@@ -598,6 +598,89 @@ describe('B1/B3 — mid-round kill-9 recovery (§7.4)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  // Regression (2026-05-26): seed ablation is ~80% of gen-1 cost. A crash
+  // mid-ablation USED to vaporise every completed seed because the original
+  // resume guard hard-failed when pareto-current.json was missing, and the
+  // seed loop emitted no B1-replayable per-(probe,target) rows. The new
+  // contract: SEED rows are persisted after each successful mkCandidate, and
+  // `--resume` without a checkpoint re-enters the seed loop with B1 replaying
+  // already-paid calls for $0. (Real production crash that motivated this fix:
+  // 5/15 seeds completed, ~$35-45 sunk, lost on the 6th candidate's score.)
+  it('a kill mid-ablation then resume reaches the SAME front as a fresh run', async () => {
+    const devProbes = [makeProbe(1), makeProbe(2), makeProbe(3)];
+    const common = {
+      variants: variants(4), devProbes,
+      callModel: mutatingEcho(), seed: 21, patience: 99, screenProbeCount: 2, verbose: false,
+    };
+
+    const freshDir = mkdtempSync(path.join(tmpdir(), 'p7-mab-f-'));
+    let freshLiveCalls = 0;
+    const fresh = await runGepa({
+      ...common, runId: 'mabf', maxRounds: 1,
+      evaluateCandidate: async (a) => { freshLiveCalls += 1; return lengthEvaluate()(a); },
+      paths: pathsFor(freshDir),
+    });
+
+    // Interrupt the SEED ablation: 4 seeds × 3 probes × 2 targets = 24 calls.
+    // Throwing after the 13th call lands mid-3rd-seed (seeds 1+2 fully scored,
+    // seed 3 partial, seed 4 untouched).
+    const dir = mkdtempSync(path.join(tmpdir(), 'p7-mab-i-'));
+    const paths = pathsFor(dir);
+    let calls = 0;
+    await expect(runGepa({
+      ...common, runId: 'mab', maxRounds: 1,
+      evaluateCandidate: async (a) => { calls += 1; if (calls > 13) throw new Error('kill mid-ablation'); return lengthEvaluate()(a); },
+      paths,
+    })).rejects.toThrow(/kill mid-ablation/);
+
+    // Exactly 2 seeds' worth of SEED rows on disk (seed 3 threw before its
+    // rows were appended; the appendEvent loop runs only AFTER mkCandidate
+    // completes for a seed). No pareto-current.json yet (round 1 not done).
+    const seedRowsAfterCrash = loadTrajectory(paths.trajectory).filter((e) => e._kind === 'seed');
+    const completedSeedHashes = new Set(seedRowsAfterCrash.map((e) => e.mutation_hash));
+    expect(completedSeedHashes.size).toBe(2);
+    expect(seedRowsAfterCrash.length).toBe(2 * devProbes.length * 2);
+    expect(existsSync(paths.paretoCurrent)).toBe(false);
+
+    // Resume — count LIVE eval calls. B1 must replay the 12 cached seed-ablation
+    // calls; the remaining 2 seeds (12 calls) run live, AND round 1 still runs
+    // live in both fresh and resumed. The invariant is: resumed lives = fresh
+    // lives − 12 (the savings = exactly the cached-seed (probe,target) calls).
+    let resumedLiveCalls = 0;
+    const resumed = await runGepa({
+      ...common, runId: 'mab', maxRounds: 1, resume: true,
+      evaluateCandidate: async (a) => { resumedLiveCalls += 1; return lengthEvaluate()(a); },
+      paths,
+    });
+    const savings = freshLiveCalls - resumedLiveCalls;
+    expect(savings).toBe(2 * devProbes.length * 2); // 12 — exactly 2 cached seeds × 3 probes × 2 targets
+
+    // The recovered front MUST match the fresh front exactly (correctness
+    // preserved through the crash + replay).
+    const sig = (r) => r.front.map((f) => `${f.hash}:${f.finalScore.toFixed(6)}`).sort();
+    expect(sig(resumed)).toEqual(sig(fresh));
+    expect(resumed.rounds).toBe(fresh.rounds);
+
+    rmSync(freshDir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // The legacy guard is still required for runs that crashed BEFORE any seed
+  // completed (zero replayable rows on disk) — we cannot safely fabricate a
+  // partial front, so the original m2/M9 fail-fast applies.
+  it('refuses to resume when neither a checkpoint nor any SEED rows exist', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'p7-mab-empty-'));
+    const paths = pathsFor(dir);
+    // Touch an empty trajectory so the file exists but has no events.
+    fs.writeFileSync(paths.trajectory, '');
+    await expect(runGepa({
+      runId: 'empty', variants: variants(2), devProbes: [makeProbe(1)],
+      evaluateCandidate: lengthEvaluate(), callModel: mutatingEcho(),
+      maxRounds: 1, resume: true, patience: 99, screenProbeCount: 1, seed: 7, paths, verbose: false,
+    })).rejects.toThrow(/no checkpoint .* 0 seed event/);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('fsyncSync is actually invoked during a run (durability primitive, §7.4 step 2)', async () => {
     const spy = vi.spyOn(fs, 'fsyncSync');
     const paths = pathsFor();

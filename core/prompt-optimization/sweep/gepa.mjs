@@ -206,37 +206,50 @@ export async function runGepa(opts = {}) {
   let maxRoundsEff = maxRounds;
   let plateauExtended = false;
 
+  // 2026-05-26: mid-ablation resume. The original guard hard-failed when
+  // pareto-current.json was missing — fine for end-of-round resume, but it
+  // meant a crash anywhere in the seed-ablation phase (the $60–80 bulk of a
+  // gen-1 run, ~80% of cost) vaporised every completed seed. The seed loop
+  // now emits B1-replayable per-(probe,target) SEED rows after each successful
+  // mkCandidate, so on `--resume` we can re-enter the seed loop and the B1
+  // wrapper short-circuits every already-paid call to its cached score for $0.
+  let midAblationResume = false;
   if (resume) {
     const ckpt = loadParetoCurrent(paths.paretoCurrent);
     for (const ev of loadTrajectory(paths.promptBank)) {
       if (ev._kind === 'prompt' && ev.hash) seenPrompts.add(ev.hash);
     }
-    if (!ckpt) {
-      // m2: pareto-current.json is the authoritative resume source. If it is
-      // lost but the trajectory survived, we cannot safely reconstruct the
-      // FULL front (incumbent per-probe scores/details aren't all replayable),
-      // so we still fail fast — but with an actionable message naming the last
-      // pareto-update round so an operator can decide. We do NOT silently
-      // continue from a partial front (that would be worse than failing).
-      const lastPareto = rs?.paretoUpdates?.length ? rs.paretoUpdates[rs.paretoUpdates.length - 1].round : 'none';
-      throw new Error(
-        `runGepa --resume: no checkpoint at ${paths.paretoCurrent} ` +
-        `(trajectory has ${rs?.paretoUpdates?.length ?? 0} pareto-update event(s), last at round ${lastPareto}). ` +
-        `pareto-current.json is the authoritative front snapshot; restore it before resuming.`,
-      );
+    if (ckpt) {
+      front = ckpt.front;
+      probeSet = (ckpt.probeSetIds || devProbes.map((p) => p.id)).map((id) => allById[id]).filter(Boolean);
+      convergence = ckpt.convergence || [];
+      patienceCounter = ckpt.patienceCounter || 0;
+      roundsEvaluatedByProbe = ckpt.roundsEvaluatedByProbe || {};
+      plateauExtended = ckpt.plateauExtended ?? false;
+      // Honor the caller's new maxRounds; only keep a stored plateau EXTENSION
+      // (never shrink to the partial run's smaller cap).
+      maxRoundsEff = plateauExtended ? Math.max(maxRounds, ckpt.maxRoundsEffective ?? maxRounds) : maxRounds;
+      startRound = (ckpt.lastCompletedRound ?? rs.lastRound ?? 0) + 1;
+      log(`resume: checkpoint round ${ckpt.lastCompletedRound}, trajectory lastRound ${rs.lastRound}, continuing from round ${startRound}`);
+    } else {
+      const seedRows = loadTrajectory(paths.trajectory).filter((ev) => ev._kind === EVENT_KINDS.SEED);
+      if (seedRows.length === 0) {
+        // No checkpoint AND no replayable SEED rows — same fail-fast as before
+        // (m2 / M9): we cannot safely reconstruct a partial front, so refuse.
+        const lastPareto = rs?.paretoUpdates?.length ? rs.paretoUpdates[rs.paretoUpdates.length - 1].round : 'none';
+        throw new Error(
+          `runGepa --resume: no checkpoint at ${paths.paretoCurrent} ` +
+          `(trajectory has ${rs?.paretoUpdates?.length ?? 0} pareto-update event(s) and 0 seed event(s), last pareto round ${lastPareto}). ` +
+          `pareto-current.json is the authoritative front snapshot; restore it before resuming.`,
+        );
+      }
+      const cachedSeeds = new Set(seedRows.map((ev) => ev.mutation_hash));
+      log(`resume: mid-ablation (${cachedSeeds.size} seed(s), ${seedRows.length} (probe,target) row(s) cached), re-entering seed loop`);
+      midAblationResume = true;
     }
-    front = ckpt.front;
-    probeSet = (ckpt.probeSetIds || devProbes.map((p) => p.id)).map((id) => allById[id]).filter(Boolean);
-    convergence = ckpt.convergence || [];
-    patienceCounter = ckpt.patienceCounter || 0;
-    roundsEvaluatedByProbe = ckpt.roundsEvaluatedByProbe || {};
-    plateauExtended = ckpt.plateauExtended ?? false;
-    // Honor the caller's new maxRounds; only keep a stored plateau EXTENSION
-    // (never shrink to the partial run's smaller cap).
-    maxRoundsEff = plateauExtended ? Math.max(maxRounds, ckpt.maxRoundsEffective ?? maxRounds) : maxRounds;
-    startRound = (ckpt.lastCompletedRound ?? rs.lastRound ?? 0) + 1;
-    log(`resume: checkpoint round ${ckpt.lastCompletedRound}, trajectory lastRound ${rs.lastRound}, continuing from round ${startRound}`);
-  } else if (opts.initialFront) {
+  }
+
+  if (!resume && opts.initialFront) {
     // Test/seed injection: start from a pre-built front (skips the seeding eval).
     probeSet = devProbes.slice();
     convergence = [];
@@ -245,7 +258,7 @@ export async function runGepa(opts = {}) {
     startRound = 1;
     front = opts.initialFront;
     log(`injected front: ${front.length}/${frontSize}, joint_best=${jointBestFinal(front).toFixed(3)}`);
-  } else {
+  } else if (!resume || midAblationResume) {
     probeSet = devProbes.slice();
     convergence = [];
     patienceCounter = 0;
@@ -255,11 +268,36 @@ export async function runGepa(opts = {}) {
     const seeds = [];
     const seedWeights = probeSet.map(() => 1.0); // round 0 < hardNegativeStartRound
     for (const v0 of variants.map(normalizeVariant)) {
+      // B1: set the resume-replay context to THIS seed's ablation pass. The
+      // mutation_hash IS the candidate's content hash (hashContent(prompt) ===
+      // cand.hash), so the per-(probe,target) SEED rows emitted below replay
+      // perfectly on `--resume`. Mid-ablation crashes used to vaporise every
+      // completed seed (~$30–60); now an already-paid call replays for $0.
+      const seedHash = hashContent(v0.prompt);
+      enterStep({ kind: EVENT_KINDS.SEED, round: 0, mutationHash: seedHash });
       const cand = await mkCandidate({ id: v0.id, prompt: v0.prompt, sourceOp: 'seed', parentHash: null, probes: probeSet, weights: seedWeights });
+      for (const probe of probeSet) {
+        for (const target of TARGET_LIST) {
+          const d = cand.detail?.[probe.id]?.[target];
+          if (!d) continue;
+          appendEvent({
+            _kind: EVENT_KINDS.SEED,
+            round: 0,
+            mutation_hash: cand.hash,
+            probe_id: probe.id,
+            target,
+            score: d.score,
+            tool_calls: d.traj?.toolCalls?.length ?? 0,
+            input_tokens: d.usage?.agent?.input_tokens ?? null,
+            output_tokens: d.usage?.agent?.output_tokens ?? null,
+          });
+        }
+      }
       appendEvent({ _kind: EVENT_KINDS.MUTATION, round: 0, source_op: 'seed', new_prompt_hash: cand.hash, parent_hash: null });
       recordPrompt(cand.hash, cand.prompt);
       seeds.push(cand);
     }
+    enterStep(null);
     front = buildFrontFrom(seeds, frontSize);
     appendEvent({ _kind: EVENT_KINDS.PARETO_UPDATE, round: 0, front: front.map((f) => f.hash), added: null, evicted: [] });
     log(`seeded front: ${front.length}/${frontSize} from ${seeds.length} variants, joint_best=${jointBestFinal(front).toFixed(3)}`);

@@ -124,7 +124,7 @@ export function buildConfirmEvent({ round, survivor, probe, pid, target, d }) {
  * must be replayable on resume. SCREEN + CONFIRM rows carry a `.score`; the
  * resume wrapper keys on (round, kind, mutation_hash, probe_id, target).
  */
-const REPLAYABLE_KINDS = new Set([EVENT_KINDS.SCREEN, EVENT_KINDS.CONFIRM]);
+const REPLAYABLE_KINDS = new Set([EVENT_KINDS.SEED, EVENT_KINDS.SCREEN, EVENT_KINDS.CONFIRM]);
 
 /**
  * Canonical resume key for a scoring call. Mirrors p7-persist.stepId's field

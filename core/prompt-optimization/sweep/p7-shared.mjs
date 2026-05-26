@@ -138,6 +138,7 @@ export const TOOL_TOKENS = Object.freeze(['ss-search', 'ss-find', 'ss-semantic',
 export const EVENT_KINDS = Object.freeze({
   MUTATION: 'mutation',
   MUTATION_REJECTION: 'mutation-rejection',
+  SEED: 'seed',                    // per-(probe,target) row for round-0 seed ablation (B1-replayable)
   SCREEN: 'screen',
   CONFIRM: 'confirm',
   TARE_ADVERSARIAL: 'tare-adversarial',

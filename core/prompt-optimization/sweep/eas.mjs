@@ -361,8 +361,26 @@ export function nativeRelativeScore({ perTarget, baselineByTarget, weights = DEF
       const base = targetBaseline[probeId];
       if (!base) throw new RangeError(`nativeRelativeScore: missing native baseline for ${target}.${probeId}`);
       const score = _finiteNumber(`nativeRelativeScore.${target}.${probeId}.score`, run.score, { min: 0, max: 1 });
-      const calls = _finiteNumber(`nativeRelativeScore.${target}.${probeId}.calls`, run.calls, { min: 0 });
-      const tokens = _finiteNumber(`nativeRelativeScore.${target}.${probeId}.tokens`, run.tokens, { min: 0, minExclusive: true });
+      // calls/tokens fall back to the baseline (= neutral efficiency desirability)
+      // when missing/non-finite. The candidate is already penalised on the accuracy
+      // axis (the judge gave the errored / empty-answer run a low score) — a missing
+      // efficiency measurement should NOT crash the whole candidate. Concretely:
+      // both API runners (Anthropic + OpenRouter) initialise `usage = { input:0,
+      // output:0,... }` and only accumulate values on successful API responses, so
+      // if every retry attempt for one (probe,target) fails (or the provider returns
+      // 200 with no usage block), `agentTokenCount` returns null and `toProbeRun`
+      // threads that null through. At 1330 runs/gen-1 this fired in real life
+      // 2026-05-26 (crashed gpt5_5.csharp-008) and torched ~5 completed seeds.
+      const _callsFallback = !(typeof run.calls === 'number' && Number.isFinite(run.calls) && run.calls >= 0);
+      const _tokensFallback = !(typeof run.tokens === 'number' && Number.isFinite(run.tokens) && run.tokens > 0);
+      const calls = _callsFallback ? base.calls : run.calls;
+      const tokens = _tokensFallback ? base.tokens : run.tokens;
+      if (_callsFallback || _tokensFallback) {
+        // eslint-disable-next-line no-console
+        console.warn(`nativeRelativeScore: missing measurement for ${target}.${probeId}` +
+          `${_callsFallback ? ` (calls=${run.calls})` : ''}${_tokensFallback ? ` (tokens=${run.tokens})` : ''}` +
+          ` — falling back to baseline (neutral efficiency desirability)`);
+      }
       const tokenPair = _effectiveTokenPair({ runTokens: tokens, base });
       const desirability = {
         accuracy: accuracyDesirability({ accuracy: score, nativeAccuracy: base.score }),
@@ -394,6 +412,9 @@ export function nativeRelativeScore({ perTarget, baselineByTarget, weights = DEF
         tokensForScoring: tokenPair.tokensForScoring,
         nativeTokensForScoring: tokenPair.nativeTokensForScoring,
         desirability: { ...desirability, overall },
+        ...(_callsFallback || _tokensFallback
+          ? { missingMeasurement: { calls: _callsFallback, tokens: _tokensFallback } }
+          : {}),
       });
     }
     perTargetFactor[target] = total / runs.length;
