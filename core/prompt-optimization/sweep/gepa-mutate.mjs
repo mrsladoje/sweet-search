@@ -12,7 +12,7 @@
  * module is fully unit-testable without network.
  */
 
-import { validateMutation } from './token-validator.mjs';
+import { validateMutation, extractTokens } from './token-validator.mjs';
 import { EVENT_KINDS } from './p7-shared.mjs';
 import { runTrajectoryCrossover } from './op-trajectory-crossover.mjs';
 import { runPersonaPivot } from './op-persona-pivot.mjs';
@@ -21,7 +21,7 @@ import { runPruner } from './op-pruner.mjs';
 
 // ─── OP-1 Reflective rewrite (inline) ───────────────────────────────────────
 
-export const REFLECTIVE_SYSTEM_PROMPT =
+export const REFLECTIVE_SYSTEM_PROMPT_BASE =
   'You are an expert prompt engineer performing a reflective rewrite of an ' +
   'agent system prompt for an agentic code-search tool. You will be shown the ' +
   'current prompt and up to 5 failure traces (probes where the JOINT score ' +
@@ -35,9 +35,47 @@ export const REFLECTIVE_SYSTEM_PROMPT =
   '- Keep the edit surgical — do not rewrite sections unrelated to the failures.\n\n' +
   'Output ONLY the rewritten prompt text. No preamble, no explanation.';
 
+// Back-compat alias: the original export name. Older code paths and tests
+// asserting on REFLECTIVE_SYSTEM_PROMPT (the base preamble without the
+// per-candidate contract) keep working unchanged.
+export const REFLECTIVE_SYSTEM_PROMPT = REFLECTIVE_SYSTEM_PROMPT_BASE;
+
+/**
+ * Render the per-candidate TOKEN PRESERVATION CONTRACT block (§3.2.1).
+ *
+ * Multiplicity drift on [[tokens]] was the dominant reason the Kimi K2.6
+ * reflector burned mutation slots during gen-1 round 1 (e.g. round-1 OP-1
+ * Slot 1 rejected with multiplicity-changed on [[ss-find]] / [[ss-grep]] /
+ * [[ss-trace]] each shifting by ±1). We anchor the reflector to the exact
+ * counts the §3.2.1 validator will check, computed via the same extractor
+ * the validator uses — so the embedded contract CANNOT drift from the
+ * downstream check.
+ *
+ * Returns '' when the candidate carries no [[tokens]] (the contract would
+ * be vacuous and noisy).
+ */
+export function buildTokenContract(candidate) {
+  if (typeof candidate !== 'string') throw new TypeError('buildTokenContract: candidate must be a string');
+  const tokens = extractTokens(candidate);
+  if (tokens.size === 0) return '';
+  const lines = [...tokens.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([tok, count]) => `  ${tok} × ${count}`);
+  return (
+    '\n\n## TOKEN PRESERVATION CONTRACT\n' +
+    'Your output MUST contain exactly these [[token]] mentions at exactly these counts (no more, no fewer):\n' +
+    lines.join('\n') + '\n\n' +
+    'Do NOT consolidate, delete, duplicate, alias, or rename any of these. ' +
+    'If you want to revise the section that mentions one of these tokens, keep the original mention(s) verbatim and add new content alongside rather than replacing. ' +
+    'A mutation that changes any count by even one will be rejected by the token validator and waste this slot.'
+  );
+}
+
 /**
  * Build the OP-1 reflective system + user prompt from a candidate + its worst
- * failure traces (from gepa-scoring.topFailures).
+ * failure traces (from gepa-scoring.topFailures). The system prompt is the
+ * BASE preamble plus a per-candidate TOKEN PRESERVATION CONTRACT block listing
+ * every [[token]] with its exact required multiplicity (§3.2.1).
  */
 export function buildReflectivePrompt({ candidate, failures }) {
   const traceBlocks = (failures || [])
@@ -57,7 +95,8 @@ export function buildReflectivePrompt({ candidate, failures }) {
     `## Worst failures (joint <= 0.4)\n${traceBlocks || '(none provided — propose a general robustness edit)'}\n\n` +
     `Rewrite the prompt to address the dominant failure pattern. Output only the new prompt:`;
 
-  return { systemPrompt: REFLECTIVE_SYSTEM_PROMPT, userPrompt };
+  const systemPrompt = REFLECTIVE_SYSTEM_PROMPT_BASE + buildTokenContract(candidate);
+  return { systemPrompt, userPrompt };
 }
 
 /**
