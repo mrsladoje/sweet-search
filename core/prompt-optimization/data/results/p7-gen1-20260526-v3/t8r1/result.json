@@ -1,0 +1,1484 @@
+{
+  "id": "T8-r1-reflective-manual",
+  "hash": "0x773422aeaba23d56",
+  "parentHash": "0xb3c6ec8dbb69defa",
+  "score_sonnet": 1,
+  "score_gpt5_5": 0.9974999999999999,
+  "taskScore": 0.9974999999999999,
+  "efficiencyFactor": 0.8584999999999999,
+  "lengthPenalty": 0.06015000000000001,
+  "finalScore": 0.26503606665927115,
+  "nativeRelative": {
+    "factor": 0.3251860666592712,
+    "perTargetFactor": {
+      "sonnet": 0.3251860666592712,
+      "gpt5_5": 0.5541454828732495
+    },
+    "breakdown": {
+      "sonnet": {
+        "factor": 0.3251860666592712,
+        "runs": [
+          {
+            "probeId": "cpp-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 18,
+            "nativeCalls": 16,
+            "tokens": 26534,
+            "nativeTokens": 21797,
+            "overheadTokens": 1008,
+            "tokensForScoring": 25526,
+            "nativeTokensForScoring": 20789,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.375,
+              "tokens": 0.3201636612122361,
+              "overall": 0.6596500847671235
+            }
+          },
+          {
+            "probeId": "cpp-002",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 5,
+            "nativeCalls": 9,
+            "tokens": 15155,
+            "nativeTokens": 6456,
+            "overheadTokens": 1008,
+            "tokensForScoring": 14147,
+            "nativeTokensForScoring": 5448,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.9444444444444444,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "cpp-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 6,
+            "tokens": 9654,
+            "nativeTokens": 6608,
+            "overheadTokens": 1008,
+            "tokensForScoring": 8646,
+            "nativeTokensForScoring": 5600,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.8333333333333334,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "cpp-004",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 14,
+            "nativeCalls": 40,
+            "tokens": 37162,
+            "nativeTokens": 36030,
+            "overheadTokens": 1008,
+            "tokensForScoring": 36154,
+            "nativeTokensForScoring": 35022,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 1,
+              "tokens": 0.5502087763321878,
+              "overall": 0.9142798050677211
+            }
+          },
+          {
+            "probeId": "csharp-004",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 17,
+            "nativeCalls": 40,
+            "tokens": 34162,
+            "nativeTokens": 58824,
+            "overheadTokens": 1008,
+            "tokensForScoring": 33154,
+            "nativeTokensForScoring": 57816,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 1,
+              "tokens": 1,
+              "overall": 1
+            }
+          },
+          {
+            "probeId": "csharp-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 21,
+            "nativeCalls": 31,
+            "tokens": 25783,
+            "nativeTokens": 24600,
+            "overheadTokens": 1008,
+            "tokensForScoring": 24775,
+            "nativeTokensForScoring": 23592,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.8225806451612904,
+              "tokens": 0.5292422157062215,
+              "overall": 0.8656509171493316
+            }
+          },
+          {
+            "probeId": "csharp-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 19,
+            "nativeCalls": 7,
+            "tokens": 14900,
+            "nativeTokens": 5854,
+            "overheadTokens": 1008,
+            "tokensForScoring": 13892,
+            "nativeTokensForScoring": 4846,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "csharp-003",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 11,
+            "nativeCalls": 6,
+            "tokens": 13294,
+            "nativeTokens": 4775,
+            "overheadTokens": 1008,
+            "tokensForScoring": 12286,
+            "nativeTokensForScoring": 3767,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "go-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 5,
+            "tokens": 8922,
+            "nativeTokens": 5913,
+            "overheadTokens": 1008,
+            "tokensForScoring": 7914,
+            "nativeTokensForScoring": 4905,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.7,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "go-006",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 5,
+            "nativeCalls": 9,
+            "tokens": 11921,
+            "nativeTokens": 5300,
+            "overheadTokens": 1008,
+            "tokensForScoring": 10913,
+            "nativeTokensForScoring": 4292,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.9444444444444444,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "go-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 3,
+            "tokens": 6104,
+            "nativeTokens": 4206,
+            "overheadTokens": 1008,
+            "tokensForScoring": 5096,
+            "nativeTokensForScoring": 3198,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.16666666666666666,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "java-002",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 3,
+            "nativeCalls": 3,
+            "tokens": 7087,
+            "nativeTokens": 4911,
+            "overheadTokens": 1008,
+            "tokensForScoring": 6079,
+            "nativeTokensForScoring": 3903,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.5,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "java-001",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 2,
+            "nativeCalls": 3,
+            "tokens": 5991,
+            "nativeTokens": 2597,
+            "overheadTokens": 1008,
+            "tokensForScoring": 4983,
+            "nativeTokensForScoring": 1589,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.8333333333333334,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "java-004",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 12,
+            "nativeCalls": 16,
+            "tokens": 22729,
+            "nativeTokens": 15237,
+            "overheadTokens": 1008,
+            "tokensForScoring": 21721,
+            "nativeTokensForScoring": 14229,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.75,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "js-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 21,
+            "nativeCalls": 8,
+            "tokens": 45060,
+            "nativeTokens": 11363,
+            "overheadTokens": 1008,
+            "tokensForScoring": 44052,
+            "nativeTokensForScoring": 10355,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "js-007",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 15,
+            "nativeCalls": 9,
+            "tokens": 14575,
+            "nativeTokens": 11936,
+            "overheadTokens": 1008,
+            "tokensForScoring": 13567,
+            "nativeTokensForScoring": 10928,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0.30412970459047456,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "js-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 14,
+            "nativeCalls": 9,
+            "tokens": 23255,
+            "nativeTokens": 14451,
+            "overheadTokens": 1008,
+            "tokensForScoring": 22247,
+            "nativeTokensForScoring": 13443,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "kotlin-002",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 6,
+            "tokens": 6616,
+            "nativeTokens": 6506,
+            "overheadTokens": 1008,
+            "tokensForScoring": 5608,
+            "nativeTokensForScoring": 5498,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.8333333333333334,
+              "tokens": 0.5646973230907497,
+              "overall": 0.8769544734832201
+            }
+          },
+          {
+            "probeId": "kotlin-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 3,
+            "nativeCalls": 5,
+            "tokens": 7476,
+            "nativeTokens": 7678,
+            "overheadTokens": 1008,
+            "tokensForScoring": 6468,
+            "nativeTokensForScoring": 6670,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.9,
+              "tokens": 0.6238645383190757,
+              "overall": 0.9074530661283735
+            }
+          },
+          {
+            "probeId": "kotlin-007",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 3,
+            "nativeCalls": 40,
+            "tokens": 9801,
+            "nativeTokens": 32503,
+            "overheadTokens": 1008,
+            "tokensForScoring": 8793,
+            "nativeTokensForScoring": 31495,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 1,
+              "tokens": 1,
+              "overall": 1
+            }
+          },
+          {
+            "probeId": "kotlin-009",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 40,
+            "nativeCalls": 7,
+            "tokens": 35421,
+            "nativeTokens": 7377,
+            "overheadTokens": 1008,
+            "tokensForScoring": 34413,
+            "nativeTokensForScoring": 6369,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "python-010",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 5,
+            "tokens": 4241,
+            "nativeTokens": 4867,
+            "overheadTokens": 1008,
+            "tokensForScoring": 3233,
+            "nativeTokensForScoring": 3859,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.7,
+              "tokens": 0.7790802249897109,
+              "overall": 0.8810728872520515
+            }
+          },
+          {
+            "probeId": "python-007",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 7,
+            "tokens": 4549,
+            "nativeTokens": 6290,
+            "overheadTokens": 1008,
+            "tokensForScoring": 3541,
+            "nativeTokensForScoring": 5282,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.9285714285714286,
+              "tokens": 0.9760117602512418,
+              "overall": 0.9780748388641599
+            }
+          },
+          {
+            "probeId": "python-009",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 9,
+            "nativeCalls": 5,
+            "tokens": 12118,
+            "nativeTokens": 3823,
+            "overheadTokens": 1008,
+            "tokensForScoring": 11110,
+            "nativeTokensForScoring": 2815,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "ruby-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 9,
+            "nativeCalls": 7,
+            "tokens": 8379,
+            "nativeTokens": 7529,
+            "overheadTokens": 1008,
+            "tokensForScoring": 7371,
+            "nativeTokensForScoring": 6521,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.21428571428571427,
+              "tokens": 0.43488458103683125,
+              "overall": 0.6004881012811546
+            }
+          },
+          {
+            "probeId": "ruby-001",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 9,
+            "nativeCalls": 14,
+            "tokens": 14004,
+            "nativeTokens": 9664,
+            "overheadTokens": 1008,
+            "tokensForScoring": 12996,
+            "nativeTokensForScoring": 8656,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.8571428571428571,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "ruby-004",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 5,
+            "tokens": 5849,
+            "nativeTokens": 4973,
+            "overheadTokens": 1008,
+            "tokensForScoring": 4841,
+            "nativeTokensForScoring": 3965,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.7,
+              "tokens": 0.3283139232994585,
+              "overall": 0.7739589114784347
+            }
+          },
+          {
+            "probeId": "rust-001",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 3,
+            "tokens": 5567,
+            "nativeTokens": 2747,
+            "overheadTokens": 1008,
+            "tokensForScoring": 4559,
+            "nativeTokensForScoring": 1739,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.16666666666666666,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "rust-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 17,
+            "nativeCalls": 7,
+            "tokens": 9656,
+            "nativeTokens": 6293,
+            "overheadTokens": 1008,
+            "tokensForScoring": 8648,
+            "nativeTokensForScoring": 5285,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "rust-004",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 18,
+            "nativeCalls": 24,
+            "tokens": 18030,
+            "nativeTokens": 23002,
+            "overheadTokens": 1008,
+            "tokensForScoring": 17022,
+            "nativeTokensForScoring": 21994,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.75,
+              "tokens": 0.8541901802095758,
+              "overall": 0.9088631641788831
+            }
+          },
+          {
+            "probeId": "rust-010",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 19,
+            "nativeCalls": 4,
+            "tokens": 10636,
+            "nativeTokens": 4567,
+            "overheadTokens": 1008,
+            "tokensForScoring": 9628,
+            "nativeTokensForScoring": 3559,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "ts-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 6,
+            "tokens": 10419,
+            "nativeTokens": 6096,
+            "overheadTokens": 1008,
+            "tokensForScoring": 9411,
+            "nativeTokensForScoring": 5088,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.8333333333333334,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "ts-003",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 2,
+            "nativeCalls": 3,
+            "tokens": 3492,
+            "nativeTokens": 2304,
+            "overheadTokens": 1008,
+            "tokensForScoring": 2484,
+            "nativeTokensForScoring": 1296,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.8333333333333334,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "ts-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 8,
+            "nativeCalls": 13,
+            "tokens": 13396,
+            "nativeTokens": 12832,
+            "overheadTokens": 1008,
+            "tokensForScoring": 12388,
+            "nativeTokensForScoring": 11824,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.8846153846153846,
+              "tokens": 0.5321181246517551,
+              "overall": 0.8822462677228654
+            }
+          },
+          {
+            "probeId": "go-004",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 5,
+            "nativeCalls": 6,
+            "tokens": 6668,
+            "nativeTokens": 7793,
+            "overheadTokens": 1008,
+            "tokensForScoring": 5660,
+            "nativeTokensForScoring": 6785,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.6666666666666666,
+              "tokens": 0.7833022671117084,
+              "overall": 0.871097149839095
+            }
+          },
+          {
+            "probeId": "java-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 6,
+            "nativeCalls": 8,
+            "tokens": 16310,
+            "nativeTokens": 9758,
+            "overheadTokens": 1008,
+            "tokensForScoring": 15302,
+            "nativeTokensForScoring": 8750,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.75,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "js-009",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 17,
+            "nativeCalls": 6,
+            "tokens": 16967,
+            "nativeTokens": 7529,
+            "overheadTokens": 1008,
+            "tokensForScoring": 15959,
+            "nativeTokensForScoring": 6521,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "python-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 5,
+            "nativeCalls": 10,
+            "tokens": 11334,
+            "nativeTokens": 10261,
+            "overheadTokens": 1008,
+            "tokensForScoring": 10326,
+            "nativeTokensForScoring": 9253,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 1,
+              "tokens": 0.4518089522634948,
+              "overall": 0.8876529991584378
+            }
+          },
+          {
+            "probeId": "ruby-002",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 10,
+            "nativeCalls": 4,
+            "tokens": 15432,
+            "nativeTokens": 4759,
+            "overheadTokens": 1008,
+            "tokensForScoring": 14424,
+            "nativeTokensForScoring": 3751,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "ts-002",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 5,
+            "tokens": 7156,
+            "nativeTokens": 2961,
+            "overheadTokens": 1008,
+            "tokensForScoring": 6148,
+            "nativeTokensForScoring": 1953,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.7,
+              "tokens": 0,
+              "overall": 0
+            }
+          }
+        ]
+      },
+      "gpt5_5": {
+        "factor": 0.5541454828732495,
+        "runs": [
+          {
+            "probeId": "cpp-005",
+            "score": 0.9,
+            "nativeScore": 1,
+            "calls": 9,
+            "nativeCalls": 5,
+            "tokens": 16824,
+            "nativeTokens": 9155,
+            "overheadTokens": 468,
+            "tokensForScoring": 16356,
+            "nativeTokensForScoring": 8687,
+            "desirability": {
+              "accuracy": 0,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "cpp-002",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 3,
+            "nativeCalls": 3,
+            "tokens": 8245,
+            "nativeTokens": 5391,
+            "overheadTokens": 468,
+            "tokensForScoring": 7777,
+            "nativeTokensForScoring": 4923,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.5,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "cpp-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 3,
+            "nativeCalls": 4,
+            "tokens": 4432,
+            "nativeTokens": 3571,
+            "overheadTokens": 468,
+            "tokensForScoring": 3964,
+            "nativeTokensForScoring": 3103,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.75,
+              "tokens": 0.26179598491023864,
+              "overall": 0.7611316177254239
+            }
+          },
+          {
+            "probeId": "cpp-004",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 15,
+            "nativeCalls": 17,
+            "tokens": 29313,
+            "nativeTokens": 16539,
+            "overheadTokens": 468,
+            "tokensForScoring": 28845,
+            "nativeTokensForScoring": 16071,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.6176470588235294,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "csharp-004",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 11,
+            "nativeCalls": 27,
+            "tokens": 21330,
+            "nativeTokens": 37938,
+            "overheadTokens": 468,
+            "tokensForScoring": 20862,
+            "nativeTokensForScoring": 37470,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 1,
+              "tokens": 1,
+              "overall": 1
+            }
+          },
+          {
+            "probeId": "csharp-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 11,
+            "tokens": 8271,
+            "nativeTokens": 12599,
+            "overheadTokens": 468,
+            "tokensForScoring": 7803,
+            "nativeTokensForScoring": 12131,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 1,
+              "tokens": 1,
+              "overall": 1
+            }
+          },
+          {
+            "probeId": "csharp-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 8,
+            "nativeCalls": 18,
+            "tokens": 9557,
+            "nativeTokens": 18128,
+            "overheadTokens": 468,
+            "tokensForScoring": 9089,
+            "nativeTokensForScoring": 17660,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 1,
+              "tokens": 1,
+              "overall": 1
+            }
+          },
+          {
+            "probeId": "csharp-003",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 6,
+            "nativeCalls": 9,
+            "tokens": 7259,
+            "nativeTokens": 8028,
+            "overheadTokens": 468,
+            "tokensForScoring": 6791,
+            "nativeTokensForScoring": 7560,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.8333333333333334,
+              "tokens": 0.7079053843759726,
+              "overall": 0.9071956744755327
+            }
+          },
+          {
+            "probeId": "go-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 2,
+            "nativeCalls": 3,
+            "tokens": 4574,
+            "nativeTokens": 5974,
+            "overheadTokens": 468,
+            "tokensForScoring": 4106,
+            "nativeTokensForScoring": 5506,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.8333333333333334,
+              "tokens": 0.8873742014059528,
+              "overall": 0.9384706787814616
+            }
+          },
+          {
+            "probeId": "go-006",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 6,
+            "nativeCalls": 5,
+            "tokens": 11113,
+            "nativeTokens": 4048,
+            "overheadTokens": 468,
+            "tokensForScoring": 10645,
+            "nativeTokensForScoring": 3580,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.3,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "go-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 2,
+            "nativeCalls": 4,
+            "tokens": 4877,
+            "nativeTokens": 4273,
+            "overheadTokens": 468,
+            "tokensForScoring": 4409,
+            "nativeTokensForScoring": 3805,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 1,
+              "tokens": 0.4014841153281286,
+              "overall": 0.87206780815196
+            }
+          },
+          {
+            "probeId": "java-002",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 2,
+            "nativeCalls": 3,
+            "tokens": 5222,
+            "nativeTokens": 3905,
+            "overheadTokens": 468,
+            "tokensForScoring": 4754,
+            "nativeTokensForScoring": 3437,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.8333333333333334,
+              "tokens": 0.1374317547793048,
+              "overall": 0.7094433991202869
+            }
+          },
+          {
+            "probeId": "java-001",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 1,
+            "nativeCalls": 2,
+            "tokens": 4791,
+            "nativeTokens": 4372,
+            "overheadTokens": 468,
+            "tokensForScoring": 4323,
+            "nativeTokensForScoring": 3904,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 1,
+              "tokens": 0.4619696239151398,
+              "overall": 0.8906191171301311
+            }
+          },
+          {
+            "probeId": "java-004",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 9,
+            "nativeCalls": 6,
+            "tokens": 20580,
+            "nativeTokens": 11926,
+            "overheadTokens": 468,
+            "tokensForScoring": 20112,
+            "nativeTokensForScoring": 11458,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "js-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 6,
+            "nativeCalls": 21,
+            "tokens": 11779,
+            "nativeTokens": 15909,
+            "overheadTokens": 468,
+            "tokensForScoring": 11311,
+            "nativeTokensForScoring": 15441,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 1,
+              "tokens": 0.9029055570158897,
+              "overall": 0.9847961654457386
+            }
+          },
+          {
+            "probeId": "js-007",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 10,
+            "nativeCalls": 8,
+            "tokens": 13438,
+            "nativeTokens": 13160,
+            "overheadTokens": 468,
+            "tokensForScoring": 12970,
+            "nativeTokensForScoring": 12692,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.25,
+              "tokens": 0.5624663984724051,
+              "overall": 0.648633671268554
+            }
+          },
+          {
+            "probeId": "js-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 6,
+            "nativeCalls": 10,
+            "tokens": 9621,
+            "nativeTokens": 12920,
+            "overheadTokens": 468,
+            "tokensForScoring": 9153,
+            "nativeTokensForScoring": 12452,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.9,
+              "tokens": 0.8999263052474442,
+              "overall": 0.9587197395240677
+            }
+          },
+          {
+            "probeId": "kotlin-002",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 6,
+            "nativeCalls": 4,
+            "tokens": 7510,
+            "nativeTokens": 4917,
+            "overheadTokens": 468,
+            "tokensForScoring": 7042,
+            "nativeTokensForScoring": 4449,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "kotlin-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 3,
+            "nativeCalls": 4,
+            "tokens": 6052,
+            "nativeTokens": 8454,
+            "overheadTokens": 468,
+            "tokensForScoring": 5584,
+            "nativeTokensForScoring": 7986,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.75,
+              "tokens": 0.9420898336795275,
+              "overall": 0.9223147698402856
+            }
+          },
+          {
+            "probeId": "kotlin-007",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 5,
+            "nativeCalls": 3,
+            "tokens": 8129,
+            "nativeTokens": 8427,
+            "overheadTokens": 468,
+            "tokensForScoring": 7661,
+            "nativeTokensForScoring": 7959,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0.6322845760995691,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "kotlin-009",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 7,
+            "nativeCalls": 12,
+            "tokens": 11208,
+            "nativeTokens": 13722,
+            "overheadTokens": 468,
+            "tokensForScoring": 10740,
+            "nativeTokensForScoring": 13254,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.9166666666666666,
+              "tokens": 0.8113865736425852,
+              "overall": 0.948280963562222
+            }
+          },
+          {
+            "probeId": "python-010",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 2,
+            "nativeCalls": 2,
+            "tokens": 4005,
+            "nativeTokens": 4530,
+            "overheadTokens": 468,
+            "tokensForScoring": 3537,
+            "nativeTokensForScoring": 4062,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.5,
+              "tokens": 0.7402902076635677,
+              "overall": 0.8038088838518878
+            }
+          },
+          {
+            "probeId": "python-007",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 3,
+            "nativeCalls": 5,
+            "tokens": 5381,
+            "nativeTokens": 5839,
+            "overheadTokens": 468,
+            "tokensForScoring": 4913,
+            "nativeTokensForScoring": 5371,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.9,
+              "tokens": 0.6885561895583032,
+              "overall": 0.9209828335716216
+            }
+          },
+          {
+            "probeId": "python-009",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 5,
+            "nativeCalls": 8,
+            "tokens": 8900,
+            "nativeTokens": 9030,
+            "overheadTokens": 468,
+            "tokensForScoring": 8432,
+            "nativeTokensForScoring": 8562,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.875,
+              "tokens": 0.6060980804375009,
+              "overall": 0.8971879862266777
+            }
+          },
+          {
+            "probeId": "ruby-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 7,
+            "nativeCalls": 6,
+            "tokens": 8677,
+            "nativeTokens": 6903,
+            "overheadTokens": 468,
+            "tokensForScoring": 8209,
+            "nativeTokensForScoring": 6435,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.3333333333333333,
+              "tokens": 0.263906028611911,
+              "overall": 0.6222101379836291
+            }
+          },
+          {
+            "probeId": "ruby-001",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 4,
+            "tokens": 10231,
+            "nativeTokens": 3653,
+            "overheadTokens": 468,
+            "tokensForScoring": 9763,
+            "nativeTokensForScoring": 3185,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.5,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "ruby-004",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 3,
+            "nativeCalls": 6,
+            "tokens": 8045,
+            "nativeTokens": 4537,
+            "overheadTokens": 468,
+            "tokensForScoring": 7577,
+            "nativeTokensForScoring": 4069,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 1,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "rust-001",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 3,
+            "nativeCalls": 3,
+            "tokens": 3122,
+            "nativeTokens": 4099,
+            "overheadTokens": 468,
+            "tokensForScoring": 2654,
+            "nativeTokensForScoring": 3631,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.5,
+              "tokens": 0.9047904482641308,
+              "overall": 0.8283706483817564
+            }
+          },
+          {
+            "probeId": "rust-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 8,
+            "nativeCalls": 9,
+            "tokens": 12105,
+            "nativeTokens": 10911,
+            "overheadTokens": 468,
+            "tokensForScoring": 11637,
+            "nativeTokensForScoring": 10443,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.6111111111111112,
+              "tokens": 0.4537235750375991,
+              "overall": 0.7853237773099699
+            }
+          },
+          {
+            "probeId": "rust-004",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 10,
+            "nativeCalls": 9,
+            "tokens": 10031,
+            "nativeTokens": 13317,
+            "overheadTokens": 468,
+            "tokensForScoring": 9563,
+            "nativeTokensForScoring": 12849,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.3888888888888889,
+              "tokens": 0.8891055838632441,
+              "overall": 0.7758886241044973
+            }
+          },
+          {
+            "probeId": "rust-010",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 15,
+            "nativeCalls": 20,
+            "tokens": 13511,
+            "nativeTokens": 21563,
+            "overheadTokens": 468,
+            "tokensForScoring": 13043,
+            "nativeTokensForScoring": 21095,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.75,
+              "tokens": 1,
+              "overall": 0.9306048591020996
+            }
+          },
+          {
+            "probeId": "ts-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 6,
+            "tokens": 8320,
+            "nativeTokens": 5912,
+            "overheadTokens": 468,
+            "tokensForScoring": 7852,
+            "nativeTokensForScoring": 5444,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.8333333333333334,
+              "tokens": 0.0678566797769806,
+              "overall": 0.6381805726482779
+            }
+          },
+          {
+            "probeId": "ts-003",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 2,
+            "nativeCalls": 3,
+            "tokens": 4290,
+            "nativeTokens": 1432,
+            "overheadTokens": 468,
+            "tokensForScoring": 3822,
+            "nativeTokensForScoring": 964,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.8333333333333334,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "ts-008",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 4,
+            "nativeCalls": 8,
+            "tokens": 9147,
+            "nativeTokens": 7678,
+            "overheadTokens": 468,
+            "tokensForScoring": 8679,
+            "nativeTokensForScoring": 7210,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 1,
+              "tokens": 0.3485355307171412,
+              "overall": 0.8537624673954223
+            }
+          },
+          {
+            "probeId": "go-004",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 3,
+            "nativeCalls": 5,
+            "tokens": 6491,
+            "nativeTokens": 4143,
+            "overheadTokens": 468,
+            "tokensForScoring": 6023,
+            "nativeTokensForScoring": 3675,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.9,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "java-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 3,
+            "nativeCalls": 6,
+            "tokens": 8497,
+            "nativeTokens": 7325,
+            "overheadTokens": 468,
+            "tokensForScoring": 8029,
+            "nativeTokensForScoring": 6857,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 1,
+              "tokens": 0.3871526735238357,
+              "overall": 0.8673259478478617
+            }
+          },
+          {
+            "probeId": "js-009",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 14,
+            "nativeCalls": 9,
+            "tokens": 15437,
+            "nativeTokens": 10060,
+            "overheadTokens": 468,
+            "tokensForScoring": 14969,
+            "nativeTokensForScoring": 9592,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "python-005",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 7,
+            "nativeCalls": 9,
+            "tokens": 10692,
+            "nativeTokens": 7965,
+            "overheadTokens": 468,
+            "tokensForScoring": 10224,
+            "nativeTokensForScoring": 7497,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0.7222222222222222,
+              "tokens": 0.16029941388320035,
+              "overall": 0.700498971480616
+            }
+          },
+          {
+            "probeId": "ruby-002",
+            "score": 1,
+            "nativeScore": 1,
+            "calls": 14,
+            "nativeCalls": 6,
+            "tokens": 19479,
+            "nativeTokens": 8378,
+            "overheadTokens": 468,
+            "tokensForScoring": 19011,
+            "nativeTokensForScoring": 7910,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          },
+          {
+            "probeId": "ts-002",
+            "score": 1,
+            "nativeScore": 0,
+            "calls": 5,
+            "nativeCalls": 3,
+            "tokens": 8625,
+            "nativeTokens": 3366,
+            "overheadTokens": 468,
+            "tokensForScoring": 8157,
+            "nativeTokensForScoring": 2898,
+            "desirability": {
+              "accuracy": 1,
+              "calls": 0,
+              "tokens": 0,
+              "overall": 0
+            }
+          }
+        ]
+      }
+    }
+  },
+  "tokenCount": 1203,
+  "sharpnessScore": 1,
+  "comparison": {
+    "vs_T2_r1_reflective": {
+      "finalScore_delta": "-0.1330",
+      "finalScore_pct": "-33.4%",
+      "taskScore_delta": "0.0037",
+      "winner": "T2-r1-reflective"
+    },
+    "gemini_prediction": "finalScore > 0.60 likely",
+    "gemini_prediction_met": false
+  },
+  "wall_seconds": 2492,
+  "completed_at": "2026-05-26T22:48:45.733Z"
+}
