@@ -640,16 +640,28 @@ fn build_url(opts: &Options, body_color: bool, body_decoration: bool) -> String 
     url
 }
 
-fn find_socket() -> Option<String> {
+fn find_socket_path_with(
+    primary: &str,
+    exists: &dyn Fn(&Path) -> bool,
+    connectable: &dyn Fn(&str) -> bool,
+) -> Option<String> {
     // Only this project's socket (explicit override or per-project derived). No
     // global legacy `/tmp/search.sock` fallback — it routed project B's queries
     // to project A's server (C3).
-    let primary = socket_path();
-    if Path::new(&primary).exists() {
-        Some(primary)
+    if exists(Path::new(primary)) && connectable(primary) {
+        Some(primary.to_string())
     } else {
         None
     }
+}
+
+fn find_socket() -> Option<String> {
+    let primary = socket_path();
+    find_socket_path_with(
+        &primary,
+        &|p| p.exists(),
+        &|p| UnixStream::connect(p).is_ok(),
+    )
 }
 
 fn do_request(socket_path: &str, path: &str) -> io::Result<()> {
@@ -1053,6 +1065,25 @@ mod tests {
         assert_ne!(a, b);
         assert_eq!(a, "/tmp/sweet-search-16fc53080a86469a.sock");
         assert_eq!(b, "/tmp/sweet-search-16fc52080a8644e7.sock");
+    }
+
+    #[test]
+    fn socket_discovery_requires_a_live_listener() {
+        let exists = exists_set(&["/tmp/sweet-search-live.sock", "/tmp/sweet-search-stale.sock"]);
+        let connectable = |p: &str| p == "/tmp/sweet-search-live.sock";
+
+        assert_eq!(
+            find_socket_path_with("/tmp/sweet-search-live.sock", &exists, &connectable),
+            Some("/tmp/sweet-search-live.sock".to_string())
+        );
+        assert_eq!(
+            find_socket_path_with("/tmp/sweet-search-stale.sock", &exists, &connectable),
+            None
+        );
+        assert_eq!(
+            find_socket_path_with("/tmp/sweet-search-missing.sock", &exists, &connectable),
+            None
+        );
     }
 
     #[test]

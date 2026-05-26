@@ -79,14 +79,19 @@ async function appendGrowingSegment(indexPath, index, docs) {
   return docs.size;
 }
 
-async function rewriteLegacyIndex(index, ops, liEncoder, pickLiInput) {
+async function rewriteLegacyIndex(index, ops, liEncoder, pickLiInput, onProgress = null) {
+  const progress = typeof onProgress === 'function'
+    ? (phase) => { onProgress(phase); }
+    : () => {};
   let tombstone = 0;
   for (const op of ops) {
     if (op.retireId && index.documents.delete(op.retireId)) tombstone += 1;
   }
   const addOps = ops.filter((op) => op.addId && op.chunk);
   const texts = addOps.map(({ chunk }) => pickLiInput(chunk));
+  progress('li:encode:start');
   const tokens = texts.length > 0 ? await liEncoder(texts) : [];
+  progress('li:encode:done');
   let appended = 0;
   for (let i = 0; i < addOps.length; i += 1) {
     if (!tokens[i] || tokens[i].length === 0) continue;
@@ -99,8 +104,10 @@ async function rewriteLegacyIndex(index, ops, liEncoder, pickLiInput) {
       endLine: chunk.metadata?.line_end || null,
     });
     appended += 1;
+    if (appended % 100 === 0) progress('li:legacy-add');
   }
   await index.save();
+  progress('li:legacy-save');
   return { appended, tombstone };
 }
 
@@ -109,7 +116,11 @@ export async function applyLateInteractionDelta({
   ops,
   liEncoder,
   pickLiInput,
+  onProgress = null,
 }) {
+  const progress = typeof onProgress === 'function'
+    ? (phase) => { onProgress(phase); }
+    : () => {};
   if (!Array.isArray(ops) || ops.length === 0) {
     return { appended: 0, tombstone: 0 };
   }
@@ -119,9 +130,10 @@ export async function applyLateInteractionDelta({
   const segmented = existing ? segmentedState(indexPath) : null;
   const index = new LateInteractionIndex({ indexPath, loadExisting: true });
   await index.init();
+  progress('li:init');
 
   if (existing && !segmented) {
-    return rewriteLegacyIndex(index, ops, encode, pickLiInput);
+    return rewriteLegacyIndex(index, ops, encode, pickLiInput, progress);
   }
 
   let tombstone = 0;
@@ -138,10 +150,13 @@ export async function applyLateInteractionDelta({
     tombstone += 1;
   }
   for (const state of states.values()) persistSegmentState(state);
+  progress('li:tombstone');
 
   const addOps = ops.filter((op) => op.addId && op.chunk);
   const texts = addOps.map(({ chunk }) => pickLiInput(chunk));
+  progress('li:encode:start');
   const tokens = texts.length > 0 ? await encode(texts) : [];
+  progress('li:encode:done');
   const writer = new LateInteractionIndex({
     indexPath,
     loadExisting: false,
@@ -156,6 +171,7 @@ export async function applyLateInteractionDelta({
     matryoshkaDim: index.matryoshkaDim,
   });
   await writer.init();
+  progress('li:writer-init');
 
   for (let i = 0; i < addOps.length; i += 1) {
     if (!tokens[i] || tokens[i].length === 0) continue;
@@ -167,8 +183,10 @@ export async function applyLateInteractionDelta({
       startLine: chunk.metadata?.line_start || null,
       endLine: chunk.metadata?.line_end || null,
     });
+    if ((i + 1) % 100 === 0) progress('li:add');
   }
 
   const appended = await appendGrowingSegment(indexPath, writer, writer._currentSegment);
+  progress('li:append-segment');
   return { appended, tombstone };
 }

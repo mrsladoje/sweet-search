@@ -55,6 +55,23 @@ describe('Reconciler / tick lifecycle', () => {
     expect(m.epoch).toBe(1);
   });
 
+  it('emits progress checkpoints around per-file tier work', async () => {
+    const phases = [];
+    const r = new Reconciler({
+      stateDir,
+      adapters: makeAdapter({ readDirtySet: async () => ['a.js'] }),
+      onProgress: (phase) => phases.push(phase),
+    });
+
+    await r.tick();
+
+    expect(phases).toContain('reconciler:dirty-read');
+    expect(phases).toContain('reconciler:file:hashed');
+    expect(phases).toContain('reconciler:graph:start');
+    expect(phases).toContain('reconciler:sparse:done');
+    expect(phases).toContain('reconciler:manifest-published');
+  });
+
   it('monotonically advances the epoch across consecutive ticks', async () => {
     const r = new Reconciler({ stateDir, adapters: makeAdapter() });
     const a = await r.tick();
