@@ -329,6 +329,51 @@ describe('native-relative desirability', () => {
     expect(r.factor).toBe(1);
   });
 
+  // Regression (2026-05-26): one bad run with null/0 tokens used to crash the
+  // entire candidate's score. The API runners initialise usage to all-zero and
+  // only accumulate on successful responses, so retry-exhausted (probe×target)
+  // runs surface as `tokens=null` from agentTokenCount. At 1330 runs/gen-1
+  // this fired in real life (gpt5_5.csharp-008) and torched 5 completed seeds.
+  // Behaviour must now be: fall back to baseline (= neutral efficiency
+  // desirability), record `missingMeasurement` in the row, never throw.
+  it('falls back to baseline (no crash) when run.tokens is null/zero/non-finite', () => {
+    const baseline = {
+      sonnet: { p1: { score: 0.9, calls: 4, tokens: 1000 } },
+      gpt5_5: { p1: { score: 0.9, calls: 4, tokens: 1000 } },
+    };
+    for (const bad of [null, undefined, 0, NaN, -Infinity, '7']) {
+      const r = nativeRelativeScore({
+        baselineByTarget: baseline,
+        perTarget: {
+          sonnet: [{ probeId: 'p1', score: 0.95, calls: 2, tokens: 650 }],
+          gpt5_5: [{ probeId: 'p1', score: 0, calls: 0, tokens: bad }],   // errored run
+        },
+      });
+      expect(Number.isFinite(r.factor)).toBe(true);
+      const row = r.breakdown.gpt5_5.runs[0];
+      expect(row.tokens).toBe(1000);                     // fell back to baseline
+      expect(row.missingMeasurement?.tokens).toBe(true); // and surfaced the flag
+    }
+  });
+
+  it('falls back to baseline for calls too (defensive — same edge-case class)', () => {
+    const baseline = {
+      sonnet: { p1: { score: 0.9, calls: 4, tokens: 1000 } },
+      gpt5_5: { p1: { score: 0.9, calls: 4, tokens: 1000 } },
+    };
+    const r = nativeRelativeScore({
+      baselineByTarget: baseline,
+      perTarget: {
+        sonnet: [{ probeId: 'p1', score: 0.95, calls: 2, tokens: 650 }],
+        gpt5_5: [{ probeId: 'p1', score: 0, calls: null, tokens: 100 }],
+      },
+    });
+    expect(Number.isFinite(r.factor)).toBe(true);
+    const row = r.breakdown.gpt5_5.runs[0];
+    expect(row.calls).toBe(4);
+    expect(row.missingMeasurement?.calls).toBe(true);
+  });
+
   it('requires a complete baseline for every scored target/probe', () => {
     expect(() =>
       nativeRelativeScore({
