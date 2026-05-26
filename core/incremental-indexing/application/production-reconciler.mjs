@@ -138,6 +138,7 @@ export function createProductionReconciler(options = {}) {
     projectRoot,
     stateDir,
     adapters: adapter.adapters(),
+    onProgress: options.onProgress,
     config: {
       filesPerTick: Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_FILES_PER_TICK || '50', 10),
       cpuBudgetMs: Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS || '2000', 10),
@@ -166,7 +167,11 @@ class ProductionReconcileAdapter {
   constructor(options) {
     this.projectRoot = options.projectRoot;
     this.stateDir = options.stateDir;
-    this.vectorEncoder = options.vectorEncoder || ((texts) => getEmbeddings(texts, { useCache: false }));
+    this.onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+    this.vectorEncoder = options.vectorEncoder || ((texts, progressOptions = {}) => getEmbeddings(texts, {
+      useCache: false,
+      onProgress: progressOptions.onProgress,
+    }));
     this.liEncoder = options.liEncoder || null;
     this.modelInfo = options.modelInfo || getModelInfo();
     // Shared admission policy — the SAME include/exclude/.sweet-search-ignore/
@@ -179,6 +184,10 @@ class ProductionReconcileAdapter {
     this._liSkipFiles = new Set();
     this.hashes = new Map();
     this.touched = new Map();
+  }
+
+  progress(phase) {
+    this.onProgress?.(phase);
   }
 
   adapters() {
@@ -230,6 +239,7 @@ class ProductionReconcileAdapter {
     const gitignored = await this.admission.gitignoredSet(
       info.filter((i) => i.exists && i.shapeOk && i.sizeOk).map((i) => i.rel),
     );
+    this.progress('production:dirty-gitignore');
 
     const files = [];
     const retire = new Set();
@@ -300,6 +310,7 @@ class ProductionReconcileAdapter {
       const parsed = hashes.deleted
         ? { entities: [], relationships: [] }
         : await extractor.extractFromFile(rel, hashes.content);
+      this.progress('production:graph-extracted');
       const entities = [...(parsed.entities || [])];
       const relationships = parsed.relationships || [];
       const fileLogicalId = graphEntityLogicalId(rel, 'file', path.basename(rel));
@@ -349,6 +360,7 @@ class ProductionReconcileAdapter {
         insertRelationships(db, relationships, liveIdFor, epoch);
       });
       tx();
+      this.progress('production:graph-written');
       if (hasFts) for (const table of ['entities_fts', 'entities_trigram']) try { fts5Merge(db, table, 16); } catch {}
       this.touched.set(rel, { ...(this.touched.get(rel) || {}), graphEntities: entities.length });
       return { ops: { graph_upsert: upsert, graph_tombstone: tombstone }, manifest: { path: 'code-graph.db' } };
@@ -377,7 +389,9 @@ class ProductionReconcileAdapter {
         return { ops: { vectors_delete: summary.retiredRows.length }, vectorOps: retired, tokenOps: retired, gramOps: [{ file: rel, deleted: true }] };
       }
       const parsed = await new ASTChunker({ projectRoot: this.projectRoot }).parseFile(rel, hashes.content);
+      this.progress('production:vector-parsed');
       chunks = await enrichChunksFromGraph(parsed.map((chunk, i) => ({ ...chunk, file: rel, id: `${rel}:${chunk.metadata?.line_start || 0}-${chunk.metadata?.line_end || chunk.metadata?.line_start || 0}:${i}` })), this.stateDir);
+      this.progress('production:vector-enriched');
       // LI generated-content parity: decide ONCE, from the file's full chunk set
       // (exactly like full indexing's per-file applyIndexingChunkPolicy), whether
       // late interaction skips this file. Embeddings/graph/sparse still index it.
@@ -390,7 +404,10 @@ class ProductionReconcileAdapter {
       const snap = snapshotFileRows(db, rel);
       const delta = diffChunks(chunks, annotations, snap);
       const texts = delta.toEncode.map(({ chunk }) => chunk.embedding_text || `${rel}\n${chunk.text || chunk.content || ''}`);
-      const embeddings = texts.length > 0 ? (await this.vectorEncoder(texts)).map((r) => r.embedding || r) : [];
+      const embeddings = texts.length > 0
+        ? (await this.vectorEncoder(texts, { onProgress: () => this.progress('production:vector-embedding') })).map((r) => r.embedding || r)
+        : [];
+      this.progress('production:vector-embedded');
       const encodedChunks = delta.toEncode.map(({ chunk }, i) => ({ ...chunk, id: `${chunk.id}@e${epoch}.${i}` }));
       const encodedAnnotations = delta.toEncode.map((x) => x.ann);
       const tx = db.transaction(() => {
@@ -402,6 +419,7 @@ class ProductionReconcileAdapter {
         return summary;
       });
       const summary = tx();
+      this.progress('production:vector-written');
       const retiredRows = [...summary.replacedRows, ...summary.retiredRows, ...summary.versionedRows];
       for (const row of retiredRows) {
         vectorOps.push({ retireId: row.oldId });
@@ -441,6 +459,7 @@ class ProductionReconcileAdapter {
     const indexPath = path.join(this.stateDir, 'codebase-hnsw.idx');
     const index = new HNSWIndex({ indexPath, stalePath: `${indexPath}.stale.bin`, dimension: this.modelInfo.hnswDimension });
     try { await index.load(indexPath); } catch { await index.init(); }
+    this.progress('production:hnsw-loaded');
     let add = 0; let tombstone = 0;
     for (const op of ops) {
       if (op.retireId && await index.remove(op.retireId)) tombstone += 1;
@@ -448,8 +467,10 @@ class ProductionReconcileAdapter {
         await index.add(op.addId, truncateForHNSW(op.embedding, this.modelInfo.hnswDimension), { file: op.metadata?.file, name: op.metadata?.name, type: op.metadata?.type });
         add += 1;
       }
+      if ((add + tombstone) > 0 && (add + tombstone) % 100 === 0) this.progress('production:hnsw-loop');
     }
     await index.save(indexPath);
+    this.progress('production:hnsw-saved');
     return { ops: { hnsw_add: add, hnsw_tombstone: tombstone }, manifest: { path: 'codebase-hnsw.idx', stale: 'codebase-hnsw.idx.stale.bin' } };
   }
 
@@ -458,6 +479,7 @@ class ProductionReconcileAdapter {
     const indexPath = path.join(this.stateDir, 'codebase-binary-hnsw.idx');
     const index = new BinaryHNSWIndex({ indexPath, stalePath: `${indexPath}.stale.bin`, floatDimension: this.modelInfo.hnswDimension });
     try { await index.load(indexPath); } catch { await index.init(); }
+    this.progress('production:binary-hnsw-loaded');
     const binaryVectorsBefore = index.idToIndex?.size ?? 0;
     let append = 0; let tombstone = 0;
     const floatUpserts = [];
@@ -473,9 +495,12 @@ class ProductionReconcileAdapter {
         floatUpserts.push({ id: op.addId, vector: truncated });
         append += 1;
       }
+      if ((append + tombstone) > 0 && (append + tombstone) % 100 === 0) this.progress('production:binary-hnsw-loop');
     }
     await index.save(indexPath);
+    this.progress('production:binary-hnsw-saved');
     await maintainFloatStore(indexPath, { upserts: floatUpserts, removeIds: floatRemoveIds, binaryVectorsBefore, dimension: this.modelInfo.hnswDimension });
+    this.progress('production:float-store-maintained');
     return { ops: { binary_hnsw_append: append, binary_hnsw_tombstone: tombstone }, manifest: { path: 'codebase-binary-hnsw.idx' } };
   }
 
@@ -497,6 +522,7 @@ class ProductionReconcileAdapter {
       ops: filteredOps,
       liEncoder: this.liEncoder,
       pickLiInput,
+      onProgress: () => this.progress('production:li-delta'),
     });
     return { ops: { li_segment_append: appended, li_tombstone: tombstone }, manifest: { path: 'codebase-late-interaction.db', segments: 'codebase-late-interaction.db.segments/manifest.json' } };
   }
@@ -517,7 +543,9 @@ class ProductionReconcileAdapter {
         grams: record.grams,
       });
       count += 1;
+      if (count % 100 === 0) this.progress('production:sparse-loop');
     }
+    this.progress('production:sparse-done');
     return { ops: { sparse_gram_delta_upsert: count }, manifest: { base: 'codebase-sparse-grams.idx', deltas: listDeltaSegments(base, { maxEpoch: epoch }).map((s) => relativeArtifact(this.stateDir, s.path)), weightsId: this.activeSparseWeightsId(base) } };
   }
 

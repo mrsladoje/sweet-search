@@ -155,17 +155,29 @@ export async function startServer() {
   // sidecar). 12 coexisting daemons cost ~15.6 GB before this guard.
   //
   // Probe BEFORE the expensive SweetSearch import: if a live daemon already
-  // answers /health on our per-project socket, defer to it and exit cleanly.
-  // A stale socket *file* with no listener still falls through to the
-  // unlink+bind path below (existing behaviour preserved for crash recovery).
+  // answers /health on our per-project socket, defer to it and exit cleanly
+  // even when it is still initializing. A stale socket *file* with no listener
+  // still falls through to the unlink+bind path below (existing behaviour
+  // preserved for crash recovery).
   //
   // Deliberate replacement of a wrong-projectRoot daemon is handled by the
   // explicit ensureDaemonForProjectRoot() path (stopServer + autoSpawnServer),
   // not by startServer — this guard never steals from a live listener.
   // ---------------------------------------------------------------------------
-  if (await isServerRunning()) {
-    console.log(`[Server] Healthy daemon already listening on ${socketPath}; reusing existing instance (no spawn).`);
-    return;
+  const existingHealth = await getServerHealth({ timeoutMs: 500 });
+  if (existingHealth) {
+    if (existingHealth.status === 'failed') {
+      console.log(`[Server] Existing daemon on ${socketPath} reports failed initialization; requesting graceful restart.`);
+      await stopServer({ timeoutMs: 2000 });
+      const exited = await waitForServerExit({ timeoutMs: 5000, intervalMs: 200 });
+      if (!exited) {
+        console.log(`[Server] Existing failed daemon on ${socketPath} did not exit; refusing to steal its live socket.`);
+        return;
+      }
+    } else {
+      console.log(`[Server] Daemon already listening on ${socketPath} (status=${existingHealth.status ?? 'unknown'}); reusing existing instance (no spawn).`);
+      return;
+    }
   }
 
   // Dynamic import to avoid circular dependency
@@ -616,12 +628,14 @@ export async function stopServer({ timeoutMs = 5000 } = {}) {
 
 /**
  * Best-effort wait for the daemon to exit. Returns true once /health stops
- * answering (within timeoutMs); false otherwise.
+ * answering at all (within timeoutMs); false otherwise. This intentionally
+ * uses getServerHealth(), not isServerRunning(), because a failed/starting
+ * daemon still owns the socket and must not be mistaken for "gone".
  */
 export async function waitForServerExit({ timeoutMs = 8000, intervalMs = 200 } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (!(await isServerRunning())) return true;
+    if (!(await getServerHealth({ timeoutMs: Math.max(1000, intervalMs) }))) return true;
     await new Promise(r => setTimeout(r, intervalMs));
   }
   return false;

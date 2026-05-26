@@ -157,6 +157,7 @@ describe('native launcher integration', () => {
         ...process.env,
         SWEET_SEARCH_PROJECT_ROOT: projectDir,
         SWEET_SEARCH_SOCKET_PATH: warmSocketPath,
+        SWEET_SEARCH_RECONCILE_V2: '0',
       },
       detached: true,
     });
@@ -209,6 +210,7 @@ describe('native launcher integration', () => {
         ...process.env,
         SWEET_SEARCH_PROJECT_ROOT: projectDir,
         SWEET_SEARCH_SOCKET_PATH: warmSocketPath,
+        SWEET_SEARCH_RECONCILE_V2: '0',
       },
     });
 
@@ -232,6 +234,7 @@ describe('native launcher integration', () => {
       env: {
         ...process.env,
         SWEET_SEARCH_SOCKET_PATH: warmSocketPath,
+        SWEET_SEARCH_RECONCILE_V2: '0',
       },
     });
     execFileSync('sleep', ['0.5']);
@@ -253,6 +256,7 @@ describe('native launcher integration', () => {
       ...process.env,
       SWEET_SEARCH_PROJECT_ROOT: projectDir,
       SWEET_SEARCH_SOCKET_PATH: coldSocketPath,
+      SWEET_SEARCH_RECONCILE_V2: '0',
     };
 
     // First call auto-starts the server. It may return a "starting" response

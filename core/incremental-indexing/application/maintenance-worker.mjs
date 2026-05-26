@@ -269,7 +269,7 @@ export function defaultMaintenanceHandlers(stateDir) {
  * makes forward progress); the budget gates only subsequent jobs.
  *
  * @param {string} stateDir
- * @param {{handlers?:object, maxJobs?:number, maxAttempts?:number, budgetMs?:number, now?:()=>number}} [options]
+ * @param {{handlers?:object, maxJobs?:number, maxAttempts?:number, budgetMs?:number, now?:()=>number, onProgress?:(phase:string)=>void}} [options]
  */
 export async function processMaintenanceQueue(stateDir, options = {}) {
   const handlers = options.handlers || {};
@@ -277,6 +277,9 @@ export async function processMaintenanceQueue(stateDir, options = {}) {
   const maxAttempts = Number.isInteger(options.maxAttempts) && options.maxAttempts > 0 ? options.maxAttempts : 3;
   const budgetMs = Number.isFinite(options.budgetMs) && options.budgetMs > 0 ? options.budgetMs : Infinity;
   const clock = typeof options.now === 'function' ? options.now : Date.now;
+  const onProgress = typeof options.onProgress === 'function'
+    ? (phase) => { options.onProgress(phase); }
+    : () => {};
   const startMs = clock();
   const remaining = [];
   const summary = {
@@ -313,9 +316,12 @@ export async function processMaintenanceQueue(stateDir, options = {}) {
 
     attempted += 1;
     try {
-      await handler(job);
+      onProgress(`maintenance:${job.tier || 'unknown'}:start`);
+      await handler(job, { stateDir, onProgress });
+      onProgress(`maintenance:${job.tier || 'unknown'}:done`);
       summary.succeeded += 1;
     } catch (err) {
+      if (err?.name === 'MaintainerLifecycleAbort') throw err;
       summary.failed += 1;
       const attempts = Number.isInteger(job.attempts) ? job.attempts + 1 : 1;
       const next = {

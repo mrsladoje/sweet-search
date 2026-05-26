@@ -46,6 +46,11 @@ import {
 } from '../infrastructure/tombstone-bitmap.mjs';
 
 function safeUnlink(p) { try { fs.unlinkSync(p); } catch { /* ok */ } }
+function progressFn(onProgress) {
+  return typeof onProgress === 'function'
+    ? (phase) => { onProgress(phase); }
+    : () => {};
+}
 
 function float32FromBuffer(buffer) {
   const view = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
@@ -56,7 +61,8 @@ function float32FromBuffer(buffer) {
  * sparse_gram                                                         *
  * ------------------------------------------------------------------ */
 
-export async function sparseGramHandler(job, { stateDir }) {
+export async function sparseGramHandler(job, { stateDir, onProgress = null }) {
+  const progress = progressFn(onProgress);
   const base = path.join(stateDir, 'codebase-sparse-grams.idx');
   // Stage the compaction in deferred-delete mode. The compacted segment is
   // already on disk via tmp+rename; the consumed old segments stay until
@@ -65,6 +71,7 @@ export async function sparseGramHandler(job, { stateDir }) {
   // cross-process reader holding the OLD manifest's `sparseGram.deltas`
   // list could resolve `recordsResolved = 0` against deleted files.
   const result = compactDeltaSegments(base, { dropTombstones: false, deferDelete: true });
+  progress('maintenance:sparse-gram:compacted');
   if (result.skipped) {
     return { skipped: result.skipped };
   }
@@ -103,6 +110,7 @@ export async function sparseGramHandler(job, { stateDir }) {
   if (safeToUnlink) {
     for (const segPath of result.consumedSegmentPaths) {
       try { fs.unlinkSync(segPath); unlinked += 1; } catch { /* tolerate concurrent deletion */ }
+      if (unlinked % 100 === 0) progress('maintenance:sparse-gram:unlink');
     }
   }
 
@@ -142,13 +150,15 @@ function readLiveVectorIds(stateDir) {
   }
 }
 
-export async function binaryHnswHandler(job, { stateDir }) {
+export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
+  const progress = progressFn(onProgress);
   const indexPath = path.join(stateDir, 'codebase-binary-hnsw.idx');
   const metaPath = path.join(stateDir, 'codebase-binary-hnsw.meta.json');
   if (!fs.existsSync(metaPath)) return { skipped: 'no-index' };
 
   const existing = new BinaryHNSWIndex({ indexPath });
   await existing.load(indexPath);
+  progress('maintenance:binary-hnsw:loaded');
 
   // Liveness authority is codebase.db, NOT the binary stale bitmap. This makes
   // binary reclamation self-healing and consistent with floatHnswHandler
@@ -165,6 +175,7 @@ export async function binaryHnswHandler(job, { stateDir }) {
     if (isStale) continue;
     const int8 = existing.int8Vectors.get(v.id) || null;
     live.push({ id: v.id, binary: v.binary, metadata: v.metadata, int8 });
+    if (i > 0 && i % 1000 === 0) progress('maintenance:binary-hnsw:scan');
   }
   const dropped = existing.vectors.length - live.length;
   if (dropped === 0) {
@@ -184,11 +195,15 @@ export async function binaryHnswHandler(job, { stateDir }) {
     maxElements: existing.maxElements,
   });
   fresh.resetForBuild();
+  let added = 0;
   for (const v of live) {
     await fresh.add(v.id, v.binary, v.metadata, v.int8);
+    added += 1;
+    if (added % 500 === 0) progress('maintenance:binary-hnsw:add');
   }
   fresh._cleanBuild = true;
   await fresh.save(indexPath);
+  progress('maintenance:binary-hnsw:saved');
 
   return {
     tier: 'binary_hnsw',
@@ -214,7 +229,8 @@ export async function binaryHnswHandler(job, { stateDir }) {
  * `metadata`, `epoch_retired`) are stable — verified in the production
  * reconciler `applyVectorDelta` path.
  */
-export async function floatHnswHandler(job, { stateDir }) {
+export async function floatHnswHandler(job, { stateDir, onProgress = null }) {
+  const progress = progressFn(onProgress);
   const indexPath = path.join(stateDir, 'codebase-hnsw.idx');
   const metaPath = path.join(stateDir, 'codebase-hnsw.meta.json');
   const dbPath = path.join(stateDir, 'codebase.db');
@@ -224,6 +240,7 @@ export async function floatHnswHandler(job, { stateDir }) {
   // Load existing index to discover dimension / parameters (cheap).
   const existing = new HNSWIndex({ indexPath });
   try { await existing.load(indexPath); } catch { return { skipped: 'load-failed' }; }
+  progress('maintenance:float-hnsw:loaded');
   const dimension = existing.dimension;
   const stalePath = existing.stalePath;
 
@@ -260,14 +277,17 @@ export async function floatHnswHandler(job, { stateDir }) {
     metric: existing.metric,
   });
   await fresh.init();
-  for (const row of liveRows) {
+  for (let i = 0; i < liveRows.length; i += 1) {
+    const row = liveRows[i];
     const embedding = float32FromBuffer(row.embedding);
     let meta;
     try { meta = JSON.parse(row.metadata || '{}'); } catch { meta = {}; }
     const truncated = embedding.length > dimension ? embedding.slice(0, dimension) : embedding;
     await fresh.add(row.id, truncated, meta);
+    if (i > 0 && i % 500 === 0) progress('maintenance:float-hnsw:add');
   }
   await fresh.save(indexPath);
+  progress('maintenance:float-hnsw:saved');
   // Stale bitmap is meaningless after rebuild — keys are fresh.
   safeUnlink(stalePath);
 
@@ -293,7 +313,8 @@ export async function floatHnswHandler(job, { stateDir }) {
  * before updating the manifest, the next pass re-runs from the
  * (untouched) old segment.
  */
-export async function liSegmentHandler(job, { stateDir }) {
+export async function liSegmentHandler(job, { stateDir, onProgress = null }) {
+  const progress = progressFn(onProgress);
   const segmentId = job?.payload?.segmentId;
   if (!segmentId || typeof segmentId !== 'string') {
     throw new Error('li_segment: missing payload.segmentId');
@@ -338,12 +359,16 @@ export async function liSegmentHandler(job, { stateDir }) {
     modelId: manifest.modelId || null,
   });
   await index.init();
+  progress('maintenance:li-segment:loaded');
 
   const ordered = [];
+  let scannedDocs = 0;
   for (const [docId, doc] of index.documents.entries()) {
     const position = index._docSegmentPositions?.get(docId);
     if (!position || position.segmentPath !== segmentPath) continue;
     ordered.push({ docIndex: position.docIndex, docId, doc });
+    scannedDocs += 1;
+    if (scannedDocs % 1000 === 0) progress('maintenance:li-segment:scan');
   }
   ordered.sort((a, b) => a.docIndex - b.docIndex);
   const liveDocs = new Map();
@@ -371,6 +396,7 @@ export async function liSegmentHandler(job, { stateDir }) {
 
   const tmpSegPath = segmentPath + '.compacting.tmp';
   await writer._writeSegmentFile(tmpSegPath, liveDocs);
+  progress('maintenance:li-segment:written');
   // Atomic replace of the segment file.
   fs.renameSync(tmpSegPath, segmentPath);
   // Reset the segment's stale bitmap to a fresh, zero-tombstone bitmap
@@ -407,13 +433,16 @@ export async function liSegmentHandler(job, { stateDir }) {
  * crash-safe — see `infrastructure/li-segment-merge.mjs`. Honors
  * `SWEET_SEARCH_LI_MERGE_GRACE_MS` for the quarantine grace window.
  */
-export async function liSegmentsHandler(job, { stateDir }) {
+export async function liSegmentsHandler(job, { stateDir, onProgress = null }) {
+  const progress = progressFn(onProgress);
   const graceRaw = Number.parseInt(process.env.SWEET_SEARCH_LI_MERGE_GRACE_MS || '', 10);
   const graceMs = Number.isFinite(graceRaw) && graceRaw >= 0 ? graceRaw : LI_MERGE_GRACE_MS;
   // A `pending_delete` re-fire only needs the cheap quarantine/orphan sweep —
   // never reload the full index just to unlink a few deferred files.
   const sweepOnly = job?.reason === 'pending_delete';
-  return mergeLiSegments(stateDir, { graceMs, sweepOnly });
+  const result = await mergeLiSegments(stateDir, { graceMs, sweepOnly });
+  progress('maintenance:li-segments:merged');
+  return result;
 }
 
 /* ------------------------------------------------------------------ *
@@ -427,15 +456,18 @@ export async function liSegmentsHandler(job, { stateDir }) {
  * size / per-run cap tunable via `SWEET_SEARCH_VECTOR_GC_BATCH` and
  * `SWEET_SEARCH_VECTOR_GC_MAX_ROWS`.
  */
-export function vectorGcHandler(job, { stateDir }) {
+export function vectorGcHandler(job, { stateDir, onProgress = null }) {
+  const progress = progressFn(onProgress);
   const batchRaw = Number.parseInt(process.env.SWEET_SEARCH_VECTOR_GC_BATCH || '', 10);
   const maxRaw = Number.parseInt(process.env.SWEET_SEARCH_VECTOR_GC_MAX_ROWS || '', 10);
-  return runVectorGc(stateDir, {
+  const result = runVectorGc(stateDir, {
     minLiveEpoch,
     readManifest,
     batchSize: Number.isFinite(batchRaw) && batchRaw > 0 ? batchRaw : undefined,
     maxRows: Number.isFinite(maxRaw) && maxRaw > 0 ? maxRaw : undefined,
   });
+  progress('maintenance:vector-gc:done');
+  return result;
 }
 
 /* ------------------------------------------------------------------ *
@@ -450,15 +482,18 @@ export function vectorGcHandler(job, { stateDir }) {
  * per-run cap tunable via `SWEET_SEARCH_GRAPH_GC_BATCH` and
  * `SWEET_SEARCH_GRAPH_GC_MAX_ROWS`.
  */
-export function graphGcHandler(job, { stateDir }) {
+export function graphGcHandler(job, { stateDir, onProgress = null }) {
+  const progress = progressFn(onProgress);
   const batchRaw = Number.parseInt(process.env.SWEET_SEARCH_GRAPH_GC_BATCH || '', 10);
   const maxRaw = Number.parseInt(process.env.SWEET_SEARCH_GRAPH_GC_MAX_ROWS || '', 10);
-  return runGraphGc(stateDir, {
+  const result = runGraphGc(stateDir, {
     minLiveEpoch,
     readManifest,
     batchSize: Number.isFinite(batchRaw) && batchRaw > 0 ? batchRaw : undefined,
     maxRows: Number.isFinite(maxRaw) && maxRaw > 0 ? maxRaw : undefined,
   });
+  progress('maintenance:graph-gc:done');
+  return result;
 }
 
 /* ------------------------------------------------------------------ *
@@ -473,12 +508,12 @@ export function graphGcHandler(job, { stateDir }) {
  */
 export function reclamationHandlers(stateDir) {
   return {
-    sparse_gram: (job) => sparseGramHandler(job, { stateDir }),
-    binary_hnsw: (job) => binaryHnswHandler(job, { stateDir }),
-    float_hnsw: (job) => floatHnswHandler(job, { stateDir }),
-    li_segment: (job) => liSegmentHandler(job, { stateDir }),
-    li_segments: (job) => liSegmentsHandler(job, { stateDir }),
-    vector_gc: (job) => vectorGcHandler(job, { stateDir }),
-    graph_gc: (job) => graphGcHandler(job, { stateDir }),
+    sparse_gram: (job, ctx = {}) => sparseGramHandler(job, { stateDir, onProgress: ctx.onProgress }),
+    binary_hnsw: (job, ctx = {}) => binaryHnswHandler(job, { stateDir, onProgress: ctx.onProgress }),
+    float_hnsw: (job, ctx = {}) => floatHnswHandler(job, { stateDir, onProgress: ctx.onProgress }),
+    li_segment: (job, ctx = {}) => liSegmentHandler(job, { stateDir, onProgress: ctx.onProgress }),
+    li_segments: (job, ctx = {}) => liSegmentsHandler(job, { stateDir, onProgress: ctx.onProgress }),
+    vector_gc: (job, ctx = {}) => vectorGcHandler(job, { stateDir, onProgress: ctx.onProgress }),
+    graph_gc: (job, ctx = {}) => graphGcHandler(job, { stateDir, onProgress: ctx.onProgress }),
   };
 }

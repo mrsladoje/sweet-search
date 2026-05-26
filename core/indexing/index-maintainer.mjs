@@ -37,11 +37,12 @@
  * Started by: session-preheat.sh (alongside search infrastructure)
  */
 
-import { readFileSync, writeFileSync, existsSync, unlinkSync, renameSync, appendFileSync, mkdirSync, openSync, closeSync, constants } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, unlinkSync, renameSync, appendFileSync, mkdirSync, openSync, closeSync, constants, ftruncateSync, fsyncSync, writeSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { dirname, join, relative, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { startupInterval, tierForHardware, reconcileEnablement } from '../incremental-indexing/domain/interval-autotune.mjs';
 import { detectHardwareCapability } from '../infrastructure/hardware-capability.js';
 import { sweepStaleArtifactTemps, DEFAULT_TMP_SWEEP_MAX_AGE_MS } from '../incremental-indexing/infrastructure/artifact-temp-sweep.mjs';
@@ -655,20 +656,56 @@ function readStateLock(lockFile) {
 // Module-level lockfile state — populated by acquireStateLock on success,
 // mutated by writeStateLock (heartbeat tick) AND recordProgress (work
 // checkpoint), cleared by releaseStateLock. Both writers share this object
-// so a heartbeat write never clobbers progress fields and vice-versa; every
-// persist is a full atomic snapshot via safeWriteFileSync (temp+rename).
+// so a heartbeat write never clobbers progress fields and vice-versa.
 let lockState = null;
 
 /**
- * Re-validate ownership, mutate the in-memory lockState, persist. Refuses to
- * write if the lockfile no longer names us so a displaced daemon never
- * overwrites a successor's pid. Shared backend for writeStateLock + recordProgress.
+ * True iff a parsed state lock belongs to this process's current acquisition.
+ * The ownerToken closes the same-pid / stale-module-state hole in tests and
+ * long-lived hosts; legacy test fixtures without a token still match by pid
+ * when this process has no active token.
+ */
+function lockMatchesCurrentOwner(existing) {
+  if (existing?.pid !== process.pid) return false;
+  if (lockState?.ownerToken) return existing.ownerToken === lockState.ownerToken;
+  return true;
+}
+
+function readStateLockFromFd(fd) {
+  try {
+    const parsed = JSON.parse(readFileSync(fd, 'utf-8'));
+    return Number.isInteger(parsed.pid) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Re-validate ownership through an open fd, mutate the in-memory lockState,
+ * then write back through that same fd. This deliberately avoids temp+rename:
+ * if another daemon unlinks/recreates the path after our open, our write lands
+ * on the old unlinked inode, not on the successor's new lockfile.
  */
 function persistLockState(lockFile, mutator) {
   if (!lockState) return;
-  if (!stillOwnsLock(lockFile)) return;
-  mutator(lockState);
-  safeWriteFileSync(lockFile, JSON.stringify(lockState));
+  let fd = null;
+  try {
+    fd = openSync(lockFile, constants.O_RDWR);
+    const existing = readStateLockFromFd(fd);
+    if (!lockMatchesCurrentOwner(existing)) return;
+    mutator(lockState);
+    const payload = JSON.stringify(lockState);
+    const bytes = Buffer.from(payload, 'utf-8');
+    ftruncateSync(fd, 0);
+    writeSync(fd, bytes, 0, bytes.length, 0);
+    try { fsyncSync(fd); } catch { /* best-effort durability for heartbeat */ }
+  } catch {
+    // Missing/corrupt/displaced locks are handled by the main ownership check.
+  } finally {
+    if (fd != null) {
+      try { closeSync(fd); } catch {}
+    }
+  }
 }
 
 function writeStateLock(lockFile) {
@@ -751,6 +788,7 @@ export async function acquireStateLock(stateDir) {
         pid: process.pid,
         timestamp: nowMs,
         startTime: getProcessStartTime(),
+        ownerToken: randomUUID(),
         progressCounter: 0,
         progressTimestamp: nowMs,
       };
@@ -804,7 +842,7 @@ export async function acquireStateLock(stateDir) {
 export function releaseStateLock(lockFile) {
   try {
     const existing = readStateLock(lockFile);
-    if (existing?.pid === process.pid) unlinkSync(lockFile);
+    if (lockMatchesCurrentOwner(existing)) unlinkSync(lockFile);
   } catch {}
   // Reset module-level state so a subsequent acquire (in tests, in long-lived
   // hosts, in respawn paths) starts from a clean slate.
@@ -826,10 +864,32 @@ export function releaseStateLock(lockFile) {
 export function stillOwnsLock(lockFile) {
   const existing = readStateLock(lockFile);
   if (!existing) return false;
-  return existing.pid === process.pid;
+  return lockMatchesCurrentOwner(existing);
+}
+
+class MaintainerLifecycleAbort extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'MaintainerLifecycleAbort';
+  }
+}
+
+function createLifecycleProgress(lockFile) {
+  return () => {
+    if (shutdownRequested) {
+      throw new MaintainerLifecycleAbort('shutdown requested');
+    }
+    if (!stillOwnsLock(lockFile)) {
+      throw new MaintainerLifecycleAbort('lock ownership lost');
+    }
+    recordProgress(lockFile);
+  };
 }
 
 export async function runReconcileV2Tick(ctx) {
+  const onProgress = typeof ctx.onProgress === 'function' ? ctx.onProgress : null;
+  const progress = (phase) => { onProgress?.(phase); };
+  progress('tick:start');
   // Baseline gate: the incremental reconciler must NEVER be the first index
   // builder for a non-empty repo (product contract). Until the normal full
   // indexing path has produced a complete baseline, stay dormant — skip BOTH
@@ -854,12 +914,15 @@ export async function runReconcileV2Tick(ctx) {
     if (dirtyScanEnabled()) {
       const { createAdmissionPolicy } = await import('../indexing/admission-policy.js');
       const admissionPolicy = createAdmissionPolicy({ projectRoot: ctx.projectRoot });
-      const scan = await scanDirtyAndEnqueue({ projectRoot: ctx.projectRoot, stateDir: ctx.stateDir, admissionPolicy });
+      progress('dirty-scan:start');
+      const scan = await scanDirtyAndEnqueue({ projectRoot: ctx.projectRoot, stateDir: ctx.stateDir, admissionPolicy, onProgress });
+      progress('dirty-scan:done');
       if (scan.enqueued > 0) {
         log('INFO', `Dirty scan enqueued ${scan.enqueued} file(s) (added=${scan.added}, modified=${scan.modified}, deleted=${scan.deleted}, retired=${scan.retired})`);
       }
     }
   } catch (err) {
+    if (err instanceof MaintainerLifecycleAbort) throw err;
     log('WARN', `Dirty scan failed (continuing with queued hints): ${err?.message ?? err}`);
   }
 
@@ -872,7 +935,9 @@ export async function runReconcileV2Tick(ctx) {
       warn: (msg) => log('WARN', msg),
       error: (msg) => log('ERROR', msg),
     },
+    onProgress,
   });
+  progress('tick:done');
   log('INFO', `Reconcile v2 tick complete: epoch=${counters.epoch}, processed=${counters.files_processed}, unchanged=${counters.content_unchanged}`);
   return counters;
 }
@@ -957,6 +1022,7 @@ function tmpSweepMaxAgeMs(env = process.env) {
  * @param {{stateDir:string, env?:NodeJS.ProcessEnv}} ctx
  */
 export async function drainMaintenanceInline(ctx) {
+  const onProgress = typeof ctx.onProgress === 'function' ? ctx.onProgress : null;
   const env = ctx.env || process.env;
   if (!maintenanceInlineEnabled(env)) {
     return { skipped: true, reason: 'inline-disabled' };
@@ -977,6 +1043,7 @@ export async function drainMaintenanceInline(ctx) {
       maxJobs: maintenanceInlineMaxJobs(env),
       budgetMs: maintenanceInlineBudgetMs(env),
       maxAttempts: maintenanceInlineMaxAttempts(env),
+      onProgress,
     });
     if (summary.seen > 0) {
       log('INFO',
@@ -986,8 +1053,22 @@ export async function drainMaintenanceInline(ctx) {
     }
     return summary;
   } catch (err) {
+    if (err instanceof MaintainerLifecycleAbort) throw err;
     log('WARN', `Maintenance drain failed (continuing reconcile): ${err?.message ?? err}`);
     return { skipped: true, reason: 'drain-error', error: err?.message ?? String(err) };
+  }
+}
+
+async function sleepWithProgress(totalMs, lockFile) {
+  const deadline = Date.now() + totalMs;
+  while (!shutdownRequested) {
+    if (!stillOwnsLock(lockFile)) {
+      throw new MaintainerLifecycleAbort('lock ownership lost during sleep');
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return;
+    await new Promise((resolveSleep) => setTimeout(resolveSleep, Math.min(LOCK_REFRESH_INTERVAL, remaining)));
+    if (!shutdownRequested) createLifecycleProgress(lockFile)();
   }
 }
 
@@ -1061,15 +1142,21 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
         log('INFO', `Automatic reconcile v2 work paused${pause.pausedAt ? ` since ${pause.pausedAt}` : ''}`);
       } else {
         try {
-          await runReconcileV2Tick(ctx);
-          recordProgress(lock.lockFile);  // post-tick checkpoint
-          await drainMaintenanceInline(ctx);
-          recordProgress(lock.lockFile);  // post-drain checkpoint
+          const onProgress = createLifecycleProgress(lock.lockFile);
+          await runReconcileV2Tick({ ...ctx, onProgress });
+          onProgress('tick:post');  // post-tick checkpoint
+          await drainMaintenanceInline({ ...ctx, onProgress });
+          onProgress('drain:post');  // post-drain checkpoint
         } catch (err) {
+          if (err instanceof MaintainerLifecycleAbort) {
+            log('WARN', `Reconcile v2 lifecycle abort: ${err.message}. Exiting cleanly.`);
+            shutdownRequested = true;
+            break;
+          }
           log('ERROR', `Reconcile v2 tick failed: ${err?.message ?? err}`);
         }
       }
-      await new Promise((resolveSleep) => setTimeout(resolveSleep, intervalMs));
+      await sleepWithProgress(intervalMs, lock.lockFile);
     }
   } finally {
     clearInterval(refresh);

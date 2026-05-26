@@ -148,8 +148,9 @@ export class Reconciler {
    * @param {object} [options.config]        Tick interval / budgets / etc.
    * @param {Function} [options.now]         Injectable clock for tests.
    * @param {{info:Function, warn:Function, error:Function}} [options.logger]
+   * @param {(phase:string)=>void} [options.onProgress]
    */
-  constructor({ stateDir, adapters, config = {}, now = Date.now, logger = console, projectRoot = null }) {
+  constructor({ stateDir, adapters, config = {}, now = Date.now, logger = console, projectRoot = null, onProgress = null }) {
     if (!stateDir) throw new Error('Reconciler: stateDir is required');
     if (!adapters) throw new Error('Reconciler: adapters are required');
     this.stateDir = stateDir;
@@ -165,8 +166,13 @@ export class Reconciler {
     };
     this.now = now;
     this.logger = logger;
+    this.onProgress = typeof onProgress === 'function' ? onProgress : null;
     this._lastEpoch = 0;
     this._running = false;
+  }
+
+  progress(phase) {
+    this.onProgress?.(phase);
   }
 
   /**
@@ -237,6 +243,7 @@ export class Reconciler {
 
     try {
       dirty = await this.adapters.readDirtySet();
+      this.progress('reconciler:dirty-read');
       counters.set('dirty_paths_seen', dirty.length);
 
       counters.set('cpu_budget_total_ms', this.config.cpuBudgetMs);
@@ -252,12 +259,15 @@ export class Reconciler {
         if (filesAttempted > 0 && this.now() - startedAt >= this.config.cpuBudgetMs) break;
 
         const file = dirty[dirtyCursor];
+        this.progress('reconciler:file:start');
         const hashes = await this.adapters.hashFile(file);
+        this.progress('reconciler:file:hashed');
         if (hashes && hashes.contentUnchanged) {
           counters.observeContentUnchanged();
           continue;
         }
         const fileRes = await this._reconcileOneFile(file, epoch, hashes);
+        this.progress('reconciler:file:done');
         filesProcessed.push({ file, ...fileRes });
         mergeManifestTiers(manifestTiers, fileRes?.manifestTiers);
         counters.inc('files_processed');
@@ -306,12 +316,14 @@ export class Reconciler {
         tiers: finalizeManifestTiers(previous, manifestTiers),
       });
       await this._publishManifest(manifest);
+      this.progress('reconciler:manifest-published');
       manifestPublished = true;
       this._lastEpoch = epoch;
 
       // Plan § 6.1 step 11: maintenance observes a successfully-published
       // epoch. Never enqueue jobs for an epoch whose manifest did not land.
       await this._scheduleMaintenance(epoch, counters, tierOps, filesProcessed);
+      this.progress('reconciler:maintenance-scheduled');
 
       counters.set('tick_ms', this.now() - startedAt);
       counters.set('ts', startedAt / 1000);
@@ -351,28 +363,40 @@ export class Reconciler {
     // Dispatch to per-tier adapter methods. Adapters can return undefined
     // when a tier has no work for this file.
     const ops = {};
+    this.progress('reconciler:graph:start');
     const graph = await this.adapters.applyGraphDelta?.(file, hashes, epoch);
+    this.progress('reconciler:graph:done');
     const manifestTiers = {};
     collectManifestTier(manifestTiers, 'codeGraph', graph);
     if (graph?.ops?.graph_upsert != null) ops.graph_upsert = graph.ops.graph_upsert;
     if (graph?.ops?.graph_tombstone != null) ops.graph_tombstone = graph.ops.graph_tombstone;
+    this.progress('reconciler:vector:start');
     const vec = await this.adapters.applyVectorDelta?.(file, hashes?.chunks ?? [], hashes, epoch);
+    this.progress('reconciler:vector:done');
     collectManifestTier(manifestTiers, 'vectors', vec);
     if (vec?.ops?.vectors_upsert != null) ops.vectors_upsert = vec.ops.vectors_upsert;
     if (vec?.ops?.vectors_delete != null) ops.vectors_delete = vec.ops.vectors_delete;
+    this.progress('reconciler:hnsw:start');
     const hnsw = await this.adapters.applyHNSWDelta?.(file, vec?.vectorOps ?? [], epoch);
+    this.progress('reconciler:hnsw:done');
     collectManifestTier(manifestTiers, 'hnsw', hnsw);
     if (hnsw?.ops?.hnsw_add != null) ops.hnsw_add = hnsw.ops.hnsw_add;
     if (hnsw?.ops?.hnsw_tombstone != null) ops.hnsw_tombstone = hnsw.ops.hnsw_tombstone;
+    this.progress('reconciler:binary-hnsw:start');
     const bin = await this.adapters.applyBinaryHNSWDelta?.(file, vec?.vectorOps ?? [], epoch);
+    this.progress('reconciler:binary-hnsw:done');
     collectManifestTier(manifestTiers, 'binaryHnsw', bin);
     if (bin?.ops?.binary_hnsw_append != null) ops.binary_hnsw_append = bin.ops.binary_hnsw_append;
     if (bin?.ops?.binary_hnsw_tombstone != null) ops.binary_hnsw_tombstone = bin.ops.binary_hnsw_tombstone;
+    this.progress('reconciler:li:start');
     const li = await this.adapters.applyLIDelta?.(file, vec?.tokenOps ?? [], epoch);
+    this.progress('reconciler:li:done');
     collectManifestTier(manifestTiers, 'lateInteraction', li);
     if (li?.ops?.li_segment_append != null) ops.li_segment_append = li.ops.li_segment_append;
     if (li?.ops?.li_tombstone != null) ops.li_tombstone = li.ops.li_tombstone;
+    this.progress('reconciler:sparse:start');
     const sg = await this.adapters.applySparseGramDelta?.(file, vec?.gramOps ?? [], epoch);
+    this.progress('reconciler:sparse:done');
     collectManifestTier(manifestTiers, 'sparseGram', sg);
     if (sg?.ops?.sparse_gram_delta_upsert != null) ops.sparse_gram_delta_upsert = sg.ops.sparse_gram_delta_upsert;
 

@@ -39,6 +39,7 @@ import {
   releaseStateLock,
   stillOwnsLock,
   recordProgress,
+  runReconcileV2Tick,
   WEDGED_KILL_GRACE_MS,
 } from '../../core/indexing/index-maintainer.mjs';
 
@@ -133,6 +134,7 @@ describe('acquireStateLock — basic paths', () => {
     // New-schema initialisation: both timestamps written; progressCounter starts at 0.
     expect(typeof parsed.timestamp).toBe('number');
     expect(typeof parsed.progressTimestamp).toBe('number');
+    expect(typeof parsed.ownerToken).toBe('string');
     expect(parsed.progressCounter).toBe(0);
   });
 
@@ -308,6 +310,39 @@ describe('recordProgress', () => {
     const parsed = JSON.parse(readFileSync(lockFile(), 'utf-8'));
     expect(parsed.pid).toBe(successorPid);
     expect(parsed.progressCounter).toBe(99);
+  });
+
+  it('is a no-op when a successor reuses the same pid with a different owner token', async () => {
+    const acquireRes = await acquireStateLock(stateDir);
+    expect(acquireRes.acquired).toBe(true);
+
+    writeFileSync(lockFile(), JSON.stringify({
+      pid: process.pid,
+      ownerToken: 'successor-token',
+      timestamp: Date.now(),
+      progressTimestamp: Date.now(),
+      progressCounter: 41,
+    }));
+
+    recordProgress(lockFile());
+
+    const parsed = JSON.parse(readFileSync(lockFile(), 'utf-8'));
+    expect(parsed.ownerToken).toBe('successor-token');
+    expect(parsed.progressCounter).toBe(41);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Progress callback propagation — cooperative shutdown / displacement
+// -----------------------------------------------------------------------------
+
+describe('runReconcileV2Tick progress', () => {
+  it('propagates progress callback errors so lifecycle aborts can stop in-flight work', async () => {
+    await expect(runReconcileV2Tick({
+      projectRoot: stateDir,
+      stateDir,
+      onProgress: () => { throw new Error('stop-now'); },
+    })).rejects.toThrow('stop-now');
   });
 });
 

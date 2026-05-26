@@ -8,9 +8,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, realpathSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, realpathSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import http from 'node:http';
 
 import {
   fnv1a64Hex,
@@ -21,6 +22,34 @@ import {
 } from '../../core/search/server-identity.js';
 
 let sandbox;
+
+function listen(server, socketPath) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(socketPath, () => {
+      server.off('error', reject);
+      resolve();
+    });
+  });
+}
+
+function close(server) {
+  return new Promise((resolve) => server.close(() => resolve()));
+}
+
+function requestHealth(socketPath) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ socketPath, path: '/health', method: 'GET' }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        try { resolve(JSON.parse(body)); } catch (err) { reject(err); }
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
 
 beforeEach(() => {
   sandbox = realpathSync(mkdtempSync(join(tmpdir(), 'ss-identity-')));
@@ -114,5 +143,37 @@ describe('tcpPort', () => {
     expect(tcpPort({ SWEET_SEARCH_TCP_PORT: 'nope' })).toBeNull();
     expect(tcpPort({ SWEET_SEARCH_TCP_PORT: '0' })).toBeNull();
     expect(tcpPort({ SWEET_SEARCH_TCP_PORT: '70000' })).toBeNull();
+  });
+});
+
+describe('startServer idempotency', () => {
+  it('reuses a daemon that is listening but still initializing', async () => {
+    const socketPath = join(sandbox, 'starting.sock');
+    const server = http.createServer((req, res) => {
+      if (req.url === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'starting', warm: false, pid: process.pid }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await listen(server, socketPath);
+
+    const oldSocket = process.env.SWEET_SEARCH_SOCKET_PATH;
+    process.env.SWEET_SEARCH_SOCKET_PATH = socketPath;
+
+    try {
+      const { startServer } = await import('../../core/search/search-server.js');
+      await startServer();
+
+      expect(existsSync(socketPath)).toBe(true);
+      await expect(requestHealth(socketPath)).resolves.toMatchObject({ status: 'starting' });
+    } finally {
+      if (oldSocket === undefined) delete process.env.SWEET_SEARCH_SOCKET_PATH;
+      else process.env.SWEET_SEARCH_SOCKET_PATH = oldSocket;
+      await close(server);
+      try { unlinkSync(socketPath); } catch { /* ignore */ }
+    }
   });
 });

@@ -152,6 +152,19 @@ describe('maintenance-worker / queue', () => {
     expect(JSON.parse(text.trim()).job.tier).toBe('sparse_gram');
   });
 
+  it('propagates lifecycle aborts instead of retrying or dead-lettering them', async () => {
+    enqueueMaintenanceJob(stateDir, { tier: 'sparse_gram', reason: 'delta_size_ratio', epoch: 1 });
+    const err = new Error('lock ownership lost');
+    err.name = 'MaintainerLifecycleAbort';
+
+    await expect(processMaintenanceQueue(stateDir, {
+      handlers: { sparse_gram: async () => { throw err; } },
+    })).rejects.toThrow('lock ownership lost');
+
+    expect(readMaintenanceQueue(stateDir).map((job) => job.tier)).toEqual(['sparse_gram']);
+    expect(fs.existsSync(path.join(stateDir, DEAD_LETTER_FILENAME))).toBe(false);
+  });
+
   it('moves malformed queue lines to dead-letter and keeps valid jobs', async () => {
     fs.writeFileSync(path.join(stateDir, QUEUE_FILENAME),
       'not-json\n' + JSON.stringify({ tier: 'li_segment', reason: 'ok', epoch: 1 }) + '\n');

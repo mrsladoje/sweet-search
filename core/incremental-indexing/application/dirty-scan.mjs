@@ -97,14 +97,19 @@ function alreadyQueued(stateDir) {
  * @param {object} [opts.admissionPolicy]   Shared admission policy (created from projectRoot if omitted).
  * @param {(rel:string)=>boolean} [opts.isExcluded]   Extra deny predicate layered on the policy.
  * @param {number} [opts.maxEnqueue]
+ * @param {(phase:string)=>void} [opts.onProgress]
  * @returns {Promise<{enqueued:number, added:number, modified:number, deleted:number, retired:number, files:string[]}>}
  */
-export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPolicy, isExcluded, maxEnqueue = DEFAULT_MAX_ENQUEUE }) {
+export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPolicy, isExcluded, maxEnqueue = DEFAULT_MAX_ENQUEUE, onProgress = null }) {
   const policy = admissionPolicy || createAdmissionPolicy({ projectRoot });
   const extraDeny = typeof isExcluded === 'function' ? isExcluded : null;
   const merkle = readMerkleFiles(stateDir);
   const queued = alreadyQueued(stateDir);
   const maxFileSize = BigInt(policy.maxFileSize);
+  const progress = typeof onProgress === 'function'
+    ? (phase) => { onProgress(phase); }
+    : () => {};
+  let walked = 0;
 
   // Never enqueue the maintainer's own state dir — its queues/manifests/db are
   // not source files and must be skipped regardless of the policy.
@@ -138,6 +143,8 @@ export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPoli
         continue;
       }
       if (!ent.isFile()) continue;
+      walked += 1;
+      if (walked % 1000 === 0) progress('dirty-scan:walk');
       const prev = merkle[rel];
       const shapeOk = policy.admitsShape(rel) && !(extraDeny && extraDeny(rel));
       if (!shapeOk) {
@@ -168,7 +175,9 @@ export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPoli
   for (const [rel, v] of present) {
     if (v.shapeOk && v.sizeOk) gitCandidates.push(rel);
   }
+  progress('dirty-scan:gitignore');
   const gitignored = await policy.gitignoredSet(gitCandidates);
+  progress('dirty-scan:decide');
 
   // 3. Decide enqueues. Admitted+changed → reindex; previously-indexed but no
   //    longer admitted → retire.
@@ -221,6 +230,7 @@ export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPoli
     .map((rel) => `${JSON.stringify({ file_path: rel, timestamp: now, queued_at: iso, source: 'scan' })}\n`)
     .join('');
   fs.appendFileSync(path.join(stateDir, DIRTY_QUEUE), lines);
+  progress('dirty-scan:queued');
 
   return { enqueued: toEnqueue.length, added, modified, deleted, retired, files: toEnqueue };
 }
