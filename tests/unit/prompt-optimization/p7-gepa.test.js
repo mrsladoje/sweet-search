@@ -301,6 +301,30 @@ describe('mutation-rejection logging (§3.2.1)', () => {
     expect(systemPrompt).toMatch(/PROTECTED/);
     expect(userPrompt).toMatch(/p9/);
   });
+
+  it('buildReflectivePrompt embeds an exact-count TOKEN PRESERVATION CONTRACT per [[token]]', () => {
+    // Candidate with KNOWN multiplicities: ss-search × 3, ss-find × 2, ss-grep × 1, no-match × 1
+    const candidate =
+      'Use [[ss-search]] first. [[ss-search]] is the default. ' +
+      'If [[ss-search]] misses, try [[ss-find]] with a regex. ' +
+      '[[ss-find]] supports `\\b<symbol>\\b`. Fall back to [[ss-grep]] for literals. ' +
+      'Conclude [[no-match]] only after verifying absence.';
+    const { systemPrompt } = buildReflectivePrompt({ candidate, failures: [] });
+    expect(systemPrompt).toMatch(/TOKEN PRESERVATION CONTRACT/);
+    expect(systemPrompt).toContain('[[ss-search]] × 3');
+    expect(systemPrompt).toContain('[[ss-find]] × 2');
+    expect(systemPrompt).toContain('[[ss-grep]] × 1');
+    expect(systemPrompt).toContain('[[no-match]] × 1');
+    // The contract must list each [[token]] EXACTLY ONCE inside the contract section.
+    const contractSection = systemPrompt.split('TOKEN PRESERVATION CONTRACT')[1];
+    expect((contractSection.match(/\[\[ss-search\]\]/g) ?? []).length).toBe(1);
+    expect((contractSection.match(/\[\[ss-find\]\]/g) ?? []).length).toBe(1);
+  });
+
+  it('buildReflectivePrompt omits the contract block when candidate has no [[tokens]]', () => {
+    const { systemPrompt } = buildReflectivePrompt({ candidate: 'plain prose with no tokens', failures: [] });
+    expect(systemPrompt).not.toMatch(/TOKEN PRESERVATION CONTRACT/);
+  });
 });
 
 // ─── 5. persistence + resume == fresh ───────────────────────────────────────
