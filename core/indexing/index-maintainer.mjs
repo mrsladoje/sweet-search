@@ -257,6 +257,40 @@ async function loadBetterSqlite3() {
 const POLL_INTERVAL = 30000;           // 30 seconds between queue checks
 const LOCK_REFRESH_INTERVAL = 30000;   // 30 seconds between lock refreshes (M5: was 60s)
 const LOCK_STALE_THRESHOLD = 180000;   // 3 minutes (M5: was 5 min, ratio 6:1 with refresh)
+// Lifecycle fix v2 — progress-aware takeover. The legacy 3-min pure-timestamp
+// takeover ("lock looks stale ⇒ steal it") produced stealth co-owner orphans
+// when a busy daemon's heartbeat aged past the threshold; the v1 interim fix
+// raised the threshold to 30 min, which traded faster wedge recovery for
+// safety. v2 reverts the threshold to 3 min and adds a second signal so we
+// keep both: orphan-free AND fast recovery, without false-positives on long
+// async work.
+//
+// The lockfile now carries TWO timestamps:
+//   - `timestamp`         — the heartbeat, refreshed every 30 s by setInterval
+//                           (event-loop bound, like before).
+//   - `progressTimestamp` — refreshed by recordProgress() at known work
+//                           checkpoints inside the reconcile loop.
+//
+// acquireStateLock combines them:
+//
+//   heartbeat fresh AND progress fresh   → busy + progressing → REFUSE
+//   heartbeat fresh AND progress stale   → alive-but-stuck    → SIGTERM + steal
+//   heartbeat stale AND progress fresh   → recent progress    → REFUSE (timer lag)
+//   heartbeat stale AND progress stale   → genuinely wedged   → SIGTERM + steal
+//   dead pid                             → crashed            → immediate takeover
+//
+// Backwards-compat: a lockfile without `progressTimestamp` falls back to
+// heartbeat-only (progressAge := heartbeatAge), reverting to classic 3-min
+// behaviour. The SIGTERM-before-steal hardening means even this legacy path
+// never leaks orphans.
+//
+// Caveat: progress IS still recorded from the main event loop, so a daemon
+// blocked by pure synchronous CPU/native work shows both signals stale and
+// will be SIGTERMed at 3 min. With async napi (see
+// project_native_metal_inference_status) this case should not arise in
+// practice; the natural escalation if it does is a worker_threads-based
+// progress beacon — left as future work.
+export const WEDGED_KILL_GRACE_MS = 5000;  // SIGTERM grace before declaring takeover complete
 
 // Retry configuration
 const MAX_RETRIES = 3;
@@ -618,39 +652,181 @@ function readStateLock(lockFile) {
   }
 }
 
-function writeStateLock(lockFile) {
-  safeWriteFileSync(lockFile, JSON.stringify({
-    pid: process.pid,
-    timestamp: Date.now(),
-    startTime: getProcessStartTime(),
-  }));
+// Module-level lockfile state — populated by acquireStateLock on success,
+// mutated by writeStateLock (heartbeat tick) AND recordProgress (work
+// checkpoint), cleared by releaseStateLock. Both writers share this object
+// so a heartbeat write never clobbers progress fields and vice-versa; every
+// persist is a full atomic snapshot via safeWriteFileSync (temp+rename).
+let lockState = null;
+
+/**
+ * Re-validate ownership, mutate the in-memory lockState, persist. Refuses to
+ * write if the lockfile no longer names us so a displaced daemon never
+ * overwrites a successor's pid. Shared backend for writeStateLock + recordProgress.
+ */
+function persistLockState(lockFile, mutator) {
+  if (!lockState) return;
+  if (!stillOwnsLock(lockFile)) return;
+  mutator(lockState);
+  safeWriteFileSync(lockFile, JSON.stringify(lockState));
 }
 
-function acquireStateLock(stateDir) {
+function writeStateLock(lockFile) {
+  persistLockState(lockFile, (s) => { s.timestamp = Date.now(); });
+}
+
+/**
+ * Lifecycle fix v2 — record a work-progress checkpoint. Called from the
+ * reconcile loop (top of iteration, post-tick, post-drain) so a candidate
+ * maintainer in acquireStateLock can tell "alive but stuck on a hung await"
+ * from "busy and progressing." One small JSON write per call; the cost is
+ * negligible at the call frequencies we use (≈ once per loop iteration).
+ *
+ * Designed for the main thread (single event loop). If the event loop is
+ * fully blocked by synchronous native work, neither this nor writeStateLock
+ * fires and both signals stale together — that case is intentionally treated
+ * as "wedged" and SIGTERMed (with the queue-based recovery making lost work
+ * idempotent). For a fully event-loop-independent signal a worker_threads
+ * beacon would be the next step.
+ */
+export function recordProgress(lockFile) {
+  persistLockState(lockFile, (s) => {
+    s.progressCounter = (s.progressCounter ?? 0) + 1;
+    s.progressTimestamp = Date.now();
+  });
+}
+
+/**
+ * SIGTERM the previous holder and unlink the lockfile, after a bounded grace
+ * period. Shared by both takeover branches in acquireStateLock (alive-but-
+ * stuck AND fully wedged). The dying holder exits via its SIGTERM handler;
+ * if it can't (uninterruptible syscall), its in-loop `stillOwnsLock` check
+ * ends it gracefully when it eventually unblocks. Either way: no immortal
+ * twin.
+ */
+async function sigtermAndStealLock(existing, lockFile, reason) {
+  log('WARN', `Existing maintainer pid=${existing.pid} appears ${reason}; sending SIGTERM before takeover.`);
+  try { process.kill(existing.pid, 'SIGTERM'); } catch { /* ESRCH/EPERM — fine, we'll steal anyway */ }
+  const deadline = Date.now() + WEDGED_KILL_GRACE_MS;
+  while (Date.now() < deadline && isPidRunning(existing.pid, existing.startTime)) {
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  if (isPidRunning(existing.pid, existing.startTime)) {
+    log('WARN', `pid=${existing.pid} still alive after SIGTERM+${WEDGED_KILL_GRACE_MS}ms grace; proceeding (it will self-exit at its next loop tick).`);
+  }
+  try { unlinkSync(lockFile); } catch {}
+}
+
+/**
+ * Acquire the reconcile-v2 state lock atomically.
+ *
+ * Lifecycle fix v2 — progress-aware single-owner takeover (see the
+ * WEDGED_KILL_GRACE_MS block above for the design rationale). Decision
+ * matrix on an existing lockfile:
+ *
+ *   no / unparseable lock                  → unlink + retry create
+ *   dead holder                            → unlink + retry create
+ *   alive, heartbeat fresh, progress fresh → REFUSE
+ *   alive, heartbeat stale, progress fresh → REFUSE (timer-lag tolerance)
+ *   alive, heartbeat fresh, progress stale → SIGTERM + steal (alive-but-stuck)
+ *   alive, both stale                      → SIGTERM + steal (wedged)
+ *
+ * Returns { acquired, lockFile }. On successful acquisition, initialises the
+ * module-level `lockState` with both heartbeat and progress timestamps so
+ * the new owner is never "stale" immediately. Async because the
+ * SIGTERM-and-steal path awaits a bounded grace period; the legacy
+ * synchronous form had no caller outside runReconcileV2Main (verified by grep).
+ */
+export async function acquireStateLock(stateDir) {
   mkdirSync(stateDir, { recursive: true });
   const lockFile = join(stateDir, 'index-maintainer.lock');
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const fd = openSync(lockFile, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
-      writeFileSync(fd, JSON.stringify({ pid: process.pid, timestamp: Date.now(), startTime: getProcessStartTime() }));
+      // Initialise the in-memory state. progressTimestamp starts equal to
+      // timestamp so a fresh owner is never falsely declared stale on either
+      // signal by a candidate maintainer that races our first tick.
+      const nowMs = Date.now();
+      lockState = {
+        pid: process.pid,
+        timestamp: nowMs,
+        startTime: getProcessStartTime(),
+        progressCounter: 0,
+        progressTimestamp: nowMs,
+      };
+      writeFileSync(fd, JSON.stringify(lockState));
       closeSync(fd);
       return { acquired: true, lockFile };
     } catch (err) {
       if (err.code !== 'EEXIST') throw err;
       const existing = readStateLock(lockFile);
-      const stale = !existing || !isPidRunning(existing.pid, existing.startTime) || Date.now() - existing.timestamp > LOCK_STALE_THRESHOLD;
-      if (!stale) return { acquired: false, lockFile };
-      try { unlinkSync(lockFile); } catch {}
+      if (!existing) {
+        // Corrupt / unparseable lock — unlink and retry the O_EXCL create.
+        try { unlinkSync(lockFile); } catch {}
+        continue;
+      }
+      const holderAlive = isPidRunning(existing.pid, existing.startTime);
+      if (!holderAlive) {
+        // Crashed daemon — safe to reclaim. (Preserves the dead-pid contract
+        // exercised by tests/indexing/maintainer-launcher.test.js.)
+        try { unlinkSync(lockFile); } catch {}
+        continue;
+      }
+      const now = Date.now();
+      const heartbeatAge = now - existing.timestamp;
+      // Backwards-compat: a legacy lockfile without progressTimestamp falls
+      // back to heartbeat-only mode. Combined with SIGTERM-before-steal this
+      // still avoids orphans even for writers that don't know about progress.
+      const progressAge = existing.progressTimestamp != null
+        ? now - existing.progressTimestamp
+        : heartbeatAge;
+      const heartbeatFresh = heartbeatAge < LOCK_STALE_THRESHOLD;
+      const progressFresh = progressAge < LOCK_STALE_THRESHOLD;
+      if (heartbeatFresh && progressFresh) {
+        // Busy AND progressing — single-owner invariant: refuse takeover.
+        return { acquired: false, lockFile };
+      }
+      if (progressFresh) {
+        // Progress recorded recently even though the heartbeat timer lagged
+        // (occasional event-loop pause that swallowed a setInterval tick).
+        // Actual work IS happening — trust the progress signal, refuse.
+        return { acquired: false, lockFile };
+      }
+      const reason = heartbeatFresh
+        ? `alive but not progressing (progress age=${Math.round(progressAge / 1000)}s)`
+        : `wedged (heartbeat age=${Math.round(heartbeatAge / 1000)}s, progress age=${Math.round(progressAge / 1000)}s)`;
+      await sigtermAndStealLock(existing, lockFile, reason);
     }
   }
   return { acquired: false, lockFile };
 }
 
-function releaseStateLock(lockFile) {
+export function releaseStateLock(lockFile) {
   try {
     const existing = readStateLock(lockFile);
     if (existing?.pid === process.pid) unlinkSync(lockFile);
   } catch {}
+  // Reset module-level state so a subsequent acquire (in tests, in long-lived
+  // hosts, in respawn paths) starts from a clean slate.
+  lockState = null;
+}
+
+/**
+ * Lifecycle fix. Returns true iff the state lockfile exists AND still names
+ * this process. Used by:
+ *   - the main reconcile loop, to self-exit when displaced (no immortal
+ *     twins after a wedged-backstop takeover), and
+ *   - the heartbeat refresh setInterval, so a displaced daemon never
+ *     clobbers a successor's lock by rewriting its own pid.
+ *
+ * Missing/unparseable lockfile is treated as "not ours" — conservatively
+ * exits the daemon so the launcher can respawn a clean single owner rather
+ * than risk a race during a successor's mid-takeover write.
+ */
+export function stillOwnsLock(lockFile) {
+  const existing = readStateLock(lockFile);
+  if (!existing) return false;
+  return existing.pid === process.pid;
 }
 
 export async function runReconcileV2Tick(ctx) {
@@ -824,7 +1000,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     return;
   }
 
-  const lock = acquireStateLock(ctx.stateDir);
+  const lock = await acquireStateLock(ctx.stateDir);
   if (!lock.acquired) {
     log('INFO', `Another reconcile v2 maintainer is running for ${ctx.stateDir}, exiting.`);
     return;
@@ -849,7 +1025,13 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   const resolved = resolveReconcileV2Interval();
   const intervalMs = resolved.intervalMs;
   log('INFO', `Reconcile v2 interval ${intervalMs}ms (source=${resolved.source}${resolved.tier ? `, tier=${resolved.tier}` : ''})`);
-  const refresh = setInterval(() => writeStateLock(lock.lockFile), LOCK_REFRESH_INTERVAL);
+  // Lifecycle fix: only refresh the heartbeat if we still own the lock. If a
+  // wedged-backstop takeover stole it, the lockfile now names another pid —
+  // we must NOT clobber that successor with our pid. The main loop's
+  // ownership check will end this maintainer at the next iteration.
+  const refresh = setInterval(() => {
+    if (stillOwnsLock(lock.lockFile)) writeStateLock(lock.lockFile);
+  }, LOCK_REFRESH_INTERVAL);
   const shutdown = () => { shutdownRequested = true; };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
@@ -857,13 +1039,32 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
 
   try {
     while (!shutdownRequested) {
+      // Lifecycle fix: bail out if the lock no longer names us. This is the
+      // backstop that ensures any displacement path (wedged-takeover,
+      // alive-but-stuck takeover, manual unlink) never leaves an immortal
+      // twin maintainer behind — the displaced daemon self-exits at the
+      // next loop iteration instead of looping forever as a PPID=1 orphan.
+      // Checked BEFORE the tick (not after) so a displaced daemon never
+      // starts new work while another maintainer owns the lock.
+      if (!stillOwnsLock(lock.lockFile)) {
+        log('WARN', `Lock no longer owned by pid=${process.pid}; another maintainer has taken over. Exiting cleanly.`);
+        shutdownRequested = true;
+        break;
+      }
+      // Lifecycle fix v2: progress checkpoint at the top of each iteration.
+      // Combined with the post-tick / post-drain checkpoints below this lets
+      // acquireStateLock distinguish a busy-but-progressing daemon from one
+      // hung on a never-resolving await — see the WEDGED_KILL_GRACE_MS block.
+      recordProgress(lock.lockFile);
       const pause = isReconcilePaused(ctx.stateDir);
       if (pause.paused) {
         log('INFO', `Automatic reconcile v2 work paused${pause.pausedAt ? ` since ${pause.pausedAt}` : ''}`);
       } else {
         try {
           await runReconcileV2Tick(ctx);
+          recordProgress(lock.lockFile);  // post-tick checkpoint
           await drainMaintenanceInline(ctx);
+          recordProgress(lock.lockFile);  // post-drain checkpoint
         } catch (err) {
           log('ERROR', `Reconcile v2 tick failed: ${err?.message ?? err}`);
         }

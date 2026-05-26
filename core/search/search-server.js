@@ -145,6 +145,29 @@ export async function startServer() {
   const pidFile = projectPidFile();
   const httpPort = tcpPort();
 
+  // ---------------------------------------------------------------------------
+  // Idempotency guard (lifecycle fix). Historically the default `--serve`
+  // path unconditionally `fs.unlink`'d the per-project socket and bound its
+  // own, so every redundant invocation (Rust auto_start_server, Claude/Codex
+  // SessionStart prewarm, benchmark warmups, manual `sweet-search --serve`)
+  // silently stole the socket from the previous resident server and left it
+  // memory-resident (~1–2 GB each, holding HNSW + vocab + float-vector
+  // sidecar). 12 coexisting daemons cost ~15.6 GB before this guard.
+  //
+  // Probe BEFORE the expensive SweetSearch import: if a live daemon already
+  // answers /health on our per-project socket, defer to it and exit cleanly.
+  // A stale socket *file* with no listener still falls through to the
+  // unlink+bind path below (existing behaviour preserved for crash recovery).
+  //
+  // Deliberate replacement of a wrong-projectRoot daemon is handled by the
+  // explicit ensureDaemonForProjectRoot() path (stopServer + autoSpawnServer),
+  // not by startServer — this guard never steals from a live listener.
+  // ---------------------------------------------------------------------------
+  if (await isServerRunning()) {
+    console.log(`[Server] Healthy daemon already listening on ${socketPath}; reusing existing instance (no spawn).`);
+    return;
+  }
+
   // Dynamic import to avoid circular dependency
   const { default: SweetSearch } = await import('./sweet-search.js');
 
