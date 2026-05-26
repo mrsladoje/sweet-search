@@ -1149,7 +1149,23 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
           onProgress('drain:post');  // post-drain checkpoint
         } catch (err) {
           if (err instanceof MaintainerLifecycleAbort) {
-            log('WARN', `Reconcile v2 lifecycle abort: ${err.message}. Exiting cleanly.`);
+            log('WARN', `Reconcile v2 lifecycle abort: ${err.message}. Cleaning up cancellation-orphaned temps and exiting cleanly.`);
+            // Caveat-1 fix: on cancellation, immediately remove our own
+            // staging temps so they don't sit on disk waiting for the next
+            // daemon startup to sweep them. Safe to use maxAgeMs=0 here
+            // because (a) sweepStaleArtifactTemps uses a strict allowlist
+            // of staging-temp suffixes — it never touches canonical
+            // artifacts, queues, WAL, or the lockfile — and (b) maintenance
+            // handlers run sequentially via processMaintenanceQueue, so no
+            // concurrent writer is mid-rename when this fires.
+            try {
+              const sweep = sweepStaleArtifactTemps(ctx.stateDir, { maxAgeMs: 0 });
+              if (sweep.removed > 0) {
+                log('INFO', `Cancellation cleanup swept ${sweep.removed} orphaned staging temp(s) (${sweep.bytesReclaimed} bytes)`);
+              }
+            } catch (sweepErr) {
+              log('WARN', `Cancellation cleanup sweep failed (non-fatal): ${sweepErr?.message ?? sweepErr}`);
+            }
             shutdownRequested = true;
             break;
           }
