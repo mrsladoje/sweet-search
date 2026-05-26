@@ -1,0 +1,30 @@
+{
+  "ok": false,
+  "normalized": "# Sweet-search — code search tool guide\n\nSweet-search provides index-backed code search tools. Prefer them over raw grep/ripgrep and blind file reads for any code search, navigation, or discovery — they are faster and semantic. Fall back to plain grep/read only for changes not yet indexed (e.g. uncommitted edits) or when these tools return nothing. Evidence quality governs every decision: retrieve real content, verify before reporting, and follow import chains when needed.\n\n## Calling the tools\nInvoke via the shell (Bash). `[[ss-search]]`/`[[ss-find]]` return ranked code blocks inline; `[[ss-grep]]` is file:line only:\n- [[ss-search]] → `ss-search \"<query>\" [-k N]`\n- [[ss-find]] → `ss-find \"<query>\" --regex \"<regex>\" [-k N]`\n- [[ss-semantic]] → `ss-semantic <file> \"<query>\"`\n- [[ss-trace]] → `ss-trace <symbol> [--in <file>]`\n- [[ss-grep]] → `ss-grep \"<regex>\" [-k N]`\n- [[ss-read]] → `ss-read <file> [start] [end]`\n\n## Core evidence rules\n1. Never report a file, symbol, or fact without a matching tool result in this session.\n2. Verify the snippet before claiming it contains the target.\n3. A shorter confirmed answer beats a longer speculative one.\n4. Stop collecting once evidence is complete.\n\n## Tool routing\n### [[ss-search]] — first call for NL queries\nDefault entry point. If a call returns a file-only result (no span), follow with [[ss-semantic]] on that file.\n### [[ss-find]] — when the symbol is known and NL underperforms\nWord-bounded regex `\\b<symbol>\\b`; query short imperative + symbol (4–8 tokens), e.g. \"find <Symbol> usage\".\n### [[ss-semantic]] — in-file span\nQuery with the symbol alone (≤3 tokens). **Only** after [[ss-search]] or [[ss-find]] has identified the file; not for behavioral or cross-file queries.\n### [[ss-trace]] — structural context\nUse when callers/callees/impact are needed and the symbol is confirmed. Pass the symbol verbatim; never an NL question.\n### [[ss-grep]] and [[ss-read]]\n[[ss-grep]] for literal regex; [[ss-read]] to verify a file or expand evidence.\n\n## Multi-file flow\nWhen [[ss-search]] surfaces a file that re-exports or delegates:\n1. [[ss-semantic]] on the entry file to find the forwarding statement.\n2. [[ss-search]] or [[ss-find]] on the downstream module.\n3. [[ss-read]] to confirm the downstream span.\nConfirm each hop's snippet before proceeding; follow the chain only while it yields progress.\n\n## Stateful summary rule\nBefore your third sweet-search query in the current search iteration (we can have multiple search iterations in a session) — or before your final answer, whichever comes first, you MUST output a `<state_summary>` block containing exactly: (1) one sentence summarising what you've established so far, (2) one sentence stating your current blind spot or open question.\n\n## Stopping\nStop once evidence is confirmed. If an attempt fails, change approach rather than repeating a near-identical query. Conclude [[no-match]] only after verifying absence (a symbol search and a broad [[ss-grep]] both empty).\n\n## Output\nName the file(s), symbol(s), and key facts — each backed by a tool result — or [[no-match]].\n\n## Language-Specific Disambiguation (Anti-Looping)\nWhen the default routing produces tool loops on specific ecosystems, override with these structural moves. Each rule prefers a structural tool ([[ss-trace]] / [[ss-find]]) over linear reads, with a hard cap on follow-on calls.\n\n### JS / TS (anti import-tracing bloat)\nDo not manually trace imports or generic prop names file-by-file with [[ss-read]] / [[ss-search]]. If a symbol is imported, jump straight to its definition with [[ss-trace]] <symbol>, or [[ss-find]] with an export-anchored regex (e.g. `\\bexport\\s+(?:default|const|function|class)\\s+<symbol>\\b`). Stop once the primary component/function logic is found — do not chase barrel files or re-exports beyond one hop.\n\n### C# / Java (anti interface ping-pong)\nIf [[ss-search]] returns an interface or abstract-class definition, do NOT search the generic method name to find implementations. Use [[ss-trace]] <InterfaceName> or [[ss-trace]] <MethodName> to structurally locate concrete implementations in one call. Avoid [[ss-grep]] for generic verbs (`get*`, `handle*`, `process*`) that flood with false positives.\n\n### C / C++ (anti header-scan bloat)\nOn locating a header (`.h`/`.hpp`), do not [[ss-read]] it to find the implementation. Use [[ss-find]] with a scope-resolution regex (e.g. `\\b<Class>::<Method>\\b`) or [[ss-trace]] <Symbol> to jump directly to the `.cpp`. Read the header only to confirm signature shape after the implementation is found.\n\n### Hard stopping condition\nAcross all three rules: if you have made 3+ tool calls on a single probe without progress, output a `<state_summary>` block and either change tool family OR conclude [[no-match]]. Do not continue the same approach.\n",
+  "failures": [
+    {
+      "reason": "multiplicity-changed",
+      "token": "[[ss-search]]"
+    },
+    {
+      "reason": "multiplicity-changed",
+      "token": "[[ss-find]]"
+    },
+    {
+      "reason": "multiplicity-changed",
+      "token": "[[ss-grep]]"
+    },
+    {
+      "reason": "multiplicity-changed",
+      "token": "[[ss-trace]]"
+    },
+    {
+      "reason": "multiplicity-changed",
+      "token": "[[ss-read]]"
+    },
+    {
+      "reason": "multiplicity-changed",
+      "token": "[[no-match]]"
+    }
+  ]
+}
