@@ -1,0 +1,88 @@
+{
+  "timestamp": "2026-05-27T20:06:12.335Z",
+  "target_hash": "0xb44adf7c5563cd99",
+  "elapsed_ms": 1181648,
+  "tare_ran": true,
+  "tare_sharpness": 0.018750000000000044,
+  "tare_sharpnessScore": 0.98125,
+  "tare_evaluations": [
+    {
+      "idx": 0,
+      "score": 1,
+      "prompt_len": 3770
+    },
+    {
+      "idx": 1,
+      "score": 0.98125,
+      "prompt_len": 4687
+    },
+    {
+      "idx": 2,
+      "score": 1,
+      "prompt_len": 4213
+    },
+    {
+      "idx": 3,
+      "score": 1,
+      "prompt_len": 4049
+    }
+  ],
+  "paraphrases": [
+    {
+      "idx": 0,
+      "length": 4687,
+      "identical_to_source": false,
+      "preview": " # Sweet-search — a guide to the code-search instrument\n\nSweet-search furnishes code-search utilities backed by indices."
+    },
+    {
+      "idx": 1,
+      "length": 4213,
+      "identical_to_source": false,
+      "preview": "# Sweet-search — Developer Navigation & Code Discovery Reference\n\nSweet-search delivers index-powered code search capabi"
+    },
+    {
+      "idx": 2,
+      "length": 4049,
+      "identical_to_source": false,
+      "preview": "# Sweet-search — Developer Navigation & Code Discovery Reference\n\nSweet-search exposes index-driven search primitives. P"
+    }
+  ],
+  "screen_evaluations": [
+    {
+      "idx": 4,
+      "taskScore": 1,
+      "score_sonnet": 1,
+      "score_gpt5_5": 1,
+      "wallMs": 959715
+    },
+    {
+      "idx": 4,
+      "taskScore": 1,
+      "score_sonnet": 1,
+      "score_gpt5_5": 1,
+      "wallMs": 990473
+    },
+    {
+      "idx": 4,
+      "taskScore": 0.98125,
+      "score_sonnet": 0.98125,
+      "score_gpt5_5": 1,
+      "wallMs": 1000228
+    },
+    {
+      "idx": 4,
+      "taskScore": 1,
+      "score_sonnet": 1,
+      "score_gpt5_5": 1,
+      "wallMs": 1019840
+    }
+  ],
+  "re_admission": {
+    "admitted": true,
+    "reason": null,
+    "target_degraded": [],
+    "drop": null,
+    "incumbent": "T2-r1-reflective-r3-reflective-r6-pruner",
+    "evicted": []
+  }
+}

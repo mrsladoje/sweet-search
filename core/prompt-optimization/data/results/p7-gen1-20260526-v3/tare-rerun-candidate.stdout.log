@@ -1,0 +1,24 @@
+[tare] probeSet=40, screenProbes=8 (first 8): cpp-005, cpp-002, cpp-008, cpp-004, csharp-004, csharp-005, csharp-008, csharp-003
+[tare] candidate 0xb44adf7c5563cd99 taskScore=0.9850 finalScore=0.5745
+[tare] front taskScores (estimated min(sonnet,gpt5_5)): [ '0.994', '0.978', '0.993' ]
+
+[tare] running paretoGatedTare ...
+[tare] generating K=3 adversarial paraphrases via LLM mutator...
+[tare]   → 3 paraphrases in 161795ms
+[tare]   paraphrase 1: 4687 chars
+[tare]   paraphrase 2: 4213 chars
+[tare]   paraphrase 3: 4049 chars
+[tare] evaluate 1 (screen 8x2) ...
+[tare] evaluate 2 (screen 8x2) ...
+[tare] evaluate 3 (screen 8x2) ...
+[tare] evaluate 4 (screen 8x2) ...
+[tare]   → taskScore=1.0000 sonnet=1.000 gpt5.5=1.000 (959715ms)
+[tare]   → taskScore=1.0000 sonnet=1.000 gpt5.5=1.000 (990473ms)
+[tare]   → taskScore=0.9812 sonnet=0.981 gpt5.5=1.000 (1000228ms)
+[tare]   → taskScore=1.0000 sonnet=1.000 gpt5.5=1.000 (1019840ms)
+
+[tare] result: sharpness=0.019 sharpnessScore=0.981
+
+[tare] re-admission with sharpnessScore=0.981: ADMITTED
+
+[tare] result written to /Users/admin/Projects/sweet-search-private/core/prompt-optimization/data/results/p7-gen1-20260526-v3/tare-rerun-candidate.result.json
