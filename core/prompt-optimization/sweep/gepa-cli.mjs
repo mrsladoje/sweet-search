@@ -148,6 +148,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
   const { loadAllVariants } = await import('./variant-loader.mjs');
   const { makeRealEvaluateCandidate } = await import('./gepa-evaluate.mjs');
   const { runJudge } = await import('../../../eval/agent-read-workflows/judge-runner.js');
+  const { callMutatorHarness } = await import('./op-harness-caller.mjs');
   const { createTokenBucket, RATE_LIMITS } = await import('./p7-token-bucket.mjs');
 
   const probesDoc = JSON.parse(readFileSync(o.probesFile, 'utf8'));
@@ -186,6 +187,13 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     rotationPool,
     evaluateCandidate: makeRealEvaluateCandidate({ agentProvider: o.agentProvider ?? 'api' }),
     callModel: (req) => runJudge(withMutatorCallDefaults(req)),
+    // Mutator path (OP-1..OP-5): route through opencode + gemini-3.1-pro-preview
+    // so each operator call has tool-using access to the repo (Read, Grep, Bash)
+    // and can self-investigate scoring/EAS/Pareto/trajectory data before
+    // producing its mutation. TARE adversarial paraphrasing keeps `callModel`
+    // (direct-API) for cost — paraphrases are short and don't benefit from
+    // agentic context-gathering.
+    mutatorCallModel: callMutatorHarness,
     maxRounds: o.rounds ?? DEFAULTS.maxRounds,
     resume: o.resume,
     bucket,

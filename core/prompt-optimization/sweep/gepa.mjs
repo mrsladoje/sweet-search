@@ -140,6 +140,14 @@ export async function runGepa(opts = {}) {
     rotationPool = [],
     evaluateCandidate,
     callModel,
+    // mutatorCallModel (optional) routes mutator operator calls through a
+    // separate code path (e.g. opencode + gemini-3.1-pro-preview harness).
+    // TARE adversarial paraphrasing keeps using `callModel` (direct API) for
+    // cost — paraphrases are short, deterministic, and don't benefit from
+    // agentic tool access. Falls back to `callModel` when not supplied so
+    // tests and dry-runs continue to work with a single stub.
+    mutatorCallModel,
+    maxAttemptsPerSlot,
     seed = 42,
     maxRounds = DEFAULTS.maxRounds,
     hardCap = DEFAULTS.hardCapRounds,
@@ -159,6 +167,7 @@ export async function runGepa(opts = {}) {
 
   if (typeof evaluateCandidate !== 'function') throw new TypeError('runGepa: evaluateCandidate is required');
   if (typeof callModel !== 'function') throw new TypeError('runGepa: callModel is required');
+  const mutatorCm = typeof mutatorCallModel === 'function' ? mutatorCallModel : callModel;
 
   const paths = opts.paths || {
     trajectory: trajectoryPath(runId),
@@ -347,7 +356,7 @@ export async function runGepa(opts = {}) {
     const parent = selectParent({ front, rng: rRng });
     const slots = planSlots({ round, front, probeIds: activeIds, rotationRound });
     const failures = topFailures({ candidate: parent, probes: probeSet, limit: 5 });
-    const muts = await generateMutations({ slots, parent, failures, probeById, round, callModel, rng: rRng, reflectionHint });
+    const muts = await generateMutations({ slots, parent, failures, probeById, round, callModel: mutatorCm, rng: rRng, reflectionHint, maxAttemptsPerSlot });
 
     const accepted = [];
     let slotIdx = 0;
@@ -355,15 +364,17 @@ export async function runGepa(opts = {}) {
       slotIdx += 1;
       if (!m.accepted) {
         const reasons = (m.rejection?.failures || []).map((f) => f.reason).join(',') || m.rejection?.reason || 'token-validation';
-        appendEvent({ _kind: EVENT_KINDS.MUTATION_REJECTION, round, source_op: m.sourceOp, parent_hash: m.parentHash, reason: reasons, failures: m.rejection?.failures ?? null });
-        log(`round ${round} mut ${slotIdx}/${muts.length} ${m.sourceOp} REJECTED (${reasons})`);
+        appendEvent({ _kind: EVENT_KINDS.MUTATION_REJECTION, round, source_op: m.sourceOp, parent_hash: m.parentHash, reason: reasons, failures: m.rejection?.failures ?? null, attempts: m.attempts ?? 1, prior_failures: m.priorFailures ?? null });
+        const attemptsTag = (m.attempts && m.attempts > 1) ? ` after ${m.attempts} attempts` : '';
+        log(`round ${round} mut ${slotIdx}/${muts.length} ${m.sourceOp} REJECTED${attemptsTag} (${reasons})`);
         continue;
       }
       const hash = hashContent(m.mutated);
-      appendEvent({ _kind: EVENT_KINDS.MUTATION, round, source_op: m.sourceOp, new_prompt_hash: hash, parent_hash: m.parentHash });
+      appendEvent({ _kind: EVENT_KINDS.MUTATION, round, source_op: m.sourceOp, new_prompt_hash: hash, parent_hash: m.parentHash, attempts: m.attempts ?? 1, prior_failures: m.priorFailures ?? null });
       recordPrompt(hash, m.mutated);
       accepted.push({ ...m, hash });
-      log(`round ${round} mut ${slotIdx}/${muts.length} ${m.sourceOp} on ${parent.id} → ${hash.slice(0, 10)}`);
+      const attemptsTag = (m.attempts && m.attempts > 1) ? ` (on attempt ${m.attempts})` : '';
+      log(`round ${round} mut ${slotIdx}/${muts.length} ${m.sourceOp} on ${parent.id} → ${hash.slice(0, 10)}${attemptsTag}`);
     }
 
     // ── 3 screen (8 probes × 2 targets) ──

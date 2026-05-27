@@ -220,8 +220,88 @@ function pickTrajForProbe(incumbent, probeId, fallbackTarget) {
   return { target, toolCalls: traj.toolCalls, answer: traj.answer };
 }
 
+// ─── retry-until-success wrapper (§3.2.x — added 2026-05-27) ────────────────
+
+/**
+ * Default per-slot retry cap. Empirical evidence from gen-1 rounds 2-6:
+ * Kimi (and to a lesser extent Gemini DeepThink) drift on token-preservation
+ * in roughly 1 of 3 attempts. With N=5 retries and a per-attempt failure-aware
+ * hint, the joint probability that ALL 5 fail is < 0.5% — slots almost never
+ * burn outright. The cap exists only to bound cost on a truly broken API.
+ */
+export const DEFAULT_OP_MAX_ATTEMPTS = 5;
+
+/**
+ * Build a retry-hint string from the prior attempt's rejection. Pure function,
+ * exported for tests. The hint is folded into the operator's user prompt by
+ * the harness caller so the LLM gets explicit per-attempt feedback.
+ */
+export function buildRetryHint(rejection, nextAttempt) {
+  if (!rejection || typeof rejection !== 'object') {
+    return `Attempt ${nextAttempt}: previous attempt did not produce a usable mutation.`;
+  }
+  if (rejection.reason === 'model-error') {
+    return `Attempt ${nextAttempt}: prior call hit a model/HTTP error. Be concise and ensure your output finishes cleanly inside the required tags.`;
+  }
+  const failures = Array.isArray(rejection.failures) ? rejection.failures : [];
+  if (failures.length === 0) {
+    const r = rejection.reason ?? 'unspecified';
+    return `Attempt ${nextAttempt}: prior output rejected (${r}). Preserve every [[token]] from the source at exactly its source multiplicity, and ensure protected fenced/pseudocode blocks survive byte-identically.`;
+  }
+  const grouped = {};
+  for (const f of failures) {
+    const r = f.reason ?? '?';
+    (grouped[r] = grouped[r] ?? []).push(f.token ?? f.block?.slice?.(0, 60) ?? '?');
+  }
+  const parts = Object.entries(grouped).map(([reason, tokens]) => `${reason} on ${tokens.slice(0, 8).join(', ')}${tokens.length > 8 ? `, +${tokens.length - 8} more` : ''}`);
+  return `Attempt ${nextAttempt}: prior output rejected by the token validator. Specifically: ${parts.join('; ')}. These are HARD constraints. Preserve every [[token]] from the source at EXACTLY its source multiplicity and do NOT alter any fenced/pseudocode block byte-identically.`;
+}
+
+/**
+ * Run an operator with up to `maxAttempts` retries, surfacing per-attempt
+ * failure-aware retry hints to the underlying callModel via `req.retryHint`.
+ * `opCall` is a factory: it takes a wrapped callModel and returns the operator
+ * promise. This way each operator runner stays unchanged — we only thread a
+ * `retryHint` field through their existing `callModel` injection point.
+ *
+ * Result extends the underlying operator result with:
+ *   attempts: number — how many attempts were made (1..maxAttempts)
+ *   priorFailures: array — rejections from EACH non-final attempt (for traj)
+ */
+export async function runOpWithRetry(opCall, callModel, opts = {}) {
+  const max = opts.maxAttempts ?? DEFAULT_OP_MAX_ATTEMPTS;
+  if (typeof opCall !== 'function') throw new TypeError('runOpWithRetry: opCall must be a function');
+  if (typeof callModel !== 'function') throw new TypeError('runOpWithRetry: callModel must be a function');
+
+  const priorFailures = [];
+  let lastRejection = null;
+
+  for (let attempt = 1; attempt <= max; attempt++) {
+    const hint = attempt > 1 ? buildRetryHint(lastRejection, attempt) : undefined;
+    const wrappedCallModel = (req) => callModel({ ...req, retryHint: hint });
+    const res = await opCall(wrappedCallModel);
+    if (res.accepted) {
+      return { ...res, attempts: attempt, priorFailures };
+    }
+    lastRejection = res.rejection;
+    priorFailures.push({ attempt, rejection: res.rejection });
+  }
+
+  return {
+    mutated: undefined,
+    accepted: false,
+    rejection: lastRejection ?? { reason: 'all-retries-failed' },
+    attempts: max,
+    priorFailures,
+  };
+}
+
 /**
  * Generate the 3 slot mutations for a round (§3.2 slot composition).
+ *
+ * Each operator call is wrapped in `runOpWithRetry` (default 5 attempts) so
+ * a transient model-error or multiplicity-changed rejection no longer burns
+ * the slot — the wrapper passes a failure-aware retry hint to the next attempt.
  *
  * m8 (documented deferral): OP-2 here consumes only the winner-vs-loser pair
  * carried on `slot.pair` (from gepa-pareto.findCrossoverPair). The TRUE balanced
@@ -240,50 +320,69 @@ function pickTrajForProbe(incumbent, probeId, fallbackTarget) {
  * @param {Function} args.callModel
  * @param {Function} args.rng        — () => number (OP-4 alias randomisation)
  * @param {string}   [args.reflectionHint] — latest manual-reflection hard negative (OP-2)
- * @returns {Promise<object[]>} one result per slot: { sourceOp, parentHash, mutated, accepted, rejection? }
+ * @param {number}   [args.maxAttemptsPerSlot] — override default retry cap
+ * @returns {Promise<object[]>} one result per slot: { sourceOp, parentHash, mutated, accepted, rejection?, attempts, priorFailures }
  */
-export async function generateMutations({ slots, parent, failures, probeById, round, callModel, rng, reflectionHint }) {
+export async function generateMutations({ slots, parent, failures, probeById, round, callModel, rng, reflectionHint, maxAttemptsPerSlot }) {
+  const retryOpts = { maxAttempts: maxAttemptsPerSlot ?? DEFAULT_OP_MAX_ATTEMPTS };
   const results = [];
   for (const slot of slots) {
     let res;
+    let parentHashOverride;
     switch (slot.op) {
       case 'reflective':
-        res = await runReflectiveRewrite({ candidate: parent.prompt, failures, callModel });
+        res = await runOpWithRetry(
+          (cm) => runReflectiveRewrite({ candidate: parent.prompt, failures, callModel: cm }),
+          callModel, retryOpts,
+        );
         break;
       case 'trajectory-crossover': {
         const { probeId, winner, loser } = slot.pair;
         const probe = probeById?.[probeId] || { id: probeId, query: undefined };
-        res = await runTrajectoryCrossover({
-          probe,
-          promptA: winner.prompt,
-          promptB: loser.prompt,
-          trajectoryA: pickTrajForProbe(winner, probeId, 'sonnet'),
-          trajectoryB: pickTrajForProbe(loser, probeId, 'gpt5_5'),
-          reflectionHint,
-          callModel,
-        });
-        // OP-2 improves from promptA (the winner): lineage parent is the winner.
-        res = { ...res, parentHashOverride: winner.hash };
+        parentHashOverride = winner.hash;
+        res = await runOpWithRetry(
+          (cm) => runTrajectoryCrossover({
+            probe,
+            promptA: winner.prompt,
+            promptB: loser.prompt,
+            trajectoryA: pickTrajForProbe(winner, probeId, 'sonnet'),
+            trajectoryB: pickTrajForProbe(loser, probeId, 'gpt5_5'),
+            reflectionHint,
+            callModel: cm,
+          }),
+          callModel, retryOpts,
+        );
         break;
       }
       case 'persona-pivot':
-        res = await runPersonaPivot({ candidate: parent.prompt, round, callModel });
+        res = await runOpWithRetry(
+          (cm) => runPersonaPivot({ candidate: parent.prompt, round, callModel: cm }),
+          callModel, retryOpts,
+        );
         break;
       case 'tool-mask':
-        res = await runToolMask({ candidate: parent.prompt, callModel, rng });
+        res = await runOpWithRetry(
+          (cm) => runToolMask({ candidate: parent.prompt, callModel: cm, rng }),
+          callModel, retryOpts,
+        );
         break;
       case 'pruner':
-        res = await runPruner({ candidate: parent.prompt, callModel, minTokens: 120 });
+        res = await runOpWithRetry(
+          (cm) => runPruner({ candidate: parent.prompt, callModel: cm, minTokens: 120 }),
+          callModel, retryOpts,
+        );
         break;
       default:
-        res = { mutated: parent.prompt, accepted: false, rejection: { reason: `unknown-op:${slot.op}` } };
+        res = { mutated: parent.prompt, accepted: false, rejection: { reason: `unknown-op:${slot.op}` }, attempts: 0, priorFailures: [] };
     }
     results.push({
       sourceOp: slot.op,
-      parentHash: res.parentHashOverride ?? parent.hash,
+      parentHash: parentHashOverride ?? parent.hash,
       mutated: res.mutated,
       accepted: res.accepted,
       rejection: res.rejection,
+      attempts: res.attempts,
+      priorFailures: res.priorFailures,
     });
   }
   return results;
