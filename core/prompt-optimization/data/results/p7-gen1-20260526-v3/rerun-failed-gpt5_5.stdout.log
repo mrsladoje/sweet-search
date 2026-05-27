@@ -1,0 +1,114 @@
+[rerun] loaded variant prompt: 3770 chars, hash=0xb44adf7c5563cd99
+[rerun] found 80 prior confirm events (expect 80)
+[rerun] cache: 56 good measurements; 24 to re-measure (all gpt5_5)
+
+[rerun] calling buildCandidate (concurrency=6) ...
+[rerun] live measurement 1/24: js-005|gpt5_5
+[rerun] live measurement 2/24: kotlin-002|gpt5_5
+[rerun] live measurement 3/24: kotlin-008|gpt5_5
+[rerun] live measurement 4/24: kotlin-007|gpt5_5
+[rerun] live measurement 5/24: kotlin-009|gpt5_5
+[rerun] live measurement 6/24: python-010|gpt5_5
+[rerun]   → score=1 tool_calls=3 output_tokens=647 18550ms
+[rerun] live measurement 7/24: python-007|gpt5_5
+[rerun]   → score=1 tool_calls=4 output_tokens=687 19146ms
+[rerun] live measurement 8/24: python-009|gpt5_5
+[rerun]   → score=1 tool_calls=1 output_tokens=263 23473ms
+[rerun] live measurement 9/24: ruby-008|gpt5_5
+[rerun]   → score=1 tool_calls=5 output_tokens=772 31284ms
+[rerun] live measurement 10/24: ruby-001|gpt5_5
+[rerun]   → score=1 tool_calls=8 output_tokens=932 35881ms
+[rerun] live measurement 11/24: ruby-004|gpt5_5
+[rerun]   → score=1 tool_calls=6 output_tokens=1333 36266ms
+[rerun] live measurement 12/24: rust-001|gpt5_5
+[rerun]   → score=1 tool_calls=3 output_tokens=796 20750ms
+[rerun] live measurement 13/24: rust-005|gpt5_5
+[rerun]   → score=1 tool_calls=1 output_tokens=349 13165ms
+[rerun] live measurement 14/24: rust-004|gpt5_5
+[rerun]   → score=1 tool_calls=6 output_tokens=796 30938ms
+[rerun] live measurement 15/24: rust-010|gpt5_5
+[rerun]   → score=1 tool_calls=5 output_tokens=619 29670ms
+[rerun] live measurement 16/24: ts-005|gpt5_5
+[rerun]   → score=1 tool_calls=3 output_tokens=664 25758ms
+[rerun] live measurement 17/24: ts-003|gpt5_5
+[rerun]   → score=1 tool_calls=8 output_tokens=953 39558ms
+[rerun] live measurement 18/24: ts-008|gpt5_5
+[rerun]   → score=1 tool_calls=6 output_tokens=693 23819ms
+[rerun] live measurement 19/24: go-004|gpt5_5
+[rerun]   → score=1 tool_calls=1 output_tokens=401 12415ms
+[rerun] live measurement 20/24: java-005|gpt5_5
+[rerun]   → score=1 tool_calls=4 output_tokens=602 17268ms
+[rerun] live measurement 21/24: js-009|gpt5_5
+[rerun]   → score=1 tool_calls=4 output_tokens=766 22933ms
+[rerun] live measurement 22/24: python-005|gpt5_5
+[rerun]   → score=1 tool_calls=11 output_tokens=1419 44753ms
+[rerun] live measurement 23/24: ruby-002|gpt5_5
+[rerun]   → score=1 tool_calls=10 output_tokens=1071 45749ms
+[rerun] live measurement 24/24: ts-002|gpt5_5
+[rerun]   → score=1 tool_calls=4 output_tokens=1074 37371ms
+[rerun]   → score=1 tool_calls=5 output_tokens=1155 36331ms
+[rerun]   → score=1 tool_calls=3 output_tokens=383 16616ms
+[rerun]   → score=1 tool_calls=3 output_tokens=1075 29642ms
+[rerun]   → score=1 tool_calls=8 output_tokens=1282 33313ms
+[rerun]   → score=1 tool_calls=10 output_tokens=1268 47150ms
+
+[rerun] buildCandidate done in 127580ms; 24 live calls
+
+[rerun] result written to /Users/admin/Projects/sweet-search-private/core/prompt-optimization/data/results/p7-gen1-20260526-v3/rerun-failed-gpt5_5.result.json
+
+--- RESULT ---
+{
+  "timestamp": "2026-05-27T19:30:37.727Z",
+  "target_hash": "0xb44adf7c5563cd99",
+  "elapsed_ms": 127580,
+  "live_calls": 24,
+  "cached_calls": 56,
+  "candidate_summary": {
+    "score_sonnet": 1,
+    "score_gpt5_5": 0.985,
+    "taskScore": 0.985,
+    "efficiencyFactor": 0.8755,
+    "lengthPenalty": 0.047150000000000004,
+    "finalScore": 0.5745178372437929,
+    "sharpnessScore": 1,
+    "tokenCount": 943
+  },
+  "prior_front": [
+    {
+      "hash": "0xec184e6e19b2ab44",
+      "finalScore": 0.3981209667043197,
+      "score_sonnet": 1,
+      "score_gpt5_5": 0.99375
+    },
+    {
+      "hash": "0x06e10aca321f2927",
+      "finalScore": 0.33878433213607534,
+      "score_sonnet": 1,
+      "score_gpt5_5": 0.9775
+    },
+    {
+      "hash": "0x6bd331b51245f787",
+      "finalScore": 0.42350408991776656,
+      "score_sonnet": 0.998,
+      "score_gpt5_5": 0.9925
+    }
+  ],
+  "pareto_admission": {
+    "admitted": true,
+    "reason": null,
+    "target_degraded": [],
+    "drop": null,
+    "incumbent": "T2-r1-reflective-r3-reflective",
+    "evicted": [
+      "T2-r1-reflective",
+      "T2-r1-reflective-r3-reflective",
+      "T2-r1-reflective-r3-reflective-r6-pruner"
+    ]
+  },
+  "new_front_finalScores": [
+    {
+      "hash": "0xb44adf7c5563cd99",
+      "finalScore": 0.5745178372437929
+    }
+  ]
+}
