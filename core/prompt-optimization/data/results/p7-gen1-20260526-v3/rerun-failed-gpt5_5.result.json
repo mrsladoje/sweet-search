@@ -1,0 +1,55 @@
+{
+  "timestamp": "2026-05-27T19:30:37.727Z",
+  "target_hash": "0xb44adf7c5563cd99",
+  "elapsed_ms": 127580,
+  "live_calls": 24,
+  "cached_calls": 56,
+  "candidate_summary": {
+    "score_sonnet": 1,
+    "score_gpt5_5": 0.985,
+    "taskScore": 0.985,
+    "efficiencyFactor": 0.8755,
+    "lengthPenalty": 0.047150000000000004,
+    "finalScore": 0.5745178372437929,
+    "sharpnessScore": 1,
+    "tokenCount": 943
+  },
+  "prior_front": [
+    {
+      "hash": "0xec184e6e19b2ab44",
+      "finalScore": 0.3981209667043197,
+      "score_sonnet": 1,
+      "score_gpt5_5": 0.99375
+    },
+    {
+      "hash": "0x06e10aca321f2927",
+      "finalScore": 0.33878433213607534,
+      "score_sonnet": 1,
+      "score_gpt5_5": 0.9775
+    },
+    {
+      "hash": "0x6bd331b51245f787",
+      "finalScore": 0.42350408991776656,
+      "score_sonnet": 0.998,
+      "score_gpt5_5": 0.9925
+    }
+  ],
+  "pareto_admission": {
+    "admitted": true,
+    "reason": null,
+    "target_degraded": [],
+    "drop": null,
+    "incumbent": "T2-r1-reflective-r3-reflective",
+    "evicted": [
+      "T2-r1-reflective",
+      "T2-r1-reflective-r3-reflective",
+      "T2-r1-reflective-r3-reflective-r6-pruner"
+    ]
+  },
+  "new_front_finalScores": [
+    {
+      "hash": "0xb44adf7c5563cd99",
+      "finalScore": 0.5745178372437929
+    }
+  ]
+}

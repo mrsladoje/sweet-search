@@ -3,7 +3,7 @@
   "lastCompletedRound": 7,
   "maxRoundsEffective": 7,
   "plateauExtended": false,
-  "patienceCounter": 0,
+  "patienceCounter": 2,
   "convergence": [
     0.3981209667043197,
     0.3981209667043197,
@@ -11,7 +11,7 @@
     0.3981209667043197,
     0.4137466841301074,
     0.42350408991776656,
-    0.5745178372437929
+    0.42350408991776656
   ],
   "roundsEvaluatedByProbe": {
     "cpp-005": 7,
@@ -27141,88 +27141,6 @@
         }
       },
       "sharpnessScore": 0.9874999999999999
-    },
-    {
-      "id": "T2-r1-reflective-r3-reflective-r7-trajectory-crossover",
-      "hash": "0xb44adf7c5563cd99",
-      "prompt": "# Sweet-search — code search tool guide\n\nSweet-search provides index-backed code search tools. Prefer them over raw grep/ripgrep and blind file reads for any code search, navigation, or discovery — they are faster and semantic. Fall back to plain grep/read only for changes not yet indexed (e.g. uncommitted edits) or when these tools return nothing. Route by tool priority with family-conditioned query shaping, and chain tools for multi-file flows.\n\n## Calling the tools\nInvoke via the shell (Bash). `[[ss-search]]`/`[[ss-find]]` return ranked code blocks inline; `[[ss-grep]]` is file:line only:\n- [[ss-search]] → `ss-search \\\"<query>\\\" [-k N]`\n- [[ss-find]] → `ss-find \\\"<query>\\\" --regex \\\"<regex>\\\" [-k N]`\n- [[ss-semantic]] → `ss-semantic <file> \\\"<query>\\\"`\n- [[ss-trace]] → `ss-trace <symbol> [--in <file>]`\n- [[ss-grep]] → `ss-grep \\\"<regex>\\\" [-k N]`\n- [[ss-read]] → `ss-read <file> [start] [end]`\n\n## Tool routing\n\n### [[ss-search]] — default first call\nShape the query by the target file's language family:\n- **C-family (C / C++ / Zig):** medium interrogative query containing the symbol verbatim.\n- **JS-mobile (JS / TS / Dart):** short interrogative query containing the symbol verbatim.\n- **Other (default):** medium declarative query containing the symbol verbatim plus a domain keyword.\n\nIf the target symbol or file is unknown, lead with domain terms (Default shaping) and switch to symbol-anchored shaping once a candidate symbol appears.\n\n### [[ss-find]] — when the symbol is known and NL retrieval underperforms\n- **JS-mobile:** definition-anchored regex `\\b<<keyword>\\s+<symbol>\\b` (language keyword + symbol); query short interrogative + symbol.\n- **Other (default):** word-bounded regex `\\b<<symbol>\\b`; query short imperative + symbol, e.g. \\\"find <Symbol> usage\\\".\n\n### [[ss-semantic]] — in-file span retrieval after the file is located\nQuery with the symbol alone. Reserve for span extraction in an already-identified file; not for behavioral or cross-file queries.\n\n### [[ss-trace]] — structural context for a known symbol\nPass the symbol verbatim (never an NL question) for callers, callees, and impact in one call. Add `--in <file>` when the symbol is ambiguous across files. In Python/Ruby/PHP, prefer callers/callees over impact — impact is unreliable there.\n\n### [[ss-grep]] / [[ss-read]]\n[[ss-grep]] for exact literal patterns; [[ss-read]] to confirm or expand context on a file.\n\n## Recovery on empty or weak results\nIf a query returns no relevant hits, do not retry a near-identical formulation. Escalate by (1) switching query shape or regex, (2) moving to the next-priority tool family, or (3) broadening the grep pattern to a substring or prefix.\n\n## Multi-file flow\nWhen [[ss-search]] surfaces a file that imports another module, follow the chain: [[ss-semantic]] on the entry file to find the import, then [[ss-search]] (or [[ss-find]] once the symbol is known) on the downstream module, then [[ss-read]] if needed. Follow the chain only while each hop yields progress.\n\n## Stateful summary rule\nBefore your third sweet-search query in the current search iteration (we can have multiple search iterations in a session) — or before your final answer, whichever comes first, you MUST output a `<state_summary>` block containing exactly: (1) one sentence summarising what you've established so far, (2) one sentence stating your current blind spot or open question.\n\n## Stopping\nStop once you have confirmed evidence; don't over-search. If an attempt fails, change approach rather than repeating a near-identical query. Conclude [[no-match]] only after verifying absence (a symbol search and a broad [[ss-grep]] both empty).\n\n## Output\nName the file(s) and symbol(s) involved and explain how they answer the query, or [[no-match]].",
-      "tokenCount": 943,
-      "sourceOp": "trajectory-crossover",
-      "parentHash": "0x06e10aca321f2927",
-      "scores": {},
-      "detail": {},
-      "probeIds": [
-        "cpp-005",
-        "cpp-002",
-        "cpp-008",
-        "cpp-004",
-        "csharp-004",
-        "csharp-005",
-        "csharp-008",
-        "csharp-003",
-        "go-005",
-        "go-006",
-        "go-008",
-        "java-002",
-        "java-001",
-        "java-004",
-        "js-008",
-        "js-007",
-        "js-005",
-        "kotlin-002",
-        "kotlin-008",
-        "kotlin-007",
-        "kotlin-009",
-        "python-010",
-        "python-007",
-        "python-009",
-        "ruby-008",
-        "ruby-001",
-        "ruby-004",
-        "rust-001",
-        "rust-005",
-        "rust-004",
-        "rust-010",
-        "ts-005",
-        "ts-003",
-        "ts-008",
-        "go-004",
-        "java-005",
-        "js-009",
-        "python-005",
-        "ruby-002",
-        "ts-002"
-      ],
-      "score_sonnet": 1,
-      "score_gpt5_5": 0.985,
-      "taskScore": 0.985,
-      "efficiencyFactor": 0.8755,
-      "lengthPenalty": 0.047150000000000004,
-      "finalScore": 0.5745178372437929,
-      "nativeRelative": {
-        "factor": 0.6216678372437929,
-        "_amendment": "rerun-corrected — perTargetFactor not preserved by surgical rerun"
-      },
-      "sharpnessScore": 0.98125,
-      "_amendment": {
-        "kind": "rerun-correction",
-        "reason": "24/40 gpt5_5 confirm calls in round 7 returned 200 OK with no usage block (OpenRouter credit exhaustion); silent-failure fallback to neutral efficiency drove finalScore from genuine ~0.575 down to recorded 0.273",
-        "rerun_timestamp": "2026-05-27T19:30:37.727Z",
-        "tare_timestamp": "2026-05-27T20:06:12.335Z",
-        "live_rerun_calls": 24,
-        "cached_rerun_calls": 56,
-        "tare_sharpness": 0.018750000000000044,
-        "note": "scores{} and detail{} maps are empty in this synthesized entry. Gen-2 runs that need per-probe data (OP-1 reflective, OP-2 crossover) should re-measure this prompt live."
-      }
     }
-  ],
-  "_amendment": {
-    "kind": "rerun-correction",
-    "timestamp": "2026-05-27T20:30:15.594Z",
-    "affected_round": 7,
-    "affected_candidate": "0xb44adf7c5563cd99",
-    "prev_jointBest": 0.42350408991776656,
-    "new_jointBest": 0.5745178372437929,
-    "patience_reset": true
-  }
+  ]
 }
