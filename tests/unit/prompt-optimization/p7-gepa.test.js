@@ -38,7 +38,8 @@ import {
   pickOverflowVictim,
   crowdingDistances,
 } from '../../../core/prompt-optimization/sweep/gepa-pareto.mjs';
-import { runReflectiveRewrite, buildReflectivePrompt, generateAdversarialParaphrases, TARE_GENERATOR_ROTATION } from '../../../core/prompt-optimization/sweep/gepa-mutate.mjs';
+import { runReflectiveRewrite, buildReflectivePrompt, generateAdversarialParaphrases, TARE_GENERATOR_ROTATION, runOpWithRetry, buildRetryHint, generateMutations } from '../../../core/prompt-optimization/sweep/gepa-mutate.mjs';
+import { augmentSystemForHarness, extractRewrittenPrompt, summariseToolCalls } from '../../../core/prompt-optimization/sweep/op-harness-caller.mjs';
 import { findBalancedPair } from '../../../core/prompt-optimization/sweep/gepa-pareto.mjs';
 import { loadTrajectory } from '../../../core/prompt-optimization/sweep/p7-persist.mjs';
 import { createTokenBucket, RATE_LIMITS } from '../../../core/prompt-optimization/sweep/p7-token-bucket.mjs';
@@ -897,5 +898,132 @@ describe('M2 — token-bucket prime on resume (§7.7)', () => {
     // The synthetic prime load forced a cooldown of ~one rolling window.
     expect(sleptMs).toBeGreaterThan(0);
     expect(sleptMs).toBeLessThanOrEqual(60_000);
+  });
+});
+
+// ─── retry-until-success wrapper + harness primitives (2026-05-27) ──────────
+
+describe('runOpWithRetry — per-slot retry until success (§3.2.x)', () => {
+  it('returns first successful attempt with attempts=1 + no priorFailures', async () => {
+    const callModel = vi.fn(async () => ({ text: '[[ss-search]] [[ss-find]] [[agent-format]] ok-once', isError: false }));
+    const opCall = (cm) => runReflectiveRewrite({ candidate: TOKEN_PROMPT('X'), failures: [], callModel: cm });
+    const res = await runOpWithRetry(opCall, callModel);
+    expect(res.accepted).toBe(true);
+    expect(res.attempts).toBe(1);
+    expect(res.priorFailures).toEqual([]);
+    expect(callModel).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries on multiplicity-changed and accepts when a later attempt validates', async () => {
+    let n = 0;
+    const callModel = vi.fn(async () => {
+      n += 1;
+      if (n < 3) return { text: 'no protected tokens', isError: false };
+      return { text: '[[ss-search]] [[ss-find]] [[agent-format]] ok-third', isError: false };
+    });
+    const opCall = (cm) => runReflectiveRewrite({ candidate: TOKEN_PROMPT('X'), failures: [], callModel: cm });
+    const res = await runOpWithRetry(opCall, callModel);
+    expect(res.accepted).toBe(true);
+    expect(res.attempts).toBe(3);
+    expect(res.priorFailures).toHaveLength(2);
+    expect(callModel).toHaveBeenCalledTimes(3);
+  });
+
+  it('threads a retryHint into the second+ attempt callModel req', async () => {
+    const seenReqs = [];
+    const callModel = vi.fn(async (req) => {
+      seenReqs.push({ retryHint: req.retryHint });
+      if (seenReqs.length === 1) return { text: 'broken', isError: false };
+      return { text: '[[ss-search]] [[ss-find]] [[agent-format]] ok', isError: false };
+    });
+    const opCall = (cm) => runReflectiveRewrite({ candidate: TOKEN_PROMPT('X'), failures: [], callModel: cm });
+    await runOpWithRetry(opCall, callModel);
+    expect(seenReqs[0].retryHint).toBeUndefined();
+    expect(seenReqs[1].retryHint).toMatch(/Attempt 2/);
+    expect(seenReqs[1].retryHint).toMatch(/missing-token|multiplicity-changed/i);
+  });
+
+  it('exhausts maxAttempts and returns the last rejection when all fail', async () => {
+    const callModel = vi.fn(async () => ({ text: 'no tokens', isError: false }));
+    const opCall = (cm) => runReflectiveRewrite({ candidate: TOKEN_PROMPT('X'), failures: [], callModel: cm });
+    const res = await runOpWithRetry(opCall, callModel, { maxAttempts: 3 });
+    expect(res.accepted).toBe(false);
+    expect(res.attempts).toBe(3);
+    expect(res.priorFailures).toHaveLength(3);
+    expect(callModel).toHaveBeenCalledTimes(3);
+  });
+
+  it('buildRetryHint surfaces specific token failures for the next attempt', () => {
+    const rej = { failures: [{ reason: 'multiplicity-changed', token: '[[ss-find]]' }, { reason: 'missing-token', token: '[[ss-grep]]' }] };
+    const hint = buildRetryHint(rej, 2);
+    expect(hint).toMatch(/Attempt 2/);
+    expect(hint).toMatch(/multiplicity-changed/);
+    expect(hint).toMatch(/\[\[ss-find\]\]/);
+    expect(hint).toMatch(/missing-token/);
+    expect(hint).toMatch(/\[\[ss-grep\]\]/);
+  });
+
+  it('buildRetryHint handles model-error rejections distinctly', () => {
+    const hint = buildRetryHint({ reason: 'model-error', detail: 'HTTP 502' }, 4);
+    expect(hint).toMatch(/Attempt 4/);
+    expect(hint).toMatch(/model.*error/i);
+  });
+});
+
+describe('generateMutations integrates retry-loop end-to-end', () => {
+  it('a mutation that fails twice then succeeds carries attempts=3 in the result', async () => {
+    let n = 0;
+    const callModel = async () => {
+      n += 1;
+      return n < 3
+        ? { text: 'no tokens', isError: false }
+        : { text: '[[ss-search]] [[ss-find]] [[agent-format]] mut-v' + n, isError: false };
+    };
+    const front = [{ id: 'P', hash: 'h', prompt: TOKEN_PROMPT('P'), finalScore: 0.5 }];
+    const slots = [{ op: 'reflective', kind: 'primary' }];
+    const muts = await generateMutations({ slots, parent: front[0], failures: [], probeById: {}, round: 1, callModel, rng: () => 0.5, maxAttemptsPerSlot: 5 });
+    expect(muts).toHaveLength(1);
+    expect(muts[0].accepted).toBe(true);
+    expect(muts[0].attempts).toBe(3);
+    expect(muts[0].priorFailures).toHaveLength(2);
+  });
+});
+
+describe('opencode harness primitives', () => {
+  it('augmentSystemForHarness adds tag, repo-paths, and anti-overfit clauses', () => {
+    const augmented = augmentSystemForHarness('base operator system prompt');
+    expect(augmented).toMatch(/base operator system prompt/);
+    expect(augmented).toMatch(/REWRITTEN_PROMPT/);
+    expect(augmented).toMatch(/ANTI-OVERFITTING/);
+    expect(augmented).toMatch(/HARNESS INVESTIGATION/);
+    expect(augmented).toMatch(/p7-dev-probes\.json/);
+  });
+
+  it('extractRewrittenPrompt picks the LAST block when multiple present', () => {
+    const stream = 'reasoning... <REWRITTEN_PROMPT>draft v1</REWRITTEN_PROMPT> more reasoning <REWRITTEN_PROMPT>final v2 [[ss-search]]</REWRITTEN_PROMPT>';
+    const r = extractRewrittenPrompt(stream);
+    expect(r.found).toBe(true);
+    expect(r.allBlocks).toHaveLength(2);
+    expect(r.text).toBe('final v2 [[ss-search]]');
+  });
+
+  it('extractRewrittenPrompt returns empty + found=false when no tags', () => {
+    const r = extractRewrittenPrompt('just some text without tags');
+    expect(r.found).toBe(false);
+    expect(r.text).toBe('');
+  });
+
+  it('summariseToolCalls counts tool_use events from opencode JSONL stream', () => {
+    const stream = [
+      JSON.stringify({ type: 'step_start' }),
+      JSON.stringify({ type: 'tool_use', part: { tool: 'bash' } }),
+      JSON.stringify({ type: 'tool_use', part: { tool: 'bash' } }),
+      JSON.stringify({ type: 'tool_use', part: { tool: 'read' } }),
+      JSON.stringify({ type: 'step_finish' }),
+    ].join('\n');
+    const s = summariseToolCalls(stream);
+    expect(s.count).toBe(3);
+    expect(s.tools.bash).toBe(2);
+    expect(s.tools.read).toBe(1);
   });
 });
