@@ -21,6 +21,35 @@ export function normalizeBrackets(text) {
   return text.replace(/\[\[\s*([^[\]]+?)\s*\]\]/g, (_, inner) => `[[${inner.trim()}]]`);
 }
 
+/**
+ * Strip an outermost markdown fence wrapping the entire body, if present.
+ *
+ * Background (2026-05-27 gen-1 v3 post-mortem): both Kimi and Gemini DeepThink
+ * wrap their mutation output in ```...``` despite explicit "no surrounding
+ * code fences" instructions. Accumulated across gen-1 with two downstream
+ * consequences:
+ *   1. OP-5 Pruner's fenced-block survival check treats every ``` block as
+ *      byte-identical-preserve. An outer fence covering the ENTIRE prompt
+ *      makes the pruner a structural no-op (verified: gen-1 r6-pruner
+ *      "winner" was byte-identical to its parent after JSON-unescape).
+ *   2. The fences cost ~6 tokens for zero semantic value.
+ *
+ * Detects the case where the entire body is wrapped in one
+ * ```optional-info-string\n…\n``` fence and removes the outer wrapping.
+ * Internal fenced blocks (e.g. ```python ... ``` code examples inside the
+ * prompt) are LEFT UNTOUCHED — only an outermost fence spanning the entire
+ * body is stripped. Pure function; exported for unit tests.
+ */
+export function stripOuterFence(text) {
+  if (typeof text !== 'string') return text;
+  const trimmed = text.trim();
+  const m = trimmed.match(/^```[^\n]*\n([\s\S]*)\n```$/);
+  if (!m) return text;
+  const inner = m[1];
+  if (inner.includes('```')) return text;
+  return inner;
+}
+
 // ─── extraction ───────────────────────────────────────────────────────────────
 
 /**
@@ -71,8 +100,10 @@ export function validateMutation({ source, mutated, op = '' }) {
   // Step 1: extract source tokens with multiplicity
   const sourceTokens = extractTokens(source);
 
-  // Step 2: normalise mutated whitespace first (this is the "fix", not a failure)
-  const normalized = normalizeBrackets(mutated);
+  // Step 2: normalise mutated whitespace first (this is the "fix", not a failure).
+  // Also strip a top-level wrapping ```...``` fence that LLM mutators tend to add
+  // despite "no fences" instructions — see stripOuterFence rationale.
+  const normalized = stripOuterFence(normalizeBrackets(mutated));
 
   // Step 3: extract mutated tokens after normalisation
   const mutatedTokens = extractTokens(normalized);

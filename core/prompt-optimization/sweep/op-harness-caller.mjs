@@ -42,6 +42,8 @@ import { spawn } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { stripOuterFence } from './token-validator.mjs';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../..');
 
@@ -94,6 +96,10 @@ export function augmentSystemForHarness(operatorSystemPrompt) {
  * The agentic stream may contain MULTIPLE blocks (Gemini sometimes drafts
  * the rewrite inside a bash tool-use to inspect it); we always take the
  * LAST one, since by the agentic loop's semantics that is the final answer.
+ *
+ * Outer wrapping markdown fences are stripped (see stripOuterFence in
+ * token-validator.mjs for the rationale). Internal fenced blocks (code
+ * examples) are preserved.
  */
 export function extractRewrittenPrompt(stdout) {
   if (typeof stdout !== 'string') return { text: '', found: false, allBlocks: [] };
@@ -107,7 +113,7 @@ export function extractRewrittenPrompt(stdout) {
     if (!body.includes('\n') && body.includes('\\n')) {
       body = body.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
     }
-    blocks.push(body.trim());
+    blocks.push(stripOuterFence(body.trim()));
   }
   return { text: blocks.length ? blocks[blocks.length - 1] : '', found: blocks.length > 0, allBlocks: blocks };
 }
