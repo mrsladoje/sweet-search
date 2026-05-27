@@ -13,6 +13,7 @@ import {
   normalizeBrackets,
   extractTokens,
   validateMutation,
+  stripOuterFence,
 } from '../../../core/prompt-optimization/sweep/token-validator.mjs';
 
 // ─── normalizeBrackets ─────────────────────────────────────────────────────
@@ -231,5 +232,51 @@ describe('validateMutation — guards and return shape', () => {
     expect(r).toHaveProperty('normalized');
     expect(r).toHaveProperty('failures');
     expect(Array.isArray(r.failures)).toBe(true);
+  });
+});
+
+// ─── stripOuterFence (2026-05-27 gen-1 v3 post-mortem) ──────────────────────
+
+describe('stripOuterFence', () => {
+  it('removes a wrapping ```...``` fence covering the entire body', () => {
+    const wrapped = '```\n# header\nbody line\n```';
+    expect(stripOuterFence(wrapped)).toBe('# header\nbody line');
+  });
+
+  it('removes a fence with an info string after the opening backticks', () => {
+    const wrapped = '```markdown\n# header\nbody\n```';
+    expect(stripOuterFence(wrapped)).toBe('# header\nbody');
+  });
+
+  it('tolerates leading/trailing whitespace around the fence', () => {
+    const wrapped = '\n\n```\nbody\n```\n  ';
+    expect(stripOuterFence(wrapped)).toBe('body');
+  });
+
+  it('leaves text without a wrapping fence untouched', () => {
+    expect(stripOuterFence('plain prose with no fence')).toBe('plain prose with no fence');
+  });
+
+  it('preserves embedded code-example fences (does NOT strip outer when inner ``` exists)', () => {
+    const wrapped = '```\nintro line\n```python\ncode example\n```\noutro line\n```';
+    expect(stripOuterFence(wrapped)).toBe(wrapped);
+  });
+
+  it('non-string inputs round-trip without error', () => {
+    expect(stripOuterFence(null)).toBe(null);
+    expect(stripOuterFence(undefined)).toBe(undefined);
+  });
+});
+
+// ─── validateMutation strips outer fence before token check ─────────────────
+
+describe('validateMutation handles outer-fence-wrapped mutations', () => {
+  it('accepts a mutation that is the source wrapped in a fence (since tokens still match)', () => {
+    const source = 'use [[ss-search]] and [[ss-find]]';
+    const mutated = '```\nuse [[ss-search]] and [[ss-find]] (rewritten)\n```';
+    const r = validateMutation({ source, mutated });
+    expect(r.ok).toBe(true);
+    expect(r.normalized).toBe('use [[ss-search]] and [[ss-find]] (rewritten)');
+    expect(r.normalized.startsWith('```')).toBe(false);
   });
 });
