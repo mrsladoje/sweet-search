@@ -60,6 +60,30 @@ export function withMutatorCallDefaults(req) {
   return req;
 }
 
+/**
+ * Round-0 ablation gate (D3). Inspect a loaded variant slate and refuse to
+ * launch evolutionary rounds if any variant is tagged
+ * `unverified-until-round-0-ablation` in its frontMatter
+ * `expected_weaknesses` — those variants must first land a measured
+ * finalScore via a round-0 ablation per PHASE7.md §4.6.1. The caller can
+ * pass `allowUnverified: true` to bypass the gate (the `--allow-unverified-seeds`
+ * CLI flag), which is only safe when a round-0 measurement was performed
+ * out-of-band.
+ *
+ * @param {object} args
+ * @param {object[]} args.variants  pre-normalize loader output (carries frontMatter)
+ * @param {boolean} [args.allowUnverified=false]
+ * @returns {{ ok: true } | { ok: false, unverified: object[] }}
+ */
+export function assertSeedsVerified({ variants, allowUnverified = false } = {}) {
+  if (allowUnverified) return { ok: true };
+  const unverified = (Array.isArray(variants) ? variants : []).filter((v) => {
+    const ew = v?.frontMatter?.expected_weaknesses;
+    return Array.isArray(ew) && ew.includes('unverified-until-round-0-ablation');
+  });
+  return unverified.length === 0 ? { ok: true } : { ok: false, unverified };
+}
+
 export function parseArgs(argv) {
   const o = { run: 'p7-v1', resume: false, dryRun: false, real: false, skipPreflight: false };
   for (let i = 0; i < argv.length; i++) {
@@ -79,6 +103,7 @@ export function parseArgs(argv) {
     else if (a === '--smoke-variants') o.smokeVariants = Number.parseInt(argv[++i], 10);
     else if (a === '--concurrency') o.concurrency = Number.parseInt(argv[++i], 10);
     else if (a === '--skip-finalize') o.skipFinalize = true;
+    else if (a === '--allow-unverified-seeds') o.allowUnverifiedSeeds = true;
   }
   if (o.agentProvider && !['api', 'cli'].includes(o.agentProvider)) {
     throw new Error(`unknown --agent-provider ${o.agentProvider}`);
@@ -165,7 +190,23 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
   const probesDoc = JSON.parse(readFileSync(o.probesFile, 'utf8'));
   const devProbes = probesDoc.probes ?? probesDoc;
   const rotationPool = probesDoc.rotationPool ?? [];
-  const variants = (o.variantsDir ? loadVariantsFromDir(o.variantsDir) : loadAllVariants()).map(normalizeVariant);
+  const loadedVariants = o.variantsDir ? loadVariantsFromDir(o.variantsDir) : loadAllVariants();
+  // D3: round-0 ablation gate. If the slate contains any variant tagged
+  // `unverified-until-round-0-ablation` (e.g. the pruner-placeholder, or any
+  // hand seed admitted via gepa-restart-scaffold), refuse to launch
+  // evolutionary rounds until the operator confirms (via flag) that a
+  // round-0 measurement has been done. See PHASE7.md §4.6.1.
+  const guard = assertSeedsVerified({ variants: loadedVariants, allowUnverified: !!o.allowUnverifiedSeeds });
+  if (!guard.ok) {
+    console.error('ERROR: launch refused — slate contains unverified seeds without a round-0 ablation.');
+    console.error('See PHASE7.md §4.6.1 for the round-0 ablation gate protocol.');
+    console.error('Unverified seeds in slate:');
+    for (const v of guard.unverified) console.error(`  - ${v.id}: source_id=${v.frontMatter?.source_id ?? '?'}`);
+    console.error('');
+    console.error('To override (NOT recommended; only safe if you have a round-0 measurement out-of-band): pass --allow-unverified-seeds.');
+    process.exit(1);
+  }
+  const variants = loadedVariants.map(normalizeVariant);
   let nativeBaselineByTarget = null;
   if (o.nativeBaselineFile) {
     nativeBaselineByTarget = assertNativeBaselineCoverage({
@@ -306,5 +347,18 @@ async function runFinalizeStage({ runId, winner, probesDoc, runJudge, agentProvi
     runCounterProbe,
     heldoutFinalScore: winner.finalScore,
     paths: { trajectory: trajectoryPath(runId), gateDir: RESULTS_DIR(runId) },
+  });
+}
+
+// ─── auto-invoke guard ─────────────────────────────────────────────────────
+// `node core/prompt-optimization/sweep/gepa-cli.mjs ...` should behave the
+// same as `node core/prompt-optimization/sweep/gepa.mjs ...` (which delegates
+// here). Without this guard the file is imported and exited silently with
+// no work done — the failure mode that ate ~$2 of confused diagnosis during
+// the Stage 1 smoke launch (defect D1, commit 218a840).
+if (import.meta.url === `file://${process.argv[1]}`) {
+  mainCli(process.argv.slice(2)).catch((e) => {
+    console.error('gepa-cli: fatal —', e?.stack || e?.message || e);
+    process.exit(1);
   });
 }

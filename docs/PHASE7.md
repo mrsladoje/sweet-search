@@ -896,6 +896,33 @@ Before the first OP-1/OP-2/OP-3/OP-4/OP-5 mutation in gen-1b:
 
 If the pruner-placeholder fails the gate, do NOT start round 1 with it on the front. Either (a) run a single live OP-5 invocation against the joint-best prompt (one screen pass, ~$3, ~10 min), re-add the OP-5 output as a fresh seed, and re-run the ablation; or (b) drop the slot and start gen-1b with three seeds instead of four. The driver MUST refuse to launch evolutionary rounds without all admitted seeds carrying a measured finalScore.
 
+#### §4.6.1.1 OP-3 mode-b is dormant on the gen-1b restart slate (2026-05-28 finding)
+
+The Stage 1 mutator validator (`core/prompt-optimization/data/results/p7-gen1b-smoke/mutator-validation.mjs`) empirically observed that **no variant in the gen-1b restart slate trips the `countConditionalRules >= 3` threshold** that activates OP-3 mode-b (compact router-table consolidation):
+
+| Variant | Source | Conditional-rule count | mode-b? |
+|---|---|---|---|
+| T1 | T2-r1-reflective | 2 | no |
+| T2 | r6-pruner | 2 | no |
+| T3 | r7-trajectory-crossover (joint-best) | 2 | no |
+| T4 | r8-trajectory-crossover | 2 | no |
+| T5 | router-minimal hand seed | 0 | no |
+| T6 | no-match-fast hand seed | 0 | no |
+| T7 | trace-first-flow hand seed | 0 | no |
+| T8 | pruner-placeholder-joint-best | 2 | no |
+
+**Implication.** In gen-1b's first few evolutionary rounds, OP-3 will exclusively select mode 'a' (surface-format pivot — bullets ↔ numbered lists ↔ dense paragraphs, no router-table consolidation). The "powerful router-table consolidation operator" the §3.2 redesign hoped for will only engage on DESCENDANTS that acquire ≥3 conditional rules during evolution (most likely via OP-1 reflective edits introducing new "When/if/unless …" wording, OR via OP-2 trajectory-crossover blending in conditional language from a different parent).
+
+**Decision (2026-05-28): accept and document, do NOT lower the threshold.** Reasons:
+
+1. **Lowering the threshold risks re-triggering the OP-3 bloat pattern from gen-1 round 10.** The original mode-b was AST/pseudocode-shaped, which inflated Sonnet's token cost (avg-calls 11.2 vs joint-best's 9.5). The Stage 0 fix changed mode-b's *target shape* (router tables) but the *firing threshold* was preserved at ≥3. Dropping to ≥2 would fire mode-b on every front member starting day 1, multiplying the "consolidate prose into a table" mutator-shape across the whole front and risking front-wide structural homogenization before we know router-tables are net-positive in practice.
+2. **The Stage 1 probe-4 measurement confirmed gemini honors the canonical-header instruction when mode-b DOES fire.** So when a descendant acquires enough conditional rules, the operator will work correctly. We have ≥1 round-by-round data point either way.
+3. **OP-3 mode 'a' is still a useful operator.** Surface-format pivots can compress prose and create length-diverse Pareto members, both of which help downstream OP-2 trajectory-crossover.
+
+**Re-evaluation trigger.** If by round 5 of gen-1b no descendant has crossed the ≥3-rule threshold AND no clear length-diverse pruner-placeholder admission has happened, reconsider lowering the threshold (to ≥2 OR adding a "mode-b every N rounds regardless of count" rotation).
+
+**For the gen-1b ablation: don't be surprised when round-1 OP-3 events show `mode: a` for every slot-3 fire.** That's expected behavior given the slate composition above.
+
 #### §4.6.2 Stale per-event trajectory scores after surgical reruns
 
 The 2026-05-27 round-7 surgical rerun and the 2026-05-28 joint-best per-probe persistence repair both updated aggregates in `pareto-current.json` but **left the original confirm events in `gepa-trajectory.jsonl` with their pre-correction `final_score` values intact**. Corrected confirm events were appended with a `_repair_rerun` field and (from 2026-05-28 onward) an explicit `corrected: true` flag plus a `supersedes` natural-key block — they do not destructively rewrite the originals.
