@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach } from 'vitest';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -18,6 +18,12 @@ import {
   splitFrontMatter,
   validateVariant,
 } from '../../../core/prompt-optimization/sweep/variant-loader.mjs';
+import {
+  makeDryRunCallModel,
+  makeDryRunEvaluate,
+  normalizeVariant,
+  runGepa,
+} from '../../../core/prompt-optimization/sweep/gepa.mjs';
 
 let tmpDir = null;
 afterEach(() => {
@@ -134,5 +140,87 @@ describe('gepa restart scaffold', () => {
     const loaded = loadVariantsFromDir(tmpDir);
     expect(loaded.map((v) => v.id)).toEqual(variants.map((v) => v.id));
     expect(loaded[0].body.trim()).toBe('plain [[ss-search]]');
+  });
+
+  // End-to-end: buildRestartVariants → writeRestartVariants → loadVariantsFromDir
+  // → driver consumption. This is the Stage-0 launch-readiness test for
+  // gen-1b: it pins the wiring contract between scaffold output, the loader,
+  // and the driver's `variants` input. If a contract mismatch were introduced
+  // (frontmatter rename, body trimming semantics change, normalizeVariant
+  // signature change), this test fails BEFORE a real run discovers it.
+  it('end-to-end: scaffold writes → loader reads → runGepa dry-run consumes the slate without crash', async () => {
+    // 1. Build a small slate (1 front member + pruner placeholder = 2
+    //    variants). Hand seeds are off to keep the test fast and focused on
+    //    the wiring rather than seed body validation (covered above).
+    const pareto = {
+      front: [{ id: 'jb', hash: '0xfeed', finalScore: 0.5, prompt: 'jb prompt [[ss-search]] [[ss-grep]]' }],
+    };
+    const variants = buildRestartVariants({ pareto, includeExtraSeeds: false, includePrunerPlaceholder: true });
+    expect(variants.length).toBeGreaterThanOrEqual(2);
+
+    // 2. Write to a tmp slate dir (under the project's results dir so the
+    //    cleanup pattern stays consistent with the rest of this file).
+    tmpDir = mkdtempSync(path.join(process.cwd(), 'core/prompt-optimization/data/results/p7-stage0-e2e-'));
+    const slateDir = path.join(tmpDir, 'slate');
+    const written = writeRestartVariants({ variants, outDir: slateDir });
+    expect(written.length).toBe(variants.length);
+    for (const f of written) expect(existsSync(f)).toBe(true);
+
+    // 3. Load via the same loader the driver uses in --variants-dir mode.
+    //    Catches frontmatter/body contract drift between scaffold and loader.
+    const loaded = loadVariantsFromDir(slateDir);
+    expect(loaded.map((v) => v.id)).toEqual(variants.map((v) => v.id));
+    // The pruner placeholder must round-trip with its label intact, so the
+    // operator/gate can identify it later as "unverified-until-round-0".
+    const ph = loaded.find((v) => v.frontMatter?.source_id === 'pruner-placeholder-joint-best');
+    expect(ph).toBeTruthy();
+
+    // 4. Normalize like gepa-cli.mjs does in both dry-run and real-run paths.
+    const normalized = loaded.map((v) => normalizeVariant(v));
+    for (const v of normalized) {
+      expect(v.id).toMatch(/^T\d+$/);
+      expect(typeof v.prompt).toBe('string');
+      expect(v.prompt.length).toBeGreaterThan(0);
+    }
+
+    // 5. Run a 1-round dry-run through the actual driver with offline
+    //    evaluator + model. Paths point into tmpDir to avoid polluting the
+    //    real results directory. concurrency=1 keeps the run deterministic.
+    const dryProbes = [
+      { id: 'p-lit', stratum: 'literal-lookup', repo: 'gin', query: 'find Engine.New', language: 'go', expectedFiles: [], expected_call_window: [1, 3] },
+      { id: 'p-flow', stratum: 'multi-file-flow', repo: 'gin', query: 'how does Run dispatch?', language: 'go', expectedFiles: [], expected_call_window: [2, 6] },
+    ];
+    const paths = {
+      trajectory: path.join(tmpDir, 'trajectory.jsonl'),
+      promptBank: path.join(tmpDir, 'prompt-bank.jsonl'),
+      paretoCurrent: path.join(tmpDir, 'pareto-current.json'),
+    };
+    const result = await runGepa({
+      runId: 'p7-stage0-e2e',
+      variants: normalized,
+      devProbes: dryProbes,
+      evaluateCandidate: makeDryRunEvaluate(),
+      callModel: makeDryRunCallModel(),
+      maxRounds: 1,
+      patience: 5,
+      paths,
+      logPath: path.join(tmpDir, 'run.log'),
+      concurrency: 1,
+    });
+
+    // 6. Driver returned a populated front + persisted both trajectory and
+    //    pareto-current. The slate was actually consumed.
+    expect(result).toBeDefined();
+    expect(Array.isArray(result.front)).toBe(true);
+    expect(result.front.length).toBeGreaterThan(0);
+    expect(existsSync(paths.trajectory)).toBe(true);
+    expect(existsSync(paths.paretoCurrent)).toBe(true);
+
+    // 7. Trajectory contains at least one event with a recognized _kind.
+    //    Non-empty trajectory confirms the variants actually entered the loop.
+    const trajLines = readFileSync(paths.trajectory, 'utf8').trim().split('\n').filter(Boolean);
+    expect(trajLines.length).toBeGreaterThan(0);
+    const events = trajLines.map((l) => JSON.parse(l));
+    expect(events.some((e) => typeof e._kind === 'string')).toBe(true);
   });
 });

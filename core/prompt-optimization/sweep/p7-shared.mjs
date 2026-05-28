@@ -156,6 +156,12 @@ export const MUTATION_REJECTION_REASONS = Object.freeze([
   'unmapped-alias',
   'surplus-token',
   'fenced-block-altered', // OP-5 pruner: fenced/pseudocode block not byte-identical (M11)
+  // OP-3 mode-b: router-table consolidation produced an output that does NOT
+  // contain a table whose header matches the OP-5 protection regex (must
+  // include both "Query signal" and "First call"). Without canonical headers
+  // the table would not be extracted as a protected block, and any subsequent
+  // OP-5 pruner pass would silently delete the dispatch rows as "extra prose".
+  'router-table-header-missing',
 ]);
 
 export const PARETO_REJECTION_REASONS = Object.freeze([
