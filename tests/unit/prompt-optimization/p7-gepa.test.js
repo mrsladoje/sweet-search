@@ -26,8 +26,10 @@ import {
   computeFinalScoreFor,
   computeProbeWeights,
   topFailures,
+  topInefficiencies,
   buildCandidate,
 } from '../../../core/prompt-optimization/sweep/gepa-scoring.mjs';
+import { selectScreenProbes } from '../../../core/prompt-optimization/sweep/gepa-screening.mjs';
 import {
   attemptParetoAdmission,
   planSlots,
@@ -71,6 +73,22 @@ function makeProbe(i, stratum = 'literal-lookup') {
     expectedSymbols: [`sym${i}`],
     expectedFacts: [`fact ${i}`],
     expectedNoMatch: false,
+    max_turns: 3,
+  };
+}
+
+function makeLangProbe(id, language, stratum) {
+  return {
+    id,
+    repo: `${language}-repo`,
+    language,
+    stratum,
+    difficulty: 'medium',
+    query: `query ${id}`,
+    expectedFiles: [`${id}.${language}`],
+    expectedSymbols: [`sym${id}`],
+    expectedFacts: [`fact ${id}`],
+    expectedNoMatch: stratum === 'no-match',
     max_turns: 3,
   };
 }
@@ -168,6 +186,39 @@ describe('joint scoring integration (§3.7.1)', () => {
     expect(after[0]).toBeCloseTo(0.1, 10);
     expect(after[1]).toBeCloseTo(0.16, 10);
     expect(after[1]).toBeGreaterThan(after[0]);
+  });
+});
+
+describe('screen probe selection', () => {
+  it('selects a deterministic mixed subset instead of the first N probes', () => {
+    const probes = [
+      makeLangProbe('cpp-001', 'cpp', 'literal-lookup'),
+      makeLangProbe('cpp-002', 'cpp', 'multi-file-flow'),
+      makeLangProbe('cpp-003', 'cpp', 'behavioral'),
+      makeLangProbe('cpp-004', 'cpp', 'no-match'),
+      makeLangProbe('csharp-001', 'csharp', 'literal-lookup'),
+      makeLangProbe('csharp-002', 'csharp', 'multi-file-flow'),
+      makeLangProbe('java-001', 'java', 'behavioral'),
+      makeLangProbe('ruby-001', 'ruby', 'no-match'),
+      makeLangProbe('kotlin-001', 'kotlin', 'literal-lookup'),
+      makeLangProbe('python-001', 'python', 'multi-file-flow'),
+      makeLangProbe('rust-001', 'rust', 'behavioral'),
+      makeLangProbe('ts-001', 'ts', 'no-match'),
+    ];
+    const screen = selectScreenProbes({ probeSet: probes, count: 8, round: 10, seed: 42 });
+    expect(screen).toHaveLength(8);
+    expect(screen.map((p) => p.id)).not.toEqual(probes.slice(0, 8).map((p) => p.id));
+    expect(new Set(screen.map((p) => p.language)).size).toBeGreaterThanOrEqual(6);
+    expect(new Set(screen.map((p) => p.stratum)).size).toBeGreaterThanOrEqual(4);
+    expect(selectScreenProbes({ probeSet: probes, count: 8, round: 10, seed: 42 }).map((p) => p.id))
+      .toEqual(screen.map((p) => p.id));
+  });
+
+  it('honors explicit diagnostic screen probe ids', () => {
+    const probes = [makeProbe(1), makeProbe(2), makeProbe(3)];
+    const screen = selectScreenProbes({ probeSet: probes, count: 2, explicitIds: ['p3', 'p1'] });
+    expect(screen.map((p) => p.id)).toEqual(['p3', 'p1']);
+    expect(() => selectScreenProbes({ probeSet: probes, count: 2, explicitIds: ['missing'] })).toThrow(/unknown explicit/);
   });
 });
 
@@ -438,6 +489,141 @@ describe('buildCandidate', () => {
     expect(typeof cand.finalScore).toBe('number');
     expect(cand.sharpnessScore).toBe(1.0);
     expect(topFailures({ candidate: cand, probes }).length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('topInefficiencies surfaces low native-relative call/token desirability even when accuracy is high', () => {
+    const probes = [makeProbe(1, 'multi-file-flow'), makeProbe(2, 'literal-lookup')];
+    const candidate = {
+      scores: { p1: 1, p2: 1 },
+      nativeRelative: {
+        breakdown: {
+          sonnet: {
+            runs: [
+              {
+                probeId: 'p1',
+                calls: 12,
+                nativeCalls: 3,
+                tokens: 9000,
+                nativeTokens: 1200,
+                tokensForScoring: 9000,
+                nativeTokensForScoring: 1200,
+                desirability: { accuracy: 1, calls: 0.1, tokens: 0.1, overall: 0.2 },
+              },
+              {
+                probeId: 'p2',
+                calls: 2,
+                nativeCalls: 2,
+                tokens: 1100,
+                nativeTokens: 1000,
+                tokensForScoring: 1100,
+                nativeTokensForScoring: 1000,
+                desirability: { accuracy: 1, calls: 1, tokens: 0.9, overall: 0.97 },
+              },
+            ],
+          },
+          gpt5_5: {
+            runs: [
+              { probeId: 'p1', calls: 4, nativeCalls: 3, tokens: 1300, nativeTokens: 1200, desirability: { accuracy: 1, calls: 0.9, tokens: 0.9, overall: 0.94 } },
+              { probeId: 'p2', calls: 2, nativeCalls: 2, tokens: 1000, nativeTokens: 1000, desirability: { accuracy: 1, calls: 1, tokens: 1, overall: 1 } },
+            ],
+          },
+        },
+      },
+      detail: {
+        p1: { sonnet: { score: 1, traj: { toolCalls: [{ name: 'ss-search' }, { name: 'ss-read' }], answer: 'ok' } }, gpt5_5: { score: 1, traj: { toolCalls: [], answer: 'ok' } } },
+        p2: { sonnet: { score: 1, traj: { toolCalls: [], answer: 'ok' } }, gpt5_5: { score: 1, traj: { toolCalls: [], answer: 'ok' } } },
+      },
+    };
+    const rows = topInefficiencies({ candidate, probes, limit: 1 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ probeId: 'p1', target: 'sonnet', nativeRelativeOverall: 0.2, calls: 12, nativeCalls: 3 });
+  });
+
+  it('topInefficiencies returns rows with overall below threshold (default 0.6)', () => {
+    const probes = [makeProbe(1, 'multi-file-flow')];
+    const candidate = {
+      scores: { p1: 1 },
+      nativeRelative: {
+        breakdown: {
+          sonnet: { runs: [{ probeId: 'p1', calls: 9, nativeCalls: 3, tokens: 8000, nativeTokens: 1500, desirability: { accuracy: 1, calls: 0.15, tokens: 0.25, overall: 0.2 } }] },
+          gpt5_5: { runs: [{ probeId: 'p1', calls: 3, nativeCalls: 3, tokens: 1500, nativeTokens: 1500, desirability: { accuracy: 1, calls: 1, tokens: 1, overall: 1 } }] },
+        },
+      },
+      detail: { p1: { sonnet: { score: 1, traj: { toolCalls: [], answer: 'ok' } }, gpt5_5: { score: 1, traj: { toolCalls: [], answer: 'ok' } } } },
+    };
+    const rows = topInefficiencies({ candidate, probes });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ probeId: 'p1', target: 'sonnet', nativeRelativeOverall: 0.2 });
+  });
+
+  it('topInefficiencies filters out probes with overall at or above threshold (default 0.6)', () => {
+    const probes = [makeProbe(1, 'multi-file-flow'), makeProbe(2, 'literal-lookup')];
+    const candidate = {
+      scores: { p1: 1, p2: 1 },
+      nativeRelative: {
+        breakdown: {
+          sonnet: {
+            runs: [
+              // Right at threshold — must be filtered.
+              { probeId: 'p1', calls: 4, nativeCalls: 3, tokens: 2000, nativeTokens: 1500, desirability: { accuracy: 1, calls: 0.7, tokens: 0.65, overall: 0.6 } },
+              // Above threshold — must be filtered.
+              { probeId: 'p2', calls: 3, nativeCalls: 3, tokens: 1600, nativeTokens: 1500, desirability: { accuracy: 1, calls: 0.95, tokens: 0.92, overall: 0.94 } },
+            ],
+          },
+          gpt5_5: {
+            runs: [
+              { probeId: 'p1', calls: 3, nativeCalls: 3, tokens: 1500, nativeTokens: 1500, desirability: { accuracy: 1, calls: 1, tokens: 1, overall: 1 } },
+              { probeId: 'p2', calls: 3, nativeCalls: 3, tokens: 1500, nativeTokens: 1500, desirability: { accuracy: 1, calls: 1, tokens: 1, overall: 1 } },
+            ],
+          },
+        },
+      },
+      detail: {
+        p1: { sonnet: { score: 1, traj: { toolCalls: [], answer: 'ok' } }, gpt5_5: { score: 1, traj: { toolCalls: [], answer: 'ok' } } },
+        p2: { sonnet: { score: 1, traj: { toolCalls: [], answer: 'ok' } }, gpt5_5: { score: 1, traj: { toolCalls: [], answer: 'ok' } } },
+      },
+    };
+    const rows = topInefficiencies({ candidate, probes });
+    expect(rows).toEqual([]);
+  });
+
+  it('topInefficiencies returns [] (not fake pressure) when every native-relative row is at/above threshold', () => {
+    // Saturated front: every probe is near-native efficient on the worst target.
+    // The function must NOT fall through to the heuristic call-window path and
+    // surface bogus inefficiencies — runGepa relies on the [] result to fall
+    // back to topFailures(), which is also empty on a saturated front, leaving
+    // OP-1 to pick a general robustness edit rather than polishing good probes.
+    const probes = [makeProbe(1, 'multi-file-flow'), makeProbe(2, 'literal-lookup'), makeProbe(3, 'behavioral')];
+    const candidate = {
+      scores: { p1: 1, p2: 1, p3: 1 },
+      nativeRelative: {
+        breakdown: {
+          sonnet: {
+            runs: [
+              { probeId: 'p1', calls: 3, nativeCalls: 3, tokens: 1500, nativeTokens: 1500, desirability: { accuracy: 1, calls: 1, tokens: 1, overall: 0.95 } },
+              { probeId: 'p2', calls: 3, nativeCalls: 3, tokens: 1500, nativeTokens: 1500, desirability: { accuracy: 1, calls: 1, tokens: 1, overall: 0.7 } },
+              { probeId: 'p3', calls: 3, nativeCalls: 3, tokens: 1500, nativeTokens: 1500, desirability: { accuracy: 1, calls: 1, tokens: 1, overall: 0.85 } },
+            ],
+          },
+          gpt5_5: {
+            runs: [
+              { probeId: 'p1', calls: 3, nativeCalls: 3, tokens: 1500, nativeTokens: 1500, desirability: { accuracy: 1, calls: 1, tokens: 1, overall: 1 } },
+              { probeId: 'p2', calls: 3, nativeCalls: 3, tokens: 1500, nativeTokens: 1500, desirability: { accuracy: 1, calls: 1, tokens: 1, overall: 1 } },
+              { probeId: 'p3', calls: 3, nativeCalls: 3, tokens: 1500, nativeTokens: 1500, desirability: { accuracy: 1, calls: 1, tokens: 1, overall: 1 } },
+            ],
+          },
+        },
+      },
+      // Deliberately populate detail with traces that COULD fire the heuristic
+      // path (lots of tool calls) — but native-relative is present, so the
+      // heuristic must not run for these probes.
+      detail: {
+        p1: { sonnet: { score: 1, traj: { toolCalls: [{ name: 'ss-search' }, { name: 'ss-search' }, { name: 'ss-read' }], answer: 'ok' } }, gpt5_5: { score: 1, traj: { toolCalls: [], answer: 'ok' } } },
+        p2: { sonnet: { score: 1, traj: { toolCalls: [{ name: 'ss-search' }, { name: 'ss-search' }, { name: 'ss-search' }], answer: 'ok' } }, gpt5_5: { score: 1, traj: { toolCalls: [], answer: 'ok' } } },
+        p3: { sonnet: { score: 1, traj: { toolCalls: [{ name: 'ss-search' }], answer: 'ok' } }, gpt5_5: { score: 1, traj: { toolCalls: [], answer: 'ok' } } },
+      },
+    };
+    expect(topInefficiencies({ candidate, probes })).toEqual([]);
   });
 });
 

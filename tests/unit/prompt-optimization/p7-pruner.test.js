@@ -4,13 +4,13 @@
  *
  * Covers:
  *  - STATEFUL_SUMMARY_RULE re-export equals the persona-pivot canonical source
- *  - buildPrunerPrompt: ~20% prose-only, pseudocode/if-then/fence protection,
+ *  - buildPrunerPrompt: ~20% prose-only, fence/router-table protection,
  *    [[token]] preservation, PRUNER_SKIP refuse-if-minimal instruction
  *  - runPruner: minTokens skip path (no model call), PRUNER_SKIP handling,
  *    validateMutation gate, model-error rejection
- *  - M11 (spec-conformance): fenced/pseudocode-block survival is ENFORCED — a
- *    model that mangles a triple-backtick fenced block or a routing-policy
- *    pseudocode block (while keeping every [[token]]) is rejected with reason
+ *  - M11 (spec-conformance): protected-block survival is ENFORCED — a
+ *    model that mangles a triple-backtick fenced block, routing-policy
+ *    pseudocode block, or compact router table is rejected with reason
  *    'fenced-block-altered'; byte-identical survival with trimmed prose is OK.
  */
 
@@ -48,11 +48,9 @@ describe('buildPrunerPrompt', () => {
     expect(systemPrompt).toMatch(/PROSE/);
   });
 
-  it('protects pseudocode, if/then blocks, and fenced code from edits', () => {
-    expect(systemPrompt).toMatch(/DO NOT alter the syntax, indentation, or logic/i);
-    expect(systemPrompt).toMatch(/pseudocode/i);
-    expect(systemPrompt).toMatch(/if\/then/i);
-    expect(systemPrompt).toMatch(/fenced code blocks/i);
+  it('protects fenced code and router tables from edits', () => {
+    expect(systemPrompt).toMatch(/DO NOT alter fenced code blocks/i);
+    expect(systemPrompt).toMatch(/router tables/i);
   });
 
   it('requires every [[token]] preserved at the same multiplicity', () => {
@@ -216,6 +214,23 @@ describe('extractProtectedBlocks', () => {
     expect(blocks[0]).not.toContain('Trailing prose');
   });
 
+  it('extracts a compact router table verbatim', () => {
+    const cand = [
+      'Intro prose.',
+      '| Query signal | First call | Follow-up | Stop condition |',
+      '|---|---|---|---|',
+      '| Literal | [[ss-grep]] | [[ss-read]] if needed | One hit is enough |',
+      '| Flow | [[ss-find]] | [[ss-trace]] | One complete path |',
+      '',
+      'Trailing prose after the blank line is NOT part of the table.',
+    ].join('\n');
+    const blocks = extractProtectedBlocks(cand);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toContain('| Query signal | First call | Follow-up | Stop condition |');
+    expect(blocks[0]).toContain('| Flow | [[ss-find]] | [[ss-trace]] | One complete path |');
+    expect(blocks[0]).not.toContain('Trailing prose');
+  });
+
   it('returns no blocks for prose-only candidates', () => {
     expect(extractProtectedBlocks(PRUNE_CAND)).toEqual([]);
   });
@@ -279,6 +294,24 @@ describe('runPruner — M11 fenced/pseudocode-block enforcement', () => {
     // Drop the elif branch from the pseudocode block while keeping the [[token]].
     const mangled = cand.replace('elif callers: use [[ss-trace]]\n', '');
     const callModel = vi.fn(async () => ({ text: mangled + '\nUse [[ss-trace]] for callers.', isError: false }));
+    const r = await runPruner({ candidate: cand, callModel });
+    expect(r.accepted).toBe(false);
+    expect(r.rejection.reason).toBe('fenced-block-altered');
+    expect(r.mutated).toBe(cand);
+  });
+
+  it('REJECTS when a compact router table is mangled', async () => {
+    const cand = [
+      'Routing table.',
+      '| Query signal | First call | Follow-up | Stop condition |',
+      '|---|---|---|---|',
+      '| Literal | [[ss-grep]] | [[ss-read]] if needed | One hit is enough |',
+      '| Flow | [[ss-find]] | [[ss-trace]] | One complete path |',
+      '',
+      'Answer with evidence.',
+    ].join('\n');
+    const mangled = cand.replace('| Flow | [[ss-find]] | [[ss-trace]] | One complete path |\n', '');
+    const callModel = vi.fn(async () => ({ text: mangled + '\nUse [[ss-find]] and [[ss-trace]] for flow.', isError: false }));
     const r = await runPruner({ candidate: cand, callModel });
     expect(r.accepted).toBe(false);
     expect(r.rejection.reason).toBe('fenced-block-altered');

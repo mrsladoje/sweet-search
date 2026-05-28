@@ -86,7 +86,7 @@ Implementation: target agent evaluation uses `p7-api-agent-runner.mjs` for paid 
 | Plateau-breakthrough rule | If patience triggers but the *trajectory* shows step-changes within the last 3 rounds, **extend by 3 more rounds** before final stop | Catches GEPA-style "compositional jumps" — see §3.1 |
 | Mutations per round | **3** (portfolio — see §3.2) | GAAPO-style portfolio |
 | Reasoning mode for evaluation | **OFF** for both targets | Production-parity (see §1) |
-| Screening probes per mutation | 8 (× 2 targets = 16 runs) | Cheap filter before full eval |
+| Screening probes per mutation | 8 (× 2 targets = 16 runs), selected by deterministic mixed language/stratum sampling rather than `first 8` | Cheap filter before full eval without the C++/C# prefix bias observed in gen-1 |
 | Confirmation probes (survivor) | 40 = full dev (× 2 targets = 80 runs) | Joint scoring requires both targets |
 | Joint score formula | **Native-relative desirability** when a frozen native rg+Read baseline is supplied: accuracy / tool calls / agent tokens are transformed to desirabilities with weights 0.60 / 0.25 / 0.15, combined by weighted geometric mean per probe-target, averaged per target, then aggregated by `min(sonnet, gpt5_5)` and length-penalized. Token desirability uses overhead-adjusted work tokens when the baseline supplies `overhead_tokens`, so fixed CLI/system context does not drown out retrieval-token savings. Legacy Maximin × EAS remains a fallback and diagnostic. Pareto admission is still gated by the 0.15 absolute accuracy-degradation cap relative to **the displaced incumbent** (NOT global per-target Pareto maxima — per GPT-5.5 review §C1, anti-utopia-point fix). | Unified-prompt ship policy (§3.7); aligns the optimizer with accuracy, speed, and token savings |
 | Manual reflection cadence | **After every round** (see §3.4) | Human-in-the-loop GEPA |
@@ -117,13 +117,15 @@ The loop is **joint across both targets** (Sonnet 4.6 + GPT-5.5-instant). Per ro
 
 1. **Selection** — Sample candidate from joint Pareto front (stochastic; weighted by per-probe wins on the §3.7.1 `final_score`: native-relative when the baseline is present, legacy Maximin × EAS otherwise).
 2. **Mutation** — Generate 3 candidates per the §3.2 portfolio.
-3. **Screening** — Each mutation evaluated on 8 probes × **both targets** = 16 agent runs per mutation. The §3.7.1 `final_score` is the screen metric.
+3. **Screening** — Each mutation evaluated on 8 mixed probes × **both targets** = 16 agent runs per mutation. The §3.7.1 `final_score` is the screen metric.
 4. **Persistence checkpoint** — Append every screen result (one JSONL row per (mutation, probe, target)) to `core/prompt-optimization/data/results/p7-v1/gepa-trajectory.jsonl`. **Run is fully resumable from this file at any point.** See §7.4.
 5. **Confirmation** — Top survivor re-evaluated on full 40 probes × 2 targets = 80 runs. Append to JSONL.
 6. **TARE-style selection gate** — Compute paraphrase-sharpness for the survivor on the task-only Maximin score (see §3.3). Selection uses dual objective: `final_score` AND `1 − sharpness`; token/call efficiency belongs in `final_score`, not in the sharpness variance measurement.
 7. **Pareto update** — Add survivor to front if it Pareto-dominates any incumbent on the joint two-objective space, AND passes the §3.7.1 step-11 0.15 accuracy-admission cap relative to the *displaced incumbent*.
 8. **Manual reflection checkpoint** — User reviews top 3 failures **separately per target** (per GPT-5.5 review §E2): the report distinguishes Sonnet-only failures, GPT-only failures, and joint failures (both targets ≤ 0.4). Logs decisions in `core/prompt-optimization/data/p7-decisions.md` (see §3.4).
 9. **Patience check** — If Δ`final_score`-best ≤ 1pp for 5 rounds, evaluate plateau-breakthrough rule (see below). If still flat, stop.
+
+**Screen-probe selection (2026-05-28 fix).** Screening MUST NOT use `probeSet.slice(0, 8)`. Gen-1's first eight probes were all C++/C# and made the screen a noisy lower bound for the full 10-language dev set. The driver now uses `selectScreenProbes()` to choose a deterministic, resume-safe mix across strata and languages. For targeted diagnostics, `--screen-probe-ids <csv>` can force a problem-probe screen, but promotion-quality comparisons should use the representative mixed selector.
 
 **Plateau-breakthrough rule** — When patience would trigger:
 
@@ -169,11 +171,11 @@ The mutation operator pool was substantially redesigned after Gemini 3.1 Pro Dee
 
 | ID | Operator | Mechanism | Why it's in the pool |
 |---|---|---|---|
-| OP-1 | **Reflective rewrite** (Kimi K2.6) | Reads N=5 failure traces from the candidate's worst probes (joint-score ≤ 0.4), proposes a targeted edit | GEPA's native operator. Workhorse. |
+| OP-1 | **Reflective rewrite** (Kimi K2.6) | Reads N=5 native-relative inefficiency traces first (low call/token desirability versus native rg+Read even when accuracy is correct), falling back to joint-score ≤ 0.4 failures only when efficiency data is unavailable. Proposes one targeted edit. | GEPA's native operator. Workhorse. After accuracy saturation, this keeps pressure on fewer tool calls and lower agent tokens instead of prompting prose bloat. |
 | OP-2 | **Contrastive Trajectory Crossover** (Kimi K2.6) | Find a probe where prompt A wins (≥0.8) and prompt B fails (≤0.4). Pass A's full tool-call trajectory + both prompts to Kimi + **the most recent manual-reflection hint as a hard negative constraint** (anti-schizophrenia per Gemini 2nd-pass §B3). **Trajectories MUST be target-tagged** (`target: 'sonnet'\|'gpt5_5'`) and the operator MUST identify whether the bottleneck is Sonnet-only, GPT-only, or joint (per GPT-5.5 review §B3 — anti-Sonnet-style import). When both targets have winning trajectories on the same probe, both are passed to Kimi as a **balanced pair** so the operator merges *behaviors compatible with both*, not just Sonnet's exploration cadence. When only one target has a winning trajectory, the operator is explicitly informed that the bottleneck is single-target and the other target needs different mechanism. Merge B's structural strengths with A's specific routing instructions, *while obeying the latest human-injected constraint*. | Empirically-grounded crossover. Compositional jumps grounded in actual agent behaviour, not abstract text similarity. **Replaces** the rejected latent-interp. |
-| OP-3 | **Persona / Constraint Pivot + AST-ification** (Sonnet 4.6 + rotated non-Anthropic generator per round) | Two-mode operator: (a) standard structural-format pivot (bullets → numbered lists, paragraphs → strict pseudocode layout) AND (b) **AST-ification of routing constraints** (per Gemini 2nd-pass §D1, with GPT-5.5 review §B4 fix): convert prose routing rules into pseudocode blocks **labelled `# routing policy pseudocode — NOT executable code` and prefer decision tables over fenced ```python``` for high-level routing**. GPT-5.5 can over-interpret fenced python as executable; explicit non-executable framing prevents this. LLMs process structured pseudocode at higher fidelity than dense English — fewer scope-ambiguity failures on conditional rules. Mode (a) is default; mode (b) fires on rounds where the candidate has ≥3 conditional routing rules in prose. **Generator rotation per GPT-5.5 review §C2**: Sonnet is default but every 3rd round uses Kimi K2.6 or GPT-5.5 to generate the pivot, so the family of paraphrase noise isn't single-Anthropic. | **Replaces** ja-pivot. 2026-era LLMs exhibit translation invariance. Format-pivot + pseudocode-routing guarantees surface variance, clear rule semantics, AND multi-family paraphrase distribution. |
+| OP-3 | **Persona / Constraint Pivot + compact router tables** (Sonnet 4.6 + rotated non-Anthropic generator per round) | Two-mode operator: (a) standard structural-format pivot (bullets / numbered lists / prose / compact tables) AND (b) **router-table consolidation**: convert scattered conditional routing rules into a compact table with columns such as `Query signal | First call | Follow-up | Stop condition`. Mode (b) explicitly forbids ASTs, procedure blocks, pseudocode blocks, flowcharts, and fenced code. Mode (a) is default; mode (b) fires when the candidate has ≥3 conditional routing rules in prose. **Generator rotation per GPT-5.5 review §C2**: Sonnet is default but every 3rd round uses Kimi K2.6 or GPT-5.5 to generate the pivot, so the family of paraphrase noise isn't single-Anthropic. | **Replaces** ja-pivot and supersedes AST-ification. The gen-1 evidence favours compact dispatch tables over executable-looking pseudocode: less bloat, fewer over-literal interpretations, and clearer first-call routing. |
 | OP-4 | **Tool-Signature Masking** (Kimi K2.6) | Temporarily alias `[[ss-search]] → [[TOOL_ALPHA]]`, `[[ss-find]] → [[TOOL_BETA]]`, `[[ss-semantic]] → [[TOOL_GAMMA]]`, `[[ss-trace]] → [[TOOL_DELTA]]` in the candidate. Ask Kimi to optimize the prompt so an agent could correctly use these tools *based only on prompt descriptions, not lexical priors*. After mutation, map names back. **Domain-stripping** (per Gemini 2nd-pass §A3 — anti-ghost-context-leak): the OP-4 reflector system prompt MUST also strip the words "code", "repository", "search", "semantic", "regex" and instead frame the task as "optimizing a generic database retrieval tool (TOOL_ALPHA), a regex-anchor lookup tool (TOOL_BETA), a vector-similarity tool (TOOL_GAMMA), and a graph-traversal tool (TOOL_DELTA)". Without this, the reflector hallucinates the domain back into surrounding context, defeating the masking. | **Cognitive forcing**: breaks the agent's reliance on pre-trained "search/find/semantic" lexical priors. Forces unambiguous self-contained tool descriptions. |
-| OP-5 | **The Pruner** (Kimi K2.6) | "Remove ~20% of words from this prompt without changing any operational rule, `[[token]]`, or behavioural expectation. Make it terse. **DO NOT alter the syntax, indentation, or logic of any pseudocode, `if/then` blocks, or fenced code blocks — restrict pruning to natural-language prose only.** This protects OP-3 AST-ified routing rules from accidental syntax destruction (per Gemini 3rd-pass §C1)." | **Bloat control.** GEPA's biggest failure mode is monotonic prompt inflation — reflectors add rules, never delete them. By round 20, prompts can balloon to 2,500+ tokens, diluting attention. Pruner provides downward pressure. Combined with the explicit length penalty in §3.7. The pseudocode-protection clause is critical because OP-3 AST-ification produces `if/then` routing blocks that "make it terse" would otherwise mangle (deleting `elif`, flattening indentation, dropping closing brackets). |
+| OP-5 | **The Pruner** (Kimi K2.6) | "Remove ~20% of words from this prompt without changing any operational rule, `[[token]]`, or behavioural expectation. Make it terse. Preserve any existing fenced examples byte-identically; otherwise prune natural-language prose and tables." | **Bloat control.** GEPA's biggest failure mode is monotonic prompt inflation — reflectors add rules, never delete them. By round 20, prompts can balloon to 2,500+ tokens, diluting attention. Pruner provides downward pressure. Combined with the explicit length penalty in §3.7. With OP-3 now producing compact router tables instead of pseudocode, pruning pressure should consolidate rows and duplicate prose rather than preserving large code-looking blocks. |
 
 **Per-round slot composition (3 mutations per round)**:
 
@@ -191,7 +193,7 @@ Retrieval-Induced Forgetting (RIF) is a known cognitive-LLM failure mode: in lon
 
 **Mitigation**: T2, T8, T13, T14, T15 seed variants explicitly include the structural rule:
 
-> "Before your 3rd tool call (or before your final answer, whichever comes first), you MUST output a `<state_summary>` block containing exactly: (1) one sentence summarising what you've established so far, (2) one sentence stating your current blind spot or open question."
+> "Before your third sweet-search query in the current search iteration (we can have multiple search iterations in a session) — or before your final answer, whichever comes first, you MUST output a `<state_summary>` block containing exactly: (1) one sentence summarising what you've established so far, (2) one sentence stating your current blind spot or open question."
 
 This forces the LLM to re-attend to the core objective mid-trajectory, breaking late-turn hallucination drift. It's NOT a mutation operator — it's a content rule available for the reflector to inject when failures show late-turn drift patterns. After round 5, if Gemini Deep Think's reflection (§3.4) flags "agent forgot the routing rules in turn 4+", the reflector can be hinted to add the `<state_summary>` rule to the candidate.
 
@@ -345,7 +347,7 @@ If the prompt fails the OOD gate, that's diagnostic — the GEPA loop overfit th
 Reasoning-mode behavior diverges from non-reasoning in ways the loop cannot observe:
 
 1. **Tool-call cadence shifts** — reasoning models pre-plan, often using fewer but more deliberate calls. EAS per-stratum windows (`multi-file-flow: [3, 6]`) calibrated on non-reasoning may misfire.
-2. **Routing rules may be ignored** — reasoning models sometimes derive routing from first principles, skipping the prompt's prescriptions. AST-ified `if/then` blocks help less when the model is doing its own decomposition.
+2. **Routing rules may be ignored** — reasoning models sometimes derive routing from first principles, skipping the prompt's prescriptions. Compact router tables help only if the reasoning model chooses to consult them.
 3. **Stateful-summarization (anti-RIF) becomes redundant or harmful** — reasoning models manage their own working memory; our rule may conflict.
 4. **Pruner-driven length cuts may hurt more** — reasoning-on benefits from richer context to ground its planning; an over-aggressively-pruned prompt may starve the planner.
 
@@ -850,6 +852,62 @@ A second external review (GPT-5.5 / Codex) on the consumer-clean commit surfaced
 
 **DONE (2026-05-25) — `[[expectedFiles]]` / `[[expectedSymbols]]` / `[[expectedFacts]]` removed from the prompt bodies.** Round 2 deferred this as a risky cross-cutting *rename*, but that conflated two separable things. The consumer-facing problem is only the **prompt-body tokens** (the sole place the production agent sees them); those are now reworded to consumer language across all 15 (§4.5 item 6). The **internal gold-field names** are deliberately KEPT as `expectedFiles` in `ProbeSchema`, `buildJudgeUserPrompt`, and every probe JSON — the production agent never sees them (only the judge does), so no schema/data/JSON rename was performed and the original regression risk does not apply. `token-validator.mjs` matches `[[...]]` by shape (`PROTECTED_TOKEN_RE`), not a name list, so it was unaffected; `KNOWN_TOKEN_NAMES` was tightened to forbid the tokens' return. Full P7 suite green (1147).
 
+### §4.6 Gen-1b restart scaffold after round-10 analysis (2026-05-28)
+
+Gen-1 reached an accuracy-saturated front where the remaining objective is native-relative efficiency: fewer tool calls, fewer agent work tokens, and faster sufficient-evidence stopping. The restart path is intentionally explicit rather than silently mutating the historical gen-1 run:
+
+1. **Normalize the current Pareto front** by stripping any outer markdown fences from incumbent prompts. This addresses the observed fence artifact: fenced whole-prompt bodies can be interpreted as inert/code-like text by host agents and make OP-5 preserve the entire prompt as a protected fenced block.
+2. **Append three new hand seeds** focused on the actual stable failures: exact-anchor-first routing (`[[ss-grep]]` / `[[ss-find]]` before `[[ss-search]]`), fast no-match termination, and trace-first multi-file flow after an anchor.
+3. **Ablate the normalized front plus the three seeds on the full 40 dev probes** before starting any new GEPA rounds. This creates a clean gen-1b front from comparable measurements rather than patching stale gen-1 scores.
+4. **Use representative mixed screening** for later rounds. Problem-probe screens are useful diagnostics, but they should not be the default selection screen because they overfit the mutation operator to known pain points.
+
+Implementation scaffolding:
+
+```bash
+# Dry plan only; does not write and does not start a run.
+node core/prompt-optimization/sweep/gepa-restart-scaffold.mjs \
+  --from-run p7-gen1-20260526-v3
+
+# When ready, materialise the restart T_i slate.
+node core/prompt-optimization/sweep/gepa-restart-scaffold.mjs \
+  --from-run p7-gen1-20260526-v3 \
+  --out-dir core/prompt-optimization/data/p7-variant-restarts/p7-gen1b-normalized \
+  --write
+
+# Later, after review/preflight, a real run can consume the slate with:
+node core/prompt-optimization/sweep/gepa-cli.mjs \
+  --variants-dir core/prompt-optimization/data/p7-variant-restarts/p7-gen1b-normalized \
+  --probes core/prompt-optimization/data/p7-dev-probes.json \
+  --native-baseline core/prompt-optimization/data/frozen/p7-native-rg-read-baseline.json
+```
+
+**Cache/control note.** Prompt-cache effects can dominate native-relative token measurements when candidate runs are interleaved differently. Treat any winner promoted by a rerun amendment as provisional until it is remeasured under the same harness path, concurrency, and candidate ordering as its peers. Keep concurrency modest enough that identical-prefix Sonnet calls can benefit from cache writes before the next batch fans out; avoid mixing a cold full-front ablation with a warm single-candidate rerun when comparing final scores.
+
+#### §4.6.1 Round-0 seed ablation gate (mandatory before any gen-1b evolutionary round)
+
+The normalized front, the three hand seeds, and the pruner-placeholder seed (`source_id: pruner-placeholder-joint-best`) are **hypotheses until measured on the dev set under one consistent harness path**. Their `expected_strengths` / `expected_weaknesses` frontmatter records intent, **not** a fitness signal. Mutation operators must never be allowed to select a parent whose only support is its frontmatter — this is the GEPA analogue of training-on-the-test-set.
+
+Before the first OP-1/OP-2/OP-3/OP-4/OP-5 mutation in gen-1b:
+
+1. **Run a full 40-probe dev-set measurement** on every variant in the restart slate (normalized front + 3 hand seeds + pruner placeholder, plus `p7-native-baseline-dev-3panel.json` for native-relative scoring). Use a single concurrency setting, a single ordering, and a single cold start so that prompt-cache, rate-limit bucketing, and TARE adversarial paraphrases are comparable across candidates.
+2. **Do NOT inspect held-out probes** during this ablation, per CLAUDE.md benchmark methodology. The 40-probe dev set is the only signal the ablation may use.
+3. **Admit seeds and front members to the gen-1b Pareto front by measured `finalScore` only.** Drop any candidate whose measured finalScore is below the worst kept member by more than the gen-1b admission cap (default 0.15, same as gen-1). Hand-authored seeds that score below the worst gen-1 incumbent are evicted before evolution starts.
+4. **Record the ablation as the gen-1b round-0 trajectory event** so the round-1 driver replays from a frozen ground truth. The pruner-placeholder seed in particular MUST survive this gate on its own measured finalScore — its `unverified-until-round-0-ablation` tag is a launch-blocker, not a soft warning.
+
+If the pruner-placeholder fails the gate, do NOT start round 1 with it on the front. Either (a) run a single live OP-5 invocation against the joint-best prompt (one screen pass, ~$3, ~10 min), re-add the OP-5 output as a fresh seed, and re-run the ablation; or (b) drop the slot and start gen-1b with three seeds instead of four. The driver MUST refuse to launch evolutionary rounds without all admitted seeds carrying a measured finalScore.
+
+#### §4.6.2 Stale per-event trajectory scores after surgical reruns
+
+The 2026-05-27 round-7 surgical rerun and the 2026-05-28 joint-best per-probe persistence repair both updated aggregates in `pareto-current.json` but **left the original confirm events in `gepa-trajectory.jsonl` with their pre-correction `final_score` values intact**. Corrected confirm events were appended with a `_repair_rerun` field and (from 2026-05-28 onward) an explicit `corrected: true` flag plus a `supersedes` natural-key block — they do not destructively rewrite the originals.
+
+**Authoritative sources for front-member scores:**
+
+- `pareto-current.json` is the single source of truth for any member's `finalScore`, `score_sonnet`, `score_gpt5_5`, `sharpnessScore`, and per-probe `scores` / `detail`.
+- `gepa-trajectory.jsonl` is the source of truth for the *event stream* (mutations, screens, confirms, TARE, pareto-update, mutation-rejection). For confirm events specifically: when both an original and a `corrected: true` (or `_repair_rerun`-tagged) confirm exist for the same `(round, mutation_hash, probe_id, target)` tuple, the corrected event supersedes the original. Any analysis tool that reads trajectory MUST deduplicate by that natural key, preferring corrected events.
+- `gepa-restart-scaffold.mjs` reads `pareto-current.json` only — it never derives front scores from trajectory. This is enforced by a comment in `loadParetoForRestart()`.
+
+Existing on-disk events from before 2026-05-28 carry only the `_repair_rerun` marker (no explicit `corrected: true`). Treat both markers as equivalent for dedup.
+
 ---
 
 ## §5 Probe set authoring
@@ -1085,7 +1143,7 @@ The work breakdown:
 | AI-assisted reflection runner (Gemini Deep Think round-end calls) | `core/prompt-optimization/sweep/p7-reflect.mjs` (new) | 0.25 day |
 | Decision log scaffold | `core/prompt-optimization/data/p7-decisions.md` template | 1 hr |
 | **EAS efficiency-adjusted scoring** + **0.15 Pareto-admission constraint** + **Round-11 Pareto re-baseline** (per Gemini 2nd-pass) | inline in gepa.mjs | 0.5 day |
-| **OP-3 AST-ification** sub-mode of Persona Pivot | inline in op-persona-pivot.mjs | 0.25 day |
+| **OP-3 compact router-table** sub-mode of Persona Pivot | inline in op-persona-pivot.mjs | 0.25 day |
 | **OP-4 domain-stripping** for Tool-Signature Masking | inline in op-tool-mask.mjs | 0.25 day |
 | **OP-2 reflection-hint-as-constraint** (anti-schizophrenia) | inline in op-trajectory-crossover.mjs | 0.25 day |
 | **Stateful summarization rule** baked into T2/T8/T13/T14/T15 seed variants | content of variant files | included in authoring |
@@ -1098,16 +1156,19 @@ The work breakdown:
 | **Token-validator multiplicity + unmapped-alias + surplus-token rejection** + tests (per GPT-5.5 review §B5) | extend `token-validator.mjs` | 0.25 day |
 | **Per-target per-stratum EAS + evidence-adequacy penalty** (per GPT-5.5 review §B1) | inline in `eas.mjs` | 0.5 day |
 | **Native rg+Read baseline loader + native-relative desirability objective** (accuracy / calls / tokens; §3.7.1 and §6.2.2) | `eas.mjs`, `gepa-scoring.mjs`, `gepa-cli.mjs`, `gepa-finalize.mjs` | 0.5 day |
+| **OP-1 inefficiency trace extractor** (native-relative calls/tokens before accuracy failures) | `gepa-scoring.mjs`, `gepa-mutate.mjs`, `gepa.mjs` | 0.25 day |
+| **Representative mixed screen selector** (language/stratum mix + optional diagnostic `--screen-probe-ids`) | `gepa-screening.mjs`, `gepa.mjs`, `gepa-cli.mjs` | 0.25 day |
+| **Normalized restart seed scaffold** (strip outer fences, append three efficiency seeds, load via `--variants-dir`) | `gepa-restart-scaffold.mjs`, `variant-loader.mjs`, `gepa-cli.mjs` | 0.25 day |
 | **Pareto admission cap relative to displaced incumbent** (per GPT-5.5 review §C1) | inline in `gepa.mjs` | 0.25 day |
 | **OP-2 target-tagged trajectory ingestion + balanced-pair logic** (per GPT-5.5 review §B3) | inline in `op-trajectory-crossover.mjs` | 0.25 day |
-| **OP-3 generator rotation (Sonnet/Kimi/GPT-5.5) + non-executable pseudocode labelling** (per GPT-5.5 review §C2/§B4) | inline in `op-persona-pivot.mjs` | 0.25 day |
+| **OP-3 generator rotation (Sonnet/Kimi/GPT-5.5) + compact router-table consolidation** (per GPT-5.5 review §C2/§B4, revised after gen-1) | inline in `op-persona-pivot.mjs` | 0.25 day |
 | **Correctness-weighted SCS** + minimum-paraphrase-accuracy gate (per GPT-5.5 review §C3) | inline in `scs.mjs` | 0.25 day |
 | **Hard-negative weighting noise floor + 2-round stability gate** (per GPT-5.5 review §C5) | inline in `gepa.mjs` | 0.25 day |
 | **Forensic-metadata JSONL extension** (per GPT-5.5 review §D4) | inline in `gepa.mjs` + `judge-runner.js` | 0.5 day |
 | **Multi-family agent-query degrader + cross-model emitter** (Sonnet/Opus/GPT-5.5/MiMo/Qwen; per GPT-5.5 review §C4, re-scoped §3.6.1) | `agent-query-degrader.mjs` | 0.5 day |
 | **OpenAI tier ≥ 2 pre-flight check** (per GPT-5.5 review §D1) | inline in `p7-preflight.mjs` | 0.25 day |
 | **Reasoning-mode operational HOMP runner** (Sonnet thinking-ON + GPT-5.5 reasoning over held-out probes; §3.5.2 — user catch) | `core/prompt-optimization/sweep/p7-reasoning-homp.mjs` (new) | 0.5 day |
-| **Total** | | **~14.5 days** |
+| **Total** | | **~15.5 days** |
 
 ### §7.4 Persistence + resume — MANDATORY
 
@@ -1474,7 +1535,7 @@ tests/unit/prompt-optimization/
 ├── p7-tare.test.js                           (sharpness computation)
 ├── p7-scs.test.js                            (Semantic Consistency Score)
 ├── p7-trajectory-crossover.test.js          (OP-2 reflection-hint-as-constraint behavior)
-├── p7-persona-pivot.test.js                  (OP-3 + AST-ification + token validator)
+├── p7-persona-pivot.test.js                  (OP-3 + compact router tables + token validator)
 ├── p7-tool-mask.test.js                      (OP-4 + domain-stripping reflector prompt)
 ├── p7-eas.test.js                            (efficiency factor + length penalty + admission)
 ├── p7-pareto-rebaseline.test.js              (Round-11 re-baselining math)
@@ -1531,8 +1592,8 @@ tests/unit/prompt-optimization/
 | **Single-family TARE / query-degradation distribution** (GPT-5.5 review §C2/§C4) | Sonnet-only paraphrase generation tests Anthropic-style robustness only. | Mitigated by TARE K=3 requiring ≥1 non-Anthropic paraphrase + OP-3 generator rotation Sonnet/Kimi/GPT-5.5 + §3.6.1 agent-query degradation across 5 families (Sonnet/Opus/GPT-5.5/MiMo/Qwen) incl. natural cross-model emission. |
 | **n=6 Pareto noise overweighted as discriminative variance** (GPT-5.5 review §C5) | Small-front variance can be judge-noise rather than probe difficulty. | Mitigated by 2-round stability gate (variance only counts after probe evaluated ≥2 rounds) + judge-noise floor of 0.05 in §3.1 weighting. |
 | **Forensic-metadata gap in JSONL telemetry** (GPT-5.5 review §D4) | Without model_id/api_path/temperature/commit/probe_hash/token_counts/judge_panel logged, post-hoc explanation of GPT-vs-Sonnet deltas is impossible. | Mitigated by extending confirm-event schema (§7.4) to log all forensic metadata. |
-| **Fenced-python pseudocode over-literally interpreted** (GPT-5.5 review §B4) | GPT-5.5 may treat ```python``` blocks as executable examples rather than routing-policy pseudocode. | Mitigated by labelling pseudocode blocks `# routing policy pseudocode — NOT executable code` and preferring decision tables for high-level routing. |
-| **Reasoning-mode transfer gap — power users run thinking ON; we optimise OFF** (user catch, post-GPT-review) | Optimization runs against `extended-thinking=OFF` Sonnet and `GPT-5.5-instant` (non-reasoning) for cost and production-default parity. Power users — disproportionately the prompt-quality-sensitive cohort — flip thinking ON. EAS per-stratum windows, AST-ified routing, stateful-summarization rules, and Pruner-driven length cuts all may misfire under reasoning. | Mitigated by §3.5.2 reasoning-mode operational HOMP gate: 60 runs (~$12) on Sonnet+thinking-ON and GPT-5.5-reasoning over the 30 held-out probes. Pass criterion ≥0.7× `final_score` per class. Fail → ship-with-caveat OR §3.7.3 fork to reasoning-as-5th-objective extension run (~$80). Validates transfer, doesn't optimise for it — accepted cost/insurance trade. |
+| **Code-looking routing blocks over-literally interpreted** (GPT-5.5 review §B4, revised after gen-1) | GPT-5.5 may treat fenced code or pseudocode as executable examples instead of routing policy, and OP-5 may preserve them too aggressively. | Mitigated by replacing OP-3 AST-ification with compact router tables and forbidding AST/procedure/pseudocode/fenced-code outputs in mode b. |
+| **Reasoning-mode transfer gap — power users run thinking ON; we optimise OFF** (user catch, post-GPT-review) | Optimization runs against `extended-thinking=OFF` Sonnet and `GPT-5.5-instant` (non-reasoning) for cost and production-default parity. Power users — disproportionately the prompt-quality-sensitive cohort — flip thinking ON. EAS per-stratum windows, compact router tables, stateful-summarization rules, and Pruner-driven length cuts all may misfire under reasoning. | Mitigated by §3.5.2 reasoning-mode operational HOMP gate: 60 runs (~$12) on Sonnet+thinking-ON and GPT-5.5-reasoning over the 30 held-out probes. Pass criterion ≥0.7× `final_score` per class. Fail → ship-with-caveat OR §3.7.3 fork to reasoning-as-5th-objective extension run (~$80). Validates transfer, doesn't optimise for it — accepted cost/insurance trade. |
 
 ---
 
@@ -1615,7 +1676,7 @@ After integrating the first-pass critique, we asked Gemini 3.1 Pro Deep Think fo
 | **Frankenstein-prompt language overfit (JS/Go/Py/Rs/TS) — silent regression on Java/C++/C#** | HIGH | §3.5.1, §10 | Added **language-transfer HOMP probe set**: 10 Java probes (post-cutoff repo), Sonnet-only, ≥0.6 score required to ship. |
 | **Brittle to lazy/degraded production user queries** | MEDIUM | §3.6.1, §10 | Added lazy-user robustness pivot: degraded-query versions of dev probes; ≤20% score drop required. |
 | **RIF (Retrieval-Induced Forgetting) drift in late-turn trajectories** | MEDIUM | §3.2.3, §10 | Stateful-summarization rule baked into T2/T8/T13/T14/T15 seed variants. |
-| **Idea: Length penalty (already in §3.7.1 now made explicit) + AST-ification of routing rules** | NEW | §3.2 (OP-3 row), §3.7.1 | OP-3 Persona Pivot now includes AST-ification sub-mode (rules expressed as decision trees / regex skeletons). |
+| **Idea: Length penalty (already in §3.7.1 now made explicit) + structured routing rules** | NEW | §3.2 (OP-3 row), §3.7.1 | Initially integrated as AST-ification; revised after gen-1 to compact router-table consolidation because it is shorter and less code-looking. |
 | **Idea: Distractor probes catching answer-shape-overfit, not just answer-content-overfit** | NEW | §5.6 | Added 5 poisoned/distractor probes in dev set. |
 
 **Cost impact of 2nd-pass integrations**: +$10 (Round-11 re-baseline $5, language-transfer HOMP $0.50, lazy-user pivot $4, adversarial counter-probes $1, distractor probes covered by existing dev-probe budget). New total: ~$320, hard cap $420.
@@ -1638,7 +1699,7 @@ After integrating both prior passes, we asked Gemini for a third-pass review wit
 
 | Gemini 3rd-pass finding | Severity | Section affected | Change |
 |---|---|---|---|
-| **OP-5 Pruner can mangle OP-3 AST-ified pseudocode** ("make it terse" deletes `elif`, flattens indentation, drops brackets) | LOW | §3.2 (OP-5 row) | Pruner system prompt now explicitly says: *"Do NOT alter syntax/indentation/logic of any pseudocode or fenced code blocks — restrict pruning to natural-language prose only."* |
+| **OP-5 Pruner can mangle structured routing blocks** ("make it terse" deletes conditions or table rows) | LOW | §3.2 (OP-5 row) | OP-3 now uses compact router tables instead of pseudocode; OP-5 preserves fenced examples and prunes redundant prose/table rows without changing operational rules. |
 | **Dev set is 40% adversarial trick probes** (7 pathology + 3 distractor / 25 = 40%, exceeds the 30% representativeness cap; agent over-evolves toward paranoia at the cost of literal-lookup baseline) | MEDIUM | §5.1, §5.3, §5.5 | Moved 3 pathology probes to rotation pool. Dev set now has 4 pathology + 3 distractor = 7 trick / 25 = 28%. Rotation pool grew 10 → 13, with 3 deferred-pathology probes guaranteed-promoted at round 11. |
 | **JSONL rejection telemetry missing** (Pareto rejections will look like black-box hallucinations on Wednesday morning when EAS/length/0.15-cap interact) | MEDIUM | §7.4 | Added explicit `_kind: 'pareto-rejection'` event with `reason`, `target_degraded`, `drop`, `incumbent_being_compared`. `_kind: 'confirm'` now logs full EAS modifier breakdown (raw scores, multiplier, length penalty, final). New `_kind: 'pareto-rebaseline'` event for round-11. |
 
@@ -1657,7 +1718,7 @@ After Gemini's three-pass ship-it verdict, we commissioned an external review by
 | GPT-5.5 review finding | Severity | Section affected | Change |
 |---|---|---|---|
 | **D1: Concurrency math wrong — TPM is the binding constraint, not RPM** (Tier 1 GPT-5.5: 30 calls × 12K tokens = 360K in flight = 12× over 30K TPM, would 429-storm minute-one) | CRITICAL | §7.7, §7.5 | Replaced RPM-only ceiling with TPM-aware token-bucket: `min(RPM, ITPM/in, OTPM/out)`. Added pre-flight tier check that flags Tier 1 as operationally insufficient (recommends $50 Tier 2 upgrade — cuts wall-time from ~12 days to ~2 days). |
-| **D3: Stale rejected-plan residue** (joint-mean references throughout, ja-pivot/latent-interp in §2.1 roles, §13 day-3 still says "implement latent-interp + ja-pivot", logging examples reference dead operators) | CRITICAL | §1, §2.1, §2.3, §3.1, §3.4, §3.5, §3.5.1, §3.6, §3.6.1, §7.6, §13 | All stale references replaced with the then-current Maximin × EAS final_score formula and current operator names (trajectory-crossover, persona-pivot+AST-ification). §11.6 later supersedes the live scalar objective with native-relative scoring. |
+| **D3: Stale rejected-plan residue** (joint-mean references throughout, ja-pivot/latent-interp in §2.1 roles, §13 day-3 still says "implement latent-interp + ja-pivot", logging examples reference dead operators) | CRITICAL | §1, §2.1, §2.3, §3.1, §3.4, §3.5, §3.5.1, §3.6, §3.6.1, §7.6, §13 | All stale references replaced with the then-current Maximin × EAS final_score formula and current operator names (trajectory-crossover, persona-pivot; OP-3 later revised from AST-ification to compact router tables). §11.6 later supersedes the live scalar objective with native-relative scoring. |
 | **C1: 0.15 cap utopia-point bug** (Gemini's own fix introduced the bug — comparing to per-target Pareto MAXIMA rejects genuinely joint-improving candidates that fall under different specialist incumbents) | CRITICAL | §3.7.1 step 11 | Cap baseline now relative to the **displaced incumbent** (or current joint-best when not displacing), NOT global per-target Pareto maxima. Worked example showing V_C=(0.75, 0.85) correctly admitted instead of incorrectly rejected. |
 | **B2: Java HOMP omits GPT-5.5** (direct Sonnet bias — only Sonnet validates language-transfer despite GPT-5.5 being a production target) | CRITICAL | §3.5.1 | Added GPT-5.5 to the language-transfer probe runners: 10 probes × 3 evaluations (MiMo + Sonnet + GPT-5.5). Pass criterion now requires ≥0.6 Maximin on BOTH targets. +$0.50 cost. |
 | **B1: EAS asymmetric — penalizes over-exploration but not under-exploration** (Sonnet-style gluttony penalised, GPT-5.5-style early-stop rewarded) | HIGH | §3.7.1 step 4 | Replaced global averaged formula with per-target, per-stratum expected-call windows + evidence-adequacy penalty for unsupported final answers. EAS aggregated as `min` across targets to be Maximin-consistent. |
@@ -1669,7 +1730,7 @@ After Gemini's three-pass ship-it verdict, we commissioned an external review by
 | **C2: TARE paraphrases are Sonnet-only** (single-family paraphrase distribution) | MEDIUM | §3.3, §2.1 | TARE K=3 must include ≥1 non-Anthropic paraphrase (deterministic structural OR Kimi/GPT-5.5). OP-3 generator rotates Sonnet → Kimi → GPT-5.5 every 3rd round. |
 | **C4: Lazy-user generator is Sonnet-only** (Sonnet's notion of "tired developer" phrasing biases the degradation distribution) | MEDIUM | §3.6.1 | Multi-source degradation: 10 deterministic templates + 8 Sonnet-generated + 7 GPT-5.5-generated. Pass criterion now per-target (not joint) so target-asymmetric brittleness is detectable. |
 | **C5: Hard-negative weighting can overweight noise at small Pareto front (n=6)** | MEDIUM | §3.1 | Added 2-round stability gate (variance only counts after a probe has been evaluated ≥2 rounds) + judge-noise floor of 0.05. |
-| **B4: Fenced python pseudocode can be over-literally interpreted** (GPT-5.5 may treat fenced ```python``` blocks as executable examples) | LOW | §3.2 (OP-3 row) | OP-3 AST-ification now labels blocks `# routing policy pseudocode — NOT executable code` and prefers decision tables for high-level routing. |
+| **B4: Fenced python pseudocode can be over-literally interpreted** (GPT-5.5 may treat fenced ```python``` blocks as executable examples) | LOW | §3.2 (OP-3 row) | Initially mitigated with labels; revised after gen-1 to avoid pseudocode entirely in OP-3 mode b and use compact router tables. |
 
 **Cost impact of GPT-5.5 review integrations**: +$1 (Java HOMP for GPT-5.5 +$0.50, GPT-5.5 lazy-user generator +$0.30 amortized, GPT-5.5 OP-3 rotation +$0.20 amortized). New total: **~$321, hard cap $420**.
 
@@ -1720,7 +1781,7 @@ All locked. Ready for `prereg/p7-v1` tag.
 1. **Now**: review this PHASE7.md; resolve the 7 open questions in §12.
 2. **Day 1**: author T1–T15 seeds (P6-grounded per §4.2, consumer-clean per §4.5) + dev / held-out / vault probes across 10 in-distribution languages + 40 OOD language-transfer probes across 8 languages (per §5.0/§5).
 3. **Day 2**: implement direct-API runners (Anthropic, OpenAI, Moonshot, MiniMax, MiMo, Qwen-DashScope) + Gemini Embedding 2 client. Unit-test the `[[token]]` preservation.
-4. **Day 3**: implement GEPA driver + Pareto-gated TARE + the 5-operator portfolio (OP-1 reflective, OP-2 trajectory-crossover with target-tagging, OP-3 persona-pivot+AST-ification with rotated generators + non-executable labelling, OP-4 tool-mask with domain-stripping, OP-5 Pruner with pseudocode-protection). Implement native-relative scoring against a frozen rg+Read baseline, EAS diagnostics/fallback (per-target per-stratum + evidence-adequacy), 0.15 admission cap (relative to displaced incumbent), TPM-aware token-bucket scheduler, persistence/resume with `fs.fsyncSync`, full-metadata JSONL telemetry (§7.4), pre-flight checklist (§7.5), verbose logger (§7.6). Unit-test crash-resume + token-validator multiplicity/alias gates.
+4. **Day 3**: implement GEPA driver + Pareto-gated TARE + the 5-operator portfolio (OP-1 reflective with inefficiency traces, OP-2 trajectory-crossover with target-tagging, OP-3 persona-pivot+compact-router-table mode with rotated generators, OP-4 tool-mask with domain-stripping, OP-5 Pruner). Implement native-relative scoring against a frozen rg+Read baseline, EAS diagnostics/fallback (per-target per-stratum + evidence-adequacy), 0.15 admission cap (relative to displaced incumbent), TPM-aware token-bucket scheduler, persistence/resume with `fs.fsyncSync`, full-metadata JSONL telemetry (§7.4), pre-flight checklist (§7.5), verbose logger (§7.6), mixed screen selection, and restart scaffolding. Unit-test crash-resume + token-validator multiplicity/alias gates.
 5. **Day 4**: dry-run on 3 probes × 1 round to validate end-to-end (cost: ~$1). Fix bugs.
 6. **Day 5**: generate/freeze the native rg+Read baseline file (§6.2.2), tag `prereg/p7-v1`, push, and run the pre-flight script. If it fails, fix and re-tag before any GEPA spend.
 7. **Days 6–8**: run full GEPA (joint Sonnet 4.6 + GPT-5.5-instant) with `--native-baseline`. Manual reflection between rounds. Trajectory written to disk continuously — resumable.

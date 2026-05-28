@@ -2,10 +2,12 @@
  * Phase 7 — GEPA mutation orchestration (§3.2).
  *
  * OP-1 Reflective rewrite lives HERE (inline), per the wave-2 spec: it reads up
- * to N=5 worst-probe failure traces (joint ≤ 0.4) and asks Kimi K2.6 for a
- * single targeted edit, validated by the LANDED token-validator. OP-2..OP-5 are
- * delegated to their landed operator modules. The TARE adversarial paraphraser
- * also lives here (Sonnet 4.6, §3.3 step 3a).
+ * to N=5 worst-probe traces and asks Kimi K2.6 for a single targeted edit,
+ * validated by the LANDED token-validator. On mature fronts these traces are
+ * efficiency-focused (native-relative calls/tokens), falling back to accuracy
+ * failures only when no efficiency data exists. OP-2..OP-5 are delegated to
+ * their landed operator modules. The TARE adversarial paraphraser also lives
+ * here (Sonnet 4.6, §3.3 step 3a).
  *
  * Every model call goes through the injectable `callModel` seam
  * (default = judge-runner.runJudge; tests pass a deterministic stub) so this
@@ -24,9 +26,11 @@ import { runPruner } from './op-pruner.mjs';
 export const REFLECTIVE_SYSTEM_PROMPT_BASE =
   'You are an expert prompt engineer performing a reflective rewrite of an ' +
   'agent system prompt for an agentic code-search tool. You will be shown the ' +
-  'current prompt and up to 5 failure traces (probes where the JOINT score ' +
-  'across both target models was <= 0.4). Diagnose the single dominant failure ' +
-  'pattern and propose ONE targeted edit that addresses it.\n\n' +
+  'current prompt and up to 5 traces. These traces usually show probes where ' +
+  'the answer was correct but the agent wasted tool calls or tokens versus a ' +
+  'native rg+Read baseline; they may fall back to low-accuracy failures when ' +
+  'needed. Diagnose the single dominant inefficiency or failure pattern and ' +
+  'propose ONE targeted edit that addresses it.\n\n' +
   '## Hard constraints\n' +
   '- Tokens wrapped in [[ ]] are PROTECTED: output them character-for-character ' +
   'with NO whitespace inside the brackets, at the SAME multiplicity as the ' +
@@ -73,27 +77,41 @@ export function buildTokenContract(candidate) {
 
 /**
  * Build the OP-1 reflective system + user prompt from a candidate + its worst
- * failure traces (from gepa-scoring.topFailures). The system prompt is the
+ * inefficiency/failure traces. The system prompt is the
  * BASE preamble plus a per-candidate TOKEN PRESERVATION CONTRACT block listing
  * every [[token]] with its exact required multiplicity (§3.2.1).
  */
 export function buildReflectivePrompt({ candidate, failures }) {
   const traceBlocks = (failures || [])
     .slice(0, 5)
-    .map((f, i) =>
-      `### Failure ${i + 1} — probe ${f.probeId} ` +
-      `(${f.stratum ?? '?'} / ${f.repo ?? '?'}) joint=${f.jointScore}\n` +
-      `Query: ${f.query ?? '(unknown)'}\n` +
-      `Tool calls: ${JSON.stringify(f.toolCalls ?? [])}\n` +
-      `Agent answer: ${f.answer ?? '(none)'}\n` +
-      `Expected files: ${JSON.stringify(f.expectedFiles ?? [])}`,
-    )
+    .map((f, i) => {
+      const nativeLine = typeof f.nativeRelativeOverall === 'number'
+        ? `Native-relative: overall=${f.nativeRelativeOverall.toFixed(3)} ` +
+          `accuracy=${f.desirability?.accuracy?.toFixed?.(3) ?? '?'} ` +
+          `calls=${f.desirability?.calls?.toFixed?.(3) ?? '?'} ` +
+          `tokens=${f.desirability?.tokens?.toFixed?.(3) ?? '?'}; ` +
+          `calls ${f.calls ?? '?'} vs native ${f.nativeCalls ?? '?'}; ` +
+          `tokens ${f.tokensForScoring ?? f.tokens ?? '?'} vs native ${f.nativeTokensForScoring ?? f.nativeTokens ?? '?'}\n`
+        : (typeof f.callDeviation === 'number'
+            ? `Efficiency: calls=${f.calls ?? '?'} callDeviation=${f.callDeviation}; tokens=${f.tokens ?? '?'}\n`
+            : '');
+      return (
+        `### Trace ${i + 1} — probe ${f.probeId} ` +
+        `(${f.stratum ?? '?'} / ${f.repo ?? '?'}) joint=${f.jointScore}\n` +
+        `Target: ${f.target ?? '?'}\n` +
+        nativeLine +
+        `Query: ${f.query ?? '(unknown)'}\n` +
+        `Tool calls: ${JSON.stringify(f.toolCalls ?? [])}\n` +
+        `Agent answer: ${f.answer ?? '(none)'}\n` +
+        `Expected files: ${JSON.stringify(f.expectedFiles ?? [])}`
+      );
+    })
     .join('\n\n');
 
   const userPrompt =
     `## Current prompt\n\`\`\`\n${candidate}\n\`\`\`\n\n` +
-    `## Worst failures (joint <= 0.4)\n${traceBlocks || '(none provided — propose a general robustness edit)'}\n\n` +
-    `Rewrite the prompt to address the dominant failure pattern. Output only the new prompt:`;
+    `## Worst inefficiency/failure traces\n${traceBlocks || '(none provided — propose a compact routing edit that reduces calls/tokens without harming accuracy)'}\n\n` +
+    `Rewrite the prompt to address the dominant inefficiency or failure pattern. Output only the new prompt:`;
 
   const systemPrompt = REFLECTIVE_SYSTEM_PROMPT_BASE + buildTokenContract(candidate);
   return { systemPrompt, userPrompt };

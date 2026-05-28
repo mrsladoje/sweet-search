@@ -48,6 +48,17 @@ describe('gepa-cli parseArgs — smoke-trim flags', () => {
     expect(parseArgs(['--probes', 'dev.json', '--skip-finalize']).skipFinalize).toBe(true);
     expect(parseArgs(['--probes', 'dev.json']).skipFinalize).toBeUndefined();
   });
+
+  it('parses restart/customization flags without starting a run', () => {
+    const o = parseArgs([
+      '--probes', 'dev.json',
+      '--variants-dir', 'core/prompt-optimization/data/p7-variant-restarts/p7-gen1b-normalized',
+      '--screen-probe-ids', 'cpp-004,ruby-008,kotlin-009',
+    ]);
+    expect(o.variantsDir).toMatch(/p7-gen1b-normalized/);
+    expect(o.screenProbeIds).toEqual(['cpp-004', 'ruby-008', 'kotlin-009']);
+    expect(() => parseArgs(['--screen-probe-ids', ',,,'])).toThrow(/screen-probe-ids/);
+  });
 });
 
 describe('withMutatorCallDefaults — Kimi reasoning timeout (B2)', () => {

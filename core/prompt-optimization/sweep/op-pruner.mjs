@@ -2,13 +2,12 @@
  * Phase 7 — OP-5 The Pruner (§3.2, Gemini 3rd-pass §C1).
  *
  * Removes ~20% of PROSE-ONLY content from the candidate while preserving every
- * [[token]], every operational rule, and every pseudocode/fenced block.
+ * [[token]], every operational rule, and every protected fenced/router block.
  *
- * Fenced/pseudocode-block survival is ENFORCED, not merely prompted (M11): every
- * triple-backtick fenced block and every `# routing policy pseudocode` block from
- * the source must reappear byte-identically in the model output, or the mutation
- * is rejected with reason `fenced-block-altered`. This guards OP-3 AST-ified
- * routing rules from a model that preserves [[token]]s but mangles indentation.
+ * Protected-block survival is ENFORCED, not merely prompted (M11): every
+ * triple-backtick fenced block, legacy `# routing policy pseudocode` block, and
+ * compact router table from the source must reappear byte-identically in the
+ * model output, or the mutation is rejected with reason `fenced-block-altered`.
  *
  * Also exports STATEFUL_SUMMARY_RULE (§3.2.3) — re-exported here for
  * convenience; canonical source is op-persona-pivot.mjs.
@@ -36,13 +35,12 @@ export function buildPrunerPrompt({ candidate }) {
     `\n\nEliminate:\n- Redundant adjectives and filler phrases\n- Repetitive restatements` +
     ` of the same rule\n- Over-qualified hedges that do not add operational meaning\n\n` +
     `## Hard constraints (MUST NOT violate)\n` +
-    `- DO NOT alter the syntax, indentation, or logic of any pseudocode, if/then blocks,` +
-    ` or fenced code blocks (delimited by \`\`\`).\n` +
+    `- DO NOT alter fenced code blocks (delimited by \`\`\`) or router tables.\n` +
     `- Preserve every [[token]] verbatim and at the SAME multiplicity as the source.\n` +
     `- Preserve every behavioural rule (routing decisions, tool-selection criteria,` +
     ` output-format requirements).\n` +
     `- Preserve every regex pattern and file-path template.\n` +
-    `- If the prompt is already minimal (very short or mostly pseudocode with little` +
+    `- If the prompt is already minimal (very short or mostly tables with little` +
     ` removable prose), output it UNCHANGED and prepend the single line: PRUNER_SKIP\n\n` +
     `Output ONLY the pruned prompt (or PRUNER_SKIP + unchanged prompt). No explanation.`;
 
@@ -58,9 +56,10 @@ export function buildPrunerPrompt({ candidate }) {
  * Extract the set of blocks that MUST survive the pruning pass byte-identically:
  *   (1) every triple-backtick fenced code block, delimited by ``` … ```
  *       (the captured string includes its own opening/closing fences), and
- *   (2) any `# routing policy pseudocode` block — the heading line plus the
- *       contiguous run of non-blank lines that follow it (the OP-3 AST-ified
- *       routing layout the Pruner is forbidden to mangle).
+ *   (2) any legacy `# routing policy pseudocode` block — the heading line plus
+ *       the contiguous run of non-blank lines that follow it, and
+ *   (3) any compact router table (markdown table whose header includes
+ *       "Query signal" and "First call").
  *
  * Each protected block is returned verbatim (no trimming). runPruner asserts
  * every returned string survives as a literal substring of the model output.
@@ -80,7 +79,7 @@ export function extractProtectedBlocks(text) {
     blocks.push(m[0]);
   }
 
-  // (2) `# routing policy pseudocode` blocks. The heading may carry a trailing
+  // (2) Legacy `# routing policy pseudocode` blocks. The heading may carry a trailing
   //     qualifier (e.g. "— NOT executable code"); we anchor on the heading and
   //     capture through the trailing contiguous non-blank lines.
   const lines = text.split('\n');
@@ -92,6 +91,18 @@ export function extractProtectedBlocks(text) {
       while (end < lines.length && lines[end].trim() !== '') end++;
       blocks.push(lines.slice(start, end).join('\n'));
       i = end; // skip past the consumed block
+    }
+  }
+
+  // (3) Router tables. Protect the full contiguous markdown table so OP-5 can
+  // prune surrounding prose without corrupting dispatch rows or stop conditions.
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*\|/.test(lines[i]) && /query signal/i.test(lines[i]) && /first call/i.test(lines[i])) {
+      const start = i;
+      let end = i + 1;
+      while (end < lines.length && /^\s*\|/.test(lines[end])) end++;
+      blocks.push(lines.slice(start, end).join('\n'));
+      i = end;
     }
   }
 
@@ -169,10 +180,10 @@ export async function runPruner({ candidate, callModel, minTokens }) {
     return { mutated: recovered, accepted: true, skipped: true };
   }
 
-  // M11 — enforce (not merely prompt) fenced/pseudocode-block survival.
+  // M11 — enforce (not merely prompt) protected-block survival.
   // Every protected block from the SOURCE must survive byte-identically in the
   // model output; a model that flattens indentation, drops `elif`, or otherwise
-  // mangles a fenced/pseudocode block (while preserving every [[token]]) is
+  // mangles a fenced block or router table (while preserving every [[token]]) is
   // rejected here, before the token-only validateMutation gate.
   const blockFailures = checkProtectedBlocks(candidate, rawMutated);
   if (blockFailures.length > 0) {
