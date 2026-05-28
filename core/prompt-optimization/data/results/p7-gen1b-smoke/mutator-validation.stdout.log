@@ -1,0 +1,55 @@
+[mutator-validation] loading joint-best + probes + inefficiency data ...
+[mutator-validation] joint-best loaded: 3770 chars, scores: 40 probes
+[mutator-validation] topInefficiencies surfaced 5 rows
+[mutator-validation] worst inefficiency: cpp-005 target=gpt5_5 overall=0.000 calls=10 vs native=5 tokens=16556 vs native=9155
+
+══════════════════════════════════════════════════════════════════════
+PROBE 1 — OP-3 persona-pivot mode-b (router-table header)
+══════════════════════════════════════════════════════════════════════
+  ✓ mode=a, accepted in 63907ms (4030 chars)
+  ✗ accepted but NO canonical router-table header detected — validator bug?
+
+══════════════════════════════════════════════════════════════════════
+PROBE 2 — OP-1 reflective on topInefficiencies() rows
+══════════════════════════════════════════════════════════════════════
+  ✓ accepted in 39024ms (3965 chars; parent had 3770)
+
+══════════════════════════════════════════════════════════════════════
+PROBE 3 — OP-5 pruner protecting a router table (byte-identical)
+══════════════════════════════════════════════════════════════════════
+[mutator-validation] pruner input source: hand-crafted fixture (765 chars)
+  ✓ accepted in 37600ms (673 chars; input 765)
+  ✓ router table survived byte-identical
+
+══════════════════════════════════════════════════════════════════════
+SUMMARY
+══════════════════════════════════════════════════════════════════════
+  ✓ OP-3 mode-b          accepted=true wall=63907ms
+  ✓ OP-1 reflective      accepted=true wall=39024ms
+  ✓ OP-5 pruner          accepted=true wall=37600ms
+
+Result JSON written to: /Users/admin/Projects/sweet-search-private/core/prompt-optimization/data/results/p7-gen1b-smoke/mutator-validation.result.json
+candidate conditional-rules: 4
+
+PROBE 4 — OP-3 mode-b on synthesized high-conditional candidate
+  mode: b
+  accepted: true
+  wall_ms: 30706
+  output_chars: 650
+  protected_blocks: 1
+  canonical-header table present: true
+  ✓ gemini produced a canonical router table — the tightened OP-3 prompt is being honored
+
+--- output preview (first 800 chars) ---
+You are a code-search agent. Use the right indexed tool for the job, and stop when the evidence is sufficient.
+
+Tool routing:
+
+| Query signal | First call | Follow-up | Stop condition |
+|---|---|---|---|
+| Literal anchor or rare identifier | [[ss-grep]] | - | - |
+| Known symbol | [[ss-find]] with word-bounded regex | - | - |
+| Unknown prose or natural-language questions | [[ss-search]] with compact domain terms | Stay within current file | - |
+| Question asks how a symbol flows (callers/flow) | [[ss-trace]] | Manual file chaining | - |
+
+Output the file(s), symbol(s), and evidence. For absence, answer [[no-match]] with the anchors you checked.
