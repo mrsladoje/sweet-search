@@ -1,13 +1,12 @@
 /**
- * Phase 7 — OP-3 Persona / Constraint Pivot + AST-ification (§3.2).
+ * Phase 7 — OP-3 Persona / Constraint Pivot + compact router tables (§3.2).
  *
  * Two-mode operator:
- *   (a) Standard structural-format pivot — bullets → numbered lists, paragraphs
- *       → strict pseudocode layout, etc.
- *   (b) AST-ification of routing constraints (fires when candidate has ≥3
- *       conditional routing rules in prose). Converts prose routing rules into
- *       pseudocode blocks labelled "# routing policy pseudocode — NOT executable
- *       code". Prefers decision tables over fenced ```python``` blocks.
+ *   (a) Standard structural-format pivot - bullets, numbered lists, prose, and
+ *       compact tables.
+ *   (b) Router-table consolidation (fires when candidate has >=3 conditional
+ *       routing rules in prose). Converts scattered conditions into a compact
+ *       decision table and explicitly avoids AST/procedure/pseudocode blocks.
  *
  * Generator rotation (GPT-5.5 review §C2): Sonnet 4.6 is default; every 3rd
  * round uses Kimi K2.6 or GPT-5.5 to diversify the paraphrase family.
@@ -21,7 +20,8 @@ import { EVENT_KINDS } from './p7-shared.mjs';
 // ─── §3.2.3 stateful summarisation rule (verbatim) ───────────────────────────
 
 export const STATEFUL_SUMMARY_RULE =
-  "Before your 3rd tool call (or before your final answer, whichever comes first), " +
+  "Before your third sweet-search query in the current search iteration " +
+  "(we can have multiple search iterations in a session) — or before your final answer, whichever comes first, " +
   "you MUST output a `<state_summary>` block containing exactly: " +
   "(1) one sentence summarising what you've established so far, " +
   "(2) one sentence stating your current blind spot or open question.";
@@ -41,7 +41,7 @@ const CONDITIONAL_PATTERNS = [
 
 /**
  * Count the number of distinct conditional routing rules found in the candidate
- * text. Used to decide whether mode (b) AST-ification should fire.
+ * text. Used to decide whether mode (b) router-table consolidation should fire.
  *
  * @param {string} text
  * @returns {number}
@@ -88,21 +88,21 @@ export function pickGenerator(round) {
  *
  * @param {object} params
  * @param {string}  params.candidate  — current candidate prompt text
- * @param {'a'|'b'} params.mode       — 'a' = format pivot, 'b' = AST-ification
+ * @param {'a'|'b'} params.mode       — 'a' = format pivot, 'b' = router table
  * @param {object}  [params.generator]— {lineage, model}
  * @returns {{ systemPrompt: string, userPrompt: string }}
  */
 export function buildPersonaPivotPrompt({ candidate, mode, generator }) {
   const modeInstruction =
     mode === 'b'
-      ? `Convert ALL prose routing rules and conditional logic into pseudocode blocks.
-LABEL every pseudocode block with the comment: # routing policy pseudocode — NOT executable code
-PREFER decision tables over fenced \`\`\`python\`\`\` blocks for high-level routing.
-If you must use a fenced block, it MUST carry the label: # routing policy pseudocode — NOT executable code
-Do NOT alter syntax/indentation/logic of pseudocode or fenced code blocks already present.
+      ? `Convert scattered prose routing rules and conditional logic into a compact router table.
+Use columns like: Query signal | First call | Follow-up | Stop condition.
+Consolidate duplicate conditions and delete redundant restatements.
+Do NOT create ASTs, procedure blocks, pseudocode blocks, flowcharts, or fenced code.
+Do NOT alter syntax/indentation/logic of any code fences already present.
 Preserve all natural-language sections that are NOT conditional routing rules.`
       : `Restructure the prompt's surface format only (e.g. bullets → numbered lists, dense
-paragraphs → strict pseudocode layout, or vice-versa). Do NOT alter any operational rule
+paragraphs → compact tables, or vice-versa). Do NOT alter any operational rule
 or [[token]]. The meaning must be identical; only the structural presentation changes.`;
 
   const systemPrompt =

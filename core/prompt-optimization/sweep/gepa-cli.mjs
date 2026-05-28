@@ -12,6 +12,7 @@
  *   --resume            resume from the persisted checkpoint (§7.4)
  *   --rounds N          override max rounds
  *   --variants-dir DIR  override the T_i variants directory
+ *   --screen-probe-ids CSV  explicit screen probe ids for diagnostic reruns
  *   --probes FILE       dev-probes JSON for a real run (required for non-dry)
  *   --native-baseline FILE  native rg+Read baseline JSON for relative scoring
  *   --agent-provider api|cli  real GEPA agent runtime [api for real, cli for --dry-run --real]
@@ -70,6 +71,7 @@ export function parseArgs(argv) {
     else if (a === '--skip-preflight') o.skipPreflight = true;
     else if (a === '--rounds') o.rounds = Number.parseInt(argv[++i], 10);
     else if (a === '--variants-dir') o.variantsDir = argv[++i];
+    else if (a === '--screen-probe-ids') o.screenProbeIds = argv[++i].split(',').map((s) => s.trim()).filter(Boolean);
     else if (a === '--probes') o.probesFile = argv[++i];
     else if (a === '--native-baseline') o.nativeBaselineFile = argv[++i];
     else if (a === '--agent-provider') o.agentProvider = argv[++i];
@@ -84,6 +86,9 @@ export function parseArgs(argv) {
   if (o.concurrency !== undefined && (!Number.isInteger(o.concurrency) || o.concurrency < 1)) {
     throw new Error('--concurrency must be a positive integer');
   }
+  if (o.screenProbeIds !== undefined && o.screenProbeIds.length === 0) {
+    throw new Error('--screen-probe-ids must contain at least one id');
+  }
   return o;
 }
 
@@ -97,14 +102,19 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
 
   // ── dry-run: fully offline by default ──
   if (o.dryRun) {
-    const { loadVariant } = await import('./variant-loader.mjs');
+    const { loadVariant, loadVariantsFromDir } = await import('./variant-loader.mjs');
     let probes = JSON.parse(readFileSync(SMOKE_PROBES_PATH, 'utf8')).probes;
     // --smoke-probes/--smoke-variants trim the matrix for a cheap real smoke
     // (e.g. 1×1×2-targets ≈ $0.30 vs the full 5×2).
     if (Number.isInteger(o.smokeProbes) && o.smokeProbes > 0) probes = probes.slice(0, o.smokeProbes);
-    let variantIds = ['T1', 'T2'];
-    if (Number.isInteger(o.smokeVariants) && o.smokeVariants > 0) variantIds = variantIds.slice(0, o.smokeVariants);
-    const variants = variantIds.map((id) => normalizeVariant(loadVariant(id)));
+    let variants;
+    if (o.variantsDir) {
+      variants = loadVariantsFromDir(o.variantsDir).slice(0, Number.isInteger(o.smokeVariants) && o.smokeVariants > 0 ? o.smokeVariants : 2).map(normalizeVariant);
+    } else {
+      let variantIds = ['T1', 'T2'];
+      if (Number.isInteger(o.smokeVariants) && o.smokeVariants > 0) variantIds = variantIds.slice(0, o.smokeVariants);
+      variants = variantIds.map((id) => normalizeVariant(loadVariant(id)));
+    }
     let evaluateCandidate = makeDryRunEvaluate();
     let callModel = makeDryRunCallModel();
     if (o.real) {
@@ -124,6 +134,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
       patience: DEFAULTS.patienceRounds,
       resume: o.resume,
       concurrency: o.concurrency ?? 1,
+      screenProbeIds: o.screenProbeIds ?? [],
     });
     reportResult('DRY-RUN complete', result);
     return result;
@@ -145,7 +156,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     process.exit(1);
   }
 
-  const { loadAllVariants } = await import('./variant-loader.mjs');
+  const { loadAllVariants, loadVariantsFromDir } = await import('./variant-loader.mjs');
   const { makeRealEvaluateCandidate } = await import('./gepa-evaluate.mjs');
   const { runJudge } = await import('../../../eval/agent-read-workflows/judge-runner.js');
   const { callMutatorHarness } = await import('./op-harness-caller.mjs');
@@ -154,7 +165,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
   const probesDoc = JSON.parse(readFileSync(o.probesFile, 'utf8'));
   const devProbes = probesDoc.probes ?? probesDoc;
   const rotationPool = probesDoc.rotationPool ?? [];
-  const variants = loadAllVariants().map(normalizeVariant);
+  const variants = (o.variantsDir ? loadVariantsFromDir(o.variantsDir) : loadAllVariants()).map(normalizeVariant);
   let nativeBaselineByTarget = null;
   if (o.nativeBaselineFile) {
     nativeBaselineByTarget = assertNativeBaselineCoverage({
@@ -199,6 +210,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     bucket,
     nativeBaselineByTarget,
     concurrency: o.concurrency ?? 1,
+    screenProbeIds: o.screenProbeIds ?? [],
   });
   reportResult('GEPA complete', result);
 

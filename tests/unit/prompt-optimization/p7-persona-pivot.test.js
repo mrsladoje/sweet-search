@@ -1,13 +1,13 @@
 /**
  * Unit tests for core/prompt-optimization/sweep/op-persona-pivot.mjs
- * (OP-3 Persona / Constraint Pivot + AST-ification, §3.2 / §3.2.3).
+ * (OP-3 Persona / Constraint Pivot + compact router tables, §3.2 / §3.2.3).
  *
  * Covers:
  *  - STATEFUL_SUMMARY_RULE: verbatim §3.2.3 content
  *  - countConditionalRules: prose conditional detection
  *  - pickGenerator: anthropic default + every-3rd-round Kimi/GPT-5.5 rotation
- *  - buildPersonaPivotPrompt: mode-a format pivot vs mode-b AST-ification
- *    (labelled non-executable pseudocode, decision tables over fenced python)
+ *  - buildPersonaPivotPrompt: mode-a format pivot vs mode-b router table
+ *    (compact routing table; no AST/procedure/pseudocode/fenced code)
  *  - runPersonaPivot: mode selection (≥3 rules → b), generator routing,
  *    validateMutation gate
  */
@@ -43,9 +43,9 @@ describe('STATEFUL_SUMMARY_RULE (§3.2.3)', () => {
     expect(STATEFUL_SUMMARY_RULE.length).toBeGreaterThan(50);
   });
 
-  it('references the <state_summary> block before the 3rd tool call / final answer', () => {
+  it('references the <state_summary> block before the third sweet-search query / final answer', () => {
     expect(STATEFUL_SUMMARY_RULE).toMatch(/<state_summary>/);
-    expect(STATEFUL_SUMMARY_RULE).toMatch(/before your 3rd tool call/i);
+    expect(STATEFUL_SUMMARY_RULE).toMatch(/before your third sweet-search query/i);
     expect(STATEFUL_SUMMARY_RULE).toMatch(/before your final answer/i);
   });
 
@@ -100,21 +100,21 @@ describe('pickGenerator', () => {
 // ─── buildPersonaPivotPrompt ───────────────────────────────────────────────
 
 describe('buildPersonaPivotPrompt', () => {
-  it('mode a → surface-format pivot, no AST-ification label', () => {
+  it('mode a → surface-format pivot, no router-table consolidation', () => {
     const { systemPrompt } = buildPersonaPivotPrompt({ candidate: SIMPLE_CAND, mode: 'a' });
     expect(systemPrompt).toMatch(/surface format only/i);
-    expect(systemPrompt).not.toMatch(/routing policy pseudocode — NOT executable code/);
+    expect(systemPrompt).not.toMatch(/router table/i);
   });
 
-  it('mode b → AST-ification with the non-executable pseudocode label', () => {
+  it('mode b → compact router table consolidation', () => {
     const { systemPrompt } = buildPersonaPivotPrompt({ candidate: COND_CAND, mode: 'b' });
-    expect(systemPrompt).toMatch(/routing policy pseudocode — NOT executable code/);
+    expect(systemPrompt).toMatch(/compact router table/i);
+    expect(systemPrompt).toMatch(/Query signal \| First call \| Follow-up \| Stop condition/);
   });
 
-  it('mode b prefers decision tables over fenced python', () => {
+  it('mode b forbids AST, procedure, pseudocode, flowchart, and fenced code outputs', () => {
     const { systemPrompt } = buildPersonaPivotPrompt({ candidate: COND_CAND, mode: 'b' });
-    expect(systemPrompt).toMatch(/decision tables/i);
-    expect(systemPrompt).toMatch(/python/i);
+    expect(systemPrompt).toMatch(/Do NOT create ASTs, procedure blocks, pseudocode blocks, flowcharts, or fenced code/);
   });
 
   it('both modes carry the [[token]] protection + multiplicity constraints', () => {
