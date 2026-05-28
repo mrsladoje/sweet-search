@@ -1,0 +1,20 @@
+[22:24:22] gepa: resume: checkpoint round 8, trajectory lastRound 8, continuing from round 9
+[22:24:22] gepa: round 9 start, fronts=4, patience=1/5, plateau-bt=YES
+[22:28:59] gepa: round 9 mut 1/3 reflective on T2-r1-reflective-r8-trajectory-crossover → 0x12095801
+[22:28:59] gepa: round 9 mut 2/3 trajectory-crossover on T2-r1-reflective-r8-trajectory-crossover → 0x32f63197 (on attempt 2)
+[22:28:59] gepa: round 9 mut 3/3 pruner on T2-r1-reflective-r8-trajectory-crossover → 0xf4a47895
+[22:37:58] gepa: round 9 screen reflective 0x12095801 final=0.502
+[22:52:39] gepa: round 9 screen trajectory-crossover 0x32f63197 final=0.502
+[23:11:02] gepa: round 9 screen pruner 0xf4a47895 final=0.473
+[00:24:09] gepa: round 9 confirm 40×2 sonnet=1.000 gpt5.5=0.995 final=0.317
+[02:49:45] gepa: round 9 tare sharpness=0.125 → sharpness_score=0.875
+[02:49:45] gepa: round 9 pareto: ADD 0x12095801
+[02:49:45] gepa: round 9 summary: joint_best=0.575 n_pareto=5 patience=2/5
+[02:49:45] gepa: round 10 start, fronts=5, patience=2/5, plateau-bt=YES
+[02:55:42] gepa: round 10 mut 1/3 reflective on T2-r1-reflective → 0xe8c1999d
+[02:55:42] gepa: round 10 mut 2/3 trajectory-crossover on T2-r1-reflective → 0xa24c51cc (on attempt 2)
+[02:55:42] gepa: round 10 mut 3/3 persona-pivot on T2-r1-reflective → 0xa5479eb0
+[03:10:28] gepa: round 10 screen reflective 0xe8c1999d final=0.365
+[03:32:26] gepa: round 10 screen trajectory-crossover 0xa24c51cc final=0.452
+[03:48:07] gepa: round 10 screen persona-pivot 0xa5479eb0 final=0.455
+[04:57:00] gepa: round 10 confirm 40×2 sonnet=1.000 gpt5.5=1.000 final=0.264
