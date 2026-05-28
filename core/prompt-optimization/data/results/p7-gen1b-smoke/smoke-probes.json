@@ -1,0 +1,69 @@
+{
+  "probes": [
+    {
+      "id": "kotlin-009",
+      "repo": "kotlinx.coroutines",
+      "language": "kotlin",
+      "stratum": "no-match",
+      "difficulty": "medium",
+      "query": "Find where kotlinx.coroutines schedules coroutines onto JDK 21 virtual threads (Project Loom), e.g. via Thread.ofVirtual or startVirtualThread.",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedNoMatch": true,
+      "max_turns": 5,
+      "author": "kotlin-author",
+      "date": "2026-05-23",
+      "hard_for_tools": false,
+      "notes": "Verified ABSENT: grep -rin --include='*.kt' -e 'ofVirtual' -e 'VirtualThread' -e 'startVirtualThread' across the entire kotlin repo root -> 0 results. kotlinx.coroutines uses its own dispatchers/event-loop/scheduler model, not JDK Loom virtual threads. Plausible-sounding feature that is not implemented here."
+    },
+    {
+      "id": "python-010",
+      "repo": "flask",
+      "language": "python",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "Which helper safely serves a file from within a directory using a client-supplied path?",
+      "expectedFiles": [
+        "src/flask/helpers.py"
+      ],
+      "expectedSymbols": [
+        "send_from_directory"
+      ],
+      "expectedFacts": [
+        "send_from_directory (helpers.py:543) serves a file from within a directory using werkzeug safe_join and delegates to send_file"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "author": "python-author",
+      "date": "2026-05-23",
+      "notes": "Verified: grep -n '^def send_from_directory' src/flask/helpers.py -> helpers.py:543. Docstring: 'Send a file from within a directory using send_file ... Uses werkzeug.security.safe_join'."
+    },
+    {
+      "id": "rust-004",
+      "repo": "ripgrep",
+      "language": "rust",
+      "stratum": "multi-file-flow",
+      "difficulty": "medium",
+      "query": "Trace how the `-S`/`--smart-case` command-line flag ends up turning on smart-case matching in the regex builder.",
+      "expectedFiles": [
+        "crates/core/flags/defs.rs",
+        "crates/core/flags/hiargs.rs"
+      ],
+      "expectedSymbols": [
+        "SmartCase",
+        "CaseMode"
+      ],
+      "expectedFacts": [
+        "The SmartCase flag's update() method sets args.case = CaseMode::Smart in defs.rs, and hiargs.rs later maps CaseMode::Smart to builder.case_smart(true) when configuring the matcher"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "author": "rust-author",
+      "date": "2026-05-23",
+      "hard_for_tools": true,
+      "notes": "grep -n 'struct SmartCase;' crates/core/flags/defs.rs -> defs.rs:6141; 'impl Flag for SmartCase' -> defs.rs:6143; update() sets `args.case = CaseMode::Smart` (defs.rs:6178-6182). grep -n 'CaseMode::Smart => builder.case_smart' crates/core/flags/hiargs.rs -> hiargs.rs:419 and hiargs.rs:471. HARD: SmartCase is one of 104 unit-struct `impl Flag for X` blocks; the connection from the CLI string '--smart-case' to behaviour goes through a trait method override (Flag::update) then a separate CaseMode match in another file — dynamic-dispatch + cross-file flow."
+    }
+  ],
+  "rotationPool": []
+}
