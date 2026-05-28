@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
 import {
+  PRUNER_PLACEHOLDER_MARKER,
   RESTART_EXTRA_SEEDS,
   buildPrunerPlaceholderVariant,
   buildRestartVariants,
@@ -12,6 +13,7 @@ import {
   renderVariantMd,
   writeRestartVariants,
 } from '../../../core/prompt-optimization/sweep/gepa-restart-scaffold.mjs';
+import { hashContent } from '../../../core/prompt-optimization/sweep/p7-shared.mjs';
 import {
   loadVariantsFromDir,
   parseFrontMatter,
@@ -54,8 +56,12 @@ describe('gepa restart scaffold', () => {
     const placeholder = variants[variants.length - 1];
     expect(placeholder.frontMatter.source_id).toBe('pruner-placeholder-joint-best');
     expect(placeholder.frontMatter.expected_weaknesses).toContain('unverified-until-round-0-ablation');
-    // Derived from the highest-finalScore member (old-plain at 0.5).
-    expect(placeholder.body).toBe('plain [[ss-grep]] [[no-match]]');
+    // Derived from the highest-finalScore member (old-plain at 0.5). The
+    // placeholder body is the joint-best body + PRUNER_PLACEHOLDER_MARKER
+    // (D2 fix) so the hash always differs from the parent.
+    expect(placeholder.body).toContain('plain [[ss-grep]] [[no-match]]');
+    expect(placeholder.body).toContain('pruner-placeholder');
+    expect(placeholder.body).not.toBe('plain [[ss-grep]] [[no-match]]');
 
     for (const variant of variants) {
       const { frontMatterBlock, body } = splitFrontMatter(renderVariantMd(variant));
@@ -129,6 +135,39 @@ describe('gepa restart scaffold', () => {
   it('buildPrunerPlaceholderVariant returns null on empty front', () => {
     expect(buildPrunerPlaceholderVariant({ front: [] }, 1)).toBeNull();
     expect(buildPrunerPlaceholderVariant({ front: [{ id: 'x', prompt: '' }] }, 1)).toBeNull();
+  });
+
+  // D2 regression: T8 pruner-placeholder hash must differ from T3 (joint-best)
+  // even on a byte-identical, already-clean parent prompt where
+  // conservativeLocalPrune is a no-op. Without this, gepa-pareto.mjs:64's
+  // hash-dedup silently evicts T8 (observed in the Stage 1 smoke against
+  // pareto hash 0x57d1d3600aaf18a8).
+  it('buildPrunerPlaceholderVariant body hashes differently from a byte-identical, already-clean parent (D2 regression)', () => {
+    // Use an already-clean prompt (no trailing whitespace, no blank-line
+    // runs) so conservativeLocalPrune produces the same string as input.
+    const cleanPrompt = 'You are a code search agent. [[ss-search]] first, then [[ss-find]] for symbols.';
+    expect(conservativeLocalPrune(cleanPrompt)).toBe(cleanPrompt);
+
+    const pareto = { front: [{ id: 'jb', hash: '0xfeed', finalScore: 0.6, prompt: cleanPrompt }] };
+    const front = pareto.front;
+    const placeholder = buildPrunerPlaceholderVariant(pareto, 8);
+    expect(placeholder).not.toBeNull();
+
+    const jbHash = hashContent(cleanPrompt);
+    const phHash = hashContent(placeholder.body);
+    expect(phHash).not.toBe(jbHash);
+    // The marker must be present and at the end.
+    expect(placeholder.body.endsWith(PRUNER_PLACEHOLDER_MARKER.trimEnd())).toBe(true);
+    // The original prompt content survives byte-identical at the start.
+    expect(placeholder.body.startsWith(cleanPrompt)).toBe(true);
+    // Sanity: even with the marker, the prompt remains short — the marker
+    // is small overhead (< 100 chars) so length-penalty impact is minimal.
+    expect(placeholder.body.length - cleanPrompt.length).toBeLessThan(100);
+    // Front-member hash collision sanity: simulate buildRestartVariants's
+    // dedup hazard. With the fix, T_front (built from same prompt) and
+    // the placeholder should have distinct hashes.
+    const frontVariantBody = (front[0].prompt || '').trim();
+    expect(hashContent(frontVariantBody)).not.toBe(hashContent(placeholder.body));
   });
 
   it('writes a restart slate that variant-loader can load from a custom directory', () => {

@@ -137,11 +137,25 @@ export function conservativeLocalPrune(text) {
     .replace(/\n{3,}/g, '\n\n');
 }
 
+/**
+ * Trailing marker appended to the pruner-placeholder body. Ensures the
+ * placeholder ALWAYS hashes differently from its parent joint-best, even
+ * when conservativeLocalPrune is a no-op on an already-clean prompt
+ * (defect D2, observed during Stage 1 — T3 and T8 both normalized to
+ * hash 0x57d1d3600aaf18a8, so gepa-pareto.attemptParetoAdmission's
+ * hash-dedup check at gepa-pareto.mjs:64 would silently evict T8).
+ * The marker is an HTML-style comment so it is inert in any markdown-
+ * aware consumer and stays distinct from prose / tokens.
+ */
+export const PRUNER_PLACEHOLDER_MARKER = '\n\n<!-- gen-1b pruner-placeholder: derived from joint-best, awaits live OP-5 -->';
+
 export function buildPrunerPlaceholderVariant(pareto, idx) {
   const jb = pickJointBest(pareto);
   if (!jb || typeof jb.prompt !== 'string' || jb.prompt.length === 0) return null;
   const normalized = normalizeParetoPrompt(jb.prompt);
-  const body = conservativeLocalPrune(normalized);
+  // conservativeLocalPrune may be a no-op on a clean prompt → marker
+  // guarantees the body always differs from the parent (D2 fix).
+  const body = conservativeLocalPrune(normalized) + PRUNER_PLACEHOLDER_MARKER;
   return {
     id: `T${idx}`,
     body,

@@ -1,10 +1,20 @@
 /**
  * gepa-cli parseArgs — smoke-trim flags (--smoke-probes / --smoke-variants).
- * Importing gepa-cli.mjs is side-effect-free: the run guard lives in gepa.mjs.
+ * Importing gepa-cli.mjs is side-effect-free: the auto-invoke guard at the
+ * bottom only fires when `import.meta.url === file://${process.argv[1]}` —
+ * which is FALSE when imported from a test (process.argv[1] is the vitest
+ * runner). Both `node gepa.mjs ...` and `node gepa-cli.mjs ...` invoke
+ * mainCli; tests do not.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { parseArgs, withMutatorCallDefaults } from '../../../core/prompt-optimization/sweep/gepa-cli.mjs';
+import { assertSeedsVerified, parseArgs, withMutatorCallDefaults } from '../../../core/prompt-optimization/sweep/gepa-cli.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const GEPA_CLI_PATH = path.resolve(__dirname, '../../../core/prompt-optimization/sweep/gepa-cli.mjs');
 
 describe('gepa-cli parseArgs — smoke-trim flags', () => {
   it('parses --smoke-probes and --smoke-variants as integers', () => {
@@ -78,5 +88,69 @@ describe('withMutatorCallDefaults — Kimi reasoning timeout (B2)', () => {
     const r = withMutatorCallDefaults({ lineage: 'moonshot', timeoutMs: 1000, maxTokens: 100 });
     expect(r.timeoutMs).toBe(1000);
     expect(r.maxTokens).toBe(100);
+  });
+});
+
+// ─── D3 round-0 ablation gate ─────────────────────────────────────────────
+describe('assertSeedsVerified (D3 round-0 ablation gate)', () => {
+  it('passes when no variant carries the unverified tag', () => {
+    const variants = [
+      { id: 'T1', frontMatter: { expected_weaknesses: ['something-else'] } },
+      { id: 'T2', frontMatter: { expected_weaknesses: [] } },
+      { id: 'T3', frontMatter: {} },
+      { id: 'T4' }, // no frontMatter at all
+    ];
+    expect(assertSeedsVerified({ variants })).toEqual({ ok: true });
+  });
+
+  it('FAILS when any variant carries `unverified-until-round-0-ablation`', () => {
+    const variants = [
+      { id: 'T1', frontMatter: { expected_weaknesses: ['something-else'] } },
+      { id: 'T2', frontMatter: { source_id: 'pruner-placeholder-joint-best', expected_weaknesses: ['unverified-until-round-0-ablation', 'no-live-op5-validation'] } },
+      { id: 'T3', frontMatter: { expected_weaknesses: ['unverified-until-round-0-ablation'] } },
+    ];
+    const r = assertSeedsVerified({ variants });
+    expect(r.ok).toBe(false);
+    expect(r.unverified.map((v) => v.id)).toEqual(['T2', 'T3']);
+  });
+
+  it('PASSES when `allowUnverified: true` even if unverified variants are present (--allow-unverified-seeds override)', () => {
+    const variants = [{ id: 'T1', frontMatter: { expected_weaknesses: ['unverified-until-round-0-ablation'] } }];
+    expect(assertSeedsVerified({ variants, allowUnverified: true })).toEqual({ ok: true });
+  });
+
+  it('handles missing/empty variants array', () => {
+    expect(assertSeedsVerified({ variants: undefined })).toEqual({ ok: true });
+    expect(assertSeedsVerified({ variants: [] })).toEqual({ ok: true });
+    expect(assertSeedsVerified({})).toEqual({ ok: true });
+  });
+
+  it('parseArgs picks up --allow-unverified-seeds as boolean true', () => {
+    const o = parseArgs(['--probes', 'x.json', '--allow-unverified-seeds']);
+    expect(o.allowUnverifiedSeeds).toBe(true);
+  });
+
+  it('parseArgs leaves allowUnverifiedSeeds undefined when flag is absent (gate active by default)', () => {
+    const o = parseArgs(['--probes', 'x.json']);
+    expect(o.allowUnverifiedSeeds).toBeUndefined();
+  });
+});
+
+// ─── D1 regression: `node gepa-cli.mjs ...` must auto-invoke mainCli ──────
+// Defect D1 (commit 218a840): gepa-cli.mjs originally had no auto-invoke
+// guard, so `node gepa-cli.mjs ...` imported the module and exited 0 with
+// no work done — the same name as `node gepa.mjs ...` but a silent no-op.
+// This pinned check fails fast if the guard is ever removed.
+describe('gepa-cli auto-invoke guard (D1 regression)', () => {
+  it('the file ends with an `import.meta.url === file://${process.argv[1]}` guard that calls mainCli', () => {
+    const src = readFileSync(GEPA_CLI_PATH, 'utf8');
+    expect(src).toMatch(/if \(import\.meta\.url === `file:\/\/\$\{process\.argv\[1\]\}`\)/);
+    // Guard must actually call mainCli (not just be a placeholder).
+    const guardSection = src.split('if (import.meta.url === `file://${process.argv[1]}`)')[1] || '';
+    expect(guardSection).toMatch(/mainCli\s*\(/);
+    // Guard must handle errors so a thrown promise doesn't terminate the
+    // node process with an unhandled-rejection warning + zero exit code.
+    expect(guardSection).toMatch(/\.catch\(/);
+    expect(guardSection).toMatch(/process\.exit\(1\)/);
   });
 });
