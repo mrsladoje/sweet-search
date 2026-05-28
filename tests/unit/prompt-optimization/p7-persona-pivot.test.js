@@ -201,3 +201,111 @@ describe('runPersonaPivot', () => {
     ).rejects.toThrow(/candidate must be a string/);
   });
 });
+
+// ─── OP-3 ↔ OP-5 cooperation: mode-b output validation ────────────────────
+// The whole point of mode-b is to produce a router table that op-pruner's
+// extractProtectedBlocks() will later protect. The detection regex anchors
+// on a header row containing both "Query signal" and "First call"
+// (case-insensitive). If the mutator paraphrases those column names, the
+// resulting table is NOT protected and a downstream OP-5 pass would
+// silently delete the routing rules. These tests pin the cooperation
+// contract: mode-b output MUST contain a table whose header survives the
+// OP-5 detection regex, or the mutation is REJECTED rather than silently
+// admitted into the front. The detection regex is duplicated (intentionally)
+// in op-persona-pivot.mjs:containsRouterTable; the last test pipes mode-b
+// output through op-pruner.extractProtectedBlocks to catch drift between
+// the two regexes.
+describe('OP-3 mode-b ↔ OP-5 cooperation — router-table header validation', () => {
+  // A candidate with enough conditional rules to trip mode-b. Each [[token]]
+  // appears exactly once so the mutator's table can echo the same multiplicity.
+  const COND_CAND_LOCAL =
+    'You are a code search agent.\n\n' +
+    'When the query is a literal anchor, use [[ss-grep]].\n' +
+    'When the symbol is known, use [[ss-find]].\n' +
+    'For unknown prose, use [[ss-search]].\n' +
+    'Unless the question is about flow, otherwise use [[ss-trace]].\n' +
+    'For multi-file queries, prefer the same flow after an anchor.\n';
+
+  const canonicalTableOutput =
+    'You are a code search agent.\n\n' +
+    '| Query signal | First call | Follow-up | Stop condition |\n' +
+    '|---|---|---|---|\n' +
+    '| Literal anchor | [[ss-grep]] | inspect the hit | One hit is enough |\n' +
+    '| Known symbol | [[ss-find]] | confirm the definition | Once the symbol is clear |\n' +
+    '| Unknown prose | [[ss-search]] | narrow the span | Once the span answers |\n' +
+    '| Multi-file flow | [[ss-trace]] | follow callers | One complete path |\n';
+
+  it('ACCEPTS mode-b output with canonical "Query signal | First call" header', async () => {
+    const callModel = vi.fn(async () => ({ text: canonicalTableOutput, isError: false }));
+    const r = await runPersonaPivot({ candidate: COND_CAND_LOCAL, round: 1, callModel });
+    expect(r.mode).toBe('b');
+    expect(r.accepted).toBe(true);
+    expect(r.mutated).toBe(canonicalTableOutput);
+  });
+
+  it('REJECTS mode-b output that paraphrases the header to "Query type | Primary tool" (silent-failure prevention)', async () => {
+    // [[token]]s all preserved at the same multiplicity → token-validator
+    // would accept. But the header has been paraphrased, so OP-5 would not
+    // protect it. Without the new gate, this would silently land on the
+    // front and be deleted by the next OP-5 pruner pass.
+    const paraphrasedHeader =
+      'You are a code search agent.\n\n' +
+      '| Query type | Primary tool | Follow-up | Stop |\n' +
+      '|---|---|---|---|\n' +
+      '| Literal anchor | [[ss-grep]] | inspect the hit | One hit is enough |\n' +
+      '| Known symbol | [[ss-find]] | confirm the definition | Once the symbol is clear |\n' +
+      '| Unknown prose | [[ss-search]] | narrow the span | Once the span answers |\n' +
+      '| Multi-file flow | [[ss-trace]] | follow callers | One complete path |\n';
+    const callModel = vi.fn(async () => ({ text: paraphrasedHeader, isError: false }));
+    const r = await runPersonaPivot({ candidate: COND_CAND_LOCAL, round: 1, callModel });
+    expect(r.mode).toBe('b');
+    expect(r.accepted).toBe(false);
+    expect(r.mutated).toBe(COND_CAND_LOCAL); // fell back to source
+    expect(r.rejection._kind).toBe(EVENT_KINDS.MUTATION_REJECTION);
+    expect(r.rejection.op).toBe('persona-pivot');
+    expect(r.rejection.reason).toBe('router-table-header-missing');
+    expect(r.rejection.failures[0].reason).toBe('router-table-header-missing');
+  });
+
+  it('REJECTS mode-b output that omits the table entirely (rewrote rules as prose)', async () => {
+    // Some LLMs will "consolidate" routing rules into a short paragraph
+    // instead of a table. Same hazard: no protected block downstream.
+    const noTable =
+      'You are a code search agent. For literal anchors, call [[ss-grep]]; for known symbols, call [[ss-find]]; for unknown prose, call [[ss-search]]; for flow or multi-file queries, call [[ss-trace]] after an anchor.';
+    const callModel = vi.fn(async () => ({ text: noTable, isError: false }));
+    const r = await runPersonaPivot({ candidate: COND_CAND_LOCAL, round: 1, callModel });
+    expect(r.accepted).toBe(false);
+    expect(r.rejection.reason).toBe('router-table-header-missing');
+  });
+
+  it('mode "a" does NOT enforce the router-table check (mode-a never emits tables)', async () => {
+    // SIMPLE_CAND has <3 conditional rules, so mode-a is selected.
+    // The output has no router table, but that is fine in mode-a.
+    const callModel = vi.fn(async () => ({ text: 'Concise agent. Use [[ss-search]].', isError: false }));
+    const r = await runPersonaPivot({ candidate: 'Concise agent. Use [[ss-search]].', round: 1, callModel });
+    expect(r.mode).toBe('a');
+    expect(r.accepted).toBe(true);
+  });
+
+  it('mode-b accepted output is detectable by op-pruner.extractProtectedBlocks (drift catcher)', async () => {
+    // The detection regex is duplicated in op-pruner.mjs and op-persona-pivot.mjs
+    // to avoid a circular import. This test pipes mode-b accepted output
+    // through extractProtectedBlocks; if the two regexes ever drift, this
+    // test fails before any live run wastes a slot.
+    const { extractProtectedBlocks } = await import('../../../core/prompt-optimization/sweep/op-pruner.mjs');
+    const callModel = vi.fn(async () => ({ text: canonicalTableOutput, isError: false }));
+    const r = await runPersonaPivot({ candidate: COND_CAND_LOCAL, round: 1, callModel });
+    expect(r.accepted).toBe(true);
+    const blocks = extractProtectedBlocks(r.mutated);
+    expect(blocks.length).toBeGreaterThanOrEqual(1);
+    expect(blocks.some((b) => /\|\s*Query signal\s*\|/.test(b) && /\|\s*First call\s*\|/.test(b))).toBe(true);
+  });
+
+  it('mode-b prompt tells the mutator the header is hard-required (auto-validator will REJECT paraphrases)', () => {
+    const { systemPrompt } = buildPersonaPivotPrompt({ candidate: COND_CAND_LOCAL, mode: 'b' });
+    expect(systemPrompt).toMatch(/header row MUST contain/i);
+    expect(systemPrompt).toMatch(/"Query signal" and "First call"/);
+    expect(systemPrompt).toMatch(/automated validator/i);
+    expect(systemPrompt).toMatch(/REJECTED/);
+  });
+});

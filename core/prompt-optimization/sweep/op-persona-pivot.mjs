@@ -17,6 +17,21 @@
 import { validateMutation } from './token-validator.mjs';
 import { EVENT_KINDS } from './p7-shared.mjs';
 
+// MUST stay byte-identical with the router-table detection in
+// op-pruner.mjs:extractProtectedBlocks. We DO NOT import that module
+// (op-pruner re-exports STATEFUL_SUMMARY_RULE from this file, so importing
+// the other direction creates a circular dependency). If the pruner's
+// detection regex changes, update this one too — there is a regression test
+// in p7-persona-pivot.test.js that pipes mode-b output through
+// extractProtectedBlocks to catch drift.
+function containsRouterTable(text) {
+  if (typeof text !== 'string') return false;
+  for (const line of text.split('\n')) {
+    if (/^\s*\|/.test(line) && /query signal/i.test(line) && /first call/i.test(line)) return true;
+  }
+  return false;
+}
+
 // ─── §3.2.3 stateful summarisation rule (verbatim) ───────────────────────────
 
 export const STATEFUL_SUMMARY_RULE =
@@ -96,7 +111,9 @@ export function buildPersonaPivotPrompt({ candidate, mode, generator }) {
   const modeInstruction =
     mode === 'b'
       ? `Convert scattered prose routing rules and conditional logic into a compact router table.
-Use columns like: Query signal | First call | Follow-up | Stop condition.
+The table header row MUST contain the LITERAL column names "Query signal" and "First call" (case-insensitive).
+Use exactly these four columns: Query signal | First call | Follow-up | Stop condition.
+An automated validator checks the header — a mutation that paraphrases the column names (e.g. "Query type", "Primary tool") will be REJECTED and waste this slot.
 Consolidate duplicate conditions and delete redundant restatements.
 Do NOT create ASTs, procedure blocks, pseudocode blocks, flowcharts, or fenced code.
 Do NOT alter syntax/indentation/logic of any code fences already present.
@@ -173,6 +190,29 @@ export async function runPersonaPivot({ candidate, round = 1, callModel }) {
         _kind: EVENT_KINDS.MUTATION_REJECTION,
         op: 'persona-pivot',
         failures: validation.failures,
+      },
+    };
+  }
+
+  // Mode-b silent-failure gate: the operator's whole point is to produce a
+  // router table that OP-5 can later protect. If the mutator paraphrased the
+  // header columns away from "Query signal | First call | …" the table will
+  // NOT be picked up by op-pruner.extractProtectedBlocks and a downstream
+  // OP-5 pass would silently delete the routing rules as "extra prose". This
+  // is the round-7 silent-failure pattern transplanted to OP-3. Reject so
+  // the slot can retry rather than admitting a candidate whose routing logic
+  // is one prune away from extinction.
+  if (mode === 'b' && !containsRouterTable(validation.normalized)) {
+    return {
+      mutated: candidate,
+      accepted: false,
+      generator,
+      mode,
+      rejection: {
+        _kind: EVENT_KINDS.MUTATION_REJECTION,
+        op: 'persona-pivot',
+        reason: 'router-table-header-missing',
+        failures: [{ reason: 'router-table-header-missing', detail: 'mode-b output lacks a markdown table whose header contains "Query signal" and "First call"' }],
       },
     };
   }
