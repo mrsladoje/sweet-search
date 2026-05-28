@@ -173,21 +173,28 @@ async function main() {
   console.log(`[repair] candidate.scores has ${Object.keys(candidate.scores).length} probe entries`);
   console.log(`[repair] candidate.detail has ${Object.keys(candidate.detail).length} probe entries`);
 
-  // ─── append 24 new confirm events to trajectory ─────────────────────────
+  // ─── append corrected confirm events to trajectory ──────────────────────
+  // These events SUPERSEDE the matching pre-correction events at the natural
+  // key (round, mutation_hash, probe_id, target) without destructively
+  // rewriting them. Trajectory readers MUST deduplicate by that key, preferring
+  // events with `corrected: true` (and the older `_repair_rerun` marker, for
+  // pre-2026-05-28 repair events that lacked the explicit flag). See
+  // docs/PHASE7.md §4.6.2.
   const repairTs = new Date().toISOString();
   // Get a repo commit for the event (use the original confirms' commit so the events stay consistent).
   const repoCommit = confirms[0]?.repo_commit ?? null;
   const newConfirmLines = [];
   for (const { probe_id, target, probe, result, wall_ms } of liveResults) {
     const u = result.usage?.agent ?? {};
+    const supersededEvent = confirms.find((c) => c.probe_id === probe_id && c.target === target) || null;
     const ev = {
       _kind: 'confirm',
       round: 7,
       mutation_hash: TARGET_HASH,
       prompt_hash: TARGET_HASH,
       probe_id,
-      probe_hash: probe.hash ?? confirms.find((c) => c.probe_id === probe_id)?.probe_hash ?? null,
-      probe_stratum: probe.stratum ?? confirms.find((c) => c.probe_id === probe_id)?.probe_stratum ?? null,
+      probe_hash: probe.hash ?? supersededEvent?.probe_hash ?? null,
+      probe_stratum: probe.stratum ?? supersededEvent?.probe_stratum ?? null,
       target,
       model_id: u.model_id ?? (target === 'sonnet' ? 'claude-sonnet-4-6' : 'gpt-5.5-instant'),
       api_path: u.api_path ?? null,
@@ -206,6 +213,16 @@ async function main() {
       retry_count: u.retry_count ?? 0,
       wall_ms,
       judge_panel: result.usage?.judges ?? [],
+      // Explicit supersession flags. `corrected: true` is the load-bearing
+      // flag for trajectory readers; `supersedes` records the natural key
+      // of the pre-correction event so audits can locate it.
+      corrected: true,
+      supersedes: {
+        round: 7,
+        mutation_hash: TARGET_HASH,
+        probe_id,
+        target,
+      },
       _repair_rerun: {
         timestamp: repairTs,
         reason: 'jointbest-persistence-repair: replace round-7 silent-failure entry with live remeasurement',

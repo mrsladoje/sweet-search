@@ -1,27 +1,6 @@
-/**
- * Phase 7 — GEPA loop driver (§3.1, §3.2, §3.7.1, §7.4, §7.6).
- *
- * Wires the LANDED wave-1 modules (eas / tare / pareto-rebaseline /
- * token-validator / OP-2..5 / persist / token-bucket / variant-loader) plus the
- * inline OP-1 reflective rewrite (gepa-mutate) into the joint Maximin loop:
- *
- *   1 selection → 2 mutation (3-slot portfolio) → 3 screen (8 probes × 2)
- *   → 4 persist → 5 confirm (full dev × 2) → 6 Pareto-gated TARE
- *   → 7 Pareto update (0.15 admission cap) → 8 (manual reflection) → 9 patience
- *   + round-11 rotation & re-baseline + dynamic hard-negative weighting.
- *
- * The agent-evaluation seam (`evaluateCandidate`) and the model caller
- * (`callModel`) are INJECTABLE — the live run uses the real harness
- * (gepa-evaluate.makeRealEvaluateCandidate + judge-runner.runJudge); tests +
- * `--dry-run` pass deterministic stubs so nothing here needs network.
- *
- * Resume (§7.4): every round atomically checkpoints the full loop state to
- * pareto-current.json AND appends audit events to gepa-trajectory.jsonl; on
- * `--resume` the loop reloads the checkpoint (cross-checked against
- * persist.resumeState) and continues only the missing rounds.
- */
+/** Phase 7 GEPA loop driver: selection, mutation, mixed screen, confirm,
+ * TARE, Pareto update, rotation/rebaseline, persistence, and resume. */
 
-import { appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,7 +17,8 @@ import {
 } from './p7-persist.mjs';
 import { rebaselineFront } from './pareto-rebaseline.mjs';
 import { paretoGatedTare } from './tare.mjs';
-import { buildCandidate, computeProbeWeights, topFailures, scoreCandidateOnProbes } from './gepa-scoring.mjs';
+import { buildCandidate, computeProbeWeights, topFailures, topInefficiencies, scoreCandidateOnProbes } from './gepa-scoring.mjs';
+import { selectScreenProbes } from './gepa-screening.mjs';
 import {
   planSlots,
   selectParent,
@@ -49,7 +29,11 @@ import {
 } from './gepa-pareto.mjs';
 import { generateMutations, generateAdversarialParaphrases } from './gepa-mutate.mjs';
 import { buildReplayMap, makeResumeReplayEvaluate, buildConfirmEvent } from './gepa-finalize.mjs';
+import { makeLogger } from './gepa-logger.mjs';
 import { mulberry32 } from '../stats/rng.mjs';
+
+export { makeLogger } from './gepa-logger.mjs';
+export { makeDryRunEvaluate, makeDryRunCallModel } from './gepa-dry-run.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -64,52 +48,6 @@ export const SMOKE_PROBES_PATH = path.join(REPO_ROOT, 'core', 'prompt-optimizati
 export function roundRng(seed, round) {
   const s = (Math.imul(seed >>> 0, 2654435761) ^ Math.imul(round, 40503)) >>> 0;
   return mulberry32(s);
-}
-
-// ─── verbose logger (§7.6) ──────────────────────────────────────────────────
-
-export function makeLogger({ logPath, stream = process.stdout, now = () => Date.now(), enabled = true } = {}) {
-  const ts = () => new Date(now()).toISOString().slice(11, 19);
-  return (line) => {
-    if (!enabled) return;
-    const out = `[${ts()}] gepa: ${line}\n`;
-    try { stream.write(out); } catch { /* */ }
-    // m1: this verbose run-log uses bare appendFileSync (NO fsync) — it is
-    // NON-LOAD-BEARING by design. The durable audit source is the fsync-backed
-    // JSONL trajectory (appendFsynced); the log is a human-readable convenience
-    // and must NOT be promoted into the resume/recovery hot path.
-    if (logPath) { try { appendFileSync(logPath, out); } catch { /* */ } }
-  };
-}
-
-// ─── dry-run stubs (offline; CLI --dry-run default) ─────────────────────────
-
-/** Deterministic stub agent evaluator — score is a hash of (prompt,probe,target). */
-export function makeDryRunEvaluate() {
-  return async ({ promptText, probe, target }) => {
-    const h = hashContent(`${promptText}|${probe.id}|${target}`);
-    const s = Number.parseInt(h.slice(2, 10), 16) / 0xffffffff;
-    const calls = 1 + Math.floor(s * 4);
-    return {
-      score: s,
-      toolCalls: calls,
-      finalAnswerEmitted: true,
-      usedReadOrGrep: s > 0.2,
-      usedSweetSearch: s > 0.2,
-      usedNativeSearch: false,
-      usedNativeRead: false,
-      trajectory: { toolCalls: Array.from({ length: calls }, () => ({ name: 'ss-search' })), answer: `ans-${probe.id}-${target}` },
-      wallMs: 1,
-    };
-  };
-}
-
-/** Deterministic stub model — echoes the fenced candidate body (token-preserving). */
-export function makeDryRunCallModel() {
-  return async ({ userPrompt }) => {
-    const m = userPrompt.match(/```\n([\s\S]*?)\n```/);
-    return { text: m ? m[1] : userPrompt, isError: false };
-  };
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -155,6 +93,7 @@ export async function runGepa(opts = {}) {
     rotationRound = DEFAULTS.rotationRound,
     rotationSwapCount = DEFAULTS.rotationSwapCount,
     screenProbeCount = DEFAULTS.screenProbes,
+    screenProbeIds = [],
     frontSize = DEFAULTS.paretoFrontSize,
     paretoCap = DEFAULTS.paretoAdmissionCap,
     resume = false,
@@ -355,7 +294,10 @@ export async function runGepa(opts = {}) {
     // ── 1 selection + 2 mutation portfolio ──
     const parent = selectParent({ front, rng: rRng });
     const slots = planSlots({ round, front, probeIds: activeIds, rotationRound });
-    const failures = topFailures({ candidate: parent, probes: probeSet, limit: 5 });
+    const inefficiencies = topInefficiencies({ candidate: parent, probes: probeSet, limit: 5 });
+    const failures = inefficiencies.length > 0
+      ? inefficiencies
+      : topFailures({ candidate: parent, probes: probeSet, limit: 5 });
     const muts = await generateMutations({ slots, parent, failures, probeById, round, callModel: mutatorCm, rng: rRng, reflectionHint, maxAttemptsPerSlot });
 
     const accepted = [];
@@ -377,11 +319,18 @@ export async function runGepa(opts = {}) {
       log(`round ${round} mut ${slotIdx}/${muts.length} ${m.sourceOp} on ${parent.id} → ${hash.slice(0, 10)}${attemptsTag}`);
     }
 
-    // ── 3 screen (8 probes × 2 targets) ──
+    // ── 3 screen (mixed 8 probes × 2 targets) ──
     let survivor = null;
     if (accepted.length > 0) {
-      const screenProbes = probeSet.slice(0, screenProbeCount);
+      const screenProbes = selectScreenProbes({
+        probeSet,
+        count: screenProbeCount,
+        round,
+        seed,
+        explicitIds: screenProbeIds,
+      });
       const screenIds = screenProbes.map((p) => p.id);
+      log(`round ${round} screen probes: ${screenIds.join(',')}`);
       const screenWeights = computeProbeWeights({ front, probeIds: screenIds, round, roundsEvaluatedByProbe });
       let best = null;
       for (const m of accepted) {

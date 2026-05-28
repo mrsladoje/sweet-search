@@ -298,7 +298,7 @@ describe('p7 variant slate — consumer-clean contract', () => {
 describe('p7 variant slate — §3.2.3 stateful-summary rule', () => {
   it('the canonical rule imports cleanly and is non-trivial', () => {
     expect(typeof STATEFUL_SUMMARY_RULE).toBe('string');
-    expect(STATEFUL_SUMMARY_RULE.startsWith('Before your 3rd tool call')).toBe(true);
+    expect(STATEFUL_SUMMARY_RULE.startsWith('Before your third sweet-search query')).toBe(true);
     expect(STATEFUL_SUMMARY_RULE).toContain('<state_summary>');
   });
 

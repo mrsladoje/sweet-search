@@ -19,6 +19,7 @@
 import {
   DEFAULTS,
   TARGET_LIST,
+  callWindowFor,
   maximinPerProbe,
   hashContent,
 } from './p7-shared.mjs';
@@ -341,5 +342,125 @@ export function topFailures({ candidate, probes, limit = 5 }) {
     });
   }
   rows.sort((a, b) => a.jointScore - b.jointScore);
+  return rows.slice(0, limit);
+}
+
+function nativeRunsByProbe(candidate, pid) {
+  const out = [];
+  const breakdown = candidate.nativeRelative?.breakdown;
+  if (!breakdown || typeof breakdown !== 'object') return out;
+  for (const target of TARGET_LIST) {
+    const row = breakdown[target]?.runs?.find((r) => r.probeId === pid);
+    if (row) out.push({ target, row });
+  }
+  return out;
+}
+
+/**
+ * Minimum native-relative `desirability.overall` for a probe to be surfaced as
+ * an inefficiency. At or above this, the probe is already near-native efficient
+ * and surfacing it would give OP-1 fake "improve this" pressure — exactly the
+ * failure mode the original `topFailures()` accuracy-only signal exhibited on
+ * a saturated front. Probes at or above the threshold are SKIPPED ENTIRELY by
+ * the native-relative path (no fallthrough to the heuristic call-window path);
+ * the heuristic path runs only when a probe has no native-relative rows at all.
+ * If every probe is gated out this way, `topInefficiencies` returns [] and
+ * `runGepa` falls back to `topFailures()`.
+ */
+export const INEFFICIENCY_OVERALL_THRESHOLD = 0.6;
+
+/**
+ * The N worst native-relative inefficiency traces for OP-1 reflection.
+ *
+ * Accuracy on the mature front is often saturated, so `topFailures()` can return
+ * an empty set and leave the reflector with no useful pressure. This extractor
+ * ranks probes by low native-relative desirability, prioritising calls/tokens
+ * waste even when the answer is already correct. Probes whose native-relative
+ * `desirability.overall` is at or above `INEFFICIENCY_OVERALL_THRESHOLD` are
+ * NOT surfaced — they are near-native efficient and would only invite OP-1 to
+ * polish already-good traces.
+ */
+export function topInefficiencies({ candidate, probes, limit = 5, threshold = INEFFICIENCY_OVERALL_THRESHOLD }) {
+  const byId = Object.fromEntries((probes || []).map((p) => [p.id, p]));
+  const rows = [];
+
+  for (const pid of Object.keys(candidate.scores || {})) {
+    const probe = byId[pid] || {};
+    const nativeRows = nativeRunsByProbe(candidate, pid);
+    if (nativeRows.length > 0) {
+      nativeRows.sort((a, b) => (a.row.desirability?.overall ?? 1) - (b.row.desirability?.overall ?? 1));
+      const { target, row } = nativeRows[0];
+      const overall = row.desirability?.overall ?? 1;
+      if (overall >= threshold) {
+        // Probe is near-native efficient. Skip — DO NOT fall through to the
+        // heuristic path. If every probe is in this state, the result set is
+        // [] and `runGepa` falls back to `topFailures()` rather than surfacing
+        // false pressure on a saturated candidate.
+        continue;
+      }
+      const traj = candidate.detail?.[pid]?.[target]?.traj || { toolCalls: [], answer: '' };
+      rows.push({
+        probeId: pid,
+        stratum: probe.stratum ?? null,
+        repo: probe.repo ?? null,
+        query: probe.query ?? null,
+        jointScore: candidate.scores[pid],
+        target,
+        toolCalls: traj.toolCalls,
+        answer: traj.answer,
+        expectedFiles: probe.expectedFiles ?? [],
+        nativeRelativeOverall: row.desirability?.overall ?? null,
+        desirability: row.desirability ?? null,
+        calls: row.calls,
+        nativeCalls: row.nativeCalls,
+        tokens: row.tokens,
+        nativeTokens: row.nativeTokens,
+        tokensForScoring: row.tokensForScoring,
+        nativeTokensForScoring: row.nativeTokensForScoring,
+      });
+      continue;
+    }
+
+    const d = candidate.detail?.[pid];
+    if (!d) continue;
+    let worst = null;
+    for (const target of TARGET_LIST) {
+      const traj = d[target]?.traj || { toolCalls: [], answer: '' };
+      const calls = Array.isArray(traj.toolCalls) ? traj.toolCalls.length : 0;
+      let lo = 0;
+      let hi = Infinity;
+      try { [lo, hi] = callWindowFor(probe); } catch { /* unknown stratum */ }
+      const deviation = Math.max(0, lo - calls) + Math.max(0, calls - hi);
+      const tokens = agentTokenCount(d[target]?.usage);
+      const score = deviation * 1000 + (tokens ?? 0);
+      if (!worst || score > worst.score) worst = { target, traj, calls, tokens, deviation, score };
+    }
+    if (!worst || (worst.deviation <= 0 && !(worst.tokens > 0))) continue;
+    rows.push({
+      probeId: pid,
+      stratum: probe.stratum ?? null,
+      repo: probe.repo ?? null,
+      query: probe.query ?? null,
+      jointScore: candidate.scores[pid],
+      target: worst.target,
+      toolCalls: worst.traj.toolCalls,
+      answer: worst.traj.answer,
+      expectedFiles: probe.expectedFiles ?? [],
+      calls: worst.calls,
+      tokens: worst.tokens,
+      callWindow: Array.isArray(probe.expected_call_window) ? probe.expected_call_window : null,
+      callDeviation: worst.deviation,
+    });
+  }
+
+  rows.sort((a, b) => {
+    const ao = typeof a.nativeRelativeOverall === 'number' ? a.nativeRelativeOverall : Infinity;
+    const bo = typeof b.nativeRelativeOverall === 'number' ? b.nativeRelativeOverall : Infinity;
+    if (ao !== bo) return ao - bo;
+    const ac = (a.desirability?.calls ?? 1) + (a.desirability?.tokens ?? 1);
+    const bc = (b.desirability?.calls ?? 1) + (b.desirability?.tokens ?? 1);
+    if (ac !== bc) return ac - bc;
+    return (b.callDeviation ?? 0) - (a.callDeviation ?? 0);
+  });
   return rows.slice(0, limit);
 }

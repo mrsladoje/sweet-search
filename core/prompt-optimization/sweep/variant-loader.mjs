@@ -16,7 +16,7 @@
  * Plan references: docs/PHASE7.md §4.2, §4.3, §3.2.1.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, isAbsolute, basename, sep } from 'node:path';
 
@@ -25,6 +25,7 @@ import { PROTECTED_TOKEN_RE } from './p7-shared.mjs';
 // ─── constants ──────────────────────────────────────────────────────────────
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(HERE, '../../..');
 /** Canonical directory holding the T_i seed files. */
 export const VARIANTS_DIR = resolve(HERE, '../data/p7-variants');
 
@@ -214,6 +215,36 @@ function resolveVariantPath(idOrPath) {
   return resolved;
 }
 
+function assertInside(root, resolved, label) {
+  if (resolved !== root && !resolved.startsWith(root + sep)) {
+    throw new Error(`${label}: refusing to load outside ${root}`);
+  }
+}
+
+function resolveVariantsDir(dir) {
+  if (typeof dir !== 'string' || dir.length === 0) {
+    throw new TypeError('loadVariantsFromDir: directory string required');
+  }
+  const resolved = isAbsolute(dir) ? resolve(dir) : resolve(REPO_ROOT, dir);
+  assertInside(REPO_ROOT, resolved, 'loadVariantsFromDir');
+  return resolved;
+}
+
+function resolveVariantPathInDir(dir, idOrPath) {
+  const root = resolveVariantsDir(dir);
+  if (typeof idOrPath !== 'string' || idOrPath.length === 0) {
+    throw new TypeError('loadVariantFromDir: id or path string required');
+  }
+  let resolved;
+  if (idOrPath.includes('/') || idOrPath.endsWith('.md')) {
+    resolved = isAbsolute(idOrPath) ? resolve(idOrPath) : resolve(root, basename(idOrPath));
+  } else {
+    resolved = resolve(root, `${idOrPath}.md`);
+  }
+  assertInside(root, resolved, 'loadVariantFromDir');
+  return resolved;
+}
+
 // ─── public loaders ───────────────────────────────────────────────────────────
 
 /**
@@ -236,6 +267,10 @@ function resolveVariantPath(idOrPath) {
  */
 export function loadVariant(idOrPath) {
   const path = resolveVariantPath(idOrPath);
+  return loadVariantFile(path);
+}
+
+function loadVariantFile(path) {
   const raw = readFileSync(path, 'utf8');
   const { frontMatterBlock, body } = splitFrontMatter(raw);
   const frontMatter = parseFrontMatter(frontMatterBlock);
@@ -252,12 +287,31 @@ export function loadVariant(idOrPath) {
 }
 
 /**
+ * Load one T_i-style variant from a caller-supplied directory under the repo.
+ */
+export function loadVariantFromDir(dir, idOrPath) {
+  return loadVariantFile(resolveVariantPathInDir(dir, idOrPath));
+}
+
+/**
  * Load all 15 seed variants in canonical (T1..T15) order.
  *
  * @returns {Variant[]}
  */
 export function loadAllVariants() {
   return VARIANT_IDS.map((id) => loadVariant(id));
+}
+
+/**
+ * Load every `T*.md` variant from a caller-supplied directory under the repo.
+ * This is used by restart scaffolds without mutating the canonical T1-T15 slate.
+ */
+export function loadVariantsFromDir(dir) {
+  const root = resolveVariantsDir(dir);
+  return readdirSync(root)
+    .filter((name) => /^T\d+\.md$/.test(name))
+    .sort((a, b) => Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10))
+    .map((name) => loadVariantFile(resolve(root, name)));
 }
 
 // ─── validation ───────────────────────────────────────────────────────────────
