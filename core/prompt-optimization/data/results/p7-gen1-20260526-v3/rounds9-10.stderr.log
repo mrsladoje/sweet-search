@@ -1,0 +1,11 @@
+gepa: fatal — AllJudgesFailedError: all 3 judge(s) failed after retries
+    at judgePanelScore (file:///Users/admin/Projects/sweet-search-private/core/prompt-optimization/sweep/gepa-evaluate.mjs:273:11)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processTimers (node:internal/timers:538:9)
+    at async evaluateCandidate (file:///Users/admin/Projects/sweet-search-private/core/prompt-optimization/sweep/gepa-evaluate.mjs:412:31)
+    at async file:///Users/admin/Projects/sweet-search-private/core/prompt-optimization/sweep/gepa-scoring.mjs:168:15
+    at async lane (file:///Users/admin/Projects/sweet-search-private/core/prompt-optimization/sweep/gepa-scoring.mjs:140:20)
+    at async Promise.all (index 4)
+    at async mapWithConcurrency (file:///Users/admin/Projects/sweet-search-private/core/prompt-optimization/sweep/gepa-scoring.mjs:143:3)
+    at async scoreCandidateOnProbes (file:///Users/admin/Projects/sweet-search-private/core/prompt-optimization/sweep/gepa-scoring.mjs:162:23)
+    at async buildCandidate (file:///Users/admin/Projects/sweet-search-private/core/prompt-optimization/sweep/gepa-scoring.mjs:262:18)
