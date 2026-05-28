@@ -377,6 +377,90 @@ describe('mutation-rejection logging (§3.2.1)', () => {
     const { systemPrompt } = buildReflectivePrompt({ candidate: 'plain prose with no tokens', failures: [] });
     expect(systemPrompt).not.toMatch(/TOKEN PRESERVATION CONTRACT/);
   });
+
+  // The OP-1 reflector now receives topInefficiencies() rows by default
+  // (with the topFailures fallback only firing when no inefficient rows
+  // qualify). Inefficiency rows have a different shape from failure rows:
+  // they carry `calls`, `nativeCalls`, `tokens`, `nativeTokens`,
+  // `desirability`, and `nativeRelativeOverall`, and the `expectedFiles`
+  // field may be absent. This test pins the contract: an inefficiency row
+  // produces a well-formed trace block with no `undefined`/`null`
+  // interpolations and surfaces the native-relative call/token gap so the
+  // reflector can actually act on it.
+  it('buildReflectivePrompt renders inefficiency-shape rows without undefined/null and with the calls-vs-native context', () => {
+    const inefficiencyRow = {
+      probeId: 'p7',
+      stratum: 'multi-file-flow',
+      repo: 'gin',
+      query: 'How does the router dispatch?',
+      jointScore: 1,
+      target: 'sonnet',
+      // The trajectory the reflector reads from. expectedFiles intentionally absent.
+      toolCalls: [{ name: 'ss-search' }, { name: 'ss-search' }, { name: 'ss-read' }],
+      answer: 'It dispatches via the radix tree in tree.go.',
+      // Inefficiency-only fields:
+      nativeRelativeOverall: 0.21,
+      desirability: { accuracy: 1, calls: 0.15, tokens: 0.27, overall: 0.21 },
+      calls: 12,
+      nativeCalls: 3,
+      tokens: 9000,
+      nativeTokens: 1200,
+      tokensForScoring: 9000,
+      nativeTokensForScoring: 1200,
+    };
+    const candidate = 'You are a code search agent. Use [[ss-search]] first.';
+    const { userPrompt, systemPrompt } = buildReflectivePrompt({ candidate, failures: [inefficiencyRow] });
+
+    // No literal "undefined" or "null" should appear in the rendered prompt.
+    expect(userPrompt).not.toMatch(/\bundefined\b/);
+    expect(userPrompt).not.toMatch(/\bnull\b/);
+    expect(systemPrompt).not.toMatch(/\bundefined\b/);
+    expect(systemPrompt).not.toMatch(/\bnull\b/);
+
+    // The new "Worst inefficiency/failure traces" header (per the OP-1
+    // wording change Codex landed) should be present.
+    expect(userPrompt).toMatch(/Worst inefficiency\/failure traces/);
+
+    // The native-relative line must surface the actual efficiency gap so the
+    // reflector has something to act on (not just "this probe is bad").
+    expect(userPrompt).toMatch(/Native-relative: overall=0\.210/);
+    expect(userPrompt).toMatch(/calls=0\.150/);
+    expect(userPrompt).toMatch(/tokens=0\.270/);
+    expect(userPrompt).toMatch(/calls 12 vs native 3/);
+    expect(userPrompt).toMatch(/tokens 9000 vs native 1200/);
+
+    // The probe identity and the agent's actual answer must round-trip.
+    expect(userPrompt).toMatch(/probe p7 \(multi-file-flow \/ gin\)/);
+    expect(userPrompt).toMatch(/dispatches via the radix tree in tree\.go/);
+
+    // expectedFiles being absent must NOT crash the renderer; it should
+    // render as an empty array.
+    expect(userPrompt).toMatch(/Expected files: \[\]/);
+  });
+
+  it('buildReflectivePrompt still renders heuristic-shape rows (callDeviation, no nativeRelativeOverall) cleanly', () => {
+    // Fallback path: topInefficiencies returns the heuristic shape when a
+    // probe has no native-relative rows. Verify the older shape still works.
+    const heuristicRow = {
+      probeId: 'p2',
+      stratum: 'literal-lookup',
+      repo: 'fastify',
+      query: 'find the route registration helper',
+      jointScore: 1,
+      target: 'sonnet',
+      toolCalls: [{ name: 'ss-search' }],
+      answer: 'See fastify/lib/route.js',
+      callWindow: [1, 3],
+      callDeviation: 4,
+      calls: 7,
+      tokens: 2400,
+      // No nativeRelativeOverall / desirability / nativeCalls.
+    };
+    const { userPrompt } = buildReflectivePrompt({ candidate: 'Use [[ss-search]] first.', failures: [heuristicRow] });
+    expect(userPrompt).not.toMatch(/\bundefined\b/);
+    expect(userPrompt).not.toMatch(/\bnull\b/);
+    expect(userPrompt).toMatch(/Efficiency: calls=7 callDeviation=4; tokens=2400/);
+  });
 });
 
 // ─── 5. persistence + resume == fresh ───────────────────────────────────────
