@@ -302,7 +302,7 @@ describe('slot composition + OP-3/4/5 rotation (§3.2)', () => {
     expect(slots[2].op).toBe('persona-pivot');
   });
 
-  it('slot2 becomes trajectory-crossover when an A-wins/B-fails pair exists', () => {
+  it('slot2 becomes trajectory-crossover when an A-wins/B-fails pair exists (accuracy fallback, no cost data)', () => {
     const front = [
       { id: 'A', scores: { p1: 0.9 } }, // wins
       { id: 'B', scores: { p1: 0.3 } }, // fails
@@ -311,6 +311,66 @@ describe('slot composition + OP-3/4/5 rotation (§3.2)', () => {
     const slots = planSlots({ round: 2, front, probeIds: ['p1'] });
     expect(slots[1].op).toBe('trajectory-crossover');
     expect(slots[2].op).toBe('tool-mask'); // round 2 slot3
+  });
+
+  // ── cost-aware OP-2 finder (2026-05-29): saturated accuracy → select on $ gap ──
+  const mkCostInc = (id, scores, costByProbe) => ({
+    id, hash: id, prompt: `prompt-${id}`, scores,
+    nativeRelative: {
+      breakdown: {
+        sonnet: { runs: Object.entries(costByProbe).map(([probeId, costUsd]) => ({ probeId, costUsd })) },
+        gpt5_5: { runs: Object.entries(costByProbe).map(([probeId, costUsd]) => ({ probeId, costUsd })) },
+      },
+    },
+  });
+
+  it('cost-aware: pairs the cheapest accurate incumbent (winner) with the priciest (loser)', () => {
+    const front = [
+      mkCostInc('CHEAP', { p1: 0.95 }, { p1: 0.10 }),
+      mkCostInc('PRICEY', { p1: 0.97 }, { p1: 0.30 }), // 3× → meaningful gap
+      mkCostInc('MID', { p1: 0.96 }, { p1: 0.15 }),
+    ];
+    const pair = findCrossoverPair({ front, probeIds: ['p1'] });
+    expect(pair).toMatchObject({ probeId: 'p1' });
+    expect(pair.winner.id).toBe('CHEAP');
+    expect(pair.loser.id).toBe('PRICEY');
+    expect(pair.costWinner).toBeCloseTo(0.10, 6);
+    expect(pair.costLoser).toBeCloseTo(0.30, 6);
+  });
+
+  it('cost-aware: no pair when the $ gap is below minCostRatio', () => {
+    const front = [
+      mkCostInc('A', { p1: 0.95 }, { p1: 0.20 }),
+      mkCostInc('B', { p1: 0.95 }, { p1: 0.24 }), // 1.2× < 1.5×
+    ];
+    expect(findCrossoverPair({ front, probeIds: ['p1'] })).toBeNull();
+  });
+
+  it('cost-aware: a cheap-but-inaccurate incumbent is never crowned the winner', () => {
+    const front = [
+      mkCostInc('LAZY', { p1: 0.2 }, { p1: 0.02 }), // cheapest but WRONG → excluded by accuracy gate
+      mkCostInc('GOOD_CHEAP', { p1: 0.95 }, { p1: 0.10 }),
+      mkCostInc('GOOD_PRICEY', { p1: 0.95 }, { p1: 0.30 }),
+    ];
+    const pair = findCrossoverPair({ front, probeIds: ['p1'] });
+    expect(pair.winner.id).toBe('GOOD_CHEAP');
+    expect(pair.loser.id).toBe('GOOD_PRICEY');
+  });
+
+  it('cost-aware: picks the probe with the largest absolute $ gap', () => {
+    const front = [
+      mkCostInc('A', { p1: 0.95, p2: 0.95 }, { p1: 0.10, p2: 0.10 }),
+      mkCostInc('B', { p1: 0.95, p2: 0.95 }, { p1: 0.20, p2: 0.50 }), // p2 gap 0.40 > p1 gap 0.10
+    ];
+    expect(findCrossoverPair({ front, probeIds: ['p1', 'p2'] }).probeId).toBe('p2');
+  });
+
+  it('cost data present but no qualifying gap among solvers → null (no accuracy fallback)', () => {
+    const front = [
+      mkCostInc('A', { p1: 0.95 }, { p1: 0.20 }), // only solver
+      mkCostInc('B', { p1: 0.30 }, { p1: 0.02 }), // fails p1 → excluded; would be the legacy "loser"
+    ];
+    expect(findCrossoverPair({ front, probeIds: ['p1'] })).toBeNull();
   });
 
   it('selectParent is deterministic for a fixed rng', () => {

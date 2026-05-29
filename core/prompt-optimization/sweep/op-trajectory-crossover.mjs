@@ -44,6 +44,9 @@ function classifyBottleneck(winA, winB) {
  * @param {object}  params.trajectoryB     — { target, toolCalls, answer } from losing run
  * @param {string}  [params.reflectionHint]— latest manual-reflection hard negative
  * @param {string}  [params.bottleneck]    — override bottleneck label
+ * @param {object}  [params.costContext]   — { costWinner, costLoser, callsWinner?, callsLoser? };
+ *                                            when present, makes cost the PRIMARY objective
+ *                                            (both candidates are correct, A is cheaper)
  * @returns {{ systemPrompt: string, userPrompt: string }}
  */
 export function buildTrajectoryCrossoverPrompt({
@@ -54,6 +57,7 @@ export function buildTrajectoryCrossoverPrompt({
   trajectoryB,
   reflectionHint,
   bottleneck,
+  costContext,
 }) {
   const inferredBottleneck =
     bottleneck ?? classifyBottleneck(trajectoryA ?? null, trajectoryB ?? null);
@@ -64,6 +68,14 @@ export function buildTrajectoryCrossoverPrompt({
       : inferredBottleneck === 'sonnet-only'
       ? 'BOTTLENECK: Sonnet-only. GPT-5.5 is failing and needs different support. Do NOT import Sonnet\'s exploration cadence wholesale.'
       : 'BOTTLENECK: GPT-only. Sonnet is winning; import GPT-specific structural strengths.';
+
+  // Cost objective (2026-05-29): when the pair was selected on a COST mismatch
+  // (both candidates correct, A cheaper), make cost reduction the PRIMARY goal so
+  // the merge actually exploits the gap instead of just blending two correct prompts.
+  const costNote =
+    costContext && typeof costContext.costWinner === 'number' && typeof costContext.costLoser === 'number'
+      ? `\n\n## Cost objective (PRIMARY)\nAccuracy is saturated — BOTH candidates answer this probe correctly. They differ in COST. Candidate A (WINNING) solved it for $${costContext.costWinner.toFixed(4)}${typeof costContext.callsWinner === 'number' ? ` in ${costContext.callsWinner} tool call(s)` : ''}; candidate B (LOSING) spent $${costContext.costLoser.toFixed(4)}${typeof costContext.callsLoser === 'number' ? ` in ${costContext.callsLoser} tool call(s)` : ''} — ${(costContext.costLoser / Math.max(costContext.costWinner, 1e-9)).toFixed(1)}× more for the same answer. Your merged prompt MUST keep B's coverage/correctness while routing as efficiently as A. The single most important outcome is REDUCED cost (fewer tool calls / fewer tokens) at unchanged accuracy.`
+      : '';
 
   const hardNegative = reflectionHint
     ? `\n\n## HARD NEGATIVE CONSTRAINT (DO NOT VIOLATE)\n${reflectionHint}\nYou MUST NOT re-introduce any behaviour, phrasing, or structural pattern that has already been penalised by the human reviewer above. This constraint overrides all other guidance.`
@@ -76,6 +88,7 @@ export function buildTrajectoryCrossoverPrompt({
     ` candidate that merges the routing strengths of candidate A with the structural` +
     ` strengths of candidate B.` +
     `\n\n## Bottleneck analysis\n${bottleneckNote}` +
+    costNote +
     hardNegative +
     `\n\n## Protected tokens\nTokens wrapped in [[ ]] (e.g. [[ss-search]], [[ss-find]]) MUST appear` +
     ` verbatim with NO whitespace inside the brackets. Do NOT add, remove, or rename them.` +
@@ -126,6 +139,7 @@ export async function runTrajectoryCrossover({
   trajectoryB,
   reflectionHint,
   bottleneck,
+  costContext,
   callModel,
   reflector,
 }) {
@@ -139,6 +153,7 @@ export async function runTrajectoryCrossover({
     trajectoryB,
     reflectionHint,
     bottleneck,
+    costContext,
   });
 
   const result = await callModel({
