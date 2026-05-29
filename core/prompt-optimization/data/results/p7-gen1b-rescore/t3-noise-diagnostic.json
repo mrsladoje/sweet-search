@@ -1,0 +1,684 @@
+[
+  {
+    "probe": "cpp-004",
+    "rep": 1,
+    "score": 1,
+    "toolCalls": 13,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"VectorBytes public entry point lane count CPU chosen target runtime\" -k 5",
+      "Bash:ss-find \"find VectorBytes usage\" --regex \"\\bVectorBytes\\b\" -k 20",
+      "Bash:ss-find \"find VectorBytes definition\" --regex \"VectorBytes\\s*\\(\" -k 20",
+      "Bash:ss-grep \"VectorBytes\" -k 50",
+      "Bash:ss-search \"per target functions query capabilities DispatchedTarget HaveInteger64 VectorBytes implementation dynamic dispatch\" -k 10",
+      "Bash:ss-read hwy/per_target.cc 1 90",
+      "Bash:ss-search \"HWY_DYNAMIC_DISPATCH macro selected target runtime function pointer\" -k 10",
+      "Bash:ss-find \"find HWY_DYNAMIC_DISPATCH macro\" --regex \"HWY_DYNAMIC_DISPATCH\" -k 20",
+      "Bash:ss-read hwy/targets.h 300 380",
+      "Bash:ss-read hwy/highway.h 520 664",
+      "Bash:ss-find \"find GetChosenTarget\" --regex \"GetChosenTarget\" -k 10",
+      "Bash:ss-read hwy/targets.h 380 388 && ss-grep \"ChosenTarget& GetChosenTarget|GetChosenTarget\\(\" -k 20",
+      "Bash:ss-read hwy/highway.h 380 435"
+    ],
+    "answerLen": 2000,
+    "answer": "The runtime path is:\n\n`hwy::VectorBytes()` → `HWY_DYNAMIC_DISPATCH(GetVectorBytes)()` → dispatch table entry selected by `GetChosenTarget().GetIndex()` → per-target `hwy::<HWY_NAMESPACE>::GetVectorBytes()` → `Lanes(ScalableTag<uint8_t>())`.\n\nFiles/symbols that answer it:\n\n- `hwy/per_target.h`\n  - Symbol: `hwy::VectorBytes`\n  - Declares the public exported entry point. Its comment says it returns the vector size in bytes, i.e. `Lanes(ScalableTag<uint8_t>())`, for the target called by `HWY_DYNAMIC_DISPATCH`.\n\n- `hwy/per_target.cc`\n  - Symbols:\n    - `hwy::VectorBytes`\n    - anonymous per-target `GetVectorBytes`\n    - `HWY_EXPORT(GetVectorBytes)`\n  - This file is self-included through `hwy/fore",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 175649,
+      "output_tokens": 1368,
+      "cache_read_tokens": 153361,
+      "retry_count": 0
+    },
+    "ms": 77882
+  },
+  {
+    "probe": "cpp-004",
+    "rep": 2,
+    "score": 1,
+    "toolCalls": 13,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"How does VectorBytes get runtime lane count CPU chosen target dispatch\" -k 5",
+      "Bash:ss-find \"find VectorBytes usage\" --regex \"\\bVectorBytes\\b\" -k 10",
+      "Bash:ss-find \"find VectorBytes definition\" --regex \"VectorBytes\\s*\\(\" -k 20",
+      "Bash:ss-grep \"VectorBytes\" -k 50",
+      "Bash:ss-search \"per target implementation DispatchedTarget HaveInteger64 HaveFloat16\" -k 10",
+      "Bash:ss-read hwy/per_target.cc 1 90",
+      "Bash:ss-find \"find HWY_DYNAMIC_DISPATCH\" --regex \"\\bHWY_DYNAMIC_DISPATCH\\b\" -k 10",
+      "Bash:ss-read hwy/highway.h 570 650",
+      "Bash:ss-find \"find GetChosenTarget\" --regex \"\\bGetChosenTarget\\b\" -k 10",
+      "Bash:ss-read hwy/targets.h 240 360",
+      "Bash:ss-read hwy/targets.h 360 388",
+      "Bash:ss-find \"find Lanes ScalableTag uint8_t\" --regex \"Lanes\\(ScalableTag\" -k 10",
+      "Bash:ss-find \"find Lanes definition\" --regex \"\\bLanes\\s*\\(\" -k 20"
+    ],
+    "answerLen": 2000,
+    "answer": "The runtime path is:\n\n`hwy::VectorBytes()` → dynamic-dispatch table entry for `GetVectorBytes` → per-target `hwy::HWY_NAMESPACE::{anonymous}::GetVectorBytes()` → `Lanes(ScalableTag<uint8_t>())`.\n\nFiles/symbols that answer it:\n\n1. **`hwy/per_target.h` — `hwy::VectorBytes()` declaration**\n   - Declares the public entry point:\n     ```cpp\n     HWY_DLLEXPORT size_t VectorBytes();\n     ```\n   - Its comment says it returns the vector size in bytes, equivalent to:\n     ```cpp\n     Lanes(ScalableTag<uint8_t>())\n     ```\n   - It also notes this is an indirect call and reflects the target selected by `HWY_DYNAMIC_DISPATCH`.\n\n2. **`hwy/per_target.cc` — per-target implementation and public dispatch wrap",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 173637,
+      "output_tokens": 1613,
+      "cache_read_tokens": 148981,
+      "retry_count": 0
+    },
+    "ms": 96749
+  },
+  {
+    "probe": "kotlin-002",
+    "rep": 0,
+    "score": 1,
+    "toolCalls": 4,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"CoroutineScope.launch implementation StandaloneCoroutine coroutine builder\" -k 5",
+      "Bash:ss-find \"find launch usage\" --regex \"\\blaunch\\b\" -k 10",
+      "Bash:ss-read kotlinx-coroutines-core/common/src/Builders.common.kt 190 535",
+      "Bash:ss-read kotlinx-coroutines-core/common/src/Builders.common.kt 500 535 && ss-read kotlinx-coroutines-core/common/src/Guidance.kt 1 275"
+    ],
+    "answerLen": 2000,
+    "answer": "The real `CoroutineScope.launch` coroutine builder is in:\n\n- `kotlinx-coroutines-core/common/src/Builders.common.kt`\n- Symbol: `public fun CoroutineScope.launch(...)`\n\nRelevant implementation:\n\n```kotlin\npublic fun CoroutineScope.launch(\n    context: CoroutineContext = EmptyCoroutineContext,\n    start: CoroutineStart = CoroutineStart.DEFAULT,\n    block: suspend CoroutineScope.() -> Unit\n): Job {\n    val newContext = newCoroutineContext(context)\n    val coroutine = if (start.isLazy)\n        LazyStandaloneCoroutine(newContext, block) else\n        StandaloneCoroutine(newContext, active = true)\n    coroutine.start(start, coroutine, block)\n    return coroutine\n}\n```\n\nThis is the actual builder be",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 26447,
+      "output_tokens": 812,
+      "cache_read_tokens": 16402,
+      "retry_count": 0
+    },
+    "ms": 24268
+  },
+  {
+    "probe": "cpp-004",
+    "rep": 0,
+    "score": 1,
+    "toolCalls": 18,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"How does VectorBytes get lane count CPU target runtime dispatch\" -k 5",
+      "Bash:ss-find \"find VectorBytes usage\" --regex \"\\bVectorBytes\\b\" -k 10",
+      "Bash:ss-search \"VectorBytes implementation dynamic dispatch per_target\" -k 10",
+      "Bash:ss-find \"find GetVectorBytes definition\" --regex \"\\bGetVectorBytes\\b\" -k 10",
+      "Bash:ss-read hwy/per_target.cc 1 140",
+      "Bash:ss-find \"find HWY_DYNAMIC_DISPATCH definition\" --regex \"#define HWY_DYNAMIC_DISPATCH|HWY_DYNAMIC_DISPATCH\" -k 10",
+      "Bash:ss-read hwy/highway.h 540 665",
+      "Bash:ss-find \"find GetChosenTarget definition\" --regex \"\\bGetChosenTarget\\b|struct ChosenTarget|class ChosenTarget\" -k 10",
+      "Bash:ss-read hwy/targets.h 300 430",
+      "Bash:ss-find \"find FunctionCache ChooseAndCall Update SupportedTargets\" --regex \"ChooseAndCall|TableChooseAndCall|FunctionCache|Update\\(HWY_SUPPORTED_TARGETS|SupportedTargets\\(\\)\" -k 10",
+      "Bash:ss-read hwy/highway.h 300 540",
+      "Bash:ss-find \"find ScalableTag Lanes uint8_t vector bytes implementation\" --regex \"Lanes\\(ScalableTag|class ScalableTag|struct ScalableTag\" -k 10",
+      "Bash:ss-grep \"HWY_API.*Lanes\\(|size_t Lanes\\(\" -k 30",
+      "Bash:ss-grep \"HWY_API size_t Lanes|HWY_INLINE size_t Lanes|constexpr size_t Lanes\" -k 50",
+      "Bash:ss-read hwy/ops/shared-inl.h 360 430 && ss-read hwy/ops/arm_sve-inl.h 300 340 && ss-read hwy/ops/rvv-inl.h 640 680",
+      "Bash:ss-grep \"template <.*>.*Lanes\\(|MaxLanes\\(.*Simd|HWY_LANES\" -k 80",
+      "Bash:ss-grep \"HWY_API size_t Lanes|HWY_INLINE size_t Lanes|HWY_LANES\" -k 80",
+      "Bash:ss-read hwy/ops/shared-inl.h 450 500 && ss-read hwy/ops/set_macros-inl.h 40 70"
+    ],
+    "answerLen": 2000,
+    "answer": "The chain is:\n\n1. **Public entry point**\n   - File: `hwy/per_target.h`\n   - Symbol: `hwy::VectorBytes()`\n   - It is declared as a public exported function. The comment says it returns the vector size in bytes, specifically:\n     ```cpp\n     Lanes(ScalableTag<uint8_t>())\n     ```\n     for the target selected by `HWY_DYNAMIC_DISPATCH`.\n\n2. **Runtime dispatch wrapper**\n   - File: `hwy/per_target.cc`\n   - Symbols: `hwy::VectorBytes`, internal `GetVectorBytes`\n   - The public function is implemented as:\n     ```cpp\n     HWY_DLLEXPORT size_t VectorBytes() {\n       return HWY_DYNAMIC_DISPATCH(GetVectorBytes)();\n     }\n     ```\n   - The per-target implementation compiled into each `HWY_NAMESPACE` is",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 350715,
+      "output_tokens": 2082,
+      "cache_read_tokens": 316958,
+      "retry_count": 0
+    },
+    "ms": 115876
+  },
+  {
+    "probe": "kotlin-002",
+    "rep": 2,
+    "score": 1,
+    "toolCalls": 3,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"CoroutineScope.launch implementation StandaloneCoroutine coroutine builder\" -k 5",
+      "Bash:ss-read kotlinx-coroutines-core/common/src/Builders.common.kt 140 225",
+      "Bash:ss-read kotlinx-coroutines-core/common/src/Builders.common.kt 500 540"
+    ],
+    "answerLen": 2000,
+    "answer": "The actual implementation is in:\n\n- `kotlinx-coroutines-core/common/src/Builders.common.kt`\n  - Symbol: `public fun CoroutineScope.launch(...)`\n  - Lines: around `188–201`\n  - Related implementation classes:\n    - `StandaloneCoroutine`\n    - `LazyStandaloneCoroutine`\n  - Lines: around `515–532`\n\nThe real `CoroutineScope.launch` coroutine builder is:\n\n```kotlin\npublic fun CoroutineScope.launch(\n    context: CoroutineContext = EmptyCoroutineContext,\n    start: CoroutineStart = CoroutineStart.DEFAULT,\n    block: suspend CoroutineScope.() -> Unit\n): Job {\n    val newContext = newCoroutineContext(context)\n    val coroutine = if (start.isLazy)\n        LazyStandaloneCoroutine(newContext, block) els",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 12101,
+      "output_tokens": 685,
+      "cache_read_tokens": 7991,
+      "retry_count": 0
+    },
+    "ms": 15829
+  },
+  {
+    "probe": "kotlin-002",
+    "rep": 1,
+    "score": 1,
+    "toolCalls": 5,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"CoroutineScope.launch real implementation StandaloneCoroutine coroutine builder\" -k 5",
+      "Bash:ss-read kotlinx-coroutines-core/common/src/Builders.common.kt 19 90",
+      "Bash:ss-read kotlinx-coroutines-core/common/src/Builders.common.kt 90 150",
+      "Bash:ss-find \"find launch definition\" --regex \"fun CoroutineScope\\.launch\" -k 5",
+      "Bash:ss-read kotlinx-coroutines-core/common/src/Builders.common.kt 510 540"
+    ],
+    "answerLen": 2000,
+    "answer": "The actual (non-deprecated) `CoroutineScope.launch` implementation is in:\n\n- `kotlinx-coroutines-core/common/src/Builders.common.kt`\n  - Symbol: `public fun CoroutineScope.launch(...)`\n  - Lines: ~200–211\n  - This is the real coroutine builder implementation.\n\nRelevant body:\n\n```kotlin\npublic fun CoroutineScope.launch(\n    context: CoroutineContext = EmptyCoroutineContext,\n    start: CoroutineStart = CoroutineStart.DEFAULT,\n    block: suspend CoroutineScope.() -> Unit\n): Job {\n    val newContext = newCoroutineContext(context)\n    val coroutine = if (start.isLazy)\n        LazyStandaloneCoroutine(newContext, block) else\n        StandaloneCoroutine(newContext, active = true)\n    coroutine.start",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 27338,
+      "output_tokens": 836,
+      "cache_read_tokens": 20233,
+      "retry_count": 0
+    },
+    "ms": 22473
+  },
+  {
+    "probe": "ruby-001",
+    "rep": 1,
+    "score": 1,
+    "toolCalls": 6,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"Sinatra route immediately stop return response method implementation\" -k 5",
+      "Bash:ss-grep \"\\bhalt\\b\" -k 20",
+      "Bash:ss-find \"find halt usage\" --regex \"\\bhalt\\b\" -k 10",
+      "Bash:ss-semantic lib/sinatra/base.rb \"halt\"",
+      "Bash:ss-grep \"def halt|class Halt|throw :halt|catch\\(:halt\" -k 30",
+      "Bash:ss-read lib/sinatra/base.rb 1000 1185"
+    ],
+    "answerLen": 1197,
+    "answer": "The Sinatra method is **`halt`**.\n\nEvidence:\n\n- **File:** `lib/sinatra/base.rb`\n- **Symbol:** `halt`\n- **Definition:** `Sinatra::Base#halt`\n\n```ruby\n# Exit the current block, halts any further processing\n# of the request, and returns the specified response.\ndef halt(*response)\n  response = response.first if response.length == 1\n  throw :halt, response\nend\n```\n\nIt is implemented using Ruby’s non-local control flow: **`throw :halt, response`**.\n\nSinatra catches that thrown value in:\n\n- **File:** `lib/sinatra/base.rb`\n- **Symbol:** `invoke`\n\n```ruby\n# Run the block with 'throw :halt' support and apply result to the response.\ndef invoke(&block)\n  res = catch(:halt, &block)\n\n  res = [res] if (Int",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 36224,
+      "output_tokens": 597,
+      "cache_read_tokens": 27158,
+      "retry_count": 0
+    },
+    "ms": 30011
+  },
+  {
+    "probe": "ruby-001",
+    "rep": 0,
+    "score": 1,
+    "toolCalls": 8,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"Sinatra route immediately stop return response method implementation\" -k 5",
+      "Bash:ss-search \"Sinatra halt route stops processing response helper\" -k 5",
+      "Bash:ss-find \"find halt usage\" --regex \"\\bhalt\\b\" -k 10",
+      "Bash:ss-semantic lib/sinatra/base.rb \"halt\"",
+      "Bash:ss-find \"find halt definition\" --regex \"def halt\\b\" -k 5",
+      "Bash:ss-grep \"catch\\s*\\(:halt|catch\\(:halt|throw :halt\" -k 20",
+      "Bash:ss-read lib/sinatra/base.rb 1068 1175",
+      "Bash:ss-read lib/sinatra/base.rb 1175 1205"
+    ],
+    "answerLen": 1507,
+    "answer": "The Sinatra method is **`halt`**.\n\nEvidence found with sweet-search:\n\n- **File:** `lib/sinatra/base.rb`\n- **Symbol:** `halt`\n- **Definition:** `Sinatra::Base#halt`\n\n```ruby\n# Exit the current block, halts any further processing\n# of the request, and returns the specified response.\ndef halt(*response)\n  response = response.first if response.length == 1\n  throw :halt, response\nend\n```\n\nIt is implemented using Ruby’s non-local control flow:\n\n1. `halt(*response)` normalizes a single argument.\n2. It then does:\n\n```ruby\nthrow :halt, response\n```\n\n3. Elsewhere in the same file, Sinatra catches that throw in `invoke`:\n\n```ruby\ndef invoke(&block)\n  res = catch(:halt, &block)\n\n  res = [res] if (Intege",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 65057,
+      "output_tokens": 751,
+      "cache_read_tokens": 53680,
+      "retry_count": 0
+    },
+    "ms": 33836
+  },
+  {
+    "probe": "ruby-001",
+    "rep": 2,
+    "score": 1,
+    "toolCalls": 5,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"Sinatra route immediately stop return response method halt implementation\" -k 5",
+      "Bash:ss-find \"find halt usage\" --regex \"\\bhalt\\b\" -k 10",
+      "Bash:ss-semantic lib/sinatra/base.rb \"halt\"",
+      "Bash:ss-find \"find halt definition\" --regex \"def halt\\b|class Halt|throw :halt|catch\\(:halt\\)\" -k 10",
+      "Bash:ss-find \"find catch halt implementation\" --regex \"catch\\(:halt\\)|def invoke\\b|process_route\" -k 10"
+    ],
+    "answerLen": 1483,
+    "answer": "The Sinatra method is **`halt`**.\n\nEvidence:\n\n- **File:** `lib/sinatra/base.rb`\n- **Symbol:** `Sinatra::Base#halt`\n\nIt is documented and implemented as:\n\n```ruby\n# Exit the current block, halts any further processing\n# of the request, and returns the specified response.\ndef halt(*response)\n  response = response.first if response.length == 1\n  throw :halt, response\nend\n```\n\nSo `halt` immediately stops route/request processing by doing a Ruby `throw :halt` with the response payload.\n\nThe corresponding catcher/response application is also in:\n\n- **File:** `lib/sinatra/base.rb`\n- **Symbol:** `Sinatra::Base#invoke`\n\n```ruby\n# Run the block with 'throw :halt' support and apply result to the respon",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 37385,
+      "output_tokens": 664,
+      "cache_read_tokens": 25969,
+      "retry_count": 0
+    },
+    "ms": 31427
+  },
+  {
+    "probe": "js-008",
+    "rep": 0,
+    "score": 1,
+    "toolCalls": 5,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"default 404 not found handler route Fastify\" -k 5",
+      "Bash:ss-search \"where unmatched route defaultRoute fourOhFour router lookup\" -k 5",
+      "Bash:ss-semantic fastify.js \"defaultRoute\"",
+      "Bash:ss-find \"find setNotFoundHandler usage\" --regex \"\\bsetNotFoundHandler\\b\" -k 10",
+      "Bash:ss-read fastify.js 690 725 && ss-read fastify.js 430 455"
+    ],
+    "answerLen": 2000,
+    "answer": "Fastify’s default “no matching route” path is handled by these files/symbols:\n\n- `fastify.js`\n  - `defaultRoute(req, res)` at `fastify.js:625`\n  - `fastify.setNotFoundHandler()` initialization at `fastify.js:433`\n  - public/internal `setNotFoundHandler(opts, handler)` at `fastify.js:694`\n\n- `lib/four-oh-four.js`\n  - `fourOhFour(options)`\n  - `basic404(request, reply)`\n  - `setNotFoundHandler(opts, handler, avvio, routeHandler)`\n  - `_setNotFoundHandler(prefix, opts, handler, avvio, routeHandler)`\n  - `fourOhFourFallBack(req, res)`\n\nHow it works:\n\n1. In `fastify.js`, the main router is configured with a `defaultRoute`. The comment says:\n\n   > “If the router does not match any route, every req",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 38538,
+      "output_tokens": 987,
+      "cache_read_tokens": 28434,
+      "retry_count": 0
+    },
+    "ms": 32060
+  },
+  {
+    "probe": "js-008",
+    "rep": 1,
+    "score": 1,
+    "toolCalls": 9,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"Fastify no matching route default 404 not found handler\" -k 5",
+      "Bash:ss-search \"where unmatched route invokes fourOhFour defaultRoute Fastify\" -k 5",
+      "Bash:ss-search \"Fastify setNotFoundHandler public API fourOhFour\" -k 5",
+      "Bash:ss-find \"find defaultRoute usage\" --regex \"defaultRoute\" -k 10",
+      "Bash:ss-read fastify.js 660 710 && ss-read lib/route.js 75 120 && ss-read lib/four-oh-four.js 31 160",
+      "Bash:ss-read lib/four-oh-four.js 160 190 && ss-find \"find fourOhFour router lookup\" --regex \"fourOhFour\\.router\" -k 10",
+      "Bash:ss-grep \"fourOhFour\\.router|defaultRoute\" -k 20",
+      "Bash:ss-read fastify.js 600 645 && ss-read lib/route.js 490 515 && ss-read fastify.js 815 830",
+      "Bash:ss-read fastify.js 880 900"
+    ],
+    "answerLen": 2000,
+    "answer": "The default 404 flow is implemented mainly by these symbols/files:\n\n- `fastify.js`\n  - `processOptions(options, defaultRoute, onBadUrl)`\n  - `defaultRoute(req, res)`\n  - public API method `setNotFoundHandler(opts, handler)`\n\n- `lib/four-oh-four.js`\n  - `fourOhFour(options)`\n  - `basic404(request, reply)`\n  - `setNotFoundHandler(opts, handler, avvio, routeHandler)`\n  - `_setNotFoundHandler(prefix, opts, handler, avvio, routeHandler)`\n  - `fourOhFourFallBack(req, res)`\n\n- `lib/route.js`\n  - `buildRouting(options)`\n  - `routeHandler(req, res, params, context, query)`\n\nHow the default 404 is produced:\n\n1. In `fastify.js`, `processOptions()` passes Fastify’s internal `defaultRoute` into `buildRou",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 104033,
+      "output_tokens": 1543,
+      "cache_read_tokens": 87117,
+      "retry_count": 0
+    },
+    "ms": 51762
+  },
+  {
+    "probe": "js-005",
+    "rep": 0,
+    "score": 1,
+    "toolCalls": 8,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"request schema validation lifecycle params body query headers\" -k 5",
+      "Bash:ss-trace validate --in lib/validation.js",
+      "Bash:ss-search \"where is validation validate called before preHandler request lifecycle\" -k 8",
+      "Bash:ss-read lib/validation.js 1 290",
+      "Bash:ss-search \"compileSchemasForValidation route context build validatorCompiler\" -k 5",
+      "Bash:ss-grep \"compileSchemasForValidation\" -k 20",
+      "Bash:ss-read lib/route.js 390 445",
+      "Bash:ss-read lib/handle-request.js 1 210"
+    ],
+    "answerLen": 2000,
+    "answer": "Request schema validation is wired in two main places:\n\n1. **Schemas are compiled when the route is registered**\n   - File: `lib/route.js`\n   - Symbol/location: route setup code around `compileSchemasForValidation(...)`\n   - Evidence:\n     - During `avvio.once('preReady', ...)`, if `opts.schema` exists, Fastify normalizes the schema and checks whether validation schemas exist for:\n       - `body`\n       - `headers`\n       - `querystring`\n       - `params`\n     - It then calls:\n\n       ```js\n       compileSchemasForValidation(\n         context,\n         opts.validatorCompiler || schemaController.validatorCompiler,\n         isCustom\n       )\n       ```\n\n   - This stores compiled validator func",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 63875,
+      "output_tokens": 1430,
+      "cache_read_tokens": 52149,
+      "retry_count": 0
+    },
+    "ms": 41386
+  },
+  {
+    "probe": "js-008",
+    "rep": 2,
+    "score": 1,
+    "toolCalls": 16,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"default 404 not found handler route no matching route Fastify\" -k 5",
+      "Bash:ss-read lib/four-oh-four.js 1 220",
+      "Bash:ss-search \"where router lookup no matching route invokes fourOhFour not found routeHandler\" -k 5",
+      "Bash:ss-find \"find fourOhFour.router usage\" --regex \"fourOhFour\\.router|defaultRoute\" -k 10",
+      "Bash:ss-read fastify.js 80 180",
+      "Bash:ss-find \"find setNotFoundHandler API binding\" --regex \"setNotFoundHandler\" -k 10",
+      "Bash:ss-read fastify.js 650 720",
+      "Bash:ss-search \"router defaultRoute no matching route request handler FindMyWay Fastify\" -k 8",
+      "Bash:ss-read lib/route.js 75 130 && ss-read fastify.js 350 390",
+      "Bash:ss-find \"find fourOhFour setup arrange404 setNotFoundHandler\" --regex \"arrange404|setNotFoundHandler\\.call|defaultRoute\" -k 10",
+      "Bash:ss-read fastify.js 300 350 && ss-read fastify.js 900 940",
+      "Bash:ss-grep \"fourOhFour\\.arrange404|setNotFoundHandler\\(null|router\\.setup\" -k 20",
+      "Bash:ss-read fastify.js 420 445",
+      "Bash:ss-read lib/route.js 459 586",
+      "Bash:ss-grep \"function defaultRoute|defaultRoute\" -k 20",
+      "Bash:ss-read fastify.js 600 650 && ss-read lib/route.js 50 75"
+    ],
+    "answerLen": 2000,
+    "answer": "The default 404 path is wired through these symbols/files:\n\n- `fastify.js` — `defaultRoute(req, res)`\n  - Fastify passes `defaultRoute` into `processOptions(...)`, which becomes the router’s default route.\n  - Comment says: “If the router does not match any route, every request will land here”.\n  - Its main action is:\n\n    ```js\n    fourOhFour.router.lookup(req, res)\n    ```\n\n  - So, when the main `find-my-way` router has no match, Fastify delegates the request to the separate 404 router.\n\n- `fastify.js` — initialization around `fastify.setNotFoundHandler()` and `fourOhFour.arrange404(fastify)`\n  - During setup Fastify installs the default not-found handler:\n\n    ```js\n    fastify.setNotFoun",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 236236,
+      "output_tokens": 1600,
+      "cache_read_tokens": 213580,
+      "retry_count": 0
+    },
+    "ms": 72889
+  },
+  {
+    "probe": "js-005",
+    "rep": 1,
+    "score": 1,
+    "toolCalls": 6,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"request schema validation lifecycle params body query headers\" -k 5",
+      "Bash:ss-trace validate --in lib/validation.js",
+      "Bash:ss-search \"where is validate(context request execution) called request lifecycle preValidation handler\" -k 8",
+      "Bash:ss-search \"route setup compileSchemasForValidation context validation schemas\" -k 6",
+      "Bash:ss-grep \"compileSchemasForValidation\" -k 10",
+      "Bash:ss-read lib/route.js 400 440 && ss-read lib/validation.js 130 285 && ss-read lib/handle-request.js 60 175"
+    ],
+    "answerLen": 2000,
+    "answer": "Request schema validation is invoked in the normal request lifecycle from **`lib/handle-request.js`**, and the actual routine that validates `params`, `body`, `querystring`, and `headers` lives in **`lib/validation.js`**.\n\nFiles/symbols that answer it:\n\n1. **`lib/handle-request.js` — `handler` / `preValidationCallback` / `validationCompleted`**\n\n   In `handler(request, reply)`, Fastify first runs any `preValidation` hooks:\n\n   ```js\n   if (request[kRouteContext].preValidation !== null) {\n     preValidationHookRunner(\n       request[kRouteContext].preValidation,\n       request,\n       reply,\n       preValidationCallback\n     )\n   } else {\n     preValidationCallback(null, request, reply)\n   }\n",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 44365,
+      "output_tokens": 1569,
+      "cache_read_tokens": 33120,
+      "retry_count": 0
+    },
+    "ms": 36575
+  },
+  {
+    "probe": "js-005",
+    "rep": 2,
+    "score": 1,
+    "toolCalls": 8,
+    "usedSweetSearch": true,
+    "usedNativeSearch": false,
+    "finalAnswerEmitted": true,
+    "commands": [
+      "Bash:ss-search \"request schema validation lifecycle params body query headers\" -k 5",
+      "Bash:ss-trace validate --in lib/validation.js",
+      "Bash:ss-search \"where is lib validation validate called during request lifecycle preValidation handler\" -k 8",
+      "Bash:ss-search \"compileSchemasForValidation route setup schema validation build route context\" -k 5",
+      "Bash:ss-find \"find compileSchemasForValidation usage\" --regex \"\\bcompileSchemasForValidation\\b\" -k 10",
+      "Bash:ss-read lib/route.js 30 80 && ss-read lib/route.js 380 440",
+      "Bash:ss-read lib/route.js 1 30 && ss-read lib/handle-request.js 1 210 && ss-read lib/validation.js 120 280",
+      "Bash:ss-read lib/validation.js 90 145"
+    ],
+    "answerLen": 2000,
+    "answer": "Request schema validation is wired in two places: route setup compiles/stores the validators, and request handling invokes them after `preValidation` and before `preHandler`/the route handler.\n\n## Lifecycle invocation\n\n### `lib/handle-request.js`\n\n**Symbols:** `handleRequest`, `handler`, `preValidationCallback`, `validationCompleted`\n\n`lib/handle-request.js` imports the validation routine as:\n\n```js\nconst { validate: validateSchema } = require('./validation')\n```\n\nThe request lifecycle path is:\n\n1. `handleRequest` parses/runs the content-type parser for body-capable methods.\n2. It calls internal `handler(request, reply)`.\n3. `handler` runs `preValidation` hooks if present.\n4. `preValidationC",
+    "judges": [
+      {
+        "model": "deepseek-v4-flash",
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "isError": false
+      },
+      {
+        "model": "abab6.5s-chat",
+        "isError": false
+      }
+    ],
+    "agent": {
+      "model_id": "openai/gpt-5.5",
+      "api_path": "openrouter-chat-completions",
+      "temperature": null,
+      "input_tokens": 69383,
+      "output_tokens": 1520,
+      "cache_read_tokens": 55722,
+      "retry_count": 0
+    },
+    "ms": 48805
+  }
+]
