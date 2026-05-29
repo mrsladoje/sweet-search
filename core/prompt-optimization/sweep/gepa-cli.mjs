@@ -199,13 +199,15 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
   const probesDoc = JSON.parse(readFileSync(o.probesFile, 'utf8'));
   const devProbes = probesDoc.probes ?? probesDoc;
   const rotationPool = probesDoc.rotationPool ?? [];
-  const loadedVariants = o.variantsDir ? loadVariantsFromDir(o.variantsDir) : loadAllVariants();
+  // With --initial-front the seed front is pre-scored, so variant loading + the
+  // round-0-ablation gate are irrelevant (there are no seeds to ablate).
+  const loadedVariants = o.initialFrontFile ? [] : (o.variantsDir ? loadVariantsFromDir(o.variantsDir) : loadAllVariants());
   // D3: round-0 ablation gate. If the slate contains any variant tagged
   // `unverified-until-round-0-ablation` (e.g. the pruner-placeholder, or any
   // hand seed admitted via gepa-restart-scaffold), refuse to launch
   // evolutionary rounds until the operator confirms (via flag) that a
   // round-0 measurement has been done. See PHASE7.md §4.6.1.
-  const guard = assertSeedsVerified({ variants: loadedVariants, allowUnverified: !!o.allowUnverifiedSeeds });
+  const guard = o.initialFrontFile ? { ok: true, unverified: [] } : assertSeedsVerified({ variants: loadedVariants, allowUnverified: !!o.allowUnverifiedSeeds });
   if (!guard.ok) {
     console.error('ERROR: launch refused — slate contains unverified seeds without a round-0 ablation.');
     console.error('See PHASE7.md §4.6.1 for the round-0 ablation gate protocol.');
