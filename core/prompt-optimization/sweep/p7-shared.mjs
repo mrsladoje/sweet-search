@@ -85,6 +85,40 @@ export const DEFAULTS = Object.freeze({
   nativeCallFailRatio: 1.5,
   nativeTokenTargetRatio: 0.65,
   nativeTokenFailRatio: 1.5,
+  // ── Cache-naive, cross-model cost model (2026-05-29 scoring overhaul) ──────
+  // USD per 1M tokens, pinned to provider list prices at the run date. "Cache-
+  // naive" = every input token is priced at the FULL uncached rate; the cache
+  // discount is a deployment property, deliberately excluded from the
+  // optimization objective so the metric is reproducible across cache warmth /
+  // request ordering (which probe "pays" cache_creation under concurrency is
+  // otherwise random). Dollars (not raw tokens) normalize across tokenizers +
+  // price tiers, so Sonnet and GPT-5.5 are directly comparable. Realized
+  // (cache-aware) cost is reported separately as the deployment figure.
+  // `cacheReadPerM` / `cacheWritePerM` are used ONLY for the realized (cache-aware)
+  // deployment-cost figure reported alongside the cache-naive optimization metric;
+  // they are NOT used by the optimization objective. Anthropic: read 0.1×, 5-min
+  // write 1.25× input. OpenAI (gpt-5.5): cached input ~0.1×; no separate write charge.
+  targetPrices: {
+    sonnet: { inPerM: 3, outPerM: 15, cacheReadPerM: 0.30, cacheWritePerM: 3.75, model: 'claude-sonnet-4-6', pinnedAt: '2026-05-29' },
+    gpt5_5: { inPerM: 5, outPerM: 30, cacheReadPerM: 0.50, cacheWritePerM: 5, model: 'gpt-5.5', pinnedAt: '2026-05-29' },
+  },
+  // Cost desirability thresholds (relative to native rg+Read $, same shape as
+  // the call/token thresholds): desirability 1 at ≤0.65× native, 0 at ≥1.5×.
+  nativeCostTargetRatio: 0.65,
+  nativeCostFailRatio: 1.5,
+  // Efficiency-axis weights — accuracy is a SEPARATE axis + floor, NEVER blended
+  // in here (2026-05-29 decouple). `cost` = cache-naive dollar cost (dominant);
+  // `calls` = tool-call/round-trip count, retained as a latency proxy.
+  efficiencyWeights: { cost: 0.7, calls: 0.3 },
+  // Deterministic latency model (DIAGNOSTIC ONLY — never an optimization
+  // objective). est_latency_s = turns × ttftSec + output_tokens / throughput.
+  // Constants are published per-model figures (Artificial Analysis / Vellum,
+  // 2026-05); wall-clock is rejected (machine contention + provider queueing +
+  // network are not properties of the prompt, only of the run environment).
+  targetLatency: {
+    sonnet: { ttftSec: 0.8, throughputTokPerSec: 55 },
+    gpt5_5: { ttftSec: 1.2, throughputTokPerSec: 50 },
+  },
   // Hard-negative weighting (§3.1): noise floor + clip + stability gate.
   judgeNoiseFloor: 0.05,
   varianceWeightClip: [0.1, 2.0],

@@ -39,6 +39,8 @@ import {
   plateauBreakthrough,
   pickOverflowVictim,
   crowdingDistances,
+  reportingFront,
+  reportingConvexHull,
 } from '../../../core/prompt-optimization/sweep/gepa-pareto.mjs';
 import { runReflectiveRewrite, buildReflectivePrompt, generateAdversarialParaphrases, TARE_GENERATOR_ROTATION, runOpWithRetry, buildRetryHint, generateMutations } from '../../../core/prompt-optimization/sweep/gepa-mutate.mjs';
 import { augmentSystemForHarness, extractRewrittenPrompt, summariseToolCalls } from '../../../core/prompt-optimization/sweep/op-harness-caller.mjs';
@@ -468,10 +470,26 @@ describe('mutation-rejection logging (§3.2.1)', () => {
 describe('persistence + resume (§7.4)', () => {
   it('a resumed run reaches the same Pareto front as a fresh run', async () => {
     const devProbes = [makeProbe(1), makeProbe(2), makeProbe(3)];
+    // Per-probe TRADE-OFF stub (2026-05-29): each seed lineage specializes on a
+    // distinct probe (T1→p1, T2→p2, T3→p3 at 0.9; others ~0.55), so under per-probe
+    // (canonical-GEPA) dominance the seeds are mutually NON-dominated and the front
+    // is genuinely multi-member. A length bump on non-favored probes lets longer
+    // mutations dominate their OWN lineage's seed (front still evolves) but never a
+    // rival specialist. Deterministic in (promptText, probe) → resumed == fresh.
+    const tradeoffEvaluate = () => async ({ promptText, probe }) => {
+      const lin = Number((promptText.match(/T(\d+)/) || [])[1] || 1);
+      const probeNum = Number(String(probe.id).replace(/\D/g, '')) || 1;
+      const favored = ((lin - 1) % 3) + 1;
+      const score = probeNum === favored ? 0.9 : 0.55 + Math.min(0.04, promptText.length / 50000);
+      return {
+        score, toolCalls: 2, finalAnswerEmitted: true, usedReadOrGrep: true,
+        trajectory: { toolCalls: [{ name: 'ss-search' }, { name: 'ss-search' }], answer: 'a' }, wallMs: 1,
+      };
+    };
     const common = {
       variants: variants(3),
       devProbes,
-      evaluateCandidate: lengthEvaluate(), // front genuinely evolves → non-trivial resume
+      evaluateCandidate: tradeoffEvaluate(), // per-probe trade-off → multi-member front
       callModel: mutatingEcho(),
       seed: 42,
       patience: 99, // never stop early
@@ -1072,12 +1090,12 @@ describe('M4 — TARE sharpness uses joint Maximin (taskScore), not finalScore',
 
 // ─── M5 — front-overflow trim keeps a robust lower-finalScore Pareto point ───
 
-describe('M5 — 2-objective-aware overflow trim', () => {
-  it('crowdingDistances marks boundary members Infinity', () => {
+describe('M5 — 2-objective-aware overflow trim (finalScore × taskScore)', () => {
+  it('crowdingDistances marks boundary members Infinity (2nd axis = taskScore, not sharpness)', () => {
     const members = [
-      { id: 'lowF-hiRobust', finalScore: 0.40, sharpnessScore: 0.99 },
-      { id: 'mid', finalScore: 0.50, sharpnessScore: 0.60 },
-      { id: 'hiF-loRobust', finalScore: 0.60, sharpnessScore: 0.30 },
+      { id: 'lowF-hiAcc', finalScore: 0.40, taskScore: 0.99 },
+      { id: 'mid', finalScore: 0.50, taskScore: 0.60 },
+      { id: 'hiF-loAcc', finalScore: 0.60, taskScore: 0.30 },
     ];
     const d = crowdingDistances(members);
     expect(d.get(members[0])).toBe(Infinity); // boundary on both objectives
@@ -1085,37 +1103,79 @@ describe('M5 — 2-objective-aware overflow trim', () => {
     expect(d.get(members[1])).toBeLessThan(Infinity); // interior → finite
   });
 
-  it('overflow evicts a dominated member and retains a robust lower-finalScore point', () => {
-    const robustLowF = { id: 'robust', finalScore: 0.45, sharpnessScore: 0.99, score_sonnet: 0.6, score_gpt5_5: 0.6, scores: {} };
-    const dominated = { id: 'dom', finalScore: 0.50, sharpnessScore: 0.40, score_sonnet: 0.6, score_gpt5_5: 0.6, scores: {} };
-    const dominator = { id: 'best', finalScore: 0.80, sharpnessScore: 0.90, score_sonnet: 0.7, score_gpt5_5: 0.7, scores: {} };
-    // dominator dominates `dominated` (higher on both objectives). pickOverflowVictim
-    // must evict `dominated`, NOT the robust lower-finalScore Pareto point.
-    const victim = pickOverflowVictim([robustLowF, dominated, dominator]);
+  it('overflow evicts a per-probe-dominated member and retains the high-accuracy boundary', () => {
+    // robust uniquely wins p2 → non-dominated (preserved). dominated loses BOTH
+    // probes to dominator (per-probe dominated) → evicted, NOT the robust point.
+    const robust = { id: 'robust', finalScore: 0.45, taskScore: 0.9, scores: { p1: 0.5, p2: 0.9 } };
+    const dominated = { id: 'dom', finalScore: 0.50, taskScore: 0.5, scores: { p1: 0.6, p2: 0.6 } };
+    const dominator = { id: 'best', finalScore: 0.80, taskScore: 0.7, scores: { p1: 0.7, p2: 0.7 } };
+    const victim = pickOverflowVictim([robust, dominated, dominator]);
     expect(victim.id).toBe('dom');
   });
 
-  it('attemptParetoAdmission overflow retains the robust lower-finalScore variant', () => {
-    // Build a full front of 6 where every member is mutually NON-dominated (each
-    // higher-finalScore member is lower-robustness, a proper trade-off front), so
+  it('attemptParetoAdmission overflow retains the high-accuracy lower-finalScore variant', () => {
+    // 6 mutually NON-dominated members, each uniquely winning a distinct probe, so
     // the 7th candidate dominates NONE and the front genuinely OVERFLOWS → the
-    // 2-objective trim (not lowest-finalScore) must keep the robust boundary point.
-    const robust = { id: 'robust', finalScore: 0.40, sharpnessScore: 1.00, score_sonnet: 0.55, score_gpt5_5: 0.55, scores: {} };
-    const fillers = Array.from({ length: 5 }, (_, i) => ({
-      // finalScore rises, sharpness falls → strictly trade-off, none dominated.
-      id: `F${i}`, finalScore: 0.50 + i * 0.05, sharpnessScore: 0.95 - i * 0.10, score_sonnet: 0.6, score_gpt5_5: 0.6, scores: {},
-    }));
+    // (finalScore, taskScore) crowding trim must keep the `robust` boundary point
+    // (lowest finalScore but highest accuracy), not evict it as lowest-finalScore.
+    const mk = (id, winIdx, finalScore, taskScore) => ({
+      id, finalScore, taskScore, score_sonnet: 0.6, score_gpt5_5: 0.6,
+      scores: Object.fromEntries([0, 1, 2, 3, 4, 5].map((i) => [`p${i}`, i === winIdx ? 1.0 : 0.3])),
+    });
+    const robust = mk('robust', 0, 0.40, 0.95); // lowest finalScore, highest accuracy
+    const fillers = [mk('F1', 1, 0.55, 0.70), mk('F2', 2, 0.60, 0.65), mk('F3', 3, 0.62, 0.60), mk('F4', 4, 0.64, 0.55), mk('F5', 5, 0.66, 0.50)];
     const front = [robust, ...fillers];
-    // Candidate: an interior trade-off point that beats ≥1 incumbent's finalScore
-    // (so it would-enter) but dominates none → front grows to 7 → must trim 1.
-    const candidate = { id: 'C', finalScore: 0.62, sharpnessScore: 0.45, score_sonnet: 0.62, score_gpt5_5: 0.6, scores: {} };
+    const candidate = mk('C', 2, 0.63, 0.58); // ties F2's p2 win → dominates none; finalScore > robust → would-enter
     const res = attemptParetoAdmission({ candidate, front, frontSize: 6 });
     expect(res.admitted).toBe(true);
     expect(res.newFront.length).toBe(6);
-    const ids = res.newFront.map((f) => f.id);
-    expect(ids).toContain('robust'); // the robust boundary point survives the trim
-    // A lowest-finalScore trim (the old behaviour) would have evicted `robust`
-    // (finalScore 0.40, the minimum); the crowding trim keeps it as a boundary.
+    expect(res.newFront.map((f) => f.id)).toContain('robust'); // accuracy boundary survives the trim
+  });
+});
+
+// ─── 2-D (accuracy, cost) reporting front — HAL-style (2026-05-29) ──────────
+
+describe('reportingFront — accuracy × cost non-dominated set', () => {
+  it('keeps the non-dominated (max accuracy, min cost) set and drops interpolation-dominated points', () => {
+    const cands = [
+      { id: 'A', taskScore: 0.99, costUsd: 0.10 }, // accuracy boundary (priciest)
+      { id: 'B', taskScore: 0.98, costUsd: 0.04 }, // cheaper, ~as accurate
+      { id: 'C', taskScore: 0.90, costUsd: 0.06 }, // dominated by B (lower acc AND higher cost)
+      { id: 'D', taskScore: 0.95, costUsd: 0.02 }, // cost boundary (cheapest)
+    ];
+    const ids = reportingFront(cands).map((c) => c.id);
+    expect(ids).toContain('A');
+    expect(ids).toContain('B');
+    expect(ids).toContain('D');
+    expect(ids).not.toContain('C'); // B dominates C on both axes
+    expect(reportingFront(cands)[0].id).toBe('A'); // sorted by accuracy desc
+  });
+
+  it('ignores candidates missing a coordinate', () => {
+    const cands = [
+      { id: 'A', taskScore: 0.9, costUsd: 0.05 },
+      { id: 'noCost', taskScore: 0.95 },
+      { id: 'noAcc', costUsd: 0.01 },
+    ];
+    expect(reportingFront(cands).map((c) => c.id)).toEqual(['A']);
+  });
+});
+
+describe('reportingConvexHull — deployable frontier incl. origin', () => {
+  it('includes the origin and excludes an agent reachable by interpolation', () => {
+    const cands = [
+      { id: 'A', taskScore: 0.60, costUsd: 0.010 },
+      { id: 'B', taskScore: 0.66, costUsd: 0.020 },
+      { id: 'interior', taskScore: 0.62, costUsd: 0.015 }, // below the A→B chord
+      { id: 'C', taskScore: 0.67, costUsd: 0.050 },
+    ];
+    const hull = reportingConvexHull(cands);
+    const ids = hull.map((h) => (h.ref ? h.ref.id : 'origin'));
+    expect(ids[0]).toBe('origin');            // lowest cost = deploy nothing
+    expect(ids).toContain('A');
+    expect(ids).toContain('B');
+    expect(ids).toContain('C');
+    expect(ids).not.toContain('interior');    // reachable by randomizing A↔B
   });
 });
 

@@ -22,6 +22,7 @@ import {
   callWindowFor,
   maximinPerProbe,
   hashContent,
+  normalizeTarget,
 } from './p7-shared.mjs';
 import {
   taskScore,
@@ -30,6 +31,9 @@ import {
   lengthPenalty,
   finalScore,
   probeWeight,
+  costUsd,
+  estLatencySeconds,
+  realizedCostUsd,
 } from './eas.mjs';
 import { estimateTokens } from './variant-loader.mjs';
 
@@ -85,14 +89,79 @@ export function agentTokenCount(usage) {
   return seen && total > 0 ? total : null;
 }
 
+function _num(v) { return typeof v === 'number' && Number.isFinite(v) ? v : 0; }
+function _numOrNull(v) { return typeof v === 'number' && Number.isFinite(v) ? v : null; }
+
+/**
+ * Cache-NAIVE usage breakdown for the 2026-05-29 dollar-cost metric.
+ *
+ * Returns { processedInput, output } where `processedInput` counts EVERY input
+ * token the model processed this trajectory at the full uncached rate — the
+ * cache discount is a deployment property, excluded so the metric is invariant
+ * to cache warmth / request ordering (which probe "pays" cache_creation under
+ * concurrency is otherwise random, making the old work-token scalar
+ * non-reproducible). Anthropic `input_tokens` EXCLUDES cache reads + writes →
+ * add them back. OpenAI `input_tokens` INCLUDES cached tokens (a subset) → do
+ * NOT double-count. `output` (reasoning/thinking + tool-call args + final
+ * answer) is generation — never cached — and already captured by output_tokens,
+ * so it carries the "decision/reasoning" cost the cache problem never touched.
+ *
+ * @returns {{ processedInput:number, output:number }|null}
+ */
+export function agentUsageBreakdown(usage) {
+  const agent = usage?.agent;
+  if (!agent || typeof agent !== 'object') return null;
+  if (!(typeof agent.input_tokens === 'number' || typeof agent.output_tokens === 'number')) {
+    // Legacy/aggregate shapes (total_tokens / prompt_tokens+completion_tokens):
+    // no input/output split available → attribute the scalar work to input.
+    const scalar = agentTokenCount(usage);
+    return scalar == null ? null : { processedInput: scalar, output: 0 };
+  }
+  const input = _num(agent.input_tokens);
+  const output = _num(agent.output_tokens);
+  const cacheRead = _numOrNull(agent.cache_read_tokens ?? agent.cached_input_tokens);
+  const cacheCreation = _num(agent.cache_creation_tokens ?? agent.cache_creation_input_tokens);
+  // OpenAI reports cached input as a SUBSET of input_tokens (cacheRead ≤ input);
+  // Anthropic reports cache reads + creation SEPARATELY from input_tokens.
+  const cacheReadIsSubset = cacheRead != null && cacheRead > 0 && cacheRead <= input;
+  const processedInput = input + cacheCreation + (cacheReadIsSubset ? 0 : (cacheRead ?? 0));
+  const total = processedInput + output;
+  return total > 0 ? { processedInput, output } : null;
+}
+
+/**
+ * Per-(probe,target) cost + latency telemetry for trajectory events (2026-05-29).
+ *   cost_usd      — cache-naive optimization metric (what the front/selection use)
+ *   realized_usd  — cache-aware deployment figure (reported, NOT optimized)
+ *   est_latency_s — deterministic latency diagnostic (turns + output/throughput)
+ * All null when usage / prices for the target are unavailable.
+ */
+export function runCostLatencyFields({ usage, target, toolCalls }) {
+  const bd = agentUsageBreakdown(usage);
+  let tkey = null;
+  try { tkey = normalizeTarget(target); } catch { tkey = null; }
+  const prices = tkey ? DEFAULTS.targetPrices?.[tkey] : null;
+  const latency = tkey ? DEFAULTS.targetLatency?.[tkey] : null;
+  return {
+    processed_input: bd?.processedInput ?? null,
+    output: bd?.output ?? null,
+    cost_usd: (bd && prices) ? costUsd({ processedInput: bd.processedInput, output: bd.output, prices }) : null,
+    realized_usd: prices ? realizedCostUsd({ agent: usage?.agent, prices }) : null,
+    est_latency_s: (bd && latency) ? estLatencySeconds({ turns: toolCalls ?? 0, output: bd.output, latency }) : null,
+  };
+}
+
 /** Map an evaluateCandidate result + probe → the ProbeRun shape EAS expects. */
 export function toProbeRun(evalResult, probe) {
+  const breakdown = agentUsageBreakdown(evalResult.usage);
   return {
     probeId: probe.id,
     stratum: probe.stratum,
     score: evalResult.score,
     calls: evalResult.toolCalls,
     tokens: agentTokenCount(evalResult.usage),
+    processedInput: breakdown?.processedInput ?? null,
+    output: breakdown?.output ?? null,
     finalAnswerEmitted: !!evalResult.finalAnswerEmitted,
     usedReadOrGrep: !!evalResult.usedReadOrGrep,
     usedNativeSearch: !!evalResult.usedNativeSearch,
@@ -234,7 +303,23 @@ export function computeFinalScoreFor({ perProbeMaximin, weights, runsByTarget, t
   const lp = lengthPenalty(tokenCount);
   if (nativeBaselineByTarget) {
     const nr = nativeRelativeScore({ perTarget: runsByTarget, baselineByTarget: nativeBaselineByTarget });
-    return { taskScore: ts, efficiencyFactor: ef, lengthPenalty: lp, finalScore: nr.factor - lp, nativeRelative: nr };
+    // Candidate-level mean cache-naive $ across all (probe,target) runs — the cost
+    // axis of the 2-D reporting front + the deployment-cost figure denominator.
+    const costs = [];
+    for (const t of Object.keys(nr.breakdown)) {
+      for (const r of nr.breakdown[t].runs) if (typeof r.costUsd === 'number') costs.push(r.costUsd);
+    }
+    const meanCostUsd = costs.length ? costs.reduce((a, b) => a + b, 0) / costs.length : null;
+    return {
+      taskScore: ts,
+      efficiencyFactor: ef,
+      lengthPenalty: lp,
+      finalScore: nr.factor - lp,
+      nativeRelative: nr,
+      accuracyFactor: nr.accuracyFactor,   // decoupled accuracy gate (own axis)
+      efficiencyScore: nr.efficiencyFactor, // decoupled efficiency (calls × cost)
+      meanCostUsd,
+    };
   }
   const fs = finalScore({ taskScore: ts, efficiencyFactor: ef, lengthPenalty: lp });
   return { taskScore: ts, efficiencyFactor: ef, lengthPenalty: lp, finalScore: fs };
@@ -285,6 +370,13 @@ export async function buildCandidate({
     lengthPenalty: fs.lengthPenalty,
     finalScore: fs.finalScore,
     nativeRelative: fs.nativeRelative ?? null,
+    // Decoupled axes (2026-05-29): taskScore (accuracy) and costUsd are the 2-D
+    // reporting-front objectives; accuracyFactor is the floored gate, efficiencyScore
+    // is the accuracy-free efficiency. sharpnessScore is a tie-breaker/reliability
+    // signal ONLY — it is NOT part of the search-front dominance relation.
+    accuracyFactor: fs.accuracyFactor ?? null,
+    efficiencyScore: fs.efficiencyScore ?? null,
+    costUsd: fs.meanCostUsd ?? null,
     sharpnessScore: 1.0,
   };
 }
@@ -413,10 +505,10 @@ export function topInefficiencies({ candidate, probes, limit = 5, threshold = IN
         desirability: row.desirability ?? null,
         calls: row.calls,
         nativeCalls: row.nativeCalls,
-        tokens: row.tokens,
-        nativeTokens: row.nativeTokens,
-        tokensForScoring: row.tokensForScoring,
-        nativeTokensForScoring: row.nativeTokensForScoring,
+        costUsd: row.costUsd,
+        nativeCostUsd: row.nativeCostUsd,
+        processedInput: row.processedInput,
+        output: row.output,
       });
       continue;
     }
@@ -457,8 +549,8 @@ export function topInefficiencies({ candidate, probes, limit = 5, threshold = IN
     const ao = typeof a.nativeRelativeOverall === 'number' ? a.nativeRelativeOverall : Infinity;
     const bo = typeof b.nativeRelativeOverall === 'number' ? b.nativeRelativeOverall : Infinity;
     if (ao !== bo) return ao - bo;
-    const ac = (a.desirability?.calls ?? 1) + (a.desirability?.tokens ?? 1);
-    const bc = (b.desirability?.calls ?? 1) + (b.desirability?.tokens ?? 1);
+    const ac = (a.desirability?.calls ?? 1) + (a.desirability?.cost ?? 1);
+    const bc = (b.desirability?.calls ?? 1) + (b.desirability?.cost ?? 1);
     if (ac !== bc) return ac - bc;
     return (b.callDeviation ?? 0) - (a.callDeviation ?? 0);
   });

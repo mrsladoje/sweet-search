@@ -20,13 +20,72 @@ import { describe, expect, it } from 'vitest';
 
 import {
   agentTokenCount,
+  agentUsageBreakdown,
   computeFinalScoreFor,
   mapWithConcurrency,
+  runCostLatencyFields,
   scoreCandidateOnProbes,
   toProbeRun,
 } from '../../../core/prompt-optimization/sweep/gepa-scoring.mjs';
 import { AllJudgesFailedError } from '../../../core/prompt-optimization/sweep/gepa-evaluate.mjs';
 import { estimateTokens } from '../../../core/prompt-optimization/sweep/variant-loader.mjs';
+
+// ─── agentUsageBreakdown — cache-naive {processedInput, output} ─────────────
+
+describe('agentUsageBreakdown — cache-naive', () => {
+  it('Anthropic: adds cache_read + cache_creation back (input_tokens excludes them)', () => {
+    // input(fresh)=5000, cache_read=60000 (> input → not a subset), cache_creation=1000
+    const b = agentUsageBreakdown({ agent: {
+      input_tokens: 5000, output_tokens: 2000, cache_read_tokens: 60000, cache_creation_tokens: 1000,
+    } });
+    expect(b).toEqual({ processedInput: 66000, output: 2000 });
+  });
+
+  it('OpenAI: cache reads are a subset of input_tokens → not double-counted', () => {
+    const b = agentUsageBreakdown({ agent: {
+      input_tokens: 70000, output_tokens: 2000, cached_input_tokens: 60000,
+    } });
+    expect(b).toEqual({ processedInput: 70000, output: 2000 });
+  });
+
+  it('is invariant to cache warmth: cold (all cache_creation) vs warm (all cache_read) → same processedInput', () => {
+    const cold = agentUsageBreakdown({ agent: { input_tokens: 5000, output_tokens: 2000, cache_read_tokens: 0, cache_creation_tokens: 61000 } });
+    const warm = agentUsageBreakdown({ agent: { input_tokens: 5000, output_tokens: 2000, cache_read_tokens: 61000, cache_creation_tokens: 0 } });
+    expect(cold.processedInput).toBe(66000);
+    expect(warm.processedInput).toBe(66000);
+    expect(cold.output).toBe(warm.output);
+  });
+
+  it('returns null when no agent usage present', () => {
+    expect(agentUsageBreakdown(null)).toBeNull();
+    expect(agentUsageBreakdown({})).toBeNull();
+  });
+
+  it('legacy total_tokens shape → all attributed to processedInput', () => {
+    expect(agentUsageBreakdown({ agent: { total_tokens: 12345 } })).toEqual({ processedInput: 12345, output: 0 });
+  });
+});
+
+// ─── runCostLatencyFields — per-(probe,target) event telemetry ──────────────
+
+describe('runCostLatencyFields', () => {
+  it('emits cache-naive cost, realized cost, and deterministic latency for a known target', () => {
+    const usage = { agent: { input_tokens: 5000, output_tokens: 2000, cache_read_tokens: 60000, cache_creation_tokens: 1000 } };
+    const f = runCostLatencyFields({ usage, target: 'sonnet', toolCalls: 4 });
+    expect(f.processed_input).toBe(66000);
+    expect(f.output).toBe(2000);
+    expect(f.cost_usd).toBeCloseTo((66000 * 3 + 2000 * 15) / 1e6, 12); // cache-naive
+    expect(f.realized_usd).toBeCloseTo(66750 / 1e6, 12);               // cache-aware < naive
+    expect(f.realized_usd).toBeLessThan(f.cost_usd);
+    expect(f.est_latency_s).toBeCloseTo(4 * 0.8 + 2000 / 55, 10);
+  });
+
+  it('returns all-null when usage is absent', () => {
+    expect(runCostLatencyFields({ usage: null, target: 'sonnet', toolCalls: 1 })).toEqual({
+      processed_input: null, output: null, cost_usd: null, realized_usd: null, est_latency_s: null,
+    });
+  });
+});
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
 

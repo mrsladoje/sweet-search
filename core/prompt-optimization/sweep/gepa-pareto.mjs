@@ -13,18 +13,39 @@ import { DEFAULTS } from './p7-shared.mjs';
 import { paretoAdmissible } from './eas.mjs';
 import { populationVariance } from './gepa-scoring.mjs';
 
-// ─── two-objective dominance (finalScore × sharpnessScore) ──────────────────
+// ─── per-probe (canonical-GEPA) search-front dominance ──────────────────────
 
 /**
- * Does `a` Pareto-dominate `b` on (finalScore max, sharpnessScore max)?
- * §3.7.1 step 8: the front orders on finalScore and 1−sharpness.
+ * SEARCH-front dominance (2026-05-29 canonical-GEPA rewrite, replacing the old
+ * scalar (finalScore × sharpnessScore) relation that collapsed the front to a
+ * singleton). `a` dominates `b` iff `a` scores ≥ `b` on EVERY shared probe AND
+ * strictly higher on at least one — the per-instance Pareto relation from GEPA
+ * (Agrawal et al. 2025). It cannot collapse the front, because a candidate
+ * survives if it wins ANY probe, preserving the diversity mutation operators need
+ * as parents. Sharpness is NOT in the dominance relation (it is a tie-breaker /
+ * reported reliability signal only); cost is NOT here either (it drives parent
+ * selection via finalScore and the separate 2-D reporting front).
+ *
+ * Fallback: candidates lacking a per-probe score vector (or with a disjoint probe
+ * set) are compared on finalScore alone, so the relation stays total for the
+ * synthetic-incumbent unit tests and mixed-probe-set edge cases.
  */
 export function dominates(a, b) {
-  const fa = a.finalScore;
-  const fb = b.finalScore;
-  const sa = a.sharpnessScore ?? 1.0;
-  const sb = b.sharpnessScore ?? 1.0;
-  return fa >= fb && sa >= sb && (fa > fb || sa > sb);
+  const pa = a?.scores;
+  const pb = b?.scores;
+  if (pa && pb && typeof pa === 'object' && typeof pb === 'object') {
+    const probes = Object.keys(pa).filter((p) => typeof pa[p] === 'number' && typeof pb[p] === 'number');
+    if (probes.length > 0) {
+      let allGE = true;
+      let anyGT = false;
+      for (const p of probes) {
+        if (pa[p] < pb[p]) { allGE = false; break; }
+        if (pa[p] > pb[p]) anyGT = true;
+      }
+      return allGE && anyGT;
+    }
+  }
+  return typeof a?.finalScore === 'number' && typeof b?.finalScore === 'number' && a.finalScore > b.finalScore;
 }
 
 // ─── admission (§3.7.1 step 9) ──────────────────────────────────────────────
@@ -147,12 +168,12 @@ export function attemptParetoAdmission({
 
 /**
  * Pick which member to evict when the front overflows (M5). Two-objective aware
- * over (finalScore max, sharpnessScore max):
+ * over (finalScore max, taskScore max):
  *   1. If any member is dominated by another in the current set, evict the
  *      lowest-finalScore dominated one (it is strictly Pareto-inferior).
  *   2. Else evict the member with the SMALLEST crowding distance — the most
  *      redundant interior point — so the boundary extremes (highest finalScore
- *      AND highest robustness) are retained. Boundary points get +∞ crowding
+ *      AND highest accuracy) are retained. Boundary points get +∞ crowding
  *      and are never evicted while an interior point exists. Deterministic ties
  *      break on lowest finalScore then id.
  *
@@ -178,10 +199,12 @@ export function pickOverflowVictim(members) {
 }
 
 /**
- * NSGA-II-style crowding distance over the two Pareto objectives
- * (finalScore, sharpnessScore). Boundary (min/max) members on either objective
- * receive Infinity so they are never the smallest-crowding victim while an
- * interior member exists.
+ * NSGA-II-style crowding distance over the two overflow-trim objectives
+ * (finalScore, taskScore). 2026-05-29: the 2nd axis is taskScore (joint-Maximin
+ * accuracy), NOT sharpness — sharpness left the scoring objective set entirely,
+ * and preserving the accuracy boundary keeps the most-accurate variant during an
+ * overflow trim. Boundary (min/max) members on either objective receive Infinity
+ * so they are never the smallest-crowding victim while an interior member exists.
  *
  * @param {object[]} members
  * @returns {Map<object, number>}
@@ -194,7 +217,7 @@ export function crowdingDistances(members) {
   }
   const objectives = [
     (m) => m.finalScore,
-    (m) => (m.sharpnessScore ?? 1.0),
+    (m) => (typeof m.taskScore === 'number' ? m.taskScore : m.finalScore),
   ];
   for (const obj of objectives) {
     const sorted = [...members].sort((a, b) => obj(a) - obj(b));
@@ -221,6 +244,62 @@ export function buildFrontFrom(candidates, frontSize = DEFAULTS.paretoFrontSize)
   const nd = candidates.filter((c) => !candidates.some((o) => o !== c && dominates(o, c)));
   nd.sort((a, b) => b.finalScore - a.finalScore);
   return nd.slice(0, frontSize);
+}
+
+// ─── 2-D (accuracy, cost) reporting front — HAL-style (2026-05-29) ──────────
+
+/**
+ * The 2-D accuracy–cost reporting front — SEPARATE from the per-probe search
+ * front (which exists to preserve parent diversity). Objectives: maximize
+ * taskScore (joint-Maximin accuracy), minimize costUsd (cache-naive dollars).
+ * Returns the non-dominated set sorted by accuracy desc — the deployable
+ * cost/accuracy trade-off for the paper figure + final-prompt selection. Under a
+ * saturated-accuracy regime this degenerates into a spread along cost at
+ * accuracy ≈ 1, which is exactly the intended "optimize cost at fixed accuracy"
+ * behavior. Candidates missing either coordinate are ignored.
+ * (HAL: Kapoor et al., ICLR 2026.)
+ */
+export function reportingFront(candidates) {
+  const pts = (candidates || []).filter(
+    (c) => typeof c?.taskScore === 'number' && typeof c?.costUsd === 'number',
+  );
+  const nd = pts.filter((c) => !pts.some((o) =>
+    o !== c
+    && o.taskScore >= c.taskScore && o.costUsd <= c.costUsd
+    && (o.taskScore > c.taskScore || o.costUsd < c.costUsd),
+  ));
+  nd.sort((a, b) => b.taskScore - a.taskScore || a.costUsd - b.costUsd);
+  return nd;
+}
+
+/**
+ * Upper convex hull of the reporting front in (cost x, accuracy y) space,
+ * INCLUDING the origin (0,0): "deploy nothing" gets 0 accuracy at 0 cost, and one
+ * can randomize between any two hull agents to reach intermediate points, so the
+ * achievable region is the convex hull and its upper boundary is the true
+ * deployable frontier (HAL convex-hull convention). Returns hull points
+ * `{ cost, acc, ref }` ordered by ascending cost; interior agents reachable by
+ * interpolation are excluded. (HAL: Kapoor et al., ICLR 2026.)
+ */
+export function reportingConvexHull(candidates) {
+  const pts = [
+    { cost: 0, acc: 0, ref: null },
+    ...reportingFront(candidates).map((c) => ({ cost: c.costUsd, acc: c.taskScore, ref: c })),
+  ].sort((a, b) => a.cost - b.cost || a.acc - b.acc);
+  // Monotone upper hull: keep counter-clockwise turns; pop a point that lies on or
+  // below the chord through its neighbours (cross ≥ 0 ⇒ not above ⇒ redundant).
+  const hull = [];
+  for (const p of pts) {
+    while (hull.length >= 2) {
+      const a = hull[hull.length - 2];
+      const b = hull[hull.length - 1];
+      const cross = (b.cost - a.cost) * (p.acc - a.acc) - (b.acc - a.acc) * (p.cost - a.cost);
+      if (cross >= 0) hull.pop();
+      else break;
+    }
+    hull.push(p);
+  }
+  return hull;
 }
 
 // ─── stochastic parent selection (§3.1 step 1) ──────────────────────────────

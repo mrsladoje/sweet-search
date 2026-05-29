@@ -5,280 +5,360 @@
       "calls": 16,
       "tokens": 21797,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 131969,
+      "output": 2770
     },
     "cpp-002": {
       "score": 1,
       "calls": 9,
       "tokens": 6456,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 18130,
+      "output": 1180
     },
     "cpp-008": {
       "score": 1,
       "calls": 6,
       "tokens": 6608,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 10690,
+      "output": 1644
     },
     "cpp-004": {
       "score": 1,
       "calls": 40,
       "tokens": 36030,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 483471,
+      "output": 6685
     },
     "csharp-004": {
       "score": 1,
       "calls": 40,
       "tokens": 58824,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 1111826,
+      "output": 7193
     },
     "csharp-005": {
       "score": 1,
       "calls": 31,
       "tokens": 24600,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 266133,
+      "output": 4509
     },
     "csharp-008": {
       "score": 1,
       "calls": 7,
       "tokens": 5854,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 14930,
+      "output": 922
     },
     "csharp-003": {
       "score": 1,
       "calls": 6,
       "tokens": 4775,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 12403,
+      "output": 1020
     },
     "go-005": {
       "score": 1,
       "calls": 5,
       "tokens": 5913,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 8945,
+      "output": 1709
     },
     "go-006": {
       "score": 1,
       "calls": 9,
       "tokens": 5300,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 12506,
+      "output": 1701
     },
     "go-008": {
       "score": 1,
       "calls": 3,
       "tokens": 4206,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 5808,
+      "output": 839
     },
     "java-002": {
       "score": 1,
       "calls": 3,
       "tokens": 4911,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 9707,
+      "output": 640
     },
     "java-001": {
       "score": 1,
       "calls": 3,
       "tokens": 2597,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 5454,
+      "output": 723
     },
     "java-004": {
       "score": 1,
       "calls": 16,
       "tokens": 15237,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 90712,
+      "output": 2933
     },
     "js-008": {
       "score": 1,
       "calls": 8,
       "tokens": 11363,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 23130,
+      "output": 2815
     },
     "js-007": {
       "score": 1,
       "calls": 9,
       "tokens": 11936,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 43513,
+      "output": 2178
     },
     "js-005": {
       "score": 1,
       "calls": 9,
       "tokens": 14451,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 39941,
+      "output": 2530
     },
     "kotlin-002": {
       "score": 1,
       "calls": 6,
       "tokens": 6506,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 16059,
+      "output": 1347
     },
     "kotlin-008": {
       "score": 1,
       "calls": 5,
       "tokens": 7678,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 19733,
+      "output": 1160
     },
     "kotlin-007": {
       "score": 1,
       "calls": 40,
       "tokens": 32503,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 469976,
+      "output": 6446
     },
     "kotlin-009": {
       "score": 1,
       "calls": 7,
       "tokens": 7377,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 21280,
+      "output": 1298
     },
     "python-010": {
       "score": 1,
       "calls": 5,
       "tokens": 4867,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 11372,
+      "output": 1016
     },
     "python-007": {
       "score": 1,
       "calls": 7,
       "tokens": 6290,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 12179,
+      "output": 1368
     },
     "python-009": {
       "score": 1,
       "calls": 5,
       "tokens": 3823,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 7564,
+      "output": 820
     },
     "ruby-008": {
       "score": 1,
       "calls": 7,
       "tokens": 7529,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 17027,
+      "output": 1129
     },
     "ruby-001": {
       "score": 1,
       "calls": 14,
       "tokens": 9664,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 57498,
+      "output": 2281
     },
     "ruby-004": {
       "score": 1,
       "calls": 5,
       "tokens": 4973,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 9994,
+      "output": 1188
     },
     "rust-001": {
       "score": 1,
       "calls": 3,
       "tokens": 2747,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 4440,
+      "output": 756
     },
     "rust-005": {
       "score": 1,
       "calls": 7,
       "tokens": 6293,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 15493,
+      "output": 1134
     },
     "rust-004": {
       "score": 1,
       "calls": 24,
       "tokens": 23002,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 234077,
+      "output": 3679
     },
     "rust-010": {
       "score": 1,
       "calls": 4,
       "tokens": 4567,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 8507,
+      "output": 771
     },
     "ts-005": {
       "score": 1,
       "calls": 6,
       "tokens": 6096,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 10303,
+      "output": 1670
     },
     "ts-003": {
       "score": 1,
       "calls": 3,
       "tokens": 2304,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 4158,
+      "output": 637
     },
     "ts-008": {
       "score": 1,
       "calls": 13,
       "tokens": 12832,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 46420,
+      "output": 2274
     },
     "go-004": {
       "score": 1,
       "calls": 6,
       "tokens": 7793,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 18631,
+      "output": 1097
     },
     "java-005": {
       "score": 1,
       "calls": 8,
       "tokens": 9758,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 33102,
+      "output": 1959
     },
     "js-009": {
       "score": 1,
       "calls": 6,
       "tokens": 7529,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 17998,
+      "output": 1455
     },
     "python-005": {
       "score": 1,
       "calls": 10,
       "tokens": 10261,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 36038,
+      "output": 2078
     },
     "ruby-002": {
       "score": 1,
       "calls": 4,
       "tokens": 4759,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 7805,
+      "output": 1306
     },
     "ts-002": {
       "score": 1,
       "calls": 5,
       "tokens": 2961,
       "repeats": 1,
-      "overhead_tokens": 1008
+      "overhead_tokens": 1008,
+      "processedInput": 7797,
+      "output": 811
     }
   },
   "gpt5_5": {
@@ -287,280 +367,360 @@
       "calls": 5,
       "tokens": 9155,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 33981,
+      "output": 966
     },
     "cpp-002": {
       "score": 1,
       "calls": 3,
       "tokens": 5391,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 13726,
+      "output": 505
     },
     "cpp-008": {
       "score": 1,
       "calls": 4,
       "tokens": 3571,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 8974,
+      "output": 558
     },
     "cpp-004": {
       "score": 1,
       "calls": 17,
       "tokens": 16539,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 158466,
+      "output": 1863
     },
     "csharp-004": {
       "score": 1,
       "calls": 27,
       "tokens": 37938,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 558105,
+      "output": 2302
     },
     "csharp-005": {
       "score": 1,
       "calls": 11,
       "tokens": 12599,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 98573,
+      "output": 1129
     },
     "csharp-008": {
       "score": 1,
       "calls": 18,
       "tokens": 18128,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 134938,
+      "output": 1666
     },
     "csharp-003": {
       "score": 1,
       "calls": 9,
       "tokens": 8028,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 47379,
+      "output": 653
     },
     "go-005": {
       "score": 1,
       "calls": 3,
       "tokens": 5974,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 15490,
+      "output": 459
     },
     "go-006": {
       "score": 1,
       "calls": 5,
       "tokens": 4048,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 11346,
+      "output": 858
     },
     "go-008": {
       "score": 1,
       "calls": 4,
       "tokens": 4273,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 10567,
+      "output": 571
     },
     "java-002": {
       "score": 1,
       "calls": 3,
       "tokens": 3905,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 8982,
+      "output": 360
     },
     "java-001": {
       "score": 1,
       "calls": 2,
       "tokens": 4372,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 6682,
+      "output": 268
     },
     "java-004": {
       "score": 1,
       "calls": 6,
       "tokens": 11926,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 47878,
+      "output": 1199
     },
     "js-008": {
       "score": 1,
       "calls": 21,
       "tokens": 15909,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 208179,
+      "output": 1414
     },
     "js-007": {
       "score": 1,
       "calls": 8,
       "tokens": 13160,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 67160,
+      "output": 1000
     },
     "js-005": {
       "score": 1,
       "calls": 10,
       "tokens": 12920,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 65808,
+      "output": 1764
     },
     "kotlin-002": {
       "score": 1,
       "calls": 4,
       "tokens": 4917,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 12717,
+      "output": 666
     },
     "kotlin-008": {
       "score": 1,
       "calls": 4,
       "tokens": 8454,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 17766,
+      "output": 548
     },
     "kotlin-007": {
       "score": 1,
       "calls": 3,
       "tokens": 8427,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 16801,
+      "output": 738
     },
     "kotlin-009": {
       "score": 1,
       "calls": 12,
       "tokens": 13722,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 88671,
+      "output": 1083
     },
     "python-010": {
       "score": 1,
       "calls": 2,
       "tokens": 4530,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 7087,
+      "output": 317
     },
     "python-007": {
       "score": 1,
       "calls": 5,
       "tokens": 5839,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 19936,
+      "output": 730
     },
     "python-009": {
       "score": 1,
       "calls": 8,
       "tokens": 9030,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 42403,
+      "output": 890
     },
     "ruby-008": {
       "score": 1,
       "calls": 6,
       "tokens": 6903,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 20104,
+      "output": 701
     },
     "ruby-001": {
       "score": 1,
       "calls": 4,
       "tokens": 3653,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 8415,
+      "output": 491
     },
     "ruby-004": {
       "score": 1,
       "calls": 6,
       "tokens": 4537,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 14895,
+      "output": 579
     },
     "rust-001": {
       "score": 1,
       "calls": 3,
       "tokens": 4099,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 9982,
+      "output": 497
     },
     "rust-005": {
       "score": 1,
       "calls": 9,
       "tokens": 10911,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 56569,
+      "output": 664
     },
     "rust-004": {
       "score": 1,
       "calls": 9,
       "tokens": 13317,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 84663,
+      "output": 1139
     },
     "rust-010": {
       "score": 1,
       "calls": 20,
       "tokens": 21563,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 245027,
+      "output": 1865
     },
     "ts-005": {
       "score": 1,
       "calls": 6,
       "tokens": 5912,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 23518,
+      "output": 735
     },
     "ts-003": {
       "score": 1,
       "calls": 3,
       "tokens": 1432,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 3201,
+      "output": 297
     },
     "ts-008": {
       "score": 1,
       "calls": 8,
       "tokens": 7678,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 40780,
+      "output": 990
     },
     "go-004": {
       "score": 1,
       "calls": 5,
       "tokens": 4143,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 12566,
+      "output": 452
     },
     "java-005": {
       "score": 1,
       "calls": 6,
       "tokens": 7325,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 21050,
+      "output": 1237
     },
     "js-009": {
       "score": 1,
       "calls": 9,
       "tokens": 10060,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 59424,
+      "output": 869
     },
     "python-005": {
       "score": 1,
       "calls": 9,
       "tokens": 7965,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 32146,
+      "output": 1339
     },
     "ruby-002": {
       "score": 1,
       "calls": 6,
       "tokens": 8378,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 27948,
+      "output": 1048
     },
     "ts-002": {
       "score": 0,
       "calls": 3,
       "tokens": 3366,
       "repeats": 1,
-      "overhead_tokens": 468
+      "overhead_tokens": 468,
+      "processedInput": 6184,
+      "output": 460
     }
   }
 }
