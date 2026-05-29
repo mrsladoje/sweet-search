@@ -17,7 +17,7 @@ import {
 } from './p7-persist.mjs';
 import { rebaselineFront } from './pareto-rebaseline.mjs';
 import { paretoGatedTare } from './tare.mjs';
-import { buildCandidate, computeProbeWeights, topFailures, topInefficiencies, scoreCandidateOnProbes } from './gepa-scoring.mjs';
+import { buildCandidate, computeProbeWeights, topFailures, topInefficiencies, scoreCandidateOnProbes, runCostLatencyFields } from './gepa-scoring.mjs';
 import { selectScreenProbes } from './gepa-screening.mjs';
 import {
   planSlots,
@@ -26,6 +26,7 @@ import {
   buildFrontFrom,
   lowestVarianceProbes,
   plateauBreakthrough,
+  reportingFront,
 } from './gepa-pareto.mjs';
 import { generateMutations, generateAdversarialParaphrases } from './gepa-mutate.mjs';
 import { buildReplayMap, makeResumeReplayEvaluate, buildConfirmEvent } from './gepa-finalize.mjs';
@@ -238,6 +239,7 @@ export async function runGepa(opts = {}) {
             tool_calls: d.traj?.toolCalls?.length ?? 0,
             input_tokens: d.usage?.agent?.input_tokens ?? null,
             output_tokens: d.usage?.agent?.output_tokens ?? null,
+            ...runCostLatencyFields({ usage: d.usage, target, toolCalls: d.traj?.toolCalls?.length ?? 0 }),
           });
         }
       }
@@ -351,6 +353,7 @@ export async function runGepa(opts = {}) {
               tool_calls: d.traj.toolCalls.length,
               input_tokens: d.usage?.agent?.input_tokens ?? null,
               output_tokens: d.usage?.agent?.output_tokens ?? null,
+              ...runCostLatencyFields({ usage: d.usage, target, toolCalls: d.traj.toolCalls.length }),
             });
           }
         }
@@ -366,7 +369,10 @@ export async function runGepa(opts = {}) {
       for (const pid of activeIds) {
         for (const target of TARGET_LIST) {
           const d = survivor.detail[pid][target];
-          appendEvent(buildConfirmEvent({ round, survivor, probe: probeById[pid], pid, target, d }));
+          appendEvent({
+            ...buildConfirmEvent({ round, survivor, probe: probeById[pid], pid, target, d }),
+            ...runCostLatencyFields({ usage: d.usage, target, toolCalls: d.traj?.toolCalls?.length ?? 0 }),
+          });
         }
       }
       log(`round ${round} confirm ${activeIds.length}×2 sonnet=${survivor.score_sonnet.toFixed(3)} gpt5.5=${survivor.score_gpt5_5.toFixed(3)} final=${survivor.finalScore.toFixed(3)}`);
@@ -467,6 +473,10 @@ export async function runGepa(opts = {}) {
     stoppedReason,
     probeSetIds: probeSet.map((p) => p.id),
     winner: front.slice().sort((a, b) => b.finalScore - a.finalScore)[0] ?? null,
+    // 2-D (accuracy, cost-$) reporting front (HAL-style) — the deployable
+    // cost/accuracy trade-off for the paper + final-prompt selection, separate
+    // from the per-probe search `front` above.
+    reportingFront: reportingFront(front),
   };
 }
 
