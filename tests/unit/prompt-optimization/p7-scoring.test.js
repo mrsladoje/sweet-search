@@ -415,3 +415,69 @@ describe('scoreCandidateOnProbes — B6 propagation (never swallow to 0)', () =>
     expect(threw).toBe(true);
   });
 });
+
+// ─── repeats + empty-run guard (2026-05-29) ─────────────────────────────────
+
+describe('scoreCandidateOnProbes — repeats + empty-run retry', () => {
+  const PROMPT_R = 'sys';
+  // Per-(probe,target) call sequencer. 'DEAD' → a 0-token run (transient failure).
+  // Live calls return input_tokens = 1000 + 500×callIndex so reps differ for the
+  // token-median assertion.
+  function makeRepStub(seqByCell) {
+    const counts = {};
+    return async ({ probe, target }) => {
+      const k = `${probe.id}:${target}`;
+      const seq = seqByCell[k] || [1];
+      const c = counts[k] || 0; counts[k] = c + 1;
+      const v = seq[Math.min(c, seq.length - 1)];
+      if (v === 'DEAD') {
+        return { score: 0, toolCalls: 0, finalAnswerEmitted: false, usedReadOrGrep: false, usedSweetSearch: false,
+          trajectory: { toolCalls: [], answer: '' }, usage: { agent: { input_tokens: 0, output_tokens: 0 } } };
+      }
+      return { score: v, toolCalls: 3, finalAnswerEmitted: true, usedReadOrGrep: true, usedSweetSearch: true,
+        trajectory: { toolCalls: [{ name: 'ss-search' }], answer: 'a' },
+        usage: { agent: { input_tokens: 1000 + 500 * c, output_tokens: 200, cache_read_tokens: 0, cache_creation_tokens: 0 } } };
+    };
+  }
+
+  it('repeats=2 aggregates score by median (= mean) and tokens by median', async () => {
+    const r = await scoreCandidateOnProbes({
+      candidate: { prompt: PROMPT_R }, probes: [makeProbe(1)], repeats: 2,
+      evaluateCandidate: makeRepStub({ 'p1:sonnet': [0.4, 0.8], 'p1:gpt5_5': [1, 1] }),
+    });
+    const son = r.detail.p1.sonnet;
+    expect(son.score).toBeCloseTo(0.6, 10);           // median(0.4, 0.8)
+    expect(son.repScores).toEqual([0.4, 0.8]);
+    expect(son.reps).toBe(2);
+    expect(son.usage.agent.input_tokens).toBe(1250);  // median(1000, 1500)
+    expect(r.detail.p1.gpt5_5.score).toBe(1);
+  });
+
+  it('repeats=1 returns the single live rep unchanged (+ telemetry)', async () => {
+    const r = await scoreCandidateOnProbes({
+      candidate: { prompt: PROMPT_R }, probes: [makeProbe(1)], repeats: 1,
+      evaluateCandidate: makeRepStub({ 'p1:sonnet': [0.7], 'p1:gpt5_5': [0.9] }),
+    });
+    expect(r.detail.p1.sonnet.score).toBe(0.7);
+    expect(r.detail.p1.sonnet.reps).toBe(1);
+    expect(r.detail.p1.sonnet.usage.agent.input_tokens).toBe(1000);
+  });
+
+  it('retries a dead (0-token) run and uses the recovered live result — never scores it 0', async () => {
+    const r = await scoreCandidateOnProbes({
+      candidate: { prompt: PROMPT_R }, probes: [makeProbe(1)], repeats: 1,
+      evaluateCandidate: makeRepStub({ 'p1:sonnet': ['DEAD', 'DEAD', 0.9], 'p1:gpt5_5': [1] }),
+    });
+    expect(r.detail.p1.sonnet.score).toBe(0.9);   // recovered on the 3rd attempt
+    expect(r.detail.p1.sonnet.reps).toBe(1);
+  });
+
+  it('flags allDead when every retry stays dead (does not crash)', async () => {
+    const r = await scoreCandidateOnProbes({
+      candidate: { prompt: PROMPT_R }, probes: [makeProbe(1)], repeats: 1,
+      evaluateCandidate: makeRepStub({ 'p1:sonnet': ['DEAD'], 'p1:gpt5_5': [1] }),
+    });
+    expect(r.detail.p1.sonnet.reps).toBe(0);                       // no live reps
+    expect(Number.isFinite(r.detail.p1.sonnet.score)).toBe(true);  // didn't throw / NaN
+  });
+});

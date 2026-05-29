@@ -138,6 +138,11 @@ export const DEFAULTS = Object.freeze({
   // Ship constraints.
   shipTokenCap: 2000, // §3.7.1 step 10 — ship variant ≤ 2000 tokens
   // GEPA loop.
+  // Per-(probe,target) evaluations, median-aggregated (2026-05-29). 1 = legacy
+  // single-shot (noise-prone — caused the gen-1b ranking inversion); the CLI
+  // launches with --repeats 2. Applies uniformly to seed ablation, screening,
+  // and the full-dev confirm (all route through scoreCandidateOnProbes).
+  repeats: 1,
   paretoFrontSize: 6,
   maxRounds: 20,
   hardCapRounds: 25,

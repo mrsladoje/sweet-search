@@ -101,6 +101,7 @@ export async function runGepa(opts = {}) {
     bucket = null,
     nativeBaselineByTarget = null,
     concurrency = 1,
+    repeats = DEFAULTS.repeats,
     now = () => Date.now(),
     reflectionHint,
   } = opts;
@@ -140,7 +141,7 @@ export async function runGepa(opts = {}) {
     : makeResumeReplayEvaluate({ evaluateCandidate, completedStepIds: new Set(), replayMap: new Map() });
   const replayEvaluate = replayLayer.evaluate;
   const enterStep = replayLayer.enterStep;
-  const mkCandidate = (args) => buildCandidate({ ...args, evaluateCandidate: replayEvaluate, bucket, nativeBaselineByTarget, concurrency });
+  const mkCandidate = (args) => buildCandidate({ ...args, evaluateCandidate: replayEvaluate, bucket, nativeBaselineByTarget, concurrency, repeats });
 
   // probe lookups (resume reconstructs probe records from ids)
   const allProbes = [...devProbes, ...rotationPool];
@@ -237,6 +238,8 @@ export async function runGepa(opts = {}) {
             target,
             score: d.score,
             tool_calls: d.traj?.toolCalls?.length ?? 0,
+            reps: d.reps ?? 1,
+            rep_scores: d.repScores ?? null,
             input_tokens: d.usage?.agent?.input_tokens ?? null,
             output_tokens: d.usage?.agent?.output_tokens ?? null,
             ...runCostLatencyFields({ usage: d.usage, target, toolCalls: d.traj?.toolCalls?.length ?? 0 }),
@@ -269,7 +272,7 @@ export async function runGepa(opts = {}) {
       const newProbes = rotationPool.slice(0, rotationSwapCount).filter((p) => !activeIds.includes(p.id));
       const before = front.map((f) => f.id);
       const rebaseEval = async (incumbent, probe) => {
-        const r = await scoreCandidateOnProbes({ candidate: { prompt: incumbent.prompt }, probes: [probe], evaluateCandidate: replayEvaluate, bucket, concurrency });
+        const r = await scoreCandidateOnProbes({ candidate: { prompt: incumbent.prompt }, probes: [probe], evaluateCandidate: replayEvaluate, bucket, concurrency, repeats });
         incumbent.detail = { ...(incumbent.detail || {}), ...r.detail };
         return r.perProbeMaximin[0];
       };
@@ -351,6 +354,8 @@ export async function runGepa(opts = {}) {
               target,
               score: d.score,
               tool_calls: d.traj.toolCalls.length,
+              reps: d.reps ?? 1,
+              rep_scores: d.repScores ?? null,
               input_tokens: d.usage?.agent?.input_tokens ?? null,
               output_tokens: d.usage?.agent?.output_tokens ?? null,
               ...runCostLatencyFields({ usage: d.usage, target, toolCalls: d.traj.toolCalls.length }),

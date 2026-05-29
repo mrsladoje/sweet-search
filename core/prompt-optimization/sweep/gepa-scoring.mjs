@@ -214,7 +214,80 @@ export async function mapWithConcurrency(items, limit, fn) {
   return results;
 }
 
-export async function scoreCandidateOnProbes({ candidate, probes, evaluateCandidate, bucket = null, concurrency = 1 }) {
+// ─── repeats + empty-run guard (2026-05-29) ─────────────────────────────────
+
+/**
+ * A run is "dead" when the agent produced NOTHING: usage.agent present but
+ * input+output tokens == 0 (a transient API/infra failure — e.g. gen-1b's
+ * kotlin-002 0/0/0 cell that was wrongly scored 0). Stubs/dry-runs return NO
+ * usage → NOT dead (don't retry them). A terse-but-real run (tokens>0) is also
+ * not dead — that's model variance, handled by repeats, not by retry.
+ */
+function _isDeadRun(r) {
+  const a = r?.usage?.agent;
+  if (!a) return false;
+  const tot = (typeof a.input_tokens === 'number' ? a.input_tokens : 0)
+    + (typeof a.output_tokens === 'number' ? a.output_tokens : 0);
+  return tot === 0;
+}
+
+const _median = (xs) => {
+  const s = xs.filter((v) => typeof v === 'number' && Number.isFinite(v)).sort((a, b) => a - b);
+  const n = s.length;
+  return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : 0;
+};
+
+/** Per-rep retries for a dead (0-token) run — transient-failure recovery. */
+const MAX_DEAD_RETRY = 3;
+
+/**
+ * Aggregate `repeats` per-(probe,target) evals into ONE result: median score
+ * (= mean for 2 reps), median token breakdown (→ median cost), OR-ed evidence
+ * flags, and the trajectory of the rep closest to the median score. Dead reps
+ * are excluded; if ALL reps are dead the (rare) cell is kept but flagged
+ * `allDead`. With a single live rep this returns it UNCHANGED (back-compat for
+ * repeats=1) plus `repScores`/`reps` telemetry.
+ */
+function _aggregateReps(reps) {
+  const live = reps.filter((x) => !x.dead).map((x) => x.r);
+  const used = live.length ? live : reps.map((x) => x.r);
+  if (used.length === 1) {
+    return { ...used[0], repScores: [used[0].score], reps: live.length, allDead: live.length === 0 };
+  }
+  const aggScore = _median(used.map((r) => r.score));
+  const rep = used.reduce((b, r) => (Math.abs((r.score ?? 0) - aggScore) < Math.abs((b.score ?? 0) - aggScore) ? r : b), used[0]);
+  let usage = rep.usage ?? null;
+  if (used.some((r) => r.usage?.agent)) {
+    const medF = (k) => _median(used.map((r) => r.usage?.agent?.[k]));
+    usage = {
+      ...(rep.usage || {}),
+      agent: {
+        ...(rep.usage?.agent || {}),
+        input_tokens: medF('input_tokens'),
+        output_tokens: medF('output_tokens'),
+        cache_read_tokens: medF('cache_read_tokens'),
+        cache_creation_tokens: medF('cache_creation_tokens'),
+      },
+    };
+  }
+  return {
+    score: aggScore,
+    toolCalls: Math.round(_median(used.map((r) => r.toolCalls))),
+    finalAnswerEmitted: used.some((r) => r.finalAnswerEmitted),
+    usedReadOrGrep: used.some((r) => r.usedReadOrGrep),
+    usedSweetSearch: used.some((r) => r.usedSweetSearch),
+    usedNativeSearch: used.some((r) => r.usedNativeSearch),
+    usedNativeRead: used.some((r) => r.usedNativeRead),
+    trajectory: rep.trajectory,
+    wallMs: rep.wallMs,
+    usage,
+    repScores: used.map((r) => r.score),
+    reps: live.length,
+    allDead: live.length === 0,
+  };
+}
+
+export async function scoreCandidateOnProbes({ candidate, probes, evaluateCandidate, bucket = null, concurrency = 1, repeats = 1 }) {
   if (typeof evaluateCandidate !== 'function') {
     throw new TypeError('scoreCandidateOnProbes: evaluateCandidate must be a function');
   }
@@ -229,27 +302,48 @@ export async function scoreCandidateOnProbes({ candidate, probes, evaluateCandid
   for (const probe of probes) {
     for (const target of TARGET_LIST) tasks.push({ probe, target });
   }
+  const nReps = Math.max(1, repeats | 0);
   const taskResults = await mapWithConcurrency(tasks, concurrency, async ({ probe, target }) => {
-    const inEst = estimateTokens(candidate.prompt) + estimateTokens(probe.query || '');
-    let entry = null;
-    if (bucket && bucket[target] && typeof bucket[target].acquire === 'function') {
-      entry = await bucket[target].acquire({ inTokens: inEst, outTokens: OUT_TOKENS_EST, target });
+    // One real eval (+ token-bucket acquire/reconcile). On --resume the injected
+    // evaluateCandidate replays a completed (probe,target) from the trajectory, so
+    // the reps below collapse to cheap in-memory replays (no re-spend).
+    const oneEval = async () => {
+      const inEst = estimateTokens(candidate.prompt) + estimateTokens(probe.query || '');
+      let entry = null;
+      if (bucket && bucket[target] && typeof bucket[target].acquire === 'function') {
+        entry = await bucket[target].acquire({ inTokens: inEst, outTokens: OUT_TOKENS_EST, target });
+      }
+      const r = await evaluateCandidate({ promptText: candidate.prompt, probe, target });
+      // M3 reconcile estimate→actual on THIS call's entry (safe under concurrency).
+      const agentUsage = r.usage?.agent;
+      if (
+        bucket && bucket[target] && typeof bucket[target].reconcile === 'function' &&
+        agentUsage &&
+        (typeof agentUsage.input_tokens === 'number' || typeof agentUsage.output_tokens === 'number')
+      ) {
+        bucket[target].reconcile({
+          inTokens: typeof agentUsage.input_tokens === 'number' ? agentUsage.input_tokens : undefined,
+          outTokens: typeof agentUsage.output_tokens === 'number' ? agentUsage.output_tokens : undefined,
+          entry,
+        });
+      }
+      return r;
+    };
+    // `repeats` evals per cell, each with empty-run retry (a dead 0-token run is a
+    // transient API failure — retry it, never let it count). Throws (e.g.
+    // AllJudgesFailedError) propagate; only the dead-run case is retried.
+    const reps = [];
+    for (let i = 0; i < nReps; i++) {
+      let r = null;
+      let dead = true;
+      for (let a = 0; a < MAX_DEAD_RETRY; a++) {
+        r = await oneEval();
+        dead = _isDeadRun(r);
+        if (!dead) break;
+      }
+      reps.push({ r, dead });
     }
-    const r = await evaluateCandidate({ promptText: candidate.prompt, probe, target });
-    // M3 reconcile estimate→actual on THIS call's entry (safe under concurrency).
-    const agentUsage = r.usage?.agent;
-    if (
-      bucket && bucket[target] && typeof bucket[target].reconcile === 'function' &&
-      agentUsage &&
-      (typeof agentUsage.input_tokens === 'number' || typeof agentUsage.output_tokens === 'number')
-    ) {
-      bucket[target].reconcile({
-        inTokens: typeof agentUsage.input_tokens === 'number' ? agentUsage.input_tokens : undefined,
-        outTokens: typeof agentUsage.output_tokens === 'number' ? agentUsage.output_tokens : undefined,
-        entry,
-      });
-    }
-    return { probeId: probe.id, target, r };
+    return { probeId: probe.id, target, r: _aggregateReps(reps) };
   });
 
   // Reassemble in probe order — deterministic for resume regardless of completion order.
@@ -276,8 +370,8 @@ export async function scoreCandidateOnProbes({ candidate, probes, evaluateCandid
     sonnetScores.push(runs.sonnet.score);
     gptScores.push(runs.gpt5_5.score);
     detail[probe.id] = {
-      sonnet: { score: runs.sonnet.score, traj: runs.sonnet.trajectory || { toolCalls: [], answer: '' }, usage: runs.sonnet.usage ?? null },
-      gpt5_5: { score: runs.gpt5_5.score, traj: runs.gpt5_5.trajectory || { toolCalls: [], answer: '' }, usage: runs.gpt5_5.usage ?? null },
+      sonnet: { score: runs.sonnet.score, traj: runs.sonnet.trajectory || { toolCalls: [], answer: '' }, usage: runs.sonnet.usage ?? null, repScores: runs.sonnet.repScores ?? null, reps: runs.sonnet.reps ?? 1 },
+      gpt5_5: { score: runs.gpt5_5.score, traj: runs.gpt5_5.trajectory || { toolCalls: [], answer: '' }, usage: runs.gpt5_5.usage ?? null, repScores: runs.gpt5_5.repScores ?? null, reps: runs.gpt5_5.reps ?? 1 },
     };
   }
 
@@ -343,9 +437,10 @@ export async function buildCandidate({
   bucket = null,
   nativeBaselineByTarget = null,
   concurrency = 1,
+  repeats = 1,
 }) {
   const tokenCount = estimateTokens(prompt);
-  const scored = await scoreCandidateOnProbes({ candidate: { prompt }, probes, evaluateCandidate, bucket, concurrency });
+  const scored = await scoreCandidateOnProbes({ candidate: { prompt }, probes, evaluateCandidate, bucket, concurrency, repeats });
   const fs = computeFinalScoreFor({
     perProbeMaximin: scored.perProbeMaximin,
     weights: weights ?? scored.probeIds.map(() => 1),
