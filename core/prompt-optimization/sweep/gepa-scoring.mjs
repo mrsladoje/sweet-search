@@ -544,6 +544,21 @@ function nativeRunsByProbe(candidate, pid) {
 }
 
 /**
+ * Mean cache-naive $ this candidate spent on a SINGLE probe, across the targets
+ * that have a cost row (null when the candidate has no native-relative cost data,
+ * e.g. dry-run/test stubs or a pre-baseline front). Mirrors the candidate-level
+ * `meanCostUsd` definition (mean over (probe,target) runs) scoped to one probe —
+ * the per-probe cost signal the cost-aware OP-2 crossover selects on.
+ */
+export function perProbeCostUsd(candidate, pid) {
+  const costs = [];
+  for (const { row } of nativeRunsByProbe(candidate, pid)) {
+    if (typeof row.costUsd === 'number') costs.push(row.costUsd);
+  }
+  return costs.length ? costs.reduce((a, b) => a + b, 0) / costs.length : null;
+}
+
+/**
  * Minimum native-relative `desirability.overall` for a probe to be surfaced as
  * an inefficiency. At or above this, the probe is already near-native efficient
  * and surfacing it would give OP-1 fake "improve this" pressure — exactly the

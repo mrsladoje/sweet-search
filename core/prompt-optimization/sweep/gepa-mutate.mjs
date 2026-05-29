@@ -355,17 +355,26 @@ export async function generateMutations({ slots, parent, failures, probeById, ro
         );
         break;
       case 'trajectory-crossover': {
-        const { probeId, winner, loser } = slot.pair;
+        const { probeId, winner, loser, costWinner, costLoser } = slot.pair;
         const probe = probeById?.[probeId] || { id: probeId, query: undefined };
         parentHashOverride = winner.hash;
+        const trajA = pickTrajForProbe(winner, probeId, 'sonnet');
+        const trajB = pickTrajForProbe(loser, probeId, 'gpt5_5');
+        // When the pair was selected on a cost mismatch (cost-aware finder), make
+        // cost the PRIMARY objective in the merge prompt; an accuracy-fallback pair
+        // carries no cost fields → costContext stays undefined (legacy behaviour).
+        const costContext = (typeof costWinner === 'number' && typeof costLoser === 'number')
+          ? { costWinner, costLoser, callsWinner: trajA.toolCalls?.length, callsLoser: trajB.toolCalls?.length }
+          : undefined;
         res = await runOpWithRetry(
           (cm) => runTrajectoryCrossover({
             probe,
             promptA: winner.prompt,
             promptB: loser.prompt,
-            trajectoryA: pickTrajForProbe(winner, probeId, 'sonnet'),
-            trajectoryB: pickTrajForProbe(loser, probeId, 'gpt5_5'),
+            trajectoryA: trajA,
+            trajectoryB: trajB,
             reflectionHint,
+            costContext,
             callModel: cm,
           }),
           callModel, retryOpts,

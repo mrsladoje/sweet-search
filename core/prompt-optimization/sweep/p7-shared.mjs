@@ -106,6 +106,14 @@ export const DEFAULTS = Object.freeze({
   // the call/token thresholds): desirability 1 at ≤0.65× native, 0 at ≥1.5×.
   nativeCostTargetRatio: 0.65,
   nativeCostFailRatio: 1.5,
+  // OP-2 cost-aware crossover (2026-05-29): accuracy saturates on a mature front,
+  // so the trajectory-crossover pair-finder selects on a per-probe COST mismatch
+  // among incumbents that BOTH solve the probe (joint score ≥ crossoverMinAccuracy),
+  // pairing the cheapest (winner) with the priciest (loser, ≥ crossoverMinCostRatio×
+  // the winner's per-probe $). Falls back to the legacy accuracy mismatch only when
+  // NO incumbent exposes per-probe cost (dry-runs / pre-baseline fronts).
+  crossoverMinAccuracy: 0.8,
+  crossoverMinCostRatio: 1.5,
   // Efficiency-axis weights — accuracy is a SEPARATE axis + floor, NEVER blended
   // in here (2026-05-29 decouple). `cost` = cache-naive dollar cost (dominant);
   // `calls` = tool-call/round-trip count, retained as a latency proxy.

@@ -152,6 +152,35 @@ describe('buildTrajectoryCrossoverPrompt', () => {
     expect(userPrompt).toContain(PROMPT_A);
     expect(userPrompt).toContain(PROMPT_B);
   });
+
+  it('adds a PRIMARY cost objective with the $ figures when costContext is provided', () => {
+    const { systemPrompt } = buildTrajectoryCrossoverPrompt({
+      probe: PROBE,
+      promptA: PROMPT_A,
+      promptB: PROMPT_B,
+      trajectoryA: trajSonnet,
+      trajectoryB: trajGpt,
+      costContext: { costWinner: 0.10, costLoser: 0.30, callsWinner: 3, callsLoser: 9 },
+    });
+    expect(systemPrompt).toMatch(/Cost objective \(PRIMARY\)/);
+    expect(systemPrompt).toMatch(/\$0\.1000/);
+    expect(systemPrompt).toMatch(/\$0\.3000/);
+    expect(systemPrompt).toMatch(/3\.0× more/);
+    expect(systemPrompt).toMatch(/REDUCED cost/);
+    expect(systemPrompt).toMatch(/3 tool call\(s\)/);
+    expect(systemPrompt).toMatch(/9 tool call\(s\)/);
+  });
+
+  it('omits the cost objective when no costContext is given', () => {
+    const { systemPrompt } = buildTrajectoryCrossoverPrompt({
+      probe: PROBE,
+      promptA: PROMPT_A,
+      promptB: PROMPT_B,
+      trajectoryA: trajSonnet,
+      trajectoryB: trajGpt,
+    });
+    expect(systemPrompt).not.toMatch(/Cost objective/);
+  });
 });
 
 // ─── runTrajectoryCrossover ────────────────────────────────────────────────
