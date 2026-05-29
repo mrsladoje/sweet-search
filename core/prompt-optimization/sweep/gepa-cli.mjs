@@ -103,6 +103,7 @@ export function parseArgs(argv) {
     else if (a === '--smoke-variants') o.smokeVariants = Number.parseInt(argv[++i], 10);
     else if (a === '--concurrency') o.concurrency = Number.parseInt(argv[++i], 10);
     else if (a === '--repeats') o.repeats = Number.parseInt(argv[++i], 10);
+    else if (a === '--initial-front') o.initialFrontFile = argv[++i];
     else if (a === '--skip-finalize') o.skipFinalize = true;
     else if (a === '--allow-unverified-seeds') o.allowUnverifiedSeeds = true;
   }
@@ -114,6 +115,9 @@ export function parseArgs(argv) {
   }
   if (o.repeats !== undefined && (!Number.isInteger(o.repeats) || o.repeats < 1)) {
     throw new Error('--repeats must be a positive integer');
+  }
+  if (o.initialFrontFile !== undefined && !existsSync(o.initialFrontFile)) {
+    throw new Error(`--initial-front file not found: ${o.initialFrontFile}`);
   }
   if (o.screenProbeIds !== undefined && o.screenProbeIds.length === 0) {
     throw new Error('--screen-probe-ids must contain at least one id');
@@ -257,6 +261,10 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     nativeBaselineByTarget,
     concurrency: o.concurrency ?? 1,
     repeats: o.repeats ?? DEFAULTS.repeats,
+    // Pre-scored seed front (skips the round-0 ablation). Used to reuse an
+    // already-measured seed front (e.g. the gen-1b rescore + 1 fresh rep merged
+    // to 2 reps) instead of re-ablating from scratch.
+    initialFront: o.initialFrontFile ? JSON.parse(readFileSync(o.initialFrontFile, 'utf8')) : undefined,
     screenProbeIds: o.screenProbeIds ?? [],
   });
   reportResult('GEPA complete', result);
