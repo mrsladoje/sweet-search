@@ -11,7 +11,7 @@
 
 import { DEFAULTS } from './p7-shared.mjs';
 import { paretoAdmissible } from './eas.mjs';
-import { populationVariance } from './gepa-scoring.mjs';
+import { populationVariance, perProbeCostUsd } from './gepa-scoring.mjs';
 
 // ─── per-probe (canonical-GEPA) search-front dominance ──────────────────────
 
@@ -340,15 +340,62 @@ export function slot3Op(round, rotationRound = DEFAULTS.rotationRound) {
 }
 
 /**
- * Find a Pareto pair with the OP-2 mismatch: one incumbent wins (≥0.8) and
- * another fails (≤0.4) on the same dev probe (§3.2 slot 2).
+ * Find the OP-2 crossover pair (§3.2 slot 2). 2026-05-29 COST-AWARE rewrite:
+ * accuracy saturates on a mature front, so the legacy accuracy mismatch (one
+ * incumbent ≥0.8, another ≤0.4 on the same probe) essentially never exists and
+ * OP-2 silently degraded to a 2nd reflective every round. The pair-finder now
+ * selects on a per-probe COST mismatch among incumbents that BOTH solve the probe
+ * (joint score ≥ minAccuracy) — so we never crown a "cheap because it gave up"
+ * prompt as the exemplar:
+ *   - WINNER (candidate A, lineage source) = the CHEAPEST such incumbent; its
+ *     efficient routing is the strength the crossover propagates.
+ *   - LOSER  (candidate B) = the PRICIEST such incumbent (≥ minCostRatio× the
+ *     winner's per-probe $); its coverage is kept but its wasteful routing is what
+ *     the merge fixes.
+ * Picks the probe with the LARGEST absolute $ gap (most cost to recover);
+ * deterministic by probeId on ties.
  *
- * @returns {{ probeId:string, winner:object, loser:object }|null}
+ * Fallback: the legacy accuracy mismatch, used ONLY when NO incumbent exposes
+ * per-probe cost data (dry-runs / pre-baseline fronts / pure-accuracy unit stubs),
+ * so the relation stays useful in an accuracy-spread regime.
+ *
+ * @returns {{ probeId:string, winner:object, loser:object, costWinner?:number, costLoser?:number }|null}
  */
-export function findCrossoverPair({ front, probeIds }) {
+export function findCrossoverPair({
+  front,
+  probeIds,
+  minAccuracy = DEFAULTS.crossoverMinAccuracy,
+  minCostRatio = DEFAULTS.crossoverMinCostRatio,
+}) {
+  const f = front || [];
+  let anyCostData = false;
+  let best = null; // { probeId, winner, loser, costWinner, costLoser, gap }
+
   for (const pid of probeIds) {
-    const winners = (front || []).filter((inc) => typeof inc.scores?.[pid] === 'number' && inc.scores[pid] >= 0.8);
-    const losers = (front || []).filter((inc) => typeof inc.scores?.[pid] === 'number' && inc.scores[pid] <= 0.4);
+    const withCost = f
+      .filter((inc) => typeof inc.scores?.[pid] === 'number' && inc.scores[pid] >= minAccuracy)
+      .map((inc) => ({ inc, cost: perProbeCostUsd(inc, pid) }))
+      .filter((x) => typeof x.cost === 'number' && x.cost > 0);
+    if (withCost.length > 0) anyCostData = true;
+    if (withCost.length < 2) continue;
+    withCost.sort((a, b) => (a.cost - b.cost) || String(a.inc.id ?? '').localeCompare(String(b.inc.id ?? '')));
+    const cheap = withCost[0];
+    const pricey = withCost[withCost.length - 1];
+    if (cheap.inc === pricey.inc || pricey.cost < cheap.cost * minCostRatio) continue;
+    const gap = pricey.cost - cheap.cost;
+    if (!best || gap > best.gap || (gap === best.gap && String(pid) < String(best.probeId))) {
+      best = { probeId: pid, winner: cheap.inc, loser: pricey.inc, costWinner: cheap.cost, costLoser: pricey.cost, gap };
+    }
+  }
+
+  if (best) {
+    return { probeId: best.probeId, winner: best.winner, loser: best.loser, costWinner: best.costWinner, costLoser: best.costLoser };
+  }
+  // Accuracy fallback only when the front carries no per-probe cost at all.
+  if (anyCostData) return null;
+  for (const pid of probeIds) {
+    const winners = f.filter((inc) => typeof inc.scores?.[pid] === 'number' && inc.scores[pid] >= 0.8);
+    const losers = f.filter((inc) => typeof inc.scores?.[pid] === 'number' && inc.scores[pid] <= 0.4);
     if (winners.length && losers.length && winners[0] !== losers[0]) {
       return { probeId: pid, winner: winners[0], loser: losers[0] };
     }

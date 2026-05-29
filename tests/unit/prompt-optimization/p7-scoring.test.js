@@ -23,6 +23,7 @@ import {
   agentUsageBreakdown,
   computeFinalScoreFor,
   mapWithConcurrency,
+  perProbeCostUsd,
   runCostLatencyFields,
   scoreCandidateOnProbes,
   toProbeRun,
@@ -479,5 +480,32 @@ describe('scoreCandidateOnProbes — repeats + empty-run retry', () => {
     });
     expect(r.detail.p1.sonnet.reps).toBe(0);                       // no live reps
     expect(Number.isFinite(r.detail.p1.sonnet.score)).toBe(true);  // didn't throw / NaN
+  });
+});
+
+// ─── perProbeCostUsd — per-probe cache-naive $ (cost-aware OP-2 selector) ─────
+
+describe('perProbeCostUsd', () => {
+  const mkCand = (runsByTarget) => ({
+    nativeRelative: {
+      breakdown: {
+        sonnet: { runs: runsByTarget.sonnet },
+        gpt5_5: { runs: runsByTarget.gpt5_5 },
+      },
+    },
+  });
+
+  it('means the per-target costUsd for the probe', () => {
+    const cand = mkCand({
+      sonnet: [{ probeId: 'p1', costUsd: 0.20 }, { probeId: 'p2', costUsd: 0.05 }],
+      gpt5_5: [{ probeId: 'p1', costUsd: 0.40 }],
+    });
+    expect(perProbeCostUsd(cand, 'p1')).toBeCloseTo(0.30, 6); // (0.20 + 0.40) / 2
+    expect(perProbeCostUsd(cand, 'p2')).toBeCloseTo(0.05, 6); // only sonnet has a row
+  });
+
+  it('returns null when the candidate has no native-relative cost data', () => {
+    expect(perProbeCostUsd({}, 'p1')).toBeNull();
+    expect(perProbeCostUsd({ nativeRelative: { breakdown: { sonnet: { runs: [] }, gpt5_5: { runs: [] } } } }, 'p1')).toBeNull();
   });
 });
