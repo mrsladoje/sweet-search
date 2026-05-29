@@ -102,6 +102,7 @@ export function parseArgs(argv) {
     else if (a === '--smoke-probes') o.smokeProbes = Number.parseInt(argv[++i], 10);
     else if (a === '--smoke-variants') o.smokeVariants = Number.parseInt(argv[++i], 10);
     else if (a === '--concurrency') o.concurrency = Number.parseInt(argv[++i], 10);
+    else if (a === '--repeats') o.repeats = Number.parseInt(argv[++i], 10);
     else if (a === '--skip-finalize') o.skipFinalize = true;
     else if (a === '--allow-unverified-seeds') o.allowUnverifiedSeeds = true;
   }
@@ -110,6 +111,9 @@ export function parseArgs(argv) {
   }
   if (o.concurrency !== undefined && (!Number.isInteger(o.concurrency) || o.concurrency < 1)) {
     throw new Error('--concurrency must be a positive integer');
+  }
+  if (o.repeats !== undefined && (!Number.isInteger(o.repeats) || o.repeats < 1)) {
+    throw new Error('--repeats must be a positive integer');
   }
   if (o.screenProbeIds !== undefined && o.screenProbeIds.length === 0) {
     throw new Error('--screen-probe-ids must contain at least one id');
@@ -159,6 +163,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
       patience: DEFAULTS.patienceRounds,
       resume: o.resume,
       concurrency: o.concurrency ?? 1,
+      repeats: o.repeats ?? DEFAULTS.repeats,
       screenProbeIds: o.screenProbeIds ?? [],
     });
     reportResult('DRY-RUN complete', result);
@@ -251,6 +256,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     bucket,
     nativeBaselineByTarget,
     concurrency: o.concurrency ?? 1,
+    repeats: o.repeats ?? DEFAULTS.repeats,
     screenProbeIds: o.screenProbeIds ?? [],
   });
   reportResult('GEPA complete', result);

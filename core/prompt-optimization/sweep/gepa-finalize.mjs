@@ -107,6 +107,8 @@ export function buildConfirmEvent({ round, survivor, probe, pid, target, d }) {
     token_count_prompt: usage?.token_count_prompt ?? survivor.tokenCount ?? null,
     length_penalty: survivor.lengthPenalty,
     final_score: survivor.finalScore,
+    reps: d?.reps ?? 1,
+    rep_scores: d?.repScores ?? null,
     input_tokens: agent?.input_tokens ?? null,
     output_tokens: agent?.output_tokens ?? null,
     cache_read_tokens: agent?.cache_read_tokens ?? null,
