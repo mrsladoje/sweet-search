@@ -16,6 +16,9 @@ import {
   finalScore,
   probeWeight,
   paretoAdmissible,
+  costUsd,
+  estLatencySeconds,
+  realizedCostUsd,
 } from '../../../core/prompt-optimization/sweep/eas.mjs';
 import { DEFAULTS } from '../../../core/prompt-optimization/sweep/p7-shared.mjs';
 
@@ -306,10 +309,11 @@ describe('native-relative desirability', () => {
       },
     });
     expect(r.factor).toBeCloseTo(1, 10);
-    expect(r.breakdown.sonnet.runs[0].desirability).toMatchObject({ accuracy: 1, calls: 1, tokens: 1, overall: 1 });
+    // `overall` is efficiency-only (calls × cost); accuracy is a decoupled axis.
+    expect(r.breakdown.sonnet.runs[0].desirability).toMatchObject({ accuracy: 1, calls: 1, cost: 1, overall: 1 });
   });
 
-  it('scores token savings on overhead-adjusted work tokens when baseline overhead is supplied', () => {
+  it('scores cost savings on overhead-adjusted work input when baseline overhead is supplied', () => {
     const r = nativeRelativeScore({
       baselineByTarget: {
         gpt5_5: {
@@ -319,14 +323,15 @@ describe('native-relative desirability', () => {
       perTarget: {
         gpt5_5: [{ probeId: 'p1', score: 0.97, calls: 4, tokens: 11300 }],
       },
-      weights: { accuracy: 0, calls: 0, tokens: 1 },
+      efficiencyWeights: { cost: 1, calls: 0 },
     });
     const row = r.breakdown.gpt5_5.runs[0];
     expect(row.overheadTokens).toBe(10000);
-    expect(row.nativeTokensForScoring).toBe(2000);
-    expect(row.tokensForScoring).toBe(1300);
-    expect(row.desirability.tokens).toBe(1);
-    expect(r.factor).toBe(1);
+    // gpt5_5 input price = $5/1M; work input = tokens − overhead (output unknown → 0).
+    expect(row.nativeCostUsd).toBeCloseTo(5 * 2000 / 1e6, 12); // (12000 − 10000)
+    expect(row.costUsd).toBeCloseTo(5 * 1300 / 1e6, 12);       // (11300 − 10000) → 0.65× native
+    expect(row.desirability.cost).toBe(1);
+    expect(r.factor).toBe(1); // accuracy 0.97 ≥ target → gate 1; cost des 1 → 1×1
   });
 
   // Regression (2026-05-26): one bad run with null/0 tokens used to crash the
@@ -336,7 +341,7 @@ describe('native-relative desirability', () => {
   // this fired in real life (gpt5_5.csharp-008) and torched 5 completed seeds.
   // Behaviour must now be: fall back to baseline (= neutral efficiency
   // desirability), record `missingMeasurement` in the row, never throw.
-  it('falls back to baseline (no crash) when run.tokens is null/zero/non-finite', () => {
+  it('falls back to baseline (no crash) when a run cost breakdown is null/zero/non-finite', () => {
     const baseline = {
       sonnet: { p1: { score: 0.9, calls: 4, tokens: 1000 } },
       gpt5_5: { p1: { score: 0.9, calls: 4, tokens: 1000 } },
@@ -351,8 +356,8 @@ describe('native-relative desirability', () => {
       });
       expect(Number.isFinite(r.factor)).toBe(true);
       const row = r.breakdown.gpt5_5.runs[0];
-      expect(row.tokens).toBe(1000);                     // fell back to baseline
-      expect(row.missingMeasurement?.tokens).toBe(true); // and surfaced the flag
+      expect(row.costUsd).toBe(row.nativeCostUsd);       // fell back to baseline cost
+      expect(row.missingMeasurement?.cost).toBe(true);   // and surfaced the flag
     }
   });
 
@@ -719,5 +724,87 @@ describe('paretoAdmissible — hardening', () => {
     expect(r.ok).toBe(true);
     expect(r.drop.sonnet).toBeLessThan(0);
     expect(r.drop.gpt5_5).toBeLessThan(0);
+  });
+});
+
+// ─── costUsd — cache-naive dollar cost (2026-05-29 scoring overhaul) ────────
+
+describe('costUsd', () => {
+  const sonnet = { inPerM: 3, outPerM: 15 };
+  const gpt5_5 = { inPerM: 5, outPerM: 30 };
+
+  it('prices processedInput at the input rate and output at the output rate', () => {
+    // (10000×3 + 2000×15) / 1e6 = (30000 + 30000)/1e6 = 0.06
+    expect(costUsd({ processedInput: 10000, output: 2000, prices: sonnet })).toBeCloseTo(0.06, 10);
+    // (10000×5 + 2000×30) / 1e6 = (50000 + 60000)/1e6 = 0.11
+    expect(costUsd({ processedInput: 10000, output: 2000, prices: gpt5_5 })).toBeCloseTo(0.11, 10);
+  });
+
+  it('weights output above input (a generation token costs more than a context token)', () => {
+    const inputHeavy = costUsd({ processedInput: 12000, output: 0, prices: sonnet });
+    const outputHeavy = costUsd({ processedInput: 0, output: 12000, prices: sonnet });
+    expect(outputHeavy).toBeGreaterThan(inputHeavy);
+    expect(outputHeavy / inputHeavy).toBeCloseTo(5, 10); // 15/3
+  });
+
+  it('is a pure function of processed tokens (cache-naive): no cache-state input', () => {
+    expect(costUsd({ processedInput: 66000, output: 2000, prices: sonnet }))
+      .toBeCloseTo((66000 * 3 + 2000 * 15) / 1e6, 12);
+  });
+
+  it('throws on missing/negative prices or tokens', () => {
+    expect(() => costUsd({ processedInput: 1, output: 1, prices: { inPerM: 3 } })).toThrow();
+    expect(() => costUsd({ processedInput: -1, output: 1, prices: sonnet })).toThrow();
+  });
+});
+
+// ─── estLatencySeconds — deterministic latency diagnostic ───────────────────
+
+describe('estLatencySeconds', () => {
+  const sonnet = { ttftSec: 0.8, throughputTokPerSec: 55 };
+
+  it('combines round-trip TTFT with serial generation time (reasoning IS output)', () => {
+    // 4 turns × 0.8 + 2000/55
+    expect(estLatencySeconds({ turns: 4, output: 2000, latency: sonnet })).toBeCloseTo(3.2 + 2000 / 55, 10);
+  });
+
+  it('more reasoning (output) → more latency, holding turns fixed', () => {
+    const a = estLatencySeconds({ turns: 3, output: 500, latency: sonnet });
+    const b = estLatencySeconds({ turns: 3, output: 5000, latency: sonnet });
+    expect(b).toBeGreaterThan(a);
+  });
+
+  it('throws on non-positive throughput', () => {
+    expect(() => estLatencySeconds({ turns: 1, output: 100, latency: { ttftSec: 1, throughputTokPerSec: 0 } })).toThrow();
+  });
+});
+
+// ─── realizedCostUsd — cache-AWARE deployment figure (reported, not optimized) ─
+
+describe('realizedCostUsd', () => {
+  const sonnet = { inPerM: 3, outPerM: 15, cacheReadPerM: 0.30, cacheWritePerM: 3.75 };
+  const gpt5_5 = { inPerM: 5, outPerM: 30, cacheReadPerM: 0.50, cacheWritePerM: 5 };
+
+  it('Anthropic: fresh input + cache_read@read-rate + cache_creation@write-rate + output', () => {
+    // (5000×3 + 60000×0.30 + 1000×3.75 + 2000×15)/1e6 = (15000+18000+3750+30000)/1e6
+    const r = realizedCostUsd({ agent: { input_tokens: 5000, output_tokens: 2000, cache_read_tokens: 60000, cache_creation_tokens: 1000 }, prices: sonnet });
+    expect(r).toBeCloseTo(66750 / 1e6, 12);
+  });
+
+  it('OpenAI: cached reads are a subset of input → fresh = input − cached', () => {
+    // fresh=10000: (10000×5 + 60000×0.5 + 0 + 2000×30)/1e6 = (50000+30000+60000)/1e6
+    const r = realizedCostUsd({ agent: { input_tokens: 70000, output_tokens: 2000, cached_input_tokens: 60000 }, prices: gpt5_5 });
+    expect(r).toBeCloseTo(140000 / 1e6, 12);
+  });
+
+  it('is ≤ the cache-naive cost (caching only ever discounts the bill)', () => {
+    const agent = { input_tokens: 5000, output_tokens: 2000, cache_read_tokens: 60000, cache_creation_tokens: 1000 };
+    const realized = realizedCostUsd({ agent, prices: sonnet });
+    const naive = costUsd({ processedInput: 66000, output: 2000, prices: sonnet });
+    expect(realized).toBeLessThan(naive);
+  });
+
+  it('returns null when no agent usage present', () => {
+    expect(realizedCostUsd({ agent: null, prices: sonnet })).toBeNull();
   });
 });

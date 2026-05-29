@@ -162,12 +162,22 @@ function _baselineMetrics(row, label) {
   const score = _metric(row, ['score', 'accuracy']);
   const calls = _metric(row, ['calls', 'toolCalls', 'tool_calls']);
   const tokens = _metric(row, ['tokens', 'agentTokens', 'agent_tokens', 'totalTokens', 'total_tokens']);
+  const processedInput = _metric(row, ['processedInput', 'processed_input']);
+  const output = _metric(row, ['output', 'outputTokens', 'output_tokens']);
   const overheadTokens = _metric(row, ['overheadTokens', 'overhead_tokens', 'fixedTokens', 'fixed_tokens', 'tokenFloor', 'token_floor']);
   const out = {
     score: _finiteNumber(`${label}.score`, score, { min: 0, max: 1 }),
     calls: _finiteNumber(`${label}.calls`, calls, { min: 0, minExclusive: true }),
-    tokens: _finiteNumber(`${label}.tokens`, tokens, { min: 0, minExclusive: true }),
   };
+  // Cost (2026-05-29) is computed from the cache-naive {processedInput, output}
+  // breakdown when present (regenerated baselines), else from the legacy
+  // work-token scalar (treated as input, output unknown). At least one required.
+  if (typeof processedInput === 'number') out.processedInput = _finiteNumber(`${label}.processedInput`, processedInput, { min: 0, minExclusive: true });
+  if (typeof output === 'number') out.output = _finiteNumber(`${label}.output`, output, { min: 0 });
+  if (typeof tokens === 'number') out.tokens = _finiteNumber(`${label}.tokens`, tokens, { min: 0, minExclusive: true });
+  if (out.processedInput == null && out.tokens == null) {
+    throw new RangeError(`${label}.tokens must be a finite number`);
+  }
   if (overheadTokens !== undefined) {
     out.overheadTokens = _finiteNumber(`${label}.overheadTokens`, overheadTokens, { min: 0 });
   }
@@ -178,13 +188,27 @@ function _workTokens(totalTokens, overheadTokens = 0) {
   return Math.max(1, totalTokens - overheadTokens);
 }
 
-function _effectiveTokenPair({ runTokens, base }) {
-  const overheadTokens = typeof base.overheadTokens === 'number' ? base.overheadTokens : 0;
-  return {
-    overheadTokens,
-    tokensForScoring: _workTokens(runTokens, overheadTokens),
-    nativeTokensForScoring: _workTokens(base.tokens, overheadTokens),
-  };
+/** Pull a cache-naive {processedInput, output} from a run/baseline metrics object. */
+function _breakdownOf(m) {
+  const pi = _metric(m, ['processedInput', 'processed_input']);
+  if (typeof pi === 'number' && Number.isFinite(pi) && pi > 0) {
+    const o = _metric(m, ['output', 'outputTokens', 'output_tokens']);
+    return { processedInput: pi, output: typeof o === 'number' && Number.isFinite(o) ? o : 0 };
+  }
+  // Legacy: only a work-token scalar is available → attribute to input, output 0.
+  const tok = _metric(m, ['tokens', 'agentTokens', 'agent_tokens', 'totalTokens', 'total_tokens']);
+  if (typeof tok === 'number' && Number.isFinite(tok) && tok > 0) return { processedInput: tok, output: 0 };
+  return null;
+}
+
+/**
+ * Overhead-adjusted, cache-naive dollar cost for one run. overheadTokens is the
+ * fixed system-prompt/tool-schema floor (input side); pricing only the marginal
+ * work keeps the comparison about retrieval efficiency, not the fixed prompt cost.
+ */
+function _runCostUsd({ processedInput, output, overheadTokens = 0, prices }) {
+  const workInput = _workTokens(processedInput, overheadTokens);
+  return { workInput, costUsd: costUsd({ processedInput: workInput, output, prices }) };
 }
 
 function _normalizeBaselineRows(rows) {
@@ -323,21 +347,36 @@ function _weightedGeomean(parts, weights) {
 }
 
 /**
- * Native-relative scalar score for GEPA. Per run, accuracy/calls/tokens are
- * transformed to desirabilities and combined with a weighted geometric mean.
- * If a baseline row carries overheadTokens/overhead_tokens, token desirability
- * is computed on max(1, totalTokens - overheadTokens) for both the candidate
- * and native baseline. Raw total tokens are still reported in the breakdown.
- * Per-target factors are the mean of probe-level desirabilities; final factor
- * is min across targets to keep the joint Maximin discipline.
+ * Native-relative scalar score for GEPA (2026-05-29 cache-naive-cost rewrite).
  *
- * @typedef {{ probeId:string, score:number, calls:number, tokens:number }} NativeProbeRun
+ * Per run, three desirabilities are computed relative to the native rg+Read
+ * baseline: `accuracy`, `calls` (a latency/round-trip proxy), and `cost` (the
+ * cache-naive dollar cost). Accuracy is kept SEPARATE from efficiency (decouple
+ * §3): the per-run efficiency `overall` is geomean({calls, cost}) ONLY, while
+ * accuracy aggregates into its own gate. Per target: accuracyFactor =
+ * mean(accuracyDesirability), efficiencyFactor = mean(efficiency overall); the
+ * per-target composite is their product. Overall factors are the min across
+ * targets (joint Maximin). `factor` = min-target composite (the finalScore base);
+ * `accuracyFactor`/`efficiencyFactor` (min of each component) are the decoupled
+ * axes for the 2-D reporting front.
+ *
+ * Cost is computed from the cache-naive {processedInput, output} breakdown and
+ * the target's pinned list prices, on overhead-adjusted work input. A run whose
+ * breakdown/calls are missing (retry-exhausted) falls back to the baseline
+ * (neutral desirability) with a missingMeasurement flag — never throws.
+ *
  * @param {object} args
- * @param {{ [target:string]: NativeProbeRun[] }} args.perTarget
- * @param {{ [target:string]: { [probeId:string]: { score:number, calls:number, tokens:number } } }} args.baselineByTarget
- * @param {{ accuracy?:number, calls?:number, tokens?:number }} [args.weights]
+ * @param {{ [target:string]: object[] }} args.perTarget
+ * @param {object} args.baselineByTarget
+ * @param {{ [target:string]: { inPerM:number, outPerM:number } }} [args.prices]
+ * @param {{ cost?:number, calls?:number }} [args.efficiencyWeights]
  */
-export function nativeRelativeScore({ perTarget, baselineByTarget, weights = DEFAULTS.nativeRelativeWeights }) {
+export function nativeRelativeScore({
+  perTarget,
+  baselineByTarget,
+  prices = DEFAULTS.targetPrices,
+  efficiencyWeights = DEFAULTS.efficiencyWeights,
+}) {
   if (perTarget == null || typeof perTarget !== 'object' || Array.isArray(perTarget)) {
     throw new TypeError('nativeRelativeScore: perTarget must be a plain object');
   }
@@ -349,9 +388,14 @@ export function nativeRelativeScore({ perTarget, baselineByTarget, weights = DEF
     if (!Array.isArray(runs) || runs.length === 0) {
       throw new TypeError(`nativeRelativeScore: perTarget.${target} must be a non-empty array`);
     }
-    const targetBaseline = baseline[normalizeTarget(target)];
+    const tkey = normalizeTarget(target);
+    const targetBaseline = baseline[tkey];
     if (!targetBaseline) throw new RangeError(`nativeRelativeScore: missing native baseline for target ${target}`);
-    let total = 0;
+    const targetPrices = prices?.[tkey];
+    if (!targetPrices) throw new RangeError(`nativeRelativeScore: missing prices for target ${target}`);
+
+    let accTotal = 0;
+    let effTotal = 0;
     const details = [];
     for (const run of runs) {
       const probeId = run.probeId ?? run.id;
@@ -361,29 +405,35 @@ export function nativeRelativeScore({ perTarget, baselineByTarget, weights = DEF
       const base = targetBaseline[probeId];
       if (!base) throw new RangeError(`nativeRelativeScore: missing native baseline for ${target}.${probeId}`);
       const score = _finiteNumber(`nativeRelativeScore.${target}.${probeId}.score`, run.score, { min: 0, max: 1 });
-      // calls/tokens fall back to the baseline (= neutral efficiency desirability)
+
+      const overhead = typeof base.overheadTokens === 'number' ? base.overheadTokens : 0;
+      const baseBd = _breakdownOf(base);
+      if (!baseBd) throw new RangeError(`nativeRelativeScore: native baseline for ${target}.${probeId} has no token breakdown`);
+      const nativeCost = _runCostUsd({ ...baseBd, overheadTokens: overhead, prices: targetPrices }).costUsd;
+
+      // calls + cost fall back to the baseline (= neutral efficiency desirability)
       // when missing/non-finite. The candidate is already penalised on the accuracy
-      // axis (the judge gave the errored / empty-answer run a low score) — a missing
-      // efficiency measurement should NOT crash the whole candidate. Concretely:
-      // both API runners (Anthropic + OpenRouter) initialise `usage = { input:0,
-      // output:0,... }` and only accumulate values on successful API responses, so
-      // if every retry attempt for one (probe,target) fails (or the provider returns
-      // 200 with no usage block), `agentTokenCount` returns null and `toProbeRun`
-      // threads that null through. At 1330 runs/gen-1 this fired in real life
-      // 2026-05-26 (crashed gpt5_5.csharp-008) and torched ~5 completed seeds.
+      // axis (the judge scored the errored/empty run low) — a missing efficiency
+      // measurement must NOT crash the whole candidate. Both API runners init usage
+      // all-zero and only accumulate on success, so a retry-exhausted (probe,target)
+      // surfaces as a null breakdown; this fired in real life 2026-05-26
+      // (gpt5_5.csharp-008) and torched ~5 seeds before the fallback existed.
       const _callsFallback = !(typeof run.calls === 'number' && Number.isFinite(run.calls) && run.calls >= 0);
-      const _tokensFallback = !(typeof run.tokens === 'number' && Number.isFinite(run.tokens) && run.tokens > 0);
       const calls = _callsFallback ? base.calls : run.calls;
-      const tokens = _tokensFallback ? base.tokens : run.tokens;
-      if (_callsFallback || _tokensFallback) {
-        // eslint-disable-next-line no-console
+      const candBd = _breakdownOf(run);
+      const _costFallback = !candBd;
+      const candCost = _costFallback
+        ? nativeCost
+        : _runCostUsd({ ...candBd, overheadTokens: overhead, prices: targetPrices }).costUsd;
+      if (_callsFallback || _costFallback) {
         console.warn(`nativeRelativeScore: missing measurement for ${target}.${probeId}` +
-          `${_callsFallback ? ` (calls=${run.calls})` : ''}${_tokensFallback ? ` (tokens=${run.tokens})` : ''}` +
-          ` — falling back to baseline (neutral efficiency desirability)`);
+          `${_callsFallback ? ` (calls=${run.calls})` : ''}${_costFallback ? ' (cost breakdown)' : ''}` +
+          ' — falling back to baseline (neutral efficiency desirability)');
       }
-      const tokenPair = _effectiveTokenPair({ runTokens: tokens, base });
+
+      const accuracy = accuracyDesirability({ accuracy: score, nativeAccuracy: base.score });
       const desirability = {
-        accuracy: accuracyDesirability({ accuracy: score, nativeAccuracy: base.score }),
+        accuracy,
         calls: minimizeRelativeDesirability({
           value: calls,
           nativeValue: base.calls,
@@ -391,37 +441,52 @@ export function nativeRelativeScore({ perTarget, baselineByTarget, weights = DEF
           failRatio: DEFAULTS.nativeCallFailRatio,
           minTarget: 1,
         }),
-        tokens: minimizeRelativeDesirability({
-          value: tokenPair.tokensForScoring,
-          nativeValue: tokenPair.nativeTokensForScoring,
-          targetRatio: DEFAULTS.nativeTokenTargetRatio,
-          failRatio: DEFAULTS.nativeTokenFailRatio,
+        cost: minimizeRelativeDesirability({
+          value: candCost,
+          nativeValue: nativeCost,
+          targetRatio: DEFAULTS.nativeCostTargetRatio,
+          failRatio: DEFAULTS.nativeCostFailRatio,
         }),
       };
-      const overall = _weightedGeomean(desirability, weights);
-      total += overall;
+      // `overall` is EFFICIENCY-only (calls × cost) — accuracy is decoupled. This
+      // is the signal topInefficiencies ranks on, and the efficiency axis factor.
+      const overall = _weightedGeomean({ calls: desirability.calls, cost: desirability.cost }, efficiencyWeights);
+      accTotal += accuracy;
+      effTotal += overall;
       details.push({
         probeId,
         score,
         nativeScore: base.score,
         calls,
         nativeCalls: base.calls,
-        tokens,
-        nativeTokens: base.tokens,
-        overheadTokens: tokenPair.overheadTokens,
-        tokensForScoring: tokenPair.tokensForScoring,
-        nativeTokensForScoring: tokenPair.nativeTokensForScoring,
+        processedInput: candBd?.processedInput ?? null,
+        output: candBd?.output ?? null,
+        nativeProcessedInput: baseBd.processedInput,
+        nativeOutput: baseBd.output,
+        costUsd: candCost,
+        nativeCostUsd: nativeCost,
+        overheadTokens: overhead,
         desirability: { ...desirability, overall },
-        ...(_callsFallback || _tokensFallback
-          ? { missingMeasurement: { calls: _callsFallback, tokens: _tokensFallback } }
+        ...((_callsFallback || _costFallback)
+          ? { missingMeasurement: { calls: _callsFallback, cost: _costFallback } }
           : {}),
       });
     }
-    perTargetFactor[target] = total / runs.length;
-    breakdown[target] = { factor: perTargetFactor[target], runs: details };
+    const accuracyFactor = accTotal / runs.length;
+    const efficiencyFactor = effTotal / runs.length;
+    perTargetFactor[target] = accuracyFactor * efficiencyFactor;
+    breakdown[target] = { factor: accuracyFactor * efficiencyFactor, accuracyFactor, efficiencyFactor, runs: details };
   }
 
-  return { factor: Math.min(...Object.values(perTargetFactor)), perTargetFactor, breakdown };
+  const accuracyFactor = Math.min(...Object.values(breakdown).map((b) => b.accuracyFactor));
+  const efficiencyFactor = Math.min(...Object.values(breakdown).map((b) => b.efficiencyFactor));
+  return {
+    factor: Math.min(...Object.values(perTargetFactor)),
+    accuracyFactor,
+    efficiencyFactor,
+    perTargetFactor,
+    breakdown,
+  };
 }
 
 // ─── length penalty ───────────────────────────────────────────────────────────
@@ -438,6 +503,76 @@ export function lengthPenalty(tokenCount) {
     throw new RangeError('lengthPenalty: tokenCount must be a non-negative finite number');
   }
   return DEFAULTS.lengthPenaltyPer1000 * tokenCount / 1000;
+}
+
+// ─── cache-naive dollar cost + deterministic latency (2026-05-29) ───────────
+
+/**
+ * Cache-naive dollar cost for one run, from its {processedInput, output} token
+ * breakdown (see gepa-scoring.agentUsageBreakdown) and the target's pinned list
+ * prices. `processedInput` is already counted at the full uncached rate, so the
+ * result is invariant to prompt-cache warmth — the property the old work-token
+ * scalar lacked. Output is priced at its true (higher) rate, so reasoning /
+ * decision cost is weighted correctly rather than 1:1 with context.
+ *
+ * @param {object} args
+ * @param {number} args.processedInput
+ * @param {number} args.output
+ * @param {{ inPerM:number, outPerM:number }} args.prices  — USD per 1M tokens
+ * @returns {number} USD
+ */
+export function costUsd({ processedInput, output, prices }) {
+  const pin = _finiteNumber('costUsd.prices.inPerM', prices?.inPerM, { min: 0 });
+  const pout = _finiteNumber('costUsd.prices.outPerM', prices?.outPerM, { min: 0 });
+  const pi = _finiteNumber('costUsd.processedInput', processedInput, { min: 0 });
+  const o = _finiteNumber('costUsd.output', output, { min: 0 });
+  return (pi * pin + o * pout) / 1e6;
+}
+
+/**
+ * Deterministic, hardware-independent latency estimate (DIAGNOSTIC ONLY — never
+ * an optimization objective). Wall-clock is rejected: machine contention,
+ * provider queueing, and network are not properties of the prompt. Latency's two
+ * structural drivers are both in the trajectory and deterministic: sequential
+ * round-trips (≈ tool calls) and generation time (output tokens ÷ throughput —
+ * and reasoning IS output). Returns seconds.
+ *
+ * @param {object} args
+ * @param {number} args.turns   — sequential round-trips (≈ tool-call count)
+ * @param {number} args.output  — output (generation) tokens, incl. reasoning
+ * @param {{ ttftSec:number, throughputTokPerSec:number }} args.latency
+ * @returns {number} estimated seconds
+ */
+export function estLatencySeconds({ turns, output, latency }) {
+  const t = _finiteNumber('estLatencySeconds.turns', turns, { min: 0 });
+  const o = _finiteNumber('estLatencySeconds.output', output, { min: 0 });
+  const ttft = _finiteNumber('estLatencySeconds.latency.ttftSec', latency?.ttftSec, { min: 0 });
+  const tp = _finiteNumber('estLatencySeconds.latency.throughputTokPerSec', latency?.throughputTokPerSec, { min: 0, minExclusive: true });
+  return t * ttft + o / tp;
+}
+
+/**
+ * Realized (cache-AWARE) dollar cost — the actual bill, reported ALONGSIDE the
+ * cache-naive optimization metric as the deployment figure (never the objective).
+ * Anthropic reports fresh input + cache_read + cache_creation separately; OpenAI
+ * folds cached reads into input_tokens (a subset), so fresh = input − cacheRead.
+ * Returns USD, or null if no agent usage. `prices` may carry cacheReadPerM /
+ * cacheWritePerM (default to inPerM when absent).
+ */
+export function realizedCostUsd({ agent, prices }) {
+  if (!agent || typeof agent !== 'object') return null;
+  const n = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const input = n(agent.input_tokens);
+  const output = n(agent.output_tokens);
+  const cacheRead = n(agent.cache_read_tokens ?? agent.cached_input_tokens);
+  const cacheCreation = n(agent.cache_creation_tokens ?? agent.cache_creation_input_tokens);
+  const inPerM = _finiteNumber('realizedCostUsd.prices.inPerM', prices?.inPerM, { min: 0 });
+  const outPerM = _finiteNumber('realizedCostUsd.prices.outPerM', prices?.outPerM, { min: 0 });
+  const crPerM = typeof prices?.cacheReadPerM === 'number' ? prices.cacheReadPerM : inPerM;
+  const cwPerM = typeof prices?.cacheWritePerM === 'number' ? prices.cacheWritePerM : inPerM;
+  const subset = cacheRead > 0 && cacheRead <= input; // OpenAI: cached ⊆ input_tokens
+  const freshInput = subset ? input - cacheRead : input;
+  return (freshInput * inPerM + cacheRead * crPerM + cacheCreation * cwPerM + output * outPerM) / 1e6;
 }
 
 // ─── final score ──────────────────────────────────────────────────────────────

@@ -14,7 +14,7 @@ import {
 } from './gepa-evaluate.mjs';
 import { AGENT_TOOL_CALL_CAP, runAnthropicApiAgent, runOpenRouterApiAgent } from './p7-api-agent-runner.mjs';
 import { assertNativeBaselineCoverage } from './eas.mjs';
-import { agentTokenCount } from './gepa-scoring.mjs';
+import { agentTokenCount, agentUsageBreakdown } from './gepa-scoring.mjs';
 import { RESULTS_DIR, appendFsynced, atomicWriteJSON } from './p7-persist.mjs';
 import { hashContent, normalizeTarget, TARGET_LIST, validateProbes } from './p7-shared.mjs';
 
@@ -315,6 +315,20 @@ function buildBaseline(rows) {
       tokens: finiteMean(xs.map((x) => x.tokens)),
       repeats: xs.length,
     };
+    // Cache-naive {processedInput, output} per row → mean (2026-05-29). Enables the
+    // dollar-cost metric to compare candidate vs native on equal footing (output is
+    // priced on BOTH sides; the legacy tokens-only path left native output=0, which
+    // understated native cost and unfairly inflated candidate cost-relative-to-native).
+    const breakdowns = xs
+      .map((x) => agentUsageBreakdown({ agent: {
+        input_tokens: x.input_tokens, output_tokens: x.output_tokens,
+        cache_read_tokens: x.cache_read_tokens, cache_creation_tokens: x.cache_creation_tokens,
+      } }))
+      .filter(Boolean);
+    const processedInput = finiteMean(breakdowns.map((b) => b.processedInput));
+    const output = finiteMean(breakdowns.map((b) => b.output));
+    if (typeof processedInput === 'number') out[target][probeId].processedInput = processedInput;
+    if (typeof output === 'number') out[target][probeId].output = output;
     const overhead = finiteMean(xs.map((x) => x.overhead_tokens));
     if (typeof overhead === 'number') out[target][probeId].overhead_tokens = overhead;
   }
