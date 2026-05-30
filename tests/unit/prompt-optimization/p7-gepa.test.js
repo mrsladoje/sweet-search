@@ -32,6 +32,7 @@ import {
 import { selectScreenProbes } from '../../../core/prompt-optimization/sweep/gepa-screening.mjs';
 import {
   attemptParetoAdmission,
+  dominates,
   planSlots,
   slot3Op,
   findCrossoverPair,
@@ -1190,6 +1191,39 @@ describe('M5 — 2-objective-aware overflow trim (finalScore × taskScore)', () 
     expect(res.admitted).toBe(true);
     expect(res.newFront.length).toBe(6);
     expect(res.newFront.map((f) => f.id)).toContain('robust'); // accuracy boundary survives the trim
+  });
+});
+
+// ─── cost-aware dominance (2026-05-30 gen-2 round-2 fix) ────────────────────
+
+describe('cost-aware dominance — pricier accuracy-dominators cannot evict cheaper peers', () => {
+  it('a PRICIER candidate that ties/beats accuracy on every probe does NOT evict the cheaper incumbent (the T2 regression)', () => {
+    // Reproduces gen-2 round 2: 0xe502ce0e was >= T2 on every probe but pricier.
+    const cheapLeader = { id: 'T2', hash: 'h-t2', finalScore: 0.294, taskScore: 0.99, costUsd: 0.236, score_sonnet: 1, score_gpt5_5: 0.99, scores: { p1: 0.99, p2: 0.99 } };
+    const pricey = { id: 'PRICEY', hash: 'h-p', finalScore: 0.211, taskScore: 0.995, costUsd: 0.30, score_sonnet: 1, score_gpt5_5: 0.99, scores: { p1: 1.0, p2: 1.0 } };
+    const res = attemptParetoAdmission({ candidate: pricey, front: [cheapLeader], frontSize: 6 });
+    expect(res.admitted).toBe(true);                       // enters the non-full front
+    expect(res.evicted).not.toContain('T2');               // but must NOT evict the cheaper leader
+    expect(res.newFront.map((f) => f.id)).toContain('T2');
+  });
+
+  it('a CHEAPER, equally-accurate candidate DOES dominate (evicts the pricier incumbent)', () => {
+    const pricey = { id: 'PRICEY', hash: 'h-p', finalScore: 0.20, taskScore: 0.99, costUsd: 0.30, score_sonnet: 1, score_gpt5_5: 0.99, scores: { p1: 0.99, p2: 0.99 } };
+    const cheaper = { id: 'CHEAP', hash: 'h-c', finalScore: 0.30, taskScore: 0.99, costUsd: 0.10, score_sonnet: 1, score_gpt5_5: 0.99, scores: { p1: 0.99, p2: 0.99 } };
+    const res = attemptParetoAdmission({ candidate: cheaper, front: [pricey], frontSize: 6 });
+    expect(res.admitted).toBe(true);
+    expect(res.evicted).toContain('PRICEY');               // cheaper + equally accurate dominates
+  });
+
+  it('dominates() direct: cost breaks an accuracy tie, and a pricier accuracy-equal/-superior loses domination', () => {
+    const base = { scores: { p1: 0.9, p2: 0.9 }, costUsd: 0.20 };
+    const cheaperEqual = { scores: { p1: 0.9, p2: 0.9 }, costUsd: 0.10 };
+    const pricierBetter = { scores: { p1: 0.95, p2: 0.95 }, costUsd: 0.40 };
+    expect(dominates(cheaperEqual, base)).toBe(true);   // accuracy tie, strictly cheaper → dominates
+    expect(dominates(base, cheaperEqual)).toBe(false);  // accuracy tie, pricier → does not
+    expect(dominates(pricierBetter, base)).toBe(false); // more accurate but pricier → trade-off, no domination
+    // back-compat: when cost is absent on either side, fall back to accuracy-only
+    expect(dominates({ scores: { p1: 0.95, p2: 0.95 } }, { scores: { p1: 0.9, p2: 0.9 } })).toBe(true);
   });
 });
 
