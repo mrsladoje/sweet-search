@@ -309,9 +309,10 @@ export async function runGepa(opts = {}) {
     const contrastive = reflectionMode === 'contrastive'
       ? contrastiveInefficiencyPair({ candidate: parent, probes: probeSet })
       : null;
-    // OP-B input: the parent's worst no-match spiral traces (the largest cost lever).
+    // OP-B / OP-D inputs: the parent's worst no-match spiral + literal over-search traces.
     const noMatchTraces = (Array.isArray(failures) ? failures : []).filter((f) => f.stratum === 'no-match');
-    const muts = await generateMutations({ slots, parent, failures, contrastive, noMatchTraces, probeById, round, callModel: mutatorCm, rng: rRng, reflectionHint, maxAttemptsPerSlot });
+    const literalTraces = (Array.isArray(failures) ? failures : []).filter((f) => f.stratum === 'literal-lookup');
+    const muts = await generateMutations({ slots, parent, failures, contrastive, noMatchTraces, literalTraces, probeById, round, callModel: mutatorCm, rng: rRng, reflectionHint, maxAttemptsPerSlot });
 
     const accepted = [];
     let slotIdx = 0;

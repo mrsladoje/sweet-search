@@ -21,6 +21,8 @@ import { runPersonaPivot } from './op-persona-pivot.mjs';
 import { runToolMask } from './op-tool-mask.mjs';
 import { runPruner } from './op-pruner.mjs';
 import { runNoMatchSufficiency } from './op-nomatch-sufficiency.mjs';
+import { runSystemAwareMerge } from './op-systemaware-merge.mjs';
+import { runBudgetVoiEdit } from './op-budget-voi.mjs';
 
 // ─── OP-1 Reflective rewrite (inline) ───────────────────────────────────────
 
@@ -361,7 +363,7 @@ export async function runOpWithRetry(opCall, callModel, opts = {}) {
  * @param {number}   [args.maxAttemptsPerSlot] — override default retry cap
  * @returns {Promise<object[]>} one result per slot: { sourceOp, parentHash, mutated, accepted, rejection?, attempts, priorFailures }
  */
-export async function generateMutations({ slots, parent, failures, contrastive = null, noMatchTraces = null, probeById, round, callModel, rng, reflectionHint, maxAttemptsPerSlot }) {
+export async function generateMutations({ slots, parent, failures, contrastive = null, noMatchTraces = null, literalTraces = null, probeById, round, callModel, rng, reflectionHint, maxAttemptsPerSlot }) {
   const retryOpts = { maxAttempts: maxAttemptsPerSlot ?? DEFAULT_OP_MAX_ATTEMPTS };
   const results = [];
   for (const slot of slots) {
@@ -374,6 +376,18 @@ export async function generateMutations({ slots, parent, failures, contrastive =
           callModel, retryOpts,
         );
         break;
+      case 'system-aware-merge': {
+        // OP-E: module-wise (## section) merge of the cost-mismatch pair — winner
+        // (cheap) is the merge baseline, loser (expensive) contributes complementary
+        // sections. No within-section blending (the trajectory-crossover failure).
+        const { winner, loser } = slot.pair;
+        parentHashOverride = winner.hash;
+        res = await runOpWithRetry(
+          (cm) => runSystemAwareMerge({ promptA: winner.prompt, promptB: loser.prompt, callModel: cm }),
+          callModel, retryOpts,
+        );
+        break;
+      }
       case 'trajectory-crossover': {
         const { probeId, winner, loser, costWinner, costLoser } = slot.pair;
         const probe = probeById?.[probeId] || { id: probeId, query: undefined };
@@ -429,6 +443,18 @@ export async function generateMutations({ slots, parent, failures, contrastive =
       case 'pruner':
         res = await runOpWithRetry(
           (cm) => runPruner({ candidate: parent.prompt, callModel: cm, minTokens: 120 }),
+          callModel, retryOpts,
+        );
+        break;
+      case 'budget-voi':
+        // OP-D: VoI/early-exit edit fed the parent's literal-lookup over-search traces
+        // (falls back to the general worst-inefficiency set when none).
+        res = await runOpWithRetry(
+          (cm) => runBudgetVoiEdit({
+            candidate: parent.prompt,
+            traces: (Array.isArray(literalTraces) && literalTraces.length) ? literalTraces : failures,
+            callModel: cm,
+          }),
           callModel, retryOpts,
         );
         break;
