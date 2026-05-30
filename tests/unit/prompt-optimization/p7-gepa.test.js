@@ -284,13 +284,15 @@ describe('Pareto admission 0.15 cap (§3.7.1 step 9)', () => {
 // ─── 3. slot composition + OP rotation ──────────────────────────────────────
 
 describe('slot composition + OP-3/4/5 rotation (§3.2)', () => {
-  it('slot3Op cycles persona-pivot → tool-mask → pruner and resets at rotation', () => {
-    expect(slot3Op(1)).toBe('persona-pivot');
+  it('slot3Op cycles no-match-sufficiency → tool-mask → pruner and resets at rotation', () => {
+    // 2026-05-30: persona-pivot (demonstrated noise) retired; OP-B no-match-sufficiency
+    // takes its rotation slot.
+    expect(slot3Op(1)).toBe('no-match-sufficiency');
     expect(slot3Op(2)).toBe('tool-mask');
     expect(slot3Op(3)).toBe('pruner');
-    expect(slot3Op(4)).toBe('persona-pivot');
+    expect(slot3Op(4)).toBe('no-match-sufficiency');
     // reset at rotationRound = 11
-    expect(slot3Op(11, 11)).toBe('persona-pivot');
+    expect(slot3Op(11, 11)).toBe('no-match-sufficiency');
     expect(slot3Op(12, 11)).toBe('tool-mask');
     expect(slot3Op(13, 11)).toBe('pruner');
   });
@@ -300,7 +302,7 @@ describe('slot composition + OP-3/4/5 rotation (§3.2)', () => {
     const slots = planSlots({ round: 1, front, probeIds: ['p1'] });
     expect(slots[0].op).toBe('reflective');
     expect(slots[1].op).toBe('reflective');
-    expect(slots[2].op).toBe('persona-pivot');
+    expect(slots[2].op).toBe('no-match-sufficiency');
   });
 
   it('slot2 becomes trajectory-crossover when an A-wins/B-fails pair exists (accuracy fallback, no cost data)', () => {
