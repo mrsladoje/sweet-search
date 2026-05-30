@@ -22,7 +22,7 @@
  */
 
 import { validateMutation } from './token-validator.mjs';
-import { EVENT_KINDS } from './p7-shared.mjs';
+import { EVENT_KINDS, isNearDuplicate } from './p7-shared.mjs';
 
 /**
  * Split a prompt into `##`-header sections. The text before the first `##` is the
@@ -115,6 +115,23 @@ export async function runSystemAwareMerge({ promptA, promptB, callModel, reflect
       mutated: promptA,
       accepted: false,
       rejection: { _kind: EVENT_KINDS.MUTATION_REJECTION, op: 'system-aware-merge', failures: validation.failures },
+    };
+  }
+  // Divergence gate (2026-05-30): on a dominant-lineage front the merge tends to
+  // return the winner (A) verbatim — a no-op clone that wastes a screen+confirm slot
+  // (gen-3 round 1). Reject a merge that is ≈ either parent so runOpWithRetry can
+  // re-prompt for a genuine cross-lineage composition; if it keeps cloning, the slot
+  // ends rejected (unscreened) rather than admitting a duplicate.
+  if (isNearDuplicate(validation.normalized, promptA) || isNearDuplicate(validation.normalized, promptB)) {
+    return {
+      mutated: promptA,
+      accepted: false,
+      rejection: {
+        _kind: EVENT_KINDS.MUTATION_REJECTION,
+        op: 'system-aware-merge',
+        reason: 'merge-noop-clone',
+        failures: [{ reason: 'merge-noop-clone', detail: 'merged output is ≈ a parent (no cross-lineage section swap) — pull at least one section from the other candidate' }],
+      },
     };
   }
   return { mutated: validation.normalized, accepted: true };

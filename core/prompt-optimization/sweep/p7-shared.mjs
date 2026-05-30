@@ -58,6 +58,26 @@ export function callWindowFor(probe) {
   return w;
 }
 
+// ─── near-duplicate detection (2026-05-30, anti-clone guard) ───────────────
+//
+// gen-3 round 1 admitted a byte-clone of the champion A (differing by ONE char —
+// a trailing newline) as a "new" front member, because dedup keyed on the exact
+// content hash. That clone got a lucky 2-rep draw and faked a +0.058 win, wasting a
+// full screen+confirm. These helpers catch prompts that are identical modulo
+// whitespace so a clone is rejected at MUTATION time (before any paid screen) and at
+// pareto admission — without false-rejecting a genuine small edit (which changes
+// words, not just whitespace).
+
+/** Whitespace-insensitive canonical form of a prompt (collapse all runs to one space, trim). */
+export function normalizeForDedup(text) {
+  return String(text ?? '').replace(/\s+/g, ' ').trim();
+}
+
+/** True iff `a` and `b` are identical after whitespace normalization. */
+export function isNearDuplicate(a, b) {
+  return normalizeForDedup(a) === normalizeForDedup(b);
+}
+
 // ─── scoring defaults (§3.1, §3.7.1, §3.5, §3.6) ───────────────────────────
 
 export const DEFAULTS = Object.freeze({

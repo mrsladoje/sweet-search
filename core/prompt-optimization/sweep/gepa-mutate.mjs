@@ -284,6 +284,10 @@ export function buildRetryHint(rejection, nextAttempt) {
     return `Attempt ${nextAttempt}: prior call hit a model/HTTP error. Be concise and ensure your output finishes cleanly inside the required tags.`;
   }
   const failures = Array.isArray(rejection.failures) ? rejection.failures : [];
+  // OP-E merge that returned ≈ a parent — re-prompt for a genuine section swap.
+  if (rejection.reason === 'merge-noop-clone' || failures.some((f) => f.reason === 'merge-noop-clone')) {
+    return `Attempt ${nextAttempt}: your previous merge returned one candidate essentially unchanged. You MUST take at least one whole \`##\` section VERBATIM from the OTHER candidate so the merge genuinely composes both lineages — do not just echo candidate A.`;
+  }
   if (failures.length === 0) {
     const r = rejection.reason ?? 'unspecified';
     return `Attempt ${nextAttempt}: prior output rejected (${r}). Preserve every [[token]] from the source at exactly its source multiplicity, and ensure protected fenced/pseudocode blocks survive byte-identically.`;

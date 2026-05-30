@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { DEFAULTS, EVENT_KINDS, TARGET_LIST, hashContent } from './p7-shared.mjs';
+import { DEFAULTS, EVENT_KINDS, TARGET_LIST, hashContent, isNearDuplicate } from './p7-shared.mjs';
 import {
   appendFsynced,
   atomicWriteJSON,
@@ -323,6 +323,18 @@ export async function runGepa(opts = {}) {
         appendEvent({ _kind: EVENT_KINDS.MUTATION_REJECTION, round, source_op: m.sourceOp, parent_hash: m.parentHash, reason: reasons, failures: m.rejection?.failures ?? null, attempts: m.attempts ?? 1, prior_failures: m.priorFailures ?? null });
         const attemptsTag = (m.attempts && m.attempts > 1) ? ` after ${m.attempts} attempts` : '';
         log(`round ${round} mut ${slotIdx}/${muts.length} ${m.sourceOp} REJECTED${attemptsTag} (${reasons})`);
+        continue;
+      }
+      // Anti-clone MONEY guard (2026-05-30): never screen a mutation that is ≈ its
+      // parent or any current front member (identical modulo whitespace). gen-3
+      // round 1 paid a full screen+confirm for a 1-char clone of A that then faked a
+      // win; reject it here, BEFORE any paid screen.
+      const dupOf = isNearDuplicate(m.mutated, parent.prompt)
+        ? parent.id
+        : (front.find((inc) => typeof inc.prompt === 'string' && isNearDuplicate(m.mutated, inc.prompt))?.id ?? null);
+      if (dupOf) {
+        appendEvent({ _kind: EVENT_KINDS.MUTATION_REJECTION, round, source_op: m.sourceOp, parent_hash: m.parentHash, reason: `near-duplicate:${dupOf}`, attempts: m.attempts ?? 1, prior_failures: m.priorFailures ?? null });
+        log(`round ${round} mut ${slotIdx}/${muts.length} ${m.sourceOp} REJECTED (near-duplicate of ${dupOf} — not screened, $0)`);
         continue;
       }
       const hash = hashContent(m.mutated);

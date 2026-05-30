@@ -9,7 +9,7 @@
  * baseline.
  */
 
-import { DEFAULTS } from './p7-shared.mjs';
+import { DEFAULTS, isNearDuplicate } from './p7-shared.mjs';
 import { paretoAdmissible } from './eas.mjs';
 import { populationVariance, perProbeCostUsd } from './gepa-scoring.mjs';
 
@@ -101,6 +101,14 @@ export function attemptParetoAdmission({
   // can yield a byte-identical deterministic mutation across rounds).
   if (candidate.hash && f.some((inc) => inc.hash === candidate.hash)) {
     return { admitted: false, reason: 'dominated', target_degraded: [], drop: null, incumbent: null, evicted: [], newFront: f };
+  }
+  // Near-duplicate guard (2026-05-30): exact-hash dedup misses a clone that differs
+  // only in whitespace (gen-3 round 1 admitted an A-clone differing by ONE trailing
+  // newline → faked a +0.058 win + spurious patience reset). Reject any candidate
+  // identical-modulo-whitespace to an incumbent.
+  if (typeof candidate.prompt === 'string'
+    && f.some((inc) => typeof inc.prompt === 'string' && isNearDuplicate(candidate.prompt, inc.prompt))) {
+    return { admitted: false, reason: 'near-duplicate', target_degraded: [], drop: null, incumbent: null, evicted: [], newFront: f };
   }
 
   const wouldEnter = f.length < frontSize || f.some((inc) => candidate.finalScore > inc.finalScore);
