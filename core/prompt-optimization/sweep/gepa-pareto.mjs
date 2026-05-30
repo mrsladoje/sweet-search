@@ -348,7 +348,7 @@ export function selectParent({ front, rng }) {
 // OP-B no-match-sufficiency, a behavior-targeting operator that attacks the largest
 // cost lever (the no-match spiral). persona-pivot remains a callable operator but is
 // no longer scheduled by default.
-const SLOT3_CYCLE = ['no-match-sufficiency', 'tool-mask', 'pruner']; // OP-B → OP-4 → OP-5
+const SLOT3_CYCLE = ['no-match-sufficiency', 'tool-mask', 'pruner', 'budget-voi']; // OP-B → OP-4 → OP-5 → OP-D
 
 /**
  * Slot-3 operator for `round` (1-based). Cycles OP-3 → OP-4 → OP-5; the cycle
@@ -471,7 +471,10 @@ export function findBalancedPair({ front, probeIds }) {
 export function planSlots({ round, front, probeIds, rotationRound = DEFAULTS.rotationRound }) {
   const slots = [{ op: 'reflective', kind: 'primary' }];
   const pair = findCrossoverPair({ front, probeIds });
-  slots.push(pair ? { op: 'trajectory-crossover', pair } : { op: 'reflective', kind: 'secondary' });
+  // 2026-05-30: slot 2 now runs OP-E System-Aware Merge on the cost-mismatch pair
+  // (module-wise section selection — no blending) instead of the indecision-prone
+  // OP-2 trajectory-crossover. Same cost-aware selector; better merge operator.
+  slots.push(pair ? { op: 'system-aware-merge', pair } : { op: 'reflective', kind: 'secondary' });
   let slot3 = slot3Op(round, rotationRound);
   // m7: explicit guard so OP-5 Pruner never runs before round 3 (it needs the
   // AST-ified routing from OP-3 to exist before it can safely prune). Today this
