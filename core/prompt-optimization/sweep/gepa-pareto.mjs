@@ -18,17 +18,26 @@ import { populationVariance, perProbeCostUsd } from './gepa-scoring.mjs';
 /**
  * SEARCH-front dominance (2026-05-29 canonical-GEPA rewrite, replacing the old
  * scalar (finalScore × sharpnessScore) relation that collapsed the front to a
- * singleton). `a` dominates `b` iff `a` scores ≥ `b` on EVERY shared probe AND
- * strictly higher on at least one — the per-instance Pareto relation from GEPA
- * (Agrawal et al. 2025). It cannot collapse the front, because a candidate
- * survives if it wins ANY probe, preserving the diversity mutation operators need
- * as parents. Sharpness is NOT in the dominance relation (it is a tie-breaker /
- * reported reliability signal only); cost is NOT here either (it drives parent
- * selection via finalScore and the separate 2-D reporting front).
+ * singleton; 2026-05-30 cost-aware extension below). `a` dominates `b` iff `a`
+ * scores ≥ `b` on EVERY shared probe AND `a` is no more expensive than `b`, with
+ * a strict win on at least one dimension — a true (per-probe accuracy, cost)
+ * Pareto relation. It cannot collapse the front, because a candidate survives if
+ * it wins ANY probe OR is cheaper, preserving the diversity mutation operators
+ * need as parents.
  *
- * Fallback: candidates lacking a per-probe score vector (or with a disjoint probe
- * set) are compared on finalScore alone, so the relation stays total for the
- * synthetic-incumbent unit tests and mixed-probe-set edge cases.
+ * **Cost is part of the relation (2026-05-30).** Accuracy saturates on a mature
+ * front, so an accuracy-ONLY relation let a PRICIER candidate dominate + EVICT a
+ * cheaper equally-accurate incumbent: gen-2 round 2 evicted the cheap finalScore
+ * leader T2 (0.294) for a costlier accuracy-dominator (0.211), regressing
+ * joint_best 0.294→0.244. Folding cost in (a must be ≤ b's `costUsd` to dominate;
+ * a strictly cheaper a is a dominating win) aligns the search front with the 2-D
+ * (accuracy, cost) reporting front and stops cost-blind eviction. Sharpness is
+ * still NOT in the relation (tie-breaker / reported reliability signal only).
+ *
+ * Fallback: when cost is absent on either side (dry-runs / pre-baseline fronts /
+ * synthetic unit stubs) the relation degrades to the original accuracy-only form;
+ * candidates lacking a per-probe score vector are compared on finalScore alone, so
+ * the relation stays total for mixed-probe-set edge cases.
  */
 export function dominates(a, b) {
   const pa = a?.scores;
@@ -42,7 +51,15 @@ export function dominates(a, b) {
         if (pa[p] < pb[p]) { allGE = false; break; }
         if (pa[p] > pb[p]) anyGT = true;
       }
-      return allGE && anyGT;
+      if (!allGE) return false;
+      // Cost as an additional minimize-objective (only when BOTH are comparable).
+      const ca = a?.costUsd;
+      const cb = b?.costUsd;
+      if (typeof ca === 'number' && typeof cb === 'number') {
+        if (ca > cb) return false;   // a is pricier → cannot dominate b
+        if (ca < cb) anyGT = true;   // a is strictly cheaper → a dominating advantage
+      }
+      return anyGT;
     }
   }
   return typeof a?.finalScore === 'number' && typeof b?.finalScore === 'number' && a.finalScore > b.finalScore;
