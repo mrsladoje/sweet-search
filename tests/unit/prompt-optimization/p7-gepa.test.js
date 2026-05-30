@@ -46,6 +46,7 @@ import {
 import { runReflectiveRewrite, buildReflectivePrompt, generateAdversarialParaphrases, TARE_GENERATOR_ROTATION, runOpWithRetry, buildRetryHint, generateMutations } from '../../../core/prompt-optimization/sweep/gepa-mutate.mjs';
 import { augmentSystemForHarness, extractRewrittenPrompt, summariseToolCalls } from '../../../core/prompt-optimization/sweep/op-harness-caller.mjs';
 import { findBalancedPair } from '../../../core/prompt-optimization/sweep/gepa-pareto.mjs';
+import { normalizeForDedup, isNearDuplicate } from '../../../core/prompt-optimization/sweep/p7-shared.mjs';
 import { loadTrajectory } from '../../../core/prompt-optimization/sweep/p7-persist.mjs';
 import { createTokenBucket, RATE_LIMITS } from '../../../core/prompt-optimization/sweep/p7-token-bucket.mjs';
 import { JUDGE_PANEL } from '../../../core/prompt-optimization/sweep/gepa-evaluate.mjs';
@@ -269,9 +270,12 @@ describe('Pareto admission 0.15 cap (§3.7.1 step 9)', () => {
       wallMs: 1,
     });
     const paths = pathsFor();
+    // NB: a custom callModel returning a DISTINCT mutation (not makeDryRunCallModel's
+    // identity echo) — the 2026-05-30 near-duplicate guard now rejects a mutation that
+    // is ≈ its parent pre-screen, so the identity echo would never reach admission.
     await runGepa({
       runId: 'rej', variants: [], devProbes: probes, initialFront,
-      evaluateCandidate, callModel: makeDryRunCallModel(),
+      evaluateCandidate, callModel: async () => ({ text: 'specialist v2 — a distinct routing prose body so this mutation is not a near-duplicate of its parent and reaches the cap check', isError: false }),
       maxRounds: 1, patience: 99, screenProbeCount: 2, paths, verbose: false,
     });
     const ev = loadTrajectory(paths.trajectory);
@@ -1287,6 +1291,40 @@ describe('cost-aware dominance — pricier accuracy-dominators cannot evict chea
     expect(dominates(pricierBetter, base)).toBe(false); // more accurate but pricier → trade-off, no domination
     // back-compat: when cost is absent on either side, fall back to accuracy-only
     expect(dominates({ scores: { p1: 0.95, p2: 0.95 } }, { scores: { p1: 0.9, p2: 0.9 } })).toBe(true);
+  });
+});
+
+// ─── anti-clone guards (2026-05-30 gen-3 round-1 fake-win fix) ──────────────
+
+describe('near-duplicate dedup guards', () => {
+  it('isNearDuplicate flags prompts identical-modulo-whitespace (the round-1 trailing-newline clone)', () => {
+    const a = '# Guide\n\nRoute lookups to [[ss-search]]; conclude [[no-match]] if absent.\n';
+    const clone = '# Guide\n\nRoute lookups to [[ss-search]]; conclude [[no-match]] if absent.'; // 1-char diff
+    expect(a === clone).toBe(false);
+    expect(isNearDuplicate(a, clone)).toBe(true);
+    expect(normalizeForDedup(a)).toBe(normalizeForDedup(clone));
+  });
+
+  it('isNearDuplicate does NOT flag a genuine edit (added sentence)', () => {
+    const a = 'Route lookups to [[ss-search]].';
+    const edit = 'Route lookups to [[ss-search]]. Once a semantic and a lexical pass are both empty, conclude [[no-match]] and stop.';
+    expect(isNearDuplicate(a, edit)).toBe(false);
+  });
+
+  it('attemptParetoAdmission rejects a higher-scoring near-duplicate of an incumbent (the round-1 bug)', () => {
+    const inc = { id: 'A', hash: 'hA', prompt: 'Route to [[ss-search]].\n', finalScore: 0.306, taskScore: 1.0, score_sonnet: 1, score_gpt5_5: 1, scores: { p1: 1 }, costUsd: 0.18 };
+    // byte-clone of A (whitespace only) that lucked a higher 2-rep finalScore:
+    const clone = { id: 'A-merge', hash: 'hClone', prompt: 'Route to [[ss-search]].', finalScore: 0.364, taskScore: 1.0, score_sonnet: 1, score_gpt5_5: 1, scores: { p1: 1 }, costUsd: 0.15 };
+    const res = attemptParetoAdmission({ candidate: clone, front: [inc], frontSize: 6 });
+    expect(res.admitted).toBe(false);
+    expect(res.reason).toBe('near-duplicate');
+    expect(res.newFront.map((m) => m.id)).toEqual(['A']);
+  });
+
+  it('buildRetryHint gives a section-swap hint for a merge-noop-clone rejection', () => {
+    const hint = buildRetryHint({ reason: 'merge-noop-clone', failures: [{ reason: 'merge-noop-clone' }] }, 2);
+    expect(hint).toMatch(/at least one whole .*section/i);
+    expect(hint).toMatch(/OTHER candidate/);
   });
 });
 

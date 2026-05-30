@@ -95,4 +95,13 @@ Stop once confirmed. Conclude [[no-match]] if absent.`;
   it('throws when callModel is not a function', async () => {
     await expect(runSystemAwareMerge({ ...base, callModel: null })).rejects.toThrow(/callModel/);
   });
+
+  it('REJECTS a no-op merge that returns ≈ promptA (the gen-3 round-1 clone-of-A bug)', async () => {
+    // gemini returned promptA + a trailing newline = a whitespace-only clone of A.
+    const callModel = vi.fn(async () => ({ text: `${PROMPT_A}\n`, isError: false }));
+    const r = await runSystemAwareMerge({ ...base, callModel });
+    expect(r.accepted).toBe(false);
+    expect(r.rejection.reason).toBe('merge-noop-clone');
+    expect(r.mutated).toBe(PROMPT_A);
+  });
 });
