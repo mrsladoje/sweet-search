@@ -22,6 +22,7 @@ import {
   agentTokenCount,
   agentUsageBreakdown,
   computeFinalScoreFor,
+  contrastiveInefficiencyPair,
   mapWithConcurrency,
   perProbeCostUsd,
   runCostLatencyFields,
@@ -507,5 +508,69 @@ describe('perProbeCostUsd', () => {
   it('returns null when the candidate has no native-relative cost data', () => {
     expect(perProbeCostUsd({}, 'p1')).toBeNull();
     expect(perProbeCostUsd({ nativeRelative: { breakdown: { sonnet: { runs: [] }, gpt5_5: { runs: [] } } } }, 'p1')).toBeNull();
+  });
+});
+
+// ─── contrastiveInefficiencyPair — OP-C cheap-vs-expensive reflection input ───
+
+describe('contrastiveInefficiencyPair', () => {
+  const mkCand = (detail, runsByTarget) => ({
+    detail,
+    nativeRelative: { breakdown: { sonnet: { runs: runsByTarget.sonnet || [] }, gpt5_5: { runs: runsByTarget.gpt5_5 || [] } } },
+  });
+  const probes = [
+    { id: 'p1', stratum: 'no-match', query: 'q1' },
+    { id: 'p2', stratum: 'no-match', query: 'q2' },
+    { id: 'p3', stratum: 'no-match', query: 'q3' },
+    { id: 'p4', stratum: 'literal-lookup', query: 'q4' },
+  ];
+
+  it('pairs the cheapest + priciest CORRECT probes within a (stratum,target)', () => {
+    const cand = mkCand(
+      {
+        p1: { sonnet: { score: 1, traj: { toolCalls: [{ name: 'ss-grep' }], answer: 'a' } } },
+        p2: { sonnet: { score: 1, traj: { toolCalls: new Array(9).fill({ name: 'ss-search' }), answer: 'b' } } },
+      },
+      { sonnet: [{ probeId: 'p1', costUsd: 0.05 }, { probeId: 'p2', costUsd: 0.30 }] },
+    );
+    const pair = contrastiveInefficiencyPair({ candidate: cand, probes });
+    expect(pair).toMatchObject({ stratum: 'no-match', target: 'sonnet' });
+    expect(pair.cheap.probeId).toBe('p1');
+    expect(pair.cheap.calls).toBe(1);
+    expect(pair.expensive.probeId).toBe('p2');
+    expect(pair.expensive.calls).toBe(9);
+  });
+
+  it('excludes incorrect probes (never crowns a "cheap because it gave up" leg)', () => {
+    const cand = mkCand(
+      {
+        p1: { sonnet: { score: 1, traj: { toolCalls: [{}], answer: 'a' } } },
+        p2: { sonnet: { score: 1, traj: { toolCalls: new Array(9).fill({}), answer: 'b' } } },
+        p3: { sonnet: { score: 0.2, traj: { toolCalls: [{}], answer: 'wrong' } } }, // cheapest but WRONG
+      },
+      { sonnet: [{ probeId: 'p1', costUsd: 0.05 }, { probeId: 'p2', costUsd: 0.30 }, { probeId: 'p3', costUsd: 0.01 }] },
+    );
+    const pair = contrastiveInefficiencyPair({ candidate: cand, probes });
+    expect(pair.cheap.probeId).toBe('p1'); // NOT p3
+  });
+
+  it('returns null when the cost gap is below minCostRatio', () => {
+    const cand = mkCand(
+      { p1: { sonnet: { score: 1, traj: { toolCalls: [{}], answer: 'a' } } }, p2: { sonnet: { score: 1, traj: { toolCalls: [{}], answer: 'b' } } } },
+      { sonnet: [{ probeId: 'p1', costUsd: 0.20 }, { probeId: 'p2', costUsd: 0.25 }] }, // 1.25× < 2×
+    );
+    expect(contrastiveInefficiencyPair({ candidate: cand, probes })).toBeNull();
+  });
+
+  it('does not pair across different strata', () => {
+    const cand = mkCand(
+      { p1: { sonnet: { score: 1, traj: { toolCalls: [{}], answer: 'a' } } }, p4: { sonnet: { score: 1, traj: { toolCalls: new Array(9).fill({}), answer: 'd' } } } },
+      { sonnet: [{ probeId: 'p1', costUsd: 0.05 }, { probeId: 'p4', costUsd: 0.30 }] }, // p1=no-match, p4=literal → no same-stratum pair
+    );
+    expect(contrastiveInefficiencyPair({ candidate: cand, probes })).toBeNull();
+  });
+
+  it('returns null when there is no native-relative cost data', () => {
+    expect(contrastiveInefficiencyPair({ candidate: {}, probes })).toBeNull();
   });
 });
