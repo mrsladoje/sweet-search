@@ -106,6 +106,12 @@ export const DEFAULTS = Object.freeze({
   // the call/token thresholds): desirability 1 at ≤0.65× native, 0 at ≥1.5×.
   nativeCostTargetRatio: 0.65,
   nativeCostFailRatio: 1.5,
+  // OP-C reflection-input richness (2026-05-30): 'scalar' = bare desirability,
+  // 'attributed' = + per-probe cost/mean-tokens-per-call, 'contrastive' = + a
+  // cheap-vs-expensive same-stratum trajectory pair (default). The 3 modes exist
+  // so the publishable ablation (does richer reflection input → cheaper mutations?)
+  // is runnable; 'contrastive' is the production default.
+  reflectionMode: 'contrastive',
   // OP-2 cost-aware crossover (2026-05-29): accuracy saturates on a mature front,
   // so the trajectory-crossover pair-finder selects on a per-probe COST mismatch
   // among incumbents that BOTH solve the probe (joint score ≥ crossoverMinAccuracy),

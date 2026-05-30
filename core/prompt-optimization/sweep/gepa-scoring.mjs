@@ -619,6 +619,13 @@ export function topInefficiencies({ candidate, probes, limit = 5, threshold = IN
         nativeCostUsd: row.nativeCostUsd,
         processedInput: row.processedInput,
         output: row.output,
+        // OP-C (cost-attributed reflection): the hidden cost multiplier is
+        // result-SIZE re-billed every turn, not call COUNT. Surface mean
+        // processed tokens per tool call so the reflector can attack bloated
+        // results (broad queries / wide reads), not just trim call counts.
+        meanTokensPerCall: (typeof row.calls === 'number' && row.calls > 0 && typeof row.processedInput === 'number')
+          ? Math.round((row.processedInput + (typeof row.output === 'number' ? row.output : 0)) / row.calls)
+          : null,
       });
       continue;
     }
@@ -665,4 +672,54 @@ export function topInefficiencies({ candidate, probes, limit = 5, threshold = IN
     return (b.callDeviation ?? 0) - (a.callDeviation ?? 0);
   });
   return rows.slice(0, limit);
+}
+
+/**
+ * OP-C contrastive reflection input (2026-05-30, per SOTA research — Feedback
+ * Descent / SCOPE): a scalar cost signal makes a reflector ADD caveats; a
+ * CONTRASTIVE cheap-vs-expensive pair of trajectories for the SAME KIND of query
+ * gives it a causal, behavioral handle ("make the expensive path resemble the
+ * cheap one"). We pair within a single (stratum, target) so the gap is a
+ * PROMPT-influenceable behavior difference, not a model artifact (cross-target
+ * gaps reflect the model, which the prompt edit cannot change). Both legs must be
+ * correct (score ≥ minScore) — we contrast efficiency at fixed accuracy, never
+ * "cheap because it gave up". Returns the largest-$-gap pair, or null when no
+ * per-probe cost data exists (dry-runs) or no qualifying gap is found.
+ *
+ * @returns {{ stratum, target, cheap, expensive }|null}
+ *   where each leg = { probeId, query, calls, costUsd, toolCalls, answer }
+ */
+export function contrastiveInefficiencyPair({ candidate, probes, minScore = 0.8, minCostRatio = 2 }) {
+  const byId = Object.fromEntries((probes || []).map((p) => [p.id, p]));
+  const breakdown = candidate?.nativeRelative?.breakdown;
+  if (!breakdown || typeof breakdown !== 'object') return null;
+  let best = null;
+  for (const target of TARGET_LIST) {
+    const runs = breakdown[target]?.runs;
+    if (!Array.isArray(runs)) continue;
+    const byStratum = {};
+    for (const r of runs) {
+      if (typeof r.costUsd !== 'number') continue;
+      const d = candidate.detail?.[r.probeId]?.[target];
+      if (!d || typeof d.score !== 'number' || d.score < minScore) continue;
+      const probe = byId[r.probeId] || {};
+      const stratum = probe.stratum ?? '?';
+      const traj = d.traj || { toolCalls: [], answer: '' };
+      (byStratum[stratum] = byStratum[stratum] || []).push({
+        probeId: r.probeId, query: probe.query ?? null, costUsd: r.costUsd,
+        calls: Array.isArray(traj.toolCalls) ? traj.toolCalls.length : 0,
+        toolCalls: traj.toolCalls ?? [], answer: traj.answer ?? '',
+      });
+    }
+    for (const [stratum, legs] of Object.entries(byStratum)) {
+      if (legs.length < 2) continue;
+      legs.sort((a, b) => a.costUsd - b.costUsd);
+      const cheap = legs[0];
+      const expensive = legs[legs.length - 1];
+      if (cheap.costUsd <= 0 || expensive.costUsd < cheap.costUsd * minCostRatio) continue;
+      const gap = expensive.costUsd - cheap.costUsd;
+      if (!best || gap > best.gap) best = { stratum, target, cheap, expensive, gap };
+    }
+  }
+  return best ? { stratum: best.stratum, target: best.target, cheap: best.cheap, expensive: best.expensive } : null;
 }

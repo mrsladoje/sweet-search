@@ -524,6 +524,40 @@ describe('mutation-rejection logging (§3.2.1)', () => {
     expect(userPrompt).not.toMatch(/\bnull\b/);
     expect(userPrompt).toMatch(/Efficiency: calls=7 callDeviation=4; tokens=2400/);
   });
+
+  // ── OP-C: cost-attributed reflection input ──
+  it('buildReflectivePrompt surfaces meanTokensPerCall (the result-size re-billing signal)', () => {
+    const row = {
+      probeId: 'p1', stratum: 'multi-file-flow', repo: 'gin', query: 'q', jointScore: 1, target: 'sonnet',
+      toolCalls: [], answer: 'a', expectedFiles: [],
+      nativeRelativeOverall: 0.2, desirability: { accuracy: 1, calls: 0.1, tokens: 0.2, overall: 0.2 },
+      calls: 10, nativeCalls: 3, tokensForScoring: 50000, nativeTokensForScoring: 1200, meanTokensPerCall: 5000,
+    };
+    const { userPrompt } = buildReflectivePrompt({ candidate: 'Use [[ss-search]].', failures: [row] });
+    expect(userPrompt).toMatch(/avg ~5000 tok\/call/);
+    expect(userPrompt).not.toMatch(/\bundefined\b/);
+  });
+
+  it('buildReflectivePrompt renders the contrastive cheap-vs-expensive block when provided', () => {
+    const contrastive = {
+      stratum: 'no-match', target: 'sonnet',
+      cheap: { probeId: 'python-009', query: 'is there X', calls: 2, costUsd: 0.04, toolCalls: [{ name: 'ss-search' }], answer: 'no match' },
+      expensive: { probeId: 'kotlin-009', query: 'is there Y', calls: 19, costUsd: 0.55, toolCalls: new Array(19).fill({ name: 'ss-search' }), answer: 'no match' },
+    };
+    const { userPrompt } = buildReflectivePrompt({ candidate: 'Use [[ss-search]].', failures: [], contrastive });
+    expect(userPrompt).toMatch(/Contrastive trace/);
+    expect(userPrompt).toMatch(/CHEAP — python-009: 2 tool calls/);
+    expect(userPrompt).toMatch(/EXPENSIVE — kotlin-009: 19 tool calls/);
+    expect(userPrompt).toMatch(/13\.8× the cheap path/); // 0.55/0.04
+    expect(userPrompt).toMatch(/make the expensive path behave like the cheap one/);
+    expect(userPrompt).not.toMatch(/\bundefined\b/);
+    expect(userPrompt).not.toMatch(/\bnull\b/);
+  });
+
+  it('buildReflectivePrompt omits the contrastive block when none is provided (back-compat)', () => {
+    const { userPrompt } = buildReflectivePrompt({ candidate: 'Use [[ss-search]].', failures: [] });
+    expect(userPrompt).not.toMatch(/Contrastive trace/);
+  });
 });
 
 // ─── 5. persistence + resume == fresh ───────────────────────────────────────

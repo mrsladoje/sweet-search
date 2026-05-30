@@ -81,19 +81,22 @@ export function buildTokenContract(candidate) {
  * BASE preamble plus a per-candidate TOKEN PRESERVATION CONTRACT block listing
  * every [[token]] with its exact required multiplicity (§3.2.1).
  */
-export function buildReflectivePrompt({ candidate, failures }) {
+export function buildReflectivePrompt({ candidate, failures, contrastive = null }) {
   const traceBlocks = (failures || [])
     .slice(0, 5)
     .map((f, i) => {
+      // OP-C: surface mean processed-tokens-per-call (result-size re-billed each
+      // turn) so the reflector attacks bloated results, not just call count.
+      const mtpc = typeof f.meanTokensPerCall === 'number' ? ` avg ~${f.meanTokensPerCall} tok/call (re-billed every turn)` : '';
       const nativeLine = typeof f.nativeRelativeOverall === 'number'
         ? `Native-relative: overall=${f.nativeRelativeOverall.toFixed(3)} ` +
           `accuracy=${f.desirability?.accuracy?.toFixed?.(3) ?? '?'} ` +
           `calls=${f.desirability?.calls?.toFixed?.(3) ?? '?'} ` +
           `tokens=${f.desirability?.tokens?.toFixed?.(3) ?? '?'}; ` +
           `calls ${f.calls ?? '?'} vs native ${f.nativeCalls ?? '?'}; ` +
-          `tokens ${f.tokensForScoring ?? f.tokens ?? '?'} vs native ${f.nativeTokensForScoring ?? f.nativeTokens ?? '?'}\n`
+          `tokens ${f.tokensForScoring ?? f.tokens ?? '?'} vs native ${f.nativeTokensForScoring ?? f.nativeTokens ?? '?'}${mtpc}\n`
         : (typeof f.callDeviation === 'number'
-            ? `Efficiency: calls=${f.calls ?? '?'} callDeviation=${f.callDeviation}; tokens=${f.tokens ?? '?'}\n`
+            ? `Efficiency: calls=${f.calls ?? '?'} callDeviation=${f.callDeviation}; tokens=${f.tokens ?? '?'}${mtpc}\n`
             : '');
       return (
         `### Trace ${i + 1} — probe ${f.probeId} ` +
@@ -108,9 +111,25 @@ export function buildReflectivePrompt({ candidate, failures }) {
     })
     .join('\n\n');
 
+  // OP-C contrastive block: a cheap-vs-expensive pair on the SAME kind of query
+  // (both correct) gives the reflector a behavioral handle instead of a scalar.
+  const contrastiveBlock = (contrastive && contrastive.cheap && contrastive.expensive)
+    ? `\n\n## Contrastive trace — SAME kind of query (${contrastive.stratum ?? '?'}, ${contrastive.target ?? '?'}), very different cost\n` +
+      `Both answers were CORRECT — the gap is efficiency you control through the prompt, not the model.\n` +
+      `CHEAP — ${contrastive.cheap.probeId}: ${contrastive.cheap.calls} tool calls, $${(contrastive.cheap.costUsd ?? 0).toFixed(4)}\n` +
+      `  query: ${contrastive.cheap.query ?? '(unknown)'}\n` +
+      `  tool calls: ${JSON.stringify(contrastive.cheap.toolCalls ?? [])}\n` +
+      `EXPENSIVE — ${contrastive.expensive.probeId}: ${contrastive.expensive.calls} tool calls, $${(contrastive.expensive.costUsd ?? 0).toFixed(4)} ` +
+      `(${((contrastive.expensive.costUsd ?? 0) / Math.max(contrastive.cheap.costUsd ?? 0, 1e-9)).toFixed(1)}× the cheap path)\n` +
+      `  query: ${contrastive.expensive.query ?? '(unknown)'}\n` +
+      `  tool calls: ${JSON.stringify(contrastive.expensive.toolCalls ?? [])}\n` +
+      `PRIMARY goal of your edit: make the expensive path behave like the cheap one — fewer/narrower tool calls and an earlier stop once the answer is in hand — WITHOUT losing accuracy. Do NOT just add caveats (that widens results and raises cost).`
+    : '';
+
   const userPrompt =
     `## Current prompt\n\`\`\`\n${candidate}\n\`\`\`\n\n` +
-    `## Worst inefficiency/failure traces\n${traceBlocks || '(none provided — propose a compact routing edit that reduces calls/tokens without harming accuracy)'}\n\n` +
+    `## Worst inefficiency/failure traces\n${traceBlocks || '(none provided — propose a compact routing edit that reduces calls/tokens without harming accuracy)'}` +
+    `${contrastiveBlock}\n\n` +
     `Rewrite the prompt to address the dominant inefficiency or failure pattern. Output only the new prompt:`;
 
   const systemPrompt = REFLECTIVE_SYSTEM_PROMPT_BASE + buildTokenContract(candidate);
@@ -121,11 +140,11 @@ export function buildReflectivePrompt({ candidate, failures }) {
  * Run OP-1 Reflective rewrite. Mirrors the OP-2..OP-5 contract:
  *   → { mutated, accepted, rejection? }
  */
-export async function runReflectiveRewrite({ candidate, failures, callModel, reflector }) {
+export async function runReflectiveRewrite({ candidate, failures, contrastive = null, callModel, reflector }) {
   if (typeof callModel !== 'function') throw new TypeError('runReflectiveRewrite: callModel must be a function');
   if (typeof candidate !== 'string') throw new TypeError('runReflectiveRewrite: candidate must be a string');
 
-  const { systemPrompt, userPrompt } = buildReflectivePrompt({ candidate, failures });
+  const { systemPrompt, userPrompt } = buildReflectivePrompt({ candidate, failures, contrastive });
   const result = await callModel({ lineage: 'moonshot', model: reflector ?? 'kimi-k2.6', systemPrompt, userPrompt });
 
   if (result.isError) {
@@ -341,7 +360,7 @@ export async function runOpWithRetry(opCall, callModel, opts = {}) {
  * @param {number}   [args.maxAttemptsPerSlot] — override default retry cap
  * @returns {Promise<object[]>} one result per slot: { sourceOp, parentHash, mutated, accepted, rejection?, attempts, priorFailures }
  */
-export async function generateMutations({ slots, parent, failures, probeById, round, callModel, rng, reflectionHint, maxAttemptsPerSlot }) {
+export async function generateMutations({ slots, parent, failures, contrastive = null, probeById, round, callModel, rng, reflectionHint, maxAttemptsPerSlot }) {
   const retryOpts = { maxAttempts: maxAttemptsPerSlot ?? DEFAULT_OP_MAX_ATTEMPTS };
   const results = [];
   for (const slot of slots) {
@@ -350,7 +369,7 @@ export async function generateMutations({ slots, parent, failures, probeById, ro
     switch (slot.op) {
       case 'reflective':
         res = await runOpWithRetry(
-          (cm) => runReflectiveRewrite({ candidate: parent.prompt, failures, callModel: cm }),
+          (cm) => runReflectiveRewrite({ candidate: parent.prompt, failures, contrastive, callModel: cm }),
           callModel, retryOpts,
         );
         break;

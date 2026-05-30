@@ -103,6 +103,7 @@ export function parseArgs(argv) {
     else if (a === '--smoke-variants') o.smokeVariants = Number.parseInt(argv[++i], 10);
     else if (a === '--concurrency') o.concurrency = Number.parseInt(argv[++i], 10);
     else if (a === '--repeats') o.repeats = Number.parseInt(argv[++i], 10);
+    else if (a === '--reflection-mode') o.reflectionMode = argv[++i];
     else if (a === '--initial-front') o.initialFrontFile = argv[++i];
     else if (a === '--skip-finalize') o.skipFinalize = true;
     else if (a === '--allow-unverified-seeds') o.allowUnverifiedSeeds = true;
@@ -115,6 +116,9 @@ export function parseArgs(argv) {
   }
   if (o.repeats !== undefined && (!Number.isInteger(o.repeats) || o.repeats < 1)) {
     throw new Error('--repeats must be a positive integer');
+  }
+  if (o.reflectionMode !== undefined && !['scalar', 'attributed', 'contrastive'].includes(o.reflectionMode)) {
+    throw new Error('--reflection-mode must be one of: scalar, attributed, contrastive');
   }
   if (o.initialFrontFile !== undefined && !existsSync(o.initialFrontFile)) {
     throw new Error(`--initial-front file not found: ${o.initialFrontFile}`);
@@ -168,6 +172,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
       resume: o.resume,
       concurrency: o.concurrency ?? 1,
       repeats: o.repeats ?? DEFAULTS.repeats,
+      reflectionMode: o.reflectionMode ?? DEFAULTS.reflectionMode,
       screenProbeIds: o.screenProbeIds ?? [],
     });
     reportResult('DRY-RUN complete', result);
@@ -263,6 +268,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     nativeBaselineByTarget,
     concurrency: o.concurrency ?? 1,
     repeats: o.repeats ?? DEFAULTS.repeats,
+    reflectionMode: o.reflectionMode ?? DEFAULTS.reflectionMode,
     // Pre-scored seed front (skips the round-0 ablation). Used to reuse an
     // already-measured seed front (e.g. the gen-1b rescore + 1 fresh rep merged
     // to 2 reps) instead of re-ablating from scratch.

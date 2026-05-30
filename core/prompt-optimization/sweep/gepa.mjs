@@ -17,7 +17,7 @@ import {
 } from './p7-persist.mjs';
 import { rebaselineFront } from './pareto-rebaseline.mjs';
 import { paretoGatedTare } from './tare.mjs';
-import { buildCandidate, computeProbeWeights, topFailures, topInefficiencies, scoreCandidateOnProbes, runCostLatencyFields } from './gepa-scoring.mjs';
+import { buildCandidate, computeProbeWeights, topFailures, topInefficiencies, contrastiveInefficiencyPair, scoreCandidateOnProbes, runCostLatencyFields } from './gepa-scoring.mjs';
 import { selectScreenProbes } from './gepa-screening.mjs';
 import {
   planSlots,
@@ -102,6 +102,7 @@ export async function runGepa(opts = {}) {
     nativeBaselineByTarget = null,
     concurrency = 1,
     repeats = DEFAULTS.repeats,
+    reflectionMode = DEFAULTS.reflectionMode,
     now = () => Date.now(),
     reflectionHint,
   } = opts;
@@ -303,7 +304,12 @@ export async function runGepa(opts = {}) {
     const failures = inefficiencies.length > 0
       ? inefficiencies
       : topFailures({ candidate: parent, probes: probeSet, limit: 5 });
-    const muts = await generateMutations({ slots, parent, failures, probeById, round, callModel: mutatorCm, rng: rRng, reflectionHint, maxAttemptsPerSlot });
+    // OP-C: contrastive cheap-vs-expensive reflection input (gated by reflectionMode
+    // so the scalar/attributed/contrastive ablation is runnable; default contrastive).
+    const contrastive = reflectionMode === 'contrastive'
+      ? contrastiveInefficiencyPair({ candidate: parent, probes: probeSet })
+      : null;
+    const muts = await generateMutations({ slots, parent, failures, contrastive, probeById, round, callModel: mutatorCm, rng: rRng, reflectionHint, maxAttemptsPerSlot });
 
     const accepted = [];
     let slotIdx = 0;
