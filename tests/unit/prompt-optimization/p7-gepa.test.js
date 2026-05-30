@@ -284,17 +284,19 @@ describe('Pareto admission 0.15 cap (§3.7.1 step 9)', () => {
 // ─── 3. slot composition + OP rotation ──────────────────────────────────────
 
 describe('slot composition + OP-3/4/5 rotation (§3.2)', () => {
-  it('slot3Op cycles no-match-sufficiency → tool-mask → pruner and resets at rotation', () => {
-    // 2026-05-30: persona-pivot (demonstrated noise) retired; OP-B no-match-sufficiency
-    // takes its rotation slot.
+  it('slot3Op cycles no-match-sufficiency → tool-mask → pruner → budget-voi and resets at rotation', () => {
+    // 2026-05-30: persona-pivot (demonstrated noise) retired → OP-B no-match-sufficiency;
+    // OP-D budget-voi added as the 4th rotation member.
     expect(slot3Op(1)).toBe('no-match-sufficiency');
     expect(slot3Op(2)).toBe('tool-mask');
     expect(slot3Op(3)).toBe('pruner');
-    expect(slot3Op(4)).toBe('no-match-sufficiency');
+    expect(slot3Op(4)).toBe('budget-voi');
+    expect(slot3Op(5)).toBe('no-match-sufficiency');
     // reset at rotationRound = 11
     expect(slot3Op(11, 11)).toBe('no-match-sufficiency');
     expect(slot3Op(12, 11)).toBe('tool-mask');
     expect(slot3Op(13, 11)).toBe('pruner');
+    expect(slot3Op(14, 11)).toBe('budget-voi');
   });
 
   it('slot1 is always reflective; slot2 falls back to reflective without a crossover pair', () => {
@@ -305,15 +307,40 @@ describe('slot composition + OP-3/4/5 rotation (§3.2)', () => {
     expect(slots[2].op).toBe('no-match-sufficiency');
   });
 
-  it('slot2 becomes trajectory-crossover when an A-wins/B-fails pair exists (accuracy fallback, no cost data)', () => {
+  it('slot2 becomes system-aware-merge when a crossover pair exists (accuracy fallback, no cost data)', () => {
     const front = [
       { id: 'A', scores: { p1: 0.9 } }, // wins
       { id: 'B', scores: { p1: 0.3 } }, // fails
     ];
     expect(findCrossoverPair({ front, probeIds: ['p1'] })).toMatchObject({ probeId: 'p1' });
     const slots = planSlots({ round: 2, front, probeIds: ['p1'] });
-    expect(slots[1].op).toBe('trajectory-crossover');
+    expect(slots[1].op).toBe('system-aware-merge'); // OP-E replaced OP-2 trajectory-crossover
     expect(slots[2].op).toBe('tool-mask'); // round 2 slot3
+  });
+
+  it('generateMutations routes a system-aware-merge slot through runSystemAwareMerge (OP-E end-to-end)', async () => {
+    const winner = { id: 'A', hash: 'hA', prompt: 'Route to [[ss-search]].' };
+    const loser = { id: 'B', hash: 'hB', prompt: 'Route to [[ss-search]] then stop.' };
+    const slots = [{ op: 'system-aware-merge', pair: { probeId: 'p1', winner, loser } }];
+    const callModel = vi.fn(async () => ({ text: 'Route to [[ss-search]] decisively.', isError: false }));
+    const res = await generateMutations({
+      slots, parent: winner, failures: [], callModel, rng: () => 0.5, maxAttemptsPerSlot: 1,
+    });
+    expect(res[0].sourceOp).toBe('system-aware-merge');
+    expect(res[0].parentHash).toBe('hA'); // winner.hash override
+    expect(res[0].accepted).toBe(true);
+    expect(callModel).toHaveBeenCalled();
+  });
+
+  it('generateMutations routes no-match-sufficiency and budget-voi slots to their operators (OP-B/OP-D end-to-end)', async () => {
+    const parent = { id: 'A', hash: 'hA', prompt: 'Use [[ss-search]] then [[ss-grep]]; conclude [[no-match]] if absent.' };
+    const callModel = vi.fn(async () => ({ text: 'Use [[ss-search]] then [[ss-grep]]; once both empty conclude [[no-match]] and stop.', isError: false }));
+    const slots = [{ op: 'no-match-sufficiency' }, { op: 'budget-voi' }];
+    const res = await generateMutations({
+      slots, parent, failures: [], noMatchTraces: [], literalTraces: [], callModel, rng: () => 0.5, maxAttemptsPerSlot: 1,
+    });
+    expect(res.map((r) => r.sourceOp)).toEqual(['no-match-sufficiency', 'budget-voi']);
+    expect(res.every((r) => r.accepted)).toBe(true);
   });
 
   // ── cost-aware OP-2 finder (2026-05-29): saturated accuracy → select on $ gap ──
