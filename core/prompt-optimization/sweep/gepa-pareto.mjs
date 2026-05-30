@@ -343,7 +343,12 @@ export function selectParent({ front, rng }) {
 
 // ─── slot-3 rotation + crossover availability (§3.2) ────────────────────────
 
-const SLOT3_CYCLE = ['persona-pivot', 'tool-mask', 'pruner']; // OP-3 → OP-4 → OP-5
+// 2026-05-30: persona-pivot RETIRED from the rotation — gen-2 round 4 showed it is
+// pure-noise reformatting (semantically-identical edit scored worst). Replaced by
+// OP-B no-match-sufficiency, a behavior-targeting operator that attacks the largest
+// cost lever (the no-match spiral). persona-pivot remains a callable operator but is
+// no longer scheduled by default.
+const SLOT3_CYCLE = ['no-match-sufficiency', 'tool-mask', 'pruner']; // OP-B → OP-4 → OP-5
 
 /**
  * Slot-3 operator for `round` (1-based). Cycles OP-3 → OP-4 → OP-5; the cycle
@@ -472,7 +477,7 @@ export function planSlots({ round, front, probeIds, rotationRound = DEFAULTS.rot
   // AST-ified routing from OP-3 to exist before it can safely prune). Today this
   // is emergent from SLOT3_CYCLE ordering + runPruner's minTokens no-op, but make
   // it explicit so a future reordering can't silently prune a tiny round-1 prompt.
-  if (slot3 === 'pruner' && round < 3) slot3 = 'persona-pivot';
+  if (slot3 === 'pruner' && round < 3) slot3 = 'no-match-sufficiency';
   slots.push({ op: slot3 });
   return slots;
 }

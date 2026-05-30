@@ -20,6 +20,7 @@ import { runTrajectoryCrossover } from './op-trajectory-crossover.mjs';
 import { runPersonaPivot } from './op-persona-pivot.mjs';
 import { runToolMask } from './op-tool-mask.mjs';
 import { runPruner } from './op-pruner.mjs';
+import { runNoMatchSufficiency } from './op-nomatch-sufficiency.mjs';
 
 // ─── OP-1 Reflective rewrite (inline) ───────────────────────────────────────
 
@@ -360,7 +361,7 @@ export async function runOpWithRetry(opCall, callModel, opts = {}) {
  * @param {number}   [args.maxAttemptsPerSlot] — override default retry cap
  * @returns {Promise<object[]>} one result per slot: { sourceOp, parentHash, mutated, accepted, rejection?, attempts, priorFailures }
  */
-export async function generateMutations({ slots, parent, failures, contrastive = null, probeById, round, callModel, rng, reflectionHint, maxAttemptsPerSlot }) {
+export async function generateMutations({ slots, parent, failures, contrastive = null, noMatchTraces = null, probeById, round, callModel, rng, reflectionHint, maxAttemptsPerSlot }) {
   const retryOpts = { maxAttempts: maxAttemptsPerSlot ?? DEFAULT_OP_MAX_ATTEMPTS };
   const results = [];
   for (const slot of slots) {
@@ -403,6 +404,19 @@ export async function generateMutations({ slots, parent, failures, contrastive =
       case 'persona-pivot':
         res = await runOpWithRetry(
           (cm) => runPersonaPivot({ candidate: parent.prompt, round, callModel: cm }),
+          callModel, retryOpts,
+        );
+        break;
+      case 'no-match-sufficiency':
+        // OP-B: fed the parent's worst no-match traces; falls back to the general
+        // worst-inefficiency set when this parent has no no-match spiral (so the
+        // slot still produces a sufficiency-focused edit rather than burning).
+        res = await runOpWithRetry(
+          (cm) => runNoMatchSufficiency({
+            candidate: parent.prompt,
+            noMatchTraces: (Array.isArray(noMatchTraces) && noMatchTraces.length) ? noMatchTraces : failures,
+            callModel: cm,
+          }),
           callModel, retryOpts,
         );
         break;
