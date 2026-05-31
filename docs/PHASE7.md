@@ -622,6 +622,50 @@ Decision at gate-failure time, not pre-committed.
 
 ---
 
+### §3.8 MAP-Elites behavioral-descriptor archive (OPT-IN search substrate)
+
+> **🛠 2026-05-31 AMENDMENT — Quality-Diversity parent/admission substrate (IMPLEMENTED; pure module `gepa-map-elites.mjs`, 35 new unit tests green, 1341 total green; OPT-IN, default unchanged).** This adds an alternative to the per-probe Pareto search front (§3.1 step 1 + §3.1 step 7), recommended by `project_p7_operator_research_2026_05` ("OP-A Behavior-Descriptor MAP-Elites archive"). It changes ONLY the SEARCH/parent substrate; the 2-D (accuracy, cost) reporting front (`reportingFront`/`reportingConvexHull`) that picks the deployable winner is UNCHANGED.
+
+**The three failure modes it fixes (all verified in `gepa-pareto.mjs`):**
+
+1. **Front collapse under saturated accuracy.** `dominates()` (gepa-pareto.mjs:42-66) is `a ≥ b on every shared probe AND a no more expensive`. Once every front member scores ~1.0 on every probe (the gen-2/gen-3 regime — accuracy is saturated), the per-probe test is satisfied by ties and dominance reduces to "cheapest wins", so the single most-accurate-and-cheapest member dominates all others and the non-dominated set collapses to a **singleton** (observed: gen-3 run p7-gen3-r1b). A collapsed front gives the mutation operators only ONE behavioral parent.
+2. **lengthPenalty blind spot in eviction.** `dominates()` compares `scores` + `costUsd` but NOT `lengthPenalty` (it never reads `finalScore` when both sides have a score vector). So a marginally-cheaper-but-longer candidate can evict the higher-**finalScore** incumbent — exactly what the r1b System-Aware-Merge did to champion A.
+3. **Parent starvation / champion bias.** `selectParent()` (gepa-pareto.mjs:337-350) weights by `Math.max(finalScore, 0.01)`, so roulette-wheel selection over-samples the champion and the search never leaves the champion's textual/behavioral neighborhood — the documented root cause of the gen-2 plateau (`project_p7_gen2_postmortem`).
+
+**How MAP-Elites fixes each:** bin candidates by **behavior** (distinct niches each keep an elite → no collapse); compete **in-bin on `finalScore`** (which folds in lengthPenalty → blind spot closed by construction); sample parents **uniformly across occupied bins** (→ no champion bias).
+
+**Behavioral descriptors** (computed in `computeDescriptors` from `candidate.detail` trajectories — NEVER from prompt text, which would recreate the cosmetic-diversity trap the postmortem named):
+
+| # | Descriptor | Definition | Rationale / why hand-picked |
+|---|---|---|---|
+| **d1** | `medianToolCalls` | Median tool-calls-to-answer over ALL (probe,target) runs | The postmortem proves candidate ranking is monotonic in Sonnet trajectory length, so total call count is the cleanest single behavioral cost axis. |
+| **d2** | `noMatchCalls` | Mean tool-calls on **no-match**-stratum probes, taken on the **worse (more-spiraling) target** per probe | THE validated headroom lever — Candidate A halved the no-match Sonnet spiral (16.2→6.4 calls) and that is what broke the gen-2 plateau. The no-match spiral deserves its own descriptor axis. "Worse target" keeps it model-agnostic (works regardless of which model binds). Falls back to d1 when the probe set has no no-match stratum. |
+| **d3** | `nativeFallbackRate` | Fraction of (probe,target) runs that reached for a native `grep`/`find`/`cat` family instead of an `ss-*` tool | The re-search / raw-shell-fallback signature: DIVERSE-SEED RESEARCH (2026-05-31) found 11.1% of A's calls are raw shell and **67% of that is in the no-match spiral**. Orthogonal to raw call count; classification regexes are pinned equal to `gepa-evaluate.classifyToolUse` by a unit test. |
+
+**Binning** (`binIndex`/`binKey`, edges in `DEFAULTS.mapElites.bins`): bin `i` covers `(edges[i-1], edges[i]]`, last bin open-ended. Defaults give ~5×5×4 cells:
+- d1 `medianToolCalls` edges `[3,5,8,12]` (5 bins)
+- d2 `noMatchCalls` edges `[4,7,10,14]` (5 bins) — the headroom axis gets the finest resolution where the action is
+- d3 `nativeFallbackRate` edges `[0.02,0.08,0.2]` (4 bins)
+
+With a 4-6 member front only a handful of cells are ever occupied — that is expected and fine for QD. **Tune the edges (not the descriptor set) when re-targeting headroom.** There is no proven auto-descriptor for prompts (the research flagged descriptor choice as the make-or-break craft step); these are hand-picked against our measured behaviors and documented so they can be re-derived.
+
+**Archive = a derived VIEW over the persisted `front` list.** `buildArchive(front, stratumById)` re-bins the front into `key → {elite}` keeping the single best member per bin. The checkpoint schema is UNCHANGED — `front` stays the source of truth — so **resume-determinism is free**: a resumed run re-binning `ckpt.front` reaches the same archive as an uninterrupted one (binning is pure + deterministic; covered by the `map-elites resume == fresh` test).
+
+**In-bin admission** (`betterInBin` / `attemptArchiveAdmission`, a drop-in returning the SAME shape as `attemptParetoAdmission`): an empty bin is colonised unconditionally (novelty is always worth keeping); an occupied bin is displaced only if the challenger **does not regress accuracy** (`taskScore ≥ elite − accuracyFloorSlack`, default 0.02 — the in-bin analogue of the global 0.15 cap, stopping a "cheap because it gave up" prompt from stealing a niche) **AND has a strictly higher `finalScore`**. The exact-hash + whitespace near-duplicate anti-clone guards are preserved. A `frontSize` safety cap evicts the weakest elite if bin proliferation ever overflows (rare at this population).
+
+**Parent selection** (`selectParentMapElites`): sample UNIFORMLY across occupied bins (sorted by key first → deterministic given the injected per-round `rng`, resume-safe). `noveltyBias > 0` optionally weights bins by descriptor-space sparsity (isolated behaviors get a boost); default `0` = pure uniform (maximal anti-champion-bias).
+
+**How to enable:** `runGepa({ selectionMode: 'map-elites' })` or the **`--selection-mode map-elites`** CLI flag. `DEFAULTS.selectionMode = 'pareto'` is the default and is byte-identical to today — when `'pareto'`, none of `gepa-map-elites.mjs` is invoked (verified by the `DEFAULT front === explicit pareto front` test). This is the money-safety gate: the QD substrate cannot silently engage on a paid run. An unknown mode throws before any spend.
+
+**Islands + reset-on-convergence:** the research also recommended a 2-3 archive island model + CMA-ME reset. With our ≤6-member population, sharding into islands is **not clean** (you cannot meaningfully split ~5 elites three ways), so island ORCHESTRATION is a documented **follow-up**. The pure helpers (`migrateElites`, `shouldResetArchive`) are implemented + tested so the scaffolding is ready, but the default loop does not run them.
+
+**Honest risks / when NOT to use it:**
+- **Descriptor choice is craft, not science.** If the descriptors don't capture the axis where headroom actually lives, MAP-Elites just preserves behaviorally-distinct-but-equally-mediocre prompts. d1/d2/d3 are tied to *measured* levers, but they are still a bet.
+- **The headroom is small (~0.03 finalScore, ~10%; `project_p7_gen2_postmortem`).** A is already 0.63×/0.58× native and the remaining gap (literal+no-match overpay) is modest. MAP-Elites does not create headroom — it widens the *behavioral search* so an operator is more likely to find a routing that captures the existing gap. It is most valuable when (a) the front has collapsed to a singleton, (b) the operators are producing cosmetic-only mutations off one parent, or (c) you have ≥4 behaviorally-distinct seeds to spread. It is over-engineering for a single-seed run or a tiny round budget.
+- **Same per-round cost as pareto** (one parent, three mutations, one screen+confirm). MAP-Elites does NOT increase spend per round — but more behavioral diversity can mean more rounds before convergence.
+
+---
+
 ## §4 Variant slate (T1–T15)
 
 ### §4.1 P6 grounding — reasoning HARD over Phase 6 data

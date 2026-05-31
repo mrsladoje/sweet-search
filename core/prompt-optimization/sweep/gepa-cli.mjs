@@ -19,6 +19,7 @@
  *   --smoke-probes N    (with --dry-run) cap smoke probes to the first N
  *   --smoke-variants N  (with --dry-run) cap seed variants to the first N (≤2)
  *   --concurrency N     bounded # of agent trajectories in flight (any target); default 1
+ *   --selection-mode M  search substrate: pareto (default) | map-elites (opt-in QD archive)
  *   --skip-finalize     skip the post-convergence winner-only ship gates (e.g. one-generation runs)
  *   --skip-preflight    skip the §7.5 pre-flight gate (NOT recommended)
  */
@@ -104,6 +105,7 @@ export function parseArgs(argv) {
     else if (a === '--concurrency') o.concurrency = Number.parseInt(argv[++i], 10);
     else if (a === '--repeats') o.repeats = Number.parseInt(argv[++i], 10);
     else if (a === '--reflection-mode') o.reflectionMode = argv[++i];
+    else if (a === '--selection-mode') o.selectionMode = argv[++i];
     else if (a === '--initial-front') o.initialFrontFile = argv[++i];
     else if (a === '--skip-finalize') o.skipFinalize = true;
     else if (a === '--allow-unverified-seeds') o.allowUnverifiedSeeds = true;
@@ -119,6 +121,9 @@ export function parseArgs(argv) {
   }
   if (o.reflectionMode !== undefined && !['scalar', 'attributed', 'contrastive'].includes(o.reflectionMode)) {
     throw new Error('--reflection-mode must be one of: scalar, attributed, contrastive');
+  }
+  if (o.selectionMode !== undefined && !['pareto', 'map-elites'].includes(o.selectionMode)) {
+    throw new Error('--selection-mode must be one of: pareto, map-elites');
   }
   if (o.initialFrontFile !== undefined && !existsSync(o.initialFrontFile)) {
     throw new Error(`--initial-front file not found: ${o.initialFrontFile}`);
@@ -173,6 +178,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
       concurrency: o.concurrency ?? 1,
       repeats: o.repeats ?? DEFAULTS.repeats,
       reflectionMode: o.reflectionMode ?? DEFAULTS.reflectionMode,
+      selectionMode: o.selectionMode ?? DEFAULTS.selectionMode,
       screenProbeIds: o.screenProbeIds ?? [],
     });
     reportResult('DRY-RUN complete', result);
@@ -269,6 +275,9 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     concurrency: o.concurrency ?? 1,
     repeats: o.repeats ?? DEFAULTS.repeats,
     reflectionMode: o.reflectionMode ?? DEFAULTS.reflectionMode,
+    // OPT-IN search substrate (default 'pareto' = unchanged). 'map-elites' swaps
+    // in the QD behavioral-descriptor archive for parent selection + admission.
+    selectionMode: o.selectionMode ?? DEFAULTS.selectionMode,
     // Pre-scored seed front (skips the round-0 ablation). Used to reuse an
     // already-measured seed front (e.g. the gen-1b rescore + 1 fresh rep merged
     // to 2 reps) instead of re-ablating from scratch.

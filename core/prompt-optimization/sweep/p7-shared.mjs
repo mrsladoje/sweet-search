@@ -189,6 +189,35 @@ export const DEFAULTS = Object.freeze({
   rotationRound: 11,
   rotationSwapCount: 5,
   tareParaphrases: 3, // K=3 adversarial paraphrases
+  // ── search substrate (2026-05-31) ─────────────────────────────────────────
+  // 'pareto' (default) = the per-probe cost-aware Pareto front + finalScore-
+  // weighted parent selection (gepa-pareto.mjs) — UNCHANGED. 'map-elites' = the
+  // opt-in QD behavioral-descriptor archive (gepa-map-elites.mjs), engaged only
+  // via runGepa({ selectionMode: 'map-elites' }) / the --selection-mode CLI flag.
+  // The map-elites path bins candidates by BEHAVIOR so distinct niches survive a
+  // saturated-accuracy regime (no front collapse), competes in-bin on finalScore
+  // (so lengthPenalty is respected), and samples parents uniformly across
+  // occupied bins (no champion bias). See docs/PHASE7.md §3.8.
+  selectionMode: 'pareto',
+  mapElites: {
+    // Descriptor discretization. Bin i covers (edges[i-1], edges[i]]; the last
+    // bin is (edges[last], ∞). Tied to the postmortem's known headroom behaviors;
+    // tune the edges, not the descriptor set, when re-targeting (PHASE7 §3.8).
+    bins: {
+      medianToolCalls: [3, 5, 8, 12],     // 5 bins on median total tool-calls
+      noMatchCalls: [4, 7, 10, 14],       // 5 bins on no-match spiral length (the lever)
+      nativeFallbackRate: [0.02, 0.08, 0.2], // 4 bins on raw-shell/native fallback rate
+    },
+    // In-bin accuracy non-regression slack (the in-bin analogue of the 0.15 cap):
+    // a challenger may displace a bin elite only if taskScore ≥ elite − this.
+    accuracyFloorSlack: 0.02,
+    // Parent-selection novelty bias exponent over descriptor-space sparsity.
+    // 0 = pure uniform across occupied bins (default, maximal anti-champion-bias).
+    noveltyBias: 0,
+    // Island migration fraction (DOCUMENTED FOLLOW-UP — not run by default; the
+    // ≤6-member population is too small to shard into islands cleanly).
+    migrationFraction: 0.1,
+  },
 });
 
 // ─── protected-token grammar (§3.2.1) ──────────────────────────────────────

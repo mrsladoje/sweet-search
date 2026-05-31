@@ -28,6 +28,12 @@ import {
   plateauBreakthrough,
   reportingFront,
 } from './gepa-pareto.mjs';
+import {
+  selectParentMapElites,
+  attemptArchiveAdmission,
+  buildArchive,
+  archiveStats,
+} from './gepa-map-elites.mjs';
 import { generateMutations, generateAdversarialParaphrases } from './gepa-mutate.mjs';
 import { buildReplayMap, makeResumeReplayEvaluate, buildConfirmEvent } from './gepa-finalize.mjs';
 import { makeLogger } from './gepa-logger.mjs';
@@ -97,6 +103,9 @@ export async function runGepa(opts = {}) {
     screenProbeIds = [],
     frontSize = DEFAULTS.paretoFrontSize,
     paretoCap = DEFAULTS.paretoAdmissionCap,
+    // 'pareto' (default, byte-identical to today) | 'map-elites' (opt-in QD
+    // behavioral-descriptor archive — see gepa-map-elites.mjs + PHASE7 §3.8).
+    selectionMode = DEFAULTS.selectionMode,
     resume = false,
     bucket = null,
     nativeBaselineByTarget = null,
@@ -109,6 +118,9 @@ export async function runGepa(opts = {}) {
 
   if (typeof evaluateCandidate !== 'function') throw new TypeError('runGepa: evaluateCandidate is required');
   if (typeof callModel !== 'function') throw new TypeError('runGepa: callModel is required');
+  if (selectionMode !== 'pareto' && selectionMode !== 'map-elites') {
+    throw new RangeError(`runGepa: selectionMode must be 'pareto' or 'map-elites' (got ${JSON.stringify(selectionMode)})`);
+  }
   const mutatorCm = typeof mutatorCallModel === 'function' ? mutatorCallModel : callModel;
 
   const paths = opts.paths || {
@@ -147,6 +159,10 @@ export async function runGepa(opts = {}) {
   // probe lookups (resume reconstructs probe records from ids)
   const allProbes = [...devProbes, ...rotationPool];
   const allById = Object.fromEntries(allProbes.map((p) => [p.id, p]));
+  // probe-id → { stratum } for the map-elites behavioral descriptors (no-match
+  // stratum drives d2). Built from ALL probes so it survives rotation; unused on
+  // the default pareto path. allById carries the full probe records already.
+  const stratumById = allById;
 
   let front;
   let probeSet;
@@ -298,7 +314,13 @@ export async function runGepa(opts = {}) {
     const rRng = roundRng(seed, round);
 
     // ── 1 selection + 2 mutation portfolio ──
-    const parent = selectParent({ front, rng: rRng });
+    // OPT-IN map-elites: sample a parent UNIFORMLY across occupied behavioral
+    // bins (no champion bias). Default 'pareto' = finalScore-weighted roulette
+    // (byte-identical to before). Both consume the SAME per-round rng so the
+    // pareto path's randomness is untouched.
+    const parent = selectionMode === 'map-elites'
+      ? selectParentMapElites({ front, rng: rRng, stratumById })
+      : selectParent({ front, rng: rRng });
     const slots = planSlots({ round, front, probeIds: activeIds, rotationRound });
     const inefficiencies = topInefficiencies({ candidate: parent, probes: probeSet, limit: 5 });
     const failures = inefficiencies.length > 0
@@ -433,7 +455,13 @@ export async function runGepa(opts = {}) {
       // event is appended AFTER the atomic checkpoint below — so a crash between
       // the append and the checkpoint can never orphan a pareto-update the
       // checkpoint (the single source of truth on resume) doesn't reflect.
-      const adm = attemptParetoAdmission({ candidate: survivor, front, cap: paretoCap, frontSize });
+      // OPT-IN map-elites: place the survivor in its behavioral bin, displacing
+      // the in-bin elite only on a finalScore win (lengthPenalty respected) under
+      // an accuracy non-regression floor. Returns the SAME shape as
+      // attemptParetoAdmission so the checkpoint + event-append below are shared.
+      const adm = selectionMode === 'map-elites'
+        ? attemptArchiveAdmission({ candidate: survivor, front, stratumById, isNearDuplicate, frontSize })
+        : attemptParetoAdmission({ candidate: survivor, front, cap: paretoCap, frontSize });
       if (adm.admitted) {
         front = adm.newFront;
         pendingParetoEvent = { _kind: EVENT_KINDS.PARETO_UPDATE, round, front: front.map((f) => f.hash), added: survivor.hash, evicted: adm.evicted };
@@ -474,6 +502,10 @@ export async function runGepa(opts = {}) {
     if (pendingParetoEvent) appendEvent(pendingParetoEvent);
 
     log(`round ${round} summary: joint_best=${bestNow.toFixed(3)} n_pareto=${front.length} patience=${patienceCounter}/${patience}`);
+    if (selectionMode === 'map-elites') {
+      const st = archiveStats(buildArchive(front, stratumById));
+      log(`round ${round} map-elites: occupied_bins=${st.occupiedBins} qd_score=${st.qdScore.toFixed(3)}`);
+    }
 
     if (patienceCounter >= patience) {
       if (plateauBreakthrough(convergence) && !plateauExtended) {
