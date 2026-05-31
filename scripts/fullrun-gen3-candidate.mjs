@@ -36,7 +36,22 @@ function promptFor(id) {
 const probesRaw = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/p7-dev-probes.json'), 'utf8'));
 const probes = Array.isArray(probesRaw) ? probesRaw : (probesRaw.probes || probesRaw.dev || []);
 const baseline = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/p7-native-baseline-dev-3panel.json'), 'utf8'));
-const evaluateCandidate = makeRealEvaluateCandidate({ agentProvider: 'api' });
+const _evalRaw = makeRealEvaluateCandidate({ agentProvider: 'api' });
+// Empty-retry: GPT-5.5 (and occasionally other providers) intermittently return a
+// transient EMPTY response (0 tokens) that scores 0 and corrupts the accuracy mean.
+// A 0-token reply is an API failure, not the agent's answer — retry ≤3× before
+// accepting it. The screen/capture scripts already did this; the fullrun path did
+// NOT, which tanked M's measured gpt to 0.696 (true ≈0.980) on 2026-05-31.
+const _num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const evaluateCandidate = async (args) => {
+  let res = null;
+  for (let a = 0; a < 3; a++) {
+    res = await _evalRaw(args);
+    const ag = res.usage?.agent;
+    if (ag && _num(ag.input_tokens) + _num(ag.output_tokens) > 0) break;
+  }
+  return res;
+};
 
 const T2_REF = 0.2942;
 const out = {};
@@ -56,7 +71,7 @@ for (const id of CANDS) {
     byStratum[s].sonCalls.push(d.sonnet.traj?.toolCalls?.length ?? 0); byStratum[s].gptCalls.push(d.gpt5_5.traj?.toolCalls?.length ?? 0);
   }
   const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
-  out[id] = { finalScore: cand.finalScore, taskScore: cand.taskScore, costUsd: cand.costUsd, accuracyFactor: cand.accuracyFactor, efficiencyScore: cand.efficiencyScore, score_sonnet: cand.score_sonnet, score_gpt5_5: cand.score_gpt5_5, tokenCount: cand.tokenCount };
+  out[id] = { finalScore: cand.finalScore, taskScore: cand.taskScore, costUsd: cand.costUsd, accuracyFactor: cand.accuracyFactor, efficiencyScore: cand.efficiencyScore, score_sonnet: cand.score_sonnet, score_gpt5_5: cand.score_gpt5_5, tokenCount: cand.tokenCount, detail: cand.detail };
   console.error(`\n${id}: finalScore=${cand.finalScore.toFixed(4)}  taskScore=${cand.taskScore.toFixed(4)}  cost$=${(cand.costUsd ?? 0).toFixed(4)}  acc=${(cand.accuracyFactor ?? 0).toFixed(3)}  eff=${(cand.efficiencyScore ?? 0).toFixed(3)}  (sonnet ${cand.score_sonnet.toFixed(3)} / gpt ${cand.score_gpt5_5.toFixed(3)})`);
   console.error(`   vs T2 ${T2_REF}: ${cand.finalScore > T2_REF ? 'BEATS by +' + (cand.finalScore - T2_REF).toFixed(4) : 'below by ' + (cand.finalScore - T2_REF).toFixed(4)}`);
   for (const [s, v] of Object.entries(byStratum)) {
