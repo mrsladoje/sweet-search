@@ -133,6 +133,105 @@ export function buildOpenRouterAgentPayload({ model, systemPrompt, messages, max
   };
 }
 
+// ─── Trajectory circuit-breaker (opt-in) ───────────────────────────────────────
+// Kills the no-match / hand-crawl SPIRAL without truncating productive long
+// trajectories. Keys on PATHOLOGY, never raw call count:
+//   1. duplicate (tool,input) → short-circuit: a re-run of an identical read-only
+//      probe cannot return new info (the repo is static within a trajectory), so
+//      we skip execution and reply with a nudge to change approach / conclude.
+//   2. `emptyStopThreshold` consecutive empty-ish results → force the model to
+//      answer now. A productive multi-file trace makes DIFFERENT calls returning
+//      CONTENT, so it trips neither rule → accuracy preserved.
+// Opt-in via `req.breaker` or `P7_BREAKER=1`; default OFF → byte-identical to the
+// pre-breaker runner, so frozen baselines stay reproducible.
+const BREAKER_EMPTY_STOP = envInt('P7_BREAKER_EMPTY_STOP', 5);
+// Max raw-shell / native-Read ESCAPES tolerated in a sweet-search run before the
+// hand-crawl spiral is force-stopped. Empirically separated (2026-05-31 capture):
+// productive multi-file traces escape ≤7; the no-match decoy spirals escape 18–36.
+// 10 leaves margin above the productive max yet halts the spiral by ~call 15.
+const BREAKER_RAW_ESCAPE_BUDGET = envInt('P7_BREAKER_RAW_ESCAPE', 10);
+
+// Mirrors the ss-* detection in validateBashCommand: a Bash command that invokes a
+// sweet-search tool is a TOOL CALL; anything else (raw find/grep/cat/ls) is an escape.
+const SS_CMD_RE = /(^|[\s;&|(])(?:sweet-search|ss-(?:search|find|semantic|trace|grep|read))\b/i;
+export function isSweetSearchCommand(command) { return SS_CMD_RE.test(String(command || '')); }
+
+// In a sweet-search run (ss-* available), an index ESCAPE is the native Read tool or
+// any Bash command that is NOT an ss-* invocation. (Native baselines have no ss-*, so
+// the caller passes ssAvailable=false and escapes are never counted.)
+function isEscapeCall(tc) {
+  if (tc?.name === 'Read') return true;
+  if (tc?.name === 'Bash') return !isSweetSearchCommand(tc.input?.command);
+  return false;
+}
+
+export function breakerFingerprint(tc) {
+  if (tc?.name === 'Bash') return `Bash|${String(tc.input?.command || '').trim().replace(/\s+/g, ' ')}`;
+  if (tc?.name === 'Read') {
+    const p = String(tc.input?.file_path || tc.input?.path || '').trim();
+    return `Read|${p}|${tc.input?.offset ?? ''}|${tc.input?.limit ?? ''}`;
+  }
+  return `${tc?.name}|${JSON.stringify(tc?.input || {})}`;
+}
+
+// Conservative empty-detection: only CLEAR negatives (error exit, empty body, or
+// explicit no-match phrasing). A short but non-empty hit (e.g. one file:line) is
+// NOT empty — we under-fire rather than risk cutting a productive trace.
+export function isEmptyToolResult(out) {
+  if (!out) return true;
+  if (out.isError) return true; // grep exit 1, blocked command, timeout
+  const body = String(out.content || '').replace(/^exit\s+-?\d+\s*\n?/, '').trim();
+  if (body.length === 0) return true;
+  if (/\b(no matches?|no results?|0 (results?|matches?|hits?)|not found|no relevant (hits?|matches?|results?))\b/i.test(body)) return true;
+  return false;
+}
+
+const BREAKER_FORCE_MSG = 'Search halted: repeated or empty probes are not yielding new information. Give your final answer NOW from the evidence already gathered — name the file(s) and symbol(s), or, if every relevant probe came back empty, conclude no match found and name the checks you ran. Do not call any more tools.';
+
+export function makeTrajectoryGuard({
+  emptyStopThreshold = BREAKER_EMPTY_STOP,
+  rawEscapeBudget = BREAKER_RAW_ESCAPE_BUDGET,
+  ssAvailable = true,
+} = {}) {
+  const seen = new Map(); // fingerprint -> first call index (0-based tIndex)
+  let consecutiveEmpty = 0;
+  let duplicates = 0;
+  let shortCircuits = 0;
+  let rawEscapes = 0;
+  let forced = false;
+  return {
+    // Consult BEFORE executing a tool call. → { action:'execute'|'short-circuit'|'force-stop', content? }
+    inspect(tc) {
+      if (forced) { shortCircuits++; return { action: 'force-stop', content: BREAKER_FORCE_MSG }; }
+      // (3) raw-shell escape budget — the PRIMARY catch for the index→raw-shell spiral.
+      // Only when ss-* tools are available; native baselines legitimately use raw shell.
+      if (ssAvailable && isEscapeCall(tc)) {
+        rawEscapes++;
+        if (rawEscapes > rawEscapeBudget) {
+          forced = true; shortCircuits++;
+          return { action: 'force-stop', content: BREAKER_FORCE_MSG };
+        }
+      }
+      // (1) exact-duplicate short-circuit — a re-run of an identical read-only probe.
+      const fp = breakerFingerprint(tc);
+      if (seen.has(fp)) {
+        duplicates++; shortCircuits++; consecutiveEmpty++; // a duplicate yields no new info → spiral pressure
+        if (consecutiveEmpty >= emptyStopThreshold) forced = true;
+        return { action: 'short-circuit', content: `DUPLICATE of call #${seen.get(fp) + 1}: identical probe, result unchanged. Do not repeat it — change approach, or conclude per the absence rule if probes have come back empty.` };
+      }
+      seen.set(fp, tc.tIndex);
+      return { action: 'execute' };
+    },
+    // Record the result of a REAL execution (skip for short-circuited calls).
+    // (2) consecutive-empty hard-stop — catches all-empty spirals that evade (1)/(3).
+    observe(out) {
+      if (isEmptyToolResult(out)) consecutiveEmpty++; else consecutiveEmpty = 0;
+      if (consecutiveEmpty >= emptyStopThreshold) forced = true;
+    },
+    stats() { return { duplicates, shortCircuits, rawEscapes, consecutiveEmpty, forced, emptyStopThreshold, rawEscapeBudget, ssAvailable }; },
+  };
+}
+
 export async function runAnthropicApiAgent(req) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('runAnthropicApiAgent: ANTHROPIC_API_KEY not set');
@@ -140,6 +239,7 @@ export async function runAnthropicApiAgent(req) {
   const usage = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, max_input_tokens: 0 };
   const messages = [{ role: 'user', content: req.prompt }];
   const toolCalls = [];
+  const guard = (req.breaker ?? process.env.P7_BREAKER === '1') ? makeTrajectoryGuard({ ssAvailable: !!req.allowSweetSearch }) : null;
   let finalText = '';
   let isError = false;
   let stderrPreview = '';
@@ -167,7 +267,15 @@ export async function runAnthropicApiAgent(req) {
       }
       const tc = { id: use.id, name: use.name, input: use.input || {}, tIndex: toolCalls.length };
       toolCalls.push(tc);
+      if (guard) {
+        const g = guard.inspect(tc);
+        if (g.action !== 'execute') {
+          results.push({ type: 'tool_result', tool_use_id: use.id, is_error: false, content: g.content });
+          continue;
+        }
+      }
       const out = await executeTool(tc, req);
+      guard?.observe(out);
       results.push({ type: 'tool_result', tool_use_id: use.id, is_error: out.isError, content: out.content });
     }
     messages.push({ role: 'user', content: results });
@@ -175,6 +283,7 @@ export async function runAnthropicApiAgent(req) {
 
   return {
     toolCalls,
+    breaker: guard ? guard.stats() : null,
     finalResultText: finalText,
     finalAssistantText: finalText,
     usage,
@@ -196,6 +305,7 @@ export async function runOpenRouterApiAgent(req) {
   const usage = { input_tokens: 0, output_tokens: 0, cached_input_tokens: 0, max_input_tokens: 0 };
   const messages = [{ role: 'user', content: req.prompt }];
   const toolCalls = [];
+  const guard = (req.breaker ?? process.env.P7_BREAKER === '1') ? makeTrajectoryGuard({ ssAvailable: !!req.allowSweetSearch }) : null;
   let finalText = '';
   let isError = false;
   let stderrPreview = '';
@@ -234,13 +344,22 @@ export async function runOpenRouterApiAgent(req) {
         continue;
       }
       toolCalls.push(tc);
+      if (guard) {
+        const g = guard.inspect(tc);
+        if (g.action !== 'execute') {
+          messages.push({ role: 'tool', tool_call_id: use.id, content: g.content });
+          continue;
+        }
+      }
       const out = await executeTool(tc, req);
+      guard?.observe(out);
       messages.push({ role: 'tool', tool_call_id: use.id, content: out.content });
     }
   }
 
   return {
     toolCalls,
+    breaker: guard ? guard.stats() : null,
     finalResultText: finalText,
     finalAssistantText: finalText,
     usage,

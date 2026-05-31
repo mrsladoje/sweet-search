@@ -1,0 +1,36 @@
+{
+  "decided": "2026-05-31",
+  "front": [
+    "A",
+    "Mstar"
+  ],
+  "kicked": [
+    "B",
+    "C",
+    "T2"
+  ],
+  "kick_reason": "A dominates B/C/T2 on the (accuracy,cost) plane — A is >= them on accuracy AND cheaper than all three (A 1.0/1.0 $0.182 final 0.306; C 1.0/0.98 $0.225 0.296; T2 1.0/0.99 $0.236 0.294; B 1.0/0.98 $0.214 0.255). Non-dominated pair = {A=accuracy-max, M*=cost-min}.",
+  "members": {
+    "A": {
+      "id": "A",
+      "role": "accuracy-max",
+      "finalScore": 0.3058951225413344,
+      "costUsd": 0.18188193749999992,
+      "score_sonnet": 1,
+      "score_gpt5_5": 1,
+      "tokenCount": 1118
+    },
+    "Mstar": {
+      "id": "Mstar",
+      "role": "cost-min CHAMPION",
+      "tokenCount": 1068,
+      "accuracy_clean": {
+        "sonnet": 0.994,
+        "gpt5_5": 0.98,
+        "note": "M base re-score (gpt x3 + sonnet x1, empty-retry); M* adds anti-flooding-trap line (js-009 0/3->3/4 fixed, literal 0.949->0.988)"
+      },
+      "cost_note": "M base measured -36% vs A in fullrun, but that headline is partly inflated by transient empty gpt runs (cost ~$0); true clean advantage smaller (~-15-25%). OFFICIAL full-40 finalScore PENDING a clean run with the fixed harness.",
+      "finalScore": null
+    }
+  }
+}

@@ -25,7 +25,7 @@ import { runCostLatencyFields } from '../core/prompt-optimization/sweep/gepa-sco
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPS = Number(process.env.REPS) || 5;
 const CONC = 6;
-const TARGETS = ['sonnet', 'gpt5_5'];
+const TARGETS = (process.env.TARGETS ? process.env.TARGETS.split(',').map((s) => s.trim()) : ['sonnet', 'gpt5_5']).filter(Boolean);
 const CANDS = (process.env.CANDS || 'A,D').split(',').map((s) => s.trim()).filter(Boolean);
 
 // 12-probe failure-mode subset (5 no-match + 3 literal + 2 multi-file + 2 behavioral).
@@ -35,7 +35,8 @@ const SCREEN = {
   'cpp-004': 'multi-file-flow', 'csharp-004': 'multi-file-flow',
   'js-008': 'behavioral', 'python-007': 'behavioral',
 };
-const SCREEN_IDS = Object.keys(SCREEN);
+const PROBE_FILTER = process.env.PROBES ? new Set(process.env.PROBES.split(',').map((s) => s.trim())) : null;
+const SCREEN_IDS = Object.keys(SCREEN).filter((id) => !PROBE_FILTER || PROBE_FILTER.has(id));
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const median = (xs) => { const s = xs.filter((v) => typeof v === 'number' && Number.isFinite(v)).sort((a, b) => a - b); const n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : 0; };
