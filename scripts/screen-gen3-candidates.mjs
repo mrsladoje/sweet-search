@@ -23,7 +23,7 @@ import { makeRealEvaluateCandidate } from '../core/prompt-optimization/sweep/gep
 import { runCostLatencyFields } from '../core/prompt-optimization/sweep/gepa-scoring.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const REPS = 5;
+const REPS = Number(process.env.REPS) || 5;
 const CONC = 6;
 const TARGETS = ['sonnet', 'gpt5_5'];
 const CANDS = (process.env.CANDS || 'A,D').split(',').map((s) => s.trim()).filter(Boolean);
