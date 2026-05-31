@@ -1896,6 +1896,24 @@ Optional (publication path):
 
 ---
 
+## §13.Z Gen-3 outcome — M\* champion (2026-05-31)
+
+**Result: the front collapses to {A = accuracy-max, M\* = cost-min CHAMPION}; B/C/T2 kicked (A-dominated).** A is ≥ them on accuracy AND cheaper than all three (A 1.0/1.0 $0.182 final 0.306; C/T2/B 0.255–0.296). Decision recorded in `data/p7-variant-restarts/p7-gen3-final-front.json` (seed front preserved historically).
+
+**The arc:** A (prior champion, ss-search-first) → G/H (strategy-rewrite: cheapest-first / trace-first multi-file) **regressed** (trace can't resolve macro/dynamic dispatch — `HWY_DYNAMIC_DISPATCH`) → I/J/K (A + targeted injections) **tied** A → Opus-subagent gen L/M/O → **M** (lean 1001-tok prompt) → **M\*** (M + a minimal anti-flooding-trap line). M\* = `data/p7-variant-restarts/p7-gen3-candidates/Mstar.md` (1068 tok).
+
+**What actually won (honest):** NOT fewer calls (M 289 ≈ A 288 sonnet) and NOT the clever fixes (M's multi-file calls ≈ A's, so the "name-the-link-STOP" completion criterion didn't cut multi-file). The cost win is **terseness (shorter prompt re-sent every call) + a cheaper tool MIX** — M leans `[[ss-grep]]` (file:line, lean output) where A leans `[[ss-search]]` (heavy semantic blocks → fat transcript → every later call costs more) — **plus no-match decisiveness** (M 5.4 vs A 7.4, B 17.2 calls).
+
+**Tool profile (M/M\*):** `[[ss-grep]]` workhorse (27–36%), `[[ss-search]]` ~1/probe, `[[ss-read]]` heavy, `[[ss-find]]` regular; **`[[ss-trace]]` ~never (0.3–1.5%), `[[ss-semantic]]` ~never (0.7%)** — the population has almost no behavioral diversity; the "smart" tools are dead across every candidate.
+
+**Accuracy (clean):** M\* gpt 0.980 / sonnet 0.994 vs A's perfect 1.0/1.0. A is uniquely perfect on **literal-gpt (flooding-trap robustness)** — every other candidate dips there (B/C 0.94, T2 0.98, M 0.95, M\* 0.988). User accepted M\*'s ~1–2% accuracy tank for the cost win.
+
+**Critical measurement bug found + fixed:** the fullrun scored M's gpt at **0.696** — a *transient GPT-5.5 empty-run episode* (0-token replies scored 0), NOT real under-searching. A clean re-run (`scripts/rescore-M-gpt.mjs`, empty-retry) gave **0.980**, 0 empties. Root cause: `fullrun-gen3-candidate.mjs` / `buildCandidate` did not retry empty runs (screen/capture scripts did). **Fixed:** the fullrun now empty-retries (≤3) + persists per-probe `cand.detail`. New diagnostic scripts: `capture-igen-trajectories.mjs`, `analyze-gpt-failures.mjs`, `rescore-M-gpt.mjs`; `screen-gen3-candidates.mjs` gained `PROBES`/`TARGETS` filters.
+
+**GEPA / MAP-Elites assessment (honest):** **low expected value now.** (1) No behavioral diversity to exploit (everything = grep+read, trace/semantic dead → QD bins cluster). (2) We've already swept the space by hand (G/H/I/J/K/L/M/O = reflective mutation, manually). (3) The `finalScore` metric is **misaligned with the non-negotiable accuracy rule** — it ranked M (gpt 0.696) ABOVE A (1.0), i.e. it rewards cost over accuracy; GEPA optimizing it would manufacture more false winners (the M-trap we caught by hand). **Prereqs before any GEPA run:** (a) a hard accuracy floor in `finalScore` so cost can't buy past an accuracy regression, and (b) genuinely diverse seeds (prompts that actually use trace/semantic). Both currently absent.
+
+**Open follow-ups:** (a) clean full-40 M\* (fixed harness, both targets) → true cost delta + official finalScore; (b) three investigations in flight (2026-05-31): does `[[ss-semantic]]` beat `[[ss-read]]` on cost (→ Mstar2?), reviving T1–T15 abandoned ideas for diversity, and the official colgrep prompt for `[[ss-find]]` insights. Guard (`makeTrajectoryGuard`, `p7-api-agent-runner.mjs`) is committed but **opt-in/default-off — never used in screens** (rejected as a benchmark mechanism: it compresses prompt differences).
+
 ## §14 Provider rate limits & pricing reference (May 2026)
 
 This is the snapshot used for §7.7's concurrency policy and §8's cost envelope. Re-validate at pre-flight time (rate limits drift).
