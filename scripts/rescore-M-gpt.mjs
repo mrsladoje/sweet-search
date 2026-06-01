@@ -20,13 +20,28 @@ import { runCostLatencyFields } from '../core/prompt-optimization/sweep/gepa-sco
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CONC = Number(process.env.CONC) || 4;
 const MAX_EMPTY_ATTEMPTS = 3;
-const TARGET_REPS = { gpt5_5: Number(process.env.GPT_REPS) || 3, sonnet: Number(process.env.SONNET_REPS) || 1 };
+// NB: use Number.isFinite, NOT `|| default` — GPT_REPS=0 must DISABLE gpt (0 is falsy,
+// so `Number("0") || 3` wrongly fell through to 3 and ran both targets — fixed 2026-06-01).
+const _reps = (v, d) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : d; };
+const TARGET_REPS = { gpt5_5: _reps(process.env.GPT_REPS, 3), sonnet: _reps(process.env.SONNET_REPS, 1) };
 const CANDS = (process.env.CANDS || 'M').split(',').map((s) => s.trim()).filter(Boolean);
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 const promptFor = (id) => fs.readFileSync(path.join(REPO, `core/prompt-optimization/data/p7-variant-restarts/p7-gen3-candidates/${id}.md`), 'utf8');
-const probesRaw = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/p7-dev-probes.json'), 'utf8'));
-const probesAll = Array.isArray(probesRaw) ? probesRaw : (probesRaw.probes || probesRaw.dev || []);
+// PROBE_FILE=<repo-relative-or-absolute> overrides the dev set (held-out / OOD / counter / vault runs).
+const PROBE_FILE = process.env.PROBE_FILE;
+const _probePath = PROBE_FILE
+  ? (path.isAbsolute(PROBE_FILE) ? PROBE_FILE : path.join(REPO, PROBE_FILE))
+  : path.join(REPO, 'core/prompt-optimization/data/p7-dev-probes.json');
+const probesRaw = JSON.parse(fs.readFileSync(_probePath, 'utf8'));
+let probesAll = Array.isArray(probesRaw) ? probesRaw : (probesRaw.probes || probesRaw.dev || []);
+// INCLUDE_ROTATION=1 → fold the 13-probe rotation pool in (the working "53-pool"),
+// WITHOUT mutating canonical p7-dev-probes.json (a unit test asserts dev.length===40).
+if (process.env.INCLUDE_ROTATION) {
+  const rotRaw = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/p7-rotation-pool.json'), 'utf8'));
+  const rot = Array.isArray(rotRaw) ? rotRaw : (rotRaw.probes || []);
+  probesAll = [...probesAll, ...rot];
+}
 const idSet = process.env.PROBES ? new Set(process.env.PROBES.split(',').map((s) => s.trim())) : null;
 const strSet = process.env.PROBE_STRATA ? new Set(process.env.PROBE_STRATA.split(',').map((s) => s.trim())) : null;
 const probes = (idSet || strSet) ? probesAll.filter((p) => (idSet && idSet.has(p.id)) || (strSet && strSet.has(p.stratum))) : probesAll;
