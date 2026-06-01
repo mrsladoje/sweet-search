@@ -13,7 +13,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { IN_DISTRIBUTION } from './author-probes.mjs';
-import { judgePanelScore } from './gepa-evaluate.mjs';
+import { judgePanelScore, JUDGE_PANEL } from './gepa-evaluate.mjs';
 import { RESULTS_DIR, appendFsynced, atomicWriteJSON } from './p7-persist.mjs';
 import { hashContent, validateProbes } from './p7-shared.mjs';
 import { loadVariant } from './variant-loader.mjs';
@@ -48,6 +48,10 @@ function parseArgs(argv) {
     timeoutMs: 240000,
     resume: false,
     noJudge: false,
+    promptFile: null,    // bare system-prompt file (e.g. Mpp.md) — overrides --variant
+    judgePanel: 'deepseek', // 'default' = 3-panel JUDGE_PANEL (HOMP comparability); 'deepseek' = single
+    reasoningEffort: null, // opencode --variant (high|max|minimal) for reasoning models
+    concurrency: 1,      // parallel opencode workers
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -55,6 +59,10 @@ function parseArgs(argv) {
     else if (a === '--tier') o.tier = argv[++i];
     else if (a === '--variant') o.variant = argv[++i];
     else if (a === '--model') o.model = argv[++i];
+    else if (a === '--prompt-file') o.promptFile = argv[++i];
+    else if (a === '--judge-panel') o.judgePanel = argv[++i];
+    else if (a === '--reasoning-effort') o.reasoningEffort = argv[++i];
+    else if (a === '--concurrency') o.concurrency = Math.max(1, Number.parseInt(argv[++i], 10) || 1);
     else if (a === '--judge-model') o.judgeModel = argv[++i];
     else if (a === '--limit') o.limit = Number.parseInt(argv[++i], 10);
     else if (a === '--offset') o.offset = Number.parseInt(argv[++i], 10);
@@ -217,7 +225,7 @@ function parseOpencodeJsonl(stdout) {
   };
 }
 
-async function runOpencodeProbe({ probe, systemPrompt, model, timeoutMs }) {
+async function runOpencodeProbe({ probe, systemPrompt, model, timeoutMs, reasoningEffort }) {
   const cwd = repoCwdFor(probe);
   const prompt = buildCanaryPrompt({ systemPrompt, probe });
   const env = {
@@ -232,6 +240,7 @@ async function runOpencodeProbe({ probe, systemPrompt, model, timeoutMs }) {
     '--model', model,
     '--format', 'json',
     '--agent', 'build',
+    ...(reasoningEffort ? ['--variant', reasoningEffort] : []),
     prompt,
   ];
   const run = await spawnCapture('opencode', args, { cwd, env, timeoutMs });
@@ -274,12 +283,12 @@ function usedSweetSearch(toolCalls) {
   return toolCalls.some((tc) => /\bss-(search|find|semantic|trace|grep|read)\b/.test(tc.command || ''));
 }
 
-async function judgeAnswer({ probe, answer, judgeModel }) {
+async function judgeAnswer({ probe, answer, judgeModel, panel }) {
   try {
     const judged = await judgePanelScore({
       probe,
       answer,
-      panel: [{ lineage: 'deepseek-api', model: judgeModel }],
+      panel: panel || [{ lineage: 'deepseek-api', model: judgeModel }],
     });
     return { score: judged.score, judges: judged.judges, error: null };
   } catch (err) {
@@ -345,7 +354,10 @@ function existingProbeIds(jsonlPath) {
 async function main(argv = process.argv.slice(2)) {
   const opts = parseArgs(argv);
   const probes = loadSelectedProbes(opts);
-  const variant = loadVariant(opts.variant);
+  const variant = opts.promptFile
+    ? { id: path.basename(opts.promptFile, '.md'), body: fs.readFileSync(path.isAbsolute(opts.promptFile) ? opts.promptFile : path.join(REPO_ROOT, opts.promptFile), 'utf8') }
+    : loadVariant(opts.variant);
+  const judgePanelChoice = opts.judgePanel === 'default' ? JUDGE_PANEL : null;
   const outDir = RESULTS_DIR(opts.run);
   const jsonlPath = path.join(outDir, 'deepseek-flash-baseline.jsonl');
   const summaryPath = path.join(outDir, 'deepseek-flash-summary.json');
@@ -353,12 +365,16 @@ async function main(argv = process.argv.slice(2)) {
 
   const done = opts.resume ? existingProbeIds(jsonlPath) : new Set();
   const rows = [];
-  console.log(`p7-deepseek-flash: run=${opts.run} tier=${opts.tier} probes=${probes.length} variant=${variant.id} model=${opts.model}`);
-  for (let i = 0; i < probes.length; i++) {
+  console.log(`p7-deepseek-flash: run=${opts.run} tier=${opts.tier} probes=${probes.length} variant=${variant.id} model=${opts.model} concurrency=${opts.concurrency}${opts.reasoningEffort ? ' reasoning=' + opts.reasoningEffort : ''}`);
+  // Serialize JSONL appends across concurrent workers (a row can exceed PIPE_BUF → torn writes).
+  let writeChain = Promise.resolve();
+  const safeAppend = (row) => { writeChain = writeChain.then(() => appendFsynced(jsonlPath, row)); return writeChain; };
+  let cursor = 0;
+  const runOne = async (i) => {
     const probe = probes[i];
     if (done.has(probe.id)) {
       console.log(`[${i + 1}/${probes.length}] ${probe.id} skipped (resume)`);
-      continue;
+      return;
     }
     const prefix = `[${i + 1}/${probes.length}] ${probe.id} ${probe.language}/${probe.stratum}`;
     console.log(`${prefix} agent...`);
@@ -367,6 +383,7 @@ async function main(argv = process.argv.slice(2)) {
       systemPrompt: variant.body,
       model: opts.model,
       timeoutMs: opts.timeoutMs,
+      reasoningEffort: opts.reasoningEffort,
     });
     const finalAnswerEmitted = agent.answer.trim().length > 0;
     const toolCalls = agent.toolCalls.length;
@@ -374,7 +391,7 @@ async function main(argv = process.argv.slice(2)) {
     let judged = { score: null, judges: [], error: null };
     if (!opts.noJudge) {
       console.log(`${prefix} judge...`);
-      judged = await judgeAnswer({ probe, answer: agent.answer, judgeModel: opts.judgeModel });
+      judged = await judgeAnswer({ probe, answer: agent.answer, judgeModel: opts.judgeModel, panel: judgePanelChoice });
     }
     const row = {
       run_id: opts.run,
@@ -416,11 +433,14 @@ async function main(argv = process.argv.slice(2)) {
       stderrPreview: agent.stderrPreview,
       stdoutTruncated: agent.stdoutTruncated,
     };
-    appendFsynced(jsonlPath, row);
+    await safeAppend(row);
     rows.push(row);
     const scoreText = typeof row.score === 'number' ? row.score.toFixed(2) : 'judge-error';
     console.log(`${prefix} score=${scoreText} tools=${toolCalls} ss=${sweetSearchUsed ? 'yes' : 'no'} cost=$${row.agentCostUsd.toFixed(4)}`);
-  }
+  };
+  await Promise.all(Array.from({ length: opts.concurrency }, async () => {
+    for (let i = cursor++; i < probes.length; i = cursor++) await runOne(i);
+  }));
 
   const allRows = [];
   if (fs.existsSync(jsonlPath)) {

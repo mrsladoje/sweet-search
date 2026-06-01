@@ -1,0 +1,1289 @@
+[
+  {
+    "id": "cpp-006",
+    "repo": "highway",
+    "language": "cpp",
+    "stratum": "multi-file-flow",
+    "difficulty": "medium",
+    "query": "Where is the aligned-allocation entry point AllocateAlignedBytes declared versus actually implemented? I need both the public declaration and the definition.",
+    "expectedFiles": [
+      "hwy/aligned_allocator.h",
+      "hwy/aligned_allocator.cc"
+    ],
+    "expectedSymbols": [
+      "AllocateAlignedBytes"
+    ],
+    "expectedFacts": [
+      "AllocateAlignedBytes is declared HWY_DLLEXPORT in aligned_allocator.h and defined in aligned_allocator.cc, where it over-allocates, stashes an AllocationHeader, and returns an aligned payload pointer"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 6,
+    "author": "cpp-author",
+    "date": "2026-05-23",
+    "notes": "Header/impl split. Verified: grep -n 'void\\* AllocateAlignedBytes' hwy/aligned_allocator.h -> aligned_allocator.h:58 (declaration); hwy/aligned_allocator.cc -> aligned_allocator.cc:69 (definition, HWY_DLLEXPORT void* AllocateAlignedBytes(const size_t payload_size, ...))."
+  },
+  {
+    "id": "cpp-001",
+    "repo": "highway",
+    "language": "cpp",
+    "stratum": "literal-lookup",
+    "difficulty": "easy",
+    "query": "Where is the per-target namespace name set to N_AVX3 (the macro that selects the AVX3 SIMD namespace)?",
+    "expectedFiles": [
+      "hwy/ops/set_macros-inl.h"
+    ],
+    "expectedSymbols": [
+      "HWY_NAMESPACE"
+    ],
+    "expectedFacts": [
+      "set_macros-inl.h defines HWY_NAMESPACE to N_AVX3 in the AVX3 branch, which is the per-target inline namespace code is emitted into for that target"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "cpp-author",
+    "date": "2026-05-23",
+    "notes": "Verified: grep -n 'define HWY_NAMESPACE N_AVX3$' hwy/ops/set_macros-inl.h -> hwy/ops/set_macros-inl.h:380 (#define HWY_NAMESPACE N_AVX3). Sibling targets N_SSE4/N_AVX2/etc defined nearby."
+  },
+  {
+    "id": "csharp-002",
+    "repo": "garnet",
+    "language": "csharp",
+    "stratum": "literal-lookup",
+    "difficulty": "easy",
+    "query": "Find the GarnetServerOptions class that holds the server configuration options.",
+    "expectedFiles": [
+      "libs/server/Servers/GarnetServerOptions.cs"
+    ],
+    "expectedSymbols": [
+      "GarnetServerOptions"
+    ],
+    "expectedFacts": [
+      "GarnetServerOptions in libs/server/Servers/GarnetServerOptions.cs extends ServerOptions and exposes object-store knobs such as DisableObjects, ObjectStoreLogMemorySize, and ObjectStorePageSize."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "csharp-author",
+    "date": "2026-05-23",
+    "notes": "Verified: `grep -n \"public class GarnetServerOptions\" libs/server/Servers/GarnetServerOptions.cs` -> :17 `public class GarnetServerOptions : ServerOptions`. Fields DisableObjects/ObjectStoreLogMemorySize/ObjectStorePageSize at lines 22-37."
+  },
+  {
+    "id": "csharp-009",
+    "repo": "garnet",
+    "language": "csharp",
+    "stratum": "behavioral",
+    "difficulty": "hard",
+    "query": "What is the fast-path command parser that recognizes the most common RESP commands before falling back to the slow parser?",
+    "expectedFiles": [
+      "libs/server/Resp/Parser/RespCommand.cs"
+    ],
+    "expectedSymbols": [
+      "FastParseCommand"
+    ],
+    "expectedFacts": [
+      "FastParseCommand in libs/server/Resp/Parser/RespCommand.cs is the fast parse pass invoked first by ParseCommand; if it returns RespCommand.NONE the parser falls back to ArrayParseCommand / the slow path."
+    ],
+    "expectedNoMatch": false,
+    "hard_for_tools": true,
+    "max_turns": 6,
+    "author": "csharp-author",
+    "date": "2026-05-23",
+    "notes": "hard_for_tools: deep parser internals; the surface term 'fast-path parser' is not a class name. Verified: `grep -n \"private RespCommand FastParseCommand(out int count)\" libs/server/Resp/Parser/RespCommand.cs` -> :708. ParseCommand (:2806) calls FastParseCommand first and falls back to ArrayParseCommand when it returns RespCommand.NONE."
+  },
+  {
+    "id": "go-002",
+    "repo": "gin",
+    "language": "go",
+    "stratum": "literal-lookup",
+    "difficulty": "medium",
+    "query": "Which function picks the request binding implementation based on the HTTP method and Content-Type (e.g. returns the JSON binder for application/json POSTs)?",
+    "expectedFiles": [
+      "binding/binding.go",
+      "binding/binding_nomsgpack.go"
+    ],
+    "expectedSymbols": [
+      "Default"
+    ],
+    "expectedFacts": [
+      "binding.Default returns Form for GET, otherwise switches on the content type and returns JSON for MIMEJSON, XML, ProtoBuf, MsgPack, YAML, TOML, etc."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "go-author",
+    "date": "2026-05-23",
+    "notes": "Verified: grep -n 'func Default' binding/binding.go -> binding/binding.go:95. Switches on contentType after a GET->Form short-circuit. Build-tag twin func Default at binding/binding_nomsgpack.go:91 (//go:build nomsgpack) is an accepted-alternative answer (review FIX)."
+  },
+  {
+    "id": "go-010",
+    "repo": "gin",
+    "language": "go",
+    "stratum": "no-match",
+    "difficulty": "easy",
+    "query": "Where is gin's built-in rate-limiting (token-bucket / throttle) middleware implemented?",
+    "expectedFiles": [],
+    "expectedSymbols": [],
+    "expectedFacts": [],
+    "expectedNoMatch": true,
+    "max_turns": 5,
+    "author": "go-author",
+    "date": "2026-05-23",
+    "notes": "Verified absent: grep -rin 'rate.limit|ratelimit|token.bucket|leaky.bucket|throttle|throttling' --include=*.go . -> 1 result, githubapi_test.go:147 which is only a route literal {http.MethodGet, \"/rate_limit\"} in a test fixture, NOT a rate-limiter implementation. gin ships no rate-limiting middleware. Agent must verify the negative, not be fooled by the test route path."
+  },
+  {
+    "id": "go-007",
+    "repo": "gin",
+    "language": "go",
+    "stratum": "multi-file-flow",
+    "difficulty": "hard",
+    "query": "There's a hard cap on how many handlers a route can have in its chain that triggers a 'too many handlers' assertion. Where is the chain merged and what constant bounds its size?",
+    "expectedFiles": [
+      "routergroup.go",
+      "context.go"
+    ],
+    "expectedSymbols": [
+      "combineHandlers",
+      "abortIndex"
+    ],
+    "expectedFacts": [
+      "RouterGroup.combineHandlers asserts the merged handler count is below abortIndex (math.MaxInt8 >> 1 = 63) before copying the group handlers and the route handlers into one chain"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 6,
+    "author": "go-author",
+    "date": "2026-05-23",
+    "notes": "Verified: grep -n 'func (group \\*RouterGroup) combineHandlers' routergroup.go -> routergroup.go:241; assert1(finalSize < int(abortIndex), \"too many handlers\") at routergroup.go:243; grep -n 'abortIndex' context.go -> const abortIndex int8 = math.MaxInt8 >> 1 at context.go:57."
+  },
+  {
+    "id": "java-008",
+    "repo": "gson",
+    "language": "java",
+    "stratum": "no-match",
+    "difficulty": "medium",
+    "query": "Where does Gson implement its YAML document parser for converting YAML input into JsonElement trees?",
+    "expectedFiles": [],
+    "expectedSymbols": [],
+    "expectedFacts": [],
+    "expectedNoMatch": true,
+    "max_turns": 5,
+    "author": "java-author",
+    "date": "2026-05-23",
+    "notes": "Verified no-match: grep -rln 'yaml|YAML|Yaml' gson/src/main -> 0 results (exit 1). Gson is a JSON-only library; it has no YAML parsing support anywhere in src/main."
+  },
+  {
+    "id": "java-007",
+    "repo": "gson",
+    "language": "java",
+    "stratum": "behavioral",
+    "difficulty": "hard",
+    "query": "When a class has no no-args constructor and no registered InstanceCreator, what is Gson's last-resort strategy to instantiate it during deserialization, and under what condition is that strategy refused?",
+    "expectedFiles": [
+      "gson/src/main/java/com/google/gson/internal/ConstructorConstructor.java"
+    ],
+    "expectedSymbols": [
+      "get",
+      "newUnsafeAllocator"
+    ],
+    "expectedFacts": [
+      "ConstructorConstructor.get(typeToken, allowUnsafe) falls through InstanceCreator, special-collection, default-constructor and default-implementation checks and finally calls newUnsafeAllocator(rawType); it refuses Unsafe (returning a ThrowingObjectConstructor) when allowUnsafe is false or the ReflectionAccessFilter result is not ALLOW"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 6,
+    "hard_for_tools": true,
+    "author": "java-author",
+    "date": "2026-05-23",
+    "notes": "grep -n 'public <T> ObjectConstructor<T> get(TypeToken<T> typeToken, boolean allowUnsafe)' gson/src/main/java/com/google/gson/internal/ConstructorConstructor.java -> :103. Body 103-171 verified: fallback chain ends with 'return newUnsafeAllocator(rawType);' at :170; ThrowingObjectConstructor returned when !allowUnsafe and when filterResult != FilterResult.ALLOW. newUnsafeAllocator def at :384. hard_for_tools: answer is the LAST branch of a long fallback method; easy to mis-attribute to newDefaultConstructor."
+  },
+  {
+    "id": "js-002",
+    "repo": "fastify",
+    "language": "javascript",
+    "stratum": "literal-lookup",
+    "difficulty": "easy",
+    "query": "find the definition of getGenReqId",
+    "expectedFiles": [
+      "lib/req-id-gen-factory.js"
+    ],
+    "expectedSymbols": [
+      "getGenReqId"
+    ],
+    "expectedFacts": [
+      "getGenReqId is defined in lib/req-id-gen-factory.js and returns contextServer.genReqId(req)"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "js-author",
+    "date": "2026-05-23",
+    "notes": "grep -n 'function getGenReqId' lib/req-id-gen-factory.js -> lib/req-id-gen-factory.js:24. Body verified lib/req-id-gen-factory.js:24-26 returns contextServer.genReqId(req)."
+  },
+  {
+    "id": "js-003",
+    "repo": "fastify",
+    "language": "javascript",
+    "stratum": "literal-lookup",
+    "difficulty": "medium",
+    "query": "How are unique incoming-request ids generated by default, and what upper bound is enforced on the counter?",
+    "expectedFiles": [
+      "lib/req-id-gen-factory.js"
+    ],
+    "expectedSymbols": [
+      "buildDefaultGenReqId"
+    ],
+    "expectedFacts": [
+      "buildDefaultGenReqId in lib/req-id-gen-factory.js increments a counter masked with the 2^31-1 max SMI value (2147483647) and returns ids of the form req-<base36>"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "js-author",
+    "date": "2026-05-23",
+    "notes": "grep -n 'function buildDefaultGenReqId' lib/req-id-gen-factory.js -> lib/req-id-gen-factory.js:28. Body verified lib/req-id-gen-factory.js:28-41: maxInt = 2147483647, nextReqId = (nextReqId + 1) & maxInt, returns `req-${nextReqId.toString(36)}`."
+  },
+  {
+    "id": "kotlin-001",
+    "repo": "kotlinx.coroutines",
+    "language": "kotlin",
+    "stratum": "literal-lookup",
+    "difficulty": "easy",
+    "query": "Where is the suspend function `coroutineScope` defined that creates a new scope and only returns once all of its child coroutines have completed?",
+    "expectedFiles": [
+      "kotlinx-coroutines-core/common/src/CoroutineScope.kt"
+    ],
+    "expectedSymbols": [
+      "coroutineScope"
+    ],
+    "expectedFacts": [
+      "coroutineScope is declared as `public suspend fun <R> coroutineScope(block: suspend CoroutineScope.() -> R): R` and is implemented via suspendCoroutineUninterceptedOrReturn creating a ScopeCoroutine that calls startUndispatchedOrReturn"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "kotlin-author",
+    "date": "2026-05-23",
+    "hard_for_tools": false,
+    "notes": "grep -n 'public suspend fun <R> coroutineScope' kotlinx-coroutines-core/common/src/CoroutineScope.kt -> CoroutineScope.kt:842. Body (lines 842-850) uses suspendCoroutineUninterceptedOrReturn + ScopeCoroutine + startUndispatchedOrReturn. Note the unrelated `public fun CoroutineScope(context: CoroutineContext)` factory lower in the same file is a different symbol; query anchors on 'suspend function' + 'waits for children'."
+  },
+  {
+    "id": "kotlin-004",
+    "repo": "kotlinx.coroutines",
+    "language": "kotlin",
+    "stratum": "multi-file-flow",
+    "difficulty": "medium",
+    "query": "When I call MutableStateFlow(initialValue), what concrete class backs the returned object, and where does the actual `value` storage live?",
+    "expectedFiles": [
+      "kotlinx-coroutines-core/common/src/flow/StateFlow.kt"
+    ],
+    "expectedSymbols": [
+      "MutableStateFlow",
+      "StateFlowImpl"
+    ],
+    "expectedFacts": [
+      "The `MutableStateFlow(value)` factory function returns `StateFlowImpl(value ?: NULL)`, and StateFlowImpl stores the state in an atomic `_state` field, boxing null as the NULL sentinel"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 6,
+    "author": "kotlin-author",
+    "date": "2026-05-23",
+    "hard_for_tools": false,
+    "notes": "grep -n 'public fun <T> MutableStateFlow' flow/StateFlow.kt -> StateFlow.kt:187 (`= StateFlowImpl(value ?: NULL)`). `private class StateFlowImpl<T>(` at StateFlow.kt:313; `private val _state = atomic(initialState)` at StateFlow.kt:316. Flow: public interface MutableStateFlow (StateFlow.kt:158) -> factory fun (187) -> private impl class (313). All within StateFlow.kt — symbol chain from public API to concrete backing."
+  },
+  {
+    "id": "python-004",
+    "repo": "flask",
+    "language": "python",
+    "stratum": "behavioral",
+    "difficulty": "medium",
+    "query": "When a view calls flash(), where does the message get stored and how is it later retrieved for rendering? Also identify the signal that fires.",
+    "expectedFiles": [
+      "src/flask/helpers.py",
+      "src/flask/signals.py"
+    ],
+    "expectedSymbols": [
+      "flash",
+      "get_flashed_messages",
+      "message_flashed"
+    ],
+    "expectedFacts": [
+      "flash appends (category, message) into the session under the '_flashes' key and sends the message_flashed signal; get_flashed_messages pops '_flashes' from the session (caching on app_ctx._flashes)"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 6,
+    "author": "python-author",
+    "date": "2026-05-23",
+    "notes": "Verified: grep -n '^def flash\\|^def get_flashed_messages' src/flask/helpers.py -> flash@326, get_flashed_messages@360. flash stores session['_flashes'] (helpers.py:349) and calls message_flashed.send (helpers.py:352). Signal: grep -n 'message_flashed = ' src/flask/signals.py -> signals.py:17."
+  },
+  {
+    "id": "python-006",
+    "repo": "flask",
+    "language": "python",
+    "stratum": "literal-lookup",
+    "difficulty": "medium",
+    "query": "Where is the serializer that round-trips non-JSON-native types (UUID, datetime, bytes, tuples) for the session cookie, and what method reverses the tagging?",
+    "expectedFiles": [
+      "src/flask/json/tag.py"
+    ],
+    "expectedSymbols": [
+      "TaggedJSONSerializer",
+      "untag"
+    ],
+    "expectedFacts": [
+      "TaggedJSONSerializer (json/tag.py:219) registers JSONTag subclasses and its untag method (json/tag.py:297) converts a tagged dict back into the original Python value"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "python-author",
+    "date": "2026-05-23",
+    "notes": "Verified: grep -n '^class TaggedJSONSerializer\\|    def untag' src/flask/json/tag.py -> class@219, register@256, untag@297."
+  },
+  {
+    "id": "ruby-003",
+    "repo": "sinatra",
+    "language": "ruby",
+    "stratum": "multi-file-flow",
+    "difficulty": "medium",
+    "query": "In classic top-level Sinatra style, calling get '/' at the file scope works without subclassing. How do those bare get/post calls reach the application class? Trace the delegation.",
+    "expectedFiles": [
+      "lib/sinatra/main.rb",
+      "lib/sinatra/base.rb"
+    ],
+    "expectedSymbols": [
+      "Delegator",
+      "delegate"
+    ],
+    "expectedFacts": [
+      "main.rb does `extend Sinatra::Delegator` (main.rb:52); Delegator.delegate defines forwarding methods (base.rb:2101) that send to Delegator.target, which is set to Application (base.rb:2126)"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 6,
+    "author": "ruby-author",
+    "date": "2026-05-23",
+    "notes": "Verified: grep -n 'extend Sinatra::Delegator' lib/sinatra/main.rb -> main.rb:52. grep -n '^  module Delegator\\|self.target = Application' lib/sinatra/base.rb -> module Delegator@2101, self.target = Application@2126. Delegator.delegate (base.rb:2102) define_method forwards to Delegator.target.send (base.rb:2109)."
+  },
+  {
+    "id": "ruby-006",
+    "repo": "sinatra",
+    "language": "ruby",
+    "stratum": "behavioral",
+    "difficulty": "hard",
+    "query": "When a route sets the response content type, how does Sinatra decide whether to append a charset parameter to the Content-Type header?",
+    "expectedFiles": [
+      "lib/sinatra/base.rb"
+    ],
+    "expectedSymbols": [
+      "content_type"
+    ],
+    "expectedFacts": [
+      "Helpers#content_type (base.rb:384) appends charset (settings.default_encoding) only when params has no :charset, the mime type matches settings.add_charset, and the mime type does not already include 'charset'"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 6,
+    "author": "ruby-author",
+    "date": "2026-05-23",
+    "notes": "Verified: grep -n '^    def content_type' lib/sinatra/base.rb -> base.rb:384. Body checks `unless params.include?(:charset) || settings.add_charset.all? { |p| !(p === mime_type) }` then `params.delete :charset if mime_type.include? 'charset'`."
+  },
+  {
+    "id": "rust-008",
+    "repo": "ripgrep",
+    "language": "rust",
+    "stratum": "behavioral",
+    "difficulty": "medium",
+    "query": "ripgrep has two binary-data strategies: one stops the search, the other replaces the offending byte. Find both constructors and explain the difference in what happens to the matched byte.",
+    "expectedFiles": [
+      "crates/searcher/src/searcher/mod.rs"
+    ],
+    "expectedSymbols": [
+      "BinaryDetection",
+      "quit",
+      "convert"
+    ],
+    "expectedFacts": [
+      "BinaryDetection::quit(byte) makes the search stop when the byte is seen, while BinaryDetection::convert(byte) replaces that byte with the configured line terminator; convert has no effect when the file is searched via a memory map"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 6,
+    "author": "rust-author",
+    "date": "2026-05-23",
+    "hard_for_tools": false,
+    "notes": "grep -n 'pub fn convert(binary_byte' crates/searcher/src/searcher/mod.rs -> mod.rs:95; quit at mod.rs:79. quit -> line_buffer::BinaryDetection::Quit; convert -> Convert (replaces byte with line terminator; 'no effect' under mmap per doc at mod.rs:91-94). quit_byte/convert_byte accessors at mod.rs:102/112."
+  },
+  {
+    "id": "rust-002",
+    "repo": "ripgrep",
+    "language": "rust",
+    "stratum": "literal-lookup",
+    "difficulty": "medium",
+    "query": "Where is the Sink trait defined and what is the signature of the method the searcher calls every time it finds a match?",
+    "expectedFiles": [
+      "crates/searcher/src/sink.rs"
+    ],
+    "expectedSymbols": [
+      "Sink",
+      "matched"
+    ],
+    "expectedFacts": [
+      "The Sink trait declares `fn matched(&mut self, _searcher: &Searcher, _mat: &SinkMatch<'_>) -> Result<bool, Self::Error>`; returning Ok(false) stops the search and Ok(true) continues it"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "rust-author",
+    "date": "2026-05-23",
+    "hard_for_tools": false,
+    "notes": "grep -n 'pub trait Sink {' crates/searcher/src/sink.rs -> sink.rs:102. grep -n 'fn matched(' crates/searcher/src/sink.rs -> sink.rs:124. Signature + return-value semantics confirmed in the doc comment at sink.rs:110-124."
+  },
+  {
+    "id": "rust-006",
+    "repo": "ripgrep",
+    "language": "rust",
+    "stratum": "multi-file-flow",
+    "difficulty": "medium",
+    "query": "How does ripgrep transparently read a compressed file like foo.gz? Find the reader type that shells out to an external decompression program, and the fallback it uses when no matching decompressor is configured.",
+    "expectedFiles": [
+      "crates/cli/src/decompress.rs"
+    ],
+    "expectedSymbols": [
+      "DecompressionReader",
+      "new_passthru"
+    ],
+    "expectedFacts": [
+      "DecompressionReader::new builds via DecompressionReaderBuilder; when no decompression command matches the path it falls back to new_passthru, which opens the file directly (rdr: Err(file)) and reads it without spawning a child process"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 6,
+    "author": "rust-author",
+    "date": "2026-05-23",
+    "hard_for_tools": false,
+    "notes": "grep -n 'pub struct DecompressionReader {' crates/cli/src/decompress.rs -> decompress.rs:332. `new` at decompress.rs:352 delegates to DecompressionReaderBuilder::new().build(path). `new_passthru` at decompress.rs:361 returns DecompressionReader { rdr: Err(file) } (passthru, no child process). Confirmed via sed -n '352,395p'."
+  },
+  {
+    "id": "ts-010",
+    "repo": "ai-chatbot",
+    "language": "typescript",
+    "stratum": "no-match",
+    "difficulty": "medium",
+    "query": "Find the WebSocket transport used to push streaming chat tokens to the browser.",
+    "expectedFiles": [],
+    "expectedSymbols": [],
+    "expectedFacts": [
+      "The ai-chatbot repo does not use WebSockets; streaming is delivered over HTTP via the AI SDK data stream / resumable-stream, so there is no WebSocket transport to find."
+    ],
+    "expectedNoMatch": true,
+    "max_turns": 5,
+    "author": "ts-author",
+    "date": "2026-05-23",
+    "notes": "Verified ABSENT: `rg -ni \"websocket|socket\\.io|new WebSocket\" .` -> 0 results (exit 1). Streaming uses HTTP/data-stream (see getStreamContext / data-stream-provider), not WebSockets. Tempting near-miss is the streaming code, but no WS transport exists."
+  },
+  {
+    "id": "ts-007",
+    "repo": "ai-chatbot",
+    "language": "typescript",
+    "stratum": "behavioral",
+    "difficulty": "medium",
+    "query": "How does the chat API set up resumable streaming so a dropped client can reconnect to an in-progress response?",
+    "expectedFiles": [
+      "app/(chat)/api/chat/route.ts",
+      "lib/db/queries.ts"
+    ],
+    "expectedSymbols": [
+      "getStreamContext",
+      "createStreamId",
+      "createNewResumableStream"
+    ],
+    "expectedFacts": [
+      "getStreamContext wraps createResumableStreamContext({ waitUntil: after }) in a try/catch; when REDIS_URL is set, consumeSseStream generates a stream id, persists it with createStreamId({ streamId, chatId }), then registers the SSE stream with streamContext.createNewResumableStream(streamId, () => sseStream). If Redis/context setup is unavailable, the route skips resumable streaming gracefully."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 6,
+    "author": "ts-author",
+    "date": "2026-05-23",
+    "notes": "Verified: `grep -n \"function getStreamContext\" app/(chat)/api/chat/route.ts` -> :50; `grep -n \"createResumableStreamContext({ waitUntil: after })\" app/(chat)/api/chat/route.ts` -> :52 (returns null in catch). `grep -n \"REDIS_URL\\|createStreamId\\|createNewResumableStream\" app/(chat)/api/chat/route.ts` -> REDIS_URL guard :306, createStreamId :313, createNewResumableStream :314. `grep -n \"export async function createStreamId\" lib/db/queries.ts` -> :597."
+  },
+  {
+    "id": "js-001",
+    "repo": "fastify",
+    "language": "javascript",
+    "stratum": "literal-lookup",
+    "difficulty": "easy",
+    "query": "Where is the handleError function that drives Fastify's error-handling pipeline defined?",
+    "expectedFiles": [
+      "lib/error-handler.js"
+    ],
+    "expectedSymbols": [
+      "handleError"
+    ],
+    "expectedFacts": [
+      "handleError is defined in lib/error-handler.js and resolves the active error handler from reply[kReplyNextErrorHandler] or the route context, falling back to fallbackErrorHandler when there is no handler func"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "js-author",
+    "date": "2026-05-23",
+    "notes": "grep -n '^function handleError' lib/error-handler.js -> lib/error-handler.js:30. Body verified lib/error-handler.js:30-66 (falls back to fallbackErrorHandler when errorHandler.func is missing). Exported at lib/error-handler.js:172."
+  },
+  {
+    "id": "python-002",
+    "repo": "flask",
+    "language": "python",
+    "stratum": "literal-lookup",
+    "difficulty": "medium",
+    "query": "Find the helper that serializes its arguments to JSON and returns a Response with the application/json mimetype.",
+    "expectedFiles": [
+      "src/flask/json/__init__.py"
+    ],
+    "expectedSymbols": [
+      "jsonify"
+    ],
+    "expectedFacts": [
+      "jsonify is defined in src/flask/json/__init__.py and delegates to current_app.json.response() to build a Response with the application/json mimetype"
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "python-author",
+    "date": "2026-05-23",
+    "notes": "Verified: grep -n '^def jsonify' src/flask/json/__init__.py -> json/__init__.py:138. Docstring states it calls app.json.response()."
+  },
+  {
+    "id": "ts-006",
+    "repo": "ai-chatbot",
+    "language": "typescript",
+    "stratum": "multi-file-flow",
+    "difficulty": "hard",
+    "query": "How does the chat POST route enforce the hourly message rate limit and what response does it return when the limit is exceeded?",
+    "expectedFiles": [
+      "app/(chat)/api/chat/route.ts",
+      "lib/db/queries.ts"
+    ],
+    "expectedSymbols": [
+      "getMessageCountByUserId",
+      "entitlementsByUserType"
+    ],
+    "expectedFacts": [
+      "The chat route compares getMessageCountByUserId (over the last hour) against entitlementsByUserType[userType].maxMessagesPerHour and returns new ChatbotError('rate_limit:chat').toResponse() when exceeded."
+    ],
+    "expectedNoMatch": false,
+    "hard_for_tools": true,
+    "max_turns": 6,
+    "author": "ts-author",
+    "date": "2026-05-23",
+    "notes": "hard_for_tools: gold exists but spans route + db query + entitlements + error class. Verified: `grep -n \"entitlementsByUserType\\[userType\\].maxMessagesPerHour\" app/(chat)/api/chat/route.ts` -> :96 (then :97 returns new ChatbotError(\"rate_limit:chat\").toResponse()). `grep -n \"export async function getMessageCountByUserId\" lib/db/queries.ts` -> lib/db/queries.ts:563 (filters role='user', createdAt >= cutoff over differenceInHours)."
+  },
+  {
+    "id": "c-v60-01",
+    "repo": "hiredis",
+    "language": "C",
+    "stratum": "behavioral",
+    "difficulty": "medium",
+    "query": "How does the sds dynamic string decide how much to grow its buffer when more space is needed during an append?",
+    "expectedFiles": [
+      "sds.c",
+      "sds.h"
+    ],
+    "expectedSymbols": [
+      "sdsMakeRoomFor",
+      "SDS_MAX_PREALLOC"
+    ],
+    "expectedFacts": [
+      "sdsMakeRoomFor in sds.c returns early if the existing free space already covers addlen; otherwise it computes newlen = len + addlen and applies a greedy growth policy: if newlen is below SDS_MAX_PREALLOC (1024*1024, defined in sds.h) it doubles newlen, and once at or above that threshold it instead adds SDS_MAX_PREALLOC, then reallocates the header/buffer."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 5,
+    "author": "c-author",
+    "date": "2026-06-01",
+    "notes": "Verified: sds.c:197 `sds sdsMakeRoomFor(sds s, size_t addlen)`; sds.c:205 early-return when avail>=addlen; sds.c:209 reqlen=newlen=(len+addlen); sds.c:211-214 `if (newlen < SDS_MAX_PREALLOC) newlen *= 2; else newlen += SDS_MAX_PREALLOC;`. sds.h:36 `#define SDS_MAX_PREALLOC (1024*1024)`. Distinct from existing langtransfer hiredis probes (redisReply, redisCallbackFn, redisProcessCallbacks flow, redisvFormatCommand)."
+  },
+  {
+    "id": "c-v60-02",
+    "repo": "hiredis",
+    "language": "C",
+    "stratum": "multi-file-flow",
+    "difficulty": "medium",
+    "query": "When I call redisConnect(ip, port), where does the actual TCP/Unix socket connection get established? Trace from the public connect entry point to the function that opens the socket.",
+    "expectedFiles": [
+      "hiredis.c",
+      "net.c"
+    ],
+    "expectedSymbols": [
+      "redisConnect",
+      "redisConnectWithOptions",
+      "redisContextConnectBindTcp",
+      "redisContextConnectUnix"
+    ],
+    "expectedFacts": [
+      "redisConnect in hiredis.c fills a redisOptions via the REDIS_OPTIONS_SET_TCP macro and delegates to redisConnectWithOptions; redisConnectWithOptions initializes the context and dispatches on options->type, calling redisContextConnectBindTcp (for REDIS_CONN_TCP) or redisContextConnectUnix (for REDIS_CONN_UNIX), both of which are defined in net.c and perform the actual socket connect."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 7,
+    "author": "c-author",
+    "date": "2026-06-01",
+    "notes": "Verified: hiredis.c:885 `redisContext *redisConnect(const char *ip, int port)` -> REDIS_OPTIONS_SET_TCP then `return redisConnectWithOptions(&options);`. hiredis.c:815 redisConnectWithOptions; hiredis.c:858-864 dispatch `if (options->type == REDIS_CONN_TCP) redisContextConnectBindTcp(...) else if (REDIS_CONN_UNIX) redisContextConnectUnix(...)`. net.c:642 `int redisContextConnectBindTcp(...)`, net.c:648 `int redisContextConnectUnix(...)` (declared net.h:47/50). Distinct from existing c-ood-03 which traces the async reply-getter path (redisProcessCallbacks/redisGetReply), not the connect path."
+  },
+  {
+    "id": "c-v60-03",
+    "repo": "hiredis",
+    "language": "C",
+    "stratum": "no-match",
+    "difficulty": "medium",
+    "query": "Where is hiredis's built-in connection pool that hands out and reuses idle redisContext connections across threads (checkout/release with a configurable max pool size)?",
+    "expectedFiles": [],
+    "expectedSymbols": [],
+    "expectedFacts": [],
+    "expectedNoMatch": true,
+    "max_turns": 4,
+    "author": "c-author",
+    "date": "2026-06-01",
+    "notes": "ABSENCE VERIFIED: hiredis is a single-connection client; each redisContext is one connection with no pooling layer. `grep -rniE 'pool|checkout|borrow|idle.?conn|max.?connections|min.?idle' *.c *.h` -> 1 hit only: hiredis.c:305 comment 'Implementation borrowed from ... util.c:string2ll()' (the word 'borrowed', unrelated to connection pooling). `grep -rniwE 'pool' *.c *.h` -> 0 hits. No connection-pool API (no getConnection/releaseConnection/poolSize/redisPool) exists. Different absent feature from existing c-ood-05 (Redis Cluster slot routing / CRC16 / MOVED-ASK)."
+  },
+  {
+    "id": "dart-v60-01",
+    "repo": "http",
+    "language": "Dart",
+    "stratum": "literal-lookup",
+    "difficulty": "easy",
+    "query": "Where is the list of character codes that are allowed inside a multipart/form-data boundary string defined?",
+    "expectedFiles": [
+      "pkgs/http/lib/src/boundary_characters.dart"
+    ],
+    "expectedSymbols": [
+      "boundaryCharacters"
+    ],
+    "expectedFacts": [
+      "boundaryCharacters in pkgs/http/lib/src/boundary_characters.dart is a top-level `const List<int>` of the ASCII character codes valid in a multipart boundary (the intersection of RFC 2046 bcharsnospace and RFC 1521 token productions), e.g. 43 ('+'), 95 ('_'), 45 ('-'), 46 ('.'), the digits 48-57, and the letters 65-90 and 97-122."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "dart-author",
+    "date": "2026-06-01",
+    "notes": "Verified: pkgs/http/lib/src/boundary_characters.dart:13 `const List<int> boundaryCharacters = <int>[` with entries 43,95,45,46,48..57,65..90,97..122. Doc comment cites RFC 2046 bcharsnospace + RFC 1521 token. Distinct from existing dart-ood-01/02 (ClientException, MultipartFile.fromBytes)."
+  },
+  {
+    "id": "dart-v60-02",
+    "repo": "http",
+    "language": "Dart",
+    "stratum": "multi-file-flow",
+    "difficulty": "hard",
+    "query": "When I just call Client() with the default constructor, how is the concrete platform implementation chosen, and what happens if no_default_http_client is set?",
+    "expectedFiles": [
+      "pkgs/http/lib/src/client.dart",
+      "pkgs/http/lib/src/io_client.dart",
+      "pkgs/http/lib/src/client_stub.dart"
+    ],
+    "expectedSymbols": [
+      "Client",
+      "createClient",
+      "zoneClient"
+    ],
+    "expectedFacts": [
+      "The `factory Client()` in client.dart returns `zoneClient ?? createClient()`, where createClient comes from a conditional import (client_stub.dart, replaced by io_client.dart when dart.library.io is available or browser_client.dart when dart.library.js_interop is available); the io_client.dart createClient returns an IOClient but throws a StateError if the no_default_http_client environment constant is true, while the client_stub.dart fallback createClient just throws UnsupportedError."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 8,
+    "author": "dart-author",
+    "date": "2026-06-01",
+    "notes": "Verified: client.dart:42 `factory Client() => zoneClient ?? createClient();`; client.dart:14-16 conditional import `import 'client_stub.dart' if (dart.library.js_interop) 'browser_client.dart' if (dart.library.io) 'io_client.dart';`; client.dart:171 `Client? get zoneClient`. io_client.dart:14 `BaseClient createClient() {` with io_client.dart:15-16 `if (const bool.fromEnvironment('no_default_http_client')) throw StateError(...)` then returns IOClient(). client_stub.dart:8 `BaseClient createClient() => throw UnsupportedError(...)`. Distinct from existing dart-ood-03 which traces http.read -> _withClient -> _checkResponseSuccess, not the Client() factory / conditional-import resolution."
+  },
+  {
+    "id": "elixir-v60-01",
+    "repo": "jason",
+    "language": "Elixir",
+    "stratum": "literal-lookup",
+    "difficulty": "medium",
+    "query": "Which struct represents a JSON object that preserves the insertion order of its keys, and how does it support bracket-style key access?",
+    "expectedFiles": [
+      "lib/ordered_object.ex"
+    ],
+    "expectedSymbols": [
+      "Jason.OrderedObject"
+    ],
+    "expectedFacts": [
+      "Jason.OrderedObject in lib/ordered_object.ex is a `defstruct values: []` wrapper around an ordered key/value list that declares `@behaviour Access` and implements fetch/2, get_and_update/3, and pop/3 (looking keys up with :lists.keyfind), which is what lets it support Access bracket-style key access while retaining property order."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "elixir-author",
+    "date": "2026-06-01",
+    "notes": "Verified: lib/ordered_object.ex:1 `defmodule Jason.OrderedObject do`; :12 `@behaviour Access`; :16 `defstruct values: []`; :35 `def fetch(%__MODULE__{values: values}, key)` using :lists.keyfind; :43 `def get_and_update`; :49 `def pop`. Also implements Enumerable and Jason.Encoder protocols at the bottom. Distinct from existing elixir-ood-01/02 (Jason.DecodeError, Jason.Formatter.pretty_print)."
+  },
+  {
+    "id": "elixir-v60-02",
+    "repo": "jason",
+    "language": "Elixir",
+    "stratum": "behavioral",
+    "difficulty": "hard",
+    "query": "When encoding with the strict maps option, how does Jason detect and reject a map that would produce two identical JSON keys?",
+    "expectedFiles": [
+      "lib/encode.ex"
+    ],
+    "expectedSymbols": [
+      "map_strict",
+      "map_strict_loop"
+    ],
+    "expectedFacts": [
+      "With maps: :strict, encode_map_function selects map_strict/3, which seeds a `visited` map with the first encoded key and then map_strict_loop/4 iterates the remaining pairs; for each pair it encodes the key to a binary and, if that key already exists in `visited`, calls error({:duplicate_key, key}) (which throws a Jason.EncodeError with message \"duplicate key: <key>\"), otherwise records it in `visited` and continues."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 5,
+    "author": "elixir-author",
+    "date": "2026-06-01",
+    "notes": "Verified: lib/encode.ex:46-50 encode_map_function picks `:strict -> &map_strict/3`; :202 `defp map_strict([{key, value} | tail], ...)` builds `visited = %{key => []}`; :214 `defp map_strict_loop([{key, value} | tail], escape, encode_map, visited)` -> :216-218 `case visited do %{^key => _} -> error({:duplicate_key, key})`. EncodeError.new({:duplicate_key, key}) (encode.ex:6-8) message is \"duplicate key: #{key}\". Distinct from existing elixir-ood-03/04 (decode->parse flow, sigil_j)."
+  },
+  {
+    "id": "lua-v60-01",
+    "repo": "Penlight",
+    "language": "Lua",
+    "stratum": "literal-lookup",
+    "difficulty": "easy",
+    "query": "Which Penlight string function replaces tab characters with spaces, and what is the default tab size it uses?",
+    "expectedFiles": [
+      "lua/pl/stringx.lua"
+    ],
+    "expectedSymbols": [
+      "stringx.expandtabs"
+    ],
+    "expectedFacts": [
+      "stringx.expandtabs(s, tabsize) in lua/pl/stringx.lua replaces tabs in s with spaces honoring tab stops, defaulting tabsize to 8 when not given (`tabsize = tabsize or 8`); it gsubs each `([^\\t\\r\\n]*)\\t` run and pads with `(' '):rep(tabsize - #before_tab % tabsize)` (a tabsize of 0 simply strips the tabs)."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "lua-author",
+    "date": "2026-06-01",
+    "notes": "Verified: lua/pl/stringx.lua:216 `function stringx.expandtabs(s,tabsize)`; :218 `tabsize = tabsize or 8`; :219-224 gsub `([^\\t\\r\\n]*)\\t` -> `before_tab .. (' '):rep(tabsize - #before_tab % tabsize)`, with `if tabsize == 0 then return before_tab`. Distinct from existing lua-ood-01 (stringx.isalpha)."
+  },
+  {
+    "id": "lua-v60-02",
+    "repo": "Penlight",
+    "language": "Lua",
+    "stratum": "behavioral",
+    "difficulty": "medium",
+    "query": "How can I register a custom value type for Penlight's Lapp command-line parser so it appears in parentheses like '<pid> (integer)', and where is that registration stored?",
+    "expectedFiles": [
+      "lua/pl/lapp.lua"
+    ],
+    "expectedSymbols": [
+      "lapp.add_type"
+    ],
+    "expectedFacts": [
+      "lapp.add_type(name, converter, constraint) in lua/pl/lapp.lua registers a new Lapp parameter type by storing `types[name] = {converter=converter, constraint=constraint}` into the module-local `types` table (declared `local types = {}`); converter is either a function or a Lua type name and the optional constraint validates values (and should call lapp.error on failure)."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 5,
+    "author": "lua-author",
+    "date": "2026-06-01",
+    "notes": "Verified: lua/pl/lapp.lua:137 `function lapp.add_type (name,converter,constraint)`; :138 `types[name] = {converter=converter,constraint=constraint}`. The `types` table is declared at lua/pl/lapp.lua:110 `local types = {}` (builtin_types separately at :112). Doc comment :131-136 describes the '(integer)'-style parenthesized type. Distinct from existing lua-ood-04 (class system _class)."
+  },
+  {
+    "id": "lua-v60-03",
+    "repo": "Penlight",
+    "language": "Lua",
+    "stratum": "no-match",
+    "difficulty": "medium",
+    "query": "Where does Penlight provide an async event-loop / coroutine scheduler for running tasks concurrently (spawn/await on promises or futures)?",
+    "expectedFiles": [],
+    "expectedSymbols": [],
+    "expectedFacts": [],
+    "expectedNoMatch": true,
+    "max_turns": 4,
+    "author": "lua-author",
+    "date": "2026-06-01",
+    "notes": "ABSENCE VERIFIED: Penlight is a synchronous general-purpose stdlib (tables, strings, classes, files, dates) with no concurrency runtime. `grep -rniE 'coroutine|scheduler|\\basync\\b|await|event.?loop|promise|future' lua/pl/*.lua` -> 2 hits, both the word 'future' in prose comments (text.lua:7 'removed in a future', xml.lua:291 'future optimizations'); `grep -rni 'coroutine' lua/ examples/` -> 0 hits. No spawn/await/scheduler/event-loop API exists. Different absent feature from existing lua-ood-05 (JSON parse/serialize)."
+  },
+  {
+    "id": "php-v60-01",
+    "repo": "Slim",
+    "language": "PHP",
+    "stratum": "literal-lookup",
+    "difficulty": "easy",
+    "query": "What is the current framework version constant declared on the Slim App class?",
+    "expectedFiles": [
+      "Slim/App.php"
+    ],
+    "expectedSymbols": [
+      "VERSION"
+    ],
+    "expectedFacts": [
+      "Slim\\App declares `public const VERSION = '4.15.1';` as the current framework version."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "ood2-author",
+    "date": "2026-06-01",
+    "notes": "Verified: grep -n 'const VERSION' Slim/App.php -> Slim/App.php:46 -> public const VERSION = '4.15.1';"
+  },
+  {
+    "id": "php-v60-02",
+    "repo": "Slim",
+    "language": "PHP",
+    "stratum": "behavioral",
+    "difficulty": "medium",
+    "query": "How does Slim let a client override the HTTP method of a POST request, e.g. via a header or a form field?",
+    "expectedFiles": [
+      "Slim/Middleware/MethodOverrideMiddleware.php"
+    ],
+    "expectedSymbols": [
+      "MethodOverrideMiddleware"
+    ],
+    "expectedFacts": [
+      "MethodOverrideMiddleware::process reads the X-Http-Method-Override header (and falls back to the _METHOD field of a parsed POST body) and rewrites the request method via withMethod before delegating to the handler."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 5,
+    "author": "ood2-author",
+    "date": "2026-06-01",
+    "notes": "Verified: Slim/Middleware/MethodOverrideMiddleware.php:26 reads getHeaderLine('X-Http-Method-Override'); lines 30-35 handle POST + $body['_METHOD']. Single process() method implements the behavior."
+  },
+  {
+    "id": "php-v60-03",
+    "repo": "Slim",
+    "language": "PHP",
+    "stratum": "no-match",
+    "difficulty": "medium",
+    "query": "Where is Slim's built-in CSRF protection middleware that generates and validates anti-forgery tokens?",
+    "expectedFiles": [],
+    "expectedSymbols": [],
+    "expectedFacts": [
+      "Slim 4 core ships no CSRF protection; there is no CSRF token generation or validation middleware anywhere in the Slim/ source tree (CSRF is provided only by the optional slim/csrf add-on package)."
+    ],
+    "expectedNoMatch": true,
+    "max_turns": 4,
+    "author": "ood2-author",
+    "date": "2026-06-01",
+    "notes": "Verified absent: grep -ri 'csrf' Slim/ -> 0 results. Also grep for 'token'/'anti-forgery' in Slim/Middleware -> none. CSRF lives in the separate slim/csrf package, not in this core repo."
+  },
+  {
+    "id": "scala-v60-01",
+    "repo": "requests-scala",
+    "language": "Scala",
+    "stratum": "literal-lookup",
+    "difficulty": "easy",
+    "query": "Is there a set listing the official HTTP method verbs the requester recognizes?",
+    "expectedFiles": [
+      "requests/src/requests/Requester.scala"
+    ],
+    "expectedSymbols": [
+      "officialHttpMethods"
+    ],
+    "expectedFacts": [
+      "The Requester companion object defines `val officialHttpMethods = Set(\"GET\", \"POST\", \"HEAD\", \"OPTIONS\", \"PUT\", \"DELETE\", \"TRACE\")`."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "ood2-author",
+    "date": "2026-06-01",
+    "notes": "Verified: grep -n 'officialHttpMethods' requests/src/requests/Requester.scala -> line 145, inside `object Requester`."
+  },
+  {
+    "id": "scala-v60-02",
+    "repo": "requests-scala",
+    "language": "Scala",
+    "stratum": "behavioral",
+    "difficulty": "medium",
+    "query": "How does requests-scala skip SSL certificate verification when verifySslCerts is set to false?",
+    "expectedFiles": [
+      "requests/src/requests/Util.scala"
+    ],
+    "expectedSymbols": [
+      "noVerifySSLContext"
+    ],
+    "expectedFacts": [
+      "Util.noVerifySSLContext builds an SSLContext initialized with an all-trusting X509TrustManager (trustAllCerts) whose checkClientTrusted/checkServerTrusted do nothing, which is used when verifySslCerts is false."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 5,
+    "author": "ood2-author",
+    "date": "2026-06-01",
+    "notes": "Verified: Util.scala:32 noVerifySSLContext initializes SSLContext with trustAllCerts (Util.scala:74) — an X509TrustManager with empty checkClient/ServerTrusted. Consumed in Requester.scala BaseSession.buildHttpClient (line 97) when !verifySslCerts."
+  },
+  {
+    "id": "scala-v60-03",
+    "repo": "requests-scala",
+    "language": "Scala",
+    "stratum": "multi-file-flow",
+    "difficulty": "hard",
+    "query": "When the server returns a 3xx redirect, how does the client follow it, and where does the resulting Response get its statusMessage text?",
+    "expectedFiles": [
+      "requests/src/requests/Requester.scala",
+      "requests/src/requests/StatusMessages.scala"
+    ],
+    "expectedSymbols": [
+      "stream",
+      "byStatusCode"
+    ],
+    "expectedFacts": [
+      "Requester.stream detects a 3xx (excluding 304) status with maxRedirects>0, reads the Location header, and recursively calls stream with maxRedirects-1; each Response's statusMessage is looked up from StatusMessages.byStatusCode keyed by the numeric status code."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 7,
+    "author": "ood2-author",
+    "date": "2026-06-01",
+    "notes": "Verified: Requester.scala:421-463 the redirect branch (responseCode startsWith '3' && != '304' && maxRedirects>0) reads headers('location') and recurses into stream(..., maxRedirects = maxRedirects - 1). statusMessage = StatusMessages.byStatusCode.getOrElse(responseCode, '') at lines 433 & 469. byStatusCode Map defined in StatusMessages.scala:4."
+  },
+  {
+    "id": "swift-v60-01",
+    "repo": "Alamofire",
+    "language": "Swift",
+    "stratum": "multi-file-flow",
+    "difficulty": "hard",
+    "query": "How does Alamofire automatically retry a failed request with exponential backoff, and where is the per-request retry counter tracked?",
+    "expectedFiles": [
+      "Source/Features/RetryPolicy.swift",
+      "Source/Core/Session.swift",
+      "Source/Core/Request.swift"
+    ],
+    "expectedSymbols": [
+      "RetryPolicy",
+      "retryRequest",
+      "retryCount"
+    ],
+    "expectedFacts": [
+      "RetryPolicy.retry returns .retryWithDelay(pow(base, retryCount) * scale) while request.retryCount < retryLimit; Session.retryResult invokes the retrier and Session.retryRequest re-performs the request after the delay, calling Request.prepareForRetry() which increments Request.retryCount."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 8,
+    "author": "ood2-author",
+    "date": "2026-06-01",
+    "notes": "Verified: RetryPolicy.swift:308-317 computes pow(exponentialBackoffBase, retryCount)*exponentialBackoffScale (defaultRetryLimit=2, base=2, scale=0.5). Session.swift:1349 retryResult -> retrier.retry; Session.swift:1365 retryRequest -> request.prepareForRetry()+perform. Request.swift:255 retryCount getter, :532 increments retryCount."
+  },
+  {
+    "id": "swift-v60-02",
+    "repo": "Alamofire",
+    "language": "Swift",
+    "stratum": "behavioral",
+    "difficulty": "medium",
+    "query": "How can I get the equivalent curl command string for a request to use for debugging?",
+    "expectedFiles": [
+      "Source/Core/Request.swift"
+    ],
+    "expectedSymbols": [
+      "cURLDescription"
+    ],
+    "expectedFacts": [
+      "Request.cURLDescription() builds and returns a curl command string starting with \"$ curl -v\", appending -X <method>, headers, credentials, and body from the request's lastRequest."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 5,
+    "author": "ood2-author",
+    "date": "2026-06-01",
+    "notes": "Verified: Request.swift:1179 func cURLDescription() -> String; line 1186 var components = [\"$ curl -v\"]; line 1188 appends -X <method>. Closure-based overloads at :909 and :931 also exist but the builder is the parameterless cURLDescription()."
+  },
+  {
+    "id": "zig-v60-01",
+    "repo": "http.zig",
+    "language": "Zig",
+    "stratum": "literal-lookup",
+    "difficulty": "medium",
+    "query": "Where are the Prometheus-style server counters like httpz_requests and httpz_connections defined and written out?",
+    "expectedFiles": [
+      "src/metrics.zig"
+    ],
+    "expectedSymbols": [
+      "write"
+    ],
+    "expectedFacts": [
+      "metrics.zig declares a comptime Metrics struct of counters named httpz_connections, httpz_requests, httpz_timeout_request, etc., and the public write(writer) function serializes every counter to the given writer."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3,
+    "author": "ood2-author",
+    "date": "2026-06-01",
+    "notes": "Verified: src/metrics.zig:6-18 initializes counters with names 'httpz_connections','httpz_requests','httpz_timeout_request',... ; pub fn write(writer) at line 59 writes each counter."
+  },
+  {
+    "id": "zig-v60-02",
+    "repo": "http.zig",
+    "language": "Zig",
+    "stratum": "no-match",
+    "difficulty": "medium",
+    "query": "How do I configure http.zig to serve over HTTPS with a TLS certificate and private key?",
+    "expectedFiles": [],
+    "expectedSymbols": [],
+    "expectedFacts": [
+      "http.zig has no built-in TLS/HTTPS support; there is no SSL/TLS context, certificate, or key configuration in the source — TLS is expected to be terminated by an upstream reverse proxy."
+    ],
+    "expectedNoMatch": true,
+    "max_turns": 4,
+    "author": "ood2-author",
+    "date": "2026-06-01",
+    "notes": "Verified absent: grep -rin 'tls|ssl|certificate|x509' src/ -> only Windows ioctlsocket calls in posix.zig and 'https://' strings in test data/URLs, no TLS implementation. config.zig (Config struct, lines 10-101) has no cert/key/tls fields. Server is plain HTTP/1.1."
+  },
+  {
+    "id": "cpp-v60-01",
+    "repo": "highway",
+    "language": "cpp",
+    "stratum": "behavioral",
+    "difficulty": "hard",
+    "query": "Highway has a robust mode estimator that repeatedly narrows down the densest interval of a sorted array instead of using the median. Where is that half-sample mode estimator implemented?",
+    "expectedFiles": [
+      "hwy/robust_statistics.h"
+    ],
+    "expectedSymbols": [
+      "ModeOfSorted"
+    ],
+    "expectedFacts": [
+      "ModeOfSorted in hwy/robust_statistics.h (namespace hwy::robust_statistics) implements Bickel's Half Sample Mode estimator: it repeatedly calls MinRange on successively halved intervals (half_count >>= 1) to find the densest sub-interval, then returns that value (or the average of the final two)."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 5
+  },
+  {
+    "id": "cpp-v60-02",
+    "repo": "highway",
+    "language": "cpp",
+    "stratum": "literal-lookup",
+    "difficulty": "medium",
+    "query": "Find the function in Highway that computes the median absolute deviation (MAD) as a robust measure of variability.",
+    "expectedFiles": [
+      "hwy/robust_statistics.h"
+    ],
+    "expectedSymbols": [
+      "MedianAbsoluteDeviation"
+    ],
+    "expectedFacts": [
+      "MedianAbsoluteDeviation is defined in hwy/robust_statistics.h; it builds a vector of absolute deviations of each value from the given median and returns the Median of those deviations."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3
+  },
+  {
+    "id": "csharp-v60-01",
+    "repo": "garnet",
+    "language": "csharp",
+    "stratum": "behavioral",
+    "difficulty": "hard",
+    "query": "In Garnet's cluster code, how is a key mapped to a hash slot, and how does it honor Redis hash tags so that {user1000} keys land in the same slot?",
+    "expectedFiles": [
+      "libs/common/HashSlotUtils.cs"
+    ],
+    "expectedSymbols": [
+      "HashSlot"
+    ],
+    "expectedFacts": [
+      "HashSlotUtils.HashSlot (libs/common/HashSlotUtils.cs) implements Redis Cluster hash-tag semantics: it scans for the first '{' and the next '}', and if a non-empty substring exists between them it computes the CRC16 Hash over only that substring (masked with MaxHashSlot=16383); otherwise it hashes the whole key."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 5
+  },
+  {
+    "id": "java-v60-01",
+    "repo": "gson",
+    "language": "java",
+    "stratum": "multi-file-flow",
+    "difficulty": "hard",
+    "query": "When Gson serializes a field declared as a base type but holding a subclass instance, how does it decide whether to use the adapter for the runtime type or the declared type?",
+    "expectedFiles": [
+      "gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java",
+      "gson/src/main/java/com/google/gson/internal/bind/ReflectiveTypeAdapterFactory.java",
+      "gson/src/main/java/com/google/gson/Gson.java"
+    ],
+    "expectedSymbols": [
+      "TypeAdapterRuntimeTypeWrapper",
+      "getAdapter"
+    ],
+    "expectedFacts": [
+      "TypeAdapterRuntimeTypeWrapper.write (internal/bind/TypeAdapterRuntimeTypeWrapper.java) applies a 4-tier preference: a user adapter for the runtime type beats one for the declared type, which beats a reflective adapter for the runtime type, which beats the reflective adapter for the declared type; it resolves the runtime adapter via Gson.getAdapter and treats ReflectiveTypeAdapterFactory.Adapter specially via isReflective()."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 7
+  },
+  {
+    "id": "java-v60-02",
+    "repo": "gson",
+    "language": "java",
+    "stratum": "no-match",
+    "difficulty": "medium",
+    "query": "Where does Gson implement its XML reader/writer for converting Java objects to and from XML documents?",
+    "expectedFiles": [],
+    "expectedSymbols": [],
+    "expectedFacts": [
+      "Gson is a JSON-only library; the source tree under src/main/java has no XML parser/serializer (no XmlReader/XmlWriter/toXml). The only mentions of XML are doc comments in JsonWriter about escaping JSON to be safe for inclusion in HTML/XML documents."
+    ],
+    "expectedNoMatch": true,
+    "max_turns": 4
+  },
+  {
+    "id": "kotlin-v60-01",
+    "repo": "kotlinx.coroutines",
+    "language": "kotlin",
+    "stratum": "literal-lookup",
+    "difficulty": "medium",
+    "query": "Find the internal helper coroutine that produces a fixed-period ticker channel (an initial delay then repeatedly sends a Unit on a fixed interval) used by the sample Flow operator.",
+    "expectedFiles": [
+      "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt"
+    ],
+    "expectedSymbols": [
+      "fixedPeriodTicker"
+    ],
+    "expectedFacts": [
+      "fixedPeriodTicker (CoroutineScope extension in flow/operators/Delay.kt) returns a ReceiveChannel<Unit> from a produce block that delays delayMillis, then loops forever sending Unit and delaying again; it is consumed by the sample operator via ticker.onReceive in a select."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3
+  },
+  {
+    "id": "kotlin-v60-02",
+    "repo": "kotlinx.coroutines",
+    "language": "kotlin",
+    "stratum": "behavioral",
+    "difficulty": "hard",
+    "query": "For SharingStarted.WhileSubscribed, what exact sequence of sharing commands is emitted when the subscriber count drops to zero, including how stopTimeout and replayExpiration are applied?",
+    "expectedFiles": [
+      "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt"
+    ],
+    "expectedSymbols": [
+      "StartedWhileSubscribed"
+    ],
+    "expectedFacts": [
+      "StartedWhileSubscribed.command (flow/SharingStarted.kt) transformLatest over subscriptionCount: when count>0 it emits START; when it hits 0 it delays stopTimeout, then (if replayExpiration>0) emits STOP and delays replayExpiration, then emits STOP_AND_RESET_REPLAY_CACHE; the stream is dropWhile{!=START} and distinctUntilChanged."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 5
+  },
+  {
+    "id": "ruby-v60-01",
+    "repo": "sinatra",
+    "language": "ruby",
+    "stratum": "behavioral",
+    "difficulty": "medium",
+    "query": "How does Sinatra's etag helper support weak versus strong validators, and when does it halt the request on a conditional GET?",
+    "expectedFiles": [
+      "lib/sinatra/base.rb"
+    ],
+    "expectedSymbols": [
+      "etag"
+    ],
+    "expectedFacts": [
+      "Sinatra::Helpers#etag (lib/sinatra/base.rb) validates the :kind option against ETAG_KINDS (:strong/:weak), quotes the value and prefixes it with 'W/' for a weak etag; on a matching If-None-Match it halts 304 for a safe request else 412, and on If-Match it halts 412 when there is no match."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 5
+  },
+  {
+    "id": "go-v60-01",
+    "repo": "gin",
+    "language": "go",
+    "stratum": "literal-lookup",
+    "difficulty": "medium",
+    "query": "Where does gin do the zero-allocation conversion between a string and a byte slice using the unsafe package?",
+    "expectedFiles": [
+      "internal/bytesconv/bytesconv.go"
+    ],
+    "expectedSymbols": [
+      "StringToBytes",
+      "BytesToString"
+    ],
+    "expectedFacts": [
+      "internal/bytesconv/bytesconv.go defines StringToBytes (unsafe.Slice(unsafe.StringData(s), len(s))) and BytesToString (unsafe.String(unsafe.SliceData(b), len(b))) for converting between string and []byte without a memory allocation."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3
+  },
+  {
+    "id": "go-v60-02",
+    "repo": "gin",
+    "language": "go",
+    "stratum": "multi-file-flow",
+    "difficulty": "hard",
+    "query": "When I serve a static directory with gin's Static, how does it prevent directory listing while still serving files, and where is that wired up?",
+    "expectedFiles": [
+      "routergroup.go",
+      "fs.go"
+    ],
+    "expectedSymbols": [
+      "StaticFS",
+      "createStaticHandler",
+      "OnlyFilesFS",
+      "neutralizedReaddirFile"
+    ],
+    "expectedFacts": [
+      "RouterGroup.Static calls StaticFS with Dir(root,false), which returns an OnlyFilesFS (fs.go) whose Open wraps files in neutralizedReaddirFile (Readdir returns nil,nil to disable listing); createStaticHandler (routergroup.go) registers the handler on '/*filepath' for GET+HEAD and returns 404 when the filesystem is *OnlyFilesFS."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 7
+  },
+  {
+    "id": "javascript-v60-01",
+    "repo": "fastify",
+    "language": "javascript",
+    "stratum": "multi-file-flow",
+    "difficulty": "medium",
+    "query": "How does fastify.inject simulate an HTTP request without a real socket, and how does it ensure the server is booted first?",
+    "expectedFiles": [
+      "fastify.js"
+    ],
+    "expectedSymbols": [
+      "inject"
+    ],
+    "expectedFacts": [
+      "The inject function in fastify.js lazily require()s 'light-my-request' (deferred because of Ajv cost) and passes the server's httpHandler to it; if the server is not yet started it first calls this.ready(...) (forcing boot) before invoking lightMyRequest, and rejects with FST_ERR_REOPENED_CLOSE_SERVER if the server is closing."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 6
+  },
+  {
+    "id": "python-v60-01",
+    "repo": "flask",
+    "language": "python",
+    "stratum": "literal-lookup",
+    "difficulty": "medium",
+    "query": "Find the cached helper Flask uses to expand a dotted nested-blueprint name into the list of itself plus all of its ancestor blueprint paths.",
+    "expectedFiles": [
+      "src/flask/helpers.py"
+    ],
+    "expectedSymbols": [
+      "_split_blueprint_path"
+    ],
+    "expectedFacts": [
+      "_split_blueprint_path in src/flask/helpers.py is an @cache-decorated function that returns [name] and, when the name contains a dot, recursively prepends the parent path via name.rpartition('.')[0]; it is used by Request.blueprints and url-default injection to resolve nested blueprints."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3
+  },
+  {
+    "id": "python-v60-02",
+    "repo": "flask",
+    "language": "python",
+    "stratum": "no-match",
+    "difficulty": "medium",
+    "query": "Where in Flask core is CSRF (cross-site request forgery) token generation and validation implemented?",
+    "expectedFiles": [],
+    "expectedSymbols": [],
+    "expectedFacts": [
+      "Flask core (src/flask) contains no CSRF protection — there are zero references to csrf or cross-site request forgery. It provides signed-cookie sessions via itsdangerous (SecureCookieSessionInterface) but CSRF protection lives in the separate Flask-WTF extension, not core."
+    ],
+    "expectedNoMatch": true,
+    "max_turns": 4
+  },
+  {
+    "id": "rust-v60-01",
+    "repo": "ripgrep",
+    "language": "rust",
+    "stratum": "literal-lookup",
+    "difficulty": "medium",
+    "query": "In ripgrep's globset crate, find the type that pre-computes a path's normalized bytes, basename, and extension so one path can be matched cheaply against many globs.",
+    "expectedFiles": [
+      "crates/globset/src/lib.rs"
+    ],
+    "expectedSymbols": [
+      "Candidate"
+    ],
+    "expectedFacts": [
+      "Candidate<'a> in crates/globset/src/lib.rs holds path, basename, and ext (each a Cow<[u8]>); from_cow normalizes the path and derives basename via file_name and ext via file_name_ext, amortizing that cost when matching a single path against multiple globs."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 3
+  },
+  {
+    "id": "typescript-v60-01",
+    "repo": "ai-chatbot",
+    "language": "typescript",
+    "stratum": "multi-file-flow",
+    "difficulty": "hard",
+    "query": "When a user edits or retries a message, how does the app delete that message and everything after it in the chat? Trace from the server action down to the database delete.",
+    "expectedFiles": [
+      "app/(chat)/actions.ts",
+      "lib/db/queries.ts"
+    ],
+    "expectedSymbols": [
+      "deleteTrailingMessages",
+      "deleteMessagesByChatIdAfterTimestamp"
+    ],
+    "expectedFacts": [
+      "deleteTrailingMessages in app/(chat)/actions.ts authenticates, loads the target message via getMessageById and verifies ownership via getChatById, then calls deleteMessagesByChatIdAfterTimestamp (lib/db/queries.ts) which selects messages with createdAt >= the message's timestamp (gte), deletes their votes first, then deletes those messages."
+    ],
+    "expectedNoMatch": false,
+    "max_turns": 7
+  }
+]
