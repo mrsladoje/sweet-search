@@ -114,20 +114,25 @@ export function buildAnthropicAgentPayload({ model, systemPrompt, messages, maxT
   };
 }
 
-export function resolveOpenRouterAgentModel(model) {
+export function resolveOpenRouterAgentModel(model, provider = 'openrouter') {
+  // DeepSeek direct API: strip the OpenRouter 'deepseek/' prefix → bare model id (e.g. deepseek-v4-pro).
+  if (provider === 'deepseek') return String(model || 'deepseek-v4-pro').replace(/^deepseek\//, '');
   if (!model || /instant/i.test(model) || model === 'gpt-5.5') return OPENROUTER_SLUGS['openai-api'];
   return model.includes('/') ? model : `openai/${model}`;
 }
 
-export function buildOpenRouterAgentPayload({ model, systemPrompt, messages, maxTokens = 4096, reasoningEffort = 'minimal', toolChoice = 'auto' }) {
+export function buildOpenRouterAgentPayload({ model, systemPrompt, messages, maxTokens = 4096, reasoningEffort = 'minimal', toolChoice = 'auto', provider = 'openrouter' }) {
   const payload = {
-    model: resolveOpenRouterAgentModel(model),
+    model: resolveOpenRouterAgentModel(model, provider),
     messages: [{ role: 'system', content: apiAgentSystem(systemPrompt) }, ...messages],
     temperature: 0,
     max_tokens: maxTokens,
     stream: false,
-    reasoning: { effort: reasoningEffort },
   };
+  // Reasoning param differs by API: OpenRouter normalizes `reasoning:{effort}`; the DeepSeek direct
+  // API (OpenAI-compatible) takes a top-level `reasoning_effort`.
+  if (provider === 'deepseek') payload.reasoning_effort = reasoningEffort;
+  else payload.reasoning = { effort: reasoningEffort };
   // toolChoice:'none' = force a final text answer. We OMIT the tools array entirely rather than
   // sending a soft tool_choice:'none' — DeepSeek-class models ignore the soft form and keep
   // emitting (rejected) tool calls; with no tools defined the model must emit content.
@@ -305,8 +310,12 @@ export async function runAnthropicApiAgent(req) {
 }
 
 export async function runOpenRouterApiAgent(req) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error('runOpenRouterApiAgent: OPENROUTER_API_KEY not set');
+  // DeepSeek must go via its OWN API (cheaper than OpenRouter's markup) — auto-route any deepseek
+  // model to the direct provider unless the caller overrides req.provider.
+  const provider = req.provider || (/(^|\/)deepseek/i.test(String(req.model || '')) ? 'deepseek' : 'openrouter');
+  const apiKeyEnv = provider === 'deepseek' ? 'DEEPSEEK_API_KEY' : 'OPENROUTER_API_KEY';
+  const apiKey = process.env[apiKeyEnv];
+  if (!apiKey) throw new Error(`runOpenRouterApiAgent: ${apiKeyEnv} not set`);
   const started = Date.now();
   const usage = { input_tokens: 0, output_tokens: 0, cached_input_tokens: 0, max_input_tokens: 0 };
   const messages = [{ role: 'user', content: req.prompt }];
@@ -331,8 +340,8 @@ export async function runOpenRouterApiAgent(req) {
       messages.push({ role: 'user', content: 'You have used all available tool calls. Do not request more tools. Write your final answer now from the evidence gathered above — cite the relevant files, symbols, and facts. If no relevant match was found, say "no match found" and name what you checked.' });
       forcedAnswerInjected = true;
     }
-    const body = buildOpenRouterAgentPayload({ model: req.model, systemPrompt: req.systemAppend, messages, reasoningEffort: req.reasoningEffort, maxTokens: req.maxTokens, toolChoice: capReached ? 'none' : 'auto' });
-    const r = await postOpenRouter({ apiKey, body, timeoutMs: req.timeoutMs ?? DEFAULT_TIMEOUT_MS });
+    const body = buildOpenRouterAgentPayload({ model: req.model, systemPrompt: req.systemAppend, messages, reasoningEffort: req.reasoningEffort, maxTokens: req.maxTokens, toolChoice: capReached ? 'none' : 'auto', provider });
+    const r = await postOpenRouter({ apiKey, body, timeoutMs: req.timeoutMs ?? DEFAULT_TIMEOUT_MS, provider });
     retryCount += r.retryCount || 0;
     addOpenAIUsage(usage, r.json?.usage);
     if (r.error) { isError = true; stderrPreview = r.error; timedOut = r.status === 'timeout'; break; }
@@ -395,8 +404,8 @@ export async function runOpenRouterApiAgent(req) {
     finalResultText: finalText,
     finalAssistantText: finalText,
     usage,
-    modelUsed: resolveOpenRouterAgentModel(req.model),
-    apiPath: 'openrouter-chat-completions',
+    modelUsed: resolveOpenRouterAgentModel(req.model, provider),
+    apiPath: provider === 'deepseek' ? 'deepseek-chat-completions' : 'openrouter-chat-completions',
     wallMs: Date.now() - started,
     isError,
     exitCode: isError ? 1 : 0,
@@ -491,12 +500,16 @@ async function postAnthropic({ apiKey, body, timeoutMs }) {
   }, body, timeoutMs, fetchFn);
 }
 
-async function postOpenRouter({ apiKey, body, timeoutMs }) {
+async function postOpenRouter({ apiKey, body, timeoutMs, provider = 'openrouter' }) {
   const fetchFn = _apiAgentInternal.fetch || globalThis.fetch;
-  const base = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+  const base = provider === 'deepseek'
+    ? (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1')
+    : (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1');
   const headers = {};
-  if (process.env.OPENROUTER_SITE_URL) headers['HTTP-Referer'] = process.env.OPENROUTER_SITE_URL;
-  if (process.env.OPENROUTER_APP_NAME) headers['X-Title'] = process.env.OPENROUTER_APP_NAME;
+  if (provider !== 'deepseek') {
+    if (process.env.OPENROUTER_SITE_URL) headers['HTTP-Referer'] = process.env.OPENROUTER_SITE_URL;
+    if (process.env.OPENROUTER_APP_NAME) headers['X-Title'] = process.env.OPENROUTER_APP_NAME;
+  }
   return postJsonWithRetry(`${base}/chat/completions`, { ...headers, Authorization: `Bearer ${apiKey}` }, body, timeoutMs, fetchFn);
 }
 
