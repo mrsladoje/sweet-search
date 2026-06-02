@@ -1,14 +1,20 @@
-export async function runCodexAgent({ prompt, systemAppend, model, cwd, sweetSearchBinDir, reasoningEffort = 'low', timeoutMs = 240000 }) {
+export async function runCodexAgent({ prompt, systemAppend, model, cwd, sweetSearchBinDir, reasoningEffort = 'low', timeoutMs = 240000, provider }) {
   const { spawn } = await import('node:child_process');
   const merged = systemAppend ? `[SYSTEM]\n${systemAppend}\n\n[USER]\n${prompt}` : prompt;
-  const codexModel = (!model || /instant/i.test(model)) ? 'gpt-5.5' : model;
+  let codexModel = (!model || /instant/i.test(model)) ? 'gpt-5.5' : model;
+  // OpenRouter backend (p7 vault): bypasses the $20 Codex-plan rate wall while keeping
+  // Codex itself as the harness. Defined as [model_providers.openrouter] in
+  // ~/.codex/config.toml (wire_api=responses — required; reasoning passes through,
+  // verified reasoning_output_tokens>0). model id needs the openai/ prefix on OpenRouter.
+  if (provider === 'openrouter' && !codexModel.includes('/')) codexModel = `openai/${codexModel}`;
   const args = [
     'exec',
     '--dangerously-bypass-approvals-and-sandbox',
     '--json',
     '-c', `model_reasoning_effort="${reasoningEffort}"`,
-    '-m', codexModel,
   ];
+  if (provider) args.push('-c', `model_provider="${provider}"`);
+  args.push('-m', codexModel);
   if (cwd) args.push('-C', cwd);
   args.push(merged);
   const env = { ...process.env };
