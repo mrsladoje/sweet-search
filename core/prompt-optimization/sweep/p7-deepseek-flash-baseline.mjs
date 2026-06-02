@@ -25,6 +25,13 @@ const SS_BIN_DIR = path.join(REPO_ROOT, 'eval', 'agent-read-workflows', 'bin');
 const DEFAULT_MODEL = 'deepseek/deepseek-v4-flash';
 const DEFAULT_JUDGE_MODEL = 'deepseek-v4-flash';
 
+// Native rg+Read baseline policy (used with --native; ss-* shims are also taken off PATH).
+const NATIVE_POLICY = `You are solving a code-understanding task in a repository you are already inside.
+Use your normal, default code-reading workflow (ripgrep/grep, find, and reading files).
+You MUST NOT use sweet-search or any \`ss-*\` command (ss-search, ss-find, ss-grep, ss-semantic, ss-trace, ss-read), and MUST NOT read anything under \`.sweet-search/\`.
+Keep searches and reads focused; stop as soon as your evidence covers the answer.
+Final answer: cite the relevant file paths, symbols, and facts. If absent, say no match found and name the checks you ran.`;
+
 const TIER_FILES = Object.freeze({
   dev: path.join(DATA_DIR, 'p7-dev-probes.json'),
   heldout: path.join(DATA_DIR, 'frozen', 'p7-heldout-probes.json'),
@@ -52,6 +59,9 @@ function parseArgs(argv) {
     judgePanel: 'deepseek', // 'default' = 3-panel JUDGE_PANEL (HOMP comparability); 'deepseek' = single
     reasoningEffort: null, // opencode --variant (high|max|minimal) for reasoning models
     concurrency: 1,      // parallel opencode workers
+    native: false,       // native rg+Read baseline: NATIVE_POLICY prompt + ss-* shims OFF PATH
+    reps: 1,             // repeat the selected probe set N times (multi-rep smokes)
+    ids: null,           // restrict to these probe ids (comma-separated)
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -63,6 +73,9 @@ function parseArgs(argv) {
     else if (a === '--judge-panel') o.judgePanel = argv[++i];
     else if (a === '--reasoning-effort') o.reasoningEffort = argv[++i];
     else if (a === '--concurrency') o.concurrency = Math.max(1, Number.parseInt(argv[++i], 10) || 1);
+    else if (a === '--native') o.native = true;
+    else if (a === '--reps') o.reps = Math.max(1, Number.parseInt(argv[++i], 10) || 1);
+    else if (a === '--ids') o.ids = argv[++i].split(',').map((x) => x.trim()).filter(Boolean);
     else if (a === '--judge-model') o.judgeModel = argv[++i];
     else if (a === '--limit') o.limit = Number.parseInt(argv[++i], 10);
     else if (a === '--offset') o.offset = Number.parseInt(argv[++i], 10);
@@ -106,9 +119,10 @@ function loadTier(tier) {
   return probes.map((probe) => ({ ...probe, tier }));
 }
 
-function loadSelectedProbes({ tier, limit, offset }) {
+function loadSelectedProbes({ tier, limit, offset, ids }) {
   const tiers = tier === 'all' ? ['dev', 'heldout', 'vault'] : [tier];
   let probes = tiers.flatMap(loadTier);
+  if (Array.isArray(ids) && ids.length) probes = probes.filter((p) => ids.includes(p.id));
   if (Number.isInteger(offset) && offset > 0) probes = probes.slice(offset);
   if (Number.isInteger(limit) && limit >= 0) probes = probes.slice(0, limit);
   return probes;
@@ -134,13 +148,16 @@ function repoCwdFor(probe) {
   return cwd;
 }
 
-function buildCanaryPrompt({ systemPrompt, probe }) {
+function buildCanaryPrompt({ systemPrompt, probe, native }) {
+  const toolLine = native
+    ? '- Use your normal code-reading workflow: ripgrep/grep, find, and reading files. Do NOT use sweet-search or any ss-* command.'
+    : '- Use Bash to run sweet-search tools only when searching: ss-search, ss-find, ss-semantic, ss-trace, ss-grep, ss-read.';
   return `[SYSTEM]
 ${systemPrompt}
 
 Additional canary constraints:
 - You are already in the target repository root.
-- Use Bash to run sweet-search tools only when searching: ss-search, ss-find, ss-semantic, ss-trace, ss-grep, ss-read.
+${toolLine}
 - Do not edit files, install packages, change git state, or use the network.
 - Stay within ${probe.max_turns} tool calls.
 - Final answer: cite the relevant file paths, symbols, and facts. If the answer is absent, say no match found and briefly name the checks you ran.
@@ -225,12 +242,12 @@ function parseOpencodeJsonl(stdout) {
   };
 }
 
-async function runOpencodeProbe({ probe, systemPrompt, model, timeoutMs, reasoningEffort }) {
+async function runOpencodeProbe({ probe, systemPrompt, model, timeoutMs, reasoningEffort, native }) {
   const cwd = repoCwdFor(probe);
-  const prompt = buildCanaryPrompt({ systemPrompt, probe });
+  const prompt = buildCanaryPrompt({ systemPrompt, probe, native });
   const env = {
     ...process.env,
-    PATH: [SS_BIN_DIR, process.env.PATH].filter(Boolean).join(':'),
+    PATH: native ? process.env.PATH : [SS_BIN_DIR, process.env.PATH].filter(Boolean).join(':'),
     SWEET_SEARCH_PROJECT_ROOT: cwd,
   };
   const args = [
@@ -353,10 +370,13 @@ function existingProbeIds(jsonlPath) {
 
 async function main(argv = process.argv.slice(2)) {
   const opts = parseArgs(argv);
-  const probes = loadSelectedProbes(opts);
-  const variant = opts.promptFile
-    ? { id: path.basename(opts.promptFile, '.md'), body: fs.readFileSync(path.isAbsolute(opts.promptFile) ? opts.promptFile : path.join(REPO_ROOT, opts.promptFile), 'utf8') }
-    : loadVariant(opts.variant);
+  let probes = loadSelectedProbes(opts);
+  if (opts.reps > 1) probes = Array.from({ length: opts.reps }).flatMap(() => probes);
+  const variant = opts.native
+    ? { id: 'native-rg-read', body: NATIVE_POLICY }
+    : opts.promptFile
+      ? { id: path.basename(opts.promptFile, '.md'), body: fs.readFileSync(path.isAbsolute(opts.promptFile) ? opts.promptFile : path.join(REPO_ROOT, opts.promptFile), 'utf8') }
+      : loadVariant(opts.variant);
   const judgePanelChoice = opts.judgePanel === 'default' ? JUDGE_PANEL : null;
   const outDir = RESULTS_DIR(opts.run);
   const jsonlPath = path.join(outDir, 'deepseek-flash-baseline.jsonl');
@@ -384,6 +404,7 @@ async function main(argv = process.argv.slice(2)) {
       model: opts.model,
       timeoutMs: opts.timeoutMs,
       reasoningEffort: opts.reasoningEffort,
+      native: opts.native,
     });
     const finalAnswerEmitted = agent.answer.trim().length > 0;
     const toolCalls = agent.toolCalls.length;

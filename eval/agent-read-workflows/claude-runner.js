@@ -65,6 +65,9 @@ async function runClaudeAgentOnce(req) {
   if (req.addDirs && req.addDirs.length) {
     for (const d of req.addDirs) args.push('--add-dir', d);
   }
+  // Pass-through for lean-run flags (e.g. --strict-mcp-config --mcp-config '{"mcpServers":{}}'
+  // --setting-sources project) so callers can disable MCP servers + user hooks.
+  if (req.extraArgs && req.extraArgs.length) args.push(...req.extraArgs);
 
   // Prepend the bench's bin/ shim to PATH so spawned agents can call
   // `sweet-search ...` without a global install. The shim execs node on
