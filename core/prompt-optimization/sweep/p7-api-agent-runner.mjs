@@ -316,6 +316,7 @@ export async function runOpenRouterApiAgent(req) {
   let isError = false;
   let stderrPreview = '';
   let emptyTurns = 0;
+  let emptyRetries = 0;
   let retryCount = 0;
   let timedOut = false;
   let forcedAnswerInjected = false;
@@ -339,6 +340,14 @@ export async function runOpenRouterApiAgent(req) {
     const msg = r.json.choices?.[0]?.message || {};
     if (typeof msg.content === 'string' && msg.content) finalText = msg.content;
     const uses = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+    // Transient empty completion: DeepSeek occasionally returns no content + no tool calls with
+    // finish_reason 'stop' (proven recoverable on a fresh roll — it asymmetrically zeroed native runs).
+    // Re-POST the SAME request a few times before the nudge/error path; round-- keeps these retries
+    // off the round budget. Skip finish_reason 'length' (genuine truncation — a re-roll won't help).
+    const finishReason = r.json.choices?.[0]?.finish_reason;
+    if (uses.length === 0 && !(typeof msg.content === 'string' && msg.content.trim()) && finishReason !== 'length' && emptyRetries < 3) {
+      emptyRetries++; round--; continue;
+    }
     if (uses.length === 0) {
       // DeepSeek-class models, when forced off tools but not yet ready to answer, sometimes emit
       // their NATIVE tool-call markup (DSML / <|tool_calls|> / invoke name=) as plain text. That is a

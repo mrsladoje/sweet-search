@@ -9,9 +9,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const load = (r) => { const p = path.join(REPO, 'core/prompt-optimization/data/results', r, 'rows.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : []; };
+// Defaults = the Codex 4-shard vault (GPT-5.5 prices). Override via env for other cells, e.g. bare-API DeepSeek:
+//   MPP_DIRS=ba-ds-vault-mpp NAT_DIRS=ba-ds-vault-native PRICE_IN=0.28 PRICE_OUT=0.42 PRICE_CACHE=0.028 node scripts/vault-stats.mjs
+const MPP_DIRS = (process.env.MPP_DIRS || 'vault-cdx-mpp-s1,vault-cdx-mpp-s2,vault-cdx-mpp-s3,vault-cdx-mpp-s4').split(',');
+const NAT_DIRS = (process.env.NAT_DIRS || 'vault-cdx-native-s1,vault-cdx-native-s2,vault-cdx-native-s3,vault-cdx-native-s4').split(',');
 let mpp = [], nat = [];
-for (const s of [1, 2, 3, 4]) { mpp = mpp.concat(load('vault-cdx-mpp-s' + s)); nat = nat.concat(load('vault-cdx-native-s' + s)); }
-const P = { inPerM: 5, outPerM: 30, cacheReadPerM: 0.50 };
+for (const d of MPP_DIRS) mpp = mpp.concat(load(d));
+for (const d of NAT_DIRS) nat = nat.concat(load(d));
+const P = { inPerM: Number(process.env.PRICE_IN || 5), outPerM: Number(process.env.PRICE_OUT || 30), cacheReadPerM: Number(process.env.PRICE_CACHE || 0.50) };
 const naive = (u) => !u ? 0 : ((u.input_tokens || 0) / 1e6) * P.inPerM + ((u.output_tokens || 0) / 1e6) * P.outPerM;
 const real = (u) => { if (!u) return 0; const c = u.cached_input_tokens || 0; return (Math.max(0, (u.input_tokens || 0) - c) / 1e6) * P.inPerM + (c / 1e6) * P.cacheReadPerM + ((u.output_tokens || 0) / 1e6) * P.outPerM; };
 const tok = (u) => !u ? 0 : (u.input_tokens || 0) + (u.output_tokens || 0);
