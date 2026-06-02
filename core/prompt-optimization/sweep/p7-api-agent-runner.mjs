@@ -119,18 +119,24 @@ export function resolveOpenRouterAgentModel(model) {
   return model.includes('/') ? model : `openai/${model}`;
 }
 
-export function buildOpenRouterAgentPayload({ model, systemPrompt, messages, maxTokens = 4096 }) {
-  return {
+export function buildOpenRouterAgentPayload({ model, systemPrompt, messages, maxTokens = 4096, reasoningEffort = 'minimal', toolChoice = 'auto' }) {
+  const payload = {
     model: resolveOpenRouterAgentModel(model),
     messages: [{ role: 'system', content: apiAgentSystem(systemPrompt) }, ...messages],
     temperature: 0,
     max_tokens: maxTokens,
     stream: false,
-    tools: openAITools(),
-    tool_choice: 'auto',
-    parallel_tool_calls: false,
-    reasoning: { effort: 'minimal' },
+    reasoning: { effort: reasoningEffort },
   };
+  // toolChoice:'none' = force a final text answer. We OMIT the tools array entirely rather than
+  // sending a soft tool_choice:'none' — DeepSeek-class models ignore the soft form and keep
+  // emitting (rejected) tool calls; with no tools defined the model must emit content.
+  if (toolChoice !== 'none') {
+    payload.tools = openAITools();
+    payload.tool_choice = toolChoice;
+    payload.parallel_tool_calls = false;
+  }
+  return payload;
 }
 
 // ─── Trajectory circuit-breaker (opt-in) ───────────────────────────────────────
@@ -312,9 +318,19 @@ export async function runOpenRouterApiAgent(req) {
   let emptyTurns = 0;
   let retryCount = 0;
   let timedOut = false;
+  let forcedAnswerInjected = false;
 
   for (let round = 0; round < maxRounds(req); round++) {
-    const body = buildOpenRouterAgentPayload({ model: req.model, systemPrompt: req.systemAppend, messages });
+    // Once the tool budget is exhausted, FORCE a final answer instead of relying on the model to
+    // volunteer one. DeepSeek-class models ignore a soft tool_choice:'none' and keep emitting
+    // (rejected) tool calls or go silent → finalText empty/truncated → judged ~0. So we (a) inject
+    // an explicit "answer now" turn and (b) omit the tools array (no tools → must emit text).
+    const capReached = toolCalls.length >= (req.maxToolCalls ?? AGENT_TOOL_CALL_CAP);
+    if (capReached && !forcedAnswerInjected) {
+      messages.push({ role: 'user', content: 'You have used all available tool calls. Do not request more tools. Write your final answer now from the evidence gathered above — cite the relevant files, symbols, and facts. If no relevant match was found, say "no match found" and name what you checked.' });
+      forcedAnswerInjected = true;
+    }
+    const body = buildOpenRouterAgentPayload({ model: req.model, systemPrompt: req.systemAppend, messages, reasoningEffort: req.reasoningEffort, maxTokens: req.maxTokens, toolChoice: capReached ? 'none' : 'auto' });
     const r = await postOpenRouter({ apiKey, body, timeoutMs: req.timeoutMs ?? DEFAULT_TIMEOUT_MS });
     retryCount += r.retryCount || 0;
     addOpenAIUsage(usage, r.json?.usage);
@@ -324,10 +340,17 @@ export async function runOpenRouterApiAgent(req) {
     if (typeof msg.content === 'string' && msg.content) finalText = msg.content;
     const uses = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
     if (uses.length === 0) {
-      if (finalText) break;
-      if (emptyTurns === 0) {
+      // DeepSeek-class models, when forced off tools but not yet ready to answer, sometimes emit
+      // their NATIVE tool-call markup (DSML / <|tool_calls|> / invoke name=) as plain text. That is a
+      // failed search, not an answer — don't let it stand; re-prompt for prose only (allow 2 nudges).
+      const markup = finalText && looksLikeToolMarkup(finalText);
+      if (finalText && !markup) break;
+      if (emptyTurns < 2) {
         emptyTurns++;
-        messages.push({ role: 'user', content: toolCalls.length > 0 ? 'No final answer was emitted. Based on the tool results above, answer the original task now. If the checks found no relevant match, say no match found and name the checks run.' : 'No tool call or final answer was emitted. Use the available Bash/Read tools to investigate the original task, then answer with cited files and facts.' });
+        if (markup) finalText = '';
+        messages.push({ role: 'user', content: markup
+          ? 'Do NOT emit tool-call syntax, function calls, or markup of any kind. Respond with a plain prose answer ONLY, based on the evidence already gathered. If you could not determine the answer, write "no match found" and list what you checked.'
+          : (toolCalls.length > 0 ? 'No final answer was emitted. Based on the tool results above, answer the original task now. If the checks found no relevant match, say no match found and name the checks run.' : 'No tool call or final answer was emitted. Use the available Bash/Read tools to investigate the original task, then answer with cited files and facts.') });
         continue;
       }
       isError = true;
@@ -505,11 +528,13 @@ async function bashTool(input, req) {
   const command = String(input?.command || '').trim();
   const validation = validateBashCommand(command, { allowSweetSearch: !!req.allowSweetSearch });
   if (!validation.ok) return { isError: true, content: validation.message };
+  const esc = bashEscapesRepo(command, req.cwd);
+  if (esc) return { isError: true, content: `blocked: command reaches outside the task repository (${esc}). Search only within the current repo — use relative paths.` };
   const env = { ...process.env, SWEET_SEARCH_PROJECT_ROOT: req.cwd };
   if (req.sweetSearchBinDir) env.PATH = [req.sweetSearchBinDir, env.PATH].filter(Boolean).join(':');
   const run = await spawnCapture('/bin/zsh', ['-lc', command], { cwd: req.cwd, env, timeoutMs: req.toolTimeoutMs ?? TOOL_TIMEOUT_MS });
   const content = [`exit ${run.exitCode}`, run.stdout, run.stderr && `stderr:\n${run.stderr}`].filter(Boolean).join('\n');
-  return { isError: run.exitCode !== 0 || run.timedOut, content: truncate(content, MAX_TOOL_OUTPUT_CHARS) };
+  return { isError: run.exitCode !== 0 || run.timedOut, content: truncate(content, req.maxToolOutputChars ?? MAX_TOOL_OUTPUT_CHARS) };
 }
 
 function readTool(input, req) {
@@ -523,9 +548,14 @@ function readTool(input, req) {
     if (!stat.isFile()) return { isError: true, content: 'path is not a file' };
     const lines = fs.readFileSync(resolved, 'utf8').split(/\r?\n/);
     const start = Math.max(1, Number.parseInt(input?.offset ?? 1, 10) || 1);
-    const limit = Math.min(300, Math.max(1, Number.parseInt(input?.limit ?? 200, 10) || 200));
+    // Read budget is per-request so the native baseline can match real harnesses (Claude Code reads
+    // ~2000 lines/call). Defaults preserved (300-line cap, 200 default) so GEPA stays byte-identical;
+    // the vault runners opt into real-agent parity via req.maxReadLines / req.maxToolOutputChars.
+    const cap = Math.max(1, req.maxReadLines ?? 300);
+    const defaultLimit = req.maxReadLines ? cap : 200;
+    const limit = Math.min(cap, Math.max(1, Number.parseInt(input?.limit ?? defaultLimit, 10) || defaultLimit));
     const out = lines.slice(start - 1, start - 1 + limit).map((line, i) => `${start + i}\t${line}`).join('\n');
-    return { isError: false, content: truncate(out, MAX_TOOL_OUTPUT_CHARS) };
+    return { isError: false, content: truncate(out, req.maxToolOutputChars ?? MAX_TOOL_OUTPUT_CHARS) };
   } catch (e) {
     return { isError: true, content: e?.message || String(e) };
   }
@@ -553,6 +583,28 @@ function commandReadsSweetSearch(command) {
     .replace(/(["'])!\/?\.sweet-search\/\*\*\1/g, '')
     .replace(/!\/?\.sweet-search\/\*\*/g, '');
   return /(^|[\s"'`/])\.sweet-search(\/|$)/.test(withoutExcludes) || /\/\.sweet-search(\/|$)/.test(withoutExcludes);
+}
+
+// Eval-integrity guard: the probe repos are nested inside the eval project, so a Bash `cd` /
+// absolute-path / `../` could reach our gold-answer/spec files or grep the whole project tree
+// (a leak + a perf confound — observed once in a thin harness). readTool already scopes Read;
+// this scopes Bash. Returns the offending token (→ block) or null. Repo-scoped agents never
+// legitimately need to leave their repo, so this only ever blocks escapes, not real searches.
+const ESCAPE_ANSWER_RE = /(gold\/|data\/frozen|data\/results|p7-vault-probes|p7-heldout|p7-dev-probes|prompt-optimization\/data)/;
+export function bashEscapesRepo(command, cwd) {
+  if (!cwd || !command) return null;
+  if (ESCAPE_ANSWER_RE.test(command)) return 'answer/spec files';
+  for (const m of command.matchAll(/\/[^\s;&|)'"`]*sweet-search-private[^\s;&|)'"`]*/g)) {
+    if (!isInside(cwd, m[0])) return m[0];
+  }
+  for (const m of command.matchAll(/\b(?:cd|pushd)\s+([^\s;&|]+)/g)) {
+    const t = m[1].replace(/^["']|["']$/g, '');
+    if (t && !isInside(cwd, path.resolve(cwd, t))) return `cd ${t}`;
+  }
+  for (const m of command.matchAll(/(?:^|\s)(\.\.\/[^\s;&|]*)/g)) {
+    if (!isInside(cwd, path.resolve(cwd, m[1]))) return m[1];
+  }
+  return null;
 }
 
 function maxRounds(req) {
@@ -608,6 +660,14 @@ function isInside(root, file) {
 
 function hasSweetSearchPath(file) {
   return file.split(path.sep).includes('.sweet-search');
+}
+
+// Detects a model emitting its native tool-call markup as TEXT content (a failed search leaking
+// through, not a real answer): DeepSeek DSML, <|tool_calls|>, antml-style `invoke name=`, etc.
+function looksLikeToolMarkup(text) {
+  if (!text) return false;
+  const head = text.slice(0, 800);
+  return /DSML|invoke\s+name=|tool▁calls|<\|tool_calls\|>|<function_calls>|<\|python_tag\|>/i.test(head);
 }
 
 function truncate(s, max) {
