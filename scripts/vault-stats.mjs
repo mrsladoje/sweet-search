@@ -16,6 +16,8 @@ const NAT_DIRS = (process.env.NAT_DIRS || 'vault-cdx-native-s1,vault-cdx-native-
 let mpp = [], nat = [];
 for (const d of MPP_DIRS) mpp = mpp.concat(load(d));
 for (const d of NAT_DIRS) nat = nat.concat(load(d));
+// REPS=2,3 → restrict to those rep numbers (e.g. the clean DeepSeek-direct reps, excluding an OpenRouter rep1).
+if (process.env.REPS) { const keep = new Set(process.env.REPS.split(',').map(Number)); mpp = mpp.filter((r) => keep.has(r.rep)); nat = nat.filter((r) => keep.has(r.rep)); }
 const P = { inPerM: Number(process.env.PRICE_IN || 5), outPerM: Number(process.env.PRICE_OUT || 30), cacheReadPerM: Number(process.env.PRICE_CACHE || 0.50) };
 const naive = (u) => !u ? 0 : ((u.input_tokens || 0) / 1e6) * P.inPerM + ((u.output_tokens || 0) / 1e6) * P.outPerM;
 const real = (u) => { if (!u) return 0; const c = u.cached_input_tokens || 0; return (Math.max(0, (u.input_tokens || 0) - c) / 1e6) * P.inPerM + (c / 1e6) * P.cacheReadPerM + ((u.output_tokens || 0) / 1e6) * P.outPerM; };
