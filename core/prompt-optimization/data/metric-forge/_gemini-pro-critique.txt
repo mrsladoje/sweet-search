@@ -1,0 +1,57 @@
+Here is your tear-down. Your metric claims to be symmetric and anti-verbosity, but it is structurally rigged to favor the tool (`ss`) and statistically broken in its aggregation. 
+
+Here are the strongest breaks, prioritized by severity.
+
+### 1. The "Citation Sprawl" Exploit (SHIP-BLOCKING)
+**Mechanism:** `purity_ratio` (your only in-scalar verbosity defense) relies entirely on LLM judges citing minimal spans. It assumes `used_tokens` will remain small even if `total_tokens` grows. This demonstrates a fatal misunderstanding of LLM judge behavior.
+**Adversarial Example:** 
+Probe: "Find the timeout configuration."
+*Native arm* returns exactly 3 lines: `config.py:42: timeout = 30`. `total_tokens` = 10, `used_tokens` = 10. `purity_ratio` = 1.0.
+*ss arm* returns the **entire 1,000-line `config.py` file**. 
+To score D2 (workable code) and D5 (sufficiency), the LLM judge is prompted to quote a verbatim span. DeepSeek/Gemini will routinely quote the *entire file* or the outermost class/module boundary to justify "competent engineer could act" or "complete symbol". 
+Because the judge cited the whole file, `used_tokens` = 1000. `total_tokens` = 1000. `purity_ratio` = 1.0. 
+*Result:* `ss` gets a perfect 1.0 density multiplier and wins on D3 (navigability, since neighbors are in the file), scoring higher `USD` than native, despite dumping 100x more tokens into the downstream engineer's context window.
+**The Fix:** `used_tokens` cannot be trusted to LLM citation. It must be programmatically capped. Define `used_tokens` strictly as the intersection of the tool response and the $C^G$ gold spans, plus a maximum allowance (e.g., +50 tokens). 
+
+### 2. The D2 "AST Gate" Asymmetry (SHIP-BLOCKING)
+**Mechanism:** You claim the metric is symmetric, but D2 is gated by a `tree-sitter "complete AST node"` check. 
+**Adversarial Example:** 
+*Native arm* uses `grep -C 5 "def calculate_tax"` and returns 11 lines of a 15-line function. This is highly actionable for a downstream engineer. But because it is missing the final `return` statement, it fails the tree-sitter AST gate. D2 = 0.
+*ss arm* returns the 15-line function perfectly. D2 = 1.
+Native's `content` score is structurally capped because `grep/read` agents do not natively output byte-perfect AST boundaries. You are penalizing native for not being a tree-sitter tool, which violates your core claim of measuring "usable code-awareness" fairly.
+**The Fix:** Remove the programmatic tree-sitter gate for D2 entirely, OR provide the native agent with a tree-sitter formatting tool in its environment so it has a mechanical chance to satisfy the gate.
+
+### 3. The Collinear Regression Extrapolation Artifact (SHIP-BLOCKING)
+**Mechanism:** Your headline number relies on `content_i = b0 + b_arm*1[arm=ss] + b_len*log(total_tokens_i) + eps`. This is statistically illiterate if the token distributions of the two arms do not heavily overlap.
+**Adversarial Scenario:** 
+Native averages 200 tokens. `ss` averages 2,000 tokens. They are disjoint in $log(total\_tokens)$ space. 
+Suppose within the `ss` arm, shorter responses are slightly better (less noise), giving a *negative* `b_len` slope. The regression will extrapolate this negative slope backward into the native arm's token territory. The model will hallucinate that *if* `ss` had output 200 tokens, its score would have been 1.5. 
+Consequently, `b_arm` (the gap at matched length) becomes massively, spuriously positive. You will claim a statistically significant victory for `ss` based entirely on out-of-sample extrapolation.
+**The Fix:** Abandon linear regression for length-matching. Use Propensity Score Matching on `log(total_tokens)` with a strict caliper. If an `ss` response has no native response of similar length to pair with, it is dropped from the gap analysis.
+
+### 4. The Signal Purity (C) Fragility & Chrome Loophole (High Severity)
+**Mechanism:** `C` is a binary multiplier (`USD_raw = g * C * content`). If `C=0`, the whole score is 0. 
+**Adversarial Example:** 
+*ss arm* returns the perfect answer, but includes its standard "confidence: high" and "tier: preview" chrome. You strip this *before* judging. The judge sees pure code, `C=1`.
+*Native arm* uses `grep` and accidentally captures a single irrelevant `test_config.py` line alongside the correct `config.py` line. Because native has no chrome stripping, the judge sees the irrelevant line. `C=0`. Native's score goes to absolute zero.
+By stripping `ss`'s metadata but leaving native's raw stdout (which often contains shell artifacts or minor grep noise), you virtually guarantee native triggers the "unmarked false-positive" penalty, wiping out its score.
+**The Fix:** `C` cannot be a binary floor multiplier. Make it a standard criterion (D6) averaged into `content`. Alternatively, apply an identical regex-based artifact stripper to native stdout before judging.
+
+### 5. The No-Match Verbosity Dump (High Severity)
+**Mechanism:** For the 9 no-match probes, `USD = g` and density is skipped.
+**Adversarial Example:** 
+Probe: "Where is the Redis password?" (It's not in the repo).
+*ss arm* realizes it can't find it. It outputs 15,000 tokens of the entire `database/` directory, the `README.md`, and the `docker-compose.yml`, just in case. 
+Because it's a no-match probe, $g=1$ (inverted programmatic check passes). `USD = 1.0`. 
+The downstream engineer's context window is completely destroyed by 15,000 tokens of useless garbage, but your metric records a flawless victory for `ss` with zero verbosity penalty.
+**The Fix:** Do not skip density for no-match probes. If a probe is no-match, the ideal response length is 0. Calculate a penalty: `USD = g * max(0, 1 - (total_tokens / 500))`.
+
+---
+
+### THE SINGLE MOST DANGEROUS FLAW
+**The reliance on LLM span-citation to define `used_tokens` (Attack #1).** 
+You built an elegant mathematical shaper (`0.5 + 0.5 * purity_ratio`) to punish verbosity, and then handed the keys to that formula to an LLM judge. LLMs are fundamentally incapable of extracting minimal sufficient sub-spans from cohesive code blocks; they will cite the whole block. This entirely neutralizes your density penalty, allowing `ss` to bloat its responses, consume the engineer's context window, and still achieve a perfect `purity_ratio`. 
+
+### WHERE I AGREE (What works)
+1. **The Floor ($g$) Programmatic Check:** Requiring a hard regex/word-boundary match for the expected file/symbol before scoring anything is excellent. It prevents LLMs from hallucinating high scores for eloquent but wrong answers.
+2. **D4 Programmatic Overlap:** Gating `edit_locality` on actual mathematical overlap with $C^G$ prevents judges from being tricked by visually similar but incorrect code sites. You should apply this exact programmatic rigor to `used_tokens`.

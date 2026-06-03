@@ -1,0 +1,233 @@
+{
+  "runId": "recheck-pilot",
+  "rubricHash": "0x46dea0229bdd7370",
+  "params": {
+    "phi": 0.25,
+    "alpha": 2,
+    "tau": 400,
+    "caliper": 0.2,
+    "minCommonSupport": 0.4,
+    "thetaFloor": 0.5,
+    "d2BodyFraction": 0.7
+  },
+  "n": {
+    "probes": 3,
+    "ss": 3,
+    "native": 3,
+    "errors": 0
+  },
+  "errors": [],
+  "perArmMean": {
+    "ss": {
+      "USD": 0,
+      "USD_noC": 0.050163585069028425,
+      "content": 0.19999999999999998,
+      "content_noD3": 0.16666666666666666,
+      "purity_ratio": 0.015372076530101926,
+      "g": 0.3333333333333333,
+      "tokens": 1845.3333333333333
+    },
+    "native": {
+      "USD": 0,
+      "USD_noC": 0.11698433648892215,
+      "content": 0.4666666666666666,
+      "content_noD3": 0.5,
+      "purity_ratio": 0.04417749548477862,
+      "g": 1,
+      "tokens": 937.6666666666666
+    }
+  },
+  "tokenDistribution": {
+    "ss": {
+      "n": 3,
+      "min": 918,
+      "q25": 918,
+      "median": 969,
+      "q75": 3649,
+      "max": 3649,
+      "mean": 1845
+    },
+    "native": {
+      "n": 3,
+      "min": 564,
+      "q25": 564,
+      "median": 942,
+      "q75": 1307,
+      "max": 1307,
+      "mean": 938
+    }
+  },
+  "headline_caliperMatchedDelta": {
+    "lengthMatchable": true,
+    "ssSupportFrac": 0.6666666666666666,
+    "natSupportFrac": 0.3333333333333333,
+    "matchedPairs": 2,
+    "deltas": {
+      "content_noD3": {
+        "mean": 0.25,
+        "ci": [
+          0,
+          0.5
+        ],
+        "excludesZero": false,
+        "n": 2
+      },
+      "content": {
+        "mean": 0.3,
+        "ci": [
+          0,
+          0.6
+        ],
+        "excludesZero": false,
+        "n": 2
+      },
+      "USD": {
+        "mean": 0,
+        "ci": [
+          0,
+          0
+        ],
+        "excludesZero": false,
+        "n": 2
+      },
+      "USD_noC": {
+        "mean": 0.07524537760354263,
+        "ci": [
+          0,
+          0.15049075520708527
+        ],
+        "excludesZero": false,
+        "n": 2
+      }
+    }
+  },
+  "rawPairedDelta_unmatched": {
+    "content_noD3": {
+      "mean": -0.3333333333333333,
+      "ci": [
+        -1,
+        0
+      ],
+      "excludesZero": false,
+      "n": 3
+    },
+    "content": {
+      "mean": -0.26666666666666666,
+      "ci": [
+        -0.8000000000000002,
+        0
+      ],
+      "excludesZero": false,
+      "n": 3
+    },
+    "USD": {
+      "mean": 0,
+      "ci": [
+        0,
+        0
+      ],
+      "excludesZero": false,
+      "n": 3
+    },
+    "USD_noC": {
+      "mean": -0.06682075141989373,
+      "ci": [
+        -0.20006884242285525,
+        0
+      ],
+      "excludesZero": false,
+      "n": 3
+    }
+  },
+  "perCriterionMean": {
+    "D1": {
+      "ss": 0.3333333333333333,
+      "native": 0.6666666666666666
+    },
+    "D2": {
+      "ss": 0,
+      "native": 0.3333333333333333
+    },
+    "D3": {
+      "ss": 0.3333333333333333,
+      "native": 0.3333333333333333
+    },
+    "D4": {
+      "ss": 0.3333333333333333,
+      "native": 0.6666666666666666
+    },
+    "D5": {
+      "ss": 0,
+      "native": 0.3333333333333333
+    },
+    "signal_purity": {
+      "ss": 0,
+      "native": 0
+    }
+  },
+  "perDimensionCorrelation": {
+    "D1~D2": 0.447,
+    "D1~D3": 0.707,
+    "D1~D4": 1,
+    "D1~D5": 0.447,
+    "D1~purity_ratio": -0.016,
+    "D2~D3": -0.316,
+    "D2~D4": 0.447,
+    "D2~D5": 1,
+    "D2~purity_ratio": -0.332,
+    "D3~D4": 0.707,
+    "D3~D5": -0.316,
+    "D3~purity_ratio": 0.245,
+    "D4~D5": 0.447,
+    "D4~purity_ratio": -0.016,
+    "D5~purity_ratio": -0.332
+  },
+  "perStratum": {
+    "literal-lookup": {
+      "n": 2,
+      "ss": {
+        "USD": 0,
+        "USD_noC": 0.07524537760354263,
+        "content_noD3": 0.25,
+        "g": 0.5,
+        "tok": 943.5
+      },
+      "native": {
+        "USD": 0,
+        "USD_noC": 0.17547650473338322,
+        "content_noD3": 0.75,
+        "g": 1,
+        "tok": 935.5
+      }
+    },
+    "multi-file-flow": {
+      "n": 1,
+      "ss": {
+        "USD": 0,
+        "USD_noC": 0,
+        "content_noD3": 0,
+        "g": 0,
+        "tok": 3649
+      },
+      "native": {
+        "USD": 0,
+        "USD_noC": 0,
+        "content_noD3": 0,
+        "g": 1,
+        "tok": 942
+      }
+    }
+  },
+  "noMatch": {
+    "ss": {
+      "n": 0,
+      "confidentFalsePositiveRate": null,
+      "meanUSD": 0
+    },
+    "native": {
+      "n": 0,
+      "confidentFalsePositiveRate": null,
+      "meanUSD": 0
+    }
+  }
+}

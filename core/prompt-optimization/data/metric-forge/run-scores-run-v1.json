@@ -1,0 +1,3432 @@
+[
+  {
+    "probeId": "cpp-v60-02",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 1,
+    "D2": 0,
+    "D3": 1,
+    "D4": 1,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0.6,
+    "content_noD3": 0.5,
+    "purity_ratio": 0.7123098201936376,
+    "total_tokens": 723,
+    "used_tokens_AST": 515,
+    "citedSpans": {
+      "answer_grounding": [
+        "MedianAbsoluteDeviation",
+        "T MedianAbsoluteDeviation(const T* values, const size_t num_values,\n                          const T median) {"
+      ],
+      "workable_code": [],
+      "navigability": [
+        "T Median(T* values, const size_t num_values) {",
+        "T Median(T* values, const size_t num_values) {"
+      ],
+      "edit_locality": [
+        "hwy/robust_statistics.h:134-135\n```\nT MedianAbsoluteDeviation(const T* values, const size_t num_values,\n                          const T median) {",
+        "hwy/robust_statistics.h",
+        "hwy/robust_statistics.h:134-135"
+      ],
+      "sufficiency": [
+        "MedianAbsoluteDeviation(const T* values, const size_t num_values,\n                          const T median) {"
+      ],
+      "signal_purity": []
+    },
+    "snappedSpans": [
+      "T MedianAbsoluteDeviation(const T* values, const size_t num_values,",
+      "T MedianAbsoluteDeviation(const T* values, const size_t num_values,",
+      "T Median(T* values, const size_t num_values) {\n\n## hwy/nanobenchmark.cc:41-42\ntimer::Ticks SampleUntilStable(const double max_rel_mad, double* rel_mad,\n                               const Params& p, const Lambda& lambda) {\n\n## hwy/contrib/sort/vqsort-inl.h:1187-1187\nhwy/contrib/sort/vqsort-inl.h:1187 — MedianOf3 (function)\n\n## hwy/contrib/sort/sort_unit_test.cc:135-135\nhwy/contrib/sort/sort_unit_test.cc:135 — TestMedian3 (function)\n\n<<SS_ROUTE_META>>{\"query\":\"median absolute deviation MAD\",\"queryHash\":\"7b65d1accd900067\",\"queryLen\":29,\"routedMode\":\"hybrid\",\"routeConfidence\":0.9663169384002686,\"routeMethod\":\"wasm_collapsed_semantic\",\"routerLatency_us\":177,\"serverUsed\":true,\"serverProjectRoot\":\"/Users/admin/Projects/sweet-search-private/eval/ast-tester-probes/_repos/cpp\",\"requestedProjectRoot\":\"/Users/admin/Projects/sweet-search-private/eval/ast-tester-probes/_repos/cpp\",\"repoMatches\":true,\"serverPid\":29794,\"tokenBudget\":4000,\"tokensUsed\":88,\"subMode\":\"agent_preview\",\"resultCount\":5,\"tierCounts\":{\"full\":1,\"preview\":2,\"summary\":2},\"sandwichCount\":0,\"neighborCount\":0,\"headerCount\":0,\"confidence\":\"low\",\"sufficient\":false,\"sufficiencyReasons\":[\"complete_symbol\",\"self_contained_strict\"],\"unresolvedExternalCount\":0}\n\n  Dimensions: 768d full, 512d HNSW\n\nVocabulary: Loaded 98 pre-computed embeddings\n  ✓ Vocabulary loaded (98 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 866ms (threads: 10, backend: cpu, quantized: q8)\n  ✓ Local embedding model loaded\nWarmup complete in 866ms\n\nhwy/auto_tune.h:96: MAD\nhwy/auto_tune.h:137: MAD\nhwy/auto_tune.h:146: MAD\nhwy/auto_tune.h:155: MAD\nhwy/auto_tune.h:175: MAD\n\nhwy/robust_statistics.h\n125\t  }\n126\t  // For integers, round rather than truncate.\n127\t  const T bias = hwy::IsInteger<T>() ? T{1} : T{0};\n128\t  // Even count: return average of middle two.\n129\t  return (values[half] + values[half - 1] + bias) / 2;\n130\t}",
+      "T Median(T* values, const size_t num_values) {\n\n## hwy/nanobenchmark.cc:41-42\ntimer::Ticks SampleUntilStable(const double max_rel_mad, double* rel_mad,\n                               const Params& p, const Lambda& lambda) {\n\n## hwy/contrib/sort/vqsort-inl.h:1187-1187\nhwy/contrib/sort/vqsort-inl.h:1187 — MedianOf3 (function)\n\n## hwy/contrib/sort/sort_unit_test.cc:135-135\nhwy/contrib/sort/sort_unit_test.cc:135 — TestMedian3 (function)\n\n<<SS_ROUTE_META>>{\"query\":\"median absolute deviation MAD\",\"queryHash\":\"7b65d1accd900067\",\"queryLen\":29,\"routedMode\":\"hybrid\",\"routeConfidence\":0.9663169384002686,\"routeMethod\":\"wasm_collapsed_semantic\",\"routerLatency_us\":177,\"serverUsed\":true,\"serverProjectRoot\":\"/Users/admin/Projects/sweet-search-private/eval/ast-tester-probes/_repos/cpp\",\"requestedProjectRoot\":\"/Users/admin/Projects/sweet-search-private/eval/ast-tester-probes/_repos/cpp\",\"repoMatches\":true,\"serverPid\":29794,\"tokenBudget\":4000,\"tokensUsed\":88,\"subMode\":\"agent_preview\",\"resultCount\":5,\"tierCounts\":{\"full\":1,\"preview\":2,\"summary\":2},\"sandwichCount\":0,\"neighborCount\":0,\"headerCount\":0,\"confidence\":\"low\",\"sufficient\":false,\"sufficiencyReasons\":[\"complete_symbol\",\"self_contained_strict\"],\"unresolvedExternalCount\":0}\n\n  Dimensions: 768d full, 512d HNSW\n\nVocabulary: Loaded 98 pre-computed embeddings\n  ✓ Vocabulary loaded (98 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 866ms (threads: 10, backend: cpu, quantized: q8)\n  ✓ Local embedding model loaded\nWarmup complete in 866ms\n\nhwy/auto_tune.h:96: MAD\nhwy/auto_tune.h:137: MAD\nhwy/auto_tune.h:146: MAD\nhwy/auto_tune.h:155: MAD\nhwy/auto_tune.h:175: MAD\n\nhwy/robust_statistics.h\n125\t  }\n126\t  // For integers, round rather than truncate.\n127\t  const T bias = hwy::IsInteger<T>() ? T{1} : T{0};\n128\t  // Even count: return average of middle two.\n129\t  return (values[half] + values[half - 1] + bias) / 2;\n130\t}",
+      "## hwy/robust_statistics.h:134-135",
+      "## hwy/robust_statistics.h:134-135",
+      "## hwy/robust_statistics.h:134-135",
+      "T MedianAbsoluteDeviation(const T* values, const size_t num_values,"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.37832337597493154,
+    "panelCorrectness": 1,
+    "stratum": "literal-lookup",
+    "language": "cpp",
+    "repo": "highway",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "T MedianAbsoluteDeviation(const T* values, const size_t num_values, const T median) { ... return Median(abs_deviations.data(), num_values); }",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "template <typename T>\nT MedianAbsoluteDeviation(const T* values, const size_t num_values,\n                          const T median) {\n  HWY_ASSERT(num_values != 0);\n  std::vector<T> abs_deviations;\n  abs_deviations.reserve(num_values);\n  for (size_t i = 0; i < num_values; ++i) {\n    const int64_t abs = ScalarAbs(static_cast<int64_t>(values[i]) -\n                                  static_cast<int64_t>(median));\n    abs_deviations.push_back(static_cast<T>(abs));\n  }\n  return Median(abs_deviations.data(), num_values);\n}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "T Median(T* values, const size_t num_values) {",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "hwy/robust_statistics.h:134-135\n```\nT MedianAbsoluteDeviation(const T* values, const size_t num_values,\n                          const T median) {",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "template <typename T>\nT MedianAbsoluteDeviation(const T* values, const size_t num_values,\n                          const T median) {\n  HWY_ASSERT(num_values != 0);\n  std::vector<T> abs_deviations;\n  abs_deviations.reserve(num_values);\n  for (size_t i = 0; i < num_values; ++i) {\n    const int64_t abs = ScalarAbs(static_cast<int64_t>(values[i]) -\n                                  static_cast<int64_t>(median));\n    abs_deviations.push_back(static_cast<T>(abs));\n  }\n  return Median(abs_deviations.data(), num_values);\n}",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "MedianAbsoluteDeviation",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "T MedianAbsoluteDeviation(const T* values, const size_t num_values,\n                          const T median) {",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "hwy/robust_statistics.h",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "MedianAbsoluteDeviation(const T* values, const size_t num_values,\n                          const T median) {",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "T MedianAbsoluteDeviation(const T* values, const size_t num_values,\n                          const T median) {",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "T MedianAbsoluteDeviation(const T* values, const size_t num_values,\n                          const T median) {\n  HWY_ASSERT(num_values != 0);\n  std::vector<T> abs_deviations;\n  abs_deviations.reserve(num_values);\n  for (size_t i = 0; i < num_values; ++i) {\n    const int64_t abs = ScalarAbs(static_cast<int64_t>(values[i]) -\n                                  static_cast<int64_t>(median));\n    abs_deviations.push_back(static_cast<T>(abs));\n  }\n  return Median(abs_deviations.data(), num_values);\n}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "T Median(T* values, const size_t num_values) {",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "hwy/robust_statistics.h:134-135",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "MedianAbsoluteDeviation is defined in hwy/robust_statistics.h; it builds a vector of absolute deviations of each value from the given median and returns the Median of those deviations.",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "hwy/auto_tune.h:96: MAD\nhwy/auto_tune.h:137: MAD\nhwy/auto_tune.h:146: MAD\nhwy/auto_tune.h:155: MAD\nhwy/auto_tune.h:175: MAD",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "cpp-v60-02",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 0,
+    "total_tokens": 771,
+    "used_tokens_AST": 0,
+    "citedSpans": {
+      "answer_grounding": [],
+      "workable_code": [],
+      "navigability": [],
+      "edit_locality": [],
+      "sufficiency": [],
+      "signal_purity": []
+    },
+    "snappedSpans": [],
+    "programmatic": {
+      "precheck": false,
+      "panelOk": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0,
+    "stratum": "literal-lookup",
+    "language": "cpp",
+    "repo": "highway",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "csharp-v60-01",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 0,
+    "total_tokens": 1400,
+    "used_tokens_AST": 0,
+    "citedSpans": {
+      "answer_grounding": [],
+      "workable_code": [],
+      "navigability": [],
+      "edit_locality": [],
+      "sufficiency": [],
+      "signal_purity": []
+    },
+    "snappedSpans": [],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0.1,
+    "stratum": "behavioral",
+    "language": "csharp",
+    "repo": "garnet",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "csharp-v60-01",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 0,
+    "total_tokens": 1715,
+    "used_tokens_AST": 0,
+    "citedSpans": {
+      "answer_grounding": [],
+      "workable_code": [],
+      "navigability": [],
+      "edit_locality": [],
+      "sufficiency": [],
+      "signal_purity": []
+    },
+    "snappedSpans": [],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0,
+    "stratum": "behavioral",
+    "language": "csharp",
+    "repo": "garnet",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "java-v60-01",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0.21298684766845033,
+    "grounding": 1,
+    "D1": 1,
+    "D2": 0,
+    "D3": 1,
+    "D4": 1,
+    "D5": 1,
+    "signal_purity": 1,
+    "content": 0.8,
+    "content_noD3": 0.75,
+    "purity_ratio": 0.14712153518123666,
+    "total_tokens": 5159,
+    "used_tokens_AST": 759,
+    "citedSpans": {
+      "answer_grounding": [
+        "// Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type",
+        "// Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type"
+      ],
+      "workable_code": [],
+      "navigability": [
+        "private static boolean isReflective(TypeAdapter<?> typeAdapter)",
+        "TypeAdapter<T> runtimeTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));"
+      ],
+      "edit_locality": [
+        "gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java:27-103",
+        "gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java"
+      ],
+      "sufficiency": [
+        "// Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type",
+        "// Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type",
+        "// Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type"
+      ],
+      "signal_purity": [
+        "gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java",
+        "extras/src/main/java/com/google/gson/typeadapters/RuntimeTypeAdapterFactory.java"
+      ]
+    },
+    "snappedSpans": [
+      "final class TypeAdapterRuntimeTypeWrapper<T> extends TypeAdapter<T> {\n  private final Gson context;\n  private final TypeAdapter<T> delegate;\n  private final Type type;\n\n  TypeAdapterRuntimeTypeWrapper(Gson context, TypeAdapter<T> delegate, Type type) {\n    this.context = context;\n    this.delegate = delegate;\n    this.type = type;\n\n  public T read(JsonReader in) throws IOException {\n    return delegate.read(in);\n\n  public void write(JsonWriter out, T value) throws IOException {\n    // Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type\n\n    TypeAdapter<T> chosen = delegate;\n    Type runtimeType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (runtimeType != type) {\n      @SuppressWarnings(\"unchecked\")\n      TypeAdapter<T> runtimeTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));\n      // For backward compatibility only check ReflectiveTypeAdapterFactory.Adapter here but not any\n      // other wrapping adapters, see\n      // https://github.com/google/gson/pull/1787#issuecomment-1222175189\n      if (!(runtimeTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the runtime type, so we will use that\n        chosen = runtimeTypeAdapter;\n      } else if (!isReflective(delegate)) {\n        // The user registered a type adapter for Base class, so we prefer it over the\n        // reflective type adapter for the runtime type\n        chosen = delegate;\n      } else {\n        // Use the type adapter for runtime type\n    chosen.write(out, value);\n\n   * Returns whether the type adapter uses reflection.\n   * @param typeAdapter the type adapter to check.\n  private static boolean isReflective(TypeAdapter<?> typeAdapter) {\n    // Run this in loop in case multiple delegating adapters are nested\n    while (typeAdapter instanceof SerializationDelegatingTypeAdapter) {\n      TypeAdapter<?> delegate =\n          ((SerializationDelegatingTypeAdapter<?>) typeAdapter).getSerializationDelegate();\n      // Break if adapter does not delegate serialization\n      if (delegate == typeAdapter) {\n        break;\n      typeAdapter = delegate;\n\n    return typeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter;\n\n  /** Finds a compatible runtime type if it is more specific */\n  private static Type getRuntimeTypeIfMoreSpecific(Type type, Object value) {\n    if (value != null && (type instanceof Class<?> || type instanceof TypeVariable<?>)) {\n      type = value.getClass();\n    return type;\n",
+      "final class TypeAdapterRuntimeTypeWrapper<T> extends TypeAdapter<T> {\n  private final Gson context;\n  private final TypeAdapter<T> delegate;\n  private final Type type;\n\n  TypeAdapterRuntimeTypeWrapper(Gson context, TypeAdapter<T> delegate, Type type) {\n    this.context = context;\n    this.delegate = delegate;\n    this.type = type;\n\n  public T read(JsonReader in) throws IOException {\n    return delegate.read(in);\n\n  public void write(JsonWriter out, T value) throws IOException {\n    // Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type\n\n    TypeAdapter<T> chosen = delegate;\n    Type runtimeType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (runtimeType != type) {\n      @SuppressWarnings(\"unchecked\")\n      TypeAdapter<T> runtimeTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));\n      // For backward compatibility only check ReflectiveTypeAdapterFactory.Adapter here but not any\n      // other wrapping adapters, see\n      // https://github.com/google/gson/pull/1787#issuecomment-1222175189\n      if (!(runtimeTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the runtime type, so we will use that\n        chosen = runtimeTypeAdapter;\n      } else if (!isReflective(delegate)) {\n        // The user registered a type adapter for Base class, so we prefer it over the\n        // reflective type adapter for the runtime type\n        chosen = delegate;\n      } else {\n        // Use the type adapter for runtime type\n    chosen.write(out, value);\n\n   * Returns whether the type adapter uses reflection.\n   * @param typeAdapter the type adapter to check.\n  private static boolean isReflective(TypeAdapter<?> typeAdapter) {\n    // Run this in loop in case multiple delegating adapters are nested\n    while (typeAdapter instanceof SerializationDelegatingTypeAdapter) {\n      TypeAdapter<?> delegate =\n          ((SerializationDelegatingTypeAdapter<?>) typeAdapter).getSerializationDelegate();\n      // Break if adapter does not delegate serialization\n      if (delegate == typeAdapter) {\n        break;\n      typeAdapter = delegate;\n\n    return typeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter;\n\n  /** Finds a compatible runtime type if it is more specific */\n  private static Type getRuntimeTypeIfMoreSpecific(Type type, Object value) {\n    if (value != null && (type instanceof Class<?> || type instanceof TypeVariable<?>)) {\n      type = value.getClass();\n    return type;\n",
+      "final class TypeAdapterRuntimeTypeWrapper<T> extends TypeAdapter<T> {\n  private final Gson context;\n  private final TypeAdapter<T> delegate;\n  private final Type type;\n\n  TypeAdapterRuntimeTypeWrapper(Gson context, TypeAdapter<T> delegate, Type type) {\n    this.context = context;\n    this.delegate = delegate;\n    this.type = type;\n\n  public T read(JsonReader in) throws IOException {\n    return delegate.read(in);\n\n  public void write(JsonWriter out, T value) throws IOException {\n    // Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type\n\n    TypeAdapter<T> chosen = delegate;\n    Type runtimeType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (runtimeType != type) {\n      @SuppressWarnings(\"unchecked\")\n      TypeAdapter<T> runtimeTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));\n      // For backward compatibility only check ReflectiveTypeAdapterFactory.Adapter here but not any\n      // other wrapping adapters, see\n      // https://github.com/google/gson/pull/1787#issuecomment-1222175189\n      if (!(runtimeTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the runtime type, so we will use that\n        chosen = runtimeTypeAdapter;\n      } else if (!isReflective(delegate)) {\n        // The user registered a type adapter for Base class, so we prefer it over the\n        // reflective type adapter for the runtime type\n        chosen = delegate;\n      } else {\n        // Use the type adapter for runtime type\n    chosen.write(out, value);\n\n   * Returns whether the type adapter uses reflection.\n   * @param typeAdapter the type adapter to check.\n  private static boolean isReflective(TypeAdapter<?> typeAdapter) {\n    // Run this in loop in case multiple delegating adapters are nested\n    while (typeAdapter instanceof SerializationDelegatingTypeAdapter) {\n      TypeAdapter<?> delegate =\n          ((SerializationDelegatingTypeAdapter<?>) typeAdapter).getSerializationDelegate();\n      // Break if adapter does not delegate serialization\n      if (delegate == typeAdapter) {\n        break;\n      typeAdapter = delegate;\n\n    return typeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter;\n\n  /** Finds a compatible runtime type if it is more specific */\n  private static Type getRuntimeTypeIfMoreSpecific(Type type, Object value) {\n    if (value != null && (type instanceof Class<?> || type instanceof TypeVariable<?>)) {\n      type = value.getClass();\n    return type;\n",
+      "final class TypeAdapterRuntimeTypeWrapper<T> extends TypeAdapter<T> {\n  private final Gson context;\n  private final TypeAdapter<T> delegate;\n  private final Type type;\n\n  TypeAdapterRuntimeTypeWrapper(Gson context, TypeAdapter<T> delegate, Type type) {\n    this.context = context;\n    this.delegate = delegate;\n    this.type = type;\n\n  public T read(JsonReader in) throws IOException {\n    return delegate.read(in);\n\n  public void write(JsonWriter out, T value) throws IOException {\n    // Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type\n\n    TypeAdapter<T> chosen = delegate;\n    Type runtimeType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (runtimeType != type) {\n      @SuppressWarnings(\"unchecked\")\n      TypeAdapter<T> runtimeTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));\n      // For backward compatibility only check ReflectiveTypeAdapterFactory.Adapter here but not any\n      // other wrapping adapters, see\n      // https://github.com/google/gson/pull/1787#issuecomment-1222175189\n      if (!(runtimeTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the runtime type, so we will use that\n        chosen = runtimeTypeAdapter;\n      } else if (!isReflective(delegate)) {\n        // The user registered a type adapter for Base class, so we prefer it over the\n        // reflective type adapter for the runtime type\n        chosen = delegate;\n      } else {\n        // Use the type adapter for runtime type\n    chosen.write(out, value);\n\n   * Returns whether the type adapter uses reflection.\n   * @param typeAdapter the type adapter to check.\n  private static boolean isReflective(TypeAdapter<?> typeAdapter) {\n    // Run this in loop in case multiple delegating adapters are nested\n    while (typeAdapter instanceof SerializationDelegatingTypeAdapter) {\n      TypeAdapter<?> delegate =\n          ((SerializationDelegatingTypeAdapter<?>) typeAdapter).getSerializationDelegate();\n      // Break if adapter does not delegate serialization\n      if (delegate == typeAdapter) {\n        break;\n      typeAdapter = delegate;\n\n    return typeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter;\n\n  /** Finds a compatible runtime type if it is more specific */\n  private static Type getRuntimeTypeIfMoreSpecific(Type type, Object value) {\n    if (value != null && (type instanceof Class<?> || type instanceof TypeVariable<?>)) {\n      type = value.getClass();\n    return type;\n",
+      "## gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java:27-103",
+      "## gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java:27-103",
+      "final class TypeAdapterRuntimeTypeWrapper<T> extends TypeAdapter<T> {\n  private final Gson context;\n  private final TypeAdapter<T> delegate;\n  private final Type type;\n\n  TypeAdapterRuntimeTypeWrapper(Gson context, TypeAdapter<T> delegate, Type type) {\n    this.context = context;\n    this.delegate = delegate;\n    this.type = type;\n\n  public T read(JsonReader in) throws IOException {\n    return delegate.read(in);\n\n  public void write(JsonWriter out, T value) throws IOException {\n    // Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type\n\n    TypeAdapter<T> chosen = delegate;\n    Type runtimeType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (runtimeType != type) {\n      @SuppressWarnings(\"unchecked\")\n      TypeAdapter<T> runtimeTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));\n      // For backward compatibility only check ReflectiveTypeAdapterFactory.Adapter here but not any\n      // other wrapping adapters, see\n      // https://github.com/google/gson/pull/1787#issuecomment-1222175189\n      if (!(runtimeTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the runtime type, so we will use that\n        chosen = runtimeTypeAdapter;\n      } else if (!isReflective(delegate)) {\n        // The user registered a type adapter for Base class, so we prefer it over the\n        // reflective type adapter for the runtime type\n        chosen = delegate;\n      } else {\n        // Use the type adapter for runtime type\n    chosen.write(out, value);\n\n   * Returns whether the type adapter uses reflection.\n   * @param typeAdapter the type adapter to check.\n  private static boolean isReflective(TypeAdapter<?> typeAdapter) {\n    // Run this in loop in case multiple delegating adapters are nested\n    while (typeAdapter instanceof SerializationDelegatingTypeAdapter) {\n      TypeAdapter<?> delegate =\n          ((SerializationDelegatingTypeAdapter<?>) typeAdapter).getSerializationDelegate();\n      // Break if adapter does not delegate serialization\n      if (delegate == typeAdapter) {\n        break;\n      typeAdapter = delegate;\n\n    return typeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter;\n\n  /** Finds a compatible runtime type if it is more specific */\n  private static Type getRuntimeTypeIfMoreSpecific(Type type, Object value) {\n    if (value != null && (type instanceof Class<?> || type instanceof TypeVariable<?>)) {\n      type = value.getClass();\n    return type;\n",
+      "final class TypeAdapterRuntimeTypeWrapper<T> extends TypeAdapter<T> {\n  private final Gson context;\n  private final TypeAdapter<T> delegate;\n  private final Type type;\n\n  TypeAdapterRuntimeTypeWrapper(Gson context, TypeAdapter<T> delegate, Type type) {\n    this.context = context;\n    this.delegate = delegate;\n    this.type = type;\n\n  public T read(JsonReader in) throws IOException {\n    return delegate.read(in);\n\n  public void write(JsonWriter out, T value) throws IOException {\n    // Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type\n\n    TypeAdapter<T> chosen = delegate;\n    Type runtimeType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (runtimeType != type) {\n      @SuppressWarnings(\"unchecked\")\n      TypeAdapter<T> runtimeTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));\n      // For backward compatibility only check ReflectiveTypeAdapterFactory.Adapter here but not any\n      // other wrapping adapters, see\n      // https://github.com/google/gson/pull/1787#issuecomment-1222175189\n      if (!(runtimeTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the runtime type, so we will use that\n        chosen = runtimeTypeAdapter;\n      } else if (!isReflective(delegate)) {\n        // The user registered a type adapter for Base class, so we prefer it over the\n        // reflective type adapter for the runtime type\n        chosen = delegate;\n      } else {\n        // Use the type adapter for runtime type\n    chosen.write(out, value);\n\n   * Returns whether the type adapter uses reflection.\n   * @param typeAdapter the type adapter to check.\n  private static boolean isReflective(TypeAdapter<?> typeAdapter) {\n    // Run this in loop in case multiple delegating adapters are nested\n    while (typeAdapter instanceof SerializationDelegatingTypeAdapter) {\n      TypeAdapter<?> delegate =\n          ((SerializationDelegatingTypeAdapter<?>) typeAdapter).getSerializationDelegate();\n      // Break if adapter does not delegate serialization\n      if (delegate == typeAdapter) {\n        break;\n      typeAdapter = delegate;\n\n    return typeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter;\n\n  /** Finds a compatible runtime type if it is more specific */\n  private static Type getRuntimeTypeIfMoreSpecific(Type type, Object value) {\n    if (value != null && (type instanceof Class<?> || type instanceof TypeVariable<?>)) {\n      type = value.getClass();\n    return type;\n",
+      "final class TypeAdapterRuntimeTypeWrapper<T> extends TypeAdapter<T> {\n  private final Gson context;\n  private final TypeAdapter<T> delegate;\n  private final Type type;\n\n  TypeAdapterRuntimeTypeWrapper(Gson context, TypeAdapter<T> delegate, Type type) {\n    this.context = context;\n    this.delegate = delegate;\n    this.type = type;\n\n  public T read(JsonReader in) throws IOException {\n    return delegate.read(in);\n\n  public void write(JsonWriter out, T value) throws IOException {\n    // Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type\n\n    TypeAdapter<T> chosen = delegate;\n    Type runtimeType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (runtimeType != type) {\n      @SuppressWarnings(\"unchecked\")\n      TypeAdapter<T> runtimeTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));\n      // For backward compatibility only check ReflectiveTypeAdapterFactory.Adapter here but not any\n      // other wrapping adapters, see\n      // https://github.com/google/gson/pull/1787#issuecomment-1222175189\n      if (!(runtimeTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the runtime type, so we will use that\n        chosen = runtimeTypeAdapter;\n      } else if (!isReflective(delegate)) {\n        // The user registered a type adapter for Base class, so we prefer it over the\n        // reflective type adapter for the runtime type\n        chosen = delegate;\n      } else {\n        // Use the type adapter for runtime type\n    chosen.write(out, value);\n\n   * Returns whether the type adapter uses reflection.\n   * @param typeAdapter the type adapter to check.\n  private static boolean isReflective(TypeAdapter<?> typeAdapter) {\n    // Run this in loop in case multiple delegating adapters are nested\n    while (typeAdapter instanceof SerializationDelegatingTypeAdapter) {\n      TypeAdapter<?> delegate =\n          ((SerializationDelegatingTypeAdapter<?>) typeAdapter).getSerializationDelegate();\n      // Break if adapter does not delegate serialization\n      if (delegate == typeAdapter) {\n        break;\n      typeAdapter = delegate;\n\n    return typeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter;\n\n  /** Finds a compatible runtime type if it is more specific */\n  private static Type getRuntimeTypeIfMoreSpecific(Type type, Object value) {\n    if (value != null && (type instanceof Class<?> || type instanceof TypeVariable<?>)) {\n      type = value.getClass();\n    return type;\n",
+      "## gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java:27-103",
+      "## extras/src/main/java/com/google/gson/typeadapters/RuntimeTypeAdapterFactory.java:158-331"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.21298684766845033,
+    "panelCorrectness": 0.9,
+    "stratum": "multi-file-flow",
+    "language": "java",
+    "repo": "gson",
+    "isDev": true,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "// Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type\n\n    TypeAdapter<T> chosen = delegate;\n    Type runtimeType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (runtimeType != type) {\n      @SuppressWarnings(\"unchecked\")\n      TypeAdapter<T> runtimeTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));\n      // For backward compatibility only check ReflectiveTypeAdapterFactory.Adapter here but not any\n      // other wrapping adapters, see\n      // https://github.com/google/gson/pull/1787#issuecomment-1222175189\n      if (!(runtimeTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the runtime type, so we will use that\n        chosen = runtimeTypeAdapter;\n      } else if (!isReflective(delegate)) {\n        // The user registered a type adapter for Base class, so we prefer it over the\n        // reflective type adapter for the runtime type\n        chosen = delegate;\n      } else {\n        // Use the type adapter for runtime type\n        chosen = runtimeTypeAdapter;\n      }\n    }\n    chosen.write(out, value);",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "final class TypeAdapterRuntimeTypeWrapper<T> extends TypeAdapter<T> {\n  private final Gson context;\n  private final TypeAdapter<T> delegate;\n  private final Type type;\n\n  TypeAdapterRuntimeTypeWrapper(Gson context, TypeAdapter<T> delegate, Type type) {\n    this.context = context;\n    this.delegate = delegate;\n    this.type = type;\n  }\n\n  @Override\n  public T read(JsonReader in) throws IOException {\n    return delegate.read(in);\n  }\n\n  @Override\n  public void write(JsonWriter out, T value) throws IOException {\n    // Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type\n\n    TypeAdapter<T> chosen = delegate;\n    Type runtimeType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (runtimeType != type) {\n      @SuppressWarnings(\"unchecked\")\n      TypeAdapter<T> runtimeTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));\n      // For backward compatibility only check ReflectiveTypeAdapterFactory.Adapter here but not any\n      // other wrapping adapters, see\n      // https://github.com/google/gson/pull/1787#issuecomment-1222175189\n      if (!(runtimeTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the runtime type, so we will use that\n        chosen = runtimeTypeAdapter;\n      } else if (!isReflective(delegate)) {\n        // The user registered a type adapter for Base class, so we prefer it over the\n        // reflective type adapter for the runtime type\n        chosen = delegate;\n      } else {\n        // Use the type adapter for runtime type\n        chosen = runtimeTypeAdapter;\n      }\n    }\n    chosen.write(out, value);\n  }",
+            "v": 0
+          },
+          "navigability": {
+            "span": "gson/src/main/java/com/google/gson/internal/bind/ReflectiveTypeAdapterFactory.java:215 — TypeAdapterRuntimeTypeWrapper",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java:27-103",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "// Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "// Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "  public void write(JsonWriter out, T value) throws IOException {\n    // Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type\n\n    TypeAdapter<T> chosen = delegate;\n    Type runtimeType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (runtimeType != type) {\n      @SuppressWarnings(\"unchecked\")\n      TypeAdapter<T> runtimeTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));\n      // For backward compatibility only check ReflectiveTypeAdapterFactory.Adapter here but not any\n      // other wrapping adapters, see\n      // https://github.com/google/gson/pull/1787#issuecomment-1222175189\n      if (!(runtimeTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the runtime type, so we will use that\n        chosen = runtimeTypeAdapter;\n      } else if (!isReflective(delegate)) {\n        // The user registered a type adapter for Base class, so we prefer it over the\n        // reflective type adapter for the runtime type\n        chosen = delegate;\n      } else {\n        // Use the type adapter for runtime type\n        chosen = runtimeTypeAdapter;\n      }\n    }\n    chosen.write(out, value);\n  }",
+            "v": 0
+          },
+          "navigability": {
+            "span": "private static boolean isReflective(TypeAdapter<?> typeAdapter)",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java:44",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "// Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java",
+            "v": 1
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "// Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "@Override\n  public void write(JsonWriter out, T value) throws IOException {\n    // Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type\n\n    TypeAdapter<T> chosen = delegate;\n    Type runtimeType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (runtimeType != type) {\n      @SuppressWarnings(\"unchecked\")\n      TypeAdapter<T> runtimeTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));\n      // For backward compatibility only check ReflectiveTypeAdapterFactory.Adapter here but not any\n      // other wrapping adapters, see\n      // https://github.com/google/gson/pull/1787#issuecomment-1222175189\n      if (!(runtimeTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the runtime type, so we will use that\n        chosen = runtimeTypeAdapter;\n      } else if (!isReflective(delegate)) {\n        // The user registered a type adapter for Base class, so we prefer it over the\n        // reflective type adapter for the runtime type\n        chosen = delegate;\n      } else {\n        // Use the type adapter for runtime type\n        chosen = runtimeTypeAdapter;\n      }\n    }\n    chosen.write(out, value);\n  }",
+            "v": 0
+          },
+          "navigability": {
+            "span": "TypeAdapter<T> runtimeTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "// Order of preference for choosing type adapters\n    // First preference: a type adapter registered for the runtime type\n    // Second preference: a type adapter registered for the declared type\n    // Third preference: reflective type adapter for the runtime type\n    //                   (if it is a subclass of the declared type)\n    // Fourth preference: reflective type adapter for the declared type",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "extras/src/main/java/com/google/gson/typeadapters/RuntimeTypeAdapterFactory.java",
+            "v": 1
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "java-v60-01",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 0.049255441008018326,
+    "total_tokens": 1746,
+    "used_tokens_AST": 86,
+    "citedSpans": {
+      "answer_grounding": [
+        "TypeAdapterRuntimeTypeWrapper.java:    // First preference: a type adapter registered for the n type"
+      ],
+      "workable_code": [],
+      "navigability": [
+        "ReflectiveTypeAdapterFactory.Adapter"
+      ],
+      "edit_locality": [
+        "TypeAdapterRuntimeTypeWrapper.java"
+      ],
+      "sufficiency": [],
+      "signal_purity": []
+    },
+    "snappedSpans": [
+      "gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java:    // First preference: a type adapter registered for the n type",
+      "gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java:      if (!(nTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {",
+      "TypeAdapterRuntimeTypeWrapper.java"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0,
+    "stratum": "multi-file-flow",
+    "language": "java",
+    "repo": "gson",
+    "isDev": true,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "TypeAdapterRuntimeTypeWrapper.java:    // First preference: a type adapter registered for the n type",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "TypeAdapterRuntimeTypeWrapper.java:    // First preference: a type adapter registered for the n type\n    // Third preference: reflective type adapter for the n type\n    Type nType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (nType != type) {\n      TypeAdapter<T> nTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(nType));\n      if (!(nTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the n type, so we will use that",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "TypeAdapterRuntimeTypeWrapper.java:    Type nType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (nType != type) {\n      TypeAdapter<T> nTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(nType));\n      if (!(nTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the n type, so we will use that\n        chosen = nTypeAdapter;",
+            "v": 0
+          },
+          "navigability": {
+            "span": "ReflectiveTypeAdapterFactory.Adapter",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "TypeAdapterRuntimeTypeWrapper.java",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "TypeAdapterRuntimeTypeWrapper.java:    // First preference: a type adapter registered for the n type\n    // Third preference: reflective type adapter for the n type\n    Type nType = getRuntimeTypeIfMoreSpecific(type, value);\n    if (nType != type) {\n      TypeAdapter<T> nTypeAdapter =\n          (TypeAdapter<T>) context.getAdapter(TypeToken.get(nType));\n      if (!(nTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\n        // The user registered a type adapter for the n type, so we will use that\n        chosen = nTypeAdapter;",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "java-v60-02",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": true,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 1,
+    "total_tokens": 3055,
+    "used_tokens_AST": 0,
+    "programmatic": {
+      "confidentFalsePositive": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0,
+    "stratum": "no-match",
+    "language": "java",
+    "repo": "gson",
+    "isDev": false,
+    "panel": []
+  },
+  {
+    "probeId": "java-v60-02",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": true,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 1,
+    "total_tokens": 456,
+    "used_tokens_AST": 0,
+    "programmatic": {
+      "confidentFalsePositive": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0.1,
+    "stratum": "no-match",
+    "language": "java",
+    "repo": "gson",
+    "isDev": false,
+    "panel": []
+  },
+  {
+    "probeId": "kotlin-v60-01",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 1,
+    "D2": 0,
+    "D3": 0,
+    "D4": 1,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0.4,
+    "content_noD3": 0.5,
+    "purity_ratio": 0.02579075425790754,
+    "total_tokens": 2055,
+    "used_tokens_AST": 53,
+    "citedSpans": {
+      "answer_grounding": [
+        "internal fun CoroutineScope.fixedPeriodTicker(\n    return produce(capacity = 0) {\n        while (true) {\n            channel.send(Unit)\n            delay(delayMillis)",
+        "internal fun CoroutineScope.fixedPeriodTicker"
+      ],
+      "workable_code": [],
+      "navigability": [
+        "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:303 — fixedPeriodTicker (function)"
+      ],
+      "edit_locality": [
+        "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:303 — fixedPeriodTicker (function)",
+        "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:303"
+      ],
+      "sufficiency": [
+        "internal fun CoroutineScope.fixedPeriodTicker(\n    return produce(capacity = 0) {\n        while (true) {\n            channel.send(Unit)\n            delay(delayMillis)"
+      ],
+      "signal_purity": []
+    },
+    "snappedSpans": [
+      "internal fun CoroutineScope.fixedPeriodTicker(",
+      "internal fun CoroutineScope.fixedPeriodTicker(",
+      "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:303 — fixedPeriodTicker (function)",
+      "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:303 — fixedPeriodTicker (function)",
+      "## kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:303-385",
+      "internal fun CoroutineScope.fixedPeriodTicker("
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0.4,
+    "stratum": "literal-lookup",
+    "language": "kotlin",
+    "repo": "kotlinx.coroutines",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "internal fun CoroutineScope.fixedPeriodTicker(\n    return produce(capacity = 0) {\n        while (true) {\n            channel.send(Unit)\n            delay(delayMillis)",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:303 — fixedPeriodTicker (function)",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "internal fun CoroutineScope.fixedPeriodTicker",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:303 — fixedPeriodTicker (function)",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:303",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "internal fun CoroutineScope.fixedPeriodTicker(\n    return produce(capacity = 0) {\n        while (true) {\n            channel.send(Unit)\n            delay(delayMillis)",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:303 — fixedPeriodTicker (function)",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "internal fun CoroutineScope.fixedPeriodTicker(\n    return produce(capacity = 0) {\n        while (true) {\n            channel.send(Unit)\n            delay(delayMillis)",
+            "v": 0
+          },
+          "navigability": {
+            "span": "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:303-385",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:303",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:303 — fixedPeriodTicker (function)",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "kotlinx-coroutines-core/jvm/src/channels/TickerChannels.kt:37-107",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "kotlin-v60-01",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 1,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0.2,
+    "content_noD3": 0.25,
+    "purity_ratio": 0.03198433420365535,
+    "total_tokens": 1532,
+    "used_tokens_AST": 49,
+    "citedSpans": {
+      "answer_grounding": [
+        "internal fun CoroutineScope.n("
+      ],
+      "workable_code": [],
+      "navigability": [],
+      "edit_locality": [
+        "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:internal fun CoroutineScope.n(",
+        "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt"
+      ],
+      "sufficiency": [],
+      "signal_purity": []
+    },
+    "snappedSpans": [
+      "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:internal fun CoroutineScope.n(",
+      "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:internal fun CoroutineScope.n(",
+      "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:        val n = fixedPeriodTicker(periodMillis)"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.05015344964516767,
+    "panelCorrectness": 0.8,
+    "stratum": "literal-lookup",
+    "language": "kotlin",
+    "repo": "kotlinx.coroutines",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:internal fun CoroutineScope.n(",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "internal fun CoroutineScope.n(",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "kotlinx-coroutines-core/common/src/flow/operators/Delay.kt:        val ticker = n(periodMillis)\n                            n.cancel(ChildCancelledException())\n                            n.onReceive {",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "kotlin-v60-02",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 1,
+    "D2": 0,
+    "D3": 0,
+    "D4": 1,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0.4,
+    "content_noD3": 0.5,
+    "purity_ratio": 0.0331421287444232,
+    "total_tokens": 3138,
+    "used_tokens_AST": 104,
+    "citedSpans": {
+      "answer_grounding": [
+        "delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)",
+        "override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n        .dropWhile { it != SharingCommand.START } // don't emit any STOP/RESET_BUFFER to start with, only START\n        .distinctUntilChanged() // just in case somebody forgets it, don't leak our multiple sending of START"
+      ],
+      "workable_code": [],
+      "navigability": [
+        "private class StartedWhileSubscribed("
+      ],
+      "edit_locality": [
+        "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt (lines 164-204 of 204)",
+        "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:164",
+        "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:164 — command (function)"
+      ],
+      "sufficiency": [
+        "delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)"
+      ],
+      "signal_purity": [
+        "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:164-204"
+      ]
+    },
+    "snappedSpans": [
+      "                delay(stopTimeout)",
+      "    override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount",
+      "private class StartedWhileSubscribed(",
+      "# ss-read kotlinx-coroutines-core/common/src/flow/SharingStarted.kt (lines 164-204 of 204)",
+      "## kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:164-204",
+      "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:164 — command (function)",
+      "                delay(stopTimeout)",
+      "## kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:164-204"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.10032952020931359,
+    "panelCorrectness": 1,
+    "stratum": "behavioral",
+    "language": "kotlin",
+    "repo": "kotlinx.coroutines",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n                emit(SharingCommand.START)\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n            }\n        }\n        .dropWhile { it != SharingCommand.START }\n        .distinctUntilChanged()",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "private class StartedWhileSubscribed(\n    private val stopTimeout: Long,\n    private val replayExpiration: Long\n) : SharingStarted {\n    init {\n        require(stopTimeout >= 0) { ... }\n        require(replayExpiration >= 0) { ... }\n    }\n\n    override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n                emit(SharingCommand.START)\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n            }\n        }\n        .dropWhile { it != SharingCommand.START }\n        .distinctUntilChanged()\n\n    override fun toString(): String { ... }\n}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "public enum class SharingCommand {\n    START,\n    STOP,\n    STOP_AND_RESET_REPLAY_CACHE\n}",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt (lines 164-204 of 204)",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n                emit(SharingCommand.START)\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n            }\n        }\n        .dropWhile { it != SharingCommand.START }\n        .distinctUntilChanged()",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "kotlinx-coroutines-core/common/src/flow/Migration.kt:447: WhileSubscribed\nkotlinx-coroutines-core/common/src/flow/Migration.kt:458: WhileSubscribed\nkotlinx-coroutines-core/common/src/flow/Migration.kt:469: WhileSubscribed\nkotlinx-coroutines-core/common/src/flow/Migration.kt:480: WhileSubscribed\nkotlinx-coroutines-core/common/src/flow/operators/Share.kt:30: WhileSubscribed\nkotlinx-coroutines-core/common/src/flow/operators/Share.kt:67: WhileSubscribed\nkotlinx-coroutines-core/common/src/flow/operators/Share.kt:282: WhileSubscribed\nkotlinx-coroutines-core/common/src/flow/operators/Share.kt:300: WhileSubscribed",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n                emit(SharingCommand.START)\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n            }\n        }\n        .dropWhile { it != SharingCommand.START }\n        .distinctUntilChanged()",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:164",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:164-204",
+            "v": 1
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n        .dropWhile { it != SharingCommand.START } // don't emit any STOP/RESET_BUFFER to start with, only START\n        .distinctUntilChanged() // just in case somebody forgets it, don't leak our multiple sending of START",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n        .dropWhile { it != SharingCommand.START }\n        .distinctUntilChanged()",
+            "v": 0
+          },
+          "navigability": {
+            "span": "private class StartedWhileSubscribed(",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:164 — command (function)",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n        .dropWhile { it != SharingCommand.START }\n        .distinctUntilChanged()",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "kotlin-v60-02",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 1,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0.2,
+    "content_noD3": 0.25,
+    "purity_ratio": 0.01285444234404537,
+    "total_tokens": 5290,
+    "used_tokens_AST": 68,
+    "citedSpans": {
+      "answer_grounding": [],
+      "workable_code": [],
+      "navigability": [
+        "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt"
+      ],
+      "edit_locality": [
+        "private class StartedWhileSubscribed",
+        "private class StartedWhileSubscribed("
+      ],
+      "sufficiency": [],
+      "signal_purity": [
+        "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:163:private class StartedWhileSubscribed("
+      ]
+    },
+    "snappedSpans": [
+      "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:38: * This functional interface provides a set of built-in strategies: [Eagerly], [Lazily], [WhileSubscribed], and",
+      "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:163:private class StartedWhileSubscribed(",
+      "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:163:private class StartedWhileSubscribed(",
+      "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:163:private class StartedWhileSubscribed("
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.05002478550319646,
+    "panelCorrectness": 1,
+    "stratum": "behavioral",
+    "language": "kotlin",
+    "repo": "kotlinx.coroutines",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n                emit(SharingCommand.START)\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n            }\n        }\n        .dropWhile { it != SharingCommand.START }\n        .distinctUntilChanged()",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n                emit(SharingCommand.START)\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n            }\n        }\n        .dropWhile { it != SharingCommand.START }\n        .distinctUntilChanged()",
+            "v": 0
+          },
+          "navigability": {
+            "span": "private class StartedWhileSubscribed(\n    private val stopTimeout: Long,\n    private val replayExpiration: Long\n) : SharingStarted {",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "private class StartedWhileSubscribed (SharingStarted.kt:163)",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n                emit(SharingCommand.START)\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n            }\n        }\n        .dropWhile { it != SharingCommand.START }\n        .distinctUntilChanged()",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n                emit(SharingCommand.START)\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n            }\n        }\n        .dropWhile { it != SharingCommand.START } // don't emit any STOP/RESET_BUFFER to start with, only START\n        .distinctUntilChanged()",
+            "v": 0
+          },
+          "navigability": {
+            "span": "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "private class StartedWhileSubscribed",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n                emit(SharingCommand.START)\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n            }\n        }",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt\n1\tpackage kotlinx.coroutines.flow\n2\n3\timport kotlinx.coroutines.*\n4\timport kotlinx.coroutines.flow.internal.unsafeFlow\n5\timport kotlinx.coroutines.internal.IgnoreJreRequirement\n6\timport kotlin.time.*\n7\n8\t/**\n9\t * A command emitted by [SharingStarted] implementations to control the sharing coroutine in\n10\t * the [shareIn] and [stateIn] operators.\n11\t */\n12\tpublic enum class SharingCommand {",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n                emit(SharingCommand.START)\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n            }\n        }\n        .dropWhile { it != SharingCommand.START } // don't emit any STOP/RESET_BUFFER to start with, only START\n        .distinctUntilChanged()",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "private class StartedWhileSubscribed(\n    private val stopTimeout: Long,\n    private val replayExpiration: Long\n) : SharingStarted {\n    init {\n        require(stopTimeout >= 0) { \"stopTimeout($stopTimeout ms) cannot be negative\" }\n        require(replayExpiration >= 0) { \"replayExpiration($replayExpiration ms) cannot be negative\" }\n    }\n\n    override fun command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand> = subscriptionCount\n        .transformLatest { count ->\n            if (count > 0) {\n                emit(SharingCommand.START)\n            } else {\n                delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)\n            }\n        }\n        .dropWhile { it != SharingCommand.START } // don't emit any STOP/RESET_BUFFER to start with, only START\n        .distinctUntilChanged() // just in case somebody forgets it, don't leak our multiple sending of START\n",
+            "v": 0
+          },
+          "navigability": {
+            "span": "SharingCommand.START\nSharingCommand.STOP\nSharingCommand.STOP_AND_RESET_REPLAY_CACHE",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "private class StartedWhileSubscribed(",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "delay(stopTimeout)\n                if (replayExpiration > 0) {\n                    emit(SharingCommand.STOP)\n                    delay(replayExpiration)\n                }\n                emit(SharingCommand.STOP_AND_RESET_REPLAY_CACHE)",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "kotlinx-coroutines-core/common/src/flow/SharingStarted.kt:163:private class StartedWhileSubscribed(",
+            "v": 1
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "ruby-v60-01",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 0,
+    "D2": 0,
+    "D3": 1,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0.2,
+    "content_noD3": 0,
+    "purity_ratio": 0.04746317512274959,
+    "total_tokens": 611,
+    "used_tokens_AST": 29,
+    "citedSpans": {
+      "answer_grounding": [
+        "value = \"W/#{value}\" if kind == :weak"
+      ],
+      "workable_code": [],
+      "navigability": [
+        "etag_matches?",
+        "lib/sinatra/base.rb:637: etag_matches?\nlib/sinatra/base.rb:642: etag_matches?\nlib/sinatra/base.rb:709: etag_matches?"
+      ],
+      "edit_locality": [
+        "lib/sinatra/base.rb:621"
+      ],
+      "sufficiency": [],
+      "signal_purity": []
+    },
+    "snappedSpans": [
+      "632\t      value = \"W/#{value}\" if kind == :weak",
+      "lib/sinatra/base.rb:637: etag_matches?",
+      "lib/sinatra/base.rb:621: etag"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.05033791294890993,
+    "panelCorrectness": 1,
+    "stratum": "behavioral",
+    "language": "ruby",
+    "repo": "sinatra",
+    "isDev": true,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "value = \"W/#{value}\" if kind == :weak\n      response['ETag'] = value\n\n      return unless success? || status == 304\n\n      if etag_matches?(env['HTTP_IF_NONE_MATCH'], new_resource)\n        halt(request.safe? ? 304 : 412)\n      end",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "def etag(value, options = {})\n      # Before touching this code, please double check RFC 2616 14.24 and 14.26.\n      options      = { kind: options } unless Hash === options\n      kind         = options[:kind] || :strong\n      new_resource = options.fetch(:new_resource) { request.post? }\n\n      unless ETAG_KINDS.include?(kind)\n        raise ArgumentError, ':strong or :weak expected'\n      end\n\n      value = format('\"%s\"', value)\n      value = \"W/#{value}\" if kind == :weak\n      response['ETag'] = value\n\n      return unless success? || status == 304\n\n      if etag_matches?(env['HTTP_IF_NONE_MATCH'], new_resource)\n        halt(request.safe? ? 304 : 412)\n      end\n\n      if env['HTTP_IF_MATCH']\n        return if etag_matches?(env['HTTP_IF_MATCH'], new_resource)\n\n        halt 412\n      end\n\n      nil\n    end",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "lib/sinatra/base.rb\n...\ndef etag(value, options = {})",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "def etag(value, options = {})\n      # Before touching this code, please double check RFC 2616 14.24 and 14.26.\n      options      = { kind: options } unless Hash === options\n      kind         = options[:kind] || :strong\n      new_resource = options.fetch(:new_resource) { request.post? }\n\n      unless ETAG_KINDS.include?(kind)\n        raise ArgumentError, ':strong or :weak expected'\n      end\n\n      value = format('\"%s\"', value)\n      value = \"W/#{value}\" if kind == :weak\n      response['ETag'] = value\n\n      return unless success? || status == 304\n\n      if etag_matches?(env['HTTP_IF_NONE_MATCH'], new_resource)\n        halt(request.safe? ? 304 : 412)\n      end\n\n      if env['HTTP_IF_MATCH']\n        return if etag_matches?(env['HTTP_IF_MATCH'], new_resource)\n\n        halt 412\n      end\n\n      nil\n    end",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "value = \"W/#{value}\" if kind == :weak",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "def etag(value, options = {})\n      # Before touching this code, please double check RFC 2616 14.24 and 14.26.\n      options      = { kind: options } unless Hash === options\n      kind         = options[:kind] || :strong\n      new_resource = options.fetch(:new_resource) { request.post? }\n\n      unless ETAG_KINDS.include?(kind)\n        raise ArgumentError, ':strong or :weak expected'\n      end\n\n      value = format('\"%s\"', value)\n      value = \"W/#{value}\" if kind == :weak\n      response['ETag'] = value\n\n      return unless success? || status == 304\n\n      if etag_matches?(env['HTTP_IF_NONE_MATCH'], new_resource)\n        halt(request.safe? ? 304 : 412)\n      end\n\n      if env['HTTP_IF_MATCH']\n        return if etag_matches?(env['HTTP_IF_MATCH'], new_resource)\n\n        halt 412\n      end\n\n      nil\n    end",
+            "v": 0
+          },
+          "navigability": {
+            "span": "etag_matches?",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "lib/sinatra/base.rb:621",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "if etag_matches?(env['HTTP_IF_NONE_MATCH'], new_resource)\n        halt(request.safe? ? 304 : 412)\n      end\n\n      if env['HTTP_IF_MATCH']\n        return if etag_matches?(env['HTTP_IF_MATCH'], new_resource)\n\n        halt 412",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "def etag(value, options = {})\n      # Before touching this code, please double check RFC 2616 14.24 and 14.26.\n      options      = { kind: options } unless Hash === options\n      kind         = options[:kind] || :strong\n      new_resource = options.fetch(:new_resource) { request.post? }\n\n      unless ETAG_KINDS.include?(kind)\n        raise ArgumentError, ':strong or :weak expected'\n      end\n\n      value = format('\"%s\"', value)\n      value = \"W/#{value}\" if kind == :weak\n      response['ETag'] = value\n\n      return unless success? || status == 304\n\n      if etag_matches?(env['HTTP_IF_NONE_MATCH'], new_resource)\n        halt(request.safe? ? 304 : 412)\n      end\n\n      if env['HTTP_IF_MATCH']\n        return if etag_matches?(env['HTTP_IF_MATCH'], new_resource)\n\n        halt 412\n      end\n\n      nil\n    end",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "def etag(value, options = {})\n      # Before touching this code, please double check RFC 2616 14.24 and 14.26.\n      options      = { kind: options } unless Hash === options\n      kind         = options[:kind] || :strong\n      new_resource = options.fetch(:new_resource) { request.post? }\n\n      unless ETAG_KINDS.include?(kind)\n        raise ArgumentError, ':strong or :weak expected'\n      end\n\n      value = format('\"%s\"', value)\n      value = \"W/#{value}\" if kind == :weak\n      response['ETag'] = value\n\n      return unless success? || status == 304\n\n      if etag_matches?(env['HTTP_IF_NONE_MATCH'], new_resource)\n        halt(request.safe? ? 304 : 412)\n      end\n\n      if env['HTTP_IF_MATCH']\n        return if etag_matches?(env['HTTP_IF_MATCH'], new_resource)\n\n        halt 412\n      end\n\n      nil\n    end",
+            "v": 0
+          },
+          "navigability": {
+            "span": "lib/sinatra/base.rb:637: etag_matches?\nlib/sinatra/base.rb:642: etag_matches?\nlib/sinatra/base.rb:709: etag_matches?",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "lib/sinatra/base.rb\n610\n611    ETAG_KINDS = %i[strong weak].freeze",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "def etag(value, options = {})\n      options      = { kind: options } unless Hash === options\n      kind         = options[:kind] || :strong\n      new_resource = options.fetch(:new_resource) { request.post? }\n\n      unless ETAG_KINDS.include?(kind)\n        raise ArgumentError, ':strong or :weak expected'\n      end\n\n      value = format('\"%s\"', value)\n      value = \"W/#{value}\" if kind == :weak\n      response['ETag'] = value\n\n      return unless success? || status == 304\n\n      if etag_matches?(env['HTTP_IF_NONE_MATCH'], new_resource)\n        halt(request.safe? ? 304 : 412)\n      end\n\n      if env['HTTP_IF_MATCH']\n        return if etag_matches?(env['HTTP_IF_MATCH'], new_resource)\n\n        halt 412\n      end\n\n      nil\n    end",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "Dimensions: 768d full, 512d HNSW\n\nVocabulary: Loaded 64 pre-computed embeddings\n  ✓ Vocabulary loaded (64 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 869ms (threads: 10, backend: cpu, quantized: q8)\n  ✓ Local embedding model loaded\nWarmup complete in 869ms",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "ruby-v60-01",
+    "arm": "native",
+    "error": "usd-panel-failed: all 3 judge(s) failed after retries",
+    "rubricHash": "0x46dea0229bdd7370"
+  },
+  {
+    "probeId": "go-v60-01",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 0,
+    "total_tokens": 43,
+    "used_tokens_AST": 0,
+    "citedSpans": {
+      "answer_grounding": [],
+      "workable_code": [],
+      "navigability": [],
+      "edit_locality": [],
+      "sufficiency": [],
+      "signal_purity": []
+    },
+    "snappedSpans": [],
+    "programmatic": {
+      "precheck": false,
+      "panelOk": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0,
+    "stratum": "literal-lookup",
+    "language": "go",
+    "repo": "gin",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "blocked: command reaches outside the task repository (cd /home/ubuntu/go/pkg/mod/github.com/gin-gonic/gin@v1.9.1). Search only within the current repo — use relative paths.",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "go-v60-01",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 1,
+    "D2": 0,
+    "D3": 0,
+    "D4": 1,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0.4,
+    "content_noD3": 0.5,
+    "purity_ratio": 0.015748031496062992,
+    "total_tokens": 1397,
+    "used_tokens_AST": 22,
+    "citedSpans": {
+      "answer_grounding": [
+        "unsafe.Slice(unsafe.StringData(s), len(s))",
+        "return unsafe.Slice(unsafe.StringData(s), len(s))\n./internal/bytesconv/bytesconv.go:20:\treturn unsafe.String(unsafe.SliceData(b), len(b))"
+      ],
+      "workable_code": [],
+      "navigability": [
+        "./internal/bytesconv/bytesconv.go:14:\treturn unsafe.Slice(unsafe.StringData(s), len(s))\n./internal/bytesconv/bytesconv.go:20:\treturn unsafe.String(unsafe.SliceData(b), len(b))"
+      ],
+      "edit_locality": [
+        "internal/bytesconv/bytesconv.go:14:\treturn unsafe.Slice(unsafe.StringData(s), len(s))",
+        "./internal/bytesconv/bytesconv.go:14"
+      ],
+      "sufficiency": [
+        "return unsafe.Slice(unsafe.StringData(s), len(s))\n./internal/bytesconv/bytesconv.go:20:\treturn unsafe.String(unsafe.SliceData(b), len(b))"
+      ],
+      "signal_purity": []
+    },
+    "snappedSpans": [
+      "./internal/bytesconv/bytesconv.go:14:\treturn unsafe.Slice(unsafe.StringData(s), len(s))",
+      "./internal/bytesconv/bytesconv.go:14:\treturn unsafe.Slice(unsafe.StringData(s), len(s))",
+      "./internal/bytesconv/bytesconv.go:14:\treturn unsafe.Slice(unsafe.StringData(s), len(s))",
+      "./internal/bytesconv/bytesconv.go:14:\treturn unsafe.Slice(unsafe.StringData(s), len(s))",
+      "./internal/bytesconv/bytesconv.go:14:\treturn unsafe.Slice(unsafe.StringData(s), len(s))",
+      "./internal/bytesconv/bytesconv.go:14:\treturn unsafe.Slice(unsafe.StringData(s), len(s))"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.1000744001488003,
+    "panelCorrectness": 1,
+    "stratum": "literal-lookup",
+    "language": "go",
+    "repo": "gin",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "unsafe.Slice(unsafe.StringData(s), len(s))",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "internal/bytesconv/bytesconv.go:14:\treturn unsafe.Slice(unsafe.StringData(s), len(s))",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": null,
+        "isError": true
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "return unsafe.Slice(unsafe.StringData(s), len(s))\n./internal/bytesconv/bytesconv.go:20:\treturn unsafe.String(unsafe.SliceData(b), len(b))",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "return unsafe.Slice(unsafe.StringData(s), len(s))",
+            "v": 0
+          },
+          "navigability": {
+            "span": "./internal/bytesconv/bytesconv.go:14:\treturn unsafe.Slice(unsafe.StringData(s), len(s))\n./internal/bytesconv/bytesconv.go:20:\treturn unsafe.String(unsafe.SliceData(b), len(b))",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "./internal/bytesconv/bytesconv.go:14",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "return unsafe.Slice(unsafe.StringData(s), len(s))\n./internal/bytesconv/bytesconv.go:20:\treturn unsafe.String(unsafe.SliceData(b), len(b))",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "./binding/json_test.go:12:\t\"unsafe\"\n./binding/json_test.go:133:func (tc timeCodec) IsEmpty(ptr unsafe.Pointer) bool",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "go-v60-02",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 0.106353591160221,
+    "total_tokens": 2172,
+    "used_tokens_AST": 231,
+    "citedSpans": {
+      "answer_grounding": [],
+      "workable_code": [],
+      "navigability": [
+        "return group.StaticFS(relativePath, Dir(root, false))"
+      ],
+      "edit_locality": [
+        "func (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {"
+      ],
+      "sufficiency": [],
+      "signal_purity": []
+    },
+    "snappedSpans": [
+      "197\tfunc (group *RouterGroup) Static(relativePath, root string) IRoutes {\n198\t\treturn group.StaticFS(relativePath, Dir(root, false))\n199\t}",
+      "216\tfunc (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {\n217\t\tabsolutePath := group.calculateAbsolutePath(relativePath)\n218\t\tfileServer := http.StripPrefix(absolutePath, http.FileServer(fs))\n219\n220\t\treturn func(c *Context) {\n221\t\t\tif _, noListing := fs.(*OnlyFilesFS); noListing {\n222\t\t\t\tc.Writer.WriteHeader(http.StatusNotFound)\n223\t\t\t}\n224\n225\t\t\tfile := c.Param(\"filepath\")\n226\t\t\t// Check if file exists and/or if we have permission to access it\n\n227\t\t\tf, err := fs.Open(file)\n228\t\t\tif err != nil {\n229\t\t\t\tc.Writer.WriteHeader(http.StatusNotFound)\n230\t\t\t\tc.handlers = group.engine.noRoute\n231\t\t\t\t// Reset index\n232\t\t\t\tc.index = -1\n233\t\t\t\treturn\n234\t\t\t}\n235\t\t\tf.Close()\n236\n237\t\t\tfileServer.ServeHTTP(c.Writer, c.Request)\n238\t\t}\n239\t}"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0.85,
+    "stratum": "multi-file-flow",
+    "language": "go",
+    "repo": "gin",
+    "isDev": true,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "func (n neutralizedReaddirFile) Readdir(_ int) ([]os.FileInfo, error) {\n\treturn nil, nil\n}",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "func (n neutralizedReaddirFile) Readdir(_ int) ([]os.FileInfo, error) {\n\treturn nil, nil\n}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "return group.StaticFS(relativePath, Dir(root, false))",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "func (group *RouterGroup) Static(relativePath, root string) IRoutes {\n\treturn group.StaticFS(relativePath, Dir(root, false))\n}",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "if _, noListing := fs.(*OnlyFilesFS); noListing {\n\t\t\tc.Writer.WriteHeader(http.StatusNotFound)\n\t\t}",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "func (o OnlyFilesFS) Open(name string) (http.File, error) { ... return neutralizedReaddirFile{f}, nil",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "func (n neutralizedReaddirFile) Readdir(_ int) ([]os.FileInfo, error) {\n\t// this disables directory listing\n\treturn nil, nil\n}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "routergroup.go:197\tfunc (group *RouterGroup) Static(relativePath, root string) IRoutes {\n198\t\treturn group.StaticFS(relativePath, Dir(root, false))\n199\t}",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "routergroup.go:216\tfunc (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "func (group *RouterGroup) Static(relativePath, root string) IRoutes {\n\t\treturn group.StaticFS(relativePath, Dir(root, false))\n\t}",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "func (group *RouterGroup) Static(relativePath, root string) IRoutes {\n\treturn group.StaticFS(relativePath, Dir(root, false))\n}",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "// Readdir overrides the http.File default implementation and always returns nil.\nfunc (n neutralizedReaddirFile) Readdir(_ int) ([]os.FileInfo, error) {\n\t// this disables directory listing\n\treturn nil, nil\n}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "return &OnlyFilesFS{FileSystem: fs}\n}\n\nfunc (group *RouterGroup) StaticFS",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "func (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "if _, noListing := fs.(*OnlyFilesFS); noListing {\n\t\t\tc.Writer.WriteHeader(http.StatusNotFound)\n\t\t}",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "go-v60-02",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 0,
+    "D2": 0,
+    "D3": 1,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0.2,
+    "content_noD3": 0,
+    "purity_ratio": 0.07604562737642585,
+    "total_tokens": 3682,
+    "used_tokens_AST": 280,
+    "citedSpans": {
+      "answer_grounding": [],
+      "workable_code": [
+        "func (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {"
+      ],
+      "navigability": [
+        "group.StaticFS(relativePath, Dir(root, false))",
+        "return &OnlyFilesFS{FileSystem: fs}"
+      ],
+      "edit_locality": [],
+      "sufficiency": [],
+      "signal_purity": [
+        "routergroup.go"
+      ]
+    },
+    "snappedSpans": [
+      "216\tfunc (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {\n217\t\tabsolutePath := group.calculateAbsolutePath(relativePath)\n218\t\tfileServer := http.StripPrefix(absolutePath, http.FileServer(fs))\n219\n220\t\treturn func(c *Context) {\n221\t\t\tif _, noListing := fs.(*OnlyFilesFS); noListing {\n222\t\t\t\tc.Writer.WriteHeader(http.StatusNotFound)\n223\t\t\t}\n224\n225\t\t\tfile := c.Param(\"filepath\")\n226\t\t\t// Check if file exists and/or if we have permission to access it\n227\t\t\tf, err := fs.Open(file)\n228\t\t\tif err != nil {\n229\t\t\t\tc.Writer.WriteHeader(http.StatusNotFound)\n230\t\t\t\tc.handlers = group.engine.noRoute\n231\t\t\t\t// Reset index\n232\t\t\t\tc.index = -1\n233\t\t\t\treturn\n234\t\t\t}\n235\t\t\tf.Close()\n236\n237\t\t\tfileServer.ServeHTTP(c.Writer, c.Request)\n238\t\t}\n239\t}",
+      "197\tfunc (group *RouterGroup) Static(relativePath, root string) IRoutes {\n198\t\treturn group.StaticFS(relativePath, Dir(root, false))\n199\t}",
+      "42\tfunc Dir(root string, listDirectory bool) http.FileSystem {\n43\t\tfs := http.Dir(root)\n44\n45\t\tif listDirectory {\n46\t\t\treturn fs\n47\t\t}\n48\n49\t\treturn &OnlyFilesFS{FileSystem: fs}\n50\t}",
+      "routergroup.go"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.05086744061646114,
+    "panelCorrectness": 1,
+    "stratum": "multi-file-flow",
+    "language": "go",
+    "repo": "gin",
+    "isDev": true,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "func (n neutralizedReaddirFile) Readdir(_ int) ([]os.FileInfo, error) { return nil, nil }",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "func (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {",
+            "v": 1
+          },
+          "navigability": {
+            "span": "group.StaticFS(relativePath, Dir(root, false))",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "func (group *RouterGroup) Static(relativePath, root string) IRoutes { return group.StaticFS(relativePath, Dir(root, false)) }",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "func (n neutralizedReaddirFile) Readdir(_ int) ([]os.FileInfo, error) { return nil, nil }",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "func (n neutralizedReaddirFile) Readdir(_ int) ([]os.FileInfo, error) {\n\t\t// this disables directory listing\n\t\treturn nil, nil\n\t}",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "func (n neutralizedReaddirFile) Readdir(_ int) ([]os.FileInfo, error) {\n\t\t// this disables directory listing\n\t\treturn nil, nil\n\t}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "return &OnlyFilesFS{FileSystem: fs}",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "func (group *RouterGroup) Static(relativePath, root string) IRoutes {\n\t\treturn group.StaticFS(relativePath, Dir(root, false))\n\t}",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "func (group *RouterGroup) Static(relativePath, root string) IRoutes {\n\t\treturn group.StaticFS(relativePath, Dir(root, false))\n\t}",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "routergroup.go",
+            "v": 1
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "func (group *RouterGroup) Static(relativePath, root string) IRoutes {\n\treturn group.StaticFS(relativePath, Dir(root, false))\n}\n...\nfunc Dir(root string, listDirectory bool) http.FileSystem {\n\tfs := http.Dir(root)\n\n\tif listDirectory {\n\t\treturn fs\n\t}\n\n\treturn &OnlyFilesFS{FileSystem: fs}\n}\n...\nfunc (n neutralizedReaddirFile) Readdir(_ int) ([]os.FileInfo, error) {\n\t// this disables directory listing\n\treturn nil, nil\n}\n...\nfunc (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {\n\t...\n\tif _, noListing := fs.(*OnlyFilesFS); noListing {\n\t\tc.Writer.WriteHeader(http.StatusNotFound)\n\t}\n\t...\n}",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "func (group *RouterGroup) Static(relativePath, root string) IRoutes {\n\treturn group.StaticFS(relativePath, Dir(root, false))\n}\n\n// StaticFS works just like `Static()` but a custom `http.FileSystem` can be used instead.\n// Gin by default uses: gin.Dir()\nfunc (group *RouterGroup) StaticFS(relativePath string, fs http.FileSystem) IRoutes {\n\t...\n\thandler := group.createStaticHandler(relativePath, fs)\n\turlPattern := path.Join(relativePath, \"/*filepath\")\n\n\t// Register GET and HEAD handlers\n\tgroup.GET(urlPattern, handler)\n\tgroup.HEAD(urlPattern, handler)\n\treturn group.returnObj()\n}\n\nfunc (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {\n\tabsolutePath := group.calculateAbsolutePath(relativePath)\n\tfileServer := http.StripPrefix(absolutePath, http.FileServer(fs))\n\n\treturn func(c *Context) {\n\t\tif _, noListing := fs.(*OnlyFilesFS); noListing {\n\t\t\tc.Writer.WriteHeader(http.StatusNotFound)\n\t\t}\n\n\t\tfile := c.Param(\"filepath\")\n\t\t// Check if file exists and/or if we have permission to access it\n\t\tf, err := fs.Open(file)\n\t\tif err != nil {\n\t\t\tc.Writer.WriteHeader(http.StatusNotFound)\n\t\t\tc.handlers = group.engine.noRoute\n\t\t\t// Reset index\n\t\t\tc.index = -1\n\t\t\treturn\n\t\t}\n\t\tf.Close()\n\n\t\tfileServer.ServeHTTP(c.Writer, c.Request)\n\t}\n}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "func (group *RouterGroup) Static(relativePath, root string) IRoutes {\n\treturn group.StaticFS(relativePath, Dir(root, false))\n}\n...\nfunc (group *RouterGroup) StaticFS(relativePath string, fs http.FileSystem) IRoutes {\n\t...\n\thandler := group.createStaticHandler(relativePath, fs)\n\t...\n}\n...\nfunc (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {\n\t...\n\tif _, noListing := fs.(*OnlyFilesFS); noListing {\n\t\t...\n\t}\n\t...\n}",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "routergroup.go:197-199 (Static), routergroup.go:203-214 (StaticFS), routergroup.go:216-239 (createStaticHandler); fs.go:12-25 (OnlyFilesFS), fs.go:27-36 (neutralizedReaddirFile), fs.go:42-50 (Dir)",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "RouterGroup.Static calls StaticFS with Dir(root,false), which returns an OnlyFilesFS (fs.go) whose Open wraps files in neutralizedReaddirFile (Readdir returns nil,nil to disable listing); createStaticHandler (routergroup.go) registers the handler on '/*filepath' for GET+HEAD and returns 404 when the filesystem is *OnlyFilesFS.",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "The response includes the two core files (routergroup.go, fs.go) with complete implementations of Static, StaticFS, createStaticHandler, OnlyFilesFS, neutralizedReaddirFile, and Dir. Test files and internal/fs are incidental noise but do not obscure the answer.",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "javascript-v60-01",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 0,
+    "D2": 0,
+    "D3": 1,
+    "D4": 1,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0.4,
+    "content_noD3": 0.25,
+    "purity_ratio": 0.13573653760569648,
+    "total_tokens": 2247,
+    "used_tokens_AST": 305,
+    "citedSpans": {
+      "answer_grounding": [
+        "lightMyRequest(httpHandler, opts, cb)"
+      ],
+      "workable_code": [],
+      "navigability": [
+        "function ready (cb) {",
+        "this.ready(err => {",
+        "const httpHandler = wrapRouting(router, options)"
+      ],
+      "edit_locality": [
+        "fastify.js:468: function inject",
+        "function inject (opts, cb) {",
+        "fastify.js:468: function inject"
+      ],
+      "sufficiency": [
+        "lightMyRequest(httpHandler, opts, cb)"
+      ],
+      "signal_purity": []
+    },
+    "snappedSpans": [
+      "475\t    if (fastify[kState].started) {\n476\t      if (fastify[kState].closing) {\n477\t        // Force to return an error\n478\t        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n479\t        if (cb) {\n480\t          cb(error)\n481\t          return\n482\t        } else {\n483\t          return Promise.reject(error)\n484\t        }\n485\t      }\n486\t      return lightMyRequest(httpHandler, opts, cb)\n487\t    }",
+      "507\t  function ready (cb) {",
+      "490\t      this.ready(err => {\n491\t        if (err) cb(err, null)\n492\t        else lightMyRequest(httpHandler, opts, cb)\n493\t      })",
+      "104\t  const httpHandler = wrapRouting(router, options)",
+      "fastify.js:468: function inject",
+      "468\t  function inject (opts, cb) {\n469\t    // lightMyRequest is dynamically loaded as it seems very expensive\n470\t    // because of Ajv\n471\t    if (lightMyRequest === undefined) {\n472\t      lightMyRequest = require('light-my-request')\n473\t    }\n474\n475\t    if (fastify[kState].started) {\n476\t      if (fastify[kState].closing) {\n477\t        // Force to return an error\n478\t        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n479\t        if (cb) {\n480\t          cb(error)\n481\t          return\n482\t        } else {\n483\t          return Promise.reject(error)\n484\t        }\n485\t      }\n486\t      return lightMyRequest(httpHandler, opts, cb)\n487\t    }\n488\n489\t    if (cb) {\n490\t      this.ready(err => {\n491\t        if (err) cb(err, null)\n492\t        else lightMyRequest(httpHandler, opts, cb)\n493\t      })\n494\t    } else {\n495\t      return lightMyRequest((req, res) => {\n496\t        this.ready(function (err) {\n497\t          if (err) {\n498\t            res.emit('error', err)\n499\t            return\n500\t          }\n501\t          httpHandler(req, res)\n502\t        })\n503\t      }, opts)\n504\t    }\n505\t  }",
+      "fastify.js:468: function inject",
+      "475\t    if (fastify[kState].started) {\n476\t      if (fastify[kState].closing) {\n477\t        // Force to return an error\n478\t        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n479\t        if (cb) {\n480\t          cb(error)\n481\t          return\n482\t        } else {\n483\t          return Promise.reject(error)\n484\t        }\n485\t      }\n486\t      return lightMyRequest(httpHandler, opts, cb)\n487\t    }"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.1055273222923548,
+    "panelCorrectness": 1,
+    "stratum": "multi-file-flow",
+    "language": "javascript",
+    "repo": "fastify",
+    "isDev": true,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "navigability": {
+            "span": "function ready (cb) {",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "fastify.js:468: function inject",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "Dimensions: 768d full, 512d HNSW",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "lightMyRequest(httpHandler, opts, cb)",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "navigability": {
+            "span": "this.ready(err => {",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "function inject (opts, cb) {",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "lightMyRequest(httpHandler, opts, cb)",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "fastify.js:468: function inject\ntest/internals/all.test.js:24: function inject\n\n460\n461\t  function throwIfAlreadyStarted (msg) {\n462\t    if (fastify[kState].started) throw new FST_ERR_INSTANCE_ALREADY_LISTENING(msg)\n463\t  }\n464\n465\t  // HTTP injection handling\n466\t  // If the server is not ready yet, this\n467\t  // utility will automatically force it.\n468\t  function inject (opts, cb) {",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "navigability": {
+            "span": "const httpHandler = wrapRouting(router, options)",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "fastify.js:468: function inject",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "test/404s.test.js:558: inject\ntest/404s.test.js:564: inject\ntest/404s.test.js:610: inject\ntest/404s.test.js:694: inject\ntest/404s.test.js:746: inject\ntest/404s.test.js:979: inject",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "javascript-v60-01",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 0.33729662077596995,
+    "total_tokens": 1598,
+    "used_tokens_AST": 539,
+    "citedSpans": {
+      "answer_grounding": [
+        "lightMyRequest = require('light-my-request')"
+      ],
+      "workable_code": [],
+      "navigability": [
+        "const httpHandler = wrapRouting(router, options)"
+      ],
+      "edit_locality": [
+        "function inject (opts, cb) {"
+      ],
+      "sufficiency": [
+        "lightMyRequest(httpHandler, opts, cb)"
+      ],
+      "signal_purity": []
+    },
+    "snappedSpans": [
+      "471\t    if (lightMyRequest === undefined) {\n472\t      lightMyRequest = require('light-my-request')\n473\t    }",
+      "545\t    function manageErr (err) {\n546\t      // If the error comes out of Avvio's Error codes\n547\t      // We create a make and preserve the previous error\n548\t      // as cause\n549\t      err = err != null && AVVIO_ERRORS_MAP[err.code] != null\n550\t        ? appendStackTrace(err, new AVVIO_ERRORS_MAP[err.code](err.message))\n551\t        : err\n552\n553\t      if (err) {\n554\t        return fastify[kState].readyResolver.reject(err)\n555\t      }\n556\n557\t      fastify[kState].readyResolver.resolve(fastify)\n558\t      fastify[kState].booting = false\n559\t      fastify[kState].ready = true\n\n$ rg -n \"httpHandler\" fastify.js\n104:  const httpHandler = wrapRouting(router, options)\n113:  } = createServer(options, httpHandler)",
+      "468:  function inject (opts, cb) {\n\n260\t    decorate: decorator.add,\n261\t    hasDecorator: decorator.exist,\n262\t    decorateReply: decorator.decorateReply,\n263\t    decorateRequest: decorator.decorateRequest,\n264\t    hasRequestDecorator: decorator.existRequest,\n265\t    hasReplyDecorator: decorator.existReply,\n266\t    getDecorator: decorator.getInstanceDecorator,\n267\t    addHttpMethod,\n268\t    // fake http injection\n269\t    inject,\n270\t    // pretty print of the registered routes\n271\t    printRoutes,\n272\t    // custom error handling\n273\t    setNotFoundHandler,\n274\t    setErrorHandler,\n275\t    // child logger\n276\t    setChildLoggerFactory,\n277\t    // Set fastify initial configuration options read-only object\n278\t    initialConfig,\n279\t    // constraint strategies\n280\t    addConstraintStrategy: router.addConstraintStrategy.bind(router),\n281\t    hasConstraintStrategy: router.hasConstraintStrategy.bind(router)\n282\t  }",
+      "475\t    if (fastify[kState].started) {\n476\t      if (fastify[kState].closing) {\n477\t        // Force to return an error\n478\t        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n479\t        if (cb) {\n480\t          cb(error)\n481\t          return\n482\t        } else {\n483\t          return Promise.reject(error)\n484\t        }\n485\t      }\n486\t      return lightMyRequest(httpHandler, opts, cb)\n487\t    }"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 1,
+    "stratum": "multi-file-flow",
+    "language": "javascript",
+    "repo": "fastify",
+    "isDev": true,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "468: function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "468: function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "navigability": {
+            "span": "468: function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "468: function inject (opts, cb) {",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "468: function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "fastify.js\ntest/handler-timeout.test.js\ntest/helper.js\ntest/encapsulated-error-handler.test.js\ntest/reply-trailers.test.js\ntest/route.4.test.js\ntest/serialize-response.test.js\ntest/encapsulated-child-logger-factory.test.js\ntest/logger/request.test.js\ntest/hooks.test.js\ntest/stream.1.test.js\ntest/custom-parser.3.test.js\ntest/reply-code.test.js\ntest/logger/logging.test.js\ntest/schema-examples.test.js\ntest/genReqId.test.js\ntest/hooks-async.test.js\ntest/buffer.test.js\ntest/custom-querystring-parser.test.js\ntest/route.8.test.js\ntest/logger/response.test.js\ntest/schema-special-usage.test.js\ntest/sync-routes.test.js\ntest/constrained-routes.test.js\ntest/route-hooks.test.js\ntest/reply-error.test.js\ntest/route.3.test.js\ntest/logger/options.test.js\ntest/handler-context.test.js\ntest/close.test.js",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "lightMyRequest = require('light-my-request')",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "  function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "navigability": {
+            "span": "const httpHandler = wrapRouting(router, options)",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "function inject (opts, cb) {",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "lightMyRequest(httpHandler, opts, cb)",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "function inject (opts, cb) {\n    // lightMyRequest is dynamically loaded as it seems very expensive\n    // because of Ajv\n    if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }\n\n    if (fastify[kState].started) {\n      if (fastify[kState].closing) {\n        // Force to return an error\n        const error = new FST_ERR_REOPENED_CLOSE_SERVER()\n        if (cb) {\n          cb(error)\n          return\n        } else {\n          return Promise.reject(error)\n        }\n      }\n      return lightMyRequest(httpHandler, opts, cb)\n    }\n\n    if (cb) {\n      this.ready(err => {\n        if (err) cb(err, null)\n        else lightMyRequest(httpHandler, opts, cb)\n      })\n    } else {\n      return lightMyRequest((req, res) => {\n        this.ready(function (err) {\n          if (err) {\n            res.emit('error', err)\n            return\n          }\n          httpHandler(req, res)\n        })\n      }, opts)\n    }\n  }",
+            "v": 0
+          },
+          "navigability": {
+            "span": "const httpHandler = wrapRouting(router, options)\n...\n  } = createServer(options, httpHandler)\n...\n      return lightMyRequest(httpHandler, opts, cb)",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "465:  // HTTP injection handling\n466:  // If the server is not ready yet, this\n467:  // utility will automatically force it.\n468:  function inject (opts, cb) {",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "if (lightMyRequest === undefined) {\n      lightMyRequest = require('light-my-request')\n    }",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "465:  // HTTP injection handling\n466:  // If the server is not ready yet, this\n467:  // utility will automatically force it.\n468:  function inject (opts, cb) {",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "python-v60-01",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 1,
+    "D2": 1,
+    "D3": 0,
+    "D4": 1,
+    "D5": 1,
+    "signal_purity": 0,
+    "content": 0.8,
+    "content_noD3": 1,
+    "purity_ratio": 0.018900343642611683,
+    "total_tokens": 1164,
+    "used_tokens_AST": 22,
+    "citedSpans": {
+      "answer_grounding": [
+        "@cache\ndef _split_blueprint_path(name: str) -> list[str]:",
+        "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out",
+        "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out"
+      ],
+      "workable_code": [
+        "def _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out",
+        "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out",
+        "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out"
+      ],
+      "navigability": [
+        "src/flask/helpers.py:644-682"
+      ],
+      "edit_locality": [
+        "src/flask/helpers.py:644-682",
+        "src/flask/helpers.py:644",
+        "src/flask/helpers.py:644-682"
+      ],
+      "sufficiency": [
+        "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out",
+        "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out",
+        "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out"
+      ],
+      "signal_purity": []
+    },
+    "snappedSpans": [
+      "@cache",
+      "@cache",
+      "@cache",
+      "def _split_blueprint_path(name: str) -> list[str]:",
+      "@cache",
+      "@cache",
+      "## src/flask/helpers.py:644-682",
+      "## src/flask/helpers.py:644-682",
+      "## src/flask/helpers.py:644-682",
+      "## src/flask/helpers.py:644-682",
+      "@cache",
+      "@cache",
+      "@cache"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.20021433379388529,
+    "panelCorrectness": 1,
+    "stratum": "literal-lookup",
+    "language": "python",
+    "repo": "flask",
+    "isDev": true,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "@cache\ndef _split_blueprint_path(name: str) -> list[str]:",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "def _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out",
+            "v": 1
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "src/flask/helpers.py:644-682",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out",
+            "v": 1
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "src/flask/helpers.py:644",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out",
+            "v": 1
+          },
+          "navigability": {
+            "span": "src/flask/helpers.py:644-682",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "src/flask/helpers.py:644-682",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "@cache\ndef _split_blueprint_path(name: str) -> list[str]:\n    out: list[str] = [name]\n\n    if \".\" in name:\n        out.extend(_split_blueprint_path(name.rpartition(\".\")[0]))\n\n    return out",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "docs/blueprints.rst:123-160",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "python-v60-01",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 0,
+    "total_tokens": 196,
+    "used_tokens_AST": 0,
+    "citedSpans": {
+      "answer_grounding": [],
+      "workable_code": [],
+      "navigability": [],
+      "edit_locality": [],
+      "sufficiency": [],
+      "signal_purity": []
+    },
+    "snappedSpans": [],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0,
+    "stratum": "literal-lookup",
+    "language": "python",
+    "repo": "flask",
+    "isDev": true,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "python-v60-02",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": true,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 1,
+    "total_tokens": 2386,
+    "used_tokens_AST": 0,
+    "programmatic": {
+      "confidentFalsePositive": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0,
+    "stratum": "no-match",
+    "language": "python",
+    "repo": "flask",
+    "isDev": true,
+    "panel": []
+  },
+  {
+    "probeId": "python-v60-02",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": true,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 1,
+    "total_tokens": 252,
+    "used_tokens_AST": 0,
+    "programmatic": {
+      "confidentFalsePositive": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0.85,
+    "stratum": "no-match",
+    "language": "python",
+    "repo": "flask",
+    "isDev": true,
+    "panel": []
+  },
+  {
+    "probeId": "rust-v60-01",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 1,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0.2,
+    "content_noD3": 0.25,
+    "purity_ratio": 0.004375729288214702,
+    "total_tokens": 3428,
+    "used_tokens_AST": 15,
+    "citedSpans": {
+      "answer_grounding": [],
+      "workable_code": [],
+      "navigability": [
+        "- type Candidate → crates/globset/src/lib.rs:599-603 [struct]"
+      ],
+      "edit_locality": [
+        "type Candidate → crates/globset/src/lib.rs:599-603",
+        "crates/globset/src/lib.rs:599"
+      ],
+      "sufficiency": [
+        "crates/globset/src/lib.rs:599-603"
+      ],
+      "signal_purity": [
+        "crates/globset/src/lib.rs:599-603"
+      ]
+    },
+    "snappedSpans": [
+      "- type Candidate → crates/globset/src/lib.rs:599-603 [struct]",
+      "- type Candidate → crates/globset/src/lib.rs:599-603 [struct]",
+      "- type Candidate → crates/globset/src/lib.rs:599-603 [struct]",
+      "- type Candidate → crates/globset/src/lib.rs:599-603 [struct]",
+      "- type Candidate → crates/globset/src/lib.rs:599-603 [struct]"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0.4,
+    "stratum": "literal-lookup",
+    "language": "rust",
+    "repo": "ripgrep",
+    "isDev": true,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "type Candidate → crates/globset/src/lib.rs:599-603",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "struct Candidate<'a> {",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "pub(crate) struct Candidate<'a> {\n    pub path: Cow<'a, [u8]>,\n    pub basename: Cow<'a, [u8]>,\n    pub ext: Cow<'a, [u8]>,\n}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "- type Candidate → crates/globset/src/lib.rs:599-603 [struct]",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "crates/globset/src/lib.rs:599",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "crates/globset/src/lib.rs:599-603",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "crates/globset/src/lib.rs:599-603",
+            "v": 1
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "type Candidate → crates/globset/src/lib.rs:599-603 [struct]",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "crates/globset/src/pathutil.rs:1-43, crates/globset/src/glob.rs:281-568, crates/ignore/src/pathutil.rs:113-142, crates/globset/src/glob.rs:84-86, crates/ignore/src/lib.rs:121-151, crates/globset/src/lib.rs:211-213, crates/globset/src/pathutil.rs:44-87, crates/cli/src/process.rs:33-38",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "rust-v60-01",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 0,
+    "total_tokens": 1218,
+    "used_tokens_AST": 0,
+    "citedSpans": {
+      "answer_grounding": [],
+      "workable_code": [],
+      "navigability": [],
+      "edit_locality": [],
+      "sufficiency": [],
+      "signal_purity": []
+    },
+    "snappedSpans": [],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0.2,
+    "stratum": "literal-lookup",
+    "language": "rust",
+    "repo": "ripgrep",
+    "isDev": true,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "typescript-v60-01",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 0.04376834801174273,
+    "total_tokens": 3747,
+    "used_tokens_AST": 164,
+    "citedSpans": {
+      "answer_grounding": [
+        "export async function deleteTrailingMessages({ id }: { id: string }) {"
+      ],
+      "workable_code": [],
+      "navigability": [],
+      "edit_locality": [
+        "app/(chat)/actions.ts"
+      ],
+      "sufficiency": [],
+      "signal_purity": [
+        "app/(chat)/actions.ts"
+      ]
+    },
+    "snappedSpans": [
+      "42\texport async function deleteTrailingMessages({ id }: { id: string }) {\n43\t  const session = await auth();\n44\t  if (!session?.user?.id) {\n45\t    throw new Error(\"Unauthorized\");\n46\t  }\n47\n48\t  const [message] = await getMessageById({ id });\n49\t  if (!message) {\n50\t    throw new Error(\"Message not found\");\n51\t  }\n52\n53\t  const chat = await getChatById({ id: message.chatId });\n54\t  if (!chat || chat.userId !== session.user.id) {\n55\t    throw new Error(\"Unauthorized\");\n56\t  }\n57\n58\t  await deleteMessagesByChatIdAfterTimestamp({\n59\t    chatId: message.chatId,\n60\t    timestamp: message.createdAt,\n61\t  });\n62\t}",
+      "app/(chat)/actions.ts:11: deleteMessages",
+      "app/(chat)/actions.ts:11: deleteMessages"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0.6,
+    "stratum": "multi-file-flow",
+    "language": "typescript",
+    "repo": "ai-chatbot",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "export async function deleteTrailingMessages({ id }: { id: string }) {\n  const session = await auth();\n  if (!session?.user?.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  const [message] = await getMessageById({ id });\n  if (!message) {\n    throw new Error(\"Message not found\");\n  }\n\n  const chat = await getChatById({ id: message.chatId });\n  if (!chat || chat.userId !== session.user.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  await deleteMessagesByChatIdAfterTimestamp({\n    chatId: message.chatId,\n    timestamp: message.createdAt,\n  });\n}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "export async function deleteTrailingMessages({ id }: { id: string }) {",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "export async function deleteTrailingMessages({ id }: { id: string }) {\n  const session = await auth();\n  if (!session?.user?.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  const [message] = await getMessageById({ id });\n  if (!message) {\n    throw new Error(\"Message not found\");\n  }\n\n  const chat = await getChatById({ id: message.chatId });\n  if (!chat || chat.userId !== session.user.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  await deleteMessagesByChatIdAfterTimestamp({\n    chatId: message.chatId,\n    timestamp: message.createdAt,\n  });\n}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "import {\n  deleteMessagesByChatIdAfterTimestamp,\n  getChatById,\n  getMessageById,\n  updateChatVisibilityById,\n} from \"@/lib/db/queries\";",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "app/(chat)/actions.ts",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "export async function deleteTrailingMessages({ id }: { id: string }) {\n  const session = await auth();\n  if (!session?.user?.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  const [message] = await getMessageById({ id });\n  if (!message) {\n    throw new Error(\"Message not found\");\n  }\n\n  const chat = await getChatById({ id: message.chatId });\n  if (!chat || chat.userId !== session.user.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  await deleteMessagesByChatIdAfterTimestamp({\n    chatId: message.chatId,\n    timestamp: message.createdAt,\n  });\n}",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "app/(chat)/actions.ts",
+            "v": 1
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "await deleteMessagesByChatIdAfterTimestamp({\n    chatId: message.chatId,\n    timestamp: message.createdAt,\n  });",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "deleteMessagesByChatIdAfterTimestamp,",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": ".github/workflows/playwright.yml:44-46\n```\n          restore-keys: |\n            ${{ runner.os }}-pnpm-store-\n```",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "typescript-v60-01",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 1,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0.2,
+    "content_noD3": 0.25,
+    "purity_ratio": 0.03837298541826554,
+    "total_tokens": 5212,
+    "used_tokens_AST": 200,
+    "citedSpans": {
+      "answer_grounding": [
+        "deleteMessagesByChatIdAfterTimestamp({"
+      ],
+      "workable_code": [],
+      "navigability": [
+        "import { deleteTrailingMessages } from \"@/app/(chat)/actions\";"
+      ],
+      "edit_locality": [
+        "export async function deleteTrailingMessages({ id }: { id: string })",
+        "./app/(chat)/actions.ts:42:export async function deleteTrailingMessages({ id }: { id: string }) {",
+        "app/(chat)/actions.ts:42:export async function deleteTrailingMessages({ id }: { id: string }) {"
+      ],
+      "sufficiency": [],
+      "signal_purity": [
+        "./app/(chat)/actions.ts"
+      ]
+    },
+    "snappedSpans": [
+      "58\t  await deleteMessagesByChatIdAfterTimestamp({\n59\t    chatId: message.chatId,\n60\t    timestamp: message.createdAt,\n61\t  });",
+      "4\timport { deleteTrailingMessages } from \"@/app/(chat)/actions\";",
+      "42\texport async function deleteTrailingMessages({ id }: { id: string }) {\n43\t  const session = await auth();\n44\t  if (!session?.user?.id) {\n45\t    throw new Error(\"Unauthorized\");\n46\t  }\n47\n48\t  const [message] = await getMessageById({ id });\n49\t  if (!message) {\n50\t    throw new Error(\"Message not found\");\n51\t  }\n52\n53\t  const chat = await getChatById({ id: message.chatId });\n54\t  if (!chat || chat.userId !== session.user.id) {\n55\t    throw new Error(\"Unauthorized\");\n56\t  }\n57\n58\t  await deleteMessagesByChatIdAfterTimestamp({\n59\t    chatId: message.chatId,\n60\t    timestamp: message.createdAt,\n61\t  });\n62\t}",
+      "./app/(chat)/actions.ts:42:export async function deleteTrailingMessages({ id }: { id: string }) {",
+      "./app/(chat)/actions.ts:42:export async function deleteTrailingMessages({ id }: { id: string }) {",
+      "./app/(chat)/actions.ts"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.05022087290148656,
+    "panelCorrectness": 1,
+    "stratum": "multi-file-flow",
+    "language": "typescript",
+    "repo": "ai-chatbot",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "export async function deleteTrailingMessages({ id }: { id: string }) {\n  const session = await auth();\n  if (!session?.user?.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  const [message] = await getMessageById({ id });\n  if (!message) {\n    throw new Error(\"Message not found\");\n  }\n\n  const chat = await getChatById({ id: message.chatId });\n  if (!chat || chat.userId !== session.user.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  await deleteMessagesByChatIdAfterTimestamp({\n    chatId: message.chatId,\n    timestamp: message.createdAt,\n  });\n}\n\nexport async function deleteMessagesByChatIdAfterTimestamp({\n  chatId,\n  timestamp,\n}: {\n  chatId: string;\n  timestamp: Date;\n}) {\n  try {\n    const messagesToDelete = await db\n      .select({ id: message.id })\n      .from(message)\n      .where(\n        and(eq(message.chatId, chatId), gte(message.createdAt, timestamp))\n      );\n\n    const messageIds = messagesToDelete.map(\n      (currentMessage) => currentMessage.id\n    );\n\n    if (messageIds.length > 0) {\n      await db\n        .delete(vote)\n        .where(\n          and(eq(vote.chatId, chatId), inArray(vote.messageId, messageIds))\n        );\n\n      return await db\n        .delete(message)\n        .where(\n          and(eq(message.chatId, chatId), inArray(message.id, messageIds))\n        );\n    }\n  } catch (_error) {\n    throw new ChatbotError(\n      \"bad_request:database\",\n      \"Failed to delete messages by chat id after timestamp\"\n    );\n  }\n}",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "export async function deleteTrailingMessages({ id }: { id: string }) {\n  const session = await auth();\n  if (!session?.user?.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  const [message] = await getMessageById({ id });\n  if (!message) {\n    throw new Error(\"Message not found\");\n  }\n\n  const chat = await getChatById({ id: message.chatId });\n  if (!chat || chat.userId !== session.user.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  await deleteMessagesByChatIdAfterTimestamp({\n    chatId: message.chatId,\n    timestamp: message.createdAt,\n  });\n}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "import { deleteTrailingMessages } from \"@/app/(chat)/actions\";\n// ...\nawait deleteTrailingMessages({ id: message.id });",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "export async function deleteTrailingMessages({ id }: { id: string })",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "export async function deleteMessagesByChatIdAfterTimestamp({\n  chatId,\n  timestamp,\n}: {\n  chatId: string;\n  timestamp: Date;\n}) {\n  try {\n    const messagesToDelete = await db\n      .select({ id: message.id })\n      .from(message)\n      .where(\n        and(eq(message.chatId, chatId), gte(message.createdAt, timestamp))\n      );\n\n    const messageIds = messagesToDelete.map(\n      (currentMessage) => currentMessage.id\n    );\n\n    if (messageIds.length > 0) {\n      await db\n        .delete(vote)\n        .where(\n          and(eq(vote.chatId, chatId), inArray(vote.messageId, messageIds))\n        );\n\n      return await db\n        .delete(message)\n        .where(\n          and(eq(message.chatId, chatId), inArray(message.id, messageIds))\n        );\n    }\n  } catch (_error) {\n    throw new ChatbotError(\n      \"bad_request:database\",\n      \"Failed to delete messages by chat id after timestamp\"\n    );\n  }\n}",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "export async function saveChat({\n  id,\n  userId,\n  title,\n  visibility,\n}: {\n  id: string;\n  userId: string;\n  title: string;\n  visibility: VisibilityType;\n}) {\n  try {\n    return await db.insert(chat).values({\n      id,\n      createdAt: new Date(),\n      userId,\n      title,\n      visibility,\n    });\n  } catch (_error) {\n    throw new ChatbotError(\"bad_request:database\", \"Failed to save chat\");\n  }\n}",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "deleteMessagesByChatIdAfterTimestamp({",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "export async function deleteTrailingMessages({ id }: { id: string }) {\n  const session = await auth();\n  if (!session?.user?.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  const [message] = await getMessageById({ id });\n  if (!message) {\n    throw new Error(\"Message not found\");\n  }\n\n  const chat = await getChatById({ id: message.chatId });\n  if (!chat || chat.userId !== session.user.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  await deleteMessagesByChatIdAfterTimestamp({\n    chatId: message.chatId,\n    timestamp: message.createdAt,\n  });\n}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "import {\n  deleteMessagesByChatIdAfterTimestamp,\n  getChatById,\n  getMessageById,\n  updateChatVisibilityById,\n} from \"@/lib/db/queries\";",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "./app/(chat)/actions.ts:42:export async function deleteTrailingMessages({ id }: { id: string }) {",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "await deleteMessagesByChatIdAfterTimestamp({\n    chatId: message.chatId,\n    timestamp: message.createdAt,\n  });",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "./app/(chat)/actions.ts",
+            "v": 1
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "export async function deleteTrailingMessages({ id }: { id: string }) {\n  const session = await auth();\n  if (!session?.user?.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  const [message] = await getMessageById({ id });\n  if (!message) {\n    throw new Error(\"Message not found\");\n  }\n\n  const chat = await getChatById({ id: message.chatId });\n  if (!chat || chat.userId !== session.user.id) {\n    throw new Error(\"Unauthorized\");\n  }\n\n  await deleteMessagesByChatIdAfterTimestamp({\n    chatId: message.chatId,\n    timestamp: message.createdAt,\n  });\n}",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "export async function deleteMessagesByChatIdAfterTimestamp({\n  chatId,\n  timestamp,\n}: {\n  chatId: string;\n  timestamp: Date;\n}) {\n  try {\n    const messagesToDelete = await db\n      .select({ id: message.id })\n      .from(message)\n      .where(\n        and(eq(message.chatId, chatId), gte(message.createdAt, timestamp))\n      );\n\n    const messageIds = messagesToDelete.map(\n      (currentMessage) => currentMessage.id\n    );\n\n    if (messageIds.length > 0) {\n      await db\n        .delete(vote)\n        .where(\n          and(eq(vote.chatId, chatId), inArray(vote.messageId, messageIds))\n        );\n\n      return await db\n        .delete(message)\n        .where(\n          and(eq(message.chatId, chatId), inArray(message.id, messageIds))\n        );\n    }\n  } catch (_error) {\n    throw new ChatbotError(\n      \"bad_request:database\",\n      \"Failed to delete messages by chat id after timestamp\"\n    );\n  }\n}",
+            "v": 0
+          },
+          "navigability": {
+            "span": "import { deleteTrailingMessages } from \"@/app/(chat)/actions\";",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "app/(chat)/actions.ts:42:export async function deleteTrailingMessages({ id }: { id: string }) {",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "deleteTrailingMessages in app/(chat)/actions.ts authenticates, loads the target message via getMessageById and verifies ownership via getChatById, then calls deleteMessagesByChatIdAfterTimestamp (lib/db/queries.ts) which selects messages with createdAt >= the message's timestamp (gte), deletes their votes first, then deletes those messages.",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  }
+]

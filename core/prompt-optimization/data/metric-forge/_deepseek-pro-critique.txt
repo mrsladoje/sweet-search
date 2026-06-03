@@ -1,0 +1,94 @@
+Prioritized concrete breaks of the USD metric. Every one is actionable, adversarial, and undermines the claimed validity.
+
+---
+
+### 1. **SHIP-BLOCKING — No-match probes award USD=1 to any garbage that sidesteps a trivial regex**
+**Severity:** Ship-blocking. The metric can be blown open with zero effort; it destroys validity of the aggregate score, the arm comparison, and any trust in the calibration.
+
+**Adversarial example:**
+Probe is a no-match for `expectedSymbol = "parse_config"`. ss-* returns:
+```
+==================================================
+This is not the answer you are looking for.
+==================================================
+```
+Or, more verbosely, a 10k‑tone Shakespeare sonnet without the word `parse_config`. The programmatic floor `g` is 1 because the inverted condition is satisfied (no expected file/symbol present). Per spec, `content := g` and `purity_ratio := 1`, so **USD = 1**. The response contains zero usable code-awareness signal, yet scores perfectly. The same holds for any tool response that avoids the blacklisted strings—padding, hallucinations, or useless filler all get the top score.
+
+**Mechanism exploited:**
+The metric special-cases no-match probes to bypass the entire judge panel, all D‑criteria, and even the density shaper. `g` is programmatic and binary; the inversion for no-match probes means `g=1` if the response does **not** contain the expected strings. There is no check that the response is empty, that it correctly indicates “no match”, or that it contains no irrelevant content. An adversarial tool can output anything as long as the response string fails to match a simple substring test.
+
+**Proposed fix:**
+No-match probes must be scored like any other probe. The tool must either output an empty response (or a canonical `NO_MATCH` token) to be considered correct. A programmatic check should enforce that the response is either empty or exactly a predefined “no result” marker; any other content on a no-match probe should force `g=0` and thus `USD=0`. Alternatively, run the full judge pipeline (including C) and require `C=1` (purity) and `content=0` (no answer provided) to receive `USD=1`. Without this, the metric is trivially gamed.
+
+---
+
+### 2. **SHIP-BLOCKING — Unrestricted judge‑span length enables massive‑verbosity responses to score purity_ratio=1**
+**Severity:** Ship-blocking. The anti‑verbosity density shaper can be neutralized entirely by formatting the response as one gargantuan block that a judge will cite whole. This makes the metric reward verbosity instead of penalizing it, exactly the opposite of its stated goal.
+
+**Adversarial example:**
+Probe asks for the body of `compute_average`. ss-* returns a single code block containing the **entire file** (1200 lines) plus all imported standard‑library modules pasted inline, with no marking of where the answer lives. The whole thing is one contiguous text block. When the judge is asked to cite a span for D2 (“workable_code: complete symbol body present”), they naturally highlight the entire block, because the function is textually nested inside it and the block is presented as an inseparable whole. The cited span thus equals the entire response; `used_tokens = total_tokens`, so `purity_ratio = 1`. D3 (“navigability”) is trivially satisfied because every possible neighbor is present, so the judge cites the same mega‑block. D5 (“sufficiency”) also gets a full‑block citation. Union of cited spans = entire response. `C` remains 1 because the judge sees one “block” and does not recognize any sub‑block as irrelevant. Result: `USD = USD_raw * (0.5 + 0.5*1) = USD_raw`. A terse native response that provides only the 10‑line function gets `USD_raw` lower because D3 and D5 may fail, and its `purity_ratio` is 1 but irrelevant because `content` is lower. The verbose ss‑* response wins, while being objectively worse for an engineer (hunting through 1200 lines vs 10 lines).
+
+**Mechanism exploited:**
+The union‑of‑cited‑spans definition of `used_tokens` has no minimality constraint. Judges are only required to “QUOTE a verbatim span before scoring 1”. They are free to quote the entire response if any part of it aids a criterion. Because `used_tokens` equals the length of the union, an attacker can force that union to be the whole response by presenting all content as one monolithic, unbreakable span. The density ratio then becomes 1 regardless of how much extraneous matter is packed in, completely defeating the `0.5+0.5*purity_ratio` shaper. The shaper becomes inert for any response structured this way.
+
+**Proposed fix:**
+Add a **span‑minimality requirement**: the judge must mark the *tightest* verbatim substring that entirely satisfies the criterion. The union of these minimal spans defines `used_tokens`. Additionally, the programmatic `C^G` overlap check for D4 should be extended to all dimensions where a gold minimal span exists, and the metric should programmatically clip cited spans to only those that directly contain required symbols/files. Even better, replace the judge‑citation union with an automatic token‑level annotation using the gold minimal sufficient context (C^G) on the 24‑probe subset, and on held‑out probes, use an LLM to extract the minimal necessary tokens and penalize any token beyond them harshly. Without a minimality constraint, the metric is a verbosity‑rewarding machine.
+
+---
+
+### 3. **SERIOUS — Chrome‑stripping asymmetry systematically penalizes ss‑* and violates arm symmetry**
+**Severity:** The metric is biased against the arm it was designed to favour (ss-*), entirely invalidating the “symmetric to both arms” requirement. This is a fairness break that can flip the conclusion of the experiment.
+
+**Adversarial example:**
+ss-* returns:
+```
+[ss‑search] tier:full confidence:0.97 sufficient:yes
+/home/user/project/utils.py:42
+def calculate(a, b):
+    return a + b
+```
+Stripping removes the meta line; judges see only `/home/user/project/utils.py:42\ndef calculate...`. The response length (unstripped) is ~80 chars; stripped is ~65 chars. `total_tokens = estimateTokens(80) = 20`, `used_tokens = estimateTokens(65) = 16` (if the judge cites the whole code). `purity_ratio = 16/20 = 0.8`. Native returns exactly the same code block without meta (65 chars) → `total_tokens=16`, `used_tokens=16`, ratio=1. If both have identical `USD_raw=1`, ss‑* USD = 1 * (0.5+0.4) = 0.9, native USD = 1.0. The metric declares the native arm better on a per‑token basis, even though the stripped content is byte‑for‑byte identical and the meta line actually carries usable signal (confidence, tier) that a downstream agent may exploit. The asymmetry is not in the code awareness signal but in an arbitrary formatting penalty.
+
+**Mechanism exploited:**
+Total token count uses the unstripped raw bytes, but the judge panel works on stripped output and therefore cannot cite the meta information. Hence the meta parts inflate `total_tokens` but can never be part of `used_tokens`. This is a design decision that breaks symmetry: native has no such non‑citable chrome, so it enjoys a permanent purity‑ratio advantage. The shaper `0.5+0.5*purity_ratio` then magnifies the gap. Even the length‑matched regression cannot fully correct for it, because the token inflation is not a function of code length but a fixed per‑response overhead.
+
+**Proposed fix:**
+Compute `total_tokens` on the **stripped** version of the response, because the judges never see the raw version. If the chrome is considered part of the tool’s per‑token cost, then it should be visible to judges and citable (i.e., do not strip it). Alternatively, define a separate “overhead budget” that is identical for both arms and excluded from the purity denominator. As specified, the metric is not arm‑symmetric and must be fixed.
+
+---
+
+### 4. **HIGH — Signal‑purity C is unanchored on the 36 held‑out probes, allowing irrelevant‑but‑plausible padding to slide through**
+**Severity:** The metric’s primary defence against packing irrelevant content into `used_tokens` (via generous citations) is the binary `C` judgement. On the held‑out set where no gold `C^G` exists, judges must rely on their own notion of “content not needed”, which is easily fooled by borderline‑relevant filler, especially when the response has been deliberately structured to look relevant (e.g., by including “neighbor” functions that are callers of something in the answer but are actually irrelevant to the probe).
+
+**Adversarial example:**
+Probe asks for the definition of a specific error‑handling function. ss-* returns that function plus 20 other functions from the same module, each with a comment “// potentially relevant caller”. None of those extra functions are required to solve the probe (the task only needs the definition, not its callers). On the annotated subset, `C^G` would explicitly mark them as “not needed” and `C` would be 0. On a held‑out probe, a lenient judge may think “this extra context is helpful for navigability” and keep `C=1`. Then the extra functions get cited for D3, `used_tokens` balloons, and the purity ratio stays high. The metric rewards the padded response while a terse native response that omits them gets lower content (D3=0) and therefore lower USD_raw. The ss‑* arm benefits from this only on the un‑calibrated subset, creating an inconsistent, gameable advantage.
+
+**Proposed fix:**
+Extend the gold annotation to all 60 probes, or at least ensure that every probe used in the final aggregate comparison has a minimal‑sufficient‑context annotation. If full annotation is infeasible, use a strong automated surrogate (e.g., an LLM prompted to strip all non‑necessary content using the expected facts) to flag irrelevant blocks before judging, and feed the stripped version to judges. Without this, the metric’s anti‑verbosity teeth are only present on the 24 calibrated probes, and an attacker can target the other 36.
+
+---
+
+### 5. **HIGH — Judge determinism and citation‑extent bias can be weaponized by tool‑specific formatting**
+**Severity:** Because the metric’s density term relies entirely on which spans judges *choose* to cite (not just whether criteria are satisfied), any systematic difference in how judges cite across arms—e.g., they might highlight entire code blocks for ss‑* because of its packaging, but point‑precise lines for native—creates an artificial purity‑ratio gap. This is not fixed by judge blinding, because the formatting itself differs between arms.
+
+**Concrete demonstration:**
+ss-* returns each result as a self‑contained block with a header, the code, and a “related” section. A judge, seeking to satisfy D2, might highlight the entire block including the header because it’s visually a single unit. Native returns pure text; a judge highlights only the function body. The union for ss-* thus includes visual framing, padding, and inter‑block whitespace that are part of the response but not signal. The metric would unfairly penalize ss‑* (if framing is unstripped) or reward it (if framing is included and gets cited), but in either case the comparison is contaminated by formatting‑driven citation behaviour. The reliability‑probe “verdict‑flip rate” only checks binary scores, not the extent of spans, so this goes undetected.
+
+**Proposed fix:**
+Move the token‑counting from judge‑cited spans to programmatically defined minimal answer spans derived from the gold facts and symbol boundaries. Use tree‑sitter to identify exact AST node extents that match the expected symbol; for D3, define a fixed‑scope limit (e.g., direct callers/callees only, identified by static analysis) and count only those tokens. Remove judge subjectivity from the density numerator entirely. As long as a human decides what span to highlight, the metric is open to extent‑bias gaming.
+
+---
+
+### 6. **Notable — The 0.5‑floor in the purity shaper can be exploited by extreme padding without crashing C**
+**Severity:** Medium, because it still leaves a wide scoring band where enormous padding only halves USD at worst. An attacker can accept a USD drop from 1.0 to 0.5 and still beat a terse native response that scores 0.4 on content.
+
+**Adversarial scenario:**
+ss-* wants to overwhelm with information while staying above a competitor. It returns a minimal correct answer plus 100 KB of definitely irrelevant filler (say, the GPL license text) **but** segments it as a separate clearly marked block, so the judge sets `C=0`. That kills USD entirely. So instead, the attacker interleaves the irrelevant text into the same code block as comments (`/* GPL… */`) that cannot be easily cited without citing the whole block. If the judge treats the whole block as one “block” and deems it not entirely irrelevant (since the needle is there), `C` remains 1. `used_tokens` grows because the judge cites the whole block for D2; `total_tokens` grows proportionally, and `purity_ratio` remains near 1. But if the attacker can’t pull that off and instead adds a separate block that is clearly irrelevant, `C` becomes 0 → USD=0. The safe attacker therefore pads inside the same logical cited span to keep `C=1`. The 0.5 floor never even comes into play; the real guardrail is `C` binary. Since `C` can be kept at 1, the shaper is irrelevant for well‑designed verbosity. The 0.5 floor is a red herring.
+
+**Proposed fix:**
+Redesign the purity term to be a stronger, continuous penalty (e.g., multiplicative factor = (used_tokens / total_tokens)^alpha, with alpha tuned such that doubling total_tokens without increasing used_tokens cuts the score severely). The current formulation makes verbosity too cheap when `C` is not triggered.
+
+---
+
+### Single Most Dangerous Flaw
+**The no‑match probe scoring loophole.** It entirely exempts 15% of the probes from any qualitative evaluation, gives perfect `USD=1` to any garbage that dodges a simple regex, and is trivially exploitable by an adversarial tool. This alone suffices to falsify the metric, because an arm can be engineered to achieve perfect no‑match scores with zero signal, making the aggregate USD meaningless and the length‑matched regression untrustworthy. No other fix matters until this is closed.
