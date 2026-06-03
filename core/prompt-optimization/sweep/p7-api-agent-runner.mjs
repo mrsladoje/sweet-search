@@ -287,6 +287,10 @@ export async function runAnthropicApiAgent(req) {
       }
       const out = await executeTool(tc, req);
       guard?.observe(out);
+      // Opt-in verbatim tool-RESULT capture (metric-forge USD scores the tool
+      // RESPONSES, not the final answer). Default off → byte-identical frozen
+      // baselines. Attached to the tc so it rides out on `toolCalls`.
+      if (req.captureToolResults) tc.result = { isError: out.isError, content: out.content };
       results.push({ type: 'tool_result', tool_use_id: use.id, is_error: out.isError, content: out.content });
     }
     messages.push({ role: 'user', content: results });
@@ -394,6 +398,7 @@ export async function runOpenRouterApiAgent(req) {
       }
       const out = await executeTool(tc, req);
       guard?.observe(out);
+      if (req.captureToolResults) tc.result = { isError: out.isError, content: out.content };
       messages.push({ role: 'tool', tool_call_id: use.id, content: out.content });
     }
   }

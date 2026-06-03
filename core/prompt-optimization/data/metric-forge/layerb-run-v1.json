@@ -1,0 +1,71 @@
+{
+  "runId": "run-v1",
+  "solver": {
+    "lineage": "anthropic-api",
+    "model": "claude-haiku-4-5"
+  },
+  "gradePanel": [
+    "deepseek-api:deepseek-v4-flash",
+    "google-api:gemini-3.1-flash-lite",
+    "minimax:minimax/minimax-m2.7"
+  ],
+  "solverThreshold": 0.6,
+  "n": 119,
+  "note": "PROVISIONAL validity (answer-fed-solver). NOT the execution-grounded F2P∧P2P resolve-delta — the task-completion bench has no per-probe join to the vault and shows resolve-parity at n=14.",
+  "solverSuccessRate": {
+    "ss": 0.7666666666666667,
+    "native": 0.7288135593220338
+  },
+  "correlations": {
+    "USD": {
+      "spearman": 0.17563077766578825,
+      "kendall": 0.04272895598917533,
+      "ci": [
+        0.11274236619560617,
+        0.238601117847204
+      ],
+      "partialSpearman_lengthControlled": 0.2198191140863125,
+      "n": 119
+    },
+    "USD_noC": {
+      "spearman": 0.5198454415308214,
+      "kendall": 0.2435550491382994,
+      "ci": [
+        0.4264466527726086,
+        0.612093722391098
+      ],
+      "partialSpearman_lengthControlled": 0.3973935336846603,
+      "n": 119
+    },
+    "content_noD3": {
+      "spearman": 0.4390127442596303,
+      "kendall": 0.20424440962825807,
+      "ci": [
+        0.3041865091295878,
+        0.5596705048059316
+      ],
+      "partialSpearman_lengthControlled": 0.30095428001709157,
+      "n": 119
+    },
+    "content": {
+      "spearman": 0.47569230610642704,
+      "kendall": 0.225751317476143,
+      "ci": [
+        0.3385801230821255,
+        0.5929877193239133
+      ],
+      "partialSpearman_lengthControlled": 0.33095000712149264,
+      "n": 119
+    },
+    "grounding": {
+      "spearman": 0.5809904766815688,
+      "kendall": 0.252385700042729,
+      "ci": [
+        0.44537143154211517,
+        0.7071078178320488
+      ],
+      "partialSpearman_lengthControlled": 0.4952285999145421,
+      "n": 119
+    }
+  }
+}

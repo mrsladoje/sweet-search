@@ -214,3 +214,8 @@ scripts/profile-search-*.mjs
 
 # Dated diagnostic / issues reports (regenerable; canonical docs stay tracked)
 docs/issues-report-*.md
+
+# metric-forge raw per-probe captures/scores/layerb (reproducible via scripts/usd-*.mjs)
+core/prompt-optimization/data/metric-forge/captures/
+core/prompt-optimization/data/metric-forge/scores/
+core/prompt-optimization/data/metric-forge/layerb/

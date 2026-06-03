@@ -1,0 +1,908 @@
+[
+  {
+    "probeId": "cpp-001",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 0.00980392156862745,
+    "total_tokens": 918,
+    "used_tokens_AST": 9,
+    "citedSpans": {
+      "answer_grounding": [
+        "hwy/ops/set_macros-inl.h:380: N_AVX3"
+      ],
+      "workable_code": [],
+      "navigability": [],
+      "edit_locality": [
+        "hwy/ops/set_macros-inl.h"
+      ],
+      "sufficiency": [],
+      "signal_purity": []
+    },
+    "snappedSpans": [
+      "hwy/ops/set_macros-inl.h:380: N_AVX3",
+      "hwy/ops/set_macros-inl.h:380: N_AVX3"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0.2,
+    "stratum": "literal-lookup",
+    "language": "cpp",
+    "repo": "highway",
+    "isDev": true,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "hwy/ops/set_macros-inl.h:380: N_AVX3",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "hwy/ops/set_macros-inl.h",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "cpp-001",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 1,
+    "D2": 1,
+    "D3": 0,
+    "D4": 1,
+    "D5": 1,
+    "signal_purity": 0,
+    "content": 0.8,
+    "content_noD3": 1,
+    "purity_ratio": 0.010711553175210406,
+    "total_tokens": 1307,
+    "used_tokens_AST": 14,
+    "citedSpans": {
+      "answer_grounding": [
+        "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+        "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+        "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3"
+      ],
+      "workable_code": [
+        "#define HWY_NAMESPACE N_AVX3",
+        "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+        "#define HWY_NAMESPACE N_AVX3"
+      ],
+      "navigability": [],
+      "edit_locality": [
+        "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+        "hwy/ops/set_macros-inl.h:380",
+        "hwy/ops/set_macros-inl.h:380"
+      ],
+      "sufficiency": [
+        "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+        "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+        "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3"
+      ],
+      "signal_purity": []
+    },
+    "snappedSpans": [
+      "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+      "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+      "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+      "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+      "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+      "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+      "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+      "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+      "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+      "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+      "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+      "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.20006884242285522,
+    "panelCorrectness": 1,
+    "stratum": "literal-lookup",
+    "language": "cpp",
+    "repo": "highway",
+    "isDev": true,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "#define HWY_NAMESPACE N_AVX3",
+            "v": 1
+          },
+          "navigability": {
+            "span": "#if HWY_TARGET == HWY_AVX3\n\n#define HWY_NAMESPACE N_AVX3\n#define HWY_TARGET_STR HWY_TARGET_STR_AVX3",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+            "v": 1
+          },
+          "navigability": {
+            "span": "hwy/ops/set_macros-inl.h:378\t#if HWY_TARGET == HWY_AVX3",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "hwy/ops/set_macros-inl.h:380",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "#define HWY_NAMESPACE N_AVX3",
+            "v": 1
+          },
+          "navigability": {
+            "span": "#if HWY_TARGET == HWY_AVX3\n\n#define HWY_NAMESPACE N_AVX3",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "hwy/ops/set_macros-inl.h:380",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "hwy/ops/set_macros-inl.h:380:#define HWY_NAMESPACE N_AVX3",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "hwy/highway.h:123:#define HWY_STATIC_NAMESPACE N_AVX3",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "cpp-006",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 0,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 0.003288572211564812,
+    "total_tokens": 3649,
+    "used_tokens_AST": 12,
+    "citedSpans": {
+      "answer_grounding": [
+        "hwy/aligned_allocator.h:58"
+      ],
+      "workable_code": [],
+      "navigability": [],
+      "edit_locality": [
+        "hwy/aligned_allocator.h:58"
+      ],
+      "sufficiency": [],
+      "signal_purity": []
+    },
+    "snappedSpans": [
+      "hwy/aligned_allocator.h:58: AllocateAlignedBytes",
+      "hwy/aligned_allocator.h:58: AllocateAlignedBytes"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": false
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 0.4,
+    "stratum": "multi-file-flow",
+    "language": "cpp",
+    "repo": "highway",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "hwy/aligned_allocator.h:58",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "hwy/aligned_allocator.h:58",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "HWY_DLLEXPORT void* AllocateAlignedBytes(size_t payload_size,\n                                         AllocPtr alloc_ptr = nullptr,\n                                         void* opaque_ptr = nullptr);",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "hwy/aligned_allocator.h:58",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "BinaryHNSW: Loaded 6530 vectors...",
+            "v": 0
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "cpp-006",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 0,
+    "D2": 0,
+    "D3": 0,
+    "D4": 0,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0,
+    "content_noD3": 0,
+    "purity_ratio": 0.07749469214437367,
+    "total_tokens": 942,
+    "used_tokens_AST": 73,
+    "citedSpans": {
+      "answer_grounding": [
+        "hwy/aligned_allocator.h:58:HWY_DLLEXPORT void* AllocateAlignedBytes"
+      ],
+      "workable_code": [],
+      "navigability": [
+        "aligned_allocator.h:121:  T* ptr = static_cast<T*>(AllocateAlignedBytes(sizeof(T), alloc, opaque));"
+      ],
+      "edit_locality": [
+        "hwy/aligned_allocator.h:58"
+      ],
+      "sufficiency": [],
+      "signal_purity": [
+        "hwy/aligned_allocator_test.cc:127:  void* ptr = AllocateAlignedBytes(kSize, /*alloc_ptr=*/nullptr,\nhwy/aligned_allocator_test.cc:158:      AllocateAlignedBytes(kSize, &FakeAllocator::StaticAlloc, &fake_alloc);"
+      ]
+    },
+    "snappedSpans": [
+      "hwy/aligned_allocator.h:58:HWY_DLLEXPORT void* AllocateAlignedBytes(size_t payload_size,",
+      "hwy/aligned_allocator.h:121:  T* ptr = static_cast<T*>(AllocateAlignedBytes(sizeof(T), alloc, opaque));",
+      "hwy/aligned_allocator.h:58:HWY_DLLEXPORT void* AllocateAlignedBytes(size_t payload_size,",
+      "hwy/aligned_allocator_test.cc:127:  void* ptr = AllocateAlignedBytes(kSize, /*alloc_ptr=*/nullptr,"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0,
+    "panelCorrectness": 1,
+    "stratum": "multi-file-flow",
+    "language": "cpp",
+    "repo": "highway",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "aligned_allocator.h:121:  T* ptr = static_cast<T*>(AllocateAlignedBytes(sizeof(T), alloc, opaque));",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "aligned_allocator.h:58:HWY_DLLEXPORT void* AllocateAlignedBytes, aligned_allocator.cc:69:HWY_DLLEXPORT void* AllocateAlignedBytes",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "hwy/aligned_allocator.h:58:HWY_DLLEXPORT void* AllocateAlignedBytes",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "hwy/aligned_allocator.cc\n69\tHWY_DLLEXPORT void* AllocateAlignedBytes(const size_t payload_size,\n70\t                                         AllocPtr alloc_ptr, void* opaque_ptr) {",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "hwy/aligned_allocator.h:58",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "hwy/aligned_allocator.h:58:HWY_DLLEXPORT void* AllocateAlignedBytes(size_t payload_size,\n                                         AllocPtr alloc_ptr = nullptr,\n                                         void* opaque_ptr = nullptr);\n...\nhwy/aligned_allocator.cc:69:HWY_DLLEXPORT void* AllocateAlignedBytes(const size_t payload_size,\n                                         AllocPtr alloc_ptr, void* opaque_ptr) {",
+            "v": 0
+          },
+          "workable_code": {
+            "span": "HWY_DLLEXPORT void* AllocateAlignedBytes(const size_t payload_size,\n                                         AllocPtr alloc_ptr, void* opaque_ptr) {\n  HWY_ASSERT(payload_size != 0);  // likely a bug in caller\n  if (payload_size >= std::numeric_limits<size_t>::max() / 2) {\n    HWY_DASSERT(false && \"payload_size too large\");\n    return nullptr;\n  }\n\n  size_t offset = NextAlignedOffset();\n\n  // What: | misalign | unused | AllocationHeader |payload\n  // Size: |<= kAlias | offset                    |payload_size\n  //       ^allocated.^aligned.^header............^payload\n  // The header must immediately precede payload, which must remain aligned.\n  // To avoid wasting space, the header resides at the end of `unused`,\n  // which therefore cannot be empty (offset == 0).\n  if (offset == 0) {\n    offset = RoundUpTo(sizeof(AllocationHeader), kAlignment);\n  }\n\n  const size_t allocated_size = kAlias + offset + payload_size;\n  void* allocated;\n  if (alloc_ptr == nullptr) {\n    allocated = malloc(allocated_size);\n  } else {\n    allocated = (*alloc_ptr)(opaque_ptr, allocated_size);\n  }\n  if (allocated == nullptr) return nullptr;\n  // Always round up even if already aligned - we already asked for kAlias\n  // extra bytes and there's no way to give them back.\n  uintptr_t aligned = reinterpret_cast<uintptr_t>(allocated) + kAlias;\n  static_assert((kAlias & (kAlias - 1)) == 0, \"kAlias must be a power of 2\");\n  static_assert(kAlias >= kAlignment, \"Cannot align to more than kAlias\");\n  aligned &= ~(kAlias - 1);\n\n  const uintptr_t payload = aligned + offset;  // still aligned",
+            "v": 0
+          },
+          "navigability": {
+            "span": "hwy/aligned_allocator.h:58\nhwy/aligned_allocator.cc:69",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "hwy/aligned_allocator.h:58:HWY_DLLEXPORT void* AllocateAlignedBytes\n...\nhwy/aligned_allocator.cc:69:HWY_DLLEXPORT void* AllocateAlignedBytes",
+            "v": 0
+          },
+          "sufficiency": {
+            "span": "Declaration at hwy/aligned_allocator.h:58 with HWY_DLLEXPORT; definition at hwy/aligned_allocator.cc:69 with full over-allocation logic (kAlias + offset + payload_size), AllocationHeader stashing, and aligned payload return",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "hwy/aligned_allocator_test.cc:127:  void* ptr = AllocateAlignedBytes(kSize, /*alloc_ptr=*/nullptr,\nhwy/aligned_allocator_test.cc:158:      AllocateAlignedBytes(kSize, &FakeAllocator::StaticAlloc, &fake_alloc);",
+            "v": 1
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "csharp-002",
+    "arm": "ss",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 1,
+    "D2": 0,
+    "D3": 1,
+    "D4": 1,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0.6,
+    "content_noD3": 0.5,
+    "purity_ratio": 0.033023735810113516,
+    "total_tokens": 969,
+    "used_tokens_AST": 32,
+    "citedSpans": {
+      "answer_grounding": [
+        "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions",
+        "public class GarnetServerOptions : ServerOptions",
+        "public class GarnetServerOptions : ServerOptions"
+      ],
+      "workable_code": [],
+      "navigability": [
+        "public class GarnetServerOptions : ServerOptions",
+        "public class GarnetServerOptions : ServerOptions"
+      ],
+      "edit_locality": [
+        "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions",
+        "libs/server/Servers/GarnetServerOptions.cs:17",
+        "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions"
+      ],
+      "sufficiency": [
+        "libs/server/Servers/GarnetServerOptions.cs"
+      ],
+      "signal_purity": [
+        "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions"
+      ]
+    },
+    "snappedSpans": [
+      "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions",
+      "17\t    public class GarnetServerOptions : ServerOptions",
+      "17\t    public class GarnetServerOptions : ServerOptions",
+      "17\t    public class GarnetServerOptions : ServerOptions",
+      "17\t    public class GarnetServerOptions : ServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.15049075520708527,
+    "panelCorrectness": 1,
+    "stratum": "literal-lookup",
+    "language": "csharp",
+    "repo": "garnet",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "public class GarnetServerOptions : ServerOptions",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "public class GarnetServerOptions : ServerOptions\n    {\n        /// <summary>\n        /// Support data structure objects.\n        /// </summary>\n        public bool DisableObjects = false;\n\n        /// <summary>\n        /// Heap memory size limit of object store.\n        /// </summary>\n        public string ObjectStoreHeapMemorySize = \"\";\n\n        /// <summary>\n        /// Object store log memory used in bytes excluding heap memory.\n        /// </summary>\n        public string ObjectStoreLogMemorySize = \"32m\";\n\n        /// <summary>\n        /// Size of each object store page in bytes (rounds down to power of 2).\n        /// </summary>\n        public string ObjectStorePageSize = \"4k\";",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "public class GarnetServerOptions : ServerOptions",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "public class GarnetServerOptions : ServerOptions\n    {\n        /// <summary>\n        /// Support data structure objects.\n        /// </summary>\n        public bool DisableObjects = false;\n\n        /// <summary>\n        /// Heap memory size limit of object store.\n        /// </summary>\n        public string ObjectStoreHeapMemorySize = \"\";\n\n        /// <summary>\n        /// Object store log memory used in bytes excluding heap memory.\n        /// </summary>\n        public string ObjectStoreLogMemorySize = \"32m\";\n\n        /// <summary>\n        /// Size of each object store page in bytes (rounds down to power of 2).\n        /// </summary>\n        public string ObjectStorePageSize = \"4k\";",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "libs/server/Servers/GarnetServerOptions.cs:17",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "libs/server/Servers/GarnetServerOptions.cs",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "public class GarnetServerOptions : ServerOptions",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "public class GarnetServerOptions : ServerOptions\n    {\n        /// <summary>\n        /// Support data structure objects.\n        /// </summary>\n        public bool DisableObjects = false;\n\n        /// <summary>\n        /// Heap memory size limit of object store.\n        /// </summary>\n        public string ObjectStoreHeapMemorySize = \"\";\n\n        /// <summary>\n        /// Object store log memory used in bytes excluding heap memory.\n        /// </summary>\n        public string ObjectStoreLogMemorySize = \"32m\";\n\n        /// <summary>\n        /// Size of each object store page in bytes (rounds down to power of 2).\n        /// </summary>\n        public string ObjectStorePageSize = \"4k\";",
+            "v": 0
+          },
+          "navigability": {
+            "span": "public class GarnetServerOptions : ServerOptions",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "public class GarnetServerOptions : ServerOptions\n    {\n        /// <summary>\n        /// Support data structure objects.\n        /// </summary>\n        public bool DisableObjects = false;\n        ...\n        public string ObjectStoreLogMemorySize = \"32m\";\n        ...\n        public string ObjectStorePageSize = \"4k\";",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "libs/server/Servers/GarnetServerOptions.cs:17: class GarnetServerOptions",
+            "v": 1
+          }
+        },
+        "isError": false
+      }
+    ]
+  },
+  {
+    "probeId": "csharp-002",
+    "arm": "native",
+    "rubricHash": "0x46dea0229bdd7370",
+    "isNoMatch": false,
+    "USD": 0,
+    "grounding": 1,
+    "D1": 1,
+    "D2": 0,
+    "D3": 1,
+    "D4": 1,
+    "D5": 0,
+    "signal_purity": 0,
+    "content": 0.6,
+    "content_noD3": 0.5,
+    "purity_ratio": 0.044326241134751775,
+    "total_tokens": 564,
+    "used_tokens_AST": 25,
+    "citedSpans": {
+      "answer_grounding": [
+        "public class GarnetServerOptions : ServerOptions",
+        "public class GarnetServerOptions : ServerOptions",
+        "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions"
+      ],
+      "workable_code": [],
+      "navigability": [
+        "public class GarnetServerOptions : ServerOptions",
+        "public class GarnetServerOptions : ServerOptions"
+      ],
+      "edit_locality": [
+        "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions",
+        "libs/server/Servers/GarnetServerOptions.cs:17",
+        "libs/server/Servers/GarnetServerOptions.cs"
+      ],
+      "sufficiency": [
+        "public class GarnetServerOptions : ServerOptions"
+      ],
+      "signal_purity": [
+        "libs/server/Servers/GarnetServerOptions.cs"
+      ]
+    },
+    "snappedSpans": [
+      "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions",
+      "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions"
+    ],
+    "programmatic": {
+      "precheck": true,
+      "panelOk": true
+    },
+    "USD_noC": 0.15088416704391125,
+    "panelCorrectness": 1,
+    "stratum": "literal-lookup",
+    "language": "csharp",
+    "repo": "garnet",
+    "isDev": false,
+    "panel": [
+      {
+        "model": "deepseek-v4-flash",
+        "lineage": "deepseek-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "public class GarnetServerOptions : ServerOptions",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "",
+            "v": 0
+          },
+          "navigability": {
+            "span": "public class GarnetServerOptions : ServerOptions",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "public class GarnetServerOptions : ServerOptions\n        public bool DisableObjects = false;\n        public string ObjectStoreLogMemorySize = \"32m\";\n        public string ObjectStorePageSize = \"4k\";",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "public class GarnetServerOptions : ServerOptions\n        public bool DisableObjects = false;\n        public string ObjectStoreLogMemorySize = \"32m\";\n        public string ObjectStorePageSize = \"4k\";",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "lineage": "google-api",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "public class GarnetServerOptions : ServerOptions",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "public class GarnetServerOptions : ServerOptions\n    {\n        /// <summary>\n        /// Support data structure objects.\n        /// </summary>\n        public bool DisableObjects = false;",
+            "v": 0
+          },
+          "navigability": {
+            "span": "",
+            "v": 0
+          },
+          "edit_locality": {
+            "span": "libs/server/Servers/GarnetServerOptions.cs:17",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "public class GarnetServerOptions : ServerOptions",
+            "v": 1
+          },
+          "signal_purity": {
+            "span": "",
+            "v": 0
+          }
+        },
+        "isError": false
+      },
+      {
+        "model": "minimax/minimax-m2.7",
+        "lineage": "minimax",
+        "verdictByCriterion": {
+          "answer_grounding": {
+            "span": "libs/server/Servers/GarnetServerOptions.cs:17:    public class GarnetServerOptions : ServerOptions",
+            "v": 1
+          },
+          "workable_code": {
+            "span": "public bool DisableObjects = false;\n        public string ObjectStoreHeapMemorySize = \"\";\n        public string ObjectStoreLogMemorySize = \"32m\";\n        public string ObjectStorePageSize = \"4k\";",
+            "v": 0
+          },
+          "navigability": {
+            "span": "public class GarnetServerOptions : ServerOptions",
+            "v": 1
+          },
+          "edit_locality": {
+            "span": "libs/server/Servers/GarnetServerOptions.cs",
+            "v": 1
+          },
+          "sufficiency": {
+            "span": "public class GarnetServerOptions : ServerOptions\n    {\n        public bool DisableObjects = false;\n        public string ObjectStoreHeapMemorySize = \"\";\n        public string ObjectStoreLogMemorySize = \"32m\";\n        public string ObjectStorePageSize = \"4k\";",
+            "v": 0
+          },
+          "signal_purity": {
+            "span": "libs/server/Servers/GarnetServerOptions.cs",
+            "v": 1
+          }
+        },
+        "isError": false
+      }
+    ]
+  }
+]
