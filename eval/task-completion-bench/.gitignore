@@ -1,0 +1,7 @@
+# local grading venv (swebench) — rebuilt via uv, never commit
+.venv-grade/
+# run outputs + dataset cache — large/regenerable
+results/
+tasks/_lite-cache.json
+# cached sweet-search indexes (built once per repo@commit) — large/regenerable
+.index-cache/
