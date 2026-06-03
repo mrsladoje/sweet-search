@@ -1,0 +1,61 @@
+You are a hostile, expert reviewer (NeurIPS/ICML area chair level, plus a motivated competitor who wants this metric to look bad). Your job: BREAK the evaluation metric specified below. Do NOT be agreeable. Find concrete, specific ways it can be gamed, is unfair, is invalid, is irreproducible, or has broken statistics. Construct adversarial example outputs that beat the metric while being WORSE for a downstream engineer.
+
+=== CONTEXT ===
+A code-search tool "sweet-search" exposes ss-* tools (ss-search/ss-find/ss-trace/ss-grep/ss-semantic/ss-read) that return RANKED, SYMBOL-COMPLETE, TOKEN-BUDGETED, context-packaged code blocks (with a 1-hop call graph and a meta line). The competing "native" arm is rg/grep + read. CLAIM TO PROVE OR REFUTE: ss-* tool RESPONSES carry MORE usable code-awareness signal PER TOKEN than native rg+read, at SIMILAR size, in a way that predicts downstream task completion. The metric scores the RAW TOOL RESPONSE (the bytes the tool returns), NOT the agent's final answer. Anti-gaming (especially anti-VERBOSITY/padding) is the crux; the metric must be symmetric to both arms (never reward verbosity/format per se; never unfairly penalize a terse-but-sufficient native response). It must be validated by correlation with a downstream task-completion benchmark.
+
+=== METRIC SPEC: "USD" (tool-response usefulness, 0-1) ===
+
+OBJECT SCORED: per (probe p, arm a) a raw tool-response string R, with the arm label HIDDEN from all scorers. GOLD per probe: expected{Files,Symbols,Facts} always; plus hand-annotated minimal-sufficient-context gold spans C^G on a 24-probe subset.
+
+THE FUNCTION:
+  g = grounding(R, gold) in {0,1}            # FLOOR/gate. wrong/empty => USD=0
+  D1..D5 in {0,1} each (3-judge panel median); content = mean(D1..D5)
+  C = signal_purity in {0,1} (panel median)
+  total_tokens = estimateTokens(R_raw)        # round(len/4)
+  used_spans   = union of spans the panel-MAJORITY cited for satisfied D1..D5 (dedup)
+  used_tokens  = estimateTokens(concat(used_spans))
+  purity_ratio = used_tokens / total_tokens   in (0,1]
+  USD_raw = g * C * content
+  USD     = USD_raw * (0.5 + 0.5 * purity_ratio)   in [0,1]
+
+FLOOR (g): programmatic pre-check (R contains an expectedFile suffix OR expectedSymbol word-boundary; inverted for the 9 no-match probes) AND 3-panel correctness median >= theta_floor=0.5.
+
+SIX BINARY CRITERIA (judge must QUOTE a verbatim span before scoring 1; no span => 0):
+  D1 answer_grounding: R contains the SPECIFIC answering code/fact (not just near it).
+  D2 workable_code: edit-ready complete symbol body present (not a path:line pointer). HYBRID: tree-sitter "complete AST node" gate ANDed with judge.
+  D3 navigability: relevant neighbors (callers/callees/related types) reachable without another retrieval round.
+  D4 edit_locality: pins the specific site (function/region + file). MOSTLY PROGRAMMATIC: cited span must overlap C^G file+line range.
+  D5 sufficiency: a competent engineer could act now without re-searching, judged vs GOLD (not the tool's self-reported "sufficient").
+  C  signal_purity: R is FREE of content not needed (no irrelevant blocks, no unmarked false-positive matches, no duplicated/boilerplate filler). Symmetric teeth: docks ss for low-relevance 5th result AND docks native for unfiltered rg list of false positives.
+
+AGGREGATION: per-criterion median over 3 panelists (binary => majority vote). D2/D4 are "programmatic-gates-judge": if the programmatic check is false the criterion is 0 regardless of judge; if true, judge majority decides.
+
+TOKEN-NORMALIZATION = TWO mechanisms:
+  (4a) IN-SCALAR DENSITY SHAPER: USD = USD_raw * (0.5 + 0.5*purity_ratio). Padding inflates total_tokens not used_tokens => purity_ratio falls => USD falls. A cited span only counts toward used_tokens if it is a verbatim substring of R AND (for D1/D4) overlaps C^G. The 0.5 floor prevents collapse to raw 1/tokens (the LC-AlpacaEval truncation-attack hazard). Density is a BOUNDED MULTIPLICATIVE SHAPER in [0.5,1.0], deliberately NOT the dominant term.
+  (4b) ANALYSIS-ONLY LENGTH-MATCHED RESIDUAL (the decisive audit): pool both arms, regress content_i = b0 + b_arm*1[arm=ss] + b_len*log(total_tokens_i) + eps. HEADLINE NUMBER = b_arm (length-matched arm gap), with paired bootstrap 95% CI. Same regression with USD as outcome. Robustness twins: adaptive length-bin tercile replication; quantile (median) regression. The ss-vs-native gap is CREDITED ONLY IF b_arm CI excludes 0.
+
+JUDGE PANEL (disjoint families, median, arm-blind): deepseek-v4-flash, gemini-3.1-flash-lite, abab6.5s-chat (MiniMax). NO Claude family as judge. Tool chrome (meta line, tier labels full/preview/summary, confidence/sufficient strings, file:line header BANNERS) stripped before judging; a single path:line locator + the code are KEPT. total_tokens uses UN-stripped bytes (chrome counts in denominator). Span-before-score machine-checked: a v=1 with a non-substring span is demoted to 0.
+
+NO-MATCH PROBES (9/60): content := g and purity_ratio := 1, so USD = g; EXCLUDED from density and length-matched-gap stats.
+
+NATIVE ARM FAIRNESS: native is a COMPETENT bare-API agent (rg/grep/find + read, reformulating + reading sufficient ranges), capped at probe max_turns, transcript captured as R. Human spot-check of 10 native captures before scoring; degenerate captures re-run. Frozen across re-scores.
+
+CALIBRATION: hand-annotate C^G on 24/60 probes (seed=42, stratified). Require Cohen's kappa >= 0.6 per dimension vs gold or the dimension is diagnostic-only. Remaining 36 held-out (aggregate only).
+
+VALIDATION (pre-registered): correlate per-probe USD with the task-completion bench's per-probe answer-fed-solver lift / resolve-delta (Spearman rho + Kendall tau + bootstrap CI). Substitution check. FALSIFIED if (a) length-matched USD gap / b_arm CI includes 0, OR (b) USD does not correlate with downstream bench lift.
+
+STANDING RELIABILITY PROBES: padding probe (append irrelevant real code block to a terse-correct native capture; expect signal_purity->0, purity_ratio drops, USD falls); truncation probe (cut a high-USD capture to ~40%; expect sufficiency/workable_code->0). Threshold sensitivity over theta_floor in {0.4,0.5,0.6}. Judge determinism: verdict-flip rate, flag >20%.
+
+SELF-IDENTIFIED WEAKEST ASSUMPTIONS (attack these AND find new ones):
+  1. The 0.5+0.5*purity_ratio shaper is a free parameter chosen by argument not data. Is there a padding strategy that keeps purity_ratio high while inflating total_tokens (e.g. padding INSIDE a cited span's range so the union grows)? Does it under-credit a genuinely-denser native arm because ss's larger absolute used_tokens co-occurs with larger total_tokens?
+  2. used_tokens = union of judge-cited spans is only as good as judges' citation behavior. If panelists cite minimal spans for native and generous spans for ss (or vice versa), density is biased by judge habit. Substring+gold-overlap checks constrain correctness of spans but NOT their EXTENT.
+  3. Layer-B validity may be unobtainable on timeline (task-completion bench is at pilot). Fallback answer-fed-solver is itself an LLM-solver signal, possibly circular.
+  4. Competent native arm is human-audited (10 captures), subjective + small. Is the native policy a strawman? Is max_turns too tight for native but fine for ss?
+  5. Binary criteria + majority-of-3 throws away gradation, brittle near boundaries; kappa on rare-positive criteria (navigability on no-neighbor probes) unstable/undefined.
+  6. D2 tree-sitter "complete AST node" gate may disagree with "edit-ready" reality (a huge truncated symbol is complete-but-useless; a 3-line config constant is incomplete-but-actionable).
+  7. no-match special-casing (USD=g, density skipped) excludes 9/60 probes from density/length stats. Hides a gaming surface if ss emits confident-but-wrong blocks on no-match.
+  8. Chrome-stripping asymmetry: strip ss chrome but count it in total_tokens, strip nothing from native. Double-penalizes ss OR the kept path:line IS the structured signal we claimed to strip.
+  9. Single rubric, 18 languages; "complete symbol"/"neighbor" semantics may not transfer; gold annotation is one researcher's AST-granularity call.
+
+=== YOUR TASK ===
+Return a PRIORITIZED list of the strongest BREAKS. For EACH: (1) severity (SHIP-BLOCKING vs accept-with-mitigation), (2) a CONCRETE adversarial example (an actual R string sketch or scenario that scores high while being worse, or scores low while being better), (3) the mechanism (which formula term / step it exploits), (4) a proposed FIX. Prioritize VERBOSITY/PADDING gaming and ARM SYMMETRY/FAIRNESS above all. Then call out the single most dangerous flaw. Be concrete and adversarial, not a summary. Where you AGREE the metric is robust, say so explicitly and explain why an attack fails.

@@ -1,0 +1,279 @@
+{
+  "runId": "run-v1",
+  "rubricHash": "0x46dea0229bdd7370",
+  "params": {
+    "phi": 0.25,
+    "alpha": 2,
+    "tau": 400,
+    "caliper": 0.2,
+    "minCommonSupport": 0.4,
+    "thetaFloor": 0.5,
+    "d2BodyFraction": 0.7
+  },
+  "n": {
+    "probes": 60,
+    "ss": 60,
+    "native": 59,
+    "errors": 1
+  },
+  "errors": [
+    {
+      "probeId": "ruby-v60-01",
+      "arm": "native",
+      "error": "usd-panel-failed: all 3 judge(s) failed after retries"
+    }
+  ],
+  "perArmMean": {
+    "ss": {
+      "USD": 0.013951455520989654,
+      "USD_noC": 0.0830365390604475,
+      "content": 0.3133333333333333,
+      "content_noD3": 0.30416666666666664,
+      "purity_ratio": 0.2252339740806095,
+      "g": 0.6333333333333333,
+      "tokens": 2413.7833333333333
+    },
+    "native": {
+      "USD": 0.010273498582835812,
+      "USD_noC": 0.04718734786868427,
+      "content": 0.18644067796610167,
+      "content_noD3": 0.17372881355932204,
+      "purity_ratio": 0.19012288046568487,
+      "g": 0.4915254237288136,
+      "tokens": 2331.5593220338983
+    }
+  },
+  "tokenDistribution": {
+    "ss": {
+      "n": 60,
+      "min": 12,
+      "q25": 1164,
+      "median": 2229,
+      "q75": 3318,
+      "max": 6855,
+      "mean": 2414
+    },
+    "native": {
+      "n": 59,
+      "min": 76,
+      "q25": 553,
+      "median": 1068,
+      "q75": 1769,
+      "max": 18023,
+      "mean": 2332
+    }
+  },
+  "headline_caliperMatchedDelta": {
+    "lengthMatchable": true,
+    "ssSupportFrac": 0.9,
+    "natSupportFrac": 0.7796610169491526,
+    "matchedPairs": 54,
+    "deltas": {
+      "content_noD3": {
+        "mean": 0.037037037037037035,
+        "ci": [
+          -0.0787037037037037,
+          0.14814814814814814
+        ],
+        "excludesZero": false,
+        "n": 54
+      },
+      "content": {
+        "mean": 0.003703703703703703,
+        "ci": [
+          -0.09999999999999998,
+          0.10370370370370374
+        ],
+        "excludesZero": false,
+        "n": 54
+      },
+      "USD": {
+        "mean": 0.008847312067015719,
+        "ci": [
+          -0.003855225826663101,
+          0.02562682871494047
+        ],
+        "excludesZero": false,
+        "n": 54
+      },
+      "USD_noC": {
+        "mean": 0.003956808610881142,
+        "ci": [
+          -0.025880435878105353,
+          0.034916884166561656
+        ],
+        "excludesZero": false,
+        "n": 54
+      }
+    }
+  },
+  "rawPairedDelta_unmatched": {
+    "content_noD3": {
+      "mean": 0.13559322033898305,
+      "ci": [
+        0.0423728813559322,
+        0.2288135593220339
+      ],
+      "excludesZero": true,
+      "n": 59
+    },
+    "content": {
+      "mean": 0.1288135593220339,
+      "ci": [
+        0.040677966101694905,
+        0.22033898305084745
+      ],
+      "excludesZero": true,
+      "n": 59
+    },
+    "USD": {
+      "mean": 0.003914422285967228,
+      "ci": [
+        -0.012700339968595103,
+        0.021832421852856408
+      ],
+      "excludesZero": false,
+      "n": 59
+    },
+    "USD_noC": {
+      "mean": 0.03640340519365369,
+      "ci": [
+        0.010298722516922262,
+        0.06426532642532813
+      ],
+      "excludesZero": true,
+      "n": 59
+    }
+  },
+  "perCriterionMean": {
+    "D1": {
+      "ss": 0.47058823529411764,
+      "native": 0.22
+    },
+    "D2": {
+      "ss": 0.13725490196078433,
+      "native": 0.04
+    },
+    "D3": {
+      "ss": 0.4117647058823529,
+      "native": 0.28
+    },
+    "D4": {
+      "ss": 0.5882352941176471,
+      "native": 0.44
+    },
+    "D5": {
+      "ss": 0.23529411764705882,
+      "native": 0.12
+    },
+    "signal_purity": {
+      "ss": 0.09803921568627451,
+      "native": 0.1
+    }
+  },
+  "perDimensionCorrelation": {
+    "D1~D2": 0.43,
+    "D1~D3": 0.388,
+    "D1~D4": 0.54,
+    "D1~D5": 0.585,
+    "D1~signal_purity": 0.107,
+    "D1~purity_ratio": 0.371,
+    "D2~D3": 0.064,
+    "D2~D4": 0.234,
+    "D2~D5": 0.49,
+    "D2~signal_purity": -0.104,
+    "D2~purity_ratio": -0.011,
+    "D3~D4": 0.374,
+    "D3~D5": 0.259,
+    "D3~signal_purity": 0.316,
+    "D3~purity_ratio": 0.358,
+    "D4~D5": 0.349,
+    "D4~signal_purity": 0.255,
+    "D4~purity_ratio": 0.313,
+    "D5~signal_purity": 0.105,
+    "D5~purity_ratio": 0.112,
+    "signal_purity~purity_ratio": 0.198
+  },
+  "perStratum": {
+    "behavioral": {
+      "n": 16,
+      "ss": {
+        "USD": 0.006575746066774153,
+        "USD_noC": 0.06640766895298328,
+        "content_noD3": 0.296875,
+        "g": 0.6875,
+        "tok": 2633.8125
+      },
+      "native": {
+        "USD": 0.006803890494037241,
+        "USD_noC": 0.026895063431228723,
+        "content_noD3": 0.1,
+        "g": 0.6,
+        "tok": 2930.5333333333333
+      }
+    },
+    "multi-file-flow": {
+      "n": 14,
+      "ss": {
+        "USD": 0.04513084390647278,
+        "USD_noC": 0.09775091265298237,
+        "content_noD3": 0.30357142857142855,
+        "g": 0.7857142857142857,
+        "tok": 3714.785714285714
+      },
+      "native": {
+        "USD": 0.01516335031709633,
+        "USD_noC": 0.06315972476337081,
+        "content_noD3": 0.21428571428571427,
+        "g": 0.6428571428571429,
+        "tok": 5022.428571428572
+      }
+    },
+    "no-match": {
+      "n": 9,
+      "ss": {
+        "USD": 0,
+        "USD_noC": 0,
+        "content_noD3": 0,
+        "g": 0.2222222222222222,
+        "tok": 1932.7777777777778
+      },
+      "native": {
+        "USD": 0,
+        "USD_noC": 0,
+        "content_noD3": 0,
+        "g": 0,
+        "tok": 539
+      }
+    },
+    "literal-lookup": {
+      "n": 21,
+      "ss": {
+        "USD": 0.0047639799762082755,
+        "USD_noC": 0.12148366015416015,
+        "content_noD3": 0.44047619047619047,
+        "g": 0.6666666666666666,
+        "tok": 1584.952380952381
+      },
+      "native": {
+        "USD": 0.0138948168827336,
+        "USD_noC": 0.0712567345760357,
+        "content_noD3": 0.27380952380952384,
+        "g": 0.5238095238095238,
+        "tok": 878.047619047619
+      }
+    }
+  },
+  "noMatch": {
+    "ss": {
+      "n": 9,
+      "confidentFalsePositiveRate": 0,
+      "meanUSD": 0
+    },
+    "native": {
+      "n": 9,
+      "confidentFalsePositiveRate": 0,
+      "meanUSD": 0
+    }
+  }
+}
