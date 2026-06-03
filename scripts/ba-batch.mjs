@@ -30,8 +30,9 @@ const MAXTOK = Number(process.env.MAXTOK || 32000); // room for high-reasoning t
 const READLINES = Number(process.env.READLINES || 2000);    // real-agent-parity Read budget (Claude Code reads ~2000 lines/call)
 const TOOLCHARS = Number(process.env.TOOLCHARS || 64000);   // ditto for tool-output chars (default runner cap 12000 cripples big-file reads)
 const TAG = process.env.TAG || (MODEL.includes('deepseek') ? 'ba-ds' : 'ba-gpt');
-// Prices per 1M tokens (cache-naive = all input at full rate). DeepSeek-V4-Pro APPROX — VERIFY before publishing.
-const PRICES = { 'ba-ds': { inPerM: 0.28, outPerM: 0.42, cacheReadPerM: 0.028 }, 'ba-gpt': { inPerM: 5, outPerM: 30, cacheReadPerM: 0.5 } };
+// Prices per 1M tokens (cache-naive = all input at full rate). ba-ds = DeepSeek-DIRECT official
+// deepseek-v4-pro (api-docs.deepseek.com, post-2026-05-31 permanent): in 0.435 / out 0.87 / cache-hit 0.003625.
+const PRICES = { 'ba-ds': { inPerM: 0.435, outPerM: 0.87, cacheReadPerM: 0.003625 }, 'ba-gpt': { inPerM: 5, outPerM: 30, cacheReadPerM: 0.5 } };
 const PR = PRICES[TAG] || PRICES['ba-ds'];
 
 const vault = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json'), 'utf8'));
