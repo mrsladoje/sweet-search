@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { runClaudeAgent } from '../eval/agent-read-workflows/claude-runner.js';
 import { runCodexAgent } from '../core/prompt-optimization/sweep/p7-codex-runner.mjs';
 import { resolveRepoCwd, buildAgentUserPrompt, classifyToolUse, judgePanelScore, JUDGE_PANEL } from '../core/prompt-optimization/sweep/gepa-evaluate.mjs';
+import { buildArmResponse, normalizeClaudeCalls, normalizeCodexCalls, scoreUsdInline, persistCapture } from '../core/prompt-optimization/sweep/usd-capture.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SS_BIN = path.join(REPO, 'eval/agent-read-workflows/bin');
@@ -99,15 +100,23 @@ for (const id of IDS) {
     const calls = Array.isArray(run.toolCalls) ? run.toolCalls : [];
     const finalText = run.finalResultText || run.finalAssistantText || '';
     const tu = classifyToolUse(calls);
-    let score = null;
-    try { ({ score } = await judgePanelScore({ probe, answer: finalText, panel: JUDGE_PANEL })); } catch (e) { score = null; }
+    // USD: build the per-arm raw tool-response (harness-specific normalizer), persist it
+    // (re-scorable forever), and score — for EVERY harness, not just bare-API.
+    const arm = MODE === 'mpp' ? 'ss' : 'native';
+    const normCalls = HARNESS === 'claude' ? normalizeClaudeCalls(run.toolCalls, run.toolResults) : normalizeCodexCalls(run.toolCalls);
+    const rawResponse = buildArmResponse(normCalls, arm);
+    persistCapture(path.join(OUTDIR, 'captures'), { probeId: id, arm, rep: r, model: MODEL, harness: HARNESS, rawResponse, finalAnswer: finalText, toolCalls: normCalls });
+    const [score, usd] = await Promise.all([
+      judgePanelScore({ probe, answer: finalText, panel: JUDGE_PANEL }).then((x) => x.score).catch(() => null),
+      scoreUsdInline(probe, rawResponse, arm),
+    ]);
     const usage = run.usage || null;
     const cost = usageToCost(usage);
     const reasoningTok = usage && typeof usage.reasoning_output_tokens === 'number' ? usage.reasoning_output_tokens : null;
-    const row = { id, lang: probe.language, stratum: probe.stratum, rep: r, harness: HARNESS, mode: MODE, model: MODEL, provider: PROVIDER || null, score, calls: calls.length, ss: !!tu.ss, nativeGrep: !!tu.nativeSearch, nativeRead: !!tu.nativeRead, answerLen: finalText.length, usage, costUsd: cost, harnessCostUsd: run.totalCostUsd ?? null, wallMs: run.wallMs ?? null, reasoningTokens: reasoningTok, exitCode: run.exitCode, timedOut: !!run.timedOut };
+    const row = { id, lang: probe.language, stratum: probe.stratum, rep: r, harness: HARNESS, mode: MODE, model: MODEL, provider: PROVIDER || null, score, ...usd, rawLen: rawResponse.length, calls: calls.length, ss: !!tu.ss, nativeGrep: !!tu.nativeSearch, nativeRead: !!tu.nativeRead, answerLen: finalText.length, usage, costUsd: cost, harnessCostUsd: run.totalCostUsd ?? null, wallMs: run.wallMs ?? null, reasoningTokens: reasoningTok, exitCode: run.exitCode, timedOut: !!run.timedOut };
     rows.push(row);
     fs.writeFileSync(path.join(OUTDIR, 'rows.json'), JSON.stringify(rows, null, 2));
-    console.error(`  ✓ ${id} r${r} score=${score} calls=${calls.length} ss=${row.ss} nativeGrep=${row.nativeGrep}${cost != null ? ' $' + cost.toFixed(4) : ''}${run.wallMs != null ? ' ' + (run.wallMs / 1000).toFixed(0) + 's' : ''}${reasoningTok != null ? ' rtok=' + reasoningTok : ''} exit=${run.exitCode}${row.timedOut ? ' TIMEOUT' : ''}`);
+    console.error(`  ✓ ${id} r${r} score=${score} USDnoC=${row.USD_noC != null ? row.USD_noC.toFixed(3) : (row.usdError ? 'ERR' : '–')} g=${row.grounding ?? '–'} calls=${calls.length} ss=${row.ss} nativeGrep=${row.nativeGrep}${cost != null ? ' $' + cost.toFixed(4) : ''}${run.wallMs != null ? ' ' + (run.wallMs / 1000).toFixed(0) + 's' : ''}${reasoningTok != null ? ' rtok=' + reasoningTok : ''} exit=${run.exitCode}${row.timedOut ? ' TIMEOUT' : ''}`);
   }
 }
 const costs = rows.map((r) => r.costUsd).filter((c) => c != null);

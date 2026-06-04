@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { runClaudeAgent } from '../eval/agent-read-workflows/claude-runner.js';
 import { resolveRepoCwd, buildAgentUserPrompt, classifyToolUse, judgePanelScore, JUDGE_PANEL } from '../core/prompt-optimization/sweep/gepa-evaluate.mjs';
+import { buildArmResponse, normalizeClaudeCalls, scoreUsdInline, persistCapture } from '../core/prompt-optimization/sweep/usd-capture.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SS_BIN = path.join(REPO, 'eval/agent-read-workflows/bin');
@@ -80,9 +81,16 @@ async function runOne(probe, mode, rep) {
   const calls = Array.isArray(run.toolCalls) ? run.toolCalls : [];
   const text = run.finalResultText || run.finalAssistantText || '';
   const tu = classifyToolUse(calls);
-  let score = null; try { ({ score } = await judgePanelScore({ probe, answer: text, panel: JUDGE_PANEL })); } catch { score = null; }
+  const arm = mode === 'mpp' ? 'ss' : 'native';
+  const normCalls = normalizeClaudeCalls(calls, run.toolResults);
+  const rawResponse = buildArmResponse(normCalls, arm);
+  persistCapture(path.join(RESULTS, 'cc-vault-min-captures'), { probeId: probe.id, arm, rep, model: MODEL, harness: 'minimal', rawResponse, finalAnswer: text, toolCalls: normCalls });
+  const [score, usd] = await Promise.all([
+    judgePanelScore({ probe, answer: text, panel: JUDGE_PANEL }).then((x) => x.score).catch(() => null),
+    scoreUsdInline(probe, rawResponse, arm),
+  ]);
   const u = run.usage || null;
-  return { id: probe.id, lang: probe.language, stratum: probe.stratum, rep, mode, model: MODEL, harness: 'minimal', score, calls: calls.length, ss: !!tu.ss, nativeGrep: !!tu.nativeSearch, nativeRead: !!tu.nativeRead, wallMs: run.wallMs ?? null, usage: u, costUsd: naive(u), harnessCostUsd: run.totalCostUsd ?? null, exitCode: run.exitCode, timedOut: !!run.timedOut };
+  return { id: probe.id, lang: probe.language, stratum: probe.stratum, rep, mode, model: MODEL, harness: 'minimal', score, ...usd, rawLen: rawResponse.length, calls: calls.length, ss: !!tu.ss, nativeGrep: !!tu.nativeSearch, nativeRead: !!tu.nativeRead, wallMs: run.wallMs ?? null, usage: u, costUsd: naive(u), harnessCostUsd: run.totalCostUsd ?? null, exitCode: run.exitCode, timedOut: !!run.timedOut };
 }
 
 const append = (mode, rows) => { const d = path.join(RESULTS, mode === 'mpp' ? 'cc-vault-min-mpp' : 'cc-vault-min-native'); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'rows.json'); const prev = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; fs.writeFileSync(f, JSON.stringify(prev.concat(rows), null, 2)); };

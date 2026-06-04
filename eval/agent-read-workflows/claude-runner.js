@@ -242,6 +242,7 @@ function parseStreamJson(stdout) {
           }
           toolResults.push({
             id: block.tool_use_id,
+            text, // the raw tool-result bytes the agent saw — needed to build the USD rawResponse
             isError: !!block.is_error,
             chars,
             ...(routeMeta ? { routeMeta } : {}),

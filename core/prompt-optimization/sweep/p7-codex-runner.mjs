@@ -103,7 +103,9 @@ export function parseCodexAgentStream(stdout) {
     if (ev.type === 'item.completed' && ev.item) {
       const it = ev.item;
       if (it.type === 'command_execution') {
-        toolCalls.push({ name: it.command || 'command', input: { command: it.command, exit_code: it.exit_code } });
+        // Capture the command's aggregated stdout/stderr so the USD rawResponse can be
+        // rebuilt (harness-agnostic capture); back-compat — adds a field, drops nothing.
+        toolCalls.push({ name: it.command || 'command', input: { command: it.command, exit_code: it.exit_code }, result: { content: typeof it.aggregated_output === 'string' ? it.aggregated_output : '', isError: (it.exit_code ?? 0) !== 0 } });
       } else if (it.type === 'agent_message' && typeof it.text === 'string' && it.text) {
         answer = it.text;
       }
