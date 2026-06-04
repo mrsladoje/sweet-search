@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { runClaudeAgent } from '../eval/agent-read-workflows/claude-runner.js';
 import { resolveRepoCwd, buildAgentUserPrompt, classifyToolUse, judgePanelScore, JUDGE_PANEL } from '../core/prompt-optimization/sweep/gepa-evaluate.mjs';
+import { buildArmResponse, normalizeClaudeCalls, scoreUsdInline, persistCapture } from '../core/prompt-optimization/sweep/usd-capture.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SS_BIN = path.join(REPO, 'eval/agent-read-workflows/bin');
@@ -32,12 +33,17 @@ Final answer: cite the relevant file paths, symbols, and facts. If absent, say n
 const BATCH = Number(process.env.BATCH_SIZE || 5);
 const THINK = process.env.THINK || '31999';            // Opus xhigh-equivalent thinking budget
 const MODEL = process.env.MODEL || 'claude-opus-4-8';
+// Model-keyed outputs + pricing so a Sonnet (or other) CC run never touches the Opus
+// dataset. Opus keeps the legacy un-suffixed paths (cc-vault-*); others get a -family suffix.
+const FAMILY = /opus/i.test(MODEL) ? 'opus' : /sonnet/i.test(MODEL) ? 'sonnet' : /haiku/i.test(MODEL) ? 'haiku' : 'other';
+const SUFFIX = process.env.SUFFIX ?? (FAMILY === 'opus' ? '' : `-${FAMILY}`);
 const LEAN = ['--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--setting-sources', 'project'];
 
 const vault = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json'), 'utf8'));
 const probes = Array.isArray(vault) ? vault : (vault.probes || []);
 const RESULTS = path.join(REPO, 'core/prompt-optimization/data/results');
-const STATE = path.join(RESULTS, 'cc-vault-state.json');
+const STATE = path.join(RESULTS, `cc-vault${SUFFIX}-state.json`);
+const CAP_DIR = path.join(RESULTS, `cc-vault${SUFFIX}-captures`); // re-scorable raw tool responses (USD never un-re-scorable)
 const GLOBAL_MD = path.join(os.homedir(), '.claude', 'CLAUDE.md');
 const PROJECT_MD = path.join(REPO, 'CLAUDE.md');
 const BAK = '.ccbak';
@@ -48,7 +54,8 @@ const suppressMd = () => { for (const f of [GLOBAL_MD, PROJECT_MD]) if (fs.exist
 const restoreMd = () => { for (const f of [GLOBAL_MD, PROJECT_MD]) if (fs.existsSync(f + BAK)) fs.renameSync(f + BAK, f); };
 restoreMd(); // recover any leftover backup from a previously-crashed batch
 
-const PR = { inPerM: 15, outPerM: 75 }; // Opus standard tier (verify) — cache-naive
+// per-1M cache-naive standard-tier rates by family (Opus 15/75, Sonnet 3/15, Haiku 1/5)
+const PR = ({ opus: { inPerM: 15, outPerM: 75 }, sonnet: { inPerM: 3, outPerM: 15 }, haiku: { inPerM: 1, outPerM: 5 } }[FAMILY]) || { inPerM: 15, outPerM: 75 };
 const tin = (u) => (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
 const naive = (u) => (!u ? null : (tin(u) / 1e6) * PR.inPerM + ((u.output_tokens || 0) / 1e6) * PR.outPerM);
 
@@ -73,19 +80,29 @@ async function runOne(probe, mode, rep) {
   const calls = Array.isArray(run.toolCalls) ? run.toolCalls : [];
   const text = run.finalResultText || run.finalAssistantText || '';
   const tu = classifyToolUse(calls);
-  let score = null; try { ({ score } = await judgePanelScore({ probe, answer: text, panel: JUDGE_PANEL })); } catch { score = null; }
+  const arm = mode === 'mpp' ? 'ss' : 'native';
+  // Join CC's toolCalls[]+toolResults[] → normalized shape, build the per-arm raw
+  // tool-response, and ALWAYS persist it so USD is re-scorable forever (no agent re-run).
+  const normCalls = normalizeClaudeCalls(calls, run.toolResults);
+  const rawResponse = buildArmResponse(normCalls, arm);
+  persistCapture(CAP_DIR, { probeId: probe.id, arm, rep, model: MODEL, harness: 'claude-code', rawResponse, finalAnswer: text, toolCalls: normCalls });
+  // accuracy judge (final answer) ∥ USD scoring (raw tool response) — independent inputs.
+  const [score, usd] = await Promise.all([
+    judgePanelScore({ probe, answer: text, panel: JUDGE_PANEL }).then((r) => r.score).catch(() => null),
+    scoreUsdInline(probe, rawResponse, arm),
+  ]);
   const u = run.usage || null;
-  return { id: probe.id, lang: probe.language, stratum: probe.stratum, rep, mode, model: MODEL, score, calls: calls.length, ss: !!tu.ss, nativeGrep: !!tu.nativeSearch, nativeRead: !!tu.nativeRead, wallMs: run.wallMs ?? null, usage: u, costUsd: naive(u), harnessCostUsd: run.totalCostUsd ?? null, exitCode: run.exitCode, timedOut: !!run.timedOut };
+  return { id: probe.id, lang: probe.language, stratum: probe.stratum, rep, mode, model: MODEL, harness: 'claude-code', score, ...usd, rawLen: rawResponse.length, calls: calls.length, ss: !!tu.ss, nativeGrep: !!tu.nativeSearch, nativeRead: !!tu.nativeRead, wallMs: run.wallMs ?? null, usage: u, costUsd: naive(u), harnessCostUsd: run.totalCostUsd ?? null, exitCode: run.exitCode, timedOut: !!run.timedOut };
 }
 
-const append = (mode, rows) => { const d = path.join(RESULTS, mode === 'mpp' ? 'cc-vault-mpp' : 'cc-vault-native'); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'rows.json'); const prev = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; fs.writeFileSync(f, JSON.stringify(prev.concat(rows), null, 2)); };
+const append = (mode, rows) => { const d = path.join(RESULTS, `cc-vault${SUFFIX}-${mode === 'mpp' ? 'mpp' : 'native'}`); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'rows.json'); const prev = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; fs.writeFileSync(f, JSON.stringify(prev.concat(rows), null, 2)); };
 
 (async () => {
   delete process.env.ANTHROPIC_API_KEY; // force Claude Max subscription (OAuth), not API key
   const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : { rep: 1, offset: 0 };
   if (state.offset >= probes.length) { state.rep += 1; state.offset = 0; }
   const batch = probes.slice(state.offset, state.offset + BATCH);
-  console.error(`\n=== cc-batch: rep ${state.rep}, probes ${state.offset + 1}-${state.offset + batch.length}/${probes.length} | Opus-${MODEL} xhigh, conc=1, MCP off, hooks off, CLAUDE.md suppressed ===`);
+  console.error(`\n=== cc-batch: rep ${state.rep}, probes ${state.offset + 1}-${state.offset + batch.length}/${probes.length} | ${MODEL} think=${THINK}, conc=1, MCP off, hooks off, CLAUDE.md suppressed, out=cc-vault${SUFFIX}-* ===`);
   console.error('  ' + batch.map((p) => `${p.id}(${p.language})`).join(', '));
   const out = { native: [], mpp: [] };
   try {
@@ -97,7 +114,7 @@ const append = (mode, rows) => { const d = path.join(RESULTS, mode === 'mpp' ? '
       for (const probe of batch) {
         const row = await runOne(probe, mode, state.rep);
         out[mode].push(row);
-        console.error(`  [${mode.padEnd(6)}] ${row.id.padEnd(15)} score=${row.score} calls=${String(row.calls).padEnd(2)} ss=${row.ss} ${row.wallMs != null ? (row.wallMs / 1000).toFixed(0) + 's' : '?'}${row.costUsd != null ? ' $' + row.costUsd.toFixed(3) : ''} exit=${row.exitCode}${row.timedOut ? ' TIMEOUT' : ''}`);
+        console.error(`  [${mode.padEnd(6)}] ${row.id.padEnd(15)} score=${row.score} USDnoC=${row.USD_noC != null ? row.USD_noC.toFixed(3) : (row.usdError ? 'ERR' : '–')} g=${row.grounding ?? '–'} calls=${String(row.calls).padEnd(2)} ss=${row.ss} ${row.wallMs != null ? (row.wallMs / 1000).toFixed(0) + 's' : '?'}${row.costUsd != null ? ' $' + row.costUsd.toFixed(3) : ''} exit=${row.exitCode}${row.timedOut ? ' TIMEOUT' : ''}`);
       }
     }
   } finally { restoreMd(); }
@@ -107,7 +124,7 @@ const append = (mode, rows) => { const d = path.join(RESULTS, mode === 'mpp' ? '
   const sm = (rows, f) => mean(rows.map(f));
   console.log(`\n--- BATCH DONE (rep ${state.rep}, ${state.offset}/${probes.length} probes this rep) ---`);
   for (const [lbl, rows] of [['native', out.native], ['M++   ', out.mpp]]) {
-    console.log(`  ${lbl}: acc=${sm(rows, (x) => x.score || 0).toFixed(3)} calls=${sm(rows, (x) => x.calls).toFixed(1)} wall=${sm(rows, (x) => (x.wallMs || 0) / 1000).toFixed(0)}s ss=${(100 * rows.filter((x) => x.ss).length / Math.max(1, rows.length)).toFixed(0)}% naive$=${sm(rows, (x) => x.costUsd || 0).toFixed(3)}${rows.some((x) => x.exitCode !== 0 || x.timedOut) ? '  ⚠ ERRORS' : ''}`);
+    console.log(`  ${lbl}: acc=${sm(rows, (x) => x.score || 0).toFixed(3)} USDnoC=${sm(rows, (x) => x.USD_noC || 0).toFixed(3)} g=${sm(rows, (x) => x.grounding || 0).toFixed(2)} calls=${sm(rows, (x) => x.calls).toFixed(1)} wall=${sm(rows, (x) => (x.wallMs || 0) / 1000).toFixed(0)}s ss=${(100 * rows.filter((x) => x.ss).length / Math.max(1, rows.length)).toFixed(0)}% naive$=${sm(rows, (x) => x.costUsd || 0).toFixed(3)} usdErr=${rows.filter((x) => x.usdError).length}${rows.some((x) => x.exitCode !== 0 || x.timedOut) ? '  ⚠ ERRORS' : ''}`);
   }
   const wN = sm(out.native, (x) => (x.wallMs || 0) / 1000), wM = sm(out.mpp, (x) => (x.wallMs || 0) / 1000);
   const cN = sm(out.native, (x) => x.calls), cM = sm(out.mpp, (x) => x.calls);

@@ -12,6 +12,7 @@ import os from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolveRepoCwd, buildAgentUserPrompt, judgePanelScore, JUDGE_PANEL } from '../core/prompt-optimization/sweep/gepa-evaluate.mjs';
+import { buildArmResponse, normalizeOpencodeCalls, scoreUsdInline, persistCapture } from '../core/prompt-optimization/sweep/usd-capture.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SS_BIN = path.join(REPO, 'eval/agent-read-workflows/bin');
@@ -23,12 +24,14 @@ Final answer: cite the relevant file paths, symbols, and facts. If absent, say n
 const MODEL = process.env.MODEL || 'openrouter/openai/gpt-5.5';
 const VARIANT = process.env.VARIANT || 'high';
 const BATCH = Number(process.env.BATCH_SIZE || 5);
+const SUFFIX = process.env.SUFFIX || ''; // output isolation (e.g. -smoke) so a test run never touches the real oc-vault dataset
 const PR = { inPerM: 5, outPerM: 30, cacheReadPerM: 0.5 };
 
 const vault = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json'), 'utf8'));
 const probes = Array.isArray(vault) ? vault : (vault.probes || []);
 const RESULTS = path.join(REPO, 'core/prompt-optimization/data/results');
-const STATE = path.join(RESULTS, 'oc-vault-state.json');
+const STATE = path.join(RESULTS, `oc-vault${SUFFIX}-state.json`);
+const CAP_DIR = path.join(RESULTS, `oc-vault${SUFFIX}-captures`); // re-scorable raw tool responses (USD never un-re-scorable)
 const MD = [path.join(os.homedir(), '.claude', 'CLAUDE.md'), path.join(REPO, 'CLAUDE.md'), path.join(REPO, 'AGENTS.md')];
 const BAK = '.obak';
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
@@ -46,7 +49,7 @@ function parse(stdout) {
     const t = line.trim(); if (!t || t[0] !== '{') continue;
     let ev; try { ev = JSON.parse(t); } catch { continue; }
     if (ev.type === 'text' && typeof ev.part?.text === 'string') text.push(ev.part.text);
-    else if (ev.type === 'tool_use') toolCalls.push({ command: ev.part?.state?.input?.command || ev.part?.tool || '' });
+    else if (ev.type === 'tool_use') { const st = ev.part?.state || {}; toolCalls.push({ tool: ev.part?.tool || '', command: st.input?.command || ev.part?.tool || '', input: st.input || {}, output: typeof st.output === 'string' ? st.output : '', isError: st.status === 'error' }); }
     else if (ev.type === 'step_finish') { const k = ev.part?.tokens || {}; tok.input += k.input || 0; tok.output += k.output || 0; tok.reasoning += k.reasoning || 0; tok.cacheRead += k.cache?.read || 0; tok.cacheWrite += k.cache?.write || 0; cost += ev.part?.cost || 0; }
   }
   return { toolCalls, answer: text.length ? text[text.length - 1] : '', tok, cost };
@@ -76,11 +79,20 @@ async function runOne(probe, mode, rep) {
   fs.writeFileSync(ag, mode === 'mpp' ? MPP : NATIVE);
   const env = { ...process.env, PATH: mode === 'mpp' ? [SS_BIN, process.env.PATH].join(':') : process.env.PATH, SWEET_SEARCH_PROJECT_ROOT: cwd };
   let r; try { r = await runOpencode(cwd, env, `Task: ${probe.query}`); } finally { if (had) fs.writeFileSync(ag, bak); else { try { fs.unlinkSync(ag); } catch {} } }
+  if (process.env.OC_RAW_DUMP) { try { fs.mkdirSync(path.dirname(process.env.OC_RAW_DUMP), { recursive: true }); fs.writeFileSync(process.env.OC_RAW_DUMP, r.out); } catch {} }
   const pr = parse(r.out); const a = analyze(pr.toolCalls, cwd);
-  let score = null; try { ({ score } = await judgePanelScore({ probe, answer: pr.answer, panel: JUDGE_PANEL })); } catch { score = null; }
-  return { id: probe.id, lang: probe.language, stratum: probe.stratum, rep, mode, model: MODEL, harness: 'opencode', score, calls: pr.toolCalls.length, ss: ssUsed(pr.toolCalls), escape: a.escape, leak: a.leak, reasoningTok: pr.tok.reasoning, wallMs: r.wallMs, tokens: pr.tok, costUsd: naive(pr.tok), opencodeCostUsd: pr.cost, exitCode: r.code };
+  // USD: build the per-arm raw tool-response, persist (re-scorable), and score.
+  const arm = mode === 'mpp' ? 'ss' : 'native';
+  const normCalls = normalizeOpencodeCalls(pr.toolCalls);
+  const rawResponse = buildArmResponse(normCalls, arm);
+  persistCapture(CAP_DIR, { probeId: probe.id, arm, rep, model: MODEL, harness: 'opencode', rawResponse, finalAnswer: pr.answer, toolCalls: normCalls });
+  const [score, usd] = await Promise.all([
+    judgePanelScore({ probe, answer: pr.answer, panel: JUDGE_PANEL }).then((x) => x.score).catch(() => null),
+    scoreUsdInline(probe, rawResponse, arm),
+  ]);
+  return { id: probe.id, lang: probe.language, stratum: probe.stratum, rep, mode, model: MODEL, harness: 'opencode', score, ...usd, rawLen: rawResponse.length, calls: pr.toolCalls.length, ss: ssUsed(pr.toolCalls), escape: a.escape, leak: a.leak, reasoningTok: pr.tok.reasoning, wallMs: r.wallMs, tokens: pr.tok, costUsd: naive(pr.tok), opencodeCostUsd: pr.cost, exitCode: r.code };
 }
-const append = (mode, rows) => { const d = path.join(RESULTS, mode === 'mpp' ? 'oc-vault-mpp' : 'oc-vault-native'); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'rows.json'); const prev = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; fs.writeFileSync(f, JSON.stringify(prev.concat(rows), null, 2)); };
+const append = (mode, rows) => { const d = path.join(RESULTS, `oc-vault${SUFFIX}-${mode === 'mpp' ? 'mpp' : 'native'}`); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'rows.json'); const prev = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; fs.writeFileSync(f, JSON.stringify(prev.concat(rows), null, 2)); };
 
 (async () => {
   const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : { rep: 1, offset: 0 };
@@ -97,7 +109,7 @@ const append = (mode, rows) => { const d = path.join(RESULTS, mode === 'mpp' ? '
       for (const probe of batch) {
         const row = await runOne(probe, mode, state.rep);
         out[mode].push(row);
-        console.error(`  [${mode.padEnd(6)}] ${row.id.padEnd(15)} score=${row.score} calls=${String(row.calls).padEnd(2)} ss=${row.ss} ${(row.wallMs / 1000).toFixed(0)}s $${(row.costUsd || 0).toFixed(3)} escape=${row.escape} leak=${row.leak} exit=${row.exitCode}`);
+        console.error(`  [${mode.padEnd(6)}] ${row.id.padEnd(15)} score=${row.score} USDnoC=${row.USD_noC != null ? row.USD_noC.toFixed(3) : (row.usdError ? 'ERR' : '–')} g=${row.grounding ?? '–'} calls=${String(row.calls).padEnd(2)} ss=${row.ss} ${(row.wallMs / 1000).toFixed(0)}s $${(row.costUsd || 0).toFixed(3)} escape=${row.escape} leak=${row.leak} exit=${row.exitCode}`);
       }
     }
   } finally { restoreMd(); reap(); }
@@ -105,6 +117,6 @@ const append = (mode, rows) => { const d = path.join(RESULTS, mode === 'mpp' ? '
   state.offset += batch.length; fs.mkdirSync(RESULTS, { recursive: true }); fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
   const sm = (r, f) => mean(r.map(f));
   console.log(`\n--- OC BATCH DONE (rep ${state.rep}, ${state.offset}/${probes.length}) ---`);
-  for (const [lbl, r] of [['native', out.native], ['M++   ', out.mpp]]) console.log(`  ${lbl}: acc=${sm(r, (x) => x.score || 0).toFixed(3)} calls=${sm(r, (x) => x.calls).toFixed(1)} ss=${(100 * r.filter((x) => x.ss).length / Math.max(1, r.length)).toFixed(0)}% $${sm(r, (x) => x.costUsd || 0).toFixed(3)} escape=${r.reduce((s, x) => s + x.escape, 0)} leak=${r.reduce((s, x) => s + x.leak, 0)}`);
+  for (const [lbl, r] of [['native', out.native], ['M++   ', out.mpp]]) console.log(`  ${lbl}: acc=${sm(r, (x) => x.score || 0).toFixed(3)} USDnoC=${sm(r, (x) => x.USD_noC || 0).toFixed(3)} g=${sm(r, (x) => x.grounding || 0).toFixed(2)} calls=${sm(r, (x) => x.calls).toFixed(1)} ss=${(100 * r.filter((x) => x.ss).length / Math.max(1, r.length)).toFixed(0)}% $${sm(r, (x) => x.costUsd || 0).toFixed(3)} usdErr=${r.filter((x) => x.usdError).length} escape=${r.reduce((s, x) => s + x.escape, 0)} leak=${r.reduce((s, x) => s + x.leak, 0)}`);
   console.log(`  → M++ vs native: calls ${sm(out.mpp, (x) => x.calls).toFixed(1)} vs ${sm(out.native, (x) => x.calls).toFixed(1)}; NEXT probes ${state.offset >= probes.length ? 1 : state.offset + 1}-${Math.min(state.offset + BATCH, probes.length)}`);
 })();
