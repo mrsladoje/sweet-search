@@ -87,12 +87,12 @@ function buildArmResponse(toolCalls, arm) {
 async function scoreUsdInline(probe, rawResponse, arm) {
   try {
     const rJudge = toRJudge(rawResponse, arm);
-    let panelCorrectness = null;
-    try { ({ score: panelCorrectness } = await judgePanelScore({ probe, answer: rJudge, panel: JUDGE_PANEL })); } catch {}
-    let panel = [];
-    if (!probe.expectedNoMatch && rJudge.trim()) {
-      ({ panel } = await usdPanelScore({ probe, rJudge, panel: JUDGE_PANEL, runJudgeFn: runJudge, normalizeUsageFn: normalizeJudgeUsage, AllJudgesFailedError }));
-    }
+    const needUsdPanel = !probe.expectedNoMatch && !!rJudge.trim();
+    // USD grounding-judge ∥ USD-dimensions-panel (independent reads of rJudge)
+    const [panelCorrectness, panel] = await Promise.all([
+      judgePanelScore({ probe, answer: rJudge, panel: JUDGE_PANEL }).then((r) => r.score).catch(() => null),
+      needUsdPanel ? usdPanelScore({ probe, rJudge, panel: JUDGE_PANEL, runJudgeFn: runJudge, normalizeUsageFn: normalizeJudgeUsage, AllJudgesFailedError }).then((r) => r.panel).catch(() => []) : Promise.resolve([]),
+    ]);
     const sc = scoreUSD({ probe, rawResponse, arm, panel, panelCorrectness, rubricHash: computeRubricHash(USD_PARAMS) });
     const usdNoC = probe.expectedNoMatch ? sc.USD : composeUSD({ g: sc.grounding, signalPurity: 1, content: sc.content, purity_ratio: sc.purity_ratio }, USD_PARAMS);
     return { USD: sc.USD, USD_noC: usdNoC, grounding: sc.grounding, content: sc.content, content_noD3: sc.content_noD3, purity_ratio: sc.purity_ratio, signal_purity: sc.signal_purity, usdTokens: sc.total_tokens };
@@ -123,8 +123,11 @@ async function runOne(probe, mode, rep) {
   const rawResponse = buildArmResponse(calls, arm);
   // ALWAYS persist the raw tool responses (so USD is re-scorable forever, no agent re-run)
   try { fs.mkdirSync(CAP_DIR, { recursive: true }); fs.writeFileSync(path.join(CAP_DIR, `${probe.id}.${arm}.rep${rep}.json`), JSON.stringify({ probeId: probe.id, arm, rep, model: MODEL, rawResponse, finalAnswer: run.finalResultText || '', toolCalls: calls.map((t) => ({ name: t.name, input: t.input, isError: t.result?.isError ?? null })) })); } catch {}
-  let score = null; try { ({ score } = await judgePanelScore({ probe, answer: run.finalResultText || '', panel: JUDGE_PANEL })); } catch { score = null; }
-  const usd = await scoreUsdInline(probe, rawResponse, arm); // {USD, USD_noC, ...} or {usdError}
+  // accuracy judge (final answer) ∥ USD scoring (raw response) — independent inputs, run concurrently
+  const [score, usd] = await Promise.all([
+    judgePanelScore({ probe, answer: run.finalResultText || '', panel: JUDGE_PANEL }).then((r) => r.score).catch(() => null),
+    scoreUsdInline(probe, rawResponse, arm), // {USD, USD_noC, ...} or {usdError}
+  ]);
   return { id: probe.id, lang: probe.language, stratum: probe.stratum, rep, mode, model: MODEL, harness: 'bare-api', score, ...usd, rawLen: rawResponse.length, calls: calls.length, ss: ssUsed(calls), escape: a.escape, leak: a.leak, wallMs: run.wallMs ?? null, usage: run.usage || null, costUsd: naive(run.usage), realizedUsd: realized(run.usage), exitCode: run.exitCode, timedOut: !!run.timedOut };
 }
 const append = (mode, rows) => { const d = path.join(RESULTS, `${TAG}-vault-${mode === 'mpp' ? 'mpp' : 'native'}`); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'rows.json'); const prev = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; fs.writeFileSync(f, JSON.stringify(prev.concat(rows), null, 2)); };
