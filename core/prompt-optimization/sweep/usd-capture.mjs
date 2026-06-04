@@ -34,6 +34,16 @@ import { runJudge } from '../../../eval/agent-read-workflows/judge-runner.js';
 const SS_CMD_RE = /\bss-(search|find|semantic|trace|grep|read)\b/;
 const NATIVE_SEARCH_RE = /\b(rg|ripgrep|grep|egrep|fgrep|ag|ack|find)\b/;
 
+// Per-tool-output cap so the USD response reflects what a real agent harness actually
+// CONSUMES, not the raw firehose. Real harnesses (incl. the bare-API runner's
+// maxToolOutputChars=64KB) truncate each tool result before feeding the model; codex's
+// `aggregated_output` does NOT, so an over-broad `rg` could dump ~1MB → it both overstated
+// native's tokens (cratering purity_ratio) AND blew the USD judge's context (silent
+// content=0). Capping each result here fixes both at the source. Override via env.
+const MAX_TOOL_OUTPUT_CHARS = Number(process.env.USD_MAX_TOOL_OUTPUT_CHARS || 65536);
+const capOutput = (s) =>
+  s.length > MAX_TOOL_OUTPUT_CHARS ? `${s.slice(0, MAX_TOOL_OUTPUT_CHARS)}\n…[output truncated to ${MAX_TOOL_OUTPUT_CHARS} chars]` : s;
+
 /**
  * Build the per-arm raw tool-response byte stream from normalized tool calls.
  * @param {Array<{name:string,input:object,result:{content:string,isError?:boolean}}>} toolCalls
@@ -43,8 +53,9 @@ const NATIVE_SEARCH_RE = /\b(rg|ripgrep|grep|egrep|fgrep|ag|ack|find)\b/;
 export function buildArmResponse(toolCalls, arm) {
   const blocks = [];
   for (const tc of toolCalls || []) {
-    const result = tc.result?.content;
-    if (typeof result !== 'string' || !result.trim()) continue;
+    const raw = tc.result?.content;
+    if (typeof raw !== 'string' || !raw.trim()) continue;
+    const result = capOutput(raw); // bound each tool output to the agent-realistic cap
     const cmd = String(tc.input?.command || '');
     const fp = tc.input?.file_path || '';
     const name = tc.name;
@@ -122,8 +133,10 @@ export async function scoreUsdInline(probe, rawResponse, arm) {
     const needUsdPanel = !probe.expectedNoMatch && !!rJudge.trim();
     const [panelCorrectness, panel] = await Promise.all([
       judgePanelScore({ probe, answer: rJudge, panel: JUDGE_PANEL }).then((r) => r.score).catch(() => null),
+      // NOTE: do NOT swallow a panel failure into [] — that silently scored content=0
+      // (the codex bug). Let AllJudgesFailedError propagate → outer catch → explicit {usdError}.
       needUsdPanel
-        ? usdPanelScore({ probe, rJudge, panel: JUDGE_PANEL, runJudgeFn: runJudge, normalizeUsageFn: normalizeJudgeUsage, AllJudgesFailedError }).then((r) => r.panel).catch(() => [])
+        ? usdPanelScore({ probe, rJudge, panel: JUDGE_PANEL, runJudgeFn: runJudge, normalizeUsageFn: normalizeJudgeUsage, AllJudgesFailedError }).then((r) => r.panel)
         : Promise.resolve([]),
     ]);
     const sc = scoreUSD({ probe, rawResponse, arm, panel, panelCorrectness, rubricHash: computeRubricHash(USD_PARAMS) });
