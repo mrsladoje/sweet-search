@@ -29,6 +29,7 @@ const MODEL = process.env.MODEL || 'deepseek/deepseek-v4-pro';
 const BATCH = Number(process.env.BATCH_SIZE || 5);
 const REASONING = process.env.REASONING || 'high';  // runner default is 'minimal' (GEPA instant target); DeepSeek "max effort" needs high
 const MAXTOK = Number(process.env.MAXTOK || 32000); // room for high-reasoning tokens + answer on big-context probes
+const THINK = Number(process.env.THINK || 0); // Anthropic extended-thinking budget tokens (0=instant; medium≈10000) — Anthropic models only
 const READLINES = Number(process.env.READLINES || 2000);    // real-agent-parity Read budget (Claude Code reads ~2000 lines/call)
 const TOOLCHARS = Number(process.env.TOOLCHARS || 64000);   // ditto for tool-output chars (default runner cap 12000 cripples big-file reads)
 const IS_ANTHROPIC = /claude|sonnet|haiku|opus/i.test(MODEL); // route Claude models to the Anthropic-direct loop (instant: no thinking param)
@@ -37,7 +38,7 @@ const TAG = process.env.TAG || (MODEL.includes('deepseek') ? 'ba-ds' : IS_ANTHRO
 // deepseek-v4-pro (api-docs.deepseek.com, post-2026-05-31 permanent): in 0.435 / out 0.87 / cache-hit 0.003625.
 // ba-sonnet = Anthropic claude-sonnet-4-6 (verify rates before publishing cost).
 const PRICES = { 'ba-ds': { inPerM: 0.435, outPerM: 0.87, cacheReadPerM: 0.003625 }, 'ba-gpt': { inPerM: 5, outPerM: 30, cacheReadPerM: 0.5 }, 'ba-sonnet': { inPerM: 3, outPerM: 15, cacheReadPerM: 0.30, cacheWritePerM: 3.75 } };
-const PR = PRICES[TAG] || PRICES['ba-ds'];
+const PR = PRICES[TAG] || (IS_ANTHROPIC ? PRICES['ba-sonnet'] : PRICES['ba-ds']);
 
 const vault = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json'), 'utf8'));
 const probes = Array.isArray(vault) ? vault : (vault.probes || []);
@@ -114,7 +115,7 @@ async function runOne(probe, mode, rep) {
   const cwd = resolveRepoCwd(probe, {});
   let run;
   try {
-    const _req = { model: MODEL, prompt: buildAgentUserPrompt(probe), systemAppend: mode === 'mpp' ? MPP : NATIVE, cwd, sweetSearchBinDir: mode === 'mpp' ? SS_BIN : undefined, allowSweetSearch: mode === 'mpp', maxToolCalls: probe.max_turns || 12, maxTokens: MAXTOK, maxReadLines: READLINES, maxToolOutputChars: TOOLCHARS, captureToolResults: true, timeoutMs: 300000 };
+    const _req = { model: MODEL, prompt: buildAgentUserPrompt(probe), systemAppend: mode === 'mpp' ? MPP : NATIVE, cwd, sweetSearchBinDir: mode === 'mpp' ? SS_BIN : undefined, allowSweetSearch: mode === 'mpp', maxToolCalls: probe.max_turns || 12, maxTokens: MAXTOK, maxReadLines: READLINES, maxToolOutputChars: TOOLCHARS, captureToolResults: true, thinkingBudget: THINK, timeoutMs: 300000 };
     run = IS_ANTHROPIC ? await runAnthropicApiAgent(_req) : await runOpenRouterApiAgent({ ..._req, reasoningEffort: REASONING });
   } catch (e) { return { id: probe.id, lang: probe.language, stratum: probe.stratum, rep, mode, model: MODEL, score: null, calls: 0, ss: false, escape: 0, leak: 0, wallMs: null, usage: null, costUsd: null, exitCode: -1, error: e.message }; }
   const calls = run.toolCalls || [];
