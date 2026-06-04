@@ -102,8 +102,8 @@ export function withRollingCache(messages) {
   return out;
 }
 
-export function buildAnthropicAgentPayload({ model, systemPrompt, messages, maxTokens = 4096 }) {
-  return {
+export function buildAnthropicAgentPayload({ model, systemPrompt, messages, maxTokens = 4096, thinkingBudget = 0 }) {
+  const payload = {
     model: model || 'claude-sonnet-4-6',
     system: [{ type: 'text', text: apiAgentSystem(systemPrompt), cache_control: EPHEMERAL }],
     messages: withRollingCache(messages),
@@ -112,6 +112,14 @@ export function buildAnthropicAgentPayload({ model, systemPrompt, messages, maxT
     tools: [BASH_TOOL, READ_TOOL],
     tool_choice: { type: 'auto' },
   };
+  if (thinkingBudget > 0) {
+    // Extended thinking: requires temperature=1, and thinking tokens count toward max_tokens,
+    // so max_tokens must exceed the budget (leave room for the answer afterwards).
+    payload.thinking = { type: 'enabled', budget_tokens: thinkingBudget };
+    payload.temperature = 1;
+    if (payload.max_tokens <= thinkingBudget) payload.max_tokens = thinkingBudget + 4096;
+  }
+  return payload;
 }
 
 export function resolveOpenRouterAgentModel(model, provider = 'openrouter') {
@@ -258,7 +266,7 @@ export async function runAnthropicApiAgent(req) {
   let timedOut = false;
 
   for (let round = 0; round < maxRounds(req); round++) {
-    const body = buildAnthropicAgentPayload({ model: req.model, systemPrompt: req.systemAppend, messages });
+    const body = buildAnthropicAgentPayload({ model: req.model, systemPrompt: req.systemAppend, messages, maxTokens: req.maxTokens, thinkingBudget: req.thinkingBudget });
     const r = await postAnthropic({ apiKey, body, timeoutMs: req.timeoutMs ?? DEFAULT_TIMEOUT_MS });
     retryCount += r.retryCount || 0;
     addAnthropicUsage(usage, r.json?.usage);
