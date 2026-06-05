@@ -39,8 +39,11 @@ const CAP_DIR = path.join(RESULTS, `oc-vault${SUFFIX}-captures`); // re-scorable
 const MD = [path.join(os.homedir(), '.claude', 'CLAUDE.md'), path.join(REPO, 'CLAUDE.md'), path.join(REPO, 'AGENTS.md')];
 const BAK = '.obak';
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
-const suppressMd = () => { for (const f of MD) if (fs.existsSync(f) && !fs.existsSync(f + BAK)) fs.renameSync(f, f + BAK); };
-const restoreMd = () => { for (const f of MD) if (fs.existsSync(f + BAK)) fs.renameSync(f + BAK, f); };
+// Race-tolerant: parallel shards rename the SAME global files (~/.claude/CLAUDE.md etc.) →
+// TOCTOU. Swallow a losing-race rename instead of crashing the shard (opencode runs --pure,
+// so the global suppress is belt-and-suspenders; the per-repo AGENTS.md is the real mechanism).
+const suppressMd = () => { for (const f of MD) { try { if (fs.existsSync(f) && !fs.existsSync(f + BAK)) fs.renameSync(f, f + BAK); } catch { /* lost the race — already moved */ } } };
+const restoreMd = () => { for (const f of MD) { try { if (fs.existsSync(f + BAK)) fs.renameSync(f + BAK, f); } catch { /* lost the race */ } } };
 restoreMd();
 // NO_REAP=1 → no-op (parallel shards must not pkill each other's ss-servers mid-call).
 const reap = () => { if (process.env.NO_REAP) return; try { spawnSync('pkill', ['-f', 'core/cli\\.js'], { stdio: 'ignore' }); } catch {} try { spawnSync('pkill', ['-9', '-f', 'index-maintainer\\.mjs'], { stdio: 'ignore' }); } catch {} };
