@@ -41,14 +41,16 @@ const PRICES = { 'ba-ds': { inPerM: 0.435, outPerM: 0.87, cacheReadPerM: 0.00362
 // Price keyed off MODEL (not TAG) so shard TAGs like ba-glm-s1 still price correctly.
 const PR = PRICES[/glm/i.test(MODEL) ? 'ba-glm' : MODEL.includes('deepseek') ? 'ba-ds' : IS_ANTHROPIC ? 'ba-sonnet' : 'ba-gpt'];
 
-const vault = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json'), 'utf8'));
+const SET = process.env.SET || 'vault'; // probe-set label for output dirs: vault | heldout | ood
+const PROBE_FILE = process.env.PROBES ? (path.isAbsolute(process.env.PROBES) ? process.env.PROBES : path.join(REPO, process.env.PROBES)) : path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json');
+const vault = JSON.parse(fs.readFileSync(PROBE_FILE, 'utf8'));
 const allProbes = Array.isArray(vault) ? vault : (vault.probes || []);
 // IDS subset → enables parallel sharding (bare-API has NO per-repo file race, so any
 // disjoint id-subsets can run concurrently; isolate state+dirs via TAG per shard).
 const IDS = (process.env.IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
 const probes = IDS.length ? allProbes.filter((p) => IDS.includes(p.id)) : allProbes;
 const RESULTS = path.join(REPO, 'core/prompt-optimization/data/results');
-const STATE = path.join(RESULTS, `${TAG}-vault-state.json`);
+const STATE = path.join(RESULTS, `${TAG}-${SET}-state.json`);
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
 // NO_REAP=1 → no-op (for parallel shards: a sibling's global pkill would kill another
 // shard's ss-server mid-call → corrupt mpp. Orchestrator reaps once per phase instead).
@@ -74,7 +76,7 @@ const ssUsed = (calls) => calls.some((c) => /\bss-(search|find|semantic|trace|gr
 // The raw tool responses are persisted to CAP_DIR so a run is NEVER un-re-scorable
 // (the lesson from the Sonnet run that stored only score/calls/usage). USD/USD_noC
 // are also computed inline (try/catch — a USD failure never breaks the moat row).
-const CAP_DIR = path.join(RESULTS, `${TAG}-vault-captures`);
+const CAP_DIR = path.join(RESULTS, `${TAG}-${SET}-captures`);
 const SS_CMD_RE = /\bss-(search|find|semantic|trace|grep|read)\b/;
 const NATIVE_SEARCH_RE = /\b(rg|ripgrep|grep|egrep|fgrep|ag|ack|find)\b/;
 function buildArmResponse(toolCalls, arm) {
@@ -138,7 +140,7 @@ async function runOne(probe, mode, rep) {
   ]);
   return { id: probe.id, lang: probe.language, stratum: probe.stratum, rep, mode, model: MODEL, harness: 'bare-api', score, ...usd, rawLen: rawResponse.length, calls: calls.length, ss: ssUsed(calls), escape: a.escape, leak: a.leak, wallMs: run.wallMs ?? null, usage: run.usage || null, costUsd: naive(run.usage), realizedUsd: realized(run.usage), exitCode: run.exitCode, timedOut: !!run.timedOut };
 }
-const append = (mode, rows) => { const d = path.join(RESULTS, `${TAG}-vault-${mode === 'mpp' ? 'mpp' : 'native'}`); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'rows.json'); const prev = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; fs.writeFileSync(f, JSON.stringify(prev.concat(rows), null, 2)); };
+const append = (mode, rows) => { const d = path.join(RESULTS, `${TAG}-${SET}-${mode === 'mpp' ? 'mpp' : 'native'}`); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'rows.json'); const prev = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; fs.writeFileSync(f, JSON.stringify(prev.concat(rows), null, 2)); };
 
 (async () => {
   const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : { rep: 1, offset: 0 };
