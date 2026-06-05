@@ -37,15 +37,22 @@ const TAG = process.env.TAG || (MODEL.includes('deepseek') ? 'ba-ds' : IS_ANTHRO
 // Prices per 1M tokens (cache-naive = all input at full rate). ba-ds = DeepSeek-DIRECT official
 // deepseek-v4-pro (api-docs.deepseek.com, post-2026-05-31 permanent): in 0.435 / out 0.87 / cache-hit 0.003625.
 // ba-sonnet = Anthropic claude-sonnet-4-6 (verify rates before publishing cost).
-const PRICES = { 'ba-ds': { inPerM: 0.435, outPerM: 0.87, cacheReadPerM: 0.003625 }, 'ba-gpt': { inPerM: 5, outPerM: 30, cacheReadPerM: 0.5 }, 'ba-sonnet': { inPerM: 3, outPerM: 15, cacheReadPerM: 0.30, cacheWritePerM: 3.75 } };
-const PR = PRICES[TAG] || (IS_ANTHROPIC ? PRICES['ba-sonnet'] : PRICES['ba-ds']);
+const PRICES = { 'ba-ds': { inPerM: 0.435, outPerM: 0.87, cacheReadPerM: 0.003625 }, 'ba-gpt': { inPerM: 5, outPerM: 30, cacheReadPerM: 0.5 }, 'ba-sonnet': { inPerM: 3, outPerM: 15, cacheReadPerM: 0.30, cacheWritePerM: 3.75 }, 'ba-glm': { inPerM: 0.98, outPerM: 3.08, cacheReadPerM: 0.182 } };
+// Price keyed off MODEL (not TAG) so shard TAGs like ba-glm-s1 still price correctly.
+const PR = PRICES[/glm/i.test(MODEL) ? 'ba-glm' : MODEL.includes('deepseek') ? 'ba-ds' : IS_ANTHROPIC ? 'ba-sonnet' : 'ba-gpt'];
 
 const vault = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json'), 'utf8'));
-const probes = Array.isArray(vault) ? vault : (vault.probes || []);
+const allProbes = Array.isArray(vault) ? vault : (vault.probes || []);
+// IDS subset → enables parallel sharding (bare-API has NO per-repo file race, so any
+// disjoint id-subsets can run concurrently; isolate state+dirs via TAG per shard).
+const IDS = (process.env.IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+const probes = IDS.length ? allProbes.filter((p) => IDS.includes(p.id)) : allProbes;
 const RESULTS = path.join(REPO, 'core/prompt-optimization/data/results');
 const STATE = path.join(RESULTS, `${TAG}-vault-state.json`);
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
-const reap = () => { try { spawnSync('pkill', ['-f', 'core/cli\\.js'], { stdio: 'ignore' }); } catch {} try { spawnSync('pkill', ['-9', '-f', 'index-maintainer\\.mjs'], { stdio: 'ignore' }); } catch {} };
+// NO_REAP=1 → no-op (for parallel shards: a sibling's global pkill would kill another
+// shard's ss-server mid-call → corrupt mpp. Orchestrator reaps once per phase instead).
+const reap = () => { if (process.env.NO_REAP) return; try { spawnSync('pkill', ['-f', 'core/cli\\.js'], { stdio: 'ignore' }); } catch {} try { spawnSync('pkill', ['-9', '-f', 'index-maintainer\\.mjs'], { stdio: 'ignore' }); } catch {} };
 const prewarm = (cwd) => { try { spawnSync('ss-search', ['warmup', '-k', '1'], { cwd, env: { ...process.env, PATH: [SS_BIN, process.env.PATH].join(':'), SWEET_SEARCH_PROJECT_ROOT: cwd }, timeout: 180000, stdio: 'ignore' }); } catch {} };
 
 const ABS = /\/Users\/admin\/Projects\/sweet-search-private[^\s"'`)]*/g;
