@@ -25,10 +25,14 @@ const MODEL = process.env.MODEL || 'openrouter/openai/gpt-5.5';
 const VARIANT = process.env.VARIANT || 'high';
 const BATCH = Number(process.env.BATCH_SIZE || 5);
 const SUFFIX = process.env.SUFFIX || ''; // output isolation (e.g. -smoke) so a test run never touches the real oc-vault dataset
-const PR = { inPerM: 5, outPerM: 30, cacheReadPerM: 0.5 };
+const PR = /glm/i.test(MODEL) ? { inPerM: 0.98, outPerM: 3.08, cacheReadPerM: 0.182 } : { inPerM: 5, outPerM: 30, cacheReadPerM: 0.5 }; // GLM-5.1 vs GPT-5.5 rates
 
 const vault = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json'), 'utf8'));
-const probes = Array.isArray(vault) ? vault : (vault.probes || []);
+const allProbes = Array.isArray(vault) ? vault : (vault.probes || []);
+// IDS subset → enables disjoint-repo sharding (opencode writes AGENTS.md per-repo, so
+// parallel shards MUST hold disjoint repos; group ids by language like run-vault-codex.sh).
+const IDS = (process.env.IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+const probes = IDS.length ? allProbes.filter((p) => IDS.includes(p.id)) : allProbes;
 const RESULTS = path.join(REPO, 'core/prompt-optimization/data/results');
 const STATE = path.join(RESULTS, `oc-vault${SUFFIX}-state.json`);
 const CAP_DIR = path.join(RESULTS, `oc-vault${SUFFIX}-captures`); // re-scorable raw tool responses (USD never un-re-scorable)
@@ -38,7 +42,8 @@ const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
 const suppressMd = () => { for (const f of MD) if (fs.existsSync(f) && !fs.existsSync(f + BAK)) fs.renameSync(f, f + BAK); };
 const restoreMd = () => { for (const f of MD) if (fs.existsSync(f + BAK)) fs.renameSync(f + BAK, f); };
 restoreMd();
-const reap = () => { try { spawnSync('pkill', ['-f', 'core/cli\\.js'], { stdio: 'ignore' }); } catch {} try { spawnSync('pkill', ['-9', '-f', 'index-maintainer\\.mjs'], { stdio: 'ignore' }); } catch {} };
+// NO_REAP=1 → no-op (parallel shards must not pkill each other's ss-servers mid-call).
+const reap = () => { if (process.env.NO_REAP) return; try { spawnSync('pkill', ['-f', 'core/cli\\.js'], { stdio: 'ignore' }); } catch {} try { spawnSync('pkill', ['-9', '-f', 'index-maintainer\\.mjs'], { stdio: 'ignore' }); } catch {} };
 const prewarm = (cwd) => { try { spawnSync('ss-search', ['warmup', '-k', '1'], { cwd, env: { ...process.env, PATH: [SS_BIN, process.env.PATH].join(':'), SWEET_SEARCH_PROJECT_ROOT: cwd }, timeout: 180000, stdio: 'ignore' }); } catch {} };
 
 const ABS = /\/Users\/admin\/Projects\/sweet-search-private[^\s"'`)]*/g;
