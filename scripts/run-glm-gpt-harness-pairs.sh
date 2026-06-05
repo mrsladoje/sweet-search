@@ -18,21 +18,21 @@ L2="python-004,python-006,python-002,python-v60-01,python-v60-02,ts-010,ts-007,t
 L3="cpp-006,cpp-001,cpp-v60-01,cpp-v60-02,js-002,js-003,js-001,javascript-v60-01,csharp-002,csharp-009,csharp-v60-01,php-v60-01,php-v60-02,php-v60-03"
 L4="java-008,java-007,java-v60-01,java-v60-02,kotlin-001,kotlin-004,kotlin-v60-01,kotlin-v60-02,ruby-003,ruby-006,ruby-v60-01,scala-v60-01,scala-v60-02,scala-v60-03"
 
-echo "=== PHASE A: GLM-5.1 bare-API (5 shards) $(date) ==="
+echo "=== PHASE A: GLM-5.1 bare-API, reasoning=HIGH (5 shards) $(date) ==="
 reapall
-for i in 1 2 3 4 5; do g="G$i"; MODEL=z-ai/glm-5.1 TAG=ba-glm-s$i IDS="${(P)g}" BATCH_SIZE=12 node scripts/ba-batch.mjs > "$R/ba-glm-s$i.log" 2>&1 & done
+for i in 1 2 3 4 5; do g="G$i"; REASONING=high MODEL=z-ai/glm-5.1 TAG=ba-glm-s$i IDS="${(P)g}" BATCH_SIZE=12 node scripts/ba-batch.mjs > "$R/ba-glm-s$i.log" 2>&1 & done
 wait
 echo "=== PHASE A done $(date) ==="
 
-echo "=== PHASE B: GPT-5.5 bare-API (5 shards) $(date) ==="
+echo "=== PHASE B: GPT-5.5 bare-API, reasoning=LOW (5 shards) $(date) ==="
 reapall
-for i in 1 2 3 4 5; do g="G$i"; MODEL=openai/gpt-5.5 TAG=ba-gpt-s$i IDS="${(P)g}" BATCH_SIZE=12 node scripts/ba-batch.mjs > "$R/ba-gpt-s$i.log" 2>&1 & done
+for i in 1 2 3 4 5; do g="G$i"; REASONING=low MODEL=openai/gpt-5.5 TAG=ba-gpt-s$i IDS="${(P)g}" BATCH_SIZE=12 node scripts/ba-batch.mjs > "$R/ba-gpt-s$i.log" 2>&1 & done
 wait
 echo "=== PHASE B done $(date) ==="
 
-echo "=== PHASE C: GLM-5.1 opencode (4 repo-shards) $(date) ==="
+echo "=== PHASE C: GLM-5.1 opencode, variant=HIGH (4 repo-shards) $(date) ==="
 reapall
-n=1; for L in "$L1" "$L2" "$L3" "$L4"; do MODEL=openrouter/z-ai/glm-5.1 SUFFIX=-glm-s$n IDS="$L" BATCH_SIZE=16 node scripts/oc-batch.mjs > "$R/oc-glm-s$n.log" 2>&1 & n=$((n+1)); done
+n=1; for L in "$L1" "$L2" "$L3" "$L4"; do VARIANT=high MODEL=openrouter/z-ai/glm-5.1 SUFFIX=-glm-s$n IDS="$L" BATCH_SIZE=16 node scripts/oc-batch.mjs > "$R/oc-glm-s$n.log" 2>&1 & n=$((n+1)); done
 wait
 reapall
 echo "=== ALL HARNESS-PAIRS DONE $(date) ==="
