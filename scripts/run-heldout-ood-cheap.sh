@@ -15,7 +15,7 @@ pfx(){ awk -v p="$1" '{print "["p"]",$0; fflush()}'; }
 
 echo "=== STAGE-A.1 bare-API GLM(high)+GPT(low) — held-out + OOD $(date) ==="
 reapall
-for pair in "heldout $HO" "ood $OOD"; do set -- $pair; SETV=$1; P=$2
+for pair in "heldout $HO" "ood $OOD"; do set -- ${=pair}; SETV=$1; P=$2
   SET=$SETV PROBES=$P REASONING=high MODEL=z-ai/glm-5.1 TAG=ba-glm BATCH_SIZE=60 node scripts/ba-batch.mjs 2>&1 | pfx "glm-ba-$SETV" | tee "$R/ba-glm-$SETV.log" &
   SET=$SETV PROBES=$P REASONING=low MODEL=openai/gpt-5.5 TAG=ba-gpt BATCH_SIZE=60 node scripts/ba-batch.mjs 2>&1 | pfx "gpt-ba-$SETV" | tee "$R/ba-gpt-$SETV.log" &
 done
@@ -24,7 +24,7 @@ echo "=== STAGE-A.1 done $(date) ==="
 
 echo "=== STAGE-A.2 opencode GLM(high) — held-out + OOD $(date) ==="
 reapall
-for pair in "heldout $HO" "ood $OOD"; do set -- $pair; SETV=$1; P=$2
+for pair in "heldout $HO" "ood $OOD"; do set -- ${=pair}; SETV=$1; P=$2
   SET=$SETV PROBES=$P VARIANT=high MODEL=openrouter/z-ai/glm-5.1 SUFFIX=-glm BATCH_SIZE=60 node scripts/oc-batch.mjs 2>&1 | pfx "glm-oc-$SETV" | tee "$R/oc-glm-$SETV.log" &
 done
 wait
