@@ -39,18 +39,20 @@ const FAMILY = /opus/i.test(MODEL) ? 'opus' : /sonnet/i.test(MODEL) ? 'sonnet' :
 const SUFFIX = process.env.SUFFIX ?? (FAMILY === 'opus' ? '' : `-${FAMILY}`);
 const LEAN = ['--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--setting-sources', 'project'];
 
-const vault = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json'), 'utf8'));
+const SET = process.env.SET || 'vault'; // probe-set label for output dirs: vault | heldout | ood
+const PROBE_FILE = process.env.PROBES ? (path.isAbsolute(process.env.PROBES) ? process.env.PROBES : path.join(REPO, process.env.PROBES)) : path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json');
+const vault = JSON.parse(fs.readFileSync(PROBE_FILE, 'utf8'));
 const probes = Array.isArray(vault) ? vault : (vault.probes || []);
 const RESULTS = path.join(REPO, 'core/prompt-optimization/data/results');
-const STATE = path.join(RESULTS, `cc-vault${SUFFIX}-state.json`);
-const CAP_DIR = path.join(RESULTS, `cc-vault${SUFFIX}-captures`); // re-scorable raw tool responses (USD never un-re-scorable)
+const STATE = path.join(RESULTS, `cc-${SET}${SUFFIX}-state.json`);
+const CAP_DIR = path.join(RESULTS, `cc-${SET}${SUFFIX}-captures`); // re-scorable raw tool responses (USD never un-re-scorable)
 const GLOBAL_MD = path.join(os.homedir(), '.claude', 'CLAUDE.md');
 const PROJECT_MD = path.join(REPO, 'CLAUDE.md');
 const BAK = '.ccbak';
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
 
 // CLAUDE.md suppression — move aside; restore is idempotent and crash-recoverable.
-const suppressMd = () => { for (const f of [GLOBAL_MD, PROJECT_MD]) if (fs.existsSync(f) && !fs.existsSync(f + BAK)) fs.renameSync(f, f + BAK); };
+const suppressMd = () => { for (const f of [GLOBAL_MD, PROJECT_MD]) { try { if (fs.existsSync(f) && !fs.existsSync(f + BAK)) fs.renameSync(f, f + BAK); } catch { /* parallel-shard race — already moved */ } } };
 const restoreMd = () => { for (const f of [GLOBAL_MD, PROJECT_MD]) if (fs.existsSync(f + BAK)) fs.renameSync(f + BAK, f); };
 restoreMd(); // recover any leftover backup from a previously-crashed batch
 
@@ -95,14 +97,14 @@ async function runOne(probe, mode, rep) {
   return { id: probe.id, lang: probe.language, stratum: probe.stratum, rep, mode, model: MODEL, harness: 'claude-code', score, ...usd, rawLen: rawResponse.length, calls: calls.length, ss: !!tu.ss, nativeGrep: !!tu.nativeSearch, nativeRead: !!tu.nativeRead, wallMs: run.wallMs ?? null, usage: u, costUsd: naive(u), harnessCostUsd: run.totalCostUsd ?? null, exitCode: run.exitCode, timedOut: !!run.timedOut };
 }
 
-const append = (mode, rows) => { const d = path.join(RESULTS, `cc-vault${SUFFIX}-${mode === 'mpp' ? 'mpp' : 'native'}`); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'rows.json'); const prev = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; fs.writeFileSync(f, JSON.stringify(prev.concat(rows), null, 2)); };
+const append = (mode, rows) => { const d = path.join(RESULTS, `cc-${SET}${SUFFIX}-${mode === 'mpp' ? 'mpp' : 'native'}`); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'rows.json'); const prev = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; fs.writeFileSync(f, JSON.stringify(prev.concat(rows), null, 2)); };
 
 (async () => {
   delete process.env.ANTHROPIC_API_KEY; // force Claude Max subscription (OAuth), not API key
   const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : { rep: 1, offset: 0 };
   if (state.offset >= probes.length) { state.rep += 1; state.offset = 0; }
   const batch = probes.slice(state.offset, state.offset + BATCH);
-  console.error(`\n=== cc-batch: rep ${state.rep}, probes ${state.offset + 1}-${state.offset + batch.length}/${probes.length} | ${MODEL} think=${THINK}, conc=1, MCP off, hooks off, CLAUDE.md suppressed, out=cc-vault${SUFFIX}-* ===`);
+  console.error(`\n=== cc-batch: rep ${state.rep}, probes ${state.offset + 1}-${state.offset + batch.length}/${probes.length} | ${MODEL} think=${THINK}, conc=1, MCP off, hooks off, CLAUDE.md suppressed, out=cc-${SET}${SUFFIX}-* ===`);
   console.error('  ' + batch.map((p) => `${p.id}(${p.language})`).join(', '));
   const out = { native: [], mpp: [] };
   try {

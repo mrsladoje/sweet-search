@@ -27,15 +27,17 @@ const BATCH = Number(process.env.BATCH_SIZE || 5);
 const SUFFIX = process.env.SUFFIX || ''; // output isolation (e.g. -smoke) so a test run never touches the real oc-vault dataset
 const PR = /glm/i.test(MODEL) ? { inPerM: 0.98, outPerM: 3.08, cacheReadPerM: 0.182 } : { inPerM: 5, outPerM: 30, cacheReadPerM: 0.5 }; // GLM-5.1 vs GPT-5.5 rates
 
-const vault = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json'), 'utf8'));
+const SET = process.env.SET || 'vault'; // probe-set label for output dirs: vault | heldout | ood
+const PROBE_FILE = process.env.PROBES ? (path.isAbsolute(process.env.PROBES) ? process.env.PROBES : path.join(REPO, process.env.PROBES)) : path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json');
+const vault = JSON.parse(fs.readFileSync(PROBE_FILE, 'utf8'));
 const allProbes = Array.isArray(vault) ? vault : (vault.probes || []);
 // IDS subset → enables disjoint-repo sharding (opencode writes AGENTS.md per-repo, so
 // parallel shards MUST hold disjoint repos; group ids by language like run-vault-codex.sh).
 const IDS = (process.env.IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
 const probes = IDS.length ? allProbes.filter((p) => IDS.includes(p.id)) : allProbes;
 const RESULTS = path.join(REPO, 'core/prompt-optimization/data/results');
-const STATE = path.join(RESULTS, `oc-vault${SUFFIX}-state.json`);
-const CAP_DIR = path.join(RESULTS, `oc-vault${SUFFIX}-captures`); // re-scorable raw tool responses (USD never un-re-scorable)
+const STATE = path.join(RESULTS, `oc-${SET}${SUFFIX}-state.json`);
+const CAP_DIR = path.join(RESULTS, `oc-${SET}${SUFFIX}-captures`); // re-scorable raw tool responses (USD never un-re-scorable)
 const MD = [path.join(os.homedir(), '.claude', 'CLAUDE.md'), path.join(REPO, 'CLAUDE.md'), path.join(REPO, 'AGENTS.md')];
 const BAK = '.obak';
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
@@ -100,7 +102,7 @@ async function runOne(probe, mode, rep) {
   ]);
   return { id: probe.id, lang: probe.language, stratum: probe.stratum, rep, mode, model: MODEL, harness: 'opencode', score, ...usd, rawLen: rawResponse.length, calls: pr.toolCalls.length, ss: ssUsed(pr.toolCalls), escape: a.escape, leak: a.leak, reasoningTok: pr.tok.reasoning, wallMs: r.wallMs, tokens: pr.tok, costUsd: naive(pr.tok), opencodeCostUsd: pr.cost, exitCode: r.code };
 }
-const append = (mode, rows) => { const d = path.join(RESULTS, `oc-vault${SUFFIX}-${mode === 'mpp' ? 'mpp' : 'native'}`); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'rows.json'); const prev = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; fs.writeFileSync(f, JSON.stringify(prev.concat(rows), null, 2)); };
+const append = (mode, rows) => { const d = path.join(RESULTS, `oc-${SET}${SUFFIX}-${mode === 'mpp' ? 'mpp' : 'native'}`); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'rows.json'); const prev = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; fs.writeFileSync(f, JSON.stringify(prev.concat(rows), null, 2)); };
 
 (async () => {
   const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : { rep: 1, offset: 0 };
