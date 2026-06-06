@@ -23,7 +23,10 @@ const CONC = Number(process.env.CONC || 4);
 const DIRS = (process.env.DIRS || '').split(',').map((s) => s.trim()).filter(Boolean);
 if (!DIRS.length) { console.error('DIRS env required (comma-separated RUN dir names under results/)'); process.exit(2); }
 
-const vault = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json'), 'utf8'));
+const PROBE_FILE = process.env.PROBES
+  ? (path.isAbsolute(process.env.PROBES) ? process.env.PROBES : path.join(REPO, process.env.PROBES))
+  : path.join(REPO, 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json');
+const vault = JSON.parse(fs.readFileSync(PROBE_FILE, 'utf8'));
 const probes = Array.isArray(vault) ? vault : (vault.probes || []);
 const byId = new Map(probes.map((p) => [p.id, p]));
 
