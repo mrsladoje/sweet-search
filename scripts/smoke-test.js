@@ -259,16 +259,19 @@ for (const profile of profiles) {
 
     if (profile === 'full') {
       assert(config.runtime.allowRuntimeModelDownload === false, 'Runtime downloads should be disabled for full');
-      // Model count: full profile registers all profile=='full' entries from
-      // core/infrastructure/model-registry.js. Currently 6 (4 retrieval models
-      // + FlashRank cross-encoder + semantic-cache MiniLM); was 4 before
-      // FlashRank and the semantic cache landed. The original hard-coded "===4"
-      // assertion is documented as drifted in docs/INIT_STRATEGY.md. We just
-      // assert presence + a reasonable lower bound rather than pin a number
-      // that drifts every time a model is added.
+      // Model count is hardware-conditional since commit d282bb0 ("use ORT CPU
+      // without accelerators"): a NO-ACCELERATOR host (no CoreML/CUDA/Metal —
+      // e.g. CI's linux-x64 ubuntu runner, or the darwin-x64 binary running
+      // cross-arch on an arm64 macos runner) correctly registers only the 3
+      // core ORT-INT8 models (embed-int8 + LI-int8 + semantic-cache MiniLM) and
+      // SKIPS the 2 native FP32 variants (coderankembed-fp32, lateon-code-fp32),
+      // since indexing falls back to ORT INT8 CPU. An accelerator host adds those
+      // 2 → 5 (opt-in cross-encoders excluded by default). So 3 is the true
+      // floor; pinning ≥4 wrongly failed no-accelerator CI runners. Assert the
+      // floor — dropping below the 3 core models is a real regression.
       assert(
-        Object.keys(config.models).length >= 4,
-        `Expected ≥4 models, got ${Object.keys(config.models).length}`,
+        Object.keys(config.models).length >= 3,
+        `Expected ≥3 core models, got ${Object.keys(config.models).length}`,
       );
     } else {
       assert(config.runtime.allowRuntimeModelDownload === true, 'Runtime downloads should be enabled for core');
