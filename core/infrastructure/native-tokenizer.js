@@ -11,10 +11,7 @@
  */
 
 import { existsSync } from 'fs';
-import { resolveNativeAddon } from './native-resolver.js';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
+import { loadNativeAddon } from './native-resolver.js';
 
 let _addon = null;
 let _addonLoaded = false;
@@ -22,17 +19,11 @@ let _addonLoaded = false;
 function loadAddon() {
   if (_addonLoaded) return _addon;
   _addonLoaded = true;
-  try {
-    const addonPath = resolveNativeAddon();
-    if (addonPath) {
-      const mod = require(addonPath);
-      if (typeof mod.NativeTokenizer?.fromFile === 'function') {
-        _addon = mod;
-      }
-    }
-  } catch {
-    // Native addon not available
-  }
+  // CUDA-preferred with CPU fallback (see loadNativeAddon): on a no-GPU box the
+  // CUDA addon throws on load (libcuda absent) and we fall back to the plain
+  // CPU addon so local tokenization (→ ORT-INT8 indexing) keeps working.
+  const res = loadNativeAddon({ validate: (m) => typeof m.NativeTokenizer?.fromFile === 'function' });
+  if (res) _addon = res.mod;
   return _addon;
 }
 
