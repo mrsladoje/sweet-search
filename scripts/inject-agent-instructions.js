@@ -22,6 +22,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, lstatSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const MARKER_BEGIN = '<!-- sweet-search:agent-instructions:begin -->';
 export const MARKER_END = '<!-- sweet-search:agent-instructions:end -->';
@@ -45,94 +46,50 @@ function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// ─── Canonical policy body (Part 5 of the plan) ─────────────────────────────
+// ─── Canonical policy body = the frozen M++ champion (integration seam) ──────
 //
-// Verbatim per §5 / §13.4. Per-harness shims (XML wrap, frontmatter, etc.) are
-// applied at write-time, not embedded here, so cross-model robustness measured
-// in the GEPA campaign translates directly to the policy that ships.
+// Plan §10 / §3.7.1 step 13 / DDD "Integration seam": scripts/init.js is the
+// SOLE consumer of the prompt-optimization ship-file. We read that artifact at
+// load time and strip its YAML front-matter; the remaining body is the frozen
+// M++ champion (PHASE7), injected VERBATIM into the harness files so users get
+// exactly the prompt that was benchmarked (held-out 0.988 Maximin, OOD 0.952,
+// HOMP/SCS/counter all pass; 5-cell cross-harness validated). Per-harness shims
+// (Cursor frontmatter, @imports) are applied at write-time, not embedded here.
+//
+// The artifact is generated from Mpp.md by
+// `core/prompt-optimization/sweep/finalize-mpp.mjs` and shipped via the
+// package.json "files" list. If it is missing we fail LOUDLY rather than
+// silently shipping a placeholder/older policy.
 
-export const CANONICAL_POLICY_BODY = `## sweet-search Tool Routing
+const SHIP_FILE_REL = 'core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md';
 
-Use sweet-search for code discovery and code reading. Pick the narrowest tool that can answer the question.
+/** Strip a leading YAML front-matter block (`---\n … \n---\n`) if present. */
+export function stripFrontMatter(text) {
+  return text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
+}
 
-1. Exact symbol, constant, error code, log string, config key, or literal:
-   - Use indexed grep.
-   - CLI: \`sweet-search grep "<regex>" --agent\`
-   - Agent wrapper: \`ss-grep "<regex>" -k 5\`
-   - Query shape: short, literal-heavy regex. Escape punctuation. Prefer the rarest identifier.
+function readShippedPolicy() {
+  const here = dirname(fileURLToPath(import.meta.url)); // <pkg>/scripts
+  const shipPath = join(here, '..', SHIP_FILE_REL);
+  let raw;
+  try {
+    raw = readFileSync(shipPath, 'utf8');
+  } catch (err) {
+    throw new Error(
+      `inject-agent-instructions: cannot read the M++ ship-file at ${shipPath}. ` +
+      'It MUST be present (packaged via package.json "files"). Regenerate with ' +
+      '`node core/prompt-optimization/sweep/finalize-mpp.mjs`. ' +
+      `Cause: ${err.message}`,
+    );
+  }
+  const body = stripFrontMatter(raw).trimEnd();
+  if (!body) {
+    throw new Error(`inject-agent-instructions: M++ ship-file at ${shipPath} has an empty body.`);
+  }
+  return body;
+}
 
-2. Behavioral or semantic question where a literal exists but intent matters:
-   - Use ColGrep / patternSearch: regex candidate pool + semantic re-rank.
-   - Agent wrapper: \`ss-find "<natural-language question>" --regex "<broad-but-relevant-regex>" -k 5\`
-   - Query shape: natural-language intent + a broad regex anchor.
-
-3. General conceptual search with no obvious literal:
-   - Use \`sweet-search "<short intent query>" --agent\` in hybrid/auto mode.
-   - Query shape: one concise sentence naming the concept and likely domain words.
-
-4. Callers, callees, implementations, impact, inheritance, or dependency questions:
-   - Use structural search.
-   - CLI: \`sweet-search "who calls <symbol>" --mode structural --agent\`
-   - Query shape: include the exact symbol plus relationship word.
-
-5. Path/name discovery:
-   - Use path search once implemented.
-   - CLI: \`sweet-search files "<glob-or-path-pattern>"\`
-
-6. Exact file/range already known:
-   - Use exact read.
-   - CLI: \`sweet-search read <file> --lines <start-end>\`
-   - Agent wrapper: \`ss-read <file> <start> <end>\`
-
-7. File is known but relevant span is unclear:
-   - Use semantic read once for that file.
-   - CLI: \`sweet-search read-semantic <file> "<question>" --max-tokens 800\`
-   - Agent wrapper: \`ss-semantic <file> "<question>" --max-tokens 800\`
-   - Do not call semantic read on multiple files unless the task is explicitly multi-file.
-
-## Stopping Rules
-
-- Inspect only the top 3-5 discovery results.
-- If a discovery result already returns a tight chunk/range that answers the question, cite it and stop.
-- If the first discovery call returns nothing, broaden once. If still empty, report no match.
-- Do not re-search merely to double-check.
-- Do not read broad files after a tight chunk already answers the task.
-- Prefer 1-3 high-confidence citations over long citation lists.
-
-## STOP rules — read these before EVERY follow-up call
-
-The sweet-search response trailer carries explicit stop signals.
-**Honour them.** A second call costs more tokens than it saves.
-
-Stop after one search and answer immediately when ALL of:
-- the response says \`sufficient=YES\`
-- the top-1 result is \`presentation=full\` with \`expansionKind\` in
-  \`{full, sandwich, chunk}\` and the gold symbol/file is named
-- the response includes a \`### related (1-hop graph, ...)\` block
-  OR a \`### imports\` block that resolves the body's referenced names
-- you can defend the answer by pointing at the visible code
-
-Do NOT call a second time merely because:
-- you want to "double-check" the line range
-- the first answer was unexpectedly short → it is short BECAUSE the
-  pack is tight, not because evidence is missing
-- you noticed a helper function named in the chunk that is also in
-  the pack as a \`summary\` row → its file:line in the rank list
-  is sufficient citation; do not read it
-
-Single counter-rule: the question explicitly asks for multi-file
-flow ("how does X flow from A to B", "trace from entry to exit",
-"all places that ..."). In that case, take ONE follow-up reading
-or sub-search to fill the gap, then stop.
-
-## Citation Rules
-
-- Every distinct source file that supports the answer must appear as its own citation.
-- If the prose names a file, imports from it, relies on a function in it, or cites behavior from it,
-  that file must be cited with a line range.
-- For multi-file flows, cite one range per required file.
-- Do not mention supporting files only in prose or notes.
-`;
+export const CANONICAL_POLICY_BODY = readShippedPolicy();
 
 const CURSOR_FRONTMATTER = `---
 description: Sweet Search tool-routing, stopping, and citation policy
