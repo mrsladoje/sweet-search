@@ -80,61 +80,76 @@ function defaultPackageDirResolver(packageName) {
 }
 
 /**
- * Resolve the path to the native MaxSim .node addon, or null.
+ * All native .node addon candidate paths that EXIST on disk, in preference
+ * order: local dev build → local package template (CUDA, then CPU) →
+ * installed npm package (CUDA, then CPU).
  *
- * On Linux, the `-cuda` variant of the platform package is preferred when
- * installed — it contains a binary built with the `cuda` Cargo feature
- * that will dispatch embedding + LI work to candle-cuda when libcuda.so
- * is present at runtime. Absence of the `-cuda` package or libcuda.so
- * cleanly falls back to the standard CPU variant.
+ * On Linux the `-cuda` variant is PREFERRED but a CUDA-built addon hard-links
+ * libcuda/libcudart/libcublas, so `require()`-ing it on a host without those
+ * libraries (any CPU-only box) THROWS. Returning an ordered candidate list —
+ * rather than a single path — lets the loader (`loadNativeAddon`) try CUDA
+ * first and transparently FALL BACK to the plain CPU addon (→ ORT-INT8 path)
+ * when CUDA can't load. This is what keeps GPU acceleration for CUDA hosts
+ * while a no-GPU `npm i` (which still auto-installs the optional -cuda package,
+ * matching os/cpu/libc) does not break indexing.
  */
-export function resolveNativeAddon(options = {}) {
+export function resolveNativeAddonCandidates(options = {}) {
   const info = getPlatformInfo();
-  if (!info) return null;
+  if (!info) return [];
   const { platform, arch, libc, cudaPackageName } = info;
   // napi-rs --platform output includes the libc suffix on Linux
-  // (e.g. `sweet-search-native.linux-x64-gnu.node`). macOS has no
-  // libc suffix so `${libc}` is '' there, yielding `.darwin-arm64.node`.
-  // Historic bug: this constructed `${platform}-${arch}` only, which
-  // worked on darwin but silently missed the Linux build output.
+  // (e.g. `sweet-search-native.linux-x64-gnu.node`). macOS has no libc suffix.
   const binaryName = `sweet-search-native.${platform}-${arch}${libc}.node`;
   const exists = options.existsSync ?? existsSync;
   const rootDir = options.rootDir ?? root;
   const resolvePackageDir = options.resolvePackageDir ?? defaultPackageDirResolver;
 
-  // 1. Local dev: crates/sweet-search-native/ directory (or legacy native-maxsim/)
-  const localDev = join(rootDir, 'crates', 'sweet-search-native', binaryName);
-  if (exists(localDev)) return localDev;
-  const legacyDev = join(rootDir, 'native-maxsim', binaryName);
-  if (exists(legacyDev)) return legacyDev;
+  const out = [];
+  const add = (p) => { if (p && exists(p) && !out.includes(p)) out.push(p); };
 
-  // 2. Local package template: packages/native-*-cuda/ preferred, then packages/native-*/
+  // 1. Local dev build (crates/sweet-search-native/ or legacy native-maxsim/).
+  add(join(rootDir, 'crates', 'sweet-search-native', binaryName));
+  add(join(rootDir, 'native-maxsim', binaryName));
+  // 2. Local package template — CUDA preferred, then CPU.
+  if (cudaPackageName) add(join(rootDir, 'packages', `native-${platform}-${arch}${libc}-cuda`, 'sweet-search-native.node'));
+  add(join(rootDir, 'packages', `native-${platform}-${arch}${libc}`, 'sweet-search-native.node'));
+  // 3. Installed npm package — CUDA preferred, then CPU.
   if (cudaPackageName) {
-    const cudaLocalPkg = join(rootDir, 'packages', `native-${platform}-${arch}${libc}-cuda`, 'sweet-search-native.node');
-    if (exists(cudaLocalPkg)) return cudaLocalPkg;
+    try { add(join(resolvePackageDir(cudaPackageName), 'sweet-search-native.node')); }
+    catch { /* -cuda package not installed */ }
   }
-  const pkgDir = `native-${platform}-${arch}${libc}`;
-  const localPkg = join(rootDir, 'packages', pkgDir, 'sweet-search-native.node');
-  if (exists(localPkg)) return localPkg;
+  try { add(join(resolvePackageDir(getPlatformPackageName()), 'sweet-search-native.node')); }
+  catch { /* package not installed */ }
 
-  // 3. Installed npm package — CUDA variant preferred on Linux.
-  if (cudaPackageName) {
+  return out;
+}
+
+/**
+ * Resolve the single highest-preference native .node addon path, or null.
+ * Back-compat shim over `resolveNativeAddonCandidates` (returns the first,
+ * i.e. CUDA-preferred). Callers that need the CUDA→CPU load fallback should
+ * use `loadNativeAddon` instead of require()-ing this path directly.
+ */
+export function resolveNativeAddon(options = {}) {
+  return resolveNativeAddonCandidates(options)[0] ?? null;
+}
+
+/**
+ * require() the first native-addon candidate that loads successfully and
+ * satisfies `validate(mod)` (default: any). Candidates are tried CUDA-first,
+ * CPU-second, so a host whose CUDA addon throws on load (libcuda absent)
+ * transparently falls back to the CPU addon. Returns `{ mod, path }` or null.
+ */
+export function loadNativeAddon({ validate, requireFn, ...options } = {}) {
+  const load = requireFn ?? require; // requireFn is a test seam
+  for (const candidatePath of resolveNativeAddonCandidates(options)) {
     try {
-      const cudaNpmPkgDir = resolvePackageDir(cudaPackageName);
-      const cudaNpmAddon = join(cudaNpmPkgDir, 'sweet-search-native.node');
-      if (exists(cudaNpmAddon)) return cudaNpmAddon;
+      const mod = load(candidatePath);
+      if (!validate || validate(mod)) return { mod, path: candidatePath };
     } catch {
-      // -cuda package not installed — fall through to standard variant.
+      // Candidate failed to load (e.g. CUDA addon without libcuda) — try next.
     }
   }
-  try {
-    const npmPkgDir = resolvePackageDir(getPlatformPackageName());
-    const npmAddon = join(npmPkgDir, 'sweet-search-native.node');
-    if (exists(npmAddon)) return npmAddon;
-  } catch {
-    // Package not installed
-  }
-
   return null;
 }
 

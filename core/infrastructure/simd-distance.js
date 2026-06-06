@@ -17,8 +17,7 @@
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, existsSync } from 'fs';
-import { createRequire } from 'module';
-import { resolveNativeAddon } from './native-resolver.js';
+import { loadNativeAddon } from './native-resolver.js';
 
 const DATA_OFFSET = 0; // SIMD popcount needs no LUT
 
@@ -46,17 +45,12 @@ async function initWasm() {
   initPromise = (async () => {
     try {
       const __dirname = dirname(fileURLToPath(import.meta.url));
-      const require = createRequire(import.meta.url);
 
-      // Tier 1: Try native Rust addon (rayon parallel + NEON/AVX2 SIMD)
-      try {
-        const addonPath = resolveNativeAddon();
-        if (addonPath) {
-          nativeMaxsim = require(addonPath);
-        }
-      } catch {
-        // Native not available — fall through to WASM
-      }
+      // Tier 1: native Rust addon (rayon + NEON/AVX2 SIMD). CUDA-preferred with
+      // CPU fallback (see loadNativeAddon) — a CUDA addon that can't load on a
+      // no-GPU box falls back to the plain CPU addon; otherwise WASM (Tier 2).
+      const nativeRes = loadNativeAddon();
+      if (nativeRes) nativeMaxsim = nativeRes.mod;
 
       // Tier 2a: Load hand-assembled SIMD distance WASM
       const wasmPath = join(__dirname, 'simd-distance.wasm');

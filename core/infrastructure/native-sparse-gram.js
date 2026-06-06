@@ -4,14 +4,11 @@
  */
 
 import { existsSync } from 'fs';
-import { createRequire } from 'module';
-import { resolveNativeAddon } from './native-resolver.js';
+import { loadNativeAddon } from './native-resolver.js';
 import { SPARSE_SYMBOL_MASKS, resolveSparseSymbolMask } from './constants.js';
 
 // Re-export from constants.js — canonical source of symbol type vocabulary.
 export { SPARSE_SYMBOL_MASKS, resolveSparseSymbolMask };
-
-const require = createRequire(import.meta.url);
 
 let _addon = null;
 let _addonLoaded = false;
@@ -177,21 +174,15 @@ function loadAddon() {
   if (_addonLoaded) return _addon;
   _addonLoaded = true;
 
-  try {
-    const addonPath = resolveNativeAddon();
-    if (!addonPath) return null;
-    const mod = require(addonPath);
-    if (
-      typeof mod.buildSparseGramIndex === 'function' &&
-      typeof mod.NativeSparseGramIndex?.load === 'function' &&
-      typeof mod.extractRegexLiterals === 'function'
-    ) {
-      _addon = mod;
-    }
-  } catch (err) {
-    // Native addon is optional; callers decide whether to warn or fall back.
-    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] addon load failed:', err.message);
-  }
+  // CUDA-preferred with CPU fallback (see loadNativeAddon): a CUDA addon that
+  // can't load on a no-GPU box falls back to the plain CPU addon.
+  const res = loadNativeAddon({
+    validate: (m) =>
+      typeof m.buildSparseGramIndex === 'function' &&
+      typeof m.NativeSparseGramIndex?.load === 'function' &&
+      typeof m.extractRegexLiterals === 'function',
+  });
+  if (res) _addon = res.mod;
 
   return _addon;
 }

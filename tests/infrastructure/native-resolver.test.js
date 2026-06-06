@@ -352,4 +352,92 @@ describe('native-resolver', () => {
       });
     });
   });
+
+  // The CUDA→CPU LOAD fallback (the no-GPU-box fix): a CUDA-built addon
+  // hard-links libcuda/libcudart, so require() THROWS on a CPU-only host.
+  // resolveNativeAddon (single path) would stop at the CUDA path; loadNativeAddon
+  // must try the next candidate (the CPU addon) so indexing keeps working.
+  describe('loadNativeAddon — CUDA→CPU load fallback', () => {
+    function withLinuxX64(fn) {
+      const op = process.platform, oa = process.arch;
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+      Object.defineProperty(process, 'arch', { value: 'x64', configurable: true });
+      try { return fn(); } finally {
+        Object.defineProperty(process, 'platform', { value: op, configurable: true });
+        Object.defineProperty(process, 'arch', { value: oa, configurable: true });
+      }
+    }
+
+    it('resolveNativeAddonCandidates lists the -cuda addon BEFORE the CPU addon', async () => {
+      const { resolveNativeAddonCandidates } = await loadResolver();
+      withLinuxX64(() => withTempRoot((tempRoot) => {
+        const cuda = join(tempRoot, 'packages', 'native-linux-x64-gnu-cuda', 'sweet-search-native.node');
+        const std = join(tempRoot, 'packages', 'native-linux-x64-gnu', 'sweet-search-native.node');
+        touch(cuda); touch(std);
+        const cands = resolveNativeAddonCandidates({ rootDir: tempRoot });
+        expect(cands[0]).toBe(cuda);
+        expect(cands).toContain(std);
+      }));
+    });
+
+    it('falls back to the CPU addon when the CUDA addon throws on load (no libcuda)', async () => {
+      const { loadNativeAddon } = await loadResolver();
+      withLinuxX64(() => withTempRoot((tempRoot) => {
+        const cuda = join(tempRoot, 'packages', 'native-linux-x64-gnu-cuda', 'sweet-search-native.node');
+        const std = join(tempRoot, 'packages', 'native-linux-x64-gnu', 'sweet-search-native.node');
+        touch(cuda); touch(std);
+        const requireFn = (p) => {
+          if (p === cuda) throw new Error('libcudart.so.12: cannot open shared object file: No such file or directory');
+          if (p === std) return { NativeTokenizer: { fromFile() {} } };
+          throw new Error(`unexpected require: ${p}`);
+        };
+        const res = loadNativeAddon({
+          rootDir: tempRoot,
+          requireFn,
+          validate: (m) => typeof m.NativeTokenizer?.fromFile === 'function',
+        });
+        expect(res).not.toBeNull();
+        expect(res.path).toBe(std); // CPU addon used after CUDA load failure
+      }));
+    });
+
+    it('uses the CUDA addon when it loads (GPU host) — no needless fallback', async () => {
+      const { loadNativeAddon } = await loadResolver();
+      withLinuxX64(() => withTempRoot((tempRoot) => {
+        const cuda = join(tempRoot, 'packages', 'native-linux-x64-gnu-cuda', 'sweet-search-native.node');
+        const std = join(tempRoot, 'packages', 'native-linux-x64-gnu', 'sweet-search-native.node');
+        touch(cuda); touch(std);
+        const requireFn = () => ({ NativeTokenizer: { fromFile() {} } });
+        const res = loadNativeAddon({ rootDir: tempRoot, requireFn });
+        expect(res.path).toBe(cuda); // CUDA preferred when loadable
+      }));
+    });
+
+    it('returns null when every candidate fails to load', async () => {
+      const { loadNativeAddon } = await loadResolver();
+      withLinuxX64(() => withTempRoot((tempRoot) => {
+        const cuda = join(tempRoot, 'packages', 'native-linux-x64-gnu-cuda', 'sweet-search-native.node');
+        const std = join(tempRoot, 'packages', 'native-linux-x64-gnu', 'sweet-search-native.node');
+        touch(cuda); touch(std);
+        const requireFn = () => { throw new Error('boom'); };
+        expect(loadNativeAddon({ rootDir: tempRoot, requireFn })).toBeNull();
+      }));
+    });
+
+    it('skips a loaded-but-wrong addon and keeps trying (validate gate)', async () => {
+      const { loadNativeAddon } = await loadResolver();
+      withLinuxX64(() => withTempRoot((tempRoot) => {
+        const cuda = join(tempRoot, 'packages', 'native-linux-x64-gnu-cuda', 'sweet-search-native.node');
+        const std = join(tempRoot, 'packages', 'native-linux-x64-gnu', 'sweet-search-native.node');
+        touch(cuda); touch(std);
+        const requireFn = (p) => (p === cuda ? { somethingElse() {} } : { NativeTokenizer: { fromFile() {} } });
+        const res = loadNativeAddon({
+          rootDir: tempRoot,
+          requireFn,
+          validate: (m) => typeof m.NativeTokenizer?.fromFile === 'function',
+        });
+        expect(res.path).toBe(std);
+      }));
+    });
+  });
 });
