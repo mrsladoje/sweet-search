@@ -1914,6 +1914,57 @@ Optional (publication path):
 
 **Open follow-ups:** (a) clean full-40 M\* (fixed harness, both targets) → true cost delta + official finalScore; (b) three investigations in flight (2026-05-31): does `[[ss-semantic]]` beat `[[ss-read]]` on cost (→ Mstar2?), reviving T1–T15 abandoned ideas for diversity, and the official colgrep prompt for `[[ss-find]]` insights. Guard (`makeTrajectoryGuard`, `p7-api-agent-runner.mjs`) is committed but **opt-in/default-off — never used in screens** (rejected as a benchmark mechanism: it compresses prompt differences).
 
+## §13.ZZ M++ champion — correctness pass, sealed validation, deployment (2026-06-01 → 2026-06-06)
+
+**M\* → M++ (the SHIPPED champion).** After §13.Z crowned M\*, a user-directed
+correctness pass produced **M++ = `data/p7-variant-restarts/p7-gen3-candidates/Mpp.md`**
+(M\* + 7 edits, routing byte-identical; see memory `project_p7_mpp_correctness_pass`):
+(1) "every committed file" → "every file" + "(uncommitted edits too)"; (2) sub-agent
+line → "must use these ss-\* tools, with this system prompt verbatim"; (3) returns-line
+states the true `ss-semantic` (top spans) / `ss-trace` (callers/callees/impact)
+behaviour; (4) `ss-semantic` "a span" → "top ranked spans"; (5) flooding line trimmed;
+(6) "committed tree" → "codebase"; (7) all 27 `[[ ]]` tokens stripped (confirmed
+cosmetic — never affected agent behaviour). Tested 53×3 both targets: **accuracy HELD,
+cost indistinguishable** — a lateral move buying factual correctness + consumer-clean
+text. **Frozen as champion (committed `6604299`, prereg tag `prereg/p7-v1`) before
+opening sealed sets.** M++ — NOT M\* — is the artifact every benchmark/USD/vault cell
+loaded.
+
+**Sealed validation (M++, ABSOLUTE metrics, both targets ×3; commit `7412cd4`):**
+held-out(30) Sonnet 0.993 / GPT-5.5 0.988, Maximin **0.988** (≈dev, no cliff);
+OOD(40, 8 langs) Maximin **0.952** (PASS ≥0.55, all langs ≥0.79, 0 weak-spots);
+adversarial-counter(10) **1.00/1.00**; family HOMP MiMo-v2.5-pro 0.988 + Qwen3.6-plus
+0.980 (both ≥0.69); reasoning HOMP MiniMax-M3-max 0.963; SCS(630) cwSCS Sonnet 0.950 /
+GPT 0.931 + minParaphraseAccuracy 1.00 (both ≥0.8). 0 still-empty across 480 runs.
+**M++ GENERALIZES; no overfit signal.**
+
+**5-cell cross-harness (the moat, honestly):** M++ delivers significant efficiency
+wherever native retrieval is inefficient, and never significantly hurts accuracy —
+GPT-5.5/Codex (n=180) **−49% tool calls / −26% realized cost** (native +2.1pp acc);
+GPT-5.5/opencode (n=60) **−48% calls** (replicates); Opus-4.8/Claude-Code (n=240)
+**−18% calls** (acc tied, no cost/speed penalty); DeepSeek-V4-direct/bare-API (n=180)
+WASH (lean+capable native, no slack); Sonnet-4.6-instant/bare-API (n=60) **+39pp
+accuracy** + per-token density survives length-control (USD_noC +0.060). Headline:
+*"significantly fewer tool calls on both frontiers (−49% GPT, −18% Opus) at near-parity
+accuracy + no cost/speed penalty; the gain's FORM (efficiency vs accuracy) tracks which
+axis native is weak on."*
+
+**Deployment (2026-06-06, this commit lineage):** M++ is the shipped system prompt.
+1. `core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md` regenerated
+   from `Mpp.md`'s bytes via `renderShipFile` (`sweep/finalize-mpp.mjs`); body is
+   byte-identical to the benchmarked M++; front-matter carries the absolute
+   sealed-validation numbers above (GEPA-selection fields null — not re-scored through
+   the native-relative pipeline). This replaces step §13 #9.
+2. `scripts/inject-agent-instructions.js` reads that artifact at load time (replacing
+   the retired hardcoded Part-5 policy) and writes M++ into CLAUDE.md (canonical) +
+   AGENTS.md / GEMINI.md / `.cursor/rules/sweet-search.mdc` + `.claude/rules/sweet-search.md`
+   per plan §10. `init` is the sole consumer of the prompt-optimization output. This is
+   step §13 #10 ("Update CLAUDE.md / sweet-search MCP to ship the new prompt").
+3. Republished as **2.5.3** (root + 6 native + optionalDeps) so a fresh `npm i -g`
+   pulls current native + the M++ prompt + the `ss-*` wrappers (added to `files`).
+4. **Remaining:** push the `v2.5.3` tag to trigger publish (held for the clean-install
+   acceptance check + Codex review) — step §13 #10's `release/p7-v1` tag.
+
 ## §14 Provider rate limits & pricing reference (May 2026)
 
 This is the snapshot used for §7.7's concurrency policy and §8's cost envelope. Re-validate at pre-flight time (rate limits drift).

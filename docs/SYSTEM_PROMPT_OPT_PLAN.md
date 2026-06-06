@@ -1298,6 +1298,17 @@ are generous enough that all gates fit within one $10 cycle.
 
 ## Part 10: Init Integration
 
+> **SHIPPED 2026-06-06.** The four-file flow below is implemented and live: `scripts/init.js` →
+> `injectAgentInstructions()` (reads the frozen M++ ship-file
+> `core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md` and writes it into
+> CLAUDE.md / AGENTS.md / GEMINI.md / `.cursor/rules/sweet-search.mdc`) + `writeClaudeRules()`
+> (`.claude/rules/sweet-search.md`) + the `UserPromptSubmit` reminder hook. The injected body is
+> byte-identical to the benchmarked M++ (see PHASE7.md §13.ZZ). `mcp/server.js` tool descriptions
+> are optimized; `scripts/uninstall.js` reverses all five files. **Canonical-file resolution:**
+> per the §3.3 implementation note, the shipped default is **CLAUDE.md canonical** (not AGENTS.md
+> as the original §3.3/§10 prose framed); `--no-claude --agents` promotes AGENTS.md. The flow
+> below is otherwise as-built.
+
 All system-prompt optimization output integrates into `scripts/init.js` after the existing runtime
 setup and index-maintainer hook installation.
 
