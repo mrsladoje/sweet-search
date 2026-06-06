@@ -975,11 +975,15 @@ function resolveOpenRouter(lineage) {
   if (!apiKey) return null;
   const model = OPENROUTER_SLUGS[lineage];
   if (!model) return null;
+  // Optional provider pin: OPENROUTER_PROVIDER_<LINEAGE>=mara[,fireworks] → forces that
+  // provider order with allow_fallbacks:false (reproducibility + a chosen fast provider).
+  const pin = process.env[`OPENROUTER_PROVIDER_${lineage.toUpperCase()}`];
   return {
     apiKey,
     baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
     model,
     chatPath: '/chat/completions',
+    provider: pin ? { order: pin.split(',').map((s) => s.trim()), allow_fallbacks: false } : undefined,
   };
 }
 
@@ -1071,6 +1075,7 @@ async function runMiniMaxDirect({ model, systemPrompt, userPrompt, maxTokens, te
       maxTokens: maxTokens ?? 4096,
       // MiniMax-direct uses a non-standard path; OpenRouter uses the standard one.
       chatPath: or?.chatPath ?? '/text/chatcompletion_v2',
+      extraBody: or?.provider ? { provider: or.provider } : undefined,
     },
     timeoutMs,
   );
