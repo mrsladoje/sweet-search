@@ -182,7 +182,7 @@ describe('lifecycle: --no-claude (universal gate)', () => {
     expect(exists('CLAUDE.md')).toBe(false);
     expect(exists('AGENTS.md')).toBe(true);
     const agents = readFileSync(join(tmpRoot, 'AGENTS.md'), 'utf8');
-    expect(agents).toContain('## sweet-search Tool Routing');
+    expect(agents).toContain('Sweet-search indexes the working tree'); // M++ body
     // No @CLAUDE.md import shim — AGENTS.md is the canonical body.
     expect(agents).not.toContain('@CLAUDE.md');
   });

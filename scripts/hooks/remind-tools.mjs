@@ -18,17 +18,20 @@
  * both the file and the settings entry.
  */
 
+// Tool surface mirrors the shipped M++ policy (the ss-* tools). Kept terse —
+// the full decision tree lives in CLAUDE.md/AGENTS.md; this is just a nudge to
+// stop the agent drifting back to raw grep/read between prompts.
 const REMINDER = [
   '<sweet-search-reminder>',
-  'Pick the narrowest sweet-search tool that fits the question:',
-  '- Exact symbol/literal/error code:  ss-grep "<regex>" -k 5',
-  '- Behavior + regex anchor:          ss-find "<question>" --regex "<anchor>" -k 5',
-  '- Concept search (no obvious lit):  sweet-search "<intent>" --agent',
-  '- Callers/callees/impact:           sweet-search "who calls X" --mode structural --agent',
-  '- Known file + line range:          ss-read <file> <start> <end>',
-  '- Known file, unclear span:         ss-semantic <file> "<question>" --max-tokens 800',
-  'STOP after one search when sufficient=YES + presentation=full + symbol/file named.',
-  'A second call costs more than it saves. Multi-file flow questions get one follow-up.',
+  'Use the index-backed ss-* tools for code search/navigation, not raw grep/find/cat:',
+  '- Exact symbol/literal/error string:  ss-grep "<regex>" -k 5   (trust the top hit)',
+  '- Known symbol, NL underperforms:     ss-find "<query>" --regex "\\b<symbol>\\b" -k 5',
+  '- Concept/behavior (no exact symbol): ss-search "<query>"',
+  '- Callers/callees/impact of a symbol: ss-trace <symbol>',
+  '- Known file, unclear span:           ss-semantic <file> "<query>"',
+  '- Known file + line range:            ss-read <file> <start> <end>',
+  'STOP the instant your evidence answers the query — one confirmed file+symbol is enough;',
+  'a second call costs more than it saves. Multi-file flow questions get one follow-up.',
   '</sweet-search-reminder>',
   '',
 ].join('\n');

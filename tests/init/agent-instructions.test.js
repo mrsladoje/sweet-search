@@ -58,14 +58,14 @@ describe('injectAgentInstructions — fresh install (claude-code canonical)', ()
     const claude = read(CLAUDE_FILE);
     expect(claude).toContain(MARKER_BEGIN);
     expect(claude).toContain(MARKER_END);
-    expect(claude).toContain('## sweet-search Tool Routing');
-    expect(claude).toContain('## STOP rules');
+    expect(claude).toContain('Sweet-search indexes the working tree'); // M++ body
+    expect(claude).toContain('Trust the top ranked result'); // M++ stop discipline
     expect(claude).toContain('@.claude/rules/sweet-search.md');
 
     // AGENTS.md is a thin import shim → CLAUDE.md.
     const agents = read(AGENTS_FILE);
     expect(agents).toContain('@CLAUDE.md');
-    expect(agents).not.toContain('## sweet-search Tool Routing');
+    expect(agents).not.toContain('Sweet-search indexes the working tree');
 
     // GEMINI.md is a symlink → CLAUDE.md (relative).
     const stat = lstatSync(join(tmpRoot, GEMINI_FILE));
@@ -76,7 +76,7 @@ describe('injectAgentInstructions — fresh install (claude-code canonical)', ()
     const cursor = read(CURSOR_FILE);
     expect(cursor).toMatch(/^---\n[\s\S]+?\n---\n/);
     expect(cursor).toContain('alwaysApply: false');
-    expect(cursor).toContain('## sweet-search Tool Routing');
+    expect(cursor).toContain('Sweet-search indexes the working tree');
   });
 
   it('falls back to AGENTS.md canonical when --no-claude-code', () => {
@@ -90,7 +90,7 @@ describe('injectAgentInstructions — fresh install (claude-code canonical)', ()
 
     // AGENTS.md now contains the full policy body.
     const agents = read(AGENTS_FILE);
-    expect(agents).toContain('## sweet-search Tool Routing');
+    expect(agents).toContain('Sweet-search indexes the working tree');
     expect(agents).not.toContain('@CLAUDE.md');
 
     // GEMINI.md symlinks to AGENTS.md.
@@ -165,7 +165,7 @@ describe('injectAgentInstructions — idempotent rewrite', () => {
     injectAgentInstructions({ projectRoot: tmpRoot, harnesses: ['claude-code'] });
     const text = read(CLAUDE_FILE);
     expect(text).toContain('Keep me.');
-    expect(text).toContain('## sweet-search Tool Routing');
+    expect(text).toContain('Sweet-search indexes the working tree');
 
     // Re-run: user content still intact, no duplicated marker.
     injectAgentInstructions({ projectRoot: tmpRoot, harnesses: ['claude-code'] });
