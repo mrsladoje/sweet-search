@@ -48,16 +48,13 @@
 
 import { existsSync } from 'fs';
 import { join } from 'path';
-import { createRequire } from 'module';
-import { resolveNativeAddon } from './native-resolver.js';
+import { loadNativeAddon } from './native-resolver.js';
 import { createTokenizer } from './native-tokenizer.js';
 import { getModelCacheDir, fetchModel } from './model-fetcher.js';
 import { getModelEntry } from './model-registry.js';
 import { getCoremlCascadeResolvedDirs } from './coreml-cascade.js';
 import { detectHardwareCapability } from './hardware-capability.js';
 import { LATE_INTERACTION_CONFIG } from './config/ranking.js';
-
-const require = createRequire(import.meta.url);
 
 // ─── State ───
 
@@ -173,14 +170,12 @@ function resolveCoremlCascadeForAddon() {
 
 function loadAddon() {
   if (_addon) return _addon;
-  const addonPath = resolveNativeAddon();
-  if (!addonPath) return null;
-  try {
-    _addon = require(addonPath);
-    return _addon;
-  } catch {
-    return null;
-  }
+  // CUDA-preferred with CPU fallback (see loadNativeAddon): a CUDA addon that
+  // can't load on a no-GPU box falls back to the plain CPU addon, so native
+  // inference degrades to the CPU (ORT-INT8) path instead of failing.
+  const res = loadNativeAddon();
+  _addon = res ? res.mod : null;
+  return _addon;
 }
 
 // ─── Detection ───

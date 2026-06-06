@@ -7,11 +7,8 @@
  * fall back to a no-op that treats every chunk as its own exemplar.
  */
 
-import { createRequire } from 'module';
-import { resolveNativeAddon } from './native-resolver.js';
+import { loadNativeAddon } from './native-resolver.js';
 import { DEDUP_CONFIG } from './config/dedup.js';
-
-const require = createRequire(import.meta.url);
 
 let _addon = null;
 let _loadAttempted = false;
@@ -20,15 +17,15 @@ let _loadError = null;
 function loadAddon() {
   if (_loadAttempted) return _addon;
   _loadAttempted = true;
-  const addonPath = resolveNativeAddon();
-  if (!addonPath) {
-    _loadError = new Error('dedup-hashing: native addon not resolved for this platform');
-    return null;
-  }
-  try {
-    _addon = require(addonPath);
-  } catch (e) {
-    _loadError = e;
+  // CUDA-preferred with CPU fallback (see loadNativeAddon): a CUDA addon that
+  // can't load on a no-GPU box falls back to the plain CPU addon.
+  const res = loadNativeAddon({
+    validate: (m) => typeof m.dedupFingerprintBatch === 'function' && typeof m.dedupCluster === 'function',
+  });
+  if (res) {
+    _addon = res.mod;
+  } else {
+    _loadError = new Error('dedup-hashing: native addon not available for this platform');
     _addon = null;
   }
   return _addon;
