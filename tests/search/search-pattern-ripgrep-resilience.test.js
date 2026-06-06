@@ -20,7 +20,11 @@ import {
   runRipgrepJsonStreaming,
 } from '../../core/search/search-pattern-ripgrep.js';
 
-const rgAvailable = isRipgrepAvailable();
+// isRipgrepAvailable() is async (race-safe promise cache) — MUST await it, else
+// a Promise is always truthy and the suite never skips on rg-less hosts (e.g.
+// CI runners without ripgrep), where executeRipgrep then throws "rg not found".
+// Top-level await is valid in this ESM test (matches search-pattern.test.js).
+const rgAvailable = await isRipgrepAvailable();
 const d = rgAvailable ? describe : describe.skip;
 
 d('search-pattern-ripgrep — missing candidate resilience', () => {
