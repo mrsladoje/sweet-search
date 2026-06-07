@@ -200,6 +200,13 @@ async function callModel({ provider = 'deepseek', apiModel, messages, tools, rea
   if (provider === 'openrouter' && reasoning && reasoning !== 'none') {
     body.reasoning = { effort: 'medium' };
   }
+  // Optional OpenRouter provider PIN (e.g. OPENROUTER_PROVIDER_PIN=Mara — the
+  // fastest provider for m2.7). Strict pin (allow_fallbacks:false) so we measure
+  // ONE provider's latency consistently; the retry ladder absorbs transient 429s.
+  // Keep CONCURRENCY low when pinning (the MARA 429-collapse lesson).
+  if (provider === 'openrouter' && process.env.OPENROUTER_PROVIDER_PIN) {
+    body.provider = { order: [process.env.OPENROUTER_PROVIDER_PIN], allow_fallbacks: false };
+  }
   let lastErr;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     // Per-request abort timeout: a hung connection must not block the arm
