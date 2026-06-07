@@ -63,7 +63,7 @@ jobs:
   build-and-publish:
     name: Build + publish arm64 CUDA native package
     runs-on: ubuntu-22.04-arm
-    timeout-minutes: 120
+    timeout-minutes: 300
     container:
       image: nvidia/cuda:12.2.2-devel-ubuntu22.04
     permissions:
