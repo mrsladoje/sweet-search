@@ -137,8 +137,10 @@ function prepareGolden(t) {
   // fresh-init: drop history so no future-fix commit/ref is reachable by the agent
   sh(`rm -rf ${gdir}/.git && git -C ${gdir} init -q && printf '.sweet-search/\\n' > ${gdir}/.git/info/exclude && git -C ${gdir} add -A && git -C ${gdir} -c user.email=a@b.c -c user.name=bench commit -q -m base`);
   const t0 = Date.now();
+  // 90 min: CPU (no Metal/GPU) index builds of bigger repos can exceed 30 min;
+  // a too-tight timeout leaves a partial/corrupt golden index (seen: pylint ETIMEDOUT).
   execFileSync('node', [INDEXER, '--full', '--sqlite-fast', '--concurrency=1'],
-    { env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: gdir, SWEET_SEARCH_RECONCILE_V2: '0', SWEET_SEARCH_WATCH: '0' }, stdio: 'ignore', timeout: 1800000 });
+    { env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: gdir, SWEET_SEARCH_RECONCILE_V2: '0', SWEET_SEARCH_WATCH: '0' }, stdio: 'ignore', timeout: 5400000 });
   return { dir: gdir, idxMs: Date.now() - t0, source: 'built' };
 }
 
@@ -246,6 +248,9 @@ async function runOneTask(id) {
     catch (e) { console.error(`### ${id} golden FAILED: ${String(e.message).slice(0, 160)} — skip`); return; }
     console.log(`\n### ${id} (${t.repo}) — golden ${golden.source}${golden.idxMs ? ' in ' + (golden.idxMs / 1000).toFixed(0) + 's' : ' (cached)'}`);
     const image = ensureImage(id);
+    // WARM_ONLY: pre-build golden + swebench image, then stop (no agent runs) so
+    // the smoke is fast. Used to pre-warm a set of instances up front.
+    if (process.env.WARM_ONLY) { console.log(`  warmed golden + image for ${id} (${image})`); return; }
     for (const arm of ['native', 'sweet']) {
       for (let rep = 0; rep < REPS; rep++) {
         const sweet = arm === 'sweet';
@@ -317,3 +322,8 @@ for (const arm of ['native', 'sweet']) {
   console.log(`${arm}: resolved ${resolved}/${rs.length}  avgCalls=${calls}  ss=${ss}  $${cost}  escape=${rs.reduce((a, r) => a + r.escape, 0)} leak=${rs.reduce((a, r) => a + r.leak, 0)}`);
 }
 console.log(`rows → ${path.join(outDir, 'rows.json')}`);
+// Force exit: lingering ss-* server sockets/handles can keep Node's event loop
+// alive after all work is done (seen hanging the pre-warm). All results are
+// already flushed above, so a clean explicit exit is safe (and lets the smoke
+// chain model runs back-to-back without a hang).
+process.exit(0);
