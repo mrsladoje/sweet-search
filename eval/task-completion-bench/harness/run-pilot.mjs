@@ -20,25 +20,25 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runTask } from './api-task-runner.mjs';
 
-// FIX A (index integrity): FREEZE the incremental maintainer for the whole run so
-// the index cannot drift while the agent edits files mid-task. Setting these in
-// process.env at the top means EVERY child ss-* spawn (the ss-bin PATH binaries)
-// and the indexer inherit them — both arms therefore observe a static, base-commit
-// index. SWEET_SEARCH_WATCH=0 disables the fs watcher; SWEET_SEARCH_RECONCILE_SCAN=0
-// disables the dirty-scan reconciler; the huge interval is belt-and-suspenders in
-// case any reconcile path is still reached.
-// THE load-bearing one: RECONCILE_V2=0 makes maintainer-launcher.mjs SKIP the
-// reconcile maintainer launch entirely (reconcileEnablement opt-out). WATCH=0 /
-// RECONCILE_SCAN=0 only tune the maintainer's behavior — they do NOT stop it
-// spawning, so without RECONCILE_V2=0 the ss-* server still launches the
-// maintainer, which reconciles the agent's mid-run edits into the index (drift,
-// poisoning the per-arm/per-task comparison). Verified 2026-06-07: with
-// RECONCILE_V2=0 the index is byte-identical before/after an edit, 0 maintainer
-// procs, and the in-memory server returns 0 hits for freshly-added code.
-process.env.SWEET_SEARCH_RECONCILE_V2 = '0';
-process.env.SWEET_SEARCH_WATCH = '0';
-process.env.SWEET_SEARCH_RECONCILE_SCAN = '0';
-process.env.SWEET_SEARCH_RECONCILE_INTERVAL_MS = '2147483647';
+// INDEX INTEGRITY via PER-RUN ISOLATION (runner-only — zero changes to the
+// sweet-search engine; incremental indexing runs exactly as it ships).
+//
+// We deliberately DO NOT freeze the maintainer: on a real multi-step task the
+// agent edits the repo and must then search the *updated* code — that working-
+// tree-tracking freshness is part of sweet-search's value, exactly the thing the
+// compounding hypothesis tests. Freezing would undersell it.
+//
+// Instead, isolation is structural: a read-only GOLDEN template (clean repo +
+// clean base index, built once per repo@commit) is `cp`-copied into a UNIQUE dir
+// per run. Each run's copy gets its own project-root → its own ss-* socket,
+// server, and incremental maintainer (verified: socket = hash(projectRoot)), so
+// concurrent runs on the same repo CANNOT poison each other's index, the agent
+// sees its own edits (fresh), and the golden is never written (clean baseline
+// preserved). The run dir is deleted after grading. Proven on Linux x86:
+// two copies, incremental on, each sees only its own edit, golden hash unchanged.
+//
+// The golden index itself is built with the maintainer off (a clean static
+// snapshot); only the per-run COPIES run incremental-on.
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const BENCH = path.join(ROOT, 'eval/task-completion-bench');
@@ -117,69 +117,61 @@ function reapServers() {
   } catch { /* */ }
 }
 
-// Project-side index cache, keyed by repo@base_commit. The index is
-// deterministic for a fixed commit, so it is built ONCE EVER and reused across
-// runs/sessions. Lives OUTSIDE the checkout (agent never sees it) and survives
-// /tmp clears. Checkouts themselves stay in /tmp/ss-eval (outside our tree) so
-// the agent can't escape into our gold/results files.
-const IDX_CACHE = path.join(BENCH, '.index-cache');
+// GOLDEN templates (read-only) + per-run isolated copies, keyed by repo@commit.
+// The golden = clean repo @ base_commit + clean base index, built ONCE and never
+// written. Runs are `cp` copies in unique dirs under RUNS_DIR, deleted after use.
+const GOLDEN_DIR = path.join(EVAL_HOME, 'golden');
+const RUNS_DIR = path.join(EVAL_HOME, 'runs');
 const cacheKeyFor = (t) => `${t.repo.replace('/', '__')}@${t.base_commit}`;
 
-// Returns { dir, idxMs, source }. source ∈ checkout-cache | index-cache | built.
-function prepareCheckout(task) {
-  // key the checkout dir by repo@commit (not instance_id) so a cached index's
-  // internal paths always match the restore path. Under $HOME so colima can
-  // bind-mount it into the test container.
-  const dir = path.join(EVAL_HOME, cacheKeyFor(task));
-  // 1) persistent checkout already indexed for THIS commit → reuse as-is.
-  if (existsSync(`${dir}/.sweet-search/codebase.db`) && existsSync(`${dir}/.git`)) {
-    resetCheckout(dir);
-    // FIX A: ensure a pristine project-side index cache exists for restoreIndex().
-    // A reused checkout's in-place index may have drifted in a prior run, so if the
-    // cache is missing (legacy checkout) seed it from THIS index once; restoreIndex
-    // (called per-rep) is what guarantees byte-identical arm starts thereafter.
-    const pristine = path.join(IDX_CACHE, cacheKeyFor(task), '.sweet-search');
-    if (!existsSync(path.join(pristine, 'codebase.db'))) {
-      try { mkdirSync(path.join(IDX_CACHE, cacheKeyFor(task)), { recursive: true }); sh(`cp -R ${dir}/.sweet-search ${path.join(IDX_CACHE, cacheKeyFor(task))}/`); } catch { /* */ }
-    }
-    return { dir, idxMs: 0, source: 'checkout-cache' };
-  }
-  // fresh clone @ base_commit, drop history (no future-fix-commit leakage)
-  rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true });
-  sh(`git clone --quiet https://github.com/${task.repo}.git ${dir}`);
-  sh(`git -C ${dir} checkout --quiet ${task.base_commit}`);
-  sh(`rm -rf ${dir}/.git && git -C ${dir} init -q && printf '.sweet-search/\\n' > ${dir}/.git/info/exclude && git -C ${dir} add -A && git -C ${dir} -c user.email=a@b.c -c user.name=bench commit -q -m base`);
-  // 2) project-side index cache for this exact repo@commit → copy it in (FREE).
-  const cacheDir = path.join(IDX_CACHE, cacheKeyFor(task), '.sweet-search');
-  if (existsSync(path.join(cacheDir, 'codebase.db'))) {
-    sh(`mkdir -p ${dir}/.sweet-search && cp -R ${cacheDir}/. ${dir}/.sweet-search/`);
-    return { dir, idxMs: 0, source: 'index-cache' };
-  }
-  // 3) build fresh, then populate the cache for next time.
+// Build (once) the read-only golden template for a repo@commit. The CALLER
+// serializes same-key builds via withCheckoutLock so concurrent siblings don't
+// double-build. The golden index is built with the maintainer OFF (RECONCILE_V2=0)
+// — a clean static snapshot; only the per-run COPIES run incremental-on.
+function prepareGolden(t) {
+  const gdir = path.join(GOLDEN_DIR, cacheKeyFor(t));
+  if (existsSync(`${gdir}/.sweet-search/codebase.db`) && existsSync(`${gdir}/.git`)) return { dir: gdir, idxMs: 0, source: 'golden-cache' };
+  rmSync(gdir, { recursive: true, force: true }); mkdirSync(gdir, { recursive: true });
+  sh(`git clone --quiet https://github.com/${t.repo}.git ${gdir}`);
+  sh(`git -C ${gdir} checkout --quiet ${t.base_commit}`);
+  // fresh-init: drop history so no future-fix commit/ref is reachable by the agent
+  sh(`rm -rf ${gdir}/.git && git -C ${gdir} init -q && printf '.sweet-search/\\n' > ${gdir}/.git/info/exclude && git -C ${gdir} add -A && git -C ${gdir} -c user.email=a@b.c -c user.name=bench commit -q -m base`);
   const t0 = Date.now();
   execFileSync('node', [INDEXER, '--full', '--sqlite-fast', '--concurrency=1'],
-    { env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: dir }, stdio: 'ignore', timeout: 1800000 });
-  const idxMs = Date.now() - t0;
-  try { mkdirSync(path.join(IDX_CACHE, cacheKeyFor(task)), { recursive: true }); sh(`cp -R ${dir}/.sweet-search ${path.join(IDX_CACHE, cacheKeyFor(task))}/`); } catch { /* */ }
-  return { dir, idxMs, source: 'built' };
+    { env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: gdir, SWEET_SEARCH_RECONCILE_V2: '0', SWEET_SEARCH_WATCH: '0' }, stdio: 'ignore', timeout: 1800000 });
+  return { dir: gdir, idxMs: Date.now() - t0, source: 'built' };
 }
 
-function resetCheckout(dir) { try { sh(`git -C ${dir} checkout -- . && git -C ${dir} clean -fdq -e .sweet-search`); } catch { /* */ } }
+// Copy the golden into a UNIQUE per-run dir → its own project-root → its own
+// ss-* socket/server/maintainer (full isolation). withIndex=false (native arm,
+// no ss-*) skips the .sweet-search copy to save time/disk.
+let __runCounter = 0;
+function makeRunDir(goldenDir, runUid, withIndex) {
+  const rundir = path.join(RUNS_DIR, `${runUid}__${++__runCounter}`);
+  mkdirSync(RUNS_DIR, { recursive: true }); rmSync(rundir, { recursive: true, force: true });
+  sh(`cp -a ${goldenDir} ${rundir}`);
+  if (!withIndex) rmSync(path.join(rundir, '.sweet-search'), { recursive: true, force: true });
+  return rundir;
+}
 
-// FIX A (index integrity): resetCheckout restores SOURCE but NOT the index — and
-// because the maintainer drifts the index as the agent edits, the two arms would
-// otherwise start from DIFFERENT indexes. restoreIndex wipes the checkout's
-// .sweet-search and copies the pristine base-commit index back from the project-
-// side cache (IDX_CACHE/<cacheKeyFor>/.sweet-search), so every arm/rep begins from
-// a byte-identical index. Call it right AFTER resetCheckout at the start of each rep.
-function restoreIndex(dir, task) {
-  const pristine = path.join(IDX_CACHE, cacheKeyFor(task), '.sweet-search');
-  if (!existsSync(path.join(pristine, 'codebase.db'))) return false; // no pristine cache → leave as-is
+// Off-clock warmup: spawn + warm THIS run's ss-* server (models + index loaded)
+// so the agent's first ss-* call isn't charged a cold start.
+function warmupRun(rundir) {
+  try { execFileSync(path.join(SS_BIN, 'ss-search'), ['warmup', '-k', '1'], { cwd: rundir, env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: rundir, PATH: SS_BIN + ':' + process.env.PATH }, stdio: 'ignore', timeout: 120000 }); } catch { /* */ }
+}
+
+// Tear down a finished run: SIGKILL exactly THIS run's ss-* server + maintainer,
+// matched precisely by SWEET_SEARCH_PROJECT_ROOT in /proc/<pid>/environ (Linux,
+// root) — concurrency-safe, never touches a sibling run's procs — then delete it.
+function reapRunDir(rundir) {
   try {
-    rmSync(path.join(dir, '.sweet-search'), { recursive: true, force: true });
-    sh(`mkdir -p ${dir}/.sweet-search && cp -R ${pristine}/. ${dir}/.sweet-search/`);
-    return true;
-  } catch { return false; }
+    const out = sh(`grep -lZ "SWEET_SEARCH_PROJECT_ROOT=${rundir}" /proc/[0-9]*/environ 2>/dev/null || true`);
+    for (const f of out.split('\0').filter(Boolean)) {
+      const pid = f.replace('/proc/', '').replace('/environ', '');
+      if (/^\d+$/.test(pid)) { try { process.kill(+pid, 'SIGKILL'); } catch { /* */ } }
+    }
+  } catch { /* */ }
+  try { rmSync(rundir, { recursive: true, force: true }); } catch { /* */ }
 }
 
 function gradeArm(arm, predictions, runId) {
@@ -240,49 +232,44 @@ async function withCheckoutLock(key, fn) {
   }
 }
 
-// FIX B: per-task work for ONE instance. Both arms run sequentially INSIDE a task
-// (native then sweet); the worker pool runs up to CONCURRENCY of THESE concurrently.
-// NOTE: no reapServers() here — that would SIGKILL sibling tasks' ss-* servers. We
-// reap exactly once after the whole pool drains.
+// Per-task work for ONE instance. Build the golden ONCE (serialized per
+// repo@commit), then each arm/rep runs in its OWN isolated cp-copy of the golden
+// (own ss-* server/maintainer, incremental ON), deleted after. The worker pool
+// runs up to CONCURRENCY of THESE instances concurrently; same-repo runs are safe
+// because each has an isolated copy. reapServers() is NOT called here.
 async function runOneTask(id) {
   const t = all.find(x => x.instance_id === id);
   if (!t) { console.error(`task ${id} not in dataset — skip`); return; }
-  // Hold the checkout-dir lock for this task's ENTIRE lifecycle (prepare → both
-  // arms → checkpoint) so a same-repo@commit sibling can't mutate the shared dir.
-  return withCheckoutLock(cacheKeyFor(t), () => runOneTaskLocked(id, t));
-}
-async function runOneTaskLocked(id, t) {
   try {
-    console.log(`\n### ${id} (${t.repo}) — checkout + index`);
-    let prep;
-    try { prep = prepareCheckout(t); console.log(`  index ${prep.source}${prep.idxMs ? ' in ' + (prep.idxMs / 1000).toFixed(0) + 's' : ' (cached, 0s)'}`); }
-    catch (e) { console.error(`  [checkout/index FAILED] ${String(e.message).slice(0, 160)} — skipping task`); return; }
-    const dir = prep.dir;
+    let golden;
+    try { golden = await withCheckoutLock(cacheKeyFor(t), () => prepareGolden(t)); }
+    catch (e) { console.error(`### ${id} golden FAILED: ${String(e.message).slice(0, 160)} — skip`); return; }
+    console.log(`\n### ${id} (${t.repo}) — golden ${golden.source}${golden.idxMs ? ' in ' + (golden.idxMs / 1000).toFixed(0) + 's' : ' (cached)'}`);
     const image = ensureImage(id);
-    const runTests = makeRunTests(image, dir);
-    const task = { id, repoCheckout: dir, mppPath: MPP, problem_statement: t.problem_statement };
-
     for (const arm of ['native', 'sweet']) {
       for (let rep = 0; rep < REPS; rep++) {
-        resetCheckout(dir);
-        // FIX A: restore the pristine base-commit index AFTER resetCheckout so both
-        // arms start from a byte-identical index (resetCheckout only restores source).
-        const restored = restoreIndex(dir, t);
-        console.log(`  index restored to base for ${arm} rep${rep} (${restored ? 'ok' : 'no-cache'})`);
-        const r = await runTask(task, { arm, model: MODEL, apiModel: MODEL, provider: PROVIDER, maxToolCalls: 60, ssBinDir: SS_BIN, mppText, policy: process.env.POLICY, runTests });
-        const ranTests = (r.toolCounts?.test || 0) > 0;
-        console.log(`  [${arm} rep${rep}] calls=${r.calls} ss=${r.ss} edits=${r.toolCounts.edit} hunks=${r.patchHunks} ranTests=${ranTests} escape=${r.escape} leak=${r.leak} $${r.costRealizedUsd} ${(r.wallMs / 1000).toFixed(0)}s exit=${r.exitReason}`);
-        if (rep === 0) predsByArm[arm].push({ instance_id: id, model_name_or_path: arm, model_patch: r.finalPatch || '' });
-        rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, predOk: r.patchHunks > 0, ranTests, idxMs: prep.idxMs, idxSource: prep.source, ...stripBig(r) });
-        // persist full trajectory for diagnosis (rows strip it for size)
-        try { const td = path.join(BENCH, 'results', runId, 'trajectories'); mkdirSync(td, { recursive: true }); writeFileSync(path.join(td, `${id}-${arm}-r${rep}.json`), JSON.stringify({ taskId: id, arm, rep, exitReason: r.exitReason, toolCounts: r.toolCounts, ranTests, escapeExamples: r.escapeExamples, trajectory: r.trajectory }, null, 2)); } catch { /* */ }
+        const sweet = arm === 'sweet';
+        const rundir = makeRunDir(golden.dir, `${id}__${arm}__r${rep}`, sweet);
+        try {
+          const runTests = makeRunTests(image, rundir);
+          const task = { id, repoCheckout: rundir, mppPath: MPP, problem_statement: t.problem_statement };
+          if (sweet) warmupRun(rundir); // off-clock: warm this run's server so the measured loop sees no cold start
+          const r = await runTask(task, { arm, model: MODEL, apiModel: MODEL, provider: PROVIDER, maxToolCalls: 60, ssBinDir: SS_BIN, mppText, policy: process.env.POLICY, runTests });
+          const ranTests = (r.toolCounts?.test || 0) > 0;
+          console.log(`  [${arm} rep${rep}] calls=${r.calls} ss=${r.ss} edits=${r.toolCounts.edit} hunks=${r.patchHunks} ranTests=${ranTests} escape=${r.escape} leak=${r.leak} $${r.costRealizedUsd} ${(r.wallMs / 1000).toFixed(0)}s exit=${r.exitReason}`);
+          if (rep === 0) predsByArm[arm].push({ instance_id: id, model_name_or_path: arm, model_patch: r.finalPatch || '' });
+          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, ...stripBig(r) });
+          try { const td = path.join(BENCH, 'results', runId, 'trajectories'); mkdirSync(td, { recursive: true }); writeFileSync(path.join(td, `${id}-${arm}-r${rep}.json`), JSON.stringify({ taskId: id, arm, rep, exitReason: r.exitReason, toolCounts: r.toolCounts, ranTests, escapeExamples: r.escapeExamples, trajectory: r.trajectory }, null, 2)); } catch { /* */ }
+        } catch (e) {
+          console.error(`  [${arm} rep${rep}] run error: ${String(e.message).slice(0, 160)}`);
+        } finally {
+          reapRunDir(rundir); // kill this run's server/maintainer + delete its copy; golden untouched
+        }
       }
     }
-    // keep the checkout (+index) for cache reuse; do NOT delete.
   } catch (e) {
     console.error(`### ${id} FAILED: ${String(e.message).slice(0, 200)} — skipping`);
   }
-  // checkpoint full snapshot after every task so a crash keeps progress
   checkpoint();
 }
 
