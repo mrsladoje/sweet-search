@@ -364,7 +364,10 @@ export async function runTask(task, { arm, provider = 'deepseek', apiModel, mode
         }
       } else resultText = `[error] unknown tool ${name}`;
 
-      trajectory.push({ call: calls, name, kind, input: args.command || args.path || args.query || args.symbol || args.regex || args.args, exit: undefined });
+      // LOG_TOOL_RESULTS=1 captures a truncated tool RESULT into the trajectory
+      // (off by default — keeps normal trajectories small). Needed to diagnose
+      // WHY an agent stopped (e.g. a blocked test-env vs a genuine early stop).
+      trajectory.push({ call: calls, name, kind, input: args.command || args.path || args.query || args.symbol || args.regex || args.args, exit: undefined, result: process.env.LOG_TOOL_RESULTS ? String(resultText).slice(0, 1500) : undefined });
       messages.push({ role: 'tool', tool_call_id: tc.id, content: resultText.slice(0, 12000) });
     }
     if (exitReason === 'max_calls') break;
