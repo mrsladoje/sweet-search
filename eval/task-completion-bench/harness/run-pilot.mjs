@@ -204,7 +204,9 @@ function gradeArm(arm, predictions, runId) {
 
 const runId = process.env.RUN_ID || `pilot-${INSTANCES.length}x${REPS}`;
 const all = await loadTasks();
-const mppText = readFileSync(MPP, 'utf8');
+// Strip the YAML frontmatter (run_id/score_*/vault_* metadata) before feeding
+// M++ to the agent — the eval scores must not leak into the system prompt.
+const mppText = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
 const rows = [];
 const predsByArm = { native: [], sweet: [] };
 

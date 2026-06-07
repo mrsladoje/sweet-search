@@ -196,5 +196,29 @@ Docker grading **structurally** isolates the answer: per-instance image at `base
 
 ---
 
+## 11b. Shared task-completion FRAME + fairness (2026-06-07)
+
+**Motivation.** Diagnosing pylint-dev__pylint-7993 (m2.7 smoke): the sweet arm produced a 0-hunk patch on all 3 reps while native solved it. Trajectory analysis showed retrieval was *correct* (gold file opened by call 4 every rep) — the failure was M++'s terminal clause ("Stop the instant your evidence answers what you're looking for … name the file(s) … or no-match"), tuned for SEARCH episodes, winning by recency and ending the run at the *locate* step with zero edits. Native (no stop heuristic) ground out the fix. Root cause ≈ M++ stop-discipline mis-calibrated for multi-step FIX tasks; retrieval-misdirect ruled out. (M+++ — a one-word "Stop"→"Stop searching" edit — was considered and **dropped**: it only helps frame-less deployments and would need the full retrieval vault to crown, out of budget. The frame supersedes it for the bench.)
+
+**Design (implemented, `api-task-runner.mjs` `buildSysPolicy`).** A shared, **tool-agnostic, authoritative** completion frame BRACKETS the sweet-only M++ block so the completion mandate is both first and last:
+- `native = FRAME_AUTHORITY + FRAME_CLOSE` (nothing between)
+- `sweet  = FRAME_AUTHORITY + [M++ search guidance] + FRAME_CLOSE`
+- `FRAME_AUTHORITY` (open) declares the completion rules override any later "when to stop / fewer steps" guidance — which governs only HOW to locate, never WHETHER the task is done ("locating is the MIDPOINT").
+- `FRAME_CLOSE` (last word) re-asserts: not finished until an edit is made AND the failing test re-run passes.
+
+**Fairness invariant (machine-checked, `tests/frame-invariants.mjs`):** sweet's prompt minus the M++ block is **byte-identical** to native's → the ONLY system-prompt asymmetry is the treatment (M++ + ss-* tools). The frame names no search tools (write_file excepted — a completion action both arms have). M++ is fed with its YAML score-frontmatter stripped (no eval-score leak into the prompt).
+
+**Ecological-validity rationale (publishable framing).** In production sweet-search runs inside a host agent (Claude Code/Cursor) whose harness owns task completion; M++ is the *search layer*. The bare-API harness lacked that driver, so M++'s search-stop leaked into task control. The frame restores the production condition, applied equally. Disclose: "both arms receive an identical task-completion harness prompt; sweet additionally receives M++ + ss-* tools."
+
+**A/B gate.** `TASK_FRAME=0` reproduces the pre-frame prompt exactly. Post-smoke validation (chosen model, the same 5 instances, **with tool-result logging**) runs frame-ON vs the existing frame-OFF data to test: (1) does sweet now solve pylint-class tasks? (2) does the efficiency edge SURVIVE a strong shared completion bar (real "fewer steps to the same green") or shrink (earlier "cheaper" was partly quit-early)? (3) resolves the H1 "blocked-vs-satisfied stop" question (was sweet's stop a missing-dep/test-env error?). Honest caveat on the record: the cost gap MAY shrink under the frame — that is the price of a fair accuracy comparison.
+
+**Real-bench headline (converged 2026-06-07).** Claim = **"efficiency at matched accuracy,"** possibly **Pareto-dominance** if accuracy also moves. Neither headline number may touch a *binding* cap:
+- **Accuracy** = resolve-vs-budget ($ or calls) **curve**, not resolve@cap; generous **non-binding ceiling** + patch-snapshot grading at checkpoints for the curve from single runs; truncation audit (were cap-hitting native runs still making test-progress?) to exonerate the cap.
+- **Efficiency** = **co-solved subset** (cap-immune), demoted to a *difficulty-conditioned* secondary IF accuracy moves (selection-on-outcome bias).
+- **Three arms** to attribute: native / sweet-tools-only (`policy:'tools-only'`) / sweet-full-M++ — separates ss-* tools from M++ guidance.
+- Pre-registered **N** from a paired-McNemar power calc (sized after model selection); post-cutoff multilingual tasks (accuracy claims don't survive memorization); report paired-bootstrap CIs, significant only if CI excludes 0.
+
+---
+
 ## 12. Key citations
 Benchmarks: SWE-bench `2310.06770`; Multi-SWE-bench `2504.02605`; SWE-PolyBench `2504.08703`; SWE-bench-Live `2505.23419`; SWE-rebench `2505.20411`; SWE-bench Pro `2509.16941`; SWE-Bench++ `2512.17419`. Ablation/retrieval: RepoGraph `2410.14684`; Agentless `2407.01489`; OrcaLoca `2502.00350`; LocAgent `2503.09089`; CodeRAG-Bench `2406.14497`; SWE-Search `2410.20285`. Metrics/stats: SWE-Effi `2509.09853`; HAL `2510.11977`; AI Agents That Matter `2407.01502`; SWE-ContextBench `2602.08316`; Beyond Resolution Rates `2604.02547`; Lost-in-the-Middle `2307.03172`; Miller Error Bars `2411.00640`; Are Solved Issues Really Solved `2503.15223`. Leakage: SWE-bench #465 / #471; SWE-ABS `2603.00520`. (2026-dated IDs lightly corroborated — verify before formal citation.)

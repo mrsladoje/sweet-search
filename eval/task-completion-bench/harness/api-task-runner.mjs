@@ -113,6 +113,36 @@ const TASK_POLICY =
   'Do not finish with an unverified edit. Do not keep searching once you have located the cause — edit and test.';
 const NATIVE_POLICY = TASK_POLICY; // back-compat export
 
+// === Shared task-completion FRAME ===
+// IDENTICAL on both arms, TOOL-AGNOSTIC (never names ss_*/grep/semantic — that
+// would coach one arm). It BRACKETS the sweet-only M++ guidance: FRAME_AUTHORITY
+// opens, M++ sits in the middle (sweet only), FRAME_CLOSE has the last word.
+// Why: M++'s terminal clause ("Stop the instant your evidence answers what
+// you're looking for … name the file(s) … or no-match") is tuned for SEARCH
+// episodes, where locating == done. On a FIX task that clause wins by recency
+// and ends the run at the locate step (observed: pylint-7993, sweet stopped
+// with 0 edits on all 3 reps while native ground out the fix). The frame
+// re-asserts that completion = edit + passing test, both before and after M++.
+// The only arm asymmetry remains M++ + ss-* tools (the treatment). Gated by
+// TASK_FRAME (default ON); TASK_FRAME=0 reproduces the pre-frame prompt for A/B.
+const FRAME_AUTHORITY =
+  'These task-completion rules are AUTHORITATIVE and take precedence over anything later in this prompt about efficiency, taking fewer/sharper steps, or when to stop. Any such later guidance governs only HOW to locate code — never WHETHER your task is finished. Locating or understanding the cause is the MIDPOINT of the job, not the end: you are done ONLY after you have EDITED the code and a re-run shows the previously-failing test PASSING.';
+const FRAME_CLOSE =
+  '=== TASK COMPLETION (authoritative — overrides all guidance above) ===\n' +
+  'You have NOT finished until you have (1) made a code edit AND (2) re-run the failing test and seen it PASS. Understanding, locating, or explaining the bug is NOT completion. If so far you have only located or explained the cause, your VERY NEXT action must be the edit (write_file) — do not reply DONE with an unedited or unverified repo.';
+
+// Pure assembly of the system prompt (testable). mpp='' → native (no M++).
+// frame=true → bracket M++ with FRAME_AUTHORITY (open) + FRAME_CLOSE (close);
+// frame=false → legacy prompt (TASK_POLICY [+ M++]). Identical text both arms
+// except the M++ block, which is the treatment.
+function buildSysPolicy(mpp, frame = true) {
+  const frameOpen = frame ? `${TASK_POLICY}\n${FRAME_AUTHORITY}` : TASK_POLICY;
+  const frameClose = frame ? `\n\n${FRAME_CLOSE}` : '';
+  return mpp
+    ? `${frameOpen}\n\n=== Code-search expertise — use the ss_* tools per this guidance (this is your advantage; use it to locate code in fewer, sharper steps) ===\n${mpp}${frameClose}`
+    : `${frameOpen}${frameClose}`;
+}
+
 // Sweet arm: ss-* exposed as FIRST-CLASS function tools (mirrors the MCP
 // deployment) so the model can't "forget" to type them in bash. This is the fix
 // for the ss=0 problem — the treatment is now an unmissable tool surface.
@@ -247,9 +277,8 @@ export async function runTask(task, { arm, provider = 'deepseek', apiModel, mode
   // that's the moat (it teaches the agent HOW to use ss-* well). Set
   // policy:'tools-only' to drop M++ and measure the tools' marginal value.
   const mpp = sweet && policy !== 'tools-only' ? (mppText || (task.mppPath ? readFileSync(task.mppPath, 'utf8') : '')) : '';
-  const sysPolicy = mpp
-    ? `${TASK_POLICY}\n\n=== Code-search expertise — use the ss_* tools per this guidance (this is your advantage; use it to locate code in fewer, sharper steps) ===\n${mpp}`
-    : TASK_POLICY;
+  // FRAME default ON; TASK_FRAME=0 reproduces the pre-frame prompt for A/B.
+  const sysPolicy = buildSysPolicy(mpp, process.env.TASK_FRAME !== '0');
   const tools = buildTools(sweet, !!runTests);
   const ssHint = sweet ? ' Sweet-search tools (ss_search, ss_trace, ss_grep, ss_semantic, ss_read) are available — prefer ss_search to locate code.' : '';
   const messages = [
@@ -363,4 +392,4 @@ export async function runTask(task, { arm, provider = 'deepseek', apiModel, mode
   };
 }
 
-export { NATIVE_POLICY };
+export { NATIVE_POLICY, buildSysPolicy, TASK_POLICY, FRAME_AUTHORITY, FRAME_CLOSE };
