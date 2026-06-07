@@ -62,17 +62,20 @@ const EVAL_HOME = path.join(process.env.HOME, '.ss-eval');
 const imageNameFor = (id) => `swebench/sweb.eval.x86_64.${id.replace('__', '_1776_')}:latest`;
 function ensureImage(id) {
   const img = imageNameFor(id);
-  try { execFileSync('docker', ['image', 'inspect', img], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore' }); return img; }
-  catch { /* build below */ }
-  // Build the env image by grading an EMPTY prediction for this instance (side-effect: builds + caches the image).
+  const have = () => { try { execFileSync('docker', ['image', 'inspect', img], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore' }); return true; } catch { return false; } };
+  if (have()) return img;
+  // Build + PERSIST the instance image by grading the GOLD prediction.
+  // swebench 4.x SILENTLY SKIPS empty-patch predictions ("Instances with empty
+  // patches: 1" → "No instances to run") so the old empty-patch trick never
+  // built anything. Gold is non-empty (and doubles as a gradeability sanity).
+  // cache_level 'instance' keeps the sweb.eval.x86_64.<id> image so run_tests
+  // (and the final grade) can exec it. run_id is unique per instance so the
+  // worker pool doesn't collide on swebench's per-run_id lock.
   try {
-    const tmp = path.join(BENCH, 'results', '_imgbuild'); mkdirSync(tmp, { recursive: true });
-    const pf = path.join(tmp, `${id}.jsonl`); writeFileSync(pf, JSON.stringify({ instance_id: id, model_name_or_path: 'empty', model_patch: '' }) + '\n');
-    // FIX B (concurrency): run_id MUST be unique per instance — the worker pool can
-    // call ensureImage() for several ids at once, and a shared run_id collides on
-    // swebench's per-run_id working dir / run-instance lock. Key it to the id.
-    execFileSync(VENV_PY, ['-m', 'swebench.harness.run_evaluation', '--dataset_name', DATASET, '--predictions_path', pf, '--max_workers', '1', '--instance_ids', id, '--run_id', `imgbuild-${id}`, '--cache_level', 'env'], { cwd: tmp, env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 1800000 });
-  } catch { /* */ }
+    execFileSync(VENV_PY, ['-m', 'swebench.harness.run_evaluation', '--dataset_name', DATASET, '--predictions_path', 'gold', '--max_workers', '1', '--instance_ids', id, '--run_id', `imgbuild-${id}`, '--cache_level', 'instance'], { cwd: path.join(BENCH, 'results'), env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 1800000 });
+  } catch { /* fall through to the loud check below */ }
+  // FAIL LOUD: a swallowed build error here previously masked 4/5 missing images.
+  if (!have()) throw new Error(`ensureImage: failed to build ${img} for ${id} (swebench gold build produced no image)`);
   return img;
 }
 // One-shot test runner: pytest in the real env, host checkout bind-mounted (live edits).
