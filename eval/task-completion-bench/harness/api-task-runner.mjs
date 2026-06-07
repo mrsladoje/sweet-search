@@ -105,9 +105,9 @@ const TASK_POLICY =
   'You are an expert software engineer resolving a bug in a Python repository. Work ONLY in your current working directory.\n' +
   'Follow this loop until the failing tests pass:\n' +
   '1. Explore to locate the root cause.\n' +
-  '2. REPRODUCE the failure: find and run the relevant test(s) with bash, e.g. `python -m pytest path/to/test_file.py -x -q` (no network/installs needed; the env is ready).\n' +
+  '2. REPRODUCE the failure with the run_tests TOOL (e.g. run_tests with args "path/to/test_file.py -x -q"). Your bash shell does NOT have the repo dependencies installed, so `python`/`pytest`/`pylint` run directly in bash WILL fail with import/dep errors — do NOT run them in bash and do NOT `pip install` anything. ALL test execution and bug reproduction goes through run_tests, which runs in the fully-prepared environment and sees your live edits. Use bash only to read/grep/list.\n' +
   '3. Make the MINIMAL code edit with write_file.\n' +
-  '4. RE-RUN the tests to confirm your fix passes AND nothing else broke.\n' +
+  '4. RE-RUN via the run_tests tool to confirm your fix passes AND nothing else broke.\n' +
   '5. Only when the previously-failing tests pass, reply DONE.\n' +
   'CRITICAL: the repo\'s EXISTING tests may not cover this issue. Do NOT conclude you are done just because pre-existing tests pass. From the issue description, construct an input/scenario that reproduces the described bug, confirm it currently misbehaves, then fix and confirm it now behaves correctly. Implement the FULL behavior the issue asks for, not just a signature change.\n' +
   'Do not finish with an unverified edit. Do not keep searching once you have located the cause — edit and test.';
