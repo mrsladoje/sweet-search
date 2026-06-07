@@ -15,7 +15,7 @@
  *     node eval/task-completion-bench/harness/run-pilot.mjs
  */
 import { execSync, execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runTask } from './api-task-runner.mjs';
@@ -210,6 +210,27 @@ const mppText = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
 const rows = [];
 const predsByArm = { native: [], sweet: [] };
 
+// --- LIVE PROGRESS counter (no black-box runs) ---
+// TOTAL = instances × 2 arms × reps. After EVERY completed run (success or
+// error) we print + append one line to results/<runId>/progress.log with the
+// running count, valid-patch (predOk) tallies per arm, $ spent, and a wall-clock
+// ETA (elapsed/done × remaining — naturally reflects the actual concurrency).
+// `tail -f` that file for a live view. (resolve rate needs grading at the end;
+// predOk = "produced a non-empty patch" is the live proxy.)
+const TOTAL_RUNS = INSTANCES.length * 2 * REPS;
+const t0run = Date.now();
+const prog = { done: 0, errors: 0, cost: 0, predOk: { native: 0, sweet: 0 }, byArm: { native: 0, sweet: 0 } };
+const PROGRESS_LOG = path.join(BENCH, 'results', runId, 'progress.log');
+const fmtDur = s => (s >= 3600 ? `${(s / 3600).toFixed(1)}h` : `${Math.max(0, Math.round(s / 60))}m`);
+function emitProgress(tag = '') {
+  const pct = TOTAL_RUNS ? ((prog.done / TOTAL_RUNS) * 100).toFixed(0) : '0';
+  const elapsed = (Date.now() - t0run) / 1000;
+  const eta = prog.done > 0 ? (elapsed / prog.done) * (TOTAL_RUNS - prog.done) : 0;
+  const line = `[PROGRESS ${runId} ${prog.done}/${TOTAL_RUNS} ${pct}%] predOk n=${prog.predOk.native}/${prog.byArm.native} s=${prog.predOk.sweet}/${prog.byArm.sweet} | $${prog.cost.toFixed(3)} | elapsed ${fmtDur(elapsed)} ETA ${fmtDur(eta)}${prog.errors ? ` | errs ${prog.errors}` : ''}${tag}`;
+  console.log(line);
+  try { mkdirSync(path.dirname(PROGRESS_LOG), { recursive: true }); appendFileSync(PROGRESS_LOG, line + '\n'); } catch { /* */ }
+}
+
 // Checkpoint helper: each call writes a FULL snapshot of rows + per-arm preds, so
 // concurrent invocations from sibling tasks can't corrupt a partial file (last
 // writer wins on a complete document). Guarded so a write failure never aborts a task.
@@ -273,8 +294,11 @@ async function runOneTask(id) {
           if (rep === 0) predsByArm[arm].push({ instance_id: id, model_name_or_path: arm, model_patch: r.finalPatch || '' });
           rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, ...stripBig(r) });
           try { const td = path.join(BENCH, 'results', runId, 'trajectories'); mkdirSync(td, { recursive: true }); writeFileSync(path.join(td, `${id}-${arm}-r${rep}.json`), JSON.stringify({ taskId: id, arm, rep, exitReason: r.exitReason, toolCounts: r.toolCounts, ranTests, escapeExamples: r.escapeExamples, trajectory: r.trajectory }, null, 2)); } catch { /* */ }
+          prog.done++; prog.byArm[arm]++; if (r.patchHunks > 0) prog.predOk[arm]++; prog.cost += Number(r.costRealizedUsd) || 0;
+          emitProgress(`  (${id} ${arm} r${rep}: ${r.calls}c ${r.patchHunks}h ${(r.wallMs / 1000).toFixed(0)}s ${r.exitReason})`);
         } catch (e) {
           console.error(`  [${arm} rep${rep}] run error: ${String(e.message).slice(0, 160)}`);
+          prog.done++; prog.errors++; prog.byArm[arm]++; emitProgress(`  (${id} ${arm} r${rep}: ERROR)`);
         } finally {
           reapRunDir(rundir); // kill this run's server/maintainer + delete its copy; golden untouched
         }
@@ -297,7 +321,8 @@ async function runPool(ids, concurrency) {
 
 function stripBig(r) { const { finalPatch, trajectory, ...rest } = r; return rest; }
 
-console.log(`\n### running ${INSTANCES.length} task(s) with CONCURRENCY=${CONCURRENCY} provider=${PROVIDER} model=${MODEL}`);
+console.log(`\n### running ${INSTANCES.length} task(s) × 2 arms × ${REPS} reps = ${TOTAL_RUNS} runs | CONCURRENCY=${CONCURRENCY} provider=${PROVIDER} model=${MODEL} frame=${process.env.TASK_FRAME !== '0' ? 'ON' : 'OFF'}`);
+emitProgress(' (start)');
 await runPool(INSTANCES, CONCURRENCY);
 // reap ss-* daemons ONCE, after the whole pool drains (never mid-pool — would kill
 // sibling tasks' live servers).
