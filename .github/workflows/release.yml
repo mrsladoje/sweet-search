@@ -45,7 +45,6 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             platform: linux-arm64-gnu
-            use_cross: true
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -53,15 +52,26 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cross (Linux arm64)
-        if: matrix.use_cross
-        run: cargo install cross --locked
+      # Linux targets cross-compile against glibc 2.17 via cargo-zigbuild, so the
+      # binary loads on ANY glibc >= 2.17 — Debian 11 (2.31), RHEL/Rocky 8 (2.28),
+      # Amazon Linux 2 (2.26), and every newer distro. cargo-zigbuild also builds
+      # the arm64 target from this x64 runner, so no QEMU/cross is needed.
+      # (Pinned zig 0.16.0 + cargo-zigbuild 0.22.3 — the combo validated locally
+      # to emit a glibc-2.17 addon that loads on Debian 11.)
+      - name: Set up zig (Linux targets)
+        if: contains(matrix.target, 'linux')
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Install cargo-zigbuild (Linux targets)
+        if: contains(matrix.target, 'linux')
+        run: cargo install cargo-zigbuild --version 0.22.3 --locked
 
       - name: Build CLI
         working-directory: crates/sweet-search-cli
         run: |
-          if [ "${{ matrix.use_cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }}
+          if [[ "${{ matrix.target }}" == *linux* ]]; then
+            cargo zigbuild --release --target ${{ matrix.target }}.2.17
           else
             cargo build --release --target ${{ matrix.target }}
           fi
@@ -110,18 +120,33 @@ jobs:
         with:
           node-version: 20
 
-      # Install JS deps so node_modules/.bin/napi exists. Without this,
-      # `npx napi` would have to download @napi-rs/cli on the fly, which
-      # hits the "could not determine executable to run" naming issue
-      # (the package is `@napi-rs/cli` but the binary it exposes is
-      # `napi`). With node_modules populated, `npx napi` resolves to the
-      # local binary directly.
-      - name: Install JS deps
+      # Darwin builds the addon natively with napi-rs. The Linux addon is the
+      # cdylib .so built via cargo-zigbuild against glibc 2.17 and renamed to
+      # *.node — portable to any glibc >= 2.17 (the napi exports work the same;
+      # the resolver requires the .node directly). Pinned zig 0.16.0 +
+      # cargo-zigbuild 0.22.3 (validated locally → glibc-2.17 addon loads on
+      # Debian 11). napi-rs CLI is only needed for the darwin native build.
+      - name: Set up zig (Linux)
+        if: contains(matrix.target, 'linux')
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Install cargo-zigbuild (Linux)
+        if: contains(matrix.target, 'linux')
+        run: cargo install cargo-zigbuild --version 0.22.3 --locked
+      - name: Install JS deps (darwin napi build)
+        if: startsWith(matrix.platform, 'darwin')
         run: npm ci --ignore-scripts
 
       - name: Build addon
         working-directory: crates/sweet-search-native
-        run: npx napi build --release --platform --target ${{ matrix.target }} ${{ matrix.features }}
+        run: |
+          if [[ "${{ matrix.target }}" == *linux* ]]; then
+            cargo zigbuild --release --target ${{ matrix.target }}.2.17
+            cp "target/${{ matrix.target }}/release/libsweet_search_native.so" "sweet-search-native.${{ matrix.platform }}.node"
+          else
+            npx napi build --release --platform --target ${{ matrix.target }} ${{ matrix.features }}
+          fi
 
       - name: Upload addon
         uses: actions/upload-artifact@v4
@@ -129,45 +154,31 @@ jobs:
           name: addon-${{ matrix.platform }}
           path: crates/sweet-search-native/sweet-search-native.*.node
 
-  # linux-arm64 addon — built inside a Docker arm64 container with cargo
-  # directly, since napi-rs CLI cross-compile requires matching host arch.
+  # linux-arm64 addon — cross-compiled from the x64 runner against glibc 2.17
+  # via cargo-zigbuild. Replaces the old QEMU-emulated Docker build: no emulation
+  # (faster + no QEMU flakiness) and a much lower glibc floor (2.17 vs the old
+  # 2.36), so the arm64 addon loads on Debian 11 / RHEL 8 / Amazon Linux 2 arm64
+  # and every newer distro. Pinned zig 0.16.0 + cargo-zigbuild 0.22.3.
   build-addon-arm64:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          platforms: arm64
+          targets: aarch64-unknown-linux-gnu
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild --version 0.22.3 --locked
 
-      # CRITICAL: must use a glibc-2.36-or-older base image, NOT rust:latest.
-      # rust:latest tracks Debian trixie/sid (glibc 2.39+) which produces a
-      # binary that fails to load on Ubuntu 22.04 (glibc 2.35), Debian 12
-      # bookworm (glibc 2.36), and most production Linux distros — covers
-      # nearly every real-world arm64 user. rust:1-bookworm pins to
-      # Debian 12 / glibc 2.36, which is forward-compatible with every newer
-      # glibc the user might be running.
-      - name: Build addon in arm64 container (pinned to bookworm/glibc 2.36)
+      - name: Build arm64 addon (glibc 2.17)
+        working-directory: crates/sweet-search-native
         run: |
-          docker run --rm --platform linux/arm64 \
-            -e CARGO_PROFILE_RELEASE_LTO=false \
-            -e CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
-            -v "$PWD/crates/sweet-search-native:/src" \
-            -w /src \
-            rust:1-bookworm \
-            sh -c '
-              cargo build --release --target-dir /tmp/build 2>&1
-              cp /tmp/build/release/libsweet_search_native.so /src/sweet-search-native.linux-arm64-gnu.node
-            '
-          ls -la crates/sweet-search-native/sweet-search-native.linux-arm64-gnu.node
-          file crates/sweet-search-native/sweet-search-native.linux-arm64-gnu.node
-          # Verify the glibc version requirement of the produced binary.
-          docker run --rm --platform linux/arm64 \
-            -v "$PWD/crates/sweet-search-native:/src" \
-            -w /src \
-            rust:1-bookworm \
-            sh -c "objdump -T sweet-search-native.linux-arm64-gnu.node | grep GLIBC | awk '{print \$5}' | sort -u"
+          cargo zigbuild --release --target aarch64-unknown-linux-gnu.2.17
+          cp "target/aarch64-unknown-linux-gnu/release/libsweet_search_native.so" sweet-search-native.linux-arm64-gnu.node
+          ls -la sweet-search-native.linux-arm64-gnu.node
+          file sweet-search-native.linux-arm64-gnu.node
 
       - name: Upload addon
         uses: actions/upload-artifact@v4
@@ -289,11 +300,33 @@ jobs:
           fi
 
   # ─────────────────────────────────────────────────────
+  # Portability gate — the linux-x64 addon MUST load on an OLD glibc.
+  # ─────────────────────────────────────────────────────
+  # The smoke-test runs on ubuntu-latest (same glibc the addon is built against),
+  # so it can never catch a glibc-too-new regression. This job loads the built
+  # addon inside Debian 11 (glibc 2.31) — the lowest common server glibc — and
+  # fails the release if it can't load. This is the gate that would have caught
+  # the GLIBC_2.39 breakage shipped in 2.5.2/2.5.3.
+  glibc-portability-check:
+    needs: build-addon
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: addon-linux-x64-gnu
+          path: ./addon
+      - name: Load linux-x64 addon on Debian 11 (glibc 2.31)
+        run: |
+          cp "$(ls ./addon/*.node | head -1)" ./addon/test.node
+          docker run --rm -v "$PWD/addon:/a" node:20-bullseye \
+            node -e "const m=require('/a/test.node'); if (typeof m.NativeTokenizer?.fromFile !== 'function') { console.error('addon loaded but missing NativeTokenizer.fromFile'); process.exit(1); } console.log('OK: linux-x64 addon loads + exports NativeTokenizer on glibc 2.31 (Debian 11)');"
+
+  # ─────────────────────────────────────────────────────
   # Publish (only on tag push, unless skip_publish)
   # ─────────────────────────────────────────────────────
   publish:
     if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_publish != 'true'
-    needs: [smoke-test, build-addon-arm64, pack-verify]
+    needs: [smoke-test, build-addon-arm64, pack-verify, glibc-portability-check]
     runs-on: macos-14
     permissions:
       contents: read
