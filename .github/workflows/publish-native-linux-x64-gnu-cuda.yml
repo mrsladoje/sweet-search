@@ -80,7 +80,7 @@ jobs:
   build-and-publish:
     name: Build + publish CUDA native package
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 300
     container:
       image: nvidia/cuda:12.2.2-devel-ubuntu22.04
     permissions:
@@ -179,14 +179,14 @@ jobs:
           echo '────────────────────────────────────────────────────────────'
 
       - name: Configure npm auth
-        if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_publish != 'true'
+        if: (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && github.event.inputs.skip_publish != 'true'
         run: |
           echo "//registry.npmjs.org/:_authToken=$NODE_AUTH_TOKEN" > ~/.npmrc
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish to npm
-        if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_publish != 'true'
+        if: (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && github.event.inputs.skip_publish != 'true'
         working-directory: packages/native-linux-x64-gnu-cuda
         run: npm publish --access public
         env:
