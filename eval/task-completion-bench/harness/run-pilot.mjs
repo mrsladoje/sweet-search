@@ -189,7 +189,10 @@ function gradeArm(arm, predictions, runId) {
     execFileSync(VENV_PY, ['-m', 'swebench.harness.run_evaluation',
       '--dataset_name', DATASET, '--predictions_path', predPath,
       '--max_workers', '2', '--instance_ids', ...predictions.map(p => p.instance_id),
-      '--run_id', `${runId}-${arm}`, '--cache_level', 'env'],
+      // cache_level 'instance' KEEPS the sweb.eval.x86_64.<id> images so chained
+      // runs (e.g. 3 models back-to-back) reuse them instead of rebuilding mid-run
+      // (a rebuild during a timed run skews wall-time). Disk is cheap on the box.
+      '--run_id', `${runId}-${arm}`, '--cache_level', 'instance'],
       { cwd: predDir, env: { ...process.env, DOCKER_HOST }, stdio: 'inherit', timeout: 1800000 });
   } catch (e) { console.error(`[grade ${arm}] harness error: ${e.message}`); }
   // swebench writes <model>.<run_id>.json in cwd
