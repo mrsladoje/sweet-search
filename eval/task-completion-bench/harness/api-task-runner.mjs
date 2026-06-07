@@ -37,6 +37,10 @@ const PRICES = {
   'deepseek-v4-flash': { in: 0.28, cacheHit: 0.028, out: 0.42 },
   'deepseek-v4-pro':   { in: 0.55, cacheHit: 0.055, out: 1.65 },
   'minimax/minimax-m3': { in: 0.60, cacheHit: 0.06, out: 2.40 },
+  // Variance-smoke candidate models (OpenRouter list prices, 2026-06-07).
+  'minimax/minimax-m2.7': { in: 0.30, cacheHit: 0.03, out: 1.20 },
+  'xiaomi/mimo-v2.5-pro': { in: 0.435, cacheHit: 0.0036, out: 0.87 },
+  'z-ai/glm-5.1':         { in: 0.98, cacheHit: 0.182, out: 3.08 },
 };
 const DEFAULT_PRICE = PRICES['deepseek-v4-pro'];
 

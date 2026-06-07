@@ -27,6 +27,15 @@ import { runTask } from './api-task-runner.mjs';
 // index. SWEET_SEARCH_WATCH=0 disables the fs watcher; SWEET_SEARCH_RECONCILE_SCAN=0
 // disables the dirty-scan reconciler; the huge interval is belt-and-suspenders in
 // case any reconcile path is still reached.
+// THE load-bearing one: RECONCILE_V2=0 makes maintainer-launcher.mjs SKIP the
+// reconcile maintainer launch entirely (reconcileEnablement opt-out). WATCH=0 /
+// RECONCILE_SCAN=0 only tune the maintainer's behavior — they do NOT stop it
+// spawning, so without RECONCILE_V2=0 the ss-* server still launches the
+// maintainer, which reconciles the agent's mid-run edits into the index (drift,
+// poisoning the per-arm/per-task comparison). Verified 2026-06-07: with
+// RECONCILE_V2=0 the index is byte-identical before/after an edit, 0 maintainer
+// procs, and the in-memory server returns 0 hits for freshly-added code.
+process.env.SWEET_SEARCH_RECONCILE_V2 = '0';
 process.env.SWEET_SEARCH_WATCH = '0';
 process.env.SWEET_SEARCH_RECONCILE_SCAN = '0';
 process.env.SWEET_SEARCH_RECONCILE_INTERVAL_MS = '2147483647';
