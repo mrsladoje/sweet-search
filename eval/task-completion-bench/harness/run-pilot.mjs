@@ -52,7 +52,9 @@ const MODEL = process.env.MODEL || 'deepseek-v4-pro';
 const PROVIDER = process.env.PROVIDER || 'deepseek';
 const CONCURRENCY = Math.max(1, +(process.env.CONCURRENCY || 4));
 const REPS = +(process.env.REPS || 1);
-const INSTANCES = (process.env.INSTANCES || 'pallets__flask-4992').split(',').map(s => s.trim()).filter(Boolean);
+// In SR mode, INSTANCES defaults to ALL ids in the materialized task file (set
+// after loadTasks); explicit INSTANCES still subsets. Lite mode keeps its default.
+let INSTANCES = (process.env.INSTANCES || (process.env.TASKS_FILE ? '' : 'pallets__flask-4992')).split(',').map(s => s.trim()).filter(Boolean);
 const CACHE = path.join(BENCH, 'tasks/_lite-cache.json');
 // Checkouts live under $HOME (colima shares $HOME into the VM, NOT /tmp) so the
 // swebench image can bind-mount them for run_tests. Still outside our project
@@ -60,7 +62,30 @@ const CACHE = path.join(BENCH, 'tasks/_lite-cache.json');
 const EVAL_HOME = path.join(process.env.HOME, '.ss-eval');
 // swebench image naming: instance_id `a__b-N` → `a_1776_b-N`, arch x86_64.
 const imageNameFor = (id) => `swebench/sweb.eval.x86_64.${id.replace('__', '_1776_')}:latest`;
-function ensureImage(id) {
+const shq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";  // single-quote for bash -c
+
+// --- SWE-rebench mode --- When TASKS_FILE points to a materialized full-spec
+// JSON (select/.cache/tasks_full_*.json), tasks come from SWE-rebench and grading
+// uses SWE-rebench's eval.py (20-language parsers) instead of the swebench-Lite
+// path. Image = each task's own image_name (docker pull); workdir = the repo dir
+// inside the image (V2 = /<basename>, V1 leaderboard = /testbed; stamped per task).
+const TASKS_FILE = process.env.TASKS_FILE || '';
+const SR_MODE = !!TASKS_FILE;
+const SR_EVAL_DIR = process.env.SR_EVAL_DIR || '/root/swe-rebench-tools/SWE-rebench-V2';
+const taskById = new Map(); // instance_id -> full spec (populated by loadTasks in SR mode)
+
+function ensureImage(t) {
+  const id = typeof t === 'string' ? t : t.instance_id;
+  if (SR_MODE) {
+    const img = t.image_name;
+    if (!img) throw new Error(`ensureImage: SR task ${id} has no image_name`);
+    const ok = () => { try { execFileSync('docker', ['image', 'inspect', img], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore' }); return true; } catch { return false; } };
+    if (!ok()) {
+      try { execFileSync('docker', ['pull', img], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 1800000 }); } catch { /* loud check below */ }
+      if (!ok()) throw new Error(`ensureImage: docker pull failed for ${img} (${id})`);
+    }
+    return img;
+  }
   const img = imageNameFor(id);
   const have = () => { try { execFileSync('docker', ['image', 'inspect', img], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore' }); return true; } catch { return false; } };
   if (have()) return img;
@@ -79,7 +104,33 @@ function ensureImage(id) {
   return img;
 }
 // One-shot test runner: pytest in the real env, host checkout bind-mounted (live edits).
-function makeRunTests(image, checkoutDir) {
+function makeRunTests(image, checkoutDir, t) {
+  if (SR_MODE) {
+    // Run the repo's canonical suite (install_config.test_cmd) on the agent's
+    // LIVE edits: apply the agent's current diff into the image's baked repo
+    // (deps preserved) at the SWE-rebench workdir. NO gold test_patch — the
+    // hidden FAIL_TO_PASS tests are never exposed to the agent (leakage guard).
+    return async () => {
+      const workdir = t.workdir || `/${t.repo.split('/')[1]}`;
+      const testScript = [].concat(t.install_config?.test_cmd || []).join(' && ');
+      if (!testScript) return '[run_tests] no test_cmd for this task';
+      let diff = '';
+      // NON-destructive: `git diff HEAD` shows the agent's tracked-file edits
+      // WITHOUT touching the index. (A prior `git add -A` here STAGED the edits,
+      // so the later finalPatch `git diff` (unstaged) came back empty → 0-hunk
+      // predictions — matching api-task-runner's finalPatch, which also uses `git diff`.)
+      try { diff = execSync(`git -C ${checkoutDir} diff HEAD -- . ':(exclude).sweet-search'`, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); } catch { /* */ }
+      const pdir = `${checkoutDir}__rt`;
+      try {
+        rmSync(pdir, { recursive: true, force: true }); mkdirSync(pdir, { recursive: true });
+        writeFileSync(path.join(pdir, 'agent.diff'), diff || '');
+        const script = `cd ${workdir} && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout 300 bash -c ${shq(testScript)} 2>&1 | tail -60`;
+        const out = execSync(`docker run --rm --network host -v ${pdir}:/patch:ro ${image} bash -c ${shq(script)}`, { env: { ...process.env, DOCKER_HOST }, encoding: 'utf8', timeout: 360000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+        return out.slice(0, 8000);
+      } catch (e) { return `[run_tests exit=${e.status ?? 1}]\n${(e.stdout || e.stderr || e.message || '').slice(0, 6000)}`; }
+      finally { try { rmSync(pdir, { recursive: true, force: true }); } catch { /* */ } }
+    };
+  }
   return async (rawArgs) => {
     const args = String(rawArgs || '').replace(/[;&|`$()<>\n]/g, ' ').slice(0, 300);
     try {
@@ -91,6 +142,11 @@ function makeRunTests(image, checkoutDir) {
 }
 
 async function loadTasks() {
+  if (SR_MODE) {
+    const specs = JSON.parse(readFileSync(TASKS_FILE, 'utf8'));
+    for (const s of specs) taskById.set(s.instance_id, s);
+    return specs;
+  }
   if (existsSync(CACHE)) return JSON.parse(readFileSync(CACHE, 'utf8'));
   let all = [];
   for (let off = 0; off < 300; off += 100) {
@@ -182,6 +238,36 @@ function reapRunDir(rundir) {
 function gradeArm(arm, predictions, runId) {
   const predDir = path.join(BENCH, 'results', runId, arm);
   mkdirSync(predDir, { recursive: true });
+  if (SR_MODE) {
+    // Grade via SWE-rebench eval.py (20-language parsers). tasks.json = full
+    // specs (incl gold test_patch); patches.json = agent patches. eval.py pulls
+    // the image, git applies prediction + gold test_patch, runs test_cmd, parses
+    // per-language. items[].passed_match = resolved (FAIL_TO_PASS flip + PASS_TO_PASS hold).
+    // eval.py raises on an empty prediction patch — but an empty patch is simply
+    // UNRESOLVED, so grade only the non-empty ones and count the rest as misses
+    // (one empty patch must not crash the whole grade batch).
+    const nonEmpty = predictions.filter(p => (p.model_patch || '').trim());
+    const specs = nonEmpty.map(p => taskById.get(p.instance_id)).filter(Boolean);
+    if (!specs.length) return { resolved_instances: 0, total_instances: predictions.length, resolved_ids: [] };
+    const tasksPath = path.join(predDir, 'tasks.json');
+    const patchesPath = path.join(predDir, 'patches.json');
+    writeFileSync(tasksPath, JSON.stringify(specs));
+    // eval.py wants --patches as a LIST of {instance_id, patch}, not a dict.
+    const patches = nonEmpty.map(p => ({ instance_id: p.instance_id, patch: p.model_patch }));
+    writeFileSync(patchesPath, JSON.stringify(patches));
+    const reportPath = path.join(predDir, 'report.json');
+    try {
+      execFileSync(VENV_PY, [path.join(SR_EVAL_DIR, 'scripts', 'eval.py'),
+        '--json', tasksPath, '--patches', patchesPath, '--max-workers', '2', '--report-json', reportPath],
+        { cwd: SR_EVAL_DIR, env: { ...process.env, DOCKER_HOST, PYTHONPATH: path.join(SR_EVAL_DIR, 'lib') }, stdio: 'inherit', timeout: 5400000 });
+    } catch (e) { console.error(`[grade ${arm}] eval.py error: ${String(e.message).slice(0, 160)}`); }
+    if (existsSync(reportPath)) {
+      const items = (JSON.parse(readFileSync(reportPath, 'utf8')).items) || [];
+      const resolved_ids = items.filter(r => r.passed_match).map(r => r.instance_id);
+      return { resolved_instances: resolved_ids.length, total_instances: predictions.length, resolved_ids };
+    }
+    return null;
+  }
   const predPath = path.join(predDir, 'preds.jsonl');
   writeFileSync(predPath, predictions.map(p => JSON.stringify(p)).join('\n') + '\n');
   const ids = predictions.map(p => p.instance_id).join(' ');
@@ -204,6 +290,7 @@ function gradeArm(arm, predictions, runId) {
 
 const runId = process.env.RUN_ID || `pilot-${INSTANCES.length}x${REPS}`;
 const all = await loadTasks();
+if (SR_MODE && !INSTANCES.length) INSTANCES = all.map(t => t.instance_id);
 // Strip the YAML frontmatter (run_id/score_*/vault_* metadata) before feeding
 // M++ to the agent — the eval scores must not leak into the system prompt.
 const mppText = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
@@ -276,7 +363,7 @@ async function runOneTask(id) {
     try { golden = await withCheckoutLock(cacheKeyFor(t), () => prepareGolden(t)); }
     catch (e) { console.error(`### ${id} golden FAILED: ${String(e.message).slice(0, 160)} — skip`); return; }
     console.log(`\n### ${id} (${t.repo}) — golden ${golden.source}${golden.idxMs ? ' in ' + (golden.idxMs / 1000).toFixed(0) + 's' : ' (cached)'}`);
-    const image = ensureImage(id);
+    const image = ensureImage(SR_MODE ? t : id);
     // WARM_ONLY: pre-build golden + swebench image, then stop (no agent runs) so
     // the smoke is fast. Used to pre-warm a set of instances up front.
     if (process.env.WARM_ONLY) { console.log(`  warmed golden + image for ${id} (${image})`); return; }
@@ -285,7 +372,7 @@ async function runOneTask(id) {
         const sweet = arm === 'sweet';
         const rundir = makeRunDir(golden.dir, `${id}__${arm}__r${rep}`, sweet);
         try {
-          const runTests = makeRunTests(image, rundir);
+          const runTests = makeRunTests(image, rundir, t);
           const task = { id, repoCheckout: rundir, mppPath: MPP, problem_statement: t.problem_statement };
           if (sweet) warmupRun(rundir); // off-clock: warm this run's server so the measured loop sees no cold start
           const r = await runTask(task, { arm, model: MODEL, apiModel: MODEL, provider: PROVIDER, maxToolCalls: 60, ssBinDir: SS_BIN, mppText, policy: process.env.POLICY, runTests });
