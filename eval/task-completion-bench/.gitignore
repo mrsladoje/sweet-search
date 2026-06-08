@@ -5,3 +5,6 @@ results/
 tasks/_lite-cache.json
 # cached sweet-search indexes (built once per repo@commit) — large/regenerable
 .index-cache/
+
+# materialized full task specs — contain GOLD patches + HIDDEN tests, NEVER commit
+select/.cache/
