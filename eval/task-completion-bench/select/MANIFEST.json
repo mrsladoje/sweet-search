@@ -1,0 +1,97 @@
+{
+  "seed": 42,
+  "N_requested": 200,
+  "N_selected_multilingual": 200,
+  "floor_per_lang": 5,
+  "date_floor": null,
+  "v2": {
+    "name": "nebius/SWE-rebench-V2",
+    "revision": "475dd5e8703bb5fb22dd3c60b5d038b019eba1e0",
+    "kept_after_filters": 23068,
+    "drops": {
+      "quality_not_A": 9011
+    },
+    "pool_by_language": {
+      "c": 131,
+      "clojure": 73,
+      "cpp": 132,
+      "csharp": 138,
+      "dart": 172,
+      "elixir": 299,
+      "go": 4161,
+      "java": 1142,
+      "js": 2884,
+      "julia": 621,
+      "kotlin": 727,
+      "lua": 22,
+      "ocaml": 20,
+      "php": 1027,
+      "python": 5247,
+      "r": 122,
+      "rust": 2505,
+      "scala": 326,
+      "swift": 291,
+      "ts": 3028
+    },
+    "allocation": {
+      "python": 27,
+      "go": 23,
+      "ts": 18,
+      "js": 18,
+      "rust": 16,
+      "java": 10,
+      "php": 9,
+      "kotlin": 8,
+      "julia": 8,
+      "scala": 6,
+      "elixir": 6,
+      "swift": 6,
+      "dart": 6,
+      "csharp": 6,
+      "cpp": 6,
+      "c": 6,
+      "r": 6,
+      "clojure": 5,
+      "lua": 5,
+      "ocaml": 5
+    },
+    "selected_by_language": {
+      "c": 6,
+      "clojure": 5,
+      "cpp": 6,
+      "csharp": 6,
+      "dart": 6,
+      "elixir": 6,
+      "go": 23,
+      "java": 10,
+      "js": 18,
+      "julia": 8,
+      "kotlin": 8,
+      "lua": 5,
+      "ocaml": 5,
+      "php": 9,
+      "python": 27,
+      "r": 6,
+      "rust": 16,
+      "scala": 6,
+      "swift": 6,
+      "ts": 18
+    }
+  },
+  "decontam": {
+    "name": "nebius/SWE-rebench-leaderboard",
+    "revision": "ab4805dae879e4f4ef81bf9e5cf5afa849f7c55b",
+    "months": [
+      "2026_01",
+      "2026_02",
+      "2026_03"
+    ],
+    "per_month": {
+      "2026_01": 48,
+      "2026_02": 57,
+      "2026_03": 110
+    },
+    "N_selected": 215
+  },
+  "criteria": "quality code=='A'; non-empty FAIL_TO_PASS; date_floor; stratified-by-language seeded sample. Orthogonal to sweet-vs-native outcome."
+}
