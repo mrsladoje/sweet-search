@@ -43,26 +43,26 @@
     
   <!-- sky -->
   <rect width="1200" height="400" fill="url(#skyGrad)"/>
-  <!-- clouds (drift gently) -->
+  <!-- clouds (3 shapes, drifting gently) -->
   <g transform="translate(168 56)" fill="#FFFFFF" opacity="0.92">
     <animateTransform attributeName="transform" type="translate" values="0 0;16 0;0 0" keyTimes="0;0.5;1" dur="34s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" additive="sum" begin="0s" repeatCount="indefinite"/>
     <circle cx="0" cy="0" r="19.8"/><circle cx="-21.6" cy="5.4" r="13.5"/><circle cx="21.6" cy="5.4" r="13.5"/><circle cx="-10.8" cy="-9" r="12.6"/><circle cx="11.7" cy="-8.1" r="13.5"/><circle cx="34.2" cy="8.1" r="9"/>
   </g>
   <g transform="translate(452 42)" fill="#FFFFFF" opacity="0.95">
     <animateTransform attributeName="transform" type="translate" values="0 0;-14 0;0 0" keyTimes="0;0.5;1" dur="40s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" additive="sum" begin="0s" repeatCount="indefinite"/>
-    <circle cx="0" cy="0" r="23.1"/><circle cx="-25.2" cy="6.3" r="15.75"/><circle cx="25.2" cy="6.3" r="15.75"/><circle cx="-12.6" cy="-10.5" r="14.7"/><circle cx="13.65" cy="-9.45" r="15.75"/><circle cx="39.9" cy="9.45" r="10.5"/>
+    <circle cx="0" cy="0" r="16"/><circle cx="-30" cy="4" r="12"/><circle cx="28" cy="4" r="13"/><circle cx="-14" cy="-8" r="12"/><circle cx="12" cy="-8" r="13"/><circle cx="46" cy="7" r="9"/><circle cx="-46" cy="7" r="9"/>
   </g>
   <g transform="translate(764 54)" fill="#FFFFFF" opacity="0.9">
     <animateTransform attributeName="transform" type="translate" values="0 0;12 0;0 0" keyTimes="0;0.5;1" dur="28s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" additive="sum" begin="0s" repeatCount="indefinite"/>
-    <circle cx="0" cy="0" r="17.6"/><circle cx="-19.2" cy="4.8" r="12"/><circle cx="19.2" cy="4.8" r="12"/><circle cx="-9.6" cy="-8" r="11.2"/><circle cx="10.4" cy="-7.2" r="12"/><circle cx="30.4" cy="7.2" r="8"/>
+    <circle cx="0" cy="0" r="12.75"/><circle cx="-11.9" cy="4.25" r="9.35"/><circle cx="11.9" cy="4.25" r="9.35"/><circle cx="0" cy="-8.5" r="10.2"/>
   </g>
   <g transform="translate(1040 40)" fill="#FFFFFF" opacity="0.85">
     <animateTransform attributeName="transform" type="translate" values="0 0;-10 0;0 0" keyTimes="0;0.5;1" dur="31s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" additive="sum" begin="0s" repeatCount="indefinite"/>
-    <circle cx="0" cy="0" r="15.4"/><circle cx="-16.8" cy="4.2" r="10.5"/><circle cx="16.8" cy="4.2" r="10.5"/><circle cx="-8.4" cy="-7" r="9.8"/><circle cx="9.1" cy="-6.3" r="10.5"/><circle cx="26.6" cy="6.3" r="7"/>
+    <circle cx="0" cy="0" r="12"/><circle cx="-22.5" cy="3" r="9"/><circle cx="21" cy="3" r="9.75"/><circle cx="-10.5" cy="-6" r="9"/><circle cx="9" cy="-6" r="9.75"/><circle cx="34.5" cy="5.25" r="6.75"/><circle cx="-34.5" cy="5.25" r="6.75"/>
   </g>
   <g transform="translate(612 26)" fill="#FFFFFF" opacity="0.55">
     <animateTransform attributeName="transform" type="translate" values="0 0;8 0;0 0" keyTimes="0;0.5;1" dur="24s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" additive="sum" begin="0s" repeatCount="indefinite"/>
-    <circle cx="0" cy="0" r="11"/><circle cx="-12" cy="3" r="7.5"/><circle cx="12" cy="3" r="7.5"/><circle cx="-6" cy="-5" r="7"/><circle cx="6.5" cy="-4.5" r="7.5"/><circle cx="19" cy="4.5" r="5"/>
+    <circle cx="0" cy="0" r="8.25"/><circle cx="-7.7" cy="2.75" r="6.05"/><circle cx="7.7" cy="2.75" r="6.05"/><circle cx="0" cy="-5.5" r="6.6"/>
   </g>
   <!-- far hills + field -->
   <path d="M0,312 C150,296 290,305 430,301 C570,297 700,308 845,301 C985,295 1100,305 1200,300 L1200,340 L0,340 Z" fill="#B4DCA0"/>
@@ -146,101 +146,134 @@
   <ellipse cx="168" cy="355" rx="70" ry="7.5" fill="#2E5C33" opacity="0.18"/>
   <g transform="translate(88 252)">
     <animateTransform attributeName="transform" type="translate" values="0 0;0 -2;0 0" keyTimes="0;0.5;1" dur="5.3s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" additive="sum" begin="0s" repeatCount="indefinite"/>
-    
     <g>
-      <animateTransform attributeName="transform" type="rotate" values="-3 10 50;3 10 50;-3 10 50" keyTimes="0;0.5;1" dur="6s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" begin="0s" repeatCount="indefinite"/>
-      <line x1="10" y1="50" x2="-7" y2="20.6" stroke="#B85230" stroke-width="15" stroke-linecap="round"/><line x1="10" y1="50" x2="-7" y2="20.6" stroke="#D77757" stroke-width="12" stroke-linecap="round"/>
-      <line x1="-7" y1="20.6" x2="-29.3" y2="0.5" stroke="#B85230" stroke-width="14" stroke-linecap="round"/><line x1="-7" y1="20.6" x2="-29.3" y2="0.5" stroke="#D77757" stroke-width="11" stroke-linecap="round"/>
-      <line x1="-29.3" y1="0.5" x2="-41.2" y2="-10.2" stroke="#3A3F4A" stroke-width="7" stroke-linecap="round"/>
-      <g transform="translate(-55.3 -22.9)">
-        <circle r="19" fill="#CFE9FF" opacity="0.4"/>
-        <circle r="19" fill="none" stroke="#3A3F4A" stroke-width="5.5"/>
-        <circle r="16" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1.4"/>
-        <line x1="-9" y1="6" x2="5" y2="-8" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.5">
-          <animate attributeName="opacity" values="0.15;0.7;0.15" keyTimes="0;0.5;1" dur="4.5s" begin="0.8s" repeatCount="indefinite"/>
-        </line>
-        <path d="M0,-3.2 L0.9,-0.9 L3.2,0 L0.9,0.9 L0,3.2 L-0.9,0.9 L-3.2,0 L-0.9,-0.9 Z" fill="#5A73DC" opacity="0.7" transform="translate(5 4)">
-          <animate attributeName="opacity" values="0.25;0.85;0.25" keyTimes="0;0.5;1" dur="3.4s" begin="0s" repeatCount="indefinite"/>
-        </path>
+      <animateTransform attributeName="transform" type="rotate" values="0 130 100;0 130 100;-5 130 100;37.6 130 100;37.6 130 100;-4 130 100;0 130 100;0 130 100" keyTimes="0;0.04;0.075;0.155;0.205;0.265;0.3;1" dur="8s" calcMode="spline" keySplines="0 0 1 1;0.4 0 0.6 1;0.35 0 0.5 1;0 0 1 1;0.3 0 0.5 1;0.35 0 0.6 1;0 0 1 1" begin="0s" repeatCount="indefinite"/>
+      
+    <g transform="translate(20 50)">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" values="25;31;25" keyTimes="0;0.5;1" dur="6s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" begin="0s" repeatCount="indefinite"/>
+        <line x1="-14" y1="0" x2="-31" y2="0" stroke="#3A3F4A" stroke-width="7" stroke-linecap="round"/>
+        <g transform="translate(-49 0)">
+          <circle r="19" fill="#CFE9FF" opacity="0.4"/>
+          <circle r="19" fill="none" stroke="#3A3F4A" stroke-width="5.5"/>
+          <circle r="16" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1.4"/>
+          <line x1="-9" y1="6" x2="5" y2="-8" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.5">
+            <animate attributeName="opacity" values="0.15;0.7;0.15" keyTimes="0;0.5;1" dur="4.5s" begin="0.8s" repeatCount="indefinite"/>
+          </line>
+          <path d="M0,-3.2 L0.9,-0.9 L3.2,0 L0.9,0.9 L0,3.2 L-0.9,0.9 L-3.2,0 L-0.9,-0.9 Z" fill="#5A73DC" opacity="0.7" transform="translate(5 4)">
+            <animate attributeName="opacity" values="0.25;0.85;0.25" keyTimes="0;0.5;1" dur="3.4s" begin="0s" repeatCount="indefinite"/>
+          </path>
+        </g>
+        <rect x="-20" y="-10" width="27" height="20" rx="2.5" fill="#D77757"/>
       </g>
-      <circle cx="-29.3" cy="0.5" r="6" fill="#D77757" stroke="#B85230" stroke-width="1.5"/>
     </g>
-    
+      
     <g transform="translate(80 100)">
       <g>
-        <animateTransform attributeName="transform" type="scale" values="1 1;1 1;1.035 0.95;0.985 1.025;1 1;1 1" keyTimes="0;0.575;0.615;0.65;0.685;1" dur="8s" calcMode="spline" keySplines="0 0 1 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0 0 1 1" begin="0s" repeatCount="indefinite"/>
+        <animateTransform attributeName="transform" type="scale" values="1 1;1 1;1.035 0.95;0.985 1.025;1 1;1 1" keyTimes="0;0.625;0.655;0.685;0.715;1" dur="8s" calcMode="spline" keySplines="0 0 1 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0 0 1 1" begin="0s" repeatCount="indefinite"/>
         <g transform="translate(-80 -100)">
           <g>
-            <animateTransform attributeName="transform" type="translate" values="0 0;0 0;0 1.4;0 0;0 1.4;0 0;0 1.4;0 0;0 0" keyTimes="0;0.3;0.345;0.39;0.435;0.48;0.525;0.575;1" dur="8s" additive="sum" begin="0s" repeatCount="indefinite"/>
-            <path d="M20,0 H140 V40 H160 V60 H140 V80 H130 V100 H120 V80 H110 V100 H100 V80 H60 V100 H50 V80 H40 V100 H30 V80 H20 V60 H0 V40 H20 Z" fill="#D77757"/>
-            <!-- cheek bump (chews up in his right cheek = viewer left, chipmunk-style) -->
-            <g transform="translate(19.5 27)">
-              <g>
-                <animateTransform attributeName="transform" type="scale" values="0;0;1;0.3;1;0.3;1;0;0" keyTimes="0;0.3;0.345;0.39;0.435;0.48;0.525;0.575;1" dur="8s" calcMode="spline" keySplines="0 0 1 1;0.3 0 0.5 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0 0 1 1" begin="0s" repeatCount="indefinite"/>
-                <ellipse rx="8" ry="10.5" fill="#D77757"/>
-              </g>
-            </g>
+            <animateTransform attributeName="transform" type="translate" values="0 0;0 0;0 1.4;0 0;0 1.4;0 0;0 1.4;0 0;0 0" keyTimes="0;0.43;0.46;0.49;0.52;0.55;0.58;0.61;1" dur="8s" additive="sum" begin="0s" repeatCount="indefinite"/>
+            <path d="M20,0 H140 V80 H130 V100 H120 V80 H110 V100 H100 V80 H60 V100 H50 V80 H40 V100 H30 V80 H20 Z" fill="#D77757"/>
             <!-- eyes: normal tall quadrants <-> happy arcs after the gulp -->
             <g>
-              <animate attributeName="opacity" values="1;1;0;0;1;1" keyTimes="0;0.615;0.645;0.855;0.885;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="1;1;0;0;1;1" keyTimes="0;0.665;0.695;0.875;0.905;1" dur="8s" begin="0s" repeatCount="indefinite"/>
               <rect x="40" width="10" fill="#20201E">
-                <animate attributeName="y" values="20;20;28.5;28.5;20;20;28.5;20;20" keyTimes="0;0.59;0.61;0.655;0.675;0.92;0.935;0.95;1" dur="8s" begin="0s" repeatCount="indefinite"/>
-                <animate attributeName="height" values="20;20;3;3;20;20;3;20;20" keyTimes="0;0.59;0.61;0.655;0.675;0.92;0.935;0.95;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+                <animate attributeName="y" values="20;20;28.5;28.5;20;20;28.5;20;20" keyTimes="0;0.625;0.645;0.685;0.705;0.92;0.935;0.95;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+                <animate attributeName="height" values="20;20;3;3;20;20;3;20;20" keyTimes="0;0.625;0.645;0.685;0.705;0.92;0.935;0.95;1" dur="8s" begin="0s" repeatCount="indefinite"/>
               </rect>
               <rect x="110" width="10" fill="#20201E">
-                <animate attributeName="y" values="20;20;28.5;28.5;20;20;28.5;20;20" keyTimes="0;0.59;0.61;0.655;0.675;0.92;0.935;0.95;1" dur="8s" begin="0s" repeatCount="indefinite"/>
-                <animate attributeName="height" values="20;20;3;3;20;20;3;20;20" keyTimes="0;0.59;0.61;0.655;0.675;0.92;0.935;0.95;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+                <animate attributeName="y" values="20;20;28.5;28.5;20;20;28.5;20;20" keyTimes="0;0.625;0.645;0.685;0.705;0.92;0.935;0.95;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+                <animate attributeName="height" values="20;20;3;3;20;20;3;20;20" keyTimes="0;0.625;0.645;0.685;0.705;0.92;0.935;0.95;1" dur="8s" begin="0s" repeatCount="indefinite"/>
               </rect>
             </g>
             <g opacity="0" stroke="#20201E" stroke-width="4.2" stroke-linecap="round" fill="none">
-              <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.615;0.645;0.855;0.885;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.665;0.695;0.875;0.905;1" dur="8s" begin="0s" repeatCount="indefinite"/>
               <path d="M38,33 Q45,25 52,33"/>
               <path d="M108,33 Q115,25 122,33"/>
             </g>
-            <!-- mouth: opens for the bite (peeks below the incoming candy) -->
+            <!-- ink cheek bump: food pouched beside the mouth between chomps -->
+            <g transform="translate(100 53)">
+              <g>
+                <animateTransform attributeName="transform" type="scale" values="0;0;0.5;1;0.45;1;0.45;1;0;0" keyTimes="0;0.42;0.445;0.46;0.49;0.52;0.55;0.58;0.62;1" dur="8s" calcMode="spline" keySplines="0 0 1 1;0.3 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0 0 1 1" begin="0s" repeatCount="indefinite"/>
+                <ellipse rx="8.5" ry="7.5" fill="#20201E"/>
+              </g>
+            </g>
+            <!-- mouth: opens to catch the toss, then chews (ink, animated) -->
             <ellipse cx="80" cy="55" rx="7" ry="0.01" fill="#20201E" opacity="0">
-              <animate attributeName="ry" values="0.01;0.01;8;8;0.01;0.01" keyTimes="0;0.165;0.2;0.26;0.295;1" dur="8s" begin="0s" repeatCount="indefinite"/>
-              <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.16;0.19;0.27;0.3;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+              <animate attributeName="ry" values="0.01;0.01;9;9;2.5;6;2.5;6;2.5;6;2.5;2;0.01;0.01" keyTimes="0;0.295;0.315;0.375;0.4;0.43;0.46;0.49;0.52;0.55;0.58;0.61;0.64;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.295;0.31;0.63;0.66;1" dur="8s" begin="0s" repeatCount="indefinite"/>
             </ellipse>
             <!-- smile after the swallow -->
             <path d="M66,49 Q80,61 94,49" stroke="#20201E" stroke-width="4.2" stroke-linecap="round" fill="none" opacity="0">
-              <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.625;0.66;0.845;0.885;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.665;0.7;0.875;0.91;1" dur="8s" begin="0s" repeatCount="indefinite"/>
             </path>
           </g>
         </g>
       </g>
     </g>
-    
-    <g transform="translate(150 50)">
+      
+    <g transform="translate(140 50)">
       <g>
-        <animateTransform attributeName="transform" type="rotate" values="-78.79;-78.79;-73.83;-73.83;-33.6;81.13;69.74;69.74;-33.6;-78.79;-78.79" keyTimes="0;0.035;0.055;0.075;0.135;0.195;0.225;0.27;0.345;0.42;1" dur="8s" calcMode="spline" keySplines="0 0 1 1;0.4 0 0.6 1;0 0 1 1;0.35 0 0.5 1;0.3 0 0.4 1;0.3 0 0.5 1;0 0 1 1;0.4 0 0.5 1;0.25 0 0.5 1;0 0 1 1" begin="0s" repeatCount="indefinite"/>
-        <line x1="0" y1="0" x2="0" y2="36" stroke="#B85230" stroke-width="15" stroke-linecap="round"/><line x1="0" y1="0" x2="0" y2="36" stroke="#D77757" stroke-width="12" stroke-linecap="round"/>
-        <g transform="translate(0 36)">
+        <animateTransform attributeName="transform" type="rotate" values="0;0;25;25;8;8;18;-55;0;0" keyTimes="0;0.04;0.075;0.155;0.205;0.3;0.315;0.345;0.46;1" dur="8s" calcMode="spline" keySplines="0 0 1 1;0.4 0 0.6 1;0 0 1 1;0.3 0 0.6 1;0 0 1 1;0.4 0 0.6 1;0.5 0 0.8 1;0.3 0 0.5 1;0 0 1 1" begin="0s" repeatCount="indefinite"/>
+        <rect x="-7" y="-10" width="27" height="20" rx="2.5" fill="#D77757"/>
+        <g transform="translate(26 0)">
           <g>
-            <animateTransform attributeName="transform" type="rotate" values="79.26;79.26;71.68;71.68;146.82;18.8;37.83;37.83;146.82;79.26;79.26" keyTimes="0;0.035;0.055;0.075;0.135;0.195;0.225;0.27;0.345;0.42;1" dur="8s" calcMode="spline" keySplines="0 0 1 1;0.4 0 0.6 1;0 0 1 1;0.35 0 0.5 1;0.3 0 0.4 1;0.3 0 0.5 1;0 0 1 1;0.4 0 0.5 1;0.25 0 0.5 1;0 0 1 1" begin="0s" repeatCount="indefinite"/>
-            <line x1="0" y1="2" x2="0" y2="34" stroke="#B85230" stroke-width="14" stroke-linecap="round"/><line x1="0" y1="2" x2="0" y2="34" stroke="#D77757" stroke-width="11" stroke-linecap="round"/>
-            <g transform="translate(0 38)">
-              <circle r="6.5" fill="#D77757" stroke="#B85230" stroke-width="1.5"/>
-              <!-- candy appears at the grab, vanishes at the bite -->
-              <g>
-                <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.048;0.06;0.251;0.255;1" dur="8s" begin="0s" repeatCount="indefinite"/>
-                <path d="M-6,0 L-13,-5.5 L-13,5.5 Z" fill="#FF97C2"/>
-                <path d="M6,0 L13,-5.5 L13,5.5 Z" fill="#FF97C2"/>
-                <ellipse rx="6.8" ry="5.4" fill="url(#candyGrad)"/>
-                <ellipse cx="-1.8" cy="-1.6" rx="2.4" ry="1.5" fill="#FFFFFF" opacity="0.65"/>
-              </g>
-            </g>
+            <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.165;0.175;0.333;0.336;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+            <g>
+    <path d="M-5.6,0 L-12.5,-5.2 L-12.5,5.2 Z" fill="#FF97C2"/>
+    <path d="M5.6,0 L12.5,-5.2 L12.5,5.2 Z" fill="#FF97C2"/>
+    <ellipse rx="6.6" ry="5.2" fill="url(#candyGrad)"/>
+    <ellipse cx="-1.7" cy="-1.5" rx="2.2" ry="1.4" fill="#FFFFFF" opacity="0.6"/>
+  </g>
           </g>
         </g>
       </g>
     </g>
+    </g>
+    
+    <g opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.336;0.339;0.378;0.382;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+      <g>
+        <animateTransform attributeName="transform" type="translate" values="163.4 38.7;163.4 38.7;135.3 8.9;107.6 13.7;93.7 29;80 53;80 53" keyTimes="0;0.336;0.347;0.358;0.369;0.38;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+        <g>
+          <animateTransform attributeName="transform" type="rotate" values="0;0;300;300" keyTimes="0;0.336;0.38;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+          <g>
+    <path d="M-5.6,0 L-12.5,-5.2 L-12.5,5.2 Z" fill="#FF97C2"/>
+    <path d="M5.6,0 L12.5,-5.2 L12.5,5.2 Z" fill="#FF97C2"/>
+    <ellipse rx="6.6" ry="5.2" fill="url(#candyGrad)"/>
+    <ellipse cx="-1.7" cy="-1.5" rx="2.2" ry="1.4" fill="#FFFFFF" opacity="0.6"/>
   </g>
-  <!-- candy pile (in front of the reaching claw) -->
+        </g>
+      </g>
+    </g>
+  </g>
+  <!-- candy pile; he visibly takes the top one each cycle -->
   <g>
     <ellipse cx="273" cy="351.5" rx="17" ry="3.2" fill="#2E5C33" opacity="0.2"/>
-    <g transform="translate(264 347.5) rotate(-14)"><path d="M-5.6,0 L-12,-5 L-12,5 Z" fill="#A78BFA"/><path d="M5.6,0 L12,-5 L12,5 Z" fill="#A78BFA"/><ellipse rx="6.2" ry="4.9" fill="#A78BFA"/><ellipse cx="-1.6" cy="-1.4" rx="2" ry="1.2" fill="#FFFFFF" opacity="0.55"/></g>
-    <g transform="translate(279 347) rotate(12)"><path d="M-5.6,0 L-12,-5 L-12,5 Z" fill="#3FD08F"/><path d="M5.6,0 L12,-5 L12,5 Z" fill="#3FD08F"/><ellipse rx="6.2" ry="4.9" fill="#3FD08F"/><ellipse cx="-1.6" cy="-1.4" rx="2" ry="1.2" fill="#FFFFFF" opacity="0.55"/></g>
-    <g transform="translate(271 341) rotate(-4)"><path d="M-5.6,0 L-12,-5 L-12,5 Z" fill="#FF97C2"/><path d="M5.6,0 L12,-5 L12,5 Z" fill="#FF97C2"/><ellipse rx="6.4" ry="5" fill="url(#candyGrad)"/><ellipse cx="-1.6" cy="-1.5" rx="2.1" ry="1.3" fill="#FFFFFF" opacity="0.6"/></g>
+    <g transform="translate(264 347.5) rotate(-14)"><g transform="scale(0.94)">
+    <path d="M-5.6,0 L-12.5,-5.2 L-12.5,5.2 Z" fill="#FF97C2"/>
+    <path d="M5.6,0 L12.5,-5.2 L12.5,5.2 Z" fill="#FF97C2"/>
+    <ellipse rx="6.6" ry="5.2" fill="#A78BFA"/>
+    <ellipse cx="-1.7" cy="-1.5" rx="2.2" ry="1.4" fill="#FFFFFF" opacity="0.55"/>
+  </g></g>
+    <g transform="translate(279 347) rotate(12)"><g transform="scale(0.94)">
+    <path d="M-5.6,0 L-12.5,-5.2 L-12.5,5.2 Z" fill="#FF97C2"/>
+    <path d="M5.6,0 L12.5,-5.2 L12.5,5.2 Z" fill="#FF97C2"/>
+    <ellipse rx="6.6" ry="5.2" fill="#3FD08F"/>
+    <ellipse cx="-1.7" cy="-1.5" rx="2.2" ry="1.4" fill="#FFFFFF" opacity="0.55"/>
+  </g></g>
+    <g transform="translate(271 341) rotate(-4)">
+      <g>
+        <animate attributeName="opacity" values="1;1;0;0;1;1" keyTimes="0;0.16;0.17;0.93;0.96;1" dur="8s" begin="0s" repeatCount="indefinite"/>
+        <g>
+    <path d="M-5.6,0 L-12.5,-5.2 L-12.5,5.2 Z" fill="#FF97C2"/>
+    <path d="M5.6,0 L12.5,-5.2 L12.5,5.2 Z" fill="#FF97C2"/>
+    <ellipse rx="6.6" ry="5.2" fill="url(#candyGrad)"/>
+    <ellipse cx="-1.7" cy="-1.5" rx="2.2" ry="1.4" fill="#FFFFFF" opacity="0.6"/>
+  </g>
+      </g>
+    </g>
   </g>
     
   <ellipse cx="1036" cy="356" rx="62" ry="7" fill="#2E5C33" opacity="0.18"/>
@@ -284,25 +317,29 @@
       
   <g transform="translate(-4 -96)">
     <g>
-      <animateTransform attributeName="transform" type="rotate" values="-7;-4.4;-7" keyTimes="0;0.5;1" dur="0.55s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" begin="0s" repeatCount="indefinite"/>
+      <animateTransform attributeName="transform" type="rotate" values="-2.5;-0.2;-2.5" keyTimes="0;0.5;1" dur="0.55s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" begin="0s" repeatCount="indefinite"/>
       <g transform="scale(4.9) translate(-12 -12)">
         <path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388z" fill="url(#coxGrad)"/>
-        <!-- official >_ : chevron = profile eye, dash = mouth -->
-        <g transform="translate(8.85 11.93)"><g>
-          <animateTransform attributeName="transform" type="scale" values="1 1;1 1;1 0.12;1 1;1 1" keyTimes="0;0.9;0.93;0.96;1" dur="3.7s" begin="0s" repeatCount="indefinite"/>
-          <g transform="translate(-8.85 -11.93)"><path d="M8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#FFFFFF"/></g>
+        <!-- eyes: official chevron + its mirror (>_<), with a squeezy blink -->
+        <g transform="translate(12 11.93)"><g>
+          <animateTransform attributeName="transform" type="scale" values="1 1;1 1;1 0.25;1 1;1 1" keyTimes="0;0.9;0.93;0.96;1" dur="3.7s" begin="0s" repeatCount="indefinite"/>
+          <g transform="translate(-12 -11.93)">
+            <path d="M8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#FFFFFF"/>
+            <path d="M8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#FFFFFF" transform="matrix(-1 0 0 1 24 0)"/>
+          </g>
         </g></g>
-        <g transform="translate(14.36 14.55)"><g>
+        <!-- mouth: official dash recentred under the eyes; chews while typing -->
+        <g transform="translate(-2.36 1.8)"><g transform="translate(14.36 14.55)"><g>
           <animateTransform attributeName="transform" type="scale" values="1 1;1 1;1 0.55;1 1;1 0.62;1 1;1 1" keyTimes="0;0.55;0.62;0.69;0.76;0.83;1" dur="2.8s" begin="0s" repeatCount="indefinite"/>
           <g transform="translate(-14.36 -14.55)"><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636z" fill="#FFFFFF"/></g>
-        </g></g>
+        </g></g></g>
         <!-- chocolate-smudged mouth -->
         <g fill="#6B4226">
-          <ellipse cx="12.05" cy="15.7" rx="0.85" ry="0.62" opacity="0.92"/>
-          <ellipse cx="17.15" cy="14.4" rx="0.7" ry="0.55" opacity="0.88"/>
-          <ellipse cx="14.6" cy="16.35" rx="1.05" ry="0.6" fill="#8A5A33" opacity="0.9"/>
-          <ellipse cx="13.35" cy="13.2" rx="0.45" ry="0.35" opacity="0.8"/>
-          <ellipse cx="16.2" cy="16.05" rx="0.55" ry="0.42" opacity="0.85"/>
+          <ellipse cx="9.7" cy="17.1" rx="0.8" ry="0.6" opacity="0.92"/>
+          <ellipse cx="14.4" cy="17.4" rx="0.7" ry="0.55" opacity="0.88"/>
+          <ellipse cx="12.1" cy="18.1" rx="1.0" ry="0.58" fill="#8A5A33" opacity="0.9"/>
+          <ellipse cx="8.9" cy="15.6" rx="0.45" ry="0.35" opacity="0.8"/>
+          <ellipse cx="15.3" cy="15.9" rx="0.5" ry="0.4" opacity="0.85"/>
         </g>
       </g>
     </g>
