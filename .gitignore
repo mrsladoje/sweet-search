@@ -151,6 +151,8 @@ bun.lock
 .swarm/
 .mcp.json
 CLAUDE.md.backup
+CLAUDE.md
+AGENTS.md
 
 # Codex local configuration
 .codex/
