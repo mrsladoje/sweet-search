@@ -84,7 +84,8 @@ function evalAt(values, keyTimes, dur, begin, discrete) {
 function anim(attr, values, keyTimes, dur, opts = {}) {
   const begin = opts.begin || 0;
   if (FREEZE) return `<set attributeName="${attr}" to="${evalAt(values, keyTimes, dur, begin, opts.discrete)}"/>`;
-  const mode = opts.discrete ? ' calcMode="discrete"' : '';
+  const mode = opts.discrete ? ' calcMode="discrete"'
+    : opts.splines ? ` calcMode="spline" keySplines="${opts.splines.join(';')}"` : '';
   return `<animate attributeName="${attr}" values="${values.join(';')}" keyTimes="${keyTimes.join(';')}" dur="${dur}s"${mode} begin="${begin}s" repeatCount="indefinite"/>`;
 }
 
@@ -94,7 +95,8 @@ function animT(type, values, keyTimes, dur, opts = {}) {
     if (opts.additive) return '';
     return `<animateTransform attributeName="transform" type="${type}" values="${evalAt(values, keyTimes, dur, begin, opts.discrete)}" dur="1s" fill="freeze" repeatCount="1"/>`;
   }
-  const mode = opts.discrete ? ' calcMode="discrete"' : '';
+  const mode = opts.discrete ? ' calcMode="discrete"'
+    : opts.splines ? ` calcMode="spline" keySplines="${opts.splines.join(';')}"` : '';
   const add = opts.additive ? ' additive="sum"' : '';
   return `<animateTransform attributeName="transform" type="${type}" values="${values.join(';')}" keyTimes="${keyTimes.join(';')}" dur="${dur}s"${mode}${add} begin="${begin}s" repeatCount="indefinite"/>`;
 }
@@ -183,14 +185,12 @@ function pixelPanelRects(x, y, w, h, fill) {
 }
 
 function bannerPanel() {
+  // fully pixel title (flat bands, flat glyphs, hard pixel shadow) — but the
+  // two light effects (white shine + rainbow shimmer) glide smoothly across
   const bands = [
     [0, 0.13, C.band0], [0.13, 0.30, C.band1], [0.30, 0.44, C.band2],
     [0.44, 0.56, C.band4], [0.56, 0.70, C.band2], [0.70, 0.87, C.band1], [0.87, 1, C.band0],
   ].map(([a, b, col]) => [PANEL.x + snap(a * PANEL.w), PANEL.y, snap((b - a) * PANEL.w) + CELL, PANEL.h, col]);
-  // banded fill clipped by drawing the stepped-corner sky patches on top
-  const corner = (cx, cy, sx, sy) => RX([
-    [cx, cy, 8, 4, 'CUT'], [cx, cy + (sy > 0 ? 4 : -0), 4, 4, 'CUT'],
-  ]);
   return `
   <g>
     ${animT('translate', ['0 0', '0 -4', '0 0'], [0, 0.5, 1], 7, { discrete: true })}
@@ -199,12 +199,12 @@ function bannerPanel() {
     <g fill="${C.glyphShadow}">${artRuns(0, 4)}</g>
     <g fill="${C.glyph}">${artRuns()}</g>
     <g clip-path="url(#artClip)">
-      <rect x="0" y="${f(BY)}" width="128" height="${artH}" fill="#FFFFFF" opacity="0.30">
-        ${anim('x', Array.from({ length: 13 }, (_, i) => snap(BX - 160 + (i / 12) * (artW + 280))).concat([snap(BX + artW + 120)]), Array.from({ length: 13 }, (_, i) => f(0.30 + (i / 12) * 0.125)).map((v, i, a) => i === 0 ? 0 : v).concat([1]).map((v, i) => i === 0 ? 0 : v), 19, { begin: 1.6, discrete: true })}
+      <rect x="0" y="${f(BY - 8)}" width="130" height="${artH + 16}" fill="url(#sweepGrad)" opacity="0.38" transform="skewX(-18)">
+        ${anim('x', [f(BX - 170), f(BX - 170), f(BX + artW + 90), f(BX + artW + 90)], [0, 0.3, 0.425, 1], 19, { begin: 1.6 })}
       </rect>
-      <rect x="0" y="${f(BY)}" width="224" height="${artH}" fill="url(#candySweepGrad)" opacity="0" style="mix-blend-mode:screen">
+      <rect x="0" y="${f(BY - 8)}" width="240" height="${artH + 16}" fill="url(#candySweepGrad)" opacity="0" transform="skewX(-18)" style="mix-blend-mode:screen">
         ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.512, 0.52, 0.585, 0.6, 1], 23)}
-        ${anim('x', Array.from({ length: 12 }, (_, i) => snap(BX - 260 + (i / 11) * (artW + 320))), Array.from({ length: 12 }, (_, i) => f(0.51 + (i / 11) * 0.085)).map((v, i) => i === 0 ? 0 : v), 23, { discrete: true })}
+        ${anim('x', [f(BX - 280), f(BX - 280), f(BX + artW + 60), f(BX + artW + 60)], [0, 0.51, 0.595, 1], 23)}
       </rect>
     </g>
   </g>`;
@@ -835,6 +835,9 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" widt
       <stop offset="60%" stop-color="${C.candyGold}" stop-opacity="1"/>
       <stop offset="85%" stop-color="${C.candy}" stop-opacity="1"/>
       <stop offset="100%" stop-color="${C.candy}" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="sweepGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.85"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
     </linearGradient>
     <clipPath id="artClip">${artRuns()}</clipPath>
     <clipPath id="panelClip">${pixelPanelRects(PANEL.x, PANEL.y, PANEL.w, PANEL.h, 'x').replace(/fill="x"/g, '')}</clipPath>
