@@ -99,7 +99,7 @@ What's already measured and written up in-repo:
 |------|--------|--------|
 | Indexed grep vs ripgrep | **10.2× faster** at the median (8.5–17.7× across 5 repos, 353 queries, 1 ms p50 — identical match counts on every query) | [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md) |
 | Warm query latency (native CLI) | **2.9 ms** warm · 108 ms cold | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
-| MaxSim rerank kernels | **47×** (native Rust) / **16×** (WASM SIMD) vs baseline JS | [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md) |
+| MaxSim rerank kernels | **1.26 s → 27 ms** for a 231-candidate pass (47× native Rust; 16× WASM SIMD) | [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md) |
 | HNSW tuning for code | **−33%** search p50, **+5.9 pp** recall@200 | [`docs/HNSW_APPROACH.md`](docs/HNSW_APPROACH.md) |
 | Indexing memory | peak JS heap **785 MB → 213 MB** | [`docs/DISK_FLUSHING_STRATEGY.md`](docs/DISK_FLUSHING_STRATEGY.md) |
 | CoreML cascade (M3 Max) | **18% faster** full indexing vs the Metal baseline | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
@@ -109,124 +109,153 @@ What's already measured and written up in-repo:
 ## 🧰 The Six Tools
 
 Six small tools, one shared index. Each returns ranked, deduplicated, token-budgeted output designed
-to be *consumed by an agent* — not a wall of matches to scroll through.
+to be *consumed by an agent* — a useful answer, not a wall of matches to scroll through.
 
 | Tool | What you give it | What you get back |
 |------|------------------|-------------------|
 | `ss-search` | a natural-language query | ranked, **self-contained code blocks** |
 | `ss-grep` | an exact regex/literal | `file:line` hits, **ranked** |
-| `ss-find` | a regex **+** a query | regex matches, **semantically re-ranked** |
+| `ss-find` | a regex **+** a query | regex matches, **semantically re-ranked, as code blocks** |
 | `ss-semantic` | a file **+** a question | just the **relevant spans** of that file |
 | `ss-trace` | a symbol | **callers + callees + impact**, in one call |
 | `ss-read` | a file (± line range) | exact bytes **+ symbol metadata** |
 
-### `ss-search` — ask in English, get code
+### `ss-search` — the full retrieval stack in one call
 
 ```bash
 ss-search "how are websocket reconnects handled?" -k 5
 ```
 
-Returns ranked code blocks that are *self-contained*: whole functions and classes with their imports and
-header context attached, so the agent doesn't need a follow-up read.
+One query fires the whole pipeline:
+
+1. **CatBoost query router** — a 498-tree gradient-boosted classifier compiled to WASM decides lexical vs hybrid from 50 single-pass features (camelCase/snake_case decomposition, CJK density, path shape…) in microseconds, with a low-confidence reject option that falls back to max-recall hybrid. Real file paths short-circuit straight to lexical.
+2. **Dual retrieval** — **BM25F** over field-weighted FTS5 (a hit on a function's *name* outweighs one buried in its body 10:1) runs in parallel with a **three-stage ANN cascade**: binary HNSW (Hamming distance over 64-byte binarized vectors, candidates in ~100 µs) → INT8 rescoring → full-precision float32 rescoring from a memory-mapped sidecar.
+3. **Convex-combination fusion** with route-specific weights and quantile normalization — and an automatic **RRF** fallback when score distributions degenerate.
+4. **Identifier-Anchored Retrieval (IAR)** — if your English mentions a real symbol, an exact-name lookup against the code graph injects that entity into the pool, even when the encoder ranked something tangential higher.
+5. **Intent-aware reranking** — docs/tests/config demoted when you want implementation; log-scaled call-site reference boosts surface the function everyone actually calls.
+6. **Adaptive graph expansion** — typed-edge walks (imports / extends / calls / uses) 1–2 hops out along the AST-derived knowledge graph, with intent-selected edge types, PathRAG-style flow-threshold pruning, and degree normalization so hub entities can't dominate.
+7. **Late-interaction rerank** — ColBERT-style per-token MaxSim over the quantized token index, on kernels that took a 231-candidate scoring pass from **1.26 s to 27 ms**.
+8. **Answer packaging** — near-duplicate siblings collapse to the best-matching member, MMR balances diversity, and entity-aware expansion emits *self-contained* blocks (whole functions with imports, docstrings, decorators) under an auto-selected **3k / 8k / 12k token budget** driven by post-ranking signals like top-1 dominance.
 
 <details>
-<summary><b>Deep dive</b></summary>
+<summary><b>More</b></summary>
 
-- **Routing:** a CatBoost model classifies every query (lexical / semantic / hybrid) in microseconds and sets the fusion weights; an uncertainty "reject option" falls back to maximum-recall hybrid.
-- **Self-contained results:** entity-aware expansion picks the right packaging per hit — the full entity when it fits, a "symbol sandwich" (signature + relevant body + closing context) when it doesn't, plus leading trivia (docstrings, decorators) and minimal import context.
-- **Adaptive token budgets:** output auto-escalates between three tiers — `preview` (3k tokens), `full` (8k), `xl` (12k) — based on post-ranking signals like top-1 dominance and result size. Thresholds are deliberately tight: the expensive tiers fire on roughly 1–5% of queries, so the default case stays cheap.
-- **Graph expansion:** results are expanded along the code knowledge graph (imports/extends/calls/uses edges) so multi-file answers surface related code the encoder alone would miss.
+- The expensive 8k/12k tiers are tuned to fire on roughly 1–5% of queries — the default case stays cheap. Force a tier with `--full` / `--xl`, or a mode with `--mode lexical|semantic|hybrid|pattern`.
 - Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 </details>
 
-### `ss-grep` — grep, but it already knows your codebase
+### `ss-grep` — grep, minus every wasted millisecond
 
 ```bash
 ss-grep "parseRetryAfter" -k 10
 ```
 
-Exact regex search over a **pre-built sparse n-gram index** — it skips files that provably can't match,
-then verifies with a real regex engine. Hits come back ranked and scored, so an agent can trust the top
-one and stop.
+**10.2× faster than ripgrep end-to-end at the median** — measured across **353 realistic queries on 5 real repos**
+(range 8.5–17.7× per repo, 1 ms p50), with **identical match counts on every single query**. Three things buy that:
+
+- **A sparse n-gram index** (inspired by [Cursor's fast-regex-search](https://cursor.com/blog/fast-regex-search) and GitHub's Blackbird): instead of a fixed trigram table, gram boundaries adapt to *your* codebase's character-pair frequencies, so common trigrams get absorbed into longer, more selective grams.
+- **Regex-AST literal extraction + SIMD intersection**: required substrings are pulled from the pattern's syntax tree, posting lists are intersected with NEON/SSE2 block merges (galloping search for skewed sizes), and only the files that *can* match — typically 0.1–5% of the corpus — see the real regex.
+- **Fully in-process**: verification runs on Rust's regex crate with Rayon across all cores, inside the warm daemon, in a single NAPI call. No child process is ever spawned — zero fork/exec, zero pipe I/O, zero JSON re-parsing.
+
+Hits come back **ranked and scored**, so an agent can trust the top one and stop.
 
 <details>
-<summary><b>Deep dive</b></summary>
+<summary><b>More</b></summary>
 
-- **Sparse n-grams, not fixed trigrams:** the index learns per-codebase character-pair frequencies, so common trigrams get absorbed into longer, more selective grams (the GitHub-Blackbird idea, tuned to *your* repo).
-- **Literal extraction from the regex AST:** required substrings are extracted from the pattern, posting lists intersected with SIMD (NEON on Apple Silicon, SSE2 on x86, galloping search for skewed list sizes), and only the surviving candidate files — typically 0.1–5% of the corpus — get the full regex.
-- **In-process verification:** no ripgrep subprocess, no JSON pipe — Rust's regex crate runs across all cores via Rayon and returns structured results straight over NAPI.
-- **Measured:** 10.2× faster than ripgrep at the median (range 8.5–17.7× across 5 repos, 353 queries, 1 ms p50), with identical match counts on every query. Methodology in [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md).
+- Full methodology, per-repo table, and the optimization log: [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md).
+- Regexes with no extractable literals fall back to native grep over the indexed file set; fixed-string and glob queries use a ripgrep fallback.
 
 </details>
 
-### `ss-find` — grep's precision, ranked by meaning
+### `ss-find` — ColGrep, on a faster engine
 
 ```bash
 ss-find "token refresh logic" --regex "refresh.*[Tt]oken"
 ```
 
-Runs the regex to generate exact candidates, then **re-ranks them semantically** with per-token MaxSim
-against your query. The match you actually meant floats to the top.
+Inspired by LightOn's [ColGrep](https://github.com/lightonai/next-plaid/tree/main/colgrep) — regex precision,
+semantically ranked — but rebuilt on our own substrate:
+
+- The regex stage runs on the **same indexed sparse-gram engine as `ss-grep`** (in-process, no subprocess), not a filesystem scan.
+- The ranking stage scores candidates with **per-token MaxSim over pre-indexed late-interaction embeddings** — no model inference over documents at query time — on our custom kernels: native Rust + Rayon takes a 231-candidate MaxSim pass from **1.26 s down to 27 ms** (WASM SIMD fallback at 16×).
+- Regex tokens are merged into the semantic query, so the ranking sees both what you typed and what you matched.
+- Like `ss-search`, it answers with **ranked, self-contained code snippets** — not bare `file:line` — so the find *and* the read collapse into one tool call. In our 30-question agent-workflow eval that eliminated **every follow-up read** and cut tokens **25.4%** vs a grep + read workflow, at quality parity (gap of 0.01 on a 5-point scale).
+- On the 60-query pattern benchmark, MaxSim ranking lifts MRR@10 to **0.45** vs **0.11** for raw grep ordering — 4× more likely the right hit lands on top.
 
 <details>
-<summary><b>Deep dive</b></summary>
+<summary><b>More</b></summary>
 
-- This is the ColGrep pattern: regex candidate generation through the sparse-gram engine, then late-interaction MaxSim scoring over pre-indexed token embeddings — no model inference over documents at query time.
-- Regex tokens are merged into the semantic query, so the ranking sees both what you typed and what you matched.
-- Requires the late-interaction index (built by default; `--li-model none` disables it).
+- Requires the late-interaction index (built by default; `--li-model none` disables pattern mode).
+- Also available as `sweet-search --mode pattern` and via the `search` MCP tool's `regex` argument.
 
 </details>
 
-### `ss-semantic` — you know the file, not the line
+### `ss-semantic` — hybrid retrieval, scoped to one file
 
 ```bash
 ss-semantic src/auth/session.ts "where does the cookie get its expiry?"
 ```
 
-Returns only the spans of that file relevant to your question — fused from lexical, exact-symbol, and
-late-interaction retrieval, then **re-read from disk** so you always get filesystem ground truth.
+You know the file; this finds the lines. Every indexed chunk of the file is scored by **three independent
+signals** — BM25-style lexical term match, exact symbol-name match (weighted 1.5×), and ColBERT-style
+MaxSim over late-interaction token embeddings — fused with **Reciprocal Rank Fusion** (k=60), with
+symbol-less fragment chunks demoted 0.85× so real definitions win ties. The top spans are then
+**re-read from disk** (±2 context lines, overlapping spans merged), so the answer is filesystem ground
+truth even mid-edit; if the file is newer than its index entry you get an explicit staleness warning.
+
+The useful answer: just the relevant spans with line numbers — not the whole file through your context window.
 
 <details>
-<summary><b>Deep dive</b></summary>
+<summary><b>More</b></summary>
 
-- Three retrieval signals per chunk — lexical term match, exact symbol-name match, ColBERT-style MaxSim — fused with Reciprocal Rank Fusion, then LI-re-ranked.
-- Exact lines are re-read from disk with ±2 context lines and overlapping spans merged; if the file is newer than the index you get an explicit staleness warning, and unindexed files fall back to a plain read.
+- Unindexed files degrade gracefully to a plain read. Defaults: top 5 spans, relevance threshold 0.4, 8k-char cap.
 - Also available as `sweet-search read-semantic` and the `read-semantic` MCP tool.
 
 </details>
 
-### `ss-trace` — who calls this, what does it call, what breaks?
+### `ss-trace` — graph algorithms, not grep guesswork
 
 ```bash
 ss-trace processOrder --in src/orders/service.py
 ```
 
-One call returns a symbol's **callers, callees, and transitive impact paths**, ranked by structural
-importance — not by string frequency.
+One call returns a symbol's **callers, callees, and transitive impact paths** from the AST-derived code
+graph (entities + typed `calls`/`imports`/`extends`/`uses` edges, persisted in SQLite at index time).
+Ranking fuses three signals:
+
+- **Query-time Personalized PageRank** via Forward Push — a *local* algorithm that spreads mass directionally from your target symbol and touches only the neighborhood it reaches, never the whole graph;
+- **Index-time edge-weighted global PageRank** (damping 0.85), precomputed into a `page_rank` column — a function called from five sites carries five units of mass, and it costs *zero* at query time;
+- **Structural heuristics** — relationship type, depth, exported-API status, fan-in — with penalties for test-only and external paths.
+
+Because the graph is prebuilt, the global ranking is precomputed, and the personalized walk is local,
+a full three-section trace costs milliseconds. The relation word (`callers` / `callees` / `impact`)
+re-weights how the response token budget is split; `--in` disambiguates duplicate names; `--depth`
+bounds impact traversal (1–4).
 
 <details>
-<summary><b>Deep dive</b></summary>
+<summary><b>More</b></summary>
 
-- Importance fuses query-time **Personalized PageRank** (Forward Push from your target over the call graph) with an index-time edge-weighted static PageRank and structural heuristics (relationship type, depth, exported-API status, fan-in), with penalties for test-only paths.
-- An optional relation word (`callers` / `callees` / `impact`) re-weights how the token budget is split across sections; `--in` disambiguates duplicate symbol names; `--depth` bounds impact traversal (1–4).
 - Honest caveat: call-graph extraction is precise but incomplete on highly dynamic code (bare-name dispatch, metaprogramming) — traces can be sparse there, and the agent prompt teaches a recovery strategy for exactly that case.
+- Also available as `sweet-search trace` and the `trace` MCP tool.
 
 </details>
 
-### `ss-read` — exact reads with structure attached
+### `ss-read` — exact bytes, with the index's knowledge attached
 
 ```bash
 ss-read src/db/pool.js 120 180
 ```
 
-Reads a file (with an optional line range), returning **exact bytes from disk** plus symbol-aware chunk
-metadata (name, type, signature, line range) when the file is indexed.
+A read tool that is **filesystem-grounded by construction**: bytes come straight from disk (never from
+the index, so never stale), but each indexed file arrives annotated with its **cAST chunk metadata** —
+symbol name, entity type, signature, line span — joined from the AST chunk index. The agent gets the
+code *and* the structural map of what it's looking at in one call: cite, navigate, or trace next
+without another search.
 
 <details>
-<summary><b>Deep dive</b></summary>
+<summary><b>More</b></summary>
 
-- Built for the agent read-loop: filesystem-grounded by design, it never serves stale index content for file bodies — and every indexed file comes annotated with the symbols it contains, so the agent can cite and navigate without re-searching.
 - The CLI/MCP form scales it up: `sweet-search read <file...>` (and the `read` MCP tool) batches **1–20 files in a single call**, each with the same symbol metadata — twenty files for the price of one tool invocation.
 
 </details>
