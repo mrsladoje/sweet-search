@@ -47,6 +47,10 @@ const f = (n) => {
   return Object.is(r, -0) ? 0 : r;
 };
 
+// darker tone of a hex colour (flat-design borders)
+const shade = (hex, k = 0.72) => '#' + hex.slice(1).match(/../g)
+  .map((h) => Math.round(parseInt(h, 16) * k).toString(16).padStart(2, '0')).join('').toUpperCase();
+
 // ---------------------------------------------------------------------------
 // Palette
 // ---------------------------------------------------------------------------
@@ -54,8 +58,7 @@ const C = {
   // scene
   skyTop: '#69B4E8', skyMid: '#A9D9F6', skyLow: '#EAF7F0',
   cloud: '#FFFFFF',
-  hillFar: '#B4DCA0', hillNear: '#96CC85',
-  fieldHi: '#8ED073', fieldLo: '#4E9C4F',
+  grass: '#79C26B',
   treeTrunk: '#7E5A40', treeA: '#54A55A', treeB: '#62B364',
   // CLI banner band (cli-decoration.js STYLE.colors, edge -> center)
   band0: '#060A1F', band1: '#0A1134', band2: '#0E1849', band4: '#162874',
@@ -64,7 +67,7 @@ const C = {
   // Clawd (claude-code cli.js: rgb(215,119,87))
   coral: '#D77757', ink: '#20201E',
   // candy
-  candyHi: '#FFB3D6', candy: '#FF5BA3', candyLo: '#DD2F7E', wrapPink: '#FF97C2',
+  candy: '#FF5BA3', wrapPink: '#FF97C2',
   candyMint: '#3FD08F', candyViolet: '#A78BFA', candyGold: '#FFC247', candyOrange: '#FF8A5C',
   // Codex (official logo gradient #B1A7FF -> #7A9DFF -> #3941FF)
   coxTop: '#B1A7FF', coxMid: '#7A9DFF', coxLow: '#3941FF',
@@ -126,14 +129,12 @@ function limb(x1, y1, x2, y2, w, fill, edge) {
     + `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="${fill}" stroke-width="${f(w)}" stroke-linecap="round"/>`;
 }
 
-// wrapped candy (centred on 0,0)
-function candyArt(fill, hiOpacity = 0.6, s = 1) {
-  const body = fill.startsWith('url') ? fill : fill;
-  return `<g${s !== 1 ? ` transform="scale(${s})"` : ''}>
-    <path d="M-5.6,0 L-12.5,-5.2 L-12.5,5.2 Z" fill="${C.wrapPink}"/>
-    <path d="M5.6,0 L12.5,-5.2 L12.5,5.2 Z" fill="${C.wrapPink}"/>
-    <ellipse rx="6.6" ry="5.2" fill="${body}"/>
-    <ellipse cx="-1.7" cy="-1.5" rx="2.2" ry="1.4" fill="#FFFFFF" opacity="${hiOpacity}"/>
+// wrapped candy (centred on 0,0) — flat: solid colour + darker border
+function candyArt(color, s = 1) {
+  return `<g${s !== 1 ? ` transform="scale(${s})"` : ''} stroke="${shade(color)}" stroke-width="1.5" stroke-linejoin="round">
+    <path d="M-5.6,0 L-12.5,-5.2 L-12.5,5.2 Z" fill="${color}"/>
+    <path d="M5.6,0 L12.5,-5.2 L12.5,5.2 Z" fill="${color}"/>
+    <ellipse rx="6.6" ry="5.2" fill="${color}"/>
   </g>`;
 }
 
@@ -239,19 +240,17 @@ function scenery() {
   return `
   <!-- sky -->
   <rect width="1200" height="400" fill="url(#skyGrad)"/>
-  <!-- clouds (3 shapes, drifting gently) -->
-  ${cloud(168, 56, 0.9, 0.92, 16, 34, 0)}
-  ${cloud(452, 42, 1.0, 0.95, -14, 40, 1)}
-  ${cloud(764, 54, 0.85, 0.9, 12, 28, 2)}
-  ${cloud(1040, 40, 0.75, 0.85, -10, 31, 1)}
-  ${cloud(612, 26, 0.55, 0.55, 8, 24, 2)}
-  <!-- far hills + field -->
-  <path d="M0,312 C150,296 290,305 430,301 C570,297 700,308 845,301 C985,295 1100,305 1200,300 L1200,340 L0,340 Z" fill="${C.hillFar}"/>
-  <path d="M0,322 C180,308 340,316 520,311 C700,306 880,316 1040,310 C1110,308 1160,311 1200,310 L1200,350 L0,350 Z" fill="${C.hillNear}"/>
-  <rect x="0" y="316" width="1200" height="84" fill="url(#fieldGrad)"/>
-  <path d="M0,316 C200,310 420,318 640,314 C860,310 1040,318 1200,313 L1200,330 L0,330 Z" fill="${C.fieldHi}" opacity="0.55"/>
+  <!-- clouds (3 shapes, bigger, some translucent, drifting gently) -->
+  ${cloud(168, 54, 1.15, 0.95, 16, 34, 0)}
+  ${cloud(452, 40, 1.3, 0.6, -14, 40, 1)}
+  ${cloud(764, 52, 1.1, 0.85, 12, 28, 2)}
+  ${cloud(1040, 38, 0.95, 0.55, -10, 31, 1)}
+  ${cloud(612, 24, 0.75, 0.4, 8, 24, 2)}
+  <!-- far hills + field (flat single green; shapes unchanged) -->
+  <path d="M0,312 C150,296 290,305 430,301 C570,297 700,308 845,301 C985,295 1100,305 1200,300 L1200,340 L0,340 Z" fill="${C.grass}"/>
+  <path d="M0,322 C180,308 340,316 520,311 C700,306 880,316 1040,310 C1110,308 1160,311 1200,310 L1200,350 L0,350 Z" fill="${C.grass}"/>
+  <rect x="0" y="316" width="1200" height="84" fill="${C.grass}"/>
   ${trees}
-  <path d="M-40,372 C260,352 560,386 900,366 C1040,358 1140,366 1240,360" stroke="#FFFFFF" stroke-width="14" fill="none" opacity="0.05"/>
   ${daisies}
   ${sparkles}`;
 }
@@ -295,32 +294,32 @@ const CLAWD_BODY = 'M20,0 H140 V80 H130 V100 H120 V80 H110 V100 H100 V80 H60 V10
 
 const EAT_DUR = 8;
 function clawd() {
-  // body lean about the right foot corner (130,100); +37.6deg puts the
-  // candy held by the +25deg flipper exactly on the pile-top candy.
+  // body lean about the right foot corner (130,100); +28.5deg puts the
+  // candy held by the +20deg flipper exactly on the pile-top candy.
   const LEAN_KT = [0, 0.04, 0.075, 0.155, 0.205, 0.265, 0.30, 1];
-  const LEAN_V = ['0 130 100', '0 130 100', '-5 130 100', '37.6 130 100', '37.6 130 100', '-4 130 100', '0 130 100', '0 130 100'];
+  const LEAN_V = ['0 130 100', '0 130 100', '-5 130 100', '28.5 130 100', '28.5 130 100', '-4 130 100', '0 130 100', '0 130 100'];
   const LEAN_SPL = ['0 0 1 1', '0.4 0 0.6 1', '0.35 0 0.5 1', '0 0 1 1', '0.3 0 0.5 1', '0.35 0 0.6 1', '0 0 1 1'];
 
   // right stump (the eater): reach down with the lean, hold the candy level
   // on the way back, wind up, flick (follow-through to -55), recover.
   const FLIP_KT = [0, 0.04, 0.075, 0.155, 0.205, 0.30, 0.315, 0.345, 0.46, 1];
-  const FLIP_V = [0, 0, 25, 25, 8, 8, 18, -55, 0, 0];
+  const FLIP_V = [0, 0, 20, 20, 8, 8, 18, -55, 0, 0];
   const FLIP_SPL = ['0 0 1 1', '0.4 0 0.6 1', '0 0 1 1', '0.3 0 0.6 1', '0 0 1 1', '0.4 0 0.6 1', '0.5 0 0.8 1', '0.3 0 0.5 1', '0 0 1 1'];
 
   // candy toss: release at flipper ~-26deg -> parabola sampled from the
-  // quadratic (163.4,38.7) Q(121,-32) (80,53); lands in the open mouth.
+  // quadratic (167,36.8) Q(122,-34) (80,53); lands in the open mouth.
   const FLY_KT = [0, 0.336, 0.347, 0.358, 0.369, 0.380, 1];
-  const FLY_V = ['163.4 38.7', '163.4 38.7', '135.3 8.9', '107.6 13.7', '93.7 29', '80 53', '80 53'];
+  const FLY_V = ['167 36.8', '167 36.8', '137.3 7.2', '108.4 12.6', '94.1 28.4', '80 53', '80 53'];
 
   const eatFlipper = `
     <g transform="translate(140 50)">
       <g>
         ${animT('rotate', FLIP_V, FLIP_KT, EAT_DUR, { splines: FLIP_SPL })}
         <rect x="-7" y="-10" width="27" height="20" rx="2.5" fill="${C.coral}"/>
-        <g transform="translate(26 0)">
+        <g transform="translate(30 0)">
           <g>
             ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.165, 0.175, 0.333, 0.336, 1], EAT_DUR)}
-            ${candyArt('url(#candyGrad)')}
+            ${candyArt(C.candy, 1.7)}
           </g>
         </g>
       </g>
@@ -373,16 +372,17 @@ function clawd() {
               <path d="M38,33 Q45,25 52,33"/>
               <path d="M108,33 Q115,25 122,33"/>
             </g>
-            <!-- ink cheek bump: food pouched beside the mouth between chomps -->
-            <g transform="translate(100 53)">
+            <!-- cheek bulge: crescent outline (orange inside) puffing out beside
+                 the mouth between chomps -->
+            <g transform="translate(104 53)">
               <g>
                 ${animT('scale', [0, 0, 0.5, 1, 0.45, 1, 0.45, 1, 0, 0], [0, 0.42, 0.445, 0.46, 0.49, 0.52, 0.55, 0.58, 0.62, 1], EAT_DUR, { splines: ['0 0 1 1', '0.3 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0 0 1 1'] })}
-                <ellipse rx="8.5" ry="7.5" fill="${C.ink}"/>
+                <path d="M0,-7.5 A7.5,7.5 0 0 1 0,7.5" stroke="${C.ink}" stroke-width="4.2" stroke-linecap="round" fill="none"/>
               </g>
             </g>
             <!-- mouth: opens to catch the toss, then chews (ink, animated) -->
             <ellipse cx="80" cy="55" rx="7" ry="0.01" fill="${C.ink}" opacity="0">
-              ${anim('ry', [0.01, 0.01, 9, 9, 2.5, 6, 2.5, 6, 2.5, 6, 2.5, 2, 0.01, 0.01], [0, 0.295, 0.315, 0.375, 0.40, 0.43, 0.46, 0.49, 0.52, 0.55, 0.58, 0.61, 0.64, 1], EAT_DUR)}
+              ${anim('ry', [0.01, 0.01, 10.5, 10.5, 2.5, 6, 2.5, 6, 2.5, 6, 2.5, 2, 0.01, 0.01], [0, 0.295, 0.315, 0.375, 0.40, 0.43, 0.46, 0.49, 0.52, 0.55, 0.58, 0.61, 0.64, 1], EAT_DUR)}
               ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.295, 0.31, 0.63, 0.66, 1], EAT_DUR)}
             </ellipse>
             <!-- smile after the swallow -->
@@ -402,7 +402,7 @@ function clawd() {
         ${animT('translate', FLY_V, FLY_KT, EAT_DUR)}
         <g>
           ${animT('rotate', [0, 0, 300, 300], [0, 0.336, 0.380, 1], EAT_DUR)}
-          ${candyArt('url(#candyGrad)')}
+          ${candyArt(C.candy, 1.7)}
         </g>
       </g>
     </g>`;
@@ -421,13 +421,13 @@ function clawd() {
   </g>
   <!-- candy pile; he visibly takes the top one each cycle -->
   <g>
-    <ellipse cx="273" cy="351.5" rx="17" ry="3.2" fill="#2E5C33" opacity="0.2"/>
-    <g transform="translate(264 347.5) rotate(-14)">${candyArt(C.candyViolet, 0.55, 0.94)}</g>
-    <g transform="translate(279 347) rotate(12)">${candyArt(C.candyMint, 0.55, 0.94)}</g>
-    <g transform="translate(271 341) rotate(-4)">
+    <ellipse cx="272" cy="352.5" rx="25" ry="3.6" fill="#2E5C33" opacity="0.2"/>
+    <g transform="translate(262 346) rotate(-14)">${candyArt(C.candyViolet, 1.6)}</g>
+    <g transform="translate(281 345.5) rotate(12)">${candyArt(C.candyMint, 1.6)}</g>
+    <g transform="translate(271.5 335) rotate(-4)">
       <g>
         ${anim('opacity', [1, 1, 0, 0, 1, 1], [0, 0.16, 0.17, 0.93, 0.96, 1], EAT_DUR)}
-        ${candyArt('url(#candyGrad)')}
+        ${candyArt(C.candy, 1.7)}
       </g>
     </g>
   </g>`;
@@ -536,13 +536,12 @@ function codex() {
   ${wrapperMound()}`;
 }
 
-// candy-wrapper bowtie
+// candy-wrapper bowtie — flat: solid colour + darker border
 function wrapper(x, y, rot, col, s = 1, op = 1) {
-  return `<g transform="translate(${f(x)} ${f(y)}) rotate(${f(rot)}) scale(${f(s)})" opacity="${op}">
+  return `<g transform="translate(${f(x)} ${f(y)}) rotate(${f(rot)}) scale(${f(s)})" opacity="${op}" stroke="${shade(col)}" stroke-width="1.3" stroke-linejoin="round">
     <path d="M-4.5,-3 L-10,-5.5 L-9,0 L-10,5.5 L-4.5,3 Z" fill="${col}"/>
     <path d="M4.5,-3 L10,-5.5 L9,0 L10,5.5 L4.5,3 Z" fill="${col}"/>
     <rect x="-5" y="-3.6" width="10" height="7.2" rx="2" fill="${col}"/>
-    <line x1="-1.4" y1="-2.4" x2="-1.4" y2="2.4" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1"/>
   </g>`;
 }
 
@@ -590,9 +589,6 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" widt
     <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="${C.skyTop}"/><stop offset="55%" stop-color="${C.skyMid}"/><stop offset="100%" stop-color="${C.skyLow}"/>
     </linearGradient>
-    <linearGradient id="fieldGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="${C.fieldHi}"/><stop offset="100%" stop-color="${C.fieldLo}"/>
-    </linearGradient>
     <linearGradient id="bandGrad" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="${C.band0}"/><stop offset="18%" stop-color="${C.band1}"/><stop offset="36%" stop-color="${C.band2}"/>
       <stop offset="50%" stop-color="${C.band4}"/>
@@ -601,9 +597,6 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" widt
     <linearGradient id="glyphGrad" gradientUnits="userSpaceOnUse" x1="0" y1="${f(BY)}" x2="0" y2="${f(BY + artH)}">
       <stop offset="0%" stop-color="${C.glyphHi}"/><stop offset="48%" stop-color="${C.glyph}"/><stop offset="100%" stop-color="${C.glyphLo}"/>
     </linearGradient>
-    <radialGradient id="candyGrad" cx="40%" cy="35%" r="70%">
-      <stop offset="0%" stop-color="${C.candyHi}"/><stop offset="55%" stop-color="${C.candy}"/><stop offset="100%" stop-color="${C.candyLo}"/>
-    </radialGradient>
     <linearGradient id="coxGrad" gradientUnits="userSpaceOnUse" x1="12" y1="3" x2="12" y2="21">
       <stop offset="0%" stop-color="${C.coxTop}"/><stop offset="50%" stop-color="${C.coxMid}"/><stop offset="100%" stop-color="${C.coxLow}"/>
     </linearGradient>
