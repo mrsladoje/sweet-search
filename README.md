@@ -11,7 +11,7 @@ and an evolved system prompt that teaches your agent to use it all — even on p
 [![npm](https://img.shields.io/npm/v/sweet-search?color=cb3837&label=npm)](https://www.npmjs.com/package/sweet-search)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)](package.json)
-[![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#%EF%B8%8F-platform-support)
+[![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#platform-support)
 [![inference](https://img.shields.io/badge/inference-100%25%20local-success)](#-gpu-accelerated-indexing-fully-local)
 
 </div>
@@ -53,7 +53,7 @@ updates itself as you type.
 - [The Native Engine Room](#-the-native-engine-room)
 - [The Ranking Stack](#-the-ranking-stack)
 - [Works With Your Agent](#-works-with-your-agent)
-- [Platform Support](#%EF%B8%8F-platform-support)
+- [Platform Support](#platform-support)
 - [Prior Art & Acknowledgements](#-prior-art--acknowledgements)
 - [License](#-license)
 
@@ -447,6 +447,8 @@ sweet-search meets your agent wherever it is — shell tools, MCP, or injected i
 - **Honest committed-state:** init never writes machine-specific absolute paths into committed settings files, and all instruction injection is marker-delimited and reversible.
 
 </details>
+
+<a id="platform-support"></a>
 
 ## 🖥️ Platform Support
 
