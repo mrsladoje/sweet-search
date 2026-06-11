@@ -303,7 +303,19 @@ function scenery() {
   <rect x="0" y="316" width="1200" height="84" fill="${C.grass}"/>
   ${trees}
   ${daisies}
-  ${sparkles}`;
+  ${sparkles}
+  <!-- long-period easter egg: a shooting star streaks by every 47s -->
+  <g opacity="0">
+    ${anim('opacity', [0, 0, 0.95, 0.95, 0, 0], [0, 0.616, 0.622, 0.643, 0.649, 1], 47)}
+    <g>
+      ${animT('translate', ['1185 5', '1185 5', '862 26', '862 26'], [0, 0.616, 0.648, 1], 47)}
+      <g transform="rotate(-3.9)">
+        <line x1="6" y1="0" x2="46" y2="0" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity="0.25"/>
+        <line x1="4" y1="0" x2="38" y2="0" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" opacity="0.7"/>
+        <circle r="2.6" fill="#FFFFFF"/>
+      </g>
+    </g>
+  </g>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -323,7 +335,13 @@ function bannerPanel() {
     </g>
     <g clip-path="url(#artClip)">
       <rect x="0" y="${f(BY - 8)}" width="130" height="${f(artH + 16)}" fill="url(#sweepGrad)" opacity="0.38" transform="skewX(-18)">
-        ${anim('x', [f(BX - 170), f(BX + artW + 90), f(BX + artW + 90)], [0, 0.55, 1], 6, { begin: 1.6 })}
+        ${anim('x', [f(BX - 170), f(BX - 170), f(BX + artW + 90), f(BX + artW + 90)], [0, 0.3, 0.425, 1], 19, { begin: 1.6 })}
+      </rect>
+      <!-- long-period easter egg: candy-rainbow shimmer rolls through the
+           letters every 23s (screen blend = luminous glow) -->
+      <rect x="0" y="${f(BY - 8)}" width="240" height="${f(artH + 16)}" fill="url(#candySweepGrad)" opacity="0" transform="skewX(-18)" style="mix-blend-mode:screen">
+        ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.512, 0.52, 0.585, 0.6, 1], 23)}
+        ${anim('x', [f(BX - 280), f(BX - 280), f(BX + artW + 60), f(BX + artW + 60)], [0, 0.51, 0.595, 1], 23)}
       </rect>
     </g>
   </g>`;
@@ -515,19 +533,32 @@ function codexHead() {
       ${animT('rotate', ['-2.5', '-0.2', '-2.5'], [0, 0.5, 1], 0.55, { splines: ['0.4 0 0.6 1', '0.4 0 0.6 1'] })}
       <g transform="scale(${k}) translate(-12 -12)">
         <path d="${CODEX_CLOUD}" fill="url(#coxGrad)"/>
-        <!-- eyes: official chevron + its mirror (>_<), with a squeezy blink -->
+        <!-- eyes: official chevron + its mirror (>_<), with a squeezy blink.
+             During the manic episode they squint (vertical squeeze = sharper
+             chevron angle) -->
         <g transform="translate(12 11.93)"><g>
           ${animT('scale', ['1 1', '1 1', '1 0.25', '1 1', '1 1'], [0, 0.9, 0.93, 0.96, 1], 3.7)}
-          <g transform="translate(-12 -11.93)">
-            <path d="${CODEX_CHEVRON}" fill="#FFFFFF"/>
-            <path d="${CODEX_CHEVRON}" fill="#FFFFFF" transform="matrix(-1 0 0 1 24 0)"/>
+          <g>
+            ${animT('scale', ['1 1', '1 1', '1 0.55', '1 0.55', '1 1', '1 1'], [0, 0.495, 0.51, 0.625, 0.64, 1], 37)}
+            <g transform="translate(-12 -11.93)">
+              <path d="${CODEX_CHEVRON}" fill="#FFFFFF"/>
+              <path d="${CODEX_CHEVRON}" fill="#FFFFFF" transform="matrix(-1 0 0 1 24 0)"/>
+            </g>
           </g>
         </g></g>
-        <!-- mouth: official dash recentred under the eyes; chews while typing -->
-        <g transform="translate(-2.36 1.8)"><g transform="translate(14.36 14.55)"><g>
-          ${animT('scale', ['1 1', '1 1', '1 0.55', '1 1', '1 0.62', '1 1', '1 1'], [0, 0.55, 0.62, 0.69, 0.76, 0.83, 1], 2.8)}
-          <g transform="translate(-14.36 -14.55)"><path d="${CODEX_DASH}" fill="#FFFFFF"/></g>
-        </g></g></g>
+        <!-- mouth: official dash recentred under the eyes; chews while typing.
+             Hidden during the manic episode (worried wave takes over) -->
+        <g transform="translate(-2.36 1.8)">
+          ${anim('opacity', [1, 1, 0, 0, 1, 1], [0, 0.495, 0.505, 0.63, 0.64, 1], 37)}
+          <g transform="translate(14.36 14.55)"><g>
+            ${animT('scale', ['1 1', '1 1', '1 0.55', '1 1', '1 0.62', '1 1', '1 1'], [0, 0.55, 0.62, 0.69, 0.76, 0.83, 1], 2.8)}
+            <g transform="translate(-14.36 -14.55)"><path d="${CODEX_DASH}" fill="#FFFFFF"/></g>
+          </g></g>
+        </g>
+        <!-- worried wavy mouth (manic episode every 37s) -->
+        <path d="M9.6,16.2 q0.8,-1 1.6,0 q0.8,1 1.6,0 q0.8,-1 1.6,0" stroke="#FFFFFF" stroke-width="1.27" stroke-linecap="round" fill="none" opacity="0">
+          ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.495, 0.505, 0.63, 0.64, 1], 37)}
+        </path>
         <!-- chocolate-smudged mouth -->
         <g fill="${C.choc}">
           <ellipse cx="9.7" cy="17.1" rx="0.8" ry="0.6" opacity="0.92"/>
@@ -542,7 +573,11 @@ function codexHead() {
 }
 
 function codex() {
-  const typing = (phase) => animT('translate', phase ? ['0 -2.4', '0 0', '0 -2.4'] : ['0 0', '0 -2.4', '0 0'], [0, 0.5, 1], 0.17, { additive: true });
+  const typing = (phase) => animT('translate', phase ? ['0 -2.4', '0 0', '0 -2.4'] : ['0 0', '0 -2.4', '0 0'], [0, 0.5, 1], 0.21, { additive: true });
+  // long-period easter egg: a 5s manic-typing episode every 37s
+  const manic = animT('translate',
+    ['0 0', '0 0', '0 -2.2', '0 0.6', '0 -2.2', '0 0.6', '0 -2.2', '0 0.6', '0 -2.2', '0 0.6', '0 -2.2', '0 0.6', '0 -1', '0 0', '0 0'],
+    [0, 0.5, 0.511, 0.522, 0.533, 0.544, 0.555, 0.566, 0.577, 0.588, 0.599, 0.61, 0.62, 0.635, 1], 37, { additive: true });
   return `
   <ellipse cx="1036" cy="356" rx="62" ry="7" fill="#2E5C33" opacity="0.18"/>
   <g transform="translate(1042 352)">
@@ -550,16 +585,21 @@ function codex() {
     <g>
       ${animT('translate', ['0 0', '0 0', '1 0', '-1 0', '0.7 0', '-0.5 0', '0 0', '0 0'], [0, 0.85, 0.875, 0.9, 0.925, 0.95, 0.975, 1], 3.4, { additive: true })}
 
-      <!-- far leg -->
-      ${limb(-6, -16, -38, -13, 13, C.coxLimbFar, C.coxLimbEdge)}
-      ${limb(-38, -13, -40, -3, 12, C.coxLimbFar, C.coxLimbEdge)}
-      <ellipse cx="-44" cy="-2" rx="8.5" ry="4.8" fill="${C.coxLimbFar}"/>
       <!-- body (stocky) -->
       <rect x="-28" y="-52" width="56" height="48" rx="20" fill="url(#coxBodyGrad)"/>
-      <!-- near leg -->
-      ${limb(0, -14, -34, -11, 13, C.coxLimb, C.coxLimbEdge)}
-      ${limb(-34, -11, -36, -1, 12, C.coxLimb, C.coxLimbEdge)}
-      <ellipse cx="-40" cy="0.5" rx="8.5" ry="4.8" fill="${C.coxLimb}"/>
+      <!-- lotus legs seen from the side: both fold forward UNDER the laptop,
+           knees at the front, shins doubling back beneath the thighs, the
+           near foot resting crossed on top at the front -->
+      <g>
+        ${limb(-2, -14, -34, -9, 13, C.coxLimbFar, C.coxLimbEdge)}
+        ${limb(-34, -9, 4, -3, 12, C.coxLimbFar, C.coxLimbEdge)}
+        <ellipse cx="8" cy="-2.5" rx="7" ry="4.3" fill="${C.coxLimbFar}"/>
+      </g>
+      <g>
+        ${limb(0, -12, -30, -7, 13, C.coxLimb, C.coxLimbEdge)}
+        ${limb(-30, -7, -4, -1, 12, C.coxLimb, C.coxLimbEdge)}
+        <ellipse transform="translate(-34 -5.5) rotate(-18)" rx="8" ry="4.8" fill="${C.coxLimb}"/>
+      </g>
 
       <!-- L-shaped laptop (side view: tall screen, longer keyboard deck) -->
       <g>
@@ -572,14 +612,14 @@ function codex() {
         <rect x="-64" y="-22.5" width="56" height="2" rx="1" fill="${C.lapHi}"/>
       </g>
 
-      <!-- arms hammering the keys -->
+      <!-- arms hammering the keys (extra frantic during the manic episode) -->
       <g>
         ${limb(-16, -42, -42, -27, 11, C.coxLimbFar, C.coxLimbEdge)}
-        <g>${typing(0)}<circle cx="-46" cy="-25" r="6" fill="${C.coxLimbFar}"/></g>
+        <g>${typing(0)}${manic}<circle cx="-46" cy="-25" r="6" fill="${C.coxLimbFar}"/></g>
       </g>
       <g>
         ${limb(-6, -38, -24, -25.5, 10, C.coxLimb, C.coxLimbEdge)}
-        <g>${typing(1)}<circle cx="-28" cy="-23.5" r="6" fill="${C.coxLimb}"/></g>
+        <g>${typing(1)}${manic}<circle cx="-28" cy="-23.5" r="6" fill="${C.coxLimb}"/></g>
       </g>
 
       ${codexHead()}
@@ -591,6 +631,9 @@ function codex() {
         </path>
         <path transform="translate(60 -108) scale(0.7)" d="M0,-4.4 L1.2,-1.2 L4.4,0 L1.2,1.2 L0,4.4 L-1.2,1.2 L-4.4,0 L-1.2,-1.2 Z">
           ${anim('opacity', [0, 1, 0], [0, 0.4, 1], 1.6, { begin: 0.8 })}
+        </path>
+        <path transform="translate(36 -148) scale(0.85)" d="M0,-4.4 L1.2,-1.2 L4.4,0 L1.2,1.2 L0,4.4 L-1.2,1.2 L-4.4,0 L-1.2,-1.2 Z" opacity="0">
+          ${anim('opacity', [0, 0, 1, 0.2, 1, 0.2, 1, 0.2, 1, 0, 0], [0, 0.5, 0.515, 0.53, 0.545, 0.56, 0.575, 0.59, 0.605, 0.63, 1], 37)}
         </path>
       </g>
     </g>
@@ -776,12 +819,22 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" widt
     <linearGradient id="sweepGrad" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.85"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
     </linearGradient>
+    <linearGradient id="candySweepGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="${C.candyViolet}" stop-opacity="0"/>
+      <stop offset="15%" stop-color="${C.candyViolet}" stop-opacity="1"/>
+      <stop offset="38%" stop-color="${C.candyMint}" stop-opacity="1"/>
+      <stop offset="60%" stop-color="${C.candyGold}" stop-opacity="1"/>
+      <stop offset="85%" stop-color="${C.candy}" stop-opacity="1"/>
+      <stop offset="100%" stop-color="${C.candy}" stop-opacity="0"/>
+    </linearGradient>
     <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
       <feGaussianBlur stdDeviation="3.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/></feMerge>
     </filter>
     <filter id="softBlur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="5"/></filter>
     <g id="artRuns">${artRuns()}</g>
-    <clipPath id="artClip"><use href="#artRuns"/></clipPath>
+    <!-- clipPath children must be shapes (a <use> of a <g> is ignored), so
+         the letterform rects are repeated here directly -->
+    <clipPath id="artClip">${artRuns()}</clipPath>
     <clipPath id="frame"><rect width="1200" height="400" rx="16"/></clipPath>
   </defs>
 
