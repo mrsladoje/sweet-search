@@ -50,7 +50,7 @@ const C = {
   coral: '#D77757', ink: '#20201E',
   candy: '#FF5BA3', candyShade: '#C2407B', wrapPink: '#FF97C2',
   candyMint: '#3FD08F', candyViolet: '#A78BFA', candyGold: '#FFC247', candyOrange: '#FF8A5C',
-  coxTop: '#B1A7FF', coxMid: '#7A9DFF', coxLow: '#3941FF',
+  coxBands: ['#B1A7FF', '#95A2FF', '#7A9DFF', '#596FFF', '#3941FF'],
   coxBodyHi: '#7A9DFF', coxBodyLo: '#4549EE', coxLimb: '#515FF2', coxLimbFar: '#3A43D6',
   lap: '#262B40', lapHi: '#4A5378', screenGlow: '#9FE8FF',
   choc: '#7A4E2A', chocDark: '#58381E', chocSmudge: '#6B4226',
@@ -420,10 +420,14 @@ const EAT_DUR = 8;
 const CLAWD_BODY_NOFEET = 'M20,0 H140 V80 H20 Z';
 
 function clawd() {
-  const LEAN_KT = [0, 0.04, 0.075, 0.105, 0.13, 0.155, 0.205, 0.235, 0.265, 0.285, 0.30, 1];
-  const LEAN_V = ['0 130 100', '0 130 100', '-6 130 100', '9 130 100', '19 130 100', '28.5 130 100', '28.5 130 100', '19 130 100', '9 130 100', '-4 130 100', '0 130 100', '0 130 100'];
-  const FLIP_KT = [0, 0.04, 0.075, 0.155, 0.205, 0.30, 0.315, 0.345, 0.46, 1];
-  const FLIP_V = [0, 0, 20, 20, 8, 8, 18, -55, 0, 0];
+  // body slides sideways in cell steps (no rotation); legs r-bend instead
+  const SHIFT_KT = [0, 0.04, 0.075, 0.105, 0.13, 0.155, 0.205, 0.235, 0.265, 0.285, 0.30, 1];
+  const SHIFT_V = ['0 0', '0 0', '-4 0', '4 0', '8 0', '16 0', '16 0', '8 0', '4 0', '-4 0', '0 0', '0 0'];
+  // the eating stump REACHES DOWN in pixel steps to the pile, then flicks
+  const ARM_KT = [0, 0.04, 0.075, 0.105, 0.13, 0.155, 0.205, 0.235, 0.265, 0.30, 1];
+  const ARM_V = ['0 0', '0 0', '0 8', '0 16', '0 24', '0 32', '0 32', '0 20', '0 8', '0 0', '0 0'];
+  const FLIP_KT = [0, 0.30, 0.315, 0.345, 0.46, 1];
+  const FLIP_V = [0, 0, 18, -55, 0, 0];
 
   // stepped toss: quad bezier (167,36.8)->(122,-34)->(80,53) sampled + snapped
   const FLY_PTS = ['168 36', '152 20', '140 8', '128 4', '116 8', '104 16', '92 32', '80 52'];
@@ -443,6 +447,8 @@ function clawd() {
   const eatFlipper = `
     <g transform="translate(140 50)">
       <g>
+        ${animT('translate', ARM_V, ARM_KT, EAT_DUR, { discrete: true })}
+        <g>
         ${animT('rotate', FLIP_V, FLIP_KT, EAT_DUR, { discrete: true })}
         <rect x="-8" y="-10" width="28" height="20" fill="${C.coral}"/>
         <g transform="translate(30 0)">
@@ -450,6 +456,7 @@ function clawd() {
             ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.165, 0.175, 0.333, 0.336, 1], EAT_DUR)}
             ${candy}
           </g>
+        </g>
         </g>
       </g>
     </g>`;
@@ -484,38 +491,23 @@ function clawd() {
       </g>
     </g>`;
 
-  // feet: straight set <-> bent set (knees kicked toward the lean), swapped
-  // sprite-style while he tips over — the detail from the Build Day video
-  const straightFeet = RX([
-    [30, 80, 10, 20, C.coral], [50, 80, 10, 20, C.coral], [100, 80, 10, 20, C.coral],
-  ]);
-  const bentFeet = RX([
-    [30, 80, 10, 12, C.coral], [36, 90, 10, 10, C.coral],
-    [50, 80, 10, 12, C.coral], [56, 90, 10, 10, C.coral],
-    [100, 80, 10, 12, C.coral], [106, 90, 10, 10, C.coral],
-  ]);
-  const feetSwap = `
+  // feet stay planted on the ground while the body slides; they swap to
+  // r-shaped bent poses (top hooks toward the shift, like the Build Day
+  // sprite), then snap straight when the body is back
+  const FEET_X = [30, 50, 100, 120];
+  const straightFeet = RX(FEET_X.map((x) => [x, 80, 10, 20, C.coral]));
+  const bentFeet = RX(FEET_X.flatMap((x) => [
+    [x + 8, 80, 10, 12, C.coral],
+    [x, 90, 10, 10, C.coral],
+  ]));
+  const plantedFeet = `
     <g>
-      ${anim('opacity', [1, 0, 1], [0, 0.06, 0.295], EAT_DUR, { discrete: true })}
+      ${anim('opacity', [1, 0, 1], [0, 0.07, 0.295], EAT_DUR, { discrete: true })}
       ${straightFeet}
     </g>
     <g>
-      ${anim('opacity', [0, 1, 0], [0, 0.06, 0.295], EAT_DUR, { discrete: true })}
+      ${anim('opacity', [0, 1, 0], [0, 0.07, 0.295], EAT_DUR, { discrete: true })}
       ${bentFeet}
-    </g>`;
-
-  // planted pivot foot: slides in cell steps, and bends too while leaning
-  const plantedFoot = `
-    <g>
-      ${animT('translate', ['0 0', '0 0', '-4 0', '4 0', '8 0', '12 0', '12 0', '8 0', '4 0', '0 0', '0 0', '0 0'], LEAN_KT, EAT_DUR, { discrete: true })}
-      <g>
-        ${anim('opacity', [1, 0, 1], [0, 0.06, 0.295], EAT_DUR, { discrete: true })}
-        <rect x="120" y="70" width="10" height="30" fill="${C.coral}"/>
-      </g>
-      <g>
-        ${anim('opacity', [0, 1, 0], [0, 0.06, 0.295], EAT_DUR, { discrete: true })}
-        ${RX([[120, 70, 10, 22, C.coral], [126, 90, 10, 10, C.coral]])}
-      </g>
     </g>`;
 
   const body = `
@@ -526,7 +518,6 @@ function clawd() {
           <g>
             ${animT('translate', ['0 0', '0 0', '0 2', '0 0', '0 2', '0 0', '0 2', '0 0', '0 0'], [0, 0.43, 0.46, 0.49, 0.52, 0.55, 0.58, 0.61, 1], EAT_DUR, { additive: true, discrete: true })}
             <path d="${CLAWD_BODY_NOFEET}" fill="${C.coral}"/>
-            ${feetSwap}
             <!-- pixel cheek bulge: stepped backwards-C, popping with the chews -->
             <g opacity="0">
               ${anim('opacity', [0, 0, 1, 0, 1, 0, 1, 0, 0], [0, 0.445, 0.46, 0.49, 0.52, 0.55, 0.58, 0.61, 1], EAT_DUR, { discrete: true })}
@@ -576,13 +567,14 @@ function clawd() {
 
   return `
   <rect x="104" y="350" width="128" height="6" fill="${C.shadow}" opacity="0.18">
-    ${anim('width', [128, 128, 112, 112, 128, 128], [0, 0.075, 0.16, 0.21, 0.305, 1], EAT_DUR, { discrete: true })}
+    ${anim('x', [104, 104, 112, 112, 104, 104], [0, 0.075, 0.16, 0.21, 0.305, 1], EAT_DUR, { discrete: true })}
+    ${anim('width', [128, 128, 116, 116, 128, 128], [0, 0.075, 0.16, 0.21, 0.305, 1], EAT_DUR, { discrete: true })}
   </rect>
   <g transform="translate(88 252)">
     ${animT('translate', ['0 0', '0 -4', '0 0'], [0, 0.5, 1], 5.3, { additive: true, discrete: true })}
-    ${plantedFoot}
+    ${plantedFeet}
     <g>
-      ${animT('rotate', LEAN_V, LEAN_KT, EAT_DUR, { discrete: true })}
+      ${animT('translate', SHIFT_V, SHIFT_KT, EAT_DUR, { discrete: true })}
       ${mag}
       ${body}
       ${eatFlipper}
@@ -608,8 +600,8 @@ function clawd() {
 // ---------------------------------------------------------------------------
 function deathRay() {
   let beam = '';
-  for (let i = 0; i < 11; i++) {
-    const x = snap(114 - 8.4 * i), y = snap(212 + 7.3 * i);
+  for (let i = 0; i < 7; i++) {
+    const x = snap(70 - 7.5 * i), y = snap(274 + 1.9 * i);
     beam += `<rect x="${x - 4}" y="${y - 4}" width="16" height="16" fill="${C.beam}"/>`;
     beam += `<rect x="${x}" y="${y}" width="8" height="8" fill="${C.beamCore}"/>`;
   }
@@ -634,7 +626,7 @@ function deathRay() {
   <!-- sun ray in (off-screen sun) -->
   <g opacity="0">
     ${anim('opacity', [0, 0, 0.42, 0.42, 0, 0], [0, 0.14, 0.155, 0.215, 0.235, 1], EAT_DUR)}
-    ${RX([[104, 0, 4, 212, '#FFF6C9', 0.5], [108, 0, 8, 212, '#FFF6C9']])}
+    ${RX([[68, 0, 4, 272, '#FFF6C9', 0.5], [72, 0, 8, 272, '#FFF6C9'], [80, 0, 4, 272, '#FFF6C9', 0.5]])}
   </g>
   <!-- staircase death ray -->
   <g opacity="0">
@@ -686,9 +678,7 @@ function codexHead() {
   return `
   <g>
     ${animT('rotate', ['-2', '0', '-2'], [0, 0.5, 1], 0.55, { discrete: true })}
-    <g clip-path="url(#coxTopClip)">${raster(C.coxTop)}</g>
-    <g clip-path="url(#coxMidClip)">${raster(C.coxMid)}</g>
-    <g clip-path="url(#coxLowClip)">${raster(C.coxLow)}</g>
+    ${C.coxBands.map((col, i) => `<g clip-path="url(#coxB${i})">${raster(col)}</g>`).join('')}
     <!-- pixel >_< : blocks; squint = squashed swap during the manic episode -->
     <g>
       ${anim('opacity', [1, 1, 0, 0, 1, 1], [0, 0.495, 0.505, 0.63, 0.64, 1], 37, { discrete: true })}
@@ -821,9 +811,11 @@ function wrapperMound() {
 // 7. Assemble
 // ---------------------------------------------------------------------------
 const headBandClips = `
-    <clipPath id="coxTopClip"><rect x="-70" y="-152" width="140" height="44"/></clipPath>
-    <clipPath id="coxMidClip"><rect x="-70" y="-108" width="140" height="24"/></clipPath>
-    <clipPath id="coxLowClip"><rect x="-70" y="-84" width="140" height="40"/></clipPath>`;
+    <clipPath id="coxB0"><rect x="-70" y="-152" width="140" height="24"/></clipPath>
+    <clipPath id="coxB1"><rect x="-70" y="-128" width="140" height="20"/></clipPath>
+    <clipPath id="coxB2"><rect x="-70" y="-108" width="140" height="20"/></clipPath>
+    <clipPath id="coxB3"><rect x="-70" y="-88" width="140" height="24"/></clipPath>
+    <clipPath id="coxB4"><rect x="-70" y="-64" width="140" height="20"/></clipPath>`;
 
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400" role="img" shape-rendering="crispEdges" aria-label="sweet-search — pixel-art Clawd and Codex around the SWEET SEARCH terminal banner">
   <title>sweet-search (pixelated)</title>
