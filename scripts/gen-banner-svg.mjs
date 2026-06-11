@@ -290,7 +290,9 @@ function bannerPanel() {
 // parabolic toss into the open mouth -> chew (ink mouth + ink cheek bump)
 // -> gulp -> smile.
 // ---------------------------------------------------------------------------
-const CLAWD_BODY = 'M20,0 H140 V80 H130 V100 H120 V80 H110 V100 H100 V80 H60 V100 H50 V80 H40 V100 H30 V80 H20 Z';
+// the x120-130 foot is OMITTED here: it is the planted pivot foot, drawn as a
+// separate static rect so it stays flat on the ground while the body leans.
+const CLAWD_BODY = 'M20,0 H140 V80 H110 V100 H100 V80 H60 V100 H50 V80 H40 V100 H30 V80 H20 Z';
 
 const EAT_DUR = 8;
 function clawd() {
@@ -332,6 +334,10 @@ function clawd() {
         <line x1="-14" y1="0" x2="-31" y2="0" stroke="#3A3F4A" stroke-width="7" stroke-linecap="round"/>
         <g transform="translate(-49 0)">
           <circle r="19" fill="#CFE9FF" opacity="0.4"/>
+          <!-- sun catches the lens right as he leans for the candy -->
+          <circle r="16" fill="#FFF9D6" opacity="0">
+            ${anim('opacity', [0, 0, 0.9, 0.35, 0, 0], [0, 0.147, 0.158, 0.205, 0.227, 1], EAT_DUR)}
+          </circle>
           <circle r="19" fill="none" stroke="#3A3F4A" stroke-width="5.5"/>
           <circle r="16" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1.4"/>
           <line x1="-9" y1="6" x2="5" y2="-8" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.5">
@@ -355,29 +361,24 @@ function clawd() {
           <g>
             ${animT('translate', ['0 0', '0 0', '0 1.4', '0 0', '0 1.4', '0 0', '0 1.4', '0 0', '0 0'], [0, 0.43, 0.46, 0.49, 0.52, 0.55, 0.58, 0.61, 1], EAT_DUR, { additive: true })}
             <path d="${CLAWD_BODY}" fill="${C.coral}"/>
-            <!-- eyes: normal tall quadrants <-> happy arcs after the gulp -->
+            <!-- eyes: squeeze shut on the gulp and stay contently shut (blink-
+                 style short eyes) for a beat after the candy; no smile -->
             <g>
-              ${anim('opacity', [1, 1, 0, 0, 1, 1], [0, 0.665, 0.695, 0.875, 0.905, 1], EAT_DUR)}
               <rect x="40" width="10" fill="${C.ink}">
-                ${anim('y', [20, 20, 28.5, 28.5, 20, 20, 28.5, 20, 20], [0, 0.625, 0.645, 0.685, 0.705, 0.92, 0.935, 0.95, 1], EAT_DUR)}
-                ${anim('height', [20, 20, 3, 3, 20, 20, 3, 20, 20], [0, 0.625, 0.645, 0.685, 0.705, 0.92, 0.935, 0.95, 1], EAT_DUR)}
+                ${anim('y', [20, 20, 28.5, 28.5, 20, 20], [0, 0.625, 0.65, 0.875, 0.905, 1], EAT_DUR)}
+                ${anim('height', [20, 20, 3, 3, 20, 20], [0, 0.625, 0.65, 0.875, 0.905, 1], EAT_DUR)}
               </rect>
               <rect x="110" width="10" fill="${C.ink}">
-                ${anim('y', [20, 20, 28.5, 28.5, 20, 20, 28.5, 20, 20], [0, 0.625, 0.645, 0.685, 0.705, 0.92, 0.935, 0.95, 1], EAT_DUR)}
-                ${anim('height', [20, 20, 3, 3, 20, 20, 3, 20, 20], [0, 0.625, 0.645, 0.685, 0.705, 0.92, 0.935, 0.95, 1], EAT_DUR)}
+                ${anim('y', [20, 20, 28.5, 28.5, 20, 20], [0, 0.625, 0.65, 0.875, 0.905, 1], EAT_DUR)}
+                ${anim('height', [20, 20, 3, 3, 20, 20], [0, 0.625, 0.65, 0.875, 0.905, 1], EAT_DUR)}
               </rect>
-            </g>
-            <g opacity="0" stroke="${C.ink}" stroke-width="4.2" stroke-linecap="round" fill="none">
-              ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.665, 0.695, 0.875, 0.905, 1], EAT_DUR)}
-              <path d="M38,33 Q45,25 52,33"/>
-              <path d="M108,33 Q115,25 122,33"/>
             </g>
             <!-- cheek bulge: crescent outline (orange inside) puffing out beside
                  the mouth between chomps -->
             <g transform="translate(104 53)">
               <g>
                 ${animT('scale', [0, 0, 0.5, 1, 0.45, 1, 0.45, 1, 0, 0], [0, 0.42, 0.445, 0.46, 0.49, 0.52, 0.55, 0.58, 0.62, 1], EAT_DUR, { splines: ['0 0 1 1', '0.3 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0 0 1 1'] })}
-                <path d="M0,-7.5 A7.5,7.5 0 0 1 0,7.5" stroke="${C.ink}" stroke-width="4.2" stroke-linecap="round" fill="none"/>
+                <path d="M0,-7.5 A7.5,7.5 0 0 1 0,7.5" stroke="${C.ink}" stroke-width="3.2" stroke-linecap="round" fill="none"/>
               </g>
             </g>
             <!-- mouth: opens to catch the toss, then chews (ink, animated) -->
@@ -385,10 +386,6 @@ function clawd() {
               ${anim('ry', [0.01, 0.01, 10.5, 10.5, 2.5, 6, 2.5, 6, 2.5, 6, 2.5, 2, 0.01, 0.01], [0, 0.295, 0.315, 0.375, 0.40, 0.43, 0.46, 0.49, 0.52, 0.55, 0.58, 0.61, 0.64, 1], EAT_DUR)}
               ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.295, 0.31, 0.63, 0.66, 1], EAT_DUR)}
             </ellipse>
-            <!-- smile after the swallow -->
-            <path d="M66,49 Q80,61 94,49" stroke="${C.ink}" stroke-width="4.2" stroke-linecap="round" fill="none" opacity="0">
-              ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.665, 0.70, 0.875, 0.91, 1], EAT_DUR)}
-            </path>
           </g>
         </g>
       </g>
@@ -408,9 +405,13 @@ function clawd() {
     </g>`;
 
   return `
-  <ellipse cx="168" cy="355" rx="70" ry="7.5" fill="#2E5C33" opacity="0.18"/>
+  <ellipse cx="168" cy="355" rx="70" ry="7.5" fill="#2E5C33" opacity="0.18">
+    ${anim('rx', [70, 70, 61, 61, 70, 70], [0, 0.075, 0.16, 0.21, 0.305, 1], EAT_DUR)}
+  </ellipse>
   <g transform="translate(88 252)">
     ${animT('translate', ['0 0', '0 -2', '0 0'], [0, 0.5, 1], 5.3, { additive: true, splines: ['0.4 0 0.6 1', '0.4 0 0.6 1'] })}
+    <!-- planted pivot foot: stays flat on the ground while the body leans -->
+    <rect x="120" y="70" width="10" height="30" fill="${C.coral}"/>
     <g>
       ${animT('rotate', LEAN_V, LEAN_KT, EAT_DUR, { splines: LEAN_SPL })}
       ${magFlipper}
@@ -581,7 +582,77 @@ function wrapperMound() {
 }
 
 // ---------------------------------------------------------------------------
-// 6. Assemble
+// 6. The death-ray gag. While Clawd leans for his candy (totally clueless),
+//    an off-screen sun catches the raised magnifying glass, which focuses a
+//    beam that sets the far-left tree on fire. It blazes while he munches,
+//    smoulders into smoke, and regrows just before the next grab.
+//    Drawn BEHIND Clawd (the beam comes from behind the glass); the lens
+//    itself flashes inside the flipper group so it tracks the glass.
+// ---------------------------------------------------------------------------
+function deathRay() {
+  const FLAME_BIG = 'M0,10 C-8,4 -6,-8 0,-18 C6,-8 8,4 0,10 Z';
+  const FLAME_SMALL = 'M0,7 C-4.5,2.5 -3.5,-4 0,-10 C3.5,-4 4.5,2.5 0,7 Z';
+  const flicker = animT('scale', ['1 1', '1.12 0.9', '0.93 1.08', '1.07 0.94', '1 1'], [0, 0.25, 0.5, 0.75, 1], 0.46);
+  return `
+  <!-- victim tree (far left) -->
+  <g transform="translate(30 303) scale(1.1)">
+    <rect x="-1.6" y="-3" width="3.2" height="8" rx="1.2" fill="${C.treeTrunk}"/>
+    <circle cx="0" cy="-9" r="6.4" fill="${C.treeA}"/>
+    <circle cx="-4.8" cy="-5.5" r="4.6" fill="${C.treeA}"/>
+    <circle cx="4.8" cy="-5.5" r="4.6" fill="${C.treeA}"/>
+    <!-- charred crown while burnt; regreens just before the next zap -->
+    <g opacity="0" fill="#4A3B33">
+      ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.185, 0.2, 0.935, 0.965, 1], EAT_DUR)}
+      <circle cx="0" cy="-9" r="6.4"/>
+      <circle cx="-4.8" cy="-5.5" r="4.6"/>
+      <circle cx="4.8" cy="-5.5" r="4.6"/>
+    </g>
+  </g>
+  <!-- sun ray in (off-screen sun) -->
+  <polygon points="88,0 130,0 121,212 115,212" fill="#FFF6C9" opacity="0">
+    ${anim('opacity', [0, 0, 0.42, 0.42, 0, 0], [0, 0.14, 0.155, 0.215, 0.235, 1], EAT_DUR)}
+  </polygon>
+  <!-- focused death ray out -->
+  <polygon points="115,211.6 121,218.4 35.9,298.8 24.1,285.2" fill="#FFE875" opacity="0">
+    ${anim('opacity', [0, 0, 0.85, 0.6, 0.85, 0.55, 0.85, 0, 0], [0, 0.153, 0.162, 0.175, 0.188, 0.2, 0.212, 0.23, 1], EAT_DUR)}
+  </polygon>
+  <line x1="118" y1="215" x2="30" y2="292" stroke="#FFFDE6" stroke-width="2.6" stroke-linecap="round" opacity="0">
+    ${anim('opacity', [0, 0, 1, 0.7, 1, 0.7, 1, 0, 0], [0, 0.153, 0.162, 0.175, 0.188, 0.2, 0.212, 0.23, 1], EAT_DUR)}
+  </line>
+  <!-- fire (long burn while Clawd obliviously munches) -->
+  <g opacity="0">
+    ${anim('opacity', [0, 0, 1, 1, 0.65, 0, 0], [0, 0.175, 0.195, 0.66, 0.74, 0.8, 1], EAT_DUR)}
+    <g transform="translate(30 290)">
+      <g>
+        ${flicker}
+        <path d="${FLAME_BIG}" fill="#FF8A3C" stroke="${shade('#FF8A3C')}" stroke-width="1.3" stroke-linejoin="round"/>
+        <path d="${FLAME_SMALL}" fill="#FFD24A"/>
+        <g transform="translate(-8 4) rotate(-14) scale(0.6)"><path d="${FLAME_BIG}" fill="#FF8A3C" stroke="${shade('#FF8A3C')}" stroke-width="1.3" stroke-linejoin="round"/></g>
+        <g transform="translate(8 5) rotate(13) scale(0.5)"><path d="${FLAME_BIG}" fill="#FFB347"/></g>
+      </g>
+    </g>
+  </g>
+  <!-- smoke as the fire dies down -->
+  <g fill="#9AA0A8">
+    <g opacity="0">
+      ${anim('opacity', [0, 0, 0.55, 0.45, 0, 0], [0, 0.58, 0.66, 0.86, 0.93, 1], EAT_DUR)}
+      <g>
+        ${animT('translate', ['0 0', '0 0', '0 -12', '0 -24', '0 -32', '0 -32'], [0, 0.58, 0.7, 0.82, 0.93, 1], EAT_DUR)}
+        <circle cx="30" cy="281" r="5"/>
+      </g>
+    </g>
+    <g opacity="0">
+      ${anim('opacity', [0, 0, 0.5, 0.4, 0, 0], [0, 0.66, 0.74, 0.9, 0.96, 1], EAT_DUR)}
+      <g>
+        ${animT('translate', ['0 0', '0 0', '0 -10', '0 -20', '0 -26', '0 -26'], [0, 0.66, 0.78, 0.88, 0.96, 1], EAT_DUR)}
+        <circle cx="35" cy="285" r="3.8"/>
+      </g>
+    </g>
+  </g>`;
+}
+
+// ---------------------------------------------------------------------------
+// 7. Assemble
 // ---------------------------------------------------------------------------
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400" role="img" aria-label="sweet-search — Clawd and Codex enjoying candy around the SWEET SEARCH terminal banner">
   <title>sweet-search</title>
@@ -620,10 +691,12 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" widt
 
   <g clip-path="url(#frame)">
     ${scenery()}
+    ${deathRay()}
     ${bannerPanel()}
     ${clawd()}
     ${codex()}
   </g>
+  <rect x="3" y="3" width="1194" height="394" rx="13" fill="none" stroke="#0A1134" stroke-width="6"/>
 </svg>
 `;
 
