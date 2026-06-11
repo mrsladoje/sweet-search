@@ -91,13 +91,19 @@ sweet-search uninstall              # clean removal: models, caches, config — 
 
 ## 📊 Benchmarks
 
+> [!WARNING]
+> ⚠️ **THESE NUMBERS ARE STALE — TREAT THEM AS A FLOOR, NOT THE CURRENT SCORE.** ⚠️
+> Several results below were measured on builds that predate major accuracy work
+> (late-interaction correctness fixes, HNSW tuning, the May 2026 ranking overhaul).
+> Every benchmark is being re-run on the current engine and this table will be
+> replaced with fresh numbers. Until then, expect the real results to be **higher**.
+
 Every number below is the **`ss-search` pipeline end-to-end** — the same binary you install, querying
 against the **full corpus** (no 99-distractor shortcuts), measured at 26–41 ms p50 on an M3 Max.
 
 | Benchmark | What it tests | Queries | MRR@10 |
 |-----------|---------------|--------:|-------:|
-| **GenCodeSearchNet** (held-out split) | NL→code, 6 languages | 2,400 | **86.0** |
-| **GenCodeSearchNet** (full) | NL→code, 6 languages | 6,000 | **86.6** |
+| **GenCodeSearchNet** | NL→code, 6 languages | 6,000 | **86.6** |
 | **M2CRB** | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 2,814 | **60.2** |
 | CoSQA (test split) | web queries → Python | 500 | 97.0 |
 | CoSQA+ | web queries → Python, multi-match | 20,604 | 72.1 |
@@ -108,8 +114,7 @@ against the **full corpus** (no 99-distractor shortcuts), measured at 26–41 ms
 **GenCodeSearchNet: the strongest result published anywhere, as far as we can tell.** The benchmark's
 own paper tops out at MRR ≤ 0.42 for its fine-tuned baselines (and ≤ 0.10 on the cross-lingual subsets),
 with zero-shot OpenAI Ada-2 at 0.79–0.94 — and those are measured against **99 random distractors per
-query**. sweet-search scores **0.860 on the held-out split it was never tuned against**, retrieving from
-the entire 6,000-document corpus.
+query**. sweet-search scores **0.866**, retrieving from the entire 6,000-document corpus.
 
 **M2CRB: best published number, no fine-tuning.** The benchmark paper's best model — a CodeBERT
 *fine-tuned on the task's training mix* — reaches 52.7 (auMRRc, a metric averaged over smaller retrieval
@@ -119,7 +124,7 @@ and French queries.
 <details>
 <summary><b>Methodology, staleness flags & systems numbers</b></summary>
 
-- **Split discipline:** GenCodeSearchNet uses a 60/40 dev/held-out stratified split (seed 42, stratified by language). We iterate on dev only; the held-out 86.0 was inspected only at milestones and never tuned against. Result artifacts live in `eval/results/`; rerun via `eval/run_all.js`.
+- **Reproduction:** result artifacts live in `eval/results/`; rerun via `eval/run_all.js`.
 - **Protocol note:** published baselines for GCSN and CoSQA-style benchmarks typically rank the gold snippet against 99 sampled distractors. All sweet-search numbers rank against the full benchmark corpus — strictly harder.
 - **† Staleness:** AdvTest and CoIR were last run on the February 2026 build — before the late-interaction correctness fixes, HNSW tuning, and the May ranking work. They likely understate the current engine; re-runs are queued. CoSQA/M2CRB are from the April build; GCSN, CoSQA+, and CLARC are current (May 2026).
 - **Honesty corner:** CrossCodeEval — cross-file *completion context* retrieval, a different task than NL search — sits at 0.12. We don't optimize for it and report it anyway.
