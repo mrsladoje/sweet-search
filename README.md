@@ -91,20 +91,52 @@ sweet-search uninstall              # clean removal: models, caches, config — 
 
 ## 📊 Benchmarks
 
-> 🚧 **The headline numbers are still cooking.** A reproducible public benchmark suite — retrieval quality on public code-search datasets, end-to-end agent task evals across model families, and cross-hardware indexing throughput, with methodology, seeds, and reproduction scripts — lands here soon.
+Every number below is the **`ss-search` pipeline end-to-end** — the same binary you install, querying
+against the **full corpus** (no 99-distractor shortcuts), measured at 26–41 ms p50 on an M3 Max.
 
-What's already measured and written up in-repo:
+| Benchmark | What it tests | Queries | MRR@10 |
+|-----------|---------------|--------:|-------:|
+| **GenCodeSearchNet** (held-out split) | NL→code, 6 languages | 2,400 | **86.0** |
+| **GenCodeSearchNet** (full) | NL→code, 6 languages | 6,000 | **86.6** |
+| **M2CRB** | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 2,814 | **60.2** |
+| CoSQA (test split) | web queries → Python | 500 | 97.0 |
+| CoSQA+ | web queries → Python, multi-match | 20,604 | 72.1 |
+| CLARC | NL→C/C++ (systems code) | 1,245 | 67.4 |
+| AdvTest † | adversarially renamed Python | 1,000 | 91.5 |
+| CoIR † | 10 datasets, 14 languages | 4,500 | 57.3 |
+
+**GenCodeSearchNet: the strongest result published anywhere, as far as we can tell.** The benchmark's
+own paper tops out at MRR ≤ 0.42 for its fine-tuned baselines (and ≤ 0.10 on the cross-lingual subsets),
+with zero-shot OpenAI Ada-2 at 0.79–0.94 — and those are measured against **99 random distractors per
+query**. sweet-search scores **0.860 on the held-out split it was never tuned against**, retrieving from
+the entire 6,000-document corpus.
+
+**M2CRB: best published number, no fine-tuning.** The benchmark paper's best model — a CodeBERT
+*fine-tuned on the task's training mix* — reaches 52.7 (auMRRc, a metric averaged over smaller retrieval
+pools). sweet-search reaches **60.2 full-corpus MRR@10 out of the box**, on Spanish, Portuguese, German,
+and French queries.
+
+<details>
+<summary><b>Methodology, staleness flags & systems numbers</b></summary>
+
+- **Split discipline:** GenCodeSearchNet uses a 60/40 dev/held-out stratified split (seed 42, stratified by language). We iterate on dev only; the held-out 86.0 was inspected only at milestones and never tuned against. Result artifacts live in `eval/results/`; rerun via `eval/run_all.js`.
+- **Protocol note:** published baselines for GCSN and CoSQA-style benchmarks typically rank the gold snippet against 99 sampled distractors. All sweet-search numbers rank against the full benchmark corpus — strictly harder.
+- **† Staleness:** AdvTest and CoIR were last run on the February 2026 build — before the late-interaction correctness fixes, HNSW tuning, and the May ranking work. They likely understate the current engine; re-runs are queued. CoSQA/M2CRB are from the April build; GCSN, CoSQA+, and CLARC are current (May 2026).
+- **Honesty corner:** CrossCodeEval — cross-file *completion context* retrieval, a different task than NL search — sits at 0.12. We don't optimize for it and report it anyway.
+- Dates and per-language breakdowns: [`docs/BENCHMARKS_EXPLAINED.md`](docs/BENCHMARKS_EXPLAINED.md).
+
+Systems performance, measured in-repo:
 
 | What | Result | Source |
 |------|--------|--------|
-| Indexed grep vs ripgrep | **10.2× faster** at the median (8.5–17.7× across 5 repos, 353 queries, 1 ms p50 — identical match counts on every query) | [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md) |
+| Indexed grep vs ripgrep | **10.2× faster** at the median (8.5–17.7× across 5 repos, 353 realistic queries, 1 ms p50 — identical match counts on every query) | [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md) |
 | Warm query latency (native CLI) | **2.9 ms** warm · 108 ms cold | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
 | MaxSim rerank kernels | **1.26 s → 27 ms** for a 231-candidate pass (47× native Rust; 16× WASM SIMD) | [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md) |
 | HNSW tuning for code | **−33%** search p50, **+5.9 pp** recall@200 | [`docs/HNSW_APPROACH.md`](docs/HNSW_APPROACH.md) |
 | Indexing memory | peak JS heap **785 MB → 213 MB** | [`docs/DISK_FLUSHING_STRATEGY.md`](docs/DISK_FLUSHING_STRATEGY.md) |
 | CoreML cascade (M3 Max) | **18% faster** full indexing vs the Metal baseline | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
 
-<sub>Internal measurements on our development corpora; per-doc methodology at the links.</sub>
+</details>
 
 ## 🧰 The Six Tools
 
