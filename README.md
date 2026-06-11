@@ -44,18 +44,66 @@ updates itself as you type.
 
 ## 📚 Table of Contents
 
-- [Quickstart](#-quickstart)
-- [Benchmarks](#-benchmarks)
-- [The Six Tools](#-the-six-tools)
-- [An Agent Prompt That Was Evolved, Not Written](#-an-agent-prompt-that-was-evolved-not-written)
-- [GPU-Accelerated Indexing, Fully Local](#-gpu-accelerated-indexing-fully-local)
-- [An Index That Never Goes Stale](#-an-index-that-never-goes-stale)
-- [The Native Engine Room](#-the-native-engine-room)
-- [The Ranking Stack](#-the-ranking-stack)
-- [Works With Your Agent](#-works-with-your-agent)
-- [Platform Support](#platform-support)
-- [Prior Art & Acknowledgements](#-prior-art--acknowledgements)
-- [License](#-license)
+<table>
+<tr>
+<td width="22%" valign="top">
+
+**GET STARTED**
+
+[🚀 Quickstart](#-quickstart)<br>
+<sub>three commands to a searchable repo</sub>
+
+[🖥️ Platform Support](#platform-support)<br>
+<sub>macOS · Linux · WASM fallback</sub>
+
+</td>
+<td width="27%" valign="top">
+
+**USE IT**
+
+[🧰 The Six Tools](#-the-six-tools)<br>
+<sub>search · grep · find · semantic · trace · read</sub>
+
+[🧠 The Evolved Agent Prompt](#-an-agent-prompt-that-was-evolved-not-written)<br>
+<sub>GEPA-optimized search discipline</sub>
+
+[🔌 Works With Your Agent](#-works-with-your-agent)<br>
+<sub>MCP · Claude Code · Codex · Gemini · Cursor</sub>
+
+</td>
+<td width="27%" valign="top">
+
+**UNDER THE HOOD**
+
+[⚡ GPU-Accelerated Indexing](#-gpu-accelerated-indexing-fully-local)<br>
+<sub>candle · fused kernels · cAST chunking</sub>
+
+[🔄 An Index That Never Goes Stale](#-an-index-that-never-goes-stale)<br>
+<sub>reconcile daemon tracks your working tree</sub>
+
+[🦀 The Native Engine Room](#-the-native-engine-room)<br>
+<sub>four Rust crates + TurboQuant compression</sub>
+
+[🎯 The Ranking Stack](#-the-ranking-stack)<br>
+<sub>route → retrieve → fuse → rerank → expand</sub>
+
+</td>
+<td width="24%" valign="top">
+
+**THE RECEIPTS**
+
+[📊 Benchmarks](#-benchmarks)<br>
+<sub>full-corpus MRR, no distractor shortcuts</sub>
+
+[🙏 Prior Art & Acknowledgements](#-prior-art--acknowledgements)<br>
+<sub>the shoulders we stand on</sub>
+
+[📄 License](#-license)<br>
+<sub>Apache-2.0</sub>
+
+</td>
+</tr>
+</table>
 
 ## 🚀 Quickstart
 
