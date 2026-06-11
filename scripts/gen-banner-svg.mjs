@@ -204,9 +204,9 @@ function cloud(cx, cy, s, op, driftPx, driftDur, shape = 0) {
 
 // three tree species so the treeline reads naturally
 function tree(x, y, s, kind = 0) {
-  if (kind === 1) { // pine
+  if (kind === 1) { // pine (trunk overlaps the foliage so there is no gap)
     return `<g transform="translate(${x} ${y}) scale(${s})">
-      <rect x="-1.6" y="-2" width="3.2" height="7" rx="1.2" fill="${C.treeTrunk}"/>
+      <rect x="-1.6" y="-6" width="3.2" height="11" rx="1.2" fill="${C.treeTrunk}"/>
       <path d="M0,-26 L7,-14 L3.5,-14 L9,-4 L-9,-4 L-3.5,-14 L-7,-14 Z" fill="#3E8C52"/>
     </g>`;
   }
@@ -227,23 +227,34 @@ function tree(x, y, s, kind = 0) {
   </g>`;
 }
 
-// translucent far range behind the main hill: rocky snow-capped peaks and
-// dense forested humps — short, so the sky keeps dominating
+// translucent far range behind the main hill: snow-capped peaks (singles and
+// a twin range) plus dense forested humps — short, so the sky keeps dominating
 function mountains() {
-  const rocky = (cx, peakY) => `
-    <polygon points="${cx - 78},330 ${cx - 16},${peakY} ${cx + 10},${peakY + 12} ${cx + 74},330" fill="#8E9BAA"/>
-    <polygon points="${cx - 16},${peakY} ${cx - 28},${peakY + 17} ${cx - 20},${peakY + 13} ${cx - 12},${peakY + 19} ${cx - 4},${peakY + 12} ${cx + 3},${peakY + 17} ${cx + 10},${peakY + 12}" fill="#F4F8FB"/>`;
+  // clean triangle + a snowcap whose edges sit exactly on the ridges (no grey
+  // sliver peeking past the snow)
+  const peak = (cx, peakY, halfW) => {
+    const H = 330 - peakY, d = 18;
+    const lx = cx - halfW * d / H - 0.8, rx2 = cx + halfW * d / H + 0.8;
+    const zz = [];
+    for (let i = 1; i <= 4; i++) {
+      const x = lx + (rx2 - lx) * i / 5;
+      zz.push(`${f(x)},${f(peakY + d - (i % 2 ? 6 : 1.5))}`);
+    }
+    return `<polygon points="${cx - halfW},330 ${cx},${peakY} ${cx + halfW},330" fill="#8E9BAA"/>
+    <polygon points="${cx},${peakY} ${f(lx)},${peakY + d} ${zz.join(' ')} ${f(rx2)},${peakY + d}" fill="#F4F8FB"/>`;
+  };
   const forest = (cx, topY) => `
     <circle cx="${cx}" cy="${topY + 26}" r="26" fill="#56975F"/>
     <circle cx="${cx - 34}" cy="${topY + 34}" r="20" fill="#4E8D58"/>
     <circle cx="${cx + 34}" cy="${topY + 34}" r="20" fill="#4E8D58"/>
     <rect x="${cx - 54}" y="${topY + 44}" width="108" height="40" fill="#56975F"/>`;
-  return `<g opacity="0.8">
-    ${rocky(310, 252)}
+  return `<g opacity="0.65">
+    ${peak(300, 254, 70)}
     ${forest(480, 264)}
-    ${rocky(725, 254)}
-    ${forest(880, 270)}
-    ${rocky(1140, 266)}
+    ${peak(742, 250, 84)}
+    ${peak(802, 268, 56)}
+    ${forest(885, 270)}
+    ${peak(1135, 262, 64)}
   </g>`;
 }
 
@@ -270,7 +281,7 @@ function scenery() {
     [350, 299, 0.95, 1], [505, 297, 0.85, 0], [663, 300, 1.0, 2], [842, 298, 0.9, 1], [1112, 301, 0.95, 2],
     [418, 330, 1.55, 2], [590, 320, 1.45, 1], [752, 336, 1.65, 0], [902, 316, 1.25, 1],
   ].map(([x, y, s, k]) => tree(x, y, s, k)).join('');
-  const daisies = [[342, 372], [520, 388], [702, 366], [880, 384], [148, 391]].map(([x, y]) => daisy(x, y)).join('');
+  const daisies = [[342, 372], [520, 383], [702, 366], [880, 384], [148, 385]].map(([x, y]) => daisy(x, y)).join('');
   const sparkles = [
     sparkle(64, 146, 0.9, C.glyph, 3.2, 0.4), sparkle(124, 64, 0.7, '#FFFFFF', 4.1, 1.5),
     sparkle(1126, 132, 0.85, C.glyph, 3.6, 0.9), sparkle(1172, 60, 0.65, '#FFFFFF', 2.8, 2.2),
@@ -401,9 +412,10 @@ function clawd() {
           <g>
             ${animT('translate', ['0 0', '0 0', '0 1.4', '0 0', '0 1.4', '0 0', '0 1.4', '0 0', '0 0'], [0, 0.43, 0.46, 0.49, 0.52, 0.55, 0.58, 0.61, 1], EAT_DUR, { additive: true })}
             <path d="${CLAWD_BODY}" fill="${C.coral}"/>
-            <!-- eyes: squeeze shut on the gulp and stay contently shut (blink-
-                 style short eyes) for a beat after the candy; no smile -->
+            <!-- eyes: squeeze shut on the gulp and stay contently shut for a
+                 beat — closed eyes are slightly wider, gently bowed arcs -->
             <g>
+              ${anim('opacity', [1, 1, 0, 0, 1, 1], [0, 0.643, 0.658, 0.868, 0.883, 1], EAT_DUR)}
               <rect x="40" width="10" fill="${C.ink}">
                 ${anim('y', [20, 20, 28.5, 28.5, 20, 20], [0, 0.625, 0.65, 0.875, 0.905, 1], EAT_DUR)}
                 ${anim('height', [20, 20, 3, 3, 20, 20], [0, 0.625, 0.65, 0.875, 0.905, 1], EAT_DUR)}
@@ -412,6 +424,11 @@ function clawd() {
                 ${anim('y', [20, 20, 28.5, 28.5, 20, 20], [0, 0.625, 0.65, 0.875, 0.905, 1], EAT_DUR)}
                 ${anim('height', [20, 20, 3, 3, 20, 20], [0, 0.625, 0.65, 0.875, 0.905, 1], EAT_DUR)}
               </rect>
+            </g>
+            <g opacity="0" stroke="${C.ink}" stroke-width="3.4" stroke-linecap="round" fill="none">
+              ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.645, 0.66, 0.866, 0.881, 1], EAT_DUR)}
+              <path d="M38.5,30 Q45,26.5 51.5,30"/>
+              <path d="M108.5,30 Q115,26.5 121.5,30"/>
             </g>
             <!-- cheek bulge: crescent outline (orange inside) puffing out beside
                  the mouth between chomps -->
@@ -450,8 +467,12 @@ function clawd() {
   </ellipse>
   <g transform="translate(88 252)">
     ${animT('translate', ['0 0', '0 -2', '0 0'], [0, 0.5, 1], 5.3, { additive: true, splines: ['0.4 0 0.6 1', '0.4 0 0.6 1'] })}
-    <!-- planted pivot foot: stays flat on the ground while the body leans -->
-    <rect x="120" y="70" width="10" height="30" fill="${C.coral}"/>
+    <!-- planted pivot foot: stays vertical but slides sideways to keep up
+         with the tipping body (foot shuffle) -->
+    <g>
+      ${animT('translate', ['0 0', '0 0', '-1.72 0', '10.15 0', '10.15 0', '-1.38 0', '0 0', '0 0'], LEAN_KT, EAT_DUR, { splines: LEAN_SPL })}
+      <rect x="120" y="70" width="10" height="30" fill="${C.coral}"/>
+    </g>
     <g>
       ${animT('rotate', LEAN_V, LEAN_KT, EAT_DUR, { splines: LEAN_SPL })}
       ${magFlipper}
@@ -530,35 +551,35 @@ function codex() {
       ${animT('translate', ['0 0', '0 0', '1 0', '-1 0', '0.7 0', '-0.5 0', '0 0', '0 0'], [0, 0.85, 0.875, 0.9, 0.925, 0.95, 0.975, 1], 3.4, { additive: true })}
 
       <!-- far leg -->
-      ${limb(-4, -14, -36, -11, 11, C.coxLimbFar, C.coxLimbEdge)}
-      ${limb(-36, -11, -38, -2, 10, C.coxLimbFar, C.coxLimbEdge)}
-      <ellipse cx="-42" cy="-1.5" rx="7.5" ry="4.2" fill="${C.coxLimbFar}"/>
-      <!-- body -->
-      <rect x="-22" y="-50" width="42" height="46" rx="18" fill="url(#coxBodyGrad)"/>
+      ${limb(-6, -16, -38, -13, 13, C.coxLimbFar, C.coxLimbEdge)}
+      ${limb(-38, -13, -40, -3, 12, C.coxLimbFar, C.coxLimbEdge)}
+      <ellipse cx="-44" cy="-2" rx="8.5" ry="4.8" fill="${C.coxLimbFar}"/>
+      <!-- body (stocky) -->
+      <rect x="-28" y="-52" width="56" height="48" rx="20" fill="url(#coxBodyGrad)"/>
       <!-- near leg -->
-      ${limb(0, -12, -32, -9, 11, C.coxLimb, C.coxLimbEdge)}
-      ${limb(-32, -9, -34, 0, 10, C.coxLimb, C.coxLimbEdge)}
-      <ellipse cx="-38" cy="0.5" rx="7.5" ry="4.2" fill="${C.coxLimb}"/>
+      ${limb(0, -14, -34, -11, 13, C.coxLimb, C.coxLimbEdge)}
+      ${limb(-34, -11, -36, -1, 12, C.coxLimb, C.coxLimbEdge)}
+      <ellipse cx="-40" cy="0.5" rx="8.5" ry="4.8" fill="${C.coxLimb}"/>
 
       <!-- L-shaped laptop (side view: tall screen, longer keyboard deck) -->
       <g>
-        <polygon points="-56,-58 -12,-86 -12,-36 -56,-22" fill="url(#screenCone)" opacity="0.14">
+        <polygon points="-58,-59 -14,-87 -14,-37 -58,-23" fill="url(#screenCone)" opacity="0.14">
           ${anim('opacity', [0.09, 0.17, 0.11, 0.16, 0.09], [0, 0.3, 0.55, 0.8, 1], 1.3)}
         </polygon>
-        <rect x="-64" y="-62" width="7.5" height="46" rx="2.5" fill="${C.screen}"/>
-        <rect x="-57.4" y="-59" width="1.6" height="40" rx="0.8" fill="${C.screenGlow}" opacity="0.6"/>
-        <rect x="-62" y="-21" width="54" height="6.5" rx="2.5" fill="${C.lap}"/>
-        <rect x="-62" y="-21" width="54" height="2" rx="1" fill="${C.lapHi}"/>
+        <rect x="-66" y="-63" width="7.5" height="46" rx="2.5" fill="${C.screen}"/>
+        <rect x="-59.2" y="-60" width="1.6" height="40" rx="0.8" fill="${C.screenGlow}" opacity="0.6"/>
+        <rect x="-64" y="-22.5" width="56" height="6.5" rx="2.5" fill="${C.lap}"/>
+        <rect x="-64" y="-22.5" width="56" height="2" rx="1" fill="${C.lapHi}"/>
       </g>
 
       <!-- arms hammering the keys -->
       <g>
-        ${limb(-13, -41, -41, -26.5, 9, C.coxLimbFar, C.coxLimbEdge)}
-        <g>${typing(0)}<circle cx="-45" cy="-24.5" r="5.2" fill="${C.coxLimbFar}"/></g>
+        ${limb(-16, -42, -42, -27, 11, C.coxLimbFar, C.coxLimbEdge)}
+        <g>${typing(0)}<circle cx="-46" cy="-25" r="6" fill="${C.coxLimbFar}"/></g>
       </g>
       <g>
-        ${limb(-5, -37, -21, -24.5, 9, C.coxLimb, C.coxLimbEdge)}
-        <g>${typing(1)}<circle cx="-25" cy="-22.5" r="5.2" fill="${C.coxLimb}"/></g>
+        ${limb(-6, -38, -24, -25.5, 10, C.coxLimb, C.coxLimbEdge)}
+        <g>${typing(1)}<circle cx="-28" cy="-23.5" r="6" fill="${C.coxLimb}"/></g>
       </g>
 
       ${codexHead()}
@@ -589,29 +610,29 @@ function wrapper(x, y, rot, col, s = 1, op = 1) {
 function wrapperMound() {
   const cols = [C.wrapPink, C.candyViolet, C.candyGold, C.candyMint, C.candyOrange, C.candy];
   const rows = [
-    { y: 387, n: 6, x0: 1072, dx: 18 },
-    { y: 378, n: 5, x0: 1081, dx: 18 },
-    { y: 369, n: 4, x0: 1090, dx: 18 },
-    { y: 360, n: 3, x0: 1099, dx: 18 },
-    { y: 352, n: 2, x0: 1108, dx: 18 },
-    { y: 345, n: 1, x0: 1117, dx: 18 },
+    { y: 380, n: 6, x0: 1072, dx: 18 },
+    { y: 372, n: 5, x0: 1081, dx: 18 },
+    { y: 364, n: 4, x0: 1090, dx: 18 },
+    { y: 356, n: 3, x0: 1099, dx: 18 },
+    { y: 348.5, n: 2, x0: 1108, dx: 18 },
+    { y: 342, n: 1, x0: 1117, dx: 18 },
   ];
-  let out = `<ellipse cx="1118" cy="390" rx="60" ry="6" fill="#2E5C33" opacity="0.16"/>`;
+  let out = `<ellipse cx="1118" cy="384" rx="60" ry="5.5" fill="#2E5C33" opacity="0.16"/>`;
   let i = 0;
   for (const row of rows)
     for (let kI = 0; kI < row.n; kI++)
       out += wrapper(row.x0 + kI * row.dx + rr(-2.5, 2.5), row.y + rr(-1.5, 1.5), rr(-50, 50), cols[i++ % cols.length], rr(0.85, 1.12));
   // strays around his seat + one on the laptop deck
-  out += wrapper(1000, 380, 24, C.candyMint, 0.95);
-  out += wrapper(1036, 390, -33, C.candyGold, 1.0);
-  out += wrapper(968, 387, 60, C.candyViolet, 0.9);
-  out += wrapper(1058, 394, -12, C.candyOrange, 0.95);
+  out += wrapper(1000, 376, 24, C.candyMint, 0.95);
+  out += wrapper(1034, 381, -33, C.candyGold, 1.0);
+  out += wrapper(966, 380, 60, C.candyViolet, 0.9);
+  out += wrapper(1054, 383, -12, C.candyOrange, 0.95);
   out += wrapper(1002, 327, -8, C.candy, 0.72);
   // one wrapper tumbles down the mound now and then
   out += `<g opacity="0">
     ${anim('opacity', [0, 0, 1, 1, 1, 0], [0, 0.6, 0.63, 0.93, 0.985, 1], 9)}
     <g>
-      ${animT('translate', ['1117 342', '1117 342', '1100 355', '1078 372', '1072 378', '1072 378'], [0, 0.6, 0.71, 0.8, 0.84, 1], 9, { splines: ['0 0 1 1', '0.45 0 0.9 1', '0.3 0 0.8 1', '0 0 0.4 1', '0 0 1 1'] })}
+      ${animT('translate', ['1117 338', '1117 338', '1098 351', '1074 368', '1066 374', '1066 374'], [0, 0.6, 0.71, 0.8, 0.84, 1], 9, { splines: ['0 0 1 1', '0.45 0 0.9 1', '0.3 0 0.8 1', '0 0 0.4 1', '0 0 1 1'] })}
       <g>
         ${animT('rotate', ['0', '0', '-210', '-210'], [0, 0.6, 0.84, 1], 9)}
         ${wrapper(0, 0, 0, C.candy, 0.95)}
@@ -632,21 +653,28 @@ function wrapperMound() {
 // scattered treats on the grass: a gold bonbon, a candy cane, a lollipop,
 // and an unwrapped, bitten chocolate bar beside Codex — all flat + bordered
 function groundTreats() {
-  const cane = 'M0,14 L0,-4 A5.5,5.5 0 0 0 -11,-4 L-11,0';
+  // candy cane as a filled outline so the classic straight diagonal stripes
+  // can be clipped into it
+  const caneOutline = 'M2.8,14 L2.8,-4 A8.3,8.3 0 0 0 -13.8,-4 L-13.8,0 A2.8,2.8 0 0 0 -8.2,0 L-8.2,-4 A2.7,2.7 0 0 1 -2.8,-4 L-2.8,14 A2.8,2.8 0 0 0 2.8,14 Z';
+  let stripes = '';
+  for (let k = -28; k <= 10; k += 7) {
+    stripes += `<line x1="${k}" y1="-22" x2="${k + 44}" y2="22" stroke="#E8556F" stroke-width="3.6"/>`;
+  }
   return `
   <g transform="translate(408 367) rotate(-9)">${candyArt(C.candyGold, 1.3)}</g>
   <g transform="translate(498 372) rotate(14)">
-    <path d="${cane}" fill="none" stroke="#B23B52" stroke-width="8.4" stroke-linecap="round"/>
-    <path d="${cane}" fill="none" stroke="#FFFFFF" stroke-width="5.6" stroke-linecap="round"/>
-    <path d="${cane}" fill="none" stroke="#E8556F" stroke-width="5.6" stroke-linecap="round" stroke-dasharray="3.6 4.6"/>
+    <clipPath id="caneClip"><path d="${caneOutline}"/></clipPath>
+    <path d="${caneOutline}" fill="#FFFFFF"/>
+    <g clip-path="url(#caneClip)">${stripes}</g>
+    <path d="${caneOutline}" fill="none" stroke="#B23B52" stroke-width="1.5" stroke-linejoin="round"/>
   </g>
-  <g transform="translate(652 382) rotate(24)">
+  <g transform="translate(652 375) rotate(24)">
     <line x1="0" y1="2" x2="0" y2="16" stroke="${shade('#E8D9C0')}" stroke-width="4" stroke-linecap="round"/>
     <line x1="0" y1="2" x2="0" y2="16" stroke="#E8D9C0" stroke-width="2.4" stroke-linecap="round"/>
     <circle cy="-4" r="7.5" fill="${C.candyViolet}" stroke="${shade(C.candyViolet)}" stroke-width="1.5"/>
     <circle cy="-4" r="3.4" fill="none" stroke="${shade(C.candyViolet)}" stroke-width="1.5"/>
   </g>
-  <g transform="translate(945 383) rotate(-11)">
+  <g transform="translate(945 377) rotate(-11)">
     <path d="M-14,-5.5 Q-14,-8 -11.5,-8 L1,-8 A4.4,4.4 0 0 0 8.6,-6.2 A3.6,3.6 0 0 0 14,-2.6 L14,5.5 Q14,8 11.5,8 L-11.5,8 Q-14,8 -14,5.5 Z" fill="#7A4E2A" stroke="${shade('#7A4E2A')}" stroke-width="1.4" stroke-linejoin="round"/>
     <g stroke="${shade('#7A4E2A')}" stroke-width="1.1" opacity="0.85">
       <line x1="-4.7" y1="-8" x2="-4.7" y2="8"/>
@@ -739,7 +767,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" widt
     <linearGradient id="coxGrad" gradientUnits="userSpaceOnUse" x1="12" y1="3" x2="12" y2="21">
       <stop offset="0%" stop-color="${C.coxTop}"/><stop offset="50%" stop-color="${C.coxMid}"/><stop offset="100%" stop-color="${C.coxLow}"/>
     </linearGradient>
-    <linearGradient id="coxBodyGrad" gradientUnits="userSpaceOnUse" x1="0" y1="-50" x2="0" y2="-4">
+    <linearGradient id="coxBodyGrad" gradientUnits="userSpaceOnUse" x1="0" y1="-52" x2="0" y2="-4">
       <stop offset="0%" stop-color="${C.coxBody1}"/><stop offset="100%" stop-color="${C.coxBody2}"/>
     </linearGradient>
     <linearGradient id="screenCone" x1="0" y1="0" x2="1" y2="0">
