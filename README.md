@@ -307,6 +307,16 @@ with no accelerator at all.
 | NVIDIA GPU (SM 7.0+) | candle **CUDA**; **flash-attention** on Ampere+ |
 | Anything else | **ONNX Runtime INT8** — optimized CPU path, ~139 MB embedding model, no GPU weights downloaded |
 
+Before a single token is embedded, files are chunked by **[cAST](https://arxiv.org/abs/2506.15655)** —
+structure-aware chunking over real **tree-sitter ASTs**. A recursive split-then-merge greedily packs
+adjacent sibling AST nodes into a chunk until the size cap, and recurses *into* nodes too big to fit —
+so every chunk is whole code: a function, a class, a contiguous run of declarations. Never a function
+sliced mid-body, never a string split mid-literal. 14 languages get true AST grammars (JS/TS/TSX,
+Python, Go, Rust, Java, C, C++, Ruby, PHP, Kotlin, Swift, C#); a 39-config regex registry extends
+structure-aware chunking to 70+ file extensions beyond those. Each chunk carries its symbol name,
+entity type, signature, and line span — the metadata that feeds the code graph, `ss-read`'s
+annotations, and the self-contained answers everywhere else.
+
 <details>
 <summary><b>What's actually custom here</b></summary>
 
@@ -316,7 +326,6 @@ with no accelerator at all.
 - **GPU off the event loop:** inference runs as napi `AsyncTask` on libuv worker threads, so tokenization and SQLite writes overlap GPU compute instead of stalling behind it.
 - **Pipelined indexing:** while batch *N+1* embeds, batch *N*'s vectors stream into SQLite through zero-copy buffer views; full rebuilds write to a temp file and atomically swap, so a crash never leaves you serving half an index.
 - **Models:** CodeRankEmbed (768-d, code-specialized) for embeddings; LateOn-Code (ModernBERT) for per-token late interaction, in a full-fidelity `standard` and a compact `edge` variant (~9× smaller FP32 backbone; ~2× smaller on the INT8 CPU path).
-- **AST-aware chunking:** files are parsed with real tree-sitter grammars (14 languages) and split by a cAST-style recursive merge — whole functions and classes, never a function sliced in half — with a 39-config regex fallback covering 70+ file extensions beyond those.
 
 </details>
 
