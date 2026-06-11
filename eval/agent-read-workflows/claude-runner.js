@@ -74,6 +74,9 @@ async function runClaudeAgentOnce(req) {
   // core/cli.js. Native-mode policy still forbids any sweet-search use, so
   // making the binary discoverable here doesn't bias native runs.
   const env = { ...process.env };
+  // Force OAuth/subscription auth for the SPAWNED agent only, without touching
+  // the caller's env (in-process judge calls still need ANTHROPIC_API_KEY).
+  if (req.stripApiKey) delete env.ANTHROPIC_API_KEY;
   if (req.extraPathEntries && req.extraPathEntries.length) {
     env.PATH = [...req.extraPathEntries, env.PATH].filter(Boolean).join(':');
   }

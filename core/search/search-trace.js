@@ -83,7 +83,7 @@ Options:
   --in <file>       Disambiguate symbols by indexed file path
   --query <hint>    Natural-language hint used only for structural ranking
   --depth <n>       Impact depth, 1-4 (default: 3)
-  --budget <n>      Token budget, 1000-16000 (default: adaptive 4k/8k/12k)
+  --budget <n>      Token budget, 1000-16000 (default: adaptive 3k/8k/12k)
   --json            Output structured JSON
   --format <fmt>    plain (no banner) or json
   --no-banner       Suppress the identity line

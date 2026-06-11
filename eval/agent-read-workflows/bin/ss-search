@@ -4,7 +4,7 @@
 # semantic / hybrid / structural) with auto-tier budget by default.
 #
 # Usage:
-#   ss-search "<query>"                    # auto-picks 4k / 8k / 12k from signals
+#   ss-search "<query>"                    # auto-picks 3k / 8k / 12k from signals
 #   ss-search "<query>" --full             # force 8k (rarely needed; default auto-picks)
 #   ss-search "<query>" --xl               # force 12k (rarely needed; default auto-picks)
 #   ss-search "<query>" -k N               # top-K (default 5)

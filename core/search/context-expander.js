@@ -1677,8 +1677,17 @@ function resolveSubMode(format) {
 // space, and small-N entropy is dominated by the 1/log(n) denominator and
 // stops being a reliable distribution-width signal.
 
+// Preview-tier budget: 3000 (was 4000 until 2026-06-11). The 4-model budget
+// sweep (DeepSeek/MiMo/GPT-5.5-codex/Opus-CC, 12 dev probes, paired vs 4k)
+// found 3k keeps every accuracy/usefulness metric flat-to-up with zero
+// call-compensation, and cuts realized cost −11–15% on the flagship cells.
+// Below 3k, flagship models re-buy the trimmed context with extra calls
+// (Opus calls Δ: 3k −0.08 → 2.8k +0.33 → 2.5k +0.67 → 2k +0.83), erasing
+// the savings — 3k is the floor. SWEET_SEARCH_PREVIEW_BUDGET overrides for
+// experiments; full/xl escalation tiers are unchanged.
+const PREVIEW_TIER_BUDGET = Number(process.env.SWEET_SEARCH_PREVIEW_BUDGET || '') || 3000;
 const BUDGET_TIERS = {
-  preview: { subMode: 'agent_preview', budget: 4000 },
+  preview: { subMode: 'agent_preview', budget: PREVIEW_TIER_BUDGET },
   full:    { subMode: 'agent_full',    budget: 8000 },
   xl:      { subMode: 'agent_full_xl', budget: 12000 },
 };
