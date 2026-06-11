@@ -7,10 +7,10 @@ This product includes software developed by Marko Sladojevic.
 
 ATTRIBUTION NOTICE
 
-Sweet Search is a high-performance hybrid code search engine featuring:
-- WASM CatBoost ML Query Router (~10us latency)
-- Semantic, Lexical, Hybrid and Structural search paths
-- Multilingual support with translation fallback
+Sweet Search is an agentic retrieval system. 
+It is highly competitive with native search (grep+Read) 
+and beats it in most cases in realized cost, tool call efficiency,
+and answer usefulness per token, for most harness+model combos. 
 
 Original Author: Marko Sladojevic
 Company: Panonit
@@ -19,5 +19,5 @@ Website: https://panonit.com
 If you use Sweet Search in your project, please include this attribution
 in your documentation, README, or application "About" section:
 
-    "Powered by Sweet Search - https://github.com/panonitorg/sweet-search"
+    "Powered by Sweet Search - https://github.com/mrsladoje/sweet-search"
     "Created by Marko Sladojevic / Panonit"
