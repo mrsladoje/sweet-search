@@ -3,16 +3,19 @@
  * gen-banner-svg.mjs — animated README hero banner for sweet-search.
  *
  * Composition (1200x400, daytime pastoral scene):
- *   - blue sky, drifting clouds, far hills + tiny trees, green field
+ *   - blue sky, drifting clouds (3 shapes), far hills + tiny trees, green field
  *   - CENTER: the real CLI banner — purple (#5A73DC) SWEET SEARCH half-block
  *             art on the dark-navy gradient band, exactly like the printout
  *   - LEFT  : Clawd (Claude Code mascot, exact terminal-quadrant silhouette,
- *             mono #D77757). Two-joint IK arm picks a candy from a pile,
- *             brings it to his mouth, chews (cheek bump), gulps, smiles.
- *             Other (right) arm holds a magnifying glass.
- *   - RIGHT : Codex (official OpenAI cloud + white >_ mark, exact logo path)
- *             sitting side-on, typing furiously on an L-shaped laptop,
- *             chocolate-smudged mouth, mountain of candy wrappers behind.
+ *             mono #D77757). His side STUMPS are the arms: he tips over to
+ *             pick a candy off the pile with the right stump, rocks back,
+ *             flicks it in a parabolic toss into his mouth, chews (animated
+ *             ink mouth + ink cheek bump), gulps, smiles. The left stump
+ *             holds the magnifying glass directly.
+ *   - RIGHT : Codex (official OpenAI cloud, exact logo path) facing the
+ *             viewer with a >_< sugar-rush face (mirrored official chevron =
+ *             second eye, official dash recentred = mouth, chocolate smudges),
+ *             body side-on typing on an L-shaped laptop, wrapper mountain.
  *
  * All animation is SMIL (GitHub strips <script> from README <img> SVGs; SMIL
  * plays fine through the camo proxy).
@@ -59,7 +62,7 @@ const C = {
   // glyphs = STYLE.colors.border (#5A73DC), bold purple
   glyphHi: '#8CA0F0', glyph: '#5A73DC', glyphLo: '#4557C5',
   // Clawd (claude-code cli.js: rgb(215,119,87))
-  coral: '#D77757', coralEdge: '#B85230', ink: '#20201E',
+  coral: '#D77757', ink: '#20201E',
   // candy
   candyHi: '#FFB3D6', candy: '#FF5BA3', candyLo: '#DD2F7E', wrapPink: '#FF97C2',
   candyMint: '#3FD08F', candyViolet: '#A78BFA', candyGold: '#FFC247', candyOrange: '#FF8A5C',
@@ -123,6 +126,17 @@ function limb(x1, y1, x2, y2, w, fill, edge) {
     + `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="${fill}" stroke-width="${f(w)}" stroke-linecap="round"/>`;
 }
 
+// wrapped candy (centred on 0,0)
+function candyArt(fill, hiOpacity = 0.6, s = 1) {
+  const body = fill.startsWith('url') ? fill : fill;
+  return `<g${s !== 1 ? ` transform="scale(${s})"` : ''}>
+    <path d="M-5.6,0 L-12.5,-5.2 L-12.5,5.2 Z" fill="${C.wrapPink}"/>
+    <path d="M5.6,0 L12.5,-5.2 L12.5,5.2 Z" fill="${C.wrapPink}"/>
+    <ellipse rx="6.6" ry="5.2" fill="${body}"/>
+    <ellipse cx="-1.7" cy="-1.5" rx="2.2" ry="1.4" fill="#FFFFFF" opacity="${hiOpacity}"/>
+  </g>`;
+}
+
 // ---------------------------------------------------------------------------
 // 1. SWEET SEARCH half-block art (identical strings to cli-decoration.js)
 // ---------------------------------------------------------------------------
@@ -169,11 +183,18 @@ function artRuns() {
 // ---------------------------------------------------------------------------
 // 2. Scenery
 // ---------------------------------------------------------------------------
-function cloud(cx, cy, s, op, driftPx, driftDur) {
-  const puffs = [
-    [0, 0, 22], [-24, 6, 15], [24, 6, 15], [-12, -10, 14], [13, -9, 15], [38, 9, 10],
-  ];
-  const body = puffs.map(([x, y, r]) => `<circle cx="${f(x * s)}" cy="${f(y * s)}" r="${f(r * s)}"/>`).join('');
+const CLOUD_SHAPES = [
+  // classic cumulus
+  [[0, 0, 22], [-24, 6, 15], [24, 6, 15], [-12, -10, 14], [13, -9, 15], [38, 9, 10]],
+  // long, flat stratus
+  [[0, 0, 16], [-30, 4, 12], [28, 4, 13], [-14, -8, 12], [12, -8, 13], [46, 7, 9], [-46, 7, 9]],
+  // small round puff
+  [[0, 0, 15], [-14, 5, 11], [14, 5, 11], [0, -10, 12]],
+];
+
+function cloud(cx, cy, s, op, driftPx, driftDur, shape = 0) {
+  const body = CLOUD_SHAPES[shape]
+    .map(([x, y, r]) => `<circle cx="${f(x * s)}" cy="${f(y * s)}" r="${f(r * s)}"/>`).join('');
   return `<g transform="translate(${cx} ${cy})" fill="${C.cloud}" opacity="${op}">
     ${animT('translate', [`0 0`, `${driftPx} 0`, `0 0`], [0, 0.5, 1], driftDur, { additive: true, splines: ['0.4 0 0.6 1', '0.4 0 0.6 1'] })}
     ${body}
@@ -218,12 +239,12 @@ function scenery() {
   return `
   <!-- sky -->
   <rect width="1200" height="400" fill="url(#skyGrad)"/>
-  <!-- clouds (drift gently) -->
-  ${cloud(168, 56, 0.9, 0.92, 16, 34)}
-  ${cloud(452, 42, 1.05, 0.95, -14, 40)}
-  ${cloud(764, 54, 0.8, 0.9, 12, 28)}
-  ${cloud(1040, 40, 0.7, 0.85, -10, 31)}
-  ${cloud(612, 26, 0.5, 0.55, 8, 24)}
+  <!-- clouds (3 shapes, drifting gently) -->
+  ${cloud(168, 56, 0.9, 0.92, 16, 34, 0)}
+  ${cloud(452, 42, 1.0, 0.95, -14, 40, 1)}
+  ${cloud(764, 54, 0.85, 0.9, 12, 28, 2)}
+  ${cloud(1040, 40, 0.75, 0.85, -10, 31, 1)}
+  ${cloud(612, 26, 0.55, 0.55, 8, 24, 2)}
   <!-- far hills + field -->
   <path d="M0,312 C150,296 290,305 430,301 C570,297 700,308 845,301 C985,295 1100,305 1200,300 L1200,340 L0,340 Z" fill="${C.hillFar}"/>
   <path d="M0,322 C180,308 340,316 520,311 C700,306 880,316 1040,310 C1110,308 1160,311 1200,310 L1200,350 L0,350 Z" fill="${C.hillNear}"/>
@@ -262,136 +283,126 @@ function bannerPanel() {
 // 4. Clawd — exact terminal-quadrant silhouette, q = 10px per quadrant-width.
 //
 //    ▐▛███▜▌     head band  y0..40,  x20..140 (eyes = the two empty quadrants)
-//   ▝▜█████▛▘    arm band   y40..60, x0..160 (side nubs are the arm roots)
-//     ▘▘ ▝▝      lower band y60..80, x20..140; feet y80..100
+//   ▝▜█████▛▘    arm band   y40..60; the side stumps ARE the arms (animated
+//     ▘▘ ▝▝      as separate flippers); lower band y60..80; feet y80..100
+//
+// Eat cycle: tip over (rotate about the right foot corner) -> grab the top
+// pile candy with the right stump -> rock back -> flick the candy in a
+// parabolic toss into the open mouth -> chew (ink mouth + ink cheek bump)
+// -> gulp -> smile.
 // ---------------------------------------------------------------------------
-const CLAWD_OUTLINE = 'M20,0 H140 V40 H160 V60 H140 V80 H130 V100 H120 V80 H110 V100 H100 V80 H60 V100 H50 V80 H40 V100 H30 V80 H20 V60 H0 V40 H20 Z';
-
-// two-joint IK: shoulder S, segment lengths Lu/Lf, target T. Returns rotations
-// (deg) for a rig whose zero pose points straight down; positive = clockwise.
-function ik(S, Lu, Lf, T, elbowSign = 1) {
-  const dx = T[0] - S[0], dy = T[1] - S[1];
-  const d = Math.min(Math.hypot(dx, dy), Lu + Lf - 0.01);
-  const thT = Math.atan2(-dx / d, dy / d) * 180 / Math.PI;
-  const beta = Math.acos(Math.min(1, Math.max(-1, (d * d + Lu * Lu - Lf * Lf) / (2 * d * Lu)))) * 180 / Math.PI;
-  const C = Math.acos(Math.min(1, Math.max(-1, (Lu * Lu + Lf * Lf - d * d) / (2 * Lu * Lf)))) * 180 / Math.PI;
-  return { s: thT - elbowSign * beta, e: elbowSign * (180 - C) };
-}
+const CLAWD_BODY = 'M20,0 H140 V80 H130 V100 H120 V80 H110 V100 H100 V80 H60 V100 H50 V80 H40 V100 H30 V80 H20 Z';
 
 const EAT_DUR = 8;
 function clawd() {
-  const S = [150, 50];           // eating-arm shoulder (his left = viewer right)
-  const Lu = 36, Lf = 38;
-  const MOUTH = [80, 51];
-  const PILE = [185, 95];        // local; candy pile on the grass beside him
+  // body lean about the right foot corner (130,100); +37.6deg puts the
+  // candy held by the +25deg flipper exactly on the pile-top candy.
+  const LEAN_KT = [0, 0.04, 0.075, 0.155, 0.205, 0.265, 0.30, 1];
+  const LEAN_V = ['0 130 100', '0 130 100', '-5 130 100', '37.6 130 100', '37.6 130 100', '-4 130 100', '0 130 100', '0 130 100'];
+  const LEAN_SPL = ['0 0 1 1', '0.4 0 0.6 1', '0.35 0 0.5 1', '0 0 1 1', '0.3 0 0.5 1', '0.35 0 0.6 1', '0 0 1 1'];
 
-  // all poses on the same elbow branch (+1) so the swing never passes through
-  // full extension (which would sweep the hand below the grass); CARRY is a
-  // tucked mid-swing pose the arm folds through on the way up AND back.
-  const pPile = ik(S, Lu, Lf, PILE, 1);
-  const pDip = ik(S, Lu, Lf, [PILE[0] + 1, PILE[1] + 3], 1);
-  const pCarry = ik(S, Lu, Lf, [135, 65], 1);
-  const pMouth = ik(S, Lu, Lf, MOUTH, 1);
-  const pOver = ik(S, Lu, Lf, [MOUTH[0] - 3, MOUTH[1] - 2], 1);
+  // right stump (the eater): reach down with the lean, hold the candy level
+  // on the way back, wind up, flick (follow-through to -55), recover.
+  const FLIP_KT = [0, 0.04, 0.075, 0.155, 0.205, 0.30, 0.315, 0.345, 0.46, 1];
+  const FLIP_V = [0, 0, 25, 25, 8, 8, 18, -55, 0, 0];
+  const FLIP_SPL = ['0 0 1 1', '0.4 0 0.6 1', '0 0 1 1', '0.3 0 0.6 1', '0 0 1 1', '0.4 0 0.6 1', '0.5 0 0.8 1', '0.3 0 0.5 1', '0 0 1 1'];
 
-  // master keyTimes for the eat cycle (8s):
-  // rest .. grab(0.05) .. lift(0.075-0.225 via carry) .. bite(0.252)
-  // return(0.27-0.42 via carry) .. chew(0.30-0.575) .. gulp(0.575-0.685)
-  // smile(0.625-0.885)
-  const KT = [0, 0.035, 0.055, 0.075, 0.135, 0.195, 0.225, 0.27, 0.345, 0.42, 1];
-  const SPL = ['0 0 1 1', '0.4 0 0.6 1', '0 0 1 1', '0.35 0 0.5 1', '0.3 0 0.4 1', '0.3 0 0.5 1', '0 0 1 1', '0.4 0 0.5 1', '0.25 0 0.5 1', '0 0 1 1'];
-  const vS = [pPile.s, pPile.s, pDip.s, pDip.s, pCarry.s, pOver.s, pMouth.s, pMouth.s, pCarry.s, pPile.s, pPile.s].map(f);
-  const vE = [pPile.e, pPile.e, pDip.e, pDip.e, pCarry.e, pOver.e, pMouth.e, pMouth.e, pCarry.e, pPile.e, pPile.e].map(f);
+  // candy toss: release at flipper ~-26deg -> parabola sampled from the
+  // quadratic (163.4,38.7) Q(121,-32) (80,53); lands in the open mouth.
+  const FLY_KT = [0, 0.336, 0.347, 0.358, 0.369, 0.380, 1];
+  const FLY_V = ['163.4 38.7', '163.4 38.7', '135.3 8.9', '107.6 13.7', '93.7 29', '80 53', '80 53'];
 
-  const armRig = `
-    <g transform="translate(${S[0]} ${S[1]})">
+  const eatFlipper = `
+    <g transform="translate(140 50)">
       <g>
-        ${animT('rotate', vS, KT, EAT_DUR, { splines: SPL })}
-        ${limb(0, 0, 0, Lu, 12, C.coral, C.coralEdge)}
-        <g transform="translate(0 ${Lu})">
+        ${animT('rotate', FLIP_V, FLIP_KT, EAT_DUR, { splines: FLIP_SPL })}
+        <rect x="-7" y="-10" width="27" height="20" rx="2.5" fill="${C.coral}"/>
+        <g transform="translate(26 0)">
           <g>
-            ${animT('rotate', vE, KT, EAT_DUR, { splines: SPL })}
-            ${limb(0, 2, 0, Lf - 4, 11, C.coral, C.coralEdge)}
-            <g transform="translate(0 ${Lf})">
-              <circle r="6.5" fill="${C.coral}" stroke="${C.coralEdge}" stroke-width="1.5"/>
-              <!-- candy appears at the grab, vanishes at the bite -->
-              <g>
-                ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.048, 0.06, 0.251, 0.255, 1], EAT_DUR)}
-                <path d="M-6,0 L-13,-5.5 L-13,5.5 Z" fill="${C.wrapPink}"/>
-                <path d="M6,0 L13,-5.5 L13,5.5 Z" fill="${C.wrapPink}"/>
-                <ellipse rx="6.8" ry="5.4" fill="url(#candyGrad)"/>
-                <ellipse cx="-1.8" cy="-1.6" rx="2.4" ry="1.5" fill="#FFFFFF" opacity="0.65"/>
-              </g>
-            </g>
+            ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.165, 0.175, 0.333, 0.336, 1], EAT_DUR)}
+            ${candyArt('url(#candyGrad)')}
           </g>
         </g>
       </g>
     </g>`;
 
-  // magnifying glass arm (his right = viewer left), gentle sway
-  const mag = `
-    <g>
-      ${animT('rotate', ['-3 10 50', '3 10 50', '-3 10 50'], [0, 0.5, 1], 6, { splines: ['0.4 0 0.6 1', '0.4 0 0.6 1'] })}
-      ${limb(10, 50, -7, 20.6, 12, C.coral, C.coralEdge)}
-      ${limb(-7, 20.6, -29.3, 0.5, 11, C.coral, C.coralEdge)}
-      <line x1="-29.3" y1="0.5" x2="-41.2" y2="-10.2" stroke="#3A3F4A" stroke-width="7" stroke-linecap="round"/>
-      <g transform="translate(-55.3 -22.9)">
-        <circle r="19" fill="#CFE9FF" opacity="0.4"/>
-        <circle r="19" fill="none" stroke="#3A3F4A" stroke-width="5.5"/>
-        <circle r="16" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1.4"/>
-        <line x1="-9" y1="6" x2="5" y2="-8" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.5">
-          ${anim('opacity', [0.15, 0.7, 0.15], [0, 0.5, 1], 4.5, { begin: 0.8 })}
-        </line>
-        <path d="M0,-3.2 L0.9,-0.9 L3.2,0 L0.9,0.9 L0,3.2 L-0.9,0.9 L-3.2,0 L-0.9,-0.9 Z" fill="${C.glyph}" opacity="0.7" transform="translate(5 4)">
-          ${anim('opacity', [0.25, 0.85, 0.25], [0, 0.5, 1], 3.4)}
-        </path>
+  const magFlipper = `
+    <g transform="translate(20 50)">
+      <g>
+        ${animT('rotate', [25, 31, 25], [0, 0.5, 1], 6, { splines: ['0.4 0 0.6 1', '0.4 0 0.6 1'] })}
+        <line x1="-14" y1="0" x2="-31" y2="0" stroke="#3A3F4A" stroke-width="7" stroke-linecap="round"/>
+        <g transform="translate(-49 0)">
+          <circle r="19" fill="#CFE9FF" opacity="0.4"/>
+          <circle r="19" fill="none" stroke="#3A3F4A" stroke-width="5.5"/>
+          <circle r="16" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1.4"/>
+          <line x1="-9" y1="6" x2="5" y2="-8" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.5">
+            ${anim('opacity', [0.15, 0.7, 0.15], [0, 0.5, 1], 4.5, { begin: 0.8 })}
+          </line>
+          <path d="M0,-3.2 L0.9,-0.9 L3.2,0 L0.9,0.9 L0,3.2 L-0.9,0.9 L-3.2,0 L-0.9,-0.9 Z" fill="${C.glyph}" opacity="0.7" transform="translate(5 4)">
+            ${anim('opacity', [0.25, 0.85, 0.25], [0, 0.5, 1], 3.4)}
+          </path>
+        </g>
+        <rect x="-20" y="-10" width="27" height="20" rx="2.5" fill="${C.coral}"/>
       </g>
-      <circle cx="-29.3" cy="0.5" r="6" fill="${C.coral}" stroke="${C.coralEdge}" stroke-width="1.5"/>
     </g>`;
 
-  // body: one mono-coral path. Eyes/mouth/cheek ride inside the gulp-squash rig.
+  // body + face. Chew = animated ink mouth + ink cheek bump pulsing beside it
+  // (food pouched in the cheek when the mouth closes).
   const body = `
     <g transform="translate(80 100)">
       <g>
-        ${animT('scale', ['1 1', '1 1', '1.035 0.95', '0.985 1.025', '1 1', '1 1'], [0, 0.575, 0.615, 0.65, 0.685, 1], EAT_DUR, { splines: ['0 0 1 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0 0 1 1'] })}
+        ${animT('scale', ['1 1', '1 1', '1.035 0.95', '0.985 1.025', '1 1', '1 1'], [0, 0.625, 0.655, 0.685, 0.715, 1], EAT_DUR, { splines: ['0 0 1 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0 0 1 1'] })}
         <g transform="translate(-80 -100)">
           <g>
-            ${animT('translate', ['0 0', '0 0', '0 1.4', '0 0', '0 1.4', '0 0', '0 1.4', '0 0', '0 0'], [0, 0.3, 0.345, 0.39, 0.435, 0.48, 0.525, 0.575, 1], EAT_DUR, { additive: true })}
-            <path d="${CLAWD_OUTLINE}" fill="${C.coral}"/>
-            <!-- cheek bump (chews up in his right cheek = viewer left, chipmunk-style) -->
-            <g transform="translate(19.5 27)">
-              <g>
-                ${animT('scale', [0, 0, 1, 0.3, 1, 0.3, 1, 0, 0], [0, 0.3, 0.345, 0.39, 0.435, 0.48, 0.525, 0.575, 1], EAT_DUR, { splines: ['0 0 1 1', '0.3 0 0.5 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0 0 1 1'] })}
-                <ellipse rx="8" ry="10.5" fill="${C.coral}"/>
-              </g>
-            </g>
+            ${animT('translate', ['0 0', '0 0', '0 1.4', '0 0', '0 1.4', '0 0', '0 1.4', '0 0', '0 0'], [0, 0.43, 0.46, 0.49, 0.52, 0.55, 0.58, 0.61, 1], EAT_DUR, { additive: true })}
+            <path d="${CLAWD_BODY}" fill="${C.coral}"/>
             <!-- eyes: normal tall quadrants <-> happy arcs after the gulp -->
             <g>
-              ${anim('opacity', [1, 1, 0, 0, 1, 1], [0, 0.615, 0.645, 0.855, 0.885, 1], EAT_DUR)}
+              ${anim('opacity', [1, 1, 0, 0, 1, 1], [0, 0.665, 0.695, 0.875, 0.905, 1], EAT_DUR)}
               <rect x="40" width="10" fill="${C.ink}">
-                ${anim('y', [20, 20, 28.5, 28.5, 20, 20, 28.5, 20, 20], [0, 0.59, 0.61, 0.655, 0.675, 0.92, 0.935, 0.95, 1], EAT_DUR)}
-                ${anim('height', [20, 20, 3, 3, 20, 20, 3, 20, 20], [0, 0.59, 0.61, 0.655, 0.675, 0.92, 0.935, 0.95, 1], EAT_DUR)}
+                ${anim('y', [20, 20, 28.5, 28.5, 20, 20, 28.5, 20, 20], [0, 0.625, 0.645, 0.685, 0.705, 0.92, 0.935, 0.95, 1], EAT_DUR)}
+                ${anim('height', [20, 20, 3, 3, 20, 20, 3, 20, 20], [0, 0.625, 0.645, 0.685, 0.705, 0.92, 0.935, 0.95, 1], EAT_DUR)}
               </rect>
               <rect x="110" width="10" fill="${C.ink}">
-                ${anim('y', [20, 20, 28.5, 28.5, 20, 20, 28.5, 20, 20], [0, 0.59, 0.61, 0.655, 0.675, 0.92, 0.935, 0.95, 1], EAT_DUR)}
-                ${anim('height', [20, 20, 3, 3, 20, 20, 3, 20, 20], [0, 0.59, 0.61, 0.655, 0.675, 0.92, 0.935, 0.95, 1], EAT_DUR)}
+                ${anim('y', [20, 20, 28.5, 28.5, 20, 20, 28.5, 20, 20], [0, 0.625, 0.645, 0.685, 0.705, 0.92, 0.935, 0.95, 1], EAT_DUR)}
+                ${anim('height', [20, 20, 3, 3, 20, 20, 3, 20, 20], [0, 0.625, 0.645, 0.685, 0.705, 0.92, 0.935, 0.95, 1], EAT_DUR)}
               </rect>
             </g>
             <g opacity="0" stroke="${C.ink}" stroke-width="4.2" stroke-linecap="round" fill="none">
-              ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.615, 0.645, 0.855, 0.885, 1], EAT_DUR)}
+              ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.665, 0.695, 0.875, 0.905, 1], EAT_DUR)}
               <path d="M38,33 Q45,25 52,33"/>
               <path d="M108,33 Q115,25 122,33"/>
             </g>
-            <!-- mouth: opens for the bite (peeks below the incoming candy) -->
+            <!-- ink cheek bump: food pouched beside the mouth between chomps -->
+            <g transform="translate(100 53)">
+              <g>
+                ${animT('scale', [0, 0, 0.5, 1, 0.45, 1, 0.45, 1, 0, 0], [0, 0.42, 0.445, 0.46, 0.49, 0.52, 0.55, 0.58, 0.62, 1], EAT_DUR, { splines: ['0 0 1 1', '0.3 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0 0 1 1'] })}
+                <ellipse rx="8.5" ry="7.5" fill="${C.ink}"/>
+              </g>
+            </g>
+            <!-- mouth: opens to catch the toss, then chews (ink, animated) -->
             <ellipse cx="80" cy="55" rx="7" ry="0.01" fill="${C.ink}" opacity="0">
-              ${anim('ry', [0.01, 0.01, 8, 8, 0.01, 0.01], [0, 0.165, 0.2, 0.26, 0.295, 1], EAT_DUR)}
-              ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.16, 0.19, 0.27, 0.3, 1], EAT_DUR)}
+              ${anim('ry', [0.01, 0.01, 9, 9, 2.5, 6, 2.5, 6, 2.5, 6, 2.5, 2, 0.01, 0.01], [0, 0.295, 0.315, 0.375, 0.40, 0.43, 0.46, 0.49, 0.52, 0.55, 0.58, 0.61, 0.64, 1], EAT_DUR)}
+              ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.295, 0.31, 0.63, 0.66, 1], EAT_DUR)}
             </ellipse>
             <!-- smile after the swallow -->
             <path d="M66,49 Q80,61 94,49" stroke="${C.ink}" stroke-width="4.2" stroke-linecap="round" fill="none" opacity="0">
-              ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.625, 0.66, 0.845, 0.885, 1], EAT_DUR)}
+              ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.665, 0.70, 0.875, 0.91, 1], EAT_DUR)}
             </path>
           </g>
+        </g>
+      </g>
+    </g>`;
+
+  // tossed candy flies outside the lean group (the body is upright by then)
+  const flyingCandy = `
+    <g opacity="0">
+      ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.336, 0.339, 0.378, 0.382, 1], EAT_DUR)}
+      <g>
+        ${animT('translate', FLY_V, FLY_KT, EAT_DUR)}
+        <g>
+          ${animT('rotate', [0, 0, 300, 300], [0, 0.336, 0.380, 1], EAT_DUR)}
+          ${candyArt('url(#candyGrad)')}
         </g>
       </g>
     </g>`;
@@ -400,52 +411,68 @@ function clawd() {
   <ellipse cx="168" cy="355" rx="70" ry="7.5" fill="#2E5C33" opacity="0.18"/>
   <g transform="translate(88 252)">
     ${animT('translate', ['0 0', '0 -2', '0 0'], [0, 0.5, 1], 5.3, { additive: true, splines: ['0.4 0 0.6 1', '0.4 0 0.6 1'] })}
-    ${mag}
-    ${body}
-    ${armRig}
+    <g>
+      ${animT('rotate', LEAN_V, LEAN_KT, EAT_DUR, { splines: LEAN_SPL })}
+      ${magFlipper}
+      ${body}
+      ${eatFlipper}
+    </g>
+    ${flyingCandy}
   </g>
-  <!-- candy pile (in front of the reaching claw) -->
+  <!-- candy pile; he visibly takes the top one each cycle -->
   <g>
     <ellipse cx="273" cy="351.5" rx="17" ry="3.2" fill="#2E5C33" opacity="0.2"/>
-    <g transform="translate(264 347.5) rotate(-14)"><path d="M-5.6,0 L-12,-5 L-12,5 Z" fill="${C.candyViolet}"/><path d="M5.6,0 L12,-5 L12,5 Z" fill="${C.candyViolet}"/><ellipse rx="6.2" ry="4.9" fill="${C.candyViolet}"/><ellipse cx="-1.6" cy="-1.4" rx="2" ry="1.2" fill="#FFFFFF" opacity="0.55"/></g>
-    <g transform="translate(279 347) rotate(12)"><path d="M-5.6,0 L-12,-5 L-12,5 Z" fill="${C.candyMint}"/><path d="M5.6,0 L12,-5 L12,5 Z" fill="${C.candyMint}"/><ellipse rx="6.2" ry="4.9" fill="${C.candyMint}"/><ellipse cx="-1.6" cy="-1.4" rx="2" ry="1.2" fill="#FFFFFF" opacity="0.55"/></g>
-    <g transform="translate(271 341) rotate(-4)"><path d="M-5.6,0 L-12,-5 L-12,5 Z" fill="${C.wrapPink}"/><path d="M5.6,0 L12,-5 L12,5 Z" fill="${C.wrapPink}"/><ellipse rx="6.4" ry="5" fill="url(#candyGrad)"/><ellipse cx="-1.6" cy="-1.5" rx="2.1" ry="1.3" fill="#FFFFFF" opacity="0.6"/></g>
+    <g transform="translate(264 347.5) rotate(-14)">${candyArt(C.candyViolet, 0.55, 0.94)}</g>
+    <g transform="translate(279 347) rotate(12)">${candyArt(C.candyMint, 0.55, 0.94)}</g>
+    <g transform="translate(271 341) rotate(-4)">
+      <g>
+        ${anim('opacity', [1, 1, 0, 0, 1, 1], [0, 0.16, 0.17, 0.93, 0.96, 1], EAT_DUR)}
+        ${candyArt('url(#candyGrad)')}
+      </g>
+    </g>
   </g>`;
 }
 
 // ---------------------------------------------------------------------------
-// 5. Codex — official cloud (+ >_) head, exact logo path, sat side-on typing
-//    on an L-shaped laptop; chocolate-smudged mouth; sugar-rush energy.
+// 5. Codex — official cloud head facing the viewer with a >_< sugar-rush face
+//    (official chevron + its mirror as the two eyes, official dash recentred
+//    as the mouth, chocolate smudges). Body side-on, typing on an L-shaped
+//    laptop; wrapper mountain behind.
 // ---------------------------------------------------------------------------
 const CODEX_CLOUD = 'M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388z';
 const CODEX_CHEVRON = 'M8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z';
 const CODEX_DASH = 'M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636z';
 
 function codexHead() {
-  // head in logo path-space (24x24), scaled k, gently nodding (sugar rush)
+  // head in logo path-space (24x24), scaled k, facing the viewer; quick
+  // little nod (sugar rush). Face = >_< from the official glyphs.
   const k = 4.9;
   return `
   <g transform="translate(-4 -96)">
     <g>
-      ${animT('rotate', ['-7', '-4.4', '-7'], [0, 0.5, 1], 0.55, { splines: ['0.4 0 0.6 1', '0.4 0 0.6 1'] })}
+      ${animT('rotate', ['-2.5', '-0.2', '-2.5'], [0, 0.5, 1], 0.55, { splines: ['0.4 0 0.6 1', '0.4 0 0.6 1'] })}
       <g transform="scale(${k}) translate(-12 -12)">
         <path d="${CODEX_CLOUD}" fill="url(#coxGrad)"/>
-        <!-- official >_ : chevron = profile eye, dash = mouth -->
-        <g transform="translate(8.85 11.93)"><g>
-          ${animT('scale', ['1 1', '1 1', '1 0.12', '1 1', '1 1'], [0, 0.9, 0.93, 0.96, 1], 3.7)}
-          <g transform="translate(-8.85 -11.93)"><path d="${CODEX_CHEVRON}" fill="#FFFFFF"/></g>
+        <!-- eyes: official chevron + its mirror (>_<), with a squeezy blink -->
+        <g transform="translate(12 11.93)"><g>
+          ${animT('scale', ['1 1', '1 1', '1 0.25', '1 1', '1 1'], [0, 0.9, 0.93, 0.96, 1], 3.7)}
+          <g transform="translate(-12 -11.93)">
+            <path d="${CODEX_CHEVRON}" fill="#FFFFFF"/>
+            <path d="${CODEX_CHEVRON}" fill="#FFFFFF" transform="matrix(-1 0 0 1 24 0)"/>
+          </g>
         </g></g>
-        <g transform="translate(14.36 14.55)"><g>
+        <!-- mouth: official dash recentred under the eyes; chews while typing -->
+        <g transform="translate(-2.36 1.8)"><g transform="translate(14.36 14.55)"><g>
           ${animT('scale', ['1 1', '1 1', '1 0.55', '1 1', '1 0.62', '1 1', '1 1'], [0, 0.55, 0.62, 0.69, 0.76, 0.83, 1], 2.8)}
           <g transform="translate(-14.36 -14.55)"><path d="${CODEX_DASH}" fill="#FFFFFF"/></g>
-        </g></g>
+        </g></g></g>
         <!-- chocolate-smudged mouth -->
         <g fill="${C.choc}">
-          <ellipse cx="12.05" cy="15.7" rx="0.85" ry="0.62" opacity="0.92"/>
-          <ellipse cx="17.15" cy="14.4" rx="0.7" ry="0.55" opacity="0.88"/>
-          <ellipse cx="14.6" cy="16.35" rx="1.05" ry="0.6" fill="${C.chocHi}" opacity="0.9"/>
-          <ellipse cx="13.35" cy="13.2" rx="0.45" ry="0.35" opacity="0.8"/>
-          <ellipse cx="16.2" cy="16.05" rx="0.55" ry="0.42" opacity="0.85"/>
+          <ellipse cx="9.7" cy="17.1" rx="0.8" ry="0.6" opacity="0.92"/>
+          <ellipse cx="14.4" cy="17.4" rx="0.7" ry="0.55" opacity="0.88"/>
+          <ellipse cx="12.1" cy="18.1" rx="1.0" ry="0.58" fill="${C.chocHi}" opacity="0.9"/>
+          <ellipse cx="8.9" cy="15.6" rx="0.45" ry="0.35" opacity="0.8"/>
+          <ellipse cx="15.3" cy="15.9" rx="0.5" ry="0.4" opacity="0.85"/>
         </g>
       </g>
     </g>
