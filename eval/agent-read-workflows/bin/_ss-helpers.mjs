@@ -126,6 +126,9 @@ async function cmdFind(args) {
     process.stderr.write('Usage: ss-find "<query>" --regex "<regex>" [--full|--xl] [-k N]\n');
     process.exit(2);
   }
+  // Budget-sweep experiment hook: lets the bench pin the response token budget
+  // per-process without changing the agent-visible tool surface.
+  const envFindBudget = Number(process.env.SS_SMOKE_FIND_BUDGET || '') || null;
   const effectiveRegex = regex || '';
   const s = await getSweetSearch();
   if (!s.hasLateInteractionIndex) {
@@ -136,6 +139,7 @@ async function cmdFind(args) {
     regex: effectiveRegex || `\\b\\w+\\b`,
     k,
     format,
+    ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
   });
 
   // Header (visible to agent)
@@ -212,7 +216,7 @@ async function cmdAgentSearch(args) {
   // Main sweet-search auto/CatBoost search with token-budgeted agent packaging.
   //
   // Usage:
-  //   ss-search "<query>"                                  → format=agent (auto-pick 4k/8k/12k)
+  //   ss-search "<query>"                                  → format=agent (auto-pick 3k/8k/12k)
   //   ss-search "<query>" --full                           → force 8k (rarely needed; default auto-picks)
   //   ss-search "<query>" --xl                             → force 12k (rarely needed; default auto-picks)
   //   ss-search "<query>" -k 5                             → top-K results
@@ -240,7 +244,10 @@ async function cmdAgentSearch(args) {
     process.exit(1);
   }
 
-  const response = await queryServer(query, { topK: k, mode, format });
+  // Budget-sweep experiment hook: per-request explicit budget (overrides the
+  // auto-tier on the warm server; flows as the `budget` URL param).
+  const envSearchBudget = Number(process.env.SS_SMOKE_SEARCH_BUDGET || '') || null;
+  const response = await queryServer(query, { topK: k, mode, format, ...(envSearchBudget ? { tokenBudget: envSearchBudget } : {}) });
   if (response?.error) {
     process.stderr.write(`[ss-search] server error: ${response.error}\n`);
     process.exit(1);
@@ -383,7 +390,11 @@ async function cmdSemantic(args) {
     process.stderr.write('Usage: ss-semantic <file> "<question>" [--max-tokens N]\n');
     process.exit(2);
   }
-  const maxTokens = +parseFlag(args.slice(2), '--max-tokens', 800);
+  // Default 600 (was 800) per the 2026-06 budget sweep — scaled with the 3k
+  // preview tier. Env hook overrides the default for sweeps; an explicit
+  // --max-tokens flag from the agent always wins.
+  const maxTokens = +parseFlag(args.slice(2), '--max-tokens',
+    Number(process.env.SS_SMOKE_SEMANTIC_MAXTOKENS || '') || 600);
   const { readSemantic } = await import(path.join(REPO_ROOT, 'core/search/search-read-semantic.js'));
   const r = await readSemantic({
     path: file, query, projectRoot: PROJECT_ROOT,
@@ -423,7 +434,9 @@ async function cmdTrace(args) {
   if (file) opts.filePath = file;
   if (queryHint) opts.queryHint = queryHint;
   if (depth != null) opts.maxDepth = +depth;
+  // Budget-sweep experiment hook: env sets the default; explicit --budget wins.
   if (budget != null) opts.tokenBudget = +budget;
+  else if (Number(process.env.SS_SMOKE_TRACE_BUDGET || '') > 0) opts.tokenBudget = Number(process.env.SS_SMOKE_TRACE_BUDGET);
 
   const response = traceSymbol(symbol, opts);
   if (json) process.stdout.write(JSON.stringify(response, null, 2) + '\n');

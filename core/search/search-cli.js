@@ -52,7 +52,7 @@ Options:
   --fusion <type>   Legacy: cc or rrf (ignored for hybrid - always uses robust CC fusion)
   --late-interaction Enable late interaction reranking (if index available)
   --late-interaction-model=ID Use specific model (lateon-code or lateon-code-edge)
-  --agent           Agent mode: self-contained code blocks. Auto-picks 4k/8k/12k
+  --agent           Agent mode: self-contained code blocks. Auto-picks 3k/8k/12k
                     tier from score-distribution signals (top-1 dominance,
                     entropy, candidate-pool breadth) — no need to choose a tier.
   --agent-preview   Force the 4k preview tier (rarely needed; --agent auto-picks)

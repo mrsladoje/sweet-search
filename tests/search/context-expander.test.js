@@ -1027,7 +1027,7 @@ describe('ranking identity', () => {
 //
 // Mirrors core/graph/structural-context.js:selectBudget() (the trace tool's
 // adaptive budget). The agent passes a single format='agent' and the system
-// picks 4k / 8k / 12k from score-distribution signals. Explicit tier formats
+// picks 3k / 8k / 12k from score-distribution signals. Explicit tier formats
 // (agent_preview / agent_full / agent_full_xl) and explicit numeric
 // tokenBudget remain as overrides.
 //
@@ -1040,10 +1040,10 @@ describe('ranking identity', () => {
 
 describe('selectAgentBudget (auto-tier)', () => {
   describe('explicit format pass-through', () => {
-    it('agent_preview → preview/4k with explicit_preview reason', () => {
+    it('agent_preview → preview/3k with explicit_preview reason', () => {
       const pick = selectAgentBudget('agent_preview', { numResults: 5, dominance: 1.2, entropy: 0.9, breadth: 100 });
       expect(pick.tier).toBe('preview');
-      expect(pick.tokenBudget).toBe(4000);
+      expect(pick.tokenBudget).toBe(3000);
       expect(pick.subMode).toBe('agent_preview');
       expect(pick.reason).toBe('explicit_preview');
     });
@@ -1248,7 +1248,7 @@ describe('selectAgentBudget (auto-tier)', () => {
         query: 'test', regex: 'test', format: 'agent', projectRoot: '/nonexistent',
       });
       expect(r.subMode).toBe('agent_preview');
-      expect(r.tokenBudget).toBe(4000);
+      expect(r.tokenBudget).toBe(3000);
       expect(r.budgetReason).toBe('auto_preview_default');
     });
 
@@ -1263,12 +1263,12 @@ describe('selectAgentBudget (auto-tier)', () => {
 
     it('format=agent + 5 moderately competitive small results → preview (was full, now preview)', () => {
       // Under the tight rule: dominance 1.2 isn't < 1.05 AND numResults < 10,
-      // so full does NOT auto-fire. 4k is enough — agent can escalate manually.
+      // so full does NOT auto-fire. 3k is enough — agent can escalate manually.
       const r = packageForAgent(makeResults(5), {}, {
         query: 'test', regex: 'test', format: 'agent', projectRoot: '/nonexistent',
       });
       expect(r.subMode).toBe('agent_preview');
-      expect(r.tokenBudget).toBe(4000);
+      expect(r.tokenBudget).toBe(3000);
       expect(r.budgetReason).toBe('auto_preview_default');
     });
 
@@ -1281,7 +1281,7 @@ describe('selectAgentBudget (auto-tier)', () => {
         { query: 'test', regex: 'test', format: 'agent', projectRoot: '/nonexistent' }
       );
       expect(r.subMode).toBe('agent_preview');
-      expect(r.tokenBudget).toBe(4000);
+      expect(r.tokenBudget).toBe(3000);
       expect(r.budgetReason).toBe('auto_preview_default');
     });
 
@@ -1408,12 +1408,12 @@ describe('agent_full_xl stretch budget', () => {
     expect(response.mode).toBe('hybrid');
   });
 
-  it('agent and agent_preview formats default to 4k budget', () => {
+  it('agent and agent_preview formats default to 3k budget', () => {
     const r = [{ score: 0.9, file: 'a.js' }];
     const responseA = packageForAgent(r, {}, { query: 't', regex: 't', format: 'agent', projectRoot: '/nonexistent' });
     const responseP = packageForAgent(r, {}, { query: 't', regex: 't', format: 'agent_preview', projectRoot: '/nonexistent' });
-    expect(responseA.tokenBudget).toBe(4000);
-    expect(responseP.tokenBudget).toBe(4000);
+    expect(responseA.tokenBudget).toBe(3000);
+    expect(responseP.tokenBudget).toBe(3000);
   });
 });
 

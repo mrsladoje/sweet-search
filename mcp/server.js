@@ -167,7 +167,7 @@ server.registerTool('trace', {
     maxDepth: z.number().int().min(1).max(4).default(3).optional()
       .describe('Maximum transitive impact depth (default: 3, capped at 4)'),
     tokenBudget: z.number().int().min(1000).max(16000).optional()
-      .describe('Optional token budget. Omit for adaptive 4k/8k/12k selection.'),
+      .describe('Optional token budget. Omit for adaptive 3k/8k/12k selection.'),
   },
   outputSchema: TraceOutputSchema,
   annotations: {
