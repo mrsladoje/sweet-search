@@ -202,13 +202,48 @@ function cloud(cx, cy, s, op, driftPx, driftDur, shape = 0) {
   </g>`;
 }
 
-function tree(x, y, s, alt) {
-  const crown = alt ? C.treeA : C.treeB;
+// three tree species so the treeline reads naturally
+function tree(x, y, s, kind = 0) {
+  if (kind === 1) { // pine
+    return `<g transform="translate(${x} ${y}) scale(${s})">
+      <rect x="-1.6" y="-2" width="3.2" height="7" rx="1.2" fill="${C.treeTrunk}"/>
+      <path d="M0,-26 L7,-14 L3.5,-14 L9,-4 L-9,-4 L-3.5,-14 L-7,-14 Z" fill="#3E8C52"/>
+    </g>`;
+  }
+  if (kind === 2) { // bushy oak
+    return `<g transform="translate(${x} ${y}) scale(${s})">
+      <rect x="-1.8" y="-4" width="3.6" height="9" rx="1.4" fill="${C.treeTrunk}"/>
+      <circle cx="0" cy="-13" r="7.5" fill="${C.treeB}"/>
+      <circle cx="-6.5" cy="-8.5" r="5.5" fill="${C.treeA}"/>
+      <circle cx="6.5" cy="-8.5" r="5.5" fill="${C.treeB}"/>
+      <circle cx="0" cy="-6.5" r="6" fill="${C.treeA}"/>
+    </g>`;
+  }
   return `<g transform="translate(${x} ${y}) scale(${s})">
     <rect x="-1.6" y="-3" width="3.2" height="8" rx="1.2" fill="${C.treeTrunk}"/>
-    <circle cx="0" cy="-9" r="6.4" fill="${crown}"/>
-    <circle cx="-4.8" cy="-5.5" r="4.6" fill="${crown}"/>
-    <circle cx="4.8" cy="-5.5" r="4.6" fill="${crown}"/>
+    <circle cx="0" cy="-9" r="6.4" fill="${C.treeA}"/>
+    <circle cx="-4.8" cy="-5.5" r="4.6" fill="${C.treeA}"/>
+    <circle cx="4.8" cy="-5.5" r="4.6" fill="${C.treeA}"/>
+  </g>`;
+}
+
+// translucent far range behind the main hill: rocky snow-capped peaks and
+// dense forested humps — short, so the sky keeps dominating
+function mountains() {
+  const rocky = (cx, peakY) => `
+    <polygon points="${cx - 78},330 ${cx - 16},${peakY} ${cx + 10},${peakY + 12} ${cx + 74},330" fill="#8E9BAA"/>
+    <polygon points="${cx - 16},${peakY} ${cx - 28},${peakY + 17} ${cx - 20},${peakY + 13} ${cx - 12},${peakY + 19} ${cx - 4},${peakY + 12} ${cx + 3},${peakY + 17} ${cx + 10},${peakY + 12}" fill="#F4F8FB"/>`;
+  const forest = (cx, topY) => `
+    <circle cx="${cx}" cy="${topY + 26}" r="26" fill="#56975F"/>
+    <circle cx="${cx - 34}" cy="${topY + 34}" r="20" fill="#4E8D58"/>
+    <circle cx="${cx + 34}" cy="${topY + 34}" r="20" fill="#4E8D58"/>
+    <rect x="${cx - 54}" y="${topY + 44}" width="108" height="40" fill="#56975F"/>`;
+  return `<g opacity="0.8">
+    ${rocky(310, 252)}
+    ${forest(480, 264)}
+    ${rocky(725, 254)}
+    ${forest(880, 270)}
+    ${rocky(1140, 266)}
   </g>`;
 }
 
@@ -229,9 +264,12 @@ function sparkle(x, y, sc, col, dur, begin) {
 }
 
 function scenery() {
-  const trees = [[95, 305, 1.0, 0], [320, 303, 0.8, 1], [430, 306, 1.1, 0], [562, 303, 0.85, 1],
-    [690, 306, 1.0, 0], [852, 303, 0.9, 1], [1108, 305, 1.05, 0], [930, 306, 0.75, 1]]
-    .map(([x, y, s, a]) => tree(x, y, s, a)).join('');
+  // far trees sit high on the horizon, near trees lower in the field and
+  // larger — irregular spacing, mixed species
+  const trees = [
+    [350, 299, 0.95, 1], [505, 297, 0.85, 0], [663, 300, 1.0, 2], [842, 298, 0.9, 1], [1112, 301, 0.95, 2],
+    [418, 330, 1.55, 2], [590, 320, 1.45, 1], [752, 336, 1.65, 0], [902, 316, 1.25, 1],
+  ].map(([x, y, s, k]) => tree(x, y, s, k)).join('');
   const daisies = [[342, 372], [520, 388], [702, 366], [880, 384], [148, 391]].map(([x, y]) => daisy(x, y)).join('');
   const sparkles = [
     sparkle(64, 146, 0.9, C.glyph, 3.2, 0.4), sparkle(124, 64, 0.7, '#FFFFFF', 4.1, 1.5),
@@ -246,6 +284,8 @@ function scenery() {
   ${cloud(764, 52, 1.1, 0.85, 12, 28, 2)}
   ${cloud(1040, 38, 0.95, 0.55, -10, 31, 1)}
   ${cloud(612, 24, 0.75, 0.4, 8, 24, 2)}
+  <!-- translucent mountain range behind the hills -->
+  ${mountains()}
   <!-- far hills + field (flat single green; shapes unchanged) -->
   <path d="M0,312 C150,296 290,305 430,301 C570,297 700,308 845,301 C985,295 1100,305 1200,300 L1200,340 L0,340 Z" fill="${C.grass}"/>
   <path d="M0,322 C180,308 340,316 520,311 C700,306 880,316 1040,310 C1110,308 1160,311 1200,310 L1200,350 L0,350 Z" fill="${C.grass}"/>
@@ -378,7 +418,7 @@ function clawd() {
             <g transform="translate(104 53)">
               <g>
                 ${animT('scale', [0, 0, 0.5, 1, 0.45, 1, 0.45, 1, 0, 0], [0, 0.42, 0.445, 0.46, 0.49, 0.52, 0.55, 0.58, 0.62, 1], EAT_DUR, { splines: ['0 0 1 1', '0.3 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0.4 0 0.6 1', '0 0 1 1'] })}
-                <path d="M0,-7.5 A7.5,7.5 0 0 1 0,7.5" stroke="${C.ink}" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+                <path d="M0,-7.5 A7.5,7.5 0 0 1 0,7.5" stroke="${C.ink}" stroke-width="2.6" stroke-linecap="round" fill="none"/>
               </g>
             </g>
             <!-- mouth: opens to catch the toss, then chews (ink, animated) -->
@@ -589,6 +629,34 @@ function wrapperMound() {
 //    Drawn BEHIND Clawd (the beam comes from behind the glass); the lens
 //    itself flashes inside the flipper group so it tracks the glass.
 // ---------------------------------------------------------------------------
+// scattered treats on the grass: a gold bonbon, a candy cane, a lollipop,
+// and an unwrapped, bitten chocolate bar beside Codex — all flat + bordered
+function groundTreats() {
+  const cane = 'M0,14 L0,-4 A5.5,5.5 0 0 0 -11,-4 L-11,0';
+  return `
+  <g transform="translate(408 367) rotate(-9)">${candyArt(C.candyGold, 1.3)}</g>
+  <g transform="translate(498 372) rotate(14)">
+    <path d="${cane}" fill="none" stroke="#B23B52" stroke-width="8.4" stroke-linecap="round"/>
+    <path d="${cane}" fill="none" stroke="#FFFFFF" stroke-width="5.6" stroke-linecap="round"/>
+    <path d="${cane}" fill="none" stroke="#E8556F" stroke-width="5.6" stroke-linecap="round" stroke-dasharray="3.6 4.6"/>
+  </g>
+  <g transform="translate(652 382) rotate(24)">
+    <line x1="0" y1="2" x2="0" y2="16" stroke="${shade('#E8D9C0')}" stroke-width="4" stroke-linecap="round"/>
+    <line x1="0" y1="2" x2="0" y2="16" stroke="#E8D9C0" stroke-width="2.4" stroke-linecap="round"/>
+    <circle cy="-4" r="7.5" fill="${C.candyViolet}" stroke="${shade(C.candyViolet)}" stroke-width="1.5"/>
+    <circle cy="-4" r="3.4" fill="none" stroke="${shade(C.candyViolet)}" stroke-width="1.5"/>
+  </g>
+  <g transform="translate(945 383) rotate(-11)">
+    <path d="M-14,-5.5 Q-14,-8 -11.5,-8 L1,-8 A4.4,4.4 0 0 0 8.6,-6.2 A3.6,3.6 0 0 0 14,-2.6 L14,5.5 Q14,8 11.5,8 L-11.5,8 Q-14,8 -14,5.5 Z" fill="#7A4E2A" stroke="${shade('#7A4E2A')}" stroke-width="1.4" stroke-linejoin="round"/>
+    <g stroke="${shade('#7A4E2A')}" stroke-width="1.1" opacity="0.85">
+      <line x1="-4.7" y1="-8" x2="-4.7" y2="8"/>
+      <line x1="4.7" y1="-1" x2="4.7" y2="8"/>
+      <line x1="-14" y1="0" x2="14" y2="0"/>
+    </g>
+    <path d="M-17,-9 L-9,-9 L-9,9 L-17,9 Q-19,5 -17,2 Q-19,-2 -17,-5 Z" fill="${C.wrapPink}" stroke="${shade(C.wrapPink)}" stroke-width="1.3" stroke-linejoin="round"/>
+  </g>`;
+}
+
 function deathRay() {
   const FLAME_BIG = 'M0,10 C-8,4 -6,-8 0,-18 C6,-8 8,4 0,10 Z';
   const FLAME_SMALL = 'M0,7 C-4.5,2.5 -3.5,-4 0,-10 C3.5,-4 4.5,2.5 0,7 Z';
@@ -621,7 +689,7 @@ function deathRay() {
   </line>
   <!-- fire (long burn while Clawd obliviously munches) -->
   <g opacity="0">
-    ${anim('opacity', [0, 0, 1, 1, 0.65, 0, 0], [0, 0.175, 0.195, 0.66, 0.74, 0.8, 1], EAT_DUR)}
+    ${anim('opacity', [0, 0, 1, 1, 0.65, 0, 0], [0, 0.175, 0.195, 0.598, 0.678, 0.738, 1], EAT_DUR)}
     <g transform="translate(30 290)">
       <g>
         ${flicker}
@@ -635,16 +703,16 @@ function deathRay() {
   <!-- smoke as the fire dies down -->
   <g fill="#9AA0A8">
     <g opacity="0">
-      ${anim('opacity', [0, 0, 0.55, 0.45, 0, 0], [0, 0.58, 0.66, 0.86, 0.93, 1], EAT_DUR)}
+      ${anim('opacity', [0, 0, 0.55, 0.45, 0, 0], [0, 0.518, 0.598, 0.798, 0.868, 1], EAT_DUR)}
       <g>
-        ${animT('translate', ['0 0', '0 0', '0 -12', '0 -24', '0 -32', '0 -32'], [0, 0.58, 0.7, 0.82, 0.93, 1], EAT_DUR)}
+        ${animT('translate', ['0 0', '0 0', '0 -12', '0 -24', '0 -32', '0 -32'], [0, 0.518, 0.638, 0.758, 0.868, 1], EAT_DUR)}
         <circle cx="30" cy="281" r="5"/>
       </g>
     </g>
     <g opacity="0">
-      ${anim('opacity', [0, 0, 0.5, 0.4, 0, 0], [0, 0.66, 0.74, 0.9, 0.96, 1], EAT_DUR)}
+      ${anim('opacity', [0, 0, 0.5, 0.4, 0, 0], [0, 0.598, 0.678, 0.838, 0.898, 1], EAT_DUR)}
       <g>
-        ${animT('translate', ['0 0', '0 0', '0 -10', '0 -20', '0 -26', '0 -26'], [0, 0.66, 0.78, 0.88, 0.96, 1], EAT_DUR)}
+        ${animT('translate', ['0 0', '0 0', '0 -10', '0 -20', '0 -26', '0 -26'], [0, 0.598, 0.718, 0.818, 0.898, 1], EAT_DUR)}
         <circle cx="35" cy="285" r="3.8"/>
       </g>
     </g>
@@ -691,12 +759,13 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" widt
 
   <g clip-path="url(#frame)">
     ${scenery()}
+    ${groundTreats()}
     ${deathRay()}
     ${bannerPanel()}
     ${clawd()}
     ${codex()}
   </g>
-  <rect x="3" y="3" width="1194" height="394" rx="13" fill="none" stroke="#0A1134" stroke-width="6"/>
+  <rect x="3" y="3" width="1194" height="394" rx="13" fill="none" stroke="#162874" stroke-width="6"/>
 </svg>
 `;
 
