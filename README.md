@@ -489,6 +489,19 @@ structure-aware chunking to 70+ file extensions beyond those. Each chunk carries
 entity type, signature, and line span — the metadata that feeds the code graph, `ss-read`'s
 annotations, and the self-contained answers everywhere else.
 
+**Contextual chunk enrichment.** Before embedding, every chunk is prefixed with a structured preamble
+built from the AST and code graph — file path, the scope breadcrumb of enclosing symbols, the chunk's
+own name and entity type, merged sibling symbols, and the imports it actually uses. Both the dense
+embedding (**CodeRankEmbed**) *and* the late-interaction tokens (**LateOn-Code**) see this enriched text,
+so a bare `getId()` still retrieves on the class and module around it. It's our nod to
+**[Anthropic's Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval)** — except
+where they prepend an *LLM-generated* summary (one model call per chunk), we derive the context
+*deterministically from structure*: no LLM, no per-chunk inference, regenerated for free on every
+reindex. And it's **tuned per language** from GenCodeSearchNet ablations — Python stays minimal (it sits
+near its MRR ceiling, and the path just echoed the symbol name), the Java family keeps a slug-stripped
+path (the framework signal survives), and JS/Ruby/Go/C/C++/Rust get the full preamble where closures and
+imports earn their keep.
+
 <details>
 <summary><b>What's actually custom here</b></summary>
 
@@ -498,6 +511,7 @@ annotations, and the self-contained answers everywhere else.
 - **GPU off the event loop:** inference runs as napi `AsyncTask` on libuv worker threads, so tokenization and SQLite writes overlap GPU compute instead of stalling behind it.
 - **Pipelined indexing:** while batch *N+1* embeds, batch *N*'s vectors stream into SQLite through zero-copy buffer views; full rebuilds write to a temp file and atomically swap, so a crash never leaves you serving half an index.
 - **Models:** CodeRankEmbed (768-d, code-specialized) for embeddings; LateOn-Code (ModernBERT) for per-token late interaction, in a full-fidelity `standard` and a compact `edge` variant (~9× smaller FP32 backbone; ~2× smaller on the INT8 CPU path).
+- **Structure-derived context, per-language routed:** the enrichment preamble (path · scope chain · symbol · siblings · imports) is assembled at index time from a code-graph line-range overlap query — never an LLM call. The late-interaction input is then routed per language family (full enriched text for JS/Ruby/Go/C-family/Rust, a slimmer path policy for Python and the Java family), every routing decision settled by per-language ablation rather than a global default.
 
 </details>
 
@@ -624,6 +638,7 @@ sweet-search stands on a lot of shoulders, and we'd rather name them than preten
 - **[CatBoost](https://catboost.ai/)** — the query router model; **Traag et al.** for the [Leiden algorithm](https://arxiv.org/abs/1810.08473); **Cormack et al.** for RRF; **[PathRAG](https://arxiv.org/abs/2502.14902)** for flow-pruned graph expansion; **[cAST](https://arxiv.org/abs/2506.15655)** for structure-aware chunking
 - **[GEPA](https://arxiv.org/abs/2507.19457)** — the reflective evolutionary prompt-optimization paradigm behind our agent prompt
 - **[nomic-ai](https://huggingface.co/nomic-ai)** — the CodeRankEmbed embedding model
+- **[Anthropic](https://www.anthropic.com/news/contextual-retrieval)** — the Contextual Retrieval idea behind our chunk enrichment, here derived from code structure instead of an LLM summary
 
 ## 📄 License
 
