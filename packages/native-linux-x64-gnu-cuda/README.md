@@ -1,6 +1,6 @@
 # @sweet-search/native-linux-x64-gnu-cuda
 
-NVIDIA CUDA-enabled native binaries for [sweet-search](https://github.com/panonitorg/sweet-search) on Linux x86-64 (glibc).
+NVIDIA CUDA-enabled native binaries for [sweet-search](https://github.com/mrsladoje/sweet-search) on Linux x86-64 (glibc).
 
 This package is a platform-scoped `optionalDependency` of the main `sweet-search`
 package. npm installs it automatically on matching hosts:

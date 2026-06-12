@@ -2016,7 +2016,7 @@ function runCoremlCascadeBuild(options = {}) {
         `  The CoreML cascade build path currently requires a local clone\n` +
         `  of the sweet-search repository — it is not yet shipped via npm.\n` +
         `  To build the cascade:\n` +
-        `    git clone https://github.com/panonitorg/sweet-search\n` +
+        `    git clone https://github.com/mrsladoje/sweet-search\n` +
         `    cd sweet-search\n` +
         `    node scripts/build-coreml-cascade.js\n` +
         `  Then point your install at the managed cache (init detects it).`,
