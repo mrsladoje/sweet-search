@@ -255,14 +255,18 @@ for (const rule of FORBIDDEN) {
 // reported 2 sites while the real coupling surface was 6 (see
 // docs/reviews/ddd-compliance.md §3).
 
+// Only *.js / *.mjs source files count toward the limit: run captures and
+// sweep artifacts under data/ embed code-shaped strings (e.g. JSON tool
+// outputs containing `from '../search/...'`) that are data, not coupling.
+const EXC_GREP_FILTER = "--include='*.js' --include='*.mjs' --exclude-dir=data";
 for (const exc of EXCEPTIONS) {
   try {
     const staticCount = execSync(
-      `grep -rn "from '.*${exc.to}" ${exc.from} 2>/dev/null | wc -l`,
+      `grep -rn ${EXC_GREP_FILTER} "from '.*${exc.to}" ${exc.from} 2>/dev/null | wc -l`,
       { encoding: 'utf8' }
     ).trim();
     const dynamicCount = execSync(
-      `grep -rn "import(.*${exc.to}" ${exc.from} 2>/dev/null | wc -l`,
+      `grep -rn ${EXC_GREP_FILTER} "import(.*${exc.to}" ${exc.from} 2>/dev/null | wc -l`,
       { encoding: 'utf8' }
     ).trim();
     const n = parseInt(staticCount, 10) + parseInt(dynamicCount, 10);
