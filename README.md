@@ -216,29 +216,47 @@ This is the big one. A single query fans out through eight stages — lexical *a
 
 ```mermaid
 flowchart TD
-    Q(["🔍  natural-language query"]) --> ROUTE{{"🧭 query router<br/>lexical · hybrid"}}
+    Q(["🔍  natural-language query"]) --> ROUTE{{"🧭 query router · lexical / hybrid"}}
 
     ROUTE --> BM["📑 <b>BM25F</b><br/>field-weighted FTS5"]
-    ROUTE --> ANN
+    ROUTE --> BIN
 
     subgraph ANN ["🧬 three-stage ANN cascade"]
         direction LR
         BIN["binary <b>HNSW</b><br/>Hamming · ~100µs"] --> INT["INT8<br/>rescore"] --> FL["float32<br/>mmap sidecar"]
     end
 
-    BM --> FUSE["🔀 <b>CCFusion</b><br/>convex combo · RRF fallback"]
-    ANN --> FUSE
-    FUSE --> IAR["⚓ <b>IAR</b><br/>exact-symbol injection"]
-    IAR --> INTENT["🎯 intent rerank<br/>demote docs · tests · config"]
-    INTENT --> GRAPH["🕸️ graph expansion<br/>typed edges · 1–2 hops · <b>PathRAG</b>"]
-    GRAPH --> MAXSIM["🧮 <b>ColBERT MaxSim</b><br/>late interaction · 1.26s → 27ms"]
-    MAXSIM --> OUT(["📦 self-contained code blocks<br/>dedup · MMR · 3k/8k/12k budget"])
+    subgraph ROW1 [" "]
+        direction LR
+        FUSE["🔀 <b>CCFusion</b><br/>convex combo · RRF fallback"] --> IAR["⚓ <b>IAR</b><br/>exact-symbol injection"] --> INTENT["🎯 intent rerank<br/>demote docs · tests · config"]
+    end
 
-    style Q fill:#fde68a,stroke:#f59e0b,color:#000
-    style OUT fill:#bbf7d0,stroke:#16a34a,color:#000
-    style ANN fill:#eff6ff,stroke:#93c5fd,color:#000
-    style FUSE fill:#fae8ff,stroke:#d8b4fe,color:#000
-    style MAXSIM fill:#ffe4e6,stroke:#fb7185,color:#000
+    BM --> FUSE
+    FL --> FUSE
+    INTENT --> GRAPH
+
+    subgraph ROW2 [" "]
+        direction RL
+        GRAPH["🕸️ graph expansion<br/>typed edges · 1–2 hops · <b>PathRAG</b>"] --> MAXSIM["🧮 <b>ColBERT MaxSim</b><br/>late interaction · 1.26s → 27ms"] --> OUT(["📦 self-contained code blocks<br/>dedup · MMR · 3k/8k/12k budget"])
+    end
+
+    classDef io    fill:#fde68a,stroke:#f59e0b,color:#000;
+    classDef out   fill:#bbf7d0,stroke:#16a34a,color:#000;
+    classDef route fill:#e0e7ff,stroke:#818cf8,color:#000;
+    classDef lex   fill:#dbeafe,stroke:#60a5fa,color:#000;
+    classDef fuse  fill:#f3e8ff,stroke:#c084fc,color:#000;
+    classDef rank  fill:#ffe4e6,stroke:#fb7185,color:#000;
+
+    class Q io;
+    class OUT out;
+    class ROUTE route;
+    class BM,BIN,INT,FL lex;
+    class FUSE,IAR fuse;
+    class INTENT,GRAPH,MAXSIM rank;
+
+    style ANN  fill:#eff6ff,stroke:#93c5fd,color:#000;
+    style ROW1 fill:none,stroke:none;
+    style ROW2 fill:none,stroke:none;
 ```
 
 | Stage | What it actually does |
