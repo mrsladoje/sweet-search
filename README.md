@@ -244,13 +244,13 @@ flowchart TD
 | Stage | What it actually does |
 |-------|-----------------------|
 | 🧭 **Route** | A **CatBoost** classifier — 499 trees compiled to a 225 KB **WASM** module — picks lexical vs. hybrid from 50 single-pass query features in **~10 µs**, with a low-confidence reject option that defaults to max-recall hybrid. |
-| 📑🧬 **Retrieve** | **BM25F** over field-weighted FTS5 (name 10× · path 5× · body 4×) runs *in parallel* with a three-stage vector cascade — **binary HNSW** (Hamming over 64-byte vectors, ~100 µs) → INT8 rescore → exact float32 from a memory-mapped sidecar. |
+| 📑🧬 **Retrieve** | **BM25F** over field-weighted FTS5 (name 10× · signature 5× · alias 4× · doc 1×) runs *in parallel* with a three-stage vector cascade — **binary HNSW** (Hamming over 64-byte vectors, ~100 µs) → INT8 rescore → exact float32 from a memory-mapped sidecar. |
 | 🔀 **Fuse** | **CCFusion** — convex combination with per-route weights and quantile normalization — collapses both rankings into one, with an automatic **RRF** (k=60) fallback when score distributions degenerate. |
 | ⚓ **Anchor** | **IAR** (Identifier-Anchored Retrieval): name a real symbol and an exact-name code-graph lookup injects that entity into the pool, even when the encoder ranked something tangential higher. |
 | 🎯 **Rerank** | Intent-aware: docs/tests/config demoted when you want implementation; log-scaled call-site reference boosts surface the function everyone actually calls. |
 | 🕸️ **Expand** | Typed-edge walks (`imports`/`extends`/`calls`/`uses`) 1–2 hops along the AST knowledge graph, edge types chosen by intent, **PathRAG**-style flow pruning + degree normalization so hub entities can't dominate. |
 | 🧮 **Score** | **ColBERT-style MaxSim** late interaction over a quantized per-token index — the genuinely precise reranker, made cheap by the kernels below. |
-| 📦 **Package** | Near-duplicate siblings collapse to their best member, MMR balances diversity, and entity-aware expansion emits whole functions (imports, docstrings, decorators) under an auto-selected **3k / 8k / 12k** token budget. |
+| 📦 **Package** | Index-time near-duplicates collapse to their exemplar, MMR (λ=0.9) and same-file overlap demotion keep results diverse, and entity-aware expansion emits whole functions (imports, docstrings, decorators) under an auto-selected **3k / 8k / 12k** token budget. |
 
 > 🏎️ **Why it's quick:** a native Rust + Rayon **MaxSim kernel** (the 1.26 s → 27 ms above, 47× over scalar; 16× WASM-SIMD fallback) · a memory-mapped float32 sidecar that skips SQL on the rescore hot path · zero-GC binary HNSW (typed-array heaps + generation-stamped visited lists) · int4-quantized token vectors (**TurboQuant**) · and a warm daemon that answers in a single NAPI call — no process is ever forked.
 
