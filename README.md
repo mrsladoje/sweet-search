@@ -84,9 +84,6 @@ updates itself as you type.
 [🦀 The Native Engine Room](#-the-native-engine-room)<br>
 <sub>four Rust crates + TurboQuant compression</sub>
 
-[🎯 The Ranking Stack](#-the-ranking-stack)<br>
-<sub>route → retrieve → fuse → rerank → expand</sub>
-
 </td>
 <td width="24%" valign="top">
 
@@ -209,27 +206,63 @@ to be *consumed by an agent* — a useful answer, not a wall of matches to scrol
 | `ss-trace` | a symbol | **callers + callees + impact**, in one call |
 | `ss-read` | a file (± line range) | exact bytes **+ symbol metadata** |
 
-### `ss-search` — the full retrieval stack in one call
+### `ss-search` — the whole retrieval stack in one call
 
 ```bash
 ss-search "how are websocket reconnects handled?" -k 5
 ```
 
-One query fires the whole pipeline:
+This is the big one. A single query fans out through eight stages — lexical *and* vector retrieval, fusion, symbol anchoring, intent reranking, graph expansion, late-interaction scoring — and comes back as ranked, **self-contained code blocks**, not a list of `file:line` you still have to go read.
 
-1. **CatBoost query router** — a 498-tree gradient-boosted classifier compiled to WASM decides lexical vs hybrid from 50 single-pass features (camelCase/snake_case decomposition, CJK density, path shape…) in microseconds, with a low-confidence reject option that falls back to max-recall hybrid. Real file paths short-circuit straight to lexical.
-2. **Dual retrieval** — **BM25F** over field-weighted FTS5 (a hit on a function's *name* outweighs one buried in its body 10:1) runs in parallel with a **three-stage ANN cascade**: binary HNSW (Hamming distance over 64-byte binarized vectors, candidates in ~100 µs) → INT8 rescoring → full-precision float32 rescoring from a memory-mapped sidecar.
-3. **Convex-combination fusion** with route-specific weights and quantile normalization — and an automatic **RRF** fallback when score distributions degenerate.
-4. **Identifier-Anchored Retrieval (IAR)** — if your English mentions a real symbol, an exact-name lookup against the code graph injects that entity into the pool, even when the encoder ranked something tangential higher.
-5. **Intent-aware reranking** — docs/tests/config demoted when you want implementation; log-scaled call-site reference boosts surface the function everyone actually calls.
-6. **Adaptive graph expansion** — typed-edge walks (imports / extends / calls / uses) 1–2 hops out along the AST-derived knowledge graph, with intent-selected edge types, PathRAG-style flow-threshold pruning, and degree normalization so hub entities can't dominate.
-7. **Late-interaction rerank** — ColBERT-style per-token MaxSim over the quantized token index, on kernels that took a 231-candidate scoring pass from **1.26 s to 27 ms**.
-8. **Answer packaging** — near-duplicate siblings collapse to the best-matching member, MMR balances diversity, and entity-aware expansion emits *self-contained* blocks (whole functions with imports, docstrings, decorators) under an auto-selected **3k / 8k / 12k token budget** driven by post-ranking signals like top-1 dominance.
+```mermaid
+flowchart TD
+    Q(["🔍  natural-language query"]) --> ROUTE{{"🧭 query router<br/>lexical · hybrid"}}
+
+    ROUTE --> BM["📑 <b>BM25F</b><br/>field-weighted FTS5"]
+    ROUTE --> ANN
+
+    subgraph ANN ["🧬 three-stage ANN cascade"]
+        direction LR
+        BIN["binary <b>HNSW</b><br/>Hamming · ~100µs"] --> INT["INT8<br/>rescore"] --> FL["float32<br/>mmap sidecar"]
+    end
+
+    BM --> FUSE["🔀 <b>CCFusion</b><br/>convex combo · RRF fallback"]
+    ANN --> FUSE
+    FUSE --> IAR["⚓ <b>IAR</b><br/>exact-symbol injection"]
+    IAR --> INTENT["🎯 intent rerank<br/>demote docs · tests · config"]
+    INTENT --> GRAPH["🕸️ graph expansion<br/>typed edges · 1–2 hops · <b>PathRAG</b>"]
+    GRAPH --> MAXSIM["🧮 <b>ColBERT MaxSim</b><br/>late interaction · 1.26s → 27ms"]
+    MAXSIM --> OUT(["📦 self-contained code blocks<br/>dedup · MMR · 3k/8k/12k budget"])
+
+    style Q fill:#fde68a,stroke:#f59e0b,color:#000
+    style OUT fill:#bbf7d0,stroke:#16a34a,color:#000
+    style ANN fill:#eff6ff,stroke:#93c5fd,color:#000
+    style FUSE fill:#fae8ff,stroke:#d8b4fe,color:#000
+    style MAXSIM fill:#ffe4e6,stroke:#fb7185,color:#000
+```
+
+| Stage | What it actually does |
+|-------|-----------------------|
+| 🧭 **Route** | A **CatBoost** classifier — 499 trees compiled to a 225 KB **WASM** module — picks lexical vs. hybrid from 50 single-pass query features in **~10 µs**, with a low-confidence reject option that defaults to max-recall hybrid. |
+| 📑🧬 **Retrieve** | **BM25F** over field-weighted FTS5 (name 10× · path 5× · body 4×) runs *in parallel* with a three-stage vector cascade — **binary HNSW** (Hamming over 64-byte vectors, ~100 µs) → INT8 rescore → exact float32 from a memory-mapped sidecar. |
+| 🔀 **Fuse** | **CCFusion** — convex combination with per-route weights and quantile normalization — collapses both rankings into one, with an automatic **RRF** (k=60) fallback when score distributions degenerate. |
+| ⚓ **Anchor** | **IAR** (Identifier-Anchored Retrieval): name a real symbol and an exact-name code-graph lookup injects that entity into the pool, even when the encoder ranked something tangential higher. |
+| 🎯 **Rerank** | Intent-aware: docs/tests/config demoted when you want implementation; log-scaled call-site reference boosts surface the function everyone actually calls. |
+| 🕸️ **Expand** | Typed-edge walks (`imports`/`extends`/`calls`/`uses`) 1–2 hops along the AST knowledge graph, edge types chosen by intent, **PathRAG**-style flow pruning + degree normalization so hub entities can't dominate. |
+| 🧮 **Score** | **ColBERT-style MaxSim** late interaction over a quantized per-token index — the genuinely precise reranker, made cheap by the kernels below. |
+| 📦 **Package** | Near-duplicate siblings collapse to their best member, MMR balances diversity, and entity-aware expansion emits whole functions (imports, docstrings, decorators) under an auto-selected **3k / 8k / 12k** token budget. |
+
+> 🏎️ **Why it's quick:** a native Rust + Rayon **MaxSim kernel** (the 1.26 s → 27 ms above, 47× over scalar; 16× WASM-SIMD fallback) · a memory-mapped float32 sidecar that skips SQL on the rescore hot path · zero-GC binary HNSW (typed-array heaps + generation-stamped visited lists) · int4-quantized token vectors (**TurboQuant**) · and a warm daemon that answers in a single NAPI call — no process is ever forked.
 
 <details>
-<summary><b>More</b></summary>
+<summary><b>Design choices &amp; honesty</b></summary>
 
-- The expensive 8k/12k tiers are tuned to fire on roughly 1–5% of queries — the default case stays cheap. Force a tier with `--full` / `--xl`, or a mode with `--mode lexical|semantic|hybrid|pattern`.
+- **Quality priors:** every chunk carries a 0–1 prior from test proximity, git recency, symbol centrality (PageRank), comment density, and complexity — production code surfaces, stale fixtures sink.
+- **Community structure:** a canonical **Leiden** pass detects code communities on the entity graph at index time, feeding vocabulary prewarming and structural signals — the engine understands your modules, not just your directories.
+- **Multilingual:** 14 languages get full tree-sitter AST treatment; a 39-config registry covers 70+ extensions beyond that. Router features handle camelCase/snake_case decomposition, CJK density, and German compounds.
+- **Long-query rescue:** wordy NL queries that FTS5 would tokenize into an unsatisfiable `AND` fall back to multi-query BM25F + RRF — one query per content keyword, fused.
+- **A negative result we ship anyway:** we built a full cross-encoder rerank cascade behind an adaptive confidence gate, measured it on our eval sets — and it didn't beat MaxSim at 3× the latency. So it ships **disabled** (`SWEET_SEARCH_CASCADE_ENABLED=true` to try it). We'd rather ship the faster path than a fancier diagram.
+- **Budget tiers:** the expensive 8k/12k tiers are tuned to fire on ~1–5% of queries — the default stays cheap. Force one with `--full` / `--xl`, or a mode with `--mode lexical|semantic|hybrid|pattern`.
 - Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 </details>
@@ -479,30 +512,6 @@ default packs token vectors at half a byte each on top of that. Laptop-sized, fu
 - **Memory-mapped HNSW:** the float graph index loads via `mmap` (USearch `view()`), contributing **0 MB** to the V8 heap at search time; the OS reclaims pages under pressure.
 - **Streaming indexer:** vectors stream from SQLite cursors instead of materializing in arrays — peak JS heap during indexing dropped from ~785 MB to ~213 MB, with 30-second fsync-ordered checkpoints bounding crash loss. The OOM cliff that used to appear above ~200k chunks is gone; large repos index comfortably on an 8 GB machine.
 - Tuned HNSW parameters and zero-GC search internals (typed-array heaps, generation-stamped visited lists) cut search p50 by 33% while *raising* recall@200 by 5.9 pp in our internal evaluation ([`docs/HNSW_APPROACH.md`](docs/HNSW_APPROACH.md)).
-
-</details>
-
-## 🎯 The Ranking Stack
-
-Retrieval quality comes from *layers*, each one cheap, each one earning its place:
-
-1. **Route** — CatBoost classifies the query (lexical / semantic / hybrid) and sets fusion weights; real file paths short-circuit straight to lexical
-2. **Retrieve** — BM25F field-weighted lexical (a match on a function's *name* outranks one buried in a body) in parallel with the three-stage vector pipeline
-3. **Fuse** — convex combination with per-route weights and quantile normalization, falling back to Reciprocal Rank Fusion on degenerate score distributions
-4. **Anchor** — name a real symbol in your query and identifier-anchored retrieval injects the exact-name entity, even when the encoder ranked something tangential higher
-5. **Rerank** — ColBERT-style MaxSim late interaction over the quantized token index
-6. **Expand** — typed-edge graph walks (1–2 hops, intent-adaptive, PathRAG-style flow pruning) pull in the related code a single chunk can't show
-7. **Polish** — intent-aware demotion of docs/tests/config when you want implementation, call-site reference boosts, MMR diversity, near-duplicate sibling re-ranking
-
-<details>
-<summary><b>Deep dive & design honesty</b></summary>
-
-- **Intent awareness:** a lightweight classifier distinguishes "fix this crash" from "how do I use this API" and tunes graph-edge selection, result limits, and chunk-type preferences per intent.
-- **Quality priors:** each chunk carries a 0–1 prior from test proximity, git recency, symbol centrality (PageRank), comment density, and complexity — production code surfaces, stale fixtures sink.
-- **Community structure:** a canonical Leiden algorithm detects code communities on the entity graph at index time, feeding vocabulary prewarming and structural signals — the engine understands your modules, not just your directories.
-- **Multilingual:** 14 languages get full tree-sitter AST treatment; a 39-config registry covers 70+ extensions beyond that; router features handle camelCase/snake_case decomposition, CJK density, and German compounds.
-- **Long-query rescue:** wordy natural-language queries that FTS5 would tokenize into an unsatisfiable AND get a multi-query BM25F + RRF fallback — one query per content keyword, fused.
-- **A negative result we ship anyway:** we built a full cross-encoder rerank cascade behind an adaptive confidence gate, measured it on our evaluation sets — and it didn't beat MaxSim at 3× the latency. So it ships **disabled** (`SWEET_SEARCH_CASCADE_ENABLED=true` if you want to try). We'd rather ship the faster path than a fancier diagram.
 
 </details>
 
