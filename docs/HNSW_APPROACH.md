@@ -1,6 +1,18 @@
 # HNSW Optimization — Implementation Record
 
-> **Status: COMPLETED** (March 23, 2026). All fixes implemented, benchmarked, and shipped.
+> ## ✅ ALL SHIPPED — ON BY DEFAULT
+> **Status: COMPLETED** (March 23, 2026). Every optimization in this document is
+> implemented, benchmarked, and live in the default build — including the items
+> below that read like "proposed fixes." Heuristic neighbor selection (Algorithm 4),
+> `M0 = 2*M` on layer 0, shuffled insertion order, discovery-rate adaptive early
+> termination, adaptive ef, typed-array heaps + generation-stamped visited lists,
+> and WASM-SIMD Hamming distance **all ship enabled** on a denser graph (M=64 /
+> efC=800 / efS=400) than the baseline below. Asymmetric binary quantization is the
+> one deliberate exception: implemented but gated **off** (it degraded connectivity
+> at 512d — see "What didn't work").
+>
+> The "Proposed Change" / "Files to Change" framing in each section is the original
+> planning language, preserved as an implementation record. Read it as *done*, not *to-do*.
 > Commit `31b26d8` (code) + `a0969fa` (docs).
 
 ## Results Summary
