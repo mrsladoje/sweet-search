@@ -207,9 +207,9 @@ to be *consumed by an agent* — a useful answer, not a wall of matches to scrol
 | 6. [`ss-read`](#tool-ss-read) | a file (± line range) | exact bytes **+ symbol metadata** |
 
 <a id="tool-ss-search"></a>
-### 1. 🔍 `ss-search` — hybrid search powerhouse 
+### 1. 🔍 `ss-search` — hybrid search powerhouse
 
-A hybrid search pipeline with late interaction reranking that returns actual code blocks. 
+A hybrid search pipeline with late interaction reranking that returns actual code blocks.
 
 SOTA in various published [`benchmarks`](#-benchmarks).
 
@@ -266,12 +266,12 @@ flowchart TD
 |-------|-----------------------|
 | 🧭 **Route** | **WASM-exported CatBoost** · lexical / hybrid · **~10 µs** routing · low-confidence → max-recall hybrid |
 | 📑🧬 **Retrieve** | • **Lexical** — **BM25F** over field-weighted FTS5 (name 10× · signature 5× · alias 4× · doc 1×)<br/>• **Embed** — query vectorized by the local **CodeRankEmbed** model (code-specialized; swappable for Voyage / Jina / Codestral)<br/>• **Vector cascade** — binary **HNSW** (Hamming, 64-byte, ~100 µs) → INT8 rescore → exact float32 from a memory-mapped sidecar |
-| 🔀 **Fuse** | **CCFusion** — convex combination with per-route weights and quantile normalization — collapses both rankings into one, with an automatic **RRF** (k=60) fallback when score distributions degenerate. |
-| ⚓ **Anchor** | **IAR** (Identifier-Anchored Retrieval): name a real symbol and an exact-name code-graph lookup injects that entity into the pool, even when the encoder ranked something tangential higher. |
-| 🎯 **Rerank** | Intent-aware: docs/tests/config demoted when you want implementation; log-scaled call-site reference boosts surface the function everyone actually calls. |
-| 🕸️ **Expand** | Typed-edge walks (`imports`/`extends`/`calls`/`uses`) 1–2 hops along the AST knowledge graph, edge types chosen by intent, **PathRAG**-style flow pruning + degree normalization so hub entities can't dominate. |
-| 🧮 **Late interaction** | The precise reranker: per-token **MaxSim** late interaction using the **LateOn-Code** model's embeddings over a quantized token index — run on a ⚡ native Rust MaxSim kernel (WASM-SIMD fallback). |
-| 📦 **Package** | Index-time near-duplicates collapse to their exemplar, MMR (λ=0.9) and same-file overlap demotion keep results diverse, and entity-aware expansion emits whole functions (imports, docstrings, decorators) under an auto-selected **3k / 8k / 12k** token budget. |
+| 🔀 **Fuse** | • **CCFusion** — convex-combine both rankings · per-route weights · quantile-normalized<br/>• auto **RRF** (k=60) fallback on degenerate score distributions |
+| ⚓ **Anchor** | • **IAR** — a real symbol in the query fires an exact-name code-graph lookup that injects that entity, even when the encoder ranked it too low |
+| 🎯 **Rerank** | • demote docs / tests / config when you want implementation<br/>• log-scaled call-site boosts surface the most-referenced function |
+| 🕸️ **Expand** | • typed-edge walks (`imports`/`extends`/`calls`/`uses`) · 1–2 hops on the AST graph · edges picked by intent<br/>• **PathRAG** flow pruning + degree normalization → hubs can't dominate |
+| 🧮 **Late interaction** | • per-token **MaxSim** over **LateOn-Code** embeddings (quantized token index) — the precise reranker<br/>• ⚡ native Rust MaxSim kernel · WASM-SIMD fallback |
+| 📦 **Package** | • dedup near-duplicates to their exemplar · **MMR** (λ=0.9) + same-file overlap demotion for diversity<br/>• entity-aware expansion → whole functions (imports, docstrings, decorators)<br/>• auto-selected **3k / 8k / 12k** token budget |
 
 > 💡 **What surprises people:** the paper-grade HNSW tuning isn't on a roadmap — it *ships, on by default*. Heuristic neighbor selection (Algorithm 4), `M0 = 2M` on layer 0, shuffled insertion order, discovery-rate **adaptive early termination**, and **adaptive ef** are all live, on a denser graph (M=64 · efC=800 · efS=400) than most vendors ship.
 
