@@ -120,6 +120,10 @@ sweet-search "where do we validate JWT tokens?"
 That's it. `init` is idempotent and SHA256-verifies every model binary; re-running it is always safe.
 From then on the index maintains itself — edit, save, search.
 
+> **Latest release: v2.5.5** — the agent-mode preview tier now defaults to a 3k token budget (was 4k):
+> same accuracy and usefulness in a 4-model paired sweep, ~11–15% cheaper per query. Already on an
+> older install? `npm install -g sweet-search` again to pick it up.
+
 <details>
 <summary><b>Setup options & details</b></summary>
 
