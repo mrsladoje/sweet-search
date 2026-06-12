@@ -226,23 +226,24 @@ flowchart TD
         BIN["binary <b>HNSW</b><br/>Hamming · ~100µs"] --> INT["INT8<br/>rescore"] --> FL["float32<br/>mmap sidecar"]
     end
 
-    BM --> ROW1
-    ANN --> ROW1
+    BM  --> FUSE
+    ANN --> FUSE
+    FUSE["🔀 <b>CCFusion</b><br/>convex combo · RRF fallback"] --> ROW1
 
     subgraph ROW1 [" "]
         direction LR
-        FUSE["🔀 <b>CCFusion</b><br/>convex combo · RRF fallback"] --> IAR["⚓ <b>IAR</b><br/>exact-symbol injection"] --> INTENT["🎯 intent rerank<br/>demote docs · tests · config"]
+        IAR["⚓ <b>IAR</b><br/>exact-symbol injection"] --> INTENT["🎯 intent rerank<br/>demote docs · tests · config"]
     end
 
     ROW1 --> ROW2
 
     subgraph ROW2 [" "]
         direction RL
-        GRAPH["🕸️ graph expansion<br/>typed edges · 1–2 hops · <b>PathRAG</b>"] --> MAXSIM["🧮 <b>ColBERT MaxSim</b><br/>late interaction · 1.26s → 27ms"] --> OUT(["📦 self-contained code blocks<br/>dedup · MMR · 3k/8k/12k budget"])
+        GRAPH["🕸️ graph expansion<br/>typed edges · 1–2 hops · <b>PathRAG</b>"] --> MAXSIM["🧮 <b>ColBERT MaxSim</b><br/>late interaction · 1.26s → 27ms"] --> OUT(["🏁 <b>self-contained code blocks</b><br/>dedup · MMR · 3k/8k/12k budget"])
     end
 
     classDef io    fill:#fde68a,stroke:#f59e0b,color:#000;
-    classDef out   fill:#bbf7d0,stroke:#16a34a,color:#000;
+    classDef out   fill:#bbf7d0,stroke:#15803d,color:#000,stroke-width:3px;
     classDef route fill:#e0e7ff,stroke:#818cf8,color:#000;
     classDef lex   fill:#dbeafe,stroke:#60a5fa,color:#000;
     classDef fuse  fill:#f3e8ff,stroke:#c084fc,color:#000;
