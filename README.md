@@ -206,12 +206,14 @@ to be *consumed by an agent* — a useful answer, not a wall of matches to scrol
 | 5. [`ss-trace`](#tool-ss-trace) | a symbol | **callers + callees + impact**, in one call |
 | 6. [`ss-read`](#tool-ss-read) | a file (± line range) | exact bytes **+ symbol metadata** |
 
+---
+
 <a id="tool-ss-search"></a>
 ### 1. 🔍 `ss-search` — hybrid search powerhouse
 
 A hybrid search pipeline with late interaction reranking that returns actual code blocks.
 
-SOTA in various published [`benchmarks`](#-benchmarks).
+SOTA in several published [`benchmarks`](#-benchmarks).
 
 ```mermaid
 flowchart TD
@@ -302,6 +304,8 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 </details>
 
+---
+
 <a id="tool-ss-grep"></a>
 ### 2. ⚡ `ss-grep` — grep, minus every wasted millisecond
 
@@ -321,6 +325,8 @@ Every match comes back in stable `file:line` order — ripgrep-identical counts,
 - Regexes with no extractable literals fall back to native grep over the indexed file set; fixed-string and glob queries use a ripgrep fallback.
 
 </details>
+
+---
 
 <a id="tool-ss-find"></a>
 ### 3. `ss-find` — ColGrep, on a faster engine
@@ -346,6 +352,8 @@ semantically ranked — but rebuilt on our own substrate:
 
 </details>
 
+---
+
 <a id="tool-ss-semantic"></a>
 ### 4. `ss-semantic` — hybrid retrieval, scoped to one file
 
@@ -369,6 +377,8 @@ The useful answer: just the relevant spans with line numbers — not the whole f
 - Also available as `sweet-search read-semantic` and the `read-semantic` MCP tool.
 
 </details>
+
+---
 
 <a id="tool-ss-trace"></a>
 ### 5. `ss-trace` — graph algorithms, not grep guesswork
@@ -398,6 +408,8 @@ bounds impact traversal (1–4).
 
 </details>
 
+---
+
 <a id="tool-ss-read"></a>
 ### 6. `ss-read` — exact bytes, with the index's knowledge attached
 
@@ -421,6 +433,8 @@ without another search.
 > The `ss-*` wrappers ship in the npm package and are what the installed agent prompt drives. Every
 > capability is equally available as `sweet-search` CLI subcommands and as MCP tools — see
 > [Works With Your Agent](#-works-with-your-agent).
+
+---
 
 ## 🧠 An Agent Prompt That Was Evolved, Not Written
 
