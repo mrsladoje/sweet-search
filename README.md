@@ -303,11 +303,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 </details>
 
 <a id="tool-ss-grep"></a>
-### 2. `ss-grep` — grep, minus every wasted millisecond
-
-```bash
-ss-grep "parseRetryAfter" -k 10
-```
+### 2. ⚡ `ss-grep` — grep, minus every wasted millisecond
 
 **10.2× faster than ripgrep end-to-end at the median** — measured across **353 realistic queries on 5 real repos**
 (range 8.5–17.7× per repo, 1 ms p50), with **identical match counts on every single query**. Three things buy that:
