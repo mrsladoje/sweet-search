@@ -219,21 +219,22 @@ flowchart TD
     Q(["🔍  natural-language query"]) --> ROUTE{{"🧭 query router · lexical / hybrid"}}
 
     ROUTE --> BM["📑 <b>BM25F</b><br/>field-weighted FTS5"]
-    ROUTE --> BIN
+    ROUTE --> ANN
 
     subgraph ANN ["🧬 three-stage ANN cascade"]
         direction LR
         BIN["binary <b>HNSW</b><br/>Hamming · ~100µs"] --> INT["INT8<br/>rescore"] --> FL["float32<br/>mmap sidecar"]
     end
 
+    BM --> ROW1
+    ANN --> ROW1
+
     subgraph ROW1 [" "]
         direction LR
         FUSE["🔀 <b>CCFusion</b><br/>convex combo · RRF fallback"] --> IAR["⚓ <b>IAR</b><br/>exact-symbol injection"] --> INTENT["🎯 intent rerank<br/>demote docs · tests · config"]
     end
 
-    BM --> FUSE
-    FL --> FUSE
-    INTENT --> GRAPH
+    ROW1 --> ROW2
 
     subgraph ROW2 [" "]
         direction RL
