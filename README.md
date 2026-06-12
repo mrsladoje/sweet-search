@@ -199,17 +199,19 @@ to be *consumed by an agent* — a useful answer, not a wall of matches to scrol
 
 | Tool | What you give it | What you get back |
 |------|------------------|-------------------|
-| [1. `ss-search`](#tool-ss-search) | a natural-language query | ranked, **self-contained code blocks** |
-| [2. `ss-grep`](#tool-ss-grep) | an exact regex/literal | `file:line` hits, **ranked** |
-| [3. `ss-find`](#tool-ss-find) | a regex **+** a query | regex matches, **semantically re-ranked, as code blocks** |
-| [4. `ss-semantic`](#tool-ss-semantic) | a file **+** a question | just the **relevant spans** of that file |
-| [5. `ss-trace`](#tool-ss-trace) | a symbol | **callers + callees + impact**, in one call |
-| [6. `ss-read`](#tool-ss-read) | a file (± line range) | exact bytes **+ symbol metadata** |
+| 1. [`ss-search`](#tool-ss-search) | a natural-language query | ranked, **self-contained code blocks** |
+| 2. [`ss-grep`](#tool-ss-grep) | an exact regex/literal | `file:line` hits, **ranked** |
+| 3. [`ss-find`](#tool-ss-find) | a regex **+** a query | regex matches, **semantically re-ranked, as code blocks** |
+| 4. [`ss-semantic`](#tool-ss-semantic) | a file **+** a question | just the **relevant spans** of that file |
+| 5. [`ss-trace`](#tool-ss-trace) | a symbol | **callers + callees + impact**, in one call |
+| 6. [`ss-read`](#tool-ss-read) | a file (± line range) | exact bytes **+ symbol metadata** |
 
 <a id="tool-ss-search"></a>
-### 1. `ss-search` — the whole retrieval stack in one call
+### 1. 🔍 `ss-search` — hybrid search powerhouse 
 
-One natural-language query runs the entire retrieval stack — lexical *and* vector search, fusion, symbol anchoring, intent reranking, graph expansion, and a final late-interaction rerank — and returns ranked, **self-contained code blocks** instead of `file:line` you still have to open.
+A hybrid search pipeline with late interaction reranking that returns actual code blocks. 
+
+SOTA in various published [`benchmarks`](#-benchmarks).
 
 ```mermaid
 flowchart TD
