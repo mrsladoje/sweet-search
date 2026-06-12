@@ -199,24 +199,21 @@ to be *consumed by an agent* — a useful answer, not a wall of matches to scrol
 
 | Tool | What you give it | What you get back |
 |------|------------------|-------------------|
-| `ss-search` | a natural-language query | ranked, **self-contained code blocks** |
-| `ss-grep` | an exact regex/literal | `file:line` hits, **ranked** |
-| `ss-find` | a regex **+** a query | regex matches, **semantically re-ranked, as code blocks** |
-| `ss-semantic` | a file **+** a question | just the **relevant spans** of that file |
-| `ss-trace` | a symbol | **callers + callees + impact**, in one call |
-| `ss-read` | a file (± line range) | exact bytes **+ symbol metadata** |
+| [1. `ss-search`](#tool-ss-search) | a natural-language query | ranked, **self-contained code blocks** |
+| [2. `ss-grep`](#tool-ss-grep) | an exact regex/literal | `file:line` hits, **ranked** |
+| [3. `ss-find`](#tool-ss-find) | a regex **+** a query | regex matches, **semantically re-ranked, as code blocks** |
+| [4. `ss-semantic`](#tool-ss-semantic) | a file **+** a question | just the **relevant spans** of that file |
+| [5. `ss-trace`](#tool-ss-trace) | a symbol | **callers + callees + impact**, in one call |
+| [6. `ss-read`](#tool-ss-read) | a file (± line range) | exact bytes **+ symbol metadata** |
 
-### `ss-search` — the whole retrieval stack in one call
+<a id="tool-ss-search"></a>
+### 1. `ss-search` — the whole retrieval stack in one call
 
-```bash
-ss-search "how are websocket reconnects handled?" -k 5
-```
-
-This is the big one. A single query fans out through eight stages — lexical *and* vector retrieval, fusion, symbol anchoring, intent reranking, graph expansion, late-interaction scoring — and comes back as ranked, **self-contained code blocks**, not a list of `file:line` you still have to go read.
+One natural-language query runs the entire retrieval stack — lexical *and* vector search, fusion, symbol anchoring, intent reranking, graph expansion, and a final late-interaction rerank — and returns ranked, **self-contained code blocks** instead of `file:line` you still have to open.
 
 ```mermaid
 flowchart TD
-    Q(["🔍  natural-language query"]) --> ROUTE{{"🧭 query router · lexical / hybrid"}}
+    Q(["🔍  natural-language query"]) --> ROUTE{{"🧭 WASM CatBoost router · lexical / hybrid"}}
 
     ROUTE --> BM["📑 <b>BM25F</b><br/>field-weighted FTS5"]
     ROUTE --> ANN
@@ -239,7 +236,7 @@ flowchart TD
 
     subgraph ROW2 [" "]
         direction LR
-        GRAPH["🕸️ graph expansion<br/>typed edges · 1–2 hops · <b>PathRAG</b>"] --> MAXSIM["🧮 <b>ColBERT MaxSim</b><br/>late interaction · 1.26s → 27ms"] --> OUT(["🏁 <b>self-contained code blocks</b><br/>dedup · MMR · 3k/8k/12k budget"])
+        GRAPH["🕸️ graph expansion<br/>typed edges · 1–2 hops · <b>PathRAG</b>"] --> MAXSIM["🧮 <b>Late-Interaction Rerank</b><br/>⚡ native Rust MaxSim kernel"] --> OUT(["🏁 <b>self-contained code blocks</b><br/>dedup · MMR · 3k/8k/12k budget"])
     end
 
     classDef io    fill:#fde68a,stroke:#f59e0b,color:#000;
@@ -265,18 +262,18 @@ flowchart TD
 
 | Stage | What it actually does |
 |-------|-----------------------|
-| 🧭 **Route** | A **CatBoost** classifier — 499 trees compiled to a 225 KB **WASM** module — picks lexical vs. hybrid from 50 single-pass query features in **~10 µs**, with a low-confidence reject option that defaults to max-recall hybrid. |
-| 📑🧬 **Retrieve** | **BM25F** over field-weighted FTS5 (name 10× · signature 5× · alias 4× · doc 1×) runs *in parallel* with a three-stage vector cascade — **binary HNSW** (Hamming over 64-byte vectors, ~100 µs) → INT8 rescore → exact float32 from a memory-mapped sidecar. |
+| 🧭 **Route** | **WASM-exported CatBoost** · lexical / hybrid · **~10 µs** routing · low-confidence → max-recall hybrid |
+| 📑🧬 **Retrieve** | • **Lexical** — **BM25F** over field-weighted FTS5 (name 10× · signature 5× · alias 4× · doc 1×)<br/>• **Embed** — query vectorized by the local **CodeRankEmbed** model (code-specialized; swappable for Voyage / Jina / Codestral)<br/>• **Vector cascade** — binary **HNSW** (Hamming, 64-byte, ~100 µs) → INT8 rescore → exact float32 from a memory-mapped sidecar |
 | 🔀 **Fuse** | **CCFusion** — convex combination with per-route weights and quantile normalization — collapses both rankings into one, with an automatic **RRF** (k=60) fallback when score distributions degenerate. |
 | ⚓ **Anchor** | **IAR** (Identifier-Anchored Retrieval): name a real symbol and an exact-name code-graph lookup injects that entity into the pool, even when the encoder ranked something tangential higher. |
 | 🎯 **Rerank** | Intent-aware: docs/tests/config demoted when you want implementation; log-scaled call-site reference boosts surface the function everyone actually calls. |
 | 🕸️ **Expand** | Typed-edge walks (`imports`/`extends`/`calls`/`uses`) 1–2 hops along the AST knowledge graph, edge types chosen by intent, **PathRAG**-style flow pruning + degree normalization so hub entities can't dominate. |
-| 🧮 **Score** | **ColBERT-style MaxSim** late interaction over a quantized per-token index — the genuinely precise reranker, made cheap by the kernels below. |
+| 🧮 **Late interaction** | The precise reranker: per-token **MaxSim** late interaction using the **LateOn-Code** model's embeddings over a quantized token index — run on a ⚡ native Rust MaxSim kernel (WASM-SIMD fallback). |
 | 📦 **Package** | Index-time near-duplicates collapse to their exemplar, MMR (λ=0.9) and same-file overlap demotion keep results diverse, and entity-aware expansion emits whole functions (imports, docstrings, decorators) under an auto-selected **3k / 8k / 12k** token budget. |
 
 > 💡 **What surprises people:** the paper-grade HNSW tuning isn't on a roadmap — it *ships, on by default*. Heuristic neighbor selection (Algorithm 4), `M0 = 2M` on layer 0, shuffled insertion order, discovery-rate **adaptive early termination**, and **adaptive ef** are all live, on a denser graph (M=64 · efC=800 · efS=400) than most vendors ship.
 
-> 🏎️ **Why it's quick:** a native Rust + Rayon **MaxSim kernel** (the 1.26 s → 27 ms above, 47× over scalar; 16× WASM-SIMD fallback) · a memory-mapped float32 sidecar that skips SQL on the rescore hot path · zero-GC binary HNSW (typed-array heaps + generation-stamped visited lists) · int4-quantized token vectors (**TurboQuant** — ~11× smaller on disk) · and a warm daemon that answers in a single NAPI call — no process is ever forked.
+> 🏎️ **Why it's quick:** a native Rust + Rayon **MaxSim kernel** (1.26 s → 27 ms on a 231-candidate rerank, 47× over scalar; 16× WASM-SIMD fallback) · a memory-mapped float32 sidecar that skips SQL on the rescore hot path · zero-GC binary HNSW (typed-array heaps + generation-stamped visited lists) · int4-quantized token vectors (**TurboQuant** — ~11× smaller on disk) · and a warm daemon that answers in a single NAPI call — no process is ever forked.
 
 <details>
 <summary><b>Design choices &amp; honesty</b></summary>
@@ -292,7 +289,8 @@ flowchart TD
 
 </details>
 
-### `ss-grep` — grep, minus every wasted millisecond
+<a id="tool-ss-grep"></a>
+### 2. `ss-grep` — grep, minus every wasted millisecond
 
 ```bash
 ss-grep "parseRetryAfter" -k 10
@@ -315,7 +313,8 @@ Hits come back **ranked and scored**, so an agent can trust the top one and stop
 
 </details>
 
-### `ss-find` — ColGrep, on a faster engine
+<a id="tool-ss-find"></a>
+### 3. `ss-find` — ColGrep, on a faster engine
 
 ```bash
 ss-find "token refresh logic" --regex "refresh.*[Tt]oken"
@@ -338,7 +337,8 @@ semantically ranked — but rebuilt on our own substrate:
 
 </details>
 
-### `ss-semantic` — hybrid retrieval, scoped to one file
+<a id="tool-ss-semantic"></a>
+### 4. `ss-semantic` — hybrid retrieval, scoped to one file
 
 ```bash
 ss-semantic src/auth/session.ts "where does the cookie get its expiry?"
@@ -361,7 +361,8 @@ The useful answer: just the relevant spans with line numbers — not the whole f
 
 </details>
 
-### `ss-trace` — graph algorithms, not grep guesswork
+<a id="tool-ss-trace"></a>
+### 5. `ss-trace` — graph algorithms, not grep guesswork
 
 ```bash
 ss-trace processOrder --in src/orders/service.py
@@ -388,7 +389,8 @@ bounds impact traversal (1–4).
 
 </details>
 
-### `ss-read` — exact bytes, with the index's knowledge attached
+<a id="tool-ss-read"></a>
+### 6. `ss-read` — exact bytes, with the index's knowledge attached
 
 ```bash
 ss-read src/db/pool.js 120 180
