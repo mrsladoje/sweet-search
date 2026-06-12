@@ -105,5 +105,5 @@ Subsequent lexical queries run in < 10ms.
 
 ## Support
 
-- Issues: https://github.com/panonitorg/sweet-search/issues
-- Docs: https://github.com/panonitorg/sweet-search/tree/main/docs
+- Issues: https://github.com/mrsladoje/sweet-search/issues
+- Docs: https://github.com/mrsladoje/sweet-search/tree/main/docs

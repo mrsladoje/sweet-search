@@ -13,12 +13,12 @@
   "author": "Marko Sladojevic <marko@panonit.com> (https://panonit.com)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/panonitorg/sweet-search.git"
+    "url": "git+https://github.com/mrsladoje/sweet-search.git"
   },
   "bugs": {
-    "url": "https://github.com/panonitorg/sweet-search/issues"
+    "url": "https://github.com/mrsladoje/sweet-search/issues"
   },
-  "homepage": "https://github.com/panonitorg/sweet-search#readme",
+  "homepage": "https://github.com/mrsladoje/sweet-search#readme",
   "keywords": [
     "sweet-search",
     "code-search",
