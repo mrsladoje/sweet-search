@@ -265,12 +265,12 @@ flowchart TD
 | Stage | What it actually does |
 |-------|-----------------------|
 | 🧭 **Route** | **WASM-exported CatBoost** · lexical / hybrid · **~10 µs** routing · low-confidence → max-recall hybrid |
-| 📑🧬 **Retrieve** | • **Lexical** — **BM25F** over field-weighted FTS5 (name 10× · signature 5× · alias 4× · doc 1×)<br/>• **Embed** — query vectorized by the local **CodeRankEmbed** model (code-specialized; swappable for Voyage / Jina / Codestral)<br/>• **Vector cascade** — binary **HNSW** (Hamming, 64-byte, ~100 µs) → INT8 rescore → exact float32 from a memory-mapped sidecar |
+| 🧬 **Retrieve** | • **Lexical** — **BM25F** over field-weighted FTS5 (name 10× · signature 5× · alias 4× · doc 1×)<br/>• **Embed** — query vectorized by the local **CodeRankEmbed** model (swappable for Voyage / Jina / Codestral)<br/>• **Vector cascade** — binary **HNSW** (Hamming, 64-byte, ~100 µs) → INT8 rescore → exact float32 from a memory-mapped sidecar |
 | 🔀 **Fuse** | • **CCFusion** — convex-combine both rankings · per-route weights · quantile-normalized<br/>• **MMR** (λ=0.9) diversity pass over the fused list<br/>• auto **RRF** (k=60) fallback on degenerate score distributions |
 | ⚓ **Anchor** | • **IAR** — a real symbol in the query fires an exact-name code-graph lookup that injects that entity, even when the encoder ranked it too low |
-| 🎯 **Rerank** | • demote docs / tests / config when you want implementation<br/>• log-scaled call-site boosts surface the most-referenced function |
-| 🕸️ **Expand** | • typed-edge walks (`imports`/`extends`/`calls`/`uses`) · 1–2 hops on the AST graph · edges picked by intent<br/>• **PathRAG** flow pruning + degree normalization → hubs can't dominate |
-| 🧮 **Late interaction** | • the precise reranker — query embedded per-token by **LateOn-Code** (149M; a 17M **edge** variant auto-selected on low-RAM hosts), then **MaxSim** against the pre-indexed quantized token vectors<br/>• ⚡ native Rust MaxSim kernel · WASM-SIMD fallback |
+| 🎯 **Intent Rerank** | • demote docs / tests / config when you want implementation<br/>• log-scaled call-site boosts surface the most-referenced function |
+| 🕸️ **Graph Expansion** | • typed-edge walks (`imports`/`extends`/`calls`/`uses`) · adaptive 2-hop on the AST graph · edges picked by intent<br/>• **PathRAG** flow pruning + degree normalization → hubs can't dominate |
+| 🧮 **Late interaction Rerank** | • Query embedded per-token by **LateOn-Code** (149M; a 17M **edge** variant auto-selected on low-RAM hosts)<br/>• **MaxSim** against the pre-indexed quantized token vectors<br/>• ⚡ native Rust+Rayon MaxSim kernel · WASM-SIMD fallback |
 | 📦 **Package** | • entity-aware expansion → whole functions (imports, docstrings, decorators)<br/>• same-file overlap demotion → diverse, non-overlapping spans<br/>• auto-selected **3k / 8k / 12k** token budget |
 
 > 💡 **What surprises people:** the paper-grade HNSW tuning isn't on a roadmap — it *ships, on by default*. Heuristic neighbor selection (Algorithm 4), `M0 = 2M` on layer 0, shuffled insertion order, discovery-rate **adaptive early termination**, and **adaptive ef** are all live, on a denser graph (M=64 · efC=800 · efS=400) than most vendors ship.
