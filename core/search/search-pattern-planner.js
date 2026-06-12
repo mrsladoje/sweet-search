@@ -268,7 +268,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
     const literalStart = performance.now();
 
     const sparseForPrefilter = globs.length === 0 ? ensureSparseGramIndex(searcher, options) : null;
-    const prefilterFiles = sparseForPrefilter ? getSparseGramAllFiles(sparseForPrefilter) : null;
+    const prefilterFiles = sparseForPrefilter ? getSparseGramAllFilesWithOverlay(searcher, sparseForPrefilter, options) : null;
 
     if (prefilterFiles && prefilterFiles.length > 0) {
       const combined = new Set();
