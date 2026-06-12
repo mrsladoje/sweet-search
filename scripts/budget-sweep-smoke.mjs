@@ -59,6 +59,8 @@ const PRICES = {
   'deepseek/deepseek-v4-pro': { inPerM: 0.435, outPerM: 0.87, cacheReadPerM: 0.003625 },
   'xiaomi/mimo-v2.5-pro':     { inPerM: 0.435, outPerM: 0.87, cacheReadPerM: 0.0036 },
   'gpt-5.5':                  { inPerM: 5, outPerM: 30, cacheReadPerM: 0.5 },
+  'openai/gpt-5.5':           { inPerM: 5, outPerM: 30, cacheReadPerM: 0.5 },
+  'z-ai/glm-5.1':             { inPerM: 0.98, outPerM: 3.08, cacheReadPerM: 0.182 },
   'claude-opus-4-8':          { inPerM: 15, outPerM: 75, cacheReadPerM: 1.5, cacheWritePerM: 18.75 },
 };
 const PR = PRICES[MODEL] || PRICES['deepseek/deepseek-v4-pro'];
@@ -109,9 +111,16 @@ const OUT = path.join(REPO, `core/prompt-optimization/data/results/budget-sweep-
 const RUNS = path.join(OUT, 'runs.jsonl');
 const CAP_DIR = path.join(OUT, 'captures');
 
-const devRaw = JSON.parse(fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/p7-dev-probes.json'), 'utf8'));
+// --probes <file>: run a different probe set (e.g. frozen/p7-heldout-probes.json).
+// DISCIPLINE: for held-out/OOD sets, consume AGGREGATE report output only —
+// never inspect per-probe rows (see Benchmark Methodology in CLAUDE.md).
+const probeFileFlag = flag('--probes', null);
+const PROBE_FILE = probeFileFlag
+  ? (path.isAbsolute(probeFileFlag) ? probeFileFlag : path.join(REPO, probeFileFlag))
+  : path.join(REPO, 'core/prompt-optimization/data/p7-dev-probes.json');
+const devRaw = JSON.parse(fs.readFileSync(PROBE_FILE, 'utf8'));
 const allProbes = Array.isArray(devRaw) ? devRaw : (devRaw.probes || []);
-const wantIds = onlyIds.length ? onlyIds : PROBE_IDS;
+const wantIds = onlyIds.length ? onlyIds : (probeFileFlag ? allProbes.map((p) => p.id) : PROBE_IDS);
 const probes = wantIds.map(id => allProbes.find(p => p.id === id)).filter(Boolean);
 if (probes.length !== wantIds.length) {
   const missing = wantIds.filter(id => !probes.some(p => p.id === id));
@@ -196,7 +205,10 @@ const realized = (u) => {
     + ((u.cached_input_tokens || 0) / 1e6) * PR.cacheReadPerM
     + out;
 };
-const reap = () => { try { spawnSync('pkill', ['-f', 'core/cli\\.js'], { stdio: 'ignore' }); } catch {} try { spawnSync('pkill', ['-9', '-f', 'index-maintainer\\.mjs'], { stdio: 'ignore' }); } catch {} };
+// SKIP_REAP=1 → no-op, for PARALLEL cells: a sibling's global pkill would kill
+// another cell's warm ss-server mid-call (the NO_REAP lesson from ba-batch).
+// Only safe when no arm in the cell needs server-side env (tier hooks).
+const reap = () => { if (process.env.SKIP_REAP) return; try { spawnSync('pkill', ['-f', 'core/cli\\.js'], { stdio: 'ignore' }); } catch {} try { spawnSync('pkill', ['-9', '-f', 'index-maintainer\\.mjs'], { stdio: 'ignore' }); } catch {} };
 const prewarm = (cwd) => { try { spawnSync('ss-search', ['warmup', '-k', '1'], { cwd, env: { ...process.env, PATH: [SS_BIN, process.env.PATH].join(':'), SWEET_SEARCH_PROJECT_ROOT: cwd }, timeout: 180000, stdio: 'ignore' }); } catch {} };
 
 // ─── CC-only: CLAUDE.md policy injection (per ARM, not per run — two probes can
