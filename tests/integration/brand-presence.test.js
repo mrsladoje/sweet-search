@@ -22,7 +22,8 @@ describe('Brand presence verification', () => {
   it('NOTICE file references Sweet Search', () => {
     const notice = readFileSync(join(ROOT, 'NOTICE'), 'utf8');
     expect(notice).toContain('Sweet Search');
-    expect(notice).toContain('panonitorg/sweet-search');
+    // NOTICE links the public repo under the author's account (see 72f65bc).
+    expect(notice).toContain('mrsladoje/sweet-search');
   });
 
   it('MCP server name is sweet-search', () => {
