@@ -261,6 +261,8 @@ flowchart TD
     style ROW2 fill:none,stroke:none;
 ```
 
+<sub>↑ The diagram traces the **hybrid** route. A pure-lexical query — or a literal file path — short-circuits at the router straight to BM25F, skipping the vector cascade and fusion.</sub>
+
 | Stage | What it actually does |
 |-------|-----------------------|
 | 🧭 **Route** | A **CatBoost** classifier — 499 trees compiled to a 225 KB **WASM** module — picks lexical vs. hybrid from 50 single-pass query features in **~10 µs**, with a low-confidence reject option that defaults to max-recall hybrid. |
