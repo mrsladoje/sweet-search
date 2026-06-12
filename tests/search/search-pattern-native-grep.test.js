@@ -69,7 +69,13 @@ describe('bareGrep — native path requires no ripgrep', () => {
       totalFiles: 1,
       scannedFiles: 1,
     });
-    const searcher = { projectRoot: '/proj', sparseGramIndex: index };
+    // sparseGramIndexPath pinned off-repo so a live sparse-delta overlay in
+    // this working tree cannot leak into the mocked unified-search result.
+    const searcher = {
+      projectRoot: '/proj',
+      sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
+      sparseGramIndex: index,
+    };
 
     const res = await bareGrep.call(searcher, 'AuthService', null, { regex: 'AuthService' });
 
@@ -98,6 +104,7 @@ describe('patternSearch — native path requires no ripgrep', () => {
     const searcher = {
       verbose: false,
       projectRoot: '/proj',
+      sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
       hasLateInteractionIndex: true,
       sparseGramIndex: index,
       lateInteractionIndex: {

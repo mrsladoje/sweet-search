@@ -172,6 +172,9 @@ describe('querySparseGramCandidates', () => {
       gramsUsed: 5,
     };
     const searcher = {
+      // Pin the index path away from the repo so a live sparse-delta overlay
+      // in this working tree cannot leak files into the mocked result.
+      sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
       sparseGramIndex: {
         queryLiterals: vi.fn().mockReturnValue(result),
       },
@@ -190,6 +193,7 @@ describe('querySparseGramCandidates', () => {
 
   it('reports too_broad when gram candidates are too broad', () => {
     const searcher = {
+      sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
       sparseGramIndex: {
         queryLiterals: vi.fn().mockReturnValue({
           eligible: true,
@@ -213,6 +217,7 @@ describe('querySparseGramCandidates', () => {
 
   it('returns an eligible empty candidate set without broad fallback', () => {
     const searcher = {
+      sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
       sparseGramIndex: {
         queryLiterals: vi.fn().mockReturnValue({
           eligible: true,
@@ -241,6 +246,7 @@ describe('querySparseGramCandidates', () => {
     await fs.writeFile(path.join(tmpDir, 'src', 'hit.js'), 'export const absentNeedle = 1;\n');
     try {
       const searcher = {
+        sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
         sparseGramIndex: {
           queryLiterals: vi.fn().mockReturnValue({
             eligible: true,
