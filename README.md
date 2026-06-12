@@ -273,21 +273,32 @@ flowchart TD
 | 🧮 **Late interaction Rerank** | • Query embedded per-token by **LateOn-Code** (149M; a 17M **edge** variant auto-selected on low-RAM hosts)<br/>• **MaxSim** against the pre-indexed quantized token vectors<br/>• native Rust+Rayon MaxSim kernel ⚡ · WASM-SIMD fallback (1.26 s → 27 ms on a 231-candidate rerank) |
 | 📦 **Package** | • entity-aware expansion → whole functions (imports, docstrings, decorators)<br/>• same-file overlap demotion → diverse, non-overlapping spans<br/>• auto-selected **3k / 8k / 12k** token budget |
 
-> 💡 **What surprises people:** the paper-grade HNSW tuning isn't on a roadmap — it *ships, on by default*. Heuristic neighbor selection (Algorithm 4), `M0 = 2M` on layer 0, shuffled insertion order, discovery-rate **adaptive early termination**, and **adaptive ef** are all live, on a denser graph (M=64 · efC=800 · efS=400) than most vendors ship.
-
-> 🏎️ **Why it's quick:** a native Rust + Rayon **MaxSim kernel** (1.26 s → 27 ms on a 231-candidate rerank, 47× over scalar; 16× WASM-SIMD fallback) · a memory-mapped float32 sidecar that skips SQL on the rescore hot path · zero-GC binary HNSW (typed-array heaps + generation-stamped visited lists) · int4-quantized token vectors (**TurboQuant** — ~11× smaller on disk) · and a warm daemon that answers in a single NAPI call — no process is ever forked.
-
 <details>
-<summary><b>Design choices &amp; honesty</b></summary>
+<summary><b>🌶️ Extra spice — the bits that didn't fit the diagram</b></summary>
 
+**🧠 The HNSW, in full.** Stage 1 is a from-scratch binary HNSW, and every "advanced" trick ships **on by default**:
+- **Heuristic neighbor selection** (HNSW Algorithm 4) + **M0 = 2M** on layer 0 — a real graph backbone, not naïve closest-M
+- **Shuffled insertion order** — no filesystem-ordering bias baked into the highway structure
+- **Discovery-rate adaptive early termination** + **adaptive ef** — easy queries stop early, hard ones keep their budget
+- A **denser graph than most vendors ship** (M=64 · efC=800 · efS=400) — which broke an 80.6 % → 86.5 % recall@200 plateau and cut p50 latency ~33 %
+- **Zero-GC search**: typed-array heaps + generation-stamped visited lists — no per-query allocation
+- 64-byte sign-bit vectors (Hamming) → INT8 → exact float32 from a memory-mapped sidecar
+
+**⚡ Why it's quick.** A native Rust + Rayon **MaxSim kernel** (47× over scalar; 16× WASM-SIMD fallback) · int4-quantized token vectors (**TurboQuant**, ~11× smaller on disk) · a memory-mapped float32 sidecar that skips SQL on the rescore hot path · **score-spread adaptive pooling** (decisive queries shrink the rescore pool, ambiguous ones widen it) · and a warm daemon that answers in a single NAPI call — no process is ever forked.
+
+**🎛️ Priors & structure.**
 - **Quality priors:** every chunk carries a 0–1 prior from test proximity, git recency, symbol centrality (PageRank), comment density, and complexity — production code surfaces, stale fixtures sink.
-- **Community structure:** a canonical **Leiden** pass detects code communities on the entity graph at index time, feeding vocabulary prewarming and structural signals — the engine understands your modules, not just your directories.
-- **Multilingual:** 14 languages get full tree-sitter AST treatment; a 39-config registry covers 70+ extensions beyond that. Router features handle camelCase/snake_case decomposition, CJK density, and German compounds.
+- **Community structure:** a canonical **Leiden** pass detects code communities on the entity graph at index time, feeding vocabulary prewarming and structural signals — it understands your modules, not just your directories.
+- **Multilingual:** 14 languages get full tree-sitter AST treatment; a 39-config registry covers 70+ extensions beyond that. Router features handle camelCase/snake_case, CJK density, and German compounds.
+- **Format-gated signals:** structure-aware boosts and demotions (symbol-exact, path-token, mega-entity) fire only in agent mode — they help agent-shaped queries and would hurt plain NL, so they stay gated by default.
+
+**🛟 Rescues & honest trade-offs.**
 - **Long-query rescue:** wordy NL queries that FTS5 would tokenize into an unsatisfiable `AND` fall back to multi-query BM25F + RRF — one query per content keyword, fused.
 - **Near-duplicate dedup:** a SimHash + MinHash-LSH pass (Jaccard τ=0.9) clusters copy-paste and vendored code at index time; aliases reuse their exemplar's vectors and skip *both* the bi-encoder and late-interaction encoding.
 - **A negative result we ship anyway:** we built a full cross-encoder rerank cascade behind an adaptive confidence gate, measured it on our eval sets — and it didn't beat MaxSim at 3× the latency. So it ships **disabled** (`SWEET_SEARCH_CASCADE_ENABLED=true` to try it). We'd rather ship the faster path than a fancier diagram.
-- **Budget tiers:** the expensive 8k/12k tiers are tuned to fire on ~1–5% of queries — the default stays cheap. Force one with `--full` / `--xl`, or a mode with `--mode lexical|semantic|hybrid|pattern`.
-- Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
+- **Budget tiers:** the expensive 8k/12k tiers fire on ~1–5 % of queries — the default stays cheap. Force one with `--full` / `--xl`, or pick a mode with `--mode lexical|semantic|hybrid|pattern`.
+
+Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 </details>
 
