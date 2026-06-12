@@ -2,7 +2,7 @@
 
 <img src="assets/sweet-search-banner-pixelated.svg" alt="sweet-search" width="100%" />
 
-### *Maybe grep isn't all you need…*
+### *Maybe grep isn't all you need…* 🍬
 
 **A local-first hybrid code-search engine built for AI coding agents.**
 Semantic + lexical + structural search over your working tree, GPU-accelerated local inference,
