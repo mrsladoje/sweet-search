@@ -82,7 +82,7 @@ updates itself as you type.
 <sub>reconcile daemon tracks your working tree</sub>
 
 [🦀 The Native Engine Room](#-the-native-engine-room)<br>
-<sub>four Rust crates + TurboQuant compression</sub>
+<sub>four Rust crates + INT4 LI compression</sub>
 
 </td>
 <td width="24%" valign="top">
@@ -278,7 +278,7 @@ flowchart TD
 <details>
 <summary><b>🌶️ Extra spice — the bits that didn't fit the diagram</b></summary>
 
-**🧠 The HNSW, in full.** Stage 1 is a from-scratch binary HNSW, and every "advanced" trick ships **on by default**:
+**🧠 The HNSW, in full** ([full writeup](docs/HNSW_APPROACH.md)). Stage 1 is a from-scratch binary HNSW, and every "advanced" trick ships **on by default**:
 - **Heuristic neighbor selection** (HNSW Algorithm 4) + **M0 = 2M** on layer 0 — a real graph backbone, not naïve closest-M
 - **Shuffled insertion order** — no filesystem-ordering bias baked into the highway structure
 - **Discovery-rate adaptive early termination** + **adaptive ef** — easy queries stop early, hard ones keep their budget
@@ -286,7 +286,7 @@ flowchart TD
 - **Zero-GC search**: typed-array heaps + generation-stamped visited lists — no per-query allocation
 - 64-byte sign-bit vectors (Hamming) → INT8 → exact float32 from a memory-mapped sidecar
 
-**⚡ Why it's quick.** A native Rust + Rayon **MaxSim kernel** (47× over scalar; 16× WASM-SIMD fallback) · int4-quantized token vectors (**TurboQuant**, ~11× smaller on disk) · a memory-mapped float32 sidecar that skips SQL on the rescore hot path · **score-spread adaptive pooling** (decisive queries shrink the rescore pool, ambiguous ones widen it) · and a warm daemon that answers in a single NAPI call — no process is ever forked.
+**⚡ Why it's quick.** A native Rust + Rayon **MaxSim kernel** (47× over scalar; 16× WASM-SIMD fallback) · int4-quantized, binary-packed token vectors (plain INT4 is the shipped path — the full [TurboQuant](docs/LI_QUANTIZATION_STRATEGY.md) algorithm is researched but deferred; binary packing alone cut the LI index ~3.4×, 1.34 GiB → ~396 MiB) · a memory-mapped float32 sidecar that skips SQL on the rescore hot path · **score-spread adaptive pooling** (decisive queries shrink the rescore pool, ambiguous ones widen it) · and a warm daemon that answers in a single NAPI call — no process is ever forked.
 
 **🎛️ Priors & structure.**
 - **Quality priors:** every chunk carries a 0–1 prior from test proximity, git recency, symbol centrality (PageRank), comment density, and complexity — production code surfaces, stale fixtures sink.
@@ -547,7 +547,7 @@ Four Rust crates do the heavy lifting, each with a graceful fallback so the engi
 
 </details>
 
-### 🗜️ TurboQuant: an index that fits in RAM
+### 🗜️ INT4 binary segments: an index that fits in RAM
 
 A 17k-document codebase's late-interaction index weighed **1.34 GiB** as JSON-encoded INT8. The binary
 segment format cut the same index to **~396 MiB** (3.4× of pure ASCII bloat, gone) — and the INT4
@@ -556,7 +556,7 @@ default packs token vectors at half a byte each on top of that. Laptop-sized, fu
 <details>
 <summary><b>Deep dive</b></summary>
 
-- **INT4 by default:** per-token min/scale quantization with nibble packing (two values per byte), A/B-tested against the INT8 baseline with no meaningful retrieval regression before becoming the default.
+- **INT4 by default:** per-token min/scale quantization with nibble packing (two values per byte), A/B-tested against the INT8 baseline with no meaningful retrieval regression before becoming the default. We borrowed the *rotation insight* from Google's [TurboQuant](docs/LI_QUANTIZATION_STRATEGY.md), but ship plain INT4 — the full TurboQuant algorithm (WHT + PolarQuant + QJL) is researched and deferred, not in the product path.
 - **SSLX binary segments:** the index persists as ~10k-document binary segment files with structured headers and CRC32 footers — a crash costs you at most one segment, not the index.
 - **Three-stage retrieval:** a binary HNSW (Hamming distance over 64-byte binarized vectors, ~32× smaller than float HNSW) produces candidates in ~100 µs, INT8 rescoring narrows them, and a float32 sidecar rescores the final pool — speed without giving up top-result quality.
 - **Memory-mapped HNSW:** the float graph index loads via `mmap` (USearch `view()`), contributing **0 MB** to the V8 heap at search time; the OS reclaims pages under pressure.
