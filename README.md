@@ -238,7 +238,7 @@ flowchart TD
     ROW1 --> ROW2
 
     subgraph ROW2 [" "]
-        direction RL
+        direction LR
         GRAPH["🕸️ graph expansion<br/>typed edges · 1–2 hops · <b>PathRAG</b>"] --> MAXSIM["🧮 <b>ColBERT MaxSim</b><br/>late interaction · 1.26s → 27ms"] --> OUT(["🏁 <b>self-contained code blocks</b><br/>dedup · MMR · 3k/8k/12k budget"])
     end
 
