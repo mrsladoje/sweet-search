@@ -200,7 +200,7 @@ to be *consumed by an agent* — a useful answer, not a wall of matches to scrol
 | Tool | What you give it | What you get back |
 |------|------------------|-------------------|
 | 1. [`ss-search`](#tool-ss-search) | a natural-language query | ranked, **self-contained code blocks** |
-| 2. [`ss-grep`](#tool-ss-grep) | an exact regex/literal | `file:line` hits, **ranked** |
+| 2. [`ss-grep`](#tool-ss-grep) | an exact regex/literal | every `file:line` hit, **ripgrep-identical** |
 | 3. [`ss-find`](#tool-ss-find) | a regex **+** a query | regex matches, **semantically re-ranked, as code blocks** |
 | 4. [`ss-semantic`](#tool-ss-semantic) | a file **+** a question | just the **relevant spans** of that file |
 | 5. [`ss-trace`](#tool-ss-trace) | a symbol | **callers + callees + impact**, in one call |
@@ -316,7 +316,7 @@ ss-grep "parseRetryAfter" -k 10
 - **Regex-AST literal extraction + SIMD intersection**: required substrings are pulled from the pattern's syntax tree, posting lists are intersected with NEON/SSE2 block merges (galloping search for skewed sizes), and only the files that *can* match — typically 0.1–5% of the corpus — see the real regex.
 - **Fully in-process**: verification runs on Rust's regex crate with Rayon across all cores, inside the warm daemon, in a single NAPI call. No child process is ever spawned — zero fork/exec, zero pipe I/O, zero JSON re-parsing.
 
-Hits come back **ranked and scored**, so an agent can trust the top one and stop.
+Every match comes back in stable `file:line` order — ripgrep-identical counts, optional context lines — with no relevance guessing, no subprocess, in one warm call.
 
 <details>
 <summary><b>More</b></summary>
@@ -358,8 +358,8 @@ ss-semantic src/auth/session.ts "where does the cookie get its expiry?"
 ```
 
 You know the file; this finds the lines. Every indexed chunk of the file is scored by **three independent
-signals** — BM25-style lexical term match, exact symbol-name match (weighted 1.5×), and ColBERT-style
-MaxSim over late-interaction token embeddings — fused with **Reciprocal Rank Fusion** (k=60), with
+signals** — BM25-style lexical term match, exact symbol-name match (weighted 1.5×), and per-token
+**MaxSim** late interaction over the **LateOn-Code** embeddings — fused with **Reciprocal Rank Fusion** (k=60), with
 symbol-less fragment chunks demoted 0.85× so real definitions win ties. The top spans are then
 **re-read from disk** (±2 context lines, overlapping spans merged), so the answer is filesystem ground
 truth even mid-edit; if the file is newer than its index entry you get an explicit staleness warning.
