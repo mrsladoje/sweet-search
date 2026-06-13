@@ -50,8 +50,11 @@
     "core/vector-store/",
     "core/query/",
     "core/skills/",
+    "core/banner/",
+    "assets/banner/",
     "mcp/",
     "scripts/benchmark-harness.js",
+    "scripts/postinstall-banner.js",
     "scripts/init.js",
     "scripts/uninstall.js",
     "scripts/verify-runtime.js",
@@ -78,6 +81,8 @@
   ],
   "scripts": {
     "init": "node scripts/init.js",
+    "postinstall": "node scripts/postinstall-banner.js",
+    "bake:banner": "node scripts/bake-banner.mjs",
     "build:assets": "node scripts/generate-asset-manifest.js",
     "lint": "eslint core/",
     "build": "node -e \"import('./core/search/sweet-search.js')\" && echo 'Build OK'",
@@ -152,6 +157,7 @@
     "eslint": "^9.39.4",
     "fast-check": "^4.5.3",
     "p-map": "^7.0.4",
+    "puppeteer-core": "^25.1.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.16"
   },
