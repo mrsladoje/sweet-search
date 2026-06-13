@@ -127,6 +127,7 @@ const CLEAR_EOL = '\x1b[K';
 const liveBars = new Map();     // label -> { current, total }; insertion order = display order
 let regionLines = 0;            // bar lines currently pinned at the bottom (TTY)
 let lastLoggedPercent = {};
+let deferredLogs = [];          // lines held back while parallel bars run (flushed on commit)
 
 function renderBar(current, total, label) {
   const ratio = total > 0 ? Math.max(0, Math.min(1, current / total)) : 1;
@@ -151,7 +152,15 @@ export function log(message, color = 'reset') {
   if (quietMode) return;
   const line = `${colors[color]}${message}${colors.reset}`;
   if (regionLines > 0 && process.stdout.isTTY) {
-    // Print the line above the pinned bars, then redraw the bars below it.
+    if (liveBars.size > 1) {
+      // Parallel bars are live: defer the line. Printing it now would scroll the
+      // region and freeze a duplicate bar-pair into scrollback (e.g. the "✓ Late
+      // interaction index built" line when LI finishes before Embedding). Flushed
+      // once every bar in the region completes.
+      deferredLogs.push(line);
+      return;
+    }
+    // Single bar: print the line above it, then redraw the bar below.
     let out = `\x1b[${regionLines}A\r${line}${CLEAR_EOL}\n`;
     for (const [label, b] of liveBars) out += renderBar(b.current, b.total, label) + CLEAR_EOL + '\n';
     process.stdout.write(out);
@@ -182,6 +191,12 @@ export function logProgress(current, total, label) {
     for (const k of liveBars.keys()) lastLoggedPercent[k] = 0;
     liveBars.clear();
     regionLines = 0;
+    // Flush any lines deferred while the parallel bars were running — now below
+    // the finished bars, in arrival order.
+    if (deferredLogs.length) {
+      for (const l of deferredLogs) console.log(l);
+      deferredLogs = [];
+    }
   }
 }
 
