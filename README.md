@@ -146,13 +146,13 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 <tr>
 <td width="50%" valign="top">
 
-**① Code-retrieval** *(agent-in-the-loop)*<br>
+🤖 **[① Code-retrieval](#bench-code-retrieval)** *(agent-in-the-loop)*<br>
 <sub>Does it make a real coding agent **cheaper and more useful** when it searches your repo? Paired against each model's own grep-and-read loop.</sub>
 
 </td>
 <td width="50%" valign="top">
 
-**② Task-completion** *(coming soon)*<br>
+🚧 **[② Task-completion](#bench-task-completion)** *(coming soon)*<br>
 <sub>Does cheaper, denser context **compound** into a higher resolve-rate on multi-step engineering tasks? Harness in progress.</sub>
 
 </td>
@@ -160,13 +160,13 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 <tr>
 <td width="50%" valign="top">
 
-**③ Paper-type IR** *(academic)*<br>
+📄 **[③ Paper-type IR](#bench-paper-type)** *(academic)*<br>
 <sub>The standard NL→code retrieval suites (GCSN, M2CRB, CoSQA…), full-corpus MRR@10.</sub>
 
 </td>
 <td width="50%" valign="top">
 
-**④ Engine speed**<br>
+⚡ **[④ Engine speed](#bench-engine-speed)**<br>
 <sub>Raw systems numbers — grep throughput, query latency, rerank kernels, HNSW.</sub>
 
 </td>
@@ -175,6 +175,7 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 
 ---
 
+<a id="bench-code-retrieval"></a>
 ### 🤖 1. Code-retrieval benchmarks — *the agent-in-the-loop test*
 
 We install the evolved agent prompt (the [GEPA-evolved search discipline](#-an-agent-prompt-that-was-evolved-not-written)), point a coding agent at a real repo, and pair it **probe-for-probe against the same model running its own native grep-and-read loop**. Same model, same tasks, same judge — the only difference is whether sweet-search is wired in.
@@ -222,12 +223,14 @@ The win is **harness-adaptive**: where the native loop is disciplined (Claude Co
 
 ---
 
+<a id="bench-task-completion"></a>
 ### 🚧 2. Task-completion benchmarks — *coming soon*
 
 > Retrieval quality is necessary but not sufficient. Cheaper, denser context only matters if it **compounds across a real, multi-step engineering task** — finding the code, understanding it, changing it, and not breaking anything. The next suite measures exactly that: **resolve-rate on SWE-bench-style multi-file tasks**, sweet-search-wired vs. native, on the same paired, multiplicity-controlled bar as above. Harness and pilot are in progress — numbers land here when they clear that bar, and not before.
 
 ---
 
+<a id="bench-paper-type"></a>
 ### 📄 3. Paper-type retrieval benchmarks — *academic NL→code IR*
 
 > [!WARNING]
@@ -273,6 +276,7 @@ and French queries.
 
 ---
 
+<a id="bench-engine-speed"></a>
 ### ⚡ 4. Engine speed — *systems benchmarks, measured in-repo*
 
 <div align="center">
@@ -568,7 +572,7 @@ What it teaches:
 
 > **Chunk → enrich → embed → quantize** — every step on-device and in Rust. Batches are sized to *your CPU's actual cache*, two open code-models do the encoding, and two separate quantizations make the index both **faster to build** and **small enough to live in RAM**. Zero API keys; nothing ever leaves the machine.
 
-| ① Structure-aware chunk | ② Enrich from structure | ③ Embed — two models | ④ Quantize + persist |
+| ① 🧩 **[Structure-aware chunk](#idx-chunk)** | ② 🏷️ **[Enrich from structure](#idx-enrich)** | ③ 🤖 **[Embed — two models](#idx-embed)** | ④ 🗜️ **[Quantize + persist](#idx-quantize)** |
 |:--|:--|:--|:--|
 | cAST over tree-sitter ASTs — whole functions, never sliced mid-body | deterministic preamble from the code graph — **no LLM call** | dense **CodeRankEmbed** + per-token **LateOn-Code** | INT8 weights → **2× faster build** · INT4 vectors → **fits in RAM** |
 
@@ -581,10 +585,12 @@ What it teaches:
 | 🟩 NVIDIA GPU (SM 7.0+) | candle **CUDA**; **flash-attention** on Ampere+ |
 | 💻 No accelerator | **ONNX Runtime INT8** — tuned CPU path, 132 MB model, **zero GPU weights downloaded** |
 
+<a id="idx-chunk"></a>
 ### 🧩 Chunking — every chunk is whole code, never a fixed window
 - **[cAST](https://arxiv.org/abs/2506.15655)** structure-aware chunking over real **tree-sitter** ASTs: a recursive *split-then-merge* greedily packs sibling AST nodes up to the size cap and recurses *into* nodes too big to fit. So a chunk is always a **function, a class, or a contiguous run of declarations** — never a body cut in half, never a string split mid-literal.
 - **14 languages** get true AST grammars — `JS · TS · TSX · Python · Go · Rust · Java · C · C++ · Ruby · PHP · Kotlin · Swift · C#` — and a **39-config regex registry** carries structure-aware chunking to **70+ more extensions**.
 
+<a id="idx-enrich"></a>
 ### 🏷️ Metadata — context the encoder can actually see
 - Every chunk ships its **symbol name · entity type · signature · line span** — the metadata that powers the code graph, `ss-read` annotations, and the self-contained answers everywhere else.
 - **Contextual enrichment:** before embedding, each chunk is prefixed with a structured preamble assembled from the AST + code graph — *file path · enclosing-scope breadcrumb · name & type · merged siblings · the imports it actually uses*. **Both** encoders see it, so a bare `getId()` still retrieves on the class and module around it.
@@ -595,6 +601,7 @@ What it teaches:
 - **Uses every core the hardware really has** — full count on ARM/Apple Silicon; x86 SMT siblings discounted because they don't scale inference linearly.
 - **ORT drives the CPU path** (ONNX Runtime); GPU hosts swap in fused kernels (below). Either way inference runs off the event loop as a napi `AsyncTask`, so tokenization and SQLite writes overlap compute instead of stalling behind it.
 
+<a id="idx-quantize"></a>
 ### 🗜️ Two quantizations — one buys speed, one buys size
 | | **Model weights** · INT8 ORT | **Index vectors** · INT4 binary |
 |:--|:--|:--|
@@ -602,6 +609,7 @@ What it teaches:
 | **Win** | **~2× faster** indexing · 4× smaller model (**132 MB**) | LI index **1.34 GiB → ~396 MiB** · INT4 nibble-packing halves it again |
 | **Fidelity** | **≥ 0.96 cosine** vs FP32 | **no measurable retrieval loss** (A/B-tested vs INT8) |
 
+<a id="idx-embed"></a>
 ### 🤖 Two models — both open, both local, both code-specialized
 - **[CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)** — 768-d dense bi-encoder (137M, Apache-2.0) for first-stage recall.
 - **[LateOn-Code](https://huggingface.co/lightonai/LateOn-Code)** — ModernBERT per-token **late interaction** (149M) for the rerank.
