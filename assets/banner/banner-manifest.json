@@ -1,0 +1,10 @@
+{
+  "format": "grid-webp",
+  "file": "banner-frames.webp",
+  "gridCols": 8,
+  "cellW": 1200,
+  "cellH": 400,
+  "count": 96,
+  "fps": 12,
+  "frameMs": 83
+}
