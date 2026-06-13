@@ -468,50 +468,55 @@ What it teaches:
 
 ## ⚡ GPU-Accelerated Indexing, Fully Local
 
-All inference is on-device, in Rust, via [candle](https://github.com/huggingface/candle) — with the
-attention path swapped for **fused kernels tuned per backend**, and an honest CPU story for machines
-with no accelerator at all.
+> **Chunk → enrich → embed → quantize** — every step on-device and in Rust. Batches are sized to *your CPU's actual cache*, two open code-models do the encoding, and two separate quantizations make the index both **faster to build** and **small enough to live in RAM**. Zero API keys; nothing ever leaves the machine.
+
+| ① Structure-aware chunk | ② Enrich from structure | ③ Embed — two models | ④ Quantize + persist |
+|:--|:--|:--|:--|
+| cAST over tree-sitter ASTs — whole functions, never sliced mid-body | deterministic preamble from the code graph — **no LLM call** | dense **CodeRankEmbed** + per-token **LateOn-Code** | INT8 weights → **2× faster build** · INT4 vectors → **fits in RAM** |
+
+**The inference engine, picked for your silicon:**
 
 | Your hardware | What runs |
-|---------------|-----------|
-| Apple Silicon (M1+) | candle **Metal**, BF16, fused SDPA attention |
-| Apple Silicon (M3+) | … plus a **CoreML Neural Engine cascade** (~18% faster full indexing, measured on M3 Max) |
-| NVIDIA GPU (SM 7.0+) | candle **CUDA**; **flash-attention** on Ampere+ |
-| Anything else | **ONNX Runtime INT8** — optimized CPU path, ~139 MB embedding model, no GPU weights downloaded |
+|--|--|
+| 🍏 Apple Silicon (M1+) | candle **Metal**, BF16, fused SDPA attention |
+| 🍏 Apple Silicon (M3+) | …​ plus a **CoreML Neural Engine cascade** — ~18% faster full index (measured, M3 Max) |
+| 🟩 NVIDIA GPU (SM 7.0+) | candle **CUDA**; **flash-attention** on Ampere+ |
+| 💻 No accelerator | **ONNX Runtime INT8** — tuned CPU path, 132 MB model, **zero GPU weights downloaded** |
 
-Before a single token is embedded, files are chunked by **[cAST](https://arxiv.org/abs/2506.15655)** —
-structure-aware chunking over real **tree-sitter ASTs**. A recursive split-then-merge greedily packs
-adjacent sibling AST nodes into a chunk until the size cap, and recurses *into* nodes too big to fit —
-so every chunk is whole code: a function, a class, a contiguous run of declarations. Never a function
-sliced mid-body, never a string split mid-literal. 14 languages get true AST grammars (JS/TS/TSX,
-Python, Go, Rust, Java, C, C++, Ruby, PHP, Kotlin, Swift, C#); a 39-config regex registry extends
-structure-aware chunking to 70+ file extensions beyond those. Each chunk carries its symbol name,
-entity type, signature, and line span — the metadata that feeds the code graph, `ss-read`'s
-annotations, and the self-contained answers everywhere else.
+### 🧩 Chunking — every chunk is whole code, never a fixed window
+- **[cAST](https://arxiv.org/abs/2506.15655)** structure-aware chunking over real **tree-sitter** ASTs: a recursive *split-then-merge* greedily packs sibling AST nodes up to the size cap and recurses *into* nodes too big to fit. So a chunk is always a **function, a class, or a contiguous run of declarations** — never a body cut in half, never a string split mid-literal.
+- **14 languages** get true AST grammars — `JS · TS · TSX · Python · Go · Rust · Java · C · C++ · Ruby · PHP · Kotlin · Swift · C#` — and a **39-config regex registry** carries structure-aware chunking to **70+ more extensions**.
 
-**Contextual chunk enrichment.** Before embedding, every chunk is prefixed with a structured preamble
-built from the AST and code graph — file path, the scope breadcrumb of enclosing symbols, the chunk's
-own name and entity type, merged sibling symbols, and the imports it actually uses. Both the dense
-embedding (**CodeRankEmbed**) *and* the late-interaction tokens (**LateOn-Code**) see this enriched text,
-so a bare `getId()` still retrieves on the class and module around it. It's our nod to
-**[Anthropic's Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval)** — except
-where they prepend an *LLM-generated* summary (one model call per chunk), we derive the context
-*deterministically from structure*: no LLM, no per-chunk inference, regenerated for free on every
-reindex. And it's **tuned per language** from GenCodeSearchNet ablations — Python stays minimal (it sits
-near its MRR ceiling, and the path just echoed the symbol name), the Java family keeps a slug-stripped
-path (the framework signal survives), and JS/Ruby/Go/C/C++/Rust get the full preamble where closures and
-imports earn their keep.
+### 🏷️ Metadata — context the encoder can actually see
+- Every chunk ships its **symbol name · entity type · signature · line span** — the metadata that powers the code graph, `ss-read` annotations, and the self-contained answers everywhere else.
+- **Contextual enrichment:** before embedding, each chunk is prefixed with a structured preamble assembled from the AST + code graph — *file path · enclosing-scope breadcrumb · name & type · merged siblings · the imports it actually uses*. **Both** encoders see it, so a bare `getId()` still retrieves on the class and module around it.
+- Our nod to **[Anthropic's Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval)** — except they prepend an *LLM-generated* summary (one model call per chunk); we derive the context **deterministically from structure**: no LLM, no per-chunk inference, regenerated for free on every reindex. **Tuned per language** from GenCodeSearchNet ablations — Python stays minimal, the Java family keeps a slug-stripped path, JS/Ruby/Go/C/C++/Rust get the full preamble where closures and imports earn their keep.
+
+### 🧠 Cache-aware batching — we read your CPU before we batch it
+- We **detect your last-level cache at runtime** — `hw.perflevel0.l2cachesize` (the 16 MB P-cluster on Apple Silicon, *not* the smaller E-cluster), Intel L3, or `/sys/.../cache` on Linux — then size every embedding batch so **one transformer layer's weights *plus* the batch's activations stay resident in cache**. No spilling to main memory mid-layer; on a long-sequence tail that's the difference between B=1 and a measured **2.1× per-chunk slowdown**.
+- **Uses every core the hardware really has** — full count on ARM/Apple Silicon; x86 SMT siblings discounted because they don't scale inference linearly.
+- **ORT drives the CPU path** (ONNX Runtime); GPU hosts swap in fused kernels (below). Either way inference runs off the event loop as a napi `AsyncTask`, so tokenization and SQLite writes overlap compute instead of stalling behind it.
+
+### 🗜️ Two quantizations — one buys speed, one buys size
+| | **Model weights** · INT8 ORT | **Index vectors** · INT4 binary |
+|:--|:--|:--|
+| **Job** | build the index faster on CPU | keep the on-disk index tiny |
+| **Win** | **~2× faster** indexing · 4× smaller model (**132 MB**) | LI index **1.34 GiB → ~396 MiB** · INT4 nibble-packing halves it again |
+| **Fidelity** | **≥ 0.96 cosine** vs FP32 | **no measurable retrieval loss** (A/B-tested vs INT8) |
+
+### 🤖 Two models — both open, both local, both code-specialized
+- **[CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)** — 768-d dense bi-encoder (137M, Apache-2.0) for first-stage recall.
+- **[LateOn-Code](https://huggingface.co/lightonai/LateOn-Code)** — ModernBERT per-token **late interaction** (149M) for the rerank.
+- **Edge fallback for leaner machines:** a **17M `edge` LateOn-Code** (~9× smaller FP32 backbone) auto-selects on low-RAM hosts, and the whole CPU path runs INT8 with **no GPU weights ever downloaded** — full local search on a laptop with no accelerator.
 
 <details>
-<summary><b>What's actually custom here</b></summary>
+<summary><b>What's actually custom here — the kernels we hand-wrote</b></summary>
 
-- **Surgical attention swap:** we vendor the upstream model implementations (NomicBERT for embeddings, ModernBERT for late interaction) and replace only the attention forward pass — an MLX-ported fused SDPA kernel on Metal, `candle-flash-attn` with varlen packing on CUDA Ampere+, and byte-for-byte upstream math on CPU so the fallback is provably identical.
+- **Surgical attention swap:** we vendor the upstream model implementations (NomicBERT for embeddings, ModernBERT for late interaction) and replace **only the attention forward pass** — an MLX-ported fused SDPA kernel on Metal, `candle-flash-attn` with varlen packing on CUDA Ampere+, and byte-for-byte upstream math on CPU so the fallback is provably identical.
 - **A silent-NaN bug, found and fixed:** Apple's Metal SDPA kernel downcasts attention masks to F16, which saturates the standard `f32::MIN` mask to `-Inf` and quietly produces NaN on padded rows — collapsing retrieval quality. We clamp the mask and serialize Metal command-buffer submissions (concurrent submission corrupts outputs on shared queues). Details in [`crates/sweet-search-native/src/inference/`](crates/sweet-search-native/src/inference/).
 - **CoreML cascade:** 18 pre-traced `.mlpackage` variants (bucketed by sequence length) dispatched to the Apple Neural Engine through an Objective-C shim; oversized batches fall through to Metal. Gated to M3+ because on M1/M2 the ANE doesn't beat its own compile overhead — we measured, so it's off there.
-- **GPU off the event loop:** inference runs as napi `AsyncTask` on libuv worker threads, so tokenization and SQLite writes overlap GPU compute instead of stalling behind it.
-- **Pipelined indexing:** while batch *N+1* embeds, batch *N*'s vectors stream into SQLite through zero-copy buffer views; full rebuilds write to a temp file and atomically swap, so a crash never leaves you serving half an index.
-- **Models:** CodeRankEmbed (768-d, code-specialized) for embeddings; LateOn-Code (ModernBERT) for per-token late interaction, in a full-fidelity `standard` and a compact `edge` variant (~9× smaller FP32 backbone; ~2× smaller on the INT8 CPU path).
-- **Structure-derived context, per-language routed:** the enrichment preamble (path · scope chain · symbol · siblings · imports) is assembled at index time from a code-graph line-range overlap query — never an LLM call. The late-interaction input is then routed per language family (full enriched text for JS/Ruby/Go/C-family/Rust, a slimmer path policy for Python and the Java family), every routing decision settled by per-language ablation rather than a global default.
+- **Structure-routed enrichment:** the preamble (path · scope chain · symbol · siblings · imports) is assembled at index time from a code-graph line-range overlap query — never an LLM call — then routed per language family (full enriched text for JS/Ruby/Go/C-family/Rust, a slimmer path policy for Python and the Java family), every decision settled by per-language ablation rather than a global default.
+- **Pipelined, crash-safe indexing:** while batch *N+1* embeds, batch *N*'s vectors stream into SQLite through zero-copy buffer views; full rebuilds write to a temp file and atomically swap, so a crash never leaves you serving half an index.
 
 </details>
 
@@ -561,11 +566,11 @@ Four Rust crates do the heavy lifting, each with a graceful fallback so the engi
 
 </details>
 
-### 🗜️ INT4 binary segments: an index that fits in RAM
+### 🗜️ INT4 binary segments: the on-disk format behind the RAM-sized index
 
-A 17k-document codebase's late-interaction index weighed **1.34 GiB** as JSON-encoded INT8. The binary
-segment format cut the same index to **~396 MiB** (3.4× of pure ASCII bloat, gone) — and the INT4
-default packs token vectors at half a byte each on top of that. Laptop-sized, fully in RAM.
+The quantization headline lives [up in indexing](#-gpu-accelerated-indexing-fully-local) — `1.34 GiB → ~396 MiB`,
+INT4-halved again. Here's the **SSLX** segment format that delivers it: crash-safe by construction, and
+the three-stage retrieval it feeds at query time.
 
 <details>
 <summary><b>Deep dive</b></summary>
