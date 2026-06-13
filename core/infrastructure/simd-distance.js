@@ -72,12 +72,17 @@ async function initWasm() {
 
       initDone = true;
 
-      if (nativeMaxsim) {
-        console.error('[MaxSim] Tier 1: Native Rust + Rayon (parallel SIMD)');
-      } else if (maxsimExports || wasmExports?.maxsim_f32) {
-        console.error('[MaxSim] Tier 2: WASM SIMD f32x4');
-      } else {
-        console.error('[MaxSim] Tier 3: JS fallback');
+      // Load-time tier diagnostic — gated behind DEBUG so it doesn't precede the
+      // banner / clutter normal output (the active tier is also shown in `init`'s
+      // summary as "MaxSim: …"). Set DEBUG=1 to surface it.
+      if (process.env.DEBUG) {
+        if (nativeMaxsim) {
+          console.error('[MaxSim] Tier 1: Native Rust + Rayon (parallel SIMD)');
+        } else if (maxsimExports || wasmExports?.maxsim_f32) {
+          console.error('[MaxSim] Tier 2: WASM SIMD f32x4');
+        } else {
+          console.error('[MaxSim] Tier 3: JS fallback');
+        }
       }
 
       return true;
