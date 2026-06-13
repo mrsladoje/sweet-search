@@ -1,139 +1,171 @@
 #!/usr/bin/env node
-// Generates assets/code-retrieval-stats.svg — a pixel-art benchmark headline
-// styled to match assets/sweet-search-banner-pixelated.svg (crispEdges 4px grid,
-// candy palette, dark terminal panel, animated candy sweep, pixel sparkles).
+// Generates assets/code-retrieval-stats.svg — a benchmark headline card with a
+// pixelated dark-blue border (banner-style stepped rounded corners) and faint
+// pixel-candy decorations, on a light background. Headline numbers are a clean
+// readable sans (NOT pixelated); only the border + decorations are pixel art.
 //
 // Re-run after editing stats:  node scripts/gen-code-retrieval-stats.mjs
-// then compress:               npx svgo assets/code-retrieval-stats.svg
+// then compress:               npx svgo --config scripts/svgo.stats.mjs assets/code-retrieval-stats.svg
 import { writeFileSync } from 'node:fs';
 
-// ---- 5x7 pixel font (1 = filled). Rows top->bottom. -----------------------
-const G = {
-  '0': ['01110','10001','10011','10101','11001','10001','01110'],
-  '1': ['00100','01100','00100','00100','00100','00100','01110'],
-  '2': ['01110','10001','00001','00010','00100','01000','11111'],
-  '3': ['11111','00010','00100','00010','00001','10001','01110'],
-  '4': ['00010','00110','01010','10010','11111','00010','00010'],
-  '5': ['11111','10000','11110','00001','00001','10001','01110'],
-  '6': ['00110','01000','10000','11110','10001','10001','01110'],
-  '7': ['11111','00001','00010','00100','01000','01000','01000'],
-  '8': ['01110','10001','10001','01110','10001','10001','01110'],
-  '9': ['01110','10001','10001','01111','00001','00010','01100'],
-  '-': ['00000','00000','00000','11111','00000','00000','00000'],
-  '+': ['00000','00100','00100','11111','00100','00100','00000'],
-  '%': ['11001','11010','00100','00100','01000','10011','00011'],
-  'x': ['00000','10001','01010','00100','01010','10001','00000'],
-  '.': ['00000','00000','00000','00000','00000','01100','01100'],
-  'p': ['00000','00000','11100','10010','11100','10000','10000'],
+const W = 920, H = 150;
+
+// ---- palette --------------------------------------------------------------
+const BG = '#f3f5fb';          // light card interior
+const BORDER = '#1f2d6b';      // dark blue pixel border
+const BORDER_HI = '#3b4da0';   // subtle inner-edge highlight
+const CAPTION = '#94a3b8';
+const LABEL = '#5b6b87';
+// readable headline colors (candy hues, darkened to read on light bg)
+const C_GREEN = '#0e9f6e', C_PURPLE = '#7c3aed', C_AMBER = '#d97706', C_PINK = '#db2777';
+// soft candy hues for background decoration
+const SOFT = ['#ff5ba3', '#a78bfa', '#ffc247', '#3fd08f', '#5a73dc', '#fb7185'];
+
+// ---- helpers --------------------------------------------------------------
+// merge horizontal runs of '1' in a grid -> rect strings (crispEdges friendly)
+function gridRects(grid, ox, oy, cs) {
+  const out = [];
+  for (let r = 0; r < grid.length; r++) {
+    const row = grid[r];
+    let c = 0;
+    while (c < row.length) {
+      if (row[c] === '1') {
+        let run = 1;
+        while (c + run < row.length && row[c + run] === '1') run++;
+        out.push(`<rect width="${run * cs}" height="${cs}" x="${ox + c * cs}" y="${oy + r * cs}"/>`);
+        c += run;
+      } else c++;
+    }
+  }
+  return out.join('');
+}
+
+// pixelated rounded-rect silhouette as horizontal bands.
+// corner = inset (px) applied to the top N bands (each `step` tall), mirrored at bottom.
+function pixelRoundRect(x, y, w, h, step, corner) {
+  const n = corner.length;
+  const bands = [];
+  for (let i = 0; i < n; i++) {                       // top corner bands
+    const ins = corner[i];
+    bands.push(`<rect x="${x + ins}" y="${y + i * step}" width="${w - 2 * ins}" height="${step}"/>`);
+  }
+  const midY = y + n * step;
+  const midH = h - 2 * n * step;
+  bands.push(`<rect x="${x}" y="${midY}" width="${w}" height="${midH}"/>`); // straight body
+  for (let i = 0; i < n; i++) {                       // bottom corner bands (mirror)
+    const ins = corner[n - 1 - i];
+    bands.push(`<rect x="${x + ins}" y="${y + h - (n - i) * step}" width="${w - 2 * ins}" height="${step}"/>`);
+  }
+  return bands.join('');
+}
+
+// ---- pixel candy sprites (grid strings, '1' = fill) -----------------------
+const CANDY = {
+  bonbon: [   // wrapped candy / bow-tie
+    '100000001',
+    '110111011',
+    '111111111',
+    '110111011',
+    '100000001',
+  ],
+  round: [    // peppermint blob
+    '00111100',
+    '01111110',
+    '11111111',
+    '11111111',
+    '01111110',
+    '00111100',
+  ],
+  lolly: [    // lollipop: round head + stick
+    '01110',
+    '11111',
+    '11111',
+    '01110',
+    '00100',
+    '00100',
+    '00100',
+  ],
+  drop: [     // gumdrop
+    '00100',
+    '01110',
+    '11111',
+    '11111',
+    '11111',
+  ],
 };
 
-const PX = 6;           // pixel size on the 4px-spirited grid (multiple-of-2)
-const COLS = 5, ROWS = 7;
-
-// width (svg units) of a rendered string in the pixel font
-function strWidth(s) {
-  return s.length * COLS * PX + (s.length - 1) * PX; // 1-col gap between glyphs
+function candy(type, x, y, cs, color, op) {
+  return `<g fill="${color}" opacity="${op}">${gridRects(CANDY[type], x, y, cs)}</g>`;
 }
 
-// emit merged horizontal-run rects for one glyph string, centered on cx, top y0
-function pixelText(s, cx, y0, fill) {
-  const w = strWidth(s);
-  let x0 = Math.round(cx - w / 2);
-  const out = [];
-  let penX = x0;
-  for (const ch of s) {
-    const g = G[ch];
-    if (!g) { penX += (COLS + 1) * PX; continue; }
-    for (let r = 0; r < ROWS; r++) {
-      const row = g[r];
-      let c = 0;
-      while (c < COLS) {
-        if (row[c] === '1') {
-          let run = 1;
-          while (c + run < COLS && row[c + run] === '1') run++;
-          out.push(`<rect width="${run * PX}" height="${PX}" x="${penX + c * PX}" y="${y0 + r * PX}"/>`);
-          c += run;
-        } else c++;
-      }
-    }
-    penX += (COLS + 1) * PX;
-  }
-  return `<g fill="${fill}">${out.join('')}</g>`;
-}
+// ---- build ----------------------------------------------------------------
+const STEP = 6;                 // pixel grid for the border staircase
+const CORNER = [18, 12, 6];     // 3-step pixelated rounded corner
+const T = STEP;                 // border thickness
 
-// pixel sparkle (4-point candy star) centered at (cx,cy)
-function sparkle(cx, cy, fill, op = 1) {
-  return `<g fill="${fill}" opacity="${op}">` +
-    `<rect width="12" height="4" x="${cx - 6}" y="${cy - 2}"/>` +
-    `<rect width="4" height="12" x="${cx - 2}" y="${cy - 6}"/>` +
-    `<rect width="4" height="4" x="${cx - 8}" y="${cy - 2}"/>` +
-    `<rect width="4" height="4" x="${cx + 4}" y="${cy - 2}"/>` +
-    `<rect width="4" height="4" x="${cx - 2}" y="${cy - 8}"/>` +
-    `<rect width="4" height="4" x="${cx - 2}" y="${cy + 4}"/></g>`;
-}
+// outer dark-blue silhouette, then light interior inset by T -> leaves the border
+const outer = pixelRoundRect(0, 0, W, H, STEP, CORNER);
+// lighter-blue ring inset by T, then the light fill inset by 2T -> two-tone pixel border
+const hiRing = pixelRoundRect(T, T, W - 2 * T, H - 2 * T, STEP, CORNER);
+const fill = pixelRoundRect(2 * T, 2 * T, W - 4 * T, H - 4 * T, STEP, CORNER);
 
-// ---- content --------------------------------------------------------------
-const W = 920, H = 150;
-const PINK = '#ff5ba3', PURPLE = '#a78bfa', GOLD = '#ffc247', GREEN = '#3fd08f';
-const cells = [
-  { cx: 115, num: '-34%',   label: 'LOWER COST · CODEX',     color: GREEN },
-  { cx: 345, num: '-56%',   label: 'FEWER TOOL CALLS',       color: PURPLE },
-  { cx: 575, num: '1.5-2x', label: 'USEFUL CONTEXT / RESP',  color: GOLD },
-  { cx: 805, num: '+3pp',   label: 'ACCURACY · WEAK MODELS', color: PINK },
-];
-const NUM_TOP = 50;                       // top y of the 7-row pixel number
-const NUM_CY = NUM_TOP + (ROWS * PX) / 2; // vertical center
-const LABEL_Y = 116;
+// faint background candies — spread out, low opacity, behind the text
+const decos = [
+  ['round',   40,  34, 5, SOFT[2], 0.14],
+  ['bonbon', 150,  98, 4, SOFT[0], 0.12],
+  ['drop',   268,  30, 5, SOFT[3], 0.13],
+  ['lolly',  300, 100, 4, SOFT[1], 0.11],
+  ['bonbon', 430,  96, 5, SOFT[4], 0.10],
+  ['round',  500,  28, 4, SOFT[5], 0.13],
+  ['drop',   636,  98, 5, SOFT[1], 0.12],
+  ['lolly',  690,  26, 4, SOFT[3], 0.12],
+  ['round',  812,  96, 5, SOFT[0], 0.12],
+  ['bonbon', 858,  30, 4, SOFT[2], 0.12],
+  ['drop',    98,  98, 4, SOFT[1], 0.10],
+  ['lolly',  560, 100, 4, SOFT[5], 0.10],
+].map(([t, x, y, cs, col, op]) => candy(t, x, y, cs, col, op)).join('');
 
-// dividers as pixel dashes
+// tiny solid candy "sprinkles" tucked into the four corners
+const sprinkles = [
+  [22, 22, C_PINK], [W - 28, 22, C_AMBER],
+  [22, H - 28, C_PURPLE], [W - 28, H - 28, C_GREEN],
+].map(([x, y, c]) => `<rect width="6" height="6" x="${x}" y="${y}" fill="${c}" opacity="0.85"/>`).join('');
+
+// dividers: light pixel dashes between cells
 let dividers = '';
 for (const dx of [230, 460, 690]) {
-  for (let y = 44; y <= 92; y += 12) {
-    dividers += `<rect width="2" height="6" x="${dx - 1}" y="${y}"/>`;
+  for (let yy = 46; yy <= 104; yy += 12) {
+    dividers += `<rect width="2" height="6" x="${dx - 1}" y="${yy}"/>`;
   }
 }
 
-// scattered faint background sparkles (purely decorative)
-const bgSparkles = [
-  sparkle(60, 30, PURPLE, 0.16), sparkle(190, 124, GREEN, 0.16),
-  sparkle(420, 28, GOLD, 0.14), sparkle(700, 126, PINK, 0.16),
-  sparkle(880, 30, PURPLE, 0.14),
-].join('');
-
-// hero sparkles next to each number, in the cell color
-const heroSparkles = cells.map(c =>
-  sparkle(Math.round(c.cx + strWidth(c.num) / 2 + 16), NUM_TOP + 6, c.color, 0.9)
+const cells = [
+  { cx: 115, num: '−34%',  label: 'LOWER COST · CODEX',     color: C_GREEN },
+  { cx: 345, num: '−56%',  label: 'FEWER TOOL CALLS',           color: C_PURPLE },
+  { cx: 575, num: '1.5–2×', label: 'USEFUL CONTEXT / RESP', color: C_AMBER },
+  { cx: 805, num: '+3pp',       label: 'ACCURACY · WEAK MODELS', color: C_PINK },
+];
+const numbers = cells.map(c =>
+  `<text x="${c.cx}" y="80" fill="${c.color}" font-size="38" font-weight="800">${c.num}</text>`
 ).join('');
-
-const numbers = cells.map(c => pixelText(c.num, c.cx, NUM_TOP, c.color)).join('');
-
 const labels = cells.map(c =>
-  `<text x="${c.cx}" y="${LABEL_Y}" fill="#8aa0c6" font-size="12" letter-spacing="0.5">${c.label.replace(/&/g, '&amp;')}</text>`
+  `<text x="${c.cx}" y="104" fill="${LABEL}" font-size="12" letter-spacing="0.4">${c.label}</text>`
 ).join('');
 
 const aria = 'Code-retrieval headline: up to 34 percent lower cost on Codex, ' +
   'up to 56 percent fewer tool calls, 1.5 to 2 times more useful context per response, ' +
   'and plus 3 percentage points accuracy on weak models.';
 
-const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 ${W} ${H}" role="img" aria-label="${aria}" shape-rendering="crispEdges" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><defs>` +
-  `<linearGradient id="bg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#131a3a"/><stop offset="1" stop-color="#070b1c"/></linearGradient>` +
-  `<linearGradient id="candy" x1="0" x2="1" y1="0" y2="0"><stop offset="0%" stop-color="#a78bfa" stop-opacity="0"/><stop offset="15%" stop-color="#a78bfa"/><stop offset="40%" stop-color="#3fd08f"/><stop offset="62%" stop-color="#ffc247"/><stop offset="85%" stop-color="#ff5ba3"/><stop offset="100%" stop-color="#ff5ba3" stop-opacity="0"/></linearGradient>` +
-  `<clipPath id="round"><rect width="${W}" height="${H}" rx="16"/></clipPath>` +
-  `</defs>` +
-  `<g clip-path="url(#round)">` +
-  `<rect width="${W}" height="${H}" fill="url(#bg)"/>` +
-  // top + bottom candy hairlines
-  `<rect width="${W}" height="3" x="0" y="0" fill="url(#candy)" opacity="0.85"/>` +
-  `<rect width="${W}" height="3" x="0" y="${H - 3}" fill="url(#candy)" opacity="0.5"/>` +
-  bgSparkles +
-  `<g fill="#243056">${dividers}</g>` +
-  numbers +
-  heroSparkles +
-  // top caption
-  `<text x="${W / 2}" y="26" fill="#5f74a6" font-size="11" letter-spacing="1.5" text-anchor="middle">SWEET-SEARCH vs. NATIVE GREP-AND-READ · PAIRED · FDR-CONTROLLED · 11 CELLS</text>` +
-  `<g text-anchor="middle" fill="#8aa0c6">${labels}</g>` +
-  // animated candy sweep across the panel
-  `<rect width="260" height="${H}" x="0" y="0" fill="url(#candy)" opacity="0" style="mix-blend-mode:screen"><animate attributeName="opacity" begin="0s" dur="9s" keyTimes="0;0.05;0.45;0.5;1" repeatCount="indefinite" values="0;0.22;0.22;0;0"/><animate attributeName="x" begin="0s" dur="9s" keyTimes="0;0.5;1" repeatCount="indefinite" values="-260;${W};${W}"/></rect>` +
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 ${W} ${H}" role="img" aria-label="${aria}" shape-rendering="crispEdges" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">` +
+  `<g fill="${BORDER}">${outer}</g>` +
+  `<g fill="${BORDER_HI}">${hiRing}</g>` +
+  `<g fill="${BG}">${fill}</g>` +
+  decos +
+  sprinkles +
+  `<g fill="#ccd5ea">${dividers}</g>` +
+  `<g text-anchor="middle">` +
+  `<text x="${W / 2}" y="28" fill="${CAPTION}" font-size="11" letter-spacing="1.2">SWEET-SEARCH vs. NATIVE GREP-AND-READ · PAIRED · FDR-CONTROLLED · 11 CELLS</text>` +
+  numbers + labels +
   `</g></svg>`;
 
 writeFileSync(new URL('../assets/code-retrieval-stats.svg', import.meta.url), svg + '\n');
