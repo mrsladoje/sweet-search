@@ -123,7 +123,6 @@ export function isVerboseMode() {
 const BAR_WIDTH = 30;
 const LABEL_COL = 17;           // pad "Label:" to this width so every bar's [ ] aligns
 const SUB_BLOCKS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']; // eighth-block partial fills
-const CLEAR_EOL = '\x1b[K';
 const liveBars = new Map();     // label -> { current, total }; insertion order = display order
 let regionLines = 0;            // bar lines currently pinned at the bottom (TTY)
 let lastLoggedPercent = {};
@@ -141,11 +140,20 @@ function renderBar(current, total, label) {
   return `${colors.cyan}${head}[${bar}${empty}] ${pct}% (${current}/${total})${colors.reset}`;
 }
 
-function drawRegion() {
-  let out = regionLines > 0 ? `\x1b[${regionLines}A\r` : '\r';
-  for (const [label, b] of liveBars) out += renderBar(b.current, b.total, label) + CLEAR_EOL + '\n';
-  process.stdout.write(out);
-  regionLines = liveBars.size;
+// (Re)draw the live region in place (the `log-update` pattern). Invariant: the
+// cursor enters and leaves at the END of the last bar line — NO trailing newline
+// — so a redraw never pushes a stale copy of a bar into scrollback. Each redraw
+// moves up to the first region line and erases to end-of-screen (\x1b[J) before
+// rewriting. `aboveLine`, if given, scrolls one permanent line above the bars.
+function regionEscape(aboveLine) {
+  const bars = [...liveBars].map(([l, b]) => renderBar(b.current, b.total, l));
+  let out = '';
+  if (regionLines > 1) out += `\x1b[${regionLines - 1}A`; // up to the first region line
+  out += '\r\x1b[J';                                       // col 0, erase region + everything below
+  if (aboveLine != null) out += aboveLine + '\n';          // permanent line above the bars
+  out += bars.join('\n');                                   // bars — no trailing newline
+  regionLines = bars.length;
+  return out;
 }
 
 export function log(message, color = 'reset') {
@@ -153,17 +161,13 @@ export function log(message, color = 'reset') {
   const line = `${colors[color]}${message}${colors.reset}`;
   if (regionLines > 0 && process.stdout.isTTY) {
     if (liveBars.size > 1) {
-      // Parallel bars are live: defer the line. Printing it now would scroll the
-      // region and freeze a duplicate bar-pair into scrollback (e.g. the "✓ Late
-      // interaction index built" line when LI finishes before Embedding). Flushed
-      // once every bar in the region completes.
+      // Parallel bars live: defer the line so it can't disturb the region. Any
+      // mid-region print scrolls a stale bar-pair into scrollback. Flushed once
+      // every bar in the region finishes.
       deferredLogs.push(line);
       return;
     }
-    // Single bar: print the line above it, then redraw the bar below.
-    let out = `\x1b[${regionLines}A\r${line}${CLEAR_EOL}\n`;
-    for (const [label, b] of liveBars) out += renderBar(b.current, b.total, label) + CLEAR_EOL + '\n';
-    process.stdout.write(out);
+    process.stdout.write(regionEscape(line)); // single bar: line above, bar redrawn below
   } else {
     console.log(line);
   }
@@ -181,18 +185,18 @@ export function logProgress(current, total, label) {
     }
     return;
   }
-  // Interactive TTY: update this bar in the live region and redraw.
+  // Interactive TTY: update this bar in the live region and redraw in place.
   liveBars.set(label, { current, total });
-  drawRegion();
+  process.stdout.write(regionEscape());
   // Once every live bar is complete, commit the region (leave it on screen).
   let allDone = true;
   for (const b of liveBars.values()) if (b.current < b.total) { allDone = false; break; }
   if (allDone) {
+    process.stdout.write('\n');             // move below the finished bars (cursor was at their end)
     for (const k of liveBars.keys()) lastLoggedPercent[k] = 0;
     liveBars.clear();
     regionLines = 0;
-    // Flush any lines deferred while the parallel bars were running — now below
-    // the finished bars, in arrival order.
+    // Flush lines deferred while parallel bars ran — now below the finished bars.
     if (deferredLogs.length) {
       for (const l of deferredLogs) console.log(l);
       deferredLogs = [];
