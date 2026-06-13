@@ -109,32 +109,64 @@ export function isVerboseMode() {
   return verboseMode;
 }
 
-export function log(message, color = 'reset') {
-  if (quietMode) return;
-  console.log(`${colors[color]}${message}${colors.reset}`);
+// ---------------------------------------------------------------------------
+// Progress rendering — an in-place "sticky" bar that animates as a phase runs.
+//
+// On a TTY (verbose or not) the bar redraws on a single line via carriage return
+// + erase-to-EOL, with smooth 1/8-block fill. While a bar is active, log() pins it:
+// it clears the bar, prints the log line above, then redraws the bar below — so
+// interleaved diagnostics (e.g. the HNSW "checkpoint:" line) never split the bar.
+// Non-TTY (pipes / CI) falls back to throttled newlines so nothing is swallowed.
+// ---------------------------------------------------------------------------
+const BAR_WIDTH = 30;
+const LABEL_COL = 17;           // pad "Label:" to this width so every bar's [ ] aligns
+const SUB_BLOCKS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']; // eighth-block partial fills
+const CLEAR_EOL = '\x1b[K';
+let activeBar = null;           // last-rendered bar string while a phase is in progress (TTY only)
+let lastLoggedPercent = {};
+
+function renderBar(current, total, label) {
+  const ratio = total > 0 ? Math.max(0, Math.min(1, current / total)) : 1;
+  const eighths = Math.round(ratio * BAR_WIDTH * 8);
+  const full = Math.floor(eighths / 8);
+  const partial = SUB_BLOCKS[eighths % 8];
+  const bar = '█'.repeat(full) + partial;
+  const empty = '░'.repeat(Math.max(0, BAR_WIDTH - full - (partial ? 1 : 0)));
+  const head = `${label}:`.padEnd(LABEL_COL);            // right border aligns across phases
+  const pct = (ratio * 100).toFixed(1).padStart(5);
+  return `${colors.cyan}${head}[${bar}${empty}] ${pct}% (${current}/${total})${colors.reset}`;
 }
 
-let lastLoggedPercent = {};
+export function log(message, color = 'reset') {
+  if (quietMode) return;
+  const line = `${colors[color]}${message}${colors.reset}`;
+  if (activeBar && process.stdout.isTTY) {
+    // Pin the bar: clear it, print the log line above, redraw the bar below.
+    process.stdout.write(`\r${CLEAR_EOL}${line}\n${activeBar}${CLEAR_EOL}`);
+  } else {
+    console.log(line);
+  }
+}
 
 export function logProgress(current, total, label) {
   if (quietMode) return;
-  const percentNum = (current / total) * 100;
-  const percent = percentNum.toFixed(1);
-  const bar = '█'.repeat(Math.floor(current / total * 30));
-  const empty = '░'.repeat(30 - bar.length);
-  // In verbose mode or non-TTY, use newlines so output isn't swallowed by pipes.
-  // Throttle to every ~2% to avoid flooding.
-  if (verboseMode || !process.stdout.isTTY) {
+  if (!process.stdout.isTTY) {
+    // Pipes / CI: throttle to ~2% and emit newlines so output isn't swallowed.
+    const percentNum = total > 0 ? (current / total) * 100 : 100;
     const lastPct = lastLoggedPercent[label] || 0;
-    if (percentNum - lastPct >= 2 || current === total || current <= 1) {
+    if (percentNum - lastPct >= 2 || current >= total || current <= 1) {
       lastLoggedPercent[label] = percentNum;
-      console.log(`${colors.cyan}${label}: [${bar}${empty}] ${percent}% (${current}/${total})${colors.reset}`);
+      console.log(renderBar(current, total, label));
     }
-  } else {
-    process.stdout.write(`\r${colors.cyan}${label}: [${bar}${empty}] ${percent}% (${current}/${total})${colors.reset}`);
-    if (current === total) {
-      process.stdout.write('\n');
-    }
+    return;
+  }
+  // Interactive TTY: animate the bar in place.
+  activeBar = renderBar(current, total, label);
+  process.stdout.write(`\r${activeBar}${CLEAR_EOL}`);
+  if (current >= total) {
+    process.stdout.write('\n');
+    activeBar = null;
+    lastLoggedPercent[label] = 0;
   }
 }
 

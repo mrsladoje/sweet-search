@@ -650,7 +650,7 @@ export async function buildHNSWIndex(dbPath, dryRun = false) {
             });
             fsyncFile(sidecarPath);
             fsyncDirectory(path.dirname(checkpointPath));
-            log(`  checkpoint: ${added}/${totalVectors} vectors`, 'dim');
+            if (process.env.DEBUG) log(`  checkpoint: ${added}/${totalVectors} vectors`, 'dim');
           }
           lastCheckpointTime = Date.now();
           vectorsSinceCheckpoint = 0;
