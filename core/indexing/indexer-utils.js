@@ -110,19 +110,22 @@ export function isVerboseMode() {
 }
 
 // ---------------------------------------------------------------------------
-// Progress rendering — an in-place "sticky" bar that animates as a phase runs.
+// Progress rendering — a live region of animated, in-place bars.
 //
-// On a TTY (verbose or not) the bar redraws on a single line via carriage return
-// + erase-to-EOL, with smooth 1/8-block fill. While a bar is active, log() pins it:
-// it clears the bar, prints the log line above, then redraws the bar below — so
-// interleaved diagnostics (e.g. the HNSW "checkpoint:" line) never split the bar.
-// Non-TTY (pipes / CI) falls back to throttled newlines so nothing is swallowed.
+// On a TTY (verbose included), each phase's bar animates in place via cursor
+// moves + erase-to-EOL, with smooth 1/8-block fill. Multiple bars can run at
+// once (e.g. Embedding + Late Interaction in parallel) — they share one pinned
+// region at the bottom and update independently. While bars are live, log()
+// prints its line above the region and redraws the bars below, so diagnostics
+// never split a bar. The region "commits" (stays on screen) once every bar in
+// it has reached 100%. Non-TTY (pipes / CI) falls back to throttled newlines.
 // ---------------------------------------------------------------------------
 const BAR_WIDTH = 30;
 const LABEL_COL = 17;           // pad "Label:" to this width so every bar's [ ] aligns
 const SUB_BLOCKS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']; // eighth-block partial fills
 const CLEAR_EOL = '\x1b[K';
-let activeBar = null;           // last-rendered bar string while a phase is in progress (TTY only)
+const liveBars = new Map();     // label -> { current, total }; insertion order = display order
+let regionLines = 0;            // bar lines currently pinned at the bottom (TTY)
 let lastLoggedPercent = {};
 
 function renderBar(current, total, label) {
@@ -137,12 +140,21 @@ function renderBar(current, total, label) {
   return `${colors.cyan}${head}[${bar}${empty}] ${pct}% (${current}/${total})${colors.reset}`;
 }
 
+function drawRegion() {
+  let out = regionLines > 0 ? `\x1b[${regionLines}A\r` : '\r';
+  for (const [label, b] of liveBars) out += renderBar(b.current, b.total, label) + CLEAR_EOL + '\n';
+  process.stdout.write(out);
+  regionLines = liveBars.size;
+}
+
 export function log(message, color = 'reset') {
   if (quietMode) return;
   const line = `${colors[color]}${message}${colors.reset}`;
-  if (activeBar && process.stdout.isTTY) {
-    // Pin the bar: clear it, print the log line above, redraw the bar below.
-    process.stdout.write(`\r${CLEAR_EOL}${line}\n${activeBar}${CLEAR_EOL}`);
+  if (regionLines > 0 && process.stdout.isTTY) {
+    // Print the line above the pinned bars, then redraw the bars below it.
+    let out = `\x1b[${regionLines}A\r${line}${CLEAR_EOL}\n`;
+    for (const [label, b] of liveBars) out += renderBar(b.current, b.total, label) + CLEAR_EOL + '\n';
+    process.stdout.write(out);
   } else {
     console.log(line);
   }
@@ -160,13 +172,16 @@ export function logProgress(current, total, label) {
     }
     return;
   }
-  // Interactive TTY: animate the bar in place.
-  activeBar = renderBar(current, total, label);
-  process.stdout.write(`\r${activeBar}${CLEAR_EOL}`);
-  if (current >= total) {
-    process.stdout.write('\n');
-    activeBar = null;
-    lastLoggedPercent[label] = 0;
+  // Interactive TTY: update this bar in the live region and redraw.
+  liveBars.set(label, { current, total });
+  drawRegion();
+  // Once every live bar is complete, commit the region (leave it on screen).
+  let allDone = true;
+  for (const b of liveBars.values()) if (b.current < b.total) { allDone = false; break; }
+  if (allDone) {
+    for (const k of liveBars.keys()) lastLoggedPercent[k] = 0;
+    liveBars.clear();
+    regionLines = 0;
   }
 }
 

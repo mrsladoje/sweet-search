@@ -1,46 +1,34 @@
 #!/usr/bin/env node
 /**
- * postinstall — play the animated banner once after install.
+ * postinstall — print a short "what next" message after install.
  *
- * npm pipes lifecycle-script stdout (it's not a TTY), so we render to the
- * controlling terminal directly via /dev/tty when possible. This is Unix-only;
- * on Windows (no /dev/tty) or when there is no controlling terminal (CI, detached,
- * sandboxed installs) we simply skip.
- *
- * Defensive by design: renders only to a real terminal, honours CI / NO_BANNER /
- * SWEET_SEARCH_NO_BANNER, swallows every error, and always exits 0 so it can never
- * fail `npm install`.
+ * Deliberately plain text: during `npm install` npm writes its own progress
+ * spinner to the terminal CONCURRENTLY with this script, which would interrupt
+ * any graphics/animation escape sequence mid-stream and leak its payload as
+ * garbage text. So the rich animated banner is reserved for `sweet-search init`
+ * and `sweet-search index` (where we own the TTY); install just prints a clean,
+ * escape-light pointer. Best-effort; always exits 0 so it can't fail an install.
  */
 import process from 'node:process';
-import tty from 'node:tty';
-import { openSync, closeSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-async function run() {
+function run() {
   const env = process.env;
-  if (env.CI || env.NO_BANNER || env.SWEET_SEARCH_NO_BANNER) return;
-
-  // Pick an output stream that is a real terminal.
-  let stream = process.stdout.isTTY ? process.stdout : null;
-  let ownedFd = -1;
-  if (!stream && process.platform !== 'win32') {
-    try {
-      ownedFd = openSync('/dev/tty', 'r+');     // throws if no controlling terminal
-      const s = new tty.WriteStream(ownedFd);
-      if (s.isTTY) stream = s;
-    } catch { /* no controlling terminal — skip */ }
-  }
-  if (!stream) return;
-
+  if (env.NO_BANNER || env.SWEET_SEARCH_NO_BANNER) return;
   try {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const { showBanner } = await import(join(here, '..', 'core', 'banner', 'render-banner.js'));
-    // query:false — we have no matching stdin for this tty stream; rely on env-based detection.
-    const shown = await showBanner({ stream, env, query: false, maxMs: 2200 });
-    if (shown) stream.write('  sweet-search installed — run `sweet-search init` to get started.\n');
+    const c = (n, s) => (process.stdout.isTTY ? `\x1b[${n}m${s}\x1b[0m` : s);
+    const lines = [
+      '',
+      `  ${c('1;38;5;213', 'sweet-search')} installed ${c('2', '— SOTA hybrid code search')}`,
+      '',
+      `  ${c('1', 'Get started:')}`,
+      `    ${c('36', 'sweet-search init')}        set up the current project`,
+      `    ${c('36', 'sweet-search index')}       build the search index`,
+      `    ${c('36', 'sweet-search "query"')}     search your code`,
+      `  ${c('2', '(installed locally? prefix with')} ${c('2;36', 'npx')}${c('2', ', e.g. `npx sweet-search init`)')}`,
+      '',
+    ];
+    process.stdout.write(lines.join('\n') + '\n');
   } catch { /* never break an install */ }
-  finally { if (ownedFd >= 0) { try { closeSync(ownedFd); } catch { /* noop */ } } }
 }
 
-run().finally(() => process.exit(0));
+run();

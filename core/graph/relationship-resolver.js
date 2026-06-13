@@ -160,7 +160,11 @@ export function resolveRelationshipTargets(db) {
 
   resolveAll();
 
-  console.log(`  ✓ Resolved ${resolved}/${unresolved.length} relationships`);
+  if (resolved > 0) {
+    console.log(`  ✓ Linked ${resolved}/${unresolved.length} references to local definitions`);
+  } else {
+    console.log(`  ${unresolved.length} references resolve to external/library symbols (no local definition to link)`);
+  }
   if (ambiguous > 0) {
     console.log(`  ⚠ ${ambiguous} ambiguous targets (multiple matches)`);
   }

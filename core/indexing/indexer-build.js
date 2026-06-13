@@ -643,7 +643,7 @@ export async function chunkFiles(files) {
     try {
       const enriched = await enrichChunksFromGraph(allChunks, ASTChunker);
       if (enriched > 0) {
-        log(`✓ Enriched ${enriched}/${allChunks.length} chunks with scope/import context`, 'green');
+        log(`✓ Added scope/import context to ${enriched} code chunks`, 'green');
       }
     } catch (err) {
       log(`⚠ Chunk enrichment skipped: ${err.message}`, 'yellow');

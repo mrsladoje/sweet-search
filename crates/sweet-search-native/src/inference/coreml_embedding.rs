@@ -108,12 +108,17 @@ impl CoremlEmbeddingVariant {
                     0, // 2D output → output_dim1 == 0
                 );
                 match &result {
-                    Ok(_) => eprintln!(
-                        "[CoremlEmbedding] variant b{}×s{} compiled in {:.0}ms",
-                        self.batch,
-                        self.seq,
-                        t0.elapsed().as_secs_f64() * 1000.0,
-                    ),
+                    // Per-variant compile timing is DEBUG-only noise during indexing.
+                    Ok(_) => {
+                        if std::env::var_os("DEBUG").is_some() {
+                            eprintln!(
+                                "[CoremlEmbedding] variant b{}×s{} compiled in {:.0}ms",
+                                self.batch,
+                                self.seq,
+                                t0.elapsed().as_secs_f64() * 1000.0,
+                            );
+                        }
+                    }
                     Err(e) => eprintln!(
                         "[CoremlEmbedding] variant b{}×s{} FAILED to compile: {}",
                         self.batch, self.seq, e

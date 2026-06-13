@@ -88,12 +88,17 @@ impl CoremlLiVariant {
                     self.token_dim,     // output_dim1 = per-token dim
                 );
                 match &result {
-                    Ok(_) => eprintln!(
-                        "[CoremlLi] variant b{}×s{} compiled in {:.0}ms",
-                        self.batch,
-                        self.seq,
-                        t0.elapsed().as_secs_f64() * 1000.0,
-                    ),
+                    // Per-variant compile timing is DEBUG-only noise during indexing.
+                    Ok(_) => {
+                        if std::env::var_os("DEBUG").is_some() {
+                            eprintln!(
+                                "[CoremlLi] variant b{}×s{} compiled in {:.0}ms",
+                                self.batch,
+                                self.seq,
+                                t0.elapsed().as_secs_f64() * 1000.0,
+                            );
+                        }
+                    }
                     Err(e) => eprintln!(
                         "[CoremlLi] variant b{}×s{} FAILED to compile: {}",
                         self.batch, self.seq, e
