@@ -572,9 +572,36 @@ What it teaches:
 
 > **Chunk → enrich → embed → quantize** — every step on-device and in Rust. Batches are sized to *your CPU's actual cache*, two open code-models do the encoding, and two separate quantizations make the index both **faster to build** and **small enough to live in RAM**. Zero API keys; nothing ever leaves the machine.
 
-| ① 🧩 **[Structure-aware chunk](#idx-chunk)** | ② 🏷️ **[Enrich from structure](#idx-enrich)** | ③ 🤖 **[Embed — two models](#idx-embed)** | ④ 🗜️ **[Quantize + persist](#idx-quantize)** |
-|:--|:--|:--|:--|
-| cAST over tree-sitter ASTs — whole functions, never sliced mid-body | deterministic preamble from the code graph — **no LLM call** | dense **CodeRankEmbed** + per-token **LateOn-Code** | INT8 weights → **2× faster build** · INT4 vectors → **fits in RAM** |
+<table>
+<tr>
+<td width="50%" valign="top">
+
+① 🧩 **[Structure-aware chunk](#idx-chunk)**<br>
+<sub>cAST over tree-sitter ASTs — whole functions, never sliced mid-body</sub>
+
+</td>
+<td width="50%" valign="top">
+
+② 🏷️ **[Enrich from structure](#idx-enrich)**<br>
+<sub>deterministic preamble from the code graph — **no LLM call**</sub>
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+③ 🤖 **[Embed — two models](#idx-embed)**<br>
+<sub>dense **CodeRankEmbed** + per-token **LateOn-Code**</sub>
+
+</td>
+<td width="50%" valign="top">
+
+④ 🗜️ **[Quantize + persist](#idx-quantize)**<br>
+<sub>INT8 weights → **2× faster build** · INT4 vectors → **fits in RAM**</sub>
+
+</td>
+</tr>
+</table>
 
 **The inference engine, picked for your silicon:**
 
