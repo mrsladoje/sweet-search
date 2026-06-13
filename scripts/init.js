@@ -252,7 +252,24 @@ export function detectProjectRoot(cwd = process.cwd()) {
 export function ensureDataDir(projectRoot) {
   const dataDir = join(projectRoot, DATA_DIR_NAME);
   mkdirSync(dataDir, { recursive: true });
+  maybeIgnoreDataDir(projectRoot);
   return dataDir;
+}
+
+// Add `.sweet-search/` to the project's .gitignore so the local index isn't
+// committed — but ONLY if a .gitignore already exists. We never create one for
+// a project that doesn't already use it.
+function maybeIgnoreDataDir(projectRoot) {
+  try {
+    const gitignorePath = join(projectRoot, '.gitignore');
+    if (!existsSync(gitignorePath)) return;
+    const content = readFileSync(gitignorePath, 'utf8');
+    const already = content.split(/\r?\n/).map((l) => l.trim().replace(/^\//, '').replace(/\/$/, ''))
+      .some((l) => l === DATA_DIR_NAME);
+    if (already) return;
+    const sep = content.length === 0 || content.endsWith('\n') ? '' : '\n';
+    writeFileSync(gitignorePath, `${content}${sep}\n# Sweet Search local index\n${DATA_DIR_NAME}/\n`);
+  } catch { /* best-effort — never block init on .gitignore */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -1576,11 +1593,10 @@ export async function runInit(args) {
   const skippedOptIns = getSkippedOptInModels(profile);
   let modelResults = new Map();
 
-  // Tell the user once which optional models are being skipped. This is
-  // NOT an error — these are opt-in features (e.g. cross-encoder
-  // rerankers disabled by default since commit 43a61eb). Without this
-  // line, init silently omitting them looks like a missing-model bug.
-  if (skippedOptIns.length > 0) {
+  // Opt-in models (e.g. cross-encoder rerankers, disabled by default since
+  // commit 43a61eb) are skipped silently — they're optional features, not
+  // missing models. Set DEBUG=1 to see which were skipped and how to enable.
+  if (process.env.DEBUG && skippedOptIns.length > 0) {
     for (const skipped of skippedOptIns) {
       process.stderr.write(
         `[init] Skipping opt-in model "${skipped.key}" — ` +

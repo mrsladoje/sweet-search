@@ -193,6 +193,7 @@ async function loadModel() {
   const { getOptimizedGraphPath } = await import('../infrastructure/onnx-session-utils.js');
   const session = await ort.InferenceSession.create(onnxPath, {
     executionProviders: ['cpu'],
+    logSeverityLevel: 3, // ERROR — silence ORT's expected "optimized model is machine-specific" warning
     intraOpNumThreads: lateInteractionRuntimeConfig.intraOpThreads ?? bestIntraOpThreads(),
     interOpNumThreads: 1,
     optimizedModelFilePath: getOptimizedGraphPath(modelConfig.hfId, 'lateon'),

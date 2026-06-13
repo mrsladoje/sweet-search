@@ -140,10 +140,6 @@ async function main() {
     applyPersistedLiModel(process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
   }
 
-  log(`${colors.bright}╔═══════════════════════════════════════════════════╗${colors.reset}`, 'bright');
-  log(`${colors.bright}║   Sweet Search Codebase Indexer v2.3 (SOTA Dec'25) ║${colors.reset}`, 'bright');
-  log(`${colors.bright}╚═══════════════════════════════════════════════════╝${colors.reset}`, 'bright');
-
   if (vectorsOnly) {
     log('⚠ WARNING: --vectors-only skips code graph rebuild', 'yellow');
     log('  GraphRAG structural queries will use stale data', 'yellow');
@@ -338,13 +334,13 @@ Output:
     }
 
     // =========================================================================
-    // PHASE 3: Code Graph + HCGS Preparation (if not --vectors-only)
+    // PHASE 1: Code Graph (if not --vectors-only)
     // =========================================================================
     let graphStats = { entities: 0, relationships: 0 };
     let hcgsPromise = null;
 
     if (!vectorsOnly) {
-      const graphResult = await runPhase('Code Graph + HCGS Prep', buildCodeGraphWithHCGSPhase, {
+      const graphResult = await runPhase('Code Graph', buildCodeGraphWithHCGSPhase, {
         allFiles,
         filesToIndex,
         dryRun,

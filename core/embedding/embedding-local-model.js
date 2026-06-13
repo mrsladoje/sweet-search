@@ -172,6 +172,7 @@ export function buildLocalSessionOptions(quantLabel = 'q8', coremlAvailable = fa
 
   const sessionOptions = {
     graphOptimizationLevel: 'all',
+    logSeverityLevel: 3, // ERROR — silence ORT's expected "optimized model is machine-specific" warning
     intraOpNumThreads: intraOpThreads,
     interOpNumThreads: interOpThreads,
     executionMode,

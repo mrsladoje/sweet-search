@@ -396,7 +396,7 @@ function diversityFirstPermutationRowids(filePaths) {
 // =============================================================================
 
 export async function incrementalUpdateHNSW(dbPath, changedFiles, dryRun = false) {
-  log('\n━━━ Phase 3: HNSW Index (Incremental) ━━━', 'bright');
+  log('\n━━━ Phase 4: HNSW Index (Incremental) ━━━', 'bright');
 
   if (dryRun) {
     log('DRY RUN: Skipping HNSW incremental update', 'magenta');
@@ -510,7 +510,7 @@ export async function incrementalUpdateHNSW(dbPath, changedFiles, dryRun = false
 // =============================================================================
 
 export async function buildHNSWIndex(dbPath, dryRun = false) {
-  log('\n━━━ Phase 3: HNSW Index ━━━', 'bright');
+  log('\n━━━ Phase 4: HNSW Index ━━━', 'bright');
 
   if (dryRun) {
     log('DRY RUN: Skipping HNSW index', 'magenta');
@@ -705,7 +705,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     segmentSize = null, // override SSLX-v3 segment threshold (default 10k)
     projectRoot,        // honored by LI skip policy for .sweet-search.config.json excludes
   } = options;
-  log('\n━━━ Phase 4: Late Interaction Index (LateOn-Code) ━━━', 'bright');
+  log('\n━━━ Phase 3: Late Interaction Index (LateOn-Code) ━━━', 'bright');
 
   if (dryRun) {
     log('DRY RUN: Skipping late interaction index', 'magenta');

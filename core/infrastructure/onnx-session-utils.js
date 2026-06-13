@@ -192,6 +192,7 @@ export function buildSessionOptions(modelId, suffix, coremlAvailable = false, ru
     ?? parseInt(process.env.SWEET_SEARCH_ORT_INTER_OP_THREADS || '1', 10);
   const opts = {
     graphOptimizationLevel: 'all',
+    logSeverityLevel: 3, // ERROR — silence ORT's expected "optimized model is machine-specific" warning
     intraOpNumThreads: runtimeOptions.intraOpThreads ?? bestIntraOpThreads(runtimeOptions),
     interOpNumThreads: interOpThreads,
     executionMode,
