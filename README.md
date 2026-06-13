@@ -140,26 +140,32 @@ sweet-search uninstall              # clean removal: models, caches, config — 
 
 ## 📊 Benchmarks
 
-We measure sweet-search on two axes, and report a third for engine speed:
+We measure sweet-search four ways — from how much it helps a real agent down to raw engine throughput:
 
 <table>
 <tr>
-<td width="33%" valign="top">
+<td width="25%" valign="top">
 
 **① Code-retrieval** *(agent-in-the-loop)*<br>
 <sub>Does it make a real coding agent **cheaper and more useful** when it searches your repo? Paired against each model's own grep-and-read loop.</sub>
 
 </td>
-<td width="33%" valign="top">
+<td width="25%" valign="top">
 
 **② Task-completion** *(coming soon)*<br>
 <sub>Does cheaper, denser context **compound** into a higher resolve-rate on multi-step engineering tasks? Harness in progress.</sub>
 
 </td>
-<td width="34%" valign="top">
+<td width="25%" valign="top">
 
-**③ Engine speed** · **④ Paper-type IR**<br>
-<sub>Raw systems numbers (grep, latency, kernels), plus the academic NL→code retrieval suites (MRR@10, full-corpus).</sub>
+**③ Paper-type IR** *(academic)*<br>
+<sub>The standard NL→code retrieval suites (GCSN, M2CRB, CoSQA…), full-corpus MRR@10.</sub>
+
+</td>
+<td width="25%" valign="top">
+
+**④ Engine speed**<br>
+<sub>Raw systems numbers — grep throughput, query latency, rerank kernels, HNSW.</sub>
 
 </td>
 </tr>
@@ -213,26 +219,7 @@ The win is **harness-adaptive**: where the native loop is disciplined (Claude Co
 
 ---
 
-### ⚡ 3. Engine speed — *systems benchmarks, measured in-repo*
-
-<div align="center">
-
-**10.2×** ripgrep's median grep &nbsp;·&nbsp; **2.9 ms** warm queries &nbsp;·&nbsp; **47×** MaxSim kernels &nbsp;·&nbsp; **−33%** HNSW search p50
-
-</div>
-
-| What | Result | Source |
-|------|--------|--------|
-| Indexed grep vs ripgrep | **10.2× faster** at the median (8.5–17.7× across 5 repos, 353 realistic queries, 1 ms p50 — identical match counts on every query) | [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md) |
-| Warm query latency (native CLI) | **2.9 ms** warm · 108 ms cold | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
-| MaxSim rerank kernels | **1.26 s → 27 ms** for a 231-candidate pass (47× native Rust; 16× WASM SIMD) | [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md) |
-| HNSW tuning for code | **−33%** search p50, **+5.9 pp** recall@200 | [`docs/HNSW_APPROACH.md`](docs/HNSW_APPROACH.md) |
-| Indexing memory | peak JS heap **785 MB → 213 MB** | [`docs/DISK_FLUSHING_STRATEGY.md`](docs/DISK_FLUSHING_STRATEGY.md) |
-| CoreML cascade (M3 Max) | **18% faster** full indexing vs the Metal baseline | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
-
----
-
-### 📄 4. Paper-type retrieval benchmarks — *academic NL→code IR*
+### 📄 3. Paper-type retrieval benchmarks — *academic NL→code IR*
 
 > [!WARNING]
 > ⚠️ **THESE NUMBERS ARE STALE — TREAT THEM AS A FLOOR, NOT THE CURRENT SCORE.** ⚠️
@@ -274,6 +261,25 @@ and French queries.
 - Dates and per-language breakdowns: [`docs/BENCHMARKS_EXPLAINED.md`](docs/BENCHMARKS_EXPLAINED.md).
 
 </details>
+
+---
+
+### ⚡ 4. Engine speed — *systems benchmarks, measured in-repo*
+
+<div align="center">
+
+**10.2×** ripgrep's median grep &nbsp;·&nbsp; **2.9 ms** warm queries &nbsp;·&nbsp; **47×** MaxSim kernels &nbsp;·&nbsp; **−33%** HNSW search p50
+
+</div>
+
+| What | Result | Source |
+|------|--------|--------|
+| Indexed grep vs ripgrep | **10.2× faster** at the median (8.5–17.7× across 5 repos, 353 realistic queries, 1 ms p50 — identical match counts on every query) | [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md) |
+| Warm query latency (native CLI) | **2.9 ms** warm · 108 ms cold | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
+| MaxSim rerank kernels | **1.26 s → 27 ms** for a 231-candidate pass (47× native Rust; 16× WASM SIMD) | [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md) |
+| HNSW tuning for code | **−33%** search p50, **+5.9 pp** recall@200 | [`docs/HNSW_APPROACH.md`](docs/HNSW_APPROACH.md) |
+| Indexing memory | peak JS heap **785 MB → 213 MB** | [`docs/DISK_FLUSHING_STRATEGY.md`](docs/DISK_FLUSHING_STRATEGY.md) |
+| CoreML cascade (M3 Max) | **18% faster** full indexing vs the Metal baseline | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
 
 ## 🧰 The Six Tools
 
