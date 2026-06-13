@@ -179,33 +179,40 @@ We install the evolved agent prompt (the [GEPA-evolved search discipline](#-an-a
 
 <div align="center">
 
-### up to **−34%** cost · **−56%** tool calls · **12–15×** less context · **~1.5–2×** more useful context per response · **accuracy held**
+<img src="assets/code-retrieval-stats.svg" alt="up to 34% lower cost on Codex · up to 56% fewer tool calls · 1.5–2× more useful context per response · +3pp accuracy on weak models" width="100%" />
 
-<sub>top-of-range figures from the Codex harness · full per-harness ranges below · 11 model×harness cells, paired, multiplicity-controlled</sub>
+<sub>top-of-range figures · full per-harness ranges in the dropdown · 11 model×harness cells, paired, multiplicity-controlled</sub>
 
 </div>
 
-The win is **harness-adaptive**: where the native loop is disciplined (Claude Code) it shows up as *denser, more useful context per token*; where the native loop thrashes (Codex floods 30k+ tokens of grep output into its own window) it shows up as a *massive cost and tool-call reduction*. Either way, **final-answer accuracy never significantly regresses** — and on weaker models, sweet-search's retrieval scaffold actually *lifts* it.
+**The headline, in four claims:**
 
-| Native agent harness | Realized cost | Tool calls | Context delivered | Useful content / response | Final accuracy |
-|---|---:|---:|---:|---:|:--|
-| **Codex** (GPT-5.5) | **−30 to −34%** | **−44 to −56%** | **12–15× leaner** | +0.06 → +0.17 ↑ | tie *(saturated)* |
-| **opencode** (GPT-5.5 / GLM-5.1) | **−18 to −22%** | −15 to −49% | 2–3× leaner | **+0.23 to +0.31** ↑ | tie |
-| **bare API** (GPT-5.5 / GLM / DeepSeek) | −15 to −32% ᵃ | −15 to −33% | 2–3× leaner | +0.08 to +0.24 ↑ | tie · **+3 pp on weak models** |
-| **Claude Code** (Sonnet / Opus) | −10% to +14% ᵇ | −5 to −33% | ≈ parity | +0.18 to +0.29 ↑ | tie |
+- 💰 **Cheaper where the agent thrashes** — up to **−34%** realized cost on Codex; **−18 to −32%** across the GPT-5.5 / opencode / bare-API harnesses.
+- 🔧 **Fewer round-trips** — up to **−56%** tool calls, significant on **9 of 11** cells.
+- ✨ **More useful per response** — **+0.18 to +0.31** on a 5-dimension usefulness score, and *still* denser when length-matched (significant on **8 of 11** cells).
+- 🎯 **Accuracy held — and lifted on the weak** — a statistical tie on flagship models (saturated at 0.94–0.99), and **+3 pp** (up to **+8 pp** out-of-distribution) on weaker models like GLM-5.1 and DeepSeek.
+
+<details>
+<summary><b>📋 Full per-harness results & how it's measured</b></summary>
+
+The win is **harness-adaptive**: where the native loop is disciplined (Claude Code) it shows up as *denser, more useful context per token*; where it thrashes (Codex floods 30k+ tokens of its own grep output into context) it shows up as a *large cost and tool-call cut*. Either way, **final-answer accuracy never significantly regresses**.
+
+| 🧰 Native agent harness | 💰 Realized cost | 🔧 Tool calls | ✨ Useful content / response | 🎯 Final accuracy |
+|---|---:|---:|---:|:--|
+| 🤖 **Codex** (GPT-5.5) | **−30 to −34%** | **−44 to −56%** | +0.06 → +0.17 ↑ | tie *(saturated)* |
+| 🐚 **opencode** (GPT-5.5 / GLM-5.1) | **−18 to −22%** | −15 to −49% | **+0.23 to +0.31** ↑ | tie |
+| 🔌 **bare API** (GPT-5.5 / GLM / DeepSeek) | −15 to −32% ᵃ | −15 to −33% | +0.08 to +0.24 ↑ | tie · **+3 pp on weak models** |
+| 🟣 **Claude Code** (Sonnet / Opus) | −10% to +14% ᵇ | −5 to −33% | +0.18 to +0.29 ↑ | tie |
 
 <sub>↑ "Useful content / response" is the per-response delta on a 5-dimension usefulness score (answer-grounding · workable-code · navigability · edit-locality · sufficiency), 0–1 scale. "tie" = final-answer correctness statistically indistinguishable (saturated in the 0.94–0.99 band on flagships).<br>ᵃ the two cheapest bare models cost fractions of a cent either way (GLM +27% of $0.008; DeepSeek −15% of $0.004). ᵇ Opus −5/−10%; Sonnet +8–14%, which is ≈1¢ on a flat-rate subscription for a richer answer.</sub>
 
 **Denser, not just longer.** The usefulness lift survives **length-matching** — comparing sweet-search and native responses of *equal token length*, sweet-search's content is significantly higher on **8 of 11** cells. The validated single-number usefulness composite (grounding × content × density) is significant on **all 11** sealed cells.
 
-<details>
-<summary><b>How it's measured, full rigor & honest caveats</b></summary>
-
 - **What's being compared:** the installed `sweet-search` agent prompt + tools vs. the *same model* using only its built-in file-reading and shell-grep tools. Not a different model — the same model, with and without sweet-search.
 - **Design:** 11 model×harness cells. **Sealed vault** (n=60/arm, the pre-registered primary) opened once; plus **held-out** (n=30) and **out-of-distribution** (n=40) sets for generalization. Stratified, fixed-seed splits.
 - **Judging:** 3-judge panel (Claude Sonnet-4-6 + DeepSeek-V4-flash + Gemini-2.0-flash), paired by probe, 20k-sample bootstrap CIs, **Benjamini–Hochberg FDR** multiplicity correction across each metric family. We report family-level survival counts, never a single cherry-picked cell.
 - **What survives FDR (vault):** useful-content **10/11**, density-composite **11/11**, length-matched content **8/11**, fewer-tool-calls **9/11**. Generalization (held-out + OOD): content **17–18/20**, fewer calls **14/20**.
-- **The token fact that drives everything:** sweet-search's footprint is nearly constant (~1.3k–3.3k tokens) because the tool responses are capped; native's footprint is whatever the model decides to grep — up to **37k tokens** on Codex. That single fact drives the cost gap, the call gap, and the context-flooding number.
+- **The token fact that drives everything:** sweet-search's footprint is nearly constant (~1.3k–3.3k tokens) because the tool responses are capped; native's footprint is whatever the model decides to grep — up to **37k tokens** on Codex. That single fact is what drives the cost and tool-call gaps.
 - **Honest caveats we keep attached:** (1) accuracy **ties** on flagship models — it is *not* an accuracy win there, it's saturated; the accuracy gains are real only on weaker models. (2) The two weakest cells for *length-matched* density (Codex-low, DeepSeek) are correct-sign but underpowered — Codex's responses are so token-divergent that too few equal-length pairs exist to reach significance, and DeepSeek is simply under-powered. Those are honest non-victories, not wins.
 - Full methodology and per-cell tables: [`docs/PHASE7.md`](docs/PHASE7.md).
 
@@ -231,15 +238,15 @@ The win is **harness-adaptive**: where the native loop is disciplined (Claude Co
 Every number below is the **`ss-search` pipeline end-to-end** — the same binary you install, querying
 against the **full corpus** (no 99-distractor shortcuts), measured at 26–41 ms p50 on an M3 Max.
 
-| Benchmark | What it tests | Queries | MRR@10 |
+| 📚 Benchmark | 🔍 What it tests | # Queries | 🎯 MRR@10 |
 |-----------|---------------|--------:|-------:|
-| **GenCodeSearchNet** | NL→code, 6 languages | 6,000 | **86.6** |
-| **M2CRB** | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 2,814 | **60.2** |
-| CoSQA (test split) | web queries → Python | 500 | 97.0 |
-| CoSQA+ | web queries → Python, multi-match | 20,604 | 72.1 |
-| CLARC | NL→C/C++ (systems code) | 1,245 | 67.4 |
-| AdvTest † | adversarially renamed Python | 1,000 | 91.5 |
-| CoIR † | 10 datasets, 14 languages | 4,500 | 57.3 |
+| 🌐 **GenCodeSearchNet** | NL→code, 6 languages | 6,000 | **86.6** |
+| 🗺️ **M2CRB** | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 2,814 | **60.2** |
+| 🐍 CoSQA (test split) | web queries → Python | 500 | 97.0 |
+| 🐍 CoSQA+ | web queries → Python, multi-match | 20,604 | 72.1 |
+| ⚙️ CLARC | NL→C/C++ (systems code) | 1,245 | 67.4 |
+| 🛡️ AdvTest † | adversarially renamed Python | 1,000 | 91.5 |
+| 🌍 CoIR † | 10 datasets, 14 languages | 4,500 | 57.3 |
 
 **GenCodeSearchNet: the strongest result published anywhere, as far as we can tell.** The benchmark's
 own paper tops out at MRR ≤ 0.42 for its fine-tuned baselines (and ≤ 0.10 on the cross-lingual subsets),
@@ -272,14 +279,14 @@ and French queries.
 
 </div>
 
-| What | Result | Source |
+| ⚙️ What | 📈 Result | 📄 Source |
 |------|--------|--------|
-| Indexed grep vs ripgrep | **10.2× faster** at the median (8.5–17.7× across 5 repos, 353 realistic queries, 1 ms p50 — identical match counts on every query) | [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md) |
-| Warm query latency (native CLI) | **2.9 ms** warm · 108 ms cold | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
-| MaxSim rerank kernels | **1.26 s → 27 ms** for a 231-candidate pass (47× native Rust; 16× WASM SIMD) | [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md) |
-| HNSW tuning for code | **−33%** search p50, **+5.9 pp** recall@200 | [`docs/HNSW_APPROACH.md`](docs/HNSW_APPROACH.md) |
-| Indexing memory | peak JS heap **785 MB → 213 MB** | [`docs/DISK_FLUSHING_STRATEGY.md`](docs/DISK_FLUSHING_STRATEGY.md) |
-| CoreML cascade (M3 Max) | **18% faster** full indexing vs the Metal baseline | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
+| ⚡ Indexed grep vs ripgrep | **10.2× faster** at the median (8.5–17.7× across 5 repos, 353 realistic queries, 1 ms p50 — identical match counts on every query) | [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md) |
+| ⏱️ Warm query latency (native CLI) | **2.9 ms** warm · 108 ms cold | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
+| 🧮 MaxSim rerank kernels | **1.26 s → 27 ms** for a 231-candidate pass (47× native Rust; 16× WASM SIMD) | [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md) |
+| 🧠 HNSW tuning for code | **−33%** search p50, **+5.9 pp** recall@200 | [`docs/HNSW_APPROACH.md`](docs/HNSW_APPROACH.md) |
+| 💾 Indexing memory | peak JS heap **785 MB → 213 MB** | [`docs/DISK_FLUSHING_STRATEGY.md`](docs/DISK_FLUSHING_STRATEGY.md) |
+| 🍏 CoreML cascade (M3 Max) | **18% faster** full indexing vs the Metal baseline | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
 
 ## 🧰 The Six Tools
 
