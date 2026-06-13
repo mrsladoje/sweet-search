@@ -29,9 +29,13 @@ function run() {
   }
 
   const c = (n, s) => `\x1b[${n}m${s}\x1b[0m`;
+  // SWEET SEARCH half-block wordmark (kept in sync with core/search/cli-decoration.js).
+  const L1 = '█▀▀ █ █ █ █▀▀ █▀▀ ▀█▀  █▀▀ █▀▀ ▄▀▄ █▀▄ █▀▀ █▄█';
+  const L2 = '▄▄█ ▀▄█▄▀ ██▄ ██▄  █   ▄▄█ ██▄ █▀█ ██▄ █▄▄ █▀█';
   const msg = [
     '',
-    `  ${c('1;38;5;213', 'sweet-search')} installed ${c('2', '— SOTA hybrid code search')}`,
+    `  ${c('1;38;5;213', L1)}`,
+    `  ${c('1;38;5;213', L2)}`,
     '',
     `  ${c('1', 'Get started:')}`,
     `    ${c('36', 'sweet-search init')}        set up the current project`,
