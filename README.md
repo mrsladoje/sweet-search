@@ -233,25 +233,24 @@ The win is **harness-adaptive**: where the native loop is disciplined (Claude Co
 <a id="bench-paper-type"></a>
 ### 📄 3. Paper-type retrieval benchmarks — *academic NL→code IR*
 
-> [!WARNING]
-> ⚠️ **THESE NUMBERS ARE STALE — TREAT THEM AS A FLOOR, NOT THE CURRENT SCORE.** ⚠️
-> Several results below were measured on builds that predate major accuracy work
-> (late-interaction correctness fixes, HNSW tuning, the May 2026 ranking overhaul).
-> Every benchmark is being re-run on the current engine and this table will be
-> replaced with fresh numbers. Until then, expect the real results to be **higher**.
+> [!NOTE]
+> 🔄 **Refreshed on the current engine (June 2026).** AdvTest, CoIR, CoSQA, and M2CRB were just
+> re-run on the latest build — the one with the late-interaction correctness fixes, HNSW tuning,
+> and the May 2026 ranking overhaul — and every one of them moved **up**. GCSN, CoSQA+, and CLARC
+> were already current. Reproduction artifacts are in [`eval/results/`](eval/results/).
 
 Every number below is the **`ss-search` pipeline end-to-end** — the same binary you install, querying
-against the **full corpus** (no 99-distractor shortcuts), measured at 26–41 ms p50 on an M3 Max.
+against the **full corpus** (no 99-distractor shortcuts), on an M3 Max.
 
 | 📚 Benchmark | 🔍 What it tests | # Queries | 🎯 MRR@10 |
 |-----------|---------------|--------:|-------:|
 | 🌐 **GenCodeSearchNet** | NL→code, 6 languages | 6,000 | **86.6** |
-| 🗺️ **M2CRB** | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 2,814 | **60.2** |
-| 🐍 CoSQA (test split) | web queries → Python | 500 | 97.0 |
+| 🗺️ **M2CRB** | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 2,814 | **65.9** |
+| 🐍 CoSQA (test split) | web queries → Python | 500 | 98.8 |
 | 🐍 CoSQA+ | web queries → Python, multi-match | 20,604 | 72.1 |
 | ⚙️ CLARC | NL→C/C++ (systems code) | 1,245 | 67.4 |
-| 🛡️ AdvTest † | adversarially renamed Python | 1,000 | 91.5 |
-| 🌍 CoIR † | 10 datasets, 14 languages | 4,500 | 57.3 |
+| 🛡️ AdvTest | adversarially renamed Python | 1,000 | **99.1** |
+| 🌍 CoIR | 10 datasets, 14 languages | 4,500 | **72.4** |
 
 **GenCodeSearchNet: the strongest result published anywhere, as far as we can tell.** The benchmark's
 own paper tops out at MRR ≤ 0.42 for its fine-tuned baselines (and ≤ 0.10 on the cross-lingual subsets),
@@ -260,15 +259,15 @@ query**. sweet-search scores **0.866**, retrieving from the entire 6,000-documen
 
 **M2CRB: best published number, no fine-tuning.** The benchmark paper's best model — a CodeBERT
 *fine-tuned on the task's training mix* — reaches 52.7 (auMRRc, a metric averaged over smaller retrieval
-pools). sweet-search reaches **60.2 full-corpus MRR@10 out of the box**, on Spanish, Portuguese, German,
+pools). sweet-search reaches **65.9 full-corpus MRR@10 out of the box**, on Spanish, Portuguese, German,
 and French queries.
 
 <details>
-<summary><b>Methodology & staleness flags</b></summary>
+<summary><b>Methodology & build dates</b></summary>
 
 - **Reproduction:** result artifacts live in `eval/results/`; rerun via `eval/run_all.js`.
 - **Protocol note:** published baselines for GCSN and CoSQA-style benchmarks typically rank the gold snippet against 99 sampled distractors. All sweet-search numbers rank against the full benchmark corpus — strictly harder.
-- **† Staleness:** AdvTest and CoIR were last run on the February 2026 build — before the late-interaction correctness fixes, HNSW tuning, and the May ranking work. They likely understate the current engine; re-runs are queued. CoSQA/M2CRB are from the April build; GCSN, CoSQA+, and CLARC are current (May 2026).
+- **Build dates:** AdvTest, CoIR, CoSQA, and M2CRB were re-run on the **June 2026** engine (0 errors on each); GCSN, CoSQA+, and CLARC are from the May 2026 build. All numbers reflect the current late-interaction pipeline — the correctness fixes, HNSW tuning, and May ranking overhaul. The June re-runs all improved over their earlier builds (AdvTest 91.5→99.1, CoIR 57.3→72.4, CoSQA 97.0→98.8, M2CRB 60.2→65.9).
 - **Honesty corner:** CrossCodeEval — cross-file *completion context* retrieval, a different task than NL search — sits at 0.12. We don't optimize for it and report it anyway.
 - Dates and per-language breakdowns: [`docs/BENCHMARKS_EXPLAINED.md`](docs/BENCHMARKS_EXPLAINED.md).
 

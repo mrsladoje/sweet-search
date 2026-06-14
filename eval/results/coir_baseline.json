@@ -1,94 +1,118 @@
 {
-  "timestamp": "2026-02-18T21:13:32.812Z",
+  "timestamp": "2026-06-14T13:33:53.600Z",
   "dataset": "coir",
   "queryCount": 4500,
   "corpusSize": 4500,
   "searchMode": "auto",
-  "totalTimeMs": 2382116,
+  "totalTimeMs": 1778130,
   "errors": 0,
   "aggregate": {
-    "mrr_at_10": 0.5733,
-    "ndcg_at_10": 0.5926,
-    "map_at_10": 0.5733,
-    "recall_at_5": 0.6204,
-    "recall_at_10": 0.654,
-    "recall_at_20": 0.6958,
-    "success_at_1": 0.5344,
-    "success_at_5": 0.6204,
-    "latency_p50_ms": 160.2607,
-    "latency_p95_ms": 8073.104,
-    "latency_mean_ms": 1125.7362
+    "mrr_at_10": 0.7239,
+    "ndcg_at_10": 0.735,
+    "map_at_10": 0.7239,
+    "recall_at_5": 0.7593,
+    "recall_at_10": 0.7687,
+    "recall_at_20": 0.77,
+    "recall_at_50": 0.7702,
+    "recall_at_100": 0.7702,
+    "gold_missing_top10_rate": 0.2313,
+    "gold_missing_top100_rate": 0.2298,
+    "success_at_1": 0.6953,
+    "success_at_5": 0.7593,
+    "latency_p50_ms": 124.4341,
+    "latency_p95_ms": 227.2301,
+    "latency_mean_ms": 144.7223
   },
   "perLanguage": {
     "python": {
       "count": 1227,
-      "mrr_at_10": 0.5114,
-      "ndcg_at_10": 0.5368,
-      "map_at_10": 0.5114,
-      "recall_at_5": 0.5811,
-      "recall_at_10": 0.6153,
-      "recall_at_20": 0.6438,
-      "success_at_1": 0.4531,
-      "success_at_5": 0.5811,
-      "latency_p50_ms": 171.8626,
-      "latency_p95_ms": 5929.0577,
-      "latency_mean_ms": 1221.0819
+      "mrr_at_10": 0.6062,
+      "ndcg_at_10": 0.624,
+      "map_at_10": 0.6062,
+      "recall_at_5": 0.6667,
+      "recall_at_10": 0.6773,
+      "recall_at_20": 0.6797,
+      "recall_at_50": 0.6805,
+      "recall_at_100": 0.6805,
+      "gold_missing_top10_rate": 0.3227,
+      "gold_missing_top100_rate": 0.3195,
+      "success_at_1": 0.5575,
+      "success_at_5": 0.6667,
+      "latency_p50_ms": 126.5397,
+      "latency_p95_ms": 210.0068,
+      "latency_mean_ms": 144.2972
     },
     "unknown": {
       "count": 2102,
-      "mrr_at_10": 0.4635,
-      "ndcg_at_10": 0.4834,
-      "map_at_10": 0.4635,
-      "recall_at_5": 0.5147,
-      "recall_at_10": 0.5466,
-      "recall_at_20": 0.5785,
-      "success_at_1": 0.4248,
-      "success_at_5": 0.5147,
-      "latency_p50_ms": 190.4119,
-      "latency_p95_ms": 10022.3595,
-      "latency_mean_ms": 1042.1095
+      "mrr_at_10": 0.6538,
+      "ndcg_at_10": 0.666,
+      "map_at_10": 0.6538,
+      "recall_at_5": 0.6903,
+      "recall_at_10": 0.7031,
+      "recall_at_20": 0.7046,
+      "recall_at_50": 0.7046,
+      "recall_at_100": 0.7046,
+      "gold_missing_top10_rate": 0.2969,
+      "gold_missing_top100_rate": 0.2954,
+      "success_at_1": 0.6251,
+      "success_at_5": 0.6903,
+      "latency_p50_ms": 133.1701,
+      "latency_p95_ms": 291.4148,
+      "latency_mean_ms": 157.0498
     },
     "javascript": {
       "count": 143,
-      "mrr_at_10": 0.7298,
-      "ndcg_at_10": 0.7409,
-      "map_at_10": 0.7298,
-      "recall_at_5": 0.7552,
-      "recall_at_10": 0.7762,
-      "recall_at_20": 0.8042,
-      "success_at_1": 0.7063,
-      "success_at_5": 0.7552,
-      "latency_p50_ms": 212.2791,
-      "latency_p95_ms": 480.0158,
-      "latency_mean_ms": 1027.7512
+      "mrr_at_10": 0.8279,
+      "ndcg_at_10": 0.8412,
+      "map_at_10": 0.8279,
+      "recall_at_5": 0.8671,
+      "recall_at_10": 0.8811,
+      "recall_at_20": 0.8811,
+      "recall_at_50": 0.8811,
+      "recall_at_100": 0.8811,
+      "gold_missing_top10_rate": 0.1189,
+      "gold_missing_top100_rate": 0.1189,
+      "success_at_1": 0.7902,
+      "success_at_5": 0.8671,
+      "latency_p50_ms": 135.6487,
+      "latency_p95_ms": 377.0664,
+      "latency_mean_ms": 167.6644
     },
     "java": {
       "count": 17,
-      "mrr_at_10": 0.6471,
-      "ndcg_at_10": 0.6471,
-      "map_at_10": 0.6471,
-      "recall_at_5": 0.6471,
-      "recall_at_10": 0.6471,
-      "recall_at_20": 0.6471,
-      "success_at_1": 0.6471,
-      "success_at_5": 0.6471,
-      "latency_p50_ms": 181.6125,
-      "latency_p95_ms": 14257.3203,
-      "latency_mean_ms": 979.6107
+      "mrr_at_10": 0.8725,
+      "ndcg_at_10": 0.8901,
+      "map_at_10": 0.8725,
+      "recall_at_5": 0.9412,
+      "recall_at_10": 0.9412,
+      "recall_at_20": 0.9412,
+      "recall_at_50": 0.9412,
+      "recall_at_100": 0.9412,
+      "gold_missing_top10_rate": 0.0588,
+      "gold_missing_top100_rate": 0.0588,
+      "success_at_1": 0.8235,
+      "success_at_5": 0.9412,
+      "latency_p50_ms": 147.2012,
+      "latency_p95_ms": 401.8342,
+      "latency_mean_ms": 178.6955
     },
     "go": {
       "count": 9,
-      "mrr_at_10": 0.7778,
-      "ndcg_at_10": 0.7778,
-      "map_at_10": 0.7778,
-      "recall_at_5": 0.7778,
-      "recall_at_10": 0.7778,
-      "recall_at_20": 0.7778,
-      "success_at_1": 0.7778,
-      "success_at_5": 0.7778,
-      "latency_p50_ms": 204.6132,
-      "latency_p95_ms": 11519.0393,
-      "latency_mean_ms": 1440.4638
+      "mrr_at_10": 0.8889,
+      "ndcg_at_10": 0.8889,
+      "map_at_10": 0.8889,
+      "recall_at_5": 0.8889,
+      "recall_at_10": 0.8889,
+      "recall_at_20": 0.8889,
+      "recall_at_50": 0.8889,
+      "recall_at_100": 0.8889,
+      "gold_missing_top10_rate": 0.1111,
+      "gold_missing_top100_rate": 0.1111,
+      "success_at_1": 0.8889,
+      "success_at_5": 0.8889,
+      "latency_p50_ms": 156.1323,
+      "latency_p95_ms": 409.8391,
+      "latency_mean_ms": 180.8623
     },
     "php": {
       "count": 2,
@@ -98,40 +122,36 @@
       "recall_at_5": 0.5,
       "recall_at_10": 0.5,
       "recall_at_20": 0.5,
+      "recall_at_50": 0.5,
+      "recall_at_100": 0.5,
+      "gold_missing_top10_rate": 0.5,
+      "gold_missing_top100_rate": 0.5,
       "success_at_1": 0.5,
       "success_at_5": 0.5,
-      "latency_p50_ms": 155.8267,
-      "latency_p95_ms": 155.8267,
-      "latency_mean_ms": 132.3356
+      "latency_p50_ms": 114.3197,
+      "latency_p95_ms": 114.3197,
+      "latency_mean_ms": 110.6374
     },
     "sql": {
       "count": 1000,
-      "mrr_at_10": 0.8548,
-      "ndcg_at_10": 0.8673,
-      "map_at_10": 0.8548,
-      "recall_at_5": 0.87,
-      "recall_at_10": 0.909,
-      "recall_at_20": 0.991,
-      "success_at_1": 0.836,
-      "success_at_5": 0.87,
-      "latency_p50_ms": 133.9838,
-      "latency_p95_ms": 7900.7049,
-      "latency_mean_ms": 1200.1805
+      "mrr_at_10": 0.997,
+      "ndcg_at_10": 0.9975,
+      "map_at_10": 0.997,
+      "recall_at_5": 0.999,
+      "recall_at_10": 0.999,
+      "recall_at_20": 0.999,
+      "recall_at_50": 0.999,
+      "recall_at_100": 0.999,
+      "gold_missing_top10_rate": 0.001,
+      "gold_missing_top100_rate": 0.001,
+      "success_at_1": 0.995,
+      "success_at_5": 0.999,
+      "latency_p50_ms": 107.272,
+      "latency_p95_ms": 131.7408,
+      "latency_mean_ms": 115.216
     }
   },
   "failedQueries": [
-    {
-      "queryId": "CR00002",
-      "query": "declaring empty numpy array in python",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
     {
       "queryId": "CR00003",
       "query": "test for iterable is string in python",
@@ -145,12 +165,12 @@
       ]
     },
     {
-      "queryId": "CR00000",
-      "query": "sort by a token in string python",
+      "queryId": "CR00005",
+      "query": "how to save header of fits file to export python",
       "language": "python",
       "topRelevance": [
         0,
-        0,
+        1,
         0,
         0,
         0
@@ -169,12 +189,24 @@
       ]
     },
     {
-      "queryId": "CR00005",
-      "query": "how to save header of fits file to export python",
+      "queryId": "CR00011",
+      "query": "how to skip an index in a for loop python",
       "language": "python",
       "topRelevance": [
         0,
+        1,
         0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CR00015",
+      "query": "python asynchronous function call return",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
         0,
         0,
         0
@@ -188,19 +220,7 @@
         0,
         0,
         0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "CR00011",
-      "query": "how to skip an index in a for loop python",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        0,
+        1,
         0
       ]
     },
@@ -210,8 +230,8 @@
       "language": "python",
       "topRelevance": [
         0,
-        1,
         0,
+        1,
         0,
         0
       ]
@@ -229,18 +249,6 @@
       ]
     },
     {
-      "queryId": "CR00024",
-      "query": "python save graph into file",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
       "queryId": "CR00026",
       "query": "add suffixes on concat python",
       "language": "python",
@@ -253,37 +261,13 @@
       ]
     },
     {
-      "queryId": "CR00012",
-      "query": "how to create a tokenization code in python",
+      "queryId": "CR00027",
+      "query": "how to check python object iterable",
       "language": "python",
       "topRelevance": [
         0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "CR00014",
-      "query": "how to seperate list with commas python",
-      "language": "python",
-      "topRelevance": [
         0,
         1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "CR00019",
-      "query": "how to read the last n lines of a program on python",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
         0,
         0
       ]
@@ -301,25 +285,13 @@
       ]
     },
     {
-      "queryId": "CR00037",
-      "query": "get wechat access token python",
+      "queryId": "CR00041",
+      "query": "python 3 not runnning in git bash",
       "language": "python",
       "topRelevance": [
         0,
-        0,
-        0,
         1,
-        0
-      ]
-    },
-    {
-      "queryId": "CR00027",
-      "query": "how to check python object iterable",
-      "language": "python",
-      "topRelevance": [
         0,
-        0,
-        1,
         0,
         0
       ]
@@ -337,20 +309,80 @@
       ]
     },
     {
-      "queryId": "CR00043",
-      "query": "python json if element exists",
+      "queryId": "CR00045",
+      "query": "how to randomize items in a list in python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CR00048",
+      "query": "python setlevel how to only record error",
       "language": "python",
       "topRelevance": [
         0,
         0,
         0,
-        1,
+        0,
         0
       ]
     },
     {
-      "queryId": "CR00044",
-      "query": "number of unique values in list python",
+      "queryId": "CR00053",
+      "query": "python read from csv into numpy array",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CR00054",
+      "query": "cast string to bytearray python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CR00057",
+      "query": "python check type if string",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CR00060",
+      "query": "how to know if a text file is empty in python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CR00061",
+      "query": "python normal distribution p values",
       "language": "python",
       "topRelevance": [
         0,
