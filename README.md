@@ -540,31 +540,43 @@ without another search.
 
 ## 🧠 An Agent Prompt That Was Evolved, Not Written
 
-Giving an agent six tools is easy. Getting it to *stop grepping in circles* is not.
+Shipping six tools is easy. Getting an agent to *stop grepping in circles* is the hard part.
 
-`sweet-search init` installs a ~1k-token system prompt that encodes a complete search discipline —
-and it wasn't hand-written. It was **evolved with a GEPA-style optimization loop**: reflective mutation
-by one model family, scored on a dual Pareto front (accuracy × cost) across two *different* production
-targets, then validated on held-out probes and on **model families that were never part of the
-optimization**, and finally hand-hardened with a correctness editing pass.
+So `sweet-search init` installs a ~1k-token system prompt that we **didn't write** — we *grew* it.
+A GEPA-style loop mutated candidate prompts, scored each on a dual Pareto front (**accuracy × cost**)
+against **two different production agents at once** — Claude Code (Sonnet) and Codex (GPT-5.5) — kept the
+survivors, and repeated. A final correctness pass hardened the winner. ~1k tokens, one job: teach the
+agent to search *well*.
 
-What it teaches:
+**🎓 The five rules it encodes:**
 
-- **Cheapest tool first** — hold an exact identifier? One `ss-grep`, trust the top hit, stop. No semantic search "just to confirm."
-- **Trust the ranking** — confirm with at most one narrow read, never a re-run of a hit that already matched.
-- **Absence is an answer** — two complementary empty probes (one semantic, one lexical) settle a negative; no third synonym, no `find`/`ls` spiral.
-- **No raw-shell escape** — the #1 token-waster we found in trajectory analysis is agents abandoning the index for dozens of raw `grep`/`find` calls after one empty result. The prompt closes that door explicitly.
-- **A reasoning checkpoint** — before a third probe, the agent must state what it has established and what its blind spot is.
+| | Rule | What it kills |
+|--|--|--|
+| 🥇 | **Cheapest tool first** | Got an exact symbol? One `ss-grep`, trust the top hit, stop — no semantic search "just to confirm." |
+| 🎯 | **Trust the ranking** | At most one narrow read to confirm; never re-run a hit that already matched. |
+| 🚫 | **Absence is an answer** | Two empty probes (one semantic, one lexical) settle a negative — no third synonym, no `find`/`ls` spiral. |
+| ⛔ | **No raw-shell escape** | The #1 token-waster in our trace analysis: agents bailing to dozens of raw `grep`/`find` calls after one miss. Door closed. |
+| 📝 | **Think before you dig** | Before a third probe, the agent states what it knows and what its blind spot is. |
+
+**🧾 The receipts** — *held-out discipline throughout: a dev set to iterate on, a held-out set touched only at milestones, a sealed vault opened exactly once.*
+
+| Validation gate | Result |
+|--|--|
+| 🎯 **Held-out** (30 probes × both agents) | joint score *(worst of the two)* **0.988** |
+| 🌍 **Out-of-distribution** (8 languages never seen in the loop) | **0.952** — *every* language ≥ 0.79, zero weak spots |
+| 🛡️ **Adversarial counter-probes** | **1.00 / 1.00** |
+| 🔀 **Held-out model families** (never optimized on) | MiMo **0.988** · Qwen **0.980** — it generalizes, it doesn't memorize |
+| 🧩 **Paraphrase robustness** (reword the prompt, same behavior) | correctness-weighted **0.95 / 0.93** |
 
 <details>
-<summary><b>How it was validated</b></summary>
+<summary><b>🔬 How it was actually built (the honest version)</b></summary>
 
-- **Optimization targets:** two frontier model families in production harnesses (Claude Code and Codex-style CLIs), scored jointly so the prompt can't overfit to one model's quirks.
-- **Selection:** dual Pareto fronts over per-probe accuracy and measured cost; candidates gated by paraphrase-invariance (the prompt's behavior must survive rewording).
-- **Held-out discipline:** a dev probe set for iteration, a held-out set checked only at milestones, and a sealed vault set opened exactly once. Joint maximin on held-out: **0.988**; out-of-distribution probes: **0.95+**; vault: **0.963** — 2.5 pp below held-out, well inside the pre-registered 15% acceptance gate.
-- **Held-out model families (HOMP):** the final prompt passed on two model families from different vendors that were never used during evolution — evidence the routing rules generalize, not memorize.
-- All figures are from the in-repo evaluation program (internal probe suites; see [`docs/PHASE7.md`](docs/PHASE7.md)); the benchmark suite that will make these externally reproducible is in progress.
-- Installation is idempotent and marker-delimited: re-running `init` updates the managed block in `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` / `.cursor/rules` without touching anything else you wrote.
+- **Seeds → survivors:** 15 hand-authored seed prompts entered a reflective-evolution loop (an agent reads the *real* tool-call traces, proposes one targeted edit, we keep what helps). Operators included trajectory crossover, structural pivots, tool-name masking, and a pruner that fights prompt bloat.
+- **Two targets, jointly:** every candidate was scored on **both** Claude Code/Sonnet **and** Codex/GPT-5.5 with Maximin discipline (a prompt is only as good as its *worse* target), so it can't overfit one model's quirks.
+- **What actually won:** not clever phrasing — **terseness** (a shorter prompt re-sent every turn is cheaper), a **leaner tool mix** (grep/read over heavy semantic blocks that fatten the transcript), and **decisiveness on no-match** (stop spiraling). We report this plainly because it's what the traces showed.
+- **The correctness pass:** the shipped prompt ("M++") is the cost-winner plus 7 edits that fix factual descriptions of the tools — routing byte-identical, accuracy held, cost unchanged. A lateral move that buys honesty.
+- **Held-out everything:** dev to iterate, held-out checked only at milestones, a sealed vault opened once, plus held-out *model families* (MiMo, Qwen) and a reasoning-mode replay (MiniMax **0.963**) it never trained against. Figures: [`docs/PHASE7.md`](docs/PHASE7.md) (internal probe suites; an externally-reproducible suite is in progress).
+- **Idempotent install:** `init` writes a marker-delimited block into `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` / `.cursor/rules` — re-run it freely, it never touches anything else you wrote.
 
 </details>
 
