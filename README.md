@@ -238,6 +238,8 @@ against the **full benchmark corpus** (no 99-distractor shortcuts), **zero-shot*
 fine-tune on these tasks). Where a benchmark's queries are docstrings, we strip the docstring out of the
 indexed code so the query can't trivially match itself — the standard retrieval protocol.
 
+We're SOTA in June 2026 on 3/4 attempted benchmarks at HARDER settings (running on full pool) than most other attempts!
+
 | 📚 Benchmark | 🔍 What it tests | # Queries | 📂 Pool | 🎯 MRR@10 | 🏆 SOTA? |
 |-----------|---------------|---------:|---------:|--------:|--------:|
 | 🌐 **GenCodeSearchNet** | NL→code, 6 languages | 6,000 | full 6,000 | **86.6** | YES ✅ |
