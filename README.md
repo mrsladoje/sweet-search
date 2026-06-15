@@ -146,13 +146,13 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 <tr>
 <td width="50%" valign="top">
 
-🤖 **[① Code-retrieval](#bench-code-retrieval)** *(agent-in-the-loop)*<br>
+🤖 **① [Code-retrieval](#bench-code-retrieval)** *(agent-in-the-loop)*<br>
 <sub>Does it make a real coding agent **cheaper and more useful** when it searches your repo? Paired against each model's own grep-and-read loop.</sub>
 
 </td>
 <td width="50%" valign="top">
 
-🚧 **[② Task-completion](#bench-task-completion)** *(coming soon)*<br>
+🚧 **② [Task-completion](#bench-task-completion)** *(coming soon)*<br>
 <sub>Does cheaper, denser context **compound** into a higher resolve-rate on multi-step engineering tasks? Harness in progress.</sub>
 
 </td>
@@ -160,13 +160,13 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 <tr>
 <td width="50%" valign="top">
 
-📄 **[③ Paper-type IR](#bench-paper-type)** *(academic)*<br>
+📄 **③ [Paper-type IR](#bench-paper-type)** *(academic)*<br>
 <sub>The standard NL→code retrieval suites (GCSN, M2CRB, CoSQA…), full-corpus MRR@10.</sub>
 
 </td>
 <td width="50%" valign="top">
 
-⚡ **[④ Engine speed](#bench-engine-speed)**<br>
+⚡ **④ [Engine speed](#bench-engine-speed)**<br>
 <sub>Raw systems numbers — grep throughput, query latency, rerank kernels, HNSW.</sub>
 
 </td>
