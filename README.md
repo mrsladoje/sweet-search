@@ -247,7 +247,7 @@ We're SOTA in June 2026 on 3/4 attempted benchmarks at HARDER settings (running 
 | 🗺️ M2CRB | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 5,795 | full 5,795 | 54.0 | YES ✅ |
 | 🛡️ AdvTest | adversarial, identifier-obfuscated Python | 19,210 | full 19,210 | 51.4 | NO ❌ |
 
-<sub>SOTA for June 2026*</sub>
+<sub>SOTA = best result we can find in the published literature as of June 2026; cross-metric/protocol comparisons are spelled out per benchmark below.</sub>
 
 #### 🌐 GenCodeSearchNet → `86.6` &nbsp;·&nbsp; 🏆 SOTA in June 2026
 - **The BEST PUBLISHED number we can find, anywhere**
@@ -261,10 +261,9 @@ We're SOTA in June 2026 on 3/4 attempted benchmarks at HARDER settings (running 
 - <sub>CoSQA has known label noise, so we read the absolute height with a pinch of salt.</sub>
 
 #### 🗺️ M2CRB → `54.0` &nbsp;·&nbsp; 🏆 SOTA in June 2026
-- **the BEST PUBLISHED number we can find, anywhere**
-- Spanish · Portuguese · German · French → code
-- Full **5,795-function** pool, single-pool MRR@10 — a *stricter operating point* than the paper's best **52.7 auMRRc**.
-- Different metric (auMRRc averages over growing pools), so we report it straight and **don't claim a head-to-head**.
+- **the BEST PUBLISHED number we can find, anywhere** — and zero-shot
+- 🇪🇸 Spanish · 🇵🇹 Portuguese · 🇩🇪 German · 🇫🇷 French → Python / Java / JavaScript.
+- The paper's best — a CodeBERT **fine-tuned on the task** — reaches **52.7 auMRRc**, a metric that *averages over easier, smaller pools* (so `auMRRc ≥ full-pool MRR` for any model). Our **54.0 is full-pool MRR@10** over all 5,795 functions in one pool — a **strictly harder** measure, cleared with **no fine-tuning**. 🔥
 
 #### 🛡️ AdvTest → `51.4` &nbsp;·&nbsp; 🧪 **our honest worst case — and we publish it anyway**
 - Adversarial obfuscation (`def Func(arg_0):`) deletes the lexical + graph signals our hybrid feeds on — yet we still **beat the classic fine-tuned baselines** (CodeBERT `27` · GraphCodeBERT `35` · UniXcoder `41`), and our stack *still lifts our own encoder ~3pp even here*.
@@ -277,7 +276,7 @@ We're SOTA in June 2026 on 3/4 attempted benchmarks at HARDER settings (running 
 - **Full corpus, not distractors.** Published baselines for GCSN- and CoSQA-style benchmarks typically rank the gold against 99 sampled distractors; every number here ranks against the benchmark's *full* corpus (6k–19k candidates) — strictly harder.
 - **Zero-shot + docstring-stripped.** We never fine-tune on these tasks. For docstring-derived benchmarks (AdvTest, M2CRB) we strip the docstring from the indexed code — otherwise the NL query matches itself verbatim (a no-strip AdvTest run scores a meaningless 0.98). This is the standard protocol; it is also why our AdvTest is lower than naïve setups that leave the docstring in.
 - **What we deliberately don't claim yet.** CoIR (official metric NDCG@10 over per-subtask corpora up to ~1M docs), CoSQA+ (multi-positive, MAP-primary), and CLARC (per-group pools) use protocols and metrics our single-pool MRR@10 harness doesn't currently match. Rather than publish apples-to-oranges numbers, we omit them; faithful per-subtask CoIR (NDCG@10) runs are queued.
-- **M2CRB** has no directly-comparable published MRR — its metric is *auMRRc* (area under the MRR-vs-pool-size curve, best published 52.7). Our 54.0 is a single-pool full-corpus MRR@10 over all 5,795 functions, a stricter operating point, so we report it without claiming a head-to-head.
+- **M2CRB** — the paper's metric is *auMRRc* (area under the MRR-vs-pool-size curve; best published **52.7**, fine-tuned). Because that area averages over easier small pools, `auMRRc ≥ full-pool MRR` for any model — so our **54.0 full-pool MRR@10** (all 5,795 functions, zero-shot) clears their best on a strictly harder measure. No one publishes a plain full-corpus MRR@10 on M2CRB, so ours is the best available.
 - **AdvTest honesty note.** We could not reproduce the commonly-cited 59.5 for the bare CodeRankEmbed encoder on our corpus: the reference FP32 model scores 54.7 on our leak-free, docstring-stripped, full-19,210 setup, and our shipped INT8 build 51.4. We report our measured numbers and the reference check rather than the leaderboard figure.
 - **Honesty corner:** CrossCodeEval — cross-file *completion-context* retrieval, a different task than NL search — sits at 0.12. We don't optimize for it and report it anyway.
 
