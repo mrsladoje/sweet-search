@@ -245,11 +245,11 @@ indexed code so the query can't trivially match itself — the standard retrieva
 | 🗺️ M2CRB | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 5,795 | full 5,795 | 54.0 |
 | 🛡️ AdvTest | adversarial, identifier-obfuscated Python | 19,210 | full 19,210 | 51.4 |
 
-#### 🌐 GenCodeSearchNet → `86.6` &nbsp;·&nbsp; 🏆 **the best published number we can find, anywhere**
+#### 🌐 GenCodeSearchNet → `86.6` &nbsp;·&nbsp; 🏆 **the BEST PUBLISHED number we can find, anywhere**
 - The benchmark's own paper caps at **MRR ≤ 0.42** for fine-tuned baselines (≤ 0.10 cross-lingual); even zero-shot OpenAI Ada-2 reaches 0.79–0.94 — but **all of it against a tiny 99-distractor pool**.
 - We score **0.866 against the entire 6,000-document corpus** — *a strictly harder setting* — and **zero-shot**. 🔥
 
-#### 🐍 CoSQA → `65.5` &nbsp;·&nbsp; 🥇 **beats every published zero-shot model**
+#### 🐍 CoSQA → `65.5` &nbsp;·&nbsp; 🥇 **beats EVERY PUBLISHED zero-shot model**
 - Canonical setup: 500 real web queries → the fixed **6,267-code database**, no fine-tuning.
 - Clears the strongest zero-shot results out there — CodeSage-Large `47.5` · OpenAI text-embedding-3-large `55.4` · OASIS `55.8` — and goes **toe-to-toe with *fine-tuned* CodeBERT / GraphCodeBERT** (64.7 / 67.5). 💪
 - <sub>CoSQA has known label noise, so we read the absolute height with a pinch of salt.</sub>
