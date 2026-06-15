@@ -4,7 +4,8 @@
 
 ### *Maybe grep isn't all you need…* 🍬
 
-Every AI coding agent of today is stuck believing grep+Read is the way... *sweet-search* challenges the narrative😎</br>
+
+Every AI coding agent of today is stuck believing grep+Read is the way... ***sweet-search*** challenges the narrative😎
 
 A 100% local code-search engine for *Claude Code*, *Codex*, *Cursor* & friends with six blazing and purpose-built tools that hand your agent ranked, ready-to-use answers instead of walls of grep output. Up to 34% cheaper, 56% fewer tool calls, more useful answers, SOTA retrieval quality, zero API keys. 
 
@@ -18,29 +19,16 @@ A 100% local code-search engine for *Claude Code*, *Codex*, *Cursor* & friends w
 
 ---
 
-Your AI agent burns most of its tokens *looking* for code: grep, read, grep again, read more.
-**sweet-search** replaces that loop with six purpose-built tools that return ranked, self-contained answers —
-backed by a Rust/WASM engine, ColBERT-style late interaction, a code knowledge graph, and an index that
-updates itself as you type.
-
-<div align="center">
-
-**10.2×** ripgrep's median grep speed &nbsp;·&nbsp; **2.9 ms** warm queries &nbsp;·&nbsp; **47×** faster reranking kernels &nbsp;·&nbsp; **0** API keys
-
-<sub>measured in-repo — sources in [Benchmarks](#-benchmarks)</sub>
-
-</div>
-
 ## ✨ Highlights
 
-- **Hybrid retrieval** — BM25F lexical + dense semantic + structural graph signals, fused per query by a CatBoost router running in WASM
+- **Hybrid retrieval** — one of the six tools uses BM25F lexical + dense semantic + structural graph signals, fused per query and reranked by late-interaction
 - **Agent-native by design** — token-budgeted output tiers, an MCP server, and a GEPA-evolved system prompt installed into Claude Code, Codex, Gemini CLI, and Cursor with one command
-- **Indexed grep, ~10× ripgrep** — a sparse n-gram prefilter skips the files that provably can't match
+- **Indexed grep, ~10× faster than ripgrep** — a sparse n-gram prefilter skips the files that provably can't match
 - **ColBERT-style reranking, locally** — per-token MaxSim late interaction on hand-written SIMD kernels
-- **Runs on anything** — Apple Metal, CUDA, CoreML Neural Engine, or plain CPU via INT8 ONNX; same engine, auto-selected
-- **Never stale** — a reconcile daemon keeps the index converged with your *working tree*, uncommitted edits included
-- **Fits in RAM** — INT4-quantized binary index segments and memory-mapped HNSW
-- **Local-first** — all models run on-device; nothing is sent anywhere, ever
+- **GPU-accelerated indexing** — Apple Metal, CUDA, CoreML Neural Engine, or plain CPU via ORT; same engine, auto-selected
+- **Never stale** — incremental indexing keeps the index aligned with your *working tree*, uncommitted edits included
+- **No storage hassle** — indexed artifacts maximally optimized without any accuracy tradeoff; up to INT4 quantization
+- **Local-first** — all models run on-device; nothing is sent anywhere, ever. CPU-inference supported for all models
 
 ## 📚 Table of Contents
 
