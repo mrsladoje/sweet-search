@@ -234,27 +234,33 @@ The win is **harness-adaptive**: where the native loop is disciplined (Claude Co
 ### 📄 3. Paper-type retrieval benchmarks — *academic NL→code IR*
 
 Every number below is the **`ss-search` pipeline end-to-end** — the same binary you install — run
-against the **full benchmark corpus** (no 99-distractor shortcuts) on an M3 Max, **zero-shot** (we never
+against the **full benchmark corpus** (no 99-distractor shortcuts), **zero-shot** (we never
 fine-tune on these tasks). Where a benchmark's queries are docstrings, we strip the docstring out of the
 indexed code so the query can't trivially match itself — the standard retrieval protocol.
 
-| 📚 Benchmark | 🔍 What it tests | # Queries | 📂 Pool | 🎯 MRR@10 |
-|-----------|---------------|--------:|--------:|-------:|
-| 🌐 **GenCodeSearchNet** | NL→code, 6 languages | 6,000 | full 6,000 | **86.6** |
-| 🐍 **CoSQA** | web queries → Python | 500 | full 6,267 | **65.5** |
-| 🗺️ M2CRB | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 5,795 | full 5,795 | 54.0 |
-| 🛡️ AdvTest | adversarial, identifier-obfuscated Python | 19,210 | full 19,210 | 51.4 |
+| 📚 Benchmark | 🔍 What it tests | # Queries | 📂 Pool | 🎯 MRR@10 | 🏆 SOTA? |
+|-----------|---------------|---------:|---------:|--------:|--------:|
+| 🌐 **GenCodeSearchNet** | NL→code, 6 languages | 6,000 | full 6,000 | **86.6** | YES ✅ |
+| 🐍 **CoSQA** | web queries → Python | 500 | full 6,267 | **65.5** | ✅ (zero-shot) |
+| 🗺️ M2CRB | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 5,795 | full 5,795 | 54.0 | YES ✅ |
+| 🛡️ AdvTest | adversarial, identifier-obfuscated Python | 19,210 | full 19,210 | 51.4 | NO ❌ |
 
-#### 🌐 GenCodeSearchNet → `86.6` &nbsp;·&nbsp; 🏆 **the BEST PUBLISHED number we can find, anywhere**
+<sub>SOTA for June 2026*</sub>
+
+#### 🌐 GenCodeSearchNet → `86.6` &nbsp;·&nbsp; 🏆 SOTA in June 2026
+- **The BEST PUBLISHED number we can find, anywhere**
 - The benchmark's own paper caps at **MRR ≤ 0.42** for fine-tuned baselines (≤ 0.10 cross-lingual); even zero-shot OpenAI Ada-2 reaches 0.79–0.94 — but **all of it against a tiny 99-distractor pool**.
 - We score **0.866 against the entire 6,000-document corpus** — *a strictly harder setting* — and **zero-shot**. 🔥
 
-#### 🐍 CoSQA → `65.5` &nbsp;·&nbsp; 🥇 **beats EVERY PUBLISHED zero-shot model**
+#### 🐍 CoSQA → `65.5` &nbsp;·&nbsp; 🥇 Zero-shot SOTA in June 2026
+- **Beats EVERY PUBLISHED zero-shot model**
 - Canonical setup: 500 real web queries → the fixed **6,267-code database**, no fine-tuning.
 - Clears the strongest zero-shot results out there — CodeSage-Large `47.5` · OpenAI text-embedding-3-large `55.4` · OASIS `55.8` — and goes **toe-to-toe with *fine-tuned* CodeBERT / GraphCodeBERT** (64.7 / 67.5). 💪
 - <sub>CoSQA has known label noise, so we read the absolute height with a pinch of salt.</sub>
 
-#### 🗺️ M2CRB → `54.0` &nbsp;·&nbsp; 🌍 **Spanish · Portuguese · German · French → code**
+#### 🗺️ M2CRB → `54.0` &nbsp;·&nbsp; 🏆 SOTA in June 2026
+- **the BEST PUBLISHED number we can find, anywhere**
+- Spanish · Portuguese · German · French → code
 - Full **5,795-function** pool, single-pool MRR@10 — a *stricter operating point* than the paper's best **52.7 auMRRc**.
 - Different metric (auMRRc averages over growing pools), so we report it straight and **don't claim a head-to-head**.
 
