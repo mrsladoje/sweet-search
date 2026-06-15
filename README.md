@@ -245,24 +245,22 @@ indexed code so the query can't trivially match itself — the standard retrieva
 | 🗺️ M2CRB | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 5,795 | full 5,795 | 54.0 |
 | 🛡️ AdvTest | adversarial, identifier-obfuscated Python | 19,210 | full 19,210 | 51.4 |
 
-**GenCodeSearchNet — the strongest result we can find published anywhere.** The benchmark's own paper tops
-out at MRR ≤ 0.42 for its fine-tuned baselines (≤ 0.10 on the cross-lingual subsets), with zero-shot OpenAI
-Ada-2 at 0.79–0.94 — all measured against just **99 random distractors per query**. sweet-search scores
-**0.866 retrieving from the entire 6,000-document corpus** — a strictly harder setting than the published one.
+#### 🌐 GenCodeSearchNet → `86.6` &nbsp;·&nbsp; 🏆 **the best published number we can find, anywhere**
+- The benchmark's own paper caps at **MRR ≤ 0.42** for fine-tuned baselines (≤ 0.10 cross-lingual); even zero-shot OpenAI Ada-2 reaches 0.79–0.94 — but **all of it against a tiny 99-distractor pool**.
+- We score **0.866 against the entire 6,000-document corpus** — *a strictly harder setting* — and **zero-shot**. 🔥
 
-**CoSQA — beats every published zero-shot model.** On the canonical 500 web queries ranked against the fixed
-**6,267-code database**, sweet-search reaches **65.5 MRR@10 with no fine-tuning** — above the strongest
-zero-shot numbers we found (CodeSage-Large 47.5, OpenAI text-embedding-3-large 55.4, OASIS 55.8) and level
-with *fine-tuned* CodeBERT / GraphCodeBERT (64.7 / 67.5). (CoSQA has known label noise, so we read absolute
-heights with some caution.)
+#### 🐍 CoSQA → `65.5` &nbsp;·&nbsp; 🥇 **beats every published zero-shot model**
+- Canonical setup: 500 real web queries → the fixed **6,267-code database**, no fine-tuning.
+- Clears the strongest zero-shot results out there — CodeSage-Large `47.5` · OpenAI text-embedding-3-large `55.4` · OASIS `55.8` — and goes **toe-to-toe with *fine-tuned* CodeBERT / GraphCodeBERT** (64.7 / 67.5). 💪
+- <sub>CoSQA has known label noise, so we read the absolute height with a pinch of salt.</sub>
 
-**AdvTest — our honest worst case, reported in full.** Adversarial identifier obfuscation (`def Func(arg_0):`)
-deletes the lexical and structural signals our hybrid adds elsewhere, leaving little but the bare encoder. We
-score **51.4**, beating the classic fine-tuned baselines (CodeBERT 27, GraphCodeBERT 35, UniXcoder 41), and
-our retrieval stack still lifts our own encoder ~3pp even here. We **could not reproduce the often-cited 59.5**
-for the bare CodeRankEmbed encoder: running the *reference FP32 model* on our leak-free, docstring-stripped
-corpus gives **54.7**, and our shipped INT8 build **51.4**. The residual gap is stricter preprocessing (~5pp)
-plus INT8 quantization (~6pp) — not the retrieval pipeline. We report what we measured.
+#### 🗺️ M2CRB → `54.0` &nbsp;·&nbsp; 🌍 **Spanish · Portuguese · German · French → code**
+- Full **5,795-function** pool, single-pool MRR@10 — a *stricter operating point* than the paper's best **52.7 auMRRc**.
+- Different metric (auMRRc averages over growing pools), so we report it straight and **don't claim a head-to-head**.
+
+#### 🛡️ AdvTest → `51.4` &nbsp;·&nbsp; 🧪 **our honest worst case — and we publish it anyway**
+- Adversarial obfuscation (`def Func(arg_0):`) deletes the lexical + graph signals our hybrid feeds on — yet we still **beat the classic fine-tuned baselines** (CodeBERT `27` · GraphCodeBERT `35` · UniXcoder `41`), and our stack *still lifts our own encoder ~3pp even here*.
+- 🔍 **Full transparency:** we could **not** reproduce the often-cited `59.5` for the bare CodeRankEmbed encoder — the *reference FP32 model* scores **54.7** on our leak-free corpus, our shipped INT8 build **51.4**. The gap is stricter preprocessing + INT8 quantization, **not** the retrieval pipeline. We report exactly what we measured.
 
 <details>
 <summary><b>Methodology, protocol & honesty notes</b></summary>
