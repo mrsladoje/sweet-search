@@ -34,8 +34,8 @@ function run() {
   const L2 = '▄▄█ ▀▄█▄▀ ██▄ ██▄  █   ▄▄█ ██▄ █▀█ ██▄ █▄▄ █▀█';
   const msg = [
     '',
-    `  ${c('1;38;5;213', L1)}`,
-    `  ${c('1;38;5;213', L2)}`,
+    `  ${c('1;38;5;135', L1)}`,
+    `  ${c('1;38;5;135', L2)}`,
     '',
     `  ${c('1', 'Get started:')}`,
     `    ${c('36', 'sweet-search init')}        set up the current project`,

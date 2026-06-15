@@ -130,14 +130,22 @@ let deferredLogs = [];          // lines held back while parallel bars run (flus
 
 function renderBar(current, total, label) {
   const ratio = total > 0 ? Math.max(0, Math.min(1, current / total)) : 1;
-  const eighths = Math.round(ratio * BAR_WIDTH * 8);
+  const head = `${label}:`.padEnd(LABEL_COL);            // right border aligns across phases
+  const pct = (ratio * 100).toFixed(1).padStart(5);
+  const prefix = `${head}[`;
+  // Size the bar so the whole line fits the terminal width — a wrapped line would
+  // span two physical rows and break the cursor-up redraw math (→ duplicate bars).
+  // Drop the (current/total) counts first when the terminal is too cramped.
+  const cols = process.stdout.columns || 80;
+  let suffix = `] ${pct}% (${current}/${total})`;
+  if (cols - prefix.length - suffix.length - 1 < 6) suffix = `] ${pct}%`;
+  const width = Math.max(1, Math.min(BAR_WIDTH, cols - prefix.length - suffix.length - 1));
+  const eighths = Math.round(ratio * width * 8);
   const full = Math.floor(eighths / 8);
   const partial = SUB_BLOCKS[eighths % 8];
   const bar = '█'.repeat(full) + partial;
-  const empty = '░'.repeat(Math.max(0, BAR_WIDTH - full - (partial ? 1 : 0)));
-  const head = `${label}:`.padEnd(LABEL_COL);            // right border aligns across phases
-  const pct = (ratio * 100).toFixed(1).padStart(5);
-  return `${colors.cyan}${head}[${bar}${empty}] ${pct}% (${current}/${total})${colors.reset}`;
+  const empty = '░'.repeat(Math.max(0, width - full - (partial ? 1 : 0)));
+  return `${colors.cyan}${prefix}${bar}${empty}${suffix}${colors.reset}`;
 }
 
 // (Re)draw the live region in place (the `log-update` pattern). Invariant: the
