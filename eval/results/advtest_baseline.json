@@ -1,51 +1,133 @@
 {
-  "timestamp": "2026-06-14T13:03:31.517Z",
+  "timestamp": "2026-06-15T00:18:44.300Z",
   "dataset": "advtest",
-  "queryCount": 1000,
-  "corpusSize": 1000,
+  "queryCount": 19210,
+  "corpusSize": 19210,
   "searchMode": "auto",
-  "totalTimeMs": 411005,
+  "totalTimeMs": 9355496,
   "errors": 0,
   "aggregate": {
-    "mrr_at_10": 0.9905,
-    "ndcg_at_10": 0.9912,
-    "map_at_10": 0.9905,
-    "recall_at_5": 0.993,
-    "recall_at_10": 0.993,
-    "recall_at_20": 0.993,
-    "recall_at_50": 0.993,
-    "recall_at_100": 0.993,
-    "gold_missing_top10_rate": 0.007,
-    "gold_missing_top100_rate": 0.007,
-    "success_at_1": 0.988,
-    "success_at_5": 0.993,
-    "latency_p50_ms": 67.5634,
-    "latency_p95_ms": 86.282,
-    "latency_mean_ms": 68.9631
+    "mrr_at_10": 0.5143,
+    "ndcg_at_10": 0.5523,
+    "map_at_10": 0.5143,
+    "recall_at_5": 0.626,
+    "recall_at_10": 0.6704,
+    "recall_at_20": 0.6898,
+    "recall_at_50": 0.69,
+    "recall_at_100": 0.69,
+    "gold_missing_top10_rate": 0.3296,
+    "gold_missing_top100_rate": 0.31,
+    "success_at_1": 0.4313,
+    "success_at_5": 0.626,
+    "latency_p50_ms": 306.3577,
+    "latency_p95_ms": 364.201,
+    "latency_mean_ms": 314.6175
   },
   "perLanguage": {
     "python": {
-      "count": 1000,
-      "mrr_at_10": 0.9905,
-      "ndcg_at_10": 0.9912,
-      "map_at_10": 0.9905,
-      "recall_at_5": 0.993,
-      "recall_at_10": 0.993,
-      "recall_at_20": 0.993,
-      "recall_at_50": 0.993,
-      "recall_at_100": 0.993,
-      "gold_missing_top10_rate": 0.007,
-      "gold_missing_top100_rate": 0.007,
-      "success_at_1": 0.988,
-      "success_at_5": 0.993,
-      "latency_p50_ms": 67.5634,
-      "latency_p95_ms": 86.282,
-      "latency_mean_ms": 68.9631
+      "count": 19210,
+      "mrr_at_10": 0.5143,
+      "ndcg_at_10": 0.5523,
+      "map_at_10": 0.5143,
+      "recall_at_5": 0.626,
+      "recall_at_10": 0.6704,
+      "recall_at_20": 0.6898,
+      "recall_at_50": 0.69,
+      "recall_at_100": 0.69,
+      "gold_missing_top10_rate": 0.3296,
+      "gold_missing_top100_rate": 0.31,
+      "success_at_1": 0.4313,
+      "success_at_5": 0.626,
+      "latency_p50_ms": 306.3577,
+      "latency_p95_ms": 364.201,
+      "latency_mean_ms": 314.6175
     }
   },
   "failedQueries": [
     {
-      "queryId": "AT00010",
+      "queryId": "AT00000",
+      "query": "str->list",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00001",
+      "query": "Downloads Sina videos by URL.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00002",
+      "query": "Format text with color or other effects into ANSI escaped string.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00003",
+      "query": "Print a log message to standard error.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00004",
+      "query": "Print an error log message.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00006",
+      "query": "str->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00007",
+      "query": "str->dict",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00008",
       "query": "str->list of str",
       "language": "python",
       "topRelevance": [
@@ -57,7 +139,43 @@
       ]
     },
     {
-      "queryId": "AT00014",
+      "queryId": "AT00009",
+      "query": "Converts a string to a valid filename.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00010",
+      "query": "Downloads CBS videos by URL.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00011",
+      "query": "Override the original one",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00012",
       "query": "str, str, str, bool, bool ->None",
       "language": "python",
       "topRelevance": [
@@ -69,7 +187,55 @@
       ]
     },
     {
-      "queryId": "AT00021",
+      "queryId": "AT00013",
+      "query": "Scans through a string for substrings matched some patterns.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00015",
+      "query": "Post the content of a URL via sending a HTTP POST request.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00017",
+      "query": "str->str",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00018",
+      "query": "JSON, int, int, int->str",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00019",
       "query": "int->None",
       "language": "python",
       "topRelevance": [
@@ -81,7 +247,7 @@
       ]
     },
     {
-      "queryId": "AT00022",
+      "queryId": "AT00020",
       "query": "int, int, int->None",
       "language": "python",
       "topRelevance": [
@@ -93,8 +259,8 @@
       ]
     },
     {
-      "queryId": "AT00067",
-      "query": "Make a naive datetime.datetime in a given time zone aware.",
+      "queryId": "AT00027",
+      "query": "Runs forever, monitoring the child processes of @gunicorn_master_proc and",
       "language": "python",
       "topRelevance": [
         0,
@@ -105,85 +271,13 @@
       ]
     },
     {
-      "queryId": "AT00125",
-      "query": "Gets the latest state of a long-running operation in Google Storage",
+      "queryId": "AT00028",
+      "query": "Translate a string or list of strings.",
       "language": "python",
       "topRelevance": [
+        0,
         0,
         1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "AT00196",
-      "query": "Create a pool.",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "AT00289",
-      "query": "The purpose of this function is to be robust to improper connections",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "AT00391",
-      "query": "creates a new, empty table in the dataset;",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "AT00544",
-      "query": "r\"\"\"",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "AT00553",
-      "query": "A generic way to insert a set of tuples into a table,",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "AT00739",
-      "query": "Normal distribution function.",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
         0,
         0
       ]

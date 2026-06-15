@@ -233,43 +233,47 @@ The win is **harness-adaptive**: where the native loop is disciplined (Claude Co
 <a id="bench-paper-type"></a>
 ### 📄 3. Paper-type retrieval benchmarks — *academic NL→code IR*
 
-> [!NOTE]
-> 🔄 **Refreshed on the current engine (June 2026).** AdvTest, CoIR, CoSQA, and M2CRB were just
-> re-run on the latest build — the one with the late-interaction correctness fixes, HNSW tuning,
-> and the May 2026 ranking overhaul — and every one of them moved **up**. GCSN, CoSQA+, and CLARC
-> were already current. Reproduction artifacts are in [`eval/results/`](eval/results/).
+Every number below is the **`ss-search` pipeline end-to-end** — the same binary you install — run
+against the **full benchmark corpus** (no 99-distractor shortcuts) on an M3 Max, **zero-shot** (we never
+fine-tune on these tasks). Where a benchmark's queries are docstrings, we strip the docstring out of the
+indexed code so the query can't trivially match itself — the standard retrieval protocol.
 
-Every number below is the **`ss-search` pipeline end-to-end** — the same binary you install, querying
-against the **full corpus** (no 99-distractor shortcuts), on an M3 Max.
+| 📚 Benchmark | 🔍 What it tests | # Queries | 📂 Pool | 🎯 MRR@10 |
+|-----------|---------------|--------:|--------:|-------:|
+| 🌐 **GenCodeSearchNet** | NL→code, 6 languages | 6,000 | full 6,000 | **86.6** |
+| 🐍 **CoSQA** | web queries → Python | 500 | full 6,267 | **65.5** |
+| 🗺️ M2CRB | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 5,795 | full 5,795 | 54.0 |
+| 🛡️ AdvTest | adversarial, identifier-obfuscated Python | 19,210 | full 19,210 | 51.4 |
 
-| 📚 Benchmark | 🔍 What it tests | # Queries | 🎯 MRR@10 |
-|-----------|---------------|--------:|-------:|
-| 🌐 **GenCodeSearchNet** | NL→code, 6 languages | 6,000 | **86.6** |
-| 🗺️ **M2CRB** | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 2,814 | **65.9** |
-| 🐍 CoSQA (test split) | web queries → Python | 500 | 98.8 |
-| 🐍 CoSQA+ | web queries → Python, multi-match | 20,604 | 72.1 |
-| ⚙️ CLARC | NL→C/C++ (systems code) | 1,245 | 67.4 |
-| 🛡️ AdvTest | adversarially renamed Python | 1,000 | **99.1** |
-| 🌍 CoIR | 10 datasets, 14 languages | 4,500 | **72.4** |
+**GenCodeSearchNet — the strongest result we can find published anywhere.** The benchmark's own paper tops
+out at MRR ≤ 0.42 for its fine-tuned baselines (≤ 0.10 on the cross-lingual subsets), with zero-shot OpenAI
+Ada-2 at 0.79–0.94 — all measured against just **99 random distractors per query**. sweet-search scores
+**0.866 retrieving from the entire 6,000-document corpus** — a strictly harder setting than the published one.
 
-**GenCodeSearchNet: the strongest result published anywhere, as far as we can tell.** The benchmark's
-own paper tops out at MRR ≤ 0.42 for its fine-tuned baselines (and ≤ 0.10 on the cross-lingual subsets),
-with zero-shot OpenAI Ada-2 at 0.79–0.94 — and those are measured against **99 random distractors per
-query**. sweet-search scores **0.866**, retrieving from the entire 6,000-document corpus.
+**CoSQA — beats every published zero-shot model.** On the canonical 500 web queries ranked against the fixed
+**6,267-code database**, sweet-search reaches **65.5 MRR@10 with no fine-tuning** — above the strongest
+zero-shot numbers we found (CodeSage-Large 47.5, OpenAI text-embedding-3-large 55.4, OASIS 55.8) and level
+with *fine-tuned* CodeBERT / GraphCodeBERT (64.7 / 67.5). (CoSQA has known label noise, so we read absolute
+heights with some caution.)
 
-**M2CRB: best published number, no fine-tuning.** The benchmark paper's best model — a CodeBERT
-*fine-tuned on the task's training mix* — reaches 52.7 (auMRRc, a metric averaged over smaller retrieval
-pools). sweet-search reaches **65.9 full-corpus MRR@10 out of the box**, on Spanish, Portuguese, German,
-and French queries.
+**AdvTest — our honest worst case, reported in full.** Adversarial identifier obfuscation (`def Func(arg_0):`)
+deletes the lexical and structural signals our hybrid adds elsewhere, leaving little but the bare encoder. We
+score **51.4**, beating the classic fine-tuned baselines (CodeBERT 27, GraphCodeBERT 35, UniXcoder 41), and
+our retrieval stack still lifts our own encoder ~3pp even here. We **could not reproduce the often-cited 59.5**
+for the bare CodeRankEmbed encoder: running the *reference FP32 model* on our leak-free, docstring-stripped
+corpus gives **54.7**, and our shipped INT8 build **51.4**. The residual gap is stricter preprocessing (~5pp)
+plus INT8 quantization (~6pp) — not the retrieval pipeline. We report what we measured.
 
 <details>
-<summary><b>Methodology & build dates</b></summary>
+<summary><b>Methodology, protocol & honesty notes</b></summary>
 
-- **Reproduction:** result artifacts live in `eval/results/`; rerun via `eval/run_all.js`.
-- **Protocol note:** published baselines for GCSN and CoSQA-style benchmarks typically rank the gold snippet against 99 sampled distractors. All sweet-search numbers rank against the full benchmark corpus — strictly harder.
-- **Build dates:** AdvTest, CoIR, CoSQA, and M2CRB were re-run on the **June 2026** engine (0 errors on each); GCSN, CoSQA+, and CLARC are from the May 2026 build. All numbers reflect the current late-interaction pipeline — the correctness fixes, HNSW tuning, and May ranking overhaul. The June re-runs all improved over their earlier builds (AdvTest 91.5→99.1, CoIR 57.3→72.4, CoSQA 97.0→98.8, M2CRB 60.2→65.9).
-- **Honesty corner:** CrossCodeEval — cross-file *completion context* retrieval, a different task than NL search — sits at 0.12. We don't optimize for it and report it anyway.
-- Dates and per-language breakdowns: [`docs/BENCHMARKS_EXPLAINED.md`](docs/BENCHMARKS_EXPLAINED.md).
+- **Reproduction:** result artifacts live in [`eval/results/`](eval/results/); rerun via `eval/run_all.js`. The canonical full-pool loaders are in `eval/download_data.py`.
+- **Full corpus, not distractors.** Published baselines for GCSN- and CoSQA-style benchmarks typically rank the gold against 99 sampled distractors; every number here ranks against the benchmark's *full* corpus (6k–19k candidates) — strictly harder.
+- **Zero-shot + docstring-stripped.** We never fine-tune on these tasks. For docstring-derived benchmarks (AdvTest, M2CRB) we strip the docstring from the indexed code — otherwise the NL query matches itself verbatim (a no-strip AdvTest run scores a meaningless 0.98). This is the standard protocol; it is also why our AdvTest is lower than naïve setups that leave the docstring in.
+- **What we deliberately don't claim yet.** CoIR (official metric NDCG@10 over per-subtask corpora up to ~1M docs), CoSQA+ (multi-positive, MAP-primary), and CLARC (per-group pools) use protocols and metrics our single-pool MRR@10 harness doesn't currently match. Rather than publish apples-to-oranges numbers, we omit them; faithful per-subtask CoIR (NDCG@10) runs are queued.
+- **M2CRB** has no directly-comparable published MRR — its metric is *auMRRc* (area under the MRR-vs-pool-size curve, best published 52.7). Our 54.0 is a single-pool full-corpus MRR@10 over all 5,795 functions, a stricter operating point, so we report it without claiming a head-to-head.
+- **AdvTest honesty note.** We could not reproduce the commonly-cited 59.5 for the bare CodeRankEmbed encoder on our corpus: the reference FP32 model scores 54.7 on our leak-free, docstring-stripped, full-19,210 setup, and our shipped INT8 build 51.4. We report our measured numbers and the reference check rather than the leaderboard figure.
+- **Honesty corner:** CrossCodeEval — cross-file *completion-context* retrieval, a different task than NL search — sits at 0.12. We don't optimize for it and report it anyway.
 
 </details>
 
@@ -314,7 +318,8 @@ to be *consumed by an agent* — a useful answer, not a wall of matches to scrol
 
 A hybrid search pipeline with late interaction reranking that returns actual code blocks.
 
-SOTA in several published [`benchmarks`](#-benchmarks).
+Leading published-benchmark results — strongest we can find on GenCodeSearchNet, and above every published
+zero-shot model on CoSQA. See [`benchmarks`](#-benchmarks).
 
 ```mermaid
 flowchart TD
