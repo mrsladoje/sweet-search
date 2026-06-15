@@ -1,52 +1,64 @@
 {
-  "timestamp": "2026-06-14T13:36:41.800Z",
+  "timestamp": "2026-06-14T18:51:03.226Z",
   "dataset": "cosqa",
   "queryCount": 500,
-  "corpusSize": 500,
+  "corpusSize": 6267,
   "searchMode": "auto",
-  "totalTimeMs": 168197,
+  "totalTimeMs": 712727,
   "errors": 0,
   "aggregate": {
-    "mrr_at_10": 0.9875,
-    "ndcg_at_10": 0.9897,
-    "map_at_10": 0.9875,
-    "recall_at_5": 0.996,
-    "recall_at_10": 0.996,
-    "recall_at_20": 0.996,
-    "recall_at_50": 0.996,
-    "recall_at_100": 0.996,
-    "gold_missing_top10_rate": 0.004,
-    "gold_missing_top100_rate": 0.004,
-    "success_at_1": 0.98,
-    "success_at_5": 0.996,
-    "latency_p50_ms": 56.5369,
-    "latency_p95_ms": 65.9701,
-    "latency_mean_ms": 56.8098
+    "mrr_at_10": 0.6553,
+    "ndcg_at_10": 0.7078,
+    "map_at_10": 0.6553,
+    "recall_at_5": 0.824,
+    "recall_at_10": 0.868,
+    "recall_at_20": 0.886,
+    "recall_at_50": 0.886,
+    "recall_at_100": 0.886,
+    "gold_missing_top10_rate": 0.132,
+    "gold_missing_top100_rate": 0.114,
+    "success_at_1": 0.53,
+    "success_at_5": 0.824,
+    "latency_p50_ms": 146.0104,
+    "latency_p95_ms": 171.3437,
+    "latency_mean_ms": 146.8948
   },
   "perLanguage": {
     "python": {
       "count": 500,
-      "mrr_at_10": 0.9875,
-      "ndcg_at_10": 0.9897,
-      "map_at_10": 0.9875,
-      "recall_at_5": 0.996,
-      "recall_at_10": 0.996,
-      "recall_at_20": 0.996,
-      "recall_at_50": 0.996,
-      "recall_at_100": 0.996,
-      "gold_missing_top10_rate": 0.004,
-      "gold_missing_top100_rate": 0.004,
-      "success_at_1": 0.98,
-      "success_at_5": 0.996,
-      "latency_p50_ms": 56.5369,
-      "latency_p95_ms": 65.9701,
-      "latency_mean_ms": 56.8098
+      "mrr_at_10": 0.6553,
+      "ndcg_at_10": 0.7078,
+      "map_at_10": 0.6553,
+      "recall_at_5": 0.824,
+      "recall_at_10": 0.868,
+      "recall_at_20": 0.886,
+      "recall_at_50": 0.886,
+      "recall_at_100": 0.886,
+      "gold_missing_top10_rate": 0.132,
+      "gold_missing_top100_rate": 0.114,
+      "success_at_1": 0.53,
+      "success_at_5": 0.824,
+      "latency_p50_ms": 146.0104,
+      "latency_p95_ms": 171.3437,
+      "latency_mean_ms": 146.8948
     }
   },
   "failedQueries": [
     {
-      "queryId": "CQ00004",
-      "query": "Print an error log message.",
+      "queryId": "CQ00002",
+      "query": "declaring empty numpy array in python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00003",
+      "query": "test for iterable is string in python",
       "language": "python",
       "topRelevance": [
         0,
@@ -57,20 +69,32 @@
       ]
     },
     {
-      "queryId": "CQ00006",
-      "query": "str->None",
+      "queryId": "CQ00005",
+      "query": "how to save header of fits file to export python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00007",
+      "query": "python numpy array as float",
       "language": "python",
       "topRelevance": [
         0,
         0,
-        0,
         1,
+        0,
         0
       ]
     },
     {
       "queryId": "CQ00008",
-      "query": "str->list of str",
+      "query": "input string that replaces occurences python",
       "language": "python",
       "topRelevance": [
         0,
@@ -81,20 +105,8 @@
       ]
     },
     {
-      "queryId": "CQ00019",
-      "query": "int->None",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "CQ00046",
-      "query": "Make a naive datetime.datetime in a given time zone aware.",
+      "queryId": "CQ00013",
+      "query": "python raise without parentheses",
       "language": "python",
       "topRelevance": [
         0,
@@ -105,20 +117,8 @@
       ]
     },
     {
-      "queryId": "CQ00360",
-      "query": "r\"\"\"",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "CQ00365",
-      "query": "A generic way to insert a set of tuples into a table,",
+      "queryId": "CQ00014",
+      "query": "how to seperate list with commas python",
       "language": "python",
       "topRelevance": [
         0,
@@ -129,8 +129,44 @@
       ]
     },
     {
-      "queryId": "CQ00405",
-      "query": "Create a shallow copy of the Keypoint object.",
+      "queryId": "CQ00015",
+      "query": "python asynchronous function call return",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00016",
+      "query": "how to make a seconds to time in python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00017",
+      "query": "python cast true or false as numbers",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00018",
+      "query": "add milliseconds to datetime python",
       "language": "python",
       "topRelevance": [
         0,
@@ -141,8 +177,44 @@
       ]
     },
     {
-      "queryId": "CQ00470",
-      "query": "Create a shallow copy of the Polygon object.",
+      "queryId": "CQ00021",
+      "query": "how to get domain part of a url in python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00022",
+      "query": "python flatten a nested dictionaary",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00024",
+      "query": "python save graph into file",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00026",
+      "query": "add suffixes on concat python",
       "language": "python",
       "topRelevance": [
         0,
@@ -153,13 +225,61 @@
       ]
     },
     {
-      "queryId": "CQ00480",
-      "query": "Get the height of a bounding box encapsulating the line.",
+      "queryId": "CQ00027",
+      "query": "how to check python object iterable",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00029",
+      "query": "how to indent self python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00030",
+      "query": "tracking centroid of an object python",
       "language": "python",
       "topRelevance": [
         0,
         1,
         0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00035",
+      "query": "how to tell what type of data object is in python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00036",
+      "query": "python jsonschema validate schema file",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
         0,
         0
       ]

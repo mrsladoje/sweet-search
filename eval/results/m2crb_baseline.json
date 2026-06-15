@@ -1,85 +1,313 @@
 {
-  "timestamp": "2026-06-14T13:50:41.254Z",
+  "timestamp": "2026-06-14T21:37:25.895Z",
   "dataset": "m2crb",
-  "queryCount": 2814,
-  "corpusSize": 2814,
+  "queryCount": 5795,
+  "corpusSize": 5795,
   "searchMode": "auto",
-  "totalTimeMs": 839452,
+  "totalTimeMs": 1549780,
   "errors": 0,
   "aggregate": {
-    "mrr_at_10": 0.6589,
-    "ndcg_at_10": 0.6799,
-    "map_at_10": 0.6589,
-    "recall_at_5": 0.7189,
-    "recall_at_10": 0.7456,
-    "recall_at_20": 0.7605,
-    "recall_at_50": 0.7623,
-    "recall_at_100": 0.7623,
-    "gold_missing_top10_rate": 0.2544,
-    "gold_missing_top100_rate": 0.2377,
-    "success_at_1": 0.6144,
-    "success_at_5": 0.7189,
-    "latency_p50_ms": 101.5905,
-    "latency_p95_ms": 126.1001,
-    "latency_mean_ms": 103.6253
+    "mrr_at_10": 0.5398,
+    "ndcg_at_10": 0.5768,
+    "map_at_10": 0.5398,
+    "recall_at_5": 0.6447,
+    "recall_at_10": 0.6916,
+    "recall_at_20": 0.7103,
+    "recall_at_50": 0.7122,
+    "recall_at_100": 0.7122,
+    "gold_missing_top10_rate": 0.3084,
+    "gold_missing_top100_rate": 0.2878,
+    "success_at_1": 0.4582,
+    "success_at_5": 0.6447,
+    "latency_p50_ms": 121.605,
+    "latency_p95_ms": 180.1375,
+    "latency_mean_ms": 132.6448
   },
   "perLanguage": {
     "python": {
-      "count": 1000,
-      "mrr_at_10": 0.9666,
-      "ndcg_at_10": 0.9702,
-      "map_at_10": 0.9666,
-      "recall_at_5": 0.98,
-      "recall_at_10": 0.981,
-      "recall_at_20": 0.981,
-      "recall_at_50": 0.982,
-      "recall_at_100": 0.982,
-      "gold_missing_top10_rate": 0.019,
-      "gold_missing_top100_rate": 0.018,
-      "success_at_1": 0.956,
-      "success_at_5": 0.98,
-      "latency_p50_ms": 103.9672,
-      "latency_p95_ms": 125.1578,
-      "latency_mean_ms": 105.8402
+      "count": 3769,
+      "mrr_at_10": 0.5854,
+      "ndcg_at_10": 0.6258,
+      "map_at_10": 0.5854,
+      "recall_at_5": 0.7039,
+      "recall_at_10": 0.7506,
+      "recall_at_20": 0.7676,
+      "recall_at_50": 0.7697,
+      "recall_at_100": 0.7697,
+      "gold_missing_top10_rate": 0.2494,
+      "gold_missing_top100_rate": 0.2303,
+      "success_at_1": 0.493,
+      "success_at_5": 0.7039,
+      "latency_p50_ms": 116.8812,
+      "latency_p95_ms": 138.2381,
+      "latency_mean_ms": 121.2812
     },
     "java": {
       "count": 814,
-      "mrr_at_10": 0.5475,
-      "ndcg_at_10": 0.5742,
-      "map_at_10": 0.5475,
-      "recall_at_5": 0.6216,
-      "recall_at_10": 0.6585,
-      "recall_at_20": 0.6744,
-      "recall_at_50": 0.6757,
-      "recall_at_100": 0.6757,
-      "gold_missing_top10_rate": 0.3415,
-      "gold_missing_top100_rate": 0.3243,
-      "success_at_1": 0.4939,
-      "success_at_5": 0.6216,
-      "latency_p50_ms": 104.4106,
-      "latency_p95_ms": 128.8273,
-      "latency_mean_ms": 107.0724
+      "mrr_at_10": 0.5201,
+      "ndcg_at_10": 0.5432,
+      "map_at_10": 0.5201,
+      "recall_at_5": 0.586,
+      "recall_at_10": 0.6155,
+      "recall_at_20": 0.6314,
+      "recall_at_50": 0.6339,
+      "recall_at_100": 0.6339,
+      "gold_missing_top10_rate": 0.3845,
+      "gold_missing_top100_rate": 0.3661,
+      "success_at_1": 0.4705,
+      "success_at_5": 0.586,
+      "latency_p50_ms": 136.306,
+      "latency_p95_ms": 190.1045,
+      "latency_mean_ms": 147.6487
     },
     "javascript": {
-      "count": 1000,
-      "mrr_at_10": 0.4419,
-      "ndcg_at_10": 0.4756,
-      "map_at_10": 0.4419,
-      "recall_at_5": 0.537,
-      "recall_at_10": 0.581,
-      "recall_at_20": 0.61,
-      "recall_at_50": 0.613,
-      "recall_at_100": 0.613,
-      "gold_missing_top10_rate": 0.419,
-      "gold_missing_top100_rate": 0.387,
-      "success_at_1": 0.371,
-      "success_at_5": 0.537,
-      "latency_p50_ms": 96.729,
-      "latency_p95_ms": 124.5521,
-      "latency_mean_ms": 98.6044
+      "count": 1212,
+      "mrr_at_10": 0.4112,
+      "ndcg_at_10": 0.4468,
+      "map_at_10": 0.4112,
+      "recall_at_5": 0.5,
+      "recall_at_10": 0.5594,
+      "recall_at_20": 0.585,
+      "recall_at_50": 0.5858,
+      "recall_at_100": 0.5858,
+      "gold_missing_top10_rate": 0.4406,
+      "gold_missing_top100_rate": 0.4142,
+      "success_at_1": 0.3416,
+      "success_at_5": 0.5,
+      "latency_p50_ms": 153.7175,
+      "latency_p95_ms": 200.2728,
+      "latency_mean_ms": 157.9057
     }
   },
   "failedQueries": [
+    {
+      "queryId": "M200004",
+      "query": "Fonction de lecture d'une variable utilisateur",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200005",
+      "query": "Ajouter/mettre à jour une propriété d'un champ du formulaire courant",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "M200010",
+      "query": "Initialise la connexion au serveur. Attent les messages venant du",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200012",
+      "query": "Renvoie True si le coup joué (lig,col) forme une ligne de 4 jetons",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200013",
+      "query": "Fusionne 2 blocs de texte.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200019",
+      "query": "Réinitialise l'ancienne valeur0, la valeur1 courante, et l'opération.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "M200021",
+      "query": "Renvoie le DataFrame correspondant à l'instance",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200024",
+      "query": "définit l'égalité entre deux vecteurs",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200027",
+      "query": "Créer un nouveau jeu de données.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200028",
+      "query": "Permet de fermet la connection à la base de données lorsque le serveur HTTP est arreté",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200031",
+      "query": "Rejoue les enveloppes d'amplitude et de décalage de fréquences",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200033",
+      "query": "Code les équations (3.3.7) des \"numericals recipes\" (juste membre de droite)",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200037",
+      "query": "Conversion de type pour parser.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200039",
+      "query": "Retourne le signal audio de la classe, pour le post-traitement.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200045",
+      "query": "Attache une alerte à i=une notice bibliographique",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200047",
+      "query": "Exécute une sauvegarde complète du code",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200048",
+      "query": "nouveau jeu",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200051",
+      "query": "attributions : bouton 'Modifier une photo' l. afpt",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "M200052",
+      "query": "Initialisation de la grille",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
     {
       "queryId": "M200053",
       "query": "Test si la date indiquée tombe sur un jour ouvert du partner",
@@ -87,234 +315,6 @@
       "topRelevance": [
         0,
         0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200065",
-      "query": "Préparer/lancer un message de mise à jour",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200170",
-      "query": "Retourne la liste des indices (ligne,",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200176",
-      "query": "Retourne la liste des indices (colonne,ligne) (!!attention ici",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        1,
-        0
-      ]
-    },
-    {
-      "queryId": "M200214",
-      "query": "Retourne la liste des indices (col,lig) des cases où peut se",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        0,
-        1
-      ]
-    },
-    {
-      "queryId": "M200222",
-      "query": "Marque une idée comme étant ajoutée à la prochaine MàJ",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200257",
-      "query": "retourne la normale au point de coordonnée p et connaissant le rayon",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200263",
-      "query": "produit vectoriel",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200270",
-      "query": "Trouve le meilleur coefficient pour le lasso",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200282",
-      "query": "Retourne la liste des indices (col,lig) des cases où peut se",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        1,
-        0
-      ]
-    },
-    {
-      "queryId": "M200292",
-      "query": "initialisation, si d == None, d est calculé comme étant",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200322",
-      "query": "Enregistrer la ficher de métadonnées du jeu de données.",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200327",
-      "query": "Retourne la liste des indices (colonne,ligne) (!!attention ici",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        0,
-        1
-      ]
-    },
-    {
-      "queryId": "M200355",
-      "query": "Retourne la liste des indices (colonne,ligne) (!!attention ici",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200363",
-      "query": "ATTENTION : premiere instruction du programme",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200371",
-      "query": "Retourne la liste des indices (col,lig) des cases où peut se",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200437",
-      "query": "retourne la normale au point de coordonn�e p et connaissant le rayon",
-      "language": "python",
-      "topRelevance": [
-        0,
-        0,
-        1,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200472",
-      "query": "retourne le point d'intersection avec le rayon r,",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200482",
-      "query": "Envoie un signal qui déclenchera l'envoi de",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "queryId": "M200492",
-      "query": "Transforme chaque verticalite en objet Accord, calcule la concordance, la coherence et les concordan",
-      "language": "python",
-      "topRelevance": [
-        0,
-        1,
         0,
         0,
         0

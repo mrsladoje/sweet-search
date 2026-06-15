@@ -89,6 +89,25 @@ def _q(text):
     return str(text).strip().split("\n")[0][:500]
 
 
+def _strip_doc_leak(code, doc):
+    """Remove the docstring/NL text from the code so the query can't match itself
+    verbatim. For docstring-derived benchmarks (AdvTest, M2CRB) the query IS the
+    function's docstring, which is also embedded in the code — indexing the raw
+    code leaks the answer to BM25. Published baselines score docstring-stripped
+    code, so we strip it. Language-agnostic: delete the docstring block and its
+    per-line fragments wherever they appear."""
+    if not doc:
+        return code
+    d = str(doc).strip()
+    if d and d in code:
+        code = code.replace(d, " ")
+    for line in d.split("\n"):
+        line = line.strip()
+        if len(line) >= 8 and line in code:
+            code = code.replace(line, " ")
+    return code
+
+
 # --- 1. CodeSearchNet ------------------------------------------------------
 
 def download_codesearchnet(languages=("python", "javascript", "go", "ruby", "java", "php"),
@@ -158,14 +177,71 @@ def download_codesearchnet(languages=("python", "javascript", "go", "ruby", "jav
 
 # --- 2. CosQA --------------------------------------------------------------
 
-def download_cosqa(max_entries=500):
+# Canonical CoSQA retrieval (Huang et al., ACL 2021): 500 web-query test set
+# ranked against the *fixed 6,267-code database*, MRR. We source the exact files
+# from the official CoCLR release so our pool matches every published CoSQA MRR
+# (CodeBERT 64.7 ... UniXcoder 70.1 fine-tuned; CodeSage/OpenAI/OASIS 47-56
+# zero-shot). The legacy 500-vs-500 form has no published counterpart, so we
+# ignore max_entries and always build the full canonical pool.
+_COCLR_BASE = "https://raw.githubusercontent.com/Jun-jie-Huang/CoCLR/main/data/search/"
+
+def download_cosqa(max_entries=None):
     out_dir = DATA_DIR / "cosqa"
     out_dir.mkdir(parents=True, exist_ok=True)
     c = _cached(out_dir)
     if c is not None:
         print(f"  CosQA: cached ({c})"); return c
 
-    print("  Downloading CosQA...")
+    print("  Downloading CosQA (canonical 500 queries x 6,267-code database)...")
+    try:
+        # code_idx_map: { code_string: idx } for all 6,267 database codes
+        code_idx_map = json.loads(urllib.request.urlopen(_COCLR_BASE + "code_idx_map.txt", timeout=60).read())
+        test500 = json.loads(urllib.request.urlopen(_COCLR_BASE + "cosqa-retrieval-test-500.json", timeout=60).read())
+    except Exception as e:
+        print(f"    Failed: {e}"); return 0
+
+    # Corpus: the full 6,267-code database, keyed by retrieval idx.
+    idx_to_code = {str(idx): code for code, idx in code_idx_map.items()}
+    with open(out_dir / "corpus.jsonl", "w") as f:
+        for idx, code in sorted(idx_to_code.items(), key=lambda kv: int(kv[0])):
+            f.write(json.dumps({
+                "doc_id": f"cosqa/python/code_{idx}", "code": code,
+                "language": "python", "func_name": f"code_{idx}", "repo": "", "path": "",
+            }) + "\n")
+
+    # Queries: 500 web queries; gold = the code at `retrieval_idx` in the database.
+    written = 0
+    with open(out_dir / "queries.jsonl", "w") as f:
+        for i, row in enumerate(test500):
+            q = _q(row.get("doc", ""))
+            gold = str(row.get("retrieval_idx", ""))
+            if not q or gold not in idx_to_code:
+                continue
+            f.write(json.dumps({
+                "query_id": f"CQ{i:05d}", "query": q,
+                "relevant_doc_ids": [f"cosqa/python/code_{gold}"], "language": "python",
+            }) + "\n")
+            written += 1
+
+    print(f"    corpus={len(idx_to_code)} codes, queries={written}"); return len(idx_to_code)
+
+
+# --- 3. AdvTest -------------------------------------------------------------
+
+# Canonical AdvTest (Lu et al., CodeXGLUE NeurIPS 2021): the entire 19,210-function
+# Python test set is the candidate pool for every query, with identifiers obfuscated
+# (def Func(arg_0), ...). This is the *defining* protocol — the older 1,000-candidate
+# setting was explicitly replaced. We always build the full pool (ignore max_entries)
+# so our MRR is comparable to published AdvTest numbers (CodeRankEmbed 59.5 zero-shot,
+# UniXcoder 41.3 / CodeSage-Large 52.67, all full-19,210-pool).
+def download_advtest(max_entries=None):
+    out_dir = DATA_DIR / "advtest"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    c = _cached(out_dir)
+    if c is not None:
+        print(f"  AdvTest: cached ({c})"); return c
+
+    print("  Downloading AdvTest (canonical obfuscated 19,210-function pool)...")
     try:
         ds = _hf_load()("code_x_glue_tc_nl_code_search_adv", split="test")
     except Exception as e:
@@ -173,50 +249,24 @@ def download_cosqa(max_entries=500):
 
     entries = []
     for i, row in enumerate(ds):
-        if max_entries and len(entries) >= max_entries:
-            break
-        query = row.get("docstring", row.get("nl", ""))
-        code = row.get("code", row.get("code_tokens", ""))
-        if isinstance(code, list):
-            code = " ".join(code)
-        if not query or not code or row.get("label", 1) != 1:
-            continue
-        entries.append({"query": _q(query), "doc_id": f"cosqa/python/func_{i}",
-                        "code": code, "language": "python", "func_name": f"func_{i}"})
-
-    _write_output(out_dir, entries, "CQ")
-    print(f"    {len(entries)} entries"); return len(entries)
-
-
-# --- 3. AdvTest -------------------------------------------------------------
-
-def download_advtest(max_entries=1000):
-    out_dir = DATA_DIR / "advtest"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    c = _cached(out_dir)
-    if c is not None:
-        print(f"  AdvTest: cached ({c})"); return c
-
-    print("  Downloading AdvTest...")
-    try:
-        ds = _hf_load()("code_x_glue_ct_code_to_text", "python", split="test")
-    except Exception as e:
-        print(f"    Failed: {e}"); return 0
-
-    entries = []
-    for i, row in enumerate(ds):
-        if max_entries and len(entries) >= max_entries:
-            break
+        # Document = the raw (naturally-formatted) obfuscated code with the docstring
+        # REMOVED. Stripping is mandatory: the query IS the function's docstring, so
+        # leaving it in leaks the answer to BM25 (our no-strip run scored 0.976 vs the
+        # published ceiling ~0.59 — pure lexical echo). But we strip from the *real*
+        # `code` field rather than the space-tokenized `code_tokens` field, so the
+        # encoder/AST-chunker see natural `def Func(arg_0):` formatting like every
+        # published baseline (CodeRankEmbed 59.5, CodeSage 52.7), not "def Func ( arg_0 )".
         code, doc = row.get("code", ""), row.get("docstring", "")
         if isinstance(code, list): code = " ".join(code)
         if isinstance(doc, list): doc = " ".join(doc)
-        if not code or not doc or len(doc.strip()) < 10 or code.strip() == doc.strip():
+        if not code or not doc or len(doc.strip()) < 3:
             continue
+        code = _strip_doc_leak(code, doc)
         entries.append({"query": _q(doc), "doc_id": f"advtest/python/func_{i}",
                         "code": code, "language": "python", "func_name": f"func_{i}"})
 
     _write_output(out_dir, entries, "AT")
-    print(f"    {len(entries)} entries"); return len(entries)
+    print(f"    {len(entries)} entries (full obfuscated, docstring-stripped, natural format)"); return len(entries)
 
 
 # --- 4. COIR ----------------------------------------------------------------
@@ -683,6 +733,9 @@ def download_m2crb(max_per_lang=1000):
             doc_lang = str(row.get("docstring_language", "")).lower().strip()
             if not code or not query:
                 continue
+            # Strip the docstring from the code: the query is that docstring, so
+            # leaving it in leaks the answer to lexical search (65% verbatim match).
+            code = _strip_doc_leak(code, query)
 
             doc_id = f"m2crb/{lang}/{ident}" if ident else f"m2crb/{lang}/{ct}"
             if doc_id in seen:
