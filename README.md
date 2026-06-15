@@ -4,9 +4,9 @@
 
 ### *Maybe grep isn't all you need…* 🍬
 
-**A local-first hybrid code-search engine built for AI coding agents.**
-Semantic + lexical + structural search over your working tree, GPU-accelerated local inference,
-and an evolved system prompt that teaches your agent to use it all — even on plain CPU.
+Every AI coding agent of today is stuck believing grep+Read is the way... *sweet-search* challenges the narrative😎</br>
+
+A 100% local code-search engine for *Claude Code*, *Codex*, *Cursor* & friends with six blazing and purpose-built tools that hand your agent ranked, ready-to-use answers instead of walls of grep output. Up to 34% cheaper, 56% fewer tool calls, more useful answers, SOTA retrieval quality, zero API keys. 
 
 [![npm](https://img.shields.io/npm/v/sweet-search?color=cb3837&label=npm)](https://www.npmjs.com/package/sweet-search)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
