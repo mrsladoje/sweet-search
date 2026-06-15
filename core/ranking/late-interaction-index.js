@@ -1654,7 +1654,7 @@ export class LateInteractionIndex {
           this._segmentDir = segDir;
           this._currentSegment = new Map();
           await this._saveAliasSidecar();
-          console.log(`LateInteraction: Saved ${this.documents.size} documents across ${this._segments.length} segments`);
+          if (process.env.DEBUG) console.log(`LateInteraction: Saved ${this.documents.size} documents across ${this._segments.length} segments`);
           return;
         }
       }
@@ -1743,7 +1743,7 @@ export class LateInteractionIndex {
       this._currentSegment = new Map();
 
       await this._saveAliasSidecar();
-      console.log(`LateInteraction: Saved ${this.documents.size} documents across ${newSegments.length} segments`);
+      if (process.env.DEBUG) console.log(`LateInteraction: Saved ${this.documents.size} documents across ${newSegments.length} segments`);
       return;
     }
 
@@ -1820,7 +1820,10 @@ export class LateInteractionIndex {
     await this._saveAliasSidecar();
 
     const sizeMB = (bytesWritten / 1024 / 1024).toFixed(2);
-    console.log(`LateInteraction: Saved ${this.documents.size} documents (${sizeMB} MB)`);
+    // DEBUG-only: this prints during the indexer's parallel embed+LI progress region;
+    // a direct write here moves the cursor and duplicates a bar. The indexer's
+    // "✓ Late interaction index built: N docs (X MB)" line already reports this.
+    if (process.env.DEBUG) console.log(`LateInteraction: Saved ${this.documents.size} documents (${sizeMB} MB)`);
   }
 
   /**
