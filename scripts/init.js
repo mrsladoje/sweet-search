@@ -1470,7 +1470,7 @@ export async function runInit(args) {
   // 0. Animated banner (best-effort; only on an interactive TTY, never in CI/pipes).
   if (process.stdout.isTTY && !process.env.CI && !process.env.NO_BANNER && !process.env.SWEET_SEARCH_NO_BANNER) {
     // query:false — init is interactive (readline); avoid any stdin contention with the terminal capability probe.
-    try { const { showBanner } = await import('../core/banner/render-banner.js'); await showBanner({ query: false }); } catch { /* non-fatal */ }
+    try { const { showBanner } = await import('../core/banner/render-banner.js'); await showBanner({ query: false, clear: true }); } catch { /* non-fatal */ }
   }
 
   // 1. Node.js version check

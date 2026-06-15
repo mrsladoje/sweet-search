@@ -123,7 +123,7 @@ async function main() {
 
   // Animated banner (best-effort; interactive TTY only, never in CI / quiet / stdin-fed runs).
   if (!quiet && !help && !filesFromStdin && process.stdout.isTTY && !process.env.CI && !process.env.NO_BANNER && !process.env.SWEET_SEARCH_NO_BANNER) {
-    try { const { showBanner } = await import('../banner/render-banner.js'); await showBanner(); } catch { /* non-fatal */ }
+    try { const { showBanner } = await import('../banner/render-banner.js'); await showBanner({ clear: true }); } catch { /* non-fatal */ }
   }
 
   // Apply late interaction model overrides before any model code runs.

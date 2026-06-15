@@ -86,6 +86,10 @@ export async function showBanner(opts = {}) {
   try {
     if (!shouldRender(out, env)) return false;
 
+    // Clear the screen first so a tall banner can't half-overflow / strand the
+    // shell prompt mid-image (home + erase screen + erase scrollback, like `clear`).
+    if (opts.clear) out.write('\x1b[H\x1b[2J\x1b[3J');
+
     const sharp = require('sharp');
     const man = JSON.parse(readFileSync(join(ASSET_DIR, 'banner-manifest.json'), 'utf8'));
     const { gridCols: GC, cellW: CW, cellH: CH, count: N, frameMs } = man;
