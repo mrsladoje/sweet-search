@@ -5,7 +5,7 @@
 ### *Maybe grep isn't all you need…* 🍬
 
 
-Every AI coding agent of today is stuck believing grep+Read is the way... ***sweet-search*** challenges the narrative😎
+Every AI coding agent of today is stuck believing grep+Read is the way... ***sweet-search*** challenges the narrative 😎
 
 A 100% local code-search engine for *Claude Code*, *Codex*, *Cursor* & friends with six blazing and purpose-built tools that hand your agent ranked, ready-to-use answers instead of walls of grep output. Up to 34% cheaper, 56% fewer tool calls, more useful answers, SOTA retrieval quality, zero API keys. 
 
