@@ -22,7 +22,7 @@ A 100% local code-search engine for *Claude Code*, *Codex*, *Cursor* & friends w
 ## ✨ Highlights
 
 - **Hybrid retrieval** — one of the six tools uses BM25F lexical + dense semantic + structural graph signals, fused per query and reranked by late-interaction
-- **Agent-native by design** — token-budgeted output tiers, an MCP server, and a GEPA-evolved system prompt installed into Claude Code, Codex, Gemini CLI, and Cursor with one command
+- **Agent-native by design** — token-budgeted output tiers, an optional MCP server (and default zero-overhead CLI), and a GEPA-evolved system prompt installed into Claude Code, Codex, Gemini CLI, and Cursor with one command
 - **Indexed grep, ~10× faster than ripgrep** — a sparse n-gram prefilter skips the files that provably can't match
 - **ColBERT-style reranking, locally** — per-token MaxSim late interaction on hand-written SIMD kernels
 - **GPU-accelerated indexing** — Apple Metal, CUDA, CoreML Neural Engine, or plain CPU via ORT; same engine, auto-selected
