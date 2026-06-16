@@ -20,6 +20,7 @@ import { getCoremlCascadeRoot, getCoremlCascadeState } from '../core/infrastruct
 import { PREWARM_HOOK_FILENAME } from './init.js';
 import { removeAgentInstructions } from './inject-agent-instructions.js';
 import { removeClaudeRules } from './write-claude-rules.js';
+import { removeMcpServer } from './install-mcp-server.js';
 import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { removeToolEnforcement } from './install-tool-enforcement.js';
 import { projectSocketPath, projectPidFile } from '../core/search/server-identity.js';
@@ -711,11 +712,16 @@ export async function runUninstall(args) {
   const codexHookPreview = removeCodexSessionStartHook(projectRoot, { dryRun: true });
   const hasCodexHook = codexHookPreview.status === 'dry-run';
 
+  // MCP server registration (.mcp.json mcpServers.sweet-search), written by
+  // `init --mcp`.
+  const mcpServerPreview = removeMcpServer({ projectRoot, dryRun: true });
+  const hasMcpServer = mcpServerPreview === 'dry-run';
+
   // Nothing to remove?
   if (
     removals.length === 0 && !hasHookEntry && !hasSkillEntry && !hasIndexMaintainerHook
     && !agentInstructionsTouched && !hasClaudeRules
-    && !hasPromptReminder && !hasToolEnforcement && !hasCodexHook
+    && !hasPromptReminder && !hasToolEnforcement && !hasCodexHook && !hasMcpServer
   ) {
     console.log('Nothing to remove — Sweet Search is not initialized in this project.');
     return;
@@ -758,6 +764,9 @@ export async function runUninstall(args) {
   if (hasCodexHook) {
     console.log(`    Codex SessionStart hook (.codex/hooks.json)`);
   }
+  if (hasMcpServer) {
+    console.log(`    MCP server registration (.mcp.json — mcpServers.sweet-search)`);
+  }
   console.log(`  Total: ${formatBytes(totalBytes)}`);
   if (parsed.keepModels) {
     console.log('  Model cache: kept (--keep-models)');
@@ -782,6 +791,10 @@ export async function runUninstall(args) {
     const dryCodex = removeCodexSessionStartHook(projectRoot, { dryRun: true });
     if (dryCodex.status === 'dry-run') {
       console.log(`  Would also remove: Codex SessionStart hook (.codex/hooks.json — ${dryCodex.detail})`);
+    }
+    const dryMcp = removeMcpServer({ projectRoot, dryRun: true });
+    if (dryMcp === 'dry-run') {
+      console.log(`  Would also remove: MCP server registration (.mcp.json — mcpServers.sweet-search)`);
     }
     console.log('Dry run — nothing was removed.');
     return;
@@ -948,6 +961,18 @@ export async function runUninstall(args) {
     console.log(`  Failed to remove tool-enforcement: ${toolEnforcementResult.detail}`);
     kept++;
   }
+
+  // MCP server registration (.mcp.json mcpServers.sweet-search). Only our entry
+  // is removed; other servers and JSON keys are preserved.
+  const mcpServerResult = removeMcpServer({ projectRoot, dryRun: parsed.dryRun });
+  if (mcpServerResult === 'removed') {
+    console.log(`  Removed: MCP server registration (.mcp.json — mcpServers.sweet-search)`);
+    removed++;
+  } else if (mcpServerResult === 'file-deleted') {
+    console.log(`  Removed: .mcp.json (wholly sweet-search-managed)`);
+    removed++;
+  }
+  // 'not-found' / 'dry-run' are silent.
 
   // Purge npm packages
   if (parsed.purge) {

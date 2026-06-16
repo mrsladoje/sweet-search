@@ -61,6 +61,7 @@
     "scripts/smoke-test.js",
     "scripts/inject-agent-instructions.js",
     "scripts/write-claude-rules.js",
+    "scripts/install-mcp-server.js",
     "scripts/install-prompt-reminders.js",
     "scripts/install-tool-enforcement.js",
     "scripts/hooks/",
