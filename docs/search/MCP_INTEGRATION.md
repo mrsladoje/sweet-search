@@ -235,9 +235,9 @@ Profile behavior:
 
 ### `.mcp.json`
 
-Project-local MCP registration includes:
+Project-local MCP registration (written by `sweet-search init --mcp`, at the repo root):
 
-- `sweet-search` server using `node` with `args: ["./mcp/server.js"]`
+- `sweet-search` server using `npx` with `args: ["-y", "sweet-search-mcp", "--project-root", "<repo-root>"]`
 
 ## Test Coverage for MCP Integration
 

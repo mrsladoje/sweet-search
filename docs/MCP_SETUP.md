@@ -10,14 +10,18 @@ with Claude Code, Codex, and other MCP-compatible tools.
 
 ## Claude Code Setup
 
-Edit `.claude/mcp.json` in your project root (create if needed):
+The fastest path is `sweet-search init --mcp`, which writes the entry below into
+`.mcp.json` for you (idempotently, preserving any other servers).
+
+To do it by hand, edit `.mcp.json` at your project root — the project-scoped MCP
+config Claude Code reads (create it if needed):
 
 ```json
 {
   "mcpServers": {
     "sweet-search": {
       "command": "npx",
-      "args": ["sweet-search-mcp", "--project-root", "/absolute/path/to/project"]
+      "args": ["-y", "sweet-search-mcp", "--project-root", "/absolute/path/to/project"]
     }
   }
 }

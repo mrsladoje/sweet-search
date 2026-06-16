@@ -63,20 +63,27 @@ function escapeRegex(s) {
 
 const SHIP_FILE_REL = 'core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md';
 
+// MCP-tool variant of the policy (init --mcp --no-cli). Same strategy core; the
+// tool-mechanics layer is remapped from the ss-* CLI surface onto the
+// sweet-search MCP tool surface. Read lazily — only the variant actually
+// requested needs to exist, so importing this module never requires the MCP
+// ship-file to be present.
+const MCP_SHIP_FILE_REL = 'core/prompt-optimization/data/p7-final/sweet-search-system-prompt-mcp.md';
+
 /** Strip a leading YAML front-matter block (`---\n … \n---\n`) if present. */
 export function stripFrontMatter(text) {
   return text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
 }
 
-function readShippedPolicy() {
+function readShippedPolicy(rel = SHIP_FILE_REL, { label = 'M++' } = {}) {
   const here = dirname(fileURLToPath(import.meta.url)); // <pkg>/scripts
-  const shipPath = join(here, '..', SHIP_FILE_REL);
+  const shipPath = join(here, '..', rel);
   let raw;
   try {
     raw = readFileSync(shipPath, 'utf8');
   } catch (err) {
     throw new Error(
-      `inject-agent-instructions: cannot read the M++ ship-file at ${shipPath}. ` +
+      `inject-agent-instructions: cannot read the ${label} ship-file at ${shipPath}. ` +
       'It MUST be present (packaged via package.json "files"). Regenerate with ' +
       '`node core/prompt-optimization/sweep/finalize-mpp.mjs`. ' +
       `Cause: ${err.message}`,
@@ -84,12 +91,30 @@ function readShippedPolicy() {
   }
   const body = stripFrontMatter(raw).trimEnd();
   if (!body) {
-    throw new Error(`inject-agent-instructions: M++ ship-file at ${shipPath} has an empty body.`);
+    throw new Error(`inject-agent-instructions: ${label} ship-file at ${shipPath} has an empty body.`);
   }
   return body;
 }
 
 export const CANONICAL_POLICY_BODY = readShippedPolicy();
+
+let _mcpPolicyBody = null;
+/** Lazily read + cache the MCP-variant policy body. */
+export function getMcpPolicyBody() {
+  if (_mcpPolicyBody == null) {
+    _mcpPolicyBody = readShippedPolicy(MCP_SHIP_FILE_REL, { label: 'M++ (MCP variant)' });
+  }
+  return _mcpPolicyBody;
+}
+
+/**
+ * Resolve the policy body for a contact-surface variant.
+ *   'cli' (default) → the frozen ss-* CLI champion (CANONICAL_POLICY_BODY)
+ *   'mcp'           → the MCP-tool variant (init --mcp --no-cli)
+ */
+export function getPolicyBody(variant = 'cli') {
+  return variant === 'mcp' ? getMcpPolicyBody() : CANONICAL_POLICY_BODY;
+}
 
 const CURSOR_FRONTMATTER = `---
 description: Sweet Search tool-routing, stopping, and citation policy
@@ -111,12 +136,12 @@ function wrapMarker(body) {
  * full policy plus, for CLAUDE.md, an extra `@.claude/rules/sweet-search.md`
  * import line so the Claude-specific shim is loaded.
  */
-export function buildCanonicalBlock({ extraImports = [] } = {}) {
+export function buildCanonicalBlock({ extraImports = [], policyBody = CANONICAL_POLICY_BODY } = {}) {
   if (extraImports.length === 0) {
-    return wrapMarker(CANONICAL_POLICY_BODY);
+    return wrapMarker(policyBody);
   }
   const importLines = extraImports.map(t => `@${t}`).join('\n');
-  return wrapMarker(`${CANONICAL_POLICY_BODY}\n${importLines}\n`);
+  return wrapMarker(`${policyBody}\n${importLines}\n`);
 }
 
 /**
@@ -133,8 +158,8 @@ export function buildImportBlock({ importTargets }) {
 }
 
 /** Body for the cursor .mdc (frontmatter + inlined canonical body). */
-export function buildCursorFile() {
-  return CURSOR_FRONTMATTER + wrapMarker(CANONICAL_POLICY_BODY);
+export function buildCursorFile(policyBody = CANONICAL_POLICY_BODY) {
+  return CURSOR_FRONTMATTER + wrapMarker(policyBody);
 }
 
 // ─── Marker injection ───────────────────────────────────────────────────────
@@ -265,26 +290,36 @@ export function injectAgentInstructions({
   projectRoot,
   harnesses = ALL_HARNESSES,
   useSymlinks = true,
+  variant = 'cli',
 } = {}) {
   if (!projectRoot) throw new TypeError('inject-agent-instructions: projectRoot is required');
   const enabled = new Set(harnesses);
-  const report = { harnesses: {}, canonical: null };
+  const report = { harnesses: {}, canonical: null, variant };
 
   if (enabled.size === 0) return report;
 
+  // Variant selects the policy body. The MCP variant retargets every ss-* CLI
+  // reference onto the sweet-search MCP tool surface; it also drops the Claude
+  // `@.claude/rules/sweet-search.md` import because that supplement is written
+  // in ss-* CLI terms and would contradict the MCP body (the CLI rules file is
+  // skipped under --no-cli in init too).
+  const policyBody = getPolicyBody(variant);
+  const claudeExtraImports = variant === 'mcp' ? [] : ['.claude/rules/sweet-search.md'];
+
   // 1. Canonical file: CLAUDE.md when Claude Code is enabled, else AGENTS.md.
-  //    Body is the full policy plus (Claude-only) the @.claude/rules import.
+  //    Body is the full policy plus (Claude-only, CLI variant) the @.claude/rules import.
   let canonicalFile;
   let canonicalBlock;
   if (enabled.has('claude-code')) {
     canonicalFile = CLAUDE_FILE;
     canonicalBlock = buildCanonicalBlock({
-      extraImports: ['.claude/rules/sweet-search.md'],
+      extraImports: claudeExtraImports,
+      policyBody,
     });
     report.canonical = 'claude-code';
   } else if (enabled.has('agents') || enabled.has('gemini') || enabled.has('cursor')) {
     canonicalFile = AGENTS_FILE;
-    canonicalBlock = buildCanonicalBlock();
+    canonicalBlock = buildCanonicalBlock({ policyBody });
     report.canonical = 'agents'; // AGENTS.md is the multi-harness convention (Codex, OpenCode, …)
   } else {
     return report; // no canonical, nothing to write
@@ -343,12 +378,12 @@ export function injectAgentInstructions({
       // and any user notes outside the markers.
       report.harnesses.cursor = injectMarkerBlock({
         filePath: cursorPath,
-        block: buildCanonicalBlock(),
+        block: buildCanonicalBlock({ policyBody }),
       });
     } else {
       // Fresh file — write frontmatter + canonical body in marker block.
       mkdirSync(dirname(cursorPath), { recursive: true });
-      writeFileSync(cursorPath, buildCursorFile());
+      writeFileSync(cursorPath, buildCursorFile(policyBody));
       report.harnesses.cursor = 'created';
     }
   }

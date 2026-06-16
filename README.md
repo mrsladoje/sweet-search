@@ -731,12 +731,13 @@ the three-stage retrieval it feeds at query time.
 sweet-search meets your agent wherever it is — shell tools, MCP, or injected instructions:
 
 ```jsonc
-// .claude/mcp.json — that's the whole integration
+// .mcp.json (project root) — that's the whole integration
+// or just run: sweet-search init --mcp
 {
   "mcpServers": {
     "sweet-search": {
       "command": "npx",
-      "args": ["sweet-search-mcp", "--project-root", "/absolute/path/to/your/repo"]
+      "args": ["-y", "sweet-search-mcp", "--project-root", "/absolute/path/to/your/repo"]
     }
   }
 }

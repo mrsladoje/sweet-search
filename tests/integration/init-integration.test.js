@@ -104,4 +104,54 @@ describe('sweet-search init (integration)', () => {
     const configPath = join(tempDir, '.sweet-search', 'config.json');
     expect(existsSync(configPath)).toBe(true);
   });
+
+  // ── --mcp / --no-cli contact-surface flags (end-to-end) ───────────────────
+  const FAST = ['--profile', 'core', '--skip-dedup', '--skip-coreml-cascade'];
+  const rulesPath = () => join(tempDir, '.claude', 'rules', 'sweet-search.md');
+  const reminderHookPath = () => join(tempDir, '.claude', 'hooks', 'sweet-search-remind-tools.mjs');
+
+  it('--no-cli without --mcp errors with a non-zero exit', () => {
+    const { exitCode, stderr, stdout } = runInit([...FAST, '--no-cli'], tempDir);
+    expect(exitCode).not.toBe(0);
+    expect(stderr + stdout).toMatch(/--no-cli requires --mcp/);
+  });
+
+  it('--mcp is additive: registers .mcp.json AND keeps the ss-* CLI surface', () => {
+    const { exitCode, stdout } = runInit([...FAST, '--mcp'], tempDir);
+    expect(exitCode).toBe(0);
+
+    const mcp = JSON.parse(readFileSync(join(tempDir, '.mcp.json'), 'utf8'));
+    expect(mcp.mcpServers['sweet-search'].command).toBe('npx');
+    expect(mcp.mcpServers['sweet-search'].args).toContain('sweet-search-mcp');
+    // CLI surface intact: ss-* prompt + rules file + reminder hook.
+    expect(readFileSync(join(tempDir, 'CLAUDE.md'), 'utf8')).toContain('ss-grep');
+    expect(existsSync(rulesPath())).toBe(true);
+    expect(existsSync(reminderHookPath())).toBe(true);
+    expect(stdout).toContain('MCP server'); // surfaced in the final report
+  });
+
+  it('cli → --mcp --no-cli flip swaps the prompt AND tears down stale CLI supplements', () => {
+    // 1. Plain CLI init installs the ss-* prompt + rules file + reminder hook.
+    const first = runInit(FAST, tempDir);
+    expect(first.exitCode).toBe(0);
+    expect(existsSync(rulesPath())).toBe(true);
+    expect(existsSync(reminderHookPath())).toBe(true);
+    expect(readFileSync(join(tempDir, 'CLAUDE.md'), 'utf8')).toContain('ss-grep');
+
+    // 2. Re-init flipping to the MCP-only contact surface.
+    const second = runInit([...FAST, '--mcp', '--no-cli'], tempDir);
+    expect(second.exitCode).toBe(0);
+
+    const claude = readFileSync(join(tempDir, 'CLAUDE.md'), 'utf8');
+    expect(claude).toContain('hybrid code search');           // MCP variant body
+    expect(claude).not.toContain('ss-grep');                  // ss-* gone
+    expect(claude).not.toContain('@.claude/rules/sweet-search.md');
+    expect(existsSync(join(tempDir, '.mcp.json'))).toBe(true);
+
+    // The adversarial finding: stale CLI supplements must be torn down on flip.
+    expect(existsSync(rulesPath())).toBe(false);
+    expect(existsSync(reminderHookPath())).toBe(false);
+    const settings = readFileSync(join(tempDir, '.claude', 'settings.json'), 'utf8');
+    expect(settings).not.toContain('sweet-search-remind-tools.mjs');
+  });
 });

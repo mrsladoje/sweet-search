@@ -38,9 +38,10 @@ import {
 import { describeDedupConfig } from '../core/infrastructure/index.js';
 import { verifyRuntime, getMaxsimTier, getRouterType } from './verify-runtime.js';
 import { ALL_HARNESSES, injectAgentInstructions } from './inject-agent-instructions.js';
-import { writeClaudeRules } from './write-claude-rules.js';
-import { installPromptReminderHook } from './install-prompt-reminders.js';
-import { installToolEnforcement } from './install-tool-enforcement.js';
+import { writeClaudeRules, removeClaudeRules } from './write-claude-rules.js';
+import { installMcpServer } from './install-mcp-server.js';
+import { installPromptReminderHook, removePromptReminderHook } from './install-prompt-reminders.js';
+import { installToolEnforcement, removeToolEnforcement } from './install-tool-enforcement.js';
 import { isNativeInferenceAvailable } from '../core/infrastructure/native-inference.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -83,6 +84,15 @@ export function parseInitArgs(args) {
     enforceTools: false,        // P3: --enforce-tools (default OFF — opt-in strict mode)
     codex: false,                // --codex: wire the Codex CLI SessionStart hook
     codexEnableGlobalHooks: false, // --codex-enable-global-hooks: also enable the flag in ~/.codex/config.toml
+    // Contact-surface flags (additive at install, exclusive at consumption):
+    //   --mcp     registers the sweet-search MCP server in the project .mcp.json
+    //             (additive — the CLI stays). Harness-agnostic, root-level.
+    //   --no-cli  makes MCP the agent's *contact surface*: inject the MCP-tool
+    //             prompt variant instead of the ss-* CLI one, and skip the
+    //             CLI-surface-specific supplements (rules file, ss-* reminder).
+    //             Indexing still runs through the CLI/engine. Requires --mcp.
+    mcp: false,
+    noCli: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -188,10 +198,38 @@ export function parseInitArgs(args) {
       // P3: opt-in strict mode — denies native Grep + installs a Read
       // hint hook. Opinionated and Claude-specific (per §4D).
       result.enforceTools = true;
+    } else if (arg === '--mcp') {
+      // Register the sweet-search MCP server in the project root .mcp.json.
+      // Additive: the CLI surface stays. Independent of --no-claude.
+      result.mcp = true;
+    } else if (arg === '--no-cli') {
+      // Make MCP the agent's contact surface: inject the MCP-tool prompt
+      // variant and skip the CLI-surface supplements. Requires --mcp (the
+      // agent would otherwise have no way to reach sweet-search). Indexing
+      // still uses the CLI/engine.
+      result.noCli = true;
     }
   }
 
   return result;
+}
+
+/**
+ * Cross-flag validation for init args. Currently the only rule: `--no-cli`
+ * (suppress the CLI contact surface) is meaningless without `--mcp` (the
+ * replacement contact surface). Returns `{ ok, error }`.
+ */
+export function validateInitArgs(parsed) {
+  if (parsed.noCli && !parsed.mcp) {
+    return {
+      ok: false,
+      error:
+        '--no-cli requires --mcp. Suppressing the CLI contact surface leaves the agent '
+        + 'with no way to reach sweet-search unless the MCP server is registered. '
+        + 'Re-run as `sweet-search init --mcp --no-cli`, or drop --no-cli.',
+    };
+  }
+  return { ok: true, error: null };
 }
 
 /**
@@ -713,7 +751,7 @@ function printReport(report) {
     profile, maxsimTier, routerType, models, verification, runtimeDownloads,
     capability, cascadeReport, dedupReport, prewarmHookReport, skillReport,
     liChoices, agentInstructionsReport, claudeRulesReport,
-    promptReminderReport, toolEnforcementReport,
+    promptReminderReport, toolEnforcementReport, mcpServerReport,
   } = report;
 
   console.log('');
@@ -832,6 +870,9 @@ function printReport(report) {
   }
   if (toolEnforcementReport && toolEnforcementReport.status !== 'skipped') {
     console.log(`  Tool enforcement:     ${toolEnforcementReport.status} (Grep deny + Read hint)`);
+  }
+  if (mcpServerReport && mcpServerReport.status) {
+    console.log(`  MCP server (.mcp.json): ${mcpServerReport.status}${mcpServerReport.detail ? ` — ${mcpServerReport.detail}` : ''}`);
   }
 
   console.log(`  Runtime downloads:    ${runtimeDownloads}`);
@@ -1429,7 +1470,24 @@ Options:
                             native Read suggesting ss-read / ss-semantic.
                             Read is hinted, not blocked, because edit
                             workflows legitimately need Read. Always
-                            implied off when --no-claude is set.
+                            implied off when --no-claude or --no-cli is set.
+  --mcp                     Register the sweet-search MCP server in the project
+                            root .mcp.json (an "npx -y sweet-search-mcp" entry
+                            under mcpServers.sweet-search). Additive and
+                            idempotent — the CLI surface stays, other servers
+                            and JSON keys are preserved. Root-level and
+                            harness-agnostic (independent of --no-claude). The
+                            MCP server is a thin adapter over the same engine
+                            the CLI wraps.
+  --no-cli                  Make MCP the agent's CONTACT SURFACE: inject the
+                            MCP-tool prompt variant instead of the ss-* CLI
+                            one, and skip the CLI-surface supplements (the
+                            .claude/rules file, the ss-* prompt reminder, tool
+                            enforcement). Indexing still runs through the CLI/
+                            engine — this only changes how the agent searches.
+                            Requires --mcp. NOTE: the MCP prompt variant is
+                            hand-derived from the frozen CLI champion and is not
+                            yet benchmarked on the MCP transport.
   --verbose, -v             Enable verbose output
   --help, -h                Show this help
 
@@ -1448,9 +1506,11 @@ CoreML cascade (M3+ Apple Silicon only):
   strategy.
 
 Examples:
-  sweet-search init                         # Full profile (default)
+  sweet-search init                         # Full profile (default); CLI contact surface
   sweet-search init --profile core          # Core profile (no model downloads)
   sweet-search init --force                 # Re-download all models
+  sweet-search init --mcp                   # Also register the MCP server (CLI stays)
+  sweet-search init --mcp --no-cli          # MCP-only contact surface (MCP-variant prompt)
   sweet-search init --build-coreml-cascade  # Trace the cascade locally (dev only)
 `);
 }
@@ -1464,6 +1524,13 @@ export async function runInit(args) {
 
   if (parsed.help) {
     printHelp();
+    return;
+  }
+
+  const validation = validateInitArgs(parsed);
+  if (!validation.ok) {
+    console.error(`sweet-search init: ${validation.error}`);
+    process.exitCode = 1;
     return;
   }
 
@@ -1918,6 +1985,30 @@ export async function runInit(args) {
   //        Idempotent marker block so re-init never duplicates content.
   //        `--no-agent-instructions` is the umbrella that skips the
   //        instruction-file injection layer entirely.
+  //
+  // 11.5 MCP server registration (`--mcp`). Writes the project-root `.mcp.json`
+  //      entry for `sweet-search-mcp`. Additive + idempotent + harness-agnostic
+  //      (root-level, independent of --no-claude). The MCP server is a thin
+  //      adapter over the same engine the CLI wraps — `--mcp` adds it, it never
+  //      replaces the CLI. `--no-cli` (below) only switches the agent's contact
+  //      surface to MCP; indexing keeps running through the CLI/engine.
+  let mcpServerReport = null;
+  if (parsed.mcp) {
+    try {
+      mcpServerReport = installMcpServer({ projectRoot });
+      process.stderr.write(
+        `[init] MCP server (.mcp.json): ${mcpServerReport.status}`
+        + (mcpServerReport.detail ? ` — ${mcpServerReport.detail}` : '') + '\n',
+      );
+    } catch (err) {
+      process.stderr.write(`[init] Warning: MCP server registration failed: ${err.message}\n`);
+    }
+  }
+
+  // Contact-surface variant: --no-cli makes MCP the agent's surface, so we
+  // inject the MCP-tool prompt variant instead of the ss-* CLI champion.
+  const promptVariant = parsed.noCli ? 'mcp' : 'cli';
+
   let agentInstructionsReport = null;
   let claudeRulesReport = null;
   if (!parsed.skipAgentInstructions) {
@@ -1936,25 +2027,40 @@ export async function runInit(args) {
           projectRoot,
           harnesses: activeHarnesses,
           useSymlinks: parsed.symlinkInstructionFiles,
+          variant: promptVariant,
         });
         const summary = Object.entries(agentInstructionsReport.harnesses)
           .map(([k, v]) => `${k}=${v}`).join(' ');
         const canonical = agentInstructionsReport.canonical
           ? ` (canonical=${agentInstructionsReport.canonical})` : '';
-        process.stderr.write(`[init] Agent instructions: ${summary || '(none)'}${canonical}\n`);
+        const variantTag = promptVariant === 'mcp' ? ' [mcp variant]' : '';
+        process.stderr.write(`[init] Agent instructions: ${summary || '(none)'}${canonical}${variantTag}\n`);
       } catch (err) {
         process.stderr.write(`[init] Warning: Agent-instruction injection failed: ${err.message}\n`);
       }
-      // Claude rules file is only useful when claude-code is enabled — the
-      // sole load path is the @.claude/rules/sweet-search.md import line that
-      // injectAgentInstructions writes into CLAUDE.md.
+      // Claude rules file is only useful when claude-code is enabled AND the
+      // CLI is the contact surface — its sole load path is the
+      // @.claude/rules/sweet-search.md import line that injectAgentInstructions
+      // writes into CLAUDE.md (omitted in the --no-cli MCP variant), and its
+      // body is written in ss-* CLI terms. Under --no-cli we TEAR DOWN any rules
+      // file a prior CLI init wrote (idempotent: not-found when absent) so a
+      // cli→mcp re-init never leaves a stale ss-* supplement contradicting the
+      // injected MCP prompt.
       if (activeHarnesses.includes('claude-code')) {
         try {
-          const status = writeClaudeRules({ projectRoot });
-          claudeRulesReport = { status };
-          process.stderr.write(`[init] Claude rules: ${status}\n`);
+          if (parsed.noCli) {
+            const status = removeClaudeRules({ projectRoot });
+            claudeRulesReport = { status };
+            if (status === 'removed' || parsed.verbose) {
+              process.stderr.write(`[init] Claude rules: ${status}${status === 'removed' ? ' (--no-cli — stale ss-* CLI supplement torn down)' : ' (--no-cli)'}\n`);
+            }
+          } else {
+            const status = writeClaudeRules({ projectRoot });
+            claudeRulesReport = { status };
+            process.stderr.write(`[init] Claude rules: ${status}\n`);
+          }
         } catch (err) {
-          process.stderr.write(`[init] Warning: Could not write Claude rules: ${err.message}\n`);
+          process.stderr.write(`[init] Warning: Claude rules ${parsed.noCli ? 'teardown' : 'write'} failed: ${err.message}\n`);
         }
       }
     }
@@ -1968,15 +2074,26 @@ export async function runInit(args) {
   //     `.claude/hooks/sweet-search-remind-tools.mjs` with a
   //     `hooks.UserPromptSubmit` entry in `.claude/settings.json` keyed by
   //     filename so re-init updates rather than duplicates.
+  //     Under --no-cli the reminder body (ss-* CLI Bash commands) contradicts
+  //     the injected MCP-variant prompt, so we TEAR DOWN any reminder hook a
+  //     prior CLI init installed (idempotent: not-found when absent) rather
+  //     than merely skipping the install. An MCP-variant reminder is a follow-up.
   let promptReminderReport = null;
   if (!parsed.noClaude) {
-    promptReminderReport = installPromptReminderHook({
-      projectRoot,
-      packageRoot: PACKAGE_ROOT,
-      skipped: parsed.skipPromptReminders,
-    });
-    if (parsed.verbose || promptReminderReport.status === 'error') {
-      process.stderr.write(`[init] Prompt reminder hook: ${promptReminderReport.status} — ${promptReminderReport.detail}\n`);
+    if (parsed.noCli) {
+      promptReminderReport = removePromptReminderHook({ projectRoot });
+      if (parsed.verbose || promptReminderReport.status === 'error') {
+        process.stderr.write(`[init] Prompt reminder hook: ${promptReminderReport.status} (--no-cli) — ${promptReminderReport.detail}\n`);
+      }
+    } else {
+      promptReminderReport = installPromptReminderHook({
+        projectRoot,
+        packageRoot: PACKAGE_ROOT,
+        skipped: parsed.skipPromptReminders,
+      });
+      if (parsed.verbose || promptReminderReport.status === 'error') {
+        process.stderr.write(`[init] Prompt reminder hook: ${promptReminderReport.status} — ${promptReminderReport.detail}\n`);
+      }
     }
   }
 
@@ -1984,15 +2101,26 @@ export async function runInit(args) {
   //     `--enforce-tools`; universal `--no-claude` gate above. Adds
   //     `permissions.deny: ["Grep"]` and a PreToolUse hint hook for `Read`
   //     in `.claude/settings.json`. Strict + opinionated; off by default.
+  //     Under --no-cli the Read hint points at ss-read / ss-semantic (CLI
+  //     surface) and denying native Grep is moot when MCP `search` is the
+  //     contact surface — so we TEAR DOWN any enforcement a prior CLI init
+  //     wrote (idempotent: not-found when absent) instead of merely skipping.
   let toolEnforcementReport = null;
   if (!parsed.noClaude) {
-    toolEnforcementReport = installToolEnforcement({
-      projectRoot,
-      packageRoot: PACKAGE_ROOT,
-      skipped: !parsed.enforceTools,
-    });
-    if (parsed.verbose || toolEnforcementReport.status === 'error') {
-      process.stderr.write(`[init] Tool enforcement: ${toolEnforcementReport.status} — ${toolEnforcementReport.detail}\n`);
+    if (parsed.noCli) {
+      toolEnforcementReport = removeToolEnforcement({ projectRoot });
+      if (parsed.verbose || toolEnforcementReport.status === 'error') {
+        process.stderr.write(`[init] Tool enforcement: ${toolEnforcementReport.status} (--no-cli)${toolEnforcementReport.detail ? ` — ${toolEnforcementReport.detail}` : ''}\n`);
+      }
+    } else {
+      toolEnforcementReport = installToolEnforcement({
+        projectRoot,
+        packageRoot: PACKAGE_ROOT,
+        skipped: !parsed.enforceTools,
+      });
+      if (parsed.verbose || toolEnforcementReport.status === 'error') {
+        process.stderr.write(`[init] Tool enforcement: ${toolEnforcementReport.status} — ${toolEnforcementReport.detail}\n`);
+      }
     }
   }
 
@@ -2014,6 +2142,7 @@ export async function runInit(args) {
     claudeRulesReport,
     promptReminderReport,
     toolEnforcementReport,
+    mcpServerReport,
   });
 }
 

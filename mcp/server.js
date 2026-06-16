@@ -115,10 +115,28 @@ const vocabDeps = { coreDir };
 // MCP Server
 // ---------------------------------------------------------------------------
 
+// MCP `instructions` — the agent-routing policy delivered to hosts that connect
+// to this server WITHOUT a project file to inject into (Claude Desktop, a remote
+// endpoint). This is the SECONDARY carrier; the primary is the MCP-variant prompt
+// that `sweet-search init --mcp --no-cli` injects into CLAUDE.md/AGENTS.md (the
+// high-salience slot). Best-effort: if the ship-file is missing the server still
+// starts, just without instructions.
+const MCP_INSTRUCTIONS = (() => {
+  try {
+    const p = path.join(__dirname, '..', 'core/prompt-optimization/data/p7-final/sweet-search-system-prompt-mcp.md');
+    const raw = readFileSync(p, 'utf8');
+    return raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').trim() || undefined;
+  } catch (err) {
+    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] mcp instructions: ${err?.message || err}\n`);
+    return undefined;
+  }
+})();
+
 const server = new McpServer({
   name: 'sweet-search',
   version: PKG_VERSION,
 }, {
+  ...(MCP_INSTRUCTIONS ? { instructions: MCP_INSTRUCTIONS } : {}),
   capabilities: {
     tools: { listChanged: false },
     resources: { subscribe: false, listChanged: false },
