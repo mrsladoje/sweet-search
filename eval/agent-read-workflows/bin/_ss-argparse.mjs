@@ -128,6 +128,21 @@ export function looksLikeOption(tok) {
     || /^--[A-Za-z][\w-]*$/.test(tok);      // --ignore-case
 }
 
+// Parse a line range supplied as a single positional token — `10-20`, `10:20`
+// or `10,20` (sed/bat/"lines 10-20" muscle memory). Returns { start, end } only
+// for a well-formed ascending range; null otherwise (so the caller falls back to
+// the plain numeric path or its own validation). Deliberately strict: both ends
+// required, no open-ended `10-` (which previously caused accidental over-reads).
+export function parseLineRange(token) {
+  if (typeof token !== 'string') return null;
+  const m = /^(\d+)[-:,](\d+)$/.exec(token);
+  if (!m) return null;
+  const start = +m[1];
+  const end = +m[2];
+  if (start < 1 || end < start) return null;
+  return { start, end };
+}
+
 // After known flags are consumed, resolve the positional pattern. `--` ends
 // option parsing (everything after is positional). Any remaining option-shaped
 // token is an unsupported flag → reported, not silently dropped and not

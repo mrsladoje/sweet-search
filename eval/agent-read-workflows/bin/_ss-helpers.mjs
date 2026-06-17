@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import {
   parseFlag, parseShortFlag, parseBoolFlag,
   buildGrepPattern, stripInertFlags, normalizeArgs, extractPositional,
+  parseLineRange, looksLikeOption,
 } from './_ss-argparse.mjs';
 
 // 8-char SHA1 prefix is enough for grouping identical queries across
@@ -188,12 +189,26 @@ async function cmdFind(rawArgs) {
   process.exit(0);
 }
 
+// ss-read takes NO flags — only positional <file> [start] [end] (or a single
+// "start-end" / "start:end" / "start,end" range token). Unlike ss-grep, a stray
+// flag here can never silently corrupt the result: the line slots are validated
+// as numbers, so a misuse is already a loud error. These hints exist only to
+// turn that error into a self-correcting one (the M++ prompt, which we may not
+// touch, documents the positional form, not these recovery messages).
+const READ_USAGE =
+  'Usage: ss-read <file>            # whole file\n' +
+  '       ss-read <file> <start>    # ONE line\n' +
+  '       ss-read <file> <start> <end>\n' +
+  '       ss-read <file> 10-20      # range (also 10:20, 10,20)\n' +
+  'Note: ss-read has no flags (no -n/--limit/-r); line selection is positional.';
 async function cmdRead(args) {
   const file = args[0];
   if (!file) {
-    process.stderr.write('Usage: ss-read <file>             # whole file\n');
-    process.stderr.write('       ss-read <file> <start>     # ONE line\n');
-    process.stderr.write('       ss-read <file> <start> <end>\n');
+    process.stderr.write(READ_USAGE + '\n');
+    process.exit(2);
+  }
+  if (looksLikeOption(file)) {
+    process.stderr.write(`[ss-read] "${file}" looks like a flag, but ss-read takes a file path first.\n${READ_USAGE}\n`);
     process.exit(2);
   }
   // If start is provided and end is omitted, read EXACTLY that one line —
@@ -201,19 +216,27 @@ async function cmdRead(args) {
   // caused accidental over-reading on large files).
   let start = null, end = null;
   if (args[1] != null) {
-    start = +args[1];
-    if (!Number.isFinite(start) || start < 1) {
-      process.stderr.write(`[ss-read] invalid start line: "${args[1]}"\n`);
-      process.exit(2);
-    }
-    if (args[2] != null) {
-      end = +args[2];
-      if (!Number.isFinite(end) || end < start) {
-        process.stderr.write(`[ss-read] invalid end line: "${args[2]}" (must be ≥ start ${start})\n`);
+    // Accept a single-token range (10-20 / 10:20 / 10,20) before the plain
+    // numeric path, so "lines 10-20" muscle memory works without a wasted call.
+    const range = parseLineRange(args[1]);
+    if (range && args[2] == null) {
+      start = range.start;
+      end = range.end;
+    } else {
+      start = +args[1];
+      if (!Number.isFinite(start) || start < 1) {
+        process.stderr.write(`[ss-read] invalid start line: "${args[1]}" (expected a line number, e.g. 10, or a range like 10-20)\n${READ_USAGE}\n`);
         process.exit(2);
       }
-    } else {
-      end = start;     // single-line read
+      if (args[2] != null) {
+        end = +args[2];
+        if (!Number.isFinite(end) || end < start) {
+          process.stderr.write(`[ss-read] invalid end line: "${args[2]}" (must be ≥ start ${start})\n`);
+          process.exit(2);
+        }
+      } else {
+        end = start;     // single-line read
+      }
     }
   }
   const { readFile } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
