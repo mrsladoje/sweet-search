@@ -1,6 +1,6 @@
 {
   "name": "sweet-search",
-  "version": "2.5.13",
+  "version": "2.5.14",
   "description": "Sweet Search - SOTA Hybrid Code Search Engine with WASM CatBoost Query Router, Semantic/Lexical/Structural Search, and Multilingual Support",
   "type": "module",
   "main": "core/search/sweet-search.js",
@@ -165,12 +165,12 @@
   },
   "optionalDependencies": {
     "usearch": "^2.21.4",
-    "@sweet-search/native-darwin-arm64": "2.5.13",
-    "@sweet-search/native-darwin-x64": "2.5.13",
-    "@sweet-search/native-linux-arm64-gnu": "2.5.13",
-    "@sweet-search/native-linux-arm64-gnu-cuda": "2.5.13",
-    "@sweet-search/native-linux-x64-gnu": "2.5.13",
-    "@sweet-search/native-linux-x64-gnu-cuda": "2.5.13"
+    "@sweet-search/native-darwin-arm64": "2.5.14",
+    "@sweet-search/native-darwin-x64": "2.5.14",
+    "@sweet-search/native-linux-arm64-gnu": "2.5.14",
+    "@sweet-search/native-linux-arm64-gnu-cuda": "2.5.14",
+    "@sweet-search/native-linux-x64-gnu": "2.5.14",
+    "@sweet-search/native-linux-x64-gnu-cuda": "2.5.14"
   },
   "engines": {
     "node": ">=18.0.0"
