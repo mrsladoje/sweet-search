@@ -77,6 +77,10 @@ export function stripInertFlags(args) {
 // so they parse instead of being mistaken for an unknown flag or the pattern.
 export const VALUE_SHORTS = new Set(['k']);
 export const BOOL_SHORTS = new Set(['i', 'w', 'F']);
+export const VALUE_LONGS = new Set([
+  '--top', '--regex', '--mode', '--max-tokens',
+  '--in', '--file', '--query', '--hint', '--depth', '--budget',
+]);
 
 export function normalizeArgs(args) {
   const out = [];
@@ -85,9 +89,11 @@ export function normalizeArgs(args) {
     if (positionalOnly || typeof tok !== 'string') { out.push(tok); continue; }
     if (tok === '--') { out.push(tok); positionalOnly = true; continue; }
 
-    // --name=value  →  --name value
+    // --name=value  →  --name value, but only for known value flags. Unknown
+    // long options stay intact so the guard can reject the whole token, and
+    // optional-value no-ops like --color=always can be stripped atomically.
     let m = /^(--[A-Za-z][\w-]*)=(.*)$/.exec(tok);
-    if (m) { out.push(m[1], m[2]); continue; }
+    if (m && VALUE_LONGS.has(m[1])) { out.push(m[1], m[2]); continue; }
 
     // attached short value or boolean bundle:  -k5, -iw, -iwk5
     m = /^-([A-Za-z])(.+)$/.exec(tok);
@@ -123,9 +129,34 @@ export function normalizeArgs(args) {
 // dash-leading pattern works WITHOUT the agent needing to know about `--`.
 export function looksLikeOption(tok) {
   if (typeof tok !== 'string' || tok === '-' || tok === '--') return false;
-  return /^-[A-Za-z]$/.test(tok)            // -i
-    || /^-[A-Za-z]{2,}$/.test(tok)          // -iw  (pure-letter bundle)
-    || /^--[A-Za-z][\w-]*$/.test(tok);      // --ignore-case
+  return /^-[A-Za-z][A-Za-z0-9]*$/.test(tok)      // -i, -iw, -C2
+    || /^--[A-Za-z][\w-]*(?:=.*)?$/.test(tok);    // --ignore-case, --foo=bar
+}
+
+export function parseValueFlag(args, names, fallback, { allowOptionValue = false } = {}) {
+  const allNames = Array.isArray(names) ? names : [names];
+  for (const n of allNames) {
+    const i = args.indexOf(n);
+    if (i === -1) continue;
+    const v = args[i + 1];
+    if (v == null || (!allowOptionValue && looksLikeOption(v))) {
+      return { value: fallback, flag: n, error: `${n} requires a value` };
+    }
+    args.splice(i, 2);
+    return { value: v, flag: n, error: null };
+  }
+  return { value: fallback, flag: null, error: null };
+}
+
+export function parsePositiveIntFlag(args, names, fallback, { min = 1 } = {}) {
+  const parsed = parseValueFlag(args, names, fallback);
+  if (parsed.error) return parsed;
+  if (parsed.flag == null) return { ...parsed, value: fallback };
+  const n = Number(parsed.value);
+  if (!Number.isInteger(n) || n < min) {
+    return { value: fallback, flag: parsed.flag, error: `${parsed.flag} must be an integer >= ${min}` };
+  }
+  return { value: n, flag: parsed.flag, error: null };
 }
 
 // Parse a line range supplied as a single positional token — `10-20`, `10:20`
