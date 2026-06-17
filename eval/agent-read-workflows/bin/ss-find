@@ -5,7 +5,7 @@
 # Use for behavioural / semantic questions where lexical alone won't pinpoint the
 # chunk. (ss-grep is the short file:line locator.)
 #
-# Usage:  ss-find "<query>" --regex "<regex>" [--full|--xl] [-k N]
+# Usage:  ss-find "<query>" --regex "<regex>" [-i|--ignore-case] [--full|--xl] [-k N]
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 TMPERR=$(mktemp)
 node "$DIR/_ss-helpers.mjs" find "$@" 2>"$TMPERR"

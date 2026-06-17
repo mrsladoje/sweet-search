@@ -2,7 +2,7 @@
 # ss-grep: indexed bare grep (gram-prefiltered) over the cwd's Sweet Search index.
 # Compact agent-friendly output: file:line  matchText
 #
-# Usage:  ss-grep <regex> [-k N]
+# Usage:  ss-grep <regex> [-i|--ignore-case] [-k N]
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 TMPERR=$(mktemp)
 node "$DIR/_ss-helpers.mjs" grep "$@" 2>"$TMPERR"

@@ -13,6 +13,10 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import {
+  parseFlag, parseShortFlag, parseBoolFlag,
+  buildGrepPattern, stripInertFlags, normalizeArgs, extractPositional,
+} from './_ss-argparse.mjs';
 
 // 8-char SHA1 prefix is enough for grouping identical queries across
 // benchmark runs without bloating artifacts.
@@ -40,19 +44,18 @@ process.env.SWEET_SEARCH_PROJECT_ROOT = PROJECT_ROOT;
 const subcommand = process.argv[2];
 const rest = process.argv.slice(3);
 
-function parseFlag(args, name, fallback) {
-  const i = args.indexOf(name);
-  if (i === -1) return fallback;
-  const v = args[i + 1];
-  args.splice(i, 2);
-  return v;
-}
-function parseShortFlag(args, names, fallback) {
-  for (const n of names) {
-    const i = args.indexOf(n);
-    if (i !== -1) { const v = args[i + 1]; args.splice(i, 2); return v; }
+// Pure arg-parsing helpers (parseFlag/parseShortFlag/parseBoolFlag/
+// buildGrepPattern/stripInertFlags/normalizeArgs/extractPositional) live in
+// ./_ss-argparse.mjs so they can be unit-tested without this file's top-level
+// IIFE firing. resolvePositional wraps the side-effect-free extractPositional
+// with the CLI's loud-error exit.
+function resolvePositional(args, usage) {
+  const { pattern, unknownFlag } = extractPositional(args);
+  if (unknownFlag) {
+    process.stderr.write(`[ss] unrecognised option "${unknownFlag}"\n${usage}\n`);
+    process.exit(2);
   }
-  return fallback;
+  return pattern;
 }
 
 async function getSweetSearch() {
@@ -79,11 +82,17 @@ async function ensureWarmServerReady({ timeoutMs = 60000, intervalMs = 500 } = {
 
 // --- subcommands ----------------------------------------------------------
 
-async function cmdGrep(args) {
+const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [-k N]';
+async function cmdGrep(rawArgs) {
+  const args = normalizeArgs(rawArgs);
+  const ignoreCase = parseBoolFlag(args, ['-i', '--ignore-case']);
+  const wordBound = parseBoolFlag(args, ['-w', '--word-regexp']);
+  const fixedString = parseBoolFlag(args, ['-F', '--fixed-strings']);
   const k = +parseShortFlag(args, ['-k', '--top'], 20);
-  const regex = args[0];
+  stripInertFlags(args);
+  const regex = buildGrepPattern(resolvePositional(args, GREP_USAGE), { ignoreCase, wordBound, fixedString });
   if (!regex) {
-    process.stderr.write('Usage: ss-grep <regex> [-k N]\n');
+    process.stderr.write(GREP_USAGE + '\n');
     process.exit(2);
   }
   const s = await getSweetSearch();
@@ -109,27 +118,34 @@ async function cmdGrep(args) {
   process.exit(0);
 }
 
-async function cmdFind(args) {
+async function cmdFind(rawArgs) {
+  const args = normalizeArgs(rawArgs);
   // ColGrep pattern search with token-budgeted agent packaging — returns the
   // FULL useful answer (ranked code blocks + confidence + sufficiency), the same
   // agent packaging ss-search emits. ss-grep is the short/locator counterpart, so
   // ss-find defaults to the full answer: it saves the follow-up read entirely.
   // (Mirrors the agent-in-the-loop H2H adapter eval/agent-eval/tools/
   // pattern-agent-tools.js, which calls search(...,{format:'agent'}).)
+  const FIND_USAGE = 'Usage: ss-find "<query>" --regex "<regex>" [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--full|--xl] [-k N]';
   let format = 'agent';
   if (args.includes('--full')) { format = 'agent_full'; args.splice(args.indexOf('--full'), 1); }
   if (args.includes('--xl'))   { format = 'agent_full_xl'; args.splice(args.indexOf('--xl'), 1); }
+  const ignoreCase = parseBoolFlag(args, ['-i', '--ignore-case']);
+  const wordBound = parseBoolFlag(args, ['-w', '--word-regexp']);
+  const fixedString = parseBoolFlag(args, ['-F', '--fixed-strings']);
   const k = +parseShortFlag(args, ['-k', '--top'], 6);
   const regex = parseFlag(args, '--regex', '');
-  const query = args[0];
+  stripInertFlags(args);
+  const query = resolvePositional(args, FIND_USAGE);
   if (!query) {
-    process.stderr.write('Usage: ss-find "<query>" --regex "<regex>" [--full|--xl] [-k N]\n');
+    process.stderr.write(FIND_USAGE + '\n');
     process.exit(2);
   }
   // Budget-sweep experiment hook: lets the bench pin the response token budget
   // per-process without changing the agent-visible tool surface.
   const envFindBudget = Number(process.env.SS_SMOKE_FIND_BUDGET || '') || null;
-  const effectiveRegex = regex || '';
+  // Pattern flags apply to the regex candidate generator; the NL query is untouched.
+  const effectiveRegex = buildGrepPattern(regex || '', { ignoreCase, wordBound, fixedString });
   const s = await getSweetSearch();
   if (!s.hasLateInteractionIndex) {
     process.stderr.write(`[ss-find] no late-interaction index — falling back to ss-grep\n`);

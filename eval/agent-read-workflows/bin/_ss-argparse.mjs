@@ -1,0 +1,148 @@
+// Pure argument-parsing helpers for the ss-* CLI wrappers.
+//
+// Extracted from _ss-helpers.mjs so they can be unit-tested without triggering
+// the CLI's top-level IIFE (which runs on import). NOTHING here touches
+// process.* or the filesystem — every function is a pure transform over an
+// args array (some mutate the array in place, by design, and return a value).
+
+// --- value-flag parsers (mutate `args`, returning the consumed value) --------
+
+export function parseFlag(args, name, fallback) {
+  const i = args.indexOf(name);
+  if (i === -1) return fallback;
+  const v = args[i + 1];
+  args.splice(i, 2);
+  return v;
+}
+
+export function parseShortFlag(args, names, fallback) {
+  for (const n of names) {
+    const i = args.indexOf(n);
+    if (i !== -1) { const v = args[i + 1]; args.splice(i, 2); return v; }
+  }
+  return fallback;
+}
+
+// Boolean (value-less) flag: remove every occurrence, return whether any present.
+export function parseBoolFlag(args, names) {
+  let present = false;
+  for (const n of names) {
+    let i;
+    while ((i = args.indexOf(n)) !== -1) { args.splice(i, 1); present = true; }
+  }
+  return present;
+}
+
+// --- pattern construction ----------------------------------------------------
+
+export function escapeRegex(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Translate the grep-family pattern flags into a single regex — no engine change
+// needed. `-F` escapes the pattern so metacharacters are literal; `-w` wraps it
+// in word boundaries; `-i` prepends the `(?i)` inline flag the planner already
+// honours end-to-end (hasCaseInsensitiveRegexFlag → ripgrep prefilter + Rust
+// gram+grep). Order matters: escape (literal) → word-wrap → case flag.
+export function buildGrepPattern(pattern, { ignoreCase = false, wordBound = false, fixedString = false } = {}) {
+  if (!pattern) return pattern;
+  let p = fixedString ? escapeRegex(pattern) : pattern;
+  if (wordBound) p = `\\b(?:${p})\\b`;
+  if (ignoreCase && !/^\(\?[a-z-]*i[a-z-]*[:)]/.test(p)) p = `(?i)${p}`;
+  return p;
+}
+
+// --- inert flags (always true for ss-*, safe to accept as no-ops) ------------
+// These never change which lines match: we always print file:line, always
+// search the whole index, never colourise. Stripping them lets reflexive grep
+// muscle-memory pass without a wasted call — UNLIKE semantic flags (-w/-F/-v/
+// -C…), which we either implement or reject, never silently drop.
+export const INERT_FLAGS = new Set([
+  '-n', '--line-number', '-H', '--with-filename', '--no-filename',
+  '-r', '-R', '--recursive', '--color', '--colour',
+]);
+
+export function stripInertFlags(args) {
+  for (let i = args.length - 1; i >= 0; i--) {
+    const a = args[i];
+    if (typeof a === 'string' && (INERT_FLAGS.has(a) || /^--colou?r=/.test(a))) {
+      args.splice(i, 1);
+    }
+  }
+}
+
+// --- normalisation: make agent-typed forms canonical before parsing ----------
+// Short flags that consume a following value, and value-less boolean shorts.
+// Used to split attached/bundled forms (-k5, -iw, -iwk5) the way getopt would,
+// so they parse instead of being mistaken for an unknown flag or the pattern.
+export const VALUE_SHORTS = new Set(['k']);
+export const BOOL_SHORTS = new Set(['i', 'w', 'F']);
+
+export function normalizeArgs(args) {
+  const out = [];
+  let positionalOnly = false;
+  for (const tok of args) {
+    if (positionalOnly || typeof tok !== 'string') { out.push(tok); continue; }
+    if (tok === '--') { out.push(tok); positionalOnly = true; continue; }
+
+    // --name=value  →  --name value
+    let m = /^(--[A-Za-z][\w-]*)=(.*)$/.exec(tok);
+    if (m) { out.push(m[1], m[2]); continue; }
+
+    // attached short value or boolean bundle:  -k5, -iw, -iwk5
+    m = /^-([A-Za-z])(.+)$/.exec(tok);
+    if (m) {
+      const first = m[1];
+      if (VALUE_SHORTS.has(first)) { out.push('-' + first, m[2]); continue; } // -k5 → -k 5
+      if (BOOL_SHORTS.has(first)) {
+        const chars = tok.slice(1);
+        const expanded = [];
+        let i = 0, ok = true;
+        while (i < chars.length) {
+          const ch = chars[i];
+          if (BOOL_SHORTS.has(ch)) { expanded.push('-' + ch); i++; }
+          else if (VALUE_SHORTS.has(ch)) {                 // value short ends the bundle
+            const val = chars.slice(i + 1);
+            expanded.push('-' + ch);
+            if (val) expanded.push(val);
+            i = chars.length;
+          } else { ok = false; break; }                    // unknown char → leave token intact
+        }
+        if (ok) { out.push(...expanded); continue; }
+      }
+    }
+    out.push(tok);
+  }
+  return out;
+}
+
+// A token that looks like a real CLI option, as opposed to a regex/query that
+// merely begins with '-' (e.g. `-?\d+`, `-->`). Narrow on purpose: single short
+// letter, pure-letter bundle, or GNU long flag. Anything containing regex
+// metacharacters falls through and is treated as the positional pattern, so a
+// dash-leading pattern works WITHOUT the agent needing to know about `--`.
+export function looksLikeOption(tok) {
+  if (typeof tok !== 'string' || tok === '-' || tok === '--') return false;
+  return /^-[A-Za-z]$/.test(tok)            // -i
+    || /^-[A-Za-z]{2,}$/.test(tok)          // -iw  (pure-letter bundle)
+    || /^--[A-Za-z][\w-]*$/.test(tok);      // --ignore-case
+}
+
+// After known flags are consumed, resolve the positional pattern. `--` ends
+// option parsing (everything after is positional). Any remaining option-shaped
+// token is an unsupported flag → reported, not silently dropped and not
+// mistaken for the pattern. Returns { pattern, unknownFlag }; the caller decides
+// how to surface the error (kept side-effect-free for testability).
+export function extractPositional(args) {
+  const sep = args.indexOf('--');
+  if (sep !== -1) {
+    const before = args.slice(0, sep);
+    const after = args.slice(sep + 1);
+    const bad = before.find(looksLikeOption);
+    if (bad) return { pattern: undefined, unknownFlag: bad };
+    return { pattern: after[0], unknownFlag: null };
+  }
+  const bad = args.find(looksLikeOption);
+  if (bad) return { pattern: undefined, unknownFlag: bad };
+  return { pattern: args[0], unknownFlag: null };
+}
