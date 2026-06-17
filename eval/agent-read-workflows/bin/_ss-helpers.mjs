@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  parseFlag, parseShortFlag, parseBoolFlag,
+  parseBoolFlag, parseValueFlag, parsePositiveIntFlag,
   buildGrepPattern, stripInertFlags, normalizeArgs, extractPositional,
   parseLineRange, looksLikeOption,
 } from './_ss-argparse.mjs';
@@ -53,10 +53,31 @@ const rest = process.argv.slice(3);
 function resolvePositional(args, usage) {
   const { pattern, unknownFlag } = extractPositional(args);
   if (unknownFlag) {
-    process.stderr.write(`[ss] unrecognised option "${unknownFlag}"\n${usage}\n`);
-    process.exit(2);
+    failUsage(`unrecognised option "${unknownFlag}"`, usage);
   }
   return pattern;
+}
+
+function failUsage(message, usage) {
+  process.stderr.write(`[ss] ${message}\n${usage}\n`);
+  process.exit(2);
+}
+
+function readPositiveIntFlag(args, names, fallback, usage) {
+  const parsed = parsePositiveIntFlag(args, names, fallback);
+  if (parsed.error) failUsage(parsed.error, usage);
+  return parsed.value;
+}
+
+function readValueFlag(args, names, fallback, usage, opts = {}) {
+  const parsed = parseValueFlag(args, names, fallback, opts);
+  if (parsed.error) failUsage(parsed.error, usage);
+  return parsed.value;
+}
+
+function rejectUnknownOptions(args, usage) {
+  const bad = args.find(looksLikeOption);
+  if (bad) failUsage(`unrecognised option "${bad}"`, usage);
 }
 
 async function getSweetSearch() {
@@ -89,7 +110,7 @@ async function cmdGrep(rawArgs) {
   const ignoreCase = parseBoolFlag(args, ['-i', '--ignore-case']);
   const wordBound = parseBoolFlag(args, ['-w', '--word-regexp']);
   const fixedString = parseBoolFlag(args, ['-F', '--fixed-strings']);
-  const k = +parseShortFlag(args, ['-k', '--top'], 20);
+  const k = readPositiveIntFlag(args, ['-k', '--top'], 20, GREP_USAGE);
   stripInertFlags(args);
   const regex = buildGrepPattern(resolvePositional(args, GREP_USAGE), { ignoreCase, wordBound, fixedString });
   if (!regex) {
@@ -134,8 +155,8 @@ async function cmdFind(rawArgs) {
   const ignoreCase = parseBoolFlag(args, ['-i', '--ignore-case']);
   const wordBound = parseBoolFlag(args, ['-w', '--word-regexp']);
   const fixedString = parseBoolFlag(args, ['-F', '--fixed-strings']);
-  const k = +parseShortFlag(args, ['-k', '--top'], 6);
-  const regex = parseFlag(args, '--regex', '');
+  const k = readPositiveIntFlag(args, ['-k', '--top'], 6, FIND_USAGE);
+  const regex = readValueFlag(args, '--regex', '', FIND_USAGE, { allowOptionValue: true });
   stripInertFlags(args);
   const query = resolvePositional(args, FIND_USAGE);
   if (!query) {
@@ -251,7 +272,9 @@ async function cmdRead(args) {
   process.exit(0);
 }
 
-async function cmdAgentSearch(args) {
+const SEARCH_USAGE = 'Usage: ss-search "<query>" [--full|--xl] [-k N] [--mode auto|lexical|semantic|hybrid]';
+async function cmdAgentSearch(rawArgs) {
+  const args = normalizeArgs(rawArgs);
   // Main sweet-search auto/CatBoost search with token-budgeted agent packaging.
   //
   // Usage:
@@ -268,11 +291,11 @@ async function cmdAgentSearch(args) {
   let format = 'agent';
   if (args.includes('--full')) { format = 'agent_full'; args.splice(args.indexOf('--full'), 1); }
   if (args.includes('--xl'))   { format = 'agent_full_xl'; args.splice(args.indexOf('--xl'), 1); }
-  const k = +parseShortFlag(args, ['-k', '--top'], 5);
-  const mode = parseFlag(args, '--mode', 'auto');
-  const query = args[0];
+  const k = readPositiveIntFlag(args, ['-k', '--top'], 5, SEARCH_USAGE);
+  const mode = readValueFlag(args, '--mode', 'auto', SEARCH_USAGE);
+  const query = resolvePositional(args, SEARCH_USAGE);
   if (!query) {
-    process.stderr.write('Usage: ss-search "<query>" [--full|--xl] [-k N] [--mode auto|lexical|semantic|hybrid]\n');
+    process.stderr.write(SEARCH_USAGE + '\n');
     process.exit(2);
   }
 
@@ -422,18 +445,21 @@ async function cmdAgentSearch(args) {
   process.exit(0);
 }
 
-async function cmdSemantic(args) {
-  const file = args[0];
-  const query = args[1];
-  if (!file || !query) {
-    process.stderr.write('Usage: ss-semantic <file> "<question>" [--max-tokens N]\n');
-    process.exit(2);
-  }
+const SEMANTIC_USAGE = 'Usage: ss-semantic <file> "<question>" [--max-tokens N]';
+async function cmdSemantic(rawArgs) {
+  const args = normalizeArgs(rawArgs);
   // Default 600 (was 800) per the 2026-06 budget sweep — scaled with the 3k
   // preview tier. Env hook overrides the default for sweeps; an explicit
   // --max-tokens flag from the agent always wins.
-  const maxTokens = +parseFlag(args.slice(2), '--max-tokens',
-    Number(process.env.SS_SMOKE_SEMANTIC_MAXTOKENS || '') || 600);
+  const maxTokens = readPositiveIntFlag(args, '--max-tokens',
+    Number(process.env.SS_SMOKE_SEMANTIC_MAXTOKENS || '') || 600, SEMANTIC_USAGE);
+  rejectUnknownOptions(args, SEMANTIC_USAGE);
+  const file = args[0];
+  const query = args[1];
+  if (!file || !query) {
+    process.stderr.write(SEMANTIC_USAGE + '\n');
+    process.exit(2);
+  }
   const { readSemantic } = await import(path.join(REPO_ROOT, 'core/search/search-read-semantic.js'));
   const r = await readSemantic({
     path: file, query, projectRoot: PROJECT_ROOT,
@@ -452,29 +478,31 @@ async function cmdSemantic(args) {
   process.exit(0);
 }
 
-async function cmdTrace(args) {
+const TRACE_USAGE = 'Usage: ss-trace <symbol> [--in <file>] [--query <hint>] [--depth N] [--budget N]';
+async function cmdTrace(rawArgs) {
+  const args = normalizeArgs(rawArgs);
   let json = false;
   if (args.includes('--json')) {
     json = true;
     args.splice(args.indexOf('--json'), 1);
   }
-  const symbol = args[0];
-  if (!symbol) {
-    process.stderr.write('Usage: ss-trace <symbol> [--in <file>] [--query <hint>] [--depth N] [--budget N]\n');
-    process.exit(2);
-  }
   const { traceSymbol, formatStructuralContext } = await import(path.join(REPO_ROOT, 'core/search/search-trace.js'));
 
   const opts = { projectRoot: PROJECT_ROOT };
-  const file = parseFlag(args, '--in', null) || parseFlag(args, '--file', null);
-  const queryHint = parseFlag(args, '--query', '') || parseFlag(args, '--hint', '');
-  const depth = parseFlag(args, '--depth', null);
-  const budget = parseFlag(args, '--budget', null);
+  const file = readValueFlag(args, ['--in', '--file'], null, TRACE_USAGE);
+  const queryHint = readValueFlag(args, ['--query', '--hint'], '', TRACE_USAGE, { allowOptionValue: true });
+  const depth = readPositiveIntFlag(args, '--depth', null, TRACE_USAGE);
+  const budget = readPositiveIntFlag(args, '--budget', null, TRACE_USAGE);
+  const symbol = resolvePositional(args, TRACE_USAGE);
+  if (!symbol) {
+    process.stderr.write(TRACE_USAGE + '\n');
+    process.exit(2);
+  }
   if (file) opts.filePath = file;
   if (queryHint) opts.queryHint = queryHint;
-  if (depth != null) opts.maxDepth = +depth;
+  if (depth != null) opts.maxDepth = depth;
   // Budget-sweep experiment hook: env sets the default; explicit --budget wins.
-  if (budget != null) opts.tokenBudget = +budget;
+  if (budget != null) opts.tokenBudget = budget;
   else if (Number(process.env.SS_SMOKE_TRACE_BUDGET || '') > 0) opts.tokenBudget = Number(process.env.SS_SMOKE_TRACE_BUDGET);
 
   const response = traceSymbol(symbol, opts);
