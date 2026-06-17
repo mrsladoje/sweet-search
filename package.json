@@ -76,6 +76,7 @@
     "eval/agent-read-workflows/bin/ss-trace",
     "eval/agent-read-workflows/bin/ss-read",
     "eval/agent-read-workflows/bin/_ss-helpers.mjs",
+    "eval/agent-read-workflows/bin/_ss-argparse.mjs",
     "crates/wasm-router/pkg/",
     "LICENSE",
     "NOTICE"
