@@ -3,6 +3,8 @@
 #   ss-read <file>                  # whole file
 #   ss-read <file> <start>          # ONE line (NOT start-to-EOF)
 #   ss-read <file> <start> <end>    # explicit range
+#   ss-read <file> 10-20            # range token (also 10:20, 10,20)
+# No flags: ss-read takes no -n/--limit/-r — line selection is positional.
 # Open-ended start-to-EOF is intentionally not supported in the bench wrapper
 # to prevent accidental over-reading. To pull a span, give an explicit end.
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

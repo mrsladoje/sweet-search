@@ -20,6 +20,7 @@ import {
   parseBoolFlag,
   parseShortFlag,
   parseFlag,
+  parseLineRange,
 } from '../../eval/agent-read-workflows/bin/_ss-argparse.mjs';
 
 describe('buildGrepPattern', () => {
@@ -134,6 +135,34 @@ describe('value/bool flag parsers', () => {
     const args = ['q', '--regex', 'foo'];
     expect(parseFlag(args, '--regex', '')).toBe('foo');
     expect(args).toEqual(['q']);
+  });
+});
+
+describe('parseLineRange (ss-read single-token ranges)', () => {
+  it.each([
+    ['10-20', { start: 10, end: 20 }],
+    ['10:20', { start: 10, end: 20 }],
+    ['10,20', { start: 10, end: 20 }],
+    ['5-5', { start: 5, end: 5 }],
+  ])('parses %s', (tok, expected) => {
+    expect(parseLineRange(tok)).toEqual(expected);
+  });
+  it.each([
+    '20-10',      // descending → invalid
+    '0-5',        // start < 1
+    '10',         // plain number, not a range
+    '10-',        // open-ended (would over-read) → rejected
+    '-5',         // looks like a flag
+    '10-20.txt',  // filename, not a range
+    'abc',
+    '',
+  ])('rejects %s (returns null)', (tok) => {
+    expect(parseLineRange(tok)).toBeNull();
+  });
+  it('does NOT treat a read-flag as a range (no silent over-read)', () => {
+    // -n / --limit etc. must stay loud errors, never coerced to a range.
+    expect(parseLineRange('-n')).toBeNull();
+    expect(parseLineRange('--limit')).toBeNull();
   });
 });
 
