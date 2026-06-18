@@ -1,19 +1,18 @@
 <div align="center">
 
-<img src="assets/sweet-search-banner-pixelated.svg" alt="sweet-search" width="100%" />
+<img src="assets/sweet-search-banner-pixelated.svg" alt="sweet-search — local code search for AI coding agents" width="100%" />
+
+**Local code search for AI coding agents.** Six fast, purpose-built tools that hand *Claude Code*, *Codex*, *Cursor* & *Gemini CLI* ranked answers, not raw grep. Zero API keys, 100% on-device.
+
+[![npm](https://img.shields.io/npm/v/sweet-search?color=cb3837&label=npm)](https://www.npmjs.com/package/sweet-search)
+[![GitHub stars](https://img.shields.io/github/stars/mrsladoje/sweet-search?style=social)](https://github.com/mrsladoje/sweet-search/stargazers)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#platform-support)
+[![inference](https://img.shields.io/badge/inference-100%25%20local-success)](#-gpu-accelerated-indexing-fully-local)
 
 ### *Maybe grep isn't all you need…* 🍬
 
-
-Every AI coding agent of today is stuck believing grep+Read is the way... ***sweet-search*** challenges the narrative 😎
-
-A 100% local code-search engine for *Claude Code*, *Codex*, *Cursor* & friends with six blazing and purpose-built tools that hand your agent ranked, ready-to-use answers instead of walls of grep output. Up to 34% cheaper, 56% fewer tool calls, more useful answers, SOTA retrieval quality, zero API keys. 
-
-[![npm](https://img.shields.io/npm/v/sweet-search?color=cb3837&label=npm)](https://www.npmjs.com/package/sweet-search)
-[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)](package.json)
-[![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#platform-support)
-[![inference](https://img.shields.io/badge/inference-100%25%20local-success)](#-gpu-accelerated-indexing-fully-local)
+Every coding agent today reaches for grep + Read by reflex. *sweet-search* challenges the narrative. 😎
 
 </div>
 
