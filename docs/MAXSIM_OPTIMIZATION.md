@@ -13,7 +13,7 @@ Three-tier MaxSim acceleration with automatic fallback:
 | Tier | Engine | Speedup | Portability |
 |------|--------|---------|-------------|
 | 1 | Native Rust + Rayon | 47x | Platform-specific `.node` addon |
-| 2 | WASM SIMD (Rust/LLVM) | 16x | Universal — `core/maxsim.wasm` (2.9KB) |
+| 2 | WASM SIMD (Rust/LLVM) | 16x | Universal — `core/infrastructure/maxsim.wasm` (4.4KB, ~1.6KB gzipped) |
 | 3 | JS (norm-cached flat buffer) | 3.5x | Universal — pure JS fallback |
 
 Auto-detected at startup. Tier 1 requires building with `npm run build:native`.
@@ -23,7 +23,7 @@ Tier 2 ships in the package. Tier 3 is always available.
 
 - `core/late-interaction-index.js` — MaxSim scoring, 3-tier dispatch
 - `core/simd-distance.js` — WASM/native loader, tier routing
-- `core/maxsim.wasm` — Rust-compiled WASM SIMD kernel
+- `core/infrastructure/maxsim.wasm` — Rust-compiled WASM SIMD kernel
 - `crates/wasm-maxsim/` — Rust source for WASM kernel
 - `crates/sweet-search-native/` — Rust source for native addon (rayon + NEON/AVX2)
 
@@ -37,7 +37,7 @@ Tier 2 ships in the package. Tier 3 is always available.
 2. **Norm caching** — pre-computes L2 norms for query and document tokens. Avoids 3x redundant FLOPs per cosine similarity.
 3. **Flat buffer scoring** — `maxSimScoreFlat()` operates on contiguous Float32Array with offset indexing, avoiding N sub-array allocations per candidate.
 4. **Pooled dequantization buffer** — reuses a single Float32Array across candidates instead of allocating 256KB per candidate.
-5. **WASM SIMD kernel** (`core/maxsim.wasm`) — Rust-compiled f32x4 SIMD with LLVM optimization. Handles arbitrary dimensions (scalar tail for non-multiple-of-4).
+5. **WASM SIMD kernel** (`core/infrastructure/maxsim.wasm`) — Rust-compiled f32x4 SIMD with LLVM optimization. Handles arbitrary dimensions (scalar tail for non-multiple-of-4).
 6. **Native Rust + Rayon** (`crates/sweet-search-native/`) — parallel candidate scoring across all CPU cores. Zero-copy buffer access via napi-rs.
 7. **`tokenNorms` persistence** — computed at `add()` time, reconstructed on `load()` via `_rebuildTokenNorms()`.
 
