@@ -12,12 +12,12 @@
 **Remaining minor hygiene:**
 - [ ] **§7.2 tail** — reconcile the `498` vs `499` tree-count straggler in `lib.rs` / `PAPER_RANKING.md` (README's 498 is correct; this is internal consistency only).
 
-**Stage 2 — the rewrite (the star work): NOT STARTED**
+**Stage 2 — the rewrite (the star work): IN PROGRESS**
 - [ ] §2 Above-the-fold redesign (definition-first ordering, stars badge up top, drop node badge)
 - [ ] §3 De-LLM the prose (cut em-dash density ~70%, break triads / "not just X—Y" / uniform bold-bullets, emoji down to ~1 per section)
 - [ ] §4 Cut/move/compress to ~250–350 visible lines (TOC, benchmark prose, engine internals → `/docs` or `<details>`)
 - [ ] §6 Elevate the 5 gems (Metal NaN bug, cache-aware batching, the shipped negative result, 8GB-laptop framing, `ss-trace` → flagship); demote internals
-- [ ] §8 Add the comparison table (vs claude-context / grepai / Cursor)
+- [x] **§8 Add the comparison table** — DONE ✅ *"Where sweet-search Fits"* matrix placed directly after Highlights (per the after-Highlights call; honest losing rows de-risk the early placement). Columns: sweet-search · claude-context (11.9k★) · Cursor · codebase-memory-mcp (6.6k★) · SocratiCode (2.9k★); grepai / Sourcegraph / Continue / Serena / cocoindex-code in the footnote. Includes 4 honest concession rows (no native Windows, fewer deep-AST languages, no GUI/editing, single-repo). Facts verified June 2026. *(Open: heading is Title Case pending the §3 sentence-case pass; SocratiCode's Windows ✅ is inferred.)*
 
 **Stage 3 — the asset (highest single ROI): NOT STARTED**
 - [ ] §5 Record the demo GIF (Quickstart payoff; `assets/demo.gif`) — *requires a screen recording, so this one's on you to capture*
