@@ -22,7 +22,15 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, openSync, writeSync, closeSync, unlinkSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  openSync,
+  writeSync,
+  closeSync,
+  unlinkSync,
+} from 'node:fs';
 import { connect } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,6 +51,86 @@ const verbose = !!process.env.SWEET_SEARCH_PREWARM_VERBOSE;
 const log = (msg) => {
   if (verbose) process.stderr.write(`[sweet-search prewarm] ${msg}\n`);
 };
+
+function pageCacheSweepEnabled() {
+  const v = String(process.env.SWEET_SEARCH_PREWARM_PAGE_CACHE || '').trim().toLowerCase();
+  return v !== '0' && v !== 'false' && v !== 'off' && v !== 'no';
+}
+
+function readAndDiscard(filePath, deadlineMs) {
+  if (!filePath || Date.now() >= deadlineMs || !existsSync(filePath)) return false;
+  try {
+    readFileSync(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function pageCacheSweep() {
+  const rawBudgetMs = Number(process.env.SWEET_SEARCH_PREWARM_PAGE_CACHE_MS || 3500);
+  const budgetMs = Number.isFinite(rawBudgetMs) ? Math.max(250, rawBudgetMs) : 3500;
+  const deadlineMs = Date.now() + budgetMs;
+  let warmed = 0;
+  try {
+    const { DB_PATHS, LATE_INTERACTION_CONFIG } = await import('../infrastructure/config/index.js');
+    const files = [
+      DB_PATHS.codeGraph,
+      DB_PATHS.lateInteraction,
+      DB_PATHS.sparseGramIndex,
+    ];
+
+    const segmentDir = DB_PATHS.lateInteraction ? `${DB_PATHS.lateInteraction}.segments` : null;
+    if (segmentDir && existsSync(segmentDir)) {
+      try {
+        for (const name of readdirSync(segmentDir)) {
+          if (name.endsWith('.bin')) files.push(join(segmentDir, name));
+        }
+      } catch {
+        /* best-effort page-cache prewarm */
+      }
+    }
+
+    const modelConfig = LATE_INTERACTION_CONFIG.activeModel;
+    if (modelConfig?.hfId) {
+      try {
+        const { getModelCacheDir } = await import('../infrastructure/model-fetcher.js');
+        const modelDir = getModelCacheDir(modelConfig.hfId);
+        files.push(join(modelDir, modelConfig.onnxFile));
+        files.push(join(modelDir, 'tokenizer.json'));
+      } catch {
+        /* model cache unavailable; do not fetch or load sessions here */
+      }
+    }
+
+    for (const filePath of files) {
+      if (readAndDiscard(filePath, deadlineMs)) warmed++;
+    }
+    log(`page-cache sweep warmed ${warmed} file(s)`);
+  } catch (err) {
+    log(`page-cache sweep non-fatal: ${err?.message || err}`);
+  }
+}
+
+function spawnPageCacheSweep() {
+  if (!pageCacheSweepEnabled()) return;
+  if (process.env.SWEET_SEARCH_PAGE_CACHE_SWEEP === '1') return;
+  try {
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url)], {
+      detached: true,
+      stdio: 'ignore',
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        SWEET_SEARCH_PAGE_CACHE_SWEEP: '1',
+      },
+    });
+    child.unref();
+    log(`page-cache sweep spawned (pid ${child.pid}, detached)`);
+  } catch (err) {
+    log(`page-cache sweep spawn non-fatal: ${err?.message || err}`);
+  }
+}
 
 /** Does a process with this PID exist right now? Handles EPERM (alien user) as "alive". */
 function pidAlive(pid) {
@@ -165,9 +253,24 @@ async function prewarmServer() {
   }
 }
 
+if (process.env.SWEET_SEARCH_PAGE_CACHE_SWEEP === '1') {
+  try {
+    await pageCacheSweep();
+  } catch (err) {
+    log(`page-cache sweep non-fatal: ${err?.message || err}`);
+  }
+  process.exit(0);
+}
+
 // The search server and the index maintainer are independent: a stuck/already
 // running server must not stop the maintainer from starting, and vice versa.
 // Each is isolated in its own try so one failing never blocks the other.
+try {
+  spawnPageCacheSweep();
+} catch (err) {
+  log(`page-cache sweep spawn non-fatal: ${err?.message || err}`);
+}
+
 try {
   await prewarmServer();
 } catch (err) {

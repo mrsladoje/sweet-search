@@ -8,10 +8,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, realpathSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import http from 'node:http';
+import { spawnSync } from 'node:child_process';
 
 import {
   fnv1a64Hex,
@@ -122,6 +123,34 @@ describe('resolveProjectRoot', () => {
 
   it('falls back to the canonical cwd when no .sweet-search exists', () => {
     expect(resolveProjectRoot({}, sandbox)).toBe(sandbox);
+  });
+});
+
+describe('infrastructure PROJECT_ROOT alignment', () => {
+  it('prefers a .sweet-search corpus boundary over an outer package root', () => {
+    writeFileSync(join(sandbox, 'package.json'), '{"private":true}\n', 'utf-8');
+    const corpus = join(sandbox, 'eval', 'corpus', 'm2crb');
+    const deep = join(corpus, 'src', 'nested');
+    mkdirSync(join(corpus, '.sweet-search'), { recursive: true });
+    mkdirSync(deep, { recursive: true });
+
+    const platformPath = join(process.cwd(), 'core', 'infrastructure', 'config', 'platform.js');
+    const script = `
+      const { PROJECT_ROOT } = await import(${JSON.stringify(platformPath)});
+      process.stdout.write(PROJECT_ROOT);
+    `;
+    const env = { ...process.env };
+    delete env.SWEET_SEARCH_PROJECT_ROOT;
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: deep,
+      env,
+      encoding: 'utf-8',
+      timeout: 10_000,
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toBe(corpus);
   });
 });
 

@@ -44,7 +44,9 @@ fn canonicalize_path(p: &Path) -> PathBuf {
         if p.is_absolute() {
             p.to_path_buf()
         } else {
-            env::current_dir().map(|c| c.join(p)).unwrap_or_else(|_| p.to_path_buf())
+            env::current_dir()
+                .map(|c| c.join(p))
+                .unwrap_or_else(|_| p.to_path_buf())
         }
     })
 }
@@ -102,11 +104,31 @@ struct Ansi {
     r: &'static str,
 }
 
-const ANSI_ON: Ansi = Ansi { d1: D1, d2: D2, fa: FA, fw: FW, fg: FG, fy: FY, r: R };
-const ANSI_OFF: Ansi = Ansi { d1: "", d2: "", fa: "", fw: "", fg: "", fy: "", r: "" };
+const ANSI_ON: Ansi = Ansi {
+    d1: D1,
+    d2: D2,
+    fa: FA,
+    fw: FW,
+    fg: FG,
+    fy: FY,
+    r: R,
+};
+const ANSI_OFF: Ansi = Ansi {
+    d1: "",
+    d2: "",
+    fa: "",
+    fw: "",
+    fg: "",
+    fy: "",
+    r: "",
+};
 
 fn ansi(color: bool) -> &'static Ansi {
-    if color { &ANSI_ON } else { &ANSI_OFF }
+    if color {
+        &ANSI_ON
+    } else {
+        &ANSI_OFF
+    }
 }
 
 // =============================================================================
@@ -172,7 +194,11 @@ fn detect_agent_env(get: &dyn Fn(&str) -> Option<String>, all_keys: &[String]) -
         .iter()
         .any(|k| get(k).map(|v| env_truthy(&v)).unwrap_or(false))
         || all_keys.iter().any(|k| k.starts_with("CURSOR_"));
-    AgentEnv { codex, claude_code, other_agent }
+    AgentEnv {
+        codex,
+        claude_code,
+        other_agent,
+    }
 }
 
 fn has_no_color(get: &dyn Fn(&str) -> Option<String>) -> bool {
@@ -296,7 +322,16 @@ fn resolve_output_policy(json: bool, plain: bool, no_banner: bool) -> OutputPoli
     } else {
         false
     };
-    detect_output_policy(json, plain, no_banner, no_color, is_tty, agent, mode, tty_available)
+    detect_output_policy(
+        json,
+        plain,
+        no_banner,
+        no_color,
+        is_tty,
+        agent,
+        mode,
+        tty_available,
+    )
 }
 
 /// Best-effort probe: can we open the controlling terminal for writing? No bytes
@@ -346,6 +381,22 @@ struct Options {
     globs: Vec<String>,
 }
 
+#[derive(Debug)]
+struct ReadSemanticOptions {
+    file: Option<String>,
+    query: Option<String>,
+    top_k: Option<u32>,
+    threshold: Option<String>,
+    context_lines: Option<u32>,
+    max_chars: Option<u32>,
+    max_tokens: Option<u32>,
+    json: bool,
+    plain: bool,
+    no_banner: bool,
+    verbose: bool,
+    help: bool,
+}
+
 impl Default for Options {
     fn default() -> Self {
         Self {
@@ -371,6 +422,25 @@ impl Default for Options {
             fixed_string: false,
             symbol_type: None,
             globs: Vec::new(),
+        }
+    }
+}
+
+impl Default for ReadSemanticOptions {
+    fn default() -> Self {
+        Self {
+            file: None,
+            query: None,
+            top_k: None,
+            threshold: None,
+            context_lines: None,
+            max_chars: None,
+            max_tokens: None,
+            json: false,
+            plain: false,
+            no_banner: false,
+            verbose: false,
+            help: false,
         }
     }
 }
@@ -408,7 +478,17 @@ fn render_header(query: &str, mode: &str, a: &Ansi) -> Vec<String> {
         format!("{}  {}{}{}{}{:>32}{}", a.d1, a.fa, L1, a.r, a.d1, "", a.r),
         format!(
             "{}  {}{}{}{}{:>pad$}{}{}{}{}  {}",
-            a.d1, a.fa, L2, a.r, a.d2, "", a.fw, right, a.r, a.d1, a.r,
+            a.d1,
+            a.fa,
+            L2,
+            a.r,
+            a.d2,
+            "",
+            a.fw,
+            right,
+            a.r,
+            a.d1,
+            a.r,
             pad = padding
         ),
     ]
@@ -469,9 +549,7 @@ fn print_usage(prog: &str, a: &Ansi, show_banner: bool) {
     println!("      --stop          Stop the search server");
     println!("  -v, --verbose       Verbose output");
     println!("  -h, --help          Show this help");
-    println!(
-        "\n{fw}Decoration:{r} auto by default. SWEET_SEARCH_DECORATION=never forces plain;"
-    );
+    println!("\n{fw}Decoration:{r} auto by default. SWEET_SEARCH_DECORATION=never forces plain;");
     println!(
         "  =always forces the banner onto stdout even when captured {fy}(you accept the token cost){r}."
     );
@@ -501,11 +579,15 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             "-k" | "--top" => {
                 i += 1;
                 opts.top_k = args.get(i).and_then(|v| v.parse().ok()).unwrap_or(10);
-                if opts.top_k == 0 { opts.top_k = 10; }
+                if opts.top_k == 0 {
+                    opts.top_k = 10;
+                }
             }
             "-m" | "--mode" => {
                 i += 1;
-                if let Some(v) = args.get(i) { opts.mode = v.clone(); }
+                if let Some(v) = args.get(i) {
+                    opts.mode = v.clone();
+                }
             }
             "-s" | "--summary" => opts.summary = true,
             "--mid" => opts.mid = true,
@@ -546,15 +628,21 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             "-F" | "--fixed-strings" => opts.fixed_string = true,
             "--type" => {
                 i += 1;
-                if let Some(v) = args.get(i) { opts.symbol_type = Some(v.clone()); }
+                if let Some(v) = args.get(i) {
+                    opts.symbol_type = Some(v.clone());
+                }
             }
             "--glob" => {
                 i += 1;
-                if let Some(v) = args.get(i) { opts.globs.push(v.clone()); }
+                if let Some(v) = args.get(i) {
+                    opts.globs.push(v.clone());
+                }
             }
             "-f" | "--fusion" => {
                 i += 1;
-                if let Some(v) = args.get(i) { opts.fusion = v.clone(); }
+                if let Some(v) = args.get(i) {
+                    opts.fusion = v.clone();
+                }
             }
             "--no-late-interaction" | "--no-colbert" => opts.no_late_interaction = true,
             "--stop" => opts.stop = true,
@@ -580,6 +668,118 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     Ok(opts)
 }
 
+fn print_read_semantic_usage(prog: &str, a: &Ansi) {
+    println!(
+        "{}Usage:{} {prog} read-semantic <file> \"query\" [options]\n",
+        a.fw, a.r
+    );
+    println!("{}Options:{}", a.fw, a.r);
+    println!("  -k, --top <n>       Max ranked spans before merging (default: 5)");
+    println!("      --threshold <f> MaxSim score floor when LI runs (default: 0.4)");
+    println!("      --context <n>   Lines of pre/post context per selected span (default: 2)");
+    println!("      --max-chars <n> Hard cap on returned text (default: 8000)");
+    println!("      --max-tokens <n> Convenience cap (~chars/4)");
+    println!("  -j, --json          Emit JSON");
+    println!("      --format <fmt>  json | agent | plain");
+    println!("      --no-banner     Suppress the identity line");
+    println!("  -v, --verbose       Include timings + per-signal scores");
+    println!("  -h, --help          Show this help");
+}
+
+fn parse_read_semantic_args(args: &[String]) -> Result<ReadSemanticOptions, String> {
+    let mut opts = ReadSemanticOptions::default();
+    let mut positional: Vec<String> = Vec::new();
+    let mut i = 0;
+
+    while i < args.len() {
+        let arg = &args[i];
+        match arg.as_str() {
+            "-k" | "--top" | "--top-k" => {
+                i += 1;
+                opts.top_k = Some(
+                    args.get(i)
+                        .ok_or_else(|| format!("{arg} requires a value"))?
+                        .parse()
+                        .map_err(|_| format!("{arg} requires an integer"))?,
+                );
+            }
+            "--threshold" => {
+                i += 1;
+                opts.threshold = Some(
+                    args.get(i)
+                        .ok_or_else(|| "--threshold requires a value".to_string())?
+                        .clone(),
+                );
+            }
+            "--context" => {
+                i += 1;
+                opts.context_lines = Some(
+                    args.get(i)
+                        .ok_or_else(|| "--context requires a value".to_string())?
+                        .parse()
+                        .map_err(|_| "--context requires an integer".to_string())?,
+                );
+            }
+            "--max-chars" => {
+                i += 1;
+                opts.max_chars = Some(
+                    args.get(i)
+                        .ok_or_else(|| "--max-chars requires a value".to_string())?
+                        .parse()
+                        .map_err(|_| "--max-chars requires an integer".to_string())?,
+                );
+            }
+            "--max-tokens" => {
+                i += 1;
+                opts.max_tokens = Some(
+                    args.get(i)
+                        .ok_or_else(|| "--max-tokens requires a value".to_string())?
+                        .parse()
+                        .map_err(|_| "--max-tokens requires an integer".to_string())?,
+                );
+            }
+            "-j" | "--json" => opts.json = true,
+            "--agent" => {}
+            "--no-banner" => opts.no_banner = true,
+            "--format" => {
+                i += 1;
+                match args.get(i).map(|s| s.as_str()) {
+                    Some("json") => opts.json = true,
+                    Some("agent") => {}
+                    Some("plain") => opts.plain = true,
+                    Some(other) => return Err(format!("unknown --format value: {other}")),
+                    None => return Err("--format requires a value".into()),
+                }
+            }
+            "-v" | "--verbose" => opts.verbose = true,
+            "-h" | "--help" => opts.help = true,
+            other => {
+                if let Some(v) = other.strip_prefix("--format=") {
+                    match v {
+                        "json" => opts.json = true,
+                        "agent" => {}
+                        "plain" => opts.plain = true,
+                        _ => return Err(format!("unknown --format value: {v}")),
+                    }
+                } else if other.starts_with('-') {
+                    return Err(format!("Unknown option: {other}"));
+                } else {
+                    positional.push(other.to_string());
+                }
+            }
+        }
+        i += 1;
+    }
+
+    if let Some(first) = positional.first() {
+        opts.file = Some(first.clone());
+    }
+    if positional.len() >= 2 {
+        opts.query = Some(positional[1..].join(" "));
+    }
+    Ok(opts)
+}
+
 fn build_url(opts: &Options, body_color: bool, body_decoration: bool) -> String {
     let query = opts.query.as_deref().unwrap_or("");
     let encoded = url_encode(query);
@@ -601,14 +801,24 @@ fn build_url(opts: &Options, body_color: bool, body_decoration: bool) -> String 
     if opts.mode != "auto" {
         url.push_str(&format!("&mode={}", opts.mode));
     }
-    if opts.summary { url.push_str("&summary=true"); }
-    if opts.mid { url.push_str("&mid=true"); }
-    if opts.no_expand { url.push_str("&expand=false"); }
-    if opts.no_rerank { url.push_str("&rerank=false"); }
+    if opts.summary {
+        url.push_str("&summary=true");
+    }
+    if opts.mid {
+        url.push_str("&mid=true");
+    }
+    if opts.no_expand {
+        url.push_str("&expand=false");
+    }
+    if opts.no_rerank {
+        url.push_str("&rerank=false");
+    }
     if opts.fusion != "cc" {
         url.push_str(&format!("&fusion={}", opts.fusion));
     }
-    if opts.no_late_interaction { url.push_str("&late-interaction=false"); }
+    if opts.no_late_interaction {
+        url.push_str("&late-interaction=false");
+    }
 
     // Pattern / grep params. For `grep`, the positional IS the pattern, so the
     // regex defaults to the query (matches the JS `grep` command). For `-e`
@@ -629,7 +839,9 @@ fn build_url(opts: &Options, body_color: bool, body_decoration: bool) -> String 
     if opts.context_lines > 0 {
         url.push_str(&format!("&contextLines={}", opts.context_lines));
     }
-    if opts.fixed_string { url.push_str("&fixedString=true"); }
+    if opts.fixed_string {
+        url.push_str("&fixedString=true");
+    }
     if let Some(t) = &opts.symbol_type {
         url.push_str(&format!("&type={}", url_encode(t)));
     }
@@ -638,6 +850,71 @@ fn build_url(opts: &Options, body_color: bool, body_decoration: bool) -> String 
     }
 
     url
+}
+
+fn build_read_semantic_url(opts: &ReadSemanticOptions) -> String {
+    let file = opts.file.as_deref().unwrap_or("");
+    let query = opts.query.as_deref().unwrap_or("");
+    let project_root = resolve_project_root().to_string_lossy().into_owned();
+    let format = if opts.json { "json" } else { "agent" };
+
+    let mut url = format!(
+        "/read-semantic?path={}&q={}&projectRoot={}&format={format}",
+        url_encode(file),
+        url_encode(query),
+        url_encode(&project_root),
+    );
+    if let Some(k) = opts.top_k {
+        url.push_str(&format!("&k={k}"));
+    }
+    if let Some(threshold) = &opts.threshold {
+        url.push_str(&format!("&threshold={}", url_encode(threshold)));
+    }
+    if let Some(context) = opts.context_lines {
+        url.push_str(&format!("&contextLines={context}"));
+    }
+    if let Some(max_chars) = opts.max_chars {
+        url.push_str(&format!("&maxChars={max_chars}"));
+    }
+    if let Some(max_tokens) = opts.max_tokens {
+        url.push_str(&format!("&maxTokens={max_tokens}"));
+    }
+    if opts.verbose {
+        url.push_str("&verbose=true");
+    }
+    url
+}
+
+fn emit_tool_identity(tool: &str, detail: &str, policy: &OutputPolicy) {
+    if !policy.banner_enabled {
+        return;
+    }
+    let icon = match tool {
+        "read-semantic" => "🧠",
+        "read" => "📄",
+        "trace" => "🔗",
+        _ => "✦",
+    };
+    let a = ansi(policy.color_enabled);
+    let sep = format!("{}·{}", a.fg, a.r);
+    let line = format!(
+        "  {icon} {}sweet-search{} {sep} {}{tool}{} {sep} {}{}{}",
+        a.fw, a.r, a.fw, a.r, a.fg, detail, a.r,
+    );
+    match policy.decoration_stream {
+        DecorationStream::Stdout => {
+            println!();
+            println!("{line}");
+        }
+        DecorationStream::Tty => {
+            if let Ok(mut tty) = fs::OpenOptions::new().write(true).open("/dev/tty") {
+                let _ = tty.write_all(b"\n");
+                let _ = tty.write_all(line.as_bytes());
+                let _ = tty.write_all(b"\n");
+            }
+        }
+        DecorationStream::None => {}
+    }
 }
 
 fn find_socket_path_with(
@@ -657,14 +934,16 @@ fn find_socket_path_with(
 
 fn find_socket() -> Option<String> {
     let primary = socket_path();
-    find_socket_path_with(
-        &primary,
-        &|p| p.exists(),
-        &|p| UnixStream::connect(p).is_ok(),
-    )
+    find_socket_path_with(&primary, &|p| p.exists(), &|p| {
+        UnixStream::connect(p).is_ok()
+    })
 }
 
 fn do_request(socket_path: &str, path: &str) -> io::Result<()> {
+    do_request_with_status(socket_path, path).map(|_| ())
+}
+
+fn do_request_with_status(socket_path: &str, path: &str) -> io::Result<u16> {
     let mut stream = UnixStream::connect(socket_path)?;
 
     let request = format!("GET {path} HTTP/1.0\r\nHost: l\r\n\r\n");
@@ -675,19 +954,26 @@ fn do_request(socket_path: &str, path: &str) -> io::Result<()> {
     let mut out = stdout.lock();
     let mut buf = [0u8; BUFFER_SIZE];
     let mut headers_done = false;
+    let mut header_buf: Vec<u8> = Vec::new();
+    let mut status_code = 0u16;
 
     loop {
         let n = stream.read(&mut buf)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
 
         if !headers_done {
+            header_buf.extend_from_slice(&buf[..n]);
             // Scan for \r\n\r\n header terminator
-            if let Some(pos) = find_header_end(&buf[..n]) {
+            if let Some(pos) = find_header_end(&header_buf) {
                 headers_done = true;
+                status_code = parse_http_status(&header_buf[..pos]).unwrap_or(0);
                 let body_start = pos + 4;
-                if body_start < n {
-                    out.write_all(&buf[body_start..n])?;
+                if body_start < header_buf.len() {
+                    out.write_all(&header_buf[body_start..])?;
                 }
+                header_buf.clear();
             }
         } else {
             out.write_all(&buf[..n])?;
@@ -695,11 +981,19 @@ fn do_request(socket_path: &str, path: &str) -> io::Result<()> {
     }
 
     out.flush()?;
-    Ok(())
+    Ok(status_code)
 }
 
 fn find_header_end(data: &[u8]) -> Option<usize> {
     data.windows(4).position(|w| w == b"\r\n\r\n")
+}
+
+fn parse_http_status(headers: &[u8]) -> Option<u16> {
+    let text = std::str::from_utf8(headers).ok()?;
+    let first = text.lines().next()?;
+    let mut parts = first.split_whitespace();
+    let _http = parts.next()?;
+    parts.next()?.parse().ok()
 }
 
 /// Auto-start the Node server and wait for the socket to appear.
@@ -742,7 +1036,10 @@ fn auto_start_server() -> Option<String> {
     }
 
     let a = ansi(incidental_color());
-    eprintln!("{}Error:{} Server did not start within 5 seconds", a.fa, a.r);
+    eprintln!(
+        "{}Error:{} Server did not start within 5 seconds",
+        a.fa, a.r
+    );
     eprintln!("Start server manually: node core/start-server.js");
     None
 }
@@ -794,7 +1091,10 @@ fn resolve_server_script(
 
     // 2. cwd upward: <ancestor>/node_modules/sweet-search/core/start-server.js.
     for ancestor in cwd.ancestors() {
-        let candidate = ancestor.join("node_modules").join("sweet-search").join(&rel);
+        let candidate = ancestor
+            .join("node_modules")
+            .join("sweet-search")
+            .join(&rel);
         if exists(&candidate) {
             return (Some(candidate), tried);
         }
@@ -815,7 +1115,11 @@ fn resolve_server_script(
                 // 3b. npm sibling: the published binary sits in
                 // node_modules/@sweet-search/native-*/, and the same node_modules
                 // also holds the `sweet-search` package with the JS server entry.
-                if ancestor.file_name().map(|n| n == "node_modules").unwrap_or(false) {
+                if ancestor
+                    .file_name()
+                    .map(|n| n == "node_modules")
+                    .unwrap_or(false)
+                {
                     let sibling = ancestor.join("sweet-search").join(&rel);
                     if exists(&sibling) {
                         return (Some(sibling), tried);
@@ -846,13 +1150,14 @@ fn find_server_script() -> Option<String> {
         }
         None => {
             let a = ansi(incidental_color());
-            eprintln!("{}Error:{} Cannot find core/start-server.js. Tried:", a.fa, a.r);
+            eprintln!(
+                "{}Error:{} Cannot find core/start-server.js. Tried:",
+                a.fa, a.r
+            );
             for t in &tried {
                 eprintln!("  - {}", t.display());
             }
-            eprintln!(
-                "Set $SWEET_SEARCH_SERVER_ENTRY to the path of start-server.js to override."
-            );
+            eprintln!("Set $SWEET_SEARCH_SERVER_ENTRY to the path of start-server.js to override.");
             None
         }
     }
@@ -860,14 +1165,72 @@ fn find_server_script() -> Option<String> {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let prog = args.first().map(|s| {
-        Path::new(s).file_name().unwrap_or_default().to_string_lossy().into_owned()
-    }).unwrap_or_else(|| "sweet-search".into());
+    let prog = args
+        .first()
+        .map(|s| {
+            Path::new(s)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .unwrap_or_else(|| "sweet-search".into());
 
     let cli_args: Vec<String> = args.into_iter().skip(1).collect();
 
     // Color for messages emitted before the full policy is known (parse errors).
     let ea = ansi(incidental_color());
+
+    if cli_args.first().map(|s| s.as_str()) == Some("read-semantic") {
+        let rs_opts = match parse_read_semantic_args(&cli_args[1..]) {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("{}Error:{} {e}", ea.fa, ea.r);
+                print_read_semantic_usage(&prog, ea);
+                process::exit(2);
+            }
+        };
+        if rs_opts.help {
+            print_read_semantic_usage(&prog, ea);
+            return;
+        }
+        let file = match rs_opts.file.as_deref() {
+            Some(v) if !v.is_empty() => v,
+            _ => {
+                print_read_semantic_usage(&prog, ea);
+                process::exit(2);
+            }
+        };
+        let query = match rs_opts.query.as_deref() {
+            Some(v) if !v.is_empty() => v,
+            _ => {
+                print_read_semantic_usage(&prog, ea);
+                process::exit(2);
+            }
+        };
+
+        let policy = resolve_output_policy(rs_opts.json, rs_opts.plain, rs_opts.no_banner);
+        let socket = match find_socket() {
+            Some(s) => s,
+            None => match auto_start_server() {
+                Some(s) => s,
+                None => process::exit(1),
+            },
+        };
+        if !rs_opts.json {
+            let detail = format!("{file} · \"{query}\"");
+            emit_tool_identity("read-semantic", &detail, &policy);
+        }
+        let url = build_read_semantic_url(&rs_opts);
+        match do_request_with_status(&socket, &url) {
+            Ok(status) if status >= 400 => process::exit(1),
+            Ok(_) => return,
+            Err(e) => {
+                eprintln!("{}Error:{} {e}", ea.fa, ea.r);
+                process::exit(1);
+            }
+        }
+    }
 
     let opts = match parse_args(&cli_args) {
         Ok(o) => o,
@@ -883,7 +1246,8 @@ fn main() {
     // so a captured pipe or a /dev/tty side-channel keeps stdout plain.
     let policy = resolve_output_policy(opts.json, opts.plain, opts.no_banner);
     let stdout_color = policy.color_enabled && policy.decoration_stream == DecorationStream::Stdout;
-    let stdout_banner = policy.banner_enabled && policy.decoration_stream == DecorationStream::Stdout;
+    let stdout_banner =
+        policy.banner_enabled && policy.decoration_stream == DecorationStream::Stdout;
     let sa = ansi(stdout_color);
 
     if opts.help {
@@ -895,7 +1259,10 @@ fn main() {
         let socket = match find_socket() {
             Some(s) => s,
             None => {
-                eprintln!("{}Error:{} No server running (socket not found)", ea.fa, ea.r);
+                eprintln!(
+                    "{}Error:{} No server running (socket not found)",
+                    ea.fa, ea.r
+                );
                 process::exit(1);
             }
         };
@@ -919,11 +1286,21 @@ fn main() {
         println!("{}Query:{} {query}", sa.fg, sa.r);
         println!("{}Mode:{} {}", sa.fg, sa.r, opts.mode);
         println!("{}Top K:{} {}", sa.fg, sa.r, opts.top_k);
-        if opts.summary { println!("{}Format:{} summary", sa.fg, sa.r); }
-        if opts.mid { println!("{}Format:{} mid", sa.fg, sa.r); }
-        if opts.no_expand { println!("{}Graph expansion:{} disabled", sa.fg, sa.r); }
-        if opts.no_rerank { println!("{}Reranking:{} disabled", sa.fg, sa.r); }
-        if opts.no_late_interaction { println!("{}Late Interaction:{} disabled", sa.fg, sa.r); }
+        if opts.summary {
+            println!("{}Format:{} summary", sa.fg, sa.r);
+        }
+        if opts.mid {
+            println!("{}Format:{} mid", sa.fg, sa.r);
+        }
+        if opts.no_expand {
+            println!("{}Graph expansion:{} disabled", sa.fg, sa.r);
+        }
+        if opts.no_rerank {
+            println!("{}Reranking:{} disabled", sa.fg, sa.r);
+        }
+        if opts.no_late_interaction {
+            println!("{}Late Interaction:{} disabled", sa.fg, sa.r);
+        }
         println!();
     }
 
@@ -976,8 +1353,7 @@ mod tests {
     #[test]
     fn dev_repo_cwd_relative_resolves() {
         let exists = exists_set(&["/repo/core/start-server.js"]);
-        let (found, _) =
-            resolve_server_script(Path::new("/repo"), None, None, &exists);
+        let (found, _) = resolve_server_script(Path::new("/repo"), None, None, &exists);
         assert_eq!(found, Some(PathBuf::from("/repo/core/start-server.js")));
     }
 
@@ -986,12 +1362,7 @@ mod tests {
         // Invoked from a subdir of a project that installed the package.
         let target = "/proj/node_modules/sweet-search/core/start-server.js";
         let exists = exists_set(&[target]);
-        let (found, _) = resolve_server_script(
-            Path::new("/proj/src/deep"),
-            None,
-            None,
-            &exists,
-        );
+        let (found, _) = resolve_server_script(Path::new("/proj/src/deep"), None, None, &exists);
         assert_eq!(found, Some(PathBuf::from(target)));
     }
 
@@ -1027,8 +1398,9 @@ mod tests {
         assert_eq!(found, None);
         assert!(!tried.is_empty());
         // The npm sibling location must be among the attempted paths.
-        assert!(tried.iter().any(|p| p
-            == &PathBuf::from("/proj/node_modules/sweet-search/core/start-server.js")));
+        assert!(tried
+            .iter()
+            .any(|p| p == &PathBuf::from("/proj/node_modules/sweet-search/core/start-server.js")));
     }
 
     // --- C3: project-scoped socket derivation -----------------------------
@@ -1069,7 +1441,10 @@ mod tests {
 
     #[test]
     fn socket_discovery_requires_a_live_listener() {
-        let exists = exists_set(&["/tmp/sweet-search-live.sock", "/tmp/sweet-search-stale.sock"]);
+        let exists = exists_set(&[
+            "/tmp/sweet-search-live.sock",
+            "/tmp/sweet-search-stale.sock",
+        ]);
         let connectable = |p: &str| p == "/tmp/sweet-search-live.sock";
 
         assert_eq!(
@@ -1087,6 +1462,42 @@ mod tests {
     }
 
     #[test]
+    fn read_semantic_subcommand_parses_file_query_and_flags() {
+        let args = vec![
+            "src/a.js".to_string(),
+            "how".to_string(),
+            "auth".to_string(),
+            "works".to_string(),
+            "--top".to_string(),
+            "3".to_string(),
+            "--threshold".to_string(),
+            "0.25".to_string(),
+            "--max-tokens".to_string(),
+            "600".to_string(),
+            "--format=plain".to_string(),
+        ];
+        let opts = parse_read_semantic_args(&args).expect("parse");
+        assert_eq!(opts.file.as_deref(), Some("src/a.js"));
+        assert_eq!(opts.query.as_deref(), Some("how auth works"));
+        assert_eq!(opts.top_k, Some(3));
+        assert_eq!(opts.threshold.as_deref(), Some("0.25"));
+        assert_eq!(opts.max_tokens, Some(600));
+        assert!(opts.plain);
+        assert!(!opts.json);
+    }
+
+    #[test]
+    fn read_semantic_subcommand_rejects_missing_flag_values() {
+        let args = vec![
+            "src/a.js".to_string(),
+            "q".to_string(),
+            "--max-tokens".to_string(),
+        ];
+        let err = parse_read_semantic_args(&args).unwrap_err();
+        assert_eq!(err, "--max-tokens requires a value");
+    }
+
+    #[test]
     fn derived_socket_is_stable_for_same_root() {
         assert_eq!(
             derive_socket(None, "/private/tmp/projA"),
@@ -1097,18 +1508,31 @@ mod tests {
     // --- Output-decoration policy (mirror of output-policy.test.js) --------
 
     fn agent(codex: bool, claude: bool, other: bool) -> AgentEnv {
-        AgentEnv { codex, claude_code: claude, other_agent: other }
+        AgentEnv {
+            codex,
+            claude_code: claude,
+            other_agent: other,
+        }
     }
-    const NONE: AgentEnv = AgentEnv { codex: false, claude_code: false, other_agent: false };
+    const NONE: AgentEnv = AgentEnv {
+        codex: false,
+        claude_code: false,
+        other_agent: false,
+    };
 
     /// Build a getter + key list from (key, value) pairs for env classification.
     fn env_of(pairs: &[(&str, &str)]) -> (Box<dyn Fn(&str) -> Option<String>>, Vec<String>) {
-        let owned: Vec<(String, String)> =
-            pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let owned: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
         let keys: Vec<String> = owned.iter().map(|(k, _)| k.clone()).collect();
         let lookup = owned.clone();
         let get = move |k: &str| {
-            lookup.iter().find(|(kk, _)| kk == k).map(|(_, v)| v.clone())
+            lookup
+                .iter()
+                .find(|(kk, _)| kk == k)
+                .map(|(_, v)| v.clone())
         };
         (Box::new(get), keys)
     }
@@ -1158,7 +1582,16 @@ mod tests {
 
     #[test]
     fn json_is_machine_readable_and_undecorated() {
-        let p = detect_output_policy(true, false, false, false, true, NONE, DecorationMode::Auto, true);
+        let p = detect_output_policy(
+            true,
+            false,
+            false,
+            false,
+            true,
+            NONE,
+            DecorationMode::Auto,
+            true,
+        );
         assert_eq!(p.mode, OutputMode::MachineReadable);
         assert!(p.machine_readable);
         assert!(!p.banner_enabled);
@@ -1167,7 +1600,16 @@ mod tests {
 
     #[test]
     fn tty_human_terminal_decorates_on_stdout() {
-        let p = detect_output_policy(false, false, false, false, true, NONE, DecorationMode::Auto, false);
+        let p = detect_output_policy(
+            false,
+            false,
+            false,
+            false,
+            true,
+            NONE,
+            DecorationMode::Auto,
+            false,
+        );
         assert_eq!(p.mode, OutputMode::HumanTerminal);
         assert_eq!(p.decoration_stream, DecorationStream::Stdout);
         assert!(p.banner_enabled);
@@ -1176,15 +1618,42 @@ mod tests {
 
     #[test]
     fn plain_and_no_banner_and_no_color_overrides() {
-        let plain = detect_output_policy(false, true, false, false, true, NONE, DecorationMode::Auto, false);
+        let plain = detect_output_policy(
+            false,
+            true,
+            false,
+            false,
+            true,
+            NONE,
+            DecorationMode::Auto,
+            false,
+        );
         assert!(!plain.banner_enabled);
         assert!(!plain.color_enabled);
 
-        let nob = detect_output_policy(false, false, true, false, true, NONE, DecorationMode::Auto, false);
+        let nob = detect_output_policy(
+            false,
+            false,
+            true,
+            false,
+            true,
+            NONE,
+            DecorationMode::Auto,
+            false,
+        );
         assert!(!nob.banner_enabled);
         assert!(nob.color_enabled);
 
-        let noc = detect_output_policy(false, false, false, true, true, NONE, DecorationMode::Auto, false);
+        let noc = detect_output_policy(
+            false,
+            false,
+            false,
+            true,
+            true,
+            NONE,
+            DecorationMode::Auto,
+            false,
+        );
         assert!(!noc.color_enabled);
         assert!(noc.banner_enabled);
     }
@@ -1193,7 +1662,16 @@ mod tests {
     fn captured_without_claude_is_plain_even_if_tty_probe_available() {
         // Non-TTY, no Claude marker: a writable /dev/tty must NOT unlock the
         // side-channel (a PTY harness would capture it).
-        let p = detect_output_policy(false, false, false, false, false, NONE, DecorationMode::Auto, true);
+        let p = detect_output_policy(
+            false,
+            false,
+            false,
+            false,
+            false,
+            NONE,
+            DecorationMode::Auto,
+            true,
+        );
         assert_eq!(p.mode, OutputMode::CapturedPlain);
         assert_eq!(p.decoration_stream, DecorationStream::None);
         assert!(!p.banner_enabled);
@@ -1203,13 +1681,31 @@ mod tests {
     #[test]
     fn claude_sidechannel_only_with_writable_tty() {
         let claude = agent(false, true, false);
-        let ok = detect_output_policy(false, false, false, false, false, claude, DecorationMode::Auto, true);
+        let ok = detect_output_policy(
+            false,
+            false,
+            false,
+            false,
+            false,
+            claude,
+            DecorationMode::Auto,
+            true,
+        );
         assert_eq!(ok.mode, OutputMode::ClaudeTtySidechannel);
         assert_eq!(ok.decoration_stream, DecorationStream::Tty);
         assert!(ok.banner_enabled);
         assert_eq!(ok.reason, "claude-code-tty");
 
-        let no_tty = detect_output_policy(false, false, false, false, false, claude, DecorationMode::Auto, false);
+        let no_tty = detect_output_policy(
+            false,
+            false,
+            false,
+            false,
+            false,
+            claude,
+            DecorationMode::Auto,
+            false,
+        );
         assert_eq!(no_tty.mode, OutputMode::CapturedPlain);
         assert!(!no_tty.banner_enabled);
         assert_eq!(no_tty.reason, "claude-no-tty");
@@ -1218,7 +1714,16 @@ mod tests {
     #[test]
     fn codex_suppresses_even_with_tty_and_probe() {
         let codex = agent(true, false, false);
-        let p = detect_output_policy(false, false, false, false, true, codex, DecorationMode::Auto, true);
+        let p = detect_output_policy(
+            false,
+            false,
+            false,
+            false,
+            true,
+            codex,
+            DecorationMode::Auto,
+            true,
+        );
         assert_eq!(p.mode, OutputMode::CapturedPlain);
         assert_eq!(p.decoration_stream, DecorationStream::None);
         assert!(!p.banner_enabled);
@@ -1228,25 +1733,61 @@ mod tests {
     #[test]
     fn other_agent_suppresses() {
         let cursor = agent(false, false, true);
-        let p = detect_output_policy(false, false, false, false, true, cursor, DecorationMode::Auto, true);
+        let p = detect_output_policy(
+            false,
+            false,
+            false,
+            false,
+            true,
+            cursor,
+            DecorationMode::Auto,
+            true,
+        );
         assert!(!p.banner_enabled);
         assert_eq!(p.reason, "agent-detected");
     }
 
     #[test]
     fn decoration_never_and_always() {
-        let never = detect_output_policy(false, false, false, false, true, NONE, DecorationMode::Never, false);
+        let never = detect_output_policy(
+            false,
+            false,
+            false,
+            false,
+            true,
+            NONE,
+            DecorationMode::Never,
+            false,
+        );
         assert!(!never.banner_enabled);
         assert_eq!(never.reason, "decoration-never");
 
         // 'always' decorates even on a captured pipe.
-        let always = detect_output_policy(false, false, false, false, false, NONE, DecorationMode::Always, false);
+        let always = detect_output_policy(
+            false,
+            false,
+            false,
+            false,
+            false,
+            NONE,
+            DecorationMode::Always,
+            false,
+        );
         assert_eq!(always.mode, OutputMode::HumanTerminal);
         assert_eq!(always.decoration_stream, DecorationStream::Stdout);
         assert!(always.banner_enabled);
 
         // json still wins over always.
-        let json = detect_output_policy(true, false, false, false, false, NONE, DecorationMode::Always, false);
+        let json = detect_output_policy(
+            true,
+            false,
+            false,
+            false,
+            false,
+            NONE,
+            DecorationMode::Always,
+            false,
+        );
         assert!(json.machine_readable);
         assert!(!json.banner_enabled);
     }
@@ -1256,7 +1797,16 @@ mod tests {
         for json in [true, false] {
             for is_tty in [true, false] {
                 for ag in [NONE, agent(true, false, false), agent(false, true, false)] {
-                    let p = detect_output_policy(json, false, false, false, is_tty, ag, DecorationMode::Auto, true);
+                    let p = detect_output_policy(
+                        json,
+                        false,
+                        false,
+                        false,
+                        is_tty,
+                        ag,
+                        DecorationMode::Auto,
+                        true,
+                    );
                     assert!(matches!(
                         p.decoration_stream,
                         DecorationStream::Stdout | DecorationStream::Tty | DecorationStream::None
@@ -1296,7 +1846,10 @@ mod tests {
 
     #[test]
     fn grep_subcommand_parses_pattern_and_mode() {
-        let args: Vec<String> = ["grep", "searchLines"].iter().map(|s| s.to_string()).collect();
+        let args: Vec<String> = ["grep", "searchLines"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let opts = parse_args(&args).unwrap();
         assert!(opts.grep);
         assert_eq!(opts.mode, "grep");
@@ -1312,8 +1865,10 @@ mod tests {
 
     #[test]
     fn dash_e_sets_pattern_mode_and_regex() {
-        let args: Vec<String> =
-            ["-e", "fn.*sort", "sorting"].iter().map(|s| s.to_string()).collect();
+        let args: Vec<String> = ["-e", "fn.*sort", "sorting"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let opts = parse_args(&args).unwrap();
         assert!(!opts.grep);
         assert_eq!(opts.mode, "pattern");
@@ -1328,7 +1883,17 @@ mod tests {
     #[test]
     fn grep_flags_thread_through_to_url() {
         let args: Vec<String> = [
-            "grep", "TODO", "--type", "function", "-C", "2", "--max-matches", "5", "-F", "--glob", "*.rs",
+            "grep",
+            "TODO",
+            "--type",
+            "function",
+            "-C",
+            "2",
+            "--max-matches",
+            "5",
+            "-F",
+            "--glob",
+            "*.rs",
         ]
         .iter()
         .map(|s| s.to_string())

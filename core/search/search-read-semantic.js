@@ -445,9 +445,9 @@ function _scoreSymbol(chunks, queryTerms, queryRaw) {
   return scores;
 }
 
-async function _scoreLateInteraction(chunks, query, projectRoot) {
+async function _scoreLateInteraction(chunks, query, projectRoot, lateInteractionIndexOverride = null) {
   if (chunks.length === 0) return { scores: new Map(), ran: false };
-  const liIndex = await _getLateInteractionIndex(projectRoot);
+  const liIndex = lateInteractionIndexOverride || await _getLateInteractionIndex(projectRoot);
   if (!liIndex) return { scores: new Map(), ran: false };
 
   // Only score chunks whose IDs actually appear in the LI index. Use the
@@ -625,6 +625,7 @@ function _fallbackSpanFromText(fileText, totalLines, maxChars) {
  * @param {number} [req.maxTokens] - Convenience: ~maxChars / 4
  * @param {string} [req.projectRoot]
  * @param {boolean} [req.verbose=false] - include timings + signal contributions
+ * @param {Object} [req._lateInteractionIndex] - private daemon injection; same-project index only
  * @returns {Promise<Object>}
  */
 async function _readSemanticUnpinned(req) {
@@ -686,7 +687,12 @@ async function _readSemanticUnpinned(req) {
   const tLex1 = performance.now();
 
   const tLi0 = performance.now();
-  const { scores: maxsimScores, ran: liRan } = await _scoreLateInteraction(chunks, req.query, projectRoot);
+  const { scores: maxsimScores, ran: liRan } = await _scoreLateInteraction(
+    chunks,
+    req.query,
+    projectRoot,
+    req._lateInteractionIndex || null,
+  );
   const tLi1 = performance.now();
 
   // Threshold gate on MaxSim — drop chunks whose LI score is too low. This

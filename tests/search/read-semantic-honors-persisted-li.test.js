@@ -102,6 +102,47 @@ function runProbeSubprocess(envOverride = {}) {
   return JSON.parse(r.stdout.trim());
 }
 
+function runDaemonRouteProbeSubprocess(envOverride = {}) {
+  const rankingPath = join(REPO_ROOT, 'core/infrastructure/config/ranking.js');
+  const searchServerPath = join(REPO_ROOT, 'core/search/search-server.js');
+  const route = `/read-semantic?${new URLSearchParams({
+    path: 'a.js',
+    q: 'alpha',
+    projectRoot,
+  }).toString()}`;
+  const script = `
+    Promise.resolve().then(async () => {
+      const { LATE_INTERACTION_CONFIG } = await import(${JSON.stringify(rankingPath)});
+      const before = LATE_INTERACTION_CONFIG.model;
+      const { buildReadSemanticDaemonResponse } = await import(${JSON.stringify(searchServerPath)});
+      const response = await buildReadSemanticDaemonResponse(${JSON.stringify(route)}, {
+        isUnixSocket: true,
+        serverReady: true,
+        searcher: { projectRoot: ${JSON.stringify(projectRoot)} },
+      });
+      const after = LATE_INTERACTION_CONFIG.model;
+      process.stdout.write(JSON.stringify({ before, after, status: response.status }));
+    }).catch((e) => { process.stderr.write(String(e?.stack || e)); process.exit(1); });
+  `;
+  const env = {
+    ...process.env,
+    ...envOverride,
+  };
+  if (!Object.prototype.hasOwnProperty.call(envOverride, 'SWEET_SEARCH_LATE_INTERACTION_MODEL')) {
+    delete env.SWEET_SEARCH_LATE_INTERACTION_MODEL;
+  }
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: projectRoot,
+    env,
+    encoding: 'utf-8',
+    timeout: 20_000,
+  });
+  if (r.status !== 0) {
+    throw new Error(`daemon route probe subprocess exited ${r.status}: ${r.stderr}`);
+  }
+  return JSON.parse(r.stdout.trim());
+}
+
 describe('read-semantic honors persisted LI model in a fresh process', () => {
   it('persisted=lateon-code-edge → LATE_INTERACTION_CONFIG.model becomes "lateon-code-edge"', () => {
     writePersistedConfig('lateon-code-edge');
@@ -130,5 +171,13 @@ describe('read-semantic honors persisted LI model in a fresh process', () => {
     // No .sweet-search/config.json written.
     const out = runProbeSubprocess();
     expect(out.after).toBe('lateon-code');
+  });
+
+  it('daemon read-semantic route applies the persisted LI model before handling the request', () => {
+    writePersistedConfig('lateon-code-edge');
+    writeFileSync(join(projectRoot, 'a.js'), 'export const alpha = 1;\n', 'utf-8');
+    const out = runDaemonRouteProbeSubprocess();
+    expect(out.status).toBe(200);
+    expect(out.after).toBe('lateon-code-edge');
   });
 });

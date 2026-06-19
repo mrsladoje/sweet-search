@@ -25,6 +25,7 @@ import {
   __resetReadSemanticCachesForTests,
 } from '../../core/search/search-read-semantic.js';
 import { __resetReadCachesForTests } from '../../core/search/search-read.js';
+import { buildReadSemanticDaemonResponse } from '../../core/search/search-server.js';
 
 let TMP;
 
@@ -139,5 +140,133 @@ describe('budget — char limit honoured even on fallback', () => {
     expect(r.spans[0].text).toHaveLength(1000);
     expect(r.spans[0].truncated).toBe(true);
     expect(r.charsReturned).toBe(1000);
+  });
+});
+
+describe('readSemantic daemon route helper', () => {
+  function routeUrl(params) {
+    return `/read-semantic?${new URLSearchParams(params).toString()}`;
+  }
+
+  it('rejects non-Unix-socket requests', async () => {
+    const r = await buildReadSemanticDaemonResponse(routeUrl({
+      path: 'a.js',
+      q: 'query',
+      projectRoot: TMP,
+    }), {
+      isUnixSocket: false,
+      serverReady: true,
+      searcher: { projectRoot: TMP },
+    });
+    expect(r.status).toBe(403);
+  });
+
+  it('rejects wrong-project daemons before running readSemantic', async () => {
+    let called = false;
+    const otherRoot = path.join(TMP, 'other');
+    mkdirSync(otherRoot, { recursive: true });
+    const r = await buildReadSemanticDaemonResponse(routeUrl({
+      path: 'a.js',
+      q: 'query',
+      projectRoot: otherRoot,
+    }), {
+      isUnixSocket: true,
+      serverReady: true,
+      searcher: { projectRoot: TMP },
+      readSemanticFn: async () => { called = true; },
+      formatReadSemanticResultFn: formatReadSemanticResult,
+    });
+    expect(r.status).toBe(409);
+    expect(called).toBe(false);
+    expect(r.body).toContain('Daemon project root mismatch');
+  });
+
+  it('passes the daemon late-interaction index when it is loaded and same-project', async () => {
+    const fakeIndex = {
+      documents: new Map([['chunk-1', {}]]),
+      modelMismatch: false,
+    };
+    let seenReq = null;
+    const r = await buildReadSemanticDaemonResponse(routeUrl({
+      path: 'src/a.js',
+      q: 'query',
+      projectRoot: TMP,
+    }), {
+      isUnixSocket: true,
+      serverReady: true,
+      searcher: { projectRoot: TMP, lateInteractionIndex: fakeIndex },
+      readSemanticFn: async (req) => {
+        seenReq = req;
+        return {
+          ok: true,
+          file: 'src/a.js',
+          query: 'query',
+          indexed: true,
+          fellBack: false,
+          language: 'javascript',
+          totalLines: 1,
+          spans: [],
+          charsReturned: 0,
+          approxTokensReturned: 0,
+        };
+      },
+      formatReadSemanticResultFn: formatReadSemanticResult,
+    });
+    expect(r.status).toBe(200);
+    expect(seenReq?._lateInteractionIndex).toBe(fakeIndex);
+  });
+
+  it('rereads fallback text from disk on each daemon request', async () => {
+    writeTmp('src/live.js', 'export const value = "old";\n');
+    const params = {
+      path: 'src/live.js',
+      q: 'value',
+      projectRoot: TMP,
+    };
+    const first = await buildReadSemanticDaemonResponse(routeUrl(params), {
+      isUnixSocket: true,
+      serverReady: true,
+      searcher: { projectRoot: TMP },
+    });
+    expect(first.status).toBe(200);
+    expect(first.body).toContain('"old"');
+
+    writeTmp('src/live.js', 'export const value = "newer text";\n');
+    const second = await buildReadSemanticDaemonResponse(routeUrl(params), {
+      isUnixSocket: true,
+      serverReady: true,
+      searcher: { projectRoot: TMP },
+    });
+    expect(second.status).toBe(200);
+    expect(second.body).toContain('"newer text"');
+    expect(second.body).not.toContain('"old"');
+  });
+
+  it('preserves staleness warnings in formatted daemon output', async () => {
+    const r = await buildReadSemanticDaemonResponse(routeUrl({
+      path: 'src/a.js',
+      q: 'query',
+      projectRoot: TMP,
+    }), {
+      isUnixSocket: true,
+      serverReady: true,
+      searcher: { projectRoot: TMP },
+      readSemanticFn: async () => ({
+        ok: true,
+        file: 'src/a.js',
+        query: 'query',
+        indexed: true,
+        fellBack: false,
+        language: 'javascript',
+        totalLines: 1,
+        warnings: ['source file is newer than the semantic index; spans were selected from stale index metadata and text was reread from disk'],
+        spans: [{ startLine: 1, endLine: 1, score: 1, symbols: [], text: 'const a = 1;\n' }],
+        charsReturned: 13,
+        approxTokensReturned: 4,
+      }),
+      formatReadSemanticResultFn: formatReadSemanticResult,
+    });
+    expect(r.status).toBe(200);
+    expect(r.body).toContain('[warning] source file is newer than the semantic index');
   });
 });
