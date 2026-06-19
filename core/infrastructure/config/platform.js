@@ -16,21 +16,28 @@ function resolveProjectRoot() {
   const fromEnv = process.env.SWEET_SEARCH_PROJECT_ROOT?.trim();
   if (fromEnv) return path.resolve(fromEnv);
 
-  // Walk up from cwd looking for .git or package.json to find the real
-  // project root, so that running from a subdirectory still finds the
-  // .sweet-search/ data dir and init config.
-  let dir = process.cwd();
-  while (true) {
+  const cwd = process.cwd();
+
+  // Prefer an existing sweet-search state dir so indexed corpus subdirectories
+  // do not get pulled back to an outer package root.
+  for (let dir = cwd; ; dir = path.dirname(dir)) {
+    if (existsSync(path.join(dir, '.sweet-search'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+  }
+
+  // Fallback to the historical project markers for cold-start/init flows before
+  // .sweet-search/ exists.
+  for (let dir = cwd; ; dir = path.dirname(dir)) {
     if (existsSync(path.join(dir, '.git')) || existsSync(path.join(dir, 'package.json'))) {
       return dir;
     }
     const parent = path.dirname(dir);
     if (parent === dir) break; // filesystem root
-    dir = parent;
   }
 
   // Fallback to cwd if no project marker found
-  return process.cwd();
+  return cwd;
 }
 
 // Project root detection

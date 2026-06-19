@@ -42,6 +42,7 @@ function env(overrides = {}) {
     SWEET_SEARCH_SOCKET_PATH: socketPath,
     SWEET_SEARCH_PREWARM_LOCK: lockPath,
     SWEET_SEARCH_PREWARM_PROBE_MS: '100',
+    SWEET_SEARCH_PREWARM_PAGE_CACHE: '0',
     FAKE_DAEMON_MARKER: markerPath,
     ...overrides,
   };

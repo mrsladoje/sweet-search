@@ -9,7 +9,8 @@
  */
 
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, realpathSync } from 'fs';
+import path from 'node:path';
 import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { clearCache } from '../embedding/embedding-cache.js';
 import { launchMaintainer } from '../indexing/maintainer-launcher.mjs';
@@ -27,6 +28,141 @@ export const SEARCH_SERVER_PORT = 9876;
 export const SEARCH_SERVER_TIMEOUT_MS = 30_000;
 export const SEARCH_SERVER_MAX_URL_LENGTH = 16_384;
 export const SEARCH_SERVER_MAX_QUERY_LENGTH = 2_000;
+export const SEARCH_SERVER_MAX_READ_PATH_LENGTH = 8_192;
+
+function canonicalProjectRoot(root) {
+  const resolved = path.resolve(root || process.cwd());
+  try {
+    return realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+function parseFiniteNumber(value, name) {
+  if (value == null || value === '') return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n)) throw new Error(`${name} must be a finite number`);
+  return n;
+}
+
+function parseInteger(value, name) {
+  if (value == null || value === '') return undefined;
+  const n = Number.parseInt(value, 10);
+  if (!Number.isInteger(n)) throw new Error(`${name} must be an integer`);
+  return n;
+}
+
+function reusableLateInteractionIndex(searcher) {
+  const idx = searcher?.lateInteractionIndex || null;
+  if (!idx) return null;
+  if (idx.modelMismatch === true) return null;
+  if (!idx.documents || idx.documents.size === 0) return null;
+  return idx;
+}
+
+function readSemanticError(status, message, extra = {}) {
+  return {
+    status,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: message, ...extra }),
+  };
+}
+
+export async function buildReadSemanticDaemonResponse(reqUrl, {
+  isUnixSocket = false,
+  serverReady = false,
+  initError = null,
+  searcher = null,
+  readSemanticFn = null,
+  formatReadSemanticResultFn = null,
+} = {}) {
+  if (!isUnixSocket) {
+    return readSemanticError(403, '/read-semantic is only available via Unix socket');
+  }
+  if (!serverReady) {
+    const reason = initError?.message
+      ? `Server initialization failed: ${initError.message}`
+      : 'Server is starting, please retry';
+    return readSemanticError(503, reason, { status: initError ? 'failed' : 'starting' });
+  }
+  if (reqUrl.length > SEARCH_SERVER_MAX_URL_LENGTH) {
+    return readSemanticError(414, `Request URL too long (max ${SEARCH_SERVER_MAX_URL_LENGTH} chars)`);
+  }
+
+  let url;
+  try {
+    url = new URL(reqUrl, `http://localhost:${SEARCH_SERVER_PORT}`);
+  } catch {
+    return readSemanticError(400, 'Invalid request URL');
+  }
+
+  const file = url.searchParams.get('path') || url.searchParams.get('file') || '';
+  const query = url.searchParams.get('q') || url.searchParams.get('query') || '';
+  const requestedRoot = url.searchParams.get('projectRoot') || '';
+  const format = url.searchParams.get('format') === 'json' ? 'json' : 'agent';
+
+  if (!file) return readSemanticError(400, 'Missing path parameter ?path=');
+  if (file.length > SEARCH_SERVER_MAX_READ_PATH_LENGTH) {
+    return readSemanticError(413, `Path too long (max ${SEARCH_SERVER_MAX_READ_PATH_LENGTH} chars)`);
+  }
+  if (!query) return readSemanticError(400, 'Missing query parameter ?q=');
+  if (query.length > SEARCH_SERVER_MAX_QUERY_LENGTH) {
+    return readSemanticError(413, `Query too long (max ${SEARCH_SERVER_MAX_QUERY_LENGTH} chars)`);
+  }
+  if (!requestedRoot) return readSemanticError(400, 'Missing projectRoot parameter');
+
+  const serverRoot = canonicalProjectRoot(searcher?.projectRoot || process.cwd());
+  const clientRoot = canonicalProjectRoot(requestedRoot);
+  if (serverRoot !== clientRoot) {
+    return readSemanticError(409, 'Daemon project root mismatch', {
+      serverProjectRoot: serverRoot,
+      requestedProjectRoot: clientRoot,
+    });
+  }
+
+  let topK; let threshold; let contextLines; let maxChars; let maxTokens;
+  try {
+    topK = parseInteger(url.searchParams.get('k') ?? url.searchParams.get('topK'), 'topK');
+    threshold = parseFiniteNumber(url.searchParams.get('threshold'), 'threshold');
+    contextLines = parseInteger(url.searchParams.get('contextLines') ?? url.searchParams.get('context'), 'contextLines');
+    maxChars = parseInteger(url.searchParams.get('maxChars'), 'maxChars');
+    maxTokens = parseInteger(url.searchParams.get('maxTokens'), 'maxTokens');
+  } catch (err) {
+    return readSemanticError(400, err.message);
+  }
+  const verbose = url.searchParams.get('verbose') === 'true';
+
+  try {
+    let readSemantic = readSemanticFn;
+    let formatReadSemanticResult = formatReadSemanticResultFn;
+    if (!readSemantic || !formatReadSemanticResult) {
+      const mod = await import('./search-read-semantic.js');
+      readSemantic = readSemantic || mod.readSemantic;
+      formatReadSemanticResult = formatReadSemanticResult || mod.formatReadSemanticResult;
+    }
+    const result = await readSemantic({
+      path: file,
+      query,
+      projectRoot: serverRoot,
+      topK,
+      threshold,
+      contextLines,
+      maxChars,
+      maxTokens,
+      verbose,
+      _lateInteractionIndex: reusableLateInteractionIndex(searcher),
+    });
+    const body = formatReadSemanticResult(result, format);
+    return {
+      status: result?.ok === false ? 404 : 200,
+      contentType: format === 'json' ? 'application/json' : 'text/plain; charset=utf-8',
+      body: format === 'json' ? body : `${body}\n`,
+    };
+  } catch (err) {
+    return readSemanticError(500, err.message || String(err));
+  }
+}
 
 function buildTextSearchResponse(results, stats, totalTime, { summary = false, mid = false, color = true, decorate = true } = {}) {
   const routeMode = stats?.routing?.mode || 'auto';
@@ -344,6 +480,15 @@ export async function startServer() {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
       }
+    } else if (req.method === 'GET' && reqUrl.startsWith('/read-semantic?')) {
+      const response = await buildReadSemanticDaemonResponse(reqUrl, {
+        isUnixSocket: !req.socket.remoteAddress,
+        serverReady,
+        initError,
+        searcher,
+      });
+      res.writeHead(response.status, { 'Content-Type': response.contentType });
+      res.end(response.body);
     } else if (req.method === 'GET' && reqUrl === '/health') {
       const status = initError ? 'failed' : (serverReady ? 'ready' : 'starting');
       // Repo identity — harness uses these to verify the daemon serves the

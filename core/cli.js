@@ -10,6 +10,11 @@ import { spawnSync } from 'node:child_process';
 
 const args = process.argv.slice(2);
 
+function envFalsey(name) {
+  const v = String(process.env[name] || '').trim().toLowerCase();
+  return v === '0' || v === 'false' || v === 'off' || v === 'no';
+}
+
 // Package-management commands always run in JS (never native dispatch)
 if (args[0] === 'init') {
   const { runInit } = await import('../scripts/init.js');
@@ -28,7 +33,18 @@ if (args[0] === 'init') {
   const { handleReadCli } = await import('./search/search-read.js');
   await handleReadCli(args.slice(1));
 } else if (args[0] === 'read-semantic') {
-  // Hybrid span-selection reader; runs in JS (depends on LI index + ranking).
+  // Hybrid span-selection reader. Default dispatches to the native Unix-socket
+  // client so the warm daemon can serve LI scoring without per-call
+  // model/session startup. Set SWEET_SEARCH_SEMANTIC_VIA_DAEMON=0 to force the
+  // legacy in-process path for debugging.
+  if (!envFalsey('SWEET_SEARCH_SEMANTIC_VIA_DAEMON')) {
+    const { resolveNativeBinary } = await import('./infrastructure/index.js');
+    const nativeBin = resolveNativeBinary();
+    if (nativeBin) {
+      const result = spawnSync(nativeBin, args, { stdio: 'inherit' });
+      process.exit(result.status ?? 1);
+    }
+  }
   const { handleReadSemanticCli } = await import('./search/search-read-semantic.js');
   await handleReadSemanticCli(args.slice(1));
 } else if (args[0] === 'trace') {
