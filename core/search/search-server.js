@@ -14,7 +14,14 @@ import path from 'node:path';
 import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { clearCache } from '../embedding/embedding-cache.js';
 import { launchMaintainer } from '../indexing/maintainer-launcher.mjs';
-import { projectSocketPath, projectPidFile, tcpPort } from './server-identity.js';
+import { projectSocketPath, projectPidFile, tcpPort, resolveProjectRoot } from './server-identity.js';
+import {
+  upsertSelf as registryUpsertSelf,
+  touchSelf as registryTouchSelf,
+  removeSelf as registryRemoveSelf,
+  pruneAndList as registryPruneAndList,
+  selectEvictionTargets as registrySelectEvictionTargets,
+} from './daemon-registry.js';
 
 // =============================================================================
 // Server constants
@@ -332,6 +339,85 @@ export async function startServer() {
   let tcpServer;
   let unixServer;
 
+  // ---------------------------------------------------------------------------
+  // Daemon lifecycle (footprint bound). A warm per-repo daemon holds ~1–2 GB
+  // (HNSW + vocab + float sidecar) and historically NEVER self-terminated, so
+  // resident daemons accumulated unbounded across repos/sessions. Two bounds:
+  //   (1) idle-TTL eviction (default ON): self-stop after no QUERY traffic for
+  //       SWEET_SEARCH_DAEMON_IDLE_TTL_MS. Tracked by WALL CLOCK, not
+  //       requestCount, because an idle daemon never increments requestCount.
+  //   (2) resident-daemon LRU cap (default OFF; SWEET_SEARCH_MAX_DAEMONS): a
+  //       hard ceiling on concurrently-resident daemons via a shared registry.
+  // NOTE: lastActivityMs is set ONLY by real query routes (/search,
+  // /read-semantic) — never by /health or /stop, so liveness probes (prewarm,
+  // isServerRunning) can never keep an idle daemon alive.
+  // ---------------------------------------------------------------------------
+  let lastActivityMs = Date.now();
+  let idleTimer = null;
+  let registryTimer = null;
+  let shuttingDown = false;
+
+  // Close a server, letting in-flight requests finish but never letting an idle
+  // keep-alive socket block exit (bounded grace, then resolve regardless).
+  const closeServerGracefully = (srv, graceMs = 3000) => new Promise((resolve) => {
+    if (!srv) { resolve(); return; }
+    let settled = false;
+    const done = () => { if (!settled) { settled = true; resolve(); } };
+    try {
+      srv.close(done);
+      // Drop idle keep-alive connections immediately; active requests still drain.
+      srv.closeIdleConnections?.();
+    } catch { done(); return; }
+    const t = setTimeout(done, graceMs);
+    if (t.unref) t.unref();
+  });
+
+  // Single idempotent teardown shared by SIGINT, /stop, and the idle timer.
+  const gracefulShutdown = async (reason) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
+    if (registryTimer) { clearInterval(registryTimer); registryTimer = null; }
+    if (capEnabled) {
+      try { await registryRemoveSelf(process.pid); } catch (err) {
+        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] registry remove: ${err?.message || err}\n`);
+      }
+    }
+    await closeServerGracefully(tcpServer);
+    await closeServerGracefully(unixServer);
+    try { searcher.close(); } catch (err) {
+      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] searcher close: ${err?.message || err}\n`);
+    }
+    try { await fs.unlink(pidFile); } catch (err) {
+      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+    }
+    try { await fs.unlink(socketPath); } catch (err) {
+      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+    }
+    console.log(`[Server] Shutdown (${reason}).`);
+    process.exit(0);
+  };
+
+  // Resident-daemon cap (default OFF). Read once at startup to gate registry
+  // participation; the numeric cap is re-read per enforcement tick.
+  const capEnabled = Number(process.env.SWEET_SEARCH_MAX_DAEMONS ?? 0) > 0;
+
+  // Enforce the LRU cap: prune dead registry entries, then /stop the
+  // least-recently-active peers that are NOT self until we're within the cap.
+  const enforceDaemonCap = async () => {
+    const cap = Number(process.env.SWEET_SEARCH_MAX_DAEMONS ?? 0);
+    if (!(cap > 0)) return;
+    let live;
+    try { live = await registryPruneAndList(); } catch { return; }
+    if (!Array.isArray(live) || live.length <= cap) return;
+    const targets = registrySelectEvictionTargets(live, process.pid, live.length - cap);
+    for (const t of targets) {
+      try { await sendStopToSocket(t.socketPath); } catch (err) {
+        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] cap evict ${t?.socketPath}: ${err?.message || err}\n`);
+      }
+    }
+  };
+
   // Shared request handler for both TCP and Unix socket
   const handleRequest = async (req, res) => {
     const reqUrl = req.url || '';
@@ -358,6 +444,8 @@ export async function startServer() {
     }
 
     if (req.method === 'GET' && reqUrl.startsWith('/search?')) {
+      // Real query traffic — reset the idle-TTL clock (NOT /health or /stop).
+      lastActivityMs = Date.now();
       if (!serverReady) {
         const reason = initError?.message
           ? `Server initialization failed: ${initError.message}`
@@ -481,6 +569,8 @@ export async function startServer() {
         res.end(JSON.stringify({ error: err.message }));
       }
     } else if (req.method === 'GET' && reqUrl.startsWith('/read-semantic?')) {
+      // Real query traffic — reset the idle-TTL clock (NOT /health or /stop).
+      lastActivityMs = Date.now();
       const response = await buildReadSemanticDaemonResponse(reqUrl, {
         isUnixSocket: !req.socket.remoteAddress,
         serverReady,
@@ -524,15 +614,7 @@ export async function startServer() {
       }
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('Shutting down...\n');
-      if (tcpServer) tcpServer.close();
-      if (unixServer) unixServer.close();
-      try { await fs.unlink(pidFile); } catch (err) {
-        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-      }
-      try { await fs.unlink(socketPath); } catch (err) {
-        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-      }
-      process.exit(0);
+      await gracefulShutdown('stop');
     } else {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not found. Use GET /search?q=<query>&mode=auto&k=10\n');
@@ -619,23 +701,50 @@ export async function startServer() {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] maintainer launch: ${err?.message || err}\n`);
   }
 
-  // Alias for graceful shutdown
-  const server = tcpServer;
+  // Handle graceful shutdown (shared idempotent teardown).
+  process.on('SIGINT', () => { gracefulShutdown('sigint'); });
 
-  // Handle graceful shutdown
-  process.on('SIGINT', async () => {
-    console.log('\n[Server] Shutting down...');
-    if (tcpServer) tcpServer.close();
-    unixServer.close();
-    searcher.close();
-    try { await fs.unlink(pidFile); } catch (err) {
-      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+  // (1) Idle-TTL eviction — default ON. Unref'd so it never keeps the event
+  // loop alive on its own. The TTL is read every tick so tests/operators can
+  // tune it live; 0 disables. Self-stops once no QUERY route has been hit for
+  // longer than the TTL — the actively-used repo's daemon keeps resetting
+  // lastActivityMs and is therefore never evicted.
+  idleTimer = setInterval(() => {
+    const ttl = Number(process.env.SWEET_SEARCH_DAEMON_IDLE_TTL_MS ?? 1_200_000);
+    if (ttl > 0 && Date.now() - lastActivityMs > ttl) {
+      gracefulShutdown('idle-ttl');
     }
-    try { await fs.unlink(socketPath); } catch (err) {
-      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-    }
-    process.exit(0);
-  });
+  }, Number(process.env.SWEET_SEARCH_DAEMON_IDLE_CHECK_MS ?? 60_000));
+  if (idleTimer.unref) idleTimer.unref();
+
+  // (2) Resident-daemon LRU cap — default OFF. Only when SWEET_SEARCH_MAX_DAEMONS
+  // is opted into do we touch the shared registry at all: register self, then
+  // refresh our real query activity + prune dead peers + enforce the cap on a
+  // coarse unref'd timer. The maintainer is never enumerated (it never registers).
+  if (capEnabled) {
+    const entry = {
+      pid: process.pid,
+      projectRoot: resolveProjectRoot(),
+      socketPath,
+      pidFile,
+      startedAt: Date.now(),
+      lastActivityMs,
+    };
+    registryUpsertSelf(entry)
+      .then(() => enforceDaemonCap())
+      .catch((err) => {
+        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] registry init: ${err?.message || err}\n`);
+      });
+
+    registryTimer = setInterval(() => {
+      registryTouchSelf(process.pid, lastActivityMs)
+        .then(() => enforceDaemonCap())
+        .catch((err) => {
+          if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] registry tick: ${err?.message || err}\n`);
+        });
+    }, Number(process.env.SWEET_SEARCH_DAEMON_REGISTRY_REFRESH_MS ?? 45_000));
+    if (registryTimer.unref) registryTimer.unref();
+  }
 }
 
 // =============================================================================
@@ -758,6 +867,34 @@ export async function stopServer({ timeoutMs = 5000 } = {}) {
       });
       // The server may close the socket abruptly as it exits before sending an
       // end-of-response. Treat that as success too.
+      req.on('error', (err) => {
+        const msg = (err && err.code) || '';
+        if (msg === 'ECONNRESET' || msg === 'EPIPE' || msg === 'ENOENT') resolve(true);
+        else resolve(false);
+      });
+      req.setTimeout(timeoutMs, () => { req.destroy(); resolve(false); });
+      req.end();
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Send /stop to a daemon on an EXPLICIT socket (variant of stopServer, which
+ * always targets this process's own socket). Used by the resident-daemon LRU
+ * cap to evict a least-recently-active PEER. Returns true if the request
+ * reached the daemon (200, or the connection dropped as it exited).
+ */
+export async function sendStopToSocket(socketPath, { timeoutMs = 5000 } = {}) {
+  if (!socketPath) return false;
+  try {
+    const http = await import('http');
+    return await new Promise((resolve) => {
+      const req = http.request({ socketPath, path: '/stop', method: 'GET' }, (res) => {
+        res.on('data', () => {});
+        res.on('end', () => resolve(true));
+      });
       req.on('error', (err) => {
         const msg = (err && err.code) || '';
         if (msg === 'ECONNRESET' || msg === 'EPIPE' || msg === 'ENOENT') resolve(true);
