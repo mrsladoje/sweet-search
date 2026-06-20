@@ -132,7 +132,13 @@ describe('pruneAndList', () => {
       const { writeFileSync } = await import('node:fs');
       writeFileSync(registryPath(env), JSON.stringify({ daemons: map }), 'utf-8');
 
-      const live = await pruneAndList({ env, timeoutMs: 300 });
+      // Raise the probe budget well above the default 300ms: under CPU
+      // contention from the heavy daemon-lifecycle.integration.test.js the
+      // socketHealthy probe intermittently times out, the live self-socket is
+      // mis-pruned, and `toContain(process.pid)` flakes. 1500ms keeps the
+      // real-listener probe from being starved without weakening the assertion
+      // (a live pid+socket must still be retained; a dead socket still pruned).
+      const live = await pruneAndList({ env, timeoutMs: 1500 });
       const pids = live.map((e) => e.pid).sort((a, b) => a - b);
       expect(pids).toContain(process.pid);     // alive pid + responsive socket
       expect(pids).not.toContain(99999991);    // dead socket pruned

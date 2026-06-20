@@ -397,6 +397,31 @@ struct ReadSemanticOptions {
     help: bool,
 }
 
+#[derive(Debug, Default)]
+struct TraceOptions {
+    symbol: Option<String>,
+    file: Option<String>,
+    hint: Option<String>,
+    depth: Option<u32>,
+    budget: Option<u32>,
+    json: bool,
+    plain: bool,
+    no_banner: bool,
+    help: bool,
+}
+
+#[derive(Debug)]
+struct ReadOptions {
+    paths: Vec<String>,
+    format: String,
+    start_line: Option<u32>,
+    end_line: Option<u32>,
+    include_metadata: bool,
+    plain: bool,
+    no_banner: bool,
+    help: bool,
+}
+
 impl Default for Options {
     fn default() -> Self {
         Self {
@@ -852,6 +877,262 @@ fn build_url(opts: &Options, body_color: bool, body_decoration: bool) -> String 
     url
 }
 
+fn print_read_usage(prog: &str, a: &Ansi) {
+    println!("{}sweet-search read{} — filesystem-grounded file reader\n", a.fw, a.r);
+    println!("{}Usage:{}", a.fw, a.r);
+    println!("  {prog} read <path> [...path]   Read 1-20 files");
+    println!("  {prog} read <path> --lines 45-92\n");
+    println!("{}Options:{}", a.fw, a.r);
+    println!("  --lines <a-b>     1-based inclusive range. \"45-\" open end, \"45\" one line.");
+    println!("  --json            Emit JSON");
+    println!("  --raw             Emit raw text only (no fences/headers)");
+    println!("  --agent           Default — markdown fenced block + symbol hints");
+    println!("  --format <fmt>    json | raw | agent | plain");
+    println!("  --no-banner       Suppress the identity line");
+    println!("  --no-metadata     Skip index metadata attachment");
+    println!("  -h, --help        Show this help");
+}
+
+// Mirrors search-read.js _parseLineRange: "45-92"/"45:92" range, "45-" open end,
+// "45" single line.
+fn parse_line_range(spec: &str) -> Result<(Option<u32>, Option<u32>), String> {
+    if spec.is_empty() {
+        return Ok((None, None));
+    }
+    let has_sep = spec.contains('-') || spec.contains(':');
+    let parts: Vec<&str> = spec.splitn(2, |c| c == '-' || c == ':').collect();
+    let start: u32 = parts[0]
+        .parse()
+        .map_err(|_| format!("invalid --lines spec: {spec}"))?;
+    let end = if parts.len() == 2 {
+        if parts[1].is_empty() {
+            None
+        } else {
+            Some(
+                parts[1]
+                    .parse::<u32>()
+                    .map_err(|_| format!("invalid --lines spec: {spec}"))?,
+            )
+        }
+    } else if has_sep {
+        None
+    } else {
+        Some(start)
+    };
+    Ok((Some(start), end))
+}
+
+// Mirrors search-read.js _parseArgs exactly.
+fn parse_read_args(args: &[String]) -> Result<ReadOptions, String> {
+    let mut opts = ReadOptions {
+        paths: Vec::new(),
+        format: "agent".to_string(),
+        start_line: None,
+        end_line: None,
+        include_metadata: true,
+        plain: false,
+        no_banner: false,
+        help: false,
+    };
+    let mut i = 0;
+    while i < args.len() {
+        let a = &args[i];
+        match a.as_str() {
+            "--json" => opts.format = "json".to_string(),
+            "--raw" => opts.format = "raw".to_string(),
+            "--agent" => opts.format = "agent".to_string(),
+            "--no-metadata" => opts.include_metadata = false,
+            "--no-banner" => opts.no_banner = true,
+            "--lines" => {
+                i += 1;
+                let spec = args
+                    .get(i)
+                    .ok_or_else(|| "--lines requires a value".to_string())?;
+                let (s, e) = parse_line_range(spec)?;
+                opts.start_line = s;
+                opts.end_line = e;
+            }
+            "-h" | "--help" => {
+                opts.help = true;
+                return Ok(opts);
+            }
+            "--format" => {
+                i += 1;
+                match args.get(i).map(|s| s.as_str()) {
+                    Some("json") => opts.format = "json".to_string(),
+                    Some("raw") => opts.format = "raw".to_string(),
+                    Some("agent") => opts.format = "agent".to_string(),
+                    Some("plain") => opts.plain = true,
+                    Some(other) => return Err(format!("unknown --format value: {other}")),
+                    None => return Err("--format requires a value".into()),
+                }
+            }
+            other => {
+                if let Some(v) = other.strip_prefix("--format=") {
+                    match v {
+                        "json" => opts.format = "json".to_string(),
+                        "raw" => opts.format = "raw".to_string(),
+                        "agent" => opts.format = "agent".to_string(),
+                        "plain" => opts.plain = true,
+                        _ => return Err(format!("unknown --format value: {v}")),
+                    }
+                } else if other.starts_with("--") {
+                    return Err(format!("unknown flag: {other}"));
+                } else {
+                    opts.paths.push(other.to_string());
+                }
+            }
+        }
+        i += 1;
+    }
+    Ok(opts)
+}
+
+fn build_read_url(opts: &ReadOptions) -> String {
+    let project_root = resolve_project_root().to_string_lossy().into_owned();
+    let mut url = format!(
+        "/read?projectRoot={}&format={}",
+        url_encode(&project_root),
+        opts.format,
+    );
+    if !opts.include_metadata {
+        url.push_str("&metadata=false");
+    }
+    if let Some(s) = opts.start_line {
+        url.push_str(&format!("&startLine={s}"));
+    }
+    if let Some(e) = opts.end_line {
+        url.push_str(&format!("&endLine={e}"));
+    }
+    for p in &opts.paths {
+        url.push_str(&format!("&path={}", url_encode(p)));
+    }
+    url
+}
+
+fn print_trace_usage(prog: &str, a: &Ansi) {
+    println!("{}Usage:{} {prog} trace <symbol> [options]\n", a.fw, a.r);
+    println!("{}Options:{}", a.fw, a.r);
+    println!("  --in <file>       Disambiguate symbols by indexed file path");
+    println!("  --query <hint>    Natural-language hint used only for structural ranking");
+    println!("  --depth <n>       Impact depth, 1-4 (default: 3)");
+    println!("  --budget <n>      Token budget, 1000-16000 (default: adaptive)");
+    println!("      --json        Emit JSON");
+    println!("      --format <fmt> json | agent | plain");
+    println!("      --no-banner   Suppress the identity line");
+    println!("  -h, --help        Show this help");
+}
+
+// Mirrors search-trace.js parseArgs exactly: first positional = symbol, any
+// later positional or --query/--hint appends to the structural hint.
+fn parse_trace_args(args: &[String]) -> Result<TraceOptions, String> {
+    let mut opts = TraceOptions::default();
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        match arg.as_str() {
+            "--in" | "--file" => {
+                i += 1;
+                opts.file = Some(
+                    args.get(i)
+                        .ok_or_else(|| format!("{arg} requires a value"))?
+                        .clone(),
+                );
+            }
+            "--query" | "--hint" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| format!("{arg} requires a value"))?
+                    .clone();
+                opts.hint = Some(match opts.hint.take() {
+                    Some(h) => format!("{h} {v}"),
+                    None => v,
+                });
+            }
+            "--depth" => {
+                i += 1;
+                opts.depth = Some(
+                    args.get(i)
+                        .ok_or_else(|| "--depth requires a value".to_string())?
+                        .parse()
+                        .map_err(|_| "--depth requires an integer".to_string())?,
+                );
+            }
+            "--budget" => {
+                i += 1;
+                opts.budget = Some(
+                    args.get(i)
+                        .ok_or_else(|| "--budget requires a value".to_string())?
+                        .parse()
+                        .map_err(|_| "--budget requires an integer".to_string())?,
+                );
+            }
+            "--json" => opts.json = true,
+            "--no-banner" => opts.no_banner = true,
+            "--format" => {
+                i += 1;
+                match args.get(i).map(|s| s.as_str()) {
+                    Some("json") => opts.json = true,
+                    Some("agent") => {}
+                    Some("plain") => opts.plain = true,
+                    Some(other) => return Err(format!("unknown --format value: {other}")),
+                    None => return Err("--format requires a value".into()),
+                }
+            }
+            "-h" | "--help" => opts.help = true,
+            other => {
+                if let Some(v) = other.strip_prefix("--format=") {
+                    match v {
+                        "json" => opts.json = true,
+                        "agent" => {}
+                        "plain" => opts.plain = true,
+                        _ => return Err(format!("unknown --format value: {v}")),
+                    }
+                } else if other.starts_with('-') {
+                    return Err(format!("Unknown option: {other}"));
+                } else if opts.symbol.is_none() {
+                    opts.symbol = Some(other.to_string());
+                } else {
+                    let v = other.to_string();
+                    opts.hint = Some(match opts.hint.take() {
+                        Some(h) => format!("{h} {v}"),
+                        None => v,
+                    });
+                }
+            }
+        }
+        i += 1;
+    }
+    Ok(opts)
+}
+
+fn build_trace_url(opts: &TraceOptions) -> String {
+    let symbol = opts.symbol.as_deref().unwrap_or("");
+    let project_root = resolve_project_root().to_string_lossy().into_owned();
+    let format = if opts.json { "json" } else { "agent" };
+    let mut url = format!(
+        "/trace?symbol={}&projectRoot={}&format={format}",
+        url_encode(symbol),
+        url_encode(&project_root),
+    );
+    if let Some(file) = &opts.file {
+        url.push_str(&format!("&file={}", url_encode(file)));
+    }
+    if let Some(hint) = &opts.hint {
+        if !hint.is_empty() {
+            url.push_str(&format!("&hint={}", url_encode(hint)));
+        }
+    }
+    if let Some(depth) = opts.depth {
+        url.push_str(&format!("&depth={depth}"));
+    }
+    if let Some(budget) = opts.budget {
+        url.push_str(&format!("&budget={budget}"));
+    }
+    url
+}
+
 fn build_read_semantic_url(opts: &ReadSemanticOptions) -> String {
     let file = opts.file.as_deref().unwrap_or("");
     let query = opts.query.as_deref().unwrap_or("");
@@ -1232,6 +1513,98 @@ fn main() {
         }
     }
 
+    if cli_args.first().map(|s| s.as_str()) == Some("trace") {
+        let t_opts = match parse_trace_args(&cli_args[1..]) {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("{}Error:{} {e}", ea.fa, ea.r);
+                print_trace_usage(&prog, ea);
+                process::exit(2);
+            }
+        };
+        if t_opts.help {
+            print_trace_usage(&prog, ea);
+            return;
+        }
+        let symbol = match t_opts.symbol.as_deref() {
+            Some(v) if !v.is_empty() => v,
+            _ => {
+                print_trace_usage(&prog, ea);
+                process::exit(2);
+            }
+        };
+        let policy = resolve_output_policy(t_opts.json, t_opts.plain, t_opts.no_banner);
+        let socket = match find_socket() {
+            Some(s) => s,
+            None => match auto_start_server() {
+                Some(s) => s,
+                None => process::exit(1),
+            },
+        };
+        if !t_opts.json {
+            emit_tool_identity("trace", symbol, &policy);
+        }
+        let url = build_trace_url(&t_opts);
+        match do_request_with_status(&socket, &url) {
+            Ok(status) if status >= 400 => process::exit(1),
+            Ok(_) => return,
+            Err(e) => {
+                eprintln!("{}Error:{} {e}", ea.fa, ea.r);
+                process::exit(1);
+            }
+        }
+    }
+
+    if cli_args.first().map(|s| s.as_str()) == Some("read") {
+        let r_opts = match parse_read_args(&cli_args[1..]) {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("{}Error:{} {e}", ea.fa, ea.r);
+                print_read_usage(&prog, ea);
+                process::exit(2);
+            }
+        };
+        if r_opts.help {
+            print_read_usage(&prog, ea);
+            return;
+        }
+        if r_opts.paths.is_empty() {
+            print_read_usage(&prog, ea);
+            process::exit(2);
+        }
+        let wants_range = r_opts.start_line.is_some() || r_opts.end_line.is_some();
+        if wants_range && r_opts.paths.len() > 1 {
+            eprintln!("{}Error:{} --lines requires exactly one path", ea.fa, ea.r);
+            process::exit(2);
+        }
+        let json = r_opts.format == "json";
+        let policy = resolve_output_policy(json, r_opts.plain, r_opts.no_banner);
+        let socket = match find_socket() {
+            Some(s) => s,
+            None => match auto_start_server() {
+                Some(s) => s,
+                None => process::exit(1),
+            },
+        };
+        if !json {
+            let detail = if r_opts.paths.len() == 1 {
+                r_opts.paths[0].clone()
+            } else {
+                format!("{} files", r_opts.paths.len())
+            };
+            emit_tool_identity("read", &detail, &policy);
+        }
+        let url = build_read_url(&r_opts);
+        match do_request_with_status(&socket, &url) {
+            Ok(status) if status >= 400 => process::exit(1),
+            Ok(_) => return,
+            Err(e) => {
+                eprintln!("{}Error:{} {e}", ea.fa, ea.r);
+                process::exit(1);
+            }
+        }
+    }
+
     let opts = match parse_args(&cli_args) {
         Ok(o) => o,
         Err(e) => {
@@ -1495,6 +1868,109 @@ mod tests {
         ];
         let err = parse_read_semantic_args(&args).unwrap_err();
         assert_eq!(err, "--max-tokens requires a value");
+    }
+
+    #[test]
+    fn trace_subcommand_parses_symbol_and_flags() {
+        let args = vec![
+            "processOrder".to_string(),
+            "--in".to_string(),
+            "lib/x.js".to_string(),
+            "--query".to_string(),
+            "request order".to_string(),
+            "--depth".to_string(),
+            "2".to_string(),
+            "--budget".to_string(),
+            "8000".to_string(),
+            "--json".to_string(),
+        ];
+        let opts = parse_trace_args(&args).expect("parse");
+        assert_eq!(opts.symbol.as_deref(), Some("processOrder"));
+        assert_eq!(opts.file.as_deref(), Some("lib/x.js"));
+        assert_eq!(opts.hint.as_deref(), Some("request order"));
+        assert_eq!(opts.depth, Some(2));
+        assert_eq!(opts.budget, Some(8000));
+        assert!(opts.json);
+    }
+
+    #[test]
+    fn trace_subcommand_appends_extra_positionals_to_hint() {
+        let args = vec![
+            "validate".to_string(),
+            "request".to_string(),
+            "validation".to_string(),
+        ];
+        let opts = parse_trace_args(&args).expect("parse");
+        assert_eq!(opts.symbol.as_deref(), Some("validate"));
+        assert_eq!(opts.hint.as_deref(), Some("request validation"));
+    }
+
+    #[test]
+    fn build_trace_url_encodes_symbol_root_and_flags() {
+        let opts = TraceOptions {
+            symbol: Some("processOrder".to_string()),
+            depth: Some(2),
+            json: true,
+            ..Default::default()
+        };
+        let url = build_trace_url(&opts);
+        assert!(url.starts_with("/trace?symbol=processOrder"));
+        assert!(url.contains("&projectRoot="));
+        assert!(url.contains("&format=json"));
+        assert!(url.contains("&depth=2"));
+    }
+
+    #[test]
+    fn read_subcommand_parses_paths_lines_and_format() {
+        let args = vec![
+            "a.py".to_string(),
+            "--lines".to_string(),
+            "3-12".to_string(),
+            "--raw".to_string(),
+            "--no-metadata".to_string(),
+        ];
+        let opts = parse_read_args(&args).expect("parse");
+        assert_eq!(opts.paths, vec!["a.py".to_string()]);
+        assert_eq!(opts.start_line, Some(3));
+        assert_eq!(opts.end_line, Some(12));
+        assert_eq!(opts.format, "raw");
+        assert!(!opts.include_metadata);
+    }
+
+    #[test]
+    fn read_subcommand_collects_multiple_paths() {
+        let args = vec!["a.py".to_string(), "b.py".to_string(), "--json".to_string()];
+        let opts = parse_read_args(&args).expect("parse");
+        assert_eq!(opts.paths, vec!["a.py".to_string(), "b.py".to_string()]);
+        assert_eq!(opts.format, "json");
+    }
+
+    #[test]
+    fn parse_line_range_handles_range_open_and_single() {
+        assert_eq!(parse_line_range("45-92").unwrap(), (Some(45), Some(92)));
+        assert_eq!(parse_line_range("45-").unwrap(), (Some(45), None));
+        assert_eq!(parse_line_range("45").unwrap(), (Some(45), Some(45)));
+        assert_eq!(parse_line_range("45:92").unwrap(), (Some(45), Some(92)));
+        assert!(parse_line_range("abc").is_err());
+    }
+
+    #[test]
+    fn build_read_url_emits_repeated_path_params() {
+        let opts = ReadOptions {
+            paths: vec!["a.py".to_string(), "b.py".to_string()],
+            format: "agent".to_string(),
+            start_line: None,
+            end_line: None,
+            include_metadata: true,
+            plain: false,
+            no_banner: false,
+            help: false,
+        };
+        let url = build_read_url(&opts);
+        assert!(url.contains("&path=a.py"));
+        assert!(url.contains("&path=b.py"));
+        assert!(url.contains("&format=agent"));
+        assert!(!url.contains("metadata=false"));
     }
 
     #[test]

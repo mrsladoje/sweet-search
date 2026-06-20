@@ -19,8 +19,12 @@
  *     leaves a torn file.
  *   - lastActivityMs stores REAL query activity (the daemon's /search and
  *     /read-semantic wall-clock), so "least-recently-active" == least-recently
- *     queried. The actively-used repo's daemon always has the freshest stamp
- *     and is therefore never an eviction target.
+ *     queried. The actively-used repo's daemon is never evicted by an
+ *     equally-or-less-recently-active peer; the one residual race is a
+ *     newly-STARTED peer, which is freshest-by-construction (its startedAt
+ *     seeds lastActivityMs) and may evict a recently-active-but-stale-stamped
+ *     peer within one registry-refresh interval, because the registry reflects
+ *     activity only as of each daemon's coarse registryTouchSelf tick.
  */
 
 import fs from 'node:fs/promises';
@@ -163,8 +167,11 @@ export async function pruneAndList({ env = process.env, probe = null, timeoutMs 
  * the union of all daemons' evictions is exactly the surplus (the oldest
  * live.length-cap daemons): the newest daemon alone already targets precisely
  * that set, and every other daemon targets a subset of it. The actively-used
- * repo's daemon (freshest lastActivityMs) is therefore never evicted, and the
- * cap converges without over-shooting below it.
+ * repo's daemon (freshest lastActivityMs) is therefore never evicted by an
+ * equally-or-less-recently-active peer — though a newly-started peer, freshest
+ * by construction, may evict it within one registry-refresh interval before
+ * its next registryTouchSelf tick re-stamps it. The cap converges without
+ * over-shooting below it.
  *
  * When self is absent from the list (e.g. an unregistered caller, or tests),
  * the gate falls back to "any non-self", i.e. plain least-recently-active.
