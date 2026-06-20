@@ -270,3 +270,165 @@ describe('readSemantic daemon route helper', () => {
     expect(r.body).toContain('[warning] source file is newer than the semantic index');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Socket-level status / validation / coercion coverage for the daemon route
+// (T8). These guard the handler's early returns BEFORE readSemantic runs.
+// ---------------------------------------------------------------------------
+describe('buildReadSemanticDaemonResponse — status + validation + coercion', () => {
+  function routeUrl(params) {
+    return `/read-semantic?${new URLSearchParams(params).toString()}`;
+  }
+  // NOTE: TMP is (re)assigned in beforeEach, so read it lazily inside each
+  // test — a `const base` captured at collection time would see TMP=undefined
+  // and trip the 409 same-project guard.
+  const base = () => ({ isUnixSocket: true, searcher: { projectRoot: TMP } });
+
+  // never-run guard: if readSemantic is reached, fail loudly.
+  const noRun = {
+    readSemanticFn: async () => { throw new Error('readSemantic must not run for a guard-rejected request'); },
+    formatReadSemanticResultFn: formatReadSemanticResult,
+  };
+
+  it('503 status:starting when the server is not yet ready', async () => {
+    const r = await buildReadSemanticDaemonResponse(
+      routeUrl({ path: 'a.js', q: 'q', projectRoot: TMP }),
+      { ...base(), serverReady: false, ...noRun },
+    );
+    expect(r.status).toBe(503);
+    const body = JSON.parse(r.body);
+    expect(body.status).toBe('starting');
+  });
+
+  it('503 status:failed when initError is set', async () => {
+    const r = await buildReadSemanticDaemonResponse(
+      routeUrl({ path: 'a.js', q: 'q', projectRoot: TMP }),
+      { ...base(), serverReady: false, initError: new Error('boom'), ...noRun },
+    );
+    expect(r.status).toBe(503);
+    const body = JSON.parse(r.body);
+    expect(body.status).toBe('failed');
+    expect(body.error).toContain('boom');
+  });
+
+  it('400 on missing path', async () => {
+    const r = await buildReadSemanticDaemonResponse(
+      routeUrl({ q: 'q', projectRoot: TMP }),
+      { ...base(), serverReady: true, ...noRun },
+    );
+    expect(r.status).toBe(400);
+    expect(r.body).toContain('path');
+  });
+
+  it('400 on missing query', async () => {
+    const r = await buildReadSemanticDaemonResponse(
+      routeUrl({ path: 'a.js', projectRoot: TMP }),
+      { ...base(), serverReady: true, ...noRun },
+    );
+    expect(r.status).toBe(400);
+    expect(r.body).toContain('query');
+  });
+
+  it('400 on missing projectRoot', async () => {
+    const r = await buildReadSemanticDaemonResponse(
+      routeUrl({ path: 'a.js', q: 'q' }),
+      { ...base(), serverReady: true, ...noRun },
+    );
+    expect(r.status).toBe(400);
+    expect(r.body).toContain('projectRoot');
+  });
+
+  it('413 when the path exceeds the max read-path length', async () => {
+    const longPath = `${'a'.repeat(8_193)}.js`; // > SEARCH_SERVER_MAX_READ_PATH_LENGTH (8192)
+    const r = await buildReadSemanticDaemonResponse(
+      routeUrl({ path: longPath, q: 'q', projectRoot: TMP }),
+      { ...base(), serverReady: true, ...noRun },
+    );
+    expect(r.status).toBe(413);
+    expect(r.body).toContain('Path too long');
+  });
+
+  it('413 when the query exceeds the max query length', async () => {
+    const longQuery = 'q'.repeat(2_001); // > SEARCH_SERVER_MAX_QUERY_LENGTH (2000)
+    const r = await buildReadSemanticDaemonResponse(
+      routeUrl({ path: 'a.js', q: longQuery, projectRoot: TMP }),
+      { ...base(), serverReady: true, ...noRun },
+    );
+    expect(r.status).toBe(413);
+    expect(r.body).toContain('Query too long');
+  });
+
+  it('414 when the whole request URL exceeds the max URL length', async () => {
+    // Keep path ≤ 8192 and query ≤ 2000, but pad the URL past 16384 via a long
+    // projectRoot so the 414 guard (checked first) fires, not 413.
+    const pad = 'x'.repeat(16_500);
+    const r = await buildReadSemanticDaemonResponse(
+      `/read-semantic?path=a.js&q=q&projectRoot=${pad}`,
+      { ...base(), serverReady: true, ...noRun },
+    );
+    expect(r.status).toBe(414);
+    expect(r.body).toContain('URL too long');
+  });
+
+  it('400 on a non-numeric k', async () => {
+    const r = await buildReadSemanticDaemonResponse(
+      routeUrl({ path: 'a.js', q: 'q', projectRoot: TMP, k: 'not-a-number' }),
+      { ...base(), serverReady: true, ...noRun },
+    );
+    expect(r.status).toBe(400);
+    expect(r.body).toContain('topK');
+  });
+
+  it('400 on a non-numeric threshold', async () => {
+    const r = await buildReadSemanticDaemonResponse(
+      routeUrl({ path: 'a.js', q: 'q', projectRoot: TMP, threshold: 'high' }),
+      { ...base(), serverReady: true, ...noRun },
+    );
+    expect(r.status).toBe(400);
+    expect(r.body).toContain('threshold');
+  });
+
+  it("coerces a non-json format (e.g. 'plain') to agent over the wire", async () => {
+    // 'plain' is a valid in-process CLI format but never sent by the native
+    // client; the handler coerces anything !== 'json' to 'agent' (text/plain),
+    // so a stray format never mishandles the response.
+    let seenFormat = null;
+    const r = await buildReadSemanticDaemonResponse(
+      routeUrl({ path: 'a.js', q: 'q', projectRoot: TMP, format: 'plain' }),
+      {
+        ...base(),
+        serverReady: true,
+        readSemanticFn: async () => ({
+          ok: true, file: 'a.js', query: 'q', indexed: false, fellBack: true,
+          language: 'javascript', totalLines: 1,
+          spans: [{ startLine: 1, endLine: 1, score: 1, symbols: [], text: 'x\n' }],
+          charsReturned: 2, approxTokensReturned: 1,
+        }),
+        formatReadSemanticResultFn: (result, fmt) => { seenFormat = fmt; return formatReadSemanticResult(result, fmt); },
+      },
+    );
+    expect(r.status).toBe(200);
+    expect(seenFormat).toBe('agent');                       // coerced, not 'plain'
+    expect(r.contentType).toBe('text/plain; charset=utf-8'); // agent wire type
+    expect(r.body.endsWith('\n')).toBe(true);                // agent trailing newline
+  });
+
+  it("keeps an explicit format=json as json", async () => {
+    let seenFormat = null;
+    const r = await buildReadSemanticDaemonResponse(
+      routeUrl({ path: 'a.js', q: 'q', projectRoot: TMP, format: 'json' }),
+      {
+        ...base(),
+        serverReady: true,
+        readSemanticFn: async () => ({
+          ok: true, file: 'a.js', query: 'q', indexed: false, fellBack: true,
+          language: 'javascript', totalLines: 1, spans: [], charsReturned: 0, approxTokensReturned: 0,
+        }),
+        formatReadSemanticResultFn: (result, fmt) => { seenFormat = fmt; return formatReadSemanticResult(result, fmt); },
+      },
+    );
+    expect(r.status).toBe(200);
+    expect(seenFormat).toBe('json');
+    expect(r.contentType).toBe('application/json');
+  });
+});

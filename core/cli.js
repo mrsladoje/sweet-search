@@ -29,7 +29,18 @@ if (args[0] === 'init') {
   const { handleIncrementalCli } = await import('./incremental-indexing/application/operator-cli.mjs');
   await handleIncrementalCli(args[0], args.slice(1));
 } else if (args[0] === 'read') {
-  // Filesystem-grounded reader; runs in JS (no native equivalent yet).
+  // Filesystem-grounded reader. Default dispatches to the native Unix-socket
+  // client so the warm daemon serves the read without per-call node startup.
+  // readFiles statSync's every call, so read-your-writes freshness is preserved.
+  // Set SWEET_SEARCH_READ_VIA_DAEMON=0 to force the in-process path.
+  if (!envFalsey('SWEET_SEARCH_READ_VIA_DAEMON')) {
+    const { resolveNativeBinary } = await import('./infrastructure/index.js');
+    const nativeBin = resolveNativeBinary();
+    if (nativeBin) {
+      const result = spawnSync(nativeBin, args, { stdio: 'inherit' });
+      process.exit(result.status ?? 1);
+    }
+  }
   const { handleReadCli } = await import('./search/search-read.js');
   await handleReadCli(args.slice(1));
 } else if (args[0] === 'read-semantic') {
@@ -48,7 +59,18 @@ if (args[0] === 'init') {
   const { handleReadSemanticCli } = await import('./search/search-read-semantic.js');
   await handleReadSemanticCli(args.slice(1));
 } else if (args[0] === 'trace') {
-  // Unified structural code context: callers, callees, and impact.
+  // Unified structural code context: callers, callees, and impact. Default
+  // dispatches to the native Unix-socket client so the warm daemon serves the
+  // code-graph traversal without per-call node startup + cold code-graph.db
+  // open. Set SWEET_SEARCH_TRACE_VIA_DAEMON=0 to force the in-process path.
+  if (!envFalsey('SWEET_SEARCH_TRACE_VIA_DAEMON')) {
+    const { resolveNativeBinary } = await import('./infrastructure/index.js');
+    const nativeBin = resolveNativeBinary();
+    if (nativeBin) {
+      const result = spawnSync(nativeBin, args, { stdio: 'inherit' });
+      process.exit(result.status ?? 1);
+    }
+  }
   const { handleTraceCli } = await import('./search/search-trace.js');
   await handleTraceCli(args.slice(1));
 } else if (args[0] === 'index') {

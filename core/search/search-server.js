@@ -171,6 +171,177 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
   }
 }
 
+// Daemon handler for `trace` — structural callers/callees/impact served from the
+// warm daemon so the native client pays no node startup + the code-graph.db is
+// page-cache warm. Byte-identical to the in-process path (search-trace.js
+// handleTraceCli): SAME traceSymbol + formatStructuralContext, with the banner
+// emitted client-side (native binary), exactly like /read-semantic.
+export async function buildTraceDaemonResponse(reqUrl, {
+  isUnixSocket = false,
+  serverReady = false,
+  initError = null,
+  searcher = null,
+} = {}) {
+  if (!isUnixSocket) {
+    return readSemanticError(403, '/trace is only available via Unix socket');
+  }
+  if (!serverReady) {
+    const reason = initError?.message
+      ? `Server initialization failed: ${initError.message}`
+      : 'Server is starting, please retry';
+    return readSemanticError(503, reason, { status: initError ? 'failed' : 'starting' });
+  }
+  if (reqUrl.length > SEARCH_SERVER_MAX_URL_LENGTH) {
+    return readSemanticError(414, `Request URL too long (max ${SEARCH_SERVER_MAX_URL_LENGTH} chars)`);
+  }
+  let url;
+  try {
+    url = new URL(reqUrl, `http://localhost:${SEARCH_SERVER_PORT}`);
+  } catch {
+    return readSemanticError(400, 'Invalid request URL');
+  }
+
+  const symbol = url.searchParams.get('symbol') || url.searchParams.get('q') || '';
+  const requestedRoot = url.searchParams.get('projectRoot') || '';
+  const json = url.searchParams.get('format') === 'json';
+
+  if (!symbol) return readSemanticError(400, 'Missing symbol parameter ?symbol=');
+  if (symbol.length > SEARCH_SERVER_MAX_QUERY_LENGTH) {
+    return readSemanticError(413, `Symbol too long (max ${SEARCH_SERVER_MAX_QUERY_LENGTH} chars)`);
+  }
+  if (!requestedRoot) return readSemanticError(400, 'Missing projectRoot parameter');
+
+  const serverRoot = canonicalProjectRoot(searcher?.projectRoot || process.cwd());
+  const clientRoot = canonicalProjectRoot(requestedRoot);
+  if (serverRoot !== clientRoot) {
+    return readSemanticError(409, 'Daemon project root mismatch', {
+      serverProjectRoot: serverRoot,
+      requestedProjectRoot: clientRoot,
+    });
+  }
+
+  const filePath = url.searchParams.get('file') || undefined;
+  const queryHint = url.searchParams.get('hint') || '';
+  let maxDepth; let tokenBudget;
+  try {
+    maxDepth = parseInteger(url.searchParams.get('depth'), 'depth');
+    tokenBudget = parseInteger(url.searchParams.get('budget'), 'budget');
+  } catch (err) {
+    return readSemanticError(400, err.message);
+  }
+
+  try {
+    const { traceSymbol, formatStructuralContext } = await import('./search-trace.js');
+    // Mirror search-trace.js parseArgs defaults exactly (maxDepth 3, adaptive
+    // budget when null) so the result is identical to the in-process call.
+    const result = traceSymbol(symbol, {
+      projectRoot: serverRoot,
+      filePath,
+      queryHint,
+      maxDepth: maxDepth ?? 3,
+      tokenBudget: tokenBudget ?? null,
+    });
+    // handleTraceCli writes `console.log(json ? JSON : formatStructuralContext)`,
+    // i.e. body + exactly one trailing newline in BOTH modes.
+    const body = json ? JSON.stringify(result, null, 2) : formatStructuralContext(result);
+    return {
+      status: 200,
+      contentType: json ? 'application/json' : 'text/plain; charset=utf-8',
+      body: `${body}\n`,
+    };
+  } catch (err) {
+    return readSemanticError(500, err.message || String(err));
+  }
+}
+
+// Daemon handler for `read` — filesystem-grounded multi-file reader served from
+// the warm daemon (no per-call node startup). Byte-identical to the in-process
+// path (search-read.js handleReadCli): SAME readFiles + formatReadResults.
+// readFiles statSync's every call (stat-keyed cache absPath|size|mtimeMs), so
+// read-your-writes freshness is preserved across the daemon boundary.
+export async function buildReadDaemonResponse(reqUrl, {
+  isUnixSocket = false,
+  serverReady = false,
+  initError = null,
+  searcher = null,
+} = {}) {
+  if (!isUnixSocket) {
+    return readSemanticError(403, '/read is only available via Unix socket');
+  }
+  if (!serverReady) {
+    const reason = initError?.message
+      ? `Server initialization failed: ${initError.message}`
+      : 'Server is starting, please retry';
+    return readSemanticError(503, reason, { status: initError ? 'failed' : 'starting' });
+  }
+  if (reqUrl.length > SEARCH_SERVER_MAX_URL_LENGTH) {
+    return readSemanticError(414, `Request URL too long (max ${SEARCH_SERVER_MAX_URL_LENGTH} chars)`);
+  }
+  let url;
+  try {
+    url = new URL(reqUrl, `http://localhost:${SEARCH_SERVER_PORT}`);
+  } catch {
+    return readSemanticError(400, 'Invalid request URL');
+  }
+
+  const paths = url.searchParams.getAll('path');
+  const requestedRoot = url.searchParams.get('projectRoot') || '';
+  const fmtParam = url.searchParams.get('format') || 'agent';
+  const format = (fmtParam === 'json' || fmtParam === 'raw') ? fmtParam : 'agent';
+
+  if (paths.length === 0) return readSemanticError(400, 'Missing path parameter ?path=');
+  if (paths.length > 20) return readSemanticError(413, 'read accepts at most 20 files');
+  for (const p of paths) {
+    if (p.length > SEARCH_SERVER_MAX_READ_PATH_LENGTH) {
+      return readSemanticError(413, `Path too long (max ${SEARCH_SERVER_MAX_READ_PATH_LENGTH} chars)`);
+    }
+  }
+  if (!requestedRoot) return readSemanticError(400, 'Missing projectRoot parameter');
+
+  const serverRoot = canonicalProjectRoot(searcher?.projectRoot || process.cwd());
+  const clientRoot = canonicalProjectRoot(requestedRoot);
+  if (serverRoot !== clientRoot) {
+    return readSemanticError(409, 'Daemon project root mismatch', {
+      serverProjectRoot: serverRoot,
+      requestedProjectRoot: clientRoot,
+    });
+  }
+
+  let startLine; let endLine;
+  try {
+    startLine = parseInteger(url.searchParams.get('startLine'), 'startLine');
+    endLine = parseInteger(url.searchParams.get('endLine'), 'endLine');
+  } catch (err) {
+    return readSemanticError(400, err.message);
+  }
+  const includeMetadata = url.searchParams.get('metadata') !== 'false';
+  const wantsRange = startLine != null || endLine != null;
+  if (wantsRange && paths.length > 1) {
+    return readSemanticError(400, '--lines requires exactly one path');
+  }
+  const files = paths.map(p => ({
+    path: p,
+    startLine: wantsRange ? startLine : undefined,
+    endLine: wantsRange ? endLine : undefined,
+  }));
+
+  try {
+    const { readFiles, formatReadResults } = await import('./search-read.js');
+    const out = await readFiles(files, { projectRoot: serverRoot, includeMetadata });
+    const body = formatReadResults(out, format);
+    // handleReadCli appends '\n' for non-json output (the extra process.stdout
+    // .write('\n')); json gets no trailing newline. Mirror exactly.
+    const allFailed = out.files.length > 0 && out.files.every(f => !f.ok);
+    return {
+      status: allFailed ? 404 : 200,
+      contentType: format === 'json' ? 'application/json' : 'text/plain; charset=utf-8',
+      body: format === 'json' ? body : `${body}\n`,
+    };
+  } catch (err) {
+    return readSemanticError(500, err.message || String(err));
+  }
+}
+
 function buildTextSearchResponse(results, stats, totalTime, { summary = false, mid = false, color = true, decorate = true } = {}) {
   const routeMode = stats?.routing?.mode || 'auto';
   const icon = routeMode === 'lexical' ? '⚡' : routeMode === 'semantic' ? '🧠' : '✨';
@@ -579,6 +750,28 @@ export async function startServer() {
       });
       res.writeHead(response.status, { 'Content-Type': response.contentType });
       res.end(response.body);
+    } else if (req.method === 'GET' && reqUrl.startsWith('/trace?')) {
+      // Real query traffic — reset the idle-TTL clock (NOT /health or /stop).
+      lastActivityMs = Date.now();
+      const response = await buildTraceDaemonResponse(reqUrl, {
+        isUnixSocket: !req.socket.remoteAddress,
+        serverReady,
+        initError,
+        searcher,
+      });
+      res.writeHead(response.status, { 'Content-Type': response.contentType });
+      res.end(response.body);
+    } else if (req.method === 'GET' && reqUrl.startsWith('/read?')) {
+      // Real query traffic — reset the idle-TTL clock (NOT /health or /stop).
+      lastActivityMs = Date.now();
+      const response = await buildReadDaemonResponse(reqUrl, {
+        isUnixSocket: !req.socket.remoteAddress,
+        serverReady,
+        initError,
+        searcher,
+      });
+      res.writeHead(response.status, { 'Content-Type': response.contentType });
+      res.end(response.body);
     } else if (req.method === 'GET' && reqUrl === '/health') {
       const status = initError ? 'failed' : (serverReady ? 'ready' : 'starting');
       // Repo identity — harness uses these to verify the daemon serves the
@@ -708,7 +901,10 @@ export async function startServer() {
   // loop alive on its own. The TTL is read every tick so tests/operators can
   // tune it live; 0 disables. Self-stops once no QUERY route has been hit for
   // longer than the TTL — the actively-used repo's daemon keeps resetting
-  // lastActivityMs and is therefore never evicted.
+  // lastActivityMs and is therefore never idle-evicted while it is being
+  // queried. (The separate LRU cap below is the only path that can stop an
+  // active peer, and only via a newly-started peer within one registry-refresh
+  // interval; see daemon-registry.js selectEvictionTargets.)
   idleTimer = setInterval(() => {
     const ttl = Number(process.env.SWEET_SEARCH_DAEMON_IDLE_TTL_MS ?? 1_200_000);
     if (ttl > 0 && Date.now() - lastActivityMs > ttl) {

@@ -7,21 +7,35 @@
  * exercise the actual gracefulShutdown / idle-TTL / activity-tracking paths in
  * search-server.js end-to-end.
  *
- * Byte-identical-result parity, RSS footprint, and maintainer-freshness across
- * eviction are proven separately on the real eval/corpus/m2crb index (manual
- * verification deliverable) because they need the heavy 295 MB corpus + native
- * binary; here we prove the lifecycle state machine itself.
+ * Byte-identical-result parity and RSS footprint are proven separately on the
+ * real eval/corpus/m2crb index (read-semantic parity is locked in
+ * read-semantic-daemon-parity.integration.test.js) because they need the heavy
+ * corpus + native binary; here we prove the lifecycle state machine itself.
+ *
+ * The maintainer-FRESHNESS invariant (the detached index maintainer must
+ * SURVIVE a search-daemon eviction, and a cold daemon restart must not
+ * duplicate it) is automated below with a hermetic long-lived fake maintainer
+ * (tests/fixtures/fake-maintainer-longlived.mjs) — no real indexer involved.
+ *
+ * DAEMON ISOLATION: every daemon here binds a UNIQUE /tmp socket+pidfile and
+ * never participates in the shared registry (SWEET_SEARCH_DAEMON_REGISTRY is
+ * deleted), so the shared m2crb daemon and the user's working-repo daemons are
+ * never enumerated, signalled, or evicted. afterEach SIGKILLs any survivor.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 
 const CLI = resolve(dirname(fileURLToPath(import.meta.url)), '../../core/cli.js');
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const FAKE_MAINTAINER = join(REPO_ROOT, 'tests', 'fixtures', 'fake-maintainer-longlived.mjs');
 
 let dir;
 let socketPath;
@@ -131,6 +145,47 @@ describe('idle-TTL eviction', () => {
   }, 20000);
 });
 
+describe('idle-TTL eviction — /read-semantic resets the timer', () => {
+  it('a /read-semantic resets the timer (mirrors /search) yet idles out once traffic stops', async () => {
+    // /read-semantic sets lastActivityMs at the top of its branch exactly like
+    // /search, so driving it past 2× the TTL must keep the daemon warm; once it
+    // stops, the daemon idles out. (Lock for search-server.js:573.)
+    spawnDaemon({ SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '1500', SWEET_SEARCH_DAEMON_IDLE_CHECK_MS: '200' });
+    expect(await waitForUp()).toBe(true);
+
+    const driveUntil = Date.now() + 3000; // > 2× TTL
+    while (Date.now() < driveUntil) {
+      // A 503 "starting"/"failed" still resets the clock — lastActivityMs is set
+      // before the readiness check, just like the /search branch.
+      await httpGet('/read-semantic?path=a.js&q=anything&projectRoot=' + encodeURIComponent(dir), { timeoutMs: 500 });
+      await sleep(400);
+    }
+    // Still alive — /read-semantic traffic kept it warm past the TTL.
+    expect(child.exitCode).toBeNull();
+    expect((await httpGet('/health', { timeoutMs: 500 }))?.status).toBe(200);
+
+    // Stop driving traffic → it must now idle out (proves /health probing in
+    // waitForExit does NOT reset the timer, only the query routes do).
+    expect(await waitForExit(4000)).toBe(true);
+    expect(existsSync(socketPath)).toBe(false);
+    expect(existsSync(pidFile)).toBe(false);
+  }, 20000);
+
+  it('/health-only traffic does NOT reset the timer (regression guard vs /read-semantic)', async () => {
+    // Companion to the above: pure /health pinging at the same cadence the
+    // /read-semantic test uses must NOT keep the daemon alive.
+    spawnDaemon({ SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '1500', SWEET_SEARCH_DAEMON_IDLE_CHECK_MS: '200' });
+    expect(await waitForUp()).toBe(true);
+
+    const probeUntil = Date.now() + 1800;
+    while (Date.now() < probeUntil) {
+      await httpGet('/health', { timeoutMs: 300 });
+      await sleep(400);
+    }
+    expect(await waitForExit(4000)).toBe(true);
+  }, 20000);
+});
+
 describe('sendStopToSocket (peer eviction / graceful /stop path)', () => {
   it('stops a running daemon on an explicit socket and unlinks its files', async () => {
     spawnDaemon({ SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '0' }); // TTL disabled — only /stop should end it
@@ -144,4 +199,225 @@ describe('sendStopToSocket (peer eviction / graceful /stop path)', () => {
     expect(existsSync(socketPath)).toBe(false);
     expect(existsSync(pidFile)).toBe(false);
   }, 20000);
+});
+
+describe('gracefulShutdown idempotency (shuttingDown guard)', () => {
+  it('two back-to-back /stop requests exit exactly once with code 0, no double-unlink throw', async () => {
+    spawnDaemon({ SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '0' }); // only /stop ends it
+    expect(await waitForUp()).toBe(true);
+
+    // Fire two /stop requests concurrently. The shuttingDown guard
+    // (search-server.js:377-378) must make the second a no-op: the process
+    // tears down once, unlinks pid+socket once, and exits 0 — no second
+    // gracefulShutdown body runs, so no double-unlink ENOENT throw escapes.
+    const [a, b] = await Promise.all([
+      httpGet('/stop', { timeoutMs: 3000 }),
+      httpGet('/stop', { timeoutMs: 3000 }),
+    ]);
+    // At least one /stop got the 200 "Shutting down" ack; the other may race the
+    // socket closing (null) or also see 200 — either way no error is thrown.
+    const statuses = [a?.status, b?.status];
+    expect(statuses.some((s) => s === 200)).toBe(true);
+
+    const exit = await Promise.race([childExited, sleep(5000).then(() => 'timeout')]);
+    expect(exit).not.toBe('timeout');
+    expect(exit.code).toBe(0);          // exits exactly once, cleanly
+    expect(exit.signal).toBeNull();     // not killed — graceful self-exit
+    expect(existsSync(socketPath)).toBe(false); // unlinked once, no throw
+    expect(existsSync(pidFile)).toBe(false);
+  }, 20000);
+
+  it('a /stop that races the idle-TTL still exits once with code 0', async () => {
+    // /stop and an about-to-fire idle-TTL both call the shared gracefulShutdown;
+    // the guard ensures only one wins. Short TTL so they genuinely race.
+    spawnDaemon({ SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '800', SWEET_SEARCH_DAEMON_IDLE_CHECK_MS: '150' });
+    expect(await waitForUp()).toBe(true);
+
+    // Let the idle window approach, then send /stop right around the TTL edge.
+    await sleep(700);
+    await httpGet('/stop', { timeoutMs: 3000 });
+
+    const exit = await Promise.race([childExited, sleep(5000).then(() => 'timeout')]);
+    expect(exit).not.toBe('timeout');
+    expect(exit.code).toBe(0);
+    expect(existsSync(socketPath)).toBe(false);
+    expect(existsSync(pidFile)).toBe(false);
+  }, 20000);
+});
+
+// ---------------------------------------------------------------------------
+// FRESHNESS INVARIANT (T6): the detached index maintainer survives a search
+// daemon eviction, and a cold daemon restart does not duplicate it.
+//
+// The maintainer is spawned detached + unref'd by launchMaintainer
+// (maintainer-launcher.mjs:121-130) from the SAME launcher the search daemon
+// calls at startup, so killing/idling the search daemon must NOT take the
+// maintainer with it. We use a hermetic long-lived fake maintainer; the real
+// indexer is never touched, and we only READ the maintainer's pid/lock.
+// ---------------------------------------------------------------------------
+describe('freshness invariant — maintainer survives daemon eviction', () => {
+  let stateDir;
+  let maintainerMarker;
+  let maintainerPids; // track for cleanup
+
+  const lockPath = () => join(stateDir, 'index-maintainer.lock');
+
+  function pidAlive(pid) {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+  }
+
+  /** Spawn a daemon WITH the maintainer enabled, pointed at the fake maintainer. */
+  function spawnDaemonWithMaintainer(extraEnv = {}) {
+    return spawnDaemon({
+      SWEET_SEARCH_RECONCILE_V2: '',                 // force default-ON
+      SWEET_SEARCH_MAINTAINER_ENTRY: FAKE_MAINTAINER,
+      SWEET_SEARCH_STATE_DIR: stateDir,
+      FAKE_MAINTAINER_MARKER: maintainerMarker,
+      ...extraEnv,
+    });
+  }
+
+  /** Wait until the fake maintainer has written its lock; return its pid. */
+  async function waitForMaintainerPid(deadlineMs = 12000) {
+    const end = Date.now() + deadlineMs;
+    while (Date.now() < end) {
+      try {
+        const { pid } = JSON.parse(readFileSync(lockPath(), 'utf-8'));
+        if (Number.isInteger(pid) && pidAlive(pid)) return pid;
+      } catch { /* not written yet */ }
+      await sleep(150);
+    }
+    return null;
+  }
+
+  function markerCount() {
+    try { return readFileSync(maintainerMarker, 'utf-8').split('\n').filter(Boolean).length; }
+    catch { return 0; }
+  }
+
+  /** Wait until the marker has exactly `n` lines (or timeout); returns the count. */
+  async function waitForMarkerCount(n, deadlineMs = 6000) {
+    const end = Date.now() + deadlineMs;
+    let c = markerCount();
+    while (c < n && Date.now() < end) {
+      await sleep(150);
+      c = markerCount();
+    }
+    return c;
+  }
+
+  beforeEach(() => {
+    // dir/socketPath/pidFile already set by the outer beforeEach.
+    stateDir = join(dir, '.sweet-search');
+    maintainerMarker = join(dir, 'maintainer-marker.log');
+    mkdirSync(stateDir, { recursive: true }); // launcher requires the state dir to exist
+    maintainerPids = new Set();
+  });
+
+  afterEach(async () => {
+    // Kill any fake maintainer we spawned (it is detached and will otherwise
+    // outlive the test by design).
+    for (const pid of maintainerPids) {
+      try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
+    }
+  });
+
+  it('maintainer outlives an idle-evicted daemon and the lock stays intact', async () => {
+    // TTL is long enough to confirm the maintainer launched BEFORE we let the
+    // daemon idle-evict — otherwise under heavy CPU contention the daemon could
+    // self-stop before its detached maintainer finishes starting. We assert the
+    // eviction explicitly via waitForExit afterwards, so a generous TTL does not
+    // weaken the test.
+    spawnDaemonWithMaintainer({
+      SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '4000',
+      SWEET_SEARCH_DAEMON_IDLE_CHECK_MS: '250',
+    });
+    expect(await waitForUp()).toBe(true);
+
+    const maintPid = await waitForMaintainerPid();
+    expect(maintPid).toBeTruthy();
+    maintainerPids.add(maintPid);
+    expect(await waitForMarkerCount(1)).toBe(1); // launched exactly once
+
+    // Let the search daemon idle-evict (no query traffic keeps it alive).
+    expect(await waitForExit(8000)).toBe(true);
+    expect(existsSync(socketPath)).toBe(false); // daemon gone
+
+    // The detached maintainer is STILL alive and its lock is intact.
+    expect(pidAlive(maintPid)).toBe(true);
+    expect(existsSync(lockPath())).toBe(true);
+    const { pid: lockedPid } = JSON.parse(readFileSync(lockPath(), 'utf-8'));
+    expect(lockedPid).toBe(maintPid);
+  }, 25000);
+
+  it('maintainer survives a /stop and a cold daemon restart does not duplicate it', async () => {
+    spawnDaemonWithMaintainer({ SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '0' }); // only /stop ends it
+    expect(await waitForUp()).toBe(true);
+
+    const maintPid = await waitForMaintainerPid();
+    expect(maintPid).toBeTruthy();
+    maintainerPids.add(maintPid);
+    expect(await waitForMarkerCount(1)).toBe(1);
+
+    // Tear the search daemon down.
+    await httpGet('/stop', { timeoutMs: 3000 });
+    expect(await waitForExit(5000)).toBe(true);
+    // Maintainer survived the teardown.
+    expect(pidAlive(maintPid)).toBe(true);
+
+    // Cold-restart the search daemon. Its launchMaintainer must see the LIVE
+    // lock and skip spawning — the marker count stays at 1 (no duplicate).
+    spawnDaemonWithMaintainer({ SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '0' });
+    expect(await waitForUp()).toBe(true);
+    // Give the restarted daemon's launcher a beat to (not) spawn a duplicate.
+    await sleep(1200);
+    expect(markerCount()).toBe(1);
+    expect(pidAlive(maintPid)).toBe(true);
+
+    // The still-live original maintainer is the one the lock points at.
+    const { pid: lockedPid } = JSON.parse(readFileSync(lockPath(), 'utf-8'));
+    expect(lockedPid).toBe(maintPid);
+  }, 30000);
+});
+
+// ---------------------------------------------------------------------------
+// STATIC GUARD (T10): the search-server teardown/cap paths must never import or
+// signal the maintainer, and only daemon-registry.js may import the registry.
+// Read-only source/import scan — complements the runtime invariant in T6.
+// ---------------------------------------------------------------------------
+describe('static guard — shutdown/cap never touch the maintainer', () => {
+  const SERVER_SRC = join(REPO_ROOT, 'core', 'search', 'search-server.js');
+  const REGISTRY_SRC = join(REPO_ROOT, 'core', 'search', 'daemon-registry.js');
+
+  it('search-server.js never kills/signals the maintainer in a teardown/cap path', () => {
+    const src = readFileSync(SERVER_SRC, 'utf-8');
+    // gracefulShutdown closes the servers, the searcher, unlinks pid/socket, and
+    // (only when capEnabled) removes the registry self-entry — it must NOT reach
+    // into the maintainer. Assert the shutdown/cap helpers carry no maintainer
+    // kill/launch.
+    const shutdownStart = src.indexOf('const gracefulShutdown');
+    const shutdownEnd = src.indexOf('const handleRequest');
+    expect(shutdownStart).toBeGreaterThan(-1);
+    expect(shutdownEnd).toBeGreaterThan(shutdownStart);
+    const teardownAndCap = src.slice(shutdownStart, shutdownEnd);
+
+    // No maintainer references at all in the teardown/cap region.
+    expect(teardownAndCap).not.toMatch(/launchMaintainer/);
+    expect(teardownAndCap).not.toMatch(/maintainer/i);
+    // And no process-killing of any external pid from teardown/cap.
+    expect(teardownAndCap).not.toMatch(/process\.kill\s*\(/);
+    expect(teardownAndCap).not.toMatch(/index-maintainer/);
+  });
+
+  it('only daemon-registry.js is imported for registry ops; the maintainer is never enumerated', () => {
+    const src = readFileSync(SERVER_SRC, 'utf-8');
+    // Registry helpers come exclusively from ./daemon-registry.js.
+    expect(src).toMatch(/from\s*['"]\.\/daemon-registry\.js['"]/);
+    // The registry module itself documents + enforces that the maintainer never
+    // registers; assert it imports nothing from the indexing context.
+    const regSrc = readFileSync(REGISTRY_SRC, 'utf-8');
+    expect(regSrc).not.toMatch(/from\s*['"][^'"]*\/indexing\//);
+    expect(regSrc).not.toMatch(/maintainer-launcher/);
+  });
 });

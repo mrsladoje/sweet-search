@@ -78,6 +78,12 @@ async function pageCacheSweep() {
       DB_PATHS.codeGraph,
       DB_PATHS.lateInteraction,
       DB_PATHS.sparseGramIndex,
+      // codebase.db is opened by the read tool (CodebaseRepository) on every
+      // invocation but was the only query-path DB the sweep omitted; warming
+      // its page cache means the first read call pays no cold SQLite I/O.
+      // readAndDiscard no-ops on an absent file, so this is harmless when the
+      // index predates codebase.db or it was never built.
+      DB_PATHS.codebase,
     ];
 
     const segmentDir = DB_PATHS.lateInteraction ? `${DB_PATHS.lateInteraction}.segments` : null;
