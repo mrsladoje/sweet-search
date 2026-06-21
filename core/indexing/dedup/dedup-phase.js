@@ -60,10 +60,29 @@ export async function runDedupPhase(allChunks, config = DEDUP_CONFIG) {
   const fingerprints = computeFingerprints(texts, config);
   const clusters = clusterFingerprints(fingerprints, config);
 
-  // Seed every chunk with simhash + self-exemplar defaults.
-  for (let i = 0; i < allChunks.length; i++) {
-    const chunk = allChunks[i];
-    const meta = (chunk.metadata = chunk.metadata || {});
+  const stats = annotateDedupClusters(allChunks, fingerprints, clusters, config);
+
+  return { skipped: false, stats };
+}
+
+/**
+ * Apply dedup annotations (simhash + exemplar/alias assignment) to a list of
+ * `items` given their `fingerprints` and the `clusters` from
+ * clusterFingerprints(). Mutates each item's `.metadata` in place and returns
+ * the stats object.
+ *
+ * `items[i]` must expose `.id`, a mutable `.metadata`, and be acceptable to
+ * selectExemplar (text length via `.text`/`.content` OR a precomputed
+ * `._textLen`, plus path/hash fields). The full-corpus path passes the chunk
+ * objects directly; the streaming path passes lightweight per-chunk records
+ * (text spilled to disk, length carried as `_textLen`) so the SAME global
+ * dedup runs without holding every chunk's text in memory. Both paths produce
+ * byte-identical annotations.
+ */
+export function annotateDedupClusters(items, fingerprints, clusters, config = DEDUP_CONFIG) {
+  // Seed every item with simhash + self-exemplar defaults.
+  for (let i = 0; i < items.length; i++) {
+    const meta = (items[i].metadata = items[i].metadata || {});
     meta.simhash = fingerprints[i].simhashHex;
     meta.isExemplar = true;
     meta.exemplarId = null;
@@ -77,6 +96,9 @@ export async function runDedupPhase(allChunks, config = DEDUP_CONFIG) {
   const liJaccardThreshold = config.liReuseEnabled
     ? (config.liReuseJaccardThreshold ?? 0.95)
     : Infinity;
+
+  const lenOf = (it) =>
+    typeof it._textLen === 'number' ? it._textLen : (it.text || it.content || '').length;
 
   for (const cluster of clusters) {
     if (!cluster.siblingIdxs || cluster.siblingIdxs.length === 0) continue;
@@ -98,12 +120,12 @@ export async function runDedupPhase(allChunks, config = DEDUP_CONFIG) {
     }
 
     const memberIdxs = [cluster.exemplarIdx, ...cluster.siblingIdxs];
-    const members = memberIdxs.map((idx) => ({ idx, chunk: allChunks[idx] }));
+    const members = memberIdxs.map((idx) => ({ idx, chunk: items[idx] }));
     const exemplar = selectExemplar(members);
-    const exemplarId = allChunks[exemplar.idx].id;
+    const exemplarId = items[exemplar.idx].id;
 
     for (const m of members) {
-      const meta = allChunks[m.idx].metadata;
+      const meta = items[m.idx].metadata;
       meta.clusterId = cluster.clusterId;
       if (m.idx === exemplar.idx) {
         meta.isExemplar = true;
@@ -123,21 +145,18 @@ export async function runDedupPhase(allChunks, config = DEDUP_CONFIG) {
         meta.liReuseEligible = j >= liJaccardThreshold;
         if (meta.liReuseEligible) liEligibleAliases++;
         totalAliases++;
-        bytesSaved += (allChunks[m.idx].text || allChunks[m.idx].content || '').length;
+        bytesSaved += lenOf(items[m.idx]);
       }
     }
   }
 
   return {
-    skipped: false,
-    stats: {
-      totalChunks: allChunks.length,
-      clustersWithSiblings,
-      totalAliases,
-      liEligibleAliases,
-      liReuseJaccardThreshold: liJaccardThreshold === Infinity ? null : liJaccardThreshold,
-      bytesSaved,
-    },
+    totalChunks: items.length,
+    clustersWithSiblings,
+    totalAliases,
+    liEligibleAliases,
+    liReuseJaccardThreshold: liJaccardThreshold === Infinity ? null : liJaccardThreshold,
+    bytesSaved,
   };
 }
 

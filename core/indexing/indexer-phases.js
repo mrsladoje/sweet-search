@@ -410,11 +410,31 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     : resourcePlan.threadsPerLateInteractionWorker;
   const stagedLateInteractionPath = DB_PATHS.lateInteraction + '.tmp';
 
-  // Always chunk files up front so both vector and LI encoders share
-  // the same chunk list. Vectors are written to SQLite and HNSW reads
-  // from the DB directly (Phase B — no in-memory arrays passed around).
+  // ── Bounded-memory streaming path for large full rebuilds ──
+  //
+  // The in-memory path below materialises the WHOLE chunk corpus (chunkFiles →
+  // allChunks/texts) plus all exemplar embeddings, all alias rows, and every
+  // LI per-token slab — peak heap O(repo). On big repos (libsql ≈ 431k chunks,
+  // swc ≈ 217k) that exceeds the default ~4 GB heap and crashes on EVERY
+  // backend (CUDA/Metal/CoreML/ORT-CPU), since the hogs are JS-side, not the
+  // model. For large full rebuilds we instead spill chunks to disk and embed/LI
+  // in bounded windows (see streaming-vectors.js) so peak heap is O(window).
+  //
+  // Gated by file count so small repos + incremental runs keep the original
+  // in-memory path byte-for-byte (benchmark indexes unaffected). Auto-selected,
+  // no opt-in flag; SWEET_SEARCH_STREAM_VECTORS=0 forces the legacy path and
+  // SWEET_SEARCH_STREAM_MIN_FILES tunes the threshold.
+  const streamMinFiles = Number(process.env.SWEET_SEARCH_STREAM_MIN_FILES) || 5000;
+  const useStreaming = !dryRun
+    && fullReindex
+    && filesToIndex.length >= streamMinFiles
+    && process.env.SWEET_SEARCH_STREAM_VECTORS !== '0';
+
+  // The in-memory path pre-chunks up front so both vector + LI encoders share
+  // one chunk list. The streaming path does its own windowed chunking + dedup,
+  // so skip this for it (this is the O(repo) allocation we're avoiding).
   let preChunked = null;
-  if (!dryRun && filesToIndex.length > 0) {
+  if (!dryRun && !useStreaming && filesToIndex.length > 0) {
     preChunked = await chunkFiles(filesToIndex);
 
     // Near-duplicate dedup: annotates chunks in place with {simhash, clusterId,
@@ -562,6 +582,82 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   }
 
   try {
+    // ── Streaming path: bounded-memory vectors + LI for large full rebuilds ──
+    if (useStreaming) {
+      const { getModelInfo } = await import('../embedding/embedding-service.js');
+      const { buildVectorsAndLiStreaming } = await import('./streaming-vectors.js');
+      const modelInfo = getModelInfo();
+
+      const streamed = await buildVectorsAndLiStreaming({
+        filesToIndex,
+        modelInfo,
+        sqliteFastMode,
+        noLateInteraction,
+        li: {
+          poolFactor: lateInteractionPool,
+          extendedSkiplist: lateInteractionExtendedSkiplist,
+          loadFromPath: DB_PATHS.lateInteraction,
+          saveToPath: stagedLateInteractionPath,
+          finalIndexPath: DB_PATHS.lateInteraction,
+          stagingSegmentDir: stagedLateInteractionSegmentDir(stagedLateInteractionPath),
+          workerCount: lateInteractionWorkers,
+          threadsPerWorker: lateInteractionWorkerThreads,
+          batchSize: resourcePlan.lateInteractionBatchSize,
+          batchSizeUpperCap: resourcePlan.lateInteractionBatchSizeUpperCap,
+          tokenBudget: resourcePlan.lateInteractionTokenBudget,
+          attentionBudget: resourcePlan.lateInteractionAttentionBudget,
+        },
+      });
+
+      // HCGS (off by default) runs independently of vectors — drain it if armed.
+      let hcgsResult = null;
+      if (hcgsPromise) {
+        try { hcgsResult = await hcgsPromise; } catch (e) { hcgsResult = { error: e.message }; }
+        if (hcgsResult && !hcgsResult.error) {
+          log(`Summaries regenerated (${hcgsResult.generated} generated, ${hcgsResult.skipped} skipped)`, 'green');
+        }
+      }
+
+      const vectorStats = streamed.vectorStats || { chunks: 0, embeddings: 0 };
+      if (vectorStats.embeddings > 0) await markPhaseComplete('vectors');
+
+      // Promote the staged LI index (built bounded), or invalidate on failure —
+      // same contract as the in-memory path's swap/invalidate below.
+      let lateInteractionResult = streamed.lateInteractionResult;
+      if (!noLateInteraction) {
+        if (streamed.liBuilt && lateInteractionResult && !lateInteractionResult.error) {
+          await atomicSwapLateInteractionIndex(stagedLateInteractionPath, DB_PATHS.lateInteraction);
+          log('Late interaction index promoted', 'green');
+          await markPhaseComplete('late-interaction');
+        } else {
+          await cleanupStagedLateInteractionIndex(stagedLateInteractionPath);
+          await invalidateLateInteractionIndex();
+          if (lateInteractionResult?.error) {
+            log(`Late interaction rebuild failed; invalidated existing index: ${lateInteractionResult.error}`, 'yellow');
+            lateInteractionResult = { error: lateInteractionResult.error, invalidated: true };
+          }
+        }
+      }
+
+      // Binary HNSW + int8 artifacts stream from the swapped codebase.db.
+      if (vectorStats.embeddings > 0) {
+        await updatePhaseProgress({ phase: 'artifacts', status: 'in_progress' });
+        await buildQuantizedArtifactsPhase(dryRun, {
+          changedFiles: filesToIndex.length,
+          force: forceArtifacts || fullReindex,
+        });
+        await markPhaseComplete('artifacts');
+      }
+
+      let sparseGramResult = null;
+      if (Array.isArray(allFiles) && allFiles.length > 0) {
+        sparseGramResult = await buildSparseGramArtifact(allFiles, dryRun);
+      }
+
+      await clearPhaseProgress();
+      return { vectorStats, hcgsResult, lateInteractionResult, sparseGramResult };
+    }
+
     const vectorPromise = buildVectorIndex(filesToIndex, dryRun, vectorOptions);
 
     // Compute LI file removal list (used by both parallel and sequential paths)

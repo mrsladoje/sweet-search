@@ -281,6 +281,14 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     attentionBudget = null,
     segmentSize = null, // override SSLX-v3 segment threshold (default 10k)
     projectRoot,        // honored by LI skip policy for .sweet-search.config.json excludes
+    // Bounded-memory build (streaming path): evict each flushed segment's
+    // per-token slabs from the index's in-memory map so peak heap stays
+    // O(one segment) on huge repos. Safe only for from-scratch full rebuilds.
+    buildEvict = false,
+    // The streaming caller applies the LI skip policy once during its spill
+    // pass (where chunk content is in hand), so skip it here to avoid needing
+    // full chunk content resident a second time.
+    skipPolicyAlreadyApplied = false,
   } = options;
   log('\n━━━ Phase 3: Late Interaction Index (LateOn-Code) ━━━', 'bright');
 
@@ -295,7 +303,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
   // LI-specific check globs can't do: content-based @generated markers.
   // Disable via SWEET_SEARCH_LI_SKIP_DISABLE=1.
   let skippedSummary = null;
-  if (Array.isArray(chunks) && chunks.length > 0) {
+  if (!skipPolicyAlreadyApplied && Array.isArray(chunks) && chunks.length > 0) {
     const { applyIndexingChunkPolicy } = await import('./indexing-file-policy.js');
     const { kept, stats } = applyIndexingChunkPolicy(chunks, { projectRoot });
     if (stats.totalSkipped > 0) {
@@ -338,6 +346,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     modelId: LATE_INTERACTION_CONFIG.model,
     indexPath: fullRebuild ? saveToPath : loadFromPath,
     loadExisting: !fullRebuild,
+    buildEvict: buildEvict && fullRebuild,
     ...(segmentSize ? { segmentSize } : {}),
   });
   if (quantBits !== defaultQuantBits || whtSeed !== 0) {
@@ -668,7 +677,10 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
       const exemplarId = alias.metadata?.exemplarId;
       const clusterId = alias.metadata?.clusterId;
       if (!exemplarId || !clusterId) continue;
-      if (!liIndex.documents.has(exemplarId)) {
+      // hasDoc() (not documents.has()) so alias registration stays valid in
+      // bounded build mode, where the exemplar's per-token slab may already
+      // have been flushed to a segment and evicted from the live map.
+      if (!liIndex.hasDoc(exemplarId)) {
         orphaned++;
         continue;
       }
