@@ -316,7 +316,7 @@ export async function checkHealth({ getConfig, PROJECT_ROOT }) {
       try {
         const ok = check();
         subsystems[name] = { status: ok ? 'ok' : 'not_initialized', details: ok ? '' : 'Index not found' };
-        if (!ok && ['graph-index', 'hnsw'].includes(name)) healthy = false;
+        if (!ok && ['graph-index', 'binary-hnsw'].includes(name)) healthy = false;
       } catch (e) {
         subsystems[name] = { status: 'error', details: e.message };
         healthy = false;

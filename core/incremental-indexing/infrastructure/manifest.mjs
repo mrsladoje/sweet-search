@@ -152,7 +152,7 @@ export function buildNextManifest(prev, delta) {
     publishedAt: new Date().toISOString(),
   };
   const tiers = delta.tiers || {};
-  for (const key of ['codeGraph', 'vectors', 'hnsw', 'binaryHnsw', 'lateInteraction', 'sparseGram']) {
+  for (const key of ['codeGraph', 'vectors', 'binaryHnsw', 'lateInteraction', 'sparseGram']) {
     if (!tiers[key]) {
       // Carry forward the previous tier descriptor with the new epoch.
       out[key] = { ...(prev[key] || {}), epoch: delta.epoch };

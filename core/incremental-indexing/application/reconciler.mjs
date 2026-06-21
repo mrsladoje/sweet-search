@@ -52,7 +52,7 @@ import { verifyStamp, writeStamp, formatStampMismatch } from '../infrastructure/
  *     // Any apply* call may also return either:
  *     //   { manifest: {...tier descriptor...} }
  *     // or:
- *     //   { manifestTiers: { sparseGram: {...}, hnsw: {...} } }
+ *     //   { manifestTiers: { sparseGram: {...}, binaryHnsw: {...} } }
  *     // These descriptors are merged into the next epoch manifest.
  *     readMaintenanceState(ctx):                  Promise<object>|object,
  *     scheduleMaintenance(job):                   Promise<void>|void,
@@ -69,7 +69,6 @@ const DEFAULT_FILES_PER_TICK = 50;
 const MANIFEST_TIER_KEYS = new Set([
   'codeGraph',
   'vectors',
-  'hnsw',
   'binaryHnsw',
   'lateInteraction',
   'sparseGram',
