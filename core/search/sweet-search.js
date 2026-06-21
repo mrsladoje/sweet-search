@@ -1061,7 +1061,6 @@ Object.assign(SweetSearch.prototype, {
   semanticSearch3Stage: semantic.semanticSearch3Stage,
   semanticSearchStandard: semantic.semanticSearchStandard,
   shouldSkipRerank: semantic.shouldSkipRerank,
-  getAdaptiveCandidateCount: semantic.getAdaptiveCandidateCount,
   hybridSearchV2: hybrid.hybridSearchV2,
   hybridSearch: hybrid.hybridSearch,
   patternSearch: pattern.patternSearch,

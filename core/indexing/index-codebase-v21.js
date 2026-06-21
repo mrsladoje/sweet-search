@@ -169,7 +169,6 @@ Options:
   --late-interaction-model=ID  Use specific model (lateon-code or lateon-code-edge)
   --late-interaction-pool=N    Token pooling factor (2=halve tokens, 3=third). Reduces index size.
   --late-interaction-skiplist=extended  Extend skiplist with code-noise tokens (whitespace, semicolons)
-                   Prevents accidental fallback to slower JS ANN in benchmarks.
   --sqlite-fast    Use unsafe SQLite pragmas for faster builds (benchmarking only).
                    Can also be set via SWEET_SEARCH_SQLITE_FAST_MODE=1.
                    WARNING: Data may be lost on crash - do NOT use in production.

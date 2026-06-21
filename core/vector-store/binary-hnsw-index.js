@@ -1085,75 +1085,8 @@ Options:
         console.log(`  Equivalent float: ${(numVectors * floatDim * 4 / 1024 / 1024).toFixed(2)} MB`);
         console.log(`  Compression: ${(floatDim * 4 / binaryDim).toFixed(0)}x`);
 
-      } else if (command === 'compare') {
-        console.log('\n=== Binary vs Float HNSW Comparison ===\n');
-
-        const { HNSWIndex } = await import('./hnsw-index.js');
-
-        const numVectors = 5000;
-        const floatDim = 512;
-
-        console.log(`Testing with ${numVectors} vectors, ${floatDim} dimensions\n`);
-
-        // Generate vectors
-        const vectors = [];
-        for (let i = 0; i < numVectors; i++) {
-          const float = new Array(floatDim).fill(0).map(() => Math.random() * 2 - 1);
-          vectors.push({ id: `vec-${i}`, float });
-        }
-
-        // Binary index
-        const binaryIndex = new BinaryHNSWIndex({ dimension: Math.ceil(floatDim / 8), floatDimension: floatDim });
-        await binaryIndex.init();
-
-        console.log('Building binary index...');
-        let start = performance.now();
-        for (const v of vectors) {
-          await binaryIndex.add(v.id, floatToBinary(v.float));
-        }
-        const binaryBuildTime = performance.now() - start;
-
-        // Float index
-        const floatIndex = new HNSWIndex({ dimension: floatDim });
-        await floatIndex.init();
-
-        console.log('Building float index...');
-        start = performance.now();
-        for (const v of vectors) {
-          await floatIndex.add(v.id, v.float);
-        }
-        const floatBuildTime = performance.now() - start;
-
-        console.log(`\nBuild time: Binary ${binaryBuildTime.toFixed(0)}ms, Float ${floatBuildTime.toFixed(0)}ms`);
-
-        // Search comparison
-        const numQueries = 50;
-        const binaryLatencies = [];
-        const floatLatencies = [];
-
-        for (let i = 0; i < numQueries; i++) {
-          const queryFloat = new Array(floatDim).fill(0).map(() => Math.random() * 2 - 1);
-
-          const binaryResult = await binaryIndex.search(floatToBinary(queryFloat), 10);
-          binaryLatencies.push(binaryResult.latency_us);
-
-          const floatResult = await floatIndex.search(queryFloat, 10);
-          floatLatencies.push(floatResult.latency_us);
-        }
-
-        const binaryP50 = binaryLatencies.sort((a, b) => a - b)[Math.floor(numQueries * 0.5)];
-        const floatP50 = floatLatencies.sort((a, b) => a - b)[Math.floor(numQueries * 0.5)];
-
-        console.log(`\nSearch latency p50: Binary ${binaryP50}μs, Float ${floatP50}μs`);
-        console.log(`Speedup: ${(floatP50 / binaryP50).toFixed(1)}x`);
-
-        const binaryMem = numVectors * Math.ceil(floatDim / 8);
-        const floatMem = numVectors * floatDim * 4;
-        console.log(`\nMemory: Binary ${(binaryMem / 1024).toFixed(0)} KB, Float ${(floatMem / 1024).toFixed(0)} KB`);
-        console.log(`Compression: ${(floatMem / binaryMem).toFixed(0)}x`);
-
       } else {
-        console.log('Unknown command. Use: stats, test, or compare');
+        console.log('Unknown command. Use: stats, test');
       }
     } catch (err) {
       console.error('Error:', err.message);

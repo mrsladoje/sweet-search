@@ -43,7 +43,6 @@ export function publishIndexerManifest(options = {}) {
   const defaultTiers = {
     codeGraph: defaultManifest.codeGraph,
     vectors: defaultManifest.vectors,
-    hnsw: defaultManifest.hnsw,
     binaryHnsw: defaultManifest.binaryHnsw,
     lateInteraction: defaultManifest.lateInteraction,
     sparseGram: {

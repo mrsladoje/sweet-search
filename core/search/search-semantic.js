@@ -786,22 +786,3 @@ export function shouldSkipRerank(scores, options = {}) {
   return { skip: false, reason: 'needs_rerank' };
 }
 
-/**
- * Adaptive candidate count based on query complexity
- */
-export function getAdaptiveCandidateCount(query, baseCount) {
-  const trimmed = query.trim();
-
-  // Very short queries (likely identifiers): use 50% of base
-  if (trimmed.length < 15) {
-    return Math.max(Math.floor(baseCount * 0.5), 20);
-  }
-
-  // Short queries without question words: use 75% of base
-  if (trimmed.length < 30 && !/\b(how|what|where|why|when|which)\b/i.test(trimmed)) {
-    return Math.max(Math.floor(baseCount * 0.75), 30);
-  }
-
-  // Complex queries (questions, long): use full base
-  return baseCount;
-}
