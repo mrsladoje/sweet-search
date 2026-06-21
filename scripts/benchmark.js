@@ -16,7 +16,7 @@ import { performance } from 'perf_hooks';
 import { DB_PATHS, PERFORMANCE_TARGETS, EMBEDDING_CONFIG } from '../core/config.js';
 import { QueryRouter } from '../core/query/index.js';
 import { GraphSearch } from '../core/graph/index.js';
-import { HNSWIndex } from '../core/vector-store/index.js';
+import { BinaryHNSWIndex } from '../core/vector-store/index.js';
 import { Reranker } from '../core/ranking/index.js';
 import SweetSearch from '../core/search/index.js';
 
@@ -141,31 +141,32 @@ async function benchmarkRouting(iterations = 1000) {
 }
 
 /**
- * Benchmark HNSW index
+ * Benchmark Binary HNSW index (the primary on-disk ANN index).
  */
 async function benchmarkHNSW(iterations = 100) {
-  console.log('\n=== HNSW Index Benchmark ===');
+  console.log('\n=== Binary HNSW Index Benchmark ===');
 
-  const hnswPath = DB_PATHS.hnswIndex.replace('.idx', '.meta.json');
+  const hnswPath = DB_PATHS.binaryHnswIndex.replace('.idx', '.meta.json');
   if (!existsSync(hnswPath)) {
-    console.log('  HNSW index not found. Run indexing first.');
+    console.log('  Binary HNSW index not found. Run indexing first.');
     console.log('  Falling back to synthetic benchmark...');
     return benchmarkHNSWSynthetic(iterations);
   }
 
-  const index = new HNSWIndex();
+  const index = new BinaryHNSWIndex({ indexPath: DB_PATHS.binaryHnswIndex });
   await index.load();
 
   const stats = index.getStats();
   console.log(`  Index size: ${stats.totalVectors} vectors`);
-  console.log(`  Dimension: ${stats.dimension}`);
-  console.log(`  Using fallback: ${stats.useFallback}`);
+  console.log(`  Binary dimension: ${stats.dimension} bits (${stats.floatDimension} float dims)`);
 
-  // Generate random query vectors
+  // Generate random float query vectors; BinaryHNSWIndex.search() converts
+  // them to the binary Hamming space internally.
   const latencies = [];
+  const floatDim = stats.floatDimension || 512;
 
   for (let i = 0; i < iterations; i++) {
-    const queryVec = new Array(stats.dimension).fill(0).map(() => Math.random() * 2 - 1);
+    const queryVec = new Array(floatDim).fill(0).map(() => Math.random() * 2 - 1);
     const result = await index.search(queryVec, 10);
     latencies.push(result.latency_us);
   }
@@ -186,28 +187,30 @@ async function benchmarkHNSW(iterations = 100) {
 }
 
 /**
- * Synthetic HNSW benchmark (when no index exists)
+ * Synthetic Binary HNSW benchmark (when no index exists).
  */
 async function benchmarkHNSWSynthetic(iterations = 100) {
-  const index = new HNSWIndex({ dimension: EMBEDDING_CONFIG.hnswDimension });
+  const index = new BinaryHNSWIndex();
   await index.init();
+
+  // BinaryHNSWIndex.add()/search() accept float vectors and binarise them
+  // internally; we synthesise random floats at the index's float dimension.
+  const floatDim = index.floatDimension || EMBEDDING_CONFIG.hnswDimension || 512;
 
   // Add synthetic vectors
   const numVectors = 5000;
-  console.log(`  Adding ${numVectors} synthetic vectors...`);
+  console.log(`  Adding ${numVectors} synthetic vectors (${floatDim} float dims)...`);
 
   for (let i = 0; i < numVectors; i++) {
-    const vec = new Array(index.dimension).fill(0).map(() => Math.random() * 2 - 1);
+    const vec = new Array(floatDim).fill(0).map(() => Math.random() * 2 - 1);
     await index.add(`synthetic-${i}`, vec, { index: i });
   }
-
-  console.log(`  Using fallback: ${index.useFallback}`);
 
   // Benchmark search
   const latencies = [];
 
   for (let i = 0; i < iterations; i++) {
-    const queryVec = new Array(index.dimension).fill(0).map(() => Math.random() * 2 - 1);
+    const queryVec = new Array(floatDim).fill(0).map(() => Math.random() * 2 - 1);
     const result = await index.search(queryVec, 10);
     latencies.push(result.latency_us);
   }
@@ -276,7 +279,7 @@ async function benchmarkLexical(iterations = 50) {
 async function benchmarkSemantic(iterations = 20) {
   console.log('\n=== Semantic Search Benchmark ===');
 
-  const hasHNSW = existsSync(DB_PATHS.hnswIndex.replace('.idx', '.meta.json'));
+  const hasHNSW = existsSync(DB_PATHS.binaryHnswIndex.replace('.idx', '.meta.json'));
   const hasCodebase = existsSync(DB_PATHS.codebase);
 
   if (!hasHNSW && !hasCodebase) {

@@ -79,19 +79,18 @@ describe('drainMaintenanceInline / behaviour', () => {
   });
 
   it('drains reclamation-tier jobs against empty artifacts as no-op successes', async () => {
-    // float_hnsw / binary_hnsw / li_segment / sparse_gram now have real
-    // handlers. With no artifacts on disk they each return a `skipped:
-    // ...` result (which the worker accounts as `succeeded`), the queue
-    // empties, and the dead-letter file is never touched.
-    enqueueMaintenanceJob(stateDir, { tier: 'float_hnsw', reason: 'tombstone_watermark', epoch: 1, payload: {} });
+    // binary_hnsw / li_segment / sparse_gram now have real handlers. With
+    // no artifacts on disk they each return a `skipped: ...` result (which
+    // the worker accounts as `succeeded`), the queue empties, and the
+    // dead-letter file is never touched.
     enqueueMaintenanceJob(stateDir, { tier: 'binary_hnsw', reason: 'dead_doc_ratio', epoch: 1, payload: {} });
     enqueueMaintenanceJob(stateDir, { tier: 'li_segment', reason: 'stale_doc_ratio', epoch: 1, payload: { segmentId: 'segment-0000.bin' } });
     enqueueMaintenanceJob(stateDir, { tier: 'sparse_gram', reason: 'delta_size_ratio', epoch: 1, payload: {} });
 
     const summary = await drainMaintenanceInline({ stateDir, env: {} });
     expect(summary.skipped).toBeUndefined();
-    expect(summary.seen).toBe(4);
-    expect(summary.succeeded).toBe(4);
+    expect(summary.seen).toBe(3);
+    expect(summary.succeeded).toBe(3);
     expect(summary.deferred).toBe(0);
 
     expect(readMaintenanceQueue(stateDir)).toEqual([]);

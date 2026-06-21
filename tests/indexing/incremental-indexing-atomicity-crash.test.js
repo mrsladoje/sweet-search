@@ -76,10 +76,10 @@ describe('Manifest atomicity (plan § 8.1)', () => {
     const prev = zeroManifest({});
     const next = buildNextManifest(prev, {
       epoch: 7,
-      tiers: { hnsw: { path: 'new-hnsw.idx' } },
+      tiers: { binaryHnsw: { path: 'new-binary-hnsw.idx' } },
     });
-    expect(next.hnsw.path).toBe('new-hnsw.idx');
-    expect(next.hnsw.epoch).toBe(7);
+    expect(next.binaryHnsw.path).toBe('new-binary-hnsw.idx');
+    expect(next.binaryHnsw.epoch).toBe(7);
   });
 
   it('buildNextManifest rejects non-integer epoch', () => {

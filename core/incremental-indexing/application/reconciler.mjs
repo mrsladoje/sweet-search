@@ -46,7 +46,6 @@ import { verifyStamp, writeStamp, formatStampMismatch } from '../infrastructure/
  *     persistManifest(manifest): Promise<void>,
  *     applyGraphDelta(file, parsed, epoch):       Promise<{ ops }>,
  *     applyVectorDelta(file, chunks, hashes, epoch): Promise<{ ops }>,
- *     applyHNSWDelta(file, vectorOps, epoch):     Promise<{ ops }>,
  *     applyBinaryHNSWDelta(file, vectorOps, epoch): Promise<{ ops }>,
  *     applyLIDelta(file, tokenOps, epoch):        Promise<{ ops }>,
  *     applySparseGramDelta(file, gramOps, epoch): Promise<{ ops }>,
@@ -376,12 +375,6 @@ export class Reconciler {
     collectManifestTier(manifestTiers, 'vectors', vec);
     if (vec?.ops?.vectors_upsert != null) ops.vectors_upsert = vec.ops.vectors_upsert;
     if (vec?.ops?.vectors_delete != null) ops.vectors_delete = vec.ops.vectors_delete;
-    this.progress('reconciler:hnsw:start');
-    const hnsw = await this.adapters.applyHNSWDelta?.(file, vec?.vectorOps ?? [], epoch);
-    this.progress('reconciler:hnsw:done');
-    collectManifestTier(manifestTiers, 'hnsw', hnsw);
-    if (hnsw?.ops?.hnsw_add != null) ops.hnsw_add = hnsw.ops.hnsw_add;
-    if (hnsw?.ops?.hnsw_tombstone != null) ops.hnsw_tombstone = hnsw.ops.hnsw_tombstone;
     this.progress('reconciler:binary-hnsw:start');
     const bin = await this.adapters.applyBinaryHNSWDelta?.(file, vec?.vectorOps ?? [], epoch);
     this.progress('reconciler:binary-hnsw:done');

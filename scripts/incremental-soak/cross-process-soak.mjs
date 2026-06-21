@@ -395,10 +395,6 @@ function enqueueAllTiersIfPossible(stateDir) {
     tier: 'binary_hnsw', reason: 'forced_test',
     epoch: 0, payload: {},
   });
-  enqueueMaintenanceJob(stateDir, {
-    tier: 'float_hnsw', reason: 'forced_test',
-    epoch: 0, payload: {},
-  });
   if (liSegmentId) {
     enqueueMaintenanceJob(stateDir, {
       tier: 'li_segment', reason: 'forced_test',

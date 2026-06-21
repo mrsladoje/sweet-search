@@ -89,9 +89,6 @@ export const DB_PATHS = {
   // Code graph (entities + relationships + FTS5 + summaries)
   codeGraph: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'code-graph.db'),
 
-  // HNSW index (in-memory at query time)
-  hnswIndex: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase-hnsw.idx'),
-
   // Binary HNSW index (32x smaller, Hamming distance)
   binaryHnswIndex: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase-binary-hnsw.idx'),
 

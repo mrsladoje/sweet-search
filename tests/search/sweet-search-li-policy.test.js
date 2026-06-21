@@ -169,8 +169,6 @@ describe('SweetSearch manifest refresh', () => {
       expect(searcher.manifestEpoch).toBe(2);
       expect(searcher.codebaseDbPath).toBe(join(stateDir, 'codebase.next.db'));
       expect(searcher.graphDbPath).toBe(join(stateDir, 'code-graph.next.db'));
-      expect(searcher.hnswPath).toBe(join(stateDir, 'codebase-hnsw.next.idx'));
-      expect(searcher.hnswIndex.stalePath).toBe(join(stateDir, 'codebase-hnsw.next.idx.stale.bin'));
       expect(searcher.binaryHnswPath).toBe(join(stateDir, 'codebase-binary-hnsw.next.idx'));
       expect(searcher.binaryHnswIndex.stalePath).toBe(join(stateDir, 'codebase-binary-hnsw.next.idx.stale.bin'));
       expect(searcher.lateInteractionIndex.indexPath).toBe(join(stateDir, 'codebase-late-interaction.next.db'));

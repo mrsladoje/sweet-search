@@ -41,7 +41,6 @@ import { existsSync } from 'fs';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 import { resolveRelationshipTargets } from '../graph/relationship-resolver.js';
-import { requireNativeAnn as requireNativeAnnBackend } from '../vector-store/hnsw-index.js';
 import { getStats as getIncrementalStats } from './incremental-tracker.js';
 import { ARTIFACT_THRESHOLDS } from './artifact-builder.js';
 
@@ -58,7 +57,6 @@ import {
   buildVectorIndex,
 } from './indexer-build.js';
 import {
-  incrementalUpdateHNSW, buildHNSWIndex,
   buildLateInteractionIndex, buildQuantizedArtifactsPhase,
 } from './indexer-ann.js';
 import {
@@ -94,7 +92,6 @@ function parseArgs(argv) {
     lateInteractionModel: args.find(a => a.startsWith('--late-interaction-model='))?.split('=')[1] || null,
     lateInteractionPool: parseInt(args.find(a => a.startsWith('--late-interaction-pool='))?.split('=')[1] || process.env.SWEET_SEARCH_LI_POOL_FACTOR || '1', 10),
     lateInteractionExtendedSkiplist: args.includes('--late-interaction-skiplist=extended'),
-    requireNativeAnn: args.includes('--require-native-ann'),
     sqliteFastMode: args.includes('--sqlite-fast') || process.env.SWEET_SEARCH_SQLITE_FAST_MODE === '1',
     verbose: args.includes('--verbose') || args.includes('-v'),
   };
@@ -110,7 +107,7 @@ async function main() {
   const { dryRun, graphOnly, vectorsOnly, fullReindex, showStats, resolveOnly,
           skipSummaryRegen, filesFromStdin, quiet, forceArtifacts, help,
           noLateInteraction, lateInteractionModel, lateInteractionPool, lateInteractionExtendedSkiplist,
-          requireNativeAnn, sqliteFastMode, verbose } = parseArgs();
+          sqliteFastMode, verbose } = parseArgs();
 
   if (quiet) {
     setQuietMode(true);
@@ -172,7 +169,6 @@ Options:
   --late-interaction-model=ID  Use specific model (lateon-code or lateon-code-edge)
   --late-interaction-pool=N    Token pooling factor (2=halve tokens, 3=third). Reduces index size.
   --late-interaction-skiplist=extended  Extend skiplist with code-noise tokens (whitespace, semicolons)
-  --require-native-ann  Fail fast if native ANN backend (usearch) is unavailable.
                    Prevents accidental fallback to slower JS ANN in benchmarks.
   --sqlite-fast    Use unsafe SQLite pragmas for faster builds (benchmarking only).
                    Can also be set via SWEET_SEARCH_SQLITE_FAST_MODE=1.
@@ -206,9 +202,9 @@ This is intentional since relationships span across files.
 
 Output:
   .sweet-search/code-graph.db      Code graph with FTS5 (lexical search)
-  .sweet-search/codebase.db        Vector embeddings (semantic search)
-  .sweet-search/codebase-hnsw.idx  HNSW index (fast ANN)
-  .sweet-search/merkle-state.json  Incremental indexing state
+  .sweet-search/codebase.db               Vector embeddings (semantic search)
+  .sweet-search/codebase-binary-hnsw.idx  Binary HNSW index (fast ANN)
+  .sweet-search/merkle-state.json         Incremental indexing state
 `);
     process.exit(0);
   }
@@ -250,10 +246,6 @@ Output:
     }
 
     return;
-  }
-
-  if (requireNativeAnn) {
-    await requireNativeAnnBackend();
   }
 
   try {
@@ -484,7 +476,6 @@ export {
   discoverFiles,
   buildCodeGraph,
   buildVectorIndex,
-  buildHNSWIndex,
   buildLateInteractionIndex,
   buildQuantizedArtifactsPhase,
   parseArgs,

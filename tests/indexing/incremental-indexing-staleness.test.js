@@ -57,11 +57,11 @@ describe('staleness-display', () => {
       epoch: 12,
       ageMs: 120_000,
       dirtyFiles: 1,
-      lastMaintenanceTier: 'float_hnsw',
+      lastMaintenanceTier: 'binary_hnsw',
       lastMaintenanceAgeMs: 240_000,
       maintenanceBacklog: 2,
     });
-    expect(s).toContain('last maintenance: float_hnsw');
+    expect(s).toContain('last maintenance: binary_hnsw');
     expect(s).toContain('backlog: 2');
   });
 

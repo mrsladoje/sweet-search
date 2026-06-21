@@ -42,15 +42,12 @@ const DEFAULT_FIELDS = Object.freeze({
   cpu_budget_total_ms: 0,
 
   manifest_epoch_mismatch_total: 0,
-  hnsw_live_candidate_shortfall: 0,
 });
 
 function freshOpsTier() {
   return {
     graph_upsert: 0, graph_tombstone: 0,
     vectors_upsert: 0, vectors_delete: 0,
-    hnsw_add: 0, hnsw_tombstone: 0,
-    hnsw_capacity_used: 0,
     binary_hnsw_tombstone: 0, binary_hnsw_append: 0,
     li_segment_append: 0, li_tombstone: 0,
     sparse_gram_delta_upsert: 0,
@@ -61,7 +58,6 @@ function freshOpsTier() {
 
 function freshWatermarks() {
   return {
-    hnsw_tombstone_fraction: 0,
     binary_hnsw_dead_doc_ratio: 0,
     li_segments_over_threshold: [],
     fts5_segment_count: 0,

@@ -1,7 +1,7 @@
 /**
  * Tests for core/incremental-indexing/application/maintenance-handlers.mjs.
  *
- * Each reclamation tier (sparse_gram, binary_hnsw, float_hnsw, li_segment)
+ * Each reclamation tier (sparse_gram, binary_hnsw, li_segment)
  * has its own block. We build a deliberately small fixture, populate the
  * artifacts in their soft-deleted state (live + tombstoned), invoke the
  * handler, and assert that:
@@ -17,18 +17,15 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import Database from 'better-sqlite3';
 
 import {
   sparseGramHandler,
   binaryHnswHandler,
-  floatHnswHandler,
   liSegmentHandler,
   reclamationHandlers,
 } from '../../core/incremental-indexing/application/maintenance-handlers.mjs';
 import { appendDeltaRecord, listDeltaSegments, deltaSizeStats } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
-import { HNSWIndex } from '../../core/vector-store/hnsw-index.js';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import {
   createBitmap, setBit, saveBitmap, loadBitmap, popcount,
@@ -167,115 +164,6 @@ describe('binaryHnswHandler', () => {
 });
 
 /* ------------------------------------------------------------------ *
- * float_hnsw                                                          *
- * ------------------------------------------------------------------ */
-
-function bootstrapVectorDb(stateDir, live, retired = []) {
-  const dbPath = path.join(stateDir, 'codebase.db');
-  const db = new Database(dbPath);
-  try {
-    db.pragma('journal_mode = WAL');
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS vectors (
-        id TEXT PRIMARY KEY,
-        file_path TEXT,
-        embedding_input_hash TEXT,
-        embedding BLOB,
-        metadata TEXT,
-        epoch_written INTEGER,
-        epoch_retired INTEGER
-      )
-    `);
-    const ins = db.prepare(
-      'INSERT INTO vectors (id, file_path, embedding_input_hash, embedding, metadata, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    );
-    for (const row of live) {
-      const blob = Buffer.from(new Float32Array(row.embedding).buffer);
-      ins.run(row.id, row.file_path || 'a.js', row.embedding_input_hash || 'h', blob, JSON.stringify(row.metadata || {}), 1, null);
-    }
-    for (const row of retired) {
-      const blob = Buffer.from(new Float32Array(row.embedding).buffer);
-      ins.run(row.id, row.file_path || 'a.js', row.embedding_input_hash || 'h', blob, JSON.stringify(row.metadata || {}), 1, 2);
-    }
-  } finally {
-    db.close();
-  }
-}
-
-describe('floatHnswHandler', () => {
-  let stateDir;
-  beforeEach(() => { stateDir = mkState('fhnsw'); });
-  afterEach(() => fs.rmSync(stateDir, { recursive: true, force: true }));
-
-  it('skips when no meta.json exists', async () => {
-    const out = await floatHnswHandler({}, { stateDir });
-    expect(out.skipped).toBe('no-index');
-  });
-
-  it('rebuilds from codebase.db live vectors and removes the stale bitmap', async () => {
-    const indexPath = path.join(stateDir, 'codebase-hnsw.idx');
-    const stalePath = indexPath + '.stale.bin';
-    const dim = 8;
-
-    // 1. Build initial HNSW with 5 vectors.
-    const hnsw = new HNSWIndex({ indexPath, dimension: dim });
-    await hnsw.init();
-    for (let i = 0; i < 5; i++) {
-      const v = Float32Array.from({ length: dim }, (_, k) => ((i + 1) * (k + 1)) % 9);
-      await hnsw.add(`vec-${i}`, v, { name: `n${i}` });
-    }
-    // Soft-delete vec-1 and vec-3 via .remove() — sets stale bits and prunes idMap.
-    await hnsw.remove('vec-1');
-    await hnsw.remove('vec-3');
-    await hnsw.save(indexPath);
-    expect(fs.existsSync(stalePath)).toBe(true);
-
-    // 2. Build matching codebase.db with the same live vectors.
-    const liveRows = [];
-    for (let i = 0; i < 5; i++) {
-      if (i === 1 || i === 3) continue;
-      liveRows.push({
-        id: `vec-${i}`,
-        embedding: Array.from({ length: dim }, (_, k) => ((i + 1) * (k + 1)) % 9),
-      });
-    }
-    bootstrapVectorDb(stateDir, liveRows, [
-      { id: 'vec-1', embedding: Array.from({ length: dim }, () => 0) },
-      { id: 'vec-3', embedding: Array.from({ length: dim }, () => 0) },
-    ]);
-
-    const result = await floatHnswHandler({}, { stateDir });
-    expect(result.skipped).toBeUndefined();
-    expect(result.kept).toBe(3);
-    expect(result.staleBitmapCleared).toBe(true);
-    expect(fs.existsSync(stalePath)).toBe(false);
-
-    // 3. Reload — only live vectors remain.
-    const reloaded = new HNSWIndex({ indexPath, dimension: dim });
-    await reloaded.load(indexPath);
-    expect([...reloaded.idMap.keys()].sort()).toEqual(['vec-0', 'vec-2', 'vec-4']);
-  });
-
-  it('returns no-stale-vectors when DB and HNSW agree and no bitmap', async () => {
-    const indexPath = path.join(stateDir, 'codebase-hnsw.idx');
-    const dim = 8;
-    const hnsw = new HNSWIndex({ indexPath, dimension: dim });
-    await hnsw.init();
-    for (let i = 0; i < 2; i++) {
-      const v = Float32Array.from({ length: dim }, (_, k) => i + k);
-      await hnsw.add(`vec-${i}`, v, {});
-    }
-    await hnsw.save(indexPath);
-    bootstrapVectorDb(stateDir, [
-      { id: 'vec-0', embedding: Array.from({ length: dim }, (_, k) => 0 + k) },
-      { id: 'vec-1', embedding: Array.from({ length: dim }, (_, k) => 1 + k) },
-    ]);
-    const out = await floatHnswHandler({}, { stateDir });
-    expect(out.skipped).toBe('no-stale-vectors');
-  });
-});
-
-/* ------------------------------------------------------------------ *
  * li_segment                                                          *
  * ------------------------------------------------------------------ */
 
@@ -376,7 +264,6 @@ describe('reclamationHandlers registry', () => {
     const h = reclamationHandlers('/tmp/whatever');
     expect(typeof h.sparse_gram).toBe('function');
     expect(typeof h.binary_hnsw).toBe('function');
-    expect(typeof h.float_hnsw).toBe('function');
     expect(typeof h.li_segment).toBe('function');
   });
 });
@@ -388,7 +275,7 @@ describe('reclamationHandlers registry', () => {
  * canonical artifacts consistent for cross-process readers:           *
  *   - sparse: the reconcile manifest's `sparseGram.deltas` list MUST  *
  *     reference only segments that exist on disk after compaction.    *
- *   - HNSW/binary HNSW: no `.tmp.<pid>` staging files leak past a     *
+ *   - binary HNSW: no `.tmp.<pid>` staging files leak past a          *
  *     successful save (atomic publish protocol).                      *
  * ------------------------------------------------------------------ */
 
@@ -542,44 +429,6 @@ describe('cross-process publish atomicity', () => {
     const { resolveLatestSparseGramDeltaRecords } = await import('../../core/infrastructure/sparse-gram-delta-reader.js');
     const records = resolveLatestSparseGramDeltaRecords(base, { segments: finalManifest.sparseGram.deltas.map((s) => path.join(stateDir, s)) });
     expect(records.size).toBe(3);
-  });
-
-  it('floatHnswHandler leaves no orphan `.tmp.<pid>` files', async () => {
-    const indexPath = path.join(stateDir, 'codebase-hnsw.idx');
-    const stalePath = indexPath + '.stale.bin';
-    // Bootstrap the DB with embeddings — the handler reads `embedding`
-    // from `vectors` and re-encodes into a fresh index. Live = a, c
-    // (the handler also walks the DB to discover live rows).
-    bootstrapVectorDb(stateDir, [
-      { id: 'a', embedding: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8] },
-      { id: 'b', embedding: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] },
-      { id: 'c', embedding: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0] },
-    ]);
-    const idx = new HNSWIndex({ indexPath, stalePath, dimension: 8 });
-    await idx.init();
-    for (const id of ['a', 'b', 'c']) await idx.add(id, new Float32Array(8).fill(0.1));
-    await idx.save(indexPath);
-    // Mark `b` stale via the bitmap so the handler doesn't take the
-    // early-return "no-stale-vectors" path. The DB walk still sees all
-    // three live rows; that's fine — the handler rebuilds from the DB.
-    const bitmap = createBitmap(8);
-    setBit(bitmap, idx.idMap.get('b'));
-    saveBitmap(stalePath, bitmap);
-
-    const out = await floatHnswHandler({}, { stateDir });
-    expect(out.skipped).toBeUndefined();
-    expect(out.atomicPublish).toBe(true);
-
-    // No `.tmp.<pid>` orphans for any sidecar this handler touches.
-    const orphans = fs.readdirSync(stateDir).filter((name) => name.includes('.tmp.'));
-    expect(orphans).toEqual([]);
-
-    // Canonical sidecars are in place.
-    expect(fs.existsSync(indexPath.replace('.idx', '.meta.json'))).toBe(true);
-    // .usearch only present when usearch native loader is reachable.
-    const usearchPath = indexPath.replace('.idx', '.usearch');
-    const vectorsPath = indexPath.replace('.idx', '.vectors.json');
-    expect(fs.existsSync(usearchPath) || fs.existsSync(vectorsPath)).toBe(true);
   });
 
   it('BinaryHNSWIndex.load detects a persistent torn (meta, vectors) pair and refuses', async () => {

@@ -164,7 +164,6 @@
     "vitest": "^4.0.16"
   },
   "optionalDependencies": {
-    "usearch": "^2.21.4",
     "@sweet-search/native-darwin-arm64": "2.5.14",
     "@sweet-search/native-darwin-x64": "2.5.14",
     "@sweet-search/native-linux-arm64-gnu": "2.5.14",

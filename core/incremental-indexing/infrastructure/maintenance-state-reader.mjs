@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 
-import { loadBitmap, popcount, tombstoneFraction } from './tombstone-bitmap.mjs';
+import { loadBitmap, popcount } from './tombstone-bitmap.mjs';
 import { deltaSizeStats } from './sparse-gram-delta.mjs';
 import { evaluateSegmentRatios, LI_SEGMENT_SIZE } from './li-segment-state.mjs';
 import { fts5SegmentCount } from './sqlite-fts5.mjs';
@@ -58,29 +58,6 @@ export function readSparseGramState(stateDir) {
   } catch {
     return { deltaSizeRatio: 0, deltaSegmentCount: 0 };
   }
-}
-
-/**
- * Float HNSW: meta.json carries `idMap` (live ids — pruned on `remove()`)
- * and the stale bitmap at `.idx.stale.bin` mirrors the soft-delete state.
- *
- *   tombstoneFraction = popcount(bitmap) / (popcount + liveTotal)
- *
- * `liveCandidateShortfall` stays undefined here — that signal must come
- * from a query-path counter (plan § 7.3), not from offline state.
- */
-export function readFloatHnswState(stateDir) {
-  const empty = { tombstoneFraction: 0, deleteCycles: 0 };
-  const metaPath = path.join(stateDir, 'codebase-hnsw.meta.json');
-  if (!fs.existsSync(metaPath)) return empty;
-  const meta = readJson(metaPath);
-  if (!meta) return empty;
-  const idMap = Array.isArray(meta.idMap) ? meta.idMap : [];
-  const liveTotal = idMap.length;
-  let bitmap = null;
-  try { bitmap = loadBitmap(path.join(stateDir, 'codebase-hnsw.idx.stale.bin')); } catch { bitmap = null; }
-  const fraction = bitmap ? tombstoneFraction(bitmap, liveTotal) : 0;
-  return { tombstoneFraction: fraction, deleteCycles: 0 };
 }
 
 /**
@@ -266,14 +243,13 @@ export function readGraphGcState(stateDir) {
 
 /**
  * One-shot bundle for the reconciler adapter. Returns the full shape
- * `evaluateWatermarks` expects: `fts5 / sparseGram / floatHnsw /
+ * `evaluateWatermarks` expects: `fts5 / sparseGram /
  * binaryHnsw / liSegments / liSegmentStats / vectors / graph`.
  */
 export function readMaintenanceState(stateDir) {
   return {
     fts5: readFts5State(stateDir),
     sparseGram: readSparseGramState(stateDir),
-    floatHnsw: readFloatHnswState(stateDir),
     binaryHnsw: readBinaryHnswState(stateDir),
     liSegments: readLiSegmentsState(stateDir),
     liSegmentStats: readLiSegmentStats(stateDir),

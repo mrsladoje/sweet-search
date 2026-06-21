@@ -28,7 +28,6 @@ describe('indexer manifest publication', () => {
     expect(manifest.epoch).toBe(1);
     expect(manifest.codeGraph.path).toBe('code-graph.db');
     expect(manifest.vectors.path).toBe('codebase.db');
-    expect(manifest.hnsw.path).toBe('codebase-hnsw.idx');
     expect(manifest.binaryHnsw.path).toBe('codebase-binary-hnsw.idx');
     expect(manifest.lateInteraction.manifest).toBe('codebase-late-interaction.db.segments/manifest.json');
     expect(readManifest(stateDir).epoch).toBe(1);
@@ -64,7 +63,6 @@ describe('indexer manifest publication', () => {
       tiers: {
         codeGraph: { path: 'code-graph.next.db' },
         vectors: { path: 'nested/codebase.next.db' },
-        hnsw: { path: 'codebase-hnsw.next.idx', stale: 'codebase-hnsw.next.idx.stale.bin' },
         binaryHnsw: { path: 'codebase-binary-hnsw.next.idx' },
         lateInteraction: { manifest: 'codebase-late-interaction.next.db.segments/manifest.json' },
         sparseGram: {
@@ -80,10 +78,6 @@ describe('indexer manifest publication', () => {
     expect(manifest.epoch).toBe(4);
     expect(manifest.codeGraph.path).toBe('code-graph.db');
     expect(manifest.vectors.path).toBe('codebase.db');
-    expect(manifest.hnsw).toMatchObject({
-      path: 'codebase-hnsw.idx',
-      stale: 'codebase-hnsw.idx.stale.bin',
-    });
     expect(manifest.binaryHnsw.path).toBe('codebase-binary-hnsw.idx');
     expect(manifest.lateInteraction.manifest).toBe('codebase-late-interaction.db.segments/manifest.json');
     expect(manifest.sparseGram).toMatchObject({

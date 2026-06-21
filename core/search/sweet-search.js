@@ -17,7 +17,6 @@ import { getGlobalLocalReranker } from '../ranking/local-reranker.js';
 import { QueryRouter, routeQuery } from '../query/query-router.js';
 import { GraphSearch } from '../graph/graph-search.js';
 import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from '../infrastructure/constants.js';
-import { HNSWIndex } from '../vector-store/hnsw-index.js';
 import { BinaryHNSWIndex } from '../vector-store/binary-hnsw-index.js';
 import { Reranker } from '../ranking/flashrank.js';
 import { LateInteractionIndex } from '../ranking/late-interaction-index.js';
@@ -133,9 +132,7 @@ export class SweetSearch {
     this._manifestGraphDbPath = this.graphDbPath;
     this.graphSearch = new GraphSearch(this.graphDbPath);
     this.codeGraphRepo = new CodeGraphRepository(this.graphDbPath);
-    this.hnswPath = options.hnswPath || DB_PATHS.hnswIndex;
     this.binaryHnswPath = options.binaryHnswPath || DB_PATHS.binaryHnswIndex;
-    this.hnswIndex = new HNSWIndex({ indexPath: this.hnswPath });
     this.binaryHnswIndex = new BinaryHNSWIndex({ indexPath: this.binaryHnswPath });
     this.reranker = new Reranker(options);
     this.lateInteractionIndex = new LateInteractionIndex(options.lateInteractionOptions || {});
@@ -228,7 +225,6 @@ export class SweetSearch {
     this._syncManifestPaths(this._readReconcileManifest());
 
     this.hasGraphIndex = existsSync(this.graphDbPath);
-    this.hasHnswIndex = existsSync(this.hnswPath.replace('.idx', '.meta.json'));
     this.hasBinaryHnswIndex = existsSync(this.binaryHnswPath.replace('.idx', '.meta.json'));
     this.hasCodebaseIndex = existsSync(this.codebaseDbPath);
     this.hasLateInteractionIndex = existsSync(this.lateInteractionIndex.indexPath);
@@ -268,16 +264,6 @@ export class SweetSearch {
         } catch (err) {
           this.log(`FloatStore: Failed to load (Stage 2.5 will use SQLite fallback): ${err.message}`);
         }
-      }
-    }
-
-    if (this.hasHnswIndex) {
-      try {
-        await this.hnswIndex.load(undefined, { mmap: true });
-        this.log(`HNSW: Loaded ${this.hnswIndex.getStats().totalVectors} vectors (mmap)`);
-      } catch (err) {
-        this.log(`HNSW: Failed to load: ${err.message}`);
-        this.hasHnswIndex = false;
       }
     }
 
@@ -433,8 +419,6 @@ export class SweetSearch {
     return {
       codebaseDbPath: this._resolveStatePath(manifest.vectors?.path),
       graphDbPath: this._resolveStatePath(manifest.codeGraph?.path),
-      hnswPath: this._resolveStatePath(manifest.hnsw?.path),
-      hnswStalePath: this._resolveStatePath(manifest.hnsw?.stale),
       binaryHnswPath: this._resolveStatePath(manifest.binaryHnsw?.path),
       binaryHnswStalePath: this._resolveStatePath(manifest.binaryHnsw?.stale),
       lateInteractionIndexPath: liIndexPath,
@@ -460,10 +444,6 @@ export class SweetSearch {
       this.graphDbPath = paths.graphDbPath;
       this.graphSearch = new GraphSearch(this._manifestGraphDbPath);
       this.codeGraphRepo = new CodeGraphRepository(this._manifestGraphDbPath);
-    }
-    if (paths.hnswPath && (paths.hnswPath !== this.hnswPath || paths.hnswStalePath !== this.hnswIndex?.stalePath)) {
-      this.hnswPath = paths.hnswPath;
-      this.hnswIndex = new HNSWIndex({ indexPath: this.hnswPath, stalePath: paths.hnswStalePath || `${this.hnswPath}.stale.bin` });
     }
     if (paths.binaryHnswPath && (paths.binaryHnswPath !== this.binaryHnswPath || paths.binaryHnswStalePath !== this.binaryHnswIndex?.stalePath)) {
       this.binaryHnswPath = paths.binaryHnswPath;
@@ -510,23 +490,6 @@ export class SweetSearch {
       } catch (err) {
         this.log(`BinaryHNSW: Failed to reload after manifest publish: ${err.message}`);
         this.hasBinaryHnswIndex = false;
-      }
-    }
-
-    if (!grepOnly) {
-      this.hasHnswIndex = existsSync(this.hnswPath.replace('.idx', '.meta.json'));
-    }
-    if (!grepOnly && this.hasHnswIndex) {
-      try {
-        const nextHnsw = new HNSWIndex({
-          indexPath: this.hnswPath,
-          stalePath: this.hnswIndex?.stalePath || `${this.hnswPath}.stale.bin`,
-        });
-        await nextHnsw.load(undefined, { mmap: true });
-        this.hnswIndex = nextHnsw;
-      } catch (err) {
-        this.log(`HNSW: Failed to reload after manifest publish: ${err.message}`);
-        this.hasHnswIndex = false;
       }
     }
 

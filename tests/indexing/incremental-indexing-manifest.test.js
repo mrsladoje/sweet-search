@@ -28,7 +28,7 @@ describe('manifest / zero state', () => {
   it('produces every tier slot at epoch 0', () => {
     const m = zeroManifest({});
     expect(m.epoch).toBe(0);
-    for (const key of ['codeGraph', 'vectors', 'hnsw', 'binaryHnsw', 'lateInteraction', 'sparseGram']) {
+    for (const key of ['codeGraph', 'vectors', 'binaryHnsw', 'lateInteraction', 'sparseGram']) {
       expect(m[key].epoch).toBe(0);
     }
     expect(m.sparseGram.weightsId).toBe(FALLBACK_WEIGHTS_ID);
@@ -80,7 +80,7 @@ describe('manifest / buildNextManifest', () => {
     const prev = zeroManifest({});
     const next = buildNextManifest(prev, { epoch: 7, tiers: {} });
     expect(next.epoch).toBe(7);
-    for (const key of ['codeGraph', 'vectors', 'hnsw', 'binaryHnsw', 'lateInteraction', 'sparseGram']) {
+    for (const key of ['codeGraph', 'vectors', 'binaryHnsw', 'lateInteraction', 'sparseGram']) {
       expect(next[key].epoch).toBe(7);
       expect(next[key].path || next[key].base || next[key].manifest)
         .toBe(prev[key].path || prev[key].base || prev[key].manifest);

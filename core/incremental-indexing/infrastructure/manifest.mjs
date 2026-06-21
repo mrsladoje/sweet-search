@@ -15,9 +15,6 @@
  *     "publishedAt": "2026-05-15T23:00:00.000Z",
  *     "codeGraph":      { "path": "code-graph.db", "epoch": 12847 },
  *     "vectors":        { "path": "codebase.db", "epoch": 12847 },
- *     "hnsw":           { "path": "codebase-hnsw.idx",
- *                          "stale": "codebase-hnsw.idx.stale.bin",
- *                          "epoch": 12847 },
  *     "binaryHnsw":     { "path": "codebase-binary-hnsw.idx", "epoch": 12847 },
  *     "lateInteraction":{ "manifest": "codebase-late-interaction.db.segments/manifest.json",
  *                          "epoch": 12847 },
@@ -61,11 +58,6 @@ export function zeroManifest(paths) {
     publishedAt: new Date().toISOString(),
     codeGraph: { path: paths.codeGraph || 'code-graph.db', epoch: 0 },
     vectors: { path: paths.vectors || 'codebase.db', epoch: 0 },
-    hnsw: {
-      path: paths.hnsw || 'codebase-hnsw.idx',
-      stale: paths.hnswStale || 'codebase-hnsw.idx.stale.bin',
-      epoch: 0,
-    },
     binaryHnsw: {
       path: paths.binaryHnsw || 'codebase-binary-hnsw.idx',
       epoch: 0,

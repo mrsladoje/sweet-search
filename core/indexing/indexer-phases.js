@@ -14,7 +14,7 @@ import { colors, log, logProgress, logError, discoverFiles, readFilesFromStdin, 
 import { buildCodeGraph, buildVectorIndex, chunkFiles } from './indexer-build.js';
 import { runDedupPhase, formatDedupSummary } from './dedup/dedup-phase.js';
 import { DEDUP_CONFIG } from '../infrastructure/config/index.js';
-import { incrementalUpdateHNSW, buildHNSWIndex, buildLateInteractionIndex, buildQuantizedArtifactsPhase } from './indexer-ann.js';
+import { buildLateInteractionIndex, buildQuantizedArtifactsPhase } from './indexer-ann.js';
 import { buildSparseGramArtifact } from './indexer-sparse-gram.js';
 import { publishIndexerManifest } from './indexer-manifest.js';
 import { contentHashSync } from '../incremental-indexing/infrastructure/hashing.mjs';
@@ -633,25 +633,6 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
       await markPhaseComplete('vectors');
     }
 
-    try {
-      if (!dryRun && vectorStats.embeddings > 0) {
-        await updatePhaseProgress({ phase: 'hnsw', status: 'in_progress' });
-        if (incrementalInfo && !fullReindex) {
-          const allFilesToRemoveFromHNSW = [
-            ...incrementalInfo.toIndex,
-            ...(incrementalInfo.toRemove || [])
-          ];
-          await incrementalUpdateHNSW(DB_PATHS.codebase, allFilesToRemoveFromHNSW, dryRun);
-        } else {
-          await buildHNSWIndex(DB_PATHS.codebase, dryRun);
-        }
-        await markPhaseComplete('hnsw');
-      }
-    } catch (err) {
-      await cleanupStagedLateInteractionIndex(stagedLateInteractionPath);
-      throw err;
-    }
-
     let lateInteractionResult = liOutcome.result;
 
     if (!liPromise && !dryRun && !noLateInteraction && (preChunked?.allChunks?.length > 0 || filesToRemoveFromLI.length > 0)) {
@@ -811,7 +792,6 @@ export function printSummaryPhase(options) {
   if (!vectorsOnly) log(`  - ${DB_PATHS.codeGraph}`, 'green');
   if (!graphOnly) {
     log(`  - ${DB_PATHS.codebase}`, 'green');
-    log(`  - ${DB_PATHS.hnswIndex}`, 'green');
     if (existsSync(DB_PATHS.binaryHnswIndex.replace('.idx', '.meta.json'))) {
       log(`  - ${DB_PATHS.binaryHnswIndex} (Binary HNSW, 32x smaller)`, 'green');
     }

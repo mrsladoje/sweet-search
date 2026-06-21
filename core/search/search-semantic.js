@@ -617,16 +617,12 @@ export async function semanticSearchStandard(query, options = {}) {
 
   let candidates;
 
-  if (this.hasHnswIndex) {
-    // ADAPTIVE CANDIDATE SIZING: Reduce candidates for simple queries
-    const baseNumCandidates = rerank ? Math.max(k * 10, 100) : k;
-    const numCandidates = this.getAdaptiveCandidateCount(query, baseNumCandidates);
-
-    const hnswResult = await this.hnswIndex.search(queryEmbedding, numCandidates);
-    candidates = hnswResult.results;
-    this.log(`HNSW: ${hnswResult.latency_us}us for ${hnswResult.k} candidates (adaptive: ${numCandidates})`);
-  } else if (this.hasCodebaseIndex) {
-    // Fallback: O(N) scan from SQLite
+  // Non-3-stage ("Standard") path: the binary 3-stage cascade is the default
+  // (see semanticSearch dispatcher). This path is reached only when 3-stage is
+  // disabled or no binary index exists, and scans float vectors directly from
+  // SQLite. (The legacy usearch float-HNSW shortcut was removed.)
+  if (this.hasCodebaseIndex) {
+    // O(N) scan from SQLite
     candidates = await this.vectorScan(queryEmbedding, rerank ? 100 : k);
     this.log(`Vector scan: ${candidates.length} candidates`);
   } else {
