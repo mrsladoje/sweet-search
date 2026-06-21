@@ -55,7 +55,6 @@ async function makeSearcher(overrides = {}) {
     init: vi.fn(async () => {}),
     hasGraphIndex: true,
     hasBinaryHnswIndex: false,
-    hasHnswIndex: false,
     hasCodebaseIndex: false,
     hasLateInteractionIndex: false,
     enableTranslationFallback: false,

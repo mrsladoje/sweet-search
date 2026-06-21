@@ -16,12 +16,12 @@
  * Manifest semantics:
  *   - sparse_gram, LI segment: the reconcile manifest is unchanged. New
  *     artifacts replace old ones at canonical paths read fresh per query.
- *   - HNSW (float / binary): canonical paths unchanged; the reconcile
- *     manifest stays at the current epoch. Cross-process readers that
- *     cache an HNSWIndex instance in memory MUST already invalidate on
- *     manifest change — but maintenance does not bump the epoch by
- *     itself. This matches the existing reconcile tick semantics; a
- *     follow-up workstream can add versioned tier paths if needed.
+ *   - Binary HNSW: canonical paths unchanged; the reconcile manifest
+ *     stays at the current epoch. Cross-process readers that cache a
+ *     binary HNSW index in memory MUST already invalidate on manifest
+ *     change — but maintenance does not bump the epoch by itself. This
+ *     matches the existing reconcile tick semantics; a follow-up
+ *     workstream can add versioned tier paths if needed.
  *
  * The handlers degrade safely when artifacts are missing/corrupt — they
  * throw a descriptive error which the worker converts into the standard
@@ -33,7 +33,6 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 
 import { BinaryHNSWIndex } from '../../vector-store/binary-hnsw-index.js';
-import { HNSWIndex } from '../../vector-store/hnsw-index.js';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
 import { compactDeltaSegments, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
 import { mergeLiSegments, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
@@ -160,9 +159,8 @@ export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
   await existing.load(indexPath);
   progress('maintenance:binary-hnsw:loaded');
 
-  // Liveness authority is codebase.db, NOT the binary stale bitmap. This makes
-  // binary reclamation self-healing and consistent with floatHnswHandler
-  // (which already rebuilds from `vectors WHERE epoch_retired IS NULL`): a
+  // Liveness authority is codebase.db (`vectors WHERE epoch_retired IS NULL`),
+  // NOT the binary stale bitmap. This makes binary reclamation self-healing: a
   // vector retired in codebase.db is dropped here even if its binary stale bit
   // was never set. Falls back to the stale bitmap only when codebase.db is
   // unavailable.
@@ -209,92 +207,6 @@ export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
     tier: 'binary_hnsw',
     kept: live.length,
     dropped,
-    staleBitmapCleared: true,
-    atomicPublish: true,
-  };
-}
-
-/* ------------------------------------------------------------------ *
- * float_hnsw                                                          *
- * ------------------------------------------------------------------ */
-
-/**
- * Float HNSW clean replacement.
- *
- * Source of truth for "which vectors are live" is `codebase.db`. The
- * existing HNSW meta.json's idMap is also pruned, but we re-read the DB
- * to pick up `embedding` blobs the in-memory HNSWIndex doesn't expose.
- *
- * Caller invariant: the codebase.db schema columns (`id`, `embedding`,
- * `metadata`, `epoch_retired`) are stable — verified in the production
- * reconciler `applyVectorDelta` path.
- */
-export async function floatHnswHandler(job, { stateDir, onProgress = null }) {
-  const progress = progressFn(onProgress);
-  const indexPath = path.join(stateDir, 'codebase-hnsw.idx');
-  const metaPath = path.join(stateDir, 'codebase-hnsw.meta.json');
-  const dbPath = path.join(stateDir, 'codebase.db');
-  if (!fs.existsSync(metaPath)) return { skipped: 'no-index' };
-  if (!fs.existsSync(dbPath)) return { skipped: 'no-vector-db' };
-
-  // Load existing index to discover dimension / parameters (cheap).
-  const existing = new HNSWIndex({ indexPath });
-  try { await existing.load(indexPath); } catch { return { skipped: 'load-failed' }; }
-  progress('maintenance:float-hnsw:loaded');
-  const dimension = existing.dimension;
-  const stalePath = existing.stalePath;
-
-  const stalePresent = fs.existsSync(stalePath);
-  const liveIdsBefore = new Set(existing.idMap.keys());
-
-  // Walk live vectors from codebase.db.
-  const db = new Database(dbPath, { readonly: true });
-  let liveRows;
-  try {
-    liveRows = db.prepare(
-      'SELECT id, embedding, metadata FROM vectors WHERE epoch_retired IS NULL'
-    ).all();
-  } finally {
-    db.close();
-  }
-
-  // If everything aligns AND no stale bitmap → nothing to do.
-  if (!stalePresent && liveIdsBefore.size === liveRows.length) {
-    return { skipped: 'no-stale-vectors', dropped: 0 };
-  }
-
-  // Rebuild the index in memory and let `HNSWIndex.save()` publish via
-  // its tmp+rename protocol — that protocol keeps any cross-process
-  // `usearch.view()` mmap valid against the unlinked old inode.
-  const fresh = new HNSWIndex({
-    indexPath,
-    stalePath,
-    dimension,
-    maxElements: existing.maxElements,
-    M: existing.M,
-    efConstruction: existing.efConstruction,
-    efSearch: existing.efSearch,
-    metric: existing.metric,
-  });
-  await fresh.init();
-  for (let i = 0; i < liveRows.length; i += 1) {
-    const row = liveRows[i];
-    const embedding = float32FromBuffer(row.embedding);
-    let meta;
-    try { meta = JSON.parse(row.metadata || '{}'); } catch { meta = {}; }
-    const truncated = embedding.length > dimension ? embedding.slice(0, dimension) : embedding;
-    await fresh.add(row.id, truncated, meta);
-    if (i > 0 && i % 500 === 0) progress('maintenance:float-hnsw:add');
-  }
-  await fresh.save(indexPath);
-  progress('maintenance:float-hnsw:saved');
-  // Stale bitmap is meaningless after rebuild — keys are fresh.
-  safeUnlink(stalePath);
-
-  return {
-    tier: 'float_hnsw',
-    kept: liveRows.length,
-    dropped: Math.max(0, liveIdsBefore.size - liveRows.length),
     staleBitmapCleared: true,
     atomicPublish: true,
   };
@@ -510,7 +422,6 @@ export function reclamationHandlers(stateDir) {
   return {
     sparse_gram: (job, ctx = {}) => sparseGramHandler(job, { stateDir, onProgress: ctx.onProgress }),
     binary_hnsw: (job, ctx = {}) => binaryHnswHandler(job, { stateDir, onProgress: ctx.onProgress }),
-    float_hnsw: (job, ctx = {}) => floatHnswHandler(job, { stateDir, onProgress: ctx.onProgress }),
     li_segment: (job, ctx = {}) => liSegmentHandler(job, { stateDir, onProgress: ctx.onProgress }),
     li_segments: (job, ctx = {}) => liSegmentsHandler(job, { stateDir, onProgress: ctx.onProgress }),
     vector_gc: (job, ctx = {}) => vectorGcHandler(job, { stateDir, onProgress: ctx.onProgress }),

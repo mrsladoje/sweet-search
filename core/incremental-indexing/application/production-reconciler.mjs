@@ -17,7 +17,6 @@ import { createGraphSchema, GraphExtractor } from '../../graph/graph-extractor.j
 import { createVectorSchema, ensureVectorSchema, buildInsertItems, insertVectorItems } from '../../indexing/indexer-build.js';
 import { ASTChunker, JAVA_FAMILY } from '../../indexing/ast-chunker.js';
 import { getEmbeddings, getModelInfo } from '../../embedding/embedding-service.js';
-import { HNSWIndex } from '../../vector-store/hnsw-index.js';
 import { BinaryHNSWIndex } from '../../vector-store/binary-hnsw-index.js';
 import { floatToBinary, normalizedFloatToInt8, truncateForHNSW } from '../../infrastructure/quantization.js';
 import { extractSparseGramDeltaRecord } from '../../infrastructure/native-sparse-gram.js';
@@ -199,7 +198,6 @@ class ProductionReconcileAdapter {
       persistManifest: (manifest) => this.persistManifest(manifest),
       applyGraphDelta: (file, hashes, epoch) => this.applyGraphDelta(file, hashes, epoch),
       applyVectorDelta: (file, chunks, hashes, epoch) => this.applyVectorDelta(file, chunks, hashes, epoch),
-      applyHNSWDelta: (file, ops, epoch) => this.applyHNSWDelta(file, ops, epoch),
       applyBinaryHNSWDelta: (file, ops, epoch) => this.applyBinaryHNSWDelta(file, ops, epoch),
       applyLIDelta: (file, ops, epoch) => this.applyLIDelta(file, ops, epoch),
       applySparseGramDelta: (file, ops, epoch) => this.applySparseGramDelta(file, ops, epoch),
@@ -452,26 +450,6 @@ class ProductionReconcileAdapter {
     } finally {
       db.close();
     }
-  }
-
-  async applyHNSWDelta(_file, ops) {
-    if (!Array.isArray(ops) || ops.length === 0) return { ops: { hnsw_add: 0, hnsw_tombstone: 0 } };
-    const indexPath = path.join(this.stateDir, 'codebase-hnsw.idx');
-    const index = new HNSWIndex({ indexPath, stalePath: `${indexPath}.stale.bin`, dimension: this.modelInfo.hnswDimension });
-    try { await index.load(indexPath); } catch { await index.init(); }
-    this.progress('production:hnsw-loaded');
-    let add = 0; let tombstone = 0;
-    for (const op of ops) {
-      if (op.retireId && await index.remove(op.retireId)) tombstone += 1;
-      if (op.addId && op.embedding) {
-        await index.add(op.addId, truncateForHNSW(op.embedding, this.modelInfo.hnswDimension), { file: op.metadata?.file, name: op.metadata?.name, type: op.metadata?.type });
-        add += 1;
-      }
-      if ((add + tombstone) > 0 && (add + tombstone) % 100 === 0) this.progress('production:hnsw-loop');
-    }
-    await index.save(indexPath);
-    this.progress('production:hnsw-saved');
-    return { ops: { hnsw_add: add, hnsw_tombstone: tombstone }, manifest: { path: 'codebase-hnsw.idx', stale: 'codebase-hnsw.idx.stale.bin' } };
   }
 
   async applyBinaryHNSWDelta(_file, ops) {

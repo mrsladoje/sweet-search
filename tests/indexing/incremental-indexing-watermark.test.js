@@ -15,7 +15,6 @@ import {
 
 describe('watermark / config', () => {
   it('exposes the plan-default thresholds', () => {
-    expect(DEFAULT_WATERMARKS.hnswTombstoneFraction).toBe(0.15);
     expect(DEFAULT_WATERMARKS.binaryHnswDeadRatio).toBe(0.30);
     expect(DEFAULT_WATERMARKS.liSegmentStaleRatio).toBe(0.20);
     expect(DEFAULT_WATERMARKS.fts5SegmentCount).toBe(64);
@@ -23,39 +22,21 @@ describe('watermark / config', () => {
 
   it('honors env overrides', () => {
     const cfg = loadWatermarkConfig({
-      SWEET_SEARCH_HNSW_TOMBSTONE_THRESHOLD: '0.25',
       SWEET_SEARCH_FTS5_MERGE_SEGMENT_THRESHOLD: '128',
     });
-    expect(cfg.hnswTombstoneFraction).toBe(0.25);
     expect(cfg.fts5SegmentCount).toBe(128);
     expect(cfg.binaryHnswDeadRatio).toBe(0.30);
   });
 
   it('ignores non-numeric overrides', () => {
-    const cfg = loadWatermarkConfig({ SWEET_SEARCH_HNSW_TOMBSTONE_THRESHOLD: 'banana' });
-    expect(cfg.hnswTombstoneFraction).toBe(0.15);
+    const cfg = loadWatermarkConfig({ SWEET_SEARCH_FTS5_MERGE_SEGMENT_THRESHOLD: 'banana' });
+    expect(cfg.fts5SegmentCount).toBe(64);
   });
 });
 
 describe('watermark / evaluator', () => {
   it('returns [] when no watermarks crossed', () => {
     expect(evaluateWatermarks({})).toEqual([]);
-  });
-
-  it('emits a float_hnsw job past the tombstone watermark', () => {
-    const jobs = evaluateWatermarks({
-      floatHnsw: { tombstoneFraction: 0.2 },
-    });
-    expect(jobs.length).toBe(1);
-    expect(jobs[0].tier).toBe('float_hnsw');
-    expect(jobs[0].reason).toBe('tombstone_watermark');
-  });
-
-  it('emits a float_hnsw job on live-candidate shortfall regardless of fraction', () => {
-    const jobs = evaluateWatermarks({
-      floatHnsw: { tombstoneFraction: 0.05, liveCandidateShortfall: true },
-    });
-    expect(jobs[0].reason).toBe('live_candidate_shortfall');
   });
 
   it('emits separate LI segment jobs per crossing', () => {

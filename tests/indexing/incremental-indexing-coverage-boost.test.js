@@ -993,11 +993,11 @@ describe('staleness-display.mjs', () => {
   it('formatStalenessFooter includes maintenance backlog when > 0', () => {
     const s = formatStalenessFooter({
       epoch: 5, ageMs: 0, dirtyFiles: 0,
-      lastMaintenanceTier: 'float_hnsw', lastMaintenanceAgeMs: 300_000,
+      lastMaintenanceTier: 'binary_hnsw', lastMaintenanceAgeMs: 300_000,
       maintenanceBacklog: 7, forceShow: true,
     });
     expect(s).toContain('backlog: 7');
-    expect(s).toContain('last maintenance: float_hnsw');
+    expect(s).toContain('last maintenance: binary_hnsw');
   });
 
   it('formatStalenessFooter empty when green + not forced', () => {

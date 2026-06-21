@@ -27,9 +27,7 @@ const MERKLE_STATE = 'merkle-state.json';
 const PAUSE_FILE = 'reconcile-pause.json';
 
 const REBUILD_TIERS = new Map([
-  ['hnsw', 'float_hnsw'],
-  ['float_hnsw', 'float_hnsw'],
-  ['float-hnsw', 'float_hnsw'],
+  ['hnsw', 'binary_hnsw'],
   ['binary_hnsw', 'binary_hnsw'],
   ['binary-hnsw', 'binary_hnsw'],
   ['li', 'li_segment'],

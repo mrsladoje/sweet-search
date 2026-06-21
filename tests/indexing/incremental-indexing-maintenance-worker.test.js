@@ -56,7 +56,7 @@ describe('maintenance-worker / queue', () => {
 
   it('writes the legacy rebuild-queue.jsonl filename', () => {
     enqueueMaintenanceJob(stateDir, {
-      tier: 'float_hnsw',
+      tier: 'binary_hnsw',
       reason: 'tombstone_watermark',
       epoch: 1,
       payload: {},
@@ -65,11 +65,11 @@ describe('maintenance-worker / queue', () => {
   });
 
   it('round-trips multiple jobs in insertion order', () => {
-    enqueueMaintenanceJob(stateDir, { tier: 'float_hnsw', reason: 'a', epoch: 1 });
+    enqueueMaintenanceJob(stateDir, { tier: 'binary_hnsw', reason: 'a', epoch: 1 });
     enqueueMaintenanceJob(stateDir, { tier: 'li_segment', reason: 'b', epoch: 2 });
     enqueueMaintenanceJob(stateDir, { tier: 'fts5', reason: 'c', epoch: 3 });
     const jobs = readMaintenanceQueue(stateDir);
-    expect(jobs.map((j) => j.tier)).toEqual(['float_hnsw', 'li_segment', 'fts5']);
+    expect(jobs.map((j) => j.tier)).toEqual(['binary_hnsw', 'li_segment', 'fts5']);
     for (const job of jobs) {
       expect(typeof job.createdAt).toBe('string');
     }
@@ -81,39 +81,39 @@ describe('maintenance-worker / queue', () => {
 
   it('appends dead-letter entries with the stack trace', () => {
     appendDeadLetter(stateDir,
-      { tier: 'float_hnsw', reason: 'x', epoch: 7 },
+      { tier: 'binary_hnsw', reason: 'x', epoch: 7 },
       new Error('staging failed'),
     );
     const text = fs.readFileSync(path.join(stateDir, DEAD_LETTER_FILENAME), 'utf-8');
     const parsed = JSON.parse(text.trim());
-    expect(parsed.job.tier).toBe('float_hnsw');
+    expect(parsed.job.tier).toBe('binary_hnsw');
     expect(parsed.error.message).toBe('staging failed');
     expect(typeof parsed.deadAt).toBe('string');
   });
 
   it('processes successful jobs and removes them from the queue', async () => {
     const handled = [];
-    enqueueMaintenanceJob(stateDir, { tier: 'float_hnsw', reason: 'a', epoch: 1 });
+    enqueueMaintenanceJob(stateDir, { tier: 'binary_hnsw', reason: 'a', epoch: 1 });
     enqueueMaintenanceJob(stateDir, { tier: 'li_segment', reason: 'b', epoch: 2 });
 
     const summary = await processMaintenanceQueue(stateDir, {
       handlers: {
-        float_hnsw: async (job) => handled.push(job.tier),
+        binary_hnsw: async (job) => handled.push(job.tier),
         li_segment: async (job) => handled.push(job.tier),
       },
     });
 
-    expect(handled).toEqual(['float_hnsw', 'li_segment']);
+    expect(handled).toEqual(['binary_hnsw', 'li_segment']);
     expect(summary.succeeded).toBe(2);
     expect(readMaintenanceQueue(stateDir)).toEqual([]);
   });
 
   it('preserves jobs appended while the worker is acknowledging a snapshot', async () => {
-    enqueueMaintenanceJob(stateDir, { tier: 'float_hnsw', reason: 'a', epoch: 1 });
+    enqueueMaintenanceJob(stateDir, { tier: 'binary_hnsw', reason: 'a', epoch: 1 });
 
     const summary = await processMaintenanceQueue(stateDir, {
       handlers: {
-        float_hnsw: async () => {
+        binary_hnsw: async () => {
           enqueueMaintenanceJob(stateDir, { tier: 'fts5', reason: 'later', epoch: 2 });
         },
       },

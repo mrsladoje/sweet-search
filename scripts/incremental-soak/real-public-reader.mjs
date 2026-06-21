@@ -160,7 +160,6 @@ class PublicReader {
         sparseGramDeltas: Array.isArray(this.searcher?.sparseGramDeltas)
           ? [...this.searcher.sparseGramDeltas]
           : null,
-        hnswIndexPath: this.searcher?.hnswPath ?? null,
         binaryHnswIndexPath: this.searcher?.binaryHnswPath ?? null,
         codebaseDbPath: this.searcher?.codebaseDbPath ?? null,
         graphDbPath: this.searcher?.graphDbPath ?? null,

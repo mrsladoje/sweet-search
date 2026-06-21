@@ -1,12 +1,9 @@
 /**
  * Vector Store — barrel export for the vector-store bounded context.
  *
- * Public API: HNSWIndex, BinaryHNSWIndex, FloatVectorStore, SeismicIndex,
+ * Public API: BinaryHNSWIndex, FloatVectorStore, SeismicIndex,
  * SIMD distance functions, and typed binary heaps.
  */
-
-// --- HNSW (USearch-backed ANN) ---
-export { HNSWIndex, createHNSWIndex, checkNativeBackend, requireNativeAnn } from './hnsw-index.js';
 
 // --- Binary HNSW (Hamming distance) ---
 export { BinaryHNSWIndex, createBinaryHNSWIndex } from './binary-hnsw-index.js';

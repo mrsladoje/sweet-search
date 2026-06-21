@@ -89,7 +89,7 @@ export function installGpuLoadGuard() {
  * JSON job descriptor:
  *
  *   {
- *     "tier":   "float_hnsw" | "binary_hnsw" | "li_segment" | "sparse_gram" | "fts5",
+ *     "tier":   "binary_hnsw" | "li_segment" | "sparse_gram" | "fts5",
  *     "reason": "tombstone_watermark" | "dead_doc_ratio" | "stale_doc_ratio" | "delta_size_ratio" | "fts5_segment_count" | "crash_recovery",
  *     "epoch":  <int>,
  *     "createdAt": <ISO-8601>,

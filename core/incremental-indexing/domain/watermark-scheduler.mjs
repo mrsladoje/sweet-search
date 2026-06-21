@@ -8,8 +8,6 @@
  *
  * Watermarks (plan § 6.2):
  *
- *   - Float HNSW: `tombstone_fraction > 0.15` OR `delete_cycles > 1000`
- *     OR live-candidate shortfall observed → `float_hnsw` clean replacement.
  *   - Binary HNSW: `dead_doc_ratio > 0.30` → replacement.
  *   - LI segment: per-segment `stale_doc_ratio > 0.20` → per-segment recompaction.
  *   - Sparse-gram: `delta_size_ratio > 0.10` OR `delta_segment_count > 64`
@@ -23,8 +21,6 @@
  */
 
 export const DEFAULT_WATERMARKS = Object.freeze({
-  hnswTombstoneFraction: 0.15,
-  hnswDeleteCycles: 1000,
   binaryHnswDeadRatio: 0.30,
   liSegmentStaleRatio: 0.20,
   liSmallSegmentCount: 16,
@@ -51,8 +47,6 @@ export function loadWatermarkConfig(env = process.env) {
     return Number.isFinite(parsed) ? parsed : def;
   };
   return {
-    hnswTombstoneFraction: num('SWEET_SEARCH_HNSW_TOMBSTONE_THRESHOLD', DEFAULT_WATERMARKS.hnswTombstoneFraction),
-    hnswDeleteCycles: num('SWEET_SEARCH_HNSW_DELETE_CYCLES', DEFAULT_WATERMARKS.hnswDeleteCycles),
     binaryHnswDeadRatio: num('SWEET_SEARCH_BINARY_HNSW_DEAD_THRESHOLD', DEFAULT_WATERMARKS.binaryHnswDeadRatio),
     liSegmentStaleRatio: num('SWEET_SEARCH_LI_SEGMENT_STALE_THRESHOLD', DEFAULT_WATERMARKS.liSegmentStaleRatio),
     liSmallSegmentCount: num('SWEET_SEARCH_LI_SMALL_SEGMENT_THRESHOLD', DEFAULT_WATERMARKS.liSmallSegmentCount),
@@ -71,7 +65,6 @@ export function loadWatermarkConfig(env = process.env) {
  * Tier-state input shape:
  *
  *   {
- *     floatHnsw:    { tombstoneFraction, deleteCycles, liveCandidateShortfall },
  *     binaryHnsw:   { deadDocRatio },
  *     liSegments:   Array<{ segmentId, staleDocRatio }>,
  *     sparseGram:   { deltaSizeRatio, deltaSegmentCount },
@@ -88,23 +81,6 @@ export function loadWatermarkConfig(env = process.env) {
  */
 export function evaluateWatermarks(state, config = DEFAULT_WATERMARKS) {
   const jobs = [];
-  const floatH = state.floatHnsw || {};
-  if (
-    (floatH.tombstoneFraction ?? 0) > config.hnswTombstoneFraction
-    || (floatH.deleteCycles ?? 0) > config.hnswDeleteCycles
-    || floatH.liveCandidateShortfall === true
-  ) {
-    jobs.push({
-      tier: 'float_hnsw',
-      reason: floatH.liveCandidateShortfall ? 'live_candidate_shortfall'
-        : (floatH.tombstoneFraction > config.hnswTombstoneFraction
-            ? 'tombstone_watermark' : 'delete_cycles'),
-      payload: {
-        tombstoneFraction: floatH.tombstoneFraction ?? 0,
-        deleteCycles: floatH.deleteCycles ?? 0,
-      },
-    });
-  }
   const binH = state.binaryHnsw || {};
   // Reclaim on the dead-doc ratio (batched) OR on any *unexplained* divergence
   // from codebase.db — a vector retired there but never stale-marked in the

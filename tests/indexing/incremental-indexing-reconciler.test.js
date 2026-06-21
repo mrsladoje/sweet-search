@@ -30,7 +30,6 @@ function makeAdapter(overrides = {}) {
     hashFile: async (file) => ({ file, contentUnchanged: false, chunks: [] }),
     applyGraphDelta: async () => ({ ops: { graph_upsert: 0 } }),
     applyVectorDelta: async () => ({ ops: { vectors_upsert: 0 } }),
-    applyHNSWDelta: async () => ({ ops: { hnsw_add: 0 } }),
     applyBinaryHNSWDelta: async () => ({ ops: { binary_hnsw_append: 0 } }),
     applyLIDelta: async () => ({ ops: { li_segment_append: 0 } }),
     applySparseGramDelta: async () => ({ ops: { sparse_gram_delta_upsert: 0 } }),
@@ -159,14 +158,12 @@ describe('Reconciler / tick lifecycle', () => {
         chunksEncoded: 4,
         chunksReused: 1,
       }),
-      applyHNSWDelta: async () => ({ ops: { hnsw_add: 4, hnsw_tombstone: 2 } }),
       applyLIDelta: async () => ({ ops: { li_segment_append: 4, li_tombstone: 2 } }),
     });
     const r = new Reconciler({ stateDir, adapters: adapter });
     const snap = await r.tick();
     expect(snap.ops_per_tier.graph_upsert).toBe(5);
     expect(snap.ops_per_tier.vectors_upsert).toBe(4);
-    expect(snap.ops_per_tier.hnsw_add).toBe(4);
     expect(snap.ops_per_tier.li_tombstone).toBe(2);
     expect(snap.chunks_encoded).toBe(4);
     expect(snap.chunks_hash_reused).toBe(1);
@@ -185,10 +182,6 @@ describe('Reconciler / tick lifecycle', () => {
         tokenOps: [{ id: 'x' }],
         gramOps: [{ file: 'x.js' }],
         manifest: { path: 'codebase.next.db' },
-      }),
-      applyHNSWDelta: async () => ({
-        ops: { hnsw_add: 1 },
-        manifest: { path: 'codebase-hnsw.next.idx', stale: 'codebase-hnsw.next.idx.stale.bin' },
       }),
       applyBinaryHNSWDelta: async () => ({
         ops: { binary_hnsw_append: 1 },
@@ -214,11 +207,6 @@ describe('Reconciler / tick lifecycle', () => {
 
     expect(manifest.codeGraph.path).toBe('code-graph.next.db');
     expect(manifest.vectors.path).toBe('codebase.next.db');
-    expect(manifest.hnsw).toMatchObject({
-      path: 'codebase-hnsw.next.idx',
-      stale: 'codebase-hnsw.next.idx.stale.bin',
-      epoch: 1,
-    });
     expect(manifest.binaryHnsw.path).toBe('codebase-binary-hnsw.next.idx');
     expect(manifest.lateInteraction.manifest).toBe('codebase-late-interaction.next.db.segments/manifest.json');
     expect(manifest.sparseGram).toMatchObject({

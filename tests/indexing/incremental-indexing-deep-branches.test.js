@@ -234,11 +234,10 @@ describe('maintenance-worker — main() smoke test via child_process', () => {
     expect(parsed.drain.succeeded).toBe(0);
   });
 
-  it('worker drains float_hnsw and li_segment jobs against empty artifacts as no-op successes', () => {
+  it('worker drains li_segment jobs against empty artifacts as no-op successes', () => {
     fs.mkdirSync(stateDir, { recursive: true });
     const qPath = path.join(stateDir, 'rebuild-queue.jsonl');
     fs.writeFileSync(qPath,
-      JSON.stringify({ tier: 'float_hnsw', reason: 'r', epoch: 1, payload: {} }) + '\n' +
       JSON.stringify({ tier: 'li_segment', reason: 'r', epoch: 2, payload: { segmentId: 'segment-0000.bin' } }) + '\n',
     );
     const r = spawnSync('node', [WORKER_PATH], {
@@ -248,11 +247,10 @@ describe('maintenance-worker — main() smoke test via child_process', () => {
     });
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout.trim());
-    // float_hnsw + li_segment now have real handlers; without artifacts
-    // on disk both return `{ skipped: 'no-index' / 'no-li-index' }`,
-    // which the worker accounts as `succeeded`.
+    // li_segment has a real handler; without artifacts on disk it returns
+    // `{ skipped: 'no-li-index' }`, which the worker accounts as `succeeded`.
     expect(parsed.pendingJobs).toBe(0);
-    expect(parsed.drain.succeeded).toBe(2);
+    expect(parsed.drain.succeeded).toBe(1);
     expect(parsed.drain.deferred).toBe(0);
   });
 
@@ -290,7 +288,6 @@ describe('Manifest — additional tier propagation', () => {
       tiers: {
         codeGraph: { path: 'cg', someExtra: 'value' },
         vectors: { path: 'v', otherExtra: 1 },
-        hnsw: { path: 'h', stale: 'h.stale' },
         binaryHnsw: { path: 'b' },
         lateInteraction: { manifest: 'li' },
         sparseGram: { base: 'sg', deltas: ['sg.delta'], weightsId: 'w1' },
@@ -298,21 +295,18 @@ describe('Manifest — additional tier propagation', () => {
     });
     expect(next.codeGraph.someExtra).toBe('value');
     expect(next.vectors.otherExtra).toBe(1);
-    expect(next.hnsw.stale).toBe('h.stale');
     expect(next.sparseGram.weightsId).toBe('w1');
     expect(next.epoch).toBe(100);
   });
 
   it('zeroManifest with all custom paths reflects them in the output', () => {
     const m = zeroManifest({
-      codeGraph: 'CG', vectors: 'V', hnsw: 'H', hnswStale: 'H.s',
+      codeGraph: 'CG', vectors: 'V',
       binaryHnsw: 'B', liManifest: 'LI', sparseBase: 'SG',
       sparseDeltas: ['d1', 'd2'], weightsId: 'wid',
     });
     expect(m.codeGraph.path).toBe('CG');
     expect(m.vectors.path).toBe('V');
-    expect(m.hnsw.path).toBe('H');
-    expect(m.hnsw.stale).toBe('H.s');
     expect(m.binaryHnsw.path).toBe('B');
     expect(m.lateInteraction.manifest).toBe('LI');
     expect(m.sparseGram.base).toBe('SG');

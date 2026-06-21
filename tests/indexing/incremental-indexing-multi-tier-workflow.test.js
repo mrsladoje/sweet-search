@@ -7,7 +7,6 @@
  *
  *   - code-graph entities (with FTS5 merge tick)
  *   - codebase.db vectors (via vector-delta-writer)
- *   - Float HNSW (tombstone bitmap + add appends)
  *   - Binary HNSW (tombstone bitmap)
  *   - LI segments (per-segment stale ratio + recompaction trigger)
  *   - Sparse-gram (per-file delta record + watermark)
@@ -59,7 +58,7 @@ afterEach(() => {
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
 });
 
-describe('Float HNSW tombstone bitmap (plan § 7.3)', () => {
+describe('tombstone bitmap primitives (plan § 7.3)', () => {
   it('append + tombstone preserves "tombstone-only writes" semantics', () => {
     const bm = createBitmap(1024);
     // Live state: 100 vectors added.
@@ -402,38 +401,9 @@ describe('HCGS invalidation (plan § 7.7)', () => {
 });
 
 describe('Watermark scheduler (plan § 10)', () => {
-  it('emits float_hnsw job when tombstone fraction exceeds threshold', () => {
-    const jobs = evaluateWatermarks({
-      floatHnsw: { tombstoneFraction: 0.20, deleteCycles: 0 },
-      binaryHnsw: { deadDocRatio: 0 },
-      liSegments: [], sparseGram: {}, fts5: {},
-    });
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0].tier).toBe('float_hnsw');
-    expect(jobs[0].reason).toBe('tombstone_watermark');
-  });
-
-  it('emits float_hnsw job on delete_cycles overflow', () => {
-    const jobs = evaluateWatermarks({
-      floatHnsw: { tombstoneFraction: 0, deleteCycles: 2000 },
-      binaryHnsw: {}, liSegments: [], sparseGram: {}, fts5: {},
-    });
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0].reason).toBe('delete_cycles');
-  });
-
-  it('emits float_hnsw job on live_candidate_shortfall', () => {
-    const jobs = evaluateWatermarks({
-      floatHnsw: { tombstoneFraction: 0, deleteCycles: 0, liveCandidateShortfall: true },
-      binaryHnsw: {}, liSegments: [], sparseGram: {}, fts5: {},
-    });
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0].reason).toBe('live_candidate_shortfall');
-  });
-
   it('emits binary_hnsw job on dead_doc_ratio > 0.30', () => {
     const jobs = evaluateWatermarks({
-      floatHnsw: {}, binaryHnsw: { deadDocRatio: 0.4 },
+      binaryHnsw: { deadDocRatio: 0.4 },
       liSegments: [], sparseGram: {}, fts5: {},
     });
     expect(jobs.find((j) => j.tier === 'binary_hnsw').reason).toBe('dead_doc_ratio');
@@ -441,7 +411,7 @@ describe('Watermark scheduler (plan § 10)', () => {
 
   it('emits per-segment LI jobs for each segment crossing 0.20', () => {
     const jobs = evaluateWatermarks({
-      floatHnsw: {}, binaryHnsw: {},
+      binaryHnsw: {},
       liSegments: [
         { segmentId: 's1', staleDocRatio: 0.1 }, // under
         { segmentId: 's2', staleDocRatio: 0.25 }, // over
@@ -456,13 +426,13 @@ describe('Watermark scheduler (plan § 10)', () => {
 
   it('emits sparse_gram job on deltaSizeRatio or segmentCount', () => {
     const a = evaluateWatermarks({
-      floatHnsw: {}, binaryHnsw: {}, liSegments: [],
+      binaryHnsw: {}, liSegments: [],
       sparseGram: { deltaSizeRatio: 0.15, deltaSegmentCount: 0 }, fts5: {},
     });
     expect(a.find((j) => j.tier === 'sparse_gram')).toBeDefined();
 
     const b = evaluateWatermarks({
-      floatHnsw: {}, binaryHnsw: {}, liSegments: [],
+      binaryHnsw: {}, liSegments: [],
       sparseGram: { deltaSizeRatio: 0, deltaSegmentCount: 100 }, fts5: {},
     });
     expect(b.find((j) => j.tier === 'sparse_gram')).toBeDefined();
@@ -470,7 +440,7 @@ describe('Watermark scheduler (plan § 10)', () => {
 
   it('emits fts5 job on segment count overflow', () => {
     const jobs = evaluateWatermarks({
-      floatHnsw: {}, binaryHnsw: {}, liSegments: [], sparseGram: {},
+      binaryHnsw: {}, liSegments: [], sparseGram: {},
       fts5: { segmentCount: 100 },
     });
     expect(jobs.find((j) => j.tier === 'fts5').payload.segmentCount).toBe(100);
@@ -504,11 +474,11 @@ describe('Watermark scheduler (plan § 10)', () => {
 
   it('loadWatermarkConfig honors env overrides and falls back to defaults', () => {
     const env = {
-      SWEET_SEARCH_HNSW_TOMBSTONE_THRESHOLD: '0.25',
+      SWEET_SEARCH_BINARY_HNSW_DEAD_THRESHOLD: '0.5',
       SWEET_SEARCH_FTS5_MERGE_SEGMENT_THRESHOLD: 'not-a-number',
     };
     const cfg = loadWatermarkConfig(env);
-    expect(cfg.hnswTombstoneFraction).toBe(0.25);
+    expect(cfg.binaryHnswDeadRatio).toBe(0.5);
     expect(cfg.fts5SegmentCount).toBe(DEFAULT_WATERMARKS.fts5SegmentCount);
   });
 });
@@ -516,14 +486,14 @@ describe('Watermark scheduler (plan § 10)', () => {
 describe('Maintenance worker queue (plan § 10.2)', () => {
   it('enqueueMaintenanceJob + readMaintenanceQueue round-trip', () => {
     enqueueMaintenanceJob(tmpDir, {
-      tier: 'float_hnsw', reason: 'crash_recovery', epoch: 100, payload: { reason: 'crash' },
+      tier: 'binary_hnsw', reason: 'crash_recovery', epoch: 100, payload: { reason: 'crash' },
     });
     enqueueMaintenanceJob(tmpDir, {
       tier: 'li_segment', reason: 'stale_doc_ratio', epoch: 100, payload: { segmentId: 's1' },
     });
     const jobs = readMaintenanceQueue(tmpDir);
     expect(jobs).toHaveLength(2);
-    expect(jobs[0].tier).toBe('float_hnsw');
+    expect(jobs[0].tier).toBe('binary_hnsw');
     expect(jobs[1].tier).toBe('li_segment');
     expect(jobs[0].createdAt).toBeDefined();
   });

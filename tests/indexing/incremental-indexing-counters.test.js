@@ -14,7 +14,7 @@ describe('reconcile-counters', () => {
     const snap = c.snapshot();
     expect(snap.chunks_encoded).toBe(0);
     expect(snap.chunks_struct_stable).toBe(0);
-    expect(snap.ops_per_tier.hnsw_add).toBe(0);
+    expect(snap.ops_per_tier.binary_hnsw_append).toBe(0);
     expect(snap.watermarks.fts5_segment_count).toBe(0);
     expect(snap.wal.last_truncate_busy).toBe(false);
   });
@@ -28,9 +28,9 @@ describe('reconcile-counters', () => {
 
   it('inc() with dotted key increments nested ops_per_tier scalars', () => {
     const c = new ReconcileCounters();
-    c.inc('ops_per_tier.hnsw_add', 3);
+    c.inc('ops_per_tier.binary_hnsw_append', 3);
     c.inc('ops_per_tier.li_tombstone');
-    expect(c.snapshot().ops_per_tier.hnsw_add).toBe(3);
+    expect(c.snapshot().ops_per_tier.binary_hnsw_append).toBe(3);
     expect(c.snapshot().ops_per_tier.li_tombstone).toBe(1);
   });
 
@@ -61,7 +61,7 @@ describe('reconcile-counters', () => {
     expect(snap).toHaveProperty('tree_sitter_files_with_errors');
     expect(snap.ops_per_tier).toHaveProperty('sparse_gram_delta_upsert');
     expect(snap.ops_per_tier).toHaveProperty('fts5_merge_calls');
-    expect(snap.watermarks).toHaveProperty('hnsw_tombstone_fraction');
+    expect(snap.watermarks).toHaveProperty('binary_hnsw_dead_doc_ratio');
     expect(snap.wal).toHaveProperty('code_graph_db_wal_bytes');
   });
 });

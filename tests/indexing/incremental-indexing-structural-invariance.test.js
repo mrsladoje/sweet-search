@@ -555,7 +555,6 @@ describe('Reconciler orchestration over a real adapter (multi-file)', () => {
           vectorOps: [], tokenOps: [], gramOps: [],
         };
       },
-      applyHNSWDelta: async () => ({ ops: { hnsw_add: 0, hnsw_tombstone: 0 } }),
       applyBinaryHNSWDelta: async () => ({ ops: { binary_hnsw_append: 0 } }),
       applyLIDelta: async () => ({ ops: { li_segment_append: 0 } }),
       applySparseGramDelta: async () => ({ ops: { sparse_gram_delta_upsert: 0 } }),

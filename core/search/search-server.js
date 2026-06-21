@@ -595,7 +595,6 @@ export async function startServer() {
 
     const componentState = {
       graphIndex: Boolean(searcher.hasGraphIndex),
-      hnswIndex: Boolean(searcher.hasHnswIndex),
       binaryHnswIndex: Boolean(searcher.hasBinaryHnswIndex),
       lateInteractionIndex: Boolean(searcher.hasLateInteractionIndex && searcher.useLateInteraction),
       embeddingService: serverReady,

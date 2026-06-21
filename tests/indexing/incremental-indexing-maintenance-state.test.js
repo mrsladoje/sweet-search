@@ -2,10 +2,10 @@
  * Tests for core/incremental-indexing/infrastructure/maintenance-state-reader.mjs
  *
  * Plan § 6.2 / § 10: the production adapter's `readMaintenanceState()`
- * must surface Float HNSW, Binary HNSW, and LI segment metrics in
- * addition to the existing FTS5 and sparse-gram counters. Without those
- * three signals the watermark scheduler stays blind to three of five
- * tiers (see eval/results/incremental-soak/REPORT.md § 6.2 Finding 1).
+ * must surface Binary HNSW and LI segment metrics in addition to the
+ * existing FTS5 and sparse-gram counters. Without those signals the
+ * watermark scheduler stays blind to those tiers (see
+ * eval/results/incremental-soak/REPORT.md § 6.2 Finding 1).
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -15,7 +15,6 @@ import path from 'node:path';
 
 import {
   readMaintenanceState,
-  readFloatHnswState,
   readBinaryHnswState,
   readLiSegmentsState,
 } from '../../core/incremental-indexing/infrastructure/maintenance-state-reader.mjs';
@@ -46,60 +45,16 @@ describe('maintenance-state-reader / missing artifacts', () => {
     const state = readMaintenanceState(stateDir);
     expect(state.fts5).toEqual({ segmentCount: 0 });
     expect(state.sparseGram.deltaSegmentCount).toBe(0);
-    expect(state.floatHnsw).toEqual({ tombstoneFraction: 0, deleteCycles: 0 });
     expect(state.binaryHnsw).toEqual({ deadDocRatio: 0 });
     expect(state.liSegments).toEqual([]);
   });
 
   it('handles a corrupt meta.json without throwing', () => {
-    fs.writeFileSync(path.join(stateDir, 'codebase-hnsw.meta.json'), 'not-json{');
     fs.writeFileSync(path.join(stateDir, 'codebase-binary-hnsw.meta.json'), '{{{broken');
     fs.writeFileSync(path.join(stateDir, 'codebase-late-interaction.db'), '<<<');
     const state = readMaintenanceState(stateDir);
-    expect(state.floatHnsw.tombstoneFraction).toBe(0);
     expect(state.binaryHnsw.deadDocRatio).toBe(0);
     expect(state.liSegments).toEqual([]);
-  });
-});
-
-describe('maintenance-state-reader / Float HNSW', () => {
-  let stateDir;
-  beforeEach(() => {
-    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-maint-state-hnsw-'));
-  });
-  afterEach(() => fs.rmSync(stateDir, { recursive: true, force: true }));
-
-  it('returns zero fraction when no stale bitmap exists', () => {
-    writeJson(path.join(stateDir, 'codebase-hnsw.meta.json'), {
-      idMap: Array.from({ length: 10 }, (_, i) => [`id-${i}`, i]),
-      nextKey: 10,
-    });
-    expect(readFloatHnswState(stateDir)).toEqual({ tombstoneFraction: 0, deleteCycles: 0 });
-  });
-
-  it('computes tombstoneFraction = popcount / (popcount + live)', () => {
-    // 8 live ids, 2 tombstoned → fraction = 2 / 10 = 0.2
-    writeJson(path.join(stateDir, 'codebase-hnsw.meta.json'), {
-      idMap: Array.from({ length: 8 }, (_, i) => [`id-${i}`, i]),
-      nextKey: 10,
-    });
-    writeBitmap(path.join(stateDir, 'codebase-hnsw.idx.stale.bin'), 16, [8, 9]);
-    expect(readFloatHnswState(stateDir).tombstoneFraction).toBeCloseTo(0.2, 5);
-  });
-
-  it('crosses the default watermark and schedules float_hnsw', () => {
-    // 5 live, 5 tombstoned → fraction = 0.5 (above 0.15 default)
-    writeJson(path.join(stateDir, 'codebase-hnsw.meta.json'), {
-      idMap: Array.from({ length: 5 }, (_, i) => [`id-${i}`, i]),
-      nextKey: 10,
-    });
-    writeBitmap(path.join(stateDir, 'codebase-hnsw.idx.stale.bin'), 16, [5, 6, 7, 8, 9]);
-    const state = readMaintenanceState(stateDir);
-    const jobs = evaluateWatermarks(state, DEFAULT_WATERMARKS);
-    expect(jobs.find((j) => j.tier === 'float_hnsw')).toMatchObject({
-      tier: 'float_hnsw',
-      reason: 'tombstone_watermark',
-    });
   });
 });
 

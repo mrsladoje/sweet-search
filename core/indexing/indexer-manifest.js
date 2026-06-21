@@ -24,8 +24,6 @@ export function defaultIndexerManifestPaths() {
   return {
     codeGraph: basename(DB_PATHS.codeGraph),
     vectors: basename(DB_PATHS.codebase),
-    hnsw: basename(DB_PATHS.hnswIndex),
-    hnswStale: basename(DB_PATHS.hnswIndex) + '.stale.bin',
     binaryHnsw: basename(DB_PATHS.binaryHnswIndex),
     liManifest: `${liBase}.segments/manifest.json`,
     sparseBase: basename(DB_PATHS.sparseGramIndex),

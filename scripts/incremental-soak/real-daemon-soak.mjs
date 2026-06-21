@@ -512,7 +512,6 @@ function measureArtifacts(stateDir) {
     bytes: {
       vectorsDb: safeStatSize(path.join(stateDir, 'codebase.db')),
       graphDb: safeStatSize(path.join(stateDir, 'code-graph.db')),
-      hnswUsearch: safeStatSize(path.join(stateDir, 'codebase-hnsw.usearch')),
       binaryHnswVectors: safeStatSize(path.join(stateDir, 'codebase-binary-hnsw.vectors.json')),
     },
     sparseDeltaSegments,
@@ -1228,7 +1227,7 @@ async function modeCrashProbe({ args, emit, fixtureRoot, stateDir }) {
   // the canonical files. (Mirrors the real runReconcileV2Main sweep, which
   // the wrapper now also runs after lock acquisition.)
   const plantedOrphans = [
-    path.join(stateDir, 'codebase-hnsw.usearch.tmp.999999'),
+    path.join(stateDir, 'codebase-binary-hnsw.int8.json.tmp.999999'),
     path.join(stateDir, 'codebase-binary-hnsw.graph.json.tmp.999998'),
     path.join(stateDir, 'codebase-late-interaction.db.selfheal.tmp'),
   ];
@@ -1236,7 +1235,7 @@ async function modeCrashProbe({ args, emit, fixtureRoot, stateDir }) {
   if (fs.existsSync(deltaDir)) plantedOrphans.push(path.join(deltaDir, '999999-9.ssgrmdelta.compacting.tmp'));
   const liSegDir = path.join(stateDir, 'codebase-late-interaction.db.segments');
   if (fs.existsSync(liSegDir)) plantedOrphans.push(path.join(liSegDir, 'phantom-segment.bin.compacting.tmp'));
-  const canonicalGuards = ['codebase.db', 'reconcile-manifest.json', 'codebase-hnsw.usearch']
+  const canonicalGuards = ['codebase.db', 'reconcile-manifest.json', 'codebase-binary-hnsw.idx']
     .map((n) => path.join(stateDir, n)).filter((p) => fs.existsSync(p));
   const oldSecs = (Date.now() - 5 * 60_000) / 1000; // 5 min ago
   for (const p of plantedOrphans) {

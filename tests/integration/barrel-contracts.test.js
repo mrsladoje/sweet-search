@@ -87,8 +87,6 @@ describe('Domain Barrel Contracts', () => {
 
     it('exports indexer-ann', async () => {
       const m = await import('../../core/indexing/indexer-ann.js');
-      expect(m.buildHNSWIndex).toBeTypeOf('function');
-      expect(m.incrementalUpdateHNSW).toBeTypeOf('function');
       expect(m.buildLateInteractionIndex).toBeTypeOf('function');
       expect(m.buildQuantizedArtifactsPhase).toBeTypeOf('function');
     });
@@ -220,7 +218,6 @@ describe('Domain Barrel Contracts', () => {
   describe('core/vector-store', () => {
     it('exports public API', async () => {
       const m = await import('../../core/vector-store/index.js');
-      expect(m.HNSWIndex).toBeTypeOf('function');
       expect(m.BinaryHNSWIndex).toBeTypeOf('function');
       expect(m.FloatVectorStore).toBeTypeOf('function');
       expect(m.SeismicIndex).toBeTypeOf('function');

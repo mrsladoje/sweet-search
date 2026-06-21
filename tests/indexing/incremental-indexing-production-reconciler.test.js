@@ -99,11 +99,6 @@ function liveFtsNames(stateDir, term) {
   `).all(term).map((r) => r.name));
 }
 
-function hnswLiveIds(stateDir) {
-  const meta = readJson(join(stateDir, 'codebase-hnsw.meta.json'));
-  return new Set(meta.idMap.map(([id]) => id));
-}
-
 function binaryArtifacts(stateDir) {
   const int8Path = join(stateDir, 'codebase-binary-hnsw.int8.json');
   return {
@@ -169,7 +164,7 @@ describe('production incremental Reconciler', () => {
     });
   }
 
-  it('updates graph, vectors, HNSW, binary HNSW, LI, sparse grams, manifest, and merkle state across add/update/delete', async () => {
+  it('updates graph, vectors, binary HNSW, LI, sparse grams, manifest, and merkle state across add/update/delete', async () => {
     writeFileSync(sourceFile, [
       "import { readFile } from 'node:fs';",
       'export function alphaThing(input) {',
@@ -182,7 +177,6 @@ describe('production incremental Reconciler', () => {
     const first = await tick();
     expect(first.files_processed).toBe(1);
     expect(first.ops_per_tier.vectors_upsert).toBeGreaterThan(0);
-    expect(first.ops_per_tier.hnsw_add).toBe(first.ops_per_tier.vectors_upsert);
     expect(first.ops_per_tier.binary_hnsw_append).toBe(first.ops_per_tier.vectors_upsert);
     expect(first.ops_per_tier.li_segment_append).toBe(first.ops_per_tier.vectors_upsert);
     expect(first.ops_per_tier.sparse_gram_delta_upsert).toBe(1);
@@ -214,7 +208,6 @@ describe('production incremental Reconciler', () => {
     expect(graph1.relationships.every((rel) => !rel.source_id || liveEntityIds1.has(rel.source_id))).toBe(true);
     expect(liveFtsNames(stateDir, 'alphaThing')).toContain('alphaThing');
 
-    expect(hnswLiveIds(stateDir)).toEqual(new Set(live1.map((row) => row.id)));
     expect(new Set(binaryArtifacts(stateDir).vectors.map((row) => row.id))).toEqual(new Set(live1.map((row) => row.id)));
     expect(new Set(Object.keys(binaryArtifacts(stateDir).int8))).toEqual(new Set(live1.map((row) => row.id)));
     expect(await liDocumentIds(stateDir)).toEqual(new Set(live1.map((row) => row.id)));
@@ -245,7 +238,6 @@ describe('production incremental Reconciler', () => {
     const second = await tick();
     expect(second.epoch).toBe(2);
     expect(second.ops_per_tier.vectors_delete).toBeGreaterThan(0);
-    expect(second.ops_per_tier.hnsw_tombstone).toBeGreaterThan(0);
     expect(second.ops_per_tier.binary_hnsw_tombstone).toBeGreaterThan(0);
     expect(second.ops_per_tier.li_tombstone).toBeGreaterThan(0);
 
@@ -270,9 +262,7 @@ describe('production incremental Reconciler', () => {
     }));
     expect(liveFtsNames(stateDir, 'alphaThing')).toEqual([]);
     expect(liveFtsNames(stateDir, 'betaThing')).toContain('betaThing');
-    expect(existsSync(join(stateDir, 'codebase-hnsw.idx.stale.bin'))).toBe(true);
     expect(existsSync(join(stateDir, 'codebase-binary-hnsw.idx.stale.bin'))).toBe(true);
-    expect(hnswLiveIds(stateDir)).toEqual(new Set(live2.map((row) => row.id)));
     expect(await liDocumentIds(stateDir)).toEqual(new Set(live2.map((row) => row.id)));
     // Modify: float store replaces retired vectors with the new ones — id-set
     // tracks the live rows exactly, leaving no stale/duplicate vectors behind.
@@ -287,7 +277,6 @@ describe('production incremental Reconciler', () => {
     expect(third.ops_per_tier.vectors_delete).toBeGreaterThan(0);
     expect(vectorRows(stateDir).filter((row) => row.epoch_retired == null)).toEqual([]);
     expect(graphRows(stateDir).entities.filter((row) => row.epoch_retired == null)).toEqual([]);
-    expect(hnswLiveIds(stateDir).size).toBe(0);
     expect(Object.keys(binaryArtifacts(stateDir).int8)).toEqual([]);
     // Delete: the float store empties out so semantic search cannot rescore a
     // retired doc. The store stays valid/loadable at zero entries.

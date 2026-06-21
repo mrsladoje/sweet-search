@@ -216,7 +216,6 @@ describe('runReconcileV2Tick baseline gate', () => {
       'reconcile-manifest.json',
       'merkle-state.json',
       'index-maintainer-queue.jsonl',
-      'codebase-hnsw.usearch',
     ]) {
       expect(existsSync(join(stateDir, artifact))).toBe(false);
     }

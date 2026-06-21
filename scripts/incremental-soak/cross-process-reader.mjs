@@ -2,7 +2,7 @@
 /**
  * Cross-process reader worker for the incremental-indexing cross-process soak.
  *
- * This process is the "search server stand-in" — it loads HNSW, Binary HNSW,
+ * This process is the "search server stand-in" — it loads Binary HNSW,
  * LI, sparse-gram and SQLite artifacts via the same code paths SweetSearch
  * uses, then exposes JSON-line RPC commands over stdin/stdout so the
  * orchestrator can probe both the long-lived (cached) view and a freshly-
@@ -32,7 +32,6 @@ import readline from 'node:readline';
 import Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 
-import { HNSWIndex } from '../../core/vector-store/hnsw-index.js';
 import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import { readManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
@@ -60,7 +59,6 @@ function digest(values) {
 class ReaderState {
   constructor(stateDir) {
     this.stateDir = path.resolve(stateDir);
-    this.hnsw = null;
     this.binaryHnsw = null;
     this.li = null;
     this.manifestAtLoad = null;
@@ -72,26 +70,6 @@ class ReaderState {
     this.loadOrder += 1;
     this.loadedAt = Date.now();
     this.manifestAtLoad = readManifest(this.stateDir);
-
-    const hnswMetaPath = path.join(this.stateDir, 'codebase-hnsw.meta.json');
-    this.hnsw = null;
-    if (fs.existsSync(hnswMetaPath)) {
-      const idx = new HNSWIndex({
-        indexPath: path.join(this.stateDir, 'codebase-hnsw.idx'),
-        stalePath: path.join(this.stateDir, 'codebase-hnsw.idx.stale.bin'),
-      });
-      // mmap mirrors what SweetSearch uses, but the in-place .usearch
-      // rewrite by maintenance is precisely the case we want to stress.
-      // Env knob lets us isolate mmap-vs-copy contributions if we crash.
-      const useMmap = process.env.SWEET_SEARCH_XPROC_HNSW_MMAP !== '0';
-      try {
-        await idx.load(undefined, { mmap: useMmap });
-        this.hnsw = idx;
-      } catch (err) {
-        logErr(`hnsw load failed (mmap=${useMmap}): ${err.message}`);
-        this.hnsw = { _loadError: err.message };
-      }
-    }
 
     const binMetaPath = path.join(this.stateDir, 'codebase-binary-hnsw.meta.json');
     this.binaryHnsw = null;
@@ -183,37 +161,6 @@ class ReaderState {
       }
     } catch (err) {
       errors.push({ surface: 'vectors', error: err.message });
-    }
-
-    // HNSW (in-memory + on-disk-tolerant stale bitmap).
-    try {
-      if (this.hnsw && this.hnsw._loadError) {
-        out.hnsw = { loadError: this.hnsw._loadError };
-      } else if (this.hnsw) {
-        const idMap = this.hnsw.idMap || new Map();
-        const ids = [...idMap.keys()];
-        // The HNSWIndex internally uses _loadStaleBitmap with mtime caching;
-        // reading it here mirrors the live search path.
-        let stalePopcount = 0;
-        try {
-          const bm = this.hnsw._loadStaleBitmap?.() || null;
-          if (bm) {
-            for (const [, key] of idMap) {
-              if (this.hnsw._isKeyStale?.(key, bm)) stalePopcount += 1;
-            }
-          }
-        } catch (err) {
-          errors.push({ surface: 'hnsw_stale', error: err.message });
-        }
-        out.hnsw = {
-          ids: digest(ids),
-          stalePopcount,
-          dimension: this.hnsw.dimension,
-          nextKey: this.hnsw.nextKey,
-        };
-      }
-    } catch (err) {
-      errors.push({ surface: 'hnsw', error: err.message });
     }
 
     // Binary HNSW.
@@ -324,30 +271,14 @@ class ReaderState {
   }
 
   /**
-   * Cheap smoke test for HNSW + Binary HNSW search: run a fixed-dimension
-   * zero-ish query through both indices. The goal is NOT retrieval quality;
+   * Cheap smoke test for Binary HNSW search: run a fixed-dimension
+   * zero-ish query through the index. The goal is NOT retrieval quality;
    * the goal is to confirm that the in-memory search routines do not throw
    * or return torn results after a maintenance publish — a stale mmap or
-   * torn .usearch / vectors.json would surface here.
+   * torn vectors.json would surface here.
    */
   async smoke() {
-    const out = { hnsw: null, binaryHnsw: null };
-    if (this.hnsw && !this.hnsw._loadError) {
-      try {
-        const dim = this.hnsw.dimension || 8;
-        const q = new Array(dim).fill(0);
-        q[0] = 1;
-        const res = await this.hnsw.search(q, 5);
-        out.hnsw = {
-          ok: true,
-          returned: res.results?.length ?? 0,
-          total: res.total ?? null,
-          sampleIds: (res.results || []).map((r) => r.id),
-        };
-      } catch (err) {
-        out.hnsw = { ok: false, error: err.message };
-      }
-    }
+    const out = { binaryHnsw: null };
     if (this.binaryHnsw && !this.binaryHnsw._loadError) {
       try {
         const dim = this.binaryHnsw.floatDimension || 8;
