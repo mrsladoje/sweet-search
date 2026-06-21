@@ -540,3 +540,137 @@ integers (~800 KB for 100K rows) — negligible.
 - SQLite WAL docs: `autocheckpoint`, `wal_checkpoint(TRUNCATE)`, `mmap_size`
 - POSIX fsync ordering: file fsync + directory fsync for durable rename
 - Qdrant memory article: 1M vectors served with 135 MB RAM via full mmap
+
+---
+
+## 15. Streaming rebuild for large repos (2026-06) — restores Phase B/C at any scale
+
+> **Status**: Implemented. `core/indexing/streaming-vectors.js`,
+> `core/indexing/indexer-phases.js` (gate), `core/ranking/late-interaction-index.js`
+> (bounded build mode), `core/indexing/dedup/dedup-phase.js` (shared annotation).
+
+### 15.1 The regression
+
+Phases B (streaming embeddings) and C (segmented LI flush) above were quietly
+defeated for the **default local-model path** by two later, well-intentioned
+changes:
+
+1. **Global length-sort embed.** `buildVectorIndex` sends *all* texts to the
+   bucketer in one call (`batchSize = embedTexts.length`) so
+   `callLocalModelBucketed` can globally length-sort for uniform batches. That
+   makes `pipelinedEmbedAndInsert`'s outer loop run **once**, so the embeddings
+   array + insert rows + write buffer accumulate the whole corpus before a
+   single flush — Phase B's "embeddings[] peak: 0 MB" no longer holds.
+2. **LI docs never evicted.** `LateInteractionIndex.add()` keeps every doc in
+   `this.documents` for the whole build; `_flushSegment()` released only the
+   rolling 10k `_currentSegment`, not `this.documents`. Phase C's "~33 MB (1
+   segment)" became O(all docs) of per-token slabs.
+
+Add the always-resident chunk corpus (`chunkFiles()` → every chunk + every
+embed-text held through dedup/embed/LI) and the alias-insert materialising all
+alias rows at once, and peak heap is **O(repo)**. Measured on the default ~4 GB
+Node heap:
+
+| Repo | Files | Chunks | Dedup | Dominant hog | In-memory result |
+|------|-------|--------|-------|--------------|------------------|
+| tursodatabase/libsql @59b922b | 24,238 | **431,260** | 94.2% alias (25,124 exemplars) | chunk corpus (~3 GB) + 406k alias rows | parallel: **hang → SIGKILL @ 6.5 GB RSS**; sequential: borderline |
+| swc-project/swc | 62,609 | **216,940** | 17% alias (180,156 exemplars) | embed output + LI per-token (180k) | OOM / hang |
+
+This is **backend-agnostic**: the hogs are JS-side (chunk objects, embedding
+arrays, LI slabs, alias rows), so CUDA, Metal, CoreML and ORT-CPU all crash the
+same way. (The Apple parallel-LI Metal *hang* is an additional symptom; the
+underlying memory blow-up is universal.)
+
+### 15.2 The fix — bounded-window streaming
+
+For **large full rebuilds** (`filesToIndex.length ≥ SWEET_SEARCH_STREAM_MIN_FILES`,
+default 5000) the phase routes to `buildVectorsAndLiStreaming` instead of the
+in-memory `buildVectorIndex ‖ buildLateInteractionIndex`. Small repos and all
+incremental runs keep the byte-identical in-memory path, so **benchmark indexes
+are unaffected** (auto-selected by size; no opt-in flag — set
+`SWEET_SEARCH_STREAM_VECTORS=0` to force legacy).
+
+```
+1. PARSE+SPILL  parse files in windows (reuse chunkFiles), compute dedup
+                fingerprints, apply the LI skip policy, spill each chunk to a
+                temp SQLite store. Only lightweight per-chunk records stay
+                resident (id, text length, path/hash, fingerprint, li-keep).
+2. DEDUP        cluster the resident fingerprints GLOBALLY (identical clusters
+                to the in-memory path — verified byte-for-byte on libsql:
+                13,198 clusters / 406,136 aliases) and annotate the records.
+3. EMBED        hydrate ONLY exemplar seqs (file-aligned windows) and insert via
+                the UNCHANGED pipelinedEmbedAndInsert → callLocalModelBucketed.
+4. ALIAS        hydrate ONLY alias seqs in windows; copy exemplar vectors via
+                the UNCHANGED insertAliasVectors (orphan purge skipped — a fresh
+                build can't orphan).
+5. LI           feed LI-lite records (exemplar token-text only; eligible aliases
+                are pointer-only) to the UNCHANGED buildLateInteractionIndex in
+                bounded build mode: each flushed segment's per-token slabs are
+                evicted (peak O(one segment)). A lightweight exemplar-id set
+                keeps alias-pointer registration valid post-eviction.
+```
+
+Peak heap is **O(window)** + a tiny O(repo) bookkeeping array (ids/offsets/
+fingerprints), regardless of repo size or backend.
+
+### 15.3 What is deliberately NOT changed
+
+- **The tuned compute-batching.** `callLocalModelBucketed` (cache-aware batch
+  sizing — §"Cache-aware batching" in the README) and
+  `buildLateInteractionBatches` are reused verbatim. Streaming only changes
+  *where chunk text lives* (disk vs heap) and *how results are flushed*, not how
+  compute batches are formed. For repos that fit one window the embed call is
+  identical to today.
+- **Global dedup.** Preserved (clustering runs over all fingerprints), so
+  dup-heavy repos keep their alias short-cut and don't re-embed everything —
+  the "don't slow down" guard for libsql-class repos.
+- **On-disk format.** codebase.db vectors + atomic swap, SSLX-v3 LI segments,
+  binary-HNSW/int8 artifacts — all identical. Existing goldens stay readable.
+
+### 15.4 Cost
+
+The spill writes each chunk to a temp SQLite file once and reads back only the
+seqs each pass needs (exemplars for embed, aliases for alias-insert; LI input is
+assembled during those passes). The IO is a few seconds against a multi-minute
+encode, so indexing throughput is unchanged. The temp store is deleted in a
+`finally`.
+
+### 15.5 Results
+
+**Memory (libsql @59b922b vectors phase, ~431k chunks):**
+
+| Path | Peak RSS | Outcome |
+|------|----------|---------|
+| In-memory, parallel embed+LI (Apple default) | **6.5 GB** | hang -> SIGKILL |
+| In-memory, sequential (`--max-old-space-size=4096`) | **~6.0 GB** | completes, borderline |
+| **Streaming** (default heap) | **~4.2 GB** | bounded |
+| **Streaming** (hard `--max-old-space-size=2048`) | ~3.3 GB RSS | **V8 heap held under 2 GB** through parse + global dedup + embed |
+
+The streaming RSS is dominated by the *evictable* 1.3 GB code-graph.db mmap +
+the model; the V8 managed heap (what OOMs) is far lower and bounded by the
+window, not the repo. Streaming uses **less** memory than the in-memory path
+*and* removes the O(repo) growth entirely.
+
+**Correctness (no MRR regression):** indexing a corpus via streaming vs
+in-memory produces a **byte-identical `codebase.db`** -- every embedding BLOB
+and the full exemplar/alias dedup partition match exactly (maxAbsDiff = 0) -- so
+search results, and therefore MRR, are identical. This holds exactly for any
+repo whose exemplars fit one embed window (GCSN-class benchmarks); larger repos
+differ only by the floating-point batch-shape nondeterminism already present in
+the in-memory baseline. At libsql scale the global dedup is byte-identical
+(13,198 clusters / 406,136 aliases).
+
+**End-to-end:** `tests/integration/streaming-vectors.integration.test.js`
+indexes a synthetic pathological repo (a 250k-line >1 MB generated file + a
+binary blob + 160 files incl. near-duplicates) through the forced streaming path
+under a constrained heap and asserts it completes, the oversized + binary files
+are skipped by admission, global dedup runs, and an in-process `SweetSearch`
+query returns ranked results. Every change is in the JS accumulation layer, so
+this is backend-agnostic (CUDA / Metal / CoreML / ORT-CPU).
+
+> Note: a *full* end-to-end libsql run on Apple Silicon intermittently stalls in
+> the CoreML/ANE embed under sustained load on a hot machine (the same
+> `embedBatch` call the in-memory path makes -- orthogonal to this memory fix).
+> Bounded memory, byte-identical-index parity, and the end-to-end integration
+> test establish the fix independently of that backend flakiness; ORT-CPU
+> completes libsql without it.

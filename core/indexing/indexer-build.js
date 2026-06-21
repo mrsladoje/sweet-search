@@ -424,7 +424,7 @@ function prepareVectorInsert(db) {
  * call this AFTER pipelinedEmbedAndInsert has written the exemplar rows.
  * Returns the number of alias rows inserted.
  */
-export function insertAliasVectors(db, aliases, modelInfo) {
+export function insertAliasVectors(db, aliases, modelInfo, options = {}) {
   if (!aliases || aliases.length === 0) return 0;
 
   const fetchExemplar = db.prepare(
@@ -443,16 +443,24 @@ export function insertAliasVectors(db, aliases, modelInfo) {
   // resolves to a live vectors row. This happens in incremental re-index
   // when a file containing an exemplar is deleted but alias files in
   // untouched paths still reference it.
-  const orphanDelete = db.prepare(`
-    DELETE FROM vectors
-    WHERE json_extract(metadata, '$.exemplarId') IS NOT NULL
-      AND json_extract(metadata, '$.exemplarId') NOT IN (
-        SELECT id FROM vectors WHERE json_extract(metadata, '$.exemplarId') IS NULL
-      )
-  `);
-  const orphansRemoved = orphanDelete.run().changes;
-  if (orphansRemoved > 0) {
-    log(`  ⚠ Purged ${orphansRemoved} orphan alias row(s) (exemplar absent)`, 'yellow');
+  //
+  // `skipOrphanPurge` is set by the streaming full-rebuild path, which calls
+  // this once per window into a FRESH temp db: there are no pre-existing rows
+  // to orphan, and the full-table json_extract scan would otherwise run once
+  // per window (O(windows × table)). A from-scratch build can never produce
+  // orphans, so skipping it is safe and keeps indexing fast.
+  if (!options.skipOrphanPurge) {
+    const orphanDelete = db.prepare(`
+      DELETE FROM vectors
+      WHERE json_extract(metadata, '$.exemplarId') IS NOT NULL
+        AND json_extract(metadata, '$.exemplarId') NOT IN (
+          SELECT id FROM vectors WHERE json_extract(metadata, '$.exemplarId') IS NULL
+        )
+    `);
+    const orphansRemoved = orphanDelete.run().changes;
+    if (orphansRemoved > 0) {
+      log(`  ⚠ Purged ${orphansRemoved} orphan alias row(s) (exemplar absent)`, 'yellow');
+    }
   }
 
   const items = [];

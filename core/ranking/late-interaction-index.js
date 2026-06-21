@@ -376,6 +376,21 @@ export class LateInteractionIndex {
     this._segmentSize = options.segmentSize || LI_SEGMENT_SIZE;
     this._docSegmentPositions = new Map(); // doc id -> { segmentPath, docIndex }
     this._staleBitmapCache = new Map(); // segment path -> { mtimeMs, size, bitmap }
+
+    // Bounded build mode (Phase C completion). When `buildEvict` is set,
+    // _flushSegment() drops each flushed segment's per-token slabs from
+    // `this.documents` so peak indexing memory stays O(one segment) instead of
+    // O(all docs) — the regression that let large repos accumulate the entire
+    // per-token corpus in the heap. Only safe during a from-scratch build (no
+    // search reads, no rewrite-from-documents save path). The fast-path save()
+    // writes the manifest from the already-flushed segment files, so it never
+    // needs the evicted docs back. A lightweight id set keeps alias-pointer
+    // registration valid after the exemplar's tokens are gone, and running
+    // doc/token totals keep getStats() + the save() doc-count accurate.
+    this._evictMode = !!options.buildEvict;
+    this._evictedDocs = 0;
+    this._evictedTokens = 0;
+    this._addedIds = this._evictMode ? new Set() : null;
   }
 
   /**
@@ -406,6 +421,21 @@ export class LateInteractionIndex {
     this._finalIndexPath = finalIndexPath;
     this._segments = [];
     this._currentSegment = new Map();
+    // Reset bounded-build counters for the fresh staged save.
+    this._evictedDocs = 0;
+    this._evictedTokens = 0;
+    if (this._addedIds) this._addedIds.clear();
+  }
+
+  /**
+   * True if `id` is (or was) a document in this build — checks both the live
+   * `documents` map and, in bounded build mode, the lightweight id set that
+   * survives segment eviction. Alias-pointer registration uses this to verify
+   * an exemplar exists even after its per-token slab has been flushed+evicted.
+   */
+  hasDoc(id) {
+    if (this.documents.has(id)) return true;
+    return this._addedIds ? this._addedIds.has(id) : false;
   }
 
   /**
@@ -568,6 +598,7 @@ export class LateInteractionIndex {
     this.documents.set(id, docEntry);
     if (docEntry.minArray) this._hasPerTokenQuant = true;
     this._currentSegment.set(id, docEntry);
+    if (this._evictMode) this._addedIds.add(id);
 
     // Flush segment to disk when full — releases memory for completed segments
     if (this._currentSegment.size >= this._segmentSize) {
@@ -594,6 +625,18 @@ export class LateInteractionIndex {
 
     await this._writeSegmentFile(segPath, this._currentSegment);
     this._segments.push({ path: segPath, count: this._currentSegment.size });
+
+    // Bounded build mode: drop this segment's per-token slabs from the live
+    // documents map now that they're durable on disk. Keeps peak heap O(one
+    // segment). The id set + running totals preserve everything later stages
+    // need (alias validity via hasDoc(), doc/token counts for save()+stats).
+    if (this._evictMode) {
+      for (const [id, doc] of this._currentSegment) {
+        this.documents.delete(id);
+        this._evictedDocs++;
+        this._evictedTokens += doc.numTokens || 0;
+      }
+    }
 
     // Release segment memory — these docs will be reloaded from segments during load()
     this._currentSegment = new Map();
@@ -1594,11 +1637,16 @@ export class LateInteractionIndex {
   async save() {
     await fs.mkdir(path.dirname(this.indexPath), { recursive: true });
 
+    // Total doc count including any flushed-and-evicted segments (bounded build
+    // mode). In normal mode `_evictedDocs` is 0, so this is byte-identical to
+    // `this.documents.size`.
+    const effectiveTotal = this.documents.size + this._evictedDocs;
+
     // Use segmented format when the doc count exceeds one segment.
     // Always rewrite ALL segments from this.documents (the authoritative
     // state) — never reuse stale segment files from a previous load,
     // because documents may have been removed since then.
-    const useSegmented = this.documents.size >= this._segmentSize;
+    const useSegmented = effectiveTotal >= this._segmentSize;
 
     if (useSegmented) {
       if (!this._loadedExisting) {
@@ -1607,7 +1655,7 @@ export class LateInteractionIndex {
         }
 
         const flushedCount = this._segments.reduce((sum, segment) => sum + segment.count, 0);
-        if (flushedCount === this.documents.size && this._segments.length > 0) {
+        if (flushedCount === effectiveTotal && this._segments.length > 0) {
           // Staging-aware segment directory. _segmentDir was pre-seeded by
           // resetForSave() when staging; otherwise derive from indexPath.
           const segDir = this._segmentDir || (this.indexPath + '.segments');
@@ -1623,7 +1671,7 @@ export class LateInteractionIndex {
             poolFactor: this.poolFactor,
             whtSeed: this.whtSeed || 0,
             whtOrdering: this.whtOrdering,
-            totalDocuments: this.documents.size,
+            totalDocuments: effectiveTotal,
             segments: this._segments.map((segment) => ({
               path: path.basename(segment.path),
               count: segment.count,
@@ -2362,13 +2410,16 @@ export class LateInteractionIndex {
    * Get index statistics
    */
   getStats() {
-    let totalTokens = 0;
+    let totalTokens = this._evictedTokens || 0;
     for (const doc of this.documents.values()) {
       totalTokens += doc.numTokens;
     }
 
-    const avgTokens = this.documents.size > 0 ?
-      (totalTokens / this.documents.size).toFixed(1) : 0;
+    // In bounded build mode, flushed docs are evicted from `documents` but their
+    // counts live in `_evictedDocs`/`_evictedTokens` so stats stay accurate.
+    const docCount = this.documents.size + (this._evictedDocs || 0);
+    const avgTokens = docCount > 0 ?
+      (totalTokens / docCount).toFixed(1) : 0;
 
     let bytesPerToken;
     if (this.quantBits === 4) {
@@ -2381,7 +2432,7 @@ export class LateInteractionIndex {
     const estimatedMB = (totalTokens * bytesPerToken / 1024 / 1024).toFixed(2);
 
     return {
-      documents: this.documents.size,
+      documents: docCount,
       totalTokens,
       avgTokensPerDoc: avgTokens,
       tokenDim: this.tokenDim,

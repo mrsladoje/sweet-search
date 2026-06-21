@@ -12,6 +12,11 @@
  */
 
 function lengthOf(chunk) {
+  // Streaming dedup passes lightweight records that carry a precomputed text
+  // length (`_textLen`) instead of the full text (which lives on disk). Full
+  // chunks have no `_textLen`, so they fall through to the original behavior —
+  // byte-identical exemplar selection on the in-memory path.
+  if (typeof chunk._textLen === 'number') return chunk._textLen;
   return (chunk.text || chunk.content || '').length;
 }
 
