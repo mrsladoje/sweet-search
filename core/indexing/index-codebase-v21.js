@@ -464,6 +464,39 @@ const _isDirectRun = (() => {
   }
 })();
 if (_isDirectRun) {
+  // ── Bounded-memory guard (works on ANY device, NO heap cap, ZERO startup cost) ──
+  // On big-RAM machines Node auto-sizes its default old-space heap large, so V8
+  // defers GC and the embedding phase's transient per-batch garbage piles up
+  // until the OS OOM-kills the indexer on very large repos (e.g. swc ~164k
+  // chunks, libsql). The pipeline is already correctly streaming (chunks spill
+  // to disk; only lightweight records stay resident) — the live working set is
+  // ~2GB — so this only needs GC to actually RUN. Enable gc at runtime (no
+  // --expose-gc launch flag and no re-exec, so frequent incremental runs pay
+  // nothing) and proactively collect only when RSS climbs past a device-adaptive
+  // watermark. Changes only WHEN gc runs — never what is embedded or stored.
+  // Opt out with SWEET_SEARCH_NO_GC_GUARD=1; degrades to a no-op if unavailable.
+  if (!process.env.SWEET_SEARCH_NO_GC_GUARD) {
+    try {
+      let gc = globalThis.gc;
+      if (typeof gc !== 'function') {
+        const v8 = await import('node:v8');
+        const vm = await import('node:vm');
+        v8.setFlagsFromString('--expose-gc');
+        gc = vm.runInNewContext('gc');     // captured fn stays callable after reset below
+        v8.setFlagsFromString('--no-expose-gc');
+      }
+      if (typeof gc === 'function') {
+        const os = await import('node:os');
+        // GC watermark: ~half of RAM, clamped to [2GB, 6GB]. Live set is ~2GB, so
+        // peak RSS stays bounded well below OOM on any machine ≥4GB. The interval
+        // is unref'd and only GCs when RSS is actually high (never on small repos).
+        const rssLimit = Math.min(6 * 1024 ** 3, Math.max(2 * 1024 ** 3, Math.floor(os.totalmem() * 0.5)));
+        setInterval(() => {
+          try { if (process.memoryUsage().rss > rssLimit) gc(); } catch { /* best-effort */ }
+        }, 4000).unref();
+      }
+    } catch { /* GC guard unavailable — indexing proceeds unchanged */ }
+  }
   main().catch(err => {
     console.error(err);
     process.exit(1);
