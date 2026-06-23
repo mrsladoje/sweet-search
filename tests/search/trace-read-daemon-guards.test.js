@@ -72,4 +72,17 @@ describe('buildReadDaemonResponse guards', () => {
     });
     expect(r.status).toBe(409);
   });
+
+  it('does NOT 503 when the server is not yet ready — read needs no index (Codex fix)', async () => {
+    // /read returns file bytes from node:fs and never touches the searcher, so
+    // it must serve during the cold-start init window. With serverReady:false it
+    // now falls through to normal validation (400 for a missing path) instead of
+    // the gratuitous 503 that made the native client exit on a freshly-spawned
+    // daemon. (read-semantic/trace keep their gate + a bounded readiness wait.)
+    const r = await buildReadDaemonResponse(`/read?projectRoot=${enc(root)}`, {
+      isUnixSocket: true, serverReady: false, initError: null, searcher: { projectRoot: root },
+    });
+    expect(r.status).not.toBe(503);
+    expect(r.status).toBe(400); // validation runs (the readiness gate is gone)
+  });
 });

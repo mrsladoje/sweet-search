@@ -172,7 +172,7 @@ export async function shouldSkipArtifactRebuild(options = {}) {
   // Skip - not enough changes, artifacts exist, within time window
   return {
     shouldSkip: true,
-    reason: `Only ${changedFiles} files changed (threshold: ${ARTIFACT_THRESHOLDS.skipThreshold}), Float HNSW will serve search`,
+    reason: `Only ${changedFiles} files changed (threshold: ${ARTIFACT_THRESHOLDS.skipThreshold})`,
     state,
     accumulatedTotal,
   };
