@@ -44,7 +44,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
-import { startupInterval, tierForHardware, reconcileEnablement, nextInterval, backstopWalkIntervalMs } from '../incremental-indexing/domain/interval-autotune.mjs';
+import { startupInterval, tierForHardware, reconcileEnablement, nextInterval, backstopWalkIntervalMs, resolveMaintainerMemoryProfile } from '../incremental-indexing/domain/interval-autotune.mjs';
 import { detectHardwareCapability } from '../infrastructure/hardware-capability.js';
 import { sweepStaleArtifactTemps, DEFAULT_TMP_SWEEP_MAX_AGE_MS } from '../incremental-indexing/infrastructure/artifact-temp-sweep.mjs';
 import { hasCompleteBaseIndex, WAITING_FOR_INITIAL_INDEX } from '../incremental-indexing/infrastructure/baseline-readiness.mjs';
@@ -1156,10 +1156,17 @@ export function computeNextIntervalMs({
  * model-loaded daemons collapse to 1–2 (the ~16 GB cross-repo footprint fix).
  * 0 (or invalid / negative) ⇒ disabled (today's "run forever" behavior).
  */
-export function maintainerIdleTtlMs(env = process.env) {
-  const raw = Number.parseInt(env.SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS ?? '', 10);
-  if (Number.isFinite(raw) && raw > 0) return raw;
-  return 0;
+export function maintainerIdleTtlMs(env = process.env, totalMemBytes = os.totalmem()) {
+  const rawStr = env.SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS;
+  if (rawStr != null) {
+    // Explicitly set (incl. '' / invalid / 0 / negative → disabled): the env
+    // always wins over the tier default.
+    const raw = Number.parseInt(rawStr, 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  }
+  // Unset → auto from the system-RAM tier (resolveMaintainerMemoryProfile):
+  // small-RAM hosts (laptops, the OOM case) get idle-TTL ON; roomy hosts → 0/off.
+  return resolveMaintainerMemoryProfile({ totalMemBytes }).idleTtlMs;
 }
 
 /**
@@ -1301,19 +1308,20 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     }
   }
 
-  // G7 RSS-budget registry hook (integration seam; module owned by G7). Only when
-  // SWEET_SEARCH_RSS_BUDGET_FRACTION is set; best-effort, guarded so a missing
-  // module is a no-op.
+  // G7 RSS-budget registry hook (integration seam; module owned by G7).
+  // Registers when the soft cap is enabled — which is now tier-aware:
+  // `isEnabled()` is true when SWEET_SEARCH_RSS_BUDGET_FRACTION is set OR the
+  // system-RAM tier auto-enables a cap (small-RAM hosts). Best-effort, guarded
+  // so a missing module is a no-op.
   let rssRegistration = null;
-  if (process.env.SWEET_SEARCH_RSS_BUDGET_FRACTION) {
-    try {
-      const mod = await import('./rss-budget.mjs');
-      if (typeof mod.registerDaemon === 'function') {
-        rssRegistration = await mod.registerDaemon({ pid: process.pid, stateDir: ctx.stateDir, kind: 'maintainer' });
-      }
-    } catch (err) {
-      log('WARN', `RSS-budget registry unavailable (no soft cap on this daemon): ${err?.message ?? err}`);
+  try {
+    const mod = await import('./rss-budget.mjs');
+    if (typeof mod.isEnabled === 'function' && mod.isEnabled()
+        && typeof mod.registerDaemon === 'function') {
+      rssRegistration = await mod.registerDaemon({ pid: process.pid, stateDir: ctx.stateDir, kind: 'maintainer' });
     }
+  } catch (err) {
+    log('WARN', `RSS-budget registry unavailable (no soft cap on this daemon): ${err?.message ?? err}`);
   }
 
   // D.1 idle-TTL: an unattended maintainer self-shuts-down after the configured

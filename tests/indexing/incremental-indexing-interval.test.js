@@ -11,6 +11,7 @@ import {
   startupInterval,
   tierForHardware,
   reconcileEnablement,
+  resolveMaintainerMemoryProfile,
   __testing,
 } from '../../core/incremental-indexing/domain/interval-autotune.mjs';
 
@@ -252,5 +253,24 @@ describe('reconcileEnablement (default-on rollout policy)', () => {
     expect(out.enabled).toBe(true);
     expect(out.source).toBe('env-enabled-permissive');
     expect(out.raw).toBe('yes-please');
+  });
+});
+
+describe('resolveMaintainerMemoryProfile (footprint-lever RAM tiers)', () => {
+  const GiB = 1024 ** 3;
+  it('maps system RAM to the tight / moderate / roomy tier', () => {
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 8 * GiB })).toMatchObject({ tier: 'tight', idleTtlMs: 600_000, rssBudgetFraction: 0.55 });
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 16 * GiB })).toMatchObject({ tier: 'moderate', idleTtlMs: 1_800_000, rssBudgetFraction: 0.60 });
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 128 * GiB })).toMatchObject({ tier: 'roomy', idleTtlMs: 0, rssBudgetFraction: null });
+  });
+  it('treats the tier boundaries as inclusive upper bounds (12 / 24 GiB)', () => {
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 12 * GiB }).tier).toBe('tight');
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 24 * GiB }).tier).toBe('moderate');
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 24 * GiB + 1 }).tier).toBe('roomy');
+  });
+  it('resolves to roomy (levers OFF) when totalMemBytes is absent or non-finite (safe default)', () => {
+    expect(resolveMaintainerMemoryProfile().tier).toBe('roomy');
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: NaN }).tier).toBe('roomy');
+    expect(resolveMaintainerMemoryProfile({}).idleTtlMs).toBe(0);
   });
 });

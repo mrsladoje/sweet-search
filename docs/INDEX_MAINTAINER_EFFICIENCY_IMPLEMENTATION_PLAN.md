@@ -669,12 +669,22 @@ normally a no-op; it STILL throws the clear contradiction error if batch is effe
 | `SWEET_SEARCH_RECONCILE_LIVE_HNSW` (+`_DELETE_FRAC=0.15`, `_SAVE_EVERY=2000`) | E.2 live HNSW | freshness trade — defers HNSW disk saves so on-disk lags → stale disk-read search |
 | `SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE` (+`_MIN_SEGMENTS=8`) | E.5 idle optimize | heavy idle compaction (full rewrite) |
 | `SWEET_SEARCH_RECONCILE_INCR_VACUUM` | E.4 incr-vacuum (reserved) | needs `auto_vacuum=INCREMENTAL` at schema-create (schema change) |
-| `SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS=0` (+`_IDLE_CHECK_MS=60000`, `_BACKSTOP_WALK_MS=600000`) | D.1 idle-TTL | stays `0`/off — product decision pending |
+| `SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS` (+`_IDLE_CHECK_MS`, `_BACKSTOP_WALK_MS`) | D.1 idle-TTL | **RAM-tier auto** (note ↓): ≤12 GiB→10 min, ≤24 GiB→30 min, >24 GiB→off; env overrides (`=0` disables) |
 | `SWEET_SEARCH_MAINTAINER_WATCH` | C `@parcel/watcher`@2.5.6 + backstop | freshness-contract change; needs large-monorepo validation |
-| `SWEET_SEARCH_RSS_BUDGET_FRACTION` | D.3 RSS-LRU + Linux PSI (e.g. `0.6`) | multi-repo soak unvalidated |
+| `SWEET_SEARCH_RSS_BUDGET_FRACTION` | D.3 RSS-LRU + Linux PSI | **RAM-tier auto** (note ↓): ≤12 GiB→0.55, ≤24 GiB→0.60, >24 GiB→off; env overrides |
 | `SWEET_SEARCH_SHARED_MODEL_SERVER` (+`_MODEL_SERVER_BACKGROUND`, `MODEL_SOCKET_PATH`) | D.5 shared model server | architectural; soak unvalidated |
 | `SWEET_SEARCH_HNSW_MMAP` | E.3 packed-binary + mmap | tooling reads JSON sidecars; format change → needs rebuild to benefit |
 | `SWEET_SEARCH_MAINTAINER_NATIVE_PRIORITY` | A.5/A.6 napi addon (QoS / `PROCESS_MODE_BACKGROUND_BEGIN`) | needs addon built + present |
+
+**RAM-tier auto-defaults (`resolveMaintainerMemoryProfile`, `interval-autotune.mjs`).** Unlike the
+rest of this table, the two footprint levers (`IDLE_TTL`, `RSS_BUDGET`) are **not** pure opt-in —
+their default is chosen from `os.totalmem()` at startup: **ON** for small-RAM hosts (laptops / the
+~16 GB cross-repo OOM case in `project_ss_daemon_footprint_safety`), **OFF** for roomy hosts
+(>24 GiB, e.g. this dev box, where idle-TTL's respawn latency would only cost with nothing to
+reclaim). An explicit env value always overrides the tier. This mirrors the existing `TIER_TABLE`
+hardware-tier interval selection — the same machine-detection pattern the indexer uses to pick its
+backend by chip. The other freshness/compat trades stay pure opt-in (detection can't make them
+safer). `SHARED_MODEL_SERVER` is *repo-count*-driven, not single-host RAM, so it is NOT auto-tiered.
 
 ### Known follow-ups (out of scope of this work)
 1. ~~Pre-existing TOCTOU flake `sparse-gram-delta-reader.js:61`~~ — **FIXED** (commit `9dc8eb4`):
