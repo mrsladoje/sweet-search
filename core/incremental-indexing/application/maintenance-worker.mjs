@@ -34,8 +34,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import Database from 'better-sqlite3';
-import { fts5Merge } from '../infrastructure/sqlite-fts5.mjs';
+import { fts5Merge, fts5Optimize, fts5SegmentCount, fts5WatermarkBudgetPages } from '../infrastructure/sqlite-fts5.mjs';
 import { reclamationHandlers } from './maintenance-handlers.mjs';
+
+const fts5BudgetEnabled = () => process.env.SWEET_SEARCH_RECONCILE_FTS5_BUDGET === '1';
+const fts5OptimizeEnabled = () => process.env.SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE === '1';
+// Minimum segment count below which an optimize is not worth its full rewrite.
+const FTS5_OPTIMIZE_MIN_SEGMENTS = Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE_MIN_SEGMENTS || '8', 10);
 
 const FORBIDDEN_GPU_FLAGS = [
   'SWEET_SEARCH_GPU',          // sweet-search canonical knob
@@ -226,29 +231,52 @@ export function appendDeadLetter(stateDir, job, err) {
 export function defaultMaintenanceHandlers(stateDir) {
   return {
     ...reclamationHandlers(stateDir),
-    fts5: async (job) => {
+    fts5: async (job, ctx = {}) => {
       const payload = job?.payload || {};
       const dbPath = payload.dbPath || payload.databasePath || path.join(stateDir, payload.dbFile || 'code-graph.db');
       const tableNames = payload.tableName || payload.table
         ? [payload.tableName || payload.table]
         : ['entities_fts', 'entities_trigram'];
-      const pages = Number.isFinite(payload.pages) && payload.pages > 0 ? payload.pages : 500;
+      // E.5: derive the merge page count from the budget remaining in the drain
+      // window. Off (default) → the original aggressive 500-page merge. On →
+      // scale pages down (floor 16) as the budget runs out so a near-exhausted
+      // drain still makes a small step rather than overrunning on one big merge.
+      // An explicit `payload.pages` always wins (operator override).
+      const explicitPages = Number.isFinite(payload.pages) && payload.pages > 0 ? payload.pages : null;
+      const pages = explicitPages != null
+        ? explicitPages
+        : (fts5BudgetEnabled()
+            ? fts5WatermarkBudgetPages({ remainingMs: ctx.remainingBudgetMs })
+            : 500);
+      // E.5 idle-gated optimize: when the daemon enqueues an fts5 job with
+      // `payload.optimize:true` (signaling true-idle / consecutive empty ticks)
+      // AND the optimize flag is on, run the full `('optimize')` rewrite + an
+      // immediate wal_checkpoint(TRUNCATE) — but ONLY on tables above a size
+      // threshold (a tiny table doesn't need it). Off by default; the merge path
+      // is the steady-state behavior.
+      const wantOptimize = fts5OptimizeEnabled() && payload.optimize === true;
       if (!fs.existsSync(dbPath)) throw new Error(`fts5 maintenance database not found: ${dbPath}`);
       const db = new Database(dbPath);
       try {
         const merged = [];
+        const optimized = [];
         for (const tableName of tableNames) {
           const exists = db.prepare(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
           ).get(tableName);
           if (!exists) continue;
-          fts5Merge(db, tableName, pages);
-          merged.push(tableName);
+          if (wantOptimize && fts5SegmentCount(db, tableName) >= FTS5_OPTIMIZE_MIN_SEGMENTS) {
+            fts5Optimize(db, tableName);
+            optimized.push(tableName);
+          } else {
+            fts5Merge(db, tableName, pages);
+            merged.push(tableName);
+          }
         }
-        if (merged.length === 0) {
+        if (merged.length === 0 && optimized.length === 0) {
           throw new Error(`fts5 maintenance found no FTS5 tables in ${dbPath}`);
         }
-        return { dbPath, tableNames: merged, pages };
+        return { dbPath, tableNames: [...merged, ...optimized], pages, optimized };
       } finally {
         db.close();
       }
@@ -317,7 +345,10 @@ export async function processMaintenanceQueue(stateDir, options = {}) {
     attempted += 1;
     try {
       onProgress(`maintenance:${job.tier || 'unknown'}:start`);
-      await handler(job, { stateDir, onProgress });
+      // E.5: surface the wall-clock budget remaining so budget-aware handlers
+      // (fts5 merge) can scale their work to the spare window.
+      const remainingBudgetMs = budgetMs === Infinity ? Infinity : Math.max(0, budgetMs - (clock() - startMs));
+      await handler(job, { stateDir, onProgress, remainingBudgetMs });
       onProgress(`maintenance:${job.tier || 'unknown'}:done`);
       summary.succeeded += 1;
     } catch (err) {

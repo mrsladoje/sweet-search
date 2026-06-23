@@ -169,6 +169,24 @@ export class Reconciler {
     this._running = false;
   }
 
+  /**
+   * Lever E.1: batch per-tier writes per tick. When enabled, the reconciler
+   * opens a tick-scoped store context once at tick start (via the adapter's
+   * `beginTick` hook), threads it through every `apply*Delta`, and persists the
+   * batched HNSW + float artifacts once at tick finalize (via `finalizeTick`),
+   * BEFORE the manifest advances. Default off → exact current per-file behavior.
+   *
+   * The adapter must expose `beginTick`/`finalizeTick` for this to engage;
+   * absent those hooks, the per-file path is used regardless of the flag.
+   *
+   * @returns {boolean}
+   */
+  _batchTierWritesEnabled() {
+    return process.env.SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES === '1'
+      && typeof this.adapters.beginTick === 'function'
+      && typeof this.adapters.finalizeTick === 'function';
+  }
+
   progress(phase) {
     this.onProgress?.(phase);
   }
@@ -238,6 +256,8 @@ export class Reconciler {
     let dirtyCursor = 0;
     let deferredRequeued = false;
     let manifestPublished = false;
+    const batched = this._batchTierWritesEnabled();
+    let tickCtx = null;
 
     try {
       dirty = await this.adapters.readDirtySet();
@@ -245,6 +265,14 @@ export class Reconciler {
       counters.set('dirty_paths_seen', dirty.length);
 
       counters.set('cpu_budget_total_ms', this.config.cpuBudgetMs);
+
+      // Lever E.1: open the tick-scoped store context once (load HNSW + float
+      // store, open RW/RO connections) before the per-file loop. Threaded into
+      // every apply*Delta so they accumulate ops instead of open/save per file.
+      if (batched) {
+        tickCtx = await this.adapters.beginTick({ epoch });
+        this.progress('reconciler:tick-begin');
+      }
 
       // Track per-file outcomes for the tick summary.
       const tierOps = {};
@@ -264,7 +292,7 @@ export class Reconciler {
           counters.observeContentUnchanged();
           continue;
         }
-        const fileRes = await this._reconcileOneFile(file, epoch, hashes);
+        const fileRes = await this._reconcileOneFile(file, epoch, hashes, tickCtx);
         this.progress('reconciler:file:done');
         filesProcessed.push({ file, ...fileRes });
         mergeManifestTiers(manifestTiers, fileRes?.manifestTiers);
@@ -299,6 +327,23 @@ export class Reconciler {
             `[reconciler] ${deferredFiles.length} dirty paths exceeded the per-tick budget; ` +
             'adapter has no requeueDirtyFiles hook',
           );
+        }
+      }
+
+      // Lever E.1 PERSIST-BEFORE-ADVANCE: save the batched HNSW + float store
+      // ONCE here, BEFORE the manifest publishes. The adapter returns the set
+      // of files whose ops are in the persisted batch (and, on a partial batch
+      // cut, the files to requeue). Only persisted files are promoted into the
+      // merkle (the adapter reads the same context inside `persistManifest`),
+      // so a crash between the SQLite commits and this save can never leave a
+      // file marked indexed-but-missing-from-HNSW.
+      if (batched && tickCtx) {
+        const fin = await this.adapters.finalizeTick(tickCtx, { epoch }) || {};
+        this.progress('reconciler:tick-finalized');
+        const requeueFiles = Array.isArray(fin.requeueFiles) ? fin.requeueFiles : [];
+        if (requeueFiles.length > 0 && this.adapters.requeueDirtyFiles) {
+          counters.inc('dirty_paths_deferred', requeueFiles.length);
+          await this.adapters.requeueDirtyFiles(requeueFiles);
         }
       }
 
@@ -353,29 +398,53 @@ export class Reconciler {
       }
       throw err;
     } finally {
+      // Lever E.1: always release the tick-scoped store context (close any
+      // still-open RW/RO connections). Idempotent: a successful finalizeTick
+      // already closed them; this is the crash/throw safety net. Best-effort.
+      if (batched && tickCtx && typeof this.adapters.disposeTick === 'function') {
+        try { await this.adapters.disposeTick(tickCtx); } catch { /* never throw from finally */ }
+      }
       this._running = false;
     }
   }
 
-  async _reconcileOneFile(file, epoch, hashes) {
+  async _reconcileOneFile(file, epoch, hashes, tickCtx = null) {
     // Dispatch to per-tier adapter methods. Adapters can return undefined
-    // when a tier has no work for this file.
+    // when a tier has no work for this file. `tickCtx` is the lever-E.1
+    // tick-scoped store context (null on the per-file path).
     const ops = {};
     this.progress('reconciler:graph:start');
-    const graph = await this.adapters.applyGraphDelta?.(file, hashes, epoch);
+    const graph = await this.adapters.applyGraphDelta?.(file, hashes, epoch, tickCtx);
     this.progress('reconciler:graph:done');
     const manifestTiers = {};
     collectManifestTier(manifestTiers, 'codeGraph', graph);
     if (graph?.ops?.graph_upsert != null) ops.graph_upsert = graph.ops.graph_upsert;
     if (graph?.ops?.graph_tombstone != null) ops.graph_tombstone = graph.ops.graph_tombstone;
     this.progress('reconciler:vector:start');
-    const vec = await this.adapters.applyVectorDelta?.(file, hashes?.chunks ?? [], hashes, epoch);
+    const vec = await this.adapters.applyVectorDelta?.(file, hashes?.chunks ?? [], hashes, epoch, tickCtx);
     this.progress('reconciler:vector:done');
     collectManifestTier(manifestTiers, 'vectors', vec);
     if (vec?.ops?.vectors_upsert != null) ops.vectors_upsert = vec.ops.vectors_upsert;
     if (vec?.ops?.vectors_delete != null) ops.vectors_delete = vec.ops.vectors_delete;
+    // Lever E.6: a cutoff-skipped file returns `skipped:true` from the vector
+    // adapter — no encode, no tier writes. Short-circuit the remaining tiers.
+    if (vec?.skipped) {
+      return {
+        chunksTotal: vec?.chunksTotal ?? 0,
+        chunksEncoded: 0,
+        chunksReused: vec?.chunksReused ?? 0,
+        chunksStructStable: 0,
+        chunksTextUnchanged: 0,
+        chunksMetadataDirty: 0,
+        chunksDedupRepaired: 0,
+        treeSitterErrorNodes: graph?.treeSitterErrorNodes ?? 0,
+        skipped: true,
+        manifestTiers,
+        ops,
+      };
+    }
     this.progress('reconciler:binary-hnsw:start');
-    const bin = await this.adapters.applyBinaryHNSWDelta?.(file, vec?.vectorOps ?? [], epoch);
+    const bin = await this.adapters.applyBinaryHNSWDelta?.(file, vec?.vectorOps ?? [], epoch, tickCtx);
     this.progress('reconciler:binary-hnsw:done');
     collectManifestTier(manifestTiers, 'binaryHnsw', bin);
     if (bin?.ops?.binary_hnsw_append != null) ops.binary_hnsw_append = bin.ops.binary_hnsw_append;

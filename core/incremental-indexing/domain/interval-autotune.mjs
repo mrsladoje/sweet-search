@@ -106,6 +106,46 @@ export function nextInterval(input) {
 const TIER_TABLE = Object.freeze({ low: 60_000, mid: 30_000, high: 20_000 });
 
 /**
+ * Backstop full-walk cadence for the event-driven watcher (lever C / group G6).
+ *
+ * When the `@parcel/watcher` event stream is the primary dirty-set producer,
+ * the full `scanDirtyAndEnqueue` stat-walk is demoted to a periodic backstop
+ * (it still runs on the first tick, on watcher overflow, and on a forced walk).
+ * This resolver returns that cadence in milliseconds, clamped to [5min, 15min]
+ * — the window the design (§4.C) accepts as the worst-case convergence latency
+ * for a gitignore/exclude change that produced no file event. G4 owns this file;
+ * G6 consumes the resolved value from the maintainer loop.
+ *
+ * Precedence (highest first):
+ *   1. `SWEET_SEARCH_MAINTAINER_BACKSTOP_WALK_MS` (milliseconds)
+ *   2. default 10 min
+ *
+ * Values are clamped into [BACKSTOP_MIN_MS, BACKSTOP_MAX_MS]; a non-finite or
+ * non-positive override falls back to the default.
+ */
+const BACKSTOP_MIN_MS = 300_000;   // 5 min
+const BACKSTOP_MAX_MS = 900_000;   // 15 min
+const BACKSTOP_DEFAULT_MS = 600_000; // 10 min
+
+/**
+ * @param {{ env?: NodeJS.ProcessEnv }} [options]
+ * @returns {{ intervalMs:number, source:'env-override-ms'|'default' }}
+ */
+export function backstopWalkIntervalMs({ env = process.env } = {}) {
+  const raw = env.SWEET_SEARCH_MAINTAINER_BACKSTOP_WALK_MS;
+  if (raw !== undefined && raw !== '') {
+    const ms = Number(raw);
+    if (Number.isFinite(ms) && ms > 0) {
+      return {
+        intervalMs: Math.min(Math.max(ms, BACKSTOP_MIN_MS), BACKSTOP_MAX_MS),
+        source: 'env-override-ms',
+      };
+    }
+  }
+  return { intervalMs: BACKSTOP_DEFAULT_MS, source: 'default' };
+}
+
+/**
  * `SWEET_SEARCH_RECONCILE_PROFILE` lets operators pin the startup interval
  * by intent rather than by tier. `balanced` is a no-op (falls through to
  * the hardware-tier table); `fresh` and `conservative` pin like an env
@@ -252,4 +292,5 @@ export const __testing = {
   MIN_MS, MAX_MS, NOMINAL_MS,
   TARGET_TICK_WALLCLOCK_FRACTION, MAX_RATIO_CHANGE_PER_TICK,
   TIER_TABLE, PROFILE_TABLE,
+  BACKSTOP_MIN_MS, BACKSTOP_MAX_MS, BACKSTOP_DEFAULT_MS,
 };

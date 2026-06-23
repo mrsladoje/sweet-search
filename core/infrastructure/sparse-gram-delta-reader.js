@@ -58,7 +58,17 @@ export function listSparseGramDeltaSegments(baseArtifactPath, opts = {}) {
 export function resolveLatestSparseGramDeltaRecords(baseArtifactPath, opts = {}) {
   const latest = new Map();
   for (const seg of listSparseGramDeltaSegments(baseArtifactPath, opts)) {
-    const raw = fs.readFileSync(seg.path, 'utf-8');
+    let raw;
+    try {
+      raw = fs.readFileSync(seg.path, 'utf-8');
+    } catch (err) {
+      // TOCTOU: a concurrent compaction/rotation can unlink a segment between
+      // listing (existsSync in parseDeltaSegment) and this read. A vanished
+      // segment is benign at query time — skip it rather than failing the whole
+      // overlay resolution. Surface any other error (EACCES, EISDIR, ...).
+      if (err && err.code === 'ENOENT') continue;
+      throw err;
+    }
     for (const line of raw.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed) continue;

@@ -193,8 +193,17 @@ export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
     maxElements: existing.maxElements,
   });
   fresh.resetForBuild();
+  // When deterministic levels are enabled, the compacted graph must be
+  // reproducible: insert surviving ids in a FIXED sorted order so the
+  // rebuild is independent of the scan/encounter order above. Combined with
+  // levelForId() (gated by the same flag inside `add()`), this makes the
+  // compaction path agree byte-for-byte with batched/per-file builds.
+  // Default OFF → preserve today's encounter-order insertion exactly.
+  const insertOrder = process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS === '1'
+    ? [...live].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    : live;
   let added = 0;
-  for (const v of live) {
+  for (const v of insertOrder) {
     await fresh.add(v.id, v.binary, v.metadata, v.int8);
     added += 1;
     if (added % 500 === 0) progress('maintenance:binary-hnsw:add');

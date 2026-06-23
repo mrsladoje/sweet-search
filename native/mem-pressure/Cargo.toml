@@ -1,0 +1,17 @@
+[package]
+name = "sweet-search-mem-pressure"
+version = "2.5.14"
+edition = "2021"
+description = "Optional napi-rs addon SCAFFOLD: macOS DISPATCH_SOURCE_TYPE_MEMORYPRESSURE WARN/CRITICAL callbacks for reactive eviction (research §4.D D.4). Currently a no-op scaffold — G7's pure-JS RSS poller is the active path."
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+napi = { version = "2", features = ["napi4"] }
+napi-derive = "2"
+
+[build-dependencies]
+napi-build = "2"

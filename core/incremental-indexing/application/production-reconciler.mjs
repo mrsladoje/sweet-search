@@ -1,18 +1,30 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 
 import { Reconciler } from './reconciler.mjs';
-import { enqueueMaintenanceJob } from './maintenance-worker.mjs';
+import { enqueueMaintenanceJob, readMaintenanceQueue } from './maintenance-worker.mjs';
 import { createAdmissionPolicy } from '../../indexing/admission-policy.js';
 import { applyIndexingChunkPolicy } from '../../indexing/indexing-file-policy.js';
 import { contentHashSync } from '../infrastructure/hashing.mjs';
 import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import { annotateChunksForDelta, snapshotFileRows, diffChunks, applyDiff } from '../infrastructure/vector-delta-writer.mjs';
 import { appendDeltaRecord, FALLBACK_WEIGHTS_ID, fileIdFor, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
-import { fts5Merge } from '../infrastructure/sqlite-fts5.mjs';
-import { insertEntity, insertRelationships, markBinaryStale, maintainFloatStore } from './production-reconciler-helpers.mjs';
+import { fts5Merge, fts5MergeBudgetPages } from '../infrastructure/sqlite-fts5.mjs';
+import { insertEntity, insertRelationships, markBinaryStale, maintainFloatStore, flushFloatStore } from './production-reconciler-helpers.mjs';
+import {
+  chunkCutoffEnabled,
+  computeCutoffSignature,
+  signaturesMatch,
+  loadCutoffCache,
+  getFileSignature,
+  setFileSignature,
+  deleteFileSignature,
+  saveCutoffCache,
+} from '../domain/cutoff-cache.mjs';
+import { FloatVectorStore, getFloatStorePath } from '../../vector-store/float-vector-store.js';
 import { createGraphSchema, GraphExtractor } from '../../graph/graph-extractor.js';
 import { createVectorSchema, ensureVectorSchema, buildInsertItems, insertVectorItems } from '../../indexing/indexer-build.js';
 import { ASTChunker, JAVA_FAMILY } from '../../indexing/ast-chunker.js';
@@ -27,6 +39,73 @@ const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
 const PROCESSING_QUEUE = 'index-maintainer-queue.processing.jsonl';
 const MERKLE_STATE = 'merkle-state.json';
 const METRICS_FILE = 'reconcile-metrics.jsonl';
+
+// ---- G2 lever flags (each default OFF; flag off ⇒ exact current behavior) ----
+const flagOn = (name) => process.env[name] === '1';
+const batchTierWritesEnabled = () => flagOn('SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES');
+const liveHnswEnabled = () => flagOn('SWEET_SEARCH_RECONCILE_LIVE_HNSW');
+const sqlitePragmasEnabled = () => flagOn('SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS');
+const fts5BudgetEnabled = () => flagOn('SWEET_SEARCH_RECONCILE_FTS5_BUDGET');
+
+// E.2: deletion-fraction threshold + insert cadence for the live (daemon-scoped)
+// HNSW. Save to disk only on graceful shutdown, deletion-fraction >= this, or
+// every N inserts.
+const LIVE_HNSW_DELETION_FRACTION = Number.parseFloat(process.env.SWEET_SEARCH_RECONCILE_LIVE_HNSW_DELETE_FRAC || '0.15');
+const LIVE_HNSW_SAVE_EVERY_INSERTS = Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_LIVE_HNSW_SAVE_EVERY || '2000', 10);
+
+/**
+ * E.4 SQLite memory pragmas, applied AFTER `journal_mode=WAL; synchronous=NORMAL`
+ * on a write connection. `cache_size=-32768` caps the per-connection page cache
+ * at ~32 MiB. `soft_heap_limit` is process-global and is set ONCE at daemon
+ * startup by G4 (index-maintainer) — NOT here — to avoid every connection
+ * re-setting a process-wide knob. With E.1 these attach to the tick-scoped
+ * connection so the cache is meaningful; without E.1 the per-file conn churn
+ * makes them near no-ops (documented, not a bug).
+ *
+ * Gated on `SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS`; off ⇒ unchanged behavior.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {{readonly?: boolean}} [opts]
+ */
+function applyMemoryPragmas(db, { readonly = false } = {}) {
+  if (!sqlitePragmasEnabled()) return;
+  try { db.pragma('cache_size = -32768'); } catch {}
+  // mmap_size only on readonly maintainer conns (negligible benefit on the JS
+  // side — the user search path is native Rust — but harmless; matches the doc).
+  if (readonly) {
+    try { db.pragma('mmap_size = 268435456'); } catch {}
+  }
+}
+
+/**
+ * E.2: process-scoped (daemon-scoped) live store registry. The index-maintainer
+ * daemon runs many ticks in one process, each constructing a fresh
+ * `createProductionReconciler`; a module-level registry keyed by the resolved
+ * state dir lets the resident HNSW + float store survive across those
+ * per-tick adapter instances when `SWEET_SEARCH_RECONCILE_LIVE_HNSW` is on.
+ *
+ * Each entry: { index: BinaryHNSWIndex, floatStore: FloatVectorStore,
+ *               insertsSinceSave, deletedCount, totalCount, dirty }
+ */
+const liveStoreRegistry = new Map();
+
+/**
+ * Release all live stores, saving any that are dirty. Called on graceful daemon
+ * shutdown (G4 wires the call; exposed here for tests + the disposeTick path).
+ */
+export async function shutdownLiveStores() {
+  for (const [key, entry] of liveStoreRegistry) {
+    try {
+      if (entry.dirty && entry.index) {
+        await entry.index.save(entry.indexPath);
+        if (entry.floatStore && entry.floatStore.loaded) {
+          await entry.floatStore.save(getFloatStorePath(entry.indexPath));
+        }
+      }
+    } catch { /* best-effort flush on shutdown */ }
+    liveStoreRegistry.delete(key);
+  }
+}
 
 function relPath(projectRoot, filePath) {
   const abs = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
@@ -99,10 +178,21 @@ function pickLiInput(chunk) {
   return chunk.li_greedy_text || chunk.embedding_text || chunk.li_text || chunk.text || chunk.content || '';
 }
 
-async function enrichChunksFromGraph(chunks, stateDir) {
+async function enrichChunksFromGraph(chunks, stateDir, tickCtx = null) {
   const dbPath = path.join(stateDir, 'code-graph.db');
-  if (!fs.existsSync(dbPath) || chunks.length === 0) return chunks;
-  const db = new Database(dbPath, { readonly: true });
+  if (chunks.length === 0) return chunks;
+  // E.1: reuse the tick-scoped readonly connection when batching; else open a
+  // per-file readonly connection exactly as before.
+  let db;
+  let ownConn = false;
+  if (tickCtx?.graphRoDb) {
+    db = tickCtx.graphRoDb;
+  } else {
+    if (!fs.existsSync(dbPath)) return chunks;
+    db = new Database(dbPath, { readonly: true });
+    applyMemoryPragmas(db, { readonly: true });
+    ownConn = true;
+  }
   try {
     const entityStmt = db.prepare('SELECT type, name, start_line, end_line FROM entities WHERE file_path = ? AND epoch_retired IS NULL ORDER BY start_line ASC');
     const fileEntityStmt = db.prepare('SELECT id FROM entities WHERE file_path = ? AND logical_entity_id = ? AND epoch_retired IS NULL ORDER BY epoch_written DESC LIMIT 1');
@@ -124,7 +214,7 @@ async function enrichChunksFromGraph(chunks, stateDir) {
   } catch {
     return chunks;
   } finally {
-    db.close();
+    if (ownConn) db.close();
   }
   return chunks;
 }
@@ -133,6 +223,19 @@ export function createProductionReconciler(options = {}) {
   const projectRoot = path.resolve(options.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
   const stateDir = path.resolve(options.stateDir || process.env.SWEET_SEARCH_STATE_DIR || path.join(projectRoot, '.sweet-search'));
   const adapter = new ProductionReconcileAdapter({ ...options, projectRoot, stateDir });
+  // A.4-config: feed the dormant interval-autotune a real load signal. This is
+  // ONLY the config half — the daemon (G4) reads the tuned interval back into
+  // its sleep loop. Gated on SWEET_SEARCH_RECONCILE_AUTOTUNE (default off): when
+  // off, `autotuneInterval` stays false and the reconciler never re-tunes.
+  const autotuneOn = flagOn('SWEET_SEARCH_RECONCILE_AUTOTUNE');
+  const cpuCount = Math.max(1, os.cpus().length);
+  const autotuneConfig = autotuneOn
+    ? {
+        autotuneInterval: true,
+        cpuLoadAvg: os.loadavg()[0] / cpuCount,
+        maintenanceBacklog: adapter.maintenanceBacklog(),
+      }
+    : {};
   return new Reconciler({
     projectRoot,
     stateDir,
@@ -141,6 +244,7 @@ export function createProductionReconciler(options = {}) {
     config: {
       filesPerTick: Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_FILES_PER_TICK || '50', 10),
       cpuBudgetMs: Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS || '2000', 10),
+      ...autotuneConfig,
       ...(options.config || {}),
     },
     logger: options.logger || console,
@@ -183,27 +287,311 @@ class ProductionReconcileAdapter {
     this._liSkipFiles = new Set();
     this.hashes = new Map();
     this.touched = new Map();
+    // E.1: the active tick-scoped store context (null on the per-file path).
+    this._tickCtx = null;
+    // E.6: chunk-cutoff cache — loaded lazily at tick begin / first vector delta
+    // when the flag is on; null when disabled.
+    this._cutoffCache = null;
+    this._cutoffDirty = false;
   }
 
   progress(phase) {
     this.onProgress?.(phase);
   }
 
+  /**
+   * A.4-config: a coarse maintenance-backlog signal for the interval autotune —
+   * the depth of the rebuild queue. Best-effort; never throws.
+   * @returns {number}
+   */
+  maintenanceBacklog() {
+    try { return readMaintenanceQueue(this.stateDir).length; } catch { return 0; }
+  }
+
   adapters() {
-    return {
+    const hooks = {
       readDirtySet: () => this.readDirtySet(),
       requeueDirtyFiles: (files) => this.requeueDirtyFiles(files),
       hashFile: (file) => this.hashFile(file),
       loadCurrentManifest: () => readManifest(this.stateDir),
       persistManifest: (manifest) => this.persistManifest(manifest),
-      applyGraphDelta: (file, hashes, epoch) => this.applyGraphDelta(file, hashes, epoch),
-      applyVectorDelta: (file, chunks, hashes, epoch) => this.applyVectorDelta(file, chunks, hashes, epoch),
-      applyBinaryHNSWDelta: (file, ops, epoch) => this.applyBinaryHNSWDelta(file, ops, epoch),
+      applyGraphDelta: (file, hashes, epoch, ctx) => this.applyGraphDelta(file, hashes, epoch, ctx),
+      applyVectorDelta: (file, chunks, hashes, epoch, ctx) => this.applyVectorDelta(file, chunks, hashes, epoch, ctx),
+      applyBinaryHNSWDelta: (file, ops, epoch, ctx) => this.applyBinaryHNSWDelta(file, ops, epoch, ctx),
       applyLIDelta: (file, ops, epoch) => this.applyLIDelta(file, ops, epoch),
       applySparseGramDelta: (file, ops, epoch) => this.applySparseGramDelta(file, ops, epoch),
       readMaintenanceState: () => this.readMaintenanceState(),
       scheduleMaintenance: (job) => enqueueMaintenanceJob(this.stateDir, job),
     };
+    // E.1: expose the batch lifecycle hooks ONLY when the flag is on, so the
+    // reconciler's `_batchTierWritesEnabled()` gate (which checks for the hooks)
+    // stays false by default and the per-file path is taken verbatim.
+    if (batchTierWritesEnabled()) {
+      hooks.beginTick = (info) => this.beginTick(info);
+      hooks.finalizeTick = (ctx, info) => this.finalizeTick(ctx, info);
+      hooks.disposeTick = (ctx) => this.disposeTick(ctx);
+    }
+    return hooks;
+  }
+
+  // ---- E.1/E.2 tick-scoped store context -----------------------------------
+
+  /**
+   * E.1: open the tick-scoped store context once at tick start. Opens RW
+   * `codebase.db` + `code-graph.db`, a RO `code-graph.db` for enrichment, loads
+   * the binary HNSW + float store once, and primes the cutoff cache (E.6).
+   *
+   * With E.2 (`SWEET_SEARCH_RECONCILE_LIVE_HNSW`) the HNSW + float store come
+   * from the daemon-scoped registry (loaded once, kept resident across ticks);
+   * otherwise they are loaded fresh and saved+closed at finalize.
+   */
+  async beginTick() {
+    const codebaseDbPath = path.join(this.stateDir, 'codebase.db');
+    const graphDbPath = path.join(this.stateDir, 'code-graph.db');
+    const indexPath = path.join(this.stateDir, 'codebase-binary-hnsw.idx');
+    fs.mkdirSync(this.stateDir, { recursive: true });
+
+    const codebaseExisted = fs.existsSync(codebaseDbPath);
+    const codebaseDb = new Database(codebaseDbPath);
+    codebaseDb.pragma('journal_mode = WAL');
+    codebaseDb.pragma('synchronous = NORMAL');
+    applyMemoryPragmas(codebaseDb);
+    codebaseExisted ? ensureVectorSchema(codebaseDb) : createVectorSchema(codebaseDb);
+
+    const graphDb = new Database(graphDbPath);
+    graphDb.pragma('journal_mode = WAL');
+    graphDb.pragma('synchronous = NORMAL');
+    applyMemoryPragmas(graphDb);
+    const graphHasFts = createGraphSchema(graphDb);
+    migrateEntitiesSchema(graphDb);
+    migrateRelationshipsSchema(graphDb);
+
+    // Enrichment reads must observe THIS tick's graph writes. Because the
+    // batched path defers the SQLite COMMIT to finalize (persist-before-advance,
+    // see below), a SEPARATE readonly connection in WAL mode would NOT see the
+    // uncommitted in-tick graph rows. So enrichment reads from the SAME RW
+    // connection (`graphDb`) — a connection always sees its own uncommitted
+    // writes — preserving per-file enrichment semantics inside one tick.
+    const graphRoDb = graphDb;
+
+    // Resident HNSW + float store (E.1 load-once; E.2 daemon-scoped singleton).
+    const live = liveHnswEnabled() ? this._getLiveStore(indexPath) : null;
+    let index = live?.index || null;
+    let floatStore = live?.floatStore || null;
+    if (!index) {
+      index = new BinaryHNSWIndex({ indexPath, stalePath: `${indexPath}.stale.bin`, floatDimension: this.modelInfo.hnswDimension });
+      try { await index.load(indexPath); } catch { await index.init(); }
+    }
+    const binaryVectorsBefore = index.idToIndex?.size ?? 0;
+    if (!floatStore) {
+      floatStore = new FloatVectorStore();
+      try { await floatStore.loadOrInit(getFloatStorePath(indexPath), this.modelInfo.hnswDimension); } catch { /* fall back to fresh */ }
+    }
+
+    if (chunkCutoffEnabled() && !this._cutoffCache) {
+      this._cutoffCache = loadCutoffCache(this.stateDir);
+      this._cutoffDirty = false;
+    }
+
+    // E.1 PERSIST-BEFORE-ADVANCE: defer the SQLite COMMIT to finalizeTick. Open
+    // an explicit outer transaction on each RW connection now; the per-file
+    // `db.transaction(fn)()` calls inside apply*Delta then run as SAVEPOINTs
+    // (better-sqlite3 nests automatically) and only become durable when
+    // finalizeTick COMMITs — which it does ONLY after the HNSW + float batch
+    // save fsyncs. A crash/throw before that point rolls the whole tick's SQLite
+    // writes back, so a restart re-reconciles from a consistent prior state and
+    // can never leave a SQLite-live row missing from the HNSW.
+    codebaseDb.exec('BEGIN');
+    graphDb.exec('BEGIN');
+
+    const ctx = {
+      indexPath,
+      tickStartMs: Date.now(),
+      txOpen: true,
+      codebaseDb,
+      graphDb,
+      graphRoDb,
+      graphHasFts,
+      index,
+      floatStore,
+      binaryVectorsBefore,
+      live: !!live,
+      // Accumulated across the tick:
+      floatUpserts: [],
+      floatRemoveIds: [],
+      append: 0,
+      tombstone: 0,
+      // Files whose ops are staged in this batch (provisional → promoted to
+      // merkle only after finalize fsyncs).
+      persistedFiles: new Set(),
+      pendingAdds: [],
+    };
+    this._tickCtx = ctx;
+    this._lastPersistedFiles = ctx.persistedFiles;
+    return ctx;
+  }
+
+  /**
+   * E.2: fetch (or lazily create) the daemon-scoped resident store entry.
+   */
+  _getLiveStore(indexPath) {
+    let entry = liveStoreRegistry.get(indexPath);
+    if (!entry) {
+      entry = {
+        indexPath,
+        index: null,
+        floatStore: null,
+        insertsSinceSave: 0,
+        deletedCount: 0,
+        totalCount: 0,
+        dirty: false,
+        loadPromise: null,
+      };
+      liveStoreRegistry.set(indexPath, entry);
+    }
+    return entry;
+  }
+
+  /**
+   * E.1 PERSIST-BEFORE-ADVANCE: save the batched HNSW + float store once, fsync,
+   * then (per E.4) shrink_memory + wal_checkpoint(PASSIVE) on the tick-scoped
+   * connections. Returns the set of files whose ops are now persisted so the
+   * manifest publish only promotes those into the merkle.
+   *
+   * With E.2 the resident index is NOT saved every tick — only on a deletion
+   * fraction >= threshold, every N inserts, or graceful shutdown. The SQLite
+   * tiers always fsync here; the merkle then advances for files whose vector
+   * rows landed (HNSW reconverges from those rows on the next save / restart).
+   */
+  async finalizeTick(ctx) {
+    if (!ctx) return { persistedFiles: new Set(), requeueFiles: [] };
+    let hnswSaved = false;
+    try {
+      // E.1: insert all staged adds into the resident index in a DETERMINISTIC
+      // order (sorted by id). Combined with G1's per-id deterministic levels and
+      // sorted-order compaction, this makes the batched graph reproducible and
+      // byte-identical across batch / rebuild / compaction construction paths.
+      const pending = ctx.pendingAdds || [];
+      if (pending.length > 0) {
+        pending.sort((a, b) => (a.addId < b.addId ? -1 : a.addId > b.addId ? 1 : 0));
+        let done = 0;
+        for (const op of pending) {
+          const truncated = truncateForHNSW(op.embedding, this.modelInfo.hnswDimension);
+          await ctx.index.add(op.addId, floatToBinary(truncated), op.metadata || {}, normalizedFloatToInt8(truncated));
+          ctx.floatUpserts.push({ id: op.addId, vector: truncated });
+          if ((++done) % 100 === 0) this.progress('production:binary-hnsw-loop');
+        }
+        this.progress('production:binary-hnsw-batched');
+      }
+      ctx.pendingAdds = [];
+
+      if (ctx.live) {
+        const entry = liveStoreRegistry.get(ctx.indexPath);
+        if (entry) {
+          entry.index = ctx.index;
+          entry.floatStore = ctx.floatStore;
+          entry.insertsSinceSave += ctx.append;
+          entry.deletedCount += ctx.tombstone;
+          entry.totalCount = ctx.index.idToIndex?.size ?? entry.totalCount;
+          if (ctx.append > 0 || ctx.tombstone > 0) entry.dirty = true;
+          const denom = Math.max(1, entry.totalCount + entry.deletedCount);
+          const deletionFraction = entry.deletedCount / denom;
+          const shouldSave = deletionFraction >= LIVE_HNSW_DELETION_FRACTION
+            || entry.insertsSinceSave >= LIVE_HNSW_SAVE_EVERY_INSERTS;
+          if (shouldSave && entry.dirty) {
+            await ctx.index.save(ctx.indexPath);
+            await flushFloatStore({
+              binaryHnswPath: ctx.indexPath,
+              store: ctx.floatStore,
+              upserts: ctx.floatUpserts,
+              removeIds: ctx.floatRemoveIds,
+              binaryVectorsBefore: ctx.binaryVectorsBefore,
+              dimension: this.modelInfo.hnswDimension,
+            });
+            entry.insertsSinceSave = 0;
+            entry.deletedCount = 0;
+            entry.dirty = false;
+            hnswSaved = true;
+          } else if (ctx.floatUpserts.length || ctx.floatRemoveIds.length) {
+            // Keep the float store's in-memory delta consistent with the live
+            // index even when we skip the disk save (so a later threshold save
+            // writes the full set).
+            ctx.floatStore.applyDelta({ upserts: ctx.floatUpserts, removeIds: ctx.floatRemoveIds });
+          }
+        }
+      } else if (ctx.append > 0 || ctx.tombstone > 0) {
+        await ctx.index.save(ctx.indexPath);
+        this.progress('production:binary-hnsw-saved');
+        await flushFloatStore({
+          binaryHnswPath: ctx.indexPath,
+          store: ctx.floatStore,
+          upserts: ctx.floatUpserts,
+          removeIds: ctx.floatRemoveIds,
+          binaryVectorsBefore: ctx.binaryVectorsBefore,
+          dimension: this.modelInfo.hnswDimension,
+        });
+        this.progress('production:float-store-maintained');
+        hnswSaved = true;
+      }
+      // PERSIST-BEFORE-ADVANCE: the HNSW + float batch has now fsynced (or was
+      // intentionally not due-to-save under E.2). COMMIT the SQLite tiers ONLY
+      // now, so a crash before this point rolled the SQLite writes back too.
+      if (ctx.txOpen) {
+        ctx.codebaseDb.exec('COMMIT');
+        ctx.graphDb.exec('COMMIT');
+        ctx.txOpen = false;
+      }
+    } catch (err) {
+      // HNSW save (or COMMIT) failed → roll back the SQLite tiers so nothing is
+      // half-persisted, close connections, and surface the error. The manifest
+      // never advances for these files (persistedFiles is dropped) and the
+      // processing queue is left in place → the next tick re-reconciles them.
+      await this.disposeTick(ctx);
+      throw err;
+    }
+
+    // E.4: return cache to the OS + checkpoint the WAL, then close. Safe now that
+    // the transaction is committed (a checkpoint inside a write tx is a no-op).
+    try {
+      if (sqlitePragmasEnabled()) {
+        try { ctx.codebaseDb.pragma('shrink_memory'); } catch {}
+        try { ctx.graphDb.pragma('shrink_memory'); } catch {}
+      }
+      try { ctx.codebaseDb.pragma('wal_checkpoint(PASSIVE)'); } catch {}
+      try { ctx.graphDb.pragma('wal_checkpoint(PASSIVE)'); } catch {}
+    } finally {
+      await this.disposeTick(ctx);
+    }
+    void hnswSaved;
+    // Stash for persistManifest (which runs after finalize disposed the ctx):
+    // only these files are promoted into the merkle (persist-before-advance).
+    this._lastPersistedFiles = ctx.persistedFiles;
+    return { persistedFiles: ctx.persistedFiles, requeueFiles: [] };
+  }
+
+  /**
+   * Close the tick-scoped connections. Idempotent + best-effort. With E.2 the
+   * resident index/float store are NOT closed (they belong to the registry).
+   */
+  async disposeTick(ctx) {
+    if (!ctx) return;
+    // Roll back an uncommitted tick transaction (crash/throw before finalize's
+    // COMMIT) so the SQLite tiers are left at their prior consistent state.
+    if (ctx.txOpen) {
+      for (const key of ['codebaseDb', 'graphDb']) {
+        try { ctx[key]?.exec('ROLLBACK'); } catch {}
+      }
+      ctx.txOpen = false;
+    }
+    // graphRoDb aliases graphDb in the batched path; close each distinct handle
+    // once.
+    const closed = new Set();
+    for (const key of ['codebaseDb', 'graphDb', 'graphRoDb']) {
+      const db = ctx[key];
+      if (db && !closed.has(db)) { try { db.close(); } catch {} closed.add(db); }
+      ctx[key] = null;
+    }
+    if (this._tickCtx === ctx) this._tickCtx = null;
   }
 
   async readDirtySet() {
@@ -290,16 +678,28 @@ class ProductionReconcileAdapter {
     return h;
   }
 
-  async applyGraphDelta(file, hashes, epoch) {
+  async applyGraphDelta(file, hashes, epoch, ctx = null) {
     const rel = typeof file === 'string' ? file : file.path;
-    const dbPath = path.join(this.stateDir, 'code-graph.db');
-    fs.mkdirSync(this.stateDir, { recursive: true });
-    const db = new Database(dbPath);
-    db.pragma('journal_mode = WAL');
-    db.pragma('synchronous = NORMAL');
-    const hasFts = createGraphSchema(db);
-    migrateEntitiesSchema(db);
-    migrateRelationshipsSchema(db);
+    // E.1: reuse the tick-scoped RW connection (schema already ensured) instead
+    // of opening + migrating + closing a connection per file.
+    let db;
+    let hasFts;
+    let ownConn = false;
+    if (ctx?.graphDb) {
+      db = ctx.graphDb;
+      hasFts = ctx.graphHasFts;
+    } else {
+      const dbPath = path.join(this.stateDir, 'code-graph.db');
+      fs.mkdirSync(this.stateDir, { recursive: true });
+      db = new Database(dbPath);
+      db.pragma('journal_mode = WAL');
+      db.pragma('synchronous = NORMAL');
+      applyMemoryPragmas(db);
+      hasFts = createGraphSchema(db);
+      migrateEntitiesSchema(db);
+      migrateRelationshipsSchema(db);
+      ownConn = true;
+    }
     try {
       const oldRows = db.prepare('SELECT rowid, id, logical_entity_id, signature_hash FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
       const oldByLogical = new Map(oldRows.map((r) => [r.logical_entity_id || r.id, r]));
@@ -359,22 +759,41 @@ class ProductionReconcileAdapter {
       });
       tx();
       this.progress('production:graph-written');
-      if (hasFts) for (const table of ['entities_fts', 'entities_trigram']) try { fts5Merge(db, table, 16); } catch {}
+      // E.5: budget-derived FTS5 merge. When the budget flag is off this is the
+      // fixed 16-page merge exactly as before; when on, a busy tick (elapsed >
+      // 1800ms) skips the merge to leave CPU for reconcile.
+      if (hasFts) {
+        const pages = fts5BudgetEnabled()
+          ? fts5MergeBudgetPages({ elapsedMs: ctx ? Date.now() - ctx.tickStartMs : 0 })
+          : 16;
+        if (pages != null) {
+          for (const table of ['entities_fts', 'entities_trigram']) try { fts5Merge(db, table, pages); } catch {}
+        }
+      }
       this.touched.set(rel, { ...(this.touched.get(rel) || {}), graphEntities: entities.length });
       return { ops: { graph_upsert: upsert, graph_tombstone: tombstone }, manifest: { path: 'code-graph.db' } };
     } finally {
-      db.close();
+      if (ownConn) db.close();
     }
   }
 
-  async applyVectorDelta(file, _chunks, hashes, epoch) {
+  async applyVectorDelta(file, _chunks, hashes, epoch, ctx = null) {
     const rel = typeof file === 'string' ? file : file.path;
-    const dbPath = path.join(this.stateDir, 'codebase.db');
-    const existed = fs.existsSync(dbPath);
-    const db = new Database(dbPath);
-    db.pragma('journal_mode = WAL');
-    db.pragma('synchronous = NORMAL');
-    existed ? ensureVectorSchema(db) : createVectorSchema(db);
+    // E.1: reuse the tick-scoped RW connection (schema already ensured).
+    let db;
+    let ownConn = false;
+    if (ctx?.codebaseDb) {
+      db = ctx.codebaseDb;
+    } else {
+      const dbPath = path.join(this.stateDir, 'codebase.db');
+      const existed = fs.existsSync(dbPath);
+      db = new Database(dbPath);
+      db.pragma('journal_mode = WAL');
+      db.pragma('synchronous = NORMAL');
+      applyMemoryPragmas(db);
+      existed ? ensureVectorSchema(db) : createVectorSchema(db);
+      ownConn = true;
+    }
     const vectorOps = [];
     let chunks = [];
     try {
@@ -384,12 +803,50 @@ class ProductionReconcileAdapter {
         const summary = retire();
         const retired = summary.retiredRows.map((r) => ({ retireId: r.oldId, file: rel }));
         this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: [] });
+        // E.6: drop a deleted file's cutoff signature.
+        if (this._cutoffCache) { deleteFileSignature(this._cutoffCache, rel); this._cutoffDirty = true; }
         return { ops: { vectors_delete: summary.retiredRows.length }, vectorOps: retired, tokenOps: retired, gramOps: [{ file: rel, deleted: true }] };
       }
       const parsed = await new ASTChunker({ projectRoot: this.projectRoot }).parseFile(rel, hashes.content);
       this.progress('production:vector-parsed');
-      chunks = await enrichChunksFromGraph(parsed.map((chunk, i) => ({ ...chunk, file: rel, id: `${rel}:${chunk.metadata?.line_start || 0}-${chunk.metadata?.line_end || chunk.metadata?.line_start || 0}:${i}` })), this.stateDir);
+      chunks = await enrichChunksFromGraph(parsed.map((chunk, i) => ({ ...chunk, file: rel, id: `${rel}:${chunk.metadata?.line_start || 0}-${chunk.metadata?.line_end || chunk.metadata?.line_start || 0}:${i}` })), this.stateDir, ctx);
       this.progress('production:vector-enriched');
+      // E.6 chunk-hash early-cutoff. The signature is the per-chunk encoder-input
+      // hashes (embedding_input_hash + li_input_hash) computed from the ENRICHED
+      // chunks — so cross-file enrichment (scope/imports injected above) folds in.
+      // If the file changed on disk but produces byte-identical encoder inputs
+      // (comment-only / reformat edits, or a dependency change that does NOT
+      // alter this file's enriched text), the encode + all tier writes are
+      // skipped. CORRECTNESS GATE: keyed ONLY on encoder-input hashes, never on
+      // the file's own chunk_text_hash / contentUnchanged.
+      if (chunkCutoffEnabled()) {
+        if (!this._cutoffCache) { this._cutoffCache = loadCutoffCache(this.stateDir); this._cutoffDirty = false; }
+        const signature = computeCutoffSignature(chunks);
+        const previous = getFileSignature(this._cutoffCache, rel);
+        if (signaturesMatch(previous, signature)) {
+          this.progress('production:vector-cutoff-skip');
+          // Provisional touched entry: keep the file's existing chunkIds so the
+          // merkle hash advances (the encoder inputs are unchanged) without any
+          // tier write. The merkle still records the new content hash so the
+          // file is not re-queued forever.
+          const prevTouched = this.touched.get(rel) || {};
+          const prevChunkIds = readJson(path.join(this.stateDir, MERKLE_STATE), { files: {} }).files?.[rel]?.chunkIds || prevTouched.chunkIds || [];
+          this.touched.set(rel, { ...prevTouched, hash: hashes, chunkIds: prevChunkIds, content: hashes.content });
+          if (ctx) ctx.persistedFiles.add(rel);
+          return {
+            ops: { vectors_upsert: 0, vectors_delete: 0 },
+            chunksTotal: chunks.length,
+            chunksEncoded: 0,
+            chunksReused: chunks.length,
+            chunksMetadataDirty: 0,
+            skipped: true,
+            vectorOps: [],
+            tokenOps: [],
+            gramOps: [],
+            manifest: { path: 'codebase.db' },
+          };
+        }
+      }
       // LI generated-content parity: decide ONCE, from the file's full chunk set
       // (exactly like full indexing's per-file applyIndexingChunkPolicy), whether
       // late interaction skips this file. Embeddings/graph/sparse still index it.
@@ -436,6 +893,13 @@ class ProductionReconcileAdapter {
         if (reused?.chunk) tokenOps.push({ addId: row.newId, chunk: reused.chunk });
       }
       this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: newIds, content: hashes.content });
+      // E.6: record this file's new cutoff signature (encoder-input hashes of
+      // the enriched chunks) for next-tick comparison.
+      if (this._cutoffCache) {
+        setFileSignature(this._cutoffCache, rel, computeCutoffSignature(chunks));
+        this._cutoffDirty = true;
+      }
+      if (ctx) ctx.persistedFiles.add(rel);
       return {
         ops: { vectors_upsert: newIds.length, vectors_delete: vectorOps.filter((o) => o.retireId).length },
         chunksTotal: chunks.length,
@@ -448,12 +912,40 @@ class ProductionReconcileAdapter {
         manifest: { path: 'codebase.db' },
       };
     } finally {
-      db.close();
+      if (ownConn) db.close();
     }
   }
 
-  async applyBinaryHNSWDelta(_file, ops) {
+  async applyBinaryHNSWDelta(_file, ops, _epoch, ctx = null) {
     if (!Array.isArray(ops) || ops.length === 0) return { ops: { binary_hnsw_append: 0, binary_hnsw_tombstone: 0 } };
+
+    // E.1 batched path: reuse the resident index, apply tombstones in place, and
+    // ACCUMULATE the add ops onto the tick context. The actual `index.add()`
+    // insertions are deferred to finalizeTick, where they run sorted-by-id so
+    // the graph is reproducible (G1 byte-identity). We still report the per-file
+    // append/tombstone counts here for the tick counters.
+    if (ctx?.index) {
+      const index = ctx.index;
+      let append = 0; let tombstone = 0;
+      for (const op of ops) {
+        if (op.retireId) {
+          if (markBinaryStale(index, op.retireId)) tombstone += 1;
+          ctx.floatRemoveIds.push(op.retireId);
+        }
+        if (op.addId && op.embedding) {
+          // Stage the add; insertion happens in finalize (sorted by id).
+          ctx.pendingAdds = ctx.pendingAdds || [];
+          ctx.pendingAdds.push(op);
+          append += 1;
+        }
+      }
+      ctx.tombstone += tombstone;
+      // append is committed to ctx.append in finalize after the sorted inserts.
+      ctx.append += append;
+      return { ops: { binary_hnsw_append: append, binary_hnsw_tombstone: tombstone }, manifest: { path: 'codebase-binary-hnsw.idx' } };
+    }
+
+    // ---- Per-file path (flag off): exact current behavior. ----
     const indexPath = path.join(this.stateDir, 'codebase-binary-hnsw.idx');
     const index = new BinaryHNSWIndex({ indexPath, stalePath: `${indexPath}.stale.bin`, floatDimension: this.modelInfo.hnswDimension });
     try { await index.load(indexPath); } catch { await index.init(); }
@@ -541,14 +1033,27 @@ class ProductionReconcileAdapter {
     const merklePath = path.join(this.stateDir, MERKLE_STATE);
     const merkle = readJson(merklePath, { version: '2.4', files: {}, stats: {} });
     merkle.files ||= {};
+    // E.1 PERSIST-BEFORE-ADVANCE: when batching, promote a file into the merkle
+    // ONLY if its ops are in the persisted batch (recorded in finalizeTick). A
+    // file touched this tick but absent from the persisted set (e.g. its HNSW
+    // adds did not make the saved batch) is left at its prior merkle state and
+    // re-reconciled next tick. Deletions always apply (no HNSW add to persist).
+    const persisted = this._lastPersistedFiles;
+    const gate = batchTierWritesEnabled() && persisted instanceof Set;
     for (const [file, data] of this.touched.entries()) {
       if (data.hash?.deleted) delete merkle.files[file];
-      else merkle.files[file] = { hash: data.hash.contentHash, ...data.hash.stat, epoch: manifest.epoch, chunkIds: data.chunkIds || [] };
+      else if (!gate || persisted.has(file)) merkle.files[file] = { hash: data.hash.contentHash, ...data.hash.stat, epoch: manifest.epoch, chunkIds: data.chunkIds || [] };
     }
     merkle.lastIndex = new Date().toISOString();
     merkle.epoch = manifest.epoch;
     merkle.stats = { ...(merkle.stats || {}), totalFiles: Object.keys(merkle.files).length };
     safeWriteJson(merklePath, merkle);
+    // E.6: persist the updated chunk-cutoff cache once per tick (after the
+    // merkle advances). Best-effort; a failure only costs a redundant re-embed.
+    if (this._cutoffCache && this._cutoffDirty) {
+      saveCutoffCache(this.stateDir, this._cutoffCache);
+      this._cutoffDirty = false;
+    }
     try { fs.unlinkSync(path.join(this.stateDir, PROCESSING_QUEUE)); } catch {}
     fs.appendFileSync(path.join(this.stateDir, METRICS_FILE), JSON.stringify({ ...manifest, ts: Date.now() / 1000, epoch: manifest.epoch }) + '\n');
   }

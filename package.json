@@ -92,6 +92,8 @@
     "build:native": "cd crates/sweet-search-native && npx napi build --release --platform --features coreml,accelerate && echo 'Native build OK'",
     "build:native:cuda": "cd crates/sweet-search-native && npx napi build --release --platform --features cuda,flash-attn && echo 'CUDA native build OK (Ampere+ — flash-attn compiled in, runtime-gated on SM 8.0+)'",
     "build:native:cuda-no-flashattn": "cd crates/sweet-search-native && npx napi build --release --platform --features cuda && echo 'CUDA native build OK (no flash-attn — SM 7.0+ compatible, naive attention)'",
+    "build:bg-priority": "cd native/bg-priority && npx napi build --platform --release && echo 'bg-priority native addon build OK'",
+    "build:mem-pressure": "cd native/mem-pressure && npx napi build --platform --release && echo 'mem-pressure native addon build OK'",
     "build:cli": "cd crates/sweet-search-cli && cargo build --release && echo 'CLI build OK'",
     "search": "node core/search/sweet-search.js",
     "index": "node core/indexing/index-codebase-v21.js",
@@ -141,6 +143,7 @@
     "@babel/helper-validator-identifier": "^7.28.5",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@node-rs/xxhash": "^1.7.6",
+    "@parcel/watcher": "^2.5.6",
     "better-sqlite3": "^11.7.0",
     "fast-glob": "^3.3.3",
     "franc-min": "^6.2.0",
@@ -169,7 +172,15 @@
     "@sweet-search/native-linux-arm64-gnu": "2.5.14",
     "@sweet-search/native-linux-arm64-gnu-cuda": "2.5.14",
     "@sweet-search/native-linux-x64-gnu": "2.5.14",
-    "@sweet-search/native-linux-x64-gnu-cuda": "2.5.14"
+    "@sweet-search/native-linux-x64-gnu-cuda": "2.5.14",
+    "@sweet-search/bg-priority-darwin-arm64": "2.5.14",
+    "@sweet-search/bg-priority-darwin-x64": "2.5.14",
+    "@sweet-search/bg-priority-win32-x64-msvc": "2.5.14",
+    "@sweet-search/bg-priority-win32-arm64-msvc": "2.5.14",
+    "@sweet-search/bg-priority-linux-x64-gnu": "2.5.14",
+    "@sweet-search/bg-priority-linux-arm64-gnu": "2.5.14",
+    "@sweet-search/mem-pressure-darwin-arm64": "2.5.14",
+    "@sweet-search/mem-pressure-darwin-x64": "2.5.14"
   },
   "engines": {
     "node": ">=18.0.0"
