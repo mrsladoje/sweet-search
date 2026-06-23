@@ -342,7 +342,12 @@ describe('G2 E.6 chunk-cutoff integration', () => {
     writeFileSync(join(projectRoot, 'src', 'a.js'), 'export function alpha(x){\n  return x.trim();\n}\n\n\n');
     const t = await tickFor('src/a.js', enc);
     expect(enc.encoded.length - baseline).toBe(0); // no re-embed
-    expect(t.ops_per_tier.vectors_upsert || 0).toBe(0); // no tier write
+    expect(t.ops_per_tier.vectors_upsert || 0).toBe(0); // no dense/HNSW/LI tier write
+    // BUT sparse-grams are derived from RAW content, not encoder inputs — the
+    // content DID change, so the sparse delta MUST still be emitted or ss-grep
+    // goes stale (the cutoff-skips-sparse regression Codex caught). The cutoff
+    // skips only the expensive encode/dense/LI/graph tiers, never sparse.
+    expect(t.ops_per_tier.sparse_gram_delta_upsert || 0).toBeGreaterThan(0);
   });
 
   it('does NOT skip when the chunk body actually changes', async () => {

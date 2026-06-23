@@ -925,7 +925,14 @@ class ProductionReconcileAdapter {
             skipped: true,
             vectorOps: [],
             tokenOps: [],
-            gramOps: [],
+            // E.6 cutoff skips the EXPENSIVE encode + dense/HNSW/LI/graph tiers
+            // (encoder inputs are byte-identical), but sparse-grams are derived
+            // from RAW file content — a comment/reformat edit, or a change in an
+            // un-chunked region, leaves encoder inputs identical yet changes the
+            // raw content, so ss-grep/regex would go STALE if we dropped the
+            // sparse delta here. Always emit the content-derived sparse-gram delta
+            // on cutoff; the reconciler applies ONLY this tier when `skipped`.
+            gramOps: [{ file: rel, deleted: false, content: hashes.content, contentHash: hashes.contentHash }],
             manifest: { path: 'codebase.db' },
           };
         }

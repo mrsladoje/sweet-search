@@ -430,8 +430,16 @@ export class Reconciler {
     if (vec?.ops?.vectors_upsert != null) ops.vectors_upsert = vec.ops.vectors_upsert;
     if (vec?.ops?.vectors_delete != null) ops.vectors_delete = vec.ops.vectors_delete;
     // Lever E.6: a cutoff-skipped file returns `skipped:true` from the vector
-    // adapter — no encode, no tier writes. Short-circuit the remaining tiers.
+    // adapter — no encode, no dense/HNSW/LI/graph writes. BUT sparse-grams are
+    // derived from RAW file content (not encoder inputs), so a content change
+    // with byte-identical encoder inputs still needs a sparse update or ss-grep
+    // goes stale. Apply ONLY the sparse-gram tier on cutoff-skip, then return.
     if (vec?.skipped) {
+      this.progress('reconciler:sparse:start');
+      const sgSkip = await this.adapters.applySparseGramDelta?.(file, vec?.gramOps ?? [], epoch);
+      this.progress('reconciler:sparse:done');
+      collectManifestTier(manifestTiers, 'sparseGram', sgSkip);
+      if (sgSkip?.ops?.sparse_gram_delta_upsert != null) ops.sparse_gram_delta_upsert = sgSkip.ops.sparse_gram_delta_upsert;
       return {
         chunksTotal: vec?.chunksTotal ?? 0,
         chunksEncoded: 0,
