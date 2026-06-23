@@ -397,12 +397,23 @@ function addDirtyHint(ctx, inputPath) {
 
 async function preserveJsonStdout(json, fn) {
   if (!json) return fn();
-  const originalLog = console.log;
+  // Route EVERY stdout-bound console level (log/info/debug) to stderr while the
+  // command runs, so stray diagnostics never corrupt the --json payload on
+  // stdout. console.log alone is not enough: the autotune emits its
+  // "[reconciler] interval …ms → …ms" line via the default `console` logger's
+  // `.info` (now that autotune is default-on), which writes to stdout and would
+  // otherwise prepend a non-JSON line to `reconcile tick --json`. warn/error
+  // already go to stderr, so they're left alone.
+  const original = { log: console.log, info: console.info, debug: console.debug };
   console.log = (...args) => console.error(...args);
+  console.info = (...args) => console.error(...args);
+  console.debug = (...args) => console.error(...args);
   try {
     return await fn();
   } finally {
-    console.log = originalLog;
+    console.log = original.log;
+    console.info = original.info;
+    console.debug = original.debug;
   }
 }
 
