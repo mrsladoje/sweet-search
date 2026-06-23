@@ -33,10 +33,26 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reconcileEnablement } from '../incremental-indexing/domain/interval-autotune.mjs';
+import { applyBackgroundPriority } from './os-priority.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export const MAINTAINER_LOCK_FILENAME = 'index-maintainer.lock';
+
+/**
+ * Background-priority gate (research §4.A A.2/A.3). Default ON — this is a
+ * Tier-1, output-identical lever (only *when* CPU/IO is granted to the child
+ * changes). Honors a canonical off-token (`0`/`false`/`off`) to disable.
+ *
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {boolean}
+ */
+function bgPriorityEnabled(env) {
+  const raw = env.SWEET_SEARCH_MAINTAINER_BG_PRIORITY;
+  if (raw == null || raw === '') return true; // default-on
+  const normalized = String(raw).trim().toLowerCase();
+  return !(normalized === '0' || normalized === 'false' || normalized === 'off');
+}
 
 /** Default maintainer entry: the sibling daemon in this same context. */
 export function defaultMaintainerEntry() {
@@ -128,6 +144,12 @@ export function launchMaintainer(options = {}) {
       },
     });
     child.unref();
+    // Demote the detached child to OS background priority (best-effort, never
+    // throws). Runs in this foreground caller, targeting the child by pid, so
+    // only the child is demoted. Gate default-on (Tier-1, output-identical).
+    if (bgPriorityEnabled(env)) {
+      applyBackgroundPriority(child.pid);
+    }
     log(`maintainer spawned (pid ${child.pid}, detached)`);
     return { spawned: true, reason: 'spawned', pid: child.pid, stateDir };
   } catch (err) {

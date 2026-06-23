@@ -105,3 +105,43 @@ export async function maintainFloatStore(binaryHnswPath, { upserts, removeIds, b
   store.applyDelta({ upserts, removeIds });
   await store.save(floatStorePath);
 }
+
+/**
+ * Tick-finalize variant of `maintainFloatStore` for the batched path (lever
+ * E.1). Instead of loading + saving the float store once per file, the
+ * reconciler loads the store once at tick start, accumulates all of the tick's
+ * float upserts/removes, and calls this once at tick finalize to apply them and
+ * save.
+ *
+ * `binaryVectorsBefore` is the live binary-HNSW vector count captured at TICK
+ * START (before any of this tick's appends), preserving the same
+ * "abnormal-state skip" semantics as the per-file path: if the float store is
+ * absent but the binary HNSW already held vectors, a store built from the delta
+ * alone would mis-score every baseline doc, so we skip until a full rebuild
+ * restores it.
+ *
+ * Returns `{ saved: boolean }` — `saved=false` means the delta was empty or the
+ * store was skipped (no fsync happened), which the persist-before-advance gate
+ * treats as "no float artifact changed this tick".
+ *
+ * @param {object} args
+ * @param {string} args.binaryHnswPath
+ * @param {FloatVectorStore} [args.store]        resident store (loaded once at tick start)
+ * @param {Array<{id:string, vector:Float32Array}>} args.upserts
+ * @param {string[]} args.removeIds
+ * @param {number} args.binaryVectorsBefore
+ * @param {number} args.dimension
+ * @returns {Promise<{saved: boolean}>}
+ */
+export async function flushFloatStore({ binaryHnswPath, store = null, upserts = [], removeIds = [], binaryVectorsBefore = 0, dimension }) {
+  if (upserts.length === 0 && removeIds.length === 0) return { saved: false };
+  const floatStorePath = getFloatStorePath(binaryHnswPath);
+  if (!existsSync(floatStorePath) && binaryVectorsBefore > 0 && !(store && store.loaded && store.count > 0)) {
+    return { saved: false };
+  }
+  const fvs = store || new FloatVectorStore();
+  if (!fvs.loaded) await fvs.loadOrInit(floatStorePath, dimension);
+  fvs.applyDelta({ upserts, removeIds });
+  await fvs.save(floatStorePath);
+  return { saved: true };
+}

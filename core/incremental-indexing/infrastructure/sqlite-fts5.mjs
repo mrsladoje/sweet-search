@@ -173,4 +173,76 @@ export function fts5Merge(db, tableName, pages) {
   db.prepare(`INSERT INTO ${tableName}(${tableName}, rank) VALUES('merge', ?)`).run(pages);
 }
 
+/**
+ * Derive the FTS5 merge page budget from the spare CPU budget for a tick, using
+ * the token-bucket policy in lever E.5:
+ *
+ *   - tick fast (elapsed < `fastMs`, default 500 ms) → a small merge step
+ *     (`smallPages`, default 16 — the same fixed value the reconcile tick used
+ *     before budgeting, so a fast tick is byte/behavior-equivalent to today);
+ *   - tick busy (elapsed > `slowMs`, default 1800 ms) → skip the merge
+ *     (`null`) to leave CPU for reconcile;
+ *   - in between → the small step.
+ *
+ * Returns a positive integer page count, or `null` to skip the merge entirely.
+ *
+ * @param {{elapsedMs: number, fastMs?: number, slowMs?: number, smallPages?: number}} args
+ * @returns {number|null}
+ */
+export function fts5MergeBudgetPages({ elapsedMs, fastMs = 500, slowMs = 1800, smallPages = 16 } = {}) {
+  const elapsed = Number.isFinite(elapsedMs) ? elapsedMs : 0;
+  if (elapsed > slowMs) return null;
+  return smallPages;
+}
+
+/**
+ * Derive the watermark-handler FTS5 merge page budget from the wall-clock budget
+ * remaining for the maintenance drain. A generous budget keeps the original
+ * aggressive `pages=500`; a tight remaining budget scales the page count down
+ * (floor 16) so a near-exhausted drain still makes a small step of forward
+ * progress rather than blowing the budget on one 500-page merge.
+ *
+ * @param {{remainingMs: number, maxPages?: number, minPages?: number, fullBudgetMs?: number}} args
+ * @returns {number}
+ */
+export function fts5WatermarkBudgetPages({ remainingMs, maxPages = 500, minPages = 16, fullBudgetMs = 2000 } = {}) {
+  if (!Number.isFinite(remainingMs) || remainingMs >= fullBudgetMs) return maxPages;
+  if (remainingMs <= 0) return minPages;
+  const scaled = Math.round((remainingMs / fullBudgetMs) * maxPages);
+  return Math.max(minPages, Math.min(maxPages, scaled));
+}
+
+/**
+ * Run a full FTS5 `('optimize')` rewrite of one table, then immediately
+ * `wal_checkpoint(TRUNCATE)` to flush the (potentially large) optimize
+ * transaction out of the WAL and truncate it back to zero — guarding the
+ * documented 256 MiB WAL-bloat alarm that is the reason `fts5Merge` itself
+ * never calls optimize (see `fts5Merge` note above).
+ *
+ * Lever E.5 (`SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE`). The CALLER is responsible
+ * for the gate: optimize must run ONLY on true-idle (consecutive empty ticks)
+ * AND only when a table-size check says it is worth it. This helper does not
+ * decide *when* — it just performs the optimize + checkpoint as one safe unit.
+ *
+ * `('optimize')` is a single-transaction rewrite: it merges every segment into
+ * one. It is idempotent (a second call on an already-optimized table is a near
+ * no-op) and output-equivalent to a fully-merged index — query results are
+ * unchanged.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} tableName  Name of the FTS5 virtual table (not the shadow).
+ * @returns {{optimized: boolean}}
+ */
+export function fts5Optimize(db, tableName) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tableName)) {
+    throw new Error(`fts5Optimize: invalid table name ${tableName}`);
+  }
+  db.prepare(`INSERT INTO ${tableName}(${tableName}) VALUES('optimize')`).run();
+  // Flush + truncate the WAL the optimize transaction just grew. Best-effort:
+  // a checkpoint failure (e.g. an active reader) must not turn a successful
+  // optimize into a thrown error on the maintainer path.
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
+  return { optimized: true };
+}
+
 export const __testing = { readVarint, STRUCTURE_ROWID };

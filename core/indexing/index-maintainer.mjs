@@ -43,7 +43,8 @@ import { dirname, join, relative, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { startupInterval, tierForHardware, reconcileEnablement } from '../incremental-indexing/domain/interval-autotune.mjs';
+import os from 'node:os';
+import { startupInterval, tierForHardware, reconcileEnablement, nextInterval, backstopWalkIntervalMs } from '../incremental-indexing/domain/interval-autotune.mjs';
 import { detectHardwareCapability } from '../infrastructure/hardware-capability.js';
 import { sweepStaleArtifactTemps, DEFAULT_TMP_SWEEP_MAX_AGE_MS } from '../incremental-indexing/infrastructure/artifact-temp-sweep.mjs';
 import { hasCompleteBaseIndex, WAITING_FOR_INITIAL_INDEX } from '../incremental-indexing/infrastructure/baseline-readiness.mjs';
@@ -909,9 +910,16 @@ export async function runReconcileV2Tick(ctx) {
   // `sweet-search index --add` or an editor hook (release-gate finding C1). Runs
   // before the consume step below; best-effort so a scan failure never blocks
   // reconcile of already-queued work.
+  // G6 backstop demotion: when the watcher is the primary producer the daemon
+  // sets `ctx.skipFullWalk` on the ticks between backstop walks (it leaves it
+  // unset/false on the first tick, on the periodic backstop, and on overflow).
+  // The watcher has already fed the queue from filesystem events, so the
+  // expensive full stat-walk is redundant on those ticks. When the watcher is
+  // inactive `skipFullWalk` is never set ⇒ the walk runs every tick (today's
+  // behavior, unchanged).
   try {
     const { dirtyScanEnabled, scanDirtyAndEnqueue } = await import('../incremental-indexing/application/dirty-scan.mjs');
-    if (dirtyScanEnabled()) {
+    if (dirtyScanEnabled() && !ctx.skipFullWalk) {
       const { createAdmissionPolicy } = await import('../indexing/admission-policy.js');
       const admissionPolicy = createAdmissionPolicy({ projectRoot: ctx.projectRoot });
       progress('dirty-scan:start');
@@ -1059,17 +1067,137 @@ export async function drainMaintenanceInline(ctx) {
   }
 }
 
-async function sleepWithProgress(totalMs, lockFile) {
+async function sleepWithProgress(totalMs, lockFile, opts = {}) {
   const deadline = Date.now() + totalMs;
+  // G6 watcher early-wake: when the watcher feeds the queue mid-sleep it sets a
+  // `pendingEvents` flag; the daemon breaks out of the sleep so the next tick
+  // reconciles fresh edits without waiting out the full interval. Off by default
+  // (no watcher → `wokenByWatcher` is never callable → behavior is today's).
+  const wokenByWatcher = typeof opts.wokenByWatcher === 'function' ? opts.wokenByWatcher : null;
   while (!shutdownRequested) {
     if (!stillOwnsLock(lockFile)) {
       throw new MaintainerLifecycleAbort('lock ownership lost during sleep');
     }
+    if (wokenByWatcher && wokenByWatcher()) return;
     const remaining = deadline - Date.now();
     if (remaining <= 0) return;
     await new Promise((resolveSleep) => setTimeout(resolveSleep, Math.min(LOCK_REFRESH_INTERVAL, remaining)));
     if (!shutdownRequested) createLifecycleProgress(lockFile)();
   }
+}
+
+// ---- G4 lever gates (each default OFF unless noted; off ⇒ exact prior behavior).
+// Mirror the G2 reconciler convention: strict `'1'` opt-in.
+const flagOn = (name) => process.env[name] === '1';
+export const reconcileAutotuneEnabled = (env = process.env) => env.SWEET_SEARCH_RECONCILE_AUTOTUNE === '1';
+
+/**
+ * A.4-consume: recompute the daemon's sleep interval from the just-finished
+ * tick. The reconciler config-half (G2) only re-tunes an ephemeral per-tick
+ * Reconciler instance, so the daemon MUST recompute the interval in its OWN
+ * loop or the autotune is "doubly dead" (flag on but output disconnected).
+ *
+ * Pure + testable: takes the tick counters snapshot + a measured maintenance
+ * backlog and returns the next interval. When the flag is off, returns
+ * `currentMs` unchanged (today's behavior). When an explicit interval is pinned
+ * via the startup env, the daemon never calls this (the resolver marked it
+ * pinned). Windows: `os.loadavg()` returns `[0,0,0]`, so the per-core load is 0
+ * and the loosen-under-load signal is naturally skipped (flat interval) — no
+ * special-casing needed beyond not treating 0 as "idle headroom" spuriously
+ * (0 < 0.2 only nudges down by 0.95, well within the rate-limit, harmless).
+ *
+ * @param {object} args
+ * @param {number} args.currentMs            interval the just-finished tick used
+ * @param {object|null} args.counters        runReconcileV2Tick return (snapshot)
+ * @param {number} args.maintenanceBacklog   pending maintenance jobs
+ * @param {NodeJS.ProcessEnv} [args.env]
+ * @param {() => number[]} [args.loadavg]    injectable for tests
+ * @param {() => number} [args.cpuCount]     injectable for tests
+ * @returns {{ nextMs:number, tuned:boolean, reasons:string[] }}
+ */
+export function computeNextIntervalMs({
+  currentMs,
+  counters,
+  maintenanceBacklog,
+  env = process.env,
+  loadavg = () => os.loadavg(),
+  cpuCount = () => os.cpus().length,
+}) {
+  if (!reconcileAutotuneEnabled(env)) {
+    return { nextMs: currentMs, tuned: false, reasons: [] };
+  }
+  // A skipped tick (dormant baseline / paused) has no usable signal — leave the
+  // interval untouched rather than feed `nextInterval` zeros that would creep up.
+  if (!counters || counters.skipped) {
+    return { nextMs: currentMs, tuned: false, reasons: [] };
+  }
+  let cores = 1;
+  try { cores = Math.max(1, cpuCount() || 1); } catch { cores = 1; }
+  let load1 = 0;
+  try { load1 = (loadavg()?.[0] ?? 0); } catch { load1 = 0; }
+  const cpuLoadAvg = load1 / cores; // Windows → 0/N = 0 → loosen-under-load skipped.
+  const tuned = nextInterval({
+    currentMs,
+    lastTickMs: Number(counters.tick_ms) || 0,
+    dirtyAtTickStart: Number(counters.dirty_paths_seen) || 0,
+    cpuLoadAvg,
+    maintenanceBacklog: Number(maintenanceBacklog) || 0,
+  });
+  return { nextMs: tuned.nextMs, tuned: tuned.nextMs !== currentMs, reasons: tuned.reasons };
+}
+
+/**
+ * D.1: idle-TTL. Default 0/disabled. Returns the configured wall-clock idle
+ * budget (ms) after which an unattended maintainer self-shuts-down so N resident
+ * model-loaded daemons collapse to 1–2 (the ~16 GB cross-repo footprint fix).
+ * 0 (or invalid / negative) ⇒ disabled (today's "run forever" behavior).
+ */
+export function maintainerIdleTtlMs(env = process.env) {
+  const raw = Number.parseInt(env.SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS ?? '', 10);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return 0;
+}
+
+/**
+ * D.1 idle bookkeeping (pure + testable). The maintainer has NO query route, so
+ * idle is keyed on consecutive ticks that found NOTHING to do — `dirtyAtTickStart
+ * === 0` AND an empty maintenance queue — NOT on the self-heartbeats
+ * (recordProgress/writeStateLock always tick). Any indexed change resets the
+ * counter and the wall-clock idle anchor.
+ *
+ * @param {object} state            mutable { idleTicks:number, idleSinceMs:number|null }
+ * @param {object} args
+ * @param {number} args.dirtyAtTickStart
+ * @param {number} args.maintenanceBacklog
+ * @param {boolean} [args.skipped]  a dormant/paused tick is NOT activity, but is
+ *                                  also not "idle work done" — treat as idle.
+ * @param {number} [args.nowMs]
+ * @returns {{ idle:boolean }}
+ */
+export function recordIdleTick(state, { dirtyAtTickStart, maintenanceBacklog, skipped = false, nowMs = Date.now() }) {
+  const didWork = !skipped && ((Number(dirtyAtTickStart) || 0) > 0 || (Number(maintenanceBacklog) || 0) > 0);
+  if (didWork) {
+    state.idleTicks = 0;
+    state.idleSinceMs = null;
+    return { idle: false };
+  }
+  state.idleTicks = (state.idleTicks || 0) + 1;
+  if (state.idleSinceMs == null) state.idleSinceMs = nowMs;
+  return { idle: true };
+}
+
+/**
+ * D.1: has the maintainer been continuously idle (no indexed change, empty
+ * maintenance queue) for at least `ttlMs` wall-clock across consecutive ticks?
+ * Requires BOTH at least one consecutive idle tick AND the wall-clock budget to
+ * have elapsed since idleness began. ttlMs<=0 ⇒ never (disabled).
+ */
+export function idleTtlExceeded(state, ttlMs, nowMs = Date.now()) {
+  if (!(ttlMs > 0)) return false;
+  // Use a null check, NOT truthiness: an idle anchor of exactly 0ms is valid.
+  if (state.idleSinceMs == null) return false;
+  if ((state.idleTicks || 0) < 1) return false;
+  return (nowMs - state.idleSinceMs) >= ttlMs;
 }
 
 async function runReconcileV2Main({ runOnce, merkleOnce }) {
@@ -1104,8 +1232,100 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   }
 
   const resolved = resolveReconcileV2Interval();
-  const intervalMs = resolved.intervalMs;
+  // A.4-consume: the sleep interval is now mutable so the autotune can move it
+  // each iteration. When the operator pins an explicit interval, the resolver
+  // marks it `pinned` and the autotune never fires (parity with the reconciler
+  // config's `pinnedIntervalMs` short-circuit).
+  let intervalMs = resolved.intervalMs;
+  const autotunePinned = resolved.pinned === true;
   log('INFO', `Reconcile v2 interval ${intervalMs}ms (source=${resolved.source}${resolved.tier ? `, tier=${resolved.tier}` : ''})`);
+
+  // G3 arming: configure the BACKGROUND/maintainer ORT profile BEFORE the first
+  // tick embeds. The ONNX session singleton is built once on first encode;
+  // configuring after is a silent no-op (mirrors indexer-phases.js:491). Gated
+  // on SWEET_SEARCH_ORT_BACKGROUND (default off). Best-effort — never block
+  // startup on the embedding module.
+  if (flagOn('SWEET_SEARCH_ORT_BACKGROUND')) {
+    try {
+      const [{ configureLocalModelRuntime }, { backgroundIntraOpThreads }] = await Promise.all([
+        import('../embedding/embedding-local-model.js'),
+        import('../infrastructure/onnx-session-utils.js'),
+      ]);
+      configureLocalModelRuntime({ intraOpThreads: backgroundIntraOpThreads(), background: true });
+      log('INFO', 'ORT background profile armed for maintainer daemon (force_spinning_stop + arena-off + bg threads)');
+    } catch (err) {
+      log('WARN', `ORT background profile arming failed (continuing on foreground profile): ${err?.message ?? err}`);
+    }
+  }
+
+  // G6 watcher hook (integration seam; module + behavior owned by G6). When the
+  // module is absent or the flag is off, behavior is EXACTLY today: the per-tick
+  // full stat-walk in runReconcileV2Tick stays the sole dirty-set producer. The
+  // watcher (when active) feeds the queue from filesystem events, sets
+  // `watcherState.pendingEvents` for early-wake, and the producer block demotes
+  // the full walk to a periodic backstop.
+  const watcherState = { active: false, pendingEvents: false, forceBackstopWalk: false, lastBackstopWalkMs: 0, handle: null };
+  const backstopMs = backstopWalkIntervalMs().intervalMs;
+  if (process.env.SWEET_SEARCH_MAINTAINER_WATCH === '1') {
+    try {
+      const mod = await import('./maintainer-watcher.mjs');
+      if (typeof mod.startWatcher === 'function') {
+        const { createAdmissionPolicy } = await import('../indexing/admission-policy.js');
+        const admissionPolicy = createAdmissionPolicy({ projectRoot: ctx.projectRoot });
+        watcherState.handle = await mod.startWatcher({
+          stateDir: ctx.stateDir,
+          projectRoot: ctx.projectRoot,
+          admissionPolicy,
+          onEvent: () => { watcherState.pendingEvents = true; },
+          onOverflow: () => { watcherState.forceBackstopWalk = true; watcherState.pendingEvents = true; },
+        });
+        watcherState.active = !!watcherState.handle;
+        if (watcherState.active) log('INFO', `Maintainer file watcher active (backstop walk every ${backstopMs}ms)`);
+      }
+    } catch (err) {
+      // Module absent or failed → no-op; the full per-tick walk remains primary.
+      log('WARN', `Maintainer watcher unavailable (full per-tick walk remains primary): ${err?.message ?? err}`);
+    }
+  }
+
+  // G7 RSS-budget registry hook (integration seam; module owned by G7). Only when
+  // SWEET_SEARCH_RSS_BUDGET_FRACTION is set; best-effort, guarded so a missing
+  // module is a no-op.
+  let rssRegistration = null;
+  if (process.env.SWEET_SEARCH_RSS_BUDGET_FRACTION) {
+    try {
+      const mod = await import('./rss-budget.mjs');
+      if (typeof mod.registerDaemon === 'function') {
+        rssRegistration = await mod.registerDaemon({ pid: process.pid, stateDir: ctx.stateDir, kind: 'maintainer' });
+      }
+    } catch (err) {
+      log('WARN', `RSS-budget registry unavailable (no soft cap on this daemon): ${err?.message ?? err}`);
+    }
+  }
+
+  // D.1 idle-TTL: an unattended maintainer self-shuts-down after the configured
+  // wall-clock idle budget so N resident model-loaded daemons collapse to 1–2
+  // (the ~16 GB cross-repo footprint fix). Default 0/disabled ⇒ run forever
+  // (today's behavior). Idle is keyed on consecutive ticks that found nothing to
+  // do (dirtyAtTickStart===0 AND empty maintenance queue), NEVER on the
+  // self-heartbeats. NOTE: the search-server daemon has its own idle-TTL+LRU,
+  // but it never enumerates/registers the maintainer (search-server.js:918), so
+  // there is no double-mechanism here.
+  const idleTtl = maintainerIdleTtlMs();
+  const idleState = { idleTicks: 0, idleSinceMs: null };
+  // Unref'd idle timer mirrors search-server.js:907–913 — it never keeps the
+  // event loop alive on its own and only REQUESTS shutdown (it does NOT
+  // process.exit); the main loop drains the current tick to `finally`.
+  const idleTimer = idleTtl > 0
+    ? setInterval(() => {
+        if (idleTtlExceeded(idleState, idleTtl)) {
+          log('INFO', `Maintainer idle for ≥${idleTtl}ms with no indexed change; requesting clean shutdown for on-demand respawn`);
+          shutdownRequested = true;
+        }
+      }, Number(process.env.SWEET_SEARCH_MAINTAINER_IDLE_CHECK_MS ?? 60_000))
+    : null;
+  if (idleTimer?.unref) idleTimer.unref();
+
   // Lifecycle fix: only refresh the heartbeat if we still own the lock. If a
   // wedged-backstop takeover stole it, the lockfile now names another pid —
   // we must NOT clobber that successor with our pid. The main loop's
@@ -1137,16 +1357,60 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
       // acquireStateLock distinguish a busy-but-progressing daemon from one
       // hung on a never-resolving await — see the WEDGED_KILL_GRACE_MS block.
       recordProgress(lock.lockFile);
+      // G6: the watcher already fed the queue from filesystem events, so the
+      // expensive full stat-walk producer is demoted to a periodic backstop.
+      // We pass the demotion decision into the tick via ctx so the producer
+      // block (index-maintainer.mjs ~:907) can skip the walk when appropriate.
+      // When the watcher is inactive this is always `false` ⇒ today's behavior.
+      let runFullWalk = true;
+      if (watcherState.active) {
+        const nowMs = Date.now();
+        const dueForBackstop = (nowMs - (watcherState.lastBackstopWalkMs || 0)) >= backstopMs;
+        const firstTick = !watcherState.lastBackstopWalkMs;
+        runFullWalk = firstTick || dueForBackstop || watcherState.forceBackstopWalk;
+        if (runFullWalk) {
+          watcherState.lastBackstopWalkMs = nowMs;
+          watcherState.forceBackstopWalk = false;
+        }
+      }
+      // Consume any pending watcher events for THIS tick (the queue already
+      // holds them); clear so early-wake doesn't immediately re-fire post-sleep.
+      watcherState.pendingEvents = false;
       const pause = isReconcilePaused(ctx.stateDir);
       if (pause.paused) {
         log('INFO', `Automatic reconcile v2 work paused${pause.pausedAt ? ` since ${pause.pausedAt}` : ''}`);
       } else {
         try {
           const onProgress = createLifecycleProgress(lock.lockFile);
-          await runReconcileV2Tick({ ...ctx, onProgress });
+          const tickCounters = await runReconcileV2Tick({ ...ctx, onProgress, skipFullWalk: watcherState.active && !runFullWalk });
           onProgress('tick:post');  // post-tick checkpoint
           await drainMaintenanceInline({ ...ctx, onProgress });
           onProgress('drain:post');  // post-drain checkpoint
+
+          // A.4-consume + D.1 idle bookkeeping. Read the maintenance backlog
+          // AFTER the drain (it reflects what remains, not what was queued).
+          let backlog = 0;
+          try {
+            const { readMaintenanceQueue } = await import('../incremental-indexing/application/maintenance-worker.mjs');
+            backlog = readMaintenanceQueue(ctx.stateDir).length;
+          } catch { backlog = 0; }
+          const dirtySeen = Number(tickCounters?.dirty_paths_seen) || 0;
+          if (!autotunePinned) {
+            const tuned = computeNextIntervalMs({
+              currentMs: intervalMs,
+              counters: tickCounters,
+              maintenanceBacklog: backlog,
+            });
+            if (tuned.tuned) {
+              log('INFO', `Reconcile v2 interval ${intervalMs}ms → ${tuned.nextMs}ms (${tuned.reasons.join(',')})`);
+              intervalMs = tuned.nextMs;
+            }
+          }
+          recordIdleTick(idleState, {
+            dirtyAtTickStart: dirtySeen,
+            maintenanceBacklog: backlog,
+            skipped: tickCounters?.skipped === true,
+          });
         } catch (err) {
           if (err instanceof MaintainerLifecycleAbort) {
             log('WARN', `Reconcile v2 lifecycle abort: ${err.message}. Cleaning up cancellation-orphaned temps and exiting cleanly.`);
@@ -1172,10 +1436,33 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
           log('ERROR', `Reconcile v2 tick failed: ${err?.message ?? err}`);
         }
       }
-      await sleepWithProgress(intervalMs, lock.lockFile);
+      await sleepWithProgress(intervalMs, lock.lockFile, {
+        // G6 early-wake: break the sleep the instant the watcher reports new
+        // events so a fresh edit is reconciled without waiting out the interval.
+        // No watcher ⇒ this is never truthy ⇒ today's full-interval sleep.
+        wokenByWatcher: watcherState.active ? () => watcherState.pendingEvents : null,
+      });
     }
   } finally {
     clearInterval(refresh);
+    if (idleTimer) clearInterval(idleTimer);
+    // G6 watcher teardown — best-effort, never throw from finally.
+    if (watcherState.handle && typeof watcherState.handle.close === 'function') {
+      try { await watcherState.handle.close(); } catch { /* best-effort */ }
+    }
+    // G7 RSS registry teardown — best-effort.
+    if (rssRegistration && typeof rssRegistration.unregister === 'function') {
+      try { await rssRegistration.unregister(); } catch { /* best-effort */ }
+    }
+    // D.1: release the ORT session in order on a clean (idle-TTL or signal)
+    // shutdown so a respawned daemon starts from a clean slate. This canNOT go
+    // in the process.on('exit') handler (synchronous, no async). releaseStateLock
+    // below unlinks the O_EXCL lock so the next launchMaintainer respawns cleanly
+    // (reconcile-before-serve via the new daemon's t=0 tick).
+    try {
+      const { unloadLocalModel } = await import('../embedding/embedding-local-model.js');
+      await unloadLocalModel();
+    } catch { /* best-effort: never block clean shutdown on model release */ }
     releaseStateLock(lock.lockFile);
     log('INFO', 'Reconcile v2 shutdown complete');
   }
@@ -2173,6 +2460,29 @@ async function main() {
   const runOnce = process.argv.includes('--once');
   const dryRun = process.argv.includes('--dry-run');
   const merkleOnce = process.argv.includes('--merkle-once');
+
+  // A.1 (Tier-1, UNGATED): demote the maintainer daemon to low OS priority so
+  // the foreground (editor / git / shell) never feels the background indexer's
+  // CPU. Identical index output — only *when* CPU is granted changes. Covers
+  // BOTH the reconcile-v2 and the legacy queue/merkle paths (set before either
+  // branch). Best-effort: a platform that rejects it must not crash the daemon.
+  try { os.setPriority(os.constants.priority.PRIORITY_LOW); } catch { /* best-effort */ }
+
+  // E.4 (global half): set the process-global SQLite `soft_heap_limit` ONCE,
+  // before any tier connection opens. SQLite's `soft_heap_limit` is a
+  // PROCESS-WIDE setting (sqlite3_soft_heap_limit64), not per-connection — so
+  // running the pragma on a single throwaway in-memory connection at startup
+  // caps the page-cache heap for EVERY subsequent better-sqlite3 connection in
+  // this process (128 MiB). This is the process-wide lever that pairs with G2's
+  // per-connection `cache_size` / `shrink_memory`. (better-sqlite3 exposes no
+  // static global setter, so the throwaway-conn pragma is the documented path.)
+  // Guarded + best-effort: a packaging without better-sqlite3 degrades to a
+  // no-op and never crashes the daemon.
+  try {
+    const { default: BetterSqlite3 } = await import('better-sqlite3');
+    const probe = new BetterSqlite3(':memory:');
+    try { probe.pragma('soft_heap_limit = 134217728'); } finally { probe.close(); }
+  } catch { /* best-effort: soft_heap_limit is an optimisation, never required */ }
 
   // L1 FIX: Updated version to v3
   log('INFO', 'Starting index maintainer daemon v3...');

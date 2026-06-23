@@ -56,6 +56,15 @@ crates/sweet-search-native/index.d.ts
 crates/sweet-search-cli/target/
 packages/native-*/maxsim.node
 packages/native-*/sweet-search
+# Optional bg-priority / mem-pressure napi addons: ignore build outputs
+# (compiled .node + cargo target + lockfile), keep the hand-written
+# index.js / index.d.ts loaders + Rust/Cargo sources in source control.
+native/bg-priority/target/
+native/bg-priority/*.node
+native/bg-priority/Cargo.lock
+native/mem-pressure/target/
+native/mem-pressure/*.node
+native/mem-pressure/Cargo.lock
 
 # Phase planning docs (regenerable)
 PHASE*_RESULTS.md

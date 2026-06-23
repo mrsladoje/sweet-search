@@ -30,6 +30,7 @@ export const QUERY_MAX_LENGTH = parseInt(process.env.SWEET_SEARCH_QUERY_MAX_LENG
 // Import + re-export from infrastructure (canonical location)
 import {
   bestIntraOpThreads,
+  backgroundIntraOpThreads,
   defaultOrtExecutionMode,
   detectLastLevelCacheBytes,
   computeWeightsAwareBatchCap,
@@ -52,6 +53,13 @@ let localModelRuntimeConfig = {
   intraOpThreads: null,
   interOpThreads: null,
   executionMode: null,
+  // G3: background/maintainer ORT profile. When truthy, buildLocalSessionOptions
+  // emits force_spinning_stop:'1' + arena-off + 2–4 intra-op threads instead of
+  // the foreground allow_spinning:'1' + arena-on default. Set by the maintainer
+  // daemon (G4) via configureLocalModelRuntime({ background: true }) before the
+  // first encode (the session singleton is built once on first encode — setting
+  // it afterwards is a silent no-op). Default null/off everywhere else.
+  background: null,
 };
 
 export function configureLocalModelRuntime(overrides = {}) {
@@ -66,7 +74,24 @@ export function resetLocalModelRuntime() {
     intraOpThreads: null,
     interOpThreads: null,
     executionMode: null,
+    background: null,
   };
+}
+
+/**
+ * Resolve whether the BACKGROUND/maintainer ORT profile is active.
+ *
+ * True when the daemon set `{ background: true }` via configureLocalModelRuntime
+ * OR the SWEET_SEARCH_ORT_BACKGROUND=1 env gate is set. Default OFF: the
+ * foreground/full-index path is unchanged. An explicit `background: false` in
+ * the runtime config wins over the env gate (lets a query daemon force the
+ * latency-critical foreground profile even under a global env flag).
+ */
+export function isBackgroundOrtProfile(runtimeConfig = {}) {
+  const cfg = runtimeConfig.background ?? localModelRuntimeConfig.background;
+  if (cfg === true) return true;
+  if (cfg === false) return false;
+  return process.env.SWEET_SEARCH_ORT_BACKGROUND === '1';
 }
 
 export function isOpenVinoProviderAvailable() {
@@ -159,6 +184,8 @@ export function getCalibrationFactor() {
 }
 
 export function buildLocalSessionOptions(quantLabel = 'q8', coremlAvailable = false, runtimeConfig = {}) {
+  const background = isBackgroundOrtProfile(runtimeConfig);
+
   const executionMode = runtimeConfig.executionMode
     ?? localModelRuntimeConfig.executionMode
     ?? process.env.SWEET_SEARCH_ORT_EXEC_MODE
@@ -166,9 +193,14 @@ export function buildLocalSessionOptions(quantLabel = 'q8', coremlAvailable = fa
   const interOpThreads = runtimeConfig.interOpThreads
     ?? localModelRuntimeConfig.interOpThreads
     ?? parseInt(process.env.SWEET_SEARCH_ORT_INTER_OP_THREADS || '1', 10);
+  // Foreground scales intra-op threads with the hardware (bestIntraOpThreads);
+  // the background/maintainer profile clamps to 2–4 so an idle-time reconcile
+  // tick never spikes every P-core. An explicit intraOpThreads override (from
+  // runtimeConfig or the daemon's configureLocalModelRuntime) still wins on
+  // both paths so callers can pin a specific count.
   const intraOpThreads = runtimeConfig.intraOpThreads
     ?? localModelRuntimeConfig.intraOpThreads
-    ?? bestIntraOpThreads(runtimeConfig);
+    ?? (background ? backgroundIntraOpThreads(runtimeConfig) : bestIntraOpThreads(runtimeConfig));
 
   const sessionOptions = {
     graphOptimizationLevel: 'all',
@@ -176,18 +208,41 @@ export function buildLocalSessionOptions(quantLabel = 'q8', coremlAvailable = fa
     intraOpNumThreads: intraOpThreads,
     interOpNumThreads: interOpThreads,
     executionMode,
-    enableCpuMemArena: true,
+    // Background profile disables the CPU mem arena: ORT never returns arena
+    // memory to the OS once grown (#25325), so a resident maintainer daemon
+    // would accrue monotonic RSS. Foreground keeps the arena on for throughput.
+    enableCpuMemArena: !background,
     enableMemPattern: true,
     optimizedModelFilePath: getOptimizedModelPath(quantLabel),
   };
 
-  // Thread spinning keeps ORT worker threads hot-looping for work instead of
-  // sleeping on OS primitives. Trades idle CPU for lower per-batch latency.
-  sessionOptions.extra = {
-    session: {
-      intra_op: { allow_spinning: '1' },
-    },
-  };
+  if (background) {
+    // Background/maintainer profile: park worker threads immediately after the
+    // last Run() instead of hot-looping (allow_spinning would peg ~a full core
+    // while the daemon sits idle 20–60s between bursts). force_spinning_stop
+    // re-spins on the next Run() at ~14% latency cost — a good trade for a
+    // background daemon. Honoured by onnxruntime-node via SessionOptions.extra
+    // (verified by native-binding inspection of 1.24.3; self-checked at startup
+    // in getLocalPipeline, which falls back to thread-count-only if rejected).
+    // NB: do NOT set intra_op_thread_affinities — no-op on macOS; E-core
+    // routing comes from process-level taskpolicy -b (G5), and RunOptions.extra
+    // per-Run arena shrinkage is not wired in the Node binding (arena-off is the
+    // only resident-memory lever here).
+    sessionOptions.extra = {
+      session: {
+        force_spinning_stop: '1',
+      },
+    };
+  } else {
+    // Foreground/full-index profile: thread spinning keeps ORT worker threads
+    // hot-looping for work instead of sleeping on OS primitives. Trades idle
+    // CPU for lower per-batch latency. (Unchanged from the historical default.)
+    sessionOptions.extra = {
+      session: {
+        intra_op: { allow_spinning: '1' },
+      },
+    };
+  }
 
   if (shouldUseOpenVino()) {
     // Note: OpenVINO EP is not bundled in onnxruntime-node 1.24 for macOS.
@@ -399,6 +454,38 @@ async function embedBatchesWithPool(pool, batches, maxLength, onProgress, totalT
 // PIPELINE SINGLETON
 // =============================================================================
 
+/**
+ * Self-check that the background ORT profile's SessionOptions.extra is accepted
+ * by the onnxruntime-node binding. Builds a throwaway session with the bg
+ * `extra` (force_spinning_stop); if it constructs cleanly, the real session
+ * keeps the extra. If construction throws (key rejected by a future ORT), log
+ * and return a copy of the options with `extra` removed (thread-count-only
+ * fallback — the clamped intra-op count + arena-off still apply). Best-effort:
+ * any failure to even run the probe leaves the options untouched.
+ *
+ * Throwaway sessions are disposed when supported so the probe leaves no
+ * resident native memory behind.
+ */
+async function verifyBackgroundExtraOrFallback(ort, onnxPath, sessionOptions) {
+  let probe = null;
+  try {
+    probe = await ort.InferenceSession.create(onnxPath, sessionOptions);
+    return sessionOptions; // extra accepted — use it
+  } catch (err) {
+    const fallback = { ...sessionOptions };
+    delete fallback.extra;
+    console.warn(
+      `[L3b] ORT background profile extra rejected (${err?.message || err}); ` +
+      'falling back to thread-count-only background profile (arena-off retained).',
+    );
+    return fallback;
+  } finally {
+    if (probe && typeof probe.release === 'function') {
+      try { await probe.release(); } catch { /* best effort */ }
+    }
+  }
+}
+
 let localPipeline = null;
 let isLoadingLocal = false;
 let loadPromise = null;
@@ -429,7 +516,16 @@ export async function getLocalPipeline() {
     if (isAppleSilicon() && !existsSync(coremlFlagPath)) {
       coremlAvailable = await isCoreMLProviderAvailable();
     }
-    const sessionOptions = buildLocalSessionOptions(quantLabel, coremlAvailable);
+    let sessionOptions = buildLocalSessionOptions(quantLabel, coremlAvailable);
+    // G3 startup self-check: the background profile relies on
+    // SessionOptions.extra.session.force_spinning_stop being honoured by the
+    // onnxruntime-node binding (confirmed via native-binding inspection of
+    // 1.24.3, but verify at runtime). If a future ORT version rejects the
+    // config key, fall back to a thread-count-only background profile (keep the
+    // clamped intra-op count + arena-off; drop only the unsupported `extra`).
+    if (isBackgroundOrtProfile() && sessionOptions.extra) {
+      sessionOptions = await verifyBackgroundExtraOrFallback(ort, onnxPath, sessionOptions);
+    }
     let backend = 'cpu';
     if (sessionOptions.executionProviders) {
       const names = sessionOptions.executionProviders.map(ep => typeof ep === 'string' ? ep : ep.name);

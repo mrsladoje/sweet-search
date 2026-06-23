@@ -1,0 +1,27 @@
+{
+  "name": "@sweet-search/bg-priority",
+  "version": "2.5.14",
+  "description": "Optional napi-rs addon: process/thread background OS scheduling (Windows PROCESS_MODE_BACKGROUND_BEGIN, macOS QOS_CLASS_BACKGROUND) for the sweet-search index-maintainer daemon. Failure to build is non-fatal — os-priority.mjs falls back to spawn-based taskpolicy/ionice/chrt + os.setPriority.",
+  "license": "Apache-2.0",
+  "private": true,
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "binaryName": "sweet-search-bg-priority",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu"
+    ]
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.5.1"
+  }
+}

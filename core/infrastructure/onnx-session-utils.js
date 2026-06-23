@@ -260,3 +260,40 @@ export function bestIntraOpThreads(options = {}) {
     : effectiveCores - reserveCores;
   return Math.max(1, Math.min(requested, maxThreads, logicalCores));
 }
+
+/**
+ * Intra-op thread count for the BACKGROUND/maintainer ORT profile.
+ *
+ * The maintainer daemon trades a little throughput for not spiking every
+ * P-core during an idle-time reconcile tick. Encoder-only INT8 GEMM recovers
+ * ~85–90% throughput at 4 threads (RESEARCH §B), so we run the background
+ * encoder at a clamped 2–4 threads regardless of how wide the box is. This is
+ * intentionally distinct from {@link bestIntraOpThreads} (the foreground /
+ * full-index path), which scales with the hardware.
+ *
+ * Reads the SWEET_SEARCH_INTRA_OP_THREADS override (shared with the foreground
+ * helper), but always clamps the result into [2, 4]; on a single-core box the
+ * floor is the available logical-core count so we never request more threads
+ * than exist. Affinity (E-core pinning) is deliberately NOT attempted here:
+ * `intra_op_thread_affinities` is a no-op on macOS (pthread_setaffinity_np
+ * unavailable) — E-core routing comes from process-level taskpolicy -b (G5).
+ *
+ * Override: SWEET_SEARCH_INTRA_OP_THREADS=N (still clamped to 2–4).
+ */
+export function backgroundIntraOpThreads(options = {}) {
+  const logicalCores = Math.max(1, options.logicalCores ?? os.cpus().length);
+  const LO = 2;
+  const HI = 4;
+  const upper = Math.min(HI, logicalCores);
+  const lower = Math.min(LO, upper);
+
+  let requested = upper;
+  const override = Number.parseInt(process.env.SWEET_SEARCH_INTRA_OP_THREADS ?? '', 10);
+  if (Number.isFinite(override) && override > 0) {
+    requested = override;
+  } else if (Number.isFinite(options.targetThreads) && options.targetThreads > 0) {
+    requested = options.targetThreads;
+  }
+
+  return Math.max(lower, Math.min(requested, upper));
+}

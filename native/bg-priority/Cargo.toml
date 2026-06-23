@@ -1,0 +1,32 @@
+[package]
+name = "sweet-search-bg-priority"
+version = "2.5.14"
+edition = "2021"
+description = "Optional napi-rs addon: process/thread background scheduling (Windows PROCESS_MODE_BACKGROUND_BEGIN, macOS QOS_CLASS_BACKGROUND) for the sweet-search index-maintainer daemon"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+napi = { version = "2", features = ["default"] }
+napi-derive = "2"
+
+# Windows: SetPriorityClass(PROCESS_MODE_BACKGROUND_BEGIN/END) lives in
+# kernel32 via the processthreadsapi. We bind the two calls we need rather
+# than pull a large crate. windows-sys is the thin, link-only binding.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+] }
+
+# macOS: pthread_set_qos_class_self_np lives in libSystem (always linked).
+# We declare it via a raw `extern "C"` block in lib.rs, so no extra crate is
+# needed here — libc is only used for the QoS class constant typing.
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[build-dependencies]
+napi-build = "2"

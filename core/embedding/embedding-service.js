@@ -38,6 +38,21 @@ import {
   resetLocalModelRuntime,
 } from './embedding-local-model.js';
 
+// G8 shared model server — the RPC client is imported LAZILY (only when the
+// SWEET_SEARCH_SHARED_MODEL_SERVER gate is on) so the default in-process path
+// never pays the import cost and stays byte-and-behavior identical to today.
+let _modelClientModule;
+async function _getModelClient() {
+  if (_modelClientModule === undefined) {
+    try {
+      _modelClientModule = await import('./model-client.mjs');
+    } catch {
+      _modelClientModule = null; // import failed → permanently fall back
+    }
+  }
+  return _modelClientModule;
+}
+
 import {
   queryCache,
   vocabulary,
@@ -315,6 +330,49 @@ export async function embed(text, options = {}) {
   return result.embedding;
 }
 
+/**
+ * G8 dispatch shim. Generate embeddings for the uncached texts.
+ *
+ * When `SWEET_SEARCH_SHARED_MODEL_SERVER==='1'` AND the embedding provider is
+ * the local ONNX model (the only model the shared server hosts), route the
+ * generation through the model-server RPC client over a Unix socket. The RPC
+ * result is BYTE-IDENTICAL to in-process (same model, same preprocessing — the
+ * floats travel as raw Float32 bytes). On ANY failure (flag off, client import
+ * failed, socket unavailable, server error, timeout) we fall through to the
+ * existing in-process `generateEmbeddings` path UNCHANGED — the shared server
+ * is a pure performance/memory optimization, never a correctness dependency.
+ */
+async function _generateUncachedEmbeddings(uncachedTexts, provider, providerOptions, onProgress) {
+  const sharedServerOn = process.env.SWEET_SEARCH_SHARED_MODEL_SERVER === '1';
+  // The shared model server only hosts the local ONNX model. Remote providers
+  // (voyage/mistral/jina) must keep their existing in-process API path.
+  const isLocalModel = !EMBEDDING_PROVIDERS[provider]
+    || !EMBEDDING_PROVIDERS[provider].enabled
+    || provider === 'local';
+
+  if (sharedServerOn && isLocalModel) {
+    const client = await _getModelClient();
+    if (client && typeof client.requestEmbeddings === 'function') {
+      try {
+        const rpc = await client.requestEmbeddings(uncachedTexts, { providerOptions });
+        // Guard against a partial/short reply — only trust a complete result.
+        if (Array.isArray(rpc) && rpc.length === uncachedTexts.length) {
+          if (onProgress) onProgress(uncachedTexts.length, uncachedTexts.length);
+          return rpc;
+        }
+      } catch (err) {
+        if (process.env.DEBUG_CATCHES) {
+          process.stderr.write(`[embedding-service] shared model server RPC failed, falling back: ${err?.message || err}\n`);
+        }
+        // fall through to in-process
+      }
+    }
+  }
+
+  // Default / fallback path — byte-and-behavior identical to today.
+  return generateEmbeddings(uncachedTexts, provider, { ...providerOptions, onProgress });
+}
+
 export async function getEmbeddings(texts, options = {}) {
   const {
     useCache = true,
@@ -355,7 +413,7 @@ export async function getEmbeddings(texts, options = {}) {
   }
 
   if (uncachedTexts.length > 0) {
-    const newEmbeddings = await generateEmbeddings(uncachedTexts, provider, { ...providerOptions, onProgress });
+    const newEmbeddings = await _generateUncachedEmbeddings(uncachedTexts, provider, providerOptions, onProgress);
     for (let i = 0; i < uncachedIndices.length; i++) {
       const idx = uncachedIndices[i];
       results[idx] = { embedding: newEmbeddings[i], cached: false };

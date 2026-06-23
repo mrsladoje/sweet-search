@@ -1,0 +1,84 @@
+{
+  "description": "Fixed determinism edit sequence for the index-maintainer harness. Each step is replayed as ONE reconciler tick. Paths are relative to the project root (the materialized copy of fixtures/mini-repo).",
+  "baseFiles": [
+    "src/util.js",
+    "src/alpha.js",
+    "src/beta.js"
+  ],
+  "baselineEnqueue": [
+    "src/util.js",
+    "src/alpha.js",
+    "src/beta.js"
+  ],
+  "steps": [
+    {
+      "name": "add",
+      "kind": "add",
+      "comment": "Add a brand-new file with no prior index state.",
+      "ops": [
+        {
+          "op": "write",
+          "path": "src/gamma.js",
+          "content": "// gamma.js — added by the edit script.\nexport function gammaJoin(parts) {\n  return parts.join('-');\n}\n\nexport function gammaFirst(items) {\n  return items[0];\n}\n"
+        }
+      ],
+      "enqueue": ["src/gamma.js"]
+    },
+    {
+      "name": "modify-1-chunk",
+      "kind": "modify",
+      "comment": "Change a single function body in beta.js; the other chunk is hash-reused.",
+      "ops": [
+        {
+          "op": "write",
+          "path": "src/beta.js",
+          "content": "// beta.js — base fixture file. Independent of util.js; edited (1 chunk)\n// and later deleted by the edit script.\nexport function betaScale(value, factor) {\n  return value * factor * 2;\n}\n\nexport function betaSum(a, b) {\n  return a + b;\n}\n"
+        }
+      ],
+      "enqueue": ["src/beta.js"]
+    },
+    {
+      "name": "modify-with-dependency-change",
+      "kind": "modify-dep",
+      "comment": "Rename a symbol in util.js. alpha.js imports it, so the dependent file must re-embed (enrichment input changed) even though alpha's own text is touched here too to make the dependency edge explicit.",
+      "ops": [
+        {
+          "op": "write",
+          "path": "src/util.js",
+          "content": "// util.js — base fixture file. A dependency target: other files import from it.\nexport function trimAllStrict(input) {\n  return String(input).trim();\n}\n\nexport function repeat(value, times) {\n  let out = '';\n  for (let i = 0; i < times; i += 1) out += value;\n  return out;\n}\n"
+        },
+        {
+          "op": "write",
+          "path": "src/alpha.js",
+          "content": "// alpha.js — now imports the renamed util symbol.\nimport { trimAllStrict } from './util.js';\n\nexport function alphaGreet(name) {\n  return 'hello ' + trimAllStrict(name);\n}\n\nexport function alphaCount(items) {\n  return items.length;\n}\n"
+        }
+      ],
+      "enqueue": ["src/util.js", "src/alpha.js"]
+    },
+    {
+      "name": "delete",
+      "kind": "delete",
+      "comment": "Delete beta.js; all tiers must tombstone and the merkle entry drops.",
+      "ops": [
+        {
+          "op": "delete",
+          "path": "src/beta.js"
+        }
+      ],
+      "enqueue": ["src/beta.js"]
+    },
+    {
+      "name": "rename",
+      "kind": "rename",
+      "comment": "Rename alpha.js -> alphaRenamed.js. The reconciler sees old path deleted and new path added.",
+      "ops": [
+        {
+          "op": "rename",
+          "from": "src/alpha.js",
+          "to": "src/alphaRenamed.js"
+        }
+      ],
+      "enqueue": ["src/alpha.js", "src/alphaRenamed.js"]
+    }
+  ]
+}

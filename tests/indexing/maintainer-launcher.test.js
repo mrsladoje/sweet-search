@@ -16,6 +16,14 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
+// Spy on the background-priority helper so we can assert the launcher calls it
+// with the spawned child's pid (research §4.A A.2/A.3, default-on Tier-1 gate).
+const applyBackgroundPriorityMock = vi.fn();
+vi.mock('../../core/indexing/os-priority.mjs', () => ({
+  applyBackgroundPriority: (...args) => applyBackgroundPriorityMock(...args),
+  loadNativePriorityAddon: () => null,
+}));
+
 import {
   launchMaintainer,
   resolveStateDir,
@@ -56,6 +64,7 @@ beforeEach(() => {
   sandbox = mkdtempSync(join(tmpdir(), 'ss-launcher-'));
   stateDir = join(sandbox, '.sweet-search');
   marker = join(sandbox, 'maintainer.log');
+  applyBackgroundPriorityMock.mockReset();
 });
 
 afterEach(() => {
@@ -179,5 +188,41 @@ describe('launchMaintainer helpers', () => {
 
   it('defaultMaintainerEntry resolves to the sibling index-maintainer.mjs', () => {
     expect(defaultMaintainerEntry().endsWith(join('indexing', 'index-maintainer.mjs'))).toBe(true);
+  });
+});
+
+describe('launchMaintainer background-priority demotion (A.2/A.3)', () => {
+  it('demotes the spawned child to OS background priority by default (gate on)', () => {
+    mkdirSync(stateDir, { recursive: true });
+    const r = launchMaintainer({ env: baseEnv(), cwd: sandbox, maintainerEntry: FAKE_ENTRY });
+    expect(r.spawned).toBe(true);
+    expect(applyBackgroundPriorityMock).toHaveBeenCalledTimes(1);
+    // Called with the spawned child's pid — demotes only the child, not the caller.
+    expect(applyBackgroundPriorityMock).toHaveBeenCalledWith(r.pid);
+  });
+
+  it('does NOT demote when the gate is off (0 / false / off)', () => {
+    mkdirSync(stateDir, { recursive: true });
+    for (const v of ['0', 'false', 'off', 'OFF']) {
+      applyBackgroundPriorityMock.mockReset();
+      const r = launchMaintainer({
+        env: baseEnv({ SWEET_SEARCH_MAINTAINER_BG_PRIORITY: v }),
+        cwd: sandbox,
+        maintainerEntry: FAKE_ENTRY,
+      });
+      expect(r.spawned).toBe(true);
+      expect(applyBackgroundPriorityMock).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does NOT demote when no child is spawned (opted-out path)', () => {
+    mkdirSync(stateDir, { recursive: true });
+    const r = launchMaintainer({
+      env: baseEnv({ SWEET_SEARCH_RECONCILE_V2: '0' }),
+      cwd: sandbox,
+      maintainerEntry: FAKE_ENTRY,
+    });
+    expect(r.spawned).toBe(false);
+    expect(applyBackgroundPriorityMock).not.toHaveBeenCalled();
   });
 });
