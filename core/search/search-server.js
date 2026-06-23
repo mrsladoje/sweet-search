@@ -268,12 +268,13 @@ export async function buildReadDaemonResponse(reqUrl, {
   if (!isUnixSocket) {
     return readSemanticError(403, '/read is only available via Unix socket');
   }
-  if (!serverReady) {
-    const reason = initError?.message
-      ? `Server initialization failed: ${initError.message}`
-      : 'Server is starting, please retry';
-    return readSemanticError(503, reason, { status: initError ? 'failed' : 'starting' });
-  }
+  // NOTE: /read deliberately does NOT gate on serverReady. `read` returns exact
+  // file bytes from node:fs (search-read.js) and never touches the searcher /
+  // indexes — the only index reference is `searcher?.projectRoot` in the root
+  // check below, already null-tolerant. Gating it on init readiness made `read`
+  // fail (503 → native client exit) during the cold-start window for no reason
+  // (Codex finding). read-semantic/trace DO need indexes and keep their gate
+  // (with a bounded readiness-wait added at the dispatch site).
   if (reqUrl.length > SEARCH_SERVER_MAX_URL_LENGTH) {
     return readSemanticError(414, `Request URL too long (max ${SEARCH_SERVER_MAX_URL_LENGTH} chars)`);
   }
@@ -502,6 +503,22 @@ export async function startServer() {
   let serverReady = false;
   let initError = null;
   let initTimeMs = null;
+
+  // Bounded readiness wait for the INDEX-DEPENDENT endpoints (read-semantic /
+  // trace). The Unix socket is bound before searcher.init() finishes (below),
+  // and the native client treats "connectable" as "ready" and fires its request
+  // immediately — so a cold-start request used to hit a 503 and the client
+  // exited (Codex finding). Waiting here (up to ~10s, or until a terminal
+  // initError) turns that race into a short latency hit instead of a hard
+  // failure. /read does NOT use this (it needs no indexes); /health is instant.
+  const READINESS_WAIT_MS = 10_000;
+  const waitForServerReady = async (budgetMs = READINESS_WAIT_MS) => {
+    if (serverReady || initError) return;
+    const deadline = Date.now() + budgetMs;
+    while (!serverReady && !initError && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  };
 
   // Track request count for periodic cache clearing in long-running sessions.
   let requestCount = 0;
@@ -741,6 +758,9 @@ export async function startServer() {
     } else if (req.method === 'GET' && reqUrl.startsWith('/read-semantic?')) {
       // Real query traffic — reset the idle-TTL clock (NOT /health or /stop).
       lastActivityMs = Date.now();
+      // read-semantic needs the indexes — wait out the cold-start init race
+      // (bounded) so a freshly-spawned daemon doesn't 503 the first request.
+      await waitForServerReady();
       const response = await buildReadSemanticDaemonResponse(reqUrl, {
         isUnixSocket: !req.socket.remoteAddress,
         serverReady,
@@ -752,6 +772,9 @@ export async function startServer() {
     } else if (req.method === 'GET' && reqUrl.startsWith('/trace?')) {
       // Real query traffic — reset the idle-TTL clock (NOT /health or /stop).
       lastActivityMs = Date.now();
+      // trace needs the code-graph — wait out the cold-start init race (bounded)
+      // so a freshly-spawned daemon doesn't 503 the first request.
+      await waitForServerReady();
       const response = await buildTraceDaemonResponse(reqUrl, {
         isUnixSocket: !req.socket.remoteAddress,
         serverReady,

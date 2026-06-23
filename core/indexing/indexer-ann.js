@@ -737,18 +737,22 @@ export async function buildQuantizedArtifactsPhase(dryRun = false, options = {})
 
     const skipCheck = await shouldSkipArtifactRebuild({ changedFiles, force });
 
-    if (skipCheck.shouldSkip) {
-      log(`Skipping binary artifacts (only ${changedFiles} files changed, threshold is ${ARTIFACT_THRESHOLDS.skipThreshold})`, 'yellow');
-      log('  Float HNSW will serve search until next rebuild', 'dim');
-      log(`  Accumulated changes: ${skipCheck.accumulatedTotal || changedFiles}`, 'dim');
-
+    // usearch float HNSW was removed (commit c2a9817) — the binary HNSW is now
+    // the ONLY semantic search surface, and search dispatches to it whenever the
+    // artifact exists. So we can NO LONGER defer its rebuild on a sub-threshold
+    // change: that left vectors freshly committed to codebase.db invisible to
+    // 3-stage search until the next rebuild fired (the staleness Codex caught).
+    // Any actual change must rebuild the binary artifact to stay consistent with
+    // codebase.db; only a genuine no-op run (0 changed files) may skip. (The
+    // default daemon reconcile path maintains this per-tick via applyBinaryHNSWDelta.)
+    if (skipCheck.shouldSkip && (Number(changedFiles) || 0) === 0) {
+      log('Skipping binary artifacts: no files changed since last rebuild', 'dim');
       await updateArtifactState({
         rebuilt: false,
         changedFiles,
         previousState: skipCheck.state,
       });
-
-      return { binaryHnsw: null, int8: null, skipped: true, reason: skipCheck.reason };
+      return { binaryHnsw: null, int8: null, skipped: true, reason: 'no-changes' };
     }
 
     log('Building quantized artifacts from codebase.db...', 'yellow');
