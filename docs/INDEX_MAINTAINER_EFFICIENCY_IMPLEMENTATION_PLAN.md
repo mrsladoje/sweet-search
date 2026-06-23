@@ -664,9 +664,98 @@ changes the format, and it is off + non-migrating by default).
 | `SWEET_SEARCH_MAINTAINER_NATIVE_PRIORITY` | A.5/A.6 napi addon (QoS / `PROCESS_MODE_BACKGROUND_BEGIN`) | addon built + present |
 
 ### Known follow-ups (out of scope of this work)
-1. Pre-existing TOCTOU flake `sparse-gram-delta-reader.js:61` — recommend wrapping the segment
-   `readFileSync` in try/catch and skipping on `ENOENT` (the lone suite flake).
+1. ~~Pre-existing TOCTOU flake `sparse-gram-delta-reader.js:61`~~ — **FIXED** (commit `9dc8eb4`):
+   `readFileSync` wrapped, skip on concurrent-unlink `ENOENT`, rethrow other errors.
 2. Pre-existing `tests/embedding/embedding-correctness.test.js` batched-vs-sequential failure
    (proven pre-existing by git-stash; unrelated to G8).
 3. Native-addon publish-readiness: add `files`/`os`/`cpu` to `native/*/package.json` so the
    prebuilt `.node` ships despite the root `.gitignore` (only if the addons are ever published).
+
+---
+
+## 8. Measured results — benchmarked 2026-06-23 (the claim, made true)
+
+Machine: Apple M3 Max, 16 cores, 137 GB, Node v25.8.1, onnxruntime-node 1.24.3, real INT8
+CodeRankEmbed CPU model. Ran **alone** (pkill of all daemons before each run; verified clean
+before/after); each lever in isolated child processes with fresh temp stateDirs. **Shared dev
+machine ⇒ numbers are indicative, not lab-isolated.** Reusable script:
+`scripts/bench-maintainer-efficiency.mjs`. *(This section replaces the earlier unmeasured
+"more efficient" assertion — what is measured is now stated; what is not is labelled.)*
+
+### 8.1 — Measured efficiency, lever by lever
+
+| Lever | Metric | OFF (today) | ON | Delta | Verdict |
+|---|---|---|---|---|---|
+| **E.1 batch tier writes** | tick **peak RSS** (12.7 MB idx, touch 40, ×3) | 600.8 MB | 356.3 MB | **−244 MB** | **STRONG — the headline win** |
+| **E.1 batch tier writes** | tick wall-clock | 10 519 ms | 7 551 ms | **−28 %** | strong (batching share; see caveat) |
+| **A OS background priority** | foreground `git status` median **under tick load** | 22–24 ms (+~40 % vs 16 ms baseline) | 16–18 ms (≈ baseline) | **erases the +7 ms regression** | **SUPPORTED — real & reproducible (×3)** |
+| **B `force_spinning_stop`** | **steady** 50 s idle self-CPU | 0.091 % | 0.002 % | ~40× but **both negligible** | **PARTIAL — doc overclaimed (see 8.2)** |
+| **B `force_spinning_stop`** | **post-burst spin tail** (settle CPU, equal threads) | 1.39 % (250 ms) | 0.03 % (5 ms) | ~50× less tail | the *real* (small) win |
+
+**Caveats:** tick-RSS used the determinism-harness stub encoders at 768-dim (batching is
+encoder-independent — the RSS shape is the per-file HNSW JSON parse/stringify reload, not embed
+math); with the real encoder, total tick wall is larger and embedding-dominated, so the −28 % is
+the *batching* share only. OFF peak RSS is noisy (501–642 MB, retained heap + GC timing); ON is
+rock-steady ~356 MB. fg-latency would shrink on a more contended box and may differ on hardware
+without E-cores.
+
+### 8.2 — Honest correction to the research doc (B / idle CPU)
+
+The research doc (citing ORT issue #26026) claimed `allow_spinning:'1'` **pegs ~a full core at
+idle**. **On ORT 1.24.3 this does NOT reproduce** — the default threadpool self-parks within ~1 s,
+so steady idle is ~0 % for *both* profiles. `force_spinning_stop`'s real, measured benefit is
+cutting the **post-burst spin-down tail** (~50× less settle-window CPU). For a daemon that bursts
+then idles between ticks that tail recurs each tick, so it still helps — but it is **tens-to-
+hundreds of ms of tail per burst, not a pegged core.** Re-check on ORT upgrades.
+
+### 8.3 — Freshness impact per flag (the trade, stated honestly)
+
+"Stays exactly as fresh as before" is **only true with every flag off.** Several levers trade
+freshness for efficiency:
+
+| Flag / lever | Freshness vs today | Worst-case staleness |
+|---|---|---|
+| A.1 `setPriority`, A.2/3 `BG_PRIORITY` | **same** (only *when* CPU is granted changes) | none |
+| E.1 batch, E.2 live-HNSW, E.4 pragmas, E.5 FTS5 | **same** (same per-tick cadence; write path only) | none |
+| B `ORT_BACKGROUND` | **same** (embeddings byte-identical — see 8.4) | none |
+| A.4 `AUTOTUNE` | **worse under CPU load by design** (loosens interval when `loadavg` high) | up to the loosened interval (tier max) while load is high |
+| D.1 `IDLE_TTL_MS` | **worse during the idle window** — daemon is down; edits not indexed until a search/MCP/session trigger respawns it (cold start 2–8 s, then reconcile-before-serve) | one respawn cycle |
+| C `MAINTAINER_WATCH` | **better common-case** (event-driven < per-tick walk); **worse worst-case** on dropped/missed events | up to `BACKSTOP_WALK_MS` (default 10 min) |
+| D.3 `RSS_BUDGET_FRACTION` | same until budget crossed; then the **evicted** repo is down until respawn | one respawn cycle (longest-idle repo only) |
+
+**Net:** with flags off, freshness is identical and nothing is faster. The efficiency wins above
+(RAM, fg-latency, spin-tail) come **only** when you enable the flags, and the watcher/idle-TTL/
+autotune levers are explicit freshness↔efficiency trades — not free.
+
+### 8.4 — E2E smokes on the real model (2026-06-23)
+
+| Feature | Result | Evidence |
+|---|---|---|
+| **B ORT parity (MRR-risk preview)** | **BYTE-IDENTICAL** | foreground vs background profile, 10 strings × 768 dims, `maxAbsDelta=0`, `firstMismatch=-1`. Enabling `ORT_BACKGROUND` shifts embeddings by **zero** → the MRR gate is essentially pre-cleared (still run it, but the outcome is determined). |
+| **G8 shared model server** | **PASS** | unix-socket round-trip byte-identical to in-process for matched batch composition (the cross-client mismatch was traced to ORT INT8 batch-composition, *not* transport — transport is lossless); 2 concurrent clients; clean socket unlink on shutdown. |
+| **C watcher** | **PASS** | real FSEvents → correctly-shaped queue line (`source:'watch'`); **stateDir self-trigger guard held** (writes into `.sweet-search` produced zero events); `.git/HEAD` → backstop. Live in the real daemon ("file watcher active"). |
+| **D.1 idle-TTL respawn** | **PASS** | real daemon: model load → reconcile → idle-TTL fires → `unloadLocalModel` → `releaseStateLock` unlinks the `O_EXCL` lock → exit 0; relaunch acquires the lock cleanly and reconciles-before-serve. |
+
+Not exercised here (honest): native `IN_Q_OVERFLOW` (source-confirmed; the `.git/HEAD` overflow
+path *was* live), `SWEET_SEARCH_STATE_DIR` (ignored by indexer+maintainer — they default to
+`<root>/.sweet-search`), and the Metal/GPU path (intentionally CPU-only per safety).
+
+### 8.5 — Default-path crash-consistency: a real bug, found and FIXED
+
+The byte-diff harness surfaced a **genuine correctness bug in the shipped default path** (not just
+the gated one): a SIGKILL after a file's SQLite vector COMMIT but before its HNSW/LI save left the
+row durable in `codebase.db` (queryable via FTS) yet **permanently missing from the HNSW + LI
+vector index** — on restart `diffChunks` saw the committed row as unchanged and never re-added it.
+Classification: **correctness — queryable-doc-missing.** **Fixed** on the default per-file path
+(minimal persist-before-advance repair keyed on `epoch_written > published merkle.epoch`,
+idempotent HNSW add + LI retire-then-add; never fires on the happy path). Verified:
+`run-harness.mjs --kill-after-tick 2` → **CRASH-CONSISTENCY PASS** (was FAIL), happy-path byte-diff
+unchanged, full `tests/indexing/` + vector-store green. Residual on modify/delete-tick crashes is
+the cosmetic stale-node (self-healed by `binaryHnswHandler` maintenance + eliminated by E.1).
+
+### 8.6 — Flag coupling (footgun removed)
+
+`RECONCILE_BATCH_TIER_WRITES` now **forces** `HNSW_DETERMINISTIC_LEVELS` on (one-time warning) so
+batching is always byte-identical; explicitly setting `HNSW_DETERMINISTIC_LEVELS=0` while batch is
+on **throws** a clear config error. Normalized once in `createProductionReconciler`
+(`normalizeHnswDeterminismFlags`), so the daemon is covered without per-call wiring.

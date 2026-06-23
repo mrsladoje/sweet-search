@@ -47,6 +47,69 @@ const liveHnswEnabled = () => flagOn('SWEET_SEARCH_RECONCILE_LIVE_HNSW');
 const sqlitePragmasEnabled = () => flagOn('SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS');
 const fts5BudgetEnabled = () => flagOn('SWEET_SEARCH_RECONCILE_FTS5_BUDGET');
 
+const BATCH_FLAG = 'SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES';
+const DET_LEVELS_FLAG = 'SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS';
+
+// One-time-warning latch so the forced-on notice is emitted ONCE per process,
+// not on every tick (createProductionReconciler runs per tick in the daemon).
+let _batchForcedDetLevelsWarned = false;
+
+/**
+ * Couple the two HNSW-determinism levers so the batch lever can never silently
+ * produce a non-byte-identical graph.
+ *
+ * E.1 batching (`SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES`) only yields a graph
+ * byte-identical to the per-file / compaction paths when per-id deterministic
+ * levels (`SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS`) are ON — see plan §0.5.
+ * `binary-hnsw-index.js` reads the det-levels env var directly at insert time,
+ * so enabling batch WITHOUT det-levels is a footgun: the batched tick draws the
+ * global RNG in a different interleaving than a per-file run and the resulting
+ * graph diverges. These two flags were independent; this normalization makes
+ * them coupled.
+ *
+ * Runs per tick from `createProductionReconciler` (which the daemon constructs
+ * each tick), so the daemon is covered without touching index-maintainer.mjs.
+ *
+ *   - batch ON + det-levels UNSET  → force det-levels='1' in the env (so
+ *     binary-hnsw-index.js transparently sees it) + emit a ONE-TIME stderr
+ *     warning explaining why.
+ *   - batch ON + det-levels EXPLICITLY '0' → throw (explicit contradiction:
+ *     the operator asked for batch byte-identity AND non-deterministic levels).
+ *   - batch ON + det-levels '1' → already correct, no-op.
+ *   - batch OFF → no-op (det-levels is independently meaningful off the batch
+ *     path; we never touch it).
+ *
+ * @param {{warn?:Function}} [logger]  optional logger for the one-time warning
+ *   (falls back to process.stderr so the notice is never swallowed).
+ */
+export function normalizeHnswDeterminismFlags(logger = null) {
+  if (process.env[BATCH_FLAG] !== '1') return;
+  const det = process.env[DET_LEVELS_FLAG];
+  if (det === '1') return; // already coupled correctly
+  if (det === '0') {
+    throw new Error(
+      `${BATCH_FLAG}=1 requires ${DET_LEVELS_FLAG} to be ON for a byte-identical `
+      + `HNSW graph, but ${DET_LEVELS_FLAG} is explicitly '0'. These are `
+      + `contradictory: batch tier writes only converge with the per-file and `
+      + `compaction build paths when per-id deterministic levels are enabled `
+      + `(see INDEX_MAINTAINER_EFFICIENCY_IMPLEMENTATION_PLAN §0.5). Either set `
+      + `${DET_LEVELS_FLAG}=1 or disable ${BATCH_FLAG}.`,
+    );
+  }
+  // Unset (or any non-'1'/'0' value): force it on so the batched graph stays
+  // byte-identical, and tell the operator once.
+  process.env[DET_LEVELS_FLAG] = '1';
+  if (!_batchForcedDetLevelsWarned) {
+    _batchForcedDetLevelsWarned = true;
+    const msg = `[reconciler] ${BATCH_FLAG}=1 requires deterministic HNSW levels for a `
+      + `byte-identical graph; ${DET_LEVELS_FLAG} was unset, so it has been forced ON. `
+      + `Set ${DET_LEVELS_FLAG}=1 explicitly to silence this, or ${DET_LEVELS_FLAG}=0 to `
+      + `surface the contradiction as an error.`;
+    if (typeof logger?.warn === 'function') logger.warn(msg);
+    else process.stderr.write(`${msg}\n`);
+  }
+}
+
 // E.2: deletion-fraction threshold + insert cadence for the live (daemon-scoped)
 // HNSW. Save to disk only on graceful shutdown, deletion-fraction >= this, or
 // every N inserts.
@@ -220,6 +283,12 @@ async function enrichChunksFromGraph(chunks, stateDir, tickCtx = null) {
 }
 
 export function createProductionReconciler(options = {}) {
+  // Couple the batch + det-levels flags FIRST (before the adapter is built and
+  // before any tier write), so binary-hnsw-index.js — which reads
+  // SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS at insert time — transparently sees
+  // the forced value whenever batch is on. Throws on the explicit contradiction
+  // (batch=1 + det-levels=0). See `normalizeHnswDeterminismFlags`.
+  normalizeHnswDeterminismFlags(options.logger);
   const projectRoot = path.resolve(options.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
   const stateDir = path.resolve(options.stateDir || process.env.SWEET_SEARCH_STATE_DIR || path.join(projectRoot, '.sweet-search'));
   const adapter = new ProductionReconcileAdapter({ ...options, projectRoot, stateDir });
@@ -892,7 +961,78 @@ class ProductionReconcileAdapter {
         const reused = delta.toReuse.find((item) => item.ann?.chunkStructId === row.chunkStructId);
         if (reused?.chunk) tokenOps.push({ addId: row.newId, chunk: reused.chunk });
       }
-      this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: newIds, content: hashes.content });
+
+      // CRASH-CONSISTENCY (default per-file path durability). On this path the
+      // SQLite vector COMMIT above (`production:vector-written`) lands BEFORE the
+      // dependent tiers (HNSW, then LI) are persisted, in separate adapter calls
+      // with no shared transaction. A SIGKILL between them leaves the vector rows
+      // DURABLE in codebase.db while the HNSW node + LI doc were never written —
+      // and the merkle did NOT advance (persistManifest never ran). On the next
+      // tick the file is re-reconciled, but its committed rows now hash-MATCH an
+      // EXACT reuse in diffChunks → zero re-encode → zero add ops → the chunk is
+      // QUERYABLE via FTS/SQLite yet permanently MISSING from the HNSW vector
+      // index AND the LI index (a real correctness hole: vector / late-interaction
+      // search silently never return it). Verified by the determinism harness
+      // `--kill-after-tick 2`: live HNSW + LI diverge (the new gamma.js chunk).
+      //
+      // FIX (minimal persist-before-advance for the per-file path): the published
+      // merkle epoch is the advance authority — persistManifest only advances
+      // `merkle.epoch` AFTER a tick wrote its downstream tiers, so any LIVE vector
+      // row whose `epoch_written` exceeds the highest published merkle epoch was
+      // committed by a tick that never published: a torn post-crash row whose
+      // HNSW node / LI doc may be missing. Re-emit a repair op for each such row
+      // under its EXISTING id (so the recovered index is identical to a clean
+      // run, not a fresh re-encode id):
+      //   - HNSW: an ADD op. `index.add` on an already-present id updates in place
+      //     (no duplicate node, no graph mutation) → no-op when the node landed,
+      //     repair when it didn't.
+      //   - LI: a RETIRE+ADD pair. LI `add` appends to a fresh segment and is NOT
+      //     idempotent, so we tombstone any existing doc for the id first; the
+      //     add then yields exactly one live doc whether or not the doc had
+      //     landed. (Retiring a non-existent LI doc is a no-op.)
+      //
+      // The discriminator is exact and never fires on the happy path: a
+      // successful tick always advances `merkle.epoch` to the epoch it wrote its
+      // rows at, so on a non-crash tick every prior live row has
+      // `epoch_written <= merkle.epoch` and the rows written THIS tick are already
+      // in `newIds` (added above), never re-added here. Gated to the per-file
+      // path (`!ctx`): the E.1 batched path has its own persist-before-advance
+      // (deferred COMMIT + merkle gating) and a crashed batch rolls the SQLite
+      // write back, so no live torn row ever exists there. Byte-diff/behaviour on
+      // non-crash runs is UNCHANGED (verified by the determinism harness control +
+      // candidate sweeps).
+      const repairedIds = [];
+      if (!ctx && snap.size > 0) {
+        const publishedEpoch = this._publishedEpoch();
+        const alreadyAdded = new Set(newIds);
+        const chunkByStructId = new Map();
+        for (let i = 0; i < chunks.length; i += 1) {
+          const sid = annotations[i]?.chunkStructId;
+          if (sid != null) chunkByStructId.set(sid, chunks[i]);
+        }
+        for (const row of snap.values()) {
+          if (row.epoch_retired != null) continue;
+          if (!Number.isInteger(row.epoch_written) || row.epoch_written <= publishedEpoch) continue;
+          if (alreadyAdded.has(row.id)) continue; // written THIS tick already
+          const dbRow = db.prepare('SELECT id, embedding, metadata FROM vectors WHERE id = ?').get(row.id);
+          if (!dbRow?.embedding) continue;
+          vectorOps.push({ addId: dbRow.id, embedding: float32FromBuffer(dbRow.embedding), metadata: JSON.parse(dbRow.metadata || '{}') });
+          const chunk = chunkByStructId.get(row.chunk_struct_id);
+          if (chunk) {
+            tokenOps.push({ retireId: dbRow.id, file: rel });
+            tokenOps.push({ addId: dbRow.id, chunk });
+          }
+          // Record the repaired row in the merkle chunkIds so the file's recorded
+          // chunk set reflects the rows actually live after recovery (a torn add
+          // produced no `newIds`, so without this the merkle would advance with an
+          // empty chunkIds for a file that does have a live, now-indexed chunk).
+          repairedIds.push(dbRow.id);
+          this.progress('production:vector-crash-recovery');
+        }
+      }
+
+      const recordedChunkIds = repairedIds.length > 0 ? [...newIds, ...repairedIds] : newIds;
+      this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: recordedChunkIds, content: hashes.content });
       // E.6: record this file's new cutoff signature (encoder-input hashes of
       // the enriched chunks) for next-tick comparison.
       if (this._cutoffCache) {
@@ -997,6 +1137,18 @@ class ProductionReconcileAdapter {
     return { ops: { li_segment_append: appended, li_tombstone: tombstone }, manifest: { path: 'codebase-late-interaction.db', segments: 'codebase-late-interaction.db.segments/manifest.json' } };
   }
 
+  /**
+   * Highest SUCCESSFULLY-published merkle epoch (the per-file crash-recovery
+   * advance authority — see the torn-row repair in `applyVectorDelta`). Returns
+   * -1 when no merkle has been published yet, so any committed row counts as
+   * un-advanced. Best-effort + read-only.
+   * @returns {number}
+   */
+  _publishedEpoch() {
+    const merkle = readJson(path.join(this.stateDir, MERKLE_STATE), {});
+    return Number.isInteger(merkle?.epoch) ? merkle.epoch : -1;
+  }
+
   applySparseGramDelta(_file, ops, epoch) {
     if (!Array.isArray(ops) || ops.length === 0) return { ops: { sparse_gram_delta_upsert: 0 } };
     const base = path.join(this.stateDir, 'codebase-sparse-grams.idx');
@@ -1063,4 +1215,8 @@ export const __testing = {
   ProductionReconcileAdapter,
   sparseGramRecord,
   markBinaryStale,
+  normalizeHnswDeterminismFlags,
+  // Reset the one-time forced-on warning latch so each test case observes the
+  // warning independently.
+  _resetDetLevelsWarnLatch() { _batchForcedDetLevelsWarned = false; },
 };
