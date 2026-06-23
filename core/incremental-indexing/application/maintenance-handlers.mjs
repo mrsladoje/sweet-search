@@ -198,8 +198,9 @@ export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
   // rebuild is independent of the scan/encounter order above. Combined with
   // levelForId() (gated by the same flag inside `add()`), this makes the
   // compaction path agree byte-for-byte with batched/per-file builds.
-  // Default OFF → preserve today's encounter-order insertion exactly.
-  const insertOrder = process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS === '1'
+  // DEFAULT-ON (disable with SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS=0) →
+  // set the flag to '0' to preserve today's encounter-order insertion exactly.
+  const insertOrder = process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS !== '0'
     ? [...live].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     : live;
   let added = 0;

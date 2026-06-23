@@ -108,6 +108,15 @@ describe('crash-consistency: torn SQLite-committed row is re-added to HNSW + LI'
       'codebase-binary-hnsw.vectors.json', 'codebase-binary-hnsw.graph.json',
       'codebase-binary-hnsw.int8.json', 'codebase-binary-hnsw.stale.bin',
       'codebase-float-vectors.bin', 'merkle-state.json',
+      // The chunk-cutoff cache (lever E.6, now DEFAULT-ON) is persisted by
+      // persistManifest in the SAME step that advances the merkle (see
+      // production-reconciler.mjs:1219). A torn tick that never advanced the
+      // merkle therefore never wrote the cutoff cache for that tick either, so a
+      // faithful crash residue must drop it alongside the merkle. Otherwise a
+      // stale cutoff signature would short-circuit applyVectorDelta BEFORE the
+      // per-file torn-row repair — an inconsistent residue that cannot occur in
+      // production (cutoff cache + merkle co-persist atomically).
+      'reconcile-cutoff-cache.json',
     ]) {
       try { unlinkSync(join(stateDir, name)); } catch { /* ok if absent */ }
     }

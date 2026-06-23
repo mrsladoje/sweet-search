@@ -46,9 +46,15 @@ export const CUTOFF_CACHE_VERSION = 1;
 
 /**
  * @returns {boolean} whether the chunk-cutoff lever is enabled.
+ *
+ * DEFAULT-ON (disable with SWEET_SEARCH_RECONCILE_CHUNK_CUTOFF=0). The cutoff key
+ * is the per-chunk encoder-input hashes (dense + LI), which fold in cross-file
+ * graph enrichment, so a file is skipped ONLY when its encoder inputs are
+ * byte-identical → byte-identical encoder outputs (verified recall-neutral). Set
+ * the flag to '0' to always re-encode changed files (today's behavior).
  */
 export function chunkCutoffEnabled(env = process.env) {
-  return env.SWEET_SEARCH_RECONCILE_CHUNK_CUTOFF === '1';
+  return env.SWEET_SEARCH_RECONCILE_CHUNK_CUTOFF !== '0';
 }
 
 /**

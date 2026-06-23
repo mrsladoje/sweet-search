@@ -1089,7 +1089,11 @@ async function sleepWithProgress(totalMs, lockFile, opts = {}) {
 // ---- G4 lever gates (each default OFF unless noted; off ⇒ exact prior behavior).
 // Mirror the G2 reconciler convention: strict `'1'` opt-in.
 const flagOn = (name) => process.env[name] === '1';
-export const reconcileAutotuneEnabled = (env = process.env) => env.SWEET_SEARCH_RECONCILE_AUTOTUNE === '1';
+// SWEET_SEARCH_RECONCILE_AUTOTUNE is DEFAULT-ON (disable with =0): the daemon's
+// consume-half mirrors the reconciler config-half so the tuned interval is
+// actually applied to the sleep loop. Verified recall-neutral + soak == baseline.
+// Set to '0' to restore the fixed-interval sleep loop.
+export const reconcileAutotuneEnabled = (env = process.env) => env.SWEET_SEARCH_RECONCILE_AUTOTUNE !== '0';
 
 /**
  * A.4-consume: recompute the daemon's sleep interval from the just-finished
@@ -1242,10 +1246,19 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
 
   // G3 arming: configure the BACKGROUND/maintainer ORT profile BEFORE the first
   // tick embeds. The ONNX session singleton is built once on first encode;
-  // configuring after is a silent no-op (mirrors indexer-phases.js:491). Gated
-  // on SWEET_SEARCH_ORT_BACKGROUND (default off). Best-effort — never block
-  // startup on the embedding module.
-  if (flagOn('SWEET_SEARCH_ORT_BACKGROUND')) {
+  // configuring after is a silent no-op (mirrors indexer-phases.js:491).
+  //
+  // MAINTAINER-SCOPED DEFAULT-ON (disable with SWEET_SEARCH_ORT_BACKGROUND=0):
+  // arm the background ORT profile (force_spinning_stop + arena-off + 2–4
+  // intra-op threads) by default, but ONLY in this maintainer daemon process. We
+  // arm it explicitly here via configureLocalModelRuntime({ background: true }),
+  // which sets the process-local runtime config — it does NOT touch
+  // buildLocalSessionOptions / isBackgroundOrtProfile's env fallback, so every
+  // OTHER process (the latency-critical search/query embedding path) stays on the
+  // FOREGROUND profile. Verified ORT embeddings byte-identical. Set
+  // SWEET_SEARCH_ORT_BACKGROUND=0 to keep even the maintainer on foreground.
+  // Best-effort — never block startup on the embedding module.
+  if (process.env.SWEET_SEARCH_ORT_BACKGROUND !== '0') {
     try {
       const [{ configureLocalModelRuntime }, { backgroundIntraOpThreads }] = await Promise.all([
         import('../embedding/embedding-local-model.js'),

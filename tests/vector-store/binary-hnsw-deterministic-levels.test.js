@@ -204,11 +204,13 @@ describe('BinaryHNSWIndex deterministic-levels gate (default OFF)', () => {
     }
   });
 
-  it('flag is OFF by default — env var unset means getRandomLevel path', () => {
+  it('flag is ON by default — env var unset means the deterministic levelForId path', () => {
     delete process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS;
-    // The gate condition in add() is strictly === '1'. Anything else (incl.
-    // undefined) selects getRandomLevel — i.e. unchanged behavior.
-    expect(process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS === '1').toBe(false);
+    // The gate in add() is now `!== '0'` (DEFAULT-ON). Unset selects the
+    // deterministic levelForId path. Only an explicit '0' restores getRandomLevel.
+    expect(process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS !== '0').toBe(true);
+    process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS = '0';
+    expect(process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS !== '0').toBe(false);
   });
 });
 
@@ -361,8 +363,10 @@ describe('BinaryHNSWIndex entry-point default path (FIX-B, flag OFF unchanged)',
     return b;
   }
 
-  it('flag OFF: a tie at the max level keeps the FIRST-inserted node (today\'s behavior)', async () => {
-    delete process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS;
+  it('flag OFF (explicit =0): a tie at the max level keeps the FIRST-inserted node (legacy behavior)', async () => {
+    // Det-levels is now DEFAULT-ON, so the legacy first-inserted-wins entry-point
+    // path must be exercised by explicitly disabling the flag with '0'.
+    process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS = '0';
     // Drive addToGraph directly with explicit equal levels so the tie is forced
     // without relying on Math.random(). The id ordering ('z' before 'a') is the
     // inverse of the deterministic min-id rule, so it proves the OFF path does

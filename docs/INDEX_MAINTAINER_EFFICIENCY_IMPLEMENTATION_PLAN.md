@@ -643,25 +643,38 @@ changes the format, and it is off + non-migrating by default).
 - `SWEET_SEARCH_MAINTAINER_BG_PRIORITY` — **default ON** (post-spawn `taskpolicy -b` / `ionice -c3`
   / `chrt -b`); set to `0`/`off` to disable.
 
-**Gated, default-OFF — flip only after the named gate (`feedback_accuracy_nonnegotiable`):**
+**DEFAULT-ON (verified) — flipped 2026-06-23 after passing their named gates.** Each is ON
+unless explicitly disabled with `=0` (gate changed from `=== '1'` to `!== '0'`). Verification that
+justified each flip: GCSN det-levels recall-neutral (+0.01pp MRR), E.1 byte-identical (determinism
+harness), crash gate PASS, ORT embeddings byte-identical, soak == baseline (no regression):
 
-| Flag | Lever | Gate to enable |
+| Flag (disable with `=0`) | Lever | Verification that justified default-on |
 |---|---|---|
-| `SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS` | G1 per-id levels (E.1 prereq) | byte-diff (done) + MRR recall-neutral |
-| `SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES` | E.1 per-tick batching (the big peak-RAM/IO win) | byte-diff (clean w/ det-levels) + crash test |
-| `SWEET_SEARCH_RECONCILE_LIVE_HNSW` (+`_DELETE_FRAC=0.15`, `_SAVE_EVERY=2000`) | E.2 live HNSW | crash test + soak |
-| `SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS` | E.4 cache_size + shrink_memory | byte-diff |
-| `SWEET_SEARCH_RECONCILE_FTS5_BUDGET` / `_FTS5_OPTIMIZE` (+`_MIN_SEGMENTS=8`) | E.5 merge budget / idle optimize | byte-diff |
-| `SWEET_SEARCH_RECONCILE_INCR_VACUUM` | E.4 incr-vacuum (reserved; needs `auto_vacuum=INCREMENTAL` at schema-create) | new-index only |
-| `SWEET_SEARCH_RECONCILE_CHUNK_CUTOFF` | E.6 enrichment-aware cutoff | USER MRR/recall gate |
-| `SWEET_SEARCH_RECONCILE_AUTOTUNE` | A.4 interval autotune | incremental soak |
-| `SWEET_SEARCH_ORT_BACKGROUND` (+`SWEET_SEARCH_INTRA_OP_THREADS`) | B background ORT profile (maintainer-only; **never on the search/query path**) | **GCSN dev+held-out MRR + byte-identical-index** |
-| `SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS=0` (+`_IDLE_CHECK_MS=60000`, `_BACKSTOP_WALK_MS=600000`) | D.1 idle-TTL | freshness probe + soak (e.g. `1200000`) |
-| `SWEET_SEARCH_MAINTAINER_WATCH` | C `@parcel/watcher`@2.5.6 + backstop | large-monorepo freshness validation |
-| `SWEET_SEARCH_RSS_BUDGET_FRACTION` | D.3 RSS-LRU + Linux PSI (e.g. `0.6`) | multi-repo soak |
-| `SWEET_SEARCH_SHARED_MODEL_SERVER` (+`_MODEL_SERVER_BACKGROUND`, `MODEL_SOCKET_PATH`) | D.5 shared model server | embedding-parity (proven) + soak |
-| `SWEET_SEARCH_HNSW_MMAP` | E.3 packed-binary + mmap (**format change → needs rebuild to benefit; do NOT enable on the reused bench indexes**) | format-migration plan |
-| `SWEET_SEARCH_MAINTAINER_NATIVE_PRIORITY` | A.5/A.6 napi addon (QoS / `PROCESS_MODE_BACKGROUND_BEGIN`) | addon built + present |
+| `SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS` | G1 per-id levels (global — also affects full-index builds; mixed old-random/new-det graphs are valid + makes builds reproducible) | byte-diff clean + **GCSN recall-neutral (+0.01pp MRR)** |
+| `SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES` | E.1 per-tick batching (the big peak-RAM/IO win) | **E.1 byte-identical** w/ det-levels (determinism harness) + crash gate PASS |
+| `SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS` | E.4 cache_size + shrink_memory (footprint-only) | byte-diff clean + soak == baseline |
+| `SWEET_SEARCH_RECONCILE_FTS5_BUDGET` | E.5 merge budgeting (CPU-budget adaptive merge page count) | byte-diff clean + soak == baseline |
+| `SWEET_SEARCH_RECONCILE_AUTOTUNE` | A.4 interval autotune (config-half in reconciler + consume-half in daemon) | recall-neutral + incremental soak == baseline |
+| `SWEET_SEARCH_RECONCILE_CHUNK_CUTOFF` | E.6 enrichment-aware cutoff (encoder-input-hash keyed → byte-identical encoder I/O when it skips) | **ORT embeddings byte-identical** + GCSN recall-neutral |
+| `SWEET_SEARCH_ORT_BACKGROUND` (+`SWEET_SEARCH_INTRA_OP_THREADS`) | B background ORT profile — **MAINTAINER-SCOPED, NOT global**: only the index-maintainer daemon arms the bg profile by default (via `configureLocalModelRuntime({background:true})` in `index-maintainer.mjs`); `buildLocalSessionOptions`/`isBackgroundOrtProfile` env fallback is LEFT foreground-by-default so the latency-critical search/query embedding path stays foreground (the bg profile is ~14% higher latency). | **ORT embeddings byte-identical**; maintainer-only so search latency unaffected |
+
+Coupling: `normalizeHnswDeterminismFlags` still enforces batch⇒det-levels. With both default-on it is
+normally a no-op; it STILL throws the clear contradiction error if batch is effectively ON (default or
+`=1`) while det-levels is EXPLICITLY `=0`.
+
+**Gated, default-OFF — opt-in only; flip later with held-out evidence (`feedback_accuracy_nonnegotiable`):**
+
+| Flag (enable with `=1`) | Lever | One-line reason kept off |
+|---|---|---|
+| `SWEET_SEARCH_RECONCILE_LIVE_HNSW` (+`_DELETE_FRAC=0.15`, `_SAVE_EVERY=2000`) | E.2 live HNSW | freshness trade — defers HNSW disk saves so on-disk lags → stale disk-read search |
+| `SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE` (+`_MIN_SEGMENTS=8`) | E.5 idle optimize | heavy idle compaction (full rewrite) |
+| `SWEET_SEARCH_RECONCILE_INCR_VACUUM` | E.4 incr-vacuum (reserved) | needs `auto_vacuum=INCREMENTAL` at schema-create (schema change) |
+| `SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS=0` (+`_IDLE_CHECK_MS=60000`, `_BACKSTOP_WALK_MS=600000`) | D.1 idle-TTL | stays `0`/off — product decision pending |
+| `SWEET_SEARCH_MAINTAINER_WATCH` | C `@parcel/watcher`@2.5.6 + backstop | freshness-contract change; needs large-monorepo validation |
+| `SWEET_SEARCH_RSS_BUDGET_FRACTION` | D.3 RSS-LRU + Linux PSI (e.g. `0.6`) | multi-repo soak unvalidated |
+| `SWEET_SEARCH_SHARED_MODEL_SERVER` (+`_MODEL_SERVER_BACKGROUND`, `MODEL_SOCKET_PATH`) | D.5 shared model server | architectural; soak unvalidated |
+| `SWEET_SEARCH_HNSW_MMAP` | E.3 packed-binary + mmap | tooling reads JSON sidecars; format change → needs rebuild to benefit |
+| `SWEET_SEARCH_MAINTAINER_NATIVE_PRIORITY` | A.5/A.6 napi addon (QoS / `PROCESS_MODE_BACKGROUND_BEGIN`) | needs addon built + present |
 
 ### Known follow-ups (out of scope of this work)
 1. ~~Pre-existing TOCTOU flake `sparse-gram-delta-reader.js:61`~~ — **FIXED** (commit `9dc8eb4`):
@@ -755,7 +768,10 @@ the cosmetic stale-node (self-healed by `binaryHnswHandler` maintenance + elimin
 
 ### 8.6 — Flag coupling (footgun removed)
 
-`RECONCILE_BATCH_TIER_WRITES` now **forces** `HNSW_DETERMINISTIC_LEVELS` on (one-time warning) so
-batching is always byte-identical; explicitly setting `HNSW_DETERMINISTIC_LEVELS=0` while batch is
-on **throws** a clear config error. Normalized once in `createProductionReconciler`
-(`normalizeHnswDeterminismFlags`), so the daemon is covered without per-call wiring.
+Both `RECONCILE_BATCH_TIER_WRITES` and `HNSW_DETERMINISTIC_LEVELS` are now **DEFAULT-ON** (`!== '0'`),
+so in the normal case batching is always byte-identical and the coupler is a no-op (det-levels is
+already effectively on — no env mutation, no warning). The coupling rule is **preserved**: if batch
+is effectively ON (default or `=1`) while `HNSW_DETERMINISTIC_LEVELS` is EXPLICITLY `=0`, the
+reconciler **throws** a clear config error (the explicit contradiction). Normalized once in
+`createProductionReconciler` (`normalizeHnswDeterminismFlags`), so the daemon is covered without
+per-call wiring.

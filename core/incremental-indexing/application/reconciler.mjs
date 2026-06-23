@@ -182,7 +182,10 @@ export class Reconciler {
    * @returns {boolean}
    */
   _batchTierWritesEnabled() {
-    return process.env.SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES === '1'
+    // Default-ON (verified byte-identical with det-levels + crash-safe + soak==baseline);
+    // disable with SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES=0. Still requires the adapter
+    // to expose the tick hooks; absent those, the per-file path is used regardless.
+    return process.env.SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES !== '0'
       && typeof this.adapters.beginTick === 'function'
       && typeof this.adapters.finalizeTick === 'function';
   }
