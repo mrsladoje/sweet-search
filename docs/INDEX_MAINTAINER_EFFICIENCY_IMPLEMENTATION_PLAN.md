@@ -686,6 +686,17 @@ hardware-tier interval selection — the same machine-detection pattern the inde
 backend by chip. The other freshness/compat trades stay pure opt-in (detection can't make them
 safer). `SHARED_MODEL_SERVER` is *repo-count*-driven, not single-host RAM, so it is NOT auto-tiered.
 
+*Validation (2026-06-23).* The auto-ON path is verified **safe**, not tuned: eviction decision logic
+(right-victim, no over-evict, convergence guard, PSI) is unit-tested with injected RSS/pressure;
+idle-TTL fire→shutdown→lock-release→respawn is E2E-proven on a real daemon; footprint relief is
+guaranteed by process *exit* (OS reclaims all); a combination soak (write-side bundle + RSS
+coordinator live under sustained mutation) matched the baseline violation count (10 vs 11 — the
+pre-existing harness artifact's run-to-run noise) with 0 coordinator errors and 0 spurious evictions
+(single daemon → correct no-op). The threshold **values** (12/24 GiB, 10/30 min, 0.55/0.60) are
+deliberately **conservative policy**, NOT empirically-optimised — they are not soak-discoverable
+optima, so they are left as safe defaults rather than tuned (tuning the exact minute/fraction would
+be unjustified churn). Re-tune only if a real low-RAM field signal contradicts them.
+
 ### Known follow-ups (out of scope of this work)
 1. ~~Pre-existing TOCTOU flake `sparse-gram-delta-reader.js:61`~~ — **FIXED** (commit `9dc8eb4`):
    `readFileSync` wrapped, skip on concurrent-unlink `ENOENT`, rethrow other errors.
