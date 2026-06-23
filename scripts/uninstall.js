@@ -583,6 +583,8 @@ export function getOptionalNativePackageNames() {
     '@sweet-search/native-linux-arm64-gnu-cuda',
     '@sweet-search/native-linux-x64-gnu',
     '@sweet-search/native-linux-x64-gnu-cuda',
+    // bg-priority base package (its per-platform optionalDeps cascade-remove with it)
+    '@sweet-search/bg-priority',
   ];
 }
 
