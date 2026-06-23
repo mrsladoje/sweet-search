@@ -160,8 +160,11 @@ export async function buildCodeGraph(files, dryRun = false) {
       const content = await fs.readFile(filePath, 'utf-8');
       const { entities, relationships } = await extractor.extractFromFile(files[i], content);
 
-      entityBatch.push(...entities);
-      relBatch.push(...relationships);
+      // Element-wise append, not push(...spread): a single generated mega-file
+      // (e.g. libsql's 250k-line SQLite amalgamation) can yield 65k+ entities,
+      // and spreading that many args into push() overflows the call stack.
+      for (let k = 0; k < entities.length; k++) entityBatch.push(entities[k]);
+      for (let k = 0; k < relationships.length; k++) relBatch.push(relationships[k]);
       processed++;
     } catch (err) {
       errors++;
@@ -592,7 +595,12 @@ export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, m
     embeddingCount += batchEmbeddings.length;
 
     const batchItems = buildInsertItems(batchChunks, batchEmbeddings, modelInfo, batchAnnotations);
-    writeBuffer.push(...batchItems);
+    // NOT `writeBuffer.push(...batchItems)`: for local models batchSize ==
+    // texts.length, so batchItems holds the WHOLE corpus in one batch. Spreading
+    // 100k+ args into push() overflows the call stack (V8 caps spread args at
+    // ~65k-125k) and crashed indexing on large repos (swc ~133k chunks, libsql).
+    // Append element-by-element so it stays O(n) and stack-safe at any size.
+    for (let k = 0; k < batchItems.length; k++) writeBuffer.push(batchItems[k]);
 
     if (!useInternalProgress) {
       logProgressFn(Math.min(i + batchSize, texts.length), texts.length, 'Embedding');
