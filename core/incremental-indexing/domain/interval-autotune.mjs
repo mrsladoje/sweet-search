@@ -106,6 +106,48 @@ export function nextInterval(input) {
 const TIER_TABLE = Object.freeze({ low: 60_000, mid: 30_000, high: 20_000 });
 
 /**
+ * Memory-tier table for the footprint levers (idle-TTL / RSS-budget soft cap) —
+ * the lever-D analogue of TIER_TABLE. Detect once at startup from system RAM:
+ * small-RAM hosts (laptops / constrained CI — the ~16 GB cross-repo OOM case in
+ * `project_ss_daemon_footprint_safety`) auto-enable the footprint levers; roomy
+ * hosts keep them OFF (no footprint pressure, and idle-TTL's respawn latency
+ * would only cost them with nothing to reclaim). The env overrides
+ * (`SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS`, `SWEET_SEARCH_RSS_BUDGET_FRACTION`)
+ * always win over the tier default.
+ *
+ *   tight    (≤12 GiB) → idle-TTL 10 min, RSS soft cap 0.55
+ *   moderate (≤24 GiB) → idle-TTL 30 min, RSS soft cap 0.60
+ *   roomy    (>24 GiB) → idle-TTL OFF (0), no RSS cap (null)
+ *
+ * Pure: the caller injects `totalMemBytes` (os.totalmem()); a non-finite/absent
+ * value resolves to `roomy` — the safe, no-surprise default (levers stay off if
+ * detection ever fails).
+ */
+const MEMORY_TIER_TABLE = Object.freeze({
+  tight: { maxGiB: 12, idleTtlMs: 600_000, rssBudgetFraction: 0.55 },
+  moderate: { maxGiB: 24, idleTtlMs: 1_800_000, rssBudgetFraction: 0.60 },
+  roomy: { maxGiB: Infinity, idleTtlMs: 0, rssBudgetFraction: null },
+});
+
+/**
+ * @param {{ totalMemBytes?: number }} [options]  totalMemBytes = os.totalmem(), injected by the caller
+ * @returns {{ tier:'tight'|'moderate'|'roomy', totalGiB:number, idleTtlMs:number, rssBudgetFraction:(number|null) }}
+ */
+export function resolveMaintainerMemoryProfile({ totalMemBytes } = {}) {
+  const giB = Number.isFinite(totalMemBytes) ? totalMemBytes / (1024 ** 3) : Infinity;
+  let tier = 'roomy';
+  if (giB <= MEMORY_TIER_TABLE.tight.maxGiB) tier = 'tight';
+  else if (giB <= MEMORY_TIER_TABLE.moderate.maxGiB) tier = 'moderate';
+  const p = MEMORY_TIER_TABLE[tier];
+  return {
+    tier,
+    totalGiB: Number.isFinite(giB) ? Math.round(giB * 10) / 10 : Infinity,
+    idleTtlMs: p.idleTtlMs,
+    rssBudgetFraction: p.rssBudgetFraction,
+  };
+}
+
+/**
  * Backstop full-walk cadence for the event-driven watcher (lever C / group G6).
  *
  * When the `@parcel/watcher` event stream is the primary dirty-set producer,
@@ -291,6 +333,6 @@ export function reconcileEnablement(env = process.env) {
 export const __testing = {
   MIN_MS, MAX_MS, NOMINAL_MS,
   TARGET_TICK_WALLCLOCK_FRACTION, MAX_RATIO_CHANGE_PER_TICK,
-  TIER_TABLE, PROFILE_TABLE,
+  TIER_TABLE, PROFILE_TABLE, MEMORY_TIER_TABLE,
   BACKSTOP_MIN_MS, BACKSTOP_MAX_MS, BACKSTOP_DEFAULT_MS,
 };

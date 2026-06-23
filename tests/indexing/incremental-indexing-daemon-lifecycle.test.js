@@ -173,15 +173,23 @@ describe('A.4 / computeNextIntervalMs (the doubly-dead-trap guard)', () => {
 // ---- D.1 idle-TTL ----------------------------------------------------------
 
 describe('D.1 / maintainerIdleTtlMs', () => {
-  it('is 0/disabled by default and on invalid values', () => {
-    expect(maintainerIdleTtlMs({})).toBe(0);
+  const ROOMY = 64 * 1024 ** 3; // >24 GiB → tier default is 0 (off)
+  it('is 0/disabled on a roomy host and on explicit invalid values', () => {
+    expect(maintainerIdleTtlMs({}, ROOMY)).toBe(0);
     expect(maintainerIdleTtlMs({ SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS: '' })).toBe(0);
     expect(maintainerIdleTtlMs({ SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS: 'banana' })).toBe(0);
     expect(maintainerIdleTtlMs({ SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS: '-5' })).toBe(0);
     expect(maintainerIdleTtlMs({ SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS: '0' })).toBe(0);
   });
-  it('honours a positive ms value', () => {
-    expect(maintainerIdleTtlMs({ SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS: '1200000' })).toBe(1_200_000);
+  it('honours a positive ms value (explicit wins regardless of RAM)', () => {
+    expect(maintainerIdleTtlMs({ SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS: '1200000' }, ROOMY)).toBe(1_200_000);
+  });
+  it('auto-enables idle-TTL from the system-RAM tier when unset (small-RAM hosts)', () => {
+    expect(maintainerIdleTtlMs({}, 8 * 1024 ** 3)).toBe(600_000);    // tight (≤12 GiB) → 10 min
+    expect(maintainerIdleTtlMs({}, 20 * 1024 ** 3)).toBe(1_800_000); // moderate (≤24 GiB) → 30 min
+    expect(maintainerIdleTtlMs({}, 64 * 1024 ** 3)).toBe(0);         // roomy (>24 GiB) → off
+    // explicit '0' disables even on a small-RAM host
+    expect(maintainerIdleTtlMs({ SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS: '0' }, 8 * 1024 ** 3)).toBe(0);
   });
 });
 

@@ -36,10 +36,12 @@
  * (research §6); macOS falls back to the pure-JS RSS poller below.
  *
  * DESIGN CONTRACT:
- *   - Default OFF. With `SWEET_SEARCH_RSS_BUDGET_FRACTION` unset there is NO
- *     registry write, NO timer, NO eviction — behavior is byte-identical to
- *     today. The gate is "a parseable positive fraction in (0,1]"; anything
- *     else (unset, '', '0', 'abc') disables the coordinator entirely.
+ *   - Tier-aware default. With `SWEET_SEARCH_RSS_BUDGET_FRACTION` unset the
+ *     fraction comes from the system-RAM tier (`resolveMaintainerMemoryProfile`):
+ *     OFF on roomy hosts (>24 GiB → NO registry write, NO timer, NO eviction —
+ *     byte-identical to before), a soft cap on small-RAM hosts (the OOM case).
+ *     An explicit env value always overrides: a parseable fraction in (0,1]
+ *     enables; '', '0', or garbage disables the coordinator entirely.
  *   - Best-effort and NEVER throws. Every RSS read, PSI read, registry write,
  *     and signal is wrapped; a failure degrades to "do nothing this tick".
  *   - The timer is unref'd: it never keeps a daemon's event loop alive.
@@ -52,6 +54,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { selectEvictionTargets } from '../search/daemon-registry.js';
+import { resolveMaintainerMemoryProfile } from '../incremental-indexing/domain/interval-autotune.mjs';
 
 const DEFAULT_REGISTRY_FILE = 'sweet-search-rss-daemons.json';
 const POLL_INTERVAL_MS = 30_000;
@@ -71,17 +74,21 @@ export function rssRegistryPath(env = process.env) {
  * coordinator is enabled, or `null` (disabled) for unset/empty/zero/garbage.
  * This is the single source of the default-OFF contract.
  */
-export function budgetFraction(env = process.env) {
+export function budgetFraction(env = process.env, totalMemBytes = os.totalmem()) {
   const raw = env.SWEET_SEARCH_RSS_BUDGET_FRACTION;
-  if (raw === undefined || raw === null || raw === '') return null;
-  const f = Number(raw);
-  if (!Number.isFinite(f) || f <= 0 || f > 1) return null;
-  return f;
+  if (raw != null) {
+    // Explicitly set (incl. '' / '0' / garbage → disabled): env wins over tier.
+    const f = Number(raw);
+    return (Number.isFinite(f) && f > 0 && f <= 1) ? f : null;
+  }
+  // Unset → auto from the system-RAM tier: small-RAM hosts get a soft cap, roomy
+  // hosts get none (null). No per-machine config; it auto-scales with RAM.
+  return resolveMaintainerMemoryProfile({ totalMemBytes }).rssBudgetFraction;
 }
 
-/** Whether the coordinator is enabled (a valid fraction is set). */
-export function isEnabled(env = process.env) {
-  return budgetFraction(env) !== null;
+/** Whether the coordinator is enabled (explicit fraction OR a RAM-tier default). */
+export function isEnabled(env = process.env, totalMemBytes = os.totalmem()) {
+  return budgetFraction(env, totalMemBytes) !== null;
 }
 
 /**
@@ -90,7 +97,7 @@ export function isEnabled(env = process.env) {
  * 128 GB). Returns 0 when disabled.
  */
 export function budgetBytes(env = process.env, totalMem = os.totalmem()) {
-  const f = budgetFraction(env);
+  const f = budgetFraction(env, totalMem);
   if (f === null) return 0;
   return Math.floor(f * totalMem);
 }

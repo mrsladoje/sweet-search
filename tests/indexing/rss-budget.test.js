@@ -55,21 +55,35 @@ function seedRegistry(entries) {
   writeFileSync(registryFile, JSON.stringify({ daemons }), 'utf-8');
 }
 
-describe('budgetFraction / isEnabled (the default-OFF gate)', () => {
-  it('is null/disabled when unset, empty, zero, out-of-range, or garbage', () => {
-    expect(budgetFraction({})).toBe(null);
+describe('budgetFraction / isEnabled (the explicit env gate)', () => {
+  const ROOMY = 64 * 1024 ** 3; // >24 GiB → tier default OFF, so unset == null here
+
+  it('is null/disabled when explicitly empty, zero, out-of-range, or garbage', () => {
     expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '' })).toBe(null);
     expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0' })).toBe(null);
     expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '-0.5' })).toBe(null);
     expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '1.5' })).toBe(null);
     expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: 'abc' })).toBe(null);
-    expect(isEnabled({})).toBe(false);
+    // unset on a roomy host → tier default is OFF
+    expect(budgetFraction({}, ROOMY)).toBe(null);
+    expect(isEnabled({}, ROOMY)).toBe(false);
   });
 
-  it('is a number in (0,1] when a valid fraction is set', () => {
-    expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' })).toBe(0.6);
-    expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '1' })).toBe(1);
-    expect(isEnabled({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' })).toBe(true);
+  it('is a number in (0,1] when a valid fraction is set (explicit wins regardless of RAM)', () => {
+    expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' }, ROOMY)).toBe(0.6);
+    expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '1' }, ROOMY)).toBe(1);
+    expect(isEnabled({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' }, ROOMY)).toBe(true);
+  });
+
+  it('auto-enables a soft cap from the system-RAM tier when unset (small-RAM hosts)', () => {
+    expect(budgetFraction({}, 8 * 1024 ** 3)).toBe(0.55);  // tight (≤12 GiB)
+    expect(budgetFraction({}, 20 * 1024 ** 3)).toBe(0.60); // moderate (≤24 GiB)
+    expect(budgetFraction({}, 64 * 1024 ** 3)).toBe(null); // roomy (>24 GiB)
+    expect(isEnabled({}, 8 * 1024 ** 3)).toBe(true);
+    expect(isEnabled({}, 64 * 1024 ** 3)).toBe(false);
+    // explicit env always overrides the tier, both directions
+    expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0' }, 8 * 1024 ** 3)).toBe(null);
+    expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' }, 64 * 1024 ** 3)).toBe(0.6);
   });
 });
 
@@ -80,8 +94,8 @@ describe('budgetBytes (auto-scales with system RAM, no per-machine config)', () 
     // Larger RAM → proportionally larger budget (scales, not capped).
     const big = 128 * 1024 ** 3;
     expect(budgetBytes({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' }, big)).toBe(Math.floor(0.6 * big));
-    // Disabled → 0.
-    expect(budgetBytes({}, totalMem)).toBe(0);
+    // Explicitly disabled → 0 (unset is now RAM-tier-driven; see the gate tests).
+    expect(budgetBytes({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0' }, totalMem)).toBe(0);
   });
 });
 
