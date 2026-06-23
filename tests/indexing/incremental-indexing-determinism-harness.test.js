@@ -201,13 +201,25 @@ describe('determinism harness — dumpers cover all five artifacts + merkle', ()
 });
 
 describe('determinism harness — crash-consistency mechanism (SIGKILL mid-tick)', () => {
-  // The SIGKILL-restart MECHANISM is the G0 deliverable; whether the index
-  // RECONVERGES byte-identically after a crash is G2's gate (persist-before-
-  // advance + G1 deterministic HNSW levels). On today's per-file path the
-  // restart leaves an extra MVCC-retired row and a structurally different HNSW
-  // graph, so we assert the harness *detects* the divergence rather than
-  // asserting (a not-yet-true) reconvergence — exactly the signal G2 needs.
-  it('SIGKILLs a child mid-tick, restarts, and produces a structured diff', async () => {
+  // CLASSIFICATION (default per-file path, kill on an ADD tick):
+  //   - liveDiff (the QUERYABLE view: retired rows dropped, epochs ranked) ==
+  //     null. This is a CORRECTNESS guarantee. The original hole was a real
+  //     correctness bug — a row committed to codebase.db before the crash but
+  //     never written to the HNSW/LI tiers stayed QUERYABLE via SQLite/FTS while
+  //     being permanently MISSING from vector + late-interaction search (its
+  //     committed hash made the restart treat it as an exact reuse → no re-add).
+  //     The per-file torn-row repair in production-reconciler.mjs
+  //     (`applyVectorDelta`) re-adds any live row whose `epoch_written` exceeds
+  //     the highest PUBLISHED merkle epoch under its existing id, so the live
+  //     index reconverges to a clean run.
+  //   - strictDiff (the FULL on-disk view, incl. MVCC-retired rows + the
+  //     physical HNSW graph) MAY be non-null: re-reconciling a crashed tick can
+  //     leave an extra retired (query-invisible) row, and a modify/delete crash
+  //     can leave an extra physical HNSW node whose stale bit was lost in the
+  //     crash (query-correct once `binaryHnswHandler` maintenance reconciles it).
+  //     This is cosmetic — a different-but-valid graph + invisible residue — and
+  //     is driven to null by E.1 batching (deferred COMMIT + merkle gating).
+  it('SIGKILLs a child mid-tick, restarts, and the live (queryable) index reconverges', async () => {
     const res = await runCrashConsistency({ killTick: 2 });
     // The child self-SIGKILLed (the crash actually happened).
     expect(res.childSignal).toBe('SIGKILL');
@@ -215,17 +227,14 @@ describe('determinism harness — crash-consistency mechanism (SIGKILL mid-tick)
     expect(res.ticksBeforeKill).toBe(1);
     // The restart drained the whole sequence.
     expect(res.ticksAfterRestart).toBe(6);
-    // Both diffs are structured (either null, or {artifact, path, a, b}).
-    for (const diff of [res.liveDiff, res.strictDiff]) {
-      if (diff !== null) {
-        expect(diff).toHaveProperty('artifact');
-        expect(diff).toHaveProperty('path');
-      }
+    // strictDiff is structured when present (either null, or {artifact, path, a, b}).
+    if (res.strictDiff !== null) {
+      expect(res.strictDiff).toHaveProperty('artifact');
+      expect(res.strictDiff).toHaveProperty('path');
     }
-    // Known pre-existing per-file crash gap (owned by G2): the live index does
-    // NOT yet reconverge byte-identically. If this ever becomes null, G2 has
-    // landed and this expectation should flip to `toBeNull()`.
-    expect(res.liveDiff).not.toBeNull();
+    // The queryable index reconverged: no live row is missing or wrong after the
+    // crash + restart on the default per-file path.
+    expect(res.liveDiff).toBeNull();
   }, 90_000);
 });
 
