@@ -40,12 +40,22 @@ const PROCESSING_QUEUE = 'index-maintainer-queue.processing.jsonl';
 const MERKLE_STATE = 'merkle-state.json';
 const METRICS_FILE = 'reconcile-metrics.jsonl';
 
-// ---- G2 lever flags (each default OFF; flag off ⇒ exact current behavior) ----
+// ---- G2 lever flags ----------------------------------------------------------
+// `flagOn` = strict opt-in (`'1'`), used by the levers that remain DEFAULT-OFF
+// (a trade or unvalidated). `flagDefaultOn` = default-on (ON unless explicitly
+// '0'), used by the PROVEN-safe levers (recall-neutral / byte-identical / soak
+// == baseline). Disable any default-on lever with `=0`.
 const flagOn = (name) => process.env[name] === '1';
-const batchTierWritesEnabled = () => flagOn('SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES');
+const flagDefaultOn = (name) => process.env[name] !== '0';
+// DEFAULT-ON (verified safe): batch tier writes (byte-identical with det-levels),
+// SQLite memory pragmas (footprint-only), budget-derived FTS5 merge (CPU-budget
+// adaptive, recall-neutral). Disable with the matching env var = '0'.
+const batchTierWritesEnabled = () => flagDefaultOn('SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES');
+const sqlitePragmasEnabled = () => flagDefaultOn('SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS');
+const fts5BudgetEnabled = () => flagDefaultOn('SWEET_SEARCH_RECONCILE_FTS5_BUDGET');
+// DEFAULT-OFF (freshness trade — defers HNSW disk saves so on-disk lags the live
+// graph): keep strict opt-in.
 const liveHnswEnabled = () => flagOn('SWEET_SEARCH_RECONCILE_LIVE_HNSW');
-const sqlitePragmasEnabled = () => flagOn('SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS');
-const fts5BudgetEnabled = () => flagOn('SWEET_SEARCH_RECONCILE_FTS5_BUDGET');
 
 const BATCH_FLAG = 'SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES';
 const DET_LEVELS_FLAG = 'SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS';
@@ -62,52 +72,55 @@ let _batchForcedDetLevelsWarned = false;
  * byte-identical to the per-file / compaction paths when per-id deterministic
  * levels (`SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS`) are ON — see plan §0.5.
  * `binary-hnsw-index.js` reads the det-levels env var directly at insert time,
- * so enabling batch WITHOUT det-levels is a footgun: the batched tick draws the
+ * so running batch WITHOUT det-levels is a footgun: the batched tick draws the
  * global RNG in a different interleaving than a per-file run and the resulting
- * graph diverges. These two flags were independent; this normalization makes
- * them coupled.
+ * graph diverges. These two flags are coupled here.
+ *
+ * BOTH levers are now DEFAULT-ON (`!== '0'`). "batch effectively ON" therefore
+ * means the batch flag is unset (default) OR '1' — i.e. `BATCH_FLAG !== '0'`.
+ * In the normal case (both unset / default-on) det-levels is ALREADY effectively
+ * ON, so this is a no-op; no env mutation is needed and binary-hnsw-index.js
+ * sees det-levels on via its own `!== '0'` gate. The ONE case that must still
+ * fail loudly is the explicit contradiction: batch effectively ON while
+ * det-levels is EXPLICITLY '0'.
  *
  * Runs per tick from `createProductionReconciler` (which the daemon constructs
  * each tick), so the daemon is covered without touching index-maintainer.mjs.
  *
- *   - batch ON + det-levels UNSET  → force det-levels='1' in the env (so
- *     binary-hnsw-index.js transparently sees it) + emit a ONE-TIME stderr
- *     warning explaining why.
- *   - batch ON + det-levels EXPLICITLY '0' → throw (explicit contradiction:
- *     the operator asked for batch byte-identity AND non-deterministic levels).
- *   - batch ON + det-levels '1' → already correct, no-op.
- *   - batch OFF → no-op (det-levels is independently meaningful off the batch
- *     path; we never touch it).
+ *   - batch effectively ON + det-levels EXPLICITLY '0' → throw (explicit
+ *     contradiction: byte-identity requested via batch, but levels forced
+ *     non-deterministic).
+ *   - batch effectively ON + det-levels default/unset/'1' → no-op (det-levels is
+ *     default-on, so the batched graph already stays byte-identical).
+ *   - batch EXPLICITLY OFF ('0') → no-op (the per-file path is taken; det-levels
+ *     is independently meaningful and we never touch it).
  *
- * @param {{warn?:Function}} [logger]  optional logger for the one-time warning
- *   (falls back to process.stderr so the notice is never swallowed).
+ * @param {{warn?:Function}} [logger]  optional logger (reserved; the default-on
+ *   defaults make the force-on warning path unreachable, but the signature is
+ *   preserved for callers + tests).
  */
 export function normalizeHnswDeterminismFlags(logger = null) {
-  if (process.env[BATCH_FLAG] !== '1') return;
+  void logger;
+  // batch is DEFAULT-ON: it is effectively OFF only when explicitly '0'.
+  if (process.env[BATCH_FLAG] === '0') return;
   const det = process.env[DET_LEVELS_FLAG];
-  if (det === '1') return; // already coupled correctly
+  // det-levels is also DEFAULT-ON: only an EXPLICIT '0' is the contradiction.
   if (det === '0') {
     throw new Error(
-      `${BATCH_FLAG}=1 requires ${DET_LEVELS_FLAG} to be ON for a byte-identical `
-      + `HNSW graph, but ${DET_LEVELS_FLAG} is explicitly '0'. These are `
-      + `contradictory: batch tier writes only converge with the per-file and `
-      + `compaction build paths when per-id deterministic levels are enabled `
-      + `(see INDEX_MAINTAINER_EFFICIENCY_IMPLEMENTATION_PLAN §0.5). Either set `
-      + `${DET_LEVELS_FLAG}=1 or disable ${BATCH_FLAG}.`,
+      `${BATCH_FLAG} is enabled (default-on) but requires ${DET_LEVELS_FLAG} to be `
+      + `ON for a byte-identical HNSW graph — ${DET_LEVELS_FLAG} is explicitly '0'. `
+      + `These are contradictory: batch tier writes only converge with the `
+      + `per-file and compaction build paths when per-id deterministic levels are `
+      + `enabled (see INDEX_MAINTAINER_EFFICIENCY_IMPLEMENTATION_PLAN §0.5). Either `
+      + `leave ${DET_LEVELS_FLAG} default-on (omit it or set it to '1') or disable `
+      + `the batch lever with ${BATCH_FLAG}=0.`,
     );
   }
-  // Unset (or any non-'1'/'0' value): force it on so the batched graph stays
-  // byte-identical, and tell the operator once.
-  process.env[DET_LEVELS_FLAG] = '1';
-  if (!_batchForcedDetLevelsWarned) {
-    _batchForcedDetLevelsWarned = true;
-    const msg = `[reconciler] ${BATCH_FLAG}=1 requires deterministic HNSW levels for a `
-      + `byte-identical graph; ${DET_LEVELS_FLAG} was unset, so it has been forced ON. `
-      + `Set ${DET_LEVELS_FLAG}=1 explicitly to silence this, or ${DET_LEVELS_FLAG}=0 to `
-      + `surface the contradiction as an error.`;
-    if (typeof logger?.warn === 'function') logger.warn(msg);
-    else process.stderr.write(`${msg}\n`);
-  }
+  // det-levels is default-on (unset) or explicitly '1' → already coupled
+  // correctly; no env mutation needed (binary-hnsw-index.js reads its own
+  // `!== '0'` gate). The legacy force-on warning latch is retained only to keep
+  // its symbol stable for any importer.
+  void _batchForcedDetLevelsWarned;
 }
 
 // E.2: deletion-fraction threshold + insert cadence for the live (daemon-scoped)
@@ -292,11 +305,12 @@ export function createProductionReconciler(options = {}) {
   const projectRoot = path.resolve(options.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
   const stateDir = path.resolve(options.stateDir || process.env.SWEET_SEARCH_STATE_DIR || path.join(projectRoot, '.sweet-search'));
   const adapter = new ProductionReconcileAdapter({ ...options, projectRoot, stateDir });
-  // A.4-config: feed the dormant interval-autotune a real load signal. This is
-  // ONLY the config half — the daemon (G4) reads the tuned interval back into
-  // its sleep loop. Gated on SWEET_SEARCH_RECONCILE_AUTOTUNE (default off): when
-  // off, `autotuneInterval` stays false and the reconciler never re-tunes.
-  const autotuneOn = flagOn('SWEET_SEARCH_RECONCILE_AUTOTUNE');
+  // A.4-config: feed the interval-autotune a real load signal. This is ONLY the
+  // config half — the daemon (G4) reads the tuned interval back into its sleep
+  // loop. DEFAULT-ON (disable with SWEET_SEARCH_RECONCILE_AUTOTUNE=0): when off,
+  // `autotuneInterval` stays false and the reconciler never re-tunes (today's
+  // fixed-interval behavior). Verified recall-neutral + soak == baseline.
+  const autotuneOn = flagDefaultOn('SWEET_SEARCH_RECONCILE_AUTOTUNE');
   const cpuCount = Math.max(1, os.cpus().length);
   const autotuneConfig = autotuneOn
     ? {
@@ -995,14 +1009,18 @@ class ProductionReconcileAdapter {
       // successful tick always advances `merkle.epoch` to the epoch it wrote its
       // rows at, so on a non-crash tick every prior live row has
       // `epoch_written <= merkle.epoch` and the rows written THIS tick are already
-      // in `newIds` (added above), never re-added here. Gated to the per-file
-      // path (`!ctx`): the E.1 batched path has its own persist-before-advance
-      // (deferred COMMIT + merkle gating) and a crashed batch rolls the SQLite
-      // write back, so no live torn row ever exists there. Byte-diff/behaviour on
-      // non-crash runs is UNCHANGED (verified by the determinism harness control +
-      // candidate sweeps).
+      // in `newIds` (added above), never re-added here. Runs in BOTH the per-file
+      // and the E.1 batched path: the batched path never CREATES a torn row (its
+      // deferred COMMIT + merkle gating rolls a crashed batch back), but a LEGACY
+      // orphan from a pre-batched per-file crash can still exist on disk when the
+      // daemon later runs batched, so the repair must heal it under either mode.
+      // In the batched path the repair ops join `vectorOps`/`tokenOps`, flow
+      // through the tick-scoped adapters into `ctx.pendingAdds`, and are saved by
+      // `finalizeTick` — and `db` reads see the committed orphan (prior-tick) row.
+      // Byte-diff/behaviour on non-crash runs is UNCHANGED in both modes (no
+      // orphan ⇒ no-op; verified by the determinism harness control + sweeps).
       const repairedIds = [];
-      if (!ctx && snap.size > 0) {
+      if (snap.size > 0) {
         const publishedEpoch = this._publishedEpoch();
         const alreadyAdded = new Set(newIds);
         const chunkByStructId = new Map();

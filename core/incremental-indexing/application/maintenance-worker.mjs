@@ -37,7 +37,13 @@ import Database from 'better-sqlite3';
 import { fts5Merge, fts5Optimize, fts5SegmentCount, fts5WatermarkBudgetPages } from '../infrastructure/sqlite-fts5.mjs';
 import { reclamationHandlers } from './maintenance-handlers.mjs';
 
-const fts5BudgetEnabled = () => process.env.SWEET_SEARCH_RECONCILE_FTS5_BUDGET === '1';
+// SWEET_SEARCH_RECONCILE_FTS5_BUDGET is DEFAULT-ON (disable with =0): the
+// budget-derived merge scales page count down as the drain budget runs out so a
+// near-exhausted window makes a small step instead of one big overrun. Verified
+// recall-neutral + soak == baseline. Set to '0' for the legacy fixed 500-page
+// merge. SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE stays DEFAULT-OFF (heavy idle
+// compaction — strict opt-in).
+const fts5BudgetEnabled = () => process.env.SWEET_SEARCH_RECONCILE_FTS5_BUDGET !== '0';
 const fts5OptimizeEnabled = () => process.env.SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE === '1';
 // Minimum segment count below which an optimize is not worth its full rewrite.
 const FTS5_OPTIMIZE_MIN_SEGMENTS = Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE_MIN_SEGMENTS || '8', 10);

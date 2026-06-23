@@ -7,11 +7,17 @@ const BATCH_FLAG = 'SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES';
 const DET_LEVELS_FLAG = 'SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS';
 
 /**
- * Task #3 — couple the two HNSW-determinism levers so the batch lever can never
- * silently produce a non-byte-identical graph (binary-hnsw-index.js reads
+ * Couple the two HNSW-determinism levers so the batch lever can never silently
+ * produce a non-byte-identical graph (binary-hnsw-index.js reads
  * SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS directly at insert time).
+ *
+ * Both levers are now DEFAULT-ON (`!== '0'`). "batch effectively ON" therefore
+ * means the flag is unset (default) OR '1' — i.e. `BATCH_FLAG !== '0'`. In the
+ * normal case det-levels is ALSO default-on, so coupling is a no-op (no env
+ * mutation, no warning). The ONE case that must still fail loudly is the explicit
+ * contradiction: batch effectively ON while det-levels is EXPLICITLY '0'.
  */
-describe('normalizeHnswDeterminismFlags (batch ⇄ det-levels coupling)', () => {
+describe('normalizeHnswDeterminismFlags (batch ⇄ det-levels coupling, default-on)', () => {
   let savedBatch;
   let savedDet;
 
@@ -28,43 +34,38 @@ describe('normalizeHnswDeterminismFlags (batch ⇄ det-levels coupling)', () => 
     if (savedDet === undefined) delete process.env[DET_LEVELS_FLAG]; else process.env[DET_LEVELS_FLAG] = savedDet;
   });
 
-  it('batch ON + det-levels UNSET → forces det-levels=1 and warns ONCE', () => {
+  it('both default (unset) → no-op: det-levels stays default-on, never mutated', () => {
+    // Both flags unset = both effectively ON. det-levels is already on via its
+    // own `!== '0'` gate, so the coupler must NOT mutate the env.
+    expect(process.env[BATCH_FLAG]).toBeUndefined();
+    expect(process.env[DET_LEVELS_FLAG]).toBeUndefined();
+    expect(() => normalizeHnswDeterminismFlags()).not.toThrow();
+    expect(process.env[DET_LEVELS_FLAG]).toBeUndefined();
+  });
+
+  it('batch unset (default-on) + det-levels EXPLICITLY 0 → throws (the contradiction)', () => {
+    // Batch is default-on; det-levels forced off is the explicit contradiction.
+    process.env[DET_LEVELS_FLAG] = '0';
+    expect(() => normalizeHnswDeterminismFlags()).toThrow(/contradictor/i);
+    // Env is left as the operator set it (we never silently flip an explicit '0').
+    expect(process.env[DET_LEVELS_FLAG]).toBe('0');
+  });
+
+  it('batch ON (explicit 1) + det-levels UNSET → no-op (det-levels default-on), no warning', () => {
     process.env[BATCH_FLAG] = '1';
     expect(process.env[DET_LEVELS_FLAG]).toBeUndefined();
 
     const warnings = [];
     const logger = { warn: (m) => warnings.push(m) };
-
     normalizeHnswDeterminismFlags(logger);
 
-    // Forced ON so binary-hnsw-index.js transparently sees it at insert time.
-    expect(process.env[DET_LEVELS_FLAG]).toBe('1');
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatch(/forced ON/i);
-    expect(warnings[0]).toContain(BATCH_FLAG);
-    expect(warnings[0]).toContain(DET_LEVELS_FLAG);
+    // Det-levels is default-on, so nothing is forced and nothing is warned.
+    expect(process.env[DET_LEVELS_FLAG]).toBeUndefined();
+    expect(warnings).toHaveLength(0);
 
-    // One-time: a second call in the same process does NOT re-warn (the env is
-    // already '1', so it short-circuits before the latch anyway).
+    // Idempotent: a second call still no-ops.
     normalizeHnswDeterminismFlags(logger);
-    expect(warnings).toHaveLength(1);
-  });
-
-  it('one-time warning latch suppresses repeat warnings across forced ticks', () => {
-    const warnings = [];
-    const logger = { warn: (m) => warnings.push(m) };
-
-    // First forced-on emits the warning...
-    process.env[BATCH_FLAG] = '1';
-    normalizeHnswDeterminismFlags(logger);
-    expect(warnings).toHaveLength(1);
-
-    // ...and after the env is reset to unset (simulating a fresh tick that
-    // re-reads the operator's flags), the latch keeps it to one notice/process.
-    delete process.env[DET_LEVELS_FLAG];
-    normalizeHnswDeterminismFlags(logger);
-    expect(process.env[DET_LEVELS_FLAG]).toBe('1');
-    expect(warnings).toHaveLength(1);
+    expect(warnings).toHaveLength(0);
   });
 
   it('batch ON + det-levels EXPLICITLY 0 → throws a clear config error', () => {
@@ -72,14 +73,13 @@ describe('normalizeHnswDeterminismFlags (batch ⇄ det-levels coupling)', () => 
     process.env[DET_LEVELS_FLAG] = '0';
 
     expect(() => normalizeHnswDeterminismFlags()).toThrow(/contradictor/i);
-    // The contradiction is surfaced verbatim with both flag names + remedy.
+    // The contradiction is surfaced with both flag names + remedy.
     let caught;
     try { normalizeHnswDeterminismFlags(); } catch (e) { caught = e; }
     expect(caught.message).toContain(BATCH_FLAG);
     expect(caught.message).toContain(DET_LEVELS_FLAG);
     expect(caught.message).toMatch(/§0\.5|0\.5/);
-    // The contradictory env is left as the operator set it (we never silently
-    // flip an explicit '0').
+    // The contradictory env is left as the operator set it.
     expect(process.env[DET_LEVELS_FLAG]).toBe('0');
   });
 
@@ -92,31 +92,17 @@ describe('normalizeHnswDeterminismFlags (batch ⇄ det-levels coupling)', () => 
     expect(warnings).toHaveLength(0);
   });
 
-  it('batch OFF → never touches det-levels (independent off the batch path)', () => {
-    // Unset det-levels stays unset.
-    delete process.env[BATCH_FLAG];
-    delete process.env[DET_LEVELS_FLAG];
-    normalizeHnswDeterminismFlags();
-    expect(process.env[DET_LEVELS_FLAG]).toBeUndefined();
-
-    // Explicit det-levels=0 with batch off is a legitimate config (RNG path) and
-    // must NOT throw.
+  it('batch EXPLICITLY OFF (0) → never touches det-levels, even det-levels=0 is legitimate', () => {
+    // Batch explicitly disabled → the per-file path is taken, det-levels is
+    // independently meaningful and an explicit det-levels=0 must NOT throw.
+    process.env[BATCH_FLAG] = '0';
     process.env[DET_LEVELS_FLAG] = '0';
     expect(() => normalizeHnswDeterminismFlags()).not.toThrow();
     expect(process.env[DET_LEVELS_FLAG]).toBe('0');
-  });
 
-  it('falls back to stderr when no logger.warn is provided (warning never swallowed)', () => {
-    process.env[BATCH_FLAG] = '1';
-    const writes = [];
-    const orig = process.stderr.write;
-    process.stderr.write = (chunk) => { writes.push(String(chunk)); return true; };
-    try {
-      normalizeHnswDeterminismFlags(); // no logger
-    } finally {
-      process.stderr.write = orig;
-    }
-    expect(process.env[DET_LEVELS_FLAG]).toBe('1');
-    expect(writes.join('')).toMatch(/forced ON/i);
+    // Batch off + det-levels unset → unset stays unset.
+    delete process.env[DET_LEVELS_FLAG];
+    normalizeHnswDeterminismFlags();
+    expect(process.env[DET_LEVELS_FLAG]).toBeUndefined();
   });
 });

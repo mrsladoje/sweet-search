@@ -135,10 +135,11 @@ describe('G2 cutoff-cache domain (E.6)', () => {
     }
   });
 
-  it('chunkCutoffEnabled honors the env flag', () => {
-    expect(chunkCutoffEnabled({})).toBe(false);
-    expect(chunkCutoffEnabled({ SWEET_SEARCH_RECONCILE_CHUNK_CUTOFF: '0' })).toBe(false);
+  it('chunkCutoffEnabled honors the env flag (DEFAULT-ON)', () => {
+    // DEFAULT-ON: unset/empty/'1' enable; only an explicit '0' disables.
+    expect(chunkCutoffEnabled({})).toBe(true);
     expect(chunkCutoffEnabled({ SWEET_SEARCH_RECONCILE_CHUNK_CUTOFF: '1' })).toBe(true);
+    expect(chunkCutoffEnabled({ SWEET_SEARCH_RECONCILE_CHUNK_CUTOFF: '0' })).toBe(false);
   });
 });
 
@@ -360,8 +361,10 @@ describe('G2 E.6 chunk-cutoff integration', () => {
 describe('G2 A.4 autotune config', () => {
   afterEach(() => clearFlags());
 
-  it('flag off → autotune dormant (no signals injected)', () => {
+  it('flag explicitly off (=0) → autotune dormant (no signals injected)', () => {
+    // Autotune is DEFAULT-ON; the dormant path is exercised with an explicit '0'.
     clearFlags();
+    process.env.SWEET_SEARCH_RECONCILE_AUTOTUNE = '0';
     const dir = mkdtempSync(join(tmpdir(), 'g2-at-'));
     mkdirSync(join(dir, '.sweet-search'), { recursive: true });
     try {
@@ -373,7 +376,7 @@ describe('G2 A.4 autotune config', () => {
     }
   });
 
-  it('flag on → autotuneInterval true with real cpuLoadAvg + maintenanceBacklog', () => {
+  it('flag on (default / =1) → autotuneInterval true with real cpuLoadAvg + maintenanceBacklog', () => {
     clearFlags();
     process.env.SWEET_SEARCH_RECONCILE_AUTOTUNE = '1';
     const dir = mkdtempSync(join(tmpdir(), 'g2-at-'));

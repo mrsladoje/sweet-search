@@ -428,11 +428,14 @@ export class BinaryHNSWIndex {
     }
 
     // Add to HNSW graph.
-    // Gate: when SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS === '1', assign the
-    // level from a stable hash of the id (insertion-order-independent) so all
-    // construction paths (incremental add, end-of-tick batch, compaction
-    // rebuild) agree. Default OFF → byte-and-behavior identical to today.
-    const level = process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS === '1'
+    // Gate: deterministic per-id levels are DEFAULT-ON (disable with
+    // SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS=0). When on, assign the level from a
+    // stable hash of the id (insertion-order-independent) so all construction
+    // paths (incremental add, end-of-tick batch, compaction rebuild) agree and
+    // the graph is reproducible. Verified recall-neutral on GCSN (+0.01pp MRR)
+    // and byte-identical via the determinism harness. Set the flag to '0' to
+    // restore the legacy random-level (insertion-order-dependent) path.
+    const level = process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS !== '0'
       ? this.levelForId(id)
       : this.getRandomLevel();
     this.addToGraph(idx, level);
@@ -503,12 +506,13 @@ export class BinaryHNSWIndex {
    * point is chosen deterministically (min id at the max level) so batched,
    * per-file, and compaction construction paths agree on `entryPoint` even
    * when several nodes share the max level — the last byte-identity gap left
-   * by deterministic levels (E.1 entry-point divergence). Default OFF →
-   * today's first-inserted-at-max-level behavior is byte-and-behavior
-   * preserved.
+   * by deterministic levels (E.1 entry-point divergence). DEFAULT-ON (disable
+   * with SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS=0) → mirrors the level-assignment
+   * gate in `add()`. Set the flag to '0' to restore today's
+   * first-inserted-at-max-level behavior.
    */
   _deterministicEntryPoint() {
-    return process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS === '1';
+    return process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS !== '0';
   }
 
   /**

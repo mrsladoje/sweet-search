@@ -45,15 +45,16 @@ describe('A.1 / os.setPriority background demotion smoke', () => {
 
 // ---- A.4 autotune-consume --------------------------------------------------
 
-describe('A.4 / reconcileAutotuneEnabled gate', () => {
-  it('is off by default (flag absent/empty)', () => {
-    expect(reconcileAutotuneEnabled({})).toBe(false);
-    expect(reconcileAutotuneEnabled({ SWEET_SEARCH_RECONCILE_AUTOTUNE: '' })).toBe(false);
+describe('A.4 / reconcileAutotuneEnabled gate (DEFAULT-ON)', () => {
+  it('is ON by default (flag absent/empty)', () => {
+    // DEFAULT-ON: only an explicit '0' disables it.
+    expect(reconcileAutotuneEnabled({})).toBe(true);
+    expect(reconcileAutotuneEnabled({ SWEET_SEARCH_RECONCILE_AUTOTUNE: '' })).toBe(true);
   });
-  it('only the strict "1" token enables it', () => {
+  it('only the explicit "0" token disables it', () => {
     expect(reconcileAutotuneEnabled({ SWEET_SEARCH_RECONCILE_AUTOTUNE: '1' })).toBe(true);
-    expect(reconcileAutotuneEnabled({ SWEET_SEARCH_RECONCILE_AUTOTUNE: 'true' })).toBe(false);
-    expect(reconcileAutotuneEnabled({ SWEET_SEARCH_RECONCILE_AUTOTUNE: 'on' })).toBe(false);
+    expect(reconcileAutotuneEnabled({ SWEET_SEARCH_RECONCILE_AUTOTUNE: 'true' })).toBe(true);
+    expect(reconcileAutotuneEnabled({ SWEET_SEARCH_RECONCILE_AUTOTUNE: 'on' })).toBe(true);
     expect(reconcileAutotuneEnabled({ SWEET_SEARCH_RECONCILE_AUTOTUNE: '0' })).toBe(false);
   });
 });
@@ -61,12 +62,14 @@ describe('A.4 / reconcileAutotuneEnabled gate', () => {
 describe('A.4 / computeNextIntervalMs (the doubly-dead-trap guard)', () => {
   const flagOn = { SWEET_SEARCH_RECONCILE_AUTOTUNE: '1' };
 
-  it('returns currentMs unchanged when the flag is OFF (today behavior)', () => {
+  it('returns currentMs unchanged when the flag is explicitly OFF (=0, legacy behavior)', () => {
+    // Autotune is DEFAULT-ON, so the legacy fixed-interval path is exercised by
+    // explicitly disabling it with '0'.
     const out = computeNextIntervalMs({
       currentMs: 60_000,
       counters: { tick_ms: 200, dirty_paths_seen: 500 },
       maintenanceBacklog: 50,
-      env: {},
+      env: { SWEET_SEARCH_RECONCILE_AUTOTUNE: '0' },
       loadavg: () => [4, 4, 4],
       cpuCount: () => 4,
     });
