@@ -25,7 +25,7 @@ function runInit(args, cwd) {
     });
     return { stdout, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: err.stdout || '', stderr: err.stderr || '', exitCode: err.status };
+    return { stdout: err.stdout || '', stderr: err.stderr || '', exitCode: err.status, signal: err.signal };
   }
 }
 
@@ -87,6 +87,13 @@ describe('sweet-search init (integration)', () => {
     }
 
     const result = runInit(['--profile', 'full'], tempDir);
+    if (result.exitCode !== 0) {
+      console.error(
+        `\n[init --profile full] FAILED: exitCode=${result.exitCode} signal=${result.signal}\n` +
+        `--- stdout (tail) ---\n${String(result.stdout).slice(-3000)}\n` +
+        `--- stderr (tail) ---\n${String(result.stderr).slice(-3000)}\n`
+      );
+    }
     expect(result.exitCode).toBe(0);
 
     const configPath = join(tempDir, '.sweet-search', 'config.json');
