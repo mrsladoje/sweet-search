@@ -279,6 +279,10 @@ jobs:
   smoke-test:
     needs: [build-cli, build-addon]
     strategy:
+      # Don't cancel sibling platform legs when one fails — we need each
+      # platform's full result (darwin-x64 runs under Rosetta and was being
+      # cancelled before it could report).
+      fail-fast: false
       matrix:
         include:
           - os: macos-14

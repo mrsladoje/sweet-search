@@ -12,7 +12,7 @@ export default defineConfig({
     // each run; all pass locally and on Linux CI). Cap concurrency there so the
     // macOS smoke-test is reliable. Linux CI and local dev keep full parallelism.
     // (Vitest 4: maxWorkers/minWorkers are top-level — poolOptions was removed.)
-    ...((process.platform === 'darwin' && process.env.CI) ? { maxWorkers: 2, minWorkers: 1 } : {}),
+    ...((process.platform === 'darwin' && process.env.CI) ? { maxWorkers: 1, minWorkers: 1 } : {}),
     // Prevent V8 Turboshaft WASM background compilation OOM when loading
     // multiple tree-sitter grammars (cpp=4.4M, kotlin=3.9M, swift=3M).
     execArgv: ['--no-wasm-tier-up', '--no-wasm-dynamic-tiering', '--v8-pool-size=1'],
