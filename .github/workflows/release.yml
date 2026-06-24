@@ -287,16 +287,24 @@ jobs:
         include:
           - os: macos-14
             platform: darwin-arm64
+            nodeArch: arm64
           - os: macos-14
             platform: darwin-x64
+            nodeArch: x64
           - os: ubuntu-latest
             platform: linux-x64-gnu
+            nodeArch: x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      # Match the Node arch to the platform under test. macos-14 runners are
+      # arm64; the darwin-x64 leg must run an x64 Node (under Rosetta) so the
+      # downloaded x64 native addon actually loads — otherwise the native addon
+      # is unloadable and dedup/native-daemon tests fail or skip.
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          architecture: ${{ matrix.nodeArch }}
 
       - name: Download CLI binary
         uses: actions/download-artifact@v4
