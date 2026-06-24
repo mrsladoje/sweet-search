@@ -343,12 +343,19 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/ss-prefetch"
           echo '{"name":"ss-prefetch"}' > "$RUNNER_TEMP/ss-prefetch/package.json"
-          # init does more than download (runtime verify, hook registration) and
-          # can exit non-zero in a bare temp dir; the model DOWNLOAD is what we
-          # need, so tolerate its exit code and assert the required tokenizers
-          # actually landed on disk.
+          # init --profile full warms the embedding stack (it downloads the
+          # CodeRankEmbed-onnx-int8 tokenizer + FP32 weights). It does more than
+          # download (runtime verify, hook registration) and can exit non-zero in
+          # a bare temp dir, so tolerate its exit code.
           SWEET_SEARCH_PROJECT_ROOT="$RUNNER_TEMP/ss-prefetch" node scripts/init.js --profile full \
-            || echo "init returned non-zero — verifying model cache directly"
+            || echo "init returned non-zero — continuing to explicit LI fetch"
+          # init selects the *edge* LI variant, but the native indexer loads the
+          # STANDARD lightonai/LateOn-Code, so fetch that registry entry directly
+          # (otherwise streaming-vectors aborts: "[NativeTokenizer] tokenizer.json
+          # not found .../lightonai--LateOn-Code/tokenizer.json" on a cold cache).
+          node -e "import('./core/infrastructure/model-fetcher.js').then((m) => m.fetchModel('lateon-code', { allowDownload: true })).then((r) => console.log('lateon-code: downloaded ' + r.downloaded + ', cached ' + r.cached)).catch((e) => { console.error(e); process.exit(1); })"
+          # The integration tests need these tokenizers on disk for the native
+          # path; fail loudly if either is absent.
           test -f "$HOME/.cache/sweet-search/models/mrsladoje--CodeRankEmbed-onnx-int8/tokenizer.json"
           test -f "$HOME/.cache/sweet-search/models/lightonai--LateOn-Code/tokenizer.json"
           echo "model cache warmed: tokenizers present"
