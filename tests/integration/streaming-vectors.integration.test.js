@@ -49,7 +49,7 @@ function run(cmd, args, env, timeout = TIMEOUT) {
     child.stderr.on('data', (d) => { stderr += d; });
     child.stdin.end();
     const t = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('timeout')); }, timeout);
-    child.on('close', (code) => { clearTimeout(t); resolve({ stdout, stderr, code }); });
+    child.on('close', (code, signal) => { clearTimeout(t); resolve({ stdout, stderr, code, signal }); });
     child.on('error', reject);
   });
 }
@@ -92,6 +92,17 @@ describe('streaming vectors (large-repo OOM regression)', () => {
       SWEET_SEARCH_STREAM_PARSE_FILES: '16',
       SWEET_SEARCH_STREAM_HYDRATE_CHUNKS: '32',
     });
+
+    // Diagnostics: when the indexer subprocess fails, surface its real output so
+    // CI logs are actionable (the indexer's stdout/stderr is captured in-process
+    // and otherwise never reaches the job log — opaque on the macOS GitHub VM).
+    if (indexRun.code !== 0) {
+      console.error(
+        `\n[streaming-vectors] indexer FAILED: code=${indexRun.code} signal=${indexRun.signal}\n` +
+        `--- indexer stdout (tail) ---\n${indexRun.stdout.slice(-4000)}\n` +
+        `--- indexer stderr (tail) ---\n${indexRun.stderr.slice(-4000)}\n`
+      );
+    }
   }, TIMEOUT + 60000);
 
   afterAll(() => {
