@@ -13,12 +13,20 @@ import { join } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '../..');
 
-let packOutput;
+let packFiles;
 let manifest;
 
 beforeAll(() => {
   execSync('node scripts/generate-asset-manifest.js --check', { cwd: ROOT, stdio: 'pipe' });
-  packOutput = execSync('npm pack --dry-run 2>&1', { cwd: ROOT, encoding: 'utf8' });
+  // Parse the machine-readable file list instead of scraping `npm notice` stdout.
+  // The human-readable output's ordering/line-wrapping/buffering varies by npm
+  // version and platform — on the macOS CI runner it was dropping mid-list
+  // entries (e.g. manifest.json), failing deterministically there while passing
+  // locally and on Linux. `--json` yields an exact, complete path list.
+  const packJson = execSync('npm pack --dry-run --json', {
+    cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  packFiles = new Set(JSON.parse(packJson)[0].files.map((f) => f.path));
   manifest = JSON.parse(readFileSync(join(ROOT, 'core', 'infrastructure', 'manifest.json'), 'utf8'));
 });
 
@@ -30,13 +38,13 @@ describe('npm pack contents', () => {
   });
 
   it('core/infrastructure/manifest.json is in the tarball', () => {
-    expect(packOutput).toContain('core/infrastructure/manifest.json');
+    expect(packFiles.has('core/infrastructure/manifest.json')).toBe(true);
   });
 
   it('every runtimeAsset in the manifest is in the tarball', () => {
     const missing = [];
     for (const [key, assetPath] of Object.entries(manifest.runtimeAssets)) {
-      if (!packOutput.includes(assetPath)) {
+      if (!packFiles.has(assetPath)) {
         missing.push(`${key}: ${assetPath}`);
       }
     }
@@ -54,13 +62,12 @@ describe('npm pack contents', () => {
   });
 
   it('excludes the old ss binary', () => {
-    // Match "ss" as a standalone filename, not as a substring of other paths
-    const lines = packOutput.split('\n').filter(l => l.includes('npm notice'));
-    const hasBareSSFile = lines.some(l => /\bss$/.test(l.trim()));
+    // A bare "ss" file at any depth, not "ss" as a substring of other paths.
+    const hasBareSSFile = [...packFiles].some((p) => p === 'ss' || p.endsWith('/ss'));
     expect(hasBareSSFile).toBe(false);
   });
 
   it('excludes native addon .node files', () => {
-    expect(packOutput).not.toMatch(/\.node\b/);
+    expect([...packFiles].some((p) => /\.node$/.test(p))).toBe(false);
   });
 });

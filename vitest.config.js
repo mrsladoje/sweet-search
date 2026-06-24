@@ -5,14 +5,6 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     pool: 'forks',
-    // On the resource-constrained macOS GitHub runner (~3 vCPU / 7 GB), the
-    // default per-core worker count lets the heavy integration tests — each
-    // spawning its own indexer / server / native-addon subprocess — starve one
-    // another into nondeterministic timeouts and racy I/O (different tests fail
-    // each run; all pass locally and on Linux CI). Cap concurrency there so the
-    // macOS smoke-test is reliable. Linux CI and local dev keep full parallelism.
-    // (Vitest 4: maxWorkers/minWorkers are top-level — poolOptions was removed.)
-    ...((process.platform === 'darwin' && process.env.CI) ? { maxWorkers: 1, minWorkers: 1 } : {}),
     // Prevent V8 Turboshaft WASM background compilation OOM when loading
     // multiple tree-sitter grammars (cpp=4.4M, kotlin=3.9M, swift=3M).
     execArgv: ['--no-wasm-tier-up', '--no-wasm-dynamic-tiering', '--v8-pool-size=1'],

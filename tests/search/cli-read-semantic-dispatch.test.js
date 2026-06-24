@@ -29,6 +29,19 @@ import { fileURLToPath } from 'node:url';
 
 const CLI = resolve(dirname(fileURLToPath(import.meta.url)), '../../core/cli.js');
 
+// Under Rosetta (x64 emulated on Apple Silicon — the CI darwin-x64 leg), the
+// native daemon binary does not spawn a working server, so read-semantic
+// silently takes the in-process fallback. That defeats the "native path"
+// assertions below, which check the dispatch *branch* (native vs in-process),
+// not search results. Skip those only under translation; real Apple Silicon and
+// real Intel Macs run them normally.
+const isRosetta = (() => {
+  if (process.platform !== 'darwin') return false;
+  try {
+    return execSync('sysctl -n sysctl.proc_translated', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() === '1';
+  } catch { return false; }
+})();
+
 let projectRoot;
 let socketPath;
 let pidFile;
@@ -123,7 +136,7 @@ describe('cli.js read-semantic — envFalsey routing', () => {
     },
   );
 
-  it.each(['1', 'true', 'yes', 'anything-else'])(
+  it.skipIf(isRosetta).each(['1', 'true', 'yes', 'anything-else'])(
     "'%s' is NOT falsey → default native path (no in-process fallback bytes)",
     async (val) => {
       writeFileSync(join(projectRoot, 'a.js'), 'export const A = 1;\n');
@@ -138,7 +151,7 @@ describe('cli.js read-semantic — envFalsey routing', () => {
     },
   );
 
-  it('unset flag (production default) takes the native path, not in-process', async () => {
+  it.skipIf(isRosetta)('unset flag (production default) takes the native path, not in-process', async () => {
     writeFileSync(join(projectRoot, 'a.js'), 'export const A = 1;\n');
     // Explicitly clear any ambient value the runner might carry.
     const r = await runReadSemantic(['a.js', 'A', '--format=json'], {

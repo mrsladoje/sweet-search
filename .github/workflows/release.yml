@@ -332,6 +332,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Warm the GLOBAL model cache (~/.cache/sweet-search/models) before the
+      # test suite. The streaming-vectors integration test runs the indexer's
+      # native path, which assumes tokenizer.json is already on disk and does
+      # NOT fetch it on demand; and the init --profile full test otherwise
+      # downloads models inside its 30s timeout. Pre-fetching via init (the
+      # registry-backed path that does download tokenizer.json) makes both run
+      # for real instead of failing on a cold cache.
+      - name: Pre-fetch models (warm cache for integration tests)
+        run: |
+          mkdir -p "$RUNNER_TEMP/ss-prefetch"
+          echo '{"name":"ss-prefetch"}' > "$RUNNER_TEMP/ss-prefetch/package.json"
+          # init does more than download (runtime verify, hook registration) and
+          # can exit non-zero in a bare temp dir; the model DOWNLOAD is what we
+          # need, so tolerate its exit code and assert the required tokenizers
+          # actually landed on disk.
+          SWEET_SEARCH_PROJECT_ROOT="$RUNNER_TEMP/ss-prefetch" node scripts/init.js --profile full \
+            || echo "init returned non-zero — verifying model cache directly"
+          test -f "$HOME/.cache/sweet-search/models/mrsladoje--CodeRankEmbed-onnx-int8/tokenizer.json"
+          test -f "$HOME/.cache/sweet-search/models/lightonai--LateOn-Code/tokenizer.json"
+          echo "model cache warmed: tokenizers present"
+        env:
+          SWEET_SEARCH_TEST_DOWNLOADS: '1'
+
       - name: Run unit tests
         run: npm test -- --run
 
