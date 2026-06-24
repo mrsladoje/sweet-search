@@ -34,9 +34,14 @@ let registryFile;
 function onEnv(fraction = '0.6') {
   return { SWEET_SEARCH_RSS_REGISTRY: registryFile, SWEET_SEARCH_RSS_BUDGET_FRACTION: String(fraction) };
 }
-/** env with the coordinator DISABLED (gate unset), still pointed at the temp file. */
+/**
+ * env with the coordinator EXPLICITLY DISABLED, pointed at the temp file.
+ * Sets the fraction to '' (→ null regardless of host RAM). Leaving it UNSET would
+ * fall through to the RAM-tier default, which auto-enables on ≤24 GiB hosts — making
+ * these "no-op when disabled" tests pass on 128 GB dev boxes but fail on small CI runners.
+ */
 function offEnv() {
-  return { SWEET_SEARCH_RSS_REGISTRY: registryFile };
+  return { SWEET_SEARCH_RSS_REGISTRY: registryFile, SWEET_SEARCH_RSS_BUDGET_FRACTION: '' };
 }
 
 beforeEach(() => {
