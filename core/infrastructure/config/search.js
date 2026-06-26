@@ -53,6 +53,7 @@ export const FILE_PATTERNS = {
     // Source code (all major languages)
     '**/*.{js,jsx,ts,tsx,mjs,cjs}',      // JavaScript/TypeScript
     '**/*.{java,kt,kts,scala,groovy}',    // JVM
+    '**/*.{clj,cljc,cljs,edn}',           // Clojure / ClojureScript / EDN
     '**/*.{py,pyi}',                       // Python
     '**/*.go',                              // Go
     '**/*.rs',                              // Rust

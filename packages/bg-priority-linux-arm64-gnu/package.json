@@ -1,6 +1,6 @@
 {
   "name": "@sweet-search/bg-priority-linux-arm64-gnu",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "description": "Sweet Search bg-priority native addon for Linux ARM64 (glibc)",
   "license": "Apache-2.0",
   "os": [
