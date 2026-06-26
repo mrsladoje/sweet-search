@@ -1,6 +1,6 @@
 {
   "name": "@sweet-search/bg-priority",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "description": "Optional napi-rs addon: process/thread background OS scheduling (macOS QOS_CLASS_BACKGROUND) for the sweet-search index-maintainer daemon. Per-platform prebuilt binaries ship as optionalDependencies (darwin + linux); a missing/failed native build is non-fatal — os-priority.mjs falls back to spawn-based taskpolicy/ionice/chrt + os.setPriority.",
   "license": "Apache-2.0",
   "main": "index.js",
@@ -19,10 +19,10 @@
     ]
   },
   "optionalDependencies": {
-    "@sweet-search/bg-priority-darwin-arm64": "2.6.0",
-    "@sweet-search/bg-priority-darwin-x64": "2.6.0",
-    "@sweet-search/bg-priority-linux-x64-gnu": "2.6.0",
-    "@sweet-search/bg-priority-linux-arm64-gnu": "2.6.0"
+    "@sweet-search/bg-priority-darwin-arm64": "2.6.1",
+    "@sweet-search/bg-priority-darwin-x64": "2.6.1",
+    "@sweet-search/bg-priority-linux-x64-gnu": "2.6.1",
+    "@sweet-search/bg-priority-linux-arm64-gnu": "2.6.1"
   },
   "scripts": {
     "build": "napi build --platform --release",

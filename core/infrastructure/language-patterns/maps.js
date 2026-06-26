@@ -42,6 +42,15 @@ export const EXTENSION_MAP = {
   // Scala
   '.scala': 'scala',
 
+  // Clojure / ClojureScript / EDN
+  // No tree-sitter-clojure grammar ships in the bundle and the brace-based
+  // regex chunker would fragment paren-delimited Lisp forms (and drop sub-30-char
+  // defns via MIN_CONTENT_LENGTH), so there is intentionally no LANGUAGES.clojure
+  // entry — getLanguageByExtension returns the chunker-less fallback and
+  // ast-chunker routes these through parseGenericFile (lossless 50-line windows),
+  // tagged with this 'clojure' language id rather than generic 'text'.
+  '.clj': 'clojure', '.cljc': 'clojure', '.cljs': 'clojure', '.edn': 'clojure',
+
   // Dart
   '.dart': 'dart',
 

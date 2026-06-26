@@ -349,7 +349,11 @@ export class ASTChunker {
     // chunker uses tree-sitter-cpp instead of tree-sitter-c.
     const langInfo = resolveLanguage(filePath, content);
     if (!langInfo || !langInfo.chunker) {
-      return this.parseGenericFile(filePath, content);
+      // Mapped-but-chunkerless languages (e.g. Clojure: no tree-sitter grammar,
+      // and paren-delimited forms don't fit the brace/indent/endKeyword parsers)
+      // fall back to lossless generic windowing but keep their resolved language
+      // id so chunks are tagged 'clojure' rather than generic 'text'.
+      return this.parseGenericFile(filePath, content, langInfo?.id || 'text');
     }
 
     // Try tree-sitter WASM first for supported languages
@@ -909,7 +913,7 @@ export class ASTChunker {
     return subChunks;
   }
 
-  parseGenericFile(filePath, content) {
+  parseGenericFile(filePath, content, language = 'text') {
     const lines = content.split('\n');
     const chunks = [];
     const CHUNK_SIZE = 50;
@@ -921,7 +925,7 @@ export class ASTChunker {
       const chunkContent = lines.slice(start, end).join('\n');
 
       if (chunkContent.trim().length > 20) {
-        chunks.push(this.buildChunk(chunkContent, filePath, 'text', 'code', 'unknown', start, end - 1));
+        chunks.push(this.buildChunk(chunkContent, filePath, language, 'code', 'unknown', start, end - 1));
       }
 
       start = end - OVERLAP;
