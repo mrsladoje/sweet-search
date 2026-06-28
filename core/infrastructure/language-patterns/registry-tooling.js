@@ -447,7 +447,9 @@ export const TOOLING_LANGUAGES = {
       },
       relationships: {
         copyFrom: /^\s*copy\s+([a-z0-9][a-z0-9-]*)/i,
-        call: /^\s*call\s+["']([a-z0-9][a-z0-9-]*)/i,
+        // CALL "subprog" → dependency edge (`call` is not a mapped relationship
+        // type; `dep` is the canonical generic-dependency key).
+        dep: /^\s*call\s+["']([a-z0-9][a-z0-9-]*)/i,
       },
       skipCallObjects: [],
     },
