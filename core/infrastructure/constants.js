@@ -3,6 +3,8 @@
  * Extracted to prevent drift between graph-search.js and sweet-search.js
  */
 
+import { EXTENSION_MAP } from './language-patterns/maps.js';
+
 export const SYMBOL_KIND_WEIGHTS = {
   class: 1.0,
   interface: 0.95,
@@ -26,25 +28,43 @@ export const DEFINITION_TYPES = new Set([
 ]);
 
 /**
- * Canonical set of code file extensions recognized by sweet-search.
- * Used by both the indexer (sparse gram builder) and the search pipeline
- * (ripgrep type filter + code file detection). Single source of truth.
+ * Canonical set of code file extensions recognized by sweet-search's
+ * grep/pattern path — the sparse-gram literal index, native-grep extension
+ * filter, ripgrep `--type-add code` fallback, and `isRipgrepCodePath`.
+ *
+ * DERIVED from EXTENSION_MAP (the single source of truth for which extensions
+ * sweet-search indexes) so ss-grep coverage can NEVER drift behind newly-added
+ * languages. This drift previously dropped Solidity, .cts/.mts, .cljc/.cljs/.edn,
+ * .mli, .rd/.rmd, shaders, build DSLs, etc. from ss-grep even though they were
+ * discovered + embedded (so ss-search worked but ss-grep silently returned
+ * nothing). Keys are stored bare + lowercase (no leading dot) to match
+ * `path.extname(f).slice(1).toLowerCase()` at the call sites.
+ *
+ * Pure document formats (Markdown/reStructuredText/plaintext) are intentionally
+ * EXCLUDED — they go through DocumentChunker and are not part of the grep
+ * code-path (isRipgrepCodePath('README.md') must stay false, and sparse-gram
+ * candidate lists drop doc files). Config/markup/style formats (json/yaml/xml/
+ * html/css/ini/…) stay in, matching the historical set.
+ *
+ * Plus a few historically grep-able languages that have no EXTENSION_MAP entry
+ * (no chunker grammar): Ada, D, V.
  */
+const DOC_FORMAT_LANGUAGE_IDS = new Set(['markdown', 'rst', 'plaintext']);
+const LEGACY_EXTRA_CODE_EXTENSIONS = ['ada', 'd', 'v'];
 export const CODE_FILE_EXTENSIONS = new Set([
-  'js', 'ts', 'jsx', 'tsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'hpp',
-  'cs', 'rb', 'php', 'swift', 'kt', 'scala', 'lua', 'sh', 'zig', 'hs', 'ml',
-  'ex', 'exs', 'clj', 'erl', 'r', 'jl', 'dart', 'v', 'nim', 'cr', 'd', 'f90',
-  'ada', 'pas', 'cob', 'pl', 'pm', 'sql', 'graphql', 'proto', 'yaml', 'yml',
-  'json', 'toml', 'xml', 'html', 'css', 'scss', 'sass', 'less', 'svelte',
-  'vue', 'astro', 'mdx',
+  ...Object.entries(EXTENSION_MAP)
+    .filter(([, id]) => !DOC_FORMAT_LANGUAGE_IDS.has(id))
+    .map(([ext]) => ext.replace(/^\./, '').toLowerCase()),
+  ...LEGACY_EXTRA_CODE_EXTENSIONS,
 ]);
 
 /**
  * Ripgrep type definition glob matching CODE_FILE_EXTENSIONS.
- * Used with --type-add to define a custom 'code' type for ripgrep.
+ * Used with --type-add to define a custom 'code' type for ripgrep. Derived from
+ * the same set so it stays in lockstep.
  */
 export const RIPGREP_CODE_TYPE_GLOB =
-  'code:*.{js,ts,jsx,tsx,py,rs,go,java,c,cpp,h,hpp,cs,rb,php,swift,kt,scala,lua,sh,zig,hs,ml,ex,exs,clj,erl,r,jl,dart,v,nim,cr,d,f90,ada,pas,cob,pl,pm,sql,graphql,proto,yaml,yml,json,toml,xml,html,css,scss,sass,less,svelte,vue,astro,mdx}';
+  `code:*.{${Array.from(CODE_FILE_EXTENSIONS).join(',')}}`;
 
 /**
  * Sparse gram symbol type bitmasks.
