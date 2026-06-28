@@ -159,7 +159,8 @@ describe('getGraphPatterns', () => {
   });
 
   it('returns null for unknown languages', () => {
-    expect(getGraphPatterns('cobol')).toBeNull();
+    // (was 'cobol' — now a supported graph-only language; use a truly unknown id)
+    expect(getGraphPatterns('not-a-real-language')).toBeNull();
   });
 });
 

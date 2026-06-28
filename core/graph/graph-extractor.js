@@ -1394,7 +1394,11 @@ export class GraphExtractor {
 
       const groupEnd = j - 1;
       const groupContent = source.slice(start, groupEnd);
-      const isOptional = source[groupEnd + 1] === '?';
+      // A group quantified by `?` OR `*` can match zero times, so the tokens
+      // AFTER it (e.g. the real keyword) may start the line. Treating a `(?:…)*`
+      // modifier prefix as mandatory wrongly rejected lines like `class Foo`
+      // (QL/Vala/Haxe leading-modifier patterns), dropping all their entities.
+      const isOptional = source[groupEnd + 1] === '?' || source[groupEnd + 1] === '*';
       if (!isOptional) {
         const alternatives = groupContent.split('|').map((alt) => alt.trim()).filter(Boolean);
         const altTokens = [];
@@ -1409,7 +1413,14 @@ export class GraphExtractor {
       const optionalAlternatives = groupContent.split('|').map((alt) => alt.trim()).filter(Boolean);
       for (const alt of optionalAlternatives) {
         const token = this.extractLiteralPrefix(alt);
-        if (token) tokens.push(token);
+        // A nested group / non-literal alternative (e.g. `(?:(?:public|…)\s+)*`)
+        // means we cannot enumerate every literal this optional prefix could
+        // start with. Adding only the literals we *can* see would
+        // false-negative lines that begin with an un-enumerated one (Vala/Haxe
+        // `public class Foo`). Disabling the prefilter is the only
+        // correctness-preserving choice; the full regex still runs per line.
+        if (!token) return [];
+        tokens.push(token);
       }
       i = groupEnd + 2;
       while (skipLeadingWhitespace()) {}
