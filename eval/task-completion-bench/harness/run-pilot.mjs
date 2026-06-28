@@ -19,6 +19,11 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileS
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runTask } from './api-task-runner.mjs';
+import { runCodexTask } from './codex-task-runner.mjs';
+// HARNESS=codex routes the agent loop through `codex exec` (real production agent)
+// instead of the bare-API ReAct loop. Same grading/metrics; native=vanilla Codex,
+// sweet=Codex + M++ + ss-* on PATH.
+const HARNESS = process.env.HARNESS || 'bareapi';
 
 // INDEX INTEGRITY via PER-RUN ISOLATION (runner-only — zero changes to the
 // sweet-search engine; incremental indexing runs exactly as it ships).
@@ -52,6 +57,12 @@ const MODEL = process.env.MODEL || 'deepseek-v4-pro';
 const PROVIDER = process.env.PROVIDER || 'deepseek';
 const CONCURRENCY = Math.max(1, +(process.env.CONCURRENCY || 4));
 const REPS = +(process.env.REPS || 1);
+// REASONING: passed through to the model (gpt-5.5 honors low/medium/high). MAX_TOOL_CALLS:
+// per-run tool-call ceiling — raise it so strong models FINISH (stop on sufficiency =
+// model_stopped) instead of truncating at the old hardcoded 60 (which censored both
+// resolution and the cost-to-solve comparison). Still bounds pathological loops.
+const REASONING = process.env.REASONING || 'standard';
+const MAX_TOOL_CALLS = Math.max(1, +(process.env.MAX_TOOL_CALLS || 60));
 // In SR mode, INSTANCES defaults to ALL ids in the materialized task file (set
 // after loadTasks); explicit INSTANCES still subsets. Lite mode keeps its default.
 let INSTANCES = (process.env.INSTANCES || (process.env.TASKS_FILE ? '' : 'pallets__flask-4992')).split(',').map(s => s.trim()).filter(Boolean);
@@ -81,8 +92,16 @@ function ensureImage(t) {
     if (!img) throw new Error(`ensureImage: SR task ${id} has no image_name`);
     const ok = () => { try { execFileSync('docker', ['image', 'inspect', img], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore' }); return true; } catch { return false; } };
     if (!ok()) {
-      try { execFileSync('docker', ['pull', img], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 1800000 }); } catch { /* loud check below */ }
-      if (!ok()) throw new Error(`ensureImage: docker pull failed for ${img} (${id})`);
+      // Retry transient pull failures (registry blips / network) before giving up —
+      // in an unattended 400-run pool a single dropped pull would otherwise skip the
+      // WHOLE task (both arms) and silently shrink N. 3 attempts w/ linear backoff.
+      let pulled = false;
+      for (let attempt = 1; attempt <= 3 && !pulled; attempt++) {
+        try { execFileSync('docker', ['pull', img], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 1800000 }); } catch { /* re-checked below */ }
+        pulled = ok();
+        if (!pulled && attempt < 3) { try { execFileSync('sleep', [String(5 * attempt)], { stdio: 'ignore' }); } catch { /* */ } }
+      }
+      if (!pulled) throw new Error(`ensureImage: docker pull failed for ${img} (${id}) after 3 attempts`);
     }
     return img;
   }
@@ -125,7 +144,11 @@ function makeRunTests(image, checkoutDir, t) {
         rmSync(pdir, { recursive: true, force: true }); mkdirSync(pdir, { recursive: true });
         writeFileSync(path.join(pdir, 'agent.diff'), diff || '');
         const script = `cd ${workdir} && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout 300 bash -c ${shq(testScript)} 2>&1 | tail -60`;
-        const out = execSync(`docker run --rm --network host -v ${pdir}:/patch:ro ${image} bash -c ${shq(script)}`, { env: { ...process.env, DOCKER_HOST }, encoding: 'utf8', timeout: 360000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+        // NO --network host: at CONCURRENCY>1 multiple test containers would share the
+        // host net namespace and collide on any port a test binds (→ flaky failures →
+        // corrupted resolved numbers). Default bridge isolates each container (own
+        // localhost + port space); self-contained SWE-bench tests don't need host net.
+        const out = execSync(`docker run --rm -v ${pdir}:/patch:ro ${image} bash -c ${shq(script)}`, { env: { ...process.env, DOCKER_HOST }, encoding: 'utf8', timeout: 360000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
         return out.slice(0, 8000);
       } catch (e) { return `[run_tests exit=${e.status ?? 1}]\n${(e.stdout || e.stderr || e.message || '').slice(0, 6000)}`; }
       finally { try { rmSync(pdir, { recursive: true, force: true }); } catch { /* */ } }
@@ -198,8 +221,16 @@ function prepareGolden(t) {
   const t0 = Date.now();
   // 90 min: CPU (no Metal/GPU) index builds of bigger repos can exceed 30 min;
   // a too-tight timeout leaves a partial/corrupt golden index (seen: pylint ETIMEDOUT).
-  execFileSync('node', [INDEXER, '--full', '--sqlite-fast', '--concurrency=1'],
-    { env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: gdir, SWEET_SEARCH_RECONCILE_V2: '0', SWEET_SEARCH_WATCH: '0' }, stdio: 'ignore', timeout: 5400000 });
+  const idxTimeout = Number(process.env.GOLDEN_TIMEOUT_MS) || 5400000;
+  try {
+    execFileSync('node', [INDEXER, '--full', '--sqlite-fast', '--concurrency=1'],
+      { env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: gdir, SWEET_SEARCH_RECONCILE_V2: '0', SWEET_SEARCH_WATCH: '0' }, stdio: 'ignore', timeout: idxTimeout });
+  } catch (e) {
+    // drop the partial/corrupt golden so a resume rebuilds it cleanly instead of
+    // treating a half-written .sweet-search as a finished golden.
+    rmSync(gdir, { recursive: true, force: true });
+    throw e;
+  }
   return { dir: gdir, idxMs: Date.now() - t0, source: 'built' };
 }
 
@@ -210,7 +241,7 @@ let __runCounter = 0;
 function makeRunDir(goldenDir, runUid, withIndex) {
   const rundir = path.join(RUNS_DIR, `${runUid}__${++__runCounter}`);
   mkdirSync(RUNS_DIR, { recursive: true }); rmSync(rundir, { recursive: true, force: true });
-  sh(`cp -a ${goldenDir} ${rundir}`);
+  execFileSync('cp', ['-a', goldenDir, rundir]); // argv form: no shell, safe with any path chars
   if (!withIndex) rmSync(path.join(rundir, '.sweet-search'), { recursive: true, force: true });
   return rundir;
 }
@@ -247,26 +278,63 @@ function gradeArm(arm, predictions, runId) {
     // UNRESOLVED, so grade only the non-empty ones and count the rest as misses
     // (one empty patch must not crash the whole grade batch).
     const nonEmpty = predictions.filter(p => (p.model_patch || '').trim());
-    const specs = nonEmpty.map(p => taskById.get(p.instance_id)).filter(Boolean);
-    if (!specs.length) return { resolved_instances: 0, total_instances: predictions.length, resolved_ids: [] };
+    if (!nonEmpty.length) return { resolved_instances: 0, total_instances: predictions.length, resolved_ids: [] };
+    // GRADING-PHASE DISK GC (critical for full-200): the agent-phase per-task GC
+    // already dropped every image, so eval.py RE-PULLS each task's ~3.5-5.3GB image
+    // here and never frees it. Grading 200 distinct images in one shot => ~800GB =>
+    // disk full mid-grade. So grade in batches of GRADE_BATCH and `docker rmi` each
+    // batch's images immediately after (gated SR_MODE && !NO_IMAGE_GC, same as the
+    // agent phase). Scoring is unchanged — SWE-bench-standard, just chunked.
+    // Default 6 (not 12): one eval.py call grades a whole batch under a single 90-min
+    // timeout, so a hanging/monster-repo task forfeits its batch-mates' grades — fewer
+    // tasks per batch = fewer waves under the timeout + less collateral on a stall.
+    const BATCH = Math.max(1, +(process.env.GRADE_BATCH || 6));
     const tasksPath = path.join(predDir, 'tasks.json');
     const patchesPath = path.join(predDir, 'patches.json');
-    writeFileSync(tasksPath, JSON.stringify(specs));
-    // eval.py wants --patches as a LIST of {instance_id, patch}, not a dict.
-    const patches = nonEmpty.map(p => ({ instance_id: p.instance_id, patch: p.model_patch }));
-    writeFileSync(patchesPath, JSON.stringify(patches));
     const reportPath = path.join(predDir, 'report.json');
-    try {
-      execFileSync(VENV_PY, [path.join(SR_EVAL_DIR, 'scripts', 'eval.py'),
-        '--json', tasksPath, '--patches', patchesPath, '--max-workers', '2', '--report-json', reportPath],
-        { cwd: SR_EVAL_DIR, env: { ...process.env, DOCKER_HOST, PYTHONPATH: path.join(SR_EVAL_DIR, 'lib') }, stdio: 'inherit', timeout: 5400000 });
-    } catch (e) { console.error(`[grade ${arm}] eval.py error: ${String(e.message).slice(0, 160)}`); }
-    if (existsSync(reportPath)) {
-      const items = (JSON.parse(readFileSync(reportPath, 'utf8')).items) || [];
-      const resolved_ids = items.filter(r => r.passed_match).map(r => r.instance_id);
-      return { resolved_instances: resolved_ids.length, total_instances: predictions.length, resolved_ids };
+    const score = {}; const resolved_ids = []; let gradedAny = false;
+    for (let i = 0; i < nonEmpty.length; i += BATCH) {
+      const chunk = nonEmpty.slice(i, i + BATCH);
+      const specs = chunk.map(p => taskById.get(p.instance_id)).filter(Boolean);
+      if (!specs.length) continue;
+      writeFileSync(tasksPath, JSON.stringify(specs));
+      // eval.py wants --patches as a LIST of {instance_id, patch}, not a dict.
+      writeFileSync(patchesPath, JSON.stringify(chunk.map(p => ({ instance_id: p.instance_id, patch: p.model_patch }))));
+      try { rmSync(reportPath, { force: true }); } catch { /* */ }
+      try {
+        execFileSync(VENV_PY, [path.join(SR_EVAL_DIR, 'scripts', 'eval.py'),
+          '--json', tasksPath, '--patches', patchesPath, '--max-workers', '2', '--report-json', reportPath],
+          { cwd: SR_EVAL_DIR, env: { ...process.env, DOCKER_HOST, PYTHONPATH: path.join(SR_EVAL_DIR, 'lib') }, stdio: 'inherit', timeout: 5400000 });
+      } catch (e) { console.error(`[grade ${arm}] eval.py error (batch @${i}): ${String(e.message).slice(0, 160)}`); }
+      if (existsSync(reportPath)) {
+        gradedAny = true;
+        const items = (JSON.parse(readFileSync(reportPath, 'utf8')).items) || [];
+        // SWE-bench-standard resolution (grading.py get_resolution_status): FULL iff
+        // ALL named FAIL_TO_PASS pass AND no PASS_TO_PASS regresses; PARTIAL iff some
+        // (not all) F2P pass and P2P holds. Do NOT use eval.py's exact-set passed_match
+        // (passed == expected_passed) — it spuriously fails when the suite passes extra
+        // tests beyond the named set (it wrongly marked native dtolnay__cxx unresolved
+        // despite 14/14 F2P + 0 P2P regressions). Also keep f2pFrac for partial credit.
+        for (const it of items) {
+          const sp = taskById.get(it.instance_id) || {};
+          const f2pTot = (sp.FAIL_TO_PASS || []).length;
+          const f2pPass = (it.from_fail_to_pass || []).length;
+          const p2pOk = (it.failed_from_pass_to_pass || []).length === 0;
+          const f2pFrac = f2pTot ? f2pPass / f2pTot : 1;
+          const status = (f2pFrac === 1 && p2pOk) ? 'FULL' : (f2pFrac > 0 && p2pOk ? 'PARTIAL' : 'NO');
+          score[it.instance_id] = { f2pFrac, p2pOk, status };
+          if (status === 'FULL') resolved_ids.push(it.instance_id);
+        }
+      }
+      // reclaim THIS batch's images before the next chunk pulls more
+      if (SR_MODE && !process.env.NO_IMAGE_GC) {
+        for (const sp of specs) {
+          if (sp.image_name) { try { execFileSync('docker', ['rmi', '-f', sp.image_name], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 60000 }); } catch { /* */ } }
+        }
+      }
     }
-    return null;
+    if (!gradedAny) return null;
+    return { resolved_instances: resolved_ids.length, total_instances: predictions.length, resolved_ids, score };
   }
   const predPath = path.join(predDir, 'preds.jsonl');
   writeFileSync(predPath, predictions.map(p => JSON.stringify(p)).join('\n') + '\n');
@@ -295,7 +363,8 @@ if (SR_MODE && !INSTANCES.length) INSTANCES = all.map(t => t.instance_id);
 // M++ to the agent — the eval scores must not leak into the system prompt.
 const mppText = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
 const rows = [];
-const predsByArm = { native: [], sweet: [] };
+const predsByArm = { native: [], sweet: [] };   // rep0 only — back-compat preds-*.jsonl
+const predsByRepArm = {};                        // { rep: { native:[], sweet:[] } } — grade EVERY rep for power
 
 // --- LIVE PROGRESS counter (no black-box runs) ---
 // TOTAL = instances × 2 arms × reps. After EVERY completed run (success or
@@ -363,10 +432,11 @@ async function runOneTask(id) {
     try { golden = await withCheckoutLock(cacheKeyFor(t), () => prepareGolden(t)); }
     catch (e) { console.error(`### ${id} golden FAILED: ${String(e.message).slice(0, 160)} — skip`); return; }
     console.log(`\n### ${id} (${t.repo}) — golden ${golden.source}${golden.idxMs ? ' in ' + (golden.idxMs / 1000).toFixed(0) + 's' : ' (cached)'}`);
-    const image = ensureImage(SR_MODE ? t : id);
-    // WARM_ONLY: pre-build golden + swebench image, then stop (no agent runs) so
-    // the smoke is fast. Used to pre-warm a set of instances up front.
-    if (process.env.WARM_ONLY) { console.log(`  warmed golden + image for ${id} (${image})`); return; }
+    const image = process.env.GOLDEN_ONLY ? null : ensureImage(SR_MODE ? t : id);
+    // WARM_ONLY: pre-build golden (+ swebench image unless GOLDEN_ONLY), then stop
+    // (no agent runs). GOLDEN_ONLY skips the multi-GB per-instance image build so a
+    // full-200 warm pass stays disk-safe (images are built lazily at grade time).
+    if (process.env.WARM_ONLY) { console.log(`  warmed golden${image ? ' + image (' + image + ')' : ' (goldens-only)'} for ${id}`); return; }
     for (const arm of ['native', 'sweet']) {
       for (let rep = 0; rep < REPS; rep++) {
         const sweet = arm === 'sweet';
@@ -375,10 +445,14 @@ async function runOneTask(id) {
           const runTests = makeRunTests(image, rundir, t);
           const task = { id, repoCheckout: rundir, mppPath: MPP, problem_statement: t.problem_statement };
           if (sweet) warmupRun(rundir); // off-clock: warm this run's server so the measured loop sees no cold start
-          const r = await runTask(task, { arm, model: MODEL, apiModel: MODEL, provider: PROVIDER, maxToolCalls: 60, ssBinDir: SS_BIN, mppText, policy: process.env.POLICY, runTests });
+          const r = HARNESS === 'codex'
+            ? await runCodexTask(task, { arm, apiModel: MODEL, reasoning: REASONING, ssBinDir: SS_BIN, mppText, image, t, perCallTimeoutMs: Number(process.env.CODEX_TIMEOUT_MS) || 900000 })
+            : await runTask(task, { arm, model: MODEL, apiModel: MODEL, provider: PROVIDER, reasoning: REASONING, maxToolCalls: MAX_TOOL_CALLS, ssBinDir: SS_BIN, mppText, policy: process.env.POLICY, runTests });
           const ranTests = (r.toolCounts?.test || 0) > 0;
           console.log(`  [${arm} rep${rep}] calls=${r.calls} ss=${r.ss} edits=${r.toolCounts.edit} hunks=${r.patchHunks} ranTests=${ranTests} escape=${r.escape} leak=${r.leak} $${r.costRealizedUsd} ${(r.wallMs / 1000).toFixed(0)}s exit=${r.exitReason}`);
-          if (rep === 0) predsByArm[arm].push({ instance_id: id, model_name_or_path: arm, model_patch: r.finalPatch || '' });
+          const pred = { instance_id: id, model_name_or_path: arm, model_patch: r.finalPatch || '' };
+          if (rep === 0) predsByArm[arm].push(pred);
+          (predsByRepArm[rep] = predsByRepArm[rep] || { native: [], sweet: [] })[arm].push(pred);
           rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, ...stripBig(r) });
           try { const td = path.join(BENCH, 'results', runId, 'trajectories'); mkdirSync(td, { recursive: true }); writeFileSync(path.join(td, `${id}-${arm}-r${rep}.json`), JSON.stringify({ taskId: id, arm, rep, exitReason: r.exitReason, toolCounts: r.toolCounts, ranTests, escapeExamples: r.escapeExamples, trajectory: r.trajectory }, null, 2)); } catch { /* */ }
           prog.done++; prog.byArm[arm]++; if (r.patchHunks > 0) prog.predOk[arm]++; prog.cost += Number(r.costRealizedUsd) || 0;
@@ -390,6 +464,16 @@ async function runOneTask(id) {
           reapRunDir(rundir); // kill this run's server/maintainer + delete its copy; golden untouched
         }
       }
+    }
+    // Per-task image GC: all arms × reps for this task are done. Drop ONLY this
+    // task's multi-GB SR docker image so a full-200 run stays disk-bounded
+    // (~CONCURRENCY images resident at once). This is `docker rmi` of a single
+    // image_name — it NEVER touches the indexed goldens under ~/.ss-eval/golden
+    // (plain dirs + .sweet-search/codebase.db, separate from docker image storage)
+    // and is never a broad `docker system prune`. A later grade pass re-pulls.
+    if (image && SR_MODE && !process.env.NO_IMAGE_GC) {
+      try { execFileSync('docker', ['rmi', '-f', image], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 60000 }); }
+      catch { /* image still referenced or already gone — ignore */ }
     }
   } catch (e) {
     console.error(`### ${id} FAILED: ${String(e.message).slice(0, 200)} — skipping`);
@@ -415,31 +499,48 @@ await runPool(INSTANCES, CONCURRENCY);
 // sibling tasks' live servers).
 reapServers();
 
-// Grade both arms (rep 0 predictions) via official swebench Docker harness.
-console.log('\n### grading via swebench (Docker, authoritative)');
-for (const arm of ['native', 'sweet']) {
-  if (!predsByArm[arm].length) continue;
-  const report = gradeArm(arm, predsByArm[arm], runId);
-  const resolvedIds = new Set(report?.resolved_ids || []);
-  const errorIds = new Set(report?.error_ids || []);          // arm64 env-build / harness errors → not gradeable
-  for (const row of rows) if (row.arm === arm && row.rep === 0) {
-    row.gradeable = !errorIds.has(row.taskId);
-    row.resolved = row.gradeable ? resolvedIds.has(row.taskId) : null;
+// Grade EVERY rep × arm via the swebench/SR Docker harness (multi-rep = variance power).
+// gradeArm overwrites results/<runId>/<arm>/report.json each call; we extract resolved_ids
+// immediately, so per-rep overwrite is fine. row.resolved/f2pFrac set per (arm, rep).
+console.log('\n### grading via swebench (Docker, authoritative) — all reps');
+const repsToGrade = Object.keys(predsByRepArm).map(Number).sort((a, b) => a - b);
+for (const rep of repsToGrade) {
+  for (const arm of ['native', 'sweet']) {
+    const preds = predsByRepArm[rep]?.[arm] || [];
+    if (!preds.length) continue;
+    const report = gradeArm(arm, preds, runId);
+    const resolvedIds = new Set(report?.resolved_ids || []);
+    const errorIds = new Set(report?.error_ids || []);
+    const score = report?.score || {};
+    for (const row of rows) if (row.arm === arm && row.rep === rep) {
+      row.gradeable = !errorIds.has(row.taskId);
+      row.resolved = row.gradeable ? resolvedIds.has(row.taskId) : null;
+      row.f2pFrac = row.gradeable ? (score[row.taskId]?.f2pFrac ?? null) : null;
+      row.resolveStatus = row.gradeable ? (score[row.taskId]?.status ?? null) : null;
+    }
+    console.log(`  ${arm} rep${rep}: resolved ${resolvedIds.size}/${preds.length - errorIds.size} gradeable  ids=${[...resolvedIds].join(',') || '(none)'}`);
   }
-  console.log(`  ${arm}: resolved ${resolvedIds.size}/${predsByArm[arm].length - errorIds.size} gradeable (errors=${errorIds.size})  ids=${[...resolvedIds].join(',') || '(none)'}`);
 }
 
 const outDir = path.join(BENCH, 'results', runId);
 mkdirSync(outDir, { recursive: true });
 writeFileSync(path.join(outDir, 'rows.json'), JSON.stringify(rows, null, 2));
-console.log('\n=== PILOT SUMMARY ===');
+console.log('\n=== PILOT SUMMARY (aggregated over all reps) ===');
+const NREPS = Math.max(1, REPS);
 for (const arm of ['native', 'sweet']) {
-  const rs = rows.filter(r => r.arm === arm && r.rep === 0);
-  const resolved = rs.filter(r => r.resolved).length;
+  const rs = rows.filter(r => r.arm === arm);                 // ALL reps
+  const resolved = rs.filter(r => r.resolved).length;         // task×rep resolutions
+  const partialMacro = rs.length ? rs.reduce((a, r) => a + (r.f2pFrac ?? 0), 0) / rs.length : 0;
   const calls = (rs.reduce((a, r) => a + r.calls, 0) / rs.length).toFixed(1);
-  const cost = rs.reduce((a, r) => a + r.costRealizedUsd, 0).toFixed(3);
+  const costN = rs.reduce((a, r) => a + r.costRealizedUsd, 0);
+  const solveCost = rs.filter(r => r.resolved).reduce((a, r) => a + r.costRealizedUsd, 0);
   const ss = rs.reduce((a, r) => a + r.ss, 0);
-  console.log(`${arm}: resolved ${resolved}/${rs.length}  avgCalls=${calls}  ss=${ss}  $${cost}  escape=${rs.reduce((a, r) => a + r.escape, 0)} leak=${rs.reduce((a, r) => a + r.leak, 0)}`);
+  const cps = resolved ? '$' + (solveCost / resolved).toFixed(3) : 'n/a';
+  // per-task pass@rep (k of NREPS reps solved) — the variance-aware view
+  const byTask = {}; rs.forEach(r => { (byTask[r.taskId] = byTask[r.taskId] || []).push(r.resolved ? 1 : 0); });
+  const perTask = Object.entries(byTask).map(([t, v]) => `${t.split('__')[1] || t}:${v.reduce((a, b) => a + b, 0)}/${v.length}`).join(' ');
+  console.log(`${arm}: resolved ${resolved}/${rs.length} task×rep (rate ${(100 * resolved / rs.length).toFixed(0)}%, partial-macro ${partialMacro.toFixed(3)})  avgCalls=${calls}  ss=${ss}  realized$${costN.toFixed(3)}  CPS=${cps}`);
+  console.log(`   per-task (reps solved): ${perTask}`);
 }
 console.log(`rows → ${path.join(outDir, 'rows.json')}`);
 // Force exit: lingering ss-* server sockets/handles can keep Node's event loop

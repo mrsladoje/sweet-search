@@ -41,6 +41,7 @@ const PRICES = {
   'minimax/minimax-m2.7': { in: 0.30, cacheHit: 0.03, out: 1.20 },
   'xiaomi/mimo-v2.5-pro': { in: 0.435, cacheHit: 0.0036, out: 0.87 },
   'z-ai/glm-5.1':         { in: 0.98, cacheHit: 0.182, out: 3.08 },
+  'openai/gpt-5.5':       { in: 5.0, cacheHit: 0.5, out: 30.0 },  // OpenRouter list price, 2026-06-24
 };
 const DEFAULT_PRICE = PRICES['deepseek-v4-pro'];
 
@@ -225,10 +226,11 @@ function endpointFor(provider) {
 async function callModel({ provider = 'deepseek', apiModel, messages, tools, reasoning = 'standard', apiKey, maxRetries = 8, fetchTimeoutMs = 180000 }) {
   const { base, label } = endpointFor(provider);
   const body = { model: apiModel, messages, tools, tool_choice: 'auto', temperature: 0, max_tokens: 8192 };
-  // OpenRouter reasoning models: request STANDARD thinking, i.e. medium effort —
-  // never 'high'/max. Both 'standard' and 'medium' map to medium effort.
+  // OpenRouter reasoning models: map the requested level to an effort. 'standard'
+  // → medium; explicit 'low'/'medium'/'high'/'minimal' are honored (e.g. gpt-5.5 'low').
   if (provider === 'openrouter' && reasoning && reasoning !== 'none') {
-    body.reasoning = { effort: 'medium' };
+    const eff = ['low', 'medium', 'high', 'minimal'].includes(reasoning) ? reasoning : 'medium';
+    body.reasoning = { effort: eff };
   }
   // Optional OpenRouter provider PIN (e.g. OPENROUTER_PROVIDER_PIN=Mara — the
   // fastest provider for m2.7). Strict pin (allow_fallbacks:false) so we measure
