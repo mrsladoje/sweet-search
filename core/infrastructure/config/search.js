@@ -51,9 +51,29 @@ export const ROUTING_CONFIG = {
 export const FILE_PATTERNS = {
   include: [
     // Source code (all major languages)
-    '**/*.{js,jsx,ts,tsx,mjs,cjs}',      // JavaScript/TypeScript
+    '**/*.{js,jsx,ts,tsx,mjs,cjs,cts,mts}', // JavaScript/TypeScript (incl. CommonJS/ESM TS)
     '**/*.{java,kt,kts,scala,groovy}',    // JVM
     '**/*.{clj,cljc,cljs,edn}',           // Clojure / ClojureScript / EDN
+    '**/*.jl',                             // Julia
+    '**/*.{R,r,Rd,rd,Rmd,rmd}',            // R (case-sensitive matcher: list both cases)
+    '**/*.{ml,mli,mll,mly}',               // OCaml
+    '**/*.{res,resi}',                     // ReScript
+    '**/*.{hs,lhs}',                       // Haskell
+    '**/*.{erl,hrl}',                      // Erlang
+    '**/*.{pl,pm,pod}',                    // Perl
+    '**/*.{f,for,f90,f95,f03,f08,F,F90,F95}', // Fortran (case-sensitive)
+    '**/*.{cob,cbl}',                      // COBOL
+    '**/*.{asm,s,S}',                      // Assembly (case-sensitive)
+    '**/*.{cr,vala,hx,pas,nix,vim}',       // Crystal / Vala / Haxe / Pascal / Nix / Vim
+    '**/*.{elm,sol,tla,rdl,el,ejs}',       // Elm / Solidity / TLA+ / SystemRDL / Emacs Lisp / EJS
+    '**/*.{ql,qll}',                       // CodeQL
+    '**/*.{zeek,bro}',                     // Zeek
+    '**/*.{tcl,tk}',                       // Tcl
+    '**/*.astro',                          // Astro (SFC)
+    // GPU shaders
+    '**/*.{glsl,vert,frag,comp,geom,tesc,tese}', // GLSL
+    '**/*.{hlsl,hlsli}',                   // HLSL
+    '**/*.{metal,wgsl,shader,cg,cginc}',   // Metal / WGSL / ShaderLab / Cg
     '**/*.{py,pyi}',                       // Python
     '**/*.go',                              // Go
     '**/*.rs',                              // Rust
@@ -72,7 +92,10 @@ export const FILE_PATTERNS = {
     '**/*.{yaml,yml}',                      // YAML
     '**/*.toml',                             // TOML
     '**/*.{xml,xsl,xsd,wsdl,pom,csproj}',  // XML
-    '**/*.{md,mdx,mdc,rst,txt}',           // Documentation + Cursor rules
+    '**/*.{tf,tfvars,hcl}',                // Terraform / HCL
+    '**/*.{ini,cfg}',                      // INI / config
+    '**/*.properties',                     // Java properties
+    '**/*.{md,mdx,mdc,rst,txt,markdown}',  // Documentation + Cursor rules
     '**/*.{html,htm,xhtml,vue,svelte}',    // Web markup/SFC
     '**/*.{css,scss,sass,less}',           // Stylesheets
     '**/*.svg',                             // SVG
@@ -82,6 +105,15 @@ export const FILE_PATTERNS = {
     '**/*.dockerfile',                     // Dockerfile alt extension
     '**/Makefile',                         // Makefile
     '**/*.mk',                            // Makefile includes
+    '**/*.cmake',                          // CMake modules
+    '**/*.gradle',                         // Gradle (Groovy DSL)
+    '**/*.ninja',                          // Ninja
+    '**/*.{bzl,star}',                     // Bazel / Starlark
+    '**/BUILD', '**/BUILD.bazel',          // Bazel BUILD
+    '**/WORKSPACE', '**/WORKSPACE.bazel',  // Bazel WORKSPACE
+    '**/meson.build',                      // Meson
+    '**/Earthfile',                        // Earthly
+    '**/justfile', '**/Justfile',          // Just
     // Project markers
     '**/CLAUDE.md',
     '**/AGENTS.md',
