@@ -596,6 +596,34 @@ const TAGS_QUERIES = {
     (field_declaration (variable_declaration (variable_declarator name: (identifier) @field.definition)))
     (local_function_statement name: (identifier) @function.definition)
   `,
+  // Solidity (tree-sitter-solidity) — every declaration carries name: (identifier).
+  solidity: `
+    (contract_declaration name: (identifier) @class.definition)
+    (interface_declaration name: (identifier) @interface.definition)
+    (library_declaration name: (identifier) @class.definition)
+    (struct_declaration name: (identifier) @struct.definition)
+    (enum_declaration name: (identifier) @enum.definition)
+    (function_definition name: (identifier) @function.definition)
+    (modifier_definition name: (identifier) @function.definition)
+    (event_definition name: (identifier) @function.definition)
+  `,
+  // TLA+ (tree-sitter-tlaplus)
+  tlaplus: `
+    (module name: (identifier) @namespace.definition)
+    (operator_definition name: (identifier) @function.definition)
+  `,
+  // OCaml (tree-sitter-ocaml) — names nested in the *_binding child.
+  ocaml: `
+    (value_definition (let_binding (value_name) @function.definition))
+    (type_definition (type_binding (type_constructor) @type.definition))
+    (module_definition (module_binding (module_name) @namespace.definition))
+  `,
+  // ReScript (tree-sitter-rescript) — names nested in the *_binding child.
+  rescript: `
+    (let_declaration (let_binding (value_identifier) @function.definition))
+    (type_declaration (type_binding (type_identifier) @type.definition))
+    (module_declaration (module_binding (module_identifier) @namespace.definition))
+  `,
 };
 
 // Names that tree-sitter-c / tree-sitter-cpp sometimes emit as the `name:`
