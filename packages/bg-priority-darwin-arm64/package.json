@@ -1,6 +1,6 @@
 {
   "name": "@sweet-search/bg-priority-darwin-arm64",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "description": "Sweet Search bg-priority native addon for macOS ARM64",
   "license": "Apache-2.0",
   "os": [

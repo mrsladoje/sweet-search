@@ -119,8 +119,72 @@ export const EXTENSION_MAP = {
   // F# / VB (.NET additional)
   // '.vb' omitted — no LANGUAGES.vb entry exists
 
+  // Julia
+  '.jl': 'julia',
+
+  // R — the lookup lowercases the key, so '.r'/'.rd'/'.rmd' also resolve the
+  // canonical uppercase on-disk forms (.R/.Rd/.Rmd). Keep keys lowercase only.
+  '.r': 'r', '.rd': 'r', '.rmd': 'r',
+
+  // OCaml (tree-sitter-ocaml ships in the bundle but is unwired → generic chunking)
+  '.ml': 'ocaml', '.mli': 'ocaml', '.mll': 'ocaml', '.mly': 'ocaml',
+
+  // TypeScript modules (CommonJS / ESM) — reuse the wired typescript grammar.
+  // Map to 'typescript' not 'tsx': .cts/.mts cannot contain JSX.
+  '.cts': 'typescript', '.mts': 'typescript',
+
+  // Other bundled-grammar languages (unwired → lossless generic chunking)
+  '.elm': 'elm',
+  '.sol': 'solidity',
+  '.res': 'rescript', '.resi': 'rescript',
+  '.ql': 'ql', '.qll': 'ql',
+  '.tla': 'tlaplus',
+  '.rdl': 'systemrdl',
+  '.el': 'elisp',
+  '.ejs': 'embedded_template',
+
+  // Functional / systems / scripting
+  '.hs': 'haskell', '.lhs': 'haskell',
+  '.erl': 'erlang', '.hrl': 'erlang',
+  '.cr': 'crystal',
+  '.vala': 'vala',
+  '.hx': 'haxe',
+  '.pas': 'pascal',
+  '.nix': 'nix',
+  '.pl': 'perl', '.pm': 'perl', '.pod': 'perl',
+  '.vim': 'vim',
+  '.tcl': 'tcl', '.tk': 'tcl',
+  '.zeek': 'zeek', '.bro': 'zeek',
+
+  // Scientific / legacy (lowercase keys cover the uppercase .F/.F90/.S forms)
+  '.f': 'fortran', '.for': 'fortran', '.f90': 'fortran', '.f95': 'fortran',
+  '.f03': 'fortran', '.f08': 'fortran',
+  '.cob': 'cobol', '.cbl': 'cobol',
+  '.asm': 'assembly', '.s': 'assembly',
+
+  // GPU shaders
+  '.glsl': 'glsl', '.vert': 'glsl', '.frag': 'glsl', '.comp': 'glsl',
+  '.geom': 'glsl', '.tesc': 'glsl', '.tese': 'glsl',
+  '.hlsl': 'hlsl', '.hlsli': 'hlsl',
+  '.metal': 'metal',
+  '.wgsl': 'wgsl',
+  '.shader': 'shaderlab',
+  '.cg': 'cg', '.cginc': 'cg',
+
+  // Web framework SFC — reuse the html SFC path (like .vue/.svelte)
+  '.astro': 'html',
+
+  // Infra / build / config DSLs
+  '.tf': 'hcl', '.tfvars': 'hcl', '.hcl': 'hcl',
+  '.ini': 'ini', '.cfg': 'ini',
+  '.properties': 'properties',
+  '.cmake': 'cmake',
+  '.gradle': 'gradle',
+  '.ninja': 'ninja',
+  '.bzl': 'starlark', '.star': 'starlark',
+
   // Document formats (dispatched to DocumentChunker in ast-chunker.js)
-  '.md': 'markdown', '.mdx': 'markdown',
+  '.md': 'markdown', '.mdx': 'markdown', '.markdown': 'markdown',
   '.rst': 'rst',
   '.txt': 'plaintext',
 };
@@ -130,4 +194,11 @@ export const FILENAME_MAP = {
   Dockerfile: 'dockerfile',
   Makefile: 'makefile',
   GNUmakefile: 'makefile',
+  // Extensionless build / project files (mirrors the Dockerfile/Makefile pattern)
+  BUILD: 'starlark',
+  WORKSPACE: 'starlark',
+  'meson.build': 'meson',
+  Earthfile: 'earthfile',
+  justfile: 'just',
+  Justfile: 'just',
 };
