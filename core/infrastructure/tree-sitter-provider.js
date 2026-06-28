@@ -46,6 +46,14 @@ const GRAMMAR_MAP = {
   // classes. Wiring tree-sitter-c-sharp puts C# on the same code path as
   // the other 13 languages (cAST sibling-merge over a proper AST).
   csharp: 'tree-sitter-c_sharp',
+  // Wired 2026-06 (v2.6.3) for first-class AST/cAST chunking. All four wasm
+  // grammars ship in tree-sitter-wasms and load on the installed web-tree-sitter
+  // ABI. (tree-sitter-elm / tree-sitter-ql also ship but are ABI 12/10 vs the
+  // required 13–15, so they stay on generic chunking.)
+  solidity: 'tree-sitter-solidity',
+  tlaplus: 'tree-sitter-tlaplus',
+  ocaml: 'tree-sitter-ocaml',
+  rescript: 'tree-sitter-rescript',
 };
 
 // Identifier node types — used to detect leaf-ident captures in extractSymbols()
@@ -56,6 +64,10 @@ const IDENT_TYPES = new Set([
   'name',                 // PHP all identifiers
   'simple_identifier',    // Kotlin functions, Swift functions
   'namespace_identifier', // C++ namespace names
+  // OCaml — names live in *_binding children (see _extractNodeName drill)
+  'value_name', 'type_constructor', 'module_name',
+  // ReScript — value/module binding names (type_identifier already covered)
+  'value_identifier', 'module_identifier',
 ]);
 
 // AST node types that represent meaningful chunk boundaries
@@ -156,6 +168,25 @@ const LANG_EXTRA_BOUNDARY_TYPES = {
     'local_function_statement',
     'event_declaration', 'event_field_declaration',
   ]),
+  // Solidity (tree-sitter-solidity). `function_definition` is already a global
+  // boundary; these are the contract-level declarations the grammar emits, all
+  // carrying a `name: (identifier)` field so _extractNodeName resolves them.
+  solidity: new Set([
+    'contract_declaration', 'interface_declaration', 'library_declaration',
+    'struct_declaration', 'enum_declaration', 'event_definition',
+    'modifier_definition', 'constructor_definition', 'error_declaration',
+  ]),
+  // TLA+ (tree-sitter-tlaplus). `module` is already global; operator_definition
+  // (`Foo == ...`) is the unit of definition, name via `name: (identifier)`.
+  tlaplus: new Set(['operator_definition']),
+  // OCaml (tree-sitter-ocaml). `type_definition` is already global; these wrap a
+  // *_binding whose name (value_name/type_constructor/module_name) is recovered
+  // by the _extractNodeName binding-wrapper drill. value_definition is top-level
+  // only (local `let … in` is a let_expression), so this doesn't over-chunk.
+  ocaml: new Set(['value_definition', 'module_definition', 'exception_definition']),
+  // ReScript (tree-sitter-rescript). `type_declaration` is already global; the
+  // let/module declarations wrap a *_binding handled by the same drill.
+  rescript: new Set(['let_declaration', 'module_declaration']),
 };
 
 // Per-language EXCLUSIONS from BOUNDARY_TYPES. Removes node-type names that
@@ -283,6 +314,37 @@ const NODE_TYPE_MAP = {
   'local_function_statement': 'function',
   'event_declaration': 'property',
   'event_field_declaration': 'field',
+  // Solidity (tree-sitter-solidity) — grammar-unique node names, so these are
+  // null-ops for every other language's chunking.
+  'contract_declaration': 'class',
+  'library_declaration': 'class',
+  'event_definition': 'event',
+  'modifier_definition': 'function',
+  'constructor_definition': 'method',
+  'error_declaration': 'type',
+  // TLA+
+  'operator_definition': 'function',
+  // OCaml
+  'value_definition': 'function',
+  'module_definition': 'module',
+  'exception_definition': 'class',
+  // ReScript
+  'let_declaration': 'function',
+  'module_declaration': 'module',
+};
+
+// OCaml / ReScript boundary node -> the `*_binding` child that carries the name.
+// Consulted only by _extractNodeName; the keys are grammar-unique node types.
+const OCAML_RESCRIPT_BINDING_WRAPPERS = {
+  // OCaml
+  value_definition: 'let_binding',
+  module_definition: 'module_binding',
+  // ReScript
+  let_declaration: 'let_binding',
+  module_declaration: 'module_binding',
+  // Shared (already a global boundary; name nested in *_binding for both langs)
+  type_definition: 'type_binding',
+  type_declaration: 'type_binding',
 };
 
 // Standard tags.scm query patterns for symbol extraction
@@ -1357,6 +1419,24 @@ export class TreeSitterProvider {
         const inner = typeNode.namedChild(0);
         if (inner && IDENT_TYPES.has(inner.type)) {
           return inner.text;
+        }
+      }
+    }
+
+    // OCaml / ReScript — the definition's name lives one level down in the
+    // grammar's `*_binding` child (value_definition → let_binding → value_name;
+    // type_definition → type_binding → type_constructor/type_identifier;
+    // module_definition → module_binding → module_name/module_identifier). The
+    // wrapper node-type strings below are unique to tree-sitter-ocaml/rescript,
+    // so this branch is a null-op for every other grammar.
+    const BINDING_WRAPPER = OCAML_RESCRIPT_BINDING_WRAPPERS[node.type];
+    if (BINDING_WRAPPER) {
+      for (let i = 0; i < node.childCount; i++) {
+        const binding = node.child(i);
+        if (binding.type !== BINDING_WRAPPER) continue;
+        for (let j = 0; j < binding.childCount; j++) {
+          const nm = binding.child(j);
+          if (IDENT_TYPES.has(nm.type)) return nm.text;
         }
       }
     }
