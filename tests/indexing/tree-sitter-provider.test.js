@@ -54,8 +54,11 @@ describe('GRAMMAR_MAP', () => {
     }
   });
 
-  it('has exactly 14 entries', () => {
-    expect(Object.keys(GRAMMAR_MAP)).toHaveLength(14);
+  it('has exactly 18 entries (14 core + solidity/tlaplus/ocaml/rescript)', () => {
+    expect(Object.keys(GRAMMAR_MAP)).toHaveLength(18);
+    for (const lang of ['solidity', 'tlaplus', 'ocaml', 'rescript']) {
+      expect(GRAMMAR_MAP[lang]).toMatch(/^tree-sitter-/);
+    }
   });
 
   it('routes tsx to tree-sitter-tsx (not tree-sitter-typescript) so JSX bodies parse', () => {
@@ -150,9 +153,9 @@ describe('TreeSitterProvider', () => {
     expect(p.grammarsDir).toBe('/tmp/grammars');
   });
 
-  it('getSupportedLanguages returns 14 languages (incl. tsx, csharp)', () => {
+  it('getSupportedLanguages returns 18 languages (incl. tsx, csharp, solidity)', () => {
     const langs = provider.getSupportedLanguages();
-    expect(langs).toHaveLength(14);
+    expect(langs).toHaveLength(18);
     expect(langs).toContain('javascript');
     expect(langs).toContain('typescript');
     expect(langs).toContain('tsx');
@@ -160,6 +163,8 @@ describe('TreeSitterProvider', () => {
     expect(langs).toContain('go');
     expect(langs).toContain('rust');
     expect(langs).toContain('csharp');
+    expect(langs).toContain('solidity');
+    expect(langs).toContain('ocaml');
   });
 
   it('hasLanguage returns true for supported', () => {

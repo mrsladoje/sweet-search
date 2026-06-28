@@ -235,6 +235,95 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: [],
     },
   },
+  // ─── Solidity ────────────────────────────────────────────────────────────────
+  // Real chunking is done by tree-sitter-solidity (GRAMMAR_MAP); these regex
+  // patterns are the fallback used only when tree-sitter is unavailable.
+  solidity: {
+    indentBased: false,
+    endKeyword: null,
+    comment: { line: "//", block: ["/*", "*/"] },
+    chunker: {
+      contract: /^\s*(?:abstract\s+)?contract\s+(\w+)/,
+      interface: /^\s*interface\s+(\w+)/,
+      library: /^\s*library\s+(\w+)/,
+      function: /^\s*function\s+(\w+)/,
+      struct: /^\s*struct\s+(\w+)/,
+    },
+    graph: {
+      entities: {
+        contract: /^\s*(?:abstract\s+)?contract\s+(\w+)/,
+        interface: /^\s*interface\s+(\w+)/,
+        library: /^\s*library\s+(\w+)/,
+        function: /^\s*function\s+(\w+)/,
+      },
+      relationships: {
+        import: /^\s*import\s+.*["']([^"']+)["']/,
+        inherit: /\bis\s+([A-Z]\w*)/,
+      },
+      skipCallObjects: ["require", "assert", "revert", "emit"],
+    },
+  },
+  // ─── OCaml ───────────────────────────────────────────────────────────────────
+  // tree-sitter-ocaml does the real chunking. OCaml has no line comment — only
+  // `(* … *)` blocks.
+  ocaml: {
+    indentBased: false,
+    endKeyword: null,
+    comment: { line: null, block: ["(*", "*)"] },
+    chunker: {
+      function: /^\s*let\s+(?:rec\s+)?(\w+)/,
+      type: /^\s*(?:and\s+)?type\s+(\w+)/,
+      module: /^\s*module\s+(\w+)/,
+    },
+    graph: {
+      entities: {
+        function: /^\s*let\s+(?:rec\s+)?(\w+)/,
+        type: /^\s*type\s+(\w+)/,
+        module: /^\s*module\s+(\w+)/,
+      },
+      relationships: { open: /^\s*open\s+([\w.]+)/ },
+      skipCallObjects: [],
+    },
+  },
+  // ─── ReScript ────────────────────────────────────────────────────────────────
+  rescript: {
+    indentBased: false,
+    endKeyword: null,
+    comment: { line: "//", block: ["/*", "*/"] },
+    chunker: {
+      function: /^\s*let\s+(\w+)/,
+      type: /^\s*type\s+(\w+)/,
+      module: /^\s*module\s+(\w+)/,
+    },
+    graph: {
+      entities: {
+        function: /^\s*let\s+(\w+)/,
+        type: /^\s*type\s+(\w+)/,
+        module: /^\s*module\s+(\w+)/,
+      },
+      relationships: { open: /^\s*open\s+(\w+)/ },
+      skipCallObjects: [],
+    },
+  },
+  // ─── TLA+ ────────────────────────────────────────────────────────────────────
+  // tree-sitter-tlaplus does the real chunking. Comments are `\* …` / `(* … *)`.
+  tlaplus: {
+    indentBased: false,
+    endKeyword: null,
+    comment: { line: "\\*", block: ["(*", "*)"] },
+    chunker: {
+      module: /^-{2,}\s*MODULE\s+(\w+)/,
+      operator: /^(\w+)\s*==/,
+    },
+    graph: {
+      entities: {
+        module: /^-{2,}\s*MODULE\s+(\w+)/,
+        operator: /^(\w+)\s*==/,
+      },
+      relationships: { extends: /^EXTENDS\s+([\w,\s]+)/ },
+      skipCallObjects: [],
+    },
+  },
 };
 
 export default TOOLING_LANGUAGES;
