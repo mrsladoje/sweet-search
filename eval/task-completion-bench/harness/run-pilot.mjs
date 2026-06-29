@@ -305,7 +305,7 @@ function gradeArm(arm, predictions, runId) {
         execFileSync(VENV_PY, [path.join(SR_EVAL_DIR, 'scripts', 'eval.py'),
           '--json', tasksPath, '--patches', patchesPath, '--max-workers', '2', '--report-json', reportPath],
           { cwd: SR_EVAL_DIR, env: { ...process.env, DOCKER_HOST, PYTHONPATH: path.join(SR_EVAL_DIR, 'lib') }, stdio: 'inherit', timeout: 5400000 });
-      } catch (e) { console.error(`[grade ${arm}] eval.py error (batch @${i}): ${String(e.message).slice(0, 160)}`); }
+      } catch { /* eval.py exits NON-ZERO whenever any task is unresolved — normal, not a grading failure; report.json is still written + valid. A REAL failure = no report, flagged below. */ }
       if (existsSync(reportPath)) {
         gradedAny = true;
         const items = (JSON.parse(readFileSync(reportPath, 'utf8')).items) || [];
@@ -325,6 +325,8 @@ function gradeArm(arm, predictions, runId) {
           score[it.instance_id] = { f2pFrac, p2pOk, status };
           if (status === 'FULL') resolved_ids.push(it.instance_id);
         }
+      } else {
+        console.error(`[grade ${arm}] eval.py produced NO report (batch @${i}) — ${chunk.length} task(s) left ungraded`);
       }
       // reclaim THIS batch's images before the next chunk pulls more
       if (SR_MODE && !process.env.NO_IMAGE_GC) {
