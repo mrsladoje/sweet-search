@@ -67,7 +67,7 @@ export const FILE_PATTERNS = {
     '**/*.{cr,vala,hx,pas,nix,vim}',       // Crystal / Vala / Haxe / Pascal / Nix / Vim
     '**/*.{elm,sol,tla,rdl,el,ejs}',       // Elm / Solidity / TLA+ / SystemRDL / Emacs Lisp / EJS
     '**/*.{ql,qll}',                       // CodeQL
-    '**/*.{zeek,bro}',                     // Zeek
+    '**/*.{zeek,bro,bif,pac,pac2,spicy,evt,hlt}', // Zeek + BiF + BinPAC + Spicy DSLs
     '**/*.{tcl,tk}',                       // Tcl
     '**/*.astro',                          // Astro (SFC)
     // GPU shaders
@@ -83,6 +83,23 @@ export const FILE_PATTERNS = {
     '**/*.php',                             // PHP
     '**/*.{swift,m,mm}',                   // Apple
     '**/*.{lua,zig,nim,ex,exs,dart}',      // Other
+    // ── Task-bench coverage audit (2026-07): additional source / DSL / template / build ──
+    '**/*.{pyx,pxd,pxi}',                   // Cython
+    '**/*.{sbt,sc}',                        // Scala build / worksheets
+    '**/*.{rake,gemspec,podspec,ru}',      // Ruby build/manifest DSLs
+    '**/*.{coffee,litcoffee}',             // CoffeeScript
+    '**/*.{pcss,styl}',                     // PostCSS / Stylus
+    '**/*.{twig,liquid,njk,hbs,handlebars,mustache,gohtml,eex,heex,leex}', // HTML templating
+    '**/*.{pug,jade,haml,slim}',           // Indentation templating
+    '**/*.{jinja,jinja2,j2,tera,tmpl,tpl,gotmpl}', // Text templating
+    '**/*.{props,targets,proj,vbproj,fsproj,resx,nuspec}', // .NET / MSBuild
+    '**/*.{m4,ac,am}',                     // Autotools
+    '**/*.{awk,sed}',                      // Text-processing scripts
+    '**/*.ipynb',                          // Jupyter notebooks (generic fixed-window chunking)
+    '**/*.in',                             // Autoconf/config templates (Makefile.in, *.py.in)
+    '**/*.sln',                            // Visual Studio solution
+    '**/go.mod', '**/go.work',             // Go module / workspace manifests
+    '**/Rakefile', '**/Gemfile',           // Ruby (extensionless)
     '**/*.{sh,bash,zsh,fish,ps1}',         // Shell
     '**/*.sql',                             // SQL
     '**/*.proto',                           // Protobuf

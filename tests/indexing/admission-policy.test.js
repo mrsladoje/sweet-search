@@ -47,7 +47,7 @@ describe('admission-policy / include allowlist', () => {
   it('rejects unsupported binary / data / archive / media types (not in include allowlist)', () => {
     const p = createAdmissionPolicy({ projectRoot: root });
     for (const f of [
-      'img/logo.png', 'photo.jpg', 'doc.pdf', 'data.parquet', 'nb.ipynb', 'sheet.csv',
+      'img/logo.png', 'photo.jpg', 'doc.pdf', 'data.parquet', 'sheet.csv',
       'a.zip', 'arch.tar', 'v.mp4', 'a.mp3', 'x.bin', 'lib.so', 'app.exe', 'f.dat',
     ]) {
       expect(p.admitsShape(f), f).toBe(false);
@@ -146,7 +146,7 @@ describe('discoverFiles (full indexing) uses the shared policy', () => {
     expect(files.has('README.md')).toBe(true);
     expect(files.has('logo.png')).toBe(false);
     expect(files.has('data.parquet')).toBe(false);
-    expect(files.has('nb.ipynb')).toBe(false);
+    expect(files.has('nb.ipynb')).toBe(true); // Jupyter notebooks now indexed (generic chunking)
     expect(files.has('big.js')).toBe(false);
   });
 
