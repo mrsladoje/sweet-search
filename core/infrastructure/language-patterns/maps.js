@@ -155,6 +155,9 @@ export const EXTENSION_MAP = {
   '.vim': 'vim',
   '.tcl': 'tcl', '.tk': 'tcl',
   '.zeek': 'zeek', '.bro': 'zeek',
+  // Zeek build-time DSLs: BiF declarations, BinPAC + Spicy parser sources (generic chunking)
+  '.bif': 'zeek', '.pac': 'zeek', '.pac2': 'zeek',
+  '.spicy': 'spicy', '.evt': 'spicy', '.hlt': 'spicy',
 
   // Scientific / legacy (lowercase keys cover the uppercase .F/.F90/.S forms)
   '.f': 'fortran', '.for': 'fortran', '.f90': 'fortran', '.f95': 'fortran',
@@ -183,6 +186,37 @@ export const EXTENSION_MAP = {
   '.ninja': 'ninja',
   '.bzl': 'starlark', '.star': 'starlark',
 
+  // ── Task-bench coverage audit (2026-07): additional source / DSL / template / build ──
+  // Cython (Python-like syntax → reuse the wired python chunker)
+  '.pyx': 'python', '.pxd': 'python', '.pxi': 'python',
+  // Scala build definitions / worksheets (→ scala grammar)
+  '.sbt': 'scala', '.sc': 'scala',
+  // Ruby build & manifest DSLs (→ ruby grammar)
+  '.rake': 'ruby', '.gemspec': 'ruby', '.podspec': 'ruby', '.ru': 'ruby',
+  // CoffeeScript (no bundled grammar → generic chunking)
+  '.coffee': 'coffeescript', '.litcoffee': 'coffeescript',
+  // Style preprocessors
+  '.pcss': 'css', '.styl': 'stylus',
+  // HTML-based templating (reuse the html SFC path, like .vue/.svelte)
+  '.twig': 'html', '.liquid': 'html', '.njk': 'html', '.hbs': 'html',
+  '.handlebars': 'html', '.mustache': 'html', '.gohtml': 'html',
+  '.eex': 'html', '.heex': 'html', '.leex': 'html',
+  // Indentation-based templating (generic chunking; not HTML syntax)
+  '.pug': 'pug', '.jade': 'pug', '.haml': 'haml', '.slim': 'slim',
+  // Polymorphic text templating (any target text → generic chunking)
+  '.jinja': 'jinja', '.jinja2': 'jinja', '.j2': 'jinja',
+  '.tera': 'jinja', '.tmpl': 'jinja', '.tpl': 'jinja', '.gotmpl': 'jinja',
+  // .NET / MSBuild project & resource files (XML dialects → xml grammar)
+  '.props': 'xml', '.targets': 'xml', '.proj': 'xml',
+  '.vbproj': 'xml', '.fsproj': 'xml', '.resx': 'xml', '.nuspec': 'xml',
+  // Autotools / text-processing script sources (generic chunking)
+  '.m4': 'm4', '.ac': 'm4', '.am': 'makefile',
+  '.awk': 'awk', '.sed': 'sed',
+  // Jupyter notebooks — chunker-less id → parseGenericFile (fixed-window, lossless)
+  // over the raw JSON. Not JSON-AST-chunked (that would emit one giant cells chunk).
+  // Image-heavy notebooks self-filter via the admission maxFileSize (1MB) gate.
+  '.ipynb': 'jupyter',
+
   // Document formats (dispatched to DocumentChunker in ast-chunker.js)
   '.md': 'markdown', '.mdx': 'markdown', '.markdown': 'markdown',
   '.rst': 'rst',
@@ -201,4 +235,7 @@ export const FILENAME_MAP = {
   Earthfile: 'earthfile',
   justfile: 'just',
   Justfile: 'just',
+  // Ruby extensionless build files (→ ruby grammar)
+  Rakefile: 'ruby',
+  Gemfile: 'ruby',
 };
