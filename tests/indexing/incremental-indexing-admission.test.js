@@ -47,21 +47,21 @@ beforeEach(() => {
 afterEach(() => { try { fs.rmSync(sandbox, { recursive: true, force: true }); } catch { /* ignore */ } });
 
 describe('dirty-scan / admission of new files', () => {
-  it('does NOT enqueue unsupported binary/data extensions (png/pdf/parquet/ipynb)', async () => {
+  it('does NOT enqueue unsupported binary/data extensions (png/pdf/parquet)', async () => {
     write('src/a.js', 'export const a = 1;');
     write('img/logo.png');
     write('doc.pdf');
     write('data.parquet');
-    write('nb.ipynb');
+    write('nb.ipynb', '{"cells": []}'); // Jupyter notebooks ARE indexed (generic chunking)
     writeMerkle({});
     const res = await scanDirtyAndEnqueue({ projectRoot: sandbox, stateDir });
     const q = queuedPaths();
     expect(q).toContain('src/a.js');
+    expect(q).toContain('nb.ipynb');
     expect(q).not.toContain('img/logo.png');
     expect(q).not.toContain('doc.pdf');
     expect(q).not.toContain('data.parquet');
-    expect(q).not.toContain('nb.ipynb');
-    expect(res.added).toBe(1);
+    expect(res.added).toBe(2);
   });
 
   it('does NOT enqueue oversized new files', async () => {
