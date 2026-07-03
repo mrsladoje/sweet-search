@@ -81,12 +81,14 @@ describe('Int8 Stage-2 Rescoring', () => {
       const int8SidecarPath = TEST_INDEX_PATH.replace('.idx', '.int8.json');
       expect(existsSync(int8SidecarPath)).toBe(true);
 
-      // Verify content
-      const int8Data = JSON.parse(await fs.readFile(int8SidecarPath, 'utf-8'));
-      expect(Object.keys(int8Data)).toHaveLength(3);
-      expect(int8Data['test-1']).toBeDefined();
-      expect(Array.isArray(int8Data['test-1'])).toBe(true);
-      expect(int8Data['test-1'].length).toBe(512);
+      // Verify content (NDJSON v2 sidecar — read via the canonical reader)
+      const { readInt8Sidecar } = await import('../../core/vector-store/binary-hnsw-index.js');
+      const int8Map = new Map();
+      await readInt8Sidecar(int8SidecarPath, int8Map);
+      expect(int8Map.size).toBe(3);
+      expect(int8Map.get('test-1')).toBeDefined();
+      expect(int8Map.get('test-1')).toBeInstanceOf(Int8Array);
+      expect(int8Map.get('test-1').length).toBe(512);
     });
 
     it('should NOT create SQLite int8 database', async () => {

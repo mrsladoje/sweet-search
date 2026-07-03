@@ -11,8 +11,8 @@
  * CANONICAL INT8 STORAGE (Workstream H resolution):
  *   Int8 vectors for stage-2 rescoring are stored in this index's .int8.json sidecar.
  *   This file is saved/loaded alongside the binary HNSW index artifacts.
- *   - save(): Writes .int8.json with { id: Int8Array[], ... } format
- *   - load(): Populates this.int8Vectors Map from .int8.json
+ *   - save(): Writes .int8.json (NDJSON v2: header line + one {id, v} per line)
+ *   - load(): Populates this.int8Vectors Map from .int8.json (v1 back-compat)
  *   - getInt8Vector(id): O(1) lookup used by sweet-search.js during stage-2
  *
  *   This is the ONLY source of int8 vectors. The SQLite approach (codebase-int8.db)
@@ -28,9 +28,11 @@
 
 import fs from 'fs/promises';
 import {
-  existsSync, statSync,
+  existsSync, statSync, readFileSync,
   openSync, readSync, closeSync, fstatSync,
+  createWriteStream, createReadStream,
 } from 'fs';
+import readline from 'readline';
 import path from 'path';
 import { BINARY_HNSW_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import {
@@ -53,11 +55,12 @@ const PIPELINE_VERSION = 2;
 //
 // The default on-disk format is the JSON sidecar tuple
 // (.meta.json / .vectors.json / .graph.json / .int8.json / .calibration.json),
-// written by save() and read by load(). That format is preserved BYTE-FOR-BYTE
-// when SWEET_SEARCH_HNSW_MMAP !== '1' — this whole subsystem is inert by
-// default. Existing on-disk indexes (the 200 bench repos) keep loading via the
-// JSON path regardless of the flag: format is detected by inspecting the .idx
-// file's magic header (`_indexFormatOnDisk`), never by the flag.
+// written by save() and read by load() — the big sidecars as NDJSON v2 with
+// v1 read back-compat (see the sidecar-format block below). This whole mmap
+// subsystem is inert when SWEET_SEARCH_HNSW_MMAP !== '1'. Existing on-disk
+// indexes (the 200 bench repos) keep loading via the JSON path regardless of
+// the flag: format is detected by inspecting the .idx file's magic header
+// (`_indexFormatOnDisk`), never by the flag.
 //
 // When SWEET_SEARCH_HNSW_MMAP === '1', NEWLY written indexes are packed into a
 // single flat-binary `.idx` file (magic-prefixed) whose vectors / graph
@@ -200,6 +203,276 @@ function makeMmapVectorProxy(store) {
       return prop in target;
     },
   });
+}
+
+// =============================================================================
+// NDJSON SIDECAR FORMAT (v2)
+// =============================================================================
+//
+// The big JSON sidecars (.vectors.json / .graph.json / .int8.json) used to be
+// written with one monolithic JSON.stringify. Past ~500k vectors that single
+// string crosses V8's ~512 MB ceiling and save() dies with "Invalid string
+// length" (libsql: 637,550 vectors) — the same failure mode the LI alias
+// sidecar hit, fixed the same way in 2.6.9. Cure: NDJSON v2 — one
+// {version:2,...} header line, then one record per line, flushed through a
+// write stream in bounded batches so no serialized string ever approaches the
+// ceiling. .meta.json / .calibration.json stay monolithic JSON (O(1)-sized).
+//
+// Back-compat: a v1 sidecar is a single line holding the whole payload, and
+// any v1 file on disk was produced by a JSON.stringify that SUCCEEDED — so it
+// fits back into one string, and the line-streaming readers handle it as
+// "first line IS the payload". Format is detected from the first line, never
+// from config, so old and new indexes coexist with zero migration.
+//
+// Truncation guard: NDJSON cut at a line boundary (crash mid-write, disk
+// full) is valid prefix NDJSON and would otherwise load a silent subset, so
+// every v2 reader enforces the header's record count and throws on mismatch —
+// callers route that to the rebuild path like any other corrupt artifact.
+// (The tmp+rename publish in save() makes this unreachable in normal
+// operation; the guard covers torn tmp files that somehow got renamed.)
+
+const NDJSON_LINE_BATCH = 20000;
+// Graph chunk lines are ~MB-sized, so batch flushes are bounded by chars too.
+const NDJSON_CHAR_BATCH = 8 * 1024 * 1024;
+const GRAPH_CHUNK_NODES = 10000;
+
+async function writeNdjsonSidecar(filePath, header, records) {
+  const ws = createWriteStream(filePath, { encoding: 'utf8' });
+  const finished = new Promise((resolve, reject) => {
+    ws.on('error', reject);
+    ws.on('finish', resolve);
+  });
+  const flush = (str) => new Promise((resolve, reject) => {
+    ws.write(str, (err) => (err ? reject(err) : resolve()));
+  });
+  try {
+    let lines = [JSON.stringify(header)];
+    let chars = lines[0].length;
+    for (const record of records) {
+      const line = JSON.stringify(record);
+      lines.push(line);
+      chars += line.length;
+      if (lines.length >= NDJSON_LINE_BATCH || chars >= NDJSON_CHAR_BATCH) {
+        await flush(lines.join('\n') + '\n');
+        lines = [];
+        chars = 0;
+      }
+    }
+    if (lines.length > 0) await flush(lines.join('\n') + '\n');
+    ws.end();
+    await finished;
+  } catch (err) {
+    finished.catch(() => { /* surfaced via throw below */ });
+    ws.destroy();
+    throw err;
+  }
+}
+
+// Yields one parsed JSON document per non-empty line. The input stream is
+// destroyed in `finally`: early exits abandon the readline iterator, and
+// rl.close() does NOT destroy its input — without the explicit destroy every
+// early return leaks an fd (fatal only in long-lived processes like the
+// daemon, but a leak everywhere).
+async function* iterateJsonLines(filePath) {
+  const input = createReadStream(filePath, { encoding: 'utf8' });
+  const rl = readline.createInterface({ input, crlfDelay: Infinity });
+  try {
+    for await (const line of rl) {
+      if (!line) continue;
+      yield JSON.parse(line);
+    }
+  } finally {
+    rl.close();
+    input.destroy();
+  }
+}
+
+function isV2Header(doc) {
+  return !!doc && !Array.isArray(doc) && doc.version === 2 && Number.isFinite(doc.count);
+}
+
+export async function readVectorsSidecar(vectorsPath) {
+  let header = null;
+  let first = true;
+  const entries = [];
+  for await (const doc of iterateJsonLines(vectorsPath)) {
+    if (first) {
+      first = false;
+      if (Array.isArray(doc)) return doc; // v1 — the whole payload is this line
+      if (!isV2Header(doc)) {
+        throw new Error(`BinaryHNSW: unrecognized vectors sidecar format: ${vectorsPath}`);
+      }
+      header = doc;
+      continue;
+    }
+    entries.push(doc);
+  }
+  if (!header) {
+    throw new Error(`BinaryHNSW: empty vectors sidecar: ${vectorsPath}`);
+  }
+  if (entries.length !== header.count) {
+    throw new Error(
+      `BinaryHNSW: truncated vectors sidecar (${entries.length}/${header.count} records): ${vectorsPath}`
+    );
+  }
+  return entries;
+}
+
+// Graph v2 records tile each level's node array in fixed-size chunks. Holes in
+// the (sparse) upper-level arrays serialize to null inside a chunk, matching
+// what JSON.parse produced for the v1 whole-array format.
+function* graphChunkRecords(graph) {
+  for (let level = 0; level < graph.length; level++) {
+    const nodes = graph[level];
+    for (let start = 0; start < nodes.length; start += GRAPH_CHUNK_NODES) {
+      yield { level, start, nodes: nodes.slice(start, start + GRAPH_CHUNK_NODES) };
+    }
+  }
+}
+
+function graphChunkCount(graph) {
+  let count = 0;
+  for (const nodes of graph) count += Math.ceil(nodes.length / GRAPH_CHUNK_NODES);
+  return count;
+}
+
+export async function readGraphSidecar(graphPath) {
+  let header = null;
+  let first = true;
+  let graph = null;
+  let parsed = 0;
+  for await (const doc of iterateJsonLines(graphPath)) {
+    if (first) {
+      first = false;
+      if (Array.isArray(doc)) return doc; // v1 — the whole payload is this line
+      if (!doc || doc.version !== 2 || !Array.isArray(doc.lengths) || !Number.isFinite(doc.chunks)) {
+        throw new Error(`BinaryHNSW: unrecognized graph sidecar format: ${graphPath}`);
+      }
+      header = doc;
+      graph = doc.lengths.map((len) => new Array(len).fill(null));
+      continue;
+    }
+    const target = graph[doc.level];
+    for (let i = 0; i < doc.nodes.length; i++) {
+      target[doc.start + i] = doc.nodes[i];
+    }
+    parsed++;
+  }
+  if (!header) {
+    throw new Error(`BinaryHNSW: empty graph sidecar: ${graphPath}`);
+  }
+  if (parsed !== header.chunks) {
+    throw new Error(
+      `BinaryHNSW: truncated graph sidecar (${parsed}/${header.chunks} chunks): ${graphPath}`
+    );
+  }
+  return graph;
+}
+
+export async function readInt8Sidecar(int8Path, out) {
+  let header = null;
+  let first = true;
+  let parsed = 0;
+  for await (const doc of iterateJsonLines(int8Path)) {
+    if (first) {
+      first = false;
+      if (!isV2Header(doc)) {
+        // v1 — the whole { id: number[] } map is this line. A v1 map can never
+        // look like a v2 header: its values are arrays, so doc.version is
+        // either undefined or a number[] and fails isV2Header.
+        for (const [id, vec] of Object.entries(doc || {})) {
+          out.set(id, new Int8Array(vec));
+        }
+        return;
+      }
+      header = doc;
+      continue;
+    }
+    out.set(doc.id, new Int8Array(doc.v));
+    parsed++;
+  }
+  if (header && parsed !== header.count) {
+    throw new Error(
+      `BinaryHNSW: truncated int8 sidecar (${parsed}/${header.count} records): ${int8Path}`
+    );
+  }
+}
+
+// Entry count without materializing the payload: v2 reads only the header
+// line; v1 (single line = whole map) is parsed from that same first line.
+// Used by diagnostics (getArtifactStats) so stats never re-load the index.
+export async function int8SidecarCount(int8Path) {
+  for await (const doc of iterateJsonLines(int8Path)) {
+    return isV2Header(doc) ? doc.count : Object.keys(doc || {}).length;
+  }
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Sync sidecar readers — TOOLING ONLY (soak probes, determinism dumps).
+// These readFileSync the whole file, so they inherit the very string ceiling
+// the streaming readers exist to avoid; fine at tool-corpus scale, never for
+// production-scale indexes. Same v1/v2 detection and truncation guards.
+// ---------------------------------------------------------------------------
+
+function parseSidecarLinesSync(filePath) {
+  return readFileSync(filePath, 'utf-8')
+    .split('\n')
+    .filter((l) => l.length > 0)
+    .map((l) => JSON.parse(l));
+}
+
+export function readVectorsSidecarSync(vectorsPath) {
+  const docs = parseSidecarLinesSync(vectorsPath);
+  if (Array.isArray(docs[0])) return docs[0]; // v1
+  if (!isV2Header(docs[0])) {
+    throw new Error(`BinaryHNSW: unrecognized vectors sidecar format: ${vectorsPath}`);
+  }
+  const entries = docs.slice(1);
+  if (entries.length !== docs[0].count) {
+    throw new Error(
+      `BinaryHNSW: truncated vectors sidecar (${entries.length}/${docs[0].count} records): ${vectorsPath}`
+    );
+  }
+  return entries;
+}
+
+export function readGraphSidecarSync(graphPath) {
+  const docs = parseSidecarLinesSync(graphPath);
+  if (Array.isArray(docs[0])) return docs[0]; // v1
+  const header = docs[0];
+  if (!header || header.version !== 2 || !Array.isArray(header.lengths) || !Number.isFinite(header.chunks)) {
+    throw new Error(`BinaryHNSW: unrecognized graph sidecar format: ${graphPath}`);
+  }
+  if (docs.length - 1 !== header.chunks) {
+    throw new Error(
+      `BinaryHNSW: truncated graph sidecar (${docs.length - 1}/${header.chunks} chunks): ${graphPath}`
+    );
+  }
+  const graph = header.lengths.map((len) => new Array(len).fill(null));
+  for (const rec of docs.slice(1)) {
+    const target = graph[rec.level];
+    for (let i = 0; i < rec.nodes.length; i++) {
+      target[rec.start + i] = rec.nodes[i];
+    }
+  }
+  return graph;
+}
+
+// Returns the v1-shaped plain object { id: number[] } for both formats.
+export function readInt8SidecarSync(int8Path) {
+  const docs = parseSidecarLinesSync(int8Path);
+  if (docs.length === 0) return {};
+  if (!isV2Header(docs[0])) return docs[0] || {}; // v1 — whole map on one line
+  const records = docs.slice(1);
+  if (records.length !== docs[0].count) {
+    throw new Error(
+      `BinaryHNSW: truncated int8 sidecar (${records.length}/${docs[0].count} records): ${int8Path}`
+    );
+  }
+  const out = {};
+  for (const rec of records) out[rec.id] = rec.v;
+  return out;
 }
 
 // =============================================================================
@@ -1070,12 +1343,6 @@ export class BinaryHNSWIndex {
       savedAt: new Date().toISOString(),
     };
 
-    const vectorsData = this.vectors.map(v => ({
-      id: v.id,
-      binary: Array.from(v.binary),
-      metadata: v.metadata,
-    }));
-
     const metaPath = indexPath.replace('.idx', '.meta.json');
     const vectorsPath = indexPath.replace('.idx', '.vectors.json');
     const graphPath = indexPath.replace('.idx', '.graph.json');
@@ -1083,21 +1350,53 @@ export class BinaryHNSWIndex {
     const calibPath = indexPath.replace('.idx', '.calibration.json');
     const pidSuffix = `.tmp.${process.pid}`;
 
-    // Stage all sidecars to sibling temp paths.
+    // Stage all sidecars to sibling temp paths. The big three are NDJSON v2
+    // (see the sidecar-format block above the class) — one record per line
+    // through a write stream — so no serialized string can cross V8's ceiling
+    // on large indexes. Records are yielded lazily so no whole-index
+    // intermediate array/object is materialized either.
     await fs.writeFile(metaPath + pidSuffix, JSON.stringify(meta, null, 2));
-    await fs.writeFile(vectorsPath + pidSuffix, JSON.stringify(vectorsData));
-    await fs.writeFile(graphPath + pidSuffix, JSON.stringify(this.graph));
+
+    const vectors = this.vectors;
+    await writeNdjsonSidecar(
+      vectorsPath + pidSuffix,
+      { version: 2, count: vectors.length },
+      (function* () {
+        for (const v of vectors) {
+          yield { id: v.id, binary: Array.from(v.binary), metadata: v.metadata };
+        }
+      })()
+    );
+
+    await writeNdjsonSidecar(
+      graphPath + pidSuffix,
+      {
+        version: 2,
+        lengths: this.graph.map((nodes) => nodes.length),
+        chunks: graphChunkCount(this.graph),
+      },
+      graphChunkRecords(this.graph)
+    );
 
     let stagedInt8 = false;
     if (this.int8Vectors.size > 0) {
       const liveIds = new Set(this.vectors.map(v => v.id));
-      const int8Data = {};
-      for (const [id, vec] of this.int8Vectors) {
-        if (!liveIds.has(id)) continue;
-        int8Data[id] = Array.from(vec);
+      let liveCount = 0;
+      for (const id of this.int8Vectors.keys()) {
+        if (liveIds.has(id)) liveCount++;
       }
-      if (Object.keys(int8Data).length > 0) {
-        await fs.writeFile(int8Path + pidSuffix, JSON.stringify(int8Data));
+      if (liveCount > 0) {
+        const int8Vectors = this.int8Vectors;
+        await writeNdjsonSidecar(
+          int8Path + pidSuffix,
+          { version: 2, count: liveCount },
+          (function* () {
+            for (const [id, vec] of int8Vectors) {
+              if (!liveIds.has(id)) continue;
+              yield { id, v: Array.from(vec) };
+            }
+          })()
+        );
         stagedInt8 = true;
       }
     }
@@ -1183,7 +1482,7 @@ export class BinaryHNSWIndex {
     let attempt = 0;
     while (true) {
       meta = attempt === 0 ? initialMeta : JSON.parse(await fs.readFile(metaPath, 'utf-8'));
-      vectorsData = JSON.parse(await fs.readFile(vectorsPath, 'utf-8'));
+      vectorsData = await readVectorsSidecar(vectorsPath);
       const consistent = meta.vectorCount === vectorsData.length
         && (meta.entryPoint === -1 || meta.entryPoint < vectorsData.length);
       if (consistent) break;
@@ -1224,15 +1523,12 @@ export class BinaryHNSWIndex {
     }
 
     // Load graph
-    this.graph = JSON.parse(await fs.readFile(graphPath, 'utf-8'));
+    this.graph = await readGraphSidecar(graphPath);
 
     // Load int8 vectors if available
     this.int8Vectors.clear();
     if (existsSync(int8Path)) {
-      const int8Data = JSON.parse(await fs.readFile(int8Path, 'utf-8'));
-      for (const [id, vec] of Object.entries(int8Data)) {
-        this.int8Vectors.set(id, new Int8Array(vec));
-      }
+      await readInt8Sidecar(int8Path, this.int8Vectors);
     }
 
     // Load asymmetric calibration data

@@ -176,7 +176,7 @@ describe('Phase 0: Rescoring Fix Correctness', () => {
 
     it('BinaryHNSWIndex ignores and omits orphan int8 sidecar rows', async () => {
       const { BinaryHNSWIndex } = await import('../../core/vector-store/index.js');
-      const { readFile } = await import('fs/promises');
+      const { readInt8Sidecar } = await import('../../core/vector-store/binary-hnsw-index.js');
 
       const indexPath = path.join(TEST_DIR, 'binary-orphan-int8.idx');
       const index = new BinaryHNSWIndex({
@@ -193,9 +193,11 @@ describe('Phase 0: Rescoring Fix Correctness', () => {
       expect(index.getInt8Vector('orphan-doc')).toBeUndefined();
 
       await index.save(indexPath);
-      const int8Data = JSON.parse(await readFile(indexPath.replace('.idx', '.int8.json'), 'utf-8'));
+      const int8Map = new Map();
+      await readInt8Sidecar(indexPath.replace('.idx', '.int8.json'), int8Map);
 
-      expect(int8Data).toEqual({ 'fresh-doc': [4, 5, 6] });
+      expect([...int8Map.keys()]).toEqual(['fresh-doc']);
+      expect(Array.from(int8Map.get('fresh-doc'))).toEqual([4, 5, 6]);
     });
 
     it('BinaryHNSWIndex.load clears previous int8 vectors when the next artifact has no int8 sidecar', async () => {

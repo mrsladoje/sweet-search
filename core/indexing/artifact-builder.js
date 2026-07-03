@@ -52,7 +52,7 @@ export const ARTIFACT_THRESHOLDS = {
   stateFile: '.sweet-search/artifact-rebuild-state.json',
 };
 
-import { BinaryHNSWIndex } from '../vector-store/binary-hnsw-index.js';
+import { BinaryHNSWIndex, int8SidecarCount } from '../vector-store/binary-hnsw-index.js';
 import { truncateForHNSW, fisherYatesShuffle, normalizedFloatToInt8, floatToBinary } from '../infrastructure/quantization.js';
 import { FloatVectorStore, getFloatStorePath } from '../vector-store/float-vector-store.js';
 
@@ -828,8 +828,10 @@ export async function getArtifactStats() {
   if (existsSync(int8SidecarPath)) {
     try {
       const fileStats = await fs.stat(int8SidecarPath);
-      const int8Data = JSON.parse(await fs.readFile(int8SidecarPath, 'utf-8'));
-      const count = Object.keys(int8Data).length;
+      // Header-only count (NDJSON v2 sidecar; v1 back-compat) — never
+      // JSON.parse the whole file, which exceeds V8's string ceiling on
+      // large indexes.
+      const count = await int8SidecarCount(int8SidecarPath);
 
       stats.int8Sidecar = {
         exists: true,

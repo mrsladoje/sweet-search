@@ -48,6 +48,7 @@ import { fileURLToPath } from 'node:url';
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
 import { readManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 import { listDeltaSegments } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
+import { readVectorsSidecarSync } from '../../core/vector-store/binary-hnsw-index.js';
 import { readGraphGcState, readFts5State } from '../../core/incremental-indexing/infrastructure/maintenance-state-reader.mjs';
 import { loadBitmap, popcount } from '../../core/infrastructure/tombstone-bitmap-reader.js';
 import { generateInitialFixture } from './fixture.mjs';
@@ -496,7 +497,7 @@ function measureArtifacts(stateDir) {
 
   let binaryHnswRows = 0; let binaryHnswTombstones = 0;
   try {
-    const vec = JSON.parse(fs.readFileSync(path.join(stateDir, 'codebase-binary-hnsw.vectors.json'), 'utf-8'));
+    const vec = readVectorsSidecarSync(path.join(stateDir, 'codebase-binary-hnsw.vectors.json')); // NDJSON v2 (v1 back-compat)
     binaryHnswRows = Array.isArray(vec) ? vec.length : 0;
     const bm = loadBitmap(path.join(stateDir, 'codebase-binary-hnsw.idx.stale.bin'));
     if (bm) binaryHnswTombstones = popcount(bm);

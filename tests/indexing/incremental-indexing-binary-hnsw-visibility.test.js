@@ -29,7 +29,7 @@ import { binaryHnswHandler } from '../../core/incremental-indexing/application/m
 import { readBinaryHnswState } from '../../core/incremental-indexing/infrastructure/maintenance-state-reader.mjs';
 import { evaluateWatermarks, DEFAULT_WATERMARKS } from '../../core/incremental-indexing/domain/watermark-scheduler.mjs';
 import { markBinaryStale } from '../../core/incremental-indexing/application/production-reconciler-helpers.mjs';
-import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
+import { BinaryHNSWIndex, readVectorsSidecar } from '../../core/vector-store/binary-hnsw-index.js';
 import { loadBitmap, isSet } from '../../core/incremental-indexing/infrastructure/tombstone-bitmap.mjs';
 
 function mkState() {
@@ -73,8 +73,8 @@ function buildVectorsDb(stateDir, { live = [], retired = [] }) {
 }
 
 /** Probe-equivalent: binary ids that are visible (stale bit unset) but not live in codebase.db. */
-function visibleRetired(stateDir) {
-  const vec = JSON.parse(fs.readFileSync(path.join(stateDir, 'codebase-binary-hnsw.vectors.json'), 'utf8'));
+async function visibleRetired(stateDir) {
+  const vec = await readVectorsSidecar(path.join(stateDir, 'codebase-binary-hnsw.vectors.json'));
   const db = new Database(path.join(stateDir, 'codebase.db'), { readonly: true });
   let live;
   try { live = new Set(db.prepare('SELECT id FROM vectors WHERE epoch_retired IS NULL').all().map((r) => r.id)); }
@@ -88,8 +88,8 @@ function visibleRetired(stateDir) {
   return out;
 }
 
-function binaryIds(stateDir) {
-  const vec = JSON.parse(fs.readFileSync(path.join(stateDir, 'codebase-binary-hnsw.vectors.json'), 'utf8'));
+async function binaryIds(stateDir) {
+  const vec = await readVectorsSidecar(path.join(stateDir, 'codebase-binary-hnsw.vectors.json'));
   return new Set(vec.map((v) => v.id));
 }
 
@@ -102,13 +102,13 @@ describe('binaryHnswHandler / codebase.db source-of-truth', () => {
     await buildBinaryIndex(stateDir, ['v0', 'v1', 'v2', 'v3']);
     // v1 retired in codebase.db, but NO binary stale bitmap exists (the bug).
     buildVectorsDb(stateDir, { live: ['v0', 'v2', 'v3'], retired: ['v1'] });
-    expect(visibleRetired(stateDir)).toEqual(['v1']); // bug present before heal
+    expect(await visibleRetired(stateDir)).toEqual(['v1']); // bug present before heal
 
     const res = await binaryHnswHandler({}, { stateDir });
     expect(res.dropped).toBe(1);
     expect(res.kept).toBe(3);
-    expect(binaryIds(stateDir).has('v1')).toBe(false);
-    expect(visibleRetired(stateDir)).toEqual([]); // healed
+    expect((await binaryIds(stateDir)).has('v1')).toBe(false);
+    expect(await visibleRetired(stateDir)).toEqual([]); // healed
   });
 
   it('keeps live vectors and drops codebase.db-retired ones (mixed)', async () => {
@@ -116,8 +116,8 @@ describe('binaryHnswHandler / codebase.db source-of-truth', () => {
     buildVectorsDb(stateDir, { live: ['a', 'c', 'e'], retired: ['b', 'd'] });
     const res = await binaryHnswHandler({}, { stateDir });
     expect(res.dropped).toBe(2);
-    expect([...binaryIds(stateDir)].sort()).toEqual(['a', 'c', 'e']);
-    expect(visibleRetired(stateDir)).toEqual([]);
+    expect([...(await binaryIds(stateDir))].sort()).toEqual(['a', 'c', 'e']);
+    expect(await visibleRetired(stateDir)).toEqual([]);
   });
 
   it('skips when binary already matches codebase.db live set', async () => {
@@ -136,7 +136,7 @@ describe('binaryHnswHandler / codebase.db source-of-truth', () => {
     expect(markBinaryStale(idx, 'x1')).toBe(true);
     const res = await binaryHnswHandler({}, { stateDir });
     expect(res.dropped).toBe(1);
-    expect(binaryIds(stateDir).has('x1')).toBe(false);
+    expect((await binaryIds(stateDir)).has('x1')).toBe(false);
   });
 });
 

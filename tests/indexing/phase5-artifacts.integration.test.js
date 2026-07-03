@@ -42,6 +42,18 @@ const TEST_META_FILE = TEST_HNSW_INDEX.replace('.idx', '.meta.json');
 const TEST_VECTORS_FILE = TEST_HNSW_INDEX.replace('.idx', '.vectors.json');
 const TEST_GRAPH_FILE = TEST_HNSW_INDEX.replace('.idx', '.graph.json');
 
+// The big sidecars are NDJSON v2 (one header line + one record per line, v1
+// back-compat) — read them through the canonical readers, not JSON.parse.
+import { readInt8Sidecar, readVectorsSidecar } from '../../core/vector-store/binary-hnsw-index.js';
+
+async function loadInt8(p) {
+  const m = new Map();
+  await readInt8Sidecar(p, m);
+  const obj = {};
+  for (const [id, vec] of m) obj[id] = Array.from(vec);
+  return obj;
+}
+
 describe('Phase 5: Artifact Builder Contract', () => {
   let buildFromCodebaseDb;
   let getArtifactStats;
@@ -258,7 +270,7 @@ describe('Phase 5: Artifact Builder Contract', () => {
       expect(result.stats.totalVectors).toBe(3);
       expect(result.hnsw.totalVectors).toBe(3);
 
-      const int8Data = JSON.parse(await fs.readFile(TEST_INT8_SIDECAR, 'utf-8'));
+      const int8Data = await loadInt8(TEST_INT8_SIDECAR);
       expect(Object.keys(int8Data).sort()).toEqual([
         'test-file-0.js:0',
         'test-file-2.js:20',
@@ -339,20 +351,26 @@ describe('Phase 5: Artifact Builder Contract', () => {
       });
     });
 
-    it('should contain valid JSON', async () => {
+    it('should be NDJSON v2: every line valid JSON, v2 header first', async () => {
       const content = await fs.readFile(TEST_INT8_SIDECAR, 'utf-8');
+      const lines = content.split('\n').filter((l) => l.length > 0);
 
-      expect(() => JSON.parse(content)).not.toThrow();
+      for (const line of lines) {
+        expect(() => JSON.parse(line)).not.toThrow();
+      }
+      const header = JSON.parse(lines[0]);
+      expect(header.version).toBe(2);
+      expect(header.count).toBe(lines.length - 1);
     });
 
     it('should have one entry per vector', async () => {
-      const int8Data = JSON.parse(await fs.readFile(TEST_INT8_SIDECAR, 'utf-8'));
+      const int8Data = await loadInt8(TEST_INT8_SIDECAR);
 
       expect(Object.keys(int8Data)).toHaveLength(10);
     });
 
     it('should have arrays as values (int8 vectors)', async () => {
-      const int8Data = JSON.parse(await fs.readFile(TEST_INT8_SIDECAR, 'utf-8'));
+      const int8Data = await loadInt8(TEST_INT8_SIDECAR);
 
       for (const [id, vec] of Object.entries(int8Data)) {
         expect(Array.isArray(vec)).toBe(true);
@@ -360,7 +378,7 @@ describe('Phase 5: Artifact Builder Contract', () => {
     });
 
     it('should have correct dimension for int8 vectors (floatDimension)', async () => {
-      const int8Data = JSON.parse(await fs.readFile(TEST_INT8_SIDECAR, 'utf-8'));
+      const int8Data = await loadInt8(TEST_INT8_SIDECAR);
 
       for (const [id, vec] of Object.entries(int8Data)) {
         expect(vec.length).toBe(512); // floatDimension, not binaryDimension
@@ -368,7 +386,7 @@ describe('Phase 5: Artifact Builder Contract', () => {
     });
 
     it('should have int8 values in range [-128, 127]', async () => {
-      const int8Data = JSON.parse(await fs.readFile(TEST_INT8_SIDECAR, 'utf-8'));
+      const int8Data = await loadInt8(TEST_INT8_SIDECAR);
 
       for (const [id, vec] of Object.entries(int8Data)) {
         for (const val of vec) {
@@ -379,8 +397,8 @@ describe('Phase 5: Artifact Builder Contract', () => {
     });
 
     it('should have matching IDs between vectors.json and int8.json', async () => {
-      const int8Data = JSON.parse(await fs.readFile(TEST_INT8_SIDECAR, 'utf-8'));
-      const vectorsData = JSON.parse(await fs.readFile(TEST_VECTORS_FILE, 'utf-8'));
+      const int8Data = await loadInt8(TEST_INT8_SIDECAR);
+      const vectorsData = await readVectorsSidecar(TEST_VECTORS_FILE);
 
       const int8Ids = new Set(Object.keys(int8Data));
       const vectorIds = new Set(vectorsData.map(v => v.id));
@@ -775,10 +793,7 @@ describe('Phase 5: Edge Cases', () => {
     expect(result.stats.floatDimension).toBe(512);
 
     // Verify int8 vectors are 512-dim
-    const int8Data = JSON.parse(await fs.readFile(
-      TEST_HNSW_INDEX.replace('.idx', '.int8.json'),
-      'utf-8'
-    ));
+    const int8Data = await loadInt8(TEST_HNSW_INDEX.replace('.idx', '.int8.json'));
     const firstVec = Object.values(int8Data)[0];
     expect(firstVec.length).toBe(512);
   });
