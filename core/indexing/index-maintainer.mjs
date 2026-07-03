@@ -1267,12 +1267,14 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   // Best-effort — never block startup on the embedding module.
   if (process.env.SWEET_SEARCH_ORT_BACKGROUND !== '0') {
     try {
-      const [{ configureLocalModelRuntime }, { backgroundIntraOpThreads }] = await Promise.all([
-        import('../embedding/embedding-local-model.js'),
-        import('../infrastructure/onnx-session-utils.js'),
-      ]);
-      configureLocalModelRuntime({ intraOpThreads: backgroundIntraOpThreads(), background: true });
-      log('INFO', 'ORT background profile armed for maintainer daemon (force_spinning_stop + arena-off + bg threads)');
+      // Arms BOTH resident CPU sessions (dense + late-interaction) — the LI
+      // session previously stayed on the foreground profile (arena ON +
+      // allow_spinning) inside the daemon; measured consequence: 354 × 128MB
+      // arena extensions (~34GB RSS) after one edit-heavy day plus ~40% idle
+      // CPU from spinning workers.
+      const { armBackgroundOrtProfiles } = await import('./model-pool.js');
+      armBackgroundOrtProfiles();
+      log('INFO', 'ORT background profile armed for maintainer daemon (dense + LI: force_spinning_stop + arena-off + bg threads)');
     } catch (err) {
       log('WARN', `ORT background profile arming failed (continuing on foreground profile): ${err?.message ?? err}`);
     }

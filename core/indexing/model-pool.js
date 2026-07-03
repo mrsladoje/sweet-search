@@ -29,12 +29,15 @@ import {
   getLocalPipeline,
   callLocalModelCpu,
   unloadLocalModel,
+  configureLocalModelRuntime,
 } from '../embedding/embedding-local-model.js';
 import {
   getLateInteractionPipeline,
   encodeDocumentsCpu,
   unloadLateInteractionModel,
+  configureLateInteractionRuntime,
 } from '../ranking/late-interaction-model.js';
+import { backgroundIntraOpThreads } from '../infrastructure/onnx-session-utils.js';
 
 /**
  * Small-changeset threshold. Incremental runs with fewer files than this use
@@ -67,6 +70,29 @@ export function selectAcceleratorDeviceKind(pref) {
   if (pref === 'coreml-cascade' || pref === 'candle-metal') return 'metal';
   if (pref === 'candle-cuda') return 'cuda';
   return null;
+}
+
+/**
+ * G3: arm the BACKGROUND/maintainer ORT profile for BOTH resident CPU
+ * sessions — dense (embedding-local-model) and late-interaction. The profile
+ * (force_spinning_stop + arena-off + 2–4 intra-op threads) prevents the two
+ * resident-daemon pathologies: idle spinning workers (~a core of idle CPU)
+ * and monotonic RSS from ORT arena extension (#25325; measured 354 × 128MB
+ * ≈ 34GB after one edit-heavy day when the LI session was left on the
+ * foreground profile). MUST run before the first encode — both session
+ * singletons are built once; configuring after is a silent no-op.
+ *
+ * Lives here (model-pool owns indexing-side model lifecycle) so daemon
+ * entrypoints don't need their own cross-context imports of the two model
+ * modules.
+ *
+ * @returns {{armed: boolean}}
+ */
+export function armBackgroundOrtProfiles() {
+  const intraOpThreads = backgroundIntraOpThreads();
+  configureLocalModelRuntime({ intraOpThreads, background: true });
+  configureLateInteractionRuntime({ intraOpThreads, background: true });
+  return { armed: true };
 }
 
 /**
