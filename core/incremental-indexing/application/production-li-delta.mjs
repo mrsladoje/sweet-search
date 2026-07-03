@@ -117,6 +117,7 @@ export async function applyLateInteractionDelta({
   liEncoder,
   pickLiInput,
   onProgress = null,
+  readerCache = null,
 }) {
   const progress = typeof onProgress === 'function'
     ? (phase) => { onProgress(phase); }
@@ -128,11 +129,35 @@ export async function applyLateInteractionDelta({
   const encode = liEncoder || ((texts) => encodeDocumentsCpu(texts));
   const existing = fs.existsSync(indexPath);
   const segmented = existing ? segmentedState(indexPath) : null;
-  const index = new LateInteractionIndex({ indexPath, loadExisting: true });
-  await index.init();
-  progress('li:init');
+
+  // E.1-LI reader cache: reuse the loaded read view across the tick's files.
+  // Only the SEGMENTED path is cacheable — everything the reader serves there
+  // (config fields, positions/counts of pre-tick docs) is immutable within a
+  // tick: per-file ops only reference the file's own pre-tick docs, appends
+  // go through appendGrowingSegment (which re-reads the manifest from disk),
+  // and tombstone sidecar state is opened fresh per call. The legacy path
+  // MUTATES the loaded index (rewriteLegacyIndex), so it always loads fresh
+  // and drops any cached reader.
+  const cacheable = !!(readerCache && segmented);
+  let index;
+  if (cacheable && readerCache.index && readerCache.key === indexPath) {
+    index = readerCache.index;
+    progress('li:init-cached');
+  } else {
+    index = new LateInteractionIndex({ indexPath, loadExisting: true });
+    await index.init();
+    progress('li:init');
+    if (cacheable) {
+      readerCache.key = indexPath;
+      readerCache.index = index;
+    }
+  }
 
   if (existing && !segmented) {
+    if (readerCache) {
+      readerCache.key = null;
+      readerCache.index = null;
+    }
     return rewriteLegacyIndex(index, ops, encode, pickLiInput, progress);
   }
 
