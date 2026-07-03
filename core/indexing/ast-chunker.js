@@ -942,6 +942,7 @@ export class ASTChunker {
     // Production embedding text. With the default variant (current) this
     // is byte-identical to shipped v6.2; under a research-only variant
     // (SWEET_SEARCH_EMBED_TEXT_VARIANT) it produces the experimental form.
+    const activeVariant = getEmbedTextVariant();
     const embedding_text = buildEmbeddingText({
       content,
       relativePath,
@@ -954,17 +955,19 @@ export class ASTChunker {
     // Research isolation: always build the shipped (current-variant)
     // form alongside, so the LI stage can read a canonical input even
     // when an R1 experiment is active on embedding_text. In production
-    // (variant=current) this is the same content as embedding_text and
-    // pickLiInput's preference for li_greedy_text changes nothing.
-    const li_greedy_text = buildEmbeddingText({
-      variant: 'current',
-      content,
-      relativePath,
-      language,
-      chunkType,
-      symbol,
-      hierarchyInfo,
-    });
+    // (variant=current) it IS the embedding_text — reuse the string
+    // instead of rebuilding it.
+    const li_greedy_text = activeVariant === 'current'
+      ? embedding_text
+      : buildEmbeddingText({
+        variant: 'current',
+        content,
+        relativePath,
+        language,
+        chunkType,
+        symbol,
+        hierarchyInfo,
+      });
 
     // Build LI text via the v6.2 builder (language-conditioned path
     // policy). See buildLiText() docstring for rationale.

@@ -109,20 +109,24 @@ export function quantileNormalize(scores, lowQuantile = 0.05, highQuantile = 0.9
 export function convexCombination(lexicalResults, semanticResults, routeType = 'mixed', options = {}) {
   const alpha = options.alpha ?? ROUTE_ALPHAS[routeType] ?? 0.5;
 
-  // Build score maps
+  // Build score + result maps in one key derivation per result
   const lexicalScoreMap = new Map();
   const semanticScoreMap = new Map();
+  const lexResultMap = new Map();
+  const semResultMap = new Map();
   const allKeys = new Set();
 
   for (const r of lexicalResults) {
     const key = this.getResultKey(r);
     lexicalScoreMap.set(key, r.score);
+    lexResultMap.set(key, r);
     allKeys.add(key);
   }
 
   for (const r of semanticResults) {
     const key = this.getResultKey(r);
     semanticScoreMap.set(key, r.score);
+    semResultMap.set(key, r);
     allKeys.add(key);
   }
 
@@ -148,8 +152,6 @@ export function convexCombination(lexicalResults, semanticResults, routeType = '
 
   // Compute CC scores
   const ccResults = [];
-  const lexResultMap = new Map(lexicalResults.map(r => [this.getResultKey(r), r]));
-  const semResultMap = new Map(semanticResults.map(r => [this.getResultKey(r), r]));
 
   for (const key of allKeys) {
     const lexScore = lexicalScoreMap.get(key);
@@ -253,7 +255,10 @@ export function rrfFusion(lexicalResults, semanticResults, k = 60) {
   });
 
   return [...results.values()]
-    .map(r => ({ ...r, score: scores.get(this.getResultKey(r)), ccScore: scores.get(this.getResultKey(r)) }))
+    .map(r => {
+      const score = scores.get(this.getResultKey(r));
+      return { ...r, score, ccScore: score };
+    })
     .sort((a, b) => b.score - a.score);
 }
 
@@ -310,7 +315,10 @@ export function robustCCFusion(lexicalResults, semanticResults, routeType = 'mix
 
   return {
     results: [...results.values()]
-      .map(r => ({ ...r, score: combinedScores.get(this.getResultKey(r)), ccScore: combinedScores.get(this.getResultKey(r)), alpha }))
+      .map(r => {
+        const score = combinedScores.get(this.getResultKey(r));
+        return { ...r, score, ccScore: score, alpha };
+      })
       .sort((a, b) => b.score - a.score),
     method: 'cc_robust',
     fallbackReason: null,

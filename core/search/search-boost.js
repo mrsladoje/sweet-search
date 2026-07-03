@@ -201,6 +201,18 @@ function envFloat(name, fallback, min = 0, max = 1) {
   return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
+// Query-term derivation is pure in `query`; memoize the last query so the
+// per-result map in applyPostFusionBoosts doesn't re-split identical input.
+let _lastIdTermsQuery = null;
+let _lastIdTerms = null;
+function identifierTermsForQuery(query) {
+  if (query !== _lastIdTermsQuery) {
+    _lastIdTermsQuery = query;
+    _lastIdTerms = new Set(splitIdentifierTerms(query));
+  }
+  return _lastIdTerms;
+}
+
 function splitIdentifierTerms(value) {
   return String(value || '')
     .replace(/_[0-9a-f]{8}(?=\.[^.]+$|$)/gi, '')
@@ -233,7 +245,7 @@ export function computeIdentifierAgreementBoost(result, query) {
   const weight = envFloat('SWEET_SEARCH_IDENTIFIER_AGREEMENT_BOOST', 0.40, 0, 1);
   if (weight === 0) return 1.0;
 
-  const queryTerms = new Set(splitIdentifierTerms(query));
+  const queryTerms = identifierTermsForQuery(query);
   if (queryTerms.size === 0) return 1.0;
 
   const fileName = (result.file || result.path || result.metadata?.file || '')
@@ -290,22 +302,22 @@ export function computeDefinitionBoost(result, queryLower, queryTokens) {
 /**
  * Compute syntax boost (PHASE_1_FIXES helper)
  */
+const DEFINITION_SIGNATURE_PATTERNS = [
+  /\b(?:public|private|protected)?\s*(?:abstract|final)?\s*class\s+(\w+)/,
+  /\b(?:public|private|protected)?\s*interface\s+(\w+)/,
+  /\b(?:public|private|protected)?\s*enum\s+(\w+)/,
+  /\bclass\s+(\w+)/,
+  /\bfunction\s+(\w+)/,
+  /\bexport\s+(?:default\s+)?(?:class|function)\s+(\w+)/,
+  /\binterface\s+(\w+)/,
+  /\btype\s+(\w+)\s*=/,
+];
+
 export function computeSyntaxBoost(result, queryTokens) {
   const signature = (result.signature || '').toLowerCase();
   if (!signature) return 1.0;
 
-  const definitionPatterns = [
-    /\b(?:public|private|protected)?\s*(?:abstract|final)?\s*class\s+(\w+)/,
-    /\b(?:public|private|protected)?\s*interface\s+(\w+)/,
-    /\b(?:public|private|protected)?\s*enum\s+(\w+)/,
-    /\bclass\s+(\w+)/,
-    /\bfunction\s+(\w+)/,
-    /\bexport\s+(?:default\s+)?(?:class|function)\s+(\w+)/,
-    /\binterface\s+(\w+)/,
-    /\btype\s+(\w+)\s*=/,
-  ];
-
-  for (const pattern of definitionPatterns) {
+  for (const pattern of DEFINITION_SIGNATURE_PATTERNS) {
     const match = signature.match(pattern);
     if (match && match[1]) {
       const definedName = match[1].toLowerCase();

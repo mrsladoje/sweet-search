@@ -9,7 +9,7 @@ import { existsSync } from 'fs';
 import path from 'path';
 
 import { DB_PATHS, EMBEDDING_CONFIG, PROJECT_ROOT } from '../infrastructure/config/index.js';
-import { GraphExtractor, createGraphSchema, insertGraph } from '../graph/graph-extractor.js';
+import { GraphExtractor, createGraphSchema, insertGraph, rebuildGraphFts } from '../graph/graph-extractor.js';
 import { resolveRelationshipTargets } from '../graph/relationship-resolver.js';
 import { populatePageRankColumn } from '../graph/structural-pagerank.js';
 import { getEmbeddings, getModelInfo } from '../embedding/embedding-service.js';
@@ -153,6 +153,7 @@ export async function buildCodeGraph(files, dryRun = false) {
   let errors = 0;
   let totalEntities = 0;
   let totalRelationships = 0;
+  let graphFlushed = false;
 
   for (let i = 0; i < files.length; i++) {
     try {
@@ -170,10 +171,14 @@ export async function buildCodeGraph(files, dryRun = false) {
       errors++;
     }
 
-    // Flush batch every GRAPH_BATCH_SIZE files or at the end
+    // Flush batch every GRAPH_BATCH_SIZE files or at the end. FTS5 sync is
+    // deferred to ONE rebuild after the loop — 'rebuild' reconstructs the
+    // whole index from the entities table, so per-batch rebuilds were
+    // O(entities × batches) work discarded by the next batch.
     if ((i + 1) % GRAPH_BATCH_SIZE === 0 || i === files.length - 1) {
       if (entityBatch.length > 0 || relBatch.length > 0) {
-        insertGraph(db, entityBatch, relBatch, hasFts5);
+        insertGraph(db, entityBatch, relBatch, hasFts5, { syncFts: false });
+        graphFlushed = true;
         totalEntities += entityBatch.length;
         totalRelationships += relBatch.length;
         entityBatch = [];
@@ -184,6 +189,13 @@ export async function buildCodeGraph(files, dryRun = false) {
     if (processed % 50 === 0 || i === files.length - 1) {
       logProgress(processed, files.length, 'Extracting');
     }
+  }
+
+  // Single FTS5 rebuild at the exact point the last per-batch rebuild used to
+  // run (before relationship resolution, whose entity updates were never
+  // reflected in FTS).
+  if (graphFlushed && hasFts5) {
+    rebuildGraphFts(db);
   }
 
   log(`\n✓ Extracted ${totalEntities} entities, ${totalRelationships} relationships`, 'green');
@@ -360,7 +372,9 @@ function annotateChunksForVectorInsert(chunks) {
       const idx = indices[i];
       annotations[idx] = {
         ...ids[i],
-        hashes: chunkInputHashes(chunks[idx]),
+        // Full indexing never persists dedup_fingerprint (only the reconcile
+        // delta writer does) — skip that hash.
+        hashes: chunkInputHashes(chunks[idx], { includeDedup: false }),
       };
     }
   }

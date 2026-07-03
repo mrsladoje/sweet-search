@@ -192,13 +192,17 @@ function firstSafeRelativePath(...candidates) {
  * carried inside the encoder-input dependency registry; see
  * `core/incremental-indexing/domain/encoder-deps.mjs`).
  *
+ * Pass `{ includeDedup: false }` when the caller never persists the dedup
+ * fingerprint (the full-indexing insert path) to skip that hash entirely.
+ *
  * @param {object} chunk
- * @returns {{chunk_text_hash:string, embedding_input_hash:string, li_input_hash:string, metadata_fingerprint:string, dedup_fingerprint:string}}
+ * @param {{includeDedup?: boolean}} [opts]
+ * @returns {{chunk_text_hash:string, embedding_input_hash:string, li_input_hash:string, metadata_fingerprint:string, dedup_fingerprint?:string}}
  */
-export function chunkInputHashes(chunk) {
+export function chunkInputHashes(chunk, { includeDedup = true } = {}) {
   const text = chunk?.content || chunk?.text || '';
   const meta = chunk?.metadata || {};
-  return {
+  const hashes = {
     chunk_text_hash: contentHashSync(text),
     embedding_input_hash: denseInputHash(chunk),
     li_input_hash: liInputHash(chunk),
@@ -214,8 +218,9 @@ export function chunkInputHashes(chunk) {
       policy_embed: EMBED_TEXT_POLICY_VERSION,
       policy_li: LI_INPUT_POLICY_VERSION,
     })),
-    dedup_fingerprint: dedupFingerprint(chunk),
   };
+  if (includeDedup) hashes.dedup_fingerprint = dedupFingerprint(chunk);
+  return hashes;
 }
 
 /**

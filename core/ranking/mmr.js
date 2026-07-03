@@ -52,6 +52,11 @@ export const MMR_CONFIG = {
  * @param {Object} weights - Feature weights
  * @returns {number} Similarity score [0, 1]
  */
+// Static type groupings used by computeSimilarity — hoisted out of the
+// O(candidates × selected) MMR inner loop.
+const SIMILARITY_DEF_TYPES = new Set(['class', 'interface', 'struct', 'enum', 'trait']);
+const SIMILARITY_METHOD_TYPES = new Set(['method', 'function', 'constructor']);
+
 export function computeSimilarity(a, b, weights = MMR_CONFIG.weights) {
   let totalSim = 0;
   let totalWeight = 0;
@@ -83,11 +88,8 @@ export function computeSimilarity(a, b, weights = MMR_CONFIG.weights) {
       totalSim += weights.type * 1.0;
     } else {
       // Partial similarity for related types
-      const defTypes = new Set(['class', 'interface', 'struct', 'enum', 'trait']);
-      const methodTypes = new Set(['method', 'function', 'constructor']);
-
-      if ((defTypes.has(typeA) && defTypes.has(typeB)) ||
-          (methodTypes.has(typeA) && methodTypes.has(typeB))) {
+      if ((SIMILARITY_DEF_TYPES.has(typeA) && SIMILARITY_DEF_TYPES.has(typeB)) ||
+          (SIMILARITY_METHOD_TYPES.has(typeA) && SIMILARITY_METHOD_TYPES.has(typeB))) {
         totalSim += weights.type * 0.5;
       }
     }
@@ -237,10 +239,18 @@ export function applyMMR(results, options = {}) {
   while (selected.length < k && remaining.size > 0) {
     let bestIdx = -1;
     let bestMMR = -Infinity;
+    // Highest-relevance tracking shares the same pass (same iteration order
+    // and strict-> comparison as the reduce it replaces).
+    let highestRelevanceIdx = -1;
 
     // Find the candidate with highest MMR score
     for (const idx of remaining) {
       const candidate = normalized[idx];
+
+      if (highestRelevanceIdx === -1
+          || candidate._normalizedRelevance > normalized[highestRelevanceIdx]._normalizedRelevance) {
+        highestRelevanceIdx = idx;
+      }
 
       // Compute max similarity to already selected results
       let maxSim = 0;
@@ -260,11 +270,6 @@ export function applyMMR(results, options = {}) {
 
     if (bestIdx >= 0) {
       const selectedCandidate = normalized[bestIdx];
-
-      // Track if this selection was reordered (not the highest relevance remaining)
-      const highestRelevanceIdx = [...remaining].reduce((maxIdx, idx) =>
-        normalized[idx]._normalizedRelevance > normalized[maxIdx]._normalizedRelevance ? idx : maxIdx
-      );
 
       if (bestIdx !== highestRelevanceIdx) {
         reorderCount++;
