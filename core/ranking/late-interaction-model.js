@@ -26,6 +26,18 @@ let lateInteractionPipeline = null;
 let loadPromise = null;
 let lateInteractionRuntimeConfig = {
   intraOpThreads: null,
+  // G3-LI: background/maintainer ORT profile for the LI session. When truthy,
+  // the session is created with the CPU mem arena OFF and force_spinning_stop
+  // instead of allow_spinning — the same profile buildLocalSessionOptions
+  // applies to the dense session. ORT never returns arena memory once grown
+  // (#25325), and per-file reconcile encodes produce highly variable batch
+  // shapes, so an arena-ON LI session in the resident maintainer accrues
+  // monotonic RSS in 128MB arena-extension steps (measured: 354×128MB ≈ 34GB
+  // after one heavy edit day). Must be set BEFORE the first encode — the
+  // session singleton is built once; configuring after is a silent no-op.
+  // Default null/off everywhere else (search/query path keeps the foreground
+  // arena+spinning profile for latency).
+  background: null,
 };
 
 // Lightweight timing accumulators for profiling (Phase 6a).
@@ -90,6 +102,7 @@ export function configureLateInteractionRuntime(overrides = {}) {
 export function resetLateInteractionRuntime() {
   lateInteractionRuntimeConfig = {
     intraOpThreads: null,
+    background: null,
   };
 }
 
@@ -191,18 +204,26 @@ async function loadModel() {
   // 'extended' + memArena + memPattern: marginal overhead for no measurable gain.
   // Conclusion: keep LI session lean. Only proven-beneficial options added.
   const { getOptimizedGraphPath } = await import('../infrastructure/onnx-session-utils.js');
+  const liBackground = !!lateInteractionRuntimeConfig.background;
   const session = await ort.InferenceSession.create(onnxPath, {
     executionProviders: ['cpu'],
     logSeverityLevel: 3, // ERROR — silence ORT's expected "optimized model is machine-specific" warning
     intraOpNumThreads: lateInteractionRuntimeConfig.intraOpThreads ?? bestIntraOpThreads(),
     interOpNumThreads: 1,
     optimizedModelFilePath: getOptimizedGraphPath(modelConfig.hfId, 'lateon'),
+    // G3-LI: background (maintainer) profile disables the CPU mem arena — ORT
+    // never returns arena memory once grown (#25325), and variable-shaped
+    // per-file reconcile batches make the arena extend monotonically (128MB
+    // steps) in a resident daemon. Foreground keeps the arena for throughput.
+    enableCpuMemArena: !liBackground,
     // Thread spinning keeps ORT worker threads hot between batches — trades idle
-    // CPU for lower per-batch latency during sustained indexing runs.
+    // CPU for lower per-batch latency during sustained indexing runs. The
+    // background profile parks workers after the last Run() instead (the
+    // maintainer sits idle 20-60s between ticks; ~14% re-spin latency cost).
     extra: {
-      session: {
-        intra_op: { allow_spinning: '1' },
-      },
+      session: liBackground
+        ? { force_spinning_stop: '1' }
+        : { intra_op: { allow_spinning: '1' } },
     },
   });
   const coremlActive = false;
