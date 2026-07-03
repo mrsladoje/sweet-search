@@ -2351,7 +2351,28 @@ function resolveThrows(exceptionName, entityByName) {
  * Insert entities and relationships into database
  * Uses better-sqlite3 (sync API, no .free() needed)
  */
-export function insertGraph(db, entities, relationships, hasFts5 = false) {
+/**
+ * Rebuild + optimize the external-content FTS5 mirrors from the entities
+ * table. 'rebuild' reconstructs the whole FTS index from current content, so
+ * only the LAST rebuild before any FTS read matters — batch loops should
+ * pass { syncFts: false } to insertGraph and call this once at the end.
+ */
+export function rebuildGraphFts(db) {
+  try {
+    db.exec(`INSERT INTO entities_fts(entities_fts) VALUES('rebuild')`);
+    db.exec(`INSERT INTO entities_trigram(entities_trigram) VALUES('rebuild')`);
+    console.log('  FTS5 indexes rebuilt (porter + trigram)');
+
+    // Best-effort post-build compaction for faster reads.
+    db.exec(`INSERT INTO entities_fts(entities_fts) VALUES('optimize')`);
+    db.exec(`INSERT INTO entities_trigram(entities_trigram) VALUES('optimize')`);
+    console.log('  FTS5 indexes optimized (segments merged)');
+  } catch (err) {
+    // FTS5 rebuild/optimize failed, ignore
+  }
+}
+
+export function insertGraph(db, entities, relationships, hasFts5 = false, { syncFts = true } = {}) {
   // Insert entities with HCGS hierarchy support
   // Includes signature_hash for collision-proof backup/restore
   const entityStmt = db.prepare(`
@@ -2481,19 +2502,8 @@ export function insertGraph(db, entities, relationships, hasFts5 = false) {
   // }
 
   // Rebuild FTS indexes if available
-  if (hasFts5) {
-    try {
-      db.exec(`INSERT INTO entities_fts(entities_fts) VALUES('rebuild')`);
-      db.exec(`INSERT INTO entities_trigram(entities_trigram) VALUES('rebuild')`);
-      console.log('  FTS5 indexes rebuilt (porter + trigram)');
-
-      // Best-effort post-build compaction for faster reads.
-      db.exec(`INSERT INTO entities_fts(entities_fts) VALUES('optimize')`);
-      db.exec(`INSERT INTO entities_trigram(entities_trigram) VALUES('optimize')`);
-      console.log('  FTS5 indexes optimized (segments merged)');
-    } catch (err) {
-      // FTS5 rebuild/optimize failed, ignore
-    }
+  if (hasFts5 && syncFts) {
+    rebuildGraphFts(db);
   }
 }
 

@@ -533,11 +533,23 @@ function envFloat(name, dflt) {
   return Number.isFinite(n) && n > 0 ? n : dflt;
 }
 
+// Pure function of `preferred` (static ENTITY_KIND_KEYWORDS table) — memoize
+// the last kind so the per-result demotion loop reuses one Set.
+let _kindKeywordSetKey;
+let _kindKeywordSet;
+function kindKeywordSet(preferred) {
+  if (preferred !== _kindKeywordSetKey) {
+    _kindKeywordSetKey = preferred;
+    _kindKeywordSet = new Set((ENTITY_KIND_KEYWORDS[preferred] || []).map(normalizeType));
+  }
+  return _kindKeywordSet;
+}
+
 function entityKindMultiplier(r, preferred, opts = {}) {
   if (!preferred) return 1;
   const kindBoost = envFloat('SWEET_SEARCH_KIND_BOOST', 1.10);
   const kindDemote = envFloat('SWEET_SEARCH_KIND_DEMOTE', 0.90);
-  const wantSet = new Set((ENTITY_KIND_KEYWORDS[preferred] || []).map(normalizeType));
+  const wantSet = kindKeywordSet(preferred);
   const inferred = resolveEntityKindInfo(r, opts)?.type || '';
   const recorded = normalizeType(resolveResultType(r));
   const type = recorded && recorded !== 'code' && recorded !== 'chunk' ? recorded : normalizeType(inferred);
@@ -550,7 +562,7 @@ function namePrecisionMultiplier(r, preferred, nameHintsLower, opts = {}) {
   if (!preferred || nameHintsLower.size === 0) return 1;
   const exactBoost = envFloat('SWEET_SEARCH_NAME_EXACT_BOOST', 1.10);
   const substrBoost = envFloat('SWEET_SEARCH_NAME_SUBSTR_BOOST', 1.03);
-  const wantSet = new Set((ENTITY_KIND_KEYWORDS[preferred] || []).map(normalizeType));
+  const wantSet = kindKeywordSet(preferred);
   const entityInfo = resolveEntityKindInfo(r, opts);
   const recorded = normalizeType(resolveResultType(r));
   const type = recorded && recorded !== 'code' && recorded !== 'chunk'

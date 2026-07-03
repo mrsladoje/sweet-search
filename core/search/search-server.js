@@ -37,6 +37,8 @@ export const SEARCH_SERVER_MAX_URL_LENGTH = 16_384;
 export const SEARCH_SERVER_MAX_QUERY_LENGTH = 2_000;
 export const SEARCH_SERVER_MAX_READ_PATH_LENGTH = 8_192;
 
+const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
+
 function canonicalProjectRoot(root) {
   const resolved = path.resolve(root || process.cwd());
   try {
@@ -686,7 +688,6 @@ export async function startServer() {
 
       // Agent mode: context packaging (ColGrep agent format)
       const rawFormat = url.searchParams.get('format');
-      const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
       const agentFormat = AGENT_FORMATS.has(rawFormat) ? rawFormat : undefined;
       const tokenBudget = url.searchParams.has('budget')
         ? parseInt(url.searchParams.get('budget'), 10)

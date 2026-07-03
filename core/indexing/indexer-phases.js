@@ -823,20 +823,32 @@ export async function updateIncrementalStatePhase(options = {}) {
     log('\nIncremental state updated', 'green');
   } else if (fullReindex) {
     const hashes = {};
-    for (const file of allFiles) {
-      try {
-        const fullPath = path.join(PROJECT_ROOT, file);
-        const [content, stat] = await Promise.all([
-          fs.readFile(fullPath),
-          fs.stat(fullPath, { bigint: true }).catch(() => null),
-        ]);
-        hashes[file] = {
-          hash: contentHashSync(content),
-          size: stat ? stat.size.toString() : null,
-          mtime_ns: stat ? stat.mtimeNs.toString() : null,
-          inode: stat ? stat.ino.toString() : null,
-        };
-      } catch (e) { /* skip */ }
+    // Batched read+stat (order-preserving assignment — key insertion order,
+    // and therefore the serialized state file, matches the sequential loop).
+    // Mirrors the H6 batching in incremental-tracker.getChangedFiles.
+    const HASH_BATCH = 100;
+    for (let i = 0; i < allFiles.length; i += HASH_BATCH) {
+      const batch = allFiles.slice(i, i + HASH_BATCH);
+      const results = await Promise.all(batch.map(async (file) => {
+        try {
+          const fullPath = path.join(PROJECT_ROOT, file);
+          const [content, stat] = await Promise.all([
+            fs.readFile(fullPath),
+            fs.stat(fullPath, { bigint: true }).catch(() => null),
+          ]);
+          return {
+            hash: contentHashSync(content),
+            size: stat ? stat.size.toString() : null,
+            mtime_ns: stat ? stat.mtimeNs.toString() : null,
+            inode: stat ? stat.ino.toString() : null,
+          };
+        } catch (e) {
+          return null; // skip
+        }
+      }));
+      for (let j = 0; j < batch.length; j++) {
+        if (results[j]) hashes[batch[j]] = results[j];
+      }
     }
     await updateState(hashes, {
       totalChunks: vectorStats.chunks,

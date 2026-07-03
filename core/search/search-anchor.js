@@ -129,7 +129,23 @@ function readUniquenessCeil(opts) {
  * @param {{ filePath: string, startLine: number, endLine: number }} entity
  * @returns {{ id: string, metadata: object, content?: string, text?: string }|null}
  */
-function findChunkForEntity(liIndex, entity) {
+// Bucket the LI documents Map by file in ONE pass, preserving per-file
+// iteration order, so findChunkForEntity scans only entity.filePath's chunks
+// instead of the whole index per entity.
+function bucketDocsByFile(liIndex) {
+  const byFile = new Map();
+  if (!liIndex?.documents) return byFile;
+  for (const [id, doc] of liIndex.documents) {
+    const file = doc?.metadata?.file;
+    if (!file) continue;
+    let arr = byFile.get(file);
+    if (!arr) byFile.set(file, arr = []);
+    arr.push([id, doc]);
+  }
+  return byFile;
+}
+
+function findChunkForEntity(liIndex, entity, docsByFile = null) {
   if (!liIndex || !entity) return null;
   let best = null;
   let bestSize = Infinity;
@@ -145,7 +161,8 @@ function findChunkForEntity(liIndex, entity) {
   let headerBest = null;
   let headerBestSize = Infinity;
   const entityNameLc = String(entity.name || '').toLowerCase();
-  for (const [id, doc] of liIndex.documents) {
+  const candidates = docsByFile ? (docsByFile.get(entity.filePath) || []) : liIndex.documents;
+  for (const [id, doc] of candidates) {
     const m = doc?.metadata;
     if (!m || m.file !== entity.filePath) continue;
     const cs = m.startLine, ce = m.endLine;
@@ -402,10 +419,11 @@ export function injectAnchorCandidates(fused, query, opts = {}) {
   let existingBoosted = 0;
   const out = fused.slice();    // copy — we'll append injections
   const seenInjected = new Set();
+  const docsByFile = bucketDocsByFile(liIndex);
 
   for (const entity of entities) {
     if (!entityMatchesAnchorHint(entity, hints)) continue;
-    const chunk = findChunkForEntity(liIndex, entity);
+    const chunk = findChunkForEntity(liIndex, entity, docsByFile);
     if (!chunk) continue;
     const key = chunkKey({ metadata: chunk.metadata });
     if (seenInjected.has(key)) continue;

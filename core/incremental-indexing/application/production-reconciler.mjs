@@ -34,6 +34,7 @@ import { floatToBinary, normalizedFloatToInt8, truncateForHNSW } from '../../inf
 import { extractSparseGramDeltaRecord } from '../../infrastructure/native-sparse-gram.js';
 import { migrateEntitiesSchema, migrateRelationshipsSchema } from '../infrastructure/schema-migrations.mjs';
 import { readMaintenanceState as readMaintenanceStateFromArtifacts } from '../infrastructure/maintenance-state-reader.mjs';
+import { prepareCached } from '../../infrastructure/db-utils.js';
 
 const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
 const PROCESSING_QUEUE = 'index-maintainer-queue.processing.jsonl';
@@ -270,9 +271,9 @@ async function enrichChunksFromGraph(chunks, stateDir, tickCtx = null) {
     ownConn = true;
   }
   try {
-    const entityStmt = db.prepare('SELECT type, name, start_line, end_line FROM entities WHERE file_path = ? AND epoch_retired IS NULL ORDER BY start_line ASC');
-    const fileEntityStmt = db.prepare('SELECT id FROM entities WHERE file_path = ? AND logical_entity_id = ? AND epoch_retired IS NULL ORDER BY epoch_written DESC LIMIT 1');
-    const importStmt = db.prepare("SELECT DISTINCT target_name FROM relationships WHERE source_id = ? AND type IN ('imports', 'plainImport') AND epoch_retired IS NULL ORDER BY target_name");
+    const entityStmt = prepareCached(db, 'SELECT type, name, start_line, end_line FROM entities WHERE file_path = ? AND epoch_retired IS NULL ORDER BY start_line ASC');
+    const fileEntityStmt = prepareCached(db, 'SELECT id FROM entities WHERE file_path = ? AND logical_entity_id = ? AND epoch_retired IS NULL ORDER BY epoch_written DESC LIMIT 1');
+    const importStmt = prepareCached(db, "SELECT DISTINCT target_name FROM relationships WHERE source_id = ? AND type IN ('imports', 'plainImport') AND epoch_retired IS NULL ORDER BY target_name");
     for (const chunk of chunks) {
       const file = chunk.file || chunk.metadata?.relative_path;
       const symbol = chunk.metadata?.symbol;
@@ -376,6 +377,23 @@ class ProductionReconcileAdapter {
     // when the flag is on; null when disabled.
     this._cutoffCache = null;
     this._cutoffDirty = false;
+    // merkle-state.json is written exactly once per tick (persistManifest);
+    // every other reader gets one shared parse. `undefined` = not read yet,
+    // `null` = missing/corrupt file.
+    this._merkleCache = undefined;
+  }
+
+  /**
+   * Shared read of merkle-state.json — parsed once per adapter lifetime and
+   * invalidated by persistManifest (the only writer). All consumers treat the
+   * object as read-only.
+   * @returns {object|null}
+   */
+  _merkleRead() {
+    if (this._merkleCache === undefined) {
+      this._merkleCache = readJson(path.join(this.stateDir, MERKLE_STATE), null);
+    }
+    return this._merkleCache;
   }
 
   progress(phase) {
@@ -697,7 +715,7 @@ class ProductionReconcileAdapter {
     // dropped if it was never indexed, and retired if it was (so the index
     // converges to a fresh full rebuild). Existence + shape + size are sync;
     // gitignore is ONE batched check over the admissible candidates.
-    const merkle = readJson(path.join(this.stateDir, MERKLE_STATE), { files: {} }).files || {};
+    const merkle = (this._merkleRead() ?? { files: {} }).files || {};
     const info = rels.map((rel) => {
       const abs = path.join(this.projectRoot, rel);
       const exists = fs.existsSync(abs);
@@ -736,7 +754,7 @@ class ProductionReconcileAdapter {
   async hashFile(file) {
     const rel = typeof file === 'string' ? file : file.path;
     const abs = path.join(this.projectRoot, rel);
-    const merkle = readJson(path.join(this.stateDir, MERKLE_STATE), { files: {} });
+    const merkle = this._merkleRead() ?? { files: {} };
     // Deleted on disk, or flagged inadmissible by readDirtySet (a previously
     // indexed file that became excluded/oversized/gitignored): retire it so all
     // tiers tombstone and the merkle entry is dropped.
@@ -784,7 +802,7 @@ class ProductionReconcileAdapter {
       ownConn = true;
     }
     try {
-      const oldRows = db.prepare('SELECT rowid, id, logical_entity_id, signature_hash FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
+      const oldRows = prepareCached(db, 'SELECT rowid, id, logical_entity_id, signature_hash FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
       const oldByLogical = new Map(oldRows.map((r) => [r.logical_entity_id || r.id, r]));
       const oldIds = oldRows.map((r) => r.id);
       const extractor = new GraphExtractor();
@@ -811,7 +829,7 @@ class ProductionReconcileAdapter {
       let tombstone = 0;
       const liveIdFor = new Map();
       const tx = db.transaction(() => {
-        const retireEntity = db.prepare('UPDATE entities SET epoch_retired = ?, stale_since = COALESCE(stale_since, ?) WHERE id = ? AND epoch_retired IS NULL');
+        const retireEntity = prepareCached(db, 'UPDATE entities SET epoch_retired = ?, stale_since = COALESCE(stale_since, ?) WHERE id = ? AND epoch_retired IS NULL');
         const retireRel = oldIds.length > 0
           ? db.prepare(`UPDATE relationships SET epoch_retired = ? WHERE source_id IN (${oldIds.map(() => '?').join(',')}) AND epoch_retired IS NULL`)
           : null;
@@ -913,7 +931,7 @@ class ProductionReconcileAdapter {
           // tier write. The merkle still records the new content hash so the
           // file is not re-queued forever.
           const prevTouched = this.touched.get(rel) || {};
-          const prevChunkIds = readJson(path.join(this.stateDir, MERKLE_STATE), { files: {} }).files?.[rel]?.chunkIds || prevTouched.chunkIds || [];
+          const prevChunkIds = (this._merkleRead() ?? { files: {} }).files?.[rel]?.chunkIds || prevTouched.chunkIds || [];
           this.touched.set(rel, { ...prevTouched, hash: hashes, chunkIds: prevChunkIds, content: hashes.content });
           if (ctx) ctx.persistedFiles.add(rel);
           return {
@@ -1170,7 +1188,7 @@ class ProductionReconcileAdapter {
    * @returns {number}
    */
   _publishedEpoch() {
-    const merkle = readJson(path.join(this.stateDir, MERKLE_STATE), {});
+    const merkle = this._merkleRead() ?? {};
     return Number.isInteger(merkle?.epoch) ? merkle.epoch : -1;
   }
 
@@ -1225,6 +1243,8 @@ class ProductionReconcileAdapter {
     merkle.epoch = manifest.epoch;
     merkle.stats = { ...(merkle.stats || {}), totalFiles: Object.keys(merkle.files).length };
     safeWriteJson(merklePath, merkle);
+    // Invalidate the shared read cache — this is the one merkle writer.
+    this._merkleCache = undefined;
     // E.6: persist the updated chunk-cutoff cache once per tick (after the
     // merkle advances). Best-effort; a failure only costs a redundant re-embed.
     if (this._cutoffCache && this._cutoffDirty) {

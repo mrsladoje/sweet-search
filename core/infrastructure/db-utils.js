@@ -17,6 +17,35 @@ import Database from 'better-sqlite3';
  */
 export const SAFE_IN_CLAUSE_BATCH = 999;
 
+// Per-connection prepared-statement cache. Statements belong to their
+// Database object, so the WeakMap self-invalidates when a connection object
+// is dropped (closed connections are never passed back in by callers).
+// Only use for .get/.all/.run statements — never .iterate (a cached statement
+// mid-iteration cannot be re-entered).
+const _stmtCaches = new WeakMap();
+
+/**
+ * db.prepare with a per-connection cache — compiles each distinct SQL string
+ * once per Database object instead of once per call.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} sql
+ * @returns {import('better-sqlite3').Statement}
+ */
+export function prepareCached(db, sql) {
+  let cache = _stmtCaches.get(db);
+  if (!cache) {
+    cache = new Map();
+    _stmtCaches.set(db, cache);
+  }
+  let stmt = cache.get(sql);
+  if (!stmt) {
+    stmt = db.prepare(sql);
+    cache.set(sql, stmt);
+  }
+  return stmt;
+}
+
 /**
  * Apply read-path PRAGMA optimizations to a read-only database connection.
  *

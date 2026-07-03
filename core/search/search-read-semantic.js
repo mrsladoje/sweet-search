@@ -155,8 +155,7 @@ function _lateInteractionIndexPath(projectRoot, manifest) {
   return path.join(_stateDirForProject(root), path.basename(DB_PATHS.lateInteraction));
 }
 
-function _sourceStaleness(projectRoot, filePathRel) {
-  const manifest = _readReconcileManifest(projectRoot);
+function _sourceStaleness(projectRoot, filePathRel, manifest = _readReconcileManifest(projectRoot)) {
   const publishedMs = Date.parse(manifest?.publishedAt || '');
   if (!Number.isFinite(publishedMs)) return null;
   try {
@@ -178,9 +177,8 @@ function _sourceStaleness(projectRoot, filePathRel) {
 }
 
 const _repos = new Map();
-function _getRepo(projectRoot) {
+function _getRepo(projectRoot, manifest = _readReconcileManifest(projectRoot)) {
   const key = _projectKey(projectRoot);
-  const manifest = _readReconcileManifest(projectRoot);
   const dbPath = _codebasePathForProject(projectRoot, manifest);
   const baseDbPath = _defaultCodebasePathForProject(projectRoot);
   let entry = _repos.get(key);
@@ -202,9 +200,8 @@ let _liIndex = null;
 let _liInitPromise = null;
 let _liProjectKey = null;
 let _liManifestEpoch = null;
-async function _getLateInteractionIndex(projectRoot) {
+async function _getLateInteractionIndex(projectRoot, manifest = _readReconcileManifest(projectRoot)) {
   const projectKey = _projectKey(projectRoot);
-  const manifest = _readReconcileManifest(projectRoot);
   const manifestEpoch = Number.isInteger(manifest?.epoch) ? manifest.epoch : null;
   const samePin = _liProjectKey === projectKey && _liManifestEpoch === manifestEpoch;
   if (_liIndex !== null && samePin) return _liIndex || null;
@@ -331,8 +328,8 @@ function _escapeRegex(s) {
 // Candidate enumeration — load chunk metadata + per-chunk on-disk text slice
 // ---------------------------------------------------------------------------
 
-async function _loadFileChunks(filePathRel, projectRoot) {
-  const repo = _getRepo(projectRoot);
+async function _loadFileChunks(filePathRel, projectRoot, manifest = _readReconcileManifest(projectRoot)) {
+  const repo = _getRepo(projectRoot, manifest);
   if (!repo) return { chunks: [], language: null };
   const rows = repo.getChunksByFilePath(filePathRel);
   if (rows.length === 0) return { chunks: [], language: null };
@@ -445,9 +442,9 @@ function _scoreSymbol(chunks, queryTerms, queryRaw) {
   return scores;
 }
 
-async function _scoreLateInteraction(chunks, query, projectRoot, lateInteractionIndexOverride = null) {
+async function _scoreLateInteraction(chunks, query, projectRoot, lateInteractionIndexOverride = null, manifest = undefined) {
   if (chunks.length === 0) return { scores: new Map(), ran: false };
-  const liIndex = lateInteractionIndexOverride || await _getLateInteractionIndex(projectRoot);
+  const liIndex = lateInteractionIndexOverride || await _getLateInteractionIndex(projectRoot, manifest);
   if (!liIndex) return { scores: new Map(), ran: false };
 
   // Only score chunks whose IDs actually appear in the LI index. Use the
@@ -636,7 +633,10 @@ async function _readSemanticUnpinned(req) {
   const projectRoot = req.projectRoot || process.cwd();
   _ensurePersistedLiModelApplied(projectRoot);
   const filePathRel = _projectRelative(req.path, projectRoot);
-  const staleness = _sourceStaleness(projectRoot, filePathRel);
+  // One manifest read per request — _sourceStaleness/_getRepo/_getLateInteractionIndex
+  // each re-read the same file otherwise (it cannot change mid-request usefully).
+  const reconcileManifest = _readReconcileManifest(projectRoot);
+  const staleness = _sourceStaleness(projectRoot, filePathRel, reconcileManifest);
 
   const topK = req.topK ?? DEFAULTS.topK;
   const threshold = req.threshold ?? DEFAULTS.threshold;
@@ -646,7 +646,7 @@ async function _readSemanticUnpinned(req) {
   const verbose = !!req.verbose;
 
   const tLoad0 = performance.now();
-  const { chunks, language, totalLines, fileText } = await _loadFileChunks(filePathRel, projectRoot);
+  const { chunks, language, totalLines, fileText } = await _loadFileChunks(filePathRel, projectRoot, reconcileManifest);
   const tLoad1 = performance.now();
 
   // No chunks at all → fall back to plain read so the caller still gets
@@ -692,6 +692,7 @@ async function _readSemanticUnpinned(req) {
     req.query,
     projectRoot,
     req._lateInteractionIndex || null,
+    reconcileManifest,
   );
   const tLi1 = performance.now();
 

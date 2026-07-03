@@ -117,12 +117,16 @@ export class FloatVectorStore {
     const idsPath = binPath.replace(/\.bin$/, '.ids.json');
     if (!existsSync(idsPath)) return false;
 
-    // Read binary
+    // Read binary. Large reads return an unpooled Buffer that owns its whole
+    // ArrayBuffer — adopt it directly; only pooled (offset/short) buffers need
+    // the defensive copy.
     const fileBuffer = await readFile(binPath);
-    this.buffer = fileBuffer.buffer.slice(
-      fileBuffer.byteOffset,
-      fileBuffer.byteOffset + fileBuffer.byteLength
-    );
+    this.buffer = (fileBuffer.byteOffset === 0 && fileBuffer.byteLength === fileBuffer.buffer.byteLength)
+      ? fileBuffer.buffer
+      : fileBuffer.buffer.slice(
+        fileBuffer.byteOffset,
+        fileBuffer.byteOffset + fileBuffer.byteLength
+      );
 
     // Parse header
     const header = new DataView(this.buffer, 0, HEADER_SIZE);

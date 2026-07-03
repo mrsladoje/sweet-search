@@ -98,6 +98,23 @@ async function initWasm() {
 // Eager non-blocking init
 initWasm().catch(() => {});
 
+// WASM memory views are cached; both modules declare fixed-size memory (no
+// memory.grow anywhere), so the buffer identity check only fires if that
+// ever changes. Same pattern as _wasmPerTokenLayout.
+function wasmMemView() {
+  if (wasmMem === null || wasmMem.buffer !== wasmExports.memory.buffer) {
+    wasmMem = new Uint8Array(wasmExports.memory.buffer);
+  }
+  return wasmMem;
+}
+
+function maxsimMemView() {
+  if (maxsimMem === null || maxsimMem.buffer !== maxsimExports.memory.buffer) {
+    maxsimMem = new Uint8Array(maxsimExports.memory.buffer);
+  }
+  return maxsimMem;
+}
+
 // =============================================================================
 // POPCOUNT LUT (JS fallback)
 // =============================================================================
@@ -115,10 +132,9 @@ export function wasmHammingDistance(a, b) {
   if (wasmExports) {
     const aPtr = DATA_OFFSET;
     const bPtr = DATA_OFFSET + a.length;
-    // Re-acquire view in case memory grew
-    wasmMem = new Uint8Array(wasmExports.memory.buffer);
-    wasmMem.set(a, aPtr);
-    wasmMem.set(b, bPtr);
+    const mem = wasmMemView();
+    mem.set(a, aPtr);
+    mem.set(b, bPtr);
     return wasmExports.hamming_distance(aPtr, bPtr, a.length);
   }
   // JS fallback
@@ -137,9 +153,9 @@ export function wasmInt8Cosine(a, b) {
   if (wasmExports) {
     const aPtr = DATA_OFFSET;
     const bPtr = DATA_OFFSET + a.length;
-    wasmMem = new Uint8Array(wasmExports.memory.buffer);
-    wasmMem.set(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), aPtr);
-    wasmMem.set(new Uint8Array(b.buffer, b.byteOffset, b.byteLength), bPtr);
+    const mem = wasmMemView();
+    mem.set(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), aPtr);
+    mem.set(new Uint8Array(b.buffer, b.byteOffset, b.byteLength), bPtr);
 
     const dot = wasmExports.int8_dot(aPtr, bPtr, a.length);
     const normA = wasmExports.int8_norm_sq(aPtr, a.length);
@@ -193,18 +209,18 @@ export function wasmInt8BatchDot(query, candidates) {
     const alignedScoresPtr = (scoresPtr + 3) & ~3;
     const needed = alignedScoresPtr + count * 4;
 
-    wasmMem = new Uint8Array(wasmExports.memory.buffer);
-    if (needed > wasmMem.length) {
+    const mem = wasmMemView();
+    if (needed > mem.length) {
       return _jsInt8BatchDot(query, candidates);
     }
 
     // Copy query once
-    wasmMem.set(new Uint8Array(query.buffer, query.byteOffset, query.byteLength), queryPtr);
+    mem.set(new Uint8Array(query.buffer, query.byteOffset, query.byteLength), queryPtr);
 
     // Copy all candidates as contiguous slab
     for (let i = 0; i < count; i++) {
       const v = candidates[i];
-      wasmMem.set(new Uint8Array(v.buffer, v.byteOffset, v.byteLength), slabPtr + i * dim);
+      mem.set(new Uint8Array(v.buffer, v.byteOffset, v.byteLength), slabPtr + i * dim);
     }
 
     // Single WASM call: scores all candidates internally, writes to output buffer
@@ -267,9 +283,9 @@ export function wasmInt8Dot(a, b) {
   if (wasmExports) {
     const aPtr = DATA_OFFSET;
     const bPtr = DATA_OFFSET + a.length;
-    wasmMem = new Uint8Array(wasmExports.memory.buffer);
-    wasmMem.set(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), aPtr);
-    wasmMem.set(new Uint8Array(b.buffer, b.byteOffset, b.byteLength), bPtr);
+    const mem = wasmMemView();
+    mem.set(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), aPtr);
+    mem.set(new Uint8Array(b.buffer, b.byteOffset, b.byteLength), bPtr);
     return wasmExports.int8_dot(aPtr, bPtr, a.length);
   }
   // JS fallback
@@ -290,9 +306,9 @@ export function wasmAsymmetricDistance(docBinary, queryInt4, queryNormScaled) {
   if (wasmExports) {
     const docPtr = DATA_OFFSET;
     const queryPtr = DATA_OFFSET + docBinary.length;
-    wasmMem = new Uint8Array(wasmExports.memory.buffer);
-    wasmMem.set(docBinary, docPtr);
-    wasmMem.set(new Uint8Array(queryInt4.buffer, queryInt4.byteOffset, queryInt4.byteLength), queryPtr);
+    const mem = wasmMemView();
+    mem.set(docBinary, docPtr);
+    mem.set(new Uint8Array(queryInt4.buffer, queryInt4.byteOffset, queryInt4.byteLength), queryPtr);
     return wasmExports.asymmetric_distance(docPtr, queryPtr, queryInt4.length, queryNormScaled);
   }
   // JS fallback
@@ -336,9 +352,7 @@ export function wasmMaxSimF32(queryFlat, docFlat, numQ, numD, dim) {
   if (!maxsimExports?.maxsim_f32) return null;
   const exports = maxsimExports;
 
-  const mem = maxsimExports
-    ? new Uint8Array(maxsimExports.memory.buffer)
-    : (wasmMem = new Uint8Array(wasmExports.memory.buffer));
+  const mem = maxsimMemView();
 
   const qBytes = numQ * dim * 4;
   const dBytes = numD * dim * 4;
@@ -375,7 +389,7 @@ export function wasmMaxSimDequant(queryFlat, docInt8, numQ, numD, dim, min, scal
   const qBytes = numQ * dim * 4; // float32
   const dBytes = numD * dim;     // int8 (4x smaller!)
 
-  const mem = new Uint8Array(maxsimExports.memory.buffer);
+  const mem = maxsimMemView();
   if (qBytes + dBytes + 1024 > mem.length) return null;
 
   const qPtr = DATA_OFFSET;

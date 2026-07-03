@@ -49,8 +49,10 @@ export function loadBitmap(filePath) {
   if (raw.length < expectedLength) {
     throw new Error(`loadBitmap: ${filePath} truncated payload (${raw.length} bytes, expected ${expectedLength})`);
   }
+  // View, not copy: `raw` is otherwise unreferenced, so this only keeps the
+  // 64-byte header alive alongside the payload bytes.
   const payload = raw.subarray(HEADER_RESERVED, HEADER_RESERVED + payloadByteLength(capacity));
-  return { capacity, payload: Buffer.from(payload) };
+  return { capacity, payload };
 }
 
 export function saveBitmap(filePath, bitmap) {

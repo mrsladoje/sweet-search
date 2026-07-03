@@ -8,7 +8,7 @@
  */
 
 import { existsSync, readFileSync } from 'fs';
-import { minimatch } from 'minimatch';
+import { Minimatch } from 'minimatch';
 import { loadProjectConfig } from '../infrastructure/config/index.js';
 
 const MM_OPTS = { dot: true, nocase: false };
@@ -54,6 +54,31 @@ function getExcludes(projectRoot) {
 function resetCache() {
   _excludesByRoot.clear();
   _cachedExtraPatterns = null;
+  _excludeMatchersByRoot.clear();
+  _cachedExtraMatchers = null;
+}
+
+// Precompiled Minimatch instances — `minimatch(p, g, opts)` recompiles the
+// glob to a regex on every call; `new Minimatch(g, opts).match(p)` is the
+// documented equivalent with the compile amortized.
+const _excludeMatchersByRoot = new Map();
+
+function getExcludeMatchers(projectRoot) {
+  const key = projectRoot || '__cwd__';
+  let cached = _excludeMatchersByRoot.get(key);
+  if (cached) return cached;
+  cached = getExcludes(projectRoot)
+    .filter((g) => typeof g === 'string')
+    .map((g) => new Minimatch(g, MM_OPTS));
+  _excludeMatchersByRoot.set(key, cached);
+  return cached;
+}
+
+let _cachedExtraMatchers = null;
+function getExtraMatchers() {
+  if (_cachedExtraMatchers !== null) return _cachedExtraMatchers;
+  _cachedExtraMatchers = loadExtraPatternsFromFile().map((g) => new Minimatch(g, MM_OPTS));
+  return _cachedExtraMatchers;
 }
 
 const GENERATED_MARKERS = [
@@ -87,13 +112,11 @@ function loadExtraPatternsFromFile() {
 export function isExcludedByConfig(filePath, projectRoot) {
   if (!filePath) return false;
   const p = normalizePath(filePath);
-  const excludes = getExcludes(projectRoot);
-  for (const g of excludes) {
-    if (typeof g === 'string' && minimatch(p, g, MM_OPTS)) return true;
+  for (const m of getExcludeMatchers(projectRoot)) {
+    if (m.match(p)) return true;
   }
-  const extras = loadExtraPatternsFromFile();
-  for (const g of extras) {
-    if (minimatch(p, g, MM_OPTS)) return true;
+  for (const m of getExtraMatchers()) {
+    if (m.match(p)) return true;
   }
   return false;
 }

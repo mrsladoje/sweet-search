@@ -22,6 +22,14 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use rayon::prelude::*;
 
+/// Bit-reinterpret a byte buffer as i8 in one memcpy (u8→i8 `as` casts are
+/// lossless, so this matches `.iter().map(|&b| b as i8).collect()` exactly).
+fn bytes_to_i8_vec(bytes: &[u8]) -> Vec<i8> {
+    // SAFETY: u8 and i8 have identical size/alignment; the value mapping of
+    // `u8 as i8` is the same bit pattern this reinterpret produces.
+    unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const i8, bytes.len()) }.to_vec()
+}
+
 /// Compute MaxSim score for one candidate.
 /// query_norms[qi] = pre-computed L2 norm of query token qi.
 fn maxsim_one(
@@ -181,7 +189,7 @@ pub fn maxsim_score_batch(
     let cand_data: Vec<(Vec<i8>, usize, usize, f32, f32)> = candidates
         .iter()
         .map(|c| {
-            let int8: Vec<i8> = c.tokens.iter().map(|&b| b as i8).collect();
+            let int8: Vec<i8> = bytes_to_i8_vec(&c.tokens);
             (
                 int8,
                 c.num_tokens as usize,
@@ -271,7 +279,7 @@ pub fn maxsim_score_batch_pertoken(
     let cand_data: Vec<(Vec<i8>, Vec<f32>, Vec<f32>, Vec<f32>, usize, usize)> = candidates
         .iter()
         .map(|c| {
-            let int8: Vec<i8> = c.tokens.iter().map(|&b| b as i8).collect();
+            let int8: Vec<i8> = bytes_to_i8_vec(&c.tokens);
             let mins: Vec<f32> = c.min_array.as_ref().to_vec();
             let scales: Vec<f32> = c.scale_array.as_ref().to_vec();
             let norms: Vec<f32> = c.token_norms.as_ref().to_vec();

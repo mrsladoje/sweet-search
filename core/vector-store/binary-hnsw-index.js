@@ -236,6 +236,11 @@ export class BinaryHNSWIndex {
 
     // Pre-allocated visited list (generation-stamped, reused across searches)
     this._visitedList = new VisitedList(this.maxElements);
+    // Pooled search heaps — searchLayer/searchLayerQuery are synchronous and
+    // never re-entered, so one pair (auto-growing) serves all calls. Same
+    // single-flight contract as _visitedList.
+    this._candHeap = new TypedMinHeap(64);
+    this._resHeap = new TypedMaxHeap(64);
 
     // Asymmetric binary quantization calibration data
     this.centroid = null;       // Float32Array — dataset centroid
@@ -652,11 +657,13 @@ export class BinaryHNSWIndex {
     const startDist = hammingDistance(this.vectors[startNode].binary, targetBinary);
 
     // candidates = min-heap (explore closest first)
-    const candidates = new TypedMinHeap(ef * 4);
+    const candidates = this._candHeap;
+    candidates.clear();
     candidates.insert(startNode, startDist);
 
     // results = max-heap of size ef (peek furthest, replaceMax when closer found)
-    const results = new TypedMaxHeap(ef + 1);
+    const results = this._resHeap;
+    results.clear();
     results.insert(startNode, startDist);
 
     while (candidates.size > 0) {
@@ -894,8 +901,10 @@ export class BinaryHNSWIndex {
     visited.mark(startNode);
 
     const startDist = hammingDistance(this.vectors[startNode].binary, queryBinary);
-    const candidates = new TypedMinHeap(ef * 4);
-    const results = new TypedMaxHeap(ef + 1);
+    const candidates = this._candHeap;
+    candidates.clear();
+    const results = this._resHeap;
+    results.clear();
     candidates.insert(startNode, startDist);
     results.insert(startNode, startDist);
 

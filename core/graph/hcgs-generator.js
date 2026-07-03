@@ -428,9 +428,10 @@ async function generateSummariesForEntities(entityIds, options = {}) {
     const dbWrite = new Database(dbPath);
     const stmt = dbWrite.prepare(`UPDATE entities SET summary = NULL WHERE id = ?`);
 
-    for (const entity of entities) {
-      stmt.run(entity.id);
-    }
+    const clearSummaries = dbWrite.transaction((rows) => {
+      for (const entity of rows) stmt.run(entity.id);
+    });
+    clearSummaries(entities);
 
     dbWrite.close();
 

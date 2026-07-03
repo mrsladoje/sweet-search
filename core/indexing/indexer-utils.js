@@ -395,16 +395,22 @@ export async function discoverFiles(options = {}) {
 
   const files = [];
   let oversized = 0;
-  for (const file of allFiles) {
-    try {
-      const stat = await fs.stat(path.join(projectRoot, file));
+  // Stat in batches (order-preserving) instead of one serialized await per
+  // file; results are consumed in the original allFiles order.
+  const STAT_BATCH = 200;
+  for (let i = 0; i < allFiles.length; i += STAT_BATCH) {
+    const batch = allFiles.slice(i, i + STAT_BATCH);
+    const stats = await Promise.all(
+      batch.map((file) => fs.stat(path.join(projectRoot, file)).catch(() => null)),
+    );
+    for (let j = 0; j < batch.length; j++) {
+      const stat = stats[j];
+      if (!stat) continue; // File disappeared between glob and stat
       if (stat.size > maxFileSize) {
         oversized++;
       } else {
-        files.push(file);
+        files.push(batch[j]);
       }
-    } catch {
-      // File disappeared between glob and stat
     }
   }
 
