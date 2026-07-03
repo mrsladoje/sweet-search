@@ -15,7 +15,7 @@ import { existsSync, createWriteStream, createReadStream, statSync } from 'fs';
 import readline from 'readline';
 import path from 'path';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
-import { wasmMaxSimF32, wasmMaxSimDequantPerToken, wasmMaxSimDequant4Bit, nativeMaxSimBatch, nativeMaxSimBatchPerToken, nativeMaxSimBatch4Bit, initWasm, isNativeMaxSimAvailable, isNativePerTokenAvailable, isNative4BitAvailable } from '../infrastructure/simd-distance.js';
+import { wasmMaxSimF32, wasmMaxSimDequantPerToken, wasmMaxSimDequant4Bit, wasmMaxSimPrepareQuery, nativeMaxSimBatch, nativeMaxSimBatchPerToken, nativeMaxSimBatch4Bit, initWasm, isNativeMaxSimAvailable, isNativePerTokenAvailable, isNative4BitAvailable } from '../infrastructure/simd-distance.js';
 import { fastRotate, generateSignVector, calibrateWUSH, wushRotate } from '../infrastructure/quantization.js';
 import { poolTokens } from './late-interaction-model.js';
 import { loadBitmap, isSet } from '../infrastructure/tombstone-bitmap-reader.js';
@@ -1281,6 +1281,21 @@ export class LateInteractionIndex {
   }
 
   _loadSegmentStaleBitmap(segmentPath) {
+    // Per-query memo: scoreWithLateInteraction checks the same segment 2-3×
+    // per candidate, and each uncached check costs a statSync. Within one
+    // scoring pass a single freshness check per segment is equivalent — a
+    // tombstone landing mid-pass races identically either way.
+    const memo = this._staleQueryMemo;
+    if (memo) {
+      if (memo.has(segmentPath)) return memo.get(segmentPath);
+      const bitmap = this._loadSegmentStaleBitmapUncached(segmentPath);
+      memo.set(segmentPath, bitmap);
+      return bitmap;
+    }
+    return this._loadSegmentStaleBitmapUncached(segmentPath);
+  }
+
+  _loadSegmentStaleBitmapUncached(segmentPath) {
     const sidecarPath = segmentPath + '.stale.bin';
     let stat;
     try {
@@ -1581,6 +1596,12 @@ export class LateInteractionIndex {
     // don't support importance weighting, so we must use the JS-tier weighted path.
     const nativeScored = new Set();
 
+    // One tombstone freshness check (statSync) per segment for this scoring
+    // pass; cleared after the synchronous scoring loops below. An exception
+    // path can leave it set — the next pass overwrites it, and staleness is
+    // bounded by one scoring pass either way.
+    this._staleQueryMemo = new Map();
+
     // Resolve a doc-lookup ID for each candidate. Graph-expanded candidates
     // carry `_liChunkId` (a chunk id pointing into the LI index) while their
     // public `id` is the entity id from the code graph. Honouring _liChunkId
@@ -1632,6 +1653,11 @@ export class LateInteractionIndex {
 
     // Tier 2 & 3: WASM fused dequant or JS fallback for candidates not scored natively.
     // Try WASM fused kernels first (avoids JS-side dequant), fall back to JS dequant + wasmMaxSimF32.
+    // Stage the query bytes in WASM memory once — per-candidate calls below
+    // skip the redundant Q×dim×4 query memcpy when the session id matches.
+    const wasmQuerySession = (useFlatPath && !this.useTokenWeights)
+      ? wasmMaxSimPrepareQuery(queryFlat, effectiveQueryTokens.length, scoringDim)
+      : 0;
     for (const candidate of toScore) {
       if (nativeScored.has(candidate.id)) continue;
       const docId = lookupDocIdOf(candidate);
@@ -1649,7 +1675,7 @@ export class LateInteractionIndex {
           if (doc.quantBits === 4 && doc.minArray && doc.tokenNorms) {
             const wasmScore = wasmMaxSimDequant4Bit(
               queryFlat, doc.tokens, doc.minArray, doc.scaleArray, doc.tokenNorms,
-              effectiveQueryTokens.length, doc.numTokens, doc.dim,
+              effectiveQueryTokens.length, doc.numTokens, doc.dim, wasmQuerySession,
             );
             if (wasmScore !== null) { pushScored(candidate, wasmScore); continue; }
           }
@@ -1658,7 +1684,7 @@ export class LateInteractionIndex {
           if (doc.minArray && doc.tokenNorms && doc.quantBits !== 4) {
             const wasmScore = wasmMaxSimDequantPerToken(
               queryFlat, doc.tokens, doc.minArray, doc.scaleArray, doc.tokenNorms,
-              effectiveQueryTokens.length, doc.numTokens, doc.dim,
+              effectiveQueryTokens.length, doc.numTokens, doc.dim, wasmQuerySession,
             );
             if (wasmScore !== null) { pushScored(candidate, wasmScore); continue; }
           }
@@ -1692,6 +1718,8 @@ export class LateInteractionIndex {
         }
       }
     }
+
+    this._staleQueryMemo = null;
 
     for (const candidate of pruned) pushFallback(candidate, { _pruned: true });
 

@@ -403,9 +403,35 @@ export function wasmMaxSimDequant(queryFlat, docInt8, numQ, numD, dim, min, scal
   return maxsimExports.maxsim_dequant(qPtr, dPtr, numQ, numD, dim, min, scale);
 }
 
+// Query-copy-once session for per-candidate WASM MaxSim loops.
+//
+// The query lives at the fixed offset DATA_OFFSET, so within one query the
+// caller prepares it once and each per-candidate call skips the Q×dim×4-byte
+// memcpy. The query Float32Array's identity is NOT a safe cache key — callers
+// pool and mutate that buffer across queries — hence an explicit session id
+// that the caller must re-obtain per query.
+let _wasmQuerySession = 0;
+let _wasmQueryPrepared = null; // { session, qBytes, memBuffer }
+
+export function wasmMaxSimPrepareQuery(queryFlat, numQ, dim) {
+  if (!maxsimExports) return 0;
+  const qBytes = numQ * dim * 4;
+  if (!maxsimMem || maxsimMem.buffer !== maxsimExports.memory.buffer) {
+    maxsimMem = new Uint8Array(maxsimExports.memory.buffer);
+  }
+  if (qBytes + 1024 > maxsimMem.length) return 0;
+  maxsimMem.set(new Uint8Array(queryFlat.buffer, queryFlat.byteOffset, qBytes), DATA_OFFSET);
+  _wasmQuerySession += 1;
+  _wasmQueryPrepared = { session: _wasmQuerySession, qBytes, memBuffer: maxsimExports.memory.buffer };
+  return _wasmQuerySession;
+}
+
 // Shared layout: copy query + doc + per-token params into WASM memory, return pointers.
 // Returns null if data doesn't fit in WASM memory.
-function _wasmPerTokenLayout(queryFlat, docData, minArray, scaleArray, tokenNorms, numQ, numD, dim, dBytes) {
+// A live `querySession` from wasmMaxSimPrepareQuery (matching qBytes and
+// memory buffer) means the query bytes already sit at DATA_OFFSET, so the
+// query memcpy is skipped.
+function _wasmPerTokenLayout(queryFlat, docData, minArray, scaleArray, tokenNorms, numQ, numD, dim, dBytes, querySession) {
   const qBytes = numQ * dim * 4;
   const paramBytes = numD * 4 * 3;
   if (!maxsimMem || maxsimMem.buffer !== maxsimExports.memory.buffer) {
@@ -419,7 +445,14 @@ function _wasmPerTokenLayout(queryFlat, docData, minArray, scaleArray, tokenNorm
   const scalePtr = minPtr + numD * 4;
   const normPtr = scalePtr + numD * 4;
 
-  maxsimMem.set(new Uint8Array(queryFlat.buffer, queryFlat.byteOffset, qBytes), qPtr);
+  const queryAlreadyPlaced = querySession
+    && _wasmQueryPrepared
+    && _wasmQueryPrepared.session === querySession
+    && _wasmQueryPrepared.qBytes === qBytes
+    && _wasmQueryPrepared.memBuffer === maxsimExports.memory.buffer;
+  if (!queryAlreadyPlaced) {
+    maxsimMem.set(new Uint8Array(queryFlat.buffer, queryFlat.byteOffset, qBytes), qPtr);
+  }
   maxsimMem.set(new Uint8Array(docData.buffer, docData.byteOffset, dBytes), dPtr);
   maxsimMem.set(new Uint8Array(minArray.buffer, minArray.byteOffset, numD * 4), minPtr);
   maxsimMem.set(new Uint8Array(scaleArray.buffer, scaleArray.byteOffset, numD * 4), scalePtr);
@@ -428,16 +461,16 @@ function _wasmPerTokenLayout(queryFlat, docData, minArray, scaleArray, tokenNorm
   return { qPtr, dPtr, minPtr, scalePtr, normPtr };
 }
 
-export function wasmMaxSimDequantPerToken(queryFlat, docInt8, minArray, scaleArray, tokenNorms, numQ, numD, dim) {
+export function wasmMaxSimDequantPerToken(queryFlat, docInt8, minArray, scaleArray, tokenNorms, numQ, numD, dim, querySession) {
   if (!maxsimExports?.maxsim_dequant_pertoken) return null;
-  const ptrs = _wasmPerTokenLayout(queryFlat, docInt8, minArray, scaleArray, tokenNorms, numQ, numD, dim, numD * dim);
+  const ptrs = _wasmPerTokenLayout(queryFlat, docInt8, minArray, scaleArray, tokenNorms, numQ, numD, dim, numD * dim, querySession);
   if (!ptrs) return null;
   return maxsimExports.maxsim_dequant_pertoken(ptrs.qPtr, ptrs.dPtr, ptrs.minPtr, ptrs.scalePtr, ptrs.normPtr, numQ, numD, dim);
 }
 
-export function wasmMaxSimDequant4Bit(queryFlat, docPacked, minArray, scaleArray, tokenNorms, numQ, numD, dim) {
+export function wasmMaxSimDequant4Bit(queryFlat, docPacked, minArray, scaleArray, tokenNorms, numQ, numD, dim, querySession) {
   if (!maxsimExports?.maxsim_dequant_4bit) return null;
-  const ptrs = _wasmPerTokenLayout(queryFlat, docPacked, minArray, scaleArray, tokenNorms, numQ, numD, dim, numD * Math.ceil(dim / 2));
+  const ptrs = _wasmPerTokenLayout(queryFlat, docPacked, minArray, scaleArray, tokenNorms, numQ, numD, dim, numD * Math.ceil(dim / 2), querySession);
   if (!ptrs) return null;
   return maxsimExports.maxsim_dequant_4bit(ptrs.qPtr, ptrs.dPtr, ptrs.minPtr, ptrs.scalePtr, ptrs.normPtr, numQ, numD, dim);
 }
