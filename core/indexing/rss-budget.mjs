@@ -112,6 +112,71 @@ export function isOverBudget(totalRssBytes, budgetBytesValue) {
   );
 }
 
+// =============================================================================
+// D.5: per-process maintainer RSS recycle ceiling
+// =============================================================================
+//
+// The fleet budget above evicts the longest-IDLE daemon, so a single fat
+// ACTIVE maintainer can legitimately ride up to the whole fleet budget
+// (~76 GB on a 128 GB host) — measured in the wild when a session-config
+// regression left the LI ORT session on the foreground arena profile
+// (354 × 128MB arena extensions ≈ 34 GB RSS). This ceiling is the
+// per-process backstop: when the maintainer's OWN rss crosses the line at a
+// tick boundary, it requests the same graceful shutdown the idle-TTL uses
+// (finish tick, publish, release lock, exit). The O_EXCL launch trigger
+// respawns a fresh few-hundred-MB process on the next dirty event, so the
+// index is unchanged — exit-to-reclaim is already the sanctioned way to
+// return ORT memory (#25325).
+//
+// Guards against restart-thrash:
+//   - at least one COMPLETED tick (never abort startup work),
+//   - minimum uptime (default 10 min ⇒ worst case 6 recycles/hour even when
+//     the ceiling is misconfigured below the resident floor — visible via
+//     the per-recycle WARN, which names the env knob to raise).
+//
+// Measured anchors (2026-07-03, arena-off profile): steady floor ~2.7-2.9 GB
+// on a mid-size repo, encode-active peaks ~4.7 GB — hence the 4 GiB default
+// floor and 8 GiB cap.
+
+const MAINTAINER_RSS_CEILING_FRACTION = 0.25;
+const MAINTAINER_RSS_CEILING_MIN_BYTES = 4 * 1024 * 1024 * 1024;  // 4 GiB
+const MAINTAINER_RSS_CEILING_MAX_BYTES = 8 * 1024 * 1024 * 1024;  // 8 GiB
+const MAINTAINER_RSS_MIN_UPTIME_MS_DEFAULT = 10 * 60 * 1000;      // 10 min
+
+/**
+ * Resolve the per-process maintainer RSS ceiling in bytes.
+ * `SWEET_SEARCH_MAINTAINER_RSS_MAX_MB` set: explicit MB value; 0/garbage
+ * disables (returns 0). Unset: clamp(25% of RAM, 4 GiB, 8 GiB).
+ */
+export function maintainerRssCeilingBytes(env = process.env, totalMem = os.totalmem()) {
+  const raw = env.SWEET_SEARCH_MAINTAINER_RSS_MAX_MB;
+  if (raw != null && raw !== '') {
+    const mb = Number(raw);
+    if (!Number.isFinite(mb) || mb <= 0) return 0;
+    return Math.floor(mb * 1024 * 1024);
+  }
+  const scaled = Math.floor(totalMem * MAINTAINER_RSS_CEILING_FRACTION);
+  return Math.min(MAINTAINER_RSS_CEILING_MAX_BYTES, Math.max(MAINTAINER_RSS_CEILING_MIN_BYTES, scaled));
+}
+
+/** Minimum uptime before an RSS recycle may fire. */
+export function maintainerRssMinUptimeMs(env = process.env) {
+  const raw = Number(env.SWEET_SEARCH_MAINTAINER_RSS_MIN_UPTIME_MS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : MAINTAINER_RSS_MIN_UPTIME_MS_DEFAULT;
+}
+
+/**
+ * Pure recycle decision — evaluated at tick boundaries only.
+ * @returns {{recycle: boolean, reason: string}}
+ */
+export function shouldRecycleForRss({ rssBytes, ceilingBytes, uptimeMs, minUptimeMs, ticksCompleted }) {
+  if (!Number.isFinite(ceilingBytes) || ceilingBytes <= 0) return { recycle: false, reason: 'disabled' };
+  if (!Number.isFinite(rssBytes) || rssBytes <= ceilingBytes) return { recycle: false, reason: 'under-ceiling' };
+  if (!(ticksCompleted >= 1)) return { recycle: false, reason: 'no-completed-tick' };
+  if (!(uptimeMs >= minUptimeMs)) return { recycle: false, reason: 'min-uptime' };
+  return { recycle: true, reason: 'over-ceiling' };
+}
+
 /**
  * Read the resident-set size (bytes) of an arbitrary pid, best-effort and
  * cross-platform. Returns a non-negative integer, or 0 when unknown (dead pid,

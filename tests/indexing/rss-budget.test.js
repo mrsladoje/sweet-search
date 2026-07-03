@@ -317,3 +317,86 @@ describe('registerDaemon (the index-maintainer.mjs seam)', () => {
     await handle.unregister();
   });
 });
+
+// =============================================================================
+// D.5: per-process maintainer RSS recycle ceiling
+// =============================================================================
+
+import {
+  maintainerRssCeilingBytes,
+  maintainerRssMinUptimeMs,
+  shouldRecycleForRss,
+} from '../../core/indexing/rss-budget.mjs';
+
+const GiB = 1024 ** 3;
+
+describe('maintainerRssCeilingBytes (D.5 config resolution)', () => {
+  it('explicit env MB wins over the tier default', () => {
+    expect(maintainerRssCeilingBytes({ SWEET_SEARCH_MAINTAINER_RSS_MAX_MB: '1500' }, 128 * GiB))
+      .toBe(1500 * 1024 * 1024);
+  });
+
+  it('0 / negative / garbage env disables (returns 0)', () => {
+    expect(maintainerRssCeilingBytes({ SWEET_SEARCH_MAINTAINER_RSS_MAX_MB: '0' }, 128 * GiB)).toBe(0);
+    expect(maintainerRssCeilingBytes({ SWEET_SEARCH_MAINTAINER_RSS_MAX_MB: '-5' }, 128 * GiB)).toBe(0);
+    expect(maintainerRssCeilingBytes({ SWEET_SEARCH_MAINTAINER_RSS_MAX_MB: 'abc' }, 128 * GiB)).toBe(0);
+  });
+
+  it('unset → clamp(25% of RAM, 4 GiB, 8 GiB)', () => {
+    expect(maintainerRssCeilingBytes({}, 8 * GiB)).toBe(4 * GiB);    // 25% = 2 GiB → floor 4 GiB
+    expect(maintainerRssCeilingBytes({}, 16 * GiB)).toBe(4 * GiB);   // 25% = 4 GiB → at floor
+    expect(maintainerRssCeilingBytes({}, 24 * GiB)).toBe(6 * GiB);   // 25% = 6 GiB → in band
+    expect(maintainerRssCeilingBytes({}, 32 * GiB)).toBe(8 * GiB);   // 25% = 8 GiB → at cap
+    expect(maintainerRssCeilingBytes({}, 128 * GiB)).toBe(8 * GiB);  // 25% = 32 GiB → cap 8 GiB
+  });
+
+  it('empty-string env falls through to the tier default (matches fleet-gate convention)', () => {
+    expect(maintainerRssCeilingBytes({ SWEET_SEARCH_MAINTAINER_RSS_MAX_MB: '' }, 128 * GiB)).toBe(8 * GiB);
+  });
+});
+
+describe('maintainerRssMinUptimeMs', () => {
+  it('defaults to 10 minutes', () => {
+    expect(maintainerRssMinUptimeMs({})).toBe(600_000);
+  });
+  it('honours the env override, including 0', () => {
+    expect(maintainerRssMinUptimeMs({ SWEET_SEARCH_MAINTAINER_RSS_MIN_UPTIME_MS: '60000' })).toBe(60_000);
+    expect(maintainerRssMinUptimeMs({ SWEET_SEARCH_MAINTAINER_RSS_MIN_UPTIME_MS: '0' })).toBe(0);
+    expect(maintainerRssMinUptimeMs({ SWEET_SEARCH_MAINTAINER_RSS_MIN_UPTIME_MS: 'junk' })).toBe(600_000);
+  });
+});
+
+describe('shouldRecycleForRss (pure decision)', () => {
+  const base = {
+    rssBytes: 9 * GiB,
+    ceilingBytes: 8 * GiB,
+    uptimeMs: 3_600_000,
+    minUptimeMs: 600_000,
+    ticksCompleted: 5,
+  };
+
+  it('recycles when over ceiling with a completed tick and min uptime', () => {
+    expect(shouldRecycleForRss(base)).toEqual({ recycle: true, reason: 'over-ceiling' });
+  });
+
+  it('never recycles when disabled (ceiling 0 / NaN)', () => {
+    expect(shouldRecycleForRss({ ...base, ceilingBytes: 0 }).recycle).toBe(false);
+    expect(shouldRecycleForRss({ ...base, ceilingBytes: NaN }).recycle).toBe(false);
+  });
+
+  it('never recycles under or at the ceiling', () => {
+    expect(shouldRecycleForRss({ ...base, rssBytes: 8 * GiB }).recycle).toBe(false);
+    expect(shouldRecycleForRss({ ...base, rssBytes: 1 * GiB }).recycle).toBe(false);
+    expect(shouldRecycleForRss({ ...base, rssBytes: NaN }).recycle).toBe(false);
+  });
+
+  it('waits for the first completed tick (never aborts startup work)', () => {
+    expect(shouldRecycleForRss({ ...base, ticksCompleted: 0 })).toEqual({ recycle: false, reason: 'no-completed-tick' });
+    expect(shouldRecycleForRss({ ...base, ticksCompleted: undefined }).recycle).toBe(false);
+  });
+
+  it('respects the minimum-uptime thrash guard', () => {
+    expect(shouldRecycleForRss({ ...base, uptimeMs: 599_999 })).toEqual({ recycle: false, reason: 'min-uptime' });
+    expect(shouldRecycleForRss({ ...base, uptimeMs: 600_000 }).recycle).toBe(true);
+  });
+});
