@@ -2520,6 +2520,11 @@ async function main() {
   const dryRun = process.argv.includes('--dry-run');
   const merkleOnce = process.argv.includes('--merkle-once');
 
+  // Name the resident daemon so ps/Activity Monitor shows what it is instead
+  // of an anonymous `node`. Cosmetic-only: all liveness/takeover checks are
+  // lock/pid-based, never command-line matching.
+  try { process.title = 'sweet-search-maintainer'; } catch { /* best-effort */ }
+
   // A.1 (Tier-1, UNGATED): demote the maintainer daemon to low OS priority so
   // the foreground (editor / git / shell) never feels the background indexer's
   // CPU. Identical index output — only *when* CPU is granted changes. Covers

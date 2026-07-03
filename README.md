@@ -711,6 +711,21 @@ without you ever running a command.
 - **Resource-polite:** ticks are budgeted (≤50 files / ≤2 s CPU per tick), run CPU-only (the GPU is reserved for cold full indexing), and the interval auto-tunes from load average, churn, and backlog.
 - `sweet-search reconcile status` / `reconcile inspect <path>` explain exactly what the daemon thinks and why. Opt out any time with `SWEET_SEARCH_RECONCILE_V2=0`.
 
+**Memory controls.** The resident daemons show up in `ps` / Activity Monitor as
+`sweet-search-maintainer` and `sweet-search-daemon`. A maintainer's steady state is
+roughly 2–3 GB (embedding + late-interaction models stay loaded so ticks are fast),
+and four independent mechanisms keep that bounded:
+
+| Mechanism | Default | Override |
+|-----------|---------|----------|
+| Background ORT profile (arena-off + parked threads) in the maintainer | on | `SWEET_SEARCH_ORT_BACKGROUND=0` |
+| Per-process recycle ceiling — the maintainer finishes its tick, exits cleanly, and respawns fresh on the next edit when its RSS crosses the line | clamp(25 % of RAM, 4 GiB, 8 GiB) | `SWEET_SEARCH_MAINTAINER_RSS_MAX_MB` (0 disables) |
+| Idle TTL — unattended daemons shut down and respawn on demand | tier-aware | `SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS` / `SWEET_SEARCH_DAEMON_IDLE_TTL_MS` |
+| Fleet RSS budget — across all repos' daemons, the longest-idle one is evicted when the sum crosses a RAM-scaled budget | tier-aware | `SWEET_SEARCH_RSS_BUDGET_FRACTION` |
+
+A recycle or eviction never touches index state: every tick publishes atomically
+before the process exits, and the next edit (or query) respawns a fresh daemon.
+
 </details>
 
 ## 🦀 The Native Engine Room

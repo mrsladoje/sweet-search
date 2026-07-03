@@ -94,6 +94,13 @@ if (args[0] === 'init') {
     await runIndexer();
   }
 } else if (args[0] === '--serve' || args[0] === '--stop') {
+  // Name the resident daemon so ps/Activity Monitor shows what it is instead
+  // of an anonymous `node`. Entrypoint-scoped: library consumers of the
+  // search modules are never retitled. Liveness checks are lock/pid-based,
+  // never command-line matching, so this is cosmetic-only.
+  if (args[0] === '--serve') {
+    try { process.title = 'sweet-search-daemon'; } catch { /* best-effort */ }
+  }
   // Warm search server lifecycle is implemented in JS.
   const { runCli } = await import('./search/index.js');
   await runCli(args);
