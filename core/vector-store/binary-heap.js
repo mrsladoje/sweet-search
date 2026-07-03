@@ -164,11 +164,20 @@ export class TypedMaxHeap {
     }
   }
 
-  // Drain heap into sorted array (ascending by distance). Destructive.
+  // Drain heap into sorted order (ascending by distance). Destructive.
+  // The returned keys/vals are POOLED buffers reused by the next drain —
+  // callers must consume (or copy) them before draining again. Both call
+  // sites (searchLayer/searchLayerQuery) box the entries immediately, so
+  // this removes two typed-array allocations per query / per insert-level.
   drainSorted() {
     const n = this.size;
-    const resultKeys = new Uint32Array(n);
-    const resultVals = new Uint32Array(n);
+    if (!this._drainKeys || this._drainKeys.length < n) {
+      const cap = Math.max(64, n);
+      this._drainKeys = new Uint32Array(cap);
+      this._drainVals = new Uint32Array(cap);
+    }
+    const resultKeys = this._drainKeys;
+    const resultVals = this._drainVals;
     // Extract max repeatedly → fills from end → ascending order
     for (let i = n - 1; i >= 0; i--) {
       resultKeys[i] = this.keys[0];
