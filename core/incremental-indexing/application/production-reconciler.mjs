@@ -419,7 +419,7 @@ class ProductionReconcileAdapter {
       applyGraphDelta: (file, hashes, epoch, ctx) => this.applyGraphDelta(file, hashes, epoch, ctx),
       applyVectorDelta: (file, chunks, hashes, epoch, ctx) => this.applyVectorDelta(file, chunks, hashes, epoch, ctx),
       applyBinaryHNSWDelta: (file, ops, epoch, ctx) => this.applyBinaryHNSWDelta(file, ops, epoch, ctx),
-      applyLIDelta: (file, ops, epoch) => this.applyLIDelta(file, ops, epoch),
+      applyLIDelta: (file, ops, epoch, ctx) => this.applyLIDelta(file, ops, ctx),
       applySparseGramDelta: (file, ops, epoch) => this.applySparseGramDelta(file, ops, epoch),
       readMaintenanceState: () => this.readMaintenanceState(),
       scheduleMaintenance: (job) => enqueueMaintenanceJob(this.stateDir, job),
@@ -1157,7 +1157,7 @@ class ProductionReconcileAdapter {
     return { ops: { binary_hnsw_append: append, binary_hnsw_tombstone: tombstone }, manifest: { path: 'codebase-binary-hnsw.idx' } };
   }
 
-  async applyLIDelta(file, ops) {
+  async applyLIDelta(file, ops, ctx = null) {
     if (!Array.isArray(ops) || ops.length === 0) return { ops: { li_segment_append: 0, li_tombstone: 0 } };
     // LI generated-content parity: full indexing's buildLateInteractionIndex runs
     // applyIndexingChunkPolicy so @generated / config-excluded files never reach
@@ -1170,12 +1170,21 @@ class ProductionReconcileAdapter {
       ? ops.filter((op) => !(op.addId && op.chunk))
       : ops;
     const { applyLateInteractionDelta } = await import('./production-li-delta.mjs');
+    // E.1-LI: tick-scoped READER cache. The per-file delta previously paid a
+    // full loadExisting init (segment manifest + doc positions over a multi-
+    // hundred-MB index) once per file; within one tick the reader view it
+    // needs is stable (per-file ops only reference the file's own pre-tick
+    // docs, appendGrowingSegment re-reads the manifest from disk, and segment
+    // compaction only runs in maintenance after the tick). Null ctx (per-file
+    // path) ⇒ fresh load per file, exactly as before.
+    const readerCache = ctx ? (ctx._liReaderCache ??= { key: null, index: null }) : null;
     const { appended, tombstone } = await applyLateInteractionDelta({
       indexPath: path.join(this.stateDir, 'codebase-late-interaction.db'),
       ops: filteredOps,
       liEncoder: this.liEncoder,
       pickLiInput,
       onProgress: () => this.progress('production:li-delta'),
+      readerCache,
     });
     return { ops: { li_segment_append: appended, li_tombstone: tombstone }, manifest: { path: 'codebase-late-interaction.db', segments: 'codebase-late-interaction.db.segments/manifest.json' } };
   }

@@ -461,7 +461,7 @@ export class Reconciler {
     if (bin?.ops?.binary_hnsw_append != null) ops.binary_hnsw_append = bin.ops.binary_hnsw_append;
     if (bin?.ops?.binary_hnsw_tombstone != null) ops.binary_hnsw_tombstone = bin.ops.binary_hnsw_tombstone;
     this.progress('reconciler:li:start');
-    const li = await this.adapters.applyLIDelta?.(file, vec?.tokenOps ?? [], epoch);
+    const li = await this.adapters.applyLIDelta?.(file, vec?.tokenOps ?? [], epoch, tickCtx);
     this.progress('reconciler:li:done');
     collectManifestTier(manifestTiers, 'lateInteraction', li);
     if (li?.ops?.li_segment_append != null) ops.li_segment_append = li.ops.li_segment_append;
