@@ -12,6 +12,7 @@
 
 import fs from 'fs/promises';
 import { existsSync, createWriteStream, createReadStream, statSync } from 'fs';
+import readline from 'readline';
 import path from 'path';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { wasmMaxSimF32, wasmMaxSimDequantPerToken, wasmMaxSimDequant4Bit, nativeMaxSimBatch, nativeMaxSimBatchPerToken, nativeMaxSimBatch4Bit, initWasm, isNativeMaxSimAvailable, isNativePerTokenAvailable, isNative4BitAvailable } from '../infrastructure/simd-distance.js';
@@ -938,33 +939,90 @@ export class LateInteractionIndex {
   }
 
   async _saveAliasSidecar(indexPath = this.indexPath) {
+    const sidecarPath = this._aliasSidecarPath(indexPath);
     if (this.aliasPointers.size === 0) {
       // Remove any stale sidecar from a previous build.
-      try { await fs.unlink(this._aliasSidecarPath(indexPath)); } catch (_e) { /* not present */ }
+      try { await fs.unlink(sidecarPath); } catch (_e) { /* not present */ }
       return;
     }
-    const entries = [];
-    for (const [aliasId, ptr] of this.aliasPointers) {
-      entries.push({
-        aliasId,
-        exemplarId: ptr.exemplarId,
-        clusterId: ptr.clusterId,
-        metadata: ptr.metadata || {},
-      });
+    // NDJSON (version 2): one header line, then one alias pointer per line,
+    // flushed through a write stream in bounded batches. The previous
+    // monolithic JSON.stringify of the whole payload hits V8's ~512 MB string
+    // ceiling ("Invalid string length") on extreme-dedup repos, and the
+    // matching readFile on load had the same ceiling.
+    const ws = createWriteStream(sidecarPath, { encoding: 'utf8' });
+    const finished = new Promise((resolve, reject) => {
+      ws.on('error', reject);
+      ws.on('finish', resolve);
+    });
+    const flush = (str) => new Promise((resolve, reject) => {
+      ws.write(str, (err) => (err ? reject(err) : resolve()));
+    });
+    try {
+      let lines = [JSON.stringify({ version: 2, count: this.aliasPointers.size })];
+      for (const [aliasId, ptr] of this.aliasPointers) {
+        lines.push(JSON.stringify({
+          aliasId,
+          exemplarId: ptr.exemplarId,
+          clusterId: ptr.clusterId,
+          metadata: ptr.metadata || {},
+        }));
+        if (lines.length >= 20000) {
+          await flush(lines.join('\n') + '\n');
+          lines = [];
+        }
+      }
+      if (lines.length > 0) await flush(lines.join('\n') + '\n');
+      ws.end();
+      await finished;
+    } catch (err) {
+      finished.catch(() => { /* surfaced via throw below */ });
+      ws.destroy();
+      throw err;
     }
-    const payload = { version: 1, count: entries.length, aliases: entries };
-    await fs.writeFile(this._aliasSidecarPath(indexPath), JSON.stringify(payload));
   }
 
   async _loadAliasSidecar(indexPath = this.indexPath) {
     const p = this._aliasSidecarPath(indexPath);
     if (!existsSync(p)) return;
+    // Streamed line-by-line so no single string approaches V8's ~512 MB
+    // ceiling. Two on-disk formats:
+    //   v1 — one JSON.stringify'd { version: 1, aliases: [...] } line
+    //   v2 — NDJSON: { version: 2, count } header, then one alias per line
+    //
+    // The input stream is destroyed in `finally`: early returns abandon the
+    // readline iterator, and rl.close() does NOT destroy its input — an
+    // fs read stream only auto-closes on 'end'/'error', so without the
+    // explicit destroy every early return leaks an fd (fatal only in
+    // long-lived processes like the daemon, but a leak everywhere).
+    const input = createReadStream(p, { encoding: 'utf8' });
+    const rl = readline.createInterface({ input, crlfDelay: Infinity });
     try {
-      const raw = await fs.readFile(p, 'utf-8');
-      const payload = JSON.parse(raw);
-      if (!payload || !Array.isArray(payload.aliases)) return;
       this.aliasPointers.clear();
-      for (const { aliasId, exemplarId, clusterId, metadata } of payload.aliases) {
+      let first = true;
+      let expected = 0;
+      let parsed = 0;
+      for await (const line of rl) {
+        if (!line) continue;
+        if (first) {
+          first = false;
+          const head = JSON.parse(line);
+          if (head && Array.isArray(head.aliases)) {
+            // v1 monolithic payload — the whole sidecar is this one line,
+            // so JSON.parse succeeding IS the integrity check (any
+            // truncation makes it unparseable).
+            for (const { aliasId, exemplarId, clusterId, metadata } of head.aliases) {
+              if (!this.documents.has(exemplarId)) continue; // orphan guard, see below
+              this.aliasPointers.set(aliasId, { exemplarId, clusterId, metadata: metadata || {} });
+            }
+            return;
+          }
+          if (!head || head.version !== 2 || !Number.isFinite(head.count)) return;
+          expected = head.count;
+          continue;
+        }
+        const { aliasId, exemplarId, clusterId, metadata } = JSON.parse(line);
+        parsed++;
         // Orphan guard: drop aliases whose exemplar is no longer in documents.
         // Happens if the file containing the exemplar was removed between
         // save and load (incremental re-index removed the exemplar file
@@ -972,8 +1030,21 @@ export class LateInteractionIndex {
         if (!this.documents.has(exemplarId)) continue;
         this.aliasPointers.set(aliasId, { exemplarId, clusterId, metadata: metadata || {} });
       }
+      // Truncation guard: NDJSON has no whole-file parse to fail, so a file
+      // cut exactly at a line boundary (crash mid-save, disk full) is valid
+      // prefix NDJSON and would otherwise load a silent subset. The header's
+      // `count` restores v1's all-or-nothing semantics. Compared against
+      // PARSED lines, not kept aliases — the orphan guard intentionally
+      // drops entries and must not trip this.
+      if (parsed !== expected) {
+        this.aliasPointers.clear();
+      }
     } catch (_e) {
       // Malformed sidecar — treat as absent; aliases will be skipped at query time.
+      this.aliasPointers.clear();
+    } finally {
+      rl.close();
+      input.destroy();
     }
   }
 

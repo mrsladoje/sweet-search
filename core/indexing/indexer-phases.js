@@ -10,7 +10,7 @@ import path from 'path';
 import { DB_PATHS, PROJECT_ROOT, EMBEDDING_CONFIG, HCGS_CONFIG } from '../infrastructure/config/index.js';
 import { getChangedFiles, updateState, getStats as getIncrementalStats, updatePhaseProgress, markPhaseComplete, clearPhaseProgress } from './incremental-tracker.js';
 import { backupSummaries, restoreSummaries, markForRegeneration } from '../graph/summary-manager.js';
-import { colors, log, logProgress, logError, discoverFiles, readFilesFromStdin, atomicSwapDatabase } from './indexer-utils.js';
+import { colors, log, logProgress, logError, discoverFiles, readFilesFromStdin, atomicSwapDatabase, shouldStreamVectors } from './indexer-utils.js';
 import { buildCodeGraph, buildVectorIndex, chunkFiles } from './indexer-build.js';
 import { runDedupPhase, formatDedupSummary } from './dedup/dedup-phase.js';
 import { DEDUP_CONFIG } from '../infrastructure/config/index.js';
@@ -420,15 +420,24 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   // model. For large full rebuilds we instead spill chunks to disk and embed/LI
   // in bounded windows (see streaming-vectors.js) so peak heap is O(window).
   //
-  // Gated by file count so small repos + incremental runs keep the original
-  // in-memory path byte-for-byte (benchmark indexes unaffected). Auto-selected,
-  // no opt-in flag; SWEET_SEARCH_STREAM_VECTORS=0 forces the legacy path and
-  // SWEET_SEARCH_STREAM_MIN_FILES tunes the threshold.
-  const streamMinFiles = Number(process.env.SWEET_SEARCH_STREAM_MIN_FILES) || 5000;
-  const useStreaming = !dryRun
-    && fullReindex
-    && filesToIndex.length >= streamMinFiles
-    && process.env.SWEET_SEARCH_STREAM_VECTORS !== '0';
+  // Gated by file count OR total admitted source bytes (see shouldStreamVectors
+  // in indexer-utils.js) so small repos + incremental runs keep the original
+  // in-memory path byte-for-byte (benchmark indexes unaffected). The byte
+  // trigger catches few-files-huge-bytes repos (amalgamations, vendored blobs)
+  // that OOM the in-memory path while staying under the file gate.
+  // Auto-selected, no opt-in flag; SWEET_SEARCH_STREAM_VECTORS=0 forces the
+  // legacy path, SWEET_SEARCH_STREAM_MIN_FILES / SWEET_SEARCH_STREAM_MIN_BYTES
+  // tune the thresholds.
+  const streamingDecision = await shouldStreamVectors({ filesToIndex, dryRun, fullReindex });
+  const useStreaming = streamingDecision.useStreaming;
+  if (streamingDecision.reason === 'bytes') {
+    log(
+      `  Streaming vectors: ${filesToIndex.length} files total ` +
+      `${(streamingDecision.totalBytes / 1048576).toFixed(0)}+ MB >= ` +
+      `${(streamingDecision.thresholdBytes / 1048576).toFixed(0)} MB (bounded memory)`,
+      'dim'
+    );
+  }
 
   // The in-memory path pre-chunks up front so both vector + LI encoders share
   // one chunk list. The streaming path does its own windowed chunking + dedup,

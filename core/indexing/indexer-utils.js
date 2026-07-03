@@ -426,3 +426,87 @@ export async function discoverFiles(options = {}) {
 
   return files;
 }
+
+// =============================================================================
+// STREAMING-VECTORS GATE
+// =============================================================================
+
+/**
+ * Sum on-disk sizes of `files` (relative to `projectRoot`), stopping as soon
+ * as the running total crosses `stopAt`. The streaming gate only needs to
+ * know whether the total crosses the threshold, not the exact figure, so on
+ * large-byte repos this exits after a fraction of the stats.
+ */
+export async function sumFileSizesUpTo(files, stopAt, projectRoot = PROJECT_ROOT) {
+  let total = 0;
+  for (const file of files) {
+    try {
+      const stat = await fs.stat(path.isAbsolute(file) ? file : path.join(projectRoot, file));
+      total += stat.size;
+      if (total >= stopAt) return total;
+    } catch {
+      // File disappeared between discovery and this gate — skip it.
+    }
+  }
+  return total;
+}
+
+/**
+ * Decide whether a full rebuild should take the bounded-memory streaming
+ * vectors path (see streaming-vectors.js) instead of the in-memory path.
+ *
+ * Two independent triggers, either is sufficient:
+ *   - file count ≥ SWEET_SEARCH_STREAM_MIN_FILES (default 5000)
+ *   - total admitted source bytes ≥ SWEET_SEARCH_STREAM_MIN_BYTES
+ *     (default 512 MB; set to 0 to disable the byte trigger)
+ *
+ * The byte trigger exists because peak heap on the in-memory path scales
+ * with the chunk corpus (≈ source bytes), not file count: a repo with
+ * few-but-huge files (amalgamations, vendored/generated blobs, extreme
+ * duplication) can OOM the default ~4 GB heap while staying far under the
+ * file gate.
+ *
+ * The 512 MB default is deliberately conservative so the trigger only fires
+ * where the in-memory path would fail outright, never where it would merely
+ * be tight. The one MEASURED failure at this scale is libsql (596 MB
+ * admitted source; the in-memory path needed a 9.6+ GB heap); the wider
+ * crash zone is ESTIMATED — not measured — to start around ~200 MB of
+ * admitted source on a default ~4 GB heap. A repo the byte trigger newly
+ * moves to streaming was therefore not getting a usable in-memory index at
+ * all, so streaming strictly improves on a crash; every repo below the
+ * threshold keeps the byte-for-byte-identical in-memory path and identical
+ * retrieval behaviour.
+ *
+ * Sizes are only stat'd when the (free) count trigger hasn't already fired,
+ * so the byte check costs at most one stat per file on sub-threshold repos.
+ * The re-stat duplicates work discoverFiles already did for its size cap —
+ * accepted deliberately: threading sizes through would change discoverFiles'
+ * public return shape, and ≤5000 extra stats on a full rebuild is noise next
+ * to chunking + embedding.
+ *
+ * @returns {Promise<{useStreaming: boolean, reason?: 'files'|'bytes', totalBytes?: number, thresholdBytes?: number}>}
+ */
+export async function shouldStreamVectors({ filesToIndex, dryRun, fullReindex, projectRoot = PROJECT_ROOT, env = process.env }) {
+  if (dryRun || !fullReindex || env.SWEET_SEARCH_STREAM_VECTORS === '0') {
+    return { useStreaming: false };
+  }
+  const streamMinFiles = Number(env.SWEET_SEARCH_STREAM_MIN_FILES) || 5000;
+  if (filesToIndex.length >= streamMinFiles) {
+    return { useStreaming: true, reason: 'files' };
+  }
+  // Unset/empty/invalid → 512 MB default; an explicit 0 (or negative)
+  // disables the byte trigger alone, leaving the count trigger active.
+  const rawMinBytes = env.SWEET_SEARCH_STREAM_MIN_BYTES;
+  const parsedMinBytes = (rawMinBytes === undefined || rawMinBytes === '') ? NaN : Number(rawMinBytes);
+  const streamMinBytes = Number.isFinite(parsedMinBytes)
+    ? (parsedMinBytes > 0 ? parsedMinBytes : Infinity)
+    : 512 * 1024 * 1024;
+  if (!Number.isFinite(streamMinBytes)) {
+    return { useStreaming: false };
+  }
+  const totalBytes = await sumFileSizesUpTo(filesToIndex, streamMinBytes, projectRoot);
+  if (totalBytes >= streamMinBytes) {
+    return { useStreaming: true, reason: 'bytes', totalBytes, thresholdBytes: streamMinBytes };
+  }
+  return { useStreaming: false };
+}
