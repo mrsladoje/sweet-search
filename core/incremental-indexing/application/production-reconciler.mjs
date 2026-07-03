@@ -13,7 +13,7 @@ import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import { annotateChunksForDelta, snapshotFileRows, diffChunks, applyDiff } from '../infrastructure/vector-delta-writer.mjs';
 import { appendDeltaRecord, FALLBACK_WEIGHTS_ID, fileIdFor, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
 import { fts5Merge, fts5MergeBudgetPages } from '../infrastructure/sqlite-fts5.mjs';
-import { insertEntity, insertRelationships, markBinaryStale, maintainFloatStore, flushFloatStore } from './production-reconciler-helpers.mjs';
+import { insertEntity, insertRelationships, markBinaryStale, createStaleBatch, maintainFloatStore, flushFloatStore } from './production-reconciler-helpers.mjs';
 import {
   chunkCutoffEnabled,
   computeCutoffSignature,
@@ -1110,9 +1110,12 @@ class ProductionReconcileAdapter {
     if (ctx?.index) {
       const index = ctx.index;
       let append = 0; let tombstone = 0;
+      // One bitmap load + one save+fsync per file's ops instead of per
+      // retired id; marks apply in op order with identical semantics.
+      const staleBatch = createStaleBatch(index);
       for (const op of ops) {
         if (op.retireId) {
-          if (markBinaryStale(index, op.retireId)) tombstone += 1;
+          if (staleBatch.markStale(op.retireId)) tombstone += 1;
           ctx.floatRemoveIds.push(op.retireId);
         }
         if (op.addId && op.embedding) {
@@ -1122,6 +1125,7 @@ class ProductionReconcileAdapter {
           append += 1;
         }
       }
+      staleBatch.flush();
       ctx.tombstone += tombstone;
       // append is committed to ctx.append in finalize after the sorted inserts.
       ctx.append += append;
@@ -1137,9 +1141,13 @@ class ProductionReconcileAdapter {
     let append = 0; let tombstone = 0;
     const floatUpserts = [];
     const floatRemoveIds = [];
+    // One bitmap load + one save+fsync for the whole op list instead of per
+    // retired id. Marks still apply inline in op order (adds never consult
+    // the bitmap), so retire-then-readd sequences behave exactly as before.
+    const staleBatch = createStaleBatch(index);
     for (const op of ops) {
       if (op.retireId) {
-        if (markBinaryStale(index, op.retireId)) tombstone += 1;
+        if (staleBatch.markStale(op.retireId)) tombstone += 1;
         floatRemoveIds.push(op.retireId);
       }
       if (op.addId && op.embedding) {
@@ -1150,6 +1158,7 @@ class ProductionReconcileAdapter {
       }
       if ((append + tombstone) > 0 && (append + tombstone) % 100 === 0) this.progress('production:binary-hnsw-loop');
     }
+    staleBatch.flush();
     await index.save(indexPath);
     this.progress('production:binary-hnsw-saved');
     await maintainFloatStore(indexPath, { upserts: floatUpserts, removeIds: floatRemoveIds, binaryVectorsBefore, dimension: this.modelInfo.hnswDimension });

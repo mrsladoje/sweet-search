@@ -60,19 +60,56 @@ export function insertRelationships(db, relationships, liveIdFor, epoch) {
   }
 }
 
-export function markBinaryStale(index, id) {
-  const idx = index.idToIndex.get(id);
-  if (idx == null) return false;
+/**
+ * Batched stale marking. The per-id `markBinaryStale` loads, mutates, and
+ * fsyncs the bitmap file once PER RETIRED ID — O(retires × bitmap size) with
+ * an fsync each. A batch loads the bitmap once (lazily, on the first mark),
+ * applies every mark in memory with the exact per-op semantics (idToIndex /
+ * int8Vectors pruned immediately, reader cache invalidated), and persists
+ * once in flush(). End state on disk is identical to N sequential
+ * markBinaryStale calls.
+ *
+ * Crash window: marks staged between flush()es are lost on crash, which the
+ * reconciler's persist-before-advance gate already handles — an unflushed
+ * tick replays its ops.
+ */
+export function createStaleBatch(index) {
   const stalePath = index.stalePath || `${index.indexPath}.stale.bin`;
   let bitmap = null;
-  try { bitmap = loadBitmap(stalePath); } catch {}
-  bitmap = bitmap ? resizeBitmap(bitmap, Math.max(idx + 1, index.vectors.length, 1)) : createBitmap(Math.max(idx + 1, index.vectors.length, 1));
-  setBit(bitmap, idx);
-  saveBitmap(stalePath, bitmap);
-  index.idToIndex.delete(id);
-  index.int8Vectors.delete(id);
-  index._staleBitmapCache = null;
-  return true;
+  let loaded = false;
+  let dirty = false;
+  return {
+    markStale(id) {
+      const idx = index.idToIndex.get(id);
+      if (idx == null) return false;
+      if (!loaded) {
+        try { bitmap = loadBitmap(stalePath); } catch {}
+        loaded = true;
+      }
+      bitmap = bitmap
+        ? resizeBitmap(bitmap, Math.max(idx + 1, index.vectors.length, 1))
+        : createBitmap(Math.max(idx + 1, index.vectors.length, 1));
+      setBit(bitmap, idx);
+      dirty = true;
+      index.idToIndex.delete(id);
+      index.int8Vectors.delete(id);
+      index._staleBitmapCache = null;
+      return true;
+    },
+    flush() {
+      if (!dirty) return false;
+      saveBitmap(stalePath, bitmap);
+      dirty = false;
+      return true;
+    },
+  };
+}
+
+export function markBinaryStale(index, id) {
+  const batch = createStaleBatch(index);
+  const marked = batch.markStale(id);
+  batch.flush();
+  return marked;
 }
 
 /**

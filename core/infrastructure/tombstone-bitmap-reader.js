@@ -109,6 +109,40 @@ export function setBit(bitmap, index) {
   bitmap.payload[byte] |= mask;
 }
 
+/**
+ * Count set bits with index < limitBits (clamped to capacity). Matches an
+ * isSet() loop over [0, limitBits) exactly — used for O(words) live-vector
+ * counting instead of an O(n) per-index probe.
+ */
+export function popcountRange(bitmap, limitBits) {
+  if (!bitmap || limitBits <= 0) return 0;
+  const bits = Math.min(limitBits, bitmap.capacity);
+  const buf = bitmap.payload;
+  const fullBytes = bits >>> 3;
+  let count = 0;
+  let i = 0;
+  // SWAR popcount, 4 bytes at a time
+  for (; i + 4 <= fullBytes; i += 4) {
+    let x = buf.readUInt32LE(i);
+    x -= (x >>> 1) & 0x55555555;
+    x = (x & 0x33333333) + ((x >>> 2) & 0x33333333);
+    x = (x + (x >>> 4)) & 0x0f0f0f0f;
+    count += Math.imul(x, 0x01010101) >>> 24;
+  }
+  for (; i < fullBytes; i++) {
+    let b = buf[i];
+    while (b !== 0) { b &= b - 1; count += 1; }
+  }
+  const tailBits = bits & 7;
+  if (tailBits > 0) {
+    // Bits are LSB-first within a byte (see byteAndMask), so the low mask
+    // selects exactly the indices below `bits`.
+    let b = buf[fullBytes] & ((1 << tailBits) - 1);
+    while (b !== 0) { b &= b - 1; count += 1; }
+  }
+  return count;
+}
+
 export function popcount(bitmap) {
   if (!bitmap) return 0;
   let count = 0;

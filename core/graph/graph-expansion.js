@@ -249,6 +249,18 @@ const TYPE_BOOST = {
   struct: 1.2,
 };
 
+/**
+ * Fetch int8 vectors for many ids with ONE stale-bitmap snapshot when the
+ * index supports it (BinaryHNSWIndex.getInt8VectorsForIds); falls back to
+ * per-id lookups for index doubles that only expose getInt8Vector.
+ */
+function batchInt8Vectors(hnswIndex, ids) {
+  if (typeof hnswIndex.getInt8VectorsForIds === 'function') {
+    return hnswIndex.getInt8VectorsForIds(ids);
+  }
+  return ids.map((id) => hnswIndex.getInt8Vector(id));
+}
+
 function clampSemanticWeight(value) {
   if (!Number.isFinite(value)) return 0.4;
   return Math.max(0, Math.min(1, value));
@@ -614,21 +626,27 @@ export function expandSecondHop(db, seedIds, expanded, edgeTypes, options = {}) 
   }
 
   const excluded = new Set([...seedIds, ...expanded.keys()]);
-  const candidates = [];
+  const eligible = [];
   for (const rel of hop2Forward) {
     if (!edgeTypes.has(rel.type) || excluded.has(rel.target_id)) continue;
 
     const hop1Entry = expanded.get(rel.source_id);
     const hop1Score = hop1Entry?.score ?? 1;  // identity: preserves old edgePriority × weight
     const graphScore = hop1Score * (EDGE_PRIORITY[rel.type] || 1) * (rel.weight || 1.0);
+    eligible.push({ rel, graphScore });
+  }
+  // Batch int8 lookup: one stale-bitmap snapshot for all targets instead of
+  // one stat per target.
+  const eligibleInt8 = batchInt8Vectors(hnswIndex, eligible.map((e) => e.rel.target_id));
+  const candidates = eligible.map((e, i) => {
+    const entityInt8 = eligibleInt8[i];
     let normSim = null;
-    const entityInt8 = hnswIndex.getInt8Vector(rel.target_id);
     if (entityInt8) {
       const cosSim = cosineSimilarity(queryInt8, entityInt8);
       normSim = (cosSim + 1) / 2;
     }
-    candidates.push({ rel, graphScore, normSim });
-  }
+    return { rel: e.rel, graphScore: e.graphScore, normSim };
+  });
 
   if (candidates.length === 0) return;
   const normalizedGraphScores = normalizeMinMax(candidates.map(c => c.graphScore));
@@ -729,6 +747,25 @@ export function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, op
   const vectorCache = semanticEnabled ? new Map() : null;
   const scoredCandidates = [];
 
+  // Pre-seed the vector cache with ONE batched int8 fetch (single
+  // stale-bitmap snapshot) so the scoring loop below never does per-target
+  // lookups.
+  if (semanticEnabled) {
+    const uniqueTargets = [];
+    for (const c of rawCandidates) {
+      if (!edgeTypes.has(c.type) || excluded.has(c.target_id)) continue;
+      if (vectorCache.has(c.target_id)) continue;
+      vectorCache.set(c.target_id, undefined);
+      uniqueTargets.push(c.target_id);
+    }
+    if (uniqueTargets.length > 0) {
+      const fetched = batchInt8Vectors(hnswIndex, uniqueTargets);
+      for (let i = 0; i < uniqueTargets.length; i++) {
+        vectorCache.set(uniqueTargets[i], fetched[i]);
+      }
+    }
+  }
+
   for (const c of rawCandidates) {
     if (!edgeTypes.has(c.type) || excluded.has(c.target_id)) continue;
 
@@ -743,6 +780,7 @@ export function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, op
     let normSim = null;
     if (semanticEnabled) {
       if (!vectorCache.has(c.target_id)) {
+        // Miss fallback only — the pre-seed pass below batch-fills the cache.
         vectorCache.set(c.target_id, hnswIndex.getInt8Vector(c.target_id));
       }
       const entityInt8 = vectorCache.get(c.target_id);
@@ -929,12 +967,16 @@ export function rerankExpanded(expandedResults, seedResults, options = {}) {
     }
   } else {
     const normalizedGraphScores = normalizeMinMax(baseScores);
+    // Batch int8 lookup: one stale-bitmap snapshot for the whole result set.
+    const entityInt8s = batchInt8Vectors(
+      hnswIndex,
+      expandedResults.map((er) => er.entity_id || er.id)
+    );
     for (let i = 0; i < expandedResults.length; i++) {
       const er = expandedResults[i];
       const normGraph = normalizedGraphScores[i];
       let rerankScore = normGraph;
-      const entityId = er.entity_id || er.id;
-      const entityInt8 = hnswIndex.getInt8Vector(entityId);
+      const entityInt8 = entityInt8s[i];
       if (entityInt8) {
         const cosSim = cosineSimilarity(queryInt8, entityInt8);
         const normSim = (cosSim + 1) / 2;

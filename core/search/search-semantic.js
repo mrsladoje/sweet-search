@@ -302,8 +302,15 @@ export async function semanticSearch3Stage(query, options = {}) {
   const validIndices = [];
   let missingInt8Count = 0;
 
+  // One stale-bitmap snapshot for the whole pool (getInt8Vector would stat
+  // the bitmap file once per candidate). Falls back per-id for injected
+  // index doubles without the batch method.
+  const poolIds = stage2Candidates.map((c) => c.id);
+  const poolInt8 = typeof this.binaryHnswIndex.getInt8VectorsForIds === 'function'
+    ? this.binaryHnswIndex.getInt8VectorsForIds(poolIds)
+    : poolIds.map((id) => this.binaryHnswIndex.getInt8Vector(id));
   for (let i = 0; i < stage2Candidates.length; i++) {
-    const int8Vector = this.binaryHnswIndex.getInt8Vector(stage2Candidates[i].id);
+    const int8Vector = poolInt8[i];
     if (int8Vector) {
       int8Vectors.push(int8Vector);
       validIndices.push(i);

@@ -41,8 +41,14 @@ import {
   computeCentroid, generateSignVector,
 } from '../infrastructure/quantization.js';
 import { wasmHammingDistance as hammingDistance } from '../infrastructure/simd-distance.js';
+import { HammingSlab } from '../infrastructure/hamming-kernel.js';
 import { TypedMinHeap, TypedMaxHeap, VisitedList } from './binary-heap.js';
-import { loadBitmap, isSet } from '../infrastructure/tombstone-bitmap-reader.js';
+import { loadBitmap, isSet, popcountRange } from '../infrastructure/tombstone-bitmap-reader.js';
+
+// Shared empty neighbor list for graph misses in the hot search loops —
+// callers only iterate it, so one frozen instance replaces a fresh `[]`
+// allocation per miss.
+const EMPTY_NEIGHBORS = Object.freeze([]);
 
 // Current quantization pipeline version. Bump when the encoding pipeline changes
 // (centroid subtraction, rotation, quantization scheme). Indexes built with a
@@ -78,6 +84,50 @@ const MMAP_FORMAT_VERSION = 1;
 
 function hnswMmapEnabled() {
   return process.env.SWEET_SEARCH_HNSW_MMAP === '1';
+}
+
+/**
+ * Sliding-window sequential reader over one packed-file section. The mmap
+ * load path scans structural integers across whole sections; doing that with
+ * one readSync per integer costs a syscall per node per level (500k+ on big
+ * indexes). This reader keeps an 8MB window resident and refills it
+ * sequentially, so a full-section scan is ~len/8MB syscalls while heap usage
+ * stays bounded by the window.
+ */
+class SectionWindow {
+  constructor(fd, base, totalLen, windowSize = 8 << 20) {
+    this._fd = fd;
+    this._base = base;
+    this._total = totalLen;
+    this._size = Math.min(windowSize, Math.max(totalLen, 4));
+    this._buf = Buffer.allocUnsafe(this._size);
+    this._start = 0;
+    this._len = 0;
+  }
+
+  _ensure(rel, need) {
+    if (rel >= this._start && rel + need <= this._start + this._len) return;
+    if (need > this._size) {
+      throw new Error(`SectionWindow: record of ${need} bytes exceeds window`);
+    }
+    if (rel + need > this._total) {
+      throw new Error('SectionWindow: read past end of section');
+    }
+    this._start = rel;
+    this._len = Math.min(this._size, this._total - rel);
+    readSync(this._fd, this._buf, 0, this._len, this._base + rel);
+  }
+
+  u32(rel) {
+    this._ensure(rel, 4);
+    return this._buf.readUInt32LE(rel - this._start);
+  }
+
+  /** Copy [rel, rel+len) into target (a Uint8Array) at offset 0. */
+  copyTo(rel, len, target) {
+    this._ensure(rel, len);
+    target.set(this._buf.subarray(rel - this._start, rel - this._start + len));
+  }
 }
 
 /**
@@ -494,9 +544,14 @@ export class BinaryHNSWIndex {
     this.indexPath = options.indexPath || DB_PATHS.binaryHnswIndex;
     this.stalePath = options.stalePath || `${this.indexPath}.stale.bin`;
 
-    // Storage
-    this.vectors = [];           // Array of { id, binary: Uint8Array, metadata }
+    // Storage. `vectors[i].binary` is a subarray view into the contiguous
+    // HammingSlab (G1/G2): one flat allocation for all vector bytes, mirrored
+    // into a resident WASM instance so hot-loop distances are single FFI
+    // calls with zero per-call copies.
+    this.vectors = [];           // Array of { id, binary: Uint8Array view, metadata }
     this.idToIndex = new Map();  // id → array index
+    this._slab = new HammingSlab(this.dimension);
+    this._queryBinary = null;    // staged query for the fallback distance path
     this.initialized = false;
 
     // For int8 rescoring
@@ -533,6 +588,7 @@ export class BinaryHNSWIndex {
   resetForBuild() {
     this._closeMmap();
     this.vectors = [];
+    this._slab = new HammingSlab(this.dimension);
     this.idToIndex = new Map();
     this.int8Vectors.clear();
     this.graph = [];
@@ -591,6 +647,7 @@ export class BinaryHNSWIndex {
     }
 
     this.vectors = [];
+    this._slab = new HammingSlab(this.dimension);
     this.idToIndex = new Map();
     this.graph = [];
     this.entryPoint = -1;
@@ -660,8 +717,16 @@ export class BinaryHNSWIndex {
    * @param {Int8Array} int8Vector - Optional int8 vector for rescoring
    */
   async add(id, binaryVector, metadata = {}, int8Vector = null) {
-    await this.init();
+    if (!this.initialized) await this.init();
+    return this.addSync(id, binaryVector, metadata, int8Vector);
+  }
 
+  /**
+   * Synchronous insert for callers that know the index is initialized
+   * (build loops, addBatch). Identical semantics to add() minus the init
+   * probe — avoids per-insert promise machinery on hot construction paths.
+   */
+  addSync(id, binaryVector, metadata = {}, int8Vector = null) {
     // The packed (mmap) layout is a read/search-only representation: `vectors`
     // and `graph` are lazy fd-backed proxies, not mutable plain arrays. Build
     // paths must construct on plain arrays and persist via save()/saveMmap().
@@ -689,16 +754,18 @@ export class BinaryHNSWIndex {
     // Check if already exists
     if (this.idToIndex.has(id)) {
       const idx = this.idToIndex.get(id);
-      this.vectors[idx] = { id, binary, metadata };
+      this.vectors[idx] = { id, binary: this._slab.set(idx, binary), metadata };
       if (int8Vector) {
         this.int8Vectors.set(id, int8Vector);
       }
       return idx;
     }
 
-    // Add new vector
+    // Add new vector. Slab growth reallocates the backing buffer, so re-point
+    // existing nodes' views at the fresh buffer (amortized O(1) per insert).
     const idx = this.vectors.length;
-    this.vectors.push({ id, binary, metadata });
+    if (this._slab.ensure(idx + 1)) this._repointSlabViews();
+    this.vectors.push({ id, binary: this._slab.set(idx, binary), metadata });
     this.idToIndex.set(id, idx);
 
     if (int8Vector) {
@@ -728,17 +795,51 @@ export class BinaryHNSWIndex {
     return level === 0 ? this.M * 2 : this.M;
   }
 
+  /** Re-point every node's binary view after a slab reallocation. */
+  _repointSlabViews() {
+    const slab = this._slab;
+    for (let i = 0; i < this.vectors.length; i++) {
+      this.vectors[i].binary = slab.view(i);
+    }
+  }
+
+  /**
+   * Hamming distance between two RESIDENT vectors (construction paths).
+   * Slab-backed on the default path (single FFI call, zero copies); falls
+   * back to the copy-per-call kernel on the mmap-proxy read path.
+   */
+  _distPair(aIdx, bIdx) {
+    const s = this._slab;
+    if (s) return s.dist(aIdx, bIdx);
+    return hammingDistance(this.vectors[aIdx].binary, this.vectors[bIdx].binary);
+  }
+
+  /** Stage the query for _distQ(). */
+  _setQuery(queryBinary) {
+    this._queryBinary = queryBinary;
+    if (this._slab) this._slab.setQuery(queryBinary);
+  }
+
+  /** Hamming distance from the staged query to a resident vector. */
+  _distQ(idx) {
+    const s = this._slab;
+    if (s) return s.distToQuery(idx);
+    return hammingDistance(this.vectors[idx].binary, this._queryBinary);
+  }
+
   /**
    * Heuristic neighbor selection (Algorithm 4, Malkov & Yashunin 2016).
    * Selects diverse neighbors that cover different angular directions,
    * avoiding clusters of nearby nodes pointing at each other.
    */
-  selectNeighborsHeuristic(nodeIdx, candidates, maxM) {
+  selectNeighborsHeuristic(nodeIdx, candidates, maxM, presorted = false) {
     const selected = [];
-    const nodeBinary = this.vectors[nodeIdx].binary;
 
-    // Sort candidates by distance ascending
-    candidates.sort((a, b) => a.dist - b.dist);
+    // Sort candidates by distance ascending. searchLayer() already returns
+    // ascending order (heap drain), so its callers pass presorted=true and
+    // skip the redundant O(ef log ef) stable sort — a stable sort of an
+    // already-sorted array is the identity, so selection is unchanged.
+    if (!presorted) candidates.sort((a, b) => a.dist - b.dist);
 
     for (const candidate of candidates) {
       if (selected.length >= maxM) break;
@@ -747,10 +848,7 @@ export class BinaryHNSWIndex {
       // than it is to the node itself — if so, it's redundant (same direction)
       let tooClose = false;
       for (const s of selected) {
-        const interDist = hammingDistance(
-          this.vectors[candidate.idx].binary,
-          this.vectors[s.idx].binary
-        );
+        const interDist = this._distPair(candidate.idx, s.idx);
         if (interDist < candidate.dist) {
           tooClose = true;
           break;
@@ -846,7 +944,7 @@ export class BinaryHNSWIndex {
       const neighbors = this.searchLayer(currentNode, idx, this.efConstruction, l);
 
       // Heuristic selection (Algorithm 4) for angular diversity
-      const selectedNeighbors = this.selectNeighborsHeuristic(idx, neighbors, maxM);
+      const selectedNeighbors = this.selectNeighborsHeuristic(idx, neighbors, maxM, true);
 
       // Connect both directions
       this.graph[l][idx] = selectedNeighbors.map(n => n.idx);
@@ -894,21 +992,35 @@ export class BinaryHNSWIndex {
    * Greedy search to find closest node at a given level
    */
   greedySearch(startNode, targetIdx, level) {
-    const targetBinary = this.vectors[targetIdx].binary;
+    const slab = this._slab;
     let currentNode = startNode;
-    let currentDist = hammingDistance(this.vectors[currentNode].binary, targetBinary);
+    let currentDist = this._distPair(currentNode, targetIdx);
 
     let improved = true;
     while (improved) {
       improved = false;
-      const neighbors = this.graph[level]?.[currentNode] || [];
+      const neighbors = this.graph[level]?.[currentNode] || EMPTY_NEIGHBORS;
+      const n = neighbors.length;
 
-      for (const neighborIdx of neighbors) {
-        const neighborDist = hammingDistance(this.vectors[neighborIdx].binary, targetBinary);
-        if (neighborDist < currentDist) {
-          currentNode = neighborIdx;
-          currentDist = neighborDist;
-          improved = true;
+      if (slab && n > 1 && n <= slab.batchIdx.length) {
+        const idx = slab.batchIdx;
+        for (let i = 0; i < n; i++) idx[i] = neighbors[i];
+        const out = slab.batchToVector(targetIdx, n);
+        for (let i = 0; i < n; i++) {
+          if (out[i] < currentDist) {
+            currentNode = neighbors[i];
+            currentDist = out[i];
+            improved = true;
+          }
+        }
+      } else {
+        for (const neighborIdx of neighbors) {
+          const neighborDist = this._distPair(neighborIdx, targetIdx);
+          if (neighborDist < currentDist) {
+            currentNode = neighborIdx;
+            currentDist = neighborDist;
+            improved = true;
+          }
         }
       }
     }
@@ -921,13 +1033,13 @@ export class BinaryHNSWIndex {
    * Heap-based with generation-stamped visited list.
    */
   searchLayer(startNode, targetIdx, ef, level) {
-    const targetBinary = this.vectors[targetIdx].binary;
     const visited = this._visitedList;
     visited.ensureCapacity(this.vectors.length);
     visited.reset();
     visited.mark(startNode);
 
-    const startDist = hammingDistance(this.vectors[startNode].binary, targetBinary);
+    const startDist = this._distPair(startNode, targetIdx);
+    const slab = this._slab;
 
     // candidates = min-heap (explore closest first)
     const candidates = this._candHeap;
@@ -949,20 +1061,48 @@ export class BinaryHNSWIndex {
 
       const currentIdx = candidates.extractMin();
 
-      const neighbors = this.graph[level]?.[currentIdx] || [];
-      for (let i = 0; i < neighbors.length; i++) {
-        const neighborIdx = neighbors[i];
-        if (visited.isVisited(neighborIdx)) continue;
-        visited.mark(neighborIdx);
+      const neighbors = this.graph[level]?.[currentIdx] || EMPTY_NEIGHBORS;
+      const nn = neighbors.length;
+      if (slab && nn > 1 && nn <= slab.batchIdx.length) {
+        // Two-pass block scoring (see searchLayerQuery) — one kernel call
+        // per neighbor block, identical push sequence.
+        const bIdx = slab.batchIdx;
+        let m = 0;
+        for (let i = 0; i < nn; i++) {
+          const neighborIdx = neighbors[i];
+          if (visited.isVisited(neighborIdx)) continue;
+          visited.mark(neighborIdx);
+          bIdx[m++] = neighborIdx;
+        }
+        if (m > 0) {
+          const out = slab.batchToVector(targetIdx, m);
+          for (let i = 0; i < m; i++) {
+            const neighborIdx = bIdx[i];
+            const dist = out[i];
+            if (results.size < ef) {
+              candidates.insert(neighborIdx, dist);
+              results.insert(neighborIdx, dist);
+            } else if (dist < results.peekVal()) {
+              candidates.insert(neighborIdx, dist);
+              results.replaceMax(neighborIdx, dist);
+            }
+          }
+        }
+      } else {
+        for (let i = 0; i < nn; i++) {
+          const neighborIdx = neighbors[i];
+          if (visited.isVisited(neighborIdx)) continue;
+          visited.mark(neighborIdx);
 
-        const dist = hammingDistance(this.vectors[neighborIdx].binary, targetBinary);
+          const dist = this._distPair(neighborIdx, targetIdx);
 
-        if (results.size < ef) {
-          candidates.insert(neighborIdx, dist);
-          results.insert(neighborIdx, dist);
-        } else if (dist < results.peekVal()) {
-          candidates.insert(neighborIdx, dist);
-          results.replaceMax(neighborIdx, dist);
+          if (results.size < ef) {
+            candidates.insert(neighborIdx, dist);
+            results.insert(neighborIdx, dist);
+          } else if (dist < results.peekVal()) {
+            candidates.insert(neighborIdx, dist);
+            results.replaceMax(neighborIdx, dist);
+          }
         }
       }
     }
@@ -982,13 +1122,23 @@ export class BinaryHNSWIndex {
    */
   pruneNeighbors(nodeIdx, level) {
     const neighbors = this.graph[level][nodeIdx];
-    const nodeBinary = this.vectors[nodeIdx].binary;
     const maxM = this.getMaxM(level);
+    const slab = this._slab;
 
-    const withDist = neighbors.map(idx => ({
-      idx,
-      dist: hammingDistance(this.vectors[idx].binary, nodeBinary),
-    }));
+    let withDist;
+    const n = neighbors.length;
+    if (slab && n > 1 && n <= slab.batchIdx.length) {
+      const bIdx = slab.batchIdx;
+      for (let i = 0; i < n; i++) bIdx[i] = neighbors[i];
+      const out = slab.batchToVector(nodeIdx, n);
+      withDist = new Array(n);
+      for (let i = 0; i < n; i++) withDist[i] = { idx: neighbors[i], dist: out[i] };
+    } else {
+      withDist = neighbors.map(idx => ({
+        idx,
+        dist: this._distPair(idx, nodeIdx),
+      }));
+    }
 
     const selected = this.selectNeighborsHeuristic(nodeIdx, withDist, maxM);
     this.graph[level][nodeIdx] = selected.map(n => n.idx);
@@ -1005,7 +1155,7 @@ export class BinaryHNSWIndex {
    * @returns {Promise<{results: Array, latency_us: number}>}
    */
   async search(queryVector, k = 10, opts = {}) {
-    await this.init();
+    if (!this.initialized) await this.init();
 
     const start = performance.now();
     const staleBitmap = this._loadStaleBitmap();
@@ -1029,6 +1179,8 @@ export class BinaryHNSWIndex {
     if (this.useAsymmetric && opts.floatQuery) {
       queryBinary = this.encodeDocument(opts.floatQuery);
     }
+    // Stage the query once: traversal distances become resident-slab calls.
+    this._setQuery(queryBinary);
     let currentNode = this.entryPoint;
 
     for (let l = this.maxLevel; l >= 1; l--) {
@@ -1037,7 +1189,7 @@ export class BinaryHNSWIndex {
 
     // Adaptive ef: easy queries get a smaller budget, hard queries get more
     let ef = Math.max(this._oversampleTarget(k, staleBitmap), this.efSearch);
-    const greedyDist = hammingDistance(this.vectors[currentNode].binary, queryBinary);
+    const greedyDist = this._distQ(currentNode);
     const maxDist = this.dimension * 8;
     const greedyQuality = 1 - (greedyDist / maxDist);
     if (greedyQuality > 0.85) {
@@ -1082,6 +1234,11 @@ export class BinaryHNSWIndex {
   }
 
   _loadStaleBitmap() {
+    // Freshness contract: an externally written bitmap must be visible on the
+    // NEXT call (rescoring-fix-phase0 pins this), so every call stats the
+    // file; only the LOAD is cached (by stat identity). Hot rescore paths that
+    // would otherwise stat per candidate snapshot once per batch via
+    // getInt8VectorsForIds().
     if (!existsSync(this.stalePath)) {
       this._staleBitmapCache = null;
       return null;
@@ -1120,12 +1277,21 @@ export class BinaryHNSWIndex {
   }
 
   _liveVectorCount(bitmap) {
-    if (!bitmap) return this.vectors.length;
-    let live = 0;
-    for (let i = 0; i < this.vectors.length; i++) {
-      if (!this._isIndexStale(i, bitmap)) live++;
+    // O(words) bitmap popcount instead of an O(n) per-index isSet loop, and
+    // memoized on the bitmap cache entry: bits only ever get SET, and every
+    // setter nulls the cache, so a cached count stays exact for the cached
+    // bitmap at a given vector count.
+    const n = this.vectors.length;
+    if (!bitmap) return n;
+    const cache = this._staleBitmapCache;
+    if (cache && cache.bitmap === bitmap) {
+      if (cache.staleCountLen !== n) {
+        cache.staleCount = popcountRange(bitmap, n);
+        cache.staleCountLen = n;
+      }
+      return n - cache.staleCount;
     }
-    return live;
+    return n - popcountRange(bitmap, n);
   }
 
   _oversampleTarget(k, bitmap) {
@@ -1141,20 +1307,40 @@ export class BinaryHNSWIndex {
    * Greedy search for query vector
    */
   greedySearchQuery(startNode, queryBinary, level) {
+    // Direct callers (outside search()) may pass their own query — stage it.
+    if (queryBinary !== this._queryBinary) this._setQuery(queryBinary);
+    const slab = this._slab;
     let currentNode = startNode;
-    let currentDist = hammingDistance(this.vectors[currentNode].binary, queryBinary);
+    let currentDist = this._distQ(currentNode);
 
     let improved = true;
     while (improved) {
       improved = false;
-      const neighbors = this.graph[level]?.[currentNode] || [];
+      const neighbors = this.graph[level]?.[currentNode] || EMPTY_NEIGHBORS;
+      const n = neighbors.length;
 
-      for (const neighborIdx of neighbors) {
-        const neighborDist = hammingDistance(this.vectors[neighborIdx].binary, queryBinary);
-        if (neighborDist < currentDist) {
-          currentNode = neighborIdx;
-          currentDist = neighborDist;
-          improved = true;
+      if (slab && n > 1 && n <= slab.batchIdx.length) {
+        // Batch-score the whole neighbor block in one kernel call, then scan
+        // with the exact per-neighbor update rule (distances are precomputed,
+        // comparisons run in the same order → identical walk).
+        const idx = slab.batchIdx;
+        for (let i = 0; i < n; i++) idx[i] = neighbors[i];
+        const out = slab.batchToQuery(n);
+        for (let i = 0; i < n; i++) {
+          if (out[i] < currentDist) {
+            currentNode = neighbors[i];
+            currentDist = out[i];
+            improved = true;
+          }
+        }
+      } else {
+        for (const neighborIdx of neighbors) {
+          const neighborDist = this._distQ(neighborIdx);
+          if (neighborDist < currentDist) {
+            currentNode = neighborIdx;
+            currentDist = neighborDist;
+            improved = true;
+          }
         }
       }
     }
@@ -1168,12 +1354,15 @@ export class BinaryHNSWIndex {
    * Asymmetric rescoring happens in search() after candidates are returned.
    */
   searchLayerQuery(startNode, queryBinary, ef, level) {
+    // Direct callers (outside search()) may pass their own query — stage it.
+    if (queryBinary !== this._queryBinary) this._setQuery(queryBinary);
     const visited = this._visitedList;
     visited.ensureCapacity(this.vectors.length);
     visited.reset();
     visited.mark(startNode);
 
-    const startDist = hammingDistance(this.vectors[startNode].binary, queryBinary);
+    const startDist = this._distQ(startNode);
+    const slab = this._slab;
     const candidates = this._candHeap;
     candidates.clear();
     const results = this._resHeap;
@@ -1194,23 +1383,54 @@ export class BinaryHNSWIndex {
       const currentIdx = candidates.extractMin();
       visitedCount++;
 
-      const neighbors = this.graph[level]?.[currentIdx] || [];
+      const neighbors = this.graph[level]?.[currentIdx] || EMPTY_NEIGHBORS;
       let foundNew = false;
-      for (let i = 0; i < neighbors.length; i++) {
-        const neighborIdx = neighbors[i];
-        if (visited.isVisited(neighborIdx)) continue;
-        visited.mark(neighborIdx);
+      const nn = neighbors.length;
+      if (slab && nn > 1 && nn <= slab.batchIdx.length) {
+        // Two-pass block scoring: pass 1 visited-filters into the batch
+        // scratch, pass 2 scores the block in one kernel call, pass 3 pushes
+        // in the same sequence — identical heap states to the per-call loop.
+        const bIdx = slab.batchIdx;
+        let m = 0;
+        for (let i = 0; i < nn; i++) {
+          const neighborIdx = neighbors[i];
+          if (visited.isVisited(neighborIdx)) continue;
+          visited.mark(neighborIdx);
+          bIdx[m++] = neighborIdx;
+        }
+        if (m > 0) {
+          const out = slab.batchToQuery(m);
+          for (let i = 0; i < m; i++) {
+            const neighborIdx = bIdx[i];
+            const dist = out[i];
+            if (results.size < ef) {
+              candidates.insert(neighborIdx, dist);
+              results.insert(neighborIdx, dist);
+              foundNew = true;
+            } else if (dist < results.peekVal()) {
+              candidates.insert(neighborIdx, dist);
+              results.replaceMax(neighborIdx, dist);
+              foundNew = true;
+            }
+          }
+        }
+      } else {
+        for (let i = 0; i < nn; i++) {
+          const neighborIdx = neighbors[i];
+          if (visited.isVisited(neighborIdx)) continue;
+          visited.mark(neighborIdx);
 
-        const dist = hammingDistance(this.vectors[neighborIdx].binary, queryBinary);
+          const dist = this._distQ(neighborIdx);
 
-        if (results.size < ef) {
-          candidates.insert(neighborIdx, dist);
-          results.insert(neighborIdx, dist);
-          foundNew = true;
-        } else if (dist < results.peekVal()) {
-          candidates.insert(neighborIdx, dist);
-          results.replaceMax(neighborIdx, dist);
-          foundNew = true;
+          if (results.size < ef) {
+            candidates.insert(neighborIdx, dist);
+            results.insert(neighborIdx, dist);
+            foundNew = true;
+          } else if (dist < results.peekVal()) {
+            candidates.insert(neighborIdx, dist);
+            results.replaceMax(neighborIdx, dist);
+            foundNew = true;
+          }
         }
       }
 
@@ -1273,11 +1493,11 @@ export class BinaryHNSWIndex {
    * Batch add vectors
    */
   async addBatch(items) {
-    await this.init();
+    if (!this.initialized) await this.init();
 
     const results = [];
     for (const item of items) {
-      const idx = await this.add(item.id, item.binary || item.vector, item.metadata, item.int8);
+      const idx = this.addSync(item.id, item.binary || item.vector, item.metadata, item.int8);
       results.push(idx);
     }
     return results;
@@ -1293,6 +1513,27 @@ export class BinaryHNSWIndex {
       return undefined;
     }
     return this.int8Vectors.get(id);
+  }
+
+  /**
+   * Batch variant of getInt8Vector for hot rescore loops: snapshots the stale
+   * bitmap ONCE for the whole batch (one existsSync+statSync instead of one
+   * pair per candidate). All candidates see a single coherent bitmap — the
+   * same per-query snapshot granularity search() itself uses.
+   *
+   * @param {string[]} ids
+   * @returns {Array<Int8Array|undefined>} aligned with ids
+   */
+  getInt8VectorsForIds(ids) {
+    const bitmap = this._loadStaleBitmap();
+    const out = new Array(ids.length);
+    for (let i = 0; i < ids.length; i++) {
+      const idx = this.idToIndex.get(ids[i]);
+      out[i] = (idx === undefined || this._isIndexStale(idx, bitmap))
+        ? undefined
+        : this.int8Vectors.get(ids[i]);
+    }
+    return out;
   }
 
   /**
@@ -1509,10 +1750,14 @@ export class BinaryHNSWIndex {
     this.centroid = null;
     this.signVector = null;
 
-    // Vectors already read above as part of the consistency probe.
-    this.vectors = vectorsData.map(v => ({
+    // Vectors already read above as part of the consistency probe. Rebuild
+    // the slab at the on-disk dimension (meta may differ from the
+    // constructor default), then store slab views on the node records.
+    this._slab = new HammingSlab(this.dimension);
+    this._slab.ensure(vectorsData.length);
+    this.vectors = vectorsData.map((v, i) => ({
       id: v.id,
-      binary: new Uint8Array(v.binary),
+      binary: this._slab.set(i, v.binary instanceof Uint8Array ? v.binary : Uint8Array.from(v.binary)),
       metadata: v.metadata,
     }));
 
@@ -1765,7 +2010,10 @@ export class BinaryHNSWIndex {
       this.idToIndex.clear();
       for (let i = 0; i < n; i += 1) this.idToIndex.set(ids[i], i);
 
-      // Lazy vectors store (binary bytes faulted in per touch).
+      // Lazy vectors store (binary bytes faulted in per touch). No resident
+      // slab on this path — distance helpers fall back to the copy-per-call
+      // kernel against the lazily-materialized views.
+      this._slab = null;
       const vectorStore = new MmapVectorStore(
         fd, sectionsBase + sec.vectors.offset, this.dimension, ids, metas
       );
@@ -1782,22 +2030,19 @@ export class BinaryHNSWIndex {
       // int8 vectors: small Int8Arrays, read eagerly into the resident Map
       // (getInt8Vector is an O(1) Map lookup on the hot rescore path; keeping
       // them resident matches the JSON path and avoids per-lookup seeks).
+      // Windowed sequential parse: ~len/8MB syscalls and bounded transient
+      // heap instead of 3 syscalls + a per-byte readInt8 loop per entry.
       this.int8Vectors.clear();
       if (sec.int8 && sec.int8.len >= 4) {
-        const int8Base = sectionsBase + sec.int8.offset;
-        const head = Buffer.allocUnsafe(4);
-        readSync(fd, head, 0, 4, int8Base);
-        const entryCount = head.readUInt32LE(0);
-        let cursor = int8Base + 4;
+        const win = new SectionWindow(fd, sectionsBase + sec.int8.offset, sec.int8.len);
+        const entryCount = win.u32(0);
+        let cursor = 4;
         for (let e = 0; e < entryCount; e += 1) {
-          const eh = Buffer.allocUnsafe(8);
-          readSync(fd, eh, 0, 8, cursor);
-          const idIndex = eh.readUInt32LE(0);
-          const len = eh.readUInt32LE(4);
-          const body = Buffer.allocUnsafe(len);
-          readSync(fd, body, 0, len, cursor + 8);
+          const idIndex = win.u32(cursor);
+          const len = win.u32(cursor + 4);
           const vec = new Int8Array(len);
-          for (let b = 0; b < len; b += 1) vec[b] = body.readInt8(b);
+          // Bytes are two's complement — identical layout, bulk copy.
+          win.copyTo(cursor + 8, len, new Uint8Array(vec.buffer));
           this.int8Vectors.set(ids[idIndex], vec);
           cursor += 8 + len;
         }
@@ -1827,22 +2072,23 @@ export class BinaryHNSWIndex {
    * proxy materializes a node on touch.
    */
   _buildMmapGraphOffsets(fd, base, sectionLen) {
-    const lvlHead = Buffer.allocUnsafe(4);
-    readSync(fd, lvlHead, 0, 4, base);
-    const levelCount = lvlHead.readUInt32LE(0);
+    // Windowed sequential scan of the structural integers (level/node/
+    // neighbor counts): ~sectionLen/8MB syscalls instead of one 4-byte
+    // readSync PER NODE PER LEVEL (500k+ syscalls on large indexes).
+    // Neighbor-list BODIES stay lazy — the window is scan-only scratch and
+    // is dropped when this method returns.
+    const win = new SectionWindow(fd, base, sectionLen);
+    const levelCount = win.u32(0);
     let cursor = 4; // relative to base
     const levels = new Array(levelCount);
-    const four = Buffer.allocUnsafe(4);
     for (let l = 0; l < levelCount; l += 1) {
-      readSync(fd, four, 0, 4, base + cursor);
-      const nodeCount = four.readUInt32LE(0);
+      const nodeCount = win.u32(cursor);
       cursor += 4;
       const nodeOffsets = new Int32Array(nodeCount);
       for (let i = 0; i < nodeCount; i += 1) {
         // Record this node's neighbor-list offset (points at its [count] word).
         nodeOffsets[i] = cursor;
-        readSync(fd, four, 0, 4, base + cursor);
-        const neighborCount = four.readUInt32LE(0);
+        const neighborCount = win.u32(cursor);
         cursor += 4 + neighborCount * 4;
       }
       const level = new MmapGraphLevel(fd, base, nodeOffsets, nodeCount);
@@ -1903,6 +2149,7 @@ export class BinaryHNSWIndex {
   async clear() {
     this._closeMmap();
     this.vectors = [];
+    this._slab = new HammingSlab(this.dimension);
     this.idToIndex.clear();
     this.int8Vectors.clear();
     this.graph = [];

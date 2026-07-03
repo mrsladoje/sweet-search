@@ -87,12 +87,13 @@ const I32x4_EXT_HI_S    = 0xa8; // i32x4.extend_high_i16x8_s
 // ============================================================================
 
 function buildModule() {
-  // Type section: 5 signatures
+  // Type section: 6 signatures
   // type 0: (i32,i32,i32) → i32       [hamming, int8_dot]
   // type 1: (i32,i32) → i32           [int8_norm_sq]
   // type 2: (i32,i32,i32,i32) → i32   [asymmetric_distance]
   // type 3: (i32,i32,i32,i32,i32) → () [int8_batch_dot]
   // type 4: (i32,i32,i32,i32,i32) → f32 [maxsim_f32]
+  // type 5: (i32×6) → ()               [hamming_batch]
   const F32 = 0x7d;
   const typeSec = section(1, vec([
     [0x60, ...vec([[I32], [I32], [I32]]), ...vec([[I32]])],
@@ -100,10 +101,11 @@ function buildModule() {
     [0x60, ...vec([[I32], [I32], [I32], [I32]]), ...vec([[I32]])],
     [0x60, ...vec([[I32], [I32], [I32], [I32], [I32]]), ...[0x00]], // → void
     [0x60, ...vec([[I32], [I32], [I32], [I32], [I32]]), ...vec([[F32]])], // → f32
+    [0x60, ...vec([[I32], [I32], [I32], [I32], [I32], [I32]]), ...[0x00]], // → void
   ]));
 
-  // Function section: 6 functions (5 original + maxsim_f32)
-  const funcSec = section(3, vec([[0], [0], [1], [2], [3], [4]]));
+  // Function section: 7 functions (6 original + hamming_batch)
+  const funcSec = section(3, vec([[0], [0], [1], [2], [3], [4], [5]]));
 
   // Memory: 64 pages (4MB — MaxSim needs Q×dim + D×dim float32 buffers)
   const memSec = section(5, vec([[0x00, ...leb128u(64)]]));
@@ -121,6 +123,7 @@ function buildModule() {
     exp('asymmetric_distance', 0, 3),
     exp('int8_batch_dot', 0, 4),
     exp('maxsim_f32', 0, 5),
+    exp('hamming_batch', 0, 6),
   ]));
 
   // -----------------------------------------------------------------------
@@ -838,6 +841,57 @@ function buildModule() {
     return b;
   }
 
+  // -----------------------------------------------------------------------
+  // Function 6: hamming_batch(query, slab, dim, idx_ptr, count, out_ptr) → void
+  //   One boundary crossing scores a whole neighbor block: for each of
+  //   `count` u32 node indices at idx_ptr, computes
+  //   hamming_distance(query, slab + idx*dim, dim) and stores the u32
+  //   distance at out_ptr + i*4. Used by the resident-slab kernel
+  //   (hamming-kernel.js) so graph traversal pays ~1 FFI call per block
+  //   instead of one per neighbor.
+  // -----------------------------------------------------------------------
+  const I32_LOAD = 0x28;
+
+  function hammingBatchBody() {
+    const b = [];
+    // params: 0=$query, 1=$slab, 2=$dim, 3=$idx_ptr, 4=$count, 5=$out_ptr
+    // locals: 6=$i
+    b.push(...leb128u(1));
+    b.push(...leb128u(1), I32); // local 6 = $i
+
+    b.push(BLOCK, VOID);
+    b.push(LOOP, VOID);
+    // if i >= count: break
+    b.push(GET, 6); b.push(GET, 4); b.push(I32_GE_U); b.push(BR_IF, 1);
+
+    // Address for i32.store: out_ptr + i*4
+    b.push(GET, 5);
+    b.push(GET, 6); b.push(I32_CONST, 2); b.push(I32_SHL);
+    b.push(I32_ADD);
+
+    // Value: call hamming_distance(query, slab + idx*dim, dim)
+    b.push(GET, 0);                       // $query
+    b.push(GET, 1);                       // $slab
+    b.push(GET, 3);                       // $idx_ptr
+    b.push(GET, 6); b.push(I32_CONST, 2); b.push(I32_SHL);
+    b.push(I32_ADD);
+    b.push(I32_LOAD, 0x02, 0x00);         // idx = u32[idx_ptr + i*4]
+    b.push(GET, 2); b.push(I32_MUL);      // idx * dim
+    b.push(I32_ADD);                      // slab + idx*dim
+    b.push(GET, 2);                       // $dim
+    b.push(CALL, ...leb128u(0));          // call function 0 (hamming_distance)
+
+    b.push(I32_STORE, 0x02, 0x00);
+
+    // i++
+    b.push(GET, 6); b.push(I32_CONST, 1); b.push(I32_ADD); b.push(SET, 6);
+    b.push(BR, 0);
+    b.push(END); b.push(END);
+
+    b.push(END);
+    return b;
+  }
+
   const codeSec = section(10, vec([
     codeEntry(hammingBody()),
     codeEntry(int8DotBody()),
@@ -845,6 +899,7 @@ function buildModule() {
     codeEntry(asymDistBody()),
     codeEntry(int8BatchDotBody()),
     codeEntry(maxsimF32Body()),
+    codeEntry(hammingBatchBody()),
   ]));
 
   // Assemble
@@ -910,6 +965,19 @@ try {
   mem[0] = 0x00;
   const ad2 = inst.exports.asymmetric_distance(0, 64, 8, 100);
   console.log(`asymmetric_distance(0x00, [1×8], 8, 100) = ${ad2} (expect 116)`);
+
+  // hamming_batch: query at 0 (all 0xFF), slab of 3×2-byte vectors at 64,
+  // indices [2,0,1] at 128, out at 160.
+  // slab: v0=FF FF (d=0), v1=00 00 (d=16), v2=FF 00 (d=8)
+  {
+    mem.fill(0, 0, 200);
+    mem.set([0xff, 0xff], 0);                 // query
+    mem.set([0xff, 0xff, 0x00, 0x00, 0xff, 0x00], 64); // slab, dim=2
+    new Uint32Array(inst.exports.memory.buffer, 128, 3).set([2, 0, 1]);
+    inst.exports.hamming_batch(0, 64, 2, 128, 3, 160);
+    const out = Array.from(new Uint32Array(inst.exports.memory.buffer, 160, 3));
+    console.log(`hamming_batch idx=[2,0,1] = ${out} (expect 8,0,16)`);
+  }
 
   // int8_batch_dot: 3 candidates, dim=4
   // query=[1,2,3,4], cand0=[1,1,1,1], cand1=[2,2,2,2], cand2=[0,0,0,0]
