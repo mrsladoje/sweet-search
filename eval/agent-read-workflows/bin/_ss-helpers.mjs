@@ -19,6 +19,17 @@ import {
   parseLineRange, looksLikeOption,
 } from './_ss-argparse.mjs';
 
+// Diagnostic-log isolation (agent-facing tools). The Sweet Search engine emits
+// model/index load banners via console.log → stdout ("LateInteraction: Loaded…",
+// "BinaryHNSW: Loaded…", "Warming up embedding…", "✓ Vocabulary loaded…"). When the
+// engine runs IN-PROCESS in this wrapper, that stdout IS the agent's tool result, so a
+// cold start crowds out the actual hits and the agent falls back to native tools
+// (diagnosed root cause of the sweet≈native tie). The wrappers emit REAL results only
+// via process.stdout.write, so redirect every console.log to stderr; the ss-* shell
+// wrapper's `2>` suppresses it on success → the agent sees clean results, warm or cold.
+// (Production search/grep/find already avoid this: the daemon is spawned stdio:'ignore'.)
+console.log = (...args) => process.stderr.write(args.map(a => (typeof a === 'string' ? a : String(a))).join(' ') + '\n');
+
 // 8-char SHA1 prefix is enough for grouping identical queries across
 // benchmark runs without bloating artifacts.
 function shortQueryHash(q) {
