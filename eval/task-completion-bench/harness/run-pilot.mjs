@@ -48,7 +48,8 @@ const HARNESS = process.env.HARNESS || 'bareapi';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const BENCH = path.join(ROOT, 'eval/task-completion-bench');
 const SS_BIN = path.join(ROOT, 'eval/agent-read-workflows/bin');
-const MPP = path.join(ROOT, 'core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md');
+const MPP = process.env.MPP || path.join(ROOT, 'core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md');
+const ARMS = (process.env.ARMS || 'native,sweet').split(',').map(s => s.trim()).filter(Boolean); // arm filter (e.g. ARMS=sweet) for prompt-variant smokes
 const INDEXER = path.join(ROOT, 'core/indexing/index-codebase-v21.js');
 const VENV_PY = path.join(BENCH, '.venv-grade/bin/python');
 const DOCKER_HOST = process.env.DOCKER_HOST || 'unix:///Users/admin/.colima/default/docker.sock';
@@ -396,7 +397,7 @@ function checkpoint() {
   try {
     const od = path.join(BENCH, 'results', runId); mkdirSync(od, { recursive: true });
     writeFileSync(path.join(od, 'rows.json'), JSON.stringify(rows, null, 2));
-    for (const arm of ['native', 'sweet']) writeFileSync(path.join(od, `preds-${arm}.jsonl`), predsByArm[arm].map(p => JSON.stringify(p)).join('\n') + '\n');
+    for (const arm of ARMS) writeFileSync(path.join(od, `preds-${arm}.jsonl`), predsByArm[arm].map(p => JSON.stringify(p)).join('\n') + '\n');
   } catch { /* */ }
 }
 
@@ -439,7 +440,7 @@ async function runOneTask(id) {
     // (no agent runs). GOLDEN_ONLY skips the multi-GB per-instance image build so a
     // full-200 warm pass stays disk-safe (images are built lazily at grade time).
     if (process.env.WARM_ONLY) { console.log(`  warmed golden${image ? ' + image (' + image + ')' : ' (goldens-only)'} for ${id}`); return; }
-    for (const arm of ['native', 'sweet']) {
+    for (const arm of ARMS) {
       for (let rep = 0; rep < REPS; rep++) {
         const sweet = arm === 'sweet';
         const rundir = makeRunDir(golden.dir, `${id}__${arm}__r${rep}`, sweet);
@@ -507,7 +508,7 @@ reapServers();
 console.log('\n### grading via swebench (Docker, authoritative) — all reps');
 const repsToGrade = Object.keys(predsByRepArm).map(Number).sort((a, b) => a - b);
 for (const rep of repsToGrade) {
-  for (const arm of ['native', 'sweet']) {
+  for (const arm of ARMS) {
     const preds = predsByRepArm[rep]?.[arm] || [];
     if (!preds.length) continue;
     const report = gradeArm(arm, preds, runId);
@@ -529,7 +530,7 @@ mkdirSync(outDir, { recursive: true });
 writeFileSync(path.join(outDir, 'rows.json'), JSON.stringify(rows, null, 2));
 console.log('\n=== PILOT SUMMARY (aggregated over all reps) ===');
 const NREPS = Math.max(1, REPS);
-for (const arm of ['native', 'sweet']) {
+for (const arm of ARMS) {
   const rs = rows.filter(r => r.arm === arm);                 // ALL reps
   const resolved = rs.filter(r => r.resolved).length;         // task×rep resolutions
   const partialMacro = rs.length ? rs.reduce((a, r) => a + (r.f2pFrac ?? 0), 0) / rs.length : 0;

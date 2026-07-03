@@ -62,6 +62,7 @@ const PRICES = {
   'openai/gpt-5.5':           { inPerM: 5, outPerM: 30, cacheReadPerM: 0.5 },
   'z-ai/glm-5.1':             { inPerM: 0.98, outPerM: 3.08, cacheReadPerM: 0.182 },
   'claude-opus-4-8':          { inPerM: 15, outPerM: 75, cacheReadPerM: 1.5, cacheWritePerM: 18.75 },
+  'claude-sonnet-4-6':        { inPerM: 3, outPerM: 15, cacheReadPerM: 0.30, cacheWritePerM: 3.75 },
 };
 const PR = PRICES[MODEL] || PRICES['deepseek/deepseek-v4-pro'];
 // Model/harness-keyed output dir: the original deepseek sweep keeps its un-suffixed dir.
@@ -311,7 +312,7 @@ function bootCI(deltas, iters = 2000, seed = 42) {
 }
 function report() {
   if (!fs.existsSync(RUNS)) { console.error(`no runs.jsonl yet at ${RUNS}`); process.exit(1); }
-  const rows = fs.readFileSync(RUNS, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((r) => !r.error);
+  const rows = fs.readFileSync(RUNS, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((r) => !r.error && r.exitCode === 0);
   const byArm = new Map();
   for (const r of rows) { if (!byArm.has(r.arm)) byArm.set(r.arm, []); byArm.get(r.arm).push(r); }
   const METRICS = [
@@ -358,13 +359,18 @@ function report() {
 (async () => {
   if (REPORT) return report();
   fs.mkdirSync(OUT, { recursive: true });
+  // A run only counts as done if the agent actually SUCCEEDED (exitCode 0) —
+  // failed runs (e.g. rate-limit cascades) must re-run on resume, not be skipped.
   const done = new Set(fs.existsSync(RUNS)
-    ? fs.readFileSync(RUNS, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((r) => !r.error).map((r) => `${r.arm}|${r.id}|${r.rep}`)
+    ? fs.readFileSync(RUNS, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((r) => !r.error && r.exitCode === 0).map((r) => `${r.arm}|${r.id}|${r.rep}`)
     : []);
   const total = arms.length * probes.length * REPS;
   console.error(`budget-sweep-smoke${TAG}: ${arms.length} arms × ${probes.length} probes × ${REPS} reps = ${total} runs (${done.size} already done) | ${MODEL} via ${HARNESS} reasoning=${REASONING}${HARNESS === 'cc' ? ' think=' + THINK : ''} conc=${CONC}`);
   const cwds = [...new Set(probes.map((p) => resolveRepoCwd(p, {})))];
-  if (HARNESS === 'cc') { restoreMd(); suppressMd(); process.env.MAX_THINKING_TOKENS = THINK; }
+  // CC_MD_EXTERNAL=1 → the ORCHESTRATOR owns global CLAUDE.md suppression
+  // (parallel shards must not race suppress/restore: the first finisher would
+  // restore globals while siblings still run).
+  if (HARNESS === 'cc') { if (!process.env.CC_MD_EXTERNAL) { restoreMd(); suppressMd(); } process.env.MAX_THINKING_TOKENS = THINK; }
   try {
     for (const armDef of arms) {
       // Arm env is process-global; arms run strictly sequentially, probes within
@@ -396,7 +402,7 @@ function report() {
       if (HARNESS === 'cc') restoreRepoMd();
     }
   } finally {
-    if (HARNESS === 'cc') { restoreRepoMd(); restoreMd(); }
+    if (HARNESS === 'cc') { restoreRepoMd(); if (!process.env.CC_MD_EXTERNAL) restoreMd(); }
   }
   console.error('\nsweep complete. Run with --report for the aggregate.');
 })();

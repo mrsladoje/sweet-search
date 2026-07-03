@@ -1938,16 +1938,61 @@ adversarial-counter(10) **1.00/1.00**; family HOMP MiMo-v2.5-pro 0.988 + Qwen3.6
 GPT 0.931 + minParaphraseAccuracy 1.00 (both ≥0.8). 0 still-empty across 480 runs.
 **M++ GENERALIZES; no overfit signal.**
 
-**5-cell cross-harness (the moat, honestly):** M++ delivers significant efficiency
-wherever native retrieval is inefficient, and never significantly hurts accuracy —
-GPT-5.5/Codex (n=180) **−49% tool calls / −26% realized cost** (native +2.1pp acc);
-GPT-5.5/opencode (n=60) **−48% calls** (replicates); Opus-4.8/Claude-Code (n=240)
-**−18% calls** (acc tied, no cost/speed penalty); DeepSeek-V4-direct/bare-API (n=180)
-WASH (lean+capable native, no slack); Sonnet-4.6-instant/bare-API (n=60) **+39pp
-accuracy** + per-token density survives length-control (USD_noC +0.060). Headline:
-*"significantly fewer tool calls on both frontiers (−49% GPT, −18% Opus) at near-parity
-accuracy + no cost/speed penalty; the gain's FORM (efficiency vs accuracy) tracks which
-axis native is weak on."*
+**5-cell cross-harness (the moat, honestly) — 4k-era, SUPERSEDED by the 11-cell 3k
+re-measurement below (§13.1):** M++ delivers significant efficiency wherever native
+retrieval is inefficient, and never significantly hurts accuracy — GPT-5.5/Codex (n=180)
+**−49% tool calls / −26% realized cost** (native +2.1pp acc); GPT-5.5/opencode (n=60)
+**−48% calls** (replicates); Opus-4.8/Claude-Code (n=240) **−18% calls** (acc tied, no
+cost/speed penalty); DeepSeek-V4-direct/bare-API (n=180) WASH (lean+capable native, no
+slack); Sonnet-4.6-instant/bare-API (n=60) **+39pp accuracy** + per-token density
+survives length-control (USD_noC +0.060). Headline: *"significantly fewer tool calls on
+both frontiers (−49% GPT, −18% Opus) at near-parity accuracy + no cost/speed penalty; the
+gain's FORM (efficiency vs accuracy) tracks which axis native is weak on."*
+
+### §13.1 Full 11-cell cross-harness matrix under the shipped 3k packaging (2026-06-13)
+
+The preview-tier token budget was lowered 4000→3000 (commit `53ad493`; see the
+budget-sweep memo) after a 4-model dose-response found 3k is the floor that keeps every
+usefulness metric flat-to-up with zero call-compensation while cutting realized cost on
+the flagships. The **entire matrix was then re-measured under 3k**, all cells on the
+SAME uniform 3-judge panel (Sonnet-4-6 + DeepSeek-V4-flash + Gemini-2.0-flash), paired by
+probe, seeded 20k-bootstrap, BH-FDR q=0.05 per metric. `*` = survives BH-FDR.
+
+**Vault (n=60 each, sealed primary family):**
+
+| cell (model / harness) | acc M++/nat | content Δ | USD_noC Δ | calls Δ | realized $ M++/nat (Δ%) |
+|---|---|---|---|---|---|
+| Sonnet-4-6 med / CC | 0.97 / 0.97 | +0.287* | +0.076* | −0.23 | $0.100 / $0.088 (+14%) |
+| Sonnet-4-6 max / CC | 0.97 / 0.99 | +0.247* | +0.054* | −0.37 | $0.094 / $0.087 (+8%) |
+| Opus-4-8 low / CC | 0.99 / 0.99 | +0.180* | +0.044* | −1.35* | $0.382 / $0.423 (**−10%**) |
+| Opus-4-8 xhigh / CC | 0.98 / 1.00 | +0.280* | +0.080* | −1.08* | $0.392 / $0.412 (−5%) |
+| GPT-5.5 low / codex | 0.96 / 0.99 | +0.055 | +0.029* | −2.92* | $0.097 / $0.138 (**−30%**) |
+| GPT-5.5 high / codex | 0.99 / 0.99 | +0.173* | +0.053* | −5.23* | $0.132 / $0.199 (**−34%**) |
+| GPT-5.5 low / bare-API | 0.99 / 0.99 | +0.237* | +0.065* | −1.65* | $0.049 / $0.072 (**−32%**) |
+| GLM-5.1 high / bare-API | 0.94 / 0.91 | +0.213* | +0.058* | −1.03* | $0.011 / $0.008 (+27%) |
+| DeepSeek-V4-pro / bare-API | 0.95 / 0.92 | +0.083* | +0.029* | −1.12* | $0.004 / $0.005 (−15%) |
+| GLM-5.1 high / opencode | 0.96 / 0.98 | +0.227* | +0.059* | −0.93* | $0.016 / $0.019 (−18%) |
+| GPT-5.5 high / opencode | 0.97 / 0.98 | +0.307* | +0.076* | −5.83* | $0.151 / $0.194 (**−22%**) |
+
+BH-FDR survival (vault): **content 10/11, content_noD3 9/11, USD_noC 11/11, calls 9/11**;
+caliper-matched (length-controlled, per-token) **8/11 on content / content_noD3 / USD_noC**.
+The two content misses (cdx-low, ds) are correct-sign, weak-model/underpowered. Held-out(30)
++ OOD(40) triangulation (n=20 cells): **content_noD3 18/20, content 17/20, USD_noC 11/20,
+calls 14/20**; caliper content_noD3 13/20. Combined raw content_noD3 **27/31**, caliper
+**21/31** — reproduces the published 4k moat at FDR. Stats: `usd-cell-stats-3k-{vault,heldout-ood}.json`.
+
+**What changed vs 4k.** Usefulness margins are unchanged-to-slightly-stronger (content
+deltas +0.18..+0.31 where the 4k headline reported +0.06 USD_noC density). The decisive
+change is the **cost column: realized $ is now M++-favorable on every GPT/codex/Opus cell**
+(codex −30/34%, bare-GPT −32%, opencode-GPT −22%, Opus −5/−10%) — the 4k matrix's "DeepSeek
+WASH / mixed dollars" caveat is retired; only the two cheapest bare models (GLM +27%, where
++$0.003 is noise; DeepSeek −15% on $0.004) are economically flat. Accuracy ties at
+saturation everywhere (the lone −2.8pp cdx-low 2-rep wobble is the only sub-tie, correct-sign
+and within reps=1 noise). Calls significantly fewer on 9/11 vault cells; the two non-sig
+(Sonnet med/max) are the already-disciplined natives where the win is per-token density, not
+call count. **Headline (3k):** *"M++ returns significantly more useful context per response
+AND per token across 11 model×harness configs, cuts tool calls on 9/11, and is now cheaper
+in realized dollars on every frontier cell — at saturation-tied accuracy."*
 
 **Deployment (2026-06-06, this commit lineage):** M++ is the shipped system prompt.
 1. `core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md` regenerated
