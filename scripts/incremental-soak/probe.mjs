@@ -28,6 +28,7 @@ import Database from 'better-sqlite3';
 import { readManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 import { resolveLatestRecords, listDeltaSegments } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { loadBitmap, isSet } from '../../core/infrastructure/tombstone-bitmap-reader.js';
+import { readVectorsSidecarSync, readInt8SidecarSync } from '../../core/vector-store/binary-hnsw-index.js';
 
 export class Probe {
   constructor({ projectRoot, stateDir }) {
@@ -145,8 +146,9 @@ export class Probe {
     const vecPath = path.join(this.stateDir, 'codebase-binary-hnsw.vectors.json');
     const int8Path = path.join(this.stateDir, 'codebase-binary-hnsw.int8.json');
     const stalePath = path.join(this.stateDir, 'codebase-binary-hnsw.idx.stale.bin');
-    const vectors = readJsonSafe(vecPath) || [];
-    const int8 = readJsonSafe(int8Path) || {};
+    // NDJSON v2 sidecars (v1 back-compat) — canonical sync readers.
+    const vectors = readSidecarSafe(() => readVectorsSidecarSync(vecPath)) || [];
+    const int8 = readSidecarSafe(() => readInt8SidecarSync(int8Path)) || {};
     const vectorRows = vectors || [];
     const vectorIds = new Set(vectorRows.map((r) => r.id));
     const int8Ids = new Set(Object.keys(int8 || {}));
@@ -202,6 +204,10 @@ export class Probe {
     try { records = resolveLatestRecords(basePath); } catch { /* concurrent compaction unlink */ }
     return { basePath, deltas, records };
   }
+}
+
+function readSidecarSafe(read) {
+  try { return read(); } catch { return null; }
 }
 
 function readJsonSafe(p) {

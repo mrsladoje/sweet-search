@@ -26,6 +26,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
+import { readVectorsSidecarSync, readGraphSidecarSync, readInt8SidecarSync } from '../../core/vector-store/binary-hnsw-index.js';
 import { resolveLatestRecords, listDeltaSegments } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 
@@ -273,6 +274,10 @@ function stripEpochDeep(value) {
 // Binary HNSW dumper (JSON sidecars, sorted by id; graph re-keyed to ids)
 // ---------------------------------------------------------------------------
 
+function readSidecarIfExists(read) {
+  try { return read(); } catch { return null; }
+}
+
 function readJsonIfExists(p) {
   try {
     return JSON.parse(fs.readFileSync(p, 'utf-8'));
@@ -306,9 +311,10 @@ export function dumpBinaryHnsw(stateDir) {
   if (!fs.existsSync(metaPath)) return null;
 
   const meta = readJsonIfExists(metaPath) || {};
-  const vectors = readJsonIfExists(idxPath.replace('.idx', '.vectors.json')) || [];
-  const graph = readJsonIfExists(idxPath.replace('.idx', '.graph.json')) || [];
-  const int8 = readJsonIfExists(idxPath.replace('.idx', '.int8.json')) || {};
+  // NDJSON v2 sidecars (v1 back-compat) — canonical sync readers.
+  const vectors = readSidecarIfExists(() => readVectorsSidecarSync(idxPath.replace('.idx', '.vectors.json'))) || [];
+  const graph = readSidecarIfExists(() => readGraphSidecarSync(idxPath.replace('.idx', '.graph.json'))) || [];
+  const int8 = readSidecarIfExists(() => readInt8SidecarSync(idxPath.replace('.idx', '.int8.json'))) || {};
   const calibration = readJsonIfExists(idxPath.replace('.idx', '.calibration.json'));
 
   // idx -> id (positional). Empty slots (retired/never-filled) map to null.

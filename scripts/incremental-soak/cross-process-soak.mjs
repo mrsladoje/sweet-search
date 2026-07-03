@@ -37,6 +37,7 @@ import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
+import { readVectorsSidecarSync, readInt8SidecarSync } from '../../core/vector-store/binary-hnsw-index.js';
 import {
   processMaintenanceQueue,
   defaultMaintenanceHandlers,
@@ -457,7 +458,7 @@ function authoritativeProbe(stateDir) {
   const binVectors = path.join(stateDir, 'codebase-binary-hnsw.vectors.json');
   if (fs.existsSync(binMeta) && fs.existsSync(binVectors)) {
     try {
-      const vec = JSON.parse(fs.readFileSync(binVectors, 'utf-8'));
+      const vec = readVectorsSidecarSync(binVectors); // NDJSON v2 (v1 back-compat)
       const allIds = vec.map((v) => v.id);
       const stalePath = path.join(stateDir, 'codebase-binary-hnsw.idx.stale.bin');
       let bm = null;
@@ -472,7 +473,7 @@ function authoritativeProbe(stateDir) {
       const int8Path = path.join(stateDir, 'codebase-binary-hnsw.int8.json');
       if (fs.existsSync(int8Path)) {
         try {
-          const obj = JSON.parse(fs.readFileSync(int8Path, 'utf-8'));
+          const obj = readInt8SidecarSync(int8Path); // NDJSON v2 (v1 back-compat)
           int8Ids = Object.keys(obj || {});
         } catch { /* tolerate */ }
       }

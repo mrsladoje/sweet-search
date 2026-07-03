@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
+import { readVectorsSidecar } from '../../core/vector-store/binary-hnsw-index.js';
 
 const MODEL_INFO = Object.freeze({
   provider: 'test', model: 'fake-crash', dimension: 8, hnswDimension: 8,
@@ -36,10 +37,11 @@ function liveVectorIds(stateDir) {
     return new Set(db.prepare('SELECT id FROM vectors WHERE epoch_retired IS NULL').all().map((r) => r.id));
   } finally { db.close(); }
 }
-function hnswVectorIds(stateDir) {
+async function hnswVectorIds(stateDir) {
   const p = join(stateDir, 'codebase-binary-hnsw.vectors.json');
   if (!existsSync(p)) return new Set();
-  return new Set(readJson(p).filter((v) => v && v.id != null).map((v) => v.id));
+  const rows = await readVectorsSidecar(p); // NDJSON v2 sidecar (v1 back-compat)
+  return new Set(rows.filter((v) => v && v.id != null).map((v) => v.id));
 }
 async function floatStoreIds(stateDir) {
   const store = new FloatVectorStore();
@@ -132,7 +134,7 @@ describe('crash-consistency: torn SQLite-committed row is re-added to HNSW + LI'
     const liveIds = liveVectorIds(stateDir);
     expect(liveIds.size).toBeGreaterThan(0);
     // Sanity: a clean tick put every live row in HNSW + float + LI.
-    expect(hnswVectorIds(stateDir)).toEqual(liveIds);
+    expect(await hnswVectorIds(stateDir)).toEqual(liveIds);
     expect(await floatStoreIds(stateDir)).toEqual(liveIds);
     expect(await liDocIds(stateDir)).toEqual(liveIds);
 
@@ -140,7 +142,7 @@ describe('crash-consistency: torn SQLite-committed row is re-added to HNSW + LI'
     // (epoch_written stays = the un-published tick's epoch).
     simulateCrashResidue();
     expect(existsSync(join(stateDir, 'merkle-state.json'))).toBe(false);
-    expect(hnswVectorIds(stateDir)).toEqual(new Set()); // HNSW lost
+    expect(await hnswVectorIds(stateDir)).toEqual(new Set()); // HNSW lost
 
     // Restart tick: the file is re-reconciled (no merkle ⇒ not skipped); the
     // committed rows hash-match an exact reuse, so WITHOUT the torn-row repair
@@ -152,7 +154,7 @@ describe('crash-consistency: torn SQLite-committed row is re-added to HNSW + LI'
     // The live SET is preserved (same row ids — repaired under their existing
     // ids, not re-encoded into fresh ones).
     expect(liveAfter).toEqual(liveIds);
-    expect(hnswVectorIds(stateDir)).toEqual(liveAfter); // missing-node hole closed
+    expect(await hnswVectorIds(stateDir)).toEqual(liveAfter); // missing-node hole closed
     expect(await floatStoreIds(stateDir)).toEqual(liveAfter);
     expect(await liDocIds(stateDir)).toEqual(liveAfter); // LI hole closed
     // No duplicate LI docs (retire+add keeps it exactly-once).
@@ -188,7 +190,7 @@ describe('crash-consistency: torn SQLite-committed row is re-added to HNSW + LI'
     await tick();
 
     // Live set + membership unchanged; no duplicate LI docs.
-    expect(hnswVectorIds(stateDir)).toEqual(liveIds);
+    expect(await hnswVectorIds(stateDir)).toEqual(liveIds);
     expect(await liDocIds(stateDir)).toEqual(liveIds);
     const liIdx = new LateInteractionIndex({ indexPath: join(stateDir, 'codebase-late-interaction.db'), loadExisting: true });
     await liIdx.init();

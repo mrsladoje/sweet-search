@@ -16,6 +16,7 @@ import { runProductionReconcileTick } from '../../core/incremental-indexing/appl
 import { resolveLatestRecords } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
+import { readVectorsSidecar, readInt8Sidecar } from '../../core/vector-store/binary-hnsw-index.js';
 
 const MODEL_INFO = Object.freeze({
   provider: 'test',
@@ -99,11 +100,18 @@ function liveFtsNames(stateDir, term) {
   `).all(term).map((r) => r.name));
 }
 
-function binaryArtifacts(stateDir) {
+async function binaryArtifacts(stateDir) {
+  // NDJSON v2 sidecars (v1 back-compat) — read via the canonical readers.
   const int8Path = join(stateDir, 'codebase-binary-hnsw.int8.json');
+  const int8 = {};
+  if (existsSync(int8Path)) {
+    const m = new Map();
+    await readInt8Sidecar(int8Path, m);
+    for (const [id, vec] of m) int8[id] = Array.from(vec);
+  }
   return {
-    vectors: readJson(join(stateDir, 'codebase-binary-hnsw.vectors.json')),
-    int8: existsSync(int8Path) ? readJson(int8Path) : {},
+    vectors: await readVectorsSidecar(join(stateDir, 'codebase-binary-hnsw.vectors.json')),
+    int8,
   };
 }
 
@@ -208,8 +216,8 @@ describe('production incremental Reconciler', () => {
     expect(graph1.relationships.every((rel) => !rel.source_id || liveEntityIds1.has(rel.source_id))).toBe(true);
     expect(liveFtsNames(stateDir, 'alphaThing')).toContain('alphaThing');
 
-    expect(new Set(binaryArtifacts(stateDir).vectors.map((row) => row.id))).toEqual(new Set(live1.map((row) => row.id)));
-    expect(new Set(Object.keys(binaryArtifacts(stateDir).int8))).toEqual(new Set(live1.map((row) => row.id)));
+    expect(new Set((await binaryArtifacts(stateDir)).vectors.map((row) => row.id))).toEqual(new Set(live1.map((row) => row.id)));
+    expect(new Set(Object.keys((await binaryArtifacts(stateDir)).int8))).toEqual(new Set(live1.map((row) => row.id)));
     expect(await liDocumentIds(stateDir)).toEqual(new Set(live1.map((row) => row.id)));
     // Stage 2.5 float store: an empty baseline grows into a real float store
     // (not just the SQLite fallback) and its id-set matches the live rows.
@@ -277,7 +285,7 @@ describe('production incremental Reconciler', () => {
     expect(third.ops_per_tier.vectors_delete).toBeGreaterThan(0);
     expect(vectorRows(stateDir).filter((row) => row.epoch_retired == null)).toEqual([]);
     expect(graphRows(stateDir).entities.filter((row) => row.epoch_retired == null)).toEqual([]);
-    expect(Object.keys(binaryArtifacts(stateDir).int8)).toEqual([]);
+    expect(Object.keys((await binaryArtifacts(stateDir)).int8)).toEqual([]);
     // Delete: the float store empties out so semantic search cannot rescore a
     // retired doc. The store stays valid/loadable at zero entries.
     expect((await floatStoreIds(stateDir)).size).toBe(0);
@@ -324,7 +332,7 @@ describe('production incremental Reconciler', () => {
     // Float store id-set equals the binary HNSW id-set equals the live rows,
     // and it is a strict superset of the first file's ids.
     expect(float2Ids).toEqual(live2Ids);
-    expect(new Set(binaryArtifacts(stateDir).vectors.map((row) => row.id))).toEqual(live2Ids);
+    expect(new Set((await binaryArtifacts(stateDir)).vectors.map((row) => row.id))).toEqual(live2Ids);
     for (const id of float1Ids) expect(float2Ids.has(id)).toBe(true);
     expect(live2.some((row) => row.file_path === 'src/sample.js')).toBe(true);
     expect(live2.some((row) => row.file_path === 'src/other.js')).toBe(true);
