@@ -1,6 +1,8 @@
 //! Sweet Search native addon — MaxSim kernel + tokenizer + future pipelines.
 //!
-//! MaxSim: Scores candidates in parallel across CPU cores (rayon + NEON/AVX2).
+//! MaxSim: Scores candidates in parallel across CPU cores (rayon), with
+//! explicit SIMD dot products (NEON on aarch64, runtime-detected AVX2+FMA on
+//! x86_64) over L1-tiled dequantized doc tokens.
 //! Tokenizer: HuggingFace `tokenizers` crate for native tokenization.
 //!
 //! Falls back gracefully: native > WASM SIMD > JS
@@ -22,126 +24,274 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use rayon::prelude::*;
 
-/// Bit-reinterpret a byte buffer as i8 in one memcpy (u8→i8 `as` casts are
-/// lossless, so this matches `.iter().map(|&b| b as i8).collect()` exactly).
-fn bytes_to_i8_vec(bytes: &[u8]) -> Vec<i8> {
-    // SAFETY: u8 and i8 have identical size/alignment; the value mapping of
-    // `u8 as i8` is the same bit pattern this reinterpret produces.
-    unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const i8, bytes.len()) }.to_vec()
+// =============================================================================
+// SIMD dot product
+// =============================================================================
+//
+// The dot products below reassociate the f32 sum across 4 partial accumulators
+// (and FMA rounding on supporting CPUs). Scores therefore drift at ~1e-7
+// relative vs the previous strictly-sequential kernels — ranking-equivalent,
+// not bit-identical.
+
+/// Scalar dot with 4 partial accumulators (fallback / non-SIMD arches).
+#[inline(always)]
+#[allow(dead_code)]
+fn dot_scalar(a: &[f32], b: &[f32]) -> f32 {
+    let n = a.len().min(b.len());
+    let (mut s0, mut s1, mut s2, mut s3) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+    let mut i = 0usize;
+    while i + 4 <= n {
+        s0 += a[i] * b[i];
+        s1 += a[i + 1] * b[i + 1];
+        s2 += a[i + 2] * b[i + 2];
+        s3 += a[i + 3] * b[i + 3];
+        i += 4;
+    }
+    let mut dot = (s0 + s1) + (s2 + s3);
+    while i < n {
+        dot += a[i] * b[i];
+        i += 1;
+    }
+    dot
 }
 
-/// Compute MaxSim score for one candidate.
-/// query_norms[qi] = pre-computed L2 norm of query token qi.
-fn maxsim_one(
-    query: &[f32],       // Q × dim flat
-    query_norms: &[f32], // Q norms
+/// NEON dot: 4 × f32x4 accumulators (16 floats/iter) + FMA.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+fn dot_f32(a: &[f32], b: &[f32]) -> f32 {
+    use std::arch::aarch64::*;
+    let n = a.len().min(b.len());
+    // SAFETY: NEON is baseline on aarch64; all loads stay within `n` elements
+    // of both slices.
+    unsafe {
+        let mut acc0 = vdupq_n_f32(0.0);
+        let mut acc1 = vdupq_n_f32(0.0);
+        let mut acc2 = vdupq_n_f32(0.0);
+        let mut acc3 = vdupq_n_f32(0.0);
+        let mut i = 0usize;
+        while i + 16 <= n {
+            let pa = a.as_ptr().add(i);
+            let pb = b.as_ptr().add(i);
+            acc0 = vfmaq_f32(acc0, vld1q_f32(pa), vld1q_f32(pb));
+            acc1 = vfmaq_f32(acc1, vld1q_f32(pa.add(4)), vld1q_f32(pb.add(4)));
+            acc2 = vfmaq_f32(acc2, vld1q_f32(pa.add(8)), vld1q_f32(pb.add(8)));
+            acc3 = vfmaq_f32(acc3, vld1q_f32(pa.add(12)), vld1q_f32(pb.add(12)));
+            i += 16;
+        }
+        while i + 4 <= n {
+            acc0 = vfmaq_f32(acc0, vld1q_f32(a.as_ptr().add(i)), vld1q_f32(b.as_ptr().add(i)));
+            i += 4;
+        }
+        let mut dot = vaddvq_f32(vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3)));
+        while i < n {
+            dot += a[i] * b[i];
+            i += 1;
+        }
+        dot
+    }
+}
+
+/// AVX2+FMA dot: 4 × f32x8 accumulators (32 floats/iter).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn dot_avx2_fma(a: &[f32], b: &[f32]) -> f32 {
+    use std::arch::x86_64::*;
+    let n = a.len().min(b.len());
+    let mut acc0 = _mm256_setzero_ps();
+    let mut acc1 = _mm256_setzero_ps();
+    let mut acc2 = _mm256_setzero_ps();
+    let mut acc3 = _mm256_setzero_ps();
+    let mut i = 0usize;
+    while i + 32 <= n {
+        let pa = a.as_ptr().add(i);
+        let pb = b.as_ptr().add(i);
+        acc0 = _mm256_fmadd_ps(_mm256_loadu_ps(pa), _mm256_loadu_ps(pb), acc0);
+        acc1 = _mm256_fmadd_ps(_mm256_loadu_ps(pa.add(8)), _mm256_loadu_ps(pb.add(8)), acc1);
+        acc2 = _mm256_fmadd_ps(_mm256_loadu_ps(pa.add(16)), _mm256_loadu_ps(pb.add(16)), acc2);
+        acc3 = _mm256_fmadd_ps(_mm256_loadu_ps(pa.add(24)), _mm256_loadu_ps(pb.add(24)), acc3);
+        i += 32;
+    }
+    while i + 8 <= n {
+        acc0 = _mm256_fmadd_ps(
+            _mm256_loadu_ps(a.as_ptr().add(i)),
+            _mm256_loadu_ps(b.as_ptr().add(i)),
+            acc0,
+        );
+        i += 8;
+    }
+    let sum = _mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3));
+    let s = _mm_add_ps(_mm256_castps256_ps128(sum), _mm256_extractf128_ps(sum, 1));
+    let s = _mm_add_ps(s, _mm_movehl_ps(s, s));
+    let s = _mm_add_ss(s, _mm_shuffle_ps(s, s, 1));
+    let mut dot = _mm_cvtss_f32(s);
+    while i < n {
+        dot += a[i] * b[i];
+        i += 1;
+    }
+    dot
+}
+
+/// x86_64 dot: AVX2+FMA when the CPU has it (detected once), scalar otherwise.
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+fn dot_f32(a: &[f32], b: &[f32]) -> f32 {
+    use std::sync::OnceLock;
+    static HAVE_AVX2_FMA: OnceLock<bool> = OnceLock::new();
+    let have = *HAVE_AVX2_FMA
+        .get_or_init(|| is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma"));
+    if have {
+        // SAFETY: feature presence verified at runtime above.
+        unsafe { dot_avx2_fma(a, b) }
+    } else {
+        dot_scalar(a, b)
+    }
+}
+
+#[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+#[inline(always)]
+fn dot_f32(a: &[f32], b: &[f32]) -> f32 {
+    dot_scalar(a, b)
+}
+
+// =============================================================================
+// Tiled MaxSim core
+// =============================================================================
+
+/// Doc tokens per dequantization tile. 64 × dim=128 × 4B = 32 KB of f32 —
+/// L1-resident on Apple Silicon, L1/L2-resident on x86 — so every query token
+/// re-reads the tile from cache instead of streaming the whole doc from RAM.
+const MAXSIM_TILE: usize = 64;
+
+/// Tiled MaxSim over quantized doc tokens.
+///
+/// `fill_tile(start, len, tile)` dequantizes doc tokens [start, start+len)
+/// into `tile` (len × dim f32, row-major). `stored_norms` are the
+/// pre-quantization per-token L2 norms; `None` computes norms from the
+/// dequantized rows (legacy per-doc-min/scale path).
+///
+/// Output contract (unchanged): mean over query tokens of
+/// `max(0, max_di dot(q, d_di) / (||q||·||d_di|| + 1e-8))`. Doc-token maxima
+/// are order-invariant, the final sum runs in ascending-qi order, and the
+/// per-query best is seeded at -1.0 exactly like the untiled kernels.
+fn maxsim_tiled<F: FnMut(usize, usize, &mut [f32])>(
+    query: &[f32],
+    query_norms: &[f32],
     num_q: usize,
-    doc: &[f32], // D × dim flat (dequantized)
     num_d: usize,
     dim: usize,
+    stored_norms: Option<&[f32]>,
+    mut fill_tile: F,
 ) -> f32 {
-    let mut total: f32 = 0.0;
+    let tile_rows = MAXSIM_TILE.min(num_d.max(1));
+    let mut tile = vec![0.0f32; tile_rows * dim];
+    let mut computed_norms = if stored_norms.is_none() {
+        vec![0.0f32; tile_rows]
+    } else {
+        Vec::new()
+    };
+    let mut best = vec![-1.0f32; num_q];
 
-    for qi in 0..num_q {
-        let q_slice = &query[qi * dim..(qi + 1) * dim];
-        let q_norm = query_norms[qi];
-        let mut best: f32 = -1.0;
+    let mut start = 0usize;
+    while start < num_d {
+        let len = MAXSIM_TILE.min(num_d - start);
+        fill_tile(start, len, &mut tile[..len * dim]);
 
-        for di in 0..num_d {
-            let d_slice = &doc[di * dim..(di + 1) * dim];
-            let mut dot: f32 = 0.0;
-            let mut d_norm_sq: f32 = 0.0;
-
-            for i in 0..dim {
-                dot += q_slice[i] * d_slice[i];
-                d_norm_sq += d_slice[i] * d_slice[i];
-            }
-
-            let sim = dot / (q_norm * d_norm_sq.sqrt() + 1e-8);
-            if sim > best {
-                best = sim;
+        if stored_norms.is_none() {
+            for ti in 0..len {
+                let row = &tile[ti * dim..(ti + 1) * dim];
+                computed_norms[ti] = dot_f32(row, row).sqrt();
             }
         }
+        let norms_slice: &[f32] = match stored_norms {
+            Some(n) => &n[start..start + len],
+            None => &computed_norms[..len],
+        };
 
-        if best > 0.0 {
-            total += best;
+        for qi in 0..num_q {
+            let q = &query[qi * dim..(qi + 1) * dim];
+            let q_norm = query_norms[qi];
+            let mut b = best[qi];
+            for ti in 0..len {
+                let row = &tile[ti * dim..(ti + 1) * dim];
+                let sim = dot_f32(q, row) / (q_norm * norms_slice[ti] + 1e-8);
+                if sim > b {
+                    b = sim;
+                }
+            }
+            best[qi] = b;
         }
+
+        start += len;
     }
 
+    let mut total = 0.0f32;
+    for &b in &best {
+        if b > 0.0 {
+            total += b;
+        }
+    }
     total / num_q as f32
 }
 
-/// Dequantize int8 to f32: val = (int8 + 128) * scale + min
-#[inline(always)]
-fn dequantize(int8_data: &[i8], min: f32, scale: f32, out: &mut Vec<f32>) {
-    out.clear();
-    out.reserve(int8_data.len());
-    for &v in int8_data {
-        out.push((v as f32 + 128.0) * scale + min);
-    }
-}
-
-/// Dequantize int8 with per-token min/scale arrays.
-#[inline(always)]
-fn dequantize_per_token(
-    int8_data: &[i8],
-    min_arr: &[f32],
-    scale_arr: &[f32],
-    num_tokens: usize,
-    dim: usize,
-    out: &mut Vec<f32>,
-) {
-    out.clear();
-    out.reserve(num_tokens * dim);
-    for t in 0..num_tokens {
-        let off = t * dim;
-        let tmin = min_arr[t];
-        let tscale = scale_arr[t];
-        for d in 0..dim {
-            out.push((int8_data[off + d] as f32 + 128.0) * tscale + tmin);
-        }
-    }
-}
-
-/// MaxSim with pre-stored document token norms (avoids redundant d_norm_sq).
-/// Saves ~40% inner-loop FLOPs when Q=32: d_norm_sq computed D times instead of Q*D.
-fn maxsim_one_with_norms(
+/// MaxSim over already-dequantized f32 doc tokens (single-candidate path).
+fn maxsim_f32(
     query: &[f32],
     query_norms: &[f32],
     num_q: usize,
     doc: &[f32],
-    doc_norms: &[f32],
     num_d: usize,
     dim: usize,
 ) -> f32 {
-    let mut total: f32 = 0.0;
+    let mut doc_norms = vec![0.0f32; num_d];
+    for di in 0..num_d {
+        let row = &doc[di * dim..(di + 1) * dim];
+        doc_norms[di] = dot_f32(row, row).sqrt();
+    }
 
+    let mut total: f32 = 0.0;
     for qi in 0..num_q {
-        let q_slice = &query[qi * dim..(qi + 1) * dim];
+        let q = &query[qi * dim..(qi + 1) * dim];
         let q_norm = query_norms[qi];
         let mut best: f32 = -1.0;
-
         for di in 0..num_d {
-            let d_slice = &doc[di * dim..(di + 1) * dim];
-            let mut dot: f32 = 0.0;
-
-            for i in 0..dim {
-                dot += q_slice[i] * d_slice[i];
-            }
-
-            let sim = dot / (q_norm * doc_norms[di] + 1e-8);
+            let row = &doc[di * dim..(di + 1) * dim];
+            let sim = dot_f32(q, row) / (q_norm * doc_norms[di] + 1e-8);
             if sim > best {
                 best = sim;
             }
         }
-
         if best > 0.0 {
             total += best;
         }
     }
-
     total / num_q as f32
 }
+
+fn compute_query_norms(query: &[f32], num_q: usize, dim: usize) -> Vec<f32> {
+    let mut query_norms = vec![0.0f32; num_q];
+    for qi in 0..num_q {
+        let q = &query[qi * dim..(qi + 1) * dim];
+        query_norms[qi] = dot_f32(q, q).sqrt();
+    }
+    query_norms
+}
+
+/// Reinterpret a byte slice as i8 without copying (`u8 as i8` is the same bit
+/// pattern this view produces).
+#[inline(always)]
+fn bytes_as_i8(bytes: &[u8]) -> &[i8] {
+    // SAFETY: u8 and i8 have identical size/alignment.
+    unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const i8, bytes.len()) }
+}
+
+// =============================================================================
+// NAPI entry points
+// =============================================================================
+//
+// All batch entry points borrow the JS-owned buffers directly (`&[u8]` /
+// `&[f32]` are Send) instead of copying them: the functions are synchronous,
+// so the JS thread is blocked for the whole call and V8 cannot collect or
+// move the backing stores while rayon workers read them.
 
 /// Candidate data passed from JS
 #[napi(object)]
@@ -161,8 +311,8 @@ pub struct MaxSimCandidate {
 /// Score all candidates in parallel using rayon.
 ///
 /// Returns an array of MaxSim scores (one per candidate).
-/// Each candidate is dequantized and scored against the query tokens
-/// on a separate thread.
+/// Each candidate is dequantized tile-by-tile and scored against the query
+/// tokens on a separate thread.
 #[napi]
 pub fn maxsim_score_batch(
     query_flat: Float32Array,
@@ -173,43 +323,31 @@ pub fn maxsim_score_batch(
     let query = query_flat.as_ref();
     let num_q = num_q as usize;
     let dim = dim as usize;
+    let query_norms = compute_query_norms(query, num_q, dim);
 
-    // Pre-compute query norms (shared across all candidates)
-    let mut query_norms = vec![0.0f32; num_q];
-    for qi in 0..num_q {
-        let q_slice = &query[qi * dim..(qi + 1) * dim];
-        let mut norm_sq: f32 = 0.0;
-        for &v in q_slice {
-            norm_sq += v * v;
-        }
-        query_norms[qi] = norm_sq.sqrt();
-    }
-
-    // Extract raw data from napi types (napi Buffer isn't Send, so extract first)
-    let cand_data: Vec<(Vec<i8>, usize, usize, f32, f32)> = candidates
+    let cand_data: Vec<(&[i8], usize, usize, f32, f32)> = candidates
         .iter()
         .map(|c| {
-            let int8: Vec<i8> = bytes_to_i8_vec(&c.tokens);
-            (
-                int8,
-                c.num_tokens as usize,
-                c.dim as usize,
-                c.min as f32,
-                c.scale as f32,
-            )
+            let num_d = c.num_tokens as usize;
+            let cdim = c.dim as usize;
+            let tokens: &[u8] = c.tokens.as_ref();
+            assert!(tokens.len() >= num_d * cdim, "maxsim: tokens buffer too small");
+            (bytes_as_i8(tokens), num_d, cdim, c.min as f32, c.scale as f32)
         })
         .collect();
 
-    // Score ALL candidates in parallel with rayon
     cand_data
         .par_iter()
-        .map(|(int8_data, num_d, d, min, scale)| {
-            // Dequantize on this thread (thread-local allocation)
-            let mut doc_f32 = Vec::with_capacity(*num_d * *d);
-            dequantize(int8_data, *min, *scale, &mut doc_f32);
-
-            let score = maxsim_one(query, &query_norms, num_q, &doc_f32, *num_d, *d);
-            score as f64
+        .map(|&(int8, num_d, cdim, min, scale)| {
+            maxsim_tiled(query, &query_norms, num_q, num_d, cdim, None, |start, len, tile| {
+                for ti in 0..len {
+                    let src = &int8[(start + ti) * cdim..(start + ti + 1) * cdim];
+                    let dst = &mut tile[ti * cdim..(ti + 1) * cdim];
+                    for d in 0..cdim {
+                        dst[d] = (src[d] as f32 + 128.0) * scale + min;
+                    }
+                }
+            }) as f64
         })
         .collect()
 }
@@ -228,18 +366,8 @@ pub fn maxsim_score_single(
     let num_q = num_q as usize;
     let num_d = num_d as usize;
     let dim = dim as usize;
-
-    let mut query_norms = vec![0.0f32; num_q];
-    for qi in 0..num_q {
-        let q_slice = &query[qi * dim..(qi + 1) * dim];
-        let mut norm_sq: f32 = 0.0;
-        for &v in q_slice {
-            norm_sq += v * v;
-        }
-        query_norms[qi] = norm_sq.sqrt();
-    }
-
-    maxsim_one(query, &query_norms, num_q, doc, num_d, dim) as f64
+    let query_norms = compute_query_norms(query, num_q, dim);
+    maxsim_f32(query, &query_norms, num_q, doc, num_d, dim) as f64
 }
 
 /// Candidate with per-token min/scale arrays and pre-stored norms.
@@ -254,7 +382,6 @@ pub struct MaxSimCandidatePerToken {
 }
 
 /// Batch scoring with per-token quantization and pre-stored norms.
-/// Eliminates redundant d_norm_sq computation (~40% fewer inner-loop FLOPs).
 #[napi]
 pub fn maxsim_score_batch_pertoken(
     query_flat: Float32Array,
@@ -265,43 +392,49 @@ pub fn maxsim_score_batch_pertoken(
     let query = query_flat.as_ref();
     let num_q = num_q as usize;
     let dim = dim as usize;
+    let query_norms = compute_query_norms(query, num_q, dim);
 
-    let mut query_norms = vec![0.0f32; num_q];
-    for qi in 0..num_q {
-        let q_slice = &query[qi * dim..(qi + 1) * dim];
-        let mut norm_sq: f32 = 0.0;
-        for &v in q_slice {
-            norm_sq += v * v;
-        }
-        query_norms[qi] = norm_sq.sqrt();
-    }
-
-    let cand_data: Vec<(Vec<i8>, Vec<f32>, Vec<f32>, Vec<f32>, usize, usize)> = candidates
+    let cand_data: Vec<(&[i8], &[f32], &[f32], &[f32], usize, usize)> = candidates
         .iter()
         .map(|c| {
-            let int8: Vec<i8> = bytes_to_i8_vec(&c.tokens);
-            let mins: Vec<f32> = c.min_array.as_ref().to_vec();
-            let scales: Vec<f32> = c.scale_array.as_ref().to_vec();
-            let norms: Vec<f32> = c.token_norms.as_ref().to_vec();
-            (
-                int8,
-                mins,
-                scales,
-                norms,
-                c.num_tokens as usize,
-                c.dim as usize,
-            )
+            let num_d = c.num_tokens as usize;
+            let cdim = c.dim as usize;
+            let tokens: &[u8] = c.tokens.as_ref();
+            let mins: &[f32] = c.min_array.as_ref();
+            let scales: &[f32] = c.scale_array.as_ref();
+            let norms: &[f32] = c.token_norms.as_ref();
+            assert!(tokens.len() >= num_d * cdim, "maxsim: tokens buffer too small");
+            assert!(
+                mins.len() >= num_d && scales.len() >= num_d && norms.len() >= num_d,
+                "maxsim: per-token arrays too small"
+            );
+            (bytes_as_i8(tokens), mins, scales, norms, num_d, cdim)
         })
         .collect();
 
     cand_data
         .par_iter()
-        .map(|(int8_data, mins, scales, norms, num_d, d)| {
-            let mut doc_f32 = Vec::with_capacity(*num_d * *d);
-            dequantize_per_token(int8_data, mins, scales, *num_d, *d, &mut doc_f32);
-            let score =
-                maxsim_one_with_norms(query, &query_norms, num_q, &doc_f32, norms, *num_d, *d);
-            score as f64
+        .map(|&(int8, mins, scales, norms, num_d, cdim)| {
+            maxsim_tiled(
+                query,
+                &query_norms,
+                num_q,
+                num_d,
+                cdim,
+                Some(norms),
+                |start, len, tile| {
+                    for ti in 0..len {
+                        let t = start + ti;
+                        let src = &int8[t * cdim..(t + 1) * cdim];
+                        let tmin = mins[t];
+                        let tscale = scales[t];
+                        let dst = &mut tile[ti * cdim..(ti + 1) * cdim];
+                        for d in 0..cdim {
+                            dst[d] = (src[d] as f32 + 128.0) * tscale + tmin;
+                        }
+                    }
+                },
+            ) as f64
         })
         .collect()
 }
@@ -317,8 +450,10 @@ pub struct MaxSimCandidate4Bit {
     pub token_norms: Float32Array,
 }
 
-/// Batch scoring with 4-bit quantization, per-token params, and pre-stored norms.
-/// Nibble unpack + dequant + MaxSim with norm reuse.
+/// Batch scoring with 4-bit quantization, per-token params, and pre-stored
+/// norms. Nibbles dequantize per tile as `nib * scale + min` (identical values
+/// to the previous per-token LUT, computed once per doc token instead of once
+/// per query token × doc token).
 #[napi]
 pub fn maxsim_score_batch_4bit(
     query_flat: Float32Array,
@@ -329,117 +464,57 @@ pub fn maxsim_score_batch_4bit(
     let query = query_flat.as_ref();
     let num_q = num_q as usize;
     let dim = dim as usize;
+    let query_norms = compute_query_norms(query, num_q, dim);
 
-    let mut query_norms = vec![0.0f32; num_q];
-    for qi in 0..num_q {
-        let q_slice = &query[qi * dim..(qi + 1) * dim];
-        let mut norm_sq: f32 = 0.0;
-        for &v in q_slice {
-            norm_sq += v * v;
-        }
-        query_norms[qi] = norm_sq.sqrt();
-    }
-
-    let cand_data: Vec<(Vec<u8>, Vec<f32>, Vec<f32>, Vec<f32>, usize, usize)> = candidates
+    let cand_data: Vec<(&[u8], &[f32], &[f32], &[f32], usize, usize)> = candidates
         .iter()
         .map(|c| {
-            let packed: Vec<u8> = c.tokens.to_vec();
-            let mins: Vec<f32> = c.min_array.as_ref().to_vec();
-            let scales: Vec<f32> = c.scale_array.as_ref().to_vec();
-            let norms: Vec<f32> = c.token_norms.as_ref().to_vec();
-            (
-                packed,
-                mins,
-                scales,
-                norms,
-                c.num_tokens as usize,
-                c.dim as usize,
-            )
+            let num_d = c.num_tokens as usize;
+            let cdim = c.dim as usize;
+            let packed_dim = (cdim + 1) / 2;
+            let tokens: &[u8] = c.tokens.as_ref();
+            let mins: &[f32] = c.min_array.as_ref();
+            let scales: &[f32] = c.scale_array.as_ref();
+            let norms: &[f32] = c.token_norms.as_ref();
+            assert!(tokens.len() >= num_d * packed_dim, "maxsim: packed buffer too small");
+            assert!(
+                mins.len() >= num_d && scales.len() >= num_d && norms.len() >= num_d,
+                "maxsim: per-token arrays too small"
+            );
+            (tokens, mins, scales, norms, num_d, cdim)
         })
         .collect();
 
     cand_data
         .par_iter()
-        .map(|(packed, mins, scales, norms, num_d, d)| {
-            // CRA-13: Fused dot-product + max-reduce directly from packed nibbles.
-            // No intermediate f32 buffer allocation. The 16-entry LUT per doc token
-            // fits in a single L1 cache line (64 bytes), so the bottleneck is HBM
-            // bandwidth for packed data loading, not compute.
-            let score = maxsim_fused_4bit(
+        .map(|&(packed, mins, scales, norms, num_d, cdim)| {
+            let packed_dim = (cdim + 1) / 2;
+            maxsim_tiled(
                 query,
                 &query_norms,
                 num_q,
-                packed,
-                mins,
-                scales,
-                norms,
-                *num_d,
-                *d,
-            );
-            score as f64
+                num_d,
+                cdim,
+                Some(norms),
+                |start, len, tile| {
+                    let pairs = cdim / 2;
+                    for ti in 0..len {
+                        let t = start + ti;
+                        let row = &packed[t * packed_dim..(t + 1) * packed_dim];
+                        let tmin = mins[t];
+                        let tscale = scales[t];
+                        let dst = &mut tile[ti * cdim..(ti + 1) * cdim];
+                        for p in 0..pairs {
+                            let byte = row[p];
+                            dst[2 * p] = (byte & 0x0F) as f32 * tscale + tmin;
+                            dst[2 * p + 1] = ((byte >> 4) & 0x0F) as f32 * tscale + tmin;
+                        }
+                        if cdim % 2 == 1 {
+                            dst[cdim - 1] = (row[pairs] & 0x0F) as f32 * tscale + tmin;
+                        }
+                    }
+                },
+            ) as f64
         })
         .collect()
-}
-
-/// CRA-13: Fused 4-bit MaxSim kernel — scores directly from packed nibbles
-/// without materializing an intermediate f32 vector. For each doc token, the
-/// dot product is computed inline from nibble unpacking:
-///   dot += q[d] * (min + bucket * scale)
-/// This eliminates the Vec<f32> allocation and halves memory bandwidth.
-#[inline(always)]
-fn maxsim_fused_4bit(
-    query: &[f32],
-    query_norms: &[f32],
-    num_q: usize,
-    packed: &[u8],
-    min_arr: &[f32],
-    scale_arr: &[f32],
-    doc_norms: &[f32],
-    num_d: usize,
-    dim: usize,
-) -> f32 {
-    let packed_dim = (dim + 1) / 2;
-    let mut total: f32 = 0.0;
-
-    for qi in 0..num_q {
-        let q_slice = &query[qi * dim..(qi + 1) * dim];
-        let q_norm = query_norms[qi];
-        let mut best: f32 = -1.0;
-
-        for di in 0..num_d {
-            let p_off = di * packed_dim;
-            let tmin = min_arr[di];
-            let tscale = scale_arr[di];
-
-            // CRA-7: Pre-compute 16-entry centroid LUT on stack (64 bytes = 1 cache line).
-            // On Apple Silicon, this stays in L1 constant cache for the entire inner loop.
-            // Replaces per-nibble multiply-add with a single array lookup.
-            let mut lut = [0.0f32; 16];
-            for b in 0..16u8 {
-                lut[b as usize] = b as f32 * tscale + tmin;
-            }
-
-            let mut dot: f32 = 0.0;
-
-            // Fused unpack + LUT gather + dot product — 2 dims per byte
-            for d in (0..dim).step_by(2) {
-                let byte = packed[p_off + d / 2];
-                dot += q_slice[d] * lut[(byte & 0x0F) as usize];
-                if d + 1 < dim {
-                    dot += q_slice[d + 1] * lut[((byte >> 4) & 0x0F) as usize];
-                }
-            }
-
-            let sim = dot / (q_norm * doc_norms[di] + 1e-8);
-            if sim > best {
-                best = sim;
-            }
-        }
-
-        if best > 0.0 {
-            total += best;
-        }
-    }
-
-    total / num_q as f32
 }
