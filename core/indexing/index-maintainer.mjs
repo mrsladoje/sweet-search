@@ -1316,15 +1316,30 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   // system-RAM tier auto-enables a cap (small-RAM hosts). Best-effort, guarded
   // so a missing module is a no-op.
   let rssRegistration = null;
+  // D.5 per-process recycle ceiling: fleet-budget eviction only sheds the
+  // longest-IDLE daemon, so an active maintainer needs its own line. Resolved
+  // once; checked at tick boundaries below. 0 ⇒ disabled.
+  let rssCeiling = { ceilingBytes: 0, minUptimeMs: 0, shouldRecycleForRss: null };
   try {
     const mod = await import('./rss-budget.mjs');
     if (typeof mod.isEnabled === 'function' && mod.isEnabled()
         && typeof mod.registerDaemon === 'function') {
       rssRegistration = await mod.registerDaemon({ pid: process.pid, stateDir: ctx.stateDir, kind: 'maintainer' });
     }
+    if (typeof mod.maintainerRssCeilingBytes === 'function') {
+      rssCeiling = {
+        ceilingBytes: mod.maintainerRssCeilingBytes(),
+        minUptimeMs: mod.maintainerRssMinUptimeMs(),
+        shouldRecycleForRss: mod.shouldRecycleForRss,
+      };
+      if (rssCeiling.ceilingBytes > 0) {
+        log('INFO', `Maintainer RSS recycle ceiling armed: ${(rssCeiling.ceilingBytes / 1048576).toFixed(0)}MB (min uptime ${rssCeiling.minUptimeMs}ms; override SWEET_SEARCH_MAINTAINER_RSS_MAX_MB)`);
+      }
+    }
   } catch (err) {
     log('WARN', `RSS-budget registry unavailable (no soft cap on this daemon): ${err?.message ?? err}`);
   }
+  let completedTicks = 0;
 
   // D.1 idle-TTL: an unattended maintainer self-shuts-down after the configured
   // wall-clock idle budget so N resident model-loaded daemons collapse to 1–2
@@ -1434,6 +1449,23 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
             maintenanceBacklog: backlog,
             skipped: tickCounters?.skipped === true,
           });
+          // D.5: per-process RSS recycle check — tick boundary only (the tick
+          // above has published; a recycle here can never tear an artifact).
+          completedTicks += 1;
+          if (rssCeiling.ceilingBytes > 0 && typeof rssCeiling.shouldRecycleForRss === 'function') {
+            const rssNow = process.memoryUsage.rss();
+            const verdict = rssCeiling.shouldRecycleForRss({
+              rssBytes: rssNow,
+              ceilingBytes: rssCeiling.ceilingBytes,
+              uptimeMs: process.uptime() * 1000,
+              minUptimeMs: rssCeiling.minUptimeMs,
+              ticksCompleted: completedTicks,
+            });
+            if (verdict.recycle) {
+              log('WARN', `Maintainer RSS ${(rssNow / 1048576).toFixed(0)}MB exceeds recycle ceiling ${(rssCeiling.ceilingBytes / 1048576).toFixed(0)}MB; requesting clean shutdown for on-demand respawn. If this repeats right after startup, raise SWEET_SEARCH_MAINTAINER_RSS_MAX_MB.`);
+              shutdownRequested = true;
+            }
+          }
         } catch (err) {
           if (err instanceof MaintainerLifecycleAbort) {
             log('WARN', `Reconcile v2 lifecycle abort: ${err.message}. Cleaning up cancellation-orphaned temps and exiting cleanly.`);
@@ -1459,6 +1491,10 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
           log('ERROR', `Reconcile v2 tick failed: ${err?.message ?? err}`);
         }
       }
+      // Skip the sleep when a shutdown was requested during this iteration
+      // (idle-TTL, signal, or D.5 RSS recycle) — exit promptly instead of
+      // waiting out one more interval.
+      if (shutdownRequested) break;
       await sleepWithProgress(intervalMs, lock.lockFile, {
         // G6 early-wake: break the sleep the instant the watcher reports new
         // events so a fresh edit is reconciled without waiting out the interval.
