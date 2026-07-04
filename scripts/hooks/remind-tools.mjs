@@ -18,7 +18,7 @@
  * both the file and the settings entry.
  */
 
-// Tool surface mirrors the shipped M++ policy (the ss-* tools). Kept terse —
+// Tool surface mirrors the shipped M++++ policy (the ss-* tools). Kept terse —
 // the full decision tree lives in CLAUDE.md/AGENTS.md; this is just a nudge to
 // stop the agent drifting back to raw grep/read between prompts.
 const REMINDER = [
@@ -30,8 +30,9 @@ const REMINDER = [
   '- Callers/callees/impact of a symbol: ss-trace <symbol>',
   '- Known file, unclear span:           ss-semantic <file> "<query>"',
   '- Known file + line range:            ss-read <file> <start> <end>',
-  'STOP the instant your evidence answers the query — one confirmed file+symbol is enough;',
+  'STOP searching the instant your evidence answers the query — one confirmed file+symbol is enough;',
   'a second call costs more than it saves. Multi-file flow questions get one follow-up.',
+  'Search rules only — if the task asks for a change, apply the edit.',
   '</sweet-search-reminder>',
   '',
 ].join('\n');

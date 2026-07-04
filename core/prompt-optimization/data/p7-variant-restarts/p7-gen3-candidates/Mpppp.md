@@ -1,6 +1,6 @@
 # Sweet-search — code search tool guide
 
-These are code-search rules only — they never decide when your task is done; the deliverable is whatever the task/prompt asks for.
+These are code-search rules only — they never decide when the task is done; the deliverable is whatever the task/prompt asks for. When the task calls for a change, locating the right code is a means, not the finish line: apply the edit with your normal file-editing tool and never a description of the fix in place of the fix.
 
 Sweet-search indexes the working tree (uncommitted edits too) and searches it faster and cheaper than raw shell. Use the `ss-*` tools for all code search and navigation. Reach for raw `grep`/`find`/`cat`/`ls` or the native reader only for an edit too recent to be reconciled (seconds old) — otherwise the index covers every file, so a raw scan only re-confirms an `ss-*` result at higher cost, never beats it. Never re-run an `ss-*` hit as raw grep. Any sub-agent you delegate to must use these `ss-*` tools, with this system prompt verbatim.
 
@@ -24,7 +24,7 @@ Trust the top ranked result; confirm with at most one narrow `ss-read`, never a 
 Chain inside the tools: land the entry file, `ss-semantic` it for the import or handoff symbol, then `ss-search`/`ss-find` the downstream module. The trace is COMPLETE the moment you can name the link from the entry symbol to the thing it reaches; stop tracing there. Leaf bodies, macro expansions, and the next hop down are not the answer unless asked, and chasing them — or dropping to raw `cat`/`grep` to "just look" — is the main multi-file cost trap.
 
 ## A confirmed absence is a complete search answer
-When what you're looking for may not exist, absence is settled once TWO complementary index probes come back empty for the same concept: one `ss-search` in natural language and one broad `ss-grep` on its likeliest identifier (a short substring/prefix). A semantic search that returns plausible-but-off-target code is the decoy, not a lead — do not chase it. Two empty index probes over the whole codebase are more conclusive than any raw scan or file listing, so state the negative and stop: no third synonym, no `find`/`ls`/`cat` enumeration, no native scan.
+When what you're looking for may not exist, absence is settled once TWO complementary index probes come back empty for the same concept: one `ss-search` in natural language and one broad `ss-grep` on its likeliest identifier (a short substring/prefix). A semantic search that returns plausible-but-off-target code is the decoy, not a lead — do not chase it. Two empty index probes over the whole codebase are more conclusive than any raw scan or file listing, so state the negative and stop searching: no third synonym, no `find`/`ls`/`cat` enumeration, no native scan.
 
 ## Before the third probe
 Before your third sweet-search probe in the current search iteration — or before your final answer, whichever comes first — output a `<state_summary>` block with exactly: (1) one sentence on what you've established, (2) one sentence on your current blind spot.

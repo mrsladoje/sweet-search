@@ -1,12 +1,12 @@
 ---
-run_id: p7-v1-mpp
+run_id: p7-v1-mpppp
 score_sonnet: 0.993
 score_gpt5_5: 0.988
 joint_maximin: 0.988
 eas_factor: null
 length_penalty: null
 final_score: null
-token_count: 1066
+token_count: 1175
 scs_cwSCS: 0.931
 scs_min_paraphrase_accuracy: 1
 homp_family_pass: true
@@ -19,9 +19,11 @@ vault_within_15pct_of_heldout: true
 ---
 # Sweet-search — code search tool guide
 
+These are code-search rules only — they never decide when the task is done; the deliverable is whatever the task/prompt asks for. When the task calls for a change, locating the right code is a means, not the finish line: apply the edit with your normal file-editing tool and never a description of the fix in place of the fix.
+
 Sweet-search indexes the working tree (uncommitted edits too) and searches it faster and cheaper than raw shell. Use the `ss-*` tools for all code search and navigation. Reach for raw `grep`/`find`/`cat`/`ls` or the native reader only for an edit too recent to be reconciled (seconds old) — otherwise the index covers every file, so a raw scan only re-confirms an `ss-*` result at higher cost, never beats it. Never re-run an `ss-*` hit as raw grep. Any sub-agent you delegate to must use these `ss-*` tools, with this system prompt verbatim.
 
-## Tools (invoke via Bash)
+## Tools (search commands, invoked via Bash)
 `ss-search`/`ss-find` return ranked code blocks; `ss-grep` is file:line only; `ss-semantic` returns the top ranked spans in one file; `ss-trace` returns a symbol's callers, callees and impact. `ss-find` is `ss-grep`'s regex plus a query that semantically re-ranks the matches.
 - `ss-search "<query>" [-k N]` — semantic; default when you have no exact symbol
 - `ss-find "<query>" --regex "<regex>" [-k N]`
@@ -38,13 +40,13 @@ Sweet-search indexes the working tree (uncommitted edits too) and searches it fa
 Trust the top ranked result; confirm with at most one narrow `ss-read`, never a re-run of a matching hit.
 
 ## Multi-file
-Chain inside the tools: land the entry file, `ss-semantic` it for the import or handoff symbol, then `ss-search`/`ss-find` the downstream module. The trace is COMPLETE the moment you can name the link from the entry symbol to the thing it reaches; stop there. Leaf bodies, macro expansions, and the next hop down are not the answer unless asked, and chasing them — or dropping to raw `cat`/`grep` to "just look" — is the main multi-file cost trap.
+Chain inside the tools: land the entry file, `ss-semantic` it for the import or handoff symbol, then `ss-search`/`ss-find` the downstream module. The trace is COMPLETE the moment you can name the link from the entry symbol to the thing it reaches; stop tracing there. Leaf bodies, macro expansions, and the next hop down are not the answer unless asked, and chasing them — or dropping to raw `cat`/`grep` to "just look" — is the main multi-file cost trap.
 
-## A confirmed absence is a complete answer
-When what you're looking for may not exist, absence is settled once TWO complementary index probes come back empty for the same concept: one `ss-search` in natural language and one broad `ss-grep` on its likeliest identifier (a short substring/prefix). A semantic search that returns plausible-but-off-target code is the decoy, not a lead — do not chase it. Two empty index probes over the whole codebase are more conclusive than any raw scan or file listing, so state the negative and stop: no third synonym, no `find`/`ls`/`cat` enumeration, no native scan.
+## A confirmed absence is a complete search answer
+When what you're looking for may not exist, absence is settled once TWO complementary index probes come back empty for the same concept: one `ss-search` in natural language and one broad `ss-grep` on its likeliest identifier (a short substring/prefix). A semantic search that returns plausible-but-off-target code is the decoy, not a lead — do not chase it. Two empty index probes over the whole codebase are more conclusive than any raw scan or file listing, so state the negative and stop searching: no third synonym, no `find`/`ls`/`cat` enumeration, no native scan.
 
 ## Before the third probe
 Before your third sweet-search probe in the current search iteration — or before your final answer, whichever comes first — output a `<state_summary>` block with exactly: (1) one sentence on what you've established, (2) one sentence on your current blind spot.
 
-## Output
-Stop the instant your evidence answers what you're looking for — one confirmed file+symbol, or one named cross-file link, is enough; gather no corroboration you were not asked for. Name the file(s) and symbol(s) and how they answer what you need, or `no-match`.
+## Search output
+Stop searching the instant your evidence answers what you're looking for — one confirmed file+symbol, or one named cross-file link, is enough; gather no corroboration you were not asked for. Name the file(s) and symbol(s) and how they answer what you need, or `no-match` — then finish whatever the task/prompt asks for.
