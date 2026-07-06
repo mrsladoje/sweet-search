@@ -16,6 +16,7 @@
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { generateRegexMatches } from './search-pattern-planner.js';
 import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
+import { applyGrepFileDiversity, matchesGrepFileFilter } from './grep-output-shaping.js';
 import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js';
 import { ensureSparseGramIndex } from './search-pattern-prefilter.js';
 import { packageForAgent } from './context-expander.js';
@@ -152,6 +153,11 @@ export async function bareGrep(query, routing, options = {}) {
   const candidateResult = await generateRegexMatches(this || {}, regex, searchDir, options);
   let matches = [...candidateResult.indexedMatches, ...candidateResult.overlayMatches];
   matches = filterMatchesBySymbolType(matches, symbolType, this);
+  // Agent drill-in scope (--in <file>): applied BEFORE sort/cap so a
+  // late-alphabet file's matches can never be pre-clipped by maxMatches.
+  if (options.fileFilter) {
+    matches = matches.filter(m => matchesGrepFileFilter(m.file, options.fileFilter));
+  }
   matches.sort((a, b) =>
     a.file.localeCompare(b.file) ||
     a.line - b.line ||
@@ -159,6 +165,16 @@ export async function bareGrep(query, routing, options = {}) {
   );
 
   const totalMatches = matches.length;
+  // Agent-only k-budget file diversity (option-gated; absent → byte-identical
+  // output). Streaming per-file cap: matches beyond the cap are counted, not
+  // stored, so memory is bounded by perFileCap*maxFiles, never total matches.
+  let fileSummary = null;
+  if (options.perFileCap > 0) {
+    ({ kept: matches, fileSummary } = applyGrepFileDiversity(matches, {
+      perFileCap: options.perFileCap,
+      maxFiles: options.maxFiles,
+    }));
+  }
   if (maxMatches > 0) {
     matches = matches.slice(0, maxMatches);
   }
@@ -170,6 +186,7 @@ export async function bareGrep(query, routing, options = {}) {
 
   return {
     results,
+    ...(fileSummary ? { fileSummary } : {}),
     stats: {
       path: 'grep',
       regex,

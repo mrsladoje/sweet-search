@@ -230,3 +230,8 @@ docs/issues-report-*.md
 core/prompt-optimization/data/metric-forge/captures/
 core/prompt-optimization/data/metric-forge/scores/
 core/prompt-optimization/data/metric-forge/layerb/
+
+# task-completion-bench forensics/analysis working docs (session artifacts, not shipped)
+eval/task-completion-bench/analysis/
+eval/task-completion-bench/.DS_Store
+downloads/
