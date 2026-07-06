@@ -192,3 +192,18 @@ export function extractPositional(args) {
   if (bad) return { pattern: undefined, unknownFlag: bad };
   return { pattern: args[0], unknownFlag: null };
 }
+
+// --- trailer rendering --------------------------------------------------------
+
+// Sufficiency trailer segment: 3-valued verdict (YES / no / unknown) + a
+// compact why-token, e.g. ` sufficient=YES (query_evidence_clear_margin)` vs
+// ` sufficient=unknown (well_formed_only)`. Falls back to the legacy boolean
+// when the engine predates sufficiencyVerdict. The full line shape stays
+// `# confidence=<bucket> (<reason>) sufficient=<verdict> (<why>)`.
+export function renderSufficiency(response) {
+  const verdict = response.sufficiencyVerdict
+    ? (response.sufficiencyVerdict === 'yes' ? 'YES' : response.sufficiencyVerdict)
+    : (response.sufficient ? 'YES' : 'no');
+  const why = response.sufficiencyReason ? ` (${response.sufficiencyReason})` : '';
+  return ` sufficient=${verdict}${why}`;
+}

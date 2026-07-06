@@ -244,7 +244,7 @@ describe('computeSufficiency (tightened)', () => {
     expect(unresolvedExternalCount).toBeGreaterThan(0);
   });
 
-  it('IS sufficient when complete + neighbors_present resolves the externals', () => {
+  it('IS sufficient when complete + neighbors_present resolves the externals AND the query matches', () => {
     const top = {
       symbol: 'validate',
       presentation: 'full',
@@ -256,12 +256,29 @@ describe('computeSufficiency (tightened)', () => {
         tokens: 30,
       },
     };
-    const { sufficient, reasons } = computeSufficiency(top, { confidence: 'high' });
+    const { sufficient, reasons } = computeSufficiency(top, { confidence: 'high' },
+      { query: 'validateParam paramsSchema' });
     expect(sufficient).toBe(true);
     expect(reasons).toContain('neighbors_present');
   });
 
-  it('IS sufficient when truly self-contained (only locally-declared identifiers)', () => {
+  it('query-conditioned (2026-07): resolved structure WITHOUT query evidence is not yes', () => {
+    // This was the pre-July-2026 structural YES: complete + neighbors +
+    // high confidence, query unrelated. Packaging alone can no longer say YES.
+    const top = {
+      symbol: 'validate',
+      presentation: 'full',
+      code: 'function validate() { return validateParam(paramsSchema) && wrapValidationError(x); }',
+      headerContext: null,
+      neighbors: { rendered: '- calls validateParam → lib/validation.js:118', count: 1, tokens: 10 },
+    };
+    const { sufficient, verdict } = computeSufficiency(top, { confidence: 'high' },
+      { query: 'websocket reconnect backoff timer' });
+    expect(sufficient).toBe(false);
+    expect(verdict).toBe('no');
+  });
+
+  it('IS sufficient when truly self-contained AND the query matches', () => {
     const top = {
       symbol: 'sum',
       presentation: 'full',
@@ -269,7 +286,8 @@ describe('computeSufficiency (tightened)', () => {
       headerContext: null,
       neighbors: null,
     };
-    const { sufficient, reasons, unresolvedExternalCount } = computeSufficiency(top, { confidence: 'high' });
+    const { sufficient, reasons, unresolvedExternalCount } = computeSufficiency(
+      top, { confidence: 'high' }, { query: 'sum result helper' });
     expect(unresolvedExternalCount).toBe(0);
     expect(reasons).toContain('self_contained_strict');
     expect(sufficient).toBe(true);
