@@ -19,6 +19,7 @@
  */
 
 import { readFileRange } from './search-pattern-chunks.js';
+import { computeSufficiencyVerdict } from './query-sufficiency.js';
 import { statSync } from 'fs';
 import path from 'path';
 
@@ -1130,15 +1131,34 @@ function unresolvedExternalRefs(code, ownSymbolName, headerContext, neighborsRen
  *                            or in the surfaced neighbours list
  *   - high_confidence     : score gap puts top-1 well ahead of top-2
  *
- * sufficient := complete_symbol
- *               AND (header_resolved OR neighbors_present OR self_contained_strict)
- *               AND (high_confidence OR header_resolved OR neighbors_present)
+ * Query-conditioned rule (July 2026 — full200 bench forensics showed the
+ * structural rule mislabels systemically: `confidence=low sufficient=YES`
+ * was the modal trailer, 156×, and reasons were structural in ~all cases):
+ * the verdict is now 3-valued and REQUIRES positive query-match evidence
+ * in top-1 (see core/search/query-sufficiency.js):
+ *
+ *   yes     := strong query evidence (exact anchor hit or high subtoken
+ *              overlap) AND (confidence=high OR (confidence=medium AND
+ *              structural resolution))
+ *   no      := no results, or a query with real anchors finding nothing
+ *              in top-1 (confirmed absence)
+ *   unknown := everything ambiguous (incl. the old structural-only YES,
+ *              now reported as reason=well_formed_only)
+ *
+ * Structural facts (complete_symbol / header_resolved / neighbors_present /
+ * self_contained_strict) are kept as diagnostic reasons and as the
+ * resolution gate for medium-confidence YES — they can no longer produce
+ * YES on their own. `sufficient` (boolean) stays = (verdict === 'yes') for
+ * every structured consumer (MCP zod schema, bench counters).
  *
  * @param {object} topResult
  * @param {{ confidence: string }} confidenceInfo
- * @returns {{ sufficient: boolean, reasons: string[], unresolvedExternalCount: number }}
+ * @param {{ query?: string, regex?: string, lowerResults?: object[] }} [queryContext]
+ * @returns {{ sufficient: boolean, verdict: 'yes'|'no'|'unknown',
+ *             sufficiencyReason: string, reasons: string[],
+ *             unresolvedExternalCount: number, evidence: object|null }}
  */
-export function computeSufficiency(topResult, confidenceInfo) {
+export function computeSufficiency(topResult, confidenceInfo, queryContext = {}) {
   const reasons = [];
 
   const isComplete = !!(topResult.symbol &&
@@ -1168,16 +1188,31 @@ export function computeSufficiency(topResult, confidenceInfo) {
 
   if (confidenceInfo?.confidence === 'high') reasons.push('high_confidence');
 
-  // Tightened rule: complete symbol is necessary but NOT sufficient.
-  // We require at least one resolution reason AND at least one specificity
-  // reason. This stops a bare "complete + high_confidence" from claiming
-  // sufficient when the body still references a dozen helpers we never
-  // surfaced (the validation-pipeline failure mode).
   const hasResolution = hasHeader || hasNeighbors || reasons.includes('self_contained_strict');
-  const hasSpecificity = confidenceInfo?.confidence === 'high' || hasHeader || hasNeighbors;
-  const sufficient = isComplete && hasResolution && hasSpecificity;
 
-  return { sufficient, reasons, unresolvedExternalCount: unresolvedCount };
+  // Query-conditioned verdict: structural facts are the resolution gate,
+  // never the whole answer. See query-sufficiency.js for the fusion rule.
+  const { verdict, reason: sufficiencyReason, evidence } = computeSufficiencyVerdict({
+    topResult,
+    confidenceInfo,
+    query: queryContext.query || '',
+    regex: queryContext.regex || '',
+    structural: { isComplete, hasResolution },
+    lowerResults: queryContext.lowerResults || [],
+  });
+
+  if (evidence?.exactHit) reasons.push('query_literal_matched');
+  else if (evidence?.strength === 'strong') reasons.push('query_token_overlap');
+  else if (evidence?.strength === 'none') reasons.push('no_query_evidence');
+
+  return {
+    sufficient: verdict === 'yes',
+    verdict,
+    sufficiencyReason,
+    reasons,
+    unresolvedExternalCount: unresolvedCount,
+    evidence,
+  };
 }
 
 // =============================================================================
@@ -2287,15 +2322,27 @@ export function packageForAgent(rankedResults, searchStats, opts) {
 
   const packagingMs = Math.round(performance.now() - start);
 
-  // Sufficiency signal for top-1. Tightened in 2026-05: requires resolution
-  // (header_resolved OR neighbors_present OR self_contained_strict) instead
-  // of the old "complete_symbol + high_confidence" rule.
+  // Sufficiency signal for top-1. Query-conditioned since 2026-07: the
+  // 3-valued verdict requires positive query-match evidence; structural
+  // packaging facts remain as reasons + the medium-confidence resolution
+  // gate. Runs for summary-only top-1 too (verdict can be 'no'/'unknown'
+  // there; never 'yes' without code).
   let sufficient = false;
+  let sufficiencyVerdict = 'no';
+  let sufficiencyReason = 'no_results';
   let sufficiencyReasons = [];
   let unresolvedExternalCount = 0;
-  if (agentResults.length > 0 && agentResults[0].code) {
-    const sufficiency = computeSufficiency(agentResults[0], confidenceInfo);
+  if (agentResults.length > 0) {
+    const sufficiency = computeSufficiency(agentResults[0], confidenceInfo, {
+      query,
+      regex,
+      // Code-bearing lower ranks (full/preview) — soften a false 'no' when
+      // the pack's answer sits below top-1; never used to grant YES.
+      lowerResults: agentResults.slice(1, 4).filter(r => r.code),
+    });
     sufficient = sufficiency.sufficient;
+    sufficiencyVerdict = sufficiency.verdict;
+    sufficiencyReason = sufficiency.sufficiencyReason;
     sufficiencyReasons = sufficiency.reasons;
     unresolvedExternalCount = sufficiency.unresolvedExternalCount || 0;
   }
@@ -2317,6 +2364,8 @@ export function packageForAgent(rankedResults, searchStats, opts) {
     confidence: confidenceInfo.confidence,
     confidenceReason: confidenceInfo.confidenceReason,
     sufficient,
+    sufficiencyVerdict,
+    sufficiencyReason,
     sufficiencyReasons,
     unresolvedExternalCount,
 

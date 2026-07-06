@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import {
   parseBoolFlag, parseValueFlag, parsePositiveIntFlag,
   buildGrepPattern, stripInertFlags, normalizeArgs, extractPositional,
-  parseLineRange, looksLikeOption,
+  parseLineRange, looksLikeOption, renderSufficiency,
 } from './_ss-argparse.mjs';
 import { renderGrepBody } from '../../../core/search/grep-output-shaping.js';
 
@@ -222,7 +222,7 @@ async function cmdFind(rawArgs) {
     ` budget=${response.tokenBudget} used=${response.tokensUsed} subMode=${response.subMode ?? format}\n`);
   if (response.confidence) {
     process.stdout.write(`# confidence=${response.confidence}${response.confidenceReason ? ' (' + response.confidenceReason + ')' : ''}` +
-      `${response.sufficient ? ' sufficient=YES' : ' sufficient=no'}\n`);
+      `${renderSufficiency(response)}\n`);
   }
 
   // Per-result blocks — identical shape to ss-search's agent packaging.
@@ -417,7 +417,7 @@ async function cmdAgentSearch(rawArgs) {
     ` results=${response.results.length} subMode=${response.subMode}\n`);
   if (response.confidence) {
     process.stdout.write(`# confidence=${response.confidence}${response.confidenceReason ? ' (' + response.confidenceReason + ')' : ''}` +
-      `${response.sufficient ? ' sufficient=YES' : ' sufficient=no'}\n`);
+      `${renderSufficiency(response)}\n`);
   }
 
   // Per-result blocks
@@ -474,6 +474,8 @@ async function cmdAgentSearch(rawArgs) {
     headerCount,
     confidence: response.confidence || null,
     sufficient: response.sufficient ?? null,
+    sufficiencyVerdict: response.sufficiencyVerdict ?? null,
+    sufficiencyReason: response.sufficiencyReason ?? null,
     sufficiencyReasons: Array.isArray(response.sufficiencyReasons) ? response.sufficiencyReasons : null,
     unresolvedExternalCount: typeof response.unresolvedExternalCount === 'number'
       ? response.unresolvedExternalCount : null,

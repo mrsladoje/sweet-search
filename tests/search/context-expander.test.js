@@ -138,19 +138,39 @@ describe('computeConfidence', () => {
 // Fix #7: Sufficiency signal
 // =============================================================================
 
-describe('computeSufficiency', () => {
-  it('should be sufficient when symbol is complete + high confidence', () => {
+describe('computeSufficiency (query-conditioned, 2026-07)', () => {
+  it('is sufficient when the queried symbol matches top-1 with high confidence', () => {
     const topResult = {
       symbol: 'MyClass',
       presentation: 'full',
       code: 'export class MyClass { constructor() {} }',
       headerContext: "import { Base } from './base.js';",
     };
-    const { sufficient, reasons } = computeSufficiency(topResult, { confidence: 'high' });
+    const { sufficient, verdict, reasons } = computeSufficiency(
+      topResult, { confidence: 'high' }, { query: 'MyClass constructor' });
     expect(sufficient).toBe(true);
+    expect(verdict).toBe('yes');
     expect(reasons).toContain('complete_symbol');
     expect(reasons).toContain('header_resolved');
-    expect(reasons).toContain('high_confidence');
+    expect(reasons).toContain('query_literal_matched');
+  });
+
+  it('structural completeness + high confidence WITHOUT query evidence is never YES (sushi shape)', () => {
+    // Well-formed complete symbol, resolved header — but nothing from the
+    // query appears in it. The old structural rule said YES here; the agent
+    // then stopped searching and patched a lookalike.
+    const topResult = {
+      symbol: 'assignFshCode',
+      presentation: 'full',
+      code: 'export function assignFshCode(def) { return def.code; }',
+      headerContext: "import { ElementDefinition } from './eld.js';",
+    };
+    const { sufficient, verdict, sufficiencyReason } = computeSufficiency(
+      topResult, { confidence: 'medium' },
+      { query: 'instance fixedValue propagation nested extension slices' });
+    expect(sufficient).toBe(false);
+    expect(verdict).toBe('no');
+    expect(sufficiencyReason).toBe('no_query_evidence');
   });
 
   it('should not be sufficient with only one signal', () => {
@@ -160,7 +180,7 @@ describe('computeSufficiency', () => {
       code: 'some code',
       headerContext: null,
     };
-    const { sufficient } = computeSufficiency(topResult, { confidence: 'low' });
+    const { sufficient } = computeSufficiency(topResult, { confidence: 'low' }, { query: 'some code' });
     expect(sufficient).toBe(false);
   });
 
@@ -171,9 +191,25 @@ describe('computeSufficiency', () => {
       code: 'function MyFunc() {\n  // ...\n// ... (50 more lines)',
       headerContext: null,
     };
-    const { reasons } = computeSufficiency(topResult, { confidence: 'high' });
+    const { reasons, verdict } = computeSufficiency(
+      topResult, { confidence: 'high' }, { query: 'MyFunc' });
     expect(reasons).not.toContain('complete_symbol');
-    // high_confidence is the only signal → not sufficient (need 2)
+    // Evidence is strong (MyFunc matched) + high confidence → yes even
+    // though packaging is incomplete: the borg-side false-no correction.
+    expect(verdict).toBe('yes');
+  });
+
+  it('ambiguous evidence yields unknown, not a false binary', () => {
+    const topResult = {
+      symbol: 'parseConfig',
+      presentation: 'full',
+      code: 'function parseConfig(file) { return toml.parse(file); }',
+      headerContext: "import toml from 'toml';",
+    };
+    // Partial overlap (config), low confidence → unknown.
+    const { verdict } = computeSufficiency(
+      topResult, { confidence: 'low' }, { query: 'config rule severity mapping' });
+    expect(verdict).toBe('unknown');
   });
 });
 
