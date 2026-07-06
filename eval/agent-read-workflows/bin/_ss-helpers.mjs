@@ -18,6 +18,7 @@ import {
   buildGrepPattern, stripInertFlags, normalizeArgs, extractPositional,
   parseLineRange, looksLikeOption,
 } from './_ss-argparse.mjs';
+import { renderGrepBody } from '../../../core/search/grep-output-shaping.js';
 
 // Diagnostic-log isolation (agent-facing tools). The Sweet Search engine emits
 // model/index load banners via console.log → stdout ("LateInteraction: Loaded…",
@@ -115,13 +116,16 @@ async function ensureWarmServerReady({ timeoutMs = 60000, intervalMs = 500 } = {
 
 // --- subcommands ----------------------------------------------------------
 
-const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [-k N]';
+const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <file>] [-k N]';
 async function cmdGrep(rawArgs) {
   const args = normalizeArgs(rawArgs);
   const ignoreCase = parseBoolFlag(args, ['-i', '--ignore-case']);
   const wordBound = parseBoolFlag(args, ['-w', '--word-regexp']);
   const fixedString = parseBoolFlag(args, ['-F', '--fixed-strings']);
   const k = readPositiveIntFlag(args, ['-k', '--top'], 20, GREP_USAGE);
+  // Drill-in scope: show matches from ONE file (the recovery affordance the
+  // diversified output advertises when it truncates a flooded file).
+  const inFile = readValueFlag(args, '--in', null, GREP_USAGE);
   stripInertFlags(args);
   const regex = buildGrepPattern(resolvePositional(args, GREP_USAGE), { ignoreCase, wordBound, fixedString });
   if (!regex) {
@@ -129,25 +133,47 @@ async function cmdGrep(rawArgs) {
     process.exit(2);
   }
   const s = await getSweetSearch();
-  const result = await s.bareGrep(regex, null, { regex, maxMatches: k * 5, contextLines: 0 });
-  // Group by file, take first k matches across all files (ordered as bareGrep returns).
-  const grouped = new Map();
-  for (const r of result.results.slice(0, k * 5)) {
-    if (!grouped.has(r.file)) grouped.set(r.file, []);
-    grouped.get(r.file).push(r);
-  }
-  let printed = 0;
-  process.stdout.write(`# ss-grep: ${result.results.length} total match(es) for /${regex}/\n`);
-  for (const [file, lines] of grouped) {
-    for (const r of lines) {
+
+  if (inFile) {
+    // Single-file scope: flat output, depth up to k within that file.
+    const result = await s.bareGrep(regex, null, {
+      regex, maxMatches: k, contextLines: 0, fileFilter: inFile,
+    });
+    const total = result.stats?.totalMatches ?? result.results.length;
+    process.stdout.write(`# ss-grep: ${total} total match(es) for /${regex}/ (scope: --in ${inFile})\n`);
+    result.results.forEach((r, i) => {
       const text = (r.matchText || '').replace(/\s+/g, ' ').trim().slice(0, 140);
-      process.stdout.write(`${file}:${r.line}: ${text}\n`);
-      printed++;
-      if (printed >= k) break;
-    }
-    if (printed >= k) break;
+      const marker = (i === result.results.length - 1 && total > result.results.length)
+        ? ` (+${total - result.results.length} more — raise -k)` : '';
+      process.stdout.write(`${r.file}:${r.line}: ${text}${marker}\n`);
+    });
+    if (result.results.length === 0) process.stdout.write('(no matches)\n');
+    process.exit(0);
   }
-  if (printed === 0) process.stdout.write('(no matches)\n');
+
+  // k-budget file diversity: fetch at most min(k,100) matches per file across
+  // at most k files (a file can never show more than k lines, and more than k
+  // files can never fit), then allocate the k body lines breadth-first so one
+  // flooded file can never hide every other matching file (the gradethis-161
+  // failure). Rendering stays grouped per file; truncation is marked inline
+  // and drillable via --in.
+  const result = await s.bareGrep(regex, null, {
+    regex, maxMatches: 0, contextLines: 0,
+    perFileCap: Math.min(k, 100), maxFiles: k,
+  });
+  const total = result.stats?.totalMatches ?? result.results.length;
+  const fileSummary = result.fileSummary
+    || { files: [], hiddenFileCount: 0, hiddenMatchCount: 0, hiddenSample: [] };
+  const body = renderGrepBody(result.results, fileSummary, k);
+
+  process.stdout.write(`# ss-grep: ${total} total match(es) for /${regex}/\n`);
+  if (body.truncatedFileCount > 0 || body.hiddenLine) {
+    process.stdout.write(`# ${body.matchedFileCount} file(s) matched; (+N more in this file)=truncated — ` +
+      `see the rest: ss-grep "<regex>" --in <file>\n`);
+  }
+  for (const line of body.lines) process.stdout.write(line + '\n');
+  if (body.hiddenLine) process.stdout.write(body.hiddenLine + '\n');
+  if (body.shownMatches === 0) process.stdout.write('(no matches)\n');
   process.exit(0);
 }
 
