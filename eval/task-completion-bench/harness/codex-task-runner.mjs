@@ -52,11 +52,82 @@ const FRAME_CLOSE =
   '=== TASK COMPLETION (authoritative — overrides all guidance above) ===\n' +
   'You have NOT finished until (1) you made a SOURCE-code edit AND (2) `run_tests` shows the previously-failing test now PASSES. Locating, understanding, or explaining the bug is NOT completion. Do NOT modify test files — the evaluation supplies its own hidden tests; test edits do not count toward the fix and can break grading. If so far you have only located the cause, your VERY NEXT action must be the source edit.';
 
-function writeRunTestsShim(binDir, { image, workdir, testScript, rundir }) {
+// Broker mode (agent sandbox): codex's Linux sandbox blocks unix-socket connects, so a
+// sandboxed run_tests cannot reach the docker daemon directly (verified: "permission
+// denied ... unix:///var/run/docker.sock" even with /run in writable_roots). Instead the
+// sandboxed shim drops a request file into the writable __rt dir and polls for the
+// response; an UNSANDBOXED host-side broker (spawned by runCodexTask before codex, killed
+// after) watches for requests and runs the exact same git-diff + docker logic outside the
+// sandbox. run_tests takes no arguments, so the protocol is parameter-free — the agent
+// can no longer inject docker args at all (strictly tighter than the legacy direct shim).
+function writeRunTestsBrokerFiles(binDir, cfgPath) {
+  const reqDir = path.join(binDir, '_rt_ipc');
+  mkdirSync(reqDir, { recursive: true });
+  const brokerPath = path.join(binDir, '_rt_broker.mjs');
+  writeFileSync(brokerPath, `import { execSync } from 'node:child_process';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, renameSync, existsSync } from 'node:fs';
+const c = JSON.parse(readFileSync(${JSON.stringify(cfgPath)}, 'utf8'));
+const IPC = ${JSON.stringify(reqDir)};
+const q = s => "'" + String(s).replace(/'/g, "'\\\\''") + "'";
+function runTests() {
+  let diff = '';
+  try { diff = execSync('git -C ' + c.rundir + " diff HEAD -- . ':(exclude).sweet-search'", { encoding: 'utf8', maxBuffer: 16*1024*1024 }); } catch {}
+  const pdir = c.rundir + '__rt/_stage';
+  try {
+    rmSync(pdir, { recursive: true, force: true }); mkdirSync(pdir, { recursive: true });
+    writeFileSync(pdir + '/agent.diff', diff || '');
+    const tSec = c.testTimeoutSec || 300;
+    const script = 'cd ' + c.workdir + ' && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout ' + tSec + ' bash -c ' + q(c.testScript) + ' 2>&1 | tail -60';
+    const out = execSync('docker run --rm ' + (c.netArgs || '') + '-v ' + pdir + ':/patch:ro ' + c.image + ' bash -c ' + q(script), { env: { ...process.env, DOCKER_HOST: c.dockerHost }, encoding: 'utf8', timeout: (tSec + 60) * 1000, maxBuffer: 4*1024*1024, stdio: ['ignore','pipe','pipe'] });
+    return out.slice(0, 8000);
+  } catch (e) { return '[run_tests exit=' + (e.status ?? 1) + ']\\n' + String(e.stdout || e.stderr || e.message || '').slice(0, 6000); }
+  finally { try { rmSync(pdir, { recursive: true, force: true }); } catch {} }
+}
+setInterval(() => {
+  let reqs = [];
+  try { reqs = readdirSync(IPC).filter(f => f.startsWith('req-')); } catch { process.exit(0); }
+  for (const r of reqs) {
+    const id = r.slice(4);
+    try { rmSync(IPC + '/' + r, { force: true }); } catch {}
+    const out = runTests();
+    const tmp = IPC + '/tmp-' + id;
+    try { writeFileSync(tmp, out); renameSync(tmp, IPC + '/res-' + id); } catch {}
+  }
+}, 400);
+`);
+  return { brokerPath, reqDir };
+}
+
+function writeRunTestsShim(binDir, { image, workdir, testScript, rundir, testTimeoutSec = 300, netArgs = '', brokerMode = false }) {
   mkdirSync(binDir, { recursive: true });
   const cfg = path.join(binDir, '_run_tests_cfg.json');
-  writeFileSync(cfg, JSON.stringify({ image, workdir, testScript, rundir, dockerHost: DOCKER_HOST }));
+  writeFileSync(cfg, JSON.stringify({ image, workdir, testScript, rundir, dockerHost: DOCKER_HOST, testTimeoutSec, netArgs }));
   const mjs = path.join(binDir, '_run_tests.mjs');
+  if (brokerMode) {
+    const { brokerPath, reqDir } = writeRunTestsBrokerFiles(binDir, cfg);
+    // requester shim: sandbox-safe (file writes into __rt/_rt_ipc only, no docker)
+    writeFileSync(mjs, `import { writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+const IPC = ${JSON.stringify(reqDir)};
+const tSec = ${Number(testTimeoutSec) || 300};
+const id = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+writeFileSync(IPC + '/req-' + id, '');
+const deadline = Date.now() + (tSec + 90) * 1000;
+const res = IPC + '/res-' + id;
+while (Date.now() < deadline) {
+  if (existsSync(res)) {
+    process.stdout.write(readFileSync(res, 'utf8'));
+    try { rmSync(res, { force: true }); } catch {}
+    process.exit(0);
+  }
+  await new Promise(r => setTimeout(r, 400));
+}
+process.stdout.write('[run_tests] no response from test broker within ' + (tSec + 90) + 's');
+`);
+    const shim = path.join(binDir, 'run_tests');
+    writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
+    chmodSync(shim, 0o755);
+    return { binDir, brokerPath };
+  }
   writeFileSync(mjs, `import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 const c = JSON.parse(readFileSync(${JSON.stringify(cfg)}, 'utf8'));
@@ -67,11 +138,14 @@ const pdir = c.rundir + '__rt';
 try {
   rmSync(pdir, { recursive: true, force: true }); mkdirSync(pdir, { recursive: true });
   writeFileSync(pdir + '/agent.diff', diff || '');
-  const script = 'cd ' + c.workdir + ' && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout 300 bash -c ' + q(c.testScript) + ' 2>&1 | tail -60';
+  // per-task test timeout (task-overrides.json via cfg; default 300s unchanged)
+  const tSec = c.testTimeoutSec || 300;
+  const script = 'cd ' + c.workdir + ' && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout ' + tSec + ' bash -c ' + q(c.testScript) + ' 2>&1 | tail -60';
   // NO --network host: at CONCURRENCY>1, concurrent test containers sharing the host
   // net namespace collide on any port a test binds (→ flaky failures → corrupted
-  // resolved numbers). Default bridge isolates each (own localhost + ports).
-  const out = execSync('docker run --rm -v ' + pdir + ':/patch:ro ' + c.image + ' bash -c ' + q(script), { env: { ...process.env, DOCKER_HOST: c.dockerHost }, encoding: 'utf8', timeout: 360000, maxBuffer: 4*1024*1024, stdio: ['ignore','pipe','pipe'] });
+  // resolved numbers). c.netArgs carries the egress lockdown ('--network none ' by
+  // default; per-task 'bridge' exception; empty under SS_BENCH_ALLOW_NET=1).
+  const out = execSync('docker run --rm ' + (c.netArgs || '') + '-v ' + pdir + ':/patch:ro ' + c.image + ' bash -c ' + q(script), { env: { ...process.env, DOCKER_HOST: c.dockerHost }, encoding: 'utf8', timeout: (tSec + 60) * 1000, maxBuffer: 4*1024*1024, stdio: ['ignore','pipe','pipe'] });
   process.stdout.write(out.slice(0, 8000));
 } catch (e) { process.stdout.write('[run_tests exit=' + (e.status ?? 1) + ']\\n' + String(e.stdout || e.stderr || e.message || '').slice(0, 6000)); }
 finally { try { rmSync(pdir, { recursive: true, force: true }); } catch {} }
@@ -109,8 +183,24 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   const testScript = [].concat(t.install_config?.test_cmd || []).join(' && ');
 
   // run_tests shim (both arms) + ss-* (sweet only) on PATH
+  const NET_LOCKDOWN = process.env.SS_BENCH_ALLOW_NET !== '1';
+  // EXPERIMENTAL opt-in ONLY (SS_AGENT_SANDBOX=1): codex's Linux sandbox denies ALL
+  // unix-socket connects (probed 2026-07-07: /tmp socket, writable-root socket, and
+  // docker.sock all refuse under both network_access settings; --allow-unix-socket
+  // doesn't exist on `exec` 0.141), which kills the sweet arm's ss-* daemon sockets —
+  // and sandboxing only one arm would confound the A/B. The run_tests broker below
+  // makes docker work under the sandbox, but ss-* cannot; production egress control
+  // is the host-level /etc/hosts code-host block (bench-net-lockdown.sh, both arms)
+  // plus --network none task containers.
+  const AGENT_SANDBOX = process.env.SS_AGENT_SANDBOX === '1';
+  const netArgs = NET_LOCKDOWN
+    ? `--network ${t._network === 'bridge' ? 'bridge' : 'none'} ${(t._dockerRunArgs || []).join(' ')}`.trim() + ' '
+    : ((t._dockerRunArgs || []).join(' ') ? (t._dockerRunArgs || []).join(' ') + ' ' : '');
   const binDir = path.join(rundir, '.codex-bin');
-  writeRunTestsShim(binDir, { image, workdir, testScript, rundir });
+  const shimInfo = writeRunTestsShim(binDir, { image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300, netArgs, brokerMode: AGENT_SANDBOX });
+  // host-side broker executes run_tests' docker work OUTSIDE the agent sandbox
+  let broker = null;
+  if (AGENT_SANDBOX && shimInfo?.brokerPath) broker = spawn('node', [shimInfo.brokerPath], { stdio: 'ignore' });
   const pathDirs = [binDir, sweet ? ssBinDir : null].filter(Boolean);
   const env = { ...process.env, PATH: [...pathDirs, process.env.PATH].join(':'), SWEET_SEARCH_PROJECT_ROOT: rundir, DOCKER_HOST };
 
@@ -139,7 +229,15 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
     : '';
   const prompt = `${FRAME_OPEN}${sweetGuidance}\n\n${FRAME_CLOSE}\n\n=== ISSUE ===\n${task.problem_statement || ''}`;
 
-  const args = ['exec', '--dangerously-bypass-approvals-and-sandbox', '--json',
+  // EXPERIMENTAL agent sandbox (see AGENT_SANDBOX above — opt-in, native-arm-only
+  // viability): workspace-write with network off; run_tests works via the host-side
+  // broker (docker is unreachable from inside — codex seccomp denies unix connects).
+  // Production egress control is bench-net-lockdown.sh + --network none containers.
+  const sandboxArgs = AGENT_SANDBOX
+    ? ['--sandbox', 'workspace-write', '--skip-git-repo-check', '-c', 'approval_policy="never"',
+       '-c', 'sandbox_workspace_write.network_access=false']
+    : ['--dangerously-bypass-approvals-and-sandbox'];
+  const args = ['exec', ...sandboxArgs, '--json',
     '-c', `model_reasoning_effort="${reasoning}"`, '-c', 'model_provider="openrouter"',
     '-m', codexModel, '-C', rundir, prompt];
 
@@ -180,6 +278,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
 
   const calls = toolCalls.length;
   const exitReason = r.timedOut ? 'timeout' : (r.exitCode !== 0 ? 'codex_error' : 'model_stopped');
+  if (broker) { try { broker.kill('SIGKILL'); } catch {} }
   try { rmSync(binDir, { recursive: true, force: true }); } catch {}
 
   return {

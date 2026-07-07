@@ -1,0 +1,49 @@
+{
+  "_doc": [
+    "Per-task harness overrides — bench-hygiene repairs for env-broken tasks (2026-07-07).",
+    "Applied by run-pilot.mjs at loadTasks (SR mode): mutates the in-memory spec so the",
+    "agent-phase run_tests (bareapi + codex shim) AND grading (tasks.json fed to eval.py)",
+    "all see the same repaired task. Fields per instance_id:",
+    "  testTimeoutSec — replaces the 300s default INSIDE the run_tests container (agent phase only;",
+    "                   grading has no per-test timeout, only the 90-min GRADE_BATCH ceiling).",
+    "  testCmd        — replaces install_config.test_cmd (agent phase AND grading).",
+    "  image          — replaces image_name with a locally-built derived repair image",
+    "                   (swerebenchv2-fixed/*; never pulled — must exist locally, see",
+    "                   analysis/dockerfiles/). Original kept in spec._origImage.",
+    "  network        — 'bridge' exempts this task's containers from the egress lockdown",
+    "                   (default under lockdown is --network none; loopback always works).",
+    "  dockerRunArgs  — extra docker-run args for this task's run_tests/grading containers",
+    "                   (e.g. --privileged for docker-in-docker).",
+    "Kill switches: NO_TASK_OVERRIDES=1 ignores this file entirely; SS_BENCH_ALLOW_NET=1",
+    "restores historical full-egress container networking. Old harness behavior is exactly",
+    "NO_TASK_OVERRIDES=1 SS_BENCH_ALLOW_NET=1."
+  ],
+  "defaults": { "testTimeoutSec": 300 },
+  "tasks": {
+    "jump-dev__jump.jl-2714": {
+      "_why": "JuMP full suite measured 2m58 clean / 2m53 with source edit applied (idle box, --network none) — right AT the 300s cliff, so under real run load (3-4 concurrent tasks + grading) every historical run_tests timed out (68-call thrash). 600s = ~3.4x idle-measured, load-aware headroom.",
+      "testTimeoutSec": 600
+    },
+    "juliadebug__cthulhu.jl-547": {
+      "_why": "THREE defects: (1) Pkg.test() defaults to --check-bounds=yes which disables the @inbounds DCE the F2P test asserts (repo CI runs --check-bounds=auto); (2) the Manifest pins LoweredCodeUtils.jl as a git dep NOT baked into the image depot, so Pkg.test clones from github at test time — derived image pre-seeds the depot; (3) Julia prints per-testset summary rows ONLY on failure — a fully-PASSING suite shows a single aggregate 'runtests.jl' row, so the name-based parser can never credit the F2P/P2P names (structurally ungradeable-on-success). The `&& printf` tail emits a synthetic summary table for the 26 expected testset names IFF the suite exits 0 (aggregate pass logically implies every nested testset passed). Grading becomes all-or-nothing for this task (partial passes still grade NO) — documented degradation, strictly better than permanently-NO.",
+      "testCmd": "julia --project=. --startup-file=no -e 'using Pkg; Pkg.test(; julia_args=[\"--check-bounds=auto\"])' && printf 'Test Summary: | Pass  Total\\nCallsites |  1  1\\nambiguity check |  1  1\\nwrapped callinfo |  1  1\\nConstPropCallInfo |  1  1\\nConstResult |  1  1\\nSemiConcreteResult |  1  1\\nissue #346 |  1  1\\nPureCallInfo |  1  1\\nReturnTypeCallInfo |  1  1\\nOCCallInfo |  1  1\\nInvokeCallInfo |  1  1\\nVarargs and printing |  1  1\\nMaybeUndef |  1  1\\nwarntype variables |  1  1\\nLimit printing (issue #94) |  1  1\\nIssue #132 |  1  1\\n@interp |  1  1\\nascend |  1  1\\nascend interface |  1  1\\nBookmarks |  1  1\\npreferences |  1  1\\nper-statement remarks |  1  1\\nper-statement effects |  1  1\\nBare-bones MIs |  1  1\\ntest_codeview.jl |  1  1\\ntest_AbstractInterpreter.jl |  1  1\\n'",
+      "image": "swerebenchv2-fixed/juliadebug-cthulhu.jl:547-b98d972"
+    },
+    "docker__compose-9148": {
+      "_why": "stock image has no docker binary/daemon; derived image + diagnosis pending (analysis/dockerfiles/docker__compose-9148)",
+      "image": "swerebenchv2-fixed/docker-compose:9148-fd676ad"
+    },
+    "scalameta__scalameta-2550": {
+      "_why": "sbt 1.5.8 needs network for ivy/coursier resolution; derived image pre-seeds the cache at build time so runtime needs no egress",
+      "image": "swerebenchv2-fixed/scalameta-scalameta:2550-8fd09d2"
+    },
+    "elixir-ecto__ecto-2438": {
+      "_why": "stock image missing test deps (jason/adapters) so mix test cannot compile; derived image runs MIX_ENV=test deps.get + deps.compile at build",
+      "image": "swerebenchv2-fixed/elixir-ecto-ecto:2438-4c78b67"
+    },
+    "rust-lang__rust-analyzer-16385": {
+      "_why": "sourcegen tests need the stable rustfmt toolchain (stable-x86_64-unknown-linux-gnu); both arms landed f2p=1 and still graded NO on P2P sourcegen failures",
+      "image": "swerebenchv2-fixed/rust-lang-rust-analyzer:16385-1ab8c7f"
+    }
+  }
+}

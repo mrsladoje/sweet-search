@@ -86,12 +86,58 @@ const SR_MODE = !!TASKS_FILE;
 const SR_EVAL_DIR = process.env.SR_EVAL_DIR || '/root/swe-rebench-tools/SWE-rebench-V2';
 const taskById = new Map(); // instance_id -> full spec (populated by loadTasks in SR mode)
 
+// --- Per-task harness overrides (bench hygiene, 2026-07-07) ---
+// task-overrides.json maps instance_id → { testTimeoutSec, testCmd, image, network,
+// dockerRunArgs } for env-broken tasks (see analysis/full200-failure-analysis-2026-07-06.md
+// §4.3). Applied ONCE in loadTasks by mutating the in-memory spec, so the agent-phase
+// run_tests (bareapi + codex shim), ensureImage, AND grading (gradeArm writes the mutated
+// specs into tasks.json for eval.py) all see the same repaired task. The global default
+// test timeout stays 300s — only mapped tasks differ. NO_TASK_OVERRIDES=1 → map ignored.
+const OVERRIDES_PATH = process.env.TASK_OVERRIDES || path.join(BENCH, 'harness/task-overrides.json');
+const TASK_OVERRIDES = (!process.env.NO_TASK_OVERRIDES && existsSync(OVERRIDES_PATH))
+  ? JSON.parse(readFileSync(OVERRIDES_PATH, 'utf8')) : { defaults: {}, tasks: {} };
+const DEFAULT_TEST_TIMEOUT_SEC = Number(TASK_OVERRIDES.defaults?.testTimeoutSec) || 300;
+// --- Container egress lockdown (default ON) ---
+// Task containers (agent-phase run_tests + grading) run with --network none: external
+// egress blocked, container-own loopback preserved (in-repo localhost test servers keep
+// working — namespace property, holds under 'none'). Per-task exception: network:"bridge"
+// in the override map. SS_BENCH_ALLOW_NET=1 restores historical full-egress behavior
+// (no --network flag at all → byte-identical legacy docker commands).
+const NET_LOCKDOWN = process.env.SS_BENCH_ALLOW_NET !== '1';
+// --- Agent-SHELL egress lockdown (host-level, both arms) ---
+// The codex agent runs on the HOST (not in a container), so --network none cannot stop
+// it fetching upstream PR diffs (the derive_more leak). Codex's own sandbox was probed
+// and rejected (blocks ALL unix sockets → kills ss-* daemons + docker; see design note).
+// Mechanism: bench-net-lockdown.sh writes a marker-delimited /etc/hosts block mapping
+// code-hosting domains to 0.0.0.0 — symmetric across arms, OpenRouter/docker.io
+// untouched. Auto-enabled here for codex runs on Linux; never auto-disabled (operator:
+// `bench-net-lockdown.sh off`). While ON, golden clones from github FAIL — warm first.
+if (NET_LOCKDOWN && HARNESS === 'codex' && process.platform === 'linux') {
+  const lockScript = path.join(BENCH, 'harness/bench-net-lockdown.sh');
+  try {
+    if (!/ACTIVE/.test(execSync(`bash ${lockScript} status`, { encoding: 'utf8' }))) {
+      execSync(`bash ${lockScript} on`, { encoding: 'utf8' });
+      console.log('[net-lockdown] agent-shell code-host DNS block ENABLED (bench-net-lockdown.sh off to remove)');
+    } else console.log('[net-lockdown] agent-shell code-host DNS block active');
+  } catch (e) { console.error(`[net-lockdown] WARNING: could not verify/enable agent-shell egress lockdown: ${String(e.message).slice(0, 120)}`); }
+}
+// docker-run net/extra args for a task spec (SR mode). 'legacy' → empty (historical).
+function dockerNetArgs(t) {
+  const extra = (t?._dockerRunArgs || []).join(' ');
+  if (!NET_LOCKDOWN) return extra ? extra + ' ' : '';
+  const net = t?._network === 'bridge' ? 'bridge' : 'none';
+  return `--network ${net} ${extra ? extra + ' ' : ''}`;
+}
+
 function ensureImage(t) {
   const id = typeof t === 'string' ? t : t.instance_id;
   if (SR_MODE) {
     const img = t.image_name;
     if (!img) throw new Error(`ensureImage: SR task ${id} has no image_name`);
     const ok = () => { try { execFileSync('docker', ['image', 'inspect', img], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore' }); return true; } catch { return false; } };
+    // Derived repair images (override map) are LOCAL-ONLY tags — never pulled. Fail
+    // loud with the build pointer instead of burning 3 doomed registry pulls.
+    if (t._origImage && !ok()) throw new Error(`ensureImage: derived image ${img} not built locally — build it from analysis/dockerfiles/${id}/ (docker build), see task-overrides.json`);
     if (!ok()) {
       // Retry transient pull failures (registry blips / network) before giving up —
       // in an unattended 400-run pool a single dropped pull would otherwise skip the
@@ -144,12 +190,15 @@ function makeRunTests(image, checkoutDir, t) {
       try {
         rmSync(pdir, { recursive: true, force: true }); mkdirSync(pdir, { recursive: true });
         writeFileSync(path.join(pdir, 'agent.diff'), diff || '');
-        const script = `cd ${workdir} && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout 300 bash -c ${shq(testScript)} 2>&1 | tail -60`;
+        // per-task test timeout (task-overrides.json; default 300s unchanged); the outer
+        // execSync bound tracks it with 60s of docker/apply headroom.
+        const tSec = t._testTimeoutSec || DEFAULT_TEST_TIMEOUT_SEC;
+        const script = `cd ${workdir} && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout ${tSec} bash -c ${shq(testScript)} 2>&1 | tail -60`;
         // NO --network host: at CONCURRENCY>1 multiple test containers would share the
         // host net namespace and collide on any port a test binds (→ flaky failures →
-        // corrupted resolved numbers). Default bridge isolates each container (own
-        // localhost + port space); self-contained SWE-bench tests don't need host net.
-        const out = execSync(`docker run --rm -v ${pdir}:/patch:ro ${image} bash -c ${shq(script)}`, { env: { ...process.env, DOCKER_HOST }, encoding: 'utf8', timeout: 360000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+        // corrupted resolved numbers). Under NET_LOCKDOWN (default) this is --network
+        // none: external egress blocked, container-own loopback preserved.
+        const out = execSync(`docker run --rm ${dockerNetArgs(t)}-v ${pdir}:/patch:ro ${image} bash -c ${shq(script)}`, { env: { ...process.env, DOCKER_HOST }, encoding: 'utf8', timeout: (tSec + 60) * 1000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
         return out.slice(0, 8000);
       } catch (e) { return `[run_tests exit=${e.status ?? 1}]\n${(e.stdout || e.stderr || e.message || '').slice(0, 6000)}`; }
       finally { try { rmSync(pdir, { recursive: true, force: true }); } catch { /* */ } }
@@ -158,8 +207,8 @@ function makeRunTests(image, checkoutDir, t) {
   return async (rawArgs) => {
     const args = String(rawArgs || '').replace(/[;&|`$()<>\n]/g, ' ').slice(0, 300);
     try {
-      const out = execSync(`docker run --rm --platform linux/amd64 -v ${checkoutDir}:/testbed ${image} bash -lc "cd /testbed && timeout 300 python -m pytest ${args} -q 2>&1 | tail -50"`,
-        { env: { ...process.env, DOCKER_HOST }, encoding: 'utf8', timeout: 360000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+      const out = execSync(`docker run --rm --platform linux/amd64 ${NET_LOCKDOWN ? '--network none ' : ''}-v ${checkoutDir}:/testbed ${image} bash -lc "cd /testbed && timeout ${DEFAULT_TEST_TIMEOUT_SEC} python -m pytest ${args} -q 2>&1 | tail -50"`,
+        { env: { ...process.env, DOCKER_HOST }, encoding: 'utf8', timeout: (DEFAULT_TEST_TIMEOUT_SEC + 60) * 1000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
       return out.slice(0, 8000);
     } catch (e) { return `[run_tests exit=${e.status ?? 1}]\n${(e.stdout || e.stderr || e.message || '').slice(0, 6000)}`; }
   };
@@ -168,7 +217,16 @@ function makeRunTests(image, checkoutDir, t) {
 async function loadTasks() {
   if (SR_MODE) {
     const specs = JSON.parse(readFileSync(TASKS_FILE, 'utf8'));
-    for (const s of specs) taskById.set(s.instance_id, s);
+    for (const s of specs) {
+      const ov = TASK_OVERRIDES.tasks?.[s.instance_id];
+      s._testTimeoutSec = Number(ov?.testTimeoutSec) || DEFAULT_TEST_TIMEOUT_SEC;
+      if (ov?.network) s._network = ov.network;
+      if (ov?.dockerRunArgs) s._dockerRunArgs = ov.dockerRunArgs;
+      if (ov?.testCmd) s.install_config = { ...s.install_config, test_cmd: ov.testCmd };
+      if (ov?.image) { s._origImage = s.image_name; s.image_name = ov.image; }
+      if (ov) console.log(`[overrides] ${s.instance_id}: ${Object.keys(ov).filter(k => k[0] !== '_').join(', ')}`);
+      taskById.set(s.instance_id, s);
+    }
     return specs;
   }
   if (existsSync(CACHE)) return JSON.parse(readFileSync(CACHE, 'utf8'));
@@ -303,8 +361,12 @@ function gradeArm(arm, predictions, runId) {
       writeFileSync(patchesPath, JSON.stringify(chunk.map(p => ({ instance_id: p.instance_id, patch: p.model_patch }))));
       try { rmSync(reportPath, { force: true }); } catch { /* */ }
       try {
+        // Under NET_LOCKDOWN grading containers run --network none too (eval.py patched
+        // to accept --network + per-spec _network exception + skip-pull for local derived
+        // images; SS_BENCH_ALLOW_NET=1 → historical --network host, no flags passed).
+        const netFlags = NET_LOCKDOWN ? ['--network', 'none'] : [];
         execFileSync(VENV_PY, [path.join(SR_EVAL_DIR, 'scripts', 'eval.py'),
-          '--json', tasksPath, '--patches', patchesPath, '--max-workers', '2', '--report-json', reportPath],
+          '--json', tasksPath, '--patches', patchesPath, '--max-workers', '2', '--report-json', reportPath, ...netFlags],
           { cwd: SR_EVAL_DIR, env: { ...process.env, DOCKER_HOST, PYTHONPATH: path.join(SR_EVAL_DIR, 'lib') }, stdio: 'inherit', timeout: 5400000 });
       } catch { /* eval.py exits NON-ZERO whenever any task is unresolved — normal, not a grading failure; report.json is still written + valid. A REAL failure = no report, flagged below. */ }
       if (existsSync(reportPath)) {
@@ -320,7 +382,13 @@ function gradeArm(arm, predictions, runId) {
           const sp = taskById.get(it.instance_id) || {};
           const f2pTot = (sp.FAIL_TO_PASS || []).length;
           const f2pPass = (it.from_fail_to_pass || []).length;
-          const p2pOk = (it.failed_from_pass_to_pass || []).length === 0;
+          // excludeP2P (task-overrides.json): P2P names structurally unrunnable in ANY
+          // offline container (e.g. compose's pkg/e2e subtests need a live docker
+          // daemon) are excluded from the regression check — SWE-bench-Verified
+          // precedent (annotators removed broken tests). Documented per task; the
+          // exclusion list is fixed, never derived from a run's output.
+          const exclP2P = new Set(TASK_OVERRIDES.tasks?.[it.instance_id]?.excludeP2P || []);
+          const p2pOk = (it.failed_from_pass_to_pass || []).filter(n => !exclP2P.has(n)).length === 0;
           const f2pFrac = f2pTot ? f2pPass / f2pTot : 1;
           const status = (f2pFrac === 1 && p2pOk) ? 'FULL' : (f2pFrac > 0 && p2pOk ? 'PARTIAL' : 'NO');
           score[it.instance_id] = { f2pFrac, p2pOk, status };
@@ -330,9 +398,10 @@ function gradeArm(arm, predictions, runId) {
         console.error(`[grade ${arm}] eval.py produced NO report (batch @${i}) — ${chunk.length} task(s) left ungraded`);
       }
       // reclaim THIS batch's images before the next chunk pulls more
+      // (never GC a derived repair image — local-only, not re-pullable)
       if (SR_MODE && !process.env.NO_IMAGE_GC) {
         for (const sp of specs) {
-          if (sp.image_name) { try { execFileSync('docker', ['rmi', '-f', sp.image_name], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 60000 }); } catch { /* */ } }
+          if (sp.image_name && !sp._origImage) { try { execFileSync('docker', ['rmi', '-f', sp.image_name], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 60000 }); } catch { /* */ } }
         }
       }
     }
@@ -474,7 +543,7 @@ async function runOneTask(id) {
     // image_name — it NEVER touches the indexed goldens under ~/.ss-eval/golden
     // (plain dirs + .sweet-search/codebase.db, separate from docker image storage)
     // and is never a broad `docker system prune`. A later grade pass re-pulls.
-    if (image && SR_MODE && !process.env.NO_IMAGE_GC) {
+    if (image && SR_MODE && !process.env.NO_IMAGE_GC && !t._origImage) {
       try { execFileSync('docker', ['rmi', '-f', image], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 60000 }); }
       catch { /* image still referenced or already gone — ignore */ }
     }
@@ -506,7 +575,8 @@ reapServers();
 // gradeArm overwrites results/<runId>/<arm>/report.json each call; we extract resolved_ids
 // immediately, so per-rep overwrite is fine. row.resolved/f2pFrac set per (arm, rep).
 console.log('\n### grading via swebench (Docker, authoritative) — all reps');
-const repsToGrade = Object.keys(predsByRepArm).map(Number).sort((a, b) => a - b);
+const repsToGrade = process.env.GRADE === '0' ? [] : Object.keys(predsByRepArm).map(Number).sort((a, b) => a - b);
+if (process.env.GRADE === '0') console.log('### grading SKIPPED (GRADE=0)');
 for (const rep of repsToGrade) {
   for (const arm of ARMS) {
     const preds = predsByRepArm[rep]?.[arm] || [];
