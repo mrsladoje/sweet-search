@@ -1,6 +1,6 @@
 {
   "name": "@sweet-search/native-linux-x64-gnu-cuda",
-  "version": "2.6.15",
+  "version": "2.6.16",
   "description": "Sweet Search native binaries for Linux x64 (glibc) with NVIDIA CUDA backend (candle-cuda + flash-attn, SM 7.0+)",
   "os": [
     "linux"
