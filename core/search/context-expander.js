@@ -1931,6 +1931,40 @@ export function selectAgentBudget(format, signals, opts = {}) {
  *   'no-syntax-expansion', 'no-header', 'no-diversity', 'no-adaptive-budget'
  * @returns {object} Agent mode response
  */
+/**
+ * Same-file span map (2026-07, within-file blind-spot fix). When the top-1
+ * pack entry is a WINDOWED view of a file (kind chunk/sandwich/syntax — not
+ * a fully-shown symbol) and the sufficiency verdict is not a clear YES, one
+ * compact line names the sibling symbols immediately above/below the shown
+ * window so the agent can sweep the fix surface instead of leaving the file
+ * (the fhir/sushi-1175 miss shape: right file, bug 30 lines above the
+ * window). Names+kinds+lines only — never bodies; ~25-45 tokens.
+ *
+ * @param {{ file:string, startLine:number, endLine:number }} top - top-1 agent result
+ * @param {{ above:Array, below:Array }} adjacent - findAdjacentEntities() result
+ * @returns {{ rendered:string, tokens:number, neighbors:Array }|null}
+ */
+export function buildSameFileMap(top, adjacent) {
+  const above = adjacent?.above || [];
+  const below = adjacent?.below || [];
+  if (above.length === 0 && below.length === 0) return null;
+  const shortType = t => (t === 'function' ? 'fn' : (t || 'sym'));
+  const fmt = (e, pos) => `${e.name} (${shortType(e.type)} ${e.startLine}-${e.endLine} ${pos})`;
+  const neighbors = [
+    ...above.map(e => ({ ...e, position: 'above' })),
+    ...below.map(e => ({ ...e, position: 'below' })),
+  ];
+  const parts = [
+    ...above.map(e => fmt(e, 'above')),
+    ...below.map(e => fmt(e, 'below')),
+  ];
+  // Placeholder-style drill-in hint (the v2.6.13 `ss-grep "<regex>" --in
+  // <file>` convention, which agents demonstrably follow) — embedding the
+  // live query costs ~25-30 tokens per pack for no extra signal.
+  const rendered = `# same file: ${parts.join(' · ')} — sweep: ss-semantic ${top.file} "<query>"`;
+  return { rendered, tokens: estimateTokens(rendered), neighbors };
+}
+
 export function packageForAgent(rankedResults, searchStats, opts) {
   const {
     query,
@@ -2345,6 +2379,53 @@ export function packageForAgent(rankedResults, searchStats, opts) {
     sufficiencyReason = sufficiency.sufficiencyReason;
     sufficiencyReasons = sufficiency.reasons;
     unresolvedExternalCount = sufficiency.unresolvedExternalCount || 0;
+  }
+
+  // Phase 7: same-file span map (top-1 only). Emitted ONLY when the verdict
+  // is not a clear YES (composes with the query-conditioned verdict: the map
+  // supplies the "where to look next" exactly when the engine says "keep
+  // looking") AND top-1 is a windowed view (kind != 'full' — fully-shown
+  // symbols stay byte-identical) AND the line fits the remaining tier
+  // budget (dropped on overflow, never a truncated pack). Its tokens are
+  // counted inside tokensUsed. Disabled by 'no-same-file-map' ablation.
+  if (!ablations.has('no-same-file-map')
+      && agentResults.length > 0
+      && sufficiencyVerdict !== 'yes'
+      && codeGraphRepo
+      && typeof codeGraphRepo.findAdjacentEntities === 'function') {
+    const top = agentResults[0];
+    const windowed = top.code
+      && top.presentation !== 'summary'
+      && top.expansionKind
+      && top.expansionKind !== 'full'
+      && top.file
+      && Number.isFinite(top.startLine)
+      && Number.isFinite(top.endLine);
+    if (windowed) {
+      let adjacent = null;
+      try {
+        adjacent = codeGraphRepo.findAdjacentEntities(top.file, top.startLine, top.endLine, { perSide: 2 });
+      } catch { adjacent = null; }
+      // Don't name neighbors whose code is ALREADY visible in the pack —
+      // locality clustering pulls same-file companions to ranks 2-3; a map
+      // entry for a shown span is pure noise.
+      if (adjacent) {
+        const shownSameFile = agentResults.filter(r =>
+          r !== top && r.code && r.file === top.file
+          && Number.isFinite(r.startLine) && Number.isFinite(r.endLine));
+        const overlapsShown = e => shownSameFile.some(r =>
+          e.startLine <= r.endLine && e.endLine >= r.startLine);
+        adjacent = {
+          above: adjacent.above.filter(e => !overlapsShown(e)),
+          below: adjacent.below.filter(e => !overlapsShown(e)),
+        };
+      }
+      const map = adjacent ? buildSameFileMap(top, adjacent) : null;
+      if (map && map.tokens <= Math.max(0, tokenBudget - tokensUsed)) {
+        top.sameFile = map;
+        tokensUsed += map.tokens;
+      }
+    }
   }
 
   return {

@@ -331,3 +331,68 @@ describe('CodeGraphRepository epoch visibility', () => {
     expect(repo.getEntityById('caller')).toBeNull();
   });
 });
+
+describe('findAdjacentEntities (same-file span map)', () => {
+  function createAdjacencyDb() {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'code-graph-adj-'));
+    tmpDirs.push(tmpDir);
+    const dbPath = join(tmpDir, 'code-graph.db');
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE entities (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL,
+        file_path TEXT NOT NULL, start_line INTEGER, end_line INTEGER,
+        parent_class TEXT, stale_since INTEGER,
+        epoch_written INTEGER, epoch_retired INTEGER
+      );
+      CREATE TABLE relationships (
+        source_id TEXT, target_id TEXT, target_name TEXT, type TEXT,
+        weight REAL DEFAULT 1.0, context_line INTEGER, full_import_path TEXT,
+        epoch_written INTEGER, epoch_retired INTEGER
+      );
+    `);
+    const insert = db.prepare(`
+      INSERT INTO entities (id, name, type, file_path, start_line, end_line,
+        parent_class, stale_since, epoch_written, epoch_retired)
+      VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 1, NULL)
+    `);
+    // sushi-shaped file: siblings around the 475-543 window, plus traps.
+    insert.run('e-far', 'assignFshCode', 'function', 'src/common.ts', 100, 200, null);
+    insert.run('e-above', 'replaceReferences', 'function', 'src/common.ts', 441, 474, null);
+    insert.run('e-above-inner', 'innerClosure', 'function', 'src/common.ts', 450, 460, null);
+    insert.run('e-window', 'listUndefinedLocalCodes', 'function', 'src/common.ts', 475, 543, null);
+    insert.run('e-below', 'applyInsertRules', 'function', 'src/common.ts', 544, 580, null);
+    insert.run('e-below-inner', 'insertHelper', 'function', 'src/common.ts', 550, 560, null);
+    insert.run('e-other-file', 'unrelated', 'function', 'src/other.ts', 400, 600, null);
+    db.close();
+    return dbPath;
+  }
+
+  it('returns outermost nearest siblings above and below, same file only', () => {
+    const repo = openRepo(createAdjacencyDb());
+    const adj = repo.findAdjacentEntities('src/common.ts', 475, 543, { perSide: 2 });
+    expect(adj.above.map(e => e.name)).toEqual(['replaceReferences', 'assignFshCode']);
+    expect(adj.below.map(e => e.name)).toEqual(['applyInsertRules']);
+    expect(adj.above[0]).toMatchObject({ startLine: 441, endLine: 474, type: 'function' });
+  });
+
+  it('never returns the enclosing entity or the window itself', () => {
+    const repo = openRepo(createAdjacencyDb());
+    // Window strictly inside listUndefinedLocalCodes: the enclosing entity
+    // matches neither "fully above" nor "starts below".
+    const adj = repo.findAdjacentEntities('src/common.ts', 480, 500, { perSide: 2 });
+    expect(adj.above.map(e => e.name)).not.toContain('listUndefinedLocalCodes');
+    expect(adj.below.map(e => e.name)).not.toContain('listUndefinedLocalCodes');
+    expect(adj.above[0].name).toBe('replaceReferences');
+    expect(adj.below[0].name).toBe('applyInsertRules');
+  });
+
+  it('perSide=1 trims each side and invalid input returns empty', () => {
+    const repo = openRepo(createAdjacencyDb());
+    const adj = repo.findAdjacentEntities('src/common.ts', 475, 543, { perSide: 1 });
+    expect(adj.above).toHaveLength(1);
+    expect(adj.below).toHaveLength(1);
+    expect(repo.findAdjacentEntities(null, 1, 2)).toEqual({ above: [], below: [] });
+    expect(repo.findAdjacentEntities('src/common.ts', NaN, 2)).toEqual({ above: [], below: [] });
+  });
+});

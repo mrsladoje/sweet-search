@@ -127,7 +127,14 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
           const header = `${r.rank}. ${r.file}:${r.startLine}-${r.endLine} (score: ${r.score.toFixed(3)}, ${r.presentation})`;
           const symbolInfo = r.symbol ? `\n   ${r.symbolType || 'symbol'}: ${r.symbol}` : '';
           const code = r.code ? `\n\`\`\`\n${r.code}\n\`\`\`` : '';
-          return header + symbolInfo + code;
+          // Same-file span map (top-1, windowed chunk, verdict != YES) —
+          // MCP phrasing references the MCP drill-in tool name.
+          const sameFile = (r.sameFile && r.sameFile.neighbors?.length)
+            ? `\n   Same file: ${r.sameFile.neighbors
+                .map(n => `${n.name} (${n.type === 'function' ? 'fn' : (n.type || 'sym')} ${n.startLine}-${n.endLine} ${n.position})`)
+                .join(' · ')} — sweep: read-semantic ${r.file}`
+            : '';
+          return header + symbolInfo + code + sameFile;
         });
 
       const summaries = agentResults
