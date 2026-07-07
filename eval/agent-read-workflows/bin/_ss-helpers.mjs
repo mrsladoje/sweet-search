@@ -242,6 +242,11 @@ async function cmdFind(rawArgs) {
     if (r.neighbors && r.neighbors.rendered) {
       process.stdout.write(`### related (1-hop graph, ~${r.neighbors.tokens} tok)\n${r.neighbors.rendered}\n`);
     }
+    // Same-file span map (top-1, windowed chunk, verdict != YES): sibling
+    // symbols just outside the shown window + a copy-paste drill-in command.
+    if (r.sameFile && r.sameFile.rendered) {
+      process.stdout.write(`${r.sameFile.rendered}\n`);
+    }
   }
   if (!response.results || response.results.length === 0) process.stdout.write('(no matches)\n');
   process.exit(0);
@@ -297,7 +302,7 @@ async function cmdRead(args) {
       }
     }
   }
-  const { readFile } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
+  const { readFile, renderUnreadBelow } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
   const r = await readFile({ path: file, projectRoot: PROJECT_ROOT, startLine: start ?? undefined, endLine: end ?? undefined });
   if (!r.ok) {
     process.stderr.write(`[ss-read] error: ${r.error}\n`);
@@ -305,7 +310,11 @@ async function cmdRead(args) {
   }
   const range = r.range ? ` (lines ${r.range.startLine}-${r.range.endLine} of ${r.totalLines})` : ` (${r.totalLines} lines)`;
   const fence = r.language ? '```' + r.language : '```';
-  process.stdout.write(`# ss-read ${r.file}${range}\n${fence}\n${r.text}\n\`\`\`\n`);
+  // "What remains" trailer: on a range read that stops before EOF, one final
+  // line names the symbols in the unread remainder + the exact continue
+  // command (last line for recency — the actionable form of truncation).
+  const remainder = renderUnreadBelow(r, { command: 'ss-read' });
+  process.stdout.write(`# ss-read ${r.file}${range}\n${fence}\n${r.text}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`);
   process.exit(0);
 }
 
@@ -441,6 +450,11 @@ async function cmdAgentSearch(rawArgs) {
     if (r.neighbors && r.neighbors.rendered) {
       process.stdout.write(`### related (1-hop graph, ~${r.neighbors.tokens} tok)\n${r.neighbors.rendered}\n`);
     }
+    // Same-file span map (top-1, windowed chunk, verdict != YES): sibling
+    // symbols just outside the shown window + a copy-paste drill-in command.
+    if (r.sameFile && r.sameFile.rendered) {
+      process.stdout.write(`${r.sameFile.rendered}\n`);
+    }
   }
 
   if (!response.results || response.results.length === 0) {
@@ -479,6 +493,8 @@ async function cmdAgentSearch(rawArgs) {
     sufficiencyReasons: Array.isArray(response.sufficiencyReasons) ? response.sufficiencyReasons : null,
     unresolvedExternalCount: typeof response.unresolvedExternalCount === 'number'
       ? response.unresolvedExternalCount : null,
+    sameFileMapTokens: response.results?.[0]?.sameFile?.tokens ?? null,
+    sameFileNeighborCount: response.results?.[0]?.sameFile?.neighbors?.length ?? null,
   };
   process.stdout.write(`\n<<SS_ROUTE_META>>${JSON.stringify(meta)}\n`);
   process.exit(0);

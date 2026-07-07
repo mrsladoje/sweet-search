@@ -313,6 +313,77 @@ export class CodeGraphRepository {
   }
 
   /**
+   * Find the named entities immediately ADJACENT to a shown line window in
+   * the same file: the nearest ones lying fully ABOVE the window
+   * (end_line < startLine) and the nearest ones starting BELOW it
+   * (start_line > endLine). Powers the agent-format same-file span map —
+   * the pointer that tells an agent which sibling symbols sit just outside
+   * the chunk window it was shown.
+   *
+   * Entities enclosing the window (e.g. the surrounding class) never match
+   * either predicate, so results are true siblings. Inner entities contained
+   * in an already-kept row (closures inside the adjacent function) are
+   * filtered so the map names outermost neighbors only.
+   *
+   * @param {string} filePath
+   * @param {number} startLine - first shown line (1-based)
+   * @param {number} endLine - last shown line (1-based)
+   * @param {{ perSide?: number }} [opts] - max entities per side (default 2)
+   * @returns {{ above: Array<{id,name,type,startLine,endLine,parentClass}>,
+   *             below: Array<{id,name,type,startLine,endLine,parentClass}> }}
+   */
+  findAdjacentEntities(filePath, startLine, endLine, opts = {}) {
+    const perSide = opts.perSide ?? 2;
+    const empty = { above: [], below: [] };
+    if (!filePath || !Number.isFinite(startLine) || !Number.isFinite(endLine)) return empty;
+    const db = this._open();
+    if (!db) return empty;
+    const mapRow = row => ({
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      startLine: row.start_line,
+      endLine: row.end_line,
+      parentClass: row.parent_class || null,
+    });
+    // Keep outermost neighbors: drop rows contained in an already-kept row.
+    const keepOutermost = rows => {
+      const kept = [];
+      for (const row of rows) {
+        if (kept.some(k => row.start_line >= k.start_line && row.end_line <= k.end_line)) continue;
+        kept.push(row);
+        if (kept.length >= perSide) break;
+      }
+      return kept.map(mapRow);
+    };
+    try {
+      const aboveRows = prepareCached(db, `
+        SELECT id, name, type, start_line, end_line, parent_class
+        FROM entities
+        WHERE file_path = ?
+          AND end_line < ?
+          AND name IS NOT NULL AND name != ''
+          AND ${this._entityVisibilitySql(db)}
+        ORDER BY end_line DESC, start_line ASC
+        LIMIT 8
+      `).all(filePath, startLine, ...this._entityVisibilityParams(db));
+      const belowRows = prepareCached(db, `
+        SELECT id, name, type, start_line, end_line, parent_class
+        FROM entities
+        WHERE file_path = ?
+          AND start_line > ?
+          AND name IS NOT NULL AND name != ''
+          AND ${this._entityVisibilitySql(db)}
+        ORDER BY start_line ASC, end_line DESC
+        LIMIT 8
+      `).all(filePath, endLine, ...this._entityVisibilityParams(db));
+      return { above: keepOutermost(aboveRows), below: keepOutermost(belowRows) };
+    } catch {
+      return empty;
+    }
+  }
+
+  /**
    * Get a single entity by id, with file:line metadata.
    *
    * @param {string} entityId

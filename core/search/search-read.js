@@ -240,6 +240,48 @@ function _attachIndexMetadata(filePathRel, projectRoot) {
 }
 
 // ---------------------------------------------------------------------------
+// Remainder definition sniffing — fallback symbol names for the "what
+// remains" trailer when the index has no named chunks in the unread span
+// (e.g. C++ files where the chunker recorded `name: null`). Scans ONLY the
+// remainder lines of the buffer already in memory: zero I/O, capped.
+// ---------------------------------------------------------------------------
+
+const SNIFF_MAX_LINES = 4000;
+const UNREAD_SYMBOLS_MAX = 5;        // hard cap on named symbols in the trailer
+const UNREAD_SYMBOLS_MIN_LINES = 20; // smaller remainders get the short form
+const C_FAMILY_EXTS = new Set(['.c', '.h', '.cc', '.cpp', '.cxx', '.hpp', '.hh', '.hxx', '.java', '.cs', '.m', '.mm']);
+
+// Keyword-introduced definitions (Python/Ruby/JS/TS/Go/Rust/Kotlin/PHP/...).
+const KEYWORD_DEF_RE = /^\s*(?:export\s+|default\s+|pub(?:\([^)]*\))?\s+|static\s+|async\s+|abstract\s+|final\s+|public\s+|private\s+|protected\s+|inline\s+|constexpr\s+|unsafe\s+|override\s+|open\s+|sealed\s+)*(?:def|fn|func|function\*?|class|struct|enum|trait|interface|impl|object|module|proc)\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*(?:(?:::|\.)[A-Za-z_][\w]*)*)/;
+// C-family definitions at low indent: `[return-type] Qualified::name(args...`
+// with no trailing `;` (declarations) — captures the identifier before the
+// first `(`. The return-type prefix is lazy so qualification stays intact.
+const C_DEF_RE = /^(?:[A-Za-z_][\w:<>,*&~\s]*?[\s*&]+)?((?:[A-Za-z_~][\w]*::)*(?:~?[A-Za-z_][\w]*|operator\s*[^\s(]{1,3}))\s*\(/;
+const C_CONTROL_RE = /^\s*(?:if|for|while|switch|return|else|do|catch|case|sizeof|new|delete|throw|goto|using|typedef)\b/;
+
+function _sniffRemainderDefinitions(text, isCFamily) {
+  const names = [];
+  const seen = new Set();
+  const lines = text.split('\n', SNIFF_MAX_LINES);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!/\S/.test(line)) continue;
+    let name = null;
+    const kw = line.match(KEYWORD_DEF_RE);
+    if (kw) name = kw[1];
+    else if (isCFamily && /^[A-Za-z_]/.test(line) && !line.trimEnd().endsWith(';') && !C_CONTROL_RE.test(line)) {
+      const m = line.match(C_DEF_RE);
+      if (m) name = m[1].replace(/\s+/g, '');
+    }
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      names.push({ symbol: name, type: null, startLine: i + 1 }); // startLine relative; caller offsets
+    }
+  }
+  return names;
+}
+
+// ---------------------------------------------------------------------------
 // Public API — single read
 // ---------------------------------------------------------------------------
 
@@ -293,6 +335,47 @@ async function _readFileUnpinned(req) {
     language = meta.language;
   }
 
+  // "What remains" trailer data (2026-07, within-file blind-spot fix): when
+  // a range read stops before EOF, record what the UNREAD remainder below
+  // the window contains — computed from the full chunk table BEFORE the
+  // overlap-narrowing just below. A bare "(lines a-b of N)" marker is
+  // provably ignored by agents (the botan-2738 shape: three reads, never
+  // past line 205 of 272, fix surface below); naming the symbols is what
+  // makes the remainder actionable. Whole-file reads and read-to-EOF stay
+  // byte-identical (unreadBelow stays null).
+  let unreadBelow = null;
+  if (wantsRange && sliced.totalLines > 0 && sliced.endLine < sliced.totalLines) {
+    // Token diet: a tiny remainder needs no symbol list — the range plus the
+    // continue command IS the affordance; names only earn their tokens when
+    // the unread span is big enough to hide a sibling branch.
+    const remainderLines = sliced.totalLines - sliced.endLine;
+    const seen = new Set();
+    let symbols = [];
+    if (remainderLines >= UNREAD_SYMBOLS_MIN_LINES) {
+      for (const c of chunks) {
+        if (c.startLine == null || c.startLine <= sliced.endLine) continue;
+        if (!c.symbol || seen.has(c.symbol)) continue;
+        seen.add(c.symbol);
+        symbols.push({ symbol: c.symbol, type: c.type ?? null, startLine: c.startLine });
+      }
+      // Index had no named chunks in the remainder (common for C/C++ where the
+      // chunker stores name:null) — sniff definition lines from the in-memory
+      // buffer instead. Zero I/O; capped at SNIFF_MAX_LINES.
+      if (symbols.length === 0 && disk.text != null) {
+        const remainder = _sliceLines(disk.text, disk.lineOffsets, sliced.endLine + 1, sliced.totalLines);
+        const isCFamily = C_FAMILY_EXTS.has(path.extname(absPath).toLowerCase());
+        symbols = _sniffRemainderDefinitions(remainder.text, isCFamily)
+          .map(s => ({ ...s, startLine: sliced.endLine + s.startLine }));
+      }
+    }
+    unreadBelow = {
+      startLine: sliced.endLine + 1,
+      endLine: sliced.totalLines,
+      symbols: symbols.slice(0, UNREAD_SYMBOLS_MAX),
+      moreCount: Math.max(0, symbols.length - UNREAD_SYMBOLS_MAX),
+    };
+  }
+
   // If a line range was requested, narrow attached chunks to the overlap.
   if (wantsRange && chunks.length) {
     chunks = chunks.filter(c =>
@@ -315,6 +398,7 @@ async function _readFileUnpinned(req) {
     range: wantsRange ? { startLine: sliced.startLine, endLine: sliced.endLine } : null,
     text: sliced.text,
     chunks,
+    unreadBelow,
     timings: { totalMs: +(performance.now() - t0).toFixed(2) },
   };
 }
@@ -362,6 +446,28 @@ export async function readFiles(files, opts = {}) {
 // Formatting
 // ---------------------------------------------------------------------------
 
+/**
+ * Render the "what remains" trailer for a range read that stopped before
+ * EOF. Names the symbols in the unread remainder plus the exact continue
+ * command — the actionable form (a bare truncation marker is ignored;
+ * see the 2026-07 within-file design note). Returns '' when the read
+ * covered the whole file / reached EOF.
+ *
+ * @param {Object} result - readFile() result
+ * @param {{ command?: 'read'|'ss-read' }} [opts] - continue-command surface
+ * @returns {string} one line without trailing newline, or ''
+ */
+export function renderUnreadBelow(result, { command = 'read' } = {}) {
+  const u = result?.unreadBelow;
+  if (!u) return '';
+  const names = (u.symbols || []).map(s => s.symbol).join(', ');
+  const more = u.moreCount > 0 ? ` +${u.moreCount} more` : '';
+  const cont = command === 'ss-read'
+    ? `ss-read ${result.file} ${u.startLine} ${u.endLine}`
+    : `read ${result.file} ${u.startLine}-${u.endLine}`;
+  return `# unread below (${u.startLine}-${u.endLine})${names ? ': ' + names + more : ''} — continue: ${cont}`;
+}
+
 function _formatAgent(result) {
   if (!result.ok) {
     return `### ${result.file}\n[error] ${result.error}\n`;
@@ -377,7 +483,8 @@ function _formatAgent(result) {
       .filter(Boolean);
     if (names.length) symbolHint = `\nsymbols: ${names.join(', ')}`;
   }
-  return `### ${result.file}${range}${symbolHint}\n${fence}\n${result.text}\n\`\`\`\n`;
+  const remainder = renderUnreadBelow(result);
+  return `### ${result.file}${range}${symbolHint}\n${fence}\n${result.text}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`;
 }
 
 export function formatReadResults(results, format = 'agent') {
