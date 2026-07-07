@@ -1,6 +1,6 @@
 {
   "name": "@sweet-search/native-linux-arm64-gnu",
-  "version": "2.6.15",
+  "version": "2.6.16",
   "description": "Sweet Search native binaries for Linux ARM64 (glibc)",
   "os": [
     "linux"
