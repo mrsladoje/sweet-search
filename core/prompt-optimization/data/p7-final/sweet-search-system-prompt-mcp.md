@@ -1,17 +1,21 @@
 ---
 variant: mcp
-derived_from: p7-v1-mpppp
-source_prompt: core/prompt-optimization/data/p7-variant-restarts/p7-gen3-candidates/Mpppp.md
+derived_from: p7-v1-mppppp
+source_prompt: core/prompt-optimization/data/p7-variant-restarts/p7-gen3-candidates/Mppppp.md
 benchmarked: false
 note: >-
-  Hand-derived MCP-tool variant of the M++++ champion (p7-v1-mpppp = M++ +
-  stop-discipline scoping edits: search-rules-only intro, "stop searching" /
-  "Search output" wording; routing unchanged from the frozen, benchmarked
-  M++). The STRATEGY core — routing by what-you-hold, trust-the-top-hit,
-  sufficiency stops, the two-probe absence rule, the <state_summary> gate, and
-  the search-output discipline — is preserved (semantics intact; the rest
-  carries only the tool-mechanics
-  rename). Only the tool-mechanics layer is remapped: the six ss-* CLI commands collapse onto the sweet-search MCP
+  Hand-derived MCP-tool variant of the M+++++ champion (p7-v1-mppppp = M++++ +
+  the verdict-gated trust line: trust rank 1 outright when the response
+  reports sufficiency yes, otherwise scan the already-delivered lower
+  ranks/same-file map before any new search; smoke-validated on the
+  task-completion bench, see memory
+  project_mppppp_conditional_trust_candidate). The STRATEGY core — routing by
+  what-you-hold, verdict-gated trust, sufficiency stops, the two-probe absence
+  rule, the <state_summary> gate, and the search-output discipline — is
+  preserved (semantics intact; the rest carries only the tool-mechanics
+  rename). The trust gate is phrased against the MCP response surface
+  (sufficiency verdict in structured content; "Also found" summary list;
+  "Same file:" map line) instead of the CLI sufficient= trailer. Only the tool-mechanics layer is remapped: the six ss-* CLI commands collapse onto the sweet-search MCP
   tool surface (a UNIFIED `search` that subsumes ss-search/ss-find/ss-grep, plus
   `trace` / `read-semantic` / `read` / `repo-map`). The anti-raw-scan discipline
   is KEPT and retargeted from "ss-* vs raw grep" to "sweet-search tools vs native
@@ -40,7 +44,7 @@ The sweet-search MCP server exposes these (call each by the name your client lis
 - **Only a behavior or concept**: one `search` in natural language for what you're looking for, then anchor on the symbol that surfaces. Shape it lightly by the target language — short and interrogative for JS/TS/Dart, a touch longer with a domain keyword otherwise.
 - **How something flows / dispatches / is called / what a change impacts**: anchor one symbol (a literal, or a `search`), then `trace` it — one call returns callers, callees and impact. Prefer callees over impact (especially Python/Ruby/PHP). If a trace is sparse or empty, anchor the downstream symbol with `search` rather than retrying or hand-crawling; never make `trace` the spine of a multi-file search.
 
-Trust the top ranked result; confirm with at most one narrow `read`, never a re-run of a matching hit.
+When the response reports sufficiency `yes`, trust the top ranked result outright; confirm with at most one narrow `read`, never a re-run of a matching hit. Otherwise, scan the rest of the results you already have (lower ranks, the `Also found` list, the `Same file:` line) before issuing any new search — the winner is often rank 2-3.
 
 ## Multi-file
 Chain inside the tools: land the entry file, `read-semantic` it for the import or handoff symbol, then `search` the downstream module. The trace is COMPLETE the moment you can name the link from the entry symbol to the thing it reaches; stop tracing there. Leaf bodies, macro expansions, and the next hop down are not the answer unless asked, and chasing them — or dropping to a native Grep/Read to "just look" — is the main multi-file cost trap.

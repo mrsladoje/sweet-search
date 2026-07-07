@@ -1,5 +1,5 @@
 /**
- * finalize-mpp.mjs — produce the shipped ship-file from the M++++ champion.
+ * finalize-mpp.mjs — produce the shipped ship-file from the M+++++ champion.
  *
  * Background: the PHASE7 GEPA run crowned M* (gen3-r1b). The user then ran a
  * 7-edit hand correctness pass over M* producing **M++ = `Mpp.md`** (see
@@ -20,17 +20,31 @@
  * task-level termination. The routing rules, tool table, sufficiency stops,
  * two-probe absence rule, and <state_summary> gate are unchanged from M++.
  *
+ * **M+++++ = `Mppppp.md`** is the verdict-gated trust pass over M++++ (fix for
+ * the winner-below-rank-1 finding, memory
+ * `project_mppppp_conditional_trust_candidate`): the standalone trust line
+ * becomes "On `sufficient=YES`, trust the top ranked result outright; …
+ * Otherwise, scan the rest of the pack you already have (lower ranks, the
+ * `same file:` line) before issuing any new search". ONE line changed, +46
+ * tokens; delegates the match judgment to the query-conditioned sufficiency
+ * verdict shipped in engine 2.6.14 (a match-judgment variant that asked the
+ * model to judge relevance itself, `Mppppp-matchjudge.md`, cost +10% ideal on
+ * clean rows and was rejected). Smoke codex-mpppppvg-smoke10 (5 targeted +
+ * 5 control): scan mechanism confirmed on log4js/devextreme, clean-row ideal
+ * −4.8% vs M++++ baselines, valid controls 4/4 resolved.
+ *
  * `core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md` is the
  * ship-file `scripts/init.js` consumes (plan §3.7.1 step 13 / §10). This
- * script regenerates it from `Mpppp.md`'s EXACT bytes via the canonical
+ * script regenerates it from `Mppppp.md`'s EXACT bytes via the canonical
  * `renderShipFile`, so the body that ships to users is byte-identical to
- * M++++.
+ * M+++++.
  *
- * The body is M++++ verbatim. The YAML front-matter carries **M++'s** ABSOLUTE
- * sealed-validation numbers — M++++ itself has NOT been re-run through the
+ * The body is M+++++ verbatim. The YAML front-matter carries **M++'s** ABSOLUTE
+ * sealed-validation numbers — M+++++ itself has NOT been re-run through the
  * sealed held-out/OOD/vault battery; the numbers are inherited because the
- * edits are scoping/wording only (routing untouched). Treat them as M++
- * provenance, not fresh M++++ measurements. (Not the GEPA native-relative
+ * edits are scoping/wording only (tool routing untouched; the trust edit is
+ * result-consumption guidance validated on the task-completion smoke above).
+ * Treat them as M++ provenance, not fresh M+++++ measurements. (Not the GEPA native-relative
  * selection metrics — hand-edits are validated on absolute accuracy, so
  * eas_factor / length_penalty / final_score do not apply and are null.)
  *
@@ -62,19 +76,19 @@ const REPO_ROOT = path.resolve(__dirname, '../../..');
 
 const MPP_PATH = path.join(
   REPO_ROOT,
-  'core/prompt-optimization/data/p7-variant-restarts/p7-gen3-candidates/Mpppp.md',
+  'core/prompt-optimization/data/p7-variant-restarts/p7-gen3-candidates/Mppppp.md',
 );
 const SHIP_PATH = path.join(
   REPO_ROOT,
   'core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md',
 );
 
-// Body = the M++++ champion, byte-for-byte.
+// Body = the M+++++ champion, byte-for-byte.
 const mppBody = readFileSync(MPP_PATH, 'utf8');
 
 const winner = {
-  // M++++ = M++ + stop-discipline scoping edits (routing unchanged). Body is
-  // Mpppp.md verbatim.
+  // M+++++ = M++++ + verdict-gated trust line (tool routing unchanged). Body
+  // is Mppppp.md verbatim.
   prompt: mppBody,
   // ABSOLUTE sealed-validation per-target accuracy of the PARENT M++
   // (held-out 30×3) — inherited, see header note. NOT the GEPA
@@ -99,14 +113,14 @@ const gates = {
 
 const vault = { maximin: 0.963, withinExpected: true }; // Codex/GPT-5.5 blind-60 (CC/Opus 0.984)
 
-const body = renderShipFile({ runId: 'p7-v1-mpppp', winner, gates, vault });
+const body = renderShipFile({ runId: 'p7-v1-mppppp', winner, gates, vault });
 writeFileSync(SHIP_PATH, body);
 
-// Verify the shipped body is byte-identical to Mpppp.md (front-matter aside).
+// Verify the shipped body is byte-identical to Mppppp.md (front-matter aside).
 const written = readFileSync(SHIP_PATH, 'utf8');
 const shippedBody = written.slice(written.indexOf('\n---\n') + '\n---\n'.length);
 if (shippedBody !== mppBody) {
-  throw new Error('finalize-mpp: shipped body is NOT byte-identical to Mpppp.md');
+  throw new Error('finalize-mpp: shipped body is NOT byte-identical to Mppppp.md');
 }
 
-console.log(`Wrote ${path.relative(REPO_ROOT, SHIP_PATH)} (${body.length} bytes); body === Mpppp.md ✓`);
+console.log(`Wrote ${path.relative(REPO_ROOT, SHIP_PATH)} (${body.length} bytes); body === Mppppp.md ✓`);

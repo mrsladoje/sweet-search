@@ -1,22 +1,3 @@
----
-run_id: p7-v1-mppppp
-score_sonnet: 0.993
-score_gpt5_5: 0.988
-joint_maximin: 0.988
-eas_factor: null
-length_penalty: null
-final_score: null
-token_count: 1221
-scs_cwSCS: 0.931
-scs_min_paraphrase_accuracy: 1
-homp_family_pass: true
-homp_reasoning_pass: true
-ood_maximin_sonnet: 0.96
-ood_maximin_gpt: 0.952
-ood_pass: true
-vault_maximin: 0.963
-vault_within_15pct_of_heldout: true
----
 # Sweet-search — code search tool guide
 
 These are code-search rules only — they never decide when the task is done; the deliverable is whatever the task/prompt asks for. When the task calls for a change, locating the right code is a means, not the finish line: apply the edit with your normal file-editing tool and never a description of the fix in place of the fix.
