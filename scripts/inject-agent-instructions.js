@@ -46,18 +46,20 @@ function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// ─── Canonical policy body = the M++++ champion (integration seam) ───────────
+// ─── Canonical policy body = the M+++++ champion (integration seam) ──────────
 //
 // Plan §10 / §3.7.1 step 13 / DDD "Integration seam": scripts/init.js is the
 // SOLE consumer of the prompt-optimization ship-file. We read that artifact at
-// load time and strip its YAML front-matter; the remaining body is the M++++
+// load time and strip its YAML front-matter; the remaining body is the M+++++
 // champion (PHASE7 M++ — held-out 0.988 Maximin, OOD 0.952, HOMP/SCS/counter
 // all pass, 5-cell cross-harness validated — plus the stop-discipline scoping
-// edits that fix M++'s over-stopping on FIX tasks; routing unchanged),
-// injected VERBATIM into the harness files. Per-harness shims
-// (Cursor frontmatter, @imports) are applied at write-time, not embedded here.
+// edits that fix M++'s over-stopping on FIX tasks, plus the verdict-gated
+// trust line that scans already-delivered lower ranks before any new search;
+// tool routing unchanged), injected VERBATIM into the harness files.
+// Per-harness shims (Cursor frontmatter, @imports) are applied at write-time,
+// not embedded here.
 //
-// The artifact is generated from Mpppp.md by
+// The artifact is generated from Mppppp.md by
 // `core/prompt-optimization/sweep/finalize-mpp.mjs` and shipped via the
 // package.json "files" list. If it is missing we fail LOUDLY rather than
 // silently shipping a placeholder/older policy.
@@ -76,7 +78,7 @@ export function stripFrontMatter(text) {
   return text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
 }
 
-function readShippedPolicy(rel = SHIP_FILE_REL, { label = 'M++++' } = {}) {
+function readShippedPolicy(rel = SHIP_FILE_REL, { label = 'M+++++' } = {}) {
   const here = dirname(fileURLToPath(import.meta.url)); // <pkg>/scripts
   const shipPath = join(here, '..', rel);
   let raw;
@@ -103,7 +105,7 @@ let _mcpPolicyBody = null;
 /** Lazily read + cache the MCP-variant policy body. */
 export function getMcpPolicyBody() {
   if (_mcpPolicyBody == null) {
-    _mcpPolicyBody = readShippedPolicy(MCP_SHIP_FILE_REL, { label: 'M++++ (MCP variant)' });
+    _mcpPolicyBody = readShippedPolicy(MCP_SHIP_FILE_REL, { label: 'M+++++ (MCP variant)' });
   }
   return _mcpPolicyBody;
 }

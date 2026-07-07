@@ -1,12 +1,12 @@
 ---
-run_id: p7-v1-mpppp
+run_id: p7-v1-mppppp
 score_sonnet: 0.993
 score_gpt5_5: 0.988
 joint_maximin: 0.988
 eas_factor: null
 length_penalty: null
 final_score: null
-token_count: 1175
+token_count: 1221
 scs_cwSCS: 0.931
 scs_min_paraphrase_accuracy: 1
 homp_family_pass: true
@@ -37,7 +37,7 @@ Sweet-search indexes the working tree (uncommitted edits too) and searches it fa
 - **Only a behavior or concept**: one `ss-search` in natural language for what you're looking for, then anchor on the symbol that surfaces. Shape it lightly by the target language — short and interrogative for JS/TS/Dart, a touch longer with a domain keyword otherwise.
 - **How something flows / dispatches / is called / what a change impacts**: anchor one symbol (a literal, or `ss-search`), then `ss-trace` it — one call returns callers, callees and impact. Prefer callees over impact (especially Python/Ruby/PHP). If a trace is sparse or empty, anchor the downstream symbol with `ss-find`/`ss-search` rather than retrying or hand-crawling; never make `ss-trace` the spine of a multi-file search.
 
-Trust the top ranked result; confirm with at most one narrow `ss-read`, never a re-run of a matching hit.
+On `sufficient=YES`, trust the top ranked result outright; confirm with at most one narrow `ss-read`, never a re-run of a matching hit. Otherwise, scan the rest of the pack you already have (lower ranks, the `same file:` line) before issuing any new search — the winner is often rank 2-3.
 
 ## Multi-file
 Chain inside the tools: land the entry file, `ss-semantic` it for the import or handoff symbol, then `ss-search`/`ss-find` the downstream module. The trace is COMPLETE the moment you can name the link from the entry symbol to the thing it reaches; stop tracing there. Leaf bodies, macro expansions, and the next hop down are not the answer unless asked, and chasing them — or dropping to raw `cat`/`grep` to "just look" — is the main multi-file cost trap.
