@@ -1,15 +1,19 @@
 ---
 variant: mcp
-derived_from: p7-v1-mppppp
+derived_from: p7-v1-mppppp-fs
 source_prompt: core/prompt-optimization/data/p7-variant-restarts/p7-gen3-candidates/Mppppp.md
 benchmarked: false
 note: >-
-  Hand-derived MCP-tool variant of the M+++++ champion (p7-v1-mppppp = M++++ +
-  the verdict-gated trust line: trust rank 1 outright when the response
-  reports sufficiency yes, otherwise scan the already-delivered lower
-  ranks/same-file map before any new search; smoke-validated on the
+  Hand-derived MCP-tool variant of the M+++++ champion (p7-v1-mppppp-fs =
+  M++++ + the verdict-gated trust line: trust rank 1 outright when the
+  response reports sufficiency yes, otherwise scan the already-delivered
+  lower ranks/same-file map before any new search; smoke-validated on the
   task-completion bench, see memory
-  project_mppppp_conditional_trust_candidate). The STRATEGY core — routing by
+  project_mppppp_conditional_trust_candidate; + the P2 fix-surface paragraph:
+  before editing a symbol with visible siblings spend ONE mapping call —
+  trace, or one broad search regex on the stem — and read the edited
+  function to its end, single-site edits skip it; ported here against the
+  MCP tool surface, smoke codex-fixsurface-smoke10). The STRATEGY core — routing by
   what-you-hold, verdict-gated trust, sufficiency stops, the two-probe absence
   rule, the <state_summary> gate, and the search-output discipline — is
   preserved (semantics intact; the rest carries only the tool-mechanics
@@ -57,3 +61,5 @@ Before your third sweet-search probe in the current search iteration — or befo
 
 ## Search output
 Stop searching the instant your evidence answers what you're looking for — one confirmed file+symbol, or one named cross-file link, is enough; gather no corroboration you were not asked for. Name the file(s) and symbol(s) and how they answer what you need, or `no-match` — then finish whatever the task/prompt asks for.
+
+Before editing a symbol with visible siblings — multiple call sites, a name family (`IVec2`/`I64Vec2`), branch variants, a generated family — spend ONE mapping call: `trace` the symbol, or one broad `search` regex on the stem. Read the function you edit to its end; a fix covering only the first matching site is not done. Single-site edits skip this.

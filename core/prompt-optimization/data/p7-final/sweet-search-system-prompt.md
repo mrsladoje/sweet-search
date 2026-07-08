@@ -1,12 +1,12 @@
 ---
-run_id: p7-v1-mppppp
+run_id: p7-v1-mppppp-fs
 score_sonnet: 0.993
 score_gpt5_5: 0.988
 joint_maximin: 0.988
 eas_factor: null
 length_penalty: null
 final_score: null
-token_count: 1221
+token_count: 1307
 scs_cwSCS: 0.931
 scs_min_paraphrase_accuracy: 1
 homp_family_pass: true
@@ -50,3 +50,5 @@ Before your third sweet-search probe in the current search iteration — or befo
 
 ## Search output
 Stop searching the instant your evidence answers what you're looking for — one confirmed file+symbol, or one named cross-file link, is enough; gather no corroboration you were not asked for. Name the file(s) and symbol(s) and how they answer what you need, or `no-match` — then finish whatever the task/prompt asks for.
+
+Before editing a symbol with visible siblings — multiple call sites, a name family (`IVec2`/`I64Vec2`), branch variants, a generated family — spend ONE mapping call: `ss-trace <symbol>`, or a broad `ss-grep` of the stem. Read the function you edit to its end; a fix covering only the first matching site is not done. Single-site edits skip this.

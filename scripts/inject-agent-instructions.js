@@ -54,8 +54,10 @@ function escapeRegex(s) {
 // champion (PHASE7 M++ — held-out 0.988 Maximin, OOD 0.952, HOMP/SCS/counter
 // all pass, 5-cell cross-harness validated — plus the stop-discipline scoping
 // edits that fix M++'s over-stopping on FIX tasks, plus the verdict-gated
-// trust line that scans already-delivered lower ranks before any new search;
-// tool routing unchanged), injected VERBATIM into the harness files.
+// trust line that scans already-delivered lower ranks before any new search,
+// plus the P2 fix-surface paragraph that maps a multi-site edit surface in
+// ONE call before the first edit; tool routing unchanged), injected VERBATIM
+// into the harness files.
 // Per-harness shims (Cursor frontmatter, @imports) are applied at write-time,
 // not embedded here.
 //

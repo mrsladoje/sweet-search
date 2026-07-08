@@ -33,6 +33,20 @@
  * 5 control): scan mechanism confirmed on log4js/devextreme, clean-row ideal
  * −4.8% vs M++++ baselines, valid controls 4/4 resolved.
  *
+ * The **P2 fix-surface paragraph** (2026-07-07, appended to `Mppppp.md` under
+ * "Search output"; lineage candidate `Mppppp-fixsurface.md`) closes the
+ * dominant near-miss of the full-200 forensics (memory
+ * `project_mpppp_failure_trace_analysis`): the agent lands the right place,
+ * fixes the FIRST matching site, and never enumerates its siblings (botan's
+ * cross-file caller, glam's I64/U64 vector families, graphql-php's parallel
+ * surfaces). One signal-gated rule, +87 tokens: before editing a symbol with
+ * VISIBLE siblings (multiple call sites, a name family, branch variants, a
+ * generated family) spend ONE mapping call — `ss-trace` or one broad
+ * `ss-grep` of the stem — and read the edited function to its end;
+ * single-site edits skip it entirely (the P1 lesson: objective triggers,
+ * imperative happy path). Smoke codex-fixsurface-smoke10 (5 multi-site
+ * targeted + 5 single-site controls).
+ *
  * `core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md` is the
  * ship-file `scripts/init.js` consumes (plan §3.7.1 step 13 / §10). This
  * script regenerates it from `Mppppp.md`'s EXACT bytes via the canonical
@@ -113,7 +127,7 @@ const gates = {
 
 const vault = { maximin: 0.963, withinExpected: true }; // Codex/GPT-5.5 blind-60 (CC/Opus 0.984)
 
-const body = renderShipFile({ runId: 'p7-v1-mppppp', winner, gates, vault });
+const body = renderShipFile({ runId: 'p7-v1-mppppp-fs', winner, gates, vault });
 writeFileSync(SHIP_PATH, body);
 
 // Verify the shipped body is byte-identical to Mppppp.md (front-matter aside).

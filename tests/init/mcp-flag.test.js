@@ -174,6 +174,7 @@ describe('injectAgentInstructions — MCP variant (--no-cli)', () => {
     // Shared opener + strategy core (ported verbatim from the CLI champion).
     expect(claude).toContain('Sweet-search indexes the working tree');
     expect(claude).toContain('trust the top ranked result outright');
+    expect(claude).toContain('a fix covering only the first matching site is not done');
     expect(claude).toContain('<state_summary>');
     // MCP-specific mechanics: unified `search`, retargeted anti-scan discipline.
     expect(claude).toContain('hybrid code search');

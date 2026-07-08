@@ -60,6 +60,7 @@ describe('injectAgentInstructions — fresh install (claude-code canonical)', ()
     expect(claude).toContain(MARKER_END);
     expect(claude).toContain('Sweet-search indexes the working tree'); // M++ body
     expect(claude).toContain('trust the top ranked result outright'); // M+++++ verdict-gated stop discipline
+    expect(claude).toContain('a fix covering only the first matching site is not done'); // P2 fix-surface mapping
     expect(claude).toContain('@.claude/rules/sweet-search.md');
 
     // AGENTS.md is a thin import shim → CLAUDE.md.
