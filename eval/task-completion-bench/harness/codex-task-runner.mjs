@@ -39,6 +39,21 @@ function parseCodexAgentStream(stdout) {
 const PRICE = { in: 5.0, cacheHit: 0.5, out: 30.0 };  // openai/gpt-5.5 (OpenRouter)
 const DOCKER_HOST = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock';
 
+// Cost levers L1/L2 (2026-07-08). Both are HARNESS-side (apply to BOTH arms) and
+// flag-gated for historical comparability:
+//   L1 (SS_NO_CMD_CONDENSE=1 → off): a docker PATH-wrapper that condenses oversized
+//      `docker run/exec/logs/build` output the agent produces when it distrusts
+//      run_tests and re-runs the suite by hand (the gt-783 ~40 KB-log mechanism).
+//   L2 (SS_NO_RT_AUTHORITY=1 → off): run_tests gains an authority banner + a
+//      baseline-diff (pre-existing vs newly-introduced failures) + a targeted mode.
+// The pure logic lives in rt-condense-lib.mjs (unit-tested); the shim runtime in
+// rt-shim-runtime.mjs. Both are imported BY ABSOLUTE PATH into the generated shims.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const RT_RUNTIME_PATH = path.join(__dirname, 'rt-shim-runtime.mjs');
+const RT_LIB_PATH = path.join(__dirname, 'rt-condense-lib.mjs');
+const L1_CONDENSE = process.env.SS_NO_CMD_CONDENSE !== '1';
+const L2_RT_AUTHORITY = process.env.SS_NO_RT_AUTHORITY !== '1';
+
 // Tool-agnostic preamble for BOTH arms: how to run tests in THIS environment.
 const RUN_TESTS_PREAMBLE =
   'Your shell does NOT have the repository\'s dependencies installed, so running the test runner/build directly (pytest, go test, cargo test, lein test, npm test, …) will fail with dependency/build errors. To run the repo\'s test suite on your current edits, invoke the `run_tests` command (no arguments) — it executes the canonical suite in the prepared environment and reflects your live edits.';
@@ -61,52 +76,30 @@ const FRAME_CLOSE =
 // after) watches for requests and runs the exact same git-diff + docker logic outside the
 // sandbox. run_tests takes no arguments, so the protocol is parameter-free — the agent
 // can no longer inject docker args at all (strictly tighter than the legacy direct shim).
-// H1 (2026-07-08 trace audit): failure-aware output condensation for run_tests.
-// The old blind `tail -60` hid failing-test NAMES when a suite prints its
-// summary last (botan: "6 tests failed" with the FAILED lines scrolled away →
-// ~10 calls of shim-spelunking + raw docker probing). Now: an explicit
-// network-unavailable banner (lockdown makes dependency fetches fail — say so
-// instead of letting the agent debug the harness), then up to 40
-// failure-indicator lines (test names), then the tail. Runs INSIDE the test
-// container against /tmp/__rt_out; static text, interpolated into both
-// generated shim variants below.
-const RT_CONDENSE =
-  "grep -qaE 'Could not resolve|Temporary failure in name resolution|Network is unreachable' /tmp/__rt_out && " +
-  "echo '[run_tests] NETWORK UNAVAILABLE in the test container (bench lockdown): dependency downloads cannot work; do not retry or debug the harness.'; " +
-  "grep -aE '(FAILED|FAIL:|not ok |AssertionError|panicked at|[0-9]+ tests? failed|[Ee]rror:|error\\[)' /tmp/__rt_out | " +
-  "grep -avE '(0 fail|failures?: 0|failed: 0|: 0 error)' | head -40; " +
-  "echo '--- output tail ---'; tail -45 /tmp/__rt_out";
-
+// run_tests shim (H1 condenser + L2 levers) now lives in rt-shim-runtime.mjs +
+// rt-condense-lib.mjs (imported by the thin generated shims below). This keeps the
+// failure-line preservation + baseline-diff logic in ONE unit-tested place instead of
+// two interpolated template strings. cfg carries dockerBin (REAL docker abs path, so
+// the shim's own `docker run` bypasses the L1 wrapper), binDir (baseline cache), and
+// rtAuthority (L2 gate).
 function writeRunTestsBrokerFiles(binDir, cfgPath) {
   const reqDir = path.join(binDir, '_rt_ipc');
   mkdirSync(reqDir, { recursive: true });
   const brokerPath = path.join(binDir, '_rt_broker.mjs');
-  writeFileSync(brokerPath, `import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, renameSync, existsSync } from 'node:fs';
+  // Host-side broker: reads the (possibly targeted) pattern from the req file, runs the
+  // suite + L2 levers via the shared runtime, writes the response atomically.
+  writeFileSync(brokerPath, `import { readFileSync, writeFileSync, rmSync, readdirSync, renameSync } from 'node:fs';
+import { runTestsWithLevers } from ${JSON.stringify(RT_RUNTIME_PATH)};
 const c = JSON.parse(readFileSync(${JSON.stringify(cfgPath)}, 'utf8'));
 const IPC = ${JSON.stringify(reqDir)};
-const q = s => "'" + String(s).replace(/'/g, "'\\\\''") + "'";
-function runTests() {
-  let diff = '';
-  try { diff = execSync('git -C ' + c.rundir + " diff HEAD -- . ':(exclude).sweet-search'", { encoding: 'utf8', maxBuffer: 16*1024*1024 }); } catch {}
-  const pdir = c.rundir + '__rt/_stage';
-  try {
-    rmSync(pdir, { recursive: true, force: true }); mkdirSync(pdir, { recursive: true });
-    writeFileSync(pdir + '/agent.diff', diff || '');
-    const tSec = c.testTimeoutSec || 300;
-    const script = 'cd ' + c.workdir + ' && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout ' + tSec + ' bash -c ' + q(c.testScript) + ' 2>&1 | head -c 20000000 > /tmp/__rt_out; ' + ${JSON.stringify(RT_CONDENSE)};
-    const out = execSync('docker run --rm ' + (c.netArgs || '') + '-v ' + pdir + ':/patch:ro ' + c.image + ' bash -c ' + q(script), { env: { ...process.env, DOCKER_HOST: c.dockerHost }, encoding: 'utf8', timeout: (tSec + 60) * 1000, maxBuffer: 4*1024*1024, stdio: ['ignore','pipe','pipe'] });
-    return out.slice(0, 8000);
-  } catch (e) { return '[run_tests exit=' + (e.status ?? 1) + ']\\n' + String(e.stdout || e.stderr || e.message || '').slice(0, 6000); }
-  finally { try { rmSync(pdir, { recursive: true, force: true }); } catch {} }
-}
 setInterval(() => {
   let reqs = [];
   try { reqs = readdirSync(IPC).filter(f => f.startsWith('req-')); } catch { process.exit(0); }
   for (const r of reqs) {
     const id = r.slice(4);
+    let pattern = ''; try { pattern = readFileSync(IPC + '/' + r, 'utf8').trim(); } catch {}
     try { rmSync(IPC + '/' + r, { force: true }); } catch {}
-    const out = runTests();
+    let out; try { out = runTestsWithLevers(c, { pattern }); } catch (e) { out = '[run_tests error] ' + String(e && e.message || e); }
     const tmp = IPC + '/tmp-' + id;
     try { writeFileSync(tmp, out); renameSync(tmp, IPC + '/res-' + id); } catch {}
   }
@@ -115,19 +108,20 @@ setInterval(() => {
   return { brokerPath, reqDir };
 }
 
-function writeRunTestsShim(binDir, { image, workdir, testScript, rundir, testTimeoutSec = 300, netArgs = '', brokerMode = false }) {
+export function writeRunTestsShim(binDir, { image, workdir, testScript, rundir, testTimeoutSec = 300, netArgs = '', brokerMode = false, dockerBin = 'docker', rtAuthority = true }) {
   mkdirSync(binDir, { recursive: true });
   const cfg = path.join(binDir, '_run_tests_cfg.json');
-  writeFileSync(cfg, JSON.stringify({ image, workdir, testScript, rundir, dockerHost: DOCKER_HOST, testTimeoutSec, netArgs }));
+  writeFileSync(cfg, JSON.stringify({ image, workdir, testScript, rundir, dockerHost: DOCKER_HOST, testTimeoutSec, netArgs, dockerBin, binDir, rtAuthority }));
   const mjs = path.join(binDir, '_run_tests.mjs');
   if (brokerMode) {
     const { brokerPath, reqDir } = writeRunTestsBrokerFiles(binDir, cfg);
-    // requester shim: sandbox-safe (file writes into __rt/_rt_ipc only, no docker)
+    // requester shim: sandbox-safe (file writes into __rt/_rt_ipc only, no docker).
+    // The first arg (optional test pattern) is passed through the req-file content.
     writeFileSync(mjs, `import { writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 const IPC = ${JSON.stringify(reqDir)};
 const tSec = ${Number(testTimeoutSec) || 300};
 const id = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-writeFileSync(IPC + '/req-' + id, '');
+writeFileSync(IPC + '/req-' + id, process.argv[2] || '');
 const deadline = Date.now() + (tSec + 90) * 1000;
 const res = IPC + '/res-' + id;
 while (Date.now() < deadline) {
@@ -143,34 +137,63 @@ process.stdout.write('[run_tests] no response from test broker within ' + (tSec 
     const shim = path.join(binDir, 'run_tests');
     writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
     chmodSync(shim, 0o755);
-    return { binDir, brokerPath, integrity: shimIntegritySnapshot([cfg, mjs, shim, brokerPath]) };
+    return { binDir, brokerPath, integrity: shimIntegritySnapshot([cfg, mjs, shim, brokerPath, RT_RUNTIME_PATH, RT_LIB_PATH]) };
   }
-  writeFileSync(mjs, `import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+  // Direct shim: run the suite + L2 levers via the shared runtime. argv[2] = optional
+  // targeted test pattern. Output IS the signal (shim exits 0; PASS/FAIL is in the text).
+  writeFileSync(mjs, `import { readFileSync } from 'node:fs';
+import { runTestsWithLevers } from ${JSON.stringify(RT_RUNTIME_PATH)};
 const c = JSON.parse(readFileSync(${JSON.stringify(cfg)}, 'utf8'));
-const q = s => "'" + String(s).replace(/'/g, "'\\\\''") + "'";
-let diff = '';
-try { diff = execSync('git -C ' + c.rundir + " diff HEAD -- . ':(exclude).sweet-search'", { encoding: 'utf8', maxBuffer: 16*1024*1024 }); } catch {}
-const pdir = c.rundir + '__rt';
-try {
-  rmSync(pdir, { recursive: true, force: true }); mkdirSync(pdir, { recursive: true });
-  writeFileSync(pdir + '/agent.diff', diff || '');
-  // per-task test timeout (task-overrides.json via cfg; default 300s unchanged)
-  const tSec = c.testTimeoutSec || 300;
-  const script = 'cd ' + c.workdir + ' && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout ' + tSec + ' bash -c ' + q(c.testScript) + ' 2>&1 | head -c 20000000 > /tmp/__rt_out; ' + ${JSON.stringify(RT_CONDENSE)};
-  // NO --network host: at CONCURRENCY>1, concurrent test containers sharing the host
-  // net namespace collide on any port a test binds (→ flaky failures → corrupted
-  // resolved numbers). c.netArgs carries the egress lockdown ('--network none ' by
-  // default; per-task 'bridge' exception; empty under SS_BENCH_ALLOW_NET=1).
-  const out = execSync('docker run --rm ' + (c.netArgs || '') + '-v ' + pdir + ':/patch:ro ' + c.image + ' bash -c ' + q(script), { env: { ...process.env, DOCKER_HOST: c.dockerHost }, encoding: 'utf8', timeout: (tSec + 60) * 1000, maxBuffer: 4*1024*1024, stdio: ['ignore','pipe','pipe'] });
-  process.stdout.write(out.slice(0, 8000));
-} catch (e) { process.stdout.write('[run_tests exit=' + (e.status ?? 1) + ']\\n' + String(e.stdout || e.stderr || e.message || '').slice(0, 6000)); }
-finally { try { rmSync(pdir, { recursive: true, force: true }); } catch {} }
+try { process.stdout.write(runTestsWithLevers(c, { pattern: process.argv[2] || '' })); }
+catch (e) { process.stdout.write('[run_tests error] ' + String(e && e.message || e)); }
 `);
   const shim = path.join(binDir, 'run_tests');
   writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
   chmodSync(shim, 0o755);
-  return { binDir, integrity: shimIntegritySnapshot([cfg, mjs, shim]) };
+  return { binDir, integrity: shimIntegritySnapshot([cfg, mjs, shim, RT_RUNTIME_PATH, RT_LIB_PATH]) };
+}
+
+// L1: install a `docker` PATH-wrapper into binDir (FIRST on the agent's PATH) that
+// condenses oversized human-facing docker output (run/exec/logs/build/compose/…) and
+// passes machine/query subcommands (inspect/ps/images/version/pull) straight through.
+// Resolves the REAL docker at call time (host PATH has no binDir → no self-reference).
+// Returns the wrapper paths (best-effort; a missing docker binary just skips it).
+export function installCommandWrappers(binDir, { realDocker }) {
+  mkdirSync(binDir, { recursive: true });
+  const condenser = path.join(binDir, '_cmd_condense.mjs');
+  // Streaming, BOUNDED capture (8 MB hard cap — the P2 unbounded-capture precedent),
+  // then condense via the unit-tested lib. Preserves the child's exit code verbatim.
+  writeFileSync(condenser, `import { spawn } from 'node:child_process';
+import { condenseOutput } from ${JSON.stringify(RT_LIB_PATH)};
+const [real, ...args] = process.argv.slice(2);
+const CAP = 8 * 1024 * 1024;
+let buf = [], bytes = 0, capped = false;
+function collect(d) { if (capped) return; bytes += d.length; if (bytes > CAP) { capped = true; buf.push(Buffer.from('\\n[...output capture truncated at 8MB...]\\n')); } else buf.push(d); }
+const child = spawn(real, args, { stdio: ['inherit', 'pipe', 'pipe'] });
+child.stdout.on('data', collect);
+child.stderr.on('data', collect);
+child.on('error', e => { process.stderr.write(String(e && e.message || e)); process.exit(127); });
+child.on('close', code => {
+  const raw = Buffer.concat(buf).toString('utf8');
+  try { process.stdout.write(condenseOutput(raw).text); }
+  catch { process.stdout.write(raw.slice(0, 8000)); }   // never lose output on a condenser bug
+  process.exit(code == null ? 0 : code);                // preserve exit code
+});
+`);
+  const dockerWrap = path.join(binDir, 'docker');
+  writeFileSync(dockerWrap, `#!/usr/bin/env bash
+# L1 harness lever: condense human-facing docker execution output so a 40 KB manual
+# test-run log does not sit resident in the agent's context. Machine/query subcommands
+# pass through untouched (never corrupt JSON/ID output consumed programmatically).
+case "$1" in
+  run|exec|logs|build|compose|attach|start|create|wait|cp)
+    exec node ${JSON.stringify(condenser)} ${JSON.stringify(realDocker)} "$@" ;;
+  *)
+    exec ${JSON.stringify(realDocker)} "$@" ;;
+esac
+`);
+  chmodSync(dockerWrap, 0o755);
+  return { condenser, dockerWrap };
 }
 
 // H2 (2026-07-08 trace audit): shim files live in the agent's writable tree, and
@@ -179,14 +202,14 @@ finally { try { rmSync(pdir, { recursive: true, force: true }); } catch {} }
 // files truly immutable for a same-uid agent, so we DETECT: hash every shim
 // file at write time, re-hash after the agent run, and flag the row. A flagged
 // row's test/grade signals are untrusted for cost/accuracy claims.
-function shimIntegritySnapshot(files) {
+export function shimIntegritySnapshot(files) {
   return files.map(f => ({ file: f, sha: sha256File(f) }));
 }
 function sha256File(f) {
   try { return createHash('sha256').update(readFileSync(f)).digest('hex'); }
   catch { return null; }
 }
-function verifyShimIntegrity(integrity) {
+export function verifyShimIntegrity(integrity) {
   const tampered = [];
   for (const { file, sha } of integrity || []) {
     const now = sha256File(file);
@@ -236,7 +259,14 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
     ? `--network ${t._network === 'bridge' ? 'bridge' : 'none'} ${(t._dockerRunArgs || []).join(' ')}`.trim() + ' '
     : ((t._dockerRunArgs || []).join(' ') ? (t._dockerRunArgs || []).join(' ') + ' ' : '');
   const binDir = path.join(rundir, '.codex-bin');
-  const shimInfo = writeRunTestsShim(binDir, { image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300, netArgs, brokerMode: AGENT_SANDBOX });
+  // Resolve the REAL docker binary from the HARNESS PATH (no binDir → no self-ref), so
+  // both the run_tests shim (cfg.dockerBin) and the L1 wrapper invoke it directly.
+  let realDocker = 'docker';
+  try { realDocker = execSync('command -v docker', { encoding: 'utf8' }).trim() || 'docker'; } catch { /* fall back to bare 'docker' */ }
+  const shimInfo = writeRunTestsShim(binDir, { image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300, netArgs, brokerMode: AGENT_SANDBOX, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY });
+  // L1: install the docker output-condenser wrapper (both arms). Flag-gated; a run
+  // with SS_NO_CMD_CONDENSE=1 leaves the agent's docker == real docker (legacy).
+  if (L1_CONDENSE) { try { installCommandWrappers(binDir, { realDocker }); } catch (e) { console.error(`  [L1] wrapper install skipped: ${String(e.message).slice(0, 100)}`); } }
   // host-side broker executes run_tests' docker work OUTSIDE the agent sandbox
   let broker = null;
   if (AGENT_SANDBOX && shimInfo?.brokerPath) broker = spawn('node', [shimInfo.brokerPath], { stdio: 'ignore' });
