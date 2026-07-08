@@ -6,10 +6,10 @@ import { applyReadPragmas } from './db-utils.js';
 import { findAliasCallers } from './structural-alias-resolver.js';
 import { rankStructuralCandidates } from './structural-candidate-ranker.js';
 import { findAssignedMemberDefinitions, findSameFileDefinition } from './structural-source-definitions.js';
-import { shouldTrustQualifiedResolution } from './structural-qualified-resolution.js';
+import { shouldTrustQualifiedResolution, trustedCallerEdge } from './structural-qualified-resolution.js';
 import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } from './structural-graph-signals.js';
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
-import { callTargetAliases, clampLimit, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
+import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
 
 export class StructuralContextRepository {
   constructor(dbPath, opts = {}) {
@@ -78,10 +78,13 @@ export class StructuralContextRepository {
       ORDER BY
         CASE WHEN file_path LIKE '%/test/%' OR file_path LIKE 'test/%' OR file_path LIKE 'tests/%' THEN 1 ELSE 0 END,
         length(name),
+        CASE WHEN end_line - start_line = 0 THEN 1 ELSE 0 END,
         (end_line - start_line) ASC
-      LIMIT 1
+      LIMIT 8
     `).all(...entityParams, ...names);
-    return this._entityFromRow(rows[0]);
+    const entity = rows.map(row => this._entityFromRow(row)).find(isLikelyCodeEntity) || null;
+    if (!entity) return null;
+    return shouldTrustQualifiedResolution(targetName, entity) ? entity : null;
   }
 
   _resolveQualifiedAlternative(targetName, excludeId) {
@@ -100,6 +103,7 @@ export class StructuralContextRepository {
       ORDER BY
         CASE WHEN file_path LIKE '%/test/%' OR file_path LIKE 'test/%' OR file_path LIKE 'tests/%' THEN 1 ELSE 0 END,
         CASE type WHEN 'method' THEN 0 WHEN 'function' THEN 1 ELSE 2 END,
+        CASE WHEN end_line - start_line = 0 THEN 1 ELSE 0 END,
         (end_line - start_line) ASC
       LIMIT 8
     `).all(...entityParams, name, excludeId);
@@ -165,6 +169,7 @@ export class StructuralContextRepository {
           WHEN 'function' THEN 2 WHEN 'method' THEN 2
           ELSE 3
         END,
+        CASE WHEN end_line - start_line = 0 THEN 1 ELSE 0 END,
         (end_line - start_line) ASC
       LIMIT ?
     `).all(...entityParams, ...params, raw, raw, limit);
@@ -215,7 +220,7 @@ export class StructuralContextRepository {
       SELECT DISTINCT
         e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
         e.signature, e.summary, e.parent_class, e.package,
-        r.context_line, r.target_name, r.weight, r.type as rel_type
+        r.target_id, r.context_line, r.target_name, r.weight, r.type as rel_type
       FROM relationships r
       JOIN entities e ON e.id = r.source_id
       WHERE r.type IN (${placeholders(types)})
@@ -237,9 +242,66 @@ export class StructuralContextRepository {
       ...this._entityFromRow(row),
       relationship: row.rel_type,
       contextLine: row.context_line || null,
+      targetId: row.target_id || null,
       targetName: row.target_name || null,
       weight: row.weight ?? 1,
-    }));
+    })).filter(edge => trustedCallerEdge(edge, target));
+  }
+
+  /**
+   * Query-time fallback for callers the extractor stored no edge for (bare
+   * local calls in JS/TS, out-of-line C++ methods, …): scan the target's own
+   * file for `name(` call sites outside the target's span and attribute each
+   * to its innermost enclosing entity. Cheap (one cached file read) and
+   * language-agnostic.
+   */
+  getSameFileCallers(target, opts = {}) {
+    const db = this._open();
+    if (!db || !target?.id || !target?.filePath || !target?.name || !target?.startLine) return [];
+    const limit = clampLimit(opts.limit, 24, 60);
+    const source = this.readFileRange(target.filePath, 1, 1000000);
+    if (!source) return [];
+    const escaped = String(target.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const callRe = new RegExp(`(?<![.\\w$:])${escaped}\\s*\\(`);
+    const defRe = new RegExp(`\\b(function|def|fn|func|sub|proc)\\s+${escaped}\\s*[(<]`);
+    const lines = source.split('\n');
+    const hits = [];
+    for (let i = 0; i < lines.length && hits.length < limit * 2; i++) {
+      const ln = i + 1;
+      if (ln >= target.startLine && ln <= (target.endLine || target.startLine)) continue;
+      const text = lines[i].replace(/(^|\s)(\/\/|#).*$/, '');
+      if (callRe.test(text) && !defRe.test(text)) hits.push(ln);
+    }
+    if (!hits.length) return [];
+    const entitySql = this._entitySql(db);
+    const fileEntities = db.prepare(`
+      SELECT id, name, type, file_path, start_line, end_line, signature,
+             summary, parent_class, package
+      FROM entities
+      WHERE ${entitySql} AND file_path = ? AND start_line IS NOT NULL AND end_line IS NOT NULL
+      ORDER BY start_line
+    `).all(...this._entityParams(db), target.filePath);
+    const out = [];
+    const seen = new Set();
+    for (const ln of hits) {
+      const host = fileEntities
+        .filter(r => r.start_line <= ln && r.end_line >= ln)
+        .sort((a, b) => (a.end_line - a.start_line) - (b.end_line - b.start_line))[0];
+      if (!host || host.id === target.id || host.name === target.name) continue;
+      const key = `${host.id}:${ln}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        ...this._entityFromRow(host),
+        relationship: 'calls',
+        contextLine: ln,
+        targetId: target.id,
+        targetName: target.name,
+        weight: 1,
+      });
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 
   getAliasCallers(target, opts = {}) {
@@ -326,6 +388,10 @@ export class StructuralContextRepository {
       LIMIT ?
     `).all(...this._entityParams(db), ...this._relationshipParams(db), ...types, ...ids, ...nameParams, limit);
 
+    // Rows admitted by the name-pattern clause (not by target_id) are subject
+    // to the same receiver-compat gate as getCallers — otherwise the phantom
+    // `this.fetch`-style edges re-enter through impact paths.
+    const idSet = new Set(ids);
     return rows.map(row => ({
       ...this._entityFromRow(row),
       relationship: row.rel_type,
@@ -333,7 +399,7 @@ export class StructuralContextRepository {
       targetName: row.target_name || null,
       contextLine: row.context_line || null,
       weight: row.weight ?? 1,
-    }));
+    })).filter(edge => (edge.targetId && idSet.has(edge.targetId)) || trustedCallerEdge(edge, target));
   }
 
   getForwardDependencies(frontierIds, opts = {}) {

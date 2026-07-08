@@ -4,6 +4,11 @@ export function formatStructuralContext(result) {
   const lines = [];
   lines.push(`# trace ${t.name} [${t.type}] ${t.filePath}:${t.startLine}-${t.endLine}`);
   lines.push(`fan-in=${t.fanIn} fan-out=${t.fanOut} budget=${result.tokensUsed}/${result.tokenBudget} (${result.budgetTier}:${result.budgetReason}) latency=${result.stats.latencyMs}ms`);
+  if (t.fanIn === 0 && t.fanOut === 0 && !result.sections.callers.total && !result.sections.callees.total) {
+    lines.push(`no stored call edges for this symbol — map its sites with one broad ss-grep of the symbol stem instead.`);
+  } else if (t.fanIn === 0 && result.sections.callers.total > 0) {
+    lines.push(`note: callers below come from a same-file source scan (no stored cross-file edges).`);
+  }
   if (result.disambiguation.length) {
     lines.push(`ambiguous: using first match; alternatives: ${result.disambiguation.slice(0, 5).map(a => `${a.name} ${a.file}:${a.startLine}`).join(', ')}`);
   }

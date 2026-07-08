@@ -321,16 +321,38 @@ void freeFunction(int x) { }
     });
   });
 
-  it('captures free functions but not in-class methods (known limitation)', async () => {
+  it('captures in-class methods, out-of-line qualified members, dtors, pointer returns (E2 fix)', async () => {
     const symbols = await extractOrFail(`
 class Foo { public: void bar(int x) { int y = x + 1; } };
 void baz(int z) { int w = z + 2; }
+Foo::Foo(int seed)
+{
+  bar(seed);
+}
+Foo::~Foo()
+{
+}
+bool Foo::check(int v) const
+{
+  return v > 0;
+}
+char* Foo::render(int v)
+{
+  return nullptr;
+}
 `, 'cpp');
-    const names = symbols.map(s => s.name);
-    expect(names).toContain('Foo');
-    expect(names).toContain('baz');
-    // In-class methods are NOT captured — documented limitation, not a bug.
-    expect(names).not.toContain('bar');
+    const byName = Object.fromEntries(symbols.map(s => [s.name, s]));
+    expect(byName.Foo).toBeDefined();
+    expect(byName.baz?.type).toBe('function');
+    // In-class definition — previously a documented limitation, now captured.
+    expect(byName.bar?.type).toBe('method');
+    // Out-of-line qualified members: name is the LEAF (check, not Foo::check).
+    expect(byName.check?.type).toBe('method');
+    expect(byName['~Foo']?.type).toBe('method');
+    expect(byName.render?.type).toBe('method');
+    // Spans cover the body (whole function_definition node), not just the
+    // declaration line — leaf-identifier captures gave zero-line spans.
+    expect(byName.check.endLine).toBeGreaterThan(byName.check.startLine);
   });
 });
 

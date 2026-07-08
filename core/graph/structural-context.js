@@ -7,6 +7,7 @@
 
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { StructuralContextRepository } from '../infrastructure/structural-context-repository.js';
+import { isLikelyCodeEntity } from '../infrastructure/structural-context-utils.js';
 import { buildAnswerCues } from './structural-answer-cues.js';
 import { callsiteHints } from './structural-callsite-hints.js';
 import { extractHeaderContext } from './structural-header-context.js';
@@ -249,7 +250,7 @@ function addHintImpactPaths(paths, seen, repo, target, hints, limit) {
   for (const name of hints) {
     if (paths.length >= limit) break;
     const hint = repo.findEntityCandidates?.(name, { limit: 1 })?.[0];
-    if (!hint || hint.id === target.id) continue;
+    if (!hint || hint.id === target.id || !isLikelyCodeEntity(hint)) continue;
     const id = `hint:${target.id}>${hint.id}`;
     if (!seen.has(id)) {
       paths.push({ id, direction: 'downstream', path: [target, hint], edgeTypes: ['handoff'], depth: 1 });
@@ -301,9 +302,18 @@ export class StructuralContextBuilder {
     const targetSource = readFileRange(target.filePath, target.startLine, target.endLine);
     const targetHeaderContext = extractHeaderContext(readFileRange, target.filePath);
     const targetCallsiteHints = callsiteHints(targetSource, new Set([target.name]));
-    const callersRaw = [...this.repo.getCallers(target, { limit: 160 }), ...(this.repo.getAliasCallers?.(target, { limit: 80 }) || [])].map(x => ({ ...x, depth: 1 }));
+    const storedCallers = [...this.repo.getCallers(target, { limit: 160 }), ...(this.repo.getAliasCallers?.(target, { limit: 80 }) || [])];
+    // Same-file callsite scan: recovers callers the extractor stored no edge
+    // for (bare local calls, out-of-line C++ methods). Deduped against stored
+    // callers by entity id — a stored edge may carry a different context_line
+    // for the same call (multi-line invocations), and a same-entity duplicate
+    // would double-pack the caller section.
+    const storedIds = new Set(storedCallers.map(x => x.id));
+    const sameFileCallers = (this.repo.getSameFileCallers?.(target, { limit: 24 }) || [])
+      .filter(x => !storedIds.has(x.id));
+    const callersRaw = [...storedCallers, ...sameFileCallers].map(x => ({ ...x, depth: 1 }));
     let calleesRaw = this.repo.getCallees(target, { limit: 160 }).map(x => ({ ...x, depth: 1 }));
-    if (!calleesRaw.length) calleesRaw = targetCallsiteHints.map(name => this.repo.findEntityCandidates?.(name, { limit: 1 })?.[0]).filter(Boolean).map(x => ({ ...x, relationship: 'handoff', depth: 1 }));
+    if (!calleesRaw.length) calleesRaw = targetCallsiteHints.map(name => this.repo.findEntityCandidates?.(name, { limit: 1 })?.[0]).filter(isLikelyCodeEntity).map(x => ({ ...x, relationship: 'handoff', depth: 1 }));
     const impactRaw = buildImpactPaths(this.repo, target, {
       maxDepth: options.maxDepth ?? DEFAULT_MAX_DEPTH,
       limit: 120,

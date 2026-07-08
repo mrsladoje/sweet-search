@@ -49,3 +49,14 @@ export function isTestPath(filePath = '') {
 export function placeholders(values) {
   return values.map(() => '?').join(',');
 }
+
+// Entities extracted from config/doc files (TOML keys, YAML fields, …) are
+// valid search hits but must never be presented as call-graph neighbours —
+// a `calls` edge into stylua.toml is noise, not structure.
+const NON_CODE_FILE_RE = /\.(toml|ya?ml|json|json5|ini|cfg|conf|properties|lock|md|markdown|rst|txt|xml|html?|css|scss|svg)$/i;
+
+export function isLikelyCodeEntity(entity) {
+  if (!entity) return false;
+  if (entity.filePath && NON_CODE_FILE_RE.test(entity.filePath)) return false;
+  return true;
+}
