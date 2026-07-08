@@ -426,8 +426,11 @@ function clawd() {
   // the eating stump REACHES DOWN in pixel steps to the pile, then flicks
   const ARM_KT = [0, 0.04, 0.075, 0.105, 0.13, 0.155, 0.205, 0.235, 0.265, 0.30, 1];
   const ARM_V = ['0 0', '0 0', '0 8', '0 16', '0 24', '0 32', '0 32', '0 20', '0 8', '0 0', '0 0'];
-  const FLIP_KT = [0, 0.30, 0.315, 0.345, 0.46, 1];
-  const FLIP_V = [0, 0, 18, -55, 0, 0];
+  // toss-arm pose windows (was a rotate 0/18/-55; now sprite swaps):
+  // A straight [0,0.315)+[0.46,1] / B down-flick [0.315,0.345) / C up-toss [0.345,0.46)
+  const FLIP_A_KT = [0, 0.315, 0.46];
+  const FLIP_B_KT = [0, 0.315, 0.345];
+  const FLIP_C_KT = [0, 0.345, 0.46];
 
   // stepped toss: quad bezier (167,36.8)->(122,-34)->(80,53) sampled + snapped
   const FLY_PTS = ['168 36', '152 20', '140 8', '128 4', '116 8', '104 16', '92 32', '80 52'];
@@ -444,30 +447,51 @@ function clawd() {
     [16, -10, 4, 10, C.candy], [16, 0, 4, 10, C.candy],
   ])}`;
 
+  // toss arm: no rotation — the flick/toss SWAPS between drawn stepped pixel
+  // poses (straight / down-flick / up-toss), like the feet do during the lean
   const eatFlipper = `
     <g transform="translate(140 50)">
       <g>
         ${animT('translate', ARM_V, ARM_KT, EAT_DUR, { discrete: true })}
         <g>
-        ${animT('rotate', FLIP_V, FLIP_KT, EAT_DUR, { discrete: true })}
-        <rect x="-8" y="-10" width="28" height="20" fill="${C.coral}"/>
-        <g transform="translate(30 0)">
+          ${anim('opacity', [1, 0, 1], FLIP_A_KT, EAT_DUR, { discrete: true })}
+          <rect x="-8" y="-10" width="28" height="20" fill="${C.coral}"/>
+        </g>
+        <g opacity="0">
+          ${anim('opacity', [0, 1, 0], FLIP_B_KT, EAT_DUR, { discrete: true })}
+          ${RX([
+            [-8, -10, 16, 20, C.coral],
+            [4, -4, 14, 18, C.coral],
+            [12, 2, 14, 16, C.coral],
+          ])}
+        </g>
+        <g opacity="0">
+          ${anim('opacity', [0, 1, 0], FLIP_C_KT, EAT_DUR, { discrete: true })}
+          ${RX([
+            [-8, -14, 18, 24, C.coral],
+            [0, -28, 14, 18, C.coral],
+            [4, -42, 16, 18, C.coral],
+          ])}
+        </g>
+        <g>
+          ${animT('translate', ['30 0', '28 8', '28 8'], [0, 0.315, 1], EAT_DUR, { discrete: true })}
           <g>
             ${anim('opacity', [0, 0, 1, 1, 0, 0], [0, 0.165, 0.175, 0.333, 0.336, 1], EAT_DUR)}
             ${candy}
           </g>
         </g>
-        </g>
       </g>
     </g>`;
 
-  // pixel magnifier held by the left stump
+  // pixel magnifier held by the left stump — arm + handle are axis-aligned
+  // staircase steps down a 2:1 slope (no rotation); the old 25->31deg wobble
+  // becomes a stepped 2px drift of the whole arm
   const mag = `
     <g transform="translate(20 50)">
       <g>
-        ${animT('rotate', [25, 28, 31, 28, 25], [0, 0.25, 0.5, 0.75, 1], 6, { discrete: true })}
-        ${RX([[-38, -3, 10, 6, C.metal], [-30, -3, 10, 6, C.metal]])}
-        <g transform="translate(-52 0)">
+        ${animT('translate', ['0 0', '2 -2', '4 -4', '2 -2', '0 0'], [0, 0.25, 0.5, 0.75, 1], 6, { discrete: true })}
+        ${RX([[-42, -24, 10, 8, C.metal], [-34, -20, 10, 8, C.metal]])}
+        <g transform="translate(-48 -24)">
           ${RX([
             [-8, -20, 16, 4, C.metal], [-8, 16, 16, 4, C.metal],
             [-20, -8, 4, 16, C.metal], [16, -8, 4, 16, C.metal],
@@ -487,7 +511,11 @@ function clawd() {
           </g>
           ${sparkle(2, 2, C.glyph, 3.4, 0)}
         </g>
-        <rect x="-20" y="-10" width="28" height="20" fill="${C.coral}"/>
+        ${RX([
+          [-36, -23, 14, 14, C.coral],
+          [-26, -16, 16, 16, C.coral],
+          [-14, -9, 22, 18, C.coral],
+        ])}
       </g>
     </g>`;
 
@@ -516,11 +544,11 @@ function clawd() {
         ${animT('scale', ['1 1', '1 1', '1.04 0.94', '0.98 1.03', '1 1', '1 1'], [0, 0.625, 0.655, 0.685, 0.715, 1], EAT_DUR, { discrete: true })}
         <g transform="translate(-80 -100)">
           <g>
-            ${animT('translate', ['0 0', '0 0', '0 2', '0 0', '0 2', '0 0', '0 2', '0 0', '0 0'], [0, 0.43, 0.46, 0.49, 0.52, 0.55, 0.58, 0.61, 1], EAT_DUR, { additive: true, discrete: true })}
+            ${animT('translate', ['0 0', '0 0', '0 2', '0 0', '0 2', '0 0', '0 2', '0 0', '0 2', '0 0', '0 0'], [0, 0.385, 0.40, 0.43, 0.46, 0.49, 0.52, 0.55, 0.58, 0.61, 1], EAT_DUR, { additive: true, discrete: true })}
             <path d="${CLAWD_BODY_NOFEET}" fill="${C.coral}"/>
             <!-- pixel cheek bulge: stepped backwards-C, popping with the chews -->
             <g opacity="0">
-              ${anim('opacity', [0, 0, 1, 0, 1, 0, 1, 0, 0], [0, 0.445, 0.46, 0.49, 0.52, 0.55, 0.58, 0.61, 1], EAT_DUR, { discrete: true })}
+              ${anim('opacity', [0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0], [0, 0.385, 0.40, 0.43, 0.46, 0.49, 0.52, 0.55, 0.58, 0.61, 1], EAT_DUR, { discrete: true })}
               ${RX([[100, 44, 6, 5, C.ink], [104, 49, 5, 9, C.ink], [100, 58, 6, 5, C.ink]])}
             </g>
             <!-- eyes: tall quadrant rects; squeeze + stay shut after the gulp -->
