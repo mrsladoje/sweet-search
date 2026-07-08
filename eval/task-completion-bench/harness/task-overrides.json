@@ -18,7 +18,9 @@
     "restores historical full-egress container networking. Old harness behavior is exactly",
     "NO_TASK_OVERRIDES=1 SS_BENCH_ALLOW_NET=1."
   ],
-  "defaults": { "testTimeoutSec": 300 },
+  "defaults": {
+    "testTimeoutSec": 300
+  },
   "tasks": {
     "jump-dev__jump.jl-2714": {
       "_why": "JuMP full suite measured 2m58 clean / 2m53 with source edit applied (idle box, --network none) — right AT the 300s cliff, so under real run load (3-4 concurrent tasks + grading) every historical run_tests timed out (68-call thrash). 600s = ~3.4x idle-measured, load-aware headroom.",
@@ -44,6 +46,21 @@
     "rust-lang__rust-analyzer-16385": {
       "_why": "sourcegen tests need the stable rustfmt toolchain (stable-x86_64-unknown-linux-gnu); both arms landed f2p=1 and still graded NO on P2P sourcegen failures",
       "image": "swerebenchv2-fixed/rust-lang-rust-analyzer:16385-1ab8c7f"
+    },
+    "bitshifter__glam-rs-382": {
+      "_why": "cargo test resolves the whole workspace (root glam + codegen + test_no_std members), and codegen's deps (anyhow/clap/git2/...) were never fetched, so cargo dies offline updating the crates.io index. Compounding: the image's default rustup toolchain is 1.84.1, but unlocked resolution today picks codegen-transitive crates (indexmap 2.14, home 0.5.12, tera 1.20.1, ...) that declare edition=\"2024\", which 1.84.1's own manifest parser cannot parse at all (hard version gate, reproduces even fully offline/cached) — this task's own curated docker_specs.cargo_version is \"1.89.0\", so the derived image installs+defaults rustup to 1.89.0 (matches curation) and fetches under it. Verified offline: 305 passed, 0 failed (unit) + 5 passed (doctests).",
+      "image": "swerebenchv2-fixed/bitshifter-glam-rs:382-813c7ef"
+    },
+    "jeltef__derive_more-387": {
+      "_why": "cargo test --workspace --features full,testing-helpers needs feature-gated optional deps (serde_core 1.0.228 et al.) never fetched into the image's registry cache, so cargo dies offline updating the crates.io index. Derived image runs cargo fetch + the task's test_cmd at build time (network available). Verified offline: full suite runs to completion, only the expected base-state F2P (compile_fail, 5/80 sub-cases — the 'overflow evaluating requirement' Debug-recursion bug from the problem statement) fails.",
+      "image": "swerebenchv2-fixed/jeltef-derive-more:387-8a172f2"
+    },
+    "serpro69__kotlin-faker-267": {
+      "_why": "the image's install step ran ./gradlew ... -x test -x dokkaJavadoc, so the full `test` task's dokka plugin graph (org.jetbrains.dokka:dokka-base/javadoc-plugin/analysis-kotlin-descriptors:1.9.20) was never resolved into GRADLE_USER_HOME=/workspace/.gradle. Compounding: the image ships _JAVA_OPTIONS=-Djava.net.preferIPv6Addresses=true, but this docker bridge network has no IPv6 route (host does; container doesn't), so dependency resolution failed with 'Network is unreachable' even during the build-time warm attempt until forced to IPv4 (same fix as scalameta__scalameta-2550 in this same dockerfiles dir). Derived image sets preferIPv6Addresses=false and runs the task's actual test_cmd once at build time. Verified offline: 3234 tests, 3233 passed, 1 failed (RandomClassProviderTest — the sealed-class randomClassInstance F2P from the problem statement); zero network-resolution errors.",
+      "image": "swerebenchv2-fixed/serpro69-kotlin-faker:267-bac805e"
+    },
+    "randombit__botan-2738": {
+      "_why": "curation: gold patch is a squashed multi-commit bundle; x509_ext.cpp validate hunk + parsing.cpp tolower dedup are unrelated to the DNS case-sensitivity problem statement"
     }
   }
 }
