@@ -8,7 +8,8 @@
 // api-task-runner.runTask so grading/metrics are identical.
 import { spawn } from 'node:child_process';
 import { execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, chmodSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -60,6 +61,22 @@ const FRAME_CLOSE =
 // after) watches for requests and runs the exact same git-diff + docker logic outside the
 // sandbox. run_tests takes no arguments, so the protocol is parameter-free — the agent
 // can no longer inject docker args at all (strictly tighter than the legacy direct shim).
+// H1 (2026-07-08 trace audit): failure-aware output condensation for run_tests.
+// The old blind `tail -60` hid failing-test NAMES when a suite prints its
+// summary last (botan: "6 tests failed" with the FAILED lines scrolled away →
+// ~10 calls of shim-spelunking + raw docker probing). Now: an explicit
+// network-unavailable banner (lockdown makes dependency fetches fail — say so
+// instead of letting the agent debug the harness), then up to 40
+// failure-indicator lines (test names), then the tail. Runs INSIDE the test
+// container against /tmp/__rt_out; static text, interpolated into both
+// generated shim variants below.
+const RT_CONDENSE =
+  "grep -qaE 'Could not resolve|Temporary failure in name resolution|Network is unreachable' /tmp/__rt_out && " +
+  "echo '[run_tests] NETWORK UNAVAILABLE in the test container (bench lockdown): dependency downloads cannot work; do not retry or debug the harness.'; " +
+  "grep -aE '(FAILED|FAIL:|not ok |AssertionError|panicked at|[0-9]+ tests? failed|[Ee]rror:|error\\[)' /tmp/__rt_out | " +
+  "grep -avE '(0 fail|failures?: 0|failed: 0|: 0 error)' | head -40; " +
+  "echo '--- output tail ---'; tail -45 /tmp/__rt_out";
+
 function writeRunTestsBrokerFiles(binDir, cfgPath) {
   const reqDir = path.join(binDir, '_rt_ipc');
   mkdirSync(reqDir, { recursive: true });
@@ -77,7 +94,7 @@ function runTests() {
     rmSync(pdir, { recursive: true, force: true }); mkdirSync(pdir, { recursive: true });
     writeFileSync(pdir + '/agent.diff', diff || '');
     const tSec = c.testTimeoutSec || 300;
-    const script = 'cd ' + c.workdir + ' && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout ' + tSec + ' bash -c ' + q(c.testScript) + ' 2>&1 | tail -60';
+    const script = 'cd ' + c.workdir + ' && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout ' + tSec + ' bash -c ' + q(c.testScript) + ' 2>&1 | head -c 20000000 > /tmp/__rt_out; ' + ${JSON.stringify(RT_CONDENSE)};
     const out = execSync('docker run --rm ' + (c.netArgs || '') + '-v ' + pdir + ':/patch:ro ' + c.image + ' bash -c ' + q(script), { env: { ...process.env, DOCKER_HOST: c.dockerHost }, encoding: 'utf8', timeout: (tSec + 60) * 1000, maxBuffer: 4*1024*1024, stdio: ['ignore','pipe','pipe'] });
     return out.slice(0, 8000);
   } catch (e) { return '[run_tests exit=' + (e.status ?? 1) + ']\\n' + String(e.stdout || e.stderr || e.message || '').slice(0, 6000); }
@@ -126,7 +143,7 @@ process.stdout.write('[run_tests] no response from test broker within ' + (tSec 
     const shim = path.join(binDir, 'run_tests');
     writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
     chmodSync(shim, 0o755);
-    return { binDir, brokerPath };
+    return { binDir, brokerPath, integrity: shimIntegritySnapshot([cfg, mjs, shim, brokerPath]) };
   }
   writeFileSync(mjs, `import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
@@ -140,7 +157,7 @@ try {
   writeFileSync(pdir + '/agent.diff', diff || '');
   // per-task test timeout (task-overrides.json via cfg; default 300s unchanged)
   const tSec = c.testTimeoutSec || 300;
-  const script = 'cd ' + c.workdir + ' && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout ' + tSec + ' bash -c ' + q(c.testScript) + ' 2>&1 | tail -60';
+  const script = 'cd ' + c.workdir + ' && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout ' + tSec + ' bash -c ' + q(c.testScript) + ' 2>&1 | head -c 20000000 > /tmp/__rt_out; ' + ${JSON.stringify(RT_CONDENSE)};
   // NO --network host: at CONCURRENCY>1, concurrent test containers sharing the host
   // net namespace collide on any port a test binds (→ flaky failures → corrupted
   // resolved numbers). c.netArgs carries the egress lockdown ('--network none ' by
@@ -153,7 +170,29 @@ finally { try { rmSync(pdir, { recursive: true, force: true }); } catch {} }
   const shim = path.join(binDir, 'run_tests');
   writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
   chmodSync(shim, 0o755);
-  return binDir;
+  return { binDir, integrity: shimIntegritySnapshot([cfg, mjs, shim]) };
+}
+
+// H2 (2026-07-08 trace audit): shim files live in the agent's writable tree, and
+// a real trajectory (glam-rs r2) perl-patched _run_tests_cfg.json to strip
+// `--network none` — silently undoing the egress lockdown. We cannot make the
+// files truly immutable for a same-uid agent, so we DETECT: hash every shim
+// file at write time, re-hash after the agent run, and flag the row. A flagged
+// row's test/grade signals are untrusted for cost/accuracy claims.
+function shimIntegritySnapshot(files) {
+  return files.map(f => ({ file: f, sha: sha256File(f) }));
+}
+function sha256File(f) {
+  try { return createHash('sha256').update(readFileSync(f)).digest('hex'); }
+  catch { return null; }
+}
+function verifyShimIntegrity(integrity) {
+  const tampered = [];
+  for (const { file, sha } of integrity || []) {
+    const now = sha256File(file);
+    if (now !== sha) tampered.push(path.basename(file) + (now === null ? ' (deleted)' : ''));
+  }
+  return tampered;
 }
 
 // classify a Codex shell command into a tool bucket. Codex wraps commands as
@@ -279,12 +318,18 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   const calls = toolCalls.length;
   const exitReason = r.timedOut ? 'timeout' : (r.exitCode !== 0 ? 'codex_error' : 'model_stopped');
   if (broker) { try { broker.kill('SIGKILL'); } catch {} }
+  // H2: detect agent tampering with the run_tests shim (cfg/script/broker)
+  const shimTamperedFiles = verifyShimIntegrity(shimInfo?.integrity);
+  if (shimTamperedFiles.length) {
+    console.log(`  [SHIM-TAMPERED ${task.id || ''}] agent modified: ${shimTamperedFiles.join(', ')} — test signals untrusted`);
+  }
   try { rmSync(binDir, { recursive: true, force: true }); } catch {}
 
   return {
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
     patchHunks, patchFiles, finalPatch, ranTests: toolCounts.test > 0,
     escape: 0, leak: 0, halluc: 0, escapeExamples: [],            // escape audit TODO for codex shell
+    shimTampered: shimTamperedFiles.length > 0, shimTamperedFiles,
     stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
     exitReason, usage: u, costNaiveUsd: +costNaive.toFixed(6), costRealizedUsd: +costRealized.toFixed(6),
     wallMs, trajectory, finalAssistantText: answer,
