@@ -166,9 +166,14 @@ async function cmdGrep(rawArgs) {
     || { files: [], hiddenFileCount: 0, hiddenMatchCount: 0, hiddenSample: [] };
   const body = renderGrepBody(result.results, fileSummary, k);
 
-  process.stdout.write(`# ss-grep: ${total} total match(es) for /${regex}/\n`);
+  // Sibling-surface signal (E6, 2026-07-08 trace audit): when a symbol/stem
+  // matches in more than one file, say so unconditionally in the header —
+  // the file count is the objective "visible siblings" trigger for
+  // fix-surface mapping, and it must not depend on truncation having occurred.
+  const across = body.matchedFileCount > 1 ? ` across ${body.matchedFileCount} files` : '';
+  process.stdout.write(`# ss-grep: ${total} total match(es) for /${regex}/${across}\n`);
   if (body.truncatedFileCount > 0 || body.hiddenLine) {
-    process.stdout.write(`# ${body.matchedFileCount} file(s) matched; (+N more in this file)=truncated — ` +
+    process.stdout.write(`# (+N more in this file)=truncated — ` +
       `see the rest: ss-grep "<regex>" --in <file>\n`);
   }
   for (const line of body.lines) process.stdout.write(line + '\n');

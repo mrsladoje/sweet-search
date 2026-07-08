@@ -544,19 +544,60 @@ const TAGS_QUERIES = {
     (protocol_function_declaration name: (simple_identifier) @method.definition)
     (init_declaration) @method.definition
   `,
-  // C/C++: function name nested inside declarator chain
+  // C/C++: function name nested inside declarator chain. Captures are on the
+  // WHOLE function_definition node (not the identifier leaf) so entity spans
+  // cover the body — leaf captures gave start_line == end_line, which starved
+  // ss-trace targets of code. Names resolve via _cFunctionDefinitionName.
+  // Pointer-returning definitions (`char *foo(...)`) wrap the
+  // function_declarator in a pointer_declarator — captured separately.
   c: `
     (function_definition
       declarator: (function_declarator
-        declarator: (identifier) @function.definition))
+        declarator: (identifier))) @function.definition
+    (function_definition
+      declarator: (pointer_declarator
+        declarator: (function_declarator
+          declarator: (identifier)))) @function.definition
     (struct_specifier name: (type_identifier) @struct.definition)
     (enum_specifier name: (type_identifier) @enum.definition)
     (type_definition declarator: (type_identifier) @type.definition)
   `,
+  // C++ additionally has out-of-line qualified members
+  // (`Type Class::method(...)` — qualified_identifier), in-class definitions
+  // (field_identifier), and destructors — ALL previously invisible to the
+  // graph (E2, 2026-07-08 trace audit: botan's GeneralName::matches_dns and
+  // Name_Constraints::validate were untraceable). Patterns are mutually
+  // exclusive by declarator shape, so the startIndex:type dedupe never sees
+  // the same definition twice.
   cpp: `
     (function_definition
       declarator: (function_declarator
-        declarator: (identifier) @function.definition))
+        declarator: (identifier))) @function.definition
+    (function_definition
+      declarator: (function_declarator
+        declarator: (qualified_identifier))) @method.definition
+    (function_definition
+      declarator: (function_declarator
+        declarator: (field_identifier))) @method.definition
+    (function_definition
+      declarator: (function_declarator
+        declarator: (destructor_name))) @method.definition
+    (function_definition
+      declarator: (pointer_declarator
+        declarator: (function_declarator
+          declarator: (identifier)))) @function.definition
+    (function_definition
+      declarator: (pointer_declarator
+        declarator: (function_declarator
+          declarator: (qualified_identifier)))) @method.definition
+    (function_definition
+      declarator: (reference_declarator
+        (function_declarator
+          declarator: (identifier)))) @function.definition
+    (function_definition
+      declarator: (reference_declarator
+        (function_declarator
+          declarator: (qualified_identifier)))) @method.definition
     (class_specifier name: (type_identifier) @class.definition)
     (struct_specifier name: (type_identifier) @struct.definition)
     (enum_specifier name: (type_identifier) @enum.definition)
@@ -891,6 +932,7 @@ export class TreeSitterProvider {
         const symbolName = isLeafIdent
           ? node.text
           : (node.childForFieldName?.('name')?.text
+            || (C_FAMILY_LANGUAGES.has(languageId) ? this._cFunctionDefinitionName(node) : null)
             || this._extractNodeName(node)
             || `<anonymous:${entityType}>`);
 
@@ -1426,6 +1468,38 @@ export class TreeSitterProvider {
     if (!/comment$/.test(node.type)) return false;
     const text = content.substring(node.startIndex, node.endIndex).trimStart();
     return text.startsWith('///') || text.startsWith('/**');
+  }
+
+  /**
+   * Resolve the leaf name of a C/C++ function_definition by walking its
+   * declarator chain: pointer/reference/parenthesized wrappers →
+   * function_declarator → identifier / field_identifier / destructor_name /
+   * operator_name / qualified_identifier (drilled to its leaf, so
+   * `ns::Class::method` yields `method`). Used ONLY by extractSymbols (graph
+   * entities) — chunker naming goes through _extractNodeName and is
+   * deliberately untouched so NL retrieval inputs stay byte-identical.
+   */
+  _cFunctionDefinitionName(node) {
+    if (!node || node.type !== 'function_definition') return null;
+    let d = node.childForFieldName?.('declarator');
+    for (let hops = 0; d && hops < 6; hops++) {
+      if (d.type === 'function_declarator') { d = d.childForFieldName?.('declarator'); break; }
+      const inner = d.childForFieldName?.('declarator')
+        || d.namedChildren?.find?.(c => /declarator/.test(c.type));
+      if (!inner) break;
+      d = inner;
+    }
+    for (let hops = 0; d && hops < 6; hops++) {
+      if (d.type === 'qualified_identifier') {
+        d = d.childForFieldName?.('name') || d.namedChildren?.[d.namedChildCount - 1];
+        continue;
+      }
+      if (/^(identifier|field_identifier|destructor_name|operator_name)$/.test(d.type)) {
+        return d.text || null;
+      }
+      break;
+    }
+    return null;
   }
 
   /** Extract symbol name from an AST node */

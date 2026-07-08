@@ -313,6 +313,20 @@ export const CORE_LANGUAGES = {
         function: /^(?:[\w:*&<>\s]+)\s+(\w+)\s*\([^)]*\)\s*(?:const)?\s*(?:override)?\s*\{/,
         typedef: /^(?:typedef|using)\s+.+\s+(\w+)/,
         enum: /^enum\s+(?:class\s+)?(\w+)/,
+        // Out-of-line qualified member definitions — `Type Class::method(...)`
+        // — the dominant C++ idiom for .cpp files, previously invisible to the
+        // graph (botan's GeneralName::matches_dns / Name_Constraints::validate,
+        // E2 in the 2026-07-07 trace audit). Additive only: existing patterns
+        // above win first (one entity per line), so no current entity changes.
+        // Requires a return-type token before the qualified name (rules out
+        // statement-position calls `Foo::bar(x);`) and rejects `;` after `(`
+        // (rules out prototypes and single-line calls); tolerates params
+        // continuing on the next line and `{` on its own line (Allman style).
+        method: /^(?:template\s*<[^<>]*>\s*)?(?!(?:return|if|while|for|switch|case|throw|delete|new|else|do|goto|using|typedef|catch)\b)[\w:*&<>~,\[\]\s]*?[\w>&*]\s+[*&]?(?:\w+(?:<[^<>]*>)?::)+(~?\w+)\s*\([^;]*(?:\)\s*(?:const)?\s*(?:noexcept(?:\([^()]*\))?)?\s*(?:override|final)?\s*(?:\{.*)?)?$/,
+        // Out-of-line constructors/destructors: `Class::Class(...)` /
+        // `Class::~Class(...)` — the backreference makes the class≡member
+        // equality the discriminator, so `std::sort(...)` never matches.
+        constructor: /^(?:template\s*<[^<>]*>\s*)?(?:\w+(?:<[^<>]*>)?::)*(\w+)(?:<[^<>]*>)?::~?\1\s*\([^;]*(?:\)\s*(?:noexcept(?:\([^()]*\))?)?\s*(?::\s*[\w({].*)?(?:\{.*)?)?$/,
       },
       relationships: {
         include: /^#include\s+[<"]([^>"]+)[>"]/,

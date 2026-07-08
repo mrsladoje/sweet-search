@@ -123,6 +123,42 @@ void process() {
     expect(result.relationships.some(r => r.target_name === 'printf')).toBe(false);
     expect(result.relationships.some(r => r.type === 'calls' && r.target_name === 'client.connect')).toBe(true);
   });
+
+  it('extracts out-of-line qualified method/ctor definitions (Allman braces, multi-line params)', async () => {
+    const result = await extractor.extractFromFile('/test/name_constraint.cpp', `
+#include <botan/pkix_types.h>
+
+GeneralName::GeneralName(const std::string& str) : GeneralName()
+   {
+   m_type = str;
+   }
+
+GeneralName::MatchResult GeneralName::matches(const X509_Certificate& cert) const
+   {
+   return MatchResult::All;
+   }
+
+bool GeneralName::matches_dns(const std::string& nam) const
+   {
+   return nam == m_name;
+   }
+
+void Name_Constraints::validate(const X509_Certificate& subject,
+                                const X509_Certificate& issuer) const
+   {
+   subject.matches_dns(issuer.name());
+   }
+`);
+    expect(result.entities.some(e => e.type === 'method' && e.name === 'matches')).toBe(true);
+    expect(result.entities.some(e => e.type === 'method' && e.name === 'matches_dns')).toBe(true);
+    expect(result.entities.some(e => e.type === 'method' && e.name === 'validate')).toBe(true);
+    expect(result.entities.some(e => e.type === 'constructor' && e.name === 'GeneralName')).toBe(true);
+    // spans must reach the closing brace (Allman style, brace on its own line)
+    const m = result.entities.find(e => e.type === 'method' && e.name === 'matches_dns');
+    expect(m.end_line).toBeGreaterThan(m.start_line);
+    // statement-position qualified calls must NOT become entities
+    expect(result.entities.some(e => e.name === 'matches' && e.start_line > m.start_line)).toBe(false);
+  });
 });
 
 // =============================================================================
