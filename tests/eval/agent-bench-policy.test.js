@@ -216,6 +216,43 @@ describe('SS_ROUTE_META trailer extraction', () => {
     expect(parsed.toolResults[0].routeMeta).toEqual(meta);
   });
 
+  it('parses compact agent route metadata without sensitive debug fields', () => {
+    const toolOutputText =
+      '# ss-search: routed=hybrid conf=0.74 budget=4000 used=1234 results=3 subMode=agent_full\n' +
+      '## #1 lib/foo.js:1-20 ...\n' +
+      'route=hybrid confidence=high sufficient=YES reason=clear_margin repo=ok results=3\n';
+    const stream = `${JSON.stringify({
+      type: 'user',
+      message: {
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'tu_compact',
+          content: [{ text: toolOutputText }],
+          is_error: false,
+        }],
+      },
+    })}\n`;
+
+    const parsed = _internal.parseStreamJson(stream);
+    expect(parsed.toolResults[0].routeMeta).toEqual({
+      routedMode: 'hybrid',
+      routeConfidence: 0.74,
+      serverUsed: true,
+      repoMatches: true,
+      resultCount: 3,
+      tokenBudget: 4000,
+      tokensUsed: 1234,
+      subMode: 'agent_full',
+      confidence: 'high',
+      sufficient: true,
+      sufficiencyVerdict: 'yes',
+      sufficiencyReason: 'clear_margin',
+    });
+    expect(parsed.toolResults[0].routeMeta).not.toHaveProperty('serverProjectRoot');
+    expect(parsed.toolResults[0].routeMeta).not.toHaveProperty('serverPid');
+    expect(parsed.toolResults[0].routeMeta).not.toHaveProperty('query');
+  });
+
   it('parses trace meta from a tool_result block emitted by ss-trace', () => {
     const meta = {
       symbol: 'handleRequest',

@@ -127,7 +127,7 @@ export function computeRubricHash(params = USD_PARAMS) {
 // ONLY true chrome: the route-meta header line, the confidence/sufficient
 // self-report line, the per-result rank/tier LABEL tokens. The `file:line`
 // locator and the 1-hop graph references are CONTENT and are KEPT (spec §5d.3).
-const SS_ROUTE_META_RE = /^#\s*ss-(search|find|semantic|trace|grep|read):.*$/gim;
+const SS_ROUTE_META_RE = /^(?:#\s*ss-(?:search|find|semantic|trace|grep|read):.*|<<SS_ROUTE_META>>\{[^\r\n]*\}|route=[A-Za-z0-9_.:-]+\s+confidence=[A-Za-z0-9_.:-]+\s+sufficient=(?:YES|no|unknown)\s+reason=[A-Za-z0-9_.:-]+\s+repo=(?:ok|mismatch|unknown)\s+results=\d+)\s*$/gim;
 const SS_CONFIDENCE_RE = /^#\s*confidence=.*$/gim;
 // "## #1 path:117-445 [namespace: x86] (full kind=chunk) score=0.368"
 // → keep "## path:117-445" (the locator is content); strip rank#, the

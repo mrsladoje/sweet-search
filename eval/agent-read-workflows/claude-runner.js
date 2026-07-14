@@ -10,6 +10,7 @@
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { parseRouteMetadata } from '../../core/search/search-format.js';
 
 /**
  * @param {Object} req
@@ -229,15 +230,9 @@ function parseStreamJson(stdout) {
               }
             }
           }
-          // Parse <<SS_ROUTE_META>>{...} trailer emitted by ss-search.
-          // Captures: query, queryHash, queryLen, routedMode, routeConfidence,
-          // routeMethod, routerLatency_us, tokenBudget, tokensUsed, subMode,
-          // resultCount, tierCounts, sandwichCount, repo-isolation fields.
-          let routeMeta = null;
-          const m = text.match(/<<SS_ROUTE_META>>(\{[^\n]*\})/);
-          if (m) {
-            try { routeMeta = JSON.parse(m[1]); } catch { /* malformed — skip */ }
-          }
+          // Agent output carries compact route metadata; explicit debug runs
+          // retain the complete JSON marker. The shared parser accepts both.
+          const routeMeta = parseRouteMetadata(text);
           let traceMeta = null;
           const tm = text.match(/<<SS_TRACE_META>>(\{[^\n]*\})/);
           if (tm) {

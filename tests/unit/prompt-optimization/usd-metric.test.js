@@ -114,6 +114,8 @@ describe('pre-committed params + rubric hash (G9)', () => {
 describe('stripChrome — only true chrome removed, content kept (G5)', () => {
   const ss = `# ss-search: routed=hybrid conf=0.99 budget=4000 used=2231 results=2 subMode=agent_preview
 # confidence=medium (close_top2) sufficient=no
+<<SS_ROUTE_META>>{"query":"private query","serverProjectRoot":"/private/repo"}
+route=hybrid confidence=medium sufficient=no reason=no_query_evidence repo=ok results=2
 
 ## #1 hwy/ops/set_macros-inl.h:380-381 [namespace: x86] (full kind=chunk) score=0.368
 \`\`\`
@@ -124,6 +126,8 @@ describe('stripChrome — only true chrome removed, content kept (G5)', () => {
     const r = stripChrome(ss, 'ss');
     expect(r).not.toMatch(/routed=hybrid/);
     expect(r).not.toMatch(/confidence=medium/);
+    expect(r).not.toMatch(/reason=no_query_evidence/);
+    expect(r).not.toMatch(/private query/);
     expect(r).not.toMatch(/\[namespace: x86\]/);
     expect(r).not.toMatch(/kind=chunk/);
     expect(r).not.toMatch(/score=0\.368/);
