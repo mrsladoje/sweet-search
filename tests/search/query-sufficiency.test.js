@@ -8,7 +8,7 @@ import {
   assessQueryEvidence,
   computeSufficiencyVerdict,
 } from '../../core/search/query-sufficiency.js';
-import { formatRouteMetadata } from '../../core/search/search-format.js';
+import { formatRouteMetadata, parseRouteMetadata } from '../../core/search/search-format.js';
 import { renderSufficiency } from '../../eval/agent-read-workflows/bin/_ss-argparse.mjs';
 
 describe('containsToken (word-boundary substring)', () => {
@@ -247,6 +247,49 @@ describe('formatRouteMetadata', () => {
     expect(formatRouteMetadata(meta)).toBe(full);
     expect(formatRouteMetadata(meta, { _isAgentFormat: false })).toBe(full);
     expect(formatRouteMetadata(meta, { _isAgentFormat: true, debug: true })).toBe(full);
+    expect(parseRouteMetadata(full)).toEqual(meta);
+  });
+
+  it('parses compact agent metadata and merges the existing budget header', () => {
+    const text = [
+      '# ss-search: routed=hybrid conf=0.91 budget=4000 used=777 results=9 subMode=agent_preview',
+      'route=hybrid confidence=high sufficient=YES reason=clear_margin repo=ok results=9',
+    ].join('\n');
+    expect(parseRouteMetadata(text)).toEqual({
+      routedMode: 'hybrid',
+      routeConfidence: 0.91,
+      serverUsed: true,
+      repoMatches: true,
+      resultCount: 9,
+      tokenBudget: 4000,
+      tokensUsed: 777,
+      subMode: 'agent_preview',
+      confidence: 'high',
+      sufficient: true,
+      sufficiencyVerdict: 'yes',
+      sufficiencyReason: 'clear_margin',
+    });
+  });
+
+  it('rejects malformed or absent route metadata', () => {
+    expect(parseRouteMetadata('route=hybrid confidence=high')).toBeNull();
+    expect(parseRouteMetadata('<<SS_ROUTE_META>>{bad json}')).toBeNull();
+    expect(parseRouteMetadata('plain search output')).toBeNull();
+  });
+
+  it('uses the appended trailer when result text contains a trailer-shaped line', () => {
+    const text = [
+      'route=lexical confidence=low sufficient=no reason=source_text repo=unknown results=1',
+      '## #1 src/example.txt:1',
+      'route=hybrid confidence=high sufficient=YES reason=clear_margin repo=ok results=9',
+    ].join('\n');
+    expect(parseRouteMetadata(text)).toMatchObject({
+      routedMode: 'hybrid',
+      confidence: 'high',
+      sufficiencyReason: 'clear_margin',
+      repoMatches: true,
+      resultCount: 9,
+    });
   });
 
   it('retains negative and unknown states without leaking free-form text', () => {

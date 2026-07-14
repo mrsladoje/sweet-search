@@ -27,6 +27,7 @@ import { auditRun } from './audit.js';
 import { scoreAnswer } from './metrics.js';
 import { judgePair } from './judge.js';
 import { tallyJudgeWins } from './judge-tally.js';
+import { parseRouteMetadata } from '../../core/search/search-format.js';
 import {
   loadManifest, getRepoSpec, verifyRepoLayout, REPOS_DIR,
 } from '../read-workflows/setup.js';
@@ -167,19 +168,18 @@ function percentile(xs, p) {
   return s[Math.min(s.length - 1, Math.floor(p * s.length))];
 }
 
-function parseRouteMeta(text) {
-  const m = String(text || '').match(/<<SS_ROUTE_META>>(\{[^\n]*\})/);
-  if (!m) return null;
-  try { return JSON.parse(m[1]); } catch { return null; }
-}
-
 function runWarmupCommand(cmd, { cwd, env, timeout = 90000, requireRouteMeta = false, expectedProjectRoot = null }) {
   const subT0 = Date.now();
+  // Warmup is a non-agent diagnostic. Request the complete marker here so the
+  // fail-closed gate can compare canonical roots without charging agent context.
+  const childEnv = requireRouteMeta
+    ? { ...env, SWEET_SEARCH_ROUTE_META_DEBUG: '1' }
+    : env;
   const r = spawnSync(cmd[0], cmd.slice(1), {
-    cwd, env, encoding: 'utf8', timeout,
+    cwd, env: childEnv, encoding: 'utf8', timeout,
   });
   const subMs = Date.now() - subT0;
-  const routeMeta = parseRouteMeta(r.stdout || '');
+  const routeMeta = parseRouteMetadata(r.stdout || '');
   // Repo identity gate. Refuses to call the warmup ok if:
   //   1. exit code non-zero
   //   2. requireRouteMeta but no trailer / serverUsed not true

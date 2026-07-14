@@ -33,6 +33,7 @@ import { normalizeClaudeCalls, normalizeCodexCalls } from '../core/prompt-optimi
 import { resolveRepoCwd, buildAgentUserPrompt, judgePanelScore, JUDGE_PANEL, normalizeJudgeUsage, AllJudgesFailedError } from '../core/prompt-optimization/sweep/gepa-evaluate.mjs';
 import { runJudge } from '../eval/agent-read-workflows/judge-runner.js';
 import { toRJudge, usdPanelScore, scoreUSD, composeUSD, computeRubricHash, USD_PARAMS } from '../core/prompt-optimization/sweep/usd-metric.mjs';
+import { parseRouteMetadata } from '../core/search/search-format.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SS_BIN = path.join(REPO, 'eval/agent-read-workflows/bin');
@@ -158,8 +159,9 @@ function ssDelivered(toolCalls) {
     const out = tc.result?.content; if (typeof out !== 'string') continue;
     const cmd = cmdText(tc);
     let m;
-    if ((m = out.match(/<<SS_ROUTE_META>>(\{.*\})/))) {
-      try { const j = JSON.parse(m[1]); per.push({ tool: 'ss-search', budget: j.tokenBudget, used: j.tokensUsed, subMode: j.subMode }); } catch {}
+    const routeMeta = parseRouteMetadata(out);
+    if (routeMeta && Number.isFinite(routeMeta.tokenBudget) && Number.isFinite(routeMeta.tokensUsed)) {
+      per.push({ tool: 'ss-search', budget: routeMeta.tokenBudget, used: routeMeta.tokensUsed, subMode: routeMeta.subMode });
     } else if ((m = out.match(/^# ss-find:.* budget=(\d+) used=(\d+)/m))) {
       per.push({ tool: 'ss-find', budget: +m[1], used: +m[2] });
     } else if ((m = out.match(/<<SS_TRACE_META>>(\{.*\})/))) {

@@ -14,6 +14,8 @@
 // =============================================================================
 
 const ROUTE_META_MARKER = '<<SS_ROUTE_META>>';
+const COMPACT_ROUTE_RE = /^route=([A-Za-z0-9_.:-]+) confidence=([A-Za-z0-9_.:-]+) sufficient=(YES|no|unknown) reason=([A-Za-z0-9_.:-]+) repo=(ok|mismatch|unknown) results=(\d+)\s*$/gm;
+const AGENT_HEADER_RE = /^#\s*ss-search:\s*routed=([A-Za-z0-9_.:-]+)(?:\s+conf=([-+]?(?:\d+(?:\.\d+)?|\.\d+)))?\s+budget=(\d+)\s+used=(\d+)\s+results=(\d+)\s+subMode=([A-Za-z0-9_.:-]+)\s*$/m;
 
 function routeAtom(value, fallback = 'unknown') {
   if (value == null || value === '') return fallback;
@@ -59,6 +61,52 @@ export function formatRouteMetadata(meta = {}, opts = {}) {
     `repo=${repo}`,
     `results=${count}`,
   ].join(' ');
+}
+
+/**
+ * Parse either the complete debug marker or the compact agent contract.
+ * Header telemetry is merged into compact metadata without requiring the
+ * verbose JSON to be present in agent context.
+ */
+export function parseRouteMetadata(text) {
+  const source = typeof text === 'string' ? text : '';
+  const full = source.match(/<<SS_ROUTE_META>>(\{[^\r\n]*\})/);
+  if (full) {
+    try {
+      const parsed = JSON.parse(full[1]);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Search result bodies can contain arbitrary source text. Prefer the final
+  // trailer-shaped line because the engine appends its metadata after results.
+  const compactMatches = [...source.matchAll(COMPACT_ROUTE_RE)];
+  const compact = compactMatches.at(-1);
+  if (!compact) return null;
+
+  const verdict = compact[3] === 'YES' ? 'yes' : compact[3];
+  const meta = {
+    routedMode: compact[1],
+    serverUsed: true,
+    repoMatches: compact[5] === 'ok' ? true : compact[5] === 'mismatch' ? false : null,
+    resultCount: Number.parseInt(compact[6], 10),
+    confidence: compact[2],
+    sufficient: verdict === 'yes' ? true : verdict === 'no' ? false : null,
+    sufficiencyVerdict: verdict,
+    sufficiencyReason: compact[4] === 'unknown' ? null : compact[4],
+  };
+
+  const header = source.match(AGENT_HEADER_RE);
+  if (header) {
+    const routeConfidence = header[2] == null ? null : Number.parseFloat(header[2]);
+    if (Number.isFinite(routeConfidence)) meta.routeConfidence = routeConfidence;
+    meta.tokenBudget = Number.parseInt(header[3], 10);
+    meta.tokensUsed = Number.parseInt(header[4], 10);
+    meta.subMode = header[6];
+  }
+  return meta;
 }
 
 /**
