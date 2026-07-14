@@ -13,6 +13,54 @@
 // Result formatting
 // =============================================================================
 
+const ROUTE_META_MARKER = '<<SS_ROUTE_META>>';
+
+function routeAtom(value, fallback = 'unknown') {
+  if (value == null || value === '') return fallback;
+  const atom = String(value).trim().replace(/[^A-Za-z0-9_.:-]+/g, '_');
+  return atom.slice(0, 96) || fallback;
+}
+
+function routeSufficiency(meta) {
+  if (meta.sufficiencyVerdict === 'yes') return 'YES';
+  if (meta.sufficiencyVerdict === 'no' || meta.sufficiencyVerdict === 'unknown') {
+    return meta.sufficiencyVerdict;
+  }
+  if (meta.sufficient === true) return 'YES';
+  if (meta.sufficient === false) return 'no';
+  return 'unknown';
+}
+
+/**
+ * Serialize route metadata for an output surface.
+ *
+ * Agent output receives only fields that can change the next action. Debug
+ * and non-agent callers retain the complete machine-readable object.
+ */
+export function formatRouteMetadata(meta = {}, opts = {}) {
+  const routeMeta = meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : {};
+  if (!opts._isAgentFormat || opts.debug === true) {
+    return `${ROUTE_META_MARKER}${JSON.stringify(routeMeta)}`;
+  }
+
+  const repo = routeMeta.repoMatches === true
+    ? 'ok'
+    : routeMeta.repoMatches === false ? 'mismatch' : 'unknown';
+  const count = Number.isInteger(routeMeta.resultCount) && routeMeta.resultCount >= 0
+    ? routeMeta.resultCount
+    : 0;
+  const reason = routeMeta.sufficiencyReason || routeMeta.error;
+
+  return [
+    `route=${routeAtom(routeMeta.routedMode ?? routeMeta.mode)}`,
+    `confidence=${routeAtom(routeMeta.confidence)}`,
+    `sufficient=${routeSufficiency(routeMeta)}`,
+    `reason=${routeAtom(reason)}`,
+    `repo=${repo}`,
+    `results=${count}`,
+  ].join(' ');
+}
+
 /**
  * Format structural results for display
  * Uses `this` — calls this methods (none currently, but kept as regular fn).

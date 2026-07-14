@@ -8,6 +8,7 @@ import {
   assessQueryEvidence,
   computeSufficiencyVerdict,
 } from '../../core/search/query-sufficiency.js';
+import { formatRouteMetadata } from '../../core/search/search-format.js';
 import { renderSufficiency } from '../../eval/agent-read-workflows/bin/_ss-argparse.mjs';
 
 describe('containsToken (word-boundary substring)', () => {
@@ -212,5 +213,52 @@ describe('renderSufficiency (trailer line-format stability)', () => {
     const line = `# confidence=medium (close_top2)${renderSufficiency({
       sufficiencyVerdict: 'unknown', sufficiencyReason: 'well_formed_only' })}`;
     expect(line).toMatch(/^# confidence=(high|medium|low) \([a-z_0-9]+\) sufficient=(YES|no|unknown)( \([a-z_0-9]+\))?$/);
+  });
+});
+
+describe('formatRouteMetadata', () => {
+  const meta = {
+    query: 'find the handler',
+    routedMode: 'hybrid',
+    routeMethod: 'wasm_catboost',
+    routerLatency_us: 417,
+    serverProjectRoot: '/private/repo',
+    requestedProjectRoot: '/private/repo',
+    serverPid: 1234,
+    repoMatches: true,
+    resultCount: 9,
+    confidence: 'high',
+    sufficient: true,
+    sufficiencyVerdict: 'yes',
+    sufficiencyReason: 'clear_margin',
+  };
+
+  it('emits one compact actionable line for agent format', () => {
+    const line = formatRouteMetadata(meta, { _isAgentFormat: true });
+    expect(line).toBe('route=hybrid confidence=high sufficient=YES reason=clear_margin repo=ok results=9');
+    expect(line).not.toContain(meta.query);
+    expect(line).not.toContain(meta.serverProjectRoot);
+    expect(line).not.toContain(String(meta.serverPid));
+    expect(line).not.toContain('latency');
+  });
+
+  it('preserves the full JSON marker for non-agent and debug output', () => {
+    const full = `<<SS_ROUTE_META>>${JSON.stringify(meta)}`;
+    expect(formatRouteMetadata(meta)).toBe(full);
+    expect(formatRouteMetadata(meta, { _isAgentFormat: false })).toBe(full);
+    expect(formatRouteMetadata(meta, { _isAgentFormat: true, debug: true })).toBe(full);
+  });
+
+  it('retains negative and unknown states without leaking free-form text', () => {
+    expect(formatRouteMetadata({
+      routedMode: 'pattern fallback',
+      confidence: 'low',
+      sufficiencyVerdict: 'unknown',
+      sufficiencyReason: 'needs more/code',
+      repoMatches: false,
+      resultCount: 0,
+    }, { _isAgentFormat: true })).toBe(
+      'route=pattern_fallback confidence=low sufficient=unknown reason=needs_more_code repo=mismatch results=0'
+    );
   });
 });
