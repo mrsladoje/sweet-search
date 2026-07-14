@@ -19,6 +19,7 @@ import {
   parseLineRange, looksLikeOption, renderSufficiency,
 } from './_ss-argparse.mjs';
 import { renderGrepBody } from '../../../core/search/grep-output-shaping.js';
+import { formatRouteMetadata } from '../../../core/search/search-format.js';
 
 // Diagnostic-log isolation (agent-facing tools). The Sweet Search engine emits
 // model/index load banners via console.log → stdout ("LateInteraction: Loaded…",
@@ -336,9 +337,9 @@ async function cmdAgentSearch(rawArgs) {
   //   ss-search "<query>" --mode hybrid                    → force a mode (default: auto/CatBoost)
   //
   // Output is agent-readable: a meta header with routed mode + budget,
-  // followed by per-result blocks with file/line + fenced code. A trailing
-  // structured marker line `<<SS_ROUTE_META>>{...json...}` lets the bench
-  // post-process parse routing/budget telemetry without affecting the agent.
+  // followed by per-result blocks with file/line + fenced code and one compact
+  // actionable route trailer. SWEET_SEARCH_ROUTE_META_DEBUG=1 restores the
+  // complete JSON trailer for routing diagnostics.
   let format = 'agent';
   if (args.includes('--full')) { format = 'agent_full'; args.splice(args.indexOf('--full'), 1); }
   if (args.includes('--xl'))   { format = 'agent_full_xl'; args.splice(args.indexOf('--xl'), 1); }
@@ -380,7 +381,7 @@ async function cmdAgentSearch(rawArgs) {
       `but server reports serverProjectRoot=${serverProjectRoot ?? '<null>'}. ` +
       `Refusing to surface cross-repo results.\n`
     );
-    // Emit a structured trailer anyway so the bench can capture the failure.
+    // Emit a route trailer so the mismatch remains explicit in agent output.
     const failMeta = {
       query,
       queryHash: shortQueryHash(query),
@@ -397,7 +398,10 @@ async function cmdAgentSearch(rawArgs) {
       repoMatches: false,
       error: 'repo-isolation-mismatch',
     };
-    process.stdout.write(`\n<<SS_ROUTE_META>>${JSON.stringify(failMeta)}\n`);
+    process.stdout.write(`\n${formatRouteMetadata(failMeta, {
+      _isAgentFormat: true,
+      debug: process.env.SWEET_SEARCH_ROUTE_META_DEBUG === '1',
+    })}\n`);
     process.exit(3);
   }
 
@@ -466,10 +470,8 @@ async function cmdAgentSearch(rawArgs) {
     process.stdout.write('(no matches)\n');
   }
 
-  // Structured trailer for bench post-processing (audit/summariseRun can parse).
-  // Route attribution fields (queryHash, routeMethod, routerLatency_us, query)
-  // let downstream analysis link a routing decision to its query and
-  // attribute failures to fast-path vs WASM vs fallback.
+  // Keep complete metadata available to the debug serializer, while normal
+  // agent output receives only the fields that can change its next action.
   const meta = {
     query,                     // exact query text (already bounded by SEARCH_SERVER_MAX_QUERY_LENGTH)
     queryHash: shortQueryHash(query),
@@ -501,7 +503,10 @@ async function cmdAgentSearch(rawArgs) {
     sameFileMapTokens: response.results?.[0]?.sameFile?.tokens ?? null,
     sameFileNeighborCount: response.results?.[0]?.sameFile?.neighbors?.length ?? null,
   };
-  process.stdout.write(`\n<<SS_ROUTE_META>>${JSON.stringify(meta)}\n`);
+  process.stdout.write(`\n${formatRouteMetadata(meta, {
+    _isAgentFormat: true,
+    debug: process.env.SWEET_SEARCH_ROUTE_META_DEBUG === '1',
+  })}\n`);
   process.exit(0);
 }
 
