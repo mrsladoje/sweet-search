@@ -13,6 +13,7 @@ import { spawn } from 'node:child_process';
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync,
 } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
 import net from 'node:net';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -63,13 +64,15 @@ async function waitForLines(file, n, timeoutMs = 2000) {
     : [];
 }
 
-function runHook(envOverrides = {}) {
+function runHook(envOverrides = {}, { args = [], input = null } = {}) {
   return new Promise((resolve) => {
     const t0 = Date.now();
-    const p = spawn(process.execPath, [HOOK], {
+    const p = spawn(process.execPath, [HOOK, ...args], {
       env: env(envOverrides),
       stdio: 'pipe',
     });
+    if (input == null) p.stdin.end();
+    else p.stdin.end(JSON.stringify(input));
     let stderr = '';
     p.stderr.on('data', (d) => (stderr += d));
     p.on('exit', (code) => resolve({ code, stderr, wallMs: Date.now() - t0 }));
@@ -99,6 +102,29 @@ function startDummySocketServer(path) {
   });
 }
 
+function startAgentSpanSocketServer(path, { failFirst = false } = {}) {
+  const operations = [];
+  let requests = 0;
+  const server = createHttpServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      requests++;
+      try { operations.push(JSON.parse(body).operation); } catch { operations.push('invalid'); }
+      if (failFirst && requests === 1) {
+        res.writeHead(500, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: false }));
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    });
+  });
+  return new Promise((resolve) => {
+    server.listen(path, () => resolve({ server, operations }));
+  });
+}
+
 beforeEach(() => {
   sandbox = mkdtempSync(join(tmpdir(), 'ss-prewarm-test-'));
   markerPath = join(sandbox, 'marker.log');
@@ -114,6 +140,51 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('session-daemon-prewarm', () => {
+  it('persists the hook session id for Claude shell tools without prompt output', async () => {
+    const envFile = join(sandbox, 'claude-env.sh');
+    const r = await runHook({
+      CLAUDE_ENV_FILE: envFile,
+      SWEET_SEARCH_SERVER_ENTRY: join(sandbox, 'missing-server.mjs'),
+    }, {
+      args: ['--agent-session-hook'],
+      input: { session_id: 'claude-session-123', source: 'startup' },
+    });
+
+    expect(r.code).toBe(0);
+    expect(r.stderr).toBe('');
+    expect(readFileSync(envFile, 'utf8')).toBe("export SWEET_SEARCH_SESSION_ID='claude-session-123'\n");
+  });
+
+  it('resets shown-span state on compact before unrelated prewarm work', async () => {
+    writeFileSync(pidFile, String(process.pid), 'utf8');
+    const { server, operations } = await startAgentSpanSocketServer(socketPath);
+    try {
+      const r = await runHook({}, {
+        args: ['--agent-session-hook'],
+        input: { session_id: 'compact-session', source: 'compact' },
+      });
+      expect(r.code).toBe(0);
+      expect(operations).toEqual(['reset']);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  it('retries a failed compact reset once after daemon prewarm', async () => {
+    writeFileSync(pidFile, String(process.pid), 'utf8');
+    const { server, operations } = await startAgentSpanSocketServer(socketPath, { failFirst: true });
+    try {
+      const r = await runHook({}, {
+        args: ['--agent-session-hook'],
+        input: { session_id: 'compact-retry-session', source: 'compact' },
+      });
+      expect(r.code).toBe(0);
+      expect(operations).toEqual(['reset', 'reset']);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
   it('spawns the daemon when no PID file exists', async () => {
     const r = await runHook();
 

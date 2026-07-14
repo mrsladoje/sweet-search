@@ -406,7 +406,7 @@ function pruneEmptyAncestors(start, stopAt) {
 }
 
 /**
- * Remove the sweet-search-owned SessionStart entry from `.claude/settings.json`,
+ * Remove the sweet-search-owned SessionStart and SessionEnd entries from `.claude/settings.json`,
  * preserving every other hook, permission, and top-level key. Detection is
  * filename-based (see PREWARM_HOOK_FILENAME) — only entries whose command
  * references the sweet-search preheat script are removed.
@@ -437,31 +437,33 @@ export function removePrewarmSessionStartHook(projectRoot, { dryRun = false } = 
     return { status: 'error', detail: `settings.json is not valid JSON: ${err.message}` };
   }
 
-  const sessionStart = settings?.hooks?.SessionStart;
-  if (!Array.isArray(sessionStart) || sessionStart.length === 0) {
-    return { status: 'not-found', detail: 'no SessionStart entries' };
+  const changes = [];
+  for (const event of ['SessionStart', 'SessionEnd']) {
+    const groups = settings?.hooks?.[event];
+    if (!Array.isArray(groups)) continue;
+    const filtered = groups.filter((group) =>
+      !(Array.isArray(group?.hooks) &&
+        group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_FILENAME)))
+    );
+    if (filtered.length !== groups.length) changes.push({ event, groups, filtered });
   }
 
-  const filtered = sessionStart.filter((group) =>
-    !(Array.isArray(group?.hooks) &&
-      group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_FILENAME)))
-  );
-
-  if (filtered.length === sessionStart.length) {
+  if (changes.length === 0) {
     return { status: 'not-found', detail: 'no matching entry' };
   }
 
+  const removedCount = changes.reduce((sum, change) => sum + change.groups.length - change.filtered.length, 0);
+
   if (dryRun) {
-    return { status: 'dry-run', detail: `would remove ${sessionStart.length - filtered.length} entry` };
+    return { status: 'dry-run', detail: `would remove ${removedCount} entries` };
   }
 
-  if (filtered.length === 0) {
-    delete settings.hooks.SessionStart;
-    if (settings.hooks && Object.keys(settings.hooks).length === 0) {
-      delete settings.hooks;
-    }
-  } else {
-    settings.hooks.SessionStart = filtered;
+  for (const { event, filtered } of changes) {
+    if (filtered.length === 0) delete settings.hooks[event];
+    else settings.hooks[event] = filtered;
+  }
+  if (settings.hooks && Object.keys(settings.hooks).length === 0) {
+    delete settings.hooks;
   }
 
   try {
@@ -472,7 +474,7 @@ export function removePrewarmSessionStartHook(projectRoot, { dryRun = false } = 
     return { status: 'error', detail: `write failed: ${err.message}` };
   }
 
-  return { status: 'removed', detail: `spliced out ${sessionStart.length - filtered.length} entry` };
+  return { status: 'removed', detail: `spliced out ${removedCount} entries` };
 }
 
 /**

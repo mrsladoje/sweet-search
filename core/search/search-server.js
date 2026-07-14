@@ -16,6 +16,17 @@ import { clearCache } from '../embedding/embedding-cache.js';
 import { launchMaintainer } from '../indexing/maintainer-launcher.mjs';
 import { projectSocketPath, projectPidFile, tcpPort, resolveProjectRoot } from './server-identity.js';
 import {
+  AgentSpanLedger,
+  applyReadOmissionDecisions,
+  collectAgentShownSpans,
+  collectReadShownSpans,
+  collectSemanticShownSpans,
+  exactRereadOmissionEnabled,
+  flagEnabled,
+  resolveAgentSessionId,
+  validAgentSessionId,
+} from './agent-span-ledger.js';
+import {
   upsertSelf as registryUpsertSelf,
   touchSelf as registryTouchSelf,
   removeSelf as registryRemoveSelf,
@@ -36,6 +47,7 @@ export const SEARCH_SERVER_TIMEOUT_MS = 30_000;
 export const SEARCH_SERVER_MAX_URL_LENGTH = 16_384;
 export const SEARCH_SERVER_MAX_QUERY_LENGTH = 2_000;
 export const SEARCH_SERVER_MAX_READ_PATH_LENGTH = 8_192;
+const AGENT_SPAN_BODY_MAX_BYTES = 64 * 1024;
 
 const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
 
@@ -78,6 +90,73 @@ function readSemanticError(status, message, extra = {}) {
   };
 }
 
+export function buildAgentSpanDaemonResponse(payload, {
+  isUnixSocket = false,
+  ledger = null,
+} = {}) {
+  if (!isUnixSocket) return readSemanticError(403, '/agent-spans is only available via Unix socket');
+  if (!ledger || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return readSemanticError(400, 'Invalid agent-span request');
+  }
+  const { operation, sessionId, force = false } = payload;
+  if (!validAgentSessionId(sessionId)) return readSemanticError(400, 'Invalid session id');
+  if (operation === 'reset' || operation === 'drop') {
+    ledger.reset(sessionId);
+    return { status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) };
+  }
+  if (operation !== 'observe' && operation !== 'read') {
+    return readSemanticError(400, 'Invalid agent-span operation');
+  }
+  if (!Array.isArray(payload.spans) || payload.spans.length > 20) {
+    return readSemanticError(400, 'Invalid agent-span receipts');
+  }
+
+  const call = ledger.beginCall(sessionId);
+  if (call == null) return readSemanticError(400, 'Invalid session id');
+  const decisions = operation === 'read'
+    ? ledger.decideAndObserveAtCall(sessionId, call, payload.spans, { force: force === true })
+    : (ledger.observeAtCall(sessionId, call, payload.spans), []);
+  return {
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ ok: true, call, decisions }),
+  };
+}
+
+async function readBoundedJsonBody(req, maxBytes = AGENT_SPAN_BODY_MAX_BYTES) {
+  const declared = Number(req.headers?.['content-length'] || 0);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    const err = new Error('Request body too large');
+    err.status = 413;
+    throw err;
+  }
+  const chunks = [];
+  let bytes = 0;
+  for await (const chunk of req) {
+    bytes += chunk.length;
+    if (bytes > maxBytes) {
+      const err = new Error('Request body too large');
+      err.status = 413;
+      throw err;
+    }
+    chunks.push(chunk);
+  }
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    const err = new Error('Invalid JSON body');
+    err.status = 400;
+    throw err;
+  }
+}
+
+function beginAgentSpanUrlCall(url, ledger, { enabled = true } = {}) {
+  if (!enabled || !ledger || !flagEnabled(url.searchParams.get('exactRereadOmission'))) return null;
+  const sessionId = url.searchParams.get('agentSessionId');
+  if (!validAgentSessionId(sessionId)) return null;
+  const call = ledger.beginCall(sessionId);
+  return call == null ? null : { sessionId, call };
+}
+
 export async function buildReadSemanticDaemonResponse(reqUrl, {
   isUnixSocket = false,
   serverReady = false,
@@ -85,6 +164,7 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
   searcher = null,
   readSemanticFn = null,
   formatReadSemanticResultFn = null,
+  agentSpanLedger = null,
 } = {}) {
   if (!isUnixSocket) {
     return readSemanticError(403, '/read-semantic is only available via Unix socket');
@@ -141,6 +221,7 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
     return readSemanticError(400, err.message);
   }
   const verbose = url.searchParams.get('verbose') === 'true';
+  const agentSpanCall = beginAgentSpanUrlCall(url, agentSpanLedger, { enabled: format === 'agent' });
 
   try {
     let readSemantic = readSemanticFn;
@@ -162,6 +243,10 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
       verbose,
       _lateInteractionIndex: reusableLateInteractionIndex(searcher),
     });
+    if (agentSpanCall) {
+      const spans = collectSemanticShownSpans(result, { projectRoot: serverRoot });
+      agentSpanLedger.observeAtCall(agentSpanCall.sessionId, agentSpanCall.call, spans);
+    }
     const body = formatReadSemanticResult(result, format);
     return {
       status: result?.ok === false ? 404 : 200,
@@ -183,6 +268,7 @@ export async function buildTraceDaemonResponse(reqUrl, {
   serverReady = false,
   initError = null,
   searcher = null,
+  agentSpanLedger = null,
 } = {}) {
   if (!isUnixSocket) {
     return readSemanticError(403, '/trace is only available via Unix socket');
@@ -231,6 +317,7 @@ export async function buildTraceDaemonResponse(reqUrl, {
   } catch (err) {
     return readSemanticError(400, err.message);
   }
+  const agentSpanCall = beginAgentSpanUrlCall(url, agentSpanLedger, { enabled: !json });
 
   try {
     const { traceSymbol, formatStructuralContext } = await import('./search-trace.js');
@@ -243,6 +330,9 @@ export async function buildTraceDaemonResponse(reqUrl, {
       maxDepth: maxDepth ?? 3,
       tokenBudget: tokenBudget ?? null,
     });
+    if (agentSpanCall) {
+      agentSpanLedger.observeAtCall(agentSpanCall.sessionId, agentSpanCall.call, []);
+    }
     // handleTraceCli writes `console.log(json ? JSON : formatStructuralContext)`,
     // i.e. body + exactly one trailing newline in BOTH modes.
     const body = json ? JSON.stringify(result, null, 2) : formatStructuralContext(result);
@@ -266,6 +356,7 @@ export async function buildReadDaemonResponse(reqUrl, {
   serverReady = false,
   initError = null,
   searcher = null,
+  agentSpanLedger = null,
 } = {}) {
   if (!isUnixSocket) {
     return readSemanticError(403, '/read is only available via Unix socket');
@@ -291,6 +382,10 @@ export async function buildReadDaemonResponse(reqUrl, {
   const requestedRoot = url.searchParams.get('projectRoot') || '';
   const fmtParam = url.searchParams.get('format') || 'agent';
   const format = (fmtParam === 'json' || fmtParam === 'raw') ? fmtParam : 'agent';
+  const exactRereadOmission = format === 'agent'
+    && flagEnabled(url.searchParams.get('exactRereadOmission'));
+  const agentSessionId = url.searchParams.get('agentSessionId');
+  const force = url.searchParams.get('force') === 'true';
 
   if (paths.length === 0) return readSemanticError(400, 'Missing path parameter ?path=');
   if (paths.length > 20) return readSemanticError(413, 'read accepts at most 20 files');
@@ -331,7 +426,19 @@ export async function buildReadDaemonResponse(reqUrl, {
   try {
     const { readFiles, formatReadResults } = await import('./search-read.js');
     const out = await readFiles(files, { projectRoot: serverRoot, includeMetadata });
-    const body = formatReadResults(out, format);
+    if (exactRereadOmission && agentSpanLedger && validAgentSessionId(agentSessionId)) {
+      const spans = collectReadShownSpans(out, { projectRoot: serverRoot });
+      const agentSpanCall = beginAgentSpanUrlCall(url, agentSpanLedger);
+      if (agentSpanCall) {
+        const compactDecisions = agentSpanLedger.decideAndObserveAtCall(
+          agentSpanCall.sessionId, agentSpanCall.call, spans, { force },
+        );
+        const decisions = Array.from({ length: out.files.length }, () => ({ omit: false }));
+        spans.forEach((span, index) => { decisions[span.resultIndex] = compactDecisions[index]; });
+        applyReadOmissionDecisions(out, decisions);
+      }
+    }
+    const body = formatReadResults(out, format, { surface: 'cli' });
     // handleReadCli appends '\n' for non-json output (the extra process.stdout
     // .write('\n')); json gets no trailing newline. Mirror exactly.
     const allFailed = out.files.length > 0 && out.files.every(f => !f.ok);
@@ -525,6 +632,7 @@ export async function startServer() {
   // Track request count for periodic cache clearing in long-running sessions.
   let requestCount = 0;
   const CACHE_CLEAR_INTERVAL = 1000;  // Clear caches every 1000 requests
+  let agentSpanLedger = null;
 
   let tcpServer;
   let unixServer;
@@ -632,7 +740,29 @@ export async function startServer() {
       console.log(`[Server] Cache cleared after ${requestCount} requests`);
     }
 
-    if (req.method === 'GET' && reqUrl.startsWith('/search?')) {
+    if (req.method === 'POST' && reqUrl === '/agent-spans') {
+      if (req.socket.remoteAddress) {
+        const response = readSemanticError(403, '/agent-spans is only available via Unix socket');
+        res.writeHead(response.status, { 'Content-Type': response.contentType });
+        res.end(response.body);
+        return;
+      }
+      let response;
+      try {
+        const payload = await readBoundedJsonBody(req);
+        response = buildAgentSpanDaemonResponse(payload, {
+          isUnixSocket: true,
+          ledger: agentSpanLedger ||= new AgentSpanLedger(),
+        });
+        if (response.status === 200 && (payload.operation === 'read' || payload.operation === 'observe')) {
+          lastActivityMs = Date.now();
+        }
+      } catch (err) {
+        response = readSemanticError(err.status || 400, err.message || 'Invalid request body');
+      }
+      res.writeHead(response.status, { 'Content-Type': response.contentType });
+      res.end(response.body);
+    } else if (req.method === 'GET' && reqUrl.startsWith('/search?')) {
       // Real query traffic — reset the idle-TTL clock (NOT /health or /stop).
       lastActivityMs = Date.now();
       if (!serverReady) {
@@ -650,6 +780,13 @@ export async function startServer() {
         return;
       }
       const url = new URL(reqUrl, `http://localhost:${SEARCH_SERVER_PORT}`);
+      const isUnixSocket = !req.socket.remoteAddress;
+      if (isUnixSocket
+          && AGENT_FORMATS.has(url.searchParams.get('format'))
+          && flagEnabled(url.searchParams.get('exactRereadOmission'))
+          && !agentSpanLedger) {
+        agentSpanLedger = new AgentSpanLedger();
+      }
       const query = url.searchParams.get('q') || '';
       const mode = url.searchParams.get('mode') || 'auto';
       const topK = parseInt(url.searchParams.get('k') || '10', 10);
@@ -703,6 +840,9 @@ export async function startServer() {
         res.end(JSON.stringify({ error: `Query too long (max ${SEARCH_SERVER_MAX_QUERY_LENGTH} chars)` }));
         return;
       }
+      const agentSpanCall = beginAgentSpanUrlCall(url, agentSpanLedger, {
+        enabled: isUnixSocket && Boolean(agentFormat),
+      });
 
       try {
         const start = Date.now();
@@ -729,11 +869,20 @@ export async function startServer() {
         // produced these results (defends against multi-repo bench reusing
         // a stale daemon — see eval/agent-read-workflows/run-bench.js).
         if (searchResult.format === 'agent') {
+          if (agentSpanCall) {
+            const spans = collectAgentShownSpans(searchResult.results, {
+              projectRoot: searcher.projectRoot || process.cwd(),
+            });
+            agentSpanLedger.observeAtCall(agentSpanCall.sessionId, agentSpanCall.call, spans);
+          }
           searchResult.serverProjectRoot = searcher.projectRoot || null;
           searchResult.serverPid = process.pid;
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(searchResult));
         } else {
+          if (agentSpanCall) {
+            agentSpanLedger.observeAtCall(agentSpanCall.sessionId, agentSpanCall.call, []);
+          }
           let { results, stats } = searchResult;
 
           // Enrich with summaries if summary mode
@@ -759,6 +908,11 @@ export async function startServer() {
     } else if (req.method === 'GET' && reqUrl.startsWith('/read-semantic?')) {
       // Real query traffic — reset the idle-TTL clock (NOT /health or /stop).
       lastActivityMs = Date.now();
+      if (!req.socket.remoteAddress
+          && reqUrl.includes('exactRereadOmission=true')
+          && !agentSpanLedger) {
+        agentSpanLedger = new AgentSpanLedger();
+      }
       // read-semantic needs the indexes — wait out the cold-start init race
       // (bounded) so a freshly-spawned daemon doesn't 503 the first request.
       await waitForServerReady();
@@ -767,12 +921,18 @@ export async function startServer() {
         serverReady,
         initError,
         searcher,
+        agentSpanLedger,
       });
       res.writeHead(response.status, { 'Content-Type': response.contentType });
       res.end(response.body);
     } else if (req.method === 'GET' && reqUrl.startsWith('/trace?')) {
       // Real query traffic — reset the idle-TTL clock (NOT /health or /stop).
       lastActivityMs = Date.now();
+      if (!req.socket.remoteAddress
+          && reqUrl.includes('exactRereadOmission=true')
+          && !agentSpanLedger) {
+        agentSpanLedger = new AgentSpanLedger();
+      }
       // trace needs the code-graph — wait out the cold-start init race (bounded)
       // so a freshly-spawned daemon doesn't 503 the first request.
       await waitForServerReady();
@@ -781,17 +941,24 @@ export async function startServer() {
         serverReady,
         initError,
         searcher,
+        agentSpanLedger,
       });
       res.writeHead(response.status, { 'Content-Type': response.contentType });
       res.end(response.body);
     } else if (req.method === 'GET' && reqUrl.startsWith('/read?')) {
       // Real query traffic — reset the idle-TTL clock (NOT /health or /stop).
       lastActivityMs = Date.now();
+      if (!req.socket.remoteAddress
+          && reqUrl.includes('exactRereadOmission=true')
+          && !agentSpanLedger) {
+        agentSpanLedger = new AgentSpanLedger();
+      }
       const response = await buildReadDaemonResponse(reqUrl, {
         isUnixSocket: !req.socket.remoteAddress,
         serverReady,
         initError,
         searcher,
+        agentSpanLedger,
       });
       res.writeHead(response.status, { 'Content-Type': response.contentType });
       res.end(response.body);
@@ -1016,6 +1183,13 @@ export async function queryServer(query, options = {}) {
     if (mid) params.set('mid', 'true');
     if (format && format.startsWith('agent')) params.set('format', format);
     if (tokenBudget) params.set('budget', tokenBudget.toString());
+    if (format?.startsWith('agent') && exactRereadOmissionEnabled()) {
+      const sessionId = resolveAgentSessionId();
+      if (sessionId) {
+        params.set('exactRereadOmission', 'true');
+        params.set('agentSessionId', sessionId);
+      }
+    }
 
     // Per-project Unix socket (C3) — the canonical local transport.
     const req = http.request({

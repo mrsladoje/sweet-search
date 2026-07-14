@@ -419,6 +419,7 @@ struct ReadOptions {
     include_metadata: bool,
     plain: bool,
     no_banner: bool,
+    force: bool,
     help: bool,
 }
 
@@ -486,6 +487,54 @@ fn url_encode(s: &str) -> String {
         }
     }
     out
+}
+
+fn flag_enabled_by_default(value: Option<&str>) -> bool {
+    !matches!(
+        value.map(|v| v.trim().to_ascii_lowercase()).as_deref(),
+        Some("0" | "false" | "off" | "no")
+    )
+}
+
+fn env_flag_enabled_by_default(name: &str) -> bool {
+    let value = env::var(name).ok();
+    flag_enabled_by_default(value.as_deref())
+}
+
+fn agent_session_id() -> Option<String> {
+    [
+        "SWEET_SEARCH_SESSION_ID",
+        "CODEX_THREAD_ID",
+        "CLAUDE_SESSION_ID",
+    ]
+    .iter()
+    .filter_map(|name| env::var(name).ok())
+    .find(|value| !value.is_empty() && value.len() <= 256 && !value.chars().any(char::is_control))
+}
+
+fn append_agent_span_params_with(
+    url: &mut String,
+    agent_output: bool,
+    feature_enabled: bool,
+    session_id: Option<&str>,
+) {
+    if !agent_output || !feature_enabled {
+        return;
+    }
+    if let Some(session_id) = session_id {
+        url.push_str("&exactRereadOmission=true&agentSessionId=");
+        url.push_str(&url_encode(session_id));
+    }
+}
+
+fn append_agent_span_params(url: &mut String, agent_output: bool) {
+    let session_id = agent_session_id();
+    append_agent_span_params_with(
+        url,
+        agent_output,
+        env_flag_enabled_by_default("SWEET_SEARCH_EXACT_REREAD_OMISSION"),
+        session_id.as_deref(),
+    );
 }
 
 /// Render the 3 banner lines (leading blank + 2 art lines). The mode tag makes
@@ -874,11 +923,16 @@ fn build_url(opts: &Options, body_color: bool, body_decoration: bool) -> String 
         url.push_str(&format!("&glob={}", url_encode(g)));
     }
 
+    append_agent_span_params(&mut url, !opts.json);
+
     url
 }
 
 fn print_read_usage(prog: &str, a: &Ansi) {
-    println!("{}sweet-search read{} — filesystem-grounded file reader\n", a.fw, a.r);
+    println!(
+        "{}sweet-search read{} — filesystem-grounded file reader\n",
+        a.fw, a.r
+    );
     println!("{}Usage:{}", a.fw, a.r);
     println!("  {prog} read <path> [...path]   Read 1-20 files");
     println!("  {prog} read <path> --lines 45-92\n");
@@ -890,6 +944,7 @@ fn print_read_usage(prog: &str, a: &Ansi) {
     println!("  --format <fmt>    json | raw | agent | plain");
     println!("  --no-banner       Suppress the identity line");
     println!("  --no-metadata     Skip index metadata attachment");
+    println!("  --force           Retry the exact read named by an omission");
     println!("  -h, --help        Show this help");
 }
 
@@ -932,6 +987,7 @@ fn parse_read_args(args: &[String]) -> Result<ReadOptions, String> {
         include_metadata: true,
         plain: false,
         no_banner: false,
+        force: false,
         help: false,
     };
     let mut i = 0;
@@ -943,6 +999,7 @@ fn parse_read_args(args: &[String]) -> Result<ReadOptions, String> {
             "--agent" => opts.format = "agent".to_string(),
             "--no-metadata" => opts.include_metadata = false,
             "--no-banner" => opts.no_banner = true,
+            "--force" => opts.force = true,
             "--lines" => {
                 i += 1;
                 let spec = args
@@ -998,6 +1055,10 @@ fn build_read_url(opts: &ReadOptions) -> String {
     if !opts.include_metadata {
         url.push_str("&metadata=false");
     }
+    if opts.force {
+        url.push_str("&force=true");
+    }
+    append_agent_span_params(&mut url, opts.format == "agent");
     if let Some(s) = opts.start_line {
         url.push_str(&format!("&startLine={s}"));
     }
@@ -1130,6 +1191,7 @@ fn build_trace_url(opts: &TraceOptions) -> String {
     if let Some(budget) = opts.budget {
         url.push_str(&format!("&budget={budget}"));
     }
+    append_agent_span_params(&mut url, !opts.json);
     url
 }
 
@@ -1163,6 +1225,7 @@ fn build_read_semantic_url(opts: &ReadSemanticOptions) -> String {
     if opts.verbose {
         url.push_str("&verbose=true");
     }
+    append_agent_span_params(&mut url, !opts.json);
     url
 }
 
@@ -1921,6 +1984,32 @@ mod tests {
     }
 
     #[test]
+    fn agent_span_params_are_agent_only_and_url_encoded() {
+        let mut enabled = "/search?q=x&format=text".to_string();
+        append_agent_span_params_with(&mut enabled, true, true, Some("thread / 1"));
+        assert!(enabled.contains("&exactRereadOmission=true"));
+        assert!(enabled.contains("&agentSessionId=thread%20%2F%201"));
+
+        let mut json = "/search?q=x&format=json".to_string();
+        append_agent_span_params_with(&mut json, false, true, Some("thread"));
+        assert_eq!(json, "/search?q=x&format=json");
+
+        let mut disabled = "/trace?symbol=x".to_string();
+        append_agent_span_params_with(&mut disabled, true, false, Some("thread"));
+        assert_eq!(disabled, "/trace?symbol=x");
+    }
+
+    #[test]
+    fn agent_span_feature_defaults_on_with_explicit_opt_out() {
+        assert!(flag_enabled_by_default(None));
+        assert!(flag_enabled_by_default(Some("1")));
+        assert!(flag_enabled_by_default(Some("yes")));
+        for value in ["0", "false", "off", "no", " FALSE "] {
+            assert!(!flag_enabled_by_default(Some(value)));
+        }
+    }
+
+    #[test]
     fn read_subcommand_parses_paths_lines_and_format() {
         let args = vec![
             "a.py".to_string(),
@@ -1928,6 +2017,7 @@ mod tests {
             "3-12".to_string(),
             "--raw".to_string(),
             "--no-metadata".to_string(),
+            "--force".to_string(),
         ];
         let opts = parse_read_args(&args).expect("parse");
         assert_eq!(opts.paths, vec!["a.py".to_string()]);
@@ -1935,6 +2025,7 @@ mod tests {
         assert_eq!(opts.end_line, Some(12));
         assert_eq!(opts.format, "raw");
         assert!(!opts.include_metadata);
+        assert!(opts.force);
     }
 
     #[test]
@@ -1964,12 +2055,14 @@ mod tests {
             include_metadata: true,
             plain: false,
             no_banner: false,
+            force: true,
             help: false,
         };
         let url = build_read_url(&opts);
         assert!(url.contains("&path=a.py"));
         assert!(url.contains("&path=b.py"));
         assert!(url.contains("&format=agent"));
+        assert!(url.contains("&force=true"));
         assert!(!url.contains("metadata=false"));
     }
 
