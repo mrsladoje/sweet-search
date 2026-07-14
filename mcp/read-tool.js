@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  applyReadOmissionDecisions,
+  collectReadShownSpans,
+  exactRereadOmissionEnabled,
+} from '../core/search/agent-span-ledger.js';
+import { sendAgentSpanOperation } from '../core/search/agent-span-client.js';
 
 const ReadFileResultSchema = z.object({
   file: z.string(),
@@ -33,6 +39,12 @@ const ReadFileResultSchema = z.object({
     })),
     moreCount: z.number().int(),
   }).nullable().optional(),
+  omitted: z.object({
+    file: z.string(),
+    startLine: z.number().int(),
+    endLine: z.number().int(),
+    callsAgo: z.number().int(),
+  }).optional(),
   error: z.string().optional(),
   timings: z.object({ totalMs: z.number() }).optional(),
 });
@@ -70,8 +82,8 @@ export const ReadSemanticOutputSchema = z.object({
 });
 
 /**
- * @param {{ files: Array<{path: string, startLine?: number, endLine?: number}>, includeMetadata?: boolean }} args
- * @param {{ PROJECT_ROOT: string }} deps
+ * @param {{ files: Array<{path: string, startLine?: number, endLine?: number}>, includeMetadata?: boolean, force?: boolean }} args
+ * @param {{ PROJECT_ROOT: string, agentSessionId?: string }} deps
  */
 export async function handleRead(args, deps) {
   try {
@@ -80,8 +92,22 @@ export async function handleRead(args, deps) {
       projectRoot: deps.PROJECT_ROOT,
       includeMetadata: args.includeMetadata !== false,
     });
+    if (exactRereadOmissionEnabled() && deps.agentSessionId) {
+      const spans = collectReadShownSpans(result, { projectRoot: deps.PROJECT_ROOT });
+      const response = await sendAgentSpanOperation({
+        operation: 'read',
+        sessionId: deps.agentSessionId,
+        spans,
+        force: args.force === true,
+      });
+      if (response?.ok && Array.isArray(response.decisions)) {
+        const decisions = Array.from({ length: result.files.length }, () => ({ omit: false }));
+        spans.forEach((span, index) => { decisions[span.resultIndex] = response.decisions[index]; });
+        applyReadOmissionDecisions(result, decisions);
+      }
+    }
     return {
-      content: [{ type: 'text', text: formatReadResults(result, 'agent') }],
+      content: [{ type: 'text', text: formatReadResults(result, 'agent', { surface: 'mcp' }) }],
       structuredContent: result,
     };
   } catch (err) {

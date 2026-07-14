@@ -27,6 +27,7 @@ import {
   readFileSync,
   readdirSync,
   openSync,
+  appendFileSync,
   writeSync,
   closeSync,
   unlinkSync,
@@ -36,6 +37,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchMaintainer } from '../indexing/maintainer-launcher.mjs';
 import { projectSocketPath, projectPidFile } from './server-identity.js';
+import { sendAgentSpanOperation } from './agent-span-client.js';
+import { validAgentSessionId } from './agent-span-ledger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -48,9 +51,32 @@ const LOCK_PATH = process.env.SWEET_SEARCH_PREWARM_LOCK || '/tmp/sweet-search-pr
 const SOCKET_PROBE_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_PREWARM_PROBE_MS ?? 300);
 
 const verbose = !!process.env.SWEET_SEARCH_PREWARM_VERBOSE;
+const hookMode = process.argv.includes('--agent-session-drop')
+  ? 'drop'
+  : (process.argv.includes('--agent-session-hook') ? 'session-start' : null);
 const log = (msg) => {
   if (verbose) process.stderr.write(`[sweet-search prewarm] ${msg}\n`);
 };
+
+function readHookPayload() {
+  if (!hookMode) return null;
+  try {
+    const raw = readFileSync(0, 'utf8');
+    if (!raw || Buffer.byteLength(raw) > 64 * 1024) return null;
+    const payload = JSON.parse(raw);
+    return payload && typeof payload === 'object' ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistClaudeSessionId(sessionId) {
+  const envFile = process.env.CLAUDE_ENV_FILE;
+  if (!envFile || !validAgentSessionId(sessionId)) return;
+  const shellQuoted = `'${sessionId.replace(/'/g, `'"'"'`)}'`;
+  try { appendFileSync(envFile, `export SWEET_SEARCH_SESSION_ID=${shellQuoted}\n`, 'utf8'); }
+  catch (err) { log(`session env non-fatal: ${err?.message || err}`); }
+}
 
 function pageCacheSweepEnabled() {
   const v = String(process.env.SWEET_SEARCH_PREWARM_PAGE_CACHE || '').trim().toLowerCase();
@@ -184,6 +210,16 @@ async function daemonHealthy() {
   return socketResponsive(SOCKET_PATH, SOCKET_PROBE_TIMEOUT_MS);
 }
 
+async function waitForResponsiveSocket(timeoutMs = SOCKET_PROBE_TIMEOUT_MS) {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  do {
+    if (await socketResponsive(SOCKET_PATH, Math.min(100, timeoutMs))) return true;
+    if (Date.now() >= deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  } while (Date.now() < deadline);
+  return false;
+}
+
 /**
  * Acquire an exclusive lock so only one concurrent SessionStart spawns a
  * daemon. Returns the file descriptor on success, null on failure. Handles
@@ -268,6 +304,34 @@ if (process.env.SWEET_SEARCH_PAGE_CACHE_SWEEP === '1') {
   process.exit(0);
 }
 
+const hookPayload = readHookPayload();
+const hookSessionId = validAgentSessionId(hookPayload?.session_id)
+  ? hookPayload.session_id
+  : null;
+
+if (hookMode === 'drop') {
+  if (hookSessionId) {
+    await sendAgentSpanOperation({ operation: 'drop', sessionId: hookSessionId }, { timeoutMs: 750 });
+  }
+  process.exit(0);
+}
+
+if (hookMode === 'session-start' && hookSessionId) {
+  persistClaudeSessionId(hookSessionId);
+}
+
+const resetRequested = hookMode === 'session-start'
+  && hookSessionId
+  && (hookPayload?.source === 'clear' || hookPayload?.source === 'compact');
+let resetComplete = false;
+if (resetRequested) {
+  const response = await sendAgentSpanOperation(
+    { operation: 'reset', sessionId: hookSessionId },
+    { timeoutMs: 750 },
+  );
+  resetComplete = response?.ok === true;
+}
+
 // The search server and the index maintainer are independent: a stuck/already
 // running server must not stop the maintainer from starting, and vice versa.
 // Each is isolated in its own try so one failing never blocks the other.
@@ -281,6 +345,17 @@ try {
   await prewarmServer();
 } catch (err) {
   log(`server prewarm non-fatal: ${err?.message || err}`);
+}
+
+if (resetRequested && !resetComplete) {
+  // A compact/clear can race a daemon cold start. The first attempt happens
+  // before unrelated prewarm work; this is the single bounded retry after the
+  // server has had a chance to bind its socket.
+  await waitForResponsiveSocket(SOCKET_PROBE_TIMEOUT_MS);
+  await sendAgentSpanOperation(
+    { operation: 'reset', sessionId: hookSessionId },
+    { timeoutMs: 750 },
+  );
 }
 
 try {

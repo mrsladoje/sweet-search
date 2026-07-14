@@ -994,7 +994,8 @@ export function registerPrewarmSessionStartHook({
     };
   }
 
-  const command = `node ${hookPath}`;
+  const command = `node ${hookPath} --agent-session-hook`;
+  const dropCommand = `node ${hookPath} --agent-session-drop`;
 
   const settingsDir = join(projectRoot, '.claude');
   const settingsPath = join(settingsDir, 'settings.json');
@@ -1012,6 +1013,7 @@ export function registerPrewarmSessionStartHook({
   const sessionStart = Array.isArray(settings.hooks.SessionStart) ? settings.hooks.SessionStart : [];
 
   const entry = {
+    matcher: 'startup|resume|clear|compact',
     hooks: [
       {
         type: 'command',
@@ -1034,6 +1036,29 @@ export function registerPrewarmSessionStartHook({
     sessionStart.push(entry);
   }
   settings.hooks.SessionStart = sessionStart;
+
+  // Claude exposes a real SessionEnd event. Drop the bounded RAM receipt
+  // bucket immediately instead of waiting for daemon/session LRU eviction.
+  const sessionEnd = Array.isArray(settings.hooks.SessionEnd) ? settings.hooks.SessionEnd : [];
+  const endEntry = {
+    hooks: [
+      {
+        type: 'command',
+        command: dropCommand,
+        timeout: 2000,
+        continueOnError: true,
+      },
+    ],
+  };
+  const ownedEndIdx = sessionEnd.findIndex((group) =>
+    Array.isArray(group?.hooks) &&
+    group.hooks.some((h) => typeof h?.command === 'string'
+      && h.command.includes(PREWARM_HOOK_FILENAME)
+      && h.command.includes('--agent-session-drop'))
+  );
+  if (ownedEndIdx >= 0) sessionEnd[ownedEndIdx] = endEntry;
+  else sessionEnd.push(endEntry);
+  settings.hooks.SessionEnd = sessionEnd;
 
   try {
     mkdirSync(settingsDir, { recursive: true });
@@ -1103,7 +1128,7 @@ export function registerCodexSessionStartHook({ projectRoot, packageRoot, skippe
   // a repo), which fixes both path resolution AND the launcher's own
   // `process.cwd()` project-root detection, while staying machine-portable
   // (no absolute path is written into the often-committed hooks.json).
-  const command = `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node ${JSON.stringify(hookPath)}`;
+  const command = `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node ${JSON.stringify(hookPath)} --agent-session-hook`;
   const codexDir = join(projectRoot, '.codex');
   const hooksPath = join(codexDir, CODEX_HOOKS_FILENAME);
 
@@ -1119,12 +1144,12 @@ export function registerCodexSessionStartHook({ projectRoot, packageRoot, skippe
   doc.hooks = doc.hooks || {};
   const sessionStart = Array.isArray(doc.hooks.SessionStart) ? doc.hooks.SessionStart : [];
 
-  // `matcher` mirrors the official Codex SessionStart example: fire on a new
-  // session and on resume (the cases where the daemon may not be running yet).
+  // Start/resume prewarm the daemon; clear/compact also reset shown-span
+  // receipts for the new context epoch.
   // `timeout` is in seconds (per Codex's hooks docs); the launcher detaches and
   // returns in well under a second, so a small budget is plenty.
   const entry = {
-    matcher: 'startup|resume',
+    matcher: 'startup|resume|clear|compact',
     hooks: [
       {
         type: 'command',

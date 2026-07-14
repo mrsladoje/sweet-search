@@ -72,11 +72,15 @@ describe('registerPrewarmSessionStartHook', () => {
 
     const s = readSettings();
     expect(s.hooks.SessionStart).toHaveLength(1);
+    expect(s.hooks.SessionStart[0].matcher).toBe('startup|resume|clear|compact');
     const cmd = s.hooks.SessionStart[0].hooks[0].command;
     expect(cmd).toContain(PREWARM_HOOK_FILENAME);
+    expect(cmd).toContain('--agent-session-hook');
     // Filename alone is the marker — no shell-comment trick.
     expect(cmd).not.toContain('#');
     expect(cmd.startsWith('node ')).toBe(true);
+    expect(s.hooks.SessionEnd).toHaveLength(1);
+    expect(s.hooks.SessionEnd[0].hooks[0].command).toContain('--agent-session-drop');
   });
 
   it('is idempotent: re-running updates in place, never duplicates', () => {
@@ -89,6 +93,7 @@ describe('registerPrewarmSessionStartHook', () => {
 
     const s = readSettings();
     expect(s.hooks.SessionStart).toHaveLength(1);
+    expect(s.hooks.SessionEnd).toHaveLength(1);
   });
 
   it('preserves pre-existing SessionStart entries from other tools', () => {
@@ -232,6 +237,18 @@ describe('removePrewarmSessionStartHook', () => {
     // Sibling sections untouched.
     expect(s.hooks.PreToolUse).toHaveLength(1);
     expect(s.permissions.allow).toEqual(['Bash(npx foo:*)']);
+  });
+
+  it('removes the paired SessionEnd receipt cleanup hook', () => {
+    registerPrewarmSessionStartHook({ projectRoot, packageRoot });
+    const before = readSettings();
+    expect(before.hooks.SessionEnd).toHaveLength(1);
+
+    removePrewarmSessionStartHook(projectRoot);
+
+    const after = readSettings();
+    expect(after.hooks?.SessionStart).toBeUndefined();
+    expect(after.hooks?.SessionEnd).toBeUndefined();
   });
 
   it('cleans up empty SessionStart array when sweet-search was the sole entry', () => {

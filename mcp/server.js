@@ -12,6 +12,12 @@ import { existsSync, statSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchMaintainer } from '../core/indexing/maintainer-launcher.mjs';
+import {
+  collectSemanticShownSpans,
+  exactRereadOmissionEnabled,
+  validAgentSessionId,
+} from '../core/search/agent-span-ledger.js';
+import { sendAgentSpanOperation } from '../core/search/agent-span-client.js';
 
 import {
   SearchOutputSchema,
@@ -104,12 +110,25 @@ async function getConfig() {
 
 const coreDir = path.join(__dirname, '..', 'core');
 
-const searchDeps = { getSearcher };
+const searchDeps = { getSearcher, PROJECT_ROOT };
 const traceDeps = { PROJECT_ROOT };
 const indexDeps = { PROJECT_ROOT, coreDir };
 const healthDeps = { getConfig, PROJECT_ROOT };
 const repoMapDeps = { coreDir, PROJECT_ROOT };
 const vocabDeps = { coreDir };
+
+function requestAgentSessionId(extra) {
+  // A long-lived MCP process does not receive later shell-environment rotation
+  // after clear/compact. Never fall back to inherited process session ids.
+  return validAgentSessionId(extra?.sessionId) ? extra.sessionId : null;
+}
+
+async function touchAgentCall(extra, spans = []) {
+  if (!exactRereadOmissionEnabled()) return;
+  const sessionId = requestAgentSessionId(extra);
+  if (!sessionId) return;
+  await sendAgentSpanOperation({ operation: 'observe', sessionId, spans });
+}
 
 // ---------------------------------------------------------------------------
 // MCP Server
@@ -171,7 +190,10 @@ server.registerTool('search', {
     idempotentHint: true,
     openWorldHint: false,
   },
-}, async (args) => handleSearch(args, searchDeps));
+}, async (args, extra) => handleSearch(args, {
+  ...searchDeps,
+  agentSessionId: requestAgentSessionId(extra),
+}));
 
 server.registerTool('trace', {
   description: 'Trace callers, callees, and transitive impact paths for one specific symbol — returns a single structural-context package adapted to the token budget. USE WHEN the question is "who calls X", "what does X depend on", or "what would break if I changed X". For general code discovery use `search` instead; for navigation around an unfamiliar repo use `repo-map` first.',
@@ -194,7 +216,10 @@ server.registerTool('trace', {
     idempotentHint: true,
     openWorldHint: false,
   },
-}, async (args) => handleTrace(args, traceDeps));
+}, async (args, extra) => {
+  await touchAgentCall(extra);
+  return handleTrace(args, traceDeps);
+});
 
 server.registerTool('index', {
   description: 'Index or re-index the codebase. USE BEFORE first search if the project has not been indexed yet, or after large source changes (`mode="full"`). The Claude Code SessionStart hook installed by `sweet-search init` keeps the incremental index fresh during normal sessions, so manual re-indexing is rarely needed.',
@@ -209,7 +234,10 @@ server.registerTool('index', {
     idempotentHint: false,
     openWorldHint: false,
   },
-}, async (args) => handleIndex(args, indexDeps));
+}, async (args, extra) => {
+  await touchAgentCall(extra);
+  return handleIndex(args, indexDeps);
+});
 
 server.registerTool('health', {
   description: 'Check health of every sweet-search subsystem (index, embedding model, late-interaction reranker, structural graph, daemon). USE WHEN searches return empty unexpectedly, results look stale, or latency is unusual — diagnoses missing index, model load failures, daemon issues. Read-only, fast.',
@@ -220,7 +248,8 @@ server.registerTool('health', {
     idempotentHint: true,
     openWorldHint: false,
   },
-}, async () => {
+}, async (_args, extra) => {
+  await touchAgentCall(extra);
   const structured = await checkHealth(healthDeps);
 
   const statusLines = Object.entries(structured.subsystems).map(
@@ -251,7 +280,10 @@ server.registerTool('repo-map', {
     idempotentHint: true,
     openWorldHint: false,
   },
-}, async (args) => handleRepoMap(args, repoMapDeps));
+}, async (args, extra) => {
+  await touchAgentCall(extra);
+  return handleRepoMap(args, repoMapDeps);
+});
 
 server.registerTool('vocab-prewarm', {
   description: 'Pre-warm sweet-search caches by mining the codebase for project-specific vocabulary across lexical / semantic / hybrid modes. USE ONCE after a fresh index to make the first batch of searches faster; generally not needed for one-off queries because the daemon-prewarm hook handles cold-start warmup automatically.',
@@ -272,7 +304,10 @@ server.registerTool('vocab-prewarm', {
     idempotentHint: true,
     openWorldHint: true,
   },
-}, async (args) => handleVocabPrewarm(args, vocabDeps));
+}, async (args, extra) => {
+  await touchAgentCall(extra);
+  return handleVocabPrewarm(args, vocabDeps);
+});
 
 server.registerTool('read', {
   description: 'Read 1-20 files (with optional line ranges) for exact code understanding. USE INSTEAD OF the native Read tool for code-discovery reads — batches multiple files in one call, attaches symbol-aware chunk metadata when the file is indexed, and returns the exact bytes from disk. Native Read remains fine for files you are about to Edit (Edit needs a prior Read of that exact file).',
@@ -284,10 +319,14 @@ server.registerTool('read', {
     })).min(1).max(20).describe('Files to read (1-20)'),
     includeMetadata: z.boolean().default(true).optional()
       .describe('Attach symbol-aware chunk metadata when the file is indexed'),
+    force: z.boolean().default(false).optional(),
   },
   outputSchema: ReadOutputSchema,
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-}, async (args) => handleRead(args, { PROJECT_ROOT }));
+}, async (args, extra) => handleRead(args, {
+  PROJECT_ROOT,
+  agentSessionId: requestAgentSessionId(extra),
+}));
 
 server.registerTool('read-semantic', {
   description: 'Read only the spans of a file relevant to a question. USE WHEN you know the file but the relevant span is unclear — selects spans via hybrid retrieval (lexical + symbol + ColBERT MaxSim, RRF-fused and LI-reranked), then re-reads exact lines from disk. Returns 1-N small spans instead of the full file. Avoid running this on multiple files unless the task is explicitly multi-file — call `search` with the question instead. Falls back to a plain read when the file is not indexed.',
@@ -309,7 +348,12 @@ server.registerTool('read-semantic', {
   },
   outputSchema: ReadSemanticOutputSchema,
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-}, async (args) => handleReadSemantic(args, { PROJECT_ROOT }));
+}, async (args, extra) => {
+  const result = await handleReadSemantic(args, { PROJECT_ROOT });
+  const spans = collectSemanticShownSpans(result.structuredContent, { projectRoot: PROJECT_ROOT });
+  await touchAgentCall(extra, spans);
+  return result;
+});
 
 // ---------------------------------------------------------------------------
 // Resources

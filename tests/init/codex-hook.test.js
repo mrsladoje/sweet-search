@@ -77,11 +77,11 @@ describe('registerCodexSessionStartHook', () => {
     const doc = readHooks();
     expect(doc.hooks.SessionStart).toHaveLength(1);
     const group = doc.hooks.SessionStart[0];
-    // Matcher mirrors the official Codex SessionStart example (start/resume).
-    expect(group.matcher).toBe('startup|resume');
+    expect(group.matcher).toBe('startup|resume|clear|compact');
     const handler = group.hooks[0];
     expect(handler.type).toBe('command');
     expect(handler.command).toContain(PREWARM_HOOK_FILENAME);
+    expect(handler.command).toContain('--agent-session-hook');
     expect(typeof handler.timeout).toBe('number');
     // Resolves from the git root (not a bare relative path) per the Codex
     // docs, and invokes node.

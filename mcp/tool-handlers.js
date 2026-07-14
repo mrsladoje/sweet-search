@@ -1,15 +1,14 @@
 // mcp/tool-handlers.js — Extracted tool handler functions (SOLID refactor)
 // Each handler receives its dependencies via a `deps` parameter.
-
 import { z } from 'zod';
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-
+import { collectAgentShownSpans, exactRereadOmissionEnabled, renderShownFullTrailer, shownSpanTrailerEnabled } from '../core/search/agent-span-ledger.js';
+import { sendAgentSpanOperation } from '../core/search/agent-span-client.js';
 // ---------------------------------------------------------------------------
 // Output schemas (Zod — SDK converts to JSON Schema for clients)
 // ---------------------------------------------------------------------------
-
 const SearchResultSchema = z.object({
   file: z.string(),
   score: z.number(),
@@ -102,10 +101,11 @@ let _healthDb = null;
 
 /**
  * @param {{ query: string, k: number, mode: string, structural?: boolean, regex?: string, format?: string, tokenBudget?: number }} args
- * @param {{ getSearcher: () => Promise<object> }} deps
+ * @param {{ getSearcher: () => Promise<object>, PROJECT_ROOT?: string, agentSessionId?: string }} deps
  */
-export async function handleSearch({ query, k, mode, structural, regex, format, tokenBudget }, { getSearcher }) {
+export async function handleSearch({ query, k, mode, structural, regex, format, tokenBudget }, deps) {
   try {
+    const { getSearcher } = deps;
     const searcher = await getSearcher();
     const searchMode = structural ? 'structural' : mode;
     const searchResult = await searcher.search(query, {
@@ -121,6 +121,13 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
     // Agent mode: return the fully packaged response directly
     if (searchResult.format === 'agent') {
       const agentResults = searchResult.results || [];
+      const exactReread = exactRereadOmissionEnabled() && deps.agentSessionId;
+      const shownTrailerEnabled = shownSpanTrailerEnabled();
+      const shownSpans = (exactReread || shownTrailerEnabled)
+        ? collectAgentShownSpans(agentResults, { projectRoot: deps.PROJECT_ROOT }) : [];
+      if (exactReread) {
+        await sendAgentSpanOperation({ operation: 'observe', sessionId: deps.agentSessionId, spans: shownSpans });
+      }
       const lines = agentResults
         .filter(r => r.presentation !== 'summary')
         .map((r) => {
@@ -144,9 +151,11 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
       const confidence = `Confidence: ${searchResult.confidence} (${searchResult.confidenceReason})`;
       const budget = `Tokens: ${searchResult.tokensUsed}/${searchResult.tokenBudget}`;
 
-      const text = lines.length > 0
+      let text = lines.length > 0
         ? `${confidence} | ${budget}\n\n${lines.join('\n\n')}${summaries.length ? '\n\nAlso found:\n' + summaries.join('\n') : ''}`
         : `No results found for "${query}"`;
+      const shownTrailer = shownTrailerEnabled ? renderShownFullTrailer(shownSpans) : '';
+      if (shownTrailer) text += `\n\n${shownTrailer}`;
 
       // Shape structuredContent to conform to SearchOutputSchema
       const structured = {
@@ -189,6 +198,9 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
     }
 
     // Standard benchmark mode
+    if (exactRereadOmissionEnabled() && deps.agentSessionId) {
+      await sendAgentSpanOperation({ operation: 'observe', sessionId: deps.agentSessionId, spans: [] });
+    }
     const { results, stats } = searchResult;
     const structured = {
       format: 'benchmark',

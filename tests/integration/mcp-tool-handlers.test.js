@@ -3,7 +3,35 @@ import path from 'node:path';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { handleVocabPrewarm } from '../../mcp/tool-handlers.js';
+import { handleSearch, handleVocabPrewarm } from '../../mcp/tool-handlers.js';
+
+describe('MCP agent shown-span trailer', () => {
+  it('is default-on, agent-only, and lists only complete full spans', async () => {
+    const previous = process.env.SWEET_SEARCH_SHOWN_SPAN_TRAILER;
+    delete process.env.SWEET_SEARCH_SHOWN_SPAN_TRAILER;
+    try {
+      const result = await handleSearch({ query: 'q', k: 2, mode: 'auto', format: 'agent' }, {
+        PROJECT_ROOT: '/repo',
+        getSearcher: async () => ({
+          search: async () => ({
+            format: 'agent',
+            results: [
+              { rank: 1, file: 'src/a.js', startLine: 2, endLine: 3, score: 1, presentation: 'full', code: 'a\nb', codeTokens: 2 },
+              { rank: 2, file: 'src/b.js', startLine: 1, endLine: 20, score: 0.5, presentation: 'full', code: 'short\n// ... (18 more lines)', codeTokens: 5 },
+            ],
+            confidence: 'high', confidenceReason: 'test', tokensUsed: 7, tokenBudget: 100,
+            totalResults: 2, mode: 'auto', latencyMs: 1, subMode: 'agent', query: 'q',
+          }),
+        }),
+      });
+      expect(result.content[0].text).toContain('shown-full: src/a.js:2-3');
+      expect(result.content[0].text).not.toContain('shown-full: src/b.js');
+    } finally {
+      if (previous == null) delete process.env.SWEET_SEARCH_SHOWN_SPAN_TRAILER;
+      else process.env.SWEET_SEARCH_SHOWN_SPAN_TRAILER = previous;
+    }
+  });
+});
 
 describe('MCP tool handlers integration', () => {
   it('handleVocabPrewarm executes stats path via dynamic imports', async () => {

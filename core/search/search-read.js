@@ -10,6 +10,15 @@ import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
 import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { withPinnedRead } from './search-reader-pin.js';
 import { emitToolIdentityAuto } from './cli-decoration.js';
+import { resolveProjectRoot } from './server-identity.js';
+import {
+  applyReadOmissionDecisions,
+  collectReadShownSpans,
+  exactRereadOmissionEnabled,
+  renderReadOmission,
+  resolveAgentSessionId,
+} from './agent-span-ledger.js';
+import { sendAgentSpanOperation } from './agent-span-client.js';
 
 const CACHE_MAX_ENTRIES = 64;
 const CACHE_LARGE_FILE_BYTES = 4 * 1024 * 1024; // 4MB — switch to range-read mode
@@ -468,10 +477,12 @@ export function renderUnreadBelow(result, { command = 'read' } = {}) {
   return `# unread below (${u.startLine}-${u.endLine})${names ? ': ' + names + more : ''} — continue: ${cont}`;
 }
 
-function _formatAgent(result) {
+function _formatAgent(result, opts = {}) {
   if (!result.ok) {
     return `### ${result.file}\n[error] ${result.error}\n`;
   }
+  const omitted = renderReadOmission(result, opts);
+  if (omitted) return `### ${result.file}\n${omitted}\n`;
   const fence = result.language ? '```' + result.language : '```';
   const range = result.range
     ? ` (lines ${result.range.startLine}-${result.range.endLine} of ${result.totalLines})`
@@ -487,14 +498,14 @@ function _formatAgent(result) {
   return `### ${result.file}${range}${symbolHint}\n${fence}\n${result.text}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`;
 }
 
-export function formatReadResults(results, format = 'agent') {
+export function formatReadResults(results, format = 'agent', opts = {}) {
   if (format === 'json') {
     return JSON.stringify({ files: results.files, totalMs: results.totalMs }, null, 2);
   }
   if (format === 'raw') {
     return results.files.map(r => r.ok ? r.text : `[error: ${r.file}] ${r.error}`).join('\n\n');
   }
-  return results.files.map(_formatAgent).join('\n');
+  return results.files.map((result) => _formatAgent(result, opts)).join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -519,6 +530,7 @@ function _parseArgs(args) {
   let includeMetadata = true;
   let plain = false;
   let noBanner = false;
+  let force = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--json') format = 'json';
@@ -526,6 +538,7 @@ function _parseArgs(args) {
     else if (a === '--agent') format = 'agent';
     else if (a === '--no-metadata') includeMetadata = false;
     else if (a === '--no-banner') noBanner = true;
+    else if (a === '--force') force = true;
     else if (a === '--format' || a.startsWith('--format=')) {
       const v = a === '--format' ? args[++i] : a.slice('--format='.length);
       if (v === 'json' || v === 'raw' || v === 'agent') format = v;
@@ -543,7 +556,7 @@ function _parseArgs(args) {
       positional.push(a);
     }
   }
-  return { positional, format, startLine, endLine, includeMetadata, plain, noBanner };
+  return { positional, format, startLine, endLine, includeMetadata, plain, noBanner, force };
 }
 
 function _printHelp() {
@@ -562,6 +575,7 @@ function _printHelp() {
     '  --format <fmt>    json | raw | agent | plain (plain = no identity line)',
     '  --no-banner       Suppress the identity line',
     '  --no-metadata     Skip index metadata attachment',
+    '  --force           Retry the exact read named by an omission',
     '',
   ].join('\n'));
 }
@@ -585,11 +599,26 @@ export async function handleReadCli(args) {
     endLine: wantsRange ? parsed.endLine : undefined,
   }));
   const out = await readFiles(files, { includeMetadata: parsed.includeMetadata });
+  if (parsed.format === 'agent' && exactRereadOmissionEnabled()) {
+    const agentSessionId = resolveAgentSessionId();
+    const spans = collectReadShownSpans(out, { projectRoot: resolveProjectRoot() });
+    const response = await sendAgentSpanOperation({
+      operation: 'read',
+      sessionId: agentSessionId,
+      spans,
+      force: parsed.force,
+    });
+    if (response?.ok && Array.isArray(response.decisions)) {
+      const decisions = Array.from({ length: out.files.length }, () => ({ omit: false }));
+      spans.forEach((span, index) => { decisions[span.resultIndex] = response.decisions[index]; });
+      applyReadOmissionDecisions(out, decisions);
+    }
+  }
   if (parsed.format !== 'json') {
     const detail = files.length === 1 ? files[0].path : `${files.length} files`;
     emitToolIdentityAuto('read', detail, { plain: parsed.plain, noBanner: parsed.noBanner });
   }
-  process.stdout.write(formatReadResults(out, parsed.format));
+  process.stdout.write(formatReadResults(out, parsed.format, { surface: 'cli', force: parsed.force }));
   if (parsed.format !== 'json') process.stdout.write('\n');
   // Non-zero exit if every file failed (so shell pipelines see the error).
   const allFailed = out.files.length > 0 && out.files.every(f => !f.ok);
