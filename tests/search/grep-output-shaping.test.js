@@ -13,6 +13,7 @@ import {
   applyGrepFileDiversity,
   allocateGrepBudget,
   renderGrepBody,
+  reallocateGrepTailForManifest,
   matchesGrepFileFilter,
 } from '../../core/search/grep-output-shaping.js';
 import { bareGrep, SweetSearch } from '../../core/search/index.js';
@@ -161,6 +162,35 @@ describe('renderGrepBody', () => {
   });
 });
 
+describe('reallocateGrepTailForManifest', () => {
+  it('pays for an indexed family manifest by removing complete tail lines', () => {
+    const lines = [
+      'src/i32/ivec2.rs:22: pub struct IVec2',
+      'src/i32/ivec3.rs:22: pub struct IVec3',
+      'src/u32/uvec2.rs:22: pub struct UVec2',
+    ];
+    const manifest = { rendered: '# indexed family: IVec{2,3,4} · UVec{2,3,4} · I64Vec{2,3,4} · U64Vec{2,3,4}' };
+    const beforeTokens = lines.reduce((sum, line) => sum + Math.ceil(`${line}\n`.length / 3.5), 0);
+    const out = reallocateGrepTailForManifest(lines, manifest);
+    const afterTokens = out.lines.reduce((sum, line) => sum + Math.ceil(`${line}\n`.length / 3.5), 0)
+      + Math.ceil(`${out.familyManifest.rendered}\n`.length / 3.5);
+
+    expect(out.removedLineCount).toBeGreaterThan(0);
+    expect(out.lines).toEqual(lines.slice(0, -out.removedLineCount));
+    expect(afterTokens).toBeLessThanOrEqual(beforeTokens);
+  });
+
+  it('abstains when all grep lines cannot fund the manifest', () => {
+    const lines = ['a:1: x'];
+    const manifest = { rendered: `# indexed family: ${'VeryLongFamily'.repeat(20)}` };
+    expect(reallocateGrepTailForManifest(lines, manifest)).toEqual({
+      lines,
+      familyManifest: null,
+      removedLineCount: 0,
+    });
+  });
+});
+
 // =============================================================================
 // bareGrep option gating (mock native unified index, hermetic off-repo paths)
 // =============================================================================
@@ -209,6 +239,53 @@ describe('bareGrep — file-diversity options are additive and default-off', () 
     expect(res.results.length).toBe(5);
     expect(new Set(res.results.map(r => r.file))).toEqual(new Set(['tests/testthat/test_detect_mistakes.R']));
   });
+
+  it('agent grep derives complete width families from indexed declarations', async () => {
+    const matches = [
+      m('src/i32/ivec2.rs', 22, 'pub struct IVec2'),
+      m('src/i32/ivec3.rs', 22, 'pub struct IVec3'),
+      m('src/i32/ivec4.rs', 22, 'pub struct IVec4'),
+      m('src/u32/uvec2.rs', 22, 'pub struct UVec2'),
+      m('src/u32/uvec3.rs', 22, 'pub struct UVec3'),
+      m('src/u32/uvec4.rs', 22, 'pub struct UVec4'),
+    ];
+    const indexed = [
+      ...['IVec', 'UVec', 'I64Vec', 'U64Vec'].flatMap(prefix => [2, 3, 4].map(width => ({
+        name: `${prefix}${width}`, type: 'struct', filePath: `src/${prefix.toLowerCase()}/${width}.rs`,
+      }))),
+    ];
+    const searcher = makeSearcher(matches);
+    searcher.codeGraphRepo = {
+      findEntitiesInRange: vi.fn((file) => {
+        const name = matches.find(match => match.file === file)?.matchText.split(' ').at(-1);
+        return name ? [{ name, type: 'struct' }] : [];
+      }),
+      findFamilyCandidates: vi.fn(() => indexed),
+    };
+
+    const res = await bareGrep.call(searcher, 'model-written-regex-is-ignored', null, {
+      regex: 'model-written-regex-is-ignored', maxMatches: 0, perFileCap: 30, maxFiles: 30,
+      _isAgentFormat: true,
+    });
+    expect(res.familyManifest.rendered).toContain('IVec{2,3,4}');
+    expect(res.familyManifest.rendered).toContain('UVec{2,3,4}');
+    expect(res.familyManifest.rendered).toContain('I64Vec{2,3,4}');
+    expect(res.familyManifest.rendered).toContain('U64Vec{2,3,4}');
+    expect(searcher.codeGraphRepo.findFamilyCandidates).toHaveBeenCalledWith('vec', expect.objectContaining({
+      filePrefix: 'src', types: ['struct'],
+    }));
+  });
+
+  it('does no symbol-table family work for non-agent grep', async () => {
+    const searcher = makeSearcher([m('src/vec2.rs', 1, 'pub struct Vec2')]);
+    searcher.codeGraphRepo = {
+      findEntitiesInRange: vi.fn(() => [{ name: 'Vec2', type: 'struct' }]),
+      findFamilyCandidates: vi.fn(() => []),
+    };
+    const res = await bareGrep.call(searcher, 'Vec2', null, { regex: 'Vec2' });
+    expect(res.familyManifest).toBeUndefined();
+    expect(searcher.codeGraphRepo.findEntitiesInRange).not.toHaveBeenCalled();
+  });
 });
 
 describe('SweetSearch grep dispatch', () => {
@@ -230,11 +307,13 @@ describe('SweetSearch grep dispatch', () => {
       bareGrep: vi.fn(async () => ({
         results: [{ file: 'src/a.js', line: 1 }],
         fileSummary,
+        familyManifest: { rendered: '# indexed family: Vec{2,3,4}' },
         stats: { total_ms: 1 },
       })),
     };
 
     const result = await SweetSearch.prototype.search.call(searcher, 'needle', { mode: 'grep' });
     expect(result.fileSummary).toEqual(fileSummary);
+    expect(result.familyManifest.rendered).toBe('# indexed family: Vec{2,3,4}');
   });
 });

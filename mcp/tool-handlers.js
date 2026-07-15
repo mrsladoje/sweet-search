@@ -25,6 +25,22 @@ const SearchResultSchema = z.object({
   presentation: z.enum(['full', 'preview', 'summary']).optional(),
   code: z.string().nullable().optional(),
   codeTokens: z.number().int().optional(),
+  continuation: z.object({
+    kind: z.enum(['symbol', 'trailer']),
+    file: z.string(),
+    startLine: z.number().int(),
+    endLine: z.number().int(),
+    symbol: z.string(),
+    symbolType: z.string().nullable().optional(),
+    code: z.string().nullable().optional(),
+    rendered: z.string(),
+    tokens: z.number().int(),
+  }).optional(),
+  familyManifest: z.object({
+    rendered: z.string(),
+    tokens: z.number().int(),
+    groups: z.array(z.string()),
+  }).optional(),
 });
 
 export const SearchOutputSchema = z.object({
@@ -143,7 +159,14 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
                 .map(n => `${n.name} (${n.type === 'function' ? 'fn' : (n.type || 'sym')} ${n.startLine}-${n.endLine} ${n.position})`)
                 .join(' · ')} — sweep: read-semantic ${r.file}`
             : '';
-          return header + symbolInfo + code + sameFile;
+          const continuation = r.continuation?.rendered
+            ? `\n   ${r.continuation.rendered.replace(/^#\s*/, '')}`
+              + (r.continuation.kind === 'symbol' && r.continuation.code
+                ? `\n\`\`\`\n${r.continuation.code}\n\`\`\`` : '')
+            : '';
+          const family = r.familyManifest?.rendered
+            ? `\n   ${r.familyManifest.rendered.replace(/^#\s*/, '')}` : '';
+          return header + symbolInfo + code + sameFile + continuation + family;
         });
 
       const summaries = agentResults
@@ -174,6 +197,14 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
           presentation: r.presentation,
           code: r.code ?? null,
           codeTokens: r.codeTokens,
+          ...(r.continuation ? { continuation: r.continuation } : {}),
+          ...(r.familyManifest ? {
+            familyManifest: {
+              rendered: r.familyManifest.rendered,
+              tokens: r.familyManifest.tokens,
+              groups: r.familyManifest.groups,
+            },
+          } : {}),
         })),
         totalFound: searchResult.totalResults,
         mode: searchResult.mode,

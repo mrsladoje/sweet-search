@@ -396,3 +396,45 @@ describe('findAdjacentEntities (same-file span map)', () => {
     expect(repo.findAdjacentEntities('src/common.ts', NaN, 2)).toEqual({ above: [], below: [] });
   });
 });
+
+describe('findFamilyCandidates (indexed symbol family)', () => {
+  it('returns only bounded, active symbols under the indexed seed directory', () => {
+    const { dbPath } = createGraphDb();
+    const db = new Database(dbPath);
+    const insert = db.prepare(`
+      INSERT INTO entities (
+        id, name, type, file_path, start_line, end_line, parent_class,
+        stale_since, epoch_written, epoch_retired
+      ) VALUES (?, ?, ?, ?, 1, 20, NULL, ?, 3, ?)
+    `);
+    const names = [
+      'IVec2', 'IVec3', 'IVec4', 'UVec2', 'UVec3', 'UVec4',
+      'I64Vec2', 'I64Vec3', 'I64Vec4', 'U64Vec2', 'U64Vec3', 'U64Vec4',
+    ];
+    for (const name of names) {
+      insert.run(`family-${name}`, name, 'struct', `src/generated/${name.toLowerCase()}.rs`, null, null);
+    }
+    insert.run('family-stale', 'I128Vec2', 'struct', 'src/generated/i128vec2.rs', 1000, null);
+    insert.run('family-outside', 'OtherVec2', 'struct', 'tests/generated/other_vec2.rs', null, null);
+    insert.run('family-wrong-kind', 'VecFactory2', 'function', 'src/generated/factory.rs', null, null);
+    db.close();
+
+    const repo = openRepo(dbPath);
+    const rows = repo.findFamilyCandidates('Vec', {
+      filePrefix: 'src/generated',
+      types: ['struct'],
+      limit: 64,
+    });
+
+    expect(rows.map((row) => row.name).sort()).toEqual([...names].sort());
+    expect(repo.findFamilyCandidates('Vec', {
+      filePrefix: 'src/generated', types: ['struct'], limit: 3,
+    })).toHaveLength(3);
+    expect(repo.findFamilyCandidates('%', {
+      filePrefix: 'src/generated', types: ['struct'], limit: 64,
+    })).toEqual([]);
+    expect(repo.findFamilyCandidates('Vec', {
+      filePrefix: '', types: ['struct'], limit: 64,
+    })).toEqual([]);
+  });
+});

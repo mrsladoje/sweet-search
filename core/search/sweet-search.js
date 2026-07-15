@@ -710,6 +710,7 @@ export class SweetSearch {
           results,
           stats,
           ...(grepResult.fileSummary ? { fileSummary: grepResult.fileSummary } : {}),
+          ...(grepResult.familyManifest ? { familyManifest: grepResult.familyManifest } : {}),
         };
       }
       case 'pattern': {
@@ -885,6 +886,7 @@ export class SweetSearch {
         locationMap: null,
         projectRoot: this.projectRoot,
         ablations: options.ablations,
+        _isAgentFormat: true,
       });
       __ptEnd('packageForAgent', __t_pkg);
       // Preserve the underlying retrieval stats so callers can inspect both layers

@@ -52,6 +52,27 @@ describe('agent shown-span extraction', () => {
     expect(spans[0]).toMatchObject({ file: 'src/a.js', startLine: 10, endLine: 12 });
   });
 
+  it('registers a complete nested continuation without treating its truncated parent as complete', () => {
+    const spans = collectAgentShownSpans([{
+      file: 'src/a.js',
+      startLine: 1,
+      endLine: 20,
+      presentation: 'full',
+      code: 'short\n// ... (18 more lines)',
+      continuation: {
+        kind: 'symbol',
+        file: 'src/a.js',
+        startLine: 21,
+        endLine: 23,
+        symbol: 'nextSymbol',
+        code: 'one\ntwo\nthree',
+      },
+    }], { projectRoot: '/repo' });
+
+    expect(spans).toHaveLength(1);
+    expect(spans[0]).toMatchObject({ file: 'src/a.js', startLine: 21, endLine: 23 });
+  });
+
   it('renders one deterministic, compact trailer', () => {
     expect(renderShownFullTrailer([
       span(),
