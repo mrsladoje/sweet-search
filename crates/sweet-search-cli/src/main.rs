@@ -174,6 +174,7 @@ struct OutputPolicy {
     color_enabled: bool,
     banner_enabled: bool,
     machine_readable: bool,
+    agent_format: bool,
     reason: &'static str,
 }
 
@@ -237,6 +238,7 @@ fn detect_output_policy(
         color_enabled: false,
         banner_enabled: false,
         machine_readable: false,
+        agent_format: !json && !plain && (agent.codex || agent.claude_code || agent.other_agent),
         reason: "captured-plain",
     };
 
@@ -854,7 +856,12 @@ fn parse_read_semantic_args(args: &[String]) -> Result<ReadSemanticOptions, Stri
     Ok(opts)
 }
 
-fn build_url(opts: &Options, body_color: bool, body_decoration: bool) -> String {
+fn build_url(
+    opts: &Options,
+    body_color: bool,
+    body_decoration: bool,
+    agent_format: bool,
+) -> String {
     let query = opts.query.as_deref().unwrap_or("");
     let encoded = url_encode(query);
     let format = if opts.json { "json" } else { "text" };
@@ -870,6 +877,9 @@ fn build_url(opts: &Options, body_color: bool, body_decoration: bool) -> String 
     // to stdout — keeps captured / side-channel bodies results-only.
     if !body_decoration {
         url.push_str("&decorate=false");
+    }
+    if agent_format {
+        url.push_str("&agent=true");
     }
 
     if opts.mode != "auto" {
@@ -1752,7 +1762,7 @@ fn main() {
     // Result body is colored / prefaced with the stats line only when it streams
     // to a real terminal; a captured pipe or /dev/tty side-channel keeps the body
     // plain and results-only.
-    let url = build_url(&opts, stdout_color, stdout_banner);
+    let url = build_url(&opts, stdout_color, stdout_banner, policy.agent_format);
     // Banner goes to the policy-selected channel (stdout / /dev/tty / nowhere);
     // results always stream to stdout below.
     emit_header(&query, &opts.mode, &policy);
@@ -2163,6 +2173,7 @@ mod tests {
         );
         assert_eq!(p.mode, OutputMode::MachineReadable);
         assert!(p.machine_readable);
+        assert!(!p.agent_format);
         assert!(!p.banner_enabled);
         assert_eq!(p.decoration_stream, DecorationStream::None);
     }
@@ -2183,6 +2194,7 @@ mod tests {
         assert_eq!(p.decoration_stream, DecorationStream::Stdout);
         assert!(p.banner_enabled);
         assert!(p.color_enabled);
+        assert!(!p.agent_format);
     }
 
     #[test]
@@ -2199,6 +2211,7 @@ mod tests {
         );
         assert!(!plain.banner_enabled);
         assert!(!plain.color_enabled);
+        assert!(!plain.agent_format);
 
         let nob = detect_output_policy(
             false,
@@ -2263,6 +2276,7 @@ mod tests {
         assert_eq!(ok.mode, OutputMode::ClaudeTtySidechannel);
         assert_eq!(ok.decoration_stream, DecorationStream::Tty);
         assert!(ok.banner_enabled);
+        assert!(ok.agent_format);
         assert_eq!(ok.reason, "claude-code-tty");
 
         let no_tty = detect_output_policy(
@@ -2277,6 +2291,7 @@ mod tests {
         );
         assert_eq!(no_tty.mode, OutputMode::CapturedPlain);
         assert!(!no_tty.banner_enabled);
+        assert!(no_tty.agent_format);
         assert_eq!(no_tty.reason, "claude-no-tty");
     }
 
@@ -2296,6 +2311,7 @@ mod tests {
         assert_eq!(p.mode, OutputMode::CapturedPlain);
         assert_eq!(p.decoration_stream, DecorationStream::None);
         assert!(!p.banner_enabled);
+        assert!(p.agent_format);
         assert_eq!(p.reason, "codex-detected");
     }
 
@@ -2405,10 +2421,10 @@ mod tests {
     fn build_url_requests_no_color_and_no_decorate_when_captured() {
         let mut opts = Options::default();
         opts.query = Some("x".into());
-        let captured = build_url(&opts, false, false);
+        let captured = build_url(&opts, false, false, false);
         assert!(captured.contains("&color=false"));
         assert!(captured.contains("&decorate=false"));
-        let human = build_url(&opts, true, true);
+        let human = build_url(&opts, true, true, false);
         assert!(!human.contains("color=false"));
         assert!(!human.contains("decorate=false"));
     }
@@ -2425,7 +2441,8 @@ mod tests {
         assert!(opts.no_expand && opts.no_rerank);
         assert_eq!(opts.query.as_deref(), Some("searchLines"));
         // grep sends the pattern as both q and regex, with rerank/expand off.
-        let url = build_url(&opts, false, false);
+        let url = build_url(&opts, false, false, true);
+        assert!(url.contains("&agent=true"));
         assert!(url.contains("mode=grep"));
         assert!(url.contains("regex=searchLines"));
         assert!(url.contains("expand=false"));
@@ -2443,7 +2460,7 @@ mod tests {
         assert_eq!(opts.mode, "pattern");
         assert_eq!(opts.regex.as_deref(), Some("fn.*sort"));
         assert_eq!(opts.query.as_deref(), Some("sorting"));
-        let url = build_url(&opts, true, true);
+        let url = build_url(&opts, true, true, false);
         assert!(url.contains("mode=pattern"));
         assert!(url.contains("regex=fn.%2Asort")); // '*' percent-encoded
         assert!(url.contains("q=sorting"));
@@ -2468,7 +2485,7 @@ mod tests {
         .map(|s| s.to_string())
         .collect();
         let opts = parse_args(&args).unwrap();
-        let url = build_url(&opts, false, false);
+        let url = build_url(&opts, false, false, false);
         assert!(url.contains("type=function"));
         assert!(url.contains("contextLines=2"));
         assert!(url.contains("maxMatches=5"));

@@ -15,7 +15,7 @@ import {
   renderGrepBody,
   matchesGrepFileFilter,
 } from '../../core/search/grep-output-shaping.js';
-import { bareGrep } from '../../core/search/index.js';
+import { bareGrep, SweetSearch } from '../../core/search/index.js';
 
 function m(file, line, text = 'detect_mistakes(x)') {
   return { file, line, column: 1, matchText: text, content: text };
@@ -208,5 +208,33 @@ describe('bareGrep — file-diversity options are additive and default-off', () 
     expect(res.stats.totalMatches).toBe(8);                // file-scoped true total
     expect(res.results.length).toBe(5);
     expect(new Set(res.results.map(r => r.file))).toEqual(new Set(['tests/testthat/test_detect_mistakes.R']));
+  });
+});
+
+describe('SweetSearch grep dispatch', () => {
+  it('preserves fileSummary for warm-daemon callers', async () => {
+    const fileSummary = {
+      files: [{ file: 'src/a.js', total: 2, kept: 1 }],
+      hiddenFileCount: 0,
+      hiddenMatchCount: 1,
+      hiddenSample: [],
+    };
+    const searcher = {
+      useLateInteraction: false,
+      qualityWeight: 1,
+      manifestEpoch: null,
+      _manifestStateDir: null,
+      initGrepOnly: vi.fn(async () => {}),
+      _refreshManifestPins: vi.fn(async () => {}),
+      log: vi.fn(),
+      bareGrep: vi.fn(async () => ({
+        results: [{ file: 'src/a.js', line: 1 }],
+        fileSummary,
+        stats: { total_ms: 1 },
+      })),
+    };
+
+    const result = await SweetSearch.prototype.search.call(searcher, 'needle', { mode: 'grep' });
+    expect(result.fileSummary).toEqual(fileSummary);
   });
 });

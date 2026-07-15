@@ -33,6 +33,7 @@ import {
   pruneAndList as registryPruneAndList,
   selectEvictionTargets as registrySelectEvictionTargets,
 } from './daemon-registry.js';
+import { renderRegexDialectHint } from './regex-dialect.js';
 
 // =============================================================================
 // Server constants
@@ -71,6 +72,14 @@ function parseInteger(value, name) {
   if (value == null || value === '') return undefined;
   const n = Number.parseInt(value, 10);
   if (!Number.isInteger(n)) throw new Error(`${name} must be an integer`);
+  return n;
+}
+
+function parseBoundedSearchInteger(value, name, max) {
+  if (value == null || value === '') return 0;
+  if (!/^\d+$/.test(value)) throw new Error(`${name} must be a non-negative integer`);
+  const n = Number(value);
+  if (!Number.isSafeInteger(n) || n > max) throw new Error(`${name} must be <= ${max}`);
   return n;
 }
 
@@ -544,13 +553,17 @@ function buildTextSearchResponse(results, stats, totalTime, { summary = false, m
     });
   }
 
+  const regexDialectNote = renderRegexDialectHint(stats?.regexDialectHint);
+  if (regexDialectNote) out += `${regexDialectNote}\n`;
+
   return out;
 }
 
-function buildJsonSearchResponse(results, stats, totalTime) {
+function buildJsonSearchResponse(results, stats, totalTime, extra = {}) {
   return JSON.stringify({
     results,
     stats: { ...stats, server_ms: totalTime },
+    ...extra,
   });
 }
 
@@ -790,6 +803,25 @@ export async function startServer() {
       const query = url.searchParams.get('q') || '';
       const mode = url.searchParams.get('mode') || 'auto';
       const topK = parseInt(url.searchParams.get('k') || '10', 10);
+      const requestedRoot = url.searchParams.get('projectRoot') || '';
+      if (requestedRoot.length > SEARCH_SERVER_MAX_READ_PATH_LENGTH) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Project root too long (max ${SEARCH_SERVER_MAX_READ_PATH_LENGTH} chars)` }));
+        return;
+      }
+      if (requestedRoot) {
+        const serverRoot = canonicalProjectRoot(searcher.projectRoot || process.cwd());
+        const clientRoot = canonicalProjectRoot(requestedRoot);
+        if (serverRoot !== clientRoot) {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'Daemon project root mismatch',
+            serverProjectRoot: serverRoot,
+            requestedProjectRoot: clientRoot,
+          }));
+          return;
+        }
+      }
 
       // Additional search options
       const expand = url.searchParams.get('expand') !== 'false';
@@ -817,6 +849,21 @@ export async function startServer() {
       }
       const maxMatches = parseInt(url.searchParams.get('maxMatches') || '0', 10);
       const contextLines = parseInt(url.searchParams.get('contextLines') || '0', 10);
+      const fileFilter = url.searchParams.get('fileFilter') || undefined;
+      if (fileFilter && fileFilter.length > SEARCH_SERVER_MAX_READ_PATH_LENGTH) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `File filter too long (max ${SEARCH_SERVER_MAX_READ_PATH_LENGTH} chars)` }));
+        return;
+      }
+      let perFileCap; let maxFiles;
+      try {
+        perFileCap = parseBoundedSearchInteger(url.searchParams.get('perFileCap'), 'perFileCap', 1000);
+        maxFiles = parseBoundedSearchInteger(url.searchParams.get('maxFiles'), 'maxFiles', 1000);
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+        return;
+      }
       const fixedString = url.searchParams.get('fixedString') === 'true';
       const symbolType = url.searchParams.get('type') || '';
       const useLiteralFilter = url.searchParams.get('literalFilter') !== 'false';
@@ -826,6 +873,7 @@ export async function startServer() {
       // Agent mode: context packaging (ColGrep agent format)
       const rawFormat = url.searchParams.get('format');
       const agentFormat = AGENT_FORMATS.has(rawFormat) ? rawFormat : undefined;
+      const isAgentFormat = Boolean(agentFormat) || url.searchParams.get('agent') === 'true';
       const tokenBudget = url.searchParams.has('budget')
         ? parseInt(url.searchParams.get('budget'), 10)
         : undefined;
@@ -841,7 +889,8 @@ export async function startServer() {
         return;
       }
       const agentSpanCall = beginAgentSpanUrlCall(url, agentSpanLedger, {
-        enabled: isUnixSocket && Boolean(agentFormat),
+        enabled: isUnixSocket && Boolean(agentFormat)
+          && url.searchParams.get('trackAgentSpans') !== 'false',
       });
 
       try {
@@ -852,6 +901,9 @@ export async function startServer() {
           regex,
           maxMatches,
           contextLines,
+          fileFilter,
+          perFileCap,
+          maxFiles,
           fixedString,
           type: symbolType,
           globs,
@@ -861,6 +913,7 @@ export async function startServer() {
           rerank,
           fusion,
           useLateInteraction,
+          _isAgentFormat: isAgentFormat,
           ...(agentFormat && { format: agentFormat, tokenBudget }),
         });
 
@@ -898,7 +951,9 @@ export async function startServer() {
             res.end(out);
           } else {
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(buildJsonSearchResponse(results, stats, totalTime));
+            res.end(buildJsonSearchResponse(results, stats, totalTime, {
+              ...(searchResult.fileSummary ? { fileSummary: searchResult.fileSummary } : {}),
+            }));
           }
         }
       } catch (err) {
@@ -1145,6 +1200,9 @@ export async function queryServer(query, options = {}) {
     topK = 10,
     maxMatches = 0,
     contextLines = 0,
+    fileFilter,
+    perFileCap = 0,
+    maxFiles = 0,
     fixedString = false,
     type = '',
     globs = [],
@@ -1158,6 +1216,9 @@ export async function queryServer(query, options = {}) {
     mid = false,
     format,
     tokenBudget,
+    projectRoot,
+    trackAgentSpans = true,
+    _isAgentFormat = false,
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -1171,6 +1232,9 @@ export async function queryServer(query, options = {}) {
     if (regex) params.set('regex', regex);
     if (maxMatches > 0) params.set('maxMatches', maxMatches.toString());
     if (contextLines > 0) params.set('contextLines', contextLines.toString());
+    if (fileFilter) params.set('fileFilter', fileFilter);
+    if (perFileCap > 0) params.set('perFileCap', perFileCap.toString());
+    if (maxFiles > 0) params.set('maxFiles', maxFiles.toString());
     if (fixedString) params.set('fixedString', 'true');
     if (type) params.set('type', type);
     if (!literalFilter) params.set('literalFilter', 'false');
@@ -1183,7 +1247,10 @@ export async function queryServer(query, options = {}) {
     if (mid) params.set('mid', 'true');
     if (format && format.startsWith('agent')) params.set('format', format);
     if (tokenBudget) params.set('budget', tokenBudget.toString());
-    if (format?.startsWith('agent') && exactRereadOmissionEnabled()) {
+    if (projectRoot) params.set('projectRoot', projectRoot);
+    if (_isAgentFormat) params.set('agent', 'true');
+    if (!trackAgentSpans) params.set('trackAgentSpans', 'false');
+    if (trackAgentSpans && format?.startsWith('agent') && exactRereadOmissionEnabled()) {
       const sessionId = resolveAgentSessionId();
       if (sessionId) {
         params.set('exactRereadOmission', 'true');
@@ -1205,6 +1272,44 @@ export async function queryServer(query, options = {}) {
         } catch (err) {
           reject(new Error('Invalid server response'));
         }
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+/**
+ * Query the warm daemon's read-semantic route as JSON. The caller may retain
+ * its existing renderer while reusing the daemon's resident model/index.
+ *
+ * @param {{ path: string, query: string, projectRoot: string, maxChars?: number }} request
+ * @returns {Promise<object>}
+ */
+export async function queryReadSemanticServer({ path: file, query, projectRoot, maxChars } = {}) {
+  if (!file || !query || !projectRoot) {
+    throw new TypeError('path, query, and projectRoot are required');
+  }
+  const http = await import('http');
+  const params = new URLSearchParams({
+    path: file,
+    q: query,
+    projectRoot,
+    format: 'json',
+  });
+  if (maxChars > 0) params.set('maxChars', String(maxChars));
+
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      socketPath: projectSocketPath(),
+      path: `/read-semantic?${params.toString()}`,
+      method: 'GET',
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch { reject(new Error('Invalid server response')); }
       });
     });
     req.on('error', reject);

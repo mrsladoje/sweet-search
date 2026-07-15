@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { collectAgentShownSpans, exactRereadOmissionEnabled, renderShownFullTrailer, shownSpanTrailerEnabled } from '../core/search/agent-span-ledger.js';
 import { sendAgentSpanOperation } from '../core/search/agent-span-client.js';
+import { renderRegexDialectHint } from '../core/search/regex-dialect.js';
 // ---------------------------------------------------------------------------
 // Output schemas (Zod — SDK converts to JSON Schema for clients)
 // ---------------------------------------------------------------------------
@@ -116,6 +117,7 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
       ...(regex && { regex }),
       ...(format && { format }),
       ...(tokenBudget && { tokenBudget }),
+      _isAgentFormat: format === 'agent',
     });
 
     // Agent mode: return the fully packaged response directly
@@ -154,6 +156,8 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
       let text = lines.length > 0
         ? `${confidence} | ${budget}\n\n${lines.join('\n\n')}${summaries.length ? '\n\nAlso found:\n' + summaries.join('\n') : ''}`
         : `No results found for "${query}"`;
+      const regexDialectNote = renderRegexDialectHint(searchResult.stats?.regexDialectHint);
+      if (regexDialectNote) text += `\n\n${regexDialectNote}`;
       const shownTrailer = shownTrailerEnabled ? renderShownFullTrailer(shownSpans) : '';
       if (shownTrailer) text += `\n\n${shownTrailer}`;
 

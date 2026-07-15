@@ -20,6 +20,19 @@ import {
 } from './_ss-argparse.mjs';
 import { renderGrepBody } from '../../../core/search/grep-output-shaping.js';
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
+import { renderRegexDialectHint } from '../../../core/search/regex-dialect.js';
+import {
+  applyReadOmissionDecisions,
+  collectAgentShownSpans,
+  collectReadShownSpans,
+  collectSemanticShownSpans,
+  exactRereadOmissionEnabled,
+  renderReadOmission,
+  renderShownFullTrailer,
+  resolveAgentSessionId,
+  shownSpanTrailerEnabled,
+} from '../../../core/search/agent-span-ledger.js';
+import { sendAgentSpanOperation } from '../../../core/search/agent-span-client.js';
 
 // Diagnostic-log isolation (agent-facing tools). The Sweet Search engine emits
 // model/index load banners via console.log → stdout ("LateInteraction: Loaded…",
@@ -54,6 +67,16 @@ if (!existsSync(path.join(PROJECT_ROOT, '.sweet-search', 'codebase.db'))) {
   process.exit(2);
 }
 process.env.SWEET_SEARCH_PROJECT_ROOT = PROJECT_ROOT;
+
+const AGENT_SESSION_ID = resolveAgentSessionId();
+const EXACT_REREAD_OMISSION = exactRereadOmissionEnabled();
+const SHOWN_SPAN_TRAILER = shownSpanTrailerEnabled();
+const SPAN_POLICY_ENABLED = EXACT_REREAD_OMISSION || SHOWN_SPAN_TRAILER;
+
+async function recordAgentToolCall({ operation = 'observe', spans = [], force = false } = {}) {
+  if (!EXACT_REREAD_OMISSION || !AGENT_SESSION_ID) return null;
+  return sendAgentSpanOperation({ operation, spans, force, sessionId: AGENT_SESSION_ID });
+}
 
 const subcommand = process.argv[2];
 const rest = process.argv.slice(3);
@@ -115,6 +138,26 @@ async function ensureWarmServerReady({ timeoutMs = 60000, intervalMs = 500 } = {
   return false;
 }
 
+async function queryWarmSearch(query, options) {
+  if (!await ensureWarmServerReady({ timeoutMs: 5000 })) {
+    throw new Error('warm server is not ready');
+  }
+  const { queryServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
+  const response = await queryServer(query, {
+    ...options,
+    projectRoot: PROJECT_ROOT,
+    trackAgentSpans: false,
+    _isAgentFormat: options._isAgentFormat ?? true,
+  });
+  if (response?.error) throw new Error(response.error);
+  return response;
+}
+
+function writeRegexDialectHint(stats) {
+  const note = renderRegexDialectHint(stats?.regexDialectHint);
+  if (note) process.stdout.write(`${note}\n`);
+}
+
 // --- subcommands ----------------------------------------------------------
 
 const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <file>] [-k N]';
@@ -133,14 +176,24 @@ async function cmdGrep(rawArgs) {
     process.stderr.write(GREP_USAGE + '\n');
     process.exit(2);
   }
-  const s = await getSweetSearch();
-
   if (inFile) {
     // Single-file scope: flat output, depth up to k within that file.
-    const result = await s.bareGrep(regex, null, {
-      regex, maxMatches: k, contextLines: 0, fileFilter: inFile,
-    });
+    let result;
+    try {
+      result = await queryWarmSearch(regex, {
+        mode: 'grep', regex, maxMatches: k, contextLines: 0,
+        fileFilter: inFile, expand: false, rerank: false, useLateInteraction: false,
+        _isAgentFormat: !fixedString,
+      });
+    } catch {
+      const s = await getSweetSearch();
+      result = await s.bareGrep(regex, null, {
+        regex, maxMatches: k, contextLines: 0, fileFilter: inFile,
+        _isAgentFormat: !fixedString,
+      });
+    }
     const total = result.stats?.totalMatches ?? result.results.length;
+    await recordAgentToolCall();
     process.stdout.write(`# ss-grep: ${total} total match(es) for /${regex}/ (scope: --in ${inFile})\n`);
     result.results.forEach((r, i) => {
       const text = (r.matchText || '').replace(/\s+/g, ' ').trim().slice(0, 140);
@@ -149,6 +202,7 @@ async function cmdGrep(rawArgs) {
       process.stdout.write(`${r.file}:${r.line}: ${text}${marker}\n`);
     });
     if (result.results.length === 0) process.stdout.write('(no matches)\n');
+    writeRegexDialectHint(result.stats);
     process.exit(0);
   }
 
@@ -158,14 +212,27 @@ async function cmdGrep(rawArgs) {
   // flooded file can never hide every other matching file (the gradethis-161
   // failure). Rendering stays grouped per file; truncation is marked inline
   // and drillable via --in.
-  const result = await s.bareGrep(regex, null, {
-    regex, maxMatches: 0, contextLines: 0,
-    perFileCap: Math.min(k, 100), maxFiles: k,
-  });
+  let result;
+  try {
+    result = await queryWarmSearch(regex, {
+      mode: 'grep', regex, maxMatches: 0, contextLines: 0,
+      perFileCap: Math.min(k, 100), maxFiles: k,
+      expand: false, rerank: false, useLateInteraction: false,
+      _isAgentFormat: !fixedString,
+    });
+  } catch {
+    const s = await getSweetSearch();
+    result = await s.bareGrep(regex, null, {
+      regex, maxMatches: 0, contextLines: 0,
+      perFileCap: Math.min(k, 100), maxFiles: k,
+      _isAgentFormat: !fixedString,
+    });
+  }
   const total = result.stats?.totalMatches ?? result.results.length;
   const fileSummary = result.fileSummary
     || { files: [], hiddenFileCount: 0, hiddenMatchCount: 0, hiddenSample: [] };
   const body = renderGrepBody(result.results, fileSummary, k);
+  await recordAgentToolCall();
 
   // Sibling-surface signal (E6, 2026-07-08 trace audit): when a symbol/stem
   // matches in more than one file, say so unconditionally in the header —
@@ -180,6 +247,7 @@ async function cmdGrep(rawArgs) {
   for (const line of body.lines) process.stdout.write(line + '\n');
   if (body.hiddenLine) process.stdout.write(body.hiddenLine + '\n');
   if (body.shownMatches === 0) process.stdout.write('(no matches)\n');
+  writeRegexDialectHint(result.stats);
   process.exit(0);
 }
 
@@ -211,17 +279,30 @@ async function cmdFind(rawArgs) {
   const envFindBudget = Number(process.env.SS_SMOKE_FIND_BUDGET || '') || null;
   // Pattern flags apply to the regex candidate generator; the NL query is untouched.
   const effectiveRegex = buildGrepPattern(regex || '', { ignoreCase, wordBound, fixedString });
-  const s = await getSweetSearch();
-  if (!s.hasLateInteractionIndex) {
-    process.stderr.write(`[ss-find] no late-interaction index — falling back to ss-grep\n`);
-    return cmdGrep([effectiveRegex || query, '-k', String(k)]);
+  let response;
+  try {
+    response = await queryWarmSearch(query, {
+      mode: 'pattern', regex: effectiveRegex || `\\b\\w+\\b`, topK: k, format,
+      _isAgentFormat: !fixedString,
+      ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
+    });
+  } catch {
+    const s = await getSweetSearch();
+    if (!s.hasLateInteractionIndex) {
+      process.stderr.write(`[ss-find] no late-interaction index — falling back to ss-grep\n`);
+      return cmdGrep([effectiveRegex || query, '-k', String(k)]);
+    }
+    response = await s.patternSearch(query, null, {
+      regex: effectiveRegex || `\\b\\w+\\b`,
+      k,
+      format,
+      _isAgentFormat: !fixedString,
+      ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
+    });
   }
-  const response = await s.patternSearch(query, null, {
-    regex: effectiveRegex || `\\b\\w+\\b`,
-    k,
-    format,
-    ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
-  });
+  const shownSpans = SPAN_POLICY_ENABLED
+    ? collectAgentShownSpans(response.results, { projectRoot: PROJECT_ROOT }) : [];
+  await recordAgentToolCall({ spans: shownSpans });
 
   // Header (visible to agent)
   process.stdout.write(`# ss-find: ColGrep ${response.results?.length || 0} for "${query}" /${effectiveRegex || '*'}/` +
@@ -255,10 +336,13 @@ async function cmdFind(rawArgs) {
     }
   }
   if (!response.results || response.results.length === 0) process.stdout.write('(no matches)\n');
+  writeRegexDialectHint(response.stats);
+  const shownTrailer = SHOWN_SPAN_TRAILER ? renderShownFullTrailer(shownSpans) : '';
+  if (shownTrailer) process.stdout.write(`\n${shownTrailer}\n`);
   process.exit(0);
 }
 
-// ss-read takes NO flags — only positional <file> [start] [end] (or a single
+// ss-read takes one recovery flag plus positional <file> [start] [end] (or a single
 // "start-end" / "start:end" / "start,end" range token). Unlike ss-grep, a stray
 // flag here can never silently corrupt the result: the line slots are validated
 // as numbers, so a misuse is already a loud error. These hints exist only to
@@ -269,8 +353,10 @@ const READ_USAGE =
   '       ss-read <file> <start>    # ONE line\n' +
   '       ss-read <file> <start> <end>\n' +
   '       ss-read <file> 10-20      # range (also 10:20, 10,20)\n' +
-  'Note: ss-read has no flags (no -n/--limit/-r); line selection is positional.';
-async function cmdRead(args) {
+  'Option: --force shows content again after an unchanged-content omission.';
+async function cmdRead(rawArgs) {
+  const args = [...rawArgs];
+  const force = parseBoolFlag(args, ['--force']);
   const file = args[0];
   if (!file) {
     process.stderr.write(READ_USAGE + '\n');
@@ -308,19 +394,52 @@ async function cmdRead(args) {
       }
     }
   }
+  // L4a (2026-07-09) — default read window. An unbounded whole-file read (no range
+  // given) delivers the ENTIRE file, which then sits RESIDENT in the agent's context
+  // and is re-sent every subsequent turn. P1 measured this read-mass resident tax at
+  // ~$11/200 (whole-file/large reads are the tail: p90=180, max=900 lines). So when
+  // the agent gives NO range, cap the default to READ_WINDOW lines and let the
+  // existing "what remains" trailer advertise the exact continue command — the agent
+  // widens on demand instead of paying for the whole file up front. Only the no-range
+  // case is capped: an EXPLICIT range is the agent's deliberate choice and capping it
+  // would cause widen-thrash (the RETUNE hazard). GCSN-neutral by construction (reads
+  // are never ranked). Gated for the standing ON-vs-OFF A/B: SS_NO_READ_WINDOW=1 → OFF
+  // (legacy whole-file); SS_READ_WINDOW=<n> retunes the tier. Prod/human ss-read is a
+  // separate wrapper and is untouched (byte-identical).
+  // PARKED default-OFF (2026-07-09 smoke): the mechanism works (−39% delivered read
+  // tokens vs off) and is accuracy-safe (no resolved→unresolved flips), but the ~$11/200
+  // pool is too small to show a net idealCost win at n=2 and one read-thrash instance
+  // appeared at window=150. Opt-in via SS_READ_WINDOW=<n> pending a larger-n confirmation.
+  const READ_WINDOW = Number(process.env.SS_READ_WINDOW) || 0;
+  const cappedDefault = (start === null && end === null && READ_WINDOW > 0);
+  if (cappedDefault) { start = 1; end = READ_WINDOW; }
+
   const { readFile, renderUnreadBelow } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
   const r = await readFile({ path: file, projectRoot: PROJECT_ROOT, startLine: start ?? undefined, endLine: end ?? undefined });
   if (!r.ok) {
     process.stderr.write(`[ss-read] error: ${r.error}\n`);
     process.exit(1);
   }
-  const range = r.range ? ` (lines ${r.range.startLine}-${r.range.endLine} of ${r.totalLines})` : ` (${r.totalLines} lines)`;
+  const readBatch = { files: [r], totalMs: r.timings?.totalMs ?? 0 };
+  const shownSpans = EXACT_REREAD_OMISSION
+    ? collectReadShownSpans(readBatch, { projectRoot: PROJECT_ROOT }) : [];
+  const receiptResponse = await recordAgentToolCall({ operation: 'read', spans: shownSpans, force });
+  if (receiptResponse?.ok && Array.isArray(receiptResponse.decisions)) {
+    applyReadOmissionDecisions(readBatch, receiptResponse.decisions);
+  }
+  // If the window happened to cover the whole file (file ≤ READ_WINDOW, clamped by
+  // readFile), present it EXACTLY like an uncapped whole-file read — no synthetic
+  // range, no continue trailer — so small-file reads stay byte-identical to legacy.
+  const coveredWholeFile = (start === null && end === null) || (cappedDefault && r.range && r.range.endLine >= r.totalLines);
+  const range = (r.range && !coveredWholeFile) ? ` (lines ${r.range.startLine}-${r.range.endLine} of ${r.totalLines})` : ` (${r.totalLines} lines)`;
   const fence = r.language ? '```' + r.language : '```';
   // "What remains" trailer: on a range read that stops before EOF, one final
   // line names the symbols in the unread remainder + the exact continue
   // command (last line for recency — the actionable form of truncation).
-  const remainder = renderUnreadBelow(r, { command: 'ss-read' });
-  process.stdout.write(`# ss-read ${r.file}${range}\n${fence}\n${r.text}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`);
+  const remainder = coveredWholeFile ? '' : renderUnreadBelow(r, { command: 'ss-read' });
+  const omitted = renderReadOmission(r, { surface: 'ss-read' });
+  if (omitted) process.stdout.write(`# ss-read ${r.file}${range}\n${omitted}\n`);
+  else process.stdout.write(`# ss-read ${r.file}${range}\n${fence}\n${r.text}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`);
   process.exit(0);
 }
 
@@ -351,7 +470,6 @@ async function cmdAgentSearch(rawArgs) {
     process.exit(2);
   }
 
-  const { queryServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
   const serverUsed = await ensureWarmServerReady();
   if (!serverUsed) {
     process.stderr.write('[ss-search] warm server is not ready; refusing cold direct search in benchmark wrapper\n');
@@ -361,7 +479,11 @@ async function cmdAgentSearch(rawArgs) {
   // Budget-sweep experiment hook: per-request explicit budget (overrides the
   // auto-tier on the warm server; flows as the `budget` URL param).
   const envSearchBudget = Number(process.env.SS_SMOKE_SEARCH_BUDGET || '') || null;
-  const response = await queryServer(query, { topK: k, mode, format, ...(envSearchBudget ? { tokenBudget: envSearchBudget } : {}) });
+  const { queryServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
+  const response = await queryServer(query, {
+    topK: k, mode, format, projectRoot: PROJECT_ROOT, trackAgentSpans: false,
+    ...(envSearchBudget ? { tokenBudget: envSearchBudget } : {}),
+  });
   if (response?.error) {
     process.stderr.write(`[ss-search] server error: ${response.error}\n`);
     process.exit(1);
@@ -404,6 +526,9 @@ async function cmdAgentSearch(rawArgs) {
     })}\n`);
     process.exit(3);
   }
+  const shownSpans = SPAN_POLICY_ENABLED
+    ? collectAgentShownSpans(response.results, { projectRoot: PROJECT_ROOT }) : [];
+  await recordAgentToolCall({ spans: shownSpans });
 
   // The packaged response shape comes from packageForAgent (or pattern's own
   // packager when CatBoost routes to pattern). Both include:
@@ -469,6 +594,8 @@ async function cmdAgentSearch(rawArgs) {
   if (!response.results || response.results.length === 0) {
     process.stdout.write('(no matches)\n');
   }
+  const shownTrailer = SHOWN_SPAN_TRAILER ? renderShownFullTrailer(shownSpans) : '';
+  if (shownTrailer) process.stdout.write(`\n${shownTrailer}\n`);
 
   // Keep complete metadata available to the debug serializer, while normal
   // agent output receives only the fields that can change its next action.
@@ -525,21 +652,36 @@ async function cmdSemantic(rawArgs) {
     process.stderr.write(SEMANTIC_USAGE + '\n');
     process.exit(2);
   }
-  const { readSemantic } = await import(path.join(REPO_ROOT, 'core/search/search-read-semantic.js'));
-  const r = await readSemantic({
-    path: file, query, projectRoot: PROJECT_ROOT,
-    maxChars: maxTokens * 4, verbose: false,
-  });
+  let r;
+  try {
+    if (!await ensureWarmServerReady({ timeoutMs: 5000 })) throw new Error('warm server is not ready');
+    const { queryReadSemanticServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
+    r = await queryReadSemanticServer({
+      path: file, query, projectRoot: PROJECT_ROOT, maxChars: maxTokens * 4,
+    });
+    if (r?.error) throw new Error(r.error);
+  } catch {
+    const { readSemantic } = await import(path.join(REPO_ROOT, 'core/search/search-read-semantic.js'));
+    r = await readSemantic({
+      path: file, query, projectRoot: PROJECT_ROOT,
+      maxChars: maxTokens * 4, verbose: false,
+    });
+  }
   if (!r.ok) {
     process.stderr.write(`[ss-semantic] error: ${r.reason || 'unknown'}\n`);
     process.exit(1);
   }
+  const shownSpans = SPAN_POLICY_ENABLED
+    ? collectSemanticShownSpans(r, { projectRoot: PROJECT_ROOT }) : [];
+  await recordAgentToolCall({ spans: shownSpans });
   process.stdout.write(`# ss-semantic ${r.file} | "${query}" | spans=${r.spans?.length ?? 0} | ~tokens=${r.approxTokensReturned}${r.fellBack ? ' [FALLBACK]' : ''}\n`);
   for (const span of r.spans || []) {
     const fence = r.language ? '```' + r.language : '```';
     const sym = span.symbols?.length ? ` [${span.symbols.join(', ')}]` : '';
     process.stdout.write(`### ${r.file}:${span.startLine}-${span.endLine}${sym}\n${fence}\n${span.text}\n\`\`\`\n`);
   }
+  const shownTrailer = SHOWN_SPAN_TRAILER ? renderShownFullTrailer(shownSpans) : '';
+  if (shownTrailer) process.stdout.write(`${shownTrailer}\n`);
   process.exit(0);
 }
 
@@ -571,6 +713,7 @@ async function cmdTrace(rawArgs) {
   else if (Number(process.env.SS_SMOKE_TRACE_BUDGET || '') > 0) opts.tokenBudget = Number(process.env.SS_SMOKE_TRACE_BUDGET);
 
   const response = traceSymbol(symbol, opts);
+  await recordAgentToolCall();
   if (json) process.stdout.write(JSON.stringify(response, null, 2) + '\n');
   else process.stdout.write(formatStructuralContext(response) + '\n');
 

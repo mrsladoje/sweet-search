@@ -40,7 +40,11 @@ import {
   formatReadSemanticResult,
   __resetReadSemanticCachesForTests,
 } from '../../core/search/search-read-semantic.js';
-import { buildReadSemanticDaemonResponse } from '../../core/search/search-server.js';
+import {
+  buildReadSemanticDaemonResponse,
+  queryReadSemanticServer,
+  queryServer,
+} from '../../core/search/search-server.js';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const CLI = join(REPO_ROOT, 'core', 'cli.js');
@@ -118,6 +122,70 @@ describe('read-semantic daemon parity — hermetic body construction', () => {
     expect(daemonResp.body).toBe(`${ipText}\n`);
     // And nothing else differs.
     expect(daemonResp.body.replace(/\n$/, '')).toBe(ipText);
+  });
+});
+
+describe('warm-daemon JSON clients', () => {
+  let dir;
+  let socketPath;
+  let server;
+  let previousSocket;
+  let requests;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'ss-client-sock-'));
+    socketPath = join(dir, 'daemon.sock');
+    previousSocket = process.env.SWEET_SEARCH_SOCKET_PATH;
+    process.env.SWEET_SEARCH_SOCKET_PATH = socketPath;
+    requests = [];
+    server = http.createServer((req, res) => {
+      requests.push(new URL(req.url, 'http://localhost'));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (req.url.startsWith('/read-semantic?')) {
+        res.end(JSON.stringify({ ok: true, file: 'src/a b.js', spans: [] }));
+      } else {
+        res.end(JSON.stringify({ results: [], stats: {}, fileSummary: { files: [] } }));
+      }
+    });
+    await new Promise((resolveListen, rejectListen) => {
+      server.once('error', rejectListen);
+      server.listen(socketPath, resolveListen);
+    });
+  });
+
+  afterEach(async () => {
+    await new Promise(resolveClose => server.close(resolveClose));
+    if (previousSocket == null) delete process.env.SWEET_SEARCH_SOCKET_PATH;
+    else process.env.SWEET_SEARCH_SOCKET_PATH = previousSocket;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('forwards grep shaping, project identity, and span-tracking controls', async () => {
+    const response = await queryServer('needle', {
+      mode: 'grep', regex: 'needle', fileFilter: 'src/a b.js',
+      perFileCap: 7, maxFiles: 9, projectRoot: '/repo with space',
+      trackAgentSpans: false, _isAgentFormat: true,
+    });
+    expect(response.fileSummary).toEqual({ files: [] });
+    const params = requests[0].searchParams;
+    expect(params.get('fileFilter')).toBe('src/a b.js');
+    expect(params.get('perFileCap')).toBe('7');
+    expect(params.get('maxFiles')).toBe('9');
+    expect(params.get('projectRoot')).toBe('/repo with space');
+    expect(params.get('trackAgentSpans')).toBe('false');
+    expect(params.get('agent')).toBe('true');
+  });
+
+  it('requests semantic JSON with the existing exact maxChars budget', async () => {
+    const response = await queryReadSemanticServer({
+      path: 'src/a b.js', query: 'how it works', projectRoot: '/repo', maxChars: 2400,
+    });
+    expect(response.ok).toBe(true);
+    const request = requests[0];
+    expect(request.pathname).toBe('/read-semantic');
+    expect(request.searchParams.get('format')).toBe('json');
+    expect(request.searchParams.get('maxChars')).toBe('2400');
+    expect(request.searchParams.get('path')).toBe('src/a b.js');
   });
 });
 
