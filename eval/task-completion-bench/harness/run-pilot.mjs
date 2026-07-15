@@ -20,6 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runTask } from './api-task-runner.mjs';
 import { runCodexTask } from './codex-task-runner.mjs';
+import { createEvaluatorRuntime } from './evaluator-runtime.mjs';
 // HARNESS=codex routes the agent loop through `codex exec` (real production agent)
 // instead of the bare-API ReAct loop. Same grading/metrics; native=vanilla Codex,
 // sweet=Codex + M++ + ss-* on PATH.
@@ -84,6 +85,7 @@ const shq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";  // single-quot
 const TASKS_FILE = process.env.TASKS_FILE || '';
 const SR_MODE = !!TASKS_FILE;
 const SR_EVAL_DIR = process.env.SR_EVAL_DIR || '/root/swe-rebench-tools/SWE-rebench-V2';
+const SR_EVAL_RUNNER = path.join(BENCH, 'harness/sr-eval.py');
 const taskById = new Map(); // instance_id -> full spec (populated by loadTasks in SR mode)
 
 // --- Per-task harness overrides (bench hygiene, 2026-07-07) ---
@@ -128,92 +130,12 @@ function dockerNetArgs(t) {
   const net = t?._network === 'bridge' ? 'bridge' : 'none';
   return `--network ${net} ${extra ? extra + ' ' : ''}`;
 }
-
-function ensureImage(t) {
-  const id = typeof t === 'string' ? t : t.instance_id;
-  if (SR_MODE) {
-    const img = t.image_name;
-    if (!img) throw new Error(`ensureImage: SR task ${id} has no image_name`);
-    const ok = () => { try { execFileSync('docker', ['image', 'inspect', img], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore' }); return true; } catch { return false; } };
-    // Derived repair images (override map) are LOCAL-ONLY tags — never pulled. Fail
-    // loud with the build pointer instead of burning 3 doomed registry pulls.
-    if (t._origImage && !ok()) throw new Error(`ensureImage: derived image ${img} not built locally — build it from analysis/dockerfiles/${id}/ (docker build), see task-overrides.json`);
-    if (!ok()) {
-      // Retry transient pull failures (registry blips / network) before giving up —
-      // in an unattended 400-run pool a single dropped pull would otherwise skip the
-      // WHOLE task (both arms) and silently shrink N. 3 attempts w/ linear backoff.
-      let pulled = false;
-      for (let attempt = 1; attempt <= 3 && !pulled; attempt++) {
-        try { execFileSync('docker', ['pull', img], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 1800000 }); } catch { /* re-checked below */ }
-        pulled = ok();
-        if (!pulled && attempt < 3) { try { execFileSync('sleep', [String(5 * attempt)], { stdio: 'ignore' }); } catch { /* */ } }
-      }
-      if (!pulled) throw new Error(`ensureImage: docker pull failed for ${img} (${id}) after 3 attempts`);
-    }
-    return img;
-  }
-  const img = imageNameFor(id);
-  const have = () => { try { execFileSync('docker', ['image', 'inspect', img], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore' }); return true; } catch { return false; } };
-  if (have()) return img;
-  // Build + PERSIST the instance image by grading the GOLD prediction.
-  // swebench 4.x SILENTLY SKIPS empty-patch predictions ("Instances with empty
-  // patches: 1" → "No instances to run") so the old empty-patch trick never
-  // built anything. Gold is non-empty (and doubles as a gradeability sanity).
-  // cache_level 'instance' keeps the sweb.eval.x86_64.<id> image so run_tests
-  // (and the final grade) can exec it. run_id is unique per instance so the
-  // worker pool doesn't collide on swebench's per-run_id lock.
-  try {
-    execFileSync(VENV_PY, ['-m', 'swebench.harness.run_evaluation', '--dataset_name', DATASET, '--predictions_path', 'gold', '--max_workers', '1', '--instance_ids', id, '--run_id', `imgbuild-${id}`, '--cache_level', 'instance'], { cwd: path.join(BENCH, 'results'), env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 1800000 });
-  } catch { /* fall through to the loud check below */ }
-  // FAIL LOUD: a swallowed build error here previously masked 4/5 missing images.
-  if (!have()) throw new Error(`ensureImage: failed to build ${img} for ${id} (swebench gold build produced no image)`);
-  return img;
-}
-// One-shot test runner: pytest in the real env, host checkout bind-mounted (live edits).
-function makeRunTests(image, checkoutDir, t) {
-  if (SR_MODE) {
-    // Run the repo's canonical suite (install_config.test_cmd) on the agent's
-    // LIVE edits: apply the agent's current diff into the image's baked repo
-    // (deps preserved) at the SWE-rebench workdir. NO gold test_patch — the
-    // hidden FAIL_TO_PASS tests are never exposed to the agent (leakage guard).
-    return async () => {
-      const workdir = t.workdir || `/${t.repo.split('/')[1]}`;
-      const testScript = [].concat(t.install_config?.test_cmd || []).join(' && ');
-      if (!testScript) return '[run_tests] no test_cmd for this task';
-      let diff = '';
-      // NON-destructive: `git diff HEAD` shows the agent's tracked-file edits
-      // WITHOUT touching the index. (A prior `git add -A` here STAGED the edits,
-      // so the later finalPatch `git diff` (unstaged) came back empty → 0-hunk
-      // predictions — matching api-task-runner's finalPatch, which also uses `git diff`.)
-      try { diff = execSync(`git -C ${checkoutDir} diff HEAD -- . ':(exclude).sweet-search'`, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); } catch { /* */ }
-      const pdir = `${checkoutDir}__rt`;
-      try {
-        rmSync(pdir, { recursive: true, force: true }); mkdirSync(pdir, { recursive: true });
-        writeFileSync(path.join(pdir, 'agent.diff'), diff || '');
-        // per-task test timeout (task-overrides.json; default 300s unchanged); the outer
-        // execSync bound tracks it with 60s of docker/apply headroom.
-        const tSec = t._testTimeoutSec || DEFAULT_TEST_TIMEOUT_SEC;
-        const script = `cd ${workdir} && git reset --hard HEAD -q 2>/dev/null; git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; timeout ${tSec} bash -c ${shq(testScript)} 2>&1 | tail -60`;
-        // NO --network host: at CONCURRENCY>1 multiple test containers would share the
-        // host net namespace and collide on any port a test binds (→ flaky failures →
-        // corrupted resolved numbers). Under NET_LOCKDOWN (default) this is --network
-        // none: external egress blocked, container-own loopback preserved.
-        const out = execSync(`docker run --rm ${dockerNetArgs(t)}-v ${pdir}:/patch:ro ${image} bash -c ${shq(script)}`, { env: { ...process.env, DOCKER_HOST }, encoding: 'utf8', timeout: (tSec + 60) * 1000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
-        return out.slice(0, 8000);
-      } catch (e) { return `[run_tests exit=${e.status ?? 1}]\n${(e.stdout || e.stderr || e.message || '').slice(0, 6000)}`; }
-      finally { try { rmSync(pdir, { recursive: true, force: true }); } catch { /* */ } }
-    };
-  }
-  return async (rawArgs) => {
-    const args = String(rawArgs || '').replace(/[;&|`$()<>\n]/g, ' ').slice(0, 300);
-    try {
-      const out = execSync(`docker run --rm --platform linux/amd64 ${NET_LOCKDOWN ? '--network none ' : ''}-v ${checkoutDir}:/testbed ${image} bash -lc "cd /testbed && timeout ${DEFAULT_TEST_TIMEOUT_SEC} python -m pytest ${args} -q 2>&1 | tail -50"`,
-        { env: { ...process.env, DOCKER_HOST }, encoding: 'utf8', timeout: (DEFAULT_TEST_TIMEOUT_SEC + 60) * 1000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
-      return out.slice(0, 8000);
-    } catch (e) { return `[run_tests exit=${e.status ?? 1}]\n${(e.stdout || e.stderr || e.message || '').slice(0, 6000)}`; }
-  };
-}
-
+const { ensureImage, makeRunTests, gradeArm } = createEvaluatorRuntime({
+  benchDir: BENCH, dataset: DATASET, defaultTestTimeoutSec: DEFAULT_TEST_TIMEOUT_SEC,
+  dockerHost: DOCKER_HOST, dockerNetArgs, imageNameFor, netLockdown: NET_LOCKDOWN, shellQuote: shq,
+  srEvalDir: SR_EVAL_DIR, srEvalRunner: SR_EVAL_RUNNER, srMode: SR_MODE, taskById,
+  taskOverrides: TASK_OVERRIDES, venvPython: VENV_PY,
+});
 async function loadTasks() {
   if (SR_MODE) {
     const specs = JSON.parse(readFileSync(TASKS_FILE, 'utf8'));
@@ -323,109 +245,6 @@ function reapRunDir(rundir) {
     }
   } catch { /* */ }
   try { rmSync(rundir, { recursive: true, force: true }); } catch { /* */ }
-}
-
-function gradeArm(arm, predictions, runId) {
-  const predDir = path.join(BENCH, 'results', runId, arm);
-  mkdirSync(predDir, { recursive: true });
-  if (SR_MODE) {
-    // Grade via SWE-rebench eval.py (20-language parsers). tasks.json = full
-    // specs (incl gold test_patch); patches.json = agent patches. eval.py pulls
-    // the image, git applies prediction + gold test_patch, runs test_cmd, parses
-    // per-language. items[].passed_match = resolved (FAIL_TO_PASS flip + PASS_TO_PASS hold).
-    // eval.py raises on an empty prediction patch — but an empty patch is simply
-    // UNRESOLVED, so grade only the non-empty ones and count the rest as misses
-    // (one empty patch must not crash the whole grade batch).
-    const nonEmpty = predictions.filter(p => (p.model_patch || '').trim());
-    if (!nonEmpty.length) return { resolved_instances: 0, total_instances: predictions.length, resolved_ids: [] };
-    // GRADING-PHASE DISK GC (critical for full-200): the agent-phase per-task GC
-    // already dropped every image, so eval.py RE-PULLS each task's ~3.5-5.3GB image
-    // here and never frees it. Grading 200 distinct images in one shot => ~800GB =>
-    // disk full mid-grade. So grade in batches of GRADE_BATCH and `docker rmi` each
-    // batch's images immediately after (gated SR_MODE && !NO_IMAGE_GC, same as the
-    // agent phase). Scoring is unchanged — SWE-bench-standard, just chunked.
-    // Default 6 (not 12): one eval.py call grades a whole batch under a single 90-min
-    // timeout, so a hanging/monster-repo task forfeits its batch-mates' grades — fewer
-    // tasks per batch = fewer waves under the timeout + less collateral on a stall.
-    const BATCH = Math.max(1, +(process.env.GRADE_BATCH || 6));
-    const tasksPath = path.join(predDir, 'tasks.json');
-    const patchesPath = path.join(predDir, 'patches.json');
-    const reportPath = path.join(predDir, 'report.json');
-    const score = {}; const resolved_ids = []; let gradedAny = false;
-    for (let i = 0; i < nonEmpty.length; i += BATCH) {
-      const chunk = nonEmpty.slice(i, i + BATCH);
-      const specs = chunk.map(p => taskById.get(p.instance_id)).filter(Boolean);
-      if (!specs.length) continue;
-      writeFileSync(tasksPath, JSON.stringify(specs));
-      // eval.py wants --patches as a LIST of {instance_id, patch}, not a dict.
-      writeFileSync(patchesPath, JSON.stringify(chunk.map(p => ({ instance_id: p.instance_id, patch: p.model_patch }))));
-      try { rmSync(reportPath, { force: true }); } catch { /* */ }
-      try {
-        // Under NET_LOCKDOWN grading containers run --network none too (eval.py patched
-        // to accept --network + per-spec _network exception + skip-pull for local derived
-        // images; SS_BENCH_ALLOW_NET=1 → historical --network host, no flags passed).
-        const netFlags = NET_LOCKDOWN ? ['--network', 'none'] : [];
-        execFileSync(VENV_PY, [path.join(SR_EVAL_DIR, 'scripts', 'eval.py'),
-          '--json', tasksPath, '--patches', patchesPath, '--max-workers', '2', '--report-json', reportPath, ...netFlags],
-          { cwd: SR_EVAL_DIR, env: { ...process.env, DOCKER_HOST, PYTHONPATH: path.join(SR_EVAL_DIR, 'lib') }, stdio: 'inherit', timeout: 5400000 });
-      } catch { /* eval.py exits NON-ZERO whenever any task is unresolved — normal, not a grading failure; report.json is still written + valid. A REAL failure = no report, flagged below. */ }
-      if (existsSync(reportPath)) {
-        gradedAny = true;
-        const items = (JSON.parse(readFileSync(reportPath, 'utf8')).items) || [];
-        // SWE-bench-standard resolution (grading.py get_resolution_status): FULL iff
-        // ALL named FAIL_TO_PASS pass AND no PASS_TO_PASS regresses; PARTIAL iff some
-        // (not all) F2P pass and P2P holds. Do NOT use eval.py's exact-set passed_match
-        // (passed == expected_passed) — it spuriously fails when the suite passes extra
-        // tests beyond the named set (it wrongly marked native dtolnay__cxx unresolved
-        // despite 14/14 F2P + 0 P2P regressions). Also keep f2pFrac for partial credit.
-        for (const it of items) {
-          const sp = taskById.get(it.instance_id) || {};
-          const f2pTot = (sp.FAIL_TO_PASS || []).length;
-          const f2pPass = (it.from_fail_to_pass || []).length;
-          // excludeP2P (task-overrides.json): P2P names structurally unrunnable in ANY
-          // offline container (e.g. compose's pkg/e2e subtests need a live docker
-          // daemon) are excluded from the regression check — SWE-bench-Verified
-          // precedent (annotators removed broken tests). Documented per task; the
-          // exclusion list is fixed, never derived from a run's output.
-          const exclP2P = new Set(TASK_OVERRIDES.tasks?.[it.instance_id]?.excludeP2P || []);
-          const p2pOk = (it.failed_from_pass_to_pass || []).filter(n => !exclP2P.has(n)).length === 0;
-          const f2pFrac = f2pTot ? f2pPass / f2pTot : 1;
-          const status = (f2pFrac === 1 && p2pOk) ? 'FULL' : (f2pFrac > 0 && p2pOk ? 'PARTIAL' : 'NO');
-          score[it.instance_id] = { f2pFrac, p2pOk, status };
-          if (status === 'FULL') resolved_ids.push(it.instance_id);
-        }
-      } else {
-        console.error(`[grade ${arm}] eval.py produced NO report (batch @${i}) — ${chunk.length} task(s) left ungraded`);
-      }
-      // reclaim THIS batch's images before the next chunk pulls more
-      // (never GC a derived repair image — local-only, not re-pullable)
-      if (SR_MODE && !process.env.NO_IMAGE_GC) {
-        for (const sp of specs) {
-          if (sp.image_name && !sp._origImage) { try { execFileSync('docker', ['rmi', '-f', sp.image_name], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 60000 }); } catch { /* */ } }
-        }
-      }
-    }
-    if (!gradedAny) return null;
-    return { resolved_instances: resolved_ids.length, total_instances: predictions.length, resolved_ids, score };
-  }
-  const predPath = path.join(predDir, 'preds.jsonl');
-  writeFileSync(predPath, predictions.map(p => JSON.stringify(p)).join('\n') + '\n');
-  const ids = predictions.map(p => p.instance_id).join(' ');
-  try {
-    execFileSync(VENV_PY, ['-m', 'swebench.harness.run_evaluation',
-      '--dataset_name', DATASET, '--predictions_path', predPath,
-      '--max_workers', '2', '--instance_ids', ...predictions.map(p => p.instance_id),
-      // cache_level 'instance' KEEPS the sweb.eval.x86_64.<id> images so chained
-      // runs (e.g. 3 models back-to-back) reuse them instead of rebuilding mid-run
-      // (a rebuild during a timed run skews wall-time). Disk is cheap on the box.
-      '--run_id', `${runId}-${arm}`, '--cache_level', 'instance'],
-      { cwd: predDir, env: { ...process.env, DOCKER_HOST }, stdio: 'inherit', timeout: 1800000 });
-  } catch (e) { console.error(`[grade ${arm}] harness error: ${e.message}`); }
-  // swebench writes <model>.<run_id>.json in cwd
-  const report = path.join(predDir, `${arm}.${runId}-${arm}.json`);
-  if (existsSync(report)) return JSON.parse(readFileSync(report, 'utf8'));
-  // fallback: find any *.json report
-  return null;
 }
 
 const runId = process.env.RUN_ID || `pilot-${INSTANCES.length}x${REPS}`;
@@ -572,8 +391,8 @@ await runPool(INSTANCES, CONCURRENCY);
 reapServers();
 
 // Grade EVERY rep × arm via the swebench/SR Docker harness (multi-rep = variance power).
-// gradeArm overwrites results/<runId>/<arm>/report.json each call; we extract resolved_ids
-// immediately, so per-rep overwrite is fine. row.resolved/f2pFrac set per (arm, rep).
+// Each arm/rep keeps task-merged report/patch artifacts; row resolution is also
+// set per (arm, rep).
 console.log('\n### grading via swebench (Docker, authoritative) — all reps');
 const repsToGrade = process.env.GRADE === '0' ? [] : Object.keys(predsByRepArm).map(Number).sort((a, b) => a - b);
 if (process.env.GRADE === '0') console.log('### grading SKIPPED (GRADE=0)');
@@ -581,7 +400,7 @@ for (const rep of repsToGrade) {
   for (const arm of ARMS) {
     const preds = predsByRepArm[rep]?.[arm] || [];
     if (!preds.length) continue;
-    const report = gradeArm(arm, preds, runId);
+    const report = gradeArm(arm, preds, runId, rep);
     const resolvedIds = new Set(report?.resolved_ids || []);
     const errorIds = new Set(report?.error_ids || []);
     const score = report?.score || {};
