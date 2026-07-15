@@ -46,8 +46,23 @@ export const SUMMARY_COUNT_RE =
   /^\s*(?:\d+\s+(?:tests?\s+)?(?:failed|failing|failures)\b|failures?:\s*\d+|tests?:?\s*\d+\s+failed|\d+\s+failed,\s*\d+\s+passed|Ran\s+\d+\s+tests?\b)/i;
 
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
+const LEADING_TIMESTAMP_RE = /^\s*(?:\[(?:\d{2}:\d{2}:\d{2}(?:[.,]\d+)?|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:\d{2})?)\]|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:\d{2})?|\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\s+/;
+const MSBUILD_NODE_PREFIX_RE = /^\s*\d+>\s?/;
+const GENERIC_BUILD_FAILURE_RE = /^Build FAILED\.?$/i;
 
 function stripAnsi(s) { return s.replace(ANSI_RE, ''); }
+
+function stripVolatileFailurePrefix(value) {
+  let s = value;
+  // Prefixes can arrive as timestamp→node or node→timestamp. Two narrow,
+  // anchored passes normalize either ordering without touching names/codes later
+  // in the diagnostic.
+  for (let i = 0; i < 2; i++) {
+    s = s.replace(LEADING_TIMESTAMP_RE, '');
+    s = s.replace(MSBUILD_NODE_PREFIX_RE, '');
+  }
+  return s;
+}
 
 function isFailureLine(line) {
   return FAILURE_INDICATOR_RE.test(line) && !FAILURE_NEGATIVE_RE.test(line);
@@ -136,7 +151,7 @@ export function condenseOutput(raw, opts = {}) {
  * the agent's edit yield a fresh signature → at worst a false "new" (the safe side).
  */
 export function normalizeFailureSignature(line) {
-  let s = stripAnsi(String(line || ''));
+  let s = stripVolatileFailurePrefix(stripAnsi(String(line || '')));
   s = s.replace(/\(\d+(?:\.\d+)?\s*(?:s|ms|sec|secs|seconds|m)\)/gi, '');   // (0.03s)
   s = s.replace(/\b\d+(?:\.\d+)?\s*(?:ms|s|sec|secs|seconds)\b/gi, '');       // 0.03s
   s = s.replace(/0x[0-9a-fA-F]+/g, '');                                       // hex addrs
@@ -160,10 +175,11 @@ export function extractFailureSignatures(text) {
   const infra = INFRA_ERROR_RE.test(t);
   const sigs = new Set();
   for (const rawLine of t.split('\n')) {
-    const line = stripAnsi(rawLine);
+    const line = stripVolatileFailurePrefix(stripAnsi(rawLine));
     if (!isFailureLine(line)) continue;
     if (SUMMARY_COUNT_RE.test(line)) continue;   // aggregate count, not a per-test signature
     const sig = normalizeFailureSignature(line);
+    if (GENERIC_BUILD_FAILURE_RE.test(sig)) continue;
     if (sig.length >= 6) sigs.add(sig);   // drop trivially-short signatures (collision guard)
   }
   return { ok: true, sigs, infra };
@@ -232,6 +248,133 @@ export function buildAuthorityBanner() {
     'in the prepared environment (dependencies installed) against your live diff. Trust THIS PASS/FAIL; ' +
     'do NOT reconstruct it by hand (manual `docker run`, `git diff`, or running the suite yourself) — ' +
     're-invoke `run_tests` instead.';
+}
+
+// ---- Conditional diff identifier signal ---------------------------------------
+// This deliberately extracts only high-confidence code-shaped references. The
+// symbol index is the authority for whether they resolve; prose/string/comment
+// tokens and identifiers declared by the same diff never become warnings.
+const DIFF_IDENTIFIER_KEYWORDS = new Set([
+  'as', 'async', 'await', 'bool', 'boolean', 'break', 'byte', 'case', 'catch',
+  'char', 'class', 'const', 'continue', 'def', 'default', 'defer', 'do', 'double',
+  'else', 'enum', 'error', 'export', 'extends', 'false', 'finally', 'float', 'fn',
+  'for', 'from', 'func', 'function', 'go', 'if', 'implements', 'import', 'in',
+  'int', 'interface', 'is', 'let', 'long', 'map', 'match', 'mod', 'module', 'new',
+  'nil', 'none', 'null', 'object', 'of', 'or', 'package', 'pass', 'private', 'protected',
+  'pub', 'public', 'raise', 'range', 'ref', 'return', 'self', 'short', 'static',
+  'string', 'struct', 'super', 'switch', 'this', 'throw', 'trait', 'true', 'try',
+  'type', 'typeof', 'undefined', 'unsafe', 'use', 'using', 'var', 'void', 'while',
+  'with', 'yield',
+]);
+
+function stripAddedLineNoise(line, state, file) {
+  let out = '';
+  let quote = state.quote || '';
+  const hashComments = /\.(?:py|rb|sh|bash|zsh|ps1|r|jl|ex|exs|yaml|yml)$/i.test(file);
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    const next = line[i + 1] || '';
+    if (state.blockComment) {
+      if (ch === '*' && next === '/') { state.blockComment = false; i++; }
+      out += ' ';
+      continue;
+    }
+    if (quote) {
+      if (ch === '\\') { i++; out += '  '; continue; }
+      if (ch === quote) quote = '';
+      out += ' ';
+      continue;
+    }
+    if (ch === '/' && next === '*') { state.blockComment = true; i++; out += '  '; continue; }
+    if (ch === '/' && next === '/') break;
+    if (hashComments && ch === '#' && !out.trim()) break;
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; out += ' '; continue; }
+    out += ch;
+  }
+  // Only backtick/raw strings may intentionally span lines. Ordinary unterminated
+  // quotes in a hunk are treated as malformed input and suppress later candidates.
+  state.quote = quote === '`' ? quote : '';
+  return out;
+}
+
+function highSignalIdentifier(name) {
+  if (!name || name.length < 3 || DIFF_IDENTIFIER_KEYWORDS.has(name.toLowerCase())) return false;
+  return /^[A-Z][A-Za-z0-9_]*$/.test(name) || /_/.test(name);
+}
+
+export function extractAddedIdentifierReferences(diffText, { maxBytes = 1_000_000, maxCandidates = 64 } = {}) {
+  const diff = String(diffText || '');
+  if (!diff || Buffer.byteLength(diff, 'utf8') > maxBytes) return { references: [], files: [] };
+  const added = [];
+  const files = new Set();
+  const state = { blockComment: false, quote: '' };
+  let file = '';
+  for (const raw of diff.split('\n')) {
+    if (raw.startsWith('+++ ')) {
+      file = raw.slice(4).replace(/^b\//, '').trim();
+      state.blockComment = false; state.quote = '';
+      if (file && file !== '/dev/null') files.add(file);
+      continue;
+    }
+    if (!file || !raw.startsWith('+') || raw.startsWith('+++')) continue;
+    const code = stripAddedLineNoise(raw.slice(1), state, file);
+    if (code.trim()) added.push({ file, code });
+  }
+
+  const declared = new Set();
+  const declarationRe = /\b(?:class|struct|interface|enum|trait|type|typealias|func|fn|function|def|const|let|var|module|namespace)\s+([A-Za-z_][A-Za-z0-9_]*)/g;
+  for (const { code } of added) {
+    for (const match of code.matchAll(declarationRe)) declared.add(match[1]);
+    for (const match of code.matchAll(/\b([A-Za-z_][A-Za-z0-9_]*)\s*:=/g)) declared.add(match[1]);
+    const typedAssignment = code.match(/^\s*(?:(?:public|private|protected|internal|static|final|readonly|volatile|extern)\s+)*(?:[A-Za-z_][\w<>,?.:\[\]]*\s+)+([A-Za-z_][A-Za-z0-9_]*)\s*=/);
+    if (typedAssignment) declared.add(typedAssignment[1]);
+    const method = code.match(/^\s*(?:(?:public|private|protected|internal|static|final|override|async)\s+)*(?:[A-Za-z_][\w<>,?.:\[\]]*\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\([^;]*\)\s*(?:\{|=>|:)/);
+    if (method) declared.add(method[1]);
+    if (/^\s*(?:import|from|use|using)\b/.test(code)) {
+      for (const match of code.matchAll(/\b[A-Za-z_][A-Za-z0-9_]*\b/g)) declared.add(match[0]);
+    }
+  }
+
+  const references = [];
+  const seen = new Set();
+  const add = ref => {
+    if (references.length >= maxCandidates || declared.has(ref.name) || seen.has(ref.name)) return;
+    seen.add(ref.name); references.push(ref);
+  };
+  for (const { file: sourceFile, code } of added) {
+    const qualifiedRanges = [];
+    for (const match of code.matchAll(/\b([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::)[A-Za-z_][A-Za-z0-9_]*)+)\b/g)) {
+      const display = match[1];
+      const parts = display.split(/\.|::/);
+      const name = parts.at(-1);
+      qualifiedRanges.push([match.index, match.index + display.length]);
+      if (highSignalIdentifier(name)) add({ name, display, qualifier: parts[0], file: sourceFile });
+    }
+    for (const match of code.matchAll(/\b[A-Za-z_][A-Za-z0-9_]*\b/g)) {
+      const start = match.index;
+      if (qualifiedRanges.some(([a, b]) => start >= a && start < b)) continue;
+      const name = match[0];
+      if (highSignalIdentifier(name)) add({ name, display: name, qualifier: null, file: sourceFile });
+    }
+  }
+  return { references, files: [...files] };
+}
+
+export function buildUnresolvedIdentifierWarning(diffText, resolveNames, { maxWarnings = 3 } = {}) {
+  if (typeof resolveNames !== 'function') return '';
+  const extracted = extractAddedIdentifierReferences(diffText);
+  if (!extracted.references.length) return '';
+  const names = [...new Set(extracted.references.flatMap(ref =>
+    ref.qualifier ? [ref.name, ref.qualifier] : [ref.name]))];
+  const rows = resolveNames(names, { files: extracted.files });
+  if (!Array.isArray(rows)) return '';
+  const resolved = new Set(rows.map(row => row?.name).filter(Boolean));
+  const missing = extracted.references.filter(ref =>
+    !resolved.has(ref.name) && (!ref.qualifier || resolved.has(ref.qualifier)));
+  if (!missing.length) return '';
+  const shown = missing.slice(0, Math.max(1, maxWarnings)).map(ref => ref.display);
+  const more = missing.length > shown.length ? ` (+${missing.length - shown.length} more)` : '';
+  return `[run_tests diff-check] WARNING: added identifier not found in symbol index: ${shown.join(', ')}${more}`.slice(0, 180);
 }
 
 // ---- L2 (b) targeted single-test mode -------------------------------------------

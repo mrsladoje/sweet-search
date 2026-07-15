@@ -13,13 +13,14 @@
 // docker WRAPPER and double-condense run_tests output. We always use cfg.dockerBin
 // (the REAL docker absolute path, resolved host-side at setup) to bypass the wrapper.
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   extractFailureSignatures, diffFailureSets, renderBaselineDiff,
   buildAuthorityBanner, applyTestPattern,
+  buildUnresolvedIdentifierWarning,
 } from './rt-condense-lib.mjs';
+import { CodeGraphRepository } from '../../../core/infrastructure/code-graph-repository.js';
 
 // In-container failure-aware condenser (H1, unchanged): network-unavailable banner,
 // then up to 40 promoted failure-indicator lines (test NAMES), then the tail. Runs
@@ -54,22 +55,63 @@ function runSuite(cfg, diffText, testCmd) {
   } finally { try { rmSync(pdir, { recursive: true, force: true }); } catch { /* */ } }
 }
 
-// Clean-baseline failure set, computed ONCE and cached to disk (lazy on the first
-// run_tests call; the clean suite is time-invariant so call order is irrelevant).
-// On an infra-errored baseline we cache {ok:false} so we degrade to NO labeling and
-// don't re-run the doomed suite every call.
-export function getBaseline(cfg) {
-  const cachePath = path.join(cfg.binDir, '_rt_baseline.json');
-  if (existsSync(cachePath)) {
-    try { const j = JSON.parse(readFileSync(cachePath, 'utf8')); return { ok: j.ok, sigs: new Set(j.sigs || []) }; }
-    catch { /* rewrite below */ }
-  }
-  const base = runSuite(cfg, '', cfg.testScript);          // FULL suite, no agent diff
+// Clean-baseline failure set, computed ONCE and retained only in the long-lived host
+// broker process. The task agent never receives a baseline path or serialized cache
+// to forge. WeakMap identity also keeps concurrent attempts isolated.
+const baselineByConfig = new WeakMap();
+export function getBaseline(cfg, { runCleanSuite = runSuite } = {}) {
+  const cached = baselineByConfig.get(cfg);
+  if (cached) return { ok: cached.ok, sigs: new Set(cached.sigs) };
+  const base = runCleanSuite(cfg, '', cfg.testScript);      // FULL suite, no agent diff
   const sig = extractFailureSignatures(base.out);
   // A baseline that is itself an infra error is untrustworthy → ok:false (no labeling).
   const ok = sig.ok && !sig.infra;
-  try { writeFileSync(cachePath, JSON.stringify({ ok, sigs: [...sig.sigs] })); } catch { /* */ }
-  return { ok, sigs: sig.sigs };
+  const value = { ok, sigs: new Set(sig.sigs) };
+  baselineByConfig.set(cfg, value);
+  return { ok: value.ok, sigs: new Set(value.sigs) };
+}
+
+const symbolRepos = new Map();
+function resolveNamesFromTaskIndex(cfg, names, { files = [] } = {}) {
+  const dbPath = path.join(cfg.rundir, '.sweet-search', 'code-graph.db');
+  if (!existsSync(dbPath)) return null;
+  let repo = symbolRepos.get(dbPath);
+  if (!repo) {
+    repo = new CodeGraphRepository(dbPath);
+    symbolRepos.set(dbPath, repo);
+  }
+  const rows = repo.findEntitiesByAnyName(names, {
+    // Keep const/variable: those are exactly the definition kinds needed for
+    // style.BrightWhite and TestResultPath. Only non-symbol structural rows go.
+    excludeKinds: ['chunk', 'message', 'topKey', 'target'],
+    limit: 64,
+  });
+  // Qualified members are actionable only when their qualifier is repo-local.
+  // Recover local import/package aliases from resolved file-level import edges so
+  // external APIs such as fmt.Sprintf do not create noise.
+  for (const file of files) {
+    const fileEntity = repo.findEntitiesInRange(file, 1, 1).find(row => row.type === 'file');
+    if (!fileEntity) continue;
+    for (const rel of repo.getOutgoingRelationships(fileEntity.id, {
+      types: ['imports', 'plainImport'], limit: 50,
+    })) {
+      if (!rel.target) continue;
+      const raw = String(rel.targetName || rel.fullImportPath || rel.target.name || '');
+      const leaf = raw.split(/[/.\\]/).filter(Boolean).at(-1);
+      if (leaf && names.includes(leaf)) rows.push({ name: leaf, type: 'import' });
+    }
+  }
+  return rows;
+}
+
+export function resolveDiffIdentifierWarning(cfg, diff, { resolveNames } = {}) {
+  if (cfg?._isAgentFormat !== true || !diff) return '';
+  try {
+    const resolver = resolveNames || ((names, context) => resolveNamesFromTaskIndex(cfg, names, context));
+    return buildUnresolvedIdentifierWarning(diff, resolver);
+  } catch {
+    return ''; // absent/stale/unavailable index degrades silently, never invents a warning
+  }
 }
 
 // Main entry: run the suite on the agent's current diff, prepend the L2 levers.
@@ -89,12 +131,16 @@ export function runTestsWithLevers(cfg, { pattern = '' } = {}) {
   const cur = runSuite(cfg, diff, testCmd);
   if (!L2) return (note ? note + '\n' : '') + cur.out;
 
-  // (a) authority banner + (b) baseline-diff
-  let head = buildAuthorityBanner();
+  const identifierWarning = resolveDiffIdentifierWarning(cfg, diff);
+
+  // (a) authority banner + (b) baseline-diff. A diff warning replaces the longer
+  // repeated authority line, then renders as a one-line trailer. This keeps the
+  // response no larger than the existing pack and preserves named failure details.
+  let head = identifierWarning ? '' : buildAuthorityBanner();
   const curSig = extractFailureSignatures(cur.out);
   const bdiff = diffFailureSets(getBaseline(cfg), curSig);   // null when untrustworthy → no labeling
   const bd = renderBaselineDiff(bdiff);
-  if (bd) head += '\n' + bd;
-  if (note) head += '\n' + note;
-  return head + '\n' + cur.out;
+  if (bd) head += (head ? '\n' : '') + bd;
+  if (note) head += (head ? '\n' : '') + note;
+  return [head, cur.out, identifierWarning].filter(Boolean).join('\n');
 }
