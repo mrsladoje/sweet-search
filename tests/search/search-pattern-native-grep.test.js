@@ -35,6 +35,7 @@ vi.mock('../../core/ranking/late-interaction-model.js', () => ({
 }));
 
 import { bareGrep, patternSearch, getChunkLocationMap } from '../../core/search/index.js';
+import { detectBreDialectHint, renderRegexDialectHint } from '../../core/search/regex-dialect.js';
 import { isNativeGrepAvailable } from '../../core/infrastructure/native-sparse-gram.js';
 import {
   appendDeltaRecord,
@@ -86,6 +87,84 @@ describe('bareGrep — native path requires no ripgrep', () => {
     expect(res.results[0].matchText).toBe('AuthService');
     expect(res.results[0].content).toBe('class AuthService {}');
     expect(index.searchFull).toHaveBeenCalled();
+  });
+});
+
+describe('agent regex-dialect diagnostics', () => {
+  it('detects BRE operator spellings without rewriting the pattern', () => {
+    expect(detectBreDialectHint(String.raw`I64Vec\|U64Vec`)).toEqual({ operators: ['\\|'] });
+    expect(renderRegexDialectHint(detectBreDialectHint(String.raw`I64Vec\|U64Vec`)))
+      .toContain('original pattern was used unchanged');
+  });
+
+  it('does not flag intentional literal pipes, character classes, or fixed strings', () => {
+    expect(detectBreDialectHint(String.raw`left\|\|right`)).toBeNull();
+    expect(detectBreDialectHint(String.raw`[\|]`)).toBeNull();
+    expect(detectBreDialectHint(String.raw`left\\|right`)).toBeNull();
+    expect(detectBreDialectHint(String.raw`\x7C`)).toBeNull();
+    expect(detectBreDialectHint(String.raw`left\|right`, { fixedString: true })).toBeNull();
+  });
+
+  it('tracks escaped brackets without losing a later operator hint', () => {
+    expect(detectBreDialectHint(String.raw`\[left\|right`)).toEqual({ operators: ['\\|'] });
+    expect(detectBreDialectHint(String.raw`[\]]left\|right`)).toEqual({ operators: ['\\|'] });
+  });
+
+  it('recognizes only valid escaped interval shapes', () => {
+    expect(detectBreDialectHint(String.raw`item\{2,4\}`)).toEqual({ operators: ['\\{m,n\\}'] });
+    expect(detectBreDialectHint(String.raw`item\{many\}`)).toBeNull();
+    expect(detectBreDialectHint(String.raw`(item)\1`)).toBeNull();
+  });
+
+  it('attaches a hint only to agent-format zero results and searches once', async () => {
+    const index = makeUnifiedIndex({
+      matches: [], candidateFiles: 0, totalFiles: 1, scannedFiles: 1,
+    });
+    const searcher = {
+      projectRoot: '/proj',
+      sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
+      sparseGramIndex: index,
+    };
+
+    const agent = await bareGrep.call(searcher, String.raw`I64Vec\|U64Vec`, null, {
+      regex: String.raw`I64Vec\|U64Vec`, _isAgentFormat: true,
+    });
+    expect(agent.stats.regexDialectHint).toEqual({ operators: ['\\|'] });
+    expect(index.searchFull).toHaveBeenCalledTimes(1);
+
+    index.searchFull.mockClear();
+    const normal = await bareGrep.call(searcher, String.raw`I64Vec\|U64Vec`, null, {
+      regex: String.raw`I64Vec\|U64Vec`,
+    });
+    expect(normal.stats.regexDialectHint).toBeUndefined();
+    expect(index.searchFull).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('patternSearch — agent regex-dialect diagnostics', () => {
+  it('attaches the same hint to a zero-result ss-find package', async () => {
+    const index = makeUnifiedIndex({
+      matches: [], candidateFiles: 0, totalFiles: 1, scannedFiles: 1,
+    });
+    const searcher = {
+      verbose: false,
+      projectRoot: '/proj',
+      sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
+      hasLateInteractionIndex: true,
+      sparseGramIndex: index,
+      lateInteractionIndex: {
+        documents: new Map(), init: vi.fn(), hasTokens: vi.fn(() => new Set()),
+        scoreWithLateInteraction: vi.fn(async () => []),
+      },
+      getChunkLocationMap,
+    };
+
+    const result = await patternSearch.call(searcher, 'integer vectors', null, {
+      regex: String.raw`I64Vec\|U64Vec`, k: 5, format: 'agent', _isAgentFormat: true,
+    });
+    expect(result.results).toEqual([]);
+    expect(result.stats.regexDialectHint).toEqual({ operators: ['\\|'] });
+    expect(index.searchLines).toHaveBeenCalledTimes(1);
   });
 });
 

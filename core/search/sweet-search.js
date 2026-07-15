@@ -706,7 +706,11 @@ export class SweetSearch {
         results = grepResult.results;
         Object.assign(stats, grepResult.stats);
         stats.total_ms = grepResult.stats.total_ms ?? (Date.now() - start);
-        return { results, stats };
+        return {
+          results,
+          stats,
+          ...(grepResult.fileSummary ? { fileSummary: grepResult.fileSummary } : {}),
+        };
       }
       case 'pattern': {
         const patternResult = await this.patternSearch(query, routing, options);

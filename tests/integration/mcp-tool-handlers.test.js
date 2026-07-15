@@ -31,6 +31,28 @@ describe('MCP agent shown-span trailer', () => {
       else process.env.SWEET_SEARCH_SHOWN_SPAN_TRAILER = previous;
     }
   });
+
+  it('explains a suspicious zero-result regex without changing it', async () => {
+    const result = await handleSearch({
+      query: 'integer vectors', k: 2, mode: 'pattern',
+      regex: String.raw`I64Vec\|U64Vec`, format: 'agent',
+    }, {
+      PROJECT_ROOT: '/repo',
+      getSearcher: async () => ({
+        search: async (_query, options) => {
+          expect(options._isAgentFormat).toBe(true);
+          return {
+            format: 'agent', results: [], stats: { regexDialectHint: { operators: ['\\|'] } },
+            confidence: 'low', confidenceReason: 'empty', tokensUsed: 0, tokenBudget: 100,
+            totalResults: 0, mode: 'pattern', latencyMs: 1, subMode: 'agent',
+            query: 'integer vectors', regex: String.raw`I64Vec\|U64Vec`,
+          };
+        },
+      }),
+    });
+    expect(result.content[0].text).toContain('Rust syntax treats \\| as a literal pipe');
+    expect(result.content[0].text).toContain('original pattern was used unchanged');
+  });
 });
 
 describe('MCP tool handlers integration', () => {

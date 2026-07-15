@@ -20,6 +20,7 @@ import { applyGrepFileDiversity, matchesGrepFileFilter } from './grep-output-sha
 import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js';
 import { ensureSparseGramIndex } from './search-pattern-prefilter.js';
 import { packageForAgent } from './context-expander.js';
+import { detectBreDialectHint } from './regex-dialect.js';
 import { applyFileKindRanking, applyResultDemotions } from '../ranking/file-kind-ranking.js';
 
 // =============================================================================
@@ -165,6 +166,9 @@ export async function bareGrep(query, routing, options = {}) {
   );
 
   const totalMatches = matches.length;
+  const regexDialectHint = totalMatches === 0 && options._isAgentFormat
+    ? detectBreDialectHint(regex, { fixedString: options.fixedString })
+    : null;
   // Agent-only k-budget file diversity (option-gated; absent → byte-identical
   // output). Streaming per-file cap: matches beyond the cap are counted, not
   // stored, so memory is bounded by perFileCap*maxFiles, never total matches.
@@ -214,6 +218,7 @@ export async function bareGrep(query, routing, options = {}) {
       plannerRoute: candidateResult.stats.plannerRoute,
       gramSelectivity: candidateResult.stats.gramSelectivity,
       nativeGrepUsed: candidateResult.stats.nativeGrepUsed,
+      ...(regexDialectHint && { regexDialectHint }),
       symbolType,
       total_ms: Math.round(performance.now() - start),
       stageTiming: candidateResult.stats.stageTiming || null,
@@ -293,6 +298,9 @@ export async function patternSearch(query, routing, options = {}) {
   const queryTokens = encodedQuery.tokens;
   const encodeTime = encodedQuery.encodeTime;
   const totalRawMatches = grepMatches.length + overlayMatches.length;
+  const regexDialectHint = totalRawMatches === 0 && options._isAgentFormat
+    ? detectBreDialectHint(regex, { fixedString: options.fixedString })
+    : null;
   log(
     `Parallel phase: ${totalRawMatches} grep matches ` +
     `(${grepMatches.length} indexed, ${overlayMatches.length} overlay), ` +
@@ -328,6 +336,7 @@ export async function patternSearch(query, routing, options = {}) {
       prefilterDiscardedCount: candidateResult.stats.prefilterDiscardedCount,
       grepStrategy: candidateResult.stats.grepStrategy,
       parallelTime_ms: Math.round(parallelTime),
+      ...(regexDialectHint && { regexDialectHint }),
       total_ms: Math.round(performance.now() - start),
     };
 
