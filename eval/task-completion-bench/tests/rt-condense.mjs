@@ -7,6 +7,7 @@
 import {
   condenseOutput, extractFailureSignatures, diffFailureSets, renderBaselineDiff,
   buildAuthorityBanner, sanitizeTestPattern, applyTestPattern, normalizeFailureSignature,
+  buildUnresolvedIdentifierWarning, extractAddedIdentifierReferences,
 } from '../harness/rt-condense-lib.mjs';
 
 let ok = true;
@@ -164,6 +165,57 @@ console.log('== L2 signature normalization: line-shift → false-new (safe), not
   const c = normalizeFailureSignature('  12) suite desc: AssertionError (0.03s)');
   const d = normalizeFailureSignature('12) suite desc: AssertionError');
   assert(c === d, 'mocha list-index + duration stripped → same signature (robust to run-to-run noise)');
+
+  const ms1 = normalizeFailureSignature('1>2026-07-15T12:01:02.123Z MigratesAClient ... FAILED');
+  const ms2 = normalizeFailureSignature('[12:05:09.900] 7>MigratesAClient ... FAILED');
+  assert(ms1 === ms2, 'MSBuild node/timestamp prefixes normalize in either order');
+  assert(ms1.includes('MigratesAClient'), 'volatile-prefix normalization preserves the named failure');
+  assert(
+    normalizeFailureSignature('1>MigratesAClient ... FAILED') !== normalizeFailureSignature('1>InitializesAsync ... FAILED'),
+    'different named failures remain distinct after MSBuild normalization',
+  );
+  const buildOnly = extractFailureSignatures('1>Build FAILED.\n7>Done Building Project "Kiota.Builder.Tests.csproj" -- FAILED.');
+  assert(!buildOnly.sigs.has('Build FAILED.'), 'generic Build FAILED aggregate is not a failure signature');
+  assert([...buildOnly.sigs].some(sig => sig.includes('Kiota.Builder.Tests.csproj')), 'named failed project remains actionable');
+}
+
+// ---------------------------------------------------------------------------
+console.log('== P3 diff identifier warning: index-resolved, agent-actionable, low noise ==');
+{
+  const diff = [
+    'diff --git a/internal/shell/zsh/action.go b/internal/shell/zsh/action.go',
+    '+++ b/internal/shell/zsh/action.go',
+    '+value := style.BrightWhite',
+  ].join('\n');
+  let calls = 0;
+  const warning = buildUnresolvedIdentifierWarning(diff, names => {
+    calls++;
+    assert(names.includes('BrightWhite') && names.includes('style'), 'qualified leaf + qualifier resolved in one batch');
+    return [{ name: 'style', type: 'package' }];
+  });
+  assert(calls === 1, 'identifier resolver called once');
+  assert(/style\.BrightWhite/.test(warning), 'unresolved qualified identifier gets one-line warning');
+  assert(!warning.includes('\n'), 'warning is a single line');
+  assert(warning.length <= buildAuthorityBanner().length, 'warning fits by replacing the existing authority trailer');
+
+  const resolved = buildUnresolvedIdentifierWarning(diff, () => ([
+    { name: 'style', type: 'package' }, { name: 'BrightWhite', type: 'const' },
+  ]));
+  assert(resolved === '', 'indexed const/variable-style definition suppresses warning');
+
+  const bare = 'diff --git a/base/test_helpers.go b/base/test_helpers.go\n+++ b/base/test_helpers.go\n+return TestResultPath';
+  assert(/TestResultPath/.test(buildUnresolvedIdentifierWarning(bare, () => [])), 'unresolved bare identifier gets warning');
+
+  const safe = [
+    'diff --git a/x.go b/x.go', '+++ b/x.go',
+    '+const BrightWhite = "style.MissingInString"',
+    '+// MissingInComment',
+    '+value := fmt.Sprintf("%s", BrightWhite)',
+    '-return RemovedMissing',
+  ].join('\n');
+  assert(buildUnresolvedIdentifierWarning(safe, () => []) === '', 'declarations, strings, comments, removed lines, and external qualifiers stay quiet');
+  assert(extractAddedIdentifierReferences('not a diff').references.length === 0, 'malformed non-diff input has no candidates');
+  assert(extractAddedIdentifierReferences('x'.repeat(1_000_001)).references.length === 0, 'oversize diff fails open without warning');
 }
 
 // ---------------------------------------------------------------------------

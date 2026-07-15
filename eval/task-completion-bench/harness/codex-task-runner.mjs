@@ -8,8 +8,11 @@
 // api-task-runner.runTask so grading/metrics are identical.
 import { spawn } from 'node:child_process';
 import { execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, rmSync, chmodSync, readFileSync } from 'node:fs';
+import {
+  chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync,
+} from 'node:fs';
 import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -86,8 +89,8 @@ const FRAME_CLOSE =
 // two interpolated template strings. cfg carries dockerBin (REAL docker abs path, so
 // the shim's own `docker run` bypasses the L1 wrapper), binDir (baseline cache), and
 // rtAuthority (L2 gate).
-function writeRunTestsBrokerFiles(binDir, cfgPath) {
-  const reqDir = path.join(binDir, '_rt_ipc');
+function writeRunTestsBrokerFiles(binDir, cfgPath, stateDir = binDir) {
+  const reqDir = path.join(stateDir, '_rt_ipc');
   mkdirSync(reqDir, { recursive: true });
   const brokerPath = path.join(binDir, '_rt_broker.mjs');
   // Host-side broker: reads the (possibly targeted) pattern from the req file, runs the
@@ -112,13 +115,20 @@ setInterval(() => {
   return { brokerPath, reqDir };
 }
 
-export function writeRunTestsShim(binDir, { image, workdir, testScript, rundir, testTimeoutSec = 300, netArgs = '', brokerMode = false, dockerBin = 'docker', rtAuthority = true }) {
+export function writeRunTestsShim(binDir, {
+  image, workdir, testScript, rundir, testTimeoutSec = 300, netArgs = '',
+  brokerMode = false, dockerBin = 'docker', rtAuthority = true,
+  stateDir = binDir, _isAgentFormat = false,
+}) {
   mkdirSync(binDir, { recursive: true });
   const cfg = path.join(binDir, '_run_tests_cfg.json');
-  writeFileSync(cfg, JSON.stringify({ image, workdir, testScript, rundir, dockerHost: DOCKER_HOST, testTimeoutSec, netArgs, dockerBin, binDir, rtAuthority }));
+  writeFileSync(cfg, JSON.stringify({
+    image, workdir, testScript, rundir, dockerHost: DOCKER_HOST, testTimeoutSec,
+    netArgs, dockerBin, binDir, stateDir, rtAuthority, _isAgentFormat,
+  }));
   const mjs = path.join(binDir, '_run_tests.mjs');
   if (brokerMode) {
-    const { brokerPath, reqDir } = writeRunTestsBrokerFiles(binDir, cfg);
+    const { brokerPath, reqDir } = writeRunTestsBrokerFiles(binDir, cfg, stateDir);
     // requester shim: sandbox-safe (file writes into __rt/_rt_ipc only, no docker).
     // The first arg (optional test pattern) is passed through the req-file content.
     writeFileSync(mjs, `import { writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
@@ -141,7 +151,8 @@ process.stdout.write('[run_tests] no response from test broker within ' + (tSec 
     const shim = path.join(binDir, 'run_tests');
     writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
     chmodSync(shim, 0o755);
-    return { binDir, brokerPath, integrity: shimIntegritySnapshot([cfg, mjs, shim, brokerPath, RT_RUNTIME_PATH, RT_LIB_PATH]) };
+    const files = [cfg, mjs, shim, brokerPath, RT_RUNTIME_PATH, RT_LIB_PATH];
+    return { binDir, brokerPath, reqDir, files, integrity: shimIntegritySnapshot(files) };
   }
   // Direct shim: run the suite + L2 levers via the shared runtime. argv[2] = optional
   // targeted test pattern. Output IS the signal (shim exits 0; PASS/FAIL is in the text).
@@ -154,7 +165,8 @@ catch (e) { process.stdout.write('[run_tests error] ' + String(e && e.message ||
   const shim = path.join(binDir, 'run_tests');
   writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
   chmodSync(shim, 0o755);
-  return { binDir, integrity: shimIntegritySnapshot([cfg, mjs, shim, RT_RUNTIME_PATH, RT_LIB_PATH]) };
+  const files = [cfg, mjs, shim, RT_RUNTIME_PATH, RT_LIB_PATH];
+  return { binDir, files, integrity: shimIntegritySnapshot(files) };
 }
 
 // L1: install a `docker` PATH-wrapper into binDir (FIRST on the agent's PATH) that
@@ -222,6 +234,41 @@ export function verifyShimIntegrity(integrity) {
   return tampered;
 }
 
+// The hash snapshot covers expected files; this closes the complementary gap where
+// an agent creates a replacement cache/state file that did not exist at snapshot
+// time (the forged `_rt_baseline.json` attack). Dynamic request/response files live
+// in stateDir/_rt_ipc and must be fully consumed when the agent process exits.
+export function verifyRunnerDirectoryIntegrity({ binDir, expectedFiles = [], stateDir } = {}) {
+  const tampered = [];
+  const expected = new Set(expectedFiles
+    .filter(file => path.dirname(file) === binDir)
+    .map(file => path.basename(file)));
+  try {
+    for (const name of readdirSync(binDir)) {
+      if (!expected.has(name)) tampered.push(`${name} (unexpected)`);
+    }
+  } catch {
+    tampered.push(`${path.basename(binDir || 'runner-bin')} (deleted)`);
+  }
+  if (stateDir) {
+    try {
+      const allowed = new Set([path.basename(binDir), '_rt_ipc']);
+      for (const name of readdirSync(stateDir)) {
+        if (!allowed.has(name)) tampered.push(`${name} (unexpected runner state)`);
+      }
+    } catch {
+      tampered.push(`${path.basename(stateDir)} (deleted)`);
+    }
+    const ipcDir = path.join(stateDir, '_rt_ipc');
+    try {
+      for (const name of readdirSync(ipcDir)) tampered.push(`_rt_ipc/${name} (unexpected)`);
+    } catch {
+      tampered.push('_rt_ipc (deleted)');
+    }
+  }
+  return tampered;
+}
+
 // classify a Codex shell command into a tool bucket. Codex wraps commands as
 // `/bin/bash -lc '<inner>'`, so unwrap to the inner command before matching.
 function classify(cmd) {
@@ -262,18 +309,37 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   const netArgs = NET_LOCKDOWN
     ? `--network ${t._network === 'bridge' ? 'bridge' : 'none'} ${(t._dockerRunArgs || []).join(' ')}`.trim() + ' '
     : ((t._dockerRunArgs || []).join(' ') ? (t._dockerRunArgs || []).join(' ') + ' ' : '');
-  const binDir = path.join(rundir, '.codex-bin');
+  // Runner-owned artifacts must not share the agent-writable task tree. The clean
+  // baseline is retained only in the persistent broker process (see
+  // rt-shim-runtime.mjs); request/response state and generated shims live in this
+  // unique per-attempt directory and are removed before returning.
+  const runnerStateDir = mkdtempSync(path.join(tmpdir(), 'sweet-search-runner-'));
+  const binDir = path.join(runnerStateDir, 'bin');
   // Resolve the REAL docker binary from the HARNESS PATH (no binDir → no self-ref), so
   // both the run_tests shim (cfg.dockerBin) and the L1 wrapper invoke it directly.
   let realDocker = 'docker';
   try { realDocker = execSync('command -v docker', { encoding: 'utf8' }).trim() || 'docker'; } catch { /* fall back to bare 'docker' */ }
-  const shimInfo = writeRunTestsShim(binDir, { image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300, netArgs, brokerMode: AGENT_SANDBOX, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY });
+  const shimInfo = writeRunTestsShim(binDir, {
+    image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300,
+    netArgs, brokerMode: true, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY,
+    stateDir: runnerStateDir, _isAgentFormat: sweet,
+  });
   // L1: install the docker output-condenser wrapper (both arms). Flag-gated; a run
   // with SS_NO_CMD_CONDENSE=1 leaves the agent's docker == real docker (legacy).
-  if (L1_CONDENSE) { try { installCommandWrappers(binDir, { realDocker }); } catch (e) { console.error(`  [L1] wrapper install skipped: ${String(e.message).slice(0, 100)}`); } }
-  // host-side broker executes run_tests' docker work OUTSIDE the agent sandbox
-  let broker = null;
-  if (AGENT_SANDBOX && shimInfo?.brokerPath) broker = spawn('node', [shimInfo.brokerPath], { stdio: 'ignore' });
+  let wrapperFiles = [];
+  if (L1_CONDENSE) {
+    try { wrapperFiles = Object.values(installCommandWrappers(binDir, { realDocker })); }
+    catch (e) { console.error(`  [L1] wrapper install skipped: ${String(e.message).slice(0, 100)}`); }
+  }
+  const runnerFiles = [...(shimInfo.files || []), ...wrapperFiles];
+  // Re-snapshot after every generated runner file exists. This includes the L1
+  // docker wrapper, which was previously outside the tamper verdict.
+  shimInfo.integrity = shimIntegritySnapshot(runnerFiles);
+  // The host-side broker is now always on: one long-lived process owns the clean
+  // baseline in memory across all run_tests invocations for this attempt.
+  const broker = shimInfo?.brokerPath
+    ? spawn('node', [shimInfo.brokerPath], { stdio: 'ignore' })
+    : null;
   const pathDirs = [binDir, sweet ? ssBinDir : null].filter(Boolean);
   const env = { ...process.env, PATH: [...pathDirs, process.env.PATH].join(':'), SWEET_SEARCH_PROJECT_ROOT: rundir, DOCKER_HOST };
 
@@ -307,7 +373,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // broker (docker is unreachable from inside — codex seccomp denies unix connects).
   // Production egress control is bench-net-lockdown.sh + --network none containers.
   const sandboxArgs = AGENT_SANDBOX
-    ? ['--sandbox', 'workspace-write', '--skip-git-repo-check', '-c', 'approval_policy="never"',
+    ? ['--sandbox', 'workspace-write', '--skip-git-repo-check', '--add-dir', runnerStateDir, '-c', 'approval_policy="never"',
        '-c', 'sandbox_workspace_write.network_access=false']
     : ['--dangerously-bypass-approvals-and-sandbox'];
   const args = ['exec', ...sandboxArgs, '--json',
@@ -352,12 +418,18 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   const calls = toolCalls.length;
   const exitReason = r.timedOut ? 'timeout' : (r.exitCode !== 0 ? 'codex_error' : 'model_stopped');
   if (broker) { try { broker.kill('SIGKILL'); } catch {} }
-  // H2: detect agent tampering with the run_tests shim (cfg/script/broker)
-  const shimTamperedFiles = verifyShimIntegrity(shimInfo?.integrity);
+  // H2: detect mutations AND injected runner/cache files. The latter catches the
+  // forged `_rt_baseline.json` class even though no baseline file is legitimate now.
+  const shimTamperedFiles = [
+    ...verifyShimIntegrity(shimInfo?.integrity),
+    ...verifyRunnerDirectoryIntegrity({
+      binDir, expectedFiles: runnerFiles, stateDir: runnerStateDir,
+    }),
+  ];
   if (shimTamperedFiles.length) {
     console.log(`  [SHIM-TAMPERED ${task.id || ''}] agent modified: ${shimTamperedFiles.join(', ')} — test signals untrusted`);
   }
-  try { rmSync(binDir, { recursive: true, force: true }); } catch {}
+  try { rmSync(runnerStateDir, { recursive: true, force: true }); } catch {}
 
   return {
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
