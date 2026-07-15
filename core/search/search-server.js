@@ -52,6 +52,15 @@ const AGENT_SPAN_BODY_MAX_BYTES = 64 * 1024;
 
 const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
 
+export function resolveAgentSearchRequest(rawFormat, agentRequested = false) {
+  const explicit = AGENT_FORMATS.has(rawFormat) ? rawFormat : undefined;
+  const requested = agentRequested === true;
+  return {
+    agentFormat: explicit || (requested ? 'agent' : undefined),
+    renderText: requested && rawFormat === 'text' && !explicit,
+  };
+}
+
 function canonicalProjectRoot(root) {
   const resolved = path.resolve(root || process.cwd());
   try {
@@ -559,6 +568,43 @@ function buildTextSearchResponse(results, stats, totalTime, { summary = false, m
   return out;
 }
 
+/** Render a packaged agent response for the native captured-output CLI. */
+export function renderAgentSearchResponse(response) {
+  const results = response?.results || [];
+  const routing = response?.stats?.routing || {};
+  const routedMode = routing.mode || response?.mode || 'auto';
+  let out = `# sweet-search: routed=${routedMode} budget=${response?.tokenBudget ?? '?'} used=${response?.tokensUsed ?? '?'} results=${results.length} subMode=${response?.subMode ?? 'agent'}\n`;
+  if (response?.confidence) {
+    out += `# confidence=${response.confidence}${response.confidenceReason ? ` (${response.confidenceReason})` : ''}`;
+    if (response.sufficiencyVerdict) out += ` sufficient=${response.sufficiencyVerdict}`;
+    out += '\n';
+  }
+  for (const result of results) {
+    const symbol = result.symbol ? ` [${result.symbolType || 'code'}: ${result.symbol}]` : '';
+    const kind = result.expansionKind ? ` kind=${result.expansionKind}` : '';
+    const stale = result.stale ? ' STALE' : '';
+    out += `\n## #${result.rank} ${result.file}:${result.startLine}-${result.endLine}${symbol} (${result.presentation}${kind}${stale}) score=${(result.score || 0).toFixed(3)}\n`;
+    if (result.headerContext) out += `### imports\n\`\`\`\n${result.headerContext}\n\`\`\`\n`;
+    if (result.code) out += `\`\`\`\n${result.code}\n\`\`\`\n`;
+    else if (result.summary) out += `${result.summary}\n`;
+    if (result.neighbors?.rendered) {
+      out += `### related (1-hop graph, ~${result.neighbors.tokens} tok)\n${result.neighbors.rendered}\n`;
+    }
+    if (result.sameFile?.rendered) out += `${result.sameFile.rendered}\n`;
+    if (result.continuation?.rendered) {
+      out += `${result.continuation.rendered}\n`;
+      if (result.continuation.kind === 'symbol' && result.continuation.code) {
+        out += `\`\`\`\n${result.continuation.code}\n\`\`\`\n`;
+      }
+    }
+    if (result.familyManifest?.rendered) out += `${result.familyManifest.rendered}\n`;
+  }
+  if (results.length === 0) out += '(no matches)\n';
+  const regexDialectNote = renderRegexDialectHint(response?.stats?.regexDialectHint);
+  if (regexDialectNote) out += `${regexDialectNote}\n`;
+  return out;
+}
+
 function buildJsonSearchResponse(results, stats, totalTime, extra = {}) {
   return JSON.stringify({
     results,
@@ -795,7 +841,8 @@ export async function startServer() {
       const url = new URL(reqUrl, `http://localhost:${SEARCH_SERVER_PORT}`);
       const isUnixSocket = !req.socket.remoteAddress;
       if (isUnixSocket
-          && AGENT_FORMATS.has(url.searchParams.get('format'))
+          && (AGENT_FORMATS.has(url.searchParams.get('format'))
+            || url.searchParams.get('agent') === 'true')
           && flagEnabled(url.searchParams.get('exactRereadOmission'))
           && !agentSpanLedger) {
         agentSpanLedger = new AgentSpanLedger();
@@ -872,8 +919,12 @@ export async function startServer() {
 
       // Agent mode: context packaging (ColGrep agent format)
       const rawFormat = url.searchParams.get('format');
-      const agentFormat = AGENT_FORMATS.has(rawFormat) ? rawFormat : undefined;
-      const isAgentFormat = Boolean(agentFormat) || url.searchParams.get('agent') === 'true';
+      const agentRequested = url.searchParams.get('agent') === 'true';
+      const { agentFormat, renderText: renderAgentText } = resolveAgentSearchRequest(
+        rawFormat,
+        agentRequested,
+      );
+      const isAgentFormat = Boolean(agentFormat);
       const tokenBudget = url.searchParams.has('budget')
         ? parseInt(url.searchParams.get('budget'), 10)
         : undefined;
@@ -930,8 +981,13 @@ export async function startServer() {
           }
           searchResult.serverProjectRoot = searcher.projectRoot || null;
           searchResult.serverPid = process.pid;
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(searchResult));
+          if (renderAgentText) {
+            res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end(renderAgentSearchResponse(searchResult));
+          } else {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(searchResult));
+          }
         } else {
           if (agentSpanCall) {
             agentSpanLedger.observeAtCall(agentSpanCall.sessionId, agentSpanCall.call, []);
@@ -953,6 +1009,7 @@ export async function startServer() {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(buildJsonSearchResponse(results, stats, totalTime, {
               ...(searchResult.fileSummary ? { fileSummary: searchResult.fileSummary } : {}),
+              ...(searchResult.familyManifest ? { familyManifest: searchResult.familyManifest } : {}),
             }));
           }
         }

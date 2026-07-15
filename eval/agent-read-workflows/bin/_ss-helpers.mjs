@@ -18,7 +18,10 @@ import {
   buildGrepPattern, stripInertFlags, normalizeArgs, extractPositional,
   parseLineRange, looksLikeOption, renderSufficiency,
 } from './_ss-argparse.mjs';
-import { renderGrepBody } from '../../../core/search/grep-output-shaping.js';
+import {
+  reallocateGrepTailForManifest,
+  renderGrepBody,
+} from '../../../core/search/grep-output-shaping.js';
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
 import { renderRegexDialectHint } from '../../../core/search/regex-dialect.js';
 import {
@@ -232,6 +235,7 @@ async function cmdGrep(rawArgs) {
   const fileSummary = result.fileSummary
     || { files: [], hiddenFileCount: 0, hiddenMatchCount: 0, hiddenSample: [] };
   const body = renderGrepBody(result.results, fileSummary, k);
+  const completed = reallocateGrepTailForManifest(body.lines, result.familyManifest);
   await recordAgentToolCall();
 
   // Sibling-surface signal (E6, 2026-07-08 trace audit): when a symbol/stem
@@ -244,7 +248,8 @@ async function cmdGrep(rawArgs) {
     process.stdout.write(`# (+N more in this file)=truncated — ` +
       `see the rest: ss-grep "<regex>" --in <file>\n`);
   }
-  for (const line of body.lines) process.stdout.write(line + '\n');
+  for (const line of completed.lines) process.stdout.write(line + '\n');
+  if (completed.familyManifest) process.stdout.write(`${completed.familyManifest.rendered}\n`);
   if (body.hiddenLine) process.stdout.write(body.hiddenLine + '\n');
   if (body.shownMatches === 0) process.stdout.write('(no matches)\n');
   writeRegexDialectHint(result.stats);
@@ -334,6 +339,13 @@ async function cmdFind(rawArgs) {
     if (r.sameFile && r.sameFile.rendered) {
       process.stdout.write(`${r.sameFile.rendered}\n`);
     }
+    if (r.continuation?.rendered) {
+      process.stdout.write(`${r.continuation.rendered}\n`);
+      if (r.continuation.kind === 'symbol' && r.continuation.code) {
+        process.stdout.write(`\`\`\`\n${r.continuation.code}\n\`\`\`\n`);
+      }
+    }
+    if (r.familyManifest?.rendered) process.stdout.write(`${r.familyManifest.rendered}\n`);
   }
   if (!response.results || response.results.length === 0) process.stdout.write('(no matches)\n');
   writeRegexDialectHint(response.stats);
@@ -589,6 +601,13 @@ async function cmdAgentSearch(rawArgs) {
     if (r.sameFile && r.sameFile.rendered) {
       process.stdout.write(`${r.sameFile.rendered}\n`);
     }
+    if (r.continuation?.rendered) {
+      process.stdout.write(`${r.continuation.rendered}\n`);
+      if (r.continuation.kind === 'symbol' && r.continuation.code) {
+        process.stdout.write(`\`\`\`\n${r.continuation.code}\n\`\`\`\n`);
+      }
+    }
+    if (r.familyManifest?.rendered) process.stdout.write(`${r.familyManifest.rendered}\n`);
   }
 
   if (!response.results || response.results.length === 0) {

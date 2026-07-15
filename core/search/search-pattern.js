@@ -21,6 +21,7 @@ import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js'
 import { ensureSparseGramIndex } from './search-pattern-prefilter.js';
 import { packageForAgent } from './context-expander.js';
 import { detectBreDialectHint } from './regex-dialect.js';
+import { buildIndexedGrepFamilyManifest } from './agent-pack-completion.js';
 import { applyFileKindRanking, applyResultDemotions } from '../ranking/file-kind-ranking.js';
 
 // =============================================================================
@@ -187,10 +188,14 @@ export async function bareGrep(query, routing, options = {}) {
     projectRoot: searchDir,
     contextLines: options.contextLines ?? 0,
   });
+  const familyManifest = options._isAgentFormat === true && !options.fileFilter
+    ? buildIndexedGrepFamilyManifest(results, this?.codeGraphRepo)
+    : null;
 
   return {
     results,
     ...(fileSummary ? { fileSummary } : {}),
+    ...(familyManifest ? { familyManifest } : {}),
     stats: {
       path: 'grep',
       regex,
@@ -343,7 +348,8 @@ export async function patternSearch(query, routing, options = {}) {
     // Agent mode: return proper agent schema even for zero results
     if (format === 'agent' || format === 'agent_preview' || format === 'agent_full' || format === 'agent_full_xl') {
       const agentResponse = packageForAgent([], emptyStats, {
-        query, regex, mode: 'pattern', format, tokenBudget, ablations, projectRoot: this.projectRoot || PROJECT_ROOT,
+        query, regex, mode: 'pattern', format, tokenBudget, ablations,
+        projectRoot: this.projectRoot || PROJECT_ROOT, _isAgentFormat: true,
       });
       agentResponse.stats = emptyStats;
       return agentResponse;
@@ -558,6 +564,7 @@ export async function patternSearch(query, routing, options = {}) {
       locationMap,
       projectRoot: searchDir,
       ablations,
+      _isAgentFormat: true,
     });
     agentResponse.stats = stats;
     return agentResponse;

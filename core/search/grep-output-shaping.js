@@ -191,3 +191,31 @@ export function renderGrepBody(kept, fileSummary, k) {
     hiddenLine,
   };
 }
+
+/**
+ * Replace the lowest-ranked complete grep lines with an indexed family
+ * manifest, but only when those lines fully fund the manifest's estimated
+ * tokens. The input is never mutated and an underfunded manifest is omitted.
+ */
+export function reallocateGrepTailForManifest(lines, manifest, estimateTokens = (text) => (
+  text ? Math.ceil(text.length / 3.5) : 0
+)) {
+  if (!Array.isArray(lines) || !manifest?.rendered || lines.length === 0) {
+    return { lines, familyManifest: null, removedLineCount: 0 };
+  }
+  const required = estimateTokens(`${manifest.rendered}\n`);
+  let reclaimed = 0;
+  let keep = lines.length;
+  while (keep > 0 && reclaimed < required) {
+    keep--;
+    reclaimed += estimateTokens(`${lines[keep]}\n`);
+  }
+  if (reclaimed < required) {
+    return { lines, familyManifest: null, removedLineCount: 0 };
+  }
+  return {
+    lines: lines.slice(0, keep),
+    familyManifest: { ...manifest, tokens: required },
+    removedLineCount: lines.length - keep,
+  };
+}

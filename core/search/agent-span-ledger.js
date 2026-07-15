@@ -108,10 +108,25 @@ function completeAgentResultSpan(result, projectRoot) {
   return validSpanReceipt(receipt) ? receipt : null;
 }
 
+function completeAgentContinuationSpan(result, projectRoot) {
+  const continuation = result?.continuation;
+  if (continuation?.kind !== 'symbol' || typeof continuation.code !== 'string' || !continuation.code) return null;
+  return completeAgentResultSpan({
+    file: continuation.file,
+    startLine: continuation.startLine,
+    endLine: continuation.endLine,
+    presentation: 'full',
+    code: continuation.code,
+  }, projectRoot);
+}
+
 export function collectAgentShownSpans(results, { projectRoot } = {}) {
   if (!Array.isArray(results)) return [];
   return results
-    .map((result) => completeAgentResultSpan(result, projectRoot))
+    .flatMap((result) => [
+      completeAgentResultSpan(result, projectRoot),
+      completeAgentContinuationSpan(result, projectRoot),
+    ])
     .filter(Boolean)
     .slice(0, MAX_SPANS_PER_CALL);
 }

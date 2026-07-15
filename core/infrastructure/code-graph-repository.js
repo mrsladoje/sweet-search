@@ -13,6 +13,10 @@ import { existsSync, statSync } from 'fs';
 import { applyReadPragmas, prepareCached } from './db-utils.js';
 import { readAdjacentManifest, resolveManifestCodeGraphPath, sqlAliasPrefix } from './code-graph-visibility.js';
 
+function pathIsUnsafe(value) {
+  return value.startsWith('/') || value === '..' || value.startsWith('../') || value.includes('/../');
+}
+
 export class CodeGraphRepository {
   constructor(dbPath, options = {}) {
     this._baseDbPath = dbPath;
@@ -380,6 +384,60 @@ export class CodeGraphRepository {
       return { above: keepOutermost(aboveRows), below: keepOutermost(belowRows) };
     } catch {
       return empty;
+    }
+  }
+
+  /**
+   * Find exact indexed symbol-family candidates under a bounded directory.
+   * The search domain supplies an identifier stem discovered from indexed
+   * seeds; this adapter performs only parameterized persistence work.
+   *
+   * @param {string} stem - alphanumeric identifier fragment (3-64 chars)
+   * @param {{ filePrefix:string, types?:string[], limit?:number }} opts
+   * @returns {Array<{id,name,type,filePath,startLine,endLine,parentClass}>}
+   */
+  findFamilyCandidates(stem, opts = {}) {
+    const db = this._open();
+    if (!db || typeof stem !== 'string' || !/^[A-Za-z][A-Za-z0-9]{2,63}$/.test(stem)) return [];
+    const prefix = typeof opts.filePrefix === 'string'
+      ? opts.filePrefix.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '')
+      : '';
+    if (!prefix || prefix === '.' || pathIsUnsafe(prefix)) return [];
+    const types = Array.isArray(opts.types)
+      ? [...new Set(opts.types.filter((type) => typeof type === 'string' && /^[A-Za-z][\w-]{0,31}$/.test(type)))].slice(0, 16)
+      : [];
+    const limit = Math.max(1, Math.min(128, opts.limit ?? 64));
+    const escapeLike = (value) => value.replace(/[\\%_]/g, '\\$&');
+    try {
+      const typeSql = types.length > 0 ? `AND type IN (${types.map(() => '?').join(',')})` : '';
+      const sql = `
+        SELECT id, name, type, file_path, start_line, end_line, parent_class
+        FROM entities
+        WHERE lower(name) LIKE lower(?) ESCAPE '\\'
+          AND file_path LIKE ? ESCAPE '\\'
+          ${typeSql}
+          AND ${this._entityVisibilitySql(db)}
+        ORDER BY name ASC, file_path ASC, start_line ASC
+        LIMIT ?
+      `;
+      const args = [
+        `%${escapeLike(stem)}%`,
+        `${escapeLike(prefix)}/%`,
+        ...types,
+        ...this._entityVisibilityParams(db),
+        limit,
+      ];
+      return prepareCached(db, sql).all(...args).map((row) => ({
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        filePath: row.file_path,
+        startLine: row.start_line,
+        endLine: row.end_line,
+        parentClass: row.parent_class || null,
+      }));
+    } catch {
+      return [];
     }
   }
 

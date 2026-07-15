@@ -20,6 +20,7 @@
 
 import { readFileRange } from './search-pattern-chunks.js';
 import { computeSufficiencyVerdict } from './query-sufficiency.js';
+import { applyAgentPackCompletion, shownSourceEndLine } from './agent-pack-completion.js';
 import { statSync } from 'fs';
 import path from 'path';
 
@@ -1974,6 +1975,7 @@ export function packageForAgent(rankedResults, searchStats, opts) {
     codeGraphRepo = null,
     locationMap = null,
     projectRoot,
+    _isAgentFormat = false,
   } = opts;
   const ablations = opts.ablations || new Set();
 
@@ -2187,6 +2189,7 @@ export function packageForAgent(rankedResults, searchStats, opts) {
     // Phase 3: Token budget — truncate or compress
     const resultTokenCap = Math.min(allocation.tokenCap, remainingBudget);
     let codeTokens;
+    let boundaryTruncated = false;
     if (resultTokenCap <= 0) {
       code = '';
       codeTokens = 0;
@@ -2209,6 +2212,7 @@ export function packageForAgent(rankedResults, searchStats, opts) {
       const truncResult = truncateToTokenCap(code, resultTokenCap);
       code = truncResult.code;
       codeTokens = estimateTokens(code);
+      boundaryTruncated = truncResult.truncated;
     } else {
       // Preview mode — compress to signature + snippet
       code = compressToPreview(code, resultTokenCap);
@@ -2264,6 +2268,15 @@ export function packageForAgent(rankedResults, searchStats, opts) {
       indexedAt,
       code,
       codeTokens,
+      ...(_isAgentFormat === true
+        && allocation.presentation === 'full'
+        && expansion.kind !== 'sandwich'
+        ? {
+            shownStartLine: expansion.startLine,
+            shownEndLine: shownSourceEndLine(expansion.startLine, code, boundaryTruncated),
+            ...(boundaryTruncated ? { boundaryTruncated: true } : {}),
+          }
+        : {}),
     };
 
     // Phase 4: Header context (top-1 only). Skipped by 'no-header' ablation.
@@ -2426,6 +2439,22 @@ export function packageForAgent(rankedResults, searchStats, opts) {
         tokensUsed += map.tokens;
       }
     }
+  }
+
+  if (_isAgentFormat === true) {
+    const completion = applyAgentPackCompletion({
+      results: agentResults,
+      query,
+      regex,
+      codeGraphRepo,
+      fileCache,
+      projectRoot,
+      tokensUsed,
+      tokenBudget,
+      estimateTokens,
+      isAgentFormat: _isAgentFormat,
+    });
+    tokensUsed = completion.tokensUsed;
   }
 
   return {
