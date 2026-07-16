@@ -107,9 +107,9 @@ sweet-search "where do we validate JWT tokens?"
 ```
 
 That's it. `init` is idempotent and SHA256-verifies every model binary; re-running it is always safe.
-From then on the index maintains itself — edit, save, search.
+From then on the index maintains itself incrementally.
 
-To uninstall:
+To uninstall 😞😞😞:
 
 ```bash
 sweet-search uninstall --keep-models  # current repo only; keeps shared models and the global CLI
