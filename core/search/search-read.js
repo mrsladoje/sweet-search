@@ -19,6 +19,7 @@ import {
   resolveAgentSessionId,
 } from './agent-span-ledger.js';
 import { sendAgentSpanOperation } from './agent-span-client.js';
+import { selectUnreadSymbols } from './unread-symbol-ranking.js';
 
 const CACHE_MAX_ENTRIES = 64;
 const CACHE_LARGE_FILE_BYTES = 4 * 1024 * 1024; // 4MB — switch to range-read mode
@@ -259,6 +260,7 @@ const SNIFF_MAX_LINES = 4000;
 const UNREAD_SYMBOLS_MAX = 5;        // hard cap on named symbols in the trailer
 const UNREAD_SYMBOLS_MIN_LINES = 20; // smaller remainders get the short form
 const C_FAMILY_EXTS = new Set(['.c', '.h', '.cc', '.cpp', '.cxx', '.hpp', '.hh', '.hxx', '.java', '.cs', '.m', '.mm']);
+const _unreadSymbolCandidates = new WeakMap();
 
 // Keyword-introduced definitions (Python/Ruby/JS/TS/Go/Rust/Kotlin/PHP/...).
 const KEYWORD_DEF_RE = /^\s*(?:export\s+|default\s+|pub(?:\([^)]*\))?\s+|static\s+|async\s+|abstract\s+|final\s+|public\s+|private\s+|protected\s+|inline\s+|constexpr\s+|unsafe\s+|override\s+|open\s+|sealed\s+)*(?:def|fn|func|function\*?|class|struct|enum|trait|interface|impl|object|module|proc)\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*(?:(?:::|\.)[A-Za-z_][\w]*)*)/;
@@ -383,6 +385,7 @@ async function _readFileUnpinned(req) {
       symbols: symbols.slice(0, UNREAD_SYMBOLS_MAX),
       moreCount: Math.max(0, symbols.length - UNREAD_SYMBOLS_MAX),
     };
+    _unreadSymbolCandidates.set(unreadBelow, symbols);
   }
 
   // If a line range was requested, narrow attached chunks to the overlap.
@@ -463,14 +466,23 @@ export async function readFiles(files, opts = {}) {
  * covered the whole file / reached EOF.
  *
  * @param {Object} result - readFile() result
- * @param {{ command?: 'read'|'ss-read' }} [opts] - continue-command surface
+ * @param {{ command?: 'read'|'ss-read', queryEvidence?: {anchors?: string[], subtokens?: string[]} }} [opts]
+ *   continue-command surface plus agent-session query evidence
  * @returns {string} one line without trailing newline, or ''
  */
-export function renderUnreadBelow(result, { command = 'read' } = {}) {
+export function renderUnreadBelow(result, { command = 'read', queryEvidence = null } = {}) {
   const u = result?.unreadBelow;
   if (!u) return '';
-  const names = (u.symbols || []).map(s => s.symbol).join(', ');
-  const more = u.moreCount > 0 ? ` +${u.moreCount} more` : '';
+  let symbols = u.symbols || [];
+  let moreCount = u.moreCount || 0;
+  if (queryEvidence) {
+    const candidates = _unreadSymbolCandidates.get(u) || u.symbols || [];
+    const selected = selectUnreadSymbols(candidates, queryEvidence, UNREAD_SYMBOLS_MAX);
+    symbols = selected.symbols;
+    moreCount = selected.moreCount;
+  }
+  const names = symbols.map(s => s.symbol).join(', ');
+  const more = moreCount > 0 ? ` +${moreCount} more` : '';
   const cont = command === 'ss-read'
     ? `ss-read ${result.file} ${u.startLine} ${u.endLine}`
     : `read ${result.file} ${u.startLine}-${u.endLine}`;
@@ -494,7 +506,7 @@ function _formatAgent(result, opts = {}) {
       .filter(Boolean);
     if (names.length) symbolHint = `\nsymbols: ${names.join(', ')}`;
   }
-  const remainder = renderUnreadBelow(result);
+  const remainder = renderUnreadBelow(result, opts);
   return `### ${result.file}${range}${symbolHint}\n${fence}\n${result.text}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`;
 }
 
@@ -599,6 +611,7 @@ export async function handleReadCli(args) {
     endLine: wantsRange ? parsed.endLine : undefined,
   }));
   const out = await readFiles(files, { includeMetadata: parsed.includeMetadata });
+  let queryEvidence = null;
   if (parsed.format === 'agent' && exactRereadOmissionEnabled()) {
     const agentSessionId = resolveAgentSessionId();
     const spans = collectReadShownSpans(out, { projectRoot: resolveProjectRoot() });
@@ -613,12 +626,17 @@ export async function handleReadCli(args) {
       spans.forEach((span, index) => { decisions[span.resultIndex] = response.decisions[index]; });
       applyReadOmissionDecisions(out, decisions);
     }
+    queryEvidence = response?.queryEvidence || null;
   }
   if (parsed.format !== 'json') {
     const detail = files.length === 1 ? files[0].path : `${files.length} files`;
     emitToolIdentityAuto('read', detail, { plain: parsed.plain, noBanner: parsed.noBanner });
   }
-  process.stdout.write(formatReadResults(out, parsed.format, { surface: 'cli', force: parsed.force }));
+  process.stdout.write(formatReadResults(out, parsed.format, {
+    surface: 'cli',
+    force: parsed.force,
+    queryEvidence,
+  }));
   if (parsed.format !== 'json') process.stdout.write('\n');
   // Non-zero exit if every file failed (so shell pipelines see the error).
   const allFailed = out.files.length > 0 && out.files.every(f => !f.ok);

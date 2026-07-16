@@ -92,6 +92,7 @@ export async function handleRead(args, deps) {
       projectRoot: deps.PROJECT_ROOT,
       includeMetadata: args.includeMetadata !== false,
     });
+    let queryEvidence = null;
     if (exactRereadOmissionEnabled() && deps.agentSessionId) {
       const spans = collectReadShownSpans(result, { projectRoot: deps.PROJECT_ROOT });
       const response = await sendAgentSpanOperation({
@@ -105,9 +106,13 @@ export async function handleRead(args, deps) {
         spans.forEach((span, index) => { decisions[span.resultIndex] = response.decisions[index]; });
         applyReadOmissionDecisions(result, decisions);
       }
+      queryEvidence = response?.queryEvidence || null;
     }
     return {
-      content: [{ type: 'text', text: formatReadResults(result, 'agent', { surface: 'mcp' }) }],
+      content: [{
+        type: 'text',
+        text: formatReadResults(result, 'agent', { surface: 'mcp', queryEvidence }),
+      }],
       structuredContent: result,
     };
   } catch (err) {
