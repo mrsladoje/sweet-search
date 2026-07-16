@@ -181,9 +181,9 @@ We install the evolved agent prompt (the [GEPA-evolved search discipline](#-an-a
 
 <div align="center">
 
-<img src="assets/code-retrieval-stats.svg" alt="up to 34% lower cost on Codex · up to 56% fewer tool calls · 1.5–2× more useful context per response · +3pp accuracy on weak models" width="100%" />
+<img src="assets/code-retrieval-stats.svg" alt="Five sealed model-by-harness profiles comparing sweet-search with native grep-and-read on cost, tool calls, useful content, and accuracy" width="100%" />
 
-<sub>top-of-range figures · full per-harness ranges in the dropdown · 11 model×harness cells, paired, multiplicity-controlled</sub>
+<sub>sealed vault · exact paired results · 60 probes per profile (OpenCode: 58 valid pairs) · full 11-cell matrix and held-out/OOD replication below</sub>
 
 </div>
 
