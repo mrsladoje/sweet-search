@@ -109,6 +109,16 @@ sweet-search "where do we validate JWT tokens?"
 That's it. `init` is idempotent and SHA256-verifies every model binary; re-running it is always safe.
 From then on the index maintains itself — edit, save, search.
 
+To uninstall:
+
+```bash
+sweet-search uninstall --keep-models  # current repo only; keeps shared models and the global CLI
+sweet-search uninstall                # current repo plus its shared model downloads; keeps the global CLI
+npm uninstall -g sweet-search         # global CLI only; does not clean initialized repos
+```
+
+Run `sweet-search uninstall` inside each initialized repo before removing the global CLI.
+
 <details>
 <summary><b>Setup options & details</b></summary>
 
@@ -116,7 +126,7 @@ From then on the index maintains itself — edit, save, search.
 sweet-search init --wizard          # interactive: shows your hardware, recommends a model tier
 sweet-search init --profile core    # lexical-only, no model downloads (CI-friendly)
 sweet-search init --li-model edge   # compact late-interaction model for constrained machines
-sweet-search uninstall              # clean removal: models, caches, config — never your code
+sweet-search uninstall --dry-run    # preview cleanup for the current repo
 ```
 
 - **Requirements:** Node ≥ 18. macOS (arm64/x64) and Linux (x64/arm64) ship native binaries; other platforms fall back to WASM/JS automatically.
