@@ -177,13 +177,18 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 <a id="bench-code-retrieval"></a>
 ### 🤖 1. Code-retrieval benchmarks — *the agent-in-the-loop test*
 
-We install the evolved agent prompt (the [GEPA-evolved search discipline](#-an-agent-prompt-that-was-evolved-not-written)), point a coding agent at a real repo, and pair it **probe-for-probe against the same model running its own native grep-and-read loop**. Same model, same tasks, same judge — the only difference is whether sweet-search is wired in.
+One variable changes: **how the agent searches a real repository.**
+
+- 🍬 **sweet-search:** the model gets our [GEPA-evolved search discipline](#-an-agent-prompt-that-was-evolved-not-written) and search tools.
+- 🐌 **Native:** the same model uses its built-in grep-and-read loop.
+
+Same tasks, same judge, paired probe-for-probe.
 
 <div align="center">
 
 <img src="assets/code-retrieval-stats.svg" alt="Five sealed model-by-harness profiles comparing sweet-search with native grep-and-read on cost, tool calls, useful content, and accuracy" width="100%" />
 
-<sub>sealed vault · exact paired results · 60 probes per profile (OpenCode: 58 valid pairs) · full 11-cell matrix and held-out/OOD replication below</sub>
+<sub>sealed vault · exact paired results · five representative profiles · full 11-cell matrix and held-out/OOD replication below</sub>
 
 </div>
 
