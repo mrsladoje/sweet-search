@@ -132,6 +132,41 @@ describe('agent shown-span extraction', () => {
 });
 
 describe('AgentSpanLedger', () => {
+  it('retains strong query anchors for the session while refreshing softer terms', () => {
+    const ledger = new AgentSpanLedger();
+    const firstCall = ledger.beginCall('query-session');
+    expect(ledger.rememberQueryAtCall(
+      'query-session',
+      firstCall,
+      'isLeadingInfixArg double newline handling',
+    )).toBe(true);
+
+    const secondCall = ledger.beginCall('query-session');
+    ledger.rememberQueryAtCall('query-session', secondCall, 'scanner whitespace branch');
+
+    expect(ledger.queryEvidence('query-session')).toEqual({
+      anchors: ['isLeadingInfixArg'],
+      subtokens: ['scanner', 'whitespace', 'branch'],
+    });
+  });
+
+  it('drops strong query anchors after the existing call TTL', () => {
+    const ledger = new AgentSpanLedger({ ttlCalls: 2 });
+    const firstCall = ledger.beginCall('query-session');
+    ledger.rememberQueryAtCall(
+      'query-session',
+      firstCall,
+      'isLeadingInfixArg double newline handling',
+    );
+
+    ledger.beginCall('query-session');
+    ledger.beginCall('query-session');
+    expect(ledger.queryEvidence('query-session')?.anchors).toEqual(['isLeadingInfixArg']);
+
+    ledger.beginCall('query-session');
+    expect(ledger.queryEvidence('query-session')?.anchors).toEqual([]);
+  });
+
   it('isolates sessions and rejects shifted evidence', () => {
     const ledger = new AgentSpanLedger();
     const firstCall = ledger.beginCall('session-a');

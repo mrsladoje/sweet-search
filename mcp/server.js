@@ -123,11 +123,11 @@ function requestAgentSessionId(extra) {
   return validAgentSessionId(extra?.sessionId) ? extra.sessionId : null;
 }
 
-async function touchAgentCall(extra, spans = []) {
+async function touchAgentCall(extra, spans = [], { query, regex } = {}) {
   if (!exactRereadOmissionEnabled()) return;
   const sessionId = requestAgentSessionId(extra);
   if (!sessionId) return;
-  await sendAgentSpanOperation({ operation: 'observe', sessionId, spans });
+  await sendAgentSpanOperation({ operation: 'observe', sessionId, spans, query, regex });
 }
 
 // ---------------------------------------------------------------------------
@@ -217,7 +217,9 @@ server.registerTool('trace', {
     openWorldHint: false,
   },
 }, async (args, extra) => {
-  await touchAgentCall(extra);
+  await touchAgentCall(extra, [], {
+    query: `${args.symbol} ${args.query || ''}`.trim(),
+  });
   return handleTrace(args, traceDeps);
 });
 
@@ -351,7 +353,7 @@ server.registerTool('read-semantic', {
 }, async (args, extra) => {
   const result = await handleReadSemantic(args, { PROJECT_ROOT });
   const spans = collectSemanticShownSpans(result.structuredContent, { projectRoot: PROJECT_ROOT });
-  await touchAgentCall(extra, spans);
+  await touchAgentCall(extra, spans, { query: args.query });
   return result;
 });
 

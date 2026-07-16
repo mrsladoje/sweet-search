@@ -54,9 +54,20 @@ afterEach(async () => {
 describe('agent-span Unix-socket client', () => {
   it('round-trips exact receipts', async () => {
     const receipt = { file: 'a.js', startLine: 1, endLine: 1, hash: hashShownText('a') };
-    expect(await sendAgentSpanOperation({ operation: 'observe', sessionId: 's', spans: [receipt] })).toMatchObject({ ok: true });
+    const observed = await sendAgentSpanOperation({
+      operation: 'observe',
+      sessionId: 's',
+      spans: [receipt],
+      query: 'isLeadingInfixArg',
+    });
+    expect(observed).toMatchObject({
+      ok: true,
+      queryEvidence: { anchors: ['isLeadingInfixArg'] },
+    });
+    expect(observed.queryEvidence.subtokens).toEqual(['leading', 'infix', 'arg']);
     const read = await sendAgentSpanOperation({ operation: 'read', sessionId: 's', spans: [receipt] });
     expect(read.decisions[0]).toMatchObject({ omit: true, callsAgo: 1 });
+    expect(read.queryEvidence.anchors).toContain('isLeadingInfixArg');
   });
 
   it('drops only enough line evidence to fit the bounded request', async () => {

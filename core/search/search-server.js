@@ -128,16 +128,28 @@ export function buildAgentSpanDaemonResponse(payload, {
   if (!Array.isArray(payload.spans) || payload.spans.length > 20) {
     return readSemanticError(400, 'Invalid agent-span receipts');
   }
+  if ((payload.query != null
+      && (typeof payload.query !== 'string' || payload.query.length > SEARCH_SERVER_MAX_QUERY_LENGTH))
+      || (payload.regex != null
+        && (typeof payload.regex !== 'string' || payload.regex.length > SEARCH_SERVER_MAX_QUERY_LENGTH))) {
+    return readSemanticError(400, 'Invalid agent-span query context');
+  }
 
   const call = ledger.beginCall(sessionId);
   if (call == null) return readSemanticError(400, 'Invalid session id');
+  ledger.rememberQueryAtCall(sessionId, call, payload.query, payload.regex);
   const decisions = operation === 'read'
     ? ledger.decideAndObserveAtCall(sessionId, call, payload.spans, { force: force === true })
     : (ledger.observeAtCall(sessionId, call, payload.spans), []);
   return {
     status: 200,
     contentType: 'application/json',
-    body: JSON.stringify({ ok: true, call, decisions }),
+    body: JSON.stringify({
+      ok: true,
+      call,
+      decisions,
+      queryEvidence: ledger.queryEvidence(sessionId),
+    }),
   };
 }
 
@@ -263,6 +275,7 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
     });
     if (agentSpanCall) {
       const spans = collectSemanticShownSpans(result, { projectRoot: serverRoot });
+      agentSpanLedger.rememberQueryAtCall(agentSpanCall.sessionId, agentSpanCall.call, query);
       agentSpanLedger.observeAtCall(agentSpanCall.sessionId, agentSpanCall.call, spans);
     }
     const body = formatReadSemanticResult(result, format);
@@ -349,6 +362,11 @@ export async function buildTraceDaemonResponse(reqUrl, {
       tokenBudget: tokenBudget ?? null,
     });
     if (agentSpanCall) {
+      agentSpanLedger.rememberQueryAtCall(
+        agentSpanCall.sessionId,
+        agentSpanCall.call,
+        `${symbol} ${queryHint}`.trim(),
+      );
       agentSpanLedger.observeAtCall(agentSpanCall.sessionId, agentSpanCall.call, []);
     }
     // handleTraceCli writes `console.log(json ? JSON : formatStructuralContext)`,
@@ -444,6 +462,7 @@ export async function buildReadDaemonResponse(reqUrl, {
   try {
     const { readFiles, formatReadResults } = await import('./search-read.js');
     const out = await readFiles(files, { projectRoot: serverRoot, includeMetadata });
+    let queryEvidence = null;
     if (exactRereadOmission && agentSpanLedger && validAgentSessionId(agentSessionId)) {
       const spans = collectReadShownSpans(out, { projectRoot: serverRoot });
       const agentSpanCall = beginAgentSpanUrlCall(url, agentSpanLedger);
@@ -454,9 +473,10 @@ export async function buildReadDaemonResponse(reqUrl, {
         const decisions = Array.from({ length: out.files.length }, () => ({ omit: false }));
         spans.forEach((span, index) => { decisions[span.resultIndex] = compactDecisions[index]; });
         applyReadOmissionDecisions(out, decisions);
+        queryEvidence = agentSpanLedger.queryEvidence(agentSpanCall.sessionId);
       }
     }
-    const body = formatReadResults(out, format, { surface: 'cli' });
+    const body = formatReadResults(out, format, { surface: 'cli', queryEvidence });
     // handleReadCli appends '\n' for non-json output (the extra process.stdout
     // .write('\n')); json gets no trailing newline. Mirror exactly.
     const allFailed = out.files.length > 0 && out.files.every(f => !f.ok);
@@ -974,6 +994,12 @@ export async function startServer() {
         // a stale daemon — see eval/agent-read-workflows/run-bench.js).
         if (searchResult.format === 'agent') {
           if (agentSpanCall) {
+            agentSpanLedger.rememberQueryAtCall(
+              agentSpanCall.sessionId,
+              agentSpanCall.call,
+              query,
+              regex,
+            );
             const spans = collectAgentShownSpans(searchResult.results, {
               projectRoot: searcher.projectRoot || process.cwd(),
             });
@@ -990,6 +1016,12 @@ export async function startServer() {
           }
         } else {
           if (agentSpanCall) {
+            agentSpanLedger.rememberQueryAtCall(
+              agentSpanCall.sessionId,
+              agentSpanCall.call,
+              query,
+              regex,
+            );
             agentSpanLedger.observeAtCall(agentSpanCall.sessionId, agentSpanCall.call, []);
           }
           let { results, stats } = searchResult;

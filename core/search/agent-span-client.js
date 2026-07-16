@@ -6,14 +6,25 @@ import { resolveAgentSessionId } from './agent-span-ledger.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
 
-export function buildAgentSpanRequestPayload({ operation, spans = [], force = false, sessionId } = {}) {
+export function buildAgentSpanRequestPayload({
+  operation,
+  spans = [],
+  force = false,
+  sessionId,
+  query,
+  regex,
+} = {}) {
   const resolvedSessionId = resolveAgentSessionId(sessionId);
   if (!resolvedSessionId) return null;
+  const boundedQuery = typeof query === 'string' && query.length <= 2000 ? query : undefined;
+  const boundedRegex = typeof regex === 'string' && regex.length <= 2000 ? regex : undefined;
   return {
     operation,
     sessionId: resolvedSessionId,
     force: force === true,
     spans: Array.isArray(spans) ? spans.slice(0, 20).map((span) => ({ ...span })) : [],
+    ...(boundedQuery ? { query: boundedQuery } : {}),
+    ...(boundedRegex ? { regex: boundedRegex } : {}),
   };
 }
 

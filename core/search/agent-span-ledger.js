@@ -8,6 +8,7 @@
 
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { extractQueryEvidence } from './query-sufficiency.js';
 
 export const SHOWN_SPAN_TRAILER_ENV = 'SWEET_SEARCH_SHOWN_SPAN_TRAILER';
 export const EXACT_REREAD_OMISSION_ENV = 'SWEET_SEARCH_EXACT_REREAD_OMISSION';
@@ -15,6 +16,8 @@ export const RECEIPT_TTL_CALLS = 30;
 export const OMISSION_WINDOW_CALLS = RECEIPT_TTL_CALLS;
 export const RECEIPTS_PER_SESSION = 64;
 export const MAX_LEDGER_SESSIONS = 32;
+export const QUERY_ANCHORS_PER_SESSION = 128;
+export const QUERY_SUBTOKENS_PER_SESSION = 64;
 
 const MAX_SESSION_ID_CHARS = 256;
 const MAX_RECEIPT_PATH_CHARS = 4096;
@@ -23,6 +26,7 @@ const MAX_LINE_DIGESTS_PER_RECEIPT = 256;
 const LINE_DIGEST_BYTES = 32;
 const SHA256_RE = /^[a-f0-9]{64}$/;
 const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
+const MAX_QUERY_CONTEXT_CHARS = 2000;
 
 export function flagEnabled(value) {
   return ['1', 'true', 'on', 'yes'].includes(String(value ?? '').trim().toLowerCase());
@@ -286,6 +290,10 @@ function publicReceipt(receipt) {
   };
 }
 
+function emptyQueryContext() {
+  return { anchors: new Map(), subtokens: [] };
+}
+
 export class AgentSpanLedger {
   constructor({
     ttlCalls = RECEIPT_TTL_CALLS,
@@ -303,9 +311,15 @@ export class AgentSpanLedger {
   _touchSession(sessionId) {
     let session = this.sessions.get(sessionId);
     if (!session) {
-      session = { call: 0, receipts: new Map(), overrides: new Map() };
+      session = {
+        call: 0,
+        receipts: new Map(),
+        overrides: new Map(),
+        queryContext: emptyQueryContext(),
+      };
     } else {
       if (!session.overrides) session.overrides = new Map();
+      if (!session.queryContext) session.queryContext = emptyQueryContext();
       this.sessions.delete(sessionId);
     }
     this.sessions.set(sessionId, session);
@@ -326,6 +340,40 @@ export class AgentSpanLedger {
       if (session.call - override.omittedAtCall > this.omissionWindowCalls) session.overrides.delete(key);
     }
     return session.call;
+  }
+
+  rememberQueryAtCall(sessionId, call, query, regex = '') {
+    const session = this.sessions.get(sessionId);
+    if (!session || !Number.isInteger(call) || call < 1 || call > session.call) return false;
+    const boundedQuery = typeof query === 'string' && query.length <= MAX_QUERY_CONTEXT_CHARS
+      ? query : '';
+    const boundedRegex = typeof regex === 'string' && regex.length <= MAX_QUERY_CONTEXT_CHARS
+      ? regex : '';
+    if (!boundedQuery && !boundedRegex) return false;
+
+    const evidence = extractQueryEvidence(boundedQuery, boundedRegex);
+    for (const anchor of evidence.anchors) {
+      session.queryContext.anchors.delete(anchor);
+      session.queryContext.anchors.set(anchor, call);
+      while (session.queryContext.anchors.size > QUERY_ANCHORS_PER_SESSION) {
+        session.queryContext.anchors.delete(session.queryContext.anchors.keys().next().value);
+      }
+    }
+    session.queryContext.subtokens = [...evidence.subtokens].slice(0, QUERY_SUBTOKENS_PER_SESSION);
+    return true;
+  }
+
+  queryEvidence(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session?.queryContext) return null;
+    for (const [anchor, rememberedAtCall] of session.queryContext.anchors) {
+      if (session.call - rememberedAtCall > this.ttlCalls) {
+        session.queryContext.anchors.delete(anchor);
+      }
+    }
+    const anchors = [...session.queryContext.anchors.keys()];
+    const subtokens = [...session.queryContext.subtokens];
+    return anchors.length > 0 || subtokens.length > 0 ? { anchors, subtokens } : null;
   }
 
   observeAtCall(sessionId, call, spans) {

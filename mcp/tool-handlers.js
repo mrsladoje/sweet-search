@@ -144,7 +144,13 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
       const shownSpans = (exactReread || shownTrailerEnabled)
         ? collectAgentShownSpans(agentResults, { projectRoot: deps.PROJECT_ROOT }) : [];
       if (exactReread) {
-        await sendAgentSpanOperation({ operation: 'observe', sessionId: deps.agentSessionId, spans: shownSpans });
+        await sendAgentSpanOperation({
+          operation: 'observe',
+          sessionId: deps.agentSessionId,
+          spans: shownSpans,
+          query,
+          regex,
+        });
       }
       const lines = agentResults
         .filter(r => r.presentation !== 'summary')

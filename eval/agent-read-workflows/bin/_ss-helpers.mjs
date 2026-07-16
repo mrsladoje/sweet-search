@@ -76,9 +76,22 @@ const EXACT_REREAD_OMISSION = exactRereadOmissionEnabled();
 const SHOWN_SPAN_TRAILER = shownSpanTrailerEnabled();
 const SPAN_POLICY_ENABLED = EXACT_REREAD_OMISSION || SHOWN_SPAN_TRAILER;
 
-async function recordAgentToolCall({ operation = 'observe', spans = [], force = false } = {}) {
+async function recordAgentToolCall({
+  operation = 'observe',
+  spans = [],
+  force = false,
+  query,
+  regex,
+} = {}) {
   if (!EXACT_REREAD_OMISSION || !AGENT_SESSION_ID) return null;
-  return sendAgentSpanOperation({ operation, spans, force, sessionId: AGENT_SESSION_ID });
+  return sendAgentSpanOperation({
+    operation,
+    spans,
+    force,
+    sessionId: AGENT_SESSION_ID,
+    query,
+    regex,
+  });
 }
 
 const subcommand = process.argv[2];
@@ -196,7 +209,10 @@ async function cmdGrep(rawArgs) {
       });
     }
     const total = result.stats?.totalMatches ?? result.results.length;
-    await recordAgentToolCall();
+    await recordAgentToolCall({
+      query: fixedString ? undefined : regex,
+      regex: fixedString ? undefined : regex,
+    });
     process.stdout.write(`# ss-grep: ${total} total match(es) for /${regex}/ (scope: --in ${inFile})\n`);
     result.results.forEach((r, i) => {
       const text = (r.matchText || '').replace(/\s+/g, ' ').trim().slice(0, 140);
@@ -236,7 +252,10 @@ async function cmdGrep(rawArgs) {
     || { files: [], hiddenFileCount: 0, hiddenMatchCount: 0, hiddenSample: [] };
   const body = renderGrepBody(result.results, fileSummary, k);
   const completed = reallocateGrepTailForManifest(body.lines, result.familyManifest);
-  await recordAgentToolCall();
+  await recordAgentToolCall({
+    query: fixedString ? undefined : regex,
+    regex: fixedString ? undefined : regex,
+  });
 
   // Sibling-surface signal (E6, 2026-07-08 trace audit): when a symbol/stem
   // matches in more than one file, say so unconditionally in the header —
@@ -307,7 +326,11 @@ async function cmdFind(rawArgs) {
   }
   const shownSpans = SPAN_POLICY_ENABLED
     ? collectAgentShownSpans(response.results, { projectRoot: PROJECT_ROOT }) : [];
-  await recordAgentToolCall({ spans: shownSpans });
+  await recordAgentToolCall({
+    spans: shownSpans,
+    query: fixedString ? undefined : query,
+    regex: fixedString ? undefined : effectiveRegex,
+  });
 
   // Header (visible to agent)
   process.stdout.write(`# ss-find: ColGrep ${response.results?.length || 0} for "${query}" /${effectiveRegex || '*'}/` +
@@ -435,7 +458,11 @@ async function cmdRead(rawArgs) {
   const readBatch = { files: [r], totalMs: r.timings?.totalMs ?? 0 };
   const shownSpans = EXACT_REREAD_OMISSION
     ? collectReadShownSpans(readBatch, { projectRoot: PROJECT_ROOT }) : [];
-  const receiptResponse = await recordAgentToolCall({ operation: 'read', spans: shownSpans, force });
+  const receiptResponse = await recordAgentToolCall({
+    operation: 'read',
+    spans: shownSpans,
+    force,
+  });
   if (receiptResponse?.ok && Array.isArray(receiptResponse.decisions)) {
     applyReadOmissionDecisions(readBatch, receiptResponse.decisions);
   }
@@ -448,7 +475,10 @@ async function cmdRead(rawArgs) {
   // "What remains" trailer: on a range read that stops before EOF, one final
   // line names the symbols in the unread remainder + the exact continue
   // command (last line for recency — the actionable form of truncation).
-  const remainder = coveredWholeFile ? '' : renderUnreadBelow(r, { command: 'ss-read' });
+  const remainder = coveredWholeFile ? '' : renderUnreadBelow(r, {
+    command: 'ss-read',
+    queryEvidence: receiptResponse?.queryEvidence,
+  });
   const omitted = renderReadOmission(r, { surface: 'ss-read' });
   if (omitted) process.stdout.write(`# ss-read ${r.file}${range}\n${omitted}\n`);
   else process.stdout.write(`# ss-read ${r.file}${range}\n${fence}\n${r.text}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`);
@@ -540,7 +570,7 @@ async function cmdAgentSearch(rawArgs) {
   }
   const shownSpans = SPAN_POLICY_ENABLED
     ? collectAgentShownSpans(response.results, { projectRoot: PROJECT_ROOT }) : [];
-  await recordAgentToolCall({ spans: shownSpans });
+  await recordAgentToolCall({ spans: shownSpans, query });
 
   // The packaged response shape comes from packageForAgent (or pattern's own
   // packager when CatBoost routes to pattern). Both include:
@@ -692,7 +722,7 @@ async function cmdSemantic(rawArgs) {
   }
   const shownSpans = SPAN_POLICY_ENABLED
     ? collectSemanticShownSpans(r, { projectRoot: PROJECT_ROOT }) : [];
-  await recordAgentToolCall({ spans: shownSpans });
+  await recordAgentToolCall({ spans: shownSpans, query });
   process.stdout.write(`# ss-semantic ${r.file} | "${query}" | spans=${r.spans?.length ?? 0} | ~tokens=${r.approxTokensReturned}${r.fellBack ? ' [FALLBACK]' : ''}\n`);
   for (const span of r.spans || []) {
     const fence = r.language ? '```' + r.language : '```';
@@ -732,7 +762,9 @@ async function cmdTrace(rawArgs) {
   else if (Number(process.env.SS_SMOKE_TRACE_BUDGET || '') > 0) opts.tokenBudget = Number(process.env.SS_SMOKE_TRACE_BUDGET);
 
   const response = traceSymbol(symbol, opts);
-  await recordAgentToolCall();
+  await recordAgentToolCall({
+    query: json ? undefined : `${symbol} ${queryHint}`.trim(),
+  });
   if (json) process.stdout.write(JSON.stringify(response, null, 2) + '\n');
   else process.stdout.write(formatStructuralContext(response) + '\n');
 
