@@ -345,10 +345,6 @@ jobs:
       # registry-backed path that does download tokenizer.json) makes both run
       # for real instead of failing on a cold cache.
       - name: Pre-fetch models (warm cache for integration tests)
-        env:
-          # HF 403s anonymous downloads from runner IPs (the 2.7.0 release
-          # failed twice here). model-fetcher sends this only to huggingface.co.
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           mkdir -p "$RUNNER_TEMP/ss-prefetch"
           echo '{"name":"ss-prefetch"}' > "$RUNNER_TEMP/ss-prefetch/package.json"
@@ -370,6 +366,9 @@ jobs:
           echo "model cache warmed: tokenizers present"
         env:
           SWEET_SEARCH_TEST_DOWNLOADS: '1'
+          # HF 403s anonymous downloads from runner IPs (the 2.7.0 release
+          # failed twice here). model-fetcher sends this only to huggingface.co.
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
       - name: Run unit tests
         run: npm test -- --run
