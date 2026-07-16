@@ -20,7 +20,7 @@ import { applyGrepFileDiversity, matchesGrepFileFilter } from './grep-output-sha
 import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js';
 import { ensureSparseGramIndex } from './search-pattern-prefilter.js';
 import { packageForAgent } from './context-expander.js';
-import { detectBreDialectHint } from './regex-dialect.js';
+import { retryBreDialectAfterZero } from './regex-dialect.js';
 import { buildIndexedGrepFamilyManifest } from './agent-pack-completion.js';
 import { applyFileKindRanking, applyResultDemotions } from '../ranking/file-kind-ranking.js';
 
@@ -128,6 +128,24 @@ async function ensureGrepEngineAvailable(searcher, options, label) {
   );
 }
 
+const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
+
+function isAgentFormat(options) {
+  return options?._isAgentFormat === true || AGENT_FORMATS.has(options?.format);
+}
+
+function shapeBareGrepMatches(candidateResult, symbolType, searcher, fileFilter) {
+  let matches = [
+    ...(candidateResult?.indexedMatches || []),
+    ...(candidateResult?.overlayMatches || []),
+  ];
+  matches = filterMatchesBySymbolType(matches, symbolType, searcher);
+  if (fileFilter) {
+    matches = matches.filter(match => matchesGrepFileFilter(match.file, fileFilter));
+  }
+  return matches;
+}
+
 // =============================================================================
 // Bare grep (wired onto SweetSearch.prototype)
 // =============================================================================
@@ -152,14 +170,24 @@ export async function bareGrep(query, routing, options = {}) {
   await ensureGrepEngineAvailable(this, options, 'Bare grep');
 
   // Disable chunk gram for bare grep — bare grep uses file:line matches, not chunk IDs.
-  const candidateResult = await generateRegexMatches(this || {}, regex, searchDir, options);
-  let matches = [...candidateResult.indexedMatches, ...candidateResult.overlayMatches];
-  matches = filterMatchesBySymbolType(matches, symbolType, this);
-  // Agent drill-in scope (--in <file>): applied BEFORE sort/cap so a
-  // late-alphabet file's matches can never be pre-clipped by maxMatches.
-  if (options.fileFilter) {
-    matches = matches.filter(m => matchesGrepFileFilter(m.file, options.fileFilter));
-  }
+  let candidateResult = await generateRegexMatches(this || {}, regex, searchDir, options);
+  const shapeResult = result => shapeBareGrepMatches(
+    result, symbolType, this, options.fileFilter,
+  );
+  const dialectRetry = await retryBreDialectAfterZero({
+    pattern: regex,
+    fixedString: options.fixedString,
+    agentFormat: isAgentFormat(options),
+    originalResult: candidateResult,
+    shapeResult,
+    retry: translatedPattern => generateRegexMatches(
+      this || {}, translatedPattern, searchDir, options,
+    ),
+  });
+  candidateResult = dialectRetry.candidateResult;
+  // Symbol and --in filtering happen before retry adoption and before sort/cap,
+  // so hint counts always describe the matches this call can actually return.
+  let matches = dialectRetry.matches;
   matches.sort((a, b) =>
     a.file.localeCompare(b.file) ||
     a.line - b.line ||
@@ -167,9 +195,7 @@ export async function bareGrep(query, routing, options = {}) {
   );
 
   const totalMatches = matches.length;
-  const regexDialectHint = totalMatches === 0 && options._isAgentFormat
-    ? detectBreDialectHint(regex, { fixedString: options.fixedString })
-    : null;
+  const regexDialectHint = dialectRetry.regexDialectHint;
   // Agent-only k-budget file diversity (option-gated; absent → byte-identical
   // output). Streaming per-file cap: matches beyond the cap are counted, not
   // stored, so memory is bounded by perFileCap*maxFiles, never total matches.
@@ -286,7 +312,7 @@ export async function patternSearch(query, routing, options = {}) {
   log(`Query: "${effectiveQuery}"`);
 
   const parallelStart = performance.now();
-  const [candidateResult, encodedQuery] = await Promise.all([
+  let [candidateResult, encodedQuery] = await Promise.all([
     generateRegexMatches(this, regex, searchDir, { ...options, lightweightParse: true }),
     (async () => {
       const encodeStart = performance.now();
@@ -298,14 +324,23 @@ export async function patternSearch(query, routing, options = {}) {
     })(),
   ]);
   const parallelTime = performance.now() - parallelStart;
+  const retryOptions = { ...options, lightweightParse: true };
+  const dialectRetry = await retryBreDialectAfterZero({
+    pattern: regex,
+    fixedString: options.fixedString,
+    agentFormat: isAgentFormat(options),
+    originalResult: candidateResult,
+    retry: translatedPattern => generateRegexMatches(
+      this, translatedPattern, searchDir, retryOptions,
+    ),
+  });
+  candidateResult = dialectRetry.candidateResult;
   const grepMatches = candidateResult.indexedMatches;
   const overlayMatches = candidateResult.overlayMatches;
   const queryTokens = encodedQuery.tokens;
   const encodeTime = encodedQuery.encodeTime;
   const totalRawMatches = grepMatches.length + overlayMatches.length;
-  const regexDialectHint = totalRawMatches === 0 && options._isAgentFormat
-    ? detectBreDialectHint(regex, { fixedString: options.fixedString })
-    : null;
+  const regexDialectHint = dialectRetry.regexDialectHint;
   log(
     `Parallel phase: ${totalRawMatches} grep matches ` +
     `(${grepMatches.length} indexed, ${overlayMatches.length} overlay), ` +
@@ -545,6 +580,7 @@ export async function patternSearch(query, routing, options = {}) {
     grepStrategy: candidateResult.stats.grepStrategy,
     plannerRoute: candidateResult.stats.plannerRoute,
     trackerLastIndex: candidateResult.stats.trackerLastIndex,
+    ...(regexDialectHint && { regexDialectHint }),
     total_ms: Math.round(totalTime),
     allCandidateIds,
     allMappedChunkIds,

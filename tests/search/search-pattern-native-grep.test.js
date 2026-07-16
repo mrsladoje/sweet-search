@@ -35,7 +35,7 @@ vi.mock('../../core/ranking/late-interaction-model.js', () => ({
 }));
 
 import { bareGrep, patternSearch, getChunkLocationMap } from '../../core/search/index.js';
-import { detectBreDialectHint, renderRegexDialectHint } from '../../core/search/regex-dialect.js';
+import { renderRegexDialectHint } from '../../core/search/regex-dialect.js';
 import { isNativeGrepAvailable } from '../../core/infrastructure/native-sparse-gram.js';
 import {
   appendDeltaRecord,
@@ -91,35 +91,19 @@ describe('bareGrep — native path requires no ripgrep', () => {
 });
 
 describe('agent regex-dialect diagnostics', () => {
-  it('detects BRE operator spellings without rewriting the pattern', () => {
-    expect(detectBreDialectHint(String.raw`I64Vec\|U64Vec`)).toEqual({ operators: ['\\|'] });
-    expect(renderRegexDialectHint(detectBreDialectHint(String.raw`I64Vec\|U64Vec`)))
-      .toContain('original pattern was used unchanged');
-  });
-
-  it('does not flag intentional literal pipes, character classes, or fixed strings', () => {
-    expect(detectBreDialectHint(String.raw`left\|\|right`)).toBeNull();
-    expect(detectBreDialectHint(String.raw`[\|]`)).toBeNull();
-    expect(detectBreDialectHint(String.raw`left\\|right`)).toBeNull();
-    expect(detectBreDialectHint(String.raw`\x7C`)).toBeNull();
-    expect(detectBreDialectHint(String.raw`left\|right`, { fixedString: true })).toBeNull();
-  });
-
-  it('tracks escaped brackets without losing a later operator hint', () => {
-    expect(detectBreDialectHint(String.raw`\[left\|right`)).toEqual({ operators: ['\\|'] });
-    expect(detectBreDialectHint(String.raw`[\]]left\|right`)).toEqual({ operators: ['\\|'] });
-  });
-
-  it('recognizes only valid escaped interval shapes', () => {
-    expect(detectBreDialectHint(String.raw`item\{2,4\}`)).toEqual({ operators: ['\\{m,n\\}'] });
-    expect(detectBreDialectHint(String.raw`item\{many\}`)).toBeNull();
-    expect(detectBreDialectHint(String.raw`(item)\1`)).toBeNull();
-  });
-
-  it('attaches a hint only to agent-format zero results and searches once', async () => {
-    const index = makeUnifiedIndex({
-      matches: [], candidateFiles: 0, totalFiles: 1, scannedFiles: 1,
-    });
+  it('retries an agent-format BRE zero and returns translated-pattern hits', async () => {
+    const empty = { matches: [], candidateFiles: 0, totalFiles: 1, scannedFiles: 1 };
+    const recovered = {
+      matches: [
+        { file: 'src/i64.rs', line: 1, column: 1, matchText: 'I64Vec', content: 'struct I64Vec;' },
+        { file: 'src/u64.rs', line: 1, column: 1, matchText: 'U64Vec', content: 'struct U64Vec;' },
+      ],
+      candidateFiles: 2, totalFiles: 2, scannedFiles: 2,
+    };
+    const index = makeUnifiedIndex(empty);
+    index.searchFull.mockImplementation((_clauses, pattern) => (
+      pattern === 'I64Vec|U64Vec' ? recovered : empty
+    ));
     const searcher = {
       projectRoot: '/proj',
       sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
@@ -129,8 +113,16 @@ describe('agent regex-dialect diagnostics', () => {
     const agent = await bareGrep.call(searcher, String.raw`I64Vec\|U64Vec`, null, {
       regex: String.raw`I64Vec\|U64Vec`, _isAgentFormat: true,
     });
-    expect(agent.stats.regexDialectHint).toEqual({ operators: ['\\|'] });
-    expect(index.searchFull).toHaveBeenCalledTimes(1);
+    expect(agent.results.map(result => result.matchText)).toEqual(['I64Vec', 'U64Vec']);
+    expect(agent.stats.regexDialectHint).toEqual({
+      operators: ['\\|'], retryAttempted: true, retryMatched: true, retryMatches: 2,
+      translatedPattern: 'I64Vec|U64Vec',
+    });
+    expect(renderRegexDialectHint(agent.stats.regexDialectHint)).toContain('showing 2 retry matches');
+    expect(index.searchFull).toHaveBeenCalledTimes(2);
+    expect(index.searchFull.mock.calls.map(call => call[1])).toEqual([
+      String.raw`I64Vec\|U64Vec`, 'I64Vec|U64Vec',
+    ]);
 
     index.searchFull.mockClear();
     const normal = await bareGrep.call(searcher, String.raw`I64Vec\|U64Vec`, null, {
@@ -139,13 +131,120 @@ describe('agent regex-dialect diagnostics', () => {
     expect(normal.stats.regexDialectHint).toBeUndefined();
     expect(index.searchFull).toHaveBeenCalledTimes(1);
   });
-});
 
-describe('patternSearch — agent regex-dialect diagnostics', () => {
-  it('attaches the same hint to a zero-result ss-find package', async () => {
+  it('does not retry when the original agent pattern already has a hit', async () => {
+    const index = makeUnifiedIndex({
+      matches: [{ file: 'src/literal.rs', line: 1, column: 1, matchText: '|', content: 'I64Vec|U64Vec' }],
+      candidateFiles: 1, totalFiles: 1, scannedFiles: 1,
+    });
+    const searcher = {
+      projectRoot: '/proj',
+      sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
+      sparseGramIndex: index,
+    };
+
+    const result = await bareGrep.call(searcher, String.raw`I64Vec\|U64Vec`, null, {
+      regex: String.raw`I64Vec\|U64Vec`, _isAgentFormat: true,
+    });
+
+    expect(result.results).toHaveLength(1);
+    expect(result.stats.regexDialectHint).toBeUndefined();
+    expect(index.searchFull).toHaveBeenCalledTimes(1);
+  });
+
+  it('records a single retry when both BRE and translated patterns are empty', async () => {
     const index = makeUnifiedIndex({
       matches: [], candidateFiles: 0, totalFiles: 1, scannedFiles: 1,
     });
+    const searcher = {
+      projectRoot: '/proj',
+      sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
+      sparseGramIndex: index,
+    };
+
+    const result = await bareGrep.call(searcher, String.raw`MissingA\|MissingB`, null, {
+      regex: String.raw`MissingA\|MissingB`, _isAgentFormat: true,
+    });
+
+    expect(result.results).toEqual([]);
+    expect(result.stats.regexDialectHint).toEqual({
+      operators: ['\\|'], retryAttempted: true, retryMatched: false, retryMatches: 0,
+      translatedPattern: 'MissingA|MissingB',
+    });
+    expect(renderRegexDialectHint(result.stats.regexDialectHint)).toContain('both forms returned 0 matches');
+    expect(index.searchFull).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not adopt or count retry hits removed by --in filtering', async () => {
+    const original = {
+      matches: [
+        { file: 'src/other.js', line: 1, column: 1, matchText: '|', content: 'foo|bar' },
+      ],
+      candidateFiles: 1, totalFiles: 2, scannedFiles: 2,
+    };
+    const retried = {
+      matches: [
+        { file: 'src/other.js', line: 2, column: 1, matchText: 'foo', content: 'foo' },
+        { file: 'src/more.js', line: 1, column: 1, matchText: 'bar', content: 'bar' },
+      ],
+      candidateFiles: 2, totalFiles: 2, scannedFiles: 2,
+    };
+    const index = makeUnifiedIndex(original);
+    index.searchFull.mockImplementation((_clauses, pattern) => (
+      pattern === 'foo|bar' ? retried : original
+    ));
+    const searcher = {
+      projectRoot: '/proj',
+      sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
+      sparseGramIndex: index,
+    };
+
+    const result = await bareGrep.call(searcher, String.raw`foo\|bar`, null, {
+      regex: String.raw`foo\|bar`, _isAgentFormat: true, fileFilter: 'src/auth.js',
+    });
+
+    expect(result.results).toEqual([]);
+    expect(result.stats.totalMatches).toBe(0);
+    expect(result.stats.regexDialectHint).toMatchObject({
+      retryAttempted: true, retryMatched: false, retryMatches: 0,
+    });
+    expect(renderRegexDialectHint(result.stats.regexDialectHint)).toContain('both forms returned 0 matches');
+    expect(index.searchFull).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the legacy hint and one engine call when translation is ambiguous', async () => {
+    const index = makeUnifiedIndex({
+      matches: [], candidateFiles: 0, totalFiles: 1, scannedFiles: 1,
+    });
+    const searcher = {
+      projectRoot: '/proj',
+      sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
+      sparseGramIndex: index,
+    };
+
+    const result = await bareGrep.call(searcher, String.raw`free(ptr)\|g_free(ptr)`, null, {
+      regex: String.raw`free(ptr)\|g_free(ptr)`, _isAgentFormat: true,
+    });
+
+    expect(result.results).toEqual([]);
+    expect(result.stats.regexDialectHint).toEqual({ operators: ['\\|'] });
+    expect(renderRegexDialectHint(result.stats.regexDialectHint)).toContain('original pattern was used unchanged');
+    expect(index.searchFull).toHaveBeenCalledTimes(1);
+  });
+
+});
+
+describe('patternSearch — agent regex-dialect diagnostics', () => {
+  it('uses the same one-retry recovery for an agent-format ss-find package', async () => {
+    const empty = { matches: [], candidateFiles: 0, totalFiles: 1, scannedFiles: 1 };
+    const recovered = {
+      matches: [{ file: 'src/i64.rs', line: 1, content: 'struct I64Vec;' }],
+      candidateFiles: 1, totalFiles: 1, scannedFiles: 1,
+    };
+    const index = makeUnifiedIndex(empty);
+    index.searchLines.mockImplementation((_clauses, pattern) => (
+      pattern === 'I64Vec|U64Vec' ? recovered : empty
+    ));
     const searcher = {
       verbose: false,
       projectRoot: '/proj',
@@ -160,11 +259,14 @@ describe('patternSearch — agent regex-dialect diagnostics', () => {
     };
 
     const result = await patternSearch.call(searcher, 'integer vectors', null, {
-      regex: String.raw`I64Vec\|U64Vec`, k: 5, format: 'agent', _isAgentFormat: true,
+      regex: String.raw`I64Vec\|U64Vec`, k: 5, format: 'agent',
     });
-    expect(result.results).toEqual([]);
-    expect(result.stats.regexDialectHint).toEqual({ operators: ['\\|'] });
-    expect(index.searchLines).toHaveBeenCalledTimes(1);
+    expect(result.results).toHaveLength(1);
+    expect(result.stats.regexDialectHint).toEqual({
+      operators: ['\\|'], retryAttempted: true, retryMatched: true, retryMatches: 1,
+      translatedPattern: 'I64Vec|U64Vec',
+    });
+    expect(index.searchLines).toHaveBeenCalledTimes(2);
   });
 });
 
