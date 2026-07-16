@@ -96,6 +96,8 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 
 ## 🚀 Quickstart
 
+**Requirements:** Node.js 18+ on macOS (Apple silicon or Intel) or Linux (x64 or ARM64). On Windows, run sweet-search inside WSL2.
+
 ```bash
 npm install -g sweet-search
 
@@ -107,9 +109,9 @@ sweet-search "where do we validate JWT tokens?"
 ```
 
 That's it. `init` is idempotent and SHA256-verifies every model binary; re-running it is always safe.
-From then on the index maintains itself incrementally.
+From then on, the index stays up to date automatically as you work.
 
-To uninstall 😞😞😞:
+To uninstall 😢:
 
 ```bash
 sweet-search uninstall --keep-models  # current repo only; keeps shared models and the global CLI
@@ -129,7 +131,6 @@ sweet-search init --li-model edge   # compact late-interaction model for constra
 sweet-search uninstall --dry-run    # preview cleanup for the current repo
 ```
 
-- **Requirements:** Node ≥ 18. macOS (arm64/x64) and Linux (x64/arm64) ship native binaries; other platforms fall back to WASM/JS automatically.
 - **Footprint:** CPU-only hosts download a few hundred MB of INT8 models; GPU hosts add ~1.2 GB of FP32 backbones (skipped automatically where they'd be useless); M3+ Macs can additionally fetch a ~3.2 GB CoreML cascade for Neural Engine acceleration. Everything lands in `~/.cache/sweet-search/models/` and is used strictly on-device.
 - **Agent wiring:** init injects the tool-routing system prompt into `CLAUDE.md` (and `AGENTS.md`, `GEMINI.md`, Cursor rules via flags), registers a session-start prewarm hook so your first query hits a warm daemon, and installs a `/sweet-index` skill in Claude Code.
 - **What gets indexed:** what you'd expect — `.gitignore` is respected, `node_modules`/build dirs/minified artifacts are denied, files over 1 MB skipped, with a `.sweet-search-ignore` for extra rules.
