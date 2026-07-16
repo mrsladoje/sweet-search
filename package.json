@@ -1,7 +1,7 @@
 {
   "name": "sweet-search",
-  "version": "2.6.17",
-  "description": "Sweet Search - SOTA Hybrid Code Search Engine with WASM CatBoost Query Router, Semantic/Lexical/Structural Search, and Multilingual Support",
+  "version": "2.7.0",
+  "description": "Local code search for AI agents: six fast, purpose-built tools that return ranked answers, not raw grep. Because maybe grep isn't all you need... 🍬",
   "type": "module",
   "main": "core/search/sweet-search.js",
   "exports": {
@@ -167,13 +167,13 @@
     "vitest": "^4.0.16"
   },
   "optionalDependencies": {
-    "@sweet-search/native-darwin-arm64": "2.6.17",
-    "@sweet-search/native-darwin-x64": "2.6.17",
-    "@sweet-search/native-linux-arm64-gnu": "2.6.17",
-    "@sweet-search/native-linux-arm64-gnu-cuda": "2.6.17",
-    "@sweet-search/native-linux-x64-gnu": "2.6.17",
-    "@sweet-search/native-linux-x64-gnu-cuda": "2.6.17",
-    "@sweet-search/bg-priority": "2.6.17"
+    "@sweet-search/native-darwin-arm64": "2.7.0",
+    "@sweet-search/native-darwin-x64": "2.7.0",
+    "@sweet-search/native-linux-arm64-gnu": "2.7.0",
+    "@sweet-search/native-linux-arm64-gnu-cuda": "2.7.0",
+    "@sweet-search/native-linux-x64-gnu": "2.7.0",
+    "@sweet-search/native-linux-x64-gnu-cuda": "2.7.0",
+    "@sweet-search/bg-priority": "2.7.0"
   },
   "engines": {
     "node": ">=18.0.0"
