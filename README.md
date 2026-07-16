@@ -23,7 +23,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 ## ✨ Highlights
 
 - **Hybrid retrieval** — one of the six tools uses BM25F lexical + dense semantic + structural graph signals, fused per query and reranked by late-interaction
-- **Agent-native by design** — token-budgeted output tiers, an optional MCP server (and default zero-overhead CLI), and a GEPA-evolved system prompt installed into Claude Code, Codex, Gemini CLI, and Cursor with one command
+- **Agent-native by design** — token-budgeted output tiers, an optional MCP server (and default zero-overhead CLI), and a GEPA-evolved system prompt — one `init` installs it into Claude Code by default (Codex, Gemini CLI, and Cursor via flags)
 - **Indexed grep, ~10× faster than ripgrep** — a sparse n-gram prefilter skips the files that provably can't match
 - **ColBERT-style reranking, locally** — per-token MaxSim late interaction on hand-written SIMD kernels
 - **GPU-accelerated indexing** — Apple Metal, CUDA, CoreML Neural Engine, or plain CPU via ORT; same engine, auto-selected
@@ -263,6 +263,7 @@ We're SOTA in June 2026 on 3/4 attempted benchmarks at HARDER settings (running 
 - **Reproduction:** result artifacts live in [`eval/results/`](eval/results/); rerun via `eval/run_all.js`. The canonical full-pool loaders are in `eval/download_data.py`.
 - **Full corpus, not distractors.** Published baselines for GCSN- and CoSQA-style benchmarks typically rank the gold against 99 sampled distractors; every number here ranks against the benchmark's *full* corpus (6k–19k candidates) — strictly harder.
 - **Zero-shot + docstring-stripped.** We never fine-tune on these tasks. For docstring-derived benchmarks (AdvTest, M2CRB) we strip the docstring from the indexed code — otherwise the NL query matches itself verbatim (a no-strip AdvTest run scores a meaningless 0.98). This is the standard protocol; it is also why our AdvTest is lower than naïve setups that leave the docstring in.
+- **Dev/held-out split.** Our ranking work iterates against a fixed dev split of each benchmark (e.g. GCSN: 600 dev + 400 held-out per language, stratified, seed=42) and treats the remainder as held-out, inspected aggregate-only at milestones. The table figures are full-corpus runs — they include the dev portion we tuned against; a held-out-only breakdown ships with the next results refresh.
 - **What we deliberately don't claim yet.** CoIR (official metric NDCG@10 over per-subtask corpora up to ~1M docs), CoSQA+ (multi-positive, MAP-primary), and CLARC (per-group pools) use protocols and metrics our single-pool MRR@10 harness doesn't currently match. Rather than publish apples-to-oranges numbers, we omit them; faithful per-subtask CoIR (NDCG@10) runs are queued.
 - **M2CRB** — the paper's metric is *auMRRc* (area under the MRR-vs-pool-size curve; best published **52.7**, fine-tuned). Because that area averages over easier small pools, `auMRRc ≥ full-pool MRR` for any model — so our **54.0 full-pool MRR@10** (all 5,795 functions, zero-shot) clears their best on a strictly harder measure. No one publishes a plain full-corpus MRR@10 on M2CRB, so ours is the best available.
 - **AdvTest honesty note.** We could not reproduce the commonly-cited 59.5 for the bare CodeRankEmbed encoder on our corpus: the reference FP32 model scores 54.7 on our leak-free, docstring-stripped, full-19,210 setup, and our shipped INT8 build 51.4. We report our measured numbers and the reference check rather than the leaderboard figure.
@@ -399,7 +400,7 @@ flowchart TD
 | 🎯 **Intent Rerank** | • demote docs / tests / config when you want implementation<br/>• log-scaled call-site boosts surface the most-referenced function |
 | 🕸️ **Graph Expansion** | • typed-edge walks (`imports`/`extends`/`calls`/`uses`) · adaptive 2-hop on the AST graph · edges picked by intent<br/>• **PathRAG** flow pruning + degree normalization → hubs can't dominate |
 | 🧮 **Late interaction Rerank** | • Query embedded per-token by **LateOn-Code** (149M; a 17M **edge** variant auto-selected on low-RAM hosts)<br/>• **MaxSim** against the pre-indexed quantized token vectors<br/>• native Rust+Rayon MaxSim kernel ⚡ · WASM-SIMD fallback (1.26 s → 27 ms on a 231-candidate rerank) |
-| 📦 **Package** | • entity-aware expansion → whole functions (imports, docstrings, decorators)<br/>• same-file overlap demotion → diverse, non-overlapping spans<br/>• auto-selected **3k / 8k / 12k** token budget |
+| 📦 **Package** | • entity-aware expansion → whole functions (imports, docstrings, decorators)<br/>• same-file overlap demotion → diverse, non-overlapping spans<br/>• **symbol-family completion** (agent mode) — generated/width families surface as a compact indexed manifest instead of truncating silently, inside the same budget<br/>• auto-selected **3k / 8k / 12k** token budget |
 
 <details>
 <summary><b>🌶️ Extra spice — the bits that didn't fit the diagram</b></summary>
@@ -418,7 +419,7 @@ flowchart TD
 - **Quality priors:** every chunk carries a 0–1 prior from test proximity, git recency, symbol centrality (PageRank), comment density, and complexity — production code surfaces, stale fixtures sink.
 - **Community structure:** a canonical **Leiden** pass detects code communities on the entity graph at index time, feeding vocabulary prewarming and structural signals — it understands your modules, not just your directories.
 - **Multilingual:** 14 languages get full tree-sitter AST treatment; a 39-config registry covers 70+ extensions beyond that. Router features handle camelCase/snake_case, CJK density, and German compounds.
-- **Format-gated signals:** structure-aware boosts and demotions (symbol-exact, path-token, mega-entity) fire only in agent mode — they help agent-shaped queries and would hurt plain NL, so they stay gated by default.
+- **Format-gated signals:** structure-aware boosts and demotions (symbol-exact, path-token, anomalous-chunk, mega-entity) fire only in agent mode — they help agent-shaped queries and would hurt plain NL, so they stay gated by default.
 
 **🛟 Rescues & honest trade-offs.**
 - **Long-query rescue:** wordy NL queries that FTS5 would tokenize into an unsatisfiable `AND` fall back to multi-query BM25F + RRF — one query per content keyword, fused.
@@ -449,6 +450,7 @@ Every match comes back in stable `file:line` order — ripgrep-identical counts,
 
 - Full methodology, per-repo table, and the optimization log: [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md).
 - Regexes with no extractable literals fall back to native grep over the indexed file set; fixed-string and glob queries use a ripgrep fallback.
+- **Dialect recovery** (agent mode): patterns written in GNU-grep BRE muscle memory (`foo\|bar`, `\(group\)`) are literals in Rust's regex dialect and used to silently match nothing — a zero-hit exact search now gets one gated auto-retry with the translated pattern instead of a false "no matches".
 
 </details>
 
@@ -553,6 +555,8 @@ without another search.
 <summary><b>More</b></summary>
 
 - The CLI/MCP form scales it up: `sweet-search read <file...>` (and the `read` MCP tool) batches **1–20 files in a single call**, each with the same symbol metadata — twenty files for the price of one tool invocation.
+- **Query-aware continuation** (agent mode): a range read that stops before EOF names the unread symbols below it — ranked by relevance to the session's recent queries, not just declaration order — plus the exact command to continue.
+- **Shown-span receipts** (agent mode, default-on): the daemon remembers what a session has already been shown; an exact re-read collapses to a one-line receipt instead of resending the bytes.
 
 </details>
 
