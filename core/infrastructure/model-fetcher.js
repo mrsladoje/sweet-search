@@ -292,6 +292,13 @@ export async function fetchModelFile(hfId, filePath, destDir, options = {}) {
       if (startByte > 0) {
         headers['Range'] = `bytes=${startByte}-`;
       }
+      // HF 403s anonymous downloads from datacenter IPs (CI runners), even on
+      // public files. A read token lifts that. Only sent to huggingface.co —
+      // never to a custom hfEndpoint, which may be an untrusted mirror.
+      const hfToken = process.env.HF_TOKEN || process.env.HUGGING_FACE_HUB_TOKEN;
+      if (hfToken && url.startsWith('https://huggingface.co/')) {
+        headers['Authorization'] = `Bearer ${hfToken}`;
+      }
 
       const resp = await fetch(url, { headers, signal });
 
