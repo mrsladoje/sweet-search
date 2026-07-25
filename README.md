@@ -111,6 +111,11 @@ sweet-search "where do we validate JWT tokens?"
 That's it. `init` is idempotent and SHA256-verifies every model binary; re-running it is always safe.
 From then on, the index stays up to date automatically as you work.
 
+For Claude Code, init automatically installs and activates the `sweet-search`
+output style, which adds the compact routing override at system-prompt priority.
+Start a new Claude session or run `/clear` after init, and keep that output style
+selected for reliable `ss-*` routing.
+
 To uninstall 😢:
 
 ```bash
@@ -128,12 +133,63 @@ Run `sweet-search uninstall` inside each initialized repo before removing the gl
 sweet-search init --wizard          # interactive: shows your hardware, recommends a model tier
 sweet-search init --profile core    # lexical-only, no model downloads (CI-friendly)
 sweet-search init --li-model edge   # compact late-interaction model for constrained machines
+sweet-search init --agents          # also configure AGENTS.md for Codex/OpenCode
+sweet-search init --no-claude --agents # streamlined AGENTS-only configuration
 sweet-search uninstall --dry-run    # preview cleanup for the current repo
 ```
 
 - **Footprint:** CPU-only hosts download a few hundred MB of INT8 models; GPU hosts add ~1.2 GB of FP32 backbones (skipped automatically where they'd be useless); M3+ Macs can additionally fetch a ~3.2 GB CoreML cascade for Neural Engine acceleration. Everything lands in `~/.cache/sweet-search/models/` and is used strictly on-device.
-- **Agent wiring:** init injects the tool-routing system prompt into `CLAUDE.md` (and `AGENTS.md`, `GEMINI.md`, Cursor rules via flags), registers a session-start prewarm hook so your first query hits a warm daemon, and installs a `/sweet-index` skill in Claude Code.
+- **Claude Code wiring (default):** init leaves `CLAUDE.md` untouched, writes the verbatim evolved guide to `.claude/rules/sweet-search.md`, installs `.claude/output-styles/sweet-search.md`, and selects it in `.claude/settings.json`. It also registers a session-start prewarm hook and installs the `/sweet-index` skill.
+- **Output-style conflicts:** init never silently replaces another selected style. It still installs the Sweet Search style so it appears under `/config`, then emits a warning. A higher-priority `.claude/settings.local.json` selection is also detected and reported. Select `sweet-search`, then run `/clear` or restart Claude Code.
+- **Codex/OpenCode wiring:** pass `--agents` to place the same verbatim guide directly in `AGENTS.md`. Use `--no-claude --agents` when AGENTS.md is the only integration you want; `--codex` additionally installs Codex's project prewarm hook.
 - **What gets indexed:** what you'd expect — `.gitignore` is respected, `node_modules`/build dirs/minified artifacts are denied, files over 1 MB skipped, with a `.sweet-search-ignore` for extra rules.
+
+### Init flags
+
+| Flag | Behavior |
+|---|---|
+| `--profile core\|full` | Select lexical-only core or the full model-backed profile. |
+| `--li-model standard\|edge\|none` | Select the late-interaction model tier or disable it. |
+| `--search-reranking auto\|on\|off` | Control search-time late-interaction reranking. |
+| `--wizard` | Choose model and reranking settings interactively. |
+| `--verify-deep` | Load modules and verify checksums after setup. |
+| `--force` | Re-download models even when cached. |
+| `--build-coreml-cascade` | Build the optional CoreML cascade locally on eligible Apple silicon. |
+| `--skip-coreml-cascade` | Skip fetching or building the CoreML cascade. |
+| `--skip-dedup` | Skip near-duplicate-detection readiness checks. |
+| `--skip-cuda` | Disable the CUDA backend even when available. |
+| `--skip-prewarm-hook` | Do not register the Claude/Codex session-start prewarm hook. |
+| `--agents` | Also write the verbatim guide to `AGENTS.md` for Codex/OpenCode. |
+| `--codex` | Add the Codex prewarm hook and project feature flag; implies `--agents`. |
+| `--codex-enable-global-hooks` | Advanced opt-in: also enable hooks in the user-level Codex config. |
+| `--no-claude` | Write nothing under `.claude/`; combine with `--agents` for AGENTS-only setup. |
+| `--gemini` | Also write `GEMINI.md` (sharing `AGENTS.md` when enabled). |
+| `--cursor` | Also write `.cursor/rules/sweet-search.mdc`. |
+| `--symlink-instruction-files` | Explicitly use the default `GEMINI.md` symlink behavior. |
+| `--no-symlink-instruction-files` | Use a regular `GEMINI.md` import instead of a symlink. |
+| `--no-agent-instructions` | Skip all agent policy and Claude output-style installation. |
+| `--mcp` | Also register the project MCP server; the CLI remains the default contact surface. |
+| `--no-cli` | With `--mcp`, give agents the MCP-specific guide and remove the CLI-specific Claude output style. |
+| `--enforce-tools` | Optional strict Claude mode: deny native Grep and hint native Read. |
+| `--verbose`, `-v` | Print additional setup diagnostics. |
+| `--help`, `-h` | Show the complete CLI help. |
+
+### Uninstall flags and cleanup
+
+| Flag | Behavior |
+|---|---|
+| `--dry-run` | Preview all detected removals. |
+| `--keep-models` | Preserve shared model and CoreML caches. |
+| `--purge` | Also uninstall the npm package and Sweet Search native packages. |
+| `--force` | Skip the confirmation prompt. |
+| `--help`, `-h` | Show uninstall help. |
+
+`sweet-search uninstall` removes Sweet Search's rule, output style and active
+selection, AGENTS/GEMINI/Cursor instruction blocks, project hooks and skill,
+MCP registration, enforcement/reminder artifacts, and `.sweet-search/`. It
+preserves user-authored content. Generic Codex `[features] hooks = true` flags
+are left in place because other tools may share them, and an otherwise-empty
+settings file may remain as `{}`.
 
 </details>
 
@@ -592,7 +648,7 @@ against **two different production agents at once** — Claude Code (Sonnet) and
 survivors, and repeated. A final correctness pass hardened the winner. ~1k tokens, one job: teach the
 agent to search *well*.
 
-**🎓 The five rules it encodes:**
+**🎓 The six rules it encodes:**
 
 | | Rule | What it kills |
 |--|--|--|
@@ -601,6 +657,7 @@ agent to search *well*.
 | 🚫 | **Absence is an answer** | Two empty probes (one semantic, one lexical) settle a negative — no third synonym, no `find`/`ls` spiral. |
 | ⛔ | **No raw-shell escape** | The #1 token-waster in our trace analysis: agents bailing to dozens of raw `grep`/`find` calls after one miss. Door closed. |
 | 📝 | **Think before you dig** | Before a third probe, the agent states what it knows and what its blind spot is. |
+| 🗺️ | **Map the fix surface** | Before a visibly multi-site edit, make one mapping call and inspect the full function instead of fixing only the first match. |
 
 **🧾 The receipts** — *held-out discipline throughout: a dev set to iterate on, a held-out set touched only at milestones, a sealed vault opened exactly once.*
 
@@ -618,9 +675,9 @@ agent to search *well*.
 - **Seeds → survivors:** 15 hand-authored seed prompts entered a reflective-evolution loop (an agent reads the *real* tool-call traces, proposes one targeted edit, we keep what helps). Operators included trajectory crossover, structural pivots, tool-name masking, and a pruner that fights prompt bloat.
 - **Two targets, jointly:** every candidate was scored on **both** Claude Code/Sonnet **and** Codex/GPT-5.5 with Maximin discipline (a prompt is only as good as its *worse* target), so it can't overfit one model's quirks.
 - **What actually won:** not clever phrasing — **terseness** (a shorter prompt re-sent every turn is cheaper), a **leaner tool mix** (grep/read over heavy semantic blocks that fatten the transcript), and **decisiveness on no-match** (stop spiraling). We report this plainly because it's what the traces showed.
-- **The correctness pass:** the shipped prompt ("M++") is the cost-winner plus 7 edits that fix factual descriptions of the tools — routing byte-identical, accuracy held, cost unchanged. A lateral move that buys honesty.
+- **The shipped lineage:** the current `p7-v1-mppppp-fs` guide is the evolved champion plus a verdict-gated trust rule and a narrowly triggered fix-surface mapping rule. The latter came from full-200 failure forensics and was retained only after targeted fix/control smokes rejected a costlier wording.
 - **Held-out everything:** dev to iterate, held-out checked only at milestones, a sealed vault opened once, plus held-out *model families* (MiMo, Qwen) and a reasoning-mode replay (MiniMax **0.963**) it never trained against. Figures: [`docs/PHASE7.md`](docs/PHASE7.md) (internal probe suites; an externally-reproducible suite is in progress).
-- **Idempotent install:** `init` writes a marker-delimited block into `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` / `.cursor/rules` — re-run it freely, it never touches anything else you wrote.
+- **Idempotent install:** Claude receives the guide through its owned project rule plus output style; opt-in harnesses receive marker-delimited blocks in `AGENTS.md` / `GEMINI.md` / `.cursor/rules`. Re-run init freely: owned content updates in place and user prose is preserved.
 
 </details>
 
@@ -806,7 +863,7 @@ sweet-search meets your agent wherever it is — shell tools, MCP, or injected i
 ```
 
 - **MCP server** — 8 tools (`search`, `trace`, `read`, `read-semantic`, `index`, `health`, `repo-map`, `vocab-prewarm`), 2 resources, 2 prompts; all search tools declared read-only and idempotent
-- **Harness injection** — `init` writes the evolved system prompt into Claude Code, Codex (`--codex`, including session hooks), Gemini CLI (`--gemini`), and Cursor (`--cursor`) from one canonical source
+- **Harness injection** — Claude Code gets the canonical guide through `.claude/rules/sweet-search.md` plus an automatically selected output style; Codex/OpenCode use `AGENTS.md` (`--agents` or `--codex`), while Gemini (`--gemini`) and Cursor (`--cursor`) use their native project files
 - **Repo maps for sub-agents** — the `repo-map` tool returns a PageRank-ranked symbol overview squeezed into any token budget, perfect for briefing a delegated agent
 - **Warm from the first query** — a SessionStart hook pre-launches the search daemon so models, vocabulary, and indexes are loaded before you ask anything
 

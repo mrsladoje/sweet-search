@@ -18,9 +18,8 @@
  * both the file and the settings entry.
  */
 
-// Tool surface mirrors the shipped M++++ policy (the ss-* tools). Kept terse —
-// the full decision tree lives in CLAUDE.md/AGENTS.md; this is just a nudge to
-// stop the agent drifting back to raw grep/read between prompts.
+// Tool surface mirrors the shipped M++++ policy (the ss-* tools). Kept only
+// for cleanup compatibility with projects initialized by older releases.
 const REMINDER = [
   '<sweet-search-reminder>',
   'Use the index-backed ss-* tools for code search/navigation, not raw grep/find/cat:',

@@ -20,6 +20,7 @@ import { getCoremlCascadeRoot, getCoremlCascadeState } from '../core/infrastruct
 import { PREWARM_HOOK_FILENAME } from './init.js';
 import { removeAgentInstructions } from './inject-agent-instructions.js';
 import { removeClaudeRules } from './write-claude-rules.js';
+import { removeClaudeSystemPrompt } from './install-claude-system-prompt.js';
 import { removeMcpServer } from './install-mcp-server.js';
 import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { removeToolEnforcement } from './install-tool-enforcement.js';
@@ -620,10 +621,18 @@ What gets removed:
   - .claude/hooks/index-maintainer.mjs (init-installed). User-modified
     copies are detected via a byte-compare and left in place.
   - daemon-prewarm SessionStart entry inside .claude/settings.json
+  - .claude/rules/sweet-search.md and the sweet-search output style +
+    outputStyle selection
+  - Sweet-search-owned blocks/files in AGENTS.md, GEMINI.md, CLAUDE.md
+    (legacy installs), and .cursor/rules/sweet-search.mdc
+  - Optional tool-enforcement and legacy reminder hooks/settings
+  - Sweet-search Codex SessionStart hook and MCP server registration
 
 What is NOT removed:
   - User source code, indexes, or database files outside .sweet-search/
   - .claude/ itself or any other hooks/skills/settings the user owns
+  - Generic Codex [features] hooks = true flags (possibly shared with
+    other tooling); an otherwise-empty settings.json may remain as {}
   - The npm package itself (unless --purge)
 `);
 }
@@ -693,15 +702,17 @@ export async function runUninstall(args) {
   const indexMaintainerSkippedReason =
     indexMaintainerPreview.status === 'skipped' ? indexMaintainerPreview.detail : null;
 
-  // P1: agent-instruction files (AGENTS.md / CLAUDE.md / GEMINI.md /
-  // .cursor/rules/sweet-search.mdc) and the .claude/rules/sweet-search.md
-  // sentinel file. The marker block contract guarantees we only strip
-  // sweet-search-managed content; user prose outside the marker is preserved.
+  // P1: agent-instruction files (AGENTS.md / GEMINI.md /
+  // .cursor/rules/sweet-search.mdc), the Claude project rule, and any legacy
+  // sweet-search marker left in CLAUDE.md. The marker/sentinel contracts
+  // preserve user-authored content.
   const agentInstructionsPreview = removeAgentInstructions({ projectRoot, dryRun: true });
   const agentInstructionsTouched = Object.values(agentInstructionsPreview.harnesses ?? {})
     .some(s => s === 'dry-run');
   const claudeRulesPreview = removeClaudeRules({ projectRoot, dryRun: true });
   const hasClaudeRules = claudeRulesPreview === 'dry-run';
+  const claudeSystemPromptPreview = removeClaudeSystemPrompt({ projectRoot, dryRun: true });
+  const hasClaudeSystemPrompt = claudeSystemPromptPreview.status === 'dry-run';
 
   // P2: UserPromptSubmit reminder hook (.claude/hooks/sweet-search-remind-tools.mjs
   // + the matching settings.json entry).
@@ -724,7 +735,7 @@ export async function runUninstall(args) {
   // Nothing to remove?
   if (
     removals.length === 0 && !hasHookEntry && !hasSkillEntry && !hasIndexMaintainerHook
-    && !agentInstructionsTouched && !hasClaudeRules
+    && !agentInstructionsTouched && !hasClaudeRules && !hasClaudeSystemPrompt
     && !hasPromptReminder && !hasToolEnforcement && !hasCodexHook && !hasMcpServer
   ) {
     console.log('Nothing to remove — Sweet Search is not initialized in this project.');
@@ -758,6 +769,11 @@ export async function runUninstall(args) {
   }
   if (hasClaudeRules) {
     console.log(`    .claude/rules/sweet-search.md`);
+  }
+  if (hasClaudeSystemPrompt) {
+    console.log(
+      `    Claude system-prompt output style (${claudeSystemPromptPreview.detail})`,
+    );
   }
   if (hasPromptReminder) {
     console.log(`    UserPromptSubmit reminder hook (${promptReminderPreview.detail})`);
@@ -933,9 +949,8 @@ export async function runUninstall(args) {
     // 'not-found' / 'not-our-symlink' / 'dry-run' are silent.
   }
 
-  // Remove the .claude/rules/sweet-search.md sentinel file. CLAUDE.md import
-  // line was already stripped by removeAgentInstructions above (it lived
-  // inside the agent-instructions marker).
+  // Remove the owned .claude/rules/sweet-search.md policy file. Any legacy
+  // CLAUDE.md marker was already stripped by removeAgentInstructions above.
   const claudeRulesResult = removeClaudeRules({ projectRoot, dryRun: parsed.dryRun });
   if (claudeRulesResult === 'removed') {
     console.log(`  Removed: .claude/rules/sweet-search.md`);
@@ -945,6 +960,27 @@ export async function runUninstall(args) {
     kept++;
   }
   // 'not-found' / 'dry-run' are silent.
+
+  // Remove the system-prompt-priority output style installed alongside the
+  // Claude CLI policy. The helper only removes the sentinel-tagged style and
+  // clears outputStyle only when it still selects that owned style.
+  const claudeSystemPromptResult = removeClaudeSystemPrompt({
+    projectRoot,
+    dryRun: parsed.dryRun,
+  });
+  if (claudeSystemPromptResult.status === 'removed') {
+    console.log(`  Removed: Claude system-prompt output style (${claudeSystemPromptResult.detail})`);
+    removed++;
+  } else if (claudeSystemPromptResult.status === 'error') {
+    console.log(`  Failed to remove Claude system-prompt output style: ${claudeSystemPromptResult.detail}`);
+    kept++;
+  } else if (
+    claudeSystemPromptResult.status === 'not-found'
+    && claudeSystemPromptResult.detail === 'output style is user-authored'
+  ) {
+    console.log('  Kept: Claude output style — no sweet-search sentinel (user-authored)');
+    kept++;
+  }
 
   // P2: strip the UserPromptSubmit reminder hook + settings entry.
   const promptReminderResult = removePromptReminderHook({ projectRoot, dryRun: parsed.dryRun });

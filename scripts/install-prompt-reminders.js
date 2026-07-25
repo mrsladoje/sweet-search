@@ -1,13 +1,10 @@
 /**
- * Install / remove the sweet-search UserPromptSubmit reminder hook.
+ * Legacy sweet-search UserPromptSubmit reminder lifecycle helper.
  *
- * Plan reference: §4C / §10 step 16. Default-on; `--no-prompt-reminders`
- * opts out. Universally gated by `--no-claude` (handled in init.js — when
- * --no-claude, this installer is never called).
- *
- * Mirrors the existing prewarm SessionStart pattern in init.js
- * (registerPrewarmSessionStartHook): sweet-search-owned by filename match,
- * so re-running init updates the entry rather than appending duplicates.
+ * Current production init deliberately uses one verbatim project rule plus one
+ * compact system-priority pointer and does not install this duplicate prompt
+ * guidance. Removal stays supported so re-init/uninstall can safely clean
+ * artifacts created by earlier releases.
  */
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -25,12 +22,12 @@ const SOURCE_REL = ['scripts', 'hooks', 'remind-tools.mjs'];
  * @param {object} args
  * @param {string} args.projectRoot
  * @param {string} args.packageRoot       — sweet-search install root (for source resolution)
- * @param {boolean} [args.skipped=false]  — set when --no-prompt-reminders
+ * @param {boolean} [args.skipped=false]  — test/legacy caller opt-out
  * @returns {{ status: string, detail: string, hookPath?: string }}
  *   status ∈ { registered, skipped, error }
  */
 export function installPromptReminderHook({ projectRoot, packageRoot, skipped = false } = {}) {
-  if (skipped) return { status: 'skipped', detail: '--no-prompt-reminders flag' };
+  if (skipped) return { status: 'skipped', detail: 'caller opted out' };
   if (!projectRoot) return { status: 'error', detail: 'install-prompt-reminders: projectRoot is required' };
   if (!packageRoot) return { status: 'error', detail: 'install-prompt-reminders: packageRoot is required' };
 

@@ -1613,20 +1613,27 @@ export class TreeSitterProvider {
 
     // Strategy 2b: .sweet-search/grammars/ relative to the sweet-search PACKAGE
     // root (the directory containing this provider file's parent's parent).
-    // This is the home for grammar overrides that need to survive `npm install`
-    // wiping the tree-sitter-wasms bundle (Strategy 3) and also be visible when
-    // the indexer is run from an arbitrary target repo (so process.cwd() is not
-    // the sweet-search root). Required for the Swift grammar override —
-    // tree-sitter-wasms@0.1.13 ships swift v0.4.0 which crashes Node 25.x V8
-    // turboshaft Wasm tier-up (Zone OOM in WasmLoweringPhase); the working
-    // v0.7.2 wasm from alex-pinkus/tree-sitter-swift `0.7.2-pypi` lives here.
-    // Resolve via import.meta.url so it works whether sweet-search is the cwd
-    // or a node_modules dependency.
+    // Dev-machine override location kept for back-compat; the SHIPPED override
+    // home is Strategy 2c below.
+    // Strategy 2c: grammars/ next to this provider file
+    // (core/infrastructure/grammars/). This directory is git-tracked and ships
+    // in the npm package via the existing "core/infrastructure/" files entry, so
+    // installed users get the overrides — the old .sweet-search/ location was
+    // gitignored and NEVER left the dev machine. Required for the Swift grammar
+    // override: tree-sitter-wasms@0.1.13 ships swift v0.4.0 whose Wasm tier-up
+    // Zone-OOMs V8 ("Fatal process out of memory: Zone") on linux-x64 under
+    // Node 24.x (verified 24.4 + 24.18 in clean-room docker; macOS arm64
+    // unaffected; Node 20 unaffected) and Node 25.x. The working v0.7.2 wasm
+    // from alex-pinkus/tree-sitter-swift `0.7.2-pypi` lives here — regenerate
+    // via scripts/download-tree-sitter-grammars.js. Resolve via import.meta.url
+    // so it works whether sweet-search is the cwd or a node_modules dependency.
     try {
       const providerDir = pathMod.dirname(new URL(import.meta.url).pathname);
       const pkgRoot = pathMod.resolve(providerDir, '..', '..');
       const pkgOverridePath = pathMod.join(pkgRoot, '.sweet-search', 'grammars', `${grammarName}.wasm`);
       if (fs.existsSync(pkgOverridePath)) return pkgOverridePath;
+      const shippedOverridePath = pathMod.join(providerDir, 'grammars', `${grammarName}.wasm`);
+      if (fs.existsSync(shippedOverridePath)) return shippedOverridePath;
     } catch {
       // import.meta.url unavailable (e.g. some bundlers); fall through.
     }

@@ -1,6 +1,7 @@
 /**
- * Unit tests for `scripts/install-prompt-reminders.js` (P2 — UserPromptSubmit
- * reminder hook). Plan reference: §4C / §10 step 16.
+ * Unit tests for the legacy UserPromptSubmit reminder lifecycle helper.
+ * Production init no longer installs this duplicate guidance, but re-init and
+ * uninstall must still remove artifacts created by older releases safely.
  *
  * Each test runs in an isolated tmpdir. The packageRoot is the real
  * sweet-search repo (so the hook source resolves) — we just write the
@@ -20,7 +21,6 @@ import {
   writeUserPromptSubmitEntry,
   removeUserPromptSubmitEntry,
 } from '../../scripts/install-prompt-reminders.js';
-import { parseInitArgs } from '../../scripts/init.js';
 
 const __dirname = dn(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = joinPath(__dirname, '..', '..');
@@ -73,7 +73,7 @@ describe('installPromptReminderHook', () => {
     expect(settings.hooks.UserPromptSubmit[0].hooks[0].command).toBe('echo my-own-hook');
   });
 
-  it('skips when --no-prompt-reminders is set', () => {
+  it('supports a legacy caller opt-out', () => {
     const r = installPromptReminderHook({ projectRoot: tmpRoot, packageRoot: PACKAGE_ROOT, skipped: true });
     expect(r.status).toBe('skipped');
     expect(existsSync(joinPath(tmpRoot, HOOK_REL))).toBe(false);
@@ -154,15 +154,6 @@ describe('writeUserPromptSubmitEntry / removeUserPromptSubmitEntry (low-level)',
   it('removeUserPromptSubmitEntry returns not-found when absent', () => {
     const r = removeUserPromptSubmitEntry({ projectRoot: tmpRoot, ownershipFilename: 'nope.mjs' });
     expect(r.status).toBe('not-found');
-  });
-});
-
-describe('parseInitArgs — --no-prompt-reminders', () => {
-  it('default: prompt reminders enabled', () => {
-    expect(parseInitArgs([]).skipPromptReminders).toBe(false);
-  });
-  it('--no-prompt-reminders flips the flag', () => {
-    expect(parseInitArgs(['--no-prompt-reminders']).skipPromptReminders).toBe(true);
   });
 });
 
