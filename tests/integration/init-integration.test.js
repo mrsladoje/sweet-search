@@ -10,6 +10,9 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { CANONICAL_POLICY_BODY, getMcpPolicyBody } from '../../scripts/inject-agent-instructions.js';
+import { _internal as claudeRulesInternal } from '../../scripts/write-claude-rules.js';
+import { CLAUDE_OUTPUT_STYLE_REL } from '../../scripts/install-claude-system-prompt.js';
 
 const CLI = join(import.meta.dirname, '../..', 'core', 'cli.js');
 const NODE = process.execPath;
@@ -130,33 +133,39 @@ describe('sweet-search init (integration)', () => {
     const mcp = JSON.parse(readFileSync(join(tempDir, '.mcp.json'), 'utf8'));
     expect(mcp.mcpServers['sweet-search'].command).toBe('npx');
     expect(mcp.mcpServers['sweet-search'].args).toContain('sweet-search-mcp');
-    // CLI surface intact: ss-* prompt + rules file + reminder hook.
-    expect(readFileSync(join(tempDir, 'CLAUDE.md'), 'utf8')).toContain('ss-grep');
-    expect(existsSync(rulesPath())).toBe(true);
-    expect(existsSync(reminderHookPath())).toBe(true);
+    // CLI surface intact: exact ss-* rule + system override; CLAUDE.md untouched.
+    expect(existsSync(join(tempDir, 'CLAUDE.md'))).toBe(false);
+    expect(readFileSync(rulesPath(), 'utf8')).toBe(
+      `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
+    );
+    expect(existsSync(join(tempDir, CLAUDE_OUTPUT_STYLE_REL))).toBe(true);
+    expect(existsSync(reminderHookPath())).toBe(false);
     expect(stdout).toContain('MCP server'); // surfaced in the final report
   });
 
-  it('cli → --mcp --no-cli flip swaps the prompt AND tears down stale CLI supplements', () => {
-    // 1. Plain CLI init installs the ss-* prompt + rules file + reminder hook.
+  it('cli → --mcp --no-cli flips the one rule and removes the CLI-only override', () => {
+    // 1. Plain CLI init installs exact M± in the rule.
     const first = runInit(FAST, tempDir);
     expect(first.exitCode).toBe(0);
-    expect(existsSync(rulesPath())).toBe(true);
-    expect(existsSync(reminderHookPath())).toBe(true);
-    expect(readFileSync(join(tempDir, 'CLAUDE.md'), 'utf8')).toContain('ss-grep');
+    expect(readFileSync(rulesPath(), 'utf8')).toBe(
+      `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
+    );
+    expect(existsSync(join(tempDir, CLAUDE_OUTPUT_STYLE_REL))).toBe(true);
+    expect(existsSync(reminderHookPath())).toBe(false);
+    expect(existsSync(join(tempDir, 'CLAUDE.md'))).toBe(false);
 
     // 2. Re-init flipping to the MCP-only contact surface.
     const second = runInit([...FAST, '--mcp', '--no-cli'], tempDir);
     expect(second.exitCode).toBe(0);
 
-    const claude = readFileSync(join(tempDir, 'CLAUDE.md'), 'utf8');
-    expect(claude).toContain('hybrid code search');           // MCP variant body
-    expect(claude).not.toContain('ss-grep');                  // ss-* gone
-    expect(claude).not.toContain('@.claude/rules/sweet-search.md');
+    expect(readFileSync(rulesPath(), 'utf8')).toBe(
+      `${claudeRulesInternal.SENTINEL}\n${getMcpPolicyBody()}\n`,
+    );
+    expect(existsSync(join(tempDir, CLAUDE_OUTPUT_STYLE_REL))).toBe(false);
+    expect(existsSync(join(tempDir, 'CLAUDE.md'))).toBe(false);
     expect(existsSync(join(tempDir, '.mcp.json'))).toBe(true);
 
-    // The adversarial finding: stale CLI supplements must be torn down on flip.
-    expect(existsSync(rulesPath())).toBe(false);
+    // No stale duplicate reminder survives either variant.
     expect(existsSync(reminderHookPath())).toBe(false);
     const settings = readFileSync(join(tempDir, '.claude', 'settings.json'), 'utf8');
     expect(settings).not.toContain('sweet-search-remind-tools.mjs');

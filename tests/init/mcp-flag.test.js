@@ -21,10 +21,17 @@ import {
   removeMcpServer,
 } from '../../scripts/install-mcp-server.js';
 import {
-  CLAUDE_FILE,
+  AGENTS_FILE,
+  CANONICAL_POLICY_BODY,
+  getMcpPolicyBody,
   MARKER_BEGIN,
   injectAgentInstructions,
 } from '../../scripts/inject-agent-instructions.js';
+import {
+  CLAUDE_RULES_REL,
+  writeClaudeRules,
+  _internal as claudeRulesInternal,
+} from '../../scripts/write-claude-rules.js';
 
 let tmpRoot;
 beforeEach(() => {
@@ -164,54 +171,53 @@ describe('removeMcpServer — round-trip', () => {
 });
 
 describe('injectAgentInstructions — MCP variant (--no-cli)', () => {
-  it('injects the MCP-tool prompt body, not the ss-* CLI one', () => {
+  it('injects the MCP-tool body into AGENTS.md, never CLAUDE.md', () => {
     const r = injectAgentInstructions({ projectRoot: tmpRoot, variant: 'mcp' });
     expect(r.variant).toBe('mcp');
-    expect(r.canonical).toBe('claude-code');
+    expect(r.canonical).toBe('agents');
 
-    const claude = read(CLAUDE_FILE);
-    expect(claude).toContain(MARKER_BEGIN);
+    const agents = read(AGENTS_FILE);
+    expect(agents).toContain(MARKER_BEGIN);
     // Shared opener + strategy core (ported verbatim from the CLI champion).
-    expect(claude).toContain('Sweet-search indexes the working tree');
-    expect(claude).toContain('trust the top ranked result outright');
-    expect(claude).toContain('a fix covering only the first matching site is not done');
-    expect(claude).toContain('<state_summary>');
+    expect(agents).toContain('Sweet-search indexes the working tree');
+    expect(agents).toContain('trust the top ranked result outright');
+    expect(agents).toContain('a fix covering only the first matching site is not done');
+    expect(agents).toContain('<state_summary>');
     // MCP-specific mechanics: unified `search`, retargeted anti-scan discipline.
-    expect(claude).toContain('hybrid code search');
-    expect(claude).toContain('native Grep/Read');
+    expect(agents).toContain('hybrid code search');
+    expect(agents).toContain('native Grep/Read');
 
-    // Must NOT carry the ss-* CLI surface or the CLI-only rules import.
-    expect(claude).not.toContain('invoke via Bash');
-    expect(claude).not.toContain('ss-grep');
-    expect(claude).not.toContain('@.claude/rules/sweet-search.md');
+    expect(agents).not.toContain('invoke via Bash');
+    expect(agents).not.toContain('ss-grep');
+    expect(exists('CLAUDE.md')).toBe(false);
   });
 
-  it('default (cli) variant is unchanged — keeps ss-* + the rules import', () => {
+  it('default CLI variant keeps the direct ss-* AGENTS.md body', () => {
     const r = injectAgentInstructions({ projectRoot: tmpRoot }); // variant defaults to 'cli'
     expect(r.variant).toBe('cli');
-    const claude = read(CLAUDE_FILE);
-    expect(claude).toContain('ss-grep');
-    expect(claude).toContain('@.claude/rules/sweet-search.md');
-    expect(claude).not.toContain('hybrid code search');
+    const agents = read(AGENTS_FILE);
+    expect(agents).toContain('ss-grep');
+    expect(agents).not.toContain('@CLAUDE.md');
+    expect(agents).not.toContain('hybrid code search');
+    expect(exists('CLAUDE.md')).toBe(false);
   });
 
-  it('cli→mcp→cli re-init flips the marker body cleanly (single marker; import only in cli)', () => {
-    const countMarkers = (s) => s.split(MARKER_BEGIN).length - 1;
+  it('cli→mcp→cli re-init flips the one Claude rule file exactly', () => {
+    writeClaudeRules({ projectRoot: tmpRoot });
+    expect(read(CLAUDE_RULES_REL)).toBe(
+      `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
+    );
 
-    injectAgentInstructions({ projectRoot: tmpRoot }); // cli
-    injectAgentInstructions({ projectRoot: tmpRoot, variant: 'mcp' }); // flip → mcp
-    let claude = read(CLAUDE_FILE);
-    expect(countMarkers(claude)).toBe(1);
-    expect(claude).toContain('hybrid code search');
-    expect(claude).not.toContain('ss-grep');
-    expect(claude).not.toContain('@.claude/rules/sweet-search.md');
+    expect(writeClaudeRules({ projectRoot: tmpRoot, variant: 'mcp' })).toBe('updated');
+    expect(read(CLAUDE_RULES_REL)).toBe(
+      `${claudeRulesInternal.SENTINEL}\n${getMcpPolicyBody()}\n`,
+    );
 
-    injectAgentInstructions({ projectRoot: tmpRoot }); // flip back → cli
-    claude = read(CLAUDE_FILE);
-    expect(countMarkers(claude)).toBe(1);
-    expect(claude).toContain('ss-grep');
-    expect(claude).toContain('@.claude/rules/sweet-search.md');
-    expect(claude).not.toContain('hybrid code search');
+    expect(writeClaudeRules({ projectRoot: tmpRoot })).toBe('updated');
+    expect(read(CLAUDE_RULES_REL)).toBe(
+      `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
+    );
+    expect(exists('CLAUDE.md')).toBe(false);
   });
 
   it('AGENTS.md canonical (claude disabled) carries the MCP body under variant mcp', () => {

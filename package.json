@@ -1,6 +1,6 @@
 {
   "name": "sweet-search",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "Local code search for AI agents: six fast, purpose-built tools that return ranked answers, not raw grep. Because maybe grep isn't all you need... 🍬",
   "type": "module",
   "main": "core/search/sweet-search.js",
@@ -61,6 +61,7 @@
     "scripts/smoke-test.js",
     "scripts/inject-agent-instructions.js",
     "scripts/write-claude-rules.js",
+    "scripts/install-claude-system-prompt.js",
     "scripts/install-mcp-server.js",
     "scripts/install-prompt-reminders.js",
     "scripts/install-tool-enforcement.js",

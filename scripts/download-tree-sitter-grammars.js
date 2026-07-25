@@ -6,14 +6,15 @@
  * fine — the runtime provider (core/infrastructure/tree-sitter-provider.js)
  * resolves it via the package's `out/` directory by default.
  *
- * KNOWN OVERRIDES (must run this script after a fresh `npm install`):
+ * KNOWN OVERRIDES:
  *   - swift: the 0.4.0 wasm shipped in tree-sitter-wasms@0.1.13 reliably
- *     crashes V8 turboshaft Wasm tier-up compilation on Node 25.x (Zone
- *     OOM in WasmLoweringPhase background compile job). The 0.7.2 wasm
+ *     crashes V8 Wasm tier-up compilation ("Fatal process out of memory:
+ *     Zone") on linux-x64 under Node 24.x (verified 24.4 + 24.18) and on
+ *     Node 25.x; macOS arm64 and Node 20 are unaffected. The 0.7.2 wasm
  *     from alex-pinkus/tree-sitter-swift release `0.7.2-pypi` does not
- *     trigger the bug. This script downloads it to .sweet-search/grammars/
- *     where tree-sitter-provider.js Strategy 2 picks it up before the
- *     bundle in node_modules.
+ *     trigger the bug. The override is COMMITTED at
+ *     core/infrastructure/grammars/ (tree-sitter-provider.js Strategy 2c)
+ *     and ships in the npm package — this script only regenerates it.
  *
  * Usage:
  *   node scripts/download-tree-sitter-grammars.js
@@ -25,7 +26,7 @@ import { fileURLToPath } from 'url';
 import https from 'https';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_DIR = path.join(__dirname, '..', '.sweet-search', 'grammars');
+const DEFAULT_DIR = path.join(__dirname, '..', 'core', 'infrastructure', 'grammars');
 
 const LANGUAGES = [
   'javascript', 'typescript', 'python', 'go', 'rust',

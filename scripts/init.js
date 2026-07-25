@@ -38,9 +38,14 @@ import {
 import { describeDedupConfig } from '../core/infrastructure/index.js';
 import { verifyRuntime, getMaxsimTier, getRouterType } from './verify-runtime.js';
 import { ALL_HARNESSES, injectAgentInstructions } from './inject-agent-instructions.js';
-import { writeClaudeRules, removeClaudeRules } from './write-claude-rules.js';
+import { writeClaudeRules } from './write-claude-rules.js';
+import {
+  formatClaudeSystemPromptGuidance,
+  installClaudeSystemPrompt,
+  removeClaudeSystemPrompt,
+} from './install-claude-system-prompt.js';
 import { installMcpServer } from './install-mcp-server.js';
-import { installPromptReminderHook, removePromptReminderHook } from './install-prompt-reminders.js';
+import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { installToolEnforcement, removeToolEnforcement } from './install-tool-enforcement.js';
 import { isNativeInferenceAvailable } from '../core/infrastructure/native-inference.js';
 
@@ -70,17 +75,16 @@ export function parseInitArgs(args) {
     searchReranking: null,   // Phase 4: --search-reranking auto|on|off
     wizard: false,           // Phase 4: --wizard runs interactive prompts
     // P1 (system-prompt opt) — agent-instruction injection.
-    // Default: only CLAUDE.md (sweet-search is Claude-first).
+    // Default: Claude Code receives an auto-loaded .claude/rules policy;
+    // CLAUDE.md is never created or modified.
     //   --agents / --gemini / --cursor opt INTO additional harness files.
-    //   --no-claude opts OUT of CLAUDE.md *and* every .claude/* write
-    //     (hooks, skills, rules, settings-json mutations).
-    //   --no-agent-instructions is the umbrella: skip the four harness
-    //     instruction files but keep .claude/* hooks unless --no-claude.
+    //   --no-claude opts OUT of every .claude/* write.
+    //   --no-agent-instructions is the umbrella: skip policy surfaces but
+    //     keep unrelated .claude/* hooks unless --no-claude.
     skipAgentInstructions: false,
     symlinkInstructionFiles: true,
     optInHarnesses: new Set(),
     noClaude: false,
-    skipPromptReminders: false, // P2: --no-prompt-reminders (default OFF)
     enforceTools: false,        // P3: --enforce-tools (default OFF — opt-in strict mode)
     codex: false,                // --codex: wire the Codex CLI SessionStart hook
     codexEnableGlobalHooks: false, // --codex-enable-global-hooks: also enable the flag in ~/.codex/config.toml
@@ -88,8 +92,8 @@ export function parseInitArgs(args) {
     //   --mcp     registers the sweet-search MCP server in the project .mcp.json
     //             (additive — the CLI stays). Harness-agnostic, root-level.
     //   --no-cli  makes MCP the agent's *contact surface*: inject the MCP-tool
-    //             prompt variant instead of the ss-* CLI one, and skip the
-    //             CLI-surface-specific supplements (rules file, ss-* reminder).
+    //             prompt variant instead of the ss-* CLI one and remove the
+    //             CLI-specific system-priority override.
     //             Indexing still runs through the CLI/engine. Requires --mcp.
     mcp: false,
     noCli: false,
@@ -146,8 +150,8 @@ export function parseInitArgs(args) {
       // but persisted through init's diagnostic output.
       result.skipCuda = true;
     } else if (arg === '--no-agent-instructions') {
-      // P1: skip ALL instruction-file writes (CLAUDE.md / AGENTS.md /
-      // GEMINI.md / .cursor/rules/sweet-search.mdc / .claude/rules/sweet-search.md).
+      // P1: skip ALL instruction-file writes (AGENTS.md / GEMINI.md /
+      // .cursor/rules/sweet-search.mdc / .claude/rules/sweet-search.md).
       result.skipAgentInstructions = true;
     } else if (arg === '--no-symlink-instruction-files') {
       // P1: write GEMINI.md as a copy with @import rather than a symlink to
@@ -158,8 +162,8 @@ export function parseInitArgs(args) {
       // P1: explicit ON — useful for clarity in scripts even though it's the default.
       result.symlinkInstructionFiles = true;
     } else if (arg === '--no-claude') {
-      // P1: opt out of CLAUDE.md *and* every other .claude/* write that
-      // init normally performs (rules file, /sweet-index skill,
+      // P1: opt out of every .claude/* write that init normally performs
+      // (rules file, /sweet-index skill,
       // index-maintainer hook, prewarm SessionStart entry). Universal
       // gate — the user has signalled they don't use Claude Code.
       // If `--agents` / `--gemini` / `--cursor` is also set, AGENTS.md
@@ -189,11 +193,6 @@ export function parseInitArgs(args) {
       // default because it writes outside the project into the user's
       // hand-curated global config.
       result.codexEnableGlobalHooks = true;
-    } else if (arg === '--no-prompt-reminders') {
-      // P2: skip the UserPromptSubmit reminder hook. Default-on because
-      // the reminder is the cheapest available shift-left for tool
-      // selection (~80 tokens per prompt vs avoided re-search loops).
-      result.skipPromptReminders = true;
     } else if (arg === '--enforce-tools') {
       // P3: opt-in strict mode — denies native Grep + installs a Read
       // hint hook. Opinionated and Claude-specific (per §4D).
@@ -750,7 +749,7 @@ function printReport(report) {
   const {
     profile, maxsimTier, routerType, models, verification, runtimeDownloads,
     capability, cascadeReport, dedupReport, prewarmHookReport, skillReport,
-    liChoices, agentInstructionsReport, claudeRulesReport,
+    liChoices, agentInstructionsReport, claudeRulesReport, claudeSystemPromptReport,
     promptReminderReport, toolEnforcementReport, mcpServerReport,
   } = report;
 
@@ -864,6 +863,12 @@ function printReport(report) {
   }
   if (claudeRulesReport) {
     console.log(`  Claude rules file:    ${claudeRulesReport.status}`);
+  }
+  if (claudeSystemPromptReport) {
+    console.log(
+      `  Claude system prompt: ${claudeSystemPromptReport.status}`
+      + (claudeSystemPromptReport.detail ? ` — ${claudeSystemPromptReport.detail}` : ''),
+    );
   }
   if (promptReminderReport && promptReminderReport.status !== 'skipped') {
     console.log(`  Prompt reminder hook: ${promptReminderReport.status}`);
@@ -1434,14 +1439,16 @@ Options:
                             Indexing falls back to ORT INT8 CPU (and native
                             FP32 safetensors are skipped at fetch time).
   --no-agent-instructions   Skip the agent-instruction injection layer
-                            entirely (no CLAUDE.md, no AGENTS.md, no
-                            GEMINI.md, no Cursor rule, no
-                            .claude/rules/sweet-search.md). Use when you
-                            manage your own agent instructions. Idempotent
+                            entirely (no AGENTS.md, no GEMINI.md, no Cursor
+                            rule, no .claude/rules/sweet-search.md, and no
+                            sweet-search Claude output style). Use
+                            when you manage your own agent instructions. Idempotent
                             rewrites use a marker block; re-running init
                             never duplicates content.
   --no-claude               Don't ship anything to .claude/. Skips
-                            CLAUDE.md + .claude/rules/sweet-search.md +
+                            .claude/rules/sweet-search.md +
+                            .claude/output-styles/sweet-search.md +
+                            the outputStyle selection in .claude/settings.json +
                             .claude/hooks/index-maintainer.mjs +
                             .claude/skills/sweet-index/ +
                             .claude/settings.json prewarm SessionStart entry.
@@ -1449,12 +1456,13 @@ Options:
                             ship the policy through a non-Claude harness.
   --agents                  Also ship AGENTS.md, the multi-harness
                             convention read by Codex CLI, OpenCode, and any
-                            other tool that adopts AGENTS.md. Without
-                            --no-claude, AGENTS.md is a thin @CLAUDE.md
-                            import shim; with --no-claude it carries the
-                            full canonical policy body.
-  --gemini                  Also ship GEMINI.md (symlink → canonical, or
-                            an @import file when --no-symlink-instruction-files).
+                            other tool that adopts AGENTS.md. AGENTS.md
+                            always carries the full canonical policy body;
+                            it never imports CLAUDE.md.
+  --gemini                  Also ship GEMINI.md. When AGENTS.md is enabled,
+                            GEMINI.md symlinks to it (or @imports it under
+                            --no-symlink-instruction-files); otherwise
+                            GEMINI.md carries the policy directly.
   --cursor                  Also ship .cursor/rules/sweet-search.mdc with
                             sweet-search frontmatter.
   --codex                   Complete Codex CLI setup (the normal path): write a
@@ -1485,11 +1493,6 @@ Options:
                             line rather than a symlink to the canonical file.
                             Useful on filesystems / hosts where symlinks
                             aren't supported. Default is to symlink.
-  --no-prompt-reminders     Skip the UserPromptSubmit reminder hook (default
-                            on). The reminder injects a small (~80 token)
-                            sweet-search tool-routing summary into every
-                            prompt to prevent drift back to native Grep/Read.
-                            Always implied when --no-claude is set.
   --enforce-tools           (Opt-in strict mode) Deny native Grep entirely
                             (forces ss-grep) and install a hint hook for
                             native Read suggesting ss-read / ss-semantic.
@@ -1506,9 +1509,9 @@ Options:
                             the CLI wraps.
   --no-cli                  Make MCP the agent's CONTACT SURFACE: inject the
                             MCP-tool prompt variant instead of the ss-* CLI
-                            one, and skip the CLI-surface supplements (the
-                            .claude/rules file, the ss-* prompt reminder, tool
-                            enforcement). Indexing still runs through the CLI/
+                            one in the same instruction files, and remove the
+                            CLI-specific Claude output style and tool
+                            enforcement. Indexing still runs through the CLI/
                             engine — this only changes how the agent searches.
                             Requires --mcp. NOTE: the MCP prompt variant is
                             hand-derived from the frozen CLI champion and is not
@@ -1999,15 +2002,12 @@ export async function runInit(args) {
   }
 
   // 12-15. Inject the sweet-search policy across coding-agent harnesses.
-  //        Default: only CLAUDE.md (sweet-search is Claude-first; the
-  //        existing project CLAUDE.md is where users look). Opt INTO
-  //        additional harnesses with --agents (AGENTS.md) / --gemini /
-  //        --cursor. --no-claude opts OUT of CLAUDE.md AND every other
-  //        .claude/* write (universal gate enforced above).
-  //        Plan §4A + §4B + §10 (the canonical flip from AGENTS.md →
-  //        CLAUDE.md is a user-driven product call — plan doc updated
-  //        in §3.3 / §10).
-  //        Idempotent marker block so re-init never duplicates content.
+  //        Default: Claude Code receives the verbatim policy through the
+  //        auto-loaded `.claude/rules/sweet-search.md`; CLAUDE.md stays
+  //        untouched. Opt INTO additional harnesses with --agents
+  //        (AGENTS.md) / --gemini / --cursor. AGENTS.md always carries the
+  //        full policy directly for Codex/OpenCode.
+  //        Idempotent ownership markers make re-init and uninstall safe.
   //        `--no-agent-instructions` is the umbrella that skips the
   //        instruction-file injection layer entirely.
   //
@@ -2036,6 +2036,7 @@ export async function runInit(args) {
 
   let agentInstructionsReport = null;
   let claudeRulesReport = null;
+  let claudeSystemPromptReport = null;
   if (!parsed.skipAgentInstructions) {
     const activeHarnesses = resolveActiveHarnesses({
       optInHarnesses: parsed.optInHarnesses,
@@ -2063,29 +2064,55 @@ export async function runInit(args) {
       } catch (err) {
         process.stderr.write(`[init] Warning: Agent-instruction injection failed: ${err.message}\n`);
       }
-      // Claude rules file is only useful when claude-code is enabled AND the
-      // CLI is the contact surface — its sole load path is the
-      // @.claude/rules/sweet-search.md import line that injectAgentInstructions
-      // writes into CLAUDE.md (omitted in the --no-cli MCP variant), and its
-      // body is written in ss-* CLI terms. Under --no-cli we TEAR DOWN any rules
-      // file a prior CLI init wrote (idempotent: not-found when absent) so a
-      // cli→mcp re-init never leaves a stale ss-* supplement contradicting the
-      // injected MCP prompt.
+      // Claude Code auto-loads this unscoped project rule. It is the sole
+      // detailed Claude policy surface: exact shipped body, no hand-authored
+      // supplement and no CLAUDE.md import. The variant changes in place when
+      // the contact surface flips between CLI and MCP.
       if (activeHarnesses.includes('claude-code')) {
         try {
-          if (parsed.noCli) {
-            const status = removeClaudeRules({ projectRoot });
-            claudeRulesReport = { status };
-            if (status === 'removed' || parsed.verbose) {
-              process.stderr.write(`[init] Claude rules: ${status}${status === 'removed' ? ' (--no-cli — stale ss-* CLI supplement torn down)' : ' (--no-cli)'}\n`);
-            }
-          } else {
-            const status = writeClaudeRules({ projectRoot });
-            claudeRulesReport = { status };
-            process.stderr.write(`[init] Claude rules: ${status}\n`);
+          const status = writeClaudeRules({
+            projectRoot,
+            variant: promptVariant,
+          });
+          claudeRulesReport = { status, variant: promptVariant };
+          process.stderr.write(
+            `[init] Claude rules: ${status}`
+            + (promptVariant === 'mcp' ? ' [mcp variant]' : '')
+            + '\n',
+          );
+        } catch (err) {
+          process.stderr.write(`[init] Warning: Claude rules write failed: ${err.message}\n`);
+        }
+
+        // Claude Code has no persistent project-level equivalent of the
+        // per-invocation `--append-system-prompt` flag. A project output style
+        // is the supported system-prompt-priority seam. Install the compact
+        // routing override pointing at the auto-loaded project rule; tear it
+        // down for the MCP-only contact surface because it names ss-* CLIs.
+        // The helper always installs the style so it is available in `/config`,
+        // but never replaces an existing user-selected output style silently.
+        // It also detects a higher-priority settings.local.json selection and
+        // returns prominent, actionable guidance when our style is not active.
+        try {
+          claudeSystemPromptReport = parsed.noCli
+            ? removeClaudeSystemPrompt({ projectRoot })
+            : installClaudeSystemPrompt({ projectRoot });
+          process.stderr.write(
+            `[init] Claude system prompt: ${claudeSystemPromptReport.status}`
+            + (parsed.noCli ? ' (--no-cli)' : '')
+            + (claudeSystemPromptReport.detail ? ` — ${claudeSystemPromptReport.detail}` : '')
+            + '\n',
+          );
+          if (!parsed.noCli) {
+            process.stderr.write(
+              formatClaudeSystemPromptGuidance(claudeSystemPromptReport),
+            );
           }
         } catch (err) {
-          process.stderr.write(`[init] Warning: Claude rules ${parsed.noCli ? 'teardown' : 'write'} failed: ${err.message}\n`);
+          claudeSystemPromptReport = { status: 'error', detail: err.message };
+          process.stderr.write(
+            `[init] Warning: Claude system prompt ${parsed.noCli ? 'teardown' : 'write'} failed: ${err.message}\n`,
+          );
         }
       }
     }
@@ -2093,32 +2120,21 @@ export async function runInit(args) {
     process.stderr.write(`[init] Agent instructions: skipped (--no-agent-instructions)\n`);
   }
 
-  // 16. UserPromptSubmit reminder hook (P2 — plan §4C / §10 step 16).
-  //     Universal `--no-claude` gate already enforced at step 10. Default-on;
-  //     `--no-prompt-reminders` opts out. The hook lives at
-  //     `.claude/hooks/sweet-search-remind-tools.mjs` with a
-  //     `hooks.UserPromptSubmit` entry in `.claude/settings.json` keyed by
-  //     filename so re-init updates rather than duplicates.
-  //     Under --no-cli the reminder body (ss-* CLI Bash commands) contradicts
-  //     the injected MCP-variant prompt, so we TEAR DOWN any reminder hook a
-  //     prior CLI init installed (idempotent: not-found when absent) rather
-  //     than merely skipping the install. An MCP-variant reminder is a follow-up.
+  // 16. Remove the legacy UserPromptSubmit reminder if an older init installed
+  //     it. The rule is now the one detailed policy source and the compact
+  //     system-priority override is the only Claude-specific reinforcement.
+  //     Repeating a second hand-authored decision tree on every prompt costs
+  //     tokens and risks drifting away from the frozen shipped policy.
   let promptReminderReport = null;
   if (!parsed.noClaude) {
-    if (parsed.noCli) {
-      promptReminderReport = removePromptReminderHook({ projectRoot });
-      if (parsed.verbose || promptReminderReport.status === 'error') {
-        process.stderr.write(`[init] Prompt reminder hook: ${promptReminderReport.status} (--no-cli) — ${promptReminderReport.detail}\n`);
-      }
-    } else {
-      promptReminderReport = installPromptReminderHook({
-        projectRoot,
-        packageRoot: PACKAGE_ROOT,
-        skipped: parsed.skipPromptReminders,
-      });
-      if (parsed.verbose || promptReminderReport.status === 'error') {
-        process.stderr.write(`[init] Prompt reminder hook: ${promptReminderReport.status} — ${promptReminderReport.detail}\n`);
-      }
+    const cleanup = removePromptReminderHook({ projectRoot });
+    if (cleanup.status !== 'not-found') {
+      promptReminderReport = cleanup;
+      process.stderr.write(
+        `[init] Legacy prompt reminder hook: ${cleanup.status}`
+        + (cleanup.detail ? ` — ${cleanup.detail}` : '')
+        + '\n',
+      );
     }
   }
 
@@ -2165,6 +2181,7 @@ export async function runInit(args) {
     liChoices,
     agentInstructionsReport,
     claudeRulesReport,
+    claudeSystemPromptReport,
     promptReminderReport,
     toolEnforcementReport,
     mcpServerReport,

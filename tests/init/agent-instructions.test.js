@@ -2,10 +2,9 @@
  * Unit tests for `scripts/inject-agent-instructions.js` and
  * `scripts/write-claude-rules.js`. Plan reference: P1 (§4A, §4B, §10).
  *
- * Canonical source: CLAUDE.md when claude-code is enabled (default), else
- * AGENTS.md. Other harnesses get @import / symlink shims to the canonical.
- * (This diverges from plan §3.3 which framed AGENTS.md as canonical — see
- * the inject-agent-instructions.js header for rationale.)
+ * Claude Code gets the verbatim policy through its auto-loaded project rule;
+ * CLAUDE.md stays untouched. AGENTS.md directly carries the same policy for
+ * Codex/OpenCode. Gemini may share AGENTS.md; Cursor inlines the body.
  *
  * Each test runs in an isolated tmpdir so the project root is never touched.
  */
@@ -23,6 +22,7 @@ import {
   GEMINI_FILE,
   MARKER_BEGIN,
   MARKER_END,
+  CANONICAL_POLICY_BODY,
   injectAgentInstructions,
   removeAgentInstructions,
 } from '../../scripts/inject-agent-instructions.js';
@@ -32,6 +32,17 @@ import {
   writeClaudeRules,
   _internal as claudeRulesInternal,
 } from '../../scripts/write-claude-rules.js';
+import {
+  CLAUDE_OUTPUT_STYLE_NAME,
+  CLAUDE_OUTPUT_STYLE_REL,
+  CLAUDE_LOCAL_SETTINGS_REL,
+  CLAUDE_SETTINGS_REL,
+  CLAUDE_SYSTEM_OVERRIDE,
+  formatClaudeSystemPromptGuidance,
+  installClaudeSystemPrompt,
+  removeClaudeSystemPrompt,
+  _internal as claudeSystemPromptInternal,
+} from '../../scripts/install-claude-system-prompt.js';
 import { parseInitArgs, resolveActiveHarnesses } from '../../scripts/init.js';
 
 let tmpRoot;
@@ -45,33 +56,29 @@ afterEach(() => {
 const read = (rel) => readFileSync(join(tmpRoot, rel), 'utf8');
 const exists = (rel) => existsSync(join(tmpRoot, rel));
 
-describe('injectAgentInstructions — fresh install (claude-code canonical)', () => {
-  it('writes CLAUDE.md (canonical) + AGENTS.md import + GEMINI.md symlink + cursor rule', () => {
+describe('injectAgentInstructions — fresh install (rule-only Claude)', () => {
+  it('leaves CLAUDE.md absent and writes direct non-Claude policy surfaces', () => {
     const r = injectAgentInstructions({ projectRoot: tmpRoot });
-    expect(r.canonical).toBe('claude-code');
-    expect(r.harnesses['claude-code']).toBe('created');
+    expect(r.canonical).toBe('agents');
+    expect(r.harnesses['claude-code']).toBe('untouched');
     expect(r.harnesses.agents).toBe('created');
     expect(r.harnesses.gemini).toBe('created');
     expect(r.harnesses.cursor).toBe('created');
+    expect(exists(CLAUDE_FILE)).toBe(false);
 
-    // CLAUDE.md is canonical: contains the full policy body + the .claude/rules import.
-    const claude = read(CLAUDE_FILE);
-    expect(claude).toContain(MARKER_BEGIN);
-    expect(claude).toContain(MARKER_END);
-    expect(claude).toContain('Sweet-search indexes the working tree'); // M++ body
-    expect(claude).toContain('trust the top ranked result outright'); // M+++++ verdict-gated stop discipline
-    expect(claude).toContain('a fix covering only the first matching site is not done'); // P2 fix-surface mapping
-    expect(claude).toContain('@.claude/rules/sweet-search.md');
-
-    // AGENTS.md is a thin import shim → CLAUDE.md.
+    // AGENTS.md directly carries the full policy for Codex/OpenCode.
     const agents = read(AGENTS_FILE);
-    expect(agents).toContain('@CLAUDE.md');
-    expect(agents).not.toContain('Sweet-search indexes the working tree');
+    expect(agents).toContain(MARKER_BEGIN);
+    expect(agents).toContain(MARKER_END);
+    expect(agents).toContain('Sweet-search indexes the working tree');
+    expect(agents).toContain('trust the top ranked result outright');
+    expect(agents).toContain('a fix covering only the first matching site is not done');
+    expect(agents).not.toContain('@CLAUDE.md');
 
-    // GEMINI.md is a symlink → CLAUDE.md (relative).
+    // GEMINI.md shares the direct AGENTS.md policy.
     const stat = lstatSync(join(tmpRoot, GEMINI_FILE));
     expect(stat.isSymbolicLink()).toBe(true);
-    expect(readlinkSync(join(tmpRoot, GEMINI_FILE))).toBe(CLAUDE_FILE);
+    expect(readlinkSync(join(tmpRoot, GEMINI_FILE))).toBe(AGENTS_FILE);
 
     // Cursor rule has frontmatter + canonical body inside marker.
     const cursor = read(CURSOR_FILE);
@@ -80,7 +87,7 @@ describe('injectAgentInstructions — fresh install (claude-code canonical)', ()
     expect(cursor).toContain('Sweet-search indexes the working tree');
   });
 
-  it('falls back to AGENTS.md canonical when --no-claude-code', () => {
+  it('keeps AGENTS.md canonical when Claude Code is disabled', () => {
     const r = injectAgentInstructions({
       projectRoot: tmpRoot,
       harnesses: ['agents', 'gemini', 'cursor'],
@@ -89,7 +96,7 @@ describe('injectAgentInstructions — fresh install (claude-code canonical)', ()
     expect(r.harnesses['claude-code']).toBeUndefined();
     expect(exists(CLAUDE_FILE)).toBe(false);
 
-    // AGENTS.md now contains the full policy body.
+    // AGENTS.md contains the full policy body.
     const agents = read(AGENTS_FILE);
     expect(agents).toContain('Sweet-search indexes the working tree');
     expect(agents).not.toContain('@CLAUDE.md');
@@ -103,24 +110,28 @@ describe('injectAgentInstructions — fresh install (claude-code canonical)', ()
       projectRoot: tmpRoot,
       harnesses: ['claude-code', 'gemini', 'cursor'],
     });
-    expect(r.canonical).toBe('claude-code');
-    expect(r.harnesses['claude-code']).toBe('created');
+    expect(r.canonical).toBe('gemini');
+    expect(r.harnesses['claude-code']).toBe('untouched');
     expect(r.harnesses.agents).toBeUndefined();
+    expect(exists(CLAUDE_FILE)).toBe(false);
     expect(exists(AGENTS_FILE)).toBe(false);
     expect(exists(GEMINI_FILE)).toBe(true);
+    expect(lstatSync(join(tmpRoot, GEMINI_FILE)).isSymbolicLink()).toBe(false);
+    expect(read(GEMINI_FILE)).toContain('Sweet-search indexes the working tree');
     expect(exists(CURSOR_FILE)).toBe(true);
   });
 
-  it('falls back to copy when --no-symlink-instruction-files', () => {
+  it('uses an AGENTS.md import when Gemini symlinks are disabled', () => {
     const r = injectAgentInstructions({
       projectRoot: tmpRoot,
-      harnesses: ['claude-code', 'gemini'],
+      harnesses: ['claude-code', 'agents', 'gemini'],
       useSymlinks: false,
     });
     expect(r.harnesses.gemini).toBe('created');
     const stat = lstatSync(join(tmpRoot, GEMINI_FILE));
     expect(stat.isSymbolicLink()).toBe(false);
-    expect(read(GEMINI_FILE)).toContain('@CLAUDE.md');
+    expect(read(GEMINI_FILE)).toContain('@AGENTS.md');
+    expect(read(GEMINI_FILE)).not.toContain('@CLAUDE.md');
   });
 
   it('returns empty report when no harnesses are enabled', () => {
@@ -137,13 +148,15 @@ describe('injectAgentInstructions — fresh install (claude-code canonical)', ()
 });
 
 describe('injectAgentInstructions — idempotent rewrite', () => {
-  it('replaces marker block on second invocation (no duplication)', () => {
+  it('rewrites AGENTS.md idempotently without marker duplication', () => {
     injectAgentInstructions({ projectRoot: tmpRoot });
-    const after1 = read(CLAUDE_FILE);
+    const after1 = read(AGENTS_FILE);
 
     const r2 = injectAgentInstructions({ projectRoot: tmpRoot });
-    expect(r2.harnesses['claude-code']).toBe('unchanged');
-    expect(read(CLAUDE_FILE)).toBe(after1);
+    expect(r2.harnesses['claude-code']).toBe('untouched');
+    expect(r2.harnesses.agents).toBe('unchanged');
+    expect(read(AGENTS_FILE)).toBe(after1);
+    expect(exists(CLAUDE_FILE)).toBe(false);
 
     // Single marker pair only — re-running never duplicates.
     const begins = (after1.match(new RegExp(escapeRegex(MARKER_BEGIN), 'g')) ?? []).length;
@@ -152,74 +165,94 @@ describe('injectAgentInstructions — idempotent rewrite', () => {
     expect(ends).toBe(1);
   });
 
-  it('prepends marker block when CLAUDE.md exists without marker', () => {
-    writeFileSync(join(tmpRoot, CLAUDE_FILE), '# My project\n\nUser-authored content.\n');
+  it('leaves a user-authored CLAUDE.md byte-identical', () => {
+    const original = '# My project\n\nUser-authored content.\n';
+    writeFileSync(join(tmpRoot, CLAUDE_FILE), original);
     const r = injectAgentInstructions({ projectRoot: tmpRoot, harnesses: ['claude-code'] });
-    expect(r.harnesses['claude-code']).toBe('prepended');
-    const text = read(CLAUDE_FILE);
-    expect(text.indexOf(MARKER_BEGIN)).toBeLessThan(text.indexOf('# My project'));
-    expect(text).toContain('User-authored content.');
+    expect(r.harnesses['claude-code']).toBe('untouched');
+    expect(read(CLAUDE_FILE)).toBe(original);
   });
 
-  it('preserves user content outside marker on rewrite', () => {
-    writeFileSync(join(tmpRoot, CLAUDE_FILE), '# Project Claude rules\n\nKeep me.\n');
-    injectAgentInstructions({ projectRoot: tmpRoot, harnesses: ['claude-code'] });
+  it('migrates the legacy managed CLAUDE.md block while preserving user prose', () => {
+    writeFileSync(
+      join(tmpRoot, CLAUDE_FILE),
+      `${MARKER_BEGIN}\nlegacy sweet-search policy\n${MARKER_END}\n\n# Project Claude rules\nKeep me.\n`,
+    );
+    const r = injectAgentInstructions({ projectRoot: tmpRoot, harnesses: ['claude-code'] });
+    expect(r.harnesses['claude-code']).toBe('legacy-block-removed');
     const text = read(CLAUDE_FILE);
+    expect(text).not.toContain(MARKER_BEGIN);
+    expect(text).not.toContain('legacy sweet-search policy');
+    expect(text).toContain('# Project Claude rules');
     expect(text).toContain('Keep me.');
-    expect(text).toContain('Sweet-search indexes the working tree');
-
-    // Re-run: user content still intact, no duplicated marker.
-    injectAgentInstructions({ projectRoot: tmpRoot, harnesses: ['claude-code'] });
-    const text2 = read(CLAUDE_FILE);
-    expect(text2).toContain('Keep me.');
-    const begins = (text2.match(new RegExp(escapeRegex(MARKER_BEGIN), 'g')) ?? []).length;
-    expect(begins).toBe(1);
   });
 });
 
 describe('injectAgentInstructions — symlink edge cases', () => {
-  it('falls back to marker injection when GEMINI.md already exists as a regular file', () => {
+  it('prepends the direct policy when GEMINI.md already exists as a regular file', () => {
     writeFileSync(join(tmpRoot, GEMINI_FILE), '# Existing Gemini config\n');
     const r = injectAgentInstructions({
       projectRoot: tmpRoot,
       harnesses: ['claude-code', 'gemini'],
     });
-    expect(r.harnesses.gemini).toBe('fell-back-to-copy');
+    expect(r.harnesses.gemini).toBe('prepended');
     const stat = lstatSync(join(tmpRoot, GEMINI_FILE));
     expect(stat.isSymbolicLink()).toBe(false);
     const text = read(GEMINI_FILE);
     expect(text).toContain('Existing Gemini config');
     expect(text).toContain(MARKER_BEGIN);
-    expect(text).toContain('@CLAUDE.md');
+    expect(text).toContain('Sweet-search indexes the working tree');
+    expect(text).not.toContain('@CLAUDE.md');
   });
 
-  it('detects an already-correct symlink as no-op', () => {
-    injectAgentInstructions({ projectRoot: tmpRoot, harnesses: ['claude-code', 'gemini'] });
+  it('detects an already-correct AGENTS.md symlink as no-op', () => {
+    injectAgentInstructions({
+      projectRoot: tmpRoot,
+      harnesses: ['claude-code', 'agents', 'gemini'],
+    });
     const r2 = injectAgentInstructions({
       projectRoot: tmpRoot,
-      harnesses: ['claude-code', 'gemini'],
+      harnesses: ['claude-code', 'agents', 'gemini'],
     });
     expect(r2.harnesses.gemini).toBe('already-correct');
+  });
+
+  it('migrates an old GEMINI.md → CLAUDE.md symlink to AGENTS.md', () => {
+    writeFileSync(join(tmpRoot, CLAUDE_FILE), '# user Claude instructions\n');
+    symlinkSync(CLAUDE_FILE, join(tmpRoot, GEMINI_FILE));
+    const r = injectAgentInstructions({
+      projectRoot: tmpRoot,
+      harnesses: ['claude-code', 'agents', 'gemini'],
+    });
+    expect(r.harnesses.gemini).toBe('created');
+    expect(readlinkSync(join(tmpRoot, GEMINI_FILE))).toBe(AGENTS_FILE);
+    expect(read(CLAUDE_FILE)).toBe('# user Claude instructions\n');
   });
 });
 
 describe('removeAgentInstructions', () => {
-  it('strips marker blocks across all four files (round-trip)', () => {
+  it('removes non-Claude managed surfaces without creating CLAUDE.md', () => {
     injectAgentInstructions({ projectRoot: tmpRoot });
 
-    // Add user prose under the CLAUDE.md marker — must survive uninstall.
-    const claudePath = join(tmpRoot, CLAUDE_FILE);
-    writeFileSync(claudePath, readFileSync(claudePath, 'utf8') + '\n# My note\nKeep me.\n');
-
     const r = removeAgentInstructions({ projectRoot: tmpRoot });
-    expect(r.harnesses['claude-code']).toBe('removed'); // user note kept
-    expect(r.harnesses.agents).toBe('file-deleted');     // wholly managed (just an import)
-    expect(r.harnesses.gemini).toBe('removed');          // symlink removed
-    expect(r.harnesses.cursor).toBe('file-deleted');     // wholly managed (frontmatter is ours)
+    expect(r.harnesses['claude-code']).toBe('not-found');
+    expect(r.harnesses.agents).toBe('file-deleted');
+    expect(r.harnesses.gemini).toBe('removed');
+    expect(r.harnesses.cursor).toBe('file-deleted');
 
+    expect(exists(CLAUDE_FILE)).toBe(false);
     expect(exists(AGENTS_FILE)).toBe(false);
     expect(exists(GEMINI_FILE)).toBe(false);
     expect(exists(CURSOR_FILE)).toBe(false);
+  });
+
+  it('removes a legacy managed CLAUDE.md block and preserves user prose', () => {
+    writeFileSync(
+      join(tmpRoot, CLAUDE_FILE),
+      `${MARKER_BEGIN}\nlegacy\n${MARKER_END}\n\n# My note\nKeep me.\n`,
+    );
+    const r = removeAgentInstructions({ projectRoot: tmpRoot });
+    expect(r.harnesses['claude-code']).toBe('removed');
     const claude = read(CLAUDE_FILE);
     expect(claude).not.toContain(MARKER_BEGIN);
     expect(claude).toContain('Keep me.');
@@ -227,13 +260,13 @@ describe('removeAgentInstructions', () => {
 
   it('dry-run reports without modifying anything', () => {
     injectAgentInstructions({ projectRoot: tmpRoot });
-    const before = read(CLAUDE_FILE);
+    const before = read(AGENTS_FILE);
     const r = removeAgentInstructions({ projectRoot: tmpRoot, dryRun: true });
-    expect(r.harnesses['claude-code']).toBe('dry-run');
+    expect(r.harnesses['claude-code']).toBe('not-found');
     expect(r.harnesses.agents).toBe('dry-run');
     expect(r.harnesses.gemini).toBe('dry-run');
     expect(r.harnesses.cursor).toBe('dry-run');
-    expect(read(CLAUDE_FILE)).toBe(before);
+    expect(read(AGENTS_FILE)).toBe(before);
   });
 
   it('preserves user-customised cursor file (no marker → no removal)', () => {
@@ -269,11 +302,14 @@ describe('removeAgentInstructions', () => {
 });
 
 describe('writeClaudeRules / removeClaudeRules', () => {
-  it('creates the rules file with sentinel header', () => {
+  it('creates an ownership comment plus the verbatim M± body only', () => {
     expect(writeClaudeRules({ projectRoot: tmpRoot })).toBe('created');
     const text = read(CLAUDE_RULES_REL);
-    expect(text).toContain(claudeRulesInternal.SENTINEL);
-    expect(text).toContain('Sweet Search');
+    expect(text).toBe(`${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`);
+    expect(text).not.toContain('These supplement the canonical');
+    expect(text).not.toContain('Use native `Grep` only for trivial');
+    expect(text).not.toContain('You are resolving a real software issue');
+    expect(text).not.toContain('=== TASK COMPLETION');
   });
 
   it('is idempotent: re-running with unchanged content reports unchanged', () => {
@@ -286,6 +322,18 @@ describe('writeClaudeRules / removeClaudeRules', () => {
     writeFileSync(join(tmpRoot, CLAUDE_RULES_REL), '# My rules\nNo sentinel.\n');
     expect(writeClaudeRules({ projectRoot: tmpRoot })).toBe('preserved-user-file');
     expect(read(CLAUDE_RULES_REL)).toBe('# My rules\nNo sentinel.\n');
+  });
+
+  it('upgrades the legacy hand-authored managed rule to verbatim M±', () => {
+    mkdirSync(join(tmpRoot, '.claude', 'rules'), { recursive: true });
+    writeFileSync(
+      join(tmpRoot, CLAUDE_RULES_REL),
+      `${claudeRulesInternal.LEGACY_SENTINEL}\nlegacy contradictory guidance\n`,
+    );
+    expect(writeClaudeRules({ projectRoot: tmpRoot })).toBe('updated');
+    expect(read(CLAUDE_RULES_REL)).toBe(
+      `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
+    );
   });
 
   it('removeClaudeRules deletes only sentinel-tagged files', () => {
@@ -305,6 +353,153 @@ describe('writeClaudeRules / removeClaudeRules', () => {
   it('throws on missing projectRoot', () => {
     expect(() => writeClaudeRules({})).toThrow(/projectRoot is required/);
     expect(() => removeClaudeRules({})).toThrow(/projectRoot is required/);
+  });
+});
+
+describe('installClaudeSystemPrompt / removeClaudeSystemPrompt', () => {
+  it('installs the exact compact override at system-prompt priority without benchmark framing', () => {
+    const result = installClaudeSystemPrompt({ projectRoot: tmpRoot });
+    expect(result.status).toBe('installed');
+
+    const style = read(CLAUDE_OUTPUT_STYLE_REL);
+    expect(style).toContain('keep-coding-instructions: true');
+    expect(style).toContain(claudeSystemPromptInternal.SENTINEL);
+    expect(style).toContain(CLAUDE_SYSTEM_OVERRIDE);
+    expect(CLAUDE_SYSTEM_OVERRIDE).toContain('`.claude/rules/sweet-search.md`');
+    expect(CLAUDE_SYSTEM_OVERRIDE).not.toContain('guidance in CLAUDE.md');
+    expect(style).not.toContain('You are resolving a real software issue');
+    expect(style).not.toContain('=== TASK COMPLETION');
+
+    const settings = JSON.parse(read(CLAUDE_SETTINGS_REL));
+    expect(settings.outputStyle).toBe(CLAUDE_OUTPUT_STYLE_NAME);
+  });
+
+  it('is idempotent and preserves unrelated Claude settings', () => {
+    mkdirSync(join(tmpRoot, '.claude'), { recursive: true });
+    writeFileSync(
+      join(tmpRoot, CLAUDE_SETTINGS_REL),
+      JSON.stringify({ permissions: { allow: ['Bash(ss-*:*)'] } }, null, 2) + '\n',
+    );
+
+    expect(installClaudeSystemPrompt({ projectRoot: tmpRoot }).status).toBe('installed');
+    expect(installClaudeSystemPrompt({ projectRoot: tmpRoot }).status).toBe('unchanged');
+    expect(JSON.parse(read(CLAUDE_SETTINGS_REL))).toEqual({
+      permissions: { allow: ['Bash(ss-*:*)'] },
+      outputStyle: CLAUDE_OUTPUT_STYLE_NAME,
+    });
+  });
+
+  it('preserves an existing selected output style instead of replacing it', () => {
+    mkdirSync(join(tmpRoot, '.claude'), { recursive: true });
+    writeFileSync(
+      join(tmpRoot, CLAUDE_SETTINGS_REL),
+      JSON.stringify({ outputStyle: 'Explanatory', theme: 'dark' }, null, 2) + '\n',
+    );
+
+    const result = installClaudeSystemPrompt({ projectRoot: tmpRoot });
+    expect(result.status).toBe('preserved-existing');
+    expect(result.active).toBe(false);
+    expect(result.warning).toContain(CLAUDE_SETTINGS_REL);
+    // Install the style even though it is not selected, so users can switch
+    // to it directly from Claude Code's `/config` picker.
+    expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(true);
+    expect(JSON.parse(read(CLAUDE_SETTINGS_REL))).toEqual({
+      outputStyle: 'Explanatory',
+      theme: 'dark',
+    });
+  });
+
+  it('detects a higher-priority settings.local.json output-style override', () => {
+    mkdirSync(join(tmpRoot, '.claude'), { recursive: true });
+    writeFileSync(
+      join(tmpRoot, CLAUDE_LOCAL_SETTINGS_REL),
+      JSON.stringify({ outputStyle: 'Learning', theme: 'dark' }, null, 2) + '\n',
+    );
+
+    const result = installClaudeSystemPrompt({ projectRoot: tmpRoot });
+    expect(result.status).toBe('preserved-existing');
+    expect(result.active).toBe(false);
+    expect(result.warning).toContain(CLAUDE_LOCAL_SETTINGS_REL);
+    expect(result.warning).toContain('"Learning"');
+    expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(true);
+    expect(JSON.parse(read(CLAUDE_SETTINGS_REL)).outputStyle).toBe(
+      CLAUDE_OUTPUT_STYLE_NAME,
+    );
+    expect(JSON.parse(read(CLAUDE_LOCAL_SETTINGS_REL))).toEqual({
+      outputStyle: 'Learning',
+      theme: 'dark',
+    });
+  });
+
+  it('warns when settings.local.json is invalid without leaving a partial install', () => {
+    mkdirSync(join(tmpRoot, '.claude'), { recursive: true });
+    writeFileSync(join(tmpRoot, CLAUDE_LOCAL_SETTINGS_REL), '{not json');
+
+    const result = installClaudeSystemPrompt({ projectRoot: tmpRoot });
+    expect(result.status).toBe('installed');
+    expect(result.active).toBeNull();
+    expect(result.warning).toContain('is not valid JSON');
+    expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(true);
+    expect(JSON.parse(read(CLAUDE_SETTINGS_REL)).outputStyle).toBe(
+      CLAUDE_OUTPUT_STYLE_NAME,
+    );
+  });
+
+  it('refuses invalid settings without leaving a partial style', () => {
+    mkdirSync(join(tmpRoot, '.claude'), { recursive: true });
+    writeFileSync(join(tmpRoot, CLAUDE_SETTINGS_REL), '{not json');
+
+    const result = installClaudeSystemPrompt({ projectRoot: tmpRoot });
+    expect(result.status).toBe('error');
+    expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(false);
+  });
+
+  it('dry-runs, then removes only the owned style and setting', () => {
+    mkdirSync(join(tmpRoot, '.claude'), { recursive: true });
+    writeFileSync(
+      join(tmpRoot, CLAUDE_SETTINGS_REL),
+      JSON.stringify({ theme: 'dark' }, null, 2) + '\n',
+    );
+    installClaudeSystemPrompt({ projectRoot: tmpRoot });
+
+    expect(removeClaudeSystemPrompt({ projectRoot: tmpRoot, dryRun: true }).status).toBe('dry-run');
+    expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(true);
+    expect(removeClaudeSystemPrompt({ projectRoot: tmpRoot }).status).toBe('removed');
+    expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(false);
+    expect(JSON.parse(read(CLAUDE_SETTINGS_REL))).toEqual({ theme: 'dark' });
+  });
+
+  it('preserves a user-authored style at the same path and its selection', () => {
+    mkdirSync(join(tmpRoot, '.claude', 'output-styles'), { recursive: true });
+    writeFileSync(join(tmpRoot, CLAUDE_OUTPUT_STYLE_REL), '# My style\n');
+    writeFileSync(
+      join(tmpRoot, CLAUDE_SETTINGS_REL),
+      JSON.stringify({ outputStyle: CLAUDE_OUTPUT_STYLE_NAME }, null, 2) + '\n',
+    );
+
+    expect(installClaudeSystemPrompt({ projectRoot: tmpRoot }).status).toBe('preserved-existing');
+    expect(removeClaudeSystemPrompt({ projectRoot: tmpRoot }).status).toBe('not-found');
+    expect(read(CLAUDE_OUTPUT_STYLE_REL)).toBe('# My style\n');
+    expect(JSON.parse(read(CLAUDE_SETTINGS_REL)).outputStyle).toBe(CLAUDE_OUTPUT_STYLE_NAME);
+  });
+
+  it('formats prominent activation and conflict guidance', () => {
+    const active = formatClaudeSystemPromptGuidance({ status: 'installed', active: true });
+    expect(active).toContain('activated the `sweet-search` output style');
+    expect(active).toContain('new session or run `/clear`');
+    expect(active).toContain('Keep this style selected');
+
+    const conflict = formatClaudeSystemPromptGuidance({
+      status: 'preserved-existing',
+      active: false,
+      conflict: 'selection',
+      warning: `${CLAUDE_LOCAL_SETTINGS_REL} currently selects "Learning".`,
+    });
+    expect(conflict).toContain('WARNING');
+    expect(conflict).toContain(
+      'system-prompt routing is not active because another output style overrides it',
+    );
+    expect(conflict).toContain('Select `sweet-search` under `/config`');
   });
 });
 
