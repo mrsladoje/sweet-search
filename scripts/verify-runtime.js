@@ -17,6 +17,60 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
 
 /**
+ * Remedy text for a missing native SQLite binding.
+ *
+ * npm >= 11.16 gates package lifecycle scripts behind an `allow-scripts`
+ * allowlist and, with `strict-allow-scripts=false`, only WARNS when it skips
+ * them. better-sqlite3 obtains its prebuilt binary from exactly such a script
+ * (`prebuild-install || node-gyp rebuild`), so a default `npm install` on those
+ * npm versions yields a JS-only better-sqlite3 with no binding. Every index and
+ * search path opens a database, so the install is unusable.
+ */
+export const SQLITE_BINDING_REMEDY = [
+  'The native SQLite binding (better-sqlite3) could not be loaded, so indexing',
+  'and search cannot run. Your package manager almost certainly skipped install',
+  'scripts — npm >= 11.16 blocks them by default and only warns, and',
+  'better-sqlite3 fetches its prebuilt binary from one.',
+  '',
+  'Fix (global install) — approve the scripts and reinstall:',
+  '  npm install -g sweet-search --allow-scripts=sweet-search,better-sqlite3',
+  '',
+  'Fix (project install) — npm rejects that flag for project-scoped installs,',
+  'so add the allowlist to your package.json, then reinstall:',
+  '  "allowScripts": { "sweet-search": true, "better-sqlite3": true }',
+  '  rm -rf node_modules && npm install',
+].join('\n         ');
+
+/**
+ * Probe the native SQLite binding by actually opening a database.
+ *
+ * `require('better-sqlite3')` is NOT sufficient: the module resolves its
+ * `.node` binding lazily on first Database construction, so a broken install
+ * imports cleanly and only fails later, mid-index. We therefore open an
+ * in-memory database and run one statement. Cost is sub-millisecond.
+ *
+ * @returns {{ ok: true } | { ok: false, message: string }}
+ */
+export function probeSqliteBinding() {
+  let db = null;
+  try {
+    const require = createRequire(import.meta.url);
+    const Database = require('better-sqlite3');
+    db = new Database(':memory:');
+    db.exec('CREATE TABLE _sweet_search_probe (x INTEGER)');
+    return { ok: true };
+  } catch (err) {
+    // Lead with the remedy. better-sqlite3's own error enumerates a dozen
+    // candidate binding paths, none of which are actionable, so keep only its
+    // first line for diagnosis.
+    const cause = String(err?.message ?? err).split('\n')[0].trim();
+    return { ok: false, message: `${SQLITE_BINDING_REMEDY}\n         Underlying error: ${cause}` };
+  } finally {
+    try { db?.close(); } catch { /* best-effort */ }
+  }
+}
+
+/**
  * Run runtime verification.
  *
  * @param {object} options
@@ -126,7 +180,16 @@ export async function verifyRuntime(options) {
     });
   }
 
-  // 4. Deep: load WASM router and CatBoost router
+  // 4. Native SQLite binding — a hard requirement, unlike the optional native
+  //    addon/binary above which have JS/WASM fallbacks. Checked in FAST mode
+  //    because a missing binding makes the install unusable, and a green init
+  //    followed by a bindings stack trace on first index is the worst outcome.
+  const sqliteProbe = probeSqliteBinding();
+  checks.push(sqliteProbe.ok
+    ? { name: 'native:sqlite', status: 'pass' }
+    : { name: 'native:sqlite', status: 'fail', message: sqliteProbe.message });
+
+  // 5. Deep: load WASM router and CatBoost router
   if (deep) {
     // WASM router
     try {

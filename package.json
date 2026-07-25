@@ -1,6 +1,6 @@
 {
   "name": "sweet-search",
-  "version": "2.7.1",
+  "version": "2.7.2",
   "description": "Local code search for AI agents: six fast, purpose-built tools that return ranked answers, not raw grep. Because maybe grep isn't all you need... 🍬",
   "type": "module",
   "main": "core/search/sweet-search.js",

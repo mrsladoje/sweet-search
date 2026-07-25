@@ -4,7 +4,13 @@
 
 import { describe, it, expect } from 'vitest';
 import { join } from 'node:path';
-import { verifyRuntime, getMaxsimTier, getRouterType } from '../../scripts/verify-runtime.js';
+import {
+  verifyRuntime,
+  getMaxsimTier,
+  getRouterType,
+  probeSqliteBinding,
+  SQLITE_BINDING_REMEDY,
+} from '../../scripts/verify-runtime.js';
 
 const PACKAGE_ROOT = join(import.meta.dirname, '../..');
 
@@ -31,6 +37,42 @@ describe('verifyRuntime (fast)', () => {
     for (const check of assetChecks) {
       expect(check.status).toBe('pass');
     }
+  });
+
+  // Regression: npm >= 11.16 blocks install scripts by default, so
+  // better-sqlite3 can land without its prebuilt binding. Fast verification
+  // MUST catch that — init previously reported a green 8/8 on a tree that
+  // could not index at all.
+  it('probes the native SQLite binding during FAST verification', async () => {
+    const result = await verifyRuntime({
+      profile: 'core',
+      modelKeys: [],
+      deep: false,
+      packageRoot: PACKAGE_ROOT,
+    });
+
+    const sqlite = result.checks.find(c => c.name === 'native:sqlite');
+    expect(sqlite, 'native:sqlite check must run in fast mode').toBeDefined();
+    expect(sqlite.status).toBe('pass');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Native SQLite binding probe
+// ---------------------------------------------------------------------------
+
+describe('probeSqliteBinding', () => {
+  it('opens a real database rather than only resolving the module', () => {
+    // A bare `require('better-sqlite3')` succeeds even when the .node binding
+    // is missing (bindings resolve lazily on first Database construction), so
+    // the probe must actually open one to be meaningful.
+    expect(probeSqliteBinding()).toEqual({ ok: true });
+  });
+
+  it('remedy text names the allowScripts fix and the reinstall step', () => {
+    expect(SQLITE_BINDING_REMEDY).toContain('allowScripts');
+    expect(SQLITE_BINDING_REMEDY).toContain('better-sqlite3');
+    expect(SQLITE_BINDING_REMEDY).toContain('npm install');
   });
 
   // CI-skipped: GitHub runners do not run `sweet-search init` first and can
