@@ -1767,9 +1767,17 @@ fn main() {
     // results always stream to stdout below.
     emit_header(&query, &opts.mode, &policy);
 
-    if let Err(e) = do_request(&socket, &url) {
-        eprintln!("{}Error:{} {e}", ea.fa, ea.r);
-        process::exit(1);
+    // Status-aware, matching the read / read-semantic / trace paths above. The
+    // daemon answers an unusable project (no index, failed init) with a 5xx and
+    // a JSON error body; streaming that body while exiting 0 made every failed
+    // search look successful to `&&` chains and CI.
+    match do_request_with_status(&socket, &url) {
+        Ok(status) if status >= 400 => process::exit(1),
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("{}Error:{} {e}", ea.fa, ea.r);
+            process::exit(1);
+        }
     }
 }
 

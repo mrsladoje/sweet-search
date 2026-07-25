@@ -111,6 +111,34 @@ sweet-search "where do we validate JWT tokens?"
 That's it. `init` is idempotent and SHA256-verifies every model binary; re-running it is always safe.
 From then on, the index stays up to date automatically as you work.
 
+<details>
+<summary><b>If your package manager blocks install scripts</b> (npm 11.16+)</summary>
+
+<br>
+
+sweet-search stores its index in SQLite via `better-sqlite3`, which downloads its
+prebuilt native binary from an install script. Recent npm versions block those
+scripts by default and only print a warning, which leaves the binding missing and
+makes indexing fail. `sweet-search init` detects this and stops with instructions
+rather than reporting success.
+
+For a global install, approve the scripts once:
+
+```bash
+npm install -g sweet-search --allow-scripts=sweet-search,better-sqlite3
+```
+
+For a project-local install, add the allowlist to that project's `package.json`
+(npm rejects the flag for project-scoped installs), then reinstall:
+
+```jsonc
+"allowScripts": { "sweet-search": true, "better-sqlite3": true }
+```
+
+Verify with `sweet-search init` — the `native:sqlite` check must pass.
+
+</details>
+
 For Claude Code, init automatically installs and activates the `sweet-search`
 output style, which adds the compact routing override at system-prompt priority.
 Start a new Claude session or run `/clear` after init, and keep that output style
