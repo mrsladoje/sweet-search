@@ -96,7 +96,7 @@ export async function runOpencodeTask(task, {
   ];
   const { runnerStateDir, binDir, runnerFiles, integrity, jail, broker, integrityStateDir } = setupRunner({
     image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300, netArgs, sweet,
-    label, extraBinds,
+    label, extraBinds, requireBins: ['opencode'],
   });
 
   // Instruction file = frame + M± (sweet) / frame only (native), written into

@@ -53,7 +53,7 @@ export function computeNetArgs(t) {
 // is a parameter-free request through the IPC dir.
 export function setupRunner({
   image, workdir, testScript, rundir, testTimeoutSec = 300, netArgs = '', sweet = false,
-  label = 'rollout', extraBinds = [], extraMasks = [], isolate = ISOLATION_ON,
+  label = 'rollout', extraBinds = [], extraMasks = [], isolate = ISOLATION_ON, requireBins = [],
 }) {
   const runnerStateDir = mkdtempSync(path.join(tmpdir(), 'sweet-search-runner-'));
   const binDir = path.join(runnerStateDir, 'bin');
@@ -82,7 +82,7 @@ export function setupRunner({
     ? spawn(process.execPath, [shimInfo.brokerPath], { stdio: 'ignore' })
     : null;
   const jail = isolate
-    ? startJail({ rundir, runnerStateDir, label, extraBinds, extraMasks })
+    ? startJail({ rundir, runnerStateDir, label, extraBinds, extraMasks, requireBins })
     : null;
   // In broker mode the IPC dir is also checked (requests must be fully consumed by exit);
   // without a broker there is no _rt_ipc and the stateDir check is skipped, as before.

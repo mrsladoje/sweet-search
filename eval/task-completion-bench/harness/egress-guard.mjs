@@ -164,7 +164,14 @@ function startTls() {
   const srv = net.createServer(sock => {
     let buf = Buffer.alloc(0); let decided = false;
     sock.on('error', () => {});
-    sock.setTimeout(30000, () => sock.destroy());
+    // Idle timeout applies ONLY to the pre-handshake phase, to reap connections that
+    // never send a ClientHello. It MUST be cleared once we start piping: an LLM
+    // streaming response (codex's wire_api="responses") can legitimately go minutes
+    // between bytes while the model reasons, and killing it there produced
+    // "stream disconnected before completion" — an agent failure that looks exactly
+    // like a provider outage. Found because codex died under the netns while working
+    // fine under mount+pid namespaces alone.
+    sock.setTimeout(30000, () => { if (!decided) sock.destroy(); });
     sock.on('data', chunk => {
       if (decided) return;
       buf = Buffer.concat([buf, chunk]);
@@ -179,9 +186,16 @@ function startTls() {
       // Resolve through the HOST resolver (the jail's stub always says 10.201.0.1).
       dnsLookup(sni, { family: 4 }, (err, addr) => {
         if (err) { denyLog({ kind: 'tls-resolve-fail', host: sni, err: String(err.code || err) }); sock.destroy(); return; }
-        const up = net.connect(443, addr, () => { up.write(buf); sock.pipe(up); up.pipe(sock); });
+        const up = net.connect(443, addr, () => {
+          // Long-lived streaming: no idle deadline on either side, and TCP keepalive so
+          // a quiet connection is not reaped by anything in between.
+          sock.setTimeout(0); up.setTimeout(0);
+          sock.setKeepAlive(true, 30000); up.setKeepAlive(true, 30000);
+          up.write(buf); sock.pipe(up); up.pipe(sock);
+        });
         up.on('error', () => sock.destroy());
         sock.on('close', () => up.destroy());
+        up.on('close', () => sock.destroy());
       });
     });
   });
