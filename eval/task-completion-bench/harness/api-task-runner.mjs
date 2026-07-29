@@ -25,6 +25,7 @@ import { execFileSync, execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { costFromTurns } from './ideal-cost.mjs';   // cache-normalized idealCost (headline metric; both harness paths must emit it)
+import { persistTurns } from './turn-log.mjs';      // per-turn {in,cached,out} archive (P7)
 
 const DEEPSEEK_BASE = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1';
 const OPENROUTER_BASE = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
@@ -398,12 +399,26 @@ export async function runTask(task, { arm, provider = 'deepseek', apiModel, mode
   // Cost lookup keys on the provider's apiModel (resolvedModel); fall back to a
   // sane default so an unlisted model still produces a finite cost.
   const price = PRICES[resolvedModel] || DEFAULT_PRICE;
+  // costNaiveUsd = every prompt token at the full input rate (usage.prompt sums each
+  // turn's FULL prompt, so the re-sent prefix is charged again per turn) — the unified
+  // §3 B4 definition shared by all four adapters.
   const costNaive = (usage.prompt * price.in + usage.completion * price.out) / 1e6;
   const costRealized = (usage.cacheMiss * price.in + usage.cacheHit * price.cacheHit + usage.completion * price.out) / 1e6;
   // idealCost: cache-normalized (all re-sent prefix charged at the cache-hit rate),
   // recovered from per-turn deltas — same formula/units the codex path uses, so the
   // headline efficiency-at-parity metric is comparable across harness paths.
   const { idealUsd } = costFromTurns(turns, { in: price.in, cache: price.cacheHit, out: price.out });
+  // costContentUsd: unique context charged once + output (§3 B4's `content`).
+  let prevIn = 0, content = 0;
+  for (const tu of turns) {
+    content += (Math.max(0, tu.in - prevIn) * price.in + tu.out * price.out) / 1e6;
+    prevIn = tu.in;
+  }
+  // P7 (PLAN.md §3 B1): keep the per-turn array, not just its length.
+  const turnsFile = persistTurns(`${task.id || 'task'}-${arm}`, turns, {
+    task: task.id, arm, harness: 'api', model: resolvedModel, provider,
+    price: { in: price.in, cache: price.cacheHit, out: price.out }, source: 'stream',
+  });
 
   return {
     taskId: task.id, arm, provider, model: resolvedModel, apiModel: resolvedModel,
@@ -412,7 +427,8 @@ export async function runTask(task, { arm, provider = 'deepseek', apiModel, mode
     calls, toolCounts, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep,
     stepsToFirstEdit, nudges, escape, leak, halluc, escapeExamples, exitReason,
     usage, costNaiveUsd: +costNaive.toFixed(6), costRealizedUsd: +costRealized.toFixed(6),
-    idealCostUsd: +idealUsd.toFixed(6), turns: turns.length,
+    costContentUsd: +content.toFixed(6),
+    idealCostUsd: +idealUsd.toFixed(6), turns: turns.length, turnsFile,
     wallMs: Date.now() - t0, trajectory,
   };
 }

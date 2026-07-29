@@ -53,6 +53,11 @@ for (const m of metrics) {
   const deltas = pairs.map(p => (p.s[m] ?? 0) - (p.n[m] ?? 0)).filter(x => Number.isFinite(x));
   eff[m] = bootCI(deltas);
 }
+// costContentUsd (unique context charged once — PLAN.md §3 B4) is null on adapters with
+// aggregate-only usage, so it gets pair-complete filtering instead of the `?? 0` default:
+// coercing a missing content cost to $0 would read as "this arm introduced no context".
+const contentPairs = pairs.filter(p => Number.isFinite(p.s.costContentUsd) && Number.isFinite(p.n.costContentUsd));
+eff.costContentUsd = bootCI(contentPairs.map(p => p.s.costContentUsd - p.n.costContentUsd));
 
 // ---- CLEAN EFFICIENCY: co-solved subset (outcome-matched) ----
 // Restrict to tasks where BOTH arms resolved. This controls for the 'gave-up-early'
@@ -90,6 +95,7 @@ console.log(fmt('ss', eff.ss));
 console.log(fmt('nativeGrep', eff.nativeGrep));
 console.log(fmt('cost_realized$', eff.costRealizedUsd));
 console.log(fmt('cost_naive$', eff.costNaiveUsd));
+if (contentPairs.length) console.log(fmt(`cost_content$(n=${contentPairs.length})`, eff.costContentUsd));
 console.log(fmt('wall_s', eff.wallMs, 1 / 1000, 's'));
 console.log(fmt('stepsToFirstEdit', eff.stepsToFirstEdit));
 

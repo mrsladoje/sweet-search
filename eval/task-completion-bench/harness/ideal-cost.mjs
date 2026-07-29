@@ -123,10 +123,18 @@ export function findRolloutForRundir(rundir, { sinceMs = 0, sessionsDir } = {}) 
 // Recover idealCost for a completed run directory. Returns nulls (never throws)
 // when no rollout is found, so a missing session degrades gracefully to the
 // existing realized-cost column instead of aborting collection.
+//
+// `turns` stays a COUNT for backwards compatibility with the existing row column;
+// `turnList` is the array itself, which the caller persists (PLAN.md §3 B1 / P7) —
+// the rollout jsonl lives in a per-rollout codex home that is deleted with the run,
+// so this is the only chance to keep it.
 export function recoverIdealCost(rundir, { sinceMs = 0, sessionsDir, price = PRICE } = {}) {
   const rolloutFile = findRolloutForRundir(rundir, { sinceMs, sessionsDir });
-  if (!rolloutFile) return { idealCostUsd: null, realFromTurnsUsd: null, rolloutFile: null, turns: 0 };
+  if (!rolloutFile) return { idealCostUsd: null, realFromTurnsUsd: null, rolloutFile: null, turns: 0, turnList: [] };
   const turns = turnsFromRollout(rolloutFile);
   const { idealUsd, realFromTurnsUsd } = costFromTurns(turns, price);
-  return { idealCostUsd: +idealUsd.toFixed(6), realFromTurnsUsd: +realFromTurnsUsd.toFixed(6), rolloutFile, turns: turns.length };
+  return {
+    idealCostUsd: +idealUsd.toFixed(6), realFromTurnsUsd: +realFromTurnsUsd.toFixed(6),
+    rolloutFile, turns: turns.length, turnList: turns,
+  };
 }

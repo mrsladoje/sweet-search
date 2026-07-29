@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { recoverIdealCost, priceFor, PRICE as IDEAL_PRICE } from './ideal-cost.mjs';
+import { persistTurns } from './turn-log.mjs';
 // Isolation is imported DIRECTLY (not via agent-runner-shared) because that module
 // imports this one — going through it would close an import cycle.
 import { ISOLATION_ON, startJail, stopJail, jailArgv, jailEnv, jailDenials, rolloutStateDir } from './agent-jail.mjs';
@@ -494,9 +495,13 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   try { finalPatch = execSync(`git -C ${rundir} diff HEAD -- . ':(exclude).sweet-search' ':(exclude)CLAUDE.md' ':(exclude)AGENTS.md'`, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); } catch {}
   const patchHunks = (finalPatch.match(/^@@ /gm) || []).length;
   const patchFiles = (finalPatch.match(/^diff --git /gm) || []).length;
-  if (toolCounts.edit === 0 && patchHunks > 0) toolCounts.edit = patchFiles;  // codex patch events may not surface as commands
+  // NO patchFiles backfill into toolCounts.edit (PLAN.md §3 B3) — it made an
+  // observed-tool-call counter mean "or else, files touched", asymmetrically between
+  // arms. Patch-derived metrics use patchFiles/patchHunks or preds-*.jsonl.
 
-  // cost (realized = cache-aware) from the codex usage
+  // cost (realized = cache-aware) from the codex usage. costNaiveUsd here is already the
+  // unified "no cache at all" definition (§3 B4): `input_tokens` is the sum of every
+  // turn's full prompt, so the re-sent prefix is charged again on each turn.
   const u = usage || {};
   const inTok = u.input_tokens || 0, cached = u.cached_input_tokens || 0, out = (u.output_tokens || 0) + (u.reasoning_output_tokens || 0);
   const costRealized = ((inTok - cached) * price.in + cached * price.cacheHit + out * price.out) / 1e6;
@@ -530,9 +535,26 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // the exact rundir cwd match keeps it unambiguous. Never throws → nulls if the
   // rollout can't be located (falls back to the realized column downstream).
   let idealCostUsd = null, realFromTurnsUsd = null, rolloutFile = null, idealTurns = 0;
+  let costContentUsd = null, turnsFile = null;
   try {
     const ic = recoverIdealCost(rundir, { sinceMs: t0 - 60000, price: _p, sessionsDir: jail ? path.join(codexHome, 'sessions') : undefined });
     ({ idealCostUsd, realFromTurnsUsd, rolloutFile, turns: idealTurns } = ic);
+    // P7 (PLAN.md §3 B1): the rollout jsonl lives in the per-rollout codex home, which is
+    // torn down with the run — persist the per-turn array now or lose it. costContentUsd
+    // (unique context charged once + output) needs the same growing-prefix structure and
+    // is computed here rather than imported: agent-runner-shared imports FROM this module,
+    // so a helper import back would be circular.
+    if (ic.turnList?.length) {
+      let prevIn = 0, content = 0;
+      for (const tu of ic.turnList) {
+        content += (Math.max(0, tu.in - prevIn) * _p.in + tu.out * _p.out) / 1e6;
+        prevIn = tu.in;
+      }
+      costContentUsd = +content.toFixed(6);
+      turnsFile = persistTurns(jailLabel, ic.turnList, {
+        task: task.id, arm, harness: 'codex', model: apiModel, price: _p, source: 'rollout-jsonl',
+      });
+    }
   } catch { /* best-effort — keep realized cost as the fallback */ }
 
   return {
@@ -542,7 +564,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
     shimTampered: shimTamperedFiles.length > 0, shimTamperedFiles,
     stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
     exitReason, usage: u, costNaiveUsd: +costNaive.toFixed(6), costRealizedUsd: +costRealized.toFixed(6),
-    idealCostUsd, realFromTurnsUsd, rolloutFile, idealTurns,
+    costContentUsd, idealCostUsd, realFromTurnsUsd, rolloutFile, idealTurns, turnsFile,
     wallMs, trajectory, finalAssistantText: answer,
     codexErrors: parsed.errors.slice(0, 5), startRetried,
     stderrPreview: String(r.stderr || '').replace(STDIN_BANNER, '').slice(0, 300),

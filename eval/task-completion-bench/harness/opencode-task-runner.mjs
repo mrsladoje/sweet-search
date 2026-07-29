@@ -17,6 +17,7 @@ import {
   buildTrajectory, gitDiffPatch, verifyIntegrity, teardownRunner, auditEscape, rolloutStateDir,
   costsFromTurns, spawnWithTimeout, exitReasonFrom, priceFor,
 } from './agent-runner-shared.mjs';
+import { persistTurns } from './turn-log.mjs';
 
 function classifyShell(cmd) {
   const c = String(cmd || '').trim();
@@ -137,9 +138,18 @@ export async function runOpencodeTask(task, {
 
   const { toolCounts, trajectory, stepsToFirstEdit } = buildTrajectory(toolCalls);
   const { finalPatch, patchHunks, patchFiles } = gitDiffPatch(rundir);
-  if (toolCounts.edit === 0 && patchHunks > 0) toolCounts.edit = patchFiles;
+  // NO patchFiles backfill into toolCounts.edit (PLAN.md §3 B3): it fired on 9/196 sweet
+  // vs 1/197 native rollouts — an asymmetry created by shell-routed edits, not by the
+  // arms' actual edit behaviour — and silently made an observed-tool-call counter mean
+  // two different things. toolCounts.edit is now strictly "edit-tool calls seen"; every
+  // patch-derived metric reads patchFiles/patchHunks here or preds-*.jsonl downstream.
 
   const costs = costsFromTurns(turns, price);
+  // P7: keep the per-turn array (PLAN.md §3 B1). opencode's step_finish events are the
+  // exact per-turn split; without this the next forensics pass is algebraic again.
+  const turnsFile = persistTurns(label, turns, {
+    task: task.id, arm, harness: 'opencode', model: apiModel, price, source: 'stream',
+  });
   // opencode.json is this adapter's own generated config and lives in the runner state
   // dir by design; declare it so the tamper check does not read it as an injected file.
   const shimTamperedFiles = verifyIntegrity({ integrity, runnerFiles, binDir, integrityStateDir, allowedStateEntries: ['opencode.json'] });
@@ -158,7 +168,7 @@ export async function runOpencodeTask(task, {
     stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
     exitReason: exitReasonFrom(r),
     usage: turns.length ? { turns: turns.length } : {},
-    ...costs,
+    ...costs, turnsFile,
     wallMs, trajectory, finalAssistantText: answer,
     agentErrors: errors.slice(0, 5), startRetried,
     stderrPreview: String(r.stderr || '').slice(0, 300),
