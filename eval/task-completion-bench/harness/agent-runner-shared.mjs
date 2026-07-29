@@ -205,14 +205,36 @@ export function auditEscape({ jail, toolCalls, rundir, endMs }) {
 }
 
 // Costs from per-turn usage. turns = [{in, cached, out}] in order, `in` = FULL context at
-// that turn (growing prefix). Realized = actual cache; ideal = cache-normalized; naive =
-// no cache. All three columns from ONE source so they can never drift.
+// that turn (growing prefix), cached tokens included. All columns come from ONE source so
+// they can never drift.
+//
+// THE FOUR COST COLUMNS (PLAN.md §3 B4 — these definitions are now identical in every
+// adapter; they were not, and a cross-harness comparison of `costNaiveUsd` produced
+// nonsense: codex appeared to have $602 of "content" against $144 realized):
+//
+//   costNaiveUsd    every input token at the full input rate + output. What the run WOULD
+//                   have cost with caching disabled. Charges the re-sent prefix again on
+//                   every turn, so naive ≫ realized on any long trajectory.
+//   costRealizedUsd what we actually paid: cached tokens at the cache-read rate.
+//   idealCostUsd    cache-normalized: ALL re-sent prefix charged at the cache-read rate
+//                   regardless of whether the provider cache actually hit. Removes
+//                   cache-TTL luck, so A/B deltas reflect trajectory shape.
+//   costContentUsd  UNIQUE context only: each input token charged once, at first
+//                   appearance, + output. This is `content = ideal − R·cache/1e6` from
+//                   §3 B4 — the quantity that isolates "how much new material did this
+//                   arm introduce" from "how many times did it re-send it". It is what
+//                   the opencode adapter used to publish under the name costNaiveUsd.
+//
+// Only costContentUsd needs the growing-prefix structure; the other three are per-turn
+// sums. An adapter with aggregate-only usage must report costContentUsd as null rather
+// than substituting one of the others.
 export function costsFromTurns(turns, price) {
   const { idealUsd, realFromTurnsUsd } = costFromTurns(turns, price);
-  let prevIn = 0, naive = 0;
+  let prevIn = 0, naive = 0, content = 0;
   for (const tu of turns) {
-    const newIn = Math.max(0, tu.in - prevIn);
-    naive += (newIn * price.in + tu.out * price.out) / 1e6;   // no-cache: charge only fresh input
+    const newIn = Math.max(0, tu.in - prevIn);                 // context first seen this turn
+    naive += (tu.in * price.in + tu.out * price.out) / 1e6;     // no cache at all
+    content += (newIn * price.in + tu.out * price.out) / 1e6;   // each token charged once
     prevIn = tu.in;
   }
   return {
@@ -220,6 +242,7 @@ export function costsFromTurns(turns, price) {
     idealCostUsd: +idealUsd.toFixed(6),
     realFromTurnsUsd: +realFromTurnsUsd.toFixed(6),
     costNaiveUsd: +naive.toFixed(6),
+    costContentUsd: +content.toFixed(6),
     idealTurns: turns.length,
   };
 }

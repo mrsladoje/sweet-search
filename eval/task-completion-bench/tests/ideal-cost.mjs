@@ -40,9 +40,16 @@ assert(priceFor('claude-sonnet-5').in === 3.0 && priceFor('claude-sonnet-5').out
 assert(approx(priceFor('claude-sonnet-5').cache, 0.3), 'sonnet-5 cache read = 0.1x input');
 // An UNREGISTERED backbone must throw, never silently inherit gpt-5.5's rates —
 // mispriced idealCost distorts the efficiency-at-parity headline it feeds.
+// (Use a name that cannot become a real backbone — this assertion previously used
+// `x-ai/grok-4.5` and went red the day that model was registered.)
 let threw = false;
-try { priceFor('x-ai/grok-4.5'); } catch { threw = true; }
+try { priceFor('acme/not-a-real-backbone'); } catch { threw = true; }
 assert(threw, 'unregistered model throws instead of defaulting');
+// ...and every backbone we actually run must be priced.
+for (const m of ['x-ai/grok-4.5', 'openai/gpt-5.5', 'anthropic/claude-sonnet-5', 'openai/gpt-5.6-luna']) {
+  let priced = true; try { priceFor(m); } catch { priced = false; }
+  assert(priced, `${m} is registered in MODEL_PRICES`);
+}
 
 console.log('\nrollout parsing + exact-cwd matching:');
 const dir = mkdtempSync(path.join(tmpdir(), 'ic-')) ;

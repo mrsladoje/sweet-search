@@ -15,6 +15,7 @@ import {
   buildTrajectory, gitDiffPatch, verifyIntegrity, teardownRunner, auditEscape, rolloutStateDir,
   spawnWithTimeout, exitReasonFrom, priceFor,
 } from './agent-runner-shared.mjs';
+import { persistTurns } from './turn-log.mjs';
 import {
   CLAUDE_SYSTEM_OVERRIDE as SWEET_SEARCH_SYSTEM_OVERRIDE,
 } from '../../../scripts/install-claude-system-prompt.js';
@@ -44,21 +45,32 @@ function classifyToolUse(name, input) {
 }
 
 // Parse Claude Code `--output-format stream-json --verbose` NDJSON. Returns
-// { toolCalls, answer, resultUsage, numTurns, errors }. IMPORTANT: via the OpenRouter
+// { toolCalls, answer, resultUsage, numTurns, turns, errors }. IMPORTANT: via the OpenRouter
 // Anthropic skin, per-assistant-message usage is ZEROED and result.usage.iterations is
 // empty — so the ONLY reliable token counts are the final `result` event's aggregate
 // usage (input_tokens / output_tokens / cache_read_input_tokens / cache_creation_input_tokens).
+//
+// `turns` collects per-assistant-message usage ANYWAY (P7 / PLAN.md §3 B1): it is exact
+// on the direct-Anthropic route, and the caller checks whether it is all-zero before
+// trusting it, so the skin's zeroing degrades to an aggregate turn log rather than to
+// silently fabricated per-turn numbers.
 export function parseClaudeStream(stdout) {
   const toolCalls = [];         // {id, kind, command, resultText, isError}
   const resultById = new Map(); // tool_use_id → {text, isError}
   const errors = [];
+  const turns = [];             // {in = full context incl. cache, cached, out}
   let answer = '', resultUsage = null, numTurns = 0;
-  if (!stdout) return { toolCalls, answer, resultUsage, numTurns, errors };
+  if (!stdout) return { toolCalls, answer, resultUsage, numTurns, turns, errors };
   for (const line of stdout.split('\n')) {
     const tl = line.trim();
     if (!tl || tl[0] !== '{') continue;
     let ev; try { ev = JSON.parse(tl); } catch { continue; }
     if (ev.type === 'assistant' && ev.message) {
+      const mu = ev.message.usage;
+      if (mu) {
+        const cRead = mu.cache_read_input_tokens || 0, cCreate = mu.cache_creation_input_tokens || 0;
+        turns.push({ in: (mu.input_tokens || 0) + cRead + cCreate, cached: cRead, out: mu.output_tokens || 0 });
+      }
       for (const blk of (ev.message.content || [])) {
         if (blk.type === 'tool_use') {
           const { kind, command } = classifyToolUse(blk.name, blk.input);
@@ -86,14 +98,24 @@ export function parseClaudeStream(stdout) {
     const r = resultById.get(tc.id);
     if (r) { tc.resultText = r.text; tc.isError = r.isError; }
   }
-  return { toolCalls, answer, resultUsage, numTurns, errors };
+  return { toolCalls, answer, resultUsage, numTurns, turns, errors };
 }
 
 // Realized/naive cost from Claude Code's aggregate result usage × our OpenRouter rate.
 // cache_read at cache rate (0.1x in), cache_creation at the 1.25x write premium, fresh
 // input + output at their rates. idealCost = realized (no per-turn data via the skin, so
 // no cache-normalization possible; realized already reflects Claude Code's actual caching).
-function claudeCosts(resultUsage, price) {
+// NOTE: on the direct-Anthropic route per-turn usage now IS available (see `turns` above),
+// so idealCost could be genuinely cache-normalized there. Deliberately not done: it would
+// make idealCost mean different things on the two routes, and idealCost is the headline
+// efficiency-at-parity metric. Change it for both routes or neither.
+//
+// costNaiveUsd matches the unified §3 B4 definition: EVERY input token — fresh, cached
+// and cache-written — charged at the full input rate. costContentUsd (unique context
+// charged once) needs the growing-prefix structure and is supplied by the caller only
+// when per-turn usage survived the provider route; null is the honest value otherwise,
+// never a stand-in from another column.
+function claudeCosts(resultUsage, price, costContentUsd = null) {
   const u = resultUsage || {};
   const inTok = u.input_tokens || 0, cRead = u.cache_read_input_tokens || 0;
   const cCreate = u.cache_creation_input_tokens || 0, out = u.output_tokens || 0;
@@ -102,7 +124,18 @@ function claudeCosts(resultUsage, price) {
   return {
     costRealizedUsd: +realized.toFixed(6), idealCostUsd: +realized.toFixed(6),
     realFromTurnsUsd: +realized.toFixed(6), costNaiveUsd: +naive.toFixed(6),
+    costContentUsd,
   };
+}
+
+// One synthetic turn record carrying the run aggregate, for the route where per-message
+// usage is zeroed. Tagged `source: 'aggregate'` in the log so no analysis mistakes it
+// for a turn distribution.
+function aggregateTurn(resultUsage) {
+  const u = resultUsage || {};
+  const cRead = u.cache_read_input_tokens || 0, cCreate = u.cache_creation_input_tokens || 0;
+  const rec = { in: (u.input_tokens || 0) + cRead + cCreate, cached: cRead, out: u.output_tokens || 0 };
+  return (rec.in || rec.out) ? [rec] : [];
 }
 
 export async function runClaudeCodeTask(task, {
@@ -200,13 +233,32 @@ export async function runClaudeCodeTask(task, {
     parsed = parseClaudeStream(r.stdout);
   }
   const wallMs = Date.now() - t0;
-  const { toolCalls, answer, resultUsage, numTurns, errors } = parsed;
+  const { toolCalls, answer, resultUsage, numTurns, turns, errors } = parsed;
 
   const { toolCounts, trajectory, stepsToFirstEdit } = buildTrajectory(toolCalls);
   const { finalPatch, patchHunks, patchFiles } = gitDiffPatch(rundir);
-  if (toolCounts.edit === 0 && patchHunks > 0) toolCounts.edit = patchFiles;
+  // NO patchFiles backfill into toolCounts.edit (PLAN.md §3 B3); patch-derived metrics
+  // read patchFiles/patchHunks or preds-*.jsonl.
 
-  const costs = claudeCosts(resultUsage, price);
+  // P7 (PLAN.md §3 B1). Per-message usage is real on the direct-Anthropic route and
+  // zeroed through the OpenRouter Anthropic skin, so trust it only when it carries
+  // tokens; otherwise log the aggregate and leave costContentUsd null.
+  const perTurnReal = turns.some(tu => tu.in > 0 || tu.out > 0);
+  let costContentUsd = null;
+  if (perTurnReal) {
+    let prevIn = 0, content = 0;
+    for (const tu of turns) {
+      content += (Math.max(0, tu.in - prevIn) * price.in + tu.out * price.out) / 1e6;
+      prevIn = tu.in;
+    }
+    costContentUsd = +content.toFixed(6);
+  }
+  const turnsFile = persistTurns(label, perTurnReal ? turns : aggregateTurn(resultUsage), {
+    task: task.id, arm, harness: 'claude-code', model: apiModel, provider, price,
+    source: perTurnReal ? 'stream' : 'aggregate',
+  });
+
+  const costs = claudeCosts(resultUsage, price, costContentUsd);
   const shimTamperedFiles = verifyIntegrity({ integrity, runnerFiles, binDir, integrityStateDir });
   if (shimTamperedFiles.length) console.log(`  [SHIM-TAMPERED ${task.id || ''}] ${shimTamperedFiles.join(', ')} — test signals untrusted`);
   const escapeAudit = auditEscape({ jail, toolCalls, rundir, endMs: Date.now() });
@@ -221,7 +273,7 @@ export async function runClaudeCodeTask(task, {
     stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
     exitReason: exitReasonFrom(r),
     usage: resultUsage || {}, idealTurns: numTurns,
-    ...costs,
+    ...costs, turnsFile,
     wallMs, trajectory, finalAssistantText: answer,
     agentErrors: errors.slice(0, 5), startRetried,
     stderrPreview: String(r.stderr || '').slice(0, 300),

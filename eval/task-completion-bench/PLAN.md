@@ -59,8 +59,11 @@ Why this is achievable on the evidence below:
    never saw; (b) a mount-ordering bug that buried the `run_tests` shim did not fail quietly — the
    agent, unable to run tests, went hunting the box for a harness and *that* is how it found the gold
    patch. Broken controls change agent behaviour, so the canary now asserts them permanently.
-2. **P7 measurement hygiene** — per-turn `{in,cached,out}` persisted (or DB archived) so the next
-   forensics pass is exact.
+2. **P7 measurement hygiene** — **IMPLEMENTED 2026-07-29.** Per-turn `{in,cached,out}` is now
+   persisted by all four adapters to `results/<runId>/turns/<task>-<arm>.jsonl`
+   (`harness/turn-log.mjs`), alongside the per-rollout agent session store P0 already
+   retained; `costNaiveUsd` means the same thing everywhere and the `toolCounts.edit`
+   backfill is gone (details in §3 B1/B3/B4). Covered by `tests/turn-log.mjs`.
 3. **P1 MCP variant on dev** — cost + solve non-regression vs the shell variant on dev tasks;
    also measures the call-granularity risk. P2 anti-thrash validated on dev in the same pass.
    (P8 M± compression rides along only if P1/P2 are stable.)
@@ -211,6 +214,15 @@ right moral, not "sweet stopped early and lost".
   entangled in the single `naive` term — only the raw OpenCode SQLite DB separates them. **Persist
   per-turn `{in, cached, out}` (or the DB) in future runs; start forensics from the DB, not
   trajectory dumps.**
+  **FIXED 2026-07-29** — `harness/turn-log.mjs` writes one JSONL per rollout to
+  `results/<runId>/turns/<task>-<arm>.jsonl`: a meta line (task, arm, harness, model, price,
+  `source`) then one record per turn. All four adapters emit it — opencode from `step_finish`,
+  codex from the rollout jsonl (which lives in the per-rollout codex home and used to die with
+  the run), api from its own loop, claude-code from per-assistant-message usage. The row carries
+  the path as `turnsFile`. JSONL not JSON-array precisely because of B2: a crash costs the last
+  turn, not the file. `source` is recorded because the numbers are not equally exact — the
+  OpenRouter Anthropic skin zeroes Claude Code's per-message usage, so that route logs ONE
+  `source: "aggregate"` record instead of fabricating a turn distribution.
 - **B2 — `c1/rows.json` truncated mid-object by the crash.** Repaired by re-parsing +
   re-merging `graded-45.json`; 3 tasks have no row data (`jtablesaw-591`, `weld-junit-27`,
   `open-feature-805`); 196/200 have cost on both arms. Solve counts reconcile exactly. ([R]
@@ -218,11 +230,24 @@ right moral, not "sweet stopped early and lost".
 - **B3 — `toolCounts.edit` / `stepsToFirstEdit` unreliable under shell edits.** Backfill at
   `opencode-task-runner.mjs:130` affects 9/196 sweet vs 1/197 native rollouts (the asymmetry is
   itself a shell-routing consequence). All patch-based metrics must use `preds-*.jsonl`.
+  **FIXED 2026-07-29** — the `toolCounts.edit = patchFiles` backfill is removed from all three
+  CLI adapters (api never had it). `toolCounts.edit` is now strictly "edit-tool calls observed";
+  patch-derived metrics read `patchFiles`/`patchHunks` on the row or `preds-*.jsonl`.
+  `stepsToFirstEdit` keeps its `?? calls` fallback and remains a tool-call-derived quantity —
+  under shell edits it is a ceiling, not a measurement.
 - **B4 — `costNaiveUsd` means different things across runners** (opencode
   `costsFromTurns`: fresh-input-only, `naive ≤ ideal`; codex `codex-task-runner.mjs:470`: all
   prompt tokens at full rate, `naive ≫ real`). Naive cross-harness comparison produces nonsense
   (observed: codex appeared to have content $602 against real $144). Cross-harness comparison
   must go through `content = ideal − R·cache/1e6`.
+  **FIXED 2026-07-29** — four columns, one definition each, in every adapter:
+  `costNaiveUsd` = every input token at the full rate (no cache at all) · `costRealizedUsd` =
+  what we paid · `idealCostUsd` = cache-normalized · **`costContentUsd`** = unique context
+  charged once + output, i.e. §3 B4's `content`, which is what opencode used to publish under
+  the name `costNaiveUsd`. Ordering `content ≤ ideal ≤ realized ≤ naive` is asserted in
+  `tests/turn-log.mjs`. `costContentUsd` needs the growing-prefix structure, so an adapter with
+  aggregate-only usage reports it as **null**, never a stand-in from another column —
+  `stats/task-stats.mjs` pair-filters it rather than defaulting a missing value to $0.
 - **B5 — trajectory JSON truncation** (200-char inputs / 600-char results) → chained commands and
   leak scans are undercounted; every scan-derived figure is a floor.
 - **Run integrity otherwise clean** [O]§E4: 393 rollouts `model_stopped` 391 / `agent_error` 2;
@@ -501,7 +526,7 @@ these 200. Ordered by priority.
 | **P4 — breadth-of-fix trigger** | §5.3 breadth bucket, §5.5 | move M± line 54's trigger from *symbol shape* to *test feedback*: after a failing `run_tests`, require one breadth pass before the next edit. Keep narrow — **P3 tests-first was rejected twice** (+23.7%/+40.4% ideal) | its original "would flip" list was mostly contaminated-control tasks; re-estimate on dev |
 | **P5 — grader isolation for test paths** | protofire, redboltz conflicts | reject or strip agent changes under test/fixture paths before applying the hidden test patch (matches the already-authoritative do-not-modify-tests contract) | validate against fresh tasks whose legitimate surface includes test-like dirs |
 | **P6 — task preflight gates** | §1.3 | reject tasks with suite-wide baseline failure (F2P≥100 or P2P=0) and preflight every image against its clean checkout/toolchain; flag hidden tests that require an unstated new API/package architecture | spectreconsole, firefly, btcpay, k8s-178 reclassify from capability to environment |
-| **P7 — measurement hygiene** | §3 | persist per-turn `{in,cached,out}` (or archive the OpenCode DB) per run; fix/unify `costNaiveUsd` semantics; stop backfilling `toolCounts.edit`; future forensics start from the DB | makes the next forensics pass exact instead of algebraic. **Partly delivered 2026-07-29 as a side-effect of P0**: each rollout now gets a PRIVATE agent session store, retained at `results/<runId>/agent-state/<task>-<arm>/`. That was required anyway — the shared 1.8 GB `~/.local/share/opencode` store is itself an escape vector (rollouts read the current run's other-arm trajectories out of it, §2 V6) — and it hands forensics the per-rollout DB, the only place fresh input and output are separable. |
+| **P7 — measurement hygiene** | §3 | persist per-turn `{in,cached,out}` (or archive the OpenCode DB) per run; fix/unify `costNaiveUsd` semantics; stop backfilling `toolCounts.edit`; future forensics start from the DB | makes the next forensics pass exact instead of algebraic. **SHIPPED 2026-07-29** (B1+B3+B4, `harness/turn-log.mjs` + `tests/turn-log.mjs`, all four adapters). The first half landed as a side-effect of P0: each rollout gets a PRIVATE agent session store at `results/<runId>/agent-state/<task>-<arm>/`, required anyway because the shared 1.8 GB `~/.local/share/opencode` store is itself escape vector V6 (rollouts read the current run's other-arm trajectories out of it). The second half is `results/<runId>/turns/<task>-<arm>.jsonl` — the per-turn split, which is what the DB was only a proxy for. Next forensics reads the turn logs first and the DB only to adjudicate. **Verified on synthetic streams, not yet on a real rollout** — confirm `turnsFile` is non-null on both arms of the next smoke before trusting a run's cost columns. |
 | **P8 — prompt size (cost only, last)** | §4.1 — ~1.1k wider ctx/turn ≈ the M± block | compress M± by removing duplicated prose, preserving tool semantics; test cost before touching any ranking/trailer rule | ≈$1.9 of this run's gap by arithmetic; no evidenced solve flips |
 | **Honest boundary (not fixable)** | §4.6 | retrieval compression only pays when retrieval dominates context; on Grok's build-log-heavy transcripts it is ~3%. Write it down rather than engineer around it | — |
 | **Do NOT change** | §5.7 | no retrieval-ranking, sufficiency-trailer, or absence-probe changes — retrieval surfaced targets 14–15/16, earlier than native 11/14; trailers rare and `YES` correlated with correct locations; zero retrieval-caused and zero prompt-induced losses | — |
