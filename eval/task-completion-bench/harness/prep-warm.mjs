@@ -38,7 +38,10 @@ const VENV_PY = process.env.VENV_PY || path.join(BENCH, '.venv-grade/bin/python'
 const OVERRIDES_PATH = process.env.TASK_OVERRIDES || path.join(BENCH, 'harness/task-overrides.json');
 const TASKS_FILE = arg('tasks');
 const ID = arg('id');
-const OUT = arg('out', '/root/env-ledger/warm');
+// Resolve to absolute: patch dirs under OUT are handed to `docker -v`, which
+// treats a relative path as a VOLUME NAME and rejects it ("invalid characters
+// for a local volume name") — every warm silently fails (heldout 2026-07-17).
+const OUT = path.resolve(arg('out', '/root/env-ledger/warm'));
 const WARM_TIMEOUT_SEC = +arg('warm-timeout-sec', 3600);
 if (!TASKS_FILE || !ID) { console.error('usage: prep-warm.mjs --tasks <specs.json> --id <instance_id> [--out dir]'); process.exit(2); }
 mkdirSync(OUT, { recursive: true });

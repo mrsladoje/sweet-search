@@ -75,14 +75,14 @@ def materialize_decontam(ids):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--set", choices=["multilingual", "decontam"], required=True)
+    ap.add_argument("--set", choices=["multilingual", "decontam", "heldout", "heldout_reserve"], required=True)
     ap.add_argument("--limit", type=int, default=0, help="take only first N frozen ids (e2e)")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
     ids = frozen_ids(a.set)
     if a.limit:
         ids = ids[: a.limit]
-    specs, missing = (materialize_multilingual if a.set == "multilingual" else materialize_decontam)(ids)
+    specs, missing = (materialize_decontam if a.set == "decontam" else materialize_multilingual)(ids)
     os.makedirs(CACHE, exist_ok=True)
     out = a.out or os.path.join(CACHE, f"tasks_full_{a.set}{('_n' + str(a.limit)) if a.limit else ''}.json")
     json.dump(specs, open(out, "w"))

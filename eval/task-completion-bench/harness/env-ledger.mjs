@@ -16,7 +16,7 @@ import { readFileSync, existsSync } from 'node:fs';
 // — a rebuilt image invalidates old verdicts), the effective test command, the
 // grading network mode, and the excludeP2P grading exception. Overrides are applied
 // by the caller (spec is the post-override spec, same as run-pilot loadTasks).
-export function taskConfigHash(spec, { netLockdown = true, excludeP2P = [], excludeF2P = [], imageId = undefined } = {}) {
+export function taskConfigHash(spec, { netLockdown = true, excludeP2P = [], excludeF2P = [], imageId = undefined, presedCmds = [] } = {}) {
   const img = spec.image_name || '';
   const local = /^swerebenchv2-(fixed|warm)\//.test(img) || !!spec._origImage;
   const id = imageId !== undefined ? imageId : (local ? dockerImageId(img) : null);
@@ -31,21 +31,73 @@ export function taskConfigHash(spec, { netLockdown = true, excludeP2P = [], excl
   // added later than excludeP2P — include only when set, so the 200 already-stamped
   // rows (which predate the field) stay valid for tasks that don't use it
   if (excludeF2P.length) fp.excludeF2P = [...excludeF2P].sort();
+  // --reapply-install-seds (2026-07-17): grading now re-runs install_config's
+  // sed shims post-reset. Include only when the task HAS such seds — their
+  // effective grading changed; sed-free tasks keep their existing hashes.
+  if (presedCmds.length) fp.presed = [...presedCmds];
   return createHash('sha256').update(JSON.stringify(fp)).digest('hex').slice(0, 16);
 }
 
 // Shared gold/agent grading arithmetic (single source of truth for run-pilot,
 // env-ledger-sweep and prep-warm). Test names are compared with per-run timing
 // suffixes ("[1.23 ms]") stripped — some parsers embed them, and they vary per run.
-export const normTestName = (n) => String(n).replace(/\s*\[[0-9.]+ ms\]\s*$/, '').trim();
+// MUST stay in lockstep with _TIMING_NORMALIZE_RES in
+// harness/upstream-patches/eval.py — gradeFromReportItem compares
+// JS-normalized spec names against Python-normalized report names, so any
+// divergence silently zeroes f2pPass.
+export const VOLATILE_NAME_RES = [
+  /\s*\[\s*\d+(?:\.\d+)?\s*(?:ms|s)\s*\]\s*$/i,   // "[1.34 ms]"
+  /\s+in\s+\d+(?:\.\d+)?\s+(?:msec|sec)\b/i,      // " in 29.08 msec"
+  /\s*\(\s*\d+(?:\.\d+)?\s*(?:ms|s)\s*\)\s*$/i,   // " (123ms)"
+  /\s+\d+(?:\.\d+)?\s+sec\s*$/i,                  // ctest "   0.58 sec"
+  /\s+\d+(?:\.\d+)?\s*ms\s*$/i,                   // bjam ":PASSED  4ms"
+  /\s+(?:\(cached\)|\d+(?:\.\d+)?s)\s*$/,         // go "\t0.009s" | "\t(cached)"
+  /^\s*\d+\s+(?=\[)/,                             // playwright leading ordinal
+  /(?<=127\.0\.0\.1):\d{2,5}\b/,                  // redis live ports
+  /(?<=\w)@[0-9a-f]{4,16}\b/g,                    // JVM identity hashCode "Foo$1@d58fa2"
+];
+export const normTestName = (n) => {
+  let s = String(n);
+  for (const r of VOLATILE_NAME_RES) s = s.replace(r, '');
+  return s.trim();
+};
+
+// Vault tar filename encoding — single source of truth, MUST match whatever wrote
+// the tars. The vaulting scripts (warm-heldout.sh / rewarm-one.sh) use
+// `tr "/:" "__"`, which maps EACH of "/" and ":" to a SINGLE "_" — tr is charwise,
+// not a string replace. Encoding this as `.replace(/[/:]/g, '__')` yields DOUBLE
+// underscores, matches no tar, and makes every warmed task silently record
+// `infra/derived-image-missing` — voiding the ledger for exactly the tasks warming
+// exists to rescue (caught pre-v3, 2026-07-17).
+export const vaultTarName = (image) => image.replace(/[/:]/g, '_') + '.tar';
+
+// Single source of truth for which install_config steps get re-applied by
+// eval.py --reapply-install-seds (and therefore belong in the config hash).
+export const installSedCmds = (spec) =>
+  [].concat(spec.install_config?.install || [])
+    .filter((c) => typeof c === 'string' && c.trim().startsWith('sed -i'))
+    .map((c) => c.trim());
 export function gradeFromReportItem(item, spec, ov = {}) {
   const exclF2P = new Set((ov.excludeF2P || []).map(normTestName));
   const exclP2P = new Set((ov.excludeP2P || []).map(normTestName));
-  const f2pAll = (spec.FAIL_TO_PASS || []).map(normTestName).filter(n => !exclF2P.has(n));
-  const f2pTot = f2pAll.length;
-  const f2pPass = (item.from_fail_to_pass || []).map(normTestName).filter(n => !exclF2P.has(n)).length;
-  const p2pFails = (item.failed_from_pass_to_pass || []).map(normTestName).filter(n => !exclP2P.has(n));
-  const f2pFrac = f2pTot ? f2pPass / f2pTot : 1;
+  // Compare UNIQUE normalized names on both sides. Upstream returns
+  // from_fail_to_pass as a deduplicated set-intersection, while raw
+  // FAIL_TO_PASS lists can carry duplicate names (parameterized suites that
+  // reuse identical test descriptions — redis TCL, PHPUnit testdox). Counting
+  // the raw list length guarantees a spurious PARTIAL even when every named
+  // test passed (held-out ledger triage 2026-07-17).
+  const f2pAll = new Set((spec.FAIL_TO_PASS || []).map(normTestName).filter(n => !exclF2P.has(n)));
+  const f2pTot = f2pAll.size;
+  const f2pPass = new Set((item.from_fail_to_pass || []).map(normTestName)
+    .filter(n => !exclF2P.has(n) && f2pAll.has(n))).size;
+  const p2pFails = [...new Set((item.failed_from_pass_to_pass || []).map(normTestName).filter(n => !exclP2P.has(n)))];
+  // No gradeable F2P requirement — natively empty, or every name excluded by an
+  // override — must never grade FULL. An empty requirement set is a free pass for
+  // BOTH arms (run-pilot scores agent runs through this same function), which is
+  // exactly the "silent zero" the green-ledger rule forbids. Force the task to an
+  // explicit disposition: exclude it, or promote its replacement from the reserve.
+  if (f2pTot === 0) return { f2pFrac: 0, f2pPass: 0, f2pTot: 0, p2pFails, p2pOk: p2pFails.length === 0, status: 'NO' };
+  const f2pFrac = f2pPass / f2pTot;
   const status = (f2pFrac === 1 && p2pFails.length === 0) ? 'FULL' : (f2pFrac > 0 && p2pFails.length === 0 ? 'PARTIAL' : 'NO');
   return { f2pFrac, f2pPass, f2pTot, p2pFails, p2pOk: p2pFails.length === 0, status };
 }
@@ -76,7 +128,7 @@ export function preflightEnvLedger(specs, ledger, { netLockdown = true, override
     if (row.status !== 'gold-valid') { failures.push({ instance_id: s.instance_id, reason: 'not-gold-FULL', detail: `ledger status=${row.status} (${(row.evidence || row.signature || '').slice(0, 120)})` }); continue; }
     if (!row.configHash) { failures.push({ instance_id: s.instance_id, reason: 'stale', detail: 'ledger entry has no configHash — re-sweep (or backfill) under the current harness' }); continue; }
     const ov = overrides.tasks?.[s.instance_id] || {};
-    const now = taskConfigHash(s, { netLockdown, excludeP2P: ov.excludeP2P || [], excludeF2P: ov.excludeF2P || [] });
+    const now = taskConfigHash(s, { netLockdown, excludeP2P: ov.excludeP2P || [], excludeF2P: ov.excludeF2P || [], presedCmds: installSedCmds(s) });
     if (now !== row.configHash) failures.push({ instance_id: s.instance_id, reason: 'stale', detail: `configHash mismatch (ledger ${row.configHash} ≠ current ${now}) — image/testCmd/network/excludeP2P changed since the gold grade; re-sweep` });
   }
   return { ok: failures.length === 0, failures };

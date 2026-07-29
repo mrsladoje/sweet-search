@@ -178,5 +178,373 @@
     "instance_ids": 0,
     "repos": 0
   },
-  "criteria": "quality code=='A'; non-empty FAIL_TO_PASS; V2 revision pinned; dev-200 instance_ids+repos and decontam instance_ids excluded; fixed Octoverse-2025-anchored quotas; seeded sample. Orthogonal to sweet-vs-native outcome."
+  "criteria": "quality code=='A'; non-empty FAIL_TO_PASS; V2 revision pinned; dev-200 instance_ids+repos and decontam instance_ids excluded; fixed Octoverse-2025-anchored quotas; seeded sample. Orthogonal to sweet-vs-native outcome.",
+  "replacements_2026_07_21": {
+    "rule": "HELDOUT_PREREGISTRATION.md L81-88; env-preflight failures only; lowest-rank same-language reserve; cross-language fallback = largest-primary-quota lang, ties alphabetical; strictly pre-rollout",
+    "n": 33,
+    "summary": {
+      "direct_valid": 26,
+      "need_warming": 7,
+      "cross_language_fallbacks": 7
+    },
+    "allocation_effective": {
+      "c": 4,
+      "clojure": 1,
+      "cpp": 10,
+      "csharp": 10,
+      "dart": 2,
+      "elixir": 2,
+      "go": 18,
+      "java": 19,
+      "js": 29,
+      "julia": 2,
+      "kotlin": 6,
+      "php": 8,
+      "python": 32,
+      "r": 1,
+      "rust": 18,
+      "scala": 2,
+      "swift": 4,
+      "ts": 32
+    },
+    "promotions": [
+      {
+        "dead_id": "ant-design-blazor__ant-design-blazor-4634",
+        "dead_lang": "csharp",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "dotnet__yarp-2825",
+        "reserve_lang": "csharp",
+        "reserve_rank": 2,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "ast-grep__ast-grep-1820",
+        "dead_lang": "rust",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "ouch-org__ouch-64",
+        "reserve_lang": "rust",
+        "reserve_rank": 1,
+        "tier": "warm",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "camshaft__bolero-182",
+        "dead_lang": "c",
+        "dead_status": "needs-warming",
+        "reserve_id": "pytask-dev__pytask-210",
+        "reserve_lang": "python",
+        "reserve_rank": 2,
+        "tier": "direct",
+        "cross_language_fallback": true,
+        "fallback_from_lang": "c"
+      },
+      {
+        "dead_id": "dotnet-script__dotnet-script-762",
+        "dead_lang": "csharp",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "devlooped__moq-1319",
+        "reserve_lang": "csharp",
+        "reserve_rank": 3,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "dtolnay__paste-55",
+        "dead_lang": "rust",
+        "dead_status": "needs-warming",
+        "reserve_id": "bytecodealliance__wasm-tools-1686",
+        "reserve_lang": "rust",
+        "reserve_rank": 3,
+        "tier": "warm",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "fujidaiti__smooth_sheets-222",
+        "dead_lang": "dart",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "dart-lang__http-1114",
+        "reserve_lang": "dart",
+        "reserve_rank": 1,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "geocoder-php__geocoder-1253",
+        "dead_lang": "php",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "statamic__cms-9029",
+        "reserve_lang": "php",
+        "reserve_rank": 1,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "gradleup__shadow-1177",
+        "dead_lang": "kotlin",
+        "dead_status": "needs-warming",
+        "reserve_id": "bnorm__kotlin-power-assert-21",
+        "reserve_lang": "kotlin",
+        "reserve_rank": 1,
+        "tier": "warm",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "hapijs__wreck-142",
+        "dead_lang": "js",
+        "dead_status": "needs-warming",
+        "reserve_id": "smooth-code__svgr-10",
+        "reserve_lang": "js",
+        "reserve_rank": 1,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "hapijs__wreck-157",
+        "dead_lang": "js",
+        "dead_status": "needs-warming",
+        "reserve_id": "ember-cli__eslint-plugin-ember-551",
+        "reserve_lang": "js",
+        "reserve_rank": 2,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "hylo-lang__hylo-1252",
+        "dead_lang": "swift",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "apple__swift-nio-http2-145",
+        "reserve_lang": "swift",
+        "reserve_rank": 1,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "mavlink__mavsdk-2595",
+        "dead_lang": "cpp",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "redboltz__mqtt_cpp-466",
+        "reserve_lang": "cpp",
+        "reserve_rank": 2,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "meilisearch__meilisearch-3524",
+        "dead_lang": "rust",
+        "dead_status": "needs-warming",
+        "reserve_id": "raphlinus__pulldown-cmark-754",
+        "reserve_lang": "rust",
+        "reserve_rank": 4,
+        "tier": "warm",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "networkx__networkx-4872",
+        "dead_lang": "python",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "litestar-org__polyfactory-405",
+        "reserve_lang": "python",
+        "reserve_rank": 3,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "node-nock__nock-820",
+        "dead_lang": "js",
+        "dead_status": "needs-warming",
+        "reserve_id": "dbader__node-datadog-metrics-73",
+        "reserve_lang": "js",
+        "reserve_rank": 3,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "phoenixframework__phoenix-3755",
+        "dead_lang": "elixir",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "absinthe-graphql__absinthe-998",
+        "reserve_lang": "elixir",
+        "reserve_rank": 1,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "phpoffice__phpspreadsheet-4224",
+        "dead_lang": "php",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "jsonmapper__jsonmapper-161",
+        "reserve_lang": "php",
+        "reserve_rank": 2,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "pysal__libpysal-676",
+        "dead_lang": "python",
+        "dead_status": "needs-warming",
+        "reserve_id": "s-knibbs__dataclasses-jsonschema-32",
+        "reserve_lang": "python",
+        "reserve_rank": 4,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "radzenhq__radzen-blazor-1627",
+        "dead_lang": "csharp",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "mathnet__mathnet-numerics-1072",
+        "reserve_lang": "csharp",
+        "reserve_rank": 4,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "radzenhq__radzen-blazor-1933",
+        "dead_lang": "csharp",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "devlooped__moq-1262",
+        "reserve_lang": "csharp",
+        "reserve_rank": 6,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "ratify-project__ratify-1538",
+        "dead_lang": "go",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "google__go-github-2971",
+        "reserve_lang": "go",
+        "reserve_rank": 1,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "redis__lettuce-3026",
+        "dead_lang": "java",
+        "dead_status": "needs-warming",
+        "reserve_id": "xlate__staedi-168",
+        "reserve_lang": "java",
+        "reserve_rank": 3,
+        "tier": "warm",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "redis__redis-12301",
+        "dead_lang": "c",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "mwouts__jupytext-360",
+        "reserve_lang": "python",
+        "reserve_rank": 6,
+        "tier": "direct",
+        "cross_language_fallback": true,
+        "fallback_from_lang": "c"
+      },
+      {
+        "dead_id": "redis__redis-13042",
+        "dead_lang": "c",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "rokucommunity__brighterscript-1050",
+        "reserve_lang": "ts",
+        "reserve_rank": 1,
+        "tier": "direct",
+        "cross_language_fallback": true,
+        "fallback_from_lang": "c"
+      },
+      {
+        "dead_id": "rnpgp__rnp-2079",
+        "dead_lang": "cpp",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "ucl__stir-1410",
+        "reserve_lang": "cpp",
+        "reserve_rank": 4,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "rumbledb__rumble-926",
+        "dead_lang": "java",
+        "dead_status": "needs-warming",
+        "reserve_id": "joshuakgoldberg__bingo-274",
+        "reserve_lang": "ts",
+        "reserve_rank": 2,
+        "tier": "direct",
+        "cross_language_fallback": true,
+        "fallback_from_lang": "java"
+      },
+      {
+        "dead_id": "runningcode__fladle-196",
+        "dead_lang": "kotlin",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "detekt__detekt-8604",
+        "reserve_lang": "kotlin",
+        "reserve_rank": 3,
+        "tier": "warm",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "shimat__opencvsharp-1756",
+        "dead_lang": "csharp",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "codeception__codeceptjs-367",
+        "reserve_lang": "js",
+        "reserve_rank": 4,
+        "tier": "direct",
+        "cross_language_fallback": true,
+        "fallback_from_lang": "csharp"
+      },
+      {
+        "dead_id": "slskd__slskd-1128",
+        "dead_lang": "csharp",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "gitbookio__markup-it-56",
+        "reserve_lang": "js",
+        "reserve_rank": 5,
+        "tier": "direct",
+        "cross_language_fallback": true,
+        "fallback_from_lang": "csharp"
+      },
+      {
+        "dead_id": "sveltejs__kit-6033",
+        "dead_lang": "js",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "fastify__fastify-cors-285",
+        "reserve_lang": "js",
+        "reserve_rank": 7,
+        "tier": "direct",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "typelevel__fs2-2932",
+        "dead_lang": "scala",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "joernio__joern-771",
+        "reserve_lang": "scala",
+        "reserve_rank": 1,
+        "tier": "warm",
+        "cross_language_fallback": false
+      },
+      {
+        "dead_id": "valkey-io__valkey-206",
+        "dead_lang": "c",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "jashkenas__underscore-2757",
+        "reserve_lang": "js",
+        "reserve_rank": 8,
+        "tier": "direct",
+        "cross_language_fallback": true,
+        "fallback_from_lang": "c"
+      },
+      {
+        "dead_id": "vaskoz__dailycodingproblem-go-586",
+        "dead_lang": "go",
+        "dead_status": "env-broken-nonnet",
+        "reserve_id": "zmap__zlint-299",
+        "reserve_lang": "go",
+        "reserve_rank": 4,
+        "tier": "direct",
+        "cross_language_fallback": false
+      }
+    ]
+  }
 }

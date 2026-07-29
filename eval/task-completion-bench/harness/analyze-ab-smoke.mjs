@@ -7,10 +7,10 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { costFromTurns } from './ideal-cost.mjs';   // shared cost math (single source of truth)
 
 const SINCE = Number(process.argv[2] || 0);
 const SESS = process.env.CODEX_SESSIONS || path.join(os.homedir(), '.codex/sessions');
-const P = { in: 5.0, cache: 0.5, out: 30.0 };
 
 function walk(d) { const o = []; for (const e of readdirSync(d)) { const p = path.join(d, e); const s = statSync(p); if (s.isDirectory()) o.push(...walk(p)); else if (e.endsWith('.jsonl')) o.push({ p, m: s.mtimeMs }); } return o; }
 
@@ -49,15 +49,8 @@ for (const f of walk(SESS)) {
   if (!cwd.includes('/runs/')) continue;              // only agent runs
   const m = cwd.match(/runs\/(.+?)__(native|sweet)__r(\d+)__/);
   if (!m) continue;
-  // per-turn cost recovery
-  let ideal = 0, real = 0, prevIn = 0;
-  for (const tu of turns) {
-    const newIn = Math.max(0, tu.in - prevIn);        // context added this turn
-    const resent = tu.in - newIn;                     // prior context re-sent
-    ideal += (newIn * P.in + resent * P.cache + tu.out * P.out) / 1e6;   // ideal cache
-    real += ((tu.in - tu.cached) * P.in + tu.cached * P.cache + tu.out * P.out) / 1e6;  // actual cache
-    prevIn = tu.in;
-  }
+  // per-turn cost recovery (shared with the collection-path column)
+  const { idealUsd: ideal, realFromTurnsUsd: real } = costFromTurns(turns);
   rows.push({ task: m[1], arm: m[2], rep: +m[3], cond: bannerSeen ? 'ON' : (ranTests ? 'OFF' : '?'),
     turns: turns.length, calls: cmds.length, ideal: +ideal.toFixed(3), real: +real.toFixed(3),
     maxOutKB: +(maxOut / 1024).toFixed(1), dockerRun, gitDiff, tmpRecon, shimPeek, rawTestRun,

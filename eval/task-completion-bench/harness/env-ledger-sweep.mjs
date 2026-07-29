@@ -26,7 +26,7 @@
 import { execFileSync, execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { taskConfigHash, gradeFromReportItem } from './env-ledger.mjs';
+import { taskConfigHash, gradeFromReportItem, installSedCmds, vaultTarName } from './env-ledger.mjs';
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -40,7 +40,10 @@ const SR_EVAL_RUNNER = path.join(BENCH, 'harness/sr-eval.py');
 const VENV_PY = process.env.VENV_PY || path.join(BENCH, '.venv-grade/bin/python');
 const TASKS_FILE = arg('tasks');
 const IDS_FILE = arg('ids', '');
-const OUT = arg('out');
+// Resolve to absolute: batch paths are handed to sr-eval.py whose cwd is OUT
+// itself — a relative --out makes the grader resolve them against itself and
+// classify every task 'infra' (JSON file not found).
+const OUT = arg('out') ? path.resolve(arg('out')) : undefined;
 const BATCH = Math.max(1, +arg('batch', 4));
 const MAX_WORKERS = Math.max(1, +arg('max-workers', 2));
 const BATCH_TIMEOUT_MS = +arg('batch-timeout-ms', 5400000); // 90 min, same as run-pilot grading
@@ -94,9 +97,17 @@ const NET_SIGS = [
 const classify = (logText) => NET_SIGS.some(r => r.test(logText)) ? 'network' : 'test-failure';
 
 const dockerEnv = { ...process.env };
+const DERIVED_BK = process.env.SS_DERIVED_BACKUP || '/workspace/docker-derived-backup';
+// Encoding lives in env-ledger.mjs (vaultTarName) so the test can pin it without
+// importing this CLI module. Used by both the vault loader and the vault-aware GC.
+const vaultTarFor = (image) => path.join(DERIVED_BK, vaultTarName(image));
 const gcImages = (batch) => {
   for (const sp of batch) {
-    if (sp.image_name && !sp._origImage) {
+    if (!sp.image_name) continue;
+    if (!sp._origImage) {
+      try { execFileSync('docker', ['rmi', '-f', sp.image_name], { env: dockerEnv, stdio: 'ignore', timeout: 60000 }); } catch { /* */ }
+    } else if (existsSync(vaultTarFor(sp.image_name))) {
+      // derived image is reloadable from the vault tar — safe to free locally
       try { execFileSync('docker', ['rmi', '-f', sp.image_name], { env: dockerEnv, stdio: 'ignore', timeout: 60000 }); } catch { /* */ }
     }
   }
@@ -109,7 +120,7 @@ const diskFreeG = () => { try { return execSync("df -BG --output=avail / | tail 
 const record = (row, sp) => {
   if (sp && !row.configHash) {
     const ovh = TASK_OVERRIDES.tasks?.[sp.instance_id] || {};
-    try { row.configHash = taskConfigHash(sp, { netLockdown: true, excludeP2P: ovh.excludeP2P || [], excludeF2P: ovh.excludeF2P || [] }); } catch { /* hash is best-effort at record time; stampable later */ }
+    try { row.configHash = taskConfigHash(sp, { netLockdown: true, excludeP2P: ovh.excludeP2P || [], excludeF2P: ovh.excludeF2P || [], presedCmds: installSedCmds(sp) }); } catch { /* hash is best-effort at record time; stampable later */ }
   }
   appendFileSync(LEDGER, JSON.stringify(row) + '\n'); done.add(row.instance_id);
 };
@@ -118,12 +129,23 @@ async function runPass(tasks, batchSize) {
   for (let i = 0; i < tasks.length; i += batchSize) {
     const chunk = tasks.slice(i, i + batchSize).filter(s => !done.has(s.instance_id));
     if (!chunk.length) continue;
-    // derived images must pre-exist locally (never pulled)
+    // derived images must pre-exist locally OR in the /workspace vault
+    // (docker-save tars, heldout 2026-07-17 — box disk can't hold the fleet)
     const runnable = [];
     for (const sp of chunk) {
       if (sp._origImage) {
-        try { execFileSync('docker', ['image', 'inspect', sp.image_name], { env: dockerEnv, stdio: 'ignore' }); runnable.push(sp); }
-        catch { record({ instance_id: sp.instance_id, language: sp.language, status: 'infra', signature: 'derived-image-missing', image: sp.image_name, ts: new Date().toISOString() }); }
+        let present = false;
+        try { execFileSync('docker', ['image', 'inspect', sp.image_name], { env: dockerEnv, stdio: 'ignore' }); present = true; }
+        catch { /* try the vault */ }
+        if (!present) {
+          const tar = vaultTarFor(sp.image_name);
+          if (existsSync(tar)) {
+            try { execFileSync('docker', ['load', '-i', tar], { env: dockerEnv, stdio: 'ignore', timeout: 600000 }); present = true; console.log(`[sweep] loaded ${sp.image_name} from vault`); }
+            catch { /* fall through to infra */ }
+          }
+        }
+        if (present) runnable.push(sp);
+        else record({ instance_id: sp.instance_id, language: sp.language, status: 'infra', signature: 'derived-image-missing', image: sp.image_name, ts: new Date().toISOString() });
       } else runnable.push(sp);
     }
     if (!runnable.length) continue;
@@ -136,7 +158,7 @@ async function runPass(tasks, batchSize) {
     let batchErr = '';
     try {
       execFileSync(VENV_PY, [SR_EVAL_RUNNER,
-        '--json', tasksPath, '--golden-eval', '--max-workers', String(MAX_WORKERS),
+        '--json', tasksPath, '--golden-eval', '--reapply-install-seds', '--max-workers', String(MAX_WORKERS),
         '--report-json', reportPath, '--network', 'none'],
         { cwd: OUT, env: { ...process.env, SR_EVAL_DIR, PYTHONPATH: path.join(SR_EVAL_DIR, 'lib') }, stdio: ['ignore', 'inherit', 'inherit'], timeout: BATCH_TIMEOUT_MS });
     } catch (e) { batchErr = e.killed ? 'batch-timeout' : ''; /* non-zero exit = some task not FULL: normal */ }
@@ -207,7 +229,7 @@ if (BRIDGE_REGRADE) {
     try { rmSync(reportPath, { force: true }); } catch { /* */ }
     try {
       execFileSync(VENV_PY, [SR_EVAL_RUNNER,
-        '--json', tasksPath, '--golden-eval', '--max-workers', '1',
+        '--json', tasksPath, '--golden-eval', '--reapply-install-seds', '--max-workers', '1',
         '--report-json', reportPath, '--network', 'none'],
         { cwd: OUT, env: { ...process.env, SR_EVAL_DIR, PYTHONPATH: path.join(SR_EVAL_DIR, 'lib') }, stdio: ['ignore', 'inherit', 'inherit'], timeout: BATCH_TIMEOUT_MS });
     } catch { /* non-zero = unresolved, normal */ }

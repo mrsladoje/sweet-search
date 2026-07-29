@@ -14,6 +14,11 @@
     "                   (default under lockdown is --network none; loopback always works).",
     "  dockerRunArgs  — extra docker-run args for this task's run_tests/grading containers",
     "                   (e.g. --privileged for docker-in-docker).",
+    "  excludeP2P     — P2P test names structurally unrunnable in ANY offline container",
+    "                   (live network calls by design); excluded from the regression check.",
+    "  excludeF2P     — F2P test names structurally unrunnable offline; removed from BOTH",
+    "                   the pass numerator and denominator (never counted for or against).",
+    "                   Names are matched with per-run timing suffixes ('[1.23 ms]') stripped.",
     "Kill switches: NO_TASK_OVERRIDES=1 ignores this file entirely; SS_BENCH_ALLOW_NET=1",
     "restores historical full-egress container networking. Old harness behavior is exactly",
     "NO_TASK_OVERRIDES=1 SS_BENCH_ALLOW_NET=1."
@@ -30,6 +35,26 @@
       "_why": "THREE defects: (1) Pkg.test() defaults to --check-bounds=yes which disables the @inbounds DCE the F2P test asserts (repo CI runs --check-bounds=auto); (2) the Manifest pins LoweredCodeUtils.jl as a git dep NOT baked into the image depot, so Pkg.test clones from github at test time — derived image pre-seeds the depot; (3) Julia prints per-testset summary rows ONLY on failure — a fully-PASSING suite shows a single aggregate 'runtests.jl' row, so the name-based parser can never credit the F2P/P2P names (structurally ungradeable-on-success). The `&& printf` tail emits a synthetic summary table for the 26 expected testset names IFF the suite exits 0 (aggregate pass logically implies every nested testset passed). Grading becomes all-or-nothing for this task (partial passes still grade NO) — documented degradation, strictly better than permanently-NO.",
       "testCmd": "julia --project=. --startup-file=no -e 'using Pkg; Pkg.test(; julia_args=[\"--check-bounds=auto\"])' && printf 'Test Summary: | Pass  Total\\nCallsites |  1  1\\nambiguity check |  1  1\\nwrapped callinfo |  1  1\\nConstPropCallInfo |  1  1\\nConstResult |  1  1\\nSemiConcreteResult |  1  1\\nissue #346 |  1  1\\nPureCallInfo |  1  1\\nReturnTypeCallInfo |  1  1\\nOCCallInfo |  1  1\\nInvokeCallInfo |  1  1\\nVarargs and printing |  1  1\\nMaybeUndef |  1  1\\nwarntype variables |  1  1\\nLimit printing (issue #94) |  1  1\\nIssue #132 |  1  1\\n@interp |  1  1\\nascend |  1  1\\nascend interface |  1  1\\nBookmarks |  1  1\\npreferences |  1  1\\nper-statement remarks |  1  1\\nper-statement effects |  1  1\\nBare-bones MIs |  1  1\\ntest_codeview.jl |  1  1\\ntest_AbstractInterpreter.jl |  1  1\\n'",
       "image": "swerebenchv2-fixed/juliadebug-cthulhu.jl:547-b98d972"
+    },
+    "hyrodium__basicbspline.jl-134": {
+      "_why": "Julia lockdown casualty (2026-07-09 audit): Pkg.test git-dep download_source→LibGit2.clone dies offline (--network none). Derived image seeds the depot at build time (analysis/dockerfiles/hyrodium__basicbspline.jl-134). Gold-grades FULL offline after repair.",
+      "image": "swerebenchv2-fixed/hyrodium-basicbspline.jl:134-938be4a"
+    },
+    "meggart__diskarrays.jl-232": {
+      "_why": "Julia lockdown casualty (2026-07-09 audit): Pkg.test git-dep clone dies offline. Derived image seeds the depot at build time (analysis/dockerfiles/meggart__diskarrays.jl-232).",
+      "image": "swerebenchv2-fixed/meggart-diskarrays.jl:232-235825f"
+    },
+    "juliadiff__finitedifferences.jl-223": {
+      "_why": "Julia lockdown casualty (2026-07-09 audit): Pkg.test git-dep clone dies offline. Derived image seeds the depot at build time (analysis/dockerfiles/juliadiff__finitedifferences.jl-223).",
+      "image": "swerebenchv2-fixed/juliadiff-finitedifferences.jl:223-c7a4624"
+    },
+    "juliadiff__finitedifferences.jl-197": {
+      "_why": "The NEW lockdown casualty from [mpppp-candidate]. Pkg.test git-dep clone dies offline. Distinct base_commit from -223. Derived image seeds the depot at build time (analysis/dockerfiles/juliadiff__finitedifferences.jl-197).",
+      "image": "swerebenchv2-fixed/juliadiff-finitedifferences.jl:197-2e3dd78"
+    },
+    "juliaintervals__intervalarithmetic.jl-577": {
+      "_why": "Julia lockdown casualty (2026-07-09 audit): Pkg.test git-dep clone dies offline. Derived image seeds the depot at build time (analysis/dockerfiles/juliaintervals__intervalarithmetic.jl-577).",
+      "image": "swerebenchv2-fixed/juliaintervals-intervalarithmetic.jl:577-0efb7f2"
     },
     "docker__compose-9148": {
       "_why": "stock image has no docker binary/daemon; derived image + diagnosis pending (analysis/dockerfiles/docker__compose-9148)",
@@ -60,7 +85,534 @@
       "image": "swerebenchv2-fixed/serpro69-kotlin-faker:267-bac805e"
     },
     "randombit__botan-2738": {
-      "_why": "curation: gold patch is a squashed multi-commit bundle; x509_ext.cpp validate hunk + parsing.cpp tolower dedup are unrelated to the DNS case-sensitivity problem statement"
+      "_why": "curation: gold patch is a squashed multi-commit bundle; x509_ext.cpp validate hunk + parsing.cpp tolower dedup are unrelated to the DNS case-sensitivity problem statement | prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)",
+      "image": "swerebenchv2-warm/randombit-botan:2738-c99d49d"
+    },
+    "k0sproject__k0sctl-556": {
+      "_why": "env-ledger 2026-07-09: TestUnmarshal/TestVersionDefaulting 'version_not_given' subtests query the live k0s GitHub releases API at TEST time to default the version — structurally unrunnable in ANY offline container (SWE-Verified precedent: annotators removed broken tests). F2P 2/2 pass on the warmed image; only these 4 online P2P names excluded. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)",
+      "excludeP2P": [
+        "TestUnmarshal",
+        "TestUnmarshal/version_not_given",
+        "TestVersionDefaulting",
+        "TestVersionDefaulting/version_not_given"
+      ],
+      "image": "swerebenchv2-warm/k0sproject-k0sctl:556-6342c65"
+    },
+    "verygoodopensource__very_good_cli-611": {
+      "_why": "env-ledger 2026-07-09: 3 e2e P2P tests fetch remote bricks/templates (brickhub/pub) with fresh resolution at TEST time — structurally unrunnable offline. F2P 25/25 pass on the warmed image. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)",
+      "excludeP2P": [
+        "create legacy org-name --org is a valid alias",
+        "create legacy uses remote brick when possible",
+        "create route legacy syntax to \"create legacy\" Allows the creation of projects in the legacy syntax with no options"
+      ],
+      "image": "swerebenchv2-warm/verygoodopensource-very-good-cli:611-e01a127"
+    },
+    "tursodatabase__libsql-1287": {
+      "_why": "env-ledger 2026-07-09: the spec's PASS_TO_PASS contains the literal name 'ok' — a rust-log-parser artifact from curation, not a real test (warmed offline suite: every real test passes, F2P 3/3). A phantom name can never be matched, so the task could never grade FULL. Excluded as a curation artifact. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-09): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "excludeP2P": [
+        "ok"
+      ],
+      "image": "swerebenchv2-warm/tursodatabase-libsql:1287-59b922b"
+    },
+    "microformats__php-mf2-255": {
+      "_why": "env-ledger 2026-07-09: F2P test 'Parser > Fetch microformats' performs a live HTTP fetch by design — structurally unrunnable offline; the task's other 225 F2P tests carry the signal. excludeF2P removes it from both the pass numerator and the denominator (never counted for or against). USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)",
+      "excludeF2P": [
+        "Parser > Fetch microformats"
+      ],
+      "image": "swerebenchv2-warm/microformats-php-mf2:255-7daaefd"
+    },
+    "scalameta__scalameta-3728": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-09): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/scalameta-scalameta:3728-6703427"
+    },
+    "swiftlang__swift-syntax-1170": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-09): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/swiftlang-swift-syntax:1170-7541740"
+    },
+    "oliyh__martian-75": {
+      "image": "swerebenchv2-warm/oliyh-martian:75-f29e776",
+      "_why": "prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)"
+    },
+    "dart-lang__dartdoc-3393": {
+      "image": "swerebenchv2-warm/dart-lang-dartdoc:3393-8e8b36e",
+      "_why": "prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)"
+    },
+    "mgechev__revive-477": {
+      "image": "swerebenchv2-warm/mgechev-revive:477-ff1ebcd",
+      "_why": "prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)"
+    },
+    "parquet-go__parquet-go-292": {
+      "image": "swerebenchv2-warm/parquet-go-parquet-go:292-aaeae58",
+      "_why": "prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)"
+    },
+    "spoonlabs__gumtree-spoon-ast-diff-88": {
+      "image": "swerebenchv2-warm/spoonlabs-gumtree-spoon-ast-diff:88-dbd2720",
+      "_why": "prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)"
+    },
+    "graphql-java-kickstart__graphql-java-tools-593": {
+      "image": "swerebenchv2-warm/graphql-java-kickstart-graphql-java-tools:593-004c964",
+      "_why": "prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)"
+    },
+    "cqfn__diktat-947": {
+      "image": "swerebenchv2-warm/cqfn-diktat:947-d584b2a",
+      "_why": "prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)"
+    },
+    "php-cs-fixer__php-cs-fixer-7593": {
+      "image": "swerebenchv2-warm/php-cs-fixer-php-cs-fixer:7593-63e6998",
+      "_why": "prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)"
+    },
+    "gfx-rs__wgpu-6354": {
+      "image": "swerebenchv2-warm/gfx-rs-wgpu:6354-c5a4b4e",
+      "_why": "prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)"
+    },
+    "jonase__eastwood-358": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/jonase-eastwood:358-0e3fd4f"
+    },
+    "skygeario__skygear-server-1219": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/skygeario-skygear-server:1219-7a9c9f1"
+    },
+    "filecoin-project__specs-actors-703": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/filecoin-project-specs-actors:703-483b389"
+    },
+    "apache__dubbo-go-hessian2-229": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/apache-dubbo-go-hessian2:229-6c1fb5c"
+    },
+    "argoproj__argo-3371": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/argoproj-argo:3371-7011160"
+    },
+    "jkroepke__openvpn-auth-oauth2-272": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/jkroepke-openvpn-auth-oauth2:272-9158997"
+    },
+    "benbjohnson__litestream-301": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/benbjohnson-litestream:301-8009bcf"
+    },
+    "googleapis__java-storage-390": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/googleapis-java-storage:390-81472a4"
+    },
+    "smallrye__smallrye-stork-498": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/smallrye-smallrye-stork:498-6897801"
+    },
+    "networknt__json-schema-validator-1124": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/networknt-json-schema-validator:1124-c7b264e"
+    },
+    "googleapis__sdk-platform-java-2358": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/googleapis-sdk-platform-java:2358-f92e19e"
+    },
+    "opentripplanner__opentripplanner-5794": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/opentripplanner-opentripplanner:5794-0bed0f2"
+    },
+    "cqfn__diktat-877": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/cqfn-diktat:877-2b17b31"
+    },
+    "arkivanov__decompose-916": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/arkivanov-decompose:916-4142a86"
+    },
+    "tipsy__javalin-2089": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/tipsy-javalin:2089-433334e"
+    },
+    "cqfn__diktat-662": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/cqfn-diktat:662-ee08aa4"
+    },
+    "dtolnay__cxx-585": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/dtolnay-cxx:585-b03d41d"
+    },
+    "migorithm__duva-683": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/migorithm-duva:683-d155572"
+    },
+    "luser__rust-minidump-488": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/luser-rust-minidump:488-6f98d1d"
+    },
+    "dtolnay__cxx-694": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/dtolnay-cxx:694-921c16d"
+    },
+    "scala-steward-org__scala-steward-1235": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/scala-steward-org-scala-steward:1235-06636f4"
+    },
+    "scalameta__scalameta-3606": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/scalameta-scalameta:3606-4fe5f4f"
+    },
+    "scalameta__scalameta-3127": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/scalameta-scalameta:3127-1de6ce7"
+    },
+    "bazelbuild__buildtools-769": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/bazelbuild-buildtools:769-41a45ed"
+    },
+    "microsoft__kiota-4328": {
+      "excludeF2P": [
+        "Kiota.Builder.Tests.KiotaSearcherTests.GetsMicrosoftGraph",
+        "Kiota.Builder.Tests.KiotaSearcherTests.GetsMicrosoftGraphBothVersions"
+      ],
+      "_why": "env-ledger 2026-07-10: 2 of 1311 F2P are live Microsoft Graph API search tests; structurally unrunnable offline. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/microsoft-kiota:4328-4850578"
+    },
+    "unidata__netcdf-c-1528": {
+      "excludeF2P": [
+        "t_misc",
+        "testurl.sh",
+        "tst_formatx.sh",
+        "tst_zero_len_var.sh"
+      ],
+      "_why": "env-ledger 2026-07-10: network F2P (remote DAP/URL tests); bridge-regrade FULL with egress; structurally unrunnable offline. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/unidata-netcdf-c:1528-1a6351d"
+    },
+    "twigphp__twig-3671": {
+      "excludeF2P": [
+        "Integration > Integration with data set #7",
+        "Integration > Integration with data set #77"
+      ],
+      "_why": "env-ledger 2026-07-10: 2 of 1133 integration data sets fail offline; structurally unrunnable offline. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/twigphp-twig:3671-4c4fb89"
+    },
+    "microsoft__kiota-5759": {
+      "excludeP2P": [
+        "Kiota.Builder.IntegrationTests.GenerateSample.GeneratesUritemplateHintsAsync(language: Go)",
+        "Kiota.Builder.IntegrationTests.GenerateSample.GeneratesUritemplateHintsAsync(language: Ruby)",
+        "Kiota.Builder.Tests.KiotaSearcherTests.GetsGithubFromApisGuruAsync",
+        "Kiota.Builder.Tests.KiotaSearcherTests.GetsGithubFromApisGuruWithExactMatchAsync",
+        "Kiota.Builder.Tests.KiotaSearcherTests.GetsMicrosoftGraphAsync",
+        "Kiota.Builder.Tests.KiotaSearcherTests.GetsMicrosoftGraphBetaAsync",
+        "Kiota.Builder.Tests.KiotaSearcherTests.GetsMicrosoftGraphBothVersionsAsync"
+      ],
+      "_why": "env-ledger 2026-07-10: live API + network integration P2P tests; structurally unrunnable offline. USER-APPROVED 2026-07-10."
+    },
+    "nvim-lua__plenary.nvim-348": {
+      "excludeP2P": [
+        "CURL Wrapper: DELETE sends delete request",
+        "CURL Wrapper: DEPUG dry_run return the curl command to be ran.",
+        "CURL Wrapper: GET downloads files to opts.output synchronously",
+        "CURL Wrapper: GET downloads files to to opts.output asynchronous",
+        "CURL Wrapper: GET sends and returns table.",
+        "CURL Wrapper: GET sends encoded URL query params.",
+        "CURL Wrapper: GET sends with basic-auth as string",
+        "CURL Wrapper: GET sends with basic-auth as table",
+        "CURL Wrapper: GET should accept the url as first argument.",
+        "CURL Wrapper: PATCH sends changes and get be back the new version.",
+        "CURL Wrapper: POST sends and recives json body.",
+        "CURL Wrapper: POST sends file",
+        "CURL Wrapper: POST sends lua table",
+        "CURL Wrapper: POST sends raw string",
+        "CURL Wrapper: POST should not include the body twice",
+        "CURL Wrapper: PUT sends changes and get be back the new version.",
+        "CURL Wrapper: request sends and returns table.",
+        "CURL Wrapper: request should accept the url as first argument."
+      ],
+      "_why": "env-ledger 2026-07-10: CURL Wrapper live-HTTP P2P tests; structurally unrunnable offline. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/nvim-lua-plenary.nvim:348-c54f77d"
+    },
+    "cs-si__eodag-790": {
+      "excludeP2P": [
+        "tests/units/test_core.py::TestCoreSearch::test__prepare_search_dates",
+        "tests/units/test_core.py::TestCoreSearch::test__prepare_search_geom",
+        "tests/units/test_core.py::TestCoreSearch::test__prepare_search_locations",
+        "tests/units/test_core.py::TestCoreSearch::test__prepare_search_no_parameters",
+        "tests/units/test_core.py::TestCoreSearch::test__prepare_search_search_plugin_has_generic_product_properties",
+        "tests/units/test_core.py::TestCoreSearch::test__prepare_search_unknown_product_type",
+        "tests/units/test_core.py::TestCoreSearch::test_search_all_unknown_product_type"
+      ],
+      "_why": "env-ledger 2026-07-10: P2P tests authenticate against live my.meteoblue.com (gate log: Temporary failure in name resolution); structurally unrunnable offline. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-10): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/cs-si-eodag:790-9acf017"
+    },
+    "ruby__prism-1726": {
+      "_why": "heldout triage 2026-07-17 (g4, high): gold patch edits src/prism.c + src/regexp.c (native C ext) but 'rake compile' runs only at image build, pre-patch; grading never recompiles, so tests run the stale .so and the spanning_heredoc snapshot check rewrites+aborts. Recompile before testing.",
+      "testCmd": "bundle exec rake compile --quiet && TESTOPTS=\"-v\" bundle exec rake test"
+    },
+    "simdjson__simdjson-2016": {
+      "_why": "heldout triage 2026-07-17 (g1, high): test_cmd ran bare ctest with no build step — zero 'Building CXX' lines, 95-test stale pre-patch suite ran instead of the patched 97-test suite (0/96 F2P). Build before ctest.",
+      "testCmd": "cd build && cmake --build . -j$(nproc) && ctest --output-on-failure"
+    },
+    "sveltejs__kit-6033": {
+      "_why": "heldout triage 2026-07-17 (g5, high): F2P strings embed Playwright dispatch ordinals; packages/kit/test/utils.js sets workers/retries from process.env.CI (2/5 with CI, machine-dependent without). Grading ran without CI so indices drifted (all 165 F2P actually pass ignoring the ordinal). CI=1 restores curation's scheduling; the ordinal-strip normalization covers residual drift.",
+      "testCmd": "cd packages/kit && CI=1 pnpm test --no-color"
+    },
+    "shimat__opencvsharp-1756": {
+      "_why": "heldout triage 2026-07-17 (g2, medium — verify on re-sweep): install exports HOME=/tmp + adds OpenCvSharp4 runtime package as uncommitted csproj edit; grading omits the HOME export and 'git reset --hard' reverts the package ref, so restore re-resolves against nuget.org offline (NU1301). Re-apply the install-time sequence pointing at the image's warm /tmp NuGet cache.",
+      "testCmd": "export HOME=/tmp && export DOTNET_CLI_HOME=/tmp && cd test/OpenCvSharp.Tests && dotnet add package OpenCvSharp4.official.runtime.linux-x64 --version 4.10.0.20241229 && dotnet build -c Release -f net8.0 && cp bin/Release/net8.0/runtimes/linux-x64/native/libOpenCvSharpExtern.so bin/Release/net8.0/ && export LD_LIBRARY_PATH=\"/opencvsharp/test/OpenCvSharp.Tests/bin/Release/net8.0:$LD_LIBRARY_PATH\" && timeout 300 dotnet test -c Release -f net8.0 --logger \"console;verbosity=detailed\" || true"
+    },
+    "vapor__jwt-kit-82": {
+      "_why": "heldout triage 2026-07-17 (g5, high): testJWKsApple does Data(contentsOf: 'https://appleid.apple.com/auth/keys') — a live fetch by design, structurally unrunnable under --network none (NSCocoaErrorDomain Code=256). Other 37 F2P pass.",
+      "excludeF2P": [
+        "JWTKitTests.testJWKsApple"
+      ]
+    },
+    "mavlink__mavsdk-2595": {
+      "_why": "heldout triage 2026-07-17 (g2, high): 2 of 5 F2P run a live HTTP download inside the test body (curl_wrapper.cpp 'Could not resolve hostname'); unrelated to the gold patch. Precedents: plenary.nvim CURL, kiota live-API, php-mf2 fetch exclusions.",
+      "excludeF2P": [
+        "[       OK ] CurlTest.Curl_DownloadText_HTTP_Success (86 ms)",
+        "[       OK ] CurlTest.Curl_DownloadFile_ProgressFeedback_Success (182 ms)"
+      ]
+    },
+    "py-pdf__pypdf2-1346": {
+      "_why": "heldout triage 2026-07-17 (g1, high): exactly the live-URL-fetch tests fail offline (socket.gaierror/URLError on arxiv/tika/github fetches) — 3 F2P + 8 P2P; the other 11 F2P pass and carry the signal.",
+      "excludeF2P": [
+        "tests/test_merger.py::test_iss1344",
+        "tests/test_page.py::test_extract_text_single_quote_op",
+        "tests/test_page.py::test_no_resources"
+      ],
+      "excludeP2P": [
+        "tests/test_generic.py::test_issue_997",
+        "tests/test_merger.py::test_iss1145",
+        "tests/test_page.py::test_page_operations[https://arxiv.org/pdf/2201.00029.pdf-None]",
+        "tests/test_page.py::test_no_ressources_on_text_extract",
+        "tests/test_page.py::test_iss_1142",
+        "tests/test_page.py::test_extract_text_page_pdf[https://corpora.tika.apache.org/base/docs/govdocs1/964/964029.pdf-tika-964029.pdf]",
+        "tests/test_page.py::test_extract_text_page_pdf[https://github.com/py-pdf/PyPDF2/files/9150656/ST.2019.PDF-iss_1134.pdf]",
+        "tests/test_page.py::test_extract_text_page_pdf[https://github.com/py-pdf/PyPDF2/files/9432350/Work.Flow.From.Check.to.QA.pdf-WFCA.pdf]"
+      ]
+    },
+    "ratify-project__ratify-1538": {
+      "_why": "heldout triage 2026-07-17 (g3, medium): 4 P2P (sub)tests require live network by design — OCI plugin download (DOWNLOAD_PLUGIN_FAILURE), Sigstore keyless vs live Rekor/Fulcio, a test literally named 'online_...' nil-derefing offline. F2P clean 31/31. Two TestProperSchemaValidates failures deliberately NOT excluded pending source-level proof.",
+      "excludeP2P": [
+        "TestCreateStoresFromConfig_DynamicPluginStores_ReturnsExpected/image_specified_by_tag",
+        "TestCreateStoresFromConfig_DynamicPluginStores_ReturnsExpected/image_specified_by_digest",
+        "TestVerifyInternal/successful_keyless_verification",
+        "TestVerifyJSONSchema/online_verification_success"
+      ]
+    },
+    "typelevel__fs2-2932": {
+      "_why": "heldout triage 2026-07-17 (g3+lead): the 'TLSSocket - google - TLSv1.2/1.3 - *' munit tests open a real TLS connection to google.com — structurally unrunnable offline (UnknownHostException in the log). F2P clean 1/1. Other SocketSuite failures NOT excluded (unproven); the Scala.js linker fetch is routed to the warm pipeline instead.",
+      "excludeP2P": [
+        "TLSSocket - google - TLSv1.2 - client writes before reading",
+        "TLSSocket - google - TLSv1.2 - client reads before writing",
+        "TLSSocket - google - TLSv1.3 - client writes before reading",
+        "TLSSocket - google - TLSv1.3 - client reads before writing"
+      ]
+    },
+    "phpstan__phpstan-doctrine-342": {
+      "_why": "heldout triage 2026-07-17 (g5 finding, remedy revised by lead): the one failing F2P needs tests/.../queryBuilder-6.json which does not exist at base_commit (confirmed upstream: first touched by a later commit that deletes it) and is added by neither patch — a curation defect (missing fixture). g5's run-twice self-heal was REJECTED (LevelsTestCase writes the snapshot from actual output — the test would compare output to itself and could never discriminate, in any arm). Exclude the single fixture-less data set.",
+      "excludeF2P": [
+        "Entity Manager Integration > Levels with data set #3 [17212.63 ms]",
+        "Entity Manager Without Object Manager Loader Integration > Levels with data set #3 [16247.41 ms]"
+      ]
+    },
+    "ccache__ccache-1312": {
+      "_why": "heldout triage 2026-07-17 (lead, verified on re-grade): after volatile-token normalization 27/28 F2P match; the last one, test.inode_cache, is ***Skipped in the container (ctest log) — inode-cache behavior is not testable on overlayfs, an environment limitation, not a regression. Excluded with skip-line evidence.",
+      "excludeF2P": [
+        "14/46 Test #14: test.inode_cache .................   Passed    0.41 sec"
+      ]
+    },
+    "konstantin8105__c4go-367": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/konstantin8105-c4go:367-2afb0eb"
+    },
+    "clojure-lsp__clojure-lsp-200": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/clojure-lsp-clojure-lsp:200-1ef8efa"
+    },
+    "anz-bank__sysl-1020": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/anz-bank-sysl:1020-7e4867b"
+    },
+    "getkin__kin-openapi-93": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/getkin-kin-openapi:93-d318029"
+    },
+    "shapesecurity__salvation-114": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/shapesecurity-salvation:114-5e2ae1d"
+    },
+    "cyclonedx__cyclonedx-core-java-105": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/cyclonedx-cyclonedx-core-java:105-f908d75"
+    },
+    "sendgrid__sendgrid-java-449": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/sendgrid-sendgrid-java:449-816451f"
+    },
+    "jtablesaw__tablesaw-591": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/jtablesaw-tablesaw:591-160fee0"
+    },
+    "weld__weld-junit-27": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/weld-weld-junit:27-9bd837c"
+    },
+    "open-feature__java-sdk-805": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/open-feature-java-sdk:805-ef56006"
+    },
+    "ta4j__ta4j-1260": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/ta4j-ta4j:1260-a995591"
+    },
+    "avaje__avaje-inject-286": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/avaje-avaje-inject:286-d96730e"
+    },
+    "ta4j__ta4j-945": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/ta4j-ta4j:945-0501c63"
+    },
+    "raml-org__raml-java-parser-614": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/raml-org-raml-java-parser:614-155ab5a"
+    },
+    "openrefine__openrefine-7247": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/openrefine-openrefine:7247-5620e00"
+    },
+    "vuejs__eslint-plugin-vue-2194": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/vuejs-eslint-plugin-vue:2194-4dfb4d7"
+    },
+    "willowtreeapps__assertk-457": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/willowtreeapps-assertk:457-d562601"
+    },
+    "bkbnio__kompendium-208": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/bkbnio-kompendium:208-f919a6a"
+    },
+    "actix__actix-web-2538": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/actix-actix-web:2538-455d5c4"
+    },
+    "zkat__miette-117": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/zkat-miette:117-d1eae3a"
+    },
+    "tokio-rs__mio-1276": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/tokio-rs-mio:1276-0f4003d"
+    },
+    "cedar-policy__cedar-1551": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/cedar-policy-cedar:1551-543a733"
+    },
+    "rust-analyzer__rust-analyzer-2616": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/rust-analyzer-rust-analyzer:2616-cfc50ff"
+    },
+    "filecoin-project__builtin-actors-1424": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/filecoin-project-builtin-actors:1424-fc80851"
+    },
+    "clap-rs__clap-2100": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/clap-rs-clap:2100-6a56a82"
+    },
+    "shepmaster__snafu-137": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/shepmaster-snafu:137-31ac98a"
+    },
+    "gleam-lang__gleam-3458": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/gleam-lang-gleam:3458-65c2efb"
+    },
+    "ast-grep__ast-grep-1820": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/ast-grep-ast-grep:1820-3b20585"
+    },
+    "vhdl-ls__rust_hdl-272": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/vhdl-ls-rust-hdl:272-4cc1f7b"
+    },
+    "clap-rs__clap-2102": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/clap-rs-clap:2102-6a56a82"
+    },
+    "leafwing-studios__leafwing-input-manager-452": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/leafwing-studios-leafwing-input-manager:452-a5edba0"
+    },
+    "fuellabs__fuel-vm-433": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/fuellabs-fuel-vm:433-456fe28"
+    },
+    "sveltejs__eslint-plugin-svelte-1108": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/sveltejs-eslint-plugin-svelte:1108-eaf56d4"
+    },
+    "squashql__squashql-295": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/squashql-squashql:295-5e866a8"
+    },
+    "helidon-io__helidon-9325": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/helidon-io-helidon:9325-48cab15"
+    },
+    "ajalt__mordant-83": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/ajalt-mordant:83-4ee6adc"
+    },
+    "1c-syntax__bsl-language-server-2901": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/1c-syntax-bsl-language-server:2901-a719a9a"
+    },
+    "projectlombok__lombok-3619": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/projectlombok-lombok:3619-8bea251"
+    },
+    "eclipse-ee4j__yasson-395": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/eclipse-ee4j-yasson:395-6e6fcca"
+    },
+    "dadoonet__elasticsearch-beyonder-164": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/dadoonet-elasticsearch-beyonder:164-8ada45a"
+    },
+    "runningcode__fladle-196": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/runningcode-fladle:196-f29eba0"
+    },
+    "detekt__detekt-7637": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-17): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/detekt-detekt:7637-ff011df"
+    },
+    "ouch-org__ouch-64": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-21): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/ouch-org-ouch:64-3f718b8"
+    },
+    "detekt__detekt-8604": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-21): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/detekt-detekt:8604-053d52c"
+    },
+    "bytecodealliance__wasm-tools-1686": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-21): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/bytecodealliance-wasm-tools:1686-263b697"
+    },
+    "xlate__staedi-168": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-21): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/xlate-staedi:168-5e79193"
+    },
+    "joernio__joern-771": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-21): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/joernio-joern:771-a76e92c"
+    },
+    "vegaprotocol__vegawallet-448": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-21): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/vegaprotocol-vegawallet:448-5bc285a"
+    },
+    "raphlinus__pulldown-cmark-754": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-21): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/raphlinus-pulldown-cmark:754-61f9beb"
+    },
+    "bnorm__kotlin-power-assert-21": {
+      "_why": "prep-phase warmed image (env-ledger 2026-07-21): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/bnorm-kotlin-power-assert:21-22a1e16"
     }
   }
 }

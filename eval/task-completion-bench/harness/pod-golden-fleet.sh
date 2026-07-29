@@ -60,7 +60,7 @@ while IFS=$'\t' read -r id key; do
   fi
   ok=0
   for attempt in 1 2; do
-    if rsync -aH --partial -e "ssh -p $PORT -i $KEY" "$POD:$POD_GOLDEN/$key/" "$VAULT/$key/" </dev/null; then ok=1; break; fi
+    if rsync -aH --partial --timeout=120 -e "ssh -p $PORT -i $KEY -o ServerAliveInterval=15 -o ServerAliveCountMax=4" "$POD:$POD_GOLDEN/$key/" "$VAULT/$key/" </dev/null; then ok=1; break; fi
     echo "[fleet]   pull attempt $attempt failed for $key"; sleep 10
   done
   if [ "$ok" != 1 ] || [ ! -f "$VAULT/$key/.sweet-search/codebase.db" ]; then

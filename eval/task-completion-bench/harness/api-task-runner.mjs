@@ -22,8 +22,9 @@
  * Grading is SEPARATE (grade/*.mjs) — this only produces the prediction patch.
  */
 import { execFileSync, execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { costFromTurns } from './ideal-cost.mjs';   // cache-normalized idealCost (headline metric; both harness paths must emit it)
 
 const DEEPSEEK_BASE = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1';
 const OPENROUTER_BASE = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
@@ -291,6 +292,10 @@ export async function runTask(task, { arm, provider = 'deepseek', apiModel, mode
   const trajectory = [];
   const toolCounts = { ss: 0, nativeGrep: 0, nativeRead: 0, edit: 0, bash: 0, test: 0 };
   const usage = { prompt: 0, completion: 0, cacheHit: 0, cacheMiss: 0, reasoning: 0 };
+  // Per-turn token deltas for idealCost (cache-normalized). The summed `usage`
+  // above loses the growing-prefix structure costFromTurns needs, so keep each
+  // turn's full prompt size (`in`) + this-turn cached + output separately.
+  const turns = [];
   let escape = 0, leak = 0, halluc = 0, calls = 0, stepsToFirstEdit = null, exitReason = 'done';
   let nudges = 0;                 // stop-quality nudges injected (capped at 2)
   const MAX_NUDGES = 2;
@@ -302,11 +307,15 @@ export async function runTask(task, { arm, provider = 'deepseek', apiModel, mode
     try { payload = await callModel({ provider, apiModel: resolvedModel, messages, tools, reasoning, apiKey: resolvedKey }); }
     catch (e) { exitReason = `api_error:${e.message}`; break; }
     const u = payload.usage || {};
+    const cachedThis = u.prompt_cache_hit_tokens ?? u.prompt_tokens_details?.cached_tokens ?? 0;
+    const outThis = (u.completion_tokens || 0) + (u.completion_tokens_details?.reasoning_tokens || 0);
     usage.prompt += u.prompt_tokens || 0;
     usage.completion += u.completion_tokens || 0;
-    usage.cacheHit += u.prompt_cache_hit_tokens ?? u.prompt_tokens_details?.cached_tokens ?? 0;
-    usage.cacheMiss += u.prompt_cache_miss_tokens ?? Math.max(0, (u.prompt_tokens || 0) - (u.prompt_cache_hit_tokens ?? u.prompt_tokens_details?.cached_tokens ?? 0));
+    usage.cacheHit += cachedThis;
+    usage.cacheMiss += u.prompt_cache_miss_tokens ?? Math.max(0, (u.prompt_tokens || 0) - cachedThis);
     usage.reasoning += u.completion_tokens_details?.reasoning_tokens || 0;
+    // `in` = full prompt this turn (the growing prefix costFromTurns diffs); out folds reasoning.
+    turns.push({ in: u.prompt_tokens || 0, cached: cachedThis, out: outThis });
 
     const msg = payload.choices?.[0]?.message || {};
     messages.push(msg);
@@ -351,7 +360,13 @@ export async function runTask(task, { arm, provider = 'deepseek', apiModel, mode
         resultText = sweet ? runSsTool(name, args, { checkoutDir, ssBinDir, timeoutMs: perCallTimeoutMs }) : '[error] sweet-search tools not available in this arm';
       } else if (name === 'read_file') {
         const full = insideCheckout(args.path, checkoutDir);
+        // Guard directories: existsSync() is true for a dir, but readFileSync(dir)
+        // throws an UNCAUGHT EISDIR that kills the whole rollout. Models call
+        // read_file on a directory often enough (~20% of rollouts in the mimo
+        // smoke) that this must degrade to a tool-error, not a crash. Symmetric
+        // across arms (read_file is not arm-gated), so it can't bias the delta.
         if (!full || !existsSync(full)) resultText = `[error] cannot read ${args.path}`;
+        else if (statSync(full).isDirectory()) resultText = `[error] ${args.path} is a directory, not a file`;
         else { const lines = readFileSync(full, 'utf8').split('\n'); const s = (args.start || 1) - 1, e = args.end || Math.min(lines.length, s + 200); resultText = lines.slice(s, e).map((l, i) => `${s + i + 1}: ${l}`).join('\n').slice(0, 12000); }
       } else if (name === 'write_file') {
         const full = insideCheckout(args.path, checkoutDir);
@@ -385,6 +400,10 @@ export async function runTask(task, { arm, provider = 'deepseek', apiModel, mode
   const price = PRICES[resolvedModel] || DEFAULT_PRICE;
   const costNaive = (usage.prompt * price.in + usage.completion * price.out) / 1e6;
   const costRealized = (usage.cacheMiss * price.in + usage.cacheHit * price.cacheHit + usage.completion * price.out) / 1e6;
+  // idealCost: cache-normalized (all re-sent prefix charged at the cache-hit rate),
+  // recovered from per-turn deltas — same formula/units the codex path uses, so the
+  // headline efficiency-at-parity metric is comparable across harness paths.
+  const { idealUsd } = costFromTurns(turns, { in: price.in, cache: price.cacheHit, out: price.out });
 
   return {
     taskId: task.id, arm, provider, model: resolvedModel, apiModel: resolvedModel,
@@ -393,6 +412,7 @@ export async function runTask(task, { arm, provider = 'deepseek', apiModel, mode
     calls, toolCounts, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep,
     stepsToFirstEdit, nudges, escape, leak, halluc, escapeExamples, exitReason,
     usage, costNaiveUsd: +costNaive.toFixed(6), costRealizedUsd: +costRealized.toFixed(6),
+    idealCostUsd: +idealUsd.toFixed(6), turns: turns.length,
     wallMs: Date.now() - t0, trajectory,
   };
 }
