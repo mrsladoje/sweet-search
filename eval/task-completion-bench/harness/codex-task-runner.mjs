@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { execSync, execFileSync } from 'node:child_process';
 import {
   chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync,
+  copyFileSync, existsSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -367,6 +368,16 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // directory is bound to a per-rollout host dir and read back from there — otherwise
   // the cost columns would silently go null under isolation.
   const codexHome = rolloutStateDir(jailLabel, 'codex-home');
+  // ...but the SAME directory holds config.toml, which is where the `openrouter` provider
+  // (base_url + env_key) is defined. Handing codex an empty ~/.codex made it exit
+  // instantly with "No such file or directory (os error 2)" and record calls=0 — a
+  // failure that looks exactly like a provider outage in the rows. Seed the config in;
+  // only the session/log state stays per-rollout.
+  for (const f of ['config.toml', 'auth.json', 'installation_id']) {
+    const src = path.join(process.env.HOME || '/root', '.codex', f);
+    const dst = path.join(codexHome, f);
+    try { if (existsSync(src) && !existsSync(dst)) copyFileSync(src, dst); } catch { /* codex will report it */ }
+  }
   const jailBinds = [{ src: codexHome, dst: path.join(process.env.HOME || '/root', '.codex') }];
   // Resolve the REAL docker binary from the HARNESS PATH (no binDir → no self-ref), so
   // both the run_tests shim (cfg.dockerBin) and the L1 wrapper invoke it directly.
@@ -393,7 +404,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   const broker = shimInfo?.brokerPath
     ? spawn('node', [shimInfo.brokerPath], { stdio: 'ignore' })
     : null;
-  const jail = ISOLATION_ON ? startJail({ rundir, runnerStateDir, label: jailLabel, extraBinds: jailBinds }) : null;
+  const jail = ISOLATION_ON ? startJail({ rundir, runnerStateDir, label: jailLabel, extraBinds: jailBinds, requireBins: ['codex'] }) : null;
   const pathDirs = [binDir, sweet ? ssBinDir : null].filter(Boolean);
   let env = { ...process.env, PATH: [...pathDirs, process.env.PATH].join(':'), SWEET_SEARCH_PROJECT_ROOT: rundir, DOCKER_HOST };
   if (jail) env = jailEnv(env);

@@ -147,7 +147,7 @@ function buildOps({ rundir, jailDir, runnerStateDir, tmpSrc, extraBinds = [], ex
 }
 
 /** Start one rollout's jail. ALWAYS pair with stopJail in a finally. */
-export function startJail({ rundir, runnerStateDir, label = 'rollout', extraBinds = [], extraMasks = [], allow } = {}) {
+export function startJail({ rundir, runnerStateDir, label = 'rollout', extraBinds = [], extraMasks = [], allow, requireBins = [] } = {}) {
   if (!ISOLATION_ON) return null;
   const pf = jailPreflight();
   if (!pf.ok) throw new Error(`agent jail unavailable: ${pf.reasons.join('; ')}`);
@@ -208,14 +208,81 @@ export function startJail({ rundir, runnerStateDir, label = 'rollout', extraBind
   const fatal = (ready.problems || []).filter(p => p.startsWith('FATAL'));
   if (fatal.length) { try { process.kill(initPid, 'SIGKILL'); } catch { /* */ } throw new Error(`jail policy failed: ${fatal.join(' | ')}`); }
   if (ready.problems?.length) console.error(`  [jail ${label}] non-fatal policy warnings: ${ready.problems.join(' | ')}`);
-  return { initPid, wrapperPid: proc.pid, jailDir, label, startedMs: Date.now() };
+  const jail = { initPid, wrapperPid: proc.pid, jailDir, label, startedMs: Date.now() };
+  try { assertBinsRunnable(jail, requireBins); assertGuardReachable(jail, { allow }); }
+  catch (e) { stopJail(jail); throw e; }
+  return jail;
 }
 
-/** argv pair [bin, args] that runs `bin args` inside the jail with cwd=`cwd`. */
+/**
+ * Prove, from INSIDE the jail, that the allowlisted endpoint is actually reachable.
+ *
+ * The guard is a single point of failure for the whole run: if its proxy dies, every
+ * later rollout loses OpenRouter and fails as a 0-call `agent_error`, which is
+ * indistinguishable from a model outage in the rows. A dead guard would therefore burn
+ * a 200-task run and look like bad luck. One TLS handshake per rollout (~300ms, off the
+ * measured clock) turns that silent failure into a loud one.
+ *
+ * It exercises the whole chain — stub resolver, veth, proxy, SNI allowlist, upstream —
+ * because a handshake only completes if all of them work. Self-heals once: a proxy that
+ * died between rollouts is restarted rather than killing the run.
+ */
+function assertGuardReachable(jail, { allow, retry = true } = {}) {
+  if (process.env.SS_JAIL_NO_HEALTHCHECK === '1') return;
+  const host = (loadGuardAllow(allow) || ['openrouter.ai'])[0];
+  const probe = `const t=require('node:tls').connect({host:${JSON.stringify(host)},port:443,servername:${JSON.stringify(host)},timeout:8000},()=>{t.destroy();process.exit(0)});t.on('error',()=>process.exit(1));t.on('timeout',()=>process.exit(1));`;
+  const [bin, args] = jailArgv(jail, process.execPath, ['-e', probe], '/tmp');
+  try { execFileSync(bin, args, { stdio: 'ignore', timeout: 20000 }); return; }
+  catch { /* fall through to one self-heal attempt */ }
+  if (!retry) throw new Error(`egress guard unreachable from the jail (${host}) — the run would fail as 0-call agent_error on every rollout`);
+  console.error(`  [jail ${jail.label}] guard unreachable — restarting egress-guard and retrying once`);
+  ensureGuard(allow);
+  assertGuardReachable(jail, { allow, retry: false });
+}
+const loadGuardAllow = (allow) => (allow && allow.length ? allow : guardStatus().allow);
+
+/**
+ * Assert the agent's own binary is actually runnable INSIDE the jail.
+ *
+ * Masking $HOME hides more than data: `claude` ships as ~/.local/bin/claude -> a
+ * versioned ELF under ~/.local/share/claude, so whitelisting only the bin directory
+ * left a DANGLING SYMLINK. exec then fails with ENOENT and the rollout records
+ * `calls=0, 0s, agent_error` — indistinguishable in the rows from a provider outage.
+ * A `test -x` here (it follows the symlink) turns that into a named error before any
+ * money is spent. Note this cannot be a host-side check: the whole point is that the
+ * path resolves differently inside the namespace.
+ */
+function assertBinsRunnable(jail, bins = []) {
+  for (const b of bins) {
+    const script = `p=$(command -v ${b} 2>/dev/null) || exit 7; test -x "$p" || exit 8; exit 0`;
+    const [bin, args] = jailArgv(jail, '/bin/sh', ['-c', script], '/tmp');
+    try { execFileSync(bin, args, { stdio: 'ignore', timeout: 15000 }); }
+    catch (e) {
+      const why = e.status === 8 ? 'resolves but is not executable in the jail (dangling symlink? its target is masked)' : 'not found on PATH inside the jail';
+      throw new Error(`agent binary "${b}" ${why} — bind whatever it points at, or the rollout would silently record 0 calls`);
+    }
+  }
+}
+
+/**
+ * argv pair [bin, args] that runs `bin args` inside the jail with cwd=`cwd`.
+ *
+ * The command goes through a shell rather than being exec'd directly by nsenter.
+ * `codex exec` fails with a bare "No such file or directory (os error 2)" when
+ * nsenter execs it directly — as `codex`, as `/usr/bin/codex`, and as
+ * `node /usr/bin/codex` — but succeeds identically when a shell is its parent.
+ * (Everything else was ruled out first: the same policy reproduced by hand passes,
+ * and opencode/claude work either way.) The shell form is what a real terminal
+ * session gives an agent anyway, so it is the more faithful harness.
+ *
+ * Arguments are passed as ARGV through the shell's positional parameters, never
+ * interpolated into the script text — issue statements contain arbitrary quotes and
+ * backticks, and building a command string out of them would be its own bug.
+ */
 export function jailArgv(jail, bin, args, cwd) {
   return ['nsenter', [
     '--target', String(jail.initPid), '--mount', '--pid', '--ipc', '--uts', '--net',
-    `--wd=${cwd}`, '--', bin, ...args,
+    '--', '/bin/bash', '-c', 'cd "$1" || exit 1; shift; exec "$@"', 'ss-jail', cwd, bin, ...args,
   ]];
 }
 

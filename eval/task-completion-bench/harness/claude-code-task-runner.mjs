@@ -8,7 +8,7 @@
 // Codex/OpenCode keep their existing AGENTS.md delivery.
 // Returns the canonical bench row shape (see codex-task-runner) so grading/metrics match.
 import { isZeroCallStartFailure } from './codex-task-runner.mjs';
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, mkdirSync, copyFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   setupRunner, buildAgentEnv, warmupSweet, issuePrompt, computeNetArgs, writeInstructionFile,
@@ -143,13 +143,24 @@ export async function runClaudeCodeTask(task, {
   // Claude Code's config + session store, per rollout rather than shared across the run.
   const claudeHome = rolloutStateDir(label, 'claude-home');
   const HOMEDIR = process.env.HOME || '/root';
+  // ~/.claude.json holds onboarding state and Claude Code WRITES to it, so it gets a
+  // private seeded COPY rather than a read-only bind of the shared file.
+  const claudeJson = join(rolloutStateDir(label, 'claude-conf'), '.claude.json');
+  try {
+    const src = join(HOMEDIR, '.claude.json');
+    if (existsSync(src) && !existsSync(claudeJson)) copyFileSync(src, claudeJson);
+  } catch { /* claude will re-onboard */ }
   const extraBinds = [
-    { src: join(HOMEDIR, '.claude.json'), dst: join(HOMEDIR, '.claude.json'), ro: true },
+    // The `claude` on PATH is ~/.local/bin/claude -> ~/.local/share/claude/versions/<v>,
+    // a versioned ELF. Masking $HOME left that symlink DANGLING, so exec failed with
+    // ENOENT and every rollout recorded calls=0 / agent_error. Bind what it points at.
+    { src: join(HOMEDIR, '.local/share/claude'), dst: join(HOMEDIR, '.local/share/claude'), ro: true, required: true },
+    { src: claudeJson, dst: join(HOMEDIR, '.claude.json') },
     { src: claudeHome, dst: join(HOMEDIR, '.claude') },
   ];
   const { runnerStateDir, binDir, runnerFiles, integrity, jail, broker, integrityStateDir } = setupRunner({
     image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300, netArgs, sweet,
-    label, extraBinds,
+    label, extraBinds, requireBins: ['claude'],
   });
 
   const env = buildAgentEnv({ rundir, binDir, ssBinDir, sweet, extraEnv: routingEnv, jail });
