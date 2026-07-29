@@ -7,20 +7,25 @@
 // (exactly like the bare harness's run_tests tool). Returns the same row shape as
 // api-task-runner.runTask so grading/metrics are identical.
 import { spawn } from 'node:child_process';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import {
-  chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync,
+  chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { recoverIdealCost, priceFor, PRICE as IDEAL_PRICE } from './ideal-cost.mjs';
+// Isolation is imported DIRECTLY (not via agent-runner-shared) because that module
+// imports this one — going through it would close an import cycle.
+import { ISOLATION_ON, startJail, stopJail, jailArgv, jailEnv, jailDenials, rolloutStateDir } from './agent-jail.mjs';
+import { auditRollout, UNAUDITED } from './escape-audit.mjs';
 
 // Inlined from p7-codex-runner.mjs (kept self-contained so the bench doesn't depend on
 // the prompt-optimization context being present/committed on the run host).
-function parseCodexAgentStream(stdout) {
-  const toolCalls = []; let answer = ''; let usage = null;
-  if (!stdout) return { toolCalls, answer, usage };
+export function parseCodexAgentStream(stdout) {
+  const toolCalls = []; let answer = ''; let usage = null; const errors = [];
+  if (!stdout) return { toolCalls, answer, usage, errors };
   for (const line of stdout.split('\n')) {
     const tl = line.trim();
     if (!tl || tl[0] !== '{') continue;
@@ -34,12 +39,36 @@ function parseCodexAgentStream(stdout) {
       }
     } else if (ev.type === 'turn.completed' && ev.usage) {
       usage = ev.usage;
+    } else if (ev.type === 'error' || ev.type === 'turn.failed') {
+      // Codex --json reports failures as STREAM EVENTS, not on stderr. The 2026-07-09
+      // checkpoint lost 9 runs' true cause because these were silently dropped
+      // (stderr showed only the benign non-TTY banner, misread as a "stdin bug").
+      const msg = ev.message || ev.error?.message || JSON.stringify(ev).slice(0, 300);
+      errors.push(`${ev.type}: ${String(msg).slice(0, 300)}`);
     }
   }
-  return { toolCalls, answer, usage };
+  return { toolCalls, answer, usage, errors };
 }
 
-const PRICE = { in: 5.0, cacheHit: 0.5, out: 30.0 };  // openai/gpt-5.5 (OpenRouter)
+// Codex 0.141 prints this banner on stderr in EVERY non-TTY spawn (stdin is already
+// /dev/null via stdio 'ignore' — it reads EOF instantly and proceeds; verified live
+// 2026-07-09: all 109 clean checkpoint runs carry it too). Strip it from previews so
+// it can never again masquerade as a failure cause.
+const STDIN_BANNER = /^Reading additional input from stdin\.\.\.\s*/;
+
+// A run that exited non-zero (or "completed" with neither a tool call nor an agent
+// message) before doing ANY work is a startup failure — e.g. an empty/errored first
+// model response — not agent signal. Worth exactly ONE automatic relaunch.
+export function isZeroCallStartFailure({ exitCode, timedOut }, toolCalls, answer) {
+  if (timedOut) return false;
+  if (toolCalls.length > 0) return false;
+  return exitCode !== 0 || !answer;
+}
+
+// Realized-cost rates. Re-exported from ideal-cost.mjs so the realized and ideal
+// columns can never drift to different numbers for the same model (`cache` there
+// is the cache-hit rate this file calls `cacheHit`).
+const PRICE = { in: IDEAL_PRICE.in, cacheHit: IDEAL_PRICE.cache, out: IDEAL_PRICE.out };
 const DOCKER_HOST = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock';
 
 // Cost levers L1/L2 (2026-07-08). Both are HARNESS-side (apply to BOTH arms) and
@@ -58,22 +87,32 @@ const L1_CONDENSE = process.env.SS_NO_CMD_CONDENSE !== '1';
 const L2_RT_AUTHORITY = process.env.SS_NO_RT_AUTHORITY !== '1';
 
 // Tool-agnostic preamble for BOTH arms: how to run tests in THIS environment.
-const RUN_TESTS_PREAMBLE =
+// Exported so the sibling harness adapters (claude-code / opencode) inject the
+// BYTE-IDENTICAL frame — cross-harness comparability requires one source of truth.
+export const RUN_TESTS_PREAMBLE =
   'Your shell does NOT have the repository\'s dependencies installed, so running the test runner/build directly (pytest, go test, cargo test, lein test, npm test, …) will fail with dependency/build errors. To run the repo\'s test suite on your current edits, invoke the `run_tests` command (no arguments) — it executes the canonical suite in the prepared environment and reflects your live edits.';
 
 // Standard SWE-agent-style completion frame (Yang et al. 2024 instance template),
 // language-agnostic. IDENTICAL on BOTH arms (tool-agnostic — never names a search
 // tool), so the only arm asymmetry is M++ + ss-*. Brackets the sweet-only M++ guidance
 // so M++'s "stop once located" recency does not end a FIX run at the locate step.
-const FRAME_OPEN =
+export const FRAME_OPEN =
   'You are resolving a real software issue by editing the repository SOURCE code in your current working directory. These task-completion rules are AUTHORITATIVE and override any later guidance about efficiency, taking fewer steps, or when to stop — such guidance governs only HOW to locate code, never WHETHER you are done. Standard workflow: (1) find and read the code relevant to the issue; (2) reproduce the failure by running the existing suite via `run_tests`; (3) make the MINIMAL source edit that implements the FULL behavior the issue requires — not just a signature or surface change; (4) re-run `run_tests` and confirm the previously-failing test now PASSES and nothing else broke; (5) consider edge cases. ' + RUN_TESTS_PREAMBLE;
-const FRAME_CLOSE =
+export const FRAME_CLOSE =
   '=== TASK COMPLETION (authoritative — overrides all guidance above) ===\n' +
   'You have NOT finished until (1) you made a SOURCE-code edit AND (2) `run_tests` shows the previously-failing test now PASSES. Locating, understanding, or explaining the bug is NOT completion. Do NOT modify test files — the evaluation supplies its own hidden tests; test edits do not count toward the fix and can break grading. If so far you have only located the cause, your VERY NEXT action must be the source edit.\n\n' +
   'VALIDATION IS AUTHORITATIVE:\n' +
   '- Use `run_tests` for validation. Never inspect, search, read, or modify `.codex-bin`, `_run_tests*`, `_rt_*`, benchmark harness files, baseline files, the env ledger, or task overrides; never reconstruct the suite with Docker or a host test runner.\n' +
   '- After the initial reproduction, re-run `run_tests` only after a source edit. If the source diff is unchanged, the result cannot improve. Use `run_tests <pattern>` for targeted diagnosis when supported.\n' +
   '- When `run_tests` is still running and no other work is pending, poll it with `write_stdin` using `yield_time_ms=120000`; do not use 30-second heartbeat polls.';
+
+// Experimental anti-thrash appendix (sweet-arm only, gated by SS_NO_ANTITHRASH).
+// Exported so the sibling adapters append the identical text under the same gate.
+export const ANTI_THRASH_TEXT =
+  '\n\nUSE WHAT THE TOOLS ALREADY GAVE YOU (efficiency):\n' +
+  '- ss-search and ss-grep return the matching code AT file:line, inline in the result. Once a span has been shown to you, do NOT ss-read or re-grep that same span/symbol again — edit directly from the body you already have; only read a DIFFERENT file, or a range OUTSIDE what was shown.\n' +
+  '- One search per target. If the top hit answers your question (especially when the trailer says sufficient=YES), act on it — do not fire multiple keyword/regex variants for the same symbol.\n' +
+  '- To find where a symbol is CALLED or what it calls (to trace a value downstream before editing), use `ss-trace <symbol>` — do not re-search by hand.';
 
 // Broker mode (agent sandbox): codex's Linux sandbox blocks unix-socket connects, so a
 // sandboxed run_tests cannot reach the docker daemon directly (verified: "permission
@@ -238,7 +277,9 @@ export function verifyShimIntegrity(integrity) {
 // an agent creates a replacement cache/state file that did not exist at snapshot
 // time (the forged `_rt_baseline.json` attack). Dynamic request/response files live
 // in stateDir/_rt_ipc and must be fully consumed when the agent process exits.
-export function verifyRunnerDirectoryIntegrity({ binDir, expectedFiles = [], stateDir } = {}) {
+// allowedStateEntries: adapter-owned files that legitimately live in stateDir (e.g.
+// opencode's generated config). Declared, not inferred — anything undeclared still flags.
+export function verifyRunnerDirectoryIntegrity({ binDir, expectedFiles = [], stateDir, allowedStateEntries = [] } = {}) {
   const tampered = [];
   const expected = new Set(expectedFiles
     .filter(file => path.dirname(file) === binDir)
@@ -252,7 +293,7 @@ export function verifyRunnerDirectoryIntegrity({ binDir, expectedFiles = [], sta
   }
   if (stateDir) {
     try {
-      const allowed = new Set([path.basename(binDir), '_rt_ipc']);
+      const allowed = new Set([path.basename(binDir), '_rt_ipc', ...allowedStateEntries]);
       for (const name of readdirSync(stateDir)) {
         if (!allowed.has(name)) tampered.push(`${name} (unexpected runner state)`);
       }
@@ -292,6 +333,11 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   const sweet = arm === 'sweet';
   const rundir = task.repoCheckout;
   const codexModel = apiModel.includes('/') ? apiModel : `openai/${apiModel}`;
+  // Price by the actual model (OpenRouter rate). gpt-5.5 resolves to the same numbers as
+  // the legacy module PRICE, so existing gpt-5.5 runs are byte-identical; other models
+  // (e.g. gpt-5.6-luna) are now priced correctly instead of at gpt-5.5's rate.
+  const _p = priceFor(apiModel);
+  const price = { in: _p.in, cacheHit: _p.cache, out: _p.out };
   const workdir = t.workdir || `/${t.repo.split('/')[1]}`;
   const testScript = [].concat(t.install_config?.test_cmd || []).join(' && ');
 
@@ -315,6 +361,13 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // unique per-attempt directory and are removed before returning.
   const runnerStateDir = mkdtempSync(path.join(tmpdir(), 'sweet-search-runner-'));
   const binDir = path.join(runnerStateDir, 'bin');
+  const jailLabel = `${task.id || 'task'}-${arm}`;
+  // Codex writes its rollout jsonl (the per-turn token_count events idealCost is
+  // recovered from) under ~/.codex/sessions. $HOME is masked in the jail, so that
+  // directory is bound to a per-rollout host dir and read back from there — otherwise
+  // the cost columns would silently go null under isolation.
+  const codexHome = rolloutStateDir(jailLabel, 'codex-home');
+  const jailBinds = [{ src: codexHome, dst: path.join(process.env.HOME || '/root', '.codex') }];
   // Resolve the REAL docker binary from the HARNESS PATH (no binDir → no self-ref), so
   // both the run_tests shim (cfg.dockerBin) and the L1 wrapper invoke it directly.
   let realDocker = 'docker';
@@ -340,8 +393,10 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   const broker = shimInfo?.brokerPath
     ? spawn('node', [shimInfo.brokerPath], { stdio: 'ignore' })
     : null;
+  const jail = ISOLATION_ON ? startJail({ rundir, runnerStateDir, label: jailLabel, extraBinds: jailBinds }) : null;
   const pathDirs = [binDir, sweet ? ssBinDir : null].filter(Boolean);
-  const env = { ...process.env, PATH: [...pathDirs, process.env.PATH].join(':'), SWEET_SEARCH_PROJECT_ROOT: rundir, DOCKER_HOST };
+  let env = { ...process.env, PATH: [...pathDirs, process.env.PATH].join(':'), SWEET_SEARCH_PROJECT_ROOT: rundir, DOCKER_HOST };
+  if (jail) env = jailEnv(env);
 
   // Off-clock warmup (sweet arm) — arm the per-run ss-* server's models BEFORE the
   // measured agent loop. Without this, the cold-start model-load banner (a console.log
@@ -349,8 +404,12 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // agent's FIRST ss-grep/ss-find stdout and crowds out the actual hits → the agent gets
   // noise, distrusts ss-*, and falls back to native rg/sed (diagnosed root cause of the
   // sweet≈native tie). The bare-API harness already does this (run-pilot warmupRun).
+  // Warmup must happen INSIDE the jail: a server warmed on the host lives in another
+  // mount namespace, so the agent could not see its socket and would pay a cold start.
   if (sweet && ssBinDir) {
-    try { execSync(`${path.join(ssBinDir, 'ss-search')} warmup -k 1`, { cwd: rundir, env, stdio: 'ignore', timeout: 120000 }); } catch { /* warmup is best-effort */ }
+    const wBin = path.join(ssBinDir, 'ss-search');
+    const [wb, wa] = jail ? jailArgv(jail, wBin, ['warmup', '-k', '1'], rundir) : [wBin, ['warmup', '-k', '1']];
+    try { execFileSync(wb, wa, { cwd: rundir, env, stdio: 'ignore', timeout: 120000 }); } catch { /* warmup is best-effort */ }
   }
 
   // Both arms get the standard completion frame; sweet additionally gets M++ (the
@@ -358,15 +417,13 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // Experimental anti-thrash appendix (A/B candidate for promotion into canonical M++).
   // Targets the diagnosed sweet-arm waste: redundant re-reads of already-returned spans,
   // search-variant reformulation, and under-use of ss-trace for downstream/caller lookup.
-  const ANTI_THRASH = process.env.SS_NO_ANTITHRASH ? '' :
-    '\n\nUSE WHAT THE TOOLS ALREADY GAVE YOU (efficiency):\n' +
-    '- ss-search and ss-grep return the matching code AT file:line, inline in the result. Once a span has been shown to you, do NOT ss-read or re-grep that same span/symbol again — edit directly from the body you already have; only read a DIFFERENT file, or a range OUTSIDE what was shown.\n' +
-    '- One search per target. If the top hit answers your question (especially when the trailer says sufficient=YES), act on it — do not fire multiple keyword/regex variants for the same symbol.\n' +
-    '- To find where a symbol is CALLED or what it calls (to trace a value downstream before editing), use `ss-trace <symbol>` — do not re-search by hand.';
-  const sweetGuidance = sweet
-    ? `\n\n=== Code-search expertise — use the ss-* commands (ss-search / ss-grep / ss-find / ss-read / ss-semantic / ss-trace) per this guidance; this is your advantage, use it to locate code in fewer, sharper steps ===\n${mppText}${ANTI_THRASH}`
-    : '';
-  const prompt = `${FRAME_OPEN}${sweetGuidance}\n\n${FRAME_CLOSE}\n\n=== ISSUE ===\n${task.problem_statement || ''}`;
+  // Instruction file = frame + M± (sweet) / frame only (native), written into
+  // <rundir>/AGENTS.md (the plain project file codex reads), NOT the prompt. M± is BRACKETED
+  // by the frame (FRAME_OPEN + M± + FRAME_CLOSE) so FRAME_CLOSE's task-completion authority
+  // overrides M±'s stop-early guidance. Excluded from the graded patch below. Prompt = issue only.
+  const instructions = `${FRAME_OPEN}${sweet ? `\n\n${mppText}` : ''}\n\n${FRAME_CLOSE}`;
+  appendFileSync(path.join(rundir, 'AGENTS.md'), `\n\n${instructions}\n`);
+  const prompt = `=== ISSUE ===\n${task.problem_statement || ''}`;
 
   // EXPERIMENTAL agent sandbox (see AGENT_SANDBOX above — opt-in, native-arm-only
   // viability): workspace-write with network off; run_tests works via the host-side
@@ -381,17 +438,36 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
     '-m', codexModel, '-C', rundir, prompt];
 
   const t0 = Date.now();
-  const r = await new Promise((resolve) => {
+  // stdin MUST stay 'ignore' (= /dev/null): codex exec blocks forever on an open
+  // never-closed stdin pipe (upstream issues #20919/#27019); /dev/null gives EOF
+  // instantly. The "Reading additional input from stdin..." banner still prints —
+  // it is benign and appears on every non-TTY spawn.
+  const [codexBin, codexArgs] = jail ? jailArgv(jail, 'codex', args, rundir) : ['codex', args];
+  const spawnOnce = () => new Promise((resolve) => {
     let stdout = '', stderr = '', timedOut = false;
-    const proc = spawn('codex', args, { cwd: rundir, env, stdio: ['ignore', 'pipe', 'pipe'] });
-    const timer = setTimeout(() => { timedOut = true; try { proc.kill('SIGTERM'); } catch {} setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 2000).unref(); }, perCallTimeoutMs);
+    const proc = spawn(codexBin, codexArgs, { cwd: rundir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    // Killing `nsenter` leaves its in-namespace child alive, so a jailed timeout must
+    // also kill the jail's init — the PID namespace death takes the agent with it.
+    const timer = setTimeout(() => { timedOut = true; if (jail) { try { process.kill(jail.initPid, 'SIGKILL'); } catch {} } try { proc.kill('SIGTERM'); } catch {} setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 2000).unref(); }, perCallTimeoutMs);
     proc.stdout.on('data', d => stdout += d.toString('utf8'));
     proc.stderr.on('data', d => stderr += d.toString('utf8'));
     proc.on('error', e => { clearTimeout(timer); resolve({ stdout, stderr: stderr + e.message, exitCode: -1, timedOut }); });
     proc.on('exit', code => { clearTimeout(timer); resolve({ stdout, stderr, exitCode: code ?? 0, timedOut }); });
   });
+  let r = await spawnOnce();
+  let parsed = parseCodexAgentStream(r.stdout);
+  let startRetried = false;
+  // 4/118 checkpoint runs died at 0 calls (codex "completed" a 7s turn with no model
+  // output, exit≠0 — a startup/API blip, zero agent signal). One relaunch, logged;
+  // spend accrues per-attempt (the failed start's usage is ~one prompt).
+  if (isZeroCallStartFailure(r, parsed.toolCalls, parsed.answer)) {
+    startRetried = true;
+    console.log(`  [codex-retry ${task.id || ''}] 0-call start failure (exit=${r.exitCode}${parsed.errors.length ? '; ' + parsed.errors[0] : ''}) — relaunching once`);
+    r = await spawnOnce();
+    parsed = parseCodexAgentStream(r.stdout);
+  }
   const wallMs = Date.now() - t0;
-  const { toolCalls, answer, usage } = parseCodexAgentStream(r.stdout);
+  const { toolCalls, answer, usage } = parsed;
 
   // tool composition + trajectory
   const toolCounts = { ss: 0, nativeGrep: 0, nativeRead: 0, edit: 0, bash: 0, test: 0 };
@@ -404,7 +480,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   });
   // patch from git diff (authoritative — counts even edits not visible as commands)
   let finalPatch = '';
-  try { finalPatch = execSync(`git -C ${rundir} diff HEAD -- . ':(exclude).sweet-search'`, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); } catch {}
+  try { finalPatch = execSync(`git -C ${rundir} diff HEAD -- . ':(exclude).sweet-search' ':(exclude)CLAUDE.md' ':(exclude)AGENTS.md'`, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); } catch {}
   const patchHunks = (finalPatch.match(/^@@ /gm) || []).length;
   const patchFiles = (finalPatch.match(/^diff --git /gm) || []).length;
   if (toolCounts.edit === 0 && patchHunks > 0) toolCounts.edit = patchFiles;  // codex patch events may not surface as commands
@@ -412,8 +488,8 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // cost (realized = cache-aware) from the codex usage
   const u = usage || {};
   const inTok = u.input_tokens || 0, cached = u.cached_input_tokens || 0, out = (u.output_tokens || 0) + (u.reasoning_output_tokens || 0);
-  const costRealized = ((inTok - cached) * PRICE.in + cached * PRICE.cacheHit + out * PRICE.out) / 1e6;
-  const costNaive = (inTok * PRICE.in + out * PRICE.out) / 1e6;
+  const costRealized = ((inTok - cached) * price.in + cached * price.cacheHit + out * price.out) / 1e6;
+  const costNaive = (inTok * price.in + out * price.out) / 1e6;
 
   const calls = toolCalls.length;
   const exitReason = r.timedOut ? 'timeout' : (r.exitCode !== 0 ? 'codex_error' : 'model_stopped');
@@ -429,16 +505,35 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   if (shimTamperedFiles.length) {
     console.log(`  [SHIM-TAMPERED ${task.id || ''}] agent modified: ${shimTamperedFiles.join(', ')} — test signals untrusted`);
   }
+  // Audit before the jail dies: its handle carries the window that attributes egress
+  // denials to this rollout.
+  const escapeAudit = jail
+    ? auditRollout({ toolCalls: trajectory.map(x => ({ command: x.input, resultText: x.result })), rundir, denials: jailDenials(jail) })
+    : { ...UNAUDITED };
+  stopJail(jail);
   try { rmSync(runnerStateDir, { recursive: true, force: true }); } catch {}
+
+  // idealCost: cache-normalized cost recovered from this run's codex rollout
+  // (per-turn token_count events) — a first-class column so cost A/B analysis no
+  // longer depends on a post-hoc script. sinceMs slack of 60s guards clock skew;
+  // the exact rundir cwd match keeps it unambiguous. Never throws → nulls if the
+  // rollout can't be located (falls back to the realized column downstream).
+  let idealCostUsd = null, realFromTurnsUsd = null, rolloutFile = null, idealTurns = 0;
+  try {
+    const ic = recoverIdealCost(rundir, { sinceMs: t0 - 60000, price: _p, sessionsDir: jail ? path.join(codexHome, 'sessions') : undefined });
+    ({ idealCostUsd, realFromTurnsUsd, rolloutFile, turns: idealTurns } = ic);
+  } catch { /* best-effort — keep realized cost as the fallback */ }
 
   return {
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
     patchHunks, patchFiles, finalPatch, ranTests: toolCounts.test > 0,
-    escape: 0, leak: 0, halluc: 0, escapeExamples: [],            // escape audit TODO for codex shell
+    ...escapeAudit,
     shimTampered: shimTamperedFiles.length > 0, shimTamperedFiles,
     stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
     exitReason, usage: u, costNaiveUsd: +costNaive.toFixed(6), costRealizedUsd: +costRealized.toFixed(6),
+    idealCostUsd, realFromTurnsUsd, rolloutFile, idealTurns,
     wallMs, trajectory, finalAssistantText: answer,
-    stderrPreview: String(r.stderr || '').slice(0, 300),
+    codexErrors: parsed.errors.slice(0, 5), startRetried,
+    stderrPreview: String(r.stderr || '').replace(STDIN_BANNER, '').slice(0, 300),
   };
 }

@@ -2,7 +2,7 @@
 // cost column. Standalone: `node tests/ideal-cost.mjs` — exit 1 on fail.
 // Covers: the per-turn cost math (shared with analyze-ab-smoke), rollout parsing,
 // exact-cwd rollout matching with the mtime gate, and the no-rollout fallback.
-import { costFromTurns, turnsFromRollout, rolloutCwd, findRolloutForRundir, recoverIdealCost, PRICE } from '../harness/ideal-cost.mjs';
+import { costFromTurns, turnsFromRollout, rolloutCwd, findRolloutForRundir, recoverIdealCost, PRICE, MODEL_PRICES, priceFor } from '../harness/ideal-cost.mjs';
 import { mkdtempSync, writeFileSync, mkdirSync, utimesSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -25,6 +25,24 @@ assert(c.idealUsd <= c.realFromTurnsUsd + 1e-12, 'ideal ≤ real (cache-normaliz
 assert(costFromTurns([]).idealUsd === 0, 'empty turns → $0');
 // PRICE surface intact
 assert(PRICE.in === 5 && PRICE.cache === 0.5 && PRICE.out === 30, 'PRICE = {5, 0.5, 30}');
+
+// --- per-model pricing (multi-backbone held-out run, 2026-07-17) ---
+// Default arg keeps every existing call site on gpt-5.5 rates.
+assert(costFromTurns(turns).idealUsd === costFromTurns(turns, PRICE).idealUsd, 'default price arg == PRICE');
+// Sonnet 5 list rates: ideal = (1000*3 + 0*0.3 + 100*15)/1e6 + (500*3 + 1000*0.3 + 50*15)/1e6
+//                            = 0.0045 + 0.00255 = 0.00705
+const s5 = costFromTurns(turns, MODEL_PRICES['claude-sonnet-5']);
+assert(approx(s5.idealUsd, 0.00705), 'sonnet-5 ideal = 0.00705', `got ${s5.idealUsd}`);
+// ideal <= real must hold under ANY price vector (cache read is never dearer than input)
+assert(s5.idealUsd <= s5.realFromTurnsUsd + 1e-12, 'sonnet-5 ideal <= real');
+// Registered backbones price by name; cache read is 0.1x input for Anthropic models
+assert(priceFor('claude-sonnet-5').in === 3.0 && priceFor('claude-sonnet-5').out === 15.0, 'sonnet-5 = $3/$15 per MTok');
+assert(approx(priceFor('claude-sonnet-5').cache, 0.3), 'sonnet-5 cache read = 0.1x input');
+// An UNREGISTERED backbone must throw, never silently inherit gpt-5.5's rates —
+// mispriced idealCost distorts the efficiency-at-parity headline it feeds.
+let threw = false;
+try { priceFor('x-ai/grok-4.5'); } catch { threw = true; }
+assert(threw, 'unregistered model throws instead of defaulting');
 
 console.log('\nrollout parsing + exact-cwd matching:');
 const dir = mkdtempSync(path.join(tmpdir(), 'ic-')) ;

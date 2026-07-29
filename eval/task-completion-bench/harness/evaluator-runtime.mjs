@@ -2,6 +2,9 @@ import { execFileSync, execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { mergeEvaluationReportFile, mergeTaskRecordFile } from './result-retention.mjs';
+import { vaultTarName } from './env-ledger.mjs';   // derived-image vault tar filename (single source of truth)
+
+const DERIVED_VAULT = process.env.SS_DERIVED_BACKUP || '/workspace/docker-derived-backup';
 
 function defaultGradeReportItem(item, spec, override = {}) {
   const f2pTotal = (spec.FAIL_TO_PASS || []).length;
@@ -42,7 +45,16 @@ export function createEvaluatorRuntime(options) {
         } catch { return false; }
       };
       if (task._origImage && !available()) {
-        throw new Error(`ensureImage: derived image ${image} not built locally — build it from analysis/dockerfiles/${id}/ (docker build), see task-overrides.json`);
+        // Derived (warm/fixed) images aren't pullable — load from the vault tar on
+        // demand. run-pilot GCs images per-task, so only one warm image is resident at
+        // a time (disk-bounded, like stock images), which is what lets a full-200 run
+        // cover all 47 warm tasks without pre-staging 100GB+ of images at once.
+        const tar = path.join(DERIVED_VAULT, vaultTarName(image));
+        if (existsSync(tar)) {
+          try { execFileSync('docker', ['load', '-i', tar], { env: { ...process.env, DOCKER_HOST: dockerHost }, stdio: 'ignore', timeout: 900000 }); } catch { /* re-checked below */ }
+        }
+        if (!available()) throw new Error(`ensureImage: derived image ${image} not present and no loadable vault tar at ${tar} — build it (analysis/dockerfiles/${id}/) or vault it`);
+        return image;
       }
       if (!available()) {
         let pulled = false;

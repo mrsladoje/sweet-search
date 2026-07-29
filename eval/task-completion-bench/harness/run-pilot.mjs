@@ -20,11 +20,25 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runTask } from './api-task-runner.mjs';
 import { runCodexTask } from './codex-task-runner.mjs';
+import { runClaudeCodeTask } from './claude-code-task-runner.mjs';
+import { runOpencodeTask } from './opencode-task-runner.mjs';
+import { shimVerdict } from './shim-policy.mjs';
+import { gradeFromReportItem, loadLedger, preflightEnvLedger, vaultTarName } from './env-ledger.mjs';
 import { createEvaluatorRuntime } from './evaluator-runtime.mjs';
-// HARNESS=codex routes the agent loop through `codex exec` (real production agent)
-// instead of the bare-API ReAct loop. Same grading/metrics; native=vanilla Codex,
-// sweet=Codex + M++ + ss-* on PATH.
+import { ISOLATION_ON, jailPreflight, guardStatus, DENY_LOG } from './agent-jail.mjs';
+import { ensureGuard } from './egress-guard.mjs';
+import { scanPredictions } from './gold-tripwire.mjs';
+// HARNESS routes the agent loop through a REAL production coding agent (uncapped — runs
+// to completion) instead of the bare-API ReAct loop. All share grading/metrics + the
+// identical completion frame; native=vanilla agent, sweet=agent + M++ + ss-* on PATH.
+//   codex      → `codex exec`   (GPT models, provider=openrouter)
+//   claudecode → `claude -p`    (Anthropic models via OpenRouter's Anthropic skin)
+//   opencode   → `opencode run` (Grok / Muse / other, provider=openrouter)
+//   bareapi    → legacy hand-written OpenAI loop (RETIRED for real runs — has a 60-call cap)
 const HARNESS = process.env.HARNESS || 'bareapi';
+// Wall-clock hang-guard per rollout (agents run to completion, so this only bounds a stuck
+// process, never the agent's own call budget). Shared across harnesses for comparability.
+const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || process.env.CODEX_TIMEOUT_MS) || 1800000;
 
 // INDEX INTEGRITY via PER-RUN ISOLATION (runner-only — zero changes to the
 // sweet-search engine; incremental indexing runs exactly as it ships).
@@ -114,7 +128,7 @@ const NET_LOCKDOWN = process.env.SS_BENCH_ALLOW_NET !== '1';
 // code-hosting domains to 0.0.0.0 — symmetric across arms, OpenRouter/docker.io
 // untouched. Auto-enabled here for codex runs on Linux; never auto-disabled (operator:
 // `bench-net-lockdown.sh off`). While ON, golden clones from github FAIL — warm first.
-if (NET_LOCKDOWN && HARNESS === 'codex' && process.platform === 'linux') {
+if (NET_LOCKDOWN && HARNESS === 'codex' && process.platform === 'linux' && !ISOLATION_ON) {
   const lockScript = path.join(BENCH, 'harness/bench-net-lockdown.sh');
   try {
     if (!/ACTIVE/.test(execSync(`bash ${lockScript} status`, { encoding: 'utf8' }))) {
@@ -122,6 +136,28 @@ if (NET_LOCKDOWN && HARNESS === 'codex' && process.platform === 'linux') {
       console.log('[net-lockdown] agent-shell code-host DNS block ENABLED (bench-net-lockdown.sh off to remove)');
     } else console.log('[net-lockdown] agent-shell code-host DNS block active');
   } catch (e) { console.error(`[net-lockdown] WARNING: could not verify/enable agent-shell egress lockdown: ${String(e.message).slice(0, 120)}`); }
+}
+
+// --- P0 ISOLATION GATE (blocking, 2026-07-29) ---
+// The held-out run's solve headline is unpublishable because the agent ran on the host
+// with six open escape vectors and `escape=0` was a hardcoded literal. Every CLI harness
+// now runs each rollout in a jail (agent-jail.mjs). A run that CANNOT isolate must not
+// start quietly and produce numbers that look identical to isolated ones — the whole
+// failure mode last time was contamination that no column recorded. Emergency override:
+// SS_ISOLATION=0, which stamps every row so the result can never be mistaken for clean.
+const CLI_HARNESS = ['codex', 'claudecode', 'opencode'].includes(HARNESS);
+if (CLI_HARNESS && ISOLATION_ON) {
+  const pf = jailPreflight();
+  if (!pf.ok) {
+    console.error(`[isolation] PRE-FLIGHT FAILED — refusing to launch an unisolated ${HARNESS} run:`);
+    for (const r of pf.reasons) console.error(`  - ${r}`);
+    console.error('[isolation] Fix the host, or accept contaminated rows explicitly with SS_ISOLATION=0.');
+    process.exit(1);
+  }
+  const g = ensureGuard();
+  console.log(`[isolation] ON — per-rollout mount/pid/net jail; egress allowlist: ${g.allow.join(', ')}; denials → ${DENY_LOG}`);
+} else if (CLI_HARNESS) {
+  console.error('[isolation] *** OFF (SS_ISOLATION=0) — rows from this run carry the documented contamination risk and MUST NOT be published as a clean comparison. ***');
 }
 // docker-run net/extra args for a task spec (SR mode). 'legacy' → empty (historical).
 function dockerNetArgs(t) {
@@ -132,7 +168,8 @@ function dockerNetArgs(t) {
 }
 const { ensureImage, makeRunTests, gradeArm } = createEvaluatorRuntime({
   benchDir: BENCH, dataset: DATASET, defaultTestTimeoutSec: DEFAULT_TEST_TIMEOUT_SEC,
-  dockerHost: DOCKER_HOST, dockerNetArgs, imageNameFor, netLockdown: NET_LOCKDOWN, shellQuote: shq,
+  dockerHost: DOCKER_HOST, dockerNetArgs, gradeReportItem: gradeFromReportItem,
+  imageNameFor, netLockdown: NET_LOCKDOWN, shellQuote: shq,
   srEvalDir: SR_EVAL_DIR, srEvalRunner: SR_EVAL_RUNNER, srMode: SR_MODE, taskById,
   taskOverrides: TASK_OVERRIDES, venvPython: VENV_PY,
 });
@@ -250,6 +287,74 @@ function reapRunDir(rundir) {
 const runId = process.env.RUN_ID || `pilot-${INSTANCES.length}x${REPS}`;
 const all = await loadTasks();
 if (SR_MODE && !INSTANCES.length) INSTANCES = all.map(t => t.instance_id);
+// --- GREEN-LEDGER PRE-FLIGHT (standing rule 2026-07-09, non-negotiable) ---
+// Every selected task must be gold-FULL in the env-ledger under the EXACT current
+// config (image/imageId/testCmd/network/excludeP2P fingerprint). Missing, stale, or
+// non-FULL ⇒ refuse to launch: env deaths are impossible by construction, not
+// avoided by diligence. Emergency override: SS_SKIP_ENV_LEDGER=1 (logged loudly).
+if (SR_MODE) {
+
+  const LEDGER_PATH = process.env.ENV_LEDGER || path.join(BENCH, 'harness/env-ledger.jsonl');
+  const sel = new Set(INSTANCES);
+  const selSpecs = all.filter(t => sel.has(t.instance_id));
+  const ledgerMap = loadLedger(LEDGER_PATH);
+  const pfOpts = { netLockdown: NET_LOCKDOWN, overrides: TASK_OVERRIDES };
+  // A warm/fixed task's configHash embeds its local docker image ID, so preflight
+  // needs the image present. We can't hold all ~47 warm images at once (100GB+), so
+  // load each from the /workspace vault transiently — load → hash-check that one task
+  // → rmi — keeping peak disk to one image. The run loop reloads per-task (ensureImage)
+  // and GCs per-task, so the whole 200 (153 stock + 47 warm) runs in ONE disk-bounded
+  // run-pilot with no pre-staging. Stock tasks hash on image NAME, so they need no load.
+  const DERIVED_BK = process.env.SS_DERIVED_BACKUP || '/workspace/docker-derived-backup';
+  const imgLoaded = (img) => { try { execFileSync('docker', ['image', 'inspect', img], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore' }); return true; } catch { return false; } };
+  const stockSpecs = selSpecs.filter(s => !s._origImage);
+  const warmSpecs = selSpecs.filter(s => s._origImage);
+  const failures = [...preflightEnvLedger(stockSpecs, ledgerMap, pfOpts).failures];
+  for (const s of warmSpecs) {
+    const already = imgLoaded(s.image_name);
+    if (!already) {
+      const tar = path.join(DERIVED_BK, vaultTarName(s.image_name));
+      if (existsSync(tar)) { try { execFileSync('docker', ['load', '-i', tar], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 900000 }); } catch { /* preflight will flag it */ } }
+    }
+    failures.push(...preflightEnvLedger([s], ledgerMap, pfOpts).failures);
+    if (!already) { try { execFileSync('docker', ['rmi', '-f', s.image_name], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore' }); } catch { /* */ } }
+  }
+  const envOk = failures.length === 0;
+  // an INSTANCES id absent from the tasks file must fail loudly too (typo guard —
+  // it would otherwise skip pre-flight and die mid-run)
+  const known = new Set(all.map(t => t.instance_id));
+  for (const id of INSTANCES) if (!known.has(id)) failures.push({ instance_id: id, reason: 'unknown-task', detail: `not present in ${TASKS_FILE}` });
+  // golden-presence gate: env-ledger validates configHash (image/testCmd/network/excludeP2P)
+  // but NOT that the golden checkout is staged. A missing golden silently falls back to
+  // `git clone` (fails under lockdown) and the task is SKIPPED mid-run — so a whole run can
+  // green the pre-flight yet process a handful of tasks. Require a valid golden per task in
+  // a real run (skip when we're the thing that BUILDS goldens: WARM_ONLY / GOLDEN_ONLY).
+  if (!process.env.WARM_ONLY && !process.env.GOLDEN_ONLY && process.env.SS_SKIP_GOLDEN_CHECK !== '1') {
+    for (const s of selSpecs) {
+      const gdir = path.join(GOLDEN_DIR, cacheKeyFor(s));
+      if (!existsSync(`${gdir}/.sweet-search/codebase.db`) || !existsSync(`${gdir}/.git`))
+        failures.push({ instance_id: s.instance_id, reason: 'golden-missing', detail: `no valid golden at ${gdir} (needs .sweet-search/codebase.db + .git) — stage it before launch (golden-vault push). Override: SS_SKIP_GOLDEN_CHECK=1` });
+    }
+  }
+  const ok = envOk && failures.length === 0;
+  if (!ok) {
+    if (process.env.SS_SKIP_ENV_LEDGER === '1') {
+      console.error(`[env-ledger] WARNING: pre-flight FAILED for ${failures.length} task(s) but SS_SKIP_ENV_LEDGER=1 — launching anyway (emergency override; rows on these tasks carry env risk)`);
+      for (const f of failures) console.error(`  [env-ledger] ${f.instance_id}: ${f.reason} — ${f.detail}`);
+    } else {
+      console.error(`[env-ledger] PRE-FLIGHT FAILED (${LEDGER_PATH}) — refusing to launch. ${failures.length} selected task(s) lack a fresh gold-FULL verdict:`);
+      for (const f of failures) console.error(`  ${f.instance_id}: ${f.reason} — ${f.detail}`);
+      console.error(`[env-ledger] Fix: env-ledger-sweep.mjs (grade), prep-warm.mjs (warm+gate), or mark excluded with evidence. Emergency override: SS_SKIP_ENV_LEDGER=1.`);
+      process.exit(1);
+    }
+  } else {
+    console.log(`[env-ledger] pre-flight OK: ${selSpecs.length}/${selSpecs.length} selected tasks gold-FULL under current config (${LEDGER_PATH})`);
+  }
+  if (process.env.PREFLIGHT_ONLY === '1') {
+    console.log('[env-ledger] PREFLIGHT_ONLY=1 — exiting after pre-flight (no rollouts run).');
+    process.exit(ok ? 0 : 1);
+  }
+}
 // Strip the YAML frontmatter (run_id/score_*/vault_* metadata) before feeding
 // M++ to the agent — the eval scores must not leak into the system prompt.
 const mppText = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
@@ -331,28 +436,58 @@ async function runOneTask(id) {
     for (const arm of ARMS) {
       for (let rep = 0; rep < REPS; rep++) {
         const sweet = arm === 'sweet';
-        const rundir = makeRunDir(golden.dir, `${id}__${arm}__r${rep}`, sweet);
+        // one measured attempt in its own isolated rundir; reaped no matter what.
+        const attemptRun = async () => {
+          const rundir = makeRunDir(golden.dir, `${id}__${arm}__r${rep}`, sweet);
+          try {
+            const runTests = makeRunTests(image, rundir, t);
+            const task = { id, repoCheckout: rundir, mppPath: MPP, problem_statement: t.problem_statement };
+            // Off-clock warm so the measured loop sees no cold start. Under isolation the
+            // adapter warms INSIDE the rollout's jail instead — a server warmed out here
+            // would sit in a different mount namespace, invisible to the agent.
+            if (sweet && !(CLI_HARNESS && ISOLATION_ON)) warmupRun(rundir);
+            const agentOpts = { arm, apiModel: MODEL, reasoning: REASONING, provider: PROVIDER, ssBinDir: SS_BIN, mppText, image, t, perCallTimeoutMs: AGENT_TIMEOUT_MS };
+            if (HARNESS === 'codex') return await runCodexTask(task, agentOpts);
+            if (HARNESS === 'claudecode') return await runClaudeCodeTask(task, agentOpts);
+            if (HARNESS === 'opencode') return await runOpencodeTask(task, agentOpts);
+            return await runTask(task, { arm, model: MODEL, apiModel: MODEL, provider: PROVIDER, reasoning: REASONING, maxToolCalls: MAX_TOOL_CALLS, ssBinDir: SS_BIN, mppText, policy: process.env.POLICY, runTests });
+          } finally {
+            reapRunDir(rundir); // kill this run's server/maintainer + delete its copy; golden untouched
+          }
+        };
         try {
-          const runTests = makeRunTests(image, rundir, t);
-          const task = { id, repoCheckout: rundir, mppPath: MPP, problem_statement: t.problem_statement };
-          if (sweet) warmupRun(rundir); // off-clock: warm this run's server so the measured loop sees no cold start
-          const r = HARNESS === 'codex'
-            ? await runCodexTask(task, { arm, apiModel: MODEL, reasoning: REASONING, ssBinDir: SS_BIN, mppText, image, t, perCallTimeoutMs: Number(process.env.CODEX_TIMEOUT_MS) || 900000 })
-            : await runTask(task, { arm, model: MODEL, apiModel: MODEL, provider: PROVIDER, reasoning: REASONING, maxToolCalls: MAX_TOOL_CALLS, ssBinDir: SS_BIN, mppText, policy: process.env.POLICY, runTests });
+          let r = await attemptRun();
+          let attemptCost = Number(r.costRealizedUsd) || 0;      // spend accrues per ATTEMPT (re-run isn't free)
+          // shimTampered policy (shim-policy.mjs): a tampered run's PASS/FAIL is
+          // untrusted → invalid → automatic re-run ONCE; a second tamper EXCLUDES
+          // the run from both arms' scored sets (counted in the report).
+          const tamperFlags = [!!r.shimTampered];
+          let v = shimVerdict(tamperFlags);
+          if (v.needRerun) {
+            console.log(`  [${arm} rep${rep}] SHIM-TAMPERED (${(r.shimTamperedFiles || []).join(', ')}) — invalid, automatic re-run (policy)`);
+            const r2 = await attemptRun();
+            attemptCost += Number(r2.costRealizedUsd) || 0;
+            tamperFlags.push(!!r2.shimTampered);
+            r = r2;                                              // re-run telemetry supersedes the tampered first run
+            v = shimVerdict(tamperFlags);
+            if (v.excluded) console.log(`  [${arm} rep${rep}] SHIM-TAMPERED on re-run too — EXCLUDED from scored set (counted in report)`);
+          }
           const ranTests = (r.toolCounts?.test || 0) > 0;
-          console.log(`  [${arm} rep${rep}] calls=${r.calls} ss=${r.ss} edits=${r.toolCounts.edit} hunks=${r.patchHunks} ranTests=${ranTests} escape=${r.escape} leak=${r.leak} $${r.costRealizedUsd} ${(r.wallMs / 1000).toFixed(0)}s exit=${r.exitReason}`);
+          console.log(`  [${arm} rep${rep}] calls=${r.calls} ss=${r.ss} edits=${r.toolCounts.edit} hunks=${r.patchHunks} ranTests=${ranTests} escape=${r.escape} leak=${r.leak} $${r.costRealizedUsd} ideal$${r.idealCostUsd ?? '?'} ${(r.wallMs / 1000).toFixed(0)}s exit=${r.exitReason}${v.excluded ? ' [SHIM-EXCLUDED]' : (v.reran ? ' [shim-reran]' : '')}`);
           const pred = { instance_id: id, model_name_or_path: arm, model_patch: r.finalPatch || '' };
-          if (rep === 0) predsByArm[arm].push(pred);
-          (predsByRepArm[rep] = predsByRepArm[rep] || { native: [], sweet: [] })[arm].push(pred);
-          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, ...stripBig(r) });
+          // EXCLUDED runs never enter the scored prediction sets (both arms).
+          if (!v.excluded) {
+            if (rep === 0) predsByArm[arm].push(pred);
+            (predsByRepArm[rep] = predsByRepArm[rep] || { native: [], sweet: [] })[arm].push(pred);
+          }
+          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, isolated: CLI_HARNESS && ISOLATION_ON, ...stripBig(r) });
           try { const td = path.join(BENCH, 'results', runId, 'trajectories'); mkdirSync(td, { recursive: true }); writeFileSync(path.join(td, `${id}-${arm}-r${rep}.json`), JSON.stringify({ taskId: id, arm, rep, exitReason: r.exitReason, toolCounts: r.toolCounts, ranTests, escapeExamples: r.escapeExamples, trajectory: r.trajectory }, null, 2)); } catch { /* */ }
-          prog.done++; prog.byArm[arm]++; if (r.patchHunks > 0) prog.predOk[arm]++; prog.cost += Number(r.costRealizedUsd) || 0;
+          prog.done++; prog.byArm[arm]++; if (r.patchHunks > 0 && !v.excluded) prog.predOk[arm]++; prog.cost += attemptCost;
+          if (v.excluded) prog.shimExcluded = (prog.shimExcluded || 0) + 1;
           emitProgress(`  (${id} ${arm} r${rep}: ${r.calls}c ${r.patchHunks}h ${(r.wallMs / 1000).toFixed(0)}s ${r.exitReason})`);
         } catch (e) {
           console.error(`  [${arm} rep${rep}] run error: ${String(e.message).slice(0, 160)}`);
           prog.done++; prog.errors++; prog.byArm[arm]++; emitProgress(`  (${id} ${arm} r${rep}: ERROR)`);
-        } finally {
-          reapRunDir(rundir); // kill this run's server/maintainer + delete its copy; golden untouched
         }
       }
     }
@@ -416,8 +551,43 @@ for (const rep of repsToGrade) {
 
 const outDir = path.join(BENCH, 'results', runId);
 mkdirSync(outDir, { recursive: true });
+
+// --- GOLD TRIPWIRE (P0 item 6) --- detector of last resort behind the jail: a patch
+// that is a near-verbatim copy of gold means the answer was obtained, not derived.
+// Reports only; a hit needs a human because some minimal fixes legitimately converge
+// on the gold text. Ledger written even when empty, so "we checked" is on the record.
+if (SR_MODE) {
+  try {
+    const goldFor = (id) => taskById.get(id)?.patch || '';
+    const scan = { runId, threshold: 0.95, arms: {} };
+    for (const arm of ARMS) {
+      const res = scanPredictions(predsByArm[arm], goldFor);
+      scan.arms[arm] = res.rows;
+      const byId = new Map(res.rows.map(r => [r.instance_id, r]));
+      for (const row of rows) if (row.arm === arm && row.rep === 0 && byId.has(row.taskId)) {
+        const s = byId.get(row.taskId);
+        row.goldSimilarity = s.score; row.goldTripwire = s.flagged;
+      }
+      if (res.flagged.length) {
+        console.log(`\n*** GOLD TRIPWIRE [${arm}] ${res.flagged.length} patch(es) ≥95% identical to gold — inspect before using this run ***`);
+        for (const f of res.flagged) console.log(`    ${f.instance_id}: ${f.reason}`);
+      } else console.log(`[tripwire] ${arm}: 0/${res.rows.length} patches near-identical to gold`);
+    }
+    writeFileSync(path.join(outDir, 'gold-tripwire.json'), JSON.stringify(scan, null, 2));
+  } catch (e) { console.error(`[tripwire] scan failed (non-fatal): ${String(e.message).slice(0, 160)}`); }
+}
+
 writeFileSync(path.join(outDir, 'rows.json'), JSON.stringify(rows, null, 2));
 console.log('\n=== PILOT SUMMARY (aggregated over all reps) ===');
+if (CLI_HARNESS) {
+  const esc = rows.reduce((a, r) => a + (r.escape || 0), 0);
+  const leaks = rows.reduce((a, r) => a + (r.leak || 0), 0);
+  const net = rows.reduce((a, r) => a + (r.escapeNetDenied || 0), 0);
+  // All three are ATTEMPT counters (see escape-audit.mjs) — under the jail the probes
+  // hit empty tmpfs and the connections are refused. They measure how hard agents hunt,
+  // which is exactly what the last run could not report at all.
+  console.log(`isolation: ${ISOLATION_ON ? 'ON' : '*** OFF ***'} | infra+net escape attempts ${esc} (of which network denials ${net}) | answer-shaped command attempts ${leaks} — all blocked by construction; see gold-tripwire.json for whether any answer actually landed`);
+}
 const NREPS = Math.max(1, REPS);
 for (const arm of ARMS) {
   const rs = rows.filter(r => r.arm === arm);                 // ALL reps

@@ -1,10 +1,12 @@
 // Green-ledger invariant tests: fingerprint stability/sensitivity + the run-pilot
 // pre-flight gate semantics (missing / stale / not-gold-FULL / excluded / ok).
 import assert from 'node:assert';
-import { writeFileSync, rmSync, mkdtempSync } from 'node:fs';
+import { writeFileSync, rmSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { taskConfigHash, loadLedger, preflightEnvLedger } from '../harness/env-ledger.mjs';
+
+import { fileURLToPath } from 'node:url';
+import { taskConfigHash, loadLedger, preflightEnvLedger, normTestName, gradeFromReportItem, VOLATILE_NAME_RES, vaultTarName } from '../harness/env-ledger.mjs';
 
 const spec = (over = {}) => ({
   instance_id: 'acme__widget-1',
@@ -68,4 +70,64 @@ assert.equal(preflightEnvLedger([s1], ledger, { netLockdown: true }).ok, true);
 assert.equal(preflightEnvLedger([s1], ledger, { netLockdown: false }).failures[0]?.reason, 'stale');
 
 rmSync(dir, { recursive: true, force: true });
+
+// --- volatile test-name normalization (held-out ledger triage 2026-07-17) ---
+// JVM prints Object.toString() as ClassName@identityHashCode; HotSpot seeds its
+// identity-hash RNG deterministically, so most re-runs reproduce the frozen value
+// and only a few drift — detekt-7637 matched 96/98 F2P names and failed on 2.
+assert.equal(
+  normTestName('[1] org.jetbrains.kotlin.resolve.BindingTraceContext$1@d58fa2 (AnnotationSuppressorSpec)'),
+  '[1] org.jetbrains.kotlin.resolve.BindingTraceContext$1 (AnnotationSuppressorSpec)');
+// detekt-style names stay DISTINCT after stripping (differ by ordinal + class)
+assert.notEqual(
+  normTestName('[1] org.jetbrains.kotlin.resolve.BindingTraceContext$1@d58fa2 (X)'),
+  normTestName('[2] org.jetbrains.kotlin.resolve.BindingContext$1@30cb54e1 (X)'));
+// anchored on a preceding word char: bare tokens are NOT hex-stripped
+assert.equal(normTestName('serves @cafe menu'), 'serves @cafe menu');
+// non-hex scopes (npm package names) are untouched
+assert.equal(normTestName('resolves @babel/core import'), 'resolves @babel/core import');
+// idempotent — normalizing twice must be a no-op
+const _n = normTestName('Foo$1@d58fa2 bar');
+assert.equal(normTestName(_n), _n);
+
+// gradeFromReportItem: identity-hash drift no longer zeroes a matched name
+const dspec = { instance_id: 'd__d-1', FAIL_TO_PASS: ['[1] Ctx$1@d58fa2 (S)', '[2] Ctx$2@30cb54e1 (S)'] };
+assert.equal(
+  gradeFromReportItem({ from_fail_to_pass: ['[1] Ctx$1@aaaaaa (S)', '[2] Ctx$2@bbbbbb (S)'], failed_from_pass_to_pass: [] }, dspec).status,
+  'FULL');
+
+// gradeFromReportItem: an EMPTY post-exclusion F2P set must never grade FULL —
+// excluding every requirement would silently turn a task into a free pass.
+// (This is why gradeup__shadow-1177, whose 4 F2P names differ only by volatile
+// JVM lambda addresses, is a reserve promotion and not an excludeF2P.)
+const eg = gradeFromReportItem({ from_fail_to_pass: [], failed_from_pass_to_pass: [] },
+  { instance_id: 'e__e-1', FAIL_TO_PASS: ['only_test'] }, { excludeF2P: ['only_test'] });
+assert.notEqual(eg.status, 'FULL');
+assert.equal(eg.f2pTot, 0);
+
+// --- vault tar filename encoding (heldout v3 pre-flight, 2026-07-17) ---
+// Pinned against a REAL filename produced by warm-heldout.sh's `tr "/:" "__"`,
+// which maps each of "/" and ":" to a SINGLE "_". A `.replace(/[/:]/g,'__')`
+// here yields double underscores, silently matches no tar, and makes every
+// warmed task record `infra/derived-image-missing` — voiding the ledger for
+// exactly the tasks warming exists to rescue.
+assert.equal(
+  (vaultTarName('swerebenchv2-warm/filecoin-project-builtin-actors:1424-fc80851')),
+  'swerebenchv2-warm_filecoin-project-builtin-actors_1424-fc80851.tar');
+assert.equal(
+  (vaultTarName('swerebenchv2-fixed/juliadiff-finitedifferences.jl:197-2e3dd78')),
+  'swerebenchv2-fixed_juliadiff-finitedifferences.jl_197-2e3dd78.tar');
+assert.ok(!(vaultTarName('a/b:c')).includes('__'), 'no double underscore');
+
+// --- LOCKSTEP GUARD: JS VOLATILE_NAME_RES vs python _TIMING_NORMALIZE_RES ---
+// gradeFromReportItem compares JS-normalized spec names against report names that
+// eval.py already normalized, so JS must strip everything python strips. If you add
+// a pattern to one side, add it to the other or this fires.
+const _py = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), '../harness/upstream-patches/eval.py'), 'utf8');
+const _blk = _py.slice(_py.indexOf('_TIMING_NORMALIZE_RES = ['), _py.indexOf('\n]', _py.indexOf('_TIMING_NORMALIZE_RES = [')));
+const _pyCount = (_blk.match(/re\.compile\(/g) || []).length;
+assert.equal(VOLATILE_NAME_RES.length, _pyCount,
+  `normalizer drift: env-ledger.mjs has ${VOLATILE_NAME_RES.length} patterns, eval.py has ${_pyCount}`);
+
 console.log('env-ledger-gate: all assertions passed');
