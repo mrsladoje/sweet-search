@@ -212,13 +212,26 @@ export function dedupDecision(state, key, digest) {
 }
 
 // ---- pure: rendered responses -------------------------------------------------
+/**
+ * The suppressed-call response.
+ *
+ * The `--ss-full` hint is DELIBERATELY ABSENT (decided 2026-07-30 after the L3 smoke).
+ * When the summary advertised the flag, the agent used it on 20 of 84 calls — usually
+ * immediately after a suppression — which hands the transcript straight back, sometimes
+ * at the price of an extra turn. Nothing is lost by staying quiet: the summary carries
+ * exit code, failure count and the first failure, the full transcript for this exact
+ * key is already in the conversation (that is what "unchanged" means), and the
+ * legitimate route to more detail is a targeted run — a different argv, hence a
+ * different key, hence full output by construction. The flag still works for
+ * hand-debugging; it is simply undocumented to the agent.
+ */
 export function buildDedupSummary({ citeCall, result }) {
   const failClause = result.failureCount
     ? `${result.failureCount} failed, first failure: ${result.firstFailure}`
     : '0 failed (suite green)';
   return `${DEDUP_MARKER} identical source diff + command as call #${citeCall}; result unchanged: ` +
     `exit ${result.exitCode}, ${failClause}.\n` +
-    `Change the code before re-running, or pass ${FULL_FLAG} for the complete output.`;
+    `Change the code before re-running.`;
 }
 
 export function buildChangedResultNote(citeCall) {
