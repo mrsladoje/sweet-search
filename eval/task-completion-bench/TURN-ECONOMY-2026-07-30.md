@@ -9,10 +9,10 @@ than native (5,908 v 5,003).
 The headline framing of *why* — "sweet issues 1.14 tool calls per turn against native's 1.76" — is
 **mostly a measurement artifact and is corrected in §3.3**. The harness counts tool *envelopes*,
 and sweet fuses several operations into one shell envelope where native issues them separately. At
-operation level the per-turn gap is **−8.3%, not −35.8%**: sweet 1.727 v native 1.883. Of sweet's
-+18.1% extra turns, roughly 8.3% is doing more retrieval operations and ~9% is packing them less
+operation level the per-turn gap is **−8.4%, not −35.8%**: sweet 1.725 v native 1.883. Of sweet's
++18.1% extra turns, roughly 8.2% is doing more retrieval operations and ~9% is packing them less
 densely — and only the second half is what this block acts on. Likewise "85.7% of sweet turns carry
-a single tool call" means a single *envelope*, and those envelopes average 1.46 operations.
+a single tool call" means a single *envelope*, and those envelopes average 1.45 operations.
 
 This note covers: (1) what the state of the art says about fixing that with prompt wording,
 (2) two harness facts verified for free, (3) the block we propose, (4) the validation design.
@@ -349,23 +349,23 @@ split on `;`/`&&`/`||`/newline, counting the same buckets `classifyShell` uses, 
 
 | arm | turns | envelopes | operations | ops/envelope | **envelopes/turn** | **operations/turn** |
 |---|---|---|---|---|---|---|
-| native | 5,003 | 9,248 | 9,423 | 1.02 | **1.848** | **1.883** |
-| sweet | 5,908 | 7,009 | 10,203 | 1.46 | **1.186** | **1.727** |
-| sweet vs native | +18.1% | — | +8.3% | — | **−35.8%** | **−8.3%** |
+| native | 5,003 | 9,248 | 9,419 | 1.02 | **1.848** | **1.883** |
+| sweet | 5,908 | 7,009 | 10,193 | 1.45 | **1.186** | **1.725** |
+| sweet vs native | +18.1% | — | +8.2% | — | **−35.8%** | **−8.4%** |
 
 (The envelope ratio 0.642 reproduces the plan's 1.140/1.763 = 0.647, so this is the same quantity,
 recomputed.) **77% of the apparent calls/turn gap is packaging.** Sweet already does nearly as many
-retrieval operations per turn as native — 1.73 v 1.88 — and fuses far more (2,747 multi-operation
-bash envelopes v native's 1,558). The claim that the envelope gap establishes a large addressable
+retrieval operations per turn as native — 1.73 v 1.88 — and fuses far more (2,746 multi-operation
+bash envelopes v native's 1,557). The claim that the envelope gap establishes a large addressable
 pool was wrong; it is withdrawn.
 
-The corrected decomposition of sweet's +18.1% turn inflation: **~8.3% is doing more retrieval
+The corrected decomposition of sweet's +18.1% turn inflation: **~8.2% is doing more retrieval
 operations** and **~9% is packing them less densely**. Only the second half is what this block
 acts on.
 
 **A first-order caveat this raises for PLAN.md §4.3.** The −14.2% counterfactual ("6,468 calls at
 native's 1.76 calls/turn → 3,675 turns") is computed on *envelopes*. It implicitly assumes sweet
-could pack envelopes like native, but sweet's envelopes already carry 1.46 operations against
+could pack envelopes like native, but sweet's envelopes already carry 1.45 operations against
 native's 1.02, so the counterfactual asks sweet to do something it is largely already doing.
 **That number should be treated as unreliable until recomputed at operation level.** It is cited in
 the plan as motivation for the cost levers, so this is a correction to an existing figure, not only
@@ -546,7 +546,7 @@ DB agrees: 214 sweet sessions, $123.75 total, **mean $0.578**.
 | **report** | cache-normalized `idealCostUsd` | never realized $ |
 
 **On the ≥10% win threshold.** It is deliberately set above what mere native-parity would give.
-Sweet is 8.3% below native on operations/turn, so closing that alone yields ~8% fewer turns —
+Sweet is 8.4% below native on operations/turn, so closing that alone yields ~8% fewer turns —
 under the gate. The block asks for more than parity ("usually two or three" against sweet's current
 1.73), so a ≥10% drop is achievable, but the threshold is demanding.
 
@@ -557,7 +557,16 @@ result. Such a result becomes evidence for the mechanism only if the paired unce
 controlled, retrieval-and-test operations stayed flat, and solve behaviour shows no concerning
 discordance — and even then it licenses a larger confirmatory run, not an adoption.
 
-**The estimator and decision rule are fixed in code before launch**: `stats/turn-economy-ab.mjs`.
+**The estimator and decision rule are fixed in code before launch**: `stats/turn-economy-ab.mjs`,
+tested by `tests/turn-economy-ab.mjs` (17 assertions on synthetic runs, offline).
+**Admission first**: it REFUSES to adjudicate unless both runs carry exactly the expected task set,
+identical on both sides, one sweet row per task, and every gated metric present and finite — a
+crashed or partial run gets `INVALID`, never a verdict on a selected subset. A missing
+`agent-state` dir or a `source:"aggregate"` turn log is also `INVALID`, because neither can be
+gated. **The operations gate is wired, not pending**: a fixture that cuts turns 20% while
+doubling probes returns REVERT.
+`ctx/turn` uses **`in` alone** — `in` is the full input context and already includes `cached`
+(`harness/turn-log.mjs` field contract), so adding them would double-count the cached prefix.
 Primary estimator = ratio of aggregate totals B/A (re-send cost tracks the TOTAL turn count, and
 the per-task distribution is too skewed for a mean-of-ratios); secondary = mean paired % change;
 **if the two disagree in sign the result is INCONCLUSIVE** and neither is cherry-picked.
