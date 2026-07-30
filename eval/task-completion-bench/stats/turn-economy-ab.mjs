@@ -15,9 +15,12 @@
  *
  * ── PREDECLARED (do not edit after launch) ───────────────────────────────────────
  * ADMISSION — refuses to adjudicate unless: both runs carry EXACTLY the expected task
- *   set, identical on both sides; exactly one sweet row per task per run; and every
- *   gated metric present and finite for every task. A crashed or partial run gets
- *   INVALID, never a verdict on a selected subset.
+ *   set, identical on both sides; exactly one sweet row per task per run; every gated
+ *   metric present and finite for every task; and `resolved` is a BOOLEAN on both sides
+ *   (run-pilot writes null for an ungradeable task, and coercing that to false would
+ *   turn missing solve evidence into a loss — or an ungradeable A-side task into a
+ *   phantom B gain offsetting a real loss). A crashed, partial, or partly-ungraded run
+ *   gets INVALID, never a verdict on a selected subset.
  *
  * ESTIMATOR — ratio of aggregate totals, B/A. Aggregate (not the mean of per-task
  *   ratios) because re-send cost is driven by the TOTAL turn count, and because the
@@ -126,7 +129,13 @@ function loadRun(dir) {
       ctxPerTurn: log.ctxPerTurn ?? null,
       operations,
       envelopes: typeof r.calls === 'number' ? r.calls : null,
-      solved: !!r.resolved,
+      // RAW, never coerced. run-pilot sets resolved:null when a task is ungradeable
+      // (`row.resolved = row.gradeable ? … : null`, run-pilot.mjs:558). `!!null` would
+      // silently record it as "not solved", turning missing solve evidence into an
+      // ordinary loss — and an ungradeable A-side task into a phantom B *gain* that
+      // offsets a real loss. Admission requires a boolean; nothing is inferred.
+      resolved: r.resolved,
+      gradeable: r.gradeable,
       idealCostUsd: typeof r.idealCostUsd === 'number' ? r.idealCostUsd : null,
     };
   }
@@ -167,6 +176,16 @@ for (const t of tasks) {
       if (typeof v !== 'number' || !Number.isFinite(v)) {
         admission.push(`${t}: RUN_${tag}.${m} missing/non-finite`);
       }
+    }
+  }
+}
+for (const t of tasks) {
+  for (const [tag, run] of [['A', A], ['B', B]]) {
+    const r = run.byTask[t];
+    if (typeof r.resolved !== 'boolean') {
+      admission.push(`${t}: RUN_${tag}.resolved is ${r.resolved === null ? 'null' : typeof r.resolved}` +
+        `${r.gradeable === false ? ' (task ungradeable — grading failed)' : ''}` +
+        ' — solve evidence missing, not adjudicable');
     }
   }
 }
@@ -221,8 +240,8 @@ const cost = bootstrap('idealCostUsd');
 
 let gains = 0, losses = 0;
 for (const t of tasks) {
-  if (!A.byTask[t].solved && B.byTask[t].solved) gains++;
-  if (A.byTask[t].solved && !B.byTask[t].solved) losses++;
+  if (!A.byTask[t].resolved && B.byTask[t].resolved) gains++;
+  if (A.byTask[t].resolved && !B.byTask[t].resolved) losses++;
 }
 
 const reverts = [];

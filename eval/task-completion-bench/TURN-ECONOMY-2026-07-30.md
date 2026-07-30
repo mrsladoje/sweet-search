@@ -560,8 +560,12 @@ discordance — and even then it licenses a larger confirmatory run, not an adop
 **The estimator and decision rule are fixed in code before launch**: `stats/turn-economy-ab.mjs`,
 tested by `tests/turn-economy-ab.mjs` (17 assertions on synthetic runs, offline).
 **Admission first**: it REFUSES to adjudicate unless both runs carry exactly the expected task set,
-identical on both sides, one sweet row per task, and every gated metric present and finite — a
-crashed or partial run gets `INVALID`, never a verdict on a selected subset. A missing
+identical on both sides, one sweet row per task, every gated metric present and finite, **and
+`resolved` a boolean on both sides** — a crashed, partial, or partly-ungraded run gets `INVALID`,
+never a verdict on a selected subset. That last condition matters more than it looks: run-pilot
+writes `resolved: null` for an ungradeable task (`run-pilot.mjs:558`), and coercing it to `false`
+would book missing solve evidence as a loss — or an ungradeable *control*-side task as a phantom
+variant **gain** that offsets a real loss. A missing
 `agent-state` dir or a `source:"aggregate"` turn log is also `INVALID`, because neither can be
 gated. **The operations gate is wired, not pending**: a fixture that cuts turns 20% while
 doubling probes returns REVERT.

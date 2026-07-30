@@ -9,7 +9,7 @@
 //
 // `node tests/turn-economy-ab.mjs` — exit 1 on any failure.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +37,10 @@ function makeRun(name, spec) {
   const rows = [];
   for (const [task, s] of Object.entries(spec)) {
     rows.push({
-      taskId: task, arm: 'sweet', rep: 0, resolved: !!s.solved,
+      taskId: task, arm: 'sweet', rep: 0,
+      // s.solved === null models run-pilot's ungradeable row (resolved:null, gradeable:false)
+      resolved: s.solved === null ? null : !!s.solved,
+      gradeable: s.solved !== null,
       calls: s.calls ?? s.ops, idealCostUsd: s.cost ?? 1,
       idealTurns: s.turns, turnsFile: `results/${name}/turns/${task}-sweet.jsonl`,
     });
@@ -159,6 +162,47 @@ for (let i = 0; i < 4; i++) base[T(i)] = { turns: 100, ctx: 50000, ops: 3, solve
   const r = run(makeRun('a8', base), makeRun('b8', variant), 4);
   check('aggregate turn log → INVALID (not a turn distribution)',
     /INVALID/.test(r.verdict || ''), `got: ${r.verdict}`);
+}
+
+// ── 5b. ungradeable rows must never be coerced into solve outcomes ───────────
+// run-pilot writes resolved:null when grading fails (run-pilot.mjs:558). Coercing that
+// to false records missing evidence as a loss — and an ungradeable A-side task as a
+// phantom B GAIN that offsets a real loss. Both directions asserted.
+{
+  const variant = {};
+  for (let i = 0; i < 4; i++) variant[T(i)] = { turns: 80, ctx: 50000, ops: 3, solved: true, cost: 0.8 };
+  const ungradedA = { ...base, [T(0)]: { ...base[T(0)], solved: null } };
+  const r = run(makeRun('a10', ungradedA), makeRun('b10', variant), 4);
+  check('A-side resolved:null → INVALID (no phantom gain)', /INVALID/.test(r.verdict || ''), `got: ${r.verdict}`);
+  check('INVALID names the missing solve evidence',
+    (r.admissionFailures || []).some(x => /resolved is null/.test(x) && /RUN_A/.test(x)),
+    JSON.stringify(r.admissionFailures));
+  check('INVALID flags it as ungradeable',
+    (r.admissionFailures || []).some(x => /ungradeable/.test(x)),
+    JSON.stringify(r.admissionFailures));
+}
+{
+  const variant = {};
+  for (let i = 0; i < 4; i++) {
+    variant[T(i)] = { turns: 80, ctx: 50000, ops: 3, solved: i === 0 ? null : true, cost: 0.8 };
+  }
+  const r = run(makeRun('a11', base), makeRun('b11', variant), 4);
+  check('B-side resolved:null → INVALID (no phantom loss)', /INVALID/.test(r.verdict || ''), `got: ${r.verdict}`);
+  check('B-side INVALID names RUN_B',
+    (r.admissionFailures || []).some(x => /RUN_B/.test(x) && /resolved is null/.test(x)),
+    JSON.stringify(r.admissionFailures));
+}
+{
+  // a run graded with GRADE=0 has no `resolved` field at all
+  const variant = {};
+  for (let i = 0; i < 4; i++) variant[T(i)] = { turns: 80, ctx: 50000, ops: 3, solved: true, cost: 0.8 };
+  const dir = makeRun('b12', variant);
+  const rowsPath = path.join(dir, 'rows.json');
+  const rows = JSON.parse(readFileSync(rowsPath, 'utf8'));
+  delete rows[0].resolved;
+  writeFileSync(rowsPath, JSON.stringify(rows, null, 1));
+  const r = run(makeRun('a12', base), dir, 4);
+  check('absent resolved field → INVALID', /INVALID/.test(r.verdict || ''), `got: ${r.verdict}`);
 }
 
 // ── 6. below threshold is not a win ──────────────────────────────────────────
