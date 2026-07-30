@@ -94,31 +94,41 @@ case "$cmd" in
 
   push)
     keys="$(keys_from_args "$@")"
+    pushed=0
     free="$(box_free_gb)"
     [ "$free" -ge "$MIN_BOX_FREE_GB" ] || die "box disk ${free}G < ${MIN_BOX_FREE_GB}G — GC images/old goldens first"
     while IFS= read -r k; do
       [ -n "$k" ] || continue
       [ -f "$VAULT/$k/.vault-manifest.sha256" ] || die "$k not in vault (or unmanifested) — run pull first"
       echo "== push $k"
-      ssh "$BOX" "test -d $BOX_GOLDEN/$k && chmod -R u+w $BOX_GOLDEN/$k || true; mkdir -p $BOX_GOLDEN/$k"
+      # `ssh -n` on EVERY call in this loop: without it ssh inherits the here-string
+      # as stdin and consumes the remaining keys, so a multi-key push silently
+      # staged only the FIRST key and reported success. That is the exact
+      # goldens-not-staged failure that has already aborted one run mid-flight.
+      ssh -n "$BOX" "test -d $BOX_GOLDEN/$k && chmod -R u+w $BOX_GOLDEN/$k || true; mkdir -p $BOX_GOLDEN/$k"
       # --delete heals half-written/tampered box states back to the vault truth
       rsync "${RSYNC_OPTS[@]}" --delete "$VAULT/$k/" "$BOX:$BOX_GOLDEN/$k/"
       if has_flag verify "$@"; then
-        ssh "$BOX" "cd $BOX_GOLDEN/$k && sha256sum --quiet -c .vault-manifest.sha256" \
+        ssh -n "$BOX" "cd $BOX_GOLDEN/$k && sha256sum --quiet -c .vault-manifest.sha256" \
           || die "$k FAILED checksum verify on box"
         echo "   verified"
       fi
       # lock: agents/maintainers on the box cannot silently mutate or re-index it
-      ssh "$BOX" "chmod -R a-w $BOX_GOLDEN/$k"
+      ssh -n "$BOX" "chmod -R a-w $BOX_GOLDEN/$k"
       echo "   restored + locked read-only"
+      pushed=$((pushed + 1))
     done <<< "$keys"
+    # loud post-condition: the count staged MUST equal the count requested
+    want="$(echo "$keys" | sed '/^$/d' | wc -l | tr -d ' ')"
+    [ "$pushed" -eq "$want" ] || die "staged $pushed of $want keys — refusing to report success"
+    echo "== pushed $pushed/$want keys"
     ;;
 
   unlock)
     keys="$(keys_from_args "$@")"
     while IFS= read -r k; do
       [ -n "$k" ] || continue
-      ssh "$BOX" "chmod -R u+w $BOX_GOLDEN/$k" && echo "unlocked $k"
+      ssh -n "$BOX" "chmod -R u+w $BOX_GOLDEN/$k" && echo "unlocked $k"   # -n: see push loop
     done <<< "$keys"
     ;;
 
