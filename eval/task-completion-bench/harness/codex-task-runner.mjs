@@ -193,12 +193,17 @@ export function writeRunTestsShim(binDir, {
     // The agent's argv (optional test pattern, optional --ss-full) rides in the req file
     // as JSON — still parameter-free with respect to docker: the broker only ever reads
     // a test pattern and the dedup escape hatch out of it.
+    // DEADLINE (PLAN.md §3 B6, 2026-07-30): the FIRST request of a rollout makes the broker
+    // run TWO full suites in series — the L2 clean baseline plus the agent's diff — so a
+    // `tSec + 90` wait was structurally too short for any suite near its own budget. Wait for
+    // both runs plus overhead. The agent-side tool timeout must exceed THIS number, or the
+    // requester is killed mid-wait and its response is orphaned (see agentBashTimeoutMs).
     writeFileSync(mjs, `import { writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 const IPC = ${JSON.stringify(reqDir)};
 const tSec = ${Number(testTimeoutSec) || 300};
 const id = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 writeFileSync(IPC + '/req-' + id, JSON.stringify(process.argv.slice(2)));
-const deadline = Date.now() + (tSec + 90) * 1000;
+const deadline = Date.now() + (2 * tSec + 120) * 1000;   // baseline + current suite + overhead
 const res = IPC + '/res-' + id;
 while (Date.now() < deadline) {
   if (existsSync(res)) {
@@ -208,7 +213,7 @@ while (Date.now() < deadline) {
   }
   await new Promise(r => setTimeout(r, 400));
 }
-process.stdout.write('[run_tests] no response from test broker within ' + (tSec + 90) + 's');
+process.stdout.write('[run_tests] no response from test broker within ' + (2 * tSec + 120) + 's');
 `);
     const shim = path.join(binDir, 'run_tests');
     writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);

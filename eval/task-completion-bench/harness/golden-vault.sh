@@ -10,6 +10,10 @@
 #   golden-vault.sh pull --keys k1,k2                     # archive specific cache keys
 #   golden-vault.sh push --tasks <specs.json|.jsonl> --ids id1,id2 [--verify]
 #   golden-vault.sh push --keys k1,k2 [--verify]          # restore batch to box, lock read-only
+#   golden-vault.sh manifest --keys k1,k2                 # (re)manifest vault copies in place
+#   golden-vault.sh manifest --tasks <specs.json> --ids …  #   for keys vaulted before manifesting
+#     CAVEAT: a manifest written now attests the VAULT copy, so a later `push --verify`
+#     proves transfer integrity — not the provenance of the original box build.
 #   golden-vault.sh unlock --keys k1,k2                   # re-allow writes on box (rebuilds)
 #   golden-vault.sh status                                # vault + box inventory and disk
 #
@@ -73,6 +77,18 @@ case "$cmd" in
       [ -f "$VAULT/$k/.sweet-search/codebase.db" ] || { echo "   WARN: $k has no codebase.db (incomplete build?) — kept but not manifested"; continue; }
       manifest_for "$VAULT/$k"
       echo "   archived + manifested ($(du -sh "$VAULT/$k" | cut -f1))"
+    done <<< "$keys"
+    ;;
+
+  manifest)
+    keys="$(keys_from_args "$@")"
+    while IFS= read -r k; do
+      [ -n "$k" ] || continue
+      [ -d "$VAULT/$k" ] || die "$k not in vault"
+      [ -f "$VAULT/$k/.sweet-search/codebase.db" ] || die "$k has no codebase.db — incomplete, refusing to manifest"
+      printf '%s ... ' "$k"
+      manifest_for "$VAULT/$k"
+      echo "manifested ($(wc -l < "$VAULT/$k/.vault-manifest.sha256" | tr -d ' ') files)"
     done <<< "$keys"
     ;;
 
