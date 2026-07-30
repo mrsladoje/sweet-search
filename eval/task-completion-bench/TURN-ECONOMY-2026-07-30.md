@@ -607,6 +607,63 @@ add a **lower** bound to the operations gate, not just the upper one. The smoke 
 mechanism-only and gate-free precisely so it could inform the design; tightening a guard is a
 legitimate use of it, but the provenance must travel with the change.
 
+#### 4.0d Stage 1 RESULT — **VERDICT: REVERT.** Recommend stopping the lever.
+
+Runs `te-s1-control-20260731` / `te-s1-variant-20260731`, 7 fresh dev tasks, both exit 0,
+prompt hashes unchanged, 14/14 rollouts gradeable, realized $2.86.
+
+```
+turns       B/A  1.146 [0.789, 1.705]   above 0.90
+operations  B/A  1.000 [0.832, 1.243]   GATE 0.85 <= bounds <= 1.05 (two-sided)
+ctx/turn    B/A  1.138 [1.034, 1.260]   GATE upper must be <= 1.10
+envelopes   B/A  1.257 [0.901, 1.671]   (reported only)
+idealCost   B/A  1.314 [0.913, 1.928]   (reported only)
+solve: +0 / −0  net 0
+REVERT triggers: operations upper 1.243 > 1.05; operations lower 0.832 < 0.85;
+                 ctx/turn upper 1.260 > 1.10
+```
+
+**The block fails the founding guardrail.** The brief required the lever to make turns FEWER,
+not WIDER. `ctx/turn` is **1.138 with a 95% interval of [1.034, 1.260] that excludes 1.0** — the
+only statistically solid result in the table, and it says the variant makes turns *wider*. Turns
+themselves went the wrong way too (1.146), though that interval spans 1.0 and is not significant
+at n=7. Realized cost rose 34.8% ($1.217 → $1.640); average calls rose 25.7% (14.4 → 18.1).
+
+**Solve is identical** — 5/7 both sides, the *same* five tasks, `net 0`. So this is not a
+quality trade; the variant simply costs more for the same outcome.
+
+**The smoke's headline was an artifact.** The smoke showed turns −32%; stage 1 shows +14.6%. The
+most likely explanation: in the smoke, the CONTROL arm was burning turns on refused upstream
+fetches (265 escape events, 9 of 10 rollouts). The offline frame removed that waste from the
+control, and the variant's apparent advantage went with it. **The lever was partly being credited
+for cleaning up a mess the frame has now cleaned up properly.**
+
+**Confound, stated plainly:** stage 1 changed BOTH the frame AND the task set relative to the
+smoke, so the sign flip cannot be attributed to the frame alone — different tasks could carry it.
+Disentangling costs ~$6: re-run the 5 smoke tasks under the new frame. Worth doing only if
+someone wants to revive the lever; it is not needed to justify stopping.
+
+**The variance we came for.** `operations` point estimate 1.000 with interval [0.832, 1.243] —
+±20% at n=7. Per-task noise is large, as the smoke's 2-of-5 wrong-way split suggested. Any future
+turn-economy attempt needs substantially more than 36 pairs, not fewer.
+
+**Recommendation: stop. Do not run stage 2.** The lever fails a predeclared gate and the user's
+founding constraint, shows no solve benefit, and costs 31–35% more. M± is unchanged and stays
+unchanged — nothing to revert in production, since the block never left the variant file.
+
+#### 4.0e The offline frame clause is a keeper, independent of the lever
+
+| | smoke (pre-frame) | stage 1 (post-frame) |
+|---|---|---|
+| rollouts attempting upstream fetch | **9 of 10** | **0 of 14** |
+| escape events | 265 control / 274 variant | 0 / 0 |
+| git-history leaks | 11 / 10 | 0 / 1 |
+
+Complete elimination. This removes a large, arm-independent source of wasted spend and variance
+from every future run on this bench, and it closes the contamination surface by instruction as
+well as by allowlist. It should be treated as a permanent harness improvement, and any run
+compared against pre-frame baselines must disclose it — the frame change alone moves cost.
+
 ### 4.1 Superseded single-run design (kept for provenance)
 
 - **Tasks**: 36 drawn from the 168 gold-valid dev-200 tasks, stratified by language,
