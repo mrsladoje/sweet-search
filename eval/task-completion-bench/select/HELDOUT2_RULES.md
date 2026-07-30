@@ -3,7 +3,13 @@
 **Status:** written and committed BEFORE the seed was used. Nothing below may change
 after the draw except through the replacement policy in §7.
 **Date:** 2026-07-30
-**Seed:** `20260730`
+**Seed:** `20260731`
+**Amendment 1 (2026-07-30), before any task content was inspected:** the first draw under
+seed `20260730` exposed a degenerate deficit rule and an exclusion rule that is more
+expensive than it is protective. Both were amended (§2, §3), the burned seed was retired
+with its draw (kept at `select/discarded-draw-20260730/`), and a fresh seed was taken. The
+amendment rests only on per-language repo counts; no task diff, patch, statement or result
+was consulted. Full disclosure in `FAIRNESS.md` §7.
 **Implementation:** `select/select_heldout2.py` — this document is the specification,
 that script is its mechanical execution and nothing else.
 **Fairness statement:** `select/FAIRNESS.md` (the pre-registration snapshot the paper cites).
@@ -23,7 +29,7 @@ touched by any step here. This set exists because held-out 1's environment was p
   later.
 - V2 only. The V1 leaderboard population (`nebius/SWE-rebench-leaderboard`) is Python-only
   and is used for the separate recency check; drawing from it would distort the language
-  quotas. Its instance ids and repos are on the exclusion list (§3).
+  quotas. Its drawn instance ids are on the tier-A exclusion list (§3).
 - Base filters, unchanged from both previous sets: `meta.llm_metadata.code == 'A'`;
   non-empty `FAIL_TO_PASS`; full date range.
 
@@ -51,38 +57,66 @@ Total = 200. The anchor is GitHub Octoverse 2025 most-used-language rankings, ma
 the 20 languages SWE-rebench-V2 carries. **No quota, in either direction, is derived from
 any sweet-vs-native performance profile, per-language result, or forensic finding.**
 
-**Deficit rule (unchanged from held-out 1):** if a language's post-exclusion pool is smaller
-than its quota, the shortfall is reassigned one task at a time to the language with the
-largest quota that still has spare pool, ties broken alphabetically. Applied
-deterministically inside the selector and logged in the manifest.
+**Deficit rule (AMENDED 2026-07-30 — proportional):** if a language's post-exclusion pool is
+smaller than its quota, that quota is cut to the pool size and the pooled shortfall is
+redistributed over the languages that still have spare pool, **in proportion to their
+pre-registered quota**, by largest remainder, capped at each language's spare pool, with
+unplaced slots going round again. Remainder ties break by larger pre-registered quota, then
+alphabetically. Applied deterministically inside the selector and logged in the manifest as
+`{shortfall, given_up_by, absorbed_by}` — pooled, not pairwise, because a pairwise arrow
+would be an invention.
 
-## 3. Exclusions — repo level, applied before the draw
+*Why amended:* held-out 1's rule moved the shortfall one slot at a time to "the largest-quota
+language with spare pool" evaluated against the **running** quota, so the language that had
+just received a slot was the largest again. Under held-out 1's tiny deficits this never
+showed; here the C-family shortfall is large, and the first draw put **all 26 freed slots on
+python** (56 python, 28% of the set, against a pre-registered 30). Proportional
+redistribution keeps the shape of the external anchor instead of silently replacing it with
+one language.
 
-Held-out 2 must be independent of everything either arm has already touched. Excluded at
-**repo** level (not just instance id), from the frozen snapshot
-`select/HELDOUT2_EXCLUDED_REPOS.json`, built by `select/heldout2_exclusions.py` from these
-sources, all of which are committed under `select/exclusion-sources/`:
+## 3. Exclusions — two tiers, applied before the draw (AMENDED 2026-07-30)
 
-1. **dev-200** (`tasks_multilingual.jsonl`) — every prompt variant, harness lever and
-   per-task override was tuned with these repos in view.
-2. **Held-out 1** — the retired final manifest (`tasks_heldout.jsonl`), its
-   pre-replacement roster (`.prereplace-2026-07-21`), and both sides of every promotion in
-   `HELDOUT_REPLACEMENTS_2026-07-21.json`.
-3. **The old reserve-101 population** (`tasks_heldout_reserve.jsonl`) — promotable into
-   held-out 1, therefore equally touched.
-4. **The decontam population** (`tasks_decontam.jsonl`) — never rolled out, excluded anyway
-   for independence; it costs pool size only.
-5. **Golden-cache history** — every repo with a golden index in the Mac vault
-   (`mac-vault-golden-keys.txt`) or staged on the eval box (`box-golden-keys.txt`).
-6. **Run/smoke history** — every `instance_id` appearing in any `rows.json`, `preds-*.jsonl`
-   or env-ledger file on the box or the Mac (`run-history-instance-ids.txt`), mapped to its
-   repo. This catches pilots, smokes and A/B probes that never became a named set.
+Held-out 2 must be independent of what we have actually learned from, which is not the same
+as every repo we have ever touched. The frozen snapshot
+`select/HELDOUT2_EXCLUDED_REPOS.json`, built by `select/heldout2_exclusions.py` from
+committed inputs, therefore carries two tiers.
 
-Excluded instance ids from the same snapshot are applied too, as a belt-and-braces check
-(a repo exclusion already implies them).
+**Tier A — instance id, excluded unconditionally (730 ids).** Every task ever drawn or run:
+dev-200; held-out 1 (final roster, `.prereplace-2026-07-21` roster, and both sides of every
+promotion in `HELDOUT_REPLACEMENTS_2026-07-21.json`); the reserve-101 population; the
+decontam population; and every `instance_id` appearing in any `rows.json`, `preds-*.jsonl`
+or env-ledger file on the box or the Mac (`exclusion-sources/run-history-instance-ids.txt`),
+which catches pilots, smokes and probes that never became a named set. Non-negotiable: those
+tasks' gold patches, failure modes and per-task narratives are written into `PLAN.md` and the
+forensics documents.
 
-The snapshot is committed **before** the seed is used. Regenerating it after the freeze
-would silently change the draw and is not permitted for this set.
+**Tier B — whole repo, for repos we have task-level knowledge of (268 repos).**
+1. **dev-200 repos** — every lever, prompt variant and per-task override was tuned with these
+   in view.
+2. **Repos of tasks read call-by-call in forensics** — extracted mechanically from `PLAN.md`
+   and `FORENSICS-*.md` (27 repos). We know these codebases and their gold fixes in detail.
+3. **Repos of tasks with a hand-written `harness/task-overrides.json` entry** (110 repos) —
+   writing an override required inspecting that task's suite.
+
+**Not excluded at repo level (tier A only): 379 repos** we ran in aggregate or merely
+golden-indexed — most of held-out 1, the reserve population, decontam, and the golden
+inventories. A *different* pull request in such a repo leaks nothing we possess: the golden
+index and any environment repair are identical for both arms, so they move attrition, not
+the comparison. Their identities are still recorded in the snapshot under
+`audit_only_repos_NOT_excluded_at_repo_level` so the choice is auditable.
+
+*Why amended:* full repo-level exclusion of all 647 touched repos costs essentially nothing
+for the eight big languages (100–650 candidate repos against quotas of 8–30) but exhausts the
+C family. It also does not rescue it: SWE-rebench-V2 holds only **12 C++ and 17 C# repos at
+quality A in total**, and under the one-task-per-repo rule (§5) even *zero* repo exclusions
+would yield at most 4 C++ and 6 C# tasks. Held-out 1 and dev-200 reached their C-family
+quotas by repeating repos (b2 ×3, moq ×3, zeek ×4, kiota ×5) and consumed most of the rest.
+The C-family shortfall is therefore a property of the population, not of the exclusion
+policy, and the exclusion policy is set on its own merits: keep it where we genuinely learned
+something, drop it where we did not.
+
+The snapshot is committed **before** the seed is used. Regenerating it after the freeze would
+silently change the draw and is not permitted for this set.
 
 ## 4. Task-rejection gate — before the seeded draw
 
@@ -108,9 +142,10 @@ proceeds on the deduplicated pool. This is deliberately a seeded pick rather tha
 
 - Pool built, exclusions applied, gate applied, one-per-repo dedup applied — in that order.
 - Within each language: candidates sorted by `instance_id`, shuffled with
-  `random.Random(20260730)` (one RNG shared across languages, languages visited in sorted
+  `random.Random(20260731)` (one RNG shared across languages, languages visited in sorted
   order — same scheme as dev-200 and held-out 1), then the quota is taken from the front.
-- **Seed = 20260730**, the freeze date, fixed in this document before the draw.
+- **Seed = 20260731**, fixed in this document before the draw. (`20260730`, the freeze
+  date, was the first draw's seed and is retired with it — see Amendment 1.)
 - Selection is **outcome-blind**: language, repo, instance id, `FAIL_TO_PASS` /
   `PASS_TO_PASS` counts, base commit, image name and license are the only fields consulted.
   No task diff, problem statement or issue text is read by a human or by the selector to
