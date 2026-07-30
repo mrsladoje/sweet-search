@@ -374,13 +374,14 @@ const predsByArm = { native: [], sweet: [] };   // rep0 only — back-compat pre
 const predsByRepArm = {};                        // { rep: { native:[], sweet:[] } } — grade EVERY rep for power
 
 // --- LIVE PROGRESS counter (no black-box runs) ---
-// TOTAL = instances × 2 arms × reps. After EVERY completed run (success or
+// TOTAL = instances × arms × reps (ARMS may be a single arm — e.g. ARMS=sweet for a
+// prompt-variant A/B — so this must not assume 2). After EVERY completed run (success or
 // error) we print + append one line to results/<runId>/progress.log with the
 // running count, valid-patch (predOk) tallies per arm, $ spent, and a wall-clock
 // ETA (elapsed/done × remaining — naturally reflects the actual concurrency).
 // `tail -f` that file for a live view. (resolve rate needs grading at the end;
 // predOk = "produced a non-empty patch" is the live proxy.)
-const TOTAL_RUNS = INSTANCES.length * 2 * REPS;
+const TOTAL_RUNS = INSTANCES.length * ARMS.length * REPS;
 const t0run = Date.now();
 const prog = { done: 0, errors: 0, cost: 0, predOk: { native: 0, sweet: 0 }, byArm: { native: 0, sweet: 0 } };
 const PROGRESS_LOG = path.join(BENCH, 'results', runId, 'progress.log');
@@ -529,7 +530,7 @@ async function runPool(ids, concurrency) {
 
 function stripBig(r) { const { finalPatch, trajectory, ...rest } = r; return rest; }
 
-console.log(`\n### running ${INSTANCES.length} task(s) × 2 arms × ${REPS} reps = ${TOTAL_RUNS} runs | CONCURRENCY=${CONCURRENCY} provider=${PROVIDER} model=${MODEL} frame=${process.env.TASK_FRAME !== '0' ? 'ON' : 'OFF'}`);
+console.log(`\n### running ${INSTANCES.length} task(s) × ${ARMS.length} arm(s) [${ARMS.join(',')}] × ${REPS} reps = ${TOTAL_RUNS} runs | CONCURRENCY=${CONCURRENCY} provider=${PROVIDER} model=${MODEL} frame=${process.env.TASK_FRAME !== '0' ? 'ON' : 'OFF'}`);
 emitProgress(' (start)');
 await runPool(INSTANCES, CONCURRENCY);
 // reap ss-* daemons ONCE, after the whole pool drains (never mid-pool — would kill

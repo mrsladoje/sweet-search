@@ -2,41 +2,47 @@
 /**
  * probe-count.mjs — PREDECLARED DIAGNOSTIC for the turn-economy A/B.
  *
- * The harness counts `calls = toolCalls.length` (opencode-task-runner.mjs:178) — i.e. tool
- * ENVELOPES, not retrieval operations. `classifyShell` is prefix-anchored, so
+ * WHAT IT COUNTS: **retrieval-and-test operations** — `ss-*`, `run_tests`, native
+ * retrieval shell (`cat`/`sed -n`/`grep`/`rg`/`find`/`ls`…), and the harness's native
+ * read/grep/glob/list tools. Edits and non-retrieval shell (`git log`, `npm i`, `cd`)
+ * count ZERO on BOTH arms. It is deliberately NOT "all operations"; it is the
+ * anti-shotgun metric, and it keeps that precise name everywhere it is reported.
+ *
+ * WHY IT EXISTS: the harness counts `calls = toolCalls.length`
+ * (opencode-task-runner.mjs:178) — tool ENVELOPES, not operations. `classifyShell` is
+ * prefix-anchored, so
  *   `ss-grep A && ss-grep B && ss-read C`   counts as ONE `ss` call, and
- *   `ls && ss-grep A`                       counts as ONE `bash` call with the probe invisible.
+ *   `ls && ss-grep A`                       counts as ONE `bash` call, probe invisible.
+ * A treatment could therefore ADD probes, fuse them into one envelope, and still pass a
+ * calls/task gate defined on envelopes. This recovers the underlying count.
  *
- * A turn-economy treatment could therefore ADD probes, fuse them into one bash envelope, and
- * still pass a calls/task gate defined on envelopes. That makes the envelope metric unable to
- * validate the block's "never a probe you had not planned" clause on its own.
+ * PARSER SCOPE (locked by tests/probe-count.mjs — read it before trusting a number):
+ *   handled  — `;` `&&` `||` newline separation; quotes; `( … )` and `{ … }` groups
+ *              (recursively); leading env assignments (`X=1 cmd`); wrapper commands
+ *              (`timeout N`, `env`, `command`, `nice`, `time`, `stdbuf …`); `$( … )`
+ *              command substitution (recursively); pipelines count as one operation
+ *              (`ss-grep A | head` is one retrieval).
+ *   NOT handled — backgrounding semantics, `eval`-constructed commands, aliases,
+ *              here-doc bodies. If a pilot rollout uses those, audit it by hand.
  *
- * This script recovers the underlying count by splitting fused shell strings on `;`, `&&`, `||`
- * and newlines (respecting quotes) and counting `ss-*` / `run_tests` occurrences per segment.
- * READ-ONLY: it reads each rollout's private OpenCode store and writes nothing.
+ * READ-ONLY: copies each rollout's OpenCode store (db + WAL + shm) to a scratch dir and
+ * reads the copy, so no run artifact is ever opened for write.
  *
  * Usage:
- *   node stats/probe-count.mjs <results/<RUN_ID>/agent-state>  [--json]
- *
- * Reports, per rollout and per arm:
- *   envelopes            tool calls as the harness counts them
- *   probes               underlying ss-* / run_tests operations
- *   probesPerEnvelope    the packaging factor the envelope metric hides
- *   turns                assistant messages carrying >=1 tool call
- *   envelopesPerTurn     comparable to the 1.14 v 1.76 figure
- *   probesPerTurn        what that figure MEANS once fusion is undone
+ *   node stats/probe-count.mjs <results/<RUN_ID>/agent-state> [--json]
  */
 import { readdirSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-// SYMMETRIC retrieval/test operation set — the same buckets `classifyShell` uses
-// (ss / nativeGrep / nativeRead / test). Sweet's `ss-read` and native's `cat`/`sed` are
-// counted alike; pure edits and non-retrieval shell (`git log`, `npm i`, `cd`) count 0 on
-// BOTH arms. An asymmetric set (ss-* only) biases hard against the native arm.
-const SS = /^(ss[-_](search|grep|find|read|semantic|trace)|sweet-search|run_tests|cat|head|tail|nl|bat|less|sed\s+(-n|')|rg|grep|ag|ack|git\s+grep|find|ls)\b/;
+/** Head-of-command matcher for a retrieval-or-test operation. */
+const OP = /^(ss[-_](search|grep|find|read|semantic|trace)|sweet-search|run_tests|cat|head|tail|nl|bat|less|sed|rg|grep|ag|ack|find|ls)$/;
+/** Leading wrappers that delegate to a real command; strip then re-inspect the head. */
+const WRAPPER = /^(timeout|env|command|nice|time|stdbuf|nohup|ionice)$/;
 
-/** Split a shell string into top-level segments on ; && || and newlines, honouring quotes. */
+/** Split a shell string into top-level segments on ; && || and newlines, honouring
+ *  quotes, parens and braces. Pipes are NOT split: a pipeline is one operation. */
 export function splitShell(cmd) {
   const out = [];
   let cur = '', q = null, depth = 0;
@@ -49,8 +55,8 @@ export function splitShell(cmd) {
       continue;
     }
     if (c === '"' || c === "'" || c === '`') { q = c; cur += c; continue; }
-    if (c === '(') { depth++; cur += c; continue; }
-    if (c === ')') { depth--; cur += c; continue; }
+    if (c === '(' || c === '{') { depth++; cur += c; continue; }
+    if (c === ')' || c === '}') { depth--; cur += c; continue; }
     if (depth === 0) {
       if (c === ';' || c === '\n') { out.push(cur); cur = ''; continue; }
       if ((c === '&' && s[i + 1] === '&') || (c === '|' && s[i + 1] === '|')) {
@@ -63,9 +69,52 @@ export function splitShell(cmd) {
   return out.map(x => x.trim()).filter(Boolean);
 }
 
-/** Count `ss-` and `run_tests` operations inside one shell string. */
+/** Extract the bodies of every top-level `$( … )` substitution in a segment. */
+function substitutions(seg) {
+  const out = [];
+  for (let i = 0; i < seg.length - 1; i++) {
+    if (seg[i] === '$' && seg[i + 1] === '(') {
+      let d = 1, j = i + 2, body = '';
+      while (j < seg.length && d > 0) {
+        if (seg[j] === '(') d++;
+        else if (seg[j] === ')') { d--; if (!d) break; }
+        body += seg[j]; j++;
+      }
+      out.push(body);
+      i = j;
+    }
+  }
+  return out;
+}
+
+/** Strip leading `VAR=val` assignments and wrapper commands, return the effective head. */
+function effectiveHead(seg) {
+  let toks = seg.split(/\s+/).filter(Boolean);
+  for (;;) {
+    if (!toks.length) return '';
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(toks[0])) { toks = toks.slice(1); continue; }
+    const base = path.basename(toks[0]);
+    if (WRAPPER.test(base)) {
+      toks = toks.slice(1);
+      // drop the wrapper's own options/operands (e.g. `timeout 60`, `stdbuf -o0`)
+      while (toks.length && /^(-|\d+(\.\d+)?[smhd]?$)/.test(toks[0])) toks = toks.slice(1);
+      continue;
+    }
+    return base;
+  }
+}
+
+/** Count retrieval-and-test operations inside one shell string. Recursive. */
 export function countProbes(cmd) {
-  return splitShell(cmd).filter(seg => SS.test(seg)).length;
+  let n = 0;
+  for (const seg of splitShell(cmd)) {
+    // Recurse into ( … ) and { … } groups rather than treating them as one command.
+    const grouped = seg.match(/^[({]([\s\S]*)[)}]$/);
+    if (grouped) { n += countProbes(grouped[1]); continue; }
+    for (const sub of substitutions(seg)) n += countProbes(sub);
+    if (OP.test(effectiveHead(seg))) n += 1;
+  }
+  return n;
 }
 
 function findDb(dir) {
@@ -138,45 +187,48 @@ function analyzeRollout(dir) {
   return { envelopes, probes, turns: turns.size, fused };
 }
 
-const root = process.argv[2];
-const asJson = process.argv.includes('--json');
-if (!root || !existsSync(root)) {
-  console.error('usage: node stats/probe-count.mjs <results/<RUN_ID>/agent-state> [--json]');
-  process.exit(2);
-}
-
-const perArm = {};
-const rollouts = [];
-for (const name of readdirSync(root).sort()) {
-  const dir = path.join(root, name);
-  if (!statSync(dir).isDirectory()) continue;
-  const r = analyzeRollout(dir);
-  if (!r) continue;
-  const arm = name.endsWith('-sweet') ? 'sweet' : name.endsWith('-native') ? 'native' : 'other';
-  rollouts.push({ rollout: name, arm, ...r });
-  (perArm[arm] ||= { envelopes: 0, probes: 0, turns: 0, n: 0 });
-  perArm[arm].envelopes += r.envelopes;
-  perArm[arm].probes += r.probes;
-  perArm[arm].turns += r.turns;
-  perArm[arm].n++;
-}
-
-if (asJson) {
-  console.log(JSON.stringify({ rollouts, perArm }, null, 2));
-} else {
-  console.log('rollout'.padEnd(44), 'env'.padStart(6), 'probe'.padStart(6),
-              'p/env'.padStart(6), 'turns'.padStart(6), 'env/t'.padStart(6), 'p/t'.padStart(6));
-  for (const r of rollouts) {
-    console.log(r.rollout.padEnd(44), String(r.envelopes).padStart(6), String(r.probes).padStart(6),
-                (r.probes / (r.envelopes || 1)).toFixed(2).padStart(6), String(r.turns).padStart(6),
-                (r.envelopes / (r.turns || 1)).toFixed(2).padStart(6),
-                (r.probes / (r.turns || 1)).toFixed(2).padStart(6));
+// CLI entry — guarded so the parser above can be imported by tests.
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  const root = process.argv[2];
+  const asJson = process.argv.includes('--json');
+  if (!root || !existsSync(root)) {
+    console.error('usage: node stats/probe-count.mjs <results/<RUN_ID>/agent-state> [--json]');
+    process.exit(2);
   }
-  console.log('\n=== per arm ===');
-  for (const [arm, a] of Object.entries(perArm)) {
-    console.log(`${arm.padEnd(8)} n=${a.n}  envelopes=${a.envelopes}  probes=${a.probes}  ` +
-      `probes/envelope=${(a.probes / (a.envelopes || 1)).toFixed(2)}  ` +
-      `envelopes/turn=${(a.envelopes / (a.turns || 1)).toFixed(2)}  ` +
-      `probes/turn=${(a.probes / (a.turns || 1)).toFixed(2)}`);
+
+  const perArm = {};
+  const rollouts = [];
+  for (const name of readdirSync(root).sort()) {
+    const dir = path.join(root, name);
+    if (!statSync(dir).isDirectory()) continue;
+    const r = analyzeRollout(dir);
+    if (!r) continue;
+    const arm = name.endsWith('-sweet') ? 'sweet' : name.endsWith('-native') ? 'native' : 'other';
+    rollouts.push({ rollout: name, arm, ...r });
+    (perArm[arm] ||= { envelopes: 0, probes: 0, turns: 0, n: 0 });
+    perArm[arm].envelopes += r.envelopes;
+    perArm[arm].probes += r.probes;
+    perArm[arm].turns += r.turns;
+    perArm[arm].n++;
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify({ rollouts, perArm }, null, 2));
+  } else {
+    console.log('rollout'.padEnd(44), 'env'.padStart(6), 'probe'.padStart(6),
+                'p/env'.padStart(6), 'turns'.padStart(6), 'env/t'.padStart(6), 'p/t'.padStart(6));
+    for (const r of rollouts) {
+      console.log(r.rollout.padEnd(44), String(r.envelopes).padStart(6), String(r.probes).padStart(6),
+                  (r.probes / (r.envelopes || 1)).toFixed(2).padStart(6), String(r.turns).padStart(6),
+                  (r.envelopes / (r.turns || 1)).toFixed(2).padStart(6),
+                  (r.probes / (r.turns || 1)).toFixed(2).padStart(6));
+    }
+    console.log('\n=== per arm ===');
+    for (const [arm, a] of Object.entries(perArm)) {
+      console.log(`${arm.padEnd(8)} n=${a.n}  envelopes=${a.envelopes}  probes=${a.probes}  ` +
+        `probes/envelope=${(a.probes / (a.envelopes || 1)).toFixed(2)}  ` +
+        `envelopes/turn=${(a.envelopes / (a.turns || 1)).toFixed(2)}  ` +
+        `probes/turn=${(a.probes / (a.turns || 1)).toFixed(2)}`);
+    }
   }
 }
