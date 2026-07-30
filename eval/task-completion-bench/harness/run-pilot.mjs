@@ -26,6 +26,7 @@ import { shimVerdict } from './shim-policy.mjs';
 import { gradeFromReportItem, loadLedger, preflightEnvLedger, vaultTarName } from './env-ledger.mjs';
 import { createEvaluatorRuntime } from './evaluator-runtime.mjs';
 import { ISOLATION_ON, jailPreflight, guardStatus, DENY_LOG } from './agent-jail.mjs';
+import { RT_DEDUP_ON } from './rt-dedup.mjs';
 import { ensureGuard } from './egress-guard.mjs';
 import { scanPredictions } from './gold-tripwire.mjs';
 // HARNESS routes the agent loop through a REAL production coding agent (uncapped — runs
@@ -285,6 +286,11 @@ function reapRunDir(rundir) {
 }
 
 const runId = process.env.RUN_ID || `pilot-${INSTANCES.length}x${REPS}`;
+// L3 run_tests output dedup (rt-dedup.mjs): harness-side, BOTH arms, tests always run.
+// Stamped on every row like `isolated`, so a run's rows always say which way it ran.
+console.log(RT_DEDUP_ON
+  ? `[rt-dedup] ON — a repeat run_tests with an identical diff+untracked+argv AND an identical result gets a compact summary (suite still runs); state/audit log → results/${runId}/rt-dedup/<task>-<arm>.jsonl`
+  : '[rt-dedup] OFF (SS_RUNTESTS_DEDUP=0) — every run_tests invocation returns the full transcript.');
 const all = await loadTasks();
 if (SR_MODE && !INSTANCES.length) INSTANCES = all.map(t => t.instance_id);
 // --- GREEN-LEDGER PRE-FLIGHT (standing rule 2026-07-09, non-negotiable) ---
@@ -480,7 +486,7 @@ async function runOneTask(id) {
             if (rep === 0) predsByArm[arm].push(pred);
             (predsByRepArm[rep] = predsByRepArm[rep] || { native: [], sweet: [] })[arm].push(pred);
           }
-          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, isolated: CLI_HARNESS && ISOLATION_ON, ...stripBig(r) });
+          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, isolated: CLI_HARNESS && ISOLATION_ON, rtDedup: RT_DEDUP_ON, ...stripBig(r) });
           try { const td = path.join(BENCH, 'results', runId, 'trajectories'); mkdirSync(td, { recursive: true }); writeFileSync(path.join(td, `${id}-${arm}-r${rep}.json`), JSON.stringify({ taskId: id, arm, rep, exitReason: r.exitReason, toolCounts: r.toolCounts, ranTests, escapeExamples: r.escapeExamples, trajectory: r.trajectory }, null, 2)); } catch { /* */ }
           prog.done++; prog.byArm[arm]++; if (r.patchHunks > 0 && !v.excluded) prog.predOk[arm]++; prog.cost += attemptCost;
           if (v.excluded) prog.shimExcluded = (prog.shimExcluded || 0) + 1;

@@ -67,7 +67,7 @@ export function setupRunner({
   const shimInfo = writeRunTestsShim(binDir, {
     image, workdir, testScript, rundir, testTimeoutSec,
     netArgs, brokerMode: isolate, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY,
-    stateDir: ipcStateDir, _isAgentFormat: sweet,
+    stateDir: ipcStateDir, _isAgentFormat: sweet, label,
   });
   let wrapperFiles = [];
   if (L1_CONDENSE) {
@@ -86,7 +86,7 @@ export function setupRunner({
     : null;
   // In broker mode the IPC dir is also checked (requests must be fully consumed by exit);
   // without a broker there is no _rt_ipc and the stateDir check is skipped, as before.
-  return { runnerStateDir, binDir, runnerFiles, integrity, realDocker, jail, broker, integrityStateDir: isolate ? runnerStateDir : undefined };
+  return { runnerStateDir, binDir, runnerFiles, integrity, realDocker, jail, broker, dedupLog: shimInfo.dedupLog || null, integrityStateDir: isolate ? runnerStateDir : undefined };
 }
 
 // PATH = [binDir, ss-* (sweet only), ...host]; + SWEET_SEARCH_PROJECT_ROOT + DOCKER_HOST.
