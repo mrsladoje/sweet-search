@@ -7,7 +7,9 @@
 #
 # Run FROM the Mac:  pod-golden-fleet.sh <specs.jsonl|.json> [--limit N]
 # Env: SS_POD (default root@213.173.103.21), SS_POD_PORT (40662),
-#      SS_POD_KEY (~/.ssh/id_ed25519), SS_VAULT_DIR (~/.ss-eval/vault/golden)
+#      SS_POD_KEY (~/.ssh/id_ed25519), SS_VAULT_DIR (~/.ss-eval/vault/golden),
+#      SS_POD_SPECS (filename of the spec file ON THE POD, relative to /root/ss;
+#                    default heldout_specs.json — held-out 2 uses heldout2_specs.json)
 set -uo pipefail
 
 POD="${SS_POD:-root@213.173.103.21}"
@@ -18,7 +20,7 @@ SSH=(ssh -p "$PORT" -i "$KEY" -o ServerAliveInterval=30 -o ServerAliveCountMax=4
 SPECS="${1:?usage: pod-golden-fleet.sh <specs.jsonl|.json> [--limit N]}"
 LIMIT="${3:-0}"; [ "${2:-}" = "--limit" ] && LIMIT="$3"
 POD_GOLDEN=/root/.ss-eval/golden
-POD_SPECS=heldout_specs.json   # relative to /root/ss on the pod
+POD_SPECS="${SS_POD_SPECS:-heldout_specs.json}"   # relative to /root/ss on the pod
 
 mkdir -p "$VAULT"
 WORK="$(mktemp -d)"
