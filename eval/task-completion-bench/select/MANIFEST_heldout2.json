@@ -1,0 +1,291 @@
+{
+  "set": "heldout2",
+  "seed": 20260731,
+  "N": 200,
+  "rules": "HELDOUT2_RULES.md",
+  "fairness": "FAIRNESS.md",
+  "supersedes": "tasks_heldout.jsonl (held-out 1, seed 20260715, RETIRED evidence)",
+  "v2": {
+    "name": "nebius/SWE-rebench-V2",
+    "revision": "475dd5e8703bb5fb22dd3c60b5d038b019eba1e0",
+    "kept_after_filters_exclusions_and_gate": 13783,
+    "drops": {
+      "task_gate_fail_to_pass_ge_max": 2212,
+      "task_gate_pass_to_pass_below_min": 2973,
+      "quality_not_A": 9011,
+      "excluded_repo": 5026,
+      "excluded_instance_id": 212
+    },
+    "pool_by_language_before_repo_dedup": {
+      "c": 8,
+      "clojure": 33,
+      "cpp": 3,
+      "csharp": 6,
+      "dart": 62,
+      "elixir": 201,
+      "go": 2477,
+      "java": 479,
+      "js": 2167,
+      "julia": 307,
+      "kotlin": 61,
+      "lua": 12,
+      "ocaml": 4,
+      "php": 537,
+      "python": 3855,
+      "r": 65,
+      "rust": 967,
+      "scala": 39,
+      "swift": 89,
+      "ts": 2411
+    },
+    "pool_by_language": {
+      "c": 5,
+      "clojure": 18,
+      "cpp": 3,
+      "csharp": 3,
+      "dart": 16,
+      "elixir": 49,
+      "go": 653,
+      "java": 107,
+      "js": 391,
+      "julia": 63,
+      "kotlin": 7,
+      "lua": 4,
+      "ocaml": 3,
+      "php": 86,
+      "python": 547,
+      "r": 14,
+      "rust": 201,
+      "scala": 8,
+      "swift": 26,
+      "ts": 380
+    }
+  },
+  "exclusions": {
+    "snapshot": "HELDOUT2_EXCLUDED_REPOS.json",
+    "rule": "HELDOUT2_RULES.md \u00a73 (two tiers)",
+    "tier_a_instance_ids": {
+      "counts": {
+        "dev200": 200,
+        "heldout1": 240,
+        "heldout1_reserve": 101,
+        "decontam": 215,
+        "run_and_smoke_history": 475
+      },
+      "n_total": 730
+    },
+    "tier_b_repos": {
+      "counts": {
+        "dev200_repos": 168,
+        "forensics_read_repos": 27,
+        "hand_written_override_repos": 110
+      },
+      "marginal_new_repos_in_listed_order": {
+        "dev200_repos": 168,
+        "forensics_read_repos": 27,
+        "hand_written_override_repos": 73
+      },
+      "n_total": 268
+    },
+    "audit_only_repos_NOT_excluded_at_repo_level": {
+      "counts": {
+        "mac_vault_golden_repos": 221,
+        "box_staged_golden_repos": 181,
+        "heldout1_repos": 224,
+        "heldout1_reserve_repos": 95,
+        "decontam_repos": 146,
+        "run_and_smoke_history_repos": 402
+      },
+      "n_downgraded_to_instance_level": 379
+    }
+  },
+  "one_task_per_repo": {
+    "rule": "HELDOUT2_RULES.md \u00a75",
+    "dropped_same_repo_candidates": 11199
+  },
+  "allocation_preregistered": {
+    "ts": 30,
+    "python": 30,
+    "js": 26,
+    "java": 20,
+    "go": 18,
+    "rust": 18,
+    "csharp": 12,
+    "cpp": 10,
+    "c": 8,
+    "php": 8,
+    "kotlin": 6,
+    "swift": 4,
+    "scala": 2,
+    "dart": 2,
+    "elixir": 2,
+    "julia": 2,
+    "r": 1,
+    "clojure": 1,
+    "lua": 0,
+    "ocaml": 0
+  },
+  "allocation_effective": {
+    "ts": 33,
+    "python": 34,
+    "js": 29,
+    "java": 22,
+    "go": 20,
+    "rust": 20,
+    "csharp": 3,
+    "cpp": 3,
+    "c": 5,
+    "php": 9,
+    "kotlin": 7,
+    "swift": 5,
+    "scala": 2,
+    "dart": 2,
+    "elixir": 2,
+    "julia": 2,
+    "r": 1,
+    "clojure": 1,
+    "lua": 0,
+    "ocaml": 0
+  },
+  "deficit_reassignments": {
+    "shortfall": 19,
+    "given_up_by": {
+      "c": 3,
+      "cpp": 7,
+      "csharp": 9
+    },
+    "absorbed_by": {
+      "go": 2,
+      "java": 2,
+      "js": 3,
+      "kotlin": 1,
+      "php": 1,
+      "python": 4,
+      "rust": 2,
+      "swift": 1,
+      "ts": 3
+    }
+  },
+  "selected_by_language": {
+    "c": 5,
+    "clojure": 1,
+    "cpp": 3,
+    "csharp": 3,
+    "dart": 2,
+    "elixir": 2,
+    "go": 20,
+    "java": 22,
+    "js": 29,
+    "julia": 2,
+    "kotlin": 7,
+    "php": 9,
+    "python": 34,
+    "r": 1,
+    "rust": 20,
+    "scala": 2,
+    "swift": 5,
+    "ts": 33
+  },
+  "reserve": {
+    "N": 67,
+    "allocation_preregistered": {
+      "ts": 9,
+      "python": 9,
+      "js": 8,
+      "java": 6,
+      "go": 6,
+      "rust": 6,
+      "csharp": 4,
+      "cpp": 3,
+      "c": 3,
+      "php": 3,
+      "kotlin": 2,
+      "swift": 2,
+      "scala": 1,
+      "dart": 1,
+      "elixir": 1,
+      "julia": 1,
+      "r": 1,
+      "clojure": 1,
+      "lua": 0,
+      "ocaml": 0
+    },
+    "allocation_effective": {
+      "ts": 11,
+      "python": 11,
+      "js": 10,
+      "java": 7,
+      "go": 8,
+      "rust": 7,
+      "csharp": 0,
+      "cpp": 0,
+      "c": 0,
+      "php": 4,
+      "kotlin": 0,
+      "swift": 3,
+      "scala": 1,
+      "dart": 1,
+      "elixir": 1,
+      "julia": 1,
+      "r": 1,
+      "clojure": 1,
+      "lua": 0,
+      "ocaml": 0
+    },
+    "deficit_reassignments": {
+      "shortfall": 12,
+      "given_up_by": {
+        "c": 3,
+        "cpp": 3,
+        "csharp": 4,
+        "kotlin": 2
+      },
+      "absorbed_by": {
+        "go": 2,
+        "java": 1,
+        "js": 2,
+        "php": 1,
+        "python": 2,
+        "rust": 1,
+        "swift": 1,
+        "ts": 2
+      }
+    },
+    "by_language": {
+      "clojure": 1,
+      "dart": 1,
+      "elixir": 1,
+      "go": 8,
+      "java": 7,
+      "js": 10,
+      "julia": 1,
+      "php": 4,
+      "python": 11,
+      "r": 1,
+      "rust": 7,
+      "scala": 1,
+      "swift": 3,
+      "ts": 11
+    },
+    "replacement_rule": "Mechanical, arm-neutral reasons only (HELDOUT2_RULES.md \u00a77): golden will not build; suite will not reach gold-FULL under the exact run config after reasonable env repair; repo/commit vanished upstream. Replaced by the lowest-rank unused reserve of the same language; if exhausted, by the reserve of the largest-primary-quota language with reserves left (ties alphabetical). Strictly before any arm rollout on that task; never after outcomes exist. Logged in HELDOUT2_REPLACEMENTS.json."
+  },
+  "task_gate": {
+    "thresholds": {
+      "max_fail_to_pass": 100,
+      "min_pass_to_pass": 1
+    },
+    "n_rejected": 4047,
+    "by_reason": {
+      "fail_to_pass_ge_max": 2212,
+      "pass_to_pass_below_min": 2973,
+      "both": 1138
+    },
+    "applies_to": "primary + reserve, before the seeded draw",
+    "sidecar": "REJECTED_heldout2.json"
+  },
+  "criteria": "quality code=='A'; non-empty FAIL_TO_PASS; V2 revision pinned; two-tier exclusion (instance ids for everything ever drawn or run, whole repos where we have task-level knowledge); task-rejection gate (FAIL_TO_PASS<100 and PASS_TO_PASS>0); one task per repo; fixed Octoverse-2025-anchored quotas with proportional deficit redistribution; seeded sample. Orthogonal to sweet-vs-native outcome; no task content inspected.",
+  "sha256": {
+    "tasks_heldout2.jsonl": "67d83ded531112a0ce7ff8082e99a8d10014df3ff24ff4cfe755e97932f148c8",
+    "tasks_heldout2_reserve.jsonl": "113994d5ce1b2ce5e8e9264269c0b593db9854d603d85d2adeec00356963a307"
+  }
+}

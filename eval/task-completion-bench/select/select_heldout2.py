@@ -228,10 +228,11 @@ def main():
                "pool_by_language_before_repo_dedup": {L: len(raw_pool[L]) for L in sorted(raw_pool)},
                "pool_by_language": {L: len(pool[L]) for L in sorted(pool)}},
         "exclusions": {"snapshot": os.path.basename(EXCLUSIONS_PATH),
-                       "n_excluded_repos": excl_snap["n_excluded_repos"],
-                       "n_excluded_instance_ids": excl_snap["n_excluded_instance_ids"],
-                       "by_source": excl_snap["counts"],
-                       "level": "repo (instance ids asserted as well)"},
+                       "rule": "HELDOUT2_RULES.md §3 (two tiers)",
+                       "tier_a_instance_ids": excl_snap["tier_a_instance_ids"],
+                       "tier_b_repos": excl_snap["tier_b_repos"],
+                       "audit_only_repos_NOT_excluded_at_repo_level":
+                           excl_snap["audit_only_repos_NOT_excluded_at_repo_level"]},
         "one_task_per_repo": {"rule": "HELDOUT2_RULES.md §5",
                               "dropped_same_repo_candidates": dropped_same_repo},
         "allocation_preregistered": ALLOCATION,
@@ -265,11 +266,13 @@ def main():
                           "both": sum(1 for r in rejected if len(r["reasons"]) == 2)},
                       "applies_to": "primary + reserve, before the seeded draw",
                       "sidecar": os.path.basename(task_gates.rejection_sidecar_path(OUT_DIR, "heldout2"))},
-        "criteria": "quality code=='A'; non-empty FAIL_TO_PASS; V2 revision pinned; "
-                    "repo-level exclusion of every population and run/golden artifact we "
-                    "have touched; task-rejection gate (FAIL_TO_PASS<100 and PASS_TO_PASS>0); "
-                    "one task per repo; fixed Octoverse-2025-anchored quotas; seeded sample. "
-                    "Orthogonal to sweet-vs-native outcome; no task content inspected.",
+        "criteria": "quality code=='A'; non-empty FAIL_TO_PASS; V2 revision pinned; two-tier "
+                    "exclusion (instance ids for everything ever drawn or run, whole repos "
+                    "where we have task-level knowledge); task-rejection gate "
+                    "(FAIL_TO_PASS<100 and PASS_TO_PASS>0); one task per repo; fixed "
+                    "Octoverse-2025-anchored quotas with proportional deficit redistribution; "
+                    "seeded sample. Orthogonal to sweet-vs-native outcome; no task content "
+                    "inspected.",
     }
     print(json.dumps(manifest, indent=2, default=str))
 

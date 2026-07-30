@@ -114,9 +114,25 @@ Why this is achievable on the evidence below:
    **Gate 3′ is therefore CLOSED for these two items, and the set build (gate 4) is UNBLOCKED.**
    The one remaining gate-3′ thread is the native half of the P7 turn-log confirmation, which
    rides on the first native rollout of the next run.
-4. **Build + freeze the NEW held-out set** — **UNBLOCKED 2026-07-30** (gate 3′ selection/grading
-   items landed above); still gated on gate 1 being verified, else it burns on first
-   contact. Recipe: Octoverse quotas, dev-repo exclusion, fresh seed, outcome-blind selection,
+4. **Build + freeze the NEW held-out set** — **DRAWN + FROZEN 2026-07-30.**
+   `select/tasks_heldout2.jsonl` (200) + `select/tasks_heldout2_reserve.jsonl` (67), seed
+   `20260731`, V2 pinned at `475dd5e8…`. Rules: `select/HELDOUT2_RULES.md`; pre-registration
+   snapshot: `select/FAIRNESS.md`; manifest: `select/MANIFEST_heldout2.json`.
+   **Hashes** — primary `67d83ded531112a0ce7ff8082e99a8d10014df3ff24ff4cfe755e97932f148c8` ·
+   reserve `113994d5ce1b2ce5e8e9264269c0b593db9854d603d85d2adeec00356963a307` · manifest
+   `0417a0f7bf5993f44040df5456b3880973637eb780d896d22539fc9bdbf73164`. The draw was run
+   twice from a clean state and is byte-identical.
+   Two-tier exclusions (730 instance ids unconditionally; 268 repos where we have task-level
+   knowledge — dev-200, the tasks read in forensics, the hand-written override tasks), the
+   rejection gate before the draw (4,047 of 17,830 pool candidates rejected), one task per
+   repo (200 distinct repos), and proportional redistribution of the 19 slots freed by C#/C++/C
+   pool exhaustion. Realized mix: python 34 · ts 33 · js 29 · java 22 · go 20 · rust 20 · php 9
+   · kotlin 7 · swift 5 · c 5 · csharp 3 · cpp 3 · scala 2 · dart 2 · elixir 2 · julia 2 · r 1 ·
+   clojure 1. **Amendment 1** (a first draw under seed `20260730` discarded for a degenerate
+   deficit rule; both draws and the reason committed) is disclosed in `FAIRNESS.md` §7.
+   Progress from here — goldens, staging, ledger — is tracked in
+   `HELDOUT2_BUILD_LOG.md`. Original recipe, for reference: Octoverse quotas, dev-repo
+   exclusion, fresh seed, outcome-blind selection,
    **the task-rejection gate now runs inside the draw** (expect ~25% of the pool rejected, absorbed
    by re-drawing — `resolve_deficits` already handles a per-language shortfall);
    goldens built, vaulted (golden-vault.sh), staged on the box, and a **preflight golden-presence
