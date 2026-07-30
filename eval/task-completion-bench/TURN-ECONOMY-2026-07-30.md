@@ -192,6 +192,20 @@ records wall-clock `state.time.{start,end}`.
 are expressible only as `&&` inside a single bash call — which the block now says explicitly, with
 the reason.
 
+**Consequence for the expected effect size — the reachable opportunity is smaller than the
+headline 797 turns.** Of the 797 greedily-collapsible sweet turns (13.8%, ≈$11.4), the **292
+edit → `run_tests` pairs are now out of reach**: an edit goes through the harness edit tool and
+`run_tests` through bash, so the pair cannot be `&&`-chained into one call, and putting them in one
+message is exactly what §2.1 shows is unsafe. That removes ~37% of the greedy count. What remains
+directly addressable is the 38 independent adjacent single-`ss` turns plus whatever share of the
+551 search → read pairs have a read path known in advance.
+
+The greedy count was never the real target, though. The broader lever is the calls-per-turn gap
+itself — 1.14 vs native's 1.76, with 85.7% of sweet turns carrying a single call against native's
+52% — which is a far larger pool than the greedy pairs. The honest position: **the ≈$11.4 figure
+is now an overestimate of what this block can reach, and no revised dollar figure should be quoted
+until the pilot measures one.**
+
 Scripts (read-only, kept for audit): `ordercheck.py`, `ordercheck2.py`, `bundlescan.py`,
 `bundlescan2.py` in this session's scratchpad; the DB was copied to `/tmp/oc_ro.db` and opened
 `mode=ro`. Nothing in the retired run was modified.
@@ -228,32 +242,83 @@ future prompt A/B becomes routine.
 
 ## 3. Proposed block (Phase 3)
 
-**CLI (`ss-*`) form — 394 chars = 99 tokens** (repo `estimateTokens` = chars/4):
+**Revised 2026-07-30 after external review (Codex).** The first draft (99 tok) is superseded; §3.1
+records why. Current block:
+
+**CLI (`ss-*`) form — 276 chars = 69 tokens** (repo `estimateTokens` = chars/4):
 
 ```markdown
 ## Turn economy
-Default to parallel: one message carries EVERY independent call you already intend, not one per turn — about three, and never a probe you had not planned. Dependent steps are unsafe in one message (they may run concurrently); chain those in ONE bash call with `&&`: `ss-grep "sym" && ss-read src/x.rs 40 120`. A turn spending one search or read is wasted unless it is your last.
+Independent probes you already intend go in ONE message — usually two or three, never a probe you had not planned. Prefer one bash call chaining them with `&&`; separate parallel calls only if they cannot share a command. A call needing another's result waits.
 ```
 
-**MCP form — 314 chars = 79 tokens** (identical core; the bash sentence becomes the tool-agnostic
-dependency carve-out):
+**MCP form — 193 chars = 48 tokens** (identical first and last sentences; the `&&` sentence has no
+meaning against a non-shell tool surface, so parallel calls become the stated mechanism):
 
 ```markdown
 ## Turn economy
-Default to parallel: one message carries EVERY independent call you already intend, not one per turn — about three, and never a probe you had not planned. Dependent calls (one's input comes from another's result) stay sequential. A turn spending one search or read is wasted unless it is your last.
+Independent probes you already intend go in ONE message, as parallel tool calls — usually two or three, never a probe you had not planned. A call needing another's result waits.
 ```
+
+### 3.1 What the first draft got wrong
+
+Three defects, all real; two were violations of requirements this note had already written down.
+
+1. **It contradicted the prompt's own stop discipline.** The draft said *"A turn spending one
+   search or read is wasted unless it is your last."* But M± prescribes single-probe turns as
+   *correct* in its most common routing case — *"ONE `ss-grep` on that literal … Trust the top hit
+   and stop"*, *"one `ss-search`"*, *"confirm with at most one narrow `ss-read`"*. The
+   "unless it is your last" hedge does not cover the multi-file chain, where each hop is single and
+   dependent and none is last. The sentence also invites padding, which is the anti-goal. **Cut
+   entirely** rather than hedged: the block is now purely conditional and says nothing about turns
+   that legitimately carry one probe.
+2. **The worked example taught the wrong lesson.** `ss-grep "sym" && ss-read src/x.rs 40 120` has a
+   hardcoded read path, so the two probes are *independent* — by the block's own rule they should
+   have been batched, not serialized. The example illustrated the opposite of the sentence it was
+   attached to. **Removed.** No example is better than a wrong one; if the pilot shows dependency
+   confusion, a correct example is a cheap follow-up variant.
+3. **"EVERY … about three" was not a limit.** *"carries EVERY independent call you already
+   intend"* and *"about three"* disagree whenever more than three are intended. Now a single
+   bound: *"usually two or three"*.
+
+Also dropped: the parenthetical explaining concurrency. The model does not need the harness's
+execution semantics, only the resulting rule.
+
+### 3.2 Where the review's recommendation was not adopted, and why
+
+The review recommended a 46-token form ending *"keep dependent calls sequential"*, with the `&&`
+guidance dropped, and a bash-aware alternative that reserved `&&` for order-only dependencies.
+Both would push the model from `&&` chaining toward separate parallel calls. **Under this bench's
+guardrail that is a regression, not a simplification:**
+
+| two independent probes | tool calls | turns |
+|---|---|---|
+| chained `&&` in one bash call | **1** | 1 |
+| two parallel bash calls | **2** | 1 |
+
+Both collapse the turn identically; only the first keeps call count flat. The hard guardrail is
+that total calls must not rise (sweet's −23.3% call advantage must survive), and `&&` is already
+**67.8% of `ss-*` calls** — the established idiom. An instruction that converts existing chains
+into separate calls raises calls with no turn benefit and would trip our own revert gate for a
+wording reason rather than a mechanism one. So the block keeps `&&` as the *preferred* mechanism
+and treats parallel calls as the fallback for work that cannot share one command (e.g. a shell
+probe alongside a harness read or edit).
+
+The rest of the review is adopted: brevity (99 → 69 tok), the conditional trigger, the single
+numeric bound, and one wording only in the pilot — the 36 pairs are not split across variants.
 
 ### Requirement check
 
 | requirement | how it is met |
 |---|---|
-| ≤100 tokens | 99 (CLI) / 79 (MCP) |
-| tool-agnostic core | first and last sentences are identical across both forms |
-| one bash-specific example | `` `ss-grep "sym" && ss-read src/x.rs 40 120` `` (CLI form only) |
-| anti-shotgun clause | "about three, and never a probe you had not planned" — the numeric ceiling is from W&D Table 1 (§1.1), which is stronger than the draft's prose-only version |
-| no contradiction of stop-discipline / sufficiency | "unless it is your last" makes the single-call *final* turn explicitly correct, and "never a probe you had not planned" restates the existing no-corroboration rule. The block changes *grouping*, never *how many* probes |
-| edit+test clause | **cut** per §2.1, and replaced by the reason it was cut |
-| "when, not more" framing | "every independent call **you already intend**" |
+| ≤100 tokens | **69** (CLI) / **48** (MCP) |
+| tool-agnostic core | first and last sentences identical across both forms |
+| one bash-specific element | the `&&`-in-one-bash-call preference (CLI form only). **A literal command example was dropped** — the draft's was wrong (§3.1) and a wrong example is worse than none. Flagged as a cheap follow-up variant if the pilot shows dependency confusion |
+| anti-shotgun clause | "usually two or three, never a probe you had not planned" — the numeric bound is from W&D Table 1 (§1.1), where width 5 and 8 score *worse* than 3 |
+| no contradiction of stop-discipline / sufficiency | the block is now purely conditional and says nothing about turns that carry one probe, so it cannot fight *"ONE `ss-grep` … trust the top hit and stop"*. "Never a probe you had not planned" restates the existing no-corroboration rule. The block changes *grouping*, never *how many* |
+| edit+test clause | **cut** per §2.1 |
+| "when, not more" framing | "probes **you already intend**" |
+| calls-flat guardrail | `&&` preferred over parallel calls (§3.2) |
 
 ### Placement
 
@@ -263,9 +328,9 @@ operational addendum after the search-discipline sections, keeping the stop rule
 ### Files
 
 - `core/prompt-optimization/data/p7-turn-economy/sweet-search-system-prompt.turn-economy.md`
-  — 1307 → **1406** tokens (+99, +7.6%)
+  — 1307 → **1377** tokens (+70, +5.4%) · `variant_id: p7-v1-mppppp-fs-te2`
 - `core/prompt-optimization/data/p7-turn-economy/sweet-search-system-prompt-mcp.turn-economy.md`
-  — 1336 → **1415** tokens (+79, +5.9%)
+  — 1336 → **1385** tokens (+49, +3.7%) · `variant_id: p7-v1-mppppp-fs-mcp-te2`
 
 Both are byte-identical to their frozen source except for the appended block. Their frontmatter
 deliberately **omits** the champion's `score_sonnet` / `joint_maximin` / `vault_*` gates — those
@@ -281,7 +346,7 @@ attest the frozen body and would be false here — and carries
  Before editing a symbol with visible siblings … Single-site edits skip this.
 +
 +## Turn economy
-+Default to parallel: one message carries EVERY independent call you already intend, not one per turn — about three, and never a probe you had not planned. Dependent steps are unsafe in one message (they may run concurrently); chain those in ONE bash call with `&&`: `ss-grep "sym" && ss-read src/x.rs 40 120`. A turn spending one search or read is wasted unless it is your last.
++Independent probes you already intend go in ONE message — usually two or three, never a probe you had not planned. Prefer one bash call chaining them with `&&`; separate parallel calls only if they cannot share a command. A call needing another's result waits.
 ```
 
 (plus the frontmatter replacement described above; the MCP diff is the same shape with the MCP form
