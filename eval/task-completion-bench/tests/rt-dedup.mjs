@@ -244,7 +244,11 @@ console.log('== end-to-end: condense on repeat, passthrough on change, tests alw
   assert(c2.includes(DEDUP_MARKER), 'call #2 (identical diff+argv+result) IS condensed');
   assert(/identical source diff \+ command as call #1; result unchanged: exit 0, 2 failed, first failure: /.test(c2),
     'summary matches the specified format', c2);
-  assert(c2.includes(FULL_FLAG), 'summary advertises the --ss-full escape hatch');
+  // The escape hatch is UNDOCUMENTED to the agent (K1 decision 2026-07-30): advertising
+  // it made the model spend 20 of 84 smoke calls re-requesting a transcript it already
+  // had. The flag keeps working; the summary must not mention it.
+  assert(!c2.includes(FULL_FLAG) && !/ss.?full/i.test(c2), 'summary does NOT advertise the escape hatch', c2);
+  assert(c2.includes('Change the code before re-running.'), 'summary keeps the change-the-code line', c2);
   assert(Buffer.byteLength(c2) < 500 && Buffer.byteLength(c2) < Buffer.byteLength(RED) / 4,
     'summary is bounded and much smaller than the transcript it replaced', `${Buffer.byteLength(c2)} vs ${Buffer.byteLength(RED)}`);
   assert(cfg._runs === 2, 'THE SUITE STILL RAN on the suppressed call (never skipped)', String(cfg._runs));
