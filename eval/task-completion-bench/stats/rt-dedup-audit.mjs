@@ -31,7 +31,11 @@ for (const file of readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort()) {
   let start = 0;
   recs.forEach((r, i) => { if (r.kind === 'session') start = i + 1; });
   const sessions = recs.filter(r => r.kind === 'session').length;
-  const calls = recs.slice(start).filter(r => r.kind !== 'session');
+  const live = recs.slice(start);
+  // Responses the requester never consumed (agent-side tool timeout on a slow suite):
+  // citing one of these would tell the agent it already has a transcript it never saw.
+  const undelivered = new Set(live.flatMap(r => r.kind === 'undelivered' ? (r.reqIds || []).map(String) : []));
+  const calls = live.filter(r => r.kind !== 'session' && r.kind !== 'undelivered');
   const byCall = new Map(calls.map(r => [r.call, r]));
   const sup = calls.filter(r => r.suppressed);
   const changed = calls.filter(r => r.decision === 'changed');
@@ -62,6 +66,9 @@ for (const file of readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort()) {
       if (!eq(cited.argv, r.argv)) problems.push('argv mismatch');
       if (cited.digest !== r.digest) problems.push('result digest mismatch');
       if (r.infra) problems.push('suppressed an infra-error result');
+      if (cited.reqId && undelivered.has(String(cited.reqId))) {
+        problems.push(`cited call #${r.citeCall} was never delivered to the agent`);
+      }
     }
     if (problems.length) {
       falsePos++;

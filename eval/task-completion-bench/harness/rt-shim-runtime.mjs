@@ -127,7 +127,7 @@ export function resolveDiffIdentifierWarning(cfg, diff, { resolveNames } = {}) {
 // Main entry: run the suite on the agent's current diff, prepend the L2 levers, then
 // apply the L3 dedup decision. `argv` is the agent's raw run_tests argv (preferred);
 // `pattern` is the legacy single-argument form and stays supported for callers/tests.
-export function runTestsWithLevers(cfg, { pattern = '', argv = null, runSuiteFn = runSuite } = {}) {
+export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = null, runSuiteFn = runSuite } = {}) {
   const L2 = cfg.rtAuthority !== false;
   const parsed = parseRunTestsArgv(argv != null ? argv : (pattern ? [pattern] : []));
   let diff = '';
@@ -151,7 +151,7 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, runSuiteFn 
   }
 
   const cur = runSuiteFn(cfg, diff, testCmd);
-  if (!L2) return applyDedup(cfg, { key, untracked, parsed, diff, out: (note ? note + '\n' : '') + cur.out, raw: cur.out });
+  if (!L2) return applyDedup(cfg, { key, untracked, parsed, diff, reqId, out: (note ? note + '\n' : '') + cur.out, raw: cur.out });
 
   const identifierWarning = resolveDiffIdentifierWarning(cfg, diff);
 
@@ -165,7 +165,7 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, runSuiteFn 
   if (bd) head += (head ? '\n' : '') + bd;
   if (note) head += (head ? '\n' : '') + note;
   const full = [head, cur.out, identifierWarning].filter(Boolean).join('\n');
-  return applyDedup(cfg, { key, untracked, parsed, diff, out: full, raw: cur.out });
+  return applyDedup(cfg, { key, untracked, parsed, diff, reqId, out: full, raw: cur.out });
 }
 
 /**
@@ -178,7 +178,7 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, runSuiteFn 
  * append disables condensation for that call — the log IS the state, so an unwritable
  * log must not silently make every call look like a repeat.
  */
-function applyDedup(cfg, { key, untracked, parsed, diff, out, raw }) {
+function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw }) {
   if (!key) {
     // Still leave an audit trail when the lever was live but abstained, so a smoke can
     // tell "never fired because the agent never repeated" from "could not fingerprint".
@@ -197,7 +197,7 @@ function applyDedup(cfg, { key, untracked, parsed, diff, out, raw }) {
   const decision = dedupDecision(state, key, result.digest);
   const suppress = decision.mode === 'unchanged' && !result.infra;
   const wrote = appendDedupRecord(cfg.dedupLog, {
-    call: state.calls + 1, key, digest: result.digest,
+    call: state.calls + 1, key, digest: result.digest, reqId,
     decision: result.infra && decision.mode !== 'first' ? 'infra-passthrough' : decision.mode,
     citeCall: decision.citeCall, suppressed: suppress,
     argv: parsed.argv,
