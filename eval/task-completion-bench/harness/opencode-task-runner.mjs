@@ -115,7 +115,23 @@ export async function runOpencodeTask(task, {
     permission: { bash: 'allow', edit: 'allow', write: 'allow', read: 'allow', webfetch: 'deny', websearch: 'deny' },
   }));
 
-  const env = buildAgentEnv({ rundir, binDir, ssBinDir, sweet, extraEnv: { OPENCODE_CONFIG: ocConfig }, jail });
+  // PLAN.md §3 B6 (2026-07-30): opencode's bash tool defaults to a 120 s timeout
+  // (`bashDefaultTimeoutMs ?? 120000` in the bundle) while the harness gives a suite
+  // 300 s and the run_tests requester waits `2*tSec+120` for the broker's baseline+current
+  // pair. A 120 s agent-side kill therefore orphans the broker's response on ANY suite over
+  // two minutes — which reads as `shimTampered`, forces the policy re-run, and can exclude
+  // the task. Raise it above the requester deadline so the harness's own budget is the only
+  // thing that can time a test run out. Caller-overridable; opencode ignores the var if a
+  // future build drops it, in which case the 120 s default is back and B6 reopens.
+  const rtDeadlineSec = 2 * (t._testTimeoutSec || 300) + 120;
+  const agentBashTimeoutMs = Number(process.env.SS_AGENT_BASH_TIMEOUT_MS) || (rtDeadlineSec + 60) * 1000;
+  const env = buildAgentEnv({
+    rundir, binDir, ssBinDir, sweet, jail,
+    extraEnv: {
+      OPENCODE_CONFIG: ocConfig,
+      OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: String(agentBashTimeoutMs),
+    },
+  });
   if (sweet && ssBinDir) warmupSweet({ ssBinDir, rundir, env, jail });
 
   // Prompt = the issue ONLY (both arms). Frame + M± live in AGENTS.md above.
