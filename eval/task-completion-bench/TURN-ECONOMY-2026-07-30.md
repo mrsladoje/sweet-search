@@ -553,6 +553,60 @@ latency. The standing `concurrency=1` rule applies to the search benchmark, a di
 **Scope discipline: the smoke reports operations/envelope and envelopes/turn ONLY.** No solve
 claim, no cost claim — 5 pairs supports neither.
 
+#### 4.0c Smoke RESULT (run 2026-07-30/31, $6.28 realized)
+
+Runs `te-smoke-control-20260730` / `te-smoke-variant-20260730`, 5/5 paired, both exit 0, both
+prompt hashes byte-identical before and after. All 10 rollouts `gradeable`.
+
+**Predeclared question — does the block change packaging? YES, so the futility stop does not
+trigger.** But three findings qualify it, and two of them are new design information.
+
+| metric | all 5 | ex `nimble_options` | ex `nimble` + `ocaml` |
+|---|---|---|---|
+| **operations/envelope** | 1.397 → 1.639 (**+17.3%**) | 1.525 → 1.646 (**+7.9%**) | 1.122 → 1.394 (+24.3%) |
+| envelopes/turn | 1.204 → 1.230 (+2.1%) | 1.188 → 1.225 (+3.1%) | 1.304 → 1.092 (−16.3%) |
+| turns *(directional only)* | 186 → 126 (−32.3%) | 149 → 120 (−19.5%) | 69 → 65 (−5.8%) |
+| **operations (total)** | 313 → 254 (**−18.8%**) | 270 → 242 (**−10.4%**) | 101 → 99 (−2.0%) |
+
+`nimble_options` is excluded in column 2 because its **control** rollout logged `escape=27
+leak=1`: it burned much of its 47 calls attempting to fetch the upstream fix from GitHub,
+raw.githubusercontent, and jsdelivr — all correctly refused by the allowlist. Its 37→6 turn
+collapse is a detour the variant happened not to take, not a packaging effect.
+
+**Finding 1 — the mechanism is real but inconsistent.** Per-task `operations/envelope`:
+
+```
+nimble   0.915 → 1.500  UP        eslint   1.156 → 0.920  DOWN
+grade    0.979 → 1.639  UP        ocaml    1.943 → 1.882  DOWN
+robot    1.636 → 1.700  UP
+```
+
+**2 of 5 moved the wrong way on the exact metric the block targets.** The aggregate is carried by
+two tasks. This is the strongest argument for sizing stage 2 from measured variance rather than
+assuming a clean effect.
+
+**Finding 2 — operations FELL 10–19%, and no gate catches that.** The predeclared guard is
+`operationsUpper ≤ 1.05`: it protects against *shotgunning* (more probes). Nothing protects
+against the variant simply **doing less retrieval and testing**. "Fewer turns because it
+investigated less" is a route to losing solves that the current gate set is blind to.
+
+**Finding 3 — one solve flip, on the task with the largest packing change.** Control 4/5,
+variant 3/5. `rstudio-education__gradethis-161` solved under control, not under variant — and it
+is also the task with the biggest `operations/envelope` jump (+67%). At n=5 this is
+statistically meaningless and is **not** reported as a solve effect. It is recorded because it is
+the precise shape the hard revert gate exists to catch, and because it should be watched at
+stage 1. Note it is *not* an under-investigation story: that rollout ran **more** operations
+(46 → 59) and produced **more** hunks (9 → 10), and still failed.
+
+Cache-normalized `idealCostUsd`, reported directionally only: $3.742 → $2.119 (−43.4%) all 5;
+−37.0% ex `nimble`; **−12.7%** ex `nimble` + `ocaml`. The spread across those three slices is the
+point — at n=5 the cost number is whatever the two long-runner tasks did.
+
+**Recommended design change before stage 1 (made AFTER seeing smoke data — disclosed as such):**
+add a **lower** bound to the operations gate, not just the upper one. The smoke was predeclared
+mechanism-only and gate-free precisely so it could inform the design; tightening a guard is a
+legitimate use of it, but the provenance must travel with the change.
+
 ### 4.1 Superseded single-run design (kept for provenance)
 
 - **Tasks**: 36 drawn from the 168 gold-valid dev-200 tasks, stratified by language,
