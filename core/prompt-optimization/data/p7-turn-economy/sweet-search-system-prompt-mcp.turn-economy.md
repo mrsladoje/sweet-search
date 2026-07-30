@@ -1,8 +1,8 @@
 ---
-variant_id: p7-v1-mppppp-fs-mcp-te2
+variant_id: p7-v1-mppppp-fs-mcp-te3
 derived_from: core/prompt-optimization/data/p7-final/sweet-search-system-prompt-mcp.md
 derivation: append the turn-economy block; no other byte changes
-token_count: 1385
+token_count: 1390
 token_count_base: 1336
 benchmarked: false
 status: PROPOSAL — pending the paired dev A/B; do not ship
@@ -46,4 +46,4 @@ Stop searching the instant your evidence answers what you're looking for — one
 Before editing a symbol with visible siblings — multiple call sites, a name family (`IVec2`/`I64Vec2`), branch variants, a generated family — spend ONE mapping call: `trace` the symbol, or one broad `search` regex on the stem. Read the function you edit to its end; a fix covering only the first matching site is not done. Single-site edits skip this.
 
 ## Turn economy
-Independent probes you already intend go in ONE message, as parallel tool calls — usually two or three, never a probe you had not planned. A call needing another's result waits.
+Independent probes you already intend go in ONE message, as parallel tool calls — usually two or three, never a probe you had not planned. A probe needing another's result goes in a later message.
