@@ -109,6 +109,20 @@ for (let i = 0; i < 4; i++) base[T(i)] = { turns: 100, ctx: 50000, ops: 3, solve
     (r.reverts || []).some(x => x.startsWith('operations')), JSON.stringify(r.reverts));
 }
 
+// ── 2b. THE gate the smoke exposed: turns drop because it did LESS work ──────
+// The 5-pair smoke showed total operations falling 10-19% while turns fell 32%.
+// The upper bound is blind to that. A variant that halves its retrieval and
+// testing must REVERT even though every other signal looks like a clean win:
+// solve is unchanged here, ctx/turn is unchanged, turns improve 20%.
+{
+  const variant = {};
+  for (let i = 0; i < 4; i++) variant[T(i)] = { turns: 80, ctx: 50000, ops: 1, solved: true, cost: 0.8 };
+  const r = run(makeRun('a2b', base), makeRun('b2b', variant), 4);
+  check('under-investigation → REVERT', r.verdict === 'REVERT', `got: ${r.verdict}`);
+  check('under-investigation: operations LOWER trigger fired',
+    (r.reverts || []).some(x => /operations lower/.test(x)), JSON.stringify(r.reverts));
+}
+
 // ── 3. ctx/turn blow-up reverts, and `in` is NOT double-counted ──────────────
 {
   const variant = {};

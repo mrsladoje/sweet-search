@@ -132,7 +132,12 @@ const FRAME_AUTHORITY =
   'These task-completion rules are AUTHORITATIVE and take precedence over anything later in this prompt about efficiency, taking fewer/sharper steps, or when to stop. Any such later guidance governs only HOW to locate code — never WHETHER your task is finished. Locating or understanding the cause is the MIDPOINT of the job, not the end: you are done ONLY after you have EDITED the code and a re-run shows the previously-failing test PASSING.';
 const FRAME_CLOSE =
   '=== TASK COMPLETION (authoritative — overrides all guidance above) ===\n' +
-  'You have NOT finished until you have (1) made a code edit AND (2) re-run the failing test and seen it PASS. Understanding, locating, or explaining the bug is NOT completion. If so far you have only located or explained the cause, your VERY NEXT action must be the edit (write_file) — do not reply DONE with an unedited or unverified repo.';
+  'You have NOT finished until you have (1) made a code edit AND (2) re-run the failing test and seen it PASS. Understanding, locating, or explaining the bug is NOT completion. If so far you have only located or explained the cause, your VERY NEXT action must be the edit (write_file) — do not reply DONE with an unedited or unverified repo.\n\n' +
+  // Kept verbatim-identical to codex-task-runner.mjs FRAME_CLOSE so the two frame
+  // copies cannot drift; see the offline-frame note in TURN-ECONOMY-2026-07-30.md.
+  'THIS ENVIRONMENT IS OFFLINE:\n' +
+  '- Every outbound request will be REFUSED — curl, wget, git fetch/clone/pull, and package installs (pip, npm, go get, cargo, gem, mix) alike. Mirrors, CDNs, proxies and archives are refused too. Do not attempt them and do not retry: everything needed to solve the issue is already in the working directory.\n' +
+  '- Solve the issue from the repository source and the issue text. Do not go looking for the upstream fix — not over the network, and not in git history, refs, tags, stashes, or packed objects. A fix copied from a later commit does not count.';
 
 // Pure assembly of the system prompt (testable). mpp='' → native (no M++).
 // frame=true → bracket M++ with FRAME_AUTHORITY (open) + FRAME_CLOSE (close);
