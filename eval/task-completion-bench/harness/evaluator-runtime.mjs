@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import path from 'node:path';
 import { mergeEvaluationReportFile, mergeTaskRecordFile } from './result-retention.mjs';
 import { vaultTarName } from './env-ledger.mjs';   // derived-image vault tar filename (single source of truth)
+import { stripCollidingPaths } from './patch-strip.mjs';
 
 const DERIVED_VAULT = process.env.SS_DERIVED_BACKUP || '/workspace/docker-derived-backup';
 
@@ -144,14 +145,45 @@ export function createEvaluatorRuntime(options) {
     };
   }
 
+  /**
+   * Grader test-collision fix (patch-strip.mjs): drop agent hunks that touch a file
+   * the HIDDEN test patch also touches, so the hidden patch applies cleanly and the
+   * suite actually runs. Shared by both arms and both grading backends — a task must
+   * never die on a merge mechanic instead of on merit (redboltz-239, protofire-224).
+   * Returns rewritten predictions plus the per-task stripped-path map for row stamping.
+   */
+  function applyCollisionStrip(arm, predictions) {
+    const strippedByTask = {};
+    const prepared = predictions.map(prediction => {
+      const spec = taskById.get(prediction.instance_id);
+      const { patch, stripped } = stripCollidingPaths(prediction.model_patch || '', spec?.test_patch || '');
+      if (!stripped.length) return prediction;
+      strippedByTask[prediction.instance_id] = stripped;
+      console.error(`[grade ${arm}] ${prediction.instance_id}: STRIPPED ${stripped.length} agent edit(s) `
+        + `colliding with the hidden test patch — ${stripped.join(', ')}`
+        + `${patch.trim() ? '' : ' (patch is now EMPTY — graded as a zero-hunk prediction)'}`);
+      return { ...prediction, model_patch: patch };
+    });
+    return { prepared, strippedByTask };
+  }
+
   function gradeArm(arm, predictions, runId, rep = 0) {
     const predDir = path.join(benchDir, 'results', runId, arm, ...(rep ? [`rep-${rep}`] : []));
     mkdirSync(predDir, { recursive: true });
-    if (!srMode) return gradeSwebenchArm(arm, predictions, runId, predDir);
+    // Lite/swebench mode has no materialized test_patch in taskById, so the strip is
+    // inert there; SR mode is the graded path for this bench.
+    const { prepared, strippedByTask } = applyCollisionStrip(arm, predictions);
+    if (!srMode) {
+      const report = gradeSwebenchArm(arm, prepared, runId, predDir);
+      return report ? { ...report, stripped_paths: strippedByTask } : report;
+    }
 
-    const nonEmpty = predictions.filter(prediction => (prediction.model_patch || '').trim());
+    const nonEmpty = prepared.filter(prediction => (prediction.model_patch || '').trim());
     if (!nonEmpty.length) {
-      return { resolved_instances: 0, total_instances: predictions.length, resolved_ids: [] };
+      return {
+        resolved_instances: 0, total_instances: predictions.length, resolved_ids: [],
+        stripped_paths: strippedByTask,
+      };
     }
     const batchSize = Math.max(1, +(process.env.GRADE_BATCH || 6));
     const tasksPath = path.join(predDir, 'tasks.json');
@@ -210,6 +242,7 @@ export function createEvaluatorRuntime(options) {
       error_ids: [...errorIds],
       missing_report_ids: [...missingReportIds],
       graded_any: gradedAny,
+      stripped_paths: strippedByTask,
     };
   }
 
