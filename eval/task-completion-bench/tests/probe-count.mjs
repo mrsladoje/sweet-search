@@ -57,6 +57,13 @@ probes('command ss-grep A', 1);
 probes('stdbuf -o0 ss-grep A', 1);
 probes('/usr/bin/timeout 30 ss-grep A', 1);      // absolute-path wrapper
 
+// ── quoting suppresses substitution (regression: reported 1) ─────────────────
+probes("echo '$(ss-grep A)'", 0);            // single quotes: no substitution
+probes('echo "$(ss-grep A)"', 1);            // double quotes: substitution happens
+probes("X='a b' ss-grep A; ss-read B", 2);   // quoted assignment value
+probes('X="a b" ss-grep A', 1);
+probes("ss-grep 'literal $(not a call)'", 1);
+
 // ── command substitution counts the inner retrieval too ──────────────────────
 probes('ss-read "$(ss-grep -l foo)" 1 40', 2);
 probes('echo "$(ss-grep A)"', 1);
