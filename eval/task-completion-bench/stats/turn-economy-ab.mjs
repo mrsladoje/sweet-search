@@ -45,6 +45,14 @@
  * GATES
  *   WIN      turnsRatio <= 0.90  AND  upper 95% bound < 1.00
  *   REVERT   operationsRatio upper 95% bound > 1.05     (anti-shotgun)
+ *   REVERT   operationsRatio LOWER 95% bound < 0.85     (anti-under-investigation)
+ *            Added 2026-07-31 AFTER the 5-pair mechanism smoke, which is disclosed
+ *            provenance: the smoke was predeclared gate-free so it could inform the
+ *            design. It showed total operations FALLING 10-19%, which the upper bound
+ *            cannot see. "Fewer turns because it searched and tested less" is a route
+ *            to losing solves, and at these n the solve tripwire is far too blunt to
+ *            catch it. The win must come from PACKING the same work into fewer turns,
+ *            not from doing less of it.
  *   REVERT   ctxPerTurnRatio upper 95% bound > 1.10     (win must be fewer turns,
  *            not wider ones)
  *   REVERT   solveLosses - solveGains >= 3              (tripwire, NOT a parity test:
@@ -59,7 +67,7 @@ import { analyzeRollout } from './probe-count.mjs';
 
 const SEED = 20260730;
 const RESAMPLES = 10000;
-const GATES = { win: 0.90, operationsUpper: 1.05, ctxUpper: 1.10, solveNet: 3 };
+const GATES = { win: 0.90, operationsUpper: 1.05, operationsLower: 0.85, ctxUpper: 1.10, solveNet: 3 };
 const GATED_METRICS = ['turns', 'ctxPerTurn', 'operations'];
 
 /** xorshift128 — seeded so the verdict is reproducible. */
@@ -246,6 +254,8 @@ for (const t of tasks) {
 
 const reverts = [];
 if (ops.hi > GATES.operationsUpper) reverts.push(`operations upper ${ops.hi.toFixed(3)} > ${GATES.operationsUpper}`);
+// Two-sided on purpose: shotgunning AND under-investigation are both failures.
+if (ops.lo < GATES.operationsLower) reverts.push(`operations lower ${ops.lo.toFixed(3)} < ${GATES.operationsLower} (did less work, not the same work in fewer turns)`);
 if (ctx.hi > GATES.ctxUpper) reverts.push(`ctx/turn upper ${ctx.hi.toFixed(3)} > ${GATES.ctxUpper}`);
 if (losses - gains >= GATES.solveNet) reverts.push(`solve losses−gains = ${losses - gains} >= ${GATES.solveNet}`);
 
@@ -273,7 +283,7 @@ else {
   const f = (b) => `${b.point.toFixed(3)} [${b.lo.toFixed(3)}, ${b.hi.toFixed(3)}]`;
   console.log(`paired tasks: ${tasks.length}   seed ${SEED}   ${RESAMPLES} resamples\n`);
   console.log(`turns       B/A  ${f(turns)}   ${turns.point <= GATES.win ? 'meets 0.90' : 'above 0.90'}`);
-  console.log(`operations  B/A  ${f(ops)}   GATE upper must be <= ${GATES.operationsUpper}`);
+  console.log(`operations  B/A  ${f(ops)}   GATE ${GATES.operationsLower} <= bounds <= ${GATES.operationsUpper} (two-sided)`);
   console.log(`ctx/turn    B/A  ${f(ctx)}   GATE upper must be <= ${GATES.ctxUpper}`);
   console.log(`envelopes   B/A  ${f(env)}   (reported only — NOT a gate)`);
   console.log(`idealCost   B/A  ${f(cost)}   (reported only)`);
