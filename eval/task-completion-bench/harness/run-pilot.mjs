@@ -26,6 +26,7 @@ import { shimVerdict } from './shim-policy.mjs';
 import { gradeFromReportItem, loadLedger, preflightEnvLedger, vaultTarName } from './env-ledger.mjs';
 import { createEvaluatorRuntime } from './evaluator-runtime.mjs';
 import { ISOLATION_ON, jailPreflight, guardStatus, DENY_LOG } from './agent-jail.mjs';
+import { warnOnGateViolations } from './task-gates.mjs';
 import { RT_DEDUP_ON } from './rt-dedup.mjs';
 import { ensureGuard } from './egress-guard.mjs';
 import { scanPredictions } from './gold-tripwire.mjs';
@@ -187,6 +188,10 @@ async function loadTasks() {
       if (ov) console.log(`[overrides] ${s.instance_id}: ${Object.keys(ov).filter(k => k[0] !== '_').join(', ')}`);
       taskById.set(s.instance_id, s);
     }
+    // Defense in depth for the selection-time task-rejection gate: WARN (never
+    // refuse) if this set carries a task the gate would reject. Sets frozen before
+    // 2026-07-30 predate the gate and must stay runnable.
+    warnOnGateViolations(specs);
     return specs;
   }
   if (existsSync(CACHE)) return JSON.parse(readFileSync(CACHE, 'utf8'));
@@ -545,12 +550,18 @@ for (const rep of repsToGrade) {
     const resolvedIds = new Set(report?.resolved_ids || []);
     const errorIds = new Set(report?.error_ids || []);
     const score = report?.score || {};
+    // Grader test-collision fix: which agent edits (if any) were discarded because
+    // they collided with the hidden test patch. Empty list on a normal task.
+    const strippedPaths = report?.stripped_paths || {};
     for (const row of rows) if (row.arm === arm && row.rep === rep) {
       row.gradeable = !errorIds.has(row.taskId);
       row.resolved = row.gradeable ? resolvedIds.has(row.taskId) : null;
       row.f2pFrac = row.gradeable ? (score[row.taskId]?.f2pFrac ?? null) : null;
       row.resolveStatus = row.gradeable ? (score[row.taskId]?.status ?? null) : null;
+      row.strippedTestPaths = strippedPaths[row.taskId] || [];
     }
+    const nStripped = Object.keys(strippedPaths).length;
+    if (nStripped) console.log(`  ${arm} rep${rep}: test-collision strip fired on ${nStripped} task(s): ${Object.keys(strippedPaths).join(',')}`);
     console.log(`  ${arm} rep${rep}: resolved ${resolvedIds.size}/${preds.length - errorIds.size} gradeable  ids=${[...resolvedIds].join(',') || '(none)'}`);
   }
 }

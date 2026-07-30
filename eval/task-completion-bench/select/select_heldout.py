@@ -18,6 +18,7 @@ Usage:
 import argparse, json, os, random, collections
 from datasets import load_dataset
 
+import task_gates
 from select_tasks import V2_NAME, quality_ok, ftp_ok, slim_v2
 
 OUT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -55,6 +56,7 @@ def load_exclusions():
 def build_pool(dev_ids, dev_repos, decontam_ids):
     pool = collections.defaultdict(list)
     drops = collections.Counter()
+    rejected = []
     kept = 0
     for r in load_dataset(V2_NAME, split="train", revision=V2_REVISION):
         if not quality_ok(r):
@@ -67,8 +69,18 @@ def build_pool(dev_ids, dev_repos, decontam_ids):
             drops["dev_repo"] += 1; continue
         if r["instance_id"] in decontam_ids:
             drops["decontam_instance_id"] += 1; continue
-        pool[r["language"]].append(slim_v2(r)); kept += 1
-    return pool, drops, kept
+        # Task-rejection gate (select/task_gates.py): drop suite-red-at-baseline
+        # tasks BEFORE the seeded draw, so the set never contains one. Applied to
+        # the primary AND the reserve, since a reserve can be promoted into the set.
+        slim = slim_v2(r)
+        gate_kept, gate_rejected = task_gates.partition([slim], log=print, label="heldout")
+        if gate_rejected:
+            rejected.extend(gate_rejected)
+            for code in gate_rejected[0]["reasons"]:
+                drops[f"task_gate_{code}"] += 1
+            continue
+        pool[r["language"]].append(gate_kept[0]); kept += 1
+    return pool, drops, kept, rejected
 
 
 def resolve_deficits(pool, alloc):
@@ -99,7 +111,7 @@ def main():
     a = ap.parse_args()
 
     dev_ids, dev_repos, decontam_ids = load_exclusions()
-    pool, drops, kept = build_pool(dev_ids, dev_repos, decontam_ids)
+    pool, drops, kept, rejected = build_pool(dev_ids, dev_repos, decontam_ids)
     alloc, reassigned = resolve_deficits(pool, ALLOCATION)
     # Reserve deficits resolved against what's left after the primary draw.
     leftover_pool = {L: pool[L][alloc.get(L, 0):] for L in pool}
@@ -128,12 +140,22 @@ def main():
         assert not (ids & decontam_ids), "instance_id overlap with decontam"
     assert not (chosen_ids & reserve_ids), "primary/reserve overlap"
 
-    # The primary 200 must stay byte-identical to the already-frozen set.
+    # The primary 200 must stay byte-identical to the already-frozen set — UNLESS
+    # that frozen set predates the task-rejection gate, in which case a difference
+    # is the gate doing its job and the set must be REBUILT, not re-verified.
     frozen_path = os.path.join(OUT_DIR, "tasks_heldout.jsonl")
     if os.path.exists(frozen_path):
-        frozen = [json.loads(l)["instance_id"] for l in open(frozen_path)]
-        assert frozen == [x["instance_id"] for x in chosen], \
-            "regenerated primary differs from frozen tasks_heldout.jsonl"
+        frozen_rows = [json.loads(l) for l in open(frozen_path)]
+        frozen = [r["instance_id"] for r in frozen_rows]
+        if frozen != [x["instance_id"] for x in chosen]:
+            _, stale = task_gates.partition(frozen_rows)
+            if stale:
+                raise SystemExit(
+                    f"regenerated primary differs from frozen tasks_heldout.jsonl, and the frozen "
+                    f"set contains {len(stale)} task(s) the rejection gate now rejects "
+                    f"(e.g. {', '.join(s['instance_id'] for s in stale[:3])}). The frozen set "
+                    f"PREDATES the gate — build a new set (new seed), do not re-verify this one.")
+            raise SystemExit("regenerated primary differs from frozen tasks_heldout.jsonl")
 
     manifest = {
         "set": "heldout", "seed": SEED, "N": N,
@@ -163,9 +185,15 @@ def main():
             ),
         },
         "overlap_with_dev": {"instance_ids": 0, "repos": 0},
+        "task_gate": {"thresholds": {"max_fail_to_pass": task_gates.MAX_FAIL_TO_PASS,
+                                     "min_pass_to_pass": task_gates.MIN_PASS_TO_PASS},
+                      "n_rejected": len(rejected),
+                      "applies_to": "primary + reserve (a reserve can be promoted into the set)",
+                      "sidecar": os.path.basename(task_gates.rejection_sidecar_path(OUT_DIR, "heldout"))},
         "criteria": "quality code=='A'; non-empty FAIL_TO_PASS; V2 revision pinned; "
                     "dev-200 instance_ids+repos and decontam instance_ids excluded; "
-                    "fixed Octoverse-2025-anchored quotas; seeded sample. "
+                    "task-rejection gate (FAIL_TO_PASS<100 and PASS_TO_PASS>0, see "
+                    "task-gates.json); fixed Octoverse-2025-anchored quotas; seeded sample. "
                     "Orthogonal to sweet-vs-native outcome.",
     }
     print(json.dumps(manifest, indent=2, default=str))
@@ -177,8 +205,11 @@ def main():
             for x in reserve: f.write(json.dumps(x) + "\n")
         with open(os.path.join(OUT_DIR, "MANIFEST_heldout.json"), "w") as f:
             json.dump(manifest, f, indent=2, default=str)
+        side = task_gates.write_rejections(OUT_DIR, "heldout", rejected,
+                                           {"seed": SEED, "v2_revision": V2_REVISION})
         print(f"\nFROZEN -> {OUT_DIR}/tasks_heldout.jsonl ({len(chosen)}), "
-              f"tasks_heldout_reserve.jsonl ({len(reserve)}), MANIFEST_heldout.json")
+              f"tasks_heldout_reserve.jsonl ({len(reserve)}), MANIFEST_heldout.json, "
+              f"{os.path.basename(side)} ({len(rejected)} gate rejections)")
     elif not a.dry_run:
         print("\n(no --freeze and no --dry-run: nothing written)")
 
