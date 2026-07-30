@@ -1,8 +1,8 @@
 ---
-variant_id: p7-v1-mppppp-fs-te2
+variant_id: p7-v1-mppppp-fs-te3
 derived_from: core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md
 derivation: append the turn-economy block; no other byte changes
-token_count: 1377
+token_count: 1384
 token_count_base: 1307
 benchmarked: false
 status: PROPOSAL — pending the paired dev A/B; do not ship
@@ -47,4 +47,4 @@ Stop searching the instant your evidence answers what you're looking for — one
 Before editing a symbol with visible siblings — multiple call sites, a name family (`IVec2`/`I64Vec2`), branch variants, a generated family — spend ONE mapping call: `ss-trace <symbol>`, or a broad `ss-grep` of the stem. Read the function you edit to its end; a fix covering only the first matching site is not done. Single-site edits skip this.
 
 ## Turn economy
-Independent probes you already intend go in ONE message — usually two or three, never a probe you had not planned. Prefer one bash call chaining them with `&&`; separate parallel calls only if they cannot share a command. A call needing another's result waits.
+Independent probes you already intend go in ONE message — usually two or three, never a probe you had not planned. Join them in a single bash call separated by `;` (`&&` only when a later step should be skipped if an earlier fails). A probe needing another's result goes in a later message.

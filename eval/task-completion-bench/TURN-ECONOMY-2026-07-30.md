@@ -3,10 +3,16 @@
 **Date**: 2026-07-30 · **Status**: drafted, pending paid validation · **Spend so far**: $0
 
 Context: the retired Grok-4.5/OpenCode held-out run cost +15.2% in the sweet arm, and **94.7%
-of that gap is re-send tax from turn inflation** (PLAN.md §4): sweet issued 1.14 tool calls per
-turn against native's 1.76, because `ss-*` is shell-routed and the model emits ~1 bash call per
-turn by habit. 85.7% of sweet turns carry a single tool call (native 52%). 797 of 5,790 sweet
-turns (13.8%) are greedily collapsible, worth ≈$11.4 of re-send savings.
+of that gap is re-send tax from turn inflation** (PLAN.md §4). Sweet used **+18.1% more turns**
+than native (5,908 v 5,003).
+
+The headline framing of *why* — "sweet issues 1.14 tool calls per turn against native's 1.76" — is
+**mostly a measurement artifact and is corrected in §3.3**. The harness counts tool *envelopes*,
+and sweet fuses several operations into one shell envelope where native issues them separately. At
+operation level the per-turn gap is **−8.2%, not −35.8%**: sweet 1.721 v native 1.875. Of sweet's
++18.1% extra turns, roughly 8.4% is doing more retrieval operations and ~9% is packing them less
+densely — and only the second half is what this block acts on. Likewise "85.7% of sweet turns carry
+a single tool call" means a single *envelope*, and those envelopes average 1.45 operations.
 
 This note covers: (1) what the state of the art says about fixing that with prompt wording,
 (2) two harness facts verified for free, (3) the block we propose, (4) the validation design.
@@ -200,11 +206,13 @@ message is exactly what §2.1 shows is unsafe. That removes ~37% of the greedy c
 directly addressable is the 38 independent adjacent single-`ss` turns plus whatever share of the
 551 search → read pairs have a read path known in advance.
 
-The greedy count was never the real target, though. The broader lever is the calls-per-turn gap
-itself — 1.14 vs native's 1.76, with 85.7% of sweet turns carrying a single call against native's
-52% — which is a far larger pool than the greedy pairs. The honest position: **the ≈$11.4 figure
-is now an overestimate of what this block can reach, and no revised dollar figure should be quoted
-until the pilot measures one.**
+**Correction (§3.3).** An earlier version of this note argued the greedy count understated the
+opportunity because the broader calls-per-turn gap (1.14 v 1.76) was a far larger pool. That was
+wrong: 77% of that gap is packaging, and the real per-turn deficit is 8.2%. The honest position:
+**the ≈$11.4 figure is an overestimate of what this block reaches, the envelope gap is not
+evidence of a larger pool, and no dollar figure should be quoted until the pilot measures one.**
+"Permanently" unreachable also overstated the edit → test case — those pairs are out of reach for a
+prompt-only treatment on this tool surface, not in principle.
 
 Scripts (read-only, kept for audit): `ordercheck.py`, `ordercheck2.py`, `bundlescan.py`,
 `bundlescan2.py` in this session's scratchpad; the DB was copied to `/tmp/oc_ro.db` and opened
@@ -242,22 +250,22 @@ future prompt A/B becomes routine.
 
 ## 3. Proposed block (Phase 3)
 
-**Revised 2026-07-30 after external review (Codex).** The first draft (99 tok) is superseded; §3.1
+**Revised twice on 2026-07-30 after two external-review rounds (Codex).** Drafts at 99 and 69 tok are superseded; §3.1 and §3.3
 records why. Current block:
 
-**CLI (`ss-*`) form — 276 chars = 69 tokens** (repo `estimateTokens` = chars/4):
+**CLI (`ss-*`) form — 306 chars = 77 tokens** (repo `estimateTokens` = chars/4):
 
 ```markdown
 ## Turn economy
-Independent probes you already intend go in ONE message — usually two or three, never a probe you had not planned. Prefer one bash call chaining them with `&&`; separate parallel calls only if they cannot share a command. A call needing another's result waits.
+Independent probes you already intend go in ONE message — usually two or three, never a probe you had not planned. Join them in a single bash call separated by `;` (`&&` only when a later step should be skipped if an earlier fails). A probe needing another's result goes in a later message.
 ```
 
-**MCP form — 193 chars = 48 tokens** (identical first and last sentences; the `&&` sentence has no
+**MCP form — 212 chars = 53 tokens** (identical first and last sentences; the `&&` sentence has no
 meaning against a non-shell tool surface, so parallel calls become the stated mechanism):
 
 ```markdown
 ## Turn economy
-Independent probes you already intend go in ONE message, as parallel tool calls — usually two or three, never a probe you had not planned. A call needing another's result waits.
+Independent probes you already intend go in ONE message, as parallel tool calls — usually two or three, never a probe you had not planned. A probe needing another's result goes in a later message.
 ```
 
 ### 3.1 What the first draft got wrong
@@ -304,21 +312,129 @@ wording reason rather than a mechanism one. So the block keeps `&&` as the *pref
 and treats parallel calls as the fallback for work that cannot share one command (e.g. a shell
 probe alongside a harness read or edit).
 
-The rest of the review is adopted: brevity (99 → 69 tok), the conditional trigger, the single
-numeric bound, and one wording only in the pilot — the 36 pairs are not split across variants.
+The rest of the first review is adopted: brevity, the conditional trigger, the single numeric
+bound, and one wording only in the pilot — the 36 pairs are not split across variants.
+
+### 3.3 Second review round — the packaging correction
+
+A second review challenged both §3.2's reasoning and the opportunity estimate. It is right on
+every load-bearing point, and the correction is larger than it argued.
+
+**(a) The §3.2 table omitted the baseline, so its conclusion was overstated.** The full picture:
+
+| execution | tool envelopes | model turns | underlying probes |
+|---|---|---|---|
+| serial, separate messages (the status quo) | 2 | 2 | 2 |
+| parallel calls, one message | 2 | 1 | 2 |
+| fused bash command | 1 | 1 | 2 |
+
+Against the *serial baseline*, parallel calls do not raise call count — they hold envelopes at 2
+and halve turns. So "only `&&` keeps calls flat" was **false as stated**. The defensible claim is
+narrower: naming shell fusion explicitly reduces the risk that *already-fused* commands get
+decomposed into separate envelopes. That is a reason to retain fusion guidance, not a proof that
+parallel calls are disallowed. Corrected.
+
+**(b) The harness counts envelopes, not operations — verified in code.**
+`opencode-task-runner.mjs:178` is literally `const calls = toolCalls.length`. Worse than the
+review supposed, `classifyShell` (`:22`) is **prefix-anchored**, so `ss-grep A && ss-grep B &&
+ss-read C` scores as ONE `ss` call, and `ls && ss-grep A` scores as ONE `bash` call with the probe
+invisible. A treatment could therefore add probes, fuse them, and pass a calls/task gate defined on
+envelopes. The anti-shotgun clause would be prompted but not measured. Conceded in full; the fix is
+§3.4.
+
+**(c) The 1.14 v 1.76 gap is mostly packaging — measured, not argued.** Recomputing both arms of
+the retired run from the shared DB, at envelope level and at operation level (fused shell strings
+split on `;`/`&&`/`||`/newline, counting the same buckets `classifyShell` uses, so sweet's
+`ss-read` and native's `cat`/`sed` count alike):
+
+| arm | turns | envelopes | operations | ops/envelope | **envelopes/turn** | **operations/turn** |
+|---|---|---|---|---|---|---|
+| native | 5,003 | 9,248 | 9,382 | 1.01 | **1.848** | **1.875** |
+| sweet | 5,908 | 7,009 | 10,167 | 1.45 | **1.186** | **1.721** |
+| sweet vs native | +18.1% | — | +8.4% | — | **−35.8%** | **−8.2%** |
+
+(The envelope ratio 0.642 reproduces the plan's 1.140/1.763 = 0.647, so this is the same quantity,
+recomputed.) **77% of the apparent calls/turn gap is packaging.** Sweet already does nearly as many
+retrieval operations per turn as native — 1.72 v 1.88 — and fuses far more (2,740 multi-operation
+bash envelopes v native's 1,548). The claim that the envelope gap establishes a large addressable
+pool was wrong; it is withdrawn.
+
+The corrected decomposition of sweet's +18.1% turn inflation: **~8.4% is doing more retrieval
+operations** and **~9% is packing them less densely**. Only the second half is what this block
+acts on.
+
+**A first-order caveat this raises for PLAN.md §4.3.** The −14.2% counterfactual ("6,468 calls at
+native's 1.76 calls/turn → 3,675 turns") is computed on *envelopes*. It implicitly assumes sweet
+could pack envelopes like native, but sweet's envelopes already carry 1.45 operations against
+native's 1.01, so the counterfactual asks sweet to do something it is largely already doing.
+**That number should be treated as unreliable until recomputed at operation level.** It is cited in
+the plan as motivation for the cost levers, so this is a correction to an existing figure, not only
+to this proposal. Not rewritten here — flagged for the plan owner.
+
+**(d) `&&` is the wrong separator for independent probes — confirmed empirically.** `&&` runs the
+next command only if the previous succeeded. Measured exit codes for the shipped wrappers:
+
+| case | exit |
+|---|---|
+| `ss-grep` no match | **0** (safe) |
+| `ss-read` missing file | 1 |
+| `ss-grep` malformed regex | 1 |
+| `ss-semantic` missing file | 1 |
+| **`ss-trace` unknown symbol** | **1** |
+
+The common no-match path is safe, but `ss-trace` on an unknown symbol exits 1 — and M± treats an
+empty trace as a *normal outcome* ("if a trace is sparse or empty, anchor the downstream symbol
+with `ss-find`/`ss-search`"). So `ss-trace X && ss-grep Y` silently drops the grep exactly when the
+trace fails to find anything, which is when the follow-up matters most. The block now specifies
+`;` for independent probes and reserves `&&` for genuine skip-on-failure. Adopted.
+
+**(e) "Only if they cannot share a command" was vacuous for the CLI, and the framing was wrong.**
+Practically any shell commands can share one command string, so that clause carried no
+information; it is removed. More importantly, the CLI treatment is therefore **serial shell-command
+fusion, not concurrent tool calling**. It compresses turns and re-sent context by the same
+mechanism, but it is *not* a replication of W&D's parallel tool calling, and a CLI result does
+**not** validate the MCP wording (which genuinely is parallel calls). Any write-up must say
+"turn compression via shell-command fusion" for the CLI arm. Adopted.
+
+**(f) "Waits" was underspecified** — it could be read as co-issued execution that the harness
+orders. Now "goes in a later message", which is the operational rule given §2.1. Adopted.
+
+**(g) "Permanently unreachable" was too strong** for the 292 edit → test pairs. They are out of
+reach *for a prompt-only treatment on this tool surface*; a composite edit-and-test tool would
+reach them. Corrected.
+
+### 3.4 Predeclared diagnostic: `stats/probe-count.mjs`
+
+Because the envelope metric cannot validate "never a probe you had not planned" (§3.3b), the A/B
+**predeclares** an operation-level count as a required diagnostic, fixed before the run:
+
+- **envelopes/task** — what the harness reports today
+- **operations/task** — `ss-*`, `run_tests`, and native retrieval, after splitting fused shell
+  strings on `;`, `&&`, `||` and newlines (quote- and paren-aware)
+- **turns/task**
+
+`stats/probe-count.mjs` implements this. It is READ-ONLY: it copies each rollout's private
+OpenCode store (db + WAL + shm) to a scratch dir and reads the copy, so no run artifact is opened
+for write and no harness code changes. Validated on the existing 5-rollout smoke
+(`l3-dedup-smoke-20260730`): 377 envelopes → 621 operations, **1.65 operations per envelope**,
+1.05 envelopes/turn but **1.73 operations/turn** — i.e. the envelope view understates work per turn
+by ~65% on that sample.
+
+**The calls-flat gate is redefined on operations/task, not envelopes/task.** An envelope-level
+gate is gameable by fusion and would not detect added probes.
 
 ### Requirement check
 
 | requirement | how it is met |
 |---|---|
-| ≤100 tokens | **69** (CLI) / **48** (MCP) |
+| ≤100 tokens | **77** (CLI) / **53** (MCP) |
 | tool-agnostic core | first and last sentences identical across both forms |
 | one bash-specific element | the `&&`-in-one-bash-call preference (CLI form only). **A literal command example was dropped** — the draft's was wrong (§3.1) and a wrong example is worse than none. Flagged as a cheap follow-up variant if the pilot shows dependency confusion |
 | anti-shotgun clause | "usually two or three, never a probe you had not planned" — the numeric bound is from W&D Table 1 (§1.1), where width 5 and 8 score *worse* than 3 |
 | no contradiction of stop-discipline / sufficiency | the block is now purely conditional and says nothing about turns that carry one probe, so it cannot fight *"ONE `ss-grep` … trust the top hit and stop"*. "Never a probe you had not planned" restates the existing no-corroboration rule. The block changes *grouping*, never *how many* |
 | edit+test clause | **cut** per §2.1 |
 | "when, not more" framing | "probes **you already intend**" |
-| calls-flat guardrail | `&&` preferred over parallel calls (§3.2) |
+| calls-flat guardrail | shell fusion retained as the CLI mechanism (§3.2), and **measured** at operation level by the predeclared diagnostic (§3.4) rather than assumed |
 
 ### Placement
 
@@ -328,9 +444,9 @@ operational addendum after the search-discipline sections, keeping the stop rule
 ### Files
 
 - `core/prompt-optimization/data/p7-turn-economy/sweet-search-system-prompt.turn-economy.md`
-  — 1307 → **1377** tokens (+70, +5.4%) · `variant_id: p7-v1-mppppp-fs-te2`
+  — 1307 → **1384** tokens (+77, +5.9%) · `variant_id: p7-v1-mppppp-fs-te3`
 - `core/prompt-optimization/data/p7-turn-economy/sweet-search-system-prompt-mcp.turn-economy.md`
-  — 1336 → **1385** tokens (+49, +3.7%) · `variant_id: p7-v1-mppppp-fs-mcp-te2`
+  — 1336 → **1390** tokens (+54, +4.0%) · `variant_id: p7-v1-mppppp-fs-mcp-te3`
 
 Both are byte-identical to their frozen source except for the appended block. Their frontmatter
 deliberately **omits** the champion's `score_sonnet` / `joint_maximin` / `vault_*` gates — those
@@ -346,7 +462,7 @@ attest the frozen body and would be false here — and carries
  Before editing a symbol with visible siblings … Single-site edits skip this.
 +
 +## Turn economy
-+Independent probes you already intend go in ONE message — usually two or three, never a probe you had not planned. Prefer one bash call chaining them with `&&`; separate parallel calls only if they cannot share a command. A call needing another's result waits.
++Independent probes you already intend go in ONE message — usually two or three, never a probe you had not planned. Join them in a single bash call separated by `;` (`&&` only when a later step should be skipped if an earlier fails). A probe needing another's result goes in a later message.
 ```
 
 (plus the frontmatter replacement described above; the MCP diff is the same shape with the MCP form
@@ -423,10 +539,17 @@ DB agrees: 214 sweet sessions, $123.75 total, **mean $0.578**.
 | gate | metric | rule |
 |---|---|---|
 | **REVERT (hard)** | solve rate | any dip beyond paired noise → revert, no tuning |
-| **REVERT** | calls/task | a rise beyond noise → revert (sweet's −23.3% call advantage must survive) |
+| **REVERT** | **operations/task** (`stats/probe-count.mjs`) | a rise beyond noise → revert. **This, not envelopes/task, is the anti-shotgun gate** — an envelope gate is gameable by fusion (§3.3b) |
 | **REVERT** | ctx/turn | a material rise → revert (the win must be fewer turns, not wider ones) |
 | **WIN** | turns/task | ≥10% drop |
+| **report** | envelopes/task, operations/envelope | packaging shift, so the result can be read correctly |
 | **report** | cache-normalized `idealCostUsd` | never realized $ |
+
+**On the ≥10% win threshold.** It is deliberately set above what mere native-parity would give.
+Sweet is 8.2% below native on operations/turn, so closing that alone yields ~8% fewer turns —
+under the gate. The block asks for more than parity ("usually two or three" against sweet's current
+1.72), so a ≥10% drop is achievable, but the threshold is genuinely demanding and a 5–9% result
+should be read as "the mechanism works, the dose is too small", not as a pass.
 
 **Power, stated honestly**: at n=36 pairs, turns/task and calls/task are continuous paired
 metrics with reasonable sensitivity to a 10% shift. **Solve rate at n=36 is not powered** to
