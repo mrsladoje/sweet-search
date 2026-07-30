@@ -22,6 +22,9 @@ import { persistTurns } from './turn-log.mjs';
 // imports this one — going through it would close an import cycle.
 import { ISOLATION_ON, startJail, stopJail, jailArgv, jailEnv, jailDenials, rolloutStateDir } from './agent-jail.mjs';
 import { auditRollout, UNAUDITED } from './escape-audit.mjs';
+// L3 run_tests dedup: only the cheap path/session helpers are needed here — the shim
+// runtime (which pulls in the code-graph repository) is never imported by the harness.
+import { RT_DEDUP_ON, dedupLogPathFor, startDedupSession } from './rt-dedup.mjs';
 
 // Inlined from p7-codex-runner.mjs (kept self-contained so the bench doesn't depend on
 // the prompt-optimization context being present/committed on the run host).
@@ -85,6 +88,7 @@ const DOCKER_HOST = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RT_RUNTIME_PATH = path.join(__dirname, 'rt-shim-runtime.mjs');
 const RT_LIB_PATH = path.join(__dirname, 'rt-condense-lib.mjs');
+const RT_DEDUP_PATH = path.join(__dirname, 'rt-dedup.mjs');
 const L1_CONDENSE = process.env.SS_NO_CMD_CONDENSE !== '1';
 const L2_RT_AUTHORITY = process.env.SS_NO_RT_AUTHORITY !== '1';
 
@@ -145,9 +149,11 @@ setInterval(() => {
   try { reqs = readdirSync(IPC).filter(f => f.startsWith('req-')); } catch { process.exit(0); }
   for (const r of reqs) {
     const id = r.slice(4);
-    let pattern = ''; try { pattern = readFileSync(IPC + '/' + r, 'utf8').trim(); } catch {}
+    // The request carries the agent's full argv as JSON (legacy: a bare pattern string).
+    let argv = []; try { argv = JSON.parse(readFileSync(IPC + '/' + r, 'utf8') || '[]'); } catch { argv = []; }
+    if (!Array.isArray(argv)) argv = [String(argv)];
     try { rmSync(IPC + '/' + r, { force: true }); } catch {}
-    let out; try { out = runTestsWithLevers(c, { pattern }); } catch (e) { out = '[run_tests error] ' + String(e && e.message || e); }
+    let out; try { out = runTestsWithLevers(c, { argv }); } catch (e) { out = '[run_tests error] ' + String(e && e.message || e); }
     const tmp = IPC + '/tmp-' + id;
     try { writeFileSync(tmp, out); renameSync(tmp, IPC + '/res-' + id); } catch {}
   }
@@ -159,24 +165,34 @@ setInterval(() => {
 export function writeRunTestsShim(binDir, {
   image, workdir, testScript, rundir, testTimeoutSec = 300, netArgs = '',
   brokerMode = false, dockerBin = 'docker', rtAuthority = true,
-  stateDir = binDir, _isAgentFormat = false,
+  stateDir = binDir, _isAgentFormat = false, label = 'rollout',
+  rtDedup = RT_DEDUP_ON,
 }) {
   mkdirSync(binDir, { recursive: true });
+  // L3 dedup state/audit log: append-only JSONL outside the agent's tree, opened with a
+  // session boundary here — writeRunTestsShim runs exactly once per rollout attempt, so
+  // that boundary is what resets dedup state between rollouts (see rt-dedup.mjs).
+  const dedupLog = rtDedup
+    ? startDedupSession(dedupLogPathFor(label, rundir), { label, rundir, brokerMode })
+    : null;
   const cfg = path.join(binDir, '_run_tests_cfg.json');
   writeFileSync(cfg, JSON.stringify({
     image, workdir, testScript, rundir, dockerHost: DOCKER_HOST, testTimeoutSec,
     netArgs, dockerBin, binDir, stateDir, rtAuthority, _isAgentFormat,
+    rtDedup: rtDedup && !!dedupLog, dedupLog,
   }));
   const mjs = path.join(binDir, '_run_tests.mjs');
   if (brokerMode) {
     const { brokerPath, reqDir } = writeRunTestsBrokerFiles(binDir, cfg, stateDir);
     // requester shim: sandbox-safe (file writes into __rt/_rt_ipc only, no docker).
-    // The first arg (optional test pattern) is passed through the req-file content.
+    // The agent's argv (optional test pattern, optional --ss-full) rides in the req file
+    // as JSON — still parameter-free with respect to docker: the broker only ever reads
+    // a test pattern and the dedup escape hatch out of it.
     writeFileSync(mjs, `import { writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 const IPC = ${JSON.stringify(reqDir)};
 const tSec = ${Number(testTimeoutSec) || 300};
 const id = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-writeFileSync(IPC + '/req-' + id, process.argv[2] || '');
+writeFileSync(IPC + '/req-' + id, JSON.stringify(process.argv.slice(2)));
 const deadline = Date.now() + (tSec + 90) * 1000;
 const res = IPC + '/res-' + id;
 while (Date.now() < deadline) {
@@ -192,22 +208,23 @@ process.stdout.write('[run_tests] no response from test broker within ' + (tSec 
     const shim = path.join(binDir, 'run_tests');
     writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
     chmodSync(shim, 0o755);
-    const files = [cfg, mjs, shim, brokerPath, RT_RUNTIME_PATH, RT_LIB_PATH];
-    return { binDir, brokerPath, reqDir, files, integrity: shimIntegritySnapshot(files) };
+    const files = [cfg, mjs, shim, brokerPath, RT_RUNTIME_PATH, RT_LIB_PATH, RT_DEDUP_PATH];
+    return { binDir, brokerPath, reqDir, files, dedupLog, integrity: shimIntegritySnapshot(files) };
   }
-  // Direct shim: run the suite + L2 levers via the shared runtime. argv[2] = optional
-  // targeted test pattern. Output IS the signal (shim exits 0; PASS/FAIL is in the text).
+  // Direct shim: run the suite + L2/L3 levers via the shared runtime. argv = optional
+  // targeted test pattern and/or --ss-full. Output IS the signal (shim exits 0; PASS/FAIL
+  // is in the text).
   writeFileSync(mjs, `import { readFileSync } from 'node:fs';
 import { runTestsWithLevers } from ${JSON.stringify(RT_RUNTIME_PATH)};
 const c = JSON.parse(readFileSync(${JSON.stringify(cfg)}, 'utf8'));
-try { process.stdout.write(runTestsWithLevers(c, { pattern: process.argv[2] || '' })); }
+try { process.stdout.write(runTestsWithLevers(c, { argv: process.argv.slice(2) })); }
 catch (e) { process.stdout.write('[run_tests error] ' + String(e && e.message || e)); }
 `);
   const shim = path.join(binDir, 'run_tests');
   writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
   chmodSync(shim, 0o755);
-  const files = [cfg, mjs, shim, RT_RUNTIME_PATH, RT_LIB_PATH];
-  return { binDir, files, integrity: shimIntegritySnapshot(files) };
+  const files = [cfg, mjs, shim, RT_RUNTIME_PATH, RT_LIB_PATH, RT_DEDUP_PATH];
+  return { binDir, files, dedupLog, integrity: shimIntegritySnapshot(files) };
 }
 
 // L1: install a `docker` PATH-wrapper into binDir (FIRST on the agent's PATH) that
@@ -387,7 +404,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   const shimInfo = writeRunTestsShim(binDir, {
     image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300,
     netArgs, brokerMode: true, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY,
-    stateDir: runnerStateDir, _isAgentFormat: sweet,
+    stateDir: runnerStateDir, _isAgentFormat: sweet, label: jailLabel,
   });
   // L1: install the docker output-condenser wrapper (both arms). Flag-gated; a run
   // with SS_NO_CMD_CONDENSE=1 leaves the agent's docker == real docker (legacy).
