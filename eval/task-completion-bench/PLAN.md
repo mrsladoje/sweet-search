@@ -26,16 +26,21 @@ partial-macro 0.542 v 0.458; realized cost $102.48 vs $118.06 (+15.2% on full 20
 
 ## Target outcome & run sequence (decided 2026-07-29)
 
-**Goal for the next Grok/OpenCode held-out run: sweet cheaper than native, solve rate at parity
-(no significant difference), on a fresh, hardened held-out set.**
+**Goal for the next Grok/OpenCode held-out run** (revised 2026-07-29, after the cost levers were
+struck): **a defensible, uncontaminated solve comparison at parity on a fresh, hardened held-out
+set**, with cost reported and mechanistically explained rather than optimised.
 
 Why this is achievable on the evidence below:
 - **Cost**: the gap is 94.7% re-send tax from turn inflation (§4), arm-internal and
   contamination-independent. Counterfactual at native's calls/turn: **−14.2% instead of +14.7%**,
-  stable across subsets (§4.3). Levers P1 (MCP `ss-*`) + P2 (anti-thrash; tail-8 = 107% of gap) +
-  P8 (M± compression ≈ $2/run) stack on the same mechanism. Risks: the counterfactual is an
-  extrapolation; MCP-ification may change call granularity (62% of ss calls currently chain ≥2
-  commands); the MCP variant prompt is UNBENCHMARKED → dev validation first.
+  stable across subsets (§4.3). **DECIDED 2026-07-29 — the cost levers that acted on this mechanism
+  are struck** (P1/P1b MCP: the product is shell-routed `ss-*` and stays that way; P2 anti-thrash:
+  repeatedly disproven, and M± is already tuned for retrieval without thrash). **Consequence: no
+  remaining lever closes a +15.2% cost gap on the Grok/OpenCode backbone.** The §4.6 honest boundary
+  is now the position of record: retrieval compression only pays when retrieval dominates context,
+  and on Grok's build-log-heavy transcripts it is ~3%. The cost goal is therefore **not pursued on
+  this backbone** — cost is reported and explained by mechanism, not optimised. (P8 M± compression,
+  ≈$2 of $15.6, is not worth touching a tuned prompt for.)
 - **Solves**: the 93v81 deficit is not established (§2 — strict census 86v76 p=0.031; with
   assisted wins voided ≈2–4 v 2, n.s.). Native exploited the porous environment harder (63 v 43
   probes; 13/16 v 2/4 assisted wins), so P0 hardening removes more from native than from sweet.
@@ -64,9 +69,23 @@ Why this is achievable on the evidence below:
    (`harness/turn-log.mjs`), alongside the per-rollout agent session store P0 already
    retained; `costNaiveUsd` means the same thing everywhere and the `toolCounts.edit`
    backfill is gone (details in §3 B1/B3/B4). Covered by `tests/turn-log.mjs`.
-3. **P1 MCP variant on dev** — cost + solve non-regression vs the shell variant on dev tasks;
-   also measures the call-granularity risk. P2 anti-thrash validated on dev in the same pass.
-   (P8 M± compression rides along only if P1/P2 are stable.)
+3. ~~**P1 MCP variant on dev** + P2 anti-thrash~~ — **STRUCK 2026-07-29.** Benchmarks stay
+   shell-only (`ss-*` on `$PATH`); no MCP variant is measured. Anti-thrash guidance is not
+   introduced — it has been disproven repeatedly, and M± is already tuned for retrieval without
+   thrash. **No M± edits** (P1b, P3, P4, P8 all touch the prompt → all struck; see §6). This gate
+   is closed with no work. Remaining pre-run engineering moves into gate 3′:
+3′. **Selection- and grader-side gates that must exist BEFORE the set is built** — P6 task
+   preflight (reject F2P≥100 / P2P=0 / suite-red-at-baseline tasks, §1.3) and P5 grader isolation
+   for test paths (§6). Both are selection/grading changes, not prompt changes, and both are
+   unusable if landed after the set is frozen. Plus: **sync the P7 turn-log code to the eval box**
+   (verified 2026-07-29 as absent there — `harness/turn-log.mjs` missing, no `turnsFile` /
+   `costContentUsd` in any P0 smoke row) and confirm `turnsFile` is non-null on both arms of one
+   real smoke.
+   **P7 box sync DONE 2026-07-30** — the box was at `c61b5e8` with no local harness edits (every
+   differing file hash-matched that revision), so `harness/` + `tests/` + `stats/` were synced
+   wholesale. On the `l3-dedup-smoke-20260730` run all 5 rollouts carry a non-null `turnsFile`
+   whose record count equals the row's turn count (25/82/58/83/56) and a populated
+   `costContentUsd`. **Sweet arm only** — the native half of this gate still needs one rollout.
 4. **Build + freeze the NEW held-out set** — only after gate 1 is verified, else it burns on first
    contact. Recipe: Octoverse quotas, dev-repo exclusion, fresh seed, outcome-blind selection;
    goldens built, vaulted (golden-vault.sh), staged on the box, and a **preflight golden-presence
@@ -250,6 +269,18 @@ right moral, not "sweet stopped early and lost".
   `stats/task-stats.mjs` pair-filters it rather than defaulting a missing value to $0.
 - **B5 — trajectory JSON truncation** (200-char inputs / 600-char results) → chained commands and
   leak scans are undercounted; every scan-derived figure is a floor.
+- **B6 — slow suites lose their first `run_tests` response and self-invalidate the rollout**
+  (found 2026-07-30 on the L3 smoke, pre-existing behaviour). The FIRST `run_tests` of a rollout
+  runs TWO full suites in series — the L2 clean baseline plus the agent's current diff. On
+  `simdjson-2016` (cmake build + ctest) that took **256 s**; the requester process was already gone
+  when the broker answered (its own deadline is `testTimeoutSec+90` = 390 s, so the agent-side tool
+  timeout killed it), leaving an unconsumed `res-*` file in the IPC dir → `shimTampered` → policy
+  re-run → the re-run then hit the 30-min wall guard (`exitReason: timeout`). Consequence for the
+  next full run: **slow C++/JVM tasks can be systematically re-run and excluded**, symmetric across
+  arms but a coverage loss. Options (not taken here, they change L2's blast radius): compute the
+  baseline off the critical path (before the agent starts, or after answering the first call), or
+  raise per-task `testTimeoutSec` and the agent-side tool timeout together. L3's own exposure to
+  this is closed — an undelivered response is no longer citable (see the L3 row in §6).
 - **Run integrity otherwise clean** [O]§E4: 393 rollouts `model_stopped` 391 / `agent_error` 2;
   0 shim tampering, 0 timeouts, 0 start-retries, all indexes `golden-cache`; 3 zero-hunk patches
   (sweet 1 / native 2), 6 never-ran-tests (all sweet, none in the 16).
@@ -348,6 +379,11 @@ retrieval** (first ~40 calls are ss-heavy and work; then drift to generic bash g
 (b) same-file edit-thrash, (c) toolchain fights, (d) results-dir sightseeing. On 5 of the 8 tail
 tasks both arms failed ([O] said 6 of 8; [V] corrected — underscore & stingray are both-solved,
 firefly is native-only).
+
+The **re-test half** of this tail — the agent re-running `run_tests` on an unchanged source diff
+and being handed the whole transcript again — now has a MECHANICAL lever: **L3** in §6
+(harness-side, both arms, no prompt change; distinct from the struck prompt-side P2). (b) and (c)
+remain *described*, not levered.
 
 ### 4.5 The mirror image [O]§C7, reframed [V]§4
 3 of the tasks where sweet was cheapest (hotmeteor −$2.12, redboltz −$2.01, sap-luigi −$1.01) are
@@ -519,15 +555,16 @@ these 200. Ordered by priority.
 | # | lever | cause | smallest concrete change | expected effect / rows plausibly affected |
 |---|---|---|---|---|
 | **P0 — isolation (publication blocker)** | §1, §2 | full isolation, not permission tweaks (3 of 6 vectors survive a chmod-level fix): (1) run rollouts in a container/namespace with **no access** to `results/**`, `/root/.ss-eval/golden/**`, `select/.cache/**`, HF caches, eval venvs, or the sweet-search-private checkout; (2) **egress allowlist** — breaking github.com DNS is not enough (jsDelivr/unpkg/proxy.golang.org/IP-pinned HTTPS all worked); (3) **no docker socket** for the agent (task images carry the fix commit) — `run_tests` via broker only; (4) scrub `/tmp` between rollouts (cross-task gold observed); (5) port `auditEscape` into all 3 CLI runners so `escape:0` stops lying; (6) grader tripwire: flag any submitted patch ≥95%-identical to gold hunks | no effect on valid solves — makes the solve comparison *measurable*. Then **re-run** for a defensible headline. **SHIPPED 2026-07-29**: all six items done plus V5b (container layer store), canary 35/35. Verified end-to-end on: a 5-task python opencode/Grok smoke; a 4-language smoke (java/rust/go/csharp) where masked host build caches broke nothing and agents made ZERO host-toolchain attempts, using run_tests instead; and one rollout each on the codex and claudecode adapters. All three CLI harnesses now run under the jail. Per-task `testTimeoutSec` is needed for .NET/JVM suites — `dotnet test` re-restores and rebuilds per invocation, exhausting a 30-min budget. |
-| **P1 — cost: MCP/structured `ss-*`** | §4.3 — 1.14 v 1.76 calls/turn; 94.7% re-send tax | expose `ss-search/read/grep/find/trace` as structured OpenCode/MCP tools so the model can batch independent calls per turn; the variant already exists (`sweet-search-system-prompt-mcp.md`, `init --mcp`) and is **UNBENCHMARKED**; keep returned evidence unchanged for the first experiment | est. **+14.7% → ≈0 to −0.4%**; all 8 tail tasks, especially the same-call-count bsl control. No solve-rate claim until fresh validation |
-| **P1b — fallback: let plain reads use the harness reader** | §5.8 — ss-read is 55% of calls, all shell-routed | one M± line (`sweet-search-system-prompt.md:24` currently forbids the native reader) | est. +14.7% → +6.3%; risk: reintroduces re-confirm thrash that rule prevents. Only if P1 stalls |
-| **P2 — anti-thrash completion guidance** | §4.4 waste taxonomy | harness + M± nudges: (a) hash the source diff and suppress repeated identical `run_tests` executions; after two no-progress cycles return one compact diagnostic instead of another full suite transcript; (b) after 2 identical-command failures, change strategy; never reconstruct `run_tests` by hand via docker | pennylane, underscore, php-scoper, bsl, stingray; parts of raml & simdjson |
-| **P3 — completion checkpoint (model-capability aid, outside M± retrieval guidance)** | §5.3 content bucket | one line: "Preserve the invariant you just identified; do not replace it with a narrower mechanism, and never update tests/snapshots to bless behavior the source should satisfy." | firefly, pion, pmmmwh, hotmeteor, redboltz; possibly bfgroup |
-| **P4 — breadth-of-fix trigger** | §5.3 breadth bucket, §5.5 | move M± line 54's trigger from *symbol shape* to *test feedback*: after a failing `run_tests`, require one breadth pass before the next edit. Keep narrow — **P3 tests-first was rejected twice** (+23.7%/+40.4% ideal) | its original "would flip" list was mostly contaminated-control tasks; re-estimate on dev |
-| **P5 — grader isolation for test paths** | protofire, redboltz conflicts | reject or strip agent changes under test/fixture paths before applying the hidden test patch (matches the already-authoritative do-not-modify-tests contract) | validate against fresh tasks whose legitimate surface includes test-like dirs |
-| **P6 — task preflight gates** | §1.3 | reject tasks with suite-wide baseline failure (F2P≥100 or P2P=0) and preflight every image against its clean checkout/toolchain; flag hidden tests that require an unstated new API/package architecture | spectreconsole, firefly, btcpay, k8s-178 reclassify from capability to environment |
+| **L3 — frame-side run_tests anti-loop (shim output dedup)** — **IMPLEMENTED + SMOKE-VERIFIED 2026-07-30** | §4.4 (a) + the re-test half of (d) | MECHANICAL, in the shared `run_tests` shim (`harness/rt-dedup.mjs` + `rt-shim-runtime.mjs`), symmetric across both arms and **not** the struck prompt-side P2 — no M±, frame, or ranking text is touched. Per-rollout state key = sha256(`git diff HEAD` + untracked non-ignored files as sorted path+content hashes + the exact `run_tests` argv). The suite **always executes**; only the response text changes. Repeat call with an identical key AND an identical result (exit code + normalized failure set) → a one-line `[run_tests-dedup]` summary (exit, failure count, first failure, "change the code before re-running, or pass `--ss-full`"). Result CHANGED under an identical key → full output + a flakiness note. First/changed-key call → byte-identical to the pre-lever shim. Degrades to full output on any doubt: unhashable untracked set, infra-error result, unwritable state log, or a cited result the requester never received (`undelivered` marker). **Semantics: `--ss-full`** bypasses condensation for one call (stripped from argv before the runner, excluded from the key, per-call not sticky); **`SS_RUNTESTS_DEDUP=0`** disables the mechanism; every row is stamped `rtDedup` beside `isolated`. State + hand-audit trail = `results/<RUN_ID>/rt-dedup/<task>-<arm>.jsonl`, written only by the host-side broker (results/** is masked by the P0 jail), reset per rollout by a `session` record. Grading (swebench `run_evaluation` / `sr-eval.py`) and the env-ledger gold-FULL runs do not go through this shim — verified. Covered by `tests/rt-dedup.mjs` (91 assertions, offline) and gated by `stats/rt-dedup-audit.mjs` | **Evidence** — 5-task sweet-arm smoke `l3-dedup-smoke-20260730` (Grok-4.5/OpenCode, P0 jail on, retired held-out loopers, mechanism-only): **84 `run_tests` calls → 18 suppressed, 4 changed-under-identical-key, 0 FALSE POSITIVES** (every suppression re-checked against its cited call: diff, untracked set, argv, digest all identical), marker observed in 4/5 trajectories, all 5 rollouts completed and graded with `turnsFile` non-null. Two caveats: the agent answered its first suppression with `--ss-full` in 4/5 rollouts (14 of 84 calls), so realized saving ≪ firing count; and argv variation on an unchanged diff (php-scoper: identical diff across all 15 calls, 13 with differing argv) is correctly *not* suppressed, so the lever catches bare repeats only. **No solve/cost claim** — burned tasks, n=1, jailed env |
+| ~~**P1 — cost: MCP/structured `ss-*`**~~ **STRUCK 2026-07-29** | §4.3 | **not doing it.** The product's contact surface is `ss-*` binaries on `$PATH`; benchmarks measure the shipped product, so all arms stay shell-only. The MCP variant is not benchmarked | the −14.2% counterfactual stays an unrealised extrapolation and is not a plan target |
+| ~~**P1b — plain reads via the harness reader**~~ **STRUCK** | §5.8 | M± edit; M± is tuned and not being reopened | — |
+| ~~**P2 — anti-thrash completion guidance**~~ **STRUCK 2026-07-29** | §4.4 | **not doing it.** Anti-thrash guidance has been disproven repeatedly; M± is already tuned for retrieval without thrash. The §4.4 tail stays a *described* waste taxonomy — except for the re-test loop, which is addressed MECHANICALLY by **L3** above (shim output dedup). L3 is not a revival of P2: it is harness output shaping, contains no guidance text, and cannot steer retrieval | — |
+| ~~**P3 — completion checkpoint**~~ **STRUCK** | §5.3 content bucket | M± edit — see P1b; also the sibling tests-first variant was already rejected twice | — |
+| ~~**P4 — breadth-of-fix trigger**~~ **STRUCK** | §5.3 breadth bucket, §5.5 | M± edit — see P1b. §5.5 itself says the deficit is diffuse and unmeasurable on a contaminated yardstick | — |
+| **P5 — grader isolation for test paths** — **NOW GATE 3′, must land before the set is frozen** | protofire, redboltz conflicts | reject or strip agent changes under test/fixture paths before applying the hidden test patch (matches the already-authoritative do-not-modify-tests contract) | validate against fresh tasks whose legitimate surface includes test-like dirs |
+| **P6 — task preflight gates** — **NOW GATE 3′, selection-time, must land before the set is built** | §1.3 | reject tasks with suite-wide baseline failure (F2P≥100 or P2P=0) and preflight every image against its clean checkout/toolchain; flag hidden tests that require an unstated new API/package architecture | spectreconsole, firefly, btcpay, k8s-178 reclassify from capability to environment |
 | **P7 — measurement hygiene** | §3 | persist per-turn `{in,cached,out}` (or archive the OpenCode DB) per run; fix/unify `costNaiveUsd` semantics; stop backfilling `toolCounts.edit`; future forensics start from the DB | makes the next forensics pass exact instead of algebraic. **SHIPPED 2026-07-29** (B1+B3+B4, `harness/turn-log.mjs` + `tests/turn-log.mjs`, all four adapters). The first half landed as a side-effect of P0: each rollout gets a PRIVATE agent session store at `results/<runId>/agent-state/<task>-<arm>/`, required anyway because the shared 1.8 GB `~/.local/share/opencode` store is itself escape vector V6 (rollouts read the current run's other-arm trajectories out of it). The second half is `results/<runId>/turns/<task>-<arm>.jsonl` — the per-turn split, which is what the DB was only a proxy for. Next forensics reads the turn logs first and the DB only to adjudicate. **Verified on synthetic streams, not yet on a real rollout** — confirm `turnsFile` is non-null on both arms of the next smoke before trusting a run's cost columns. |
-| **P8 — prompt size (cost only, last)** | §4.1 — ~1.1k wider ctx/turn ≈ the M± block | compress M± by removing duplicated prose, preserving tool semantics; test cost before touching any ranking/trailer rule | ≈$1.9 of this run's gap by arithmetic; no evidenced solve flips |
+| ~~**P8 — prompt size**~~ **STRUCK** | §4.1 | M± edit for ≈$1.9 of a $15.6 gap — not worth reopening a tuned prompt | — |
 | **Honest boundary (not fixable)** | §4.6 | retrieval compression only pays when retrieval dominates context; on Grok's build-log-heavy transcripts it is ~3%. Write it down rather than engineer around it | — |
 | **Do NOT change** | §5.7 | no retrieval-ranking, sufficiency-trailer, or absence-probe changes — retrieval surfaced targets 14–15/16, earlier than native 11/14; trailers rare and `YES` correlated with correct locations; zero retrieval-caused and zero prompt-induced losses | — |
 
