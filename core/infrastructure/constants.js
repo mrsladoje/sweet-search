@@ -51,11 +51,24 @@ export const DEFINITION_TYPES = new Set([
  */
 const DOC_FORMAT_LANGUAGE_IDS = new Set(['markdown', 'rst', 'plaintext']);
 const LEGACY_EXTRA_CODE_EXTENSIONS = ['ada', 'd', 'v'];
+/**
+ * Discovered by FILE_PATTERNS and worth grepping, but with no chunker grammar, so
+ * they get no EXTENSION_MAP entry (which would claim one). Without this list they
+ * would be embedded and searchable yet invisible to ss-grep — the exact drift the
+ * comment above describes. Added 2026-07 from the held-out-2 extension-coverage
+ * audit; `mod` covers go.mod, which FILE_PATTERNS has always discovered.
+ */
+const EXTRA_GREPPABLE_CODE_EXTENSIONS = [
+  'razor', 'jj', 'bnf', 'yy', 'y', 'scm', 'jq', 'pkl', 'gleam', 'hylo',
+  'snap', 'stderr', 'conf', 'config', 'adoc', 'scd', 'vtt', 'test', 'mod',
+  'txtar', 'bsh', 'inc', 'fixed',
+];
 export const CODE_FILE_EXTENSIONS = new Set([
   ...Object.entries(EXTENSION_MAP)
     .filter(([, id]) => !DOC_FORMAT_LANGUAGE_IDS.has(id))
     .map(([ext]) => ext.replace(/^\./, '').toLowerCase()),
   ...LEGACY_EXTRA_CODE_EXTENSIONS,
+  ...EXTRA_GREPPABLE_CODE_EXTENSIONS,
 ]);
 
 /**

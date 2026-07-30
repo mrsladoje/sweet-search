@@ -77,7 +77,7 @@ export const FILE_PATTERNS = {
     '**/*.{py,pyi}',                       // Python
     '**/*.go',                              // Go
     '**/*.rs',                              // Rust
-    '**/*.{c,cpp,cc,cxx,h,hpp,hxx}',      // C/C++
+    '**/*.{c,cpp,cc,cxx,h,hpp,hxx,inl}',  // C/C++ (.inl = inline impl included from a header)
     '**/*.{cs,fs,vb}',                     // .NET
     '**/*.{rb,erb}',                       // Ruby
     '**/*.php',                             // PHP
@@ -88,6 +88,25 @@ export const FILE_PATTERNS = {
     '**/*.{sbt,sc}',                        // Scala build / worksheets
     '**/*.{rake,gemspec,podspec,ru}',      // Ruby build/manifest DSLs
     '**/*.{coffee,litcoffee}',             // CoffeeScript
+    // ── Held-out-2 coverage audit (2026-07): types that appear in the drawn set's
+    //    gold or hidden-test patches and were discovered by nothing above ──
+    '**/*.razor',                          // Blazor components (C# + markup)
+    '**/*.{jj,bnf,yy,y}',                  // parser/lexer grammars: JavaCC, Grammar-Kit, bison
+    '**/*.scm',                            // tree-sitter queries / Scheme
+    '**/*.jq',                             // jq programs
+    '**/*.pkl',                            // Pkl configuration language
+    '**/*.gleam',                          // Gleam
+    '**/*.hylo',                           // Hylo
+    '**/*.snap',                           // Jest/Vitest snapshot fixtures (agents edit these)
+    '**/*.stderr',                         // rustc compile-fail expected output
+    '**/*.{conf,config}',                  // runtime config (redis.conf, *.config)
+    '**/*.adoc',                           // AsciiDoc documentation
+    '**/*.scd',                            // scdoc man-page source
+    '**/*.vtt',                            // WebVTT fixtures
+    '**/*.test',                           // extensionless-suffix test fixtures (nginx t/*.test)
+    '**/*.txtar',                          // Go txtar test archives
+    '**/*.bsh',                            // BeanShell (maven integration-test verify scripts)
+    '**/*.{inc,fixed}',                    // PHP_CodeSniffer fixtures: source + expected output
     '**/*.{pcss,styl}',                     // PostCSS / Stylus
     '**/*.{twig,liquid,njk,hbs,handlebars,mustache,gohtml,eex,heex,leex}', // HTML templating
     '**/*.{pug,jade,haml,slim}',           // Indentation templating

@@ -105,7 +105,8 @@ def run_gate(specs, setname, enforce):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--set", choices=["multilingual", "decontam", "heldout", "heldout_reserve"], required=True)
+    ap.add_argument("--set", choices=["multilingual", "decontam", "heldout", "heldout_reserve",
+                                      "heldout2", "heldout2_reserve"], required=True)
     ap.add_argument("--limit", type=int, default=0, help="take only first N frozen ids (e2e)")
     ap.add_argument("--out", default=None)
     ap.add_argument("--enforce-gate", action="store_true",

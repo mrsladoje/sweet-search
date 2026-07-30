@@ -23,6 +23,7 @@ export const EXTENSION_MAP = {
   // C / C++
   '.c': 'c', '.h': 'c',
   '.cpp': 'cpp', '.cc': 'cpp', '.cxx': 'cpp', '.hpp': 'cpp', '.hxx': 'cpp',
+  '.inl': 'cpp',   // inline implementation included from a header — ordinary C++ source
 
   // C#
   '.cs': 'csharp',
