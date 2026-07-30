@@ -136,19 +136,30 @@ the second draw can be compared against the first rather than taken on trust.
 
 ## 8. Realized counts
 
-*Placeholder at pre-registration time — filled in from `MANIFEST_heldout2.json` immediately
-after the draw, with no rule changed. Empty here is the point: these numbers are outputs of
-the rules above, and this section is committed before they exist so that they cannot be
-selected for.*
+*This section was committed empty, before the numbers existed, so that they could not be
+selected for. Filled in from `MANIFEST_heldout2.json` immediately after the draw, with no
+rule changed.*
 
 - Dataset: `nebius/SWE-rebench-V2` @ `475dd5e8703bb5fb22dd3c60b5d038b019eba1e0`
 - Seed: `20260731` · N = 200 primary + 67 reserve
-- Pool after base filters and exclusions, before the rejection gate: TO BE FILLED
-- Rejected by the task gate: TO BE FILLED → `REJECTED_heldout2.json`
-- Dropped by the one-task-per-repo rule: TO BE FILLED
-- Language quota deficits requiring reassignment: TO BE FILLED
-- Selected: TO BE FILLED
-- `tasks_heldout2.jsonl` sha256: TO BE FILLED (recorded in `PLAN.md`)
+- Pool after base filters and exclusions, before the rejection gate: **17,830 tasks**
+  (9,011 dropped as quality != A; 5,026 on an excluded repo; 212 on an excluded instance id)
+- Rejected by the task gate: **4,047** — 2,212 on `FAIL_TO_PASS >= 100`, 2,973 on
+  `PASS_TO_PASS == 0`, 1,138 on both → `REJECTED_heldout2.json`
+- Dropped by the one-task-per-repo rule: **11,199**, leaving **2,584 candidates in 2,584
+  distinct repos**
+- Language deficits: **19 primary slots** freed by exhausted pools (C# 9, C++ 7, C 3) and
+  redistributed proportionally — python +4, ts +3, js +3, go +2, java +2, rust +2, kotlin +1,
+  php +1, swift +1. The reserve freed 12 more (C# 4, C 3, C++ 3, kotlin 2) the same way.
+- Realized mix: python 34 · ts 33 · js 29 · java 22 · go 20 · rust 20 · php 9 · kotlin 7 ·
+  swift 5 · c 5 · csharp 3 · cpp 3 · scala 2 · dart 2 · elixir 2 · julia 2 · r 1 · clojure 1
+- Selected: 200 primary in 200 distinct repos, 67 reserve in 67 further distinct repos; zero
+  overlap with either exclusion tier, zero primary/reserve overlap, zero gate violations —
+  all asserted in the selector, which refuses to write a set that breaks any of them
+- `tasks_heldout2.jsonl` sha256:
+  `67d83ded531112a0ce7ff8082e99a8d10014df3ff24ff4cfe755e97932f148c8`
+- `tasks_heldout2_reserve.jsonl` sha256:
+  `113994d5ce1b2ce5e8e9264269c0b593db9854d603d85d2adeec00356963a307`
 
 ## 9. Known limitations of this set
 
