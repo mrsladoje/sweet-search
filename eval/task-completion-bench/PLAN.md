@@ -77,7 +77,8 @@ Why this is achievable on the evidence below:
 3′. **Selection- and grader-side gates that must exist BEFORE the set is built** — P6 task
    preflight (reject F2P≥100 / P2P=0 / suite-red-at-baseline tasks, §1.3) and P5 grader isolation
    for test paths (§6). Both are selection/grading changes, not prompt changes, and both are
-   unusable if landed after the set is frozen. Plus: **sync the P7 turn-log code to the eval box**
+   unusable if landed after the set is frozen. **BOTH IMPLEMENTED 2026-07-30 — see the status
+   block below.** Plus: **sync the P7 turn-log code to the eval box**
    (verified 2026-07-29 as absent there — `harness/turn-log.mjs` missing, no `turnsFile` /
    `costContentUsd` in any P0 smoke row) and confirm `turnsFile` is non-null on both arms of one
    real smoke.
@@ -89,24 +90,35 @@ Why this is achievable on the evidence below:
    the next run** rather than costing a dedicated smoke — same code path, same adapter, and the
    stamping is arm-independent (confirm `turnsFile` + `rtDedup` on that row and this gate closes).
 
-   **STATUS OF THE OTHER TWO GATE-3′ ITEMS (checked 2026-07-30 — BOTH STILL OPEN, no work
-   started):**
-   - **P6 task preflight gates — NOT IMPLEMENTED.** Selection does not reject F2P≥100, P2P=0, or
-     suite-red-at-baseline tasks; `select/materialize_tasks.py:95` only *prints* `F2P=<n>` in its
-     progress line. The only related machinery is the hand-curated `excludeF2P`/`excludeP2P`
-     lists in `harness/task-overrides.json`, which are per-task repairs applied after the fact,
-     not a selection-time gate.
-   - **P5 grader isolation for test paths — NOT IMPLEMENTED.** Nothing in `evaluator-runtime.mjs`
-     or `sr-eval.py` strips, rejects, or reverts agent changes under test/fixture paths before the
-     hidden test patch is applied; `gradeArm` passes `model_patch` through as-is. The
-     do-not-modify-tests contract is therefore still frame text only — exactly the hole that cost
-     `redboltz-239` (unmerged conflict, no tests ran) and `protofire-224` (hand-typed fixtures
-     collided with the hidden test patch).
+   **STATUS OF THE OTHER TWO GATE-3′ ITEMS — BOTH IMPLEMENTED 2026-07-30 (§6 rows P5/P6 carry the
+   full detail and the evidence):**
+   - **P6 task preflight gates — IMPLEMENTED.** Metadata-only, outcome-blind selection-time
+     rejection of `FAIL_TO_PASS ≥ 100` or `PASS_TO_PASS == 0`, applied before the seeded draw in
+     `select_tasks.py` / `select_heldout.py` (primary + reserve), thresholds single-sourced in
+     `select/task-gates.json`, every rejection logged and written to a `REJECTED_<set>.json`
+     sidecar next to the manifest, `materialize_tasks.py` as an audit checkpoint, and a WARN-only
+     preflight in run-pilot for sets that predate the gate. `harness/task-overrides.json` keeps its
+     separate after-the-fact-repair role. **Evidence:** dry run over the retired held-out metadata
+     rejects 53/200 (25 on F2P, 40 on P2P, 12 both), including `spectreconsole-1942`,
+     `firefly-716` and `btcpayserver-6251`; `jupytext-360` (F2P=33) is correctly below threshold.
+     Retired manifests were not modified.
+   - **P5 grader isolation for test paths — IMPLEMENTED.** `harness/patch-strip.mjs` in the shared
+     `gradeArm` path drops, from the agent's patch, every block touching a file the hidden
+     `test_patch` also touches — narrow and collision-based, not a test-glob sweep; symmetric
+     across arms; every graded row stamped `strippedTestPaths`. **Evidence:** live re-grade of the
+     two damaged tasks from the retired run's saved preds into a scratch dir — control (strip off)
+     reproduces `with conflicts` + unmerged paths with zero tests run; with stripping ON the hidden
+     patch applies cleanly and the suites execute (logs 24→243 and 46→362 lines). Mechanism check
+     only, no solve claim.
 
-   Both are selection/grading changes that are **unusable if landed after the set is frozen**, so
-   they block gate 4. Neither is started — awaiting a go.
-4. **Build + freeze the NEW held-out set** — only after gate 1 is verified, else it burns on first
-   contact. Recipe: Octoverse quotas, dev-repo exclusion, fresh seed, outcome-blind selection;
+   **Gate 3′ is therefore CLOSED for these two items, and the set build (gate 4) is UNBLOCKED.**
+   The one remaining gate-3′ thread is the native half of the P7 turn-log confirmation, which
+   rides on the first native rollout of the next run.
+4. **Build + freeze the NEW held-out set** — **UNBLOCKED 2026-07-30** (gate 3′ selection/grading
+   items landed above); still gated on gate 1 being verified, else it burns on first
+   contact. Recipe: Octoverse quotas, dev-repo exclusion, fresh seed, outcome-blind selection,
+   **the task-rejection gate now runs inside the draw** (expect ~25% of the pool rejected, absorbed
+   by re-drawing — `resolve_deficits` already handles a per-language shortfall);
    goldens built, vaulted (golden-vault.sh), staged on the box, and a **preflight golden-presence
    check** added (prior run died 14/200 on this); green ledger under the exact run config; one
    run-pilot per box at a time.
@@ -162,7 +174,9 @@ reading harness/ledger/task data, but the permission model did not enforce it. [
 
 ### 1.3 Tasks whose whole suite is red at baseline [O]§A3
 `spectreconsole-1942` F2P=495; `hyperledger__firefly-716` F2P=293; `jupytext-360` 33;
-`btcpayserver-6251` 21 with **P2P=0**. On these, "solving" means repairing the build, not fixing
+`btcpayserver-6251` 21 with **P2P=0**. **Closed 2026-07-30 by the selection-time task-rejection
+gate** (§6 P6): F2P≥100 or P2P==0 is rejected before the draw, so a set built from here on cannot
+contain one. On these, "solving" means repairing the build, not fixing
 the bug (native "won" spectreconsole by rewriting `net9.0` across every `.csproj`). BTCPay's
 F2P=21/P2P=0 is compile-gated: the hidden `TestAccount.cs` helper calls the new
 `GeneralSettings(storeId)` signature, so any patch not changing that signature fails the whole
@@ -597,8 +611,8 @@ these 200. Ordered by priority.
 | ~~**P2 — anti-thrash completion guidance**~~ **STRUCK 2026-07-29** | §4.4 | **not doing it.** Anti-thrash guidance has been disproven repeatedly; M± is already tuned for retrieval without thrash. The §4.4 tail stays a *described* waste taxonomy — except for the re-test loop, which is addressed MECHANICALLY by **L3** above (shim output dedup). L3 is not a revival of P2: it is harness output shaping, contains no guidance text, and cannot steer retrieval | — |
 | ~~**P3 — completion checkpoint**~~ **STRUCK** | §5.3 content bucket | M± edit — see P1b; also the sibling tests-first variant was already rejected twice | — |
 | ~~**P4 — breadth-of-fix trigger**~~ **STRUCK** | §5.3 breadth bucket, §5.5 | M± edit — see P1b. §5.5 itself says the deficit is diffuse and unmeasurable on a contaminated yardstick | — |
-| **P5 — grader isolation for test paths** — **NOW GATE 3′, must land before the set is frozen** | protofire, redboltz conflicts | reject or strip agent changes under test/fixture paths before applying the hidden test patch (matches the already-authoritative do-not-modify-tests contract) | validate against fresh tasks whose legitimate surface includes test-like dirs |
-| **P6 — task preflight gates** — **NOW GATE 3′, selection-time, must land before the set is built** | §1.3 | reject tasks with suite-wide baseline failure (F2P≥100 or P2P=0) and preflight every image against its clean checkout/toolchain; flag hidden tests that require an unstated new API/package architecture | spectreconsole, firefly, btcpay, k8s-178 reclassify from capability to environment |
+| **P5 — grader isolation for test paths** — **IMPLEMENTED 2026-07-30** | protofire, redboltz conflicts | **Narrow, collision-based, not a test-glob sweep.** `harness/patch-strip.mjs`, called from `gradeArm` (`evaluator-runtime.mjs`) — i.e. the SHARED grading path, so both arms are treated identically. Before eval.py applies the hidden `test_patch`, every `diff --git` block of the agent's `model_patch` that touches a path the hidden patch modifies/creates/deletes/renames is dropped; the rest is graded normally. The split is byte-lossless, so a non-colliding patch passes through unchanged, and a patch emptied by stripping falls through to the ordinary zero-hunk case (no special case). Path extraction reads `---`/`+++`/`rename from`/`rename to` and stops at the first `@@` (hunk text cannot inject a path), with a `diff --git`-line fallback for header-less blocks. Transparency: `gradeArm` returns `stripped_paths`, run-pilot stamps every row with `strippedTestPaths` (empty list normally) and logs a warning per firing. `SS_GRADE_STRIP_COLLISIONS=0` restores verbatim passthrough for bit-exact re-grading of frozen evidence; the broader **test-glob** mode exists behind `SS_GRADE_STRIP_TEST_GLOBS=1`, **default OFF**. Covered by `tests/patch-strip.mjs` (41 assertions, offline, stub evaluator; includes both-arms symmetry and the narrowness case). Note `harness/task-overrides.json` is unchanged — it stays the after-the-fact per-task repair mechanism | **Evidence — live re-grade of the two damaged tasks** (retired run's SAVED sweet-arm preds, re-graded into `/root/regrade-scratch` on the box; the original results were read-only and are byte-unchanged). **Control (`SS_GRADE_STRIP_COLLISIONS=0`) reproduces the defect exactly**: redboltz-239 → `Applied patch to 'test/test_broker.hpp' with conflicts` → `U test/test_broker.hpp`, log ends there (24 lines, `set -e`, zero tests run); protofire-224 → `U test/fixtures/order/ordering-correct.js` (46 lines). Both `f2pFrac=0.000`. **With stripping ON**: 1 path stripped for redboltz (`test/test_broker.hpp`), 2 for protofire (`test/fixtures/order/ordering-{correct,incorrect}.js`); **zero `with conflicts`, zero unmerged paths, and the suites actually execute** — logs grow 24→243 and 46→362 lines. Resulting `f2pFrac=1.000 / status=FULL` on both, reported as a **sanity signal only: NO solve claim** — these two tasks are retired and burned, n=1, and the re-graded patches come from the contaminated run. **Why collision and not a glob** (measured over heldout-200 + multilingual-200 + heldout-reserve-101 = 501 tasks): GOLD patches touching ≥1 test-glob path = 8/501 (1.6%; 4/200 heldout), so a blanket test-glob strip would discard part of the LEGITIMATE fix surface on ~1 task in 60 — that is the number that says a broad mode is not safe as a default. GOLD patches sharing ANY path with the hidden test patch = **0/501**, so the collision rule cannot discard a load-bearing fix on any task in these populations. Non-test collision paths are stripped too (hidden test patches do touch real source files — e.g. `Sources/MapboxDirections/RouteStep.swift`; 21/480 heldout test-patch files are not test-glob-shaped): whatever the hidden patch writes is the authoritative graded state of that file, so stripping makes the outcome deterministic instead of merge-order-dependent |
+| **P6 — task preflight gates** — **IMPLEMENTED 2026-07-30** | §1.3 | **Selection-time rejection, metadata-only and outcome-blind** (task structure, never a run result — so it is pre-registration compatible). Reject when `FAIL_TO_PASS ≥ 100` **or** `PASS_TO_PASS == 0`. Thresholds + their motivating cases live in ONE file, `select/task-gates.json`, read by both the Python selection path (`select/task_gates.py`) and the JS preflight (`harness/task-gates.mjs`). Rejection happens **before the seeded draw** in `select_tasks.py` / `select_heldout.py` (primary AND reserve, since a reserve can be promoted), so a set built from here on cannot contain a violator; every rejection is logged with id + reason + counts, counted in the manifest, and written to a sidecar `REJECTED_<set>.json` next to the manifest. `materialize_tasks.py` is an audit checkpoint over an already-frozen id list: report + sidecar by default (frozen sets must stay materializable for re-grading), `--enforce-gate` to drop, `--gate-only` to audit without writing. Defense in depth: run-pilot's `loadTasks` **WARNs, never refuses** (old sets predate the gate) and degrades to one warning if the config is unreadable. `select_heldout.py`'s frozen-set identity check now says explicitly that a set predating the gate must be rebuilt, not re-verified. The hand-curated `excludeF2P`/`excludeP2P` map in `harness/task-overrides.json` is untouched and keeps its separate role: after-the-fact repair of a task already in a set, not a gate. Covered by `tests/task-gates.mjs` (28 assertions) + `python3 select/task_gates.py --self-test` (16), including a cross-language assertion that both sides load identical thresholds | **Evidence — dry run over the retired held-out metadata** (`materialize_tasks.py --set heldout --gate-only`; report-only, the retired manifests were NOT modified): **53/200 would have been rejected** — 25 on `FAIL_TO_PASS≥100`, 40 on `PASS_TO_PASS==0` (12 on both). All three expected cases are caught: `spectreconsole__spectre.console-1942` (F2P=495), `hyperledger__firefly-716` (F2P=293), `btcpayserver__btcpayserver-6251` (F2P=21, P2P=0). `mwouts__jupytext-360` (F2P=33) is correctly **not** caught — it sits below the threshold, which is deliberately set where whole-suite failure is unambiguous rather than where it first smells. Same gate on the other populations: 67/200 multilingual, 20/101 heldout-reserve. **Recorded caveat on the `P2P==0` half**: it is stricter than the btcpay case alone requires (~20% of candidates, some with F2P=1 where the empty PASS_TO_PASS looks like a dataset recording artifact rather than a red suite). Kept because a task with no verified-passing baseline test gives the grader no regression signal, and because rejection is cheap — the gate runs against a ~19k-task pool, so a rejected candidate is simply replaced by the next draw of the same seeded shuffle. It costs pool size, never set size |
 | **P7 — measurement hygiene** | §3 | persist per-turn `{in,cached,out}` (or archive the OpenCode DB) per run; fix/unify `costNaiveUsd` semantics; stop backfilling `toolCounts.edit`; future forensics start from the DB | makes the next forensics pass exact instead of algebraic. **SHIPPED 2026-07-29** (B1+B3+B4, `harness/turn-log.mjs` + `tests/turn-log.mjs`, all four adapters). The first half landed as a side-effect of P0: each rollout gets a PRIVATE agent session store at `results/<runId>/agent-state/<task>-<arm>/`, required anyway because the shared 1.8 GB `~/.local/share/opencode` store is itself escape vector V6 (rollouts read the current run's other-arm trajectories out of it). The second half is `results/<runId>/turns/<task>-<arm>.jsonl` — the per-turn split, which is what the DB was only a proxy for. Next forensics reads the turn logs first and the DB only to adjudicate. **Verified on synthetic streams, not yet on a real rollout** — confirm `turnsFile` is non-null on both arms of the next smoke before trusting a run's cost columns. |
 | ~~**P8 — prompt size**~~ **STRUCK** | §4.1 | M± edit for ≈$1.9 of a $15.6 gap — not worth reopening a tuned prompt | — |
 | **Honest boundary (not fixable)** | §4.6 | retrieval compression only pays when retrieval dominates context; on Grok's build-log-heavy transcripts it is ~3%. Write it down rather than engineer around it | — |
