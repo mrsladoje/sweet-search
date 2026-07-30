@@ -470,9 +470,90 @@ of the block.)
 
 ---
 
-## 4. Validation plan (Phase 4) — **NOT LAUNCHED, awaiting explicit go**
+## 4. Validation plan (Phase 4)
 
-Design of record:
+### 4.0 Staged design — supersedes the single 36-pair run below
+
+The one-shot 36-pair design was replaced on 2026-07-30 with a **staged** design, on the user's
+cost challenge. Rationale: a 12-pair run standalone cannot clear the guard gates (wide bootstrap
+intervals push the *upper* bounds up, so `operations ≤1.05` and `ctx/turn ≤1.10` fail almost
+regardless of merit), but most of the saving is available by **stopping early when the data says
+we can**, rather than by shrinking the final n.
+
+Decisive fact behind the staging: **we have never measured within-arm prompt-variant noise.**
+Every measurement to date is sweet-vs-native. The per-task standard deviation that sets the
+required n is unknown, so 36 was a guess. Stage 1 measures it and stage 2's size is computed.
+
+| stage | pairs | rollouts | ~cost | decides |
+|---|---|---|---|---|
+| smoke | 5 | 10 | ~$6 | does the block change grouping at all? mechanism only |
+| stage 1 | 12 cumulative | +14 | ~$8 | interim look + **measures the per-task sd** |
+| stage 2 | sized from stage 1 | — | ~$28 worst case | final adjudication |
+
+- The smoke's 5 pairs are **predeclared as part of stage 1** — stopping on "mechanism dead" is a
+  stopping rule, not task selection, so folding them in is legitimate and costs nothing.
+- **Futility boundary at stage 1**: observed turn effect ≤ 0 → stop, do not proceed.
+- **Alpha spending**: two looks need an O'Brien-Fleming-style split (stage 1 ~0.97 to stop early,
+  stage 2 ~0.90) or the effective threshold drifts easier than the predeclared 0.90.
+- Worst case equals the original ~$42; **expected** ~$14–20; floor $6.
+
+#### 4.0a Eligible pool is 20, not 39 — the 36-pair set below is NOT reachable
+
+Measured 2026-07-30 (`/root/eligibility.mjs`, read-only). Of the 40 dev tasks with a vaulted
+golden, only **20** clear all three independent gates:
+
+| filter | survivors |
+|---|---|
+| vaulted golden (zero build cost) | 40 |
+| … AND ledger `gold-valid` **with a current `configHash`** | 25 |
+| … AND passes the selection task-gate (`F2P<100` and `P2P≥1`) | **20** |
+
+Two failure modes account for the loss. 15 fall at the ledger: **14 stale `configHash`** (the
+harness has changed since the 2026-07-10 gold grade — they need a re-sweep, not a rebuild) and 1
+explicitly excluded. Of the 25 survivors, **5 are task-gate rejects** measuring build repair
+rather than bug fixing (`P2P=0` — nothing passes at baseline). 40 = 14 + 1 + 5 + 20.
+
+Across all 40 regardless of ledger state, 11 are gate rejects — the overlap with staleness is
+heavy, which is itself a signal that the rejected tasks are the neglected ones.
+
+Consequences, recorded rather than worked around:
+
+- The 36-task set listed below **cannot be run as written** — it predates both the configHash
+  churn and the selection gate.
+- Smoke (5) and stage 1 (12) fit inside the 20. **Stage 2 at 36 does not** — it needs either
+  ledger re-sweeps or fresh golden builds, both box work, neither API spend. That cost lands
+  before stage 2, not before the smoke.
+- The 20-task pool is *not* a random dev draw: it is the previously-exercised, still-valid subset.
+  Acceptable for a paired within-arm prompt comparison, where task identity largely cancels;
+  **not** acceptable as the basis for any headline solve claim. Disclose on any writeup.
+
+#### 4.0b Smoke set (predeclared 2026-07-30, before launch)
+
+Rule: eligible pool (20) → sort by `instance_id` → seeded shuffle (`seed = 20260730`) → take 5,
+distinct languages first. Outcome-blind: reads only ledger validity, task-gate status, and
+language — never turns, cost, or solve outcome from any prior run.
+
+```
+ontodev__robot-710                    java
+jsx-eslint__eslint-plugin-react-3385  js
+rstudio-education__gradethis-161      r
+mransan__ocaml-protoc-202             ocaml
+dashbitco__nimble_options-43          elixir
+```
+
+Config: Grok-4.5 / OpenCode / OpenRouter, `ARMS=sweet`, `REPS=1`, **`CONCURRENCY=2`**, isolation
+jail ON, `run_tests` dedup ON, `TASK_FRAME` ON, `REASONING=standard`. Runs A (control) and B
+(variant) are **strictly sequential** — `CONCURRENCY` is in-process worker parallelism over
+isolated golden copies (`run-pilot.mjs:525`), which is safe; two concurrent *run-pilot processes*
+are not (git dubious-ownership bug).
+
+`CONCURRENCY=2` cannot bias this measurement: the smoke's metrics are token and turn counts, not
+latency. The standing `concurrency=1` rule applies to the search benchmark, a different harness.
+
+**Scope discipline: the smoke reports operations/envelope and envelopes/turn ONLY.** No solve
+claim, no cost claim — 5 pairs supports neither.
+
+### 4.1 Superseded single-run design (kept for provenance)
 
 - **Tasks**: 36 drawn from the 168 gold-valid dev-200 tasks, stratified by language,
   `seed = 20260730`, selection outcome-blind (uses only ledger validity + language).
@@ -509,10 +590,12 @@ Design of record:
 
 | check | state |
 |---|---|
-| box idle | **OK** — 0 running containers, no active rollout; load ~1.1 from 5 orphaned `agent-jail-init.mjs` (≈27 h) + `egress-guard.mjs serve`. Worth clearing before the run |
-| green ledger | **OK** — `/root/env-ledger/dev200/ledger.jsonl`: 200 tasks, **168 gold-valid / grade FULL**, all with `f2pFrac == 1.0` and `p2pFails == 0`; 32 excluded |
-| goldens staged | **BLOCKING — 0/168 dev goldens on the box.** The box currently holds the **retired held-out 200** goldens (200/200). A `golden-vault.sh push` of the chosen dev tasks is required first; vault has 239 keys, box disk 168G/225G used (48G free) |
-| set-build coordination | **must confirm with the user** — held-out 2 was pre-registered on 2026-07-29 (commit 9be3169) and its build may want the box for ledger sweeps. Never two things on the box at once |
+| box idle | **CLEARED 2026-07-30** — 0 containers, no live run-pilot (the 5 lingering tmux sessions were dead shells). Found a **leaked `sweet-search-maintainer` pegged at 100% CPU for 1 d 8 h** plus 5 orphaned `agent-jail-init.mjs`; killed by explicit PID. `pkill -f` is unusable here — the pattern matches the ssh command line and the shell kills itself |
+| green ledger | **OK** — `/root/env-ledger/dev200/ledger.jsonl` (JSONL, with `configHash`). The `analysis/env-ledger-dev200-2026-07-10.json` summary is **not** loadable by `loadLedger`: wrong shape (object keyed by id, not one row per line) and it carries no `configHash`, so every entry would fail the staleness check even after conversion |
+| goldens staged | **OK for the smoke** — 5/5 pushed + checksum-verified. Fixed a bug found in the process (below) |
+| `golden-vault.sh push` | **BUG FOUND AND FIXED** (commit `6227d98`). `ssh` inside `while read … done <<< "$keys"` inherited the here-string as stdin and ate the remaining keys, so a multi-key push staged **key #1 only** and still printed "verified / restored + locked read-only" and exited 0. This is exactly the goldens-not-staged blind spot that aborted an earlier run 14/200 tasks in. Fix: `ssh -n` throughout both loops + a post-condition that dies unless staged == requested |
+| preflight | **GREEN** — `PREFLIGHT_ONLY=1` reports 5/5 gold-FULL under current config, goldens present |
+| set-build coordination | **OK** — box confirmed idle; held-out 2 is not using it |
 
 Sha256 of the two prompt bodies used for the run is recorded at launch time, since `rows.json`
 carries no prompt provenance (§2.2).
