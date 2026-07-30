@@ -142,18 +142,23 @@ function writeRunTestsBrokerFiles(binDir, cfgPath, stateDir = binDir) {
   // suite + L2 levers via the shared runtime, writes the response atomically.
   writeFileSync(brokerPath, `import { readFileSync, writeFileSync, rmSync, readdirSync, renameSync } from 'node:fs';
 import { runTestsWithLevers } from ${JSON.stringify(RT_RUNTIME_PATH)};
+import { markUndeliveredResponses } from ${JSON.stringify(RT_DEDUP_PATH)};
 const c = JSON.parse(readFileSync(${JSON.stringify(cfgPath)}, 'utf8'));
 const IPC = ${JSON.stringify(reqDir)};
 setInterval(() => {
   let reqs = [];
   try { reqs = readdirSync(IPC).filter(f => f.startsWith('req-')); } catch { process.exit(0); }
+  // A response still sitting here means its requester died (agent-side tool timeout on a
+  // slow suite): the agent never saw that output, so L3 must stop citing it. The file is
+  // left in place — an unconsumed response at exit IS the shim-tamper signal.
+  if (reqs.length && c.rtDedup && c.dedupLog) { try { markUndeliveredResponses(c.dedupLog, IPC); } catch {} }
   for (const r of reqs) {
     const id = r.slice(4);
     // The request carries the agent's full argv as JSON (legacy: a bare pattern string).
     let argv = []; try { argv = JSON.parse(readFileSync(IPC + '/' + r, 'utf8') || '[]'); } catch { argv = []; }
     if (!Array.isArray(argv)) argv = [String(argv)];
     try { rmSync(IPC + '/' + r, { force: true }); } catch {}
-    let out; try { out = runTestsWithLevers(c, { argv }); } catch (e) { out = '[run_tests error] ' + String(e && e.message || e); }
+    let out; try { out = runTestsWithLevers(c, { argv, reqId: id }); } catch (e) { out = '[run_tests error] ' + String(e && e.message || e); }
     const tmp = IPC + '/tmp-' + id;
     try { writeFileSync(tmp, out); renameSync(tmp, IPC + '/res-' + id); } catch {}
   }

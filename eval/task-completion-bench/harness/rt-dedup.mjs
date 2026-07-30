@@ -36,7 +36,7 @@
 // trail of the earlier attempt.
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, appendFileSync, statSync, mkdirSync } from 'node:fs';
+import { readFileSync, appendFileSync, readdirSync, statSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractFailureSignatures } from './rt-condense-lib.mjs';
@@ -156,6 +156,14 @@ export function summarizeRunTestsResult(text) {
 /**
  * Replay a dedup log into per-key history. Only records AFTER the last `session`
  * marker count, which is how state resets between rollouts/attempts.
+ *
+ * Records whose response was never DELIVERED to the agent (an `undelivered` marker
+ * naming their reqId — see markUndeliveredResponses) are excluded from the history:
+ * citing "identical to call #N, result unchanged" is only honest if the agent
+ * actually received call #N's transcript. Observed in the wild on a slow C++ suite,
+ * where the agent-side tool timeout killed the requester while the broker was still
+ * running the suite. Call NUMBERING still counts them, so the log and the agent's
+ * call sequence never drift.
  * @returns {{calls:number, byKey:Map<string,{firstCall:number,lastCall:number,lastDigest:string,byDigest:Map<string,number>}>}}
  */
 export function replayDedupLog(text) {
@@ -169,12 +177,18 @@ export function replayDedupLog(text) {
   for (let i = recs.length - 1; i >= 0; i--) {
     if (recs[i] && recs[i].kind === 'session') { start = i + 1; break; }
   }
+  const live = recs.slice(start);
+  const undelivered = new Set();
+  for (const r of live) {
+    if (r && r.kind === 'undelivered') for (const id of r.reqIds || []) undelivered.add(String(id));
+  }
   const byKey = new Map();
   let calls = 0;
-  for (const r of recs.slice(start)) {
-    if (!r || r.kind === 'session') continue;
+  for (const r of live) {
+    if (!r || r.kind === 'session' || r.kind === 'undelivered') continue;
     calls = Math.max(calls, Number(r.call) || 0);
     if (!r.key) continue;
+    if (r.reqId && undelivered.has(String(r.reqId))) continue;
     let h = byKey.get(r.key);
     if (!h) { h = { firstCall: r.call, lastCall: r.call, lastDigest: r.digest, byDigest: new Map() }; byKey.set(r.key, h); }
     h.lastCall = r.call;
@@ -237,6 +251,31 @@ export function readDedupState(file) {
   let text = '';
   try { text = readFileSync(file, 'utf8'); } catch { return { calls: 0, byKey: new Map() }; }
   return replayDedupLog(text);
+}
+
+/**
+ * Broker-side: name request ids whose response the requester never consumed, so the
+ * replay stops treating those results as something the agent has seen.
+ *
+ * A response file that is still sitting in the IPC dir well after it was written means
+ * the requester process is gone (agent-side tool timeout / abort). The files are NOT
+ * removed here — an unconsumed response at rollout exit is exactly what
+ * verifyRunnerDirectoryIntegrity reports as tampering, and that signal must survive.
+ * `staleMs` keeps the benign case (the requester polls every 400ms) out of the marker.
+ */
+export function markUndeliveredResponses(file, ipcDir, { staleMs = 5000, now = Date.now(), readdir, stat } = {}) {
+  if (!file || !ipcDir) return [];
+  let names = [];
+  try { names = (readdir || readdirSync)(ipcDir).filter(f => f.startsWith('res-')); } catch { return []; }
+  const stale = [];
+  for (const name of names) {
+    try {
+      const st = (stat || statSync)(path.join(ipcDir, name));
+      if (now - Number(st.mtimeMs ?? st.mtime ?? 0) >= staleMs) stale.push(name.slice(4));
+    } catch { /* vanished between readdir and stat = consumed */ }
+  }
+  if (stale.length) appendDedupRecord(file, { kind: 'undelivered', reqIds: stale });
+  return stale;
 }
 
 /** Append one call record. Returns true on success — a failed append must disable dedup. */

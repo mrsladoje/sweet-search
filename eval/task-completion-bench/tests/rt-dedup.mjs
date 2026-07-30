@@ -20,6 +20,7 @@ const {
   RT_DEDUP_ON, DEDUP_MARKER, FULL_FLAG,
   parseRunTestsArgv, untrackedFingerprint, computeStateKey, summarizeRunTestsResult,
   replayDedupLog, dedupDecision, dedupLogPathFor, startDedupSession, readDedupState,
+  markUndeliveredResponses,
 } = await import('../harness/rt-dedup.mjs');
 const { runTestsWithLevers } = await import('../harness/rt-shim-runtime.mjs');
 const { writeRunTestsShim } = await import('../harness/codex-task-runner.mjs');
@@ -28,6 +29,7 @@ const BENCH_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const RESULTS_DIR = path.join(BENCH_DIR, 'results', process.env.RUN_ID);
 
 let ok = true;
+const eqArr = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const assert = (c, name, extra = '') => {
   console.log((c ? '  ✓ ' : '  ✗ ') + name + (c ? '' : '  ' + extra));
   if (!c) ok = false;
@@ -182,6 +184,48 @@ console.log('== result summary + decision ==');
   assert(dedupDecision(state, 'K', 'D1').citeCall === 1, 'repeat cites the call where key+result was FIRST seen');
   assert(dedupDecision(state, 'K', 'D2').citeCall === 3, 'repeat of the later result cites call 3');
   assert(dedupDecision(state, 'K', 'D3').mode === 'changed', 'same key, unseen result → changed');
+
+  // A response the agent never received must not be citable. Observed in the wild:
+  // a slow C++ suite outran the agent-side tool timeout, the requester died, and the
+  // NEXT identical call was told "identical to call #1" for a transcript that never
+  // reached the model.
+  const undel = replayDedupLog([
+    JSON.stringify({ kind: 'session' }),
+    JSON.stringify({ call: 1, key: 'K', digest: 'D1', reqId: 'r1' }),
+    JSON.stringify({ kind: 'undelivered', reqIds: ['r1'] }),
+  ].join('\n'));
+  assert(undel.calls === 1, 'an undelivered call still counts for CALL NUMBERING', String(undel.calls));
+  assert(dedupDecision(undel, 'K', 'D1').mode === 'first', 'an undelivered result is not citable → next call is full output');
+  const mixed = replayDedupLog([
+    JSON.stringify({ kind: 'session' }),
+    JSON.stringify({ call: 1, key: 'K', digest: 'D1', reqId: 'r1' }),
+    JSON.stringify({ call: 2, key: 'K', digest: 'D1', reqId: 'r2' }),
+    JSON.stringify({ kind: 'undelivered', reqIds: ['r1'] }),
+  ].join('\n'));
+  assert(dedupDecision(mixed, 'K', 'D1').citeCall === 2, 'citation moves to the DELIVERED call', JSON.stringify(dedupDecision(mixed, 'K', 'D1')));
+}
+
+// ---------------------------------------------------------------------------
+console.log('== undelivered-response detection (broker side) ==');
+{
+  const ipc = mkdtempSync(path.join(tmpdir(), 'rt-dedup-ipc-'));
+  const log = path.join(ipc, 'log.jsonl');
+  writeFileSync(path.join(ipc, 'res-abc'), 'stale output');
+  writeFileSync(path.join(ipc, 'res-fresh'), 'just written');
+  writeFileSync(path.join(ipc, 'req-xyz'), '[]');
+  // The clock is injected rather than slept on: `now` in the past-relative sense keeps
+  // a just-written response out of the marker, `now` far ahead makes both stale.
+  const none = markUndeliveredResponses(log, ipc, { staleMs: 60_000 });
+  assert(none.length === 0, 'a just-written response is NOT marked undelivered', JSON.stringify(none));
+  const all = markUndeliveredResponses(log, ipc, { staleMs: 5_000, now: Date.now() + 60_000 }).sort();
+  assert(eqArr(all, ['abc', 'fresh']), 'stale responses are marked by request id', JSON.stringify(all));
+  assert(existsSync(path.join(ipc, 'res-abc')), 'the response file is LEFT IN PLACE (it is the shim-tamper signal)');
+  const state = readDedupState(log);
+  assert(state.calls === 0, 'markers alone add no calls');
+  assert(readFileSync(log, 'utf8').includes('"kind":"undelivered"'), 'marker appended to the dedup log');
+  assert(markUndeliveredResponses(log, path.join(ipc, 'nope')).length === 0, 'a missing IPC dir is a no-op');
+  assert(markUndeliveredResponses(null, ipc).length === 0, 'no dedup log → no-op');
+  rmSync(ipc, { recursive: true, force: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -343,7 +387,8 @@ console.log('== generated shim wiring ==');
   const requester = readFileSync(path.join(binDir, '_run_tests.mjs'), 'utf8');
   assert(/JSON.stringify\(process\.argv\.slice\(2\)\)/.test(requester), 'the requester shim forwards the full argv (so --ss-full reaches the broker)');
   const broker = readFileSync(path.join(binDir, '_rt_broker.mjs'), 'utf8');
-  assert(/runTestsWithLevers\(c, \{ argv \}\)/.test(broker), 'the broker passes argv through');
+  assert(/runTestsWithLevers\(c, \{ argv, reqId: id \}\)/.test(broker), 'the broker passes argv + the request id through');
+  assert(/markUndeliveredResponses\(c\.dedupLog, IPC\)/.test(broker), 'the broker marks unconsumed responses undelivered before serving a new request');
   rmSync(dir, { recursive: true, force: true });
   rmSync(path.dirname(binDir), { recursive: true, force: true });
 }
