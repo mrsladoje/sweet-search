@@ -6,13 +6,16 @@ implementation of that document and nothing else. It never looks at sweet-vs-nat
 outcomes, and it never reads a task diff, patch or problem statement.
 
 Differences from select_heldout.py (held-out 1):
-  - fresh seed 20260730
-  - repo-level exclusion snapshot HELDOUT2_EXCLUDED_REPOS.json (dev-200, held-out 1 +
-    its reserve population, decontam, golden-cache history, run/smoke history)
+  - fresh seed 20260731
+  - two-tier exclusion snapshot HELDOUT2_EXCLUDED_REPOS.json (instance ids for
+    everything ever drawn or run; whole repos for the ones we have task-level
+    knowledge of)
   - one task per repo across primary AND reserve
   - reserve = ceil(0.3 x quota) instead of ceil(quota / 2)
-Everything else — population, pinned revision, base filters, quotas, deficit rule,
-shuffle scheme, rejection gate — is held-out 1's recipe, unchanged.
+  - PROPORTIONAL deficit reassignment (§2 amendment) instead of held-out 1's
+    "largest current quota wins", which snowballed every freed slot onto one language
+Everything else — population, pinned revision, base filters, quotas, shuffle scheme,
+rejection gate — is held-out 1's recipe, unchanged.
 
 Usage:
   python3 select_heldout2.py --dry-run   # print manifest, write nothing
@@ -25,7 +28,7 @@ import task_gates
 from select_tasks import V2_NAME, quality_ok, ftp_ok, slim_v2
 
 OUT_DIR = os.path.dirname(os.path.abspath(__file__))
-SEED = 20260730
+SEED = 20260731  # 20260730 is retired with the discarded draw (see FAIRNESS.md §7)
 N = 200
 V2_REVISION = "475dd5e8703bb5fb22dd3c60b5d038b019eba1e0"  # == dev + held-out-1 revision
 EXCLUSIONS_PATH = os.path.join(OUT_DIR, "HELDOUT2_EXCLUDED_REPOS.json")
@@ -97,24 +100,69 @@ def dedupe_one_per_repo(pool, rng):
 
 
 def resolve_deficits(pool, alloc):
-    """Pre-registered fallback (held-out 1, unchanged): if a language's pool < quota,
-    reassign the shortfall one task at a time to the largest-quota language with spare
-    pool (ties broken alphabetically)."""
+    """PROPORTIONAL deficit reassignment — HELDOUT2_RULES.md §2, amended 2026-07-30.
+
+    Held-out 1's rule moved the shortfall one slot at a time to "the largest-quota
+    language with spare pool", evaluated against the RUNNING quota — so the language
+    that just received a slot was the largest again, and the whole shortfall snowballed
+    onto one language (observed: all 26 freed slots onto python). This version keeps
+    the shape of the external Octoverse anchor instead:
+
+      1. every language short of pool has its quota cut to its pool size;
+      2. the total shortfall is distributed over the languages that still have spare
+         pool, in proportion to their PRE-REGISTERED quota, by largest remainder;
+      3. a language never receives more than its spare pool; slots left unplaced by
+         that cap go round again over the languages that still have room.
+
+    Deterministic throughout: remainder ties break by larger pre-registered quota, then
+    alphabetically.
+    """
+    prereg = dict(alloc)
     alloc = dict(alloc)
     reassigned = collections.Counter()
+
+    donors = []
     for L in sorted(alloc):
         short = alloc[L] - len(pool.get(L, []))
-        if short <= 0:
-            continue
-        alloc[L] -= short
-        for _ in range(short):
-            candidates = [M for M in alloc if len(pool.get(M, [])) > alloc[M]]
-            if not candidates:
-                raise SystemExit("pool exhausted: cannot place reassigned quota")
-            M = min(candidates, key=lambda M: (-alloc[M], M))
-            alloc[M] += 1
-            reassigned[f"{L}->{M}"] += 1
-    return alloc, dict(reassigned)
+        if short > 0:
+            alloc[L] -= short
+            donors.append((L, short))
+    shortfall = sum(s for _, s in donors)
+    if not shortfall:
+        return alloc, {}
+
+    placed = collections.Counter()
+    remaining = shortfall
+    while remaining > 0:
+        room = {L: len(pool.get(L, [])) - alloc[L] for L in alloc}
+        eligible = [L for L in sorted(alloc) if room[L] > 0 and prereg[L] > 0]
+        if not eligible:
+            raise SystemExit("pool exhausted: cannot place reassigned quota")
+        weight = sum(prereg[L] for L in eligible)
+        exact = {L: remaining * prereg[L] / weight for L in eligible}
+        take = {L: min(room[L], int(exact[L])) for L in eligible}
+        left = remaining - sum(take.values())
+        # largest remainder for the leftover slots
+        order = sorted(eligible, key=lambda L: (-(exact[L] - int(exact[L])), -prereg[L], L))
+        for L in order:
+            if left <= 0:
+                break
+            if take[L] < room[L]:
+                take[L] += 1
+                left -= 1
+        if not any(take.values()):
+            raise SystemExit("pool exhausted: cannot place reassigned quota")
+        for L, n in take.items():
+            alloc[L] += n
+            placed[L] += n
+        remaining = left
+
+    # Audit trail: who gave up how much, who absorbed how much. Not pairwise —
+    # the shortfall is pooled before redistribution, so a pairwise arrow would be
+    # an invention.
+    return alloc, {"shortfall": shortfall,
+                   "given_up_by": {L: s for L, s in donors},
+                   "absorbed_by": {L: n for L, n in sorted(placed.items()) if n}}
 
 
 def sha256_file(path):

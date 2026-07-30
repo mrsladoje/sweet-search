@@ -2,8 +2,9 @@
 
 This is the pre-registration snapshot for the held-out-2 evaluation set: what the set is,
 how it was drawn, and what was deliberately never allowed to influence it. Sections 1–6
-were written and committed **before** the seed was used; section 7 records the realized
-counts produced by the draw and was filled in immediately after it, with no rule changed.
+were written and committed **before** any seed was used; section 7 discloses the one protocol
+amendment and the draw discarded by it; section 8 records the realized counts, filled in
+immediately after the final draw with no rule changed.
 
 Rules in full: `HELDOUT2_RULES.md`. Selector: `select_heldout2.py`.
 
@@ -49,29 +50,47 @@ the draw.
 ## 4. Rules, then seed, then draw
 
 The order was: write every rule, exclusion list and quota → freeze the exclusion snapshot →
-fix the seed (`20260730`, the freeze date) → commit all of it → run the draw. The draw is a
-deterministic function of committed artifacts; anyone with the repo and the pinned dataset
-revision reproduces `tasks_heldout2.jsonl` byte-for-byte. Nothing changed after the draw
-except through the replacement policy (§6), and every replacement is logged with its reason.
+fix the seed → commit all of it → run the draw. The draw is a deterministic function of
+committed artifacts; anyone with the repo and the pinned dataset revision reproduces
+`tasks_heldout2.jsonl` byte-for-byte.
 
-## 5. Exclusions — independence from everything already touched
+This happened twice. The first pass (seed `20260730`) is disclosed and discarded in §7; its
+rules, its draw and the reason for discarding it are all committed. The second pass (seed
+`20260731`) is the set. After the final draw nothing changed except through the replacement
+policy (§6), and every replacement is logged with its reason.
 
-Excluded at **repo** level before the draw, from the committed snapshot
-`HELDOUT2_EXCLUDED_REPOS.json` (per-source counts and marginal contributions inside):
+## 5. Exclusions — independence from what we actually learned from
+
+Two tiers, both frozen in `HELDOUT2_EXCLUDED_REPOS.json` and applied before the draw.
+
+**Tier A — instance id, unconditional: 730 ids.** Every task ever drawn or run — dev-200
+(200), held-out 1 including its pre-replacement roster and both sides of every promotion
+(240), the reserve-101 population (101), the decontam population (215), and every instance id
+appearing in any `rows.json`, `preds-*.jsonl` or env-ledger artifact on the box or the Mac
+(475), which catches pilots and smokes that never became a named set.
+
+**Tier B — whole repo: 268 repos**, those we have task-level knowledge of:
 
 | source | repos | new repos it contributed |
 |---|---:|---:|
-| dev-200 (iterated against) | 168 | 168 |
-| held-out 1: final + pre-replacement + promotions | 224 | 224 |
-| held-out 1 reserve-101 population | 95 | 48 |
-| decontam population | 146 | 135 |
-| Mac golden vault inventory | 221 | 0 |
-| eval-box staged goldens | 181 | 0 |
-| run/smoke history (every instance id in any result artifact) | 402 | 72 |
-| **union** | **647** | |
+| dev-200 (levers, prompt variants and 121 per-task overrides tuned with these in view) | 168 | 168 |
+| repos of tasks read call-by-call in forensics (from `PLAN.md` + `FORENSICS-*.md`) | 27 | 27 |
+| repos of tasks with a hand-written `task-overrides.json` entry | 110 | 73 |
+| **union** | **268** | |
 
-730 instance ids are excluded as well, which a repo exclusion already implies; both are
-asserted in the selector, which refuses to emit an overlapping set.
+**Deliberately not excluded at repo level: 379 repos** we ran only in aggregate or merely
+golden-indexed. A different pull request in one of them leaks nothing we hold, and the golden
+index and any environment repair are identical for both arms — they move attrition, not the
+comparison. Their identities are recorded in the snapshot under
+`audit_only_repos_NOT_excluded_at_repo_level`, so a reader can check that choice rather than
+take it on trust. The selector refuses to emit a set overlapping either tier.
+
+**What this does not buy back.** SWE-rebench-V2 holds only 12 C++ and 17 C# repos at quality
+A. Held-out 1 and dev-200 reached their C-family quotas by drawing several tasks from the same
+repos (b2 ×3, moq ×3, zeek ×4, kiota ×5) and consumed most of the rest. Under one-task-per-repo
+(rules §5), even zero repo exclusions would leave at most 4 C++ and 6 C# candidates. The
+C-family shortfall in this set is a property of the population, not of our exclusion policy,
+and it is redistributed by the deficit rule rather than papered over.
 
 ## 6. Replacement is mechanical only
 
@@ -85,7 +104,37 @@ exists. **"This task looks weird" is not a reason.**
 Similarly, if sweet-search cannot index a drawn task's file types, the fix is to sweet's
 indexing config — never dropping the task, which would tilt the set toward sweet.
 
-## 7. Realized counts
+## 7. Amendment 1 — the discarded first draw (2026-07-30)
+
+Disclosed in full because a protocol amendment after a draw is exactly the kind of thing a
+pre-registration exists to make visible.
+
+**What happened.** Rules, exclusions and seed `20260730` were committed
+(commit `9be3169`), then the draw ran. It produced a valid set under those rules and a
+degenerate language histogram: **56 python (28%)** against a pre-registered 30, with C# 12→1,
+C++ 10→1 and C 8→2.
+
+**Why.** Two independent causes, both visible in the language counts alone:
+1. Excluding all 647 touched repos exhausts the C family — but so does any policy, since the
+   population holds only 12 C++ and 17 C# repos at quality A (§5).
+2. The deficit rule inherited from held-out 1 reassigns freed slots to "the largest-quota
+   language with spare pool" measured against the **running** quota, so the language that had
+   just received a slot was the largest again. All 26 freed slots snowballed onto python.
+   Held-out 1's deficits were too small for this to show.
+
+**What was changed** (rules §2 and §3): proportional redistribution of the shortfall, and the
+two-tier exclusion policy in §5 above. A fresh seed, `20260731`, was taken; `20260730` is
+retired with its draw.
+
+**What was NOT consulted.** No task diff, gold patch, test patch, problem statement, or any
+run result. The amendment rests only on the per-language repo-count table and the histogram of
+the discarded draw. Nothing about either arm entered the decision.
+
+**Evidence kept.** The discarded draw is committed verbatim at
+`select/discarded-draw-20260730/` — task list, reserve, manifest and rejection sidecar — so
+the second draw can be compared against the first rather than taken on trust.
+
+## 8. Realized counts
 
 *Placeholder at pre-registration time — filled in from `MANIFEST_heldout2.json` immediately
 after the draw, with no rule changed. Empty here is the point: these numbers are outputs of
@@ -93,7 +142,7 @@ the rules above, and this section is committed before they exist so that they ca
 selected for.*
 
 - Dataset: `nebius/SWE-rebench-V2` @ `475dd5e8703bb5fb22dd3c60b5d038b019eba1e0`
-- Seed: `20260730` · N = 200 primary + 67 reserve
+- Seed: `20260731` · N = 200 primary + 67 reserve
 - Pool after base filters and exclusions, before the rejection gate: TO BE FILLED
 - Rejected by the task gate: TO BE FILLED → `REJECTED_heldout2.json`
 - Dropped by the one-task-per-repo rule: TO BE FILLED
@@ -101,7 +150,7 @@ selected for.*
 - Selected: TO BE FILLED
 - `tasks_heldout2.jsonl` sha256: TO BE FILLED (recorded in `PLAN.md`)
 
-## 8. Known limitations of this set
+## 9. Known limitations of this set
 
 - N = 200, one replication per (task, arm). The achievable claim from a null result is "no
   significant difference", not proven equivalence.
@@ -109,7 +158,7 @@ selected for.*
 - The pinned dataset revision is shared with dev-200 and held-out 1, so held-out 2 is
   independent by repo, not by dataset snapshot. Pre-training contamination of the underlying
   pull requests is not addressed by this set; it is the separate decontam population's job.
-- Excluding 647 repos removes some of the largest, most-worked-on codebases from the pool,
+- Excluding 268 repos removes some of the largest, most-worked-on codebases from the pool,
   since those are the ones earlier sets drew. The set skews slightly toward less
   frequently-sampled repos as a consequence. This is a cost of independence and applies to
   both arms identically.

@@ -1,48 +1,65 @@
 #!/usr/bin/env python3
 """
-Build the REPO-LEVEL exclusion set for held-out 2 (HELDOUT2_RULES.md §3).
+Build the exclusion snapshot for held-out 2 (HELDOUT2_RULES.md §3).
 
-Every source here is arm-neutral: it names repos we have already touched with
-either arm, in any capacity (rolled out, smoked, golden-built, or drawn into an
-earlier population). Nothing in this file looks at an outcome, a diff, or a
-sweet-vs-native result — only at identity.
+Two tiers, because the two kinds of contact are not equally contaminating:
 
-Inputs:
-  tasks_multilingual.jsonl                       dev-200 (iterated against)
-  tasks_heldout.jsonl                            held-out 1, final (RETIRED evidence)
-  tasks_heldout.jsonl.prereplace-2026-07-21      held-out 1, pre-replacement
-  HELDOUT_REPLACEMENTS_2026-07-21.json           held-out 1 promotions (both sides)
-  tasks_heldout_reserve.jsonl                    the old reserve-101 population
-  tasks_decontam.jsonl                           the recency robustness population
-  exclusion-sources/mac-vault-golden-keys.txt    Mac golden vault inventory
-  exclusion-sources/box-golden-keys.txt          eval box staged goldens
-  exclusion-sources/run-history-instance-ids.txt every instance_id appearing in any
-                                                 rows.json / preds / env-ledger on the
-                                                 box or the Mac (runs + smokes)
+  TIER A — instance level, applied to EVERY id we have ever drawn or run.
+    Non-negotiable: those tasks' gold patches, failure modes and per-task
+    narratives are written into PLAN.md and the forensics documents.
 
-Output: HELDOUT2_EXCLUDED_REPOS.json — the frozen, committed exclusion snapshot
-consumed by select_heldout2.py. Regenerating it after the freeze would change the
-draw, so it is committed BEFORE the seed is used.
+  TIER B — repo level, applied only to repos we have genuine TASK-LEVEL
+    knowledge of:
+      * dev-200 repos — every lever, prompt variant and per-task override was
+        tuned with these in view;
+      * repos of the tasks read call-by-call during forensics (extracted from
+        PLAN.md + the FORENSICS-*.md documents);
+      * repos of the tasks with a hand-written entry in harness/task-overrides.json,
+        which required inspecting that task's suite.
+    Everything else we have merely run in aggregate or golden-indexed stays at
+    tier A only: a DIFFERENT pull request in such a repo leaks nothing, and the
+    golden index and any environment repair are identical for both arms, so they
+    move attrition rather than the comparison.
+
+Nothing here looks at an outcome, a diff or a sweet-vs-native result — only at
+identity.
+
+Inputs (all committed):
+  tasks_multilingual.jsonl · tasks_heldout.jsonl · tasks_heldout.jsonl.prereplace-*
+  HELDOUT_REPLACEMENTS_2026-07-21.json · tasks_heldout_reserve.jsonl
+  tasks_decontam.jsonl · ../PLAN.md · ../FORENSICS-*.md · ../harness/task-overrides.json
+  exclusion-sources/{mac-vault-golden-keys,box-golden-keys,run-history-instance-ids}.txt
+
+Output: HELDOUT2_EXCLUDED_REPOS.json — frozen and committed BEFORE the seed is
+used. Regenerating it after the freeze would change the draw.
 
   python3 heldout2_exclusions.py            # write the snapshot
   python3 heldout2_exclusions.py --print    # summary only
 """
 from __future__ import annotations
 
+import glob
 import json
 import os
+import re
 import sys
-import collections
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+BENCH = os.path.dirname(HERE)
 SRC = os.path.join(HERE, "exclusion-sources")
 OUT_PATH = os.path.join(HERE, "HELDOUT2_EXCLUDED_REPOS.json")
 
+INSTANCE_ID_RE = re.compile(r"[A-Za-z0-9_.-]+__[A-Za-z0-9_.-]+-[0-9]+")
+
 
 def _jsonl(name):
-    path = os.path.join(HERE, name)
-    with open(path) as f:
+    with open(os.path.join(HERE, name)) as f:
         return [json.loads(line) for line in f if line.strip()]
+
+
+def _lines(fname):
+    with open(os.path.join(SRC, fname)) as f:
+        return [l.strip() for l in f if l.strip()]
 
 
 def repo_from_cache_key(key: str) -> str | None:
@@ -67,77 +84,87 @@ def repo_from_instance_id(iid: str) -> str | None:
     return f"{owner}/{name}"
 
 
-def _lines(fname):
-    path = os.path.join(SRC, fname)
-    with open(path) as f:
-        return [l.strip() for l in f if l.strip()]
+def _repos(ids):
+    return {r for r in map(repo_from_instance_id, ids) if r}
 
 
 def build():
-    sources: dict[str, set] = {}
-    ids: dict[str, set] = {}
+    tier_a: dict[str, set] = {}   # instance ids
+    tier_b: dict[str, set] = {}   # repos
 
-    # 1. dev-200 — every lever, override and prompt variant was tuned with these in view
+    # ---- tier A: every id ever drawn or run -------------------------------
     dev = _jsonl("tasks_multilingual.jsonl")
-    sources["dev200_repos"] = {r["repo"] for r in dev}
-    ids["dev200_instance_ids"] = {r["instance_id"] for r in dev}
-
-    # 2. held-out 1 — frozen evidence; final AND pre-replacement rosters
     h1 = _jsonl("tasks_heldout.jsonl")
     h1pre = _jsonl("tasks_heldout.jsonl.prereplace-2026-07-21")
+    res = _jsonl("tasks_heldout_reserve.jsonl")
+    dec = _jsonl("tasks_decontam.jsonl")
+
     repl = json.load(open(os.path.join(HERE, "HELDOUT_REPLACEMENTS_2026-07-21.json")))
     repl_ids = set()
     for p in repl.get("promotions", []):
         repl_ids.update(x for x in (p.get("dead_id"), p.get("reserve_id")) if x)
     repl_ids.update(s.split(" ", 1)[0] for s in repl.get("reserve_failures_refilled", []))
-    sources["heldout1_repos"] = ({r["repo"] for r in h1} | {r["repo"] for r in h1pre}
-                                 | {r for r in map(repo_from_instance_id, repl_ids) if r})
-    ids["heldout1_instance_ids"] = ({r["instance_id"] for r in h1}
-                                    | {r["instance_id"] for r in h1pre} | repl_ids)
 
-    # 3. the old reserve-101 population (promotable into held-out 1, so equally touched)
-    res = _jsonl("tasks_heldout_reserve.jsonl")
-    sources["heldout1_reserve_repos"] = {r["repo"] for r in res}
-    ids["heldout1_reserve_instance_ids"] = {r["instance_id"] for r in res}
+    tier_a["dev200"] = {r["instance_id"] for r in dev}
+    tier_a["heldout1"] = ({r["instance_id"] for r in h1} | {r["instance_id"] for r in h1pre}
+                          | repl_ids)
+    tier_a["heldout1_reserve"] = {r["instance_id"] for r in res}
+    tier_a["decontam"] = {r["instance_id"] for r in dec}
+    tier_a["run_and_smoke_history"] = set(_lines("run-history-instance-ids.txt"))
+    # golden inventories are keyed by repo@commit, not by task; they contribute
+    # repos only (below), and their ids are already covered by the sets above.
 
-    # 4. decontam population (never run, but it is an existing draw — excluded for
-    #    independence; costs pool size only)
-    dec = _jsonl("tasks_decontam.jsonl")
-    sources["decontam_repos"] = {r["repo"] for r in dec}
-    ids["decontam_instance_ids"] = {r["instance_id"] for r in dec}
+    # ---- tier B: repos we have task-level knowledge of --------------------
+    tier_b["dev200_repos"] = {r["repo"] for r in dev}
 
-    # 5. golden-cache history — anything ever indexed for the bench
-    sources["mac_vault_golden_repos"] = {r for r in map(repo_from_cache_key,
-                                                        _lines("mac-vault-golden-keys.txt")) if r}
-    sources["box_golden_repos"] = {r for r in map(repo_from_cache_key,
-                                                   _lines("box-golden-keys.txt")) if r}
+    read_ids = set()
+    for path in [os.path.join(BENCH, "PLAN.md")] + sorted(glob.glob(os.path.join(BENCH, "FORENSICS-*.md"))):
+        with open(path) as f:
+            read_ids |= set(INSTANCE_ID_RE.findall(f.read()))
+    tier_b["forensics_read_repos"] = _repos(read_ids)
 
-    # 6. run/smoke history — every instance_id that ever appeared in a result artifact
-    run_ids = set(_lines("run-history-instance-ids.txt"))
-    sources["run_history_repos"] = {r for r in map(repo_from_instance_id, run_ids) if r}
-    ids["run_history_instance_ids"] = run_ids
+    ov = json.load(open(os.path.join(BENCH, "harness", "task-overrides.json")))["tasks"]
+    tier_b["hand_written_override_repos"] = _repos(ov.keys())
 
-    all_repos = set().union(*sources.values())
-    all_ids = set().union(*ids.values())
+    # Recorded for provenance/audit, NOT excluded at repo level (tier A only):
+    audit_only = {
+        "mac_vault_golden_repos": {r for r in map(repo_from_cache_key,
+                                                  _lines("mac-vault-golden-keys.txt")) if r},
+        "box_staged_golden_repos": {r for r in map(repo_from_cache_key,
+                                                   _lines("box-golden-keys.txt")) if r},
+        "heldout1_repos": ({r["repo"] for r in h1} | {r["repo"] for r in h1pre}
+                           | _repos(repl_ids)),
+        "heldout1_reserve_repos": {r["repo"] for r in res},
+        "decontam_repos": {r["repo"] for r in dec},
+        "run_and_smoke_history_repos": _repos(tier_a["run_and_smoke_history"]),
+    }
 
-    # marginal contribution, in the order listed (what each source adds on its own)
+    all_ids = set().union(*tier_a.values())
+    all_repos = set().union(*tier_b.values())
+    downgraded = set().union(*audit_only.values()) - all_repos
+
     marginal, seen = {}, set()
-    for k in ["dev200_repos", "heldout1_repos", "heldout1_reserve_repos", "decontam_repos",
-              "mac_vault_golden_repos", "box_golden_repos", "run_history_repos"]:
-        marginal[k] = len(sources[k] - seen)
-        seen |= sources[k]
+    for k in ["dev200_repos", "forensics_read_repos", "hand_written_override_repos"]:
+        marginal[k] = len(tier_b[k] - seen)
+        seen |= tier_b[k]
 
     return {
-        "_doc": ("Frozen repo-level exclusion snapshot for held-out 2. Built by "
-                 "heldout2_exclusions.py from the sources listed in HELDOUT2_RULES.md §3. "
-                 "Committed BEFORE the seeded draw; regenerating it later would change the "
-                 "draw and is not permitted for this set."),
-        "counts": {k: len(v) for k, v in sources.items()},
-        "marginal_new_repos_in_listed_order": marginal,
-        "n_excluded_repos": len(all_repos),
-        "n_excluded_instance_ids": len(all_ids),
+        "_doc": ("Frozen exclusion snapshot for held-out 2 (HELDOUT2_RULES.md §3). "
+                 "TIER A = instance ids, excluded unconditionally. TIER B = repos we have "
+                 "task-level knowledge of, excluded whole. Repos we only ran in aggregate or "
+                 "golden-indexed are tier A only. Committed BEFORE the seeded draw; "
+                 "regenerating it later would change the draw."),
+        "tier_a_instance_ids": {"counts": {k: len(v) for k, v in tier_a.items()},
+                                "n_total": len(all_ids)},
+        "tier_b_repos": {"counts": {k: len(v) for k, v in tier_b.items()},
+                         "marginal_new_repos_in_listed_order": marginal,
+                         "n_total": len(all_repos)},
+        "audit_only_repos_NOT_excluded_at_repo_level": {
+            "counts": {k: len(v) for k, v in audit_only.items()},
+            "n_downgraded_to_instance_level": len(downgraded)},
         "excluded_repos": sorted(all_repos),
         "excluded_instance_ids": sorted(all_ids),
+        "repos_downgraded_to_instance_level": sorted(downgraded),
     }
 
 
@@ -148,8 +175,8 @@ def main():
             json.dump(snap, f, indent=2)
         print(f"wrote {OUT_PATH}")
     print(json.dumps({k: snap[k] for k in
-                      ("counts", "marginal_new_repos_in_listed_order",
-                       "n_excluded_repos", "n_excluded_instance_ids")}, indent=2))
+                      ("tier_a_instance_ids", "tier_b_repos",
+                       "audit_only_repos_NOT_excluded_at_repo_level")}, indent=2))
 
 
 if __name__ == "__main__":
