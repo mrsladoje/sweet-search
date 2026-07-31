@@ -1,171 +1,434 @@
-# EDIT_THRASHING — killing the completion tail (2026-07-31)
+# EDIT_THRASHING — run-ready completion-tail controller (revision 2, 2026-07-31)
 
-The **primary** cost lever. Synthesized from three independent analyses (Claude Fable 5, GPT-5.6
-Sol / Codex, Kimi K3 Max) of `TURN-ECONOMY-HANDOFF.md`; companion to `TURN_FIX_PLAN.md` (shares
-Phase 0 and the final 2×2). Evidence tags as in the companion: `[verified]`, `[box — re-verify]`,
-`[paper]` / `[paper detail]`.
+This is the primary cost-control plan for edit→test→edit tails. It is a companion to
+`TURN_FIX_PLAN.md`, which defines dataset policy, structured batching, shared experiment cohorts,
+statistics, and the final native-versus-Sweet comparison.
 
----
+The goal is not to make agents stop sooner at any cost. It is to preserve the best valid work,
+surface objective non-progress, and prevent long-context oscillation while retaining task completion.
 
-## 0. Why this is the primary lever
+## 0. Data and evidence policy
 
-- **8 tasks = +$16.70 = 107.2% of the retired run's entire cost gap**; the other 192 tasks
-  net-offset `[verified: PLAN.md:426]`. Removing the tail matters more than shaving a search turn
-  everywhere.
-- Stage-1 signature: search −3.6%, **edits +63%, tests +43%**, operations exactly flat (143→143).
-  One task (thelounge: turns 11→28, edits 5→17, failed both arms) carries the entire REVERT.
-- **thelounge anatomy** `[box — re-verify]`: the variant *complied* with batching (first two
-  search envelopes carried 3 commands each); reached an early state of "link tests pass, only the
-  6 baseline SQLite failures remain"; then spent ~25 envelopes oscillating between two designs
-  (Promise caching vs callback multiplexing), re-testing each flip. It searched MORE during
-  repair than control (30 v 10 post-edit searches). **Thrash = completion uncertainty + a harness
-  warning amplifier — not retrieval starvation.** Capability without stable policy.
-- Literature (independent convergence):
-  - **Coherence Collapse**: 60-69% of agent failures reach and modify the correct function, then
-    corrupt it; preserving best patch states recovered 5/5 cases where gold patches existed
-    mid-trajectory `[paper: 2603.24631]`.
-  - **More with Less**: fixed turn caps at the model's p75 cut cost 24-68% at ~flat solve;
-    dynamic staged budgets add 12-24%; the per-turn remaining-budget **reminder is the mechanism,
-    not the cap** (solve collapses without it) `[paper: 2510.16786; ablation = paper detail]`.
-  - **To Run or Not to Run** (ISSTA'26): banning test execution cost ~1.25pp solve (n.s.) while
-    saving 56-62% tokens; **81-100% of failed runs passed the agent's own validation** — the
-    edit→test loop is frequently uninformative about the real objective; quotas price
-    uninformative iteration `[paper detail — verify venue+numbers]`.
-  - **EET / SWE-Effi**: failed trajectories cost 3-4× successful ones ("token snowball"); early
-    termination −19-55% cost at ≤0.2pp solve `[paper detail — verify]`.
-  - **SWE-agent**: lint/parse gating stops error cascades; they *abandoned* semantic
-    stuck-detection for false positives → circuit breakers need ~100% precision.
-  - **OpenHands stuck detector**: matches exact/alternating action patterns — insufficient here:
-    our agents change the patch string every cycle while world-state stays put. **Detect on
-    external STATE (diff hash + failure set), never on command strings.**
+The former held-out-200 is now `DEV-RET`: retired, fully inspectable development data. Use all of it
+for trajectory replay, threshold discovery, checkpoint reconstruction, tail selection, and live dev
+experiments. The original dev set is `DEV-OLD` and is also unrestricted. The new
+`select/tasks_heldout2.jsonl` set (`HO2`) remains frozen and unavailable for tuning.
 
-## 1. Phase 0a — remove the harness thrash amplifier (VERIFIED bug)
+Historical `DEV-RET` costs and solve totals remain pre-offline-frame observations, not a current
+baseline. For controller fitting, stratify replay by era:
 
-**The identifier warning is generating false authority-displacing noise:**
+- pre-frame retired run;
+- post-frame Stage 1; and
+- fresh post-fix development runs.
 
-- `harness/rt-condense-lib.mjs:253` ff `[verified]`: extracts identifiers from the diff and
-  treats the **project symbol index as the authority for whether they resolve**. Runtime
-  built-ins (`Promise`, `AbortSignal`, …) are never in a project symbol index → false "added
-  identifier not found in symbol index" warnings. Reported incidence: **8/14 stage-1 rollouts**,
-  including `Promise` and even `You` `[box — re-verify]`.
-- `harness/rt-shim-runtime.mjs:156-167` `[verified]`: when a warning exists, the **authority
-  banner is REPLACED** (`head = identifierWarning ? '' : buildAuthorityBanner()`), and the
-  warning renders as the **final** line of the output. So any `run_tests | tail` keeps the false
-  warning and **drops the authoritative verdict + baseline-diff**. All six of the variant's
-  thelounge test runs were piped through `tail` `[box — re-verify]`. Control dismissed the
-  warning once; the variant engaged with it 7×, flip-flopped its implementation to silence it,
-  flipped back because the issue text demanded promises, and re-tested each time.
+Use task-level five-fold cross-validation when selecting thresholds from historical trajectories.
+The eventual untouched-set claim comes only from `HO2`.
 
-**Fixes, in order:**
-1. Suppress warnings for identifiers that are **runtime globals of the diff's language** — or
-   better, an index-aware existence check before warning. (The repo's own rule applies to the
-   harness too: shape/index-aware checks over growing stopword lists — `DIFF_IDENTIFIER_KEYWORDS`
-   is already at the edge of that anti-pattern.)
-2. **Never displace the authority banner.** Render verdict + baseline-diff in the FINAL lines of
-   run_tests output (tail-safe ordering); warnings go above, not below.
-3. These files were effectively frozen — this needs the same **explicit reopen** the frame clause
-   got, then a **green-ledger re-sweep** (harness change ⇒ configHash change ⇒ gold re-grade) and
-   a disclosed comparability break, exactly like the offline frame.
+Established local evidence:
 
-## 2. Phase 0b — $0 forensics before building anything
+- eight retired tasks supplied +$16.70, 107.2% of the historical cost gap;
+- Stage 1 held retrieval/test operations flat while edits rose 63% and test envelopes 43%;
+- `thelounge` expanded from 11 to 28 turns and 5 to 17 edit envelopes while failing both arms;
+- the variant performed substantially more post-edit retrieval than control, rejecting repair
+  starvation as the explanation; and
+- the identifier warning fired in 8/14 Stage-1 rollouts. Variant `thelounge` received four warning-
+  bearing test outputs, and all six of its test commands piped `run_tests` through `tail`.
 
-1. Re-derive the Codex box measurements (timing test, warning incidence, thelounge anatomy) from
-   the te-s1 DBs — commands in `TURN-ECONOMY-HANDOFF.md` §8.2-8.3.
-2. **Retro-fit the progress ledger** (§3) over the retired + stage-1 transcripts: does
-   "2 consecutive non-improving edit/test cycles" predict eventual failure with ~100% precision?
-   Calibrate thresholds on data before shipping the controller.
-3. **Retro-simulate a p75 turn budget** on the retired run's rows: how many tail dollars would it
-   have censored, at what solve cost? (More-with-Less transfer check — Grok is in nobody's
-   published ablation.)
-4. Measure the search→read server-side collapse potential (`TURN_FIX_PLAN.md` §2.3).
+Research supports the direction, not our exact thresholds:
 
-## 3. The progress controller (S-harness, arm-symmetric)
+- Coherence Collapse found that capable agents often reach the right function and later corrupt it;
+  exact mid-trajectory gold patches were recoverable by checkpointing.
+- More with Less found large cost reductions from turn limits/reminders, but its no-reminder table
+  was a retrospective truncation analysis, not an independently rerun reminder ablation. Its p75
+  caps also reduced solve point estimates for two of three tested models.
+- To Run or Not to Run found execution value concentrated and model-dependent. Its OpenCode result
+  used Qwen2.5-Coder-32B and does not select a quota for Grok/OpenCode 1.18.4.
+- EET is experience-driven early termination. Its 19–55% cost result motivates replay and staged
+  control but does not validate a deterministic two-cycle rule here.
 
-Track per edit/test cycle, from **external state only**:
-- diff hash of the working tree
-- normalized failure-set signature (`extractFailureSignatures` already exists in the shim)
-- new-vs-baseline failure classification (baseline-diff machinery exists)
-- targeted-test/build status
-- **best-so-far checkpoint**: the patch whose failure set is minimal, retained with its signature
+Therefore every controller component starts as telemetry, then advisory behavior, and only then—if
+the safety gates pass—enforcement.
 
-**Progress** := fewer new failures | a previously-failing relevant test now passes | build
-advances to a later failure | first run of a genuinely new diagnostic. Model confidence never
-counts.
+## 1. Phase 0a — remove the verified harness amplifier
 
-**Policy (footer text appended to run_tests output — the per-cycle channel we control):**
-1. After **2 consecutive non-improving cycles**: append a compact state footer — unchanged
-   failure set, current-vs-best patch status, "no observed improvement" — and permit ONE recovery
-   step (a diagnostic batch or a fresh-context patch review). Discourage a third blind edit.
-2. After a **3rd non-improving cycle**: instruct restore/submit of the **best checkpoint**, not
-   the latest patch. Never kill a session in a way that loses a previously-working solution.
-3. Once relevant tests pass with only baseline failures: allow exactly **one bounded
-   edge-case/contract review**; if it finds no concrete missing requirement, submit. (Stops the
-   corrupt-your-own-gold-patch failure mode.)
+### 1.1 Root defect
 
-**Precision rule:** deterministic external-state definitions only; no semantic/LLM judging of
-stuckness. Start advisory (footer text), measure compliance, only then consider enforcement.
+`harness/rt-condense-lib.mjs` extracts code-shaped identifiers from added lines and treats absence
+from the project symbol index as evidence that the identifier is unresolved. That authority is
+invalid for runtime globals (`Promise`, `AbortSignal`), local lexical bindings, some imported aliases,
+and other language constructs.
 
-**Grading-safe checkpoint measurement first:** before making "submit best checkpoint" a harness
-*policy*, record BOTH final and best-checkpoint patches in preds and grade both offline on dev —
-if best-checkpoint grading flips tasks, that quantifies the prize without changing bench
-semantics prematurely.
+`harness/rt-shim-runtime.mjs` then suppresses the authority banner whenever this warning exists and
+appends the warning as the final line. A caller using `run_tests | tail` preferentially retains the
+false warning and discards leading baseline/authority context.
 
-## 4. Budgets and quotas (S-harness, arm-symmetric)
+### 1.2 Immediate fix
 
-- **Turn budget** at the backbone's p75 of the *re-baselined dev* turn distribution, delivered
-  with a **per-cycle countdown reminder** in the run_tests footer (the reminder is the mechanism
-  `[paper detail]`). Dynamic extension granted only when the §3 ledger shows progress (staged
-  budgets `[paper: More-with-Less]`).
-- **Test-run quota** K with "unused budget is wasted" framing — composes with the existing
-  run_tests dedup (dedup kills *identical* repeats; the quota prices *non-identical but
-  uninformative* repeats).
-- **Parse/lint pre-gate in the shim**: if the diff fails parse/lint for changed files, return the
-  lint error fast **without burning a suite run** (adapts SWE-agent's gate to our surface —
-  deterministic, cheap, symmetric).
-- Denominate budgets in **cycles, not wall-time** (30-min wall × slow-suite interaction).
-- Honest bounds: all the budget numbers are SWE-bench-Verified numbers on other backbones —
-  Phase 0b.3 re-proves the shape on our dev tasks before anything gates.
+Do **not** add a growing runtime-global allowlist, and do not describe another project-index query as
+an “index-aware fix”—the current implementation already queries that index. The safe Phase-0 change
+is:
 
-## 5. Prompt residue (S-prompt, sweet M± — small, adjunct)
+1. Disable the unresolved-identifier warning by default. Keep any experimental implementation
+   behind an explicit default-OFF flag until a language parser/compiler can authoritatively resolve
+   references.
+2. Never condition authority rendering on a warning.
+3. Append a compact, machine-parseable footer **after** raw test output so pipes preserve it:
 
-- **Re-anchor clause** (repair-scoped): "a failed test after an edit is new information — re-read
-  the failing span or run one targeted probe before the next edit." Wording must not induce
-  premature give-up on FIX tasks (known over-stop history): frame as *change information before
-  changing code again*, never "stop".
-- **Stop-when-green**: "once the previously-failing tests pass and only baseline failures remain,
-  stop editing; one bounded review, then submit."
-- Caveat from the timing data: the variant retrieved MORE during repair and still thrashed — so
-  prompt-side retrieval nudges are adjunct; the controller (§3) is the primary medicine for
-  oscillation-type thrash.
+```text
+[run_tests verdict] status=PASS|FAIL|INFRA scope=full|targeted exit=N
+[run_tests baseline-diff] verdict=PASS|FAIL|INFRA introduced_failures=N pre_existing_failures=N trustworthy=yes|no <bounded signatures>
+[run_tests guidance] verdict=PASS|FAIL|INFRA action=<bounded controller text or none>
+```
 
-## 6. Wave 2 (optional): `apply_patch_and_test`
+4. Put optional diagnostics above those final lines. Nothing may render after the guidance line.
+5. Preserve the raw test output and existing result condenser; the footer summarizes rather than
+   replaces the authoritative evidence.
 
-Atomic composite tool: apply patch → run targeted tests **sequentially inside one tool
-execution**. Safely reaches the 292 edit→run_tests collapsible pairs that co-issued calls cannot
-(OpenCode 1.18.4 has no in-message serialization barrier — verified in the handoff). Must ship to
-BOTH arms; changes the "stock harness" claim and run comparability → separate decision, default
-OFF for the paper's headline comparison.
+### 1.3 Required tests
 
-## 7. Experiment design
+- `Promise`, `AbortSignal`, locally declared names, import aliases, comments, and strings never
+  suppress or displace the verdict.
+- PASS, FAIL, baseline-only FAIL, introduced FAIL, infra error, targeted fallback, and deduplicated
+  responses all end with the three footer lines.
+- `run_tests | tail -n 3` and `tail -n 30` retain the complete footer. Fixtures for the common
+  existing PASS/FAIL `rg ... | tail` filters retain the verdict and baseline counts because every
+  footer line carries the verdict; arbitrary user filters are not claimed safe.
+- Footer status agrees with raw exit status and baseline-diff classification.
+- Feature-disabled output contains no unresolved-identifier warning.
+- Existing authority, baseline, dedup, pattern, integrity, and result-retention suites remain green.
 
-Second factor of the 2×2 in `TURN_FIX_PLAN.md` §4 (batching × controller), 12-20 dev pairs after
-re-baseline. Expected effect class for the controller: 15-60% on tail-heavy tasks `[papers]` —
-visible at this n, unlike the 3-8% prose effects. Predeclared: cost-per-correct-solve primary,
-solve non-inferiority, two-sided operations gate, escape=0, robust per-pair estimator, seeds.
-Enrich the pair set with known thrash-prone tasks (they carry the cost mass), and report
-tail-task and non-tail strata separately. Dev only; heldout-2 stays frozen.
+This changes the harness config hash. Explicitly reopen the frozen files, disclose the comparability
+break, and re-sweep the golden ledger before any model run.
 
-## 8. Kill criteria
+## 2. Phase 0b — observe state without steering behavior
 
-- Controller: if Phase 0b.2 retro-fit shows <95% precision for the 2-cycle rule on dev history,
-  recalibrate or abandon enforcement (advisory footer may stay).
-- Budgets: if the Phase 0b.3 retro-sim shows solve losses beyond non-inferiority margin at p75,
-  do not ship a hard cap; ship countdown-only.
-- Prompt residue: mechanism-gated like everything else — if repair-phase behavior doesn't move in
-  a 3-5 task smoke, drop it.
+Add a controller ledger before adding controller prose. One cycle is:
 
-## 9. Constraints in force
+> one or more source edits since the previous comparable test, followed by a `run_tests` result.
 
-Identical to `TURN_FIX_PLAN.md` §10 — dev-only, green ledger after any harness change, explicit
-reopen for shim/condenser edits, arm symmetry for every S-harness feature, one run-pilot process,
-production M± untouched until gated evidence exists.
+The initial clean reproduction is cycle 0, not an attempted repair. Multiple edit tool calls before
+one test remain one cycle.
+
+For every test invocation, append one JSONL record outside the graded workspace containing:
+
+- task, arm, run, model turn, cycle number, timestamp, and controller version;
+- exact test scope: full or normalized targeted pattern;
+- diff hash, binary patch hash, untracked-source fingerprint, patch files, and patch size;
+- normalized raw failure signature, introduced-failure set, and pre-existing-failure set;
+- target/build status and deterministic build-stage code when available;
+- dedup/cache decision and whether the suite actually executed;
+- candidate-best and verified-best checkpoint identifiers;
+- trigger count, advisory text emitted, and subsequent action class; and
+- raw result/checkpoint retention path.
+
+Retain every distinct source patch needed for offline grading. A checkpoint bundle must contain a
+binary diff plus validated copies/manifests for untracked source files, stored under runner state—not
+inside the repository. Paths are repository-relative, traversal-safe, and exclude benchmark,
+instruction, test, `.sweet-search`, and runner-state files.
+
+Telemetry-only mode emits no new model-visible text and changes no stopping behavior. Validate that
+its output bytes are unchanged except for the Phase-0 footer correction.
+
+## 3. Deterministic state and progress definitions
+
+### 3.1 Comparable cycles
+
+Two results are comparable only when they use the same normalized test scope and the baseline label
+is trustworthy. Results from different targeted patterns may be recorded but never ranked against
+one another. A full-suite result dominates targeted evidence for verified checkpoint selection.
+
+An infra error, timeout, tamper signal, untrusted baseline, or non-executed dedup response is not a
+progress or non-progress observation.
+
+### 3.2 Objective progress
+
+For comparable results, progress is one of:
+
+- the introduced-failure set becomes a strict subset with no new introduced signature;
+- the issue-relevant failing test changes from fail to pass;
+- a deterministic build pipeline advances to a later stage; or
+- the first trustworthy full-suite validation establishes a better canonical state.
+
+The following are **not** progress:
+
+- a changed diff hash by itself;
+- a new command, probe, or diagnostic by itself;
+- model confidence or a new explanation;
+- changing the targeted-test pattern;
+- eliminating a pre-existing failure unrelated to the issue; or
+- obtaining the same normalized failure set from a different patch.
+
+A genuinely new diagnostic is an allowed recovery action, not a way to reset the progress counter.
+
+### 3.3 Non-improvement and oscillation
+
+A non-improving cycle is a trustworthy comparable cycle after a source change that satisfies none of
+§3.2. Consecutive means consecutive comparable cycles; infra/unsupported results pause rather than
+reset the count.
+
+Record separately:
+
+- exact-state repeat: same diff hash and failure signature;
+- failure-state repeat: different diff, same normalized failures;
+- A↔B oscillation: a previously seen diff/failure state recurs; and
+- degradation: new introduced failures or an earlier build stage.
+
+## 4. Checkpoint policy
+
+### 4.1 Candidate and verified checkpoints
+
+- **Candidate checkpoint:** any distinct source patch after a trustworthy targeted or full result.
+- **Verified checkpoint:** candidate observed under the canonical full `run_tests` scope with a
+  source edit, no prohibited-file changes, and trustworthy baseline classification.
+
+Only a verified checkpoint can be automatically restored. Targeted results can recommend which
+candidate deserves a full verification but cannot outrank a verified checkpoint.
+
+Rank verified checkpoints lexicographically:
+
+1. issue-relevant tests pass;
+2. fewer introduced failures;
+3. later deterministic build stage;
+4. no prohibited or test-file edits; and
+5. smaller source patch as a tie-breaker only.
+
+Pre-existing failures are neutral. Model prose and historical gold patches are never inputs to the
+online score.
+
+### 4.2 Grade before restore
+
+Before enabling restore or termination behavior, write both final and selected-best patches to dev
+predictions and grade both with the real evaluator. Report:
+
+- best wins / ties / losses versus final;
+- how often the selector chose a grader-worse patch;
+- whether a successful final trajectory would have been interrupted before its first passing patch;
+  and
+- checkpoint storage/restore failures.
+
+No hard restore is permitted until the development evidence has **zero observed grader regressions**
+and enough trigger exposures that the one-sided 95% upper bound on regression risk is below 5%.
+With zero regressions, that requires at least 59 independent triggered tasks. If exposure is smaller,
+remain advisory regardless of apparent precision.
+
+## 5. Maximal $0 replay on development histories
+
+Replay all reconstructible `DEV-RET`, `DEV-OLD`, and Stage-1 trajectories. Missing intermediate
+patches are reported missing; never impute a best checkpoint.
+
+For candidate trigger thresholds of 2, 3, and 4 consecutive non-improving cycles, calculate per
+cross-validation fold:
+
+- tasks and cycles exposed;
+- eventual solve rate after the trigger;
+- fraction of eventually solved tasks triggered before their first passing patch;
+- remaining turns, edits, tests, input tokens, and realized dollars after the trigger;
+- best-versus-final offline grades where reconstructible;
+- exact/failure-state/A↔B/degradation composition; and
+- pre-frame versus post-frame estimates.
+
+Choose the advisory threshold using cross-validated development utility, not the full-data apparent
+fit. Do not choose an enforcement threshold from precision alone: a “95% failure predictor” can still
+terminate one recoverable task in twenty.
+
+Replay exit gate:
+
+- classifier fixtures cover every state transition;
+- fold assignment and threshold-selection rule are fixed;
+- no `HO2` input was read;
+- advisory trigger has enough exposure to justify a live behavior test; and
+- enforcement remains OFF unless §4.2 is already satisfied.
+
+## 6. Advisory progress controller
+
+The first model-visible controller is a footer appended only after trustworthy `run_tests` results.
+It is correctly described as **per-cycle feedback**, not per-turn injection.
+
+Let `H` be the advisory threshold selected in §5 from the fixed candidates `{2, 3, 4}`. The
+pre-replay default candidate is 2, but live text and behavior use the selected, hashed value of `H`:
+
+1. After `H` consecutive non-improving comparable cycles, report the unchanged failure state,
+   current-versus-best checkpoint, and remaining recovery allowance. Permit one recovery step:
+   re-read the failing span, run one targeted diagnostic/probe, or perform one fresh-context review.
+   Do not instruct another blind edit.
+2. If the next comparable cycle (`H + 1`) still does not improve, recommend restoring the
+   verified-best checkpoint and submitting/reviewing from it. In advisory mode the agent remains in
+   control.
+3. When issue-relevant tests pass and only pre-existing failures remain, allow one bounded review
+   turn of the issue, diff, and test evidence. A further edit requires a concrete missing requirement
+   named in the ledger; otherwise submit.
+
+The footer is bounded, machine-parseable, and tail-safe. It does not repeat full failure logs or
+resident instructions.
+
+Advisory mechanism gates on `DISCOVERY-20`:
+
+- at least 80% of triggered next actions are recovery, restore, or submission rather than another
+  ungrounded edit;
+- blind-edit cycles and p90 post-trigger turns decrease;
+- no recurring controller-induced task-completion failure appears; and
+- operations and context-width gates from `TURN_FIX_PLAN.md` pass.
+
+These are behavior gates, not solve non-inferiority claims.
+
+## 7. Turn budget — a separate, true per-turn treatment
+
+A test footer is not a per-turn reminder. Use the benchmark-local request-hook design and pinned-
+version preflight in `TURN_FIX_PLAN.md` §4.5. The candidate seam on OpenCode's current V2 API is
+`ctx.session.hook("request")`, which can mutate request messages immediately before model dispatch;
+`tool.execute.after` is not an injection substitute. Load the plugin explicitly from generated
+per-run config, never from a task repository, and use the same plugin bytes in both arms. The V2 API
+is beta, so lack of compatible support in pinned OpenCode 1.18.4 makes this arm **NO-GO**, not a
+reason to change the benchmark binary.
+
+Append one ephemeral user-role countdown message per eligible request and log session ID, model-step
+index, reminder hash, limit, remaining turns, and preceding-observation type. An isolated
+request-capture fixture must show exactly-once outbound injection, no cumulative persistence, and
+reconciliation with model-step records. Coverage below 99% in either arm fails preflight.
+
+Initial faithful adaptation:
+
+- derive pooled p50 and p75 turns from the fresh repaired-harness development baseline;
+- use the same numeric limits on native and Sweet;
+- define one budget unit as a completed assistant model step; provider/transport retries are logged
+  and costed but do not create a second agent decision or decrement the task budget;
+- announce the p50 initial budget from the start and show exact remaining turns every model step;
+- if the task is unfinished at p50, automatically grant one extension to p75—do not initially make
+  extension conditional on the progress classifier;
+- reserve the final three turns for canonical validation, best-checkpoint restoration if necessary,
+  and submission; and
+- at p75, preserve the verified-best patch and request finalization rather than discarding the
+  workspace with no answer.
+
+The p75 value is a hard ceiling on completed assistant model steps, not a suggestion. The
+finalization instruction begins when three steps remain and must finish inside the cap. When the cap
+is exhausted, the runner starts no new model request, retains the current patch plus every captured
+checkpoint, and runs ordinary grading. `budget_exhausted` is a treatment outcome—not an infra
+exclusion—and its full cost and solve result remain in the assigned pair. Automatic restoration at
+that boundary remains disabled until §4.2's checkpoint-safety gate passes.
+
+Automatic extension is intentionally separated from experience-driven early termination. A later
+progress-gated extension is a new treatment and must pass its own dev experiment.
+
+Run the countdown/budget arm separately from the advisory controller on `DISCOVERY-20`. Advance only
+if reminder coverage, finalization behavior, integrity, and completion tripwires pass. Do not call
+the paper's cross-model cost range our expected Grok effect.
+
+## 8. Test execution budget — optional separate arm
+
+Do not use “unused budget is wasted”; it can encourage consuming the quota. First measure the fresh
+baseline distribution of non-deduplicated suite executions among solved tasks.
+
+If a quota experiment is justified:
+
+- set shared `K = ceil(p75)` from the pooled fresh baseline, identical across arms;
+- reserve one execution for final canonical validation;
+- show `executions used / K` only after test results;
+- existing identical-state dedup calls do not consume K;
+- infra errors and unsupported targeted patterns do not consume K;
+- start with a soft advisory counter; and
+- test hard refusal as a later independent treatment only after solve-safety evidence.
+
+Quota-1/Quota-3 results from other agents do not select K here. If the progress controller already
+removes non-informative test loops, the quota may add no value and should be dropped.
+
+## 9. Syntax pre-gate — correctness infrastructure, not generic lint
+
+Before an expensive suite execution, optionally run a deterministic syntax/parser adapter on changed
+source files:
+
+- use a project/language-native parser only when its invocation and dependencies are known;
+- unsupported language/file/config means abstain and run the suite normally;
+- compare against baseline where the parser can surface pre-existing errors;
+- never run a broad style lint as a universal gate;
+- return the parse error quickly without consuming a suite execution; and
+- do not auto-rollback in the first implementation.
+
+Automatic rollback is a later feature requiring an exact last-edit delta and a verified checkpoint;
+it must never erase earlier valid work. The syntax gate is arm-symmetric and independently flagged.
+
+## 10. Optional Wave 2 — atomic edit/test and rollback tools
+
+`apply_patch_and_test` can safely collapse an edit→test pair because sequencing occurs inside one
+tool execution:
+
+1. validate and apply a bounded source patch;
+2. run the requested supported targeted test or canonical suite;
+3. return patch status plus the standard tail-safe verdict; and
+4. retain pre/post checkpoints for recovery.
+
+It must be available identically to both arms, rejects test/harness/protected paths, and remains OFF
+for the headline comparison until separately approved. It changes the stock-agent-runtime claim.
+
+A syntax-failing atomic patch may roll back only the patch applied by that invocation. Never restore
+or delete unrelated user/agent changes.
+
+## 11. Live development experiment sequence
+
+Use the cohorts and statistics defined in `TURN_FIX_PLAN.md`.
+
+| stage | treatment | cohort | purpose |
+|---|---|---|---|
+| T0 | telemetry/checkpoint retention, no footer | Phase-1 `DISCOVERY-20` baseline | validate state capture and grade candidate checkpoints |
+| T1 | advisory progress footer only | `DISCOVERY-20` | test trigger precision and behavior change |
+| T2 | true per-turn dynamic p50→p75 budget only | `DISCOVERY-20` | test urgency/finalization independently |
+| T3 | soft test counter only, if justified | `DISCOVERY-20` | test whether quota adds information beyond T1/T2 |
+| T4 | combine only passing components | `DISCOVERY-20` 2×2 | estimate interaction with native versus winning Sweet surface |
+| T5 | frozen two-arm confirmation | `CONFIRM-60` or powered expansion | establish cost reduction and solve non-inferiority |
+| T6 | frozen headline comparison | `HO2` | untouched aggregate milestone only |
+
+Do not combine T1–T3 in their first live run. If a component changes after seeing T4/T5 outcomes, it
+returns to development discovery before another confirmation.
+
+The repaired-harness Phase-1 baseline may serve as the common control for T0–T3 only when task list,
+model/provider, prompt, search surface, runner, and every non-treatment config hash are identical.
+Otherwise rerun the control; never compare cells separated by an unrecorded config change.
+
+T5 controller enforcement may be enabled only if the offline checkpoint safety gate already passes;
+otherwise T5 tests the advisory controller and turn budget, with checkpoint retention but no forced
+restore.
+
+## 12. Kill and fallback rules
+
+- **Warning/footer fix:** mandatory correctness repair; failure of tail-safe fixtures blocks all runs.
+- **Telemetry:** any lost/corrupt patch, path escape, workspace mutation, or result mismatch blocks
+  model-visible controller work.
+- **Advisory controller:** kill or recalibrate if it induces a recurring completion failure, fails to
+  alter post-trigger behavior, or inflates operations/context beyond the shared gates.
+- **Hard restore/termination:** remain OFF without §4.2's safety exposure and fresh confirmation
+  non-inferiority. Advisory mode is the fallback.
+- **Turn budget:** kill if per-turn coverage is below 99%, finalization loses the best patch, or the
+  powered solve interval crosses the −5pp margin. A larger shared cap is a new preregistered arm.
+- **Test quota:** drop if it does not reduce non-deduplicated executions/cost or if any repeatable
+  quota-caused completion loss appears.
+- **Syntax gate:** abstain on uncertainty; never convert unsupported parsing into a task failure.
+- **Combined controller:** no `HO2` run unless the final development contract in
+  `TURN_FIX_PLAN.md` passes.
+
+## 13. Implementation acceptance checklist
+
+Before paid execution:
+
+- controller flags default OFF and are recorded in every result row;
+- ledger schema/version, exact reminder/footer text, thresholds, budgets, and checkpoint selector
+  are hashed;
+- unit tests cover comparable scopes, progress/non-progress, infra abstention, oscillation,
+  checkpoint ranking, path validation, and finalization reserve;
+- replay tests cover known `thelounge` oscillation plus successful long trajectories that must not
+  be cut;
+- both native and Sweet receive byte-identical harness policy;
+- raw streams, DB/WAL, turn logs, controller ledgers, and checkpoint patches survive retention;
+- boolean grading admission, integrity checks, `escape=0`, green ledger, and
+  `PREFLIGHT_ONLY=1` all pass; and
+- no production M± change, commit, push, or paid run occurs without explicit authorization.
+
+## 14. Intended outcome
+
+The controller succeeds only if it turns expensive tails into one of two safe outcomes:
+
+1. the agent uses objective feedback to recover and complete the task sooner; or
+2. the agent preserves and submits its best verified patch instead of corrupting it through further
+   edits.
+
+Merely terminating failures cheaply is not success. Completion retention and lower cost must both
+survive the powered development confirmation and then the untouched `HO2` evaluation.
