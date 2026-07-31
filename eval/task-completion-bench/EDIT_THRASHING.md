@@ -374,11 +374,16 @@ Use the cohorts and statistics defined in `TURN_FIX_PLAN.md`.
 | T2 | true per-turn dynamic p50→p75 budget only | `DISCOVERY-20` | test urgency/finalization independently |
 | T3 | soft test counter only, if justified | `DISCOVERY-20` | test whether quota adds information beyond T1/T2 |
 | T4 | combine only passing components | `DISCOVERY-20` 2×2 | estimate interaction with native versus winning Sweet surface |
-| T5 | frozen two-arm confirmation | `CONFIRM-60` or powered expansion | establish cost reduction and solve non-inferiority |
+| T5 | frozen two-arm confirmation | `CONFIRM-28`, then `EXPAND-32` on predeclared triggers only | establish cost reduction; gross solve-safety screen (powered non-inferiority at n≥60 or `HO2`) |
 | T6 | frozen headline comparison | `HO2` | untouched aggregate milestone only |
 
 Do not combine T1–T3 in their first live run. If a component changes after seeing T4/T5 outcomes, it
 returns to development discovery before another confirmation.
+
+Budget rules (user, 2026-07-31): a screen may run its arms sequentially — Sweet first, native only
+after the Sweet arm passes its behavior gates. Reuse the Phase-1 baseline as the control/OFF cells
+whenever every non-treatment config hash matches; rerun it otherwise. T2 runs only if the plugin
+preflight passes AND T1 alone leaves the tail alive. T3 stays skip-by-default.
 
 The repaired-harness Phase-1 baseline may serve as the common control for T0–T3 only when task list,
 model/provider, prompt, search surface, runner, and every non-treatment config hash are identical.

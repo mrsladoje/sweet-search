@@ -1,4 +1,4 @@
-# TURN_FIX_PLAN — run-ready turn-economics program (revision 2, 2026-07-31)
+# TURN_FIX_PLAN — run-ready turn-economics program (revision 4, 2026-07-31, bash-only, lean budget)
 
 This is the execution contract for reducing model turns and cost without buying the reduction by
 losing task completion or retrieval quality. It supersedes the first synthesis of the three reviews
@@ -9,9 +9,19 @@ experiment sequencing, and the final comparison.
 **Current status:** ready to implement and preflight; not authorization to spend or to touch the new
 frozen held-out set. Every paid stage still requires its stated gate and explicit launch approval.
 
+**Scope decision (user, 2026-07-31):** the MCP surface is out of this program. Every packing
+treatment runs on the bash/CLI surface only. All development iterates on `DEV-RET`/`DEV-OLD`;
+`HO2` is touched exactly once, at the end, aggregate-only.
+
+**Budget decision (user, 2026-07-31):** Grok 4.5 stays the backbone; development runs lean.
+Confirmation is two-stage — `CONFIRM-28` first, `EXPAND-32` only on predeclared triggers — and
+screens reuse the Phase-1 baseline as their control cells wherever every non-treatment config
+hash matches. Screens may run their arms sequentially to allow early kills.
+
 ## 0. Dataset policy — explicit reclassification
 
-As of 2026-07-31, the former held-out-200 set is **retired and reclassified as development data**:
+As of 2026-07-31, the former held-out-200 set is **retired and reclassified as development data**
+(user-ratified in session, superseding the handoff's "evidence, not a tuning set" constraint):
 
 | handle | artifact | permitted use |
 |---|---|---|
@@ -75,8 +85,10 @@ The program optimizes two separate quantities and may not trade one away silentl
 The final candidate advances to `HO2` only if the fresh development confirmation satisfies all of
 the following:
 
-- one-sided 95% lower confidence bound for paired solve-rate difference is above **−5 percentage
-  points**;
+- at `CONFIRM-28`: **zero unexplained treatment-only losses** (zero such losses at 28 pairs
+  bounds the gross treatment-loss rate near 11% at one-sided 95%); the powered **−5pp**
+  non-inferiority bound is established only at n≥60 (`EXPAND-32`) or at `HO2` (n=200) — never
+  claimed from 28;
 - every treatment-only loss has a dev trajectory adjudication; no recurring treatment-caused
   failure mode remains open;
 - the untrimmed assigned-task cost ratio, `sum(treatment cost) / sum(control cost)`, is at most
@@ -100,7 +112,7 @@ only solve counts, p50/p75/p90 turns, and the top-tail contribution.
 
 | surface | examples | rule |
 |---|---|---|
-| **Product** | MCP tools, `search_batch`, CLI mirror, result format, server-side span fusion | Sweet only; this is the retrieval-product treatment |
+| **Product** | the `ss-batch` CLI command, result format, server-side span fusion | Sweet only; this is the retrieval-product treatment |
 | **Harness** | warning repair, telemetry, checkpoint retention, countdown, quota, syntax gate | byte-identical policy and numeric budget on native and Sweet in headline comparisons |
 | **Prompt/tool description** | dependency guard, phase-scoped width, batch-tool description | minimal and versioned; do not change frozen production M± until a mechanism wins |
 
@@ -110,27 +122,32 @@ search arm a different cap.
 
 ## 4. Product mechanism
 
-### 4.1 First test the structured surface that already exists
+### 4.1 Surface decision: bash/CLI only
 
-`mcp/server.js` already registers structured `search`, `trace`, and batched `read` tools. Before
-building another interface, prove against pinned OpenCode 1.18.4 that:
+The MCP surface is excluded from this program by product decision (user, 2026-07-31). The CLI is
+what sweet-search ships, and one surface keeps treatment attribution clean. `mcp/server.js` remains
+a product surface; it is not a benchmark arm here.
 
-- MCP/custom tools load in the jailed run and appear in the model's tool schema;
-- two or three independent MCP calls emitted in one assistant message remain one model turn;
-- results retain per-call identity, status, and errors;
-- schema plus resident-description tokens do not erase the saved re-send cost; and
-- result JSON is no wider than equivalent CLI output after normalization.
+Two bash-surface packing candidates remain:
 
-If existing MCP parallel calls meet the mechanism gates in §7, they are the preferred minimal
-change. Do not build `ss-batch` merely because it was proposed.
+1. **Structural:** the `ss-batch` CLI command (§4.2) — one bash invocation that declares two or
+   three read-only operations. One model decision carries the operations deterministically; it
+   does not depend on changing the model's one-call-per-turn habit.
+2. **Behavioral:** prompt-steered parallel bash envelopes — several independent bash calls in one
+   assistant message. Pinned OpenCode already executes co-issued calls concurrently, and the
+   retired run shows the model can emit this form (383 multi-bash-call messages). Read-only
+   probes only; never edit+test.
 
-### 4.2 If needed, build one typed `search_batch` primitive
+Accepted costs of this decision: no provider-native structured parallel-call arm, and the
+shell-quoting/regex-dialect failure class remains.
 
-If MCP adoption remains serial, add a structured batch tool and a CLI mirror only where production
-clients require it. The public request is typed and boundary-validated:
+### 4.2 Build the typed `ss-batch` primitive (bash surface)
+
+Build it in Phase 0; it must exist and pass its offline gates before the packing screen. The
+request is typed and boundary-validated:
 
 ```text
-search_batch({
+ss-batch({
   operations: [
     { id: "imports", tool: "grep", args: { pattern: "...", in: "..." } },
     { id: "caller",  tool: "trace", args: { symbol: "..." } }
@@ -188,7 +205,7 @@ how many are already eliminated by shipped within-file affordances.
 
 If a reminder remains necessary:
 
-- orientation: at most three independent retrieval calls in one message or one `search_batch`;
+- orientation: at most three independent retrieval calls in one message or one `ss-batch`;
 - refinement: at most two;
 - after first edit: default one, unless a genuinely independent diagnostic set exists;
 - a call needing another result goes later; and
@@ -269,9 +286,12 @@ This phase now precedes every natural-task mechanism experiment.
    silently dropping it.
 3. From `DEV-RET`, materialize and hash with fixed seed `20260731`:
    - `DISCOVERY-20`: 10 tail plus 10 non-tail tasks, with proportional language allocation by
-     largest remainder inside each stratum; and
-   - `CONFIRM-60`: 12 tail plus 48 non-tail tasks, disjoint from discovery, preserving the 20/80
-     population ratio and proportional language allocation by largest remainder.
+     largest remainder inside each stratum;
+   - `CONFIRM-28`: 6 tail plus 22 non-tail tasks (largest-remainder rounding of the 20/80
+     population ratio), disjoint from discovery, proportional language allocation; and
+   - `EXPAND-32`: the next 32 tasks under the same rules, materialized and hashed NOW but run
+     only on the predeclared triggers in §9. `CONFIRM-28` plus `EXPAND-32` reproduce the
+     original 60-task safety cohort exactly.
    Within a stratum/language cell, seeded order determines selection and replacement order. Replace
    a failed golden only before any arm outcome, with the next task from the same cell; if exhausted,
    follow a prewritten largest-remainder fallback and record it.
@@ -279,13 +299,11 @@ This phase now precedes every natural-task mechanism experiment.
    weights are frozen before new outcomes.
 5. Run the status-quo native and Sweet surfaces on `DISCOVERY-20` under the repaired offline frame.
    This supplies the provisional pooled turn/test distributions and current variance.
-6. Calculate prospective sample size for paired cost and solve non-inferiority before confirmation.
-   `CONFIRM-60` is the minimum solve-safety cohort, not an automatic maximum; expand from remaining
-   `DEV-RET` tasks if the predeclared calculation requires it. Expansion preserves the frozen 20/80
-   tail ratio, language allocation, and seeded order. Materialize the full `CONFIRM-N` before any
-   confirmation outcome; do not repeatedly peek and stop when significance appears. If the required
-   `N` exceeds the eligible remainder of `DEV-RET`, stop and redesign the development study—do not
-   borrow tasks from `HO2`.
+6. Calculate prospective sample size for paired cost before confirmation. `CONFIRM-28` is the
+   budget-lean mechanism cohort chosen by the user (2026-07-31); it is not a powered solve-safety
+   cohort. Expansion runs `EXPAND-32` under the §9 triggers only — one predeclared expansion, no
+   repeated peeking. If even n=60 cannot support a required claim, the claim moves to `HO2` or is
+   dropped; never borrow tasks from `HO2`.
 
 Use a shared pooled p50/p75 for symmetric harness budgets. Choose the upper bootstrap confidence
 limit for the provisional p75 when a small baseline makes the quantile uncertain.
@@ -296,10 +314,12 @@ Run sequentially so each result answers one question:
 
 ### Phase 2A. No-model and synthetic checks
 
-- MCP loading/schema preflight;
+- `ss-batch` CLI preflight inside the jail;
 - batch fixtures and retrieval-equivalence replay;
-- exactly 12 synthetic scenarios, paired across surfaces: four with two independent calls, four
-  with three independent calls, and four dependency traps whose later arguments are unknowable;
+- exactly 12 synthetic scenarios, paired across the bash cells — A: status-quo bash;
+  B: `ss-batch`; C: parallel bash envelopes in one message; plus a per-turn-nudge cell only if
+  the plugin preflight passes — four with two independent calls, four with three independent
+  calls, and four dependency traps whose later arguments are unknowable;
 - ≥90% eligible packing (therefore 8/8 on this screen), zero dependency-trap violations, zero
   hidden sibling errors; and
 - operations upper ratio ≤1.05, result tokens ≤ serial union.
@@ -346,9 +366,12 @@ the OFF cells diagnose how much each structural change contributed.
 ## 9. Phase 4 — fresh development confirmation
 
 Freeze code, schemas, prompts, thresholds, task list, and config hashes. Run the two headline arms
-(native+controller and Sweet+controller) on `CONFIRM-60`, expanding only according to the
-predeclared sample-size rule. Do not change the treatment after seeing confirmation outcomes; a
-change returns to Phase 2/3 discovery.
+(native+controller and Sweet+controller) on `CONFIRM-28`. Then apply the predeclared two-stage
+rule. Run `EXPAND-32` (completing n=60) only if: (a) one or two treatment-only losses occurred and
+adjudication left the mechanism plausible; or (b) the cost upper bound crosses 1.00 while the
+point estimate still meets the ≥15% target. Zero triggers → stop at 28 and bank the savings.
+Three or more treatment-only losses → the treatment fails; no expansion. Do not change the
+treatment after seeing confirmation outcomes; a change returns to Phase 2/3 discovery.
 
 Statistics, fixed before the first confirmation outcome:
 
@@ -364,9 +387,9 @@ Statistics, fixed before the first confirmation outcome:
 - strict admission: exact pairs only, boolean `resolved` only, no aggregate rows or infra failures
   silently scored as losses.
 
-With zero treatment-only losses, 60 tasks put the one-sided 95% upper bound on the gross loss rate
-below approximately 5%. If losses occur, use the predeclared paired interval and expand if required;
-do not claim that 12–20 pairs prove completion retention.
+With zero treatment-only losses, 28 tasks bound the gross loss rate near 11%, and the full 60
+near 5%, at one-sided 95%. The tight −5pp claim belongs to n≥60 or to `HO2`; never claim it from
+28, and never claim completion retention from 12–20 pairs.
 
 ## 10. Phase 5 — new frozen held-out milestone
 
@@ -383,7 +406,7 @@ Only after Phase 4 passes:
 
 Before any paid stage, report:
 
-- exact commit/worktree diff and hashes for harness, prompt, MCP schemas, native binary, stats code,
+- exact commit/worktree diff and hashes for harness, prompt, `ss-batch` build, native binary, stats code,
   task list, request-hook plugin, and generated config;
 - enabled feature flags for each arm;
 - OpenCode/model/provider versions and tool-schema dump;
@@ -400,6 +423,8 @@ No paid stage starts merely because implementation tests pass.
 ## 12. Explicit non-goals and stop rules
 
 - No more AGENTS.md-only packing A/Bs.
+- No MCP arm in this program; the bash/CLI surface is the only packing surface (user decision,
+  2026-07-31).
 - No width above three and no `&&` between independent probes.
 - No unconditional server-side auto-read and no arbitrary 1.5× result budget.
 - No cost comparison treating the pre-frame retired run as current.
