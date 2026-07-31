@@ -63,12 +63,13 @@
  */
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { analyzeRollout } from './probe-count.mjs';
+import { analyzeRollout, readTurnLog } from './probe-count.mjs';
 
 const SEED = 20260730;
 const RESAMPLES = 10000;
 const GATES = { win: 0.90, operationsUpper: 1.05, operationsLower: 0.85, ctxUpper: 1.10, solveNet: 3 };
 const GATED_METRICS = ['turns', 'ctxPerTurn', 'operations'];
+const REQUIRED_COUNT_METRICS = ['retrievalEnvelopes', 'testEnvelopes', 'editEnvelopes'];
 
 /** xorshift128 — seeded so the verdict is reproducible. */
 function rng(seed) {
@@ -79,26 +80,6 @@ function rng(seed) {
     w = (w ^ (w >>> 19)) ^ (t ^ (t >>> 8));
     return (w >>> 0) / 4294967296;
   };
-}
-
-/** Read one rollout's turn log → {turns, ctxPerTurn}. Rejects aggregate logs. */
-function readTurnLog(file) {
-  if (!existsSync(file)) return { error: 'turn log missing' };
-  let sum = 0, k = 0, meta = null;
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
-    if (!line.trim()) continue;
-    let o;
-    try { o = JSON.parse(line); } catch { return { error: 'turn log unparseable' }; }
-    if (o.kind === 'meta') { meta = o; continue; }
-    if (typeof o.in !== 'number') return { error: 'turn record missing `in`' };
-    sum += o.in;                       // `in` already includes `cached` — do NOT add it
-    k++;
-  }
-  if (meta && meta.source === 'aggregate') {
-    return { error: 'turn log is source:aggregate — not a turn distribution' };
-  }
-  if (!k) return { error: 'turn log has no turn records' };
-  return { turns: k, ctxPerTurn: sum / k };
 }
 
 function loadRun(dir) {
@@ -122,20 +103,22 @@ function loadRun(dir) {
     const log = readTurnLog(path.join(dir, 'turns', `${t}-sweet.jsonl`));
     if (log.error) problems.push(`${t}: ${log.error}`);
 
-    let operations = null;
+    let meter = null;
     const roll = path.join(asRoot, `${t}-sweet`);
     if (existsSync(roll) && statSync(roll).isDirectory()) {
-      const a = analyzeRollout(roll);
-      if (a) operations = a.probes;
-      else problems.push(`${t}: agent-state unreadable (operations gate)`);
+      meter = analyzeRollout(roll);
+      if (!meter) problems.push(`${t}: agent-state unreadable (operations gate)`);
     } else {
       problems.push(`${t}: no agent-state dir (operations gate)`);
     }
 
     byTask[t] = {
-      turns: log.turns ?? null,
+      turns: log.modelTurns ?? null,
       ctxPerTurn: log.ctxPerTurn ?? null,
-      operations,
+      retrievalEnvelopes: meter?.retrievalEnvelopes ?? null,
+      testEnvelopes: meter?.testEnvelopes ?? null,
+      editEnvelopes: meter?.editEnvelopes ?? null,
+      operations: meter?.operations ?? null,
       envelopes: typeof r.calls === 'number' ? r.calls : null,
       // RAW, never coerced. run-pilot sets resolved:null when a task is ungradeable
       // (`row.resolved = row.gradeable ? … : null`, run-pilot.mjs:558). `!!null` would
@@ -157,7 +140,9 @@ const expectIdx = args.indexOf('--expect');
 const EXPECT = expectIdx >= 0 ? Number(args[expectIdx + 1]) : 36;
 const dirs = args.filter((a, i) => !a.startsWith('--') && !(expectIdx >= 0 && i === expectIdx + 1));
 const [dirA, dirB] = dirs;
-if (!dirA || !dirB) {
+const unknownFlag = args.find(arg => arg.startsWith('--') && arg !== '--json' && arg !== '--expect');
+if (!dirA || !dirB || dirs.length !== 2 || unknownFlag ||
+    !Number.isInteger(EXPECT) || EXPECT <= 0) {
   console.error('usage: node stats/turn-economy-ab.mjs <results/RUN_A> <results/RUN_B> [--json] [--expect N]');
   process.exit(2);
 }
@@ -178,7 +163,7 @@ if (tasksB.length !== EXPECT) admission.push(`RUN_B has ${tasksB.length} tasks, 
 
 const tasks = tasksA.filter(t => t in B.byTask);
 for (const t of tasks) {
-  for (const m of GATED_METRICS) {
+  for (const m of [...GATED_METRICS, ...REQUIRED_COUNT_METRICS]) {
     for (const [tag, run] of [['A', A], ['B', B]]) {
       const v = run.byTask[t][m];
       if (typeof v !== 'number' || !Number.isFinite(v)) {
@@ -271,6 +256,22 @@ else verdict = 'NO CHANGE ADOPTED — directionally positive but below the prede
 
 const report = {
   pairedTasks: tasks.length, seed: SEED, resamples: RESAMPLES, gates: GATES,
+  counts: {
+    runA: {
+      retrievalEnvelopes: tasks.reduce((sum, task) => sum + A.byTask[task].retrievalEnvelopes, 0),
+      testEnvelopes: tasks.reduce((sum, task) => sum + A.byTask[task].testEnvelopes, 0),
+      editEnvelopes: tasks.reduce((sum, task) => sum + A.byTask[task].editEnvelopes, 0),
+      operations: tasks.reduce((sum, task) => sum + A.byTask[task].operations, 0),
+      modelTurns: tasks.reduce((sum, task) => sum + A.byTask[task].turns, 0),
+    },
+    runB: {
+      retrievalEnvelopes: tasks.reduce((sum, task) => sum + B.byTask[task].retrievalEnvelopes, 0),
+      testEnvelopes: tasks.reduce((sum, task) => sum + B.byTask[task].testEnvelopes, 0),
+      editEnvelopes: tasks.reduce((sum, task) => sum + B.byTask[task].editEnvelopes, 0),
+      operations: tasks.reduce((sum, task) => sum + B.byTask[task].operations, 0),
+      modelTurns: tasks.reduce((sum, task) => sum + B.byTask[task].turns, 0),
+    },
+  },
   turnsRatio: turns, operationsRatio: ops, ctxPerTurnRatio: ctx,
   envelopesRatio: env, idealCostRatio: cost,
   meanPairedTurnsPct: +secondary.toFixed(2),
@@ -287,6 +288,12 @@ else {
   console.log(`ctx/turn    B/A  ${f(ctx)}   GATE upper must be <= ${GATES.ctxUpper}`);
   console.log(`envelopes   B/A  ${f(env)}   (reported only — NOT a gate)`);
   console.log(`idealCost   B/A  ${f(cost)}   (reported only)`);
+  console.log('\nexplicit counts (A → B):');
+  console.log(`  retrieval envelopes  ${report.counts.runA.retrievalEnvelopes} → ${report.counts.runB.retrievalEnvelopes}`);
+  console.log(`  test envelopes       ${report.counts.runA.testEnvelopes} → ${report.counts.runB.testEnvelopes}`);
+  console.log(`  edit envelopes       ${report.counts.runA.editEnvelopes} → ${report.counts.runB.editEnvelopes}`);
+  console.log(`  operations           ${report.counts.runA.operations} → ${report.counts.runB.operations}`);
+  console.log(`  model turns          ${report.counts.runA.modelTurns} → ${report.counts.runB.modelTurns}`);
   console.log(`mean paired turns change: ${secondary.toFixed(2)}%   (secondary)`);
   console.log(`solve: +${gains} / −${losses}  net ${gains - losses}`);
   if (reverts.length) console.log(`\nREVERT triggers:\n  ${reverts.join('\n  ')}`);

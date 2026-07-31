@@ -11,12 +11,48 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 
+// Runtime test-output behavior affects whether a gold verdict transfers to a
+// pilot run just as much as image/test configuration does. Keep an ordered,
+// versioned manifest of the exact source bytes so sweep rows and run-pilot
+// preflight invalidate together whenever that behavior changes.
+const RT_HARNESS_SOURCE_NAMES = Object.freeze([
+  'rt-condense-lib.mjs',
+  'rt-shim-runtime.mjs',
+  'rt-dedup.mjs',
+]);
+export const RT_HARNESS_FINGERPRINT = Object.freeze({
+  version: 1,
+  sources: Object.freeze(RT_HARNESS_SOURCE_NAMES.map((name) => Object.freeze({
+    name,
+    sha256: createHash('sha256').update(readFileSync(new URL(name, import.meta.url))).digest('hex'),
+  }))),
+});
+
+// Image-resolution/authentication failures happen before a task's tests can run.
+// They are grader infrastructure, never evidence that a task is env-broken.
+const IMAGE_PULL_INFRA_RES = Object.freeze([
+  /docker: Error response from daemon:.*failed to resolve reference/i,
+  /failed to authorize:.*(?:auth\.docker\.io|anonymous token)/i,
+  /unexpected status from GET request.*\b5\d\d\b/i,
+]);
+export function isImagePullInfra(text) {
+  return IMAGE_PULL_INFRA_RES.some(pattern => pattern.test(String(text || '')));
+}
+
 // The fingerprint covers exactly what decides whether a gold grade transfers to a
 // run: the effective image (and, for LOCAL derived/warm images, the docker image ID
 // — a rebuilt image invalidates old verdicts), the effective test command, the
-// grading network mode, and the excludeP2P grading exception. Overrides are applied
-// by the caller (spec is the post-override spec, same as run-pilot loadTasks).
-export function taskConfigHash(spec, { netLockdown = true, excludeP2P = [], excludeF2P = [], imageId = undefined, presedCmds = [] } = {}) {
+// grading network mode, grading exceptions, install sed shims, and runtime harness
+// source fingerprint. Overrides are applied by the caller (spec is the post-override
+// spec, same as run-pilot loadTasks).
+export function taskConfigHash(spec, {
+  netLockdown = true,
+  excludeP2P = [],
+  excludeF2P = [],
+  imageId = undefined,
+  presedCmds = [],
+  rtHarness = RT_HARNESS_FINGERPRINT,
+} = {}) {
   const img = spec.image_name || '';
   const local = /^swerebenchv2-(fixed|warm)\//.test(img) || !!spec._origImage;
   const id = imageId !== undefined ? imageId : (local ? dockerImageId(img) : null);
@@ -27,6 +63,7 @@ export function taskConfigHash(spec, { netLockdown = true, excludeP2P = [], excl
     testCmd: [].concat(spec.install_config?.test_cmd || []).join(' && '),
     net: netLockdown ? (spec._network === 'bridge' ? 'bridge' : 'none') : 'legacy-open',
     excludeP2P: [...excludeP2P].sort(),
+    rtHarness,
   };
   // added later than excludeP2P — include only when set, so the 200 already-stamped
   // rows (which predate the field) stay valid for tasks that don't use it
@@ -129,7 +166,7 @@ export function preflightEnvLedger(specs, ledger, { netLockdown = true, override
     if (!row.configHash) { failures.push({ instance_id: s.instance_id, reason: 'stale', detail: 'ledger entry has no configHash — re-sweep (or backfill) under the current harness' }); continue; }
     const ov = overrides.tasks?.[s.instance_id] || {};
     const now = taskConfigHash(s, { netLockdown, excludeP2P: ov.excludeP2P || [], excludeF2P: ov.excludeF2P || [], presedCmds: installSedCmds(s) });
-    if (now !== row.configHash) failures.push({ instance_id: s.instance_id, reason: 'stale', detail: `configHash mismatch (ledger ${row.configHash} ≠ current ${now}) — image/testCmd/network/excludeP2P changed since the gold grade; re-sweep` });
+    if (now !== row.configHash) failures.push({ instance_id: s.instance_id, reason: 'stale', detail: `configHash mismatch (ledger ${row.configHash} ≠ current ${now}) — image/testCmd/network/grading exceptions/runtime harness changed since the gold grade; re-sweep` });
   }
   return { ok: failures.length === 0, failures };
 }

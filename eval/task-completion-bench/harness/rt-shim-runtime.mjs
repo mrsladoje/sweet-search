@@ -23,12 +23,12 @@ import path from 'node:path';
 import {
   extractFailureSignatures, diffFailureSets, renderBaselineDiff,
   buildAuthorityBanner, applyTestPattern,
-  buildUnresolvedIdentifierWarning,
+  buildUnresolvedIdentifierWarning, buildRunTestsFooter,
 } from './rt-condense-lib.mjs';
 import {
   RT_DEDUP_ON, parseRunTestsArgv, untrackedFingerprint, computeStateKey,
   summarizeRunTestsResult, readDedupState, dedupDecision, appendDedupRecord,
-  buildDedupSummary, buildChangedResultNote,
+  buildDedupSummary, buildChangedResultNote, parseExitCode,
 } from './rt-dedup.mjs';
 import { CodeGraphRepository } from '../../../core/infrastructure/code-graph-repository.js';
 
@@ -44,6 +44,14 @@ export const RT_CONDENSE =
   "echo '--- output tail ---'; tail -45 /tmp/__rt_out";
 
 const q = s => "'" + String(s).replace(/'/g, "'\\''") + "'";
+const EXIT_SENTINEL_RE = /\x1e__SS_RT_EXIT=(-?\d+)\x1e$/;
+
+function splitExitSentinel(value) {
+  const text = String(value || '');
+  const match = text.match(EXIT_SENTINEL_RE);
+  if (!match) return { out: text, exitCode: null };
+  return { out: text.slice(0, match.index), exitCode: Number(match[1]) };
+}
 
 // Run the suite ONCE in the container for a given diff + test command. `diffText` ''
 // (empty) yields the clean-baseline result (no agent edits). Returns { out }.
@@ -56,12 +64,21 @@ function runSuite(cfg, diffText, testCmd) {
     writeFileSync(pdir + '/agent.diff', diffText || '');
     const script = 'cd ' + cfg.workdir + ' && git reset --hard HEAD -q 2>/dev/null; ' +
       'git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; ' +
-      'timeout ' + tSec + ' bash -c ' + q(testCmd) + ' 2>&1 | head -c 20000000 > /tmp/__rt_out; ' + RT_CONDENSE;
-    const out = execSync(dockerBin + ' run --rm ' + (cfg.netArgs || '') + '-v ' + pdir + ':/patch:ro ' + cfg.image + ' bash -c ' + q(script),
+      '{ timeout ' + tSec + ' bash -c ' + q(testCmd) + "; printf '%s' \"$?\" > /tmp/__rt_exit; } " +
+      '2>&1 | head -c 20000000 > /tmp/__rt_out; ' + RT_CONDENSE + '; ' +
+      "printf '\\036__SS_RT_EXIT=%s\\036' \"$(cat /tmp/__rt_exit 2>/dev/null || printf 1)\"";
+    const marked = execSync(dockerBin + ' run --rm ' + (cfg.netArgs || '') + '-v ' + pdir + ':/patch:ro ' + cfg.image + ' bash -c ' + q(script),
       { env: { ...process.env, DOCKER_HOST: cfg.dockerHost }, encoding: 'utf8', timeout: (tSec + 60) * 1000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
-    return { out: out.slice(0, 8000) };
+    const captured = splitExitSentinel(marked);
+    return { out: captured.out.slice(0, 8000), exitCode: captured.exitCode };
   } catch (e) {
-    return { out: '[run_tests exit=' + (e.status ?? 1) + ']\n' + String(e.stdout || e.stderr || e.message || '').slice(0, 6000) };
+    const captured = splitExitSentinel(e.stdout);
+    if (captured.exitCode !== null) return { out: captured.out.slice(0, 8000), exitCode: captured.exitCode };
+    const exitCode = Number.isInteger(e.status) ? e.status : 1;
+    return {
+      out: '[run_tests exit=' + exitCode + ']\n' + String(e.stdout || e.stderr || e.message || '').slice(0, 6000),
+      exitCode, infra: true,
+    };
   } finally { try { rmSync(pdir, { recursive: true, force: true }); } catch { /* */ } }
 }
 
@@ -74,8 +91,11 @@ export function getBaseline(cfg, { runCleanSuite = runSuite } = {}) {
   if (cached) return { ok: cached.ok, sigs: new Set(cached.sigs) };
   const base = runCleanSuite(cfg, '', cfg.testScript);      // FULL suite, no agent diff
   const sig = extractFailureSignatures(base.out);
-  // A baseline that is itself an infra error is untrustworthy → ok:false (no labeling).
-  const ok = sig.ok && !sig.infra;
+  const exitCode = Number.isInteger(base?.exitCode) ? base.exitCode : parseExitCode(base?.out);
+  // An infra/timeout baseline or a non-zero result with no classifiable failure is
+  // untrustworthy → ok:false (no baseline labeling).
+  const infra = base?.infra === true || sig.infra || exitCode === 124 || exitCode === 137;
+  const ok = sig.ok && !infra && !(exitCode !== 0 && sig.sigs.size === 0);
   const value = { ok, sigs: new Set(sig.sigs) };
   baselineByConfig.set(cfg, value);
   return { ok: value.ok, sigs: new Set(value.sigs) };
@@ -115,13 +135,31 @@ function resolveNamesFromTaskIndex(cfg, names, { files = [] } = {}) {
 }
 
 export function resolveDiffIdentifierWarning(cfg, diff, { resolveNames } = {}) {
-  if (cfg?._isAgentFormat !== true || !diff) return '';
+  if (cfg?._isAgentFormat !== true || cfg?.rtUnresolvedIdentifierWarning !== true || !diff) return '';
   try {
     const resolver = resolveNames || ((names, context) => resolveNamesFromTaskIndex(cfg, names, context));
-    return buildUnresolvedIdentifierWarning(diff, resolver);
+    return buildUnresolvedIdentifierWarning(diff, resolver, { enabled: true });
   } catch {
     return ''; // absent/stale/unavailable index degrades silently, never invents a warning
   }
+}
+
+function appendFooter(body, footer) {
+  const text = String(body || '');
+  if (!text) return footer;
+  return text + (text.endsWith('\n') ? '' : '\n') + footer;
+}
+
+function classifySuiteResult(cur, current, baselineDiff) {
+  const suppliedExit = Number.isInteger(cur?.exitCode) ? cur.exitCode : null;
+  let exitCode = suppliedExit ?? parseExitCode(cur?.out);
+  if (suppliedExit === null && exitCode === 0 && current.sigs.size > 0) exitCode = 1;
+  const infra = cur?.infra === true || current.infra || exitCode === 124 || exitCode === 137;
+  const status = infra ? 'INFRA' : (exitCode !== 0 || current.sigs.size > 0 ? 'FAIL' : 'PASS');
+  const baselineOnly = status === 'FAIL' && baselineDiff !== null && current.sigs.size > 0 &&
+    baselineDiff.introduced.length === 0 && baselineDiff.preExisting.length === current.sigs.size;
+  const verdict = status === 'INFRA' ? 'INFRA' : (status === 'PASS' || baselineOnly ? 'PASS' : 'FAIL');
+  return { exitCode, status, verdict, trustworthy: baselineDiff !== null && !infra };
 }
 
 // Main entry: run the suite on the agent's current diff, prepend the L2 levers, then
@@ -134,10 +172,11 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = nul
   try { diff = execSync('git -C ' + cfg.rundir + " diff HEAD -- . ':(exclude).sweet-search'", { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); } catch { /* */ }
 
   // (c) targeted single-test mode — degrade to full suite when unsupported.
-  let testCmd = cfg.testScript, note = '';
+  let testCmd = cfg.testScript, note = '', scope = 'full';
   if (parsed.pattern) {
     const ap = applyTestPattern(cfg.testScript, parsed.pattern);
     testCmd = ap.cmd;
+    if (ap.applied) scope = 'targeted';
     if (!ap.applied) note = `[run_tests] targeted pattern '${parsed.pattern}' ignored (${ap.reason}) — ran the full suite.`;
   }
 
@@ -151,21 +190,29 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = nul
   }
 
   const cur = runSuiteFn(cfg, diff, testCmd);
-  if (!L2) return applyDedup(cfg, { key, untracked, parsed, diff, reqId, out: (note ? note + '\n' : '') + cur.out, raw: cur.out });
-
   const identifierWarning = resolveDiffIdentifierWarning(cfg, diff);
 
-  // (a) authority banner + (b) baseline-diff. A diff warning replaces the longer
-  // repeated authority line, then renders as a one-line trailer. This keeps the
-  // response no larger than the existing pack and preserves named failure details.
-  let head = identifierWarning ? '' : buildAuthorityBanner();
+  // (a) authority banner + (b) baseline-diff. Experimental diagnostics can never
+  // suppress authority and always render above the final machine footer.
+  let head = L2 ? buildAuthorityBanner() : '';
   const curSig = extractFailureSignatures(cur.out);
-  const bdiff = diffFailureSets(getBaseline(cfg, { runCleanSuite: runSuiteFn }), curSig);   // null when untrustworthy → no labeling
-  const bd = renderBaselineDiff(bdiff);
+  const bdiff = L2
+    ? diffFailureSets(getBaseline(cfg, { runCleanSuite: runSuiteFn }), curSig)
+    : null;   // null when disabled/untrustworthy → no labeling
+  const bd = L2 ? renderBaselineDiff(bdiff) : '';
   if (bd) head += (head ? '\n' : '') + bd;
   if (note) head += (head ? '\n' : '') + note;
+  const classified = classifySuiteResult(cur, curSig, bdiff);
+  const footer = buildRunTestsFooter({
+    status: classified.status, verdict: classified.verdict, scope,
+    exitCode: classified.exitCode, baselineDiff: bdiff,
+    trustworthy: classified.trustworthy, guidance: 'none',
+  });
   const full = [head, cur.out, identifierWarning].filter(Boolean).join('\n');
-  return applyDedup(cfg, { key, untracked, parsed, diff, reqId, out: full, raw: cur.out });
+  return applyDedup(cfg, {
+    key, untracked, parsed, diff, reqId, out: full, raw: cur.out,
+    rawExitCode: classified.exitCode, footer,
+  });
 }
 
 /**
@@ -178,7 +225,7 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = nul
  * append disables condensation for that call — the log IS the state, so an unwritable
  * log must not silently make every call look like a repeat.
  */
-function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw }) {
+function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw, rawExitCode, footer }) {
   if (!key) {
     // Still leave an audit trail when the lever was live but abstained, so a smoke can
     // tell "never fired because the agent never repeated" from "could not fingerprint".
@@ -190,10 +237,10 @@ function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw }) {
         argv: parsed.argv, diffBytes: Buffer.byteLength(String(diff ?? ''), 'utf8'),
       });
     }
-    return out;
+    return appendFooter(out, footer);
   }
   const state = readDedupState(cfg.dedupLog);
-  const result = summarizeRunTestsResult(raw);
+  const result = summarizeRunTestsResult(raw, { exitCode: rawExitCode });
   const decision = dedupDecision(state, key, result.digest);
   const suppress = decision.mode === 'unchanged' && !result.infra;
   const wrote = appendDedupRecord(cfg.dedupLog, {
@@ -205,14 +252,14 @@ function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw }) {
     untracked: untracked.entries,
     exit: result.exitCode, failures: result.failureCount, infra: result.infra,
     firstFailure: result.firstFailure,
-    outBytes: Buffer.byteLength(out, 'utf8'),
+    outBytes: Buffer.byteLength(appendFooter(out, footer), 'utf8'),
   });
-  if (!wrote) return out;
-  if (suppress) return buildDedupSummary({ citeCall: decision.citeCall, result });
+  if (!wrote) return appendFooter(out, footer);
+  if (suppress) return appendFooter(buildDedupSummary({ citeCall: decision.citeCall, result }), footer);
   if (decision.mode === 'changed' && !result.infra) {
-    return buildChangedResultNote(decision.citeCall) + '\n' + out;
+    return appendFooter(buildChangedResultNote(decision.citeCall) + '\n' + out, footer);
   }
-  return out;
+  return appendFooter(out, footer);
 }
 
 function sha256Hex(s) { return createHash('sha256').update(s).digest('hex'); }

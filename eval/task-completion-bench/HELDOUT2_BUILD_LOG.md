@@ -13,7 +13,7 @@ the box or the Mac** (indexing is the user's RunPod step).
 | S4 · extension-coverage audit | DONE 2026-07-30 | 1,299 patch paths audited; 23 extensions added to the indexing config; remaining gaps all by-design |
 | S5 · RunPod handoff inputs | DONE 2026-07-30 | 267 keys, 0 vault reuse; `HELDOUT2_POD_HANDOFF.md` |
 | S5b · pod golden fleet (A100 SXM) | RUNNING since 2026-07-31 11:40 | driven from the Mac, tmux `h2fleet`, log `~/h2-fleet.log` |
-| S6 · vault verify + stage on box (read-only) | PENDING | after the user returns indexed goldens |
+| S6 · vault verify + stage on box (read-only) | verify DONE 2026-07-31 22:30 (200/200 clean); staging pending fleet end | `golden-vault.sh verify` added |
 | S7 · green ledger, gold-FULL 200/200 | PENDING | box compute, 4-wide sweep |
 | S8 · final PLAN.md update, set marked DONE | PENDING | |
 
@@ -97,3 +97,16 @@ batches; the A100 is not the constraint.
 top up pod credit, rather than sharding 3-wide (which would have cost ~$9 and ~6 h but breaks
 the one-repo-at-a-time-per-machine rule) or stopping after the primaries. Serial discipline
 stays intact; the driver is resume-safe if the pod dies.
+
+**S6 (verify) — 2026-07-31 22:25.** All 200 primaries vaulted, zero fleet failures. Vault
+integrity verified: **200 ok, 0 bad**.
+
+Closing a gap first: `golden-vault.sh` could write manifests and verify the BOX copy after a
+push, but had no way to verify the VAULT copy in place. That ordering is load-bearing — a
+truncated or bit-rotted vault copy would be faithfully rsynced to the box and then checked
+against the same bad manifest, so `push --verify` would go green on corruption. The new
+`verify` subcommand runs before staging and asserts prepareGolden's full validity condition
+(`.sweet-search/codebase.db` AND `.git`), not just the checksum list.
+
+Also corrected a now-false claim in that script's header: it stated goldens are box-built
+under ORT INT8, which is true of held-out 1 only. Parity is per-SET.

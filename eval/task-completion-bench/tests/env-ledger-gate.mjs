@@ -1,12 +1,13 @@
 // Green-ledger invariant tests: fingerprint stability/sensitivity + the run-pilot
 // pre-flight gate semantics (missing / stale / not-gold-FULL / excluded / ok).
 import assert from 'node:assert';
+import { createHash } from 'node:crypto';
 import { writeFileSync, rmSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { fileURLToPath } from 'node:url';
-import { taskConfigHash, loadLedger, preflightEnvLedger, normTestName, gradeFromReportItem, VOLATILE_NAME_RES, vaultTarName } from '../harness/env-ledger.mjs';
+import { taskConfigHash, loadLedger, preflightEnvLedger, normTestName, gradeFromReportItem, isImagePullInfra, VOLATILE_NAME_RES, vaultTarName, RT_HARNESS_FINGERPRINT } from '../harness/env-ledger.mjs';
 
 const spec = (over = {}) => ({
   instance_id: 'acme__widget-1',
@@ -19,6 +20,29 @@ const spec = (over = {}) => ({
 const h1 = taskConfigHash(spec(), { netLockdown: true });
 assert.equal(h1, taskConfigHash(spec(), { netLockdown: true }));
 assert.equal(h1.length, 16);
+
+// Runtime harness fingerprint: exact files, exact bytes, stable ordering/version.
+assert.equal(RT_HARNESS_FINGERPRINT.version, 1);
+assert.deepEqual(
+  RT_HARNESS_FINGERPRINT.sources.map(({ name }) => name),
+  ['rt-condense-lib.mjs', 'rt-shim-runtime.mjs', 'rt-dedup.mjs']);
+for (const { name, sha256 } of RT_HARNESS_FINGERPRINT.sources) {
+  const sourcePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../harness', name);
+  assert.equal(sha256, createHash('sha256').update(readFileSync(sourcePath)).digest('hex'));
+}
+assert.equal(h1, taskConfigHash(spec(), { netLockdown: true, rtHarness: RT_HARNESS_FINGERPRINT }));
+const changedRtHarness = {
+  ...RT_HARNESS_FINGERPRINT,
+  sources: RT_HARNESS_FINGERPRINT.sources.map((source) => source.name === 'rt-dedup.mjs'
+    ? { ...source, sha256: '0'.repeat(64) }
+    : source),
+};
+assert.notEqual(h1, taskConfigHash(spec(), { netLockdown: true, rtHarness: changedRtHarness }));
+
+assert.equal(isImagePullInfra(
+  'docker: Error response from daemon: unknown: failed to resolve reference; ' +
+  'failed to authorize: unexpected status from GET request https://auth.docker.io/token: 502 Bad Gateway'), true);
+assert.equal(isImagePullInfra('FAILED test_widget.py::test_value'), false);
 
 // --- fingerprint: sensitive to every config axis ---
 assert.notEqual(h1, taskConfigHash(spec({ image_name: 'docker.io/swerebenchv2/acme-widget:1-DIFFERENT' }), { netLockdown: true }));
@@ -41,20 +65,21 @@ assert.notEqual(
 // --- ledger load: append-only, LAST verdict wins ---
 const dir = mkdtempSync(path.join(tmpdir(), 'ledger-'));
 const lpath = path.join(dir, 'ledger.jsonl');
-const s1 = spec(), s2 = spec({ instance_id: 'acme__widget-2' }), s3 = spec({ instance_id: 'acme__widget-3' }), s4 = spec({ instance_id: 'acme__widget-4' });
+const s1 = spec(), s2 = spec({ instance_id: 'acme__widget-2' }), s3 = spec({ instance_id: 'acme__widget-3' }), s4 = spec({ instance_id: 'acme__widget-4' }), s6 = spec({ instance_id: 'acme__widget-6' });
 const rows = [
   { instance_id: s1.instance_id, status: 'needs-warming', evidence: 'clojars' },              // superseded ↓
   { instance_id: s1.instance_id, status: 'gold-valid', configHash: taskConfigHash(s1, { netLockdown: true }) },
   { instance_id: s2.instance_id, status: 'gold-valid', configHash: 'deadbeefdeadbeef' },      // stale hash
   { instance_id: s3.instance_id, status: 'env-broken-curation', evidence: 'patch does not apply' },
   { instance_id: s4.instance_id, status: 'excluded', evidence: 'curation defect, user-excluded 2026-07-09' },
+  { instance_id: s6.instance_id, status: 'gold-valid', configHash: taskConfigHash(s6, { netLockdown: true, rtHarness: changedRtHarness }) },
 ];
 writeFileSync(lpath, rows.map(r => JSON.stringify(r)).join('\n') + '\n');
 const ledger = loadLedger(lpath);
 assert.equal(ledger.get(s1.instance_id).status, 'gold-valid'); // last wins
 
 // --- pre-flight verdicts ---
-const { ok, failures } = preflightEnvLedger([s1, s2, s3, s4, spec({ instance_id: 'acme__widget-5' })], ledger, { netLockdown: true });
+const { ok, failures } = preflightEnvLedger([s1, s2, s3, s4, spec({ instance_id: 'acme__widget-5' }), s6], ledger, { netLockdown: true });
 assert.equal(ok, false);
 const byId = Object.fromEntries(failures.map(f => [f.instance_id, f.reason]));
 assert.equal(byId[s1.instance_id], undefined);          // fresh gold-FULL → passes
@@ -62,7 +87,8 @@ assert.equal(byId[s2.instance_id], 'stale');            // hash mismatch
 assert.equal(byId[s3.instance_id], 'not-gold-FULL');    // broken env
 assert.equal(byId[s4.instance_id], 'excluded');         // explicit exclusion → must be dropped from INSTANCES
 assert.equal(byId['acme__widget-5'], 'missing');        // no entry
-assert.equal(failures.length, 4);
+assert.equal(byId[s6.instance_id], 'stale');            // runtime harness changed after gold grade
+assert.equal(failures.length, 5);
 
 // all-green selection → ok
 assert.equal(preflightEnvLedger([s1], ledger, { netLockdown: true }).ok, true);

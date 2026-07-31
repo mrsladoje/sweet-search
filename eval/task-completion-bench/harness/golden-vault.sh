@@ -10,6 +10,7 @@
 #   golden-vault.sh pull --keys k1,k2                     # archive specific cache keys
 #   golden-vault.sh push --tasks <specs.json|.jsonl> --ids id1,id2 [--verify]
 #   golden-vault.sh push --keys k1,k2 [--verify]          # restore batch to box, lock read-only
+#   golden-vault.sh verify --keys k1,k2                   # verify vault copies IN PLACE (pre-staging)
 #   golden-vault.sh manifest --keys k1,k2                 # (re)manifest vault copies in place
 #   golden-vault.sh manifest --tasks <specs.json> --ids …  #   for keys vaulted before manifesting
 #     CAVEAT: a manifest written now attests the VAULT copy, so a later `push --verify`
@@ -90,6 +91,34 @@ case "$cmd" in
       manifest_for "$VAULT/$k"
       echo "manifested ($(wc -l < "$VAULT/$k/.vault-manifest.sha256" | tr -d ' ') files)"
     done <<< "$keys"
+    ;;
+
+  verify)
+    # Verify the VAULT copies in place, before they are staged anywhere. `push
+    # --verify` attests the box copy after transfer, which cannot catch vault-side
+    # bit-rot or a truncated pull — that would simply be copied faithfully to the
+    # box and verified against the same bad bytes. A valid golden is
+    # .sweet-search/codebase.db + .git (prepareGolden's own validity check), so
+    # both are asserted, not just the checksum list.
+    keys="$(keys_from_args "$@")"
+    ok=0; bad=0
+    while IFS= read -r k; do
+      [ -n "$k" ] || continue
+      if [ ! -d "$VAULT/$k" ]; then echo "MISSING   $k"; bad=$((bad + 1)); continue; fi
+      if [ ! -f "$VAULT/$k/.vault-manifest.sha256" ]; then echo "NOMANIFEST $k"; bad=$((bad + 1)); continue; fi
+      if [ ! -f "$VAULT/$k/.sweet-search/codebase.db" ] || [ ! -d "$VAULT/$k/.git" ]; then
+        echo "INVALID   $k (needs .sweet-search/codebase.db + .git)"; bad=$((bad + 1)); continue
+      fi
+      if (cd "$VAULT/$k" && shasum -a 256 --quiet -c .vault-manifest.sha256 >/dev/null 2>&1); then
+        ok=$((ok + 1))
+      else
+        echo "CHECKSUM  $k"
+        (cd "$VAULT/$k" && shasum -a 256 -c .vault-manifest.sha256 2>&1 | grep -v ': OK$' | head -5)
+        bad=$((bad + 1))
+      fi
+    done <<< "$keys"
+    echo "== verify: $ok ok, $bad bad"
+    [ "$bad" -eq 0 ] || die "$bad key(s) failed vault verification"
     ;;
 
   push)

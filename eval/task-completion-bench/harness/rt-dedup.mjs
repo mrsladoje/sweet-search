@@ -140,15 +140,15 @@ export function parseExitCode(text) {
  * `infra:true` (network/broker/docker error rather than test failures) suppresses
  * condensation entirely — that output is not a test result.
  */
-export function summarizeRunTestsResult(text) {
-  const exitCode = parseExitCode(text);
+export function summarizeRunTestsResult(text, { exitCode = parseExitCode(text) } = {}) {
+  const normalizedExit = Number.isInteger(exitCode) ? exitCode : parseExitCode(text);
   const { sigs, infra } = extractFailureSignatures(text);
   const ordered = [...sigs];
   const failures = ordered.slice().sort();
   const firstFailure = ordered.slice(0, 2).join(' | ').slice(0, 220);
   return {
-    exitCode, infra, failures, failureCount: failures.length, firstFailure,
-    digest: sha(String(exitCode) + '\n' + failures.join('\n')),
+    exitCode: normalizedExit, infra, failures, failureCount: failures.length, firstFailure,
+    digest: sha(String(normalizedExit) + '\n' + failures.join('\n')),
   };
 }
 

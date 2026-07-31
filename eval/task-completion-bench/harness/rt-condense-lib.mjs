@@ -250,10 +250,44 @@ export function buildAuthorityBanner() {
     're-invoke `run_tests` instead.';
 }
 
-// ---- Conditional diff identifier signal ---------------------------------------
-// This deliberately extracts only high-confidence code-shaped references. The
-// symbol index is the authority for whether they resolve; prose/string/comment
-// tokens and identifiers declared by the same diff never become warnings.
+// ---- Tail-safe authoritative footer -------------------------------------------
+// Footer signature values are URI-encoded tokens, bounded independently from the
+// richer human-readable banner above. This keeps all three final lines parseable and
+// safe to retain through `tail` without allowing failure text to grow unboundedly.
+function footerSignatures(signatures) {
+  const values = (Array.isArray(signatures) ? signatures : [])
+    .slice(0, 2)
+    .map(sig => encodeURIComponent(String(sig).replace(/\s+/g, ' ').trim().slice(0, 48)).slice(0, 72))
+    .filter(Boolean);
+  return values.length ? values.join(',') : 'none';
+}
+
+/** Render the exact final three-line run_tests footer. */
+export function buildRunTestsFooter({
+  status, verdict = status, scope = 'full', exitCode = 0,
+  baselineDiff = null, trustworthy = false, guidance = 'none',
+} = {}) {
+  const normalizedStatus = ['PASS', 'FAIL', 'INFRA'].includes(status) ? status : 'INFRA';
+  const normalizedVerdict = ['PASS', 'FAIL', 'INFRA'].includes(verdict) ? verdict : 'INFRA';
+  const normalizedScope = scope === 'targeted' ? 'targeted' : 'full';
+  const normalizedExit = Number.isInteger(exitCode) ? exitCode : 1;
+  const introduced = baselineDiff?.introduced || [];
+  const preExisting = baselineDiff?.preExisting || [];
+  const trusted = trustworthy === true && baselineDiff !== null;
+  const action = String(guidance || 'none').replace(/[^A-Za-z0-9_.:-]+/g, '_').slice(0, 120) || 'none';
+  return [
+    `[run_tests verdict] status=${normalizedStatus} scope=${normalizedScope} exit=${normalizedExit}`,
+    `[run_tests baseline-diff] verdict=${normalizedVerdict} introduced_failures=${introduced.length} ` +
+      `pre_existing_failures=${preExisting.length} trustworthy=${trusted ? 'yes' : 'no'} ` +
+      `introduced_signatures=${footerSignatures(introduced)} pre_existing_signatures=${footerSignatures(preExisting)}`,
+    `[run_tests guidance] verdict=${normalizedVerdict} action=${action}`,
+  ].join('\n');
+}
+
+// ---- Experimental diff identifier signal --------------------------------------
+// A project symbol index cannot authoritatively resolve runtime globals, lexical
+// bindings, or every language's import semantics. The implementation is retained
+// only for explicit experiments and is default-OFF at this pure-function boundary.
 const DIFF_IDENTIFIER_KEYWORDS = new Set([
   'as', 'async', 'await', 'bool', 'boolean', 'break', 'byte', 'case', 'catch',
   'char', 'class', 'const', 'continue', 'def', 'default', 'defer', 'do', 'double',
@@ -360,7 +394,8 @@ export function extractAddedIdentifierReferences(diffText, { maxBytes = 1_000_00
   return { references, files: [...files] };
 }
 
-export function buildUnresolvedIdentifierWarning(diffText, resolveNames, { maxWarnings = 3 } = {}) {
+export function buildUnresolvedIdentifierWarning(diffText, resolveNames, { enabled = false, maxWarnings = 3 } = {}) {
+  if (enabled !== true) return '';
   if (typeof resolveNames !== 'function') return '';
   const extracted = extractAddedIdentifierReferences(diffText);
   if (!extracted.references.length) return '';

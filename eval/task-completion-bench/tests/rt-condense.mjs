@@ -7,7 +7,7 @@
 import {
   condenseOutput, extractFailureSignatures, diffFailureSets, renderBaselineDiff,
   buildAuthorityBanner, sanitizeTestPattern, applyTestPattern, normalizeFailureSignature,
-  buildUnresolvedIdentifierWarning, extractAddedIdentifierReferences,
+  buildUnresolvedIdentifierWarning, extractAddedIdentifierReferences, buildRunTestsFooter,
 } from '../harness/rt-condense-lib.mjs';
 
 let ok = true;
@@ -180,8 +180,20 @@ console.log('== L2 signature normalization: line-shift → false-new (safe), not
 }
 
 // ---------------------------------------------------------------------------
-console.log('== P3 diff identifier warning: index-resolved, agent-actionable, low noise ==');
+console.log('== Phase 0a identifier warning: default-OFF, explicit experiment only ==');
 {
+  const defaultOff = [
+    'diff --git a/src/example.ts b/src/example.ts', '+++ b/src/example.ts',
+    '+import { RemoteThing as LocalAlias } from "pkg";',
+    '+const locallyDeclared = Promise.resolve(new AbortSignal());',
+    '+// MissingInComment', '+const text = "MissingInString";',
+    '+return LocalAlias.build(locallyDeclared);',
+  ].join('\n');
+  let defaultCalls = 0;
+  assert(buildUnresolvedIdentifierWarning(defaultOff, () => { defaultCalls++; return []; }) === '',
+    'Promise, AbortSignal, local names, import aliases, comments, and strings emit no warning by default');
+  assert(defaultCalls === 0, 'default-OFF warning does not query the symbol resolver');
+
   const diff = [
     'diff --git a/internal/shell/zsh/action.go b/internal/shell/zsh/action.go',
     '+++ b/internal/shell/zsh/action.go',
@@ -192,30 +204,57 @@ console.log('== P3 diff identifier warning: index-resolved, agent-actionable, lo
     calls++;
     assert(names.includes('BrightWhite') && names.includes('style'), 'qualified leaf + qualifier resolved in one batch');
     return [{ name: 'style', type: 'package' }];
-  });
+  }, { enabled: true });
   assert(calls === 1, 'identifier resolver called once');
-  assert(/style\.BrightWhite/.test(warning), 'unresolved qualified identifier gets one-line warning');
+  assert(/style\.BrightWhite/.test(warning), 'explicit experiment can emit an unresolved qualified identifier warning');
   assert(!warning.includes('\n'), 'warning is a single line');
-  assert(warning.length <= buildAuthorityBanner().length, 'warning fits by replacing the existing authority trailer');
+  assert(warning.length <= 180, 'experimental warning remains bounded');
 
   const resolved = buildUnresolvedIdentifierWarning(diff, () => ([
     { name: 'style', type: 'package' }, { name: 'BrightWhite', type: 'const' },
-  ]));
+  ]), { enabled: true });
   assert(resolved === '', 'indexed const/variable-style definition suppresses warning');
 
   const bare = 'diff --git a/base/test_helpers.go b/base/test_helpers.go\n+++ b/base/test_helpers.go\n+return TestResultPath';
-  assert(/TestResultPath/.test(buildUnresolvedIdentifierWarning(bare, () => [])), 'unresolved bare identifier gets warning');
+  assert(/TestResultPath/.test(buildUnresolvedIdentifierWarning(bare, () => [], { enabled: true })),
+    'explicit experiment can warn on an unresolved bare identifier');
 
   const safe = [
     'diff --git a/x.go b/x.go', '+++ b/x.go',
+    '+import AliasName "example.com/pkg"',
     '+const BrightWhite = "style.MissingInString"',
     '+// MissingInComment',
     '+value := fmt.Sprintf("%s", BrightWhite)',
     '-return RemovedMissing',
   ].join('\n');
-  assert(buildUnresolvedIdentifierWarning(safe, () => []) === '', 'declarations, strings, comments, removed lines, and external qualifiers stay quiet');
+  assert(buildUnresolvedIdentifierWarning(safe, () => [], { enabled: true }) === '',
+    'local declarations, import aliases, strings, comments, removed lines, and external qualifiers stay quiet');
   assert(extractAddedIdentifierReferences('not a diff').references.length === 0, 'malformed non-diff input has no candidates');
   assert(extractAddedIdentifierReferences('x'.repeat(1_000_001)).references.length === 0, 'oversize diff fails open without warning');
+}
+
+// ---------------------------------------------------------------------------
+console.log('== Phase 0a footer: exact, bounded, machine-parseable three-line contract ==');
+{
+  const baselineDiff = {
+    introduced: ['FAILED tests/test_new.py::test_regression - expected true got false'],
+    preExisting: ['FAILED tests/test_old.py::test_known - AssertionError'],
+  };
+  const footer = buildRunTestsFooter({
+    status: 'FAIL', verdict: 'FAIL', scope: 'targeted', exitCode: 7,
+    baselineDiff, trustworthy: true,
+  });
+  const lines = footer.split('\n');
+  assert(lines.length === 3, 'footer is exactly three lines');
+  assert(lines[0] === '[run_tests verdict] status=FAIL scope=targeted exit=7',
+    'verdict line has exact status/scope/exit fields');
+  assert(/^\[run_tests baseline-diff\] verdict=FAIL introduced_failures=1 pre_existing_failures=1 trustworthy=yes /.test(lines[1]),
+    'baseline line carries verdict, counts, and trust label');
+  assert(/introduced_signatures=\S+ pre_existing_signatures=\S+$/.test(lines[1]),
+    'bounded signatures are whitespace-free machine tokens');
+  assert(lines[2] === '[run_tests guidance] verdict=FAIL action=none',
+    'guidance line carries the same verdict and defaults to none');
+  assert(lines.every(line => line.length < 500), 'every footer line is bounded');
 }
 
 // ---------------------------------------------------------------------------

@@ -16,11 +16,23 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.join(HERE, '..', 'stats', 'turn-economy-ab.mjs');
+const SMOKE_SCRIPT = path.join(HERE, '..', 'stats', 'turn-economy-smoke.mjs');
 
 let failures = 0, n = 0;
 function check(label, cond, extra = '') {
   n++;
   if (!cond) { failures++; console.error(`FAIL ${label}${extra ? '\n  ' + extra : ''}`); }
+}
+
+function cliFailure(script, args) {
+  try {
+    execFileSync('node', [script, ...args], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { status: 0, stderr: '' };
+  } catch (error) {
+    return { status: error.status, stderr: String(error.stderr || '') };
+  }
 }
 
 const root = mkdtempSync(path.join(tmpdir(), 'te-ab-'));
@@ -83,6 +95,16 @@ function run(a, b, expect) {
   }
 }
 
+function runSmoke(a, b, expect) {
+  try {
+    const out = execFileSync('node', [SMOKE_SCRIPT, a, b, '--json', '--expect', String(expect)],
+      { encoding: 'utf8' });
+    return JSON.parse(out);
+  } catch (e) {
+    try { return JSON.parse(e.stdout || '{}'); } catch { return { verdict: 'CRASH', stderr: String(e.stderr).slice(0, 300) }; }
+  }
+}
+
 const T = (i) => `repo__proj-${i}`;
 const base = {};
 for (let i = 0; i < 4; i++) base[T(i)] = { turns: 100, ctx: 50000, ops: 3, solved: true, cost: 1 };
@@ -96,6 +118,13 @@ for (let i = 0; i < 4; i++) base[T(i)] = { turns: 100, ctx: 50000, ops: 3, solve
   check('win: turns ratio 0.8', Math.abs(r.turnsRatio.point - 0.8) < 1e-9, JSON.stringify(r.turnsRatio));
   check('win: operations gate evaluated', r.operationsRatio && Number.isFinite(r.operationsRatio.point),
     JSON.stringify(r.operationsRatio));
+  check('win: explicit counts emitted',
+    r.counts?.runA?.retrievalEnvelopes === 4 &&
+      r.counts?.runA?.testEnvelopes === 0 &&
+      r.counts?.runA?.editEnvelopes === 0 &&
+      r.counts?.runA?.operations === 12 &&
+      r.counts?.runA?.modelTurns === 400,
+    JSON.stringify(r.counts));
   check('win: no "pending" language', !/pending/i.test(r.verdict || ''), r.verdict);
 }
 
@@ -218,6 +247,20 @@ for (let i = 0; i < 4; i++) base[T(i)] = { turns: 100, ctx: 50000, ops: 3, solve
   const r = run(makeRun('a12', base), dir, 4);
   check('absent resolved field → INVALID', /INVALID/.test(r.verdict || ''), `got: ${r.verdict}`);
 }
+{
+  const variant = {};
+  for (let i = 0; i < 4; i++) variant[T(i)] = { turns: 80, ctx: 50000, ops: 3, solved: true, cost: 0.8 };
+  const dir = makeRun('b13', variant);
+  const rowsPath = path.join(dir, 'rows.json');
+  const rows = JSON.parse(readFileSync(rowsPath, 'utf8'));
+  rows[0].resolved = 'false';
+  writeFileSync(rowsPath, JSON.stringify(rows, null, 1));
+  const r = run(makeRun('a13', base), dir, 4);
+  check('string resolved value → INVALID', /INVALID/.test(r.verdict || ''), `got: ${r.verdict}`);
+  check('non-boolean admission reports the actual type',
+    (r.admissionFailures || []).some(failure => /resolved is string/.test(failure)),
+    JSON.stringify(r.admissionFailures));
+}
 
 // ── 6. below threshold is not a win ──────────────────────────────────────────
 {
@@ -227,6 +270,46 @@ for (let i = 0; i < 4; i++) base[T(i)] = { turns: 100, ctx: 50000, ops: 3, solve
   check('6% drop → NO CHANGE ADOPTED', /NO CHANGE ADOPTED/.test(r.verdict || ''), `got: ${r.verdict}`);
   check('below-threshold wording is non-causal',
     !/dose/i.test(r.verdict || ''), r.verdict);
+}
+
+// ── 7. every stage uses explicit result paths + exact pair admission ─────────
+{
+  const variant = {};
+  for (let i = 0; i < 4; i++) variant[T(i)] = { turns: 80, ctx: 50000, ops: 3, solved: true, cost: 0.8 };
+  const controlPath = makeRun('smoke-a', base);
+  const variantPath = makeRun('smoke-b', variant);
+  const r = runSmoke(controlPath, variantPath, 4);
+  check('smoke accepts explicit result paths', r.paired === 4, JSON.stringify(r));
+  check('smoke reports exact explicit counts',
+    r.agg?.counts?.a?.retrievalEnvelopes === 4 &&
+      r.agg?.counts?.a?.testEnvelopes === 0 &&
+      r.agg?.counts?.a?.editEnvelopes === 0 &&
+      r.agg?.counts?.a?.operations === 12 &&
+      r.agg?.counts?.a?.modelTurns === 400,
+    JSON.stringify(r.agg?.counts));
+  const wrongN = runSmoke(controlPath, variantPath, 5);
+  check('smoke expected-pair drift → INVALID', /INVALID/.test(wrongN.verdict || ''),
+    JSON.stringify(wrongN));
+  const badSmokeFlag = cliFailure(SMOKE_SCRIPT,
+    [controlPath, variantPath, '--expect', '4', '--unknown']);
+  check('smoke rejects unknown flags',
+    badSmokeFlag.status === 2 && /usage:/.test(badSmokeFlag.stderr),
+    JSON.stringify(badSmokeFlag));
+  const badAbFlag = cliFailure(SCRIPT,
+    [controlPath, variantPath, '--expect', '4', '--unknown']);
+  check('adjudicator rejects unknown flags',
+    badAbFlag.status === 2 && /usage:/.test(badAbFlag.stderr),
+    JSON.stringify(badAbFlag));
+}
+{
+  const variant = {};
+  for (let i = 0; i < 4; i++) variant[T(i)] = { turns: 80, ctx: 50000, ops: 3, solved: true, cost: 0.8 };
+  const ungraded = { ...base, [T(0)]: { ...base[T(0)], solved: null } };
+  const r = runSmoke(makeRun('smoke-null-a', ungraded), makeRun('smoke-null-b', variant), 4);
+  check('smoke resolved:null → INVALID', /INVALID/.test(r.verdict || ''), JSON.stringify(r));
+  check('smoke null admission names missing solve evidence',
+    (r.admissionFailures || []).some(failure => /resolved is null/.test(failure)),
+    JSON.stringify(r.admissionFailures));
 }
 
 rmSync(root, { recursive: true, force: true });
