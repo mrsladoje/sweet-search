@@ -11,7 +11,8 @@ the box or the Mac** (indexing is the user's RunPod step).
 | S2 · rules + seed + FAIRNESS.md committed | DONE 2026-07-30 | `9be3169`, amended by `e4f2587` (amendment 1) |
 | S3 · draw + freeze + manifest hash in PLAN.md | DONE 2026-07-30 | 200 + 67, seed 20260731, byte-identical on a second run |
 | S4 · extension-coverage audit | DONE 2026-07-30 | 1,299 patch paths audited; 23 extensions added to the indexing config; remaining gaps all by-design |
-| S5 · RunPod handoff inputs | DONE 2026-07-30 — **PAUSED FOR THE USER** | 267 keys, 0 vault reuse; `HELDOUT2_POD_HANDOFF.md` |
+| S5 · RunPod handoff inputs | DONE 2026-07-30 | 267 keys, 0 vault reuse; `HELDOUT2_POD_HANDOFF.md` |
+| S5b · pod golden fleet (A100 SXM) | RUNNING since 2026-07-31 11:40 | driven from the Mac, tmux `h2fleet`, log `~/h2-fleet.log` |
 | S6 · vault verify + stage on box (read-only) | PENDING | after the user returns indexed goldens |
 | S7 · green ledger, gold-FULL 200/200 | PENDING | box compute, 4-wide sweep |
 | S8 · final PLAN.md update, set marked DONE | PENDING | |
@@ -66,3 +67,20 @@ fresh builds. ~80 GB expected in the vault at the existing ~300 MB/key.
 `pod-golden-fleet.sh` gained `SS_POD_SPECS` (default unchanged) since it hardcoded held-out
 1's filename. **Paused here for the user's RunPod pass** — S6 onward resumes when the
 indexed goldens are in the vault.
+
+**S5b — 2026-07-31.** User rented an A100 SXM 80GB (compute capability 8.0 — the documented
+flash-attn floor), EPYC 7713, 1 TB RAM, 100 GB disk. Pod setup: Node 24, `npm install`
+(the prebuilt `@sweet-search/native-linux-x64-gnu-cuda` addon resolves — no nvcc build
+needed), `core/` + `models/` + the gold-free specs rsynced to `/root/ss`. The repo's
+`models/` is not the runtime location: the indexer wants `~/.cache/sweet-search/models/`,
+so the Mac's model cache was mirrored to the pod (minus the Mac-only CoreML cascade),
+giving byte-identical model files rather than a fresh download.
+
+First key verified end-to-end before launching the fleet — `[NativeEmbedding] … device: cuda`,
+`GPU index pool armed (candle-cuda)`, valid `codebase.db` + `code-graph.db` + binary HNSW.
+
+**Parity note, recorded deliberately:** held-out 1's goldens were box-built under the ORT
+INT8 CPU config; these 267 are pod-built under candle-CUDA. Within held-out 2 the config is
+uniform, and both arms read the SAME golden index per task, so the sweet-vs-native comparison
+is unaffected. It does mean held-out 1 and held-out 2 goldens are not byte-comparable — they
+are separate sets and were never going to be compared at that level.
