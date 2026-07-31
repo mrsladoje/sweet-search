@@ -84,3 +84,16 @@ INT8 CPU config; these 267 are pod-built under candle-CUDA. Within held-out 2 th
 uniform, and both arms read the SAME golden index per task, so the sweet-vs-native comparison
 is unaffected. It does mean held-out 1 and held-out 2 goldens are not byte-comparable — they
 are separate sets and were never going to be compared at that level.
+
+**S5b timing, measured 2026-07-31 12:08.** 7 keys in 26.6 min, zero failures. Per-key
+0.1 min (ngx-fancyindex) to 9.1 min (transmission); **mean 3.80 min, median 3.48**. Projection:
+**~12.7 h for the 200 primaries, ~16.9 h for all 267**, i.e. ~$19 / ~$25 of pod time at
+$1.49/hr. The ~3 h figure in `HELDOUT2_POD_HANDOFF.md` was precedent-based, not measured, and
+is wrong — corrected there. GPU utilisation samples at 0% during large-repo indexing, so a
+large share of per-key time is clone + CPU parse/chunk with the GPU idle between embedding
+batches; the A100 is not the constraint.
+
+**Decision (user, 2026-07-31):** carry on with the single serial stream through all 267 and
+top up pod credit, rather than sharding 3-wide (which would have cost ~$9 and ~6 h but breaks
+the one-repo-at-a-time-per-machine rule) or stopping after the primaries. Serial discipline
+stays intact; the driver is resume-safe if the pod dies.

@@ -64,7 +64,11 @@ that failed.
 `SS_POD_SPECS` is new — the driver used to hardcode `heldout_specs.json`. That is still the
 default, so held-out 1's flow is unchanged.
 
-Expect ~3 h serial for the full 267 on a GPU pod, per the previous fleet.
+**Measured rate (2026-07-31, A100 SXM):** mean 3.80 min/key, median 3.48, range 0.1–9.1 min
+→ **~12.7 h for the 200 primaries, ~16.9 h for all 267** (~$19 / ~$25 at $1.49/hr). An earlier
+"~3 h" estimate here came from the previous fleet's header comment rather than a measurement
+and was wrong by roughly 5x. GPU utilisation is near zero during large-repo indexing — most of
+the per-key time is clone plus CPU parse/chunk.
 
 ## When it finishes
 
