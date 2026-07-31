@@ -26,7 +26,9 @@
 import { execFileSync, execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { taskConfigHash, gradeFromReportItem, installSedCmds, vaultTarName } from './env-ledger.mjs';
+import {
+  taskConfigHash, gradeFromReportItem, installSedCmds, isImagePullInfra, vaultTarName,
+} from './env-ledger.mjs';
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -182,7 +184,12 @@ async function runPass(tasks, batchSize) {
       };
       if (grade === 'FULL') { row.status = 'gold-valid'; row.signature = ''; }
       else if (it.error && !logTail) { row.status = 'infra'; row.signature = `eval-error: ${String(it.error).slice(0, 200)}`; }
-      else {
+      else if (isImagePullInfra(logTail + '\n' + (it.error || ''))) {
+        row.status = 'infra';
+        row.signature = 'image-pull-infra';
+        row.evidence = logTail.split('\n').filter(line => /docker:|authorize|unexpected status/i.test(line))
+          .slice(-3).join(' | ').slice(0, 500);
+      } else {
         const cls = classify(logTail + '\n' + (it.error || ''));
         row.status = cls === 'network' ? 'needs-warming' : 'env-broken-nonnet';
         row.signature = cls;

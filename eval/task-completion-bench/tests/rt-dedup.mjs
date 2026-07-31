@@ -34,6 +34,10 @@ const assert = (c, name, extra = '') => {
   console.log((c ? '  ✓ ' : '  ✗ ') + name + (c ? '' : '  ' + extra));
   if (!c) ok = false;
 };
+const bodyBeforeFooter = (text) => {
+  const marker = String(text).lastIndexOf('\n[run_tests verdict]');
+  return marker < 0 ? String(text) : String(text).slice(0, marker);
+};
 
 // ---- fixtures -----------------------------------------------------------------
 const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
@@ -237,19 +241,19 @@ console.log('== end-to-end: condense on repeat, passthrough on change, tests alw
   cfg._out = RED;
 
   const c1 = call(cfg);
-  assert(c1 === RED, 'call #1 output is BYTE-IDENTICAL to the pre-lever shim output');
+  assert(bodyBeforeFooter(c1) === RED, 'call #1 preserves the raw pre-lever output before the footer');
   assert(!c1.includes(DEDUP_MARKER), 'call #1 carries no dedup marker');
 
   const c2 = call(cfg);
   assert(c2.includes(DEDUP_MARKER), 'call #2 (identical diff+argv+result) IS condensed');
-  assert(/identical source diff \+ command as call #1; result unchanged: exit 0, 2 failed, first failure: /.test(c2),
+  assert(/identical source diff \+ command as call #1; result unchanged: exit 1, 2 failed, first failure: /.test(c2),
     'summary matches the specified format', c2);
   // The escape hatch is UNDOCUMENTED to the agent (K1 decision 2026-07-30): advertising
   // it made the model spend 20 of 84 smoke calls re-requesting a transcript it already
   // had. The flag keeps working; the summary must not mention it.
   assert(!c2.includes(FULL_FLAG) && !/ss.?full/i.test(c2), 'summary does NOT advertise the escape hatch', c2);
   assert(c2.includes('Change the code before re-running.'), 'summary keeps the change-the-code line', c2);
-  assert(Buffer.byteLength(c2) < 500 && Buffer.byteLength(c2) < Buffer.byteLength(RED) / 4,
+  assert(Buffer.byteLength(c2) < 700 && Buffer.byteLength(c2) < Buffer.byteLength(RED) / 4,
     'summary is bounded and much smaller than the transcript it replaced', `${Buffer.byteLength(c2)} vs ${Buffer.byteLength(RED)}`);
   assert(cfg._runs === 2, 'THE SUITE STILL RAN on the suppressed call (never skipped)', String(cfg._runs));
 
@@ -264,7 +268,7 @@ console.log('== end-to-end: condense on repeat, passthrough on change, tests alw
   writeFileSync(path.join(dir, 'src.py'), 'def f():\n    return 3\n');
   cfg._out = CLEAN;
   const c4 = call(cfg, []);
-  assert(c4 === CLEAN, 'changed-diff call is BYTE-IDENTICAL to the pre-lever output');
+  assert(bodyBeforeFooter(c4) === CLEAN, 'changed-diff call preserves the raw pre-lever output before the footer');
 
   // Repeat after the edit condenses again, and cites the post-edit call.
   const c5 = call(cfg, []);
@@ -274,17 +278,17 @@ console.log('== end-to-end: condense on repeat, passthrough on change, tests alw
   // are unchanged — the false-positive guard.
   writeFileSync(path.join(dir, 'repro.py'), 'print(1)\n');
   const c6 = call(cfg, []);
-  assert(c6 === CLEAN, 'new untracked file → NOT condensed (key changed)');
+  assert(bodyBeforeFooter(c6) === CLEAN, 'new untracked file → NOT condensed (key changed)');
   const c7 = call(cfg, []);
   assert(c7.includes(DEDUP_MARKER) && /as call #6/.test(c7), 'the following repeat condenses against call #6', c7);
 
   // Different argv is a different key even with an identical tree + result.
   const c8 = call(cfg, ['test_a']);
-  assert(c8 === CLEAN, 'targeted run is a different key → NOT condensed');
+  assert(bodyBeforeFooter(c8) === CLEAN, 'targeted run is a different key → NOT condensed');
 
   // --ss-full bypasses condensation for that call only.
   const c9 = call(cfg, [FULL_FLAG]);
-  assert(c9 === CLEAN, '--ss-full returns the complete output');
+  assert(bodyBeforeFooter(c9) === CLEAN, '--ss-full returns the complete raw output plus footer');
   assert(!c9.includes(DEDUP_MARKER), '--ss-full response carries no dedup marker');
   const c10 = call(cfg, []);
   assert(c10.includes(DEDUP_MARKER), 'the NEXT plain call condenses again (flag is per-call)');
@@ -340,7 +344,7 @@ console.log('== per-rollout state reset ==');
   const cfgB = makeCfg(dir, { label });
   cfgB._out = RED;
   const b1 = call(cfgB);
-  assert(b1 === RED, 'rollout B: first call is full output despite an identical key in rollout A');
+  assert(bodyBeforeFooter(b1) === RED, 'rollout B: first call is full output despite an identical key in rollout A');
   assert(readDedupState(cfgB.dedupLog).calls === 1, 'replay after the session marker sees only this rollout', String(readDedupState(cfgB.dedupLog).calls));
   const raw = readFileSync(cfgB.dedupLog, 'utf8');
   assert(raw.split('\n').filter(l => l.includes('"kind":"session"')).length === 2, 'both session markers retained (audit trail of the earlier attempt survives)');
@@ -359,7 +363,8 @@ console.log('== kill-switch: SS_RUNTESTS_DEDUP=0 ==');
   cfg._out = RED;
   assert(cfg.dedupLog === null, 'no dedup log when the lever is off');
   const o1 = call(cfg), o2 = call(cfg), o3 = call(cfg);
-  assert(o1 === RED && o2 === RED && o3 === RED, 'lever off → every call returns the full transcript');
+  assert([o1, o2, o3].every(out => bodyBeforeFooter(out) === RED),
+    'lever off → every call returns the full transcript plus footer');
   assert(cfg._runs === 3, 'tests still ran three times');
   rmSync(dir, { recursive: true, force: true });
 
