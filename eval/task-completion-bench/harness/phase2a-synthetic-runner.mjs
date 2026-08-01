@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
   chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync,
-  rmSync, statSync, writeFileSync,
+  realpathSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,6 +21,7 @@ import {
 import { installSyntheticToolClients, startSyntheticToolBroker } from './phase2a-synthetic-tools.mjs';
 import { costFromTurns, priceFor } from './ideal-cost.mjs';
 import { evaluateSyntheticScreen } from '../stats/phase2a-synthetic-gate.mjs';
+import { resolveNativeBinary } from '../../../core/infrastructure/native-resolver.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BENCH = path.resolve(HERE, '..');
@@ -59,7 +60,14 @@ export function assertSyntheticPaidAuthorization(env = process.env) {
   if (typeof env.OPENROUTER_API_KEY !== 'string' || !env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY is required only for an authorized run');
   }
-  return { runId: env.RUN_ID, guardianSession: env.SS_SPEND_GUARD_SESSION };
+  if (!/^[a-f0-9]{64}$/.test(String(env.SS_PHASE2A_EXPECT_NATIVE_SHA256 || ''))) {
+    throw new Error('SS_PHASE2A_EXPECT_NATIVE_SHA256 must pin the reviewed Linux binary');
+  }
+  return {
+    runId: env.RUN_ID,
+    guardianSession: env.SS_SPEND_GUARD_SESSION,
+    expectedNativeSha256: env.SS_PHASE2A_EXPECT_NATIVE_SHA256,
+  };
 }
 
 function privateWrite(file, content, { exclusive = true } = {}) {
@@ -76,10 +84,36 @@ function productHashes() {
   }));
 }
 
+export function resolvedNativeBinaryArtifact() {
+  const candidate = resolveNativeBinary();
+  if (!candidate) throw new Error('native sweet-search CLI binary did not resolve');
+  const resolvedPath = realpathSync(candidate);
+  const stat = statSync(resolvedPath);
+  if (!stat.isFile() || (stat.mode & 0o111) === 0) throw new Error('resolved native CLI is not an executable file');
+  const relative = path.relative(ROOT, resolvedPath);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error('resolved native CLI is outside the frozen repository');
+  }
+  return {
+    path: resolvedPath,
+    repoRelativePath: relative.split(path.sep).join('/'),
+    sha256: sha256(readFileSync(resolvedPath)),
+    bytes: stat.size,
+    platform: process.platform,
+    arch: process.arch,
+  };
+}
+
+export function assertResolvedNativeBinary(expected, { resolver = resolvedNativeBinaryArtifact } = {}) {
+  const actual = resolver();
+  if (!sameHashes(actual, expected)) throw new Error('resolved native CLI path/hash drifted from the frozen artifact');
+  return actual;
+}
+
 export function buildSyntheticPreOutcomeManifest({
   runId, guardianSession = '00000000-0000-0000-0000-000000000000',
   nonceFactory = () => randomBytes(8).toString('hex'), contract = loadSyntheticContract(),
-  productSha256 = productHashes(),
+  productSha256 = productHashes(), nativeBinary = resolvedNativeBinaryArtifact(),
 } = {}) {
   if (!validRunId(runId)) throw new Error('invalid Phase-2A manifest run id');
   const hashes = syntheticArtifactHashes(contract);
@@ -112,6 +146,7 @@ export function buildSyntheticPreOutcomeManifest({
     maxChars: contract.cells.maxChars,
     ...hashes,
     productSha256,
+    nativeBinary,
     selectionRule: contract.cells.selectionRule,
     rows,
   };
@@ -293,6 +328,7 @@ async function runSyntheticRowInTemp({
   runId, stageDir, manifestRow, cell, scenario, contract, manifest, apiKey, tempRoot,
 }) {
   if (!sameHashes(productHashes(), manifest.productSha256)) throw new Error('product artifacts changed after pre-outcome freeze');
+  assertResolvedNativeBinary(manifest.nativeBinary);
   const resultDir = path.join(stageDir, 'rows', cell.id, scenario.id);
   mkdirSync(resultDir, { recursive: true, mode: 0o700 });
   const workspace = path.join(tempRoot, 'workspace');
@@ -346,6 +382,7 @@ async function runSyntheticRowInTemp({
     if (broker) await broker.close();
   }
   const after = snapshotDirectory(workspace);
+  const opencodeStateFiles = snapshotDirectory(opencodeData);
   const workspaceMutations = sameHashes(before, after) ? [] : [{ before, after }];
   const secrets = [apiKey];
   const safeStdout = redactText(raw?.stdout, secrets);
@@ -361,9 +398,10 @@ async function runSyntheticRowInTemp({
     instructionSha256: manifest.instructionSha256ByCell[cell.id],
     promptSha256: manifest.promptSha256ByScenario[scenario.id],
     runtimeScenarioSha256: manifestRow.runtimeScenarioSha256,
+    nativeBinary: manifest.nativeBinary,
     opencodeVersion: contract.cells.opencodeVersion, maxSteps: contract.cells.maxSteps,
     raw: { ...raw, stdout: safeStdout.output, stderr: safeStderr.output },
-    audit, networkDenials, workspaceMutations, secretLeakDetected, usage,
+    audit, networkDenials, workspaceMutations, opencodeStateFiles, secretLeakDetected, usage,
     preflight: { ssBatch: true, opencodeVersion: true, resolvedConfig: true },
   };
   privateWrite(path.join(resultDir, 'prompt.txt'), prompt);
@@ -398,10 +436,14 @@ export async function runSyntheticScreen({ env = process.env } = {}) {
   const isolation = jailPreflight();
   if (!isolation.ok) throw new Error(`Phase-2A isolation preflight failed: ${isolation.reasons.join('; ')}`);
   const contract = loadSyntheticContract();
-  const stageDir = safeStageDirectory(authorization.runId);
+  const nativeBinary = resolvedNativeBinaryArtifact();
+  if (nativeBinary.sha256 !== authorization.expectedNativeSha256) {
+    throw new Error(`resolved native CLI sha256 ${nativeBinary.sha256} does not match the reviewed pin`);
+  }
   const manifest = buildSyntheticPreOutcomeManifest({
-    runId: authorization.runId, guardianSession: authorization.guardianSession, contract,
+    runId: authorization.runId, guardianSession: authorization.guardianSession, contract, nativeBinary,
   });
+  const stageDir = safeStageDirectory(authorization.runId);
   privateWrite(path.join(stageDir, 'pre-outcome-manifest.json'), serializeSyntheticArtifact(manifest));
   privateWrite(path.join(stageDir, 'opencode.json'), serializeSyntheticArtifact(buildSyntheticOpenCodeConfig(contract.cells)));
   const rows = [];
@@ -415,6 +457,7 @@ export async function runSyntheticScreen({ env = process.env } = {}) {
     });
     rows.push(row);
     if (row.raw.timedOut || row.raw.outputTruncated || row.networkDenials.length || row.workspaceMutations.length
+        || !row.opencodeStateFiles.some(file => file.type === 'file')
         || row.secretLeakDetected) throw new Error(`integrity stop after ${cell.id}/${scenario.id}`);
   }
   const report = evaluateSyntheticScreen(rows, { contract });
@@ -427,7 +470,7 @@ function usage() {
   return [
     'Phase-2A synthetic packing runner (no calls by default).',
     'Manifest only: node harness/phase2a-synthetic-runner.mjs --manifest <run-id>',
-    'Paid execution: SS_PHASE2A_EXECUTE=1 RUN_ID=<id> OPENROUTER_API_KEY=... node harness/openrouter-spend-guardian.mjs --entrypoint harness/phase2a-synthetic-runner.mjs',
+    'Paid execution: SS_PHASE2A_EXECUTE=1 SS_PHASE2A_EXPECT_NATIVE_SHA256=<reviewed-linux-sha256> RUN_ID=<id> OPENROUTER_API_KEY=... node eval/task-completion-bench/harness/openrouter-spend-guardian.mjs --entrypoint eval/task-completion-bench/harness/phase2a-synthetic-runner.mjs',
   ].join('\n');
 }
 

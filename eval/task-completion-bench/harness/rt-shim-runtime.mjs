@@ -16,7 +16,7 @@
 // PATH has the agent's .codex-bin FIRST — so a bare `docker` would resolve to the L1
 // docker WRAPPER and double-condense run_tests output. We always use cfg.dockerBin
 // (the REAL docker absolute path, resolved host-side at setup) to bypass the wrapper.
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -30,6 +30,7 @@ import {
   summarizeRunTestsResult, readDedupState, dedupDecision, appendDedupRecord,
   buildDedupSummary, buildChangedResultNote, parseExitCode,
 } from './rt-dedup.mjs';
+import { recordProgressInvocation } from './rt-progress-controller.mjs';
 import { CodeGraphRepository } from '../../../core/infrastructure/code-graph-repository.js';
 
 // In-container failure-aware condenser (H1, unchanged): network-unavailable banner,
@@ -169,7 +170,11 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = nul
   const L2 = cfg.rtAuthority !== false;
   const parsed = parseRunTestsArgv(argv != null ? argv : (pattern ? [pattern] : []));
   let diff = '';
-  try { diff = execSync('git -C ' + cfg.rundir + " diff HEAD -- . ':(exclude).sweet-search'", { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); } catch { /* */ }
+  try {
+    diff = execFileSync('git', ['-C', cfg.rundir, 'diff', 'HEAD', '--', '.', ':(exclude).sweet-search'], {
+      encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch { /* */ }
 
   // (c) targeted single-test mode — degrade to full suite when unsupported.
   let testCmd = cfg.testScript, note = '', scope = 'full';
@@ -203,15 +208,32 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = nul
   if (bd) head += (head ? '\n' : '') + bd;
   if (note) head += (head ? '\n' : '') + note;
   const classified = classifySuiteResult(cur, curSig, bdiff);
-  const footer = buildRunTestsFooter({
-    status: classified.status, verdict: classified.verdict, scope,
-    exitCode: classified.exitCode, baselineDiff: bdiff,
-    trustworthy: classified.trustworthy, guidance: 'none',
-  });
   const full = [head, cur.out, identifierWarning].filter(Boolean).join('\n');
+  // T0 records at the broker seam but returns `guidance=none`, preserving output bytes.
+  // T1 can change only the existing third footer line; controller failures abstain.
+  const footerForDecision = (dedupDecision) => {
+    let guidance = 'none';
+    try {
+      const observed = recordProgressInvocation(cfg.rtProgress, {
+        rundir: cfg.rundir, diffText: diff, rawOutput: cur.out,
+        scope, pattern: parsed.pattern, status: classified.status,
+        verdict: classified.verdict, exitCode: classified.exitCode,
+        trustworthy: classified.trustworthy, executed: true,
+        rawFailures: [...curSig.sigs], introducedFailures: bdiff?.introduced || [],
+        preExistingFailures: bdiff?.preExisting || [],
+        issuePass: classified.verdict === 'PASS', dedupDecision,
+      });
+      guidance = observed.guidance;
+    } catch { /* telemetry is observational; storage failure cannot alter test output */ }
+    return buildRunTestsFooter({
+      status: classified.status, verdict: classified.verdict, scope,
+      exitCode: classified.exitCode, baselineDiff: bdiff,
+      trustworthy: classified.trustworthy, guidance,
+    });
+  };
   return applyDedup(cfg, {
     key, untracked, parsed, diff, reqId, out: full, raw: cur.out,
-    rawExitCode: classified.exitCode, footer,
+    rawExitCode: classified.exitCode, footerForDecision,
   });
 }
 
@@ -225,7 +247,7 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = nul
  * append disables condensation for that call — the log IS the state, so an unwritable
  * log must not silently make every call look like a repeat.
  */
-function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw, rawExitCode, footer }) {
+function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw, rawExitCode, footerForDecision }) {
   if (!key) {
     // Still leave an audit trail when the lever was live but abstained, so a smoke can
     // tell "never fired because the agent never repeated" from "could not fingerprint".
@@ -237,15 +259,18 @@ function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw, rawExi
         argv: parsed.argv, diffBytes: Buffer.byteLength(String(diff ?? ''), 'utf8'),
       });
     }
+    const footer = footerForDecision(parsed.full ? 'ss-full' : (dedupActive(cfg) ? 'no-key' : 'disabled'));
     return appendFooter(out, footer);
   }
   const state = readDedupState(cfg.dedupLog);
   const result = summarizeRunTestsResult(raw, { exitCode: rawExitCode });
   const decision = dedupDecision(state, key, result.digest);
   const suppress = decision.mode === 'unchanged' && !result.infra;
+  const auditDecision = result.infra && decision.mode !== 'first' ? 'infra-passthrough' : decision.mode;
+  const footer = footerForDecision(auditDecision);
   const wrote = appendDedupRecord(cfg.dedupLog, {
     call: state.calls + 1, key, digest: result.digest, reqId,
-    decision: result.infra && decision.mode !== 'first' ? 'infra-passthrough' : decision.mode,
+    decision: auditDecision,
     citeCall: decision.citeCall, suppressed: suppress,
     argv: parsed.argv,
     diffSha: sha256Hex(String(diff ?? '')), diffBytes: Buffer.byteLength(String(diff ?? ''), 'utf8'),
@@ -260,6 +285,10 @@ function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw, rawExi
     return appendFooter(buildChangedResultNote(decision.citeCall) + '\n' + out, footer);
   }
   return appendFooter(out, footer);
+}
+
+function dedupActive(cfg) {
+  return RT_DEDUP_ON && cfg.rtDedup !== false && !!cfg.dedupLog;
 }
 
 function sha256Hex(s) { return createHash('sha256').update(s).digest('hex'); }

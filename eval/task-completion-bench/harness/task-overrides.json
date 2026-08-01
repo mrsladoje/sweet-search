@@ -1,22 +1,22 @@
 {
   "_doc": [
-    "Per-task harness overrides — bench-hygiene repairs for env-broken tasks (2026-07-07).",
+    "Per-task harness overrides \u2014 bench-hygiene repairs for env-broken tasks (2026-07-07).",
     "Applied by run-pilot.mjs at loadTasks (SR mode): mutates the in-memory spec so the",
     "agent-phase run_tests (bareapi + codex shim) AND grading (tasks.json fed to eval.py)",
     "all see the same repaired task. Fields per instance_id:",
-    "  testTimeoutSec — replaces the 300s default INSIDE the run_tests container (agent phase only;",
+    "  testTimeoutSec \u2014 replaces the 300s default INSIDE the run_tests container (agent phase only;",
     "                   grading has no per-test timeout, only the 90-min GRADE_BATCH ceiling).",
-    "  testCmd        — replaces install_config.test_cmd (agent phase AND grading).",
-    "  image          — replaces image_name with a locally-built derived repair image",
-    "                   (swerebenchv2-fixed/*; never pulled — must exist locally, see",
+    "  testCmd        \u2014 replaces install_config.test_cmd (agent phase AND grading).",
+    "  image          \u2014 replaces image_name with a locally-built derived repair image",
+    "                   (swerebenchv2-fixed/*; never pulled \u2014 must exist locally, see",
     "                   analysis/dockerfiles/). Original kept in spec._origImage.",
-    "  network        — 'bridge' exempts this task's containers from the egress lockdown",
+    "  network        \u2014 'bridge' exempts this task's containers from the egress lockdown",
     "                   (default under lockdown is --network none; loopback always works).",
-    "  dockerRunArgs  — extra docker-run args for this task's run_tests/grading containers",
+    "  dockerRunArgs  \u2014 extra docker-run args for this task's run_tests/grading containers",
     "                   (e.g. --privileged for docker-in-docker).",
-    "  excludeP2P     — P2P test names structurally unrunnable in ANY offline container",
+    "  excludeP2P     \u2014 P2P test names structurally unrunnable in ANY offline container",
     "                   (live network calls by design); excluded from the regression check.",
-    "  excludeF2P     — F2P test names structurally unrunnable offline; removed from BOTH",
+    "  excludeF2P     \u2014 F2P test names structurally unrunnable offline; removed from BOTH",
     "                   the pass numerator and denominator (never counted for or against).",
     "                   Names are matched with per-run timing suffixes ('[1.23 ms]') stripped.",
     "Kill switches: NO_TASK_OVERRIDES=1 ignores this file entirely; SS_BENCH_ALLOW_NET=1",
@@ -28,16 +28,16 @@
   },
   "tasks": {
     "jump-dev__jump.jl-2714": {
-      "_why": "JuMP full suite measured 2m58 clean / 2m53 with source edit applied (idle box, --network none) — right AT the 300s cliff, so under real run load (3-4 concurrent tasks + grading) every historical run_tests timed out (68-call thrash). 600s = ~3.4x idle-measured, load-aware headroom.",
+      "_why": "JuMP full suite measured 2m58 clean / 2m53 with source edit applied (idle box, --network none) \u2014 right AT the 300s cliff, so under real run load (3-4 concurrent tasks + grading) every historical run_tests timed out (68-call thrash). 600s = ~3.4x idle-measured, load-aware headroom.",
       "testTimeoutSec": 600
     },
     "juliadebug__cthulhu.jl-547": {
-      "_why": "THREE defects: (1) Pkg.test() defaults to --check-bounds=yes which disables the @inbounds DCE the F2P test asserts (repo CI runs --check-bounds=auto); (2) the Manifest pins LoweredCodeUtils.jl as a git dep NOT baked into the image depot, so Pkg.test clones from github at test time — derived image pre-seeds the depot; (3) Julia prints per-testset summary rows ONLY on failure — a fully-PASSING suite shows a single aggregate 'runtests.jl' row, so the name-based parser can never credit the F2P/P2P names (structurally ungradeable-on-success). The `&& printf` tail emits a synthetic summary table for the 26 expected testset names IFF the suite exits 0 (aggregate pass logically implies every nested testset passed). Grading becomes all-or-nothing for this task (partial passes still grade NO) — documented degradation, strictly better than permanently-NO.",
+      "_why": "THREE defects: (1) Pkg.test() defaults to --check-bounds=yes which disables the @inbounds DCE the F2P test asserts (repo CI runs --check-bounds=auto); (2) the Manifest pins LoweredCodeUtils.jl as a git dep NOT baked into the image depot, so Pkg.test clones from github at test time \u2014 derived image pre-seeds the depot; (3) Julia prints per-testset summary rows ONLY on failure \u2014 a fully-PASSING suite shows a single aggregate 'runtests.jl' row, so the name-based parser can never credit the F2P/P2P names (structurally ungradeable-on-success). The `&& printf` tail emits a synthetic summary table for the 26 expected testset names IFF the suite exits 0 (aggregate pass logically implies every nested testset passed). Grading becomes all-or-nothing for this task (partial passes still grade NO) \u2014 documented degradation, strictly better than permanently-NO.",
       "testCmd": "julia --project=. --startup-file=no -e 'using Pkg; Pkg.test(; julia_args=[\"--check-bounds=auto\"])' && printf 'Test Summary: | Pass  Total\\nCallsites |  1  1\\nambiguity check |  1  1\\nwrapped callinfo |  1  1\\nConstPropCallInfo |  1  1\\nConstResult |  1  1\\nSemiConcreteResult |  1  1\\nissue #346 |  1  1\\nPureCallInfo |  1  1\\nReturnTypeCallInfo |  1  1\\nOCCallInfo |  1  1\\nInvokeCallInfo |  1  1\\nVarargs and printing |  1  1\\nMaybeUndef |  1  1\\nwarntype variables |  1  1\\nLimit printing (issue #94) |  1  1\\nIssue #132 |  1  1\\n@interp |  1  1\\nascend |  1  1\\nascend interface |  1  1\\nBookmarks |  1  1\\npreferences |  1  1\\nper-statement remarks |  1  1\\nper-statement effects |  1  1\\nBare-bones MIs |  1  1\\ntest_codeview.jl |  1  1\\ntest_AbstractInterpreter.jl |  1  1\\n'",
       "image": "swerebenchv2-fixed/juliadebug-cthulhu.jl:547-b98d972"
     },
     "hyrodium__basicbspline.jl-134": {
-      "_why": "Julia lockdown casualty (2026-07-09 audit): Pkg.test git-dep download_source→LibGit2.clone dies offline (--network none). Derived image seeds the depot at build time (analysis/dockerfiles/hyrodium__basicbspline.jl-134). Gold-grades FULL offline after repair.",
+      "_why": "Julia lockdown casualty (2026-07-09 audit): Pkg.test git-dep download_source\u2192LibGit2.clone dies offline (--network none). Derived image seeds the depot at build time (analysis/dockerfiles/hyrodium__basicbspline.jl-134). Gold-grades FULL offline after repair.",
       "image": "swerebenchv2-fixed/hyrodium-basicbspline.jl:134-938be4a"
     },
     "meggart__diskarrays.jl-232": {
@@ -73,15 +73,15 @@
       "image": "swerebenchv2-fixed/rust-lang-rust-analyzer:16385-1ab8c7f"
     },
     "bitshifter__glam-rs-382": {
-      "_why": "cargo test resolves the whole workspace (root glam + codegen + test_no_std members), and codegen's deps (anyhow/clap/git2/...) were never fetched, so cargo dies offline updating the crates.io index. Compounding: the image's default rustup toolchain is 1.84.1, but unlocked resolution today picks codegen-transitive crates (indexmap 2.14, home 0.5.12, tera 1.20.1, ...) that declare edition=\"2024\", which 1.84.1's own manifest parser cannot parse at all (hard version gate, reproduces even fully offline/cached) — this task's own curated docker_specs.cargo_version is \"1.89.0\", so the derived image installs+defaults rustup to 1.89.0 (matches curation) and fetches under it. Verified offline: 305 passed, 0 failed (unit) + 5 passed (doctests).",
+      "_why": "cargo test resolves the whole workspace (root glam + codegen + test_no_std members), and codegen's deps (anyhow/clap/git2/...) were never fetched, so cargo dies offline updating the crates.io index. Compounding: the image's default rustup toolchain is 1.84.1, but unlocked resolution today picks codegen-transitive crates (indexmap 2.14, home 0.5.12, tera 1.20.1, ...) that declare edition=\"2024\", which 1.84.1's own manifest parser cannot parse at all (hard version gate, reproduces even fully offline/cached) \u2014 this task's own curated docker_specs.cargo_version is \"1.89.0\", so the derived image installs+defaults rustup to 1.89.0 (matches curation) and fetches under it. Verified offline: 305 passed, 0 failed (unit) + 5 passed (doctests).",
       "image": "swerebenchv2-fixed/bitshifter-glam-rs:382-813c7ef"
     },
     "jeltef__derive_more-387": {
-      "_why": "cargo test --workspace --features full,testing-helpers needs feature-gated optional deps (serde_core 1.0.228 et al.) never fetched into the image's registry cache, so cargo dies offline updating the crates.io index. Derived image runs cargo fetch + the task's test_cmd at build time (network available). Verified offline: full suite runs to completion, only the expected base-state F2P (compile_fail, 5/80 sub-cases — the 'overflow evaluating requirement' Debug-recursion bug from the problem statement) fails.",
+      "_why": "cargo test --workspace --features full,testing-helpers needs feature-gated optional deps (serde_core 1.0.228 et al.) never fetched into the image's registry cache, so cargo dies offline updating the crates.io index. Derived image runs cargo fetch + the task's test_cmd at build time (network available). Verified offline: full suite runs to completion, only the expected base-state F2P (compile_fail, 5/80 sub-cases \u2014 the 'overflow evaluating requirement' Debug-recursion bug from the problem statement) fails.",
       "image": "swerebenchv2-fixed/jeltef-derive-more:387-8a172f2"
     },
     "serpro69__kotlin-faker-267": {
-      "_why": "the image's install step ran ./gradlew ... -x test -x dokkaJavadoc, so the full `test` task's dokka plugin graph (org.jetbrains.dokka:dokka-base/javadoc-plugin/analysis-kotlin-descriptors:1.9.20) was never resolved into GRADLE_USER_HOME=/workspace/.gradle. Compounding: the image ships _JAVA_OPTIONS=-Djava.net.preferIPv6Addresses=true, but this docker bridge network has no IPv6 route (host does; container doesn't), so dependency resolution failed with 'Network is unreachable' even during the build-time warm attempt until forced to IPv4 (same fix as scalameta__scalameta-2550 in this same dockerfiles dir). Derived image sets preferIPv6Addresses=false and runs the task's actual test_cmd once at build time. Verified offline: 3234 tests, 3233 passed, 1 failed (RandomClassProviderTest — the sealed-class randomClassInstance F2P from the problem statement); zero network-resolution errors.",
+      "_why": "the image's install step ran ./gradlew ... -x test -x dokkaJavadoc, so the full `test` task's dokka plugin graph (org.jetbrains.dokka:dokka-base/javadoc-plugin/analysis-kotlin-descriptors:1.9.20) was never resolved into GRADLE_USER_HOME=/workspace/.gradle. Compounding: the image ships _JAVA_OPTIONS=-Djava.net.preferIPv6Addresses=true, but this docker bridge network has no IPv6 route (host does; container doesn't), so dependency resolution failed with 'Network is unreachable' even during the build-time warm attempt until forced to IPv4 (same fix as scalameta__scalameta-2550 in this same dockerfiles dir). Derived image sets preferIPv6Addresses=false and runs the task's actual test_cmd once at build time. Verified offline: 3234 tests, 3233 passed, 1 failed (RandomClassProviderTest \u2014 the sealed-class randomClassInstance F2P from the problem statement); zero network-resolution errors.",
       "image": "swerebenchv2-fixed/serpro69-kotlin-faker:267-bac805e"
     },
     "randombit__botan-2738": {
@@ -89,7 +89,7 @@
       "image": "swerebenchv2-warm/randombit-botan:2738-c99d49d"
     },
     "k0sproject__k0sctl-556": {
-      "_why": "env-ledger 2026-07-09: TestUnmarshal/TestVersionDefaulting 'version_not_given' subtests query the live k0s GitHub releases API at TEST time to default the version — structurally unrunnable in ANY offline container (SWE-Verified precedent: annotators removed broken tests). F2P 2/2 pass on the warmed image; only these 4 online P2P names excluded. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)",
+      "_why": "env-ledger 2026-07-09: TestUnmarshal/TestVersionDefaulting 'version_not_given' subtests query the live k0s GitHub releases API at TEST time to default the version \u2014 structurally unrunnable in ANY offline container (SWE-Verified precedent: annotators removed broken tests). F2P 2/2 pass on the warmed image; only these 4 online P2P names excluded. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)",
       "excludeP2P": [
         "TestUnmarshal",
         "TestUnmarshal/version_not_given",
@@ -99,7 +99,7 @@
       "image": "swerebenchv2-warm/k0sproject-k0sctl:556-6342c65"
     },
     "verygoodopensource__very_good_cli-611": {
-      "_why": "env-ledger 2026-07-09: 3 e2e P2P tests fetch remote bricks/templates (brickhub/pub) with fresh resolution at TEST time — structurally unrunnable offline. F2P 25/25 pass on the warmed image. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)",
+      "_why": "env-ledger 2026-07-09: 3 e2e P2P tests fetch remote bricks/templates (brickhub/pub) with fresh resolution at TEST time \u2014 structurally unrunnable offline. F2P 25/25 pass on the warmed image. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)",
       "excludeP2P": [
         "create legacy org-name --org is a valid alias",
         "create legacy uses remote brick when possible",
@@ -108,14 +108,14 @@
       "image": "swerebenchv2-warm/verygoodopensource-very-good-cli:611-e01a127"
     },
     "tursodatabase__libsql-1287": {
-      "_why": "env-ledger 2026-07-09: the spec's PASS_TO_PASS contains the literal name 'ok' — a rust-log-parser artifact from curation, not a real test (warmed offline suite: every real test passes, F2P 3/3). A phantom name can never be matched, so the task could never grade FULL. Excluded as a curation artifact. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-09): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "_why": "env-ledger 2026-07-09: the spec's PASS_TO_PASS contains the literal name 'ok' \u2014 a rust-log-parser artifact from curation, not a real test (warmed offline suite: every real test passes, F2P 3/3). A phantom name can never be matched, so the task could never grade FULL. Excluded as a curation artifact. USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-09): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
       "excludeP2P": [
         "ok"
       ],
       "image": "swerebenchv2-warm/tursodatabase-libsql:1287-59b922b"
     },
     "microformats__php-mf2-255": {
-      "_why": "env-ledger 2026-07-09: F2P test 'Parser > Fetch microformats' performs a live HTTP fetch by design — structurally unrunnable offline; the task's other 225 F2P tests carry the signal. excludeF2P removes it from both the pass numerator and the denominator (never counted for or against). USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)",
+      "_why": "env-ledger 2026-07-09: F2P test 'Parser > Fetch microformats' performs a live HTTP fetch by design \u2014 structurally unrunnable offline; the task's other 225 F2P tests carry the signal. excludeF2P removes it from both the pass numerator and the denominator (never counted for or against). USER-APPROVED 2026-07-10. | prep-phase warmed image (env-ledger 2026-07-09): gold-grades FULL offline; arms-blind warm (re-wired from ledger after an overwrite of this file)",
       "excludeF2P": [
         "Parser > Fetch microformats"
       ],
@@ -341,7 +341,7 @@
       "testCmd": "bundle exec rake compile --quiet && TESTOPTS=\"-v\" bundle exec rake test"
     },
     "simdjson__simdjson-2016": {
-      "_why": "heldout triage 2026-07-17 (g1, high): test_cmd ran bare ctest with no build step — zero 'Building CXX' lines, 95-test stale pre-patch suite ran instead of the patched 97-test suite (0/96 F2P). Build before ctest.",
+      "_why": "heldout triage 2026-07-17 (g1, high): test_cmd ran bare ctest with no build step \u2014 zero 'Building CXX' lines, 95-test stale pre-patch suite ran instead of the patched 97-test suite (0/96 F2P). Build before ctest.",
       "testCmd": "cd build && cmake --build . -j$(nproc) && ctest --output-on-failure"
     },
     "sveltejs__kit-6033": {
@@ -349,11 +349,11 @@
       "testCmd": "cd packages/kit && CI=1 pnpm test --no-color"
     },
     "shimat__opencvsharp-1756": {
-      "_why": "heldout triage 2026-07-17 (g2, medium — verify on re-sweep): install exports HOME=/tmp + adds OpenCvSharp4 runtime package as uncommitted csproj edit; grading omits the HOME export and 'git reset --hard' reverts the package ref, so restore re-resolves against nuget.org offline (NU1301). Re-apply the install-time sequence pointing at the image's warm /tmp NuGet cache.",
+      "_why": "heldout triage 2026-07-17 (g2, medium \u2014 verify on re-sweep): install exports HOME=/tmp + adds OpenCvSharp4 runtime package as uncommitted csproj edit; grading omits the HOME export and 'git reset --hard' reverts the package ref, so restore re-resolves against nuget.org offline (NU1301). Re-apply the install-time sequence pointing at the image's warm /tmp NuGet cache.",
       "testCmd": "export HOME=/tmp && export DOTNET_CLI_HOME=/tmp && cd test/OpenCvSharp.Tests && dotnet add package OpenCvSharp4.official.runtime.linux-x64 --version 4.10.0.20241229 && dotnet build -c Release -f net8.0 && cp bin/Release/net8.0/runtimes/linux-x64/native/libOpenCvSharpExtern.so bin/Release/net8.0/ && export LD_LIBRARY_PATH=\"/opencvsharp/test/OpenCvSharp.Tests/bin/Release/net8.0:$LD_LIBRARY_PATH\" && timeout 300 dotnet test -c Release -f net8.0 --logger \"console;verbosity=detailed\" || true"
     },
     "vapor__jwt-kit-82": {
-      "_why": "heldout triage 2026-07-17 (g5, high): testJWKsApple does Data(contentsOf: 'https://appleid.apple.com/auth/keys') — a live fetch by design, structurally unrunnable under --network none (NSCocoaErrorDomain Code=256). Other 37 F2P pass.",
+      "_why": "heldout triage 2026-07-17 (g5, high): testJWKsApple does Data(contentsOf: 'https://appleid.apple.com/auth/keys') \u2014 a live fetch by design, structurally unrunnable under --network none (NSCocoaErrorDomain Code=256). Other 37 F2P pass.",
       "excludeF2P": [
         "JWTKitTests.testJWKsApple"
       ]
@@ -366,7 +366,7 @@
       ]
     },
     "py-pdf__pypdf2-1346": {
-      "_why": "heldout triage 2026-07-17 (g1, high): exactly the live-URL-fetch tests fail offline (socket.gaierror/URLError on arxiv/tika/github fetches) — 3 F2P + 8 P2P; the other 11 F2P pass and carry the signal.",
+      "_why": "heldout triage 2026-07-17 (g1, high): exactly the live-URL-fetch tests fail offline (socket.gaierror/URLError on arxiv/tika/github fetches) \u2014 3 F2P + 8 P2P; the other 11 F2P pass and carry the signal.",
       "excludeF2P": [
         "tests/test_merger.py::test_iss1344",
         "tests/test_page.py::test_extract_text_single_quote_op",
@@ -384,7 +384,7 @@
       ]
     },
     "ratify-project__ratify-1538": {
-      "_why": "heldout triage 2026-07-17 (g3, medium): 4 P2P (sub)tests require live network by design — OCI plugin download (DOWNLOAD_PLUGIN_FAILURE), Sigstore keyless vs live Rekor/Fulcio, a test literally named 'online_...' nil-derefing offline. F2P clean 31/31. Two TestProperSchemaValidates failures deliberately NOT excluded pending source-level proof.",
+      "_why": "heldout triage 2026-07-17 (g3, medium): 4 P2P (sub)tests require live network by design \u2014 OCI plugin download (DOWNLOAD_PLUGIN_FAILURE), Sigstore keyless vs live Rekor/Fulcio, a test literally named 'online_...' nil-derefing offline. F2P clean 31/31. Two TestProperSchemaValidates failures deliberately NOT excluded pending source-level proof.",
       "excludeP2P": [
         "TestCreateStoresFromConfig_DynamicPluginStores_ReturnsExpected/image_specified_by_tag",
         "TestCreateStoresFromConfig_DynamicPluginStores_ReturnsExpected/image_specified_by_digest",
@@ -393,7 +393,7 @@
       ]
     },
     "typelevel__fs2-2932": {
-      "_why": "heldout triage 2026-07-17 (g3+lead): the 'TLSSocket - google - TLSv1.2/1.3 - *' munit tests open a real TLS connection to google.com — structurally unrunnable offline (UnknownHostException in the log). F2P clean 1/1. Other SocketSuite failures NOT excluded (unproven); the Scala.js linker fetch is routed to the warm pipeline instead.",
+      "_why": "heldout triage 2026-07-17 (g3+lead): the 'TLSSocket - google - TLSv1.2/1.3 - *' munit tests open a real TLS connection to google.com \u2014 structurally unrunnable offline (UnknownHostException in the log). F2P clean 1/1. Other SocketSuite failures NOT excluded (unproven); the Scala.js linker fetch is routed to the warm pipeline instead.",
       "excludeP2P": [
         "TLSSocket - google - TLSv1.2 - client writes before reading",
         "TLSSocket - google - TLSv1.2 - client reads before writing",
@@ -402,14 +402,14 @@
       ]
     },
     "phpstan__phpstan-doctrine-342": {
-      "_why": "heldout triage 2026-07-17 (g5 finding, remedy revised by lead): the one failing F2P needs tests/.../queryBuilder-6.json which does not exist at base_commit (confirmed upstream: first touched by a later commit that deletes it) and is added by neither patch — a curation defect (missing fixture). g5's run-twice self-heal was REJECTED (LevelsTestCase writes the snapshot from actual output — the test would compare output to itself and could never discriminate, in any arm). Exclude the single fixture-less data set.",
+      "_why": "heldout triage 2026-07-17 (g5 finding, remedy revised by lead): the one failing F2P needs tests/.../queryBuilder-6.json which does not exist at base_commit (confirmed upstream: first touched by a later commit that deletes it) and is added by neither patch \u2014 a curation defect (missing fixture). g5's run-twice self-heal was REJECTED (LevelsTestCase writes the snapshot from actual output \u2014 the test would compare output to itself and could never discriminate, in any arm). Exclude the single fixture-less data set.",
       "excludeF2P": [
         "Entity Manager Integration > Levels with data set #3 [17212.63 ms]",
         "Entity Manager Without Object Manager Loader Integration > Levels with data set #3 [16247.41 ms]"
       ]
     },
     "ccache__ccache-1312": {
-      "_why": "heldout triage 2026-07-17 (lead, verified on re-grade): after volatile-token normalization 27/28 F2P match; the last one, test.inode_cache, is ***Skipped in the container (ctest log) — inode-cache behavior is not testable on overlayfs, an environment limitation, not a regression. Excluded with skip-line evidence.",
+      "_why": "heldout triage 2026-07-17 (lead, verified on re-grade): after volatile-token normalization 27/28 F2P match; the last one, test.inode_cache, is ***Skipped in the container (ctest log) \u2014 inode-cache behavior is not testable on overlayfs, an environment limitation, not a regression. Excluded with skip-line evidence.",
       "excludeF2P": [
         "14/46 Test #14: test.inode_cache .................   Passed    0.41 sec"
       ]
@@ -613,6 +613,26 @@
     "bnorm__kotlin-power-assert-21": {
       "_why": "prep-phase warmed image (env-ledger 2026-07-21): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
       "image": "swerebenchv2-warm/bnorm-kotlin-power-assert:21-22a1e16"
+    },
+    "peak__s5cmd-658": {
+      "_why": "env-ledger heldout2 2026-08-01: gold grades F2P 2/2 but 3 PASS_TO_PASS proxy tests fail offline (TestAppProxy and its no-verify-ssl subtests exercise an HTTP proxy path that needs live network). Structurally unrunnable in any --network none container; same shape as k0sproject__k0sctl-556. F2P untouched, 3 of a large P2P set excluded, so regression signal is retained.",
+      "excludeP2P": [
+        "TestAppProxy",
+        "TestAppProxy/with_no-verify-ssl_flag",
+        "TestAppProxy/without_no-verify-ssl_flag"
+      ]
+    },
+    "un-ts__synckit-184": {
+      "_why": "env-ledger heldout2 2026-08-01: gold grades F2P 3/3; the single P2P failure 'subsequent executions after timeout' is a wall-clock-timing assertion that is flaky under concurrent box load (Atomics.wait timeout race in the evidence). Environment-dependent, not related to the fix under test.",
+      "excludeP2P": [
+        "subsequent executions after timeout"
+      ]
+    },
+    "callowayproject__bump-my-version-119": {
+      "_why": "env-ledger heldout2 2026-08-01: gold grades F2P 1/1; tests/test_cli.py::test_bump_nested_regex fails at gold independently of the change under test (pre-existing red test in the pinned revision). Excluded so the task measures its own fix rather than an unrelated defect.",
+      "excludeP2P": [
+        "tests/test_cli.py::test_bump_nested_regex"
+      ]
     }
   }
 }

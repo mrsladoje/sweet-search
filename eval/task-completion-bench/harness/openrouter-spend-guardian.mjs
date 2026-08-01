@@ -20,11 +20,13 @@ const INTERNAL_SUPERVISOR_ARG = '--internal-supervise';
 const OPENROUTER_KEY_ENDPOINT = 'https://openrouter.ai/api/v1/key';
 
 export const SPEND_POLICY = Object.freeze({
-  hardCapUsd: 65,
-  operationalStopUsd: 60,
+  hardCapUsd: 50,
+  operationalStopUsd: 45,
   reserveUsd: 5,
   pollMs: 5_000,
   requestTimeoutMs: 3_000,
+  pollRetryAttempts: 12,
+  pollRetryMs: 2_000,
   terminateGraceMs: 2_000,
 });
 
@@ -64,8 +66,8 @@ function validatePositiveNumber(name, value) {
   }
 }
 
-function validateOptions({ hardCapUsd, operationalStopUsd, reserveUsd, pollMs, requestTimeoutMs, terminateGraceMs }) {
-  for (const [name, value] of Object.entries({ hardCapUsd, operationalStopUsd, reserveUsd, pollMs, requestTimeoutMs, terminateGraceMs })) {
+function validateOptions({ hardCapUsd, operationalStopUsd, reserveUsd, pollMs, requestTimeoutMs, pollRetryAttempts, pollRetryMs, terminateGraceMs }) {
+  for (const [name, value] of Object.entries({ hardCapUsd, operationalStopUsd, reserveUsd, pollMs, requestTimeoutMs, pollRetryAttempts, pollRetryMs, terminateGraceMs })) {
     validatePositiveNumber(name, value);
   }
   if (operationalStopUsd >= hardCapUsd) {
@@ -158,6 +160,24 @@ export async function fetchOpenRouterUsage({
   return parseUsagePayload(payload);
 }
 
+async function fetchUsageWithRetry({ apiKey, endpoint, fetchImpl, policy, logger }) {
+  let lastError;
+  for (let attempt = 1; attempt <= policy.pollRetryAttempts; attempt += 1) {
+    try {
+      return await fetchOpenRouterUsage({
+        apiKey, endpoint, fetchImpl, requestTimeoutMs: policy.requestTimeoutMs,
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt < policy.pollRetryAttempts) {
+        logger(`provider usage poll attempt ${attempt}/${policy.pollRetryAttempts} failed; retrying`);
+        await delay(policy.pollRetryMs, { unref: false });
+      }
+    }
+  }
+  throw lastError;
+}
+
 function childOutcome(child) {
   return new Promise(resolve => {
     let settled = false;
@@ -205,7 +225,7 @@ function ownedGroupAlive(child, killImpl) {
   }
 }
 
-function persistSessionState({ statePath, sessionId, runId, baselineUsageUsd, policy, entrypoint }) {
+function persistSessionState({ statePath, sessionId, runId, baselineUsageUsd, observedUsageAtStartUsd, policy, entrypoint }) {
   mkdirSync(path.dirname(statePath), { recursive: true, mode: 0o700 });
   if (existsSync(statePath)) {
     throw new GuardianError('state-exists', 'spend session state already exists; refusing to reset its baseline');
@@ -219,6 +239,8 @@ function persistSessionState({ statePath, sessionId, runId, baselineUsageUsd, po
     provider: 'openrouter',
     usageEndpoint: '/api/v1/key',
     baselineUsageUsd,
+    observedUsageAtStartUsd,
+    carryoverUsageUsd: observedUsageAtStartUsd - baselineUsageUsd,
     hardCapUsd: policy.hardCapUsd,
     operationalStopUsd: policy.operationalStopUsd,
     reserveUsd: policy.reserveUsd,
@@ -260,6 +282,7 @@ export async function runSpendGuardian({
   logger = message => console.error(`[spend-guardian] ${message}`),
   abortSignal,
   policy = SPEND_POLICY,
+  cumulativeBaselineUsageUsd = null,
 } = {}) {
   validateRunId(runId);
   validateOptions(policy);
@@ -273,17 +296,26 @@ export async function runSpendGuardian({
     throw new GuardianError('receipt-exists', 'spend session receipt already exists; refusing to overwrite it');
   }
 
-  let baselineUsageUsd;
+  let observedUsageAtStartUsd;
   try {
-    baselineUsageUsd = await fetchOpenRouterUsage({ apiKey, endpoint, fetchImpl, requestTimeoutMs: policy.requestTimeoutMs });
+    observedUsageAtStartUsd = await fetchUsageWithRetry({ apiKey, endpoint, fetchImpl, policy, logger });
   } catch (error) {
     if (error instanceof GuardianError) throw error;
     throw new GuardianError('baseline-poll', 'initial provider usage poll failed', EXIT.usagePollFailed);
   }
+  const baselineUsageUsd = cumulativeBaselineUsageUsd == null
+    ? observedUsageAtStartUsd : Number(cumulativeBaselineUsageUsd);
+  if (!Number.isFinite(baselineUsageUsd) || baselineUsageUsd < 0
+      || baselineUsageUsd > observedUsageAtStartUsd + EPSILON_USD) {
+    throw new GuardianError('invalid-cumulative-baseline', 'cumulative spend baseline must be finite, non-negative, and no greater than current provider usage');
+  }
+  if (observedUsageAtStartUsd - baselineUsageUsd + EPSILON_USD >= policy.operationalStopUsd) {
+    throw new GuardianError('cap-already-reached', 'cumulative spend already reached the operational stop');
+  }
 
   const sessionId = randomUUID();
-  persistSessionState({ statePath, sessionId, runId, baselineUsageUsd, policy, entrypoint });
-  logger(`session ${sessionId} baseline total=$${money(baselineUsageUsd)}; stop at cumulative delta=$${money(policy.operationalStopUsd)} (hard cap $${money(policy.hardCapUsd)}, reserve $${money(policy.reserveUsd)})`);
+  persistSessionState({ statePath, sessionId, runId, baselineUsageUsd, observedUsageAtStartUsd, policy, entrypoint });
+  logger(`session ${sessionId} baseline total=$${money(baselineUsageUsd)}; current delta=$${money(observedUsageAtStartUsd - baselineUsageUsd)}; stop at cumulative delta=$${money(policy.operationalStopUsd)} (hard cap $${money(policy.hardCapUsd)}, reserve $${money(policy.reserveUsd)})`);
 
   // The tiny internal supervisor owns the detached group. Its IPC channel is a
   // parent-death signal: if this polling process disappears, it terminates the
@@ -301,21 +333,22 @@ export async function runSpendGuardian({
   });
   const exitPromise = childOutcome(child);
   const interruptedPromise = abortOutcome(abortSignal);
-  let lastUsageUsd = baselineUsageUsd;
-  let lastLoggedUsageUsd = baselineUsageUsd;
+  let lastUsageUsd = observedUsageAtStartUsd;
+  let lastLoggedUsageUsd = observedUsageAtStartUsd;
   let pollCount = 0;
 
   const poll = async () => {
-    const current = await fetchOpenRouterUsage({ apiKey, endpoint, fetchImpl, requestTimeoutMs: policy.requestTimeoutMs });
+    const current = await fetchUsageWithRetry({ apiKey, endpoint, fetchImpl, policy, logger });
     if (current + EPSILON_USD < lastUsageUsd) {
-      throw new GuardianError('usage-decreased', 'provider total usage decreased during the session', EXIT.usagePollFailed);
+      logger(`provider usage total regressed from $${money(lastUsageUsd)} to $${money(current)}; retaining the conservative high-water total`);
+    } else {
+      lastUsageUsd = current;
     }
-    lastUsageUsd = current;
     pollCount += 1;
-    const delta = current - baselineUsageUsd;
-    if (current > lastLoggedUsageUsd + EPSILON_USD || pollCount % 12 === 0) {
+    const delta = lastUsageUsd - baselineUsageUsd;
+    if (lastUsageUsd > lastLoggedUsageUsd + EPSILON_USD || pollCount % 12 === 0) {
       logger(`usage delta=$${money(delta)}; $${money(Math.max(0, policy.operationalStopUsd - delta))} to operational stop`);
-      lastLoggedUsageUsd = current;
+      lastLoggedUsageUsd = lastUsageUsd;
     }
     return delta;
   };
@@ -451,6 +484,7 @@ async function main() {
       statePath,
       apiKey: process.env.OPENROUTER_API_KEY,
       abortSignal: controller.signal,
+      cumulativeBaselineUsageUsd: process.env.SS_SPEND_CUMULATIVE_BASELINE_USD,
     });
     process.exitCode = result.exitCode;
   } catch (error) {

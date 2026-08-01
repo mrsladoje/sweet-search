@@ -15,6 +15,7 @@
 // the agent cannot pass docker args at all.
 import { execSync } from 'node:child_process';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, rmSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -32,7 +33,39 @@ export { FRAME_OPEN, FRAME_CLOSE, priceFor, costFromTurns };
 const DOCKER_HOST = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock';
 const L1_CONDENSE = process.env.SS_NO_CMD_CONDENSE !== '1';
 const L2_RT_AUTHORITY = process.env.SS_NO_RT_AUTHORITY !== '1';
+export const PACKING_TREATMENTS = Object.freeze(['off', 'ss-batch', 'parallel-bash']);
+const PACKING_INSTRUCTIONS = Object.freeze({
+  off: '',
+  'ss-batch': [
+    '=== Frozen read-only packing treatment: ss-batch-v1 ===',
+    `When 2 or 3 ss-* probes are independent and every argument is already known, issue exactly one Bash command of this form: ss-batch '{"version":1,"operations":[{"id":"...","tool":"...","args":{...}}],"maxChars":16000}'.`,
+    'Allowed operation tools are search, grep, find, read, semantic, and trace. Never batch a probe whose arguments depend on another result; run dependent work only after that result arrives.',
+  ].join('\n'),
+  'parallel-bash': [
+    '=== Frozen read-only packing treatment: parallel-bash-v1 ===',
+    'When 2 or 3 read-only probes are independent and every argument is already known, issue them as separate Bash tool calls in the same assistant message so they can run concurrently.',
+    'Do not combine them into one shell command with &, ;, or &&. Never parallelize a probe whose arguments depend on another result; run dependent work only after that result arrives.',
+  ].join('\n'),
+});
 export { rolloutStateDir };
+
+export function resolvePackingTreatment(env = process.env) {
+  const treatment = String(env.SS_PACKING_TREATMENT || 'off').trim();
+  if (!PACKING_TREATMENTS.includes(treatment)) {
+    throw new Error('SS_PACKING_TREATMENT must be off, ss-batch, or parallel-bash');
+  }
+  return treatment;
+}
+
+export function packingTreatmentRowFields({ sweet, env = process.env } = {}) {
+  const treatment = resolvePackingTreatment(env);
+  if (!sweet && treatment !== 'off') throw new Error('packing treatment is valid only for the sweet arm');
+  const instruction = sweet ? PACKING_INSTRUCTIONS[treatment] : '';
+  return {
+    packingTreatment: sweet ? treatment : 'off',
+    packingInstructionSha256: createHash('sha256').update(instruction).digest('hex'),
+  };
+}
 
 // --network for the run_tests test container (both arms). Identical to codex's compute.
 export function computeNetArgs(t) {
@@ -53,7 +86,8 @@ export function computeNetArgs(t) {
 // is a parameter-free request through the IPC dir.
 export function setupRunner({
   image, workdir, testScript, rundir, testTimeoutSec = 300, netArgs = '', sweet = false,
-  label = 'rollout', extraBinds = [], extraMasks = [], isolate = ISOLATION_ON, requireBins = [],
+  label = 'rollout', taskId = null, arm = null, extraBinds = [], extraMasks = [],
+  isolate = ISOLATION_ON, requireBins = [], injectedFiles = [],
 }) {
   const runnerStateDir = mkdtempSync(path.join(tmpdir(), 'sweet-search-runner-'));
   const binDir = path.join(runnerStateDir, 'bin');
@@ -67,7 +101,7 @@ export function setupRunner({
   const shimInfo = writeRunTestsShim(binDir, {
     image, workdir, testScript, rundir, testTimeoutSec,
     netArgs, brokerMode: isolate, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY,
-    stateDir: ipcStateDir, _isAgentFormat: sweet, label,
+    stateDir: ipcStateDir, _isAgentFormat: sweet, label, taskId, arm, injectedFiles,
   });
   let wrapperFiles = [];
   if (L1_CONDENSE) {
@@ -86,7 +120,12 @@ export function setupRunner({
     : null;
   // In broker mode the IPC dir is also checked (requests must be fully consumed by exit);
   // without a broker there is no _rt_ipc and the stateDir check is skipped, as before.
-  return { runnerStateDir, binDir, runnerFiles, integrity, realDocker, jail, broker, dedupLog: shimInfo.dedupLog || null, integrityStateDir: isolate ? runnerStateDir : undefined };
+  return {
+    runnerStateDir, binDir, runnerFiles, integrity, realDocker, jail, broker,
+    dedupLog: shimInfo.dedupLog || null, controller: shimInfo.controller,
+    progressConfig: shimInfo.progressConfig,
+    integrityStateDir: isolate ? runnerStateDir : undefined,
+  };
 }
 
 // PATH = [binDir, ss-* (sweet only), ...host]; + SWEET_SEARCH_PROJECT_ROOT + DOCKER_HOST.
@@ -121,8 +160,11 @@ export function warmupSweet({ ssBinDir, rundir, env, jail = null }) {
 // only, bracketed so completion authority wins) + the issue. Identical assembly to codex.
 export function buildPrompt({ sweet, mppText, problemStatement }) {
   const antiThrash = process.env.SS_NO_ANTITHRASH ? '' : ANTI_THRASH_TEXT;
+  const packing = packingTreatmentRowFields({ sweet });
+  const packingGuidance = sweet && packing.packingTreatment !== 'off'
+    ? `\n\n${PACKING_INSTRUCTIONS[packing.packingTreatment]}` : '';
   const sweetGuidance = sweet
-    ? `\n\n=== Code-search expertise — use the ss-* commands (ss-search / ss-grep / ss-find / ss-read / ss-semantic / ss-trace) per this guidance; this is your advantage, use it to locate code in fewer, sharper steps ===\n${mppText}${antiThrash}`
+    ? `\n\n=== Code-search expertise — use the ss-* commands (ss-search / ss-grep / ss-find / ss-read / ss-semantic / ss-trace) per this guidance; this is your advantage, use it to locate code in fewer, sharper steps ===\n${mppText}${antiThrash}${packingGuidance}`
     : '';
   return `${FRAME_OPEN}${sweetGuidance}\n\n${FRAME_CLOSE}\n\n=== ISSUE ===\n${problemStatement || ''}`;
 }
@@ -142,6 +184,8 @@ export function buildTrajectory(toolCalls) {
       input: String(tc.command || '').slice(0, 200),
       result: String(tc.resultText || '').slice(0, 600),
       isError: !!tc.isError,
+      modelTurn: Number.isInteger(tc.modelTurn) ? tc.modelTurn : null,
+      messageId: tc.messageId || null,
     });
   });
   return { toolCounts, trajectory, stepsToFirstEdit };
@@ -152,11 +196,14 @@ export function buildTrajectory(toolCalls) {
 // calls this with sweet:false so CLAUDE.md contains only the benchmark frame and
 // writes M± to Claude's auto-loaded project rule instead. Injected instruction
 // surfaces are excluded from the graded patch.
-export function buildInstructionFile({ sweet, mppText }) {
-  return `${FRAME_OPEN}${sweet ? `\n\n${mppText}` : ''}\n\n${FRAME_CLOSE}`;
+export function buildInstructionFile({ sweet, mppText, env = process.env }) {
+  const packing = packingTreatmentRowFields({ sweet, env });
+  const treatment = packing.packingTreatment === 'off'
+    ? '' : `\n\n${PACKING_INSTRUCTIONS[packing.packingTreatment]}`;
+  return `${FRAME_OPEN}${sweet ? `\n\n${mppText}${treatment}` : ''}\n\n${FRAME_CLOSE}`;
 }
-export function writeInstructionFile(rundir, fileName, { sweet, mppText }) {
-  appendFileSync(path.join(rundir, fileName), `\n\n${buildInstructionFile({ sweet, mppText })}\n`);
+export function writeInstructionFile(rundir, fileName, { sweet, mppText, env = process.env }) {
+  appendFileSync(path.join(rundir, fileName), `\n\n${buildInstructionFile({ sweet, mppText, env })}\n`);
 }
 // The prompt is the issue ONLY (both arms) — the frame lives in the instruction file above.
 export function issuePrompt(problemStatement) {

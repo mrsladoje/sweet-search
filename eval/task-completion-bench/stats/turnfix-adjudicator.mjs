@@ -2,10 +2,11 @@
 // Strict, stage-aware adjudicator for the frozen turn-fix program. Unlike the
 // retired prompt A/B rule, this accepts arbitrary native/sweet arm selectors,
 // has no lower-operations gate, and uses the Phase-4 estimator contract.
-import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { analyzeRollout, readTurnLog } from './probe-count.mjs';
+import {
+  TURNFIX_ARMS, armCohortFailures, loadTurnfixArm, loadTurnfixCohort,
+} from './turnfix-admission.mjs';
 
 export const TURNFIX_STATS = Object.freeze({
   seed: 20260731,
@@ -16,10 +17,6 @@ export const TURNFIX_STATS = Object.freeze({
   contextPerTurnUpper: 1.10,
   solveMargin: -0.05,
 });
-const BENCH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const REAL_TURN_SOURCES = new Set(['stream', 'rollout-jsonl']);
-const VALID_EXITS = new Set(['model_stopped', 'budget_exhausted']);
-const VALID_ARMS = new Set(['native', 'sweet']);
 
 function rng(seed) {
   let x = seed >>> 0 || 1, y = 362436069, z = 521288629, w = 88675123;
@@ -80,89 +77,6 @@ function bootstrapUpper(tasks, estimator) {
     resamples: TURNFIX_STATS.resamples,
     drawsAttempted: attempted,
   };
-}
-
-function safeTaskSegment(task) {
-  return typeof task === 'string' && task.length > 0 && !/[\\/\0]/.test(task) && task !== '.' && task !== '..';
-}
-
-function readRows(resultPath) {
-  const rowsPath = path.join(resultPath, 'rows.json');
-  if (!existsSync(rowsPath)) return { rows: [], problems: [`no rows.json in ${resultPath}`] };
-  try {
-    const rows = JSON.parse(readFileSync(rowsPath, 'utf8'));
-    return Array.isArray(rows) ? { rows, problems: [] } : { rows: [], problems: ['rows.json is not an array'] };
-  } catch {
-    return { rows: [], problems: ['rows.json is not valid JSON'] };
-  }
-}
-
-function loadArm(inputPath, arm, tag) {
-  const resultPath = path.resolve(inputPath);
-  const { rows, problems } = readRows(resultPath);
-  const selected = rows.filter(row => row?.arm === arm);
-  const byTask = {}, seen = new Set();
-  for (const row of selected) {
-    const task = row?.taskId;
-    if (!safeTaskSegment(task)) { problems.push(`${tag}: selected row has an unsafe/missing taskId`); continue; }
-    if (seen.has(task)) { problems.push(`${tag}: duplicate ${arm} row for ${task}`); continue; }
-    seen.add(task);
-    const prefix = `${tag}.${task}`;
-    if (typeof row.resolved !== 'boolean') problems.push(`${prefix}.resolved must be boolean`);
-    if (row.gradeable !== true) problems.push(`${prefix}.gradeable must be true`);
-    if (row.isolated !== true) problems.push(`${prefix}.isolated must be true`);
-    if (row.escape !== 0) problems.push(`${prefix}.escape must equal 0`);
-    if (row.leak !== 0) problems.push(`${prefix}.leak must equal 0`);
-    if (row.goldTripwire !== false) problems.push(`${prefix}.goldTripwire must be false`);
-    if (row.shimTampered !== false) problems.push(`${prefix}.shimTampered must be false`);
-    if (row.shimReran !== false) problems.push(`${prefix}.shimReran must be false for complete assigned-task cost`);
-    if (row.shimExcluded !== false) problems.push(`${prefix}.shimExcluded must be false`);
-    if (!Array.isArray(row.shimTamperedFiles) || row.shimTamperedFiles.length) {
-      problems.push(`${prefix}.shimTamperedFiles must be an empty array`);
-    }
-    if (!VALID_EXITS.has(row.exitReason)) problems.push(`${prefix}.exitReason is not an admitted completion outcome`);
-    if (typeof row.costRealizedUsd !== 'number' || !Number.isFinite(row.costRealizedUsd) || row.costRealizedUsd <= 0) {
-      problems.push(`${prefix}.costRealizedUsd must be finite and positive`);
-    }
-
-    const turnFile = path.join(resultPath, 'turns', `${task}-${arm}.jsonl`);
-    const turns = readTurnLog(turnFile);
-    if (turns.error) problems.push(`${prefix}: ${turns.error}`);
-    else if (!REAL_TURN_SOURCES.has(turns.source)) problems.push(`${prefix}: turn log source must be stream or rollout-jsonl`);
-
-    const rolloutDir = path.join(resultPath, 'agent-state', `${task}-${arm}`);
-    let meter = null;
-    if (existsSync(rolloutDir) && statSync(rolloutDir).isDirectory()) {
-      meter = analyzeRollout(rolloutDir, { turnLog: turnFile });
-    }
-    if (!meter) problems.push(`${prefix}: canonical operation meter could not read agent-state`);
-    else {
-      if (meter.turnLogError || meter.modelTurnsSource !== 'turn-log') problems.push(`${prefix}: operation meter lacks a real turn log`);
-      if (!Number.isInteger(meter.operations) || meter.operations < 0) problems.push(`${prefix}.operations must be a non-negative integer`);
-      if (!Number.isInteger(meter.retrievalOperations) || meter.retrievalOperations < 0) {
-        problems.push(`${prefix}.retrievalOperations must be a non-negative integer`);
-      }
-      if (!Number.isInteger(meter.retrievalEnvelopes) || meter.retrievalEnvelopes < 0) {
-        problems.push(`${prefix}.retrievalEnvelopes must be a non-negative integer`);
-      }
-    }
-    if (!Number.isInteger(turns.modelTurns) || turns.modelTurns <= 0) problems.push(`${prefix}.modelTurns must be a positive integer`);
-    if (typeof turns.contextTokens !== 'number' || !Number.isFinite(turns.contextTokens) || turns.contextTokens <= 0) {
-      problems.push(`${prefix}.contextTokens must be finite and positive`);
-    }
-
-    byTask[task] = {
-      resolved: row.resolved,
-      cost: row.costRealizedUsd,
-      turns: turns.modelTurns,
-      contextTokens: turns.contextTokens,
-      contextPerTurn: turns.ctxPerTurn,
-      operations: meter?.operations,
-      retrievalOperations: meter?.retrievalOperations,
-      retrievalEnvelopes: meter?.retrievalEnvelopes,
-    };
-  }
-  return { resultPath, arm, byTask, problems };
 }
 
 function wilson(count, n, z) {
@@ -268,17 +182,16 @@ function pairedDiagnostics(tasks, control, treatment, key) {
 }
 
 export function adjudicateTurnfix(options) {
-  const { stage, controlPath, treatmentPath, controlArm, treatmentArm, expected } = options;
-  const control = loadArm(controlPath, controlArm, 'CONTROL');
-  const treatment = loadArm(treatmentPath, treatmentArm, 'TREATMENT');
-  const cTasks = Object.keys(control.byTask).sort(), tTasks = Object.keys(treatment.byTask).sort();
-  const onlyControl = cTasks.filter(task => !(task in treatment.byTask));
-  const onlyTreatment = tTasks.filter(task => !(task in control.byTask));
-  const admissionFailures = [...control.problems, ...treatment.problems];
-  if (cTasks.length !== expected) admissionFailures.push(`CONTROL has ${cTasks.length} tasks, expected ${expected}`);
-  if (tTasks.length !== expected) admissionFailures.push(`TREATMENT has ${tTasks.length} tasks, expected ${expected}`);
-  if (onlyControl.length) admissionFailures.push(`${onlyControl.length} task(s) only in CONTROL: ${onlyControl.slice(0, 5).join(', ')}`);
-  if (onlyTreatment.length) admissionFailures.push(`${onlyTreatment.length} task(s) only in TREATMENT: ${onlyTreatment.slice(0, 5).join(', ')}`);
+  const {
+    stage, controlPath, treatmentPath, controlArm, treatmentArm, expected, tasksPath,
+  } = options;
+  const cohort = loadTurnfixCohort(tasksPath, expected);
+  const control = loadTurnfixArm(controlPath, controlArm, 'CONTROL');
+  const treatment = loadTurnfixArm(treatmentPath, treatmentArm, 'TREATMENT');
+  const admissionFailures = [
+    ...armCohortFailures(control, cohort, expected, 'CONTROL'),
+    ...armCohortFailures(treatment, cohort, expected, 'TREATMENT'),
+  ];
   const aggregate = (run, key) => Object.values(run.byTask)
     .reduce((total, row) => total + (typeof row[key] === 'number' ? row[key] : NaN), 0);
   for (const [tag, run] of [['CONTROL', control], ['TREATMENT', treatment]]) {
@@ -293,10 +206,11 @@ export function adjudicateTurnfix(options) {
   }
   if (admissionFailures.length) return {
     valid: false, verdict: 'INVALID — not adjudicated', stage, expected,
+    cohort: { tasksPath: cohort.tasksPath, sha256: cohort.sha256 },
     admissionFailures: [...new Set(admissionFailures)],
   };
 
-  const tasks = cTasks;
+  const tasks = cohort.ids;
   const metric = key => bootstrapUpper(tasks, sample => ratioOfSums(sample, control, treatment, key));
   const metrics = {
     cost: metric('cost'),
@@ -334,7 +248,11 @@ export function adjudicateTurnfix(options) {
   };
   const common = {
     valid: true, stage, expected, pairedTasks: tasks.length,
-    inputs: { controlPath: control.resultPath, controlArm, treatmentPath: treatment.resultPath, treatmentArm },
+    cohort: { tasksPath: cohort.tasksPath, sha256: cohort.sha256 },
+    inputs: {
+      controlPath: control.resultPath, controlArm, treatmentPath: treatment.resultPath, treatmentArm,
+      tasksPath: cohort.tasksPath, cohortSha256: cohort.sha256,
+    },
     seed: TURNFIX_STATS.seed, resamples: TURNFIX_STATS.resamples,
     metrics, packing, solve,
     bothSolvedCost: {
@@ -372,6 +290,19 @@ export function adjudicateTurnfix(options) {
     return { ...common, gates, verdict: advance ? 'ADVANCE' : 'DO NOT ADVANCE' };
   }
 
+  if (stage === 'advisory') {
+    const gates = {
+      operationsUpperAtMost1_05: metrics.operations.upper95 <= TURNFIX_STATS.operationsUpper,
+      contextPerTurnUpperAtMost1_10: metrics.contextPerTurn.upper95 <= TURNFIX_STATS.contextPerTurnUpper,
+      completionTripwiresPassed: external.completionTripwires === 'pass',
+      noTreatmentOnlyLosses: solve.treatmentOnlyLosses === 0,
+    };
+    return {
+      ...common, gates,
+      verdict: Object.values(gates).every(Boolean) ? 'ADVANCE' : 'DO NOT ADVANCE',
+    };
+  }
+
   const gates = {
     costPointAtMost0_85: metrics.cost.point <= TURNFIX_STATS.costPointTarget,
     costUpperBelow1: metrics.cost.upper95 < 1,
@@ -399,7 +330,7 @@ export function adjudicateTurnfix(options) {
 
 export function parseTurnfixArgs(argv) {
   const values = new Set(['stage', 'control', 'treatment', 'control-arm', 'treatment-arm', 'expect',
-    'retrieval-equivalence', 'completion-tripwires', 'loss-adjudication']);
+    'tasks', 'retrieval-equivalence', 'completion-tripwires', 'loss-adjudication']);
   const out = { json: false }, seen = new Set();
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -409,10 +340,10 @@ export function parseTurnfixArgs(argv) {
     if (i + 1 >= argv.length || argv[i + 1].startsWith('--')) throw new Error(`missing value for ${arg}`);
     out[key] = argv[++i];
   }
-  const stage = out.stage === 'confirmation' ? 'confirmation' : out.stage;
+  const stage = out.stage;
   const expected = Number(out.expect);
-  if (!['natural', 'confirmation'].includes(stage) || !out.control || !out.treatment ||
-      !VALID_ARMS.has(out['control-arm']) || !VALID_ARMS.has(out['treatment-arm']) ||
+  if (!['natural', 'advisory', 'confirmation'].includes(stage) || !out.control || !out.treatment ||
+      !TURNFIX_ARMS.has(out['control-arm']) || !TURNFIX_ARMS.has(out['treatment-arm']) || !out.tasks ||
       !Number.isInteger(expected) || expected <= 0) throw new Error('missing/invalid required option');
   for (const key of ['retrieval-equivalence', 'completion-tripwires']) {
     if (out[key] != null && !['pass', 'fail'].includes(out[key])) throw new Error(`invalid --${key}`);
@@ -422,7 +353,7 @@ export function parseTurnfixArgs(argv) {
   }
   return {
     stage, controlPath: out.control, treatmentPath: out.treatment,
-    controlArm: out['control-arm'], treatmentArm: out['treatment-arm'], expected,
+    controlArm: out['control-arm'], treatmentArm: out['treatment-arm'], expected, tasksPath: out.tasks,
     retrievalEquivalence: out['retrieval-equivalence'], completionTripwires: out['completion-tripwires'],
     lossAdjudication: out['loss-adjudication'], json: out.json,
   };
@@ -449,7 +380,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (options.json) console.log(JSON.stringify(report, null, 2)); else printText(report);
     if (!report.valid) process.exitCode = 1;
   } catch {
-    console.error('usage: node stats/turnfix-adjudicator.mjs --stage natural|confirmation --control PATH --control-arm native|sweet --treatment PATH --treatment-arm native|sweet --expect N [--retrieval-equivalence pass|fail] [--completion-tripwires pass|fail] [--loss-adjudication pass|fail] [--json]');
+    console.error('usage: node stats/turnfix-adjudicator.mjs --stage natural|advisory|confirmation --control PATH --control-arm native|sweet --treatment PATH --treatment-arm native|sweet --expect N --tasks COHORT.jsonl [--retrieval-equivalence pass|fail] [--completion-tripwires pass|fail] [--loss-adjudication pass|fail] [--json]');
     process.exitCode = 2;
   }
 }

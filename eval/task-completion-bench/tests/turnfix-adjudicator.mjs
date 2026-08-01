@@ -10,9 +10,14 @@ import path from 'node:path';
 import {
   TURNFIX_STATS, adjudicateTurnfix, newcombeMethod10, parseTurnfixArgs,
 } from '../stats/turnfix-adjudicator.mjs';
+import {
+  parseArmAdmissionArgs, validateTurnfixArm,
+} from '../stats/turnfix-admission.mjs';
 
 const root = mkdtempSync(path.join(tmpdir(), 'turnfix-adjudicator-'));
 const tasks = Array.from({ length: 4 }, (_, i) => `repo__project-${i + 1}`);
+const cohortPath = path.join(root, 'cohort.jsonl');
+writeFileSync(cohortPath, `${tasks.map(instance_id => JSON.stringify({ instance_id })).join('\n')}\n`);
 
 function makeDb(file, commands) {
   execFileSync('python3', ['-c', `
@@ -60,6 +65,16 @@ function makeResult(name, arm, perTask) {
       shimTamperedFiles: [],
       exitReason: 'model_stopped',
       costRealizedUsd: spec.cost,
+      model: 'x-ai/grok-4.5', provider: 'openrouter', harness: 'opencode', reasoning: 'standard',
+      envConfigHash: 'a'.repeat(16),
+      openCodePreflight: {
+        valid: true, version: '1.18.4', pluginCount: 0, resolvedConfigSha256: 'b'.repeat(64),
+      },
+      secretLeakDetected: false,
+      packingTreatment: 'off', packingInstructionSha256: 'c'.repeat(64),
+      rtProgressVersion: 'rt-progress-v1', rtProgressSchema: 1,
+      rtProgressTelemetry: true, rtProgressAdvisory: false, rtProgressH: null,
+      rtProgressPolicyHash: 'd'.repeat(64), rtProgressTurnMapComplete: true,
       calls: 999,
       idealTurns: 999,
     });
@@ -107,6 +122,7 @@ function options(stage, controlPath, treatmentPath, extra = {}) {
     controlArm: 'native',
     treatmentArm: 'sweet',
     expected: 4,
+    tasksPath: cohortPath,
     retrievalEquivalence: 'pass',
     completionTripwires: 'pass',
     ...extra,
@@ -129,6 +145,23 @@ try {
     costScale: 0.8, turnScale: 0.8, operations: 4, envelopes: 1,
   }));
 
+  // Sequential orchestration can admit each arm against the same immutable
+  // cohort before launching the next arm, without applying comparative gates.
+  const singleArm = validateTurnfixArm({
+    resultPath: treatment, arm: 'sweet', expected: 4, tasksPath: cohortPath,
+  });
+  assert.equal(singleArm.valid, true);
+  assert.equal(singleArm.verdict, 'VALID — ARM ADMITTED');
+  assert.equal(singleArm.summary.tasks, 4);
+  assert.equal(singleArm.summary.solved, 4);
+  assert.match(singleArm.cohort.sha256, /^[a-f0-9]{64}$/);
+  const wrongCell = validateTurnfixArm({
+    resultPath: treatment, arm: 'sweet', expected: 4, tasksPath: cohortPath,
+    expectedCell: { packingTreatment: 'ss-batch' },
+  });
+  assert.equal(wrongCell.valid, false);
+  assert.ok(wrongCell.admissionFailures.some(failure => failure.includes('packingTreatment differs')));
+
   const natural = adjudicateTurnfix(options('natural', control, treatment));
   assert.equal(natural.valid, true);
   assert.equal(natural.verdict, 'ADVANCE');
@@ -140,6 +173,14 @@ try {
   assert.equal(natural.packing.operationsPerModelTurnRatio, 1.25);
   assert.equal(natural.gates.operationsPerRetrievalEnvelopeImproved, true);
   assert.equal('operationsLower' in natural.gates, false);
+
+  const advisory = adjudicateTurnfix(options('advisory', control, treatment));
+  assert.equal(advisory.valid, true);
+  assert.equal(advisory.verdict, 'ADVANCE');
+  assert.deepEqual(Object.keys(advisory.gates), [
+    'operationsUpperAtMost1_05', 'contextPerTurnUpperAtMost1_10',
+    'completionTripwiresPassed', 'noTreatmentOnlyLosses',
+  ]);
 
   const confirmation = adjudicateTurnfix(options('confirmation', control, treatment));
   assert.equal(confirmation.valid, true);
@@ -222,6 +263,7 @@ try {
       shimExcluded: true,
       shimTamperedFiles: ['rt-shim-runtime.mjs'],
       exitReason: 'agent_error',
+      secretLeakDetected: true,
     });
   });
   const invalid = adjudicateTurnfix(options('confirmation', control, badIntegrity));
@@ -231,8 +273,13 @@ try {
     /escape must equal 0/, /leak must equal 0/, /goldTripwire must be false/,
     /shimTampered must be false/, /shimReran must be false/,
     /shimExcluded must be false/, /shimTamperedFiles must be an empty array/,
-    /exitReason is not an admitted/,
+    /exitReason is not an admitted/, /secretLeakDetected must be false/,
   ]) assert.ok(invalid.admissionFailures.some(failure => pattern.test(failure)), String(pattern));
+  const singleArmInvalid = validateTurnfixArm({
+    resultPath: badIntegrity, arm: 'sweet', expected: 4, tasksPath: cohortPath,
+  });
+  assert.equal(singleArmInvalid.valid, false);
+  assert.ok(singleArmInvalid.admissionFailures.some(failure => /resolved must be boolean/.test(failure)));
 
   const aggregateLog = path.join(treatment, 'turns', `${tasks[0]}-sweet.jsonl`);
   const aggregateCopy = path.join(root, 'aggregate-log');
@@ -247,16 +294,45 @@ try {
   assert.equal(wrongCount.valid, false);
   assert.ok(wrongCount.admissionFailures.some(failure => /expected 5/.test(failure)));
 
+  // Equal row counts are insufficient: both arms must match the frozen task set.
+  const wrongCohortPath = path.join(root, 'wrong-cohort.json');
+  writeFileSync(wrongCohortPath, `${JSON.stringify([...tasks.slice(0, 3), 'repo__different-4'])}\n`);
+  const wrongCohort = adjudicateTurnfix({
+    ...options('confirmation', control, treatment), tasksPath: wrongCohortPath,
+  });
+  assert.equal(wrongCohort.valid, false);
+  assert.ok(wrongCohort.admissionFailures.some(failure => /outside frozen cohort/.test(failure)));
+  assert.ok(wrongCohort.admissionFailures.some(failure => /missing 1 frozen task/.test(failure)));
+
+  // The cohort reader accepts JSON arrays as well as NDJSON.
+  const arrayCohortPath = path.join(root, 'array-cohort.json');
+  writeFileSync(arrayCohortPath, `${JSON.stringify(tasks)}\n`);
+  assert.equal(validateTurnfixArm({
+    resultPath: control, arm: 'native', expected: 4, tasksPath: arrayCohortPath,
+  }).valid, true);
+
   const parsed = parseTurnfixArgs([
     '--stage', 'natural', '--control', control, '--control-arm', 'native',
     '--treatment', treatment, '--treatment-arm', 'sweet', '--expect', '4',
+    '--tasks', cohortPath,
     '--retrieval-equivalence', 'pass', '--completion-tripwires', 'pass', '--json',
   ]);
   assert.equal(parsed.controlPath, control);
   assert.equal(parsed.treatmentArm, 'sweet');
+  assert.equal(parsed.tasksPath, cohortPath);
+  assert.deepEqual(parseArmAdmissionArgs([
+    '--result', treatment, '--arm', 'sweet', '--expect', '4', '--tasks', cohortPath, '--json',
+  ]), {
+    resultPath: treatment, arm: 'sweet', expected: 4, tasksPath: cohortPath, json: true,
+  });
   assert.throws(() => parseTurnfixArgs([
     '--stage', 'natural', '--control', control, '--control-arm', 'native',
-    '--treatment', treatment, '--treatment-arm', 'sweet', '--expect', '4', '--bogus', 'x',
+    '--treatment', treatment, '--treatment-arm', 'sweet', '--expect', '4',
+  ]));
+  assert.throws(() => parseTurnfixArgs([
+    '--stage', 'natural', '--control', control, '--control-arm', 'native',
+    '--treatment', treatment, '--treatment-arm', 'sweet', '--expect', '4',
+    '--tasks', cohortPath, '--bogus', 'x',
   ]));
 } finally {
   rmSync(root, { recursive: true, force: true });
