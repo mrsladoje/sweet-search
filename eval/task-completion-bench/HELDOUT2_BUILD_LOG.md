@@ -168,3 +168,25 @@ need per-task derived images, so they go to replacement.
 
 **Ledger now: gold-valid 158 · needs-warming 19 · env-broken-nonnet 22 · infra 1.**
 42 tasks require mechanical replacement from the reserve.
+
+**S7 replacements — 2026-08-01 09:15.** 42 mechanical replacements executed under
+HELDOUT2_RULES.md §7. Every dead task failed the environment gate (22 env-broken-nonnet, 19
+warm-gate failures, 1 infra); **none was replaced for its content, difficulty, or anything
+observed about either arm.** Assignment is deterministic: dead tasks in instance_id order,
+each taking the lowest-rank unused reserve of its own language, falling back to the reserve of
+the largest-primary-quota language with reserves left (ties alphabetical). 25 same-language,
+17 cross-language, 25 reserve tasks left.
+
+Artifacts: `select/HELDOUT2_REPLACEMENTS.json` (every swap with its reason, F2P/P2P counts and
+reserve rank), `tasks_heldout2.jsonl.prereplace-2026-08-01` + the matching manifest sidecar, so
+the original draw stays auditable. New `tasks_heldout2.jsonl` sha256
+`81dc0983090a2d7732ac8edb26eb674f6e725446fdf3f612d5cb751ddbde60eb`; still 200 tasks in 200
+distinct repos (one-task-per-repo asserted after the swap).
+
+Language mix moves further from the anchor, which is the unavoidable cost of C-family
+environments being unrunnable offline: python 34->43, ts 33->40, java 22->19, kotlin 7->1,
+c 5->1, csharp 3->1, cpp 3->2. Recorded here rather than smoothed over — it is a real
+limitation of the final set and belongs in the paper's description of it.
+
+All 42 replacement goldens verified in the vault (42 ok, 0 bad) and staged to the box with
+`push --verify` (42/42). Sweep + warm running for the replacement round.
