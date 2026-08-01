@@ -89,11 +89,13 @@ export function progressRowFields(config = {}) {
 /** Build one rollout config and open an append-only controller session. */
 export function createProgressRunConfig({
   flags = resolveProgressFlags(), controllerDir = null, rundir, taskId, arm, runId = 'adhoc',
+  injectedFiles = [],
 } = {}) {
   const base = {
     flags, version: RT_PROGRESS_VERSION, schema: RT_PROGRESS_SCHEMA,
     policyHash: progressPolicyHash(flags), taskId: taskId || null, arm: arm || null, runId,
     controllerDir: null, logPath: null, rawDir: null, checkpointDir: null, sessionId: null,
+    injectedFiles: [],
   };
   if (!flags.telemetry) return base;
   if (!controllerDir) throw new Error('progress telemetry requires an out-of-tree controllerDir');
@@ -106,6 +108,7 @@ export function createProgressRunConfig({
     logPath: path.join(controllerDir, 'cycles.jsonl'),
     rawDir: path.join(controllerDir, 'raw', sessionId),
     checkpointDir: path.join(controllerDir, 'checkpoints'),
+    injectedFiles: snapshotInjectedFiles(rundir, injectedFiles),
   };
   mkdirSync(config.rawDir, { recursive: true });
   mkdirSync(config.checkpointDir, { recursive: true });
@@ -116,6 +119,31 @@ export function createProgressRunConfig({
     timestamp: new Date().toISOString(),
   }) + '\n');
   return config;
+}
+
+function snapshotInjectedFiles(rundir, files) {
+  const snapshots = [];
+  for (const rel of [...new Set(files || [])].sort()) {
+    if (!isSafeRepoRelative(rel) || !isProtectedCheckpointPath(rel)) continue;
+    const absolute = path.resolve(rundir, ...rel.replace(/\\/g, '/').split('/'));
+    try {
+      const stat = lstatSync(absolute);
+      if (!stat.isFile() || stat.isSymbolicLink() || !inside(rundir, absolute)) continue;
+      snapshots.push({ path: rel.replace(/\\/g, '/'), sha256: sha256(readFileSync(absolute)), bytes: stat.size });
+    } catch { /* absent injected surface cannot be an exclusion baseline */ }
+  }
+  return snapshots;
+}
+
+function matchesInjectedSnapshot(rundir, rel, snapshots) {
+  const expected = (snapshots || []).find(item => item.path === rel.replace(/\\/g, '/'));
+  if (!expected) return false;
+  try {
+    const absolute = path.resolve(rundir, ...rel.replace(/\\/g, '/').split('/'));
+    const stat = lstatSync(absolute);
+    return stat.isFile() && !stat.isSymbolicLink() && stat.size === expected.bytes
+      && sha256(readFileSync(absolute)) === expected.sha256;
+  } catch { return false; }
 }
 
 export function normalizeTestScope(scope = 'full', pattern = '') {
@@ -136,7 +164,7 @@ export function isProtectedCheckpointPath(value) {
   const rel = value.replace(/\\/g, '/');
   const parts = rel.toLowerCase().split('/');
   const base = parts.at(-1);
-  if (parts.some(p => ['.git', '.sweet-search', '.codex-bin', '__tests__', 'test', 'tests',
+  if (parts.some(p => ['.git', '.sweet-search', '.codex-bin', '.claude', '__tests__', 'test', 'tests',
     'benchmark', 'benchmarks'].includes(p))) return true;
   if (rel.toLowerCase().startsWith('eval/task-completion-bench/')) return true;
   if (['agents.md', 'claude.md', '.cursorrules'].includes(base)) return true;
@@ -180,17 +208,24 @@ function captureUntracked(rundir) {
         rejected.push({ path: rel, reason: 'size-limit' }); continue;
       }
       const content = readFileSync(real);
+      if (content.length > MAX_FILE_BYTES || total + content.length > MAX_TOTAL_BYTES) {
+        rejected.push({ path: rel, reason: 'size-limit' }); continue;
+      }
       total += content.length;
       accepted.push({ path: rel.replace(/\\/g, '/'), bytes: content.length, sha256: sha256(content), content });
     } catch { rejected.push({ path: rel, reason: 'read-failed' }); }
   }
   const manifest = accepted.map(({ path: p, bytes, sha256: hash }) => ({ path: p, bytes, sha256: hash }));
-  const incomplete = rejected.some(item => item.reason !== 'protected-path' && item.reason !== 'not-source');
-  return { names, accepted, rejected, fingerprint: sha256(stable({ manifest, rejected })), totalBytes: total, complete: !incomplete };
+  const incompleteEntries = rejected.filter(item => item.reason !== 'protected-path' && item.reason !== 'not-source');
+  return {
+    names, accepted, rejected,
+    fingerprint: sha256(stable({ manifest, incompleteEntries })),
+    totalBytes: total, complete: incompleteEntries.length === 0,
+  };
 }
 
 /** Capture the current source state; protected/test/instruction edits are never bundled. */
-export function captureSourceState(rundir, diffText = '') {
+export function captureSourceState(rundir, diffText = '', { injectedFiles = [] } = {}) {
   let trackedChangedFiles = [];
   try { trackedChangedFiles = zlist(git(rundir, ['diff', '--name-only', '-z', 'HEAD', '--', '.'])).sort(); }
   catch { /* state remains explicitly empty */ }
@@ -202,7 +237,10 @@ export function captureSourceState(rundir, diffText = '') {
   }
   const untracked = captureUntracked(rundir);
   const changedFiles = [...new Set([...trackedChangedFiles, ...untracked.names])].sort();
-  const prohibitedFiles = changedFiles.filter(isProtectedCheckpointPath);
+  const ignoredInjectedFiles = changedFiles.filter(p => isProtectedCheckpointPath(p)
+    && matchesInjectedSnapshot(rundir, p, injectedFiles));
+  const ignored = new Set(ignoredInjectedFiles);
+  const prohibitedFiles = changedFiles.filter(p => isProtectedCheckpointPath(p) && !ignored.has(p));
   const untrackedManifest = untracked.accepted.map(({ path: p, bytes, sha256: hash }) => ({ path: p, bytes, sha256: hash }));
   const sourceStateHash = sha256(Buffer.concat([
     binaryPatch, Buffer.from('\0'), Buffer.from(untracked.fingerprint || 'unavailable'),
@@ -210,6 +248,7 @@ export function captureSourceState(rundir, diffText = '') {
   return {
     diffHash: sha256(String(diffText || '')), binaryPatch, binaryPatchHash: sha256(binaryPatch),
     sourceStateHash, changedFiles, trackedSourceFiles, prohibitedFiles,
+    ignoredInjectedFiles,
     untrackedManifest, untrackedRejected: untracked.rejected,
     untrackedFingerprint: untracked.fingerprint,
     retentionComplete: untracked.complete,
@@ -237,7 +276,8 @@ function retainCheckpoint(config, state) {
         schema: RT_PROGRESS_SCHEMA, version: RT_PROGRESS_VERSION, checkpointId: id,
         binaryPatchHash: state.binaryPatchHash, sourceStateHash: state.sourceStateHash,
         trackedSourceFiles: state.trackedSourceFiles, changedFiles: state.changedFiles,
-        prohibitedFiles: state.prohibitedFiles, untrackedSource: state.untrackedManifest,
+        prohibitedFiles: state.prohibitedFiles, ignoredInjectedFiles: state.ignoredInjectedFiles,
+        untrackedSource: state.untrackedManifest,
         untrackedRejected: state.untrackedRejected, patchBytes: state.patchBytes,
       }, null, 2) + '\n', { flag: 'wx' });
     }
@@ -321,7 +361,7 @@ export function recordProgressInvocation(config, input) {
   const call = rows.length + 1;
   const rawPath = path.join(config.rawDir, `call-${String(call).padStart(4, '0')}.txt`);
   writeFileSync(rawPath, String(input.rawOutput || ''));
-  const state = captureSourceState(input.rundir, input.diffText);
+  const state = captureSourceState(input.rundir, input.diffText, { injectedFiles: config.injectedFiles });
   const checkpoint = retainCheckpoint(config, state);
   const scopeKey = normalizeTestScope(input.scope, input.pattern);
   const rawFailures = sorted(input.rawFailures);
@@ -372,7 +412,8 @@ export function recordProgressInvocation(config, input) {
     diffHash: state.diffHash, binaryPatchHash: state.binaryPatchHash,
     sourceStateHash: state.sourceStateHash, untrackedSourceFingerprint: state.untrackedFingerprint,
     changedFiles: state.changedFiles, sourceFiles: [...state.trackedSourceFiles, ...state.untrackedManifest.map(x => x.path)].sort(),
-    prohibitedFiles: state.prohibitedFiles, patchBytes: state.patchBytes,
+    prohibitedFiles: state.prohibitedFiles, ignoredInjectedFiles: state.ignoredInjectedFiles,
+    patchBytes: state.patchBytes,
     rawFailureSignatures: rawFailures, introducedFailures, preExistingFailures,
     targetStatus: input.targetStatus || input.status, buildStatus: input.buildStatus || null,
     buildStage: current.buildStage, dedupDecision: input.dedupDecision || 'none',
@@ -387,4 +428,31 @@ export function recordProgressInvocation(config, input) {
   };
   appendFileSync(config.logPath, JSON.stringify(record) + '\n');
   return { guidance, record };
+}
+
+/**
+ * Backfill the broker's cycle-to-model-step relation from the retained agent
+ * stream. The cycle rows stay append-only; this final record is the immutable
+ * join table used by post-run threshold and behavior adjudication.
+ */
+export function finalizeProgressModelTurns(config, toolCalls = []) {
+  if (config?.flags?.telemetry !== true) return { complete: true, mappings: [] };
+  const invocations = readSessionRows(config);
+  const tests = (toolCalls || []).filter(call => call?.kind === 'test');
+  const mappings = invocations.map((row, index) => ({
+    call: row.call,
+    modelTurn: Number.isInteger(tests[index]?.modelTurn) ? tests[index].modelTurn : null,
+    messageId: tests[index]?.messageId || null,
+  }));
+  const complete = tests.length === invocations.length
+    && mappings.every(row => Number.isInteger(row.modelTurn) && row.modelTurn > 0);
+  const record = {
+    kind: 'model-turn-map', schema: config.schema, version: config.version,
+    policyHash: config.policyHash, sessionId: config.sessionId, task: config.taskId,
+    arm: config.arm, run: config.runId, source: 'raw-ndjson-posthoc',
+    invocationCount: invocations.length, testToolCount: tests.length,
+    complete, mappings, timestamp: new Date().toISOString(),
+  };
+  appendFileSync(config.logPath, JSON.stringify(record) + '\n');
+  return record;
 }

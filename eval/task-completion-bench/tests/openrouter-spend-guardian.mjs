@@ -9,8 +9,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  GuardianError, parseUsagePayload, runSpendGuardian, validateRunId,
+  GuardianError, parseUsagePayload, runSpendGuardian, SPEND_POLICY, validateRunId,
 } from '../harness/openrouter-spend-guardian.mjs';
+
+assert.equal(SPEND_POLICY.hardCapUsd, 50);
+assert.equal(SPEND_POLICY.operationalStopUsd, 45);
+assert.equal(SPEND_POLICY.reserveUsd, 5);
 
 const TEST_KEY = 'fake-secret-that-must-never-be-printed';
 const GUARDIAN_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../harness/openrouter-spend-guardian.mjs');
@@ -20,7 +24,11 @@ const FAST_POLICY = Object.freeze({
   reserveUsd: 3,
   pollMs: 20,
   requestTimeoutMs: 2_000,
-  terminateGraceMs: 40,
+  pollRetryAttempts: 3,
+  pollRetryMs: 5,
+  // Match production so a loaded Node child gets the same opportunity to run
+  // its SIGTERM handler before the owned process group is escalated.
+  terminateGraceMs: 2_000,
 });
 
 function waitForExit(child) {
@@ -38,6 +46,7 @@ async function waitForFile(file, timeoutMs = 2_000) {
 
 async function startUsageServer(sequence) {
   let calls = 0;
+  let lastUsage = null;
   const authorizations = [];
   const server = http.createServer(async (req, res) => {
     authorizations.push(req.headers.authorization);
@@ -48,9 +57,18 @@ async function startUsageServer(sequence) {
       return;
     }
     if (item?.waitForPath) {
-      const deadline = Date.now() + 1_500;
+      const deadline = Date.now() + 250;
       while (!existsSync(item.waitForPath) && Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      // A loaded host may need more than one synthetic 20 ms poll to start the
+      // supervised child. Until its ready marker exists, report the last total
+      // again instead of manufacturing an early cap crossing.
+      if (!existsSync(item.waitForPath)) {
+        const body = JSON.stringify({ data: { usage: lastUsage } });
+        res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+        res.end(body);
+        return;
       }
       await new Promise(resolve => setTimeout(resolve, 25));
     }
@@ -60,7 +78,8 @@ async function startUsageServer(sequence) {
       res.end('{"error":"synthetic"}');
       return;
     }
-    const body = JSON.stringify({ data: { usage: item?.usage ?? item } });
+    lastUsage = item?.usage ?? item;
+    const body = JSON.stringify({ data: { usage: lastUsage } });
     res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
     res.end(body);
   });
@@ -81,15 +100,18 @@ function makeFakeEntrypoint(dir) {
   const file = path.join(dir, 'fake-paid-entrypoint.mjs');
   writeFileSync(file, `
     import { writeFileSync } from 'node:fs';
+    process.on('SIGTERM', () => {
+      writeFileSync(process.env.FAKE_TERM, 'terminated');
+      process.exit(0);
+    });
+    // Publish readiness only after the termination handler is installed. The
+    // usage fixture keys its cap response to this marker, so a loaded test host
+    // cannot race SIGTERM between process startup and handler registration.
     writeFileSync(process.env.FAKE_STARTED, JSON.stringify({
       concurrency: process.env.CONCURRENCY,
       runId: process.env.RUN_ID,
       sessionId: process.env.SS_SPEND_GUARD_SESSION,
     }));
-    process.on('SIGTERM', () => {
-      writeFileSync(process.env.FAKE_TERM, 'terminated');
-      process.exit(0);
-    });
     if (process.env.FAKE_MODE === 'exit') setTimeout(() => process.exit(0), 35);
     else setInterval(() => {}, 1000);
   `);
@@ -107,7 +129,7 @@ function pathsFor(dir, label) {
   };
 }
 
-async function runFake({ dir, label, server, entrypoint, mode = 'hang', policy = FAST_POLICY }) {
+async function runFake({ dir, label, server, entrypoint, mode = 'hang', policy = FAST_POLICY, cumulativeBaselineUsageUsd = null }) {
   const paths = pathsFor(dir, label);
   const logs = [];
   const result = await runSpendGuardian({
@@ -119,6 +141,7 @@ async function runFake({ dir, label, server, entrypoint, mode = 'hang', policy =
     endpoint: server.endpoint,
     logger: message => logs.push(message),
     policy,
+    cumulativeBaselineUsageUsd,
     childEnv: {
       ...process.env,
       FAKE_MODE: mode,
@@ -187,7 +210,8 @@ try {
   unrelated = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
   const capPaths = pathsFor(dir, 'guardian-cap');
   const capServer = await startUsageServer([
-    { usage: 100 }, { usage: 102.25, waitForPath: capPaths.startedPath },
+    { usage: 100 }, { usage: 101, waitForPath: capPaths.startedPath },
+    { usage: 100.5 }, { usage: 102.25 },
   ]);
   try {
     const { result, logs, paths } = await runFake({
@@ -204,8 +228,41 @@ try {
     assert.doesNotThrow(() => process.kill(unrelated.pid, 0), 'unrelated process must survive');
     assert.ok(capServer.authorizations.every(value => value === `Bearer ${TEST_KEY}`));
     assert.ok(!logs.join('\n').includes(TEST_KEY));
+    assert.ok(logs.some(line => line.includes('retaining the conservative high-water total')));
   } finally {
     await capServer.close();
+  }
+
+  // A transient provider failure is retried without killing paid work.
+  const retryServer = await startUsageServer([{ usage: 30 }, { status: 503 }, { usage: 30 }]);
+  try {
+    const { result } = await runFake({
+      dir, label: 'guardian-poll-retry', server: retryServer, entrypoint, mode: 'exit',
+    });
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.reason, 'completed');
+    assert.ok(retryServer.calls() >= 3);
+  } finally {
+    await retryServer.close();
+  }
+
+  // A resumed guardian keeps the original cumulative baseline instead of
+  // resetting the user's aggregate cap after a prior session.
+  const carryoverServer = await startUsageServer([{ usage: 41 }, { usage: 41 }]);
+  try {
+    const { result, paths } = await runFake({
+      dir, label: 'guardian-carryover', server: carryoverServer, entrypoint, mode: 'exit',
+      cumulativeBaselineUsageUsd: 40,
+    });
+    assert.equal(result.exitCode, 0);
+    const state = JSON.parse(readFileSync(paths.statePath, 'utf8'));
+    const receipt = JSON.parse(readFileSync(paths.receiptPath, 'utf8'));
+    assert.equal(state.baselineUsageUsd, 40);
+    assert.equal(state.observedUsageAtStartUsd, 41);
+    assert.equal(state.carryoverUsageUsd, 1);
+    assert.equal(receipt.deltaUsd, 1);
+  } finally {
+    await carryoverServer.close();
   }
 
   // Polling failure after launch is fail-closed and kills the same owned group.

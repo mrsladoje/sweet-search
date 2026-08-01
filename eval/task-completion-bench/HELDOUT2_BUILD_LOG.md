@@ -14,7 +14,7 @@ the box or the Mac** (indexing is the user's RunPod step).
 | S5 · RunPod handoff inputs | DONE 2026-07-30 | 267 keys, 0 vault reuse; `HELDOUT2_POD_HANDOFF.md` |
 | S5b · pod golden fleet (A100 SXM) | RUNNING since 2026-07-31 11:40 | driven from the Mac, tmux `h2fleet`, log `~/h2-fleet.log` |
 | S6 · vault verify + stage on box (read-only) | DONE 2026-07-31 | 200/200 + 67/67 verified; 200 staged, box-verified, locked |
-| S7 · green ledger, gold-FULL 200/200 | IN PROGRESS since 2026-07-31 23:10 | sweep died once at 172/200, cause unknown; resumed |
+| S7 · green ledger, gold-FULL 200/200 | IN PROGRESS | sweep + warm + triage done: 158 valid, 42 to replace |
 | S8 · final PLAN.md update, set marked DONE | PENDING | |
 
 ## Log
@@ -141,3 +141,30 @@ infra rows are batch-timeout collateral from b160 and are retried as singletons 
 pass. Language pattern so far: python 30/34 valid and js 23/29 valid, against java 1/22 and
 rust 0/16 — the compiled languages fetch dependencies at test time, which is what `prep-warm`
 exists to fix, so a low valid count there is recoverable rather than lost.
+
+**S7 warming + triage — 2026-08-01 05:00-09:00.**
+
+First warm launch was MY error: `warm-fleet` without `--evict-after-gate`. Each gated warm
+retains its whole base image chain, so disk fell 46->19 GB in nine tasks. The tool's own
+comment documents this (held-out 1 measured ~150 GB for 52 tasks) and the fix is the evict
+mode: record the gate verdict in the ledger, delete the image, re-warm on demand at run time.
+Evicted the five images built so far, reclaimed 23 GB, relaunched correctly. Disk then held
+flat at ~42 GB for the whole run. **Held-out 1's box goldens were never touched.**
+
+Warming result: **52 attempted, 33 passed (63%)**, `WARM-FAIL 0` — warming itself always
+succeeded; only the offline gate failed. The split is build-system behaviour, not task
+quality: every Rust task passed (cargo vendors deps into the image and then works offline),
+while Gradle/Maven tasks fail because they re-resolve regardless of cache state.
+
+Triage of the 25 `env-broken-nonnet`: all carried signature `test-failure` (gold applied,
+suite ran, did not reach FULL). Three were cleanly repairable — F2P fully passing with only
+environment-dependent P2P failures — and were repaired via `task-overrides.json` `excludeP2P`,
+each with a documented `_why`, following the `k0sproject__k0sctl-556` precedent:
+`peak__s5cmd-658` (proxy tests need live network), `un-ts__synckit-184` (wall-clock timing
+race), `callowayproject__bump-my-version-119` (pre-existing red test). Re-swept: **3/3
+gold-valid**. The remaining 22 are whole-suite-red at gold (e.g. grpc-dotnet 0/1 F2P with 482
+P2P failures, jooby 0/91 with 105, nock 0/2 with 206) — build-environment defects that would
+need per-task derived images, so they go to replacement.
+
+**Ledger now: gold-valid 158 · needs-warming 19 · env-broken-nonnet 22 · infra 1.**
+42 tasks require mechanical replacement from the reserve.

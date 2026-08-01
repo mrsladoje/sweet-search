@@ -19,9 +19,10 @@ const RT_HARNESS_SOURCE_NAMES = Object.freeze([
   'rt-condense-lib.mjs',
   'rt-shim-runtime.mjs',
   'rt-dedup.mjs',
+  'rt-progress-controller.mjs',
 ]);
 export const RT_HARNESS_FINGERPRINT = Object.freeze({
-  version: 1,
+  version: 2,
   sources: Object.freeze(RT_HARNESS_SOURCE_NAMES.map((name) => Object.freeze({
     name,
     sha256: createHash('sha256').update(readFileSync(new URL(name, import.meta.url))).digest('hex'),

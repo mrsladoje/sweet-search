@@ -191,23 +191,27 @@ export async function runClaudeCodeTask(task, {
     { src: claudeJson, dst: join(HOMEDIR, '.claude.json') },
     { src: claudeHome, dst: join(HOMEDIR, '.claude') },
   ];
-  const { runnerStateDir, binDir, runnerFiles, integrity, jail, broker, integrityStateDir } = setupRunner({
+  // Inject before runner setup so telemetry snapshots the harness-owned bytes.
+  writeInstructionFile(rundir, 'CLAUDE.md', { sweet: false, mppText });
+  const injectedFiles = ['CLAUDE.md'];
+  if (sweet) {
+    const rulesDir = join(rundir, '.claude', 'rules');
+    mkdirSync(rulesDir, { recursive: true });
+    appendFileSync(join(rulesDir, 'sweet-search.md'), `${mppText.trimEnd()}\n`);
+    injectedFiles.push('.claude/rules/sweet-search.md');
+  }
+  const {
+    runnerStateDir, binDir, runnerFiles, integrity, jail, broker, integrityStateDir, controller,
+  } = setupRunner({
     image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300, netArgs, sweet,
-    label, extraBinds, requireBins: ['claude'],
+    label, taskId: task.id, arm, extraBinds, requireBins: ['claude'], injectedFiles,
   });
 
   const env = buildAgentEnv({ rundir, binDir, ssBinDir, sweet, extraEnv: routingEnv, jail });
   if (sweet && ssBinDir) warmupSweet({ ssBinDir, rundir, env, jail });
 
   // Prompt = the issue ONLY (both arms). CLAUDE.md carries only the benchmark
-  // completion frame. Claude auto-loads the sweet arm's verbatim M± from the
-  // same unscoped project-rule surface used by production init.
-  writeInstructionFile(rundir, 'CLAUDE.md', { sweet: false, mppText });
-  if (sweet) {
-    const rulesDir = join(rundir, '.claude', 'rules');
-    mkdirSync(rulesDir, { recursive: true });
-    appendFileSync(join(rulesDir, 'sweet-search.md'), `${mppText.trimEnd()}\n`);
-  }
+  // completion frame; the sweet arm's verbatim M± lives in its project rule.
   const prompt = issuePrompt(task.problem_statement);
   const args = [
     '-p', prompt, '--add-dir', rundir,
@@ -266,6 +270,7 @@ export async function runClaudeCodeTask(task, {
 
   const calls = toolCalls.length;
   return {
+    ...controller,
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
     patchHunks, patchFiles, finalPatch,
     ...escapeAudit,

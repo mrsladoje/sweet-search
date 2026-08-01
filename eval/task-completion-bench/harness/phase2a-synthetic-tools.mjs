@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import {
-  chmodSync, copyFileSync, lstatSync, mkdirSync, symlinkSync, unlinkSync,
+  chmodSync, copyFileSync, lstatSync, mkdirSync, unlinkSync,
 } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
@@ -107,7 +107,11 @@ export function installSyntheticToolClients(binDir) {
   const client = path.join(binDir, 'phase2a-tool-client.mjs');
   copyFileSync(CLIENT_FILE, client);
   chmodSync(client, 0o700);
-  for (const command of TOOL_COMMANDS) symlinkSync('phase2a-tool-client.mjs', path.join(binDir, command));
+  for (const command of TOOL_COMMANDS) {
+    const target = path.join(binDir, command);
+    copyFileSync(CLIENT_FILE, target);
+    chmodSync(target, 0o700);
+  }
   return { binDir, client, commands: [...TOOL_COMMANDS] };
 }
 
@@ -115,7 +119,7 @@ export function installSyntheticToolClients(binDir) {
  * Host-side deterministic tool boundary. Hidden dependency paths remain only in
  * this process until the lead result has been returned to its client.
  */
-export async function startSyntheticToolBroker({ runtimeScenario, socketPath, delayMs = 45 } = {}) {
+export async function startSyntheticToolBroker({ runtimeScenario, socketPath, delayMs = 200 } = {}) {
   if (!runtimeScenario?.id || !Array.isArray(runtimeScenario.operations)) throw new Error('runtime scenario is required');
   if (!Number.isInteger(delayMs) || delayMs < 0 || delayMs > 1000) throw new Error('invalid synthetic delay');
   safeSocketPath(socketPath);

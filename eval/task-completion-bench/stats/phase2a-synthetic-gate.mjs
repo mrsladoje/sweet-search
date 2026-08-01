@@ -29,6 +29,15 @@ function finiteTime(value) {
   return Number.isFinite(value) && value >= 0;
 }
 
+function validNativeArtifact(value) {
+  return value && typeof value.path === 'string' && path.isAbsolute(value.path)
+    && typeof value.repoRelativePath === 'string' && value.repoRelativePath.length > 0
+    && !value.repoRelativePath.split('/').includes('..')
+    && /^[a-f0-9]{64}$/.test(value.sha256)
+    && Number.isSafeInteger(value.bytes) && value.bytes > 0
+    && value.platform === 'linux' && ['x64', 'arm64'].includes(value.arch);
+}
+
 /** Parse only the narrow, non-mutating shell grammar admitted by this screen. */
 export function parseRestrictedShell(command) {
   const source = String(command || '');
@@ -239,6 +248,7 @@ export function classifySyntheticRow(row, { contract = loadSyntheticContract() }
   if (row?.opencodeVersion !== contract.cells.opencodeVersion || row?.maxSteps !== contract.cells.maxSteps) {
     failures.push('OpenCode version/maxSteps mismatch');
   }
+  if (!validNativeArtifact(row?.nativeBinary)) failures.push('resolved Linux native-binary provenance is invalid');
   if (!scenario || !cell) return { scenarioId: row?.scenarioId, cellId: row?.cellId, failures, valid: false };
 
   let runtimeScenario;
@@ -261,6 +271,10 @@ export function classifySyntheticRow(row, { contract = loadSyntheticContract() }
   else if (!Array.isArray(row?.networkDenials)) failures.push('network denial audit is missing');
   if (!Array.isArray(row?.workspaceMutations)) failures.push('workspace mutation audit is missing');
   else if (row.workspaceMutations.length) failures.push('synthetic workspace was mutated');
+  if (!Array.isArray(row?.opencodeStateFiles)
+      || !row.opencodeStateFiles.some(file => file?.type === 'file' && /^[a-f0-9]{64}$/.test(file.sha256))) {
+    failures.push('retained OpenCode state/DB evidence is missing');
+  }
   if (row?.secretLeakDetected !== false) failures.push('secret-leak audit is missing or nonzero');
   if (row?.preflight?.ssBatch !== true || row?.preflight?.opencodeVersion !== true
       || row?.preflight?.resolvedConfig !== true) failures.push('exact-jail preflight is incomplete');
@@ -342,6 +356,8 @@ export function evaluateSyntheticScreen(rows, { contract = loadSyntheticContract
   const shapeFailures = [];
   if (rows.length !== EXPECTED_ROWS) shapeFailures.push(`received ${rows.length} rows, requires ${EXPECTED_ROWS}`);
   if (new Set(identities).size !== EXPECTED_ROWS || duplicateIdentities.length) shapeFailures.push('row identities are missing or duplicated');
+  const nativeArtifacts = new Set(rows.map(row => JSON.stringify(row?.nativeBinary)));
+  if (nativeArtifacts.size !== 1) shapeFailures.push('resolved native-binary path/hash differs across rows');
   const passing = candidates.filter(candidate => candidate.verdict === 'PASS').sort((left, right) => (
     right.eligiblePacked - left.eligiblePacked
     || left.resultTokenRatio - right.resultTokenRatio
@@ -365,6 +381,7 @@ export function evaluateSyntheticScreen(rows, { contract = loadSyntheticContract
     verdict: shapeFailures.length === 0 && passing.length ? 'PASS' : 'FAIL',
     selectedCell: shapeFailures.length ? null : (passing[0]?.cellId || null),
     shapeFailures,
+    nativeBinary: nativeArtifacts.size === 1 ? rows[0]?.nativeBinary : null,
     stageUsage,
     candidates,
     rows: classified,

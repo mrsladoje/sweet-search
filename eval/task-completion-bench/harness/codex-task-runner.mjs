@@ -25,6 +25,9 @@ import { auditRollout, UNAUDITED } from './escape-audit.mjs';
 // L3 run_tests dedup: only the cheap path/session helpers are needed here — the shim
 // runtime (which pulls in the code-graph repository) is never imported by the harness.
 import { RT_DEDUP_ON, dedupLogPathFor, startDedupSession } from './rt-dedup.mjs';
+import {
+  createProgressRunConfig, progressRowFields, resolveProgressFlags,
+} from './rt-progress-controller.mjs';
 
 // Inlined from p7-codex-runner.mjs (kept self-contained so the bench doesn't depend on
 // the prompt-optimization context being present/committed on the run host).
@@ -89,6 +92,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RT_RUNTIME_PATH = path.join(__dirname, 'rt-shim-runtime.mjs');
 const RT_LIB_PATH = path.join(__dirname, 'rt-condense-lib.mjs');
 const RT_DEDUP_PATH = path.join(__dirname, 'rt-dedup.mjs');
+const RT_PROGRESS_PATH = path.join(__dirname, 'rt-progress-controller.mjs');
 const L1_CONDENSE = process.env.SS_NO_CMD_CONDENSE !== '1';
 const L2_RT_AUTHORITY = process.env.SS_NO_RT_AUTHORITY !== '1';
 
@@ -174,7 +178,8 @@ export function writeRunTestsShim(binDir, {
   image, workdir, testScript, rundir, testTimeoutSec = 300, netArgs = '',
   brokerMode = false, dockerBin = 'docker', rtAuthority = true,
   stateDir = binDir, _isAgentFormat = false, label = 'rollout',
-  rtDedup = RT_DEDUP_ON,
+  rtDedup = RT_DEDUP_ON, rtProgressFlags = resolveProgressFlags(),
+  controllerDir = null, taskId = null, arm = null, injectedFiles = [],
 }) {
   mkdirSync(binDir, { recursive: true });
   // L3 dedup state/audit log: append-only JSONL outside the agent's tree, opened with a
@@ -183,11 +188,18 @@ export function writeRunTestsShim(binDir, {
   const dedupLog = rtDedup
     ? startDedupSession(dedupLogPathFor(label, rundir), { label, rundir, brokerMode })
     : null;
+  const rtProgress = createProgressRunConfig({
+    flags: rtProgressFlags,
+    controllerDir: rtProgressFlags.telemetry
+      ? (controllerDir || rolloutStateDir(label, 'rt-progress'))
+      : null,
+    rundir, taskId, arm, runId: process.env.RUN_ID || 'adhoc', injectedFiles,
+  });
   const cfg = path.join(binDir, '_run_tests_cfg.json');
   writeFileSync(cfg, JSON.stringify({
     image, workdir, testScript, rundir, dockerHost: DOCKER_HOST, testTimeoutSec,
     netArgs, dockerBin, binDir, stateDir, rtAuthority, _isAgentFormat,
-    rtDedup: rtDedup && !!dedupLog, dedupLog,
+    rtDedup: rtDedup && !!dedupLog, dedupLog, rtProgress,
   }));
   const mjs = path.join(binDir, '_run_tests.mjs');
   if (brokerMode) {
@@ -221,8 +233,11 @@ process.stdout.write('[run_tests] no response from test broker within ' + (2 * t
     const shim = path.join(binDir, 'run_tests');
     writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
     chmodSync(shim, 0o755);
-    const files = [cfg, mjs, shim, brokerPath, RT_RUNTIME_PATH, RT_LIB_PATH, RT_DEDUP_PATH];
-    return { binDir, brokerPath, reqDir, files, dedupLog, integrity: shimIntegritySnapshot(files) };
+    const files = [cfg, mjs, shim, brokerPath, RT_RUNTIME_PATH, RT_LIB_PATH, RT_DEDUP_PATH, RT_PROGRESS_PATH];
+    return {
+      binDir, brokerPath, reqDir, files, dedupLog, progressConfig: rtProgress,
+      controller: progressRowFields(rtProgress), integrity: shimIntegritySnapshot(files),
+    };
   }
   // Direct shim: run the suite + L2/L3 levers via the shared runtime. argv = optional
   // targeted test pattern and/or --ss-full. Output IS the signal (shim exits 0; PASS/FAIL
@@ -236,8 +251,12 @@ catch (e) { process.stdout.write('[run_tests error] ' + String(e && e.message ||
   const shim = path.join(binDir, 'run_tests');
   writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
   chmodSync(shim, 0o755);
-  const files = [cfg, mjs, shim, RT_RUNTIME_PATH, RT_LIB_PATH, RT_DEDUP_PATH];
-  return { binDir, files, dedupLog, integrity: shimIntegritySnapshot(files) };
+  const files = [cfg, mjs, shim, RT_RUNTIME_PATH, RT_LIB_PATH, RT_DEDUP_PATH, RT_PROGRESS_PATH];
+  return {
+    binDir, files, dedupLog, progressConfig: rtProgress,
+    controller: progressRowFields(rtProgress),
+    integrity: shimIntegritySnapshot(files),
+  };
 }
 
 // L1: install a `docker` PATH-wrapper into binDir (FIRST on the agent's PATH) that
@@ -414,10 +433,15 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // both the run_tests shim (cfg.dockerBin) and the L1 wrapper invoke it directly.
   let realDocker = 'docker';
   try { realDocker = execSync('command -v docker', { encoding: 'utf8' }).trim() || 'docker'; } catch { /* fall back to bare 'docker' */ }
+  // Inject before shim generation so telemetry fingerprints these harness-owned
+  // bytes; a later agent modification is still reported as a prohibited change.
+  const instructions = `${FRAME_OPEN}${sweet ? `\n\n${mppText}` : ''}\n\n${FRAME_CLOSE}`;
+  appendFileSync(path.join(rundir, 'AGENTS.md'), `\n\n${instructions}\n`);
   const shimInfo = writeRunTestsShim(binDir, {
     image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300,
     netArgs, brokerMode: true, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY,
     stateDir: runnerStateDir, _isAgentFormat: sweet, label: jailLabel,
+    taskId: task.id, arm, injectedFiles: ['AGENTS.md'],
   });
   // L1: install the docker output-condenser wrapper (both arms). Flag-gated; a run
   // with SS_NO_CMD_CONDENSE=1 leaves the agent's docker == real docker (legacy).
@@ -463,8 +487,6 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // <rundir>/AGENTS.md (the plain project file codex reads), NOT the prompt. M± is BRACKETED
   // by the frame (FRAME_OPEN + M± + FRAME_CLOSE) so FRAME_CLOSE's task-completion authority
   // overrides M±'s stop-early guidance. Excluded from the graded patch below. Prompt = issue only.
-  const instructions = `${FRAME_OPEN}${sweet ? `\n\n${mppText}` : ''}\n\n${FRAME_CLOSE}`;
-  appendFileSync(path.join(rundir, 'AGENTS.md'), `\n\n${instructions}\n`);
   const prompt = `=== ISSUE ===\n${task.problem_statement || ''}`;
 
   // EXPERIMENTAL agent sandbox (see AGENT_SANDBOX above — opt-in, native-arm-only
@@ -588,6 +610,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   } catch { /* best-effort — keep realized cost as the fallback */ }
 
   return {
+    ...shimInfo.controller,
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
     patchHunks, patchFiles, finalPatch, ranTests: toolCounts.test > 0,
     ...escapeAudit,

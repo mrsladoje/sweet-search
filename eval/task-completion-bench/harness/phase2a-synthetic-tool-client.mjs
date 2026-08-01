@@ -37,7 +37,7 @@ else {
     const timer = setTimeout(() => finish(2, 'phase2a synthetic tool timed out'), TIMEOUT_MS);
     timer.unref?.();
     client.setEncoding('utf8');
-    client.once('connect', () => client.end(request));
+    client.once('connect', () => client.write(request));
     client.on('data', chunk => {
       body += chunk;
       if (Buffer.byteLength(body) > MAX_RESPONSE_BYTES) finish(2, 'phase2a synthetic response too large');

@@ -30,6 +30,9 @@ import { warnOnGateViolations } from './task-gates.mjs';
 import { RT_DEDUP_ON } from './rt-dedup.mjs';
 import { ensureGuard } from './egress-guard.mjs';
 import { scanPredictions } from './gold-tripwire.mjs';
+import { loadTaskFile } from './task-file-loader.mjs';
+import { progressRowFields, resolveProgressFlags } from './rt-progress-controller.mjs';
+import { packingTreatmentRowFields, resolvePackingTreatment } from './agent-runner-shared.mjs';
 // HARNESS routes the agent loop through a REAL production coding agent (uncapped — runs
 // to completion) instead of the bare-API ReAct loop. All share grading/metrics + the
 // identical completion frame; native=vanilla agent, sweet=agent + M++ + ss-* on PATH.
@@ -67,6 +70,10 @@ const BENCH = path.join(ROOT, 'eval/task-completion-bench');
 const SS_BIN = path.join(ROOT, 'eval/agent-read-workflows/bin');
 const MPP = process.env.MPP || path.join(ROOT, 'core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md');
 const ARMS = (process.env.ARMS || 'native,sweet').split(',').map(s => s.trim()).filter(Boolean); // arm filter (e.g. ARMS=sweet) for prompt-variant smokes
+const PACKING_TREATMENT = resolvePackingTreatment();
+if (PACKING_TREATMENT !== 'off' && ARMS.some(arm => arm !== 'sweet')) {
+  throw new Error('SS_PACKING_TREATMENT requires ARMS=sweet');
+}
 const INDEXER = path.join(ROOT, 'core/indexing/index-codebase-v21.js');
 const VENV_PY = path.join(BENCH, '.venv-grade/bin/python');
 const DOCKER_HOST = process.env.DOCKER_HOST || 'unix:///Users/admin/.colima/default/docker.sock';
@@ -103,6 +110,7 @@ const SR_MODE = !!TASKS_FILE;
 const SR_EVAL_DIR = process.env.SR_EVAL_DIR || '/root/swe-rebench-tools/SWE-rebench-V2';
 const SR_EVAL_RUNNER = path.join(BENCH, 'harness/sr-eval.py');
 const taskById = new Map(); // instance_id -> full spec (populated by loadTasks in SR mode)
+const preflightConfigHashes = new Map();
 
 // --- Per-task harness overrides (bench hygiene, 2026-07-07) ---
 // task-overrides.json maps instance_id → { testTimeoutSec, testCmd, image, network,
@@ -177,7 +185,7 @@ const { ensureImage, makeRunTests, gradeArm } = createEvaluatorRuntime({
 });
 async function loadTasks() {
   if (SR_MODE) {
-    const specs = JSON.parse(readFileSync(TASKS_FILE, 'utf8'));
+    const specs = loadTaskFile(TASKS_FILE);
     for (const s of specs) {
       const ov = TASK_OVERRIDES.tasks?.[s.instance_id];
       s._testTimeoutSec = Number(ov?.testTimeoutSec) || DEFAULT_TEST_TIMEOUT_SEC;
@@ -291,6 +299,7 @@ function reapRunDir(rundir) {
 }
 
 const runId = process.env.RUN_ID || `pilot-${INSTANCES.length}x${REPS}`;
+const RT_PROGRESS_ROW = progressRowFields({ flags: resolveProgressFlags() });
 // L3 run_tests output dedup (rt-dedup.mjs): harness-side, BOTH arms, tests always run.
 // Stamped on every row like `isolated`, so a run's rows always say which way it ran.
 console.log(RT_DEDUP_ON
@@ -360,6 +369,7 @@ if (SR_MODE) {
     }
   } else {
     console.log(`[env-ledger] pre-flight OK: ${selSpecs.length}/${selSpecs.length} selected tasks gold-FULL under current config (${LEDGER_PATH})`);
+    for (const spec of selSpecs) preflightConfigHashes.set(spec.instance_id, ledgerMap.get(spec.instance_id)?.configHash || null);
   }
   if (process.env.PREFLIGHT_ONLY === '1') {
     console.log('[env-ledger] PREFLIGHT_ONLY=1 — exiting after pre-flight (no rollouts run).');
@@ -492,7 +502,7 @@ async function runOneTask(id) {
             if (rep === 0) predsByArm[arm].push(pred);
             (predsByRepArm[rep] = predsByRepArm[rep] || { native: [], sweet: [] })[arm].push(pred);
           }
-          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, isolated: CLI_HARNESS && ISOLATION_ON, rtDedup: RT_DEDUP_ON, ...stripBig(r) });
+          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, provider: PROVIDER, harness: HARNESS, reasoning: REASONING, envConfigHash: preflightConfigHashes.get(id) || null, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, isolated: CLI_HARNESS && ISOLATION_ON, rtDedup: RT_DEDUP_ON, ...RT_PROGRESS_ROW, ...packingTreatmentRowFields({ sweet }), ...stripBig(r) });
           try { const td = path.join(BENCH, 'results', runId, 'trajectories'); mkdirSync(td, { recursive: true }); writeFileSync(path.join(td, `${id}-${arm}-r${rep}.json`), JSON.stringify({ taskId: id, arm, rep, exitReason: r.exitReason, toolCounts: r.toolCounts, ranTests, escapeExamples: r.escapeExamples, trajectory: r.trajectory }, null, 2)); } catch { /* */ }
           prog.done++; prog.byArm[arm]++; if (r.patchHunks > 0 && !v.excluded) prog.predOk[arm]++; prog.cost += attemptCost;
           if (v.excluded) prog.shimExcluded = (prog.shimExcluded || 0) + 1;
