@@ -1,0 +1,433 @@
+{
+  "audit": {
+    "exclusions": [
+      {
+        "configHash": "63e60231575a5726",
+        "id": "1c-syntax__bsl-language-server-2901",
+        "language": "java",
+        "slot": 0,
+        "stage": "confirm",
+        "status": "needs-warming",
+        "stratum": "tail"
+      }
+    ],
+    "fallbacks": [],
+    "replacements": [
+      {
+        "language": "java",
+        "rejectedId": "1c-syntax__bsl-language-server-2901",
+        "rejectedStatus": "needs-warming",
+        "replacementId": "weld__weld-junit-27",
+        "slot": 0,
+        "stage": "confirm",
+        "stratum": "tail"
+      }
+    ]
+  },
+  "cohorts": {
+    "confirm": {
+      "actualByLanguage": {
+        "c": 1,
+        "cpp": 2,
+        "csharp": 2,
+        "go": 3,
+        "java": 3,
+        "js": 4,
+        "kotlin": 1,
+        "php": 1,
+        "python": 4,
+        "rust": 2,
+        "swift": 1,
+        "ts": 4
+      },
+      "actualByStratum": {
+        "non_tail": 22,
+        "tail": 6
+      },
+      "execute": true,
+      "file": "tasks_turnfix_confirm28.jsonl",
+      "ids": [
+        "kubernetes-sigs__security-profiles-operator-1278",
+        "hypothesisworks__hypothesis-2506",
+        "eslint-community__eslint-plugin-promise-365",
+        "pashagolub__pgxmock-148",
+        "detekt__detekt-7637",
+        "fuellabs__fuel-vm-433",
+        "ant-design__ant-design-mobile-6812",
+        "ccache__ccache-1312",
+        "ta4j__ta4j-945",
+        "bfgroup__b2-113",
+        "scikit-build__scikit-build-core-712",
+        "rust-lang__chalk-222",
+        "devlooped__moq-1262",
+        "locationtech__jts-622",
+        "vaskoz__dailycodingproblem-go-117",
+        "doctrine__orm-11308",
+        "yelp__bravado-core-154",
+        "platers__obsidian-linter-511",
+        "gitbookio__markup-it-56",
+        "chicio__id3tageditor-54",
+        "typescript-eslint__tslint-to-eslint-config-707",
+        "sveltejs__kit-8412",
+        "mathnet__mathnet-numerics-1072",
+        "smooth-code__svgr-10",
+        "weld__weld-junit-27",
+        "zmap__zlint-299",
+        "pytest-dev__pytest-xdist-851",
+        "ota-meshi__eslint-plugin-regexp-306"
+      ],
+      "languageAllocation": {
+        "non_tail": {
+          "c": 1,
+          "clojure": 0,
+          "cpp": 1,
+          "csharp": 1,
+          "dart": 0,
+          "elixir": 0,
+          "go": 2,
+          "java": 2,
+          "js": 3,
+          "julia": 0,
+          "kotlin": 1,
+          "php": 1,
+          "python": 3,
+          "r": 0,
+          "rust": 2,
+          "scala": 0,
+          "swift": 1,
+          "ts": 4
+        },
+        "tail": {
+          "cpp": 1,
+          "csharp": 1,
+          "dart": 0,
+          "go": 1,
+          "java": 1,
+          "js": 1,
+          "julia": 0,
+          "kotlin": 0,
+          "php": 0,
+          "python": 1,
+          "rust": 0,
+          "ts": 0
+        },
+        "unknown": {}
+      },
+      "n": 28,
+      "sha256": "b768dc0879f9e2eba45a0d21f4f1f95899ee86efe526604e43320542055e6347",
+      "targets": {
+        "non_tail": 22,
+        "tail": 6,
+        "unknown": 0
+      }
+    },
+    "discovery": {
+      "actualByLanguage": {
+        "cpp": 2,
+        "csharp": 1,
+        "go": 2,
+        "java": 3,
+        "js": 3,
+        "kotlin": 1,
+        "php": 1,
+        "python": 4,
+        "rust": 1,
+        "ts": 2
+      },
+      "actualByStratum": {
+        "non_tail": 10,
+        "tail": 10
+      },
+      "execute": true,
+      "file": "tasks_turnfix_discovery20.jsonl",
+      "ids": [
+        "apigee__registry-994",
+        "nvidia__cccl-1157",
+        "py-cov-action__python-coverage-comment-action-323",
+        "helidon-io__helidon-9325",
+        "humbug__php-scoper-1027",
+        "pennylaneai__pennylane-3651",
+        "apache__camel-k-779",
+        "typescript-eslint__tslint-to-eslint-config-861",
+        "bkbnio__kompendium-208",
+        "cedar-policy__cedar-1551",
+        "ta4j__ta4j-1260",
+        "mozilla__node-convict-246",
+        "bfgroup__b2-259",
+        "sap__luigi-3946",
+        "devlooped__moq-1259",
+        "raml-org__raml-java-parser-614",
+        "stingraysoftware__stingray-324",
+        "florianholzapfel__express-restify-mongoose-360",
+        "intuit__auto-560",
+        "jazzband__tablib-454"
+      ],
+      "languageAllocation": {
+        "non_tail": {
+          "c": 0,
+          "clojure": 0,
+          "cpp": 1,
+          "csharp": 0,
+          "dart": 0,
+          "elixir": 0,
+          "go": 1,
+          "java": 1,
+          "js": 2,
+          "julia": 0,
+          "kotlin": 0,
+          "php": 0,
+          "python": 2,
+          "r": 0,
+          "rust": 1,
+          "scala": 0,
+          "swift": 0,
+          "ts": 2
+        },
+        "tail": {
+          "cpp": 1,
+          "csharp": 1,
+          "dart": 0,
+          "go": 1,
+          "java": 2,
+          "js": 1,
+          "julia": 0,
+          "kotlin": 1,
+          "php": 1,
+          "python": 2,
+          "rust": 0,
+          "ts": 0
+        },
+        "unknown": {}
+      },
+      "n": 20,
+      "sha256": "3542da55bbe214bdd2d03882e6ecf790816938879695d21fbef63bc6fa3f26a1",
+      "targets": {
+        "non_tail": 10,
+        "tail": 10,
+        "unknown": 0
+      }
+    },
+    "expand": {
+      "actualByLanguage": {
+        "cpp": 1,
+        "csharp": 1,
+        "elixir": 1,
+        "go": 2,
+        "java": 3,
+        "js": 4,
+        "kotlin": 1,
+        "php": 2,
+        "python": 6,
+        "rust": 4,
+        "scala": 1,
+        "ts": 6
+      },
+      "actualByStratum": {
+        "non_tail": 26,
+        "tail": 6
+      },
+      "execute": false,
+      "file": "tasks_turnfix_expand32.jsonl",
+      "ids": [
+        "rcardin__raise4s-62",
+        "mpmath__mpmath-689",
+        "awslabs__aws-embedded-metrics-node-21",
+        "spectreconsole__spectre.console-1942",
+        "hypothesisworks__hypothesis-2932",
+        "vhdl-ls__rust_hdl-272",
+        "final-form__final-form-64",
+        "redocly__openapi-cli-448",
+        "aws-actions__configure-aws-credentials-42",
+        "celestiaorg__nmt-192",
+        "nvidia__cccl-1298",
+        "keichi__binary-parser-202",
+        "vlucas__frisby-511",
+        "samchungy__zod-openapi-330",
+        "absinthe-graphql__absinthe-998",
+        "mwouts__jupytext-360",
+        "openrefine__openrefine-7247",
+        "apigee__registry-961",
+        "python-babel__babel-649",
+        "zkat__miette-117",
+        "sindresorhus__dot-prop-105",
+        "shapesecurity__salvation-114",
+        "mirumee__ariadne-codegen-218",
+        "bnorm__kotlin-power-assert-21",
+        "not-an-aardvark__eslint-plugin-eslint-plugin-38",
+        "auth0__auth0-python-443",
+        "filecoin-project__builtin-actors-1424",
+        "eclipse-ee4j__yasson-395",
+        "clap-rs__clap-2100",
+        "jsonmapper__jsonmapper-161",
+        "protofire__solhint-224",
+        "hotmeteor__spectator-181"
+      ],
+      "languageAllocation": {
+        "non_tail": {
+          "c": 0,
+          "clojure": 0,
+          "cpp": 1,
+          "csharp": 1,
+          "dart": 0,
+          "elixir": 1,
+          "go": 2,
+          "java": 2,
+          "js": 4,
+          "julia": 0,
+          "kotlin": 0,
+          "php": 1,
+          "python": 5,
+          "r": 0,
+          "rust": 3,
+          "scala": 1,
+          "swift": 0,
+          "ts": 5
+        },
+        "tail": {
+          "cpp": 0,
+          "csharp": 0,
+          "dart": 0,
+          "go": 0,
+          "java": 1,
+          "js": 0,
+          "julia": 0,
+          "kotlin": 1,
+          "php": 1,
+          "python": 1,
+          "rust": 1,
+          "ts": 1
+        },
+        "unknown": {}
+      },
+      "n": 32,
+      "sha256": "4827a054179ecff773fd5a4d1b70f0595231304bfb0e86adf2d7488b9009a867",
+      "targets": {
+        "non_tail": 26,
+        "tail": 6,
+        "unknown": 0
+      }
+    }
+  },
+  "goldLedger": {
+    "green": 198,
+    "nonGreenOrMissing": 2
+  },
+  "greenRule": "append-only ledger last verdict is gold-valid with non-empty configHash",
+  "historicalTail": {
+    "bothInvalidIds": [],
+    "boundaryTurns": 52,
+    "ids": [
+      "1c-syntax__bsl-language-server-2901",
+      "pennylaneai__pennylane-3651",
+      "devlooped__moq-1259",
+      "jashkenas__underscore-2757",
+      "hyperledger__firefly-716",
+      "stingraysoftware__stingray-324",
+      "hotmeteor__spectator-181",
+      "aio-libs__aiohttp-8038",
+      "humbug__php-scoper-1027",
+      "narwhals-dev__narwhals-2733",
+      "simdjson__simdjson-2016",
+      "helidon-io__helidon-9325",
+      "raml-org__raml-java-parser-614",
+      "samchungy__zod-openapi-330",
+      "vaskoz__dailycodingproblem-go-117",
+      "getmoto__moto-6716",
+      "redboltz__mqtt_cpp-239",
+      "devlooped__moq-1319",
+      "apigee__registry-994",
+      "painterqubits__unitful.jl-478",
+      "bkbnio__kompendium-208",
+      "rokucommunity__brighterscript-1050",
+      "smooth-code__svgr-10",
+      "avaje__avaje-inject-286",
+      "auth0__auth0-python-443",
+      "clap-rs__clap-2102",
+      "filecoin-project__builtin-actors-1424",
+      "suzuki-shunsuke__tfcmt-1257",
+      "vuejs__eslint-plugin-vue-2194",
+      "btcpayserver__btcpayserver-6251",
+      "intel__rohd-458",
+      "sap__luigi-3946",
+      "bnorm__kotlin-power-assert-21",
+      "devlooped__moq-1262",
+      "openrefine__openrefine-7247",
+      "weld__weld-junit-27",
+      "bfgroup__b2-259",
+      "yelp__bravado-core-154",
+      "ccache__ccache-1312",
+      "unexpectedjs__unexpected-571"
+    ],
+    "n": 40,
+    "oneInvalidArm": 0
+  },
+  "outcomesObserved": false,
+  "replacementRule": "same seeded stratum/language cell, then largest proportional deficit with language tie-break",
+  "safetyLanguageAllocation": {
+    "non_tail": {
+      "c": 1,
+      "clojure": 0,
+      "cpp": 2,
+      "csharp": 2,
+      "dart": 0,
+      "elixir": 1,
+      "go": 4,
+      "java": 4,
+      "js": 7,
+      "julia": 0,
+      "kotlin": 1,
+      "php": 2,
+      "python": 8,
+      "r": 0,
+      "rust": 5,
+      "scala": 1,
+      "swift": 1,
+      "ts": 9
+    },
+    "tail": {
+      "cpp": 1,
+      "csharp": 1,
+      "dart": 0,
+      "go": 1,
+      "java": 2,
+      "js": 1,
+      "julia": 0,
+      "kotlin": 1,
+      "php": 1,
+      "python": 2,
+      "rust": 1,
+      "ts": 1
+    },
+    "unknown": {}
+  },
+  "safetyRule": "CONFIRM-28 plus EXPAND-32 is the pre-materialized 60-task safety cohort; EXPAND is never automatic",
+  "schema": "turnfix-dev-cohorts-v1",
+  "seed": 20260731,
+  "source": "DEV-RET",
+  "sourceTaskCount": 200,
+  "sources": {
+    "history": {
+      "dbSnapshot": "/root/turnfix-snapshot-lag6WUI3/opencode.db",
+      "extractedRowsSha256": "70cbb7cf66ae0ce0903000b3564f8ae19ccbf6d4fda3adf63c59b1317e91cb16"
+    },
+    "ledger": {
+      "path": "/root/env-ledger/devret200-phase0a-footer-20260731/ledger.jsonl",
+      "sha256": "8a75c6ebb30ca0ab16cfeb068326c45ed722a0dd5b45d132c3c953c13f44de01"
+    },
+    "tasks": {
+      "path": "/root/sweet-search-private/eval/task-completion-bench/select/tasks_heldout.jsonl",
+      "sha256": "66f73b90ffa0d0bceaddc85f1c3a0e1338e6de8c0b0e362d30aa111835d0860a"
+    }
+  },
+  "stratumCounts": {
+    "non_tail": 160,
+    "tail": 40,
+    "unknown": 0
+  },
+  "stratumWeights": {
+    "non_tail": 0.8,
+    "tail": 0.2,
+    "unknown": 0
+  },
+  "tailRule": "top 20% by max(valid nativeTurns, valid sweetTurns); ties by instance_id"
+}

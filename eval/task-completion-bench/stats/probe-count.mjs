@@ -1,10 +1,6 @@
 #!/usr/bin/env node
-/**
- * Canonical retrieval-and-test operation meter for the turn-economy A/B.
- * It separates operations from tool envelopes, parses shell composition recursively,
- * and reads only copied OpenCode stores. See tests/probe-count.mjs for parser scope.
- * Usage: node stats/probe-count.mjs <results/RUN_ID> [--expect N] [--json]
- */
+// Canonical operation meter: splits shell composition and reads copied OpenCode stores.
+// Usage: node stats/probe-count.mjs <results/RUN_ID> [--expect N] [--json]
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -283,12 +279,10 @@ finally:
   return JSON.parse(out);
 }
 
-/**
- * Read a persisted per-turn log. `in` already includes cached input tokens.
- * Aggregate-only logs are not a model-turn distribution and are rejected.
- *
+/** Read a real per-turn log; `in` already includes cached input tokens.
  * @param {string} file
- * @returns {{ modelTurns?: number, ctxPerTurn?: number, error?: string }}
+ * @returns {{ modelTurns?: number, contextTokens?: number, ctxPerTurn?: number,
+ *   source?: string | null, error?: string }}
  */
 export function readTurnLog(file) {
   if (!existsSync(file)) return { error: 'turn log missing' };
@@ -298,8 +292,8 @@ export function readTurnLog(file) {
     let record;
     try { record = JSON.parse(line); } catch { return { error: 'turn log unparseable' }; }
     if (record.kind === 'meta') { meta = record; continue; }
-    if (typeof record.in !== 'number' || !Number.isFinite(record.in)) {
-      return { error: 'turn record missing finite `in`' };
+    if (typeof record.in !== 'number' || !Number.isFinite(record.in) || record.in < 0) {
+      return { error: 'turn record missing finite non-negative `in`' };
     }
     inputTokens += record.in;
     modelTurns++;
@@ -308,7 +302,15 @@ export function readTurnLog(file) {
     return { error: 'turn log is source:aggregate — not a turn distribution' };
   }
   if (!modelTurns) return { error: 'turn log has no turn records' };
-  return { modelTurns, ctxPerTurn: inputTokens / modelTurns };
+  if (meta?.turns != null && (!Number.isInteger(meta.turns) || meta.turns !== modelTurns)) {
+    return { error: `turn log meta count ${String(meta.turns)} != ${modelTurns} records` };
+  }
+  return {
+    modelTurns,
+    contextTokens: inputTokens,
+    ctxPerTurn: inputTokens / modelTurns,
+    source: typeof meta?.source === 'string' ? meta.source : null,
+  };
 }
 
 /**

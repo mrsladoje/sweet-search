@@ -1,0 +1,290 @@
+{
+  "schemaVersion": 1,
+  "seed": 20260731,
+  "scenarios": [
+    {
+      "id": "independent-2-auth",
+      "kind": "independent",
+      "width": 2,
+      "operations": [
+        {
+          "id": "auth_search",
+          "tool": "search",
+          "args": { "query": "phase2a authentication handshake route", "k": 5, "mode": "hybrid" },
+          "serialCommand": "ss-search \"phase2a authentication handshake route\" -k 5 --mode hybrid",
+          "fact": "FACT_AUTH_ROUTE"
+        },
+        {
+          "id": "auth_grep",
+          "tool": "grep",
+          "args": { "pattern": "PHASE2A_AUTH_SENTINEL", "k": 10 },
+          "serialCommand": "ss-grep \"PHASE2A_AUTH_SENTINEL\" -k 10",
+          "fact": "FACT_AUTH_GREP"
+        }
+      ]
+    },
+    {
+      "id": "independent-2-transport",
+      "kind": "independent",
+      "width": 2,
+      "operations": [
+        {
+          "id": "transport_find",
+          "tool": "find",
+          "args": { "query": "phase2a locate batch transport constructor", "regex": "BatchTransport", "k": 5 },
+          "serialCommand": "ss-find \"phase2a locate batch transport constructor\" --regex \"BatchTransport\" -k 5",
+          "fact": "FACT_TRANSPORT_FIND"
+        },
+        {
+          "id": "transport_read",
+          "tool": "read",
+          "args": { "path": "known/transport.txt", "startLine": 1, "endLine": 20 },
+          "serialCommand": "ss-read \"known/transport.txt\" 1 20",
+          "fact": "FACT_TRANSPORT_READ"
+        }
+      ]
+    },
+    {
+      "id": "independent-2-cache",
+      "kind": "independent",
+      "width": 2,
+      "operations": [
+        {
+          "id": "cache_grep",
+          "tool": "grep",
+          "args": { "pattern": "PHASE2A_CACHE_EPOCH", "in": "known", "k": 8 },
+          "serialCommand": "ss-grep \"PHASE2A_CACHE_EPOCH\" --in \"known\" -k 8",
+          "fact": "FACT_CACHE_GREP"
+        },
+        {
+          "id": "cache_read",
+          "tool": "read",
+          "args": { "path": "known/cache.txt", "startLine": 3, "endLine": 18 },
+          "serialCommand": "ss-read \"known/cache.txt\" 3 18",
+          "fact": "FACT_CACHE_READ"
+        }
+      ]
+    },
+    {
+      "id": "independent-2-router",
+      "kind": "independent",
+      "width": 2,
+      "operations": [
+        {
+          "id": "router_search",
+          "tool": "search",
+          "args": { "query": "phase2a query router fallback", "k": 6, "mode": "auto" },
+          "serialCommand": "ss-search \"phase2a query router fallback\" -k 6 --mode auto",
+          "fact": "FACT_ROUTER_SEARCH"
+        },
+        {
+          "id": "router_find",
+          "tool": "find",
+          "args": { "query": "phase2a route selection branch", "regex": "selectRoute", "k": 6 },
+          "serialCommand": "ss-find \"phase2a route selection branch\" --regex \"selectRoute\" -k 6",
+          "fact": "FACT_ROUTER_FIND"
+        }
+      ]
+    },
+    {
+      "id": "independent-3-server",
+      "kind": "independent",
+      "width": 3,
+      "operations": [
+        {
+          "id": "server_search",
+          "tool": "search",
+          "args": { "query": "phase2a search server readiness", "k": 5, "mode": "hybrid" },
+          "serialCommand": "ss-search \"phase2a search server readiness\" -k 5 --mode hybrid",
+          "fact": "FACT_SERVER_SEARCH"
+        },
+        {
+          "id": "server_grep",
+          "tool": "grep",
+          "args": { "pattern": "PHASE2A_SERVER_READY", "k": 8 },
+          "serialCommand": "ss-grep \"PHASE2A_SERVER_READY\" -k 8",
+          "fact": "FACT_SERVER_GREP"
+        },
+        {
+          "id": "server_read",
+          "tool": "read",
+          "args": { "path": "known/server.txt", "startLine": 1, "endLine": 24 },
+          "serialCommand": "ss-read \"known/server.txt\" 1 24",
+          "fact": "FACT_SERVER_READ"
+        }
+      ]
+    },
+    {
+      "id": "independent-3-protocol",
+      "kind": "independent",
+      "width": 3,
+      "operations": [
+        {
+          "id": "protocol_find",
+          "tool": "find",
+          "args": { "query": "phase2a protocol marker parser", "regex": "protocolMarker", "k": 5 },
+          "serialCommand": "ss-find \"phase2a protocol marker parser\" --regex \"protocolMarker\" -k 5",
+          "fact": "FACT_PROTOCOL_FIND"
+        },
+        {
+          "id": "protocol_search",
+          "tool": "search",
+          "args": { "query": "phase2a batch protocol negotiation", "k": 5, "mode": "lexical" },
+          "serialCommand": "ss-search \"phase2a batch protocol negotiation\" -k 5 --mode lexical",
+          "fact": "FACT_PROTOCOL_SEARCH"
+        },
+        {
+          "id": "protocol_grep",
+          "tool": "grep",
+          "args": { "pattern": "PHASE2A_PROTOCOL_V1", "k": 8 },
+          "serialCommand": "ss-grep \"PHASE2A_PROTOCOL_V1\" -k 8",
+          "fact": "FACT_PROTOCOL_GREP"
+        }
+      ]
+    },
+    {
+      "id": "independent-3-socket",
+      "kind": "independent",
+      "width": 3,
+      "operations": [
+        {
+          "id": "socket_read",
+          "tool": "read",
+          "args": { "path": "known/socket.txt", "startLine": 2, "endLine": 22 },
+          "serialCommand": "ss-read \"known/socket.txt\" 2 22",
+          "fact": "FACT_SOCKET_READ"
+        },
+        {
+          "id": "socket_grep",
+          "tool": "grep",
+          "args": { "pattern": "PHASE2A_SOCKET_OWNER", "in": "known", "k": 8 },
+          "serialCommand": "ss-grep \"PHASE2A_SOCKET_OWNER\" --in \"known\" -k 8",
+          "fact": "FACT_SOCKET_GREP"
+        },
+        {
+          "id": "socket_find",
+          "tool": "find",
+          "args": { "query": "phase2a unix socket ownership check", "regex": "effectiveUid", "k": 5 },
+          "serialCommand": "ss-find \"phase2a unix socket ownership check\" --regex \"effectiveUid\" -k 5",
+          "fact": "FACT_SOCKET_FIND"
+        }
+      ]
+    },
+    {
+      "id": "independent-3-budget",
+      "kind": "independent",
+      "width": 3,
+      "operations": [
+        {
+          "id": "budget_search",
+          "tool": "search",
+          "args": { "query": "phase2a shared result budget", "k": 5, "mode": "hybrid" },
+          "serialCommand": "ss-search \"phase2a shared result budget\" -k 5 --mode hybrid",
+          "fact": "FACT_BUDGET_SEARCH"
+        },
+        {
+          "id": "budget_read",
+          "tool": "read",
+          "args": { "path": "known/budget.txt", "startLine": 1, "endLine": 16 },
+          "serialCommand": "ss-read \"known/budget.txt\" 1 16",
+          "fact": "FACT_BUDGET_READ"
+        },
+        {
+          "id": "budget_grep",
+          "tool": "grep",
+          "args": { "pattern": "PHASE2A_MAX_CHARS", "k": 8 },
+          "serialCommand": "ss-grep \"PHASE2A_MAX_CHARS\" -k 8",
+          "fact": "FACT_BUDGET_GREP"
+        }
+      ]
+    },
+    {
+      "id": "dependency-route",
+      "kind": "dependency",
+      "width": 2,
+      "leadId": "route_search",
+      "dependentId": "route_read",
+      "operations": [
+        {
+          "id": "route_search",
+          "tool": "search",
+          "args": { "query": "phase2a reveal route target", "k": 5, "mode": "hybrid" },
+          "serialCommand": "ss-search \"phase2a reveal route target\" -k 5 --mode hybrid",
+          "fact": "FACT_ROUTE_SEARCH"
+        },
+        {
+          "id": "route_read",
+          "tool": "read",
+          "args": { "path": "$lead.path", "startLine": 1, "endLine": 20 },
+          "fact": "FACT_ROUTE_READ"
+        }
+      ]
+    },
+    {
+      "id": "dependency-owner",
+      "kind": "dependency",
+      "width": 2,
+      "leadId": "owner_search",
+      "dependentId": "owner_read",
+      "operations": [
+        {
+          "id": "owner_search",
+          "tool": "search",
+          "args": { "query": "phase2a reveal owner target", "k": 5, "mode": "hybrid" },
+          "serialCommand": "ss-search \"phase2a reveal owner target\" -k 5 --mode hybrid",
+          "fact": "FACT_OWNER_SEARCH"
+        },
+        {
+          "id": "owner_read",
+          "tool": "read",
+          "args": { "path": "$lead.path", "startLine": 1, "endLine": 20 },
+          "fact": "FACT_OWNER_READ"
+        }
+      ]
+    },
+    {
+      "id": "dependency-config",
+      "kind": "dependency",
+      "width": 2,
+      "leadId": "config_search",
+      "dependentId": "config_read",
+      "operations": [
+        {
+          "id": "config_search",
+          "tool": "search",
+          "args": { "query": "phase2a reveal config target", "k": 5, "mode": "hybrid" },
+          "serialCommand": "ss-search \"phase2a reveal config target\" -k 5 --mode hybrid",
+          "fact": "FACT_CONFIG_SEARCH"
+        },
+        {
+          "id": "config_read",
+          "tool": "read",
+          "args": { "path": "$lead.path", "startLine": 1, "endLine": 20 },
+          "fact": "FACT_CONFIG_READ"
+        }
+      ]
+    },
+    {
+      "id": "dependency-symbol",
+      "kind": "dependency",
+      "width": 2,
+      "leadId": "symbol_search",
+      "dependentId": "symbol_read",
+      "operations": [
+        {
+          "id": "symbol_search",
+          "tool": "search",
+          "args": { "query": "phase2a reveal symbol target", "k": 5, "mode": "hybrid" },
+          "serialCommand": "ss-search \"phase2a reveal symbol target\" -k 5 --mode hybrid",
+          "fact": "FACT_SYMBOL_SEARCH"
+        },
+        {
+          "id": "symbol_read",
+          "tool": "read",
+          "args": { "path": "$lead.path", "startLine": 1, "endLine": 20 },
+          "fact": "FACT_SYMBOL_READ"
+        }
+      ]
+    }
+  ]
+}
