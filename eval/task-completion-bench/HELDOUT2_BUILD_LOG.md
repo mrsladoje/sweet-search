@@ -13,8 +13,8 @@ the box or the Mac** (indexing is the user's RunPod step).
 | S4 · extension-coverage audit | DONE 2026-07-30 | 1,299 patch paths audited; 23 extensions added to the indexing config; remaining gaps all by-design |
 | S5 · RunPod handoff inputs | DONE 2026-07-30 | 267 keys, 0 vault reuse; `HELDOUT2_POD_HANDOFF.md` |
 | S5b · pod golden fleet (A100 SXM) | RUNNING since 2026-07-31 11:40 | driven from the Mac, tmux `h2fleet`, log `~/h2-fleet.log` |
-| S6 · vault verify + stage on box (read-only) | verify DONE 2026-07-31 22:30 (200/200 clean); staging pending fleet end | `golden-vault.sh verify` added |
-| S7 · green ledger, gold-FULL 200/200 | PENDING | box compute, 4-wide sweep |
+| S6 · vault verify + stage on box (read-only) | DONE 2026-07-31 | 200/200 + 67/67 verified; 200 staged, box-verified, locked |
+| S7 · green ledger, gold-FULL 200/200 | IN PROGRESS since 2026-07-31 23:10 | sweep died once at 172/200, cause unknown; resumed |
 | S8 · final PLAN.md update, set marked DONE | PENDING | |
 
 ## Log
@@ -110,3 +110,34 @@ against the same bad manifest, so `push --verify` would go green on corruption. 
 
 Also corrected a now-false claim in that script's header: it stated goldens are box-built
 under ORT INT8, which is true of held-out 1 only. Parity is per-SET.
+
+**S5b/S6 complete — 2026-08-01 02:05.** Pod fleet finished: **267/267 built, 0 skipped,
+0 failed** — no key needed a retry. Vault integrity: 200/200 primaries and 67/67 reserve
+verified (`golden-vault.sh verify`), 539 keys / 129 GB total. All 200 primaries staged to the
+box with `push --verify` (checksum re-verified ON the box against the manifest) and locked
+read-only; the script's post-condition confirmed 200/200 staged. Pod released. Total pod cost
+~14.5 h at $1.49/hr ≈ $22.
+
+Golden-presence preflight needed no work — run-pilot already refuses to launch when a
+selected task lacks `.sweet-search/codebase.db` + `.git` (`SS_SKIP_GOLDEN_CHECK` overrides).
+
+**S7 ledger, first pass — 2026-07-31 23:10 → 2026-08-01 03:05.** Config: `--tasks
+select/.cache/tasks_full_heldout2.json --out results/heldout2-ledger --batch 4 --max-workers 2
+--singleton-retry`, `--network none` inherent. Reached 172/200 then the node process exited
+mid-batch with no error, no OOM (dmesg clean; 29 GB available), no cron/guardian on the box,
+and the tmux server intact with its other sessions alive. **Cause not determined.** Two
+candidate mechanisms were checked and ruled out: per-batch `docker rmi` is wrapped in
+`try/catch` with empty handlers so GC cannot crash it, and the logged `SWEEP_EXIT=0` was
+`tee`'s status, not node's. Restarted at 03:07 capturing `PIPESTATUS[0]` instead; it resumed
+correctly (`172 already verdicted, 28 to run`).
+
+Cleanup done at the same time: the timed-out Scala/Swift batch (b160) had left a container
+running for 2 h after the sweep abandoned it — killed. `docker container prune` surfaced a
+container with a missing rw layer snapshot; it is a 4-day-old held-out-1 leftover, not from
+this run, and docker is otherwise healthy (9 images, 12 GB reclaimable).
+
+Verdicts at 172: **gold-valid 90 · needs-warming 55 · env-broken-nonnet 23 · infra 4.** The 4
+infra rows are batch-timeout collateral from b160 and are retried as singletons after the main
+pass. Language pattern so far: python 30/34 valid and js 23/29 valid, against java 1/22 and
+rust 0/16 — the compiled languages fetch dependencies at test time, which is what `prep-warm`
+exists to fix, so a low valid count there is recoverable rather than lost.
