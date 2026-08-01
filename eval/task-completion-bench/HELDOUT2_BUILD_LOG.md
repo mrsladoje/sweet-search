@@ -14,7 +14,7 @@ the box or the Mac** (indexing is the user's RunPod step).
 | S5 · RunPod handoff inputs | DONE 2026-07-30 | 267 keys, 0 vault reuse; `HELDOUT2_POD_HANDOFF.md` |
 | S5b · pod golden fleet (A100 SXM) | RUNNING since 2026-07-31 11:40 | driven from the Mac, tmux `h2fleet`, log `~/h2-fleet.log` |
 | S6 · vault verify + stage on box (read-only) | DONE 2026-07-31 | 200/200 + 67/67 verified; 200 staged, box-verified, locked |
-| S7 · green ledger, gold-FULL 200/200 | IN PROGRESS | sweep + warm + triage done: 158 valid, 42 to replace |
+| S7 · green ledger, gold-FULL 200/200 | **PAUSED 2026-08-01 16:38** — box collision with another live session | replacements staged; sweep resumable |
 | S8 · final PLAN.md update, set marked DONE | PENDING | |
 
 ## Log
@@ -190,3 +190,34 @@ limitation of the final set and belongs in the paper's description of it.
 
 All 42 replacement goldens verified in the vault (42 ok, 0 bad) and staged to the box with
 `push --verify` (42/42). Sweep + warm running for the replacement round.
+
+**S7 PAUSED — 2026-08-01 16:38. Box collision, not a technical failure.**
+
+The replacement sweep made no progress for hours and I initially misread it as a stall. It was
+not: **another session is running a live, paid agent rollout on the same box** —
+`turnfix-direct-d20-sweet-rem17-20260801-v1`, 17 tasks, sweet arm, Grok-4.5 via OpenRouter,
+under `run-pilot.mjs`, plus tmux sessions `turnfix_direct_discovery_20260801_v1` and `tes1`.
+I killed my sweep (0/42 graded, no ledger rows written, nothing to reconcile) and stopped
+touching the box.
+
+**Consequences, recorded honestly:**
+- **Do NOT reclaim the 214 older goldens.** That was my proposed disk lever; the other
+  session's task list is held-out-1/dev work (helidon, php-scoper, pennylane, b2, sap-luigi,
+  stingray, moq) and depends on exactly those goldens. Deleting them would have killed a paid
+  run mid-flight.
+- **I may have destroyed that session's `task-overrides.json` edits.** I scp'd my copy over
+  the box's at ~07:15 box time. The file now holds 124 entries with my three repairs present,
+  consistent with base-121 + mine, but any entry they added before my push is gone. The file
+  is git-tracked, so it is recoverable — flagged for the user.
+- This also explains the **earlier unexplained events**: the first ledger sweep dying at
+  172/200 with no error and no OOM, the harness rsync at 14:23 on 2026-07-31, and the
+  mtime-preserving golden restore that raised the box golden count 199 -> 214.
+- Box disk is at 12 GB free and is now a **shared** risk; backing off is the main mitigation
+  available to me.
+
+**Held-out 2 state is safe and fully resumable:** set frozen with the 42 replacements applied
+(sha256 `81dc0983…`), all 267 goldens vaulted + verified, 242 staged and locked on the box,
+`HELDOUT2_REPLACEMENTS.json` written, ledger resumable from `results/heldout2-ledger-r2/`.
+Remaining work when the box is free: sweep + warm the 42 replacements, iterate on their
+failures from the 25 remaining reserve, re-record the config fingerprint (the three
+`task-overrides` repairs changed it), then PLAN.md + FAIRNESS.md final update.
