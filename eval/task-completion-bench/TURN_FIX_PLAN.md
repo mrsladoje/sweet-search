@@ -414,7 +414,11 @@ Before any paid stage, report:
 - result-retention paths for raw stream, OpenCode DB/WAL, per-turn usage, controller cycles, and all
   checkpoint patches;
 - green ledger count under the exact config hash;
-- one run-pilot process, intended in-process concurrency, box process/disk state, and `escape=0`;
+- one run-pilot process, intended in-process concurrency, box process/disk state, and the
+  escape gate: `escapeProbes=0` and zero confirmed leaks (command-text evidence, exact
+  attribution). Raw network-denial counts are REPORTED, never gated — they are
+  window-attributed over a global log and include arm tooling/agent-CLI infrastructure
+  (see TURNFIX-PHASE0-REPLAY-RESULTS-2026-08-03.md §1);
 - `PREFLIGHT_ONLY=1` output; and
 - projected spend plus the stage-specific kill rule.
 

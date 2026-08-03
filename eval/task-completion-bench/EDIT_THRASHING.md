@@ -423,7 +423,8 @@ Before paid execution:
   be cut;
 - both native and Sweet receive byte-identical harness policy;
 - raw streams, DB/WAL, turn logs, controller ledgers, and checkpoint patches survive retention;
-- boolean grading admission, integrity checks, `escape=0`, green ledger, and
+- boolean grading admission, integrity checks, the escape gate (`escapeProbes=0`, zero
+  confirmed leaks; network denials reported not gated), green ledger, and
   `PREFLIGHT_ONLY=1` all pass; and
 - no production M± change, commit, push, or paid run occurs without explicit authorization.
 

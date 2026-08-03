@@ -22,10 +22,10 @@ assert.equal(h1, taskConfigHash(spec(), { netLockdown: true }));
 assert.equal(h1.length, 16);
 
 // Runtime harness fingerprint: exact files, exact bytes, stable ordering/version.
-assert.equal(RT_HARNESS_FINGERPRINT.version, 1);
+assert.equal(RT_HARNESS_FINGERPRINT.version, 2);
 assert.deepEqual(
   RT_HARNESS_FINGERPRINT.sources.map(({ name }) => name),
-  ['rt-condense-lib.mjs', 'rt-shim-runtime.mjs', 'rt-dedup.mjs']);
+  ['rt-condense-lib.mjs', 'rt-shim-runtime.mjs', 'rt-dedup.mjs', 'rt-progress-controller.mjs']);
 for (const { name, sha256 } of RT_HARNESS_FINGERPRINT.sources) {
   const sourcePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../harness', name);
   assert.equal(sha256, createHash('sha256').update(readFileSync(sourcePath)).digest('hex'));

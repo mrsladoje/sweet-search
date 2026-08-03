@@ -15,7 +15,7 @@
  *     node eval/task-completion-bench/harness/run-pilot.mjs
  */
 import { execSync, execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runTask } from './api-task-runner.mjs';
@@ -354,6 +354,28 @@ if (SR_MODE) {
       const gdir = path.join(GOLDEN_DIR, cacheKeyFor(s));
       if (!existsSync(`${gdir}/.sweet-search/codebase.db`) || !existsSync(`${gdir}/.git`))
         failures.push({ instance_id: s.instance_id, reason: 'golden-missing', detail: `no valid golden at ${gdir} (needs .sweet-search/codebase.db + .git) — stage it before launch (golden-vault push). Override: SS_SKIP_GOLDEN_CHECK=1` });
+    }
+  }
+  // Sweet-model gate: a missing model cache silently degrades the sweet arm and
+  // (pre-offline-mode) burned minutes per query in egress-denied fetch retries
+  // (TURNFIX-PHASE0-REPLAY-RESULTS-2026-08-03.md §7). Require at least one .onnx
+  // under the model cache before any run that fields a sweet arm.
+  if (ARMS.includes('sweet') && !process.env.WARM_ONLY && !process.env.GOLDEN_ONLY
+      && process.env.SS_SKIP_MODEL_CHECK !== '1') {
+    const modelRoot = process.env.SWEET_SEARCH_MODEL_CACHE
+      || path.join(process.env.HOME || '/root', '.cache/sweet-search', 'models');
+    const hasOnnx = (dir, depth = 0) => {
+      if (depth > 3 || !existsSync(dir)) return false;
+      let entries = [];
+      try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return false; }
+      for (const e of entries) {
+        if (e.isFile() && e.name.endsWith('.onnx')) return true;
+        if (e.isDirectory() && hasOnnx(path.join(dir, e.name), depth + 1)) return true;
+      }
+      return false;
+    };
+    if (!hasOnnx(modelRoot)) {
+      failures.push({ instance_id: '(sweet arm)', reason: 'model-cache-missing', detail: `no .onnx model under ${modelRoot} — restore the cache before launch (rsync from the Mac). Override: SS_SKIP_MODEL_CHECK=1` });
     }
   }
   const ok = envOk && failures.length === 0;
