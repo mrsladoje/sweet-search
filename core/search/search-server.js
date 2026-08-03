@@ -34,6 +34,12 @@ import {
   selectEvictionTargets as registrySelectEvictionTargets,
 } from './daemon-registry.js';
 import { renderRegexDialectHint } from './regex-dialect.js';
+import {
+  executeSearchBatch,
+  searchBatchRequiresServerReady,
+  validateSearchBatchRequest,
+} from './search-batch.js';
+import { renderSearchBatchCliResult } from './search-batch-format.js';
 
 // =============================================================================
 // Server constants
@@ -49,6 +55,7 @@ export const SEARCH_SERVER_MAX_URL_LENGTH = 16_384;
 export const SEARCH_SERVER_MAX_QUERY_LENGTH = 2_000;
 export const SEARCH_SERVER_MAX_READ_PATH_LENGTH = 8_192;
 const AGENT_SPAN_BODY_MAX_BYTES = 64 * 1024;
+export const SEARCH_BATCH_BODY_MAX_BYTES = 64 * 1024;
 
 const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
 
@@ -153,7 +160,39 @@ export function buildAgentSpanDaemonResponse(payload, {
   };
 }
 
-async function readBoundedJsonBody(req, maxBytes = AGENT_SPAN_BODY_MAX_BYTES) {
+export async function buildSearchBatchDaemonResponse(payload, {
+  isUnixSocket = false,
+  serverReady = false,
+  initError = null,
+  searcher = null,
+  executeBatchFn = executeSearchBatch,
+} = {}) {
+  if (!isUnixSocket) return readSemanticError(403, '/batch is only available via Unix socket');
+  const daemonProjectRoot = searcher?.projectRoot || process.cwd();
+  let plan;
+  try {
+    plan = validateSearchBatchRequest(payload, { daemonProjectRoot });
+  } catch (err) {
+    return readSemanticError(err.status || 400, err.message || 'Invalid batch request');
+  }
+  if (!serverReady && searchBatchRequiresServerReady(plan)) {
+    const reason = initError?.message
+      ? `Server initialization failed: ${initError.message}`
+      : 'Server is starting, please retry';
+    return readSemanticError(503, reason, { status: initError ? 'failed' : 'starting' });
+  }
+  try {
+    const result = await executeBatchFn(payload, { daemonProjectRoot, searcher });
+    const responseResult = result && typeof result === 'object' && !Array.isArray(result)
+      ? { ...result, cliOutput: renderSearchBatchCliResult(result) }
+      : { result, cliOutput: renderSearchBatchCliResult(result) };
+    return { status: 200, contentType: 'application/json', body: JSON.stringify(responseResult) };
+  } catch (err) {
+    return readSemanticError(err.status || 500, err.message || 'Batch execution failed');
+  }
+}
+
+export async function readBoundedJsonBody(req, maxBytes = AGENT_SPAN_BODY_MAX_BYTES) {
   const declared = Number(req.headers?.['content-length'] || 0);
   if (Number.isFinite(declared) && declared > maxBytes) {
     const err = new Error('Request body too large');
@@ -819,7 +858,32 @@ export async function startServer() {
       console.log(`[Server] Cache cleared after ${requestCount} requests`);
     }
 
-    if (req.method === 'POST' && reqUrl === '/agent-spans') {
+    if (req.method === 'POST' && reqUrl === '/batch') {
+      if (req.socket.remoteAddress) {
+        const response = await buildSearchBatchDaemonResponse(null, { isUnixSocket: false });
+        res.writeHead(response.status, { 'Content-Type': response.contentType });
+        res.end(response.body);
+        return;
+      }
+      let response;
+      try {
+        const payload = await readBoundedJsonBody(req, SEARCH_BATCH_BODY_MAX_BYTES);
+        response = await buildSearchBatchDaemonResponse(payload, {
+          isUnixSocket: true, serverReady, initError, searcher,
+        });
+        if (response.status === 503 && !initError) {
+          await waitForServerReady();
+          response = await buildSearchBatchDaemonResponse(payload, {
+            isUnixSocket: true, serverReady, initError, searcher,
+          });
+        }
+        if (response.status === 200) lastActivityMs = Date.now();
+      } catch (err) {
+        response = readSemanticError(err.status || 400, err.message || 'Invalid request body');
+      }
+      res.writeHead(response.status, { 'Content-Type': response.contentType });
+      res.end(response.body);
+    } else if (req.method === 'POST' && reqUrl === '/agent-spans') {
       if (req.socket.remoteAddress) {
         const response = readSemanticError(403, '/agent-spans is only available via Unix socket');
         res.writeHead(response.status, { 'Content-Type': response.contentType });

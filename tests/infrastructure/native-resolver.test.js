@@ -210,6 +210,35 @@ describe('native-resolver', () => {
     });
   });
 
+  describe('nativeBinarySupportsBatch', () => {
+    it('requires the exact protocol marker from a successful bounded probe', async () => {
+      const { nativeBinarySupportsBatch } = await loadResolver();
+      const calls = [];
+      const spawn = (...args) => {
+        calls.push(args);
+        return { status: 0, stdout: 'sweet-search-batch-protocol=1\n', stderr: '' };
+      };
+      expect(nativeBinarySupportsBatch('/tmp/sweet-search', { spawn })).toBe(true);
+      expect(calls[0][0]).toBe('/tmp/sweet-search');
+      expect(calls[0][1]).toEqual(['batch', '--help']);
+      expect(calls[0][2]).toMatchObject({ timeout: 5_000, maxBuffer: 64 * 1024 });
+    });
+
+    it('rejects legacy help, nonzero exits, spawn errors, and invalid paths', async () => {
+      const { nativeBinarySupportsBatch } = await loadResolver();
+      expect(nativeBinarySupportsBatch('/tmp/legacy', {
+        spawn: () => ({ status: 0, stdout: 'Usage: sweet-search query', stderr: '' }),
+      })).toBe(false);
+      expect(nativeBinarySupportsBatch('/tmp/new', {
+        spawn: () => ({ status: 1, stdout: 'sweet-search-batch-protocol=1', stderr: '' }),
+      })).toBe(false);
+      expect(nativeBinarySupportsBatch('/tmp/broken', {
+        spawn: () => ({ status: null, stdout: '', stderr: '', error: new Error('ENOEXEC') }),
+      })).toBe(false);
+      expect(nativeBinarySupportsBatch('', { spawn: () => { throw new Error('must not run'); } })).toBe(false);
+    });
+  });
+
   describe('resolution order', () => {
     // CI-skipped: release jobs stage package-template binaries under
     // packages/native-* without also creating a local dev build in

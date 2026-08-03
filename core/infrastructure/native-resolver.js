@@ -20,6 +20,7 @@
  */
 
 import { existsSync } from 'fs';
+import { spawnSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -27,6 +28,7 @@ import { createRequire } from 'module';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..', '..');
 const require = createRequire(import.meta.url);
+const BATCH_CAPABILITY_MARKER = 'sweet-search-batch-protocol=1';
 
 // Supported targets — only these get native resolution.
 const SUPPORTED_TARGETS = new Set([
@@ -199,4 +201,30 @@ export function resolveNativeBinary(options = {}) {
   }
 
   return null;
+}
+
+/**
+ * Fail-closed capability check for the typed batch protocol. Older native
+ * packages interpret `batch` as an ordinary search query, so exit status alone
+ * is insufficient; only the Rust client's versioned marker admits dispatch.
+ *
+ * @param {string} binaryPath
+ * @param {{ spawn?: typeof spawnSync }} [options]
+ * @returns {boolean}
+ */
+export function nativeBinarySupportsBatch(binaryPath, options = {}) {
+  if (typeof binaryPath !== 'string' || binaryPath.length === 0) return false;
+  const run = options.spawn ?? spawnSync;
+  try {
+    const result = run(binaryPath, ['batch', '--help'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 5_000,
+      maxBuffer: 64 * 1024,
+    });
+    const output = `${result.stdout || ''}\n${result.stderr || ''}`;
+    return result.status === 0 && !result.error && output.includes(BATCH_CAPABILITY_MARKER);
+  } catch {
+    return false;
+  }
 }

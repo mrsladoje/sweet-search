@@ -25,7 +25,12 @@ export { fetchModel, fetchModelFile, resolveModelFile, computeFileHash, getModel
 export { MODEL_REGISTRY, getModelEntry, getModelsForProfile, getSkippedOptInModels, isModelEnabled, isNativeAcceleratedModel } from './model-registry.js';
 
 // Native platform resolution
-export { resolveNativeAddon, resolveNativeBinary, getPlatformInfo } from './native-resolver.js';
+export {
+  getPlatformInfo,
+  nativeBinarySupportsBatch,
+  resolveNativeAddon,
+  resolveNativeBinary,
+} from './native-resolver.js';
 
 // Tokenization
 export { createTokenizer } from './native-tokenizer.js';
