@@ -265,6 +265,17 @@ export async function fetchModelFile(hfId, filePath, destDir, options = {}) {
     return finalPath;
   }
 
+  // Explicit offline mode: never touch the network — fail fast with the expected
+  // path instead of waiting out DNS/TLS timeouts in egress-restricted
+  // environments (benchmark jails, air-gapped hosts). Wins over `allowDownload`.
+  if (process.env.SWEET_SEARCH_OFFLINE === '1') {
+    throw new Error(
+      `[ModelFetcher] Offline (SWEET_SEARCH_OFFLINE=1): missing model file ${hfId}/${filePath}\n` +
+      `  Expected at: ${finalPath}\n` +
+      `  Populate the model cache (\`sweet-search init\`) before running offline.`
+    );
+  }
+
   // Check if runtime download is allowed. Explicit `options.allowDownload`
   // overrides the persisted config flag — init passes `true` so re-runs
   // can fetch a bumped SHA256, a newly added model, or a `--force` rebuild.

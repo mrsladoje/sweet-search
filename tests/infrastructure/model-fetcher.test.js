@@ -107,6 +107,41 @@ describe('model-fetcher', () => {
       });
     });
 
+    it('offline mode still returns a valid cached file', async () => {
+      const prev = process.env.SWEET_SEARCH_OFFLINE;
+      process.env.SWEET_SEARCH_OFFLINE = '1';
+      try {
+        await withTmpDir(async (dir) => {
+          const filePath = join(dir, 'model.onnx');
+          writeFileSync(filePath, 'fake-model-data');
+          const result = await fetchModelFile('test/repo', 'model.onnx', dir, {
+            expectedSize: 15,
+          });
+          expect(result).toBe(filePath);
+        });
+      } finally {
+        if (prev === undefined) delete process.env.SWEET_SEARCH_OFFLINE;
+        else process.env.SWEET_SEARCH_OFFLINE = prev;
+      }
+    });
+
+    it('offline mode fails fast on a missing file even when downloads are allowed', async () => {
+      const prev = process.env.SWEET_SEARCH_OFFLINE;
+      process.env.SWEET_SEARCH_OFFLINE = '1';
+      originalAllowDownload = MODEL_DELIVERY_CONFIG.allowRuntimeModelDownload;
+      MODEL_DELIVERY_CONFIG.allowRuntimeModelDownload = true;
+      try {
+        await withTmpDir(async (dir) => {
+          await expect(
+            fetchModelFile('test/repo', 'missing.onnx', dir)
+          ).rejects.toThrow('SWEET_SEARCH_OFFLINE');
+        });
+      } finally {
+        if (prev === undefined) delete process.env.SWEET_SEARCH_OFFLINE;
+        else process.env.SWEET_SEARCH_OFFLINE = prev;
+      }
+    });
+
     it('error message includes sweet-search init when download blocked', async () => {
       originalAllowDownload = MODEL_DELIVERY_CONFIG.allowRuntimeModelDownload;
       MODEL_DELIVERY_CONFIG.allowRuntimeModelDownload = false;
