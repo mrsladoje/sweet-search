@@ -167,3 +167,13 @@ baseline fragments. The likely eraser is the Aug-01 disk-space emergency cleanup
 - Leaked `agent-jail-init.mjs` process (PID 3382655, since Aug 01, idle) + three leftover
   `/root/.ss-eval/runs/` rollout dirs (apigee, helidon, simdjson).
 - The denial log is global and shared across concurrent box workloads — see §1 fix 2.
+
+## 9. Addendum — a second latency lead (post-restore)
+
+After the model restore, wrapper queries still take exactly **4.007s** wall (three separate
+invocations, ~0.07s CPU), with **no persistent search-server process** on the box between
+calls. A fixed ~4-second startup/poll constant in the wrapper→server auto-start path is the
+next latency suspect, independent of the HF-timeout issue. Also note: identical result +
+identical score across pre- and post-restore queries means the ranking-degradation question
+(§7.1) is NOT yet settled by the live probes — settle it with a controlled Mac A/B (same
+golden, models present vs `SWEET_SEARCH_OFFLINE=1` + masked cache) before the fresh baseline.
