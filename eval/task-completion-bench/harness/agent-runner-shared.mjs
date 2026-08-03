@@ -137,6 +137,11 @@ export function buildAgentEnv({ rundir, binDir, ssBinDir, sweet, extraEnv = {}, 
     ...process.env,
     PATH: [...pathDirs, process.env.PATH].join(':'),
     SWEET_SEARCH_PROJECT_ROOT: rundir,
+    // With the model cache prewarmed, a cache miss must fail fast — never retry
+    // DNS/TLS against the jail's deny-all egress (the 39s-cold-query / polluted
+    // escape-counter incident, TURNFIX-PHASE0-REPLAY-RESULTS-2026-08-03.md §7).
+    // Symmetric on both arms; harmless where sweet tooling never runs.
+    SWEET_SEARCH_OFFLINE: '1',
     DOCKER_HOST,
     ...extraEnv,
   };
