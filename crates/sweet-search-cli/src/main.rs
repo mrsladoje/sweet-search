@@ -5,6 +5,9 @@
 //
 // Compile: cargo build --release
 
+mod batch;
+mod batch_transport;
+
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -603,7 +606,8 @@ fn print_usage(prog: &str, a: &Ansi, show_banner: bool) {
         println!("{fa}{L1}\n{L2}{r}\n");
     }
     println!("{fw}Usage:{r} {prog} \"query\" [options]");
-    println!("       {prog} grep \"pattern\" [options]\n");
+    println!("       {prog} grep \"pattern\" [options]");
+    println!("       {prog} batch '<JSON>'\n");
     println!("{fw}Options:{r}");
     println!("  -k, --top <n>       Number of results (default: 10)");
     println!("  -m, --mode <mode>   Search mode: auto, lexical, semantic, hybrid");
@@ -1534,6 +1538,14 @@ fn main() {
 
     // Color for messages emitted before the full policy is known (parse errors).
     let ea = ansi(incidental_color());
+
+    if cli_args.first().map(|s| s.as_str()) == Some("batch") {
+        let code = batch::run(&prog, &cli_args[1..]);
+        if code != 0 {
+            process::exit(code);
+        }
+        return;
+    }
 
     if cli_args.first().map(|s| s.as_str()) == Some("read-semantic") {
         let rs_opts = match parse_read_semantic_args(&cli_args[1..]) {

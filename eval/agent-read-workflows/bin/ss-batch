@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Bench-local typed batch shortcut. The canonical CLI owns validation/execution;
+# this wrapper only selects the subcommand and preserves every argument verbatim.
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+exec "$DIR/sweet-search" batch "$@"

@@ -73,6 +73,24 @@ if (args[0] === 'init') {
   }
   const { handleTraceCli } = await import('./search/search-trace.js');
   await handleTraceCli(args.slice(1));
+} else if (args[0] === 'batch') {
+  // Typed multi-operation retrieval is implemented by the native Unix-socket
+  // client. There is deliberately no JS search fallback: treating the JSON
+  // request as a free-form query would silently change both semantics and the
+  // declared operation count.
+  const { nativeBinarySupportsBatch, resolveNativeBinary } = await import('./infrastructure/index.js');
+  const nativeBin = resolveNativeBinary();
+  if (!nativeBin) {
+    console.error('sweet-search batch requires the native CLI binary');
+    process.exit(1);
+  }
+  if (!nativeBinarySupportsBatch(nativeBin)) {
+    console.error('sweet-search batch requires a matching native CLI with batch protocol 1');
+    process.exit(1);
+  }
+  const result = spawnSync(nativeBin, args, { stdio: 'inherit' });
+  if (result.error) console.error(`sweet-search batch failed to start native CLI: ${result.error.message}`);
+  process.exit(result.status ?? 1);
 } else if (args[0] === 'index') {
   // Indexing pipeline. Forwarded to index-codebase-v21.js::main(), which
   // reads its own flags via process.argv. Setting argv here is required
@@ -112,6 +130,7 @@ Usage:
   sweet-search trace <symbol>           Structural context: callers, callees, impact
   sweet-search read <file...>           Filesystem-grounded read (1-20 files)
   sweet-search read-semantic <f> <q>    Return only file spans relevant to a query
+  sweet-search batch '<json>'           Run 2-3 typed read-only operations
   sweet-search index [options]          Build / update the codebase index
   sweet-search index --add <path>       Hint a file as dirty
   sweet-search reconcile status         Show incremental epoch and dirty status
