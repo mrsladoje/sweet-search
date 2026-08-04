@@ -32,7 +32,9 @@ export const MODEL_PRICES = {
   'anthropic/claude-sonnet-5': { in: 2.0, cache: 0.20, out: 10.0 },   // OpenRouter intro ($2/$10) — what we pay via the Anthropic skin
   'x-ai/grok-4.5': { in: 2.0, cache: 0.30, out: 6.0 },
   'meta/muse-spark-1.1': { in: 1.25, cache: 0.15, out: 4.25 },
-  'openai/gpt-5.6-luna': { in: 1.0, cache: 0.10, out: 6.0 },
+  // Re-fetched from OpenRouter /api/v1/models 2026-08-04 after OpenAI's 2026-07-30
+  // 80% Luna cut (announced $0.20/$1.20; OpenRouter serves $0.10/$0.60).
+  'openai/gpt-5.6-luna': { in: 0.10, cache: 0.01, out: 0.60 },
 };
 
 // Fail loudly rather than silently billing an unregistered backbone at gpt-5.5's
