@@ -177,3 +177,33 @@ next latency suspect, independent of the HF-timeout issue. Also note: identical 
 identical score across pre- and post-restore queries means the ranking-degradation question
 (§7.1) is NOT yet settled by the live probes — settle it with a controlled Mac A/B (same
 golden, models present vs `SWEET_SEARCH_OFFLINE=1` + masked cache) before the fresh baseline.
+
+## 10. Clean-baseline trace forensics (2026-08-04, 18 pairs)
+
+Phase decomposition (locate = before first edit; repair = after; per-turn ledger pricing):
+
+| metric | native | sweet |
+|---|---|---|
+| turns | 394 | 509 (+29%) |
+| tool calls (envelopes) | 705 | 592 (−16%) |
+| calls/turn (median per rollout) | **1.64** | **0.98** |
+| median context in/turn | 49,230 tok | **44,106 tok** |
+| median context growth/turn | 1,672 tok | **1,254 tok** |
+| steps to first edit (median) | 17.5 | **8.0** |
+| locate-phase retrieval ops | 292 | 194 (−34%) |
+| repair-phase retrieval ops | 255 | 245 (flat) |
+| edits / tests | 96 / 62 | 84 / 69 |
+| locate / repair cost share | $2.47 / $12.35 | $3.51 / $15.32 |
+| zero-call turns | 9% | 7% |
+
+**Findings.** (1) Retrieval superiority is confirmed in-run: sweet reaches its first edit in half
+the steps with a third fewer locate probes, edits less, and solves one more task. (2) The WIDTH
+hypothesis is REFUTED: sweet's context is narrower and grows slower — packed results beat native
+file dumps, as designed. (3) The entire cost gap is TURN STRUCTURE: sweet runs ~1 call per turn
+vs native's 1.64, paying +29% full-context re-sends at ~44k tokens each. First-order
+counterfactual: at native's call density sweet's 592 calls need ~361 turns — fewer than native's
+394 — flipping +24% cost into roughly −10% at equal solve. (4) Repair is ~80% of spend on BOTH
+arms; sweet does not thrash more in aggregate, but on moq it localized late (turn 16 vs 5) and
+repaired messy (30 edits/23 tests vs 15/7) — tail variance decides signs, third run running.
+Consequence for the program: the packing cell (ss-batch, adoption 8/8) is now the FIRST paid
+priority; the controller second; no width work needed.
