@@ -58,7 +58,7 @@ The one-probe / trust-the-top-hit rule is for LOCATING code. Deciding HOW to cha
 is a different question: before implementing a new contract or compatibility shim, make one
 probe for how this repository already solves similar problems (its existing idioms — promises,
 callbacks, shims) and imitate the local convention, not the first pattern that comes to mind.
-When your change alters a public contract, re-read the issue's exact wording before
-finalizing: your own passing tests do not certify a shape the issue did not ask for.
+When your change alters a public contract, re-read the task's exact wording before
+finalizing: apparent local success does not certify a shape the task did not ask for.
 Before editing more than one file for a single fix, run ss-trace on the target symbol; if the
 trace shows the change is self-contained (minimal fan-in/fan-out), edit only that file.
