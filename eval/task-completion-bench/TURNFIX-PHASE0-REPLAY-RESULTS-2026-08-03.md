@@ -362,3 +362,13 @@ proportionally. p75 caps fail solve non-inferiority outright on this cohort and 
 Operational smoke (deterministic cap-hit at cap=10 on luigi + no-op parity at cap=200) validates
 the stop/grade path; statistics come later from a properly-powered cell with REPS≥2, per the
 noise-floor rule.
+
+### 13.1 Operational validation (2026-08-04, $0.51) — the lever is live
+
+Cap-hit half (luigi, cap=10): OpenCode stopped at exactly 10 turns; `budgetExhausted:true`,
+`hardTurnCap:10` recorded; row gradeable and graded; cost mechanically cut ($0.16 vs ~$0.25
+typical). No-op half (cap=200): 18 turns / 22 calls / $0.35 — inside luigi's historical band;
+`budgetExhausted:false`. The hard turn budget is fully operational end-to-end. Pending one human
+decision: the powered capped cell — cap = pooled p90 recomputed on the target cohort,
+grade-at-cut, both arms, REPS=2, moq's interpretation pre-registered (its deep solves are the
+known intentional casualty class).
