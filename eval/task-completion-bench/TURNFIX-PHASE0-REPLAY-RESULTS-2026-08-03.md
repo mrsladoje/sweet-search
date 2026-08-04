@@ -477,3 +477,24 @@ Variants as M± file variants (production M± untouched), config identical to th
 Tasks: express + raml (treatment targets), tablib + camel-k (controls, sweet always solves).
 2 reps each, CONCURRENCY=1, ~$4 total. Gates: a variant must flip a target task without
 breaking a control; winners then face the full 18-task screen before any confirmation claim.
+
+### 15.2 Micro-smoke results (V1 + V2, $4.96) — BOTH variants hit their targets; controls intact
+
+| task | control (capped cell) | V1 completion | V2 fix-shape |
+|---|---|---|---|
+| express (design-anchor target) | 0/2 | 0/2 (not its target) | **1/2 — first sweet solve EVER (0-for-3 lifetime)** |
+| raml (give-up/shotgun target) | 0/2 | **2/2** | 1/2 |
+| tablib (control) | 2/2 | 2/2 | 2/2 |
+| camel-k (control) | 2/2 | 2/2 | 2/2 |
+| total | 4/8 | **6/8** | **6/8** |
+
+Signature is textbook: each variant flipped the failure mode it targets, V1 left the
+design-task alone exactly as predicted, no control broke, cost per task ~flat. Both effects
+match the forensic diagnoses (persistence fixes the zero-edit stall; convention-check +
+trace-scoping fixes anchoring/shotgun). Small n (2 reps/cell) — treatment-target flips of
+0/2→2/2 and 0-for-3-lifetime→1/2 are strong signals but not confirmations.
+
+Next ladder rungs (in order): (1) V1 content migrates to the FRAME (both arms — bench-specific
+per the M±-generality rule; frozen-surface reopen + both-arms rerun); (2) V2 (bench-agnostic
+wording) advances to the full 18-task screen as an M± candidate; (3) a V1+V2 combined cell;
+(4) only a screen winner faces CONFIRM-28. Luna after, per user sequence.
