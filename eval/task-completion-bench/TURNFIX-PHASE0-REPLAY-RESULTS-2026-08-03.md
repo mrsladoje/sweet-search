@@ -300,3 +300,17 @@ launches without a $0 ledger-replay demonstrating nonzero trigger exposure on th
 Fingerprint v2 changed configHash → ledger re-sweep required before the next live run. Proposed
 micro-smoke set (moq EXCLUDED per user): bfgroup + luigi + stingray + cedar — exactly the
 would-fire tasks — ≥2 reps each (~$3-5), awaiting explicit authorization.
+
+### 12.4 Advisory micro-smoke (4 tasks × 2 reps, moq excluded) — mechanism PROVEN live
+
+$2.35, 7/8 rollouts (bfgroup rep0 died at OpenCode preflight, $0). **First live advisory
+renders in program history:** bfgroup rep1 saw green.review-then-submit at test-calls 2/3/4 and
+finished at 32 agent calls vs 59 in the footer run (−46% on the exact green-grind case);
+stingray saw green at 5/6, one retest, done. Solves 0/7 — identical to this quartet's history
+in both prior runs (never sweet-solved); no over-stop evidence. Recovery/restore paths did not
+fire live this run (cycle variance) — still unexercised. Finding for the next wording
+iteration: the model SEES a bare token (`action=green.streak-2.review-then-submit`), not the
+spec's imperative sentence — it retested twice after the first nudge before stopping. Next:
+render guidance as a short imperative sentence, rerun the quartet (~$2.50) until green AND
+recovery each show ≥2 live fires with compliant next-actions, then the full 18-task footer
+re-run (real T1, moq excluded).
