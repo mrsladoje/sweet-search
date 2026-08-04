@@ -258,3 +258,30 @@ demonstrated, reliability and overhead unproven; NOT ready for CONFIRM-28. Next:
 analysis (trigger precision, bfgroup miss, overhead source), then footer-variant micro-smokes
 on the exact failure sites (moq=cap, bfgroup=miss, apigee/py-cov=overhead) per the trap-first
 protocol.
+
+### 12.2 REVERSAL — the footer run was an accidental A/A test; the "win" is the noise floor
+
+Ledger forensics on all 21 sessions / 94 invocations: **guidance = 'none' on every invocation.
+The advisory never rendered; the model never saw the controller.** Model-visible config was
+therefore identical to the baseline run. Every §12 delta — the −37%, the moq collapse, the +1
+solve — measures RUN-TO-RUN VARIANCE at identical config, not a treatment effect.
+
+Why the controller was structurally inert on this cohort:
+1. **Trust starvation (moq-class):** every moq invocation had `trustworthy:false` (baseline-diff
+   null on all 15 test calls) — untrusted cycles pause the streak by design, so the thrashiest
+   task is precisely the one the controller cannot see. Investigate moq's baseline classification
+   (volatile .NET signatures suspected).
+2. **Stop-when-green was never implemented:** `advisoryGuidance` has no pass-state branch;
+   bfgroup PASSed 5 trusted times and ground on for 59 calls with no rule existing to catch it —
+   an unimplemented spec item (EDIT_THRASHING §6.3), not a tuning miss.
+3. On trusted, non-tail tasks, no streak ever reached H=2 — tasks finish first. The advisory's
+   addressable surface on this cohort was ~empty.
+
+**The silver lining is paper-grade:** an accidental A/A at n=19 quantifies the bench noise
+floor — aggregate cost ±37%, one task (moq) at $1.69 / $7.00 / $1.36 across three
+identical-config runs, solve ±1. No single-rep n≈19 run can support a cost claim on this bench;
+REPS≥2 or larger cohorts are mandatory for every future stage, including CONFIRM-28's design.
+
+Defect-driven iteration list (micro-smoke protocol): D1 relax/repair baseline trust on
+volatile-signature tasks; D2 implement the pass-state rule; D3 re-test on the three named sites
+(moq=trust, bfgroup=green-grind, apigee=overhead) with ≥2 reps per site before any full cell.
