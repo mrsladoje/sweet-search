@@ -128,8 +128,19 @@ export async function startSyntheticToolBroker({ runtimeScenario, socketPath, de
   let nextSequence = 1;
   let leadReturnedAtMs = null;
 
+  // Subset match on the expected keys: models legitimately add auxiliary flags
+  // (-k, --mode) that become extra args keys — those must not void the match.
+  // Every key the SCENARIO defines must still match exactly (trimmed strings).
+  const argsMatch = (expectedArgs, actual) => {
+    if (!expectedArgs) return true;
+    return Object.entries(expectedArgs).every(([key, value]) => {
+      const got = actual ? actual[key] : undefined;
+      if (typeof value === 'string' && typeof got === 'string') return value.trim() === got.trim();
+      return sameJson(value, got);
+    });
+  };
   const findExpected = (tool, id, args) => runtimeScenario.operations.find(operation => (
-    operation.tool === tool && (id == null || operation.id === id) && sameJson(operation.args, args)
+    operation.tool === tool && (id == null || operation.id === id) && argsMatch(operation.args, args)
   ));
 
   const executeLeaf = async ({ id, tool, args, envelopeSequence, batched }) => {

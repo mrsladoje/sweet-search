@@ -37,14 +37,16 @@ export const PACKING_TREATMENTS = Object.freeze(['off', 'ss-batch', 'parallel-ba
 const PACKING_INSTRUCTIONS = Object.freeze({
   off: '',
   'ss-batch': [
-    '=== Frozen read-only packing treatment: ss-batch-v1 ===',
+    '=== Frozen read-only packing treatment: ss-batch-v2 ===',
     `When 2 or 3 ss-* probes are independent and every argument is already known, issue exactly one Bash command of this form: ss-batch '{"version":1,"operations":[{"id":"...","tool":"...","args":{...}}],"maxChars":16000}'.`,
-    'Allowed operation tools are search, grep, find, read, semantic, and trace. Never batch a probe whose arguments depend on another result; run dependent work only after that result arrives.',
+    'Allowed operation tools are search, grep, find, read, semantic, and trace.',
+    'Before adding ANY probe to a batch, apply this test: is every argument value already visible in the issue text or an earlier result? If an argument would come from another probe in the same batch — a path, symbol, or line range you have not yet seen — that probe is DEPENDENT: leave it out and run it alone in a later message after its prerequisite result arrives. Batching a dependent probe with a guessed argument is a hard error, never a time saving.',
   ].join('\n'),
   'parallel-bash': [
-    '=== Frozen read-only packing treatment: parallel-bash-v1 ===',
+    '=== Frozen read-only packing treatment: parallel-bash-v2 ===',
     'When 2 or 3 read-only probes are independent and every argument is already known, issue them as separate Bash tool calls in the same assistant message so they can run concurrently.',
-    'Do not combine them into one shell command with &, ;, or &&. Never parallelize a probe whose arguments depend on another result; run dependent work only after that result arrives.',
+    'Do not combine them into one shell command with &, ;, or &&.',
+    'Before co-issuing ANY probe, apply this test: is every argument value already visible in the issue text or an earlier result? If an argument would come from another probe in the same message, that probe is DEPENDENT: leave it out and run it alone in a later message after its prerequisite result arrives. Co-issuing a dependent probe with a guessed argument is a hard error, never a time saving.',
   ].join('\n'),
 });
 export { rolloutStateDir };
