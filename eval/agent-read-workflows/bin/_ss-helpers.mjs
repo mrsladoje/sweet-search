@@ -420,8 +420,16 @@ async function cmdRead(rawArgs) {
       }
       if (args[2] != null) {
         end = +args[2];
-        if (!Number.isFinite(end) || end < start) {
-          process.stderr.write(`[ss-read] invalid end line: "${args[2]}" (must be ≥ start ${start})\n`);
+        // Agents habitually pass (start, COUNT) offset/limit-style; a small second
+        // arg below start is unambiguous (a real end would be ≥ start), so honor
+        // the intent instead of burning one of the agent's turns on an error
+        // (raml rep1 lost 6 calls to this under a 44-turn cap — TURNFIX §14.3).
+        if (Number.isFinite(end) && end >= 1 && end < start) {
+          const count = end;
+          end = start + count - 1;
+          process.stderr.write(`[ss-read] note: interpreted "${args[1]} ${args[2]}" as start+count → lines ${start}-${end} (usage: ss-read <file> <start> <end>)\n`);
+        } else if (!Number.isFinite(end) || end < start) {
+          process.stderr.write(`[ss-read] invalid end line: "${args[2]}" (expected END line ≥ start ${start}; usage: ss-read <file> <start> <end>, e.g. ss-read src/a.js 40 90)\n`);
           process.exit(2);
         }
       } else {
