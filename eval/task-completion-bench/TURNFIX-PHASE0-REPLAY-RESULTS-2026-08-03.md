@@ -433,3 +433,47 @@ turn economics. Remaining paths: (a) Luna-class pricing makes the re-send tax fi
 irrelevant (9-45× cheaper per solve, probe-verified); (b) server-side search→read fusion
 (pool intact, model-free); (c) run headline comparisons WITH moq-class tasks in scope, capped,
 where the cap provably pays.
+
+## 15. Solve-divergence forensics (workflow, 3 agents, $0 bench spend) — why sweet solved less
+
+The entire 3-solve gap = three rollouts, fully diagnosed from complete transcripts:
+
+**raml (2 of the 3):** retrieval PERFECT in all runs — sweet found NumberTypeRule.java at turn
+2-3 every time. The solved sweet run ran `ss-trace` (fan-out=1) and scoped the edit to the one
+gold file. Failed rep0 skipped the trace, shotgun-edited 5 rule files before first test, then
+misread a reformatted target-failure as a new regression and chased it into the cap. Failed
+rep1 made ZERO edits in 31 calls — read-only analysis paralysis, aggravated by ~6 turns lost
+to `ss-read` (start,count) argument errors [product fix shipped]. **The M± discipline, when
+followed (trace-then-scope), was exactly what solved the task; the failures deviated from it.**
+
+**express (the 3rd; sweet 0-for-3 lifetime):** retrieval perfect again (prepareOutput.js,
+sufficient=YES). Sweet declared its fix shape BEFORE any evidence ("I'll ... with a sync
+fallback"), then searched only to rubber-stamp arity/callback dispatch; native checked repo
+conventions and shipped the gold Promise/thenable shape. Sweet's own tests passed — wrong
+contract, graded fail. **Premature closure on a design-shaped task: the speed that wins locate
+tasks becomes anchoring on design tasks.**
+
+**Research (sourced):** OpenAI GPT-4.1 guide — persistence + plan/reflect instructions ≈ +20%
+SWE-bench Verified combined (planning alone +4%); ContextBench (2602.05892) — retrieval-step
+count correlates positively with Pass@1; aggressive search minimization measurably degrades
+solve rate; recommended consolidation-not-truncation wording. Anchoring literature warns naive
+"consider alternatives" nudges can backfire — test, never assume.
+
+**THE deep answer to "why don't we solve more":** sweet's prompt optimizes the locate phase and
+is silent about the design/repair phase. Retrieval is never the failure site — commitment
+quality after retrieval is. This is finally a lever Grok CAN respond to: system-prompt-level
+guidance demonstrably steers this model (the whole ss-* discipline proves it); only MID-TASK
+injected instructions are ignored.
+
+### 15.1 Micro-smoke design (user's method; launched)
+
+Variants as M± file variants (production M± untouched), config identical to the capped cell
+(cap=44, telemetry on) so the cell's own sweet rows are the free 2-rep control:
+- **V1 completion-discipline:** persistence + plan/reflect block (GPT-4.1-sourced, adapted) —
+  targets raml-rep1 give-up.
+- **V2 fix-shape-discipline:** locate-vs-design carve-out + repo-convention check before shims +
+  contract re-read + trace-before-multi-file-edit — targets express anchoring + raml-rep0
+  shotgun.
+Tasks: express + raml (treatment targets), tablib + camel-k (controls, sweet always solves).
+2 reps each, CONCURRENCY=1, ~$4 total. Gates: a variant must flip a target task without
+breaking a control; winners then face the full 18-task screen before any confirmation claim.
