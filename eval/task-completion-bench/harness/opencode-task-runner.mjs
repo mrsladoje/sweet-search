@@ -74,12 +74,29 @@ export function validateMainOpencodePreflight({ version, resolved }) {
   return true;
 }
 
-export function buildMainOpencodeConfig() {
+// Runner-enforced hard turn budget (EDIT_THRASHING §7). OpenCode's own loop
+// stops at agent.build.maxSteps — no model cooperation involved, which is the
+// point: Grok-4.5 ignores mid-task behavioral instructions in every channel
+// (TURNFIX results doc §12.5), so the only reliable tail cap is one the runner
+// owns. Absent/invalid env → config byte-identical to the pre-cap harness.
+export function resolveHardTurnCap(env = process.env) {
+  const raw = String(env.SS_HARD_TURN_CAP || '').trim();
+  if (!raw) return null;
+  const cap = Number(raw);
+  if (!Number.isInteger(cap) || cap < 5 || cap > 500) {
+    throw new Error('SS_HARD_TURN_CAP must be an integer between 5 and 500');
+  }
+  return cap;
+}
+
+export function buildMainOpencodeConfig({ env = process.env } = {}) {
+  const cap = resolveHardTurnCap(env);
   return {
     $schema: 'https://opencode.ai/config.json',
     plugin: [],
     provider: { openrouter: { options: { apiKey: '{env:OPENROUTER_API_KEY}' } } },
     permission: { bash: 'allow', edit: 'allow', write: 'allow', read: 'allow', webfetch: 'deny', websearch: 'deny' },
+    ...(cap ? { agent: { build: { maxSteps: cap } } } : {}),
   };
 }
 
@@ -305,6 +322,8 @@ export async function runOpencodeTask(task, {
     ...escapeAudit,
     shimTampered: shimTamperedFiles.length > 0, shimTamperedFiles,
     stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
+    hardTurnCap: resolveHardTurnCap(),
+    budgetExhausted: resolveHardTurnCap() !== null && turns.length >= resolveHardTurnCap(),
     exitReason: exitReasonFrom(r),
     usage: turns.length ? { turns: turns.length } : {},
     ...costs, turnsFile,
