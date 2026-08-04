@@ -391,3 +391,15 @@ CAPABILITY PROBE ONLY — Luna-on-OpenCode contradicts the multi-harness routing
 (GPT→codex), so nothing here is a bench claim. Readouts: does it run at all, calls/turn
 profile (does it parallelize bash where Grok won't), cost/task, qualitative
 instruction-following. Decides whether dev iteration moves to a 10-20× cheaper backbone.
+
+### 14.1 Luna probe result (capability only, $0.014 total)
+
+3/3 SOLVED on historically-sweet-solved tasks, sane trajectories, healthy ss usage (4-7
+calls/task): cccl $0.0052 (Grok $0.122), camel-k $0.0046 ($0.042), tablib $0.0039 ($0.175) —
+**9-45× cheaper per solved task at equal outcomes.** Calls/turn 0.85-1.15: Luna does NOT
+parallelize bash either, so the turn-structure gap likely persists — but at $0.10/M input the
+re-send tax is financially negligible, which makes the entire turn-economy problem nearly moot
+on this backbone. Implication (decision for the user): move dev iteration/micro-smokes to Luna
+(pennies per round), keep Grok for the redemption-story confirmations. Caveats: 3 easy tasks,
+1 rep, Luna-on-OpenCode contradicts the routing policy — a proper Luna arm needs the codex
+harness per policy, or a policy amendment.
