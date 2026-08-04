@@ -293,3 +293,13 @@ test('counts-level trust advances streaks but never creates checkpoint candidate
   const countsTrusted = { executed: true, trustworthy: true, status: 'FAIL', scopeKey: 'full', hasSourceEdit: true, sourceStateHash: 'a', failureStateHash: 'h1' };
   assert.notEqual(classifyProgress(null, countsTrusted).kind, 'pause');
 });
+
+test('hard turn cap is env-gated, bounded, and absent by default', async () => {
+  const { resolveHardTurnCap, buildMainOpencodeConfig: build } = await import('../harness/opencode-task-runner.mjs');
+  assert.equal(resolveHardTurnCap({}), null);
+  assert.equal(resolveHardTurnCap({ SS_HARD_TURN_CAP: '38' }), 38);
+  assert.throws(() => resolveHardTurnCap({ SS_HARD_TURN_CAP: '2' }));
+  assert.throws(() => resolveHardTurnCap({ SS_HARD_TURN_CAP: 'lots' }));
+  assert.equal(build({ env: {} }).agent, undefined);
+  assert.equal(build({ env: { SS_HARD_TURN_CAP: '38' } }).agent.build.maxSteps, 38);
+});
