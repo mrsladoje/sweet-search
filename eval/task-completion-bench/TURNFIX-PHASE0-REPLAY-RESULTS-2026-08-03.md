@@ -239,3 +239,22 @@ Solves went UP under the controller — the over-stop failure mode did not mater
 n=18/19, one rep, tail-enriched dev cohort, behavior-gate/ledger analysis pending; CONFIRM-28
 remains the confirmation stage. This is the first configuration in program history where sweet
 beats native on cost, solves, and calls simultaneously under clean counters.
+
+### 12.1 Outlier-excluded correction (user-demanded, same discipline as prior runs)
+
+| paired vs | ALL tasks | excluding moq |
+|---|---|---|
+| untreated sweet | −36.8% cost, solve +1 | **+8.8% cost**, solve +1 (6v5), cheaper on 7/18 |
+| native | −27.6% cost, solve +1 | **+6.0% cost**, solve +1 (5v4), cheaper on 6/17 |
+
+Without moq the cost win disappears: the footer adds a small overhead (~$0.1-0.5) on non-tail
+tasks (its own appended text/turns) and the aggregate saving is one capped tail. Fourth
+consecutive run where a single trajectory decides the aggregate sign. Interpretive tension,
+stated honestly: tail-capping IS the controller's mechanism — excluding the tail excludes the
+treatment target, and the plan's confirmation statistics deliberately use untrimmed sums for
+exactly this reason — but ONE capped tail is one observation, the footer also MISSED a tail
+(bfgroup ran $2.48/59c under treatment), and the non-tail overhead is real. Verdict: mechanism
+demonstrated, reliability and overhead unproven; NOT ready for CONFIRM-28. Next: $0 ledger
+analysis (trigger precision, bfgroup miss, overhead source), then footer-variant micro-smokes
+on the exact failure sites (moq=cap, bfgroup=miss, apigee/py-cov=overhead) per the trap-first
+protocol.
