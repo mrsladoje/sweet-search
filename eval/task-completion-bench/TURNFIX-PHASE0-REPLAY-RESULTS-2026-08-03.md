@@ -498,3 +498,15 @@ Next ladder rungs (in order): (1) V1 content migrates to the FRAME (both arms �
 per the M±-generality rule; frozen-surface reopen + both-arms rerun); (2) V2 (bench-agnostic
 wording) advances to the full 18-task screen as an M± candidate; (3) a V1+V2 combined cell;
 (4) only a screen winner faces CONFIRM-28. Luna after, per user sequence.
+
+## 16. Fusion-v1 interim (2026-08-05): implementation sound, aim likely under-scoped
+
+SWEET_SEARCH_FUSE_TOP=1 (top-1 cap 2000→8000, floor 4000) verified functional end-to-end
+(deploy hash matched; no crash — an early 0-byte result was a server race). But offline
+evidence says the binding site is narrow: test queries use a fraction of budget (top-1 rarely
+truncated), the resumed 551-replay showed 0/59 early eliminations, and §6 already recorded
+294/551 pairs as MULTI-file reads that top-1 fusion cannot cover. Offline replay abandoned
+(low information per minute; also SIGKILLed once on the Mac). **The live fusion micro-smoke
+(read-heavy tasks, running) is the arbiter: if sweet's ss-read counts and cost do not drop,
+fusion-v2 = reference-batching (LLMCompiler-style server-resolved refs) or top-3 fusion —
+pre-registered here before the smoke's outcome is known.**
