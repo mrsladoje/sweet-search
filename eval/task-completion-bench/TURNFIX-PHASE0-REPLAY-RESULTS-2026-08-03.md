@@ -223,3 +223,19 @@ evidence is preserved: re-screen ss-batch per backbone (~$0.80) before any futur
 elsewhere. The turn-structure cost gap (§10) remains real; the surviving levers are the
 advisory controller (T1 cell launched 2026-08-04) and server-side structural turn reduction
 that needs no model cooperation (dependent search→read fusion; pool 97.9% intact per §6).
+
+## 12. Footer cell (T1) verdict — 2026-08-04: first treatment WIN, beats native on all axes
+
+Advisory progress controller (telemetry+advisory, H=2), sweet arm, single variable vs the clean
+baseline, $8.67 realized:
+
+| paired vs | pairs | cost | solve | calls |
+|---|---|---|---|---|
+| untreated sweet | 19 | **$8.67 vs $13.72 (−36.8%)** | **7 vs 6** | 496 vs 646 (−23%) |
+| native | 18 | **$7.49 vs $10.34 (−27.6%)** | **6 vs 5** | 436 vs 705 (−38%) |
+
+Solves went UP under the controller — the over-stop failure mode did not materialize; kompendium
+(untreated-sweet fail) now solves. Tail collapse as designed: moq $7.00/254c → $1.36/71c. Caveats:
+n=18/19, one rep, tail-enriched dev cohort, behavior-gate/ledger analysis pending; CONFIRM-28
+remains the confirmation stage. This is the first configuration in program history where sweet
+beats native on cost, solves, and calls simultaneously under clean counters.
