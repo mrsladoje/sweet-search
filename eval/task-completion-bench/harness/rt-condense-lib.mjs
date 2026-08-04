@@ -280,8 +280,29 @@ export function buildRunTestsFooter({
     `[run_tests baseline-diff] verdict=${normalizedVerdict} introduced_failures=${introduced.length} ` +
       `pre_existing_failures=${preExisting.length} trustworthy=${trusted ? 'yes' : 'no'} ` +
       `introduced_signatures=${footerSignatures(introduced)} pre_existing_signatures=${footerSignatures(preExisting)}`,
-    `[run_tests guidance] verdict=${normalizedVerdict} action=${action}`,
+    `[run_tests guidance] verdict=${normalizedVerdict} action=${action}` +
+      (action !== 'none' ? ` note="${guidanceSentence(action)}"` : ''),
   ].join('\n');
+}
+
+// Imperative rendering of a non-none advisory. The first micro-smoke showed the
+// model under-complies with the bare token (it kept retesting instead of
+// reviewing once and submitting). The token stays first for machine parsing;
+// the sentence is bounded imperative prose on the same tail-safe line.
+function guidanceSentence(action) {
+  const streak = /streak-(\d+)/.exec(action)?.[1] || '?';
+  if (action.startsWith('green.')) {
+    return `Canonical tests PASS with only pre-existing failures (consecutive pass ${streak}). ` +
+      'Review the issue and your diff ONCE; unless you can name a concrete missing requirement, submit now - further edits are not improving anything.';
+  }
+  if (action.startsWith('recovery.')) {
+    return `Your last ${streak} edit+test cycles produced no objective change in the failure state. ` +
+      'Do not make another blind edit: gather ONE new fact first (re-read the failing span or run one targeted probe), then edit - or restore your best earlier state and submit.';
+  }
+  if (action.startsWith('restore-submit.')) {
+    return 'Still no objective change after the recovery allowance. Keep or restore your best earlier state and submit it now.';
+  }
+  return '';
 }
 
 // ---- Experimental diff identifier signal --------------------------------------
