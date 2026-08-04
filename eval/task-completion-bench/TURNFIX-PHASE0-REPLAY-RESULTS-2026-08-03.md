@@ -314,3 +314,23 @@ spec's imperative sentence — it retested twice after the first nudge before st
 render guidance as a short imperative sentence, rerun the quartet (~$2.50) until green AND
 recovery each show ≥2 live fires with compliant next-actions, then the full 18-task footer
 re-run (real T1, moq excluded).
+
+### 12.5 Micro-round 2 (sentence-rendered advisory) — compliance REFUTED on Grok-4.5
+
+$1.40 ($4.85 across both rounds). Rendering verified end-to-end in the OpenCode transcript: the
+model saw `note="...submit now - further edits are not improving anything"` on consecutive
+passes. Behavior: bfgroup received the imperative FIVE times and produced its longest grind
+ever — 62 calls/$1.72 (vs 32c round 1, 59c unadvised, 33c baseline); stingray edited after
+being told to submit. Quartet economics across four runs bounce inside noise regardless of
+advisory version. Also: 3 rollouts died at OpenCode boot ("pinned 1.18.4 unavailable") — a
+concurrency-2 boot race; micro-cohorts run CONCURRENCY=1 from now on.
+
+**Cross-mechanism finding, now 3-for-3:** Grok-4.5 ignores mid-task behavioral instructions
+regardless of channel — memory-file packing prose (inert), tool-description dependency guard
+(3/4 traps violated), tool-output imperative advisory (5× ignored). This is a backbone property,
+not a wording deficiency; the wording-iteration curve has enough points. Cooperation-DEPENDENT
+levers are closed on Grok-4.5. Remaining live levers are cooperation-FREE: (a) runner-enforced
+hard turn budget (EDIT_THRASHING §7 — the runner stops at the cap; budget_exhausted is a scored
+outcome; no compliance involved), (b) server-side search→read fusion (97.9% pool, zero model
+involvement), (c) backbone change (Luna re-screen $0.80). Advisory mode remains harmless
+telemetry; enforcement was never enabled.
