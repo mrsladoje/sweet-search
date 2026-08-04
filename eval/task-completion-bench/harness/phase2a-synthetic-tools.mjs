@@ -135,6 +135,7 @@ export async function startSyntheticToolBroker({ runtimeScenario, socketPath, de
     if (!expectedArgs) return true;
     return Object.entries(expectedArgs).every(([key, value]) => {
       const got = actual ? actual[key] : undefined;
+      if (got === undefined) return false;
       if (typeof value === 'string' && typeof got === 'string') return value.trim() === got.trim();
       return sameJson(value, got);
     });
