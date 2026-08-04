@@ -334,3 +334,31 @@ hard turn budget (EDIT_THRASHING §7 — the runner stops at the cap; budget_exh
 outcome; no compliance involved), (b) server-side search→read fusion (97.9% pool, zero model
 involvement), (c) backbone change (Luna re-screen $0.80). Advisory mode remains harmless
 telemetry; enforcement was never enabled.
+
+## 13. Hard turn budget (cooperation-free lever) — retro analysis and implementation
+
+**Implementation:** `SS_HARD_TURN_CAP` → OpenCode `agent.build.maxSteps` (the loop owner enforces;
+no model cooperation involved). Env-gated, absent-by-default config is byte-identical; rows carry
+`hardTurnCap` + `budgetExhausted`. 17/17 tests.
+
+**Retro preflight over all 68 recorded rollouts** (pooled turns p50=18, p75=32, p90=54, max=184):
+
+| cap | rollouts cut | ledger cost saved (of $38.05) | solved rollouts over cap |
+|---|---|---|---|
+| 32 (p75) | 14 | ~$24.76 (65%) | 6 |
+| 45 | 8 | ~$19.00 (50%) | 4 |
+| 60 (~p90) | 4 | ~$14.61 (38%) | 4 |
+
+**Last-edit refinement (grade-at-cut):** a cut rollout keeps its solve when its final source edit
+landed before the cap. At cap=60: helidon (last edit 38), raml (27), kompendium (59), and the
+footer-run moq (45) all KEEP their solves; only the ultra-deep moq runs die (sweet last edit 177,
+native 117). moq's own solve depth is stochastic (45 vs 177 across identical-config runs) — under
+a cap it becomes a coin flip instead of a guaranteed deep grind. Recommendation: **cap ≈ p90 (≈60
+on this tail-enriched cohort; recompute pooled p90 on any new cohort), grade-at-cut, both arms,
+same numeric cap** — trades moq-class coin-flip solves for capping the exact runs that decide
+every aggregate sign. On a true 20%-tail population both the saving and the risk shrink
+proportionally. p75 caps fail solve non-inferiority outright on this cohort and are rejected.
+
+Operational smoke (deterministic cap-hit at cap=10 on luigi + no-op parity at cap=200) validates
+the stop/grade path; statistics come later from a properly-powered cell with REPS≥2, per the
+noise-floor rule.
