@@ -403,3 +403,33 @@ on this backbone. Implication (decision for the user): move dev iteration/micro-
 (pennies per round), keep Grok for the redemption-story confirmations. Caveats: 3 easy tasks,
 1 rep, Luna-on-OpenCode contradicts the routing policy — a proper Luna arm needs the codex
 harness per policy, or a policy amendment.
+
+### 14.2 Capped cell FINAL (35/36 pairs, 2 reps, ~$25.5) — NULL on cost; the cap needs the tail it excluded
+
+| paired (n=35) | sweet+cap44 | native+cap44 |
+|---|---|---|
+| cost | $12.58 | $12.01 (ratio 1.047) |
+| solve | 8 | 11 |
+| calls | 780 (−32%) | 1144 |
+| median cost | **$0.175** | $0.188 (sweet cheaper — first time; 16/35 tasks) |
+| budgetExhausted | 5 | 1 |
+
+Sweet-capped vs sweet-uncapped, same 18 tasks (rep-avg): cost $6.75 vs $6.72 (FLAT), solve 4.5
+vs 5 (raml lost 0/2 vs solved uncapped; kompendium gained 1/2). **Interpretation: with moq
+excluded per standing instruction, the moq-free p90 cap (44) binds on only 6/70 rollouts and
+truncates runs near their natural end — the treatment's target WAS the excluded task. The cap
+is a null treatment on a tail-free cohort, with a real casualty risk when it does bind (raml).
+Same lesson as the outlier-cut correction, from the other side: the tail is both the noise AND
+the treatment effect; excluding it excludes both.** Solve reading across both clean 2-rep-era
+runs: baseline sweet +1, this run native +3 — pooled, solve parity within the ±1-2 noise band;
+neither arm has a demonstrated solve advantage on this cohort.
+
+**PROGRAM VERDICT on Grok-4.5 turn-economy levers, all tested:** prompt packing DEAD; ss-batch
+DEAD (unsafe speculation); advisory DEAD (instruction-deaf); hard cap NULL-to-risky on
+tail-free cohorts, only pays where moq-class tails are in scope. The defensible clean-data
+claim stands unchanged: **cost parity, solve parity, −16 to −32% calls, 2× faster
+localization, narrower context.** The wide-margin cost win does not exist on Grok-4.5 via
+turn economics. Remaining paths: (a) Luna-class pricing makes the re-send tax financially
+irrelevant (9-45× cheaper per solve, probe-verified); (b) server-side search→read fusion
+(pool intact, model-free); (c) run headline comparisons WITH moq-class tasks in scope, capped,
+where the cap provably pays.
