@@ -285,3 +285,18 @@ REPS≥2 or larger cohorts are mandatory for every future stage, including CONFI
 Defect-driven iteration list (micro-smoke protocol): D1 relax/repair baseline trust on
 volatile-signature tasks; D2 implement the pass-state rule; D3 re-test on the three named sites
 (moq=trust, bfgroup=green-grind, apigee=overhead) with ≥2 reps per site before any full cell.
+
+### 12.3 Controller v2 + the exposure preflight that was missing (2026-08-04)
+
+Both defects fixed and tested (rt-progress-v2, 16/16): count-summary trust fallback (D1 —
+moq-class suites get a stable counts comparable, controller-only, checkpoints stay names-only)
+and the pass-state green rule (D2 — review-then-submit from the second consecutive trusted
+PASS). Offline exposure replay over the footer run's own ledgers: **v1 fired 0 times; v2 would
+have fired 10 times on 5 of 19 tasks** (bfgroup green×4 — the 59-call grinder; luigi
+recovery+restore; stingray recovery×2; cedar recovery; tablib green). moq would still not have
+fired — its cheap footer run was genuine luck (state changed every cycle), reinforcing its
+exclusion from live smokes. STANDING RULE, now satisfied for the first time: no treatment cell
+launches without a $0 ledger-replay demonstrating nonzero trigger exposure on the target tasks.
+Fingerprint v2 changed configHash → ledger re-sweep required before the next live run. Proposed
+micro-smoke set (moq EXCLUDED per user): bfgroup + luigi + stingray + cedar — exactly the
+would-fire tasks — ≥2 reps each (~$3-5), awaiting explicit authorization.
