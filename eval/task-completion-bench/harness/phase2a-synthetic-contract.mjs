@@ -7,7 +7,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const SCENARIO_FILE = path.join(HERE, 'phase2a-synthetic-scenarios.json');
 export const CELL_FILE = path.join(HERE, 'phase2a-synthetic-cells.json');
 export const FROZEN_SCENARIO_SHA256 = 'f14bc06fed85f05a311eb12a213549cd48bda017ab52cc3d039d29473fc47144';
-export const FROZEN_CELL_SHA256 = '4368c0fd35ddf4235584d5dae03fd1407fb0e72a12e43bfd9e1221d2d0a4d6fd';
+// Re-frozen 2026-08-04: dependency-guard hardening after the first live screen
+// packed all 4 traps (turnfix-p2a-20260804c); wording change only, same cells.
+export const FROZEN_CELL_SHA256 = 'badd5ef5b5f39f4af93432772c9a50d9c1e6a64d33083a4f421629d7cfe97909';
 export const SYNTHETIC_SCHEMA_VERSION = 1;
 export const SYNTHETIC_CELLS = Object.freeze(['status-quo', 'ss-batch', 'parallel-bash']);
 const OP_TO_COMMAND = Object.freeze({
