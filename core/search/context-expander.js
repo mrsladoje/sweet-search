@@ -1488,11 +1488,18 @@ export function allocateBudget(totalBudget, numResults, subMode = 'agent_preview
     // Gate fires when top-1 dominates: 2× top-2 OR there is no top-2.
     xlGateActive = top1Score > 0 && (top2Score === 0 || top1Score >= 2 * top2Score);
   }
-  const top1HardCap = xlGateActive ? xlPerResultCap : baselinePerResultCap;
+  // Turn-fusion mode (SWEET_SEARCH_FUSE_TOP=1): guarantee top-1 lands as the
+  // COMPLETE symbol so the follow-up read turn is redundant. Trades result
+  // tokens (bounded below) for a whole saved agent turn (~44k re-sent tokens
+  // on bench backbones). Off by default; measured pool: 97.9% of historical
+  // search→read pairs survive truncation-level output (TURNFIX results §6).
+  const fuseTop = process.env.SWEET_SEARCH_FUSE_TOP === '1';
+  const top1HardCap = (xlGateActive || fuseTop) ? xlPerResultCap : baselinePerResultCap;
 
   for (let i = 0; i < numResults; i++) {
     if (i === 0) {
-      const cap = Math.min(Math.floor(totalBudget * top1Share), top1HardCap);
+      let cap = Math.min(Math.floor(totalBudget * top1Share), top1HardCap);
+      if (fuseTop) cap = Math.max(cap, 4000);
       allocations.push({ presentation: 'full', tokenCap: cap });
     } else if (i <= 2) {
       // In agent_full: gate full expansion on score gap from top-1.

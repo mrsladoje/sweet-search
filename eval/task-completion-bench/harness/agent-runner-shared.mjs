@@ -163,6 +163,19 @@ export function warmupSweet({ ssBinDir, rundir, env, jail = null }) {
   catch { /* best-effort */ }
 }
 
+// Frame-level plan/reflect clause (both arms) — the V1 micro-smoke content that
+// flipped raml 0/2→2/2, re-homed per the M±-generality rule (bench-specific
+// completion discipline belongs in the FRAME, never M±). Env-gated so the
+// default frame stays byte-identical; run_tests naming is legitimate here.
+export const FRAME_REFLECT_TEXT =
+  '\n\nWORK DISCIPLINE: Before each source edit, state in one sentence which file(s) you will ' +
+  'change and why. After each `run_tests` result, state in one sentence what it proves before ' +
+  'acting again. Extended read-only analysis is not progress — once you have located the cause, ' +
+  'commit to a testable edit.';
+export function frameReflectText(env = process.env) {
+  return env.SS_FRAME_REFLECT === '1' ? FRAME_REFLECT_TEXT : '';
+}
+
 // The full agent prompt: completion frame (both arms) + M++ retrieval guidance (sweet
 // only, bracketed so completion authority wins) + the issue. Identical assembly to codex.
 export function buildPrompt({ sweet, mppText, problemStatement }) {
@@ -173,7 +186,7 @@ export function buildPrompt({ sweet, mppText, problemStatement }) {
   const sweetGuidance = sweet
     ? `\n\n=== Code-search expertise — use the ss-* commands (ss-search / ss-grep / ss-find / ss-read / ss-semantic / ss-trace) per this guidance; this is your advantage, use it to locate code in fewer, sharper steps ===\n${mppText}${antiThrash}${packingGuidance}`
     : '';
-  return `${FRAME_OPEN}${sweetGuidance}\n\n${FRAME_CLOSE}\n\n=== ISSUE ===\n${problemStatement || ''}`;
+  return `${FRAME_OPEN}${sweetGuidance}\n\n${FRAME_CLOSE}${frameReflectText()}\n\n=== ISSUE ===\n${problemStatement || ''}`;
 }
 
 // Aggregate a normalized toolCalls list ([{kind, command, resultText, isError}]) into
@@ -207,7 +220,7 @@ export function buildInstructionFile({ sweet, mppText, env = process.env }) {
   const packing = packingTreatmentRowFields({ sweet, env });
   const treatment = packing.packingTreatment === 'off'
     ? '' : `\n\n${PACKING_INSTRUCTIONS[packing.packingTreatment]}`;
-  return `${FRAME_OPEN}${sweet ? `\n\n${mppText}${treatment}` : ''}\n\n${FRAME_CLOSE}`;
+  return `${FRAME_OPEN}${sweet ? `\n\n${mppText}${treatment}` : ''}\n\n${FRAME_CLOSE}${frameReflectText(env)}`;
 }
 export function writeInstructionFile(rundir, fileName, { sweet, mppText, env = process.env }) {
   appendFileSync(path.join(rundir, fileName), `\n\n${buildInstructionFile({ sweet, mppText, env })}\n`);
