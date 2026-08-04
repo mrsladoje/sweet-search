@@ -10,7 +10,7 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const RT_PROGRESS_VERSION = 'rt-progress-v1';
+export const RT_PROGRESS_VERSION = 'rt-progress-v2';
 export const RT_PROGRESS_SCHEMA = 1;
 const BENCH_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const H_VALUES = new Set([2, 3, 4]);
@@ -291,8 +291,24 @@ const sorted = values => [...new Set(values || [])].sort();
 const strictSubset = (left, right) => left.length < right.length && left.every(x => right.includes(x));
 const failureStateHash = observation => sha256(stable({
   introduced: sorted(observation.introducedFailures), raw: sorted(observation.rawFailures),
-  status: observation.status,
+  status: observation.status, counts: observation.countSummary || null,
 }));
+
+// Count-based comparable for suites whose failures resist per-test NAME extraction
+// (dotnet trx console output prints counts but no names — the moq blindness,
+// TURNFIX-PHASE0-REPLAY-RESULTS §12.2). Names remain the primary comparable;
+// counts are a stable lower-fidelity fallback for the CONTROLLER ONLY — grading
+// and the model-visible baseline labels never consume this.
+export function extractFailureCountSummary(out) {
+  const text = String(out || '');
+  const pick = (re) => { const m = re.exec(text); return m ? Number(m[1]) : null; };
+  const failed = pick(/(?:^|\n)\s*Failed:\s*(\d+)\b/)
+    ?? pick(/\bFailures:\s*(\d+)\b/)
+    ?? pick(/\b(\d+) failed\b/);
+  if (failed === null) return null;
+  const total = pick(/\bTotal tests:\s*(\d+)\b/) ?? pick(/\bTests run:\s*(\d+)\b/);
+  return { failed, total };
+}
 
 /** Classify one cycle without using model prose or the gold patch. */
 export function classifyProgress(previous, current, history = []) {
@@ -332,10 +348,15 @@ export function rankCheckpoints(checkpoints, { verifiedOnly = false } = {}) {
   return [...(checkpoints || [])].filter(c => c?.id && (!verifiedOnly || c.verified)).sort(compareCheckpoints);
 }
 
-export function advisoryGuidance({ advisory, h, streak, currentId, verifiedBestId, trustworthy }) {
+export function advisoryGuidance({ advisory, h, streak, currentId, verifiedBestId, trustworthy, status, greenStreak = 0 }) {
   if (!advisory || !trustworthy || !Number.isInteger(h)) return 'none';
   const current = safeLabel(currentId || 'none').slice(0, 24);
   const best = safeLabel(verifiedBestId || 'none').slice(0, 24);
+  // Pass-state rule (spec §6.3, unimplemented until 2026-08-04 — the bfgroup
+  // green-grind): from the second consecutive trusted PASS onward, nudge one
+  // bounded review then submission. PASS classifies as progress, so this can
+  // never collide with the non-progress branches below.
+  if (status === 'PASS' && greenStreak >= 2) return `green.streak-${greenStreak}.review-then-submit`;
   if (streak === h) return `recovery.streak-${streak}.current-${current}.best-${best}.allowance-1`;
   if (streak >= h + 1) return `restore-submit.streak-${streak}.best-${best}`;
   return 'none';
@@ -373,10 +394,16 @@ export function recordProgressInvocation(config, input) {
   const cycle = state.hasSourceEdit
     ? ((previousState?.cycle || 0) + (previousState?.sourceStateHash === state.sourceStateHash ? 0 : 1))
     : (previousState?.cycle || 0);
+  // Controller trust: shim (names-level) trust, or the count-summary fallback.
+  // The shim's verdict is preserved separately as shimTrustworthy.
+  const countSummary = input.trustworthy === true ? null : extractFailureCountSummary(input.rawOutput);
+  const trustLevel = input.trustworthy === true ? 'names' : (countSummary ? 'counts' : 'none');
+  const controllerTrust = trustLevel !== 'none' && input.executed !== false && input.status !== 'INFRA';
   const current = {
     scopeKey, status: input.status, executed: input.executed !== false,
-    trustworthy: input.trustworthy === true, sourceStateHash: state.sourceStateHash,
+    trustworthy: controllerTrust, sourceStateHash: state.sourceStateHash,
     hasSourceEdit: state.hasSourceEdit, rawFailures, introducedFailures,
+    countSummary,
     issuePass: input.issuePass === true, buildStage: Number.isInteger(input.buildStage) ? input.buildStage : null,
   };
   current.failureStateHash = failureStateHash(current);
@@ -384,7 +411,9 @@ export function recordProgressInvocation(config, input) {
   const priorStreak = previousSameScope?.triggerCount || 0;
   const triggerCount = classification.kind === 'progress' ? 0
     : (classification.kind === 'non-progress' ? priorStreak + 1 : priorStreak);
-  const candidate = checkpoint.id && current.executed && current.trustworthy && input.status !== 'INFRA'
+  // Checkpoint candidacy stays names-only: counts-level cannot classify
+  // introduced-vs-preexisting, which the checkpoint ranking depends on.
+  const candidate = checkpoint.id && current.executed && trustLevel === 'names' && input.status !== 'INFRA'
     ? {
         id: checkpoint.id, verified: scopeKey === 'full' && state.prohibitedFiles.length === 0,
         issuePass: current.issuePass, introducedCount: introducedFailures.length,
@@ -396,9 +425,18 @@ export function recordProgressInvocation(config, input) {
   if (candidate) candidates.push(candidate);
   const candidateBestId = rankCheckpoints(candidates)[0]?.id || null;
   const verifiedBestId = rankCheckpoints(candidates, { verifiedOnly: true })[0]?.id || null;
+  let greenStreak = 0;
+  if (current.status === 'PASS' && current.trustworthy) {
+    greenStreak = 1;
+    for (let i = priorScopeRows.length - 1; i >= 0; i--) {
+      if (priorScopeRows[i].status === 'PASS') greenStreak++;
+      else break;
+    }
+  }
   const guidance = advisoryGuidance({
     advisory: config.flags.advisory, h: config.flags.h, streak: triggerCount,
     currentId: checkpoint.id, verifiedBestId, trustworthy: current.trustworthy && current.executed && current.status !== 'INFRA',
+    status: current.status, greenStreak,
   });
   const record = {
     kind: 'invocation', schema: config.schema, version: config.version,
@@ -409,6 +447,7 @@ export function recordProgressInvocation(config, input) {
     normalizedPattern: scopeKey.startsWith('targeted:') ? scopeKey.slice(9) : null,
     status: input.status, verdict: input.verdict, exitCode: input.exitCode,
     executed: current.executed, trustworthy: current.trustworthy,
+    shimTrustworthy: input.trustworthy === true, trustLevel, countSummary, greenStreak,
     diffHash: state.diffHash, binaryPatchHash: state.binaryPatchHash,
     sourceStateHash: state.sourceStateHash, untrackedSourceFingerprint: state.untrackedFingerprint,
     changedFiles: state.changedFiles, sourceFiles: [...state.trackedSourceFiles, ...state.untrackedManifest.map(x => x.path)].sort(),

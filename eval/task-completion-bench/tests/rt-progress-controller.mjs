@@ -268,3 +268,28 @@ test('main OpenCode config pins the version surface and rejects ambient plugins'
   assert.throws(() => validateMainOpencodePreflight({ version: '1.18.5', resolved: config }), /1\.18\.4/);
   assert.throws(() => validateMainOpencodePreflight({ version: '1.18.4', resolved: { ...config, plugin: ['ambient'] } }), /ambient/);
 });
+
+test('count-summary fallback unblinds name-resistant suites (the moq case)', async () => {
+  const { extractFailureCountSummary } = await import('../harness/rt-progress-controller.mjs');
+  const dotnet = 'Results File: /moq/tests/x.trx\n\nTest Run Failed.\nTotal tests: 1684\n     Failed: 2\n    Skipped: 4\n';
+  assert.deepEqual(extractFailureCountSummary(dotnet), { failed: 2, total: 1684 });
+  const maven = 'Tests run: 120, Failures: 3, Errors: 0, Skipped: 1\n';
+  assert.deepEqual(extractFailureCountSummary(maven), { failed: 3, total: 120 });
+  assert.equal(extractFailureCountSummary('all good, nothing here'), null);
+});
+
+test('green streak fires review-then-submit from the second trusted PASS (the bfgroup case)', () => {
+  const base = { advisory: true, h: 2, streak: 0, currentId: 'c1', verifiedBestId: 'c1', trustworthy: true };
+  assert.equal(advisoryGuidance({ ...base, status: 'PASS', greenStreak: 1 }), 'none');
+  assert.equal(advisoryGuidance({ ...base, status: 'PASS', greenStreak: 2 }), 'green.streak-2.review-then-submit');
+  assert.equal(advisoryGuidance({ ...base, status: 'PASS', greenStreak: 5 }), 'green.streak-5.review-then-submit');
+  assert.equal(advisoryGuidance({ ...base, status: 'FAIL', greenStreak: 0, streak: 2 }),
+    'recovery.streak-2.current-c1.best-c1.allowance-1');
+});
+
+test('counts-level trust advances streaks but never creates checkpoint candidates', () => {
+  const untrustedNamed = { executed: true, trustworthy: false, status: 'FAIL', failureStateHash: 'x' };
+  assert.equal(classifyProgress(null, untrustedNamed).kind, 'pause');
+  const countsTrusted = { executed: true, trustworthy: true, status: 'FAIL', scopeKey: 'full', hasSourceEdit: true, sourceStateHash: 'a', failureStateHash: 'h1' };
+  assert.notEqual(classifyProgress(null, countsTrusted).kind, 'pause');
+});
