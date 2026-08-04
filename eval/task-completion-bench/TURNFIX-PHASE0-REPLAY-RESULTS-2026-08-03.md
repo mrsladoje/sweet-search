@@ -207,3 +207,19 @@ arms; sweet does not thrash more in aggregate, but on moq it localized late (tur
 repaired messy (30 edits/23 tests vs 15/7) — tail variance decides signs, third run running.
 Consequence for the program: the packing cell (ss-batch, adoption 8/8) is now the FIRST paid
 priority; the controller second; no width work needed.
+
+## 11. Packing-lever verdict (2026-08-04): DEAD on Grok-4.5, twice-tested
+
+Screen c (original guard): ss-batch adoption 8/8 eligible, result tokens −41%, but 4/4
+dependency traps packed. Screen e (hardened explicit argument-visibility guard + tolerant
+subset broker matching): adoption 8/8 again, tokens −33%, operations ratio 1.03 — and **3/4
+traps still packed under maximal instruction**. Total spend across both screens: $1.73.
+
+Conclusion: Grok-4.5 eagerly adopts batch surfaces but speculatively includes operations whose
+arguments it cannot yet know, and prompting does not fix it. An adopted-but-unsafe batch tool
+on real tasks produces invented-argument probes; the paid packing cell is therefore cancelled
+for this backbone, permanently, per the pre-registered stop rule. The adoption and token
+evidence is preserved: re-screen ss-batch per backbone (~$0.80) before any future packing cell
+elsewhere. The turn-structure cost gap (§10) remains real; the surviving levers are the
+advisory controller (T1 cell launched 2026-08-04) and server-side structural turn reduction
+that needs no model cooperation (dependent search→read fusion; pool 97.9% intact per §6).
