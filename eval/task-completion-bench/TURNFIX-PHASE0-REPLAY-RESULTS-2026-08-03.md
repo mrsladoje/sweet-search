@@ -372,3 +372,22 @@ typical). No-op half (cap=200): 18 turns / 22 calls / $0.35 — inside luigi's h
 decision: the powered capped cell — cap = pooled p90 recomputed on the target cohort,
 grade-at-cut, both arms, REPS=2, moq's interpretation pre-registered (its deep solves are the
 known intentional casualty class).
+
+## 14. PRE-REGISTRATION — capped cell + Luna probe (written before any outcome, 2026-08-04)
+
+**Capped cell** (`turnfix-capcell44-20260804`): 18 tasks (discovery cohort minus moq — excluded
+per standing user instruction; its deep-solve casualty class is already characterized), both
+arms, REPS=2, CONCURRENCY=2, `SS_HARD_TURN_CAP=44` (pooled p90 over all 55 moq-free rollouts:
+p50/p75/p90/p95 = 17/32/44/54 — the p90 rule was fixed in §13 before this computation),
+telemetry on (model-invisible, A/A-proven), fresh v4 ledger sweep. Predeclared analysis:
+paired vs the clean baseline and vs same-run native; primary = cost per assigned task
+(untrimmed sums) + solve non-inferiority; budgetExhausted rollouts scored, never excluded;
+known risk = kompendium-class solves with last edits past turn 44. Expected from retro:
+~25-35% cost reduction class. Boot-race repairs (if any) rerun identically, once.
+
+**Luna probe** (`turnfix-luna-probe-20260804`): 3 historically-sweet-solved tasks
+(cccl/camel-k/tablib), sweet arm, 1 rep, ~$0.10 total at Luna's $0.10/$0.60 rates.
+CAPABILITY PROBE ONLY — Luna-on-OpenCode contradicts the multi-harness routing policy
+(GPT→codex), so nothing here is a bench claim. Readouts: does it run at all, calls/turn
+profile (does it parallelize bash where Grok won't), cost/task, qualitative
+instruction-following. Decides whether dev iteration moves to a 10-20× cheaper backbone.
