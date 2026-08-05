@@ -611,3 +611,18 @@ Both wordings: py-cov 0/4, camel-k control full. py-cov's run_tests shows AUTHOR
 UNTESTED on a clean self-revert task, not disproven. Re-test C on a task where run_tests
 PASS == gold before any judgement. Checkpoint as a HARNESS feature (freeze/grade the
 passing intermediate, Coherence-Collapse style) remains the non-prompt path.
+
+## 20. OpenCode batching prompt (user hypothesis) — RESOLVED: the calls/turn gap is a counting artifact
+
+OpenCode's embedded system prompt (both arms use it) mandates verbatim: "When making multiple
+bash tool calls, you MUST send a single message with multiple tool calls to run the calls in
+parallel." So batching is ALREADY instructed on both arms. Native satisfies it with multiple
+bash/grep ENVELOPES per message; sweet satisfies it with one bash envelope that &&-CHAINS
+several ss-* ops (the measured 84%). Both = ONE model turn. The native-1.64 vs sweet-0.98
+calls/turn "gap" is therefore substantially a COUNTING artifact (envelopes vs chained-ops), not
+a real turn deficit — sweet already obeys the same batching instruction native gets. Mimicking
+native's envelope form changes how packing is COUNTED, not the turn count or cost. **Packing
+lever closed for the 3rd time, now with the mechanism: nothing to pack that isn't packed; the
+metric was miscounting.** Real cost levers remain: P (line-numbers, shipped), V3 (exemplar-stop,
+shipped), server-side fusion-v2 of dependent search→read hops, and killing failed-task thrash
+(72% of spend). MCP first-class ss-* tools would only change counting, not turns — deprioritized.
