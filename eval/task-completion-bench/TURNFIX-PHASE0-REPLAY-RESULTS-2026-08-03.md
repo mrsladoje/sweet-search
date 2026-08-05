@@ -532,3 +532,50 @@ signal any variant has produced. V2 is the standing champion candidate.
 Next decision menu: (a) V1(frame)+V2 combined 18-task cell (~$12); (b) CONFIRM-28 with V2
 (pre-registered stage, ~$25, 2 reps now mandatory → ~$50 — needs budget sign-off);
 (c) Luna track. Spend this ladder ≈ $18.
+
+## 18. Cost-thrash forensics (workflow, 5 agents, $0 bench) — where the 72% goes
+
+72% of V2-screen sweet spend was on FAILED rollouts. Four costliest failures traced vs their
+native counterparts. **The cost sink is NOT one phase — it splits three ways:**
+
+| task | verdict | mechanism |
+|---|---|---|
+| registry-994 | RETRIEVAL (2° repair) | toured 10 of 14 sibling rule-packages in full before writing (27 of 43 turns pre-write); then post-PASS re-exploration to the cap |
+| b2-259 | RETRIEVAL (pure) | 30 calls reading 5 interlocking .jam files, **never edited, never tested** — analysis paralysis |
+| kompendium-208 | TOOL FRICTION | 3 chained `ss-read`s in one bash call → combined output truncated → file 2/3 unseen → **blind edit at call 6**, then thrash |
+| py-cov | REPAIR (Coherence Collapse) | produced a passing fix, then `git checkout -- file` **discarded its own passing edit** — native did the identical self-revert |
+
+**Cross-cutting product bug in 3 of 4: `ss-read` friction.** (a) chained multi-file reads
+truncate silently → blind edits (kompendium); (b) arg-semantics flip between count and end
+depending on end<start vs end>start, so the agent can't predict slice size (registry); (c)
+unfollowed `# unread below` pagination trailers leave files partially read (registry, b2). This
+is a sweet-ONLY product surface — fixing it is a pure win, no both-arms cost, no model
+cooperation.
+
+**Verdict on the two proposed optimizations, from the traces:**
+- **Drop rank 2/3 bodies (adaptive budget):** RISKY, not a clear win. 2 tasks neutral (agent
+  never read rank 2/3), 1 would-help (kompendium), 1 would-HURT (registry — rank 2 was
+  load-bearing and top-1 never dominated: every search returned `confidence=low
+  (many_candidates)`). Only safe under a strict dominance+sufficiency gate that, by construction,
+  rarely fires on the hard tasks where cost actually concentrates. Low priority; ship behind a
+  flag with pointer-lines (not deletion) if at all.
+- **Line-numbered ss-read:** supported but secondary. The real ss-read damage is truncation +
+  arg-semantics, not missing line numbers. Line numbers help the edit phase; fix truncation
+  first.
+
+**Research (Coherence Collapse 2603.24631):** 60-69% of capable-model failures reach and edit
+the right code then corrupt it; the py-cov self-revert is this exact mode; the paper's
+edit-checkpoint (freeze a test-passing state so a later edit can't destroy it) recovered 5/5 —
+mechanism promising, n small.
+
+### 18.1 Targeted micro-smoke slate (ranked; awaiting go)
+1. **P (product, $0 build + ~$2 smoke):** ss-read fixes — never truncate a chained/multi-file
+   read (auto-split or loud per-file flag), make arg-semantics deterministic, surface unread
+   trailers harder. Sweet-only, zero risk to native. Targets kompendium + registry + b2.
+2. **V3 (M± retrieval discipline, ~$2 smoke):** "once you have 1-2 exemplars of a pattern, stop
+   reading siblings and start writing; scan the pack you already have before a new search."
+   Targets registry + b2 retrieval-tour. General, ships in M±.
+3. **C (frame checkpoint clause OR harness checkpoint, ~$2 smoke):** "once tests pass, do not
+   discard or rewrite the passing change." Targets py-cov. Bench-completion content → frame.
+Controls: tablib + camel-k. All 2 reps, CONCURRENCY=1. A fix must flip a target without
+breaking a control before it earns the 18-task screen.
