@@ -603,3 +603,11 @@ search→read hop (fusion-v2, multi-file — v1 only did top-1), NOT packing pro
 sweet's ss-* are bash-hidden so likely invisible to that machinery — explains native 1.64 vs
 sweet 0.98 calls/turn. Test: mimic OpenCode's batch wording in frame, or expose ss-* as
 first-class tools (MCP path). Both after current smokes.
+
+### 19.1 C-wording round (v2 stop-at-green, v3 fragile-state) — py-cov is a POISONED target
+Both wordings: py-cov 0/4, camel-k control full. py-cov's run_tests shows AUTHORITATIVE PASS
+(banner present) that does not match gold grading — a false-pass / grader-suite mismatch no
+"stop at green" wording can fix (submitting green submits a gold-FAIL state). C's true verdict:
+UNTESTED on a clean self-revert task, not disproven. Re-test C on a task where run_tests
+PASS == gold before any judgement. Checkpoint as a HARNESS feature (freeze/grade the
+passing intermediate, Coherence-Collapse style) remains the non-prompt path.
