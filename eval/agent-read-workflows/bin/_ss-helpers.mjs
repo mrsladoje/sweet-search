@@ -58,6 +58,40 @@ function shortQueryHash(q) {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 
+// Resident-daemon cap for bench fan-outs. Daemon sockets are keyed per project
+// root, so a multi-repo replay never reuses one: search-read-replay --execute-current
+// checks out a different golden repo per task, so every task takes the `action='spawned'`
+// branch and leaves behind a ~1.2GB daemon plus a ~2.7GB maintainer. Production defaults
+// are SWEET_SEARCH_MAX_DAEMONS=0 (cap OFF) with a 20-minute idle-TTL, which at the
+// observed ~1 daemon / 4.5s reaches ~265 resident daemons on a 200-task replay — it
+// OOM-killed a 224GB box twice. Capping here, not in core/search/search-server.js, keeps
+// the shipped single-repo warm-daemon behaviour untouched. An explicit caller env wins.
+//
+// LATENCY: this must never cost a cold start. The cap evicts by LRU only when the count
+// is exceeded, and a replay walks repos strictly in sequence — the evicted daemon serves
+// a task that is already finished and is never queried again. The idle-TTL is left at the
+// production default ON PURPOSE: shortening it can reap a daemon that a slow task is still
+// between calls on, which would force a ~2.5s cold start instead of the ~80ms warm path.
+// Bound the count, never the lifetime.
+//
+// The cap gates registry participation at daemon STARTUP (search-server.js `capEnabled`),
+// so a daemon spawned without it never registers and is invisible to LRU eviction. Kill
+// stray daemons before a run rather than mixing capped and uncapped ones.
+process.env.SWEET_SEARCH_MAX_DAEMONS ??= '3';
+
+// The maintainers, not the daemons, are the bigger half of the footprint (~2.7GB each
+// and ratcheting, vs ~1.2GB for a daemon). maintainerIdleTtlMs() auto-tunes off the
+// system-RAM tier and returns 0 = NEVER self-exit on a roomy host — measured 0 on this
+// 128GB box. That heuristic is backwards for a bench fan-out: the roomy machine is
+// exactly the one that runs 200 repos and dies. An explicit env value always wins over
+// the tier default, so pin it on here.
+//
+// LATENCY: free. The maintainer has NO query route (index-maintainer.mjs) — it only does
+// background reconcile — so idling it out can never slow a search, and it respawns
+// on demand. Idle is counted as consecutive ticks that found nothing to do, so the repo
+// being actively searched keeps its maintainer; only finished repos are reclaimed.
+process.env.SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS ??= '120000';
+
 // The agent's cwd is the target repo. SWEET_SEARCH_PROJECT_ROOT must point
 // at the repo so DB_PATHS resolves to the repo's own .sweet-search/.
 const PROJECT_ROOT = process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
@@ -488,8 +522,19 @@ async function cmdRead(rawArgs) {
     queryEvidence: receiptResponse?.queryEvidence,
   });
   const omitted = renderReadOmission(r, { surface: 'ss-read' });
+  // Optional line-number gutter (SS_READ_LINENUMS=1). `N| ` form, skipped under
+  // 15 lines. Native Claude Code Read numbers every line; this closes that
+  // grounding asymmetry for the sweet arm so exact-span edits are easier.
+  let bodyText = r.text;
+  if (process.env.SS_READ_LINENUMS === '1' && r.text && r.text.split('\n').length >= 15) {
+    const startAt = (r.range && !coveredWholeFile) ? r.range.startLine : 1;
+    const ls = r.text.split('\n');
+    const trailNL = ls.length > 1 && ls[ls.length - 1] === '';
+    const bodyLs = trailNL ? ls.slice(0, -1) : ls;
+    bodyText = bodyLs.map((ln, i) => `${startAt + i}| ${ln}`).join('\n') + (trailNL ? '\n' : '');
+  }
   if (omitted) process.stdout.write(`# ss-read ${r.file}${range}\n${omitted}\n`);
-  else process.stdout.write(`# ss-read ${r.file}${range}\n${fence}\n${r.text}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`);
+  else process.stdout.write(`# ss-read ${r.file}${range}\n${fence}\n${bodyText}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`);
   process.exit(0);
 }
 

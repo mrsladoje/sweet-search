@@ -507,7 +507,31 @@ function _formatAgent(result, opts = {}) {
     if (names.length) symbolHint = `\nsymbols: ${names.join(', ')}`;
   }
   const remainder = renderUnreadBelow(result, opts);
-  return `### ${result.file}${range}${symbolHint}\n${fence}\n${result.text}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`;
+  // Optional line-number gutter (SS_READ_LINENUMS=1). Native Claude Code Read numbers
+  // every line; ss-read does not, so sweet edits with less line grounding than its
+  // comparison arm. `N| ` form (not cat -n's padded field, which miscalibrates edit
+  // wrapping — Claude Code #36654). Skipped for spans < 15 lines (short reads don't
+  // need it and the prefix is pure token cost). Prior art: pi-hashline +14pp Sonnet.
+  const body = shouldNumberLines(result, opts)
+    ? numberLines(result.text, result.range ? result.range.startLine : 1)
+    : result.text;
+  return `### ${result.file}${range}${symbolHint}\n${fence}\n${body}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`;
+}
+
+function shouldNumberLines(result, opts) {
+  const on = (opts && opts.lineNumbers != null) ? opts.lineNumbers : process.env.SS_READ_LINENUMS === '1';
+  if (!on || !result.text) return false;
+  return result.text.split('\n').length >= 15;
+}
+
+function numberLines(text, startLine) {
+  const lines = text.split('\n');
+  // Drop a single trailing empty element from a terminal newline so we don't
+  // number a phantom blank line past EOF.
+  const hasTrailingNL = lines.length > 1 && lines[lines.length - 1] === '';
+  const body = hasTrailingNL ? lines.slice(0, -1) : lines;
+  const numbered = body.map((ln, i) => `${startLine + i}| ${ln}`).join('\n');
+  return hasTrailingNL ? numbered + '\n' : numbered;
 }
 
 export function formatReadResults(results, format = 'agent', opts = {}) {

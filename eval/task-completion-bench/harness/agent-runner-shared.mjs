@@ -176,6 +176,18 @@ export function frameReflectText(env = process.env) {
   return env.SS_FRAME_REFLECT === '1' ? FRAME_REFLECT_TEXT : '';
 }
 
+// Checkpoint clause (both arms) — targets the Coherence-Collapse self-revert:
+// agents that reach a passing state then destroy it (py-cov `git checkout` of
+// its own fix). Bench-completion content → frame, per the M±-generality rule.
+export const FRAME_CHECKPOINT_TEXT =
+  '\n\nPROTECT WORKING STATE: once `run_tests` shows the previously-failing test PASSES, you are ' +
+  'done — submit. Do not revert, `git checkout`, rewrite, or "improve" a change that already ' +
+  'made the target test pass; a later edit that breaks it is a regression, not progress. If you ' +
+  'must keep editing, never discard the passing version.';
+export function frameCheckpointText(env = process.env) {
+  return env.SS_FRAME_CHECKPOINT === '1' ? FRAME_CHECKPOINT_TEXT : '';
+}
+
 // The full agent prompt: completion frame (both arms) + M++ retrieval guidance (sweet
 // only, bracketed so completion authority wins) + the issue. Identical assembly to codex.
 export function buildPrompt({ sweet, mppText, problemStatement }) {
@@ -186,7 +198,7 @@ export function buildPrompt({ sweet, mppText, problemStatement }) {
   const sweetGuidance = sweet
     ? `\n\n=== Code-search expertise — use the ss-* commands (ss-search / ss-grep / ss-find / ss-read / ss-semantic / ss-trace) per this guidance; this is your advantage, use it to locate code in fewer, sharper steps ===\n${mppText}${antiThrash}${packingGuidance}`
     : '';
-  return `${FRAME_OPEN}${sweetGuidance}\n\n${FRAME_CLOSE}${frameReflectText()}\n\n=== ISSUE ===\n${problemStatement || ''}`;
+  return `${FRAME_OPEN}${sweetGuidance}\n\n${FRAME_CLOSE}${frameReflectText()}${frameCheckpointText()}\n\n=== ISSUE ===\n${problemStatement || ''}`;
 }
 
 // Aggregate a normalized toolCalls list ([{kind, command, resultText, isError}]) into
