@@ -579,3 +579,27 @@ mechanism promising, n small.
    discard or rewrite the passing change." Targets py-cov. Bench-completion content → frame.
 Controls: tablib + camel-k. All 2 reps, CONCURRENCY=1. A fix must flip a target without
 breaking a control before it earns the 18-task screen.
+
+## 19. Cost-thrash micro-smoke batch (2026-08-05, ~$18): P & V3 clean, C half, STACK regressed
+
+| variant | cost vs ctrl | solves | verdict |
+|---|---|---|---|
+| P (line-numbered ss-read, SS_READ_LINENUMS) | −16% | held | CLEAN WIN — advance |
+| V3 (exemplar-stop M±) | −13% | held, retrieval-tour cut | CLEAN WIN — advance |
+| C v1 (checkpoint frame) | ~flat | killed self-revert (1→0) but kept-editing-past-green still failed py-cov | half; v2/v3 wordings testing |
+| STACK (P+V3+C) | −14% | **kompendium 1/2→0/2 REGRESSION** | do NOT ship as-is |
+
+**Key finding — the clauses interact.** P and V3 each hold solves alone; combined (+C) they
+over-constrained kompendium and lost its solve. Champion is **P+V3, not the full stack**, and
+even P+V3 needs a clean-combination smoke before trust.
+
+**Packing measurement that redirects the turn lever (§18 follow-up):** 84% of sweet's
+ss-bearing bash calls ALREADY pack 2+ ops (&&/; chains); 92% of assistant messages are
+single-envelope but each is a fat chain. There is almost no independent-op headroom for
+wording — the residual turns are DEPENDENT hops (search→read→edit). Wording cannot pack a step
+that needs the prior step's output. Turn lever = server-side fusion of the dependent
+search→read hop (fusion-v2, multi-file — v1 only did top-1), NOT packing prompts. Also queued
+(user): OpenCode enforces parallel tool calls on its FIRST-CLASS tools (native grep/read/edit);
+sweet's ss-* are bash-hidden so likely invisible to that machinery — explains native 1.64 vs
+sweet 0.98 calls/turn. Test: mimic OpenCode's batch wording in frame, or expose ss-* as
+first-class tools (MCP path). Both after current smokes.
