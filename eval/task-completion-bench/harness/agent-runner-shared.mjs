@@ -184,8 +184,22 @@ export const FRAME_CHECKPOINT_TEXT =
   'done — submit. Do not revert, `git checkout`, rewrite, or "improve" a change that already ' +
   'made the target test pass; a later edit that breaks it is a regression, not progress. If you ' +
   'must keep editing, never discard the passing version.';
+// V2/V3 target the OBSERVED miss: C's "don't revert" half worked (self-reverts
+// 1→0) but the agent kept editing past a green run and the final state failed.
+export const FRAME_CHECKPOINT_V2 =
+  '\n\nSTOP AT FIRST GREEN: the moment `run_tests` shows the target test PASS, you are finished — ' +
+  'your next action must be to submit. Do NOT make another edit. Editing after a passing run is the ' +
+  'single most common way agents turn a solved task into a failed one: every extra edit past green ' +
+  'can only break what already works. If you believe more is needed, submit anyway and stop.';
+export const FRAME_CHECKPOINT_V3 =
+  '\n\nWORKING STATE IS FRAGILE: when `run_tests` first shows the target test PASS, treat that exact ' +
+  'code state as your answer and submit it. Do not revert it, rewrite it, or keep editing to "improve" ' +
+  'it. If a further change truly seems needed, make it ONE minimal edit and re-run tests; if the result ' +
+  'is not still green, undo that last edit only — never the fix that first passed.';
+const FRAME_CHECKPOINT_VARIANTS = { '1': FRAME_CHECKPOINT_TEXT, v1: FRAME_CHECKPOINT_TEXT, v2: FRAME_CHECKPOINT_V2, v3: FRAME_CHECKPOINT_V3 };
 export function frameCheckpointText(env = process.env) {
-  return env.SS_FRAME_CHECKPOINT === '1' ? FRAME_CHECKPOINT_TEXT : '';
+  const sel = String(env.SS_FRAME_CHECKPOINT || '').trim();
+  return FRAME_CHECKPOINT_VARIANTS[sel] || '';
 }
 
 // The full agent prompt: completion frame (both arms) + M++ retrieval guidance (sweet
