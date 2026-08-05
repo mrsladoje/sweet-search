@@ -333,6 +333,10 @@ function runCurrent(candidate, task, options, cache) {
         encoding: 'utf8',
         maxBuffer: 16 * 1024 * 1024,
         timeout: 120_000,
+        // Each task runs against its own checked-out repo, so every spawn below
+        // starts a fresh daemon. The resident-daemon cap and short idle-TTL that
+        // stop those from piling up are defaulted in bin/_ss-helpers.mjs (single
+        // source of truth); export SWEET_SEARCH_MAX_DAEMONS to override.
         env: {
           ...process.env,
           SWEET_SEARCH_PROJECT_ROOT: projectRoot,
