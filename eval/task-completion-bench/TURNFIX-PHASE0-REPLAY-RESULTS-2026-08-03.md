@@ -510,3 +510,25 @@ truncated), the resumed 551-replay showed 0/59 early eliminations, and §6 alrea
 (read-heavy tasks, running) is the arbiter: if sweet's ss-read counts and cost do not drop,
 fusion-v2 = reference-batching (LLMCompiler-style server-resolved refs) or top-3 fusion —
 pre-registered here before the smoke's outcome is known.**
+
+## 17. Ladder results (2026-08-05, ~$18): fusion-v1 RETIRED, frame-reflect mild, V2 SCREEN POSITIVE
+
+**Fusion smoke — NULL, exactly as the §16 pre-registration feared.** ss-call counts unchanged on
+the read-heavy targets (py-cov 39 v 35, cedar 24 v 21), cost and solves identical. Per the
+pre-registered arbiter: fusion-v1 (top-1 cap raise) retires; fusion-v2 = reference-batching
+stays designed-but-unscheduled. Top-1 truncation is not why agents re-read.
+
+**Frame-reflect smoke — directionally positive, mild.** sweet raml 0/2→1/2 (weaker than
+V1-as-M±'s 2/2 — note the content differed: the frame clause dropped the persistence sentences
+the frame already had), native unchanged at 7/8 (no harm, raml cost −44%), controls intact.
+
+**V2 screen (18 tasks, 2 reps) — the best full-cohort sweet result to date:** solves 10 v 9,
+cost **$11.51 v $13.50 (−15%)**, avgCalls 19.5. Flips: raml 0→2 (trace-scoping works at scale),
+tablib 2→1 (one control rep lost — within the known per-rep coin-flip range; tablib solves 2/2
+everywhere else). Express did not flip at screen scale (its micro 1/2 was one rep). Honest
+read: +1 solve is inside solve noise; the −15% cost with a solve gain is the strongest joint
+signal any variant has produced. V2 is the standing champion candidate.
+
+Next decision menu: (a) V1(frame)+V2 combined 18-task cell (~$12); (b) CONFIRM-28 with V2
+(pre-registered stage, ~$25, 2 reps now mandatory → ~$50 — needs budget sign-off);
+(c) Luna track. Spend this ladder ≈ $18.
