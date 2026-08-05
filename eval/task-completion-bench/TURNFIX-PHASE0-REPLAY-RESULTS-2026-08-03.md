@@ -626,3 +626,16 @@ lever closed for the 3rd time, now with the mechanism: nothing to pack that isn'
 metric was miscounting.** Real cost levers remain: P (line-numbers, shipped), V3 (exemplar-stop,
 shipped), server-side fusion-v2 of dependent search→read hops, and killing failed-task thrash
 (72% of spend). MCP first-class ss-* tools would only change counting, not turns — deprioritized.
+
+## 21. Overnight generalization loop (2026-08-06)
+
+### Wave gen — champion (P+V3) on 6 FRESH (never-tuned) tasks
+Solves 4/12 vs control 4/12 — IDENTICAL, no solve regression on fresh tasks (clean generalization
+of the no-harm property). Cost $2.97 vs $2.35 (+26%) but **CONFOUNDED**: overnight cap=60,
+control cap=44. helidon (only task long enough to reach either cap) ran 60 vs 44 turns → +$0.66,
+the entire aggregate delta. Cap-irrelevant short tasks (php-scoper/node-convict/ta4j/tslint) are
+flat-to-better (tslint −32%). Honest verdict: P+V3 do NOT regress solves or cost on fresh tasks;
+the cost win seen on TUNING tasks (−13/−16%) did NOT reproduce as a clear win on fresh tasks —
+champion is roughly NEUTRAL on cost when generalized (helidon confound removed). METHODOLOGY
+NOTE: overnight cap should have matched control cap; treat all overnight cost deltas as
+cap-confounded for any task that can reach 60 turns; solve deltas are clean.
