@@ -1508,7 +1508,17 @@ export function allocateBudget(totalBudget, numResults, subMode = 'agent_preview
       const thisScore = results[i]?.score || 0;
       const isCompetitive = top1Score > 0 && thisScore >= top1Score / 2;
 
-      if (isFullMode && isCompetitive) {
+      // Budget-pointer (SWEET_SEARCH_POINTER_TAIL=1): when top-1 MASSIVELY
+      // dominates (>=3x this rank), drop rank 2/3 CODE bodies to pointer lines
+      // (file:line — symbol, ~15 tok) instead of preview bodies (~400-600 tok).
+      // Conservative gate: fires only on extreme dominance, so load-bearing
+      // rank-2 hits (registry: rank2 ~= rank1) keep their body. The agent can
+      // still ss-read the exact span — recovery is one cheap read, not a search.
+      const pointerTail = process.env.SWEET_SEARCH_POINTER_TAIL === '1'
+        && top1Score > 0 && thisScore > 0 && top1Score >= 3 * thisScore;
+      if (pointerTail) {
+        allocations.push({ presentation: 'summary', tokenCap: 0 });
+      } else if (isFullMode && isCompetitive) {
         const cap = Math.min(Math.floor(totalBudget * top23Share), DEFAULT_PER_RESULT_CAPS[0]);
         allocations.push({ presentation: 'full', tokenCap: cap });
       } else {
