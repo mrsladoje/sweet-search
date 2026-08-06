@@ -40,6 +40,7 @@ import {
   validateSearchBatchRequest,
 } from './search-batch.js';
 import { renderSearchBatchCliResult } from './search-batch-format.js';
+import { lineGutterEnabled, numberCodeLines } from './search-read.js';
 
 // =============================================================================
 // Server constants
@@ -644,8 +645,16 @@ export function renderAgentSearchResponse(response) {
     const stale = result.stale ? ' STALE' : '';
     out += `\n## #${result.rank} ${result.file}:${result.startLine}-${result.endLine}${symbol} (${result.presentation}${kind}${stale}) score=${(result.score || 0).toFixed(3)}\n`;
     if (result.headerContext) out += `### imports\n\`\`\`\n${result.headerContext}\n\`\`\`\n`;
-    if (result.code) out += `\`\`\`\n${result.code}\n\`\`\`\n`;
-    else if (result.summary) out += `${result.summary}\n`;
+    if (result.code) {
+      // Line-number gutter (default ON for agent output; benchmark path is JSON,
+      // never here). Numbers start at the result's own startLine so the agent can
+      // target exact edit spans directly from a search hit — same grounding
+      // ss-read now provides. Skipped for tiny spans.
+      const body = (lineGutterEnabled() && String(result.code).split('\n').length >= 15)
+        ? numberCodeLines(result.code, result.startLine || 1)
+        : result.code;
+      out += `\`\`\`\n${body}\n\`\`\`\n`;
+    } else if (result.summary) out += `${result.summary}\n`;
     if (result.neighbors?.rendered) {
       out += `### related (1-hop graph, ~${result.neighbors.tokens} tok)\n${result.neighbors.rendered}\n`;
     }

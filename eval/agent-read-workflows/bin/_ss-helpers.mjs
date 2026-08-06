@@ -526,7 +526,7 @@ async function cmdRead(rawArgs) {
   // 15 lines. Native Claude Code Read numbers every line; this closes that
   // grounding asymmetry for the sweet arm so exact-span edits are easier.
   let bodyText = r.text;
-  if (process.env.SS_READ_LINENUMS === '1' && r.text && r.text.split('\n').length >= 15) {
+  if (process.env.SS_READ_LINENUMS !== '0' && r.text && r.text.split('\n').length >= 15) {
     const startAt = (r.range && !coveredWholeFile) ? r.range.startLine : 1;
     const ls = r.text.split('\n');
     const trailNL = ls.length > 1 && ls[ls.length - 1] === '';

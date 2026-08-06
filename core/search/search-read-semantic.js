@@ -34,6 +34,7 @@ import fs from 'node:fs';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
 import { DB_PATHS, LATE_INTERACTION_CONFIG, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
+import { lineGutterEnabled, numberCodeLines } from './search-read.js';
 import { readFile as readFileExact } from './search-read.js';
 import { withPinnedRead } from './search-reader-pin.js';
 import { emitToolIdentityAuto } from './cli-decoration.js';
@@ -856,6 +857,7 @@ export async function readSemantic(req) {
 export function formatReadSemanticResult(result, format = 'agent') {
   if (format === 'json') return JSON.stringify(result, null, 2);
 
+  const gutterOn = lineGutterEnabled({ format });
   const fence = result.language ? '```' + result.language : '```';
   const header = result.fellBack
     ? `### ${result.file} — full file (${result.reason || 'fallback'})`
@@ -874,7 +876,10 @@ export function formatReadSemanticResult(result, format = 'agent') {
       : `lines ${span.startLine}-${span.endLine}`;
     lines.push(`-- ${label}${typeof span.score === 'number' ? ` — score=${span.score.toFixed(3)}` : ''}`);
     lines.push(fence);
-    lines.push(span.text);
+    // Line-number gutter (default ON for agent format; benchmark uses json path).
+    lines.push(gutterOn && String(span.text || '').split('\n').length >= 15
+      ? numberCodeLines(span.text, span.startLine || 1)
+      : span.text);
     lines.push('```');
   }
   return lines.join('\n');
