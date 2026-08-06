@@ -282,7 +282,17 @@ export function guardStatus() {
 }
 export function ensureGuard(allow) {
   const s = guardStatus();
-  if (s.ns && s.proxy) return s;
+  if (s.ns && s.proxy) {
+    // Reconcile: if an explicit allowlist is requested and differs from the
+    // running one, restart the guard so EGRESS_ALLOW is authoritative (needed
+    // e.g. for codex-subscription hosts vs the openrouter default).
+    if (allow && allow.length &&
+        JSON.stringify([...allow].sort()) !== JSON.stringify([...s.allow].sort())) {
+      down();
+      return up(allow);
+    }
+    return s;
+  }
   return up(allow);
 }
 // Denials recorded inside a wall-clock window — how a rollout gets attributed its

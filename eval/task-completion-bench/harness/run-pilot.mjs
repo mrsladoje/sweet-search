@@ -164,7 +164,7 @@ if (CLI_HARNESS && ISOLATION_ON) {
     console.error('[isolation] Fix the host, or accept contaminated rows explicitly with SS_ISOLATION=0.');
     process.exit(1);
   }
-  const g = ensureGuard();
+  const g = ensureGuard(process.env.EGRESS_ALLOW ? process.env.EGRESS_ALLOW.split(',').map(s => s.trim()).filter(Boolean) : undefined);
   console.log(`[isolation] ON — per-rollout mount/pid/net jail; egress allowlist: ${g.allow.join(', ')}; denials → ${DENY_LOG}`);
 } else if (CLI_HARNESS) {
   console.error('[isolation] *** OFF (SS_ISOLATION=0) — rows from this run carry the documented contamination risk and MUST NOT be published as a clean comparison. ***');
