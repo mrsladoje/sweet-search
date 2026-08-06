@@ -639,3 +639,12 @@ the cost win seen on TUNING tasks (−13/−16%) did NOT reproduce as a clear wi
 champion is roughly NEUTRAL on cost when generalized (helidon confound removed). METHODOLOGY
 NOTE: overnight cap should have matched control cap; treat all overnight cost deltas as
 cap-confounded for any task that can reach 60 turns; solve deltas are clean.
+
+### Wave thrash — champion (P+V3) on 4 costly failures
+Solves 0/8 vs control 1/8 — champion LOST kompendium (1/2→0/2, SAME regression as STACK but now
+WITHOUT C). registry/b2/py-cov stay 0/2 (retrieval-tour + false-pass — champion doesn't target
+these). Cost cap-confounded. **KEY: P+V3 COMBINED regresses kompendium consistently (STACK + this
+wave) — the two clean individual wins (P −16%, V3 −13%) do NOT compose cleanly. V3's
+stop-reading-siblings + P interact to cut kompendium's multi-file fix short. Champion should be
+P-ALONE or V3-ALONE, not both. Overnight is de-risking the combination the tuning tasks made
+look safe.**
