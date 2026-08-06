@@ -663,3 +663,33 @@ prompt-fixable), but kompendium HELD 1/2 (V4's read-the-pack prose offset V3's s
 regression — so V3+read-the-pack is safer on kompendium than V3 alone). No failure fixed, no
 cost win (cap-confounded). Confirms: registry/b2 retrieval-tour and py-cov false-pass are NOT
 reachable by prompting.
+
+### Wave ptrgen — budget-pointer on 6 FRESH tasks
+Solves 4/12 vs control 4/12 — neutral, helidon HELD 2/2 (vs 1/2 in the ptr wave → the ptr-wave
+"helidon regression" was largely rep NOISE, not a clean pointer fault). No cost win (confounded).
+
+### 21.X OVERNIGHT SYNTHESIS (5 waves, 48 rollouts, $29.10, cap-60)
+
+| wave | config | tasks | solves champ/ctrl | note |
+|---|---|---|---|---|
+| gen | P+V3 | 6 fresh | 4/4 | neutral, no solve regression |
+| thrash | P+V3 | 4 failures | 0/1 | LOST kompendium (P+V3 don't compose) |
+| ptr | +pointer | 4 read-heavy | 3/5 | helidon 1/2 (later shown noise) |
+| v4 | +thrash-fix prompt | 4 failures | 1/1 | no failure fixed; read-the-pack offsets V3 kompendium regression |
+| ptrgen | +pointer | 6 fresh | 4/4 | neutral; helidon 2/2 (noise-corrects ptr) |
+
+**BOTTOM LINE (honest):**
+1. NO lever produced a clean generalizing cost win. The tuning-task wins (P −16%, V3 −13%) went
+   NEUTRAL on rotation — they were partly overfit to the 6 tuning tasks. (User's rotation
+   instinct correctly exposed this.)
+2. P+V3 COMBINED regresses kompendium (thrash + STACK, twice) — V3's stop-reading-siblings + P
+   interact. The "read-the-pack" clause (V4) offsets it. So a safe champion is P-alone, or
+   V3+read-the-pack, NOT bare P+V3.
+3. Budget-pointer (user's rank2/3 idea) = NEUTRAL (helidon apparent-regression was rep noise).
+   Safe to keep OFF-by-default as a shipped option; not a win to enable.
+4. The costly failures are NOT prompt-reachable: registry/b2 retrieval-tour and py-cov false-pass
+   survived every prompt/format lever (thrash + v4).
+5. ALL cost deltas cap-confounded (overnight 60 vs control 44) — solve deltas are the clean signal.
+6. **Real remaining levers = server-side fusion-v2 (dependent read-hop, no model cooperation) +
+   harness-level failed-task-thrash reduction. NOT more prompt/format variants — that space is
+   now exhausted with consistent evidence.**
