@@ -383,7 +383,13 @@ function classify(cmd) {
 export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', reasoning = 'medium', ssBinDir, mppText, image, t, perCallTimeoutMs = 600000 } = {}) {
   const sweet = arm === 'sweet';
   const rundir = task.repoCheckout;
-  const codexModel = apiModel.includes('/') ? apiModel : `openai/${apiModel}`;
+  // CODEX_SUBSCRIPTION=1 routes through a ChatGPT (Max/Pro) login instead of the
+  // openrouter API key: bare model id + codex's built-in provider (auth.json carries
+  // the ChatGPT OAuth token). Default path is byte-identical to before (openrouter).
+  const codexSubscription = process.env.CODEX_SUBSCRIPTION === '1';
+  const codexModel = codexSubscription
+    ? apiModel.replace(/^openai\//, '')
+    : (apiModel.includes('/') ? apiModel : `openai/${apiModel}`);
   // Price by the actual model (OpenRouter rate). gpt-5.5 resolves to the same numbers as
   // the legacy module PRICE, so existing gpt-5.5 runs are byte-identical; other models
   // (e.g. gpt-5.6-luna) are now priced correctly instead of at gpt-5.5's rate.
@@ -497,8 +503,11 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
     ? ['--sandbox', 'workspace-write', '--skip-git-repo-check', '--add-dir', runnerStateDir, '-c', 'approval_policy="never"',
        '-c', 'sandbox_workspace_write.network_access=false']
     : ['--dangerously-bypass-approvals-and-sandbox'];
+  // Subscription mode omits the openrouter provider override so codex uses its built-in
+  // ChatGPT backend (selected by the seeded auth.json); the openrouter path is unchanged.
+  const providerArgs = codexSubscription ? [] : ['-c', 'model_provider="openrouter"'];
   const args = ['exec', ...sandboxArgs, '--json',
-    '-c', `model_reasoning_effort="${reasoning}"`, '-c', 'model_provider="openrouter"',
+    '-c', `model_reasoning_effort="${reasoning}"`, ...providerArgs,
     '-m', codexModel, '-C', rundir, prompt];
 
   const t0 = Date.now();
