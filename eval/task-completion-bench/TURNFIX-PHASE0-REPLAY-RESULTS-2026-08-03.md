@@ -738,3 +738,75 @@ paid work is unblocked or blocked by today's result.
 **Next $0 step:** read-only `scp` of the box `opencode.db` (+ WAL) to a Mac scratch path, then
 extend `stats/search-read-replay.mjs` to emit per-pair {namedRank, distinctFiles, spanTokens}
 and run the economics gate. Awaiting user go on the box pull.
+
+## 23. W0.b — economics gate CLOSED (box DB pulled, $0, 2026-08-06)
+
+Pulled the box `opencode.db` (1.86G, read-only) → 200 retired sweet rollouts, 551 candidates
+reproduced exactly. New tool `stats/w0b-fusion-economics.mjs` computes the three DB-blocked
+numbers + an empirical economics gate. **Coefficients fit by OLS on 11,339 real turns recovered
+the exact Grok/openrouter list rates ($2 / $0.30 / $6 per M input/cached/output)** — a strong
+validation that the model is correct, not guessed.
+
+### 23.1 §1.2b RESOLVED — multi-FILE share
+| distinct files/envelope | n | | metric | value |
+|---|---|---|---|---|
+| 1 (same-file multi-range) | 283 | | multi-READ envelopes | 301 (54.6%) |
+| 2 | 168 | | **multi-FILE envelopes** | **268 (48.6%)** |
+| 3 | 70 | | multi-file capability matters for | ~half the pairs |
+| 4 | 21 | | the other half | wider same-file spans |
+
+The 294 "multi-read" count was NOT all multi-file: ~49% are genuinely distinct-file (need
+multi-file returns), ~51% are same-file multi-range (coverable by a wider single span).
+
+### 23.2 Mechanism B resolver strength (read target's rank in the preceding search)
+p_hit@1 = **47.9%**, @3 = **68.6%**, @5 = **76.4%**; 93.5% of targets are rankable hits.
+The server can resolve the dependent read from the search result ~69% of the time at top-3.
+
+### 23.3 Span sizes and turn model
+R (read payload tokens): median **994**, p75 1778, p90 **2893**, mean 1348.
+turnCost = **$0.0130**/turn (W_resident median 38,715 ≈ the known ~44k; output median 233).
+T_remaining after the hop: mean **32**, median 26 (candidates drawn from the longest session/task).
+
+### 23.4 ECONOMICS GATE — conditional NO-GO
+net = p_hit·turnCost − R·(c_new + c_cached·Trem), bootstrap 90% LCB over 551 pairs:
+
+| scenario | net mean | net lcb90 | gate |
+|---|---|---|---|
+| **baseline top-1** | −$0.0097 | −$0.0112 | **NO-GO** |
+| **baseline top-3** | −$0.0070 | −$0.0085 | **NO-GO** |
+| + eviction (W4 pairing) | +$0.0064 | **+$0.0060** | **GO** |
+| + span cap 600 | +$0.0031 | +$0.0027 | GO* |
+| + span cap 400 | +$0.0048 | +$0.0044 | GO* |
+| late hops (Trem=8) | +$0.0033 | +$0.0028 | GO |
+| late hops (Trem=4) | +$0.0049 | +$0.0044 | GO |
+
+Break-even span R_max1 = **1122 tokens**. Median R (994) sits just under it; the mean (1348) and
+p90 (2893) sit over — the fat-tail spans drag net negative.
+
+**Verdict: fusion as naively specified (fat, persistent spans) LOSES money.** The turn saving is
+one-shot and probabilistic ($0.013 × 0.69); the resend tax is paid on every fused payload,
+whether or not it saved a turn, and re-sent ~32 more turns at the cached rate. This is the §2
+design-law warning made concrete: a fused result is re-sent forever, so the bar is high.
+
+**But the gate FLIPS positive (positive 90% LCB) under any one of three levers:**
+1. **Eviction pairing (W4) — the clean flip, +$0.0060 LCB.** Drop the fused payload from resident
+   context after the read consumes it → tax collapses to one injection. No effect on payload
+   usefulness. This economically JOINS W1 and W4 exactly as §2/§6b predicted; W1 should NOT be
+   built standalone.
+2. **Span cap — the optimistic flip.** Capping R helps, but the model assumes the capped payload
+   still contains what the read needed (hit unchanged) — an UPPER bound. A break-even cap (~1122)
+   clips only the top quartile and leaves the median span intact; this is product-side (no
+   frozen-surface change) and the safest near-term move. Needs a joint (cap, containment) re-check
+   before trusting.
+3. **Late-session hops only.** Restricting fusion to low-Trem hops is positive but leaves most of
+   the pool (early-localization hops) unaddressed.
+
+### 23.5 W0.b bottom line
+- Mechanism A (proactive span containment, current ver): still 2.1% eliminated (§22) — dead alone.
+- Mechanism B (forward-ref co-issue): availability-feasible (69% top-3) BUT net-negative at
+  measured Trem with fat persistent spans.
+- **The build decision: DO NOT ship W1 fusion standalone.** Ship it span-capped at break-even AND
+  paired with eviction, or not at all. The single highest-value next study is therefore W4
+  (context eviction) feasibility on this harness — it is what makes fusion pay AND it is the
+  strongest standalone re-send lever (−84% tokens external). Fusion without eviction is a
+  measured money-loser on Grok at these session lengths.
