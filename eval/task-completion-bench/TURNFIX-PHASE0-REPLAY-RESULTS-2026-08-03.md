@@ -810,3 +810,42 @@ design-law warning made concrete: a fused result is re-sent forever, so the bar 
   (context eviction) feasibility on this harness — it is what makes fusion pay AND it is the
   strongest standalone re-send lever (−84% tokens external). Fusion without eviction is a
   measured money-loser on Grok at these session lengths.
+
+## 24. Luna rotation run (18 tasks, 13 langs, REPS=2, codex+subscription, 2026-08-06)
+
+Fresh seed-42 DEV-RET cohort (never tuned; zero HO2/HO2-reserve overlap), tests the shipped
+bundle (line-numbers + M± fix-discipline, both confirmed live). Backbone = gpt-5.6-luna via
+ChatGPT-Max subscription on the codex harness. Env: DOCKER_HOST=/var/run/docker.sock,
+REASONING=medium, codex 0.146.1, CODEX_SUBSCRIPTION=1, EGRESS_ALLOW=+chatgpt.com,openai.com,
+per-task image GC (18 imgs × 3-9.5GB won't co-resident). Ledger green (18/18 gold-valid).
+
+### 24.1 Graded result
+| arm | solved | rate | avgCalls | ss-* | idealCost | CPS |
+|---|---|---|---|---|---|---|
+| native | 19/36 | 53% | 8.0 | 0 | $0.371 | $0.009 |
+| sweet | 15/36 | 42% | 9.6 | 243 | $0.328 | $0.008 |
+
+Sweet −4 solves, −11.6% cost. Per-task: 8 both-solve, 8 both-fail, native>sweet on 3
+(teleport 2/2→0/2 CONSISTENT; underscore & gradethis 1-rep flips = noise). Sign test on 3
+discordant (all favour native) → directional, NOT significant at n=18. Cost saving is partly
+hollow (some is teleport giving a wrong fix, not efficiency).
+
+### 24.2 Teleport root cause — the valuable finding (n=2, ONE task; hypothesis not proof)
+Both arms patched the SAME correct file+location (packages/teleport-project-generator/src/utils.ts,
+injectFilesToPath dedup). Near-identical fixes. The ONLY diff:
+- native (PASS): `existingFile.name === file.name && existingFile.fileType === file.fileType`
+- sweet (FAIL): `existingFile.name === file.name`   ← dropped the fileType conjunct
+The suite keys files by (name, fileType); sweet's name-only match wrongly overwrites → fail.
+
+WHY sweet dropped it — retrieval COMPLETENESS, not retrieval-tour, not prompt-reachable:
+- `fileType` in native's retrieved context: **39×** (grep flooded every usage → obvious files
+  are keyed by name+fileType).
+- `fileType` in sweet's retrieved context: **1×** (only `133| fileType?: string`, the interface
+  def). Sweet's ranked/diet spans surfaced the edit LOCATION but starved the model of the
+  redundant usage signal that disambiguates the fix.
+
+**Implication (hypothesis):** the same span-diet/ranking that makes sweet cheaper (−11.6%) also
+under-surfaces redundant usage signal that repair needs. The candidate lever is usage/call-site
+surfacing before an edit (what native gets free from grep) — ties to ss-trace, NOT to prompt/M±.
+CAVEAT: one task, n=2. Confirm on more divergent tasks before treating as the systematic driver.
+Retrieval QUALITY (right file) is fine; retrieval COMPLETENESS for repair is the open question.
