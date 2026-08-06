@@ -656,3 +656,10 @@ registry/b2/cccl unchanged solves. ss-counts mixed (cccl 10→6 fewer, registry 
 cost win. VERDICT: budget-pointer trades a bit of retrieval for a solve regression — same shape
 as every other lever this overnight. Even the strict 3x-dominance gate wasn't safe enough; ship
 only OFF by default, do not enable.
+
+### Wave v4 — thrash-fix prompt (V3 + read-the-pack + always-validate) on 4 failures
+Solves 1/8 vs control 1/8 — registry/b2/py-cov unmoved (retrieval-tour + false-pass NOT
+prompt-fixable), but kompendium HELD 1/2 (V4's read-the-pack prose offset V3's sibling-stop
+regression — so V3+read-the-pack is safer on kompendium than V3 alone). No failure fixed, no
+cost win (cap-confounded). Confirms: registry/b2 retrieval-tour and py-cov false-pass are NOT
+reachable by prompting.
