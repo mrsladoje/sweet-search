@@ -849,3 +849,24 @@ under-surfaces redundant usage signal that repair needs. The candidate lever is 
 surfacing before an edit (what native gets free from grep) — ties to ss-trace, NOT to prompt/M±.
 CAVEAT: one task, n=2. Confirm on more divergent tasks before treating as the systematic driver.
 Retrieval QUALITY (right file) is fine; retrieval COMPLETENESS for repair is the open question.
+
+### 24.3 Run #1 — does the teleport retrieval-completeness pattern generalize? NO.
+Checked the 2 other divergent tasks (both 1/2 sweet = inconsistent → a priori variance, not structural):
+
+- **underscore-2757 (js), sweet 1/2:** NOT the pattern. Context was RICH, not starved — both fix
+  forms present abundantly (`_.has` 18-31×, `hasOwnProperty` 14-19× in sweet's own context; native
+  similar). The FAILED rep generated an internally-inconsistent patch mixing `hasOwnProperty.call
+  (result,key)` with a BROKEN `_.has(result,[key])` array-path form. Generation/coherence variance;
+  the SAME retrieval passed the other rep. If anything, richer/ambiguous context (both forms shown)
+  raised generation inconsistency — the OPPOSITE of teleport's starvation.
+- **gradethis-161 (r), sweet 1/2:** NOT the pattern. Sweet found the SAME 3 R files native did
+  (retrieval adequate; passed r1). Failed rep (r0) made a LARGER multi-file change (114 vs 94 +lines)
+  that missed. Generation variance on a complex change, not retrieval completeness.
+
+**Verdict:** retrieval-completeness is a REAL but RARE failure mode — 1 supporting case (teleport)
+out of 3 divergences; the other 2 are generation variance with adequate retrieval. DO NOT build the
+call-site-surfacing lever on this evidence (n=1 task for it). The sweet 15 v native 19 gap decomposes
+as: 1 retrieval-completeness loss + 2 generation-variance losses → no single systematic mechanism,
+not significant at n=18. The shipped bundle (line-numbers + M±) is NOT implicated in any of the three.
+To find systematic sweet-side mechanisms, need a cohort of sweet-CONSISTENT (0/2) failures; this run
+produced only one. User's #1 check prevented over-building on a single-task artifact.
