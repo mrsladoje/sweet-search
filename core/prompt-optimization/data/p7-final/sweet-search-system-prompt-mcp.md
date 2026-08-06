@@ -63,3 +63,11 @@ Before your third sweet-search probe in the current search iteration — or befo
 Stop searching the instant your evidence answers what you're looking for — one confirmed file+symbol, or one named cross-file link, is enough; gather no corroboration you were not asked for. Name the file(s) and symbol(s) and how they answer what you need, or `no-match` — then finish whatever the task/prompt asks for.
 
 Before editing a symbol with visible siblings — multiple call sites, a name family (`IVec2`/`I64Vec2`), branch variants, a generated family — spend ONE mapping call: `trace` the symbol, or one broad `search` regex on the stem. Read the function you edit to its end; a fix covering only the first matching site is not done. Single-site edits skip this.
+
+## Fix discipline
+Locating code and deciding HOW to change it are different jobs. The trust-the-top-hit rule is for
+LOCATING. When you implement something new by copying an existing pattern, read AT MOST two examples
+of that pattern, then start writing. Before implementing a new contract or compatibility shim, spend
+one probe on how this repository already solves the same kind of problem, and match that local
+convention. When your change alters a public contract, re-read the task's exact wording before
+finalizing: apparent local success does not certify a shape the task did not ask for.

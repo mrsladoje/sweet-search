@@ -518,20 +518,38 @@ function _formatAgent(result, opts = {}) {
   return `### ${result.file}${range}${symbolHint}\n${fence}\n${body}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`;
 }
 
-function shouldNumberLines(result, opts) {
-  const on = (opts && opts.lineNumbers != null) ? opts.lineNumbers : process.env.SS_READ_LINENUMS === '1';
-  if (!on || !result.text) return false;
-  return result.text.split('\n').length >= 15;
+// Line-number gutter is ON by default for AGENT-consumption output (measured
+// −16% agent cost, no solve loss; native Claude Code Read numbers every line so
+// this closes the grounding asymmetry). Two off-switches: SS_READ_LINENUMS=0
+// (explicit disable, e.g. A/B) and benchmark/raw formats (protect retrieval
+// measurement — the JSON/benchmark path never calls these renderers anyway, but
+// the guard is belt-and-suspenders). Skipped under 15 lines (short reads don't
+// need it and the prefix is pure token cost).
+export function lineGutterEnabled(opts = {}) {
+  if (opts.lineNumbers === false) return false;
+  if (opts.lineNumbers === true) return true;
+  if (opts.format === 'benchmark' || opts.format === 'raw' || opts.format === 'json') return false;
+  return process.env.SS_READ_LINENUMS !== '0';
 }
 
-function numberLines(text, startLine) {
+// Prefix each line with `N| ` starting at startLine. `N| ` form (not cat -n's
+// padded field, which miscalibrates edit-wrapping — Claude Code #36654).
+export function numberCodeLines(text, startLine = 1) {
+  if (!text) return text;
   const lines = text.split('\n');
-  // Drop a single trailing empty element from a terminal newline so we don't
-  // number a phantom blank line past EOF.
   const hasTrailingNL = lines.length > 1 && lines[lines.length - 1] === '';
   const body = hasTrailingNL ? lines.slice(0, -1) : lines;
   const numbered = body.map((ln, i) => `${startLine + i}| ${ln}`).join('\n');
   return hasTrailingNL ? numbered + '\n' : numbered;
+}
+
+function shouldNumberLines(result, opts) {
+  if (!lineGutterEnabled(opts) || !result.text) return false;
+  return result.text.split('\n').length >= 15;
+}
+
+function numberLines(text, startLine) {
+  return numberCodeLines(text, startLine);
 }
 
 export function formatReadResults(results, format = 'agent', opts = {}) {
