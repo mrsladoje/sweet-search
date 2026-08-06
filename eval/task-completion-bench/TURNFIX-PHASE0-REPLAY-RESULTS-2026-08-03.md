@@ -693,3 +693,48 @@ Solves 4/12 vs control 4/12 — neutral, helidon HELD 2/2 (vs 1/2 in the ptr wav
 6. **Real remaining levers = server-side fusion-v2 (dependent read-hop, no model cooperation) +
    harness-level failed-task-thrash reduction. NOT more prompt/format variants — that space is
    now exhausted with consistent evidence.**
+
+## 22. W0.b — fusion feasibility mining (partial, $0, 2026-08-06)
+
+**Scope reached at $0 today:** the DB-independent half of W0.b is answered from the §6 prior
+box-DB run; the economics half (p_hit, R span size, distinct-file share) is DB-blocked. The Mac's
+local `~/.local/share/opencode/opencode.db` (720M) holds only Mac dev-probe sessions — zero
+retired `/runs/*__sweet__r0__*` rollouts (verified: 0 sessions in the retired window). The box DB
+(`/root/.local/share/opencode/opencode.db`, 1.8G) is the only source of the 551-pair traces and
+is NOT mirrored on the Mac. So the two remaining W0.b numbers need one read-only box pull ($0
+model spend; a copy operation).
+
+**Two mechanisms, separated (rev 1.1 accounting):**
+
+- **Mechanism A — proactive span containment (turn-collapsing via WIDER search spans).**
+  Current-version elimination-or-partial = **2.1% of decidable (9/432)**; the ≥20% build bar is
+  NOT met by CURRENT output. IMPORTANT read: "97.9% not_eliminated" is the addressable pool being
+  INTACT — for 97.9% of pairs the follow-up read fetched something current search did NOT return,
+  so those reads are genuine, not redundant. That is *headroom for* fusion, not evidence against
+  it. What is unproven offline: whether fusion-v2's WIDER spans (owning-symbol / full-span) would
+  CONTAIN those payloads. That is the R (span token size) question → DB-blocked. So Mechanism A
+  is neither GO nor NO-GO yet; its build bar is a build-then-replay test, not answerable pre-build.
+
+- **Mechanism B — inline forward-reference co-issue (`ss-search Q --then-read hit:1..2`,
+  turn-collapsing, server resolves the reference).** Availability = **84.8% (467/551)**: the read
+  target was NAMED in the immediately-preceding search output, so a server-side resolver can find
+  it without the model inventing a path. This is the strongest signal in W0.b and it is the
+  turn-collapser that needs NO payload containment. Feasible on availability grounds. Its GO/NO-GO
+  still needs the §2 economics gate (p_hit·turnCost vs R·resend-tax), which needs p_hit and R from
+  the box DB.
+
+**Still DB-blocked (need the box pull to close W0.b):**
+1. **Distinct-file share of the 294 multi-read envelopes** (§1.2b). The 294 counter counts read
+   COMMANDS, not distinct files; same-file multi-range → wider-span fusion; distinct-file →
+   multi-file fusion. This decides how much multi-FILE return capability matters.
+2. **p_hit** — rank of the read target under a top-1 / top-3 resolver over the search result.
+3. **R** — token size of the span each read actually consumed → feeds the break-even bound.
+
+**Partial verdict:** Mechanism B is availability-feasible (85%) and is the turn-collapsing lever;
+Mechanism A has an intact addressable pool but unsized economics. Neither is refuted. The build
+decision (W1) stays gated on the economics gate, which needs one $0 read-only box DB pull. No
+paid work is unblocked or blocked by today's result.
+
+**Next $0 step:** read-only `scp` of the box `opencode.db` (+ WAL) to a Mac scratch path, then
+extend `stats/search-read-replay.mjs` to emit per-pair {namedRank, distinctFiles, spanTokens}
+and run the economics gate. Awaiting user go on the box pull.
