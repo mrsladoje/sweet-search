@@ -648,3 +648,11 @@ wave) — the two clean individual wins (P −16%, V3 −13%) do NOT compose cle
 stop-reading-siblings + P interact to cut kompendium's multi-file fix short. Champion should be
 P-ALONE or V3-ALONE, not both. Overnight is de-risking the combination the tuning tasks made
 look safe.**
+
+### Wave ptr — champion + budget-pointer (rank2/3 pointers on 3x dominance) read-heavy
+Solves 3/8 vs control 5/8 — LOST helidon (2/2→1/2). Not cap-confounded (cap60>44 gives more
+room; the pointer HID rank2/3 content helidon needed → a rep failed to recover it under budget).
+registry/b2/cccl unchanged solves. ss-counts mixed (cccl 10→6 fewer, registry 57→64 more). No
+cost win. VERDICT: budget-pointer trades a bit of retrieval for a solve regression — same shape
+as every other lever this overnight. Even the strict 3x-dominance gate wasn't safe enough; ship
+only OFF by default, do not enable.
