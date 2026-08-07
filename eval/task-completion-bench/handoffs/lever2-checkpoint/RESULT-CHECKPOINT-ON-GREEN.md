@@ -227,6 +227,14 @@ While measuring "green", the first footer line turned out to be wrong very often
 | `status=FAIL` printed while `verdict=PASS` on the next line | 102 | **31%** |
 | untrustworthy baseline (`trustworthy=no`, so no introduced-vs-pre-existing labelling at all) | 60 | **18%** |
 
+**Correction 2026-08-07 (verification pass, `RUN-TESTS-VERDICT-DEFECT.md`):** the 31% is the
+observed *disagreement* rate, not the *mislabel* rate. Decomposed, 48 of those 102 calls are
+provably wrong (exit 0, only zero-failure artifacts as signatures); the other 54 have a non-zero
+exit with a genuine pre-existing error, where `status=FAIL` is defensible and `verdict=PASS` is
+correct. **The provable mislabel rate is 15%, not 31%.** The verification pass also splits this
+section's single "defect" into three distinct ones with different mechanisms — see that document
+before acting on the recommendations below.
+
 **9 of 18 tasks never emit `status=PASS` at any point.** Two runners are completely
 non-discriminative: `dotnet__yarp-2825` exits 145 and `litestar-org__polyfactory-405` exits 4
 on the clean baseline, the gold patch and a broken patch alike, so the agent gets the same
