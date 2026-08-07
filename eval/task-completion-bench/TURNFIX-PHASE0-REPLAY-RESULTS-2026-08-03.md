@@ -907,3 +907,49 @@ Full writeup: `handoffs/lever2-checkpoint/RESULT-CHECKPOINT-ON-GREEN.md`.
   `status=PASS`; `dotnet__yarp-2825` (exit 145) and `litestar-org__polyfactory-405` (exit 4) are
   fully non-discriminative between empty, gold and broken patches.
 - New $0 tools: `stats/checkpoint-exposure-census.mjs`, `stats/checkpoint-reconstruct.mjs`.
+
+## 26. Verdict repair SHIPPED + re-baseline — the instrument is now truthful (2026-08-07)
+
+Spend: **$0 metered** (Luna via subscription). Repair `2b80ee3`; full writeup
+`handoffs/lever2-checkpoint/PAYOFF-VERDICT-REPAIR.md`. DEV-RET only; `HO2` untouched.
+
+- **Mechanism complete and symmetric:** false-red rate (status=FAIL at exit 0 whose only
+  signatures report zero failures) **10.3% -> 0.0% native, 15.9% -> 0.0% sweet**. The
+  `trustworthy=no` category is gone entirely. Trustworthy-baseline coverage 83% -> 88%.
+  68 rollouts, 0 codex errors / 0 start retries / 0 shim tampering / 0 errored exits,
+  gold tripwire 0 of 34 flagged.
+- **Resolution flat, as designed** (the two halves of the repair push opposite ways):
+  rep0 vs matched baseline over 17 common tasks — native 10/17 -> 9/17, sweet 7/17 -> 6/17;
+  native any-rep view unchanged at 10/17. Both flips are documented 1-of-2 coin-flip
+  tasks. pytask native simply swapped which rep solved. gradethis sweet went 0/2, and the
+  "now-truthful PASS made it stop early" hypothesis is REFUTED by its own counters: calls
+  rose 10/12 -> 15/18 and the patch grew 9 -> 10 hunks. Read this as a re-baseline, not a
+  significance verdict; McNemar p=1.000 reflects zero power at n=17, not absence of effect.
+- **Checkpoint no-go holds on clean footers:** 0 triggers in 54 cleanly joined rollouts
+  (upper bound 5.4%, wider only because the run is smaller). The circularity caveat is
+  retired — the census no longer reads the field the defect corrupted.
+- **Poll lever stayed orthogonal:** poll rate 12.8% -> 10.4% native, 9.2% -> 7.4% sweet,
+  with SS_RT_LONGYIELD default-on in both runs. No revisit needed.
+- **Taxonomy, BOTH ARMS, before and after — wrong-fix is UNIVERSAL, not sweet-specific:**
+  wrong-fix native 76% -> 67%, sweet 71% -> 64%; incompleteness ~13-18%; wrong-location
+  ~13%; **over-edit-past-green 0 in all four cells** (a third independent derivation of
+  the checkpoint no-go). Losses ending on a PASS verdict went UP (native 59% -> 73%,
+  sweet 67% -> 82%) — the repair working, not regressing: the agent is now told the truth
+  about the suite it can run, and still loses.
+- **THE BOUND — disclose in any writeup:** the dominant failure is "satisfies the visible
+  tests, misses the hidden assertion". 10/18 tasks have their F2P test CREATED by
+  test_patch; others (underscore groupBy/countBy) pre-exist by name but are discriminated
+  only by an added assertion. Better retrieval cannot reveal an assertion that is not in
+  the repository, so this **upper-bounds what any retrieval change can do on this bench**.
+  Because the taxonomy is arm-universal, a lever aimed at wrong-fix raises a SHARED FLOOR
+  and does not close the native-vs-sweet gap.
+- **QUEUED, not built:** issue-derived acceptance (agent enumerates required behaviours,
+  or writes its own test, from the VISIBLE ISSUE TEXT ONLY, then verifies before
+  submitting). Hard boundary: derived from the issue, NEVER from test_patch. Raises cost
+  -> $0 gate + explicit approval, same handling as the 2-candidate lever.
+- **THREE LEDGERS ARE DEAD BY DESIGN** (all 18 configHashes changed):
+  `ledger-sweep-all18`, `ledger-sweep-smoke3`, `ledger-sweep-rot3`. Current:
+  `/root/.ss-eval/ledger-postfix-20260807/ledger.jsonl`, 18/18 gold-valid including the
+  lua task under its new exit-code-propagating testCmd (so that override needed no
+  revert). polyfactory-405 excluded from AGENT runs only; still gold-valid and gradeable.
+- The paper-corpus headline re-baseline is a SEPARATE milestone decision and was not taken.
