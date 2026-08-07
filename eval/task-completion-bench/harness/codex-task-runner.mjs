@@ -114,7 +114,9 @@ export const FRAME_CLOSE =
   'VALIDATION IS AUTHORITATIVE:\n' +
   '- Use `run_tests` for validation. Never inspect, search, read, or modify `.codex-bin`, `_run_tests*`, `_rt_*`, benchmark harness files, baseline files, the env ledger, or task overrides; never reconstruct the suite with Docker or a host test runner.\n' +
   '- After the initial reproduction, re-run `run_tests` only after a source edit. If the source diff is unchanged, the result cannot improve. Use `run_tests <pattern>` for targeted diagnosis when supported.\n' +
-  '- When `run_tests` is still running and no other work is pending, poll it with `write_stdin` using `yield_time_ms=120000`; do not use 30-second heartbeat polls.\n\n' +
+  (process.env.SS_RT_LONGYIELD === '1'
+    ? '- `run_tests` runs the whole suite and blocks until it finishes. Launch it with `yield_time_ms=300000` so its complete PASS/FAIL result comes back in ONE call — do NOT launch it with a short yield and then poll. Only if it has still not returned after that full wait, poll ONCE with `write_stdin` using `yield_time_ms=300000`; never use short heartbeat polls.\n\n'
+    : '- When `run_tests` is still running and no other work is pending, poll it with `write_stdin` using `yield_time_ms=120000`; do not use 30-second heartbeat polls.\n\n') +
   'THIS ENVIRONMENT IS OFFLINE:\n' +
   '- Every outbound request will be REFUSED — curl, wget, git fetch/clone/pull, and package installs (pip, npm, go get, cargo, gem, mix) alike. Mirrors, CDNs, proxies and archives are refused too. Do not attempt them and do not retry: everything needed to solve the issue is already in the working directory.\n' +
   '- Solve the issue from the repository source and the issue text. Do not go looking for the upstream fix — not over the network, and not in git history, refs, tags, stashes, or packed objects. A fix copied from a later commit does not count.';
