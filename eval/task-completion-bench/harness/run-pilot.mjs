@@ -206,8 +206,8 @@ async function loadTasks() {
       for (const s of excluded) {
         console.log(`[overrides] EXCLUDED FROM AGENT RUNS ${s.instance_id}: ${String(TASK_OVERRIDES.tasks[s.instance_id]._why || '').slice(0, 160)}`);
       }
-      const keep = new Set(excluded.map(s => s.instance_id));
-      const remaining = specs.filter(s => !keep.has(s.instance_id));
+      const dropped = new Set(excluded.map(s => s.instance_id));
+      const remaining = specs.filter(s => !dropped.has(s.instance_id));
       warnOnGateViolations(remaining);
       return remaining;
     }
