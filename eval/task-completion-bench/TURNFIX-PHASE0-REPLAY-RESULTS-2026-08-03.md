@@ -859,6 +859,11 @@ Checked the 2 other divergent tasks (both 1/2 sweet = inconsistent → a priori 
   (result,key)` with a BROKEN `_.has(result,[key])` array-path form. Generation/coherence variance;
   the SAME retrieval passed the other rep. If anything, richer/ambiguous context (both forms shown)
   raised generation inconsistency — the OPPOSITE of teleport's starvation.
+  **CORRECTION 2026-08-07 (§25 raw-trajectory replay):** the inconsistent mixture existed only as
+  an INTERMEDIATE state and was reverted two edits later; the SUBMITTED patch is correct on
+  `groupBy` and never touched `countBy` at all (f2pFrac 0.5 = 1 of 2 F2P). The failure is
+  incompleteness, not an internally-inconsistent submission. The classification above
+  (generation variance, retrieval adequate) stands unchanged.
 - **gradethis-161 (r), sweet 1/2:** NOT the pattern. Sweet found the SAME 3 R files native did
   (retrieval adequate; passed r1). Failed rep (r0) made a LARGER multi-file change (114 vs 94 +lines)
   that missed. Generation variance on a complex change, not retrieval completeness.
@@ -870,3 +875,35 @@ as: 1 retrieval-completeness loss + 2 generation-variance losses → no single s
 not significant at n=18. The shipped bundle (line-numbers + M±) is NOT implicated in any of the three.
 To find systematic sweet-side mechanisms, need a cohort of sweet-CONSISTENT (0/2) failures; this run
 produced only one. User's #1 check prevented over-building on a single-task artifact.
+
+## 25. Lever #2 verified checkpoint-on-green — $0 gate FAILED, NO-GO (2026-08-07)
+
+Spend: **$0** — no model calls. Box docker compute only (6 task probes + 5 evaluator grades).
+Full writeup: `handoffs/lever2-checkpoint/RESULT-CHECKPOINT-ON-GREEN.md`.
+
+- **Gate 0a (validity):** the agent's `run_tests` applies only its own diff to BASE-commit tests,
+  never `test_patch`. Static pass over 18 specs: 10 tasks have their FAIL_TO_PASS test CREATED by
+  `test_patch`, 2 have only assertions added, so >=12/18 targets are unrunnable by the agent.
+  Empirical pass over 6 tasks: the gold patch produces the SAME `run_tests` verdict as an empty
+  patch on 6/6. Publishable (no oracle access) but "green" carries no correctness signal.
+- **Gate 0 (exposure):** using the harness's own footer lines joined to `rt-dedup` diff hashes,
+  the "reached green then edited past it and submitted non-green" shape occurs **0 times in 119
+  cleanly-joined Luna rollouts** (134 total, 15 with incomplete footer retention). 76% of
+  rollouts DO reach verified-green; the final edited state is green in every one. One-sided 95%
+  upper bound on the trigger rate 2.5% -> ~2,400 rollouts before EDIT_THRASHING 4.2's 59-exposure
+  gate is even evaluable. Grok-4.5/OpenCode scope check (174 rollouts, coarser proxy): 1 strict /
+  9 lenient triggers, 8 of 9 on already-failing rollouts. Not a Luna artifact.
+- **Gate 0c (selector safety):** 11 of 13 multi-green rollouts would have the 4.1 patch-size
+  tie-break pick a state other than the agent's final; 7 of those are SOLVED rollouts. Five were
+  reconstructed byte-exactly (4/5 sha-verified against `rt-dedup`) and graded with the real
+  evaluator: **wins 0 / ties 3 / losses 2**. 4.2 requires zero grader regressions — gate FAILS.
+  Worst case `akinsho__nvim-bufferline.lua-173/sweet/r0`: the state the selector would freeze
+  fails all 8 Offset pass-to-pass tests while `run_tests` reported `status=PASS ...
+  trustworthy=yes introduced_failures=0`.
+- **No live smoke was run** — the `/microsmoke` anti-A/A rule stops spend when Gate 0 shows no
+  exposure.
+- **Byproduct worth fixing:** across 326 `run_tests` calls, 31% print `status=FAIL` while the
+  next line says `verdict=PASS`, and 18% have an untrustworthy baseline. 9/18 tasks never emit
+  `status=PASS`; `dotnet__yarp-2825` (exit 145) and `litestar-org__polyfactory-405` (exit 4) are
+  fully non-discriminative between empty, gold and broken patches.
+- New $0 tools: `stats/checkpoint-exposure-census.mjs`, `stats/checkpoint-reconstruct.mjs`.
