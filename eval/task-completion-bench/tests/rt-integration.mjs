@@ -9,7 +9,9 @@ import Database from 'better-sqlite3';
 import {
   installCommandWrappers, writeRunTestsShim, verifyRunnerDirectoryIntegrity, verifyShimIntegrity,
 } from '../harness/codex-task-runner.mjs';
-import { getBaseline, resolveDiffIdentifierWarning, runTestsWithLevers } from '../harness/rt-shim-runtime.mjs';
+import {
+  getBaseline, resolveDiffIdentifierWarning, runTestsWithLevers, buildSuiteScript,
+} from '../harness/rt-shim-runtime.mjs';
 import { DEDUP_MARKER, startDedupSession } from '../harness/rt-dedup.mjs';
 
 let ok = true;
@@ -89,10 +91,19 @@ console.log('== P3 runner state: out-of-tree broker + in-memory baseline ==');
     image: 'img', workdir: '/w', testScript: 'true', rundir: taskDir,
     testTimeoutSec: 10, netArgs: '--network none ', brokerMode: true,
     dockerBin: fakeDocker, rtAuthority: true, stateDir, _isAgentFormat: true,
+    // The grader re-applies these (eval.py --reapply-install-seds); the shim must too,
+    // because `git reset --hard HEAD` reverts install-time edits to TRACKED files.
+    installSeds: ["sed -i 's/10.0.100/8.0.416/g' global.json", 'rm -rf /'],
   });
   assert(!binDir.startsWith(taskDir + path.sep), 'runner artifacts live outside the agent task tree');
   const cfg = JSON.parse(readFileSync(path.join(binDir, '_run_tests_cfg.json'), 'utf8'));
   assert(!Object.values(cfg).some(value => /_rt_baseline\.json/.test(String(value))), 'no baseline cache path is exposed in runner config');
+  assert(Array.isArray(cfg.installSeds) && cfg.installSeds.length === 2, 'install seds reach the runner config');
+  const script = buildSuiteScript(cfg, 'pytest -q', 300);
+  assert(/git reset --hard HEAD[\s\S]*sed -i 's\/10\.0\.100\/8\.0\.416\/g' global\.json[\s\S]*git apply/.test(script),
+    'install seds run AFTER the reset and BEFORE the agent diff');
+  assert(!script.includes('rm -rf /'), 'a non-sed entry is filtered out and never reaches the container');
+  assert(!buildSuiteScript({ workdir: '/w' }, 'true', 300).includes('sed -i'), 'no seds configured leaves the script unchanged');
 
   let cleanRuns = 0;
   const baselineCfg = { testScript: 'suite' };

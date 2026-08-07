@@ -196,6 +196,21 @@ async function loadTasks() {
       if (ov) console.log(`[overrides] ${s.instance_id}: ${Object.keys(ov).filter(k => k[0] !== '_').join(', ')}`);
       taskById.set(s.instance_id, s);
     }
+    // Agent-phase exclusions: tasks whose test_cmd cannot execute against the BASE
+    // commit (it names a path that only test_patch creates), so run_tests returns the
+    // same error for every possible patch and the agent gets no feedback at all. The
+    // GRADER is unaffected — it applies test_patch first — so these stay gold-valid in
+    // the ledger and remain gradeable; they are simply not runnable as agent tasks.
+    const excluded = specs.filter(s => TASK_OVERRIDES.tasks?.[s.instance_id]?.excludeFromAgentRuns === true);
+    if (excluded.length) {
+      for (const s of excluded) {
+        console.log(`[overrides] EXCLUDED FROM AGENT RUNS ${s.instance_id}: ${String(TASK_OVERRIDES.tasks[s.instance_id]._why || '').slice(0, 160)}`);
+      }
+      const keep = new Set(excluded.map(s => s.instance_id));
+      const remaining = specs.filter(s => !keep.has(s.instance_id));
+      warnOnGateViolations(remaining);
+      return remaining;
+    }
     // Defense in depth for the selection-time task-rejection gate: WARN (never
     // refuse) if this set carries a task the gate would reject. Sets frozen before
     // 2026-07-30 predate the gate and must stay runnable.

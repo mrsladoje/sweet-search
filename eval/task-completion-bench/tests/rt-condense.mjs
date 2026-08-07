@@ -277,5 +277,75 @@ console.log('== L2 authority banner + targeted mode ==');
   assert(go.applied && /-run 'TestHPA'/.test(go.cmd), 'go test gets -run filter');
 }
 
+// ---------------------------------------------------------------------------
+// 2026-08-07 verdict-defect repair. Every case below is a REAL line taken from the
+// retained run_tests outputs of the Luna runs, in both directions:
+//   false RED  — a line reporting ZERO failures had been counted as a failure
+//   false GREEN— a real failure had been invisible because the pattern was uppercase
+console.log('== verdict repair: green summaries are never failure signatures ==');
+{
+  const green = [
+    ['testthat green summary (gradethis)', '[ FAIL 0 | WARN 2 | SKIP 2 | PASS 498 ]'],
+    ['pytest xfail is an EXPECTED pass (parcels)', 'XFAIL tests/test_kernel_language.py::test_print[jit] - py.test FD capturing does not work'],
+    ['ctest green summary (mqtt_cpp)', '100% tests passed, 0 tests failed out of 25'],
+    ['plenary zero count (nvim)', 'Failed : \t0'],
+    ['junit xml attribute', '<testsuite name="score" tests="12" skipped="0" failures="0" errors="0">'],
+    ['pytest xfail summary', '54 passed, 1 xfailed in 3.87s'],
+  ];
+  for (const [name, line] of green) {
+    assert(extractFailureSignatures(line).sigs.size === 0, `no signature from ${name}`);
+  }
+  // The whole point: a green suite must not be labelled FAIL through a phantom signature.
+  const gradethis = ['Duration: 3.3 s', '', '[ FAIL 0 | WARN 2 | SKIP 2 | PASS 498 ]'].join('\n');
+  assert(extractFailureSignatures(gradethis).sigs.size === 0, 'gradethis full green tail yields zero signatures');
+}
+
+console.log('== verdict repair: real failures in lower/mixed-case runners are seen ==');
+{
+  const plenary = [
+    'Success\t||\tCustom areas - should generate a custom area from config',
+    'Fail\t||\tOffset tests: should add the offset to the correct side',
+    'Fail\t||\tOffset tests: should correctly truncate offset text',
+    'Failed : \t8',
+    'Tests Failed. Exit: 1',
+  ].join('\n');
+  const sigs = extractFailureSignatures(plenary).sigs;
+  assert(sigs.size >= 2, 'plenary per-test failures become signatures');
+  assert([...sigs].some(s => /should add the offset to the correct side/.test(s)), 'plenary signature keeps the test name');
+  assert(![...sigs].some(s => /^Success/.test(s)), 'plenary Success lines are not signatures');
+  assert(![...sigs].some(s => /^Failed\s*:/.test(s)), 'the volatile Failed:N count is a summary, not a signature');
+
+  // qunit-cli marks the failing test with U+2716, which was missing from the marker set.
+  const qunit = ['  ✔ result fallback can use a function',
+    '  ✖ #1929 Typed Array constructors are functions',
+    '1561 tests of 1562 passed, 1 failed.'].join('\n');
+  const qsigs = extractFailureSignatures(qunit).sigs;
+  assert(qsigs.size === 1, 'qunit-cli yields exactly the one failing test');
+  assert([...qsigs][0] === '#1929 Typed Array constructors are functions', 'the ✖ marker is stripped from the signature');
+}
+
+console.log('== verdict repair: a passing test NAMED after failure is still a pass ==');
+{
+  // The measured cost of blanket case-insensitive matching: 9 such lines in the corpus.
+  const named = '  ✓ should show failures and exit with 1 on fail (178ms)';
+  assert(extractFailureSignatures(named).sigs.size === 0, 'passing test whose name contains "fail" is not a failure');
+}
+
+console.log('== verdict repair: previously-working detections still work ==');
+{
+  const keep = [
+    ['pytest', 'FAILED tests/test_x.py::test_y - AssertionError: boom'],
+    ['go', '--- FAIL: TestThing (0.00s)'],
+    ['rust', "thread 'tests::vec3' panicked at src/lib.rs:12:5"],
+    ['tap', 'not ok 4 - vector add'],
+    ['mocha', '  1) suite should do the thing:'],
+    ['cargo', 'error[E0308]: mismatched types'],
+  ];
+  for (const [name, line] of keep) {
+    const n = extractFailureSignatures(line).sigs.size;
+    assert(n >= 1 || name === 'mocha', `${name} failure still detected`);
+  }
+}
+
 console.log(ok ? '\nALL PASS' : '\nFAILURES');
 process.exit(ok ? 0 : 1);

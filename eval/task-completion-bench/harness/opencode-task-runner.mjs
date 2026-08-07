@@ -19,6 +19,7 @@ import {
   buildTrajectory, gitDiffPatch, verifyIntegrity, teardownRunner, auditEscape, rolloutStateDir,
   costsFromTurns, spawnWithTimeout, exitReasonFrom, priceFor,
 } from './agent-runner-shared.mjs';
+import { installSedCmds } from './env-ledger.mjs';
 import { persistTurns } from './turn-log.mjs';
 import { finalizeProgressModelTurns } from './rt-progress-controller.mjs';
 
@@ -198,7 +199,7 @@ export async function runOpencodeTask(task, {
   } = setupRunner({
     image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300, netArgs, sweet,
     label, taskId: task.id, arm, extraBinds, extraMasks: [ambientConfigDir], requireBins: ['opencode'],
-    injectedFiles: ['AGENTS.md'],
+    injectedFiles: ['AGENTS.md'], installSeds: installSedCmds(t),
   });
   // Per-run opencode config: OpenRouter provider (key via {env:} substitution) + permissive
   // permissions so the headless agent edits/bashes without prompts (the #13851 write-gap

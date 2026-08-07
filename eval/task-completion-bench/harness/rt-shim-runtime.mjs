@@ -37,11 +37,16 @@ import { CodeGraphRepository } from '../../../core/infrastructure/code-graph-rep
 // then up to 40 promoted failure-indicator lines (test NAMES), then the tail. Runs
 // against /tmp/__rt_out inside the test container. NOT the L1 condenser — this is the
 // established run_tests condenser and must stay byte-stable for historical parity.
+// 2026-08-07: the promoted-line grep learned the runner vocabularies whose failures
+// were previously invisible unless they happened to land in the 45-line tail —
+// plenary/busted (`Fail\t||\t<test>`, `Failed :\tN`) and qunit-cli (`✖ <test>`). The
+// zero-count filter grew the matching green forms so a passing summary is still
+// never promoted. Kept in step with FAILURE_INDICATOR_RE / FAILURE_NEGATIVE_RE.
 export const RT_CONDENSE =
   "grep -qaE 'Could not resolve|Temporary failure in name resolution|Network is unreachable' /tmp/__rt_out && " +
   "echo '[run_tests] NETWORK UNAVAILABLE in the test container (bench lockdown): dependency downloads cannot work; do not retry or debug the harness.'; " +
-  "grep -aE '(FAILED|FAIL:|not ok |AssertionError|panicked at|[0-9]+ tests? failed|[Ee]rror:|error\\[)' /tmp/__rt_out | " +
-  "grep -avE '(0 fail|failures?: 0|failed: 0|: 0 error)' | head -40; " +
+  "grep -aE '(FAILED|FAIL:|not ok |AssertionError|panicked at|[0-9]+ tests? failed|[Ee]rror:|error\\[|Fail[[:space:]]*\\|\\||Failed[[:space:]]*:[[:space:]]*[1-9]|✖)' /tmp/__rt_out | " +
+  "grep -avE '(0 fail|failures?: 0|failed: 0|: 0 error|Failed[[:space:]]*:[[:space:]]*0|[0-9]+% tests passed)' | head -40; " +
   "echo '--- output tail ---'; tail -45 /tmp/__rt_out";
 
 const q = s => "'" + String(s).replace(/'/g, "'\\''") + "'";
@@ -54,6 +59,33 @@ function splitExitSentinel(value) {
   return { out: text.slice(0, match.index), exitCode: Number(match[1]) };
 }
 
+/**
+ * The in-container script for one suite execution. Pure and exported so the
+ * install-sed contract is unit-testable without docker.
+ *
+ * `git reset --hard HEAD` also reverts install-time mutations of TRACKED files: several
+ * images are built by sed-patching the repo (yarp's `global.json` pins an SDK version
+ * that is not installed), so the reset left `dotnet test` unable to load and every call
+ * returned exit 145 on a suite the grader runs green. The grader re-applies those steps
+ * via `eval.py --reapply-install-seds`; re-applying them here keeps the agent and the
+ * grader on ONE environment.
+ *
+ * The list is host-supplied (installSedCmds in env-ledger.mjs, the same source the
+ * config hash uses) and never agent-reachable, and is filtered to `sed -i` again here so
+ * a malformed spec cannot smuggle an arbitrary command into the container. `sed -i`
+ * substitutions are idempotent, so re-running them per invocation is safe.
+ */
+export function buildSuiteScript(cfg, testCmd, tSec) {
+  const installSeds = (Array.isArray(cfg.installSeds) ? cfg.installSeds : [])
+    .filter(cmd => typeof cmd === 'string' && cmd.trim().startsWith('sed -i'));
+  return 'cd ' + cfg.workdir + ' && git reset --hard HEAD -q 2>/dev/null; ' +
+    installSeds.map(cmd => cmd + ' 2>/dev/null; ').join('') +
+    'git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; ' +
+    '{ timeout ' + tSec + ' bash -c ' + q(testCmd) + "; printf '%s' \"$?\" > /tmp/__rt_exit; } " +
+    '2>&1 | head -c 20000000 > /tmp/__rt_out; ' + RT_CONDENSE + '; ' +
+    "printf '\\036__SS_RT_EXIT=%s\\036' \"$(cat /tmp/__rt_exit 2>/dev/null || printf 1)\"";
+}
+
 // Run the suite ONCE in the container for a given diff + test command. `diffText` ''
 // (empty) yields the clean-baseline result (no agent edits). Returns { out }.
 function runSuite(cfg, diffText, testCmd) {
@@ -63,11 +95,7 @@ function runSuite(cfg, diffText, testCmd) {
   try {
     rmSync(pdir, { recursive: true, force: true }); mkdirSync(pdir, { recursive: true });
     writeFileSync(pdir + '/agent.diff', diffText || '');
-    const script = 'cd ' + cfg.workdir + ' && git reset --hard HEAD -q 2>/dev/null; ' +
-      'git apply --3way --recount --ignore-space-change --whitespace=nowarn /patch/agent.diff 2>/dev/null || true; ' +
-      '{ timeout ' + tSec + ' bash -c ' + q(testCmd) + "; printf '%s' \"$?\" > /tmp/__rt_exit; } " +
-      '2>&1 | head -c 20000000 > /tmp/__rt_out; ' + RT_CONDENSE + '; ' +
-      "printf '\\036__SS_RT_EXIT=%s\\036' \"$(cat /tmp/__rt_exit 2>/dev/null || printf 1)\"";
+    const script = buildSuiteScript(cfg, testCmd, tSec);
     const marked = execSync(dockerBin + ' run --rm ' + (cfg.netArgs || '') + '-v ' + pdir + ':/patch:ro ' + cfg.image + ' bash -c ' + q(script),
       { env: { ...process.env, DOCKER_HOST: cfg.dockerHost }, encoding: 'utf8', timeout: (tSec + 60) * 1000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
     const captured = splitExitSentinel(marked);
