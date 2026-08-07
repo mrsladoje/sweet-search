@@ -77,6 +77,17 @@ format-gated on `opts._isAgentFormat`/`format==='agent*'` by default. NL traffic
 - V2 (push polls→0) NOT pursued: rotation already reached 93%; residual 2 polls = 1.2% of spend,
   marginal value negligible. V1 essentially solved it.
 
+### [18-TASK SCREEN] Lever #1 — confirmed at scale (RUN_ID=luna-poll-screen18, 36 rollouts, 0 err)
+- REPS=1 across all 18 tasks / 13 languages, both arms, SS_RT_LONGYIELD=1, ledger all-18 gold-valid.
+- Poll rate (rep-independent): **23.1% → 10.8% of requests (−53% relative)**; poll-spend 15.9%→7.1%.
+- SOLVE REGRESSION CHECK vs run1 baseline: PASSED. Every run1-2/2 task held 1/1 in BOTH arms
+  (native + sweet: mqtt, robot, nvim, cms, scoringutils, parcels, gradethis; native also underscore,
+  pytask, teleport). Sweet's only drops — underscore 1/2→0/1, pytask 1/2→0/1 — were ALREADY variance
+  tasks (1/2) in baseline; 0/1 is within their coin-flip, not a treatment regression.
+- Screen native 10/18 vs sweet 7/18 mirrors the pre-existing product gap (identical FRAME both arms —
+  the treatment does not touch the A/B). Screen's 53% < micro-smokes' 62%/93% because the full set
+  dilutes with low-poll tasks + averages partial model compliance. Robust at-scale confirmation.
+
 ## VERDICT
 - **Lever #1 auto-await (SS_RT_LONGYIELD) = the night's win.** Solve-neutral, general, −71% poll
   turns. Committed GATED (not silently default-on — flipping default changes all future bench
