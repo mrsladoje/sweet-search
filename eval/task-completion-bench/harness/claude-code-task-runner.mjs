@@ -15,6 +15,7 @@ import {
   buildTrajectory, gitDiffPatch, verifyIntegrity, teardownRunner, auditEscape, rolloutStateDir,
   spawnWithTimeout, exitReasonFrom, priceFor,
 } from './agent-runner-shared.mjs';
+import { installSedCmds } from './env-ledger.mjs';
 import { persistTurns } from './turn-log.mjs';
 import {
   CLAUDE_SYSTEM_OVERRIDE as SWEET_SEARCH_SYSTEM_OVERRIDE,
@@ -205,6 +206,7 @@ export async function runClaudeCodeTask(task, {
   } = setupRunner({
     image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300, netArgs, sweet,
     label, taskId: task.id, arm, extraBinds, requireBins: ['claude'], injectedFiles,
+    installSeds: installSedCmds(t),
   });
 
   const env = buildAgentEnv({ rundir, binDir, ssBinDir, sweet, extraEnv: routingEnv, jail });

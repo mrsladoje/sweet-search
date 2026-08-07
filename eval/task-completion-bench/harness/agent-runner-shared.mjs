@@ -89,7 +89,7 @@ export function computeNetArgs(t) {
 export function setupRunner({
   image, workdir, testScript, rundir, testTimeoutSec = 300, netArgs = '', sweet = false,
   label = 'rollout', taskId = null, arm = null, extraBinds = [], extraMasks = [],
-  isolate = ISOLATION_ON, requireBins = [], injectedFiles = [],
+  isolate = ISOLATION_ON, requireBins = [], injectedFiles = [], installSeds = [],
 }) {
   const runnerStateDir = mkdtempSync(path.join(tmpdir(), 'sweet-search-runner-'));
   const binDir = path.join(runnerStateDir, 'bin');
@@ -104,6 +104,7 @@ export function setupRunner({
     image, workdir, testScript, rundir, testTimeoutSec,
     netArgs, brokerMode: isolate, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY,
     stateDir: ipcStateDir, _isAgentFormat: sweet, label, taskId, arm, injectedFiles,
+    installSeds,
   });
   let wrapperFiles = [];
   if (L1_CONDENSE) {

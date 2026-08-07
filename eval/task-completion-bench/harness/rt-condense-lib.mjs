@@ -24,13 +24,21 @@
 
 // Positive failure indicators, language-appropriate. Mirrors + widens the in-container
 // RT_CONDENSE grep (pytest/cargo/go/mocha/jest/dotnet/phpunit/R/julia/ctest/generic).
+// The FAIL tokens carry a LEADING word boundary: without it `XFAIL` (pytest's
+// expected-failure marker, which is a PASS) matched and became a failure signature.
+// The lower/mixed-case alternatives are deliberately narrow — the specific vocabulary
+// observed from real runners — because blanket case-insensitive `fail` matching was
+// measured on 12,752 retained output lines and fired on passing test NAMES
+// ("✓ should show failures and exit with 1 on fail") plus JUnit XML attributes.
 export const FAILURE_INDICATOR_RE =
-  /(FAILED|FAIL:|FAIL\b|not ok |AssertionError|panicked at|thread '[^']*' panicked|[0-9]+ tests? failed|[0-9]+ (?:failing|failures)|[Ee]rror:|error\[|Exception\b|Traceback|--- FAIL|✗|✘|×|Test Failed|Failure \(|SEGFAULT|Segmentation fault|core dumped|assert(?:ion)? failed|expected .* but| FAILED\b)/;
+  /(\bFAILED\b|\bFAIL:|\bFAIL\b|not ok |AssertionError|panicked at|thread '[^']*' panicked|[0-9]+ tests? failed|[0-9]+ (?:failing|failures)|[Ee]rror:|error\[|Exception\b|Traceback|--- FAIL|✗|✘|✖|×|\bTests?\s+Failed\b|\bFail\s*\|\||\bFailed\s*:\s*[1-9][0-9]*\b|Failure \(|SEGFAULT|Segmentation fault|core dumped|assert(?:ion)? failed|expected .* but| FAILED\b)/;
 
 // Negative guard: lines that MENTION failure vocabulary but report ZERO failures
-// (a green summary) must NOT be promoted or counted as failures.
+// (a green summary) must NOT be promoted or counted as failures. The zero can sit on
+// either side of the label — `0 failed` and `FAIL 0` / `Failed : 0` / `failures="0"`
+// are all green — and ctest reports green as `100% tests passed, 0 tests failed`.
 export const FAILURE_NEGATIVE_RE =
-  /(0 fail|failures?: 0|failed: 0|: 0 error|0 error|no failures|all tests passed|0 failing)/i;
+  /(0 fail|failures?: 0|failed: 0|: 0 error|0 error|no failures|all tests passed|0 failing|\bx?fail(?:ed|ures?)?\s*[:=|]?\s*0\b|\b0\s+(?:tests?\s+)?fail(?:ed|ures?)?\b|\b\d+%\s+tests\s+passed\b|\bxfail)/i;
 
 // Infra / harness-error markers: when the CURRENT run is an infra failure (lockdown
 // network, broker timeout, docker error) rather than real test failures, baseline
@@ -43,7 +51,7 @@ export const INFRA_ERROR_RE =
 // must NOT become per-test failure SIGNATURES — the count varies run to run, so a
 // summary would spuriously differ between baseline and current and pollute the diff.
 export const SUMMARY_COUNT_RE =
-  /^\s*(?:\d+\s+(?:tests?\s+)?(?:failed|failing|failures)\b|failures?:\s*\d+|tests?:?\s*\d+\s+failed|\d+\s+failed,\s*\d+\s+passed|Ran\s+\d+\s+tests?\b)/i;
+  /^\s*(?:\d+\s+(?:tests?\s+)?(?:failed|failing|failures)\b|failures?:\s*\d+|tests?:?\s*\d+\s+failed|\d+\s+failed,\s*\d+\s+passed|Ran\s+\d+\s+tests?\b|Failed\s*:\s*\d+)/i;
 
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
 const LEADING_TIMESTAMP_RE = /^\s*(?:\[(?:\d{2}:\d{2}:\d{2}(?:[.,]\d+)?|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:\d{2})?)\]|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:\d{2})?|\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\s+/;
@@ -156,7 +164,7 @@ export function normalizeFailureSignature(line) {
   s = s.replace(/\b\d+(?:\.\d+)?\s*(?:ms|s|sec|secs|seconds)\b/gi, '');       // 0.03s
   s = s.replace(/0x[0-9a-fA-F]+/g, '');                                       // hex addrs
   s = s.replace(/^\s*\d+\)\s*/, '');                                          // mocha "12) "
-  s = s.replace(/^\s*(?:✗|✘|×|-|\*|•)\s*/, '');                               // bullet markers
+  s = s.replace(/^\s*(?:✗|✘|✖|×|-|\*|•)\s*/, '');                             // bullet markers
   s = s.replace(/^\s*(?:not ok\s+\d+\s*-?\s*|FAIL(?:ED)?:?\s*|--- FAIL:\s*)/i, ''); // status prefixes
   s = s.replace(/\s+/g, ' ').trim();
   return s;

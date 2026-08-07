@@ -28,6 +28,10 @@ import { RT_DEDUP_ON, dedupLogPathFor, startDedupSession } from './rt-dedup.mjs'
 import {
   createProgressRunConfig, progressRowFields, resolveProgressFlags,
 } from './rt-progress-controller.mjs';
+// Single source of truth for which install steps the GRADER re-applies
+// (eval.py --reapply-install-seds). The run_tests shim must apply the same set, or the
+// agent and the grader see different environments. Pure helper — no import cycle.
+import { installSedCmds } from './env-ledger.mjs';
 
 // Inlined from p7-codex-runner.mjs (kept self-contained so the bench doesn't depend on
 // the prompt-optimization context being present/committed on the run host).
@@ -188,6 +192,7 @@ export function writeRunTestsShim(binDir, {
   stateDir = binDir, _isAgentFormat = false, label = 'rollout',
   rtDedup = RT_DEDUP_ON, rtProgressFlags = resolveProgressFlags(),
   controllerDir = null, taskId = null, arm = null, injectedFiles = [],
+  installSeds = [],
 }) {
   mkdirSync(binDir, { recursive: true });
   // L3 dedup state/audit log: append-only JSONL outside the agent's tree, opened with a
@@ -207,7 +212,7 @@ export function writeRunTestsShim(binDir, {
   writeFileSync(cfg, JSON.stringify({
     image, workdir, testScript, rundir, dockerHost: DOCKER_HOST, testTimeoutSec,
     netArgs, dockerBin, binDir, stateDir, rtAuthority, _isAgentFormat,
-    rtDedup: rtDedup && !!dedupLog, dedupLog, rtProgress,
+    rtDedup: rtDedup && !!dedupLog, dedupLog, rtProgress, installSeds,
   }));
   const mjs = path.join(binDir, '_run_tests.mjs');
   if (brokerMode) {
@@ -456,6 +461,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
     netArgs, brokerMode: true, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY,
     stateDir: runnerStateDir, _isAgentFormat: sweet, label: jailLabel,
     taskId: task.id, arm, injectedFiles: ['AGENTS.md'],
+    installSeds: installSedCmds(t),
   });
   // L1: install the docker output-condenser wrapper (both arms). Flag-gated; a run
   // with SS_NO_CMD_CONDENSE=1 leaves the agent's docker == real docker (legacy).
