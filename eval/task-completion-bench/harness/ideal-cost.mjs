@@ -45,19 +45,52 @@ export function priceFor(model) {
   return p;
 }
 
-// Per-turn cost recovery. `turns` = [{in, cached, out}] in trajectory order, where
+// Per-turn cost recovery. `turns` = [{in, cached, out, holeAt?}] in trajectory order, where
 // `in` is the FULL context size at that turn (the growing prefix). newIn is the
 // positive delta (context added this turn); the remainder is prior context re-sent.
+//
+// THREE COLUMNS, and picking the wrong one has already nearly shipped a loss:
+//
+//   idealUsd       cache-NORMALIZED. Charges every re-sent token at the cache rate by
+//                  construction, so provider cache luck (TTL, replica routing, run timing)
+//                  cannot pollute an A/B. Correct for any lever that only APPENDS to context.
+//   realFromTurns  what the provider actually billed. Polluted by cache luck at smoke scale.
+//   breakPricedUsd cache-normalized AND aware that prompt caching is a PREFIX cache.
+//
+// WHY breakPricedUsd EXISTS (measured 2026-08-10, lever #3 eviction $0 gate). Deleting or
+// reordering anything mid-conversation invalidates every cached token after it, so the next
+// request re-pays the FULL input rate for the whole surviving suffix — 10x the cache-read rate
+// on Luna. idealUsd cannot see that: it charges the re-send at the cache rate no matter what
+// happened to the prefix. On a 32K-cap eviction replay idealUsd scored **+7.7% saved** while the
+// policy actually **lost 12.3%**. Read on idealUsd alone, that lever ships as a win.
+//
+// So: ANY lever that deletes, evicts, reorders, compacts or rewrites prior context must be read
+// on breakPricedUsd. Append-only levers (prompt/frame/format/retrieval-payload changes) are
+// unaffected — the two columns are identical there, by construction, which is why this is safe
+// to print by default.
+//
+// `holeAt` is the token position of the EARLIEST place the context was changed this turn. A lever
+// that rewrites context should report it; the cost is then exact. Without it, a turn whose context
+// shrank is priced pessimistically (nothing provably survived the cache), which is deliberate — it
+// makes an unreported rewrite look expensive rather than free.
 export function costFromTurns(turns, price = PRICE) {
-  let ideal = 0, real = 0, prevIn = 0;
+  let ideal = 0, real = 0, breakPriced = 0, prevIn = 0, rewrites = 0;
   for (const tu of turns) {
     const newIn = Math.max(0, tu.in - prevIn);   // context added this turn
     const resent = tu.in - newIn;                // prior context re-sent
     ideal += (newIn * price.in + resent * price.cache + tu.out * price.out) / 1e6;   // ideal cache
     real += ((tu.in - tu.cached) * price.in + tu.cached * price.cache + tu.out * price.out) / 1e6;  // actual cache
+
+    // longest prefix PROVABLY still cache-valid after whatever happened to the context
+    let cacheable;
+    if (tu.holeAt != null) { cacheable = Math.min(tu.holeAt, tu.in); rewrites++; }
+    else if (tu.in < prevIn) { cacheable = 0; rewrites++; }   // shrank, position unreported
+    else cacheable = Math.min(prevIn, tu.in);                 // append-only: same as ideal
+    breakPriced += ((tu.in - cacheable) * price.in + cacheable * price.cache + tu.out * price.out) / 1e6;
+
     prevIn = tu.in;
   }
-  return { idealUsd: ideal, realFromTurnsUsd: real };
+  return { idealUsd: ideal, realFromTurnsUsd: real, breakPricedUsd: breakPriced, contextRewrites: rewrites };
 }
 
 // Per-turn token usage from a codex rollout jsonl (token_count → last_token_usage).
@@ -132,11 +165,12 @@ export function findRolloutForRundir(rundir, { sinceMs = 0, sessionsDir } = {}) 
 // so this is the only chance to keep it.
 export function recoverIdealCost(rundir, { sinceMs = 0, sessionsDir, price = PRICE } = {}) {
   const rolloutFile = findRolloutForRundir(rundir, { sinceMs, sessionsDir });
-  if (!rolloutFile) return { idealCostUsd: null, realFromTurnsUsd: null, rolloutFile: null, turns: 0, turnList: [] };
+  if (!rolloutFile) return { idealCostUsd: null, realFromTurnsUsd: null, breakPricedCostUsd: null, contextRewrites: 0, rolloutFile: null, turns: 0, turnList: [] };
   const turns = turnsFromRollout(rolloutFile);
-  const { idealUsd, realFromTurnsUsd } = costFromTurns(turns, price);
+  const { idealUsd, realFromTurnsUsd, breakPricedUsd, contextRewrites } = costFromTurns(turns, price);
   return {
     idealCostUsd: +idealUsd.toFixed(6), realFromTurnsUsd: +realFromTurnsUsd.toFixed(6),
+    breakPricedCostUsd: +breakPricedUsd.toFixed(6), contextRewrites,
     rolloutFile, turns: turns.length, turnList: turns,
   };
 }

@@ -610,10 +610,11 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // the exact rundir cwd match keeps it unambiguous. Never throws → nulls if the
   // rollout can't be located (falls back to the realized column downstream).
   let idealCostUsd = null, realFromTurnsUsd = null, rolloutFile = null, idealTurns = 0;
+  let breakPricedCostUsd = null, contextRewrites = 0;
   let costContentUsd = null, turnsFile = null;
   try {
     const ic = recoverIdealCost(rundir, { sinceMs: t0 - 60000, price: _p, sessionsDir: jail ? path.join(codexHome, 'sessions') : undefined });
-    ({ idealCostUsd, realFromTurnsUsd, rolloutFile, turns: idealTurns } = ic);
+    ({ idealCostUsd, realFromTurnsUsd, breakPricedCostUsd, contextRewrites, rolloutFile, turns: idealTurns } = ic);
     // P7 (PLAN.md §3 B1): the rollout jsonl lives in the per-rollout codex home, which is
     // torn down with the run — persist the per-turn array now or lose it. costContentUsd
     // (unique context charged once + output) needs the same growing-prefix structure and
@@ -640,7 +641,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
     shimTampered: shimTamperedFiles.length > 0, shimTamperedFiles,
     stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
     exitReason, usage: u, costNaiveUsd: +costNaive.toFixed(6), costRealizedUsd: +costRealized.toFixed(6),
-    costContentUsd, idealCostUsd, realFromTurnsUsd, rolloutFile, idealTurns, turnsFile,
+    costContentUsd, idealCostUsd, realFromTurnsUsd, breakPricedCostUsd, contextRewrites, rolloutFile, idealTurns, turnsFile,
     wallMs, trajectory, finalAssistantText: answer,
     codexErrors: parsed.errors.slice(0, 5), startRetried,
     stderrPreview: String(r.stderr || '').replace(STDIN_BANNER, '').slice(0, 300),

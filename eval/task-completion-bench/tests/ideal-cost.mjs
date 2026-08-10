@@ -26,6 +26,37 @@ assert(costFromTurns([]).idealUsd === 0, 'empty turns → $0');
 // PRICE surface intact
 assert(PRICE.in === 5 && PRICE.cache === 0.5 && PRICE.out === 30, 'PRICE = {5, 0.5, 30}');
 
+// --- breakPricedUsd: cache-normalized AND aware that caching is a PREFIX cache (2026-08-10) ---
+// Append-only context (every real run to date): identical to ideal, by construction. This is what
+// makes the column safe to print by default — it can only differ once a lever rewrites context.
+assert(approx(c.breakPricedUsd, c.idealUsd), 'append-only: breakPriced == ideal', `got ${c.breakPricedUsd}`);
+assert(c.contextRewrites === 0, 'append-only: 0 context rewrites');
+
+// A turn whose context SHRANK with no reported hole position: nothing is provably still cached,
+// so the whole prefix re-prices at the full input rate. Deliberately pessimistic — an unreported
+// rewrite must look expensive, not free.
+const shrunk = costFromTurns([{ in: 1000, cached: 0, out: 0 }, { in: 600, cached: 500, out: 0 }]);
+// ideal: (1000*5)/1e6 + (0*5 + 600*0.5)/1e6 = 0.005 + 0.0003 = 0.0053
+// break: (1000*5)/1e6 + (600*5 + 0*0.5)/1e6 = 0.005 + 0.003  = 0.008
+assert(approx(shrunk.idealUsd, 0.0053), 'shrunk: ideal = 0.0053', `got ${shrunk.idealUsd}`);
+assert(approx(shrunk.breakPricedUsd, 0.008), 'shrunk: breakPriced = 0.0080 (whole prefix re-priced)', `got ${shrunk.breakPricedUsd}`);
+assert(shrunk.breakPricedUsd > shrunk.idealUsd, 'shrunk: breakPriced > ideal (the cost ideal cannot see)');
+assert(shrunk.contextRewrites === 1, 'shrunk: 1 context rewrite flagged');
+
+// With holeAt reported, the surviving prefix before the hole stays cached and the cost is exact.
+const holed = costFromTurns([{ in: 1000, cached: 0, out: 0 }, { in: 600, cached: 500, out: 0, holeAt: 400 }]);
+// break: 0.005 + ((600-400)*5 + 400*0.5)/1e6 = 0.005 + 0.0012 = 0.0062
+assert(approx(holed.breakPricedUsd, 0.0062), 'holeAt=400: breakPriced = 0.0062 (prefix before the hole survives)', `got ${holed.breakPricedUsd}`);
+assert(holed.breakPricedUsd < shrunk.breakPricedUsd, 'reporting holeAt is cheaper than not reporting it');
+
+// A hole can exist even when the context still GREW (evict 5k, append 8k) — the trigger is the
+// hole, not the shrink. This is the eviction case that scored +7.7% on ideal while losing 12.3%.
+const grewWithHole = costFromTurns([{ in: 1000, cached: 0, out: 0 }, { in: 1200, cached: 900, out: 0, holeAt: 300 }]);
+assert(grewWithHole.breakPricedUsd > grewWithHole.idealUsd, 'grew-but-holed: breakPriced > ideal (hole, not shrink, is the trigger)');
+assert(grewWithHole.contextRewrites === 1, 'grew-but-holed: rewrite flagged even though context grew');
+
+// recoverIdealCost must carry the column through to the row (the default collection path).
+
 // --- per-model pricing (multi-backbone held-out run, 2026-07-17) ---
 // Default arg keeps every existing call site on gpt-5.5 rates.
 assert(costFromTurns(turns).idealUsd === costFromTurns(turns, PRICE).idealUsd, 'default price arg == PRICE');
@@ -88,9 +119,10 @@ const found = findRolloutForRundir(rundir, { sinceMs: t0 - 60_000, sessionsDir: 
 assert(found === match, 'findRolloutForRundir picks exact-cwd, fresh file (not the other cwd, not the stale one)', `got ${found}`);
 const rec = recoverIdealCost(rundir, { sinceMs: t0 - 60_000, sessionsDir: path.join(dir, 'sessions') });
 assert(approx(rec.idealCostUsd, 0.0125) && rec.turns === 2 && rec.rolloutFile === match, 'recoverIdealCost matches costFromTurns + reports rolloutFile', JSON.stringify(rec));
+assert(approx(rec.breakPricedCostUsd, 0.0125) && rec.contextRewrites === 0, 'recoverIdealCost emits breakPricedCostUsd + contextRewrites', JSON.stringify(rec));
 // no rollout for an unknown rundir → graceful nulls (never throws)
 const none = recoverIdealCost('/root/.ss-eval/runs/nope__sweet__r9__99', { sinceMs: t0 - 60_000, sessionsDir: path.join(dir, 'sessions') });
-assert(none.idealCostUsd === null && none.rolloutFile === null, 'no rollout → null idealCost (fallback to realized)');
+assert(none.idealCostUsd === null && none.rolloutFile === null && none.breakPricedCostUsd === null, 'no rollout → null idealCost AND null breakPriced (fallback to realized)');
 
 rmSync(dir, { recursive: true, force: true });
 console.log(ok ? '\nALL PASS' : '\nFAILED');

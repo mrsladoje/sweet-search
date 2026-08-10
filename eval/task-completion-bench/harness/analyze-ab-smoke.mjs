@@ -50,17 +50,18 @@ for (const f of walk(SESS)) {
   const m = cwd.match(/runs\/(.+?)__(native|sweet)__r(\d+)__/);
   if (!m) continue;
   // per-turn cost recovery (shared with the collection-path column)
-  const { idealUsd: ideal, realFromTurnsUsd: real } = costFromTurns(turns);
+  const { idealUsd: ideal, realFromTurnsUsd: real, breakPricedUsd: brk, contextRewrites } = costFromTurns(turns);
   rows.push({ task: m[1], arm: m[2], rep: +m[3], cond: bannerSeen ? 'ON' : (ranTests ? 'OFF' : '?'),
     turns: turns.length, calls: cmds.length, ideal: +ideal.toFixed(3), real: +real.toFixed(3),
+    brk: +brk.toFixed(3), rewrites: contextRewrites,
     maxOutKB: +(maxOut / 1024).toFixed(1), dockerRun, gitDiff, tmpRecon, shimPeek, rawTestRun,
     condSeen: condSeen ? 1 : 0, baselineSeen: baselineSeen ? 1 : 0, ranTests: ranTests ? 1 : 0 });
 }
 
 rows.sort((a, b) => (a.task + a.cond + a.rep).localeCompare(b.task + b.cond + b.rep));
-console.log('| task | cond | rep | arm | calls | ideal$ | real$ | maxOutKB | dockerRun | gitDiff | tmpRecon | shimPeek | rawTest | L1cond | L2base |');
-console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
-for (const r of rows) console.log(`| ${r.task} | ${r.cond} | ${r.rep} | ${r.arm} | ${r.calls} | ${r.ideal} | ${r.real} | ${r.maxOutKB} | ${r.dockerRun} | ${r.gitDiff} | ${r.tmpRecon} | ${r.shimPeek} | ${r.rawTestRun} | ${r.condSeen} | ${r.baselineSeen} |`);
+console.log('| task | cond | rep | arm | calls | ideal$ | break$ | real$ | maxOutKB | dockerRun | gitDiff | tmpRecon | shimPeek | rawTest | L1cond | L2base |');
+console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+for (const r of rows) console.log(`| ${r.task} | ${r.cond} | ${r.rep} | ${r.arm} | ${r.calls} | ${r.ideal} | ${r.brk}${r.rewrites ? '*' : ''} | ${r.real} | ${r.maxOutKB} | ${r.dockerRun} | ${r.gitDiff} | ${r.tmpRecon} | ${r.shimPeek} | ${r.rawTestRun} | ${r.condSeen} | ${r.baselineSeen} |`);
 
 // aggregates by cond (sweet only)
 for (const cond of ['ON', 'OFF']) {
@@ -68,6 +69,16 @@ for (const cond of ['ON', 'OFF']) {
   if (!rs.length) continue;
   const sum = k => rs.reduce((a, r) => a + r[k], 0);
   const med = k => { const v = rs.map(r => r[k]).sort((a, b) => a - b); return v[Math.floor(v.length / 2)]; };
-  console.log(`\n[${cond}] n=${rs.length} sweet | medianIdeal$=${med('ideal')} sumIdeal$=${sum('ideal').toFixed(2)} sumReal$=${sum('real').toFixed(2)} | reconMoves(docker+gitDiff+tmp+shim+rawTest)=${sum('dockerRun') + sum('gitDiff') + sum('tmpRecon') + sum('shimPeek') + sum('rawTestRun')} | medMaxOutKB=${med('maxOutKB')} | L1condHits=${sum('condSeen')} L2baseHits=${sum('baselineSeen')}`);
+  console.log(`\n[${cond}] n=${rs.length} sweet | medianIdeal$=${med('ideal')} sumIdeal$=${sum('ideal').toFixed(2)} sumBreak$=${sum('brk').toFixed(2)} sumReal$=${sum('real').toFixed(2)} | reconMoves(docker+gitDiff+tmp+shim+rawTest)=${sum('dockerRun') + sum('gitDiff') + sum('tmpRecon') + sum('shimPeek') + sum('rawTestRun')} | medMaxOutKB=${med('maxOutKB')} | L1condHits=${sum('condSeen')} L2baseHits=${sum('baselineSeen')}`);
 }
+const totRewrites = rows.reduce((a, r) => a + r.rewrites, 0);
+const sumIdeal = rows.reduce((a, r) => a + r.ideal, 0), sumBrk = rows.reduce((a, r) => a + r.brk, 0);
 console.log(`\n(rollouts since ${new Date(SINCE).toISOString()}: ${rows.length} runs)`);
+console.log('ideal$ = cache-normalized (append-only levers). break$ = same, but prices the prefix-cache');
+console.log('break that deleting/reordering context forces. Rows where they differ are marked *.');
+if (totRewrites) {
+  console.log(`\n!! ${totRewrites} turn(s) REWROTE context. ideal$ ${sumIdeal.toFixed(3)} vs break$ ${sumBrk.toFixed(3)} `
+    + `(${sumIdeal > 0 ? ((sumBrk / sumIdeal - 1) * 100).toFixed(1) : '0'}% higher). READ break$ — ideal$ is blind here.`);
+} else {
+  console.log('No context rewrites: ideal$ == break$ by construction, and ideal$ is the valid read.');
+}
