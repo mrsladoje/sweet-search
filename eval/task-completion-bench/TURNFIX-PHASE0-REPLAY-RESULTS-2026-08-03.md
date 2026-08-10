@@ -953,3 +953,43 @@ Spend: **$0 metered** (Luna via subscription). Repair `2b80ee3`; full writeup
   lua task under its new exit-code-propagating testCmd (so that override needed no
   revert). polyfactory-405 excluded from AGENT runs only; still gold-valid and gradeable.
 - The paper-corpus headline re-baseline is a SEPARATE milestone decision and was not taken.
+
+---
+
+## [$0 GATE — 2026-08-10] Lever #3 phase-aware eviction (+ span-capped fusion) — **DROPPED at Gate 0**
+
+Spend: **$0.00**. No live cell, no eviction engine built. Data: `results/postfix-screen17`
+(68 rollouts, 17 DEV-RET tasks x 2 arms x 2 reps, Luna, post-lever-#1). HO2 untouched.
+Full write-up + pre-registration: `handoffs/lever3-eviction/GATE0-RESULTS.md`.
+
+- **Bar (A) FAILED.** Residual non-poll tool-body tail = **10.2%** of ideal spend (native 12.1%,
+  sweet 8.0%) vs a pre-registered >=15%. GPT's 33.4% resident-re-send figure REPLICATES (we measure
+  30.7%) but its attribution was wrong: **59% of the tax is the fixed preamble** (18.0% of ideal
+  spend), which is un-evictable by construction. Tool bodies are 10.9%, and only their older part
+  is reachable.
+- **Bar (B) FAILED.** No cap in {24,32,40,48K} avoids >=10% of input at a LOW (<=10%) refetch rate.
+  The one low-refetch cap (48K, 0%) avoids 2.7%; the caps clearing 10% (24K/32K) refetch at 27%/23%
+  — they would starve solves.
+- **The mechanism that kills it: prompt caching is a PREFIX cache.** Mid-conversation deletion
+  invalidates the suffix, so the next request re-pays full input rate (10x cache-read on Luna).
+  Evicting oldest-first puts the hole near the start, so nearly the whole context re-prices, at
+  250/760 boundary turns. NET-of-cache-break savings: 24K +1.5%, 32K **-12.3%**, 40K **-15.1%**,
+  48K -6.6% on dart+mransan; all four negative across the full 17 tasks.
+- **METHOD WARNING for every future cost lever:** the bench's canonical `idealCost` is
+  cache-NORMALIZED and therefore structurally blind to a cache break. It scores 32K eviction at
+  **+7.7%** while the policy actually loses **-12.3%**. Any lever that reorders or deletes context
+  (not just appends) MUST be read on a break-priced column, never on idealCost alone.
+- **Gate 0c (supporting, retired Grok DB, not Luna):** standalone fusion net-negative (top1
+  -$0.0097, top3 -$0.0070, both NO-GO), flips positive only `with_eviction_W4` (+$0.0064). Eviction
+  died, so span-capped fusion drops with it.
+- **Measurement validity:** the rollout prefix alignment was verified empirically, not assumed
+  (correct alignment R^2=0.947 at 3.87 B/tok; the naive one R^2=0.019 at an impossible 8.6 B/tok —
+  it inflated the first pass to 13.8%). Verdict is calibration-insensitive: +-60% slope perturbation
+  moves the tail only 9.7% -> 10.8%.
+- **REDIRECT (the useful $0 finding).** The real re-send driver is the preamble, and it holds a
+  clean arm-asymmetric target: the sweet arm's preamble is **exactly +1457 tokens** larger than
+  native's on ALL 17 tasks (ss-* tool docs + M± block), re-sent every turn, costing **$0.01018 =
+  4.1% of the sweet arm's total ideal spend**. Static text: no cache-break cost, no refetch risk.
+  Its own risk is different (shorter tool docs may degrade tool use) so it needs its own $0 exposure
+  gate + solve-safety check. Logged as a candidate, not a decision.
+- New $0 tools, reusable: `stats/resend-census.mjs`, `stats/eviction-grid-replay.mjs`.
