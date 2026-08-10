@@ -24,9 +24,14 @@ const rows = Array.isArray(raw) ? raw : (raw.rows || []);
 const cell = new Map();  // key `${task}|${arm}` -> {task, arm, real:[], ideal:[], resolved}
 for (const r of rows) {
   const k = `${r.taskId}|${r.arm}`;
-  let c = cell.get(k); if (!c) { c = { task: r.taskId, arm: r.arm, real: [], ideal: [], resolved: false, calls: [] }; cell.set(k, c); }
+  let c = cell.get(k); if (!c) { c = { task: r.taskId, arm: r.arm, real: [], ideal: [], brk: [], brkRows: 0, rewrites: 0, resolved: false, calls: [] }; cell.set(k, c); }
   if (r.costRealizedUsd != null) c.real.push(r.costRealizedUsd);
   if (r.idealCostUsd != null) c.ideal.push(r.idealCostUsd);
+  // break-priced: cache-normalized AND aware that deleting/reordering context breaks the prefix
+  // cache. Falls back to idealCost for rows collected before the column existed.
+  if (r.breakPricedCostUsd != null) { c.brk.push(r.breakPricedCostUsd); c.brkRows++; }
+  else if (r.idealCostUsd != null) c.brk.push(r.idealCostUsd);   // legacy row: column not collected
+  c.rewrites += r.contextRewrites || 0;
   if (r.calls != null) c.calls.push(r.calls);
   if (r.resolved) c.resolved = true;
 }
@@ -34,7 +39,7 @@ const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
 const byTask = new Map();
 for (const c of cell.values()) {
   let t = byTask.get(c.task); if (!t) { t = {}; byTask.set(c.task, t); }
-  t[c.arm] = { real: mean(c.real), ideal: mean(c.ideal), resolved: c.resolved, calls: mean(c.calls) };
+  t[c.arm] = { real: mean(c.real), ideal: mean(c.ideal), brk: mean(c.brk), brkRows: c.brkRows, rewrites: c.rewrites, resolved: c.resolved, calls: mean(c.calls) };
 }
 const tasks = [...byTask.values()].filter(t => t.native && t.sweet);   // paired only
 
@@ -87,5 +92,12 @@ for (const [label, stratum] of [['BOTH-SOLVED (clean cost comparison)', both], [
   console.log(`  ▶ HEADLINE  REALIZED  sweet ${R.pctRed >= 0 ? '−' : '+'}${Math.abs(R.pctRed).toFixed(1)}% vs native   ($${R.natSum.toFixed(2)} → $${R.swSum.toFixed(2)})`);
   console.log(`             paired Δ/task $${R.obsMean.toFixed(4)}  95% CI [$${R.ciMeanLo.toFixed(4)}, $${R.ciMeanHi.toFixed(4)}]  %CI [${fmt(R.ciPctLo)}%, ${fmt(R.ciPctHi)}%]  p=${R.p.toFixed(3)}`);
   console.log(`    idealCost  sweet ${I.pctRed >= 0 ? '−' : '+'}${Math.abs(I.pctRed).toFixed(1)}% vs native   ($${I.natSum.toFixed(2)} → $${I.swSum.toFixed(2)})   %CI [${fmt(I.ciPctLo)}%, ${fmt(I.ciPctHi)}%]  p=${I.p.toFixed(3)}`);
+  const B = pairedBoot(stratum, 'brk');
+  const rw = stratum.reduce((a, t) => a + (t.native.rewrites || 0) + (t.sweet.rewrites || 0), 0);
+  const measured = stratum.some(t => (t.native.brkRows || 0) + (t.sweet.brkRows || 0) > 0);
+  console.log(`    breakPriced sweet ${B.pctRed >= 0 ? '−' : '+'}${Math.abs(B.pctRed).toFixed(1)}% vs native   ($${B.natSum.toFixed(2)} → $${B.swSum.toFixed(2)})   %CI [${fmt(B.ciPctLo)}%, ${fmt(B.ciPctHi)}%]  p=${B.p.toFixed(3)}`
+    + (rw ? `   << ${rw} context rewrites: READ THIS ROW, idealCost is blind to the cache break`
+          : (measured ? '   (== idealCost: context measured append-only)'
+                      : '   (legacy rows: column not collected, mirrored from idealCost)')));
 }
 console.log('');

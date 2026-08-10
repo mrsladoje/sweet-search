@@ -412,7 +412,7 @@ export async function runTask(task, { arm, provider = 'deepseek', apiModel, mode
   // idealCost: cache-normalized (all re-sent prefix charged at the cache-hit rate),
   // recovered from per-turn deltas — same formula/units the codex path uses, so the
   // headline efficiency-at-parity metric is comparable across harness paths.
-  const { idealUsd } = costFromTurns(turns, { in: price.in, cache: price.cacheHit, out: price.out });
+  const { idealUsd, breakPricedUsd, contextRewrites } = costFromTurns(turns, { in: price.in, cache: price.cacheHit, out: price.out });
   // costContentUsd: unique context charged once + output (§3 B4's `content`).
   let prevIn = 0, content = 0;
   for (const tu of turns) {
@@ -433,7 +433,8 @@ export async function runTask(task, { arm, provider = 'deepseek', apiModel, mode
     stepsToFirstEdit, nudges, escape, leak, halluc, escapeExamples, exitReason,
     usage, costNaiveUsd: +costNaive.toFixed(6), costRealizedUsd: +costRealized.toFixed(6),
     costContentUsd: +content.toFixed(6),
-    idealCostUsd: +idealUsd.toFixed(6), turns: turns.length, turnsFile,
+    idealCostUsd: +idealUsd.toFixed(6), breakPricedCostUsd: +breakPricedUsd.toFixed(6), contextRewrites,
+    turns: turns.length, turnsFile,
     wallMs: Date.now() - t0, trajectory,
   };
 }
