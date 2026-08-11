@@ -175,47 +175,177 @@ gated on `opts._isAgentFormat`. Ungated, it has regressed GCSN twice: −0.07pp,
 Use the `Workflow` tool. The operator has explicitly opted into multi-agent orchestration and into
 a large agent budget. Design for breadth of hypothesis generation plus hard adversarial screening.
 
-### Agent roster (operator-specified)
+### AGENT ROSTER — MANDATORY, NOT ADVISORY
 
-| Role | Model | How to invoke |
+The operator's requirement, stated explicitly and then restated: **three different model families,
+all at maximum thinking. Independent opinions ARE the deliverable.** A cheap uniform model defeats
+the entire purpose of the exercise.
+
+| Role | Model | Invocation |
 |---|---|---|
-| Deep analysis, synthesis, adjudication | **Opus 5, max effort** | `agent(prompt, {model:'opus', effort:'max'})` |
-| Independent parallel hypothesis generation | **Fable 5, max effort** | `agent(prompt, {model:'fable', effort:'max'})` |
-| Disjoint-family third opinion | **GPT-5.6 Sol, high effort** | shell out — see below |
+| Hypothesis generation, analysis, synthesis, adjudication | **Opus 5, max effort** | `agent(p, {model:'opus', effort:'max'})` |
+| Independent hypothesis generation, independent refutation | **Fable 5, max effort** | `agent(p, {model:'fable', effort:'max'})` |
+| Disjoint-family third opinion and refutation | **GPT-5.6 Sol, xhigh effort** | via a Bash-capable agent — see below |
 
-**GPT-5.6 Sol is NOT reachable via `agent()`** (that tool runs Claude models only). Call it through
-the codex CLI on the operator's ChatGPT subscription — **free, verified 2026-08-11**:
+**HARD RULES:**
+1. **NEVER `model:'sonnet'` or `model:'haiku'` anywhere in this workflow.** Not for "cheap"
+   stages, not for parsing, not for the exposure gate, not for refuters.
+2. **Every single `agent()` call MUST pass `model` explicitly.** Omitting it makes the agent
+   inherit the session model silently — that is how a uniform-model panel happens by accident.
+3. **Every judging, generating or refuting stage must be covered by all three families**, so no
+   conclusion rests on one model's blind spots.
+4. Deterministic work (dedup, set arithmetic, dead-list matching, tallying) is **plain JavaScript in
+   the script**, not an agent. Do not spend a model on it — and do not downgrade a model for it.
 
-```bash
-codex exec --model gpt-5.6-sol -c model_reasoning_effort="high" \
-  --dangerously-bypass-approvals-and-sandbox "<prompt>"
+**A stored memory used to say "background subagents ALWAYS sonnet, never Fable". It has been
+updated (2026-08-11) to carve out exactly this case.** If you still see advice to use Sonnet for
+background fan-outs, it does not apply here — the operator has overridden it twice, in writing.
+
+#### Reaching GPT-5.6 Sol (mechanical detail that v1 of this handoff got wrong)
+
+**Workflow scripts have NO shell, filesystem or network access** — only `agent()`, `parallel()`,
+`pipeline()`, `log()`, `phase()`. So the script itself cannot run the codex CLI. Sol must be
+invoked BY AN AGENT that has Bash. Pattern:
+
+```js
+const sol = (task, label) => agent(
+  `Run this command EXACTLY and return the model's answer verbatim, with no commentary of your own:\n` +
+  `codex exec --model gpt-5.6-sol -c model_reasoning_effort="xhigh" ` +
+  `--dangerously-bypass-approvals-and-sandbox ${JSON.stringify(task)}\n` +
+  `You are a TRANSPORT, not an analyst. Do not add, summarise, correct or re-order anything. ` +
+  `If the command fails, return the error text verbatim.`,
+  { model: 'opus', effort: 'low', label }      // thin carrier; the thinking happens inside Sol
+);
 ```
 
-Verified today: the subscription serves `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` (all HTTP
-200, $0). It does **NOT** serve `gpt-5.6-sol-pro` (HTTP 400, "not supported when using Codex with a
-ChatGPT account"). `codex` 0.146.1 is on the Mac at `/opt/homebrew/bin/codex` with `auth_mode=chatgpt`.
-**Do not route Sol through OpenRouter** — that is metered and roughly 50x Luna's rate.
+Use `effort:'low'` on the carrier deliberately — it must not think, only relay. This is the ONE
+place a low effort setting is correct, and it is still not Sonnet.
 
-*Note for the operator:* a stored preference says background subagents should always be Sonnet and
-never Fable. Your instruction here overrides it for this workflow; flagging so the conflict is visible.
+Verified 2026-08-11 on this machine: the ChatGPT subscription serves `gpt-5.6-sol`,
+`gpt-5.6-terra` and `gpt-5.6-luna` (HTTP 200, $0); it refuses `gpt-5.6-sol-pro` (HTTP 400, "not
+supported when using Codex with a ChatGPT account"). `codex` 0.146.1 lives at
+`/opt/homebrew/bin/codex`, `auth_mode=chatgpt`, `OPENAI_API_KEY: null`. Both
+`model_reasoning_effort="xhigh"` and `"high"` are accepted; use `xhigh` and fall back to `high`
+only if a future CLI rejects it. **Never route Sol through OpenRouter** — metered, ~50x Luna.
 
-### Suggested phases
+#### Before launching: raise the workflow size cap
 
-1. **Independent hypothesis generation (parallel, diverse lenses).** Give Opus, Fable and Sol the
-   SAME evidence pack (§0, §1, plus pointers to the raw runs) and the SAME dead list, and ask each
-   independently for cost levers and resolution levers. Do not let them see each other's output.
-   Diversity of family is the point.
-2. **Deduplicate and screen against the dead list.** Plain code, not an agent. Anything matching §2
-   is dropped with the reason recorded — do not silently discard.
-3. **$0 exposure gate, one agent per surviving candidate.** Each must measure, from the existing 204
-   rollouts, how often its trigger fires and what the ceiling on its benefit is. A candidate that
-   cannot show exposure is dead — report it as dead, do not soften it.
-4. **Adversarial verification, 3 disjoint refuters per survivor**, each prompted to REFUTE and to
-   default to "refuted" under uncertainty. Kill on a majority. Use different lenses (does the
-   trigger really fire / would the fix actually change the outcome / what does it cost elsewhere).
-5. **Synthesis (Opus, max effort).** Ranked slate with evidence class per item, expected effect on
-   cost AND solve, per-harness applicability, and the exact $0 or cheap experiment that would settle
-   each one. State plainly which findings are strong and which are n=1.
+A three-family panel across several candidates will exceed the default guideline of ~15 agents per
+workflow. Either tell the operator to raise **"Dynamic workflow size"** in `/config`, or state
+plainly in your plan how many agents you intend to spawn so they can approve it. Do not silently
+shrink the panel to fit the cap — that would quietly drop the model diversity that is the point.
+
+### Phase design — skeleton, models already assigned
+
+Adapt freely, but keep three properties: (a) the three families generate **independently**, (b)
+every survivor is refuted by a family that did not propose it, (c) dead-list screening is code.
+
+```js
+export const meta = {
+  name: 'sweet-lever-hunt',
+  description: 'Three-family lever hunt for sweet cost + resolution, screened against the dead list',
+  phases: [
+    { title: 'Generate', detail: 'Opus / Fable / Sol propose independently', model: 'opus+fable+sol' },
+    { title: 'Gate',     detail: '$0 exposure measured from the 204 rollouts' },
+    { title: 'Refute',   detail: 'cross-family adversarial verification' },
+    { title: 'Synthesize', detail: 'ranked slate, Opus max' },
+  ],
+}
+
+const EVIDENCE = `<paste §0 + §1 + §2 + §3 of this handoff verbatim>`;
+const ASK = `${EVIDENCE}\n\nPropose levers that make sweet CHEAPER and RESOLVE MORE, on all three
+harnesses. Anything on the DEAD LIST is an automatic failure — do not propose it. For each lever
+give: mechanism, which finding it attacks, which harnesses it applies to, the cheapest measurement
+that would falsify it, and your honest confidence.`;
+
+// ── Phase 1: independent generation, one per FAMILY. No agent sees another's output.
+phase('Generate')
+const proposals = (await parallel([
+  () => agent(`${ASK}\n\nLens: COST.`,       { model: 'opus',  effort: 'max', phase: 'Generate', schema: LEVERS }),
+  () => agent(`${ASK}\n\nLens: RESOLUTION.`, { model: 'opus',  effort: 'max', phase: 'Generate', schema: LEVERS }),
+  () => agent(`${ASK}\n\nLens: COST.`,       { model: 'fable', effort: 'max', phase: 'Generate', schema: LEVERS }),
+  () => agent(`${ASK}\n\nLens: RESOLUTION.`, { model: 'fable', effort: 'max', phase: 'Generate', schema: LEVERS }),
+  () => sol(`${ASK}\n\nLens: COST.`,       'sol:cost'),        // carrier pattern above
+  () => sol(`${ASK}\n\nLens: RESOLUTION.`, 'sol:resolution'),
+])).filter(Boolean);
+
+// ── Phase 2: dedup + dead-list screen — PLAIN CODE, no agent, nothing silently dropped.
+const dead = [/pack/i, /evict/i, /fus(e|ion)/i, /preamble/i, /thrash/i, /novelty.?stall/i,
+              /no.?progress/i, /completeness card/i, /checkpoint.?on.?green/i, /tests.?first/i,
+              /match.?judge/i];
+const seen = new Set(), live = [], killed = [];
+for (const p of proposals.flatMap(x => x.levers)) {
+  const key = p.name.toLowerCase().replace(/[^a-z]/g, '');
+  if (seen.has(key)) continue; seen.add(key);
+  const hit = dead.find(rx => rx.test(p.name + ' ' + p.mechanism));
+  (hit ? killed : live).push(hit ? { ...p, killedBy: String(hit) } : p);
+}
+log(`${live.length} live, ${killed.length} killed by the dead list`);
+
+// ── Phase 3+4: exposure gate then cross-family refutation, pipelined (no barrier).
+const verdicts = await pipeline(live,
+  l => agent(`Measure EXPOSURE for this lever from the 204 rollouts on the box. How often does its
+trigger actually fire, and what is the CEILING on its benefit? Zero exposure = dead; say so
+plainly.\n\n${JSON.stringify(l)}\n\n${EVIDENCE}`,
+    { model: 'opus', effort: 'max', phase: 'Gate', schema: EXPOSURE }),
+  (exp, l) => exp.exposure === 0 ? { ...l, verdict: 'dead-no-exposure', exp }
+    : parallel([
+        () => agent(`REFUTE this lever. Default to refuted if uncertain. Lens: does the trigger
+really fire as claimed?\n${JSON.stringify({ l, exp })}`, { model: 'fable', effort: 'max', phase: 'Refute', schema: VERDICT }),
+        () => agent(`REFUTE this lever. Default to refuted if uncertain. Lens: even if it fires,
+would it change the OUTCOME (solve or cost)?\n${JSON.stringify({ l, exp })}`, { model: 'opus', effort: 'max', phase: 'Refute', schema: VERDICT }),
+        () => sol(`REFUTE this lever. Default to refuted if uncertain. Lens: what does it COST
+elsewhere — regressions, latency, other harnesses?\n${JSON.stringify({ l, exp })}`, 'sol:refute'),
+      ]).then(v => ({ ...l, exp, survives: v.filter(Boolean).filter(x => !x.refuted).length >= 2 })));
+
+// ── Phase 5: synthesis. Opus max. Must report the killed list too.
+phase('Synthesize')
+return await agent(`Rank the survivors into a slate. State evidence class, exposure, per-harness
+applicability, expected effect on BOTH solve and cost, and the exact next experiment. Then list what
+was killed and why — including dead-list hits. Do not soften a dead verdict.
+\n${JSON.stringify({ verdicts, killed })}`, { model: 'opus', effort: 'max' });
+```
+
+Note the refuters for a lever are drawn from families that did not necessarily propose it, and the
+majority rule is 2 of 3. If a lever was proposed by Opus, weight Fable's and Sol's refutations.
+
+The dead-list regexes are a blunt first pass (`/pack/i` will also hit "package"). Every kill is
+carried into the synthesis output with its reason so a false positive is visible and recoverable.
+Never drop a proposal without recording it.
+
+#### The exposure gate is WORTHLESS unless agents touch the real data
+
+This is the single most important mechanical requirement in this handoff. An agent asked to
+"measure exposure" from a prose summary will invent numbers. Every gate and refute agent MUST be
+told, in its own prompt, how to reach the evidence — subagents do not inherit this document.
+
+Data lives on the box: **`ssh root@167.233.69.121`**, under
+`/root/sweet-search-private/eval/task-completion-bench/results/<RUN_ID>/` for
+`RUN_ID ∈ {sb-codex-20260811, sb-opencode-20260811, sb-claudecode-20260811}`:
+
+| Artifact | Contains | Use it for |
+|---|---|---|
+| `rows.json` | 68 rollouts: `taskId, arm, rep, resolved, calls, ss, nativeGrep, patchHunks, patchFiles, exitReason, breakPricedCostUsd, idealCostUsd, contextRewrites, idealTurns, turnsFile` | solve/cost/tool-use tallies |
+| `preds-<arm>.jsonl` | `model_patch` — the FULL final diff, untruncated | localization vs gold, edit shape |
+| `turns/<task>-<arm>.jsonl` | per-turn `{in, cached, out}` + meta | context growth, prefix cost |
+| `trajectories/` | tool-call sequences | ordering only — **results truncated at 600 chars** |
+| `rt-dedup/` | repeat-`run_tests` audit | redundant test runs |
+
+Gold patches come from `select/.cache/tasks_full_luna_rotate20.json` (`spec.patch`,
+`spec.test_patch`). Worked example — the localization taxonomy in §1a is reproduced by:
+
+```bash
+ssh root@167.233.69.121 'cd /root/sweet-search-private/eval/task-completion-bench && node -e "…
+  const gold = files(spec.patch);                       // diff --git a/<path>
+  const agent = files(pred.model_patch);
+  const cls = !agent.length ? \"no-edit\"
+            : !agent.some(f=>gold.includes(f)) ? \"WRONG-LOC\"
+            : gold.every(f=>agent.includes(f)) ? \"loc-ALL\" : \"loc-some\";
+"'
+```
+
+**Read-only.** Do not launch rollouts, do not spend money, do not mutate `results/`. If a candidate
+needs a new run, that is a recommendation for a later session, not an action for this one.
 
 ### Specific questions worth assigning
 
