@@ -115,5 +115,178 @@ so all three cells share one endpoint and harness becomes the only variable. Add
 claude-code estimate derived from its measured smoke: 3 trivial turns cost $0.0026 at Luna
 OpenRouter rates (17.9k cache-write + 31.4k cache-read + 103 out).
 
-**STATUS: STOPPED. Operator chose all three harnesses at REPS=2, then asked for it to be free.
-Those two are incompatible. Awaiting the design choice (A / B / C).**
+**DECISION (operator, 2026-08-11): design B** — free codex on the subscription, opencode and
+claude-code metered via OpenRouter, REPS=2, all three harnesses. Serving-path confound accepted
+and recorded here so the write-up states it.
+
+---
+
+## Phase 0c — instrumentation repair (operator: "all harnesses must report all metrics")
+
+Two defects would have made the cross-harness cost table dishonest. Both fixed, committed
+`eff752d`, tests added (`tests/claude-code-cost.mjs`), harness re-synced to the box.
+
+**Defect 1 — the box was running stale harness code.** Five files predated the break-priced
+commit (a80c577, 2026-08-10): `ideal-cost.mjs`, `codex-task-runner.mjs`, `api-task-runner.mjs`,
+`analyze-run.mjs`, `analyze-ab-smoke.mjs`. So `breakPricedCostUsd` did **not exist on the box for
+any harness** — the handoff's "read the break-priced column, it is default in the analyzers now"
+was not true of the machine the runs happen on. Mac was a strict superset (every diff was an
+addition); pushed all five. Harness now byte-identical across all 40 files. No `rt-*.mjs` differed,
+so the green ledger stayed valid (re-verified 17/17 after the push).
+
+**Defect 2 — `costsFromTurns` dropped two columns.** It computed `breakPricedUsd` and
+`contextRewrites` and then returned neither, so **opencode** never published break-priced cost
+either. Only codex did.
+
+**Defect 3 — claude-code had no turn distribution.** The OpenRouter Anthropic skin zeroes usage on
+streamed assistant events, so the adapter fell back to ONE synthetic aggregate turn, published
+`idealCost = realized`, and emitted no break-priced column. Recovered by reading Claude Code's own
+session transcript (`<claude-home>/projects/<slug>/<session>.jsonl`), deduped by message id.
+Validated against the provider: each transcript row's (input + cache_read + cache_creation) equals
+OpenRouter's `native_tokens_prompt` for the matching generation, and `output_tokens` equals
+`native_tokens_completion` (reasoning already folded in — not re-added).
+
+Verified on real rollouts, same task and arm, after the fix:
+
+| harness | turns | ideal | breakPriced | real | naive | content | rewrites |
+|---|---|---|---|---|---|---|---|
+| codex | 10 | 0.005555 | 0.005555 | 0.005276 | 0.020344 | 0.003912 | 0 |
+| opencode | 13 | 0.007465 | 0.007465 | 0.007469 | 0.030142 | 0.004946 | 0 |
+| claude-code | 10 | 0.006158 | 0.006158 | 0.006296 | 0.025581 | 0.004000 | 0 |
+
+claude-code was 1 synthetic turn with `ideal == real` and no break-priced column before this.
+breakPriced == ideal in all three because these trajectories are append-only (`rewrites = 0`) —
+correct by construction, not a coincidence.
+
+Also proven in Phase 0c: **claude-code runs a full rollout end-to-end** (13 calls, ss-* tools used,
+graded) — it had never produced a single row before today.
+
+---
+
+## Phase 1 — the measurement
+
+Config held IDENTICAL across all three cells (`/root/sb-run.sh`): 17 tasks, ARMS=native,sweet,
+REPS=2 (68 rollouts/cell), CONCURRENCY=1, AGENT_TIMEOUT_MS=1800000, MODEL=openai/gpt-5.6-luna,
+ENV_LEDGER=ledger-postfix-20260807. No tool-call cap on any CLI harness (`MAX_TOOL_CALLS` is
+bareapi-only), so caps are matched by absence.
+
+| Cell | RUN_ID | Status | Wall | Spend |
+|---|---|---|---|---|
+| codex (free) | sb-codex-20260811 | COMPLETE 68/68 | 2.2h | $0 (subscription) |
+| opencode (metered) | sb-opencode-20260811 | COMPLETE 68/68 | 2.0h | $0.49 |
+| claude-code (metered) | sb-claudecode-20260811 | RUNNING (from 17:05Z, ETA ~3.9h) | — | ~$0.57 proj. |
+
+### Results so far (DEV-RET rotated tasks — dev data, NOT publishable)
+
+**Solve — native never beats sweet on either harness.**
+
+| Harness | native | sweet | both | native-only | sweet-only | neither |
+|---|---|---|---|---|---|---|
+| codex | 9/17 | 10/17 | 9 | **0** | 1 | 7 |
+| opencode | 9/17 | 9/17 | 8 | 1 | 1 | 7 |
+
+**Cost — break-priced, paired, sweet vs native** (negative = sweet cheaper; %CI is the saving):
+
+| Harness | Both-solved | 95% CI | p | All 17 paired | 95% CI | p |
+|---|---|---|---|---|---|---|
+| codex | −9.6% (n=9) | [−3.1%, +22.7%] | 0.138 | −6.5% | [−5.3%, +17.2%] | 0.275 |
+| opencode | **−15.7%** (n=8) | [+9.1%, +21.9%] | **0.000** | **−17.8%** | [+10.6%, +27.6%] | **0.000** |
+
+breakPriced == idealCost in every cell, both arms: context is append-only, so no cache break
+hides inside the cheaper column. The instrumentation repair is doing its job.
+
+---
+
+## FINAL SCOREBOARD — 204 rollouts, 3 harnesses, model held at Luna (COMPLETE 2026-08-11 20:09Z)
+
+Metered spend **$1.31** (opencode $0.49 + claude-code $0.82); codex $0 on the subscription.
+Under the $2 estimate. All 204 rollouts carry a non-null `breakPricedCostUsd`; `contextRewrites`
+is 0 everywhere, so breakPriced == ideal by construction and no cache break hides in any column.
+
+### Solve
+
+| Harness | native | sweet | both | native-only | sweet-only | neither |
+|---|---|---|---|---|---|---|
+| codex | 9/17 | 10/17 | 9 | **0** | 1 | 7 |
+| opencode | 9/17 | 9/17 | 8 | 1 | 1 | 7 |
+| claude-code | 9/17 | 9/17 | 8 | 1 | 1 | 7 |
+
+### Cost — break-priced, paired (negative = sweet cheaper)
+
+| Harness | Both-solved | 95% CI | p | All 17 paired | 95% CI | p |
+|---|---|---|---|---|---|---|
+| codex | −9.6% (n=9) | [−3.1%, +22.7%] | 0.138 | −6.5% | [−5.3%, +17.2%] | 0.275 |
+| opencode | **−15.7%** (n=8) | [+9.1%, +21.9%] | **0.000** | **−17.8%** | [+10.6%, +27.6%] | **0.000** |
+| claude-code | +0.2% (n=8) | [−12.7%, +17.5%] | 0.909 | +2.4% | [−15.5%, +11.4%] | 0.784 |
+
+### ANSWER 1 — is a cost win real on this backbone?
+
+**Yes, but it is harness-dependent, not a property of sweet alone.** Significant on opencode
+(−15.7% at exact solve parity, CI excludes zero). Directionally present but not significant on
+codex. Exactly zero on claude-code. Any published cost claim must name the harness.
+
+### ANSWER 2 — is "native solves more" a property of sweet or of the harness?
+
+**Neither. It is a single task, and a coin flip.** 13 of 17 tasks are invariant to BOTH arm and
+harness: 7 solved by every arm on every harness, 6 solved by nobody anywhere. Only 4 tasks vary,
+and the entire arm-level solve difference across all three harnesses reduces to ONE task,
+`pytask-dev__pytask-210`, whose winner flips by harness (sweet on codex, native on the other two).
+
+Per-rep detail kills the "native solves more" reading outright:
+
+| Harness | native reps solved | sweet reps solved |
+|---|---|---|
+| codex | 0/2 | **2/2** |
+| opencode | **1/2** | 0/2 |
+| claude-code | **1/2** | 0/2 |
+
+Native's two "wins" are 1-of-2 reps each — variance. Sweet's win is 2-of-2 — consistent. The
+other three varying tasks are also single-rep flips, except `jashkenas__underscore-2757`, which is
+a pure HARNESS effect (both arms solve it on codex and opencode, neither arm on claude-code).
+
+## Phase 2 — discordant-pair mining
+
+Only two native-solved-sweet-did-not pairs exist in 204 rollouts, and both are the same task.
+
+**`pytask-dev__pytask-210` — classed AGENT-BOUND (generation incompleteness), not retrieval-starved.**
+
+Evidence, from patches (not trajectory files — those truncate tool results at 600 chars):
+- Every sweet rollout on all three harnesses edited exactly ONE file, `src/_pytask/traceback.py`,
+  which is the correct location. Sweet never mis-localized.
+- The task requires supporting a CALLABLE `__tracebackhide__`, which must receive `exc_info`.
+- Sweet on codex (SOLVED, 3 hunks) threaded `exc_info` through the whole chain: added the
+  parameter to both helpers, updated the call site, and invoked `is_hidden(exc_info)`.
+- Sweet on opencode (FAILED, 1 hunk) reached the SAME insight — it wrote `if callable(is_hidden)`
+  — but called `is_hidden()` with no argument and never propagated the parameter.
+
+So the deciding fact was PRESENT in sweet's context on every harness: sweet found the function and
+modified it every time. The failure is the depth of the generated edit, not what was retrieved.
+There is no retrieval gap to close here. This is the fourth independent analysis to land on the
+same conclusion — consistent with [[project_resolution_floor_universal_wrongfix]].
+
+### Ranked improvement hypotheses (all agent-bound; none is a retrieval lever)
+
+1. **Call-chain completeness after a signature change** (evidence: direct, 1 task, 4 rollouts).
+   When an edit adds a parameter, nothing forces the agent to update every caller and definition.
+   Sweet did this correctly on codex and not on the other two. This is a completion-discipline
+   candidate, not a retrieval one, and prior completeness levers have died at the $0 gate.
+2. **Harness-level capability gap** (evidence: direct, 1 task, 4 rollouts).
+   `jashkenas__underscore-2757` is solved by BOTH arms on codex and opencode and by NEITHER on
+   claude-code. That is a pure harness effect worth understanding before any claude-code numbers
+   are published.
+3. **The 7-task floor** (evidence: strong, 42 rollouts). Seven tasks were solved by no arm on any
+   harness. They bound the achievable score and are, by construction, retrieval-independent.
+
+**Do NOT build any of these here.** Each must pass the normal $0-exposure microsmoke gate first.
+
+## Caveats that must travel with these numbers
+
+1. **DEV-RET rotated dev tasks. Not publishable.** HO2 was never touched.
+2. **n=17 per cell.** The codex and claude-code cost intervals both span zero.
+3. **Serving-path confound (operator-accepted design B):** codex reached Luna through the ChatGPT
+   backend; opencode and claude-code through OpenRouter. Harness is therefore confounded with
+   serving path in any codex-vs-other comparison. The opencode-vs-claude-code contrast is clean.
+4. The prior "native solves more" result (Grok, hardened heldout, 81v93) does not reproduce here,
+   but that used a different model AND task set — this contrasts with it, it does not overturn it.
+
+**Program status: the scoreboard is closed. Ready for the single, final, aggregate-only HO2 pass.**
