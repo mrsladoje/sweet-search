@@ -8,12 +8,12 @@
 // Codex/OpenCode keep their existing AGENTS.md delivery.
 // Returns the canonical bench row shape (see codex-task-runner) so grading/metrics match.
 import { isZeroCallStartFailure } from './codex-task-runner.mjs';
-import { appendFileSync, mkdirSync, copyFileSync, existsSync } from 'node:fs';
+import { appendFileSync, mkdirSync, copyFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   setupRunner, buildAgentEnv, warmupSweet, issuePrompt, computeNetArgs, writeInstructionFile,
   buildTrajectory, gitDiffPatch, verifyIntegrity, teardownRunner, auditEscape, rolloutStateDir,
-  spawnWithTimeout, exitReasonFrom, priceFor,
+  spawnWithTimeout, exitReasonFrom, priceFor, costsFromTurns,
 } from './agent-runner-shared.mjs';
 import { installSedCmds } from './env-ledger.mjs';
 import { persistTurns } from './turn-log.mjs';
@@ -60,12 +60,15 @@ export function parseClaudeStream(stdout) {
   const resultById = new Map(); // tool_use_id → {text, isError}
   const errors = [];
   const turns = [];             // {in = full context incl. cache, cached, out}
-  let answer = '', resultUsage = null, numTurns = 0;
-  if (!stdout) return { toolCalls, answer, resultUsage, numTurns, turns, errors };
+  let answer = '', resultUsage = null, numTurns = 0, sessionId = null;
+  if (!stdout) return { toolCalls, answer, resultUsage, numTurns, turns, sessionId, errors };
   for (const line of stdout.split('\n')) {
     const tl = line.trim();
     if (!tl || tl[0] !== '{') continue;
     let ev; try { ev = JSON.parse(tl); } catch { continue; }
+    // Every event carries it; needed to find this rollout's session transcript, which is
+    // where per-message usage survives the skin's zeroing.
+    if (!sessionId && ev.session_id) sessionId = ev.session_id;
     if (ev.type === 'assistant' && ev.message) {
       const mu = ev.message.usage;
       if (mu) {
@@ -99,17 +102,63 @@ export function parseClaudeStream(stdout) {
     const r = resultById.get(tc.id);
     if (r) { tc.resultText = r.text; tc.isError = r.isError; }
   }
-  return { toolCalls, answer, resultUsage, numTurns, turns, errors };
+  return { toolCalls, answer, resultUsage, numTurns, turns, sessionId, errors };
 }
 
-// Realized/naive cost from Claude Code's aggregate result usage × our OpenRouter rate.
-// cache_read at cache rate (0.1x in), cache_creation at the 1.25x write premium, fresh
-// input + output at their rates. idealCost = realized (no per-turn data via the skin, so
-// no cache-normalization possible; realized already reflects Claude Code's actual caching).
-// NOTE: on the direct-Anthropic route per-turn usage now IS available (see `turns` above),
-// so idealCost could be genuinely cache-normalized there. Deliberately not done: it would
-// make idealCost mean different things on the two routes, and idealCost is the headline
-// efficiency-at-parity metric. Change it for both routes or neither.
+// Per-message usage RECOVERY (2026-08-11). The OpenRouter Anthropic skin zeroes usage on
+// the streamed assistant events, but Claude Code's OWN session transcript records the real
+// per-response numbers — that is where its final aggregate comes from. Verified against the
+// provider: every transcript row's (input + cache_read + cache_creation) equals OpenRouter's
+// native_tokens_prompt for the matching generation, and output_tokens equals
+// native_tokens_completion (reasoning included, so it must NOT be added again).
+//
+// Without this the adapter published idealCost = realized and no breakPriced column at all,
+// which is cache-lucky and unusable in a cross-harness cost table.
+export function turnsFromTranscript(claudeHome, sessionId) {
+  const turns = [];
+  if (!claudeHome || !sessionId) return turns;
+  // <claude-home>/projects/<cwd-slug>/<session-id>.jsonl — the slug encodes the rundir, so
+  // find the file by session id rather than reconstructing the encoding.
+  let file = null;
+  const walk = (dir, depth = 0) => {
+    if (file || depth > 4) return;
+    let entries; try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (file) return;
+      if (e.isDirectory()) walk(join(dir, e.name), depth + 1);
+      else if (e.name === `${sessionId}.jsonl`) file = join(dir, e.name);
+    }
+  };
+  walk(join(claudeHome, 'projects'));
+  if (!file) return turns;
+
+  let text; try { text = readFileSync(file, 'utf8'); } catch { return turns; }
+  const seen = new Set();   // transcript repeats a message once per content block
+  for (const line of text.split('\n')) {
+    const tl = line.trim();
+    if (!tl || tl[0] !== '{') continue;
+    let ev; try { ev = JSON.parse(tl); } catch { continue; }
+    const m = ev.message;
+    if (!m || m.role !== 'assistant' || !m.usage || !m.id || seen.has(m.id)) continue;
+    const u = m.usage;
+    const cRead = u.cache_read_input_tokens || 0, cCreate = u.cache_creation_input_tokens || 0;
+    const inTot = (u.input_tokens || 0) + cRead + cCreate, out = u.output_tokens || 0;
+    if (!inTot && !out) continue;            // a zeroed row recovers nothing
+    seen.add(m.id);
+    turns.push({ in: inTot, cached: cRead, out });
+  }
+  return turns;
+}
+
+// LAST-RESORT cost path: aggregate-only, used solely when neither the stream nor the session
+// transcript yielded a turn distribution. Realized/naive from Claude Code's aggregate result
+// usage × our OpenRouter rate: cache_read at the cache rate, cache_creation at the 1.25x write
+// premium, fresh input + output at their rates.
+//
+// idealCost = realized here because cache-normalization needs the growing-prefix structure,
+// which an aggregate does not have. breakPriced and contextRewrites are NULL for the same
+// reason — an absent column is honest; a copy of another column is not. The normal path
+// (costsFromTurns, shared with codex/opencode) fills all of them; see turnsFromTranscript.
 //
 // costNaiveUsd matches the unified §3 B4 definition: EVERY input token — fresh, cached
 // and cache-written — charged at the full input rate. costContentUsd (unique context
@@ -125,6 +174,7 @@ function claudeCosts(resultUsage, price, costContentUsd = null) {
   return {
     costRealizedUsd: +realized.toFixed(6), idealCostUsd: +realized.toFixed(6),
     realFromTurnsUsd: +realized.toFixed(6), costNaiveUsd: +naive.toFixed(6),
+    breakPricedCostUsd: null, contextRewrites: null,
     costContentUsd,
   };
 }
@@ -239,7 +289,7 @@ export async function runClaudeCodeTask(task, {
     parsed = parseClaudeStream(r.stdout);
   }
   const wallMs = Date.now() - t0;
-  const { toolCalls, answer, resultUsage, numTurns, turns, errors } = parsed;
+  const { toolCalls, answer, resultUsage, numTurns, turns, sessionId, errors } = parsed;
 
   const { toolCounts, trajectory, stepsToFirstEdit } = buildTrajectory(toolCalls);
   const { finalPatch, patchHunks, patchFiles } = gitDiffPatch(rundir);
@@ -249,22 +299,27 @@ export async function runClaudeCodeTask(task, {
   // P7 (PLAN.md §3 B1). Per-message usage is real on the direct-Anthropic route and
   // zeroed through the OpenRouter Anthropic skin, so trust it only when it carries
   // tokens; otherwise log the aggregate and leave costContentUsd null.
-  const perTurnReal = turns.some(tu => tu.in > 0 || tu.out > 0);
-  let costContentUsd = null;
-  if (perTurnReal) {
-    let prevIn = 0, content = 0;
-    for (const tu of turns) {
-      content += (Math.max(0, tu.in - prevIn) * price.in + tu.out * price.out) / 1e6;
-      prevIn = tu.in;
-    }
-    costContentUsd = +content.toFixed(6);
+  // Stream first (direct-Anthropic route); then the session transcript, which keeps the real
+  // per-message numbers even when the skin zeroes the stream. Only when BOTH are empty does
+  // this degrade to the aggregate — an honest realized-only row with null breakPriced,
+  // never a fabricated turn distribution.
+  let turnSource = 'stream';
+  let realTurns = turns.some(tu => tu.in > 0 || tu.out > 0) ? turns : [];
+  if (!realTurns.length) {
+    realTurns = turnsFromTranscript(claudeHome, sessionId);
+    if (realTurns.length) turnSource = 'transcript';
   }
-  const turnsFile = persistTurns(label, perTurnReal ? turns : aggregateTurn(resultUsage), {
+  const perTurnReal = realTurns.length > 0;
+  const turnsFile = persistTurns(label, perTurnReal ? realTurns : aggregateTurn(resultUsage), {
     task: task.id, arm, harness: 'claude-code', model: apiModel, provider, price,
-    source: perTurnReal ? 'stream' : 'aggregate',
+    source: perTurnReal ? turnSource : 'aggregate',
   });
 
-  const costs = claudeCosts(resultUsage, price, costContentUsd);
+  // Shared arithmetic with opencode/codex whenever a real distribution exists, so the three
+  // harnesses' cost columns come from ONE code path and cannot drift apart.
+  const costs = perTurnReal
+    ? costsFromTurns(realTurns, price)
+    : claudeCosts(resultUsage, price, null);
   const shimTamperedFiles = verifyIntegrity({ integrity, runnerFiles, binDir, integrityStateDir });
   if (shimTamperedFiles.length) console.log(`  [SHIM-TAMPERED ${task.id || ''}] ${shimTamperedFiles.join(', ')} — test signals untrusted`);
   const escapeAudit = auditEscape({ jail, toolCalls, rundir, endMs: Date.now() });

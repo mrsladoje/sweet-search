@@ -323,7 +323,7 @@ export function auditEscape({ jail, toolCalls, rundir, endMs }) {
 // sums. An adapter with aggregate-only usage must report costContentUsd as null rather
 // than substituting one of the others.
 export function costsFromTurns(turns, price) {
-  const { idealUsd, realFromTurnsUsd } = costFromTurns(turns, price);
+  const { idealUsd, realFromTurnsUsd, breakPricedUsd, contextRewrites } = costFromTurns(turns, price);
   let prevIn = 0, naive = 0, content = 0;
   for (const tu of turns) {
     const newIn = Math.max(0, tu.in - prevIn);                 // context first seen this turn
@@ -335,6 +335,12 @@ export function costsFromTurns(turns, price) {
     costRealizedUsd: +realFromTurnsUsd.toFixed(6),
     idealCostUsd: +idealUsd.toFixed(6),
     realFromTurnsUsd: +realFromTurnsUsd.toFixed(6),
+    // breakPriced is the honest column when a lever can break the prefix cache; codex has
+    // published it since 2026-08-10 and the default analyzer reads it, so every adapter
+    // that has a real turn distribution must publish it too or its rows silently fall back
+    // to cache-lucky numbers in a cross-harness table.
+    breakPricedCostUsd: +breakPricedUsd.toFixed(6),
+    contextRewrites,
     costNaiveUsd: +naive.toFixed(6),
     costContentUsd: +content.toFixed(6),
     idealTurns: turns.length,
