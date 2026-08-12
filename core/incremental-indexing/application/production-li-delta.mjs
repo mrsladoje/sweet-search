@@ -10,6 +10,50 @@ import {
   nextSegmentSeq,
 } from '../infrastructure/li-segment-state.mjs';
 
+/**
+ * Step 2b: PROCESS-scoped verified-identity cache for the positions-only reader.
+ * segment path -> filesystem identity key of the last read whose whole-file
+ * CRC32 was verified.
+ *
+ * It must be process-scoped, not instance-scoped: the index maintainer builds a
+ * FRESH reconciler adapter for every tick, so an instance-scoped cache would be
+ * empty on every tick and every tick would re-checksum the whole segment set —
+ * which would make this step slower than what it replaces, not faster.
+ *
+ * `_loadSegmented` prunes the entries of a segment directory whose segments
+ * leave the manifest. The size cap below is the second bound, for a process
+ * that touches many short-lived index directories (test runs, multi-repo
+ * tooling). Clearing only costs one extra verified read per live segment.
+ */
+const segmentIdentityCache = new Map();
+const SEGMENT_IDENTITY_CACHE_MAX = 4096;
+
+/** Test seam: drop all remembered segment identities. */
+export function resetSegmentIdentityCache() {
+  segmentIdentityCache.clear();
+}
+
+function defaultPositionsCache() {
+  if (segmentIdentityCache.size > SEGMENT_IDENTITY_CACHE_MAX) segmentIdentityCache.clear();
+  return segmentIdentityCache;
+}
+
+/**
+ * Step 2b kill switch — `SWEET_SEARCH_LI_POSITIONS_ONLY=0|off|false|no` puts the
+ * delta path back on the HEAD full-token loader.
+ *
+ * This exists so proof obligation 4.2 ("replay a fixed dirty-file sequence with
+ * the flags on and off; the artifacts must be byte-identical") can be executed
+ * as a real two-arm replay rather than as two variants of the same new reader.
+ * It is read once per delta call, off the query path.
+ */
+function positionsOnlyEnabled(env = process.env) {
+  const raw = env.SWEET_SEARCH_LI_POSITIONS_ONLY;
+  if (raw == null || raw === '') return true; // default-on
+  const token = String(raw).trim().toLowerCase();
+  return !(token === '0' || token === 'off' || token === 'false' || token === 'no');
+}
+
 function readJson(filePath, fallback = null) {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
@@ -118,6 +162,7 @@ export async function applyLateInteractionDelta({
   pickLiInput,
   onProgress = null,
   readerCache = null,
+  positionsCache = null,
 }) {
   const progress = typeof onProgress === 'function'
     ? (phase) => { onProgress(phase); }
@@ -144,7 +189,32 @@ export async function applyLateInteractionDelta({
     index = readerCache.index;
     progress('li:init-cached');
   } else {
-    index = new LateInteractionIndex({ indexPath, loadExisting: true });
+    // Step 2b POSITIONS-ONLY READER. Everything this function reads off the
+    // loaded index is either manifest config (tokenDim, quantBits, …, copied
+    // onto the writer) or segment bookkeeping (`_docSegmentPositions`,
+    // `_segments[].count`). It never reads a token. Flattening every segment's
+    // token slab into `documents` cost ~1.4 GB of fresh external allocation on
+    // every working tick and produced the RSS peaks that tripped the recycle
+    // ceiling. The legacy single-file path is excluded: `rewriteLegacyIndex`
+    // MUTATES `index.documents` and re-saves it, so it needs the full load.
+    //
+    // SCOPE, stated so no soak gate is written against a bound this does not
+    // give: this removes the flatten from the RECONCILE tick only. The inline
+    // maintenance drain that runs immediately after every tick
+    // (`drainMaintenanceInline`, default-ON) still performs the identical full
+    // load inside `liSegmentHandler` and `mergeLiSegments`. Those two are
+    // single-segment compaction and segment merge, which are explicitly
+    // deferred (they are not byte-identical to today's compactor when a live
+    // document id exists in two segments). So a tick whose drain runs a
+    // `li_segment` or `li_segments` job still pays the ~1.5-1.7 GB peak, and
+    // any RSS soak must report drain ticks and non-drain ticks separately.
+    const lean = !!segmented && positionsOnlyEnabled();
+    index = new LateInteractionIndex({
+      indexPath,
+      loadExisting: true,
+      positionsOnly: lean,
+      positionsCache: lean ? (positionsCache || defaultPositionsCache()) : null,
+    });
     await index.init();
     progress('li:init');
     if (cacheable) {

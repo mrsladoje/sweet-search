@@ -475,20 +475,6 @@ class ProductionReconcileAdapter {
     // writes — preserving per-file enrichment semantics inside one tick.
     const graphRoDb = graphDb;
 
-    // Resident HNSW + float store (E.1 load-once; E.2 daemon-scoped singleton).
-    const live = liveHnswEnabled() ? this._getLiveStore(indexPath) : null;
-    let index = live?.index || null;
-    let floatStore = live?.floatStore || null;
-    if (!index) {
-      index = new BinaryHNSWIndex({ indexPath, stalePath: `${indexPath}.stale.bin`, floatDimension: this.modelInfo.hnswDimension });
-      try { await index.load(indexPath); } catch { await index.init(); }
-    }
-    const binaryVectorsBefore = index.idToIndex?.size ?? 0;
-    if (!floatStore) {
-      floatStore = new FloatVectorStore();
-      try { await floatStore.loadOrInit(getFloatStorePath(indexPath), this.modelInfo.hnswDimension); } catch { /* fall back to fresh */ }
-    }
-
     if (chunkCutoffEnabled() && !this._cutoffCache) {
       this._cutoffCache = loadCutoffCache(this.stateDir);
       this._cutoffDirty = false;
@@ -513,10 +499,24 @@ class ProductionReconcileAdapter {
       graphDb,
       graphRoDb,
       graphHasFts,
-      index,
-      floatStore,
-      binaryVectorsBefore,
-      live: !!live,
+      // Step 2a LAZY TICK STORES. The binary HNSW + float store are NOT loaded
+      // here. On this repository they are ~253 MB of fresh allocation, and an
+      // idle tick (empty dirty set) never touches them, so eagerly loading them
+      // every ~20 s was pure churn. They are materialised on first use through
+      // `ctx.ensureStores()` — from `applyBinaryHNSWDelta` (a file actually has
+      // vector ops) and from `finalizeTick` (staged adds, or a resident live
+      // store that may be due for a deferred disk save).
+      index: null,
+      floatStore: null,
+      binaryVectorsBefore: 0,
+      storesLoaded: false,
+      // `live` is resolved EAGERLY: it is an environment read, not a load. The
+      // finalize guard below tests `ctx.live` to decide whether a resident
+      // store may need flushing, so deferring it would make that guard circular
+      // (no stores loaded ⇒ no `live` ⇒ never flush) and strand a pending
+      // deferred disk save across idle ticks under
+      // SWEET_SEARCH_RECONCILE_LIVE_HNSW=1.
+      live: liveHnswEnabled(),
       // Accumulated across the tick:
       floatUpserts: [],
       floatRemoveIds: [],
@@ -527,6 +527,39 @@ class ProductionReconcileAdapter {
       persistedFiles: new Set(),
       pendingAdds: [],
     };
+
+    // Step 2a: single-flight loader for the tick-scoped stores. Idempotent and
+    // safe to call from anywhere in the tick; the first call pays the load, all
+    // later calls resolve on the same promise. Under E.2 (live HNSW) the
+    // resident registry entry usually satisfies it with no disk read at all.
+    let storesPromise = null;
+    const loadStores = async () => {
+      const live = ctx.live ? this._getLiveStore(ctx.indexPath) : null;
+      let index = live?.index || null;
+      let floatStore = live?.floatStore || null;
+      if (!index) {
+        index = new BinaryHNSWIndex({
+          indexPath: ctx.indexPath,
+          stalePath: `${ctx.indexPath}.stale.bin`,
+          floatDimension: this.modelInfo.hnswDimension,
+        });
+        try { await index.load(ctx.indexPath); } catch { await index.init(); }
+      }
+      ctx.index = index;
+      // Captured BEFORE the float store loads, exactly as the eager path did.
+      ctx.binaryVectorsBefore = index.idToIndex?.size ?? 0;
+      if (!floatStore) {
+        floatStore = new FloatVectorStore();
+        try {
+          await floatStore.loadOrInit(getFloatStorePath(ctx.indexPath), this.modelInfo.hnswDimension);
+        } catch { /* fall back to fresh */ }
+      }
+      ctx.floatStore = floatStore;
+      ctx.storesLoaded = true;
+      return ctx;
+    };
+    ctx.ensureStores = () => (storesPromise ??= loadStores());
+
     this._tickCtx = ctx;
     this._lastPersistedFiles = ctx.persistedFiles;
     return ctx;
@@ -574,6 +607,10 @@ class ProductionReconcileAdapter {
       // byte-identical across batch / rebuild / compaction construction paths.
       const pending = ctx.pendingAdds || [];
       if (pending.length > 0) {
+        // Step 2a: staged adds imply `applyBinaryHNSWDelta` already opened the
+        // stores; this is the belt-and-braces no-op that keeps the invariant
+        // local rather than inherited.
+        await ctx.ensureStores?.();
         pending.sort((a, b) => (a.addId < b.addId ? -1 : a.addId > b.addId ? 1 : 0));
         let done = 0;
         for (const op of pending) {
@@ -588,7 +625,15 @@ class ProductionReconcileAdapter {
 
       if (ctx.live) {
         const entry = liveStoreRegistry.get(ctx.indexPath);
-        if (entry) {
+        // Step 2a: run the resident-store bookkeeping when this tick actually
+        // opened the stores, OR when an earlier tick left a resident index in
+        // the registry (that index may carry a deferred, not-yet-saved delta
+        // and must still be re-evaluated for the save thresholds). When neither
+        // holds there is nothing resident and nothing staged, so the whole
+        // block is a no-op and the stores stay unloaded. `ensureStores()` costs
+        // no disk read in the resident case — it adopts `entry.index`.
+        if (entry && (ctx.storesLoaded || entry.index)) {
+          await ctx.ensureStores();
           entry.index = ctx.index;
           entry.floatStore = ctx.floatStore;
           entry.insertsSinceSave += ctx.append;
@@ -621,6 +666,8 @@ class ProductionReconcileAdapter {
           }
         }
       } else if (ctx.append > 0 || ctx.tombstone > 0) {
+        // Non-zero op counters imply `applyBinaryHNSWDelta` opened the stores.
+        await ctx.ensureStores?.();
         await ctx.index.save(ctx.indexPath);
         this.progress('production:binary-hnsw-saved');
         await flushFloatStore({
@@ -1107,7 +1154,13 @@ class ProductionReconcileAdapter {
     // insertions are deferred to finalizeTick, where they run sorted-by-id so
     // the graph is reproducible (G1 byte-identity). We still report the per-file
     // append/tombstone counts here for the tick counters.
-    if (ctx?.index) {
+    // Step 2a: the batched path is selected by the PRESENCE of a tick context,
+    // not by an already-loaded index — `ctx.index` is now lazy and is null until
+    // the first file with vector ops asks for it. Keying the branch on
+    // `ctx.index` would have silently rerouted every tick to the per-file path
+    // (per-file HNSW saves, no persist-before-advance).
+    if (ctx && (ctx.ensureStores || ctx.index)) {
+      if (!ctx.index && ctx.ensureStores) await ctx.ensureStores();
       const index = ctx.index;
       let append = 0; let tombstone = 0;
       // One bitmap load + one save+fsync per file's ops instead of per
