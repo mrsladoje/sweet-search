@@ -198,6 +198,7 @@ export function createEvaluatorRuntime(options) {
     const resolvedIds = [];
     const errorIds = new Set();
     const missingReportIds = new Set();
+    const noTestEvidenceIds = new Set();
     let gradedAny = false;
     for (let offset = 0; offset < nonEmpty.length; offset += batchSize) {
       const chunk = nonEmpty.slice(offset, offset + batchSize);
@@ -222,7 +223,7 @@ export function createEvaluatorRuntime(options) {
           gradedAny = true;
           const batchReport = JSON.parse(readFileSync(batchPaths.report, 'utf8'));
           mergeEvaluationReportFile(reportPath, batchReport);
-          applyBatchScores(batchReport.items || [], knownChunk, score, resolvedIds, errorIds, missingReportIds);
+          applyBatchScores(batchReport.items || [], knownChunk, score, resolvedIds, errorIds, missingReportIds, noTestEvidenceIds);
         } else {
           markMissing(knownChunk, errorIds, missingReportIds);
           console.error(`[grade ${arm} rep${rep}] eval.py produced NO report (batch @${offset}) — ${knownChunk.length} task(s) left ungraded`);
@@ -241,6 +242,7 @@ export function createEvaluatorRuntime(options) {
       score,
       error_ids: [...errorIds],
       missing_report_ids: [...missingReportIds],
+      no_test_evidence_ids: [...noTestEvidenceIds],
       graded_any: gradedAny,
       stripped_paths: strippedByTask,
     };
@@ -251,6 +253,14 @@ export function createEvaluatorRuntime(options) {
     try {
       execFileSync(venvPython, [srEvalRunner,
         '--json', batchPaths.tasks, '--patches', batchPaths.patches, '--max-workers', '2',
+        // --reapply-install-seds (D-1 fix, 2026-08-12). eval.py's `git reset --hard HEAD`
+        // reverts the image author's uncommitted working-tree shims (SDK pins, TFM trims)
+        // that the image was frozen with, so the container asks for an SDK it does not have.
+        // env-ledger-sweep.mjs has ALWAYS passed this flag when validating gold, so gold was
+        // certified under one grader configuration and rollouts were graded under another.
+        // dotnet__yarp-2825 is the only task in the rotate20 set carrying `sed -i` install
+        // steps, and all 12 of its rows recorded f2pFrac=0 with no test ever executed.
+        '--reapply-install-seds',
         '--report-json', batchPaths.report, ...networkFlags], {
         cwd: predDir,
         env: {
@@ -262,7 +272,7 @@ export function createEvaluatorRuntime(options) {
     } catch { /* non-zero is normal when any task is unresolved */ }
   }
 
-  function applyBatchScores(items, predictions, score, resolvedIds, errorIds, missingReportIds) {
+  function applyBatchScores(items, predictions, score, resolvedIds, errorIds, missingReportIds, noTestEvidenceIds = new Set()) {
     const itemIds = new Set(items.map(item => item.instance_id));
     for (const prediction of predictions) {
       if (!itemIds.has(prediction.instance_id)) {
@@ -275,10 +285,29 @@ export function createEvaluatorRuntime(options) {
         errorIds.add(item.instance_id);
         continue;
       }
+      // --- D-1 TEST-EVIDENCE TRIPWIRE (2026-08-12) ---
+      // eval.py raises no exception when the suite never runs, so a build/SDK outage and a
+      // genuine all-tests-failed run both arrive here as from_fail_to_pass == []. Scoring
+      // the first as f2pFrac=0 publishes a fabricated behavioral failure: that is exactly
+      // how 12 dotnet__yarp-2825 rows were recorded gradeable=true with zero executed tests.
+      // A task whose own log parser recovered NO test-result line has produced no evidence
+      // of anything, so it must never be scored. Callers stamp gradeable=false and decide,
+      // from whether EVERY patch on the task is evidence-free, whether this is a grader
+      // defect (task-wide) or the agent's own patch breaking the build (patch-specific).
+      // Older reports have no n_test_results field; treat missing as "unknown, do not gate"
+      // so a stale report degrades to today's behavior rather than voiding every row.
+      if (item.n_test_results === 0) {
+        noTestEvidenceIds.add(item.instance_id);
+        score[item.instance_id] = { f2pFrac: null, p2pOk: null, status: 'NO-TEST-EVIDENCE', nTestResults: 0 };
+        console.error(`[grade] ${item.instance_id}: NO TEST EVIDENCE — the log parser recovered 0 test results; `
+          + `row marked ungradeable instead of scored f2pFrac=0 (exit=${item.exit_code}, log=${item.log_path || 'n/a'})`);
+        continue;
+      }
       const spec = taskById.get(item.instance_id) || {};
       const grade = gradeReportItem(item, spec, taskOverrides.tasks?.[item.instance_id] || {});
       score[item.instance_id] = {
         f2pFrac: grade.f2pFrac, p2pOk: grade.p2pOk, status: grade.status,
+        nTestResults: item.n_test_results ?? null,
       };
       if (grade.status === 'FULL') resolvedIds.push(item.instance_id);
     }

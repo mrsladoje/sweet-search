@@ -118,6 +118,10 @@ try {
     'parser.add_argument("--max-workers", type=int, required=True)',
     'parser.add_argument("--report-json", required=True)',
     'parser.add_argument("--network")',
+    // The real grader MUST pass this: without it eval.py reverts the image author's
+    // working-tree SDK/TFM shims and the suite cannot even start (the 12 yarp rows).
+    // required=True here so dropping the flag again fails this test instead of shipping.
+    'parser.add_argument("--reapply-install-seds", action="store_true", required=True)',
     'args = parser.parse_args()',
     'tasks = json.loads(Path(args.json).read_text())',
     'patches = {row["instance_id"] for row in json.loads(Path(args.patches).read_text())}',
@@ -127,8 +131,11 @@ try {
     '    instance_id = task["instance_id"]',
     '    assert instance_id in patches',
     '    log_path = Path("logs") / f"{instance_id}_log.txt"',
-    '    log_path.write_text("synthetic green log\\n")',
-    '    items.append({"instance_id": instance_id, "from_fail_to_pass": ["target"], "failed_from_pass_to_pass": [], "passed_match": True, "exit_code": 0, "log_path": str(log_path), "error": ""})',
+    // task-9 stands for a build/SDK outage: eval.py raises nothing, the report item looks
+    // ordinary, and the only signal that no test ran is n_test_results == 0.
+    '    blind = instance_id == "task-9"',
+    '    log_path.write_text("no test ran\\n" if blind else "synthetic green log\\n")',
+    '    items.append({"instance_id": instance_id, "from_fail_to_pass": [] if blind else ["target"], "failed_from_pass_to_pass": [], "passed_match": not blind, "exit_code": 1 if blind else 0, "n_test_results": 0 if blind else 42, "log_path": str(log_path), "error": ""})',
     'payload = {"max_workers": args.max_workers, "total": len(items), "all_ok": True, "items": items}',
     'Path(args.report_json).write_text(json.dumps(payload))',
     '',
@@ -157,7 +164,15 @@ try {
     else process.env.NO_IMAGE_GC = previousGc;
   }
   const integratedDir = path.join(dir, 'results/synthetic-ten/sweet');
-  assert.equal(grade.resolved_ids.length, 10);
+  // D-1 tripwire: nine tasks produced test results and resolve; task-9's log carried no
+  // test result at all, so it must be reported as evidence-free rather than scored as a
+  // failure. Scoring it f2pFrac=0 is what published 12 fabricated yarp failures.
+  assert.equal(grade.resolved_ids.length, 9);
+  assert.equal(grade.resolved_ids.includes('task-9'), false);
+  assert.deepEqual(grade.no_test_evidence_ids, ['task-9']);
+  assert.equal(grade.score['task-9'].status, 'NO-TEST-EVIDENCE');
+  assert.equal(grade.score['task-9'].f2pFrac, null);
+  assert.equal(grade.score['task-1'].nTestResults, 42);
   assert.equal(JSON.parse(readFileSync(path.join(integratedDir, 'report.json'), 'utf8')).items.length, 10);
   assert.equal(JSON.parse(readFileSync(path.join(integratedDir, 'patches.json'), 'utf8')).length, 10);
   assert.equal(JSON.parse(readFileSync(path.join(integratedDir, 'tasks.json'), 'utf8')).length, 10);

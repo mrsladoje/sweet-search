@@ -148,10 +148,15 @@ console.log('\ngradeArm wiring (stub evaluator, both arms):');
     'p.add_argument("--json", required=True); p.add_argument("--patches", required=True)',
     'p.add_argument("--max-workers", type=int); p.add_argument("--report-json", required=True)',
     'p.add_argument("--network")',
+    // The grader must re-apply install_config's working-tree sed steps; without the flag the
+    // container reverts the image author's SDK/TFM pins and no test can run (see D-1).
+    'p.add_argument("--reapply-install-seds", action="store_true", required=True)',
     'a = p.parse_args()',
     'patches = json.loads(Path(a.patches).read_text())',
     'Path("seen.json").write_text(json.dumps(patches))',
-    'items = [{"instance_id": x["instance_id"], "from_fail_to_pass": ["t"],',
+    // n_test_results > 0: this fixture is about patch stripping, so it must clear the
+    // test-evidence tripwire rather than trip it.
+    'items = [{"instance_id": x["instance_id"], "from_fail_to_pass": ["t"], "n_test_results": 7,',
     '          "failed_from_pass_to_pass": [], "error": ""} for x in patches]',
     'Path(a.report_json).write_text(json.dumps({"total": len(items), "all_ok": True, "items": items}))',
     '',
