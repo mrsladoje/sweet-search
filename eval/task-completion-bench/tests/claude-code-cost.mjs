@@ -13,7 +13,7 @@
 // native_tokens_completion (reasoning already folded in, so it must NOT be re-added).
 //
 // Standalone: `node tests/claude-code-cost.mjs` — exit 1 on fail.
-import { turnsFromTranscript } from '../harness/claude-code-task-runner.mjs';
+import { turnsFromTranscript, sidechainTurnSets, addSidechainCosts, READ_PAGES_TOOL_NOTE } from '../harness/claude-code-task-runner.mjs';
 import { costsFromTurns } from '../harness/agent-runner-shared.mjs';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -79,6 +79,54 @@ assert(approx(s.breakPricedCostUsd, +expBrk.toFixed(6)), `shrunk context: breakP
 assert(approx(s.idealCostUsd, +expIdeal.toFixed(6)), `shrunk context: ideal = ${expIdeal.toFixed(6)}`, `got ${s.idealCostUsd}`);
 assert(s.contextRewrites === 1, 'a shrunk context is counted as a rewrite', `got ${s.contextRewrites}`);
 assert(s.breakPricedCostUsd > s.idealCostUsd, 'breakPriced exceeds ideal once the cache is broken — the whole point of the column');
+
+// --- D-2: delegated subagents must be priced (2026-08-12) ---
+// Claude Code writes each subagent's conversation to <session-id>/subagents/agent-*.jsonl,
+// NOT into the main transcript, and its aggregate `result` usage excludes them too. Every
+// delegated request was billed by the provider and recorded at zero. Native delegated in
+// 11 of 34 rows on the 2026-08-11 Claude run and sweet in 3, so the omission moved the
+// comparison in sweet's favour — an accounting exploit, not a product win.
+console.log('\nsidechain pricing (D-2):');
+const subDir = join(projDir, SESSION, 'subagents');
+mkdirSync(subDir, { recursive: true });
+writeFileSync(join(subDir, 'agent-aaa.jsonl'), [
+  row('sub-1', 500, 0, 0, 40), row('sub-1', 500, 0, 0, 40),   // repeated content blocks again
+  row('sub-2', 100, 500, 0, 20),
+].join('\n') + '\n');
+writeFileSync(join(subDir, 'agent-bbb.jsonl'), [row('sub-3', 300, 0, 0, 10)].join('\n') + '\n');
+// A non-transcript file in the same directory must not be mistaken for one.
+writeFileSync(join(subDir, 'notes.txt'), 'ignore me\n');
+
+const sets = sidechainTurnSets(ROOT, SESSION);
+assert(sets.length === 2, 'one turn set per subagent transcript', `got ${sets.length}`);
+assert(sets[0].turns.length === 2 && sets[1].turns.length === 1, 'subagent turns deduped by message id',
+  JSON.stringify(sets.map(s => s.turns.length)));
+assert(turnsFromTranscript(ROOT, SESSION).length === 3, 'main-context recovery is unchanged by the subagent files');
+
+const mainCosts = costsFromTurns(turns, price);
+const subCosts = sets.map(s => costsFromTurns(s.turns, price));
+const total = addSidechainCosts(mainCosts, subCosts);
+const expReal = +(mainCosts.costRealizedUsd + subCosts.reduce((a, c) => a + c.costRealizedUsd, 0)).toFixed(6);
+assert(approx(total.costRealizedUsd, expReal), 'realized = main + every subagent context', `${total.costRealizedUsd} vs ${expReal}`);
+assert(total.costRealizedUsd > mainCosts.costRealizedUsd, 'inclusive cost is strictly above main-only');
+assert(approx(total.costRealizedMainOnlyUsd, mainCosts.costRealizedUsd), 'main-only cost is retained beside the total — the reproduction check for the old ledger');
+assert(total.sidechainCount === 2, 'delegated context count is published', `got ${total.sidechainCount}`);
+assert(approx(total.costSidechainUsd, +subCosts.reduce((a, c) => a + c.costRealizedUsd, 0).toFixed(6)), 'delegated spend is published on its own');
+// Each subagent is its own growing prefix; folding them into the main sequence would make
+// the prefix diff meaningless, so breakPriced is summed per context, never re-derived.
+assert(approx(total.breakPricedCostUsd, +(mainCosts.breakPricedCostUsd + subCosts.reduce((a, c) => a + c.breakPricedCostUsd, 0)).toFixed(6)),
+  'breakPriced is summed per context, not recomputed over a merged sequence');
+// An absent column must stay absent: a partial sum is worse than an honest null.
+const nullMain = { ...mainCosts, breakPricedCostUsd: null };
+assert(addSidechainCosts(nullMain, subCosts).breakPricedCostUsd === null, 'a null main column stays null after adding subagents');
+assert(addSidechainCosts(mainCosts, []).costRealizedUsd === mainCosts.costRealizedUsd, 'no subagents leaves every column byte-identical');
+
+// D-4: the shared tool-argument note must stay arm-symmetric and content-free. If it ever
+// carries retrieval or strategy advice it stops being a harness repair and becomes an
+// unmeasured prompt lever handed to both arms.
+console.log('\nshared tool-argument note (D-4):');
+assert(/pages/.test(READ_PAGES_TOOL_NOTE), 'the note names the parameter it repairs');
+assert(!/(ss-|sweet|search first|grep|retriev)/i.test(READ_PAGES_TOOL_NOTE), 'the note carries no retrieval or strategy content', READ_PAGES_TOOL_NOTE);
 
 rmSync(ROOT, { recursive: true, force: true });
 console.log(ok ? '\nALL PASS' : '\nFAILED');

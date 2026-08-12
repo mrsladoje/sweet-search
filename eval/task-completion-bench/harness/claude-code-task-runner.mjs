@@ -21,6 +21,14 @@ import {
   CLAUDE_SYSTEM_OVERRIDE as SWEET_SEARCH_SYSTEM_OVERRIDE,
 } from '../../../scripts/install-claude-system-prompt.js';
 
+// D-4: shared, arm-symmetric tool-usage note. Kept to the single malformed argument it
+// repairs — it names no file, tool strategy or retrieval policy, so neither arm gains
+// anything from it beyond not wasting a call on a rejected parameter.
+export const READ_PAGES_TOOL_NOTE =
+  'Tool argument note: the Read tool\'s `pages` parameter is optional and applies only to PDF '
+  + 'files. Omit it entirely for every non-PDF file. Never pass it as an empty string — an empty '
+  + '`pages` value is rejected and the read is wasted.';
+
 // Classify a shell command run via Claude Code's Bash tool into a bucket. Claude Code
 // passes the raw command (no `bash -lc` wrapper like codex), so match directly.
 function classifyShell(cmd) {
@@ -115,10 +123,14 @@ export function parseClaudeStream(stdout) {
 // Without this the adapter published idealCost = realized and no breakPriced column at all,
 // which is cache-lucky and unusable in a cross-harness cost table.
 export function turnsFromTranscript(claudeHome, sessionId) {
-  const turns = [];
-  if (!claudeHome || !sessionId) return turns;
-  // <claude-home>/projects/<cwd-slug>/<session-id>.jsonl — the slug encodes the rundir, so
-  // find the file by session id rather than reconstructing the encoding.
+  const file = findSessionFile(claudeHome, sessionId);
+  return file ? turnsFromTranscriptFile(file) : [];
+}
+
+// <claude-home>/projects/<cwd-slug>/<session-id>.jsonl — the slug encodes the rundir, so
+// find the file by session id rather than reconstructing the encoding.
+function findSessionFile(claudeHome, sessionId) {
+  if (!claudeHome || !sessionId) return null;
   let file = null;
   const walk = (dir, depth = 0) => {
     if (file || depth > 4) return;
@@ -130,8 +142,12 @@ export function turnsFromTranscript(claudeHome, sessionId) {
     }
   };
   walk(join(claudeHome, 'projects'));
-  if (!file) return turns;
+  return file;
+}
 
+/** Per-message usage from one transcript file, in trajectory order. */
+export function turnsFromTranscriptFile(file) {
+  const turns = [];
   let text; try { text = readFileSync(file, 'utf8'); } catch { return turns; }
   const seen = new Set();   // transcript repeats a message once per content block
   for (const line of text.split('\n')) {
@@ -148,6 +164,53 @@ export function turnsFromTranscript(claudeHome, sessionId) {
     turns.push({ in: inTot, cached: cRead, out });
   }
   return turns;
+}
+
+// --- D-2 SIDECHAIN PRICING (2026-08-12) ---
+// Claude Code writes each delegated subagent's conversation to its OWN transcript at
+// <session-id>/subagents/agent-*.jsonl, NOT into the main session file. turnsFromTranscript
+// stops at the main file, and the CLI's aggregate `result` usage does not include subagents
+// either — so every delegated request was billed by the provider and priced at zero here.
+// That is an accounting exploit in sweet's favour on any harness where native delegates more:
+// native used sidechains in 8/17 Claude cells, sweet in 2/17.
+//
+// Each subagent is a SEPARATE context with its own growing prefix, so its turns are priced as
+// their own sequence and the totals are summed. Folding them into the main sequence would make
+// the prefix diff meaningless and corrupt breakPriced/contextRewrites.
+export function sidechainTurnSets(claudeHome, sessionId) {
+  const file = findSessionFile(claudeHome, sessionId);
+  if (!file) return [];
+  const dir = join(file.replace(/\.jsonl$/, ''), 'subagents');
+  let entries; try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+  const sets = [];
+  for (const e of entries.filter(x => x.isFile() && x.name.endsWith('.jsonl')).sort((a, b) => a.name < b.name ? -1 : 1)) {
+    const turns = turnsFromTranscriptFile(join(dir, e.name));
+    if (turns.length) sets.push({ name: e.name, turns });
+  }
+  return sets;
+}
+
+// Sum a main-context cost object with each subagent context's own cost object. Main-only
+// values are KEPT alongside (…MainOnlyUsd) so the pre-repair ledger stays reproducible from
+// the same row — that is the D-2 acceptance check, not a separate derivation.
+// A null column stays null: if the main context could not produce breakPriced, the total
+// cannot either, and a partial sum would be worse than an honest absence.
+export function addSidechainCosts(mainCosts, sidechainCosts) {
+  const SUM = ['costRealizedUsd', 'idealCostUsd', 'realFromTurnsUsd', 'breakPricedCostUsd',
+    'costNaiveUsd', 'costContentUsd', 'contextRewrites', 'idealTurns'];
+  const out = { ...mainCosts };
+  for (const k of SUM) {
+    if (mainCosts[k] == null) { out[k] = null; continue; }
+    let total = mainCosts[k];
+    for (const c of sidechainCosts) total += (c[k] ?? 0);
+    out[k] = k === 'contextRewrites' || k === 'idealTurns' ? total : +total.toFixed(6);
+  }
+  out.costRealizedMainOnlyUsd = mainCosts.costRealizedUsd ?? null;
+  out.idealCostMainOnlyUsd = mainCosts.idealCostUsd ?? null;
+  out.breakPricedCostMainOnlyUsd = mainCosts.breakPricedCostUsd ?? null;
+  out.costSidechainUsd = +sidechainCosts.reduce((a, c) => a + (c.costRealizedUsd || 0), 0).toFixed(6);
+  out.sidechainCount = sidechainCosts.length;
+  return out;
 }
 
 // LAST-RESORT cost path: aggregate-only, used solely when neither the stream nor the session
@@ -268,6 +331,15 @@ export async function runClaudeCodeTask(task, {
   const args = [
     '-p', prompt, '--add-dir', rundir,
   ];
+  // --- D-4 EMPTY `pages` PARAMETER (2026-08-12) ---
+  // Claude Code's Read tool takes an optional `pages` string for PDFs and rejects "" with
+  // `Invalid pages parameter: ""`. The backbone here is not a Claude model, and it fills the
+  // optional string rather than omitting it: 68 native and 6 sweet Read calls died this way
+  // on the 2026-08-11 run, a pure harness-adapter tax that inflated NATIVE's Claude cost.
+  // The note is byte-identical for both arms and carries no retrieval or strategy content,
+  // so it creates no head-to-head differential — a later native improvement from this fix is
+  // a repair of our own defect and must never be reported as a sweet regression.
+  args.push('--append-system-prompt', READ_PAGES_TOOL_NOTE);
   if (sweet) args.push('--append-system-prompt', SWEET_SEARCH_SYSTEM_OVERRIDE);
   // Append rather than replace Claude Code's native system prompt so its standard coding-agent
   // and tool behavior remains intact. bypassPermissions avoids a headless permission hang.
@@ -317,9 +389,20 @@ export async function runClaudeCodeTask(task, {
 
   // Shared arithmetic with opencode/codex whenever a real distribution exists, so the three
   // harnesses' cost columns come from ONE code path and cannot drift apart.
-  const costs = perTurnReal
+  const mainCosts = perTurnReal
     ? costsFromTurns(realTurns, price)
     : claudeCosts(resultUsage, price, null);
+  // D-2: price every delegated request too. Each subagent transcript is its own context.
+  const sideSets = sidechainTurnSets(claudeHome, sessionId);
+  sideSets.forEach((s, i) => persistTurns(`${label}__sidechain-${i}`, s.turns, {
+    task: task.id, arm, harness: 'claude-code', model: apiModel, provider, price,
+    source: 'transcript-sidechain', sidechainFile: s.name,
+  }));
+  const costs = addSidechainCosts(mainCosts, sideSets.map(s => costsFromTurns(s.turns, price)));
+  if (sideSets.length) {
+    console.log(`  [sidechain ${task.id || ''} ${arm}] ${sideSets.length} delegated context(s), `
+      + `${sideSets.reduce((a, s) => a + s.turns.length, 0)} turn(s), +$${costs.costSidechainUsd} on top of main $${costs.costRealizedMainOnlyUsd}`);
+  }
   const shimTamperedFiles = verifyIntegrity({ integrity, runnerFiles, binDir, integrityStateDir });
   if (shimTamperedFiles.length) console.log(`  [SHIM-TAMPERED ${task.id || ''}] ${shimTamperedFiles.join(', ')} — test signals untrusted`);
   const escapeAudit = auditEscape({ jail, toolCalls, rundir, endMs: Date.now() });
@@ -335,6 +418,7 @@ export async function runClaudeCodeTask(task, {
     stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
     exitReason: exitReasonFrom(r),
     usage: resultUsage || {}, idealTurns: numTurns,
+    sidechainTurns: sideSets.reduce((a, s) => a + s.turns.length, 0),
     ...costs, turnsFile,
     wallMs, trajectory, finalAssistantText: answer,
     agentErrors: errors.slice(0, 5), startRetried,

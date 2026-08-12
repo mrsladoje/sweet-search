@@ -597,20 +597,62 @@ for (const rep of repsToGrade) {
     const report = gradeArm(arm, preds, runId, rep);
     const resolvedIds = new Set(report?.resolved_ids || []);
     const errorIds = new Set(report?.error_ids || []);
+    // D-1 tripwire: tasks whose grading log carried no framework test-result line at all.
+    // They are NOT gradeable — scoring them f2pFrac=0 invents a behavioral failure.
+    const noEvidenceIds = new Set(report?.no_test_evidence_ids || []);
     const score = report?.score || {};
     // Grader test-collision fix: which agent edits (if any) were discarded because
     // they collided with the hidden test patch. Empty list on a normal task.
     const strippedPaths = report?.stripped_paths || {};
     for (const row of rows) if (row.arm === arm && row.rep === rep) {
-      row.gradeable = !errorIds.has(row.taskId);
+      row.noTestEvidence = noEvidenceIds.has(row.taskId);
+      row.testResults = score[row.taskId]?.nTestResults ?? null;
+      row.gradeable = !errorIds.has(row.taskId) && !row.noTestEvidence;
       row.resolved = row.gradeable ? resolvedIds.has(row.taskId) : null;
       row.f2pFrac = row.gradeable ? (score[row.taskId]?.f2pFrac ?? null) : null;
-      row.resolveStatus = row.gradeable ? (score[row.taskId]?.status ?? null) : null;
+      row.resolveStatus = row.gradeable ? (score[row.taskId]?.status ?? null)
+        : (row.noTestEvidence ? 'NO-TEST-EVIDENCE' : null);
       row.strippedTestPaths = strippedPaths[row.taskId] || [];
     }
     const nStripped = Object.keys(strippedPaths).length;
     if (nStripped) console.log(`  ${arm} rep${rep}: test-collision strip fired on ${nStripped} task(s): ${Object.keys(strippedPaths).join(',')}`);
+    if (noEvidenceIds.size) console.log(`  ${arm} rep${rep}: *** NO TEST EVIDENCE on ${noEvidenceIds.size} task(s): ${[...noEvidenceIds].join(',')} — marked UNGRADEABLE, not scored zero ***`);
     console.log(`  ${arm} rep${rep}: resolved ${resolvedIds.size}/${preds.length - errorIds.size} gradeable  ids=${[...resolvedIds].join(',') || '(none)'}`);
+  }
+}
+
+// --- D-1 EVIDENCE SCOPE (2026-08-12) ---
+// A row with no test evidence has two possible causes, and they must not be merged:
+//   task-wide      EVERY arm×rep on the task is evidence-free → the image/grader never runs
+//                  the suite for any patch. Infrastructure. Regrade before publishing.
+//   patch-specific only some rows are evidence-free → that patch broke the build. That is a
+//                  real agent failure and belongs in the denominator as UNRESOLVED; dropping
+//                  it would flatter whichever arm broke the build.
+// The scope is stamped on the row so the analyzer can apply that split without re-deriving it.
+{
+  const byTask = new Map();
+  for (const row of rows) {
+    if (row.gradeable == null) continue;                 // never graded (GRADE=0)
+    const agg = byTask.get(row.taskId) || { total: 0, blind: 0 };
+    agg.total++; if (row.noTestEvidence) agg.blind++;
+    byTask.set(row.taskId, agg);
+  }
+  const taskWide = [], patchSpecific = [];
+  for (const row of rows) {
+    if (!row.noTestEvidence) continue;
+    const agg = byTask.get(row.taskId);
+    row.evidenceScope = agg && agg.blind === agg.total ? 'task-wide' : 'patch-specific';
+    (row.evidenceScope === 'task-wide' ? taskWide : patchSpecific).push(`${row.taskId}/${row.arm}/r${row.rep}`);
+  }
+  if (taskWide.length) {
+    console.log(`\n*** GRADER EVIDENCE TRIPWIRE: ${taskWide.length} row(s) across ${new Set(taskWide.map(s => s.split('/')[0])).size} task(s) `
+      + `produced NO test result on ANY arm or rep — this is an image/grader defect, not a behavioral failure. ***`);
+    console.log(`    ${[...new Set(taskWide.map(s => s.split('/')[0]))].join(', ')}`);
+    console.log('    These rows are UNGRADEABLE. Repair the image and regrade before publishing any solve number for them.');
+  }
+  if (patchSpecific.length) {
+    console.log(`\n[evidence] ${patchSpecific.length} row(s) produced no test result while a sibling row on the same task did — `
+      + 'the patch broke the build. Counted as UNRESOLVED, not excluded: ' + patchSpecific.join(', '));
   }
 }
 

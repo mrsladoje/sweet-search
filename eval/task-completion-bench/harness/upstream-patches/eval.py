@@ -332,6 +332,13 @@ def evaluate_instance(
         "passed_expected": expected_passed,
         "passed_actual": passed,
         "failed_actual": failed,
+        # TEST-EVIDENCE COUNT (D-1 tripwire, 2026-08-12). `parsed` is what the task's own
+        # log parser recovered from the container output, so len(parsed) == 0 means the
+        # run produced NO framework test-result line at all: the suite never executed.
+        # Without this count a build/SDK outage and a genuine all-tests-failed run are
+        # indistinguishable downstream — both arrive as from_fail_to_pass == [] — which is
+        # exactly how 12 YARP rows were published as gradeable failures while no test ran.
+        "n_test_results": len(parsed),
         "log_length": len(output),
         "log_path": str(log_path),
     }
@@ -429,6 +436,7 @@ def build_report_item(spec: dict, outcome: dict) -> dict:
             "instance_id": instance_id,
             "from_fail_to_pass": [],
             "failed_from_pass_to_pass": sorted(pass_to_pass_expected),
+            "n_test_results": 0,
             "error": error,
         }
 
@@ -442,6 +450,9 @@ def build_report_item(spec: dict, outcome: dict) -> dict:
         "failed_from_pass_to_pass": failed_from_pass_to_pass,
         "passed_match": result.get("passed_match", False),
         "exit_code": result.get("exit_code"),
+        # Carried into the report so the caller can gate `gradeable` on real test
+        # evidence rather than on the absence of an eval.py exception (D-1 tripwire).
+        "n_test_results": result.get("n_test_results", 0),
         "log_path": result.get("log_path"),
         "error": "",
     }
