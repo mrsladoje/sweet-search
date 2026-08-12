@@ -297,6 +297,79 @@ const SSLX_VERSION = 3;
 const SSLX_HEADER_SIZE = 64;
 const SSLX_DOC_ENTRY_SIZE = 20;
 
+// =============================================================================
+// SSLX v3 prefix reader (positions-only load)
+//
+// The incremental delta path needs only each segment's document IDS in
+// on-disk order — it reads `_docSegmentPositions` and `_segments[].count` and
+// never touches a token. Those ids live entirely in the file PREFIX
+// (header + document table + id table), ahead of the token slab, so they can
+// be read without materialising the slab. On this repository the slab is
+// ~1.4 GB and was being flattened into `documents` on every working tick.
+//
+// Whole-file CRC verification is NOT dropped. It runs on the first read after a
+// segment's filesystem identity (inode, size, mtime, ctime) changes; while the
+// identity is unchanged the prefix read is used and the previously verified CRC
+// still stands for those bytes. Structural prefix validation (magic, version,
+// slabStart <= fileSize, numDocs vs the manifest's count) is the second line:
+// any failure escalates to the full verified read rather than being trusted.
+// =============================================================================
+
+/**
+ * Validate an SSLX header and derive the fixed part of the layout.
+ * @param {Buffer} header At least SSLX_HEADER_SIZE bytes from offset 0.
+ * @param {number} fileSize Size of the whole segment file in bytes.
+ * @returns {{numDocs:number, idTableStart:number}|null} null when the prefix is
+ *   not a structurally valid SSLX v3 header.
+ */
+function sslxPrefixLayout(header, fileSize) {
+  if (!header || header.length < SSLX_HEADER_SIZE) return null;
+  if (header.readUInt32LE(0) !== SSLX_SEGMENT_MAGIC) return null;
+  if (header.readUInt16LE(4) !== SSLX_VERSION) return null;
+  const numDocs = header.readUInt32LE(8);
+  // Doc table + the u32 id-table length + the 4-byte CRC footer must all fit.
+  const idTableStart = SSLX_HEADER_SIZE + numDocs * SSLX_DOC_ENTRY_SIZE;
+  if (!Number.isSafeInteger(idTableStart)) return null;
+  if (idTableStart + 4 + 4 > fileSize) return null;
+  return { numDocs, idTableStart };
+}
+
+/**
+ * Parse `numDocs` length-prefixed UTF-8 ids out of an id-table slice.
+ * @returns {string[]|null} null when an entry runs past the table.
+ */
+function parseSslxIdTable(idTable, numDocs) {
+  const ids = new Array(numDocs);
+  let off = 0;
+  for (let i = 0; i < numDocs; i++) {
+    if (off + 2 > idTable.length) return null;
+    const idLen = idTable.readUInt16LE(off);
+    if (off + 2 + idLen > idTable.length) return null;
+    ids[i] = idTable.toString('utf-8', off + 2, off + 2 + idLen);
+    off += 2 + idLen;
+  }
+  return ids;
+}
+
+/**
+ * Filesystem identity of a segment file: inode, size, and nanosecond mtime and
+ * ctime. Any content rewrite, truncation, replacement or in-place byte flip
+ * moves at least one of these, so an unchanged key means the bytes we CRC'd
+ * before are still the bytes on disk.
+ * @returns {{key:string, size:number}|null}
+ */
+function segmentIdentity(segPath) {
+  try {
+    const st = statSync(segPath, { bigint: true });
+    return {
+      key: `${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}`,
+      size: Number(st.size),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export class LateInteractionIndex {
   constructor(options = {}) {
     this.tokenDim = options.tokenDim || LATE_INTERACTION_CONFIG.tokenDimension;
@@ -314,6 +387,21 @@ export class LateInteractionIndex {
     this.poolFactor = options.poolFactor || 1;
     this.streamChunkSize = options.streamChunkSize || (8 * 1024 * 1024);
     this.loadExisting = options.loadExisting ?? true;
+
+    // Positions-only load (incremental delta path). When true, a SEGMENTED load
+    // populates `_docSegmentPositions`, `_segments`, `_segmentDir` and the
+    // format config from the manifest, but never materialises a token slab into
+    // `documents`. Search readers must leave this false — scoring needs tokens.
+    // It has no effect on the legacy single-file format, which has no prefix to
+    // read; that path still loads in full.
+    this.positionsOnly = options.positionsOnly ?? false;
+    // Cross-load verified-identity cache: segment path -> identity key of the
+    // last read whose whole-file CRC32 was verified. Supplied by the caller so
+    // its lifetime (and its bound) is owned where the ticks are, not here.
+    this._positionsCache = options.positionsCache instanceof Map ? options.positionsCache : null;
+    // Set by `load()` when it swallows a non-ENOENT failure; `init()` rethrows
+    // it for positions-only readers (see init()).
+    this._loadFailure = null;
 
     // Phase 3: norm-based token pruning threshold (0 = disabled)
     this.normPruneThreshold = options.normPruneThreshold || 0;
@@ -451,6 +539,20 @@ export class LateInteractionIndex {
     if (this.loadExisting && existsSync(this.indexPath)) {
       await this.load();
       this._loadedExisting = true;
+      // A POSITIONS-ONLY reader is a WRITER's read view: the incremental delta
+      // path uses it to decide which documents to retire and then appends a new
+      // segment. `load()` swallows every failure into a console.error, and the
+      // maintainer runs detached with `stdio: 'ignore'`, so a segment that
+      // fails its CRC would leave the delta running on PARTIAL positions —
+      // missing retirements and appending on top of corrupt state, silently.
+      // Refuse instead. The search-side (full) reader keeps its existing
+      // degrade-to-empty tolerance: that path is the warm query path and must
+      // not change behaviour.
+      if (this.positionsOnly && this._loadFailure) {
+        const err = this._loadFailure;
+        this._loadFailure = null;
+        throw err;
+      }
     }
 
     this.initialized = true;
@@ -787,6 +889,152 @@ export class LateInteractionIndex {
     if (magic === LI_SEGMENT_MAGIC) {
       const body = buf.subarray(64);
       return JSON.parse(body.toString('utf-8'));
+    }
+    throw new Error(`Invalid segment file (unknown magic 0x${magic.toString(16)}): ${segPath}`);
+  }
+
+  /**
+   * Read ONLY the document ids of a segment, in on-disk order.
+   *
+   * Fast path (segment identity unchanged since its last verified read): three
+   * positional reads of the file prefix — header, id-table length, id table.
+   * Nothing from the token slab is read or allocated.
+   *
+   * Slow path (first read, or identity changed, or the prefix fails structural
+   * validation): the whole file is read and its CRC32 footer verified exactly as
+   * `_readSegmentFile` does, then only the prefix is parsed. Corruption is
+   * therefore still caught on the first read after the segment changed — the
+   * same read as before this optimisation — and a corrupt segment throws the
+   * same error.
+   *
+   * @param {string} segPath
+   * @param {number|null} expectedCount Manifest's document count for this
+   *   segment, used as a structural cross-check. Pass null when unknown.
+   * @returns {Promise<string[]>}
+   */
+  async _readSegmentIds(segPath, expectedCount = null) {
+    const cache = this._positionsCache;
+    const before = cache ? segmentIdentity(segPath) : null;
+
+    if (before && cache.get(segPath) === before.key) {
+      const ids = await this._readSslxIdsPrefix(segPath, before, expectedCount);
+      if (ids) return ids;
+      // Structurally suspect despite an unchanged identity, or the file moved
+      // under us between the stat and the open: never trust it — drop the entry
+      // and fall through to the full verified read.
+      cache.delete(segPath);
+    }
+
+    let ids;
+    try {
+      ids = await this._readSegmentIdsVerified(segPath, expectedCount);
+    } catch (err) {
+      // A failed verification never leaves a remembered identity behind.
+      cache?.delete(segPath);
+      throw err;
+    }
+    if (cache) {
+      // Re-stat AFTER the read: only cache an identity the read actually
+      // observed, so a write racing between stat and read cannot be recorded as
+      // verified.
+      const after = segmentIdentity(segPath);
+      if (after && before && after.key === before.key) cache.set(segPath, after.key);
+      else cache.delete(segPath);
+    }
+    return ids;
+  }
+
+  /**
+   * Prefix-only id read. Returns null (never throws) when anything about the
+   * prefix fails validation, so the caller can escalate to the verified read.
+   *
+   * TOCTOU: the identity that authorises this trusted read was observed by a
+   * `stat` BEFORE the `open`. Per-segment maintenance replaces a segment under
+   * the same path, so the bytes can change in between. An `fstat` on the open
+   * descriptor closes that window — if the identity moved, the CRC that
+   * authorised this read no longer covers these bytes, so we refuse and let the
+   * caller do the full verified read.
+   *
+   * @param {string} segPath
+   * @param {{key:string, size:number}} identity Identity captured before open.
+   * @param {number|null} expectedCount Manifest's document count, cross-checked.
+   */
+  async _readSslxIdsPrefix(segPath, identity, expectedCount) {
+    const fileSize = identity.size;
+    let fh = null;
+    try {
+      fh = await fs.open(segPath, 'r');
+      const opened = await fh.stat({ bigint: true });
+      if (`${opened.ino}:${opened.size}:${opened.mtimeNs}:${opened.ctimeNs}` !== identity.key) return null;
+      const header = Buffer.allocUnsafe(SSLX_HEADER_SIZE);
+      if ((await fh.read(header, 0, SSLX_HEADER_SIZE, 0)).bytesRead !== SSLX_HEADER_SIZE) return null;
+      const layout = sslxPrefixLayout(header, fileSize);
+      if (!layout) return null;
+      if (Number.isInteger(expectedCount) && expectedCount !== layout.numDocs) return null;
+
+      const lenBuf = Buffer.allocUnsafe(4);
+      if ((await fh.read(lenBuf, 0, 4, layout.idTableStart)).bytesRead !== 4) return null;
+      const totalIdBytes = lenBuf.readUInt32LE(0);
+      const idStart = layout.idTableStart + 4;
+      // slabStart must sit inside the file, ahead of the 4-byte CRC footer.
+      const slabStart = idStart + totalIdBytes;
+      if (!Number.isSafeInteger(slabStart) || slabStart + 4 > fileSize) return null;
+
+      const idTable = Buffer.allocUnsafe(totalIdBytes);
+      if (totalIdBytes > 0
+        && (await fh.read(idTable, 0, totalIdBytes, idStart)).bytesRead !== totalIdBytes) return null;
+      return parseSslxIdTable(idTable, layout.numDocs);
+    } catch {
+      return null;
+    } finally {
+      if (fh) await fh.close().catch(() => {});
+    }
+  }
+
+  /**
+   * Whole-file read with CRC32 verification, returning only the ids. Same
+   * detection and same error messages as `_readSegmentFile`; it simply stops
+   * before decoding the token slab.
+   *
+   * `expectedCount` is the manifest's count for this segment. A valid CRC only
+   * proves the FILE is self-consistent; it says nothing about whether the
+   * manifest agrees with it. A disagreement means the two artifacts describe
+   * different states, which is exactly the condition under which
+   * `_docSegmentPositions` and `manifest.totalDocuments` diverge — so it is an
+   * error here, not something to accept silently.
+   */
+  async _readSegmentIdsVerified(segPath, expectedCount = null) {
+    const buf = await fs.readFile(segPath);
+    const magic = buf.readUInt32LE(0);
+    const checkCount = (ids) => {
+      if (Number.isInteger(expectedCount) && ids.length !== expectedCount) {
+        throw new Error(`Segment document count mismatch in ${segPath}: manifest=${expectedCount} segment=${ids.length}`);
+      }
+      return ids;
+    };
+
+    if (magic === SSLX_SEGMENT_MAGIC) {
+      const storedCrc = buf.readUInt32LE(buf.length - 4);
+      const computedCrc = crc32(buf.subarray(0, buf.length - 4));
+      if (storedCrc !== computedCrc) {
+        throw new Error(`CRC32 mismatch in ${segPath}: stored=0x${storedCrc.toString(16)} computed=0x${computedCrc.toString(16)}`);
+      }
+      const layout = sslxPrefixLayout(buf, buf.length);
+      if (!layout) throw new Error(`Invalid SSLX segment header in ${segPath}`);
+      const totalIdBytes = buf.readUInt32LE(layout.idTableStart);
+      const idStart = layout.idTableStart + 4;
+      if (idStart + totalIdBytes + 4 > buf.length) {
+        throw new Error(`Invalid SSLX id table in ${segPath}: table overruns the file`);
+      }
+      const ids = parseSslxIdTable(buf.subarray(idStart, idStart + totalIdBytes), layout.numDocs);
+      if (!ids) throw new Error(`Invalid SSLX id table in ${segPath}: entry overruns the table`);
+      return checkCount(ids);
+    }
+    if (magic === LI_SEGMENT_MAGIC) {
+      // Legacy LISE segments are a JSON body with no prefix and no checksum;
+      // there is nothing cheaper to read than the whole document array.
+      const docs = JSON.parse(buf.subarray(64).toString('utf-8'));
+      return checkCount(docs.map((doc) => doc.id));
     }
     throw new Error(`Invalid segment file (unknown magic 0x${magic.toString(16)}): ${segPath}`);
   }
@@ -2081,7 +2329,11 @@ export class LateInteractionIndex {
             }
           }
           await this._loadSegmented(segDirAbs);
-          await this._loadAliasSidecar();
+          // Positions-only readers must not load the alias sidecar: its orphan
+          // guard resolves each alias against `documents`, which is empty by
+          // construction here, so every alias would be dropped. The delta path
+          // never reads `aliasPointers`, and nothing it writes depends on them.
+          if (!this.positionsOnly) await this._loadAliasSidecar();
           return;
         }
       }
@@ -2180,6 +2432,10 @@ export class LateInteractionIndex {
       if (err.code === 'ENOENT') {
         console.log('LateInteraction: No existing index found');
       } else {
+        // Recorded so `init()` can turn it into a hard error for the
+        // positions-only (writer-side) reader. The full reader's behaviour is
+        // unchanged: it still degrades to whatever loaded.
+        this._loadFailure = err;
         console.error(`LateInteraction: Failed to load index: ${err.message}`);
       }
     }
@@ -2217,9 +2473,24 @@ export class LateInteractionIndex {
     this._staleBitmapCache.clear();
 
     const isSSLX = manifest.format === 'sslx-v3';
+    const visitedSegments = this.positionsOnly && this._positionsCache ? new Set() : null;
 
     for (const seg of manifest.segments) {
       const segPath = path.join(segmentDir, seg.path);
+
+      // Positions-only: read the id prefix, apply the identical stale-document
+      // skip, and record positions. `documents` stays empty.
+      if (this.positionsOnly) {
+        const ids = await this._readSegmentIds(segPath, Number.isInteger(seg.count) ? seg.count : null);
+        visitedSegments?.add(segPath);
+        const staleBitmapOnly = this._loadSegmentStaleBitmap(segPath);
+        for (let docIndex = 0; docIndex < ids.length; docIndex++) {
+          if (staleBitmapOnly && isSet(staleBitmapOnly, docIndex)) continue;
+          this._docSegmentPositions.set(ids[docIndex], { segmentPath: segPath, docIndex });
+        }
+        continue;
+      }
+
       const docs = await this._readSegmentFile(segPath);
       const staleBitmap = this._loadSegmentStaleBitmap(segPath);
 
@@ -2267,6 +2538,21 @@ export class LateInteractionIndex {
     this._rebuildTokenNorms();
     this._segmentDir = segmentDir;
     this._segments = manifest.segments.map(s => ({ path: path.join(segmentDir, s.path), count: s.count }));
+
+    if (visitedSegments) {
+      // Bound the verified-identity cache: drop entries for segments of THIS
+      // directory that the current manifest no longer lists (compaction retires
+      // segment files and never reuses their names).
+      const prefix = segmentDir + path.sep;
+      for (const key of this._positionsCache.keys()) {
+        if (key.startsWith(prefix) && !visitedSegments.has(key)) this._positionsCache.delete(key);
+      }
+    }
+
+    if (this.positionsOnly) {
+      console.log(`LateInteraction: Loaded ${this._docSegmentPositions.size} document positions from ${manifest.segments.length} segments (positions-only, model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)`);
+      return;
+    }
 
     // CRA-3: Load WUSH calibration if it exists alongside segments
     const wushPath = path.join(segmentDir, 'wush-calibration.json');
