@@ -178,6 +178,45 @@ describe('maintainer supervision — the spawn claim', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('does not spawn a second time while the first spawn has not taken the lock yet', () => {
+    // The window that matters in production: `spawn` has returned but the child
+    // has not written its lock, so `maintainerAlive` is still false. A second
+    // tick landing in that window must be stopped by the claim, or a repository
+    // gets two maintainers every time a supervisor ticks twice in a row.
+    //
+    // A 16-minute churn soak saw concurrency touch 2 once across 219 respawns;
+    // this pins whether the in-process path can be the cause. The launcher stub
+    // deliberately does NOT write a lock, which IS the unwritten-lock window.
+    const state = createSupervisionState();
+    const calls = [];
+    const launchWithoutLock = () => { calls.push(1); return { spawned: true, reason: 'spawned', pid: 5150 }; };
+
+    const first = runSupervisionTick({
+      state, env: baseEnv(), cwd: root, launch: launchWithoutLock, now: 1_000_000, minIntervalMs: 0,
+    });
+    const second = runSupervisionTick({
+      state, env: baseEnv(), cwd: root, launch: launchWithoutLock, now: 1_000_050, minIntervalMs: 0,
+    });
+
+    expect(first.acted).toBe(true);
+    expect(second).toMatchObject({ acted: false, reason: 'claim-held' });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('holds off a SEPARATE supervisor in the same unwritten-lock window', () => {
+    // Same window, but the second tick carries its own fresh state, which is
+    // what a second process (the MCP server, a prewarm hook) looks like. The
+    // in-process rate limit cannot help here; only the on-disk claim can.
+    const calls = [];
+    const launchWithoutLock = () => { calls.push(1); return { spawned: true, reason: 'spawned', pid: 5150 }; };
+
+    runSupervisionTick({ state: createSupervisionState(), env: baseEnv(), cwd: root, launch: launchWithoutLock, now: 1_000_000 });
+    const second = runSupervisionTick({ state: createSupervisionState(), env: baseEnv(), cwd: root, launch: launchWithoutLock, now: 1_000_050 });
+
+    expect(second).toMatchObject({ acted: false, reason: 'claim-held' });
+    expect(calls).toHaveLength(1);
+  });
+
   it('steals a claim whose holder never followed through', () => {
     writeFileSync(join(stateDir, MAINTAINER_SPAWN_CLAIM_FILENAME), JSON.stringify({ pid: 999, at: 1_000_000 }));
     const calls = [];

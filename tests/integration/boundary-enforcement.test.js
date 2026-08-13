@@ -17,7 +17,11 @@ const TEMP_FILES = [
   join('core', 'infrastructure', '__boundary_test_violation__.js'),
   join('core', 'ranking', '__boundary_test_violation__.js'),
 ];
-const CHECK_BOUNDARIES_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_BOUNDARY_TIMEOUT_MS || 240000);
+// The checker walks every file in core/ three times across this file's tests.
+// On a quiet machine that is already ~365s; under full-suite load it exceeded
+// the old 240s budget and reported ETIMEDOUT, which reads as a boundary
+// violation when it is only a stopwatch running out. The check itself passes.
+const CHECK_BOUNDARIES_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_BOUNDARY_TIMEOUT_MS || 900000);
 afterAll(() => TEMP_FILES.forEach(f => rmSync(f, { force: true })));
 
 describe('DDD Boundary Enforcement', () => {

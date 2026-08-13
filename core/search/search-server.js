@@ -1277,7 +1277,9 @@ export async function startServer() {
   // One wrapper for both servers. It returns `handleRequest`'s promise exactly
   // as `createServer` received it before, so request semantics are unchanged.
   const serveRequest = (req, res) => {
-    res.on('finish', maybeSuperviseMaintainer);
+    // Wrapped rather than passed directly: as a listener it would receive the
+    // event's arguments, and `force` must only ever be set by the timer.
+    res.on('finish', () => maybeSuperviseMaintainer());
     return handleRequest(req, res);
   };
 

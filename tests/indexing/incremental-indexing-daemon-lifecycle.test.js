@@ -173,9 +173,13 @@ describe('A.4 / computeNextIntervalMs (the doubly-dead-trap guard)', () => {
 // ---- D.1 idle-TTL ----------------------------------------------------------
 
 describe('D.1 / maintainerIdleTtlMs', () => {
-  const ROOMY = 64 * 1024 ** 3; // >24 GiB → tier default is 0 (off)
-  it('is 0/disabled on a roomy host and on explicit invalid values', () => {
-    expect(maintainerIdleTtlMs({}, ROOMY)).toBe(0);
+  const ROOMY = 64 * 1024 ** 3; // >24 GiB → tier default is 60 min
+  it('is disabled only when the operator says so, never by the tier', () => {
+    // An operator can still switch it off; the TIER no longer does. A tier
+    // default of 0 meant a maintainer that never retired, on every host above
+    // 24 GiB, with nothing else bounding the resident set.
+    expect(maintainerIdleTtlMs({}, ROOMY)).toBe(3_600_000);
+    expect(maintainerIdleTtlMs({ SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS: '0' }, ROOMY)).toBe(0);
     expect(maintainerIdleTtlMs({ SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS: '' })).toBe(0);
     expect(maintainerIdleTtlMs({ SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS: 'banana' })).toBe(0);
     expect(maintainerIdleTtlMs({ SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS: '-5' })).toBe(0);
@@ -187,7 +191,7 @@ describe('D.1 / maintainerIdleTtlMs', () => {
   it('auto-enables idle-TTL from the system-RAM tier when unset (small-RAM hosts)', () => {
     expect(maintainerIdleTtlMs({}, 8 * 1024 ** 3)).toBe(600_000);    // tight (≤12 GiB) → 10 min
     expect(maintainerIdleTtlMs({}, 20 * 1024 ** 3)).toBe(1_800_000); // moderate (≤24 GiB) → 30 min
-    expect(maintainerIdleTtlMs({}, 64 * 1024 ** 3)).toBe(0);         // roomy (>24 GiB) → off
+    expect(maintainerIdleTtlMs({}, 64 * 1024 ** 3)).toBe(3_600_000); // roomy (>24 GiB) → 60 min
     // explicit '0' disables even on a small-RAM host
     expect(maintainerIdleTtlMs({ SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS: '0' }, 8 * 1024 ** 3)).toBe(0);
   });
