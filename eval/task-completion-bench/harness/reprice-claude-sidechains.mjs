@@ -61,7 +61,7 @@ function sessionsFor(taskId, arm, rep) {
   return out;
 }
 
-const summary = { run: path.basename(RUN), tol: TOL, rows: rows.length, matched: 0, noState: [], mismatched: [], withSidechains: 0 };
+const summary = { run: path.basename(RUN), tol: TOL, rows: rows.length, matched: 0, noState: [], mismatched: [], unverified: [], idealMatched: 0, withSidechains: 0 };
 const outRows = [];
 for (const r of rows) {
   const row = { ...r };
@@ -81,8 +81,13 @@ for (const r of rows) {
     mainReal: costFromTurns(s.main, price).realFromTurnsUsd,
     sideCosts: s.sides.map(x => costFromTurns(x.turns, price)),
   }));
-  const recorded = r.costRealizedUsd ?? 0;
-  priced.sort((a, b) => Math.abs(a.mainReal - recorded) - Math.abs(b.mainReal - recorded));
+  // The witness is the run's MAIN-ONLY realized cost. On a run recorded after D-2 shipped,
+  // `costRealizedUsd` is already the INCLUSIVE column and is null wherever a delegated
+  // transcript was unreadable — comparing against it silently passed every null row and made
+  // the reproduction count hollow. Prefer the explicit main-only field, and when neither is
+  // available say so instead of scoring a vacuous match.
+  const recorded = r.costRealizedMainOnlyUsd ?? r.costRealizedUsd ?? null;
+  priced.sort((a, b) => Math.abs(a.mainReal - (recorded ?? 0)) - Math.abs(b.mainReal - (recorded ?? 0)));
   const pick = priced[0];
 
   const mainCost = costFromTurns(pick.main, price);
@@ -92,17 +97,27 @@ for (const r of rows) {
   const sideTurns = pick.sides.reduce((a, s) => a + s.turns.length, 0);
 
   // Reproduction check: main-only must land within tolerance of the published row.
-  const drift = recorded ? Math.abs(mainCost.realFromTurnsUsd - recorded) / recorded : 0;
-  if (drift > TOL) summary.mismatched.push({ cell: `${r.taskId}/${r.arm}/r${r.rep}`, recorded, recomputedMainOnly: +mainCost.realFromTurnsUsd.toFixed(6), drift: +(drift * 100).toFixed(2) });
-  else summary.matched++;
+  if (recorded == null || recorded === 0) {
+    summary.unverified.push(`${r.taskId}/${r.arm}/r${r.rep}`);
+  } else {
+    const drift = Math.abs(mainCost.realFromTurnsUsd - recorded) / recorded;
+    // Diagnostic: `ideal` never involved the 1.25x cache-creation premium, so a run recorded
+    // before that premium shipped reproduces on ideal while realized drifts by ~10%.
+    const recIdeal = r.idealCostMainOnlyUsd ?? r.idealCostUsd ?? null;
+    const idealDrift = recIdeal ? Math.abs(mainCost.idealUsd - recIdeal) / recIdeal : null;
+    if (idealDrift != null && idealDrift <= TOL) summary.idealMatched++;
+    if (drift > TOL) summary.mismatched.push({ cell: `${r.taskId}/${r.arm}/r${r.rep}`, recorded, recomputedMainOnly: +mainCost.realFromTurnsUsd.toFixed(6), drift: +(drift * 100).toFixed(2) });
+    else summary.matched++;
+  }
   if (pick.sides.length) summary.withSidechains++;
 
   row.sidechainRepriced = true;
   row.sidechainCount = pick.sides.length;
   row.sidechainTurns = sideTurns;
-  row.costRealizedMainOnlyUsd = r.costRealizedUsd;
-  row.idealCostMainOnlyUsd = r.idealCostUsd;
-  row.breakPricedCostMainOnlyUsd = r.breakPricedCostUsd;
+  // Preserve an existing main-only column; only synthesise it on a pre-D-2 run.
+  row.costRealizedMainOnlyUsd = r.costRealizedMainOnlyUsd ?? r.costRealizedUsd;
+  row.idealCostMainOnlyUsd = r.idealCostMainOnlyUsd ?? r.idealCostUsd;
+  row.breakPricedCostMainOnlyUsd = r.breakPricedCostMainOnlyUsd ?? r.breakPricedCostUsd;
   row.costSidechainUsd = +sideReal.toFixed(6);
   row.costRealizedUsd = +(mainCost.realFromTurnsUsd + sideReal).toFixed(6);
   row.idealCostUsd = +(mainCost.idealUsd + sideIdeal).toFixed(6);
@@ -118,9 +133,15 @@ writeFileSync(OUT, JSON.stringify(outRows, null, 2));
 const sum = (rs, f) => rs.reduce((a, x) => a + (x[f] || 0), 0);
 console.log(`\n=== D-2 sidechain repricing: ${summary.run} ===`);
 console.log(`rows ${summary.rows} | main-only reproduced within ${(TOL * 100).toFixed(1)}%: ${summary.matched}/${summary.rows} | rows with sidechains: ${summary.withSidechains}`);
+if (summary.unverified.length) console.log(`  UNVERIFIED (no recorded main-only cost to check against): ${summary.unverified.length} — ${summary.unverified.slice(0, 6).join(', ')}${summary.unverified.length > 6 ? ' …' : ''}`);
 if (summary.noState.length) console.log(`  NO RETAINED STATE (${summary.noState.length}): ${summary.noState.join(', ')}`);
 if (summary.mismatched.length) {
   console.log(`  *** ${summary.mismatched.length} ROW(S) DID NOT REPRODUCE — derivation untrustworthy, do not publish: ***`);
+  if (summary.idealMatched === summary.rows) {
+    console.log(`  NOTE: the cache-normalized \`ideal\` column reproduces on ALL ${summary.rows} rows.`);
+    console.log(`        That is the signature of a run recorded BEFORE the 1.25x cache-creation`);
+    console.log(`        premium shipped (7562b42). Read this run on ideal, not realized.`);
+  }
   for (const m of summary.mismatched) console.log(`    ${m.cell}: recorded $${m.recorded} vs recomputed main-only $${m.recomputedMainOnly} (${m.drift}%)`);
 }
 for (const arm of ['native', 'sweet']) {
