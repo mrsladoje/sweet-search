@@ -148,6 +148,50 @@ export function parseValueFlag(args, names, fallback, { allowOptionValue = false
   return { value: fallback, flag: null, error: null };
 }
 
+// Repeatable value flag: `--in A --in B` yields ['A','B']. Every occurrence is
+// consumed, in the order given, de-duplicated.
+//
+// parseValueFlag keeps only the FIRST occurrence and leaves the rest in `args`,
+// where they fall through to the positional extractor and vanish. That silent
+// drop is the dashbitco/nimble_options defect: the agent scoped one call to two
+// paths, the header echoed back only the first, and the dropped file held the
+// exact-string assertion that decided the task. A scope that disappears is
+// indistinguishable from a regex that genuinely misses.
+export function parseRepeatedValueFlag(args, names) {
+  const allNames = Array.isArray(names) ? names : [names];
+  const values = [];
+  let flag = null;
+  for (;;) {
+    let at = -1;
+    let matched = null;
+    const separator = args.indexOf('--');
+    const optionEnd = separator === -1 ? args.length : separator;
+    for (const n of allNames) {
+      const i = args.indexOf(n);
+      if (i !== -1 && i < optionEnd && (at === -1 || i < at)) { at = i; matched = n; }
+    }
+    if (at === -1) break;
+    flag ??= matched;
+    const v = args[at + 1];
+    if (v == null || v === '' || v === '--' || looksLikeOption(v)) {
+      return { values: [], flag: matched, error: `${matched} requires a value` };
+    }
+    args.splice(at, 2);
+    if (!values.includes(v)) values.push(v);
+  }
+  return { values, flag, error: null };
+}
+
+// Bare positionals beyond the first, once every known flag has been consumed.
+// The first is the pattern/query; anything after it was silently discarded, so
+// callers that can mean something by it must say so out loud. Option-shaped
+// tokens are left to extractPositional, which already reports them.
+export function extraPositionals(args) {
+  const sep = args.indexOf('--');
+  const scan = sep === -1 ? args : args.slice(sep + 1);
+  return scan.filter(tok => !looksLikeOption(tok) && tok !== '--').slice(1);
+}
+
 export function parsePositiveIntFlag(args, names, fallback, { min = 1 } = {}) {
   const parsed = parseValueFlag(args, names, fallback);
   if (parsed.error) return parsed;

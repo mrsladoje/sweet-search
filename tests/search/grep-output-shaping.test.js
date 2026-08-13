@@ -46,10 +46,108 @@ describe('matchesGrepFileFilter', () => {
     expect(matchesGrepFileFilter('tests/testthat/test_x.R', 'test_x.R')).toBe(true);
     expect(matchesGrepFileFilter('tests/testthat/test_x.R', 'testthat/test_x.R')).toBe(true);
   });
-  it('rejects other files and partial basename overlaps', () => {
+
+  // Was locked in as `false` — a directory scope matched NOTHING, so
+  // `ss-grep … --in tests/testthat` printed "(no matches)" and was
+  // indistinguishable from a regex that genuinely misses.
+  it('matches a directory scope, named from the root or by its own name', () => {
+    expect(matchesGrepFileFilter('tests/testthat/test_x.R', 'tests/testthat')).toBe(true);
+    expect(matchesGrepFileFilter('tests/testthat/test_x.R', 'tests/testthat/')).toBe(true);
+    expect(matchesGrepFileFilter('tests/testthat/test_x.R', './tests/testthat')).toBe(true);
+    expect(matchesGrepFileFilter('tests/testthat/test_x.R', 'tests')).toBe(true);
+    expect(matchesGrepFileFilter('tests/testthat/test_x.R', 'testthat')).toBe(true);
+  });
+
+  it('rejects other files and partial segment overlaps', () => {
     expect(matchesGrepFileFilter('tests/testthat/test_x.R', 'x.R')).toBe(false);
-    expect(matchesGrepFileFilter('tests/testthat/test_x.R', 'tests/testthat')).toBe(false);
+    expect(matchesGrepFileFilter('tests/testthat/test_x.R', 'test')).toBe(false);       // not a whole segment
+    expect(matchesGrepFileFilter('tests/testthat/test_x.R', 'testthat/test_y.R')).toBe(false);
+    expect(matchesGrepFileFilter('tests/testthat/test_x.R', 'src/tests')).toBe(false);  // run must be contiguous
     expect(matchesGrepFileFilter('tests/testthat/test_x.R', '')).toBe(false);
+    expect(matchesGrepFileFilter('', 'tests')).toBe(false);
+  });
+
+  it('never lets a scope escape the repository root', () => {
+    // The engine only ever emits repo-relative paths, so a traversal scope has
+    // nothing to match; `..` is rejected outright so it cannot even be spelled.
+    expect(matchesGrepFileFilter('tests/testthat/test_x.R', '..')).toBe(false);
+    expect(matchesGrepFileFilter('tests/testthat/test_x.R', '../tests/testthat')).toBe(false);
+    expect(matchesGrepFileFilter('tests/testthat/test_x.R', '../../etc/passwd')).toBe(false);
+    expect(matchesGrepFileFilter('tests/testthat/test_x.R', 'tests/../tests/testthat')).toBe(false);
+    expect(matchesGrepFileFilter('etc/passwd', '/etc/passwd')).toBe(false);             // root unknown
+  });
+
+  // Agents paste back the absolute path the harness gave them. Two of the
+  // eleven directory scopes in the 2026-08-11 run were spelled this way and
+  // returned nothing, because an absolute scope is LONGER than the repo-relative
+  // path the engine emits, so no contiguous run can exist.
+  describe('absolute scopes (as agents actually spell them)', () => {
+    const ROOT = '/root/.ss-eval/runs/dart-lang__http-1114__sweet__r0__11/.claude/worktrees/agent-ae7c';
+    const FILE = 'pkgs/http/lib/src/response.dart';
+
+    it('with the project root known: strips the root, then matches relatively', () => {
+      expect(matchesGrepFileFilter(FILE, `${ROOT}/pkgs/http/lib/src`, ROOT)).toBe(true);
+      expect(matchesGrepFileFilter(FILE, `${ROOT}/pkgs/http`, ROOT)).toBe(true);
+      expect(matchesGrepFileFilter('lib/other.dart', `${ROOT}/pkgs/http/lib/src`, ROOT)).toBe(false);
+    });
+
+    it('scoping to the repo root itself matches every file', () => {
+      expect(matchesGrepFileFilter(FILE, ROOT, ROOT)).toBe(true);
+    });
+
+    it('without the root: rejects an absolute scope instead of guessing from a suffix', () => {
+      expect(matchesGrepFileFilter(FILE, `${ROOT}/pkgs/http/lib/src`)).toBe(false);
+      expect(matchesGrepFileFilter(FILE, `${ROOT}/pkgs/http`)).toBe(false);
+    });
+
+    it('without the root, a bare repo root cannot be recognised — stays false', () => {
+      expect(matchesGrepFileFilter(FILE, ROOT)).toBe(false);
+    });
+
+    it('rejects absolute scopes outside the known root even when a suffix aligns', () => {
+      expect(matchesGrepFileFilter('src/auth.js', '/tmp/other-repo/src', ROOT)).toBe(false);
+      expect(matchesGrepFileFilter('src/auth.js', `${ROOT}2/src`, ROOT)).toBe(false);
+    });
+
+    it('keeps a rooted absolute scope anchored after stripping the root', () => {
+      expect(matchesGrepFileFilter('nested/src/a.js', `${ROOT}/src`, ROOT)).toBe(false);
+      expect(matchesGrepFileFilter('nested/src/a.js', `${ROOT}/src/a.js`, ROOT)).toBe(false);
+    });
+
+    it('a relative scope cannot over-widen from a longer unrelated prefix', () => {
+      expect(matchesGrepFileFilter('c/d.js', 'a/b/c')).toBe(false);
+      expect(matchesGrepFileFilter('src/lib/x.js', 'other/src')).toBe(false);
+    });
+
+    it('still refuses traversal in an absolute scope', () => {
+      expect(matchesGrepFileFilter(FILE, `${ROOT}/../../etc`, ROOT)).toBe(false);
+    });
+  });
+
+  it('resolves every directory scope recorded in the 2026-08-11 run', () => {
+    // Ten of eleven returned "(no matches)". These are the exact spellings.
+    const recorded = [
+      ['test/nimble_options_test.exs', 'test'],
+      ['packages/bingo-handlebars/src/handlebars.ts', 'packages/bingo-handlebars/src'],
+      ['packages/bingo-handlebars/src/handlebars.ts', 'packages/bingo-handlebars'],
+      ['pkgs/http/test/response_test.dart', 'pkgs/http/test'],
+      ['src/Kubernetes.Controller/Converters/YarpParser.cs', 'src/Kubernetes.Controller/Converters'],
+      ['pkgs/http/lib/src/response.dart', 'pkgs/http/lib'],
+      ['robot-core/src/test/java/org/obolibrary/robot/IOHelperTest.java', 'robot-core/src/test'],
+      ['config/cache.php', 'config'],
+    ];
+    for (const [file, scope] of recorded) {
+      expect(matchesGrepFileFilter(file, scope), `${scope} -> ${file}`).toBe(true);
+    }
+  });
+
+  it('accepts several scopes: any one matching wins', () => {
+    const scopes = ['lib/nimble_options.ex', 'test/nimble_options_test.exs'];
+    expect(matchesGrepFileFilter('lib/nimble_options.ex', scopes)).toBe(true);
+    expect(matchesGrepFileFilter('test/nimble_options_test.exs', scopes)).toBe(true);   // was silently dropped
+    expect(matchesGrepFileFilter('mix.exs', scopes)).toBe(false);
+    expect(matchesGrepFileFilter('lib/nimble_options.ex', [])).toBe(false);
+    expect(matchesGrepFileFilter('lib/nimble_options.ex', ['', null])).toBe(false);
   });
 });
 
@@ -238,6 +336,41 @@ describe('bareGrep — file-diversity options are additive and default-off', () 
     expect(res.stats.totalMatches).toBe(8);                // file-scoped true total
     expect(res.results.length).toBe(5);
     expect(new Set(res.results.map(r => r.file))).toEqual(new Set(['tests/testthat/test_detect_mistakes.R']));
+  });
+
+  it('fileFilter accepts several scopes and keeps matches from every one', async () => {
+    const matches = [
+      m('lib/nimble_options.ex', 12),
+      m('mix.exs', 3),
+      m('test/nimble_options_test.exs', 44),
+    ].sort((a, b) => a.file.localeCompare(b.file));
+    const res = await bareGrep.call(makeSearcher(matches), 'keys', null, {
+      regex: 'keys', maxMatches: 0,
+      fileFilter: ['lib/nimble_options.ex', 'test/nimble_options_test.exs'],
+    });
+    expect(res.stats.totalMatches).toBe(2);
+    expect(new Set(res.results.map(r => r.file)))
+      .toEqual(new Set(['lib/nimble_options.ex', 'test/nimble_options_test.exs']));
+  });
+
+  it('fileFilter accepts a directory scope', async () => {
+    const res = await bareGrep.call(makeSearcher(floodMatches()), 'detect_mistakes\\(', null,
+      { regex: 'detect_mistakes\\(', maxMatches: 0, fileFilter: 'tests/testthat' });
+    expect(res.stats.totalMatches).toBe(8);
+    expect(new Set(res.results.map(r => r.file)))
+      .toEqual(new Set(['tests/testthat/test_detect_mistakes.R']));
+  });
+
+  it('uses options.projectRoot for absolute scopes when the searcher has no root', async () => {
+    const searcher = makeSearcher(floodMatches());
+    delete searcher.projectRoot;
+    const res = await bareGrep.call(searcher, 'detect_mistakes\\(', null, {
+      regex: 'detect_mistakes\\(', maxMatches: 0,
+      projectRoot: '/proj', fileFilter: '/proj/tests/testthat',
+    });
+    expect(res.stats.totalMatches).toBe(8);
+    expect(new Set(res.results.map(r => r.file)))
+      .toEqual(new Set(['tests/testthat/test_detect_mistakes.R']));
   });
 
   it('agent grep derives complete width families from indexed declarations', async () => {
