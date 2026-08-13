@@ -32,26 +32,82 @@ export function turnsFromTranscriptFile(file) {
   return transcriptMetricsFromFile(file).turns;
 }
 
-/** Recover priced turns and retrospective signals, deduplicated by message id. */
+/**
+ * Recover priced turns and retrospective signals, MERGED by message id.
+ *
+ * ONE SERVED REQUEST IS WRITTEN AS MANY RECORDS — one per content block, all sharing
+ * `message.id` (2.46 blocks per request measured over 2,877 requests, 2026-08-13). Reading
+ * only the first record per id is wrong in two ways at once:
+ *
+ *   1. USAGE. The first record is often a `redacted_thinking` block whose usage is all
+ *      zeros while a later record for the SAME id carries the real numbers. Keeping the
+ *      first therefore DROPPED the whole request from `turns`, and one dropped delegated
+ *      request nulls the row's entire inclusive cost via addSidechainCostsChecked. On the
+ *      two retained claude runs that lost 76 of 235 and 67 of 156 delegated requests —
+ *      under-charging the arm that delegates most, which was native by 3 to 1.
+ *   2. CONTENT. `payloads` and `retainedOutputChars` saw one block per request, an 6.6x
+ *      under-count, which inflates the billed-vs-retained ratio the degeneration detector
+ *      reads.
+ *
+ * Taking the usage-bearing record is EXACT, not an estimate: across 1,939 ids carrying more
+ * than one non-zero record, ZERO disagreed on any token category, and no id was ever reused
+ * or interleaved. A request whose every record is zeroed is genuinely unrecoverable and is
+ * still excluded, so `instrumentationComplete` keeps failing closed on it.
+ *
+ * `repeatedToolUseBlocks` is a tripwire. The writer is append-only today — 0 duplicate
+ * blocks in 7,078 — so unioning blocks cannot double-count. If a future Claude Code writes
+ * CUMULATIVE records instead, tool_use ids will repeat and this counter goes positive
+ * rather than the character totals silently doubling.
+ */
 export function transcriptMetricsFromFile(file) {
   const turns = [];
   const payloads = [];
   let retainedOutputChars = 0, billedOutputTokens = 0;
-  let assistantMessages = 0, usageMessages = 0;
+  let assistantMessages = 0, usageMessages = 0, repeatedToolUseBlocks = 0;
   let text; try { text = readFileSync(file, 'utf8'); } catch {
     return { turns, payloads, retainedOutputChars, billedOutputTokens,
-      assistantMessages, usageMessages, instrumentationComplete: false };
+      assistantMessages, usageMessages, repeatedToolUseBlocks,
+      instrumentationComplete: false };
   }
-  const seen = new Set();
+  // Pass 1 — group every record by message id, in first-seen order.
+  const order = [];
+  const byId = new Map();
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed || trimmed[0] !== '{') continue;
     let event; try { event = JSON.parse(trimmed); } catch { continue; }
     const message = event.message;
-    if (!message || message.role !== 'assistant' || !message.id || seen.has(message.id)) continue;
-    seen.add(message.id);
-    assistantMessages++;
+    if (!message || message.role !== 'assistant' || !message.id) continue;
+    let group = byId.get(message.id);
+    if (!group) {
+      group = { blocks: [], usage: null, best: -1, toolUseIds: new Set() };
+      byId.set(message.id, group);
+      order.push(message.id);
+    }
     for (const block of (message.content || [])) {
+      if (block.type === 'tool_use' && block.id) {
+        if (group.toolUseIds.has(block.id)) { repeatedToolUseBlocks++; continue; }
+        group.toolUseIds.add(block.id);
+      }
+      group.blocks.push(block);
+    }
+    const usage = message.usage;
+    if (!usage) continue;
+    const cached = usage.cache_read_input_tokens || 0;
+    const cacheWrite = usage.cache_creation_input_tokens || 0;
+    const input = (usage.input_tokens || 0) + cached + cacheWrite;
+    const output = usage.output_tokens || 0;
+    // The record that actually reports tokens wins; every record that reports any agrees.
+    if (input + output > group.best) {
+      group.best = input + output;
+      group.usage = { in: input, cached, cacheWrite, out: output };
+    }
+  }
+  // Pass 2 — emit one turn per served request, with that request's whole content.
+  for (const id of order) {
+    const group = byId.get(id);
+    assistantMessages++;
+    for (const block of group.blocks) {
       if (block.type === 'tool_use') {
         for (const value of Object.values(block.input || {})) {
           if (typeof value === 'string') {
@@ -73,20 +129,15 @@ export function transcriptMetricsFromFile(file) {
         retainedOutputChars += block.thinking.length;
       }
     }
-    if (!message.usage) continue;
-    const usage = message.usage;
-    const cached = usage.cache_read_input_tokens || 0;
-    const cacheWrite = usage.cache_creation_input_tokens || 0;
-    const input = (usage.input_tokens || 0) + cached + cacheWrite;
-    const output = usage.output_tokens || 0;
-    if (!input && !output) continue;
+    const usage = group.usage;
+    if (!usage || (!usage.in && !usage.out)) continue;
     usageMessages++;
-    billedOutputTokens += output;
-    turns.push({ in: input, cached, cacheWrite, out: output });
+    billedOutputTokens += usage.out;
+    turns.push(usage);
   }
   return {
     turns, payloads, retainedOutputChars, billedOutputTokens,
-    assistantMessages, usageMessages,
+    assistantMessages, usageMessages, repeatedToolUseBlocks,
     instrumentationComplete: assistantMessages > 0 && usageMessages === assistantMessages,
   };
 }

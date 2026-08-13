@@ -20,6 +20,7 @@ import {
   buildClaudeCliArgs, installClaudeReadPagesNormalizer, parseClaudeStream,
   selectClaudeMainCosts, READ_PAGES_TOOL_NOTE,
 } from '../harness/claude-code-task-runner.mjs';
+import { transcriptMetricsFromFile } from '../harness/claude-code-accounting.mjs';
 import { normalizeReadInput, readHookDecision } from '../harness/claude-read-pages-hook.mjs';
 import { costsFromTurns } from '../harness/agent-runner-shared.mjs';
 import { readTurnLog } from '../harness/turn-log.mjs';
@@ -65,6 +66,64 @@ assert(turns[2].in === 16515 && turns[2].cached === 16451, 'turn 3 context keeps
 assert(!turns.some(t => t.in === 0 && t.out === 0), 'an all-zero row is dropped, never logged as a real turn');
 // The growing prefix is what makes cache-normalization meaningful at all.
 assert(turns[0].in < turns[1].in && turns[1].in < turns[2].in, 'recovered turns form a growing prefix');
+
+// ---------------------------------------------------------------------------
+// THE SPLIT-RECORD DEFECT (found 2026-08-13, invisible to the fixture above).
+//
+// The slice above writes the SAME usage on every record of a message, so reading only the
+// first record happened to be right. Real transcripts do not look like that: the first
+// record is frequently a `redacted_thinking` block carrying ZEROED usage, and a LATER
+// record for the same id carries the real numbers. First-record-wins therefore dropped the
+// whole request — 76 of 235 and 67 of 156 delegated requests on the two retained claude
+// runs — and one dropped delegated request nulls a row's entire inclusive cost.
+//
+// Verified before this fix shipped: across 1,939 ids with more than one non-zero record,
+// ZERO disagreed on any token category, so taking the usage-bearing record is exact.
+// ---------------------------------------------------------------------------
+console.log('\nsplit-record usage recovery:');
+const blockRow = (id, content, usage) => JSON.stringify({
+  type: 'assistant', message: { id, role: 'assistant', content, usage },
+});
+const ZERO = { input_tokens: 0, cache_read_input_tokens: null, cache_creation_input_tokens: null, output_tokens: 0 };
+const REAL = { input_tokens: 3, cache_read_input_tokens: 900, cache_creation_input_tokens: 100, output_tokens: 55 };
+const splitDir = join(ROOT, 'projects', '-tmp-run-split');
+mkdirSync(splitDir, { recursive: true });
+const SPLIT = 'b1c2d3e4-0000-4000-8000-000000000001';
+writeFileSync(join(splitDir, `${SPLIT}.jsonl`), [
+  // zeroed FIRST, real usage on a later record for the same id
+  blockRow('gen-split', [{ type: 'redacted_thinking', data: 'xxxx' }], ZERO),
+  blockRow('gen-split', [{ type: 'text', text: 'twelve chars' }], ZERO),
+  blockRow('gen-split', [{ type: 'tool_use', id: 'tu-1', name: 'Bash', input: { command: 'ls -la' } }], REAL),
+  // every record zeroed — genuinely unrecoverable, must stay excluded
+  blockRow('gen-dark', [{ type: 'redacted_thinking', data: 'yyyy' }], ZERO),
+  blockRow('gen-dark', [{ type: 'text', text: 'seven!!' }], ZERO),
+].join('\n') + '\n');
+const split = transcriptMetricsFromFile(join(splitDir, `${SPLIT}.jsonl`));
+assert(split.turns.length === 1,
+  'a request whose usage arrives on a LATER record is recovered, not dropped', JSON.stringify(split.turns));
+assert(split.turns[0]?.in === 1003 && split.turns[0]?.out === 55 && split.turns[0]?.cacheWrite === 100,
+  'the recovered turn carries the real token counts', JSON.stringify(split.turns[0]));
+assert(split.assistantMessages === 2 && split.usageMessages === 1,
+  'the all-zero request still counts as a request with no usage', JSON.stringify(split));
+assert(split.instrumentationComplete === false,
+  'a genuinely unrecoverable request still fails instrumentation closed');
+assert(split.retainedOutputChars === 12 + 6 + 7,
+  'content is unioned across every record of a request, not read from the first only',
+  `got ${split.retainedOutputChars}`);
+assert(split.payloads.includes('ls -la'),
+  'a tool payload written on a later record still reaches the degeneration detector');
+assert(split.repeatedToolUseBlocks === 0, 'append-only writer trips no cumulative-format tripwire');
+// The tripwire itself: a cumulative writer repeating a tool_use id must not double-count.
+writeFileSync(join(splitDir, 'cumulative.jsonl'), [
+  blockRow('gen-cum', [{ type: 'tool_use', id: 'tu-9', name: 'Bash', input: { command: 'echo hi' } }], REAL),
+  blockRow('gen-cum', [{ type: 'tool_use', id: 'tu-9', name: 'Bash', input: { command: 'echo hi' } },
+    { type: 'text', text: 'tail' }], REAL),
+].join('\n') + '\n');
+const cum = transcriptMetricsFromFile(join(splitDir, 'cumulative.jsonl'));
+assert(cum.repeatedToolUseBlocks === 1, 'a repeated tool_use id trips the cumulative-format tripwire');
+assert(cum.retainedOutputChars === 'echo hi'.length + 'tail'.length,
+  'a repeated block is counted once, so a format change cannot silently double the totals',
+  `got ${cum.retainedOutputChars}`);
 
 console.log('\nmissing inputs degrade, never throw:');
 assert(turnsFromTranscript(ROOT, 'no-such-session').length === 0, 'unknown session id → empty');
