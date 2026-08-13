@@ -123,16 +123,23 @@ export function isOverBudget(totalRssBytes, budgetBytesValue) {
 // (354 × 128MB arena extensions ≈ 34 GB RSS). This ceiling is the
 // per-process backstop: when the maintainer's OWN rss crosses the line at a
 // tick boundary, it requests the same graceful shutdown the idle-TTL uses
-// (finish tick, publish, release lock, exit). The O_EXCL launch trigger
-// respawns a fresh few-hundred-MB process on the next dirty event, so the
-// index is unchanged — exit-to-reclaim is already the sanctioned way to
-// return ORT memory (#25325).
+// (finish tick, publish, release lock, exit) and then HANDS OFF to a fresh
+// few-hundred-MB successor it spawns itself — see the `recycleForRss` block in
+// index-maintainer.mjs. Exit-to-reclaim is the sanctioned way to return ORT
+// memory (#25325); the handoff is what keeps the index converging across it.
+//
+// The handoff is NOT optional. Every launchMaintainer call site is a cold
+// start, so a recycle without a successor freezes the index silently: new
+// files return zero hits from both search and grep and nothing logs an error.
 //
 // Guards against restart-thrash:
 //   - at least one COMPLETED tick (never abort startup work),
 //   - minimum uptime (default 10 min ⇒ worst case 6 recycles/hour even when
-//     the ceiling is misconfigured below the resident floor — visible via
-//     the per-recycle WARN, which names the env knob to raise).
+//     the ceiling is configured below the resident floor),
+//   - a startup WARN when the configured ceiling is below that floor, and a
+//     second WARN once the handoff chain reaches its third generation.
+// An explicit ceiling is never silently raised: on a memory-constrained host a
+// low hard cap plus frequent recycles can be exactly what the operator wants.
 //
 // Measured anchors (2026-07-03, arena-off profile): steady floor ~2.7-2.9 GB
 // on a mid-size repo, encode-active peaks ~4.7 GB — hence the 4 GiB default
@@ -144,9 +151,19 @@ const MAINTAINER_RSS_CEILING_MAX_BYTES = 8 * 1024 * 1024 * 1024;  // 8 GiB
 const MAINTAINER_RSS_MIN_UPTIME_MS_DEFAULT = 10 * 60 * 1000;      // 10 min
 
 /**
+ * The measured steady resident set of a working maintainer. A ceiling below
+ * this is satisfiable only by recycling constantly, so the arming site warns
+ * when an operator configures one. It is deliberately NOT enforced: an explicit
+ * `SWEET_SEARCH_MAINTAINER_RSS_MAX_MB` is the operator's decision, and on a
+ * memory-constrained host a low hard cap can be exactly what they want.
+ */
+export const MAINTAINER_RSS_RESIDENT_FLOOR_BYTES = MAINTAINER_RSS_CEILING_MIN_BYTES;
+
+/**
  * Resolve the per-process maintainer RSS ceiling in bytes.
- * `SWEET_SEARCH_MAINTAINER_RSS_MAX_MB` set: explicit MB value; 0/garbage
- * disables (returns 0). Unset: clamp(25% of RAM, 4 GiB, 8 GiB).
+ * `SWEET_SEARCH_MAINTAINER_RSS_MAX_MB` set: explicit MB value, honoured
+ * verbatim; 0/garbage disables (returns 0). Unset: clamp(25% of RAM, 4 GiB,
+ * 8 GiB).
  */
 export function maintainerRssCeilingBytes(env = process.env, totalMem = os.totalmem()) {
   const raw = env.SWEET_SEARCH_MAINTAINER_RSS_MAX_MB;

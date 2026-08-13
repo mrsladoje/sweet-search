@@ -48,6 +48,10 @@ import { startupInterval, tierForHardware, reconcileEnablement, nextInterval, ba
 import { detectHardwareCapability } from '../infrastructure/hardware-capability.js';
 import { sweepStaleArtifactTemps, DEFAULT_TMP_SWEEP_MAX_AGE_MS } from '../incremental-indexing/infrastructure/artifact-temp-sweep.mjs';
 import { hasCompleteBaseIndex, WAITING_FOR_INITIAL_INDEX } from '../incremental-indexing/infrastructure/baseline-readiness.mjs';
+// Static, not dynamic: the D.5 teardown watchdog must be able to hand off from
+// a synchronous callback, so the launcher has to be resolved before any await
+// in the shutdown path can wedge.
+import { launchMaintainer } from './maintainer-launcher.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -752,6 +756,20 @@ async function sigtermAndStealLock(existing, lockFile, reason) {
   if (isPidRunning(existing.pid, existing.startTime)) {
     log('WARN', `pid=${existing.pid} still alive after SIGTERM+${WEDGED_KILL_GRACE_MS}ms grace; proceeding (it will self-exit at its next loop tick).`);
   }
+  // Re-read before unlinking. During the grace above the observed holder may
+  // have shut down and been REPLACED by a legitimate successor — an RSS-recycle
+  // handoff does exactly that, and so does any normal restart. Unlinking the
+  // pathname we originally saw would then delete the SUCCESSOR's lock, letting
+  // us start a second writer against the same state. Only remove the lock while
+  // it still names the holder we decided to displace.
+  const current = readStateLock(lockFile);
+  if (!current) return;                       // already gone; nothing to steal
+  if (current.pid !== existing.pid
+      || (existing.ownerToken != null && current.ownerToken !== existing.ownerToken)
+      || (existing.startTime != null && current.startTime != null && current.startTime !== existing.startTime)) {
+    log('INFO', `Lock for ${lockFile} now belongs to pid=${current.pid} (was ${existing.pid}); abandoning takeover so we never displace a live successor.`);
+    return;
+  }
   try { unlinkSync(lockFile); } catch {}
 }
 
@@ -778,7 +796,14 @@ async function sigtermAndStealLock(existing, lockFile, reason) {
 export async function acquireStateLock(stateDir) {
   mkdirSync(stateDir, { recursive: true });
   const lockFile = join(stateDir, 'index-maintainer.lock');
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // THREE attempts, not two. A takeover can now legitimately spend an attempt
+  // WITHOUT clearing the lock: sigtermAndStealLock abandons the steal when the
+  // holder was replaced during its grace (an RSS-recycle handoff does exactly
+  // that). If that replacement then dies, attempt 2 only gets as far as
+  // unlinking its dead lock, and a two-attempt budget would return
+  // `acquired:false` having just removed the last lock — leaving ZERO writers.
+  // The third attempt is what turns that state back into an acquisition.
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const fd = openSync(lockFile, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
       // Initialise the in-memory state. progressTimestamp starts equal to
@@ -1211,6 +1236,233 @@ export function idleTtlExceeded(state, ttlMs, nowMs = Date.now()) {
   return (nowMs - state.idleSinceMs) >= ttlMs;
 }
 
+// Deadline for the whole post-recycle teardown. The watchdog is armed BEFORE
+// the teardown awaits, not after: `watcher.close()`, the registry
+// `unregister()` and `unloadLocalModel()` are all native and none is
+// guaranteed to resolve. A hang there would leave a fat process holding the
+// lock and doing no work — the exact state the ceiling exists to prevent.
+const RECYCLE_TEARDOWN_DEADLINE_MS = 20_000;
+
+// Per-step bound inside that deadline, so one wedged native close cannot eat
+// the whole budget and starve the lock release + handoff that follow it.
+const TEARDOWN_STEP_DEADLINE_MS = 5_000;
+
+// Backstop for the watchdog's own handoff, so a wedge there cannot keep the
+// process alive indefinitely after we have already decided to leave.
+const WATCHDOG_HANDOFF_DEADLINE_MS = 5_000;
+
+// How long to wait before confirming the successor is still alive. `spawn()`
+// reports failures like EAGAIN/EMFILE/ENOENT asynchronously, so a synchronous
+// return tells us nothing about whether the child survived.
+const SUCCESSOR_CONFIRM_MS = 750;
+
+// Chain length at which a repeating recycle stops being routine and starts
+// meaning "the ceiling is below this repo's working set".
+const RECYCLE_CHAIN_WARN_AT = 3;
+
+/**
+ * Run a best-effort teardown step under a hard time bound. A step that hangs
+ * is abandoned, never awaited forever; a step that throws is swallowed. Both
+ * are already best-effort in this shutdown path — the bound only stops one of
+ * them from blocking the lock release and the handoff behind it.
+ */
+async function runBoundedTeardown(label, fn, ms = TEARDOWN_STEP_DEADLINE_MS, emit = log) {
+  let timer = null;
+  // The rejection handler is attached to the work promise ITSELF, not to the
+  // race. Promise.race does not cancel the loser, so a step that rejects after
+  // the timeout has already won would otherwise be an unhandled rejection.
+  const work = Promise.resolve()
+    .then(fn)
+    .then(() => true, (err) => {
+      emit('WARN', `${label} failed (non-fatal): ${err?.message ?? err}`);
+      return true;
+    });
+  const expiry = new Promise((resolve) => {
+    timer = setTimeout(() => { timer = null; resolve(false); }, ms);
+  });
+  const finished = await Promise.race([work, expiry]);
+  if (timer) clearTimeout(timer);
+  if (finished === false) {
+    emit('WARN', `${label} did not finish within ${ms}ms; abandoning it so shutdown can continue.`);
+  }
+}
+
+/**
+ * Does this shutdown hand off to a successor?
+ *
+ * An RSS recycle is the ONE exit reason where the work is NOT finished — the
+ * maintainer quits mid-backlog purely to hand native memory back to the OS.
+ * Every other reason means "stop", and an explicit stop must WIN even when it
+ * arrives after the recycle decision: an operator who sends SIGTERM during
+ * teardown expects the maintainer to be gone, not replaced.
+ */
+export function shouldHandOffAfterRecycle({ recycleForRss, stopRequested }) {
+  return recycleForRss === true && stopRequested !== true;
+}
+
+/**
+ * How many RSS recycles this maintainer chain has done, including the one we
+ * are about to do. A cold-started maintainer has no generation env var, so its
+ * successor is generation 1. Garbage/negative values reset to 0.
+ */
+export function nextRecycleGeneration(env = process.env) {
+  const raw = Number(env.SWEET_SEARCH_MAINTAINER_RECYCLE_GENERATION);
+  const current = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+  return current + 1;
+}
+
+/**
+ * Environment for the successor maintainer.
+ *
+ * The project root and state dir are pinned to the ALREADY-RESOLVED absolute
+ * paths from our own context. Inheriting the raw strings is not safe: they may
+ * be relative, and the successor is spawned with a different cwd, so
+ * `SWEET_SEARCH_PROJECT_ROOT=repos/app` would re-resolve against the new cwd
+ * and point the successor at a different index — leaving the real one with
+ * zero writers.
+ */
+export function successorEnv(ctx, env = process.env) {
+  return {
+    ...env,
+    SWEET_SEARCH_PROJECT_ROOT: ctx.projectRoot,
+    SWEET_SEARCH_STATE_DIR: ctx.stateDir,
+  };
+}
+
+/**
+ * Did the freshly spawned successor survive its first `ms`?
+ *
+ * Watching the child handle's events is the only reliable answer. A pid probe
+ * is NOT: a child that exits immediately becomes a zombie of this process until
+ * it is reaped, and `process.kill(pid, 0)` reports a zombie as alive — so the
+ * probe returns "healthy" in exactly the case the check exists to catch.
+ *
+ * `error` covers the asynchronous spawn failures (EAGAIN, EMFILE, ENOENT on a
+ * missing cwd) that the synchronous try/catch cannot see.
+ */
+function confirmSuccessor(child, ms) {
+  if (!child || typeof child.once !== 'function') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let settled = false;
+    let t = null;
+    const finish = (alive) => {
+      if (settled) return;
+      settled = true;
+      if (t) clearTimeout(t);
+      child.removeListener('error', onDead);
+      child.removeListener('exit', onDead);
+      resolve(alive);
+    };
+    const onDead = () => finish(false);
+    child.once('error', onDead);
+    child.once('exit', onDead);
+    // DELIBERATELY REF'D. The child is detached and unref'd, the pending promise
+    // holds nothing, and by this point the shutdown path has cleared every
+    // interval — so with an unref'd timer Node exits before either the child's
+    // `exit` event or this timeout can run, and the confirmation silently never
+    // happens. Verified: a parent whose detached child ran `process.exit(1)`
+    // exited 0 without the confirmation callback firing at all. A referenced
+    // timer keeps the loop alive for exactly this bounded window, which is the
+    // whole point; the caller exits immediately afterwards.
+    t = setTimeout(() => finish(true), ms);
+  });
+}
+
+/**
+ * Start the successor maintainer after an RSS recycle, and report what
+ * happened. Extracted from the shutdown path so the decision logic is testable
+ * without spawning a process: `launch` is the injected launcher (defaults to
+ * the real `launchMaintainer`).
+ *
+ * A synchronous `spawn()` return does NOT mean the child is running — Node
+ * reports EAGAIN/EMFILE/ENOENT asynchronously — so a confirmed handoff waits
+ * briefly and re-checks liveness, retrying once. Without that check the parent
+ * can log "successor started", exit, and leave zero writers.
+ *
+ * Never throws — a failed handoff is logged loudly and reported, because the
+ * consequence (a silently frozen index) must not also be a silent crash.
+ *
+ * @returns {Promise<{generation:number, spawned:boolean, reason:string, confirmed:boolean}>}
+ */
+export async function handOffAfterRssRecycle({
+  cwd,
+  env = process.env,
+  launch = null,
+  emit = log,
+  confirmDelayMs = SUCCESSOR_CONFIRM_MS,
+  confirm = confirmSuccessor,
+  shouldAbort = () => false,
+  attempts = 2,
+} = {}) {
+  const generation = nextRecycleGeneration(env);
+  let outcome = { generation, spawned: false, reason: 'error', confirmed: false };
+  try {
+    const launcher = launch || launchMaintainer;
+    const childEnv = { ...env, SWEET_SEARCH_MAINTAINER_RECYCLE_GENERATION: String(generation) };
+    let result = null;
+    for (let attempt = 1; attempt <= Math.max(1, attempts); attempt++) {
+      // Re-checked before EVERY spawn: an operator stop that arrives between
+      // attempts must not be answered with another successor.
+      if (shouldAbort()) {
+        emit('INFO', 'RSS-recycle handoff abandoned: a stop was requested.');
+        return { generation, spawned: false, reason: 'stop-requested', confirmed: false };
+      }
+      result = launcher({
+        cwd,
+        env: childEnv,
+        log: (msg) => emit('INFO', `RSS-recycle handoff: ${msg}`),
+      });
+      if (result?.spawned !== true) break;
+      // `null` ⇒ this launcher gave us no child handle to watch (an injected
+      // test double). Trust the synchronous result rather than inventing a
+      // liveness signal we do not have.
+      const survived = await confirm(result.child, confirmDelayMs);
+      // The confirmation window is real wall-clock time, so a SIGTERM can land
+      // inside it. The successor is already running by then, so honouring the
+      // stop means stopping IT too — otherwise `kill <pid>` silently leaves a
+      // replacement behind, which is exactly the round-1 complaint one layer
+      // deeper.
+      if (shouldAbort()) {
+        emit('WARN', `RSS-recycle handoff: stop requested during confirmation; stopping the successor (pid ${result.pid}).`);
+        try { result.child?.kill?.('SIGTERM'); } catch { /* best-effort */ }
+        return { generation, spawned: false, reason: 'stop-requested', confirmed: false };
+      }
+      if (survived !== false) {
+        outcome = { generation, spawned: true, reason: 'spawned', confirmed: survived === true };
+        emit('INFO', `RSS-recycle handoff: successor maintainer ${survived === true ? 'confirmed running' : 'started'} (pid ${result.pid}, generation ${generation})`);
+        break;
+      }
+      emit('WARN', `RSS-recycle handoff: successor pid ${result.pid} did not survive its first ${confirmDelayMs}ms (attempt ${attempt}).`);
+      outcome = { generation, spawned: true, reason: 'died-immediately', confirmed: false };
+    }
+    if (result?.spawned !== true) {
+      outcome = { generation, spawned: false, reason: result?.reason ?? 'unknown', confirmed: false };
+    }
+    if (outcome.spawned && outcome.reason === 'spawned') {
+      // Already logged with the pid above.
+    } else if (outcome.reason === 'already-running') {
+      // Benign: a maintainer already owns the lock for this state dir, so the
+      // index has a live writer. Nothing to warn about — this is the O_EXCL
+      // guarantee doing its job, e.g. after a takeover raced our shutdown.
+      emit('INFO', 'RSS-recycle handoff: a maintainer already holds the lock; no successor needed.');
+    } else {
+      emit('WARN', `RSS-recycle handoff did NOT start a successor (${outcome.reason}). The index stops converging until the next daemon start.`);
+    }
+  } catch (err) {
+    emit('ERROR', `RSS-recycle handoff failed: ${err?.message ?? err}. The index stops converging until the next daemon start.`);
+    outcome = { generation, spawned: false, reason: 'error', confirmed: false };
+  }
+  // A repeating chain means the ceiling sits below this repo's true resident
+  // working set. We deliberately do NOT cap the chain — a capped chain is the
+  // silent-staleness bug again, and each generation still does a full minUptime
+  // of useful work with RSS bounded by the ceiling. We say so instead, and name
+  // the knob.
+  if (generation >= RECYCLE_CHAIN_WARN_AT) {
+    emit('WARN', `Maintainer has recycled for RSS ${generation} times in a row. The ceiling is probably below this repo's working set; raise SWEET_SEARCH_MAINTAINER_RSS_MAX_MB.`);
+  }
+  return outcome;
+}
+
 async function runReconcileV2Main({ runOnce, merkleOnce }) {
   const ctx = reconcileV2Context();
   mkdirSync(ctx.stateDir, { recursive: true });
@@ -1320,6 +1572,14 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   // longest-IDLE daemon, so an active maintainer needs its own line. Resolved
   // once; checked at tick boundaries below. 0 ⇒ disabled.
   let rssCeiling = { ceilingBytes: 0, minUptimeMs: 0, shouldRecycleForRss: null };
+  // Set ONLY by the D.5 ceiling trip below. It selects the successor handoff in
+  // the `finally` — see the comment there for why no other exit reason qualifies.
+  let recycleForRss = false;
+  // Set by every exit reason that means "stop, and stay stopped": SIGTERM,
+  // SIGINT, idle-TTL, a lost lock, a lifecycle abort. It DOMINATES
+  // recycleForRss, so a signal that arrives after the ceiling trip still
+  // cancels the handoff — `kill <pid>` must never be answered with a successor.
+  let stopRequested = false;
   try {
     const mod = await import('./rss-budget.mjs');
     if (typeof mod.isEnabled === 'function' && mod.isEnabled()
@@ -1334,6 +1594,15 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
       };
       if (rssCeiling.ceilingBytes > 0) {
         log('INFO', `Maintainer RSS recycle ceiling armed: ${(rssCeiling.ceilingBytes / 1048576).toFixed(0)}MB (min uptime ${rssCeiling.minUptimeMs}ms; override SWEET_SEARCH_MAINTAINER_RSS_MAX_MB)`);
+        // Advisory only — the operator's explicit value is never overridden.
+        // Below the measured steady resident set the maintainer cannot stay
+        // under the line, so it will recycle and hand off on every minUptime.
+        // That is bounded and it keeps the index converging, but it is worth
+        // saying out loud rather than leaving as a mystery restart loop.
+        const floor = mod.MAINTAINER_RSS_RESIDENT_FLOOR_BYTES;
+        if (Number.isFinite(floor) && rssCeiling.ceilingBytes < floor) {
+          log('WARN', `That ceiling is below the measured steady resident set (~${(floor / 1073741824).toFixed(0)}GiB). Expect a recycle + handoff roughly every ${Math.round(rssCeiling.minUptimeMs / 60000)} minutes.`);
+        }
       }
     }
   } catch (err) {
@@ -1358,6 +1627,9 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     ? setInterval(() => {
         if (idleTtlExceeded(idleState, idleTtl)) {
           log('INFO', `Maintainer idle for ≥${idleTtl}ms with no indexed change; requesting clean shutdown for on-demand respawn`);
+          // Idle means there is nothing left to index, so this exit must NOT
+          // hand off — a successor would immediately idle out again.
+          stopRequested = true;
           shutdownRequested = true;
         }
       }, Number(process.env.SWEET_SEARCH_MAINTAINER_IDLE_CHECK_MS ?? 60_000))
@@ -1371,7 +1643,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   const refresh = setInterval(() => {
     if (stillOwnsLock(lock.lockFile)) writeStateLock(lock.lockFile);
   }, LOCK_REFRESH_INTERVAL);
-  const shutdown = () => { shutdownRequested = true; };
+  const shutdown = () => { stopRequested = true; shutdownRequested = true; };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
   process.on('exit', () => releaseStateLock(lock.lockFile));
@@ -1387,6 +1659,8 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
       // starts new work while another maintainer owns the lock.
       if (!stillOwnsLock(lock.lockFile)) {
         log('WARN', `Lock no longer owned by pid=${process.pid}; another maintainer has taken over. Exiting cleanly.`);
+        // A successor already exists — never start a second one.
+        stopRequested = true;
         shutdownRequested = true;
         break;
       }
@@ -1462,7 +1736,8 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
               ticksCompleted: completedTicks,
             });
             if (verdict.recycle) {
-              log('WARN', `Maintainer RSS ${(rssNow / 1048576).toFixed(0)}MB exceeds recycle ceiling ${(rssCeiling.ceilingBytes / 1048576).toFixed(0)}MB; requesting clean shutdown for on-demand respawn. If this repeats right after startup, raise SWEET_SEARCH_MAINTAINER_RSS_MAX_MB.`);
+              log('WARN', `Maintainer RSS ${(rssNow / 1048576).toFixed(0)}MB exceeds recycle ceiling ${(rssCeiling.ceilingBytes / 1048576).toFixed(0)}MB; shutting down and handing off to a fresh maintainer. If this repeats right after startup, raise SWEET_SEARCH_MAINTAINER_RSS_MAX_MB.`);
+              recycleForRss = true;
               shutdownRequested = true;
             }
           }
@@ -1485,6 +1760,8 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
             } catch (sweepErr) {
               log('WARN', `Cancellation cleanup sweep failed (non-fatal): ${sweepErr?.message ?? sweepErr}`);
             }
+            // A cancellation is a stop, not a recycle — no successor.
+            stopRequested = true;
             shutdownRequested = true;
             break;
           }
@@ -1505,25 +1782,128 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   } finally {
     clearInterval(refresh);
     if (idleTimer) clearInterval(idleTimer);
-    // G6 watcher teardown — best-effort, never throw from finally.
+
+    // D.5 teardown watchdog — armed BEFORE the awaits below, not after them.
+    // `watcher.close()`, the registry `unregister()` and `unloadLocalModel()`
+    // are all native and none is guaranteed to resolve. If one wedges we would
+    // otherwise sit here forever: lock still held, no ticks running, full RSS
+    // still resident — silent staleness with none of the memory reclaimed.
+    //
+    // The watchdog only ever fires from a timer callback, which means the event
+    // loop is alive; a synchronously blocked loop would stop the watchdog too,
+    // and nothing in-process can help there. Because the loop IS alive we can
+    // use the SAME confirmed handoff as the normal path instead of a
+    // fire-and-forget spawn: `spawn()` reports EAGAIN/EMFILE/ENOENT
+    // asynchronously, so exiting immediately after a synchronous "spawned"
+    // would report a successor that never existed.
+    let teardownFinished = false;
+    // Exit ownership latch. `teardownFinished` alone is not enough: it only
+    // stops a watchdog callback that has NOT started. Once the watchdog IS
+    // running, a teardown await can settle underneath it and the normal path
+    // would race ahead — releasing the lock again, launching a second
+    // successor, and calling process.exit(0) while the watchdog's confirmation
+    // is still pending, which kills the retry. Exactly one of the two paths
+    // owns shutdown from here on.
+    let watchdogEngaged = false;
+    const watchdog = recycleForRss ? setTimeout(() => {
+      if (teardownFinished) return;
+      watchdogEngaged = true;
+      log('WARN', `Post-recycle teardown did not finish within ${RECYCLE_TEARDOWN_DEADLINE_MS}ms; releasing the lock and handing off from the watchdog.`);
+      try { releaseStateLock(lock.lockFile); } catch { /* best-effort */ }
+      // Hard backstop in case the handoff itself wedges. Referenced on purpose:
+      // an unref'd timer here would let the process exit before the handoff
+      // resolves, which is the very failure this block exists to avoid.
+      const hardExit = setTimeout(() => {
+        log('WARN', 'Watchdog handoff did not resolve; exiting anyway.');
+        process.exit(0);
+      }, WATCHDOG_HANDOFF_DEADLINE_MS);
+      const done = () => { clearTimeout(hardExit); process.exit(0); };
+      if (stopRequested) { done(); return; }
+      handOffAfterRssRecycle({
+        cwd: ctx.projectRoot,
+        env: successorEnv(ctx, process.env),
+        shouldAbort: () => stopRequested,
+        emit: (level, msg) => log(level, `[watchdog] ${msg}`),
+      }).then(done, done);
+    }, RECYCLE_TEARDOWN_DEADLINE_MS) : null;
+    watchdog?.unref?.();
+
+    // G6 watcher teardown — best-effort, never throw and never hang. Safe to
+    // abandon on timeout: closing a watcher only touches parent-local state.
     if (watcherState.handle && typeof watcherState.handle.close === 'function') {
-      try { await watcherState.handle.close(); } catch { /* best-effort */ }
+      await runBoundedTeardown('Watcher close', () => watcherState.handle.close());
     }
-    // G7 RSS registry teardown — best-effort.
-    if (rssRegistration && typeof rssRegistration.unregister === 'function') {
-      try { await rssRegistration.unregister(); } catch { /* best-effort */ }
+    // G7 RSS registry teardown — SKIPPED ENTIRELY when we are handing off.
+    //
+    // `unregister` is an async read-modify-rename over a registry file SHARED
+    // with every other daemon on the host. On a handoff that is a hazard with
+    // no upside: if the rename stalls and lands after the successor has
+    // registered itself, it restores a snapshot taken before the successor
+    // existed and erases its entry — the successor is then invisible to fleet
+    // RSS accounting for as long as it lives. Bounding the call does not help,
+    // because abandoning it does not cancel the pending write.
+    //
+    // Not unregistering costs nothing: `pruneRegistry` drops entries whose pid
+    // is gone on every eviction tick, so our row disappears on its own once
+    // this process exits. On a non-handoff shutdown there is no successor to
+    // erase, so we still unregister promptly and keep SIGTERM snappy.
+    if (rssRegistration && typeof rssRegistration.unregister === 'function' && !recycleForRss) {
+      await runBoundedTeardown('RSS registry unregister', () => rssRegistration.unregister());
     }
     // D.1: release the ORT session in order on a clean (idle-TTL or signal)
     // shutdown so a respawned daemon starts from a clean slate. This canNOT go
     // in the process.on('exit') handler (synchronous, no async). releaseStateLock
     // below unlinks the O_EXCL lock so the next launchMaintainer respawns cleanly
     // (reconcile-before-serve via the new daemon's t=0 tick).
-    try {
+    await runBoundedTeardown('Local model unload', async () => {
       const { unloadLocalModel } = await import('../embedding/embedding-local-model.js');
       await unloadLocalModel();
-    } catch { /* best-effort: never block clean shutdown on model release */ }
+    });
+    teardownFinished = true;
+    // The watchdog got here first and owns shutdown: it has already released
+    // the lock and is mid-handoff, with its own referenced backstop timer
+    // keeping this process alive until it finishes. Doing ANYTHING more here —
+    // releasing again, launching a second successor, or exiting — would cut its
+    // confirmation and retry short. Stand down.
+    if (watchdogEngaged) return;
+    if (watchdog) clearTimeout(watchdog);
     releaseStateLock(lock.lockFile);
     log('INFO', 'Reconcile v2 shutdown complete');
+    // D.5 successor handoff. An RSS recycle is the ONE exit reason where the
+    // work is NOT finished — the maintainer quits mid-backlog purely to hand
+    // native (ORT arena / sqlite) memory back to the OS. Every other exit
+    // reason means "stop": SIGTERM/SIGINT is an operator asking us to go away,
+    // idle-TTL means there is nothing left to index, a lost lock means a
+    // successor already exists, and a lifecycle abort is a cancellation. So
+    // only this path hands off.
+    //
+    // Without the handoff the index silently stops converging. All three
+    // launchMaintainer call sites (search-server, session prewarm, MCP server)
+    // are COLD starts, so after a recycle nothing would restart the maintainer
+    // until the next daemon boot — new files return zero hits from search and
+    // grep, with no error anywhere.
+    //
+    // Ordering is load-bearing: the spawn happens AFTER releaseStateLock, so
+    // the successor's O_EXCL acquire succeeds on its first attempt. The
+    // successor is detached, so it outlives this process. Our own
+    // process.on('exit') release is pid+token matched, so it can never unlink
+    // the successor's lock, and a takeover that raced us re-checks ownership
+    // before unlinking (see sigtermAndStealLock).
+    if (shouldHandOffAfterRecycle({ recycleForRss, stopRequested })) {
+      await handOffAfterRssRecycle({
+        cwd: ctx.projectRoot,
+        env: successorEnv(ctx, process.env),
+        // Re-read live, not captured: a signal can land during the spawn and
+        // the confirmation wait, long after the predicate above was evaluated.
+        shouldAbort: () => stopRequested,
+      });
+      // Exit NOW rather than waiting for the event loop to drain. The successor
+      // is already running, so every extra millisecond here is a millisecond
+      // where two model-loaded processes are resident — the opposite of what a
+      // recycle is for. Everything that had to happen has happened: the tick
+      // published, the lock is released, the successor is confirmed.
+      process.exit(0);
+    }
   }
 }
 
