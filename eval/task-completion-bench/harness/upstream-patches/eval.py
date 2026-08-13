@@ -66,6 +66,11 @@ HF_ROWS_ENDPOINT = "https://datasets-server.huggingface.co/rows"
 DEFAULT_NETWORK = "host"
 REAPPLY_INSTALL_SEDS = False
 LOGS_DIR = Path("logs")
+EVALUATOR_CONTRACT = {
+    "version": 1,
+    "n_test_results": "required-nonnegative-integer-per-report-item",
+    "empty_agent_patch": "grade-baseline",
+}
 
 
 def load_specs(json_path: Path) -> list[dict]:
@@ -193,12 +198,17 @@ def run_in_container(
     extra_docker_args: list[str] | None = None,
     presed_cmds: list[str] | None = None,
 ) -> tuple[int, str]:
-    cmd_lines = [
-        "set -e",
-        "git reset --hard HEAD",
-        f"git apply -v --3way --recount --ignore-space-change --whitespace=nowarn /patches/{patch_name}",
-        f"git apply -v --3way --recount --ignore-space-change --whitespace=nowarn /patches/{test_patch_name}",
-    ]
+    cmd_lines = ["set -e", "git reset --hard HEAD"]
+    # An empty agent patch is a valid baseline prediction, not a reason to skip
+    # grading. `git apply` rejects a zero-byte file, so omit only that apply step;
+    # hidden tests and the framework suite still run normally.
+    if (patch_dir / patch_name).read_text(encoding="utf-8").strip():
+        cmd_lines.append(
+            f"git apply -v --3way --recount --ignore-space-change --whitespace=nowarn /patches/{patch_name}"
+        )
+    cmd_lines.append(
+        f"git apply -v --3way --recount --ignore-space-change --whitespace=nowarn /patches/{test_patch_name}"
+    )
     # held-out ledger triage 2026-07-17: images are frozen AFTER install_config's
     # `sed -i` working-tree edits (SDK/langversion/TFM/conftest compat shims),
     # but the `git reset --hard HEAD` above silently reverts them — reproducing
@@ -270,8 +280,8 @@ def evaluate_instance(
     if patch_override:
         patch = patch_override.get("patch", patch)
     test_patch = spec.get("test_patch", "")
-    if not patch or not test_patch:
-        raise ValueError(f"Task {instance_id} missing patch/test_patch.")
+    if not test_patch:
+        raise ValueError(f"Task {instance_id} missing test_patch.")
 
     workdir = f"/{repo.split('/')[1]}"
 
@@ -466,6 +476,9 @@ def render_progress_bar(completed: int, total: int, width: int = 30) -> str:
 
 
 def main() -> int:
+    if sys.argv[1:] == ["--print-contract"]:
+        print(json.dumps(EVALUATOR_CONTRACT, sort_keys=True))
+        return 0
     parser = argparse.ArgumentParser(description="Evaluate instances via docker.")
     source_group = parser.add_mutually_exclusive_group(required=True)
     source_group.add_argument("--json", help="Path to JSON file with tasks.")

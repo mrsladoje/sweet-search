@@ -45,9 +45,11 @@ export function priceFor(model) {
   return p;
 }
 
-// Per-turn cost recovery. `turns` = [{in, cached, out, holeAt?}] in trajectory order, where
+// Per-turn cost recovery. `turns` = [{in, cached, cacheWrite?, out, holeAt?}] in trajectory order, where
 // `in` is the FULL context size at that turn (the growing prefix). newIn is the
 // positive delta (context added this turn); the remainder is prior context re-sent.
+// `cacheWrite` is the subset of `in` written into the provider prompt cache on
+// this request. It is zero for providers that do not expose cache creation.
 //
 // THREE COLUMNS, and picking the wrong one has already nearly shipped a loss:
 //
@@ -78,8 +80,15 @@ export function costFromTurns(turns, price = PRICE) {
   for (const tu of turns) {
     const newIn = Math.max(0, tu.in - prevIn);   // context added this turn
     const resent = tu.in - newIn;                // prior context re-sent
+    const cacheWrite = Math.max(0, Math.min(Number(tu.cacheWrite) || 0, tu.in - (Number(tu.cached) || 0)));
     ideal += (newIn * price.in + resent * price.cache + tu.out * price.out) / 1e6;   // ideal cache
-    real += ((tu.in - tu.cached) * price.in + tu.cached * price.cache + tu.out * price.out) / 1e6;  // actual cache
+    // Anthropic prompt-cache creation is billed at 1.25x input. Keeping it
+    // distinct from ordinary fresh input is required for transcript-derived
+    // realized cost to agree with the authoritative aggregate usage bill.
+    real += ((tu.in - tu.cached - cacheWrite) * price.in
+      + cacheWrite * price.in * 1.25
+      + tu.cached * price.cache
+      + tu.out * price.out) / 1e6;  // actual cache
 
     // longest prefix PROVABLY still cache-valid after whatever happened to the context
     let cacheable;

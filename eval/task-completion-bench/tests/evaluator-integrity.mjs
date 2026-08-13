@@ -63,10 +63,22 @@ try {
     '',
   ].join('\n'));
   const wrapped = execFileSync(python, [wrapperPath], {
-    env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', SR_EVAL_DIR: fakeEval },
+    env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', SR_EVAL_DIR: fakeEval,
+      SS_SR_EVAL_SCRIPT: path.join(fakeEval, 'scripts/eval.py') },
     encoding: 'utf8',
   });
   assert.deepEqual(JSON.parse(wrapped), { wrapped: 'PASSED' });
+
+  // With no explicit override, the wrapper must execute the repository-owned
+  // evaluator and expose its machine-checkable evidence contract.
+  const contract = JSON.parse(execFileSync(python, [wrapperPath, '--print-contract'], {
+    env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', SR_EVAL_DIR: fakeEval,
+      SS_SR_EVAL_SCRIPT: '' },
+    encoding: 'utf8',
+  }));
+  assert.equal(contract.version, 1);
+  assert.match(contract.n_test_results, /required/);
+  assert.equal(contract.empty_agent_patch, 'grade-baseline');
 
   const patchesPath = path.join(dir, 'patches.json');
   const reportPath = path.join(dir, 'report.json');
@@ -135,7 +147,9 @@ try {
     // ordinary, and the only signal that no test ran is n_test_results == 0.
     '    blind = instance_id == "task-9"',
     '    log_path.write_text("no test ran\\n" if blind else "synthetic green log\\n")',
-    '    items.append({"instance_id": instance_id, "from_fail_to_pass": [] if blind else ["target"], "failed_from_pass_to_pass": [], "passed_match": not blind, "exit_code": 1 if blind else 0, "n_test_results": 0 if blind else 42, "log_path": str(log_path), "error": ""})',
+    '    item = {"instance_id": instance_id, "from_fail_to_pass": [] if blind else ["target"], "failed_from_pass_to_pass": [], "passed_match": not blind, "exit_code": 1 if blind else 0, "log_path": str(log_path), "error": ""}',
+    '    if instance_id != "task-10": item["n_test_results"] = 0 if blind else 42',
+    '    items.append(item)',
     'payload = {"max_workers": args.max_workers, "total": len(items), "all_ok": True, "items": items}',
     'Path(args.report_json).write_text(json.dumps(payload))',
     '',
@@ -150,36 +164,97 @@ try {
   });
   const previousBatch = process.env.GRADE_BATCH;
   const previousGc = process.env.NO_IMAGE_GC;
+  const previousEvalScript = process.env.SS_SR_EVAL_SCRIPT;
   process.env.GRADE_BATCH = '6';
   process.env.NO_IMAGE_GC = '1';
-  let grade;
+  process.env.SS_SR_EVAL_SCRIPT = path.join(fakeEval, 'scripts/eval.py');
+  let grade, emptyGrade, mixedGrade;
   try {
     grade = runtime.gradeArm('sweet', records.map(record => ({
       instance_id: record.instance_id, model_patch: record.patch,
     })), 'synthetic-ten', 0);
+    emptyGrade = runtime.gradeArm('native', records.slice(0, 2).map(record => ({
+      instance_id: record.instance_id, model_patch: '',
+    })), 'synthetic-empty', 0);
+    mixedGrade = runtime.gradeArm('sweet', [
+      { instance_id: records[0].instance_id, model_patch: '' },
+      { instance_id: records[1].instance_id, model_patch: records[1].patch },
+    ], 'synthetic-mixed', 0);
   } finally {
     if (previousBatch === undefined) delete process.env.GRADE_BATCH;
     else process.env.GRADE_BATCH = previousBatch;
     if (previousGc === undefined) delete process.env.NO_IMAGE_GC;
     else process.env.NO_IMAGE_GC = previousGc;
+    if (previousEvalScript === undefined) delete process.env.SS_SR_EVAL_SCRIPT;
+    else process.env.SS_SR_EVAL_SCRIPT = previousEvalScript;
   }
   const integratedDir = path.join(dir, 'results/synthetic-ten/sweet');
-  // D-1 tripwire: nine tasks produced test results and resolve; task-9's log carried no
-  // test result at all, so it must be reported as evidence-free rather than scored as a
-  // failure. Scoring it f2pFrac=0 is what published 12 fabricated yarp failures.
-  assert.equal(grade.resolved_ids.length, 9);
+  // D-1 tripwire: task-9 explicitly reports zero tests and task-10 simulates an
+  // external evaluator that omits the evidence-count contract. Neither may score.
+  assert.equal(grade.resolved_ids.length, 8);
   assert.equal(grade.resolved_ids.includes('task-9'), false);
-  assert.deepEqual(grade.no_test_evidence_ids, ['task-9']);
+  assert.equal(grade.resolved_ids.includes('task-10'), false);
+  assert.deepEqual(grade.no_test_evidence_ids, ['task-9', 'task-10']);
   assert.equal(grade.score['task-9'].status, 'NO-TEST-EVIDENCE');
   assert.equal(grade.score['task-9'].f2pFrac, null);
+  assert.equal(grade.score['task-10'].status, 'NO-TEST-EVIDENCE');
+  assert.equal(grade.score['task-10'].evidenceReason, 'missing-n_test_results-contract');
   assert.equal(grade.score['task-1'].nTestResults, 42);
   assert.equal(JSON.parse(readFileSync(path.join(integratedDir, 'report.json'), 'utf8')).items.length, 10);
   assert.equal(JSON.parse(readFileSync(path.join(integratedDir, 'patches.json'), 'utf8')).length, 10);
   assert.equal(JSON.parse(readFileSync(path.join(integratedDir, 'tasks.json'), 'utf8')).length, 10);
   assert.equal(readFileSync(path.join(integratedDir, 'logs/task-1_log.txt'), 'utf8'), 'synthetic green log\n');
   assert.equal(readdirSync(integratedDir).some(name => name.startsWith('.grade-')), false);
+
+  // Empty patches are still graded: they are baseline predictions, not rows that
+  // can be stamped gradeable without a log. Exercise all-empty and mixed batches.
+  assert.equal(emptyGrade.resolved_ids.length, 2);
+  assert.deepEqual(emptyGrade.no_test_evidence_ids, []);
+  const emptyPatches = JSON.parse(readFileSync(path.join(dir,
+    'results/synthetic-empty/native/patches.json'), 'utf8'));
+  assert.equal(emptyPatches.length, 2);
+  assert.equal(emptyPatches.every(item => item.patch === ''), true);
+
+  assert.equal(mixedGrade.resolved_ids.length, 2);
+  assert.deepEqual(mixedGrade.no_test_evidence_ids, []);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
 
-console.log('evaluator-integrity: parser and ten-task retention assertions passed');
+// ---------------------------------------------------------------------------
+// THE GRADER IS INSIDE THE LEDGER FINGERPRINT (2026-08-12)
+//
+// D-1 was not "someone forgot a flag". It was that gold validation and rollout
+// grading could diverge SILENTLY, because nothing tied a gold verdict to the
+// grader that produced it. Fixing the flag left that class open, and it
+// recurred: the 2026-08-12 review changed empty-patch handling and evidence
+// gating, and every gold verdict still read as fresh.
+//
+// These assertions close the class. If a future change edits the grader without
+// invalidating gold, this test fails before the run does.
+{
+  const { RT_HARNESS_FINGERPRINT, taskConfigHash } = await import('../harness/env-ledger.mjs');
+  const graderNames = (RT_HARNESS_FINGERPRINT.grader || []).map(s => s.name);
+  for (const required of ['evaluator-runtime.mjs', 'sr-eval.py', 'upstream-patches/eval.py']) {
+    assert.ok(graderNames.includes(required),
+      `grader source ${required} must be inside the ledger fingerprint`);
+  }
+  assert.ok(RT_HARNESS_FINGERPRINT.version >= 3,
+    'adding the grader must bump the fingerprint version so the change is explicit');
+  assert.ok((RT_HARNESS_FINGERPRINT.grader || []).every(s => /^[0-9a-f]{64}$/.test(s.sha256)),
+    'every grader source is hashed by content, not merely named');
+
+  // The property that matters: a changed grader must change every task's hash.
+  const spec = { instance_id: 'acme__widget-1', image_name: 'registry/acme:1',
+    install_config: { test_cmd: 'pytest -q' } };
+  const before = taskConfigHash(spec);
+  const mutated = {
+    ...RT_HARNESS_FINGERPRINT,
+    grader: [{ name: 'upstream-patches/eval.py', sha256: 'f'.repeat(64) }],
+  };
+  const after = taskConfigHash(spec, { rtHarness: mutated });
+  assert.notEqual(before, after,
+    'a grader edit MUST invalidate gold verdicts — otherwise D-1 can recur silently');
+}
+
+console.log('evaluator-integrity: parser, ten-task retention, and grader-fingerprint assertions passed');

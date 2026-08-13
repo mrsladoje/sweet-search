@@ -204,13 +204,15 @@ console.log('\ngradeArm wiring (stub evaluator, both arms):');
   assert(JSON.stringify(reports.native.stripped_paths) === JSON.stringify(reports.sweet.stripped_paths),
     'both arms are treated identically (symmetry)');
 
-  // A prediction that is ENTIRELY stripped must fall through to the ordinary
-  // zero-hunk path, not a special case.
+  // A prediction that is ENTIRELY stripped is still graded as the unchanged
+  // baseline. It must not bypass the evaluator and acquire gradeable=true with
+  // no log; this synthetic baseline passes its target test.
   const emptied = runtime.gradeArm('sweet', [
     { instance_id: 'redboltz__mqtt_cpp-239', model_name_or_path: 'sweet', model_patch: mod('test/test_broker.hpp') },
   ], 'unit-run-empty');
-  assert(emptied.resolved_instances === 0 && emptied.total_instances === 1,
-    'emptied patch grades as the zero-hunk case', JSON.stringify(emptied));
+  assert(emptied.resolved_instances === 1 && emptied.total_instances === 1
+      && emptied.score['redboltz__mqtt_cpp-239']?.nTestResults === 7,
+    'emptied patch is authoritatively baseline-graded with test evidence', JSON.stringify(emptied));
   assert(emptied.stripped_paths['redboltz__mqtt_cpp-239']?.join() === 'test/test_broker.hpp',
     'the emptied task is still stamped');
 

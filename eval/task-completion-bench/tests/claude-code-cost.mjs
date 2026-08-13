@@ -13,9 +13,18 @@
 // native_tokens_completion (reasoning already folded in, so it must NOT be re-added).
 //
 // Standalone: `node tests/claude-code-cost.mjs` — exit 1 on fail.
-import { turnsFromTranscript, sidechainTurnSets, addSidechainCosts, READ_PAGES_TOOL_NOTE } from '../harness/claude-code-task-runner.mjs';
+import {
+  turnsFromTranscript, sidechainTurnSets, addSidechainCosts,
+  addSidechainCostsChecked, aggregateUsageFromTurns, recoveredTurnsMatchAggregate,
+  recoveredTurnsCoverAggregate,
+  buildClaudeCliArgs, installClaudeReadPagesNormalizer, parseClaudeStream,
+  selectClaudeMainCosts, READ_PAGES_TOOL_NOTE,
+} from '../harness/claude-code-task-runner.mjs';
+import { normalizeReadInput, readHookDecision } from '../harness/claude-read-pages-hook.mjs';
 import { costsFromTurns } from '../harness/agent-runner-shared.mjs';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readTurnLog } from '../harness/turn-log.mjs';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -31,8 +40,9 @@ mkdirSync(projDir, { recursive: true });
 // A faithful transcript slice: the SAME assistant message is written once per content
 // block (3x, then 2x, then 1x — this is what the real file looks like), interleaved with
 // user tool_result rows that carry no usage, plus one all-zero row.
-const row = (id, input, cRead, cCreate, out) => JSON.stringify({
-  type: 'assistant', message: { id, role: 'assistant', usage: { input_tokens: input, cache_read_input_tokens: cRead, cache_creation_input_tokens: cCreate, output_tokens: out } },
+const row = (id, input, cRead, cCreate, out, content = []) => JSON.stringify({
+  type: 'assistant', message: { id, role: 'assistant', content,
+    usage: { input_tokens: input, cache_read_input_tokens: cRead, cache_creation_input_tokens: cCreate, output_tokens: out } },
 });
 writeFileSync(join(projDir, `${SESSION}.jsonl`), [
   row('gen-1', 3, 0, 16365, 68), row('gen-1', 3, 0, 16365, 68), row('gen-1', 3, 0, 16365, 68),
@@ -49,6 +59,8 @@ assert(turns.length === 3, 'one turn per DISTINCT message id, not per content bl
 // in = the FULL context at that turn: fresh + cache_read + cache_creation.
 assert(turns[0].in === 16368 && turns[0].cached === 0 && turns[0].out === 68, 'turn 1 = fresh+read+create, cached=read', JSON.stringify(turns[0]));
 assert(turns[1].in === 16454 && turns[1].cached === 14963 && turns[1].out === 94, 'turn 2 folds cache_creation into `in`', JSON.stringify(turns[1]));
+assert(turns[0].cacheWrite === 16365 && turns[1].cacheWrite === 1488,
+  'cache creation remains a first-class per-turn field', JSON.stringify(turns.slice(0, 2)));
 assert(turns[2].in === 16515 && turns[2].cached === 16451, 'turn 3 context keeps growing', JSON.stringify(turns[2]));
 assert(!turns.some(t => t.in === 0 && t.out === 0), 'an all-zero row is dropped, never logged as a real turn');
 // The growing prefix is what makes cache-normalization meaningful at all.
@@ -58,6 +70,176 @@ console.log('\nmissing inputs degrade, never throw:');
 assert(turnsFromTranscript(ROOT, 'no-such-session').length === 0, 'unknown session id → empty');
 assert(turnsFromTranscript(join(ROOT, 'nope'), SESSION).length === 0, 'missing claude home → empty');
 assert(turnsFromTranscript(null, null).length === 0, 'null inputs → empty');
+
+console.log('\nauthoritative aggregate output accounting:');
+const streamed = [
+  JSON.stringify({ type: 'assistant', session_id: SESSION, message: {
+    usage: { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 },
+    content: [{ type: 'text', text: 'retained' }],
+  } }),
+  JSON.stringify({ type: 'result', session_id: SESSION, subtype: 'success', num_turns: 1,
+    usage: { input_tokens: 10, cache_read_input_tokens: 20, cache_creation_input_tokens: 30, output_tokens: 777 } }),
+].join('\n');
+const parsedStream = parseClaudeStream(streamed);
+assert(parsedStream.billedOutputTokens === 777,
+  'final result aggregate supplies billed output when assistant usage is zero', JSON.stringify(parsedStream));
+assert(parsedStream.billedOutputSource === 'result-aggregate',
+  'output accounting records the authoritative aggregate source');
+const mismatchedStream = parseClaudeStream([
+  JSON.stringify({ type: 'assistant', message: { usage: {
+    input_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 5,
+  }, content: [] } }),
+  JSON.stringify({ type: 'result', usage: { output_tokens: 17 } }),
+].join('\n'));
+assert(mismatchedStream.billedOutputTokens === 17,
+  'final aggregate overrides a partial non-zero assistant-event sum');
+
+const aggregateAllCosts = (u) => (
+  (u.input_tokens * 5 + u.cache_creation_input_tokens * 5 * 1.25
+   + u.cache_read_input_tokens * 0.5 + u.output_tokens * 30) / 1e6);
+
+console.log('\nper-turn recovery completeness:');
+const completeUsage = aggregateUsageFromTurns(turns);
+assert(recoveredTurnsMatchAggregate(turns, completeUsage),
+  'exact per-turn category totals reproduce the final aggregate');
+assert(!recoveredTurnsMatchAggregate(turns.slice(0, 2), completeUsage),
+  'partial non-zero turn recovery fails closed');
+assert(!recoveredTurnsMatchAggregate(turns, { ...completeUsage, output_tokens: completeUsage.output_tokens + 1 }),
+  'an output mismatch fails closed');
+assert(!recoveredTurnsMatchAggregate(turns, { output_tokens: completeUsage.output_tokens }),
+  'missing aggregate categories fail closed');
+const exactSelection = selectClaudeMainCosts({
+  streamTurns: turns, transcriptTurns: [], resultUsage: completeUsage, price: { in: 5, cache: 0.5, out: 30 },
+});
+assert(exactSelection.source === 'stream' && exactSelection.costs.idealCostUsd != null,
+  'complete stream recovery keeps normalized per-turn pricing');
+const transcriptSelection = selectClaudeMainCosts({
+  streamTurns: turns.slice(0, 1), transcriptTurns: turns, resultUsage: completeUsage,
+  price: { in: 5, cache: 0.5, out: 30 },
+});
+assert(transcriptSelection.source === 'transcript' && transcriptSelection.costs.idealCostUsd != null,
+  'a partial stream falls through to an exact transcript');
+// --- the aggregate omits a served request (measured 2026-08-12) ---
+// harness-smoke-20260812: Claude Code's aggregate dropped exactly one request
+// per rollout. Subtracting it from the transcript reproduced the aggregate on
+// all four categories in BOTH arms. Trusting the aggregate under-charged native
+// 4.1% and sweet 11.1% — an arm-asymmetric under-charge, which a cost benchmark
+// must never make. Coverage licenses the per-request record.
+const droppedOne = aggregateUsageFromTurns(turns.slice(0, -1));
+assert(!recoveredTurnsMatchAggregate(turns, droppedOne),
+  'a superset is not exact parity');
+assert(recoveredTurnsCoverAggregate(turns, droppedOne),
+  'the per-request record COVERS an aggregate that dropped a request');
+assert(!recoveredTurnsCoverAggregate(turns.slice(0, 2), completeUsage),
+  'an INCOMPLETE record never counts as coverage — it must fail closed');
+assert(!recoveredTurnsCoverAggregate(turns, completeUsage),
+  'exact parity is not "coverage" (handled by the earlier, preferred branch)');
+const supersetSelection = selectClaudeMainCosts({
+  streamTurns: [], transcriptTurns: turns, resultUsage: droppedOne,
+  price: { in: 5, cache: 0.5, out: 30 },
+});
+assert(supersetSelection.source === 'transcript-superset',
+  'a superset transcript is used, not discarded', supersetSelection.source);
+assert(supersetSelection.costs.idealCostUsd != null && supersetSelection.costs.breakPricedCostUsd != null,
+  'the cache-normalized columns survive — an A/B can still be read');
+assert(supersetSelection.costs.costRealizedUsd > aggregateAllCosts(droppedOne),
+  'the superset charges MORE than the aggregate that dropped a request');
+
+const aggregateSelection = selectClaudeMainCosts({
+  streamTurns: turns.slice(0, 1), transcriptTurns: turns.slice(0, 2), resultUsage: completeUsage,
+  price: { in: 5, cache: 0.5, out: 30 },
+});
+assert(aggregateSelection.source === 'aggregate'
+    && aggregateSelection.costs.costRealizedUsd != null
+    && aggregateSelection.costs.idealCostUsd === null
+    && aggregateSelection.costs.breakPricedCostUsd === null,
+  'partial stream and transcript recover only aggregate realized cost; normalized columns stay null',
+  JSON.stringify(aggregateSelection));
+const unavailableSelection = selectClaudeMainCosts({
+  streamTurns: [], transcriptTurns: [], resultUsage: { output_tokens: 9 },
+  price: { in: 5, cache: 0.5, out: 30 },
+});
+assert(unavailableSelection.source === 'unavailable'
+    && unavailableSelection.costs.costRealizedUsd === null
+    && unavailableSelection.costs.costNaiveUsd === null,
+  'missing aggregate usage categories make cost unavailable instead of $0');
+
+console.log('\nprompt argument construction:');
+for (const sweet of [false, true]) {
+  const argv = buildClaudeCliArgs({ prompt: 'issue', rundir: '/tmp/repo', sweet, claudeModelId: 'model' });
+  const appendIndexes = argv.flatMap((v, i) => v === '--append-system-prompt' ? [i] : []);
+  assert(appendIndexes.length === 1, `${sweet ? 'sweet' : 'native'} emits exactly one append-system-prompt flag`, JSON.stringify(argv));
+  const appended = argv[appendIndexes[0] + 1];
+  assert(appended.includes(READ_PAGES_TOOL_NOTE), `${sweet ? 'sweet' : 'native'} receives the byte-identical pages note`);
+  assert(sweet === appended.includes('sweet-search guidance'),
+    `${sweet ? 'sweet' : 'native'} appended value has the expected routing override`, appended);
+}
+
+console.log('\ndeterministic Read pages normalization:');
+assert(!Object.hasOwn(normalizeReadInput({ file_path: '/repo/a.js', pages: '' }), 'pages'),
+  'empty pages is removed from a source-file Read');
+assert(!Object.hasOwn(normalizeReadInput({ file_path: '/repo/a.js', pages: '1-2', offset: 4 }), 'pages'),
+  'pages is removed from non-PDF reads even when non-empty');
+assert(normalizeReadInput({ file_path: '/repo/a.PDF', pages: '1-2' }).pages === '1-2',
+  'a valid PDF page range is preserved');
+const invalidHookDecision = readHookDecision({ tool_name: 'Read', tool_input: {
+  file_path: '/repo/a.ts', pages: '', offset: 2,
+} });
+assert(invalidHookDecision.hookSpecificOutput.permissionDecision === 'allow'
+    && invalidHookDecision.hookSpecificOutput.updatedInput.offset === 2
+    && !Object.hasOwn(invalidHookDecision.hookSpecificOutput.updatedInput, 'pages'),
+  'PreToolUse output preserves other Read fields while removing invalid pages');
+const hookHome = join(ROOT, 'hook-user');
+const privateClaudeHome = join(hookHome, '.claude');
+const installed = installClaudeReadPagesNormalizer(privateClaudeHome, hookHome);
+const hookSettings = JSON.parse(readFileSync(installed.settingsPath, 'utf8'));
+assert(hookSettings.hooks.PreToolUse.filter(group => group.matcher === 'Read').length === 1
+    && hookSettings.hooks.PreToolUse[0].hooks[0].command.includes('normalize-read-pages.mjs'),
+  'each private Claude home installs exactly one Read normalizer hook');
+installClaudeReadPagesNormalizer(privateClaudeHome, hookHome);
+const reinstalledSettings = JSON.parse(readFileSync(installed.settingsPath, 'utf8'));
+assert(reinstalledSettings.hooks.PreToolUse.filter(group =>
+  (group.hooks || []).some(hook => hook.command?.includes('normalize-read-pages.mjs'))).length === 1,
+  'Read normalizer installation is idempotent');
+const hookRun = spawnSync(process.execPath, [installed.installedHook], {
+  input: JSON.stringify({ tool_name: 'Read', tool_input: {
+    file_path: '/repo/source.mjs', pages: '', limit: 12,
+  } }),
+  encoding: 'utf8',
+});
+let hookOutput = null;
+try { hookOutput = JSON.parse(hookRun.stdout); } catch { /* asserted below */ }
+assert(hookRun.status === 0
+    && hookOutput?.hookSpecificOutput?.permissionDecision === 'allow'
+    && hookOutput.hookSpecificOutput.updatedInput.limit === 12
+    && !Object.hasOwn(hookOutput.hookSpecificOutput.updatedInput, 'pages'),
+  'installed hook executable emits the Claude PreToolUse updatedInput contract',
+  `${hookRun.stderr || hookRun.stdout}`);
+const malformedHookRun = spawnSync(process.execPath, [installed.installedHook], {
+  input: '{not-json', encoding: 'utf8',
+});
+let malformedHookOutput = null;
+try { malformedHookOutput = JSON.parse(malformedHookRun.stdout); } catch { /* asserted below */ }
+assert(malformedHookRun.status === 0
+    && malformedHookOutput?.hookSpecificOutput?.permissionDecision === 'allow'
+    && !Object.hasOwn(malformedHookOutput.hookSpecificOutput, 'updatedInput'),
+  'malformed hook input fails open without inventing replacement arguments');
+const quotedHome = join(ROOT, "hook'user");
+const quotedInstall = installClaudeReadPagesNormalizer(join(quotedHome, '.claude'), quotedHome);
+const quotedSettings = JSON.parse(readFileSync(quotedInstall.settingsPath, 'utf8'));
+const quotedCommand = quotedSettings.hooks.PreToolUse[0].hooks[0].command;
+const quotedHookRun = spawnSync('/bin/sh', ['-c', quotedCommand], {
+  input: JSON.stringify({ tool_name: 'Read', tool_input: {
+    file_path: '/repo/source.js', pages: '',
+  } }),
+  encoding: 'utf8',
+});
+let quotedHookOutput = null;
+try { quotedHookOutput = JSON.parse(quotedHookRun.stdout); } catch { /* asserted below */ }
+assert(quotedHookRun.status === 0
+    && !Object.hasOwn(quotedHookOutput?.hookSpecificOutput?.updatedInput || {}, 'pages'),
+  'hook command safely handles a private-home path containing a quote',
+  `${quotedHookRun.stderr || quotedHookRun.stdout}`);
 
 console.log('\nbreakPriced is published by the shared contract:');
 const price = { in: 5.0, cache: 0.5, out: 30.0 };
@@ -90,10 +272,14 @@ console.log('\nsidechain pricing (D-2):');
 const subDir = join(projDir, SESSION, 'subagents');
 mkdirSync(subDir, { recursive: true });
 writeFileSync(join(subDir, 'agent-aaa.jsonl'), [
-  row('sub-1', 500, 0, 0, 40), row('sub-1', 500, 0, 0, 40),   // repeated content blocks again
+  row('sub-1', 400, 0, 100, 40), row('sub-1', 400, 0, 100, 40),   // repeated content blocks again
   row('sub-2', 100, 500, 0, 20),
 ].join('\n') + '\n');
-writeFileSync(join(subDir, 'agent-bbb.jsonl'), [row('sub-3', 300, 0, 0, 10)].join('\n') + '\n');
+writeFileSync(join(subDir, 'agent-bbb.jsonl'), [row('sub-3', 250, 0, 50, 10, [
+  { type: 'tool_use', name: 'MultiEdit', input: {
+    file_path: 'src/b.js', edits: [{ old_string: 'old', new_string: 'new' }],
+  } },
+])].join('\n') + '\n');
 // A non-transcript file in the same directory must not be mistaken for one.
 writeFileSync(join(subDir, 'notes.txt'), 'ignore me\n');
 
@@ -101,9 +287,28 @@ const sets = sidechainTurnSets(ROOT, SESSION);
 assert(sets.length === 2, 'one turn set per subagent transcript', `got ${sets.length}`);
 assert(sets[0].turns.length === 2 && sets[1].turns.length === 1, 'subagent turns deduped by message id',
   JSON.stringify(sets.map(s => s.turns.length)));
+assert(sets.every(s => s.instrumentationComplete),
+  'sidechain transcripts expose complete per-message accounting');
+assert(sets.reduce((sum, s) => sum + s.billedOutputTokens, 0) === 70
+  && sets.flatMap(s => s.payloads).includes('new'),
+  'sidechain output and payload signals are available to full-rollout degeneration classification');
+const multiEditMetrics = sets.find(s => s.name === 'agent-bbb.jsonl');
+assert(multiEditMetrics.payloads.join('|') === 'src/b.js|old|new'
+    && multiEditMetrics.retainedOutputChars === 'src/b.jsoldnew'.length,
+  'nested edit fields contribute to degeneration signals exactly once',
+  JSON.stringify({ payloads: multiEditMetrics.payloads, retainedOutputChars: multiEditMetrics.retainedOutputChars }));
 assert(turnsFromTranscript(ROOT, SESSION).length === 3, 'main-context recovery is unchanged by the subagent files');
 
 const mainCosts = costsFromTurns(turns, price);
+const expectedMainReal = [
+  { input: 3, read: 0, write: 16365, out: 68 },
+  { input: 3, read: 14963, write: 1488, out: 94 },
+  { input: 3, read: 16451, write: 61, out: 38 },
+].reduce((sum, u) => sum
+  + (u.input * price.in + u.read * price.cache + u.write * price.in * 1.25 + u.out * price.out) / 1e6, 0);
+assert(approx(mainCosts.costRealizedUsd, +expectedMainReal.toFixed(6)),
+  'transcript realized cost matches aggregate cache-read/cache-write arithmetic',
+  `${mainCosts.costRealizedUsd} vs ${expectedMainReal}`);
 const subCosts = sets.map(s => costsFromTurns(s.turns, price));
 const total = addSidechainCosts(mainCosts, subCosts);
 const expReal = +(mainCosts.costRealizedUsd + subCosts.reduce((a, c) => a + c.costRealizedUsd, 0)).toFixed(6);
@@ -112,6 +317,14 @@ assert(total.costRealizedUsd > mainCosts.costRealizedUsd, 'inclusive cost is str
 assert(approx(total.costRealizedMainOnlyUsd, mainCosts.costRealizedUsd), 'main-only cost is retained beside the total — the reproduction check for the old ledger');
 assert(total.sidechainCount === 2, 'delegated context count is published', `got ${total.sidechainCount}`);
 assert(approx(total.costSidechainUsd, +subCosts.reduce((a, c) => a + c.costRealizedUsd, 0).toFixed(6)), 'delegated spend is published on its own');
+const expectedSideReal = [
+  { input: 400, read: 0, write: 100, out: 40 },
+  { input: 100, read: 500, write: 0, out: 20 },
+  { input: 250, read: 0, write: 50, out: 10 },
+].reduce((sum, u) => sum
+  + (u.input * price.in + u.read * price.cache + u.write * price.in * 1.25 + u.out * price.out) / 1e6, 0);
+assert(approx(total.costSidechainUsd, +expectedSideReal.toFixed(6)),
+  'sidechain realized cost obeys the same aggregate pricing contract');
 // Each subagent is its own growing prefix; folding them into the main sequence would make
 // the prefix diff meaningless, so breakPriced is summed per context, never re-derived.
 assert(approx(total.breakPricedCostUsd, +(mainCosts.breakPricedCostUsd + subCosts.reduce((a, c) => a + c.breakPricedCostUsd, 0)).toFixed(6)),
@@ -120,6 +333,28 @@ assert(approx(total.breakPricedCostUsd, +(mainCosts.breakPricedCostUsd + subCost
 const nullMain = { ...mainCosts, breakPricedCostUsd: null };
 assert(addSidechainCosts(nullMain, subCosts).breakPricedCostUsd === null, 'a null main column stays null after adding subagents');
 assert(addSidechainCosts(mainCosts, []).costRealizedUsd === mainCosts.costRealizedUsd, 'no subagents leaves every column byte-identical');
+const checkedTotal = addSidechainCostsChecked(mainCosts, sets, price);
+assert(checkedTotal.sidechainAccountingComplete && approx(checkedTotal.costRealizedUsd, total.costRealizedUsd),
+  'checked sidechain pricing preserves the exact complete path');
+const incompleteTotal = addSidechainCostsChecked(mainCosts, [
+  ...sets, { name: 'agent-truncated.jsonl', turns: [], instrumentationComplete: false },
+], price);
+assert(incompleteTotal.sidechainAccountingComplete === false
+    && incompleteTotal.costRealizedUsd === null
+    && incompleteTotal.costSidechainUsd === null
+    && incompleteTotal.incompleteSidechains.join() === 'agent-truncated.jsonl',
+  'an incomplete sidechain makes inclusive cost unavailable instead of $0/partial',
+  JSON.stringify(incompleteTotal));
+
+// Turn-log reader must retain cache-write accounting. Use the existing temp root
+// rather than the benchmark results tree.
+const turnLogPath = join(ROOT, 'turns.jsonl');
+writeFileSync(turnLogPath, [
+  JSON.stringify({ kind: 'meta', source: 'unit', turns: 1 }),
+  JSON.stringify({ t: 1, in: 100, cached: 20, cacheWrite: 30, out: 4 }),
+].join('\n') + '\n');
+assert(readTurnLog(turnLogPath).turns[0].cacheWrite === 30,
+  'turn-log reader preserves cacheWrite for later repricing');
 
 // D-4: the shared tool-argument note must stay arm-symmetric and content-free. If it ever
 // carries retrieval or strategy advice it stops being a harness repair and becomes an

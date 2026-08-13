@@ -8,15 +8,29 @@
 // Codex/OpenCode keep their existing AGENTS.md delivery.
 // Returns the canonical bench row shape (see codex-task-runner) so grading/metrics match.
 import { isZeroCallStartFailure } from './codex-task-runner.mjs';
-import { appendFileSync, mkdirSync, copyFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
+import {
+  appendFileSync, mkdirSync, copyFileSync, existsSync, readFileSync, writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   setupRunner, buildAgentEnv, warmupSweet, issuePrompt, computeNetArgs, writeInstructionFile,
   buildTrajectory, gitDiffPatch, verifyIntegrity, teardownRunner, auditEscape, rolloutStateDir,
-  spawnWithTimeout, exitReasonFrom, priceFor, costsFromTurns,
+  spawnWithTimeout, exitReasonFrom, priceFor,
 } from './agent-runner-shared.mjs';
+import {
+  turnsFromTranscript, sidechainTurnSets, addSidechainCostsChecked,
+  selectClaudeMainCosts, aggregateTurn,
+} from './claude-code-accounting.mjs';
+export {
+  turnsFromTranscript, turnsFromTranscriptFile, transcriptMetricsFromFile,
+  aggregateUsageFromTurns, recoveredTurnsMatchAggregate, recoveredTurnsCoverAggregate,
+  sidechainTurnSets,
+  addSidechainCosts, addSidechainCostsChecked, claudeCosts, selectClaudeMainCosts,
+} from './claude-code-accounting.mjs';
 import { installSedCmds } from './env-ledger.mjs';
 import { persistTurns } from './turn-log.mjs';
+import { classifyRollout } from './degeneration.mjs';
 import {
   CLAUDE_SYSTEM_OVERRIDE as SWEET_SEARCH_SYSTEM_OVERRIDE,
 } from '../../../scripts/install-claude-system-prompt.js';
@@ -28,6 +42,92 @@ export const READ_PAGES_TOOL_NOTE =
   'Tool argument note: the Read tool\'s `pages` parameter is optional and applies only to PDF '
   + 'files. Omit it entirely for every non-PDF file. Never pass it as an empty string — an empty '
   + '`pages` value is rejected and the read is wasted.';
+
+/**
+ * Build the invariant Claude CLI argument vector. The CLI accepts one scalar
+ * `--append-system-prompt` value: passing the option twice is last-value-wins,
+ * which previously dropped the shared pages repair from the sweet arm.
+ */
+export function buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, settingsPath = null }) {
+  const appendedSystemPrompt = sweet
+    ? `${READ_PAGES_TOOL_NOTE}\n\n${SWEET_SEARCH_SYSTEM_OVERRIDE}`
+    : READ_PAGES_TOOL_NOTE;
+  return [
+    '-p', prompt, '--add-dir', rundir,
+    '--append-system-prompt', appendedSystemPrompt,
+    // THE PreToolUse READ NORMALIZER IS INERT. IT CANNOT WORK. DO NOT "FIX" IT.
+    // (Settled 2026-08-13 by correlating every hook invocation against every Read
+    // outcome across all 32 native sessions of screen-v3.)
+    //
+    //             Read calls   needed normalizing   rejected
+    //   hook ran      189              0                0
+    //   hook did not  110            110              110
+    //
+    // Complete separation. Claude Code validates tool arguments against the tool
+    // schema BEFORE the PreToolUse stage, so `pages: ""` (99 calls) and
+    // `pages: " "` (11 calls) die before a hook can observe them. The hook has
+    // never repaired a single input, and no hook ever will. Where it does run it
+    // is flawless and irrelevant — 189/189 hook_success on already-valid calls.
+    //
+    // TWO EARLIER CONCLUSIONS HERE WERE WRONG, both from one unreplicated run:
+    //   * "coverage is 33.9%, an activation race" — there is no race, and 557 was
+    //     the wrong denominator (299 native main-transcript Read calls).
+    //   * "`--settings` made coverage worse, so it is refuted" — void comparison;
+    //     both sides measured a quantity that was 0. `--settings` is still NOT
+    //     passed, but for want of any reason to pass it, not because it lost.
+    //
+    // The only layer upstream of the validator is the network transport, and
+    // `egress-guard.mjs` deliberately never terminates TLS (no MITM CA in the
+    // jail). That property closed the ground-truth-assistance hole; it is not
+    // traded for this. The tax is therefore MEASURED AND SUBTRACTED post hoc,
+    // never mitigated — see RESULTS-2026-08-13.md §1 and §5.
+    //
+    // Residual shape: 110 rejections over 32 sessions (3.4 each), front-loaded
+    // (median = 2nd Read call). It is NOT self-limiting: only 10 of 32 sessions
+    // stop sending an invalid value after the first rejection; 22 keep sending it.
+    // It is arm-asymmetric because the sweet arm barely uses this tool, so any run
+    // must MEASURE and DISCLOSE it rather than assume it is neutral.
+    //
+    // READ_PAGES_TOOL_NOTE below is the only lever that works. It is prompt-level,
+    // byte-identical across both arms, and gets 189 of 299 calls to a valid value.
+    '--model', claudeModelId,
+    '--permission-mode', 'bypassPermissions',
+    '--output-format', 'stream-json', '--verbose',
+  ];
+}
+
+const CLAUDE_READ_PAGES_HOOK = fileURLToPath(
+  new URL('./claude-read-pages-hook.mjs', import.meta.url),
+);
+
+/** Install the deterministic Read-input normalizer into one private Claude home. */
+export function installClaudeReadPagesNormalizer(claudeHome, visibleHome) {
+  const hooksDir = join(claudeHome, 'hooks');
+  const installedHook = join(hooksDir, 'normalize-read-pages.mjs');
+  const visibleHook = join(visibleHome, '.claude', 'hooks', 'normalize-read-pages.mjs');
+  const settingsPath = join(claudeHome, 'settings.json');
+  mkdirSync(hooksDir, { recursive: true });
+  copyFileSync(CLAUDE_READ_PAGES_HOOK, installedHook);
+
+  let settings = {};
+  if (existsSync(settingsPath)) settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+  settings.hooks ??= {};
+  const groups = Array.isArray(settings.hooks.PreToolUse) ? settings.hooks.PreToolUse : [];
+  if (!groups.some(group => (group?.hooks || []).some(hook =>
+    typeof hook?.command === 'string' && hook.command.includes('normalize-read-pages.mjs')))) {
+    const quotedHook = `'${visibleHook.replace(/'/g, `'\\''`)}'`;
+    groups.push({
+      matcher: 'Read',
+      hooks: [{ type: 'command', command: `node ${quotedHook}`, timeout: 4 }],
+    });
+  }
+  settings.hooks.PreToolUse = groups;
+  writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+  // visibleSettings is the IN-JAIL path (claudeHome is bind-mounted at
+  // $HOME/.claude), which is what `--settings` must receive.
+  const visibleSettings = join(visibleHome, '.claude', 'settings.json');
+  return { installedHook, settingsPath, visibleHook, visibleSettings };
+}
 
 // Classify a shell command run via Claude Code's Bash tool into a bucket. Claude Code
 // passes the raw command (no `bash -lc` wrapper like codex), so match directly.
@@ -68,8 +168,17 @@ export function parseClaudeStream(stdout) {
   const resultById = new Map(); // tool_use_id → {text, isError}
   const errors = [];
   const turns = [];             // {in = full context incl. cache, cached, out}
+  // Degeneration accounting: every payload the model emitted, and how many
+  // output chars the transcript actually retained, so the billed-vs-retained
+  // ratio can be computed without a second pass over the session files.
+  const payloads = [];
+  let retainedOutputChars = 0, billedOutputTokens = 0;
+  let billedOutputSource = 'assistant-stream';
   let answer = '', resultUsage = null, numTurns = 0, sessionId = null;
-  if (!stdout) return { toolCalls, answer, resultUsage, numTurns, turns, sessionId, errors };
+  if (!stdout) {
+    return { toolCalls, answer, resultUsage, numTurns, turns, sessionId, errors,
+      payloads, retainedOutputChars, billedOutputTokens, billedOutputSource };
+  }
   for (const line of stdout.split('\n')) {
     const tl = line.trim();
     if (!tl || tl[0] !== '{') continue;
@@ -81,14 +190,30 @@ export function parseClaudeStream(stdout) {
       const mu = ev.message.usage;
       if (mu) {
         const cRead = mu.cache_read_input_tokens || 0, cCreate = mu.cache_creation_input_tokens || 0;
-        turns.push({ in: (mu.input_tokens || 0) + cRead + cCreate, cached: cRead, out: mu.output_tokens || 0 });
+        turns.push({ in: (mu.input_tokens || 0) + cRead + cCreate, cached: cRead,
+          cacheWrite: cCreate, out: mu.output_tokens || 0 });
+        billedOutputTokens += mu.output_tokens || 0;
       }
       for (const blk of (ev.message.content || [])) {
         if (blk.type === 'tool_use') {
           const { kind, command } = classifyToolUse(blk.name, blk.input);
           toolCalls.push({ id: blk.id, kind, command, resultText: '', isError: false });
-        } else if (blk.type === 'text' && typeof blk.text === 'string' && blk.text.trim()) {
-          answer = blk.text;
+          // Every string the model wrote into a tool argument. Stream parsing
+          // happens after the buffered CLI process returns, so this is
+          // retrospective detection; it does not intercept tool execution.
+          for (const v of Object.values(blk.input || {})) {
+            if (typeof v === 'string') { payloads.push(v); retainedOutputChars += v.length; }
+          }
+          for (const e of (blk.input?.edits || [])) {
+            for (const v of Object.values(e || {})) {
+              if (typeof v === 'string') { payloads.push(v); retainedOutputChars += v.length; }
+            }
+          }
+        } else if (blk.type === 'text' && typeof blk.text === 'string') {
+          retainedOutputChars += blk.text.length;
+          if (blk.text.trim()) answer = blk.text;
+        } else if (blk.type === 'thinking' && typeof blk.thinking === 'string') {
+          retainedOutputChars += blk.thinking.length;
         }
       }
     } else if (ev.type === 'user' && ev.message) {
@@ -110,146 +235,20 @@ export function parseClaudeStream(stdout) {
     const r = resultById.get(tc.id);
     if (r) { tc.resultText = r.text; tc.isError = r.isError; }
   }
-  return { toolCalls, answer, resultUsage, numTurns, turns, sessionId, errors };
-}
-
-// Per-message usage RECOVERY (2026-08-11). The OpenRouter Anthropic skin zeroes usage on
-// the streamed assistant events, but Claude Code's OWN session transcript records the real
-// per-response numbers — that is where its final aggregate comes from. Verified against the
-// provider: every transcript row's (input + cache_read + cache_creation) equals OpenRouter's
-// native_tokens_prompt for the matching generation, and output_tokens equals
-// native_tokens_completion (reasoning included, so it must NOT be added again).
-//
-// Without this the adapter published idealCost = realized and no breakPriced column at all,
-// which is cache-lucky and unusable in a cross-harness cost table.
-export function turnsFromTranscript(claudeHome, sessionId) {
-  const file = findSessionFile(claudeHome, sessionId);
-  return file ? turnsFromTranscriptFile(file) : [];
-}
-
-// <claude-home>/projects/<cwd-slug>/<session-id>.jsonl — the slug encodes the rundir, so
-// find the file by session id rather than reconstructing the encoding.
-function findSessionFile(claudeHome, sessionId) {
-  if (!claudeHome || !sessionId) return null;
-  let file = null;
-  const walk = (dir, depth = 0) => {
-    if (file || depth > 4) return;
-    let entries; try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      if (file) return;
-      if (e.isDirectory()) walk(join(dir, e.name), depth + 1);
-      else if (e.name === `${sessionId}.jsonl`) file = join(dir, e.name);
+  // The final result event is Claude Code's authoritative aggregate. Assistant
+  // stream usage is zeroed by some provider skins and can otherwise be partial,
+  // so never substitute its sum when the aggregate field is present.
+  if (resultUsage && Object.prototype.hasOwnProperty.call(resultUsage, 'output_tokens')) {
+    const aggregateOutput = Number(resultUsage.output_tokens);
+    if (Number.isFinite(aggregateOutput) && aggregateOutput >= 0) {
+      billedOutputTokens = aggregateOutput;
+      billedOutputSource = 'result-aggregate';
     }
-  };
-  walk(join(claudeHome, 'projects'));
-  return file;
-}
-
-/** Per-message usage from one transcript file, in trajectory order. */
-export function turnsFromTranscriptFile(file) {
-  const turns = [];
-  let text; try { text = readFileSync(file, 'utf8'); } catch { return turns; }
-  const seen = new Set();   // transcript repeats a message once per content block
-  for (const line of text.split('\n')) {
-    const tl = line.trim();
-    if (!tl || tl[0] !== '{') continue;
-    let ev; try { ev = JSON.parse(tl); } catch { continue; }
-    const m = ev.message;
-    if (!m || m.role !== 'assistant' || !m.usage || !m.id || seen.has(m.id)) continue;
-    const u = m.usage;
-    const cRead = u.cache_read_input_tokens || 0, cCreate = u.cache_creation_input_tokens || 0;
-    const inTot = (u.input_tokens || 0) + cRead + cCreate, out = u.output_tokens || 0;
-    if (!inTot && !out) continue;            // a zeroed row recovers nothing
-    seen.add(m.id);
-    turns.push({ in: inTot, cached: cRead, out });
   }
-  return turns;
-}
-
-// --- D-2 SIDECHAIN PRICING (2026-08-12) ---
-// Claude Code writes each delegated subagent's conversation to its OWN transcript at
-// <session-id>/subagents/agent-*.jsonl, NOT into the main session file. turnsFromTranscript
-// stops at the main file, and the CLI's aggregate `result` usage does not include subagents
-// either — so every delegated request was billed by the provider and priced at zero here.
-// That is an accounting exploit in sweet's favour on any harness where native delegates more:
-// native used sidechains in 8/17 Claude cells, sweet in 2/17.
-//
-// Each subagent is a SEPARATE context with its own growing prefix, so its turns are priced as
-// their own sequence and the totals are summed. Folding them into the main sequence would make
-// the prefix diff meaningless and corrupt breakPriced/contextRewrites.
-export function sidechainTurnSets(claudeHome, sessionId) {
-  const file = findSessionFile(claudeHome, sessionId);
-  if (!file) return [];
-  const dir = join(file.replace(/\.jsonl$/, ''), 'subagents');
-  let entries; try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return []; }
-  const sets = [];
-  for (const e of entries.filter(x => x.isFile() && x.name.endsWith('.jsonl')).sort((a, b) => a.name < b.name ? -1 : 1)) {
-    const turns = turnsFromTranscriptFile(join(dir, e.name));
-    if (turns.length) sets.push({ name: e.name, turns });
-  }
-  return sets;
-}
-
-// Sum a main-context cost object with each subagent context's own cost object. Main-only
-// values are KEPT alongside (…MainOnlyUsd) so the pre-repair ledger stays reproducible from
-// the same row — that is the D-2 acceptance check, not a separate derivation.
-// A null column stays null: if the main context could not produce breakPriced, the total
-// cannot either, and a partial sum would be worse than an honest absence.
-export function addSidechainCosts(mainCosts, sidechainCosts) {
-  const SUM = ['costRealizedUsd', 'idealCostUsd', 'realFromTurnsUsd', 'breakPricedCostUsd',
-    'costNaiveUsd', 'costContentUsd', 'contextRewrites', 'idealTurns'];
-  const out = { ...mainCosts };
-  for (const k of SUM) {
-    if (mainCosts[k] == null) { out[k] = null; continue; }
-    let total = mainCosts[k];
-    for (const c of sidechainCosts) total += (c[k] ?? 0);
-    out[k] = k === 'contextRewrites' || k === 'idealTurns' ? total : +total.toFixed(6);
-  }
-  out.costRealizedMainOnlyUsd = mainCosts.costRealizedUsd ?? null;
-  out.idealCostMainOnlyUsd = mainCosts.idealCostUsd ?? null;
-  out.breakPricedCostMainOnlyUsd = mainCosts.breakPricedCostUsd ?? null;
-  out.costSidechainUsd = +sidechainCosts.reduce((a, c) => a + (c.costRealizedUsd || 0), 0).toFixed(6);
-  out.sidechainCount = sidechainCosts.length;
-  return out;
-}
-
-// LAST-RESORT cost path: aggregate-only, used solely when neither the stream nor the session
-// transcript yielded a turn distribution. Realized/naive from Claude Code's aggregate result
-// usage × our OpenRouter rate: cache_read at the cache rate, cache_creation at the 1.25x write
-// premium, fresh input + output at their rates.
-//
-// idealCost = realized here because cache-normalization needs the growing-prefix structure,
-// which an aggregate does not have. breakPriced and contextRewrites are NULL for the same
-// reason — an absent column is honest; a copy of another column is not. The normal path
-// (costsFromTurns, shared with codex/opencode) fills all of them; see turnsFromTranscript.
-//
-// costNaiveUsd matches the unified §3 B4 definition: EVERY input token — fresh, cached
-// and cache-written — charged at the full input rate. costContentUsd (unique context
-// charged once) needs the growing-prefix structure and is supplied by the caller only
-// when per-turn usage survived the provider route; null is the honest value otherwise,
-// never a stand-in from another column.
-function claudeCosts(resultUsage, price, costContentUsd = null) {
-  const u = resultUsage || {};
-  const inTok = u.input_tokens || 0, cRead = u.cache_read_input_tokens || 0;
-  const cCreate = u.cache_creation_input_tokens || 0, out = u.output_tokens || 0;
-  const realized = (inTok * price.in + cCreate * price.in * 1.25 + cRead * price.cache + out * price.out) / 1e6;
-  const naive = ((inTok + cRead + cCreate) * price.in + out * price.out) / 1e6;
   return {
-    costRealizedUsd: +realized.toFixed(6), idealCostUsd: +realized.toFixed(6),
-    realFromTurnsUsd: +realized.toFixed(6), costNaiveUsd: +naive.toFixed(6),
-    breakPricedCostUsd: null, contextRewrites: null,
-    costContentUsd,
+    toolCalls, answer, resultUsage, numTurns, turns, sessionId, errors,
+    payloads, retainedOutputChars, billedOutputTokens, billedOutputSource,
   };
-}
-
-// One synthetic turn record carrying the run aggregate, for the route where per-message
-// usage is zeroed. Tagged `source: 'aggregate'` in the log so no analysis mistakes it
-// for a turn distribution.
-function aggregateTurn(resultUsage) {
-  const u = resultUsage || {};
-  const cRead = u.cache_read_input_tokens || 0, cCreate = u.cache_creation_input_tokens || 0;
-  const rec = { in: (u.input_tokens || 0) + cRead + cCreate, cached: cRead, out: u.output_tokens || 0 };
-  return (rec.in || rec.out) ? [rec] : [];
 }
 
 export async function runClaudeCodeTask(task, {
@@ -290,6 +289,7 @@ export async function runClaudeCodeTask(task, {
   // Claude Code's config + session store, per rollout rather than shared across the run.
   const claudeHome = rolloutStateDir(label, 'claude-home');
   const HOMEDIR = process.env.HOME || '/root';
+  installClaudeReadPagesNormalizer(claudeHome, HOMEDIR);
   // ~/.claude.json holds onboarding state and Claude Code WRITES to it, so it gets a
   // private seeded COPY rather than a read-only bind of the shared file.
   const claudeJson = join(rolloutStateDir(label, 'claude-conf'), '.claude.json');
@@ -328,9 +328,6 @@ export async function runClaudeCodeTask(task, {
   // Prompt = the issue ONLY (both arms). CLAUDE.md carries only the benchmark
   // completion frame; the sweet arm's verbatim M± lives in its project rule.
   const prompt = issuePrompt(task.problem_statement);
-  const args = [
-    '-p', prompt, '--add-dir', rundir,
-  ];
   // --- D-4 EMPTY `pages` PARAMETER (2026-08-12) ---
   // Claude Code's Read tool takes an optional `pages` string for PDFs and rejects "" with
   // `Invalid pages parameter: ""`. The backbone here is not a Claude model, and it fills the
@@ -339,15 +336,12 @@ export async function runClaudeCodeTask(task, {
   // The note is byte-identical for both arms and carries no retrieval or strategy content,
   // so it creates no head-to-head differential — a later native improvement from this fix is
   // a repair of our own defect and must never be reported as a sweet regression.
-  args.push('--append-system-prompt', READ_PAGES_TOOL_NOTE);
-  if (sweet) args.push('--append-system-prompt', SWEET_SEARCH_SYSTEM_OVERRIDE);
-  // Append rather than replace Claude Code's native system prompt so its standard coding-agent
-  // and tool behavior remains intact. bypassPermissions avoids a headless permission hang.
-  args.push(
-    '--model', claudeModelId,
-    '--permission-mode', 'bypassPermissions',
-    '--output-format', 'stream-json', '--verbose',
-  );
+  // The arm-symmetric PreToolUse hook above performs the actual input normalization; this note
+  // keeps the model from repeatedly proposing an argument the hook must remove. Append rather
+  // than replace Claude Code's native system prompt so its standard coding-agent and tool
+  // behavior remains intact. `buildClaudeCliArgs` deliberately emits ONE append flag,
+  // preserving the shared pages note in both arms. bypassPermissions avoids a headless hang.
+  const args = buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId });
 
   const t0 = Date.now();
   const spawnOnce = () => spawnWithTimeout('claude', args, { cwd: rundir, env, timeoutMs: perCallTimeoutMs, jail });
@@ -372,36 +366,68 @@ export async function runClaudeCodeTask(task, {
   // zeroed through the OpenRouter Anthropic skin, so trust it only when it carries
   // tokens; otherwise log the aggregate and leave costContentUsd null.
   // Stream first (direct-Anthropic route); then the session transcript, which keeps the real
-  // per-message numbers even when the skin zeroes the stream. Only when BOTH are empty does
-  // this degrade to the aggregate — an honest realized-only row with null breakPriced,
-  // never a fabricated turn distribution.
-  let turnSource = 'stream';
-  let realTurns = turns.some(tu => tu.in > 0 || tu.out > 0) ? turns : [];
-  if (!realTurns.length) {
-    realTurns = turnsFromTranscript(claudeHome, sessionId);
-    if (realTurns.length) turnSource = 'transcript';
-  }
-  const perTurnReal = realTurns.length > 0;
-  const turnsFile = persistTurns(label, perTurnReal ? realTurns : aggregateTurn(resultUsage), {
+  // per-message numbers even when the skin zeroes the stream. Only when BOTH are unusable does
+  // this degrade to the aggregate — an honest realized-only row with null breakPriced.
+  // If the final aggregate itself is incomplete, every cost stays null and no synthetic
+  // turn log is written; absent provider evidence must never become zero usage.
+  const transcriptTurns = turnsFromTranscript(claudeHome, sessionId);
+  const mainCostSelection = selectClaudeMainCosts({
+    streamTurns: turns, transcriptTurns, resultUsage, price,
+  });
+  const { source: turnSource, turns: realTurns, perTurnReal, costs: mainCosts } = mainCostSelection;
+  const persistedTurns = perTurnReal ? realTurns
+    : (turnSource === 'aggregate' ? aggregateTurn(resultUsage) : []);
+  const turnsFile = persistTurns(label, persistedTurns, {
     task: task.id, arm, harness: 'claude-code', model: apiModel, provider, price,
-    source: perTurnReal ? turnSource : 'aggregate',
+    source: turnSource,
   });
 
   // Shared arithmetic with opencode/codex whenever a real distribution exists, so the three
   // harnesses' cost columns come from ONE code path and cannot drift apart.
-  const mainCosts = perTurnReal
-    ? costsFromTurns(realTurns, price)
-    : claudeCosts(resultUsage, price, null);
   // D-2: price every delegated request too. Each subagent transcript is its own context.
   const sideSets = sidechainTurnSets(claudeHome, sessionId);
+  // Retrospective, full-rollout classification. Main billed output uses the
+  // authoritative final result aggregate; delegated contexts contribute their
+  // own transcript payload, retained-character, and output-token accounting.
+  // If a sidechain transcript lacks non-zero per-message usage, expose that gap
+  // explicitly instead of claiming complete rollout instrumentation.
+  const incompleteSidechains = sideSets.filter(s => !s.instrumentationComplete).map(s => s.name);
+  const rolloutSignals = {
+    payloads: [...parsed.payloads, ...sideSets.flatMap(s => s.payloads)],
+    retainedOutputChars: parsed.retainedOutputChars
+      + sideSets.reduce((sum, s) => sum + s.retainedOutputChars, 0),
+    billedOutputTokens: parsed.billedOutputTokens
+      + sideSets.reduce((sum, s) => sum + s.billedOutputTokens, 0),
+  };
+  const degeneration = {
+    ...classifyRollout(rolloutSignals),
+    instrumentation: {
+      complete: parsed.billedOutputSource === 'result-aggregate' && incompleteSidechains.length === 0,
+      mainOutput: parsed.billedOutputSource,
+      sidechainTranscripts: sideSets.length,
+      incompleteSidechains,
+      timing: 'retrospective',
+    },
+  };
+  if (degeneration.degenerate) {
+    console.log(`  [degenerate ${task.id || ''} ${arm}] ${degeneration.reasons.join(', ')}`
+      + ` — ${degeneration.degeneratePayloads} payload(s), ${degeneration.degenerateChars} chars,`
+      + ` billed/retained=${degeneration.billedVsRetainedRatio ?? 'n/a'}x`);
+  }
+  if (!degeneration.instrumentation.complete) {
+    console.log(`  [degeneration-instrumentation ${task.id || ''} ${arm}] INCOMPLETE — main=${parsed.billedOutputSource}`
+      + `${incompleteSidechains.length ? ` sidechains=${incompleteSidechains.join(',')}` : ''}`);
+  }
   sideSets.forEach((s, i) => persistTurns(`${label}__sidechain-${i}`, s.turns, {
     task: task.id, arm, harness: 'claude-code', model: apiModel, provider, price,
     source: 'transcript-sidechain', sidechainFile: s.name,
   }));
-  const costs = addSidechainCosts(mainCosts, sideSets.map(s => costsFromTurns(s.turns, price)));
+  const costs = addSidechainCostsChecked(mainCosts, sideSets, price);
   if (sideSets.length) {
-    console.log(`  [sidechain ${task.id || ''} ${arm}] ${sideSets.length} delegated context(s), `
-      + `${sideSets.reduce((a, s) => a + s.turns.length, 0)} turn(s), +$${costs.costSidechainUsd} on top of main $${costs.costRealizedMainOnlyUsd}`);
+    console.log(costs.sidechainAccountingComplete
+      ? `  [sidechain ${task.id || ''} ${arm}] ${sideSets.length} delegated context(s), `
+        + `${sideSets.reduce((a, s) => a + s.turns.length, 0)} turn(s), +$${costs.costSidechainUsd} on top of main $${costs.costRealizedMainOnlyUsd}`
+      : `  [sidechain ${task.id || ''} ${arm}] ACCOUNTING INCOMPLETE — inclusive cost unavailable; ${costs.incompleteSidechains.join(',')}`);
   }
   const shimTamperedFiles = verifyIntegrity({ integrity, runnerFiles, binDir, integrityStateDir });
   if (shimTamperedFiles.length) console.log(`  [SHIM-TAMPERED ${task.id || ''}] ${shimTamperedFiles.join(', ')} — test signals untrusted`);
@@ -418,6 +444,9 @@ export async function runClaudeCodeTask(task, {
     stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
     exitReason: exitReasonFrom(r),
     usage: resultUsage || {}, idealTurns: numTurns,
+    degenerate: degeneration.degenerate, degeneration,
+    degenerationInstrumentationComplete: degeneration.instrumentation.complete,
+    readPagesNormalization: 'pretool-hook-v1',
     sidechainTurns: sideSets.reduce((a, s) => a + s.turns.length, 0),
     ...costs, turnsFile,
     wallMs, trajectory, finalAssistantText: answer,
