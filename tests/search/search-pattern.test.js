@@ -1349,7 +1349,12 @@ describe('patternSearch', () => {
     expect(result.results).toEqual([]);
     expect(result.stats.path).toBe('pattern');
     expect(result.stats.grepMatches).toBe(0);
-  });
+    // 120 s of PATIENCE, no weakened assertion: this case runs a real ripgrep
+    // over the WHOLE repository looking for a pattern that cannot match, so it
+    // pays for a full scan every time. In a ~170-file worker pool that shares
+    // CPU with several process-spawning integration files, the 30 s default was
+    // a coin flip; alone it finishes in a couple of seconds.
+  }, 120_000);
 
   it.skipIf(!rgAvailable)('returns results with correct stats shape', async () => {
     const regex = ['ZZZZNOTFOUND', 'XYZZY', '42'].join('_');

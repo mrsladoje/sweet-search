@@ -15,6 +15,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   parseBoolFlag, parseValueFlag, parsePositiveIntFlag,
+  parseRepeatedValueFlag, extraPositionals,
   buildGrepPattern, stripInertFlags, normalizeArgs, extractPositional,
   parseLineRange, looksLikeOption, renderSufficiency,
 } from './_ss-argparse.mjs';
@@ -161,6 +162,27 @@ function readValueFlag(args, names, fallback, usage, opts = {}) {
   return parsed.value;
 }
 
+function readRepeatedValueFlag(args, names, usage) {
+  const parsed = parseRepeatedValueFlag(args, names);
+  if (parsed.error) failUsage(parsed.error, usage);
+  return parsed.values;
+}
+
+// Bare positionals past the pattern used to be dropped without a word. Both
+// plausible intents are named, because the parser cannot tell them apart:
+// extra scopes (`--in A B`) or an unquoted multi-word pattern (`ss-grep def foo`).
+function rejectExtraPositionals(args, usage) {
+  const extras = extraPositionals(args);
+  if (extras.length === 0) return;
+  const shown = extras.map(e => `"${e}"`).join(', ');
+  failUsage(
+    `${extras.length} argument(s) not consumed: ${shown}\n` +
+    `[ss] for several scopes repeat the flag: ss-grep "<regex>" --in A --in B\n` +
+    `[ss] if this is part of the pattern, quote the whole pattern`,
+    usage,
+  );
+}
+
 function rejectUnknownOptions(args, usage) {
   const bad = args.find(looksLikeOption);
   if (bad) failUsage(`unrecognised option "${bad}"`, usage);
@@ -210,35 +232,38 @@ function writeRegexDialectHint(stats) {
 
 // --- subcommands ----------------------------------------------------------
 
-const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <file>] [-k N]';
+const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]';
 async function cmdGrep(rawArgs) {
   const args = normalizeArgs(rawArgs);
   const ignoreCase = parseBoolFlag(args, ['-i', '--ignore-case']);
   const wordBound = parseBoolFlag(args, ['-w', '--word-regexp']);
   const fixedString = parseBoolFlag(args, ['-F', '--fixed-strings']);
   const k = readPositiveIntFlag(args, ['-k', '--top'], 20, GREP_USAGE);
-  // Drill-in scope: show matches from ONE file (the recovery affordance the
-  // diversified output advertises when it truncates a flooded file).
-  const inFile = readValueFlag(args, '--in', null, GREP_USAGE);
+  // Drill-in scope: restrict matches to the named files or directories (the
+  // recovery affordance the diversified output advertises when it truncates a
+  // flooded file). Repeatable — one path per flag, every one applied.
+  const inPaths = readRepeatedValueFlag(args, '--in', GREP_USAGE);
   stripInertFlags(args);
+  rejectExtraPositionals(args, GREP_USAGE);
   const regex = buildGrepPattern(resolvePositional(args, GREP_USAGE), { ignoreCase, wordBound, fixedString });
   if (!regex) {
     process.stderr.write(GREP_USAGE + '\n');
     process.exit(2);
   }
-  if (inFile) {
-    // Single-file scope: flat output, depth up to k within that file.
+  if (inPaths.length > 0) {
+    // Scoped: flat output, depth up to k across the named scopes.
+    const fileFilter = inPaths.length === 1 ? inPaths[0] : inPaths;
     let result;
     try {
       result = await queryWarmSearch(regex, {
         mode: 'grep', regex, maxMatches: k, contextLines: 0,
-        fileFilter: inFile, expand: false, rerank: false, useLateInteraction: false,
+        fileFilter, expand: false, rerank: false, useLateInteraction: false,
         _isAgentFormat: !fixedString,
       });
     } catch {
       const s = await getSweetSearch();
       result = await s.bareGrep(regex, null, {
-        regex, maxMatches: k, contextLines: 0, fileFilter: inFile,
+        regex, maxMatches: k, contextLines: 0, fileFilter,
         _isAgentFormat: !fixedString,
       });
     }
@@ -247,7 +272,10 @@ async function cmdGrep(rawArgs) {
       query: fixedString ? undefined : regex,
       regex: fixedString ? undefined : regex,
     });
-    process.stdout.write(`# ss-grep: ${total} total match(es) for /${regex}/ (scope: --in ${inFile})\n`);
+    // Every applied scope is echoed. The header used to print one value however
+    // many were supplied, which made the loss look like intended behaviour.
+    const scopes = inPaths.map(p => `--in ${p}`).join(' ');
+    process.stdout.write(`# ss-grep: ${total} total match(es) for /${regex}/ (scope: ${scopes})\n`);
     result.results.forEach((r, i) => {
       const text = (r.matchText || '').replace(/\s+/g, ' ').trim().slice(0, 140);
       const marker = (i === result.results.length - 1 && total > result.results.length)
@@ -491,7 +519,7 @@ async function cmdRead(rawArgs) {
   const cappedDefault = (start === null && end === null && READ_WINDOW > 0);
   if (cappedDefault) { start = 1; end = READ_WINDOW; }
 
-  const { readFile, renderUnreadBelow } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
+  const { readFile, renderUnreadBelow, numberCodeLines } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
   const r = await readFile({ path: file, projectRoot: PROJECT_ROOT, startLine: start ?? undefined, endLine: end ?? undefined });
   if (!r.ok) {
     process.stderr.write(`[ss-read] error: ${r.error}\n`);
@@ -522,16 +550,18 @@ async function cmdRead(rawArgs) {
     queryEvidence: receiptResponse?.queryEvidence,
   });
   const omitted = renderReadOmission(r, { surface: 'ss-read' });
-  // Optional line-number gutter (SS_READ_LINENUMS=1). `N| ` form, skipped under
-  // 15 lines. Native Claude Code Read numbers every line; this closes that
+  // Optional line-number gutter (SS_READ_LINENUMS=0 disables), skipped under 15
+  // lines. Native Claude Code Read numbers every line; this closes that
   // grounding asymmetry for the sweet arm so exact-span edits are easier.
+  //
+  // Rendering goes through the SHARED numberCodeLines. It used to be an inlined
+  // copy of the same arithmetic, which meant the CLI and the daemon/library
+  // renderers could drift apart silently — and a delimiter that differs between
+  // the two paths is exactly the class of defect that corrupts edit anchors.
   let bodyText = r.text;
   if (process.env.SS_READ_LINENUMS !== '0' && r.text && r.text.split('\n').length >= 15) {
     const startAt = (r.range && !coveredWholeFile) ? r.range.startLine : 1;
-    const ls = r.text.split('\n');
-    const trailNL = ls.length > 1 && ls[ls.length - 1] === '';
-    const bodyLs = trailNL ? ls.slice(0, -1) : ls;
-    bodyText = bodyLs.map((ln, i) => `${startAt + i}| ${ln}`).join('\n') + (trailNL ? '\n' : '');
+    bodyText = numberCodeLines(r.text, startAt);
   }
   if (omitted) process.stdout.write(`# ss-read ${r.file}${range}\n${omitted}\n`);
   else process.stdout.write(`# ss-read ${r.file}${range}\n${fence}\n${bodyText}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`);

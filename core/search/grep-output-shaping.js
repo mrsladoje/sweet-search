@@ -13,20 +13,79 @@
  * sorted order; raw match count is deliberately never used as a sort key).
  */
 
+/** Split a path into whole segments, dropping "" and "." (so "./a//b" → [a,b]). */
+function pathSegments(value) {
+  return String(value).replace(/\\/g, '/').split('/').filter(s => s !== '' && s !== '.');
+}
+
+/** POSIX, drive-letter, and UNC spellings after slash normalization. */
+function isAbsolutePath(value) {
+  const normalized = String(value).replace(/\\/g, '/');
+  return normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized);
+}
+
 /**
- * True when a match's repo-relative path is the drill-in target. Accepts the
- * exact relative path as printed in grep output, a path with a leading "./",
- * or a suffix (basename or trailing path segments) so agents can paste any
- * reasonable spelling of the file they saw.
+ * True when a match's repo-relative path lies inside a drill-in scope.
+ *
+ * Matching is on WHOLE path segments — the scope's segments must appear as a
+ * contiguous run of the target's segments — so every reasonable spelling an
+ * agent can paste is accepted while `x.R` still never matches `test_x.R`:
+ *
+ *   exact path            tests/testthat/test_x.R
+ *   ./-prefixed           ./tests/testthat/test_x.R
+ *   trailing segments     testthat/test_x.R   ·   test_x.R
+ *   DIRECTORY from root   tests   ·   tests/testthat   ·   tests/testthat/
+ *   DIRECTORY by name     testthat
+ *
+ * The two directory rows are the fix. The previous rule required the run to end
+ * at the final segment, so a directory scope matched nothing at all: `ss-grep
+ * … --in tests/testthat` printed "(no matches)" — indistinguishable from a
+ * regex that genuinely misses — instead of scoping to the directory.
+ *
+ * SAFETY: this is a pure post-filter over repo-relative paths the engine has
+ * already produced. It can only ever REMOVE results, never widen a read, so no
+ * scope can reach outside the repository root. A scope carrying a `..` segment
+ * is rejected outright, so an escape cannot even be spelled.
  *
  * @param {string} file - repo-relative match path (as emitted by the engine)
- * @param {string} filter - user-supplied --in value
+ * @param {string|string[]} filter - user-supplied --in value(s); any one matching wins
+ * @param {string|null} projectRoot - absolute root required to validate absolute scopes
+ * @returns {boolean}
  */
-export function matchesGrepFileFilter(file, filter) {
+export function matchesGrepFileFilter(file, filter, projectRoot = null) {
   if (!file || !filter) return false;
-  const f = String(filter).replace(/^\.\//, '').replace(/\\/g, '/');
-  const target = String(file).replace(/\\/g, '/');
-  return target === f || target.endsWith(`/${f}`);
+  const target = pathSegments(file);
+  if (target.length === 0) return false;
+  const root = projectRoot ? pathSegments(projectRoot) : null;
+  const scopes = Array.isArray(filter) ? filter : [filter];
+  const runAt = (hay, needle, start) => {
+    for (let i = 0; i < needle.length; i++) if (hay[start + i] !== needle[i]) return false;
+    return true;
+  };
+  return scopes.some((raw) => {
+    if (!raw) return false;
+    let scope = pathSegments(raw);
+    if (scope.length === 0 || scope.includes('..')) return false;
+
+    // ABSOLUTE scope. It is meaningful only relative to the repository root
+    // that produced the repo-relative target. Suffix inference is unsafe:
+    // `/tmp/other-repo/src` must never scope this repository's `src/a.js`.
+    // Once the root is stripped, keep the remainder root-anchored as well — an
+    // exact `/repo/src` scope must not match `nested/src/a.js`.
+    if (isAbsolutePath(raw)) {
+      if (!root || !isAbsolutePath(projectRoot)
+          || scope.length < root.length || !runAt(scope, root, 0)) return false;
+      scope = scope.slice(root.length);
+      if (scope.length === 0) return true;
+      return scope.length <= target.length && runAt(target, scope, 0);
+    }
+
+    if (scope.length > target.length) return false;
+    for (let start = 0; start + scope.length <= target.length; start++) {
+      if (runAt(target, scope, start)) return true;
+    }
+    return false;
+  });
 }
 
 /**

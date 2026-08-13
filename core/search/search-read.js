@@ -507,11 +507,12 @@ function _formatAgent(result, opts = {}) {
     if (names.length) symbolHint = `\nsymbols: ${names.join(', ')}`;
   }
   const remainder = renderUnreadBelow(result, opts);
-  // Optional line-number gutter (SS_READ_LINENUMS=1). Native Claude Code Read numbers
-  // every line; ss-read does not, so sweet edits with less line grounding than its
-  // comparison arm. `N| ` form (not cat -n's padded field, which miscalibrates edit
-  // wrapping — Claude Code #36654). Skipped for spans < 15 lines (short reads don't
-  // need it and the prefix is pure token cost). Prior art: pi-hashline +14pp Sonnet.
+  // Optional line-number gutter (SS_READ_LINENUMS=0 disables). Native Claude Code Read
+  // numbers every line; ss-read did not, so sweet edited with less line grounding than
+  // its comparison arm. `N<TAB>` form — see numberCodeLines for why the delimiter is a
+  // tab and not the `N| ` it replaced, nor cat -n's padded field. Skipped for spans
+  // < 15 lines (short reads don't need it and the prefix is pure token cost).
+  // Prior art: pi-hashline +14pp Sonnet.
   const body = shouldNumberLines(result, opts)
     ? numberLines(result.text, result.range ? result.range.startLine : 1)
     : result.text;
@@ -532,15 +533,61 @@ export function lineGutterEnabled(opts = {}) {
   return process.env.SS_READ_LINENUMS !== '0';
 }
 
-// Prefix each line with `N| ` starting at startLine. `N| ` form (not cat -n's
-// padded field, which miscalibrates edit-wrapping — Claude Code #36654).
+// The gutter delimiter. Prefix each line with `N<TAB>` starting at startLine.
+//
+// WHY A TAB, AND WHY NOT THE `N| ` IT REPLACED (2026-08-12)
+// --------------------------------------------------------
+// `N| ` injects ONE SPACE between the delimiter and the content, and a model
+// rebuilding an exact-match edit anchor has to strip all of `123| ` (5 chars),
+// not the visually salient `123|` (4). Stripping 4 carries one extra leading
+// space into the anchor and the harness's edit tool rejects it. sweet does not
+// own that edit tool (Claude Code `Edit`, codex `apply_patch`), so the only
+// possible fix is on the render side.
+//
+// Measured on the 2026-08-11 three-harness run, claude-code:
+//   sweet  15,205 gutter lines as `N| `  → 20 anchor failures, 14 of which
+//          match the read reconstructed with `N|` stripped instead of `N| `,
+//          and do NOT match the true source. Per-line delta exactly +1 space.
+//   native 19,499 gutter lines as `N<TAB>` → 0 whitespace-carry failures.
+//          (Its 8 anchor failures are unrelated: decoding garbage, a
+//          replace_all ambiguity, anchors absent from the file.)
+// Same harness, same model, same tasks, comparable gutter volume, opposite
+// outcome. A tab has no adjacent injected whitespace, so the off-by-one is
+// structurally impossible rather than merely less likely.
+//
+// The tab-indented worry is refuted by the same evidence:
+// joshuakgoldberg__bingo-274 renders TAB-indented TypeScript as `5<TAB><TAB>…`
+// and its 4 exact-match edits all succeeded, with leading content tabs
+// reproduced verbatim — the model strips the gutter tab and keeps the rest.
+//
+// This is NOT `cat -n`. cat -n pads the number into a fixed-width field
+// (`%6d`), which is what was tried and rejected for miscalibrating edit
+// wrapping (Claude Code #36654). The number here stays unpadded, so the prefix
+// width still varies with digit count exactly as `N| ` did.
+export const GUTTER_DELIMITER = '\t';
+
 export function numberCodeLines(text, startLine = 1) {
   if (!text) return text;
   const lines = text.split('\n');
   const hasTrailingNL = lines.length > 1 && lines[lines.length - 1] === '';
   const body = hasTrailingNL ? lines.slice(0, -1) : lines;
-  const numbered = body.map((ln, i) => `${startLine + i}| ${ln}`).join('\n');
+  const numbered = body.map((ln, i) => `${startLine + i}${GUTTER_DELIMITER}${ln}`).join('\n');
   return hasTrailingNL ? numbered + '\n' : numbered;
+}
+
+// Inverse of numberCodeLines: recover the exact source text from a rendered
+// gutter body. Exists so the round-trip is asserted by tests rather than
+// assumed, and so any future delimiter change has to keep it exact.
+export function stripCodeLineNumbers(text) {
+  if (!text) return text;
+  const lines = text.split('\n');
+  const hasTrailingNL = lines.length > 1 && lines[lines.length - 1] === '';
+  const body = hasTrailingNL ? lines.slice(0, -1) : lines;
+  const stripped = body.map((ln) => {
+    const at = ln.indexOf(GUTTER_DELIMITER);
+    return at > 0 && /^\d+$/.test(ln.slice(0, at)) ? ln.slice(at + GUTTER_DELIMITER.length) : ln;
+  }).join('\n');
+  return hasTrailingNL ? stripped + '\n' : stripped;
 }
 
 function shouldNumberLines(result, opts) {
@@ -559,7 +606,7 @@ export function formatReadResults(results, format = 'agent', opts = {}) {
   if (format === 'raw') {
     return results.files.map(r => r.ok ? r.text : `[error: ${r.file}] ${r.error}`).join('\n\n');
   }
-  return results.files.map((result) => _formatAgent(result, opts)).join('\n');
+  return results.files.map((result) => _formatAgent(result, { ...opts, format })).join('\n');
 }
 
 // ---------------------------------------------------------------------------

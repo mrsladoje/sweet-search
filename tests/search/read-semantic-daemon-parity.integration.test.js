@@ -176,6 +176,32 @@ describe('warm-daemon JSON clients', () => {
     expect(params.get('agent')).toBe('true');
   });
 
+  // REGRESSION GUARD (screen-v3-20260812). The matcher accepted arrays and its
+  // unit tests passed, but the WIRE did not carry them: `params.set` stringified
+  // ['src','tests','docs'] into the single value "src,tests,docs", which the
+  // server matched as one literal directory name — i.e. nothing. Four
+  // multi-scope ss-grep calls returned 0 matches for patterns certainly present.
+  // That is worse than the defect it replaced, which at least returned the first
+  // scope's matches. Unit-testing the matcher alone cannot catch this; only a
+  // wire assertion can.
+  it('forwards EVERY --in scope as its own param, never one comma-joined value', async () => {
+    await queryServer('keys', {
+      mode: 'grep', regex: 'keys',
+      fileFilter: ['src', 'tests', 'docs'],
+      _isAgentFormat: true,
+    });
+    const params = requests[0].searchParams;
+    expect(params.getAll('fileFilter')).toEqual(['src', 'tests', 'docs']);
+    // the exact shape of the bug: one joined value
+    expect(params.get('fileFilter')).not.toBe('src,tests,docs');
+    expect(params.getAll('fileFilter').length).toBe(3);
+  });
+
+  it('a single scope still travels as one plain value (wire format unchanged)', async () => {
+    await queryServer('keys', { mode: 'grep', regex: 'keys', fileFilter: 'src/a b.js' });
+    expect(requests[0].searchParams.getAll('fileFilter')).toEqual(['src/a b.js']);
+  });
+
   it('requests semantic JSON with the existing exact maxChars budget', async () => {
     const response = await queryReadSemanticServer({
       path: 'src/a b.js', query: 'how it works', projectRoot: '/repo', maxChars: 2400,

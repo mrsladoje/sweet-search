@@ -989,8 +989,20 @@ export async function startServer() {
       }
       const maxMatches = parseInt(url.searchParams.get('maxMatches') || '0', 10);
       const contextLines = parseInt(url.searchParams.get('contextLines') || '0', 10);
-      const fileFilter = url.searchParams.get('fileFilter') || undefined;
-      if (fileFilter && fileFilter.length > SEARCH_SERVER_MAX_READ_PATH_LENGTH) {
+      // Repeatable: `--in A --in B` arrives as several fileFilter params and
+      // every one is applied. A single value stays a plain string, so the
+      // one-scope wire format is byte-identical to before.
+      //
+      // MEASURED REGRESSION (screen-v3-20260812): when this read a single value
+      // with .get(), an array sent by the CLI was stringified by
+      // URLSearchParams into "src,tests,docs" and matched a directory of that
+      // literal name — i.e. nothing. Four multi-scope ss-grep calls on
+      // pytask-dev__pytask-210 returned 0 matches for patterns that are
+      // certainly present. That is WORSE than the defect it replaced: the old
+      // code silently used the first scope and at least returned its matches.
+      const fileFilters = url.searchParams.getAll('fileFilter').filter(Boolean);
+      const fileFilter = fileFilters.length > 1 ? fileFilters : (fileFilters[0] || undefined);
+      if (fileFilters.some(f => f.length > SEARCH_SERVER_MAX_READ_PATH_LENGTH)) {
         res.writeHead(413, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: `File filter too long (max ${SEARCH_SERVER_MAX_READ_PATH_LENGTH} chars)` }));
         return;
@@ -1394,7 +1406,11 @@ export async function queryServer(query, options = {}) {
     if (regex) params.set('regex', regex);
     if (maxMatches > 0) params.set('maxMatches', maxMatches.toString());
     if (contextLines > 0) params.set('contextLines', contextLines.toString());
-    if (fileFilter) params.set('fileFilter', fileFilter);
+    // One param per scope. `set` would stringify an array into "a,b,c", which
+    // the server then treats as one literal path that matches nothing.
+    for (const f of (Array.isArray(fileFilter) ? fileFilter : [fileFilter])) {
+      if (f) params.append('fileFilter', f);
+    }
     if (perFileCap > 0) params.set('perFileCap', perFileCap.toString());
     if (maxFiles > 0) params.set('maxFiles', maxFiles.toString());
     if (fixedString) params.set('fixedString', 'true');

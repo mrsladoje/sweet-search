@@ -13,6 +13,7 @@
  * References: docs/COLGREP_PLAN.md, docs/USEFUL_ANSWER_COLGREP_PLAN.md
  */
 
+import path from 'node:path';
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { generateRegexMatches } from './search-pattern-planner.js';
 import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
@@ -134,14 +135,17 @@ function isAgentFormat(options) {
   return options?._isAgentFormat === true || AGENT_FORMATS.has(options?.format);
 }
 
-function shapeBareGrepMatches(candidateResult, symbolType, searcher, fileFilter) {
+function shapeBareGrepMatches(candidateResult, symbolType, searcher, fileFilter, projectRoot) {
   let matches = [
     ...(candidateResult?.indexedMatches || []),
     ...(candidateResult?.overlayMatches || []),
   ];
   matches = filterMatchesBySymbolType(matches, symbolType, searcher);
   if (fileFilter) {
-    matches = matches.filter(match => matchesGrepFileFilter(match.file, fileFilter));
+    // Use the same effective root as candidate generation/result construction.
+    // Looking only at searcher.projectRoot loses options.projectRoot for direct
+    // bareGrep callers and makes absolute-scope validation rootless.
+    matches = matches.filter(match => matchesGrepFileFilter(match.file, fileFilter, projectRoot));
   }
   return matches;
 }
@@ -154,6 +158,7 @@ export async function bareGrep(query, routing, options = {}) {
   await this?._refreshManifestPins?.({ reloadScope: 'grep' });
   const regex = options.regex || query;
   const searchDir = this?.projectRoot || options.projectRoot || PROJECT_ROOT;
+  const filterRoot = path.resolve(searchDir);
   const maxMatches = options.maxMatches ?? 0;
   const start = performance.now();
   const symbolType = resolveSearchSymbolFilter(options);
@@ -172,7 +177,7 @@ export async function bareGrep(query, routing, options = {}) {
   // Disable chunk gram for bare grep — bare grep uses file:line matches, not chunk IDs.
   let candidateResult = await generateRegexMatches(this || {}, regex, searchDir, options);
   const shapeResult = result => shapeBareGrepMatches(
-    result, symbolType, this, options.fileFilter,
+    result, symbolType, this, options.fileFilter, filterRoot,
   );
   const dialectRetry = await retryBreDialectAfterZero({
     pattern: regex,

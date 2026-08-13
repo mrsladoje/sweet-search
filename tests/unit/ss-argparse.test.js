@@ -22,6 +22,8 @@ import {
   parseFlag,
   parseValueFlag,
   parsePositiveIntFlag,
+  parseRepeatedValueFlag,
+  extraPositionals,
   parseLineRange,
 } from '../../eval/agent-read-workflows/bin/_ss-argparse.mjs';
 
@@ -175,6 +177,104 @@ describe('value/bool flag parsers', () => {
       .toBe('-k must be an integer >= 1');
     expect(parsePositiveIntFlag(['q', '-k', 'abc'], ['-k', '--top'], 20).error)
       .toBe('-k must be an integer >= 1');
+  });
+});
+
+describe('ss-grep multi-scope --in (dashbitco/nimble_options: a dropped scope decided the task)', () => {
+  // Mirrors cmdGrep's parsing order: repeated --in, then inert strip, then the
+  // extras guard, then the positional pattern.
+  function grepScopes(rawArgs) {
+    const args = normalizeArgs(rawArgs);
+    parseBoolFlag(args, ['-i', '--ignore-case']);
+    parseBoolFlag(args, ['-w', '--word-regexp']);
+    parseBoolFlag(args, ['-F', '--fixed-strings']);
+    const k = parsePositiveIntFlag(args, ['-k', '--top'], 20);
+    if (k.error) return { error: k.error };
+    const scopes = parseRepeatedValueFlag(args, '--in');
+    if (scopes.error) return { error: scopes.error };
+    stripInertFlags(args);
+    const extras = extraPositionals(args);
+    if (extras.length) return { extras };
+    const { pattern, unknownFlag } = extractPositional(args);
+    if (unknownFlag) return { error: unknownFlag };
+    return { pattern, scopes: scopes.values };
+  }
+
+  it('one scope: unchanged behaviour', () => {
+    expect(grepScopes(['keys', '--in', 'lib/nimble_options.ex']))
+      .toEqual({ pattern: 'keys', scopes: ['lib/nimble_options.ex'] });
+  });
+
+  it('several scopes: every repeated --in is applied, in order', () => {
+    expect(grepScopes(['keys', '--in', 'lib/nimble_options.ex', '--in', 'test/nimble_options_test.exs']))
+      .toEqual({ pattern: 'keys', scopes: ['lib/nimble_options.ex', 'test/nimble_options_test.exs'] });
+  });
+
+  it('a directory scope is a scope like any other', () => {
+    expect(grepScopes(['expect_error', '--in', 'tests/testthat']))
+      .toEqual({ pattern: 'expect_error', scopes: ['tests/testthat'] });
+  });
+
+  it('de-duplicates a repeated identical scope', () => {
+    expect(grepScopes(['x', '--in', 'a.ex', '--in', 'a.ex']).scopes).toEqual(['a.ex']);
+  });
+
+  it('THE DEFECT: a second bare path is now reported, never silently dropped', () => {
+    // Was: --in consumed only 'lib/…', the header echoed that one scope back,
+    // and 'test/…' — which held the deciding assertion — vanished.
+    expect(grepScopes(['keys', '--in', 'lib/nimble_options.ex', 'test/nimble_options_test.exs']))
+      .toEqual({ extras: ['test/nimble_options_test.exs'] });
+  });
+
+  it('reports every unconsumed argument, not just the first', () => {
+    expect(grepScopes(['keys', '--in', 'a.ex', 'b.ex', 'c.ex']))
+      .toEqual({ extras: ['b.ex', 'c.ex'] });
+  });
+
+  it('malformed value: --in with nothing after it is a loud error', () => {
+    expect(grepScopes(['keys', '--in'])).toEqual({ error: '--in requires a value' });
+    expect(grepScopes(['keys', '--in', '-k', '5'])).toEqual({ error: '--in requires a value' });
+    expect(grepScopes(['keys', '--in='])).toEqual({ error: '--in requires a value' });
+    expect(grepScopes(['keys', '--in', ''])).toEqual({ error: '--in requires a value' });
+    expect(grepScopes(['keys', '--in', '--'])).toEqual({ error: '--in requires a value' });
+  });
+
+  it('no --in at all still parses, and a lone pattern is not an extra', () => {
+    expect(grepScopes(['fn main'])).toEqual({ pattern: 'fn main', scopes: [] });
+    expect(grepScopes(['-i', 'fn main', '-k', '5'])).toEqual({ pattern: 'fn main', scopes: [] });
+  });
+
+  it('extras are counted after inert flags are stripped, so -n never trips the guard', () => {
+    expect(grepScopes(['-n', 'fn main', '--color=always'])).toEqual({ pattern: 'fn main', scopes: [] });
+  });
+
+  it('extraPositionals ignores option-shaped tokens (extractPositional reports those)', () => {
+    expect(extraPositionals(['fn', '-z'])).toEqual([]);
+    expect(extraPositionals(['fn', '-z', 'extra'])).toEqual(['extra']);
+  });
+
+  it('extraPositionals respects the -- sentinel', () => {
+    expect(extraPositionals(['--', '-->'])).toEqual([]);
+    expect(extraPositionals(['--', '-->', 'extra'])).toEqual(['extra']);
+  });
+
+  it('parseRepeatedValueFlag consumes each flag+value pair out of args', () => {
+    const args = ['keys', '--in', 'a.ex', '-k', '5', '--in', 'b.ex'];
+    expect(parseRepeatedValueFlag(args, '--in')).toEqual({
+      values: ['a.ex', 'b.ex'], flag: '--in', error: null,
+    });
+    expect(args).toEqual(['keys', '-k', '5']);
+  });
+
+  it('parseRepeatedValueFlag returns no values and no flag when absent', () => {
+    expect(parseRepeatedValueFlag(['keys'], '--in')).toEqual({ values: [], flag: null, error: null });
+  });
+
+  it('parseRepeatedValueFlag never consumes flag-shaped positionals after --', () => {
+    const args = ['keys', '--', '--in', 'src'];
+    expect(parseRepeatedValueFlag(args, '--in'))
+      .toEqual({ values: [], flag: null, error: null });
+    expect(args).toEqual(['keys', '--', '--in', 'src']);
   });
 });
 
