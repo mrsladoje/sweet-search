@@ -1,0 +1,70 @@
+{
+  "WARNING": "SEALED. Contains the answer to the blinded gate. Open only after every lock file is hashed.",
+  "seed": 20260813,
+  "generated_from": "select/.cache/tasks_full_heldout.json (DEV-RET)",
+  "pool_size": 200,
+  "eligible": 179,
+  "excluded": {
+    "rotate20": 13,
+    "alreadyUsed": 1,
+    "emptyIssue": 7,
+    "noPatch": 0,
+    "extreme": 0
+  },
+  "class_counts": {
+    "adds_new_source_module": 14,
+    "does_not": 165
+  },
+  "labels": [
+    {
+      "instance_id": "konstantin8105__c4go-367",
+      "adds_new_source_module": true,
+      "new_source_modules": [
+        "ast/enable_if_attr.go",
+        "ast/overloadable_attr.go"
+      ],
+      "created_paths_all": [
+        "ast/enable_if_attr.go",
+        "ast/overloadable_attr.go"
+      ],
+      "modified_file_count": 5
+    },
+    {
+      "instance_id": "smooth-code__svgr-10",
+      "adds_new_source_module": true,
+      "new_source_modules": [
+        "src/h2x/removeStyle.js"
+      ],
+      "created_paths_all": [
+        "src/h2x/removeStyle.js"
+      ],
+      "modified_file_count": 6
+    },
+    {
+      "instance_id": "aws__aws-lambda-dotnet-1346",
+      "adds_new_source_module": false,
+      "new_source_modules": [],
+      "created_paths_all": [],
+      "modified_file_count": 1
+    },
+    {
+      "instance_id": "vuejs__eslint-plugin-vue-2194",
+      "adds_new_source_module": true,
+      "new_source_modules": [
+        "lib/rules/no-console.js"
+      ],
+      "created_paths_all": [
+        "docs/rules/no-console.md",
+        "lib/rules/no-console.js"
+      ],
+      "modified_file_count": 4
+    },
+    {
+      "instance_id": "joshuakgoldberg__create-typescript-app-2061",
+      "adds_new_source_module": false,
+      "new_source_modules": [],
+      "created_paths_all": [],
+      "modified_file_count": 2
+    }
+  ]
+}
