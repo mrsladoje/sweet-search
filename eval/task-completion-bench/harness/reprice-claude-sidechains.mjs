@@ -20,6 +20,7 @@ import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { costFromTurns, priceFor } from './ideal-cost.mjs';
 import { turnsFromTranscriptFile } from './claude-code-task-runner.mjs';
+import { repOfSlug } from './claude-code-accounting.mjs';
 
 const args = process.argv.slice(2);
 const RUN = args.find(a => !a.startsWith('--'));
@@ -30,9 +31,6 @@ if (!RUN) { console.error('usage: reprice-claude-sidechains.mjs <results/<run>> 
 const rows = JSON.parse(readFileSync(path.join(RUN, 'rows.json'), 'utf8'));
 const stateRoot = path.join(RUN, 'agent-state');
 
-// Project-dir slug encodes the rundir, and the rundir encodes task, arm and rep:
-//   -root--ss-eval-runs-<task-slug>--<arm>--r<rep>--<n>
-const repOfSlug = slug => { const m = /--r(\d+)--\d+$/.exec(slug); return m ? +m[1] : null; };
 
 /** Every session in one rollout's claude-home: main turns + per-subagent turn sets. */
 function sessionsFor(taskId, arm, rep) {

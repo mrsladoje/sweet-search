@@ -198,6 +198,21 @@ export function recoveredTurnsCoverAggregate(turns, resultUsage) {
   return strictlyMore;                                 // exact match handled above
 }
 
+/**
+ * Claude Code's project-dir slug encodes the rundir path, replacing `/`, `.` and `_` with `-`.
+ * Two rundir shapes exist and BOTH must resolve, because retained runs keep the old one:
+ *   pre-2026-08-13  `<task>__<arm>__r<rep>__<n>`  ->  `…-runs-<task>--<arm>--r<rep>--<n>`
+ *   current         `r<rep>-<n>`                  ->  `…-runs-r<rep>-<n>`
+ * The current shape is short and ARM-BLIND on purpose — see makeRunDir in run-pilot.mjs. It
+ * stopped the agent reading its own arm out of its working directory, and it removed ~40
+ * characters the model had to transcribe whenever a tool wanted an absolute path.
+ */
+export function repOfSlug(slug) {
+  const m = /--r(\d+)--\d+$/.exec(String(slug))     // long form, retained runs
+         || /-r(\d+)-\d+$/.exec(String(slug));      // short arm-blind form
+  return m ? +m[1] : null;
+}
+
 /** One independently priced context per delegated subagent transcript. */
 export function sidechainTurnSets(claudeHome, sessionId) {
   const file = findSessionFile(claudeHome, sessionId);

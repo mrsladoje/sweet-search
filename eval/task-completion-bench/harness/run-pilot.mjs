@@ -284,9 +284,29 @@ function prepareGolden(t) {
 // Copy the golden into a UNIQUE per-run dir → its own project-root → its own
 // ss-* socket/server/maintainer (full isolation). withIndex=false (native arm,
 // no ss-*) skips the .sweet-search copy to save time/disk.
+// THE NAME IS SHORT AND ARM-BLIND ON PURPOSE (2026-08-13).
+//
+// This path IS the agent's working directory, and the harness puts it in the system prompt,
+// so it is a string the model must transcribe exactly every time a tool wants an absolute
+// path. It used to be `<taskId>__<arm>__r<rep>__<n>` — around 45 characters of doubled
+// underscores. Measured over two retained claude runs: 54 `File does not exist` failures,
+// 45 carrying a mangled run-directory segment, and only 1 of the 54 was a path any tool had
+// ever printed. BOTH ARMS INVENT IT. That cost 12.66% of native's spend and 5.29% of
+// sweet's — 7.4 points of the arm delta, the same as the `pages` tax — on a directory that
+// exists only because this harness creates it.
+//
+// Two separate defects are fixed by shortening it:
+//   1. TRANSCRIPTION. 4-5 characters instead of ~45, with no doubled separator to mangle.
+//   2. ARM LEAKAGE. The old name told the agent it was `__sweet__` or `__native__` in its
+//      own cwd. An arm-conditioned agent is exactly the contamination this bench forbids;
+//      nothing should be able to read its own arm at runtime.
+//
+// `rep` stays because reprice-claude-sidechains.mjs recovers it from Claude Code's
+// project-dir slug. Task and arm are already carried by results/<run>/agent-state/<cell>/,
+// so nothing downstream needs them here.
 let __runCounter = 0;
-function makeRunDir(goldenDir, runUid, withIndex) {
-  const rundir = path.join(RUNS_DIR, `${runUid}__${++__runCounter}`);
+function makeRunDir(goldenDir, rep, withIndex) {
+  const rundir = path.join(RUNS_DIR, `r${rep}-${++__runCounter}`);
   mkdirSync(RUNS_DIR, { recursive: true }); rmSync(rundir, { recursive: true, force: true });
   execFileSync('cp', ['-a', goldenDir, rundir]); // argv form: no shell, safe with any path chars
   if (!withIndex) rmSync(path.join(rundir, '.sweet-search'), { recursive: true, force: true });
@@ -497,7 +517,7 @@ async function runOneTask(id) {
         const sweet = arm === 'sweet';
         // one measured attempt in its own isolated rundir; reaped no matter what.
         const attemptRun = async () => {
-          const rundir = makeRunDir(golden.dir, `${id}__${arm}__r${rep}`, sweet);
+          const rundir = makeRunDir(golden.dir, rep, sweet);
           try {
             const runTests = makeRunTests(image, rundir, t);
             const task = { id, repoCheckout: rundir, mppPath: MPP, problem_statement: t.problem_statement };
