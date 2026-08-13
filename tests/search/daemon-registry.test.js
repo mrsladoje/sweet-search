@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import http from 'node:http';
 
@@ -54,9 +54,14 @@ function fakeHealthServer(socketPath, { status = 200 } = {}) {
 const closeServer = (s) => new Promise((r) => s.close(() => r()));
 
 describe('registryPath', () => {
-  it('honors the SWEET_SEARCH_DAEMON_REGISTRY override and a sane default', () => {
+  it('honors the SWEET_SEARCH_DAEMON_REGISTRY override and defaults to a PRIVATE dir', () => {
     expect(registryPath(env)).toBe(join(dir, 'daemons.json'));
-    expect(registryPath({})).toBe('/tmp/sweet-search-daemons.json');
+    // The default used to be a fixed path in world-writable /tmp. Entries there
+    // are acted on — the cap sends /stop to each listed socket — so a file
+    // another local user could create first was a file that could make this
+    // daemon stop things on their behalf.
+    expect(registryPath({})).toBe(join(homedir(), '.cache', 'sweet-search', 'daemons.json'));
+    expect(registryPath({}).startsWith('/tmp/')).toBe(false);
   });
 });
 

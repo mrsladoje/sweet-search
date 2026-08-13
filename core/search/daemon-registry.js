@@ -28,14 +28,79 @@
  */
 
 import fs from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { readFileSync, lstatSync, mkdirSync, statSync } from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 
-const DEFAULT_REGISTRY_PATH = '/tmp/sweet-search-daemons.json';
+const REGISTRY_FILENAME = 'daemons.json';
+
+/**
+ * A PRIVATE, per-user directory for daemon registries.
+ *
+ * These files used to sit at a fixed path in a world-writable directory
+ * (`/tmp/sweet-search-daemons.json`, and `os.tmpdir()` for the RSS registry,
+ * which is `/tmp` on Linux). Any other local user could create that file first
+ * and then own its contents, and the contents are ACTED ON: the count cap sends
+ * `/stop` to each listed socket path, and the RSS coordinator sends SIGTERM to
+ * each listed pid. A file an attacker controls therefore turns our own daemon
+ * into the thing that stops the user's processes — and the RSS coordinator is
+ * default-ON for hosts of 24 GiB or less, so this was reachable without anyone
+ * opting into anything.
+ *
+ * `~/.cache/sweet-search` is created 0700 and is already where this project
+ * keeps other per-user runtime state.
+ */
+export function privateRuntimeDir(env = process.env) {
+  const base = env.SWEET_SEARCH_RUNTIME_DIR
+    || path.join(os.homedir(), '.cache', 'sweet-search');
+  try {
+    mkdirSync(base, { recursive: true, mode: 0o700 });
+  } catch { /* already there, or unwritable — validation below decides */ }
+  return base;
+}
+
+/**
+ * Is this path safe to read instructions from?
+ *
+ * Fail CLOSED. Anything unexpected — a symlink, another user's file, a file
+ * others can write, a directory — means we treat the registry as empty and
+ * decline to write. An empty registry costs at most an un-enforced cap; a
+ * trusted hostile one costs the user their running processes.
+ */
+export function registryTrustworthy(filePath) {
+  let st;
+  try {
+    st = lstatSync(filePath);
+  } catch {
+    // Absent is fine: we are about to create it ourselves.
+    return dirTrustworthy(path.dirname(filePath));
+  }
+  if (!st.isFile()) return false;                       // symlink, fifo, directory
+  if (typeof process.getuid === 'function' && st.uid !== process.getuid()) return false;
+  if ((st.mode & 0o022) !== 0) return false;            // group- or world-writable
+  return dirTrustworthy(path.dirname(filePath));
+}
+
+/** The containing directory must be ours and not writable by anyone else. */
+function dirTrustworthy(dirPath) {
+  try {
+    const st = statSync(dirPath);
+    if (!st.isDirectory()) return false;
+    if (typeof process.getuid === 'function' && st.uid !== process.getuid()) return false;
+    // A world-writable directory lets an attacker REPLACE our file by rename,
+    // whatever the file's own mode says. The sticky bit on /tmp stops deleting
+    // someone else's file but not creating one that does not exist yet.
+    if ((st.mode & 0o022) !== 0) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Path to the shared registry file (override via SWEET_SEARCH_DAEMON_REGISTRY for tests). */
 export function registryPath(env = process.env) {
-  return env.SWEET_SEARCH_DAEMON_REGISTRY || DEFAULT_REGISTRY_PATH;
+  return env.SWEET_SEARCH_DAEMON_REGISTRY || path.join(privateRuntimeDir(env), REGISTRY_FILENAME);
 }
 
 /**
@@ -56,7 +121,11 @@ export function pidAlive(pid) {
 /** Read + parse the registry, returning a { "<pid>": entry } map ({} on any error). */
 export async function readRegistry(env = process.env) {
   try {
-    const raw = await fs.readFile(registryPath(env), 'utf-8');
+    const target = registryPath(env);
+    // Refuse to take instructions from a file we cannot vouch for. Empty is the
+    // safe answer: it disables eviction rather than acting on hostile entries.
+    if (!registryTrustworthy(target)) return {};
+    const raw = await fs.readFile(target, 'utf-8');
     const parsed = JSON.parse(raw);
     const daemons = parsed && typeof parsed === 'object' ? parsed.daemons : null;
     return daemons && typeof daemons === 'object' ? daemons : {};
@@ -68,6 +137,10 @@ export async function readRegistry(env = process.env) {
 /** Atomically persist the daemon map (tmp + rename). Best-effort: swallows errors. */
 async function writeRegistryAtomic(daemons, env = process.env) {
   const target = registryPath(env);
+  // Never write into a location we would not read from — publishing our socket
+  // path and pid into a file another user controls is the same exposure in the
+  // other direction.
+  if (!registryTrustworthy(target)) return false;
   // Per-pid tmp suffix so two daemons writing concurrently never collide on the
   // tmp file; the rename is atomic so the reader always sees a whole document.
   const tmp = `${target}.${process.pid}.tmp`;

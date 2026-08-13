@@ -53,7 +53,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-import { selectEvictionTargets } from '../search/daemon-registry.js';
+import { selectEvictionTargets, privateRuntimeDir, registryTrustworthy } from '../search/daemon-registry.js';
 import { resolveMaintainerMemoryProfile } from '../incremental-indexing/domain/interval-autotune.mjs';
 
 const DEFAULT_REGISTRY_FILE = 'sweet-search-rss-daemons.json';
@@ -66,7 +66,13 @@ const POLL_INTERVAL_MS = 30_000;
  * shared file under the OS tmp dir so every daemon on the host coordinates.
  */
 export function rssRegistryPath(env = process.env) {
-  return env.SWEET_SEARCH_RSS_REGISTRY || path.join(os.tmpdir(), DEFAULT_REGISTRY_FILE);
+  // Was `os.tmpdir()`, which is `/tmp` on Linux — world-writable, so any local
+  // user could pre-create this file and choose its contents. The contents are
+  // acted on: this coordinator SIGTERMs the pid of the longest-idle entry. That
+  // made "any local user can make sweet-search kill your processes" reachable
+  // by default, because the coordinator is default-ON at 24 GiB and below. The
+  // private per-user directory is validated on every read and write.
+  return env.SWEET_SEARCH_RSS_REGISTRY || path.join(privateRuntimeDir(env), DEFAULT_REGISTRY_FILE);
 }
 
 /**
@@ -279,7 +285,11 @@ export async function readLinuxMemoryPressure() {
 
 async function readRssRegistry(env = process.env) {
   try {
-    const raw = await fs.readFile(rssRegistryPath(env), 'utf-8');
+    const target = rssRegistryPath(env);
+    // Fail closed. Every entry here is a pid this coordinator is willing to
+    // SIGTERM, so an untrustworthy file must read as empty, not as instructions.
+    if (!registryTrustworthy(target)) return {};
+    const raw = await fs.readFile(target, 'utf-8');
     const parsed = JSON.parse(raw);
     const daemons = parsed && typeof parsed === 'object' ? parsed.daemons : null;
     return daemons && typeof daemons === 'object' ? daemons : {};
@@ -290,6 +300,7 @@ async function readRssRegistry(env = process.env) {
 
 async function writeRssRegistryAtomic(daemons, env = process.env) {
   const target = rssRegistryPath(env);
+  if (!registryTrustworthy(target)) return false;
   const tmp = `${target}.${process.pid}.tmp`;
   try {
     await fs.writeFile(tmp, JSON.stringify({ daemons }), { mode: 0o600 });
