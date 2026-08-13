@@ -13,7 +13,7 @@ import { existsSync, realpathSync } from 'fs';
 import path from 'node:path';
 import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { clearCache } from '../embedding/embedding-cache.js';
-import { launchMaintainer } from '../indexing/maintainer-launcher.mjs';
+import { createSupervisionState, runSupervisionTick } from '../indexing/maintainer-launcher.mjs';
 import { projectSocketPath, projectPidFile, tcpPort, resolveProjectRoot } from './server-identity.js';
 import {
   AgentSpanLedger,
@@ -1233,11 +1233,59 @@ export async function startServer() {
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // Maintainer supervision (freshness bound).
+  //
+  // The maintainer stops itself after a long idle stretch on small-RAM hosts,
+  // and until now nothing restarted it while this daemon stayed up — every
+  // `launchMaintainer` call site runs at daemon STARTUP. The index then froze
+  // silently: edited files returned zero hits and no error was logged anywhere.
+  //
+  // Supervision is driven from responses that have ALREADY been flushed, never
+  // from the request path. `maybeSuperviseMaintainer` is called once per
+  // response and, inside the rate-limit window, costs one integer comparison
+  // and no syscalls — so it cannot show up in query latency.
+  // ---------------------------------------------------------------------------
+  const supervisionState = createSupervisionState();
+  // Seed from the current activity stamp, NOT from 0. Seeded at 0 the very
+  // first response of any kind — including the `/health` probe a client uses to
+  // find out whether the daemon is up — would read as "new query traffic" and
+  // supervise, while this daemon's own startup launch had not yet taken the
+  // lock. That produced a second maintainer, which is exactly the duplication
+  // the freshness-invariant tests exist to forbid.
+  let lastSupervisedActivityMs = lastActivityMs;
+
+  const maybeSuperviseMaintainer = ({ force = false } = {}) => {
+    if (shuttingDown) return;
+    // Only real query routes advance lastActivityMs, so /health and /stop never
+    // trigger supervision — a liveness probe must not resurrect a maintainer for
+    // a repository nobody is working in. `force` is the timer backstop, which
+    // has already checked that this repo is in active use.
+    if (!force && lastActivityMs <= lastSupervisedActivityMs) return;
+    lastSupervisedActivityMs = lastActivityMs;
+    // Defer off the response callback so no file system work is ever queued
+    // ahead of the next request's handler.
+    setImmediate(() => {
+      try {
+        runSupervisionTick({ state: supervisionState, cwd: process.cwd() });
+      } catch (err) {
+        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] maintainer supervision: ${err?.message || err}\n`);
+      }
+    });
+  };
+
+  // One wrapper for both servers. It returns `handleRequest`'s promise exactly
+  // as `createServer` received it before, so request semantics are unchanged.
+  const serveRequest = (req, res) => {
+    res.on('finish', maybeSuperviseMaintainer);
+    return handleRequest(req, res);
+  };
+
   // TCP server — opt-in only (SWEET_SEARCH_TCP_PORT). Bound non-fatally so a
   // port already in use never crashes the server (C3: it used to be bound
   // unconditionally on 9876 and a second project's server died on EADDRINUSE).
   if (httpPort != null) {
-    tcpServer = http.createServer(handleRequest);
+    tcpServer = http.createServer(serveRequest);
     tcpServer.setTimeout(SEARCH_SERVER_TIMEOUT_MS);
     if ('requestTimeout' in tcpServer) tcpServer.requestTimeout = SEARCH_SERVER_TIMEOUT_MS;
     if ('headersTimeout' in tcpServer) tcpServer.headersTimeout = SEARCH_SERVER_TIMEOUT_MS + 5_000;
@@ -1251,7 +1299,7 @@ export async function startServer() {
   }
 
   // Unix socket server (per-project) - primary transport, 30-50% faster than TCP
-  unixServer = http.createServer(handleRequest);
+  unixServer = http.createServer(serveRequest);
   unixServer.setTimeout(SEARCH_SERVER_TIMEOUT_MS);
   if ('requestTimeout' in unixServer) unixServer.requestTimeout = SEARCH_SERVER_TIMEOUT_MS;
   if ('headersTimeout' in unixServer) unixServer.headersTimeout = SEARCH_SERVER_TIMEOUT_MS + 5_000;
@@ -1307,8 +1355,12 @@ export async function startServer() {
   // the maintainer runs its own first tick at t=0 in its own process; blocking
   // server readiness / the first query on indexing work would add latency and
   // risk flakiness. The launcher is idempotent + lock-guarded (no duplicates).
+  // Routed through supervision rather than calling `launchMaintainer` directly,
+  // so the startup spawn and every later supervision tick share ONE claim and
+  // ONE rate limit. Called directly, the two paths could each spawn inside the
+  // few hundred milliseconds it takes a fresh maintainer to take the lock.
   try {
-    launchMaintainer({ cwd: process.cwd() });
+    runSupervisionTick({ state: supervisionState, cwd: process.cwd() });
   } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] maintainer launch: ${err?.message || err}\n`);
   }
@@ -1326,9 +1378,17 @@ export async function startServer() {
   // interval; see daemon-registry.js selectEvictionTargets.)
   idleTimer = setInterval(() => {
     const ttl = Number(process.env.SWEET_SEARCH_DAEMON_IDLE_TTL_MS ?? 1_200_000);
-    if (ttl > 0 && Date.now() - lastActivityMs > ttl) {
+    const idleFor = Date.now() - lastActivityMs;
+    if (ttl > 0 && idleFor > ttl) {
       gracefulShutdown('idle-ttl');
+      return;
     }
+    // Supervision backstop. The per-response hook covers the normal case; this
+    // catches the one it cannot — a tick that lost the spawn claim to a peer
+    // which then failed to start one. Gated on the repo being in ACTIVE use, so
+    // a daemon nobody is querying never resurrects a maintainer, and rate-limited
+    // internally so a 60s cadence costs at most one lock stat per minute.
+    if (ttl > 0 && idleFor <= ttl) maybeSuperviseMaintainer({ force: true });
   }, Number(process.env.SWEET_SEARCH_DAEMON_IDLE_CHECK_MS ?? 60_000));
   if (idleTimer.unref) idleTimer.unref();
 

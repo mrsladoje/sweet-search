@@ -29,7 +29,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { closeSync, constants as fsConstants, existsSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reconcileEnablement } from '../incremental-indexing/domain/interval-autotune.mjs';
@@ -38,6 +38,44 @@ import { applyBackgroundPriority } from './os-priority.mjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export const MAINTAINER_LOCK_FILENAME = 'index-maintainer.lock';
+
+/**
+ * Cross-process spawn budget for supervision (see `runSupervisionTick`).
+ *
+ * The `O_EXCL` state lock is the hard no-duplicate guarantee and this file is
+ * NOT a second one. It exists so that the two or three supervisors that watch
+ * the same repository — the warm search daemon, the MCP server, a prewarm hook
+ * — do not all notice the same absent maintainer in the same second and each
+ * spawn a node process that loses the lock race and immediately exits. The
+ * lock makes those extra processes harmless; the budget makes them not happen.
+ */
+export const MAINTAINER_SPAWN_CLAIM_FILENAME = 'maintainer-spawn.claim';
+
+/**
+ * How long a spawn claim is honoured before another supervisor may steal it.
+ *
+ * DELIBERATELY SHORT. The claim is an optimization, not a guarantee — the
+ * `O_EXCL` state lock is what actually admits one maintainer — so the two
+ * failure directions are not symmetric. Too short costs one wasted node process
+ * that loses the lock race and exits. Too long costs FRESHNESS: a claim left
+ * over from a spawn that has already happened blocks the next genuine respawn
+ * for its whole lifetime, which is the silent-staleness bug all over again. An
+ * earlier 30s value did exactly that, and the end-to-end test caught it.
+ *
+ * Five seconds covers the interval between `spawn` returning and the child
+ * writing its lock, which is a node process start.
+ */
+const SPAWN_CLAIM_TTL_MS = 5_000;
+
+/**
+ * Per-process floor between supervision ticks.
+ *
+ * Supervision is driven by query traffic, so without this a busy daemon would
+ * stat the lock on every single request. The check that enforces it is one
+ * integer comparison against in-process state, so a request that is inside the
+ * window costs no syscalls at all.
+ */
+const SUPERVISION_MIN_INTERVAL_MS = 15_000;
 
 /**
  * Background-priority gate (research §4.A A.2/A.3). Default ON — this is a
@@ -168,4 +206,196 @@ export function launchMaintainer(options = {}) {
     log(`maintainer spawn failed (non-fatal): ${err?.message || err}`);
     return { spawned: false, reason: 'error', stateDir, error: err?.message || String(err) };
   }
+}
+
+// =============================================================================
+// SUPERVISION
+// =============================================================================
+
+/**
+ * Is automatic reconcile work paused for this state dir?
+ *
+ * Mirrors `isReconcilePaused` in index-maintainer.mjs, deliberately reimplemented
+ * as four lines rather than imported: importing it would pull the whole
+ * maintainer module — tree-sitter grammars and all — into the search daemon,
+ * which is the one process whose startup time users feel.
+ */
+function reconcilePaused(stateDir) {
+  const pauseFile = join(stateDir, 'reconcile-pause.json');
+  if (!existsSync(pauseFile)) return false;
+  try {
+    return JSON.parse(readFileSync(pauseFile, 'utf-8'))?.paused !== false;
+  } catch {
+    // Unreadable pause state is not a reason to stop maintaining the index.
+    return false;
+  }
+}
+
+/**
+ * Take the cross-process spawn claim, or report who holds it.
+ *
+ * NOT airtight, and does not need to be. A supervisor that reads a stale claim
+ * and unlinks it can, in a window of microseconds, delete a claim a third
+ * supervisor has just written, and then both spawn. The `O_EXCL` state lock
+ * still admits exactly one maintainer, so the whole cost of losing that race is
+ * one node process that starts, fails to take the lock, and exits.
+ */
+function claimSpawnBudget(stateDir, nowMs, pid) {
+  const claimFile = join(stateDir, MAINTAINER_SPAWN_CLAIM_FILENAME);
+  const write = () => {
+    const fd = openSync(claimFile, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, 0o600);
+    try { writeSync(fd, JSON.stringify({ pid, at: nowMs })); } finally { closeSync(fd); }
+  };
+
+  try {
+    write();
+    return { claimed: true, reason: 'claimed' };
+  } catch (err) {
+    if (err?.code !== 'EEXIST') return { claimed: false, reason: 'claim-error' };
+  }
+
+  let heldAt = null;
+  try {
+    const parsed = Number(JSON.parse(readFileSync(claimFile, 'utf-8'))?.at);
+    if (Number.isFinite(parsed)) heldAt = parsed;
+  } catch { /* corrupt claim → treat as stale, same as a corrupt lock */ }
+
+  // A claim from the future is a clock change, not a live supervisor. Treating
+  // it as held would wedge supervision until the TTL elapsed in real time.
+  const age = heldAt == null ? Infinity : nowMs - heldAt;
+  if (age >= 0 && age < SPAWN_CLAIM_TTL_MS) return { claimed: false, reason: 'claim-held' };
+
+  try { unlinkSync(claimFile); } catch { /* another supervisor got there first */ }
+  try {
+    write();
+    return { claimed: true, reason: 'claimed-stale' };
+  } catch {
+    return { claimed: false, reason: 'claim-held' };
+  }
+}
+
+/**
+ * Drop a spent claim once the maintainer it covered is confirmed up.
+ *
+ * Without this the claim would keep blocking for its full TTL after it had
+ * already done its job, so a maintainer that died shortly after starting could
+ * not be replaced until the claim aged out. Best-effort: a claim we fail to
+ * remove still expires on its own.
+ */
+function releaseSpawnClaim(stateDir) {
+  const claimFile = join(stateDir, MAINTAINER_SPAWN_CLAIM_FILENAME);
+  if (!existsSync(claimFile)) return;
+  try { unlinkSync(claimFile); } catch { /* another supervisor got there first */ }
+}
+
+/**
+ * Floor between supervision ticks, overridable for tests and for operators who
+ * want a repository picked up faster after a maintainer stops. A value of 0 or
+ * garbage falls back to the default rather than disabling the floor — an
+ * unthrottled supervisor would stat the lock on every request.
+ */
+function supervisionIntervalMs(env = process.env) {
+  const raw = Number.parseInt(env.SWEET_SEARCH_MAINTAINER_SUPERVISION_INTERVAL_MS, 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : SUPERVISION_MIN_INTERVAL_MS;
+}
+
+/** Per-supervisor state. Plain object so a caller can keep it on a daemon closure. */
+export function createSupervisionState() {
+  return { lastTickMs: 0, launches: 0, lastReason: null };
+}
+
+/**
+ * Relaunch the maintainer if this repository has lost the one it should have.
+ *
+ * WHY THIS EXISTS. On hosts with 24 GiB of RAM or less the maintainer stops
+ * itself after 10–30 minutes with nothing to index, so that N model-loaded
+ * daemons across N repositories collapse to one or two. Nothing then started it
+ * again while a warm search daemon was already up: the three `launchMaintainer`
+ * call sites all run at daemon STARTUP. So the sequence "work in a repo, leave
+ * it alone over lunch, come back and edit files" left the index frozen with no
+ * error anywhere — new files returned zero hits from search and from grep. It
+ * is the same silent-staleness failure the RSS-recycle handoff closed, reached
+ * by the other exit path.
+ *
+ * WHY RESPAWN RATHER THAN KEEP IT DORMANT. Unloading the model in a surviving
+ * process leaks native memory on every cycle (onnxruntime#25325, and
+ * `unloadLocalModel` says so in as many words). Exiting and starting again is
+ * the memory-SAFE option: the process boundary reclaims what the ORT session
+ * cannot release. A replacement maintainer with nothing to do never loads the
+ * model at all — it costs about 50 MB and no measurable CPU — so the respawn is
+ * cheap precisely in the case where it happens most often.
+ *
+ * COST ON THE QUERY PATH: none. Callers drive this from a response that has
+ * already been flushed, and a tick inside the rate-limit window returns after a
+ * single integer comparison, touching no files.
+ *
+ * @param {{
+ *   state: {lastTickMs:number, launches:number, lastReason:string|null},
+ *   env?: NodeJS.ProcessEnv,
+ *   cwd?: string,
+ *   launch?: typeof launchMaintainer,
+ *   now?: number,
+ *   minIntervalMs?: number,
+ *   log?: (msg: string) => void,
+ * }} options
+ * @returns {{acted: boolean, reason: string, pid?: number}}
+ */
+export function runSupervisionTick(options = {}) {
+  const {
+    state,
+    env = process.env,
+    cwd = process.cwd(),
+    launch = launchMaintainer,
+    now = Date.now(),
+    minIntervalMs = supervisionIntervalMs(env),
+    log = () => {},
+  } = options;
+
+  const record = (reason, extra = {}) => {
+    if (state) state.lastReason = reason;
+    return { acted: false, reason, ...extra };
+  };
+
+  // Cheapest possible guard first: no syscalls for a tick inside the window.
+  if (state && state.lastTickMs && (now - state.lastTickMs) < minIntervalMs) {
+    return { acted: false, reason: 'rate-limited' };
+  }
+  if (state) state.lastTickMs = now;
+
+  if (!reconcileEnablement(env).enabled) return record('opted-out');
+
+  const stateDir = resolveStateDir(env, cwd);
+  if (!existsSync(stateDir)) return record('no-state-dir');
+
+  // A paused repository has a maintainer that would start, find its work
+  // switched off, and idle back out. Respawning it every interval would be
+  // pure churn, which is the one thing supervision must not introduce.
+  if (reconcilePaused(stateDir)) return record('paused');
+
+  if (maintainerAlive(stateDir)) {
+    releaseSpawnClaim(stateDir);
+    return record('already-running');
+  }
+
+  const claim = claimSpawnBudget(stateDir, now, process.pid);
+  if (!claim.claimed) return record(claim.reason);
+
+  let result;
+  try {
+    result = launch({ env, cwd });
+  } catch (err) {
+    // Supervision runs off a response callback and a timer; it must never be
+    // able to take the daemon down.
+    log(`maintainer supervision launch threw (non-fatal): ${err?.message || err}`);
+    return record('launch-error');
+  }
+
+  if (!result?.spawned) return record(result?.reason || 'not-spawned');
+
+  if (state) {
+    state.launches += 1;
+    state.lastReason = 'spawned';
+  }
+  log(`maintainer was absent for this repo; supervision started a replacement (pid ${result.pid})`);
+  return { acted: true, reason: 'spawned', pid: result.pid };
 }

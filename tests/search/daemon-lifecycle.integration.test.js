@@ -379,6 +379,81 @@ describe('freshness invariant — maintainer survives daemon eviction', () => {
     const { pid: lockedPid } = JSON.parse(readFileSync(lockPath(), 'utf-8'));
     expect(lockedPid).toBe(maintPid);
   }, 30000);
+
+  it('brings the maintainer back when it stops while this daemon keeps serving', async () => {
+    // THE BUG THIS PINS. On hosts of 24 GiB or less the maintainer stops itself
+    // after a long idle stretch, and every `launchMaintainer` call site runs at
+    // daemon STARTUP — so with the daemon still up, nothing ever started it
+    // again. Editing a file after that left the index frozen: zero hits from
+    // search and from grep, and no error logged anywhere.
+    //
+    // The daemon's own idle-TTL is off here, so the ONLY thing that can bring
+    // the maintainer back is supervision driven by query traffic.
+    spawnDaemonWithMaintainer({
+      SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '0',
+      SWEET_SEARCH_MAINTAINER_SUPERVISION_INTERVAL_MS: '250',
+    });
+    expect(await waitForUp()).toBe(true);
+
+    const firstPid = await waitForMaintainerPid();
+    expect(firstPid).toBeTruthy();
+    maintainerPids.add(firstPid);
+    expect(await waitForMarkerCount(1)).toBe(1);
+
+    // Stand in for the idle-TTL exit. SIGKILL is the HARSHER case: it leaves the
+    // lock behind naming a dead pid, where the real idle exit releases it.
+    process.kill(firstPid, 'SIGKILL');
+    await sleep(300);
+    expect(pidAlive(firstPid)).toBe(false);
+
+    // Querying is what a developer does after coming back to the project, and
+    // it is the moment staleness would start being served. Several queries, not
+    // one: supervision is driven by responses, so a developer who issues a
+    // single query and walks away is not the case worth pinning, and a lone
+    // query can also land inside the spawn-claim window left by startup.
+    let markers = 1;
+    for (let i = 0; i < 12 && markers < 2; i++) {
+      const r = await httpGet('/search?q=anything', { timeoutMs: 3000 });
+      expect(r).toBeTruthy(); // 200 or 503 both count: the route ran
+      await sleep(500);
+      markers = markerCount();
+    }
+
+    expect(await waitForMarkerCount(2)).toBe(2);
+    const secondPid = await waitForMaintainerPid();
+    expect(secondPid).toBeTruthy();
+    maintainerPids.add(secondPid);
+    expect(secondPid).not.toBe(firstPid);
+    expect(pidAlive(secondPid)).toBe(true);
+  }, 40000);
+
+  it('does not resurrect a maintainer for a repo nobody is querying', async () => {
+    // The mirror image of the test above, and the reason supervision is keyed on
+    // query traffic rather than on the maintainer simply being absent. A health
+    // probe is not use of the repository; if it counted, a monitoring check
+    // would keep a model-loaded maintainer resident on a laptop indefinitely and
+    // undo the whole point of the idle-TTL.
+    spawnDaemonWithMaintainer({
+      SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '0',
+      SWEET_SEARCH_MAINTAINER_SUPERVISION_INTERVAL_MS: '250',
+    });
+    expect(await waitForUp()).toBe(true);
+
+    const firstPid = await waitForMaintainerPid();
+    maintainerPids.add(firstPid);
+    expect(await waitForMarkerCount(1)).toBe(1);
+
+    process.kill(firstPid, 'SIGKILL');
+    await sleep(300);
+
+    // Health probes only — no queries. Long enough to outlast the spawn claim,
+    // so a passing result means supervision declined, not that it was blocked.
+    for (let i = 0; i < 16; i++) {
+      await httpGet('/health', { timeoutMs: 1000 });
+      await sleep(500);
+    }
+    expect(markerCount()).toBe(1);
+  }, 40000);
 });
 
 // ---------------------------------------------------------------------------

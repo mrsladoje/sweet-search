@@ -9,6 +9,11 @@ export default defineConfig({
     // multiple tree-sitter grammars (cpp=4.4M, kotlin=3.9M, swift=3M).
     execArgv: ['--no-wasm-tier-up', '--no-wasm-dynamic-tiering', '--v8-pool-size=1'],
     include: ['tests/**/*.test.js'],
+    // Kill fixture processes orphaned by timed-out tests, before a run starts
+    // and again after it ends. A run that inherits the previous run's orphans
+    // measures machine load instead of the code under test — see the file
+    // header for the feedback loop this breaks.
+    globalSetup: ['tests/setup/reap-test-fixtures.js'],
     exclude: [
       'node_modules', 'dist',
       'tests/embedding/embedding-perf.test.js',

@@ -18,9 +18,30 @@
 import { writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+/**
+ * Resolve the state dir, but REFUSE to fall back to the current directory.
+ *
+ * The original version mirrored `maintainer-launcher.resolveStateDir` exactly,
+ * including its `process.cwd()` fallback. That fallback is correct for the real
+ * launcher and dangerous here: run this fixture by hand from a checkout and it
+ * overwrites the developer's LIVE `index-maintainer.lock` with its own pid,
+ * which evicts the real maintainer (it self-exits when the lock stops naming
+ * it) and leaves a stale lock behind once the fixture is reaped. That is not
+ * hypothetical — it happened while wiring up the reaper.
+ *
+ * The tests always pass one of these explicitly, so requiring it costs nothing
+ * and converts a silent corruption of real state into a loud startup failure.
+ */
 function stateDir() {
   if (process.env.SWEET_SEARCH_STATE_DIR) return process.env.SWEET_SEARCH_STATE_DIR;
-  const root = process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
+  const root = process.env.SWEET_SEARCH_PROJECT_ROOT;
+  if (!root) {
+    process.stderr.write(
+      'fake-maintainer-longlived: refusing to run without SWEET_SEARCH_STATE_DIR or '
+      + 'SWEET_SEARCH_PROJECT_ROOT — a cwd fallback would clobber a real index-maintainer.lock\n',
+    );
+    process.exit(2);
+  }
   return join(root, '.sweet-search');
 }
 
