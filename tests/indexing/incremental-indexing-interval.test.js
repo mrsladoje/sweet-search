@@ -261,16 +261,35 @@ describe('resolveMaintainerMemoryProfile (footprint-lever RAM tiers)', () => {
   it('maps system RAM to the tight / moderate / roomy tier', () => {
     expect(resolveMaintainerMemoryProfile({ totalMemBytes: 8 * GiB })).toMatchObject({ tier: 'tight', idleTtlMs: 600_000, rssBudgetFraction: 0.55 });
     expect(resolveMaintainerMemoryProfile({ totalMemBytes: 16 * GiB })).toMatchObject({ tier: 'moderate', idleTtlMs: 1_800_000, rssBudgetFraction: 0.60 });
-    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 128 * GiB })).toMatchObject({ tier: 'roomy', idleTtlMs: 0, rssBudgetFraction: null });
+    // roomy keeps the fleet RSS coordinator off, but its maintainer DOES expire.
+    // At idleTtlMs 0 nothing ever retired a maintainer on a host above 24 GiB,
+    // and nothing else bounds them either — the count cap does not enumerate
+    // maintainers and the RSS budget is null here — so the resident set grew by
+    // one process per repository ever searched, without limit.
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 128 * GiB })).toMatchObject({ tier: 'roomy', idleTtlMs: 3_600_000, rssBudgetFraction: null });
+  });
+
+  it('gives EVERY tier a finite maintainer idle TTL', () => {
+    // The property that matters, stated once so a future tier cannot quietly
+    // reintroduce an immortal maintainer: whatever the numbers become, a
+    // maintainer with nothing to do must eventually stop. Supervision is what
+    // makes that safe — an expired maintainer returns as soon as its repository
+    // is queried again.
+    for (const bytes of [4, 8, 12, 16, 24, 32, 64, 128, 512]) {
+      const p = resolveMaintainerMemoryProfile({ totalMemBytes: bytes * GiB });
+      expect(p.idleTtlMs).toBeGreaterThan(0);
+      expect(Number.isFinite(p.idleTtlMs)).toBe(true);
+    }
   });
   it('treats the tier boundaries as inclusive upper bounds (12 / 24 GiB)', () => {
     expect(resolveMaintainerMemoryProfile({ totalMemBytes: 12 * GiB }).tier).toBe('tight');
     expect(resolveMaintainerMemoryProfile({ totalMemBytes: 24 * GiB }).tier).toBe('moderate');
     expect(resolveMaintainerMemoryProfile({ totalMemBytes: 24 * GiB + 1 }).tier).toBe('roomy');
   });
-  it('resolves to roomy (levers OFF) when totalMemBytes is absent or non-finite (safe default)', () => {
+  it('resolves to roomy (fleet RSS lever OFF) when totalMemBytes is absent or non-finite', () => {
     expect(resolveMaintainerMemoryProfile().tier).toBe('roomy');
     expect(resolveMaintainerMemoryProfile({ totalMemBytes: NaN }).tier).toBe('roomy');
-    expect(resolveMaintainerMemoryProfile({}).idleTtlMs).toBe(0);
+    expect(resolveMaintainerMemoryProfile({}).rssBudgetFraction).toBe(null);
+    expect(resolveMaintainerMemoryProfile({}).idleTtlMs).toBe(3_600_000);
   });
 });

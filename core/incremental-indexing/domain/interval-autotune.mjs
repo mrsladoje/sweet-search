@@ -126,7 +126,25 @@ const TIER_TABLE = Object.freeze({ low: 60_000, mid: 30_000, high: 20_000 });
 const MEMORY_TIER_TABLE = Object.freeze({
   tight: { maxGiB: 12, idleTtlMs: 600_000, rssBudgetFraction: 0.55 },
   moderate: { maxGiB: 24, idleTtlMs: 1_800_000, rssBudgetFraction: 0.60 },
-  roomy: { maxGiB: Infinity, idleTtlMs: 0, rssBudgetFraction: null },
+  // `roomy` used to mean idleTtlMs 0 — the maintainer for a repository NEVER
+  // expired. Combined with the fact that maintainers are not enumerated by the
+  // daemon count cap (daemon-registry.js is search-daemons-only) and that the
+  // RSS fleet budget is null here, that made the resident maintainer set
+  // unbounded: one process per repository ever searched, each free to grow to
+  // its 8 GiB recycle ceiling, none of them ever leaving. The tier starts at
+  // just over 24 GiB, so a 32 GiB laptop got the same "no limits at all"
+  // treatment as a 128 GiB workstation and reached memory pressure far sooner.
+  //
+  // An hour of finding nothing to index now retires it. That was NOT safe to do
+  // before: with nothing to restart the maintainer, expiry meant the index
+  // silently froze. Supervision (runSupervisionTick in maintainer-launcher.mjs)
+  // is what changed — a repository being queried gets its maintainer back, so
+  // expiry now costs at most the first query after a long absence, and only
+  // repositories nobody has returned to stay retired.
+  //
+  // Deliberately generous at 60 min (tight is 10, moderate 30): on a host with
+  // this much memory the point is to bound the fleet, not to reclaim quickly.
+  roomy: { maxGiB: Infinity, idleTtlMs: 3_600_000, rssBudgetFraction: null },
 });
 
 /**
