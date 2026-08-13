@@ -21,12 +21,41 @@ const RT_HARNESS_SOURCE_NAMES = Object.freeze([
   'rt-dedup.mjs',
   'rt-progress-controller.mjs',
 ]);
+
+// THE GRADER ITSELF (added 2026-08-12, fingerprint version 3).
+//
+// D-1 happened because gold validation and rollout grading ran DIFFERENT grader
+// configurations for months and no invariant compared them: the sweep always
+// passed `--reapply-install-seds`, the rollout grader never did, and 12 rows
+// were published as gradeable failures with zero tests executed.
+//
+// The repair at the time fixed the flag. It did not fix the CLASS: the
+// fingerprint still covered only the rt-* runtime, so any later edit to the
+// grading logic could again certify gold under one grader and score agents
+// under another, silently. That recurred immediately — the 2026-08-12 review
+// changed empty-patch handling in eval.py, evidence gating in
+// evaluator-runtime.mjs and sr-eval.py, and every gold verdict stayed "fresh".
+//
+// Hashing the grader's own bytes makes the divergence impossible rather than
+// merely discouraged. The cost is a gold re-sweep whenever the grader changes,
+// including for cosmetic edits. That is the correct trade: a re-sweep costs
+// container time and NO model spend, while a silent divergence costs the
+// credibility of every solve number derived under it.
+const GRADER_SOURCE_NAMES = Object.freeze([
+  'evaluator-runtime.mjs',
+  'sr-eval.py',
+  'upstream-patches/eval.py',
+]);
+
+const hashSource = (name) => ({
+  name,
+  sha256: createHash('sha256').update(readFileSync(new URL(name, import.meta.url))).digest('hex'),
+});
+
 export const RT_HARNESS_FINGERPRINT = Object.freeze({
-  version: 2,
-  sources: Object.freeze(RT_HARNESS_SOURCE_NAMES.map((name) => Object.freeze({
-    name,
-    sha256: createHash('sha256').update(readFileSync(new URL(name, import.meta.url))).digest('hex'),
-  }))),
+  version: 3,
+  sources: Object.freeze(RT_HARNESS_SOURCE_NAMES.map(name => Object.freeze(hashSource(name)))),
+  grader: Object.freeze(GRADER_SOURCE_NAMES.map(name => Object.freeze(hashSource(name)))),
 });
 
 // Image-resolution/authentication failures happen before a task's tests can run.

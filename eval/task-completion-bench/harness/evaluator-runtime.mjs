@@ -178,10 +178,15 @@ export function createEvaluatorRuntime(options) {
       return report ? { ...report, stripped_paths: strippedByTask } : report;
     }
 
-    const nonEmpty = prepared.filter(prediction => (prediction.model_patch || '').trim());
-    if (!nonEmpty.length) {
+    // Empty model patches still need an authoritative baseline grading run. Dropping
+    // them here produced rows with gradeable=true even though no evaluator log or
+    // framework result existed. The repository-owned evaluator skips only the empty
+    // agent-patch apply step and still applies hidden tests and runs the suite.
+    const predictionsToGrade = prepared;
+    if (!predictionsToGrade.length) {
       return {
         resolved_instances: 0, total_instances: predictions.length, resolved_ids: [],
+        score: {}, error_ids: [], missing_report_ids: [], no_test_evidence_ids: [],
         stripped_paths: strippedByTask,
       };
     }
@@ -189,8 +194,8 @@ export function createEvaluatorRuntime(options) {
     const tasksPath = path.join(predDir, 'tasks.json');
     const patchesPath = path.join(predDir, 'patches.json');
     const reportPath = path.join(predDir, 'report.json');
-    mergeTaskRecordFile(tasksPath, nonEmpty.map(prediction => taskById.get(prediction.instance_id)).filter(Boolean));
-    mergeTaskRecordFile(patchesPath, nonEmpty.map(prediction => ({
+    mergeTaskRecordFile(tasksPath, predictionsToGrade.map(prediction => taskById.get(prediction.instance_id)).filter(Boolean));
+    mergeTaskRecordFile(patchesPath, predictionsToGrade.map(prediction => ({
       instance_id: prediction.instance_id, patch: prediction.model_patch,
     })));
 
@@ -200,8 +205,8 @@ export function createEvaluatorRuntime(options) {
     const missingReportIds = new Set();
     const noTestEvidenceIds = new Set();
     let gradedAny = false;
-    for (let offset = 0; offset < nonEmpty.length; offset += batchSize) {
-      const chunk = nonEmpty.slice(offset, offset + batchSize);
+    for (let offset = 0; offset < predictionsToGrade.length; offset += batchSize) {
+      const chunk = predictionsToGrade.slice(offset, offset + batchSize);
       const knownChunk = chunk.filter(prediction => {
         const known = taskById.has(prediction.instance_id);
         if (!known) errorIds.add(prediction.instance_id);
@@ -294,12 +299,17 @@ export function createEvaluatorRuntime(options) {
       // of anything, so it must never be scored. Callers stamp gradeable=false and decide,
       // from whether EVERY patch on the task is evidence-free, whether this is a grader
       // defect (task-wide) or the agent's own patch breaking the build (patch-specific).
-      // Older reports have no n_test_results field; treat missing as "unknown, do not gate"
-      // so a stale report degrades to today's behavior rather than voiding every row.
-      if (item.n_test_results === 0) {
+      // Missing is a broken evaluator contract, not permission to infer that tests
+      // ran. Fail closed: both zero and absent/invalid counts are evidence-free.
+      if (!Number.isSafeInteger(item.n_test_results) || item.n_test_results <= 0) {
+        const evidenceReason = item.n_test_results === 0
+          ? 'zero-test-results'
+          : 'missing-n_test_results-contract';
         noTestEvidenceIds.add(item.instance_id);
-        score[item.instance_id] = { f2pFrac: null, p2pOk: null, status: 'NO-TEST-EVIDENCE', nTestResults: 0 };
-        console.error(`[grade] ${item.instance_id}: NO TEST EVIDENCE — the log parser recovered 0 test results; `
+        score[item.instance_id] = { f2pFrac: null, p2pOk: null, status: 'NO-TEST-EVIDENCE',
+          nTestResults: Number.isSafeInteger(item.n_test_results) ? item.n_test_results : null,
+          evidenceReason };
+        console.error(`[grade] ${item.instance_id}: NO TEST EVIDENCE — ${evidenceReason}; `
           + `row marked ungradeable instead of scored f2pFrac=0 (exit=${item.exit_code}, log=${item.log_path || 'n/a'})`);
         continue;
       }

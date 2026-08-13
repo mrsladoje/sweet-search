@@ -298,7 +298,7 @@ export function auditEscape({ jail, toolCalls, rundir, endMs }) {
   return auditRollout({ toolCalls, rundir, denials: jailDenials(jail, endMs) });
 }
 
-// Costs from per-turn usage. turns = [{in, cached, out}] in order, `in` = FULL context at
+// Costs from per-turn usage. turns = [{in, cached, cacheWrite?, out}] in order, `in` = FULL context at
 // that turn (growing prefix), cached tokens included. All columns come from ONE source so
 // they can never drift.
 //

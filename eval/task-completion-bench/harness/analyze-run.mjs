@@ -1,21 +1,18 @@
 #!/usr/bin/env node
 // analyze-run.mjs — paired A/B report for a counted run's rows.json.
 //
-// HEADLINE: paired REALIZED cost delta (sweet vs native) on both-solved tasks, with
-// a paired-bootstrap 95% CI + two-sided p. Realized is the real money the user pays;
-// pairing per task differences out the task-level cache-TTL noise (both arms run the
-// same tests), leaving the genuine arm difference (incl. sweet keeping the cache warmer
-// by navigating faster). idealCost (cache-normalized, strips even arm-timing to pure
-// token shape) is reported BESIDE it, computed the same paired way.
+// SOLE COST HEADLINE: raw, untrimmed realized dollars summed over every recorded row.
+// Paired both-solved/all-task bootstrap blocks remain secondary analyses; diagnostic
+// flags never remove billed work from the headline. Any matched-pair or whole-task
+// removal is explicitly labelled exploratory and post hoc.
 //
 // Usage: node analyze-run.mjs <rows.json> [--ledger <ledger.jsonl>] [--boot 10000]
 //                             [--exclude id1,id2] [--quiet-evidence]
 //
-// --exclude drops named tasks and prints the whole report a second time without them. A task
+// --exclude drops named tasks in an exploratory sensitivity report. A task
 // whose issue text is empty (mransan__ocaml-protoc-202: zero characters) is answered correctly
 // by refusing, which costs almost nothing, so leaving it in flatters whichever arm refuses.
-// The honest publication carries BOTH views, which is why this is a first-class flag rather
-// than a hand-edited number (D-5).
+// The raw untrimmed headline still remains primary and visible.
 import { readFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
@@ -61,7 +58,8 @@ function report(rows, label) {
   const cell = new Map();  // key `${task}|${arm}` -> {task, arm, real:[], ideal:[], resolved}
   for (const r of rows) {
     const k = `${r.taskId}|${r.arm}`;
-    let c = cell.get(k); if (!c) { c = { task: r.taskId, arm: r.arm, real: [], ideal: [], brk: [], brkRows: 0, rewrites: 0, resolved: false, resReps: 0, gradedReps: 0, calls: [] }; cell.set(k, c); }
+    let c = cell.get(k); if (!c) { c = { task: r.taskId, arm: r.arm, rows: 0, real: [], ideal: [], brk: [], brkRows: 0, rewrites: 0, resolved: false, resReps: 0, gradedReps: 0, calls: [] }; cell.set(k, c); }
+    c.rows++;
     if (r.costRealizedUsd != null) c.real.push(r.costRealizedUsd);
     if (r.idealCostUsd != null) c.ideal.push(r.idealCostUsd);
     // break-priced: cache-normalized AND aware that deleting/reordering context breaks the prefix
@@ -79,7 +77,20 @@ function report(rows, label) {
   const byTask = new Map();
   for (const c of cell.values()) {
     let t = byTask.get(c.task); if (!t) { t = { id: c.task }; byTask.set(c.task, t); }
-    t[c.arm] = { real: mean(c.real), ideal: mean(c.ideal), brk: mean(c.brk), brkRows: c.brkRows, rewrites: c.rewrites, resolved: c.resolved, resReps: c.resReps, gradedReps: c.gradedReps, calls: mean(c.calls) };
+    t[c.arm] = {
+      real: c.real.length ? mean(c.real) : null,
+      ideal: c.ideal.length ? mean(c.ideal) : null,
+      brk: c.brk.length ? mean(c.brk) : null,
+      realComplete: c.real.length === c.rows,
+      idealComplete: c.ideal.length === c.rows,
+      brkComplete: c.brk.length === c.rows,
+      brkRows: c.brkRows,
+      rewrites: c.rewrites,
+      resolved: c.resolved,
+      resReps: c.resReps,
+      gradedReps: c.gradedReps,
+      calls: c.calls.length ? mean(c.calls) : null,
+    };
   }
   const paired = [...byTask.values()].filter(t => t.native && t.sweet);   // paired only
   // Tasks with no test evidence anywhere carry no solve information; they are held out of
@@ -143,35 +154,156 @@ function pairedBoot(stratum, field) {
 
 const fmt = x => (x >= 0 ? '+' : '') + x.toFixed(1);
 
+function rowLevelRealized(rows, { label, headline = false } = {}) {
+  console.log(`\n${'='.repeat(78)}`);
+  console.log(`${headline ? 'SOLE COST HEADLINE' : 'EXPLORATORY SENSITIVITY'} — ${label}`);
+  console.log('  estimand: sum of costRealizedUsd over every listed row (no task-cell averaging)');
+  const arms = [...new Set(rows.map(r => r.arm).filter(Boolean))].sort();
+  if (!arms.length) console.log('  unavailable: no rows');
+  for (const arm of arms) {
+    const armRows = rows.filter(r => r.arm === arm);
+    const known = armRows.filter(r => Number.isFinite(r.costRealizedUsd));
+    if (known.length !== armRows.length) {
+      console.log(`  ${arm}: unavailable (${armRows.length - known.length}/${armRows.length} row(s) missing realized cost)`);
+      continue;
+    }
+    const total = known.reduce((sum, r) => sum + r.costRealizedUsd, 0);
+    console.log(`  ${arm}: ${armRows.length} row(s), $${total.toFixed(6)} raw realized`);
+  }
+  console.log('='.repeat(78));
+}
+
+function completePairedMetric(stratum, field) {
+  const completeness = `${field}Complete`;
+  const missing = stratum.filter(t => !Number.isFinite(t.native[field]) || !Number.isFinite(t.sweet[field])
+    || t.native[completeness] !== true || t.sweet[completeness] !== true);
+  return missing.length ? { result: null, missing } : { result: pairedBoot(stratum, field), missing: [] };
+}
+
 function costBlocks({ tasks, both }) {
-for (const [label, stratum] of [['BOTH-SOLVED (clean cost comparison)', both], ['ALL PAIRED', tasks]]) {
+for (const [label, stratum] of [
+  ['BOTH-SOLVED (descriptive post-treatment stratum; not a causal estimate)', both],
+  ['ALL PAIRED', tasks],
+]) {
   if (!stratum.length) { console.log(`\n${label}: (no tasks)`); continue; }
-  const R = pairedBoot(stratum, 'real');
-  const I = pairedBoot(stratum, 'ideal');
   console.log(`\n${label}  (n=${stratum.length})`);
-  console.log(`  ▶ HEADLINE  REALIZED  sweet ${R.pctRed >= 0 ? '−' : '+'}${Math.abs(R.pctRed).toFixed(1)}% vs native   ($${R.natSum.toFixed(6)} → $${R.swSum.toFixed(6)})`);
-  console.log(`             paired Δ/task $${R.obsMean.toFixed(4)}  95% CI [$${R.ciMeanLo.toFixed(4)}, $${R.ciMeanHi.toFixed(4)}]  %CI [${fmt(R.ciPctLo)}%, ${fmt(R.ciPctHi)}%]  p=${R.p.toFixed(3)}`);
-  console.log(`    idealCost  sweet ${I.pctRed >= 0 ? '−' : '+'}${Math.abs(I.pctRed).toFixed(1)}% vs native   ($${I.natSum.toFixed(6)} → $${I.swSum.toFixed(6)})   %CI [${fmt(I.ciPctLo)}%, ${fmt(I.ciPctHi)}%]  p=${I.p.toFixed(3)}`);
-  const BK = pairedBoot(stratum, 'brk');
+  const { result: R, missing: missingR } = completePairedMetric(stratum, 'real');
+  if (R) {
+    console.log(`    realized   sweet ${R.pctRed >= 0 ? '−' : '+'}${Math.abs(R.pctRed).toFixed(1)}% vs native   ($${R.natSum.toFixed(6)} → $${R.swSum.toFixed(6)})`);
+    console.log(`               paired Δ/task $${R.obsMean.toFixed(4)}  95% CI [$${R.ciMeanLo.toFixed(4)}, $${R.ciMeanHi.toFixed(4)}]  %CI [${fmt(R.ciPctLo)}%, ${fmt(R.ciPctHi)}%]  p=${R.p.toFixed(3)}`);
+  } else console.log(`    realized   unavailable (${missingR.length}/${stratum.length} paired task(s) have missing row costs)`);
+  const { result: I, missing: missingI } = completePairedMetric(stratum, 'ideal');
+  if (I) console.log(`    idealCost  sweet ${I.pctRed >= 0 ? '−' : '+'}${Math.abs(I.pctRed).toFixed(1)}% vs native   ($${I.natSum.toFixed(6)} → $${I.swSum.toFixed(6)})   %CI [${fmt(I.ciPctLo)}%, ${fmt(I.ciPctHi)}%]  p=${I.p.toFixed(3)}`);
+  else console.log(`    idealCost  unavailable (${missingI.length}/${stratum.length} paired task(s) have missing row costs)`);
+  const { result: BK, missing: missingBK } = completePairedMetric(stratum, 'brk');
   const rw = stratum.reduce((a, t) => a + (t.native.rewrites || 0) + (t.sweet.rewrites || 0), 0);
   const measured = stratum.some(t => (t.native.brkRows || 0) + (t.sweet.brkRows || 0) > 0);
-  console.log(`    breakPriced sweet ${BK.pctRed >= 0 ? '−' : '+'}${Math.abs(BK.pctRed).toFixed(1)}% vs native   ($${BK.natSum.toFixed(6)} → $${BK.swSum.toFixed(6)})   %CI [${fmt(BK.ciPctLo)}%, ${fmt(BK.ciPctHi)}%]  p=${BK.p.toFixed(3)}`
-    + (rw ? `   << ${rw} context rewrites: READ THIS ROW, idealCost is blind to the cache break`
-          : (measured ? '   (== idealCost: context measured append-only)'
-                      : '   (legacy rows: column not collected, mirrored from idealCost)')));
+  if (BK) {
+    console.log(`    breakPriced sweet ${BK.pctRed >= 0 ? '−' : '+'}${Math.abs(BK.pctRed).toFixed(1)}% vs native   ($${BK.natSum.toFixed(6)} → $${BK.swSum.toFixed(6)})   %CI [${fmt(BK.ciPctLo)}%, ${fmt(BK.ciPctHi)}%]  p=${BK.p.toFixed(3)}`
+      + (rw ? `   << ${rw} context rewrites: READ THIS ROW, idealCost is blind to the cache break`
+            : (measured ? '   (== idealCost: context measured append-only)'
+                        : '   (legacy rows: column not collected, mirrored from idealCost)')));
+  } else console.log(`    breakPriced unavailable (${missingBK.length}/${stratum.length} paired task(s) have missing row costs)`);
 }
 console.log('');
 }
 
+// ---- output/content diagnostics (item 6) ----
+// Raw, untrimmed realized cost is the sole headline. Flags are descriptive:
+// arm-blind classification prevents explicit arm conditioning but does not imply
+// equal flag rates or cost effects. Any removal is post-hoc sensitivity only.
+function degenerationReport(rows) {
+  const uninstrumented = rows.filter(r => typeof r.degenerate !== 'boolean'
+    || !r.degeneration || typeof r.degeneration !== 'object'
+    || r.degenerationInstrumentationComplete !== true
+    || r.degeneration.instrumentation?.complete !== true);
+  if (uninstrumented.length) {
+    console.log(`\n${'='.repeat(78)}`);
+    console.log(`DIAGNOSTIC INSTRUMENTATION INCOMPLETE: ${uninstrumented.length}/${rows.length} row(s) missing a verdict, structured detail, or explicit complete-instrumentation attestation.`);
+    console.log('  Fail closed: flags and exclusion sensitivities are not reported; raw untrimmed cost remains the sole headline.');
+    console.log(`  examples: ${uninstrumented.slice(0, 5).map(r => `${r.taskId ?? '?'}/${r.arm ?? '?'}/r${r.rep ?? '?'}`).join(', ')}`);
+    console.log('='.repeat(78));
+    return { flagged: [], collected: false };
+  }
+  const flagged = rows.filter(r => r.degenerate === true);
+  console.log(`\n${'='.repeat(78)}`);
+  console.log(`DIAGNOSTIC FLAGS (arm-blind, descriptive, never a saving): ${flagged.length} of ${rows.length} rollouts`);
+  if (!flagged.length) {
+    console.log('  none; no exclusion sensitivity is needed.');
+    return { flagged, collected: true };
+  }
+  const arms = [...new Set(flagged.map(r => r.arm).filter(Boolean))].sort();
+  for (const arm of arms) {
+    const armRows = flagged.filter(r => r.arm === arm);
+    const known = armRows.filter(r => Number.isFinite(r.costRealizedUsd));
+    const cost = known.length === armRows.length
+      ? `$${known.reduce((sum, r) => sum + r.costRealizedUsd, 0).toFixed(6)}`
+      : `unavailable (${armRows.length - known.length}/${armRows.length} flagged row(s) missing realized cost)`;
+    console.log(`  ${arm}: ${armRows.length} flag(s); ${cost} raw row-level realized cost associated with flags`);
+  }
+  for (const r of flagged) {
+    const d = r.degeneration;
+    const cost = Number.isFinite(r.costRealizedUsd) ? `$${r.costRealizedUsd.toFixed(6)}` : 'realized cost unavailable';
+    console.log(`    ${r.taskId}/${r.arm}/r${r.rep}  ${cost}`
+      + `  [${(d.reasons || []).join(', ') || 'flagged'}]`
+      + (Number.isFinite(d.billedVsRetainedRatio) ? `  billed/visible-estimate=${d.billedVsRetainedRatio}x` : ''));
+  }
+  return { flagged, collected: true };
+}
+
+function pairBalance(rows) {
+  const arms = [...new Set(rows.map(r => r.arm).filter(Boolean))].sort();
+  const groups = new Map();
+  const malformed = [];
+  for (const r of rows) {
+    if (r.taskId == null || r.rep == null || !r.arm) { malformed.push(r); continue; }
+    const key = JSON.stringify([r.taskId, r.rep]);
+    if (!groups.has(key)) groups.set(key, new Map());
+    const byArm = groups.get(key);
+    byArm.set(r.arm, (byArm.get(r.arm) || 0) + 1);
+  }
+  const incomplete = [...groups.entries()].filter(([, byArm]) => arms.length < 2
+    || arms.some(arm => byArm.get(arm) !== 1) || byArm.size !== arms.length);
+  return { ok: !malformed.length && !incomplete.length && arms.length >= 2, arms, incomplete, malformed };
+}
+
+function diagnosticSensitivities(rows, flagged) {
+  const balance = pairBalance(rows);
+  if (!balance.ok) {
+    console.log(`\nEXPLORATORY DIAGNOSTIC SENSITIVITIES NOT RUN: taskId×rep pairing is incomplete or duplicated (${balance.incomplete.length} incomplete, ${balance.malformed.length} malformed).`);
+    console.log('Raw untrimmed cost remains the sole headline.');
+    return;
+  }
+  const flaggedPairs = new Set(flagged.map(r => JSON.stringify([r.taskId, r.rep])));
+  const matchedKept = rows.filter(r => !flaggedPairs.has(JSON.stringify([r.taskId, r.rep])));
+  console.log(`\n${'='.repeat(78)}`);
+  console.log(`EXPLORATORY POST-HOC MATCHED-PAIR SENSITIVITY: remove ${flaggedPairs.size} taskId×rep pair(s), both arms (${rows.length - matchedKept.length} rows).`);
+  console.log('This is not a corrected estimate and never replaces the raw headline.');
+  rowLevelRealized(matchedKept, { label: 'MATCHED taskId×rep pairs retained; both arms removed together' });
+  costBlocks(report(matchedKept, 'EXPLORATORY MATCHED-PAIR DIAGNOSTIC SENSITIVITY'));
+
+  const flaggedTasks = new Set(flagged.map(r => r.taskId));
+  const taskKept = rows.filter(r => !flaggedTasks.has(r.taskId));
+  console.log(`\n${'='.repeat(78)}`);
+  console.log(`EXPLORATORY POST-HOC WHOLE-TASK SENSITIVITY: remove ${flaggedTasks.size} flagged task(s), all arms and reps (${rows.length - taskKept.length} rows).`);
+  console.log('This is not a corrected estimate and never replaces the raw headline.');
+  rowLevelRealized(taskKept, { label: 'WHOLE flagged tasks removed; all arms and reps removed together' });
+  costBlocks(report(taskKept, 'EXPLORATORY WHOLE-TASK DIAGNOSTIC SENSITIVITY'));
+}
+
 // ---- driver ----
-costBlocks(report(allRows, EXCLUDE.size ? 'ALL TASKS' : ''));
+rowLevelRealized(allRows, { label: 'RAW UNTRIMMED REALIZED COST; all recorded rows', headline: true });
+costBlocks(report(allRows, 'RAW — NO DIAGNOSTIC EXCLUSION'));
+const degen = degenerationReport(allRows);
+if (degen.collected && degen.flagged.length) diagnosticSensitivities(allRows, degen.flagged);
 if (EXCLUDE.size) {
   const kept = allRows.filter(r => !EXCLUDE.has(r.taskId));
   const dropped = new Set(allRows.filter(r => EXCLUDE.has(r.taskId)).map(r => r.taskId));
   console.log('='.repeat(78));
-  console.log(`SENSITIVITY: same report with ${dropped.size} task(s) excluded — ${[...dropped].join(', ')}`);
-  console.log('Both views are the publication; neither replaces the other.');
+  console.log(`EXPLORATORY USER-REQUESTED TASK SENSITIVITY: ${dropped.size} task(s) excluded — ${[...dropped].join(', ')}`);
+  console.log('This is not a headline and never replaces raw untrimmed cost.');
   console.log('='.repeat(78));
   if (dropped.size !== EXCLUDE.size) console.log(`  note: ${[...EXCLUDE].filter(i => !dropped.has(i)).join(', ')} not present in these rows`);
-  costBlocks(report(kept, 'EXCLUDING ' + [...dropped].join(', ')));
+  rowLevelRealized(kept, { label: 'USER-REQUESTED TASK EXCLUSION' });
+  costBlocks(report(kept, 'EXPLORATORY EXCLUSION OF ' + [...dropped].join(', ')));
 }
