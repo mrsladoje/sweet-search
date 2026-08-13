@@ -29,7 +29,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { closeSync, constants as fsConstants, existsSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
+import { closeSync, constants as fsConstants, existsSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reconcileEnablement } from '../incremental-indexing/domain/interval-autotune.mjs';
@@ -90,6 +90,40 @@ function bgPriorityEnabled(env) {
   if (raw == null || raw === '') return true; // default-on
   const normalized = String(raw).trim().toLowerCase();
   return !(normalized === '0' || normalized === 'false' || normalized === 'off');
+}
+
+/**
+ * Where a detached maintainer's output goes.
+ *
+ * It used to go nowhere. The maintainer is spawned detached with
+ * `stdio: 'ignore'`, so every warning it emits — the RSS ceiling being set
+ * below the steady resident set, a recycle chain that keeps repeating, an
+ * operator override being honoured verbatim — was written to a console that no
+ * process was attached to. So was every crash. Diagnosing why a maintainer had
+ * died meant guessing, because the one process that knew had no way to say.
+ */
+export const MAINTAINER_LOG_FILENAME = 'index-maintainer.log';
+
+/** Rotate at this size, keeping one previous file, so the pair is bounded. */
+const MAINTAINER_LOG_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Open the maintainer log for appending, rotating it first if it has grown past
+ * the cap. Returns a file descriptor, or null if anything at all goes wrong —
+ * losing the log must never cost us the maintainer.
+ */
+function openMaintainerLog(stateDir) {
+  try {
+    const logFile = join(stateDir, MAINTAINER_LOG_FILENAME);
+    try {
+      if (statSync(logFile).size >= MAINTAINER_LOG_MAX_BYTES) {
+        renameSync(logFile, `${logFile}.1`);
+      }
+    } catch { /* absent, or a concurrent rotation won — either way, just append */ }
+    return openSync(logFile, 'a', 0o600);
+  } catch {
+    return null;
+  }
 }
 
 /** Default maintainer entry: the sibling daemon in this same context. */
@@ -171,10 +205,13 @@ export function launchMaintainer(options = {}) {
     return { spawned: false, reason: 'already-running', stateDir };
   }
 
+  // Give the child a real destination for its warnings and its dying words.
+  // stdin stays ignored; stdout and stderr both land in the rotating log.
+  const logFd = openMaintainerLog(stateDir);
   try {
     const child = spawn(process.execPath, [maintainerEntry], {
       detached: true,
-      stdio: 'ignore',
+      stdio: logFd == null ? 'ignore' : ['ignore', logFd, logFd],
       cwd,
       env: {
         ...env,
@@ -205,6 +242,13 @@ export function launchMaintainer(options = {}) {
   } catch (err) {
     log(`maintainer spawn failed (non-fatal): ${err?.message || err}`);
     return { spawned: false, reason: 'error', stateDir, error: err?.message || String(err) };
+  } finally {
+    // Close OUR copy. The child holds its own, so the log keeps working after
+    // this process exits. Skipping this would leak one descriptor per launch,
+    // and supervision launches repeatedly over a daemon's lifetime.
+    if (logFd != null) {
+      try { closeSync(logFd); } catch { /* already closed */ }
+    }
   }
 }
 

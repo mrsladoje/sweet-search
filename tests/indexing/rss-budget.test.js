@@ -116,9 +116,14 @@ describe('isOverBudget', () => {
 });
 
 describe('rssRegistryPath', () => {
-  it('honors SWEET_SEARCH_RSS_REGISTRY and a tmpdir default', () => {
+  it('honors SWEET_SEARCH_RSS_REGISTRY and defaults to a PRIVATE per-user dir', () => {
     expect(rssRegistryPath(onEnv())).toBe(registryFile);
-    expect(rssRegistryPath({})).toBe(join(os.tmpdir(), 'sweet-search-rss-daemons.json'));
+    // Was `os.tmpdir()`, which is `/tmp` on Linux. Every entry in this file is
+    // a pid the coordinator will SIGTERM, and the coordinator is default-ON at
+    // 24 GiB and below — so a world-writable default let any local user choose
+    // which of the user's processes sweet-search terminated.
+    expect(rssRegistryPath({})).toBe(join(os.homedir(), '.cache', 'sweet-search', 'sweet-search-rss-daemons.json'));
+    expect(rssRegistryPath({}).startsWith(os.tmpdir())).toBe(false);
   });
 });
 
