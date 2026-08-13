@@ -25,6 +25,7 @@ import {
   readLinuxMemoryPressure,
   registerDaemon,
   runEvictionTick,
+  MAINTAINER_RSS_RESIDENT_FLOOR_BYTES,
   _readRegistryForTest,
 } from '../../core/indexing/rss-budget.mjs';
 
@@ -334,6 +335,16 @@ describe('maintainerRssCeilingBytes (D.5 config resolution)', () => {
   it('explicit env MB wins over the tier default', () => {
     expect(maintainerRssCeilingBytes({ SWEET_SEARCH_MAINTAINER_RSS_MAX_MB: '1500' }, 128 * GiB))
       .toBe(1500 * 1024 * 1024);
+  });
+
+  it('an explicit value BELOW the resident floor is honoured verbatim, never silently raised', () => {
+    // The operator's number is the operator's decision: on a memory-constrained
+    // host a hard 1.5 GB cap plus frequent recycles can be exactly what they
+    // want, and silently substituting 4 GiB could push that host into OOM. The
+    // arming site warns instead; the recycle chain is bounded by minUptime.
+    expect(maintainerRssCeilingBytes({ SWEET_SEARCH_MAINTAINER_RSS_MAX_MB: '900' }, 8 * GiB))
+      .toBe(900 * 1024 * 1024);
+    expect(MAINTAINER_RSS_RESIDENT_FLOOR_BYTES).toBe(4 * GiB);
   });
 
   it('0 / negative / garbage env disables (returns 0)', () => {

@@ -143,6 +143,13 @@ export function launchMaintainer(options = {}) {
         SWEET_SEARCH_PROJECT_ROOT: env.SWEET_SEARCH_PROJECT_ROOT || cwd,
       },
     });
+    // `spawn` reports EAGAIN / EMFILE / ENOENT (missing cwd) ASYNCHRONOUSLY, so
+    // the try/catch around it never sees them. Without a listener that event is
+    // an uncaught exception that would kill this process. Attach one first, then
+    // unref: the listener does not keep the event loop alive.
+    child.on('error', (err) => {
+      log(`maintainer spawn reported an async error (child did not start): ${err?.message || err}`);
+    });
     child.unref();
     // Demote the detached child to OS background priority (best-effort, never
     // throws). Runs in this foreground caller, targeting the child by pid, so
@@ -151,7 +158,12 @@ export function launchMaintainer(options = {}) {
       applyBackgroundPriority(child.pid);
     }
     log(`maintainer spawned (pid ${child.pid}, detached)`);
-    return { spawned: true, reason: 'spawned', pid: child.pid, stateDir };
+    // `child` is returned so a caller that MUST know the child survived (the
+    // RSS-recycle handoff) can watch its 'error'/'exit' events. A pid liveness
+    // probe cannot do that job: a child that dies instantly becomes a zombie of
+    // this process, and `process.kill(pid, 0)` reports a zombie as alive.
+    // Callers that fire-and-forget can ignore this field.
+    return { spawned: true, reason: 'spawned', pid: child.pid, stateDir, child };
   } catch (err) {
     log(`maintainer spawn failed (non-fatal): ${err?.message || err}`);
     return { spawned: false, reason: 'error', stateDir, error: err?.message || String(err) };
