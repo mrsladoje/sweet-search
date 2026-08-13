@@ -20,7 +20,7 @@ import {
   buildClaudeCliArgs, installClaudeReadPagesNormalizer, parseClaudeStream,
   selectClaudeMainCosts, READ_PAGES_TOOL_NOTE,
 } from '../harness/claude-code-task-runner.mjs';
-import { transcriptMetricsFromFile } from '../harness/claude-code-accounting.mjs';
+import { transcriptMetricsFromFile, repOfSlug } from '../harness/claude-code-accounting.mjs';
 import { normalizeReadInput, readHookDecision } from '../harness/claude-read-pages-hook.mjs';
 import { costsFromTurns } from '../harness/agent-runner-shared.mjs';
 import { readTurnLog } from '../harness/turn-log.mjs';
@@ -124,6 +124,33 @@ assert(cum.repeatedToolUseBlocks === 1, 'a repeated tool_use id trips the cumula
 assert(cum.retainedOutputChars === 'echo hi'.length + 'tail'.length,
   'a repeated block is counted once, so a format change cannot silently double the totals',
   `got ${cum.retainedOutputChars}`);
+
+// ---------------------------------------------------------------------------
+// RUN-DIRECTORY NAMING (2026-08-13). The rundir IS the agent's cwd and the harness puts it
+// in the system prompt, so its name is a string the model must transcribe exactly whenever a
+// tool wants an absolute path. The old `<task>__<arm>__r<rep>__<n>` form cost 12.66% of
+// native's claude spend and 5.29% of sweet's in `File does not exist` retries — 45 of 54
+// failures carried a mangled run-directory segment and only 1 was a path any tool had
+// printed, so both arms were INVENTING it. It also leaked the arm into the agent's own cwd.
+// The name is now short and arm-blind; BOTH slug forms must still resolve, because retained
+// runs keep the old one.
+// ---------------------------------------------------------------------------
+console.log('\nrun-directory slug decoding:');
+assert(repOfSlug('-root--ss-eval-runs-pytask-dev--pytask-210--sweet--r0--51') === 0,
+  'retained long-form slug still yields its rep');
+assert(repOfSlug('-root--ss-eval-runs-akinsho--nvim-bufferline-lua-173--native--r1--26') === 1,
+  'retained long-form slug with hyphenated task still yields its rep');
+assert(repOfSlug('-root--ss-eval-runs-r0-51') === 0, 'short arm-blind slug yields its rep');
+assert(repOfSlug('-root--ss-eval-runs-r1-7') === 1, 'short arm-blind slug, second rep');
+assert(repOfSlug('-root--ss-eval-runs-r12-345') === 12, 'multi-digit rep and counter decode');
+assert(repOfSlug('-root--ss-eval-runs-nonsense') === null, 'an undecodable slug yields null, never 0');
+assert(repOfSlug(undefined) === null, 'a missing slug yields null, never throws');
+// The whole point of the rename: nothing in the path may tell a rollout which arm it is.
+const shortName = (rep, n) => `r${rep}-${n}`;
+assert(!/sweet|native/i.test(shortName(0, 51)),
+  'the run-directory name never reveals the arm — an arm-conditioned agent is forbidden');
+assert(shortName(0, 51).length <= 8,
+  'the run-directory name stays short enough to transcribe', shortName(0, 51));
 
 console.log('\nmissing inputs degrade, never throw:');
 assert(turnsFromTranscript(ROOT, 'no-such-session').length === 0, 'unknown session id → empty');

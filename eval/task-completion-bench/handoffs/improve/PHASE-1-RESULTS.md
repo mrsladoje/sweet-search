@@ -911,18 +911,47 @@ every case. The model absolutizes anyway, and mistypes a name no real user would
 Unlike `pages` it is not one-sided, so it cannot simply be subtracted from one arm; it has to be
 measured on both.
 
-### 12.3 What to do about it
+### 12.3 What was done — FIXED 2026-08-13
 
-- **Do not fix it as a sweet product lever.** Making `ss-*` print absolute paths would help
-  sweet's 12 failures and none of native's 42, which shrinks the measured cost of the arm that is
+- **Not fixed as a sweet product lever.** Making `ss-*` print absolute paths would have helped
+  sweet's 12 failures and none of native's 42, shrinking the measured cost of the arm that is
   already cheaper. That is optimising the benchmark, not the product.
-- **Fix it in the harness**, which is where it comes from: shorten the run-directory name, or
-  place the checkout at a stable short path. Both arms improve and native improves more, so the
-  measured gap narrows. That is the validity-preserving direction and it is the same call that was
-  made on `pages`.
-- **Until it is fixed, disclose it.** Any cost figure from a Claude run of this bench carries a
-  7.4-point contribution from a directory-naming artifact. That belongs beside the `pages` line in
-  the pre-registered cost definition, not in a candidate's ceiling.
+- **Fixed in the harness, where it comes from.** `makeRunDir` in `run-pilot.mjs` no longer names
+  the directory `<taskId>__<arm>__r<rep>__<n>`. It is now `r<rep>-<n>` — **4 to 5 characters
+  instead of about 45**, with no doubled separator to mangle. Both arms improve and native
+  improves more, so the measured gap narrows. That is the validity-preserving direction, and it
+  is the same call that was made on `pages`.
+
+**A second defect was fixed by the same change, and it is the more serious one.** The old name
+put the string `__sweet__` or `__native__` **inside the agent's own working directory**, which the
+harness places in the system prompt. Every rollout could read its own arm at runtime. Nothing in
+the traces suggests any rollout acted on it, but an arm-conditioned agent is precisely the
+contamination this bench forbids, and the channel was open for every run to date. The new name is
+arm-blind. A regression test asserts it:
+
+```
+✓ the run-directory name never reveals the arm — an arm-conditioned agent is forbidden
+```
+
+`rep` is kept in the name because `reprice-claude-sidechains.mjs` recovers it from Claude Code's
+project-directory slug. Task and arm are already carried by `results/<run>/agent-state/<cell>/`,
+so nothing downstream needed them in the path. `repOfSlug` moved into the testable accounting
+module and now decodes **both** forms, because retained runs keep the long one:
+
+| rundir | slug | rep |
+|---|---|---:|
+| `pytask-dev__pytask-210__sweet__r0__51` | `…-runs-pytask-dev--pytask-210--sweet--r0--51` | 0 |
+| `r0-51` | `…-runs-r0-51` | 0 |
+
+Nine assertions cover the decode, including multi-digit reps, hyphenated task names, and an
+undecodable slug yielding `null` rather than `0`. Verified end-to-end: `screen-v3` still
+reproduces **64 / 64** through the repricing tool after the change.
+
+**Disclosure still required for existing figures.** Every cost number already published from a
+Claude run of this bench carries the 7.4-point contribution from the old directory naming. The
+fix applies to future runs only; it cannot be replayed onto recorded rows, exactly like the `pages`
+adapter fix. That belongs beside the `pages` line in the pre-registered cost definition, not in
+any candidate's ceiling.
 
 **Method note.** This was found only by writing the hypothesis down as a falsifiable prediction —
 "sweet's failing paths should be ones no tool printed, native's should not be malformed" — and
