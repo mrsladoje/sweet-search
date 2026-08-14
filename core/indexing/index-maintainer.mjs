@@ -1718,11 +1718,30 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
               intervalMs = tuned.nextMs;
             }
           }
-          recordIdleTick(idleState, {
+          const idleTick = recordIdleTick(idleState, {
             dirtyAtTickStart: dirtySeen,
             maintenanceBacklog: backlog,
             skipped: tickCounters?.skipped === true,
           });
+
+          // FLEET-EVICTION FAIRNESS. The RSS coordinator sheds the daemon with
+          // the OLDEST lastActivityMs. We registered with that field set once,
+          // at startup, and never touched it again — so among maintainers the
+          // stamp was really "when did this process start", and the victim was
+          // always the earliest-started one. That is the repository you have had
+          // open all day: the coordinator would have hunted your main repo,
+          // supervision would have restarted it because that repo is being
+          // queried, and it would be evicted again.
+          //
+          // Refreshing on ticks that did real work makes "longest idle" mean
+          // what it says. It also makes the busy-maintainer preference fall out
+          // for free: a maintainer that is indexing keeps its stamp fresh, so it
+          // is automatically the last thing eviction reaches for.
+          if (!idleTick.idle && rssRegistration && typeof rssRegistration.touch === 'function') {
+            // Best-effort and deliberately not awaited: this is a shared-file
+            // read-modify-write, and a slow one must never delay the next tick.
+            Promise.resolve(rssRegistration.touch()).catch(() => {});
+          }
           // D.5: per-process RSS recycle check — tick boundary only (the tick
           // above has published; a recycle here can never tear an artifact).
           completedTicks += 1;

@@ -266,7 +266,8 @@ describe('resolveMaintainerMemoryProfile (footprint-lever RAM tiers)', () => {
     // and nothing else bounds them either — the count cap does not enumerate
     // maintainers and the RSS budget is null here — so the resident set grew by
     // one process per repository ever searched, without limit.
-    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 128 * GiB })).toMatchObject({ tier: 'roomy', idleTtlMs: 3_600_000, rssBudgetFraction: null });
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 32 * GiB })).toMatchObject({ tier: 'generous', idleTtlMs: 1_800_000, rssBudgetFraction: 0.60 });
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 128 * GiB })).toMatchObject({ tier: 'roomy', idleTtlMs: 3_600_000, rssBudgetFraction: 0.40 });
   });
 
   it('gives EVERY tier a finite maintainer idle TTL', () => {
@@ -299,10 +300,22 @@ describe('resolveMaintainerMemoryProfile (footprint-lever RAM tiers)', () => {
     expect(marginal.idleTtlMs).toBe(1_800_000);
     expect(resolveMaintainerMemoryProfile({ totalMemBytes: 128 * GiB }).idleTtlMs).toBe(3_600_000);
   });
-  it('resolves to roomy (fleet RSS lever OFF) when totalMemBytes is absent or non-finite', () => {
+  it('resolves to roomy when totalMemBytes is absent or non-finite', () => {
     expect(resolveMaintainerMemoryProfile().tier).toBe('roomy');
     expect(resolveMaintainerMemoryProfile({ totalMemBytes: NaN }).tier).toBe('roomy');
-    expect(resolveMaintainerMemoryProfile({}).rssBudgetFraction).toBe(null);
     expect(resolveMaintainerMemoryProfile({}).idleTtlMs).toBe(3_600_000);
+  });
+
+  it('gives EVERY tier a fleet budget, so no host is left unbounded', () => {
+    // The companion to the finite-TTL property. A TTL bounds the steady state;
+    // only the fleet budget bounds the PEAK, and a tier resolving to null is
+    // what switches the coordinator off entirely. Between them, no host size
+    // ends up with nothing limiting its resident maintainers.
+    for (const giB of [4, 8, 12, 16, 24, 32, 64, 128, 512]) {
+      const p = resolveMaintainerMemoryProfile({ totalMemBytes: giB * GiB });
+      expect(p.rssBudgetFraction).toBeGreaterThan(0);
+      expect(p.rssBudgetFraction).toBeLessThanOrEqual(1);
+    }
+    expect(resolveMaintainerMemoryProfile({}).rssBudgetFraction).toBeGreaterThan(0);
   });
 });

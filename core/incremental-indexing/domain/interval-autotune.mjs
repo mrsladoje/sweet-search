@@ -153,8 +153,19 @@ const MEMORY_TIER_TABLE = Object.freeze({
   // it evicts by SIGTERMing peers, and turning that on for a new class of host
   // is a change that has to be soaked across several repositories under real
   // memory pressure before it can be trusted.
-  generous: { maxGiB: 64, idleTtlMs: 1_800_000, rssBudgetFraction: null },
-  roomy: { maxGiB: Infinity, idleTtlMs: 3_600_000, rssBudgetFraction: null },
+  // The fleet budget is ON for the big tiers too. A fraction alone cannot cap a
+  // large machine — 0.60 of 128 GiB is 76 GB of sweet-search daemons before
+  // anything sheds, a threshold nothing would ever cross — so the real work is
+  // done by the absolute ceiling in rss-budget.mjs
+  // (MAINTAINER_FLEET_BUDGET_MAX_BYTES). What matters here is only that the
+  // fraction is NOT null, because null is what switches the coordinator off.
+  //
+  // `generous` keeps moderate's 0.60 deliberately. Dropping it lower made the
+  // budget NON-MONOTONIC across the tier boundary: a 32 GiB host would have
+  // been given a smaller budget than a 24 GiB one, which no user could be
+  // expected to predict.
+  generous: { maxGiB: 64, idleTtlMs: 1_800_000, rssBudgetFraction: 0.60 },
+  roomy: { maxGiB: Infinity, idleTtlMs: 3_600_000, rssBudgetFraction: 0.40 },
 });
 
 /**
