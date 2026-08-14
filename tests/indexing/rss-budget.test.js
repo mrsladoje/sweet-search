@@ -26,6 +26,7 @@ import {
   registerDaemon,
   runEvictionTick,
   MAINTAINER_RSS_RESIDENT_FLOOR_BYTES,
+  MAINTAINER_FLEET_BUDGET_MAX_BYTES,
   _readRegistryForTest,
 } from '../../core/indexing/rss-budget.mjs';
 
@@ -62,7 +63,7 @@ function seedRegistry(entries) {
 }
 
 describe('budgetFraction / isEnabled (the explicit env gate)', () => {
-  const ROOMY = 64 * 1024 ** 3; // >24 GiB → tier default OFF, so unset == null here
+  const ROOMY = 128 * 1024 ** 3;
 
   it('is null/disabled when explicitly empty, zero, out-of-range, or garbage', () => {
     expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '' })).toBe(null);
@@ -70,9 +71,6 @@ describe('budgetFraction / isEnabled (the explicit env gate)', () => {
     expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '-0.5' })).toBe(null);
     expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '1.5' })).toBe(null);
     expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: 'abc' })).toBe(null);
-    // unset on a roomy host → tier default is OFF
-    expect(budgetFraction({}, ROOMY)).toBe(null);
-    expect(isEnabled({}, ROOMY)).toBe(false);
   });
 
   it('is a number in (0,1] when a valid fraction is set (explicit wins regardless of RAM)', () => {
@@ -81,27 +79,61 @@ describe('budgetFraction / isEnabled (the explicit env gate)', () => {
     expect(isEnabled({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' }, ROOMY)).toBe(true);
   });
 
-  it('auto-enables a soft cap from the system-RAM tier when unset (small-RAM hosts)', () => {
-    expect(budgetFraction({}, 8 * 1024 ** 3)).toBe(0.55);  // tight (≤12 GiB)
-    expect(budgetFraction({}, 20 * 1024 ** 3)).toBe(0.60); // moderate (≤24 GiB)
-    expect(budgetFraction({}, 64 * 1024 ** 3)).toBe(null); // roomy (>24 GiB)
-    expect(isEnabled({}, 8 * 1024 ** 3)).toBe(true);
-    expect(isEnabled({}, 64 * 1024 ** 3)).toBe(false);
+  it('auto-enables a soft cap on EVERY RAM tier when unset', () => {
+    // The big tiers used to resolve to null, i.e. no fleet budget at all. Since
+    // maintainers are not enumerated by the daemon count cap either, that left
+    // hosts above 24 GiB with nothing bounding the resident set — one process
+    // per repository, unbounded. A tier that switches the coordinator off is
+    // the hole, not the safe default.
+    expect(budgetFraction({}, 8 * 1024 ** 3)).toBe(0.55);   // tight    (≤12 GiB)
+    expect(budgetFraction({}, 20 * 1024 ** 3)).toBe(0.60);  // moderate (≤24 GiB)
+    expect(budgetFraction({}, 32 * 1024 ** 3)).toBe(0.60);  // generous (≤64 GiB)
+    expect(budgetFraction({}, 128 * 1024 ** 3)).toBe(0.40); // roomy    (>64 GiB)
+    for (const giB of [4, 8, 16, 24, 32, 64, 128, 512]) {
+      expect(isEnabled({}, giB * 1024 ** 3)).toBe(true);
+    }
     // explicit env always overrides the tier, both directions
     expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0' }, 8 * 1024 ** 3)).toBe(null);
-    expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' }, 64 * 1024 ** 3)).toBe(0.6);
+    expect(budgetFraction({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.9' }, ROOMY)).toBe(0.9);
   });
 });
 
-describe('budgetBytes (auto-scales with system RAM, no per-machine config)', () => {
-  it('is fraction * totalMem when enabled, 0 when disabled', () => {
-    const totalMem = 16 * 1024 ** 3; // 16 GiB
+describe('budgetBytes (scales with RAM, but never past an absolute ceiling)', () => {
+  it('is fraction * totalMem while that is under the ceiling', () => {
+    const totalMem = 16 * 1024 ** 3;
     expect(budgetBytes({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' }, totalMem)).toBe(Math.floor(0.6 * totalMem));
-    // Larger RAM → proportionally larger budget (scales, not capped).
-    const big = 128 * 1024 ** 3;
-    expect(budgetBytes({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' }, big)).toBe(Math.floor(0.6 * big));
-    // Explicitly disabled → 0 (unset is now RAM-tier-driven; see the gate tests).
     expect(budgetBytes({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0' }, totalMem)).toBe(0);
+  });
+
+  it('clamps at the ceiling, because a pure fraction cannot cap a large host', () => {
+    // 0.6 of 128 GiB is 76 GB of sweet-search daemons before anything sheds —
+    // a threshold nothing would ever cross, so the cap would exist without ever
+    // capping. The clamp is what makes the guarantee true on any host size.
+    expect(budgetBytes({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' }, 128 * 1024 ** 3))
+      .toBe(MAINTAINER_FLEET_BUDGET_MAX_BYTES);
+    expect(budgetBytes({ SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' }, 1024 * 1024 ** 3))
+      .toBe(MAINTAINER_FLEET_BUDGET_MAX_BYTES);
+  });
+
+  it('clamps ONLY the upper bound, so small hosts keep their tighter cap', () => {
+    // A lower clamp would LOOSEN the cap exactly where it matters most: an
+    // 8 GiB host's 0.55 is 4.4 GB, and raising that to a floor would undo the
+    // protection the tier exists to provide.
+    const small = 8 * 1024 ** 3;
+    expect(budgetBytes({}, small)).toBe(Math.floor(0.55 * small));
+    expect(budgetBytes({}, small)).toBeLessThan(MAINTAINER_FLEET_BUDGET_MAX_BYTES);
+  });
+
+  it('never gives a bigger machine a smaller budget', () => {
+    // The budget is a promise a user has to be able to predict. An earlier
+    // draft dropped the `generous` fraction below moderate's, which made a
+    // 32 GiB host get LESS headroom than a 24 GiB one.
+    let previous = -1;
+    for (const giB of [4, 8, 12, 16, 24, 25, 32, 40, 48, 64, 65, 128, 512]) {
+      const b = budgetBytes({}, giB * 1024 ** 3);
+      expect(b).toBeGreaterThanOrEqual(previous);
+      previous = b;
+    }
   });
 });
 
@@ -145,6 +177,62 @@ describe('runEvictionTick — no-op when disabled', () => {
     expect(r.enabled).toBe(false);
     expect(r.evicted).toBe(null);
     expect(signalled).toEqual([]);
+  });
+});
+
+describe('a maintainer that keeps working is not the victim', () => {
+  // WHY THIS MATTERS. Eviction sheds the entry with the oldest lastActivityMs.
+  // Maintainers registered with that field set once, at startup, and never
+  // refreshed it — so for them the stamp really meant "when did this process
+  // start", and the victim was always the earliest-started maintainer. That is
+  // the repository you have had open all day. The coordinator would have hunted
+  // your main repo, supervision would have restarted it (that repo is being
+  // queried), and it would be evicted again: a thrash loop aimed at the one
+  // repository you care about most.
+  //
+  // The maintainer now refreshes on every tick that did real indexing work.
+  // These two cases pin what that buys, from the selection side.
+  const overBudget = {
+    totalMem: 16 * 1024 ** 3,
+    rssReader: async () => 5 * 1024 ** 3,
+    pressureReader: async () => null,
+    aliveProbe: () => true,
+  };
+
+  it('sheds the maintainer that stopped working, not the one that started first', async () => {
+    const now = Date.now();
+    seedRegistry([
+      // Started FIRST, but still working — the busy main repo.
+      { pid: 11, kind: 'm', startedAt: now - 3 * 3600_000, lastActivityMs: now, rss: 0 },
+      // Started later, but has done nothing for an hour — the abandoned repo.
+      { pid: 12, kind: 'm', startedAt: now - 60_000, lastActivityMs: now - 3600_000, rss: 0 },
+      { pid: 13, kind: 's', startedAt: now, lastActivityMs: now, rss: 0 }, // self
+    ]);
+    const signalled = [];
+    const r = await runEvictionTick({
+      ...overBudget, env: onEnv('0.6'), selfPid: 13, signal: (pid) => signalled.push(pid),
+    });
+    expect(r.evicted).toBe(12);
+    expect(signalled).toEqual([12]);
+  });
+
+  it('would shed the WRONG one if maintainers never refreshed their stamp', async () => {
+    // The old behaviour, reproduced exactly: both maintainers still carry the
+    // stamp from the moment they registered, so "longest idle" degrades into
+    // "started first" and the busy main repo is chosen.
+    const now = Date.now();
+    seedRegistry([
+      { pid: 11, kind: 'm', startedAt: now - 3 * 3600_000, lastActivityMs: now - 3 * 3600_000, rss: 0 },
+      { pid: 12, kind: 'm', startedAt: now - 60_000, lastActivityMs: now - 60_000, rss: 0 },
+      { pid: 13, kind: 's', startedAt: now, lastActivityMs: now, rss: 0 },
+    ]);
+    const signalled = [];
+    await runEvictionTick({
+      ...overBudget, env: onEnv('0.6'), selfPid: 13, signal: (pid) => signalled.push(pid),
+    });
+    // pid 11 is the busy main repo in the previous test. Without a refresh it
+    // is the first thing killed — which is the defect, stated as a test.
+    expect(signalled).toEqual([11]);
   });
 });
 

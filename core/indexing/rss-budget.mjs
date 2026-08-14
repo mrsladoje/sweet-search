@@ -102,10 +102,25 @@ export function isEnabled(env = process.env, totalMemBytes = os.totalmem()) {
  * so there is no per-machine config (4 GB-ish on a 16 GB box at 0.6, ~76 GB on
  * 128 GB). Returns 0 when disabled.
  */
+/**
+ * Absolute ceiling on the resident sweet-search fleet, whatever the host size.
+ *
+ * A pure fraction does not survive large machines. 0.40 of 128 GiB is 51 GB,
+ * and of 512 GiB it is 205 GB — thresholds nothing would ever cross, so the cap
+ * would exist without ever capping. Clamping the BYTES gives a statement that
+ * holds on every host: sweet-search does not keep more than this much resident
+ * before it starts shedding its longest-idle daemon.
+ *
+ * Only the upper bound is clamped. Clamping a lower bound would LOOSEN the cap
+ * on the small hosts that need it most — an 8 GiB host's 0.55 works out to
+ * 4.4 GB, and raising that to a floor would undo the protection.
+ */
+export const MAINTAINER_FLEET_BUDGET_MAX_BYTES = 24 * 1024 * 1024 * 1024; // 24 GiB
+
 export function budgetBytes(env = process.env, totalMem = os.totalmem()) {
   const f = budgetFraction(env, totalMem);
   if (f === null) return 0;
-  return Math.floor(f * totalMem);
+  return Math.min(MAINTAINER_FLEET_BUDGET_MAX_BYTES, Math.floor(f * totalMem));
 }
 
 /** Total RSS over budget? Pure predicate (testable without any I/O). */
