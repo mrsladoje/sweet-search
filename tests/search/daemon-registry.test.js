@@ -38,7 +38,21 @@ afterEach(() => {
 });
 
 function entry(pid, lastActivityMs, extra = {}) {
-  return { pid, projectRoot: `/p/${pid}`, socketPath: `/tmp/s${pid}.sock`, pidFile: `/tmp/s${pid}.pid`, startedAt: 1, lastActivityMs, ...extra };
+  // `startedAt` must be a real timestamp from THIS boot. It used to be the
+  // literal 1 — the start of 1970 — which was harmless while the registry lived
+  // in a temp dir the OS wipes on reboot. Now that it persists in ~/.cache,
+  // pruning drops any entry older than the last boot, because such an entry
+  // names a pid that an unrelated process may have inherited since. A fixture
+  // stamped 1970 is indistinguishable from exactly that.
+  return {
+    pid,
+    projectRoot: `/p/${pid}`,
+    socketPath: `/tmp/s${pid}.sock`,
+    pidFile: `/tmp/s${pid}.pid`,
+    startedAt: Date.now(),
+    lastActivityMs,
+    ...extra,
+  };
 }
 
 function fakeHealthServer(socketPath, { status = 200 } = {}) {

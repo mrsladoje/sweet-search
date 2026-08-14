@@ -64,9 +64,17 @@ try {
   writeFileSync(lockFile, JSON.stringify({ pid: process.pid, timestamp: Date.now() }), 'utf-8');
 } catch { /* best-effort */ }
 
-// Stay alive indefinitely; the test kills us explicitly. A bare interval keeps
-// the event loop busy without consuming CPU.
-setInterval(() => {}, 1 << 30);
+// Keep the heartbeat fresh, like the real maintainer's 30s lock refresh. This
+// is load-bearing, not decoration: `maintainerAlive` no longer trusts a pid
+// probe alone (an unreaped zombie reports as alive), so a lock whose timestamps
+// stop advancing eventually reads as dead. A fixture that wrote its lock once
+// and then sat there would drift out of "alive" mid-test and stop modelling the
+// thing it stands in for.
+setInterval(() => {
+  try {
+    writeFileSync(lockFile, JSON.stringify({ pid: process.pid, timestamp: Date.now() }), 'utf-8');
+  } catch { /* best-effort */ }
+}, 5000);
 // Exit cleanly on termination so the test's afterEach kill is graceful.
 process.on('SIGTERM', () => process.exit(0));
 process.on('SIGINT', () => process.exit(0));

@@ -53,7 +53,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-import { selectEvictionTargets, privateRuntimeDir, registryTrustworthy } from '../search/daemon-registry.js';
+import { selectEvictionTargets, privateRuntimeDir, registryTrustworthy, entryPredatesBoot } from '../search/daemon-registry.js';
 import { resolveMaintainerMemoryProfile } from '../incremental-indexing/domain/interval-autotune.mjs';
 
 const DEFAULT_REGISTRY_FILE = 'sweet-search-rss-daemons.json';
@@ -336,6 +336,10 @@ async function pruneRegistry(env = process.env, alive = pidAlive) {
   const liveMap = {};
   for (const [key, entry] of Object.entries(daemons)) {
     if (!entry || typeof entry !== 'object') continue;
+    // A pre-boot entry names a pid that some unrelated process may now hold,
+    // and every surviving entry here is one this coordinator is willing to
+    // SIGTERM. See entryPredatesBoot in daemon-registry.js.
+    if (entryPredatesBoot(entry)) continue;
     if (alive(entry.pid)) {
       live.push(entry);
       liveMap[key] = entry;

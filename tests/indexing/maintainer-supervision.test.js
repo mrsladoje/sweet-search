@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -248,6 +248,181 @@ describe('maintainer supervision — the spawn claim', () => {
     expect(result.acted).toBe(true);
     expect(calls).toHaveLength(1);
   });
+});
+
+describe('maintainer supervision — liveness cannot be forged by a dead process', () => {
+  it('does NOT believe a lock whose timestamps have stopped advancing', () => {
+    // The zombie case, and the one that turns supervision into the bug it
+    // fixes. `process.kill(pid, 0)` succeeds for an unreaped zombie — under a
+    // container PID 1 that does not reap, or a stopped parent — so a pid probe
+    // alone would answer "already-running" forever and the index would never
+    // update again. process.pid is genuinely alive here, so ONLY the stale
+    // timestamps can produce the right answer.
+    writeFileSync(join(stateDir, MAINTAINER_LOCK_FILENAME), JSON.stringify({
+      pid: process.pid,
+      timestamp: Date.now() - 30 * 60 * 1000,
+      progressTimestamp: Date.now() - 30 * 60 * 1000,
+    }));
+    const calls = [];
+    const result = runSupervisionTick({
+      state: createSupervisionState(), env: baseEnv(), cwd: root, launch: recordingLaunch(calls),
+    });
+    expect(result.acted).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('still believes a live holder whose heartbeat is recent', () => {
+    // The other direction matters just as much: displacing a healthy maintainer
+    // gives the repository two writers.
+    writeFileSync(join(stateDir, MAINTAINER_LOCK_FILENAME), JSON.stringify({
+      pid: process.pid, timestamp: Date.now(), progressTimestamp: Date.now(),
+    }));
+    const calls = [];
+    const result = runSupervisionTick({
+      state: createSupervisionState(), env: baseEnv(), cwd: root, launch: recordingLaunch(calls),
+    });
+    expect(result).toMatchObject({ acted: false, reason: 'already-running' });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('accepts a busy holder whose heartbeat lags but whose progress is fresh', () => {
+    // A maintainer inside long work refreshes progress while its heartbeat
+    // timer lags. Either signal being fresh is enough.
+    writeFileSync(join(stateDir, MAINTAINER_LOCK_FILENAME), JSON.stringify({
+      pid: process.pid,
+      timestamp: Date.now() - 30 * 60 * 1000,
+      progressTimestamp: Date.now(),
+    }));
+    const result = runSupervisionTick({
+      state: createSupervisionState(), env: baseEnv(), cwd: root, launch: recordingLaunch([]),
+    });
+    expect(result.reason).toBe('already-running');
+  });
+});
+
+describe('maintainer supervision — a maintainer that will not start', () => {
+  it('backs off instead of spawning a doomed child on every interval', () => {
+    // `launchMaintainer` returns as soon as `spawn` returns, which is before
+    // the child takes its lock and before an async EAGAIN/EMFILE surfaces. A
+    // child that always crashes on startup therefore looks like a successful
+    // launch every time. Without backoff supervision would start another one
+    // every interval, forever, while the index stays stale anyway.
+    const state = createSupervisionState();
+    const calls = [];
+    const launchThatNeverLives = () => { calls.push(1); return { spawned: true, reason: 'spawned', pid: 4242 }; };
+
+    let t = 1_000_000;
+    const step = 20_000; // comfortably past the 15s base interval
+    for (let i = 0; i < 12; i++) {
+      rmSync(join(stateDir, MAINTAINER_SPAWN_CLAIM_FILENAME), { force: true });
+      runSupervisionTick({ state, env: baseEnv(), cwd: root, launch: launchThatNeverLives, now: t });
+      t += step;
+    }
+
+    // Twelve opportunities, but the interval doubles each time a launch fails
+    // to produce a live maintainer, so only the first few actually spawn.
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.length).toBeLessThanOrEqual(5);
+    expect(state.consecutiveFailures).toBeGreaterThan(1);
+  });
+
+  it('does not accumulate backoff on ticks that were blocked by the claim', () => {
+    // A tick that never attempted a spawn is not a failed spawn. Counting it as
+    // one meant that during the few seconds a peer holds the claim, a fast
+    // supervisor racked up a dozen "failures" and backed itself off for
+    // minutes — supervision switching itself off for no reason at all, which is
+    // the staleness bug arriving by a new route. Caught by the end-to-end
+    // restore test, pinned here.
+    const state = createSupervisionState();
+    const calls = [];
+    runSupervisionTick({ state, env: baseEnv(), cwd: root, launch: recordingLaunch(calls), now: 1_000_000, minIntervalMs: 0 });
+    expect(calls).toHaveLength(1);
+
+    // The claim written by that launch now blocks every tick for its TTL.
+    for (let i = 1; i <= 12; i++) {
+      const r = runSupervisionTick({
+        state, env: baseEnv(), cwd: root, launch: recordingLaunch(calls), now: 1_000_000 + i * 100, minIntervalMs: 0,
+      });
+      expect(r.reason).toBe('claim-held');
+    }
+    expect(state.consecutiveFailures).toBe(0);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('clears the backoff as soon as a maintainer is actually up', () => {
+    const state = createSupervisionState();
+    const calls = [];
+    runSupervisionTick({ state, env: baseEnv(), cwd: root, launch: recordingLaunch(calls), now: 1_000_000 });
+    runSupervisionTick({ state, env: baseEnv(), cwd: root, launch: recordingLaunch(calls), now: 1_060_000 });
+    expect(state.consecutiveFailures).toBe(1);
+
+    // A live maintainer appears.
+    writeFileSync(join(stateDir, MAINTAINER_LOCK_FILENAME), JSON.stringify({ pid: process.pid, timestamp: Date.now() }));
+    runSupervisionTick({ state, env: baseEnv(), cwd: root, launch: recordingLaunch(calls), now: 1_120_000 });
+    expect(state.consecutiveFailures).toBe(0);
+  });
+
+  it('does not treat an ordinary idle exit and respawn as a failure', () => {
+    // The normal lifecycle: maintainer runs, is observed alive, retires on its
+    // idle TTL, gets replaced. Counting that as failure would make a perfectly
+    // healthy machine back off until it was barely maintained at all.
+    const state = createSupervisionState();
+    const calls = [];
+    let t = 1_000_000;
+
+    runSupervisionTick({ state, env: baseEnv(), cwd: root, launch: recordingLaunch(calls), now: t });
+    for (let cycle = 0; cycle < 5; cycle++) {
+      // Observed alive...
+      writeFileSync(join(stateDir, MAINTAINER_LOCK_FILENAME), JSON.stringify({ pid: process.pid, timestamp: Date.now() }));
+      t += 60_000;
+      runSupervisionTick({ state, env: baseEnv(), cwd: root, launch: recordingLaunch(calls), now: t });
+      // ...then it retires, and supervision replaces it.
+      rmSync(join(stateDir, MAINTAINER_LOCK_FILENAME), { force: true });
+      rmSync(join(stateDir, MAINTAINER_SPAWN_CLAIM_FILENAME), { force: true });
+      t += 60_000;
+      runSupervisionTick({ state, env: baseEnv(), cwd: root, launch: recordingLaunch(calls), now: t });
+    }
+
+    expect(state.consecutiveFailures).toBe(0);
+    expect(calls).toHaveLength(6); // the first launch plus one per cycle
+  });
+});
+
+describe('maintainer supervision — hostile and broken files', () => {
+  it('acts rather than parking forever when the wall clock jumps BACKWARDS', () => {
+    // An NTP correction or a confused VM can move the clock back hours. Treating
+    // a negative elapsed time as "inside the rate-limit window" would suspend
+    // supervision for the whole skew, and a maintainer exiting during it would
+    // never be replaced.
+    const state = createSupervisionState();
+    const calls = [];
+    runSupervisionTick({ state, env: baseEnv(), cwd: root, launch: recordingLaunch(calls), now: 5_000_000 });
+    rmSync(join(stateDir, MAINTAINER_SPAWN_CLAIM_FILENAME), { force: true });
+
+    const afterJumpBack = runSupervisionTick({
+      state, env: baseEnv(), cwd: root, launch: recordingLaunch(calls), now: 1_000_000,
+    });
+    expect(afterJumpBack.acted).toBe(true);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('never reads a FIFO left at the claim path', () => {
+    // .sweet-search lives inside the repository, so a hostile checkout can ship
+    // a named pipe here — and readFileSync on a FIFO with no writer blocks
+    // FOREVER. This code runs on the search daemon's event loop, so that single
+    // file would hang every query the daemon serves from then on. If this test
+    // hangs instead of failing, the guard is gone.
+    const claimPath = join(stateDir, MAINTAINER_SPAWN_CLAIM_FILENAME);
+    const mk = spawnSync('mkfifo', [claimPath]);
+    if (mk.status !== 0) return; // no mkfifo on this platform; nothing to prove
+
+    const calls = [];
+    const result = runSupervisionTick({
+      state: createSupervisionState(), env: baseEnv(), cwd: root, launch: recordingLaunch(calls),
+    });
+    // It must return promptly with a verdict, whatever that verdict is.
+    expect(typeof result.reason).toBe('string');
+  }, 20_000);
 });
 
 describe('maintainer supervision — failure containment', () => {

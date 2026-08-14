@@ -281,10 +281,23 @@ describe('resolveMaintainerMemoryProfile (footprint-lever RAM tiers)', () => {
       expect(Number.isFinite(p.idleTtlMs)).toBe(true);
     }
   });
-  it('treats the tier boundaries as inclusive upper bounds (12 / 24 GiB)', () => {
+  it('treats the tier boundaries as inclusive upper bounds (12 / 24 / 64 GiB)', () => {
     expect(resolveMaintainerMemoryProfile({ totalMemBytes: 12 * GiB }).tier).toBe('tight');
     expect(resolveMaintainerMemoryProfile({ totalMemBytes: 24 * GiB }).tier).toBe('moderate');
-    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 24 * GiB + 1 }).tier).toBe('roomy');
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 24 * GiB + 1 }).tier).toBe('generous');
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 64 * GiB }).tier).toBe('generous');
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 64 * GiB + 1 }).tier).toBe('roomy');
+  });
+
+  it('keeps the 32 GiB machine on the shorter TTL', () => {
+    // A TTL bounds the steady state, not the peak: nine repositories visited
+    // inside one hour hold nine maintainers at once, ~2.7 GB each. That is
+    // survivable on 128 GiB and not on the 32 GiB machine that used to share
+    // the same "roomy" row.
+    const marginal = resolveMaintainerMemoryProfile({ totalMemBytes: 32 * GiB });
+    expect(marginal.tier).toBe('generous');
+    expect(marginal.idleTtlMs).toBe(1_800_000);
+    expect(resolveMaintainerMemoryProfile({ totalMemBytes: 128 * GiB }).idleTtlMs).toBe(3_600_000);
   });
   it('resolves to roomy (fleet RSS lever OFF) when totalMemBytes is absent or non-finite', () => {
     expect(resolveMaintainerMemoryProfile().tier).toBe('roomy');
