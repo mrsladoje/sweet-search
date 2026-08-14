@@ -52,12 +52,28 @@ const REGISTRY_FILENAME = 'daemons.json';
  * keeps other per-user runtime state.
  */
 export function privateRuntimeDir(env = process.env) {
-  const base = env.SWEET_SEARCH_RUNTIME_DIR
-    || path.join(os.homedir(), '.cache', 'sweet-search');
+  if (env.SWEET_SEARCH_RUNTIME_DIR) {
+    try { mkdirSync(env.SWEET_SEARCH_RUNTIME_DIR, { recursive: true, mode: 0o700 }); } catch { /* validated later */ }
+    return env.SWEET_SEARCH_RUNTIME_DIR;
+  }
+
+  const preferred = path.join(os.homedir(), '.cache', 'sweet-search');
   try {
-    mkdirSync(base, { recursive: true, mode: 0o700 });
-  } catch { /* already there, or unwritable — validation below decides */ }
-  return base;
+    mkdirSync(preferred, { recursive: true, mode: 0o700 });
+    if (dirTrustworthy(preferred)) return preferred;
+  } catch { /* fall through */ }
+
+  // A container or service account can have HOME missing, pointing at /, or
+  // read-only. Returning the unusable path anyway would make every read fail
+  // the trust check and every write refuse — so the footprint controls would
+  // switch themselves off SILENTLY while still appearing configured. Fall back
+  // to a per-user directory we create ourselves inside the temp dir: a
+  // 0700 directory owned by us passes the same trust check that plain /tmp
+  // fails, which is the whole point.
+  const uid = typeof process.getuid === 'function' ? process.getuid() : 'nouid';
+  const fallback = path.join(os.tmpdir(), `sweet-search-${uid}`);
+  try { mkdirSync(fallback, { recursive: true, mode: 0o700 }); } catch { /* validated by the caller */ }
+  return fallback;
 }
 
 /**
@@ -101,6 +117,29 @@ function dirTrustworthy(dirPath) {
 /** Path to the shared registry file (override via SWEET_SEARCH_DAEMON_REGISTRY for tests). */
 export function registryPath(env = process.env) {
   return env.SWEET_SEARCH_DAEMON_REGISTRY || path.join(privateRuntimeDir(env), REGISTRY_FILENAME);
+}
+
+/**
+ * Was this entry written before the machine last booted?
+ *
+ * These registries used to live in a temp directory that the OS clears on
+ * reboot, so a stale entry could not outlive the processes it described. They
+ * now live in `~/.cache`, which persists — and that turns PID REUSE from a
+ * curiosity into a real hazard: an entry from a previous boot names a pid that
+ * some unrelated process (an editor, a database) now holds, `kill(pid, 0)`
+ * accepts it as ours, and its ancient `lastActivityMs` makes it the FIRST
+ * choice when something has to be stopped. We would then send SIGTERM, or an
+ * HTTP `/stop`, to a process we have never had anything to do with.
+ *
+ * Ownership and mode on the FILE cannot help here: the file is genuinely ours.
+ * Only the age of the entry can, so anything older than boot is discarded.
+ */
+export function entryPredatesBoot(entry, nowMs = Date.now(), uptimeSec = os.uptime()) {
+  const startedAt = Number(entry?.startedAt);
+  if (!Number.isFinite(startedAt)) return true;   // unattributable → do not act on it
+  if (!Number.isFinite(uptimeSec) || uptimeSec < 0) return false;
+  // One minute of slack absorbs clock adjustments around boot.
+  return startedAt < (nowMs - uptimeSec * 1000 - 60_000);
 }
 
 /**
@@ -213,6 +252,9 @@ export async function pruneAndList({ env = process.env, probe = null, timeoutMs 
   const liveMap = {};
   for (const [key, entry] of Object.entries(daemons)) {
     if (!entry || typeof entry !== 'object') continue;
+    // Drop pre-boot entries before probing: their pid may now belong to an
+    // unrelated process, and probing is what would mistake it for ours.
+    if (entryPredatesBoot(entry)) continue;
     let ok;
     if (probe) {
       ok = await probe(entry);

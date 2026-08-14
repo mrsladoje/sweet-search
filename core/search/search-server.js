@@ -1254,6 +1254,18 @@ export async function startServer() {
   // lock. That produced a second maintainer, which is exactly the duplication
   // the freshness-invariant tests exist to forbid.
   let lastSupervisedActivityMs = lastActivityMs;
+  // The stamp as it was before any request arrived. Only real query routes move
+  // lastActivityMs, so "it still equals this" is exactly "this repository has
+  // never been queried", which the timer backstop must not mistake for use.
+  const startupActivityMs = lastActivityMs;
+
+  // Outcomes that settle the question for this burst of activity. Anything else
+  // — rate-limited, the claim lost to a peer, a launch error — is RETRYABLE, and
+  // must NOT consume the activity that triggered it. Consuming it
+  // unconditionally meant a single query whose tick happened to be rate-limited
+  // left an actively-used repository with no maintainer until the next query
+  // arrived, which is the staleness bug wearing a smaller hat.
+  const SETTLED_REASONS = new Set(['spawned', 'already-running', 'paused', 'opted-out', 'no-state-dir']);
 
   const maybeSuperviseMaintainer = ({ force = false } = {}) => {
     if (shuttingDown) return;
@@ -1261,13 +1273,16 @@ export async function startServer() {
     // trigger supervision — a liveness probe must not resurrect a maintainer for
     // a repository nobody is working in. `force` is the timer backstop, which
     // has already checked that this repo is in active use.
-    if (!force && lastActivityMs <= lastSupervisedActivityMs) return;
-    lastSupervisedActivityMs = lastActivityMs;
+    const activityAtCall = lastActivityMs;
+    if (!force && activityAtCall <= lastSupervisedActivityMs) return;
     // Defer off the response callback so no file system work is ever queued
     // ahead of the next request's handler.
     setImmediate(() => {
       try {
-        runSupervisionTick({ state: supervisionState, cwd: process.cwd() });
+        const result = runSupervisionTick({ state: supervisionState, cwd: process.cwd() });
+        // Mark the activity handled only once the answer is one that will not
+        // change by trying again.
+        if (SETTLED_REASONS.has(result?.reason)) lastSupervisedActivityMs = activityAtCall;
       } catch (err) {
         if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] maintainer supervision: ${err?.message || err}\n`);
       }
@@ -1387,10 +1402,23 @@ export async function startServer() {
     }
     // Supervision backstop. The per-response hook covers the normal case; this
     // catches the one it cannot — a tick that lost the spawn claim to a peer
-    // which then failed to start one. Gated on the repo being in ACTIVE use, so
-    // a daemon nobody is querying never resurrects a maintainer, and rate-limited
-    // internally so a 60s cadence costs at most one lock stat per minute.
-    if (ttl > 0 && idleFor <= ttl) maybeSuperviseMaintainer({ force: true });
+    // which then failed to start one, on a repo that goes quiet immediately
+    // afterwards. Rate-limited internally, so a 60s cadence costs at most one
+    // lock stat per minute.
+    //
+    // "In active use" is deliberately NOT `ttl > 0`: the daemon's own eviction
+    // setting says nothing about whether this repository is being worked in,
+    // and gating on it meant that turning daemon eviction off
+    // (SWEET_SEARCH_DAEMON_IDLE_TTL_MS=0, a supported configuration) silently
+    // removed the only backstop supervision has.
+    //
+    // It is also not merely "recently started". A daemon receiving nothing but
+    // health probes has an idleFor measured from ITS OWN start, which would
+    // read as active and resurrect a maintainer for a repository nobody has
+    // ever queried — the exact thing the health-probe invariant forbids.
+    const everQueried = lastActivityMs !== startupActivityMs;
+    const activeWindow = ttl > 0 ? ttl : 1_200_000;
+    if (everQueried && idleFor <= activeWindow) maybeSuperviseMaintainer({ force: true });
   }, Number(process.env.SWEET_SEARCH_DAEMON_IDLE_CHECK_MS ?? 60_000));
   if (idleTimer.unref) idleTimer.unref();
 

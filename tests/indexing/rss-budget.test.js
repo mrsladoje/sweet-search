@@ -130,8 +130,8 @@ describe('rssRegistryPath', () => {
 describe('runEvictionTick — no-op when disabled', () => {
   it('does nothing and signals nobody when the gate is unset', async () => {
     seedRegistry([
-      { pid: 11, kind: 'm', startedAt: 1, lastActivityMs: 100, rss: 0 },
-      { pid: 12, kind: 'm', startedAt: 1, lastActivityMs: 200, rss: 0 },
+      { pid: 11, kind: 'm', startedAt: Date.now(), lastActivityMs: 100, rss: 0 },
+      { pid: 12, kind: 'm', startedAt: Date.now(), lastActivityMs: 200, rss: 0 },
     ]);
     const signalled = [];
     const r = await runEvictionTick({
@@ -153,9 +153,9 @@ describe('runEvictionTick — eviction picks the longest-idle daemon', () => {
     // Three daemons; self is the newest (300). RSS reader reports 5 GiB each =
     // 15 GiB total, well over a 0.6 * 16 GiB ≈ 9.6 GiB budget.
     seedRegistry([
-      { pid: 11, kind: 'm', startedAt: 1, lastActivityMs: 100, rss: 0 }, // oldest → victim
-      { pid: 12, kind: 'm', startedAt: 1, lastActivityMs: 200, rss: 0 },
-      { pid: 13, kind: 's', startedAt: 1, lastActivityMs: 300, rss: 0 }, // self
+      { pid: 11, kind: 'm', startedAt: Date.now(), lastActivityMs: 100, rss: 0 }, // oldest → victim
+      { pid: 12, kind: 'm', startedAt: Date.now(), lastActivityMs: 200, rss: 0 },
+      { pid: 13, kind: 's', startedAt: Date.now(), lastActivityMs: 300, rss: 0 }, // self
     ]);
     const signalled = [];
     const r = await runEvictionTick({
@@ -176,9 +176,9 @@ describe('runEvictionTick — eviction picks the longest-idle daemon', () => {
 
   it('respects the fraction: same fleet UNDER a higher budget evicts nobody', async () => {
     seedRegistry([
-      { pid: 11, kind: 'm', startedAt: 1, lastActivityMs: 100, rss: 0 },
-      { pid: 12, kind: 'm', startedAt: 1, lastActivityMs: 200, rss: 0 },
-      { pid: 13, kind: 's', startedAt: 1, lastActivityMs: 300, rss: 0 },
+      { pid: 11, kind: 'm', startedAt: Date.now(), lastActivityMs: 100, rss: 0 },
+      { pid: 12, kind: 'm', startedAt: Date.now(), lastActivityMs: 200, rss: 0 },
+      { pid: 13, kind: 's', startedAt: Date.now(), lastActivityMs: 300, rss: 0 },
     ]);
     const signalled = [];
     // Same 15 GiB fleet, same 16 GiB host — but a 0.99 fraction lifts the budget
@@ -202,9 +202,9 @@ describe('runEvictionTick — eviction picks the longest-idle daemon', () => {
     // Same over-budget fleet, but self IS the oldest (11). It must shed nobody,
     // so the fleet converges on a single victim chosen by the newest daemon.
     seedRegistry([
-      { pid: 11, kind: 'm', startedAt: 1, lastActivityMs: 100, rss: 0 }, // self, oldest
-      { pid: 12, kind: 'm', startedAt: 1, lastActivityMs: 200, rss: 0 },
-      { pid: 13, kind: 's', startedAt: 1, lastActivityMs: 300, rss: 0 },
+      { pid: 11, kind: 'm', startedAt: Date.now(), lastActivityMs: 100, rss: 0 }, // self, oldest
+      { pid: 12, kind: 'm', startedAt: Date.now(), lastActivityMs: 200, rss: 0 },
+      { pid: 13, kind: 's', startedAt: Date.now(), lastActivityMs: 300, rss: 0 },
     ]);
     const signalled = [];
     const r = await runEvictionTick({
@@ -225,9 +225,9 @@ describe('runEvictionTick — eviction picks the longest-idle daemon', () => {
 describe('runEvictionTick — D.4 Linux memory-pressure', () => {
   it('a positive PSI stall near (≥80%) budget forces an eviction even under the RSS cap', async () => {
     seedRegistry([
-      { pid: 11, kind: 'm', startedAt: 1, lastActivityMs: 100, rss: 0 },
-      { pid: 12, kind: 'm', startedAt: 1, lastActivityMs: 200, rss: 0 },
-      { pid: 13, kind: 's', startedAt: 1, lastActivityMs: 300, rss: 0 },
+      { pid: 11, kind: 'm', startedAt: Date.now(), lastActivityMs: 100, rss: 0 },
+      { pid: 12, kind: 'm', startedAt: Date.now(), lastActivityMs: 200, rss: 0 },
+      { pid: 13, kind: 's', startedAt: Date.now(), lastActivityMs: 300, rss: 0 },
     ]);
     const totalMem = 16 * 1024 ** 3;
     const budget = budgetBytes(onEnv('0.6'), totalMem);
@@ -251,8 +251,8 @@ describe('runEvictionTick — D.4 Linux memory-pressure', () => {
 
   it('PSI is ignored well under budget (a system-wide stall unrelated to us)', async () => {
     seedRegistry([
-      { pid: 11, kind: 'm', startedAt: 1, lastActivityMs: 100, rss: 0 },
-      { pid: 12, kind: 's', startedAt: 1, lastActivityMs: 200, rss: 0 },
+      { pid: 11, kind: 'm', startedAt: Date.now(), lastActivityMs: 100, rss: 0 },
+      { pid: 12, kind: 's', startedAt: Date.now(), lastActivityMs: 200, rss: 0 },
     ]);
     const signalled = [];
     const r = await runEvictionTick({

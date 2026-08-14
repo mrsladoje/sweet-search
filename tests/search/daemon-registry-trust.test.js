@@ -20,7 +20,8 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync, chmodSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { registryTrustworthy, readRegistry, upsertSelf } from '../../core/search/daemon-registry.js';
+import { registryTrustworthy, readRegistry, upsertSelf, entryPredatesBoot } from '../../core/search/daemon-registry.js';
+import { runEvictionTick, _readRegistryForTest } from '../../core/indexing/rss-budget.mjs';
 
 let root;
 
@@ -91,6 +92,54 @@ describe('registryTrustworthy', () => {
   });
 });
 
+describe('entries from a previous boot are not acted on', () => {
+  // These files used to live in a temp dir the OS clears on reboot, so a stale
+  // entry could not outlive the process it described. In ~/.cache they persist,
+  // which makes PID REUSE real: an old entry names a pid some unrelated process
+  // now holds, `kill(pid,0)` accepts it, and its ancient lastActivityMs makes it
+  // the FIRST thing chosen for termination. Owner and mode checks cannot help —
+  // the file genuinely is ours. Only the age of the entry can.
+  const UPTIME_1H = 3600;
+
+  it('accepts an entry stamped after the last boot', () => {
+    expect(entryPredatesBoot({ startedAt: Date.now() }, Date.now(), UPTIME_1H)).toBe(false);
+  });
+
+  it('rejects an entry stamped before the last boot', () => {
+    const now = Date.now();
+    expect(entryPredatesBoot({ startedAt: now - 2 * 3600 * 1000 }, now, UPTIME_1H)).toBe(true);
+  });
+
+  it('rejects an entry with no usable startedAt at all', () => {
+    expect(entryPredatesBoot({}, Date.now(), UPTIME_1H)).toBe(true);
+    expect(entryPredatesBoot({ startedAt: 'yesterday' }, Date.now(), UPTIME_1H)).toBe(true);
+    expect(entryPredatesBoot({ startedAt: 1 }, Date.now(), UPTIME_1H)).toBe(true);
+  });
+
+  it('never signals a pre-boot pid even when far over budget', async () => {
+    const f = join(root, 'rss-daemons.json');
+    writeFileSync(f, JSON.stringify({
+      daemons: {
+        // Stamped before this machine booted: pid could be anything by now.
+        4242: { pid: 4242, kind: 'm', startedAt: 1, lastActivityMs: 1, rss: 0 },
+      },
+    }), { mode: 0o600 });
+
+    const signalled = [];
+    const r = await runEvictionTick({
+      env: { SWEET_SEARCH_RSS_REGISTRY: f, SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' },
+      selfPid: 1,
+      totalMem: 16 * 1024 ** 3,
+      rssReader: async () => 99 * 1024 ** 3,
+      pressureReader: async () => null,
+      aliveProbe: () => true,
+      signal: (pid) => signalled.push(pid),
+    });
+    expect(signalled).toEqual([]);
+    expect(r.evicted).toBe(null);
+  });
+});
+
 describe('registry I/O refuses untrusted files', () => {
   it('reads an untrusted registry as EMPTY even though it parses', () => {
     const openDir = join(root, 'open');
@@ -124,6 +173,37 @@ describe('registry I/O refuses untrusted files', () => {
     );
     expect(ok).toBe(false);
     expect(existsSync(f)).toBe(false);
+  });
+
+  it('refuses an untrusted RSS registry too, not just the count one', async () => {
+    // The RSS coordinator has its OWN reader and writer in rss-budget.mjs. A
+    // test that only went through daemon-registry.js would stay green if both
+    // guards there were deleted — and that module is the one that sends SIGTERM.
+    const openDir = join(root, 'open');
+    mkdirSync(openDir);
+    chmodSync(openDir, 0o777);
+    const f = join(openDir, 'rss-daemons.json');
+    writeFileSync(f, JSON.stringify({
+      daemons: { 4242: { pid: 4242, kind: 'm', startedAt: Date.now(), lastActivityMs: 1, rss: 0 } },
+    }), { mode: 0o600 });
+
+    const env = { SWEET_SEARCH_RSS_REGISTRY: f, SWEET_SEARCH_RSS_BUDGET_FRACTION: '0.6' };
+    expect(await _readRegistryForTest(env)).toEqual({});
+
+    // And end to end: hugely over budget, but nobody is signalled, because the
+    // coordinator has no entries it is willing to believe.
+    const signalled = [];
+    const r = await runEvictionTick({
+      env,
+      selfPid: 1,
+      totalMem: 16 * 1024 ** 3,
+      rssReader: async () => 99 * 1024 ** 3,
+      pressureReader: async () => null,
+      aliveProbe: () => true,
+      signal: (pid) => signalled.push(pid),
+    });
+    expect(r.evicted).toBe(null);
+    expect(signalled).toEqual([]);
   });
 
   it('writes normally into a trusted location', async () => {

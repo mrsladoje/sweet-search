@@ -142,8 +142,18 @@ const MEMORY_TIER_TABLE = Object.freeze({
   // expiry now costs at most the first query after a long absence, and only
   // repositories nobody has returned to stay retired.
   //
-  // Deliberately generous at 60 min (tight is 10, moderate 30): on a host with
-  // this much memory the point is to bound the fleet, not to reclaim quickly.
+  // A TTL bounds the STEADY state, not the PEAK: nothing retires until its hour
+  // is up, so visiting nine repositories inside that hour holds nine
+  // maintainers at once. At roughly 2.7 GB each that is ~24 GB — survivable on
+  // 128 GiB, not on the 32 GiB machine that also lands in this band. The band
+  // is therefore split, and the marginal half keeps the moderate tier's 30 min.
+  //
+  // This does NOT fully bound the peak; only a fleet cap would. The RSS budget
+  // coordinator is the mechanism for that and is deliberately left off here —
+  // it evicts by SIGTERMing peers, and turning that on for a new class of host
+  // is a change that has to be soaked across several repositories under real
+  // memory pressure before it can be trusted.
+  generous: { maxGiB: 64, idleTtlMs: 1_800_000, rssBudgetFraction: null },
   roomy: { maxGiB: Infinity, idleTtlMs: 3_600_000, rssBudgetFraction: null },
 });
 
@@ -156,6 +166,7 @@ export function resolveMaintainerMemoryProfile({ totalMemBytes } = {}) {
   let tier = 'roomy';
   if (giB <= MEMORY_TIER_TABLE.tight.maxGiB) tier = 'tight';
   else if (giB <= MEMORY_TIER_TABLE.moderate.maxGiB) tier = 'moderate';
+  else if (giB <= MEMORY_TIER_TABLE.generous.maxGiB) tier = 'generous';
   const p = MEMORY_TIER_TABLE[tier];
   return {
     tier,

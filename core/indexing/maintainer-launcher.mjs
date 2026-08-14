@@ -29,7 +29,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { closeSync, constants as fsConstants, existsSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs';
+import { closeSync, constants as fsConstants, existsSync, lstatSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reconcileEnablement } from '../incremental-indexing/domain/interval-autotune.mjs';
@@ -149,13 +149,53 @@ export function resolveStateDir(env = process.env, cwd = process.cwd()) {
   return join(root, '.sweet-search');
 }
 
-/** True when a live maintainer already holds the lock for this state dir. */
-export function maintainerAlive(stateDir) {
+/**
+ * How stale a lock's heartbeat may be before its holder stops counting as live.
+ *
+ * The maintainer rewrites the heartbeat every 30s, so this is six missed
+ * refreshes. It matches LOCK_STALE_THRESHOLD in index-maintainer.mjs, which is
+ * the same judgement made from the other side.
+ */
+const LOCK_HEARTBEAT_STALE_MS = 180_000;
+
+/**
+ * True when a live maintainer already holds the lock for this state dir.
+ *
+ * A PID PROBE ALONE IS NOT ENOUGH, and this is the failure that matters most:
+ * `process.kill(pid, 0)` succeeds for an unreaped ZOMBIE. A maintainer that
+ * writes its lock and then dies somewhere that does not reap children — a
+ * container whose PID 1 does not reap, a stopped parent — would be reported
+ * alive forever, so supervision would answer "already-running" every time and
+ * the index would stay frozen permanently. That is precisely the bug
+ * supervision exists to prevent, reappearing through its own liveness check.
+ * PID REUSE produces the same false positive from a stale lock.
+ *
+ * So liveness needs a second signal that a dead process cannot forge: the lock's
+ * own timestamps, which only a running maintainer keeps refreshing.
+ *
+ * The two errors are NOT symmetric, and this leans deliberately:
+ *   - a false "not alive" costs one spawned process that fails to take the
+ *     O_EXCL lock and exits;
+ *   - a false "alive" costs an index that never updates again.
+ */
+export function maintainerAlive(stateDir, nowMs = Date.now()) {
   const lockFile = join(stateDir, MAINTAINER_LOCK_FILENAME);
   if (!existsSync(lockFile)) return false;
   try {
-    const { pid } = JSON.parse(readFileSync(lockFile, 'utf-8'));
-    return pidAlive(Number(pid));
+    const parsed = JSON.parse(readFileSync(lockFile, 'utf-8'));
+    const { pid } = parsed;
+    if (!pidAlive(Number(pid))) return false;
+
+    // Legacy locks carry only `timestamp`; either field being fresh is enough,
+    // because a maintainer busy inside long work refreshes progress while its
+    // heartbeat timer lags, and vice versa.
+    const stamps = [Number(parsed.timestamp), Number(parsed.progressTimestamp)]
+      .filter((n) => Number.isFinite(n));
+    if (stamps.length === 0) return true;   // nothing to judge by; trust the pid
+    const newest = Math.max(...stamps);
+    // A stamp in the future is a clock change, not evidence of death.
+    const age = nowMs - newest;
+    return age < LOCK_HEARTBEAT_STALE_MS;
   } catch {
     // Unreadable/corrupt lock → treat as not-alive; the daemon's O_EXCL
     // acquire + stale-lock reclaim handle the real arbitration on spawn.
@@ -300,9 +340,21 @@ function claimSpawnBudget(stateDir, nowMs, pid) {
 
   let heldAt = null;
   try {
-    const parsed = Number(JSON.parse(readFileSync(claimFile, 'utf-8'))?.at);
-    if (Number.isFinite(parsed)) heldAt = parsed;
-  } catch { /* corrupt claim → treat as stale, same as a corrupt lock */ }
+    // NEVER read this path without checking what it is first. It lives inside
+    // the repository's .sweet-search directory, so a hostile checkout can ship
+    // a FIFO there — and `readFileSync` on a FIFO with no writer blocks
+    // FOREVER. This runs on the search daemon's event loop, so that single
+    // trick would hang every query the daemon ever serves again. A symlink is
+    // refused for the same reason: we would be reading something we did not
+    // choose.
+    const st = lstatSync(claimFile);
+    if (!st.isFile()) {
+      try { unlinkSync(claimFile); } catch { /* leave it; we simply will not read it */ }
+    } else {
+      const parsed = Number(JSON.parse(readFileSync(claimFile, 'utf-8'))?.at);
+      if (Number.isFinite(parsed)) heldAt = parsed;
+    }
+  } catch { /* corrupt/absent claim → treat as stale, same as a corrupt lock */ }
 
   // A claim from the future is a clock change, not a live supervisor. Treating
   // it as held would wedge supervision until the TTL elapsed in real time.
@@ -343,9 +395,36 @@ function supervisionIntervalMs(env = process.env) {
   return Number.isFinite(raw) && raw > 0 ? raw : SUPERVISION_MIN_INTERVAL_MS;
 }
 
+/**
+ * Ceiling for the failure backoff. Long enough that a maintainer which cannot
+ * start stops costing anything measurable; short enough that a repository
+ * recovers on its own once whatever blocked it (a descriptor limit, a full
+ * disk) clears.
+ */
+const SUPERVISION_MAX_BACKOFF_MS = 15 * 60 * 1000;
+
 /** Per-supervisor state. Plain object so a caller can keep it on a daemon closure. */
 export function createSupervisionState() {
-  return { lastTickMs: 0, launches: 0, lastReason: null };
+  return { lastTickMs: 0, launches: 0, lastReason: null, consecutiveFailures: 0, sawAliveSinceLaunch: false };
+}
+
+/**
+ * How long to wait before the next tick, given how many launches in a row have
+ * failed to produce a live maintainer.
+ *
+ * WHY THIS EXISTS. `launchMaintainer` reports success as soon as `spawn`
+ * returns, which is BEFORE the child has taken the lock and before an
+ * asynchronous EAGAIN/EMFILE can surface. A child that crashes on startup, or a
+ * host out of process slots, therefore looks like a successful launch every
+ * time — and without backoff supervision would start another doomed process on
+ * every interval, forever, burning CPU and filling the log while the index
+ * stays stale anyway. Doubling from the base interval turns an endless spawn
+ * loop into a handful of attempts per hour.
+ */
+function backoffIntervalMs(baseMs, consecutiveFailures) {
+  if (!(consecutiveFailures > 0)) return baseMs;
+  const scaled = baseMs * (2 ** Math.min(consecutiveFailures, 16));
+  return Math.min(SUPERVISION_MAX_BACKOFF_MS, scaled);
 }
 
 /**
@@ -401,7 +480,14 @@ export function runSupervisionTick(options = {}) {
   };
 
   // Cheapest possible guard first: no syscalls for a tick inside the window.
-  if (state && state.lastTickMs && (now - state.lastTickMs) < minIntervalMs) {
+  // `elapsed < 0` means the wall clock moved BACKWARDS. Treating that as
+  // "inside the window" would park supervision for the whole skew — hours, if
+  // an NTP correction or a timezone-confused VM decides so — and a repository
+  // whose maintainer exits during that time would never get one back. A
+  // backwards clock is a reason to act, not to wait.
+  const elapsed = state?.lastTickMs ? now - state.lastTickMs : Infinity;
+  const dueAfter = backoffIntervalMs(minIntervalMs, state?.consecutiveFailures || 0);
+  if (elapsed >= 0 && elapsed < dueAfter) {
     return { acted: false, reason: 'rate-limited' };
   }
   if (state) state.lastTickMs = now;
@@ -418,11 +504,36 @@ export function runSupervisionTick(options = {}) {
 
   if (maintainerAlive(stateDir)) {
     releaseSpawnClaim(stateDir);
+    // A maintainer is up, so whatever was failing has stopped failing — and
+    // the launch that produced it is now known to have worked.
+    if (state) {
+      state.consecutiveFailures = 0;
+      state.sawAliveSinceLaunch = true;
+    }
     return record('already-running');
   }
 
   const claim = claimSpawnBudget(stateDir, now, process.pid);
   if (!claim.claimed) return record(claim.reason);
+
+  // Count a failure ONLY here — after the claim is ours, so this tick really is
+  // about to spawn — and only when the previous launch was never once observed
+  // alive. Both conditions are load-bearing:
+  //
+  //   - counting before the claim check counts ticks that never attempted
+  //     anything. During the few seconds a peer holds the claim, a fast
+  //     supervisor racks up a dozen "failures" and backs itself off for
+  //     minutes, which is supervision disabling itself for no reason. That
+  //     regression was caught by the end-to-end restore test.
+  //   - a maintainer that ran fine and later retired on its idle TTL is the
+  //     NORMAL case; counting it would make a healthy machine drift into
+  //     backoff until it was barely maintained at all.
+  //
+  // `launchMaintainer` returns before the child takes its lock, so an unproven
+  // launch is the only evidence available that a spawn did not take.
+  if (state && state.launches > 0 && !state.sawAliveSinceLaunch) {
+    state.consecutiveFailures += 1;
+  }
 
   let result;
   try {
@@ -439,6 +550,8 @@ export function runSupervisionTick(options = {}) {
   if (state) {
     state.launches += 1;
     state.lastReason = 'spawned';
+    // Unproven until a later tick sees it holding the lock.
+    state.sawAliveSinceLaunch = false;
   }
   log(`maintainer was absent for this repo; supervision started a replacement (pid ${result.pid})`);
   return { acted: true, reason: 'spawned', pid: result.pid };
