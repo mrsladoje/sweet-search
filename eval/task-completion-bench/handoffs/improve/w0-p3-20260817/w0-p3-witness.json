@@ -1,0 +1,311 @@
+[
+  {
+    "taskId": "dashbitco__nimble_options-43",
+    "rows": [
+      {
+        "label": "BASE (no patch)",
+        "resolved": null,
+        "verdict": "REJECT",
+        "detail": "8/8 failed |   1) test an :integer option accepts a negative integer (W0P3IntegerWitness) |      ** (ArgumentError) invalid schema given to NimbleOptions.validate/2. Reason: invalid option type :integer. |   2) test an :integer option rejects a float (W0P3IntegerWitness) |      ** (ArgumentError) invalid schema given to NimbleOptions.validate/2. Reason: invalid option type :integer. |   3) test an :integer option rejects a string (W0P3IntegerWitness) |      ** (ArgumentError) invalid schema given to NimbleOptions.validate/2. Reason: invalid option type :integer. |   4) test the advertised list and the accepted set agree (W0P3IntegerWitness) |   5) test the advertised type list names :integer (W0P3IntegerWitness) |   6) test an :integer option accepts zero (W0P3IntegerWitness) |      ** (ArgumentError) invalid schema given to NimbleOptions.validate/2. Reason: invalid option type :integer. |   7) test an :integer option accepts a positive integer (W0P3IntegerWitness) |      ** (ArgumentError) invalid schema given to NimbleOptions.validate/2. Reason: invalid option type :integer. |   8) test an :integer option rejects nil (W0P3IntegerWitness) |      ** (ArgumentError) invalid schema given to Nimbl",
+        "apply": "empty patch"
+      },
+      {
+        "label": "codex/native/r0",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "codex/sweet/r0",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "codex/native/r1",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "codex/sweet/r1",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "opencode/native/r0",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "opencode/sweet/r0",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "opencode/native/r1",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "opencode/sweet/r1",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "claudecode/native/r0",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "claudecode/sweet/r0",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "claudecode/native/r1",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "claudecode/sweet/r1",
+        "resolved": true,
+        "verdict": "ACCEPT",
+        "detail": "0/8 failed | 8 tests, 0 failures | W0P3-RESULT failures=0 total=8",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "GOLD (reference fix)",
+        "resolved": true,
+        "verdict": "ACCEPT",
+        "detail": "0/8 failed | 8 tests, 0 failures | W0P3-RESULT failures=0 total=8",
+        "apply": "git apply -p1"
+      }
+    ]
+  },
+  {
+    "taskId": "codeception__codeceptjs-367",
+    "rows": [
+      {
+        "label": "BASE (no patch)",
+        "resolved": null,
+        "verdict": "REJECT",
+        "detail": "  FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every helper method reachable |   FAIL  the comment step returns a promise, like every other step  — no comment-style step to test |   FAIL  the comment prints in step order, not immediately  — no comment-style step to test | WITNESS REJECT (1/4)",
+        "apply": "empty patch"
+      },
+      {
+        "label": "codex/native/r0",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "  FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every helper method reachable |   FAIL  the comment step returns a promise, like every other step  — no comment-style step to test |   FAIL  the comment prints in step order, not immediately  — no comment-style step to test | WITNESS REJECT (1/4)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "codex/sweet/r0",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "  FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every helper method reachable |   FAIL  the comment step returns a promise, like every other step  — no comment-style step to test |   FAIL  the comment prints in step order, not immediately  — no comment-style step to test | WITNESS REJECT (1/4)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "codex/native/r1",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "  FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every helper method reachable |   FAIL  the comment step returns a promise, like every other step  — no comment-style step to test |   FAIL  the comment prints in step order, not immediately  — no comment-style step to test | WITNESS REJECT (1/4)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "codex/sweet/r1",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "  FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every helper method reachable |   FAIL  the comment step returns a promise, like every other step  — no comment-style step to test |   FAIL  the comment prints in step order, not immediately  — no comment-style step to test | WITNESS REJECT (1/4)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "opencode/native/r0",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "  FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every helper method reachable |   FAIL  the comment step returns a promise, like every other step  — no comment-style step to test |   FAIL  the comment prints in step order, not immediately  — no comment-style step to test | WITNESS REJECT (1/4)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "opencode/sweet/r0",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "  FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every helper method reachable |   FAIL  the comment step returns a promise, like every other step  — no comment-style step to test |   FAIL  the comment prints in step order, not immediately  — no comment-style step to test | WITNESS REJECT (1/4)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "opencode/native/r1",
+        "resolved": false,
+        "verdict": "ACCEPT",
+        "detail": "  PASS  the actor exposes a comment-style step |   PASS  the comment step still leaves every helper method reachable |   PASS  the comment step returns a promise, like every other step |   PASS  the comment prints in step order, not immediately | WITNESS ACCEPT (4/4)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "opencode/sweet/r1",
+        "resolved": false,
+        "verdict": "ACCEPT",
+        "detail": "  PASS  the actor exposes a comment-style step |   PASS  the comment step still leaves every helper method reachable |   PASS  the comment step returns a promise, like every other step |   PASS  the comment prints in step order, not immediately | WITNESS ACCEPT (4/4)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "claudecode/native/r0",
+        "resolved": false,
+        "verdict": "ACCEPT",
+        "detail": "  PASS  the actor exposes a comment-style step |   PASS  the comment step still leaves every helper method reachable |   PASS  the comment step returns a promise, like every other step |   PASS  the comment prints in step order, not immediately | WITNESS ACCEPT (4/4)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "claudecode/sweet/r0",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "  FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every helper method reachable |   FAIL  the comment step returns a promise, like every other step  — no comment-style step to test |   FAIL  the comment prints in step order, not immediately  — no comment-style step to test | WITNESS REJECT (1/4)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "claudecode/native/r1",
+        "resolved": false,
+        "verdict": "ACCEPT",
+        "detail": "  PASS  the actor exposes a comment-style step |   PASS  the comment step still leaves every helper method reachable |   PASS  the comment step returns a promise, like every other step |   PASS  the comment prints in step order, not immediately | WITNESS ACCEPT (4/4)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "claudecode/sweet/r1",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "  FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every helper method reachable |   FAIL  the comment step returns a promise, like every other step  — no comment-style step to test |   FAIL  the comment prints in step order, not immediately  — no comment-style step to test | WITNESS REJECT (1/4)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "GOLD (reference fix)",
+        "resolved": true,
+        "verdict": "ACCEPT",
+        "detail": "  PASS  the actor exposes a comment-style step |   PASS  the comment step still leaves every helper method reachable |   PASS  the comment step returns a promise, like every other step |   PASS  the comment prints in step order, not immediately | WITNESS ACCEPT (4/4)",
+        "apply": "git apply -p1"
+      }
+    ]
+  },
+  {
+    "taskId": "akinsho__nvim-bufferline.lua-173",
+    "rows": [
+      {
+        "label": "BASE (no patch)",
+        "resolved": null,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   FAIL  a nested undotree sidebar offsets on the left  — w0_p3_witness.lua:161: total size: got 0, want 30 |   FAIL  a nested undotree sidebar offsets on the right  — w0_p3_witness.lua:171: total size: got 0, want 30 |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (2/5)",
+        "apply": "empty patch"
+      },
+      {
+        "label": "codex/native/r0",
+        "resolved": true,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   PASS  a nested undotree sidebar offsets on the right |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (4/5)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "codex/sweet/r0",
+        "resolved": true,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   PASS  a nested undotree sidebar offsets on the right |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (4/5)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "codex/native/r1",
+        "resolved": true,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   PASS  a nested undotree sidebar offsets on the right |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (4/5)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "codex/sweet/r1",
+        "resolved": true,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   FAIL  a nested undotree sidebar offsets on the right  — w0_p3_witness.lua:171: total size: got 0, want 30 |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (3/5)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "opencode/native/r0",
+        "resolved": true,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   PASS  a nested undotree sidebar offsets on the right |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (4/5)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "opencode/sweet/r0",
+        "resolved": true,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   FAIL  a nested undotree sidebar offsets on the right  — w0_p3_witness.lua:171: total size: got 0, want 30 |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (3/5)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "opencode/native/r1",
+        "resolved": true,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   PASS  a nested undotree sidebar offsets on the right |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (4/5)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "opencode/sweet/r1",
+        "resolved": true,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   FAIL  a nested undotree sidebar offsets on the right  — w0_p3_witness.lua:171: total size: got 0, want 30 |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (3/5)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "claudecode/native/r0",
+        "resolved": true,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   FAIL  a nested undotree sidebar offsets on the right  — w0_p3_witness.lua:171: total size: got 0, want 30 |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (3/5)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "claudecode/sweet/r0",
+        "resolved": false,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   FAIL  a nested undotree sidebar offsets on the left  — w0_p3_witness.lua:162: left component must be filled |   PASS  a nested undotree sidebar offsets on the right |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (3/5)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "claudecode/native/r1",
+        "resolved": true,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   FAIL  a nested undotree sidebar offsets on the right  — w0_p3_witness.lua:171: total size: got 0, want 30 |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (3/5)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "claudecode/sweet/r1",
+        "resolved": true,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   FAIL  a nested undotree sidebar offsets on the right  — w0_p3_witness.lua:171: total size: got 0, want 30 |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (3/5)",
+        "apply": "git apply -p1"
+      },
+      {
+        "label": "GOLD (reference fix)",
+        "resolved": true,
+        "verdict": "REJECT",
+        "detail": "  PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   PASS  a nested undotree sidebar offsets on the right |   FAIL  a row nested inside a column still finds the sidebar  — w0_p3_witness.lua:180: total size: got 0, want 30 |   PASS  no sidebar means no offset | WITNESS REJECT (4/5)",
+        "apply": "git apply -p1"
+      }
+    ]
+  }
+]

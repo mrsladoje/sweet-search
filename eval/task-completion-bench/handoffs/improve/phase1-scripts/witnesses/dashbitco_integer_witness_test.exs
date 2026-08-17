@@ -95,16 +95,30 @@ defmodule W0P3IntegerWitness do
     end
   end
 
-  # Bare atoms only. The tail of the advertised list holds compound forms such as
-  # "{:fun, arity}"; stripping every brace group first stops :fun, :one_of and :custom
-  # being read as standalone types, which they are not.
+  # Bare atoms only, and only from the advertised list itself.
+  #
+  # DEFECT FIXED AFTER THE FREEZE (disclosed in the write-up): the first version scanned
+  # the whole error message, so it read the probe atom back out of "invalid option type
+  # :__w0_p3_definitely_not_a_type__" and then demanded the library accept it. That made
+  # the witness reject every tree including a correct one. The repair slices the message
+  # down to the list between "Available types:" and the trailing "(in options ...)", which
+  # needs no knowledge of the fix; nothing else about the witness changed.
+  #
+  # The tail of the list holds compound forms such as "{:fun, arity}"; stripping every
+  # brace group first stops :fun, :one_of and :custom being read as standalone types,
+  # which they are not.
   defp advertised_atoms do
-    advertised_message()
+    segment =
+      case Regex.run(~r/Available types:\s*(.*)/s, advertised_message()) do
+        [_, tail] -> tail |> String.split("(in options") |> List.first()
+        _ -> ""
+      end
+
+    segment
     |> String.replace(~r/\{[^}]*\}/, " ")
     |> then(&Regex.scan(~r/:([a-z_][a-zA-Z0-9_]*)/, &1))
     |> Enum.map(fn [_, name] -> String.to_atom(name) end)
     |> Enum.uniq()
-    |> Enum.reject(&(&1 in [:validate, :stages, :foo]))
   end
 
   # Schema-only check: with no options to validate, the sole thing that can fail is the
