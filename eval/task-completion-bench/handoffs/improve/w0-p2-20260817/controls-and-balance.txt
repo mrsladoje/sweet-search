@@ -1,0 +1,32 @@
+P2 replay controls
+
+-- SENSITIVITY: the instrument must find the twin it exists to find
+  ok    span stem is derived from the real claude sweet patch
+  ok    span stem MATCHES the untouched countBy line
+  ok    line-granular stem MISSES countBy (this is why the span exists)
+  ok    the derived stem is not so short it matches anything
+
+-- SPECIFICITY: the instrument must stay silent when there is nothing to say
+  ok    a stem the agent kept elsewhere in the patch is NOT reported
+  ok    a fully-replaced stem leaves no residue against the twin
+  ok    trivial fragments are rejected before they can flood a report
+  ok    a real fragment is still accepted
+
+-- MECHANICS
+  ok    trimmedSpan cuts on token boundaries, never mid-identifier
+  ok    a pure deletion keeps the whole removed line as the stem
+
+-- GROUND TRUTH (skipped off-box)
+  ok    base tree really does hold the stem twice, at groupBy and countBy
+
+11 controls passed
+P2 — post-hoc effect of requiring a bracket-balanced stem
+
+population                        as-run (cells/items)    balanced-only (cells/items)
+RESOLVED (false positives)        4/4                     0/0
+UNRESOLVED                        7/7                     6/6
+ALL admissible                    11/11                   6/6
+
+the rule must not cost the trace P2 exists for:
+  losing Underscore cells still naming countBy under the rule: 2/2
+  (stem "_.has(result, key)" balanced = true; "user, solution)" balanced = false)

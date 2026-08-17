@@ -1,0 +1,127 @@
+P2 silence audit — admissible sweet cells
+
+total                     78
+purely additive (removed=0) 9   <- correct silence by construction
+replaced but SILENT         27   <- must be justified line by line
+produced stems              42
+
+=== additive cells (nothing to audit) ===
+  codex       rep0 apple__swift-nio-http2-145
+  codex       rep1 dashbitco__nimble_options-43
+  opencode    rep0 dashbitco__nimble_options-43
+  opencode    rep0 codeception__codeceptjs-367
+  opencode    rep1 codeception__codeceptjs-367
+  claudecode  rep0 codeception__codeceptjs-367
+  claudecode  rep0 akinsho__nvim-bufferline.lua-173
+  claudecode  rep1 dashbitco__nimble_options-43
+  claudecode  rep1 pytask-dev__pytask-210
+
+=== replaced-but-silent cells, one reason per removed line ===
+
+  codex rep0 dashbitco__nimble_options-43   (1 removed line(s))
+      [ABSORBED         ] - Enum.map(@basic_types, &inspect/1) ++
+
+  codex rep0 epiforecasts__scoringutils-229   (1 removed line(s))
+      [REJECTED         ] - if (length(unique(lengths)) != 1) {
+                            span kept: "!="
+
+  codex rep0 joshuakgoldberg__bingo-274   (1 removed line(s))
+      [ABSORBED         ] - import { intake } from "bingo-fs";
+
+  codex rep0 oceanparcels__parcels-617   (1 removed line(s))
+      [REJECTED         ] - kernel_vars = ['particle', 'fieldset', 'time', 'dt', 'output_time', 'tol']
+                            span kept: "dt', '"
+
+  codex rep0 teleporthq__teleport-code-generators-291   (1 removed line(s))
+      [KEPT             ] - folder.files = folder.files.concat(files)
+
+  codex rep1 akinsho__nvim-bufferline.lua-173   (2 removed line(s))
+      [KEPT             ] - local wins = { windows[1] }
+      [KEPT             ] - wins[#wins + 1] = windows[#windows]
+
+  codex rep1 joshuakgoldberg__bingo-274   (1 removed line(s))
+      [ABSORBED         ] - import { intake } from "bingo-fs";
+
+  codex rep1 oceanparcels__parcels-617   (1 removed line(s))
+      [REJECTED         ] - kernel_vars = ['particle', 'fieldset', 'time', 'dt', 'output_time', 'tol']
+                            span kept: "dt', '"
+
+  opencode rep0 dart-lang__http-1114   (2 removed line(s))
+      [KEPT             ] - this.reasonPhrase}) {
+      [ABSORBED         ] - ioRequest.headers.set(name, value);
+
+  opencode rep0 akinsho__nvim-bufferline.lua-173   (2 removed line(s))
+      [KEPT             ] - local wins = { windows[1] }
+      [KEPT             ] - wins[#wins + 1] = windows[#windows]
+
+  opencode rep0 epiforecasts__scoringutils-229   (1 removed line(s))
+      [REJECTED         ] - if (length(unique(lengths)) != 1) {
+                            span kept: "!="
+
+  opencode rep0 joshuakgoldberg__bingo-274   (1 removed line(s))
+      [ABSORBED         ] - import { intake } from "bingo-fs";
+
+  opencode rep0 pytask-dev__pytask-210   (1 removed line(s))
+      [ABSORBED         ] - local variable called ``__tracebackhide__ = True``.
+
+  opencode rep1 dart-lang__http-1114   (8 removed line(s))
+      [ABSORBED         ] - request: response.request,
+      [ABSORBED         ] - headers: response.headers,
+      [ABSORBED         ] - isRedirect: response.isRedirect,
+      [ABSORBED         ] - xhr.setRequestHeader(header.key, header.value);
+      [ABSORBED         ] - ioRequest.headers.set(name, value);
+      [KEPT             ] - headers[key] = values.map((value) => value.trimRight()).join(',');
+      [ABSORBED         ] - request: request,
+      [ABSORBED         ] - headers: headers,
+
+  opencode rep1 dashbitco__nimble_options-43   (1 removed line(s))
+      [ABSORBED         ] - Enum.map(@basic_types, &inspect/1) ++
+
+  opencode rep1 epiforecasts__scoringutils-229   (1 removed line(s))
+      [REJECTED         ] - if (length(unique(lengths)) != 1) {
+                            span kept: "!="
+
+  opencode rep1 apple__swift-nio-http2-145   (1 removed line(s))
+      [KEPT             ] - .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteW
+
+  opencode rep1 pytask-dev__pytask-210   (1 removed line(s))
+      [KEPT             ] - local variable called ``__tracebackhide__ = True``.
+
+  opencode rep1 oceanparcels__parcels-617   (1 removed line(s))
+      [REJECTED         ] - kernel_vars = ['particle', 'fieldset', 'time', 'dt', 'output_time', 'tol']
+                            span kept: "dt', '"
+
+  claudecode rep0 dart-lang__http-1114   (1 removed line(s))
+      [KEPT             ] - headers[key] = values.map((value) => value.trimRight()).join(',');
+
+  claudecode rep0 dashbitco__nimble_options-43   (1 removed line(s))
+      [ABSORBED         ] - Enum.map(@basic_types, &inspect/1) ++
+
+  claudecode rep0 joshuakgoldberg__bingo-274   (1 removed line(s))
+      [ABSORBED         ] - import { intake } from "bingo-fs";
+
+  claudecode rep0 pytask-dev__pytask-210   (1 removed line(s))
+      [ABSORBED         ] - local variable called ``__tracebackhide__ = True``.
+
+  claudecode rep0 oceanparcels__parcels-617   (1 removed line(s))
+      [REJECTED         ] - kernel_vars = ['particle', 'fieldset', 'time', 'dt', 'output_time', 'tol']
+                            span kept: "dt', '"
+
+  claudecode rep1 epiforecasts__scoringutils-229   (1 removed line(s))
+      [REJECTED         ] - if (length(unique(lengths)) != 1) {
+                            span kept: "!="
+
+  claudecode rep1 apple__swift-nio-http2-145   (1 removed line(s))
+      [KEPT             ] - .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteW
+
+  claudecode rep1 oceanparcels__parcels-617   (1 removed line(s))
+      [REJECTED         ] - kernel_vars = ['particle', 'fieldset', 'time', 'dt', 'output_time', 'tol']
+                            span kept: "dt', '"
+
+=== silence reason tally over every removed line in a silent cell ===
+  ABSORBED           17
+  KEPT               11
+  REJECTED           9
+
+  ABSORBED/KEPT are correct silence. REJECTED is the only category that could
+  hide a missed twin; SHOULD-HAVE-FIRED would be an outright bug.
