@@ -1,0 +1,24 @@
+{
+  "task": "dotnet__yarp-2825",
+  "frozenSetSize": 11,
+  "goldRuns": 8,
+  "goldFullAfterFrozenExclusion": 5,
+  "escapedTests": [
+    "Yarp.Kubernetes.Controller.Hosting.Tests.BackgroundHostedServiceTests.StartAndStopUnderWebHost",
+    "Yarp.Kubernetes.Controller.Rate.Tests.LimiterTests.AsManyAsBurstTokensAreAvailableRightAway(burst: 1)",
+    "Yarp.Kubernetes.Controller.Rate.Tests.LimiterTests.ReserveTellsYouHowLongToWait",
+    "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 1.1, versionPolicy: RequestVersionExact, requestedDestinationVersion: 1.1, destinationProtocols: Http1AndHttp2, useHttpsOnDestination: True, expectedVersion: \"HTTP/1.1\", expectedProxyError: null, e2eWillFail: False)",
+    "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 2.0, versionPolicy: RequestVersionOrLower, requestedDestinationVersion: 1.1, destinationProtocols: Http2, useHttpsOnDestination: True, expectedVersion: \"HTTP/1.1\", expectedProxyError: Request, e2eWillFail: True)"
+  ],
+  "nTestResults": [
+    2153,
+    2150,
+    2153,
+    2153,
+    2153,
+    2153,
+    2153,
+    2153
+  ],
+  "verdict": "UNSTABLE — gold is FULL in only 5/8 fresh runs; 5 test(s) escaped the frozen set"
+}

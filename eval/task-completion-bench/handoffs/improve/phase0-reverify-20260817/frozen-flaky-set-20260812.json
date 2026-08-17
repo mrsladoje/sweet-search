@@ -1,0 +1,17 @@
+{
+  "goldRuns": 8,
+  "flaky": [
+    "Yarp.ReverseProxy.Forwarder.Tests.HttpForwarderTests.RequestConnectTimedOut_Returns504",
+    "Yarp.ReverseProxy.Transforms.Tests.RequestHeadersAllowedTransformTests.AllowedHeaders_Copied(names: \"header1;header2;header2;header3\", expected: 3)",
+    "Yarp.ReverseProxy.Utilities.Tests.ActivityCancellationTokenSourceTests.ActivityCancellationTokenSource_RespectsBothLinkedTokens",
+    "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 1.1, versionPolicy: RequestVersionExact, requestedDestinationVersion: 3.0, destinationProtocols: Http1AndHttp2, useHttpsOnDestination: False, expectedVersion: \"HTTP/2\", expectedProxyError: RequestCreation, e2eWillFail: True)",
+    "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 1.1, versionPolicy: RequestVersionExact, requestedDestinationVersion: 3.0, destinationProtocols: Http2, useHttpsOnDestination: True, expectedVersion: \"HTTP/2\", expectedProxyError: RequestCreation, e2eWillFail: True)",
+    "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 1.1, versionPolicy: RequestVersionOrHigher, requestedDestinationVersion: 2.0, destinationProtocols: Http1, useHttpsOnDestination: True, expectedVersion: \"HTTP/2\", expectedProxyError: Request, e2eWillFail: True)",
+    "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 2.0, versionPolicy: RequestVersionOrLower, requestedDestinationVersion: 2.0, destinationProtocols: Http1, useHttpsOnDestination: False, expectedVersion: \"HTTP/1.1\", expectedProxyError: null, e2eWillFail: False)",
+    "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 2.0, versionPolicy: RequestVersionOrLower, requestedDestinationVersion: 2.0, destinationProtocols: Http1AndHttp2, useHttpsOnDestination: True, expectedVersion: \"HTTP/2\", expectedProxyError: null, e2eWillFail: False)",
+    "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 2.0, versionPolicy: RequestVersionOrLower, requestedDestinationVersion: 2.0, destinationProtocols: Http2, useHttpsOnDestination: False, expectedVersion: \"HTTP/1.1\", expectedProxyError: null, e2eWillFail: True)",
+    "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 2.0, versionPolicy: RequestVersionOrLower, requestedDestinationVersion: 2.0, destinationProtocols: Http2, useHttpsOnDestination: True, expectedVersion: \"HTTP/2\", expectedProxyError: null, e2eWillFail: False)",
+    "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 2.0, versionPolicy: RequestVersionOrLower, requestedDestinationVersion: 3.0, destinationProtocols: Http1, useHttpsOnDestination: True, expectedVersion: \"HTTP/1.1\", expectedProxyError: null, e2eWillFail: False)"
+  ],
+  "goldFullAfterExclusion": 8
+}

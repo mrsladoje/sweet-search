@@ -1,0 +1,39 @@
+{
+  "_doc": [
+    "Task-admission blocklist — tasks proven INVALID as measurement instruments.",
+    "SLATE-B-UBER.md Phase 0 / §7 item 2: 'Do not carry known invalid tasks into the",
+    "next denominator.' Enforced by run-pilot.mjs immediately after INSTANCES resolves:",
+    "  named explicitly in INSTANCES  -> hard error, refuse to launch",
+    "  swept in by a whole-file run   -> dropped, named on stdout, denominator shrinks",
+    "Deliberately NOT a field in task-overrides.json: NO_TASK_OVERRIDES=1 disables that",
+    "file wholesale, and a validity gate a convenience switch can turn off is not a gate.",
+    "Fields per instance_id:",
+    "  reason   — machine-readable class (empty-issue | vacuous-f2p | ungradeable)",
+    "  _why     — the evidence, with the document that established it",
+    "  since    — date the block was applied",
+    "Escape hatch: SS_ALLOW_BLOCKED_TASKS=1 admits them anyway and prints a per-task",
+    "warning. Any published denominator produced under that flag is invalid."
+  ],
+  "tasks": {
+    "dotnet__yarp-2825": {
+      "reason": "ungradeable",
+      "_why": "ITS OWN GOLD PATCH FAILS THE GRADING GATE. The original SDK outage was a real defect and is fixed (the rollout grader never passed --reapply-install-seds; PHASE-0-RESULTS.md §2.1), and after the fix the suite runs ~2150 tests with FAIL_TO_PASS 1/1 in all 12 agent cells. But grading the GOLD patch 8 times failed PASS_TO_PASS in 4 of 8 runs. A deflake was attempted: the 11 tests that failed gold at least once were frozen as an exclusion set and gold was re-graded on 8 FRESH runs (p0b-yarp-reverify.mjs, results/phase0-reverify-20260817/). OUT OF SAMPLE IT DOES NOT HOLD — gold is FULL in only 5 of 8 fresh runs, and 5 further tests failed gold outside the frozen set, including Kubernetes controller tests the first batch never touched. The flaky tail is open-ended, so each new batch would need a wider exclusion fitted to it. A single grading of this task remains a coin flip of unknown bias, which means it cannot carry a solve number for either arm. Blocking also parks SLATE-B-UBER.md Q1 (cardinality simulation), whose entire ceiling rested on this task.",
+      "since": "2026-08-17"
+    },
+    "mransan__ocaml-protoc-202": {
+      "reason": "empty-issue",
+      "_why": "The problem statement has ZERO usable characters while the gold change spans 19 files. No arm can derive the task from the issue, so the cell measures refusal policy rather than capability. It is also cost-asymmetric: opencode sweet answers once and uses no tools ($0.000858) while native random-walks at 6-10x ($0.005646), which alone moves the published opencode delta from -17.8% to -13.8%. Established in PHASE-0-RESULTS.md §5 and SLATE-B-UBER.md D6.",
+      "since": "2026-08-17"
+    },
+    "redboltz__mqtt_cpp-466": {
+      "reason": "vacuous-f2p",
+      "_why": "RESOLVES WITH AN EMPTY PATCH. Its FAIL_TO_PASS tests already pass on the base tree, so the grader returns resolved for a rollout that did nothing. Confirmed four times over at $0: first by accident when a broken cell submitted empty patches, then deliberately by a null arm (AGENT_TIMEOUT_MS=1000, zero tool calls). A task that cannot fail cannot detect a regression, which is exactly what it was doing duty as in the control set. SLATE-A-RESIDUE-RESULTS.md §7.",
+      "since": "2026-08-17"
+    },
+    "statamic__cms-9029": {
+      "reason": "vacuous-f2p",
+      "_why": "RESOLVES WITH AN EMPTY PATCH, same null-arm confirmation as redboltz__mqtt_cpp-466. The null arm was discriminating rather than blanket-passing: epiforecasts__scoringutils-229 correctly came back unresolved in the same sweep. SLATE-A-RESIDUE-RESULTS.md §7.",
+      "since": "2026-08-17"
+    }
+  }
+}
