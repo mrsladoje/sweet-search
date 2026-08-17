@@ -18,6 +18,7 @@ import {
   buildTrajectory, gitDiffPatch, verifyIntegrity, teardownRunner, auditEscape, rolloutStateDir,
   spawnWithTimeout, exitReasonFrom, priceFor,
 } from './agent-runner-shared.mjs';
+import { runTestsTelemetry } from './rt-inflight.mjs';
 import {
   turnsFromTranscript, sidechainTurnSets, addSidechainCostsChecked,
   selectClaudeMainCosts, aggregateTurn,
@@ -358,6 +359,10 @@ export async function runClaudeCodeTask(task, {
   const { toolCalls, answer, resultUsage, numTurns, turns, sessionId, errors } = parsed;
 
   const { toolCounts, trajectory, stepsToFirstEdit } = buildTrajectory(toolCalls);
+  // D-6 row telemetry (HANDOFF-SLATE-A-RESIDUE §3.G.2). Fed the tool calls, NOT the
+  // trajectory: buildTrajectory truncates results at 600 chars and the verdict footer is the
+  // last line a completed run writes, so reading it off the trajectory would under-count.
+  const rtTelemetry = runTestsTelemetry(toolCalls);
   const { finalPatch, patchHunks, patchFiles } = gitDiffPatch(rundir);
   // NO patchFiles backfill into toolCounts.edit (PLAN.md §3 B3); patch-derived metrics
   // read patchFiles/patchHunks or preds-*.jsonl.
@@ -441,7 +446,7 @@ export async function runClaudeCodeTask(task, {
     patchHunks, patchFiles, finalPatch,
     ...escapeAudit,
     shimTampered: shimTamperedFiles.length > 0, shimTamperedFiles,
-    stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
+    stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0, ...rtTelemetry,
     exitReason: exitReasonFrom(r),
     usage: resultUsage || {}, idealTurns: numTurns,
     degenerate: degeneration.degenerate, degeneration,

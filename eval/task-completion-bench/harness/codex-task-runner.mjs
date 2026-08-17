@@ -16,8 +16,9 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { recoverIdealCost, priceFor, PRICE as IDEAL_PRICE } from './ideal-cost.mjs';
+import { recoverIdealCost, rolloutFilesForRundir, turnsFromRollout, costFromTurns, priceFor, PRICE as IDEAL_PRICE } from './ideal-cost.mjs';
 import { persistTurns } from './turn-log.mjs';
+import { runTestsTelemetry } from './rt-inflight.mjs';
 // Isolation is imported DIRECTLY (not via agent-runner-shared) because that module
 // imports this one — going through it would close an import cycle.
 import { ISOLATION_ON, startJail, stopJail, jailArgv, jailEnv, jailDenials, rolloutStateDir } from './agent-jail.mjs';
@@ -97,6 +98,7 @@ const RT_RUNTIME_PATH = path.join(__dirname, 'rt-shim-runtime.mjs');
 const RT_LIB_PATH = path.join(__dirname, 'rt-condense-lib.mjs');
 const RT_DEDUP_PATH = path.join(__dirname, 'rt-dedup.mjs');
 const RT_PROGRESS_PATH = path.join(__dirname, 'rt-progress-controller.mjs');
+const RT_INFLIGHT_PATH = path.join(__dirname, 'rt-inflight.mjs');
 const L1_CONDENSE = process.env.SS_NO_CMD_CONDENSE !== '1';
 const L2_RT_AUTHORITY = process.env.SS_NO_RT_AUTHORITY !== '1';
 
@@ -162,6 +164,7 @@ function writeRunTestsBrokerFiles(binDir, cfgPath, stateDir = binDir) {
   writeFileSync(brokerPath, `import { readFileSync, writeFileSync, rmSync, readdirSync, renameSync } from 'node:fs';
 import { runTestsWithLevers } from ${JSON.stringify(RT_RUNTIME_PATH)};
 import { markUndeliveredResponses } from ${JSON.stringify(RT_DEDUP_PATH)};
+import { publishVerdict } from ${JSON.stringify(RT_INFLIGHT_PATH)};
 const c = JSON.parse(readFileSync(${JSON.stringify(cfgPath)}, 'utf8'));
 const IPC = ${JSON.stringify(reqDir)};
 setInterval(() => {
@@ -179,6 +182,9 @@ setInterval(() => {
     try { rmSync(IPC + '/' + r, { force: true }); } catch {}
     let out; try { out = runTestsWithLevers(c, { argv, reqId: id }); } catch (e) { out = '[run_tests error] ' + String(e && e.message || e); }
     const tmp = IPC + '/tmp-' + id;
+    // D-6: publish the durable verdict copy HERE, not in the requester, so a run whose
+    // requester was killed mid-wait can still be resolved by the agent's next run_tests call.
+    publishVerdict(IPC, id, out);
     try { writeFileSync(tmp, out); renameSync(tmp, IPC + '/res-' + id); } catch {}
   }
 }, 400);
@@ -226,27 +232,48 @@ export function writeRunTestsShim(binDir, {
     // `tSec + 90` wait was structurally too short for any suite near its own budget. Wait for
     // both runs plus overhead. The agent-side tool timeout must exceed THIS number, or the
     // requester is killed mid-wait and its response is orphaned (see agentBashTimeoutMs).
+    // D-6: the banner is written BEFORE the request, so a yielded cell is never empty; and a
+    // call made while an earlier launch is still in flight attaches to it instead of queueing
+    // a second suite. See rt-inflight.mjs for why a prompt sentence could not do this.
     writeFileSync(mjs, `import { writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import {
+  RUNNING_BANNER, ATTACH_NOTE, NO_VERDICT_NOTE,
+  findInflight, markInflight, clearInflight, readVerdict, newRunId,
+} from ${JSON.stringify(RT_INFLIGHT_PATH)};
 const IPC = ${JSON.stringify(reqDir)};
 const tSec = ${Number(testTimeoutSec) || 300};
-const id = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-writeFileSync(IPC + '/req-' + id, JSON.stringify(process.argv.slice(2)));
-const deadline = Date.now() + (2 * tSec + 120) * 1000;   // baseline + current suite + overhead
+const waitSec = 2 * tSec + 120;                          // baseline + current suite + overhead
+process.stdout.write(RUNNING_BANNER);
+const attachId = findInflight(IPC, waitSec * 1000);
+const id = attachId || newRunId();
+if (attachId) process.stdout.write(ATTACH_NOTE);
+else {
+  markInflight(IPC, id, process.argv.slice(2));
+  writeFileSync(IPC + '/req-' + id, JSON.stringify(process.argv.slice(2)));
+}
+const deadline = Date.now() + waitSec * 1000;
 const res = IPC + '/res-' + id;
 while (Date.now() < deadline) {
-  if (existsSync(res)) {
-    process.stdout.write(readFileSync(res, 'utf8'));
+  if (!attachId && existsSync(res)) {
+    const text = readFileSync(res, 'utf8');
     try { rmSync(res, { force: true }); } catch {}
+    clearInflight(IPC, id);                              // the broker already published it
+    process.stdout.write(text);
     process.exit(0);
+  }
+  if (attachId) {
+    const text = readVerdict(IPC, id);
+    if (text != null) { process.stdout.write(text); process.exit(0); }
   }
   await new Promise(r => setTimeout(r, 400));
 }
-process.stdout.write('[run_tests] no response from test broker within ' + (2 * tSec + 120) + 's');
+if (!attachId) clearInflight(IPC, id);
+process.stdout.write(NO_VERDICT_NOTE(waitSec));
 `);
     const shim = path.join(binDir, 'run_tests');
     writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
     chmodSync(shim, 0o755);
-    const files = [cfg, mjs, shim, brokerPath, RT_RUNTIME_PATH, RT_LIB_PATH, RT_DEDUP_PATH, RT_PROGRESS_PATH];
+    const files = [cfg, mjs, shim, brokerPath, RT_RUNTIME_PATH, RT_LIB_PATH, RT_DEDUP_PATH, RT_PROGRESS_PATH, RT_INFLIGHT_PATH];
     return {
       binDir, brokerPath, reqDir, files, dedupLog, progressConfig: rtProgress,
       controller: progressRowFields(rtProgress), integrity: shimIntegritySnapshot(files),
@@ -255,16 +282,46 @@ process.stdout.write('[run_tests] no response from test broker within ' + (2 * t
   // Direct shim: run the suite + L2/L3 levers via the shared runtime. argv = optional
   // targeted test pattern and/or --ss-full. Output IS the signal (shim exits 0; PASS/FAIL
   // is in the text).
+  // D-6: same two properties as the broker requester, without a second process. The banner
+  // lands before the suite starts; a call made while an earlier one is still running attaches
+  // to it and returns its verdict instead of starting a second suite.
+  const directIpc = path.join(stateDir, '_rt_inflight');
+  mkdirSync(directIpc, { recursive: true });
   writeFileSync(mjs, `import { readFileSync } from 'node:fs';
 import { runTestsWithLevers } from ${JSON.stringify(RT_RUNTIME_PATH)};
+import {
+  RUNNING_BANNER, ATTACH_NOTE, NO_VERDICT_NOTE,
+  findInflight, markInflight, clearInflight, publishVerdict, readVerdict, newRunId,
+} from ${JSON.stringify(RT_INFLIGHT_PATH)};
 const c = JSON.parse(readFileSync(${JSON.stringify(cfg)}, 'utf8'));
-try { process.stdout.write(runTestsWithLevers(c, { argv: process.argv.slice(2) })); }
-catch (e) { process.stdout.write('[run_tests error] ' + String(e && e.message || e)); }
+const IPC = ${JSON.stringify(directIpc)};
+const waitSec = 2 * (${Number(testTimeoutSec) || 300}) + 120;
+process.stdout.write(RUNNING_BANNER);
+const attachId = findInflight(IPC, waitSec * 1000);
+if (attachId) {
+  process.stdout.write(ATTACH_NOTE);
+  const deadline = Date.now() + waitSec * 1000;
+  while (Date.now() < deadline) {
+    const text = readVerdict(IPC, attachId);
+    if (text != null) { process.stdout.write(text); process.exit(0); }
+    await new Promise(r => setTimeout(r, 400));
+  }
+  process.stdout.write(NO_VERDICT_NOTE(waitSec));
+  process.exit(0);
+}
+const id = newRunId();
+markInflight(IPC, id, process.argv.slice(2));
+let out;
+try { out = runTestsWithLevers(c, { argv: process.argv.slice(2) }); }
+catch (e) { out = '[run_tests error] ' + String(e && e.message || e); }
+publishVerdict(IPC, id, out);
+clearInflight(IPC, id);
+process.stdout.write(out);
 `);
   const shim = path.join(binDir, 'run_tests');
   writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
   chmodSync(shim, 0o755);
-  const files = [cfg, mjs, shim, RT_RUNTIME_PATH, RT_LIB_PATH, RT_DEDUP_PATH, RT_PROGRESS_PATH];
+  const files = [cfg, mjs, shim, RT_RUNTIME_PATH, RT_LIB_PATH, RT_DEDUP_PATH, RT_PROGRESS_PATH, RT_INFLIGHT_PATH];
   return {
     binDir, files, dedupLog, progressConfig: rtProgress,
     controller: progressRowFields(rtProgress),
@@ -507,7 +564,63 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // <rundir>/AGENTS.md (the plain project file codex reads), NOT the prompt. M± is BRACKETED
   // by the frame (FRAME_OPEN + M± + FRAME_CLOSE) so FRAME_CLOSE's task-completion authority
   // overrides M±'s stop-early guidance. Excluded from the graded patch below. Prompt = issue only.
-  const prompt = `=== ISSUE ===\n${task.problem_statement || ''}`;
+  // ---- R-1 turn-0 dossier (SS_R1), default OFF ---------------------------------------
+  // SLATE-A-RESIDUE §3.B re-checks R-1, which was killed on a fixed-trajectory replay at
+  // +0.41% to +1.82%. Its claim is that orienting the agent before it starts removes early
+  // retrieval calls. Two shapes, both delivered in the turn-0 user message so the dossier is
+  // billed once and then cached — the cheapest possible delivery, chosen to FAVOUR the lever:
+  //
+  //   map   repo map only: top-level entries with file counts and the dominant extensions.
+  //         Deterministic, built from the tree, costs nothing to produce.
+  //   map5  the map plus the top 5 files ss-search returns for the issue text.
+  //
+  // TWO ASSUMPTIONS ARE DELIBERATELY GENEROUS AND BOTH MUST BE DISCLOSED WITH ANY RESULT:
+  // the retrieval that builds the top-5 list is run off-clock and charged to nobody, and the
+  // dossier is placed where prompt caching is cheapest. A real deployment pays for both. If
+  // the lever loses under assumptions this favourable, it loses by more in production.
+  const R1 = (process.env.SS_R1 || '').toLowerCase();
+  const R1_ON = R1 === 'map' || R1 === 'map5';
+  let r1 = null;
+  function buildDossier() {
+    const lines = [];
+    try {
+      const ents = readdirSync(rundir, { withFileTypes: true })
+        .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules');
+      const counted = [];
+      for (const e of ents) {
+        if (!e.isDirectory()) { counted.push(`${e.name}  (file)`); continue; }
+        let n = 0; const ext = new Map();
+        const walk = (d, depth) => {
+          if (depth > 4 || n > 4000) return;
+          let es; try { es = readdirSync(d, { withFileTypes: true }); } catch { return; }
+          for (const c of es) {
+            if (c.name.startsWith('.') || c.name === 'node_modules') continue;
+            if (c.isDirectory()) walk(path.join(d, c.name), depth + 1);
+            else { n++; const x = path.extname(c.name); if (x) ext.set(x, (ext.get(x) || 0) + 1); }
+          }
+        };
+        walk(path.join(rundir, e.name), 0);
+        const top = [...ext].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k}×${v}`).join(' ');
+        counted.push(`${e.name}/  ${n} files  ${top}`);
+      }
+      lines.push('REPOSITORY MAP', ...counted.slice(0, 40));
+    } catch { /* a map we cannot build is simply absent */ }
+    if (R1 === 'map5' && sweet && ssBinDir) {
+      try {
+        const q = String(task.problem_statement || '').replace(/\s+/g, ' ').slice(0, 200);
+        const wBin = path.join(ssBinDir, 'ss-search');
+        const [b, a] = jail ? jailArgv(jail, wBin, [q, '-k', '5'], rundir) : [wBin, [q, '-k', '5']];
+        const out = execFileSync(b, a, { cwd: rundir, env, encoding: 'utf8', timeout: 120000 });
+        lines.push('', 'FILES MOST RELEVANT TO THE ISSUE (retrieval, top 5)', String(out).slice(0, 4000));
+      } catch { /* no list is better than a wrong one */ }
+    }
+    return lines.join('\n');
+  }
+  const dossier = R1_ON ? buildDossier() : '';
+  if (R1_ON) r1 = { mode: R1, dossierChars: dossier.length, inert: !dossier.trim() };
+  if (R1_ON && !dossier.trim()) console.log(`  [R-1 ${R1} ${task.id || ''}] dossier is EMPTY — cell is inert, do not read it as a null`);
+  const prompt = `=== ISSUE ===\n${task.problem_statement || ''}`
+    + (dossier.trim() ? `\n\n=== ORIENTATION (provided; you do not need to rediscover this) ===\n${dossier}` : '');
 
   // EXPERIMENTAL agent sandbox (see AGENT_SANDBOX above — opt-in, native-arm-only
   // viability): workspace-write with network off; run_tests works via the host-side
@@ -520,19 +633,67 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // Subscription mode omits the openrouter provider override so codex uses its built-in
   // ChatGPT backend (selected by the seeded auth.json); the openrouter path is unchanged.
   const providerArgs = codexSubscription ? [] : ['-c', 'model_provider="openrouter"'];
-  const args = ['exec', ...sandboxArgs, '--json',
+  const baseArgs = ['exec', ...sandboxArgs, '--json',
     '-c', `model_reasoning_effort="${reasoning}"`, ...providerArgs,
-    '-m', codexModel, '-C', rundir, prompt];
+    '-m', codexModel, '-C', rundir];
+  const args = [...baseArgs, prompt];
+
+  // ---- C-3 two-phase context handoff (SS_C3), default OFF ----------------------------
+  // SLATE-A-RESIDUE §3.A re-opens C-3 as a LIVE A/B, because §0 established that a
+  // fixed-trajectory replay predicts BEHAVIOUR well and COST badly. The two shapes below are
+  // identical in everything except whether the diagnosis context SURVIVES, which is exactly
+  // the isolate §3.A asks for:
+  //
+  //   v1  RESET   phase 2 is a FRESH `codex exec`. Diagnosis context is gone; only the typed
+  //               handoff crosses the boundary. This is the lever.
+  //   v5  APPEND  phase 2 is `codex exec resume --last`. The identical handoff is appended and
+  //               NOTHING is deleted. This is the control that decides whether C-3 is a
+  //               topology change or merely a structured-summary prompt.
+  //
+  // Both phases get a byte-identical phase-2 prompt, so any difference between v1 and v5 is
+  // attributable to context deletion alone.
+  const C3 = (process.env.SS_C3 || '').toLowerCase();
+  const C3_ON = C3 === 'v1' || C3 === 'v5';
+  const C3_HANDOFF_FILE = '.c3-handoff.md';
+  const c3Phase1Prompt = `${prompt}
+
+=== PHASE 1 OF 2 — DIAGNOSE ONLY ===
+Localise this issue. Read whatever you need. DO NOT edit, patch or write any source file yet,
+and do not run the tests yet.
+
+When you know what the fix must be, write ${C3_HANDOFF_FILE} in the repository root with exactly
+these five sections, then stop and say DIAGNOSIS COMPLETE:
+
+## CAUSAL CHAIN
+What is wrong, and the chain from symptom to cause.
+## SOURCE ANCHORS
+file:line for every location that must change, plus the exact current text at each.
+## LIVE UNCERTAINTIES
+What you are still unsure of, and what would settle it.
+## FALSIFYING COMMAND
+The single command that proves the fix worked or failed.
+## EDIT CONSTRAINT
+What must NOT change, and any convention the patch has to follow.
+
+A later session will receive only this file. Anything you leave out is lost.`;
+  const c3Phase2Prompt = ho => `${prompt}
+
+=== PHASE 2 OF 2 — APPLY AND PROVE ===
+The diagnosis below was produced for this exact repository. Apply the fix and prove it.
+
+${ho}`;
+  // ------------------------------------------------------------------------------------
 
   const t0 = Date.now();
   // stdin MUST stay 'ignore' (= /dev/null): codex exec blocks forever on an open
   // never-closed stdin pipe (upstream issues #20919/#27019); /dev/null gives EOF
   // instantly. The "Reading additional input from stdin..." banner still prints —
   // it is benign and appears on every non-TTY spawn.
-  const [codexBin, codexArgs] = jail ? jailArgv(jail, 'codex', args, rundir) : ['codex', args];
-  const spawnOnce = () => new Promise((resolve) => {
+  const spawnArgv = argv => (jail ? jailArgv(jail, 'codex', argv, rundir) : ['codex', argv]);
+  const spawnWith = argv => new Promise((resolve) => {
+    const [bin, a] = spawnArgv(argv);
     let stdout = '', stderr = '', timedOut = false;
-    const proc = spawn(codexBin, codexArgs, { cwd: rundir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawn(bin, a, { cwd: rundir, env, stdio: ['ignore', 'pipe', 'pipe'] });
     // Killing `nsenter` leaves its in-namespace child alive, so a jailed timeout must
     // also kill the jail's init — the PID namespace death takes the agent with it.
     const timer = setTimeout(() => { timedOut = true; if (jail) { try { process.kill(jail.initPid, 'SIGKILL'); } catch {} } try { proc.kill('SIGTERM'); } catch {} setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 2000).unref(); }, perCallTimeoutMs);
@@ -541,6 +702,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
     proc.on('error', e => { clearTimeout(timer); resolve({ stdout, stderr: stderr + e.message, exitCode: -1, timedOut }); });
     proc.on('exit', code => { clearTimeout(timer); resolve({ stdout, stderr, exitCode: code ?? 0, timedOut }); });
   });
+  const spawnOnce = () => spawnWith(C3_ON ? [...baseArgs, c3Phase1Prompt] : args);
   let r = await spawnOnce();
   let parsed = parseCodexAgentStream(r.stdout);
   let startRetried = false;
@@ -553,12 +715,82 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
     r = await spawnOnce();
     parsed = parseCodexAgentStream(r.stdout);
   }
+  // C-3 phase 2. The handoff is read from the file the agent was told to write; if it did not
+  // write one, its closing message is used instead and the fallback is COUNTED, because a cell
+  // where the trigger never fired is inert and must not be read as a null result (/microsmoke
+  // Gate 0). c3.handoffTokens is recorded so the carrying cost is visible in the row.
+  const c3 = C3_ON ? { mode: C3, phase1Calls: parsed.toolCalls.length, handoffFromFile: false, handoffChars: 0, fallback: false } : null;
+  if (C3_ON) {
+    let ho = '';
+    try { ho = readFileSync(path.join(rundir, C3_HANDOFF_FILE), 'utf8'); c3.handoffFromFile = true; } catch { /* fall back below */ }
+    if (!ho.trim()) { ho = String(parsed.answer || '').trim(); c3.fallback = true; }
+    c3.handoffChars = ho.length;
+    if (!ho.trim()) {
+      console.log(`  [C-3 ${C3} ${task.id || ''}] phase 1 produced NO handoff — cell is inert, phase 2 skipped`);
+      c3.inert = true;
+    } else {
+      const p2 = c3Phase2Prompt(ho);
+      // v1 starts a fresh session (context deleted); v5 resumes the same one (nothing deleted).
+      //
+      // `codex exec resume` takes a DIFFERENT option set from `codex exec`: no `-C` and no
+      // `--sandbox` (checked against `codex exec resume --help` on 0.146.1 — it accepts only
+      // -c/-m/--json/--last/--dangerously-bypass-*/--skip-git-repo-check/-i/-o).
+      //
+      // Its signature is `resume [OPTIONS] [SESSION_ID] [PROMPT]`, and THAT is the trap: with
+      // `--last` and a single positional, codex binds the positional to SESSION_ID, not PROMPT,
+      // so the whole handoff is parsed as a session identifier and the invocation dies. Two
+      // attempts were lost to this and to the `-C`/`--sandbox` difference above, and both times
+      // the cell looked like "the treatment destroyed the agent" rather than a broken argv.
+      //
+      // So pass the session id EXPLICITLY. Codex names each rollout file
+      // `rollout-<timestamp>-<uuid>.jsonl` and the uuid is the session id, so phase 1's own file
+      // gives it to us with no ambiguity and no dependency on what "most recent" means when
+      // rollouts run concurrently.
+      const p1File = rolloutFilesForRundir(rundir, {
+        sinceMs: t0 - 60000, sessionsDir: jail ? path.join(codexHome, 'sessions') : undefined,
+      }).pop();
+      const sid = /rollout-[\dT-]+-([0-9a-f-]{36})\.jsonl$/.exec(p1File || '')?.[1] || null;
+      const argv2 = C3 === 'v5'
+        ? (sid ? ['exec', 'resume', sid, '--dangerously-bypass-approvals-and-sandbox', '--json',
+          '-c', `model_reasoning_effort="${reasoning}"`, ...providerArgs, '-m', codexModel, p2] : null)
+        : [...baseArgs, p2];
+      if (!argv2) {
+        // Refuse to spawn a malformed resume rather than emit a cell that looks like a result.
+        console.log(`  [C-3 v5 ${task.id || ''}] phase-1 session id not recoverable from ${p1File || '(no rollout file)'} — INERT, not a null result`);
+        c3.inert = true;
+      }
+      const r2 = argv2 ? await spawnWith(argv2) : { stdout: '', stderr: '', exitCode: -1, timedOut: false };
+      const parsed2 = parseCodexAgentStream(r2.stdout);
+      c3.phase2Calls = parsed2.toolCalls.length;
+      // Merge: tool calls concatenate in trajectory order; usage sums across BOTH contexts.
+      // Summing per context is the same rule the cost contract uses for sidechains — a
+      // merged token sequence would make the prefix diff meaningless.
+      const u1 = parsed.usage || {}, u2 = parsed2.usage || {};
+      const sum = k => (u1[k] || 0) + (u2[k] || 0);
+      parsed = {
+        ...parsed2,
+        toolCalls: [...parsed.toolCalls, ...parsed2.toolCalls],
+        errors: [...(parsed.errors || []), ...(parsed2.errors || [])],
+        usage: { input_tokens: sum('input_tokens'), cached_input_tokens: sum('cached_input_tokens'),
+          output_tokens: sum('output_tokens'), reasoning_output_tokens: sum('reasoning_output_tokens') },
+      };
+      r = { ...r2, stdout: r.stdout + r2.stdout };
+    }
+    // The handoff file is a runner artifact, not a patch. It is excluded from the graded diff
+    // below and removed here so it cannot leak into preds-*.jsonl.
+    try { rmSync(path.join(rundir, C3_HANDOFF_FILE), { force: true }); } catch { /* best effort */ }
+  }
   const wallMs = Date.now() - t0;
   const { toolCalls, answer, usage } = parsed;
 
   // tool composition + trajectory
   const toolCounts = { ss: 0, nativeGrep: 0, nativeRead: 0, edit: 0, bash: 0, test: 0 };
   const trajectory = []; let stepsToFirstEdit = null;
+  // D-6 telemetry is computed from the UNTRUNCATED results, before buildTrajectory-style
+  // truncation, because the verdict footer is the last line a completed run writes.
+  const rtTelemetry = runTestsTelemetry(toolCalls.map(tc => ({
+    kind: classify(tc.input?.command), resultText: String(tc.result?.content ?? ''),
+  })));
   toolCalls.forEach((tc, i) => {
     const kind = classify(tc.input?.command);
     toolCounts[kind] = (toolCounts[kind] || 0) + 1;
@@ -567,7 +799,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   });
   // patch from git diff (authoritative — counts even edits not visible as commands)
   let finalPatch = '';
-  try { finalPatch = execSync(`git -C ${rundir} diff HEAD -- . ':(exclude).sweet-search' ':(exclude)CLAUDE.md' ':(exclude)AGENTS.md'`, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); } catch {}
+  try { finalPatch = execSync(`git -C ${rundir} diff HEAD -- . ':(exclude).sweet-search' ':(exclude)CLAUDE.md' ':(exclude)AGENTS.md' ':(exclude).c3-handoff.md'`, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); } catch {}
   const patchHunks = (finalPatch.match(/^@@ /gm) || []).length;
   const patchFiles = (finalPatch.match(/^diff --git /gm) || []).length;
   // NO patchFiles backfill into toolCounts.edit (PLAN.md §3 B3) — it made an
@@ -613,23 +845,62 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   let breakPricedCostUsd = null, contextRewrites = 0;
   let costContentUsd = null, turnsFile = null;
   try {
-    const ic = recoverIdealCost(rundir, { sinceMs: t0 - 60000, price: _p, sessionsDir: jail ? path.join(codexHome, 'sessions') : undefined });
-    ({ idealCostUsd, realFromTurnsUsd, breakPricedCostUsd, contextRewrites, rolloutFile, turns: idealTurns } = ic);
-    // P7 (PLAN.md §3 B1): the rollout jsonl lives in the per-rollout codex home, which is
-    // torn down with the run — persist the per-turn array now or lose it. costContentUsd
-    // (unique context charged once + output) needs the same growing-prefix structure and
-    // is computed here rather than imported: agent-runner-shared imports FROM this module,
-    // so a helper import back would be circular.
-    if (ic.turnList?.length) {
-      let prevIn = 0, content = 0;
-      for (const tu of ic.turnList) {
-        content += (Math.max(0, tu.in - prevIn) * _p.in + tu.out * _p.out) / 1e6;
-        prevIn = tu.in;
+    const sessionsDir = jail ? path.join(codexHome, 'sessions') : undefined;
+    // C-3 invokes the agent twice, so there are two rollout files and the cost columns must be
+    // combined according to how many prompt-cache CONTEXTS those files represent:
+    //   v1 RESET  → two independent growing prefixes. Sum the columns PER FILE. This is the
+    //               same rule the cost contract uses for sidechains; re-deriving over a merged
+    //               token sequence would make the prefix diff meaningless.
+    //   v5 APPEND → `resume` continues ONE conversation, so the phase-2 turns already carry the
+    //               phase-1 prefix and it is still cache-valid. Concatenate the turns in time
+    //               order and price them as a SINGLE context, or the resumed session's first
+    //               turn is charged full input rate for a prefix that never left the cache.
+    const files = C3_ON
+      ? rolloutFilesForRundir(rundir, { sinceMs: t0 - 60000, sessionsDir })
+      : [];
+    if (C3_ON && files.length > 1) {
+      const per = files.map(f => ({ f, turns: turnsFromRollout(f) })).filter(x => x.turns.length);
+      const merged = per.flatMap(x => x.turns);
+      let cost;
+      if (C3 === 'v5') cost = costFromTurns(merged, _p);
+      else {
+        cost = per.map(x => costFromTurns(x.turns, _p))
+          .reduce((a, c) => ({ idealUsd: a.idealUsd + c.idealUsd, realFromTurnsUsd: a.realFromTurnsUsd + c.realFromTurnsUsd,
+            breakPricedUsd: a.breakPricedUsd + c.breakPricedUsd, contextRewrites: a.contextRewrites + c.contextRewrites }),
+          { idealUsd: 0, realFromTurnsUsd: 0, breakPricedUsd: 0, contextRewrites: 0 });
       }
+      idealCostUsd = +cost.idealUsd.toFixed(6); realFromTurnsUsd = +cost.realFromTurnsUsd.toFixed(6);
+      breakPricedCostUsd = +cost.breakPricedUsd.toFixed(6); contextRewrites = cost.contextRewrites;
+      rolloutFile = files.join(','); idealTurns = merged.length;
+      if (c3) { c3.contexts = C3 === 'v5' ? 1 : per.length; c3.rolloutFiles = per.length; }
+      // costContentUsd + the persisted turn list follow the same merge, so downstream
+      // analysis sees one ordered trajectory for the rollout.
+      let prevIn = 0, content = 0;
+      for (const tu of merged) { content += (Math.max(0, tu.in - prevIn) * _p.in + tu.out * _p.out) / 1e6; prevIn = tu.in; }
       costContentUsd = +content.toFixed(6);
-      turnsFile = persistTurns(jailLabel, ic.turnList, {
-        task: task.id, arm, harness: 'codex', model: apiModel, price: _p, source: 'rollout-jsonl',
+      turnsFile = persistTurns(jailLabel, merged, {
+        task: task.id, arm, harness: 'codex', model: apiModel, price: _p,
+        source: `rollout-jsonl(c3-${C3},${per.length}-context)`,
       });
+    } else {
+      const ic = recoverIdealCost(rundir, { sinceMs: t0 - 60000, price: _p, sessionsDir });
+      ({ idealCostUsd, realFromTurnsUsd, breakPricedCostUsd, contextRewrites, rolloutFile, turns: idealTurns } = ic);
+      // P7 (PLAN.md §3 B1): the rollout jsonl lives in the per-rollout codex home, which is
+      // torn down with the run — persist the per-turn array now or lose it. costContentUsd
+      // (unique context charged once + output) needs the same growing-prefix structure and
+      // is computed here rather than imported: agent-runner-shared imports FROM this module,
+      // so a helper import back would be circular.
+      if (ic.turnList?.length) {
+        let prevIn = 0, content = 0;
+        for (const tu of ic.turnList) {
+          content += (Math.max(0, tu.in - prevIn) * _p.in + tu.out * _p.out) / 1e6;
+          prevIn = tu.in;
+        }
+        costContentUsd = +content.toFixed(6);
+        turnsFile = persistTurns(jailLabel, ic.turnList, {
+          task: task.id, arm, harness: 'codex', model: apiModel, price: _p, source: 'rollout-jsonl',
+        });
+      }
     }
   } catch { /* best-effort — keep realized cost as the fallback */ }
 
@@ -642,7 +913,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
     stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
     exitReason, usage: u, costNaiveUsd: +costNaive.toFixed(6), costRealizedUsd: +costRealized.toFixed(6),
     costContentUsd, idealCostUsd, realFromTurnsUsd, breakPricedCostUsd, contextRewrites, rolloutFile, idealTurns, turnsFile,
-    wallMs, trajectory, finalAssistantText: answer,
+    wallMs, trajectory, finalAssistantText: answer, c3, r1, ...rtTelemetry,
     codexErrors: parsed.errors.slice(0, 5), startRetried,
     stderrPreview: String(r.stderr || '').replace(STDIN_BANNER, '').slice(0, 300),
   };
