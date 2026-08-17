@@ -1,0 +1,250 @@
+[
+  {
+    "id": "dart-lang__http-1114",
+    "img": "docker.io/swerebenchv2/dart-lang-http:1114-5c75da6",
+    "verdict": "SOURCE",
+    "srcFiles": 3927,
+    "binFiles": 0,
+    "byExt": {
+      "SRC.py": 2,
+      "SRC.js": 9,
+      "SRC.mjs": 1,
+      "SRC.ts": 1,
+      "SRC.dart": 3874,
+      "SRC.java": 40
+    },
+    "mins": "0.2",
+    "err": null,
+    "probe": "CTX home=/root pwd=/http\nENV PUB_CACHE=/workspace/.pub-cache CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME= R_LIBS= R_LIBS_USER= MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/http/.git/objects/pack\n/workspace/.pub-cache\n>>\n--- /http/.git/objects/pack\n--- /workspace/.pub-cache\n  SRC .py = 2\n  SRC .js = 9\n  SRC .mjs = 1\n  SRC .ts = 1\n  SRC .dart = 3874\n  SRC .java = 40\n"
+  },
+  {
+    "id": "dashbitco__nimble_options-43",
+    "img": "docker.io/swerebenchv2/dashbitco-nimble-options:43-5270554",
+    "verdict": "SOURCE",
+    "srcFiles": 2028,
+    "binFiles": 1871,
+    "byExt": {
+      "BIN.beam": 9,
+      "SRC.js": 6,
+      "SRC.ex": 105,
+      "SRC.exs": 6,
+      "SRC.py": 1911,
+      "BIN.pyc": 1862
+    },
+    "mins": "0.4",
+    "err": null,
+    "probe": "CTX home=/root pwd=/nimble_options\nENV PUB_CACHE= CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME=/workspace/.mix R_LIBS= R_LIBS_USER= MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/nimble_options/.git/objects/pack\n/nimble_options/_build\n/nimble_options/deps\n/opt/conda/lib/python3.12/site-packages\n/opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n/usr/lib/python3/dist-packages\n/usr/local/lib/python3.11/dist-packages\n>>\n--- /nimble_options/.git/objects/pack\n--- /nimble_options/_build\n  BIN .beam = 9\n--- /nimble_options/deps\n  SRC .js = 3\n  SRC .ex = 105\n  SRC .exs = 6\n--- /opt/conda/lib/python3.12/site-packages\n  SRC .py = 1465\n  SRC .js = 1\n  BIN .pyc = 1466\n--- /opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n  SRC .py = 12\n--- /opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n  SRC .py = 1\n--- /opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n  SRC .py = 17\n--- /usr/lib/python3/dist-packages\n  SRC .py = 396\n  SRC .js = 2\n  BIN .pyc = 396\n--- /usr/local/lib/python3.11/dist-packages\n"
+  },
+  {
+    "id": "ontodev__robot-710",
+    "img": "docker.io/swerebenchv2/ontodev-robot:710-691d0dd",
+    "verdict": "SOURCE",
+    "srcFiles": 1516,
+    "binFiles": 1756,
+    "byExt": {
+      "SRC.py": 1515,
+      "SRC.js": 1,
+      "BIN.pyc": 1466,
+      "BIN.jar": 290
+    },
+    "mins": "0.3",
+    "err": null,
+    "probe": "CTX home=/root pwd=/robot\nENV PUB_CACHE= CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME= R_LIBS= R_LIBS_USER= MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/opt/conda/lib/python3.12/site-packages\n/opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n/robot/.git/objects/pack\n/root/.m2\n>>\n--- /opt/conda/lib/python3.12/site-packages\n  SRC .py = 1465\n  SRC .js = 1\n  BIN .pyc = 1466\n--- /opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n  SRC .py = 12\n--- /opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n  SRC .py = 1\n--- /opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n  SRC .py = 17\n--- /robot/.git/objects/pack\n--- /root/.m2\n  BIN .jar = 290\n"
+  },
+  {
+    "id": "codeception__codeceptjs-367",
+    "img": "docker.io/swerebenchv2/codeception-codeceptjs:367-9ed8196",
+    "verdict": "SOURCE",
+    "srcFiles": 19793,
+    "binFiles": 1510,
+    "byExt": {
+      "SRC.js": 17802,
+      "SRC.mjs": 15,
+      "SRC.cjs": 3,
+      "SRC.ts": 365,
+      "SRC.py": 1608,
+      "BIN.pyc": 1510
+    },
+    "mins": "0.5",
+    "err": null,
+    "probe": "CTX home=/root pwd=/CodeceptJS\nENV PUB_CACHE= CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME= R_LIBS= R_LIBS_USER= MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/CodeceptJS/.git/objects/pack\n/CodeceptJS/node_modules\n/opt/conda/lib/python3.12/site-packages\n/opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n/usr/lib/node_modules\n/usr/lib/python3/dist-packages\n/usr/local/lib/python3.10/dist-packages\n>>\n--- /CodeceptJS/.git/objects/pack\n--- /CodeceptJS/node_modules\n  SRC .js = 16922\n  SRC .mjs = 12\n  SRC .cjs = 2\n  SRC .ts = 312\n--- /opt/conda/lib/python3.12/site-packages\n  SRC .py = 1465\n  SRC .js = 1\n  BIN .pyc = 1466\n--- /opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n  SRC .py = 12\n--- /opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n  SRC .py = 1\n--- /opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n  SRC .py = 17\n--- /usr/lib/node_modules\n  SRC .py = 49\n  SRC .js = 879\n  SRC .mjs = 3\n  SRC .cjs = 1\n  SRC .ts = 53\n--- /usr/lib/python3/dist-packages\n  SRC .py = 44\n  BIN .pyc = 44\n--- /usr/local/lib/python3.10/dist-packages\n"
+  },
+  {
+    "id": "akinsho__nvim-bufferline.lua-173",
+    "img": "docker.io/swerebenchv2/akinsho-nvim-bufferline.lua:173-7bf463c",
+    "verdict": "SOURCE",
+    "srcFiles": 1676,
+    "binFiles": 1512,
+    "byExt": {
+      "SRC.py": 1562,
+      "SRC.js": 1,
+      "BIN.pyc": 1512,
+      "SRC.lua": 113
+    },
+    "mins": "0.3",
+    "err": null,
+    "probe": "CTX home=/root pwd=/nvim-bufferline.lua\nENV PUB_CACHE= CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME= R_LIBS= R_LIBS_USER= MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/nvim-bufferline.lua/.git/objects/pack\n/opt/conda/lib/python3.12/site-packages\n/opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n/root/.local/share/nvim/site/pack\n/usr/lib/python3/dist-packages\n/usr/local/lib/python3.11/dist-packages\n/usr/share/nvim/runtime/pack\n>>\n--- /nvim-bufferline.lua/.git/objects/pack\n--- /opt/conda/lib/python3.12/site-packages\n  SRC .py = 1465\n  SRC .js = 1\n  BIN .pyc = 1466\n--- /opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n  SRC .py = 12\n--- /opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n  SRC .py = 1\n--- /opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n  SRC .py = 17\n--- /root/.local/share/nvim/site/pack\n  SRC .py = 1\n  SRC .lua = 113\n--- /usr/lib/python3/dist-packages\n  SRC .py = 46\n  BIN .pyc = 46\n--- /usr/local/lib/python3.11/dist-packages\n--- /usr/share/nvim/runtime/pack\n"
+  },
+  {
+    "id": "litestar-org__polyfactory-405",
+    "img": "docker.io/swerebenchv2/litestar-org-polyfactory:405-63aa272",
+    "verdict": "SOURCE",
+    "srcFiles": 4466,
+    "binFiles": 1416,
+    "byExt": {
+      "SRC.py": 4464,
+      "SRC.js": 2,
+      "BIN.pyc": 1416
+    },
+    "mins": "0.3",
+    "err": null,
+    "probe": "CTX home=/root pwd=/polyfactory\nENV PUB_CACHE= CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME= R_LIBS= R_LIBS_USER= MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/opt/conda/lib/python3.12/site-packages\n/opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n/polyfactory/.git/objects/pack\n/usr/local/lib/python3.10/site-packages\n>>\n--- /opt/conda/lib/python3.12/site-packages\n  SRC .py = 1465\n  SRC .js = 1\n  BIN .pyc = 1416\n--- /opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n  SRC .py = 12\n--- /opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n  SRC .py = 1\n--- /opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n  SRC .py = 17\n--- /polyfactory/.git/objects/pack\n--- /usr/local/lib/python3.10/site-packages\n  SRC .py = 2949\n  SRC .js = 1\n"
+  },
+  {
+    "id": "epiforecasts__scoringutils-229",
+    "img": "docker.io/swerebenchv2/epiforecasts-scoringutils:229-53436b6",
+    "verdict": "SOURCE",
+    "srcFiles": 2267,
+    "binFiles": 1976,
+    "byExt": {
+      "SRC.py": 1517,
+      "SRC.js": 277,
+      "BIN.pyc": 1466,
+      "SRC.ts": 2,
+      "SRC.lua": 8,
+      "SRC.R": 383,
+      "SRC.r": 79,
+      "SRC.rs": 1,
+      "BIN.rdb": 255,
+      "BIN.rdx": 255
+    },
+    "mins": "0.4",
+    "err": null,
+    "probe": "CTX home=/root pwd=/scoringutils\nENV PUB_CACHE= CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME= R_LIBS= R_LIBS_USER=/workspace/R MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/opt/conda/lib/python3.12/site-packages\n/opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n/scoringutils/.git/objects/pack\n/usr/lib/python3/dist-packages\n/usr/local/lib/R/site-library\n/usr/local/lib/python3.10/dist-packages\n>>\n--- /opt/conda/lib/python3.12/site-packages\n  SRC .py = 1465\n  SRC .js = 1\n  BIN .pyc = 1466\n--- /opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n  SRC .py = 12\n--- /opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n  SRC .py = 1\n--- /opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n  SRC .py = 17\n--- /scoringutils/.git/objects/pack\n--- /usr/lib/python3/dist-packages\n--- /usr/local/lib/R/site-library\n  SRC .py = 2\n  SRC .js = 276\n  SRC .ts = 2\n  SRC .lua = 8\n  SRC .R = 383\n  SRC .r = 79\n  SRC .rs = 1\n  BIN .rdb = 255\n  BIN .rdx = 255\n--- /usr/local/lib/python3.10/dist-packages\n"
+  },
+  {
+    "id": "apple__swift-nio-http2-145",
+    "img": "docker.io/swerebenchv2/apple-swift-nio-http2:145-3d0b382",
+    "verdict": "SOURCE",
+    "srcFiles": 1112,
+    "binFiles": 2,
+    "byExt": {
+      "SRC.py": 40,
+      "SRC.swift": 1071,
+      "SRC.rb": 1,
+      "BIN.pyc": 2
+    },
+    "mins": "0.3",
+    "err": null,
+    "probe": "CTX home=/workspace pwd=/swift-nio-http2\nENV PUB_CACHE= CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME= R_LIBS= R_LIBS_USER= MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/swift-nio-http2/.build/checkouts\n/swift-nio-http2/.build/repositories/swift-atomics-7429e549/objects/pack\n/swift-nio-http2/.build/repositories/swift-collections-9a58d5cf/objects/pack\n/swift-nio-http2/.build/repositories/swift-nio-a9bb6d62/objects/pack\n/swift-nio-http2/.build/repositories/swift-system-5815d4b7/objects/pack\n/swift-nio-http2/.git/objects/pack\n/usr/lib/llvm-13/lib/python3/dist-packages\n/usr/lib/python3/dist-packages\n/usr/local/lib/python3.10/dist-packages\n>>\n--- /swift-nio-http2/.build/checkouts\n  SRC .py = 5\n  SRC .swift = 1071\n  SRC .rb = 1\n--- /swift-nio-http2/.build/repositories/swift-atomics-7429e549/objects/pack\n--- /swift-nio-http2/.build/repositories/swift-collections-9a58d5cf/objects/pack\n--- /swift-nio-http2/.build/repositories/swift-nio-a9bb6d62/objects/pack\n--- /swift-nio-http2/.build/repositories/swift-system-5815d4b7/objects/pack\n--- /swift-nio-http2/.git/objects/pack\n--- /usr/lib/llvm-13/lib/python3/dist-packages\n  SRC .py = 16\n--- /usr/lib/python3/dist-packages\n  SRC .py = 1\n  BIN .pyc = 1\n--- /usr/local/lib/python3.10/dist-packages\n  SRC .py = 18\n  BIN .pyc = 1\n"
+  },
+  {
+    "id": "joshuakgoldberg__bingo-274",
+    "img": "docker.io/swerebenchv2/joshuakgoldberg-bingo:274-aa2363d",
+    "verdict": "SOURCE",
+    "srcFiles": 20336,
+    "binFiles": 1510,
+    "byExt": {
+      "SRC.py": 1623,
+      "SRC.js": 11098,
+      "SRC.mjs": 1261,
+      "SRC.cjs": 313,
+      "SRC.ts": 6018,
+      "SRC.lua": 22,
+      "SRC.php": 1,
+      "BIN.pyc": 1510
+    },
+    "mins": "0.6",
+    "err": null,
+    "probe": "CTX home=/root pwd=/bingo\nENV PUB_CACHE= CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME= R_LIBS= R_LIBS_USER= MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/bingo/.git/objects/pack\n/bingo/node_modules\n/bingo/packages/bingo-fs/node_modules\n/bingo/packages/bingo-handlebars/node_modules\n/bingo/packages/bingo-stratum-testers/node_modules\n/bingo/packages/bingo-stratum/node_modules\n/bingo/packages/bingo-systems/node_modules\n/bingo/packages/bingo-testers/node_modules\n/bingo/packages/bingo/node_modules\n/bingo/packages/create/node_modules\n/bingo/packages/input-from-fetch/node_modules\n/bingo/packages/input-from-file-json/node_modules\n/bingo/packages/input-from-file/node_modules\n/bingo/packages/input-from-script/node_modules\n/bingo/packages/site/node_modules\n/opt/conda/lib/python3.12/site-packages\n/opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n/usr/lib/node_modules\n/usr/lib/python3/dist-packages\n/usr/local/lib/python3.10/dist-packages\n>>\n--- /bingo/.git/objects/pack\n--- /bingo/node_modules\n  SRC .py = 7\n  SRC .js = 10087\n  SRC .mjs = 1254\n  SRC .cjs = 309\n  SRC .ts = 6004\n  SRC .lua = 22\n  SRC .php = 1\n--- /bingo/packages/bingo-fs/node_modules\n--- /bingo/packages/bingo-handlebars/node_modules\n--- /bingo/packages/bingo-stratum-testers/node_modules\n--- /bingo/packages/bingo-stratum/node_modules\n--- /bingo/packages/bingo-systems/node_modules\n--- /bingo/packages/bingo-testers/node_modules\n--- /bingo/packages/bingo/node_modules\n--- /bingo/packages/create/node_modules\n--- /bingo/packages/input-from-fetch/node_modules\n--- /bingo/packages/input-from-file-json/node_modules\n--- /bingo/packages/input-from-file/node_modules\n--- /bingo/packages/input-from-script/node_modules\n--- /bingo/packages/site/node_modules\n  SRC .js = 4\n--- /opt/conda/lib/python3.12/site-packages\n  SRC .py = 1465\n  SRC .js = 1\n  BIN .pyc = 1466\n--- /opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n  SRC .py = 12\n--- /opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n  SRC .py = 1\n--- /opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n  SRC .py = 17\n--- /usr/lib/node_modules\n  SRC .py = 57\n  SRC .js = 1006\n  SRC .mjs = 7\n  SRC .cjs = 4\n  SRC .ts = 14\n--- /usr/lib/python3/dist-packages\n  SRC .py = 44\n  BIN .pyc = 44\n--- /usr/local/lib/python3.10/dist-packages\n"
+  },
+  {
+    "id": "jashkenas__underscore-2757",
+    "img": "docker.io/swerebenchv2/jashkenas-underscore:2757-4bd6f69",
+    "verdict": "SOURCE",
+    "srcFiles": 7941,
+    "binFiles": 1510,
+    "byExt": {
+      "SRC.py": 1608,
+      "SRC.js": 6252,
+      "BIN.pyc": 1510,
+      "SRC.ts": 77,
+      "SRC.mjs": 3,
+      "SRC.cjs": 1
+    },
+    "mins": "0.4",
+    "err": null,
+    "probe": "CTX home=/root pwd=/underscore\nENV PUB_CACHE= CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME= R_LIBS= R_LIBS_USER= MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/opt/conda/lib/python3.12/site-packages\n/opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n/underscore/.git/objects/pack\n/underscore/node_modules\n/underscore/test/vendor\n/usr/lib/node_modules\n/usr/lib/python3/dist-packages\n/usr/local/lib/python3.10/dist-packages\n>>\n--- /opt/conda/lib/python3.12/site-packages\n  SRC .py = 1465\n  SRC .js = 1\n  BIN .pyc = 1466\n--- /opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n  SRC .py = 12\n--- /opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n  SRC .py = 1\n--- /opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n  SRC .py = 17\n--- /underscore/.git/objects/pack\n--- /underscore/node_modules\n  SRC .js = 5371\n  SRC .ts = 24\n--- /underscore/test/vendor\n  SRC .js = 1\n--- /usr/lib/node_modules\n  SRC .py = 49\n  SRC .js = 879\n  SRC .mjs = 3\n  SRC .cjs = 1\n  SRC .ts = 53\n--- /usr/lib/python3/dist-packages\n  SRC .py = 44\n  BIN .pyc = 44\n--- /usr/local/lib/python3.10/dist-packages\n"
+  },
+  {
+    "id": "pytask-dev__pytask-210",
+    "img": "docker.io/swerebenchv2/pytask-dev-pytask:210-3022733",
+    "verdict": "SOURCE",
+    "srcFiles": 3660,
+    "binFiles": 1416,
+    "byExt": {
+      "SRC.py": 3659,
+      "SRC.js": 1,
+      "BIN.pyc": 1416
+    },
+    "mins": "0.3",
+    "err": null,
+    "probe": "CTX home=/root pwd=/pytask\nENV PUB_CACHE= CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME= R_LIBS= R_LIBS_USER= MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/opt/conda/lib/python3.12/site-packages\n/opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n/pytask/.git/objects/pack\n/usr/local/lib/python3.10/site-packages\n>>\n--- /opt/conda/lib/python3.12/site-packages\n  SRC .py = 1465\n  SRC .js = 1\n  BIN .pyc = 1416\n--- /opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n  SRC .py = 12\n--- /opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n  SRC .py = 1\n--- /opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n  SRC .py = 17\n--- /pytask/.git/objects/pack\n--- /usr/local/lib/python3.10/site-packages\n  SRC .py = 2144\n"
+  },
+  {
+    "id": "rstudio-education__gradethis-161",
+    "img": "docker.io/swerebenchv2/rstudio-education-gradethis:161-2e64380",
+    "verdict": "SOURCE",
+    "srcFiles": 2246,
+    "binFiles": 1900,
+    "byExt": {
+      "SRC.py": 1518,
+      "SRC.js": 288,
+      "BIN.pyc": 1466,
+      "SRC.ts": 2,
+      "SRC.lua": 8,
+      "SRC.R": 352,
+      "SRC.r": 77,
+      "SRC.rs": 1,
+      "BIN.rdb": 217,
+      "BIN.rdx": 217
+    },
+    "mins": "0.4",
+    "err": null,
+    "probe": "CTX home=/root pwd=/gradethis\nENV PUB_CACHE= CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME= R_LIBS= R_LIBS_USER=/workspace/R MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/gradethis/.git/objects/pack\n/opt/conda/lib/python3.12/site-packages\n/opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n/usr/lib/python3/dist-packages\n/usr/local/lib/R/site-library\n/usr/local/lib/python3.10/dist-packages\n>>\n--- /gradethis/.git/objects/pack\n--- /opt/conda/lib/python3.12/site-packages\n  SRC .py = 1465\n  SRC .js = 1\n  BIN .pyc = 1466\n--- /opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n  SRC .py = 12\n--- /opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n  SRC .py = 1\n--- /opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n  SRC .py = 17\n--- /usr/lib/python3/dist-packages\n--- /usr/local/lib/R/site-library\n  SRC .py = 3\n  SRC .js = 287\n  SRC .ts = 2\n  SRC .lua = 8\n  SRC .R = 352\n  SRC .r = 77\n  SRC .rs = 1\n  BIN .rdb = 217\n  BIN .rdx = 217\n--- /usr/local/lib/python3.10/dist-packages\n"
+  },
+  {
+    "id": "oceanparcels__parcels-617",
+    "img": "docker.io/swerebenchv2/oceanparcels-parcels:617-762f021",
+    "verdict": "SOURCE",
+    "srcFiles": 5899,
+    "binFiles": 5794,
+    "byExt": {
+      "SRC.py": 5893,
+      "SRC.js": 5,
+      "BIN.pyc": 5794,
+      "SRC.lua": 1
+    },
+    "mins": "0.4",
+    "err": null,
+    "probe": "CTX home=/root pwd=/parcels\nENV PUB_CACHE= CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME= R_LIBS= R_LIBS_USER= MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/opt/conda/lib/python3.12/site-packages\n/opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n/parcels/.git/objects/pack\n/usr/local/lib/python3.7/site-packages\n>>\n--- /opt/conda/lib/python3.12/site-packages\n  SRC .py = 1465\n  SRC .js = 1\n  BIN .pyc = 1416\n--- /opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n  SRC .py = 12\n--- /opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n  SRC .py = 1\n--- /opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n  SRC .py = 17\n--- /parcels/.git/objects/pack\n--- /usr/local/lib/python3.7/site-packages\n  SRC .py = 4378\n  SRC .js = 4\n  SRC .lua = 1\n  BIN .pyc = 4378\n"
+  },
+  {
+    "id": "teleporthq__teleport-code-generators-291",
+    "img": "docker.io/swerebenchv2/teleporthq-teleport-code-generators:291-ee3baaf",
+    "verdict": "SOURCE",
+    "srcFiles": 14411,
+    "binFiles": 1510,
+    "byExt": {
+      "SRC.py": 1658,
+      "SRC.js": 10382,
+      "BIN.pyc": 1510,
+      "SRC.mjs": 10,
+      "SRC.ts": 2360,
+      "SRC.cjs": 1
+    },
+    "mins": "0.5",
+    "err": null,
+    "probe": "CTX home=/root pwd=/teleport-code-generators\nENV PUB_CACHE= CARGO_HOME= GOPATH= GOMODCACHE= MIX_HOME= R_LIBS= R_LIBS_USER= MAVEN_OPTS= GRADLE_USER_HOME= OPAMROOT=\nROOTS<<\n/opt/conda/lib/python3.12/site-packages\n/opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n/opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n/teleport-code-generators/.git/objects/pack\n/teleport-code-generators/node_modules\n/teleport-code-generators/packages/teleport-postprocessor-prettier-html/node_modules\n/teleport-code-generators/packages/teleport-postprocessor-prettier-js/node_modules\n/teleport-code-generators/packages/teleport-project-packer-test/node_modules\n/usr/lib/node_modules\n/usr/lib/python3/dist-packages\n/usr/local/lib/python3.10/dist-packages\n>>\n--- /opt/conda/lib/python3.12/site-packages\n  SRC .py = 1465\n  SRC .js = 1\n  BIN .pyc = 1466\n--- /opt/conda/pkgs/archspec-0.2.3-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/charset-normalizer-3.3.2-pyhd3eb1b0_0/site-packages\n  SRC .py = 12\n--- /opt/conda/pkgs/conda-libmamba-solver-24.7.0-pyhd3eb1b0_0/site-packages\n  SRC .py = 10\n--- /opt/conda/pkgs/jsonpointer-2.1-pyhd3eb1b0_0/site-packages\n  SRC .py = 1\n--- /opt/conda/pkgs/pycparser-2.21-pyhd3eb1b0_0/site-packages\n  SRC .py = 17\n--- /teleport-code-generators/.git/objects/pack\n--- /teleport-code-generators/node_modules\n  SRC .py = 50\n  SRC .js = 9490\n  SRC .mjs = 7\n  SRC .ts = 2252\n--- /teleport-code-generators/packages/teleport-postprocessor-prettier-html/node_modules\n--- /teleport-code-generators/packages/teleport-postprocessor-prettier-js/node_modules\n--- /teleport-code-generators/packages/teleport-project-packer-test/node_modules\n  SRC .js = 8\n  SRC .ts = 55\n--- /usr/lib/node_modules\n  SRC .py = 49\n  SRC .js = 883\n  SRC .mjs = 3\n  SRC .cjs = 1\n  SRC .ts = 53\n--- /usr/lib/python3/dist-packages\n  SRC .py = 44\n  BIN .pyc = 44\n--- /usr/local/lib/python3.10/dist-packages\n"
+  }
+]
