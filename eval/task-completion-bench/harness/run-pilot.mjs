@@ -33,6 +33,9 @@ import { scanPredictions } from './gold-tripwire.mjs';
 import { loadTaskFile } from './task-file-loader.mjs';
 import { progressRowFields, resolveProgressFlags } from './rt-progress-controller.mjs';
 import { packingTreatmentRowFields, resolvePackingTreatment } from './agent-runner-shared.mjs';
+import { assertBaseCommit, writeProvenance, verifyGolden, provenanceNote, provenanceIsFatal } from './golden-provenance.mjs';
+import { admissionReport, loadBlocklist } from './task-admission.mjs';
+import { degenerationVerdict } from './degeneration-policy.mjs';
 // HARNESS routes the agent loop through a REAL production coding agent (uncapped — runs
 // to completion) instead of the bare-API ReAct loop. All share grading/metrics + the
 // identical completion frame; native=vanilla agent, sweet=agent + M++ + ss-* on PATH.
@@ -91,6 +94,9 @@ const MAX_TOOL_CALLS = Math.max(1, +(process.env.MAX_TOOL_CALLS || 60));
 // In SR mode, INSTANCES defaults to ALL ids in the materialized task file (set
 // after loadTasks); explicit INSTANCES still subsets. Lite mode keeps its default.
 let INSTANCES = (process.env.INSTANCES || (process.env.TASKS_FILE ? '' : 'pallets__flask-4992')).split(',').map(s => s.trim()).filter(Boolean);
+// Naming a task is a different act from sweeping a whole file, and the admission
+// blocklist below treats them differently — so record which one happened.
+const INSTANCES_EXPLICIT = !!process.env.INSTANCES;
 const CACHE = path.join(BENCH, 'tasks/_lite-cache.json');
 // Checkouts live under $HOME (colima shares $HOME into the VM, NOT /tmp) so the
 // swebench image can bind-mount them for run_tests. Still outside our project
@@ -123,6 +129,14 @@ const OVERRIDES_PATH = process.env.TASK_OVERRIDES || path.join(BENCH, 'harness/t
 const TASK_OVERRIDES = (!process.env.NO_TASK_OVERRIDES && existsSync(OVERRIDES_PATH))
   ? JSON.parse(readFileSync(OVERRIDES_PATH, 'utf8')) : { defaults: {}, tasks: {} };
 const DEFAULT_TEST_TIMEOUT_SEC = Number(TASK_OVERRIDES.defaults?.testTimeoutSec) || 300;
+// --- Task-admission blocklist (SLATE-B Phase 0, 2026-08-17) ---
+// Tasks proven invalid as instruments: a zero-character issue nobody can derive the
+// task from, or a FAIL_TO_PASS that already passes at base so an EMPTY patch grades
+// resolved. Kept in its OWN file rather than as a task-overrides.json field, because
+// NO_TASK_OVERRIDES=1 disables that file wholesale and a validity gate a convenience
+// switch can turn off is not a gate. Enforced right after INSTANCES resolves.
+const BLOCKLIST_PATH = process.env.TASK_BLOCKLIST || path.join(BENCH, 'harness/task-blocklist.json');
+const TASK_BLOCKLIST = loadBlocklist(BLOCKLIST_PATH);
 // --- Container egress lockdown (default ON) ---
 // Task containers (agent-phase run_tests + grading) run with --network none: external
 // egress blocked, container-own loopback preserved (in-repo localhost test servers keep
@@ -258,13 +272,28 @@ const cacheKeyFor = (t) => `${t.repo.replace('/', '__')}@${t.base_commit}`;
 // double-build. The golden index is built with the maintainer OFF (RECONCILE_V2=0)
 // — a clean static snapshot; only the per-run COPIES run incremental-on.
 function prepareGolden(t) {
-  const gdir = path.join(GOLDEN_DIR, cacheKeyFor(t));
-  if (existsSync(`${gdir}/.sweet-search/codebase.db`) && existsSync(`${gdir}/.git`)) return { dir: gdir, idxMs: 0, source: 'golden-cache' };
+  const key = cacheKeyFor(t);
+  const gdir = path.join(GOLDEN_DIR, key);
+  if (existsSync(`${gdir}/.sweet-search/codebase.db`) && existsSync(`${gdir}/.git`)) {
+    // A cache hit used to be decided by the DIRECTORY NAME alone, and the name encodes the base
+    // commit — so any directory under the right name was served as that task's base tree
+    // whatever was inside it. That is the exposure behind "every golden built before this check
+    // is unverified": nothing ever recorded what was built, and the fresh-init below destroys
+    // the evidence. Refuse a golden whose stamp contradicts the task; say so loudly when there
+    // is no stamp at all.
+    const v = verifyGolden(GOLDEN_DIR, key, { baseCommit: t.base_commit, gdir });
+    if (provenanceIsFatal(v)) throw new Error(`golden ${key}: ${provenanceNote(v)} — refusing to serve it`);
+    if (v.status !== 'verified') console.log(`  [golden] ${key}: ${provenanceNote(v)}`);
+    return { dir: gdir, idxMs: 0, source: 'golden-cache', provenance: v.status };
+  }
   rmSync(gdir, { recursive: true, force: true }); mkdirSync(gdir, { recursive: true });
   sh(`git clone --quiet https://github.com/${t.repo}.git ${gdir}`);
   sh(`git -C ${gdir} checkout --quiet ${t.base_commit}`);
+  // Assert BEFORE the fresh-init, the only window in which the answer is knowable.
+  const sourceTreeHash = assertBaseCommit(gdir, t.base_commit);
   // fresh-init: drop history so no future-fix commit/ref is reachable by the agent
   sh(`rm -rf ${gdir}/.git && git -C ${gdir} init -q && printf '.sweet-search/\\n' > ${gdir}/.git/info/exclude && git -C ${gdir} add -A && git -C ${gdir} -c user.email=a@b.c -c user.name=bench commit -q -m base`);
+  writeProvenance(GOLDEN_DIR, key, { repo: t.repo, baseCommit: t.base_commit, sourceTreeHash, gdir });
   const t0 = Date.now();
   // 90 min: CPU (no Metal/GPU) index builds of bigger repos can exceed 30 min;
   // a too-tight timeout leaves a partial/corrupt golden index (seen: pylint ETIMEDOUT).
@@ -342,6 +371,28 @@ console.log(RT_DEDUP_ON
   : '[rt-dedup] OFF (SS_RUNTESTS_DEDUP=0) — every run_tests invocation returns the full transcript.');
 const all = await loadTasks();
 if (SR_MODE && !INSTANCES.length) INSTANCES = all.map(t => t.instance_id);
+// --- ADMISSION GATE: blocked tasks never reach a denominator silently ---
+// Asking for a blocked task by name is a mistake worth stopping for; sweeping one in
+// with a whole-file selection is not, so it is dropped and named instead. Either way
+// the count is printed, because a denominator that quietly shrank is its own defect.
+{
+  const adm = admissionReport(INSTANCES, TASK_BLOCKLIST,
+    { explicit: INSTANCES_EXPLICIT, allow: process.env.SS_ALLOW_BLOCKED_TASKS === '1' });
+  const say = (r) => `  ${r.instance_id}: ${r.reason} — ${r._why}`;
+  if (adm.action === 'warn') {
+    console.error(`[admission] WARNING: ${adm.blocked.length} blocked task(s) admitted by SS_ALLOW_BLOCKED_TASKS=1 — any denominator containing them is invalid:`);
+    for (const r of adm.reasons) console.error(say(r));
+  } else if (adm.action === 'refuse') {
+    console.error(`[admission] REFUSING TO LAUNCH — ${adm.blocked.length} explicitly named task(s) are on the validity blocklist (${BLOCKLIST_PATH}):`);
+    for (const r of adm.reasons) console.error(say(r));
+    console.error('[admission] These tasks cannot measure anything. Remove them from INSTANCES, or override with SS_ALLOW_BLOCKED_TASKS=1 and never publish the denominator.');
+    process.exit(1);
+  } else if (adm.action === 'drop') {
+    console.log(`[admission] dropped ${adm.blocked.length} blocked task(s) from the ${INSTANCES.length}-task selection — denominator is now ${adm.admitted.length}:`);
+    for (const r of adm.reasons) console.log(say(r));
+  }
+  INSTANCES = adm.admitted;
+}
 // --- GREEN-LEDGER PRE-FLIGHT (standing rule 2026-07-09, non-negotiable) ---
 // Every selected task must be gold-FULL in the env-ledger under the EXACT current
 // config (image/imageId/testCmd/network/excludeP2P fingerprint). Missing, stale, or
@@ -551,15 +602,32 @@ async function runOneTask(id) {
             v = shimVerdict(tamperFlags);
             if (v.excluded) console.log(`  [${arm} rep${rep}] SHIM-TAMPERED on re-run too — EXCLUDED from scored set (counted in report)`);
           }
+          // degeneration policy (degeneration-policy.mjs, rule pre-registered in
+          // RESULTS-2026-08-13.md §9.3): a decoding blow-up is a malfunction of the
+          // decoder, not a property of the tool under test, so it is re-run ONCE and
+          // the retry replaces it. A second blow-up is kept and flagged, never
+          // excluded — dropping rollouts after seeing which arm drew them is the
+          // degree of freedom that rule exists to remove. Detection is arm-blind.
+          const degenFlags = [!!r.degenerate];
+          let d = degenerationVerdict(degenFlags);
+          if (d.needRerun) {
+            console.log(`  [${arm} rep${rep}] DEGENERATE (${(r.degeneration?.reasons || []).join(', ')}) — re-run once, retry replaces it (policy)`);
+            const r3 = await attemptRun();
+            attemptCost += Number(r3.costRealizedUsd) || 0;   // the retry is not free
+            degenFlags.push(!!r3.degenerate);
+            r = r3;
+            d = degenerationVerdict(degenFlags);
+            if (d.degenerateAfterRetry) console.log(`  [${arm} rep${rep}] DEGENERATE on re-run too — KEPT and flagged (never excluded)`);
+          }
           const ranTests = (r.toolCounts?.test || 0) > 0;
-          console.log(`  [${arm} rep${rep}] calls=${r.calls} ss=${r.ss} edits=${r.toolCounts.edit} hunks=${r.patchHunks} ranTests=${ranTests} escape=${r.escape} leak=${r.leak} $${r.costRealizedUsd} ideal$${r.idealCostUsd ?? '?'} ${(r.wallMs / 1000).toFixed(0)}s exit=${r.exitReason}${v.excluded ? ' [SHIM-EXCLUDED]' : (v.reran ? ' [shim-reran]' : '')}`);
+          console.log(`  [${arm} rep${rep}] calls=${r.calls} ss=${r.ss} edits=${r.toolCounts.edit} hunks=${r.patchHunks} ranTests=${ranTests} escape=${r.escape} leak=${r.leak} $${r.costRealizedUsd} ideal$${r.idealCostUsd ?? '?'} ${(r.wallMs / 1000).toFixed(0)}s exit=${r.exitReason}${v.excluded ? ' [SHIM-EXCLUDED]' : (v.reran ? ' [shim-reran]' : '')}${d.degenerateAfterRetry ? ' [DEGENERATE-KEPT]' : (d.reran ? ' [degen-reran]' : '')}`);
           const pred = { instance_id: id, model_name_or_path: arm, model_patch: r.finalPatch || '' };
           // EXCLUDED runs never enter the scored prediction sets (both arms).
           if (!v.excluded) {
             if (rep === 0) predsByArm[arm].push(pred);
             (predsByRepArm[rep] = predsByRepArm[rep] || { native: [], sweet: [] })[arm].push(pred);
           }
-          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, provider: PROVIDER, harness: HARNESS, reasoning: REASONING, envConfigHash: preflightConfigHashes.get(id) || null, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, isolated: CLI_HARNESS && ISOLATION_ON, rtDedup: RT_DEDUP_ON, ...RT_PROGRESS_ROW, ...packingTreatmentRowFields({ sweet }), ...stripBig(r) });
+          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, provider: PROVIDER, harness: HARNESS, reasoning: REASONING, envConfigHash: preflightConfigHashes.get(id) || null, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, degenReran: d.reran, degenerateAfterRetry: d.degenerateAfterRetry, isolated: CLI_HARNESS && ISOLATION_ON, rtDedup: RT_DEDUP_ON, ...RT_PROGRESS_ROW, ...packingTreatmentRowFields({ sweet }), ...stripBig(r) });
           try { const td = path.join(BENCH, 'results', runId, 'trajectories'); mkdirSync(td, { recursive: true }); writeFileSync(path.join(td, `${id}-${arm}-r${rep}.json`), JSON.stringify({ taskId: id, arm, rep, exitReason: r.exitReason, toolCounts: r.toolCounts, ranTests, escapeExamples: r.escapeExamples, trajectory: r.trajectory }, null, 2)); } catch { /* */ }
           prog.done++; prog.byArm[arm]++; if (r.patchHunks > 0 && !v.excluded) prog.predOk[arm]++; prog.cost += attemptCost;
           if (v.excluded) prog.shimExcluded = (prog.shimExcluded || 0) + 1;

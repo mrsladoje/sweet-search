@@ -1,0 +1,86 @@
+{
+  "frozenSetSize": 11,
+  "frozenFrom": "/root/sweet-search-private/eval/task-completion-bench/results/phase0-regrade-20260812/stability/flaky-set.json",
+  "runs": [
+    {
+      "n": 2153,
+      "f2pPass": 1,
+      "p2pFails": [],
+      "mins": "0.6",
+      "escaped": [],
+      "fullAfterExclusion": true
+    },
+    {
+      "n": 2150,
+      "f2pPass": 1,
+      "p2pFails": [
+        "Yarp.Kubernetes.Controller.Hosting.Tests.BackgroundHostedServiceTests.StartAndStopUnderWebHost",
+        "Yarp.Kubernetes.Controller.Rate.Tests.LimiterTests.ReserveTellsYouHowLongToWait",
+        "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 1.1, versionPolicy: RequestVersionExact, requestedDestinationVersion: 1.1, destinationProtocols: Http1AndHttp2, useHttpsOnDestination: True, expectedVersion: \"HTTP/1.1\", expectedProxyError: null, e2eWillFail: False)"
+      ],
+      "mins": "0.5",
+      "escaped": [
+        "Yarp.Kubernetes.Controller.Hosting.Tests.BackgroundHostedServiceTests.StartAndStopUnderWebHost",
+        "Yarp.Kubernetes.Controller.Rate.Tests.LimiterTests.ReserveTellsYouHowLongToWait",
+        "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 1.1, versionPolicy: RequestVersionExact, requestedDestinationVersion: 1.1, destinationProtocols: Http1AndHttp2, useHttpsOnDestination: True, expectedVersion: \"HTTP/1.1\", expectedProxyError: null, e2eWillFail: False)"
+      ],
+      "fullAfterExclusion": false
+    },
+    {
+      "n": 2153,
+      "f2pPass": 1,
+      "p2pFails": [
+        "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 2.0, versionPolicy: RequestVersionOrLower, requestedDestinationVersion: 1.1, destinationProtocols: Http2, useHttpsOnDestination: True, expectedVersion: \"HTTP/1.1\", expectedProxyError: Request, e2eWillFail: True)"
+      ],
+      "mins": "0.6",
+      "escaped": [
+        "Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 2.0, versionPolicy: RequestVersionOrLower, requestedDestinationVersion: 1.1, destinationProtocols: Http2, useHttpsOnDestination: True, expectedVersion: \"HTTP/1.1\", expectedProxyError: Request, e2eWillFail: True)"
+      ],
+      "fullAfterExclusion": false
+    },
+    {
+      "n": 2153,
+      "f2pPass": 1,
+      "p2pFails": [],
+      "mins": "0.5",
+      "escaped": [],
+      "fullAfterExclusion": true
+    },
+    {
+      "n": 2153,
+      "f2pPass": 1,
+      "p2pFails": [
+        "Yarp.Kubernetes.Controller.Rate.Tests.LimiterTests.AsManyAsBurstTokensAreAvailableRightAway(burst: 1)"
+      ],
+      "mins": "0.5",
+      "escaped": [
+        "Yarp.Kubernetes.Controller.Rate.Tests.LimiterTests.AsManyAsBurstTokensAreAvailableRightAway(burst: 1)"
+      ],
+      "fullAfterExclusion": false
+    },
+    {
+      "n": 2153,
+      "f2pPass": 1,
+      "p2pFails": [],
+      "mins": "0.5",
+      "escaped": [],
+      "fullAfterExclusion": true
+    },
+    {
+      "n": 2153,
+      "f2pPass": 1,
+      "p2pFails": [],
+      "mins": "0.6",
+      "escaped": [],
+      "fullAfterExclusion": true
+    },
+    {
+      "n": 2153,
+      "f2pPass": 1,
+      "p2pFails": [],
+      "mins": "0.5",
+      "escaped": [],
+      "fullAfterExclusion": true
+    }
+  ]
+}
