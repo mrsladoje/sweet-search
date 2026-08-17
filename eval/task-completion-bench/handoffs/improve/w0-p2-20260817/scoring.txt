@@ -1,0 +1,107 @@
+P2 residue replay — scoring
+
+rows=99  OK=99  EMPTY_PATCH=0  ERROR=0  apply-failed=0
+admissible (blocklist applied)=78
+
+=== 1. SENSITIVITY — the trace P2 exists to catch ===
+
+  claudecode  rep0  resolved=false residue=1 item(s)  namesCountBy=true   <- REQUIRED, met
+  claudecode  rep1  resolved=false residue=1 item(s)  namesCountBy=true   <- REQUIRED, met
+  codex       rep0  resolved=true  residue=0 item(s)  namesCountBy=false
+  codex       rep1  resolved=true  residue=0 item(s)  namesCountBy=false
+  opencode    rep0  resolved=true  residue=0 item(s)  namesCountBy=false
+  opencode    rep1  resolved=true  residue=0 item(s)  namesCountBy=false
+
+  losing Underscore sweet cells naming countBy: 2/2
+  winning Underscore sweet cells with any residue: 0/4
+
+
+=== 2. SPECIFICITY — what the audit would say on work that was already right ===
+
+--- RESOLVED admissible sweet cells — every item here is a false positive (n=38) ---
+granularity/scope   cells w/ residue  median  p90   max   total items
+span/touched        4 (10.5%)         0       1     1     4
+span/repo           12 (31.6%)        0       3     3     22
+line/touched        2 (5.3%)          0       0     1     2
+line/repo           8 (21.1%)         0       3     3     18
+
+--- UNRESOLVED admissible sweet cells (n=40) ---
+granularity/scope   cells w/ residue  median  p90   max   total items
+span/touched        7 (17.5%)         0       1     1     7
+span/repo           11 (27.5%)        0       1     2     12
+line/touched        2 (5.0%)          0       0     1     2
+line/repo           8 (20.0%)         0       1     1     8
+
+--- ALL admissible sweet cells (n=78) ---
+granularity/scope   cells w/ residue  median  p90   max   total items
+span/touched        11 (14.1%)        0       1     1     11
+span/repo           23 (29.5%)        0       1     3     34
+line/touched        4 (5.1%)          0       0     1     4
+line/repo           16 (20.5%)        0       1     3     26
+
+
+=== 3. IS THE SILENCE REAL — guarding against a quiet-because-broken extractor ===
+
+cells with ZERO derived stems: 36/78
+  (a large patch with no stems means the extractor, not the agent, was quiet)
+    codex       rep0 dashbitco__nimble_options-43               touchedFiles=1
+    codex       rep0 epiforecasts__scoringutils-229             touchedFiles=1
+    codex       rep0 apple__swift-nio-http2-145                 touchedFiles=1
+    codex       rep0 joshuakgoldberg__bingo-274                 touchedFiles=1
+    codex       rep0 oceanparcels__parcels-617                  touchedFiles=1
+    codex       rep0 teleporthq__teleport-code-generators-291   touchedFiles=1
+    codex       rep1 dashbitco__nimble_options-43               touchedFiles=1
+    codex       rep1 akinsho__nvim-bufferline.lua-173           touchedFiles=1
+    codex       rep1 joshuakgoldberg__bingo-274                 touchedFiles=1
+    codex       rep1 oceanparcels__parcels-617                  touchedFiles=1
+    opencode    rep0 dart-lang__http-1114                       touchedFiles=7
+    opencode    rep0 dashbitco__nimble_options-43               touchedFiles=1
+    opencode    rep0 codeception__codeceptjs-367                touchedFiles=1
+    opencode    rep0 akinsho__nvim-bufferline.lua-173           touchedFiles=1
+    opencode    rep0 epiforecasts__scoringutils-229             touchedFiles=1
+    opencode    rep0 joshuakgoldberg__bingo-274                 touchedFiles=1
+    opencode    rep0 pytask-dev__pytask-210                     touchedFiles=1
+    opencode    rep1 dart-lang__http-1114                       touchedFiles=6
+    opencode    rep1 dashbitco__nimble_options-43               touchedFiles=1
+    opencode    rep1 codeception__codeceptjs-367                touchedFiles=1
+    opencode    rep1 epiforecasts__scoringutils-229             touchedFiles=1
+    opencode    rep1 apple__swift-nio-http2-145                 touchedFiles=1
+    opencode    rep1 pytask-dev__pytask-210                     touchedFiles=1
+    opencode    rep1 oceanparcels__parcels-617                  touchedFiles=1
+    claudecode  rep0 dart-lang__http-1114                       touchedFiles=7
+    claudecode  rep0 dashbitco__nimble_options-43               touchedFiles=1
+    claudecode  rep0 codeception__codeceptjs-367                touchedFiles=1
+    claudecode  rep0 akinsho__nvim-bufferline.lua-173           touchedFiles=1
+    claudecode  rep0 joshuakgoldberg__bingo-274                 touchedFiles=1
+    claudecode  rep0 pytask-dev__pytask-210                     touchedFiles=1
+    claudecode  rep0 oceanparcels__parcels-617                  touchedFiles=1
+    claudecode  rep1 dashbitco__nimble_options-43               touchedFiles=1
+    claudecode  rep1 epiforecasts__scoringutils-229             touchedFiles=1
+    claudecode  rep1 apple__swift-nio-http2-145                 touchedFiles=1
+    claudecode  rep1 pytask-dev__pytask-210                     touchedFiles=1
+    claudecode  rep1 oceanparcels__parcels-617                  touchedFiles=1
+
+stems per cell: median=1 p90=7 max=19 total=117
+
+
+=== 4. EVERY RESIDUE ITEM ON A RESOLVED CELL (the false-positive list, in full) ===
+
+  codex rep0 rstudio-education__gradethis-161
+     stem "user, solution)"  (2 hits)
+        R/detect_mistakes.R:68 symbol=if | if (!identical(user, solution)) {
+        R/grade_code.R:103 symbol=if | if (is_code_identical(user, solution)) {
+  opencode rep0 rstudio-education__gradethis-161
+     stem "user, solution)"  (2 hits)
+        R/detect_mistakes.R:68 symbol=if | if (!identical(user, solution)) {
+        R/grade_code.R:103 symbol=if | if (is_code_identical(user, solution)) {
+  opencode rep1 rstudio-education__gradethis-161
+     stem "user, solution)"  (2 hits)
+        R/detect_mistakes.R:68 symbol=if | if (!identical(user, solution)) {
+        R/grade_code.R:103 symbol=if | if (is_code_identical(user, solution)) {
+  claudecode rep1 rstudio-education__gradethis-161
+     stem "user, solution)"  (2 hits)
+        R/detect_mistakes.R:68 symbol=if | if (!identical(user, solution)) {
+        R/grade_code.R:103 symbol=if | if (is_code_identical(user, solution)) {
+
+  total false-positive residue items on resolved cells: 4
+  resolved cells that would see ANY residue: 4/38

@@ -1,0 +1,7194 @@
+[
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "redboltz__mqtt_cpp-466",
+    "harness": "codex",
+    "touched": [
+      "include/mqtt/client.hpp"
+    ],
+    "stemsLine": 4,
+    "stemsSpan": 4,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 3,
+      "hits": 12,
+      "detail": [
+        {
+          "stem": "auto it = r.resolve(q);",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 45,
+              "text": "auto it = r.resolve(q);",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 118,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 192,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 283,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "as::ip::tcp::resolver::iterator end;",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 46,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 119,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 193,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 284,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "#endif // BOOST_VERSION < 106600",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 51,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 124,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 198,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 289,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 3,
+      "hits": 12,
+      "detail": [
+        {
+          "stem": "auto it = r.resolve(q);",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 45,
+              "text": "auto it = r.resolve(q);",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 118,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 192,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 283,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "as::ip::tcp::resolver::iterator end;",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 46,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 119,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 193,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 284,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "#endif // BOOST_VERSION < 106600",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 51,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 124,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 198,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 289,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "dotnet__yarp-2825",
+    "harness": "codex",
+    "touched": [
+      "src/Kubernetes.Controller/Converters/YarpParser.cs"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "dart-lang__http-1114",
+    "harness": "codex",
+    "touched": [
+      "pkgs/http/lib/src/base_request.dart",
+      "pkgs/http/lib/src/base_response.dart",
+      "pkgs/http/lib/src/browser_client.dart",
+      "pkgs/http/lib/src/io_client.dart",
+      "pkgs/http/lib/src/io_streamed_response.dart",
+      "pkgs/http/lib/src/response.dart",
+      "pkgs/http/lib/src/streamed_response.dart"
+    ],
+    "stemsLine": 10,
+    "stemsSpan": 7,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "dashbitco__nimble_options-43",
+    "harness": "codex",
+    "touched": [
+      "lib/nimble_options.ex"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "ontodev__robot-710",
+    "harness": "codex",
+    "touched": [
+      "robot-core/src/main/java/org/obolibrary/robot/OntologyHelper.java"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "codeception__codeceptjs-367",
+    "harness": "codex",
+    "touched": [
+      "lib/helper.js"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "akinsho__nvim-bufferline.lua-173",
+    "harness": "codex",
+    "touched": [
+      "lua/bufferline/offset.lua"
+    ],
+    "stemsLine": 6,
+    "stemsSpan": 5,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "mransan__ocaml-protoc-202",
+    "harness": "codex",
+    "touched": [
+      "src/compilerlib/pb_codegen_decode_bs.ml"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "statamic__cms-9029",
+    "harness": "codex",
+    "touched": [
+      "src/Licensing/Outpost.php"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "epiforecasts__scoringutils-229",
+    "harness": "codex",
+    "touched": [
+      "R/input-check-helpers.R"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "apple__swift-nio-http2-145",
+    "harness": "codex",
+    "touched": [
+      "Sources/NIOHTTP2/StreamStateMachine.swift"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "joshuakgoldberg__bingo-274",
+    "harness": "codex",
+    "touched": [
+      "packages/bingo-handlebars/src/handlebars.ts"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "import { intake } from \"bingo-fs\";",
+          "n": 1,
+          "hits": [
+            {
+              "file": "packages/bingo-handlebars/src/loadHandlebars.ts",
+              "line": 1,
+              "text": "import { intake } from \"bingo-fs\";",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "jashkenas__underscore-2757",
+    "harness": "codex",
+    "touched": [
+      "underscore.js"
+    ],
+    "stemsLine": 2,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "pytask-dev__pytask-210",
+    "harness": "codex",
+    "touched": [
+      "src/_pytask/traceback.py"
+    ],
+    "stemsLine": 4,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "rstudio-education__gradethis-161",
+    "harness": "codex",
+    "touched": [
+      "R/detect_mistakes.R",
+      "R/grade_code.R",
+      "R/message_generators.R"
+    ],
+    "stemsLine": 2,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 1,
+      "hits": 5,
+      "detail": [
+        {
+          "stem": "enclosing_arg = NULL) {",
+          "n": 5,
+          "hits": [
+            {
+              "file": "R/message_generators.R",
+              "line": 58,
+              "text": "enclosing_arg = NULL) { # only if the user supplied one (to match user code)",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 97,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 130,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 172,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 214,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "line_repo": {
+      "items": 1,
+      "hits": 5,
+      "detail": [
+        {
+          "stem": "enclosing_arg = NULL) {",
+          "n": 5,
+          "hits": [
+            {
+              "file": "R/message_generators.R",
+              "line": 58,
+              "text": "enclosing_arg = NULL) { # only if the user supplied one (to match user code)",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 97,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 130,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 172,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 214,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 1,
+      "hits": 2,
+      "detail": [
+        {
+          "stem": "user, solution)",
+          "n": 2,
+          "hits": [
+            {
+              "file": "R/detect_mistakes.R",
+              "line": 68,
+              "text": "if (!identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/grade_code.R",
+              "line": 103,
+              "text": "if (is_code_identical(user, solution)) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 8,
+      "detail": [
+        {
+          "stem": "user, solution)",
+          "n": 8,
+          "hits": [
+            {
+              "file": "R/detect_mistakes.R",
+              "line": 68,
+              "text": "if (!identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/grade_code.R",
+              "line": 103,
+              "text": "if (is_code_identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 10,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 17,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 24,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 32,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 41,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 49,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "oceanparcels__parcels-617",
+    "harness": "codex",
+    "touched": [
+      "parcels/codegenerator.py"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "teleporthq__teleport-code-generators-291",
+    "harness": "codex",
+    "touched": [
+      "packages/teleport-project-generator/src/utils.ts"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "redboltz__mqtt_cpp-466",
+    "harness": "codex",
+    "touched": [
+      "include/mqtt/client.hpp"
+    ],
+    "stemsLine": 4,
+    "stemsSpan": 4,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 3,
+      "hits": 12,
+      "detail": [
+        {
+          "stem": "auto it = r.resolve(q);",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 45,
+              "text": "auto it = r.resolve(q);",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 118,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 192,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 283,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "as::ip::tcp::resolver::iterator end;",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 46,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 119,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 193,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 284,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "#endif // BOOST_VERSION < 106600",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 51,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 124,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 198,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 289,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 3,
+      "hits": 12,
+      "detail": [
+        {
+          "stem": "auto it = r.resolve(q);",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 45,
+              "text": "auto it = r.resolve(q);",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 118,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 192,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 283,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "as::ip::tcp::resolver::iterator end;",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 46,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 119,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 193,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 284,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "#endif // BOOST_VERSION < 106600",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 51,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 124,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 198,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 289,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "dotnet__yarp-2825",
+    "harness": "codex",
+    "touched": [
+      "src/Kubernetes.Controller/Converters/YarpParser.cs"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "dart-lang__http-1114",
+    "harness": "codex",
+    "touched": [
+      "pkgs/http/lib/src/base_request.dart",
+      "pkgs/http/lib/src/base_response.dart",
+      "pkgs/http/lib/src/browser_client.dart",
+      "pkgs/http/lib/src/io_client.dart",
+      "pkgs/http/lib/src/io_streamed_response.dart",
+      "pkgs/http/lib/src/response.dart",
+      "pkgs/http/lib/src/streamed_response.dart"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "// TODO(nweiz): make this a HttpHeaders object",
+          "n": 1,
+          "hits": [
+            {
+              "file": "pkgs/http/lib/src/base_response.dart",
+              "line": 49,
+              "text": "// TODO(nweiz): make this a HttpHeaders object.",
+              "symbol": "BaseResponse"
+            }
+          ]
+        }
+      ]
+    },
+    "line_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "// TODO(nweiz): make this a HttpHeaders object",
+          "n": 1,
+          "hits": [
+            {
+              "file": "pkgs/http/lib/src/base_response.dart",
+              "line": 49,
+              "text": "// TODO(nweiz): make this a HttpHeaders object.",
+              "symbol": "BaseResponse"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "// TODO(nweiz): make this a HttpHeaders object",
+          "n": 1,
+          "hits": [
+            {
+              "file": "pkgs/http/lib/src/base_response.dart",
+              "line": 49,
+              "text": "// TODO(nweiz): make this a HttpHeaders object.",
+              "symbol": "BaseResponse"
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "// TODO(nweiz): make this a HttpHeaders object",
+          "n": 1,
+          "hits": [
+            {
+              "file": "pkgs/http/lib/src/base_response.dart",
+              "line": 49,
+              "text": "// TODO(nweiz): make this a HttpHeaders object.",
+              "symbol": "BaseResponse"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "dashbitco__nimble_options-43",
+    "harness": "codex",
+    "touched": [
+      "lib/nimble_options.ex"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "ontodev__robot-710",
+    "harness": "codex",
+    "touched": [
+      "robot-core/src/main/java/org/obolibrary/robot/OntologyHelper.java"
+    ],
+    "stemsLine": 8,
+    "stemsSpan": 8,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 3,
+      "hits": 10,
+      "detail": [
+        {
+          "stem": "} catch (Exception e) {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/AnnotateCommand.java",
+              "line": 141,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CollapseCommand.java",
+              "line": 82,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandLineHelper.java",
+              "line": 584,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 140,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 249,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ConvertCommand.java",
+              "line": 93,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/DiffCommand.java",
+              "line": 103,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ExceptionHelper.java",
+              "line": 63,
+              "text": "} catch (Exception e) {",
+              "symbol": "getExceptionID"
+            }
+          ]
+        },
+        {
+          "stem": "OWLEntity entity;",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/Template.java",
+              "line": 570,
+              "text": "OWLEntity entity;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "if (entity != null) {",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/TemplateOperation.java",
+              "line": 585,
+              "text": "if (entity != null) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 3,
+      "hits": 10,
+      "detail": [
+        {
+          "stem": "} catch (Exception e) {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/AnnotateCommand.java",
+              "line": 141,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CollapseCommand.java",
+              "line": 82,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandLineHelper.java",
+              "line": 584,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 140,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 249,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ConvertCommand.java",
+              "line": 93,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/DiffCommand.java",
+              "line": 103,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ExceptionHelper.java",
+              "line": 63,
+              "text": "} catch (Exception e) {",
+              "symbol": "getExceptionID"
+            }
+          ]
+        },
+        {
+          "stem": "OWLEntity entity;",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/Template.java",
+              "line": 570,
+              "text": "OWLEntity entity;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "if (entity != null) {",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/TemplateOperation.java",
+              "line": 585,
+              "text": "if (entity != null) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "codeception__codeceptjs-367",
+    "harness": "codex",
+    "touched": [
+      "lib/helper.js"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "akinsho__nvim-bufferline.lua-173",
+    "harness": "codex",
+    "touched": [
+      "lua/bufferline/offset.lua"
+    ],
+    "stemsLine": 2,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "mransan__ocaml-protoc-202",
+    "harness": "codex",
+    "touched": [
+      "src/compilerlib/pb_codegen_decode_yojson.ml",
+      "src/compilerlib/pb_codegen_encode_yojson.ml",
+      "src/runtime-yojson/pbrt_yojson.ml",
+      "src/runtime-yojson/pbrt_yojson.mli"
+    ],
+    "stemsLine": 5,
+    "stemsSpan": 5,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "statamic__cms-9029",
+    "harness": "codex",
+    "touched": [
+      "src/Licensing/Outpost.php"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "epiforecasts__scoringutils-229",
+    "harness": "codex",
+    "touched": [
+      "R/input-check-helpers.R"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "apple__swift-nio-http2-145",
+    "harness": "codex",
+    "touched": [
+      "Sources/NIOHTTP2/StreamStateMachine.swift"
+    ],
+    "stemsLine": 2,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 1,
+      "hits": 4,
+      "detail": [
+        {
+          "stem": "halfClosedLocalPeerIdle, .",
+          "n": 4,
+          "hits": [
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 388,
+              "text": "case .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": "init"
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 688,
+              "text": "case .idle, .reservedLocal, .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive,",
+              "symbol": null
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 825,
+              "text": "case .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": null
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 937,
+              "text": "case .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 4,
+      "detail": [
+        {
+          "stem": "halfClosedLocalPeerIdle, .",
+          "n": 4,
+          "hits": [
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 388,
+              "text": "case .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": "init"
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 688,
+              "text": "case .idle, .reservedLocal, .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive,",
+              "symbol": null
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 825,
+              "text": "case .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": null
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 937,
+              "text": "case .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "joshuakgoldberg__bingo-274",
+    "harness": "codex",
+    "touched": [
+      "packages/bingo-handlebars/src/handlebars.ts"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "import { intake } from \"bingo-fs\";",
+          "n": 1,
+          "hits": [
+            {
+              "file": "packages/bingo-handlebars/src/loadHandlebars.ts",
+              "line": 1,
+              "text": "import { intake } from \"bingo-fs\";",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "jashkenas__underscore-2757",
+    "harness": "codex",
+    "touched": [
+      "underscore.js"
+    ],
+    "stemsLine": 2,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "pytask-dev__pytask-210",
+    "harness": "codex",
+    "touched": [
+      "src/_pytask/traceback.py"
+    ],
+    "stemsLine": 4,
+    "stemsSpan": 2,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "exc_info[2])",
+          "n": 1,
+          "hits": [
+            {
+              "file": "src/_pytask/debugging.py",
+              "line": 391,
+              "text": "post_mortem(exc_info[2])",
+              "symbol": "wrapper"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "rstudio-education__gradethis-161",
+    "harness": "codex",
+    "touched": [
+      "R/detect_mistakes.R",
+      "R/grade_code.R",
+      "R/message_generators.R"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "oceanparcels__parcels-617",
+    "harness": "codex",
+    "touched": [
+      "parcels/codegenerator.py"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-codex-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "teleporthq__teleport-code-generators-291",
+    "harness": "codex",
+    "touched": [
+      "packages/teleport-project-generator/src/utils.ts"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "redboltz__mqtt_cpp-466",
+    "harness": "opencode",
+    "touched": [
+      "include/mqtt/client.hpp",
+      "include/mqtt/string_view.hpp"
+    ],
+    "stemsLine": 13,
+    "stemsSpan": 13,
+    "applied": true,
+    "line_touched": {
+      "items": 3,
+      "hits": 7,
+      "detail": [
+        {
+          "stem": "namespace MQTT_NS {",
+          "n": 3,
+          "hits": [
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 38,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 16,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 32,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            }
+          ]
+        },
+        {
+          "stem": "} // namespace MQTT_NS",
+          "n": 3,
+          "hits": [
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 1353,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 22,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 39,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "Traits"
+            }
+          ]
+        },
+        {
+          "stem": "template<class CharT, class Traits = std::char_traits<CharT> >",
+          "n": 1,
+          "hits": [
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 36,
+              "text": "template<class CharT, class Traits = std::char_traits<CharT> >",
+              "symbol": "Traits"
+            }
+          ]
+        }
+      ]
+    },
+    "line_repo": {
+      "items": 6,
+      "hits": 29,
+      "detail": [
+        {
+          "stem": "namespace MQTT_NS {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 16,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 27,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/async_client.hpp",
+              "line": 15,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/buffer.hpp",
+              "line": 19,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/callable_overlay.hpp",
+              "line": 17,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 38,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/connect_flags.hpp",
+              "line": 14,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/connect_return_code.hpp",
+              "line": 13,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            }
+          ]
+        },
+        {
+          "stem": "} // namespace MQTT_NS",
+          "n": 8,
+          "hits": [
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 21,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 32,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/async_client.hpp",
+              "line": 697,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "async_client_t"
+            },
+            {
+              "file": "include/mqtt/buffer.hpp",
+              "line": 138,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "allocate_buffer"
+            },
+            {
+              "file": "include/mqtt/callable_overlay.hpp",
+              "line": 2129,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "set_error_handler"
+            },
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 1353,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/connect_flags.hpp",
+              "line": 54,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "will_qos"
+            },
+            {
+              "file": "include/mqtt/connect_return_code.hpp",
+              "line": 47,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "connect_return_code"
+            }
+          ]
+        },
+        {
+          "stem": "template<class CharT, class Traits = std::char_traits<CharT> >",
+          "n": 1,
+          "hits": [
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 36,
+              "text": "template<class CharT, class Traits = std::char_traits<CharT> >",
+              "symbol": "Traits"
+            }
+          ]
+        },
+        {
+          "stem": "auto it = r.resolve(q);",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 45,
+              "text": "auto it = r.resolve(q);",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 118,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 192,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 283,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "as::ip::tcp::resolver::iterator end;",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 46,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 119,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 193,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 284,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "#endif // BOOST_VERSION < 106600",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 51,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 124,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 198,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 289,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 3,
+      "hits": 7,
+      "detail": [
+        {
+          "stem": "namespace MQTT_NS {",
+          "n": 3,
+          "hits": [
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 38,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 16,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 32,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            }
+          ]
+        },
+        {
+          "stem": "} // namespace MQTT_NS",
+          "n": 3,
+          "hits": [
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 1353,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 22,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 39,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "Traits"
+            }
+          ]
+        },
+        {
+          "stem": "template<class CharT, class Traits = std::char_traits<CharT> >",
+          "n": 1,
+          "hits": [
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 36,
+              "text": "template<class CharT, class Traits = std::char_traits<CharT> >",
+              "symbol": "Traits"
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 6,
+      "hits": 29,
+      "detail": [
+        {
+          "stem": "namespace MQTT_NS {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 16,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 27,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/async_client.hpp",
+              "line": 15,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/buffer.hpp",
+              "line": 19,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/callable_overlay.hpp",
+              "line": 17,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 38,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/connect_flags.hpp",
+              "line": 14,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/connect_return_code.hpp",
+              "line": 13,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            }
+          ]
+        },
+        {
+          "stem": "} // namespace MQTT_NS",
+          "n": 8,
+          "hits": [
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 21,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 32,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/async_client.hpp",
+              "line": 697,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "async_client_t"
+            },
+            {
+              "file": "include/mqtt/buffer.hpp",
+              "line": 138,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "allocate_buffer"
+            },
+            {
+              "file": "include/mqtt/callable_overlay.hpp",
+              "line": 2129,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "set_error_handler"
+            },
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 1353,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/connect_flags.hpp",
+              "line": 54,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "will_qos"
+            },
+            {
+              "file": "include/mqtt/connect_return_code.hpp",
+              "line": 47,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "connect_return_code"
+            }
+          ]
+        },
+        {
+          "stem": "template<class CharT, class Traits = std::char_traits<CharT> >",
+          "n": 1,
+          "hits": [
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 36,
+              "text": "template<class CharT, class Traits = std::char_traits<CharT> >",
+              "symbol": "Traits"
+            }
+          ]
+        },
+        {
+          "stem": "auto it = r.resolve(q);",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 45,
+              "text": "auto it = r.resolve(q);",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 118,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 192,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 283,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "as::ip::tcp::resolver::iterator end;",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 46,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 119,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 193,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 284,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "#endif // BOOST_VERSION < 106600",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 51,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 124,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 198,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 289,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "dotnet__yarp-2825",
+    "harness": "opencode",
+    "touched": [
+      "src/Kubernetes.Controller/Converters/YarpParser.cs"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "dart-lang__http-1114",
+    "harness": "opencode",
+    "touched": [
+      "pkgs/http/lib/src/base_request.dart",
+      "pkgs/http/lib/src/base_response.dart",
+      "pkgs/http/lib/src/browser_client.dart",
+      "pkgs/http/lib/src/io_client.dart",
+      "pkgs/http/lib/src/io_streamed_response.dart",
+      "pkgs/http/lib/src/response.dart",
+      "pkgs/http/lib/src/streamed_response.dart"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "dashbitco__nimble_options-43",
+    "harness": "opencode",
+    "touched": [
+      "lib/nimble_options.ex"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "ontodev__robot-710",
+    "harness": "opencode",
+    "touched": [
+      "robot-core/src/main/java/org/obolibrary/robot/OntologyHelper.java"
+    ],
+    "stemsLine": 8,
+    "stemsSpan": 8,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 3,
+      "hits": 10,
+      "detail": [
+        {
+          "stem": "} catch (Exception e) {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/AnnotateCommand.java",
+              "line": 141,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CollapseCommand.java",
+              "line": 82,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandLineHelper.java",
+              "line": 584,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 140,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 249,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ConvertCommand.java",
+              "line": 93,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/DiffCommand.java",
+              "line": 103,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ExceptionHelper.java",
+              "line": 63,
+              "text": "} catch (Exception e) {",
+              "symbol": "getExceptionID"
+            }
+          ]
+        },
+        {
+          "stem": "OWLEntity entity;",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/Template.java",
+              "line": 570,
+              "text": "OWLEntity entity;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "if (entity != null) {",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/TemplateOperation.java",
+              "line": 585,
+              "text": "if (entity != null) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 3,
+      "hits": 10,
+      "detail": [
+        {
+          "stem": "} catch (Exception e) {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/AnnotateCommand.java",
+              "line": 141,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CollapseCommand.java",
+              "line": 82,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandLineHelper.java",
+              "line": 584,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 140,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 249,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ConvertCommand.java",
+              "line": 93,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/DiffCommand.java",
+              "line": 103,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ExceptionHelper.java",
+              "line": 63,
+              "text": "} catch (Exception e) {",
+              "symbol": "getExceptionID"
+            }
+          ]
+        },
+        {
+          "stem": "OWLEntity entity;",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/Template.java",
+              "line": 570,
+              "text": "OWLEntity entity;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "if (entity != null) {",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/TemplateOperation.java",
+              "line": 585,
+              "text": "if (entity != null) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "codeception__codeceptjs-367",
+    "harness": "opencode",
+    "touched": [
+      "lib/helper.js"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "akinsho__nvim-bufferline.lua-173",
+    "harness": "opencode",
+    "touched": [
+      "lua/bufferline/offset.lua"
+    ],
+    "stemsLine": 2,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "statamic__cms-9029",
+    "harness": "opencode",
+    "touched": [
+      "src/Licensing/Outpost.php"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "epiforecasts__scoringutils-229",
+    "harness": "opencode",
+    "touched": [
+      "R/input-check-helpers.R"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "apple__swift-nio-http2-145",
+    "harness": "opencode",
+    "touched": [
+      "Sources/NIOHTTP2/StreamStateMachine.swift"
+    ],
+    "stemsLine": 2,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 1,
+      "hits": 4,
+      "detail": [
+        {
+          "stem": "halfClosedLocalPeerIdle, .",
+          "n": 4,
+          "hits": [
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 388,
+              "text": "case .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": "init"
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 688,
+              "text": "case .idle, .reservedLocal, .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive,",
+              "symbol": null
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 826,
+              "text": "case .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": null
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 938,
+              "text": "case .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 4,
+      "detail": [
+        {
+          "stem": "halfClosedLocalPeerIdle, .",
+          "n": 4,
+          "hits": [
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 388,
+              "text": "case .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": "init"
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 688,
+              "text": "case .idle, .reservedLocal, .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive,",
+              "symbol": null
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 826,
+              "text": "case .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": null
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 938,
+              "text": "case .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "joshuakgoldberg__bingo-274",
+    "harness": "opencode",
+    "touched": [
+      "packages/bingo-handlebars/src/handlebars.ts"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "import { intake } from \"bingo-fs\";",
+          "n": 1,
+          "hits": [
+            {
+              "file": "packages/bingo-handlebars/src/loadHandlebars.ts",
+              "line": 1,
+              "text": "import { intake } from \"bingo-fs\";",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "jashkenas__underscore-2757",
+    "harness": "opencode",
+    "touched": [
+      "underscore.js"
+    ],
+    "stemsLine": 2,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "pytask-dev__pytask-210",
+    "harness": "opencode",
+    "touched": [
+      "src/_pytask/traceback.py"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "rstudio-education__gradethis-161",
+    "harness": "opencode",
+    "touched": [
+      "R/detect_mistakes.R",
+      "R/grade_code.R",
+      "R/message_generators.R"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 1,
+      "hits": 2,
+      "detail": [
+        {
+          "stem": "user, solution)",
+          "n": 2,
+          "hits": [
+            {
+              "file": "R/detect_mistakes.R",
+              "line": 68,
+              "text": "if (!identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/grade_code.R",
+              "line": 103,
+              "text": "if (is_code_identical(user, solution)) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 8,
+      "detail": [
+        {
+          "stem": "user, solution)",
+          "n": 8,
+          "hits": [
+            {
+              "file": "R/detect_mistakes.R",
+              "line": 68,
+              "text": "if (!identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/grade_code.R",
+              "line": 103,
+              "text": "if (is_code_identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 10,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 17,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 24,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 32,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 41,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 49,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "oceanparcels__parcels-617",
+    "harness": "opencode",
+    "touched": [
+      "parcels/codegenerator.py"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "teleporthq__teleport-code-generators-291",
+    "harness": "opencode",
+    "touched": [
+      "packages/teleport-project-generator/src/utils.ts"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "folder.files = folder.files.concat(files",
+          "n": 1,
+          "hits": [
+            {
+              "file": "packages/teleport-github-gateway/src/utils.ts",
+              "line": 20,
+              "text": "folder.files = folder.files.concat(filesContents)",
+              "symbol": "fetchFilesContent"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "redboltz__mqtt_cpp-466",
+    "harness": "opencode",
+    "touched": [
+      "include/mqtt/client.hpp"
+    ],
+    "stemsLine": 4,
+    "stemsSpan": 4,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 3,
+      "hits": 12,
+      "detail": [
+        {
+          "stem": "auto it = r.resolve(q);",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 45,
+              "text": "auto it = r.resolve(q);",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 118,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 192,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 283,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "as::ip::tcp::resolver::iterator end;",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 46,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 119,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 193,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 284,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "#endif // BOOST_VERSION < 106600",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 51,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 124,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 198,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 289,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 3,
+      "hits": 12,
+      "detail": [
+        {
+          "stem": "auto it = r.resolve(q);",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 45,
+              "text": "auto it = r.resolve(q);",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 118,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 192,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 283,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "as::ip::tcp::resolver::iterator end;",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 46,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 119,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 193,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 284,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "#endif // BOOST_VERSION < 106600",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 51,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 124,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 198,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 289,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "dotnet__yarp-2825",
+    "harness": "opencode",
+    "touched": [
+      "src/Kubernetes.Controller/Converters/YarpParser.cs"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "dart-lang__http-1114",
+    "harness": "opencode",
+    "touched": [
+      "pkgs/http/lib/src/base_request.dart",
+      "pkgs/http/lib/src/base_response.dart",
+      "pkgs/http/lib/src/browser_client.dart",
+      "pkgs/http/lib/src/io_client.dart",
+      "pkgs/http/lib/src/io_streamed_response.dart",
+      "pkgs/http/lib/src/streamed_response.dart"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "dashbitco__nimble_options-43",
+    "harness": "opencode",
+    "touched": [
+      "lib/nimble_options.ex"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "ontodev__robot-710",
+    "harness": "opencode",
+    "touched": [
+      "robot-core/src/main/java/org/obolibrary/robot/OntologyHelper.java"
+    ],
+    "stemsLine": 8,
+    "stemsSpan": 8,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 3,
+      "hits": 10,
+      "detail": [
+        {
+          "stem": "} catch (Exception e) {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/AnnotateCommand.java",
+              "line": 141,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CollapseCommand.java",
+              "line": 82,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandLineHelper.java",
+              "line": 584,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 140,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 249,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ConvertCommand.java",
+              "line": 93,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/DiffCommand.java",
+              "line": 103,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ExceptionHelper.java",
+              "line": 63,
+              "text": "} catch (Exception e) {",
+              "symbol": "getExceptionID"
+            }
+          ]
+        },
+        {
+          "stem": "OWLEntity entity;",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/Template.java",
+              "line": 570,
+              "text": "OWLEntity entity;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "if (entity != null) {",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/TemplateOperation.java",
+              "line": 585,
+              "text": "if (entity != null) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 3,
+      "hits": 10,
+      "detail": [
+        {
+          "stem": "} catch (Exception e) {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/AnnotateCommand.java",
+              "line": 141,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CollapseCommand.java",
+              "line": 82,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandLineHelper.java",
+              "line": 584,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 140,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 249,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ConvertCommand.java",
+              "line": 93,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/DiffCommand.java",
+              "line": 103,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ExceptionHelper.java",
+              "line": 63,
+              "text": "} catch (Exception e) {",
+              "symbol": "getExceptionID"
+            }
+          ]
+        },
+        {
+          "stem": "OWLEntity entity;",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/Template.java",
+              "line": 570,
+              "text": "OWLEntity entity;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "if (entity != null) {",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/TemplateOperation.java",
+              "line": 585,
+              "text": "if (entity != null) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "codeception__codeceptjs-367",
+    "harness": "opencode",
+    "touched": [
+      "lib/actor.js"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "akinsho__nvim-bufferline.lua-173",
+    "harness": "opencode",
+    "touched": [
+      "lua/bufferline/offset.lua"
+    ],
+    "stemsLine": 8,
+    "stemsSpan": 7,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "statamic__cms-9029",
+    "harness": "opencode",
+    "touched": [
+      "src/Licensing/Outpost.php"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 1,
+      "hits": 3,
+      "detail": [
+        {
+          "stem": "$this->cache(",
+          "n": 3,
+          "hits": [
+            {
+              "file": "src/Licensing/Outpost.php",
+              "line": 115,
+              "text": "$this->cache()->put(self::CACHE_KEY, $contents, $expiration);",
+              "symbol": "cacheResponse"
+            },
+            {
+              "file": "src/Licensing/Outpost.php",
+              "line": 138,
+              "text": "return $this->cache()->get(self::CACHE_KEY);",
+              "symbol": "getCachedResponse"
+            },
+            {
+              "file": "src/Licensing/Outpost.php",
+              "line": 143,
+              "text": "return $this->cache()->forget(self::CACHE_KEY);",
+              "symbol": "clearCachedResponse"
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 6,
+      "detail": [
+        {
+          "stem": "$this->cache(",
+          "n": 6,
+          "hits": [
+            {
+              "file": "src/Licensing/Outpost.php",
+              "line": 115,
+              "text": "$this->cache()->put(self::CACHE_KEY, $contents, $expiration);",
+              "symbol": "cacheResponse"
+            },
+            {
+              "file": "src/Licensing/Outpost.php",
+              "line": 138,
+              "text": "return $this->cache()->get(self::CACHE_KEY);",
+              "symbol": "getCachedResponse"
+            },
+            {
+              "file": "src/Licensing/Outpost.php",
+              "line": 143,
+              "text": "return $this->cache()->forget(self::CACHE_KEY);",
+              "symbol": "clearCachedResponse"
+            },
+            {
+              "file": "src/Stache/Indexes/Index.php",
+              "line": 97,
+              "text": "$this->cache();",
+              "symbol": "if"
+            },
+            {
+              "file": "src/Stache/Indexes/Index.php",
+              "line": 118,
+              "text": "$this->cache();",
+              "symbol": "updateItem"
+            },
+            {
+              "file": "src/Stache/Indexes/Index.php",
+              "line": 127,
+              "text": "$this->cache();",
+              "symbol": "forgetItem"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "epiforecasts__scoringutils-229",
+    "harness": "opencode",
+    "touched": [
+      "R/input-check-helpers.R"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "apple__swift-nio-http2-145",
+    "harness": "opencode",
+    "touched": [
+      "Sources/NIOHTTP2/StreamStateMachine.swift"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "joshuakgoldberg__bingo-274",
+    "harness": "opencode",
+    "touched": [
+      "packages/bingo-handlebars/src/handlebars.ts"
+    ],
+    "stemsLine": 2,
+    "stemsSpan": 2,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "import { intake } from \"bingo-fs\";",
+          "n": 1,
+          "hits": [
+            {
+              "file": "packages/bingo-handlebars/src/loadHandlebars.ts",
+              "line": 1,
+              "text": "import { intake } from \"bingo-fs\";",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 2,
+      "hits": 3,
+      "detail": [
+        {
+          "stem": "import { intake",
+          "n": 2,
+          "hits": [
+            {
+              "file": "packages/bingo-fs/src/intake.test.ts",
+              "line": 3,
+              "text": "import { intake } from \"./intake.js\";",
+              "symbol": null
+            },
+            {
+              "file": "packages/bingo-handlebars/src/loadHandlebars.ts",
+              "line": 1,
+              "text": "import { intake } from \"bingo-fs\";",
+              "symbol": null
+            }
+          ]
+        },
+        {
+          "stem": "sourcePath: string, options?: object) {",
+          "n": 1,
+          "hits": [
+            {
+              "file": "packages/bingo-handlebars/src/loadHandlebars.ts",
+              "line": 24,
+              "text": "return function handlebars(sourcePath: string, options?: object) {",
+              "symbol": "handlebars"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "jashkenas__underscore-2757",
+    "harness": "opencode",
+    "touched": [
+      "underscore.js"
+    ],
+    "stemsLine": 2,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "pytask-dev__pytask-210",
+    "harness": "opencode",
+    "touched": [
+      "src/_pytask/traceback.py"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "rstudio-education__gradethis-161",
+    "harness": "opencode",
+    "touched": [
+      "R/detect_mistakes.R",
+      "R/grade_code.R"
+    ],
+    "stemsLine": 2,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 1,
+      "hits": 5,
+      "detail": [
+        {
+          "stem": "enclosing_arg = NULL) {",
+          "n": 5,
+          "hits": [
+            {
+              "file": "R/message_generators.R",
+              "line": 35,
+              "text": "enclosing_arg = NULL) { # only if the user supplied one (to match user code)",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 74,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 107,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 149,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 191,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 1,
+      "hits": 2,
+      "detail": [
+        {
+          "stem": "user, solution)",
+          "n": 2,
+          "hits": [
+            {
+              "file": "R/detect_mistakes.R",
+              "line": 68,
+              "text": "if (!identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/grade_code.R",
+              "line": 103,
+              "text": "if (is_code_identical(user, solution)) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 8,
+      "detail": [
+        {
+          "stem": "user, solution)",
+          "n": 8,
+          "hits": [
+            {
+              "file": "R/detect_mistakes.R",
+              "line": 68,
+              "text": "if (!identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/grade_code.R",
+              "line": 103,
+              "text": "if (is_code_identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 10,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 17,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 24,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 32,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 41,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 49,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "oceanparcels__parcels-617",
+    "harness": "opencode",
+    "touched": [
+      "parcels/codegenerator.py"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-opencode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "teleporthq__teleport-code-generators-291",
+    "harness": "opencode",
+    "touched": [
+      "packages/teleport-project-generator/src/utils.ts"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "folder.files = folder.files.concat(files",
+          "n": 1,
+          "hits": [
+            {
+              "file": "packages/teleport-github-gateway/src/utils.ts",
+              "line": 20,
+              "text": "folder.files = folder.files.concat(filesContents)",
+              "symbol": "fetchFilesContent"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "redboltz__mqtt_cpp-466",
+    "harness": "claudecode",
+    "touched": [
+      "include/mqtt/client.hpp",
+      "include/mqtt/string_view.hpp"
+    ],
+    "stemsLine": 13,
+    "stemsSpan": 13,
+    "applied": true,
+    "line_touched": {
+      "items": 3,
+      "hits": 7,
+      "detail": [
+        {
+          "stem": "namespace MQTT_NS {",
+          "n": 3,
+          "hits": [
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 38,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 16,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 32,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            }
+          ]
+        },
+        {
+          "stem": "} // namespace MQTT_NS",
+          "n": 3,
+          "hits": [
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 1353,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 22,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 39,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "Traits"
+            }
+          ]
+        },
+        {
+          "stem": "template<class CharT, class Traits = std::char_traits<CharT> >",
+          "n": 1,
+          "hits": [
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 36,
+              "text": "template<class CharT, class Traits = std::char_traits<CharT> >",
+              "symbol": "Traits"
+            }
+          ]
+        }
+      ]
+    },
+    "line_repo": {
+      "items": 6,
+      "hits": 29,
+      "detail": [
+        {
+          "stem": "namespace MQTT_NS {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 16,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 27,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/async_client.hpp",
+              "line": 15,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/buffer.hpp",
+              "line": 19,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/callable_overlay.hpp",
+              "line": 17,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 38,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/connect_flags.hpp",
+              "line": 14,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/connect_return_code.hpp",
+              "line": 13,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            }
+          ]
+        },
+        {
+          "stem": "} // namespace MQTT_NS",
+          "n": 8,
+          "hits": [
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 21,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 32,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/async_client.hpp",
+              "line": 697,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "async_client_t"
+            },
+            {
+              "file": "include/mqtt/buffer.hpp",
+              "line": 138,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "allocate_buffer"
+            },
+            {
+              "file": "include/mqtt/callable_overlay.hpp",
+              "line": 2129,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "set_error_handler"
+            },
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 1353,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/connect_flags.hpp",
+              "line": 54,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "will_qos"
+            },
+            {
+              "file": "include/mqtt/connect_return_code.hpp",
+              "line": 47,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "connect_return_code"
+            }
+          ]
+        },
+        {
+          "stem": "template<class CharT, class Traits = std::char_traits<CharT> >",
+          "n": 1,
+          "hits": [
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 36,
+              "text": "template<class CharT, class Traits = std::char_traits<CharT> >",
+              "symbol": "Traits"
+            }
+          ]
+        },
+        {
+          "stem": "auto it = r.resolve(q);",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 45,
+              "text": "auto it = r.resolve(q);",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 118,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 192,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 283,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "as::ip::tcp::resolver::iterator end;",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 46,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 119,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 193,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 284,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "#endif // BOOST_VERSION < 106600",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 51,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 124,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 198,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 289,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 3,
+      "hits": 7,
+      "detail": [
+        {
+          "stem": "namespace MQTT_NS {",
+          "n": 3,
+          "hits": [
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 38,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 16,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 32,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            }
+          ]
+        },
+        {
+          "stem": "} // namespace MQTT_NS",
+          "n": 3,
+          "hits": [
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 1353,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 22,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 39,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "Traits"
+            }
+          ]
+        },
+        {
+          "stem": "template<class CharT, class Traits = std::char_traits<CharT> >",
+          "n": 1,
+          "hits": [
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 36,
+              "text": "template<class CharT, class Traits = std::char_traits<CharT> >",
+              "symbol": "Traits"
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 6,
+      "hits": 29,
+      "detail": [
+        {
+          "stem": "namespace MQTT_NS {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 16,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 27,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/async_client.hpp",
+              "line": 15,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/buffer.hpp",
+              "line": 19,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/callable_overlay.hpp",
+              "line": 17,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 38,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/connect_flags.hpp",
+              "line": 14,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/connect_return_code.hpp",
+              "line": 13,
+              "text": "namespace MQTT_NS {",
+              "symbol": null
+            }
+          ]
+        },
+        {
+          "stem": "} // namespace MQTT_NS",
+          "n": 8,
+          "hits": [
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 21,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/any.hpp",
+              "line": 32,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/async_client.hpp",
+              "line": 697,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "async_client_t"
+            },
+            {
+              "file": "include/mqtt/buffer.hpp",
+              "line": 138,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "allocate_buffer"
+            },
+            {
+              "file": "include/mqtt/callable_overlay.hpp",
+              "line": 2129,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "set_error_handler"
+            },
+            {
+              "file": "include/mqtt/client.hpp",
+              "line": 1353,
+              "text": "} // namespace MQTT_NS",
+              "symbol": null
+            },
+            {
+              "file": "include/mqtt/connect_flags.hpp",
+              "line": 54,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "will_qos"
+            },
+            {
+              "file": "include/mqtt/connect_return_code.hpp",
+              "line": 47,
+              "text": "} // namespace MQTT_NS",
+              "symbol": "connect_return_code"
+            }
+          ]
+        },
+        {
+          "stem": "template<class CharT, class Traits = std::char_traits<CharT> >",
+          "n": 1,
+          "hits": [
+            {
+              "file": "include/mqtt/string_view.hpp",
+              "line": 36,
+              "text": "template<class CharT, class Traits = std::char_traits<CharT> >",
+              "symbol": "Traits"
+            }
+          ]
+        },
+        {
+          "stem": "auto it = r.resolve(q);",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 45,
+              "text": "auto it = r.resolve(q);",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 118,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 192,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 283,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "as::ip::tcp::resolver::iterator end;",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 46,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 119,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 193,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 284,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "#endif // BOOST_VERSION < 106600",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 51,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 124,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 198,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 289,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "dotnet__yarp-2825",
+    "harness": "claudecode",
+    "touched": [
+      "src/Kubernetes.Controller/Converters/YarpParser.cs"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "dart-lang__http-1114",
+    "harness": "claudecode",
+    "touched": [
+      "pkgs/http/lib/src/base_request.dart",
+      "pkgs/http/lib/src/base_response.dart",
+      "pkgs/http/lib/src/browser_client.dart",
+      "pkgs/http/lib/src/io_client.dart",
+      "pkgs/http/lib/src/io_streamed_response.dart",
+      "pkgs/http/lib/src/response.dart",
+      "pkgs/http/lib/src/streamed_response.dart"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "dashbitco__nimble_options-43",
+    "harness": "claudecode",
+    "touched": [
+      "lib/nimble_options.ex"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "ontodev__robot-710",
+    "harness": "claudecode",
+    "touched": [
+      "robot-core/src/main/java/org/obolibrary/robot/OntologyHelper.java"
+    ],
+    "stemsLine": 8,
+    "stemsSpan": 8,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 3,
+      "hits": 10,
+      "detail": [
+        {
+          "stem": "} catch (Exception e) {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/AnnotateCommand.java",
+              "line": 141,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CollapseCommand.java",
+              "line": 82,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandLineHelper.java",
+              "line": 584,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 140,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 249,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ConvertCommand.java",
+              "line": 93,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/DiffCommand.java",
+              "line": 103,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ExceptionHelper.java",
+              "line": 63,
+              "text": "} catch (Exception e) {",
+              "symbol": "getExceptionID"
+            }
+          ]
+        },
+        {
+          "stem": "OWLEntity entity;",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/Template.java",
+              "line": 570,
+              "text": "OWLEntity entity;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "if (entity != null) {",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/TemplateOperation.java",
+              "line": 585,
+              "text": "if (entity != null) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 3,
+      "hits": 10,
+      "detail": [
+        {
+          "stem": "} catch (Exception e) {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/AnnotateCommand.java",
+              "line": 141,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CollapseCommand.java",
+              "line": 82,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandLineHelper.java",
+              "line": 584,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 140,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 249,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ConvertCommand.java",
+              "line": 93,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/DiffCommand.java",
+              "line": 103,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ExceptionHelper.java",
+              "line": 63,
+              "text": "} catch (Exception e) {",
+              "symbol": "getExceptionID"
+            }
+          ]
+        },
+        {
+          "stem": "OWLEntity entity;",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/Template.java",
+              "line": 570,
+              "text": "OWLEntity entity;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "if (entity != null) {",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/TemplateOperation.java",
+              "line": 585,
+              "text": "if (entity != null) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "codeception__codeceptjs-367",
+    "harness": "claudecode",
+    "touched": [
+      "lib/helper.js"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "akinsho__nvim-bufferline.lua-173",
+    "harness": "claudecode",
+    "touched": [
+      "lua/bufferline/offset.lua"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "statamic__cms-9029",
+    "harness": "claudecode",
+    "touched": [
+      "src/Licensing/Outpost.php"
+    ],
+    "stemsLine": 3,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 1,
+      "hits": 2,
+      "detail": [
+        {
+          "stem": "$lock->release();",
+          "n": 2,
+          "hits": [
+            {
+              "file": "src/Http/Middleware/StacheLock.php",
+              "line": 27,
+              "text": "$lock->release();",
+              "symbol": "if"
+            },
+            {
+              "file": "src/Stache/Stache.php",
+              "line": 113,
+              "text": "$lock->release();",
+              "symbol": "warm"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "epiforecasts__scoringutils-229",
+    "harness": "claudecode",
+    "touched": [
+      "R/input-check-helpers.R"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "apple__swift-nio-http2-145",
+    "harness": "claudecode",
+    "touched": [
+      "Sources/NIOHTTP2/StreamStateMachine.swift"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 1,
+      "hits": 4,
+      "detail": [
+        {
+          "stem": "halfClosedLocalPeerIdle, .",
+          "n": 4,
+          "hits": [
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 388,
+              "text": "case .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": "init"
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 688,
+              "text": "case .idle, .reservedLocal, .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive,",
+              "symbol": null
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 829,
+              "text": "case .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": null
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 941,
+              "text": "case .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 4,
+      "detail": [
+        {
+          "stem": "halfClosedLocalPeerIdle, .",
+          "n": 4,
+          "hits": [
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 388,
+              "text": "case .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": "init"
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 688,
+              "text": "case .idle, .reservedLocal, .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive,",
+              "symbol": null
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 829,
+              "text": "case .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": null
+            },
+            {
+              "file": "Sources/NIOHTTP2/StreamStateMachine.swift",
+              "line": 941,
+              "text": "case .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive:",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "joshuakgoldberg__bingo-274",
+    "harness": "claudecode",
+    "touched": [
+      "packages/bingo-handlebars/src/handlebars.ts"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "import { intake } from \"bingo-fs\";",
+          "n": 1,
+          "hits": [
+            {
+              "file": "packages/bingo-handlebars/src/loadHandlebars.ts",
+              "line": 1,
+              "text": "import { intake } from \"bingo-fs\";",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "jashkenas__underscore-2757",
+    "harness": "claudecode",
+    "touched": [
+      "underscore.js"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "_.has(result, key)",
+          "n": 1,
+          "hits": [
+            {
+              "file": "underscore.js",
+              "line": 461,
+              "text": "if (_.has(result, key)) result[key]++; else result[key] = 1;",
+              "symbol": "countBy"
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "_.has(result, key)",
+          "n": 1,
+          "hits": [
+            {
+              "file": "underscore.js",
+              "line": 461,
+              "text": "if (_.has(result, key)) result[key]++; else result[key] = 1;",
+              "symbol": "countBy"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "pytask-dev__pytask-210",
+    "harness": "claudecode",
+    "touched": [
+      "src/_pytask/traceback.py"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "rstudio-education__gradethis-161",
+    "harness": "claudecode",
+    "touched": [
+      "R/detect_mistakes.R",
+      "R/grade_code.R",
+      "R/message_generators.R"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 1,
+      "hits": 2,
+      "detail": [
+        {
+          "stem": "user, solution)",
+          "n": 2,
+          "hits": [
+            {
+              "file": "R/detect_mistakes.R",
+              "line": 68,
+              "text": "if (!identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/grade_code.R",
+              "line": 103,
+              "text": "if (is_code_identical(user, solution)) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 8,
+      "detail": [
+        {
+          "stem": "user, solution)",
+          "n": 8,
+          "hits": [
+            {
+              "file": "R/detect_mistakes.R",
+              "line": 68,
+              "text": "if (!identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/grade_code.R",
+              "line": 103,
+              "text": "if (is_code_identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 10,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 17,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 24,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 32,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 41,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 49,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "oceanparcels__parcels-617",
+    "harness": "claudecode",
+    "touched": [
+      "parcels/codegenerator.py"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 0,
+    "id": "teleporthq__teleport-code-generators-291",
+    "harness": "claudecode",
+    "touched": [
+      "packages/teleport-project-generator/src/utils.ts"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "folder.files = folder.files.concat(files",
+          "n": 1,
+          "hits": [
+            {
+              "file": "packages/teleport-github-gateway/src/utils.ts",
+              "line": 20,
+              "text": "folder.files = folder.files.concat(filesContents)",
+              "symbol": "fetchFilesContent"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "redboltz__mqtt_cpp-466",
+    "harness": "claudecode",
+    "touched": [
+      "include/mqtt/client.hpp"
+    ],
+    "stemsLine": 4,
+    "stemsSpan": 4,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 3,
+      "hits": 12,
+      "detail": [
+        {
+          "stem": "auto it = r.resolve(q);",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 45,
+              "text": "auto it = r.resolve(q);",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 118,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 192,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 283,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "as::ip::tcp::resolver::iterator end;",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 46,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 119,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 193,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 284,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "#endif // BOOST_VERSION < 106600",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 51,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 124,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 198,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 289,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 3,
+      "hits": 12,
+      "detail": [
+        {
+          "stem": "auto it = r.resolve(q);",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 45,
+              "text": "auto it = r.resolve(q);",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 118,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 192,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 283,
+              "text": "auto it = r.resolve(q);",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "as::ip::tcp::resolver::iterator end;",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 46,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 119,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 193,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 284,
+              "text": "as::ip::tcp::resolver::iterator end;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "#endif // BOOST_VERSION < 106600",
+          "n": 4,
+          "hits": [
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 51,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": null
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 124,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 198,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            },
+            {
+              "file": "test/underlying_timeout.cpp",
+              "line": 289,
+              "text": "#endif // BOOST_VERSION < 106600",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "dotnet__yarp-2825",
+    "harness": "claudecode",
+    "touched": [
+      "src/Kubernetes.Controller/Converters/YarpParser.cs"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "dart-lang__http-1114",
+    "harness": "claudecode",
+    "touched": [
+      "pkgs/http/lib/src/base_response.dart",
+      "pkgs/http/lib/src/browser_client.dart",
+      "pkgs/http/lib/src/io_client.dart",
+      "pkgs/http/lib/src/io_streamed_response.dart",
+      "pkgs/http/lib/src/streamed_response.dart"
+    ],
+    "stemsLine": 24,
+    "stemsSpan": 19,
+    "applied": true,
+    "line_touched": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "var headers = <String, String>{};",
+          "n": 1,
+          "hits": [
+            {
+              "file": "pkgs/http/lib/src/io_client.dart",
+              "line": 111,
+              "text": "var headers = <String, String>{};",
+              "symbol": "ioRequest"
+            }
+          ]
+        }
+      ]
+    },
+    "line_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "var headers = <String, String>{};",
+          "n": 1,
+          "hits": [
+            {
+              "file": "pkgs/http/lib/src/io_client.dart",
+              "line": 111,
+              "text": "var headers = <String, String>{};",
+              "symbol": "ioRequest"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "dashbitco__nimble_options-43",
+    "harness": "claudecode",
+    "touched": [
+      "lib/nimble_options.ex"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "ontodev__robot-710",
+    "harness": "claudecode",
+    "touched": [
+      "robot-core/src/main/java/org/obolibrary/robot/OntologyHelper.java"
+    ],
+    "stemsLine": 8,
+    "stemsSpan": 8,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 3,
+      "hits": 10,
+      "detail": [
+        {
+          "stem": "} catch (Exception e) {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/AnnotateCommand.java",
+              "line": 141,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CollapseCommand.java",
+              "line": 82,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandLineHelper.java",
+              "line": 584,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 140,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 249,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ConvertCommand.java",
+              "line": 93,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/DiffCommand.java",
+              "line": 103,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ExceptionHelper.java",
+              "line": 63,
+              "text": "} catch (Exception e) {",
+              "symbol": "getExceptionID"
+            }
+          ]
+        },
+        {
+          "stem": "OWLEntity entity;",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/Template.java",
+              "line": 570,
+              "text": "OWLEntity entity;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "if (entity != null) {",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/TemplateOperation.java",
+              "line": 585,
+              "text": "if (entity != null) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 3,
+      "hits": 10,
+      "detail": [
+        {
+          "stem": "} catch (Exception e) {",
+          "n": 8,
+          "hits": [
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/AnnotateCommand.java",
+              "line": 141,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CollapseCommand.java",
+              "line": 82,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandLineHelper.java",
+              "line": 584,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 140,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/CommandManager.java",
+              "line": 249,
+              "text": "} catch (Exception e) {",
+              "symbol": "if"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ConvertCommand.java",
+              "line": 93,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/DiffCommand.java",
+              "line": 103,
+              "text": "} catch (Exception e) {",
+              "symbol": "main"
+            },
+            {
+              "file": "robot-command/src/main/java/org/obolibrary/robot/ExceptionHelper.java",
+              "line": 63,
+              "text": "} catch (Exception e) {",
+              "symbol": "getExceptionID"
+            }
+          ]
+        },
+        {
+          "stem": "OWLEntity entity;",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/Template.java",
+              "line": 570,
+              "text": "OWLEntity entity;",
+              "symbol": "if"
+            }
+          ]
+        },
+        {
+          "stem": "if (entity != null) {",
+          "n": 1,
+          "hits": [
+            {
+              "file": "robot-core/src/main/java/org/obolibrary/robot/TemplateOperation.java",
+              "line": 585,
+              "text": "if (entity != null) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "codeception__codeceptjs-367",
+    "harness": "claudecode",
+    "touched": [
+      "lib/helper.js"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "akinsho__nvim-bufferline.lua-173",
+    "harness": "claudecode",
+    "touched": [
+      "lua/bufferline/offset.lua"
+    ],
+    "stemsLine": 5,
+    "stemsSpan": 5,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "mransan__ocaml-protoc-202",
+    "harness": "claudecode",
+    "touched": [
+      "src/compilerlib/pb_parsing_lexer.mll"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "statamic__cms-9029",
+    "harness": "claudecode",
+    "touched": [
+      "src/Licensing/Outpost.php"
+    ],
+    "stemsLine": 3,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 1,
+      "hits": 2,
+      "detail": [
+        {
+          "stem": "$lock->release();",
+          "n": 2,
+          "hits": [
+            {
+              "file": "src/Http/Middleware/StacheLock.php",
+              "line": 27,
+              "text": "$lock->release();",
+              "symbol": "if"
+            },
+            {
+              "file": "src/Stache/Stache.php",
+              "line": 113,
+              "text": "$lock->release();",
+              "symbol": "warm"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "epiforecasts__scoringutils-229",
+    "harness": "claudecode",
+    "touched": [
+      "R/input-check-helpers.R"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "apple__swift-nio-http2-145",
+    "harness": "claudecode",
+    "touched": [
+      "Sources/NIOHTTP2/StreamStateMachine.swift"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "joshuakgoldberg__bingo-274",
+    "harness": "claudecode",
+    "touched": [
+      "packages/bingo-handlebars/src/handlebars.ts"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "import { intake } from \"bingo-fs\";",
+          "n": 1,
+          "hits": [
+            {
+              "file": "packages/bingo-handlebars/src/loadHandlebars.ts",
+              "line": 1,
+              "text": "import { intake } from \"bingo-fs\";",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 2,
+      "detail": [
+        {
+          "stem": "import { intake",
+          "n": 2,
+          "hits": [
+            {
+              "file": "packages/bingo-fs/src/intake.test.ts",
+              "line": 3,
+              "text": "import { intake } from \"./intake.js\";",
+              "symbol": null
+            },
+            {
+              "file": "packages/bingo-handlebars/src/loadHandlebars.ts",
+              "line": 1,
+              "text": "import { intake } from \"bingo-fs\";",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "jashkenas__underscore-2757",
+    "harness": "claudecode",
+    "touched": [
+      "underscore.js"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "_.has(result, key)",
+          "n": 1,
+          "hits": [
+            {
+              "file": "underscore.js",
+              "line": 461,
+              "text": "if (_.has(result, key)) result[key]++; else result[key] = 1;",
+              "symbol": "countBy"
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "_.has(result, key)",
+          "n": 1,
+          "hits": [
+            {
+              "file": "underscore.js",
+              "line": 461,
+              "text": "if (_.has(result, key)) result[key]++; else result[key] = 1;",
+              "symbol": "countBy"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "pytask-dev__pytask-210",
+    "harness": "claudecode",
+    "touched": [
+      "src/_pytask/traceback.py"
+    ],
+    "stemsLine": 0,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "rstudio-education__gradethis-161",
+    "harness": "claudecode",
+    "touched": [
+      "R/detect_mistakes.R",
+      "R/grade_code.R",
+      "R/message_generators.R",
+      "man/grade_code.Rd"
+    ],
+    "stemsLine": 2,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 1,
+      "hits": 5,
+      "detail": [
+        {
+          "stem": "enclosing_arg = NULL) {",
+          "n": 5,
+          "hits": [
+            {
+              "file": "R/message_generators.R",
+              "line": 52,
+              "text": "enclosing_arg = NULL) { # only if the user supplied one (to match user code)",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 91,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 124,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 166,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 208,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "line_repo": {
+      "items": 1,
+      "hits": 5,
+      "detail": [
+        {
+          "stem": "enclosing_arg = NULL) {",
+          "n": 5,
+          "hits": [
+            {
+              "file": "R/message_generators.R",
+              "line": 52,
+              "text": "enclosing_arg = NULL) { # only if the user supplied one (to match user code)",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 91,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 124,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "that"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 166,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/message_generators.R",
+              "line": 208,
+              "text": "enclosing_arg = NULL) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_touched": {
+      "items": 1,
+      "hits": 2,
+      "detail": [
+        {
+          "stem": "user, solution)",
+          "n": 2,
+          "hits": [
+            {
+              "file": "R/detect_mistakes.R",
+              "line": 68,
+              "text": "if (!identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/grade_code.R",
+              "line": 103,
+              "text": "if (is_code_identical(user, solution)) {",
+              "symbol": "if"
+            }
+          ]
+        }
+      ]
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 8,
+      "detail": [
+        {
+          "stem": "user, solution)",
+          "n": 8,
+          "hits": [
+            {
+              "file": "R/detect_mistakes.R",
+              "line": 68,
+              "text": "if (!identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "R/grade_code.R",
+              "line": 103,
+              "text": "if (is_code_identical(user, solution)) {",
+              "symbol": "if"
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 10,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 17,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 24,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 32,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 41,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            },
+            {
+              "file": "tests/testthat/test_detect_mistakes.R",
+              "line": 49,
+              "text": "detect_mistakes(user, solution),",
+              "symbol": null
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "oceanparcels__parcels-617",
+    "harness": "claudecode",
+    "touched": [
+      "parcels/codegenerator.py"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 0,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "status": "OK"
+  },
+  {
+    "run": "sb-claudecode-20260811",
+    "arm": "sweet",
+    "rep": 1,
+    "id": "teleporthq__teleport-code-generators-291",
+    "harness": "claudecode",
+    "touched": [
+      "packages/teleport-project-generator/src/utils.ts"
+    ],
+    "stemsLine": 1,
+    "stemsSpan": 1,
+    "applied": true,
+    "line_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "line_repo": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_touched": {
+      "items": 0,
+      "hits": 0,
+      "detail": []
+    },
+    "span_repo": {
+      "items": 1,
+      "hits": 1,
+      "detail": [
+        {
+          "stem": "folder.files = folder.files.concat(files",
+          "n": 1,
+          "hits": [
+            {
+              "file": "packages/teleport-github-gateway/src/utils.ts",
+              "line": 20,
+              "text": "folder.files = folder.files.concat(filesContents)",
+              "symbol": "fetchFilesContent"
+            }
+          ]
+        }
+      ]
+    },
+    "status": "OK"
+  }
+]
