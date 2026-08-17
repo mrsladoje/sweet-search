@@ -147,8 +147,17 @@ export function sessionsDirDefault() {
 // restricted to files modified at/after sinceMs. With sinceMs = run-start the
 // mtime filter usually leaves exactly this run's file, so the cwd read is O(1).
 export function findRolloutForRundir(rundir, { sinceMs = 0, sessionsDir } = {}) {
+  return rolloutFilesForRundir(rundir, { sinceMs, sessionsDir }).pop() || null;
+}
+
+// EVERY rollout jsonl for this rundir since sinceMs, oldest first. A single-session run
+// yields one file and findRolloutForRundir above is unchanged by construction. A run that
+// invokes the agent more than once (the C-3 two-phase handoff) yields one file per
+// invocation, and the caller must decide whether those are ONE context or TWO — the
+// distinction is load-bearing for breakPricedUsd and cannot be made here.
+export function rolloutFilesForRundir(rundir, { sinceMs = 0, sessionsDir } = {}) {
   const root = sessionsDir || sessionsDirDefault();
-  let best = null, bestM = -1;
+  const hits = [];
   const walk = (d) => {
     let ents; try { ents = readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const e of ents) {
@@ -157,11 +166,11 @@ export function findRolloutForRundir(rundir, { sinceMs = 0, sessionsDir } = {}) 
       if (!e.name.endsWith('.jsonl')) continue;
       let s; try { s = statSync(pth); } catch { continue; }
       if (s.mtimeMs < sinceMs) continue;
-      if (s.mtimeMs > bestM && rolloutCwd(pth) === rundir) { best = pth; bestM = s.mtimeMs; }
+      if (rolloutCwd(pth) === rundir) hits.push({ pth, m: s.mtimeMs });
     }
   };
   walk(root);
-  return best;
+  return hits.sort((a, b) => a.m - b.m).map(x => x.pth);
 }
 
 // Recover idealCost for a completed run directory. Returns nulls (never throws)

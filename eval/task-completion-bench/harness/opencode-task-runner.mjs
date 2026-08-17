@@ -19,6 +19,7 @@ import {
   buildTrajectory, gitDiffPatch, verifyIntegrity, teardownRunner, auditEscape, rolloutStateDir,
   costsFromTurns, spawnWithTimeout, exitReasonFrom, priceFor,
 } from './agent-runner-shared.mjs';
+import { runTestsTelemetry } from './rt-inflight.mjs';
 import { installSedCmds } from './env-ledger.mjs';
 import { persistTurns } from './turn-log.mjs';
 import { finalizeProgressModelTurns } from './rt-progress-controller.mjs';
@@ -282,6 +283,10 @@ export async function runOpencodeTask(task, {
   const progressTurnMap = finalizeProgressModelTurns(progressConfig, toolCalls);
 
   const { toolCounts, trajectory, stepsToFirstEdit } = buildTrajectory(toolCalls);
+  // D-6 row telemetry (HANDOFF-SLATE-A-RESIDUE §3.G.2). Fed the tool calls, NOT the
+  // trajectory: buildTrajectory truncates results at 600 chars and the verdict footer is the
+  // last line a completed run writes, so reading it off the trajectory would under-count.
+  const rtTelemetry = runTestsTelemetry(toolCalls);
   const { finalPatch, patchHunks, patchFiles } = gitDiffPatch(rundir);
   const apiKeyLeak = String(process.env.OPENROUTER_API_KEY || '');
   const secretLeakDetected = rawAttempts.some(attempt => attempt.secretLeakDetected)
@@ -322,7 +327,7 @@ export async function runOpencodeTask(task, {
     patchHunks, patchFiles, finalPatch,
     ...escapeAudit,
     shimTampered: shimTamperedFiles.length > 0, shimTamperedFiles,
-    stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
+    stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0, ...rtTelemetry,
     hardTurnCap: resolveHardTurnCap(),
     budgetExhausted: resolveHardTurnCap() !== null && turns.length >= resolveHardTurnCap(),
     exitReason: exitReasonFrom(r),

@@ -11,6 +11,7 @@ import { execSync, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertBaseCommit, writeProvenance, verifyGolden, provenanceNote, provenanceIsFatal } from './golden-provenance.mjs';
 
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -35,8 +36,17 @@ let built = 0, cached = 0, failed = [];
 for (const id of IDS) {
   const t = specs.find(s => s.instance_id === id);
   if (!t) { console.error(`[golden-build] ${id}: not in tasks file`); failed.push(id); continue; }
-  const gdir = path.join(GOLDEN_DIR, cacheKeyFor(t));
-  if (existsSync(`${gdir}/.sweet-search/codebase.db`) && existsSync(`${gdir}/.git`)) { console.log(`[golden-build] ${id}: cached`); cached++; continue; }
+  const key = cacheKeyFor(t);
+  const gdir = path.join(GOLDEN_DIR, key);
+  if (existsSync(`${gdir}/.sweet-search/codebase.db`) && existsSync(`${gdir}/.git`)) {
+    // A cache hit used to be decided by the DIRECTORY NAME alone. The name encodes the base
+    // commit, so any directory under the right name was served as that task's base tree
+    // whatever was inside it. Check the stamp before trusting it.
+    const v = verifyGolden(GOLDEN_DIR, key, { baseCommit: t.base_commit, gdir });
+    console.log(`[golden-build] ${id}: cached — ${provenanceNote(v)}`);
+    if (provenanceIsFatal(v)) { console.error(`[golden-build] ${id}: REFUSING the cached golden — rebuild it`); failed.push(id); continue; }
+    cached++; continue;
+  }
   const free = freeGb();
   if (free < MIN_FREE_GB) { console.error(`[golden-build] STOP: disk ${free}G < ${MIN_FREE_GB}G before ${id}`); failed.push(id); break; }
   const t0 = Date.now();
@@ -46,8 +56,12 @@ for (const id of IDS) {
       rmSync(gdir, { recursive: true, force: true }); mkdirSync(gdir, { recursive: true });
       sh(`git clone --quiet https://github.com/${t.repo}.git ${gdir}`);
       sh(`git -C ${gdir} checkout --quiet ${t.base_commit}`);
+      // Assert BEFORE the fresh-init below, which is the only window in which the answer is
+      // knowable: `rm -rf .git` destroys every trace of which commit this tree came from.
+      const sourceTreeHash = assertBaseCommit(gdir, t.base_commit);
       // fresh-init: drop history so no future-fix commit/ref is reachable by the agent
       sh(`rm -rf ${gdir}/.git && git -C ${gdir} init -q && printf '.sweet-search/\\n' > ${gdir}/.git/info/exclude && git -C ${gdir} add -A && git -C ${gdir} -c user.email=a@b.c -c user.name=bench commit -q -m base`);
+      writeProvenance(GOLDEN_DIR, key, { repo: t.repo, baseCommit: t.base_commit, sourceTreeHash, gdir });
     }
     if (CLONE_ONLY) { console.log(`[golden-build] ${id}: cloned in ${((Date.now() - t0) / 60000).toFixed(1)}m (index deferred)`); built++; continue; }
     if (INDEX_EXISTING && !existsSync(`${gdir}/.git`)) throw new Error('no cloned dir to index (run --clone-only first)');
