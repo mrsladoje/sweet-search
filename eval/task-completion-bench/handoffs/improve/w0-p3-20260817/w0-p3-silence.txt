@@ -1,0 +1,35 @@
+P3 coverage audit — why each failing screen was or was not read
+
+  {"PARSED":13,"NO-FAILURE-BLOCK":51,"NO-DELTA":119,"SHAPE-MISS":1}
+
+  per task:
+    akinsho__nvim-bufferline.lua-173           {"NO-FAILURE-BLOCK":2}
+    apple__swift-nio-http2-145                 {"NO-FAILURE-BLOCK":13}
+    codeception__codeceptjs-367                {"PARSED":3}
+    dart-lang__http-1114                       {"NO-FAILURE-BLOCK":25}
+    dashbitco__nimble_options-43               {"PARSED":10,"NO-FAILURE-BLOCK":9}
+    epiforecasts__scoringutils-229             {"NO-DELTA":27,"NO-FAILURE-BLOCK":1}
+    jashkenas__underscore-2757                 {"NO-DELTA":27}
+    pytask-dev__pytask-210                     {"SHAPE-MISS":1}
+    rstudio-education__gradethis-161           {"NO-DELTA":39,"NO-FAILURE-BLOCK":1}
+    teleporthq__teleport-code-generators-291   {"NO-DELTA":26}
+
+  SHAPE-MISS screens (1) — the only defect bucket:
+
+    claude-code/native/r1/pytask-dev__pytask-210 screen 28
+      | vironment (dependencies installed) against your live diff. Trust THIS PASS/FAIL; do NOT reconstruct it by hand (manual `docker run`, `git diff`, or running the suite yourself) — re-invoke `run_tests` instead.
+      | [run_tests baseline-diff] 3 NEW failure(s) introduced by your edits (were passing before): E AssertionError: assert ('This variable should not be shown.' in '───────────────────────… | /pytask/tests/test_traceback.py:30: AssertionError: assert ('This variable should not be s… | tests/test_traceback.py::test_hide_traceback_from_error_report[False]
+      | E   AssertionError: assert ('This variable should not be shown.' in '───────────────────────────── Start pytask session ─────────────────────────────\nPlatform: linux -- Python 3.10.19, ...n┡━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━┩\n│ task_main.py::task_main │ running │\n└─────────────────────────┴─────────┘\n') is not False
+      | /pytask/tests/test_traceback.py:30: AssertionError: assert ('This variable should not be shown.' in '──────────────────
+
+==============================================================================
+CONSISTENCY — same task, same test, same delta must get the same verdict
+
+  ok    REAL  x1  codeception__codeceptjs-367 :: actor should take all methods of helpers :: ["comment","remark","say"]
+  ok    STALE-CANDIDATE  x1  codeception__codeceptjs-367 :: actor should take all methods of helpers :: ["comment","remark"]
+  ok    REAL  x1  codeception__codeceptjs-367 :: actor should take all methods of helpers :: ["say"]
+  ok    STALE-CANDIDATE  x8  dashbitco__nimble_options-43 :: test validate the schema itself before validating the options raise argumenterror when invalid nimbleoptionstest :: ["
+  ok    REAL  x1  dashbitco__nimble_options-43 :: test validate the schema itself before validating the options raise argumenterror when invalid nimbleoptionstest :: ["
+  ok    STALE-CANDIDATE  x1  dashbitco__nimble_options-43 :: generic :: [":integer"]
+
+  distinct (task, test, delta) groups: 6; groups with more than one verdict: 0

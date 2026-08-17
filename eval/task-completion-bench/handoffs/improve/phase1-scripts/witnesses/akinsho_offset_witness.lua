@@ -54,8 +54,56 @@ local function install_vim_stub()
       for piece in tostring(s):gmatch('([^' .. sep .. ']+)') do out[#out + 1] = piece end
       return out
     end,
+    -- STUB GAP FIXED AFTER THE FREEZE (disclosed in the write-up): the first version
+    -- stopped at `split` and `tbl_isempty`, so any tree whose fix reached for another
+    -- vim.tbl_* helper died with "attempt to call a nil value" and was scored REJECT for
+    -- a reason that had nothing to do with its behaviour. The reference fix was one of
+    -- them. These are neovim's own list helpers, reimplemented from their documented
+    -- behaviour; none of them encodes anything about the fix.
     tbl_isempty = function(t) return next(t) == nil end,
+    tbl_islist = function(t)
+      if type(t) ~= 'table' then return false end
+      local n = 0
+      for k in pairs(t) do
+        if type(k) ~= 'number' then return false end
+        n = n + 1
+      end
+      return n == #t
+    end,
+    tbl_contains = function(t, want)
+      for _, v in pairs(t) do if v == want then return true end end
+      return false
+    end,
+    tbl_filter = function(fn, t)
+      local out = {}
+      for _, v in ipairs(t) do if fn(v) then out[#out + 1] = v end end
+      return out
+    end,
+    tbl_map = function(fn, t)
+      local out = {}
+      for i, v in ipairs(t) do out[i] = fn(v) end
+      return out
+    end,
+    tbl_count = function(t)
+      local n = 0
+      for _ in pairs(t) do n = n + 1 end
+      return n
+    end,
+    list_extend = function(dst, src)
+      for _, v in ipairs(src) do dst[#dst + 1] = v end
+      return dst
+    end,
+    deepcopy = function(t)
+      local function copy(x)
+        if type(x) ~= 'table' then return x end
+        local out = {}
+        for k, v in pairs(x) do out[copy(k)] = copy(v) end
+        return out
+      end
+      return copy(t)
+    end,
   }
+  _G.vim.islist = _G.vim.tbl_islist
   -- offset.lua pulls this in lazily; a fix may or may not still use it.
   package.loaded['bufferline.highlights'] = { hl = function(name) return '%#' .. tostring(name or 'Fill') .. '#' end }
 end

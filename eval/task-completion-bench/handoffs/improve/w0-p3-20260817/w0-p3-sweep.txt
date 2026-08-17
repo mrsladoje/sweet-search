@@ -1,0 +1,54 @@
+P3 sweep — delta parser over every recorded failure screen
+
+cells                       202   (admissible 156, sweet admissible 78)
+screens                     517
+failing screens (admissible) 184
+  of which the parser read   13
+parsed failures by verdict   {"REAL":3,"STALE-CANDIDATE":10}
+
+==============================================================================
+FALSIFIER 2a — Dashbitco replay, every screen, every arm and rep
+
+  native claude-code r0  resolved=false screens=3 parsedFailures=1
+      screen 15  STALE-CANDIDATE  additive delta [":integer"], named in the issue and introduced by this patch
+  native claude-code r1  resolved=false screens=3 parsedFailures=1
+      screen 13  STALE-CANDIDATE  additive delta [":integer"], named in the issue and introduced by this patch
+  native codex       r0  resolved=false screens=3 parsedFailures=1
+      screen  4  STALE-CANDIDATE  additive delta [":integer"], named in the issue and introduced by this patch
+  native codex       r1  resolved=false screens=4 parsedFailures=0
+  native opencode    r0  resolved=false screens=4 parsedFailures=0
+  native opencode    r1  resolved=false screens=3 parsedFailures=1
+      screen 13  STALE-CANDIDATE  additive delta [":integer"], named in the issue and introduced by this patch
+  sweet  claude-code r0  resolved=false screens=6 parsedFailures=2
+      screen 10  STALE-CANDIDATE  additive delta [":integer"], named in the issue and introduced by this patch
+      screen 19  REAL             destructive: the assertion pinned [":fun","arity",":one_of","choices",":custom","mod"] and the code no longer produces it
+  sweet  claude-code r1  resolved=true  screens=2 parsedFailures=1
+      screen 16  STALE-CANDIDATE  additive delta [":integer"], named in the issue and introduced by this patch
+  sweet  codex       r0  resolved=false screens=4 parsedFailures=1
+      screen 12  STALE-CANDIDATE  additive delta [":integer"], named in the issue and introduced by this patch
+  sweet  codex       r1  resolved=false screens=4 parsedFailures=0
+  sweet  opencode    r0  resolved=false screens=3 parsedFailures=1
+      screen 13  STALE-CANDIDATE  additive delta [":integer"], named in the issue and introduced by this patch
+  sweet  opencode    r1  resolved=false screens=3 parsedFailures=1
+      screen  9  STALE-CANDIDATE  additive delta [":integer"], named in the issue and introduced by this patch
+
+  sweet Dashbitco verdicts: ["STALE-CANDIDATE","REAL","STALE-CANDIDATE","STALE-CANDIDATE","STALE-CANDIDATE","STALE-CANDIDATE"]
+  consistent across harnesses and reps: NO
+
+==============================================================================
+FALSIFIER 2b — negative controls on cells that RESOLVED
+
+  resolved admissible cells: 76  (sweet 38, native 38)
+  FALSE stale  (failure later went green): 0   on 0 cell(s)   <- KILL CONDITION
+  correct stale (still red at the end of a cell that resolved anyway): 1
+    ok     claude-code/sweet/r1/dashbitco__nimble_options-43 screen 16: test validate the schema itself before validating the options raise ArgumentError when inv
+           additive delta [":integer"], named in the issue and introduced by this patch
+
+==============================================================================
+FALSIFIER 3 — ss-oracle trigger census
+
+  cells that read a test file at least once: 84 of 156
+  total test-file reads: 160
+  by task: {"akinsho__nvim-bufferline.lua-173":16,"apple__swift-nio-http2-145":17,"codeception__codeceptjs-367":27,"dart-lang__http-1114":10,"dashbitco__nimble_options-43":15,"epiforecasts__scoringutils-229":1,"jashkenas__underscore-2757":3,"joshuakgoldberg__bingo-274":12,"oceanparcels__parcels-617":9,"ontodev__robot-710":7,"pytask-dev__pytask-210":14,"rstudio-education__gradethis-161":21,"teleporthq__teleport-code-generators-291":8}
+
+wrote /root/w0-p3-verdicts.json

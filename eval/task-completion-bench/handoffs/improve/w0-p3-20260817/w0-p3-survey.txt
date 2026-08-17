@@ -1,0 +1,231 @@
+
+==============================================================================
+akinsho__nvim-bufferline.lua-173
+  verdicts {"PASS":25,"FAIL":2}   baseline-diff introduced_failures {"0":25,"?":2}
+  sample: claude-code native r0 screen i=14
+   | Success[0m	||	Sorters -  should sort by tabs correctly	
+   | 	
+   | [32mSuccess: [0m	2	
+   | [31mFailed : [0m	0	
+   | [31mErrors : [0m	0	
+   | ========================================	
+   | [run_tests verdict] status=FAIL scope=full exit=1
+   | [run_tests baseline-diff] verdict=FAIL introduced_failures=4 pre_existing_failures=0 trustworthy=yes introduced_signatures=%7C%7C%20Offset%20tests%3A%20should%20allow%20setting%20some%20extra,%7C%7C%20Offset%20tests%3A%20should%20align%20the%20text%20to%20the%20ri pre_existing_signatures=none
+   | [run_tests guidance] verdict=FAIL action=none
+
+==============================================================================
+apple__swift-nio-http2-145
+  verdicts {"PASS":9,"FAIL":13}   baseline-diff introduced_failures {"0":9,"1":1,"?":12}
+  sample: claude-code native r0 screen i=13
+   | eamIDsAreStrideable' passed (0.0 seconds)
+   | Test Suite 'StreamIDTests' passed at 2026-08-11 18:46:59.959
+   | 	 Executed 1 test, with 0 failures (0 unexpected) in 0.0 (0.0) seconds
+   | Test Suite 'debug.xctest' failed at 2026-08-11 18:46:59.959
+   | Executed 349 tests, with 1 failure (0 unexpected) in 12.123 (12.123) seconds
+   | Test Suite 'All tests' failed at 2026-08-11 18:46:59.959
+   | Executed 349 tests, with 1 failure (0 unexpected) in 12.123 (12.123) seconds
+   | [run_tests verdict] status=FAIL scope=full exit=1
+   | [run_tests baseline-diff] verdict=FAIL introduced_failures=1 pre_existing_failures=0 trustworthy=yes introduced_signatures=%2Fswift-nio-http2%2FTests%2FNIOHTTP2Tests%2FConnectionS pre_existing_signatures=none
+   | [run_tests guidance] verdict=FAIL action=none
+
+==============================================================================
+codeception__codeceptjs-367
+  verdicts {"PASS":27,"FAIL":3}   baseline-diff introduced_failures {"0":27,"?":3}
+  sample: claude-code native r0 screen i=18
+   | etrieved from enabled helpers. 
+   | Implement custom actions in your helper classes.
+   | 
+   |     ✓ list should print actions (98ms)
+   |     ✓ def should create definition file (96ms)
+   | 
+   | 
+   |   48 passing (1s)
+   |   1 failing
+   | 
+   |   1) Actor should take all methods of helpers:
+   | 
+   |       AssertionError: expected { Object (hello, bye, ...) } to have keys 'hello', 'bye', and 'greeting'
+   |       + expected - actual
+   | 
+   |        [
+   |          "bye"
+   |       -  "comment"
+   |          "greeting"
+   |          "hello"
+   |       -  "remark"
+   |       -  "say"
+   |        ]
+   |       
+   |       at Context.<anonymous> (test/unit/actor_test.js:27:19)
+   |       at processImmediate (node:internal/timers:466:21)
+   | 
+   | 
+   | 
+   | [run_tests verdict] status=FAIL scope=full exit=1
+   | [run_tests baseline-diff] verdict=FAIL introduced_failures=1 pre_existing_failures=0 trustworthy=yes introduced_signatures=AssertionError%3A%20expected%20%7B%20Object%20(hello%2C%20bye%2C%20. pre_existing_signatures=none
+   | [run_tests guidance] verdict=FAIL action=none
+
+==============================================================================
+dart-lang__http-1114
+  verdicts {"PASS":31,"FAIL":25}   baseline-diff introduced_failures {"0":42,"4":1,"?":13}
+  sample: claude-code native r0 screen i=33
+   | },"type":"group","time":4980}
+   | {"test":{"id":315,"name":"response cookies single session cookie","suiteID":137,"groupIDs":[139,314],"metadata":{"skip":false,"skipReason":nul
+   | [run_tests verdict] status=FAIL scope=full exit=1
+   | [run_tests baseline-diff] verdict=FAIL introduced_failures=0 pre_existing_failures=0 trustworthy=yes introduced_signatures=none pre_existing_signatures=none
+   | [run_tests guidance] verdict=FAIL action=none
+
+==============================================================================
+dashbitco__nimble_options-43
+  verdicts {"PASS":23,"FAIL":19}   baseline-diff introduced_failures {"0":41,"?":1}
+  sample: claude-code native r0 screen i=15
+   | e schema itself before validating the options raise ArgumentError when invalid [L#28]  * test validate the schema itself before validating the options raise ArgumentError when invalid (0.5ms) [L#28]
+   | 
+   |   1) test validate the schema itself before validating the options raise ArgumentError when invalid (NimbleOptionsTest)
+   |      test/nimble_options_test.exs:28
+   |      Wrong message for ArgumentError
+   |      expected:
+   |        "invalid schema given to NimbleOptions.validate/2. Reason: invalid option type :foo.\n\nAvailable types: :any, :keyword_list, :non_empty_keyword_list, :atom, :non_neg_integer, :pos_integer, :mfa, :mod_arg, :string, :boolean, :timeout, :pid, {:fun, arity}, {:one_of, choices}, {:custom, mod, fun, args} (in options [:stages])"
+   |      actual:
+   |        "invalid schema given to NimbleOptions.validate/2. Reason: invalid option type :foo.\n\nAvailable types: :any, :keyword_list, :non_empty_keyword_list, :atom, :integer, :non_neg_integer, :pos_integer, :mfa, :mod_arg, :string, :boolean, :timeout, :pid, {:fun, arity}, {:one_of, choices}, {:custom, mod, fun, args} (in options [:stages])"
+   |      code: assert_raise ArgumentError, message, fn ->
+   |      stacktrace:
+   |        test/nimble_options_test.exs:41: (test)
+   | 
+   |   * test validate the schema itself before validating the options validate the keys recursively, if any [L#46]  * test validate the schema itself before validating the options valid
+
+==============================================================================
+dotnet__yarp-2825
+  verdicts {"FAIL":28}   baseline-diff introduced_failures {"0":1,"6":1,"?":26}
+  sample: claude-code native r0 screen i=0
+   | [run_tests] Authoritative test result for your CURRENT edits — the canonical suite ran in the prepared environment (dependencies installed) against your live diff. Trust THIS PASS/FAIL; do NOT reconstruct it by hand (manual `docker run`, `git diff`, or running the suite yourself) — re-invoke `run_tests` instead.
+   | [run_tests baseline-diff] 26 PRE-EXISTING failure(s) — also failing on the clean checkout BEFORE your edits, NOT caused by you (do not chase them).
+   |   Passed Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 1.1, versionPolicy: RequestVersionOrLower, requestedDestinationVersion: 1.1, destinationProtocols: Http1, useHttpsOnDestination: True, expectedVersion: "HTTP/1.1", expectedProxyError: null, e2eWillFail: False) [44 ms]
+   |   Passed Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 1.1, versionPolicy: RequestVersionOrLower, requestedDestinationVersion: 1.1, destinationProtocols: Http1, useHttpsOnDestination: False, expectedVersion: "HTTP/1.1", expectedProxyError: null, e2eWillFail: False) [13 ms]
+   |   Passed Yarp.ReverseProxy.WebSocketTests.WebSocketVersionNegotiation(incomingVersion: 1.1, versionPolicy: RequestVersionOrLower, requestedDestinationVersion: 1.1, destinationProtocols: Http2, useHttpsOnDestination: True, expectedVersion: "HTTP/1.1", expectedProxyError: Request, e2eWillFail: True) [50 ms]
+   | 
+
+==============================================================================
+epiforecasts__scoringutils-229
+  verdicts {"FAIL":28}   baseline-diff introduced_failures {"0":1,"?":27}
+  sample: claude-code native r0 screen i=3
+   | sname="utils_data_handling" name="sample_to_quantiles_works"/>
+   |     <testcase time="0.0109999999999992" classname="utils_data_handling" name="sample_to_range_long_works"/>
+   |   </testsuite>
+   | </testsuites>
+   | Error:
+   | ! Test failures.
+   | Execution halted
+   | [run_tests verdict] status=FAIL scope=full exit=1
+   | [run_tests baseline-diff] verdict=PASS introduced_failures=0 pre_existing_failures=1 trustworthy=yes introduced_signatures=none pre_existing_signatures=Error%3A
+   | [run_tests guidance] verdict=PASS action=none
+
+==============================================================================
+jashkenas__underscore-2757
+  verdicts {"FAIL":27}   baseline-diff introduced_failures {"?":27}
+  sample: claude-code native r0 screen i=1
+   | ate evaluates code only once.
+   |   ✔ #746 - _.template settings are not modified.
+   |   ✔ #779 - delimiters are applied to unescaped text.
+   | 
+   | Tests completed in 4062 milliseconds.
+   | 1561 tests of 1562 passed, 1 failed.
+   | [run_tests verdict] status=FAIL scope=full exit=1
+   | [run_tests baseline-diff] verdict=PASS introduced_failures=0 pre_existing_failures=1 trustworthy=yes introduced_signatures=none pre_existing_signatures=%231929%20Typed%20Array%20constructors%20are%20functions
+   | [run_tests guidance] verdict=PASS action=none
+
+==============================================================================
+joshuakgoldberg__bingo-274
+  verdicts {"PASS":28}   baseline-diff introduced_failures {"0":28}
+  no FAIL screen with a recognisable failure marker
+
+==============================================================================
+mransan__ocaml-protoc-202
+  verdicts {"FAIL":20}   baseline-diff introduced_failures {"?":20}
+  sample: claude-code native r0 screen i=1
+   | ttest.eobjs/native/dune__exe__Google_unittest.cmx)
+   | Running[334]: (cd _build/default/src/tests/google_unittest && ./google_unittest.exe)
+   | Output[334]:
+   | Google unittest .... OK
+   | [run_tests verdict] status=FAIL scope=full exit=1
+   | [run_tests baseline-diff] verdict=PASS introduced_failures=0 pre_existing_failures=1 trustworthy=yes introduced_signatures=none pre_existing_signatures=Error%3A%20Library%20%22yojson%22%20not%20found.
+   | [run_tests guidance] verdict=PASS action=none
+
+==============================================================================
+oceanparcels__parcels-617
+  verdicts {"PASS":24}   baseline-diff introduced_failures {"0":24}
+  no FAIL screen with a recognisable failure marker
+
+==============================================================================
+ontodev__robot-710
+  verdicts {"PASS":23}   baseline-diff introduced_failures {"0":23}
+  no FAIL screen with a recognisable failure marker
+
+==============================================================================
+pytask-dev__pytask-210
+  verdicts {"PASS":27,"FAIL":1}   baseline-diff introduced_failures {"0":27,"?":1}
+  sample: claude-code native r1 screen i=28
+   | ==============
+   | collected 2 items
+   | 
+   | tests/test_traceback.py .F                                               [100%]
+   | 
+   | =================================== FAILURES ===================================
+   | E   AssertionError: assert ('This variable should not be shown.' in '───────────────────────────── Start pytask session ─────────────────────────────\nPlatform: linux -- Python 3.10.19, ...n┡━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━┩\n│ task_main.py::task_main │ running │\n└─────────────────────────┴─────────┘\n') is not False
+   |      +  where '───────────────────────────── Start pytask session ─────────────────────────────\nPlatform: linux -- Python 3.10.19, ...n┡━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━┩\n│ task_main.py::task_main │ running │\n└─────────────────────────┴─────────┘\n' = <Result TypeError('_filter_internal_traceback_frames() takes 1 positional argument but 2 were given')>.output
+   | /pytask/tests/test_traceback.py:30: AssertionError: assert ('This variable should not be shown.' in '───────────────────────────── Start pytask session ─────────────────────────────\nPlatform: linux -- Python 3.10.19, ...n┡━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━┩\n│ task_main.py::task_main │ running │\n└─────────────────────────┴─────────┘\n') is not False
+   | ==================================== PASSES ====================================
+   | =========================== short test summary info ==========================
+
+==============================================================================
+redboltz__mqtt_cpp-466
+  verdicts {"PASS":20}   baseline-diff introduced_failures {"0":20}
+  no FAIL screen with a recognisable failure marker
+
+==============================================================================
+rstudio-education__gradethis-161
+  verdicts {"PASS":35,"FAIL":5}   baseline-diff introduced_failures {"0":35,"?":5}
+  sample: claude-code native r1 screen i=36
+   | ct_equal(...) at test_sanity_checks.R:506:3
+   |  2. │ └─testthat::quasi_label(enquo(object), label)
+   |  3. │   └─rlang::eval_bare(expr, quo_get_env(quo))
+   |  4. └─gradethis:::detect_mistakes(user, solution)
+   | 
+   | [ FAIL 5 | WARN 2 | SKIP 2 | PASS 479 ]
+   | > 
+   | > 
+   | [run_tests verdict] status=FAIL scope=full exit=0
+   | [run_tests baseline-diff] verdict=FAIL introduced_failures=4 pre_existing_failures=0 trustworthy=yes introduced_signatures=%7C%201%202%201%20128%20%7C%20Check%20Code,%7C%202%2064%20%7C%20Check%20code%20with%20calls%20%5B%5D pre_existing_signatures=none
+   | [run_tests guidance] verdict=FAIL action=none
+
+==============================================================================
+statamic__cms-9029
+  verdicts {"PASS":26}   baseline-diff introduced_failures {"0":26}
+  no FAIL screen with a recognisable failure marker
+
+==============================================================================
+teleporthq__teleport-code-generators-291
+  verdicts {"FAIL":26}   baseline-diff introduced_failures {"?":26}
+  sample: claude-code native r0 screen i=1
+   | ages/teleport-publisher-zip/__tests__/index.ts:13:53)
+   |       at fulfilled (packages/teleport-publisher-zip/__tests__/index.ts:4:58)
+   | 
+   | node:events:491
+   |       throw er; // Unhandled 'error' event
+   |       ^
+   | 
+   | Error: ENOENT: no such file or directory, open '/teleport-code-generators/packages/teleport-publisher-zip/__tests__/disk-project/project-name.zip'
+   | Emitted 'error' event on WriteStream instance at:
+   |     at emitErrorNT (node:internal/streams/destroy:157:8)
+   |     at emitErrorCloseNT (node:internal/streams/destroy:122:3)
+   |     at processTicksAndRejections (node:internal/process/task_queues:83:21) {
+   |   errno: -2,
+   |   code: 'ENOENT',
+   |   syscall: 'open',
+   |   path: '/teleport-code-generators/packages/teleport-publisher-zip/__tests__/disk-project/project-name.zip'
+   | }
+   | error Command failed with exit code 1.
+   | info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command.
+   | [run_tests verdict] status=FAIL scope=full exit=1
+   | [run_tests baseline-diff] verdict=PASS introduced_failures=0 pre_existing_failures=1 trustworthy=yes introduced_signatures=none pre_existing_signatures=Error%3A%20ENOENT%3A%20no%20such%20file%20or%20directory%2C%20open%20'
+   | [run_tests guidance] verdict=PASS action=none

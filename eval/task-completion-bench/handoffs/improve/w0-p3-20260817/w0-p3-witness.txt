@@ -1,0 +1,72 @@
+
+==============================================================================
+dashbitco__nimble_options-43
+  REJECT  BASE (no patch)          resolved=null  8/8 failed |   1) test an :integer option accepts a negative integer (W0P3IntegerWitness) |      ** (ArgumentError) invalid schema given to NimbleOpti
+  REJECT  codex/native/r0          resolved=false 1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8
+  REJECT  codex/sweet/r0           resolved=false 1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8
+  REJECT  codex/native/r1          resolved=false 1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8
+  REJECT  codex/sweet/r1           resolved=false 1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8
+  REJECT  opencode/native/r0       resolved=false 1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8
+  REJECT  opencode/sweet/r0        resolved=false 1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8
+  REJECT  opencode/native/r1       resolved=false 1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8
+  REJECT  opencode/sweet/r1        resolved=false 1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8
+  REJECT  claudecode/native/r0     resolved=false 1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8
+  REJECT  claudecode/sweet/r0      resolved=false 1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8
+  REJECT  claudecode/native/r1     resolved=false 1/8 failed |   1) test the advertised type list names :integer (W0P3IntegerWitness) | 8 tests, 1 failure | W0P3-RESULT failures=1 total=8
+  ACCEPT  claudecode/sweet/r1      resolved=true  0/8 failed | 8 tests, 0 failures | W0P3-RESULT failures=0 total=8
+  ACCEPT  GOLD (reference fix)     resolved=true  0/8 failed | 8 tests, 0 failures | W0P3-RESULT failures=0 total=8
+
+==============================================================================
+codeception__codeceptjs-367
+  REJECT  BASE (no patch)          resolved=null    FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every 
+  REJECT  codex/native/r0          resolved=false   FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every 
+  REJECT  codex/sweet/r0           resolved=false   FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every 
+  REJECT  codex/native/r1          resolved=false   FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every 
+  REJECT  codex/sweet/r1           resolved=false   FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every 
+  REJECT  opencode/native/r0       resolved=false   FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every 
+  REJECT  opencode/sweet/r0        resolved=false   FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every 
+  ACCEPT  opencode/native/r1       resolved=false   PASS  the actor exposes a comment-style step |   PASS  the comment step still leaves every helper method reachable |   PASS  the comment step return
+  ACCEPT  opencode/sweet/r1        resolved=false   PASS  the actor exposes a comment-style step |   PASS  the comment step still leaves every helper method reachable |   PASS  the comment step return
+  ACCEPT  claudecode/native/r0     resolved=false   PASS  the actor exposes a comment-style step |   PASS  the comment step still leaves every helper method reachable |   PASS  the comment step return
+  REJECT  claudecode/sweet/r0      resolved=false   FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every 
+  ACCEPT  claudecode/native/r1     resolved=false   PASS  the actor exposes a comment-style step |   PASS  the comment step still leaves every helper method reachable |   PASS  the comment step return
+  REJECT  claudecode/sweet/r1      resolved=false   FAIL  the actor exposes a comment-style step  — none of comment/remark/say is a function on the actor |   PASS  the comment step still leaves every 
+  ACCEPT  GOLD (reference fix)     resolved=true    PASS  the actor exposes a comment-style step |   PASS  the comment step still leaves every helper method reachable |   PASS  the comment step return
+
+==============================================================================
+akinsho__nvim-bufferline.lua-173
+  REJECT  BASE (no patch)          resolved=null    PASS  a flat NvimTree sidebar still offsets on the left |   FAIL  a nested undotree sidebar offsets on the left  — w0_p3_witness.lua:161: total size
+  REJECT  codex/native/r0          resolved=true    PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   PASS  a nested undotree sidebar 
+  REJECT  codex/sweet/r0           resolved=true    PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   PASS  a nested undotree sidebar 
+  REJECT  codex/native/r1          resolved=true    PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   PASS  a nested undotree sidebar 
+  REJECT  codex/sweet/r1           resolved=true    PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   FAIL  a nested undotree sidebar 
+  REJECT  opencode/native/r0       resolved=true    PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   PASS  a nested undotree sidebar 
+  REJECT  opencode/sweet/r0        resolved=true    PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   FAIL  a nested undotree sidebar 
+  REJECT  opencode/native/r1       resolved=true    PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   PASS  a nested undotree sidebar 
+  REJECT  opencode/sweet/r1        resolved=true    PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   FAIL  a nested undotree sidebar 
+  REJECT  claudecode/native/r0     resolved=true    PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   FAIL  a nested undotree sidebar 
+  REJECT  claudecode/sweet/r0      resolved=false   PASS  a flat NvimTree sidebar still offsets on the left |   FAIL  a nested undotree sidebar offsets on the left  — w0_p3_witness.lua:162: left compo
+  REJECT  claudecode/native/r1     resolved=true    PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   FAIL  a nested undotree sidebar 
+  REJECT  claudecode/sweet/r1      resolved=true    PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   FAIL  a nested undotree sidebar 
+  REJECT  GOLD (reference fix)     resolved=true    PASS  a flat NvimTree sidebar still offsets on the left |   PASS  a nested undotree sidebar offsets on the left |   PASS  a nested undotree sidebar 
+
+==============================================================================
+FALSIFIER 1 SCORECARD
+
+  dashbitco__nimble_options-43
+    rejects the unfixed base tree:  yes
+    accepts the reference fix:      yes
+    rejects every WRONG patch:      11/11
+    accepts patches that resolved:  1/1
+  codeception__codeceptjs-367
+    rejects the unfixed base tree:  yes
+    accepts the reference fix:      yes
+    rejects every WRONG patch:      8/12
+    accepts patches that resolved:  0/0
+  akinsho__nvim-bufferline.lua-173
+    rejects the unfixed base tree:  yes
+    accepts the reference fix:      NO (REJECT)
+    rejects every WRONG patch:      1/1
+    accepts patches that resolved:  0/11
+
+wrote /root/w0-p3-witness.json
