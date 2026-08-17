@@ -1,5 +1,16 @@
 # SESSION B UBER — resolution-first domination slate and later execution plan
 
+> **Phase 0 has since been executed — see [`PHASE-0-B-RESULTS.md`](./PHASE-0-B-RESULTS.md)
+> (2026-08-17, `$0`).** Four tasks are now blocked from admission because they cannot measure
+> anything, so **every cost figure in §0 and every `17`-task denominator below is superseded.**
+> On the admissible 13 the deltas are codex `−9.4%`, opencode `−15.3%`, claude-code **`−0.3%`** —
+> the claude-code advantage was carried almost entirely by the blocked tasks. Solve counts are
+> unchanged (codex 7 vs 8; opencode and claude-code 7 vs 7).
+> **D1** is closed by REMOVAL, not repair: the deflake was attempted and gold still fails its own
+> gate in 3 of 8 fresh runs, so **Q1 (§5) is dead, not quarantined**. **D2** is committed but not
+> yet deployed. **D3** now has the retry rule §6 declared. **D4**, **D5** and **D7** were already
+> closed by Slate A. Read that document before acting on any number below.
+
 This document is the curated synthesis of [`SLATE-B.md`](./SLATE-B.md) and [`SLATE-B-FABLE.md`](./SLATE-B-FABLE.md). It preserves every reusable candidate, supporting mechanism, defect, falsifier, and later-plan suggestion from both files while removing duplication and correcting factual inconsistencies. The source documents remain unchanged.
 This synthesis was produced at `$0`. No rollout, benchmark, build, test suite, remote mutation, commit, or push was performed. `HO2` remains frozen. Nothing below authorizes implementation or spend; later paid work requires an explicit user `GO` after the stated zero-cost gates pass.
 ## 0. Executive verdict
