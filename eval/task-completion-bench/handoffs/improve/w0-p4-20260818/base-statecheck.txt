@@ -1,0 +1,4 @@
+states 11  operations 10  end-of-stream edges 8
+directional pairs: sendHeaders/receiveHeaders=ARMED  sendData/receiveData=ARMED  sendPushPromise/receivePushPromise=ARMED  sendWindowUpdate/receiveWindowUpdate=unarmed
+
+STATECHECK ACCEPT (0 counterexamples)

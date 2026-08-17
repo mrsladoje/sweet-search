@@ -1,0 +1,22 @@
+scanning 457 golden checkouts
+
+files read              152270
+candidate state machines 16  (a stored state field switched on by 3+ operations)
+by language             {".swift":14,".java":1,".rs":1}
+distinct repositories   4
+
+the Swift front end reads  9/16
+  cannot read              7
+  unread by language       {".swift":5,".java":1,".rs":1}
+
+of the 9 it reads:
+  derive an end-of-stream axis   1
+  have an armed directional pair 2
+  have BOTH (a rule can fire)    1
+
+--- false firing
+shipped trees the checker REJECTS  0/9
+
+--- portability verdict inputs
+languages carrying the shape        3
+fraction of the shape this parser reads  56.3%

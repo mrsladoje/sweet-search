@@ -1,0 +1,4 @@
+files read               152270
+narrow detector          16 files in 4 repos  = 1 in 9517
+generous detector        174 files in 64 repos  = 1 in 875
+generous by language     {".rs":71,".swift":34,".go":20,".java":19,".cpp":8,".ts":7,".cs":6,".js":6,".scala":2,".dart":1}

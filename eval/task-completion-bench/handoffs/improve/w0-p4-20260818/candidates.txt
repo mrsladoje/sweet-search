@@ -1,0 +1,17 @@
+repo                              file                                                        ops  esEdges  armedPairs  findings
+apple__swift-nio-http2            Sources/NIOHPACK/HPACKEncoder.swift                         0    0        0           0
+apple__swift-nio-http2            Sources/NIOHTTP2/ConnectionStateMachine/ConnectionStateMachine.swift19   0        8           0
+apple__swift-nio-http2            Sources/NIOHTTP2/StreamStateMachine.swift                   10   8        3           0  <- both rules can fire
+grpc__grpc-swift                  Sources/GRPC/CallHandlers/BidirectionalStreamingServerHandler.swift8    0        0           0
+grpc__grpc-swift                  Sources/GRPC/CallHandlers/ClientStreamingServerHandler.swift7    0        0           0
+grpc__grpc-swift                  Sources/GRPC/CallHandlers/ServerStreamingServerHandler.swift7    0        0           0
+grpc__grpc-swift                  Sources/GRPC/CallHandlers/UnaryServerHandler.swift          6    0        0           0
+grpc__grpc-swift                  Sources/GRPC/ClientCalls/Call.swift                         0    0        0           0
+grpc__grpc-swift                  Sources/GRPC/ConnectionManager.swift                        10   0        0           0
+grpc__grpc-swift                  Sources/GRPC/GRPCIdleHandlerStateMachine.swift              9    0        0           0
+grpc__grpc-swift                  Sources/GRPC/HTTP2ToRawGRPCServerCodec.swift                0    0        0           0
+grpc__grpc-swift                  Sources/GRPC/Interceptor/ClientTransport.swift              0    0        0           0
+grpc__grpc-swift                  Sources/GRPC/LengthPrefixedMessageReader.swift              0    0        0           0
+grpc__grpc-swift                  Tests/GRPCTests/InterceptorsTests.swift                     3    0        0           0
+helidon-io__helidon               integrations/jdbc/jdbc/src/main/java/io/helidon/integrations/jdbc/ConditionallyCloseableConnection.java0    0        0           0
+wizardsardine__liana              liana-ui/src/widget/cursor.rs                               0    0        0           0
