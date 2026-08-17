@@ -1,0 +1,24 @@
+P1 availability, reclassified by the task's OWN ecosystem
+
+task                                      lang        verdict   own-src  own-bin   py-baseline
+ontodev__robot-710                        java        BINARY          0      290          1515
+dart-lang__http-1114                      dart        SOURCE       3874        0             2
+dashbitco__nimble_options-43              elixir      SOURCE        111        9          1911
+codeception__codeceptjs-367               js          SOURCE      17820        0          1608
+jashkenas__underscore-2757                js          SOURCE       6256        0          1608
+akinsho__nvim-bufferline.lua-173          lua         SOURCE        113        0          1562
+litestar-org__polyfactory-405             python      SOURCE       4464     1416          4464 (incl. toolchain baseline)
+pytask-dev__pytask-210                    python      SOURCE       3659     1416          3659 (incl. toolchain baseline)
+oceanparcels__parcels-617                 python      SOURCE       5893     5794          5893 (incl. toolchain baseline)
+epiforecasts__scoringutils-229            r           SOURCE        462      510          1517
+rstudio-education__gradethis-161          r           SOURCE        429      434          1518
+apple__swift-nio-http2-145                swift       SOURCE       1071        0            40
+joshuakgoldberg__bingo-274                ts          SOURCE      18690        0          1623
+teleporthq__teleport-code-generators-291  ts          SOURCE      12753        0          1658
+
+=== map ===
+SOURCE    13: dart-lang__http-1114 (dart), dashbitco__nimble_options-43 (elixir), codeception__codeceptjs-367 (js), jashkenas__underscore-2757 (js), akinsho__nvim-bufferline.lua-173 (lua), litestar-org__polyfactory-405 (python), pytask-dev__pytask-210 (python), oceanparcels__parcels-617 (python), epiforecasts__scoringutils-229 (r), rstudio-education__gradethis-161 (r), apple__swift-nio-http2-145 (swift), joshuakgoldberg__bingo-274 (ts), teleporthq__teleport-code-generators-291 (ts)
+BINARY    1: ontodev__robot-710 (java)
+
+ss-deps could walk dependency SOURCE for 13/14 tasks.
+raw sweep claimed 14/14 — the difference is the Python toolchain baseline it counted as task dependencies.
