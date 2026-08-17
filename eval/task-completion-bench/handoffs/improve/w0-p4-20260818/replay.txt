@@ -1,0 +1,38 @@
+task apple__swift-nio-http2-145   base 3d0b38268ecda6ba0e7a1d5aca1c3c5a20f7c42a   file Sources/NIOHTTP2/StreamStateMachine.swift
+
+cell                      resolved  verdict  recv|send allow counterexamples
+BASE (unmodified)         false     ACCEPT   2|2             
+codex sweet r0            false     REJECT   3|2             class:halfOpenLocalPeerIdle mirror:halfClosedRemoteLocalIdle
+codex sweet r1            false     REJECT   3|2             class:halfOpenLocalPeerIdle mirror:halfClosedRemoteLocalIdle
+codex native r0           false     REJECT   3|2             class:halfOpenLocalPeerIdle mirror:halfClosedRemoteLocalIdle
+codex native r1           false     REJECT   3|2             class:halfOpenLocalPeerIdle mirror:halfClosedRemoteLocalIdle
+opencode sweet r0         false     REJECT   3|2             class:halfOpenLocalPeerIdle mirror:halfClosedRemoteLocalIdle
+opencode sweet r1         false     REJECT   3|2             class:halfOpenLocalPeerIdle mirror:halfClosedRemoteLocalIdle
+opencode native r0        false     REJECT   3|2             class:halfOpenLocalPeerIdle mirror:halfClosedRemoteLocalIdle
+opencode native r1        false     REJECT   3|2             class:halfOpenLocalPeerIdle mirror:halfClosedRemoteLocalIdle
+claude-code sweet r0      false     REJECT   3|2             class:halfOpenLocalPeerIdle mirror:halfClosedRemoteLocalIdle
+claude-code sweet r1      false     REJECT   3|2             class:halfOpenLocalPeerIdle mirror:halfClosedRemoteLocalIdle
+claude-code native r0     false     REJECT   3|2             class:halfOpenLocalPeerIdle mirror:halfClosedRemoteLocalIdle
+claude-code native r1     false     REJECT   3|2             class:halfOpenLocalPeerIdle mirror:halfClosedRemoteLocalIdle
+GOLD (reference fix)      true      ACCEPT   4|4             
+
+--- falsifier 1
+recorded cells                       12
+  unresolved, REJECTed by the rule   12/12
+  unresolved, ACCEPTed (rule missed) 0
+  resolved, REJECTed (rejection cost) 0/0
+  errors                             0
+
+gold verdict                         ACCEPT
+counterexamples by rule              {"class":12,"mirror":12}
+
+--- one full counterexample, as the tool would print it
+(codex sweet r0)
+
+[class] receivePushPromise
+  receivePushPromise admits halfClosedLocalPeerIdle but rejects halfOpenLocalPeerIdle; the two differ only by a locally sent END_STREAM, an axis this operation is insensitive to (it already admits both ends of fullyOpen(localRole: .client) --sendES--> halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)).
+  reachable by:
+    idle(localRole: .client) --sendHeaders--> halfOpenLocalPeerIdle
+
+[mirror] sendPushPromise
+  receivePushPromise admits halfClosedLocalPeerIdle, but its twin sendPushPromise rejects the reflected state halfClosedRemoteLocalIdle. The two allow-sets are exact mirrors in the base tree, so one side moved alone.

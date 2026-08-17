@@ -1,0 +1,35 @@
+task                                    cites   w/ §   on changed files  § there  top cited
+redboltz__mqtt_cpp-466                  0       0      0                 0        
+dotnet__yarp-2825                       67      0      0                 0        TOOLS.IETF.ORG×21 DATATRACKER.IETF.ORG×6 RFC3546×6
+dart-lang__http-1114                    31      0      0                 0        RFC 2616×8 RFC2616×5 TOOLS.IETF.ORG×4
+dashbitco__nimble_options-43            0       0      0                 0        
+ontodev__robot-710                      11      0      1                 0        W3.ORG/TR×10 SEMVER.ORG×1
+codeception__codeceptjs-367             2       0      0                 0        W3C×1 W3.ORG/TR×1
+akinsho__nvim-bufferline.lua-173        0       0      0                 0        
+mransan__ocaml-protoc-202               0       0      0                 0        
+statamic__cms-9029                      6       0      0                 0        RFC 2822×2 OWASP×1 WHATWG×1
+litestar-org__polyfactory-405           0       0      0                 0        
+epiforecasts__scoringutils-229          0       0      0                 0        
+apple__swift-nio-http2-145              106     47     13                4        RFC 7540×51 RFC 7541×14 RFC7541×14
+joshuakgoldberg__bingo-274              0       0      0                 0        
+jashkenas__underscore-2757              0       0      0                 0        
+pytask-dev__pytask-210                  4       0      0                 0        POSIX×4
+rstudio-education__gradethis-161        0       0      0                 0        
+oceanparcels__parcels-617               0       0      0                 0        
+teleporthq__teleport-code-generators-2910       0      0                 0        
+
+repositories harvested                         18
+  with any normative citation                  7
+  citing a numbered section anywhere           1
+  citing on a file the reference fix changes   2
+  ... with a numbered section on that file     1
+
+--- the pre-registered probes, in the repositories' own words
+
+apple__swift-nio-http2-145: 106 citations, 4 sectioned on changed files
+   Sources/NIOHTTP2/StreamStateMachine.swift: // Sending a DATA frame outside any of these states is a stream error of type STREAM_CLOSED (RFC7540 § 6.1)
+   Sources/NIOHTTP2/StreamStateMachine.swift: // Receiving a DATA frame outside any of these states is a stream error of type STREAM_CLOSED (RFC7540 § 6.1)
+   Sources/NIOHTTP2/StreamStateMachine.swift: // RFC 7540 § 6.6 forbids sending PUSH_PROMISE frames on locally-initiated streams.
+   Sources/NIOHTTP2/StreamStateMachine.swift: // RFC 7540 § 6.6 forbids receiving PUSH_PROMISE frames on remotely-initiated streams.
+
+pytask-dev__pytask-210: 4 citations, 0 sectioned on changed files

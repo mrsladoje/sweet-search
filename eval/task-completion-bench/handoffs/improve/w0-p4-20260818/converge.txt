@@ -1,0 +1,10 @@
+round 1: recv=3 send=2 counterexamples=2
+   [class] admit halfOpenLocalPeerIdle to receivePushPromise
+   [mirror] admit halfClosedRemoteLocalIdle to sendPushPromise
+round 2: recv=4 send=3 counterexamples=2
+   [class] admit halfOpenRemoteLocalIdle to sendPushPromise
+   [mirror] admit halfOpenRemoteLocalIdle to sendPushPromise
+round 3: recv=4 send=4 counterexamples=0
+
+CONVERGED after 2 rounds of following the counterexamples
+matches the reference allow-sets exactly: true

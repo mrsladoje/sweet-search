@@ -1,0 +1,776 @@
+[
+  {
+    "label": "BASE (unmodified)",
+    "verdict": "ACCEPT",
+    "widened": false,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)"
+    ],
+    "findings": [],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "resolved": false
+  },
+  {
+    "label": "codex sweet r0",
+    "verdict": "REJECT",
+    "widened": true,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)",
+      "halfClosedLocalPeerIdle"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)"
+    ],
+    "findings": [
+      {
+        "rule": "class",
+        "op": "receivePushPromise",
+        "state": "halfOpenLocalPeerIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle but rejects halfOpenLocalPeerIdle; the two differ only by a locally sent END_STREAM, an axis this operation is insensitive to (it already admits both ends of fullyOpen(localRole: .client) --sendES--> halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)).",
+        "path": [
+          "idle(localRole: .client) --sendHeaders--> halfOpenLocalPeerIdle"
+        ]
+      },
+      {
+        "rule": "mirror",
+        "op": "sendPushPromise",
+        "state": "halfClosedRemoteLocalIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle, but its twin sendPushPromise rejects the reflected state halfClosedRemoteLocalIdle. The two allow-sets are exact mirrors in the base tree, so one side moved alone."
+      }
+    ],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "harness": "codex",
+    "arm": "sweet",
+    "rep": 0,
+    "resolved": false,
+    "f2p": 0
+  },
+  {
+    "label": "codex sweet r1",
+    "verdict": "REJECT",
+    "widened": true,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)",
+      "halfClosedLocalPeerIdle"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)"
+    ],
+    "findings": [
+      {
+        "rule": "class",
+        "op": "receivePushPromise",
+        "state": "halfOpenLocalPeerIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle but rejects halfOpenLocalPeerIdle; the two differ only by a locally sent END_STREAM, an axis this operation is insensitive to (it already admits both ends of fullyOpen(localRole: .client) --sendES--> halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)).",
+        "path": [
+          "idle(localRole: .client) --sendHeaders--> halfOpenLocalPeerIdle"
+        ]
+      },
+      {
+        "rule": "mirror",
+        "op": "sendPushPromise",
+        "state": "halfClosedRemoteLocalIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle, but its twin sendPushPromise rejects the reflected state halfClosedRemoteLocalIdle. The two allow-sets are exact mirrors in the base tree, so one side moved alone."
+      }
+    ],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "harness": "codex",
+    "arm": "sweet",
+    "rep": 1,
+    "resolved": false,
+    "f2p": 0
+  },
+  {
+    "label": "codex native r0",
+    "verdict": "REJECT",
+    "widened": true,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)",
+      "halfClosedLocalPeerIdle"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)"
+    ],
+    "findings": [
+      {
+        "rule": "class",
+        "op": "receivePushPromise",
+        "state": "halfOpenLocalPeerIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle but rejects halfOpenLocalPeerIdle; the two differ only by a locally sent END_STREAM, an axis this operation is insensitive to (it already admits both ends of fullyOpen(localRole: .client) --sendES--> halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)).",
+        "path": [
+          "idle(localRole: .client) --sendHeaders--> halfOpenLocalPeerIdle"
+        ]
+      },
+      {
+        "rule": "mirror",
+        "op": "sendPushPromise",
+        "state": "halfClosedRemoteLocalIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle, but its twin sendPushPromise rejects the reflected state halfClosedRemoteLocalIdle. The two allow-sets are exact mirrors in the base tree, so one side moved alone."
+      }
+    ],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "harness": "codex",
+    "arm": "native",
+    "rep": 0,
+    "resolved": false,
+    "f2p": 0
+  },
+  {
+    "label": "codex native r1",
+    "verdict": "REJECT",
+    "widened": true,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)",
+      "halfClosedLocalPeerIdle"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)"
+    ],
+    "findings": [
+      {
+        "rule": "class",
+        "op": "receivePushPromise",
+        "state": "halfOpenLocalPeerIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle but rejects halfOpenLocalPeerIdle; the two differ only by a locally sent END_STREAM, an axis this operation is insensitive to (it already admits both ends of fullyOpen(localRole: .client) --sendES--> halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)).",
+        "path": [
+          "idle(localRole: .client) --sendHeaders--> halfOpenLocalPeerIdle"
+        ]
+      },
+      {
+        "rule": "mirror",
+        "op": "sendPushPromise",
+        "state": "halfClosedRemoteLocalIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle, but its twin sendPushPromise rejects the reflected state halfClosedRemoteLocalIdle. The two allow-sets are exact mirrors in the base tree, so one side moved alone."
+      }
+    ],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "harness": "codex",
+    "arm": "native",
+    "rep": 1,
+    "resolved": false,
+    "f2p": 0
+  },
+  {
+    "label": "opencode sweet r0",
+    "verdict": "REJECT",
+    "widened": true,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)",
+      "halfClosedLocalPeerIdle"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)"
+    ],
+    "findings": [
+      {
+        "rule": "class",
+        "op": "receivePushPromise",
+        "state": "halfOpenLocalPeerIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle but rejects halfOpenLocalPeerIdle; the two differ only by a locally sent END_STREAM, an axis this operation is insensitive to (it already admits both ends of fullyOpen(localRole: .client) --sendES--> halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)).",
+        "path": [
+          "idle(localRole: .client) --sendHeaders--> halfOpenLocalPeerIdle"
+        ]
+      },
+      {
+        "rule": "mirror",
+        "op": "sendPushPromise",
+        "state": "halfClosedRemoteLocalIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle, but its twin sendPushPromise rejects the reflected state halfClosedRemoteLocalIdle. The two allow-sets are exact mirrors in the base tree, so one side moved alone."
+      }
+    ],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "harness": "opencode",
+    "arm": "sweet",
+    "rep": 0,
+    "resolved": false,
+    "f2p": 0
+  },
+  {
+    "label": "opencode sweet r1",
+    "verdict": "REJECT",
+    "widened": true,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)",
+      "halfClosedLocalPeerIdle"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)"
+    ],
+    "findings": [
+      {
+        "rule": "class",
+        "op": "receivePushPromise",
+        "state": "halfOpenLocalPeerIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle but rejects halfOpenLocalPeerIdle; the two differ only by a locally sent END_STREAM, an axis this operation is insensitive to (it already admits both ends of fullyOpen(localRole: .client) --sendES--> halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)).",
+        "path": [
+          "idle(localRole: .client) --sendHeaders--> halfOpenLocalPeerIdle"
+        ]
+      },
+      {
+        "rule": "mirror",
+        "op": "sendPushPromise",
+        "state": "halfClosedRemoteLocalIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle, but its twin sendPushPromise rejects the reflected state halfClosedRemoteLocalIdle. The two allow-sets are exact mirrors in the base tree, so one side moved alone."
+      }
+    ],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "harness": "opencode",
+    "arm": "sweet",
+    "rep": 1,
+    "resolved": false,
+    "f2p": 0
+  },
+  {
+    "label": "opencode native r0",
+    "verdict": "REJECT",
+    "widened": true,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)",
+      "halfClosedLocalPeerIdle"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)"
+    ],
+    "findings": [
+      {
+        "rule": "class",
+        "op": "receivePushPromise",
+        "state": "halfOpenLocalPeerIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle but rejects halfOpenLocalPeerIdle; the two differ only by a locally sent END_STREAM, an axis this operation is insensitive to (it already admits both ends of fullyOpen(localRole: .client) --sendES--> halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)).",
+        "path": [
+          "idle(localRole: .client) --sendHeaders--> halfOpenLocalPeerIdle"
+        ]
+      },
+      {
+        "rule": "mirror",
+        "op": "sendPushPromise",
+        "state": "halfClosedRemoteLocalIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle, but its twin sendPushPromise rejects the reflected state halfClosedRemoteLocalIdle. The two allow-sets are exact mirrors in the base tree, so one side moved alone."
+      }
+    ],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "harness": "opencode",
+    "arm": "native",
+    "rep": 0,
+    "resolved": false,
+    "f2p": 0
+  },
+  {
+    "label": "opencode native r1",
+    "verdict": "REJECT",
+    "widened": true,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)",
+      "halfClosedLocalPeerIdle"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)"
+    ],
+    "findings": [
+      {
+        "rule": "class",
+        "op": "receivePushPromise",
+        "state": "halfOpenLocalPeerIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle but rejects halfOpenLocalPeerIdle; the two differ only by a locally sent END_STREAM, an axis this operation is insensitive to (it already admits both ends of fullyOpen(localRole: .client) --sendES--> halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)).",
+        "path": [
+          "idle(localRole: .client) --sendHeaders--> halfOpenLocalPeerIdle"
+        ]
+      },
+      {
+        "rule": "mirror",
+        "op": "sendPushPromise",
+        "state": "halfClosedRemoteLocalIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle, but its twin sendPushPromise rejects the reflected state halfClosedRemoteLocalIdle. The two allow-sets are exact mirrors in the base tree, so one side moved alone."
+      }
+    ],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "harness": "opencode",
+    "arm": "native",
+    "rep": 1,
+    "resolved": false,
+    "f2p": 0
+  },
+  {
+    "label": "claude-code sweet r0",
+    "verdict": "REJECT",
+    "widened": true,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)",
+      "halfClosedLocalPeerIdle"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)"
+    ],
+    "findings": [
+      {
+        "rule": "class",
+        "op": "receivePushPromise",
+        "state": "halfOpenLocalPeerIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle but rejects halfOpenLocalPeerIdle; the two differ only by a locally sent END_STREAM, an axis this operation is insensitive to (it already admits both ends of fullyOpen(localRole: .client) --sendES--> halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)).",
+        "path": [
+          "idle(localRole: .client) --sendHeaders--> halfOpenLocalPeerIdle"
+        ]
+      },
+      {
+        "rule": "mirror",
+        "op": "sendPushPromise",
+        "state": "halfClosedRemoteLocalIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle, but its twin sendPushPromise rejects the reflected state halfClosedRemoteLocalIdle. The two allow-sets are exact mirrors in the base tree, so one side moved alone."
+      }
+    ],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "harness": "claude-code",
+    "arm": "sweet",
+    "rep": 0,
+    "resolved": false,
+    "f2p": 0
+  },
+  {
+    "label": "claude-code sweet r1",
+    "verdict": "REJECT",
+    "widened": true,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)",
+      "halfClosedLocalPeerIdle"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)"
+    ],
+    "findings": [
+      {
+        "rule": "class",
+        "op": "receivePushPromise",
+        "state": "halfOpenLocalPeerIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle but rejects halfOpenLocalPeerIdle; the two differ only by a locally sent END_STREAM, an axis this operation is insensitive to (it already admits both ends of fullyOpen(localRole: .client) --sendES--> halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)).",
+        "path": [
+          "idle(localRole: .client) --sendHeaders--> halfOpenLocalPeerIdle"
+        ]
+      },
+      {
+        "rule": "mirror",
+        "op": "sendPushPromise",
+        "state": "halfClosedRemoteLocalIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle, but its twin sendPushPromise rejects the reflected state halfClosedRemoteLocalIdle. The two allow-sets are exact mirrors in the base tree, so one side moved alone."
+      }
+    ],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "harness": "claude-code",
+    "arm": "sweet",
+    "rep": 1,
+    "resolved": false,
+    "f2p": 0
+  },
+  {
+    "label": "claude-code native r0",
+    "verdict": "REJECT",
+    "widened": true,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)",
+      "halfClosedLocalPeerIdle"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)"
+    ],
+    "findings": [
+      {
+        "rule": "class",
+        "op": "receivePushPromise",
+        "state": "halfOpenLocalPeerIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle but rejects halfOpenLocalPeerIdle; the two differ only by a locally sent END_STREAM, an axis this operation is insensitive to (it already admits both ends of fullyOpen(localRole: .client) --sendES--> halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)).",
+        "path": [
+          "idle(localRole: .client) --sendHeaders--> halfOpenLocalPeerIdle"
+        ]
+      },
+      {
+        "rule": "mirror",
+        "op": "sendPushPromise",
+        "state": "halfClosedRemoteLocalIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle, but its twin sendPushPromise rejects the reflected state halfClosedRemoteLocalIdle. The two allow-sets are exact mirrors in the base tree, so one side moved alone."
+      }
+    ],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "harness": "claude-code",
+    "arm": "native",
+    "rep": 0,
+    "resolved": false,
+    "f2p": 0
+  },
+  {
+    "label": "claude-code native r1",
+    "verdict": "REJECT",
+    "widened": true,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)",
+      "halfClosedLocalPeerIdle"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)"
+    ],
+    "findings": [
+      {
+        "rule": "class",
+        "op": "receivePushPromise",
+        "state": "halfOpenLocalPeerIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle but rejects halfOpenLocalPeerIdle; the two differ only by a locally sent END_STREAM, an axis this operation is insensitive to (it already admits both ends of fullyOpen(localRole: .client) --sendES--> halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)).",
+        "path": [
+          "idle(localRole: .client) --sendHeaders--> halfOpenLocalPeerIdle"
+        ]
+      },
+      {
+        "rule": "mirror",
+        "op": "sendPushPromise",
+        "state": "halfClosedRemoteLocalIdle",
+        "why": "receivePushPromise admits halfClosedLocalPeerIdle, but its twin sendPushPromise rejects the reflected state halfClosedRemoteLocalIdle. The two allow-sets are exact mirrors in the base tree, so one side moved alone."
+      }
+    ],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "harness": "claude-code",
+    "arm": "native",
+    "rep": 1,
+    "resolved": false,
+    "f2p": 0
+  },
+  {
+    "label": "GOLD (reference fix)",
+    "verdict": "ACCEPT",
+    "widened": true,
+    "recvAllow": [
+      "fullyOpen(localRole: .client)",
+      "halfClosedLocalPeerActive(initiatedBy: .client, localRole: .client)",
+      "halfClosedLocalPeerIdle",
+      "halfOpenLocalPeerIdle"
+    ],
+    "sendAllow": [
+      "fullyOpen(localRole: .server)",
+      "halfClosedRemoteLocalActive(initiatedBy: .client, localRole: .server)",
+      "halfClosedRemoteLocalIdle",
+      "halfOpenRemoteLocalIdle"
+    ],
+    "findings": [],
+    "pairs": [
+      {
+        "send": "sendHeaders",
+        "recv": "receiveHeaders",
+        "armed": true
+      },
+      {
+        "send": "sendData",
+        "recv": "receiveData",
+        "armed": true
+      },
+      {
+        "send": "sendPushPromise",
+        "recv": "receivePushPromise",
+        "armed": true
+      },
+      {
+        "send": "sendWindowUpdate",
+        "recv": "receiveWindowUpdate",
+        "armed": false
+      }
+    ],
+    "resolved": true
+  }
+]

@@ -1,0 +1,31 @@
+
+1. the shipped base tree is clean
+  ok    parse found the state enum  — 11 cases
+  ok    parse found ten operations  — sendHeaders,receiveHeaders,sendData,receiveData,sendPushPromise,receivePushPromise,sendWindowUpdate,receiveWindowUpdate,localInitialWindowSizeChanged,remoteInitialWindowSizeChanged
+  ok    eight end-of-stream edges derived  — 8
+  ok    the push-promise pair is armed
+  ok    the window-update pair is reported UNARMED, not dropped
+  ok    zero counterexamples on unmodified base
+
+2. the one-quadrant patch both arms actually wrote
+  ok    rejected  — 2 counterexamples
+  ok    class rule names the untouched halfOpenLocalPeerIdle
+  ok    mirror rule names the untouched send twin
+  ok    a reachable path is attached to the class counterexample
+
+3. both receive states, send side untouched
+  ok    the class rule falls silent on receivePushPromise
+  ok    the mirror rule still rejects  — 2 counterexamples
+
+4. the four-quadrant patch — the rule must be satisfiable
+  ok    accepted with zero counterexamples
+  ok    and it really did widen both operations  — recv 4, send 4
+
+5. mirrored but class-broken — the two rules are independent
+  ok    the mirror rule falls silent
+  ok    the class rule rejects on both sides  — sendPushPromise:halfOpenRemoteLocalIdle receivePushPromise:halfOpenLocalPeerIdle
+
+6. a patch that touches nothing relevant is not rejected
+  ok    a comment-only edit stays accepted
+
+CONTROLS PASSED
