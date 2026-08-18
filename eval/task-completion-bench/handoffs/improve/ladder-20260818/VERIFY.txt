@@ -1,0 +1,11 @@
+Every solve figure quoted in HINT-LADDER-RESULTS.md, re-derived from the rows-*.json in this
+directory. Regenerate with the node snippet in the commit that added this file.
+
+28 per-cell figures checked against the doc: all ok.
+
+Aggregates:
+  apple, certificate present, luna, 4 runs (L1, L1CK, L1G1, L1G14)   16/16
+  apple, certificate present, both backbones (+ terra T1)            18/18
+  apple, general symmetry clause, 2 runs (cl-G3 + r4-G3APPLE)         0/6
+  apple, placebo + general clause + gold prose spec                   0/13
+  rotation, five fresh tasks, 4 reps:  L0 11/20   G1 12/20   GALL 15/20
