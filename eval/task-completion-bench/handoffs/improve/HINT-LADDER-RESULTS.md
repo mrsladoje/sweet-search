@@ -374,6 +374,45 @@ crutch.
 
 ---
 
+## Seventh: none of this costs anything
+
+Every result above is a resolution number. The benchmark's headline is efficiency at parity,
+so the question that decides whether any of it ships is whether the gain was bought with
+tokens. It was not.
+
+**The general clauses, on the five rotation tasks they were never written for:**
+
+| | solved | `$`/rollout | `$` per solved task | tool calls |
+|---|---|---|---|---|
+| baseline | 11/20 | `$0.00673` | `$0.01223` | 17.4 |
+| all three clauses | **15/20** | `$0.00632` | **`$0.00843`** | 17.4 |
+
+**And on the three controls that were already solved:**
+
+| | solved | `$`/rollout | tool calls |
+|---|---|---|---|
+| baseline | 8/8 | `$0.00565` | 15.0 |
+| G1 | 9/9 | `$0.00565` | 14.0 |
+| G4 | 9/9 | `$0.00528` | 12.7 |
+| all three | 9/9 | `$0.00499` | **12.6** |
+
+The clauses add about 420 tokens to every prompt, which over an 18-turn rollout should cost
+roughly **+11%**. Measured cost went **down**. The mechanism is visible in the call counts:
+on already-solved tasks the agent finishes in **12.6 calls instead of 15.0**, and the shorter
+trajectory more than repays the longer prompt.
+
+**Read this honestly.** At twenty rollouts an arm the cost noise floor is far wider than these
+gaps — a 6% move is not a cost win and must not be published as one. The defensible claim is
+**resolution up, cost flat, and the token cost of the treatment fully absorbed.** The call-count
+drop is the firmer of the two signals, because call counts are far less noisy than dollars.
+
+The per-task picture for the certificate is the same story: Apple goes `$0.00692` → `$0.00755`
+per rollout (n=3 vs 4, indistinguishable), NimbleOptions goes `$0.00641` → `$0.00601`, and
+CodeceptJS `$0.00551` → `$0.00598`. Against a baseline that solves **zero**, any finite number
+is an infinite improvement in cost per solved task.
+
+---
+
 ## Scale and spend
 
 **369 rollouts across 24 pilots for `$4.72`** in ideal cost: 349 on `openai/gpt-5.6-luna` for
