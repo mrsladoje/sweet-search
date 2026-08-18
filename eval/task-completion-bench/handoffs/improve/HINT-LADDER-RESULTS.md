@@ -137,6 +137,112 @@ instructive: the model invents `headersAll` and cascades it across `base_request
 `base_response.dart`, `browser_client.dart` and more, where the reference fix is one extension
 in one file. It is not missing a fact; it is choosing a different design.
 
+---
+
+## Second experiment: is the certificate even necessary?
+
+Each per-task certificate is an instance of a rule that can be stated once, in general, for
+every task. A general clause costs nothing to ship — no parser, no language front end, no
+per-project semantics, which is exactly what P4's rotation killed its checker on. So the same
+five targets and all three controls were re-run with one general clause appended to **every**
+task, three reps each, four clause sets. Every clause is written to be true of any
+repository: no file name, no symbol, nothing bench-specific.
+
+| task | L0 | G1 family completeness | G2 public surface + vocabulary | G3 symmetry and siblings | GALL all three |
+|---|---|---|---|---|---|
+| `apple__swift-nio-http2-145` | 0/3 | 0/3 | 0/3 | 0/2 | 0/3 |
+| `codeception__codeceptjs-367` | 0/3 | 0/3 | 0/3 | 0/2 | 0/3 |
+| `dashbitco__nimble_options-43` | 0/3 | **1/3** | 0/3 | 0/3 | 0/3 |
+| `joshuakgoldberg__bingo-274` | 0/3 | 0/3 | 0/3 | 0/3 | 0/3 |
+| `dart-lang__http-1114` | 0/3 | 0/3 | 0/3 | 0/3 | 0/3 |
+| `oceanparcels__parcels-617` (control) | 3/3 | 3/3 | 3/3 | 3/3 | 3/3 |
+| `ontodev__robot-710` (control) | 3/3 | 3/3 | 3/3 | 3/3 | 3/3 |
+| `epiforecasts__scoringutils-229` (control) | 2/2 | 3/3 | 3/3 | 3/3 | 3/3 |
+
+**No control regressed under any clause.** That is the only good news a general clause earned.
+
+### The comparison that decides whether the tool is worth building
+
+Apple with the **general symmetry clause**: **0/2**. Apple with the **computed certificate**:
+**4/4**. The clause says, correctly and in general, *check the twin and check the siblings*.
+It does not produce the fix. Neither does the gold-derived prose specification (0/3). Only the
+computed closure — the two states nobody states in a sentence — does.
+
+That is `ss-statecheck`'s value, isolated: **not the rule, the computation.**
+
+### The placebo holds the headline up
+
+A flip produced by a long analysis block invites one obvious objection: any long analysis
+block might raise effort. So Apple was re-run with a **placebo certificate** — the same tool,
+the same format, the same length, reporting truthfully on
+`Sources/NIOHTTP2/ConnectionStateMachine/ConnectionStateMachine.swift`: 19 operations, eight
+armed mirror pairs, no end-of-stream axis derivable, **zero counterexamples**. A real report
+about a file the reference fix never touches.
+
+**Apple under the placebo: 0/4.** The flip is content, not attention.
+
+### The dose-response, on one task, from five conditions
+
+Removing the computed counterexamples from Apple's certificate and leaving only its two rules
+— still file-specific, still naming the sibling pairs — gives **1/4**. So:
+
+| what Apple is given | solves |
+|---|---|
+| a truthful certificate about a different file (placebo) | 0/4 |
+| a general "check the twin and the siblings" clause | 0/2 |
+| a gold-derived prose specification of the fix | 0/3 |
+| this file's two rules, no computed counterexamples | 1/4 |
+| this file's rules **plus the computed counterexamples** | **4/4** |
+
+The rules are worth a quarter of the way. The closure is worth the rest. Nothing else on that
+list is worth anything at all.
+
+### NimbleOptions: the clause matches the certificate, and both stall on the same fourth edit
+
+G1 flips it 1/3, the certificate flips it 1/4 — indistinguishable at these reps. Reading the
+patches shows why neither does better: **the exact three-site patch SOLVES** (rep 1, three
+hunks, `f2p` 1.000). Two of the three G1 rollouts produced that same patch and then added a
+fourth hunk rewriting the error-message generator so `:integer` would stay out of an existing
+list, which drops `f2p` to 0.667. Three of the four certificate rollouts did the same.
+
+The retrieval half of this task is finished. The loss is a fourth edit nobody asked for, and
+it earned a fifth clause (`G4`, minimal change) which is queued.
+
+### Stacking clauses destroys the one effect there was
+
+`GALL` — all three clauses together — is **0/3 on NimbleOptions**, losing G1's flip. More
+instruction is not more compliance.
+
+---
+
+## Third finding: two of the five targets are a naming lottery
+
+`bingo-274` and `dart-1114` flip at no level, including a full prose specification, and their
+hidden tests explain it. They import an identifier the reference patch invented and the base
+tree has never mentioned:
+
+- `packages/bingo-fs/src/isFile.test.ts` → `import { isFile } from "./isFile.js"` — so the
+  **file name** is locked, not only the symbol. At L3 the model wrote a functionally correct
+  implementation and named it `isCreatedFile` in `handlebars.ts`. Nothing about that is wrong;
+  it just is not the name the test imports.
+- `pkgs/http/test/response_test.dart` → `response.headersSplitValues`. The baseline model
+  invents `headersAll` and cascades it across four files.
+
+`phase1-scripts/name-lock-census.mjs` measures this across the whole task file. It counts a
+name as locked only when the hidden test needs it, the reference patch adds it, the base tree
+never mentions it, **and the issue text does not spell it out** — that last clause matters,
+because without it `gradethis` looks locked and it solves 2/2 everywhere, since its issue
+hands the agent the name.
+
+**4 of 18 tasks are name-locked.** Two were already excluded for other reasons (`mransan`
+broken, `polyfactory` unfixable in the shim). The remaining two are `bingo` and `dart` — and
+both are 0/2 in both arms on all three harnesses.
+
+No candidate in the slate can address a name lottery. **P5's `+1 task on each harness` and the
+Dart half of P7's cost pool rest on tasks that measure a coin flip.**
+
+---
+
 ## Honest limits
 
 - **Single backbone, single harness, one arm.** Everything here is luna on opencode, sweet
