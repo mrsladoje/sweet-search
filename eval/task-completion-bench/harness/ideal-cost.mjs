@@ -35,6 +35,12 @@ export const MODEL_PRICES = {
   // Re-fetched from OpenRouter /api/v1/models 2026-08-04 after OpenAI's 2026-07-30
   // 80% Luna cut (announced $0.20/$1.20; OpenRouter serves $0.10/$0.60).
   'openai/gpt-5.6-luna': { in: 0.10, cache: 0.01, out: 0.60 },
+  // Fetched from OpenRouter /api/v1/models 2026-08-18 for the hint-ladder backbone probe.
+  // Both carry a >272k-prompt tier at double these rates; bench rollouts run at ~8-30k
+  // prompt tokens, so the base tier is the one we pay. Re-check before pricing a long-context
+  // run at these numbers.
+  'openai/gpt-5.6-terra': { in: 2.00, cache: 0.20, out: 12.0 },
+  'openai/gpt-5.6-sol': { in: 2.50, cache: 0.25, out: 15.0 },
 };
 
 // Fail loudly rather than silently billing an unregistered backbone at gpt-5.5's
