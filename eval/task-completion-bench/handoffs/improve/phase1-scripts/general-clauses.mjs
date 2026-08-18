@@ -45,10 +45,22 @@ of states, cases or branches that the surrounding code treats alike. If the rule
 applied holds for the twin or for a sibling, apply it there too in the same change. A
 one-sided edit to a symmetric structure is the most common way a correct diagnosis turns
 into an incomplete fix.`,
+  // Added after the first clause screen, which isolated a failure the other three do not
+  // touch. On NimbleOptions the exact three-site patch SOLVES; two of the three rollouts
+  // that produced it then added a fourth hunk rewriting the error-message generator to keep
+  // `:integer` out of an existing list, and broke a test. The same shape cost three of four
+  // rollouts at L1. The models are not under-reaching, they are defending code nobody asked
+  // them to defend.
+  G4: `MINIMAL CHANGE. Make the change the issue asks for and stop. Do not also adjust
+neighbouring code to keep existing output, messages or lists looking the way they did before
+— that is a guess about what the rest of the system expects, and a wrong guess there breaks
+a test your actual change would have passed. If some existing behaviour genuinely must adapt,
+let a failing test tell you so first, then adapt only what that test names.`,
 };
 
 export const COMBOS = {
-  G1: ['G1'], G2: ['G2'], G3: ['G3'], GALL: ['G1', 'G2', 'G3'],
+  G1: ['G1'], G2: ['G2'], G3: ['G3'], G4: ['G4'],
+  GALL: ['G1', 'G2', 'G3'], G14: ['G1', 'G4'],
 };
 
 const HEAD = '\n\n=== ENGINEERING CHECKS (apply to any change you make) ===\n';
