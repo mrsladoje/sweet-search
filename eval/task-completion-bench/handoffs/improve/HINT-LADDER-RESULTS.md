@@ -20,7 +20,8 @@ fix set-exactly, blind, and the write-up had to close with: *not established, th
 handed the counterexample list would act on it.* All six sweet and native cells had the state
 machine file in reach and every one still wrote the same one-quadrant patch.
 
-This experiment answers it, at `$0.51`.
+This experiment answers it. The first round cost `$0.51`; everything below, twenty pilots
+and 269 rollouts, cost `$1.99`.
 
 ## Design
 
@@ -300,7 +301,7 @@ best figure, **2/4**. It does nothing for CodeceptJS, which needs the runtime fa
 
 | target | best condition found | baseline → best |
 |---|---|---|
-| `apple__swift-nio-http2-145` | blind state-space certificate | 0/3 → **12/12** |
+| `apple__swift-nio-http2-145` | blind state-space certificate | 0/3 → **16/16** |
 | `codeception__codeceptjs-367` | certificate + runtime surface fact | 0/3 → **2/4** |
 | `dashbitco__nimble_options-43` | certificate + family-completeness clause | 0/3 → **2/4** |
 | `joshuakgoldberg__bingo-274` | nothing found | 0/3 → 0 everywhere (name-locked) |
@@ -310,6 +311,17 @@ best figure, **2/4**. It does nothing for CodeceptJS, which needs the runtime fa
 two that are not are benchmark artifacts rather than product gaps.** No single condition wins
 all three — each needs a different derived fact, which is the argument for three narrow
 analyzers rather than one prompt.
+
+### Apple is now 16/16, and every stack past the first hurts NimbleOptions
+
+Four independent runs have now put the certificate in front of Apple — alone, with the
+stop-at-green clause, with the family clause, and with the family plus minimal-change clauses.
+**Every one returned 4/4: 16 rollouts, 16 solves, four run IDs.** Against 0/6 for the general
+clause and 0/4 for the placebo, the certificate's effect is not a sampling artifact.
+
+NimbleOptions moves the other way as clauses pile up: **2/4** on certificate + family clause,
+**1/4** once minimal-change is added on top, **0/4** with stop-at-green instead. The pattern
+matches `GALL` losing `G1`'s flip. More instruction is not more compliance.
 
 ### The minimal-change clause does not rescue NimbleOptions on its own
 
