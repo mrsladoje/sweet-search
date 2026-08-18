@@ -367,9 +367,10 @@ certificate, two reps each.
 | | 0/10, `$1.19` | 2/10, `$1.00` |
 
 **A twenty-fold increase in backbone price buys zero resolution on these tasks. The derived
-fact buys one of them outright.** Apple is now **18/18 across five runs on two backbones**,
-against 0/12 for everything that is not the computed closure. The checker is not a
-cheap-model crutch.
+fact buys one of them outright.** Apple is now **18/18 across five runs on two backbones** — against
+**0/13** for the three conditions that carry no computed closure (placebo 0/4, general
+symmetry clause 0/6, gold-derived prose specification 0/3). The checker is not a cheap-model
+crutch.
 
 ---
 
