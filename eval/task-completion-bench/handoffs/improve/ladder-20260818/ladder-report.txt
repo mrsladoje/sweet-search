@@ -1,0 +1,36 @@
+hint ladder — sweet arm, opencode/luna, stamp 20260818
+
+task                                      L0          L1          L2          L3            reading
+apple__swift-nio-http2-145                0/3         4/4         0/2         0/3           *** FLIPPED ***
+codeception__codeceptjs-367               0/3         0/4         0/3         2/3           *** FLIPPED ***
+dart-lang__http-1114                      0/3         0/4         0/3         0/3           no flip at any level
+dashbitco__nimble_options-43              0/3         1/4         0/2         0/3           *** FLIPPED ***
+epiforecasts__scoringutils-229            2/2         -           -           -             control (was solved)
+joshuakgoldberg__bingo-274                0/3         0/4         0/3         0/3           no flip at any level
+oceanparcels__parcels-617                 3/3         -           -           -             control (was solved)
+ontodev__robot-710                        3/3         -           -           -             control (was solved)
+
+aggregates over the 5 task(s) present at every level
+                                          L0          L1          L2          L3          
+mean f2p fraction                         0.133       0.390       0.267       0.400       
+mean ideal cost $                         0.00737     0.00660     0.00792     0.00739     
+mean tool calls                           18.3        18.9        20.6        18.1        
+
+DELIVERY CHECK — mean prompt tokens on the FIRST model turn (a hint must raise it)
+task                                      L0          L1          L2          L3            delta vs L0
+apple__swift-nio-http2-145                8192        8647        8273        8313          +455 +81 +121
+codeception__codeceptjs-367               8068        8325        8148        8182          +257 +80 +114
+dart-lang__http-1114                      8111        8391        8219        8243          +280 +108 +132
+dashbitco__nimble_options-43              7983        8178        8057        8072          +195 +74 +89
+epiforecasts__scoringutils-229            8250        -           -           -             
+joshuakgoldberg__bingo-274                8205        8489        8331        8334          +284 +126 +129
+oceanparcels__parcels-617                 8080        -           -           -             
+ontodev__robot-710                        8451        -           -           -             
+
+per-target f2p fraction (partial credit — solve requires 1.000 and no p2p break)
+task                                      L0          L1          L2          L3          
+apple__swift-nio-http2-145                0.000       1.000       0.667       0.667       
+codeception__codeceptjs-367               0.000       0.000       0.000       0.667       
+dart-lang__http-1114                      0.000       0.200       0.000       0.000       
+dashbitco__nimble_options-43              0.667       0.750       0.667       0.667       
+joshuakgoldberg__bingo-274                0.000       0.000       0.000       0.000       

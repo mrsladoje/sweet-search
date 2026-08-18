@@ -1,0 +1,2789 @@
+########## L0 sweet dashbitco__nimble_options-43
+diff --git a/lib/nimble_options.ex b/lib/nimble_options.ex
+index d2ac608..fa5cf8f 100644
+--- a/lib/nimble_options.ex
++++ b/lib/nimble_options.ex
+@@ -83,6 +83,8 @@ defmodule NimbleOptions do
+ 
+     * `:boolean` - A boolean.
+ 
++    * `:integer` - An integer.
++
+     * `:non_neg_integer` - A non-negative integer.
+ 
+     * `:pos_integer` - A positive integer.
+@@ -336,6 +338,12 @@ defmodule NimbleOptions do
+     end
+   end
+ 
++  defp validate_type(:integer, _key, value) when is_integer(value), do: :ok
++
++  defp validate_type(:integer, key, value) do
++    error_tuple("expected #{inspect(key)} to be an integer, got: #{inspect(value)}")
++  end
++
+   defp validate_type(:non_neg_integer, key, value) when not is_integer(value) or value < 0 do
+     error_tuple("expected #{inspect(key)} to be a non negative integer, got: #{inspect(value)}")
+   end
+@@ -472,6 +480,8 @@ defmodule NimbleOptions do
+   end
+ 
+   @doc false
++  def type(:integer), do: {:ok, :integer}
++
+   def type(value) when value in @basic_types do
+     {:ok, value}
+   end
+
+########## L0 sweet codeception__codeceptjs-367
+diff --git a/lib/helper.js b/lib/helper.js
+index 632764d..690fc74 100644
+--- a/lib/helper.js
++++ b/lib/helper.js
+@@ -2,6 +2,7 @@
+ 
+ let container = require('./container');
+ let debug = require('./output').debug;
++let say = require('./output').say;
+ 
+ /**
+  * @inner
+@@ -123,6 +124,13 @@ class Helper {
+     debug(`[${section}] ${msg}`);
+   }
+ 
++  /**
++   * Print a comment during test execution.
++   */
++  comment(message) {
++    say(message);
++  }
++
+ }
+ 
+ module.exports = Helper;
+
+########## L0 sweet apple__swift-nio-http2-145
+diff --git a/Sources/NIOHTTP2/StreamStateMachine.swift b/Sources/NIOHTTP2/StreamStateMachine.swift
+index 7c4f16c..6f4df67 100644
+--- a/Sources/NIOHTTP2/StreamStateMachine.swift
++++ b/Sources/NIOHTTP2/StreamStateMachine.swift
+@@ -703,12 +703,13 @@ extension HTTP2StreamStateMachine {
+         // RFC 7540 § 6.6 forbids receiving PUSH_PROMISE frames on remotely-initiated streams.
+         switch self.state {
+         case .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
++             .halfClosedLocalPeerIdle,
+              .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Receiving a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+         // Authors note: I cannot find a citation for this in RFC 7540, but this seems a sensible choice.
+-        case .idle, .reservedLocal, .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedRemoteLocalIdle,
++        case .idle, .reservedLocal, .reservedRemote, .halfClosedRemoteLocalIdle,
+              .halfClosedRemoteLocalActive, .halfOpenLocalPeerIdle, .halfOpenRemoteLocalIdle, .closed,
+              .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+              .halfClosedLocalPeerActive(localRole: .server, initiatedBy: _, remoteContentLength: _, remoteWindow: _),
+
+########## L0 sweet joshuakgoldberg__bingo-274
+diff --git a/packages/bingo-handlebars/src/handlebars.ts b/packages/bingo-handlebars/src/handlebars.ts
+index 07d9507..7fbeb6d 100644
+--- a/packages/bingo-handlebars/src/handlebars.ts
++++ b/packages/bingo-handlebars/src/handlebars.ts
+@@ -1,8 +1,15 @@
+-import { intake } from "bingo-fs";
++import { CreatedDirectory, CreatedEntry, intake } from "bingo-fs";
+ 
+ import { executeTemplatesRecursive } from "./executeTemplatesRecursive.js";
+ 
+-export async function handlebars(sourcePath: string, options?: object) {
++export function handlebars(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedDirectory>;
++export async function handlebars(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedEntry | undefined> {
+ 	const source = await intake(sourcePath);
+ 
+ 	if (!source) {
+
+########## L0 sweet dart-lang__http-1114
+diff --git a/pkgs/http/lib/src/base_request.dart b/pkgs/http/lib/src/base_request.dart
+index 70a7869..c5368f3 100644
+--- a/pkgs/http/lib/src/base_request.dart
++++ b/pkgs/http/lib/src/base_request.dart
+@@ -81,6 +81,12 @@ abstract class BaseRequest {
+ 
+   // TODO(nweiz): automatically parse cookies from headers
+ 
++  /// The HTTP headers to send with the request, including repeated values.
++  ///
++  /// Header names are compared case-insensitively. Values in this map are sent
++  /// as separate header fields rather than being folded together.
++  final Map<String, List<String>> headersAll;
++
+   // TODO(nweiz): make this a HttpHeaders object
+   final Map<String, String> headers;
+ 
+@@ -99,6 +105,9 @@ abstract class BaseRequest {
+   BaseRequest(String method, this.url)
+       : method = _validateMethod(method),
+         headers = LinkedHashMap(
++            equals: (key1, key2) => key1.toLowerCase() == key2.toLowerCase(),
++            hashCode: (key) => key.toLowerCase().hashCode),
++        headersAll = LinkedHashMap(
+             equals: (key1, key2) => key1.toLowerCase() == key2.toLowerCase(),
+             hashCode: (key) => key.toLowerCase().hashCode);
+ 
+@@ -136,6 +145,7 @@ abstract class BaseRequest {
+           contentLength: response.contentLength,
+           request: response.request,
+           headers: response.headers,
++          headersAll: response.headersAll,
+           isRedirect: response.isRedirect,
+           persistentConnection: response.persistentConnection,
+           reasonPhrase: response.reasonPhrase);
+diff --git a/pkgs/http/lib/src/base_response.dart b/pkgs/http/lib/src/base_response.dart
+index ed95f6c..17c35ee 100644
+--- a/pkgs/http/lib/src/base_response.dart
++++ b/pkgs/http/lib/src/base_response.dart
+@@ -26,6 +26,12 @@ abstract class BaseResponse {
+ 
+   // TODO(nweiz): automatically parse cookies from headers
+ 
++  /// The HTTP headers returned by the server, including repeated values.
++  ///
++  /// Header names are compared case-insensitively. Unlike [headers], this map
++  /// does not fold repeated header fields together.
++  final Map<String, List<String>> headersAll;
++
+   /// The HTTP headers returned by the server.
+   ///
+   /// The header names are converted to lowercase and stored with their
+@@ -58,9 +64,16 @@ abstract class BaseResponse {
+       {this.contentLength,
+       this.request,
+       this.headers = const {},
++      Map<String, List<String>> headersAll = const {},
+       this.isRedirect = false,
+       this.persistentConnection = true,
+-      this.reasonPhrase}) {
++      this.reasonPhrase})
++      : headersAll = headersAll.isEmpty
++            ? {
++                for (final entry in headers.entries)
++                  entry.key: [entry.value],
++              }
++            : headersAll.map((key, values) => MapEntry(key, [...values])) {
+     if (statusCode < 100) {
+       throw ArgumentError('Invalid status code $statusCode.');
+     } else if (contentLength != null && contentLength! < 0) {
+diff --git a/pkgs/http/lib/src/browser_client.dart b/pkgs/http/lib/src/browser_client.dart
+index 80db8b1..bbc24ce 100644
+--- a/pkgs/http/lib/src/browser_client.dart
++++ b/pkgs/http/lib/src/browser_client.dart
+@@ -65,6 +65,11 @@ class BrowserClient extends BaseClient {
+     for (var header in request.headers.entries) {
+       xhr.setRequestHeader(header.key, header.value);
+     }
++    for (var header in request.headersAll.entries) {
++      for (var value in header.value) {
++        xhr.setRequestHeader(header.key, value);
++      }
++    }
+ 
+     var completer = Completer<StreamedResponse>();
+ 
+@@ -84,6 +89,7 @@ class BrowserClient extends BaseClient {
+           contentLength: body.length,
+           request: request,
+           headers: xhr.responseHeaders,
++          headersAll: xhr.responseHeadersAll,
+           reasonPhrase: xhr.statusText));
+     }));
+ 
+@@ -142,4 +148,17 @@ extension on XMLHttpRequest {
+     }
+     return headers;
+   }
++
++  Map<String, List<String>> get responseHeadersAll {
++    final headers = <String, List<String>>{};
++    final headersString = getAllResponseHeaders();
++    for (final header in headersString.split('\r\n')) {
++      if (header.isEmpty) continue;
++      final splitIdx = header.indexOf(': ');
++      if (splitIdx == -1) continue;
++      final key = header.substring(0, splitIdx).toLowerCase();
++      headers.putIfAbsent(key, () => []).add(header.substring(splitIdx + 2));
++    }
++    return headers;
++  }
+ }
+diff --git a/pkgs/http/lib/src/io_client.dart b/pkgs/http/lib/src/io_client.dart
+index db66b02..1ee244f 100644
+--- a/pkgs/http/lib/src/io_client.dart
++++ b/pkgs/http/lib/src/io_client.dart
+@@ -105,15 +105,23 @@ class IOClient extends BaseClient {
+       request.headers.forEach((name, value) {
+         ioRequest.headers.set(name, value);
+       });
++      request.headersAll.forEach((name, values) {
++        for (final value in values) {
++          ioRequest.headers.add(name, value);
++        }
++      });
+ 
+       var response = await stream.pipe(ioRequest) as HttpClientResponse;
+ 
+       var headers = <String, String>{};
++      var headersAll = <String, List<String>>{};
+       response.headers.forEach((key, values) {
+         // TODO: Remove trimRight() when
+         // https://github.com/dart-lang/sdk/issues/53005 is resolved and the
+         // package:http SDK constraint requires that version or later.
+-        headers[key] = values.map((value) => value.trimRight()).join(',');
++        final trimmed = values.map((value) => value.trimRight()).toList();
++        headers[key] = trimmed.join(',');
++        headersAll[key] = trimmed;
+       });
+ 
+       return IOStreamedResponse(
+@@ -126,6 +134,7 @@ class IOClient extends BaseClient {
+               response.contentLength == -1 ? null : response.contentLength,
+           request: request,
+           headers: headers,
++          headersAll: headersAll,
+           isRedirect: response.isRedirect,
+           persistentConnection: response.persistentConnection,
+           reasonPhrase: response.reasonPhrase,
+diff --git a/pkgs/http/lib/src/io_streamed_response.dart b/pkgs/http/lib/src/io_streamed_response.dart
+index 95b818c..7be13a3 100644
+--- a/pkgs/http/lib/src/io_streamed_response.dart
++++ b/pkgs/http/lib/src/io_streamed_response.dart
+@@ -20,6 +20,7 @@ class IOStreamedResponse extends StreamedResponse {
+       {super.contentLength,
+       super.request,
+       super.headers,
++      super.headersAll,
+       super.isRedirect,
+       super.persistentConnection,
+       super.reasonPhrase,
+diff --git a/pkgs/http/lib/src/response.dart b/pkgs/http/lib/src/response.dart
+index 1ba7c46..4cd3edb 100644
+--- a/pkgs/http/lib/src/response.dart
++++ b/pkgs/http/lib/src/response.dart
+@@ -31,12 +31,14 @@ class Response extends BaseResponse {
+   Response(String body, int statusCode,
+       {BaseRequest? request,
+       Map<String, String> headers = const {},
++      Map<String, List<String>> headersAll = const {},
+       bool isRedirect = false,
+       bool persistentConnection = true,
+       String? reasonPhrase})
+       : this.bytes(_encodingForHeaders(headers).encode(body), statusCode,
+             request: request,
+             headers: headers,
++            headersAll: headersAll,
+             isRedirect: isRedirect,
+             persistentConnection: persistentConnection,
+             reasonPhrase: reasonPhrase);
+@@ -45,6 +47,7 @@ class Response extends BaseResponse {
+   Response.bytes(List<int> bodyBytes, super.statusCode,
+       {super.request,
+       super.headers,
++      super.headersAll,
+       super.isRedirect,
+       super.persistentConnection,
+       super.reasonPhrase})
+@@ -58,6 +61,7 @@ class Response extends BaseResponse {
+     return Response.bytes(body, response.statusCode,
+         request: response.request,
+         headers: response.headers,
++        headersAll: response.headersAll,
+         isRedirect: response.isRedirect,
+         persistentConnection: response.persistentConnection,
+         reasonPhrase: response.reasonPhrase);
+diff --git a/pkgs/http/lib/src/streamed_response.dart b/pkgs/http/lib/src/streamed_response.dart
+index 8cc0c76..af2cb7c 100644
+--- a/pkgs/http/lib/src/streamed_response.dart
++++ b/pkgs/http/lib/src/streamed_response.dart
+@@ -21,6 +21,7 @@ class StreamedResponse extends BaseResponse {
+       {super.contentLength,
+       super.request,
+       super.headers,
++      super.headersAll,
+       super.isRedirect,
+       super.persistentConnection,
+       super.reasonPhrase})
+
+########## L0 sweet/rep-1 dashbitco__nimble_options-43
+diff --git a/lib/nimble_options.ex b/lib/nimble_options.ex
+index d2ac608..bc3ade8 100644
+--- a/lib/nimble_options.ex
++++ b/lib/nimble_options.ex
+@@ -87,6 +87,8 @@ defmodule NimbleOptions do
+ 
+     * `:pos_integer` - A positive integer.
+ 
++    * `:integer` - An integer.
++
+     * `:timeout` - A non-negative integer or the atom `:infinity`.
+ 
+     * `:pid` - A PID (process identifier).
+@@ -176,6 +178,7 @@ defmodule NimbleOptions do
+     :atom,
+     :non_neg_integer,
+     :pos_integer,
++    :integer,
+     :mfa,
+     :mod_arg,
+     :string,
+@@ -344,6 +347,10 @@ defmodule NimbleOptions do
+     error_tuple("expected #{inspect(key)} to be a positive integer, got: #{inspect(value)}")
+   end
+ 
++  defp validate_type(:integer, key, value) when not is_integer(value) do
++    error_tuple("expected #{inspect(key)} to be an integer, got: #{inspect(value)}")
++  end
++
+   defp validate_type(:atom, key, value) when not is_atom(value) do
+     error_tuple("expected #{inspect(key)} to be an atom, got: #{inspect(value)}")
+   end
+@@ -465,7 +472,7 @@ defmodule NimbleOptions do
+ 
+   defp available_types() do
+     types =
+-      Enum.map(@basic_types, &inspect/1) ++
++      Enum.map(@basic_types -- [:integer], &inspect/1) ++
+         ["{:fun, arity}", "{:one_of, choices}", "{:custom, mod, fun, args}"]
+ 
+     Enum.join(types, ", ")
+
+########## L0 sweet/rep-1 codeception__codeceptjs-367
+diff --git a/lib/actor.js b/lib/actor.js
+index e963f85..e2f150e 100644
+--- a/lib/actor.js
++++ b/lib/actor.js
+@@ -4,6 +4,7 @@ let container = require('./container');
+ let methodsOfObject = require('./utils').methodsOfObject;
+ let recorder = require('./recorder');
+ let event = require('./event');
++let output = require('./output');
+ 
+ /**
+  * Fetches all methods from all enabled helpers,
+@@ -13,6 +14,13 @@ let event = require('./event');
+ module.exports = function (obj) {
+   obj = obj || {};
+ 
++  Object.defineProperty(obj, 'say', {
++    enumerable: false,
++    value: function (message) {
++      return recorder.add('say ' + message, () => output.say(message));
++    }
++  });
++
+   let helpers = container.helpers();
+   Object.keys(helpers)
+     .map(function (key) {
+
+########## L0 sweet/rep-1 apple__swift-nio-http2-145
+diff --git a/Sources/NIOHTTP2/StreamStateMachine.swift b/Sources/NIOHTTP2/StreamStateMachine.swift
+index 7c4f16c..c8625e8 100644
+--- a/Sources/NIOHTTP2/StreamStateMachine.swift
++++ b/Sources/NIOHTTP2/StreamStateMachine.swift
+@@ -703,12 +703,13 @@ extension HTTP2StreamStateMachine {
+         // RFC 7540 § 6.6 forbids receiving PUSH_PROMISE frames on remotely-initiated streams.
+         switch self.state {
+         case .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+-             .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _):
++             .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _),
++             .halfClosedLocalPeerIdle(remoteWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Receiving a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+         // Authors note: I cannot find a citation for this in RFC 7540, but this seems a sensible choice.
+-        case .idle, .reservedLocal, .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedRemoteLocalIdle,
++        case .idle, .reservedLocal, .reservedRemote, .halfClosedRemoteLocalIdle,
+              .halfClosedRemoteLocalActive, .halfOpenLocalPeerIdle, .halfOpenRemoteLocalIdle, .closed,
+              .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+              .halfClosedLocalPeerActive(localRole: .server, initiatedBy: _, remoteContentLength: _, remoteWindow: _),
+
+########## L0 sweet/rep-1 joshuakgoldberg__bingo-274
+diff --git a/packages/bingo-handlebars/src/handlebars.ts b/packages/bingo-handlebars/src/handlebars.ts
+index 07d9507..ad973b8 100644
+--- a/packages/bingo-handlebars/src/handlebars.ts
++++ b/packages/bingo-handlebars/src/handlebars.ts
+@@ -1,4 +1,4 @@
+-import { intake } from "bingo-fs";
++import { CreatedDirectory, CreatedFileEntry, intake } from "bingo-fs";
+ 
+ import { executeTemplatesRecursive } from "./executeTemplatesRecursive.js";
+ 
+@@ -13,3 +13,33 @@ export async function handlebars(sourcePath: string, options?: object) {
+ 
+ 	return executeTemplatesRecursive(source, options);
+ }
++
++export async function handlebarsDirectory(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedDirectory> {
++	const created = await handlebars(sourcePath, options);
++
++	if (!created || Array.isArray(created)) {
++		throw new Error(
++			`handlebarsDirectory() must be given a path to a directory. '${sourcePath}' is a file.`,
++		);
++	}
++
++	return created;
++}
++
++export async function handlebarsFile(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedFileEntry> {
++	const created = await handlebars(sourcePath, options);
++
++	if (!created || (typeof created === "object" && !Array.isArray(created))) {
++		throw new Error(
++			`handlebarsFile() must be given a path to a file. '${sourcePath}' is a directory.`,
++		);
++	}
++
++	return created;
++}
+
+########## L0 sweet/rep-1 dart-lang__http-1114
+diff --git a/pkgs/http/lib/src/base_request.dart b/pkgs/http/lib/src/base_request.dart
+index 70a7869..9b4e05c 100644
+--- a/pkgs/http/lib/src/base_request.dart
++++ b/pkgs/http/lib/src/base_request.dart
+@@ -84,6 +84,20 @@ abstract class BaseRequest {
+   // TODO(nweiz): make this a HttpHeaders object
+   final Map<String, String> headers;
+ 
++  /// The values to send for each request header.
++  ///
++  /// This map contains the values added with [addHeader]. The [headers] map
++  /// remains available for headers which have a single value.
++  final Map<String, List<String>> headersAll = LinkedHashMap(
++      equals: (key1, key2) => key1.toLowerCase() == key2.toLowerCase(),
++      hashCode: (key) => key.toLowerCase().hashCode);
++
++  /// Adds another value for [name] without replacing an existing value.
++  void addHeader(String name, String value) {
++    _checkFinalized();
++    (headersAll[name] ??= []).add(value);
++  }
++
+   /// Whether [finalize] has been called.
+   bool get finalized => _finalized;
+   bool _finalized = false;
+diff --git a/pkgs/http/lib/src/base_response.dart b/pkgs/http/lib/src/base_response.dart
+index ed95f6c..b98e8fd 100644
+--- a/pkgs/http/lib/src/base_response.dart
++++ b/pkgs/http/lib/src/base_response.dart
+@@ -49,6 +49,13 @@ abstract class BaseResponse {
+   // TODO(nweiz): make this a HttpHeaders object.
+   final Map<String, String> headers;
+ 
++  /// All values returned for each HTTP header.
++  ///
++  /// Unlike [headers], this map does not combine repeated header fields. This
++  /// is important for headers such as `Set-Cookie`, whose values cannot be
++  /// safely separated after they have been joined.
++  final Map<String, List<String>> headersAll;
++
+   final bool isRedirect;
+ 
+   /// Whether the server requested that a persistent connection be maintained.
+@@ -58,6 +65,7 @@ abstract class BaseResponse {
+       {this.contentLength,
+       this.request,
+       this.headers = const {},
++      this.headersAll = const {},
+       this.isRedirect = false,
+       this.persistentConnection = true,
+       this.reasonPhrase}) {
+diff --git a/pkgs/http/lib/src/io_client.dart b/pkgs/http/lib/src/io_client.dart
+index db66b02..77e689d 100644
+--- a/pkgs/http/lib/src/io_client.dart
++++ b/pkgs/http/lib/src/io_client.dart
+@@ -105,15 +105,24 @@ class IOClient extends BaseClient {
+       request.headers.forEach((name, value) {
+         ioRequest.headers.set(name, value);
+       });
++      request.headersAll.forEach((name, values) {
++        for (final value in values) {
++          ioRequest.headers.add(name, value);
++        }
++      });
+ 
+       var response = await stream.pipe(ioRequest) as HttpClientResponse;
+ 
+       var headers = <String, String>{};
++      var headersAll = <String, List<String>>{};
+       response.headers.forEach((key, values) {
+         // TODO: Remove trimRight() when
+         // https://github.com/dart-lang/sdk/issues/53005 is resolved and the
+         // package:http SDK constraint requires that version or later.
+-        headers[key] = values.map((value) => value.trimRight()).join(',');
++        final trimmedValues =
++            values.map((value) => value.trimRight()).toList(growable: false);
++        headersAll[key] = trimmedValues;
++        headers[key] = trimmedValues.join(',');
+       });
+ 
+       return IOStreamedResponse(
+@@ -126,6 +135,7 @@ class IOClient extends BaseClient {
+               response.contentLength == -1 ? null : response.contentLength,
+           request: request,
+           headers: headers,
++          headersAll: headersAll,
+           isRedirect: response.isRedirect,
+           persistentConnection: response.persistentConnection,
+           reasonPhrase: response.reasonPhrase,
+diff --git a/pkgs/http/lib/src/io_streamed_response.dart b/pkgs/http/lib/src/io_streamed_response.dart
+index 95b818c..7be13a3 100644
+--- a/pkgs/http/lib/src/io_streamed_response.dart
++++ b/pkgs/http/lib/src/io_streamed_response.dart
+@@ -20,6 +20,7 @@ class IOStreamedResponse extends StreamedResponse {
+       {super.contentLength,
+       super.request,
+       super.headers,
++      super.headersAll,
+       super.isRedirect,
+       super.persistentConnection,
+       super.reasonPhrase,
+diff --git a/pkgs/http/lib/src/response.dart b/pkgs/http/lib/src/response.dart
+index 1ba7c46..4cd3edb 100644
+--- a/pkgs/http/lib/src/response.dart
++++ b/pkgs/http/lib/src/response.dart
+@@ -31,12 +31,14 @@ class Response extends BaseResponse {
+   Response(String body, int statusCode,
+       {BaseRequest? request,
+       Map<String, String> headers = const {},
++      Map<String, List<String>> headersAll = const {},
+       bool isRedirect = false,
+       bool persistentConnection = true,
+       String? reasonPhrase})
+       : this.bytes(_encodingForHeaders(headers).encode(body), statusCode,
+             request: request,
+             headers: headers,
++            headersAll: headersAll,
+             isRedirect: isRedirect,
+             persistentConnection: persistentConnection,
+             reasonPhrase: reasonPhrase);
+@@ -45,6 +47,7 @@ class Response extends BaseResponse {
+   Response.bytes(List<int> bodyBytes, super.statusCode,
+       {super.request,
+       super.headers,
++      super.headersAll,
+       super.isRedirect,
+       super.persistentConnection,
+       super.reasonPhrase})
+@@ -58,6 +61,7 @@ class Response extends BaseResponse {
+     return Response.bytes(body, response.statusCode,
+         request: response.request,
+         headers: response.headers,
++        headersAll: response.headersAll,
+         isRedirect: response.isRedirect,
+         persistentConnection: response.persistentConnection,
+         reasonPhrase: response.reasonPhrase);
+diff --git a/pkgs/http/lib/src/streamed_response.dart b/pkgs/http/lib/src/streamed_response.dart
+index 8cc0c76..af2cb7c 100644
+--- a/pkgs/http/lib/src/streamed_response.dart
++++ b/pkgs/http/lib/src/streamed_response.dart
+@@ -21,6 +21,7 @@ class StreamedResponse extends BaseResponse {
+       {super.contentLength,
+       super.request,
+       super.headers,
++      super.headersAll,
+       super.isRedirect,
+       super.persistentConnection,
+       super.reasonPhrase})
+
+########## L0 sweet/rep-2 dashbitco__nimble_options-43
+diff --git a/lib/nimble_options.ex b/lib/nimble_options.ex
+index d2ac608..35bf055 100644
+--- a/lib/nimble_options.ex
++++ b/lib/nimble_options.ex
+@@ -83,6 +83,8 @@ defmodule NimbleOptions do
+ 
+     * `:boolean` - A boolean.
+ 
++    * `:integer` - An integer.
++
+     * `:non_neg_integer` - A non-negative integer.
+ 
+     * `:pos_integer` - A positive integer.
+@@ -340,6 +342,10 @@ defmodule NimbleOptions do
+     error_tuple("expected #{inspect(key)} to be a non negative integer, got: #{inspect(value)}")
+   end
+ 
++  defp validate_type(:integer, key, value) when not is_integer(value) do
++    error_tuple("expected #{inspect(key)} to be an integer, got: #{inspect(value)}")
++  end
++
+   defp validate_type(:pos_integer, key, value) when not is_integer(value) or value < 1 do
+     error_tuple("expected #{inspect(key)} to be a positive integer, got: #{inspect(value)}")
+   end
+@@ -472,6 +478,8 @@ defmodule NimbleOptions do
+   end
+ 
+   @doc false
++  def type(:integer), do: {:ok, :integer}
++
+   def type(value) when value in @basic_types do
+     {:ok, value}
+   end
+
+########## L0 sweet/rep-2 codeception__codeceptjs-367
+diff --git a/lib/helper.js b/lib/helper.js
+index 632764d..324efad 100644
+--- a/lib/helper.js
++++ b/lib/helper.js
+@@ -1,7 +1,7 @@
+ 'use strict';
+ 
+ let container = require('./container');
+-let debug = require('./output').debug;
++let output = require('./output');
+ 
+ /**
+  * @inner
+@@ -116,11 +116,18 @@ class Helper {
+    * Print debug message to console (outputs only in debug mode)
+    */
+   debug(msg) {
+-    debug(msg);
++    output.debug(msg);
++  }
++
++  /**
++   * Print an informational message during test execution.
++   */
++  comment(msg) {
++    output.say(msg);
+   }
+ 
+   debugSection(section, msg) {
+-    debug(`[${section}] ${msg}`);
++    output.debug(`[${section}] ${msg}`);
+   }
+ 
+ }
+
+########## L0 sweet/rep-2 apple__swift-nio-http2-145
+diff --git a/Sources/NIOHTTP2/StreamStateMachine.swift b/Sources/NIOHTTP2/StreamStateMachine.swift
+index 7c4f16c..6777765 100644
+--- a/Sources/NIOHTTP2/StreamStateMachine.swift
++++ b/Sources/NIOHTTP2/StreamStateMachine.swift
+@@ -698,17 +698,19 @@ extension HTTP2StreamStateMachine {
+         // We can receive PUSH_PROMISE frames in the following states:
+         //
+         // - fullyOpen when we are a client. In this case we assert that the stream was initiated by us.
++        // - halfClosedLocalPeerIdle, when we are a client that has not yet received response HEADERS.
+         // - halfClosedLocalPeerActive, when we are a client, and when the stream was initiated by us.
+         //
+         // RFC 7540 § 6.6 forbids receiving PUSH_PROMISE frames on remotely-initiated streams.
+         switch self.state {
+         case .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
++             .halfClosedLocalPeerIdle(remoteWindow: _),
+              .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Receiving a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+         // Authors note: I cannot find a citation for this in RFC 7540, but this seems a sensible choice.
+-        case .idle, .reservedLocal, .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedRemoteLocalIdle,
++        case .idle, .reservedLocal, .reservedRemote, .halfClosedRemoteLocalIdle,
+              .halfClosedRemoteLocalActive, .halfOpenLocalPeerIdle, .halfOpenRemoteLocalIdle, .closed,
+              .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+              .halfClosedLocalPeerActive(localRole: .server, initiatedBy: _, remoteContentLength: _, remoteWindow: _),
+
+########## L0 sweet/rep-2 joshuakgoldberg__bingo-274
+diff --git a/packages/bingo-handlebars/src/handlebars.ts b/packages/bingo-handlebars/src/handlebars.ts
+index 07d9507..97e430f 100644
+--- a/packages/bingo-handlebars/src/handlebars.ts
++++ b/packages/bingo-handlebars/src/handlebars.ts
+@@ -1,8 +1,11 @@
+-import { intake } from "bingo-fs";
++import { CreatedDirectory, CreatedEntry, CreatedFileEntry, intake } from "bingo-fs";
+ 
+ import { executeTemplatesRecursive } from "./executeTemplatesRecursive.js";
+ 
+-export async function handlebars(sourcePath: string, options?: object) {
++export async function handlebars(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedEntry | undefined> {
+ 	const source = await intake(sourcePath);
+ 
+ 	if (!source) {
+@@ -13,3 +16,33 @@ export async function handlebars(sourcePath: string, options?: object) {
+ 
+ 	return executeTemplatesRecursive(source, options);
+ }
++
++export async function handlebarsDirectory(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedDirectory> {
++	const created = await handlebars(sourcePath, options);
++
++	if (!created || Array.isArray(created) || typeof created !== "object") {
++		throw new Error(
++			`handlebarsDirectory() must be given a path to a directory. '${sourcePath}' is a file.`,
++		);
++	}
++
++	return created;
++}
++
++export async function handlebarsFile(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedFileEntry> {
++	const created = await handlebars(sourcePath, options);
++
++	if (!created || !Array.isArray(created)) {
++		throw new Error(
++			`handlebarsFile() must be given a path to a file. '${sourcePath}' is a directory.`,
++		);
++	}
++
++	return created;
++}
+
+########## L0 sweet/rep-2 dart-lang__http-1114
+diff --git a/pkgs/http/lib/src/base_request.dart b/pkgs/http/lib/src/base_request.dart
+index 70a7869..3514d39 100644
+--- a/pkgs/http/lib/src/base_request.dart
++++ b/pkgs/http/lib/src/base_request.dart
+@@ -84,6 +84,14 @@ abstract class BaseRequest {
+   // TODO(nweiz): make this a HttpHeaders object
+   final Map<String, String> headers;
+ 
++  /// All values for each HTTP request header.
++  ///
++  /// Use this map when a header must be sent more than once. The legacy
++  /// [headers] map remains available for headers with a single value.
++  final Map<String, List<String>> headersAll = LinkedHashMap(
++      equals: (key1, key2) => key1.toLowerCase() == key2.toLowerCase(),
++      hashCode: (key) => key.toLowerCase().hashCode);
++
+   /// Whether [finalize] has been called.
+   bool get finalized => _finalized;
+   bool _finalized = false;
+@@ -136,6 +144,7 @@ abstract class BaseRequest {
+           contentLength: response.contentLength,
+           request: response.request,
+           headers: response.headers,
++          headersAll: response.headersAll,
+           isRedirect: response.isRedirect,
+           persistentConnection: response.persistentConnection,
+           reasonPhrase: response.reasonPhrase);
+diff --git a/pkgs/http/lib/src/base_response.dart b/pkgs/http/lib/src/base_response.dart
+index ed95f6c..18b6013 100644
+--- a/pkgs/http/lib/src/base_response.dart
++++ b/pkgs/http/lib/src/base_response.dart
+@@ -49,6 +49,12 @@ abstract class BaseResponse {
+   // TODO(nweiz): make this a HttpHeaders object.
+   final Map<String, String> headers;
+ 
++  /// All values for each HTTP header returned by the server.
++  ///
++  /// Unlike [headers], this preserves separate values for headers which may
++  /// legally occur more than once, such as `Set-Cookie`.
++  final Map<String, List<String>> headersAll;
++
+   final bool isRedirect;
+ 
+   /// Whether the server requested that a persistent connection be maintained.
+@@ -58,9 +64,12 @@ abstract class BaseResponse {
+       {this.contentLength,
+       this.request,
+       this.headers = const {},
++      Map<String, List<String>>? headersAll,
+       this.isRedirect = false,
+       this.persistentConnection = true,
+-      this.reasonPhrase}) {
++      this.reasonPhrase})
++      : headersAll = headersAll ??
++            headers.map((name, value) => MapEntry(name, [value])) {
+     if (statusCode < 100) {
+       throw ArgumentError('Invalid status code $statusCode.');
+     } else if (contentLength != null && contentLength! < 0) {
+diff --git a/pkgs/http/lib/src/browser_client.dart b/pkgs/http/lib/src/browser_client.dart
+index 80db8b1..dca9559 100644
+--- a/pkgs/http/lib/src/browser_client.dart
++++ b/pkgs/http/lib/src/browser_client.dart
+@@ -65,6 +65,11 @@ class BrowserClient extends BaseClient {
+     for (var header in request.headers.entries) {
+       xhr.setRequestHeader(header.key, header.value);
+     }
++    for (var header in request.headersAll.entries) {
++      for (var value in header.value) {
++        xhr.setRequestHeader(header.key, value);
++      }
++    }
+ 
+     var completer = Completer<StreamedResponse>();
+ 
+@@ -84,6 +89,7 @@ class BrowserClient extends BaseClient {
+           contentLength: body.length,
+           request: request,
+           headers: xhr.responseHeaders,
++          headersAll: xhr.responseHeadersAll,
+           reasonPhrase: xhr.statusText));
+     }));
+ 
+@@ -119,8 +125,13 @@ class BrowserClient extends BaseClient {
+ 
+ extension on XMLHttpRequest {
+   Map<String, String> get responseHeaders {
++    return responseHeadersAll
++        .map((key, values) => MapEntry(key, values.join(', ')));
++  }
++
++  Map<String, List<String>> get responseHeadersAll {
+     // from Closure's goog.net.Xhrio.getResponseHeaders.
+-    var headers = <String, String>{};
++    var headers = <String, List<String>>{};
+     var headersString = getAllResponseHeaders();
+     var headersList = headersString.split('\r\n');
+     for (var header in headersList) {
+@@ -134,11 +145,7 @@ extension on XMLHttpRequest {
+       }
+       var key = header.substring(0, splitIdx).toLowerCase();
+       var value = header.substring(splitIdx + 2);
+-      if (headers.containsKey(key)) {
+-        headers[key] = '${headers[key]}, $value';
+-      } else {
+-        headers[key] = value;
+-      }
++      headers.putIfAbsent(key, () => []).add(value);
+     }
+     return headers;
+   }
+diff --git a/pkgs/http/lib/src/io_client.dart b/pkgs/http/lib/src/io_client.dart
+index db66b02..40cf5bc 100644
+--- a/pkgs/http/lib/src/io_client.dart
++++ b/pkgs/http/lib/src/io_client.dart
+@@ -105,15 +105,23 @@ class IOClient extends BaseClient {
+       request.headers.forEach((name, value) {
+         ioRequest.headers.set(name, value);
+       });
++      request.headersAll.forEach((name, values) {
++        for (var value in values) {
++          ioRequest.headers.add(name, value);
++        }
++      });
+ 
+       var response = await stream.pipe(ioRequest) as HttpClientResponse;
+ 
+       var headers = <String, String>{};
++      var headersAll = <String, List<String>>{};
+       response.headers.forEach((key, values) {
+         // TODO: Remove trimRight() when
+         // https://github.com/dart-lang/sdk/issues/53005 is resolved and the
+         // package:http SDK constraint requires that version or later.
+-        headers[key] = values.map((value) => value.trimRight()).join(',');
++        final trimmed = values.map((value) => value.trimRight()).toList();
++        headers[key] = trimmed.join(',');
++        headersAll[key] = trimmed;
+       });
+ 
+       return IOStreamedResponse(
+@@ -126,6 +134,7 @@ class IOClient extends BaseClient {
+               response.contentLength == -1 ? null : response.contentLength,
+           request: request,
+           headers: headers,
++          headersAll: headersAll,
+           isRedirect: response.isRedirect,
+           persistentConnection: response.persistentConnection,
+           reasonPhrase: response.reasonPhrase,
+diff --git a/pkgs/http/lib/src/io_streamed_response.dart b/pkgs/http/lib/src/io_streamed_response.dart
+index 95b818c..7be13a3 100644
+--- a/pkgs/http/lib/src/io_streamed_response.dart
++++ b/pkgs/http/lib/src/io_streamed_response.dart
+@@ -20,6 +20,7 @@ class IOStreamedResponse extends StreamedResponse {
+       {super.contentLength,
+       super.request,
+       super.headers,
++      super.headersAll,
+       super.isRedirect,
+       super.persistentConnection,
+       super.reasonPhrase,
+diff --git a/pkgs/http/lib/src/response.dart b/pkgs/http/lib/src/response.dart
+index 1ba7c46..3db8b5e 100644
+--- a/pkgs/http/lib/src/response.dart
++++ b/pkgs/http/lib/src/response.dart
+@@ -45,6 +45,7 @@ class Response extends BaseResponse {
+   Response.bytes(List<int> bodyBytes, super.statusCode,
+       {super.request,
+       super.headers,
++      super.headersAll,
+       super.isRedirect,
+       super.persistentConnection,
+       super.reasonPhrase})
+@@ -56,8 +57,9 @@ class Response extends BaseResponse {
+   static Future<Response> fromStream(StreamedResponse response) async {
+     final body = await response.stream.toBytes();
+     return Response.bytes(body, response.statusCode,
+-        request: response.request,
+-        headers: response.headers,
++            request: response.request,
++            headers: response.headers,
++            headersAll: response.headersAll,
+         isRedirect: response.isRedirect,
+         persistentConnection: response.persistentConnection,
+         reasonPhrase: response.reasonPhrase);
+diff --git a/pkgs/http/lib/src/streamed_response.dart b/pkgs/http/lib/src/streamed_response.dart
+index 8cc0c76..af2cb7c 100644
+--- a/pkgs/http/lib/src/streamed_response.dart
++++ b/pkgs/http/lib/src/streamed_response.dart
+@@ -21,6 +21,7 @@ class StreamedResponse extends BaseResponse {
+       {super.contentLength,
+       super.request,
+       super.headers,
++      super.headersAll,
+       super.isRedirect,
+       super.persistentConnection,
+       super.reasonPhrase})
+
+########## L1 sweet codeception__codeceptjs-367
+diff --git a/lib/actor.js b/lib/actor.js
+index e963f85..689d351 100644
+--- a/lib/actor.js
++++ b/lib/actor.js
+@@ -4,6 +4,7 @@ let container = require('./container');
+ let methodsOfObject = require('./utils').methodsOfObject;
+ let recorder = require('./recorder');
+ let event = require('./event');
++let output = require('./output');
+ 
+ /**
+  * Fetches all methods from all enabled helpers,
+@@ -37,6 +38,13 @@ module.exports = function (obj) {
+       });
+     });
+ 
++  Object.defineProperty(obj, 'say', {
++    value: function (message) {
++      recorder.add(`say: ${message}`, () => output.say(message));
++      return recorder.promise();
++    }
++  });
++
+   return obj;
+ };
+ 
+
+########## L1 sweet dashbitco__nimble_options-43
+diff --git a/lib/nimble_options.ex b/lib/nimble_options.ex
+index d2ac608..cd340f0 100644
+--- a/lib/nimble_options.ex
++++ b/lib/nimble_options.ex
+@@ -81,9 +81,11 @@ defmodule NimbleOptions do
+ 
+     * `:string` - A string.
+ 
+-    * `:boolean` - A boolean.
++	    * `:boolean` - A boolean.
+ 
+-    * `:non_neg_integer` - A non-negative integer.
++	    * `:integer` - An integer.
++
++	    * `:non_neg_integer` - A non-negative integer.
+ 
+     * `:pos_integer` - A positive integer.
+ 
+@@ -173,8 +175,9 @@ defmodule NimbleOptions do
+     :any,
+     :keyword_list,
+     :non_empty_keyword_list,
+-    :atom,
+-    :non_neg_integer,
++	    :atom,
++	    :integer,
++	    :non_neg_integer,
+     :pos_integer,
+     :mfa,
+     :mod_arg,
+@@ -336,7 +339,11 @@ defmodule NimbleOptions do
+     end
+   end
+ 
+-  defp validate_type(:non_neg_integer, key, value) when not is_integer(value) or value < 0 do
++	  defp validate_type(:integer, key, value) when not is_integer(value) do
++	    error_tuple("expected #{inspect(key)} to be an integer, got: #{inspect(value)}")
++	  end
++
++	  defp validate_type(:non_neg_integer, key, value) when not is_integer(value) or value < 0 do
+     error_tuple("expected #{inspect(key)} to be a non negative integer, got: #{inspect(value)}")
+   end
+ 
+
+########## L1 sweet apple__swift-nio-http2-145
+diff --git a/Sources/NIOHTTP2/StreamStateMachine.swift b/Sources/NIOHTTP2/StreamStateMachine.swift
+index 7c4f16c..a3b0b79 100644
+--- a/Sources/NIOHTTP2/StreamStateMachine.swift
++++ b/Sources/NIOHTTP2/StreamStateMachine.swift
+@@ -674,13 +674,16 @@ extension HTTP2StreamStateMachine {
+         //
+         // - fullyOpen when we are a server. In this case we assert that the stream was initiated by the client.
+         // - halfClosedRemoteLocalActive, when we are a server, and when the stream was initiated by the client.
++        // - halfOpenRemoteLocalIdle and halfClosedRemoteLocalIdle, when we are a server, and the stream was initiated by the client.
+         //
+         // RFC 7540 § 6.6 forbids sending PUSH_PROMISE frames on locally-initiated streams.
+         //
+         // PUSH_PROMISE frames never have stream effects: they cannot create or close streams, or affect flow control state.
+         switch self.state {
+         case .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+-             .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .client, localContentLength: _, localWindow: _):
++             .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .client, localContentLength: _, localWindow: _),
++             .halfOpenRemoteLocalIdle(localWindow: _, remoteContentLength: _, remoteWindow: _),
++             .halfClosedRemoteLocalIdle(localWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Sending a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+@@ -699,11 +702,14 @@ extension HTTP2StreamStateMachine {
+         //
+         // - fullyOpen when we are a client. In this case we assert that the stream was initiated by us.
+         // - halfClosedLocalPeerActive, when we are a client, and when the stream was initiated by us.
++        // - halfOpenLocalPeerIdle and halfClosedLocalPeerIdle, when we are a client, and the stream was initiated by us.
+         //
+         // RFC 7540 § 6.6 forbids receiving PUSH_PROMISE frames on remotely-initiated streams.
+         switch self.state {
+         case .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+-             .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _):
++             .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _),
++             .halfOpenLocalPeerIdle(localWindow: _, localContentLength: _, remoteWindow: _),
++             .halfClosedLocalPeerIdle(remoteWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Receiving a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+
+########## L1 sweet joshuakgoldberg__bingo-274
+diff --git a/packages/bingo-fs/src/index.ts b/packages/bingo-fs/src/index.ts
+index 5f9240f..d3128b0 100644
+--- a/packages/bingo-fs/src/index.ts
++++ b/packages/bingo-fs/src/index.ts
+@@ -1,2 +1,4 @@
+ export * from "./intake.js";
++export * from "./isCreatedDirectory.js";
++export * from "./isCreatedFile.js";
+ export type * from "./types.js";
+diff --git a/packages/bingo-handlebars/src/index.ts b/packages/bingo-handlebars/src/index.ts
+index febf09e..4490c5a 100644
+--- a/packages/bingo-handlebars/src/index.ts
++++ b/packages/bingo-handlebars/src/index.ts
+@@ -1,2 +1,4 @@
+ export * from "./handlebars.js";
++export * from "./handlebarsDirectory.js";
++export * from "./handlebarsFile.js";
+ export * from "./loadHandlebars.js";
+
+########## L1 sweet dart-lang__http-1114
+diff --git a/pkgs/http/lib/src/base_response.dart b/pkgs/http/lib/src/base_response.dart
+index ed95f6c..c5415b4 100644
+--- a/pkgs/http/lib/src/base_response.dart
++++ b/pkgs/http/lib/src/base_response.dart
+@@ -68,3 +68,11 @@ abstract class BaseResponse {
+     }
+   }
+ }
++
++/// Provides access to response header values as lists.
++extension BaseResponseHeaders on BaseResponse {
++  /// The HTTP headers returned by the server, with each comma-separated value
++  /// represented as an item in a list.
++  Map<String, List<String>> get headersAll => headers.map((name, value) =>
++      MapEntry(name, value.split(',').map((value) => value.trim()).toList()));
++}
+
+########## L1 sweet/rep-1 codeception__codeceptjs-367
+diff --git a/lib/actor.js b/lib/actor.js
+index e963f85..b6c3952 100644
+--- a/lib/actor.js
++++ b/lib/actor.js
+@@ -4,6 +4,7 @@ let container = require('./container');
+ let methodsOfObject = require('./utils').methodsOfObject;
+ let recorder = require('./recorder');
+ let event = require('./event');
++let output = require('./output');
+ 
+ /**
+  * Fetches all methods from all enabled helpers,
+@@ -37,6 +38,14 @@ module.exports = function (obj) {
+       });
+     });
+ 
++  Object.defineProperty(obj, 'say', {
++    enumerable: false,
++    value: function (message) {
++      recorder.add(`say: ${message}`, () => output.say(message));
++      return recorder.promise();
++    }
++  });
++
+   return obj;
+ };
+ 
+
+########## L1 sweet/rep-1 dashbitco__nimble_options-43
+diff --git a/lib/nimble_options.ex b/lib/nimble_options.ex
+index d2ac608..075da09 100644
+--- a/lib/nimble_options.ex
++++ b/lib/nimble_options.ex
+@@ -83,6 +83,8 @@ defmodule NimbleOptions do
+ 
+     * `:boolean` - A boolean.
+ 
++    * `:integer` - An integer.
++
+     * `:non_neg_integer` - A non-negative integer.
+ 
+     * `:pos_integer` - A positive integer.
+@@ -174,6 +176,7 @@ defmodule NimbleOptions do
+     :keyword_list,
+     :non_empty_keyword_list,
+     :atom,
++    :integer,
+     :non_neg_integer,
+     :pos_integer,
+     :mfa,
+@@ -340,6 +343,10 @@ defmodule NimbleOptions do
+     error_tuple("expected #{inspect(key)} to be a non negative integer, got: #{inspect(value)}")
+   end
+ 
++  defp validate_type(:integer, key, value) when not is_integer(value) do
++    error_tuple("expected #{inspect(key)} to be an integer, got: #{inspect(value)}")
++  end
++
+   defp validate_type(:pos_integer, key, value) when not is_integer(value) or value < 1 do
+     error_tuple("expected #{inspect(key)} to be a positive integer, got: #{inspect(value)}")
+   end
+@@ -465,7 +472,7 @@ defmodule NimbleOptions do
+ 
+   defp available_types() do
+     types =
+-      Enum.map(@basic_types, &inspect/1) ++
++      Enum.map(@basic_types -- [:integer], &inspect/1) ++
+         ["{:fun, arity}", "{:one_of, choices}", "{:custom, mod, fun, args}"]
+ 
+     Enum.join(types, ", ")
+
+########## L1 sweet/rep-1 apple__swift-nio-http2-145
+diff --git a/Sources/NIOHTTP2/StreamStateMachine.swift b/Sources/NIOHTTP2/StreamStateMachine.swift
+index 7c4f16c..9702727 100644
+--- a/Sources/NIOHTTP2/StreamStateMachine.swift
++++ b/Sources/NIOHTTP2/StreamStateMachine.swift
+@@ -674,13 +674,15 @@ extension HTTP2StreamStateMachine {
+         //
+         // - fullyOpen when we are a server. In this case we assert that the stream was initiated by the client.
+         // - halfClosedRemoteLocalActive, when we are a server, and when the stream was initiated by the client.
++        // - halfClosedRemoteLocalIdle and halfOpenRemoteLocalIdle, when we are a server and the stream was initiated by the client.
+         //
+         // RFC 7540 § 6.6 forbids sending PUSH_PROMISE frames on locally-initiated streams.
+         //
+         // PUSH_PROMISE frames never have stream effects: they cannot create or close streams, or affect flow control state.
+         switch self.state {
+         case .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+-             .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .client, localContentLength: _, localWindow: _):
++             .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .client, localContentLength: _, localWindow: _),
++             .halfClosedRemoteLocalIdle, .halfOpenRemoteLocalIdle:
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Sending a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+@@ -699,11 +701,13 @@ extension HTTP2StreamStateMachine {
+         //
+         // - fullyOpen when we are a client. In this case we assert that the stream was initiated by us.
+         // - halfClosedLocalPeerActive, when we are a client, and when the stream was initiated by us.
++        // - halfClosedLocalPeerIdle and halfOpenLocalPeerIdle, when we are a client and the stream was initiated by us.
+         //
+         // RFC 7540 § 6.6 forbids receiving PUSH_PROMISE frames on remotely-initiated streams.
+         switch self.state {
+         case .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+-             .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _):
++             .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _),
++             .halfClosedLocalPeerIdle, .halfOpenLocalPeerIdle:
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Receiving a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+
+########## L1 sweet/rep-1 joshuakgoldberg__bingo-274
+diff --git a/packages/bingo-fs/src/index.ts b/packages/bingo-fs/src/index.ts
+index 5f9240f..d3128b0 100644
+--- a/packages/bingo-fs/src/index.ts
++++ b/packages/bingo-fs/src/index.ts
+@@ -1,2 +1,4 @@
+ export * from "./intake.js";
++export * from "./isCreatedDirectory.js";
++export * from "./isCreatedFile.js";
+ export type * from "./types.js";
+diff --git a/packages/bingo-handlebars/src/index.ts b/packages/bingo-handlebars/src/index.ts
+index febf09e..4490c5a 100644
+--- a/packages/bingo-handlebars/src/index.ts
++++ b/packages/bingo-handlebars/src/index.ts
+@@ -1,2 +1,4 @@
+ export * from "./handlebars.js";
++export * from "./handlebarsDirectory.js";
++export * from "./handlebarsFile.js";
+ export * from "./loadHandlebars.js";
+
+########## L1 sweet/rep-1 dart-lang__http-1114
+diff --git a/pkgs/http/lib/src/base_response.dart b/pkgs/http/lib/src/base_response.dart
+index ed95f6c..be4a200 100644
+--- a/pkgs/http/lib/src/base_response.dart
++++ b/pkgs/http/lib/src/base_response.dart
+@@ -68,3 +68,14 @@ abstract class BaseResponse {
+     }
+   }
+ }
++
++/// Extensions for accessing response headers.
++extension BaseResponseHeaders on BaseResponse {
++  /// The HTTP headers returned by the server, split by comma.
++  ///
++  /// The header names are converted to lowercase and stored with their
++  /// associated header values. If the server returns multiple headers with the
++  /// same name, their values are split into a list.
++  Map<String, List<String>> get headersSplitValues => headers.map((key, value) =>
++      MapEntry(key, value.split(',').map((value) => value.trim()).toList()));
++}
+
+########## L1 sweet/rep-2 codeception__codeceptjs-367
+diff --git a/lib/actor.js b/lib/actor.js
+index e963f85..b6c3952 100644
+--- a/lib/actor.js
++++ b/lib/actor.js
+@@ -4,6 +4,7 @@ let container = require('./container');
+ let methodsOfObject = require('./utils').methodsOfObject;
+ let recorder = require('./recorder');
+ let event = require('./event');
++let output = require('./output');
+ 
+ /**
+  * Fetches all methods from all enabled helpers,
+@@ -37,6 +38,14 @@ module.exports = function (obj) {
+       });
+     });
+ 
++  Object.defineProperty(obj, 'say', {
++    enumerable: false,
++    value: function (message) {
++      recorder.add(`say: ${message}`, () => output.say(message));
++      return recorder.promise();
++    }
++  });
++
+   return obj;
+ };
+ 
+
+########## L1 sweet/rep-2 dashbitco__nimble_options-43
+diff --git a/lib/nimble_options.ex b/lib/nimble_options.ex
+index d2ac608..b16a504 100644
+--- a/lib/nimble_options.ex
++++ b/lib/nimble_options.ex
+@@ -83,6 +83,8 @@ defmodule NimbleOptions do
+ 
+     * `:boolean` - A boolean.
+ 
++    * `:integer` - An integer.
++
+     * `:non_neg_integer` - A non-negative integer.
+ 
+     * `:pos_integer` - A positive integer.
+@@ -174,6 +176,7 @@ defmodule NimbleOptions do
+     :keyword_list,
+     :non_empty_keyword_list,
+     :atom,
++    :integer,
+     :non_neg_integer,
+     :pos_integer,
+     :mfa,
+@@ -336,6 +339,10 @@ defmodule NimbleOptions do
+     end
+   end
+ 
++  defp validate_type(:integer, key, value) when not is_integer(value) do
++    error_tuple("expected #{inspect(key)} to be an integer, got: #{inspect(value)}")
++  end
++
+   defp validate_type(:non_neg_integer, key, value) when not is_integer(value) or value < 0 do
+     error_tuple("expected #{inspect(key)} to be a non negative integer, got: #{inspect(value)}")
+   end
+@@ -465,7 +472,7 @@ defmodule NimbleOptions do
+ 
+   defp available_types() do
+     types =
+-      Enum.map(@basic_types, &inspect/1) ++
++      Enum.map(@basic_types -- [:integer], &inspect/1) ++
+         ["{:fun, arity}", "{:one_of, choices}", "{:custom, mod, fun, args}"]
+ 
+     Enum.join(types, ", ")
+
+########## L1 sweet/rep-2 apple__swift-nio-http2-145
+diff --git a/Sources/NIOHTTP2/StreamStateMachine.swift b/Sources/NIOHTTP2/StreamStateMachine.swift
+index 7c4f16c..1950535 100644
+--- a/Sources/NIOHTTP2/StreamStateMachine.swift
++++ b/Sources/NIOHTTP2/StreamStateMachine.swift
+@@ -674,13 +674,15 @@ extension HTTP2StreamStateMachine {
+         //
+         // - fullyOpen when we are a server. In this case we assert that the stream was initiated by the client.
+         // - halfClosedRemoteLocalActive, when we are a server, and when the stream was initiated by the client.
++        // - halfOpenRemoteLocalIdle and halfClosedRemoteLocalIdle, before we have sent response headers.
+         //
+         // RFC 7540 § 6.6 forbids sending PUSH_PROMISE frames on locally-initiated streams.
+         //
+         // PUSH_PROMISE frames never have stream effects: they cannot create or close streams, or affect flow control state.
+         switch self.state {
+         case .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+-             .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .client, localContentLength: _, localWindow: _):
++             .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .client, localContentLength: _, localWindow: _),
++             .halfOpenRemoteLocalIdle, .halfClosedRemoteLocalIdle:
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Sending a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+@@ -699,11 +701,13 @@ extension HTTP2StreamStateMachine {
+         //
+         // - fullyOpen when we are a client. In this case we assert that the stream was initiated by us.
+         // - halfClosedLocalPeerActive, when we are a client, and when the stream was initiated by us.
++        // - halfOpenLocalPeerIdle and halfClosedLocalPeerIdle, before we have received response headers.
+         //
+         // RFC 7540 § 6.6 forbids receiving PUSH_PROMISE frames on remotely-initiated streams.
+         switch self.state {
+         case .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+-             .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _):
++             .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _),
++             .halfOpenLocalPeerIdle, .halfClosedLocalPeerIdle:
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Receiving a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+
+########## L1 sweet/rep-2 joshuakgoldberg__bingo-274
+diff --git a/packages/bingo-fs/src/index.ts b/packages/bingo-fs/src/index.ts
+index 5f9240f..d3128b0 100644
+--- a/packages/bingo-fs/src/index.ts
++++ b/packages/bingo-fs/src/index.ts
+@@ -1,2 +1,4 @@
+ export * from "./intake.js";
++export * from "./isCreatedDirectory.js";
++export * from "./isCreatedFile.js";
+ export type * from "./types.js";
+diff --git a/packages/bingo-handlebars/src/index.ts b/packages/bingo-handlebars/src/index.ts
+index febf09e..4490c5a 100644
+--- a/packages/bingo-handlebars/src/index.ts
++++ b/packages/bingo-handlebars/src/index.ts
+@@ -1,2 +1,4 @@
+ export * from "./handlebars.js";
++export * from "./handlebarsDirectory.js";
++export * from "./handlebarsFile.js";
+ export * from "./loadHandlebars.js";
+
+########## L1 sweet/rep-2 dart-lang__http-1114
+diff --git a/pkgs/http/lib/src/base_response.dart b/pkgs/http/lib/src/base_response.dart
+index ed95f6c..fa7703d 100644
+--- a/pkgs/http/lib/src/base_response.dart
++++ b/pkgs/http/lib/src/base_response.dart
+@@ -68,3 +68,12 @@ abstract class BaseResponse {
+     }
+   }
+ }
++
++/// Extensions for accessing response headers as lists of values.
++extension BaseResponseHeaders on BaseResponse {
++  /// The HTTP headers returned by the server, with comma-separated values
++  /// represented as separate list entries.
++  Map<String, List<String>> get headersAll => headers.map(
++        (name, value) => MapEntry(name, value.split(RegExp(r'\s*,\s*'))),
++      );
++}
+
+########## L1 sweet/rep-3 codeception__codeceptjs-367
+diff --git a/lib/actor.js b/lib/actor.js
+index e963f85..689d351 100644
+--- a/lib/actor.js
++++ b/lib/actor.js
+@@ -4,6 +4,7 @@ let container = require('./container');
+ let methodsOfObject = require('./utils').methodsOfObject;
+ let recorder = require('./recorder');
+ let event = require('./event');
++let output = require('./output');
+ 
+ /**
+  * Fetches all methods from all enabled helpers,
+@@ -37,6 +38,13 @@ module.exports = function (obj) {
+       });
+     });
+ 
++  Object.defineProperty(obj, 'say', {
++    value: function (message) {
++      recorder.add(`say: ${message}`, () => output.say(message));
++      return recorder.promise();
++    }
++  });
++
+   return obj;
+ };
+ 
+
+########## L1 sweet/rep-3 dashbitco__nimble_options-43
+diff --git a/lib/nimble_options.ex b/lib/nimble_options.ex
+index d2ac608..945d229 100644
+--- a/lib/nimble_options.ex
++++ b/lib/nimble_options.ex
+@@ -83,6 +83,8 @@ defmodule NimbleOptions do
+ 
+     * `:boolean` - A boolean.
+ 
++    * `:integer` - An integer.
++
+     * `:non_neg_integer` - A non-negative integer.
+ 
+     * `:pos_integer` - A positive integer.
+@@ -174,6 +176,7 @@ defmodule NimbleOptions do
+     :keyword_list,
+     :non_empty_keyword_list,
+     :atom,
++    :integer,
+     :non_neg_integer,
+     :pos_integer,
+     :mfa,
+@@ -340,6 +343,10 @@ defmodule NimbleOptions do
+     error_tuple("expected #{inspect(key)} to be a non negative integer, got: #{inspect(value)}")
+   end
+ 
++  defp validate_type(:integer, key, value) when not is_integer(value) do
++    error_tuple("expected #{inspect(key)} to be an integer, got: #{inspect(value)}")
++  end
++
+   defp validate_type(:pos_integer, key, value) when not is_integer(value) or value < 1 do
+     error_tuple("expected #{inspect(key)} to be a positive integer, got: #{inspect(value)}")
+   end
+@@ -465,8 +472,14 @@ defmodule NimbleOptions do
+ 
+   defp available_types() do
+     types =
+-      Enum.map(@basic_types, &inspect/1) ++
+-        ["{:fun, arity}", "{:one_of, choices}", "{:custom, mod, fun, args}"]
++      @basic_types
++      |> Enum.reject(&(&1 == :integer))
++      |> Enum.map(&inspect/1)
++      |> Kernel.++([
++        "{:fun, arity}",
++        "{:one_of, choices}",
++        "{:custom, mod, fun, args}"
++      ])
+ 
+     Enum.join(types, ", ")
+   end
+
+########## L1 sweet/rep-3 joshuakgoldberg__bingo-274
+diff --git a/packages/bingo-fs/src/index.ts b/packages/bingo-fs/src/index.ts
+index 5f9240f..d3128b0 100644
+--- a/packages/bingo-fs/src/index.ts
++++ b/packages/bingo-fs/src/index.ts
+@@ -1,2 +1,4 @@
+ export * from "./intake.js";
++export * from "./isCreatedDirectory.js";
++export * from "./isCreatedFile.js";
+ export type * from "./types.js";
+diff --git a/packages/bingo-handlebars/src/index.ts b/packages/bingo-handlebars/src/index.ts
+index febf09e..4490c5a 100644
+--- a/packages/bingo-handlebars/src/index.ts
++++ b/packages/bingo-handlebars/src/index.ts
+@@ -1,2 +1,4 @@
+ export * from "./handlebars.js";
++export * from "./handlebarsDirectory.js";
++export * from "./handlebarsFile.js";
+ export * from "./loadHandlebars.js";
+
+########## L1 sweet/rep-3 dart-lang__http-1114
+diff --git a/pkgs/http/lib/src/base_response.dart b/pkgs/http/lib/src/base_response.dart
+index ed95f6c..3a9e4ec 100644
+--- a/pkgs/http/lib/src/base_response.dart
++++ b/pkgs/http/lib/src/base_response.dart
+@@ -68,3 +68,14 @@ abstract class BaseResponse {
+     }
+   }
+ }
++
++/// Additional accessors for HTTP responses.
++extension BaseResponseHeaders on BaseResponse {
++  /// The HTTP headers returned by the server, with each value as a list.
++  ///
++  /// Header fields that occur multiple times are folded into a comma-separated
++  /// value by the underlying HTTP APIs. This accessor splits those values back
++  /// into individual entries.
++  Map<String, List<String>> get headersAll => headers.map((key, value) =>
++      MapEntry(key, value.split(',').map((value) => value.trim()).toList()));
++}
+
+########## L1 sweet/rep-3 apple__swift-nio-http2-145
+diff --git a/Sources/NIOHTTP2/StreamStateMachine.swift b/Sources/NIOHTTP2/StreamStateMachine.swift
+index 7c4f16c..45acc2d 100644
+--- a/Sources/NIOHTTP2/StreamStateMachine.swift
++++ b/Sources/NIOHTTP2/StreamStateMachine.swift
+@@ -672,6 +672,8 @@ extension HTTP2StreamStateMachine {
+     mutating func sendPushPromise(headers: HPACKHeaders, validateHeaderBlock: Bool) -> StateMachineResultWithStreamEffect {
+         // We can send PUSH_PROMISE frames in the following states:
+         //
++        // - halfOpenRemoteLocalIdle and halfClosedRemoteLocalIdle when we are a server. In these cases we assert
++        //   that the stream was initiated by the client, and allow the PUSH_PROMISE before response HEADERS.
+         // - fullyOpen when we are a server. In this case we assert that the stream was initiated by the client.
+         // - halfClosedRemoteLocalActive, when we are a server, and when the stream was initiated by the client.
+         //
+@@ -680,13 +682,15 @@ extension HTTP2StreamStateMachine {
+         // PUSH_PROMISE frames never have stream effects: they cannot create or close streams, or affect flow control state.
+         switch self.state {
+         case .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
++             .halfOpenRemoteLocalIdle(localWindow: _, remoteContentLength: _, remoteWindow: _),
++             .halfClosedRemoteLocalIdle(localWindow: _),
+              .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .client, localContentLength: _, localWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Sending a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+         // Authors note: I cannot find a citation for this in RFC 7540, but this seems a sensible choice.
+         case .idle, .reservedLocal, .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive,
+-             .halfClosedRemoteLocalIdle, .halfOpenLocalPeerIdle, .halfOpenRemoteLocalIdle, .closed,
++             .halfOpenLocalPeerIdle, .halfOpenRemoteLocalIdle, .closed,
+              .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+              .halfClosedRemoteLocalActive(localRole: .client, initiatedBy: _, localContentLength: _, localWindow: _),
+              .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .server, localContentLength: _, localWindow: _):
+@@ -697,19 +701,23 @@ extension HTTP2StreamStateMachine {
+     mutating func receivePushPromise(headers: HPACKHeaders, validateHeaderBlock: Bool) -> StateMachineResultWithStreamEffect {
+         // We can receive PUSH_PROMISE frames in the following states:
+         //
++        // - halfOpenLocalPeerIdle and halfClosedLocalPeerIdle when we are a client. In these cases we assert
++        //   that the stream was initiated by us, and allow the PUSH_PROMISE before response HEADERS.
+         // - fullyOpen when we are a client. In this case we assert that the stream was initiated by us.
+         // - halfClosedLocalPeerActive, when we are a client, and when the stream was initiated by us.
+         //
+         // RFC 7540 § 6.6 forbids receiving PUSH_PROMISE frames on remotely-initiated streams.
+         switch self.state {
+         case .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
++             .halfOpenLocalPeerIdle(localWindow: _, localContentLength: _, remoteWindow: _),
++             .halfClosedLocalPeerIdle(remoteWindow: _),
+              .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Receiving a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+         // Authors note: I cannot find a citation for this in RFC 7540, but this seems a sensible choice.
+-        case .idle, .reservedLocal, .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedRemoteLocalIdle,
+-             .halfClosedRemoteLocalActive, .halfOpenLocalPeerIdle, .halfOpenRemoteLocalIdle, .closed,
++        case .idle, .reservedLocal, .reservedRemote, .halfClosedRemoteLocalIdle,
++             .halfClosedRemoteLocalActive, .halfOpenRemoteLocalIdle, .closed,
+              .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+              .halfClosedLocalPeerActive(localRole: .server, initiatedBy: _, remoteContentLength: _, remoteWindow: _),
+              .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .server, remoteContentLength: _, remoteWindow: _):
+
+########## L2 sweet codeception__codeceptjs-367
+diff --git a/lib/actor.js b/lib/actor.js
+index e963f85..6a7ad79 100644
+--- a/lib/actor.js
++++ b/lib/actor.js
+@@ -4,6 +4,7 @@ let container = require('./container');
+ let methodsOfObject = require('./utils').methodsOfObject;
+ let recorder = require('./recorder');
+ let event = require('./event');
++let output = require('./output');
+ 
+ /**
+  * Fetches all methods from all enabled helpers,
+@@ -37,6 +38,12 @@ module.exports = function (obj) {
+       });
+     });
+ 
++  Object.defineProperty(obj, 'comment', {
++    value: function (message) {
++      recorder.add('comment', () => output.print(message));
++    }
++  });
++
+   return obj;
+ };
+ 
+
+########## L2 sweet dashbitco__nimble_options-43
+diff --git a/lib/nimble_options.ex b/lib/nimble_options.ex
+index d2ac608..075da09 100644
+--- a/lib/nimble_options.ex
++++ b/lib/nimble_options.ex
+@@ -83,6 +83,8 @@ defmodule NimbleOptions do
+ 
+     * `:boolean` - A boolean.
+ 
++    * `:integer` - An integer.
++
+     * `:non_neg_integer` - A non-negative integer.
+ 
+     * `:pos_integer` - A positive integer.
+@@ -174,6 +176,7 @@ defmodule NimbleOptions do
+     :keyword_list,
+     :non_empty_keyword_list,
+     :atom,
++    :integer,
+     :non_neg_integer,
+     :pos_integer,
+     :mfa,
+@@ -340,6 +343,10 @@ defmodule NimbleOptions do
+     error_tuple("expected #{inspect(key)} to be a non negative integer, got: #{inspect(value)}")
+   end
+ 
++  defp validate_type(:integer, key, value) when not is_integer(value) do
++    error_tuple("expected #{inspect(key)} to be an integer, got: #{inspect(value)}")
++  end
++
+   defp validate_type(:pos_integer, key, value) when not is_integer(value) or value < 1 do
+     error_tuple("expected #{inspect(key)} to be a positive integer, got: #{inspect(value)}")
+   end
+@@ -465,7 +472,7 @@ defmodule NimbleOptions do
+ 
+   defp available_types() do
+     types =
+-      Enum.map(@basic_types, &inspect/1) ++
++      Enum.map(@basic_types -- [:integer], &inspect/1) ++
+         ["{:fun, arity}", "{:one_of, choices}", "{:custom, mod, fun, args}"]
+ 
+     Enum.join(types, ", ")
+
+########## L2 sweet apple__swift-nio-http2-145
+diff --git a/Sources/NIOHTTP2/StreamStateMachine.swift b/Sources/NIOHTTP2/StreamStateMachine.swift
+index 7c4f16c..9fd265b 100644
+--- a/Sources/NIOHTTP2/StreamStateMachine.swift
++++ b/Sources/NIOHTTP2/StreamStateMachine.swift
+@@ -673,6 +673,7 @@ extension HTTP2StreamStateMachine {
+         // We can send PUSH_PROMISE frames in the following states:
+         //
+         // - fullyOpen when we are a server. In this case we assert that the stream was initiated by the client.
++        // - halfClosedRemoteLocalIdle, when we are a server, and when the stream was initiated by the client.
+         // - halfClosedRemoteLocalActive, when we are a server, and when the stream was initiated by the client.
+         //
+         // RFC 7540 § 6.6 forbids sending PUSH_PROMISE frames on locally-initiated streams.
+@@ -680,6 +681,7 @@ extension HTTP2StreamStateMachine {
+         // PUSH_PROMISE frames never have stream effects: they cannot create or close streams, or affect flow control state.
+         switch self.state {
+         case .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
++             .halfClosedRemoteLocalIdle,
+              .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .client, localContentLength: _, localWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+@@ -698,11 +700,13 @@ extension HTTP2StreamStateMachine {
+         // We can receive PUSH_PROMISE frames in the following states:
+         //
+         // - fullyOpen when we are a client. In this case we assert that the stream was initiated by us.
++        // - halfClosedLocalPeerIdle, when we are a client, and when the stream was initiated by us.
+         // - halfClosedLocalPeerActive, when we are a client, and when the stream was initiated by us.
+         //
+         // RFC 7540 § 6.6 forbids receiving PUSH_PROMISE frames on remotely-initiated streams.
+         switch self.state {
+         case .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
++             .halfClosedLocalPeerIdle,
+              .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+
+########## L2 sweet joshuakgoldberg__bingo-274
+diff --git a/packages/bingo-fs/src/index.ts b/packages/bingo-fs/src/index.ts
+index 5f9240f..c90db20 100644
+--- a/packages/bingo-fs/src/index.ts
++++ b/packages/bingo-fs/src/index.ts
+@@ -1,2 +1,3 @@
++export * from "./isFile.js";
+ export * from "./intake.js";
+ export type * from "./types.js";
+diff --git a/packages/bingo-handlebars/src/executeTemplatesRecursive.ts b/packages/bingo-handlebars/src/executeTemplatesRecursive.ts
+index af1dd04..315e7d4 100644
+--- a/packages/bingo-handlebars/src/executeTemplatesRecursive.ts
++++ b/packages/bingo-handlebars/src/executeTemplatesRecursive.ts
+@@ -1,7 +1,15 @@
+-import { CreatedEntry } from "bingo-fs";
++import { CreatedDirectory, CreatedEntry, CreatedFileEntry } from "bingo-fs";
+ 
+ import { executeTemplate } from "./executeTemplate.js";
+ 
++export function executeTemplatesRecursive(
++	source: CreatedDirectory,
++	options: object | undefined,
++): CreatedDirectory;
++export function executeTemplatesRecursive(
++	source: CreatedFileEntry,
++	options: object | undefined,
++): CreatedFileEntry;
+ export function executeTemplatesRecursive(
+ 	source: CreatedEntry | undefined,
+ 	options: object | undefined,
+diff --git a/packages/bingo-handlebars/src/handlebars.ts b/packages/bingo-handlebars/src/handlebars.ts
+index 07d9507..2892035 100644
+--- a/packages/bingo-handlebars/src/handlebars.ts
++++ b/packages/bingo-handlebars/src/handlebars.ts
+@@ -1,8 +1,11 @@
+-import { intake } from "bingo-fs";
++import { CreatedEntry, intake } from "bingo-fs";
+ 
+ import { executeTemplatesRecursive } from "./executeTemplatesRecursive.js";
+ 
+-export async function handlebars(sourcePath: string, options?: object) {
++export async function handlebars(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedEntry | undefined> {
+ 	const source = await intake(sourcePath);
+ 
+ 	if (!source) {
+diff --git a/packages/bingo-handlebars/src/index.ts b/packages/bingo-handlebars/src/index.ts
+index febf09e..4490c5a 100644
+--- a/packages/bingo-handlebars/src/index.ts
++++ b/packages/bingo-handlebars/src/index.ts
+@@ -1,2 +1,4 @@
+ export * from "./handlebars.js";
++export * from "./handlebarsDirectory.js";
++export * from "./handlebarsFile.js";
+ export * from "./loadHandlebars.js";
+
+########## L2 sweet dart-lang__http-1114
+diff --git a/pkgs/http/lib/src/base_response.dart b/pkgs/http/lib/src/base_response.dart
+index ed95f6c..33d9ea3 100644
+--- a/pkgs/http/lib/src/base_response.dart
++++ b/pkgs/http/lib/src/base_response.dart
+@@ -49,6 +49,16 @@ abstract class BaseResponse {
+   // TODO(nweiz): make this a HttpHeaders object.
+   final Map<String, String> headers;
+ 
++  /// All the HTTP headers returned by the server.
++  ///
++  /// The header names are converted to lowercase. Unlike [headers], this map
++  /// preserves each value when the server returns multiple headers with the
++  /// same name. The values are ordered as they appeared in the response.
++  ///
++  /// This is useful for headers such as `Set-Cookie`, which must not be folded
++  /// into a comma-separated value.
++  final Map<String, List<String>> headersAll;
++
+   final bool isRedirect;
+ 
+   /// Whether the server requested that a persistent connection be maintained.
+@@ -58,6 +68,7 @@ abstract class BaseResponse {
+       {this.contentLength,
+       this.request,
+       this.headers = const {},
++      this.headersAll = const {},
+       this.isRedirect = false,
+       this.persistentConnection = true,
+       this.reasonPhrase}) {
+
+########## L2 sweet/rep-1 codeception__codeceptjs-367
+diff --git a/lib/actor.js b/lib/actor.js
+index e963f85..51eb55a 100644
+--- a/lib/actor.js
++++ b/lib/actor.js
+@@ -4,6 +4,7 @@ let container = require('./container');
+ let methodsOfObject = require('./utils').methodsOfObject;
+ let recorder = require('./recorder');
+ let event = require('./event');
++let output = require('./output');
+ 
+ /**
+  * Fetches all methods from all enabled helpers,
+@@ -37,6 +38,13 @@ module.exports = function (obj) {
+       });
+     });
+ 
++  Object.defineProperty(obj, 'comment', {
++    value: function (message) {
++      recorder.add('comment', () => output.say(message));
++      return recorder.promise();
++    }
++  });
++
+   return obj;
+ };
+ 
+
+########## L2 sweet/rep-1 dashbitco__nimble_options-43
+diff --git a/lib/nimble_options.ex b/lib/nimble_options.ex
+index d2ac608..138fc18 100644
+--- a/lib/nimble_options.ex
++++ b/lib/nimble_options.ex
+@@ -83,6 +83,8 @@ defmodule NimbleOptions do
+ 
+     * `:boolean` - A boolean.
+ 
++    * `:integer` - An integer.
++
+     * `:non_neg_integer` - A non-negative integer.
+ 
+     * `:pos_integer` - A positive integer.
+@@ -180,6 +182,7 @@ defmodule NimbleOptions do
+     :mod_arg,
+     :string,
+     :boolean,
++    :integer,
+     :timeout,
+     :pid
+   ]
+@@ -340,6 +343,10 @@ defmodule NimbleOptions do
+     error_tuple("expected #{inspect(key)} to be a non negative integer, got: #{inspect(value)}")
+   end
+ 
++  defp validate_type(:integer, key, value) when not is_integer(value) do
++    error_tuple("expected #{inspect(key)} to be an integer, got: #{inspect(value)}")
++  end
++
+   defp validate_type(:pos_integer, key, value) when not is_integer(value) or value < 1 do
+     error_tuple("expected #{inspect(key)} to be a positive integer, got: #{inspect(value)}")
+   end
+@@ -465,7 +472,7 @@ defmodule NimbleOptions do
+ 
+   defp available_types() do
+     types =
+-      Enum.map(@basic_types, &inspect/1) ++
++      Enum.map(@basic_types -- [:integer], &inspect/1) ++
+         ["{:fun, arity}", "{:one_of, choices}", "{:custom, mod, fun, args}"]
+ 
+     Enum.join(types, ", ")
+
+########## L2 sweet/rep-1 joshuakgoldberg__bingo-274
+diff --git a/packages/bingo-fs/src/index.ts b/packages/bingo-fs/src/index.ts
+index 5f9240f..e7c3be5 100644
+--- a/packages/bingo-fs/src/index.ts
++++ b/packages/bingo-fs/src/index.ts
+@@ -1,2 +1,3 @@
+ export * from "./intake.js";
++export * from "./isFile.js";
+ export type * from "./types.js";
+diff --git a/packages/bingo-handlebars/src/executeTemplatesRecursive.ts b/packages/bingo-handlebars/src/executeTemplatesRecursive.ts
+index af1dd04..9357e0f 100644
+--- a/packages/bingo-handlebars/src/executeTemplatesRecursive.ts
++++ b/packages/bingo-handlebars/src/executeTemplatesRecursive.ts
+@@ -10,7 +10,11 @@ export function executeTemplatesRecursive(
+ 		return source;
+ 	}
+ 
+-	if (Array.isArray(source)) {
++	if (typeof source === "string" || Array.isArray(source)) {
++		if (typeof source === "string") {
++			return executeTemplate(source, options);
++		}
++
+ 		return source.length === 1
+ 			? [executeTemplate(source[0], options)]
+ 			: [executeTemplate(source[0], options), source[1]];
+diff --git a/packages/bingo-handlebars/src/index.ts b/packages/bingo-handlebars/src/index.ts
+index febf09e..4490c5a 100644
+--- a/packages/bingo-handlebars/src/index.ts
++++ b/packages/bingo-handlebars/src/index.ts
+@@ -1,2 +1,4 @@
+ export * from "./handlebars.js";
++export * from "./handlebarsDirectory.js";
++export * from "./handlebarsFile.js";
+ export * from "./loadHandlebars.js";
+
+########## L2 sweet/rep-1 dart-lang__http-1114
+diff --git a/pkgs/http/lib/src/base_response.dart b/pkgs/http/lib/src/base_response.dart
+index ed95f6c..5775305 100644
+--- a/pkgs/http/lib/src/base_response.dart
++++ b/pkgs/http/lib/src/base_response.dart
+@@ -49,6 +49,17 @@ abstract class BaseResponse {
+   // TODO(nweiz): make this a HttpHeaders object.
+   final Map<String, String> headers;
+ 
++  /// The HTTP headers returned by the server, including all values for
++  /// headers which occurred more than once.
++  ///
++  /// Header names are lowercase. Values for headers which can contain a
++  /// comma-separated list are split on commas. `Set-Cookie` is handled
++  /// specially because commas in its `Expires` attribute are not separators.
++  Map<String, List<String>> get headersAll => {
++        for (final entry in headers.entries)
++          entry.key: _splitHeaderValues(entry.key, entry.value),
++      };
++
+   final bool isRedirect;
+ 
+   /// Whether the server requested that a persistent connection be maintained.
+@@ -68,3 +79,22 @@ abstract class BaseResponse {
+     }
+   }
+ }
++
++List<String> _splitHeaderValues(String name, String value) {
++  if (name != 'set-cookie') {
++    return value.split(',').map((value) => value.trim()).toList();
++  }
++
++  final values = <String>[];
++  var start = 0;
++  final weekday = RegExp(r'\s*(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),',
++      caseSensitive: false);
++  for (var i = 0; i < value.length; i++) {
++    if (value.codeUnitAt(i) != 44) continue;
++    if (weekday.matchAsPrefix(value, i + 1) != null) continue;
++    values.add(value.substring(start, i).trim());
++    start = i + 1;
++  }
++  values.add(value.substring(start).trim());
++  return values;
++}
+
+########## L2 sweet/rep-2 codeception__codeceptjs-367
+diff --git a/lib/actor.js b/lib/actor.js
+index e963f85..6f6ab17 100644
+--- a/lib/actor.js
++++ b/lib/actor.js
+@@ -4,6 +4,7 @@ let container = require('./container');
+ let methodsOfObject = require('./utils').methodsOfObject;
+ let recorder = require('./recorder');
+ let event = require('./event');
++let output = require('./output');
+ 
+ /**
+  * Fetches all methods from all enabled helpers,
+@@ -37,6 +38,13 @@ module.exports = function (obj) {
+       });
+     });
+ 
++  Object.defineProperty(obj, 'say', {
++    enumerable: false,
++    value: function (message) {
++      return recorder.add('say', () => output.say(message));
++    }
++  });
++
+   return obj;
+ };
+ 
+
+########## L2 sweet/rep-2 apple__swift-nio-http2-145
+diff --git a/Sources/NIOHTTP2/StreamStateMachine.swift b/Sources/NIOHTTP2/StreamStateMachine.swift
+index 7c4f16c..99b35e0 100644
+--- a/Sources/NIOHTTP2/StreamStateMachine.swift
++++ b/Sources/NIOHTTP2/StreamStateMachine.swift
+@@ -674,13 +674,16 @@ extension HTTP2StreamStateMachine {
+         //
+         // - fullyOpen when we are a server. In this case we assert that the stream was initiated by the client.
+         // - halfClosedRemoteLocalActive, when we are a server, and when the stream was initiated by the client.
++        // - halfClosedRemoteLocalIdle, when we are a server and are responding to a request
++        //   that ended its stream.
+         //
+         // RFC 7540 § 6.6 forbids sending PUSH_PROMISE frames on locally-initiated streams.
+         //
+         // PUSH_PROMISE frames never have stream effects: they cannot create or close streams, or affect flow control state.
+         switch self.state {
+         case .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+-             .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .client, localContentLength: _, localWindow: _):
++             .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .client, localContentLength: _, localWindow: _),
++             .halfClosedRemoteLocalIdle(localWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Sending a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+@@ -699,11 +702,13 @@ extension HTTP2StreamStateMachine {
+         //
+         // - fullyOpen when we are a client. In this case we assert that the stream was initiated by us.
+         // - halfClosedLocalPeerActive, when we are a client, and when the stream was initiated by us.
++        // - halfClosedLocalPeerIdle, when we are a client.
+         //
+         // RFC 7540 § 6.6 forbids receiving PUSH_PROMISE frames on remotely-initiated streams.
+         switch self.state {
+         case .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+-             .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _):
++             .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _),
++             .halfClosedLocalPeerIdle(remoteWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Receiving a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+
+########## L2 sweet/rep-2 joshuakgoldberg__bingo-274
+diff --git a/packages/bingo-fs/src/index.ts b/packages/bingo-fs/src/index.ts
+index 5f9240f..e7c3be5 100644
+--- a/packages/bingo-fs/src/index.ts
++++ b/packages/bingo-fs/src/index.ts
+@@ -1,2 +1,3 @@
+ export * from "./intake.js";
++export * from "./isFile.js";
+ export type * from "./types.js";
+diff --git a/packages/bingo-handlebars/src/index.ts b/packages/bingo-handlebars/src/index.ts
+index febf09e..4490c5a 100644
+--- a/packages/bingo-handlebars/src/index.ts
++++ b/packages/bingo-handlebars/src/index.ts
+@@ -1,2 +1,4 @@
+ export * from "./handlebars.js";
++export * from "./handlebarsDirectory.js";
++export * from "./handlebarsFile.js";
+ export * from "./loadHandlebars.js";
+
+########## L2 sweet/rep-2 dart-lang__http-1114
+diff --git a/pkgs/http/CHANGELOG.md b/pkgs/http/CHANGELOG.md
+index 7b8dec4..1c6c2a1 100644
+--- a/pkgs/http/CHANGELOG.md
++++ b/pkgs/http/CHANGELOG.md
+@@ -1,5 +1,6 @@
+-## 1.1.3-wip
++## 1.2.0-wip
+ 
++* Add `BaseResponse.headersAll` to expose repeated response header values.
+ * Add `MockClient.pngResponse`, which makes it easier to fake image responses.
+ 
+ ## 1.1.2
+diff --git a/pkgs/http/lib/src/base_response.dart b/pkgs/http/lib/src/base_response.dart
+index ed95f6c..99650af 100644
+--- a/pkgs/http/lib/src/base_response.dart
++++ b/pkgs/http/lib/src/base_response.dart
+@@ -49,6 +49,13 @@ abstract class BaseResponse {
+   // TODO(nweiz): make this a HttpHeaders object.
+   final Map<String, String> headers;
+ 
++  /// The HTTP headers returned by the server, including repeated headers.
++  ///
++  /// Header names are converted to lowercase. Unlike [headers], this map
++  /// keeps each field value separate, which is important for headers such as
++  /// `Set-Cookie` that must not be combined with commas.
++  final Map<String, List<String>> headersAll;
++
+   final bool isRedirect;
+ 
+   /// Whether the server requested that a persistent connection be maintained.
+@@ -58,6 +65,7 @@ abstract class BaseResponse {
+       {this.contentLength,
+       this.request,
+       this.headers = const {},
++      this.headersAll = const {},
+       this.isRedirect = false,
+       this.persistentConnection = true,
+       this.reasonPhrase}) {
+diff --git a/pkgs/http/lib/src/io_client.dart b/pkgs/http/lib/src/io_client.dart
+index db66b02..2d4084d 100644
+--- a/pkgs/http/lib/src/io_client.dart
++++ b/pkgs/http/lib/src/io_client.dart
+@@ -109,11 +109,15 @@ class IOClient extends BaseClient {
+       var response = await stream.pipe(ioRequest) as HttpClientResponse;
+ 
+       var headers = <String, String>{};
++      var headersAll = <String, List<String>>{};
+       response.headers.forEach((key, values) {
+         // TODO: Remove trimRight() when
+         // https://github.com/dart-lang/sdk/issues/53005 is resolved and the
+         // package:http SDK constraint requires that version or later.
+-        headers[key] = values.map((value) => value.trimRight()).join(',');
++        final trimmedValues =
++            values.map((value) => value.trimRight()).toList(growable: false);
++        headers[key] = trimmedValues.join(',');
++        headersAll[key] = trimmedValues;
+       });
+ 
+       return IOStreamedResponse(
+@@ -126,6 +130,7 @@ class IOClient extends BaseClient {
+               response.contentLength == -1 ? null : response.contentLength,
+           request: request,
+           headers: headers,
++          headersAll: headersAll,
+           isRedirect: response.isRedirect,
+           persistentConnection: response.persistentConnection,
+           reasonPhrase: response.reasonPhrase,
+diff --git a/pkgs/http/lib/src/io_streamed_response.dart b/pkgs/http/lib/src/io_streamed_response.dart
+index 95b818c..7be13a3 100644
+--- a/pkgs/http/lib/src/io_streamed_response.dart
++++ b/pkgs/http/lib/src/io_streamed_response.dart
+@@ -20,6 +20,7 @@ class IOStreamedResponse extends StreamedResponse {
+       {super.contentLength,
+       super.request,
+       super.headers,
++      super.headersAll,
+       super.isRedirect,
+       super.persistentConnection,
+       super.reasonPhrase,
+diff --git a/pkgs/http/lib/src/response.dart b/pkgs/http/lib/src/response.dart
+index 1ba7c46..4cd3edb 100644
+--- a/pkgs/http/lib/src/response.dart
++++ b/pkgs/http/lib/src/response.dart
+@@ -31,12 +31,14 @@ class Response extends BaseResponse {
+   Response(String body, int statusCode,
+       {BaseRequest? request,
+       Map<String, String> headers = const {},
++      Map<String, List<String>> headersAll = const {},
+       bool isRedirect = false,
+       bool persistentConnection = true,
+       String? reasonPhrase})
+       : this.bytes(_encodingForHeaders(headers).encode(body), statusCode,
+             request: request,
+             headers: headers,
++            headersAll: headersAll,
+             isRedirect: isRedirect,
+             persistentConnection: persistentConnection,
+             reasonPhrase: reasonPhrase);
+@@ -45,6 +47,7 @@ class Response extends BaseResponse {
+   Response.bytes(List<int> bodyBytes, super.statusCode,
+       {super.request,
+       super.headers,
++      super.headersAll,
+       super.isRedirect,
+       super.persistentConnection,
+       super.reasonPhrase})
+@@ -58,6 +61,7 @@ class Response extends BaseResponse {
+     return Response.bytes(body, response.statusCode,
+         request: response.request,
+         headers: response.headers,
++        headersAll: response.headersAll,
+         isRedirect: response.isRedirect,
+         persistentConnection: response.persistentConnection,
+         reasonPhrase: response.reasonPhrase);
+diff --git a/pkgs/http/lib/src/streamed_response.dart b/pkgs/http/lib/src/streamed_response.dart
+index 8cc0c76..af2cb7c 100644
+--- a/pkgs/http/lib/src/streamed_response.dart
++++ b/pkgs/http/lib/src/streamed_response.dart
+@@ -21,6 +21,7 @@ class StreamedResponse extends BaseResponse {
+       {super.contentLength,
+       super.request,
+       super.headers,
++      super.headersAll,
+       super.isRedirect,
+       super.persistentConnection,
+       super.reasonPhrase})
+diff --git a/pkgs/http/pubspec.yaml b/pkgs/http/pubspec.yaml
+index 1645f96..31746fc 100644
+--- a/pkgs/http/pubspec.yaml
++++ b/pkgs/http/pubspec.yaml
+@@ -1,5 +1,5 @@
+ name: http
+-version: 1.1.3-wip
++version: 1.2.0-wip
+ description: A composable, multi-platform, Future-based API for HTTP requests.
+ repository: https://github.com/dart-lang/http/tree/master/pkgs/http
+ 
+
+########## L3 sweet dashbitco__nimble_options-43
+diff --git a/lib/nimble_options.ex b/lib/nimble_options.ex
+index d2ac608..35bf055 100644
+--- a/lib/nimble_options.ex
++++ b/lib/nimble_options.ex
+@@ -83,6 +83,8 @@ defmodule NimbleOptions do
+ 
+     * `:boolean` - A boolean.
+ 
++    * `:integer` - An integer.
++
+     * `:non_neg_integer` - A non-negative integer.
+ 
+     * `:pos_integer` - A positive integer.
+@@ -340,6 +342,10 @@ defmodule NimbleOptions do
+     error_tuple("expected #{inspect(key)} to be a non negative integer, got: #{inspect(value)}")
+   end
+ 
++  defp validate_type(:integer, key, value) when not is_integer(value) do
++    error_tuple("expected #{inspect(key)} to be an integer, got: #{inspect(value)}")
++  end
++
+   defp validate_type(:pos_integer, key, value) when not is_integer(value) or value < 1 do
+     error_tuple("expected #{inspect(key)} to be a positive integer, got: #{inspect(value)}")
+   end
+@@ -472,6 +478,8 @@ defmodule NimbleOptions do
+   end
+ 
+   @doc false
++  def type(:integer), do: {:ok, :integer}
++
+   def type(value) when value in @basic_types do
+     {:ok, value}
+   end
+
+########## L3 sweet codeception__codeceptjs-367
+diff --git a/lib/actor.js b/lib/actor.js
+index e963f85..c6e0e3e 100644
+--- a/lib/actor.js
++++ b/lib/actor.js
+@@ -4,6 +4,7 @@ let container = require('./container');
+ let methodsOfObject = require('./utils').methodsOfObject;
+ let recorder = require('./recorder');
+ let event = require('./event');
++let output = require('./output');
+ 
+ /**
+  * Fetches all methods from all enabled helpers,
+@@ -37,6 +38,11 @@ module.exports = function (obj) {
+       });
+     });
+ 
++  obj.print = function (message) {
++    recorder.add('print: ' + message, () => output.print(message));
++    return recorder.promise();
++  };
++
+   return obj;
+ };
+ 
+
+########## L3 sweet apple__swift-nio-http2-145
+diff --git a/Sources/NIOHTTP2/StreamStateMachine.swift b/Sources/NIOHTTP2/StreamStateMachine.swift
+index 7c4f16c..6056e33 100644
+--- a/Sources/NIOHTTP2/StreamStateMachine.swift
++++ b/Sources/NIOHTTP2/StreamStateMachine.swift
+@@ -673,20 +673,21 @@ extension HTTP2StreamStateMachine {
+         // We can send PUSH_PROMISE frames in the following states:
+         //
+         // - fullyOpen when we are a server. In this case we assert that the stream was initiated by the client.
+-        // - halfClosedRemoteLocalActive, when we are a server, and when the stream was initiated by the client.
++        // - halfClosedRemoteLocalIdle or halfClosedRemoteLocalActive, when we are a server, and when the stream was initiated by the client.
+         //
+         // RFC 7540 § 6.6 forbids sending PUSH_PROMISE frames on locally-initiated streams.
+         //
+         // PUSH_PROMISE frames never have stream effects: they cannot create or close streams, or affect flow control state.
+         switch self.state {
+         case .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
++             .halfClosedRemoteLocalIdle(localWindow: _),
+              .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .client, localContentLength: _, localWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Sending a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+         // Authors note: I cannot find a citation for this in RFC 7540, but this seems a sensible choice.
+         case .idle, .reservedLocal, .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedLocalPeerActive,
+-             .halfClosedRemoteLocalIdle, .halfOpenLocalPeerIdle, .halfOpenRemoteLocalIdle, .closed,
++             .halfOpenLocalPeerIdle, .halfOpenRemoteLocalIdle, .closed,
+              .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+              .halfClosedRemoteLocalActive(localRole: .client, initiatedBy: _, localContentLength: _, localWindow: _),
+              .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .server, localContentLength: _, localWindow: _):
+@@ -698,17 +699,18 @@ extension HTTP2StreamStateMachine {
+         // We can receive PUSH_PROMISE frames in the following states:
+         //
+         // - fullyOpen when we are a client. In this case we assert that the stream was initiated by us.
+-        // - halfClosedLocalPeerActive, when we are a client, and when the stream was initiated by us.
++        // - halfClosedLocalPeerIdle or halfClosedLocalPeerActive, when we are a client, and when the stream was initiated by us.
+         //
+         // RFC 7540 § 6.6 forbids receiving PUSH_PROMISE frames on remotely-initiated streams.
+         switch self.state {
+         case .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
++             .halfClosedLocalPeerIdle(remoteWindow: _),
+              .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+         // Receiving a PUSH_PROMISE frame outside any of these states is a stream error of type PROTOCOL_ERROR.
+         // Authors note: I cannot find a citation for this in RFC 7540, but this seems a sensible choice.
+-        case .idle, .reservedLocal, .reservedRemote, .halfClosedLocalPeerIdle, .halfClosedRemoteLocalIdle,
++        case .idle, .reservedLocal, .reservedRemote, .halfClosedRemoteLocalIdle,
+              .halfClosedRemoteLocalActive, .halfOpenLocalPeerIdle, .halfOpenRemoteLocalIdle, .closed,
+              .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
+              .halfClosedLocalPeerActive(localRole: .server, initiatedBy: _, remoteContentLength: _, remoteWindow: _),
+
+########## L3 sweet dart-lang__http-1114
+diff --git a/pkgs/http/lib/http.dart b/pkgs/http/lib/http.dart
+index 6200424..00b6632 100644
+--- a/pkgs/http/lib/http.dart
++++ b/pkgs/http/lib/http.dart
+@@ -16,7 +16,7 @@ import 'src/streamed_request.dart';
+ 
+ export 'src/base_client.dart';
+ export 'src/base_request.dart';
+-export 'src/base_response.dart';
++export 'src/base_response.dart' show BaseResponse, BaseResponseHeaders;
+ export 'src/byte_stream.dart';
+ export 'src/client.dart' hide zoneClient;
+ export 'src/exception.dart';
+diff --git a/pkgs/http/lib/src/base_response.dart b/pkgs/http/lib/src/base_response.dart
+index ed95f6c..b05e856 100644
+--- a/pkgs/http/lib/src/base_response.dart
++++ b/pkgs/http/lib/src/base_response.dart
+@@ -68,3 +68,20 @@ abstract class BaseResponse {
+     }
+   }
+ }
++
++/// Additional accessors for response headers.
++extension BaseResponseHeaders on BaseResponse {
++  /// The HTTP headers returned by the server, including repeated values.
++  ///
++  /// Header values are split on commas, except for `set-cookie` headers. For
++  /// those headers, a comma is treated as a separator only when it is followed
++  /// by an RFC 2616 token and an equals sign. This preserves commas in cookie
++  /// values, such as the date in an `Expires` attribute.
++  Map<String, List<String>> get headersAll => {
++        for (final entry in headers.entries)
++          entry.key: entry.key == 'set-cookie'
++              ? entry.value.split(
++                  RegExp(r",\s*(?=[!#$%&'*+\-.^_`|~0-9A-Za-z]+=)"))
++              : entry.value.split(RegExp(r'\s*,\s*')),
++      };
++}
+
+########## L3 sweet joshuakgoldberg__bingo-274
+diff --git a/packages/bingo-fs/src/index.ts b/packages/bingo-fs/src/index.ts
+index 5f9240f..d3128b0 100644
+--- a/packages/bingo-fs/src/index.ts
++++ b/packages/bingo-fs/src/index.ts
+@@ -1,2 +1,4 @@
+ export * from "./intake.js";
++export * from "./isCreatedDirectory.js";
++export * from "./isCreatedFile.js";
+ export type * from "./types.js";
+diff --git a/packages/bingo-handlebars/src/handlebars.ts b/packages/bingo-handlebars/src/handlebars.ts
+index 07d9507..5365313 100644
+--- a/packages/bingo-handlebars/src/handlebars.ts
++++ b/packages/bingo-handlebars/src/handlebars.ts
+@@ -1,4 +1,5 @@
+-import { intake } from "bingo-fs";
++import { intake, isCreatedDirectory, isCreatedFile } from "bingo-fs";
++import type { CreatedDirectory, CreatedFileEntry } from "bingo-fs";
+ 
+ import { executeTemplatesRecursive } from "./executeTemplatesRecursive.js";
+ 
+@@ -13,3 +14,33 @@ export async function handlebars(sourcePath: string, options?: object) {
+ 
+ 	return executeTemplatesRecursive(source, options);
+ }
++
++export async function handlebarsDirectory(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedDirectory> {
++	const created = await handlebars(sourcePath, options);
++
++	if (!isCreatedDirectory(created)) {
++		throw new Error(
++			`handlebarsDirectory() must be given a path to a directory. '${sourcePath}' is a file.`,
++		);
++	}
++
++	return created;
++}
++
++export async function handlebarsFile(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedFileEntry> {
++	const created = await handlebars(sourcePath, options);
++
++	if (!isCreatedFile(created)) {
++		throw new Error(
++			`handlebarsFile() must be given a path to a file. '${sourcePath}' is a directory.`,
++		);
++	}
++
++	return created;
++}
+
+########## L3 sweet/rep-1 dashbitco__nimble_options-43
+diff --git a/lib/nimble_options.ex b/lib/nimble_options.ex
+index d2ac608..075da09 100644
+--- a/lib/nimble_options.ex
++++ b/lib/nimble_options.ex
+@@ -83,6 +83,8 @@ defmodule NimbleOptions do
+ 
+     * `:boolean` - A boolean.
+ 
++    * `:integer` - An integer.
++
+     * `:non_neg_integer` - A non-negative integer.
+ 
+     * `:pos_integer` - A positive integer.
+@@ -174,6 +176,7 @@ defmodule NimbleOptions do
+     :keyword_list,
+     :non_empty_keyword_list,
+     :atom,
++    :integer,
+     :non_neg_integer,
+     :pos_integer,
+     :mfa,
+@@ -340,6 +343,10 @@ defmodule NimbleOptions do
+     error_tuple("expected #{inspect(key)} to be a non negative integer, got: #{inspect(value)}")
+   end
+ 
++  defp validate_type(:integer, key, value) when not is_integer(value) do
++    error_tuple("expected #{inspect(key)} to be an integer, got: #{inspect(value)}")
++  end
++
+   defp validate_type(:pos_integer, key, value) when not is_integer(value) or value < 1 do
+     error_tuple("expected #{inspect(key)} to be a positive integer, got: #{inspect(value)}")
+   end
+@@ -465,7 +472,7 @@ defmodule NimbleOptions do
+ 
+   defp available_types() do
+     types =
+-      Enum.map(@basic_types, &inspect/1) ++
++      Enum.map(@basic_types -- [:integer], &inspect/1) ++
+         ["{:fun, arity}", "{:one_of, choices}", "{:custom, mod, fun, args}"]
+ 
+     Enum.join(types, ", ")
+
+########## L3 sweet/rep-1 codeception__codeceptjs-367
+diff --git a/lib/actor.js b/lib/actor.js
+index e963f85..8124ee1 100644
+--- a/lib/actor.js
++++ b/lib/actor.js
+@@ -4,6 +4,7 @@ let container = require('./container');
+ let methodsOfObject = require('./utils').methodsOfObject;
+ let recorder = require('./recorder');
+ let event = require('./event');
++let output = require('./output');
+ 
+ /**
+  * Fetches all methods from all enabled helpers,
+@@ -37,6 +38,11 @@ module.exports = function (obj) {
+       });
+     });
+ 
++  obj.say = function (message) {
++    recorder.add('say', () => output.say(message));
++    return recorder.promise();
++  };
++
+   return obj;
+ };
+ 
+
+########## L3 sweet/rep-1 apple__swift-nio-http2-145
+diff --git a/Sources/NIOHTTP2/StreamStateMachine.swift b/Sources/NIOHTTP2/StreamStateMachine.swift
+index 7c4f16c..0d525f6 100644
+--- a/Sources/NIOHTTP2/StreamStateMachine.swift
++++ b/Sources/NIOHTTP2/StreamStateMachine.swift
+@@ -673,6 +673,7 @@ extension HTTP2StreamStateMachine {
+         // We can send PUSH_PROMISE frames in the following states:
+         //
+         // - fullyOpen when we are a server. In this case we assert that the stream was initiated by the client.
++        // - halfClosedRemoteLocalIdle, when we are a server.
+         // - halfClosedRemoteLocalActive, when we are a server, and when the stream was initiated by the client.
+         //
+         // RFC 7540 § 6.6 forbids sending PUSH_PROMISE frames on locally-initiated streams.
+@@ -680,6 +681,7 @@ extension HTTP2StreamStateMachine {
+         // PUSH_PROMISE frames never have stream effects: they cannot create or close streams, or affect flow control state.
+         switch self.state {
+         case .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
++             .halfClosedRemoteLocalIdle(localWindow: _),
+              .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .client, localContentLength: _, localWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+@@ -698,11 +700,13 @@ extension HTTP2StreamStateMachine {
+         // We can receive PUSH_PROMISE frames in the following states:
+         //
+         // - fullyOpen when we are a client. In this case we assert that the stream was initiated by us.
++        // - halfClosedLocalPeerIdle, when we are a client.
+         // - halfClosedLocalPeerActive, when we are a client, and when the stream was initiated by us.
+         //
+         // RFC 7540 § 6.6 forbids receiving PUSH_PROMISE frames on remotely-initiated streams.
+         switch self.state {
+         case .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
++             .halfClosedLocalPeerIdle(remoteWindow: _),
+              .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+
+########## L3 sweet/rep-1 dart-lang__http-1114
+diff --git a/pkgs/http/lib/http.dart b/pkgs/http/lib/http.dart
+index 6200424..715e7ec 100644
+--- a/pkgs/http/lib/http.dart
++++ b/pkgs/http/lib/http.dart
+@@ -16,7 +16,7 @@ import 'src/streamed_request.dart';
+ 
+ export 'src/base_client.dart';
+ export 'src/base_request.dart';
+-export 'src/base_response.dart';
++export 'src/base_response.dart' show BaseResponse, BaseResponseExtensions;
+ export 'src/byte_stream.dart';
+ export 'src/client.dart' hide zoneClient;
+ export 'src/exception.dart';
+diff --git a/pkgs/http/lib/src/base_response.dart b/pkgs/http/lib/src/base_response.dart
+index ed95f6c..fc4bf70 100644
+--- a/pkgs/http/lib/src/base_response.dart
++++ b/pkgs/http/lib/src/base_response.dart
+@@ -68,3 +68,23 @@ abstract class BaseResponse {
+     }
+   }
+ }
++
++/// Additional accessors for [BaseResponse].
++extension BaseResponseExtensions on BaseResponse {
++  /// The HTTP headers returned by the server, with each value represented as
++  /// a separate list entry.
++  ///
++  /// Header values are split on commas, except for `set-cookie`, where a
++  /// comma is a separator only when followed by an RFC 2616 token and an
++  /// equals sign. This preserves commas in cookie dates and paths.
++  Map<String, List<String>> get headersAll => headers.map(
++        (name, value) => MapEntry(name, _splitHeaderValue(name, value)),
++      );
++}
++
++List<String> _splitHeaderValue(String name, String value) {
++  final separator = name == 'set-cookie'
++      ? RegExp(r"\s*,\s*(?=[!#$%&'*+\-.^_`|~0-9A-Za-z]+=)")
++      : RegExp(r'\s*,\s*');
++  return value.split(separator);
++}
+
+########## L3 sweet/rep-1 joshuakgoldberg__bingo-274
+diff --git a/packages/bingo-fs/src/index.ts b/packages/bingo-fs/src/index.ts
+index 5f9240f..d3128b0 100644
+--- a/packages/bingo-fs/src/index.ts
++++ b/packages/bingo-fs/src/index.ts
+@@ -1,2 +1,4 @@
+ export * from "./intake.js";
++export * from "./isCreatedDirectory.js";
++export * from "./isCreatedFile.js";
+ export type * from "./types.js";
+diff --git a/packages/bingo-handlebars/src/handlebars.ts b/packages/bingo-handlebars/src/handlebars.ts
+index 07d9507..3f1b31c 100644
+--- a/packages/bingo-handlebars/src/handlebars.ts
++++ b/packages/bingo-handlebars/src/handlebars.ts
+@@ -1,4 +1,8 @@
+-import { intake } from "bingo-fs";
++import {
++	CreatedDirectory,
++	CreatedFileEntry,
++	intake,
++} from "bingo-fs";
+ 
+ import { executeTemplatesRecursive } from "./executeTemplatesRecursive.js";
+ 
+@@ -13,3 +17,33 @@ export async function handlebars(sourcePath: string, options?: object) {
+ 
+ 	return executeTemplatesRecursive(source, options);
+ }
++
++export async function handlebarsDirectory(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedDirectory> {
++	const created = await handlebars(sourcePath, options);
++
++	if (!created || typeof created !== "object" || Array.isArray(created)) {
++		throw new Error(
++			`handlebarsDirectory() must be given a path to a directory. '${sourcePath}' is a file.`,
++		);
++	}
++
++	return created;
++}
++
++export async function handlebarsFile(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedFileEntry> {
++	const created = await handlebars(sourcePath, options);
++
++	if (typeof created !== "string" && !Array.isArray(created)) {
++		throw new Error(
++			`handlebarsFile() must be given a path to a file. '${sourcePath}' is a directory.`,
++		);
++	}
++
++	return created;
++}
+
+########## L3 sweet/rep-2 dashbitco__nimble_options-43
+diff --git a/lib/nimble_options.ex b/lib/nimble_options.ex
+index d2ac608..075da09 100644
+--- a/lib/nimble_options.ex
++++ b/lib/nimble_options.ex
+@@ -83,6 +83,8 @@ defmodule NimbleOptions do
+ 
+     * `:boolean` - A boolean.
+ 
++    * `:integer` - An integer.
++
+     * `:non_neg_integer` - A non-negative integer.
+ 
+     * `:pos_integer` - A positive integer.
+@@ -174,6 +176,7 @@ defmodule NimbleOptions do
+     :keyword_list,
+     :non_empty_keyword_list,
+     :atom,
++    :integer,
+     :non_neg_integer,
+     :pos_integer,
+     :mfa,
+@@ -340,6 +343,10 @@ defmodule NimbleOptions do
+     error_tuple("expected #{inspect(key)} to be a non negative integer, got: #{inspect(value)}")
+   end
+ 
++  defp validate_type(:integer, key, value) when not is_integer(value) do
++    error_tuple("expected #{inspect(key)} to be an integer, got: #{inspect(value)}")
++  end
++
+   defp validate_type(:pos_integer, key, value) when not is_integer(value) or value < 1 do
+     error_tuple("expected #{inspect(key)} to be a positive integer, got: #{inspect(value)}")
+   end
+@@ -465,7 +472,7 @@ defmodule NimbleOptions do
+ 
+   defp available_types() do
+     types =
+-      Enum.map(@basic_types, &inspect/1) ++
++      Enum.map(@basic_types -- [:integer], &inspect/1) ++
+         ["{:fun, arity}", "{:one_of, choices}", "{:custom, mod, fun, args}"]
+ 
+     Enum.join(types, ", ")
+
+########## L3 sweet/rep-2 codeception__codeceptjs-367
+diff --git a/lib/actor.js b/lib/actor.js
+index e963f85..bde26e6 100644
+--- a/lib/actor.js
++++ b/lib/actor.js
+@@ -4,6 +4,7 @@ let container = require('./container');
+ let methodsOfObject = require('./utils').methodsOfObject;
+ let recorder = require('./recorder');
+ let event = require('./event');
++let output = require('./output');
+ 
+ /**
+  * Fetches all methods from all enabled helpers,
+@@ -13,6 +14,11 @@ let event = require('./event');
+ module.exports = function (obj) {
+   obj = obj || {};
+ 
++  obj.say = function (message) {
++    recorder.add('say: ' + message, () => output.say(message));
++    return recorder.promise();
++  };
++
+   let helpers = container.helpers();
+   Object.keys(helpers)
+     .map(function (key) {
+
+########## L3 sweet/rep-2 apple__swift-nio-http2-145
+diff --git a/Sources/NIOHTTP2/StreamStateMachine.swift b/Sources/NIOHTTP2/StreamStateMachine.swift
+index 7c4f16c..ad400db 100644
+--- a/Sources/NIOHTTP2/StreamStateMachine.swift
++++ b/Sources/NIOHTTP2/StreamStateMachine.swift
+@@ -673,13 +673,14 @@ extension HTTP2StreamStateMachine {
+         // We can send PUSH_PROMISE frames in the following states:
+         //
+         // - fullyOpen when we are a server. In this case we assert that the stream was initiated by the client.
+-        // - halfClosedRemoteLocalActive, when we are a server, and when the stream was initiated by the client.
++        // - halfClosedRemoteLocalIdle or halfClosedRemoteLocalActive, when we are a server, and when the stream was initiated by the client.
+         //
+         // RFC 7540 § 6.6 forbids sending PUSH_PROMISE frames on locally-initiated streams.
+         //
+         // PUSH_PROMISE frames never have stream effects: they cannot create or close streams, or affect flow control state.
+         switch self.state {
+         case .fullyOpen(localRole: .server, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
++             .halfClosedRemoteLocalIdle(localWindow: _),
+              .halfClosedRemoteLocalActive(localRole: .server, initiatedBy: .client, localContentLength: _, localWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+@@ -698,11 +699,12 @@ extension HTTP2StreamStateMachine {
+         // We can receive PUSH_PROMISE frames in the following states:
+         //
+         // - fullyOpen when we are a client. In this case we assert that the stream was initiated by us.
+-        // - halfClosedLocalPeerActive, when we are a client, and when the stream was initiated by us.
++        // - halfClosedLocalPeerIdle or halfClosedLocalPeerActive, when we are a client, and when the stream was initiated by us.
+         //
+         // RFC 7540 § 6.6 forbids receiving PUSH_PROMISE frames on remotely-initiated streams.
+         switch self.state {
+         case .fullyOpen(localRole: .client, localContentLength: _, remoteContentLength: _, localWindow: _, remoteWindow: _),
++             .halfClosedLocalPeerIdle(remoteWindow: _),
+              .halfClosedLocalPeerActive(localRole: .client, initiatedBy: .client, remoteContentLength: _, remoteWindow: _):
+             return self.processRequestHeaders(headers, validateHeaderBlock: validateHeaderBlock, targetState: self.state, targetEffect: nil)
+ 
+
+########## L3 sweet/rep-2 dart-lang__http-1114
+diff --git a/pkgs/http/lib/http.dart b/pkgs/http/lib/http.dart
+index 6200424..715e7ec 100644
+--- a/pkgs/http/lib/http.dart
++++ b/pkgs/http/lib/http.dart
+@@ -16,7 +16,7 @@ import 'src/streamed_request.dart';
+ 
+ export 'src/base_client.dart';
+ export 'src/base_request.dart';
+-export 'src/base_response.dart';
++export 'src/base_response.dart' show BaseResponse, BaseResponseExtensions;
+ export 'src/byte_stream.dart';
+ export 'src/client.dart' hide zoneClient;
+ export 'src/exception.dart';
+diff --git a/pkgs/http/lib/src/base_response.dart b/pkgs/http/lib/src/base_response.dart
+index ed95f6c..1c595df 100644
+--- a/pkgs/http/lib/src/base_response.dart
++++ b/pkgs/http/lib/src/base_response.dart
+@@ -68,3 +68,28 @@ abstract class BaseResponse {
+     }
+   }
+ }
++
++/// Additional functionality for [BaseResponse].
++extension BaseResponseExtensions on BaseResponse {
++  /// The HTTP headers returned by the server, with each value represented as a
++  /// separate list element.
++  ///
++  /// Header values are split on commas, except for `set-cookie` headers. A
++  /// comma in a cookie's `Expires` attribute is not a separator, so cookie
++  /// values are split only when the comma is followed by an RFC 2616 token and
++  /// an equals sign.
++  Map<String, List<String>> get headersAll => headers.map(
++        (name, value) => MapEntry(name, _splitHeaderValue(name, value)),
++      );
++}
++
++final _setCookieSeparator = RegExp(
++  r',\s*(?=[!#\$%&\x27*+\-.\^_`|~0-9A-Za-z]+=)',
++);
++
++List<String> _splitHeaderValue(String name, String value) {
++  final values = name == 'set-cookie'
++      ? value.split(_setCookieSeparator)
++      : value.split(',');
++  return values.map((value) => value.trim()).toList();
++}
+
+########## L3 sweet/rep-2 joshuakgoldberg__bingo-274
+diff --git a/packages/bingo-fs/src/index.ts b/packages/bingo-fs/src/index.ts
+index 5f9240f..40c1588 100644
+--- a/packages/bingo-fs/src/index.ts
++++ b/packages/bingo-fs/src/index.ts
+@@ -1,2 +1,3 @@
+ export * from "./intake.js";
++export * from "./isCreatedEntry.js";
+ export type * from "./types.js";
+diff --git a/packages/bingo-handlebars/src/handlebars.ts b/packages/bingo-handlebars/src/handlebars.ts
+index 07d9507..ec11eff 100644
+--- a/packages/bingo-handlebars/src/handlebars.ts
++++ b/packages/bingo-handlebars/src/handlebars.ts
+@@ -1,4 +1,10 @@
+-import { intake } from "bingo-fs";
++import {
++	CreatedDirectory,
++	CreatedFileEntry,
++	isCreatedDirectory,
++	isCreatedFile,
++	intake,
++} from "bingo-fs";
+ 
+ import { executeTemplatesRecursive } from "./executeTemplatesRecursive.js";
+ 
+@@ -13,3 +19,33 @@ export async function handlebars(sourcePath: string, options?: object) {
+ 
+ 	return executeTemplatesRecursive(source, options);
+ }
++
++export async function handlebarsDirectory(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedDirectory> {
++	const created = await handlebars(sourcePath, options);
++
++	if (!isCreatedDirectory(created)) {
++		throw new Error(
++			`handlebarsDirectory() must be given a path to a directory. '${sourcePath}' is a file.`,
++		);
++	}
++
++	return created;
++}
++
++export async function handlebarsFile(
++	sourcePath: string,
++	options?: object,
++): Promise<CreatedFileEntry> {
++	const created = await handlebars(sourcePath, options);
++
++	if (!isCreatedFile(created)) {
++		throw new Error(
++			`handlebarsFile() must be given a path to a file. '${sourcePath}' is a directory.`,
++		);
++	}
++
++	return created;
++}
+
