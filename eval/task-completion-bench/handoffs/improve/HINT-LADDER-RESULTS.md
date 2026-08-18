@@ -189,13 +189,14 @@ Removing the computed counterexamples from Apple's certificate and leaving only 
 | what Apple is given | solves |
 |---|---|
 | a truthful certificate about a different file (placebo) | 0/4 |
-| a general "check the twin and the siblings" clause | 0/2 |
+| a general "check the twin and the siblings" clause | **0/6** (2 runs) |
 | a gold-derived prose specification of the fix | 0/3 |
 | this file's two rules, no computed counterexamples | 1/4 |
-| this file's rules **plus the computed counterexamples** | **4/4** |
+| this file's rules **plus the computed counterexamples** | **8/8** (2 runs) |
 
 The rules are worth a quarter of the way. The closure is worth the rest. Nothing else on that
-list is worth anything at all.
+list is worth anything at all. **0/6 against 8/8** is the whole case for building the analyzer
+instead of writing a sentence.
 
 ### NimbleOptions: the clause matches the certificate, and both stall on the same fourth edit
 
@@ -288,6 +289,27 @@ Two reps is not a result — at this size the difference is comfortably inside n
 opposite of overfitting, and the two tasks that moved are the flagship targets of two separate
 programs (`pytask` is P1's, `underscore` is P2's). A deeper rotation at four reps, with `G1`
 alone included to separate the stack from its most likely single cause, is queued.
+
+---
+
+## Fifth: what the best-known configuration buys on each target
+
+Stacking the certificate with the family-completeness clause (`r4-L1G1`) gives Apple **4/4 a
+third time — 12/12 rollouts across three independent runs** — and lifts NimbleOptions to its
+best figure, **2/4**. It does nothing for CodeceptJS, which needs the runtime fact instead.
+
+| target | best condition found | baseline → best |
+|---|---|---|
+| `apple__swift-nio-http2-145` | blind state-space certificate | 0/3 → **12/12** |
+| `codeception__codeceptjs-367` | certificate + runtime surface fact | 0/3 → **2/4** |
+| `dashbitco__nimble_options-43` | certificate + family-completeness clause | 0/3 → **2/4** |
+| `joshuakgoldberg__bingo-274` | nothing found | 0/3 → 0 everywhere (name-locked) |
+| `dart-lang__http-1114` | nothing found | 0/3 → 0 everywhere (name-locked) |
+
+**Three of the five chronically-unsolved targets are reachable with delivered information. The
+two that are not are benchmark artifacts rather than product gaps.** No single condition wins
+all three — each needs a different derived fact, which is the argument for three narrow
+analyzers rather than one prompt.
 
 ---
 
