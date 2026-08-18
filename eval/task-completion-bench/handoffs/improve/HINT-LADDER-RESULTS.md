@@ -1,0 +1,163 @@
+# Hint ladder — does delivered information raise resolution?
+
+**Date:** 2026-08-18 · **Arm:** sweet only · **Harness:** opencode · **Backbone:** `openai/gpt-5.6-luna`
+**Ledger:** `/root/env-ledger/luna-rotate20-v3/ledger.jsonl`, 8/8 gold-FULL under the current config
+**Scripts (frozen at `aece0be`, before any rollout):** `phase1-scripts/hint-ladder.mjs`,
+`hint-ladder-round2.mjs`, `general-clauses.mjs`, `hint-ladder-report.mjs`
+**Artifacts:** `ladder-20260818/`
+
+---
+
+## Why this exists
+
+Four zero-cost gates have now asked the same question — *could a tool derive the right fact
+from the base tree at `$0`?* — and four times the answer was yes. Not one of them asked the
+question that decides whether any of those tools is worth building: **when the model is handed
+the fact, does the task flip?**
+
+The P4 gate ended precisely on that gap. Its checker named the four states of the reference
+fix set-exactly, blind, and the write-up had to close with: *not established, that an agent
+handed the counterexample list would act on it.* All six sweet and native cells had the state
+machine file in reach and every one still wrote the same one-quadrant patch.
+
+This experiment answers it, at `$0.51`.
+
+## Design
+
+`TASKS_FILE` already feeds `problem_statement` straight into the prompt, so a hint is delivered
+by generating a derived task file and changing no harness code. Four conditions, run as four
+separate pilots over the same five chronically-unsolved targets:
+
+| | what the model is given | derivable at `$0`? |
+|---|---|---|
+| **L0** | nothing added | baseline |
+| **L1** | a **blind certificate** — only facts readable from the base tree and the issue | **yes — this is the shippable rung** |
+| **L2** | the **files and symbols** the reference patch touches, no semantics | no, gold-derived: an upper bound |
+| **L3** | a prose **specification** of the required behaviour, no code | no, gold-derived: the ceiling probe |
+
+They are conditions, not a monotone ladder, and the results below show why that distinction
+was worth making: on Apple the blind certificate is *more* specific than the prose spec.
+
+**Targets** are the five tasks recorded 0/2 in both arms on all three harnesses (YARP is
+excluded as ungradeable, mransan as broken). **Controls** are three tasks already solved 2/2,
+carried at L0 to prove the rig reproduces.
+
+## The rig reproduced before anything was interpreted
+
+| control | L0 |
+|---|---|
+| `oceanparcels__parcels-617` | 3/3 |
+| `ontodev__robot-710` | 3/3 |
+| `epiforecasts__scoringutils-229` | 2/2 |
+
+and every target came back 0/3, matching the recorded 0/2-everywhere baseline exactly.
+
+**Delivery check (the micro-smoke `$0` exposure gate, verified after the fact).** The hint
+reaches the model only through the issue text, so its arrival is visible as a step in
+first-turn prompt tokens: **+195 to +455 tokens at L1, on exactly the five hinted tasks and
+on no control.** This was not an accidental A/A.
+
+## Result
+
+Solves out of reps, sweet arm:
+
+| task | L0 | L1 blind | L2 localise | L3 spec |
+|---|---|---|---|---|
+| `apple__swift-nio-http2-145` | 0/3 | **4/4** | 0/2 | 0/3 |
+| `codeception__codeceptjs-367` | 0/3 | 0/4 | 0/3 | **2/3** |
+| `dashbitco__nimble_options-43` | 0/3 | **1/4** | 0/2 | 0/3 |
+| `joshuakgoldberg__bingo-274` | 0/3 | 0/4 | 0/3 | 0/3 |
+| `dart-lang__http-1114` | 0/3 | 0/4 | 0/3 | 0/3 |
+| mean f2p fraction (partial credit) | 0.133 | 0.390 | 0.000 | 0.400 |
+| mean ideal cost per rollout | `$0.00737` | `$0.00660` | `$0.00766` | `$0.00739` |
+
+71 rollouts, `$0.5045` ideal / `$0.5066` realized.
+
+### 1. The P4 checker's output flips Apple, 0/3 → 4/4
+
+This is the first live resolution gain in the whole SLATE-B program, and it is the strongest
+form the gate could take: the certificate is the literal output of a checker **committed at
+`193ff9b` before it had ever met a patch**, containing no gold and no test knowledge.
+
+All four rollouts wrote a genuine four-quadrant fix, each with different surface syntax — the
+gold tripwire reports **0/5 patches near-identical to gold**, so this is the model doing the
+work, not copying text.
+
+### 2. Prose describing the same fix does NOT work — and the failure is exactly diagnostic
+
+Apple at L3 is **0/3**, with the certificate's 4/4 sitting next to it. Reading the patches
+explains why. At L3 every rollout adds `halfClosedRemoteLocalIdle` **and** its mirror
+`halfClosedLocalPeerIdle` — the mirror half of the rule survives being stated in prose — and
+every rollout **omits both `halfOpen*Idle` states**. The end-of-stream sibling half does not
+survive prose.
+
+That is the value of the tool stated precisely: the mirror rule is a sentence; the
+end-of-stream closure is a computation, and only the computation gets the last two states.
+
+### 3. Localisation buys nothing at all
+
+L2 flips nothing and scores **0.000** mean f2p, below the untouched baseline. Handing these
+models the file and function list is not help — they already find the right file. Any product
+framing that sells "we find the right code faster" as the path to resolution is not supported
+here.
+
+### 4. CodeceptJS: the certificate got everything except one runtime fact
+
+At baseline every rollout put a `comment()` method on the wrong object in the wrong file
+(`lib/helper.js`, the Helper class). With the blind certificate, **all four rollouts** wrote:
+
+- the right file — `lib/actor.js`
+- the right name — `say`, the verb the project already owns
+- the right mechanism — `recorder.add(...)` around `output.say(...)`
+
+and then attached it with `Object.defineProperty`, which defaults to **non-enumerable**; two
+of the four set `enumerable: false` explicitly. The grader checks the actor's enumerable keys.
+
+The certificate carried every static fact and stopped one fact short, and the missing fact is
+a runtime property of the object. That is P6's claim — *static types cannot observe
+enumerability* — reproduced live rather than argued. L3, which states the enumerability
+requirement in prose, flips the task **2/3**.
+
+### 5. NimbleOptions: the residue certificate lands, then the model breaks its own fix
+
+At L1 **all four** rollouts hit the three residue sites the certificate named (documentation
+list, valid-type list, `validate_type/3` clause) — the P2 residue analysis is confirmed live.
+Only one solved. The other three then added a fourth, unrequested edit rewriting the
+error-message generator (`Enum.map(@basic_types -- [:integer], ...)`) and broke the suite.
+
+The retrieval half of this task is solved and the loss is stop-discipline, which is what the
+stop-at-first-green frame clause targets. That combination is queued as a follow-up.
+
+### 6. Two targets are not purchasable with information at this backbone
+
+`bingo-274` and `dart-lang__http-1114` are 0 at **every** level, including a full prose
+specification of the required behaviour. Their `+1 task per harness` ceilings in the slate
+arithmetic are not supported by any evidence here. For Dart the baseline failure is
+instructive: the model invents `headersAll` and cascades it across `base_request.dart`,
+`base_response.dart`, `browser_client.dart` and more, where the reference fix is one extension
+in one file. It is not missing a fact; it is choosing a different design.
+
+## Honest limits
+
+- **Single backbone, single harness, one arm.** Everything here is luna on opencode, sweet
+  arm. Whether the flips survive a stronger backbone is untested.
+- **3 of 74 attempted rollouts (4.1%) were lost** to `pinned OpenCode 1.18.4 is unavailable`
+  at `CONCURRENCY=3` — the same failure the micro-smoke skill records from 2026-08-04 and
+  describes as fixed by the global install. It is not fixed. It hit L0 once and L2 twice, and
+  it costs reps rather than biasing outcomes, but the skill's claim needs correcting.
+- **L2 and L3 are gold-derived and can never ship.** They are ceiling probes. Only L1 is a
+  product claim.
+- **`ss-statecheck` is not built.** L1 delivers a certificate that the frozen analyzer
+  produces; it does not prove an agent would invoke a tool to obtain it, and P4's own rotation
+  found the shape on exactly one file in 152,270.
+
+## What this changes
+
+| candidate | before tonight | after |
+|---|---|---|
+| P4 state checker | "predicts the fix, delivery unproven" | **delivery proven: 0/3 → 4/4** |
+| P6 runtime surface | "trace evidence suggests enumerability matters" | **isolated as the single missing fact; 4/4 rollouts fail on it alone** |
+| P2 residue | "$0 replay finds `countBy`" | **residue sites land 4/4 live; the loss moves to stop discipline** |
+| P5 artifact graph | "+1 task ceiling on bingo" | **no support: 0 at every level including full spec** |
+| P7 / Dart | "+1 task ceiling" | **no support: 0 at every level; the failure is design choice, not information** |
+| any localisation lever | assumed useful | **0 flips, f2p 0.000 — dead** |
