@@ -213,6 +213,31 @@ it earned a fifth clause (`G4`, minimal change) which is queued.
 `GALL` — all three clauses together — is **0/3 on NimbleOptions**, losing G1's flip. More
 instruction is not more compliance.
 
+### The Apple flip replicates, and stop-at-first-green is the wrong lever
+
+Running the certificate again with the stop-at-first-green frame clause attached gives Apple
+**4/4 a second time** — two independent runs, **8/8 rollouts**, different run IDs, different
+days' worth of sampling noise. This is not one lucky cell.
+
+The clause itself does nothing useful: NimbleOptions goes **1/4 → 0/4** under it. The fourth
+edit that breaks that task is not "editing after green", it is a defensive rewrite made before
+any test is run, so a stop-at-green rule never fires. That is what `G4` targets instead.
+
+### CodeceptJS: adding the one runtime fact buys the task
+
+The certificate was extended with the fact a runtime probe can observe and source cannot —
+that the actor's public contract is its **enumerable** own keys, that every existing method is
+installed by plain assignment and is therefore enumerable, and that `Object.defineProperty`
+defaults `enumerable` to false.
+
+**CodeceptJS goes 0/4 → 2/4**, matching what the gold-derived prose specification achieved
+(2/3) — and the mechanism is visible in the diffs rather than inferred: **both solving
+rollouts install `say` by plain assignment and neither calls `defineProperty`; both failing
+rollouts still reach for `defineProperty` without `enumerable: true`.**
+
+That is P6 bought, and its price is one runtime probe, not a language front end. `bingo` under
+the same treatment stays 0/4 — see below for why nothing can move it.
+
 ---
 
 ## Third finding: two of the five targets are a naming lottery
@@ -240,6 +265,29 @@ both are 0/2 in both arms on all three harnesses.
 
 No candidate in the slate can address a name lottery. **P5's `+1 task on each harness` and the
 Dart half of P7's cost pool rest on tasks that measure a coin flip.**
+
+---
+
+## Fourth finding: the clauses point the other way on tasks they were not written for
+
+The micro-smoke protocol's rotation gate exists to catch a lever that only wins on its tuning
+tasks. This one failed in the opposite direction. On five DEV tasks that took no part in
+designing any clause, two reps each:
+
+| fresh task | L0 | GALL |
+|---|---|---|
+| `jashkenas__underscore-2757` | 1/2 | **2/2** |
+| `pytask-dev__pytask-210` | 1/2 | **2/2** |
+| `rstudio-education__gradethis-161` | 1/2 | 1/2 |
+| `akinsho__nvim-bufferline.lua-173` | 1/1 | 1/2 |
+| `teleporthq__teleport-code-generators-291` | 0/2 | 0/2 |
+| **rollouts solved** | **4/9** | **6/10** |
+
+Two reps is not a result — at this size the difference is comfortably inside noise, and
+`akinsho` even lands on unequal denominators because a rollout was lost. But it is the
+opposite of overfitting, and the two tasks that moved are the flagship targets of two separate
+programs (`pytask` is P1's, `underscore` is P2's). A deeper rotation at four reps, with `G1`
+alone included to separate the stack from its most likely single cause, is queued.
 
 ---
 
