@@ -20,8 +20,8 @@ fix set-exactly, blind, and the write-up had to close with: *not established, th
 handed the counterexample list would act on it.* All six sweet and native cells had the state
 machine file in reach and every one still wrote the same one-quadrant patch.
 
-This experiment answers it. The first round cost `$0.51`; everything below, twenty pilots
-and 269 rollouts, cost `$1.99`.
+This experiment answers it. The first round cost `$0.51`; everything below, 24 pilots and 369
+rollouts on two backbones, cost `$4.72`.
 
 ## Design
 
@@ -351,19 +351,44 @@ failure mode in general terms is not enough to stop it; the best NimbleOptions f
 
 ---
 
+## Sixth: a 20x-priced backbone buys nothing, and the certificate still works on it
+
+Everything above is one cheap model, so the five targets were re-run on
+`openai/gpt-5.6-terra` — twenty times luna's per-token price — twice, baseline and blind
+certificate, two reps each.
+
+| target | terra baseline | terra + certificate |
+|---|---|---|
+| `apple__swift-nio-http2-145` | 0/2 | **2/2** |
+| `codeception__codeceptjs-367` | 0/2 | 0/2 |
+| `dashbitco__nimble_options-43` | 0/2 | 0/2 |
+| `joshuakgoldberg__bingo-274` | 0/2 | 0/2 |
+| `dart-lang__http-1114` | 0/2 | 0/2 |
+| | 0/10, `$1.19` | 2/10, `$1.00` |
+
+**A twenty-fold increase in backbone price buys zero resolution on these tasks. The derived
+fact buys one of them outright.** Apple is now **18/18 across five runs on two backbones**,
+against 0/12 for everything that is not the computed closure. The checker is not a
+cheap-model crutch.
+
+---
+
 ## Scale and spend
 
-269 rollouts across 20 pilots for **`$1.99`** in ideal cost, all on `openai/gpt-5.6-luna`
-through OpenCode, sweet arm only. Every pilot ran against the same green ledger and the same
-matched cap (`MAX_TOOL_CALLS=60`, never binding — every rollout exited `model_stopped` at a
-mean 17-20 tool calls).
+**369 rollouts across 24 pilots for `$4.72`** in ideal cost: 349 on `openai/gpt-5.6-luna` for
+`$2.53`, and 20 on `openai/gpt-5.6-terra` for `$2.19`. OpenCode, sweet arm only. Every pilot
+ran against the same green ledger and the same matched cap (`MAX_TOOL_CALLS=60`, never binding
+— every rollout exited `model_stopped` at a mean 12-20 tool calls).
 
 ---
 
 ## Honest limits
 
-- **Single backbone, single harness, one arm.** Everything here is luna on opencode, sweet
-  arm. Whether the flips survive a stronger backbone is untested.
+- **One harness, one arm.** Everything here is OpenCode, sweet arm. The backbone limit is now
+  partly answered — the Apple flip reproduces on a 20x-priced model — but codex and
+  claude-code are untested, and so is the native arm. Hints travel through the issue text, so
+  a hint result is not itself a sweet differential; the *analyzer* is what only sweet would
+  ship.
 - **3 of 74 attempted rollouts (4.1%) were lost** to `pinned OpenCode 1.18.4 is unavailable`
   at `CONCURRENCY=3` — the same failure the micro-smoke skill records from 2026-08-04 and
   describes as fixed by the global install. It is not fixed. It hit L0 once and L2 twice, and
