@@ -287,9 +287,26 @@ designing any clause, two reps each:
 
 Two reps is not a result — at this size the difference is comfortably inside noise, and
 `akinsho` even lands on unequal denominators because a rollout was lost. But it is the
-opposite of overfitting, and the two tasks that moved are the flagship targets of two separate
-programs (`pytask` is P1's, `underscore` is P2's). A deeper rotation at four reps, with `G1`
-alone included to separate the stack from its most likely single cause, is queued.
+opposite of overfitting, so it earned a deeper rotation at four reps:
+
+| fresh task | L0 | GALL |
+|---|---|---|
+| `jashkenas__underscore-2757` | 2/4 | **4/4** |
+| `teleporthq__teleport-code-generators-291` | 0/4 | **3/4** |
+| `akinsho__nvim-bufferline.lua-173` | 4/4 | 4/4 |
+| `rstudio-education__gradethis-161` | 3/4 | 3/4 |
+| `pytask-dev__pytask-210` | 2/4 | 1/4 |
+| **rollouts solved** | **11/20** | **15/20** |
+
+`teleport-291` is the interesting one: **0/4 at baseline here and 0/2 on every arm of every
+harness in the recorded slate, and 3/4 under the clauses.** `underscore` goes from flaky to
+robust. `pytask` moves the other way.
+
+At the rollout level 15/20 against 11/20 is not significant on its own. But this is the same
+three sentences that did nothing on the five tasks they were written against, and the shape —
+no control regression anywhere, a dead task turning over, one task degrading — is a real
+candidate rather than a tuning artifact. It is the cheapest lever in the whole slate: no
+parser, no index, no tool, and it applies to both arms.
 
 ---
 
