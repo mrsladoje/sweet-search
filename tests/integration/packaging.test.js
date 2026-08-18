@@ -41,6 +41,10 @@ describe('npm pack contents', () => {
     expect(packFiles.has('core/infrastructure/manifest.json')).toBe(true);
   });
 
+  it('ships the shared environment sourced by every ss-* wrapper', () => {
+    expect(packFiles.has('eval/agent-read-workflows/bin/_ss-env.sh')).toBe(true);
+  });
+
   it('every runtimeAsset in the manifest is in the tarball', () => {
     const missing = [];
     for (const [key, assetPath] of Object.entries(manifest.runtimeAssets)) {

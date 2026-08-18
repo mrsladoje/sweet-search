@@ -289,20 +289,23 @@ Two reps is not a result — at this size the difference is comfortably inside n
 `akinsho` even lands on unequal denominators because a rollout was lost. But it is the
 opposite of overfitting, so it earned a deeper rotation at four reps:
 
-| fresh task | L0 | GALL |
-|---|---|---|
-| `jashkenas__underscore-2757` | 2/4 | **4/4** |
-| `teleporthq__teleport-code-generators-291` | 0/4 | **3/4** |
-| `akinsho__nvim-bufferline.lua-173` | 4/4 | 4/4 |
-| `rstudio-education__gradethis-161` | 3/4 | 3/4 |
-| `pytask-dev__pytask-210` | 2/4 | 1/4 |
-| **rollouts solved** | **11/20** | **15/20** |
+| fresh task | L0 | G1 alone | GALL |
+|---|---|---|---|
+| `jashkenas__underscore-2757` | 2/4 | 3/4 | **4/4** |
+| `teleporthq__teleport-code-generators-291` | 0/4 | 1/4 | **3/4** |
+| `akinsho__nvim-bufferline.lua-173` | 4/4 | 4/4 | 4/4 |
+| `rstudio-education__gradethis-161` | 3/4 | 3/4 | 3/4 |
+| `pytask-dev__pytask-210` | 2/4 | 1/4 | 1/4 |
+| **rollouts solved** | **11/20** | **12/20** | **15/20** |
 
 `teleport-291` is the interesting one: **0/4 at baseline here and 0/2 on every arm of every
 harness in the recorded slate, and 3/4 under the clauses.** `underscore` goes from flaky to
 robust. `pytask` moves the other way.
 
-At the rollout level 15/20 against 11/20 is not significant on its own. But this is the same
+`G1` alone lands at 12/20, indistinguishable from baseline, so whatever is happening needs all
+three sentences — the exact opposite of the design set, where the stack lost `G1`'s only flip.
+At the rollout level 15/20 against 11/20 is not significant on its own, and neither is the
+ordering. But this is the same
 three sentences that did nothing on the five tasks they were written against, and the shape —
 no control regression anywhere, a dead task turning over, one task degrading — is a real
 candidate rather than a tuning artifact. It is the cheapest lever in the whole slate: no

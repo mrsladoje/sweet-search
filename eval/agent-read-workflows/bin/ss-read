@@ -8,6 +8,7 @@
 # Open-ended start-to-EOF is intentionally not supported in the bench wrapper
 # to prevent accidental over-reading. To pull a span, give an explicit end.
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+. "$DIR/_ss-env.sh"
 TMPERR=$(mktemp)
 node "$DIR/_ss-helpers.mjs" read "$@" 2>"$TMPERR"
 RC=$?

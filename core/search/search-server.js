@@ -501,7 +501,11 @@ export async function buildReadDaemonResponse(reqUrl, {
 
   try {
     const { readFiles, formatReadResults } = await import('./search-read.js');
-    const out = await readFiles(files, { projectRoot: serverRoot, includeMetadata });
+    // Agent-facing read route: span gate on. Measurement formats still veto it
+    // inside spanExpandEnabled().
+    const out = await readFiles(files, {
+      projectRoot: serverRoot, includeMetadata, spanExpand: true, format,
+    });
     let queryEvidence = null;
     if (exactRereadOmission && agentSpanLedger && validAgentSessionId(agentSessionId)) {
       const spans = collectReadShownSpans(out, { projectRoot: serverRoot });

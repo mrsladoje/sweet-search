@@ -311,6 +311,10 @@ export class StructuralContextBuilder {
     const storedIds = new Set(storedCallers.map(x => x.id));
     const sameFileCallers = (this.repo.getSameFileCallers?.(target, { limit: 24 }) || [])
       .filter(x => !storedIds.has(x.id));
+    const callerProvenance = {
+      stored: storedCallers.length,
+      sameFileFallback: sameFileCallers.length,
+    };
     const callersRaw = [...storedCallers, ...sameFileCallers].map(x => ({ ...x, depth: 1 }));
     let calleesRaw = this.repo.getCallees(target, { limit: 160 }).map(x => ({ ...x, depth: 1 }));
     if (!calleesRaw.length) calleesRaw = targetCallsiteHints.map(name => this.repo.findEntityCandidates?.(name, { limit: 1 })?.[0]).filter(isLikelyCodeEntity).map(x => ({ ...x, relationship: 'handoff', depth: 1 }));
@@ -409,7 +413,10 @@ export class StructuralContextBuilder {
         latencyMs: Math.round(performance.now() - started),
       },
       sections: {
-        callers: { total: callers.length, shown: callersPack.items.length, items: callersPack.items },
+        callers: {
+          total: callers.length, shown: callersPack.items.length, items: callersPack.items,
+          provenance: callerProvenance,
+        },
         callees: { total: callees.length, shown: calleesPack.items.length, items: calleesPack.items },
         impact: { total: impactPaths.length, shown: impactPack.paths.length, paths: impactPack.paths },
       },
@@ -450,7 +457,11 @@ export class StructuralContextBuilder {
       tokensUsed: 0,
       maxDepth: DEFAULT_MAX_DEPTH,
       stats: { totalEntities: this.repo.getEntityCount(), callers: 0, callees: 0, impactPaths: 0, entropy: 0, latencyMs: Math.round(performance.now() - started) },
-      sections: { callers: { total: 0, shown: 0, items: [] }, callees: { total: 0, shown: 0, items: [] }, impact: { total: 0, shown: 0, paths: [] } },
+      sections: {
+        callers: { total: 0, shown: 0, items: [], provenance: { stored: 0, sameFileFallback: 0 } },
+        callees: { total: 0, shown: 0, items: [] },
+        impact: { total: 0, shown: 0, paths: [] },
+      },
     };
   }
 }

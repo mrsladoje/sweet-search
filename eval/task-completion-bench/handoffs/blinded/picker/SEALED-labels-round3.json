@@ -1,0 +1,79 @@
+{
+  "WARNING": "SEALED. Contains the answer to the blinded gate. Open only after every lock file is hashed.",
+  "seed": 20260901,
+  "generated_from": "../../../select/.cache/tasks_full_round3_pool.json",
+  "pool_size": 268,
+  "eligible": 126,
+  "excluded": {
+    "rotate20": 13,
+    "alreadyUsed": 1,
+    "previousRounds": 5,
+    "turnfixCohort": 94,
+    "discussed": 12,
+    "burnedRepo": 6,
+    "noBaseTree": 1,
+    "emptyIssue": 10,
+    "noPatch": 0,
+    "extreme": 0
+  },
+  "class_counts": {
+    "adds_new_source_module": 6,
+    "does_not": 120
+  },
+  "labels": [
+    {
+      "instance_id": "s-knibbs__dataclasses-jsonschema-32",
+      "adds_new_source_module": false,
+      "new_source_modules": [],
+      "created_paths_all": [],
+      "modified_file_count": 2
+    },
+    {
+      "instance_id": "ember-cli__eslint-plugin-ember-551",
+      "adds_new_source_module": true,
+      "new_source_modules": [
+        "lib/rules/no-classic-components.js"
+      ],
+      "created_paths_all": [
+        "docs/rules/no-classic-components.md",
+        "lib/rules/no-classic-components.js"
+      ],
+      "modified_file_count": 5
+    },
+    {
+      "instance_id": "phpactor__phpactor-2001",
+      "adds_new_source_module": true,
+      "new_source_modules": [
+        "lib/Completion/Bridge/TolerantParser/ReferenceFinder/AttributeCompletor.php"
+      ],
+      "created_paths_all": [
+        "lib/Completion/Bridge/TolerantParser/ReferenceFinder/AttributeCompletor.php"
+      ],
+      "modified_file_count": 4
+    },
+    {
+      "instance_id": "cyclonedx__cyclonedx-core-java-105",
+      "adds_new_source_module": true,
+      "new_source_modules": [
+        "src/main/java/org/cyclonedx/model/Diff.java",
+        "src/main/java/org/cyclonedx/model/Issue.java",
+        "src/main/java/org/cyclonedx/model/Patch.java",
+        "src/main/java/org/cyclonedx/model/Source.java"
+      ],
+      "created_paths_all": [
+        "src/main/java/org/cyclonedx/model/Diff.java",
+        "src/main/java/org/cyclonedx/model/Issue.java",
+        "src/main/java/org/cyclonedx/model/Patch.java",
+        "src/main/java/org/cyclonedx/model/Source.java"
+      ],
+      "modified_file_count": 7
+    },
+    {
+      "instance_id": "rrd108__vue-mess-detector-129",
+      "adds_new_source_module": false,
+      "new_source_modules": [],
+      "created_paths_all": [],
+      "modified_file_count": 1
+    }
+  ]
+}

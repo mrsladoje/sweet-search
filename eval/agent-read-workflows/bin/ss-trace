@@ -3,6 +3,7 @@
 #
 # Usage: ss-trace <symbol> [--in <file>] [--query <hint>] [--depth N] [--budget N]
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+. "$DIR/_ss-env.sh"
 TMPERR=$(mktemp)
 node "$DIR/_ss-helpers.mjs" trace "$@" 2>"$TMPERR"
 RC=$?

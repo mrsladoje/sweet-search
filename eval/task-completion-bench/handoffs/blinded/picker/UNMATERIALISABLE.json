@@ -1,0 +1,12 @@
+{
+  "_why": "A task whose base tree cannot be obtained cannot be used for a derivation gate: the deriver is given an issue and a base tree, and there is no base tree. Verified by cloning the repository and attempting `git checkout <base_commit>`, including an explicit `git fetch origin <sha>` for commits not on a branch. Recorded here so the check is not repeated and the exclusion is auditable.",
+  "_checked": "2026-08-13",
+  "unmaterialisable": [
+    {
+      "instance_id": "ember-intl__ember-intl-596",
+      "repo": "ember-intl/ember-intl",
+      "base_commit": "19eb37af6999c6be87aa6ec0141893195131e77a",
+      "reason": "commit unreachable on GitHub — not in any branch history and not fetchable by sha; a plain `git clone` + `git checkout` silently leaves the default branch HEAD, which is a POST-fix tree"
+    }
+  ]
+}

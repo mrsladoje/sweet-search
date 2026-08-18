@@ -10,6 +10,7 @@
 #   ss-search "<query>" -k N               # top-K (default 5)
 #   ss-search "<query>" --mode hybrid      # force a mode (default: auto)
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+. "$DIR/_ss-env.sh"
 TMPERR=$(mktemp)
 node "$DIR/_ss-helpers.mjs" agent-search "$@" 2>"$TMPERR"
 RC=$?

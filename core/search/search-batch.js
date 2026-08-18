@@ -221,7 +221,9 @@ const DEFAULT_ADAPTERS = {
     k: args.k ?? 10, mode: 'pattern', regex: args.regex, format: 'agent',
     ...(args.in && { fileFilter: args.in }),
   }),
-  read: (args, { projectRoot }) => readFiles([args], { projectRoot, includeMetadata: true }),
+  read: (args, { projectRoot }) => readFiles([args], {
+    projectRoot, includeMetadata: true, spanExpand: true, format: 'agent',
+  }),
   semantic: (args, { projectRoot, searcher }) => readSemantic({
     ...args, projectRoot,
     _lateInteractionIndex: searcher?.lateInteractionIndex || undefined,

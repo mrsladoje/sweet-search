@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 # Bench-local typed batch shortcut. The canonical CLI owns validation/execution;
 # this wrapper only selects the subcommand and preserves every argument verbatim.
+#
+# It sources `_ss-env.sh` even though the `sweet-search` shim it execs does the
+# same: sourcing is idempotent (every value uses `:=`), and an entry point that
+# depends on a DIFFERENT entry point to set its environment is one refactor away
+# from being unpinned again without anything failing.
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+. "$DIR/_ss-env.sh"
 exec "$DIR/sweet-search" batch "$@"

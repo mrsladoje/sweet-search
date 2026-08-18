@@ -19,8 +19,18 @@
  * the answer just by existing. The mixture is why the deriver can be handed a list at all.
  *
  * Usage:  node pick-newmodule-slate.mjs [--n-with 2] [--n-without 2] [--seed 20260813]
+ *                                       [--round round2] [--force]
+ *
+ * ROUND SAFETY (added 2026-08-13, round 3). A rerun used to overwrite `round2/SLATE-PUBLIC.json`
+ * and `picker/SEALED-labels.json` in place, which would destroy the audit trail of how an
+ * already-scored round was drawn. Two guards now:
+ *   --round <dir>  writes the public slate into blinded/<dir>/ and seals labels to
+ *                  picker/SEALED-labels-<dir>.json (round2 keeps its historical filename);
+ *   refuse to clobber an existing SLATE-PUBLIC.json unless --force is passed.
+ * Every task drawn in ANY previous round is excluded automatically by reading the public
+ * slates that already exist, so a new round can never re-draw a burned task.
  */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,13 +38,85 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const BENCH = join(HERE, '..', '..', '..');           // eval/task-completion-bench
 const DEV_RET = join(BENCH, 'select', '.cache', 'tasks_full_heldout.json');
 const ROTATE20 = join(BENCH, 'select', 'tasks_luna_rotate20.json');
+const BLINDED = join(HERE, '..');
 
-// Tasks already burned as rotation subjects, or contaminated by being discussed in
-// handoffs/improve/. rotate20 is excluded wholesale by file below.
+// Round 1's subjects, which predate the public-slate file. Later rounds are picked up
+// automatically from their SLATE-PUBLIC.json — see previouslyDrawn().
 const ALREADY_USED = new Set([
   'holoviews__holoviews-6534',
   'pennylaneai__pennylane-3651',
 ]);
+
+// BURNED BY ANOTHER PROGRAMME (found 2026-08-13 by the round-3 leak sweep, and the fourth
+// blinding channel this project has found). Excluding rotate20 and the previous obligation
+// rounds is not enough: 98 of the 200 development-pool tasks were also run as turnfix cohort
+// subjects, so rollouts, trajectories, analysis documents and memory files exist that name what
+// their fix was. The first round-3 draw put three of them on the slate. A task any planning
+// document discusses was already out of scope; this is the file that says which those are.
+const TURNFIX_MANIFEST = join(BENCH, 'select', 'MANIFEST_turnfix_cohorts.json');
+
+// NO BASE TREE, NO GATE. A task whose base commit cannot be checked out cannot be derived
+// against. Worse, `golden-build.mjs` does not check that its `git checkout <sha>` succeeded, so
+// an unreachable base commit silently yields a golden holding the DEFAULT BRANCH — a post-fix
+// tree that would hand a blinded gate its own answer. Verified cases are recorded in this file.
+const UNMATERIALISABLE = join(HERE, 'UNMATERIALISABLE.json');
+
+// DISCUSSED IN A PROSE DOCUMENT (found 2026-08-13, one draw after the turnfix channel). A
+// forensics write-up named a slate task AND the exact new packages its hidden test imports —
+// which is the very obligation this gate asks the deriver to predict. "Every task any planning
+// document discusses" was already out of scope; this is the scan that finds them.
+//
+// Bare INVENTORY files are not discussion: `run-history-instance-ids.txt` lists every id ever
+// run and `HELDOUT2_EXCLUDED_REPOS.json` lists the whole pool, so counting them would exclude
+// all 200 tasks and leak nothing about any of them. Prose is the discriminating signal.
+const DOC_ROOT = BENCH;
+const INVENTORY_ONLY = /run-history-instance-ids\.txt$|HELDOUT2_EXCLUDED_REPOS\.json$|MANIFEST[^/]*\.json$|SLATE-PUBLIC\.json$|ISSUES\.json$|SEALED-labels[^/]*\.json$/;
+const SKIP_DIRS = new Set(['.git', 'node_modules', 'results', '.index-cache', '.venv-grade', '.agentic-qe', '.cache', 'env', 'tasks', 'corpus', 'repos', 'round3']);
+
+/** instance_id -> [documents that discuss it in prose] */
+function discussedInDocs(ids) {
+  const out = new Map();
+  const walk = (dir) => {
+    let es; try { es = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of es) {
+      if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) walk(join(dir, e.name)); continue; }
+      if (!/\.(md|txt)$/i.test(e.name)) continue;
+      const p = join(dir, e.name);
+      if (INVENTORY_ONLY.test(p)) continue;
+      let txt; try { txt = readFileSync(p, 'utf8'); } catch { continue; }
+      for (const id of ids) if (txt.includes(id)) { if (!out.has(id)) out.set(id, []); out.get(id).push(p); }
+    }
+  };
+  walk(DOC_ROOT);
+  return out;
+}
+
+/** Every instance_id anywhere inside a manifest, at any nesting depth. */
+function idsIn(file) {
+  const out = new Set();
+  let doc;
+  try { doc = JSON.parse(readFileSync(file, 'utf8')); } catch { return out; }
+  const walk = (o) => {
+    if (Array.isArray(o)) o.forEach(walk);
+    else if (o && typeof o === 'object') Object.values(o).forEach(walk);
+    else if (typeof o === 'string' && /__.+-\d+$/.test(o)) out.add(o);
+  };
+  walk(doc);
+  return out;
+}
+
+/** Every instance_id drawn in a previous round, from the public slates on disk. */
+function previouslyDrawn() {
+  const ids = new Set();
+  let dirs = [];
+  try { dirs = readdirSync(BLINDED, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name); } catch { return ids; }
+  for (const d of dirs) {
+    const p = join(BLINDED, d, 'SLATE-PUBLIC.json');
+    if (!existsSync(p)) continue;
+    try { for (const t of JSON.parse(readFileSync(p, 'utf8'))) if (t?.instance_id) ids.add(t.instance_id); } catch { /* unreadable slate is not a licence to re-draw */ }
+  }
+  return ids;
+}
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -112,19 +194,51 @@ function main() {
   const nWith = parseInt(arg('n-with', '2'), 10);
   const nWithout = parseInt(arg('n-without', '2'), 10);
   const seed = parseInt(arg('seed', '20260813'), 10);
+  const round = arg('round', 'round2');
+  const poolFile = arg('pool', DEV_RET);
+  const force = process.argv.includes('--force');
 
-  const pool = JSON.parse(readFileSync(DEV_RET, 'utf8'));
+  const outPub = join(BLINDED, round, 'SLATE-PUBLIC.json');
+  if (existsSync(outPub) && !force) {
+    console.error(`refusing to overwrite ${outPub} — it is the audit trail of a drawn round.`);
+    console.error('pass a different --round, or --force if you really mean to redraw it.');
+    process.exit(1);
+  }
+
+  const pool = JSON.parse(readFileSync(poolFile, 'utf8'));
   const tasks = Array.isArray(pool) ? pool : Object.values(pool)[0];
 
   const rot = JSON.parse(readFileSync(ROTATE20, 'utf8'));
   const rotIds = new Set((Array.isArray(rot) ? rot : Object.values(rot)[0]).map(t => t.instance_id));
+  const burned = previouslyDrawn();
+  const turnfix = idsIn(TURNFIX_MANIFEST);
+  const discussed = discussedInDocs(new Set(tasks.map(t => t.instance_id)));
+  let unbuildable = new Set();
+  try {
+    unbuildable = new Set(JSON.parse(readFileSync(UNMATERIALISABLE, 'utf8')).unmaterialisable.map(x => x.instance_id));
+  } catch { /* absent file means nothing has been ruled out yet */ }
+  // A REPOSITORY whose layout has already been discussed in prose, or derived on in a previous
+  // round, gives a head start on exactly what this gate scores: owning package and dependency
+  // direction. Sibling tasks in such a repo are excluded even when the task itself is untouched.
+  const burnedRepos = new Set();
+  for (const t of tasks) if (discussed.has(t.instance_id) && t.repo) burnedRepos.add(String(t.repo).toLowerCase());
+  for (const d of readdirSync(BLINDED, { withFileTypes: true }).filter(x => x.isDirectory()).map(x => x.name)) {
+    const p = join(BLINDED, d, 'SLATE-PUBLIC.json');
+    if (!existsSync(p)) continue;
+    try { for (const t of JSON.parse(readFileSync(p, 'utf8'))) if (t?.repo) burnedRepos.add(String(t.repo).toLowerCase()); } catch { /* */ }
+  }
 
-  const excluded = { rotate20: 0, alreadyUsed: 0, emptyIssue: 0, noPatch: 0, extreme: 0 };
+  const excluded = { rotate20: 0, alreadyUsed: 0, previousRounds: 0, turnfixCohort: 0, discussed: 0, burnedRepo: 0, noBaseTree: 0, emptyIssue: 0, noPatch: 0, extreme: 0 };
   const eligible = [];
 
   for (const t of tasks) {
     if (rotIds.has(t.instance_id)) { excluded.rotate20++; continue; }
     if (ALREADY_USED.has(t.instance_id)) { excluded.alreadyUsed++; continue; }
+    if (burned.has(t.instance_id)) { excluded.previousRounds++; continue; }
+    if (turnfix.has(t.instance_id)) { excluded.turnfixCohort++; continue; }
+    if (discussed.has(t.instance_id)) { excluded.discussed++; continue; }
+    if (burnedRepos.has(String(t.repo || '').toLowerCase())) { excluded.burnedRepo++; continue; }
+    if (unbuildable.has(t.instance_id)) { excluded.noBaseTree++; continue; }
     if (!t.problem_statement || t.problem_statement.trim().length < 200) { excluded.emptyIssue++; continue; }
     if (!t.patch || t.patch.length < 50) { excluded.noPatch++; continue; }
     const mods = modifiedFileCount(t.patch);
@@ -136,6 +250,16 @@ function main() {
   for (const t of eligible) {
     const mods = newSourceModules(t.patch);
     (mods.length > 0 ? withNew : withoutNew).push({ t, mods });
+  }
+
+  // A short slate must never be produced silently: a round drawn with fewer
+  // new-module tasks than pre-registered is a WEAKER test, and that has to be a decision
+  // somebody takes on purpose, not a slice() that happened to run out of candidates.
+  if (withNew.length < nWith || withoutNew.length < nWithout) {
+    console.error(`cannot fill the requested slate: asked for ${nWith} with a new source module and ${nWithout} without;`);
+    console.error(`the eligible pool has ${withNew.length} and ${withoutNew.length} after exclusions ${JSON.stringify(excluded)}.`);
+    console.error('Either lower --n-with / --n-without ON PURPOSE and record the deviation, or draw from a fresh pool.');
+    process.exit(2);
   }
 
   const rand = rng(seed);
@@ -152,7 +276,7 @@ function main() {
 
   const sealed = {
     WARNING: 'SEALED. Contains the answer to the blinded gate. Open only after every lock file is hashed.',
-    seed, generated_from: 'select/.cache/tasks_full_heldout.json (DEV-RET)',
+    seed, generated_from: poolFile,
     pool_size: tasks.length, eligible: eligible.length, excluded,
     class_counts: { adds_new_source_module: withNew.length, does_not: withoutNew.length },
     labels: slate.map(({ t, mods }) => ({
@@ -164,10 +288,10 @@ function main() {
     })),
   };
 
-  const outPub = join(HERE, '..', 'round2', 'SLATE-PUBLIC.json');
   mkdirSync(dirname(outPub), { recursive: true });
   writeFileSync(outPub, JSON.stringify(pub, null, 2) + '\n');
-  writeFileSync(join(HERE, 'SEALED-labels.json'), JSON.stringify(sealed, null, 2) + '\n');
+  const sealedPath = join(HERE, round === 'round2' ? 'SEALED-labels.json' : `SEALED-labels-${round}.json`);
+  writeFileSync(sealedPath, JSON.stringify(sealed, null, 2) + '\n');
 
   // The issue text lives in the same file as gold, so the deriver must never open that file.
   // Extract the statements alone into the clean zone.
@@ -178,14 +302,14 @@ function main() {
     language: t.language,
     problem_statement: t.problem_statement,
   }));
-  writeFileSync(join(HERE, '..', 'round2', 'ISSUES.json'), JSON.stringify(issues, null, 2) + '\n');
+  writeFileSync(join(BLINDED, round, 'ISSUES.json'), JSON.stringify(issues, null, 2) + '\n');
 
   // Console output must stay safe: counts only, never which task is in which class.
   console.log(`pool ${tasks.length} → eligible ${eligible.length}`);
   console.log(`excluded: ${JSON.stringify(excluded)}`);
   console.log(`classes: adds-new-module ${withNew.length}, does-not ${withoutNew.length}`);
   console.log(`slate: ${pub.length} tasks (${nWith} + ${nWithout}, shuffled, seed ${seed})`);
-  console.log(`wrote round2/SLATE-PUBLIC.json  and  picker/SEALED-labels.json`);
+  console.log(`wrote ${round}/SLATE-PUBLIC.json, ${round}/ISSUES.json and ${sealedPath.split('/').pop()}`);
 }
 
 if (process.argv[1] && process.argv[1].endsWith('pick-newmodule-slate.mjs')) main();

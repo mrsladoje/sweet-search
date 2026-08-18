@@ -1,0 +1,32 @@
+[
+  {
+    "instance_id": "s-knibbs__dataclasses-jsonschema-32",
+    "repo": "s-knibbs/dataclasses-jsonschema",
+    "base_commit": "0d222e9e01903f937d67bea2f6ab593bdde22818",
+    "language": "python"
+  },
+  {
+    "instance_id": "ember-cli__eslint-plugin-ember-551",
+    "repo": "ember-cli/eslint-plugin-ember",
+    "base_commit": "eb62f6fbae3363f8f806f614df4fc0c65e313405",
+    "language": "js"
+  },
+  {
+    "instance_id": "phpactor__phpactor-2001",
+    "repo": "phpactor/phpactor",
+    "base_commit": "9caee4baeecf43f20a1a2523f76f04ddcd7ec1a2",
+    "language": "php"
+  },
+  {
+    "instance_id": "cyclonedx__cyclonedx-core-java-105",
+    "repo": "CycloneDX/cyclonedx-core-java",
+    "base_commit": "f908d759647b6baf7c15705c9501d5f4d06cd559",
+    "language": "java"
+  },
+  {
+    "instance_id": "rrd108__vue-mess-detector-129",
+    "repo": "rrd108/vue-mess-detector",
+    "base_commit": "6ec303143ac2bdd8dc9d09563547c5d219ec4679",
+    "language": "ts"
+  }
+]
