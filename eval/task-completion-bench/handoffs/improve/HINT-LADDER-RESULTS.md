@@ -311,6 +311,21 @@ two that are not are benchmark artifacts rather than product gaps.** No single c
 all three — each needs a different derived fact, which is the argument for three narrow
 analyzers rather than one prompt.
 
+### The minimal-change clause does not rescue NimbleOptions on its own
+
+`G4` alone flips nothing — NimbleOptions 0/3 — while all three controls stay 3/3. Naming the
+failure mode in general terms is not enough to stop it; the best NimbleOptions figure remains
+2/4, on the certificate stacked with the family clause.
+
+---
+
+## Scale and spend
+
+269 rollouts across 20 pilots for **`$1.99`** in ideal cost, all on `openai/gpt-5.6-luna`
+through OpenCode, sweet arm only. Every pilot ran against the same green ledger and the same
+matched cap (`MAX_TOOL_CALLS=60`, never binding — every rollout exited `model_stopped` at a
+mean 17-20 tool calls).
+
 ---
 
 ## Honest limits
