@@ -34,6 +34,7 @@ import { loadTaskFile } from './task-file-loader.mjs';
 import { progressRowFields, resolveProgressFlags } from './rt-progress-controller.mjs';
 import { packingTreatmentRowFields, resolvePackingTreatment } from './agent-runner-shared.mjs';
 import { assertBaseCommit, writeProvenance, verifyGolden, provenanceNote, provenanceIsFatal } from './golden-provenance.mjs';
+import { materialiseDeps } from './dep-materialise.mjs';
 import { admissionReport, loadBlocklist } from './task-admission.mjs';
 import { degenerationVerdict } from './degeneration-policy.mjs';
 // HARNESS routes the agent loop through a REAL production coding agent (uncapped — runs
@@ -569,6 +570,14 @@ async function runOneTask(id) {
         // one measured attempt in its own isolated rundir; reaped no matter what.
         const attemptRun = async () => {
           const rundir = makeRunDir(golden.dir, rep, sweet);
+          // Installed dependencies, put where a real checkout would have them. OFF by
+          // default so the standing baseline stays byte-identical; when on it runs for BOTH
+          // arms, because a corpus only sweet can reach is a manufactured differential and
+          // a developer's tree has its dependencies in it either way. See dep-materialise.mjs.
+          if (process.env.SS_DEPS === '1') {
+            try { materialiseDeps(t, rundir, { log: (m) => console.log('  ' + m) }); }
+            catch (e) { console.log(`  [deps] ${id}: FAILED ${String(e.message).slice(0, 140)}`); }
+          }
           try {
             const runTests = makeRunTests(image, rundir, t);
             const task = { id, repoCheckout: rundir, mppPath: MPP, problem_statement: t.problem_statement };
