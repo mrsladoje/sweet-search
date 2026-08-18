@@ -275,13 +275,30 @@ describe('StructuralContextBuilder', () => {
   });
 
   it('formats trace output for agent-readable CLI use', () => {
-    const text = formatStructuralContext(builder.build('processOrder', { tokenBudget: 4000 }));
+    const result = builder.build('processOrder', { tokenBudget: 4000 });
+    const text = formatStructuralContext(result);
 
     expect(text).toContain('# trace processOrder');
     expect(text).toContain('## callers');
     expect(text).toContain('## callees');
     expect(text).toContain('## impact paths');
     expect(text).toContain('answer cues: target terms=');
+    expect(result.sections.callers.provenance).toEqual({ stored: 3, sameFileFallback: 0 });
+    expect(text).not.toContain('same-file source scan');
+  });
+
+  it('renders explicit fallback-only and mixed caller provenance', () => {
+    const fallback = builder.build('helper', { tokenBudget: 4000 });
+    expect(fallback.sections.callers.provenance).toEqual({ stored: 0, sameFileFallback: 1 });
+    expect(formatStructuralContext(fallback)).toContain(
+      'callers below come from a same-file source scan (no stored cross-file edges).',
+    );
+
+    const mixed = builder.build('processOrder', { tokenBudget: 4000 });
+    mixed.sections.callers.provenance = { stored: 3, sameFileFallback: 1 };
+    expect(formatStructuralContext(mixed)).toContain(
+      'caller sources are mixed — 3 from stored call edges, 1 from a same-file source scan.',
+    );
   });
 
   it('resolves proxy-style qualified self-loop callees to concrete alternatives', () => {

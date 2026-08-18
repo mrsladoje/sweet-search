@@ -7,6 +7,7 @@
 #
 # Usage:  ss-find "<query>" --regex "<regex>" [-i|--ignore-case] [--full|--xl] [-k N]
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+. "$DIR/_ss-env.sh"
 TMPERR=$(mktemp)
 node "$DIR/_ss-helpers.mjs" find "$@" 2>"$TMPERR"
 RC=$?

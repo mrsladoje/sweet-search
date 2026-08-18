@@ -25,6 +25,97 @@ const CACHE_MAX_ENTRIES = 64;
 const CACHE_LARGE_FILE_BYTES = 4 * 1024 * 1024; // 4MB — switch to range-read mode
 const _cache = new Map(); // key -> { text|null, lineOffsets, size, mtimeMs }
 
+// ---------------------------------------------------------------------------
+// Span-gated whole-file expansion
+//
+// When a range read ALREADY covers a quarter of a small file, serving the rest
+// costs little and removes the later re-read of the same file entirely. The
+// carrying cost is bounded by construction: the remainder that gets injected is
+// at most (1 - MIN_FRAC) of a file no larger than MAX_LINES.
+//
+// WHY THESE TWO NUMBERS (2026-08-14, three-harness replay, d11-c4-all-harnesses.mjs)
+// ---------------------------------------------------------------------------
+// Replayed over 102 sweet rollouts — 34 each on codex, opencode and claude-code,
+// each harness's baseline reproducing its recorded arm cost to 100.0%:
+//
+//              codex     opencode   claude     mean     worst harness
+//   0.25/600   -1.60%    -2.08%     -4.72%     -2.80%   -1.60%
+//
+// 71 of 72 configurations in a 9x8 grid save money on all three harnesses at
+// once, so the mechanism is flat rather than tuned, and the exact constants
+// matter far less than the fact that the gate exists.
+//
+// NOT any harness's argmax, deliberately, for two reasons.
+//
+// 1. THE CLIFF. On opencode and claude the effect MORE THAN DOUBLES between
+//    cap 350 and cap 400 (opencode -0.93 -> -2.08, claude -1.54 -> -4.54). The
+//    per-harness optima all sit at cap 400, i.e. directly ON that edge. 600 is
+//    250 lines clear, and a corpus with slightly larger files moves the edge.
+// 2. THE FRACTION HAS TO KEEP THE MECHANISM HONEST. 0.15 scores marginally
+//    better on the worst harness (-2.07 vs -1.60, well inside the +/-1.5pp
+//    bootstrap SE) but it means expanding a 500-line file after a 75-line
+//    request. The policy only makes sense while "already paying for most of it"
+//    is true, so the gate stays at a quarter.
+//
+// Anything in span 0.15-0.30 x cap 400-600 is the same policy on this evidence.
+//
+// ONE MEASUREMENT TRAP, recorded because it cost a wrong set of constants:
+// `ss-read <file> <start>` is a SINGLE LINE in the bench wrapper, not
+// start-to-EOF (_ss-helpers.mjs:523). A replay that reads it as start-to-EOF
+// inflates the covered fraction on 176 of 1000 recorded calls and moved the
+// codex figure from -1.60% to a spurious -3.30%. Parse the wrapper, not the
+// library default.
+const SPAN_EXPAND_MIN_FRAC = 0.25;
+const SPAN_EXPAND_MAX_LINES = 600;
+
+// Expansion is OPT-IN at the library boundary and enabled at the agent-facing
+// entry points. It must NOT default on, because it changes `text` and `range`,
+// and the retrieval evaluation harness (eval/read-workflows/runners.js) calls
+// readFile() with a chunk range and measures containment from the lines that
+// come back. A default-on expansion would silently inflate that measurement —
+// the same class of accuracy regression that format-gating exists to prevent.
+// So: measurement paths get the exact span they asked for, always.
+// DEFAULT OFF EVERYWHERE, 2026-08-14, after a live paired A/B refuted the replay.
+// Opt in per call with `spanExpand: true` AND `SS_READ_SPAN_EXPAND=1`.
+//
+// The replay predicted -1.60 / -2.08 / -4.72% on codex / opencode / claude-code. A live
+// 3-rep A/B on all three measured **+4.78 / +19.79 / +11.72%** on the ideal column -- the
+// sign inverted everywhere. Excluding the one task that never solves, claude-code is
+// **+41.3%**. Trace analysis says why: the replay held the trajectory FIXED and only
+// re-counted tokens, but an agent handed the whole file does MORE work, not less
+// (claude-code: 105 edits with the gate on against 79 off, 23.6 calls against 20.5).
+//
+// The delivery mechanism itself works exactly as designed and replicates on all three
+// harnesses -- whole-file serving ~69% against ~40%, and on codex and opencode re-reads
+// fall 66% and 43%. On claude-code the same delivery change makes re-reads RISE 55%.
+// So this is kept, tested and documented, and shipped to nobody.
+// Evidence: SLATE-A-CLOSE-RESULTS.md 9.13.
+export function spanExpandEnabled(req = {}) {
+  if (process.env.SS_READ_SPAN_EXPAND !== '1') return false;
+  if (req.format === 'benchmark' || req.format === 'raw' || req.format === 'json') return false;
+  return req.spanExpand === true;
+}
+
+/**
+ * Decide the effective line range for a read. Returns the requested range
+ * unchanged unless the span gate fires.
+ *
+ * @returns {{startLine:number, endLine:number|null, expanded:boolean}}
+ */
+export function resolveSpanExpansion(totalLines, startLine, endLine, req = {}) {
+  const reqStart = startLine ?? 1;
+  const reqEnd = endLine ?? null;
+  if (!spanExpandEnabled(req)) return { startLine: reqStart, endLine: reqEnd, expanded: false };
+  if (!Number.isFinite(totalLines) || totalLines <= 0) return { startLine: reqStart, endLine: reqEnd, expanded: false };
+  if (totalLines > SPAN_EXPAND_MAX_LINES) return { startLine: reqStart, endLine: reqEnd, expanded: false };
+  const s = Math.max(1, reqStart | 0);
+  const e = reqEnd == null ? totalLines : Math.min(totalLines, reqEnd | 0);
+  const covered = Math.max(0, e - s + 1);
+  if (covered >= totalLines) return { startLine: reqStart, endLine: reqEnd, expanded: false }; // already whole
+  if (covered / totalLines < SPAN_EXPAND_MIN_FRAC) return { startLine: reqStart, endLine: reqEnd, expanded: false };
+  return { startLine: 1, endLine: totalLines, expanded: true };
+}
+
 function _cacheKey(absPath, size, mtimeMs) {
   return `${absPath}|${size}|${mtimeMs}`;
 }
@@ -327,13 +418,18 @@ async function _readFileUnpinned(req) {
   }
 
   const wantsRange = req.startLine != null || req.endLine != null;
+  // Span gate: a range that already covers a quarter of a small file is served
+  // whole, so the later re-read of the same file never happens.
+  const span = wantsRange
+    ? resolveSpanExpansion(disk.lineOffsets.length, req.startLine, req.endLine, req)
+    : { startLine: 1, endLine: null, expanded: false };
   const fullText = !wantsRange && disk.text == null
     ? await fs.readFile(absPath, 'utf8')
     : disk.text;
   const sliced = wantsRange
     ? (disk.text == null
-        ? await _sliceLinesFromDisk(absPath, disk.lineOffsets, disk.size, req.startLine ?? 1, req.endLine ?? null)
-        : _sliceLines(disk.text, disk.lineOffsets, req.startLine ?? 1, req.endLine ?? null))
+        ? await _sliceLinesFromDisk(absPath, disk.lineOffsets, disk.size, span.startLine, span.endLine)
+        : _sliceLines(disk.text, disk.lineOffsets, span.startLine, span.endLine))
     : { text: fullText, startLine: 1, endLine: disk.lineOffsets.length, totalLines: disk.lineOffsets.length };
 
   let language = null;
@@ -408,6 +504,7 @@ async function _readFileUnpinned(req) {
     bytes: disk.size,
     mtimeMs: disk.mtimeMs,
     range: wantsRange ? { startLine: sliced.startLine, endLine: sliced.endLine } : null,
+    spanExpanded: span.expanded || undefined,
     text: sliced.text,
     chunks,
     unreadBelow,
@@ -449,6 +546,8 @@ export async function readFiles(files, opts = {}) {
       endLine: f.endLine,
       projectRoot,
       includeMetadata: opts.includeMetadata !== false,
+      spanExpand: opts.spanExpand === true,
+      format: opts.format,
     })));
     return { files: results, totalMs: +(performance.now() - t0).toFixed(2) };
   });
@@ -699,7 +798,13 @@ export async function handleReadCli(args) {
     startLine: wantsRange ? parsed.startLine : undefined,
     endLine: wantsRange ? parsed.endLine : undefined,
   }));
-  const out = await readFiles(files, { includeMetadata: parsed.includeMetadata });
+  // Agent-facing entry point: the span gate is on here. `format` still vetoes it
+  // for benchmark/raw/json so a measurement run never sees an expanded span.
+  const out = await readFiles(files, {
+    includeMetadata: parsed.includeMetadata,
+    spanExpand: true,
+    format: parsed.format,
+  });
   let queryEvidence = null;
   if (parsed.format === 'agent' && exactRereadOmissionEnabled()) {
     const agentSessionId = resolveAgentSessionId();
