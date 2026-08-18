@@ -403,9 +403,31 @@ ran against the same green ledger and the same matched cap (`MAX_TOOL_CALLS=60`,
 
 | candidate | before tonight | after |
 |---|---|---|
-| P4 state checker | "predicts the fix, delivery unproven" | **delivery proven: 0/3 → 4/4** |
-| P6 runtime surface | "trace evidence suggests enumerability matters" | **isolated as the single missing fact; 4/4 rollouts fail on it alone** |
-| P2 residue | "$0 replay finds `countBy`" | **residue sites land 4/4 live; the loss moves to stop discipline** |
-| P5 artifact graph | "+1 task ceiling on bingo" | **no support: 0 at every level including full spec** |
-| P7 / Dart | "+1 task ceiling" | **no support: 0 at every level; the failure is design choice, not information** |
+| P4 state checker | "predicts the fix, delivery unproven" | **delivery proven: 0/3 → 18/18 across five runs and two backbones** |
+| P6 runtime surface | "trace evidence suggests enumerability matters" | **isolated to one runtime fact; adding it gives 2/4, and the solving diffs differ from the failing ones exactly there** |
+| P2 residue | "$0 replay finds `countBy`" | **residue sites land 4/4 live; the loss moved to a defensive fourth edit, and no clause tried tonight stops it** |
+| P5 artifact graph | "+1 task ceiling on bingo" | **structurally unreachable: the hidden test imports `./isFile.js` by relative path** |
+| P7 / Dart | "+1 task ceiling" | **structurally unreachable: the hidden test reads `headersSplitValues`** |
 | any localisation lever | assumed useful | **0 flips, f2p 0.000 — dead** |
+| general prompt clauses | not on the slate | **new candidate: no control regression in 100+ control rollouts, 15/20 vs 11/20 on five rotation tasks, one dead task turned over. Costs nothing to ship.** |
+| "buy a better backbone" | untested | **0/10 on a 20x-priced model — buys nothing here** |
+
+## What to do next
+
+1. **Build `ss-statecheck` for real.** It is the only thing on this slate with a replicated
+   flip behind it, and its blind output is worth more than a gold prose specification. The
+   known limit stands: P4's rotation found the shape on one file in 152,270, so scope it as a
+   narrow gated analyzer and do not promise generality.
+2. **Screen the general clauses properly.** They are free, they broke nothing across more than
+   a hundred control rollouts, and on tasks they were not written for they turned over
+   `teleport-291`, which is 0/2 on every arm of every harness in the recorded slate. This is an
+   18-task screen, not another micro-smoke.
+3. **Take `bingo` and `dart` out of every ceiling argument.** They are name lotteries. Either
+   exclude them the way YARP was excluded, or state plainly that any candidate crediting them
+   with `+1 task` is crediting a coin flip. Run `name-lock-census.mjs` over any new task slate
+   before it is adopted.
+4. **`ss-surface-probe` is cheaper than it looked.** The whole CodeceptJS gap is one runtime
+   property. That is a small local process that loads a module and reports its enumerable
+   keys, not the language-runner fleet P6 sketched.
+5. **Nothing here authorises a paid pilot.** Phase 0 still owes two gold-verified replacement
+   control tasks, and the control set is still 40% vacuous.
