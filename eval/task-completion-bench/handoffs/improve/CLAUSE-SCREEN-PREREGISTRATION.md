@@ -73,3 +73,45 @@ argument for this candidate is that it is free.
 - More than 5 of 204 rollouts lost to harness errors → rerun, do not patch around it.
 - A win carried entirely by the 5 reused tasks → not a result, report as selection.
 - A win carried by a single task → report as a single-task effect, never as a rate.
+
+---
+
+## AMENDMENT 1 — 2026-08-21, before any rollout of this screen existed
+
+**The run refused to launch, and it was right to.** `run-pilot`'s admission policy rejected
+four of the seventeen tasks I had registered:
+
+| task | why it cannot measure anything |
+|---|---|
+| `redboltz__mqtt_cpp-466` | vacuous — resolves with an EMPTY patch; its `FAIL_TO_PASS` already passes at base |
+| `statamic__cms-9029` | vacuous — same, confirmed by a null arm |
+| `mransan__ocaml-protoc-202` | empty issue — zero usable characters against a 19-file gold change |
+| `litestar-org__polyfactory-405` | unfixable in the shim — `test_cmd` names a file the test patch creates |
+
+That leaves **13 admissible tasks**, which is the same admissible set Phase 0-B established.
+No data from this screen existed when this amendment was written, so the bars are restated
+rather than moved after the fact.
+
+**Revised split.** Of the 13, **five were used to select `GALL`** in the first clause screen
+(`underscore`, `teleport`, `akinsho`, `gradethis`, `pytask`). **Eight are unused**: `dart`,
+`dashbitco`, `robot`, `codeception`, `scoringutils`, `apple`, `bingo`, `parcels`. Three of
+those eight (`robot`, `scoringutils`, `parcels`) are already solved at ceiling and can only
+regress, so the treatment has at most **five** fresh tasks it could actually move.
+
+**Revised bars.**
+
+- **Primary:** on all 13 admissible tasks, majority of 3 reps, `CG` or `C14` must solve
+  **at least 2 more tasks** than `C0` with **zero regression** from majority-solved to
+  majority-unsolved — and **at least +1 of that gain must come from the eight unused tasks.**
+  A gain located entirely in the five selection tasks is selection, not effect, and is
+  reported as such.
+- Cost guard unchanged: above `+10%` per rollout fails regardless of resolution.
+
+**Power, stated honestly in advance.** Eight fresh tasks with five movable is not a
+well-powered screen. **This run cannot produce a shipping decision on its own.** Its job is
+to replicate or fail to replicate the prior signal under correct product delivery. If it
+replicates, the next step is a properly powered screen on the dev-200 pool, which is the only
+pool large enough to settle it. If it fails to replicate, the candidate is dead and no larger
+run is needed.
+
+**Total: 13 × 3 reps × 4 conditions = 156 rollouts.**
