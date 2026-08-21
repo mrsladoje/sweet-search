@@ -1,0 +1,138 @@
+{
+ "sweet.codex": {
+  "n": 32,
+  "tot": 0.26185,
+  "A": 31.6,
+  "Abp": 27,
+  "half": 15.8,
+  "L": 30
+ },
+ "sweet.opencode": {
+  "n": 32,
+  "tot": 0.209838,
+  "A": 34.4,
+  "Abp": 34.4,
+  "half": 17.2,
+  "L": 29
+ },
+ "sweet.claude-code": {
+  "n": 32,
+  "tot": 0.421861,
+  "A": 43.5,
+  "Abp": 46.1,
+  "half": 21.8,
+  "L": 29
+ },
+ "sweet.ALL": {
+  "n": 96,
+  "tot": 0.893549,
+  "A": 37.9,
+  "Abp": 37.5,
+  "half": 18.9,
+  "L": 88
+ },
+ "native.codex": {
+  "n": 32,
+  "tot": 0.280521,
+  "A": 40.3,
+  "Abp": 36.3,
+  "half": 20.1,
+  "L": 32
+ },
+ "native.opencode": {
+  "n": 32,
+  "tot": 0.258973,
+  "A": 39.3,
+  "Abp": 39.3,
+  "half": 19.7,
+  "L": 31
+ },
+ "native.claude-code": {
+  "n": 32,
+  "tot": 0.407655,
+  "A": 46.1,
+  "Abp": 48.9,
+  "half": 23,
+  "L": 32
+ },
+ "native.ALL": {
+  "n": 96,
+  "tot": 0.947149,
+  "A": 42.5,
+  "Abp": 42.4,
+  "half": 21.3,
+  "L": 95
+ },
+ "sweetNoDegen.codex": {
+  "n": 32,
+  "tot": 0.26185,
+  "A": 31.6,
+  "Abp": 27,
+  "half": 15.8,
+  "L": 30
+ },
+ "sweetNoDegen.opencode": {
+  "n": 32,
+  "tot": 0.209838,
+  "A": 34.4,
+  "Abp": 34.4,
+  "half": 17.2,
+  "L": 29
+ },
+ "sweetNoDegen.claude-code": {
+  "n": 31,
+  "tot": 0.374662,
+  "A": 37.4,
+  "Abp": 39.7,
+  "half": 18.7,
+  "L": 28
+ },
+ "sweetNoDegen.ALL": {
+  "n": 95,
+  "tot": 0.84635,
+  "A": 34.9,
+  "Abp": 34.3,
+  "half": 17.4,
+  "L": 87
+ },
+ "fumble.codex.sweet": {
+  "turns": 0,
+  "cost": 0,
+  "pct": 0
+ },
+ "fumble.codex.native": {
+  "turns": 0,
+  "cost": 0,
+  "pct": 0
+ },
+ "fumble.opencode.sweet": {
+  "turns": 4,
+  "cost": 0.002451,
+  "pct": 1.2
+ },
+ "fumble.opencode.native": {
+  "turns": 6,
+  "cost": 0.004036,
+  "pct": 1.6
+ },
+ "fumble.claude-code.sweet": {
+  "turns": 32,
+  "cost": 0.056597,
+  "pct": 13.4
+ },
+ "fumble.claude-code.native": {
+  "turns": 15,
+  "cost": 0.028661,
+  "pct": 7
+ },
+ "meta": {
+  "rollouts": 192,
+  "gate0pass": 188,
+  "gate0fail": 0,
+  "emptyPatch": 4,
+  "degen": 2,
+  "validated": 128,
+  "maxToolInputBytes": 6166,
+  "maxOutTokNonDegen": 3929
+ }
+}
