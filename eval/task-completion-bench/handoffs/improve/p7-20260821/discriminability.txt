@@ -1,0 +1,24 @@
+rollouts=192
+final verdict never emitted: 6
+ended green on the FULL visible suite: 127
+FALSE GREEN (visible suite passed, grading failed): 56
+
+per task — falseGreen / rollouts   (a task with ANY false green is NOT locally selectable)
+  codeception__codeceptjs-367                12/12  NOT discriminable
+  joshuakgoldberg__bingo-274                 12/12  NOT discriminable
+  dashbitco__nimble_options-43               11/12  NOT discriminable
+  dart-lang__http-1114                       10/12  NOT discriminable
+  pytask-dev__pytask-210                      8/12  NOT discriminable
+  rstudio-education__gradethis-161            2/12  NOT discriminable
+  akinsho__nvim-bufferline.lua-173            1/12  NOT discriminable
+  redboltz__mqtt_cpp-466                      0/12  discriminable
+  ontodev__robot-710                          0/12  discriminable
+  mransan__ocaml-protoc-202                   0/12  discriminable
+  statamic__cms-9029                          0/12  discriminable
+  epiforecasts__scoringutils-229              0/12  discriminable
+  apple__swift-nio-http2-145                  0/12  discriminable
+  jashkenas__underscore-2757                  0/12  discriminable
+  oceanparcels__parcels-617                   0/12  discriminable
+  teleporthq__teleport-code-generators-291    0/12  discriminable
+
+tasks where the visible suite cannot reject a wrong patch: 7/16
