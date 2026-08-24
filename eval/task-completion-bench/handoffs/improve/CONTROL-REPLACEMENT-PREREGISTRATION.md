@@ -87,3 +87,29 @@ reported below, because §6 requires every candidate that reached the null arm t
 including the ones that fail — but neither is eligible for adoption whatever it returns.
 
 The gate exists and it worked. The omission was mine.
+
+---
+
+## Amendment 2 — a cost tie-break, added after seeing call counts, declared in the open
+
+§4's tie-break stops at language and golden availability. It should have included **cost**,
+because a control runs in **every** condition of **every** screen, and cost per rollout is the
+product headline.
+
+Recorded mean tool calls per rollout, over the same runs used for the ceiling evidence:
+
+| current control | calls | | candidate | calls |
+|---|---:|---|---|---:|
+| `robot-710` | 14.0 | | `dot-prop-105` | **9.0** |
+| `scoringutils-229` | 12.5 | | `zlint-299` | **10.0** |
+| `parcels-617` | 8.5 | | `final-form-64` | 19.0 |
+| | | | `unexpected-571` | **61.5** |
+| | | | `moq-1262` | **74.5** |
+
+`unexpected-571` and `moq-1262` are **5–8×** the existing controls. Adopting either would add
+more measured cost variance to every future screen than the control could ever repay.
+
+**This criterion was added after the numbers were seen and is therefore declared, not
+folded in.** It is outcome-independent: call count is not a solve or regression signal, it was
+not used to select for a favourable result, and it does not change which candidates passed the
+null arm — all five eligible candidates remain reported below.
