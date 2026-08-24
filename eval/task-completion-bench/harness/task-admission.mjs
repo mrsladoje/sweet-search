@@ -78,7 +78,12 @@ export const VACUITY_MARKERS = Object.freeze([
   [/\bPASS\b/, 'jest/tap "PASS"'],
   [/\bok\s+\d+/, 'TAP "ok N"'],
   [/✓|✔/, 'check mark'],
-  [/\(\d+(?:\.\d+)?\s*m?s\)/, 'timing "(N ms)"'],
+  // Both bracket styles: jest/mocha print `(3 ms)`, PHPUnit/pest print `[0.54 ms]`. The
+  // square form was MISSED at first and cost a real detection — `jsonmapper__jsonmapper-161`
+  // has 182 FAIL_TO_PASS entries all shaped `"... [0.54 ms]"`, the pre-screen returned no
+  // markers, and a null arm then resolved it with an empty patch. That is the screen's first
+  // MEASURED false negative, and it was caught by the authority the screen defers to.
+  [/[([]\d+(?:\.\d+)?\s*m?s[)\]]/, 'timing "(N ms)" / "[N ms]"'],
 ]);
 
 /**
