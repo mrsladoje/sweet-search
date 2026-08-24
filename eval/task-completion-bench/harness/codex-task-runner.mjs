@@ -18,7 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { recoverIdealCost, rolloutFilesForRundir, turnsFromRollout, costFromTurns, priceFor, PRICE as IDEAL_PRICE } from './ideal-cost.mjs';
 import { persistTurns } from './turn-log.mjs';
-import { runTestsTelemetry } from './rt-inflight.mjs';
+import { runTestsTelemetry, inflightInlineSource } from './rt-inflight.mjs';
 // Isolation is imported DIRECTLY (not via agent-runner-shared) because that module
 // imports this one — going through it would close an import cycle.
 import { ISOLATION_ON, startJail, stopJail, jailArgv, jailEnv, jailDenials, rolloutStateDir } from './agent-jail.mjs';
@@ -235,11 +235,12 @@ export function writeRunTestsShim(binDir, {
     // D-6: the banner is written BEFORE the request, so a yielded cell is never empty; and a
     // call made while an earlier launch is still in flight attaches to it instead of queueing
     // a second suite. See rt-inflight.mjs for why a prompt sentence could not do this.
-    writeFileSync(mjs, `import { writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
-import {
-  RUNNING_BANNER, ATTACH_NOTE, NO_VERDICT_NOTE,
-  findInflight, markInflight, clearInflight, readVerdict, newRunId,
-} from ${JSON.stringify(RT_INFLIGHT_PATH)};
+    // The in-flight protocol is INLINED, never imported. This shim runs INSIDE the jail, and
+    // the jail masks the whole of <repo>/eval, so an absolute-path import of any harness
+    // module is ERR_MODULE_NOT_FOUND here — see the inline boundary note in rt-inflight.mjs.
+    // Its `node:fs` import covers writeFileSync/readFileSync/rmSync/existsSync, so this shim
+    // must not declare its own or the duplicate binding is a SyntaxError.
+    writeFileSync(mjs, `${inflightInlineSource()}
 const IPC = ${JSON.stringify(reqDir)};
 const tSec = ${Number(testTimeoutSec) || 300};
 const waitSec = 2 * tSec + 120;                          // baseline + current suite + overhead
@@ -287,12 +288,12 @@ process.stdout.write(NO_VERDICT_NOTE(waitSec));
   // to it and returns its verdict instead of starting a second suite.
   const directIpc = path.join(stateDir, '_rt_inflight');
   mkdirSync(directIpc, { recursive: true });
-  writeFileSync(mjs, `import { readFileSync } from 'node:fs';
+  // Inlined for the same reason as the requester above, and for one more: this variant is
+  // reached only with isolation OFF, so a jail-resolution bug in it would never surface in a
+  // production run and would sit here until someone turned isolation off. The runtime import
+  // below stays — it is large, it has its own dependency tree, and it never runs in a jail.
+  writeFileSync(mjs, `${inflightInlineSource()}
 import { runTestsWithLevers } from ${JSON.stringify(RT_RUNTIME_PATH)};
-import {
-  RUNNING_BANNER, ATTACH_NOTE, NO_VERDICT_NOTE,
-  findInflight, markInflight, clearInflight, publishVerdict, readVerdict, newRunId,
-} from ${JSON.stringify(RT_INFLIGHT_PATH)};
 const c = JSON.parse(readFileSync(${JSON.stringify(cfg)}, 'utf8'));
 const IPC = ${JSON.stringify(directIpc)};
 const waitSec = 2 * (${Number(testTimeoutSec) || 300}) + 120;
