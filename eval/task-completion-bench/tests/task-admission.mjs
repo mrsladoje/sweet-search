@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { admissionReport, loadBlocklist } from '../harness/task-admission.mjs';
+import { admissionReport, loadBlocklist, vacuityMarkers, vacuityBlocklist } from '../harness/task-admission.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BENCH = path.resolve(HERE, '..');
@@ -102,6 +102,64 @@ console.log('\nthe gate cannot be turned off by a convenience switch:');
   const decl = pilot.split('\n').filter(l => /const TASK_BLOCKLIST\s*=/.test(l));
   assert(decl.length === 1 && !/NO_TASK_OVERRIDES/.test(decl[0]),
     'the blocklist load is not gated on NO_TASK_OVERRIDES', decl.join(' | '));
+}
+
+console.log('\nvacuity pre-screen (VACUITY-PRESCREEN-RESULTS.md):');
+{
+  // The two tasks a null arm independently proved vacuous, with their real recorded strings.
+  const MQTT = { instance_id: 'redboltz__mqtt_cpp-466',
+    FAIL_TO_PASS: JSON.stringify(['10/25 Test #10: pubsub ...........   Passed    0.68 sec']) };
+  const CMS = { instance_id: 'statamic__cms-9029',
+    FAIL_TO_PASS: ['it runs without hooks (3 ms)'] };
+  assert(vacuityMarkers(MQTT).length > 0, 'recovers mqtt_cpp-466 — the ctest success marker');
+  assert(vacuityMarkers(CMS).length > 0, 'recovers cms-9029 — the jest timing suffix');
+
+  // Negatives: ordinary FAIL_TO_PASS entries in the formats this corpus actually uses.
+  const NEGATIVES = [
+    ['pytest', ['tests/test_foo.py::test_bar']],
+    ['go', ['TestHandlerRejectsEmptyBody']],
+    ['elixir', ['test type/1 accepts :integer (NimbleOptionsTest)']],
+    ['lua busted', ['bufferline offsets the sidebar on the left']],
+    ['rust', ['parser::tests::rejects_trailing_comma']],
+  ];
+  for (const [name, f2p] of NEGATIVES) {
+    assert(vacuityMarkers({ instance_id: 'x', FAIL_TO_PASS: f2p }).length === 0,
+      `no false alarm on a ${name} test name`, JSON.stringify(vacuityMarkers({ instance_id: 'x', FAIL_TO_PASS: f2p })));
+  }
+
+  // A format it cannot read must produce NO markers. Guessing would turn a parsing
+  // problem into a validity claim, which is the failure mode of the FIRST version of
+  // this screen (1 of 2 recovered, 5 false alarms, 8 of 18 unparseable).
+  assert(vacuityMarkers({ instance_id: 'x', FAIL_TO_PASS: '{not json' }).length === 0,
+    'an unparseable FAIL_TO_PASS yields no markers rather than a guess');
+  assert(vacuityMarkers({ instance_id: 'x' }).length === 0, 'a missing FAIL_TO_PASS yields no markers');
+
+  const derived = vacuityBlocklist([MQTT, CMS, { instance_id: 'good__a-1', FAIL_TO_PASS: ['test_ok'] }]);
+  assert(Object.keys(derived).length === 2, 'only the flagged tasks become entries');
+  assert(!derived['good__a-1'], 'a clean task is not blocked');
+  assert(derived[MQTT.instance_id].reason === 'vacuous-f2p-prescreen', 'entries carry the pre-screen reason code');
+  assert(/null arm is the authority/.test(derived[MQTT.instance_id]._why),
+    'the entry states in its own evidence that it is a pre-filter, not the authority');
+  assert(derived[MQTT.instance_id].since === '2026-08-21',
+    'since records when the SIGNAL was established, not today, so a derived entry never looks fresh');
+
+  // It has to travel the SAME path as the static blocklist, or a refusal would print
+  // differently and be read differently.
+  const r = admissionReport(['good__a-1', MQTT.instance_id], derived, { explicit: true });
+  assert(r.action === 'refuse', 'naming a pre-screened task by hand is a hard stop, same as the static list');
+  const swept = admissionReport(['good__a-1', MQTT.instance_id], derived, { explicit: false });
+  assert(swept.action === 'drop' && swept.admitted.length === 1,
+    'sweeping one in shrinks the denominator, loudly');
+}
+
+console.log('\nrun-pilot wires the pre-screen into the gate:');
+{
+  const pilot = readFileSync(path.join(BENCH, 'harness/run-pilot.mjs'), 'utf8');
+  assert(/vacuityBlocklist\(selectedSpecs\)/.test(pilot), 'run-pilot derives the pre-screen from the SELECTED task specs');
+  assert(/\{ \.\.\.prescreened, \.\.\.TASK_BLOCKLIST \}/.test(pilot),
+    'the static blocklist wins a collision — a hand-written entry carries evidence a derived one cannot');
+  assert(/admissionReport\(INSTANCES, MERGED_BLOCKLIST/.test(pilot),
+    'the merged map is what the gate actually decides on');
 }
 
 rmSync(work, { recursive: true, force: true });
