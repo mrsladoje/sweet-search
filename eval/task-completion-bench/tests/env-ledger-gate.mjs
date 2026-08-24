@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { fileURLToPath } from 'node:url';
+import { brokerRequesterSource, shimFingerprintSource } from '../harness/rt-shim-text.mjs';
 import { taskConfigHash, loadLedger, preflightEnvLedger, normTestName, gradeFromReportItem, isImagePullInfra, VOLATILE_NAME_RES, vaultTarName, RT_HARNESS_FINGERPRINT } from '../harness/env-ledger.mjs';
 
 const spec = (over = {}) => ({
@@ -26,7 +27,7 @@ assert.equal(h1.length, 16);
 // the fingerprint without updating this file, so this test sat red on main for four
 // days — the same "nobody checked the grader against itself" shape as D-1. The grader
 // assertions below are what make a future silent bump fail here instead.
-assert.equal(RT_HARNESS_FINGERPRINT.version, 3);
+assert.equal(RT_HARNESS_FINGERPRINT.version, 4);
 assert.deepEqual(
   RT_HARNESS_FINGERPRINT.sources.map(({ name }) => name),
   ['rt-condense-lib.mjs', 'rt-shim-runtime.mjs', 'rt-dedup.mjs', 'rt-progress-controller.mjs']);
@@ -45,6 +46,33 @@ const changedRtHarness = {
     : source),
 };
 assert.notEqual(h1, taskConfigHash(spec(), { netLockdown: true, rtHarness: changedRtHarness }));
+
+// --- v4: the GENERATED SHIM is fingerprinted, not just the modules it calls ---
+// D2 changed the shim so that every run_tests call died inside the jail and no agent ever
+// received a verdict, and the two sides compared as ledger-identical because neither
+// rt-inflight.mjs nor the shim template was covered. These assertions are what make that
+// impossible rather than merely unlikely.
+assert.equal(RT_HARNESS_FINGERPRINT.shim.sha256,
+  createHash('sha256').update(shimFingerprintSource()).digest('hex'));
+// It must hash the REAL generated text, so the in-flight protocol is genuinely inside it.
+assert.ok(shimFingerprintSource().includes('RUNNING_BANNER'));
+assert.ok(shimFingerprintSource().includes('findInflight'));
+// ...and it must be path-independent, or every rollout would produce a unique fingerprint
+// and the ledger would be permanently stale rather than merely strict.
+assert.ok(!/\/(tmp|var)\/(folders|sweet-search-runner)/.test(shimFingerprintSource()));
+const changedShim = { ...RT_HARNESS_FINGERPRINT, shim: { ...RT_HARNESS_FINGERPRINT.shim, sha256: '0'.repeat(64) } };
+assert.notEqual(h1, taskConfigHash(spec(), { netLockdown: true, rtHarness: changedShim }));
+
+// THE REGRESSION ITSELF: the production shim variant is the BROKER REQUESTER, it runs inside
+// a jail that masks the whole of <repo>/eval, and it must therefore import node: and nothing
+// else. Asserted on the canonical text the fingerprint hashes, so the ledger rule and the
+// jail rule can never drift apart.
+{
+  const req = brokerRequesterSource({ reqDir: '/CANON/_rt_ipc', testTimeoutSec: 300 });
+  const specifiers = [...req.matchAll(/^\s*import\s[^;]*?from\s*['"]([^'"]+)['"]/gm)].map(m => m[1]);
+  assert.ok(specifiers.length > 0);
+  assert.deepEqual(specifiers.filter(x => !x.startsWith('node:')), []);
+}
 
 assert.equal(isImagePullInfra(
   'docker: Error response from daemon: unknown: failed to resolve reference; ' +

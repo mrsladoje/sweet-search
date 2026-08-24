@@ -18,7 +18,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { recoverIdealCost, rolloutFilesForRundir, turnsFromRollout, costFromTurns, priceFor, PRICE as IDEAL_PRICE } from './ideal-cost.mjs';
 import { persistTurns } from './turn-log.mjs';
-import { runTestsTelemetry, inflightInlineSource } from './rt-inflight.mjs';
+import { runTestsTelemetry } from './rt-inflight.mjs';
+import { brokerRequesterSource, directShimSource } from './rt-shim-text.mjs';
 // Isolation is imported DIRECTLY (not via agent-runner-shared) because that module
 // imports this one — going through it would close an import cycle.
 import { ISOLATION_ON, startJail, stopJail, jailArgv, jailEnv, jailDenials, rolloutStateDir } from './agent-jail.mjs';
@@ -240,37 +241,7 @@ export function writeRunTestsShim(binDir, {
     // module is ERR_MODULE_NOT_FOUND here — see the inline boundary note in rt-inflight.mjs.
     // Its `node:fs` import covers writeFileSync/readFileSync/rmSync/existsSync, so this shim
     // must not declare its own or the duplicate binding is a SyntaxError.
-    writeFileSync(mjs, `${inflightInlineSource()}
-const IPC = ${JSON.stringify(reqDir)};
-const tSec = ${Number(testTimeoutSec) || 300};
-const waitSec = 2 * tSec + 120;                          // baseline + current suite + overhead
-process.stdout.write(RUNNING_BANNER);
-const attachId = findInflight(IPC, waitSec * 1000);
-const id = attachId || newRunId();
-if (attachId) process.stdout.write(ATTACH_NOTE);
-else {
-  markInflight(IPC, id, process.argv.slice(2));
-  writeFileSync(IPC + '/req-' + id, JSON.stringify(process.argv.slice(2)));
-}
-const deadline = Date.now() + waitSec * 1000;
-const res = IPC + '/res-' + id;
-while (Date.now() < deadline) {
-  if (!attachId && existsSync(res)) {
-    const text = readFileSync(res, 'utf8');
-    try { rmSync(res, { force: true }); } catch {}
-    clearInflight(IPC, id);                              // the broker already published it
-    process.stdout.write(text);
-    process.exit(0);
-  }
-  if (attachId) {
-    const text = readVerdict(IPC, id);
-    if (text != null) { process.stdout.write(text); process.exit(0); }
-  }
-  await new Promise(r => setTimeout(r, 400));
-}
-if (!attachId) clearInflight(IPC, id);
-process.stdout.write(NO_VERDICT_NOTE(waitSec));
-`);
+    writeFileSync(mjs, brokerRequesterSource({ reqDir, testTimeoutSec }));
     const shim = path.join(binDir, 'run_tests');
     writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
     chmodSync(shim, 0o755);
@@ -292,33 +263,7 @@ process.stdout.write(NO_VERDICT_NOTE(waitSec));
   // reached only with isolation OFF, so a jail-resolution bug in it would never surface in a
   // production run and would sit here until someone turned isolation off. The runtime import
   // below stays — it is large, it has its own dependency tree, and it never runs in a jail.
-  writeFileSync(mjs, `${inflightInlineSource()}
-import { runTestsWithLevers } from ${JSON.stringify(RT_RUNTIME_PATH)};
-const c = JSON.parse(readFileSync(${JSON.stringify(cfg)}, 'utf8'));
-const IPC = ${JSON.stringify(directIpc)};
-const waitSec = 2 * (${Number(testTimeoutSec) || 300}) + 120;
-process.stdout.write(RUNNING_BANNER);
-const attachId = findInflight(IPC, waitSec * 1000);
-if (attachId) {
-  process.stdout.write(ATTACH_NOTE);
-  const deadline = Date.now() + waitSec * 1000;
-  while (Date.now() < deadline) {
-    const text = readVerdict(IPC, attachId);
-    if (text != null) { process.stdout.write(text); process.exit(0); }
-    await new Promise(r => setTimeout(r, 400));
-  }
-  process.stdout.write(NO_VERDICT_NOTE(waitSec));
-  process.exit(0);
-}
-const id = newRunId();
-markInflight(IPC, id, process.argv.slice(2));
-let out;
-try { out = runTestsWithLevers(c, { argv: process.argv.slice(2) }); }
-catch (e) { out = '[run_tests error] ' + String(e && e.message || e); }
-publishVerdict(IPC, id, out);
-clearInflight(IPC, id);
-process.stdout.write(out);
-`);
+  writeFileSync(mjs, directShimSource({ cfgPath: cfg, runtimePath: RT_RUNTIME_PATH, ipcDir: directIpc, testTimeoutSec }));
   const shim = path.join(binDir, 'run_tests');
   writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
   chmodSync(shim, 0o755);

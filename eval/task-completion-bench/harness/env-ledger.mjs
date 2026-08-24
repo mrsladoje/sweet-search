@@ -10,6 +10,7 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
+import { shimFingerprintSource } from './rt-shim-text.mjs';
 
 // Runtime test-output behavior affects whether a gold verdict transfers to a
 // pilot run just as much as image/test configuration does. Keep an ordered,
@@ -52,10 +53,33 @@ const hashSource = (name) => ({
   sha256: createHash('sha256').update(readFileSync(new URL(name, import.meta.url))).digest('hex'),
 });
 
+// THE GENERATED SHIM ITSELF (added 2026-08-24, fingerprint version 4).
+//
+// The list above hashes the modules the shim CALLS. It never hashed the shim, and it never
+// hashed the template that assembles it. D2 walked straight through that gap: it changed the
+// generated `run_tests` text so that, under the production isolation policy, every call on
+// every harness died with ERR_MODULE_NOT_FOUND and no agent ever received a verdict — and the
+// two sides of that change compared as LEDGER-IDENTICAL, because neither `rt-inflight.mjs`
+// nor `codex-task-runner.mjs` was covered.
+//
+// Hashing the generated TEXT rather than a file list is what makes this stay closed: it
+// covers the inlined in-flight protocol, the template, and any future inlining, in one rule.
+// It also avoids the obvious alternative's cost — listing `codex-task-runner.mjs` would stale
+// every gold verdict each time an unrelated line of a 58 KB adapter moved.
+//
+// The text is generated with CANONICAL placeholder paths (see rt-shim-text.mjs), so the hash
+// tracks the code and never a per-rollout temp directory. A per-rollout path would make every
+// run's fingerprint unique and the ledger permanently stale.
+const hashShimText = () => ({
+  name: 'generated run_tests shim (canonical)',
+  sha256: createHash('sha256').update(shimFingerprintSource()).digest('hex'),
+});
+
 export const RT_HARNESS_FINGERPRINT = Object.freeze({
-  version: 3,
+  version: 4,
   sources: Object.freeze(RT_HARNESS_SOURCE_NAMES.map(name => Object.freeze(hashSource(name)))),
   grader: Object.freeze(GRADER_SOURCE_NAMES.map(name => Object.freeze(hashSource(name)))),
+  shim: Object.freeze(hashShimText()),
 });
 
 // Image-resolution/authentication failures happen before a task's tests can run.
