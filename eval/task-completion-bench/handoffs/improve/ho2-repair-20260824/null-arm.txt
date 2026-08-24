@@ -1,0 +1,26 @@
+{"instance_id":"ucl__stir-1442","language":"cpp","grade":"FULL","f2pFrac":1,"f2pPass":21,"f2pTot":21,"p2pFails":0,"image":"docker.io/swerebenchv2/ucl-stir:1442-982a5f8","overridden":false,"evalError":"","ts":"2026-08-24T11:18:36.887Z","status":"gold-valid","signature":"","configHash":"558229c74bb80f1a"}
+---NULLARM---
+
+### grading via swebench (Docker, authoritative) — all reps
+[------------------------------] done 0/1 | ok 0 | mismatch 0 | error 0 | running 1[##############################] done 1/1 | ok 0 | mismatch 1 | error 0 | running 0
+JSON report written: /root/sweet-search-private/eval/task-completion-bench/results/ho2-stir-nullarm-20260824/sweet/.grade-4043451-0000-report.json
+  sweet rep0: resolved 1/1 gradeable  ids=ucl__stir-1442
+[tripwire] sweet: 0/1 patches near-identical to gold
+
+=== PILOT SUMMARY (aggregated over all reps) ===
+isolation: ON | infra+net escape attempts 0 (of which network denials 0) | answer-shaped command attempts 0 — all blocked by construction; see gold-tripwire.json for whether any answer actually landed
+sweet: resolved 1/1 task×rep (rate 100%, partial-macro 1.000)  avgCalls=0.0  ss=0  realized$0.000  CPS=$0.000
+   per-task (reps solved): stir-1442:1/1
+rows → /root/sweet-search-private/eval/task-completion-bench/results/ho2-stir-nullarm-20260824/rows.json
+=== exit=0 11:22:03Z ===
+/dev/sda1       225G  147G   69G  69% /
+---ROWS---
+[
+ {
+  "taskId": "ucl__stir-1442",
+  "arm": "sweet",
+  "calls": 0,
+  "resolved": true,
+  "patchBytes": null
+ }
+]
