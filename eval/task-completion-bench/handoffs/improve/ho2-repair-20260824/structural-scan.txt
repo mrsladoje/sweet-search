@@ -1,0 +1,4 @@
+HO2 pool size (as shipped): 200
+flagged: ucl__stir-1442
+FAIL_TO_PASS entries: 21 | carrying the ctest success marker: 21
+HO2 denominator after removal: 199

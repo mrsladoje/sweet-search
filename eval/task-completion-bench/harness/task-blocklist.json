@@ -34,6 +34,11 @@
       "reason": "vacuous-f2p",
       "_why": "RESOLVES WITH AN EMPTY PATCH, same null-arm confirmation as redboltz__mqtt_cpp-466. The null arm was discriminating rather than blanket-passing: epiforecasts__scoringutils-229 correctly came back unresolved in the same sweep. SLATE-A-RESIDUE-RESULTS.md §7.",
       "since": "2026-08-17"
+    },
+    "ucl__stir-1442": {
+      "reason": "vacuous-f2p",
+      "_why": "RESOLVES WITH AN EMPTY PATCH, and it sits inside FROZEN HELD-OUT SET 2. Found by the $0 vacuity pre-screen (VACUITY-PRESCREEN-RESULTS.md), which scanned HO2 for a COUNT only and deliberately did not read the ids; identified later from the STRUCTURAL scan alone. ALL 21 of its FAIL_TO_PASS entries are verbatim ctest SUCCESS lines - '1/67 Test  #1: test_DataSymmetriesForBins_PET_CartesianGrid ... Passed   44.20 sec' - so the list was harvested from a run in which every one of those tests already passed. Confirmed by a null arm on 2026-08-24 behind a fresh gold-FULL ledger (env-ledger/ho2-stir-repair, configHash 558229c74bb80f1a): AGENT_TIMEOUT_MS=1000, 0 tool calls, empty patch, graded RESOLVED 1/1. HO2's denominator is therefore 199, not 200. The freeze break is recorded in HO2-VALIDITY-REPAIR.md; no HO2 result, rollout, grade or per-query outcome was inspected.",
+      "since": "2026-08-24"
     }
   }
 }
