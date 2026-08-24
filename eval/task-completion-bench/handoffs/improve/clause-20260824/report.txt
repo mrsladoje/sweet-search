@@ -1,0 +1,55 @@
+=== INTEGRITY ===
+  LOST  CG   rstudio-education__gradethis-161             2/3 reps
+  LOST  CG   teleporthq__teleport-code-generators-291     2/3 reps
+  LOST  C14  codeception__codeceptjs-367                  2/3 reps
+  rollouts expected 156, lost 3  (pre-registered discard threshold: >5)
+
+=== SOLVE MATRIX (solved/reps; * = majority) ===
+task                                             NAT     C0     CG    C14   group
+akinsho__nvim-bufferline.lua-173                3/3*   3/3*   3/3*   3/3*   selection
+apple__swift-nio-http2-145                      0/3    0/3    0/3    0/3    FRESH
+codeception__codeceptjs-367                     0/3    0/3    0/3    0/2    FRESH
+dart-lang__http-1114                            0/3    0/3    0/3    0/3    FRESH
+dashbitco__nimble_options-43                    0/3    0/3    0/3    0/3    FRESH
+epiforecasts__scoringutils-229                  3/3*   3/3*   3/3*   3/3*   control
+jashkenas__underscore-2757                      3/3*   1/3    2/3*   2/3*   selection
+joshuakgoldberg__bingo-274                      0/3    0/3    0/3    0/3    FRESH
+oceanparcels__parcels-617                       3/3*   3/3*   3/3*   3/3*   control
+ontodev__robot-710                              3/3*   3/3*   3/3*   3/3*   control
+pytask-dev__pytask-210                          1/3    0/3    1/3    0/3    selection
+rstudio-education__gradethis-161                3/3*   3/3*   1/2    2/3*   selection
+teleporthq__teleport-code-generators-291        2/3*   1/3    0/2    0/3    selection
+
+=== ALL 13 ADMISSIBLE (13 tasks) ===
+cond   majority-solved   rollouts-solved      cost      $/rollout   calls/rollout
+NAT              7/13             21/39     $0.298261    $0.007648         24.3
+C0               5/13             17/39     $0.274700    $0.007044         18.0
+CG               5/13             16/37     $0.262250    $0.007088         18.0
+C14              6/13             16/38     $0.267003    $0.007026         17.3
+
+=== UNUSED-BY-SELECTION (the honest number) (8 tasks) ===
+cond   majority-solved   rollouts-solved      cost      $/rollout   calls/rollout
+NAT               3/8              9/24     $0.197036    $0.008210         24.5
+C0                3/8              9/24     $0.176266    $0.007344         18.3
+CG                3/8              9/24     $0.184297    $0.007679         19.5
+C14               3/8              9/23     $0.167126    $0.007266         17.3
+
+=== SELECTION TASKS (reported, never pooled) (5 tasks) ===
+cond   majority-solved   rollouts-solved      cost      $/rollout   calls/rollout
+NAT               4/5             12/15     $0.101225    $0.006748         23.9
+C0                2/5              8/15     $0.098434    $0.006562         17.4
+CG                2/5              7/13     $0.077953    $0.005996         15.2
+C14               3/5              7/15     $0.099877    $0.006658         17.4
+
+=== CONTROLS (3 tasks) ===
+cond   majority-solved   rollouts-solved      cost      $/rollout   calls/rollout
+NAT               3/3              9/9      $0.054208    $0.006023         19.0
+C0                3/3              9/9      $0.048452    $0.005384         14.1
+CG                3/3              9/9      $0.047871    $0.005319         13.1
+C14               3/3              9/9      $0.046210    $0.005134         13.1
+
+=== PRE-REGISTERED BAR ===
+CG:  majority 5 -> 5 (+0)  gained=[jashkenas__underscore-2757]  regressed=[rstudio-education__gradethis-161]  fresh-gains=0  cost +0.6%
+      bar: >=+2 tasks AND zero regression AND >=1 fresh gain AND cost <=+10%  ->  FAIL
+C14:  majority 5 -> 6 (+1)  gained=[jashkenas__underscore-2757]  regressed=[none]  fresh-gains=0  cost -0.2%
+      bar: >=+2 tasks AND zero regression AND >=1 fresh gain AND cost <=+10%  ->  FAIL
