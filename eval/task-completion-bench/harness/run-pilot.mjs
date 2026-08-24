@@ -35,7 +35,7 @@ import { progressRowFields, resolveProgressFlags } from './rt-progress-controlle
 import { packingTreatmentRowFields, resolvePackingTreatment } from './agent-runner-shared.mjs';
 import { assertBaseCommit, writeProvenance, verifyGolden, provenanceNote, provenanceIsFatal } from './golden-provenance.mjs';
 import { materialiseDeps } from './dep-materialise.mjs';
-import { admissionReport, loadBlocklist } from './task-admission.mjs';
+import { admissionReport, loadBlocklist, vacuityBlocklist } from './task-admission.mjs';
 import { degenerationVerdict } from './degeneration-policy.mjs';
 // HARNESS routes the agent loop through a REAL production coding agent (uncapped — runs
 // to completion) instead of the bare-API ReAct loop. All share grading/metrics + the
@@ -377,14 +377,29 @@ if (SR_MODE && !INSTANCES.length) INSTANCES = all.map(t => t.instance_id);
 // with a whole-file selection is not, so it is dropped and named instead. Either way
 // the count is printed, because a denominator that quietly shrank is its own defect.
 {
-  const adm = admissionReport(INSTANCES, TASK_BLOCKLIST,
+  // The static blocklist plus the FREE vacuity pre-screen, merged so both refusals travel
+  // one path and print one way. The pre-screen reads the selected tasks' own FAIL_TO_PASS
+  // lists: an entry carrying the test runner's success marker means the list was harvested
+  // from a green run, so an EMPTY patch grades the task resolved. It costs no container and
+  // no model call, and it would have blocked both tasks that made the control set 40%
+  // vacuous. It is a PRE-FILTER — the null arm remains the authority; see task-admission.mjs.
+  // The static list wins a collision: a hand-written entry carries evidence a derived one
+  // cannot.
+  const selectedSpecs = all.filter(t => INSTANCES.includes(t.instance_id));
+  const prescreened = vacuityBlocklist(selectedSpecs);
+  const MERGED_BLOCKLIST = { ...prescreened, ...TASK_BLOCKLIST };
+  const freshlyFlagged = Object.keys(prescreened).filter(id => !TASK_BLOCKLIST[id]);
+  if (freshlyFlagged.length) {
+    console.log(`[admission] vacuity pre-screen flagged ${freshlyFlagged.length} task(s) not on the static blocklist: ${freshlyFlagged.join(', ')}`);
+  }
+  const adm = admissionReport(INSTANCES, MERGED_BLOCKLIST,
     { explicit: INSTANCES_EXPLICIT, allow: process.env.SS_ALLOW_BLOCKED_TASKS === '1' });
   const say = (r) => `  ${r.instance_id}: ${r.reason} — ${r._why}`;
   if (adm.action === 'warn') {
     console.error(`[admission] WARNING: ${adm.blocked.length} blocked task(s) admitted by SS_ALLOW_BLOCKED_TASKS=1 — any denominator containing them is invalid:`);
     for (const r of adm.reasons) console.error(say(r));
   } else if (adm.action === 'refuse') {
-    console.error(`[admission] REFUSING TO LAUNCH — ${adm.blocked.length} explicitly named task(s) are on the validity blocklist (${BLOCKLIST_PATH}):`);
+    console.error(`[admission] REFUSING TO LAUNCH — ${adm.blocked.length} explicitly named task(s) fail the validity gate (blocklist ${BLOCKLIST_PATH}, plus the vacuity pre-screen):`);
     for (const r of adm.reasons) console.error(say(r));
     console.error('[admission] These tasks cannot measure anything. Remove them from INSTANCES, or override with SS_ALLOW_BLOCKED_TASKS=1 and never publish the denominator.');
     process.exit(1);
