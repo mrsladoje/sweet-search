@@ -61,3 +61,29 @@ this rule exists to prevent, and "we needed two" is not evidence.
 
 Every candidate that reaches the null arm is reported with its verdict, including the ones
 that fail. A shortlist that quietly drops its failures is a filtered denominator.
+
+---
+
+## Amendment 1 — a filter I should have applied, caught by the harness rather than by me
+
+**Recorded as a defect of this pre-registration, in the open, rather than repaired silently.**
+
+§3 lists three additional exclusions and omits the oldest one in the repository: the
+**selection-time task-rejection gate** (`FAIL_TO_PASS < 100`, `PASS_TO_PASS ≥ 1`). I built the
+shortlist without applying it, and run-pilot's own defence-in-depth WARN caught two of the
+eight candidates on the way into the null arm:
+
+```
+[task-gate]   google__go-github-2971:      FAIL_TO_PASS=1274 >= 100 (whole suite red at baseline)
+[task-gate]   jsonmapper__jsonmapper-161:  FAIL_TO_PASS=182  >= 100 (whole suite red at baseline)
+```
+
+A task whose whole suite is red at baseline is an especially bad control: "solving" it means
+repairing the build, so it would move for build reasons that have nothing to do with any
+change under test — the precise failure a control exists to rule out.
+
+**Both are excluded.** The shortlist is six, not eight. Their null-arm verdicts are still
+reported below, because §6 requires every candidate that reached the null arm to be reported,
+including the ones that fail — but neither is eligible for adoption whatever it returns.
+
+The gate exists and it worked. The omission was mine.
