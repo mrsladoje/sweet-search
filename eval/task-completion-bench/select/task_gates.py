@@ -30,10 +30,12 @@ with open(CONFIG_PATH) as _f:
 
 MAX_FAIL_TO_PASS = int(CONFIG["max_fail_to_pass"])
 MIN_PASS_TO_PASS = int(CONFIG["min_pass_to_pass"])
+REJECT_NAME_LOCKED = bool(CONFIG.get("reject_name_locked", False))
 
 # Machine-stable reason codes; the human string is built by format_reason().
 REASON_F2P_TOO_MANY = "fail_to_pass_ge_max"
 REASON_P2P_EMPTY = "pass_to_pass_below_min"
+REASON_NAME_LOCKED = "name_locked"
 
 
 def counts(record) -> tuple[int, int]:
@@ -55,10 +57,23 @@ def reject_reasons(record) -> list[dict]:
     if n_p2p < MIN_PASS_TO_PASS:
         out.append({"code": REASON_P2P_EMPTY, "n_fail_to_pass": n_f2p,
                     "n_pass_to_pass": n_p2p, "threshold": MIN_PASS_TO_PASS})
+    # Reads the STAMPED boolean, never a base tree. An UNSTAMPED record is
+    # not-yet-measured, never clean, so absence of the field is not a rejection here --
+    # it is reported by the stamping step instead.
+    if REJECT_NAME_LOCKED and record.get("name_locked") is True:
+        out.append({"code": REASON_NAME_LOCKED, "n_fail_to_pass": n_f2p,
+                    "n_pass_to_pass": n_p2p,
+                    "identifiers": list(record.get("name_locked_identifiers") or [])})
     return out
 
 
 def format_reason(reason: dict) -> str:
+    if reason["code"] == REASON_NAME_LOCKED:
+        idents = ", ".join(reason.get("identifiers") or []) or "(stamped, identifiers not recorded)"
+        return (f"name-locked on {idents} "
+                "(the hidden test needs an identifier the reference patch invented, the base "
+                "tree never mentions and the issue does not spell out -> measures a naming "
+                "lottery, not retrieval)")
     if reason["code"] == REASON_F2P_TOO_MANY:
         return (f"FAIL_TO_PASS={reason['n_fail_to_pass']} >= {reason['threshold']} "
                 f"(whole suite red at baseline -> measures build repair, not the bug)")
@@ -108,11 +123,13 @@ def write_rejections(out_dir: str, setname: str, rejected, extra: dict | None = 
         "set": setname,
         "gate": "select/task_gates.py",
         "thresholds": {"max_fail_to_pass": MAX_FAIL_TO_PASS,
-                       "min_pass_to_pass": MIN_PASS_TO_PASS},
+                       "min_pass_to_pass": MIN_PASS_TO_PASS,
+                       "reject_name_locked": REJECT_NAME_LOCKED},
         "n_rejected": len(rejected),
         "by_reason": {
             REASON_F2P_TOO_MANY: sum(1 for r in rejected if REASON_F2P_TOO_MANY in r["reasons"]),
             REASON_P2P_EMPTY: sum(1 for r in rejected if REASON_P2P_EMPTY in r["reasons"]),
+            REASON_NAME_LOCKED: sum(1 for r in rejected if REASON_NAME_LOCKED in r["reasons"]),
         },
         **(extra or {}),
         "rejected": sorted(rejected, key=lambda r: r["instance_id"] or ""),
@@ -134,6 +151,16 @@ def _self_test() -> int:
     print("task_gates self-test:")
     check(MAX_FAIL_TO_PASS == 100 and MIN_PASS_TO_PASS == 1,
           f"thresholds load from task-gates.json (F2P<{MAX_FAIL_TO_PASS}, P2P>={MIN_PASS_TO_PASS})")
+    check(REJECT_NAME_LOCKED is True, "name-lock rejection is enabled in task-gates.json")
+
+    healthy = {"instance_id": "a", "FAIL_TO_PASS": ["t"], "PASS_TO_PASS": ["u"]}
+    check(passes(healthy), "an UNSTAMPED record is not rejected -- absent means not-yet-measured")
+    check(passes({**healthy, "name_locked": False}), "a stamped-clean record passes")
+    locked = {**healthy, "name_locked": True, "name_locked_identifiers": ["isFile"]}
+    check(not passes(locked), "a stamped name-locked record is rejected")
+    check(reject_reasons(locked)[0]["code"] == REASON_NAME_LOCKED, "it carries the name_locked code")
+    check("isFile" in format_reason(reject_reasons(locked)[0]),
+          "the rejection names the identifier that locks it")
 
     # raw-row shape
     check(passes({"instance_id": "a", "FAIL_TO_PASS": ["t"], "PASS_TO_PASS": ["u"]}),

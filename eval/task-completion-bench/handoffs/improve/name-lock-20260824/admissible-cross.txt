@@ -1,0 +1,5 @@
+pool                      18
+name-locked in pool       4 -> dart-lang__http-1114, mransan__ocaml-protoc-202, litestar-org__polyfactory-405, joshuakgoldberg__bingo-274
+admissible                13
+name-locked & admissible  2 -> dart-lang__http-1114, joshuakgoldberg__bingo-274
+measurable                11

@@ -12,9 +12,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  GATE_CONFIG_PATH, REASON_F2P_TOO_MANY, REASON_P2P_EMPTY,
+  GATE_CONFIG_PATH, REASON_F2P_TOO_MANY, REASON_P2P_EMPTY, REASON_NAME_LOCKED,
   auditTaskSet, gateViolations, loadGateConfig, taskCounts, warnOnGateViolations,
+  nameLockCensusOf, reportNameLockCensus,
 } from '../harness/task-gates.mjs';
+import { nameLockFor, NOISE } from '../select/name-lock.mjs';
+import { mkdirSync } from 'node:fs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PY_GATE = path.resolve(HERE, '../select/task_gates.py');
@@ -111,6 +114,84 @@ console.log('\nunreadable config degrades safely:');
   assert(gateViolations({ FAIL_TO_PASS: Array(999).fill('t') }, null).length === 0,
     'gateViolations with no config returns [] rather than throwing');
   rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('\nname-lock: the rule');
+{
+  // A materialized "base tree" with a small vocabulary, so "invented" is decidable here.
+  const base = mkdtempSync(path.join(tmpdir(), 'name-lock-base-'));
+  mkdirSync(path.join(base, 'src'), { recursive: true });
+  writeFileSync(path.join(base, 'src', 'readFile.ts'), 'export function readFile(p) { return p; }\n');
+
+  const locked = nameLockFor({
+    problem_statement: 'The library should be able to tell whether a path is a file.',
+    patch: 'diff --git a/src/isFile.ts b/src/isFile.ts\n+export function isFile(p) { return true; }\n',
+    test_patch: 'diff --git a/src/isFile.test.ts b/src/isFile.test.ts\n+import { isFile } from "./isFile.js";\n+expect(isFile("x")).toBe(true);\n',
+  }, base);
+  assert(locked.nameLocked, 'an identifier the test needs, the fix invents and the base never mentions IS a lock');
+  assert(locked.locked.includes('isFile'), 'the locking identifier is named', JSON.stringify(locked.locked));
+  assert(locked.relImports.includes('./isFile.js'),
+    'a relative module import is reported — the FILE name is locked too, a stronger lock than a symbol');
+
+  // The clause that separates a real lock from a spelled-out request. gradethis-161 solves
+  // 2/2 everywhere and still shows an invented identifier, because the issue hands it over.
+  const spelledOut = nameLockFor({
+    problem_statement: 'Please add an `isFile` helper that returns true for regular files.',
+    patch: 'diff --git a/src/isFile.ts b/src/isFile.ts\n+export function isFile(p) { return true; }\n',
+    test_patch: 'diff --git a/src/isFile.test.ts b/src/isFile.test.ts\n+import { isFile } from "./isFile.js";\n',
+  }, base);
+  assert(!spelledOut.nameLocked, 'an identifier the ISSUE spells out is not a lock');
+
+  const alreadyThere = nameLockFor({
+    problem_statement: 'fix the reader',
+    patch: 'diff --git a/src/readFile.ts b/src/readFile.ts\n+export function readFile(p) { return p + 1; }\n',
+    test_patch: 'diff --git a/t.ts b/t.ts\n+expect(readFile("x")).toBe("x1");\n',
+  }, base);
+  assert(!alreadyThere.nameLocked, 'an identifier the base tree already contains is not invented');
+
+  const plainWord = nameLockFor({
+    problem_statement: 'trailing commas should be rejected',
+    patch: 'diff --git a/a.ts b/a.ts\n+const comma = 1;\n',
+    test_patch: 'diff --git a/b.ts b/b.ts\n+expect(comma).toBe(1);\n',
+  }, base);
+  assert(!plainWord.nameLocked, 'a one-word English noun is not an API name');
+  assert(NOISE.has('describe') && NOISE.has('expect'),
+    'test-framework vocabulary is noise — without it every task would look locked');
+  rmSync(base, { recursive: true, force: true });
+}
+
+console.log('\nname-lock: the gate reads the STAMP, never a base tree');
+{
+  const cfg = loadGateConfig();
+  assert(cfg && cfg.rejectNameLocked === true, 'reject_name_locked is on in task-gates.json');
+  const healthy = { instance_id: 'a', FAIL_TO_PASS: ['t'], PASS_TO_PASS: ['u'] };
+  assert(gateViolations(healthy).length === 0,
+    'an UNSTAMPED record is NOT rejected — absent means not-yet-measured, and treating it as clean is the error this avoids');
+  assert(gateViolations({ ...healthy, name_locked: false }).length === 0, 'a stamped-clean record passes');
+  const v = gateViolations({ ...healthy, name_locked: true, name_locked_identifiers: ['isFile'] });
+  assert(v.length === 1 && v[0].code === REASON_NAME_LOCKED, 'a stamped-locked record is rejected');
+  assert(/isFile/.test(v[0].detail), 'the rejection names the identifier that locks it');
+}
+
+console.log('\nname-lock: the reported statistic');
+{
+  const set = [
+    { instance_id: 'a', name_locked: false },
+    { instance_id: 'b', name_locked: true },
+    { instance_id: 'c' },
+  ];
+  const c = nameLockCensusOf(set);
+  assert(c.total === 3 && c.stamped === 2 && c.unstamped === 1 && c.locked === 1,
+    'stamped, unstamped and locked are counted separately', JSON.stringify(c));
+  assert(c.lockedIds.join() === 'b', 'the locked task is named');
+  const lines = [];
+  reportNameLockCensus(set, { log: l => lines.push(l) });
+  assert(lines.length === 1 && /1\/2/.test(lines[0]) && /1 unstamped/.test(lines[0]),
+    'the census line reports the rate over STAMPED tasks and says how many are unmeasured', lines.join('|'));
+  const none = [];
+  reportNameLockCensus([{ instance_id: 'x' }], { log: l => none.push(l) });
+  assert(none.length === 1 && /UNSTAMPED/.test(none[0]) && /never clean/.test(none[0]),
+    'a wholly unstamped set says so rather than reporting 0%', none.join('|'));
 }
 
 console.log(ok ? '\nALL PASS' : '\nFAILED');

@@ -19,15 +19,16 @@ export const GATE_CONFIG_PATH = path.resolve(HERE, '../select/task-gates.json');
 
 export const REASON_F2P_TOO_MANY = 'fail_to_pass_ge_max';
 export const REASON_P2P_EMPTY = 'pass_to_pass_below_min';
+export const REASON_NAME_LOCKED = 'name_locked';
 
-/** @returns {{maxFailToPass:number,minPassToPass:number}|null} null = config unreadable */
+/** @returns {{maxFailToPass:number,minPassToPass:number,rejectNameLocked:boolean}|null} */
 export function loadGateConfig(configPath = GATE_CONFIG_PATH) {
   try {
     const cfg = JSON.parse(readFileSync(configPath, 'utf8'));
     const maxFailToPass = Number(cfg.max_fail_to_pass);
     const minPassToPass = Number(cfg.min_pass_to_pass);
     if (!Number.isFinite(maxFailToPass) || !Number.isFinite(minPassToPass)) return null;
-    return { maxFailToPass, minPassToPass };
+    return { maxFailToPass, minPassToPass, rejectNameLocked: cfg.reject_name_locked === true };
   } catch { return null; }
 }
 
@@ -55,6 +56,14 @@ export function gateViolations(spec, config = loadGateConfig()) {
     out.push({ code: REASON_P2P_EMPTY, f2p, p2p, threshold: config.minPassToPass,
       detail: `PASS_TO_PASS=${p2p} < ${config.minPassToPass} (nothing passes at baseline)` });
   }
+  // Reads the STAMPED boolean, never a base tree — deciding "invented" needs a materialized
+  // checkout and gold, which belong at recruitment (select/stamp-name-lock.mjs), not here.
+  // An UNSTAMPED record is not-yet-measured, never clean, so `undefined` is not a violation.
+  if (config.rejectNameLocked && spec?.name_locked === true) {
+    const idents = (spec.name_locked_identifiers || []).join(', ') || '(stamped, identifiers not recorded)';
+    out.push({ code: REASON_NAME_LOCKED, f2p, p2p,
+      detail: `name-locked on ${idents} (the hidden test needs an identifier the reference patch invented, the base tree never mentions and the issue does not spell out — measures a naming lottery, not retrieval)` });
+  }
   return out;
 }
 
@@ -81,10 +90,45 @@ export function warnOnGateViolations(specs, { log = console.error, config = load
   const rows = auditTaskSet(specs, config);
   if (!rows.length) return rows;
   log(`[task-gate] WARNING: ${rows.length}/${(specs || []).length} loaded task(s) would be REJECTED by the `
-    + `selection gate (FAIL_TO_PASS<${config.maxFailToPass}, PASS_TO_PASS>=${config.minPassToPass}). `
-    + `This set predates the gate; the run continues, but these tasks measure build repair, not bug fixing.`);
+    + `selection gate (FAIL_TO_PASS<${config.maxFailToPass}, PASS_TO_PASS>=${config.minPassToPass}`
+    + `${config.rejectNameLocked ? ', not name-locked' : ''}). `
+    + `This set predates the gate; the run continues, but these tasks measure build repair or a naming lottery, not bug fixing.`);
   for (const row of rows) {
     log(`[task-gate]   ${row.instance_id}: ${row.violations.map(v => v.detail).join('; ')}`);
   }
   return rows;
+}
+
+/**
+ * The NAME-LOCK census over a loaded set, as a reported statistic.
+ *
+ * Separate from `gateViolations` on purpose: a locked task is a rejection, but the count of
+ * UNSTAMPED tasks is the number this set cannot answer the question for, and conflating the
+ * two would let "we never measured it" read as "it is clean". Both are printed.
+ */
+export function nameLockCensusOf(specs = []) {
+  const stamped = specs.filter(s => s && s.name_locked !== undefined);
+  const locked = stamped.filter(s => s.name_locked === true);
+  return {
+    total: specs.length,
+    stamped: stamped.length,
+    unstamped: specs.length - stamped.length,
+    locked: locked.length,
+    lockedIds: locked.map(s => s.instance_id),
+  };
+}
+
+/** One line of census, for a run's header. Never throws, never aborts. */
+export function reportNameLockCensus(specs, { log = console.log } = {}) {
+  const c = nameLockCensusOf(specs);
+  if (!c.total) return c;
+  if (!c.stamped) {
+    log(`[name-lock] ${c.total} task(s) UNSTAMPED — this set predates the census; run select/stamp-name-lock.mjs to measure it. Unstamped is not-yet-measured, never clean.`);
+    return c;
+  }
+  const pct = ((100 * c.locked) / c.stamped).toFixed(1);
+  log(`[name-lock] ${c.locked}/${c.stamped} stamped task(s) are naming lotteries (${pct}%)`
+    + `${c.unstamped ? `, ${c.unstamped} unstamped` : ''}`
+    + `${c.locked ? `: ${c.lockedIds.join(', ')}` : ''}`);
+  return c;
 }

@@ -26,7 +26,7 @@ import { shimVerdict } from './shim-policy.mjs';
 import { gradeFromReportItem, loadLedger, preflightEnvLedger, vaultTarName } from './env-ledger.mjs';
 import { createEvaluatorRuntime } from './evaluator-runtime.mjs';
 import { ISOLATION_ON, jailPreflight, guardStatus, DENY_LOG } from './agent-jail.mjs';
-import { warnOnGateViolations } from './task-gates.mjs';
+import { warnOnGateViolations, reportNameLockCensus } from './task-gates.mjs';
 import { RT_DEDUP_ON } from './rt-dedup.mjs';
 import { ensureGuard } from './egress-guard.mjs';
 import { scanPredictions } from './gold-tripwire.mjs';
@@ -224,12 +224,17 @@ async function loadTasks() {
       const dropped = new Set(excluded.map(s => s.instance_id));
       const remaining = specs.filter(s => !dropped.has(s.instance_id));
       warnOnGateViolations(remaining);
+      reportNameLockCensus(remaining);
       return remaining;
     }
     // Defense in depth for the selection-time task-rejection gate: WARN (never
     // refuse) if this set carries a task the gate would reject. Sets frozen before
     // 2026-07-30 predate the gate and must stay runnable.
     warnOnGateViolations(specs);
+    // The name-lock census is a REPORTED STATISTIC on every run, separate from the gate
+    // above: a naming lottery is noise no number of reps removes, so a run needs to say how
+    // much of its denominator is one. An unstamped set says "unmeasured", never "0%".
+    reportNameLockCensus(specs);
     return specs;
   }
   if (existsSync(CACHE)) return JSON.parse(readFileSync(CACHE, 'utf8'));
