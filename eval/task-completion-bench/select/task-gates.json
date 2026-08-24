@@ -34,8 +34,29 @@
     "verified-passing baseline test gives the grader no regression signal at all,",
     "and because rejection is CHEAP: the gate runs against a ~19k-task pool, so a",
     "rejected candidate is simply replaced by the next draw of the same seeded",
-    "shuffle. It costs pool size, never set size."
+    "shuffle. It costs pool size, never set size.",
+    "",
+    "reject_name_locked = true  (added 2026-08-24)",
+    "  A task is NAME-LOCKED when its hidden test imports an identifier that the",
+    "  reference patch INVENTED, that the base tree never mentions, and that the issue",
+    "  text does not spell out. An agent that produces a functionally identical fix",
+    "  under any other name FAILS, so the task measures a naming lottery and no",
+    "  analyzer, index, ranking change or certificate can close the gap.",
+    "    joshuakgoldberg__bingo-274  hidden test: import { isFile } from './isFile.js'",
+    "    dart-lang__http-1114        hidden test: response.headersSplitValues",
+    "  Both flip at NO hint level, a full prose specification of the required",
+    "  behaviour included, and a 20x-larger backbone buys 0/10 on one of them",
+    "  (HINT-LADDER-RESULTS.md). 4 of the 18 current rotation tasks are locked.",
+    "",
+    "  UNLIKE the two rules above, this one cannot be computed from the task record",
+    "  alone: deciding 'invented' needs the BASE TREE. So it is computed once at",
+    "  RECRUITMENT by select/stamp-name-lock.mjs, which needs gold and a materialized",
+    "  checkout, and STAMPED into the record as `name_locked`. Everything downstream",
+    "  reads the stamped boolean, which keeps this gate metadata-only and outcome-blind",
+    "  exactly like the other two. An UNSTAMPED task is never rejected: absence of the",
+    "  field means not-yet-measured, never clean."
   ],
   "max_fail_to_pass": 100,
-  "min_pass_to_pass": 1
+  "min_pass_to_pass": 1,
+  "reject_name_locked": true
 }
