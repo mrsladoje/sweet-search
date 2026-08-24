@@ -1,0 +1,736 @@
+{
+  "task": "codeception__codeceptjs-367",
+  "rows": [
+    {
+      "label": "BASE (no patch)",
+      "resolved": null,
+      "apply": "empty patch",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see"
+        ],
+        "allOwn": [
+          "click",
+          "see"
+        ],
+        "perName": {
+          "say": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "comment": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "remark": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "FAIL",
+        "why": "say is not on the actor at all"
+      }
+    },
+    {
+      "label": "codex/native/r0",
+      "resolved": false,
+      "apply": "git apply -p1",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see"
+        ],
+        "allOwn": [
+          "click",
+          "see"
+        ],
+        "perName": {
+          "say": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "comment": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "remark": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "FAIL",
+        "why": "say is not on the actor at all"
+      }
+    },
+    {
+      "label": "codex/sweet/r0",
+      "resolved": false,
+      "apply": "git apply -p1",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see"
+        ],
+        "allOwn": [
+          "click",
+          "see"
+        ],
+        "perName": {
+          "say": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "comment": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "remark": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "FAIL",
+        "why": "say is not on the actor at all"
+      }
+    },
+    {
+      "label": "codex/native/r1",
+      "resolved": false,
+      "apply": "git apply -p1",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see"
+        ],
+        "allOwn": [
+          "click",
+          "see"
+        ],
+        "perName": {
+          "say": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "comment": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "remark": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "FAIL",
+        "why": "say is not on the actor at all"
+      }
+    },
+    {
+      "label": "codex/sweet/r1",
+      "resolved": false,
+      "apply": "git apply -p1",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see"
+        ],
+        "allOwn": [
+          "click",
+          "see"
+        ],
+        "perName": {
+          "say": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "comment": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "remark": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "FAIL",
+        "why": "say is not on the actor at all"
+      }
+    },
+    {
+      "label": "opencode/native/r0",
+      "resolved": false,
+      "apply": "git apply -p1",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see"
+        ],
+        "allOwn": [
+          "click",
+          "see"
+        ],
+        "perName": {
+          "say": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "comment": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "remark": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "FAIL",
+        "why": "say is not on the actor at all"
+      }
+    },
+    {
+      "label": "opencode/sweet/r0",
+      "resolved": false,
+      "apply": "git apply -p1",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see"
+        ],
+        "allOwn": [
+          "click",
+          "see"
+        ],
+        "perName": {
+          "say": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "comment": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "remark": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "FAIL",
+        "why": "say is not on the actor at all"
+      }
+    },
+    {
+      "label": "opencode/native/r1",
+      "resolved": false,
+      "apply": "git apply -p1",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see"
+        ],
+        "allOwn": [
+          "say",
+          "click",
+          "see"
+        ],
+        "perName": {
+          "say": {
+            "present": true,
+            "enumerable": false,
+            "onActor": true,
+            "deferred": true,
+            "immediateBytes": 0,
+            "callError": null
+          },
+          "comment": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "remark": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "FAIL",
+        "why": "say is on the actor but NOT enumerable"
+      }
+    },
+    {
+      "label": "opencode/sweet/r1",
+      "resolved": false,
+      "apply": "git apply -p1",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see"
+        ],
+        "allOwn": [
+          "comment",
+          "click",
+          "see"
+        ],
+        "perName": {
+          "say": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "comment": {
+            "present": true,
+            "enumerable": false,
+            "onActor": true,
+            "deferred": true,
+            "immediateBytes": 0,
+            "callError": null
+          },
+          "remark": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "FAIL",
+        "why": "say is not on the actor at all"
+      }
+    },
+    {
+      "label": "claudecode/native/r0",
+      "resolved": false,
+      "apply": "git apply -p1",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see"
+        ],
+        "allOwn": [
+          "click",
+          "see",
+          "say",
+          "comment",
+          "remark"
+        ],
+        "perName": {
+          "say": {
+            "present": true,
+            "enumerable": false,
+            "onActor": true,
+            "deferred": true,
+            "immediateBytes": 0,
+            "callError": null
+          },
+          "comment": {
+            "present": true,
+            "enumerable": false,
+            "onActor": true,
+            "deferred": true,
+            "immediateBytes": 0,
+            "callError": null
+          },
+          "remark": {
+            "present": true,
+            "enumerable": false,
+            "onActor": true,
+            "deferred": true,
+            "immediateBytes": 0,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "FAIL",
+        "why": "say is on the actor but NOT enumerable"
+      }
+    },
+    {
+      "label": "claudecode/sweet/r0",
+      "resolved": false,
+      "apply": "git apply -p1",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see"
+        ],
+        "allOwn": [
+          "click",
+          "see"
+        ],
+        "perName": {
+          "say": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "comment": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "remark": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "FAIL",
+        "why": "say is not on the actor at all"
+      }
+    },
+    {
+      "label": "claudecode/native/r1",
+      "resolved": false,
+      "apply": "git apply -p1",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see"
+        ],
+        "allOwn": [
+          "click",
+          "see",
+          "comment",
+          "remark"
+        ],
+        "perName": {
+          "say": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "comment": {
+            "present": true,
+            "enumerable": false,
+            "onActor": true,
+            "deferred": true,
+            "immediateBytes": 0,
+            "callError": null
+          },
+          "remark": {
+            "present": true,
+            "enumerable": false,
+            "onActor": true,
+            "deferred": true,
+            "immediateBytes": 0,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "FAIL",
+        "why": "say is not on the actor at all"
+      }
+    },
+    {
+      "label": "claudecode/sweet/r1",
+      "resolved": false,
+      "apply": "git apply -p1",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see"
+        ],
+        "allOwn": [
+          "click",
+          "see"
+        ],
+        "perName": {
+          "say": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "comment": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "remark": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "FAIL",
+        "why": "say is not on the actor at all"
+      }
+    },
+    {
+      "label": "GOLD (reference fix)",
+      "resolved": true,
+      "apply": "git apply -p1",
+      "cert": {
+        "ok": true,
+        "error": null,
+        "enumerable": [
+          "click",
+          "see",
+          "say"
+        ],
+        "allOwn": [
+          "click",
+          "see",
+          "say"
+        ],
+        "perName": {
+          "say": {
+            "present": true,
+            "enumerable": true,
+            "onActor": true,
+            "deferred": true,
+            "immediateBytes": 0,
+            "callError": null
+          },
+          "comment": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          },
+          "remark": {
+            "present": false,
+            "enumerable": null,
+            "onActor": false,
+            "deferred": null,
+            "immediateBytes": null,
+            "callError": null
+          }
+        },
+        "helperMethods": [
+          "click",
+          "see"
+        ]
+      },
+      "surface": {
+        "verdict": "PASS",
+        "why": "say: on the actor, enumerable, queued, silent at call time"
+      }
+    }
+  ],
+  "derivability": {
+    "baseOccurrences": 1,
+    "baseSamples": [
+      "lib/output.js:89:  say: (message) => {"
+    ],
+    "publicOutputPrimitive": true,
+    "alsoIntroducedByGold": true
+  }
+}

@@ -1,0 +1,10 @@
+cells                : 12
+cells that RESOLVED  : 0
+cells passing surface: 0
+BASE passes surface  : false
+GOLD passes surface  : true
+trees separated correctly: 14 / 14
+present (name,tree) pairs: 8
+  distinct enumerable values: false,true
+  distinct deferred values  : true
+  distinct bytes-at-call    : 0

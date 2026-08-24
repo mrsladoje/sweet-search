@@ -1,0 +1,42 @@
+================================================================================================
+P6 BEHAVIOURAL CERTIFICATE — codeception__codeceptjs-367
+
+target                    resolved  surface  say / comment / remark  (present · enumerable · deferred · bytes-at-call)
+BASE (no patch)           null      FAIL     say=absent  comment=absent  remark=absent
+codex/native/r0           false     FAIL     say=absent  comment=absent  remark=absent
+codex/sweet/r0            false     FAIL     say=absent  comment=absent  remark=absent
+codex/native/r1           false     FAIL     say=absent  comment=absent  remark=absent
+codex/sweet/r1            false     FAIL     say=absent  comment=absent  remark=absent
+opencode/native/r0        false     FAIL     say=absent  comment=absent  remark=absent
+opencode/sweet/r0         false     FAIL     say=absent  comment=absent  remark=absent
+opencode/native/r1        false     FAIL     say=[enum:false defer:true bytes:0]  comment=absent  remark=absent
+opencode/sweet/r1         false     FAIL     say=absent  comment=[enum:false defer:true bytes:0]  remark=absent
+claudecode/native/r0      false     FAIL     say=[enum:false defer:true bytes:0]  comment=[enum:false defer:true bytes:0]  remark=[enum:false defer:true bytes:0]
+claudecode/sweet/r0       false     FAIL     say=absent  comment=absent  remark=absent
+claudecode/native/r1      false     FAIL     say=absent  comment=[enum:false defer:true bytes:0]  remark=[enum:false defer:true bytes:0]
+claudecode/sweet/r1       false     FAIL     say=absent  comment=absent  remark=absent
+GOLD (reference fix)      true      PASS     say=[enum:true defer:true bytes:0]  comment=absent  remark=absent
+
+------------------------------------------------------------------------------------------------
+PRE-REGISTERED PREDICTIONS
+
+P6-1 non-enumerable aliases observed as present-but-not-enumerable : 4 cell(s)
+       opencode/native/r1 resolved=false
+       opencode/sweet/r1 resolved=false
+       claudecode/native/r0 resolved=false
+       claudecode/native/r1 resolved=false
+P6-2 comment absent from the actor                                 : 9/12 evaluable cell(s)
+P6-3 the reference fix passes the surface check                    : YES
+     the unfixed base tree fails it                               : YES
+P6-4 certificate agrees with the grader                           : 12/12 evaluable cell(s)
+
+------------------------------------------------------------------------------------------------
+KILL CONDITION — can the public name be derived without grader-only facts?
+
+  occurrences of "say" in the BASE tree (lib/bin/docs, no tests)  : 1
+  present as a public output primitive in lib/output.js           : true
+      lib/output.js:89:  say: (message) => {
+
+  KILL FIRES: no — the name is in the base tree
+
+wrote /root/w0-p6-certificate.json
