@@ -2,7 +2,7 @@
 // Exercises the ACTUAL artifacts installCommandWrappers/writeRunTestsShim generate,
 // against a FAKE docker binary (no daemon, no API spend). `node tests/rt-integration.mjs`.
 import { execFileSync, execSync, spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, chmodSync, readFileSync, appendFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, chmodSync, readFileSync, appendFileSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
@@ -123,6 +123,29 @@ console.log('== P3 runner state: out-of-tree broker + in-memory baseline ==');
   writeFileSync(path.join(stateDir, '_rt_cache.json'), '{}');
   const stateExtras = verifyRunnerDirectoryIntegrity({ binDir, expectedFiles: info.files, stateDir });
   assert(stateExtras.includes('_rt_cache.json (unexpected runner state)'), 'injected runner-root state feeds tamper detection');
+
+  // D-6 markers vs. the emptiness rule. `publishVerdict` RETAINS verdict-<id> on purpose,
+  // so a later run_tests call can attach to a run whose requester died and still be told
+  // the answer. The first live rollout after the D2 repair came back SHIM-TAMPERED with
+  // four of them; preflight was green for that too, because it never runs the shim.
+  // Whitelisting must not weaken the property the check exists for.
+  const ipcProbe = path.join(stateDir, '_rt_ipc');
+  mkdirSync(ipcProbe, { recursive: true });
+  writeFileSync(path.join(ipcProbe, 'verdict-1787565862399-91hajg'), 'x');
+  writeFileSync(path.join(ipcProbe, 'inflight-1787565862399-91hajg'), '{}');
+  const withMarkers = verifyRunnerDirectoryIntegrity({ binDir, expectedFiles: info.files, stateDir });
+  assert(!withMarkers.some(x => x.startsWith('_rt_ipc/verdict-')), 'a retained D-6 verdict copy is NOT tamper evidence');
+  assert(!withMarkers.some(x => x.startsWith('_rt_ipc/inflight-')), 'a D-6 in-flight marker is NOT tamper evidence');
+  writeFileSync(path.join(ipcProbe, 'res-orphan'), 'undelivered');
+  writeFileSync(path.join(ipcProbe, 'req-orphan'), '[]');
+  const withOrphans = verifyRunnerDirectoryIntegrity({ binDir, expectedFiles: info.files, stateDir });
+  assert(withOrphans.includes('_rt_ipc/res-orphan (unexpected)'), 'an UNDELIVERED response still flags — the agent never saw it');
+  assert(withOrphans.includes('_rt_ipc/req-orphan (unexpected)'), 'an UNCONSUMED request still flags');
+  // Clear the probe files: the real broker starts below and would otherwise serve
+  // req-orphan as a genuine request and run an extra suite.
+  for (const n of ['verdict-1787565862399-91hajg', 'inflight-1787565862399-91hajg', 'res-orphan', 'req-orphan']) {
+    rmSync(path.join(ipcProbe, n), { force: true });
+  }
 
   // Exercise the generated host broker itself. First invocation runs current+clean
   // (2 docker calls); the second reuses the in-memory clean baseline (1 call).
