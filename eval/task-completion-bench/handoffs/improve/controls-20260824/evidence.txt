@@ -1,0 +1,18 @@
+{"instance_id":"sindresorhus__dot-prop-105","language":"js","grade":"FULL","f2pFrac":1,"f2pPass":1,"f2pTot":1,"p2pFails":0,"image":"docker.io/swerebenchv2/sindresorhus-dot-prop:105-7cfa81f","overridden":false,"evalError":"","ts":"2026-08-24T12:29:59.086Z","status":"gold-valid","signature":"","configHash":"4327164ad740acf3"}
+{"instance_id":"unexpectedjs__unexpected-571","language":"js","grade":"FULL","f2pFrac":1,"f2pPass":6,"f2pTot":6,"p2pFails":0,"image":"docker.io/swerebenchv2/unexpectedjs-unexpected:571-72b1397","overridden":false,"evalError":"","ts":"2026-08-24T12:29:59.087Z","status":"gold-valid","signature":"","configHash":"50a31daceb63f874"}
+{"instance_id":"keichi__binary-parser-202","language":"ts","grade":"FULL","f2pFrac":1,"f2pPass":70,"f2pTot":70,"p2pFails":0,"image":"docker.io/swerebenchv2/keichi-binary-parser:202-e776857","overridden":false,"evalError":"","ts":"2026-08-24T12:30:35.817Z","status":"gold-valid","signature":"","configHash":"50ee7cc72f6ba393"}
+{"instance_id":"final-form__final-form-64","language":"ts","grade":"FULL","f2pFrac":1,"f2pPass":1,"f2pTot":1,"p2pFails":0,"image":"docker.io/swerebenchv2/final-form-final-form:64-449955e","overridden":false,"evalError":"","ts":"2026-08-24T12:30:35.817Z","status":"gold-valid","signature":"","configHash":"7ad080605add4b75"}
+{"instance_id":"jsonmapper__jsonmapper-161","language":"php","grade":"FULL","f2pFrac":1,"f2pPass":182,"f2pTot":182,"p2pFails":0,"image":"docker.io/swerebenchv2/jsonmapper-jsonmapper:161-4bbee99","overridden":false,"evalError":"","ts":"2026-08-24T12:31:45.846Z","status":"gold-valid","signature":"","configHash":"b462ca2230c7d316"}
+{"instance_id":"devlooped__moq-1262","language":"csharp","grade":"FULL","f2pFrac":1,"f2pPass":1,"f2pTot":1,"p2pFails":0,"image":"docker.io/swerebenchv2/devlooped-moq:1262-6c7e7a1","overridden":false,"evalError":"","ts":"2026-08-24T12:31:45.846Z","status":"gold-valid","signature":"","configHash":"afbb5634b8a92246"}
+{"instance_id":"google__go-github-2971","language":"go","grade":"FULL","f2pFrac":1,"f2pPass":1274,"f2pTot":1274,"p2pFails":0,"image":"docker.io/swerebenchv2/google-go-github:2971-eea6e0a","overridden":false,"evalError":"","ts":"2026-08-24T12:32:49.133Z","status":"gold-valid","signature":"","configHash":"9f2356669c781959"}
+{"instance_id":"zmap__zlint-299","language":"go","grade":"FULL","f2pFrac":1,"f2pPass":2,"f2pTot":2,"p2pFails":0,"image":"docker.io/swerebenchv2/zmap-zlint:299-9971d62","overridden":false,"evalError":"","ts":"2026-08-24T12:32:49.134Z","status":"gold-valid","signature":"","configHash":"5e6798a1dbf32d8d"}
+---NULLARM-1---
+   per-task (reps solved): go-github-2971:0/1 zlint-299:0/1 unexpected-571:0/1 jsonmapper-161:1/1
+---NULLARM-2---
+   per-task (reps solved): dot-prop-105:0/1 binary-parser-202:0/1 final-form-64:0/1 moq-1262:0/1
+---UNGRADEABLE---
+[grade] keichi__binary-parser-202: NO TEST EVIDENCE — zero-test-results; row marked ungradeable instead of scored f2pFrac=0 (exit=1, log=logs/keichi__binary-parser-202_log.txt)
+  sweet rep0: *** NO TEST EVIDENCE on 1 task(s): keichi__binary-parser-202 — marked UNGRADEABLE, not scored zero ***
+---GATE WARN---
+[task-gate]   jsonmapper__jsonmapper-161: FAIL_TO_PASS=182 >= 100 (whole suite red at baseline)
+[task-gate]   google__go-github-2971: FAIL_TO_PASS=1274 >= 100 (whole suite red at baseline)
