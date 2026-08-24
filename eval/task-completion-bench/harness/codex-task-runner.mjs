@@ -424,7 +424,21 @@ export function verifyRunnerDirectoryIntegrity({ binDir, expectedFiles = [], sta
     }
     const ipcDir = path.join(stateDir, '_rt_ipc');
     try {
-      for (const name of readdirSync(ipcDir)) tampered.push(`_rt_ipc/${name} (unexpected)`);
+      for (const name of readdirSync(ipcDir)) {
+        // D-6 leaves two kinds of marker here BY DESIGN, and they are harness-written, not
+        // agent-written, so they are not tamper evidence:
+        //   verdict-<id>   a durable copy of a completed run's output, deliberately retained
+        //                  so a later run_tests call can attach to a run whose requester was
+        //                  killed mid-wait and still be given the answer;
+        //   inflight-<id>  ownership of a run still going, swept by ttl.
+        // Whitelisting them keeps the property this check exists for: an unconsumed req-,
+        // res- or tmp- file still means the agent never received an answer it asked for,
+        // and still flags. This was found by the FIRST live rollout after the D2 repair —
+        // every rollout came back SHIM-TAMPERED with four verdict- entries. Preflight was
+        // green for that too; it does not run the shim.
+        if (/^(verdict|inflight)-/.test(name)) continue;
+        tampered.push(`_rt_ipc/${name} (unexpected)`);
+      }
     } catch {
       tampered.push('_rt_ipc (deleted)');
     }
