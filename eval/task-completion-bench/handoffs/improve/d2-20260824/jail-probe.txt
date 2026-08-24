@@ -1,0 +1,13 @@
+ISOLATION_ON=true
+jail up: initPid=4041525
+
+harness dir listing from inside the jail: readdir failed: ENOENT
+repo root listing from inside the jail:   43 entries
+eval/ listing from inside the jail:       1 entries
+
+rt-shim-runtime.mjs      read=NOT READABLE (ENOENT)    import=IMPORT FAILED (ERR_MODULE_NOT_FOUND)
+                         imported by the DIRECT shim variant (isolation OFF) and by the host-side broker
+rt-inflight.mjs          read=NOT READABLE (ENOENT)    import=IMPORT FAILED (ERR_MODULE_NOT_FOUND)
+                         the import D2 adds to the BROKER REQUESTER, which runs INSIDE the jail
+rt-condense-lib.mjs      read=NOT READABLE (ENOENT)    import=IMPORT FAILED (ERR_MODULE_NOT_FOUND)
+                         control: another harness module, same directory

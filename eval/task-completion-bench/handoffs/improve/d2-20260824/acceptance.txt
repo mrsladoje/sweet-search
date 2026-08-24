@@ -1,0 +1,84 @@
+
+=== d2-accept-opencode-20260824 — 4 trace file(s) mentioning run_tests ===
+  dashbitco__nimble_options-43           sweet   calls=16   resolved=false  rtLaunched=3 rtVerdicts=3 rtNoVerdict=0 rtEndedUnverified=false
+  verdict LINES (real results)      : 6
+  banner quotes of the marker       : 9   (never a result)
+  running banners emitted           : 9
+  ERR_MODULE_NOT_FOUND occurrences  : 0
+
+=== d2-accept-claudecode-20260824 — 3 trace file(s) mentioning run_tests ===
+  dashbitco__nimble_options-43           sweet   calls=10   resolved=true   rtLaunched=1 rtVerdicts=1 rtNoVerdict=0 rtEndedUnverified=false
+  verdict LINES (real results)      : 2
+  banner quotes of the marker       : 3   (never a result)
+  running banners emitted           : 3
+  ERR_MODULE_NOT_FOUND occurrences  : 0
+
+=== d2-accept-codex-20260824 — 2 trace file(s) mentioning run_tests ===
+  dashbitco__nimble_options-43           sweet   calls=0    resolved=false  rtLaunched=0 rtVerdicts=0 rtNoVerdict=0 rtEndedUnverified=false
+  verdict LINES (real results)      : 0
+  banner quotes of the marker       : 0   (never a result)
+  running banners emitted           : 0
+  ERR_MODULE_NOT_FOUND occurrences  : 0
+
+[
+ {
+  "dir": "d2-accept-opencode-20260824",
+  "verdictLines": 6,
+  "banners": 9,
+  "modErrs": 0,
+  "rows": [
+   {
+    "taskId": "dashbitco__nimble_options-43",
+    "arm": "sweet",
+    "harness": "opencode",
+    "resolved": false,
+    "rtLaunched": 3,
+    "rtVerdicts": 3,
+    "rtNoVerdict": 0,
+    "rtEndedUnverified": false,
+    "calls": 16,
+    "status": null
+   }
+  ]
+ },
+ {
+  "dir": "d2-accept-claudecode-20260824",
+  "verdictLines": 2,
+  "banners": 3,
+  "modErrs": 0,
+  "rows": [
+   {
+    "taskId": "dashbitco__nimble_options-43",
+    "arm": "sweet",
+    "harness": "claudecode",
+    "resolved": true,
+    "rtLaunched": 1,
+    "rtVerdicts": 1,
+    "rtNoVerdict": 0,
+    "rtEndedUnverified": false,
+    "calls": 10,
+    "status": null
+   }
+  ]
+ },
+ {
+  "dir": "d2-accept-codex-20260824",
+  "verdictLines": 0,
+  "banners": 0,
+  "modErrs": 0,
+  "rows": [
+   {
+    "taskId": "dashbitco__nimble_options-43",
+    "arm": "sweet",
+    "harness": "codex",
+    "resolved": false,
+    "rtLaunched": 0,
+    "rtVerdicts": 0,
+    "rtNoVerdict": 0,
+    "rtEndedUnverified": false,
+    "calls": 0,
+    "status": null
+   }
+  ]
+ }
+]
