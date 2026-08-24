@@ -111,6 +111,47 @@ export function newRunId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// ============================ INLINE BOUNDARY ============================
+// Everything ABOVE this line is inlined VERBATIM into the generated `run_tests` shim by
+// `inflightInlineSource()` below. Nothing above it may import anything but a `node:` builtin.
+//
+// WHY THE SHIM INLINES RATHER THAN IMPORTS (2026-08-24; the D2 deployment that was reverted).
+// Under the production isolation policy `agent-jail.mjs` masks the whole of `<repo>/eval`,
+// so EVERY file in this directory is ENOENT inside the jail — reproduced with a real
+// rollout's binds by `handoffs/improve/phase1-scripts/d2-jail-import-probe.mjs`. The shim
+// that runs in production is the BROKER REQUESTER, and before D2 it imported nothing but
+// `node:fs`, which is why it never noticed. D2 gave it an absolute-path import of this file
+// and every `run_tests` call on every harness died with ERR_MODULE_NOT_FOUND — silently,
+// because the agent just never received a verdict. Preflight stayed green throughout: it
+// validates that a gold grade transfers, and it never executes the shim.
+//
+// Inlining removes the dependency instead of widening the jail, so the shim is immune to
+// the mount policy. `tests/rt-inflight.mjs` asserts the requester imports `node:` and
+// nothing else, which is the regression that would otherwise ship silently again.
+// =========================================================================
+// Below the boundary, so the inlined shim text never carries an import it does not use.
+import { fileURLToPath } from 'node:url';
+
+const INLINE_BOUNDARY = '// ============================ INLINE BOUNDARY ====';
+
+/**
+ * This module's own source down to the inline boundary, with the `export` keywords removed,
+ * ready to be prepended to a generated shim. Reading the real file keeps ONE definition of
+ * the in-flight protocol: a copy pasted into the shim template would drift.
+ */
+export function inflightInlineSource() {
+  const src = readFileSync(fileURLToPath(import.meta.url), 'utf8');
+  const cut = src.indexOf(INLINE_BOUNDARY);
+  if (cut < 0) throw new Error('rt-inflight.mjs: inline boundary marker missing — the shim would be generated empty');
+  const body = src.slice(0, cut).replace(/^export /gm, '');
+  // A non-builtin import above the boundary is the exact defect this exists to prevent, and
+  // it must fail at shim-generation time on the host, not at run_tests time inside the jail.
+  for (const m of body.matchAll(/^\s*import\s[^;]*?from\s*['"]([^'"]+)['"]/gm)) {
+    if (!m[1].startsWith('node:')) throw new Error(`rt-inflight.mjs: "${m[1]}" is imported above the inline boundary; the shim cannot resolve it inside the jail`);
+  }
+  return body;
+}
+
 /**
  * D-6 ROW TELEMETRY (HANDOFF-SLATE-A-RESIDUE §3.G.2).
  *
