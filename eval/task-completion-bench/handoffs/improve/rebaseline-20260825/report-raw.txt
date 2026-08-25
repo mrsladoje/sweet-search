@@ -1,0 +1,57 @@
+=== INTEGRITY ===
+  rollouts 156 expected, 156 recorded, 0 lost (void threshold: >8)
+
+===== OPENCODE =====
+task                                         native  sweet
+akinsho__nvim-bufferline.lua-173               3/3*    3/3*
+apple__swift-nio-http2-145                     0/3     0/3 
+codeception__codeceptjs-367                    0/3     0/3 
+dart-lang__http-1114                           0/3     0/3 
+dashbitco__nimble_options-43                   0/3     0/3 
+epiforecasts__scoringutils-229                 3/3*    3/3*
+jashkenas__underscore-2757                     3/3*    1/3 
+joshuakgoldberg__bingo-274                     0/3     0/3 
+oceanparcels__parcels-617                      3/3*    3/3*
+ontodev__robot-710                             3/3*    3/3*
+pytask-dev__pytask-210                         2/3*    0/3 
+rstudio-education__gradethis-161               1/3     2/3*
+teleporthq__teleport-code-generators-291       1/3     2/3*
+------------------------------------------------------------
+rollouts solved     native 19/39      sweet 17/39     delta -2
+tasks majority      native 6/13       sweet 6/13
+tasks where an arm solved MORE reps:  sweet 2  native 2  tied 9
+cost (fully loaded) native $0.339494  sweet $0.330117
+$/rollout           native $0.008705  sweet $0.008465   -2.8%
+calls/rollout       native 26.2          sweet 20.1
+
+PRE-REGISTERED RULE: |delta| = 2; bar is >=6 rollouts.
+  -> NO MEASURABLE RESOLUTION DIFFERENCE. Cost-per-solved is NOT reported, by pre-registration.
+  paired sign test over tasks: 2 sweet-better vs 2 native-better, two-sided p ~ 1.000
+
+===== CLAUDE-CODE =====
+task                                         native  sweet
+akinsho__nvim-bufferline.lua-173               3/3*    2/3*
+apple__swift-nio-http2-145                     1/3     0/3 
+codeception__codeceptjs-367                    0/3     0/3 
+dart-lang__http-1114                           0/3     0/3 
+dashbitco__nimble_options-43                   0/3     0/3 
+epiforecasts__scoringutils-229                 3/3*    3/3*
+jashkenas__underscore-2757                     1/3     0/3 
+joshuakgoldberg__bingo-274                     0/3     0/3 
+oceanparcels__parcels-617                      3/3*    3/3*
+ontodev__robot-710                             3/3*    3/3*
+pytask-dev__pytask-210                         0/3     1/3 
+rstudio-education__gradethis-161               2/3*    3/3*
+teleporthq__teleport-code-generators-291       2/3*    1/3 
+------------------------------------------------------------
+rollouts solved     native 18/39      sweet 16/39     delta -2
+tasks majority      native 6/13       sweet 5/13
+tasks where an arm solved MORE reps:  sweet 2  native 4  tied 7
+cost (fully loaded) native $0.375889  sweet $0.502952   [sidechains: native $0.151535 sweet $0.000000]
+$/rollout           native $0.009638  sweet $0.012896   +33.8%
+calls/rollout       native 40.1          sweet 17.9
+
+PRE-REGISTERED RULE: |delta| = 2; bar is >=6 rollouts.
+  -> NO MEASURABLE RESOLUTION DIFFERENCE. Cost-per-solved is NOT reported, by pre-registration.
+  paired sign test over tasks: 2 sweet-better vs 4 native-better, two-sided p ~ 0.688
+
