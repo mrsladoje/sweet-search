@@ -19,9 +19,23 @@ but only after repairing a cost ledger that was null on 51% of native's rollouts
 |---|---|---:|---|---:|---:|
 | opencode | 17/39 v 19/39 | −2 | 6/13 v 6/13 | `$0.008465` v `$0.008705` | **−2.8%** |
 | claude-code | 16/39 v 18/39 | −2 | 5/13 v 6/13 | `$0.012896` v `$0.019620` | **−34.3%** |
+| codex | 16/39 v 20/39 | −4 | 5/13 v 7/13 | `$0.010236` v `$0.010836` | **−5.5%** |
 
-**Both deltas are −2 against a pre-registered bar of 6.** Paired sign test over the 13 tasks:
-opencode 2 sweet-better v 2 native-better, **p ≈ 1.000**; claude-code 2 v 4, **p ≈ 0.688**.
+**All three deltas are below the pre-registered bar of 6.** Paired sign test over the 13
+tasks: opencode 2 sweet-better v 2 native-better, **p ≈ 1.000**; claude-code 2 v 4,
+**p ≈ 0.688**; codex **0 v 4**, **p ≈ 0.125**.
+
+**Pooled, and labelled post-hoc because the bar was set per harness:** sweet **49/117** v
+native **57/117**, delta **−8**; **4 task-cells sweet-better against 10 native-better**,
+25 tied, two-sided sign test **p = 0.180**.
+
+**The fair summary is therefore not "identical".** No harness reaches significance and the
+pool does not either, but every harness is negative and 10 of 14 discordant task-cells favour
+native. **Sweet is at parity or slightly behind on resolution.** Claiming a tie would be as
+much of an overstatement as claiming a loss.
+
+**`underscore` is native-better on all three harnesses** — 1v3, 0v1, 2v3. It is the single
+most consistent loss in the corpus, and P2 (the lever built for it) died at `$0`.
 
 **Cost per solved task is NOT reported, by pre-registration.** The solve counts do not clear
 the bar, and the flipping denominator is exactly what invalidated the previous figures.
@@ -80,8 +94,16 @@ is sweet-better on both; `teleport` is sweet-better on opencode and native-bette
 
 ## 5. Not covered, and why
 
-**Codex was excluded deliberately.** Its subscription refresh token was spent on 2026-08-06,
-so D2 is unproven there and any codex evidence would carry the yield-before-completion defect
-this run exists to clear. It needs an interactive `codex login`, then a separate run reported
-separately. The last codex figure we have (sweet 15/26 v native 14/26, −16.1% per solved) is
-from the retired dataset and should not be quoted.
+**Codex was added on 2026-08-25 and needed no login.** The earlier claim that it required an
+interactive `codex login` was wrong: OpenRouter is codex's DEFAULT path and
+`CODEX_SUBSCRIPTION=1` is what opts into the ChatGPT one. The only blocker was `REASONING`
+defaulting to `'standard'`, a value the Responses API rejects (valid: max/xhigh/high/medium/
+low/minimal/none). 78 rollouts, 0 lost, `$0.822`.
+
+Note codex's call counts are not comparable across harnesses — it packs several shell
+operations into one envelope, so 9.9 sweet v 10.2 native there is not the same measurement as
+opencode's 20.1 v 26.2.
+
+The retired codex figure (sweet 15/26 v native 14/26, −16.1% per solved) came from the
+2026-08-11 dataset and is superseded: on repaired conditions codex is sweet **16/39 v 20/39**,
+its worst resolution result of the three.

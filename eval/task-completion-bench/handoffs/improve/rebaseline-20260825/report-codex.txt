@@ -1,0 +1,30 @@
+=== INTEGRITY ===
+  rollouts 156 expected, 78 recorded, 0 lost (void threshold: >8)
+
+===== CODEX =====
+task                                         native  sweet
+akinsho__nvim-bufferline.lua-173               3/3*    3/3*
+apple__swift-nio-http2-145                     0/3     0/3 
+codeception__codeceptjs-367                    0/3     0/3 
+dart-lang__http-1114                           0/3     0/3 
+dashbitco__nimble_options-43                   0/3     0/3 
+epiforecasts__scoringutils-229                 3/3*    3/3*
+jashkenas__underscore-2757                     3/3*    2/3*
+joshuakgoldberg__bingo-274                     0/3     0/3 
+oceanparcels__parcels-617                      3/3*    3/3*
+ontodev__robot-710                             3/3*    3/3*
+pytask-dev__pytask-210                         1/3     0/3 
+rstudio-education__gradethis-161               2/3*    1/3 
+teleporthq__teleport-code-generators-291       2/3*    1/3 
+------------------------------------------------------------
+rollouts solved     native 20/39      sweet 16/39     delta -4
+tasks majority      native 7/13       sweet 5/13
+tasks where an arm solved MORE reps:  sweet 0  native 4  tied 9
+cost (fully loaded) native $0.422599  sweet $0.399196
+$/rollout           native $0.010836  sweet $0.010236   -5.5%
+calls/rollout       native 10.2          sweet 9.9
+
+PRE-REGISTERED RULE: |delta| = 4; bar is >=6 rollouts.
+  -> NO MEASURABLE RESOLUTION DIFFERENCE. Cost-per-solved is NOT reported, by pre-registration.
+  paired sign test over tasks: 0 sweet-better vs 4 native-better, two-sided p ~ 0.125
+
