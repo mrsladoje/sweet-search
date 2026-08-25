@@ -1,0 +1,39 @@
+
+===== CODEX =====
+task                                                  TAB         PIPE         NONE  native(ref)
+jashkenas__underscore-2757                            2/3          3/3          3/3          3/3
+pytask-dev__pytask-210                                0/3          0/3          2/3          1/3
+rstudio-education__gradethis-161                      1/3          3/3          2/3          2/3
+teleporthq__teleport-code-generators-291              1/3          1/3          0/3          2/3
+ontodev__robot-710                                    3/3          3/3          3/3          3/3  <- control
+epiforecasts__scoringutils-229                        3/3          3/3          3/3          3/3  <- control
+TAB            total 10/18  controls 6/6  $/roll $0.008915   gutter[tab=6862 pipe=0]  ANCHOR-FAILURES 0/0 edits
+PIPE           total 13/18  controls 6/6  $/roll $0.008958   gutter[tab=0 pipe=6368]  ANCHOR-FAILURES 0/0 edits
+NONE           total 13/18  controls 6/6  $/roll $0.008749   gutter[tab=0 pipe=0]  ANCHOR-FAILURES 0/0 edits
+native(ref)    total 14/18  controls 6/6  $/roll $0.009575
+
+===== OPENCODE =====
+task                                                  TAB         PIPE         NONE  native(ref)
+jashkenas__underscore-2757                            1/3          3/3          2/3          3/3
+pytask-dev__pytask-210                                0/3          3/3          1/3          2/3
+rstudio-education__gradethis-161                      2/3          2/3          2/3          1/3
+teleporthq__teleport-code-generators-291              2/3          0/3          0/3          1/3
+ontodev__robot-710                                    3/3          3/3          3/3          3/3  <- control
+epiforecasts__scoringutils-229                        3/3          3/3          3/3          3/3  <- control
+TAB            total 11/18  controls 6/6  $/roll $0.006537   gutter[tab=5933 pipe=0]  ANCHOR-FAILURES 3/32 edits
+PIPE           total 14/18  controls 6/6  $/roll $0.006736   gutter[tab=0 pipe=6995]  ANCHOR-FAILURES 2/33 edits
+NONE           total 11/18  controls 6/6  $/roll $0.006327   gutter[tab=0 pipe=0]  ANCHOR-FAILURES 3/29 edits
+native(ref)    total 13/18  controls 6/6  $/roll $0.007454
+
+===== CLAUDE-CODE =====
+task                                                  TAB         PIPE         NONE  native(ref)
+jashkenas__underscore-2757                            0/3          0/3          0/3          1/3
+pytask-dev__pytask-210                                1/3          2/3          1/3          0/3
+rstudio-education__gradethis-161                      3/3          2/3          2/3          2/3
+teleporthq__teleport-code-generators-291              1/3          2/3          1/3          2/3
+ontodev__robot-710                                    3/3          3/3          3/3          3/3  <- control
+epiforecasts__scoringutils-229                        3/3          3/3          3/3          3/3  <- control
+TAB            total 11/18  controls 6/6  $/roll $0.011080   gutter[tab=8355 pipe=0]  ANCHOR-FAILURES 1/63 edits
+PIPE           total 12/18  controls 6/6  $/roll $0.010726   gutter[tab=92 pipe=8740]  ANCHOR-FAILURES 8/105 edits
+NONE           total 10/18  controls 6/6  $/roll $0.010052   gutter[tab=168 pipe=0]  ANCHOR-FAILURES 8/71 edits
+native(ref)    total 11/18  controls 6/6  $/roll $0.006450
