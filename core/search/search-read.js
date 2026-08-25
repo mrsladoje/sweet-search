@@ -663,7 +663,14 @@ export function lineGutterEnabled(opts = {}) {
 // (`%6d`), which is what was tried and rejected for miscalibrating edit
 // wrapping (Claude Code #36654). The number here stays unpadded, so the prefix
 // width still varies with digit count exactly as `N| ` did.
-export const GUTTER_DELIMITER = '\t';
+// A/B ESCAPE HATCH (2026-08-25). `SS_READ_GUTTER=pipe` restores the pre-116ca2b `N| `
+// delimiter. The tab was adopted on measured claude-code evidence — 20 anchor failures
+// against native's 0 — but codex was never re-measured on it, and codex edits through
+// `apply_patch` context hunks rather than exact-string anchors, which is a different
+// interaction entirely. Default is unchanged; this exists so the question is answerable
+// without editing files mid-run. numberCodeLines and stripCodeLineNumbers both read this
+// constant, so the round-trip stays exact under either setting.
+export const GUTTER_DELIMITER = process.env.SS_READ_GUTTER === 'pipe' ? '| ' : '\t';
 
 export function numberCodeLines(text, startLine = 1) {
   if (!text) return text;
