@@ -247,27 +247,70 @@ export function addSidechainCosts(mainCosts, sidechainCosts) {
   return out;
 }
 
-/** Inclusive cost is unavailable when any delegated transcript is incomplete. */
+/**
+ * Inclusive cost is unavailable when any delegated transcript is incomplete.
+ *
+ * WHY THE NULLS ALSO NEED A LOWER BOUND (2026-08-25)
+ * -------------------------------------------------
+ * Failing closed is right: an under-charge that favours one arm is the one error a cost
+ * benchmark must never make, so `costRealizedUsd` and friends stay null rather than
+ * publishing a number that omits delegated spend.
+ *
+ * But nulls are a trap for whoever reads `rows.json` next, because subagent use is
+ * ARM-ASYMMETRIC. Measured on `rb-claudecode-20260824`: 20 of 39 NATIVE rollouts are null
+ * and 0 of 39 sweet ones, because sweet spawned no subagents at all. Summing the column
+ * treats every null as `$0`, which charged native for barely half its rollouts and reported
+ * sweet as **124% more expensive** when a full reconstruction says **34% cheaper**. A sign
+ * flip, from a column that was behaving exactly as designed.
+ *
+ * The gap is not a rare dropped request either: across the 21 sidechain transcripts in that
+ * run, **105 of 302 delegated assistant messages (34.8%) carry no usage record at all**, and
+ * *every* file is incomplete.
+ *
+ * So the nulls stay — nobody may quote a precise inclusive figure — and alongside them we
+ * publish what IS known: main plus every delegated turn that did report usage. That is a
+ * genuine LOWER bound on inclusive cost, it is labelled as one, and it cannot silently be
+ * mistaken for the real total the way a null summed as zero can.
+ */
 export function addSidechainCostsChecked(mainCosts, sideSets, price) {
-  const incomplete = (sideSets || [])
+  const sets = sideSets || [];
+  const incomplete = sets
     .filter(set => !set.instrumentationComplete || !set.turns?.length)
     .map(set => set.name);
   if (incomplete.length) {
+    // Every delegated turn that DID report usage. Priced the same way as the main
+    // transcript, so the bound is comparable to the columns it stands in for.
+    const measured = sets
+      .filter(set => set.turns?.length)
+      .reduce((sum, set) => sum + (costsFromTurns(set.turns, price).costRealizedUsd || 0), 0);
+    const missingRequests = sets.reduce(
+      (sum, set) => sum + Math.max(0, (set.assistantMessages || 0) - (set.usageMessages || 0)), 0);
+    const mainReal = mainCosts.costRealizedUsd ?? null;
     return {
       ...mainCosts,
-      costRealizedMainOnlyUsd: mainCosts.costRealizedUsd ?? null,
+      costRealizedMainOnlyUsd: mainReal,
       idealCostMainOnlyUsd: mainCosts.idealCostUsd ?? null,
       breakPricedCostMainOnlyUsd: mainCosts.breakPricedCostUsd ?? null,
       costRealizedUsd: null, idealCostUsd: null, realFromTurnsUsd: null,
       breakPricedCostUsd: null, costNaiveUsd: null, costContentUsd: null,
       contextRewrites: null, idealTurns: null, costSidechainUsd: null,
-      sidechainCount: sideSets.length,
+      // main + measured delegated turns. A LOWER bound, never the total.
+      costRealizedLowerBoundUsd: mainReal == null ? null : +(mainReal + measured).toFixed(6),
+      costSidechainMeasuredUsd: +measured.toFixed(6),
+      sidechainMissingRequests: missingRequests,
+      sidechainCount: sets.length,
       sidechainAccountingComplete: false,
       incompleteSidechains: incomplete,
     };
   }
+  const full = addSidechainCosts(mainCosts, sets.map(set => costsFromTurns(set.turns, price)));
   return {
-    ...addSidechainCosts(mainCosts, sideSets.map(set => costsFromTurns(set.turns, price))),
+    ...full,
+    // Present on both paths so a consumer never has to branch on key existence. When the
+    // accounting IS complete the bound and the total are the same number.
+    costRealizedLowerBoundUsd: full.costRealizedUsd ?? null,
+    costSidechainMeasuredUsd: full.costSidechainUsd ?? 0,
+    sidechainMissingRequests: 0,
     sidechainAccountingComplete: true,
     incompleteSidechains: [],
   };

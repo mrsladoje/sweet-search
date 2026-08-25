@@ -432,6 +432,33 @@ assert(incompleteTotal.sidechainAccountingComplete === false
   'an incomplete sidechain makes inclusive cost unavailable instead of $0/partial',
   JSON.stringify(incompleteTotal));
 
+// A null inclusive cost is correct but it is ALSO a trap: subagent use is arm-asymmetric,
+// so summing the column treats every native null as $0 and can flip the sign of a headline.
+// The lower bound has to be present, labelled, and never mistakable for the total.
+const boundCase = addSidechainCostsChecked(mainCosts, [
+  { name: 'agent-partial.jsonl', turns: [{ in: 1000, cached: 0, out: 100 }],
+    instrumentationComplete: false, assistantMessages: 5, usageMessages: 3 },
+], price);
+assert(boundCase.costRealizedUsd === null,
+  'the inclusive total stays null when a delegated transcript is incomplete');
+assert(boundCase.costRealizedLowerBoundUsd != null
+    && boundCase.costRealizedLowerBoundUsd > (mainCosts.costRealizedUsd ?? 0),
+  'a labelled LOWER BOUND is published alongside the nulls, and it exceeds main-only',
+  JSON.stringify({ bound: boundCase.costRealizedLowerBoundUsd, main: mainCosts.costRealizedUsd }));
+assert(boundCase.sidechainMissingRequests === 2,
+  'the count of delegated requests with no usage record is reported',
+  String(boundCase.sidechainMissingRequests));
+assert(boundCase.costSidechainMeasuredUsd > 0,
+  'the measured part of delegated spend is reported separately from the unknown part');
+
+// The same keys must exist on the COMPLETE path, so a consumer never branches on presence.
+const completeChecked = addSidechainCostsChecked(mainCosts, sets, price);
+assert('costRealizedLowerBoundUsd' in completeChecked && 'sidechainMissingRequests' in completeChecked
+    && completeChecked.sidechainMissingRequests === 0
+    && completeChecked.costRealizedLowerBoundUsd === completeChecked.costRealizedUsd,
+  'complete accounting carries the same keys, with bound === total',
+  JSON.stringify({ b: completeChecked.costRealizedLowerBoundUsd, t: completeChecked.costRealizedUsd }));
+
 // Turn-log reader must retain cache-write accounting. Use the existing temp root
 // rather than the benchmark results tree.
 const turnLogPath = join(ROOT, 'turns.jsonl');
