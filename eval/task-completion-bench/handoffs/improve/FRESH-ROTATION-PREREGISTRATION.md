@@ -62,3 +62,61 @@ outcome either way is written up.
   than run a thin pool.
 - More than 8 of 225 rollouts lost per harness after the re-run pass.
 - Any harness or engine change landing mid-run.
+
+---
+
+## AMENDMENT 1 — 2026-08-26, after the pre-registered VOID and before any rollout
+
+**The first attempt voided itself as designed**: 17 of 25 tasks survived the gold sweep
+against a floor of 18. No rollout was spent. Three things changed before relaunching, all
+recorded before data exists.
+
+### A. The pool was screened wrong, and it is now screened properly
+
+**7 of the 25 tranche-1 tasks fail run-pilot's own selection gate** (`FAIL_TO_PASS < 100`,
+`PASS_TO_PASS >= 1`) — they are whole-suite-red build repairs, not bug fixes. My screen
+omitted that gate. Adding it leaves **13 clean tasks from tranche 1**, and a second tranche
+of 13 gate-passing candidates is being swept to reach a **~20-task pool**.
+
+The full screen is now: gold-FULL under v4 · selection gate · not vacuity-flagged · not
+name-locked · issue > 200 chars · unused in any prior rotation · ≤2 per language.
+
+### B. Every ss-* code surface is now numbered, so `TAB` here is NOT the old `TAB`
+
+`ss-search`, `ss-find` and `ss-semantic` were writing code **raw** while `ss-read` numbered
+(`_ss-helpers.mjs`). That is **27–36% of delivered code lines unnumbered, with 5–10% of edits
+anchoring on them** — the agent was being handed two formats for one job. All three now go
+through the shared `numberCodeLines`.
+
+**Consequence, stated plainly: this run's `TAB` arm is not comparable to any earlier `TAB`
+number.** It is a new baseline, not a continuation. Nothing from the six-task run may be
+pooled with it.
+
+### C. Three forms, not two
+
+`TAB` (shipped), `NONE` (cheapest; no gutter anywhere), `PIPE` (`N| `, the form that produced
+the +3 that started this). `PIPE` is included **because that +3 was never significance-tested
+and is Fisher p ≈ 0.49 at n=18** — it is here to be killed or confirmed at n≈60 per condition,
+not because anyone expects it to win.
+
+Native runs once per harness; it never calls `ss-*`, so no form can touch it.
+
+### D. Revised scale and the corrected earlier claim
+
+3 harnesses × (3 sweet forms + native) × ~20 tasks × 3 reps ≈ **720 rollouts, ≈ `$7`,
+~18 hours** at concurrency 2, staged one harness at a time so results are readable as they
+land and a failure does not consume the budget.
+
+**A correction that invalidates part of the earlier analysis:** the cross-harness census
+never counted codex edits at all — its codex branch has no edit detection
+(`gutter-cross-report.mjs:40` is opencode, `:49` is claude-code). The reported "codex 0/0
+edits, `apply_patch` has no string anchor" was **the instrument not looking**, and the
+per-harness delimiter recommendation built on it is withdrawn. Codex does fail edits, at a
+rate comparable to the other harnesses. The census counter is replaced before this run is read.
+
+### E. Bars unchanged
+
+`PIPE − TAB` and `NONE − TAB` each need **≥ +6 solved rollouts of ~60** with no control
+regression. Sweet-vs-native superiority needs the same margin. Cost is reported per rollout,
+sidechain-inclusive, and **is a primary outcome here** — the stated objective is highest
+resolution at lowest cost, and the gutter is a resident-context cost that is re-sent every turn.

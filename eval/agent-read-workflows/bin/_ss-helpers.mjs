@@ -24,6 +24,7 @@ import {
   renderGrepBody,
 } from '../../../core/search/grep-output-shaping.js';
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
+import { numberCodeLines, lineGutterEnabled } from '../../../core/search/search-read.js';
 import { renderRegexDialectHint } from '../../../core/search/regex-dialect.js';
 import {
   applyReadOmissionDecisions,
@@ -58,6 +59,19 @@ function shortQueryHash(q) {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
+
+// EVERY code block the ss-* wrappers hand the agent goes through the SAME gutter as
+// `ss-read`. It used not to: `ss-search`, `ss-find` and `ss-semantic` wrote `r.code` and
+// `span.text` raw while `ss-read` numbered, so 27-36% of delivered code lines arrived
+// unnumbered and 5-10% of edits anchored on them. A model that has to strip a prefix on
+// some blocks and not others is being handed two formats for one job.
+//
+// `search-server.js` and `search-read-semantic.js` already number on the daemon path; this
+// closes the CLI path so the two agree.
+function gutter(text, startLine) {
+  return (lineGutterEnabled() && text) ? numberCodeLines(text, startLine || 1) : text;
+}
+
 
 // Resident-daemon cap for bench fan-outs. Daemon sockets are keyed per project
 // root, so a multi-repo replay never reuses one: search-read-replay --execute-current
@@ -437,7 +451,7 @@ async function cmdFind(rawArgs) {
       process.stdout.write(`### imports\n\`\`\`\n${r.headerContext}\n\`\`\`\n`);
     }
     if (r.code) {
-      process.stdout.write(`\`\`\`\n${r.code}\n\`\`\`\n`);
+      process.stdout.write(`\`\`\`\n${gutter(r.code, r.startLine)}\n\`\`\`\n`);
     } else if (r.summary) {
       process.stdout.write(`${r.summary}\n`);
     }
@@ -728,7 +742,7 @@ async function cmdAgentSearch(rawArgs) {
       process.stdout.write(`### imports\n\`\`\`\n${r.headerContext}\n\`\`\`\n`);
     }
     if (r.code) {
-      process.stdout.write(`\`\`\`\n${r.code}\n\`\`\`\n`);
+      process.stdout.write(`\`\`\`\n${gutter(r.code, r.startLine)}\n\`\`\`\n`);
     } else if (r.summary) {
       process.stdout.write(`${r.summary}\n`);
     }
@@ -840,7 +854,7 @@ async function cmdSemantic(rawArgs) {
   for (const span of r.spans || []) {
     const fence = r.language ? '```' + r.language : '```';
     const sym = span.symbols?.length ? ` [${span.symbols.join(', ')}]` : '';
-    process.stdout.write(`### ${r.file}:${span.startLine}-${span.endLine}${sym}\n${fence}\n${span.text}\n\`\`\`\n`);
+    process.stdout.write(`### ${r.file}:${span.startLine}-${span.endLine}${sym}\n${fence}\n${gutter(span.text, span.startLine)}\n\`\`\`\n`);
   }
   const shownTrailer = SHOWN_SPAN_TRAILER ? renderShownFullTrailer(shownSpans) : '';
   if (shownTrailer) process.stdout.write(`${shownTrailer}\n`);
