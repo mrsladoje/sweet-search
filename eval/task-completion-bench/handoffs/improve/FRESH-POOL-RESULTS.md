@@ -18,40 +18,45 @@ is at parity with native on tasks nobody selected.**
 numbered form, it is the only form with a demonstrated mechanism anywhere, and changing it
 would mean shipping a `p = 0.72` result.
 
-## 1. Resolution
+## 1. Resolution and price together
 
-| harness | native | sweet TAB | sweet NONE | sweet PIPE |
-|---|---:|---:|---:|---:|
-| codex | 41/66 | 39/66 | **41/66** | **42/66** |
-| opencode | 41/66 | **41/66** | 39/66 | 38/66 |
-| claude-code | **43/66** | 40/66 | 41/66 | 39/66 |
-| **total** | **125/198** | **120/198** | **121/198** | **119/198** |
+22 unselected tasks × 3 reps = 66 rollouts per cell. Every denominator complete.
+Claude-code cost is the **transcript reconstruction**, never the ledger (see §2).
 
-**Each harness prefers a different form.** Codex ranks PIPE first, opencode ranks TAB first,
-claude-code ranks NONE first. That is what noise looks like sliced three ways. Every pairwise
-Fisher test is `p ≥ 0.72` against a pre-registered bar of **≥ +6 rollouts**; the largest
-observed difference is 3.
+| harness | form | solved | rate | `$`/rollout | cell total | vs native |
+|---|---|---:|---:|---:|---:|---:|
+| codex | native | 41/66 | 62.1% | `$0.012287` | `$0.8110` | — |
+| codex | **TAB** | 39/66 | 59.1% | `$0.012330` | `$0.8138` | `+0.3%` |
+| codex | NONE | 41/66 | 62.1% | `$0.012319` | `$0.8131` | `+0.3%` |
+| codex | PIPE | 42/66 | 63.6% | `$0.012754` | `$0.8418` | **`+3.8%`** |
+| opencode | native | 41/66 | 62.1% | `$0.008968` | `$0.5919` | — |
+| opencode | **TAB** | 41/66 | 62.1% | `$0.009265` | `$0.6115` | `+3.3%` |
+| opencode | NONE | 39/66 | 59.1% | `$0.008584` | `$0.5665` | `−4.3%` |
+| opencode | PIPE | 38/66 | 57.6% | `$0.008764` | `$0.5784` | `−2.3%` |
+| claude-code | native | 43/66 | 65.2% | `$0.021558` | `$1.4228` | — |
+| claude-code | **TAB** | 40/66 | 60.6% | `$0.020727` | `$1.3680` | `−3.9%` |
+| claude-code | NONE | 41/66 | 62.1% | `$0.019480` | `$1.2857` | `−9.6%` |
+| claude-code | PIPE | 39/66 | 59.1% | `$0.017761` | `$1.1722` | `−17.6%` |
 
-**Sweet versus native: 120/198 against 125/198 on TAB.** −5 rollouts across three harnesses,
-`p ≈ 1.00` on opencode where they tie exactly. **No harness shows an advantage in either
-direction on unselected tasks.**
+**Totals across the three harnesses:** native **125/198**, TAB **120/198**, NONE **121/198**,
+PIPE **119/198**.
 
-## 2. Cost per rollout
+**Each harness ranks the forms differently** — codex prefers PIPE, opencode TAB, claude-code
+NONE. That is what noise looks like sliced three ways. Every pairwise Fisher test is
+`p ≥ 0.72` against a pre-registered bar of **≥ +6 rollouts**; the largest observed difference
+is 3.
 
-| harness | native | sweet TAB | sweet NONE | sweet PIPE |
-|---|---:|---:|---:|---:|
-| codex | `$0.012287` | `$0.012330` | `$0.012319` | `$0.012754` |
-| opencode | `$0.008968` | `$0.009265` | `$0.008584` | `$0.008764` |
-| claude-code | `$0.021558` | `$0.020727` | `$0.019480` | `$0.017761` |
+**Reading the price column honestly.** The only cost difference with a mechanism behind it is
+codex `PIPE` at **`+3.8%`** — pipe is ~0.9 tokens per line dearer than tab, and at n=66 that
+shows where resolution differences do not. Opencode's `NONE` looks `−4.3%` cheaper but also
+solves 2 fewer; claude-code's `PIPE` looks `−17.6%` cheaper but that tracks **subagent spawn
+counts, not gutter tokens** (§2). Cheaper-and-worse is not a saving.
 
-**Sweet vs native:** codex `+0.3%`, opencode `+3.3%`, claude-code `−3.9%` (TAB).
+**Cost per solved task is deliberately not in this table.** The pre-registration forbids it
+unless solve counts differ by ≥6, and they differ by at most 3. Dividing a flat numerator by a
+noisy denominator is exactly what made every earlier cost-per-solved figure flip sign.
 
-**The one clean cost fact about the delimiter itself: `PIPE` costs `+3.4%` on codex.** Pipe is
-~0.9 tokens per line dearer than tab, and at n=66 that shows where resolution differences do
-not. `NONE` saves `−0.1%` on codex — the token-saving argument for dropping the gutter is real
-in mechanism and nil in magnitude.
-
-## 3. Claude-code cost had to be reconstructed, and the ledger reads backwards
+## 2. Claude-code cost had to be reconstructed, and the ledger reads backwards
 
 **The published column cannot be summed.** 28 of 66 native rollouts and 9 sweet ones carry
 `null` inclusive cost, because a delegated (subagent) transcript was incomplete. Subagent use
@@ -77,7 +82,7 @@ tracks **subagent spawn counts** (6, 6, 2 cells), not gutter tokens — **the cl
 differences between forms are a delegation coin flip and must not be read as a delimiter
 effect.**
 
-## 4. Efficiency: the one place sweet is unambiguously ahead
+## 3. Efficiency: the one place sweet is unambiguously ahead
 
 Tool calls per rollout, sweet TAB against native:
 
@@ -91,7 +96,7 @@ On claude-code sweet reaches the same 14/22 tasks on **30% fewer calls**, and `N
 further to 26.5 (−37% vs native). Codex is the exception because it packs several shell
 operations into one envelope, so its counts are not comparable to the others.
 
-## 5. Why the old `−10%` cost lead disappeared — it was never a fix that broke
+## 4. Why the old `−10%` cost lead disappeared — it was never a fix that broke
 
 Decomposing codex old (13 rotation tasks) against new (22 fresh tasks), per call:
 
@@ -111,7 +116,7 @@ best.
 **That points at the only cost lever this run surfaced: adaptive output budgeting.** Native
 behaves as if it has a *context* budget; sweet behaves as if it has a *per-call* budget.
 
-## 6. Corrections to earlier claims in this programme
+## 5. Corrections to earlier claims in this programme
 
 1. **The per-harness delimiter recommendation is withdrawn.** I proposed shipping `N| ` to
    codex and opencode on a six-task result. At proper power that is **−3 rollouts on opencode**
@@ -125,7 +130,7 @@ behaves as if it has a *context* budget; sweet behaves as if it has a *per-call*
 5. **My pool screen omitted run-pilot's own selection gate**, which rejects 7 of the original
    25 tasks as build repairs or naming lotteries.
 
-## 7. Measurement defects found and their status
+## 6. Measurement defects found and their status
 
 | defect | status |
 |---|---|
@@ -139,7 +144,7 @@ concurrency 2 and **0 of 33** at concurrency 1. Uncorrected, opencode's `NONE` a
 **61.4%**; repaired it reads **59.1%** and drops from best form to second-worst. The arm with
 the most losses had the easiest surviving subset, exactly as suspected.
 
-## 8. Disposition
+## 7. Disposition
 
 - **Ship nothing on the delimiter.** Keep `N<TAB>`.
 - **Keep the surface fix** (`ba5b4ee`) — it removes a real inconsistency (two formats for one
