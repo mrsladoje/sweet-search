@@ -25,15 +25,25 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadProjectConfig } from '../../infrastructure/config/search.js';
 
-const DEFAULT_DENY_DIRS = Object.freeze([
+// Directories that hold build OUTPUT for the common case, but whose names are
+// also used for hand-written SOURCE by some projects (Boost.Build keeps its
+// engine under `src/build/*.jam`). These are denied by default, but the
+// admission policy re-admits any git-TRACKED file under them — tracked ⟹ not
+// gitignored ⟹ the repo means it as source, not generated output. Kept separate
+// from the hard deny-list so that re-admission can target exactly this set.
+export const BUILD_OUTPUT_DENY_DIRS = Object.freeze(['dist', 'build', 'out', 'target']);
+
+// The config-level exclude globs (search.js FILE_PATTERNS.exclude) that mirror
+// BUILD_OUTPUT_DENY_DIRS. Dropped from the "hard" filter so re-admission can see
+// past them the same way it sees past the deny-dirs.
+export const BUILD_OUTPUT_GLOBS = Object.freeze(['**/build/**', '**/dist/**', '**/out/**', '**/target/**']);
+
+const DEFAULT_DENY_DIRS_HARD = Object.freeze([
   'node_modules',
   '.git',
   '.sweet-search',
-  'dist',
-  'build',
   '.next',
   '.nuxt',
-  'target',
   'vendor',
   '__pycache__',
   '.venv',
@@ -45,6 +55,8 @@ const DEFAULT_DENY_DIRS = Object.freeze([
   '.svelte-kit',
   '.vercel',
 ]);
+
+const DEFAULT_DENY_DIRS = Object.freeze([...DEFAULT_DENY_DIRS_HARD, ...BUILD_OUTPUT_DENY_DIRS]);
 
 const DEFAULT_DENY_EXTS = Object.freeze([
   '.lock',
@@ -132,10 +144,18 @@ function patternToRegex(pattern) {
  * @returns {(relativePath:string)=>boolean}
  */
 export function buildPathFilter(opts = {}) {
+  // `omitBuildOutputDirs` builds the "hard" deny filter used for git-tracked
+  // re-admission: it drops the build-output dirs and their config globs, so a
+  // path excluded ONLY because it lives under build/dist/out/target is NOT
+  // denied by this variant. Everything else (node_modules, vendor, caches,
+  // user-supplied excludes) still denies.
+  const omitBuild = !!opts.omitBuildOutputDirs;
+  const buildGlobSet = new Set(BUILD_OUTPUT_GLOBS);
   const patterns = [];
   if (opts.projectRoot) {
     for (const p of loadProjectConfig(opts.projectRoot).exclude || []) {
       if (opts.allowSweetSearchDir && String(p).includes('.sweet-search')) continue;
+      if (omitBuild && buildGlobSet.has(String(p))) continue;
       patterns.push(p);
     }
   }
@@ -146,7 +166,7 @@ export function buildPathFilter(opts = {}) {
     for (const p of loadIgnoreFile(ignoreFile)) patterns.push(p);
   }
   const regexes = patterns.map(patternToRegex);
-  const denyDirs = new Set(DEFAULT_DENY_DIRS);
+  const denyDirs = new Set(omitBuild ? DEFAULT_DENY_DIRS_HARD : DEFAULT_DENY_DIRS);
   if (opts.allowSweetSearchDir) denyDirs.delete('.sweet-search');
   const denyExts = new Set(DEFAULT_DENY_EXTS);
 

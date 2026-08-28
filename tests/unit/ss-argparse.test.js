@@ -15,6 +15,7 @@ import {
   buildGrepPattern,
   normalizeArgs,
   looksLikeOption,
+  absorbPositionalPaths,
   extractPositional,
   stripInertFlags,
   parseBoolFlag,
@@ -403,5 +404,50 @@ describe('adjacent ss-wrapper parser guards', () => {
     expect(traceArgs(['--in', 'src/a.js', 'AuthService', '--depth', '2']))
       .toEqual({ symbol: 'AuthService', file: 'src/a.js', hint: '', depth: 2 });
     expect(traceArgs(['AuthService', '--bad'])).toEqual({ error: '--bad' });
+  });
+});
+
+describe('absorbPositionalPaths', () => {
+  // Injected predicate: treat these exact tokens as real paths.
+  const isPath = (paths) => (tok) => new Set(paths).has(tok);
+
+  it('reinterprets a trailing positional path as an --in scope', () => {
+    const args = ['rule install', 'src/tools'];
+    const inPaths = [];
+    absorbPositionalPaths(args, inPaths, isPath(['src/tools']));
+    expect(inPaths).toEqual(['src/tools']);
+    expect(args).toEqual(['rule install']);       // pattern preserved, scope removed
+  });
+
+  it('keeps the first positional as the pattern even if it names a path', () => {
+    const args = ['src/tools', 'src/build'];       // first is the "pattern" by position
+    const inPaths = [];
+    absorbPositionalPaths(args, inPaths, isPath(['src/tools', 'src/build']));
+    expect(args).toEqual(['src/tools']);           // first stays as pattern
+    expect(inPaths).toEqual(['src/build']);        // second absorbed
+  });
+
+  it('absorbs several trailing paths, preserving order', () => {
+    const args = ['pat', 'lib', 'test'];
+    const inPaths = [];
+    absorbPositionalPaths(args, inPaths, isPath(['lib', 'test']));
+    expect(inPaths).toEqual(['lib', 'test']);
+    expect(args).toEqual(['pat']);
+  });
+
+  it('leaves a non-path bareword in place (ambiguous → rejectExtraPositionals)', () => {
+    const args = ['def', 'foo'];                   // unquoted two-word pattern, not a path
+    const inPaths = [];
+    absorbPositionalPaths(args, inPaths, isPath([]));
+    expect(inPaths).toEqual([]);
+    expect(args).toEqual(['def', 'foo']);          // untouched
+  });
+
+  it('ignores option-shaped tokens and merges with an existing --in list', () => {
+    const args = ['pat', 'src/a'];
+    const inPaths = ['src/b'];                      // already parsed from --in src/b
+    absorbPositionalPaths(args, inPaths, isPath(['src/a']));
+    expect(inPaths).toEqual(['src/b', 'src/a']);
+    expect(args).toEqual(['pat']);
   });
 });

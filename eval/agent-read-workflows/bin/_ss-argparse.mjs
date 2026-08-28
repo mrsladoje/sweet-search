@@ -251,3 +251,20 @@ export function renderSufficiency(response) {
   const why = response.sufficiencyReason ? ` (${response.sufficiencyReason})` : '';
   return ` sufficient=${verdict}${why}`;
 }
+
+// Reinterpret bare positionals AFTER the pattern as `--in` scopes when they name
+// a real path. Grep muscle memory writes `ss-grep "pat" src/foo` with the scope
+// as a bare positional; rejecting the whole call wastes a turn when the token is
+// unambiguously a path. The first bare positional stays the pattern. Absorbed
+// tokens are spliced out of `args` and pushed onto `inPaths`. `isPath(token)`
+// decides membership — injected so this pure arg logic is testable without a
+// filesystem. A non-path bareword is left in place for rejectExtraPositionals.
+export function absorbPositionalPaths(args, inPaths, isPath) {
+  let seenPattern = false;
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i];
+    if (typeof tok !== 'string' || tok === '--' || looksLikeOption(tok)) continue;
+    if (!seenPattern) { seenPattern = true; continue; }   // this is the pattern/query
+    if (isPath(tok)) { inPaths.push(tok); args.splice(i, 1); i--; }
+  }
+}
