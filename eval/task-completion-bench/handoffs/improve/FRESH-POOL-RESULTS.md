@@ -1,0 +1,150 @@
+# Fresh-rotation gutter run — full report
+
+**Executes:** [`FRESH-ROTATION-PREREGISTRATION.md`](./FRESH-ROTATION-PREREGISTRATION.md) and
+its Amendment 1, both committed before any rollout.
+**891 rollouts, `$6.9`.** 22 unselected tasks × 3 reps × (3 sweet gutter forms + native) ×
+3 harnesses, plus a 99-rollout repair pass. Ledger `fresh-pool-v4`, gold re-swept under the
+current config. **Every denominator is complete.**
+
+---
+
+## 0. Verdict
+
+**The gutter delimiter is not a lever. Three forms, three harnesses, 198 rollouts per form —
+they land within 2 rollouts of each other and every harness ranks them differently. And sweet
+is at parity with native on tasks nobody selected.**
+
+**Keep `N<TAB>`.** Not because it wins — nothing wins — but because it is the cheapest
+numbered form, it is the only form with a demonstrated mechanism anywhere, and changing it
+would mean shipping a `p = 0.72` result.
+
+## 1. Resolution
+
+| harness | native | sweet TAB | sweet NONE | sweet PIPE |
+|---|---:|---:|---:|---:|
+| codex | 41/66 | 39/66 | **41/66** | **42/66** |
+| opencode | 41/66 | **41/66** | 39/66 | 38/66 |
+| claude-code | **43/66** | 40/66 | 41/66 | 39/66 |
+| **total** | **125/198** | **120/198** | **121/198** | **119/198** |
+
+**Each harness prefers a different form.** Codex ranks PIPE first, opencode ranks TAB first,
+claude-code ranks NONE first. That is what noise looks like sliced three ways. Every pairwise
+Fisher test is `p ≥ 0.72` against a pre-registered bar of **≥ +6 rollouts**; the largest
+observed difference is 3.
+
+**Sweet versus native: 120/198 against 125/198 on TAB.** −5 rollouts across three harnesses,
+`p ≈ 1.00` on opencode where they tie exactly. **No harness shows an advantage in either
+direction on unselected tasks.**
+
+## 2. Cost per rollout
+
+| harness | native | sweet TAB | sweet NONE | sweet PIPE |
+|---|---:|---:|---:|---:|
+| codex | `$0.012287` | `$0.012330` | `$0.012319` | `$0.012754` |
+| opencode | `$0.008968` | `$0.009265` | `$0.008584` | `$0.008764` |
+| claude-code | `$0.021558` | `$0.020727` | `$0.019480` | `$0.017761` |
+
+**Sweet vs native:** codex `+0.3%`, opencode `+3.3%`, claude-code `−3.9%` (TAB).
+
+**The one clean cost fact about the delimiter itself: `PIPE` costs `+3.4%` on codex.** Pipe is
+~0.9 tokens per line dearer than tab, and at n=66 that shows where resolution differences do
+not. `NONE` saves `−0.1%` on codex — the token-saving argument for dropping the gutter is real
+in mechanism and nil in magnitude.
+
+## 3. Claude-code cost had to be reconstructed, and the ledger reads backwards
+
+**The published column cannot be summed.** 28 of 66 native rollouts and 9 sweet ones carry
+`null` inclusive cost, because a delegated (subagent) transcript was incomplete. Subagent use
+is arm-asymmetric — native delegated in 15 task-cells against sweet's 6 — so summing nulls as
+`$0` undercharges native on exactly its dearest rollouts.
+
+| | ledger as published | main (rebuilt) | sidechain | **true total** | `$`/rollout |
+|---|---:|---:|---:|---:|---:|
+| native | `$0.386325` | `$1.130494` | `$0.292341` | **`$1.422835`** | `$0.021558` |
+| sweet TAB | `$0.862258` | `$1.182496` | `$0.185518` | **`$1.368014`** | `$0.020727` |
+| sweet NONE | `$0.781220` | `$1.163153` | `$0.122539` | **`$1.285692`** | `$0.019480` |
+| sweet PIPE | `$0.795297` | `$1.055723` | `$0.116536` | **`$1.172259`** | `$0.017761` |
+
+**Summing the ledger naively says sweet is `+123.2%` more expensive. The truth is `−3.9%`.**
+A 127-point sign flip, from a column behaving exactly as designed — it refuses to publish a
+number rather than undercharge, and a careless reader turns that refusal into `$0`.
+
+**Two caveats on these figures, both against sweet's favour and stated for that reason.**
+The reconstruction is a **lower bound**: 205 native delegated requests carry no usage record
+at all (against 165/74/106 for the sweet forms), so **native's true cost is higher than shown**
+and sweet's advantage is understated. And the spread across sweet forms (`−3.9%` to `−17.6%`)
+tracks **subagent spawn counts** (6, 6, 2 cells), not gutter tokens — **the claude-code cost
+differences between forms are a delegation coin flip and must not be read as a delimiter
+effect.**
+
+## 4. Efficiency: the one place sweet is unambiguously ahead
+
+Tool calls per rollout, sweet TAB against native:
+
+| harness | native | sweet | delta |
+|---|---:|---:|---:|
+| codex | 11.6 | 12.5 | +8% |
+| opencode | 25.2 | 21.8 | **−13%** |
+| claude-code | 41.8 | 29.9 | **−28%** |
+
+On claude-code sweet reaches the same 14/22 tasks on **30% fewer calls**, and `NONE` cuts that
+further to 26.5 (−37% vs native). Codex is the exception because it packs several shell
+operations into one envelope, so its counts are not comparable to the others.
+
+## 5. Why the old `−10%` cost lead disappeared — it was never a fix that broke
+
+Decomposing codex old (13 rotation tasks) against new (22 fresh tasks), per call:
+
+| | old | new | change |
+|---|---|---|---|
+| native `sed -n` | 3.3× @ **11,500B** | 5.5× @ **7,806B** | **−32%/call** |
+| native `grep/rg` | 1.2× @ **12,767B** | 1.3× @ **4,741B** | **−63%/call** |
+| sweet `ss-read` | 2.6× @ 5,783B | 3.8× @ **6,091B** | +5% |
+| sweet `ss-search` | 1.2× @ 7,116B | 1.5× @ **7,362B** | +3% |
+
+**On harder tasks the model narrows its own reads by a third to two thirds. Sweet's per-call
+output is budget-governed and stays flat.** Sweet still returns 18% fewer total tool bytes
+(57k vs 70k per rollout) — it simply no longer returns *dramatically smaller calls*, which is
+where `−10%` came from. The advantage was real and **pool-dependent**, measured where it looked
+best.
+
+**That points at the only cost lever this run surfaced: adaptive output budgeting.** Native
+behaves as if it has a *context* budget; sweet behaves as if it has a *per-call* budget.
+
+## 6. Corrections to earlier claims in this programme
+
+1. **The per-harness delimiter recommendation is withdrawn.** I proposed shipping `N| ` to
+   codex and opencode on a six-task result. At proper power that is **−3 rollouts on opencode**
+   and **+3.4% cost on codex**.
+2. **"`NONE` everywhere" is also withdrawn** — it is the *worst* form on opencode.
+3. **The cross-harness census never counted codex edits.** Its codex branch had no edit
+   detection, so "codex 0/0 edits, `apply_patch` has no string anchor" was the instrument not
+   looking. Codex does fail edits at a comparable rate.
+4. **The `+3` was never significance-tested.** It reproduced at `+3` on codex and is
+   `p = 0.72`. Two harnesses landing the same way is not replication.
+5. **My pool screen omitted run-pilot's own selection gate**, which rejects 7 of the original
+   25 tasks as build repairs or naming lotteries.
+
+## 7. Measurement defects found and their status
+
+| defect | status |
+|---|---|
+| `opencode --version` preflight race deletes rollouts at `CONCURRENCY=2` | **diagnosed**; 18 losses, all sweet-side; repaired at `CONCURRENCY=1` (0 missing of 99). Needs retry-with-backoff — a preflight probe must never delete a rollout |
+| claude-code inclusive cost nulls, arm-asymmetric | **fixed** (`ab0824d`): labelled lower bound + missing-request count now published on both paths |
+| `ss-search`/`ss-find`/`ss-semantic` emitted code **raw** while `ss-read` numbered | **fixed** (`ba5b4ee`): 27–36% of delivered code lines were unnumbered; all surfaces now share `numberCodeLines` |
+| reading `rows.json` before grading completes | procedural; every cell now prints missing + ungraded counts before any solve number is read |
+
+**The repair is the proof the bias was real:** the same 11 tasks lost 3 rollouts at
+concurrency 2 and **0 of 33** at concurrency 1. Uncorrected, opencode's `NONE` arm read
+**61.4%**; repaired it reads **59.1%** and drops from best form to second-worst. The arm with
+the most losses had the easiest surviving subset, exactly as suspected.
+
+## 8. Disposition
+
+- **Ship nothing on the delimiter.** Keep `N<TAB>`.
+- **Keep the surface fix** (`ba5b4ee`) — it removes a real inconsistency (two formats for one
+  job) and is measured neutral on resolution.
+- **The honest product claim is efficiency, not cost or resolution:** parity on solves, 13–28%
+  fewer tool calls on the two harnesses where calls are comparable.
+- **The next cost lever, if there is one, is adaptive output budgeting** — §5 is the first
+  mechanism with measured support in weeks.
