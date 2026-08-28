@@ -415,7 +415,7 @@ export async function discoverFiles(options = {}) {
     }
   }
 
-  const files = [];
+  let files = [];
   let oversized = 0;
   // Stat in batches (order-preserving) instead of one serialized await per
   // file; results are consumed in the original allFiles order.
@@ -433,6 +433,55 @@ export async function discoverFiles(options = {}) {
       } else {
         files.push(batch[j]);
       }
+    }
+  }
+
+  // Content-based minified/bundle skip (SS_INDEX_SKIP_MINIFIED=0 disables). A committed
+  // bundle (`.github/actions/*/dist/index.js`, a built `dist/js/app.js`) is git-tracked,
+  // so the build-output re-admission above cannot separate it from real source — its
+  // content SHAPE can. A minified file is unreadable in BOTH the vector and grep index,
+  // so drop it entirely. `.gitattributes linguist-*=false` force-admits past this.
+  if (process.env.SS_INDEX_SKIP_MINIFIED !== '0' && files.length) {
+    const { looksMinified } = await import('./minified-detector.js');
+    const kept = [];
+    const skippedByRule = {};
+    const skippedSample = [];
+    for (const rel of files) {
+      if (policy.forceAdmit(rel)) { kept.push(rel); continue; }
+      let verdict = false;
+      try {
+        const abs = path.isAbsolute(rel) ? rel : path.join(projectRoot, rel);
+        const st = await fs.stat(abs);
+        if (st.size >= 1024) {   // a sub-1KB file is never a problematic bundle
+          const fh = await fs.open(abs, 'r');
+          try {
+            const headBuf = Buffer.alloc(Math.min(32768, st.size));
+            await fh.read(headBuf, 0, headBuf.length, 0);
+            let tail = '';
+            if (st.size > headBuf.length) {
+              const tLen = Math.min(4096, st.size);
+              const tBuf = Buffer.alloc(tLen);
+              await fh.read(tBuf, 0, tLen, st.size - tLen);
+              tail = tBuf.toString('utf8');
+            }
+            verdict = looksMinified(headBuf.toString('utf8'),
+              { ext: path.extname(rel).toLowerCase(), tailText: tail, totalBytes: st.size });
+          } finally { await fh.close(); }
+        }
+      } catch { verdict = false; }
+      if (verdict) {
+        skippedByRule[verdict.rule] = (skippedByRule[verdict.rule] || 0) + 1;
+        if (skippedSample.length < 12) skippedSample.push(`${rel} [${verdict.rule}]`);
+      } else {
+        kept.push(rel);
+      }
+    }
+    const nSkipped = files.length - kept.length;
+    if (nSkipped > 0) {
+      files = kept;
+      writeLog(`  Skipped ${nSkipped} minified/bundled file(s): ` +
+        Object.entries(skippedByRule).map(([r, c]) => `${r}×${c}`).join(', '), 'yellow');
+      for (const s of skippedSample) writeLog(`    - ${s}`, 'dim');
     }
   }
 

@@ -106,6 +106,62 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
     return trackedCache;
   }
 
+  // `.gitattributes` linguist overrides — the authoritative, repo-declared signal,
+  // resolved once via `git check-attr` (git's own path matching, incl. nested
+  // .gitattributes). This is the mechanism GitHub documents for our exact problem:
+  // `build/** linguist-generated=false` re-includes real source in an excluded dir,
+  // and `dist/** linguist-generated` marks a committed bundle for exclusion.
+  // Returns for each tracked path one of: 'force-include' (linguist-*=false / -attr,
+  // repo says "this is source"), 'vendored' (skip), 'generated' (demote, handled
+  // downstream by the chunk policy), or null (unspecified → fall through to heuristics).
+  let linguistCache = null;
+  function linguistAttr(rel) {
+    if (!linguistCache) linguistCache = buildLinguistMap();
+    return linguistCache.get(normalizeRel(rel)) || null;
+  }
+  function buildLinguistMap() {
+    const map = new Map();
+    if (!hasGit) return map;
+    const files = [...trackedFiles()];
+    if (!files.length) return map;
+    let out;
+    try {
+      out = execFileSync('git',
+        ['check-attr', '--stdin', '-z', 'linguist-generated', 'linguist-vendored', 'linguist-documentation'],
+        { cwd: projectRoot, input: files.join('\0') + '\0', maxBuffer: 512 * 1024 * 1024 })
+        .toString('utf8');
+    } catch { return map; }
+    // Output is NUL-separated (path, attr, value) triples.
+    const parts = out.split('\0');
+    // A linguist boolean is TRUE unless the value is 'unspecified', 'unset' or 'false'
+    // (Linguist lazy_blob.rb `boolean_attribute`). 'unset'/'false' means an explicit
+    // negation — the repo forcing the file to be treated as source.
+    const isTrue = (v) => v !== 'unspecified' && v !== 'unset' && v !== 'false';
+    const isFalse = (v) => v === 'unset' || v === 'false';
+    for (let i = 0; i + 2 < parts.length; i += 3) {
+      const path = normalizeRel(parts[i]);
+      const attr = parts[i + 1];
+      const val = parts[i + 2];
+      if (!path) continue;
+      const prev = map.get(path);
+      if (isFalse(val) && (attr === 'linguist-generated' || attr === 'linguist-vendored')) {
+        map.set(path, 'force-include');            // wins over everything
+      } else if (attr === 'linguist-vendored' && isTrue(val)) {
+        if (prev !== 'force-include') map.set(path, 'vendored');
+      } else if (attr === 'linguist-generated' && isTrue(val)) {
+        if (prev !== 'force-include' && prev !== 'vendored') map.set(path, 'generated');
+      }
+    }
+    return map;
+  }
+
+  /** True when `.gitattributes` explicitly declares this path as source
+   *  (linguist-generated=false / linguist-vendored=false). Such a file must be
+   *  indexed even if it sits under a deny dir or looks generated. */
+  function forceAdmit(rel) {
+    return linguistAttr(rel) === 'force-include';
+  }
+
   /**
    * Synchronous shape gate: include allowlist AND not excluded. The one gate
    * both full and incremental indexing consume. A git-TRACKED file whose only
@@ -116,6 +172,12 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
     const r = normalizeRel(rel);
     if (!r) return false;
     if (!matchesInclude(r)) return false;
+    // .gitattributes is authoritative in both directions (Linguist precedence).
+    const la = linguistAttr(r);
+    if (la === 'force-include') return true;   // repo declares this source → index it
+    if (la === 'vendored') return false;       // repo declares this vendored → skip
+    // (la === 'generated' falls through: kept for grep, demoted from vectors by the
+    //  chunk-time generated policy — the readable-but-generated Tier-2 case.)
     if (!isDenied(r)) return true;
     return isBuildOutputOnly(r) && trackedFiles().has(r);
   }
@@ -175,6 +237,8 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
     isExcluded,
     isBuildOutputOnly,
     trackedFiles,
+    linguistAttr,
+    forceAdmit,
     admitsShape,
     isOversizedAbs,
     gitignoredSet,

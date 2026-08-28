@@ -235,3 +235,47 @@ describe('admission-policy / git-tracked source under build-output dirs', () => 
     expect(files.has('build/generated.js')).toBe(false);   // gitignored real output
   });
 });
+
+// ── .gitattributes linguist overrides (authoritative, via git check-attr) ────
+describe('admission-policy / .gitattributes linguist overrides', () => {
+  it('linguist-generated=false force-admits a file the deny-list would reject', () => {
+    write(root, 'dist/hand-written.js', 'export const x = 1');
+    write(root, '.gitattributes', 'dist/hand-written.js linguist-generated=false\n');
+    gitInit(root);
+    gitCommitAll(root);
+    const p = createAdmissionPolicy({ projectRoot: root });
+    expect(p.forceAdmit('dist/hand-written.js')).toBe(true);
+    expect(p.admitsShape('dist/hand-written.js')).toBe(true);   // past the dist/ deny
+  });
+
+  it('linguist-vendored skips a file that would otherwise be admitted', () => {
+    write(root, 'src/thirdparty.js', 'x');
+    write(root, 'src/mine.js', 'x');
+    write(root, '.gitattributes', 'src/thirdparty.js linguist-vendored\n');
+    gitInit(root);
+    gitCommitAll(root);
+    const p = createAdmissionPolicy({ projectRoot: root });
+    expect(p.admitsShape('src/thirdparty.js')).toBe(false);
+    expect(p.admitsShape('src/mine.js')).toBe(true);
+  });
+
+  it('linguist-generated (set) still admits for grep (Tier-2, demoted downstream)', () => {
+    write(root, 'api/types.gen.ts', 'export type X = 1');
+    write(root, '.gitattributes', 'api/types.gen.ts linguist-generated\n');
+    gitInit(root);
+    gitCommitAll(root);
+    const p = createAdmissionPolicy({ projectRoot: root });
+    // not force-skipped at admission — the chunk policy demotes it from vectors
+    expect(p.admitsShape('api/types.gen.ts')).toBe(true);
+    expect(p.linguistAttr('api/types.gen.ts')).toBe('generated');
+  });
+
+  it('no .gitattributes ⇒ every path is unspecified, behaviour unchanged', () => {
+    write(root, 'src/a.js', 'x');
+    gitInit(root);
+    gitCommitAll(root);
+    const p = createAdmissionPolicy({ projectRoot: root });
+    expect(p.linguistAttr('src/a.js')).toBe(null);
+    expect(p.forceAdmit('src/a.js')).toBe(false);
+  });
+});
