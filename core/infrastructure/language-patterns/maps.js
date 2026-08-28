@@ -185,6 +185,7 @@ export const EXTENSION_MAP = {
   '.cmake': 'cmake',
   '.gradle': 'gradle',
   '.ninja': 'ninja',
+  '.jam': 'jam',                    // Boost.Build / Perforce Jam (generic chunking; grep-indexable)
   '.bzl': 'starlark', '.star': 'starlark',
 
   // ── Task-bench coverage audit (2026-07): additional source / DSL / template / build ──
@@ -232,6 +233,10 @@ export const FILENAME_MAP = {
   // Extensionless build / project files (mirrors the Dockerfile/Makefile pattern)
   BUILD: 'starlark',
   WORKSPACE: 'starlark',
+  // Boost.Build extensionless project files (→ jam, generic chunking)
+  Jamfile: 'jam',
+  Jamroot: 'jam',
+  Jamrules: 'jam',
   'meson.build': 'meson',
   Earthfile: 'earthfile',
   justfile: 'just',

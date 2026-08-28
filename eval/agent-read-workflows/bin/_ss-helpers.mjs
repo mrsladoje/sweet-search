@@ -11,19 +11,20 @@
 
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   parseBoolFlag, parseValueFlag, parsePositiveIntFlag,
   parseRepeatedValueFlag, extraPositionals,
   buildGrepPattern, stripInertFlags, normalizeArgs, extractPositional,
-  parseLineRange, looksLikeOption, renderSufficiency,
+  parseLineRange, looksLikeOption, renderSufficiency, absorbPositionalPaths as absorbPositionalPathsPure,
 } from './_ss-argparse.mjs';
 import {
   reallocateGrepTailForManifest,
   renderGrepBody,
 } from '../../../core/search/grep-output-shaping.js';
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
+import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.js';
 import { numberCodeLines, lineGutterEnabled } from '../../../core/search/search-read.js';
 import { renderRegexDialectHint } from '../../../core/search/regex-dialect.js';
 import {
@@ -227,11 +228,64 @@ function rejectUnknownOptions(args, usage) {
   if (bad) failUsage(`unrecognised option "${bad}"`, usage);
 }
 
+// Grep muscle memory writes `ss-grep "pat" src/foo` with the scope as a bare
+// positional instead of `--in src/foo`. Absorb any such trailing positional that
+// resolves to a real path under the project (pure logic lives in _ss-argparse so
+// it is unit-tested; the path predicate is injected here).
+function absorbPositionalPaths(args, inPaths) {
+  absorbPositionalPathsPure(args, inPaths,
+    (tok) => existsSync(path.isAbsolute(tok) ? tok : path.resolve(PROJECT_ROOT, tok)));
+}
+
+// When a scope resolves to a real path on disk but is EXCLUDED from the index
+// (real build output, a dependency dir, an unsupported file type), a 0-result
+// answer means "not searchable", not "searched and absent". Say which, so the
+// agent stops grepping a bundle like dist/index.js and looks at real source.
+// The policy is built once, lazily, and only on the 0-result branch.
+let _admissionPolicy = null;
+let _admissionTried = false;
+function excludedScopeNote(scopePath) {
+  if (!scopePath) return null;
+  try {
+    const abs = path.isAbsolute(scopePath) ? scopePath : path.resolve(PROJECT_ROOT, scopePath);
+    if (!existsSync(abs)) return null;
+    if (!_admissionTried) {
+      _admissionTried = true;
+      try { _admissionPolicy = createAdmissionPolicy({ projectRoot: PROJECT_ROOT }); }
+      catch { _admissionPolicy = null; }
+    }
+    if (!_admissionPolicy) return null;
+    const rel = path.relative(PROJECT_ROOT, abs).replace(/\\/g, '/');
+    if (!rel || rel.startsWith('..')) return null;
+    // Directory scope: excluded ⇔ the deny-list rejects it. File scope: excluded
+    // ⇔ not admitted (wrong extension, denied dir, oversized).
+    const isDir = statSync(abs).isDirectory();
+    const excluded = isDir ? _admissionPolicy.isExcluded(rel) : !_admissionPolicy.admitsShape(rel);
+    if (excluded) {
+      return `(not indexed: ${scopePath} is excluded from the index — build output, a dependency, or an unsupported file type. Nothing here is searchable; look at tracked source instead.)`;
+    }
+  } catch { /* best-effort hint only */ }
+  return null;
+}
+
 async function getSweetSearch() {
-  const { SweetSearch } = await import(path.join(REPO_ROOT, 'core/search/sweet-search.js'));
-  const s = new SweetSearch({ projectRoot: PROJECT_ROOT });
-  await s.init();
-  return s;
+  // In-process cold-start loads the LI/HNSW indexes and the embedding model,
+  // which print load banners ("BinaryHNSW: Loaded …", "LateInteraction: …",
+  // "Loading local model: …") via raw console.log — i.e. onto THIS process's
+  // stdout, which the agent captures as the tool result. The warm-daemon path
+  // never leaks (it spawns detached with stdio:'ignore'); only this fallback
+  // does. Reroute stdout writes to stderr for the duration of init so the boot
+  // noise stays in the logs but never contaminates the agent-visible output.
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk, ...rest) => process.stderr.write(chunk, ...rest);
+  try {
+    const { SweetSearch } = await import(path.join(REPO_ROOT, 'core/search/sweet-search.js'));
+    const s = new SweetSearch({ projectRoot: PROJECT_ROOT });
+    await s.init();
+    return s;
+  } finally {
+    process.stdout.write = origWrite;
+  }
 }
 
 async function ensureWarmServerReady({ timeoutMs = 60000, intervalMs = 500 } = {}) {
@@ -283,6 +337,7 @@ async function cmdGrep(rawArgs) {
   // flooded file). Repeatable — one path per flag, every one applied.
   const inPaths = readRepeatedValueFlag(args, '--in', GREP_USAGE);
   stripInertFlags(args);
+  absorbPositionalPaths(args, inPaths);
   rejectExtraPositionals(args, GREP_USAGE);
   const regex = buildGrepPattern(resolvePositional(args, GREP_USAGE), { ignoreCase, wordBound, fixedString });
   if (!regex) {
@@ -321,7 +376,10 @@ async function cmdGrep(rawArgs) {
         ? ` (+${total - result.results.length} more — raise -k)` : '';
       process.stdout.write(`${r.file}:${r.line}: ${text}${marker}\n`);
     });
-    if (result.results.length === 0) process.stdout.write('(no matches)\n');
+    if (result.results.length === 0) {
+      const note = inPaths.map(excludedScopeNote).find(Boolean);
+      process.stdout.write(`${note || '(no matches)'}\n`);
+    }
     writeRegexDialectHint(result.stats);
     process.exit(0);
   }
@@ -384,7 +442,7 @@ async function cmdFind(rawArgs) {
   // ss-find defaults to the full answer: it saves the follow-up read entirely.
   // (Mirrors the agent-in-the-loop H2H adapter eval/agent-eval/tools/
   // pattern-agent-tools.js, which calls search(...,{format:'agent'}).)
-  const FIND_USAGE = 'Usage: ss-find "<query>" --regex "<regex>" [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--full|--xl] [-k N]';
+  const FIND_USAGE = 'Usage: ss-find "<query>" --regex "<regex>" [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [--full|--xl] [-k N]';
   let format = 'agent';
   if (args.includes('--full')) { format = 'agent_full'; args.splice(args.indexOf('--full'), 1); }
   if (args.includes('--xl'))   { format = 'agent_full_xl'; args.splice(args.indexOf('--xl'), 1); }
@@ -393,8 +451,11 @@ async function cmdFind(rawArgs) {
   const fixedString = parseBoolFlag(args, ['-F', '--fixed-strings']);
   const k = readPositiveIntFlag(args, ['-k', '--top'], 6, FIND_USAGE);
   const regex = readValueFlag(args, '--regex', '', FIND_USAGE, { allowOptionValue: true });
+  const inPaths = readRepeatedValueFlag(args, '--in', FIND_USAGE);
   stripInertFlags(args);
+  absorbPositionalPaths(args, inPaths);
   const query = resolvePositional(args, FIND_USAGE);
+  const findFileFilter = inPaths.length ? (inPaths.length === 1 ? inPaths[0] : inPaths) : undefined;
   if (!query) {
     process.stderr.write(FIND_USAGE + '\n');
     process.exit(2);
@@ -409,19 +470,21 @@ async function cmdFind(rawArgs) {
     response = await queryWarmSearch(query, {
       mode: 'pattern', regex: effectiveRegex || `\\b\\w+\\b`, topK: k, format,
       _isAgentFormat: !fixedString,
+      ...(findFileFilter ? { fileFilter: findFileFilter } : {}),
       ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
     });
   } catch {
     const s = await getSweetSearch();
     if (!s.hasLateInteractionIndex) {
       process.stderr.write(`[ss-find] no late-interaction index — falling back to ss-grep\n`);
-      return cmdGrep([effectiveRegex || query, '-k', String(k)]);
+      return cmdGrep([effectiveRegex || query, '-k', String(k), ...inPaths.flatMap(p => ['--in', p])]);
     }
     response = await s.patternSearch(query, null, {
       regex: effectiveRegex || `\\b\\w+\\b`,
       k,
       format,
       _isAgentFormat: !fixedString,
+      ...(findFileFilter ? { fileFilter: findFileFilter } : {}),
       ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
     });
   }
@@ -567,6 +630,18 @@ async function cmdRead(rawArgs) {
   });
   if (!r.ok) {
     process.stderr.write(`[ss-read] error: ${r.error}\n`);
+    // A wrong or invented path is the common cause (e.g. src/b2/build/x for
+    // src/build/x). Point back at the index instead of a bare ENOENT: an
+    // excluded path says so, otherwise suggest locating it by name/behaviour.
+    if (/ENOENT|not a regular file|no such file/i.test(String(r.error))) {
+      const note = excludedScopeNote(file);
+      if (note) {
+        process.stderr.write(`[ss-read] ${note}\n`);
+      } else {
+        const base = path.basename(String(file));
+        process.stderr.write(`[ss-read] path not found — locate it first: ss-grep "${base}"  (exact name) or ss-search "<what it does>" (behaviour), then ss-read the path it returns.\n`);
+      }
+    }
     process.exit(1);
   }
   const readBatch = { files: [r], totalMs: r.timings?.totalMs ?? 0 };

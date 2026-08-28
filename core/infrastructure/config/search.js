@@ -144,6 +144,9 @@ export const FILE_PATTERNS = {
     '**/*.cmake',                          // CMake modules
     '**/*.gradle',                         // Gradle (Groovy DSL)
     '**/*.ninja',                          // Ninja
+    '**/*.jam',                            // Boost.Build / Perforce Jam (property.jam, stage.jam, Jamroot.jam)
+    '**/Jamfile', '**/Jamfile.*',          // Boost.Build Jamfile (+ Jamfile.v2)
+    '**/Jamroot', '**/Jamrules',           // Boost.Build project root / rules (extensionless)
     '**/*.{bzl,star}',                     // Bazel / Starlark
     '**/BUILD', '**/BUILD.bazel',          // Bazel BUILD
     '**/WORKSPACE', '**/WORKSPACE.bazel',  // Bazel WORKSPACE

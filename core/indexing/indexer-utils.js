@@ -393,6 +393,28 @@ export async function discoverFiles(options = {}) {
 
   const { files: allFiles, gitignored } = await policy.applyGitignore(shaped, { silent });
 
+  // Re-admit git-tracked source under build-output dirs (build/dist/out/target).
+  // The include-glob walk above prunes those dirs via excludeGlobs — correct for
+  // real, gitignored build output — but some repos keep hand-written source
+  // there (Boost.Build's engine is src/build/*.jam). `admitsShape` already
+  // re-admits such files, yet the pruned walk never enumerates them, so union
+  // them in explicitly. Tracked ⟹ not gitignored, so only genuine source is added.
+  if (policy.hasGit) {
+    const present = new Set(allFiles);
+    let readmitted = 0;
+    for (const rel of policy.trackedFiles()) {
+      if (present.has(rel)) continue;
+      if (!policy.matchesInclude(rel)) continue;
+      if (!policy.isBuildOutputOnly(rel)) continue;
+      allFiles.push(rel);
+      present.add(rel);
+      readmitted++;
+    }
+    if (readmitted > 0) {
+      writeLog(`  Re-admitted ${readmitted} git-tracked file(s) under build-output dirs`, 'yellow');
+    }
+  }
+
   const files = [];
   let oversized = 0;
   // Stat in batches (order-preserving) instead of one serialized await per

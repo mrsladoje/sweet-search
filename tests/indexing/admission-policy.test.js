@@ -178,3 +178,60 @@ describe('discoverFiles (full indexing) uses the shared policy', () => {
     }
   });
 });
+
+// ── Jam support + git-tracked source under build-output dirs ────────────────
+// Regression for the Boost.Build blind spot (b2-113 / b2-259): `.jam` was in no
+// include glob or extension map, and `src/build/*.jam` was doubly excluded by
+// the `**/build/**` glob and the `build` deny-dir. Real source kept under a
+// build-output dir must index; real (gitignored) build output must not.
+function gitCommitAll(root) {
+  execFileSync('git', ['add', '-A'], { cwd: root, stdio: 'ignore' });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'base'], { cwd: root, stdio: 'ignore' });
+}
+
+describe('admission-policy / Jam files', () => {
+  it('admits .jam and extensionless Jamfile/Jamroot', () => {
+    const p = createAdmissionPolicy({ projectRoot: root });
+    for (const f of ['src/tools/stage.jam', 'Jamroot.jam', 'boost-build.jam', 'Jamfile', 'Jamroot', 'Jamrules']) {
+      expect(p.admitsShape(f), f).toBe(true);
+    }
+  });
+});
+
+describe('admission-policy / git-tracked source under build-output dirs', () => {
+  it('re-admits tracked src/build/*.jam but still excludes real gitignored build output', () => {
+    write(root, 'src/build/property.jam', 'rule feature { }');   // tracked source
+    write(root, 'src/app.py', 'x');
+    write(root, 'build/out.py', 'GENERATED');                    // real build output
+    write(root, 'dist/bundle.js', 'x');
+    write(root, '.gitignore', '/build/\n/dist/\n');              // root-anchored: keeps src/build tracked
+    gitInit(root);
+    gitCommitAll(root);
+    const p = createAdmissionPolicy({ projectRoot: root });
+    expect(p.admitsShape('src/build/property.jam')).toBe(true);  // tracked ⇒ re-admitted
+    expect(p.isBuildOutputOnly('src/build/property.jam')).toBe(true);
+    expect(p.admitsShape('build/out.py')).toBe(false);           // untracked build output stays out
+    expect(p.admitsShape('dist/bundle.js')).toBe(false);
+  });
+
+  it('does NOT re-admit build-output source in a non-git directory (no tracking signal)', () => {
+    write(root, 'src/build/property.jam', 'x');
+    const p = createAdmissionPolicy({ projectRoot: root });   // no gitInit
+    expect(p.hasGit).toBe(false);
+    expect(p.admitsShape('src/build/property.jam')).toBe(false);
+  });
+
+  it('full discovery includes tracked src/build/*.jam via the re-admission union', async () => {
+    write(root, 'src/build/property.jam', 'rule feature { }');
+    write(root, 'src/tools/stage.jam', 'rule stage { }');
+    write(root, 'src/app.py', 'x');
+    write(root, 'build/generated.js', 'x');
+    write(root, '.gitignore', '/build/\n');
+    gitInit(root);
+    gitCommitAll(root);
+    const files = new Set(await discoverFiles({ projectRoot: root, silent: true }));
+    expect(files.has('src/build/property.jam')).toBe(true);
+    expect(files.has('src/tools/stage.jam')).toBe(true);
+    expect(files.has('build/generated.js')).toBe(false);   // gitignored real output
+  });
+});
