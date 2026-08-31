@@ -7,6 +7,7 @@
  */
 
 import fs from 'fs/promises';
+import { bootLog } from '../infrastructure/boot-log.js';
 import { existsSync } from 'fs';
 import path from 'path';
 import { join } from 'path';
@@ -454,7 +455,7 @@ export class SemanticCache {
     this.loadingModel = true;
     this.loadPromise = (async () => {
       const start = Date.now();
-      console.log('[SemanticCache] Loading local model for cache keys...');
+      bootLog('[SemanticCache] Loading local model for cache keys...');
       await fetchModel('all-minilm-l6-v2');
       const cacheDir = getModelCacheDir('Xenova/all-MiniLM-L6-v2');
       this.localModel = await createOrtPipeline(
@@ -462,7 +463,7 @@ export class SemanticCache {
         join(cacheDir, 'tokenizer.json'),
         { graphOptimizationLevel: 'all' },
       );
-      console.log(`[SemanticCache] Local model loaded in ${Date.now() - start}ms`);
+      bootLog(`[SemanticCache] Local model loaded in ${Date.now() - start}ms`);
       this.loadingModel = false;
       return this.localModel;
     })();

@@ -11,6 +11,7 @@
  */
 
 import fs from 'fs/promises';
+import { bootLog } from '../infrastructure/boot-log.js';
 import { existsSync, createWriteStream, createReadStream, statSync } from 'fs';
 import readline from 'readline';
 import path from 'path';
@@ -2427,10 +2428,10 @@ export class LateInteractionIndex {
 
       await this._loadAliasSidecar();
 
-      console.log(`LateInteraction: Loaded ${this.documents.size} documents (model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)${this.aliasPointers.size > 0 ? `, ${this.aliasPointers.size} aliases` : ''}`);
+      bootLog(`LateInteraction: Loaded ${this.documents.size} documents (model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)${this.aliasPointers.size > 0 ? `, ${this.aliasPointers.size} aliases` : ''}`);
     } catch (err) {
       if (err.code === 'ENOENT') {
-        console.log('LateInteraction: No existing index found');
+        bootLog('LateInteraction: No existing index found');
       } else {
         // Recorded so `init()` can turn it into a hard error for the
         // positions-only (writer-side) reader. The full reader's behaviour is
@@ -2550,7 +2551,7 @@ export class LateInteractionIndex {
     }
 
     if (this.positionsOnly) {
-      console.log(`LateInteraction: Loaded ${this._docSegmentPositions.size} document positions from ${manifest.segments.length} segments (positions-only, model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)`);
+      bootLog(`LateInteraction: Loaded ${this._docSegmentPositions.size} document positions from ${manifest.segments.length} segments (positions-only, model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)`);
       return;
     }
 
@@ -2567,7 +2568,7 @@ export class LateInteractionIndex {
       } catch { /* calibration missing or corrupt — fall back to bare WHT */ }
     }
 
-    console.log(`LateInteraction: Loaded ${this.documents.size} documents from ${manifest.segments.length} segments (model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)`);
+    bootLog(`LateInteraction: Loaded ${this.documents.size} documents from ${manifest.segments.length} segments (model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)`);
   }
 
   /**
@@ -2624,7 +2625,7 @@ export class LateInteractionIndex {
 
       docCount++;
       if (docCount % 5000 === 0) {
-        console.log(`LateInteraction: Streaming load ${docCount} documents...`);
+        bootLog(`LateInteraction: Streaming load ${docCount} documents...`);
       }
     };
 

@@ -9,6 +9,7 @@
  */
 
 import { EMBEDDING_CONFIG, EMBEDDING_PROVIDERS } from '../infrastructure/config/index.js';
+import { bootLog } from '../infrastructure/boot-log.js';
 import { wasmHammingDistance, wasmInt8Cosine, wasmAsymmetricDistance, wasmInt8BatchDot, isWasmAvailable } from '../infrastructure/simd-distance.js';
 
 // --- Sub-module imports (no circular deps) ---
@@ -604,22 +605,22 @@ export async function getInt8Embedding(text) {
 export async function warmup(options = {}) {
   const { initVocabulary = true, initSemanticCache = true } = options;
 
-  console.log(`\nWarming up embedding service...`);
-  console.log(`  Provider: ${EMBEDDING_CONFIG.provider} (${EMBEDDING_CONFIG.model})`);
-  console.log(`  Dimensions: ${EMBEDDING_CONFIG.dimension}d full, ${EMBEDDING_CONFIG.hnswDimension}d HNSW`);
+  bootLog(`\nWarming up embedding service...`);
+  bootLog(`  Provider: ${EMBEDDING_CONFIG.provider} (${EMBEDDING_CONFIG.model})`);
+  bootLog(`  Dimensions: ${EMBEDDING_CONFIG.dimension}d full, ${EMBEDDING_CONFIG.hnswDimension}d HNSW`);
 
   const warmupStart = performance.now();
   const warmupTasks = [];
 
   if (EMBEDDING_CONFIG.provider === 'local') {
     warmupTasks.push(
-      getLocalPipeline().then(() => console.log(`  ✓ Local embedding model loaded`))
+      getLocalPipeline().then(() => bootLog(`  ✓ Local embedding model loaded`))
     );
   }
 
   if (initSemanticCache && EMBEDDING_CONFIG.isRemote) {
     warmupTasks.push(
-      semanticCache.getLocalModel().then(() => console.log(`  ✓ SemanticCache local model loaded`))
+      semanticCache.getLocalModel().then(() => bootLog(`  ✓ SemanticCache local model loaded`))
     );
   }
 
@@ -641,7 +642,7 @@ export async function warmup(options = {}) {
   await Promise.all(warmupTasks);
 
   const elapsed = Math.round(performance.now() - warmupStart);
-  console.log(`Warmup complete in ${elapsed}ms\n`);
+  bootLog(`Warmup complete in ${elapsed}ms\n`);
   return true;
 }
 
@@ -666,7 +667,7 @@ export function getModelInfo() {
 
 export async function unload() {
   await unloadLocalModel();
-  console.log('Local model unloaded');
+  bootLog('Local model unloaded');
 }
 
 // =============================================================================

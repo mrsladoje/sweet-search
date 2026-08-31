@@ -61,3 +61,12 @@ export SWEET_SEARCH_MAX_DAEMONS
 # slow a search, and it respawns on demand.
 : "${SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS=120000}"
 export SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS
+
+# Suppress engine boot/load banners ("BinaryHNSW: Loaded …", "Loading local
+# model …", "Warming up embedding service…") on the agent tool surface. An
+# in-process cold-start otherwise prints these onto the ss-* tool's stdout, which
+# the agent captures as the result. Gated at the source via core/infrastructure/
+# boot-log.js so it holds on every load path and regardless of exit code. Human
+# CLI / indexer leave it unset and still see the banners.
+: "${SS_QUIET_BOOT=1}"
+export SS_QUIET_BOOT
