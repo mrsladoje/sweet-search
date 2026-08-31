@@ -27,6 +27,7 @@
  */
 
 import fs from 'fs/promises';
+import { bootLog } from '../infrastructure/boot-log.js';
 import {
   existsSync, statSync, readFileSync,
   openSync, readSync, closeSync, fstatSync,
@@ -1788,7 +1789,7 @@ export class BinaryHNSWIndex {
     this._visitedList.ensureCapacity(this.vectors.length);
 
     this.initialized = true;
-    console.log(`BinaryHNSW: Loaded ${this.vectors.length} vectors from ${indexPath} (asymmetric=${this.useAsymmetric})`);
+    bootLog(`BinaryHNSW: Loaded ${this.vectors.length} vectors from ${indexPath} (asymmetric=${this.useAsymmetric})`);
   }
 
   /**
@@ -2055,7 +2056,7 @@ export class BinaryHNSWIndex {
 
       // Touch the file size to keep the consistency contract auditable.
       void stat.size;
-      console.log(`BinaryHNSW: Loaded ${n} vectors from ${indexPath} (packed/mmap, asymmetric=${this.useAsymmetric})`);
+      bootLog(`BinaryHNSW: Loaded ${n} vectors from ${indexPath} (packed/mmap, asymmetric=${this.useAsymmetric})`);
     } catch (err) {
       try { closeSync(fd); } catch { /* best-effort */ }
       this._mmapFd = null;

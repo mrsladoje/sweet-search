@@ -4,6 +4,7 @@
  */
 
 import { DB_PATHS, detectIndexerProfile } from './platform.js';
+import { bootLog } from '../boot-log.js';
 import { resolveNativeAddon } from '../native-resolver.js';
 
 const VOYAGEAI_API_KEY = process.env.VOYAGEAI_API_KEY || '';
@@ -313,5 +314,5 @@ export function getOptimalBatchSize() {
 // Active configuration (silent by default, set SEARCH_DEBUG=1 to enable)
 if (process.env.SEARCH_DEBUG) {
   console.log(`[Sweet Search] Active provider: ${EMBEDDING_CONFIG.provider} (${EMBEDDING_CONFIG.model})`);
-  console.log(`[Sweet Search] Dimensions: ${EMBEDDING_CONFIG.dimension}d full, ${EMBEDDING_CONFIG.hnswDimension}d HNSW`);
+  bootLog(`[Sweet Search] Dimensions: ${EMBEDDING_CONFIG.dimension}d full, ${EMBEDDING_CONFIG.hnswDimension}d HNSW`);
 }

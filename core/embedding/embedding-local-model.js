@@ -4,6 +4,7 @@
  */
 
 import crypto from 'crypto';
+import { bootLog } from '../infrastructure/boot-log.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import path from 'path';
 import { join } from 'path';
@@ -498,7 +499,7 @@ export async function getLocalPipeline() {
   loadPromise = (async () => {
     const start = Date.now();
     const { quantized: isQuantized, label: quantLabel } = resolveQuantizationMode();
-    console.log(`Loading local model: ${resolveLocalModelName(isQuantized)}...`);
+    bootLog(`Loading local model: ${resolveLocalModelName(isQuantized)}...`);
 
     // Fetch model files to managed cache (verifies checksums, respects allowRuntimeModelDownload)
     await fetchModel('coderankembed-int8');
@@ -587,7 +588,7 @@ export async function getLocalPipeline() {
       await session.run(warmupFeed);
     }
 
-    console.log(`[ORT] Direct session: inputs=[${session.inputNames}], outputs=[${session.outputNames}]`);
+    bootLog(`[ORT] Direct session: inputs=[${session.inputNames}], outputs=[${session.outputNames}]`);
 
     const optimizedPath = getOptimizedModelPath(quantLabel);
     if (!existsSync(optimizedPath)) {
@@ -596,7 +597,7 @@ export async function getLocalPipeline() {
 
     localPipeline = { session, tokenizer, quantLabel, backend };
 
-    console.log(`Local model loaded in ${Date.now() - start}ms (threads: ${sessionOptions.intraOpNumThreads}, backend: ${backend}, quantized: ${quantLabel})`);
+    bootLog(`Local model loaded in ${Date.now() - start}ms (threads: ${sessionOptions.intraOpNumThreads}, backend: ${backend}, quantized: ${quantLabel})`);
     isLoadingLocal = false;
     return localPipeline;
   })();
@@ -845,7 +846,7 @@ export async function callLocalModelBucketed(texts, options = {}) {
       const ortPipeline = await getLocalPipeline();
       if (ortPipeline?.session) {
         useHybrid = true;
-        console.log('[Embedding] hybrid CPU+GPU dispatch enabled (smart routing)');
+        bootLog('[Embedding] hybrid CPU+GPU dispatch enabled (smart routing)');
       }
     } catch {
       useHybrid = false;

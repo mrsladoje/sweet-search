@@ -12,6 +12,7 @@
  */
 
 import os from 'os';
+import { bootLog } from '../infrastructure/boot-log.js';
 import fs from 'fs';
 import path from 'path';
 import { join } from 'path';
@@ -169,7 +170,7 @@ async function loadModel() {
   if (!modelConfig) throw new Error(`[LateInteraction] Unknown model: ${LATE_INTERACTION_CONFIG.model}`);
 
   const start = Date.now();
-  console.log(`[LateInteraction] Loading ${LATE_INTERACTION_CONFIG.model} (${modelConfig.tokenDimension}d)...`);
+  bootLog(`[LateInteraction] Loading ${LATE_INTERACTION_CONFIG.model} (${modelConfig.tokenDimension}d)...`);
 
   // Load tokenizer from managed cache (native Rust → JS fallback)
   const tokenizerPath = join(getModelCacheDir(modelConfig.hfId), 'tokenizer.json');
@@ -239,9 +240,9 @@ async function loadModel() {
   const projectionNeeded = outputDim === modelConfig.backboneDim;
 
   if (projectionBakedIn) {
-    console.log(`[LateInteraction] ONNX output is ${outputDim}d — projection baked in`);
+    bootLog(`[LateInteraction] ONNX output is ${outputDim}d — projection baked in`);
   } else if (projectionNeeded) {
-    console.log(`[LateInteraction] ONNX output is raw ${outputDim}d backbone — loading projection weights...`);
+    bootLog(`[LateInteraction] ONNX output is raw ${outputDim}d backbone — loading projection weights...`);
 
     // Load each projection weight and derive dims from weight.length + known input dim.
     // Stage 1 input dim = backbone dim. Each subsequent stage input = previous output.
@@ -254,7 +255,7 @@ async function loadModel() {
         throw new Error(`[LateInteraction] Projection ${i + 1}: weight length ${weight.length} not divisible by input dim ${currentInDim}`);
       }
       const outDim = weight.length / currentInDim;
-      console.log(`[LateInteraction]   Stage ${i + 1}: ${currentInDim}d → ${outDim}d (${weight.length} weights)`);
+      bootLog(`[LateInteraction]   Stage ${i + 1}: ${currentInDim}d → ${outDim}d (${weight.length} weights)`);
       projectionStages.push({ weight, inDim: currentInDim, outDim });
       currentInDim = outDim;
     }
@@ -263,7 +264,7 @@ async function loadModel() {
     if (currentInDim !== modelConfig.tokenDimension) {
       throw new Error(`[LateInteraction] Final projection output ${currentInDim}d !== expected ${modelConfig.tokenDimension}d`);
     }
-    console.log(`[LateInteraction] Loaded ${projectionStages.length} projection stage(s): ${modelConfig.backboneDim}d → ${modelConfig.tokenDimension}d`);
+    bootLog(`[LateInteraction] Loaded ${projectionStages.length} projection stage(s): ${modelConfig.backboneDim}d → ${modelConfig.tokenDimension}d`);
   } else {
     throw new Error(`[LateInteraction] Unexpected ONNX output dim ${outputDim} (expected ${modelConfig.tokenDimension} or ${modelConfig.backboneDim})`);
   }
@@ -286,7 +287,7 @@ async function loadModel() {
 
   const elapsed = Date.now() - start;
   const epLabel = coremlActive ? 'coreml+cpu' : 'cpu';
-  console.log(`[LateInteraction] Loaded ${LATE_INTERACTION_CONFIG.model} in ${elapsed}ms (${modelConfig.tokenDimension}d, ep: ${epLabel}, skiplist: ${skiplistTokenIds.size} IDs, projection: ${projectionBakedIn ? 'baked' : 'manual'})`);
+  bootLog(`[LateInteraction] Loaded ${LATE_INTERACTION_CONFIG.model} in ${elapsed}ms (${modelConfig.tokenDimension}d, ep: ${epLabel}, skiplist: ${skiplistTokenIds.size} IDs, projection: ${projectionBakedIn ? 'baked' : 'manual'})`);
 
   return { tokenizer, session, modelConfig, skiplistTokenIds, ort, projectionStages };
 }
