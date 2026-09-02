@@ -498,7 +498,13 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
     : null;
   const jail = ISOLATION_ON ? startJail({ rundir, runnerStateDir, label: jailLabel, extraBinds: jailBinds, requireBins: ['codex'] }) : null;
   const pathDirs = [binDir, sweet ? ssBinDir : null].filter(Boolean);
-  let env = { ...process.env, PATH: [...pathDirs, process.env.PATH].join(':'), SWEET_SEARCH_PROJECT_ROOT: rundir, DOCKER_HOST };
+  // Line-number gutter form for the ss-* tools, pinned per harness (2026-09-02 decision,
+  // core/search/gutter-form.js). Pinning makes the measured run detect nothing — the
+  // harness auto-detection is for real users; here it would only add a process-tree
+  // walk to a path that is timed. Symmetric on both arms (native never renders one).
+  // An explicit operator value (an A/B arm such as SS_READ_GUTTER=pipe) still wins.
+  const gutterPin = { SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'none' };
+  let env = { ...process.env, PATH: [...pathDirs, process.env.PATH].join(':'), SWEET_SEARCH_PROJECT_ROOT: rundir, DOCKER_HOST, ...gutterPin };
   if (jail) env = jailEnv(env);
 
   // Off-clock warmup (sweet arm) — arm the per-run ss-* server's models BEFORE the

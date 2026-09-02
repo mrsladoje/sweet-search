@@ -284,6 +284,9 @@ export async function runClaudeCodeTask(task, {
   // isolation is now the per-rollout jail (mount+pid+net namespaces), so declare it.
   routingEnv.IS_SANDBOX = '1';
   routingEnv.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+  // ss-* gutter form pinned per harness (core/search/gutter-form.js): claude-code → `N<TAB>`.
+  // Pinned so the timed run never pays a process-tree walk; operator env (A/B arm) wins.
+  routingEnv.SS_READ_GUTTER = process.env.SS_READ_GUTTER ?? 'tab';
 
   const netArgs = computeNetArgs(t);
   const label = `${task.id || 'task'}-${arm}`;

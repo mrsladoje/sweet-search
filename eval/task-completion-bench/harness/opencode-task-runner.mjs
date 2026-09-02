@@ -228,6 +228,9 @@ export async function runOpencodeTask(task, {
     extraEnv: {
       OPENCODE_CONFIG: ocConfig,
       OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: String(agentBashTimeoutMs),
+      // ss-* gutter form pinned per harness (core/search/gutter-form.js): opencode → `N:`.
+      // Pinned so the timed run never pays a process-tree walk; operator env (A/B arm) wins.
+      SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'colon',
     },
   });
   let preflight;
