@@ -8,6 +8,16 @@
 //
 // Usage: node analyze-run.mjs <rows.json> [--ledger <ledger.jsonl>] [--boot 10000]
 //                             [--exclude id1,id2] [--quiet-evidence]
+//                             [--ledger-basis current|legacy-cachewrite-claudecode-only]
+//
+// LEDGER BASIS. Every cost figure below names the basis it is priced on, because the same
+// run priced two ways gives two different sweet-versus-native percentages. On the fresh pool
+// the difference is 0.79 points on opencode and 0.29 on codex — a quarter of the gap under
+// discussion, not a rounding detail. `current` charges the provider's 1.25x prompt-cache-write
+// rate on all three harnesses. `legacy-cachewrite-claudecode-only` reproduces the basis
+// published before 2026-09-02, where only claude-code supplied a cache-write count, and reads
+// the costRealizedNoCacheWriteUsd column every runner now writes. Use it for disclosure rows
+// that restate an old number; never for a headline.
 //
 // --exclude drops named tasks in an exploratory sensitivity report. A task
 // whose issue text is empty (mransan__ocaml-protoc-202: zero characters) is answered correctly
@@ -20,10 +30,39 @@ const ROWS = args.find(a => !a.startsWith('--'));
 const arg = (n, d) => { const i = args.indexOf(`--${n}`); return i > -1 ? args[i + 1] : d; };
 const B = +arg('boot', 10000);
 const EXCLUDE = new Set(String(arg('exclude', '')).split(',').map(s => s.trim()).filter(Boolean));
-if (!ROWS) { console.error('usage: analyze-run.mjs <rows.json> [--ledger <f>] [--boot N] [--exclude ids]'); process.exit(2); }
+if (!ROWS) { console.error('usage: analyze-run.mjs <rows.json> [--ledger <f>] [--boot N] [--exclude ids] [--ledger-basis current|legacy-cachewrite-claudecode-only]'); process.exit(2); }
+
+const BASIS_MODE = String(arg('ledger-basis', 'current'));
+if (!['current', 'legacy-cachewrite-claudecode-only'].includes(BASIS_MODE)) {
+  console.error(`analyze-run: unknown --ledger-basis "${BASIS_MODE}" (current | legacy-cachewrite-claudecode-only)`); process.exit(2);
+}
+const LEGACY_BASIS = BASIS_MODE === 'legacy-cachewrite-claudecode-only';
 
 const raw = JSON.parse(readFileSync(ROWS, 'utf8'));
-const allRows = Array.isArray(raw) ? raw : (raw.rows || []);
+const allRowsRaw = Array.isArray(raw) ? raw : (raw.rows || []);
+
+// The realized column the whole report reads. On the legacy basis it is swapped for the
+// column the runners write for exactly this purpose; a row that predates that column has no
+// legacy figure, so it goes null and every block that needs completeness says "unavailable"
+// rather than silently mixing two bases in one sum.
+const allRows = LEGACY_BASIS
+  ? allRowsRaw.map(r => ({
+    ...r,
+    costRealizedUsd: r.costRealizedNoCacheWriteUsd ?? null,
+    costRealizedMainOnlyUsd: r.costRealizedNoCacheWriteMainOnlyUsd ?? null,
+  }))
+  : allRowsRaw;
+
+// One label, printed beside every cost figure. Rows carry their own `ledgerBasis`; if they
+// disagree with each other the run pooled two ledgers and no cost figure from it is
+// comparable, so say so loudly instead of averaging them.
+const rowBases = [...new Set(allRowsRaw.map(r => r.ledgerBasis).filter(Boolean))];
+const BASIS_LABEL = LEGACY_BASIS
+  ? 'cache-write-1.25x-claudecode-only (LEGACY, disclosure only)'
+  : (rowBases.length === 1 ? rowBases[0]
+    : rowBases.length === 0 ? 'UNLABELLED ROWS — basis unknown, pre-2026-09-02 collection'
+      : `MIXED (${rowBases.join(' + ')}) — NOT COMPARABLE`);
+const basisNote = () => `  ledger basis: ${BASIS_LABEL}`;
 
 const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
 const wilson = (k, n) => { if (!n) return [0, 0]; const z = 1.96, p = k / n, d = 1 + z * z / n; const c = p + z * z / (2 * n), m = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)); return [(c - m) / d, (c + m) / d]; };
@@ -158,6 +197,9 @@ function rowLevelRealized(rows, { label, headline = false } = {}) {
   console.log(`\n${'='.repeat(78)}`);
   console.log(`${headline ? 'SOLE COST HEADLINE' : 'EXPLORATORY SENSITIVITY'} — ${label}`);
   console.log('  estimand: sum of costRealizedUsd over every listed row (no task-cell averaging)');
+  console.log(basisNote());
+  const cw = rows.map(r => r.cacheWriteTokens).filter(Number.isFinite);
+  if (cw.length) console.log(`  cache-write tokens/row: mean ${Math.round(cw.reduce((a, b) => a + b, 0) / cw.length)} over ${cw.length}/${rows.length} row(s)`);
   const arms = [...new Set(rows.map(r => r.arm).filter(Boolean))].sort();
   if (!arms.length) console.log('  unavailable: no rows');
   for (const arm of arms) {
@@ -187,6 +229,7 @@ for (const [label, stratum] of [
 ]) {
   if (!stratum.length) { console.log(`\n${label}: (no tasks)`); continue; }
   console.log(`\n${label}  (n=${stratum.length})`);
+  console.log(basisNote());
   const { result: R, missing: missingR } = completePairedMetric(stratum, 'real');
   if (R) {
     console.log(`    realized   sweet ${R.pctRed >= 0 ? '−' : '+'}${Math.abs(R.pctRed).toFixed(1)}% vs native   ($${R.natSum.toFixed(6)} → $${R.swSum.toFixed(6)})`);

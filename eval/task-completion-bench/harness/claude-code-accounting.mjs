@@ -229,8 +229,12 @@ export function sidechainTurnSets(claudeHome, sessionId) {
 }
 
 export function addSidechainCosts(mainCosts, sidechainCosts) {
+  // costRealizedNoCacheWriteUsd and cacheWriteTokens sum here for the same reason the
+  // realized column does: a legacy-basis disclosure row must cover the delegated spend too,
+  // or it silently compares a main-only old number against an inclusive new one.
   const sumFields = ['costRealizedUsd', 'idealCostUsd', 'realFromTurnsUsd',
-    'breakPricedCostUsd', 'costNaiveUsd', 'costContentUsd', 'contextRewrites', 'idealTurns'];
+    'breakPricedCostUsd', 'costNaiveUsd', 'costContentUsd', 'contextRewrites', 'idealTurns',
+    'costRealizedNoCacheWriteUsd', 'cacheWriteTokens'];
   const out = { ...mainCosts };
   for (const field of sumFields) {
     if (mainCosts[field] == null) { out[field] = null; continue; }
@@ -239,6 +243,7 @@ export function addSidechainCosts(mainCosts, sidechainCosts) {
       ? total : +total.toFixed(6);
   }
   out.costRealizedMainOnlyUsd = mainCosts.costRealizedUsd ?? null;
+  out.costRealizedNoCacheWriteMainOnlyUsd = mainCosts.costRealizedNoCacheWriteUsd ?? null;
   out.idealCostMainOnlyUsd = mainCosts.idealCostUsd ?? null;
   out.breakPricedCostMainOnlyUsd = mainCosts.breakPricedCostUsd ?? null;
   out.costSidechainUsd = +sidechainCosts
@@ -289,10 +294,12 @@ export function addSidechainCostsChecked(mainCosts, sideSets, price) {
     return {
       ...mainCosts,
       costRealizedMainOnlyUsd: mainReal,
+      costRealizedNoCacheWriteMainOnlyUsd: mainCosts.costRealizedNoCacheWriteUsd ?? null,
       idealCostMainOnlyUsd: mainCosts.idealCostUsd ?? null,
       breakPricedCostMainOnlyUsd: mainCosts.breakPricedCostUsd ?? null,
       costRealizedUsd: null, idealCostUsd: null, realFromTurnsUsd: null,
       breakPricedCostUsd: null, costNaiveUsd: null, costContentUsd: null,
+      costRealizedNoCacheWriteUsd: null, cacheWriteTokens: null,
       contextRewrites: null, idealTurns: null, costSidechainUsd: null,
       // main + measured delegated turns. A LOWER bound, never the total.
       costRealizedLowerBoundUsd: mainReal == null ? null : +(mainReal + measured).toFixed(6),

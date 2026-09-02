@@ -12,6 +12,22 @@ import os from 'node:os';
 
 export const PRICE = { in: 5.0, cache: 0.5, out: 30.0 };  // openai/gpt-5.5 (OpenRouter)
 
+// Ledger basis label. Printed beside EVERY cost figure the analyzers emit, because the
+// same run priced under two bases gives two different sweet-versus-native percentages and
+// the difference (0.79 points on opencode) is a quarter of the gap under discussion.
+//
+//   cache-write-1.25x-all-harnesses   the current basis. Every runner supplies a per-turn
+//                                     `cacheWrite` from its own provider usage, so the 1.25x
+//                                     prompt-cache-creation surcharge is charged on codex,
+//                                     opencode and claude-code alike.
+//   cache-write-1.25x-claudecode-only the basis published before 2026-09-02. Only
+//                                     claude-code-accounting.mjs supplied `cacheWrite`, so
+//                                     codex and opencode paid plain input rate on tokens the
+//                                     provider billed at 1.25x. Reproducible from any row via
+//                                     `costRealizedNoCacheWriteUsd`; kept for disclosure rows.
+export const LEDGER_BASIS = 'cache-write-1.25x-all-harnesses';
+export const LEDGER_BASIS_LEGACY = 'cache-write-1.25x-claudecode-only';
+
 // Per-model USD/MTok. `cache` is the cache-READ (hit) rate — idealCost charges
 // every re-sent prefix token at that rate by construction, so a model's
 // cache-WRITE rate never enters this math.
@@ -118,7 +134,14 @@ export function turnsFromRollout(file) {
     const p = o.payload || {}; const t = p.type || o.type;
     if (t === 'token_count' && p.info?.last_token_usage) {
       const u = p.info.last_token_usage;
-      turns.push({ in: u.input_tokens || 0, cached: u.cached_input_tokens || 0, out: (u.output_tokens || 0) + (u.reasoning_output_tokens || 0) });
+      // cache_write_input_tokens is codex's own prompt-cache-creation count. Emitting it
+      // is what puts codex on the same ledger basis as claude-code (G17); without it the
+      // realized column silently charged plain input rate for tokens billed at 1.25x.
+      turns.push({
+        in: u.input_tokens || 0, cached: u.cached_input_tokens || 0,
+        cacheWrite: u.cache_write_input_tokens || 0,
+        out: (u.output_tokens || 0) + (u.reasoning_output_tokens || 0),
+      });
     }
   }
   return turns;

@@ -1,0 +1,18 @@
+
+=== codex ===
+  rows: native 66/66  sweet 66/66
+  cache-write tok/rollout: native 35899  sweet 34498
+  legacy basis (cache-write-1.25x-claudecode-only): native $0.012287  sweet $0.012330  sweet +0.35%   [published 0.35%]
+  new basis (cache-write-1.25x-all-harnesses):      native $0.013185  sweet $0.013193  sweet +0.06%   [target 0.06%]
+  PASS new basis reproduces 0.06% (|Δ| 0.002 pp, bar 0.05)
+  PASS legacy basis reproduces the published 0.35% (|Δ| 0.003 pp, bar 0.05)
+
+=== opencode ===
+  rows: native 66/66  sweet 66/66
+  cache-write tok/rollout: native 30356  sweet 28312
+  legacy basis (cache-write-1.25x-claudecode-only): native $0.008969  sweet $0.009265  sweet +3.31%   [published 3.31%]
+  new basis (cache-write-1.25x-all-harnesses):      native $0.009727  sweet $0.009973  sweet +2.52%   [target 2.52%]
+  PASS new basis reproduces 2.52% (|Δ| 0.003 pp, bar 0.05)
+  PASS legacy basis reproduces the published 3.31% (|Δ| 0.004 pp, bar 0.05)
+
+ACCEPTANCE PASS

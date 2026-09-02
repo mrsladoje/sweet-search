@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { recoverIdealCost, rolloutFilesForRundir, turnsFromRollout, costFromTurns, priceFor, PRICE as IDEAL_PRICE } from './ideal-cost.mjs';
+import { recoverIdealCost, rolloutFilesForRundir, turnsFromRollout, costFromTurns, priceFor, LEDGER_BASIS, PRICE as IDEAL_PRICE } from './ideal-cost.mjs';
 import { persistTurns } from './turn-log.mjs';
 import { runTestsTelemetry } from './rt-inflight.mjs';
 import { brokerRequesterSource, directShimSource } from './rt-shim-text.mjs';
@@ -777,7 +777,9 @@ ${ho}`;
   // turn's full prompt, so the re-sent prefix is charged again on each turn.
   const u = usage || {};
   const inTok = u.input_tokens || 0, cached = u.cached_input_tokens || 0, out = (u.output_tokens || 0) + (u.reasoning_output_tokens || 0);
-  const costRealized = ((inTok - cached) * price.in + cached * price.cacheHit + out * price.out) / 1e6;
+  // Legacy ledger basis: every uncached prompt token at plain input rate. Kept as its own
+  // column so a disclosure row can restate a pre-2026-09-02 codex figure from rows.json alone.
+  const costRealizedNoCacheWrite = ((inTok - cached) * price.in + cached * price.cacheHit + out * price.out) / 1e6;
   const costNaive = (inTok * price.in + out * price.out) / 1e6;
 
   const calls = toolCalls.length;
@@ -810,6 +812,12 @@ ${ho}`;
   let idealCostUsd = null, realFromTurnsUsd = null, rolloutFile = null, idealTurns = 0;
   let breakPricedCostUsd = null, contextRewrites = 0;
   let costContentUsd = null, turnsFile = null;
+  // G17 ledger basis. Codex's aggregate `turn.completed` usage carries no cache-creation
+  // count, so the 1.25x prompt-cache-write surcharge has to come from the per-turn rollout
+  // jsonl (`cache_write_input_tokens`) — the same source the G17 measurement used. Without
+  // it the codex realized column sits on the old claude-code-only basis while
+  // realFromTurnsUsd sits on the new one, and a cross-harness table mixes two ledgers.
+  let cacheWriteTokens = 0;
   try {
     const sessionsDir = jail ? path.join(codexHome, 'sessions') : undefined;
     // C-3 invokes the agent twice, so there are two rollout files and the cost columns must be
@@ -837,6 +845,7 @@ ${ho}`;
       }
       idealCostUsd = +cost.idealUsd.toFixed(6); realFromTurnsUsd = +cost.realFromTurnsUsd.toFixed(6);
       breakPricedCostUsd = +cost.breakPricedUsd.toFixed(6); contextRewrites = cost.contextRewrites;
+      cacheWriteTokens = merged.reduce((a, tu) => a + (Number(tu.cacheWrite) || 0), 0);
       rolloutFile = files.join(','); idealTurns = merged.length;
       if (c3) { c3.contexts = C3 === 'v5' ? 1 : per.length; c3.rolloutFiles = per.length; }
       // costContentUsd + the persisted turn list follow the same merge, so downstream
@@ -851,6 +860,7 @@ ${ho}`;
     } else {
       const ic = recoverIdealCost(rundir, { sinceMs: t0 - 60000, price: _p, sessionsDir });
       ({ idealCostUsd, realFromTurnsUsd, breakPricedCostUsd, contextRewrites, rolloutFile, turns: idealTurns } = ic);
+      cacheWriteTokens = (ic.turnList || []).reduce((a, tu) => a + (Number(tu.cacheWrite) || 0), 0);
       // P7 (PLAN.md §3 B1): the rollout jsonl lives in the per-rollout codex home, which is
       // torn down with the run — persist the per-turn array now or lose it. costContentUsd
       // (unique context charged once + output) needs the same growing-prefix structure and
@@ -870,6 +880,13 @@ ${ho}`;
     }
   } catch { /* best-effort — keep realized cost as the fallback */ }
 
+  // Apply the cache-write surcharge to the realized column (G17). The surcharge is the
+  // EXTRA 0.25x over plain input rate on tokens the provider billed as cache creation;
+  // the base rate is already inside costRealizedNoCacheWrite. If the per-turn rollout was
+  // not recoverable, cacheWriteTokens stays 0 and the two columns are equal — which the
+  // ledgerBasis label plus cacheWriteTokens=0 makes visible instead of silent.
+  const costRealized = costRealizedNoCacheWrite + (cacheWriteTokens * price.in * 0.25) / 1e6;
+
   return {
     ...shimInfo.controller,
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
@@ -878,6 +895,8 @@ ${ho}`;
     shimTampered: shimTamperedFiles.length > 0, shimTamperedFiles,
     stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
     exitReason, usage: u, costNaiveUsd: +costNaive.toFixed(6), costRealizedUsd: +costRealized.toFixed(6),
+    ledgerBasis: LEDGER_BASIS, cacheWriteTokens,
+    costRealizedNoCacheWriteUsd: +costRealizedNoCacheWrite.toFixed(6),
     costContentUsd, idealCostUsd, realFromTurnsUsd, breakPricedCostUsd, contextRewrites, rolloutFile, idealTurns, turnsFile,
     wallMs, trajectory, finalAssistantText: answer, c3, r1, ...rtTelemetry,
     codexErrors: parsed.errors.slice(0, 5), startRetried,
