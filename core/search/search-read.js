@@ -5,6 +5,7 @@
  */
 
 import { promises as fs, realpathSync, statSync } from 'node:fs';
+import { GUTTER_FORMS, resolveGutterForm, gutterDelimiter } from './gutter-form.js';
 import path from 'node:path';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
 import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
@@ -629,7 +630,9 @@ export function lineGutterEnabled(opts = {}) {
   if (opts.lineNumbers === false) return false;
   if (opts.lineNumbers === true) return true;
   if (opts.format === 'benchmark' || opts.format === 'raw' || opts.format === 'json') return false;
-  return process.env.SS_READ_LINENUMS !== '0';
+  if (process.env.SS_READ_LINENUMS === '0') return false;
+  // Per-harness form 'none' (codex by default) — see gutter-form.js.
+  return resolveGutterForm().form !== 'none';
 }
 
 // The gutter delimiter. Prefix each line with `N<TAB>` starting at startLine.
@@ -663,35 +666,39 @@ export function lineGutterEnabled(opts = {}) {
 // (`%6d`), which is what was tried and rejected for miscalibrating edit
 // wrapping (Claude Code #36654). The number here stays unpadded, so the prefix
 // width still varies with digit count exactly as `N| ` did.
-// A/B ESCAPE HATCH (2026-08-25). `SS_READ_GUTTER=pipe` restores the pre-116ca2b `N| `
-// delimiter. The tab was adopted on measured claude-code evidence — 20 anchor failures
-// against native's 0 — but codex was never re-measured on it, and codex edits through
-// `apply_patch` context hunks rather than exact-string anchors, which is a different
-// interaction entirely. Default is unchanged; this exists so the question is answerable
-// without editing files mid-run. numberCodeLines and stripCodeLineNumbers both read this
-// constant, so the round-trip stays exact under either setting.
-export const GUTTER_DELIMITER = process.env.SS_READ_GUTTER === 'pipe' ? '| ' : '\t';
+// PER-HARNESS FORM (2026-09-02). The tab above is the claude-code form and the
+// default. Opencode gets `N:` and codex gets no gutter — see gutter-form.js for
+// the measured reasons (silent tab carry on tab-indented files under the
+// four-pass edit seek those two harnesses use; codex's ~2,500-token output cap
+// makes the gutter pure cost there). The harness is detected from process
+// ancestry, then env markers; `SS_READ_GUTTER=tab|pipe|colon|none` overrides.
+// numberCodeLines and stripCodeLineNumbers both default to the resolved
+// delimiter, so the round-trip stays exact under every form.
+export const GUTTER_DELIMITER = GUTTER_FORMS.tab;
+export { GUTTER_FORMS, resolveGutterForm, gutterDelimiter } from './gutter-form.js';
 
-export function numberCodeLines(text, startLine = 1) {
+export function numberCodeLines(text, startLine = 1, delimiter = gutterDelimiter()) {
   if (!text) return text;
+  if (delimiter === '') return text; // form 'none': the agent sees the source as-is
   const lines = text.split('\n');
   const hasTrailingNL = lines.length > 1 && lines[lines.length - 1] === '';
   const body = hasTrailingNL ? lines.slice(0, -1) : lines;
-  const numbered = body.map((ln, i) => `${startLine + i}${GUTTER_DELIMITER}${ln}`).join('\n');
+  const numbered = body.map((ln, i) => `${startLine + i}${delimiter}${ln}`).join('\n');
   return hasTrailingNL ? numbered + '\n' : numbered;
 }
 
 // Inverse of numberCodeLines: recover the exact source text from a rendered
 // gutter body. Exists so the round-trip is asserted by tests rather than
 // assumed, and so any future delimiter change has to keep it exact.
-export function stripCodeLineNumbers(text) {
+export function stripCodeLineNumbers(text, delimiter = gutterDelimiter()) {
   if (!text) return text;
+  if (delimiter === '') return text;
   const lines = text.split('\n');
   const hasTrailingNL = lines.length > 1 && lines[lines.length - 1] === '';
   const body = hasTrailingNL ? lines.slice(0, -1) : lines;
   const stripped = body.map((ln) => {
-    const at = ln.indexOf(GUTTER_DELIMITER);
-    return at > 0 && /^\d+$/.test(ln.slice(0, at)) ? ln.slice(at + GUTTER_DELIMITER.length) : ln;
+    const at = ln.indexOf(delimiter);
+    return at > 0 && /^\d+$/.test(ln.slice(0, at)) ? ln.slice(at + delimiter.length) : ln;
   }).join('\n');
   return hasTrailingNL ? stripped + '\n' : stripped;
 }

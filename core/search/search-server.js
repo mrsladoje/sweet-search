@@ -40,7 +40,7 @@ import {
   validateSearchBatchRequest,
 } from './search-batch.js';
 import { renderSearchBatchCliResult } from './search-batch-format.js';
-import { lineGutterEnabled, numberCodeLines } from './search-read.js';
+import { lineGutterEnabled, numberCodeLines, resolveGutterForm } from './search-read.js';
 
 // =============================================================================
 // Server constants
@@ -691,6 +691,13 @@ function buildJsonSearchResponse(results, stats, totalTime, extra = {}) {
 
 export async function startServer() {
   const http = await import('http');
+
+  // Decide the line-number gutter form NOW, while the CLI that spawned us is
+  // still alive and the process ancestry still reaches the agent harness. A
+  // detached daemon is reparented to init once that parent exits, and would
+  // otherwise resolve to the default form on its first render. The decision is
+  // exported into our env so maintainers we spawn inherit it too.
+  resolveGutterForm();
 
   // Per-project server identity (C3). The Unix socket + pidfile are derived from
   // the canonical project root so each project gets its own server and never

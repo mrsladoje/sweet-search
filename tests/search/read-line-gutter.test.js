@@ -26,6 +26,13 @@ import {
   formatReadResults,
   GUTTER_DELIMITER,
 } from '../../core/search/search-read.js';
+import { _resetGutterFormForTests } from '../../core/search/gutter-form.js';
+
+// These tests are about the TAB form (claude-code's, and the default). The live
+// form is per harness (gutter-form.js), and vitest may itself be running under
+// codex or opencode, so pin it explicitly rather than inherit the detector.
+process.env.SS_READ_GUTTER = 'tab';
+_resetGutterFormForTests();
 
 const DART = [
   'class StreamedResponse extends BaseResponse {',
@@ -131,15 +138,22 @@ describe('exact edit-anchor round-trip', () => {
   });
 });
 
-describe('shipped delimiter is fixed', () => {
-  it('does not let the paid A/B environment switch restore the rejected pipe gutter', () => {
+describe('explicit SS_READ_GUTTER override', () => {
+  // Since 2026-09-02 the form is per harness and an explicit env value is the
+  // documented override (bench A/B arms, or a user pinning one form). It is
+  // resolved ONCE per process, so a change mid-process is deliberately ignored.
+  it('is honoured at first resolution and then fixed for the process', () => {
     const previous = process.env.SS_READ_GUTTER;
     try {
       process.env.SS_READ_GUTTER = 'pipe';
-      expect(numberCodeLines('a\nb', 51)).toBe('51\ta\n52\tb');
+      _resetGutterFormForTests();
+      expect(numberCodeLines('a\nb', 51)).toBe('51| a\n52| b');
+      process.env.SS_READ_GUTTER = 'none';
+      expect(numberCodeLines('a\nb', 51)).toBe('51| a\n52| b');
     } finally {
       if (previous === undefined) delete process.env.SS_READ_GUTTER;
       else process.env.SS_READ_GUTTER = previous;
+      _resetGutterFormForTests();
     }
   });
 });

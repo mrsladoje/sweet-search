@@ -677,8 +677,11 @@ async function cmdRead(rawArgs) {
   // copy of the same arithmetic, which meant the CLI and the daemon/library
   // renderers could drift apart silently — and a delimiter that differs between
   // the two paths is exactly the class of defect that corrupts edit anchors.
+  //
+  // The gate is the SHARED lineGutterEnabled(), which also carries the
+  // per-harness form (codex renders no gutter at all — gutter-form.js).
   let bodyText = r.text;
-  if (process.env.SS_READ_LINENUMS !== '0' && r.text && r.text.split('\n').length >= 15) {
+  if (lineGutterEnabled() && r.text && r.text.split('\n').length >= 15) {
     const startAt = (r.range && !coveredWholeFile) ? r.range.startLine : 1;
     bodyText = numberCodeLines(r.text, startAt);
   }
