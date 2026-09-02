@@ -302,10 +302,15 @@ export async function patternSearch(query, routing, options = {}) {
   const mapStart = performance.now();
   const locationMap = this.getChunkLocationMap();
   const mapTime = performance.now() - mapStart;
+  // NO THROW HERE (fixed 2026-09-02). An index whose late-interaction documents carry no
+  // line spans used to crash `ss-find` outright, and a crash is the one answer the agent
+  // cannot act on — the index it was given is the only index it has. getChunkLocationMap
+  // already falls back to the codebase vector rows, which carry the same spans; if even
+  // that is empty, every match simply routes to the unindexed path and the agent still gets
+  // its grep results, unranked. Degraded is not broken.
   if (this.lateInteractionIndex.documents.size > 0 && locationMap.size === 0) {
-    throw new Error(
-      'Pattern search requires a late interaction index with line spans. Re-index with late interaction enabled.'
-    );
+    log('No chunk line spans available (late-interaction and codebase rows both empty) — '
+      + 'returning unranked pattern matches');
   }
   log(`Chunk location map: ${locationMap.size} files in ${mapTime.toFixed(1)}ms`);
 
@@ -621,6 +626,6 @@ export async function patternSearch(query, routing, options = {}) {
 
 export { generateRegexMatches } from './search-pattern-planner.js';
 export { hasCaseInsensitiveRegexFlag, extractRequiredLiteralsHeuristic, extractLiteralClausesHeuristic, extractLiteralClauses, normalizeLiteralClauses, querySparseGramCandidates, ensureSparseGramIndex, nativeGrepFilesWithMatches, nativeGrepLines, getSparseGramAllFiles } from './search-pattern-prefilter.js';
-export { buildChunkLocationMap, findChunkForLine, findChunkIntervalForLine, mapMatchesToChunks, readFileRange, getChunkLocationMap, getCodebaseChunkTypeMap, normalizeSearchSymbolType, resolveSearchSymbolFilter, isRipgrepCodePath, buildBareGrepResults, filterMatchesBySymbolType } from './search-pattern-chunks.js';
+export { buildChunkLocationMap, buildCodebaseChunkLocationMap, findChunkForLine, findChunkIntervalForLine, mapMatchesToChunks, readFileRange, getChunkLocationMap, getCodebaseChunkTypeMap, normalizeSearchSymbolType, resolveSearchSymbolFilter, isRipgrepCodePath, buildBareGrepResults, filterMatchesBySymbolType } from './search-pattern-chunks.js';
 export { isRipgrepAvailable, _resetRgCache, normalizeSearchPath, chunkRipgrepFiles } from './search-pattern-ripgrep.js';
 export { packageForAgent, estimateTokens, computeConfidence, computeSufficiency, allocateBudget, expandToSymbol, expandBySyntax, expandLeadingTrivia, extractHeaderContext, truncateToTokenCap, findEnclosingEntity, checkStaleness, renderGraphNeighbors } from './context-expander.js';
