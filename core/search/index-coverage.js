@@ -65,16 +65,22 @@ export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy
   const root = projectRoot || process.cwd();
   const db = dbPath || path.join(root, '.sweet-search', 'codebase.db');
 
-  // The admission policy is loaded ONCE, up front, and only to explain a miss. Its module
-  // graph has a top-level await, so it cannot be `require`d — which is why this factory is
-  // async. A load failure leaves `policy` null and every reason degrades to a true but
-  // vaguer statement; it never makes a path look indexed when it is not.
-  let policy = admissionPolicy;
-  if (!policy) {
+  // The admission policy is needed ONLY to explain a miss, and building it costs about 18 ms.
+  // The common case is a file that IS indexed, so it is loaded lazily: `ss-read` on an
+  // ordinary source file must not pay for machinery that exists to write an error message.
+  // Its module graph has a top-level await, so it cannot be `require`d — which is why the
+  // lazy getter, and therefore `notIndexedNote`, are async. A load failure leaves it null and
+  // every reason degrades to a true but vaguer statement; it never makes a path look indexed
+  // when it is not.
+  let policy = admissionPolicy, policyTried = !!admissionPolicy;
+  async function getPolicy() {
+    if (policyTried) return policy;
+    policyTried = true;
     try {
-      ({ createAdmissionPolicy: policy } = await import('../indexing/admission-policy.js'));
-      policy = policy({ projectRoot: root });
+      const mod = await import('../indexing/admission-policy.js');
+      policy = mod.createAdmissionPolicy({ projectRoot: root });
     } catch { policy = null; }
+    return policy;
   }
 
   let handle = null, opened = false, usable = false;
@@ -129,16 +135,17 @@ export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy
    * `kind`, because refusing to show a file body is right for 'excluded' and wrong for
    * 'stale'.
    */
-  function exclusionReason(rel) {
+  async function exclusionReason(rel) {
     const r = normalizeRel(rel);
     const abs = path.isAbsolute(rel) ? rel : path.join(root, r);
     let admissibleByPath = false;
-    if (policy) {
+    const p = await getPolicy();
+    if (p) {
       try {
-        if (policy.linguistAttr(r) === 'vendored') return REASONS.vendored;
-        if (!policy.matchesInclude(r)) return REASONS.unsupported;
-        if (policy.isOversizedAbs(abs)) return REASONS.oversized;
-        if (!policy.admitsShape(r)) return REASONS.denied;
+        if (p.linguistAttr(r) === 'vendored') return REASONS.vendored;
+        if (!p.matchesInclude(r)) return REASONS.unsupported;
+        if (p.isOversizedAbs(abs)) return REASONS.oversized;
+        if (!p.admitsShape(r)) return REASONS.denied;
         admissibleByPath = true;
       } catch { /* fall through to the content check */ }
     }
@@ -156,7 +163,7 @@ export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy
    * exist, or sits outside the project — in each of those the caller's normal output is
    * already the right output.
    */
-  function notIndexedNote(scopePath) {
+  async function notIndexedNote(scopePath) {
     if (!scopePath) return null;
     try {
       const abs = path.isAbsolute(scopePath) ? scopePath : path.resolve(root, scopePath);
@@ -166,14 +173,17 @@ export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy
       const isDir = statSync(abs).isDirectory();
       if (isDir) {
         if (dirHasIndexedFiles(rel)) return null;
-        const reason = (policy && policy.isExcluded(rel)) ? REASONS.denied : REASONS.absent;
+        const p = await getPolicy();
+        const reason = (p && p.isExcluded(rel)) ? REASONS.denied : REASONS.absent;
         return {
           kind: reason.kind, reason: reason.text, rel, isDir: true,
           text: `(not indexed: ${scopePath} — ${reason.text}. Nothing under it is searchable; look at tracked source instead.)`,
         };
       }
+      // The hot path stops here: an indexed file costs one indexed sqlite lookup and never
+      // touches the admission policy.
       if (isIndexed(rel)) return null;
-      const reason = exclusionReason(rel);
+      const reason = await exclusionReason(rel);
       const advice = reason.kind === 'stale'
         ? 'Search cannot see it yet; read it directly instead.'
         : 'It is not searchable; look at the source it was built from.';

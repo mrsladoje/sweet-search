@@ -308,7 +308,7 @@ async function getCoverage() {
 async function notIndexedNote(scopePath) {
   const cov = await getCoverage();
   if (!cov) return null;
-  try { return cov.notIndexedNote(scopePath); } catch { return null; }
+  try { return await cov.notIndexedNote(scopePath); } catch { return null; }
 }
 
 /** The `--in` scopes that do not exist on disk at all. */
