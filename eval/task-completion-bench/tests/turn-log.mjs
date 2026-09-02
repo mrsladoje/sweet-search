@@ -80,6 +80,35 @@ assert(c.costRealizedUsd <= c.costNaiveUsd + 1e-12, 'realized ≤ naive');
 assert(c.costNaiveUsd > c.costContentUsd + 1e-9, 'costNaiveUsd is NOT the old content number');
 assert(costsFromTurns([], price).costNaiveUsd === 0, 'empty turns → $0 across the board');
 
+// --- F1 / register G17: every row names its ledger basis and carries the old one ---------
+// A cross-harness cost table that mixes the two bases is not comparable, and the difference
+// is 0.79 points on opencode. So the label rides on the row, and the pre-2026-09-02 number
+// rides beside it, which is what lets a disclosure row restate an old figure from rows.json
+// alone instead of re-deriving it from transcripts that may already be gone.
+console.log('\nledger basis columns (G17):');
+{
+  const cw = [
+    { in: 2000, cached: 0, cacheWrite: 2000, out: 50 },
+    { in: 3000, cached: 1900, cacheWrite: 1100, out: 30 },
+  ];
+  const withCw = costsFromTurns(cw, price);
+  assert(withCw.ledgerBasis === 'cache-write-1.25x-all-harnesses', 'every row names its ledger basis', String(withCw.ledgerBasis));
+  assert(withCw.cacheWriteTokens === 3100, 'cacheWriteTokens sums the per-turn field', String(withCw.cacheWriteTokens));
+  const noCw = costsFromTurns(cw.map(t => ({ ...t, cacheWrite: 0 })), price);
+  assert(approx(withCw.costRealizedNoCacheWriteUsd, noCw.costRealizedUsd),
+    'costRealizedNoCacheWriteUsd reproduces the legacy basis exactly', `${withCw.costRealizedNoCacheWriteUsd} vs ${noCw.costRealizedUsd}`);
+  assert(withCw.costRealizedUsd > withCw.costRealizedNoCacheWriteUsd, 'the current basis is the dearer of the two');
+  // The normalized columns must be identical on both bases, or an A/B on idealCost would
+  // silently move when the ledger basis changed.
+  assert(approx(withCw.idealCostUsd, noCw.idealCostUsd), 'idealCost does not move with the ledger basis');
+  assert(approx(withCw.breakPricedCostUsd, noCw.breakPricedCostUsd), 'breakPriced does not move with the ledger basis');
+  // A turn set with no cache-write field at all: the two columns agree and the count is 0,
+  // which is how a row from an adapter that cannot report cache writes stays honest.
+  const plain = costsFromTurns(turns, price);
+  assert(plain.cacheWriteTokens === 0 && approx(plain.costRealizedUsd, plain.costRealizedNoCacheWriteUsd),
+    'no cache-write field → both bases equal and cacheWriteTokens=0');
+}
+
 rmSync(path.join(DIR, '..'), { recursive: true, force: true });
 console.log(ok ? '\nALL PASS' : '\nFAILED');
 process.exit(ok ? 0 : 1);

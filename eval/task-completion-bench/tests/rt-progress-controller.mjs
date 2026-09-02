@@ -260,6 +260,26 @@ test('raw OpenCode NDJSON and stderr are retained byte-for-byte per attempt', ()
   assert.equal(readFileSync(path.join(dir, 'attempt-3.stdout.ndjson'), 'utf8'), 'token=[REDACTED]');
 });
 
+// F1 / register G17. opencode's step_finish reports cache creation separately from cache
+// reads. The parser folds it into `in` so the context size stays right AND publishes it as
+// `cacheWrite`, which is what puts opencode on the same 1.25x cache-write ledger as
+// claude-code. Dropping the separate field silently returns opencode to the cheaper basis
+// and shifts its published gap by 0.79 points.
+test('parseOpencodeStream publishes cache.write separately from cache.read', () => {
+  const raw = [
+    JSON.stringify({ type: 'step_finish', part: { tokens: { input: 40, output: 5, reasoning: 2, cache: { read: 0, write: 960 } } } }),
+    JSON.stringify({ type: 'step_finish', part: { tokens: { input: 10, output: 3, cache: { read: 900, write: 300 } } } }),
+    JSON.stringify({ type: 'step_finish', part: { tokens: { input: 7, output: 1 } } }),
+  ].join('\n') + '\n';
+  const { turns } = parseOpencodeStream(raw);
+  assert.equal(turns.length, 3);
+  // `in` is the full prompt: fresh input + cache reads + cache writes.
+  assert.deepEqual(turns[0], { in: 1000, cached: 0, cacheWrite: 960, out: 7 });
+  assert.deepEqual(turns[1], { in: 1210, cached: 900, cacheWrite: 300, out: 3 });
+  // No cache block at all → 0, never undefined; an undefined reads as NaN downstream.
+  assert.deepEqual(turns[2], { in: 7, cached: 0, cacheWrite: 0, out: 1 });
+});
+
 test('main OpenCode config pins the version surface and rejects ambient plugins', () => {
   const config = buildMainOpencodeConfig();
   assert.deepEqual(config.plugin, []);

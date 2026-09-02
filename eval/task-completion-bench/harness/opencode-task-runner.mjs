@@ -158,7 +158,11 @@ export function parseOpencodeStream(stdout) {
       const tk = p.tokens || {};
       const cache = tk.cache || {};
       const cRead = cache.read || 0, cWrite = cache.write || 0;
-      turns.push({ in: (tk.input || 0) + cRead + cWrite, cached: cRead, out: (tk.output || 0) + (tk.reasoning || 0) });
+      // cache.write is opencode's prompt-cache-creation count. It is folded into `in` (so the
+      // context size stays right) AND published separately, so the realized column can charge
+      // it at the provider's 1.25x creation rate — the same basis claude-code has always used
+      // (G17). Dropping the separate field puts opencode back on the old, cheaper basis.
+      turns.push({ in: (tk.input || 0) + cRead + cWrite, cached: cRead, cacheWrite: cWrite, out: (tk.output || 0) + (tk.reasoning || 0) });
     } else if (type === 'text') {
       if (typeof p.text === 'string' && p.text.trim()) answer = p.text;
     } else if (type === 'error') {

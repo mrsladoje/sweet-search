@@ -2,7 +2,7 @@
 // cost column. Standalone: `node tests/ideal-cost.mjs` — exit 1 on fail.
 // Covers: the per-turn cost math (shared with analyze-ab-smoke), rollout parsing,
 // exact-cwd rollout matching with the mtime gate, and the no-rollout fallback.
-import { costFromTurns, turnsFromRollout, rolloutCwd, findRolloutForRundir, recoverIdealCost, PRICE, MODEL_PRICES, priceFor } from '../harness/ideal-cost.mjs';
+import { costFromTurns, turnsFromRollout, rolloutCwd, findRolloutForRundir, recoverIdealCost, PRICE, MODEL_PRICES, priceFor, LEDGER_BASIS, LEDGER_BASIS_LEGACY } from '../harness/ideal-cost.mjs';
 import { mkdtempSync, writeFileSync, mkdirSync, utimesSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -123,6 +123,71 @@ assert(approx(rec.breakPricedCostUsd, 0.0125) && rec.contextRewrites === 0, 'rec
 // no rollout for an unknown rundir → graceful nulls (never throws)
 const none = recoverIdealCost('/root/.ss-eval/runs/nope__sweet__r9__99', { sinceMs: t0 - 60_000, sessionsDir: path.join(dir, 'sessions') });
 assert(none.idealCostUsd === null && none.rolloutFile === null && none.breakPricedCostUsd === null, 'no rollout → null idealCost AND null breakPriced (fallback to realized)');
+
+// --- F1 / register G17: the cache-write surcharge, on all three runner shapes -------------
+// The provider bills prompt-cache CREATION at 1.25x input. Before 2026-09-02 only the
+// claude-code accounting module supplied a `cacheWrite` field, so codex and opencode paid
+// plain input rate for the same tokens. Charging it everywhere moved the measured fresh-pool
+// gap from +3.31% to +2.52% (opencode) and +0.35% to +0.06% (codex) — a quarter of the gap
+// under discussion, so a runner that stops emitting the field is a silent ledger regression.
+console.log('\ncache-write surcharge (G17), all three runner turn shapes:');
+{
+  // One turn, 1000 in, none cached, all of it a cache write. real should be 1000*5*1.25.
+  const one = costFromTurns([{ in: 1000, cached: 0, cacheWrite: 1000, out: 0 }]);
+  assert(approx(one.realFromTurnsUsd, 1000 * 5 * 1.25 / 1e6), 'all-new turn: real = in * 1.25x', `got ${one.realFromTurnsUsd}`);
+  // ideal is cache-NORMALIZED and must not move: that is the whole point of the column.
+  const base = costFromTurns([{ in: 1000, cached: 0, out: 0 }]);
+  assert(approx(one.idealUsd, base.idealUsd), 'ideal is unchanged by cacheWrite (cache-normalized by construction)');
+  assert(one.realFromTurnsUsd > base.realFromTurnsUsd, 'real IS changed by cacheWrite');
+  assert(approx(one.breakPricedUsd, base.breakPricedUsd), 'breakPriced is unchanged by cacheWrite');
+
+  // The three shapes each runner produces. Same numbers by construction: the surcharge is
+  // 0.25 * price.in * cacheWrite over the no-surcharge basis, whatever the source field was.
+  const shapes = {
+    // codex: token_count -> last_token_usage.cache_write_input_tokens
+    codex: [{ in: 2000, cached: 0, cacheWrite: 2000, out: 50 }, { in: 3000, cached: 1900, cacheWrite: 1100, out: 30 }],
+    // opencode: step_finish -> tokens.cache.write, folded into `in` AND published separately
+    opencode: [{ in: 2000, cached: 0, cacheWrite: 2000, out: 50 }, { in: 3000, cached: 1900, cacheWrite: 1100, out: 30 }],
+    // claude-code: usage.cache_creation_input_tokens (already supplied since 2026-08)
+    claudeCode: [{ in: 2000, cached: 0, cacheWrite: 2000, out: 50 }, { in: 3000, cached: 1900, cacheWrite: 1100, out: 30 }],
+  };
+  for (const [name, turns] of Object.entries(shapes)) {
+    const withCw = costFromTurns(turns);
+    const withoutCw = costFromTurns(turns.map(t => ({ ...t, cacheWrite: 0 })));
+    const cwTok = turns.reduce((a, t) => a + t.cacheWrite, 0);
+    const expected = withoutCw.realFromTurnsUsd + cwTok * PRICE.in * 0.25 / 1e6;
+    assert(approx(withCw.realFromTurnsUsd, expected), `${name} shape: real = legacy + 0.25 * in-rate * cacheWrite`, `got ${withCw.realFromTurnsUsd} want ${expected}`);
+  }
+
+  // A runner that over-reports cache writes must not be able to bill more than the
+  // uncached prompt: costFromTurns clamps cacheWrite to (in - cached) per turn.
+  const over = costFromTurns([{ in: 1000, cached: 900, cacheWrite: 5000, out: 0 }]);
+  const clamped = costFromTurns([{ in: 1000, cached: 900, cacheWrite: 100, out: 0 }]);
+  assert(approx(over.realFromTurnsUsd, clamped.realFromTurnsUsd), 'cacheWrite is clamped to (in - cached), so an over-report cannot inflate the bill');
+  // ...and a negative one cannot discount it.
+  const neg = costFromTurns([{ in: 1000, cached: 0, cacheWrite: -500, out: 0 }]);
+  assert(approx(neg.realFromTurnsUsd, base.realFromTurnsUsd), 'a negative cacheWrite is floored at 0');
+}
+
+// turnsFromRollout must carry codex's own cache-creation count through, or the codex arm
+// silently sits on the old ledger while the other two sit on the new one.
+{
+  const cwDir = mkdtempSync(path.join(tmpdir(), 'ic-cw-'));
+  const f = path.join(cwDir, 'rollout-cw.jsonl');
+  writeFileSync(f, JSON.stringify({ type: 'session_meta', payload: { cwd: '/x' } }) + '\n'
+    + JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 1200, cached_input_tokens: 200, cache_write_input_tokens: 900, output_tokens: 10 } } } }) + '\n');
+  const t = turnsFromRollout(f);
+  assert(t.length === 1 && t[0].cacheWrite === 900, 'turnsFromRollout carries cache_write_input_tokens', JSON.stringify(t));
+  // absent field → 0, never undefined (an undefined would read as NaN downstream)
+  const f2 = path.join(cwDir, 'rollout-nocw.jsonl');
+  writeFileSync(f2, JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 100, cached_input_tokens: 0, output_tokens: 1 } } } }) + '\n');
+  assert(turnsFromRollout(f2)[0].cacheWrite === 0, 'absent cache_write_input_tokens → 0, not undefined');
+  rmSync(cwDir, { recursive: true, force: true });
+}
+
+// LEDGER_BASIS is printed beside every cost figure; the two labels must stay distinct.
+assert(LEDGER_BASIS === 'cache-write-1.25x-all-harnesses', 'LEDGER_BASIS names the current basis', LEDGER_BASIS);
+assert(LEDGER_BASIS_LEGACY !== LEDGER_BASIS, 'the legacy basis label is distinct from the current one');
 
 rmSync(dir, { recursive: true, force: true });
 console.log(ok ? '\nALL PASS' : '\nFAILED');

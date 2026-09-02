@@ -26,7 +26,7 @@ import {
   writeRunTestsShim, installCommandWrappers, shimIntegritySnapshot,
   verifyShimIntegrity, verifyRunnerDirectoryIntegrity,
 } from './codex-task-runner.mjs';
-import { priceFor, costFromTurns } from './ideal-cost.mjs';
+import { priceFor, costFromTurns, LEDGER_BASIS } from './ideal-cost.mjs';
 
 export { FRAME_OPEN, FRAME_CLOSE, priceFor, costFromTurns };
 
@@ -324,6 +324,11 @@ export function auditEscape({ jail, toolCalls, rundir, endMs }) {
 // than substituting one of the others.
 export function costsFromTurns(turns, price) {
   const { idealUsd, realFromTurnsUsd, breakPricedUsd, contextRewrites } = costFromTurns(turns, price);
+  // Pre-2026-09-02 basis, recomputed on the same turns with the cache-write surcharge
+  // suppressed. Every row carries it so a disclosure table can restate an old number
+  // without re-deriving it from transcripts that may no longer exist.
+  const legacy = costFromTurns(turns.map(tu => ({ ...tu, cacheWrite: 0 })), price);
+  const cacheWriteTokens = turns.reduce((a, tu) => a + (Number(tu.cacheWrite) || 0), 0);
   let prevIn = 0, naive = 0, content = 0;
   for (const tu of turns) {
     const newIn = Math.max(0, tu.in - prevIn);                 // context first seen this turn
@@ -335,6 +340,12 @@ export function costsFromTurns(turns, price) {
     costRealizedUsd: +realFromTurnsUsd.toFixed(6),
     idealCostUsd: +idealUsd.toFixed(6),
     realFromTurnsUsd: +realFromTurnsUsd.toFixed(6),
+    // Which ledger basis costRealizedUsd is on, and the same number on the old basis.
+    // Print the label beside every cost figure: the two bases differ by 0.79 points on
+    // opencode, and a cross-harness table that mixes them is not comparable.
+    ledgerBasis: LEDGER_BASIS,
+    costRealizedNoCacheWriteUsd: +legacy.realFromTurnsUsd.toFixed(6),
+    cacheWriteTokens,
     // breakPriced is the honest column when a lever can break the prefix cache; codex has
     // published it since 2026-08-10 and the default analyzer reads it, so every adapter
     // that has a real turn distribution must publish it too or its rows silently fall back
