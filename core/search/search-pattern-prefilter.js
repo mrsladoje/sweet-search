@@ -151,29 +151,221 @@ export function normalizeLiteralClauses(clauses) {
   return normalized;
 }
 
+
+// =============================================================================
+// Alternation soundness guard
+// =============================================================================
+//
+// THE DEFECT. A literal prefilter is sound only when EVERY string the regex can match
+// contains at least one clause's literals. The native extractor silently drops an
+// alternation branch that carries no usable literal:
+//
+//   extractRegexLiteralClauses('_color|_.*,')  ->  [['_color']]
+//
+// The `_.*,` branch has no 3-character literal, so it vanishes, and the prefilter then
+// keeps only files containing `_color`. Every file that matched the other branch is
+// dropped before the regex ever runs, and the agent is told `(no matches)`. Measured
+// once on the fresh pool: 59 lines lost, none of them holding the literal the agent
+// sought. It is the worst class of search bug — a confident, silent, wrong zero.
+//
+// The extractor lives in the native addon, so the guard sits here at the JS boundary:
+// expand the pattern's alternations into the alternatives they stand for, extract from
+// each one independently, and use the union ONLY when every alternative yielded a
+// literal. If any alternative yields nothing, no sound prefilter exists and the scan
+// must be full. Correctness over speed: a full scan is slower, a false zero is wrong.
+
+/** Cap on expanded alternatives. Beyond this, refuse to prefilter rather than expand. */
+const MAX_ALTERNATIVES = 32;
+
+/** True when the pattern contains an alternation operator that actually alternates. */
+export function hasAlternation(regex) {
+  const s = String(regex);
+  let inClass = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\') { i++; continue; }
+    if (inClass) { if (c === ']') inClass = false; continue; }
+    if (c === '[') { inClass = true; continue; }
+    if (c === '|') return true;
+  }
+  return false;
+}
+
+/**
+ * Expand a regex's alternations into the list of alternative patterns it stands for,
+ * preserving the matched language exactly. Returns null when that cannot be done
+ * safely, which the caller must treat as "do not prefilter":
+ *
+ *   - a QUANTIFIED group containing an alternation. `(a|b)+` matches "ab", which
+ *     neither `a+` nor `b+` does, so expanding it would narrow the language.
+ *   - a non-capturing-group construct other than `(?:` — lookarounds and named
+ *     groups — holding an alternation. A lookahead is not part of the match.
+ *   - more than MAX_ALTERNATIVES products, or an unbalanced pattern.
+ */
+export function expandAlternatives(regex, max = MAX_ALTERNATIVES) {
+  const s = String(regex);
+  let i = 0;
+  let bailed = false;
+
+  // alternation := branch ('|' branch)*   — stops at ')' or end of input
+  function parseAlternation(depth) {
+    const branches = [];
+    let current = parseBranch(depth);
+    if (bailed) return null;
+    branches.push(...current);
+    while (i < s.length && s[i] === '|') {
+      i++;
+      current = parseBranch(depth);
+      if (bailed) return null;
+      branches.push(...current);
+      if (branches.length > max) { bailed = true; return null; }
+    }
+    return branches;
+  }
+
+  // branch := atom*  — returns the cartesian product of its atoms' options
+  function parseBranch(depth) {
+    let out = [''];
+    while (i < s.length && s[i] !== '|' && !(depth > 0 && s[i] === ')')) {
+      const options = parseAtom(depth);
+      if (bailed) return null;
+      const next = [];
+      for (const prefix of out) for (const opt of options) next.push(prefix + opt);
+      if (next.length > max) { bailed = true; return null; }
+      out = next;
+    }
+    return out;
+  }
+
+  function parseAtom(depth) {
+    const c = s[i];
+    if (c === '\\') {                       // escaped char: two units, never structural
+      const lit = s.slice(i, i + 2); i += 2;
+      return [lit + takeQuantifier()];
+    }
+    if (c === '[') {                        // character class: opaque, '|' inside is literal
+      const start = i; i++;
+      if (s[i] === '^') i++;
+      if (s[i] === ']') i++;                // a leading ']' is a literal ']'
+      while (i < s.length && s[i] !== ']') { if (s[i] === '\\') i++; i++; }
+      if (i >= s.length) { bailed = true; return null; }
+      i++;                                  // consume ']'
+      return [s.slice(start, i) + takeQuantifier()];
+    }
+    if (c === '(') {
+      const start = i; i++;
+      let prefix = '(';
+      let expandable = true;
+      if (s[i] === '?') {
+        // `(?:` is a plain group and expands. Every other `(?...)` construct — lookaround,
+        // named group, inline flags — is opaque: expanding it would change what it asserts.
+        if (s[i + 1] === ':') { i += 2; prefix = '(?:'; }
+        else expandable = false;
+      }
+      if (!expandable) {
+        const end = skipGroup(start);
+        if (end < 0) { bailed = true; return null; }
+        const body = s.slice(start, end);
+        i = end;
+        // An opaque construct that itself alternates cannot be reasoned about here.
+        if (hasAlternation(body.slice(1, -1))) { bailed = true; return null; }
+        return [body + takeQuantifier()];
+      }
+      const inner = parseAlternation(depth + 1);
+      if (bailed) return null;
+      if (s[i] !== ')') { bailed = true; return null; }
+      i++;                                  // consume ')'
+      const quant = takeQuantifier();
+      if (quant && inner.length > 1) {
+        // `(a|b)+` matches "ab"; no expansion of it preserves the language.
+        bailed = true; return null;
+      }
+      // A quantified single-branch group keeps its parentheses so the quantifier still
+      // binds the whole group; an unquantified one can drop them safely.
+      return quant ? inner.map(x => `${prefix}${x})${quant}`) : inner;
+    }
+    if (c === ')') { bailed = true; return null; }   // unbalanced
+    i++;
+    return [c + takeQuantifier()];
+  }
+
+  /** Consume a quantifier suffix if one follows, including its lazy/possessive marker. */
+  function takeQuantifier() {
+    if (i >= s.length) return '';
+    const c = s[i];
+    let q = '';
+    if (c === '*' || c === '+' || c === '?') { q = c; i++; }
+    else if (c === '{') {
+      const close = s.indexOf('}', i);
+      if (close < 0) return '';
+      const body = s.slice(i + 1, close);
+      if (!/^\d+(,\d*)?$/.test(body)) return '';   // a literal '{', not a quantifier
+      q = s.slice(i, close + 1); i = close + 1;
+    }
+    if (q && (s[i] === '?' || s[i] === '+')) { q += s[i]; i++; }
+    return q;
+  }
+
+  /** Index just past the group opening at `from`, honouring classes and escapes. */
+  function skipGroup(from) {
+    let depth = 0, inClass = false;
+    for (let j = from; j < s.length; j++) {
+      const c = s[j];
+      if (c === '\\') { j++; continue; }
+      if (inClass) { if (c === ']') inClass = false; continue; }
+      if (c === '[') { inClass = true; continue; }
+      if (c === '(') depth++;
+      else if (c === ')') { depth--; if (depth === 0) return j + 1; }
+    }
+    return -1;
+  }
+
+  const alts = parseAlternation(0);
+  if (bailed || alts === null || i !== s.length) return null;
+  if (alts.length === 0 || alts.length > max) return null;
+  return alts;
+}
+
+/** Clauses for one pattern with no alternation left in it. */
+function extractClausesDirect(regex, options) {
+  if (!options.forceHeuristic) {
+    try {
+      const nativeClauses = normalizeLiteralClauses(extractRegexLiteralClauses(regex)?.clauses);
+      if (nativeClauses.length > 0) return { clauses: nativeClauses, source: 'native' };
+    } catch {
+      // Fall back to heuristic extraction below.
+    }
+  }
+  const heuristicClauses = extractLiteralClausesHeuristic(regex);
+  if (heuristicClauses.length > 0) return { clauses: heuristicClauses, source: 'heuristic' };
+  return { clauses: [], source: 'none' };
+}
+
 export function extractLiteralClauses(regex, options = {}) {
   if (!regex || typeof regex !== 'string') {
     return { clauses: [], source: 'none' };
   }
 
-  if (!options.forceHeuristic) {
-    try {
-      const nativeResult = extractRegexLiteralClauses(regex);
-      const nativeClauses = normalizeLiteralClauses(nativeResult?.clauses);
-      if (nativeClauses.length > 0) {
-        return { clauses: nativeClauses, source: 'native' };
-      }
-    } catch {
-      // Fall back to heuristic extraction below.
+  // An alternating pattern is only prefilterable when EVERY alternative it can match
+  // carries a literal. Extract per alternative and union; the union is sound because each
+  // alternative is covered by its own clause. If the pattern cannot be expanded safely, or
+  // any alternative yields nothing, there is no sound prefilter and the scan must be full.
+  if (hasAlternation(regex)) {
+    const alternatives = expandAlternatives(regex);
+    if (!alternatives) return { clauses: [], source: 'unsafe-alternation' };
+    const union = [];
+    let source = 'native';
+    for (const alt of alternatives) {
+      const got = extractClausesDirect(alt, options);
+      if (got.clauses.length === 0) return { clauses: [], source: 'unsafe-alternation' };
+      if (got.source === 'heuristic') source = 'heuristic';
+      union.push(...got.clauses);
     }
+    const clauses = normalizeLiteralClauses(union);
+    return clauses.length > 0 ? { clauses, source } : { clauses: [], source: 'unsafe-alternation' };
   }
 
-  const heuristicClauses = extractLiteralClausesHeuristic(regex);
-  if (heuristicClauses.length > 0) {
-    return { clauses: heuristicClauses, source: 'heuristic' };
-  }
-
-  return { clauses: [], source: 'none' };
+  return extractClausesDirect(regex, options);
 }
 
 // =============================================================================

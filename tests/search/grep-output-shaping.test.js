@@ -141,6 +141,36 @@ describe('matchesGrepFileFilter', () => {
     }
   });
 
+  describe('whole-repo scope: `.` and `./`', () => {
+    // The scope carries no path segments, and the old rule rejected an empty segment list
+    // outright — so `--in .` matched NOTHING and printed "(no matches)", the one answer an
+    // agent reads as "your pattern is absent". It fired on 5 fresh-pool calls, 4 with real
+    // hits. "Here" means the repository, so it must behave like an unscoped grep.
+    it('matches every repo-relative path', () => {
+      for (const scope of ['.', './', './/.', './/']) {
+        expect(matchesGrepFileFilter('src/a.js', scope, '/repo'), scope).toBe(true);
+        expect(matchesGrepFileFilter('deeply/nested/dir/z.R', scope, '/repo'), scope).toBe(true);
+      }
+    });
+
+    it('works with no project root supplied', () => {
+      expect(matchesGrepFileFilter('src/a.js', '.', null)).toBe(true);
+    });
+
+    it('still refuses traversal and the filesystem root', () => {
+      // `..` escapes; `/` is the filesystem root, a different claim from "this repository",
+      // and it has fewer segments than any real root so the absolute branch rejects it.
+      expect(matchesGrepFileFilter('src/a.js', '..', '/repo')).toBe(false);
+      expect(matchesGrepFileFilter('src/a.js', './..', '/repo')).toBe(false);
+      expect(matchesGrepFileFilter('src/a.js', '/', '/repo')).toBe(false);
+    });
+
+    it('is equivalent to no scope at all across a whole file list', () => {
+      const files = ['a.js', 'src/b.js', 'src/deep/c.R', 'tests/testthat/test_x.R'];
+      expect(files.filter(f => matchesGrepFileFilter(f, '.', '/repo'))).toEqual(files);
+    });
+  });
+
   it('accepts several scopes: any one matching wins', () => {
     const scopes = ['lib/nimble_options.ex', 'test/nimble_options_test.exs'];
     expect(matchesGrepFileFilter('lib/nimble_options.ex', scopes)).toBe(true);
