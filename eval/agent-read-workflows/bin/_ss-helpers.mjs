@@ -271,6 +271,15 @@ async function notIndexedNote(scopePath) {
   try { return cov.notIndexedNote(scopePath); } catch { return null; }
 }
 
+/** The `--in` scopes that do not exist on disk at all. */
+function missingScopes(scopePaths) {
+  return (scopePaths || []).filter((p) => {
+    if (!p) return false;
+    try { return !existsSync(path.isAbsolute(p) ? p : path.resolve(PROJECT_ROOT, p)); }
+    catch { return false; }
+  });
+}
+
 async function getSweetSearch() {
   // In-process cold-start loads the LI/HNSW indexes and the embedding model,
   // which print load banners ("BinaryHNSW: Loaded …", "LateInteraction: …",
@@ -380,8 +389,21 @@ async function cmdGrep(rawArgs) {
       process.stdout.write(`${r.file}:${r.line}: ${text}${marker}\n`);
     });
     if (result.results.length === 0) {
-      // First scope the index cannot answer for wins: an agent that scoped to a bundle needs
-      // to know that before it decides the pattern is absent.
+      // A scope that does not exist on disk is the loudest case: 10 of 11 such calls in the
+      // fresh pool printed a bare `(no matches)`, which says "your pattern is absent" about
+      // a directory that was never searched. Usually a mistyped or invented path
+      // (`src/b2/build/x` for `src/build/x`). Say so and name the repair.
+      const missing = missingScopes(inPaths);
+      if (missing.length) {
+        process.stdout.write(`(scope not found: ${missing.join(', ')} — nothing was searched under `
+          + `${missing.length > 1 ? 'those paths' : 'that path'}. This is NOT an absence of matches. `
+          + `Locate the real path first: ss-grep "<name>" with no --in, then re-scope.)\n`);
+        // Informative, not a crash: the pattern may still be fine. A distinct exit code lets
+        // a wrapper or a script tell "scope wrong" from "searched and found nothing" (0).
+        process.exit(3);
+      }
+      // Then a scope the index cannot answer for: an agent that scoped to a bundle needs to
+      // know that before it decides the pattern is absent.
       let note = null;
       for (const p of inPaths) { note = await notIndexedNote(p); if (note) break; }
       process.stdout.write(`${note ? note.text : '(no matches)'}\n`);

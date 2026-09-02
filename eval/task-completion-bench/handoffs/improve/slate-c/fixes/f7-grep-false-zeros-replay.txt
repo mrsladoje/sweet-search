@@ -1,0 +1,19 @@
+F7 REPLAY — ss-grep false zeros, aws-actions golden
+
+(a) --in . rejected every file (pathSegments('.') is empty)
+$ ss-grep credentials --in .
+# ss-grep: 18 total match(es) for /credentials/ (scope: --in .)
+action.yml:21: credentials
+$ ss-grep credentials            # unscoped control, must agree
+# ss-grep: 18 total match(es) for /credentials/ across 4 files
+
+(b) an absent scope printed a bare (no matches)
+$ ss-grep credentials --in src/nope/there
+(scope not found: src/nope/there — nothing was searched under that path. This is NOT an absence of matches. Locate the real path first: ss-grep "<name>" with no --in, then re-scope.)
+  exit=3  (3 = scope wrong; 0 still means searched and empty)
+
+(c) an alternation branch with no 3-char literal was dropped from the prefilter
+$ ss-grep 'assumeRole|role.*,'   # second branch has no usable literal
+# ss-grep: 32 total match(es) for /assumeRole|role.*,/ across 2 files
+$ ss-grep 'assumeRole'           # the literal-only prefilter would have capped here
+# ss-grep: 6 total match(es) for /assumeRole/ across 2 files

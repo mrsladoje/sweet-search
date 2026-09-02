@@ -65,7 +65,15 @@ export function matchesGrepFileFilter(file, filter, projectRoot = null) {
   return scopes.some((raw) => {
     if (!raw) return false;
     let scope = pathSegments(raw);
-    if (scope.length === 0 || scope.includes('..')) return false;
+    if (scope.includes('..')) return false;
+    // WHOLE-REPO scope. `.` and `./` carry no segments, and the old rule rejected an empty
+    // segment list outright — so `--in .` matched NOTHING and printed "(no matches)", the
+    // one answer that reads as "your pattern is absent". It fired on 5 calls in the fresh
+    // pool, 4 of which had real hits. A relative scope of "here" means the repository, so
+    // accept every repo-relative path — exactly what an unscoped grep already does. An
+    // ABSOLUTE scope with no segments is "/", the filesystem root, which is a different
+    // claim; it falls through to the absolute branch below and is rejected there.
+    if (scope.length === 0 && !isAbsolutePath(raw)) return true;
 
     // ABSOLUTE scope. It is meaningful only relative to the repository root
     // that produced the repo-relative target. Suffix inference is unsafe:
@@ -75,6 +83,7 @@ export function matchesGrepFileFilter(file, filter, projectRoot = null) {
     if (isAbsolutePath(raw)) {
       if (!root || !isAbsolutePath(projectRoot)
           || scope.length < root.length || !runAt(scope, root, 0)) return false;
+      // (a bare "/" has fewer segments than any real root, so it is rejected above)
       scope = scope.slice(root.length);
       if (scope.length === 0) return true;
       return scope.length <= target.length && runAt(target, scope, 0);
