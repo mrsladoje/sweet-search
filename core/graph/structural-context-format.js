@@ -1,5 +1,22 @@
-export function formatStructuralContext(result) {
+/** The three sections a caller may restrict the render to. */
+export const TRACE_MODES = ['callers', 'callees', 'impact'];
+
+/**
+ * Render a structural-context result.
+ *
+ * @param {object} result
+ * @param {object} [options]
+ * @param {'callers'|'callees'|'impact'|null} [options.mode]
+ *   Restrict the body to one section. The guide has taught
+ *   `ss-trace <symbol> [callers|callees|impact]` since p7, but the wrapper read only the
+ *   first positional and dropped the mode word silently — 27 pooled operations asked for a
+ *   section and got the full trace. The header, the target and any notes always print: they
+ *   say WHICH symbol was resolved, and an agent that cannot see that cannot trust the rest.
+ */
+export function formatStructuralContext(result, options = {}) {
   if (!result.target) return `No indexed symbol found for "${result.symbol}".`;
+  const mode = TRACE_MODES.includes(options.mode) ? options.mode : null;
+  const show = section => mode === null || mode === section;
   const t = result.target;
   const lines = [];
   const callerProvenance = result.sections.callers.provenance
@@ -26,10 +43,17 @@ export function formatStructuralContext(result) {
     if (result.answerCues.topCallees.length) lines.push(`answer cues: top callees=${result.answerCues.topCallees.join(' | ')}`);
     if (result.answerCues.criticalPaths.length) lines.push(`answer cues: critical paths=${result.answerCues.criticalPaths.join(' | ')}`);
   }
-  if (t.headerContext) lines.push('\n## target imports\n```', t.headerContext, '```');
-  if (t.code) lines.push('\n## target\n```', t.code, '```');
-  if (t.callsiteHints?.length) lines.push(`target callsite hints: ${t.callsiteHints.join(', ')}`);
+  // The target's own body is the largest block in a trace. A mode-restricted call asked
+  // about one relationship, not about the symbol's source, so it is left out — that is the
+  // whole point of asking for a section.
+  if (!mode) {
+    if (t.headerContext) lines.push('\n## target imports\n```', t.headerContext, '```');
+    if (t.code) lines.push('\n## target\n```', t.code, '```');
+    if (t.callsiteHints?.length) lines.push(`target callsite hints: ${t.callsiteHints.join(', ')}`);
+  }
+  if (mode) lines.push(`\nmode=${mode} — showing only this section; run ss-trace ${t.name} with no mode word for the full trace.`);
   for (const [title, section] of [['callers', result.sections.callers], ['callees', result.sections.callees]]) {
+    if (!show(title)) continue;
     lines.push(`\n## ${title} (${section.total})`);
     for (const item of section.items) {
       lines.push(`\n### ${item.name} [${item.type}] importance=${item.importance}`);
@@ -38,11 +62,13 @@ export function formatStructuralContext(result) {
     }
     if (!section.items.length) lines.push('(none)');
   }
-  lines.push(`\n## impact paths (${result.sections.impact.total}, depth <= ${result.maxDepth})`);
-  if (!result.sections.impact.paths.length) lines.push('(none)');
-  result.sections.impact.paths.forEach((p, i) => {
-    lines.push(`${i + 1}. ${p.direction} importance=${p.importance} ${p.path}`);
-  });
+  if (show('impact')) {
+    lines.push(`\n## impact paths (${result.sections.impact.total}, depth <= ${result.maxDepth})`);
+    if (!result.sections.impact.paths.length) lines.push('(none)');
+    result.sections.impact.paths.forEach((p, i) => {
+      lines.push(`${i + 1}. ${p.direction} importance=${p.importance} ${p.path}`);
+    });
+  }
   return lines.join('\n');
 }
 

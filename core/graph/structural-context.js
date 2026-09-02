@@ -466,6 +466,6 @@ export class StructuralContextBuilder {
   }
 }
 
-export { formatStructuralContext } from './structural-context-format.js';
+export { formatStructuralContext, TRACE_MODES } from './structural-context-format.js';
 
 export default StructuralContextBuilder;

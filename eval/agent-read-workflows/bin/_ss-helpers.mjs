@@ -186,6 +186,19 @@ function resolvePositional(args, usage) {
   return pattern;
 }
 
+/**
+ * True when `args[i]` is the value belonging to the flag before it, rather than a
+ * positional of its own. Needed because ss-trace's flags are all space-separated
+ * (`--in <file>`), so a naive "second non-flag token" scan would read a flag's value as
+ * the mode word.
+ */
+function looksLikeTraceOptionValue(args, i) {
+  const token = String(args[i] ?? '');
+  if (token.startsWith('-')) return true;                     // a flag, not a positional
+  const prev = String(args[i - 1] ?? '');
+  return prev.startsWith('-') && !prev.includes('=');         // the previous flag's value
+}
+
 function failUsage(message, usage) {
   process.stderr.write(`[ss] ${message}\n${usage}\n`);
   process.exit(2);
@@ -997,7 +1010,7 @@ async function cmdSemantic(rawArgs) {
   process.exit(0);
 }
 
-const TRACE_USAGE = 'Usage: ss-trace <symbol> [--in <file>] [--query <hint>] [--depth N] [--budget N]';
+const TRACE_USAGE = 'Usage: ss-trace <symbol> [callers|callees|impact] [--in <file>] [--query <hint>] [--depth N] [--budget N]';
 async function cmdTrace(rawArgs) {
   const args = normalizeArgs(rawArgs);
   let json = false;
@@ -1005,7 +1018,27 @@ async function cmdTrace(rawArgs) {
     json = true;
     args.splice(args.indexOf('--json'), 1);
   }
-  const { traceSymbol, formatStructuralContext } = await import(path.join(REPO_ROOT, 'core/search/search-trace.js'));
+  const { traceSymbol, formatStructuralContext, TRACE_MODES } = await import(path.join(REPO_ROOT, 'core/search/search-trace.js'));
+
+  // THE MODE WORD. The guide has taught `ss-trace <symbol> [callers|callees|impact]` since
+  // p7, but this function read only the FIRST positional, so `ss-trace foo callers` ran as
+  // an un-moded trace and the agent silently got the whole thing — 27 pooled operations
+  // used the form. Implemented rather than removed from the guide: the guidance block is
+  // owner-protected, and an agent that asks for one relationship should be answered with
+  // one relationship. An unrecognised second positional is now a usage error instead of a
+  // silent drop, because a typo'd mode word is exactly how this stayed invisible.
+  let mode = null;
+  {
+    const idx = args.findIndex((a, i) => i > 0 && !looksLikeTraceOptionValue(args, i));
+    if (idx > 0) {
+      const word = String(args[idx]).toLowerCase();
+      if (!TRACE_MODES.includes(word)) {
+        failUsage(`unrecognised mode "${args[idx]}" (expected one of: ${TRACE_MODES.join(', ')})`, TRACE_USAGE);
+      }
+      mode = word;
+      args.splice(idx, 1);
+    }
+  }
 
   const opts = { projectRoot: PROJECT_ROOT };
   const file = readValueFlag(args, ['--in', '--file'], null, TRACE_USAGE);
@@ -1028,11 +1061,12 @@ async function cmdTrace(rawArgs) {
   await recordAgentToolCall({
     query: json ? undefined : `${symbol} ${queryHint}`.trim(),
   });
-  if (json) process.stdout.write(JSON.stringify(response, null, 2) + '\n');
-  else process.stdout.write(formatStructuralContext(response) + '\n');
+  if (json) process.stdout.write(JSON.stringify({ ...response, mode }, null, 2) + '\n');
+  else process.stdout.write(formatStructuralContext(response, { mode }) + '\n');
 
   const meta = {
     symbol,
+    mode,
     queryHash: shortQueryHash(`${symbol}:${queryHint || ''}`),
     target: response.target ? {
       name: response.target.name,
