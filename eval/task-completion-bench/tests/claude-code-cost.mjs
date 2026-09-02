@@ -251,6 +251,7 @@ assert(unavailableSelection.source === 'unavailable'
   'missing aggregate usage categories make cost unavailable instead of $0');
 
 console.log('\nprompt argument construction:');
+const subagentAppended = {};
 for (const sweet of [false, true]) {
   const argv = buildClaudeCliArgs({ prompt: 'issue', rundir: '/tmp/repo', sweet, claudeModelId: 'model' });
   const appendIndexes = argv.flatMap((v, i) => v === '--append-system-prompt' ? [i] : []);
@@ -259,7 +260,20 @@ for (const sweet of [false, true]) {
   assert(appended.includes(READ_PAGES_TOOL_NOTE), `${sweet ? 'sweet' : 'native'} receives the byte-identical pages note`);
   assert(sweet === appended.includes('sweet-search guidance'),
     `${sweet ? 'sweet' : 'native'} appended value has the expected routing override`, appended);
+
+  // F2: `--append-system-prompt` never reaches a Task-tool subagent, so subagents on both
+  // arms kept sending the invalid empty `pages` value. The note must therefore go out on
+  // the subagent flag too, and it must be BYTE-IDENTICAL between arms — the sweet tool
+  // guide must not ride along, or a shared repair becomes a retrieval treatment.
+  const subIndexes = argv.flatMap((v, i) => v === '--append-subagent-system-prompt' ? [i] : []);
+  assert(subIndexes.length === 1, `${sweet ? 'sweet' : 'native'} emits exactly one append-subagent-system-prompt flag`, JSON.stringify(argv));
+  const sub = argv[subIndexes[0] + 1];
+  assert(sub === READ_PAGES_TOOL_NOTE, `${sweet ? 'sweet' : 'native'} subagent prompt is the pages note and nothing else`, sub);
+  assert(!sub.includes('sweet-search guidance'), `${sweet ? 'sweet' : 'native'} subagent prompt carries no sweet routing override`);
+  subagentAppended[sweet ? 'sweet' : 'native'] = sub;
 }
+assert(subagentAppended.native === subagentAppended.sweet,
+  'the subagent pages note is byte-identical across arms (zero head-to-head differential)');
 
 console.log('\ndeterministic Read pages normalization:');
 assert(!Object.hasOwn(normalizeReadInput({ file_path: '/repo/a.js', pages: '' }), 'pages'),

@@ -48,6 +48,18 @@ export const READ_PAGES_TOOL_NOTE =
  * Build the invariant Claude CLI argument vector. The CLI accepts one scalar
  * `--append-system-prompt` value: passing the option twice is last-value-wins,
  * which previously dropped the shared pages repair from the sweet arm.
+ *
+ * SUBAGENTS GET THE PAGES NOTE TOO, ON BOTH ARMS (2026-09-02). `--append-system-prompt`
+ * reaches the main thread only, so every Task-tool subagent was still sending the invalid
+ * empty `pages` value: 154 of 176 failed native Read results are that form, and inside
+ * subagents native wasted 22 requests (1.3% of the arm) against sweet's 9. That asymmetry
+ * flattered sweet, because the sweet arm barely uses the Read tool. The note goes to both
+ * arms byte-identically, so any resulting native improvement is a repair of our own harness
+ * defect and is NEVER to be reported as a sweet regression.
+ *
+ * `--append-subagent-system-prompt` is hidden from `--help` but registered in the pinned
+ * 2.1.218 binary; it only works with `--print` (which `-p` is) and sets its own gate,
+ * CLAUDE_CODE_ENABLE_APPEND_SUBAGENT_PROMPT=1, so no env plumbing is needed.
  */
 export function buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, settingsPath = null }) {
   const appendedSystemPrompt = sweet
@@ -56,6 +68,10 @@ export function buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, setti
   return [
     '-p', prompt, '--add-dir', rundir,
     '--append-system-prompt', appendedSystemPrompt,
+    // Byte-identical on both arms: the sweet tool guide deliberately does NOT ride along
+    // here. A subagent that learned about ss-* only in the sweet arm would be a retrieval
+    // treatment, not a shared repair, and this flag must stay differential-free.
+    '--append-subagent-system-prompt', READ_PAGES_TOOL_NOTE,
     // THE PreToolUse READ NORMALIZER IS INERT. IT CANNOT WORK. DO NOT "FIX" IT.
     // (Settled 2026-08-13 by correlating every hook invocation against every Read
     // outcome across all 32 native sessions of screen-v3.)
