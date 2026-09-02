@@ -69,7 +69,7 @@ describe('index coverage', () => {
     writeFileSync(path.join(root, 'a.js'), 'x');
     const cov = await createIndexCoverage({ projectRoot: root });
     expect(cov.isIndexed('a.js')).toBe(true);
-    expect(cov.notIndexedNote('a.js')).toBeNull();
+    expect(await cov.notIndexedNote('a.js')).toBeNull();
     cov.close();
     rmSync(root, { recursive: true, force: true }); root = null;
   });
@@ -87,14 +87,14 @@ describe('index coverage', () => {
     writeFileSync(path.join(root, 'node_modules/dep/index.js'), 'module.exports = 1;\n');
     const cov = await createIndexCoverage({ projectRoot: root });
 
-    expect(cov.notIndexedNote('src/known.js')).toBeNull();
+    expect(await cov.notIndexedNote('src/known.js')).toBeNull();
 
-    const fresh = cov.notIndexedNote('src/fresh.js');
+    const fresh = await cov.notIndexedNote('src/fresh.js');
     expect(fresh.kind).toBe('stale');
     expect(fresh.text).toMatch(/has not seen it yet/);
     expect(fresh.text).not.toMatch(/built from/);
 
-    const dep = cov.notIndexedNote('node_modules/dep/index.js');
+    const dep = await cov.notIndexedNote('node_modules/dep/index.js');
     expect(dep.kind).toBe('excluded');
     cov.close();
     rmSync(root, { recursive: true, force: true }); root = null;
@@ -111,7 +111,7 @@ describe('index coverage', () => {
     // One very long line repeated: median line length far above 200, the bundler shape.
     writeFileSync(path.join(root, 'dist/index.js'), `${'a'.repeat(4000)};\n`.repeat(40));
     const cov = await createIndexCoverage({ projectRoot: root });
-    const note = cov.notIndexedNote('dist/index.js');
+    const note = await cov.notIndexedNote('dist/index.js');
     expect(note.kind).toBe('excluded');
     expect(note.text).toMatch(/not indexed: dist\/index\.js/);
     cov.close();
@@ -125,15 +125,15 @@ describe('index coverage', () => {
     writeFileSync(path.join(root, 'src/deep/a.js'), 'x');
     writeFileSync(path.join(root, 'build/out.js'), 'x');
     const cov = await createIndexCoverage({ projectRoot: root });
-    expect(cov.notIndexedNote('src')).toBeNull();            // has indexed descendants
-    expect(cov.notIndexedNote('src/')).toBeNull();           // trailing slash is the same scope
-    const build = cov.notIndexedNote('build');
+    expect(await cov.notIndexedNote('src')).toBeNull();            // has indexed descendants
+    expect(await cov.notIndexedNote('src/')).toBeNull();           // trailing slash is the same scope
+    const build = await cov.notIndexedNote('build');
     expect(build.isDir).toBe(true);
     expect(build.kind).toBe('excluded');
     // A prefix match must not leak across a sibling: "src" must never match "srcfoo".
     mkdirSync(path.join(root, 'srcfoo'), { recursive: true });
     writeFileSync(path.join(root, 'srcfoo/x.js'), 'x');
-    expect(cov.notIndexedNote('srcfoo')).not.toBeNull();
+    expect(await cov.notIndexedNote('srcfoo')).not.toBeNull();
     cov.close();
     rmSync(root, { recursive: true, force: true }); root = null;
   });
@@ -141,9 +141,9 @@ describe('index coverage', () => {
   it('says nothing about a path that does not exist or sits outside the project', async () => {
     root = makeProject(['src/a.js']);
     const cov = await createIndexCoverage({ projectRoot: root });
-    expect(cov.notIndexedNote('nope.js')).toBeNull();
-    expect(cov.notIndexedNote('/etc/hosts')).toBeNull();
-    expect(cov.notIndexedNote('')).toBeNull();
+    expect(await cov.notIndexedNote('nope.js')).toBeNull();
+    expect(await cov.notIndexedNote('/etc/hosts')).toBeNull();
+    expect(await cov.notIndexedNote('')).toBeNull();
     cov.close();
     rmSync(root, { recursive: true, force: true }); root = null;
   });
