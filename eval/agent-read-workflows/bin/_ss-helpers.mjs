@@ -25,6 +25,7 @@ import {
 } from '../../../core/search/grep-output-shaping.js';
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
 import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.js';
+import { createIndexCoverage } from '../../../core/search/index-coverage.js';
 import { numberCodeLines, lineGutterEnabled } from '../../../core/search/search-read.js';
 import { renderRegexDialectHint } from '../../../core/search/regex-dialect.js';
 import {
@@ -237,35 +238,37 @@ function absorbPositionalPaths(args, inPaths) {
     (tok) => existsSync(path.isAbsolute(tok) ? tok : path.resolve(PROJECT_ROOT, tok)));
 }
 
-// When a scope resolves to a real path on disk but is EXCLUDED from the index
-// (real build output, a dependency dir, an unsupported file type), a 0-result
-// answer means "not searchable", not "searched and absent". Say which, so the
-// agent stops grepping a bundle like dist/index.js and looks at real source.
-// The policy is built once, lazily, and only on the 0-result branch.
-let _admissionPolicy = null;
-let _admissionTried = false;
-function excludedScopeNote(scopePath) {
-  if (!scopePath) return null;
-  try {
-    const abs = path.isAbsolute(scopePath) ? scopePath : path.resolve(PROJECT_ROOT, scopePath);
-    if (!existsSync(abs)) return null;
-    if (!_admissionTried) {
-      _admissionTried = true;
-      try { _admissionPolicy = createAdmissionPolicy({ projectRoot: PROJECT_ROOT }); }
-      catch { _admissionPolicy = null; }
-    }
-    if (!_admissionPolicy) return null;
-    const rel = path.relative(PROJECT_ROOT, abs).replace(/\\/g, '/');
-    if (!rel || rel.startsWith('..')) return null;
-    // Directory scope: excluded ⇔ the deny-list rejects it. File scope: excluded
-    // ⇔ not admitted (wrong extension, denied dir, oversized).
-    const isDir = statSync(abs).isDirectory();
-    const excluded = isDir ? _admissionPolicy.isExcluded(rel) : !_admissionPolicy.admitsShape(rel);
-    if (excluded) {
-      return `(not indexed: ${scopePath} is excluded from the index — build output, a dependency, or an unsupported file type. Nothing here is searchable; look at tracked source instead.)`;
-    }
-  } catch { /* best-effort hint only */ }
-  return null;
+// When a scope resolves to a real path on disk but the index does not hold it, a 0-result
+// answer means "not searchable", not "searched and absent". Say which, so the agent stops
+// grepping a bundle like dist/index.js and looks at real source.
+//
+// THE PATH PREDICATE WAS NOT ENOUGH. This used to ask `admitsShape(rel)`, a PATH rule. The
+// indexer ALSO drops files by CONTENT: a committed bundle is git-tracked, so the path rules
+// re-admit it and the minified-shape rule then drops it anyway. `admitsShape` answered
+// "admitted", so the wrapper printed a bare `(no matches)` on `--in dist/index.js`. Asking
+// the index itself cannot drift from the indexer, whatever rule did the dropping.
+//
+// Built once, lazily, and only on a branch that is already about to explain something.
+let _coverage = null;
+let _coverageTried = false;
+async function getCoverage() {
+  if (_coverageTried) return _coverage;
+  _coverageTried = true;
+  try { _coverage = await createIndexCoverage({ projectRoot: PROJECT_ROOT }); }
+  catch { _coverage = null; }
+  return _coverage;
+}
+
+/**
+ * `{kind, reason, text}` when the index does not hold `scopePath`, else null.
+ * `kind` is 'excluded' (the indexer will never hold it) or 'stale' (it would, but this
+ * index has not seen it yet). Callers must not treat those the same: refusing to show a
+ * file body is right for the first and wrong for the second.
+ */
+async function notIndexedNote(scopePath) {
+  const cov = await getCoverage();
+  if (!cov) return null;
+  try { return cov.notIndexedNote(scopePath); } catch { return null; }
 }
 
 async function getSweetSearch() {
@@ -377,8 +380,11 @@ async function cmdGrep(rawArgs) {
       process.stdout.write(`${r.file}:${r.line}: ${text}${marker}\n`);
     });
     if (result.results.length === 0) {
-      const note = inPaths.map(excludedScopeNote).find(Boolean);
-      process.stdout.write(`${note || '(no matches)'}\n`);
+      // First scope the index cannot answer for wins: an agent that scoped to a bundle needs
+      // to know that before it decides the pattern is absent.
+      let note = null;
+      for (const p of inPaths) { note = await notIndexedNote(p); if (note) break; }
+      process.stdout.write(`${note ? note.text : '(no matches)'}\n`);
     }
     writeRegexDialectHint(result.stats);
     process.exit(0);
@@ -621,6 +627,23 @@ async function cmdRead(rawArgs) {
   const cappedDefault = (start === null && end === null && READ_WINDOW > 0);
   if (cappedDefault) { start = 1; end = READ_WINDOW; }
 
+  // A file the INDEXER refused by content is refused here too, BEFORE any body is read.
+  // `ss-read dist/index.js` used to hand back 13,396 tokens of minified JavaScript in one
+  // call — resident for the rest of the rollout and re-sent every turn. The refusal names
+  // the native read, so the agent that genuinely wants the bytes can still get them; it
+  // just does not get them by accident from a search tool.
+  //
+  // ONLY 'excluded' refuses. A file this index has not seen yet ('stale') is ordinary
+  // source — often the agent's own new file — and reading it is exactly right.
+  {
+    const note = await notIndexedNote(file);
+    if (note && note.kind === 'excluded' && !note.isDir) {
+      process.stderr.write(`[ss-read] ${note.text}\n`);
+      process.stderr.write(`[ss-read] ss-read will not return its contents. If you truly need the bytes, read ${file} with your own file-reading tool.\n`);
+      process.exit(1);
+    }
+  }
+
   const { readFile, renderUnreadBelow, numberCodeLines } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
   // Agent-facing ss-read: span gate on, same as the CLI and the daemon route.
   const r = await readFile({
@@ -634,9 +657,9 @@ async function cmdRead(rawArgs) {
     // src/build/x). Point back at the index instead of a bare ENOENT: an
     // excluded path says so, otherwise suggest locating it by name/behaviour.
     if (/ENOENT|not a regular file|no such file/i.test(String(r.error))) {
-      const note = excludedScopeNote(file);
+      const note = await notIndexedNote(file);
       if (note) {
-        process.stderr.write(`[ss-read] ${note}\n`);
+        process.stderr.write(`[ss-read] ${note.text}\n`);
       } else {
         const base = path.basename(String(file));
         process.stderr.write(`[ss-read] path not found — locate it first: ss-grep "${base}"  (exact name) or ss-search "<what it does>" (behaviour), then ss-read the path it returns.\n`);
@@ -906,6 +929,19 @@ async function cmdSemantic(rawArgs) {
     process.stderr.write(SEMANTIC_USAGE + '\n');
     process.exit(2);
   }
+  // Same refusal as ss-read, and for a sharper reason: on an excluded file `readSemantic`
+  // has no chunks to rank, so it falls back to a WHOLE-FILE span. Five of the seven
+  // [FALLBACK] calls on the fresh pool were `dist/index.js` lines 1-35000 — the tool
+  // answering a semantic question with 35,000 lines of bundle.
+  {
+    const note = await notIndexedNote(file);
+    if (note && note.kind === 'excluded' && !note.isDir) {
+      process.stderr.write(`[ss-semantic] ${note.text}\n`);
+      process.stderr.write(`[ss-semantic] There is nothing to rank inside it, so no span is returned. Ask this question of the source it was built from.\n`);
+      process.exit(1);
+    }
+  }
+
   let r;
   try {
     if (!await ensureWarmServerReady({ timeoutMs: 5000 })) throw new Error('warm server is not ready');
