@@ -1,0 +1,117 @@
+=== 1. VALIDATION: my reconstruction vs rows.json ===
+codex: ideal n=410 maxAbsErr=5.000e-7 @fp-codex-tab-20260826/bfgroup__b2-259/sweet/r1
+  realized n=410 maxAbsErr=9.353e-4
+opencode: ideal n=491 maxAbsErr=5.000e-7 @sb-opencode-20260811/mransan__ocaml-protoc-202/sweet/r0
+  realized n=491 maxAbsErr=5.000e-7
+claude-code: ideal n=338 maxAbsErr=5.000e-7 @sb-claudecode-20260811/rstudio-education__gradethis-161/native/r0
+  mainOnly n=342 maxAbsErr=5.000e-7 @fp-claudecode-tab-20260826/callstack__react-native-paper-972/r2
+  sidechain n=270 maxAbsErr=0.000e+0
+  claude tab/native: n=66 nullRealized=28 nullMainOnly=0 degenReran=1 candidates>1=1
+  claude tab/sweet: n=66 nullRealized=9 nullMainOnly=0 degenReran=5 candidates>1=5
+  claude none/sweet: n=66 nullRealized=9 nullMainOnly=0 degenReran=4 candidates>1=4
+  claude pipe/sweet: n=66 nullRealized=6 nullMainOnly=0 degenReran=2 candidates>1=2
+
+=== 2. EPOCH-C CELLS (my reconstruction) ===
+harness form arm  n  ideal$   real$    brk$   incl$   turns  outTok  ingestTok residentTok ctxInt firstIn  rewrites
+codex tab native n=66 ideal=0.012218 real=0.012287 brk=0.012218 incl=0.012287 turns=18.85 out=5786 ingT=35942 resT=515269 ctx=551210 first=14359 rew=0 solved=41 side=0.000000 delegRollouts=0
+codex tab sweet n=66 ideal=0.012258 real=0.012330 brk=0.012258 incl=0.012330 turns=19.61 out=5524 ingT=34541 resT=548952 ctx=583492 first=15816 rew=0 solved=39 side=0.000000 delegRollouts=0
+codex none sweet n=66 ideal=0.012248 real=0.012319 brk=0.012248 incl=0.012319 turns=19.42 out=5676 ingT=34183 resT=542398 ctx=576581 first=15816 rew=0 solved=41 side=0.000000 delegRollouts=0
+codex pipe sweet n=66 ideal=0.012681 real=0.012754 brk=0.012681 incl=0.012754 turns=19.77 out=5728 ingT=35785 resT=566607 ctx=602393 first=15816 rew=0 solved=42 side=0.000000 delegRollouts=0
+opencode tab native n=66 ideal=0.008964 real=0.008969 brk=0.008964 incl=0.008969 turns=16.32 out=3606 ingT=30359 resT=376466 ctx=406824 first=6898 rew=0 solved=41 side=0.000000 delegRollouts=0
+opencode tab sweet n=66 ideal=0.009260 real=0.009265 brk=0.009260 incl=0.009265 turns=19.70 out=3645 ingT=28315 resT=424150 ctx=452466 first=8355 rew=0 solved=41 side=0.000000 delegRollouts=0
+opencode none sweet n=66 ideal=0.008579 real=0.008584 brk=0.008579 incl=0.008584 turns=18.91 out=3647 ingT=26582 resT=373290 ctx=399872 first=8355 rew=0 solved=39 side=0.000000 delegRollouts=0
+opencode pipe sweet n=66 ideal=0.008630 real=0.008764 brk=0.008630 incl=0.008764 turns=18.39 out=3479 ingT=27260 resT=381596 ctx=408855 first=8355 rew=0 solved=38 side=0.000000 delegRollouts=0
+claude-code tab native n=66 ideal=0.015329 real=0.016542 brk=0.015329 incl=0.020972 turns=24.30 out=6415 ingT=36562 resT=782429 ctx=818991 first=17674 rew=0 solved=43 side=0.004429 delegRollouts=28
+claude-code tab sweet n=66 ideal=0.014739 real=0.016314 brk=0.014739 incl=0.019125 turns=23.17 out=5248 ingT=38551 resT=773481 ctx=812032 first=19243 rew=0 solved=40 side=0.002811 delegRollouts=9
+claude-code none sweet n=66 ideal=0.014359 real=0.015488 brk=0.014359 incl=0.017345 turns=22.42 out=5552 ingT=36931 resT=733501 ctx=770431 first=19243 rew=1 solved=41 side=0.001857 delegRollouts=9
+claude-code pipe sweet n=66 ideal=0.013708 real=0.014964 brk=0.013708 incl=0.016730 turns=21.27 out=4487 ingT=38761 resT=714023 ctx=752783 first=19243 rew=0 solved=39 side=0.001766 delegRollouts=6
+
+--- component split (per rollout, mean) ---
+codex|tab|native: INGEST 0.003594 (29.4%) RESIDENT 0.005153 (42.2%) OUTPUT 0.003472 (28.4%) side 0.000000 | identity ideal=0.012218 vs 0.012218 | surcharge real-ideal=0.000069 | cacheWriteTok=35899
+codex|tab|sweet: INGEST 0.003454 (28.2%) RESIDENT 0.005490 (44.8%) OUTPUT 0.003315 (27.0%) side 0.000000 | identity ideal=0.012258 vs 0.012258 | surcharge real-ideal=0.000072 | cacheWriteTok=34498
+codex|none|sweet: INGEST 0.003418 (27.9%) RESIDENT 0.005424 (44.3%) OUTPUT 0.003406 (27.8%) side 0.000000 | identity ideal=0.012248 vs 0.012248 | surcharge real-ideal=0.000071 | cacheWriteTok=34140
+codex|pipe|sweet: INGEST 0.003579 (28.2%) RESIDENT 0.005666 (44.7%) OUTPUT 0.003437 (27.1%) side 0.000000 | identity ideal=0.012681 vs 0.012681 | surcharge real-ideal=0.000073 | cacheWriteTok=35742
+opencode|tab|native: INGEST 0.003036 (33.9%) RESIDENT 0.003765 (42.0%) OUTPUT 0.002164 (24.1%) side 0.000000 | identity ideal=0.008964 vs 0.008964 | surcharge real-ideal=0.000004 | cacheWriteTok=30356
+opencode|tab|sweet: INGEST 0.002832 (30.6%) RESIDENT 0.004242 (45.8%) OUTPUT 0.002187 (23.6%) side 0.000000 | identity ideal=0.009260 vs 0.009260 | surcharge real-ideal=0.000005 | cacheWriteTok=28312
+opencode|none|sweet: INGEST 0.002658 (31.0%) RESIDENT 0.003733 (43.5%) OUTPUT 0.002188 (25.5%) side 0.000000 | identity ideal=0.008579 vs 0.008579 | surcharge real-ideal=0.000005 | cacheWriteTok=26579
+opencode|pipe|sweet: INGEST 0.002726 (31.6%) RESIDENT 0.003816 (44.2%) OUTPUT 0.002088 (24.2%) side 0.000000 | identity ideal=0.008630 vs 0.008630 | surcharge real-ideal=0.000134 | cacheWriteTok=27512
+claude-code|tab|native: INGEST 0.003656 (18.5%) RESIDENT 0.007824 (39.6%) OUTPUT 0.003849 (19.5%) side 0.004429 | identity ideal=0.015329 vs 0.015329 | surcharge real-ideal=0.001213 | cacheWriteTok=39105
+claude-code|tab|sweet: INGEST 0.003855 (22.0%) RESIDENT 0.007735 (44.1%) OUTPUT 0.003149 (17.9%) side 0.002811 | identity ideal=0.014739 vs 0.014739 | surcharge real-ideal=0.001575 | cacheWriteTok=43812
+claude-code|none|sweet: INGEST 0.003693 (22.8%) RESIDENT 0.007335 (45.2%) OUTPUT 0.003331 (20.5%) side 0.001857 | identity ideal=0.014359 vs 0.014359 | surcharge real-ideal=0.001129 | cacheWriteTok=38666
+claude-code|pipe|sweet: INGEST 0.003876 (25.0%) RESIDENT 0.007140 (46.1%) OUTPUT 0.002692 (17.4%) side 0.001766 | identity ideal=0.013708 vs 0.013708 | surcharge real-ideal=0.001256 | cacheWriteTok=41204
+
+=== 3. PAIRED PER-TASK DELTA, epoch C (sweet TAB - native) ===
+codex: tasks=22 meanD=0.000043 pct=0.35% CI=[-11.6%, 12.9%] median=-0.001119 cheaper=14 dearer=8
+  LOO on realized MAIN-ONLY: full=0.35%  min drop bfgroup__b2-113 -> -3.31%  max drop aio-libs__aiohttp-8038 -> 2.32%
+  extremes: bfgroup__b2-113 0.009396 | bfgroup__b2-259 0.008224 | devlooped__moq-1262 0.004269 ... accenture__sfmc-devtools-1974 -0.004375 | aio-libs__aiohttp-8038 -0.004832
+opencode: tasks=22 meanD=0.000297 pct=3.31% CI=[-8.5%, 16.4%] median=-0.000208 cheaper=13 dearer=9
+  LOO on realized MAIN-ONLY: full=3.31%  min drop bfgroup__b2-259 -> -0.08%  max drop protofire__solhint-224 -> 5.47%
+  extremes: bfgroup__b2-259 0.006674 | bfgroup__b2-113 0.005664 | aws-actions__configure-aws-credentials-42 0.005155 ... accenture__sfmc-devtools-1974 -0.002886 | protofire__solhint-224 -0.003498
+claude-code: tasks=22 meanD=-0.001847 pct=-8.81% CI=[-33.1%, 29.1%] median=-0.002389 cheaper=13 dearer=9
+  LOO on realized MAIN-ONLY: full=-1.38%  min drop bfgroup__b2-259 -> -9.66%  max drop devlooped__moq-1262 -> 6.83%
+  extremes: bfgroup__b2-259 0.051387 | bfgroup__b2-113 0.016648 | fastify__fastify-cors-285 0.008229 ... aio-libs__aiohttp-8038 -0.020109 | devlooped__moq-1262 -0.041375
+
+=== 4. INSTRUCTION-FILE FIRST-TURN DELTA (sweet - native), epoch C ===
+codex: per-task n=22 min=1457 med=1457 max=1457
+  per-rollout(rep-matched) n=66 min=1457 med=1457 max=1457 distinct=1457
+  price: 1457 tok x (0.10 once + 0.01 x 18.61 resends) = $0.000417 = 3.38% of the sweet inclusive arm ($0.012330)
+opencode: per-task n=22 min=1457 med=1457 max=1457
+  per-rollout(rep-matched) n=66 min=1457 med=1457 max=1457 distinct=1457
+  price: 1457 tok x (0.10 once + 0.01 x 18.70 resends) = $0.000418 = 4.51% of the sweet inclusive arm ($0.009265)
+claude-code: per-task n=22 min=1565 med=1570 max=1570
+  per-rollout(rep-matched) n=66 min=1565 med=1570 max=1570 distinct=1565,1570
+  price: 1570 tok x (0.10 once + 0.01 x 22.17 resends) = $0.000505 = 2.64% of the sweet inclusive arm ($0.019125)
+
+=== 5. OUTPUT TOKENS (per turn / per rollout), epoch C ===
+codex native: outTok/rollout=5786 turns=18.85 outTok/turn=307.0 outUsd=0.003472  (main only, sidechain out=0)
+codex sweet: outTok/rollout=5524 turns=19.61 outTok/turn=281.8 outUsd=0.003315  (main only, sidechain out=0)
+opencode native: outTok/rollout=3606 turns=16.32 outTok/turn=221.0 outUsd=0.002164  (main only, sidechain out=0)
+opencode sweet: outTok/rollout=3645 turns=19.70 outTok/turn=185.0 outUsd=0.002187  (main only, sidechain out=0)
+claude-code native: outTok/rollout=6415 turns=24.30 outTok/turn=263.9 outUsd=0.003849  (main only, sidechain out=1627)
+claude-code sweet: outTok/rollout=5248 turns=23.17 outTok/turn=226.5 outUsd=0.003149  (main only, sidechain out=540)
+
+=== 6. CLAUDE-CODE DELEGATION ===
+  epoch A native: n=34 delegatingRollouts=11 delegatingTaskCells=8 side$/rollout=0.002313 main$/rollout=0.012783 incl=0.015096 subReqs=121 subNoUsage=0
+  epoch A sweet: n=34 delegatingRollouts=3 delegatingTaskCells=2 side$/rollout=0.000696 main$/rollout=0.013063 incl=0.013759 subReqs=35 subNoUsage=0
+  epoch A NEITHER-DELEGATED tasks n=9: main-only Δ=1.7% CI=[-10.2%, 10.9%]
+  epoch B native: n=39 delegatingRollouts=20 delegatingTaskCells=9 side$/rollout=0.003718 main$/rollout=0.014949 incl=0.018668 subReqs=290 subNoUsage=0
+  epoch B sweet: n=39 delegatingRollouts=0 delegatingTaskCells=0 side$/rollout=0.000000 main$/rollout=0.012896 incl=0.012896 subReqs=0 subNoUsage=0
+  epoch B NEITHER-DELEGATED tasks n=4: main-only Δ=-12.6% CI=[-26.9%, 7.6%]
+  epoch C native: n=66 delegatingRollouts=28 delegatingTaskCells=15 side$/rollout=0.004429 main$/rollout=0.016542 incl=0.020972 subReqs=519 subNoUsage=0
+  epoch C sweet: n=66 delegatingRollouts=9 delegatingTaskCells=6 side$/rollout=0.002811 main$/rollout=0.016314 incl=0.019125 subReqs=364 subNoUsage=0
+  epoch C NEITHER-DELEGATED tasks n=4: main-only Δ=26.3% CI=[5.0%, 51.9%]
+
+=== 7. ALL-EPOCH CELL TABLE ===
+A codex native: n=34 solved=18 real=0.008592 ideal=0.008510 brk=0.008510 incl=0.008592 turns=11.44 calls=7.53 ctx=307414 first=13277
+A codex sweet: n=34 solved=19 real=0.008040 ideal=0.007960 brk=0.007960 incl=0.008040 turns=12.41 calls=9.26 ctx=290574 first=14734
+A opencode native: n=34 solved=17 real=0.007971 ideal=0.007967 brk=0.007967 incl=0.007971 turns=15.24 calls=22.79 ctx=330240 first=6911
+A opencode sweet: n=34 solved=17 real=0.006556 ideal=0.006552 brk=0.006552 incl=0.006556 turns=14.79 calls=16.97 ctx=268279 first=8368
+A claude-code native: n=34 solved=15 real=0.012783 ideal=0.011719 brk=0.011719 incl=0.015096 turns=19.53 calls=29.50 ctx=563686 first=17630
+A claude-code sweet: n=34 solved=14 real=0.013063 ideal=0.011998 brk=0.011998 incl=0.013759 turns=18.12 calls=19.68 ctx=573740 first=19217
+B codex native: n=39 solved=20 real=0.010836 ideal=0.010775 brk=0.010775 incl=0.010836 turns=16.69 calls=10.18 ctx=441334 first=14147
+B codex sweet: n=39 solved=16 real=0.010236 ideal=0.010177 brk=0.010177 incl=0.010236 turns=16.26 calls=9.92 ctx=417285 first=15604
+B opencode native: n=39 solved=19 real=0.008705 ideal=0.008701 brk=0.008701 incl=0.008705 turns=15.95 calls=26.23 ctx=363942 first=6653
+B opencode sweet: n=39 solved=17 real=0.008465 ideal=0.008460 brk=0.008460 incl=0.008465 turns=18.05 calls=20.05 ctx=378319 first=8110
+B claude-code native: n=39 solved=18 real=0.014949 ideal=0.013774 brk=0.013774 incl=0.018668 turns=22.69 calls=40.08 ctx=691043 first=17432
+B claude-code sweet: n=39 solved=16 real=0.012896 ideal=0.011820 brk=0.011820 incl=0.012896 turns=18.49 calls=17.95 ctx=580308 first=19002
+C codex native: n=66 solved=41 real=0.012287 ideal=0.012218 brk=0.012218 incl=0.012287 turns=18.85 calls=11.59 ctx=551210 first=14359
+C codex sweet: n=66 solved=39 real=0.012330 ideal=0.012258 brk=0.012258 incl=0.012330 turns=19.61 calls=12.45 ctx=583492 first=15816
+C opencode native: n=66 solved=41 real=0.008969 ideal=0.008964 brk=0.008964 incl=0.008969 turns=16.32 calls=25.23 ctx=406824 first=6898
+C opencode sweet: n=66 solved=41 real=0.009265 ideal=0.009260 brk=0.009260 incl=0.009265 turns=19.70 calls=21.79 ctx=452466 first=8355
+C claude-code native: n=66 solved=43 real=0.016542 ideal=0.015329 brk=0.015329 incl=0.020972 turns=24.30 calls=41.85 ctx=818991 first=17674
+C claude-code sweet: n=66 solved=40 real=0.016314 ideal=0.014739 brk=0.014739 incl=0.019125 turns=23.17 calls=29.86 ctx=812032 first=19243
+
+=== 8. RUN SPEND (every rollout in rows.json of each run) ===
+fp-codex-tab-20260826: n=132 myInclusiveSum=$1.6248 rowsJsonRealizedSum=$1.6248
+fp-codex-none-20260826: n=66 myInclusiveSum=$0.8131 rowsJsonRealizedSum=$0.8131
+fp-codex-pipe-20260826: n=66 myInclusiveSum=$0.8418 rowsJsonRealizedSum=$0.8418
+fp-opencode-tab-20260826: n=129 myInclusiveSum=$1.1716 rowsJsonRealizedSum=$1.1716
+fp-opencode-none-20260826: n=57 myInclusiveSum=$0.4711 rowsJsonRealizedSum=$0.4711
+fp-opencode-pipe-20260826: n=60 myInclusiveSum=$0.5053 rowsJsonRealizedSum=$0.5053
+rp-oc-tab-20260827: n=33 myInclusiveSum=$0.3744 rowsJsonRealizedSum=$0.3744
+rp-oc-none-20260827: n=33 myInclusiveSum=$0.3388 rowsJsonRealizedSum=$0.3388
+rp-oc-pipe-20260827: n=33 myInclusiveSum=$0.3662 rowsJsonRealizedSum=$0.3662
+fp-claudecode-tab-20260826: n=132 myInclusiveSum=$2.6464 rowsJsonRealizedSum=$1.2486
+fp-claudecode-none-20260826: n=66 myInclusiveSum=$1.1448 rowsJsonRealizedSum=$0.7812
+fp-claudecode-pipe-20260826: n=66 myInclusiveSum=$1.1042 rowsJsonRealizedSum=$0.7953
+GRAND epoch-C total (all 12 runs, every row incl. deleted/repair duplicates) = $11.4023

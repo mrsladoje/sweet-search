@@ -1,0 +1,45 @@
+EXIT=0
+{
+ "codex-sweet-TAB": {
+  "rollouts": 66,
+  "turns": 1294,
+  "cellUsd": 0.81379,
+  "ssTurns": 59,
+  "standalone": 0,
+  "standaloneUsd": 0,
+  "shared": 59,
+  "textOnlyTurns": 66,
+  "textOnlyUsd": 0.03037,
+  "perRollout": {
+   "turns": 19.61,
+   "ssTurns": 0.89,
+   "standaloneSsTurns": 0,
+   "textOnlyTurns": 1
+  },
+  "standaloneUsdPerRollout": 0,
+  "standaloneShareOfCell": 0,
+  "textOnlyUsdPerRollout": 0.00046,
+  "textOnlyShareOfCell": 0.0373
+ },
+ "claude-sweet-TAB": {
+  "rollouts": 66,
+  "turns": 1569,
+  "cellUsd": 1.0499,
+  "ssTurns": 85,
+  "standalone": 1,
+  "standaloneUsd": 0.00052,
+  "shared": 84,
+  "textOnlyTurns": 69,
+  "textOnlyUsd": 0.03946,
+  "perRollout": {
+   "turns": 23.77,
+   "ssTurns": 1.29,
+   "standaloneSsTurns": 0.02,
+   "textOnlyTurns": 1.05
+  },
+  "standaloneUsdPerRollout": 0.000008,
+  "standaloneShareOfCell": 0.0005,
+  "textOnlyUsdPerRollout": 0.000598,
+  "textOnlyShareOfCell": 0.0376
+ }
+}

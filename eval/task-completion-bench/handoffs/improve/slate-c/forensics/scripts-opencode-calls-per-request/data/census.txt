@@ -1,0 +1,57 @@
+
+=== native: 66 rollouts ===
+ requests/rollout 16.32 | tool-bearing requests/rollout 15.32 | calls/rollout 25.23 | ops/rollout 25.74 | cost/rollout $0.008969
+ calls/request (all) 1.546 | calls/tool-bearing request 1.647 | ops/request (all) 1.578 | ops/tool-bearing request 1.681
+ ops/rollout under three definitions: pipeline=1 op, quotes masked 25.74 | pipes split, quotes masked (08-28 p3 intent) 25.76 | naive split incl. inside quotes (08-28 p3 as run) 27.47
+ joiners between chained ss ops: 
+ multi-call requests 271 (25.2% of all, 26.8% of tool-bearing); calls in them 55.6%
+ bash calls/rollout 4.76 | structured read-like calls/rollout 14.77 | structured edit calls/rollout 1.77
+ ss envelopes/rollout 0.00 | ss ops/rollout 0.00 | ss-bearing requests/rollout 0.00 | chained (>=2 ss ops in one bash) envelopes 0/0 (0.0%)
+ ss-bearing requests with >=2 ss envelopes (parallel bash emission) 0/0 (0.0%); with a chained envelope 0 (0.0%)
+ requests with structured read-like calls 412; of which >=2 such calls 225 (54.6%); calls per such request 2.37
+ requests with bash calls 275; of which >=2 bash calls 33 (12.0%)
+ ss ops by tool: 
+ request classes (count | share | calls/req | ops/req | multi-call share | mean cost | mean cache-read tok | mean out+reasoning tok):
+   struct-only   477 |  44.3% | 2.080 | 2.080 |  40.5% | $0.000605 |    23712 |    294
+   bash-other    223 |  20.7% | 1.143 | 1.215 |  11.7% | $0.000424 |    27185 |    118
+   mixed          52 |   4.8% | 3.058 | 3.404 | 100.0% | $0.000491 |    20378 |    272
+   todo-only     259 |  24.0% | 1.000 | 1.000 |   0.0% | $0.000605 |    17127 |    195
+   text-only      66 |   6.1% | 0.000 | 0.000 |   0.0% | $0.000403 |    29927 |    101
+ request kinds (R read-only, S search-only, RS mixed exploration, E edit, T test, O other, N todo-only, X text-only): count | ops/req | calls/req
+   R    156 | 2.154 | 2.154
+   S    180 | 1.961 | 1.856
+   RS   108 | 3.833 | 3.713
+   E    117 | 1.000 | 1.000
+   T    179 | 1.140 | 1.128
+   O     12 | 1.333 | 1.333
+   N    259 | 1.000 | 1.000
+   X     66 | 0.000 | 0.000
+
+=== sweet: 66 rollouts ===
+ requests/rollout 19.70 | tool-bearing requests/rollout 18.70 | calls/rollout 21.79 | ops/rollout 23.79 | cost/rollout $0.009265
+ calls/request (all) 1.106 | calls/tool-bearing request 1.165 | ops/request (all) 1.208 | ops/tool-bearing request 1.272
+ ops/rollout under three definitions: pipeline=1 op, quotes masked 23.79 | pipes split, quotes masked (08-28 p3 intent) 23.85 | naive split incl. inside quotes (08-28 p3 as run) 28.56
+ joiners between chained ss ops: &&=73, ;=3
+ multi-call requests 105 (8.1% of all, 8.5% of tool-bearing); calls in them 21.5%
+ bash calls/rollout 15.52 | structured read-like calls/rollout 0.62 | structured edit calls/rollout 1.86
+ ss envelopes/rollout 10.79 | ss ops/rollout 11.94 | ss-bearing requests/rollout 8.52 | chained (>=2 ss ops in one bash) envelopes 53/712 (7.4%)
+ ss-bearing requests with >=2 ss envelopes (parallel bash emission) 70/562 (12.5%); with a chained envelope 53 (9.4%)
+ requests with structured read-like calls 41; of which >=2 such calls 0 (0.0%); calls per such request 1.00
+ requests with bash calls 822; of which >=2 bash calls 104 (12.7%)
+ ss ops by tool: find=35, grep=199, read=438, search=102, semantic=6, trace=8
+ request classes (count | share | calls/req | ops/req | multi-call share | mean cost | mean cache-read tok | mean out+reasoning tok):
+   struct-only   162 |  12.5% | 1.000 | 1.000 |   0.0% | $0.000670 |    28466 |    426
+   bash-ss       560 |  43.1% | 1.300 | 1.452 |  13.6% | $0.000418 |    19531 |    159
+   bash-other    260 |  20.0% | 1.127 | 1.308 |  10.4% | $0.000386 |    25262 |    116
+   mixed           2 |   0.2% | 2.500 | 2.500 | 100.0% | $0.000278 |    15764 |    139
+   todo-only     250 |  19.2% | 1.000 | 1.000 |   0.0% | $0.000567 |    16001 |    176
+   text-only      66 |   5.1% | 0.000 | 0.000 |   0.0% | $0.000395 |    27906 |    125
+ request kinds (R read-only, S search-only, RS mixed exploration, E edit, T test, O other, N todo-only, X text-only): count | ops/req | calls/req
+   R    240 | 1.567 | 1.350
+   S    380 | 1.229 | 1.103
+   RS    42 | 2.929 | 2.286
+   E    123 | 1.000 | 1.000
+   T    191 | 1.168 | 1.141
+   O      7 | 1.000 | 1.000
+   N    251 | 1.000 | 1.000
+   X     66 | 0.000 | 0.000

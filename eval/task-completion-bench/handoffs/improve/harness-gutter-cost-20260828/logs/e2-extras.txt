@@ -1,0 +1,44 @@
+### paired inclusive-cost delta with a bootstrap CI over tasks, epoch C
+codex	paired d$ 0.000043	0.3%	CI [-11.1%, 13.1%]	tasks 22
+opencode	paired d$ 0.000297	3.3%	CI [-8.3%, 16.1%]	tasks 22
+claude-code	paired d$ -0.001847	-8.8%	CI [-39.4%, 24.8%]	tasks 22
+
+### delegated (sub-agent) requests that carry NO usage record — the lower-bound gap
+fp-claudecode-tab-20260826 {"native":{"files":33,"requests":519,"noUsage":205},"sweet":{"files":11,"requests":364,"noUsage":165}}
+fp-claudecode-none-20260826 {"sweet":{"files":9,"requests":249,"noUsage":74}}
+fp-claudecode-pipe-20260826 {"sweet":{"files":7,"requests":209,"noUsage":106}}
+rb-claudecode-20260824 {"native":{"files":21,"requests":302,"noUsage":105}}
+sb-claudecode-20260811 {"native":{"files":11,"requests":121,"noUsage":29},"sweet":{"files":3,"requests":35,"noUsage":10}}
+
+### epoch A -> C component change, paired (sweet minus native), per harness
+harness	component	A	B	C	A->C change
+codex	INGEST $	-0.000469	-0.000270	-0.000140	0.000328
+codex	RESIDENT $	-0.000122	-0.000213	0.000337	0.000458
+codex	OUTPUT $	0.000040	-0.000115	-0.000157	-0.000197
+codex	sidechain $	0.000000	0.000000	0.000000	0.000000
+codex	turns	1.0	-0.4	0.8	-0.2
+codex	context integral	-16840.5	-24048.2	32282.1	49122.6
+codex	tool bytes	-24587.6	-16798.8	-12744.4	11843.2
+codex	new input tokens	-4685.6	-2703.5	-1401.0	3284.6
+codex	output tokens	67.4	-191.0	-261.7	-329.0
+codex	tool calls	1.0	-0.4	0.8	-0.3
+opencode	INGEST $	-0.000529	-0.000478	-0.000204	0.000324
+opencode	RESIDENT $	-0.000567	0.000192	0.000477	0.001044
+opencode	OUTPUT $	-0.000319	0.000045	0.000023	0.000343
+opencode	sidechain $	0.000000	0.000000	0.000000	0.000000
+opencode	turns	-0.4	2.1	3.4	3.8
+opencode	context integral	-61960.6	14377.1	45641.3	107601.9
+opencode	tool bytes	-19809.8	-20256.2	-8543.2	11266.6
+opencode	new input tokens	-5286.5	-4777.6	-2043.0	3243.5
+opencode	output tokens	-532.5	75.3	38.4	570.9
+opencode	tool calls	-5.8	-6.2	-3.4	2.4
+claude-code	INGEST $	0.000087	-0.000042	0.000199	0.000112
+claude-code	RESIDENT $	0.000092	-0.001103	-0.000089	-0.000181
+claude-code	OUTPUT $	0.000100	-0.000809	-0.000700	-0.000801
+claude-code	sidechain $	-0.001617	-0.003718	-0.001619	-0.000001
+claude-code	turns	-1.4	-4.2	-1.1	0.3
+claude-code	context integral	10054.2	-110735.1	-6959.3	-17013.6
+claude-code	tool bytes	-1188.1	-2627.7	4969.2	6157.3
+claude-code	new input tokens	867.9	-423.9	1989.5	1121.6
+claude-code	output tokens	167.5	-1348.6	-1166.9	-1334.4
+claude-code	tool calls	-4.1	-7.3	-4.0	0.2

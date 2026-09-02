@@ -1,0 +1,2701 @@
+{
+ "encoding": "o200k_base",
+ "files": {
+  "detect_mistakes.R": {
+   "lines": 391,
+   "bytes": 11975,
+   "forms": {
+    "none": {
+     "tokens": 2785,
+     "per_line": 7.122762148337596,
+     "overhead_per_line": 0.0,
+     "ratio": 1.0
+    },
+    "tab": {
+     "tokens": 3232,
+     "per_line": 8.265984654731458,
+     "overhead_per_line": 1.143222506393862,
+     "ratio": 1.1605026929982047
+    },
+    "pipe": {
+     "tokens": 3615,
+     "per_line": 9.245524296675192,
+     "overhead_per_line": 2.122762148337596,
+     "ratio": 1.2980251346499103
+    },
+    "colon_space": {
+     "tokens": 3615,
+     "per_line": 9.245524296675192,
+     "overhead_per_line": 2.122762148337596,
+     "ratio": 1.2980251346499103
+    },
+    "colon": {
+     "tokens": 3568,
+     "per_line": 9.12531969309463,
+     "overhead_per_line": 2.002557544757033,
+     "ratio": 1.281149012567325
+    },
+    "space": {
+     "tokens": 3224,
+     "per_line": 8.245524296675192,
+     "overhead_per_line": 1.1227621483375958,
+     "ratio": 1.1576301615798923
+    },
+    "pad5_tab": {
+     "tokens": 4014,
+     "per_line": 10.265984654731458,
+     "overhead_per_line": 3.1432225063938617,
+     "ratio": 1.4412926391382406
+    },
+    "pad5_2sp": {
+     "tokens": 4010,
+     "per_line": 10.255754475703325,
+     "overhead_per_line": 3.132992327365729,
+     "ratio": 1.4398563734290843
+    },
+    "sp_pipe": {
+     "tokens": 3568,
+     "per_line": 9.12531969309463,
+     "overhead_per_line": 2.002557544757033,
+     "ratio": 1.281149012567325
+    },
+    "pad05_sp_pipe": {
+     "tokens": 3959,
+     "per_line": 10.12531969309463,
+     "overhead_per_line": 3.002557544757033,
+     "ratio": 1.4215439856373429
+    },
+    "pipe_nosp": {
+     "tokens": 3567,
+     "per_line": 9.122762148337596,
+     "overhead_per_line": 2.0,
+     "ratio": 1.2807899461400358
+    },
+    "sparse5": {
+     "tokens": 2872,
+     "per_line": 7.345268542199489,
+     "overhead_per_line": 0.22250639386189258,
+     "ratio": 1.0312387791741473
+    },
+    "sparse10": {
+     "tokens": 2827,
+     "per_line": 7.2301790281329925,
+     "overhead_per_line": 0.10741687979539642,
+     "ratio": 1.01508078994614
+    },
+    "landmark": {
+     "tokens": 2791,
+     "per_line": 7.138107416879795,
+     "overhead_per_line": 0.015345268542199489,
+     "ratio": 1.0021543985637342
+    }
+   }
+  },
+  "eth.go": {
+   "lines": 706,
+   "bytes": 23387,
+   "forms": {
+    "none": {
+     "tokens": 6272,
+     "per_line": 8.88385269121813,
+     "overhead_per_line": 0.0,
+     "ratio": 1.0
+    },
+    "tab": {
+     "tokens": 7381,
+     "per_line": 10.454674220963172,
+     "overhead_per_line": 1.5708215297450425,
+     "ratio": 1.1768176020408163
+    },
+    "pipe": {
+     "tokens": 7983,
+     "per_line": 11.307365439093484,
+     "overhead_per_line": 2.423512747875354,
+     "ratio": 1.272799744897959
+    },
+    "colon_space": {
+     "tokens": 7983,
+     "per_line": 11.307365439093484,
+     "overhead_per_line": 2.423512747875354,
+     "ratio": 1.272799744897959
+    },
+    "colon": {
+     "tokens": 7659,
+     "per_line": 10.84844192634561,
+     "overhead_per_line": 1.9645892351274787,
+     "ratio": 1.221141581632653
+    },
+    "space": {
+     "tokens": 7277,
+     "per_line": 10.307365439093484,
+     "overhead_per_line": 1.4235127478753542,
+     "ratio": 1.160235969387755
+    },
+    "pad5_tab": {
+     "tokens": 8793,
+     "per_line": 12.454674220963172,
+     "overhead_per_line": 3.5708215297450425,
+     "ratio": 1.4019451530612246
+    },
+    "pad5_2sp": {
+     "tokens": 8840,
+     "per_line": 12.521246458923512,
+     "overhead_per_line": 3.6373937677053823,
+     "ratio": 1.409438775510204
+    },
+    "sp_pipe": {
+     "tokens": 7724,
+     "per_line": 10.940509915014164,
+     "overhead_per_line": 2.056657223796034,
+     "ratio": 1.2315051020408163
+    },
+    "pad05_sp_pipe": {
+     "tokens": 8430,
+     "per_line": 11.940509915014164,
+     "overhead_per_line": 3.056657223796034,
+     "ratio": 1.3440688775510203
+    },
+    "pipe_nosp": {
+     "tokens": 7685,
+     "per_line": 10.885269121813032,
+     "overhead_per_line": 2.001416430594901,
+     "ratio": 1.2252869897959184
+    },
+    "sparse5": {
+     "tokens": 6500,
+     "per_line": 9.206798866855523,
+     "overhead_per_line": 0.32294617563739375,
+     "ratio": 1.0363520408163265
+    },
+    "sparse10": {
+     "tokens": 6379,
+     "per_line": 9.035410764872521,
+     "overhead_per_line": 0.15155807365439095,
+     "ratio": 1.0170599489795917
+    },
+    "landmark": {
+     "tokens": 6311,
+     "per_line": 8.939093484419264,
+     "overhead_per_line": 0.05524079320113314,
+     "ratio": 1.0062181122448979
+    }
+   }
+  },
+  "grade_code.R": {
+   "lines": 167,
+   "bytes": 5515,
+   "forms": {
+    "none": {
+     "tokens": 1450,
+     "per_line": 8.682634730538922,
+     "overhead_per_line": 0.0,
+     "ratio": 1.0
+    },
+    "tab": {
+     "tokens": 1705,
+     "per_line": 10.209580838323353,
+     "overhead_per_line": 1.526946107784431,
+     "ratio": 1.1758620689655173
+    },
+    "pipe": {
+     "tokens": 1743,
+     "per_line": 10.437125748502995,
+     "overhead_per_line": 1.7544910179640718,
+     "ratio": 1.2020689655172414
+    },
+    "colon_space": {
+     "tokens": 1743,
+     "per_line": 10.437125748502995,
+     "overhead_per_line": 1.7544910179640718,
+     "ratio": 1.2020689655172414
+    },
+    "colon": {
+     "tokens": 1710,
+     "per_line": 10.239520958083832,
+     "overhead_per_line": 1.5568862275449102,
+     "ratio": 1.1793103448275861
+    },
+    "space": {
+     "tokens": 1576,
+     "per_line": 9.437125748502995,
+     "overhead_per_line": 0.7544910179640718,
+     "ratio": 1.086896551724138
+    },
+    "pad5_tab": {
+     "tokens": 2039,
+     "per_line": 12.209580838323353,
+     "overhead_per_line": 3.5269461077844313,
+     "ratio": 1.406206896551724
+    },
+    "pad5_2sp": {
+     "tokens": 1987,
+     "per_line": 11.89820359281437,
+     "overhead_per_line": 3.215568862275449,
+     "ratio": 1.370344827586207
+    },
+    "sp_pipe": {
+     "tokens": 1784,
+     "per_line": 10.682634730538922,
+     "overhead_per_line": 2.0,
+     "ratio": 1.230344827586207
+    },
+    "pad05_sp_pipe": {
+     "tokens": 1951,
+     "per_line": 11.682634730538922,
+     "overhead_per_line": 3.0,
+     "ratio": 1.3455172413793104
+    },
+    "pipe_nosp": {
+     "tokens": 1783,
+     "per_line": 10.676646706586826,
+     "overhead_per_line": 1.9940119760479043,
+     "ratio": 1.2296551724137932
+    },
+    "sparse5": {
+     "tokens": 1501,
+     "per_line": 8.988023952095809,
+     "overhead_per_line": 0.30538922155688625,
+     "ratio": 1.0351724137931035
+    },
+    "sparse10": {
+     "tokens": 1474,
+     "per_line": 8.826347305389222,
+     "overhead_per_line": 0.1437125748502994,
+     "ratio": 1.016551724137931
+    },
+    "landmark": {
+     "tokens": 1453,
+     "per_line": 8.70059880239521,
+     "overhead_per_line": 0.017964071856287425,
+     "ratio": 1.0020689655172415
+    }
+   }
+  },
+  "traceback.py": {
+   "lines": 100,
+   "bytes": 2931,
+   "forms": {
+    "none": {
+     "tokens": 672,
+     "per_line": 6.72,
+     "overhead_per_line": 0.0,
+     "ratio": 1.0
+    },
+    "tab": {
+     "tokens": 809,
+     "per_line": 8.09,
+     "overhead_per_line": 1.37,
+     "ratio": 1.2038690476190477
+    },
+    "pipe": {
+     "tokens": 902,
+     "per_line": 9.02,
+     "overhead_per_line": 2.3,
+     "ratio": 1.3422619047619047
+    },
+    "colon_space": {
+     "tokens": 902,
+     "per_line": 9.02,
+     "overhead_per_line": 2.3,
+     "ratio": 1.3422619047619047
+    },
+    "colon": {
+     "tokens": 860,
+     "per_line": 8.6,
+     "overhead_per_line": 1.88,
+     "ratio": 1.2797619047619047
+    },
+    "space": {
+     "tokens": 802,
+     "per_line": 8.02,
+     "overhead_per_line": 1.3,
+     "ratio": 1.193452380952381
+    },
+    "pad5_tab": {
+     "tokens": 1009,
+     "per_line": 10.09,
+     "overhead_per_line": 3.37,
+     "ratio": 1.5014880952380953
+    },
+    "pad5_2sp": {
+     "tokens": 1027,
+     "per_line": 10.27,
+     "overhead_per_line": 3.55,
+     "ratio": 1.5282738095238095
+    },
+    "sp_pipe": {
+     "tokens": 871,
+     "per_line": 8.71,
+     "overhead_per_line": 1.99,
+     "ratio": 1.2961309523809523
+    },
+    "pad05_sp_pipe": {
+     "tokens": 971,
+     "per_line": 9.71,
+     "overhead_per_line": 2.99,
+     "ratio": 1.4449404761904763
+    },
+    "pipe_nosp": {
+     "tokens": 873,
+     "per_line": 8.73,
+     "overhead_per_line": 2.01,
+     "ratio": 1.2991071428571428
+    },
+    "sparse5": {
+     "tokens": 699,
+     "per_line": 6.99,
+     "overhead_per_line": 0.27,
+     "ratio": 1.0401785714285714
+    },
+    "sparse10": {
+     "tokens": 685,
+     "per_line": 6.85,
+     "overhead_per_line": 0.13,
+     "ratio": 1.0193452380952381
+    },
+    "landmark": {
+     "tokens": 679,
+     "per_line": 6.79,
+     "overhead_per_line": 0.07,
+     "ratio": 1.0104166666666667
+    }
+   }
+  },
+  "underscore.js": {
+   "lines": 1688,
+   "bytes": 58221,
+   "forms": {
+    "none": {
+     "tokens": 14811,
+     "per_line": 8.774289099526067,
+     "overhead_per_line": 0.0,
+     "ratio": 1.0
+    },
+    "tab": {
+     "tokens": 17384,
+     "per_line": 10.298578199052132,
+     "overhead_per_line": 1.5242890995260663,
+     "ratio": 1.1737222334751198
+    },
+    "pipe": {
+     "tokens": 19065,
+     "per_line": 11.294431279620854,
+     "overhead_per_line": 2.5201421800947865,
+     "ratio": 1.287218958881912
+    },
+    "colon_space": {
+     "tokens": 19065,
+     "per_line": 11.294431279620854,
+     "overhead_per_line": 2.5201421800947865,
+     "ratio": 1.287218958881912
+    },
+    "colon": {
+     "tokens": 18869,
+     "per_line": 11.178317535545023,
+     "overhead_per_line": 2.404028436018957,
+     "ratio": 1.2739855512794545
+    },
+    "space": {
+     "tokens": 17377,
+     "per_line": 10.294431279620854,
+     "overhead_per_line": 1.5201421800947867,
+     "ratio": 1.1732496117750322
+    },
+    "pad5_tab": {
+     "tokens": 20071,
+     "per_line": 11.890402843601896,
+     "overhead_per_line": 3.1161137440758293,
+     "ratio": 1.3551414489230977
+    },
+    "pad5_2sp": {
+     "tokens": 20070,
+     "per_line": 11.889810426540285,
+     "overhead_per_line": 3.115521327014218,
+     "ratio": 1.3550739315373708
+    },
+    "sp_pipe": {
+     "tokens": 18874,
+     "per_line": 11.181279620853081,
+     "overhead_per_line": 2.4069905213270144,
+     "ratio": 1.2743231382080886
+    },
+    "pad05_sp_pipe": {
+     "tokens": 19873,
+     "per_line": 11.773104265402843,
+     "overhead_per_line": 2.998815165876777,
+     "ratio": 1.3417730065491864
+    },
+    "pipe_nosp": {
+     "tokens": 18873,
+     "per_line": 11.18068720379147,
+     "overhead_per_line": 2.406398104265403,
+     "ratio": 1.2742556208223617
+    },
+    "sparse5": {
+     "tokens": 15333,
+     "per_line": 9.083530805687204,
+     "overhead_per_line": 0.30924170616113744,
+     "ratio": 1.0352440753494025
+    },
+    "sparse10": {
+     "tokens": 15076,
+     "per_line": 8.931279620853081,
+     "overhead_per_line": 0.15699052132701422,
+     "ratio": 1.0178921072176086
+    },
+    "landmark": {
+     "tokens": 14959,
+     "per_line": 8.861966824644549,
+     "overhead_per_line": 0.08767772511848342,
+     "ratio": 1.00999257308757
+    }
+   }
+  }
+ },
+ "aggregate": {
+  "none": {
+   "tokens": 25990,
+   "lines": 3052,
+   "per_line": 8.515727391874181,
+   "overhead_per_line": 0.0,
+   "ratio": 1.0
+  },
+  "tab": {
+   "tokens": 30511,
+   "lines": 3052,
+   "per_line": 9.997051114023591,
+   "overhead_per_line": 1.4813237221494102,
+   "ratio": 1.1739515198153136
+  },
+  "pipe": {
+   "tokens": 33308,
+   "lines": 3052,
+   "per_line": 10.913499344692005,
+   "overhead_per_line": 2.3977719528178234,
+   "ratio": 1.2815698345517506
+  },
+  "colon_space": {
+   "tokens": 33308,
+   "lines": 3052,
+   "per_line": 10.913499344692005,
+   "overhead_per_line": 2.3977719528178234,
+   "ratio": 1.2815698345517506
+  },
+  "colon": {
+   "tokens": 32666,
+   "lines": 3052,
+   "per_line": 10.703145478374836,
+   "overhead_per_line": 2.1874180865006547,
+   "ratio": 1.2568680261639091
+  },
+  "space": {
+   "tokens": 30256,
+   "lines": 3052,
+   "per_line": 9.913499344692005,
+   "overhead_per_line": 1.3977719528178234,
+   "ratio": 1.1641400538668718
+  },
+  "pad5_tab": {
+   "tokens": 35926,
+   "lines": 3052,
+   "per_line": 11.771297509829619,
+   "overhead_per_line": 3.255570117955438,
+   "ratio": 1.382300884955752
+  },
+  "pad5_2sp": {
+   "tokens": 35934,
+   "lines": 3052,
+   "per_line": 11.77391874180865,
+   "overhead_per_line": 3.258191349934469,
+   "ratio": 1.382608695652174
+  },
+  "sp_pipe": {
+   "tokens": 32821,
+   "lines": 3052,
+   "per_line": 10.753931847968545,
+   "overhead_per_line": 2.2382044560943637,
+   "ratio": 1.2628318584070795
+  },
+  "pad05_sp_pipe": {
+   "tokens": 35184,
+   "lines": 3052,
+   "per_line": 11.528178243774574,
+   "overhead_per_line": 3.012450851900393,
+   "ratio": 1.3537514428626394
+  },
+  "pipe_nosp": {
+   "tokens": 32781,
+   "lines": 3052,
+   "per_line": 10.740825688073395,
+   "overhead_per_line": 2.2250982961992136,
+   "ratio": 1.2612928049249712
+  },
+  "sparse5": {
+   "tokens": 26905,
+   "lines": 3052,
+   "per_line": 8.815530799475754,
+   "overhead_per_line": 0.29980340760157276,
+   "ratio": 1.035205848403232
+  },
+  "sparse10": {
+   "tokens": 26441,
+   "lines": 3052,
+   "per_line": 8.663499344692005,
+   "overhead_per_line": 0.1477719528178234,
+   "ratio": 1.0173528280107733
+  },
+  "landmark": {
+   "tokens": 26193,
+   "lines": 3052,
+   "per_line": 8.582241153342071,
+   "overhead_per_line": 0.06651376146789012,
+   "ratio": 1.0078106964217006
+  }
+ },
+ "boundaries": {
+  "none": {
+   "0sp": [
+    "res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "2sp": [
+    " ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "4sp": [
+    "   ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "6sp": [
+    "     ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "8sp": [
+    "       ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "tab": [
+    "\tif",
+    " err",
+    " !=",
+    " nil",
+    " {"
+   ],
+   "2tab": [
+    "\t",
+    "\treturn",
+    " nil",
+    ",",
+    " err"
+   ]
+  },
+  "tab": {
+   "0sp": [
+    "35",
+    "\tres",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "2sp": [
+    "35",
+    "\t ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "4sp": [
+    "35",
+    "\t   ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "6sp": [
+    "35",
+    "\t     ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "8sp": [
+    "35",
+    "\t       ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "tab": [
+    "35",
+    "\t",
+    "\tif",
+    " err",
+    " !=",
+    " nil",
+    " {"
+   ],
+   "2tab": [
+    "35",
+    "\t\t",
+    "\treturn",
+    " nil",
+    ",",
+    " err"
+   ]
+  },
+  "pipe": {
+   "0sp": [
+    "35",
+    "|",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "2sp": [
+    "35",
+    "|",
+    "  ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "4sp": [
+    "35",
+    "|",
+    "    ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "6sp": [
+    "35",
+    "|",
+    "      ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "8sp": [
+    "35",
+    "|",
+    "        ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "tab": [
+    "35",
+    "|",
+    " ",
+    "\tif",
+    " err",
+    " !=",
+    " nil",
+    " {"
+   ],
+   "2tab": [
+    "35",
+    "|",
+    " \t",
+    "\treturn",
+    " nil",
+    ",",
+    " err"
+   ]
+  },
+  "colon_space": {
+   "0sp": [
+    "35",
+    ":",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "2sp": [
+    "35",
+    ":",
+    "  ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "4sp": [
+    "35",
+    ":",
+    "    ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "6sp": [
+    "35",
+    ":",
+    "      ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "8sp": [
+    "35",
+    ":",
+    "        ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "tab": [
+    "35",
+    ":",
+    " ",
+    "\tif",
+    " err",
+    " !=",
+    " nil",
+    " {"
+   ],
+   "2tab": [
+    "35",
+    ":",
+    " \t",
+    "\treturn",
+    " nil",
+    ",",
+    " err"
+   ]
+  },
+  "colon": {
+   "0sp": [
+    "35",
+    ":",
+    "res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "2sp": [
+    "35",
+    ":",
+    " ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "4sp": [
+    "35",
+    ":",
+    "   ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "6sp": [
+    "35",
+    ":",
+    "     ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "8sp": [
+    "35",
+    ":",
+    "       ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "tab": [
+    "35",
+    ":",
+    "\tif",
+    " err",
+    " !=",
+    " nil",
+    " {"
+   ],
+   "2tab": [
+    "35",
+    ":",
+    "\t",
+    "\treturn",
+    " nil",
+    ",",
+    " err"
+   ]
+  },
+  "space": {
+   "0sp": [
+    "35",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "2sp": [
+    "35",
+    "  ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "4sp": [
+    "35",
+    "    ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "6sp": [
+    "35",
+    "      ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "8sp": [
+    "35",
+    "        ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "tab": [
+    "35",
+    " ",
+    "\tif",
+    " err",
+    " !=",
+    " nil",
+    " {"
+   ],
+   "2tab": [
+    "35",
+    " \t",
+    "\treturn",
+    " nil",
+    ",",
+    " err"
+   ]
+  },
+  "pad5_tab": {
+   "0sp": [
+    "  ",
+    " ",
+    "35",
+    "\tres",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "2sp": [
+    "  ",
+    " ",
+    "35",
+    "\t ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist"
+   ],
+   "4sp": [
+    "  ",
+    " ",
+    "35",
+    "\t   ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist"
+   ],
+   "6sp": [
+    "  ",
+    " ",
+    "35",
+    "\t     ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist"
+   ],
+   "8sp": [
+    "  ",
+    " ",
+    "35",
+    "\t       ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist"
+   ],
+   "tab": [
+    "  ",
+    " ",
+    "35",
+    "\t",
+    "\tif",
+    " err",
+    " !=",
+    " nil",
+    " {"
+   ],
+   "2tab": [
+    "  ",
+    " ",
+    "35",
+    "\t\t",
+    "\treturn",
+    " nil",
+    ",",
+    " err"
+   ]
+  },
+  "pad5_2sp": {
+   "0sp": [
+    "  ",
+    " ",
+    "35",
+    " ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist"
+   ],
+   "2sp": [
+    "  ",
+    " ",
+    "35",
+    "   ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist"
+   ],
+   "4sp": [
+    "  ",
+    " ",
+    "35",
+    "     ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist"
+   ],
+   "6sp": [
+    "  ",
+    " ",
+    "35",
+    "       ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist"
+   ],
+   "8sp": [
+    "  ",
+    " ",
+    "35",
+    "         ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist"
+   ],
+   "tab": [
+    "  ",
+    " ",
+    "35",
+    "  ",
+    "\tif",
+    " err",
+    " !=",
+    " nil",
+    " {"
+   ],
+   "2tab": [
+    "  ",
+    " ",
+    "35",
+    "  \t",
+    "\treturn",
+    " nil",
+    ",",
+    " err"
+   ]
+  },
+  "sp_pipe": {
+   "0sp": [
+    "35",
+    " |",
+    "res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "2sp": [
+    "35",
+    " |",
+    " ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "4sp": [
+    "35",
+    " |",
+    "   ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "6sp": [
+    "35",
+    " |",
+    "     ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "8sp": [
+    "35",
+    " |",
+    "       ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "tab": [
+    "35",
+    " |",
+    "\tif",
+    " err",
+    " !=",
+    " nil",
+    " {"
+   ],
+   "2tab": [
+    "35",
+    " |",
+    "\t",
+    "\treturn",
+    " nil",
+    ",",
+    " err"
+   ]
+  },
+  "pad05_sp_pipe": {
+   "0sp": [
+    "000",
+    "35",
+    " |",
+    "res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "2sp": [
+    "000",
+    "35",
+    " |",
+    " ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist"
+   ],
+   "4sp": [
+    "000",
+    "35",
+    " |",
+    "   ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist"
+   ],
+   "6sp": [
+    "000",
+    "35",
+    " |",
+    "     ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist"
+   ],
+   "8sp": [
+    "000",
+    "35",
+    " |",
+    "       ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist"
+   ],
+   "tab": [
+    "000",
+    "35",
+    " |",
+    "\tif",
+    " err",
+    " !=",
+    " nil",
+    " {"
+   ],
+   "2tab": [
+    "000",
+    "35",
+    " |",
+    "\t",
+    "\treturn",
+    " nil",
+    ",",
+    " err"
+   ]
+  },
+  "pipe_nosp": {
+   "0sp": [
+    "35",
+    "|",
+    "res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes",
+    "("
+   ],
+   "2sp": [
+    "35",
+    "|",
+    " ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "4sp": [
+    "35",
+    "|",
+    "   ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "6sp": [
+    "35",
+    "|",
+    "     ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "8sp": [
+    "35",
+    "|",
+    "       ",
+    " res",
+    " <-",
+    " detect",
+    "_m",
+    "ist",
+    "akes"
+   ],
+   "tab": [
+    "35",
+    "|",
+    "\tif",
+    " err",
+    " !=",
+    " nil",
+    " {"
+   ],
+   "2tab": [
+    "35",
+    "|",
+    "\t",
+    "\treturn",
+    " nil",
+    ",",
+    " err"
+   ]
+  }
+ },
+ "merge_test": [
+  {
+   "form": "none",
+   "indent": "2sp",
+   "gutter_token": "-",
+   "next_token": "\u00b7",
+   "merged": null
+  },
+  {
+   "form": "none",
+   "indent": "4sp",
+   "gutter_token": "-",
+   "next_token": "\u00b7\u00b7\u00b7",
+   "merged": null
+  },
+  {
+   "form": "none",
+   "indent": "6sp",
+   "gutter_token": "-",
+   "next_token": "\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "merged": null
+  },
+  {
+   "form": "none",
+   "indent": "8sp",
+   "gutter_token": "-",
+   "next_token": "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "merged": null
+  },
+  {
+   "form": "none",
+   "indent": "tab",
+   "gutter_token": "-",
+   "next_token": "\\tx",
+   "merged": null
+  },
+  {
+   "form": "tab",
+   "indent": "2sp",
+   "gutter_token": "\\t\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "tab",
+   "indent": "4sp",
+   "gutter_token": "\\t\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "tab",
+   "indent": "6sp",
+   "gutter_token": "\\t\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "tab",
+   "indent": "8sp",
+   "gutter_token": "\\t\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "tab",
+   "indent": "tab",
+   "gutter_token": "\\t",
+   "next_token": "\\tx",
+   "merged": false
+  },
+  {
+   "form": "pipe",
+   "indent": "2sp",
+   "gutter_token": "\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "pipe",
+   "indent": "4sp",
+   "gutter_token": "\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "pipe",
+   "indent": "6sp",
+   "gutter_token": "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "pipe",
+   "indent": "8sp",
+   "gutter_token": "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "pipe",
+   "indent": "tab",
+   "gutter_token": "\u00b7",
+   "next_token": "\\tx",
+   "merged": false
+  },
+  {
+   "form": "colon_space",
+   "indent": "2sp",
+   "gutter_token": "\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "colon_space",
+   "indent": "4sp",
+   "gutter_token": "\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "colon_space",
+   "indent": "6sp",
+   "gutter_token": "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "colon_space",
+   "indent": "8sp",
+   "gutter_token": "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "colon_space",
+   "indent": "tab",
+   "gutter_token": "\u00b7",
+   "next_token": "\\tx",
+   "merged": false
+  },
+  {
+   "form": "colon",
+   "indent": "2sp",
+   "gutter_token": ":",
+   "next_token": "\u00b7",
+   "merged": false
+  },
+  {
+   "form": "colon",
+   "indent": "4sp",
+   "gutter_token": ":",
+   "next_token": "\u00b7\u00b7\u00b7",
+   "merged": false
+  },
+  {
+   "form": "colon",
+   "indent": "6sp",
+   "gutter_token": ":",
+   "next_token": "\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "merged": false
+  },
+  {
+   "form": "colon",
+   "indent": "8sp",
+   "gutter_token": ":",
+   "next_token": "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "merged": false
+  },
+  {
+   "form": "colon",
+   "indent": "tab",
+   "gutter_token": ":",
+   "next_token": "\\tx",
+   "merged": false
+  },
+  {
+   "form": "space",
+   "indent": "2sp",
+   "gutter_token": "\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "space",
+   "indent": "4sp",
+   "gutter_token": "\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "space",
+   "indent": "6sp",
+   "gutter_token": "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "space",
+   "indent": "8sp",
+   "gutter_token": "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "space",
+   "indent": "tab",
+   "gutter_token": "\u00b7",
+   "next_token": "\\tx",
+   "merged": false
+  },
+  {
+   "form": "pad5_tab",
+   "indent": "2sp",
+   "gutter_token": "\\t\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "pad5_tab",
+   "indent": "4sp",
+   "gutter_token": "\\t\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "pad5_tab",
+   "indent": "6sp",
+   "gutter_token": "\\t\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "pad5_tab",
+   "indent": "8sp",
+   "gutter_token": "\\t\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "pad5_tab",
+   "indent": "tab",
+   "gutter_token": "\\t",
+   "next_token": "\\tx",
+   "merged": false
+  },
+  {
+   "form": "pad5_2sp",
+   "indent": "2sp",
+   "gutter_token": "\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "pad5_2sp",
+   "indent": "4sp",
+   "gutter_token": "\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "pad5_2sp",
+   "indent": "6sp",
+   "gutter_token": "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "pad5_2sp",
+   "indent": "8sp",
+   "gutter_token": "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "next_token": "\u00b7x",
+   "merged": true
+  },
+  {
+   "form": "pad5_2sp",
+   "indent": "tab",
+   "gutter_token": "\u00b7\u00b7",
+   "next_token": "\\tx",
+   "merged": false
+  },
+  {
+   "form": "sp_pipe",
+   "indent": "2sp",
+   "gutter_token": "\u00b7|",
+   "next_token": "\u00b7",
+   "merged": false
+  },
+  {
+   "form": "sp_pipe",
+   "indent": "4sp",
+   "gutter_token": "\u00b7|",
+   "next_token": "\u00b7\u00b7\u00b7",
+   "merged": false
+  },
+  {
+   "form": "sp_pipe",
+   "indent": "6sp",
+   "gutter_token": "\u00b7|",
+   "next_token": "\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "merged": false
+  },
+  {
+   "form": "sp_pipe",
+   "indent": "8sp",
+   "gutter_token": "\u00b7|",
+   "next_token": "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "merged": false
+  },
+  {
+   "form": "sp_pipe",
+   "indent": "tab",
+   "gutter_token": "\u00b7|",
+   "next_token": "\\tx",
+   "merged": false
+  },
+  {
+   "form": "pad05_sp_pipe",
+   "indent": "2sp",
+   "gutter_token": "\u00b7|",
+   "next_token": "\u00b7",
+   "merged": false
+  },
+  {
+   "form": "pad05_sp_pipe",
+   "indent": "4sp",
+   "gutter_token": "\u00b7|",
+   "next_token": "\u00b7\u00b7\u00b7",
+   "merged": false
+  },
+  {
+   "form": "pad05_sp_pipe",
+   "indent": "6sp",
+   "gutter_token": "\u00b7|",
+   "next_token": "\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "merged": false
+  },
+  {
+   "form": "pad05_sp_pipe",
+   "indent": "8sp",
+   "gutter_token": "\u00b7|",
+   "next_token": "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "merged": false
+  },
+  {
+   "form": "pad05_sp_pipe",
+   "indent": "tab",
+   "gutter_token": "\u00b7|",
+   "next_token": "\\tx",
+   "merged": false
+  },
+  {
+   "form": "pipe_nosp",
+   "indent": "2sp",
+   "gutter_token": "|",
+   "next_token": "\u00b7",
+   "merged": false
+  },
+  {
+   "form": "pipe_nosp",
+   "indent": "4sp",
+   "gutter_token": "|",
+   "next_token": "\u00b7\u00b7\u00b7",
+   "merged": false
+  },
+  {
+   "form": "pipe_nosp",
+   "indent": "6sp",
+   "gutter_token": "|",
+   "next_token": "\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "merged": false
+  },
+  {
+   "form": "pipe_nosp",
+   "indent": "8sp",
+   "gutter_token": "|",
+   "next_token": "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+   "merged": false
+  },
+  {
+   "form": "pipe_nosp",
+   "indent": "tab",
+   "gutter_token": "|",
+   "next_token": "\\tx",
+   "merged": false
+  }
+ ],
+ "samples": {
+  "none": [
+   {
+    "file": "detect_mistakes.R",
+    "line": 2,
+    "ntok": 3,
+    "tokens": [
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7solution",
+     ","
+    ]
+   },
+   {
+    "file": "detect_mistakes.R",
+    "line": 3,
+    "ntok": 9,
+    "tokens": [
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7env",
+     "\u00b7=",
+     "\u00b7r",
+     "lang",
+     "::",
+     "env",
+     "_parent",
+     "(),"
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 4,
+    "ntok": 3,
+    "tokens": [
+     "\\t",
+     "\"context",
+     "\""
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 5,
+    "ntok": 4,
+    "tokens": [
+     "\\t",
+     "\"encoding",
+     "/json",
+     "\""
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 8,
+    "ntok": 5,
+    "tokens": [
+     "\u00b7",
+     "\u00b7//",
+     "\u00b7Bas",
+     "eline",
+     "\u00b7setup"
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 9,
+    "ntok": 4,
+    "tokens": [
+     "\u00b7",
+     "\u00b7//",
+     "\u00b7",
+     "--------------"
+    ]
+   }
+  ],
+  "tab": [
+   {
+    "file": "detect_mistakes.R",
+    "line": 2,
+    "ntok": 5,
+    "tokens": [
+     "2",
+     "\\t",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7solution",
+     ","
+    ]
+   },
+   {
+    "file": "detect_mistakes.R",
+    "line": 3,
+    "ntok": 11,
+    "tokens": [
+     "3",
+     "\\t",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7env",
+     "\u00b7=",
+     "\u00b7r",
+     "lang",
+     "::",
+     "env",
+     "_parent",
+     "(),"
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 4,
+    "ntok": 5,
+    "tokens": [
+     "4",
+     "\\t",
+     "\\t",
+     "\"context",
+     "\""
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 5,
+    "ntok": 6,
+    "tokens": [
+     "5",
+     "\\t",
+     "\\t",
+     "\"encoding",
+     "/json",
+     "\""
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 8,
+    "ntok": 6,
+    "tokens": [
+     "8",
+     "\\t\u00b7",
+     "\u00b7//",
+     "\u00b7Bas",
+     "eline",
+     "\u00b7setup"
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 9,
+    "ntok": 5,
+    "tokens": [
+     "9",
+     "\\t\u00b7",
+     "\u00b7//",
+     "\u00b7",
+     "--------------"
+    ]
+   }
+  ],
+  "pipe": [
+   {
+    "file": "detect_mistakes.R",
+    "line": 2,
+    "ntok": 5,
+    "tokens": [
+     "2",
+     "|",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7solution",
+     ","
+    ]
+   },
+   {
+    "file": "detect_mistakes.R",
+    "line": 3,
+    "ntok": 11,
+    "tokens": [
+     "3",
+     "|",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7env",
+     "\u00b7=",
+     "\u00b7r",
+     "lang",
+     "::",
+     "env",
+     "_parent",
+     "(),"
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 4,
+    "ntok": 6,
+    "tokens": [
+     "4",
+     "|",
+     "\u00b7",
+     "\\t",
+     "\"context",
+     "\""
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 5,
+    "ntok": 7,
+    "tokens": [
+     "5",
+     "|",
+     "\u00b7",
+     "\\t",
+     "\"encoding",
+     "/json",
+     "\""
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 8,
+    "ntok": 7,
+    "tokens": [
+     "8",
+     "|",
+     "\u00b7\u00b7",
+     "\u00b7//",
+     "\u00b7Bas",
+     "eline",
+     "\u00b7setup"
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 9,
+    "ntok": 6,
+    "tokens": [
+     "9",
+     "|",
+     "\u00b7\u00b7",
+     "\u00b7//",
+     "\u00b7",
+     "--------------"
+    ]
+   }
+  ],
+  "colon_space": [
+   {
+    "file": "detect_mistakes.R",
+    "line": 2,
+    "ntok": 5,
+    "tokens": [
+     "2",
+     ":",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7solution",
+     ","
+    ]
+   },
+   {
+    "file": "detect_mistakes.R",
+    "line": 3,
+    "ntok": 11,
+    "tokens": [
+     "3",
+     ":",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7env",
+     "\u00b7=",
+     "\u00b7r",
+     "lang",
+     "::",
+     "env",
+     "_parent",
+     "(),"
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 4,
+    "ntok": 6,
+    "tokens": [
+     "4",
+     ":",
+     "\u00b7",
+     "\\t",
+     "\"context",
+     "\""
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 5,
+    "ntok": 7,
+    "tokens": [
+     "5",
+     ":",
+     "\u00b7",
+     "\\t",
+     "\"encoding",
+     "/json",
+     "\""
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 8,
+    "ntok": 7,
+    "tokens": [
+     "8",
+     ":",
+     "\u00b7\u00b7",
+     "\u00b7//",
+     "\u00b7Bas",
+     "eline",
+     "\u00b7setup"
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 9,
+    "ntok": 6,
+    "tokens": [
+     "9",
+     ":",
+     "\u00b7\u00b7",
+     "\u00b7//",
+     "\u00b7",
+     "--------------"
+    ]
+   }
+  ],
+  "colon": [
+   {
+    "file": "detect_mistakes.R",
+    "line": 2,
+    "ntok": 5,
+    "tokens": [
+     "2",
+     ":",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7solution",
+     ","
+    ]
+   },
+   {
+    "file": "detect_mistakes.R",
+    "line": 3,
+    "ntok": 11,
+    "tokens": [
+     "3",
+     ":",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7env",
+     "\u00b7=",
+     "\u00b7r",
+     "lang",
+     "::",
+     "env",
+     "_parent",
+     "(),"
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 4,
+    "ntok": 5,
+    "tokens": [
+     "4",
+     ":",
+     "\\t",
+     "\"context",
+     "\""
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 5,
+    "ntok": 6,
+    "tokens": [
+     "5",
+     ":",
+     "\\t",
+     "\"encoding",
+     "/json",
+     "\""
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 8,
+    "ntok": 7,
+    "tokens": [
+     "8",
+     ":",
+     "\u00b7",
+     "\u00b7//",
+     "\u00b7Bas",
+     "eline",
+     "\u00b7setup"
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 9,
+    "ntok": 6,
+    "tokens": [
+     "9",
+     ":",
+     "\u00b7",
+     "\u00b7//",
+     "\u00b7",
+     "--------------"
+    ]
+   }
+  ],
+  "space": [
+   {
+    "file": "detect_mistakes.R",
+    "line": 2,
+    "ntok": 4,
+    "tokens": [
+     "2",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7solution",
+     ","
+    ]
+   },
+   {
+    "file": "detect_mistakes.R",
+    "line": 3,
+    "ntok": 10,
+    "tokens": [
+     "3",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7env",
+     "\u00b7=",
+     "\u00b7r",
+     "lang",
+     "::",
+     "env",
+     "_parent",
+     "(),"
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 4,
+    "ntok": 5,
+    "tokens": [
+     "4",
+     "\u00b7",
+     "\\t",
+     "\"context",
+     "\""
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 5,
+    "ntok": 6,
+    "tokens": [
+     "5",
+     "\u00b7",
+     "\\t",
+     "\"encoding",
+     "/json",
+     "\""
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 8,
+    "ntok": 6,
+    "tokens": [
+     "8",
+     "\u00b7\u00b7",
+     "\u00b7//",
+     "\u00b7Bas",
+     "eline",
+     "\u00b7setup"
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 9,
+    "ntok": 5,
+    "tokens": [
+     "9",
+     "\u00b7\u00b7",
+     "\u00b7//",
+     "\u00b7",
+     "--------------"
+    ]
+   }
+  ],
+  "pad5_tab": [
+   {
+    "file": "detect_mistakes.R",
+    "line": 2,
+    "ntok": 7,
+    "tokens": [
+     "\u00b7\u00b7\u00b7",
+     "\u00b7",
+     "2",
+     "\\t",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7solution",
+     ","
+    ]
+   },
+   {
+    "file": "detect_mistakes.R",
+    "line": 3,
+    "ntok": 13,
+    "tokens": [
+     "\u00b7\u00b7\u00b7",
+     "\u00b7",
+     "3",
+     "\\t",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7env",
+     "\u00b7=",
+     "\u00b7r",
+     "lang",
+     "::",
+     "env",
+     "_parent",
+     "(),"
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 4,
+    "ntok": 7,
+    "tokens": [
+     "\u00b7\u00b7\u00b7",
+     "\u00b7",
+     "4",
+     "\\t",
+     "\\t",
+     "\"context",
+     "\""
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 5,
+    "ntok": 8,
+    "tokens": [
+     "\u00b7\u00b7\u00b7",
+     "\u00b7",
+     "5",
+     "\\t",
+     "\\t",
+     "\"encoding",
+     "/json",
+     "\""
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 8,
+    "ntok": 8,
+    "tokens": [
+     "\u00b7\u00b7\u00b7",
+     "\u00b7",
+     "8",
+     "\\t\u00b7",
+     "\u00b7//",
+     "\u00b7Bas",
+     "eline",
+     "\u00b7setup"
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 9,
+    "ntok": 7,
+    "tokens": [
+     "\u00b7\u00b7\u00b7",
+     "\u00b7",
+     "9",
+     "\\t\u00b7",
+     "\u00b7//",
+     "\u00b7",
+     "--------------"
+    ]
+   }
+  ],
+  "pad5_2sp": [
+   {
+    "file": "detect_mistakes.R",
+    "line": 2,
+    "ntok": 6,
+    "tokens": [
+     "\u00b7\u00b7\u00b7",
+     "\u00b7",
+     "2",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7solution",
+     ","
+    ]
+   },
+   {
+    "file": "detect_mistakes.R",
+    "line": 3,
+    "ntok": 12,
+    "tokens": [
+     "\u00b7\u00b7\u00b7",
+     "\u00b7",
+     "3",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7env",
+     "\u00b7=",
+     "\u00b7r",
+     "lang",
+     "::",
+     "env",
+     "_parent",
+     "(),"
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 4,
+    "ntok": 7,
+    "tokens": [
+     "\u00b7\u00b7\u00b7",
+     "\u00b7",
+     "4",
+     "\u00b7\u00b7",
+     "\\t",
+     "\"context",
+     "\""
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 5,
+    "ntok": 8,
+    "tokens": [
+     "\u00b7\u00b7\u00b7",
+     "\u00b7",
+     "5",
+     "\u00b7\u00b7",
+     "\\t",
+     "\"encoding",
+     "/json",
+     "\""
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 8,
+    "ntok": 8,
+    "tokens": [
+     "\u00b7\u00b7\u00b7",
+     "\u00b7",
+     "8",
+     "\u00b7\u00b7\u00b7",
+     "\u00b7//",
+     "\u00b7Bas",
+     "eline",
+     "\u00b7setup"
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 9,
+    "ntok": 7,
+    "tokens": [
+     "\u00b7\u00b7\u00b7",
+     "\u00b7",
+     "9",
+     "\u00b7\u00b7\u00b7",
+     "\u00b7//",
+     "\u00b7",
+     "--------------"
+    ]
+   }
+  ],
+  "sp_pipe": [
+   {
+    "file": "detect_mistakes.R",
+    "line": 2,
+    "ntok": 5,
+    "tokens": [
+     "2",
+     "\u00b7|",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7solution",
+     ","
+    ]
+   },
+   {
+    "file": "detect_mistakes.R",
+    "line": 3,
+    "ntok": 11,
+    "tokens": [
+     "3",
+     "\u00b7|",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7env",
+     "\u00b7=",
+     "\u00b7r",
+     "lang",
+     "::",
+     "env",
+     "_parent",
+     "(),"
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 4,
+    "ntok": 5,
+    "tokens": [
+     "4",
+     "\u00b7|",
+     "\\t",
+     "\"context",
+     "\""
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 5,
+    "ntok": 6,
+    "tokens": [
+     "5",
+     "\u00b7|",
+     "\\t",
+     "\"encoding",
+     "/json",
+     "\""
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 8,
+    "ntok": 7,
+    "tokens": [
+     "8",
+     "\u00b7|",
+     "\u00b7",
+     "\u00b7//",
+     "\u00b7Bas",
+     "eline",
+     "\u00b7setup"
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 9,
+    "ntok": 6,
+    "tokens": [
+     "9",
+     "\u00b7|",
+     "\u00b7",
+     "\u00b7//",
+     "\u00b7",
+     "--------------"
+    ]
+   }
+  ],
+  "pad05_sp_pipe": [
+   {
+    "file": "detect_mistakes.R",
+    "line": 2,
+    "ntok": 6,
+    "tokens": [
+     "000",
+     "02",
+     "\u00b7|",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7solution",
+     ","
+    ]
+   },
+   {
+    "file": "detect_mistakes.R",
+    "line": 3,
+    "ntok": 12,
+    "tokens": [
+     "000",
+     "03",
+     "\u00b7|",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7env",
+     "\u00b7=",
+     "\u00b7r",
+     "lang",
+     "::",
+     "env",
+     "_parent",
+     "(),"
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 4,
+    "ntok": 6,
+    "tokens": [
+     "000",
+     "04",
+     "\u00b7|",
+     "\\t",
+     "\"context",
+     "\""
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 5,
+    "ntok": 7,
+    "tokens": [
+     "000",
+     "05",
+     "\u00b7|",
+     "\\t",
+     "\"encoding",
+     "/json",
+     "\""
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 8,
+    "ntok": 8,
+    "tokens": [
+     "000",
+     "08",
+     "\u00b7|",
+     "\u00b7",
+     "\u00b7//",
+     "\u00b7Bas",
+     "eline",
+     "\u00b7setup"
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 9,
+    "ntok": 7,
+    "tokens": [
+     "000",
+     "09",
+     "\u00b7|",
+     "\u00b7",
+     "\u00b7//",
+     "\u00b7",
+     "--------------"
+    ]
+   }
+  ],
+  "pipe_nosp": [
+   {
+    "file": "detect_mistakes.R",
+    "line": 2,
+    "ntok": 5,
+    "tokens": [
+     "2",
+     "|",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7solution",
+     ","
+    ]
+   },
+   {
+    "file": "detect_mistakes.R",
+    "line": 3,
+    "ntok": 11,
+    "tokens": [
+     "3",
+     "|",
+     "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7",
+     "\u00b7env",
+     "\u00b7=",
+     "\u00b7r",
+     "lang",
+     "::",
+     "env",
+     "_parent",
+     "(),"
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 4,
+    "ntok": 5,
+    "tokens": [
+     "4",
+     "|",
+     "\\t",
+     "\"context",
+     "\""
+    ]
+   },
+   {
+    "file": "eth.go",
+    "line": 5,
+    "ntok": 6,
+    "tokens": [
+     "5",
+     "|",
+     "\\t",
+     "\"encoding",
+     "/json",
+     "\""
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 8,
+    "ntok": 7,
+    "tokens": [
+     "8",
+     "|",
+     "\u00b7",
+     "\u00b7//",
+     "\u00b7Bas",
+     "eline",
+     "\u00b7setup"
+    ]
+   },
+   {
+    "file": "underscore.js",
+    "line": 9,
+    "ntok": 6,
+    "tokens": [
+     "9",
+     "|",
+     "\u00b7",
+     "\u00b7//",
+     "\u00b7",
+     "--------------"
+    ]
+   }
+  ]
+ }
+}

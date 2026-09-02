@@ -1,0 +1,442 @@
+[
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "sweet": "rp-oc-tab-20260827/agent-state/aio-libs__aiohttp-8038-sweet rep0 (session-1787855170125-1442751-294e0a0a)",
+  "sweet_req_idx": [
+   10,
+   11
+  ],
+  "sweet_msgs": [
+   "msg_04479fbba001L5086qsc4i8eSW",
+   "msg_0447a04700016iKzlW9Q2Gcf4M"
+  ],
+  "sweet_paths": [
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py"
+  ],
+  "sweet_cmds": [
+   "ss-read aiohttp/client_proto.py 1 150",
+   "ss-read aiohttp/connector.py 94 190"
+  ],
+  "native": "fp-opencode-tab-20260826/agent-state/aio-libs__aiohttp-8038-native rep0 (session-1787755067101-1040662-f1242589)",
+  "native_req_idx": 2,
+  "native_msg": "msg_03e819b02001AWTZaO2h5SYK5j",
+  "native_paths": [
+   "AGENTS.md",
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py",
+   "aiohttp/connector.py"
+  ],
+  "shared": [
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py"
+  ],
+  "sweet_marginal_saved_if_one_request": 0.00023425
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "sweet": "rp-oc-tab-20260827/agent-state/aio-libs__aiohttp-8038-sweet rep0 (session-1787855170125-1442751-294e0a0a)",
+  "sweet_req_idx": [
+   10,
+   11
+  ],
+  "sweet_msgs": [
+   "msg_04479fbba001L5086qsc4i8eSW",
+   "msg_0447a04700016iKzlW9Q2Gcf4M"
+  ],
+  "sweet_paths": [
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py"
+  ],
+  "sweet_cmds": [
+   "ss-read aiohttp/client_proto.py 1 150",
+   "ss-read aiohttp/connector.py 94 190"
+  ],
+  "native": "fp-opencode-tab-20260826/agent-state/aio-libs__aiohttp-8038-native rep1 (session-1787755288876-1040662-04407300)",
+  "native_req_idx": 2,
+  "native_msg": "msg_03e84fcf0001bhrcJk7TiKITTq",
+  "native_paths": [
+   "aiohttp/connector.py",
+   "aiohttp/client_proto.py",
+   "tests/test_connector.py"
+  ],
+  "shared": [
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py"
+  ],
+  "sweet_marginal_saved_if_one_request": 0.00023425
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "sweet": "rp-oc-tab-20260827/agent-state/aio-libs__aiohttp-8038-sweet rep0 (session-1787855170125-1442751-294e0a0a)",
+  "sweet_req_idx": [
+   10,
+   11
+  ],
+  "sweet_msgs": [
+   "msg_04479fbba001L5086qsc4i8eSW",
+   "msg_0447a04700016iKzlW9Q2Gcf4M"
+  ],
+  "sweet_paths": [
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py"
+  ],
+  "sweet_cmds": [
+   "ss-read aiohttp/client_proto.py 1 150",
+   "ss-read aiohttp/connector.py 94 190"
+  ],
+  "native": "fp-opencode-tab-20260826/agent-state/aio-libs__aiohttp-8038-native rep2 (session-1787755474630-1040662-6ae5c9ea)",
+  "native_req_idx": 2,
+  "native_msg": "msg_03e87d681001KvSHWuqedfzoj1",
+  "native_paths": [
+   "aiohttp/connector.py",
+   "aiohttp/client_proto.py"
+  ],
+  "shared": [
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py"
+  ],
+  "sweet_marginal_saved_if_one_request": 0.00023425
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "sweet": "rp-oc-tab-20260827/agent-state/aio-libs__aiohttp-8038-sweet rep2 (session-1787855671429-1442751-56a79545)",
+  "sweet_req_idx": [
+   3,
+   4,
+   5,
+   6
+  ],
+  "sweet_msgs": [
+   "msg_044814857001TpmA4o2ApDTKSI",
+   "msg_0448154b8001R7zTXZs4BLB0Bh",
+   "msg_044815d98001A734HINhyvX5jw",
+   "msg_0448167ad001vriHhzdHMabmfT"
+  ],
+  "sweet_paths": [
+   "aiohttp/connector.py",
+   "aiohttp/connector.py",
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py"
+  ],
+  "sweet_cmds": [
+   "ss-read aiohttp/connector.py 230 390",
+   "ss-read aiohttp/connector.py 490 650",
+   "ss-read aiohttp/client_proto.py 50 90",
+   "ss-read aiohttp/connector.py 650 710"
+  ],
+  "native": "fp-opencode-tab-20260826/agent-state/aio-libs__aiohttp-8038-native rep0 (session-1787755067101-1040662-f1242589)",
+  "native_req_idx": 2,
+  "native_msg": "msg_03e819b02001AWTZaO2h5SYK5j",
+  "native_paths": [
+   "AGENTS.md",
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py",
+   "aiohttp/connector.py"
+  ],
+  "shared": [
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py"
+  ],
+  "sweet_marginal_saved_if_one_request": 0.00062455
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "sweet": "rp-oc-tab-20260827/agent-state/aio-libs__aiohttp-8038-sweet rep2 (session-1787855671429-1442751-56a79545)",
+  "sweet_req_idx": [
+   3,
+   4,
+   5,
+   6
+  ],
+  "sweet_msgs": [
+   "msg_044814857001TpmA4o2ApDTKSI",
+   "msg_0448154b8001R7zTXZs4BLB0Bh",
+   "msg_044815d98001A734HINhyvX5jw",
+   "msg_0448167ad001vriHhzdHMabmfT"
+  ],
+  "sweet_paths": [
+   "aiohttp/connector.py",
+   "aiohttp/connector.py",
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py"
+  ],
+  "sweet_cmds": [
+   "ss-read aiohttp/connector.py 230 390",
+   "ss-read aiohttp/connector.py 490 650",
+   "ss-read aiohttp/client_proto.py 50 90",
+   "ss-read aiohttp/connector.py 650 710"
+  ],
+  "native": "fp-opencode-tab-20260826/agent-state/aio-libs__aiohttp-8038-native rep1 (session-1787755288876-1040662-04407300)",
+  "native_req_idx": 2,
+  "native_msg": "msg_03e84fcf0001bhrcJk7TiKITTq",
+  "native_paths": [
+   "aiohttp/connector.py",
+   "aiohttp/client_proto.py",
+   "tests/test_connector.py"
+  ],
+  "shared": [
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py"
+  ],
+  "sweet_marginal_saved_if_one_request": 0.00062455
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "sweet": "rp-oc-tab-20260827/agent-state/aio-libs__aiohttp-8038-sweet rep2 (session-1787855671429-1442751-56a79545)",
+  "sweet_req_idx": [
+   3,
+   4,
+   5,
+   6
+  ],
+  "sweet_msgs": [
+   "msg_044814857001TpmA4o2ApDTKSI",
+   "msg_0448154b8001R7zTXZs4BLB0Bh",
+   "msg_044815d98001A734HINhyvX5jw",
+   "msg_0448167ad001vriHhzdHMabmfT"
+  ],
+  "sweet_paths": [
+   "aiohttp/connector.py",
+   "aiohttp/connector.py",
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py"
+  ],
+  "sweet_cmds": [
+   "ss-read aiohttp/connector.py 230 390",
+   "ss-read aiohttp/connector.py 490 650",
+   "ss-read aiohttp/client_proto.py 50 90",
+   "ss-read aiohttp/connector.py 650 710"
+  ],
+  "native": "fp-opencode-tab-20260826/agent-state/aio-libs__aiohttp-8038-native rep2 (session-1787755474630-1040662-6ae5c9ea)",
+  "native_req_idx": 2,
+  "native_msg": "msg_03e87d681001KvSHWuqedfzoj1",
+  "native_paths": [
+   "aiohttp/connector.py",
+   "aiohttp/client_proto.py"
+  ],
+  "shared": [
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py"
+  ],
+  "sweet_marginal_saved_if_one_request": 0.00062455
+ },
+ {
+  "task": "aws-actions__configure-aws-credentials-42",
+  "sweet": "rp-oc-tab-20260827/agent-state/aws-actions__configure-aws-credentials-42-sweet rep1 (session-1787857170849-1442751-be4edc1d)",
+  "sweet_req_idx": [
+   3,
+   4
+  ],
+  "sweet_msgs": [
+   "msg_04497b6b2001f0epdbKoU7ncxn",
+   "msg_04497bd26001IMIYCwp1KCAIXk"
+  ],
+  "sweet_paths": [
+   "action.yml",
+   "index.js"
+  ],
+  "sweet_cmds": [
+   "ss-read action.yml 1 80",
+   "ss-read index.js 1 180"
+  ],
+  "native": "fp-opencode-tab-20260826/agent-state/aws-actions__configure-aws-credentials-42-native rep0 (session-1787756493001-1040662-4702aee0)",
+  "native_req_idx": 2,
+  "native_msg": "msg_03e976502001Cy6AG6BXaHTvaj",
+  "native_paths": [
+   "index.js",
+   "action.yml",
+   "index.test.js",
+   "package.json"
+  ],
+  "shared": [
+   "action.yml",
+   "index.js"
+  ],
+  "sweet_marginal_saved_if_one_request": 0.00013304
+ },
+ {
+  "task": "aws-actions__configure-aws-credentials-42",
+  "sweet": "rp-oc-tab-20260827/agent-state/aws-actions__configure-aws-credentials-42-sweet rep1 (session-1787857170849-1442751-be4edc1d)",
+  "sweet_req_idx": [
+   3,
+   4
+  ],
+  "sweet_msgs": [
+   "msg_04497b6b2001f0epdbKoU7ncxn",
+   "msg_04497bd26001IMIYCwp1KCAIXk"
+  ],
+  "sweet_paths": [
+   "action.yml",
+   "index.js"
+  ],
+  "sweet_cmds": [
+   "ss-read action.yml 1 80",
+   "ss-read index.js 1 180"
+  ],
+  "native": "fp-opencode-tab-20260826/agent-state/aws-actions__configure-aws-credentials-42-native rep1 (session-1787756555348-1040662-93b73e6e)",
+  "native_req_idx": 2,
+  "native_msg": "msg_03e984b150010UmeMcI0TmyLIZ",
+  "native_paths": [
+   "action.yml",
+   "index.js",
+   "index.test.js",
+   "package.json"
+  ],
+  "shared": [
+   "action.yml",
+   "index.js"
+  ],
+  "sweet_marginal_saved_if_one_request": 0.00013304
+ },
+ {
+  "task": "aws-actions__configure-aws-credentials-42",
+  "sweet": "rp-oc-tab-20260827/agent-state/aws-actions__configure-aws-credentials-42-sweet rep1 (session-1787857170849-1442751-be4edc1d)",
+  "sweet_req_idx": [
+   3,
+   4
+  ],
+  "sweet_msgs": [
+   "msg_04497b6b2001f0epdbKoU7ncxn",
+   "msg_04497bd26001IMIYCwp1KCAIXk"
+  ],
+  "sweet_paths": [
+   "action.yml",
+   "index.js"
+  ],
+  "sweet_cmds": [
+   "ss-read action.yml 1 80",
+   "ss-read index.js 1 180"
+  ],
+  "native": "fp-opencode-tab-20260826/agent-state/aws-actions__configure-aws-credentials-42-native rep2 (session-1787756605673-1040662-ad4e1c75)",
+  "native_req_idx": 2,
+  "native_msg": "msg_03e991b24001C2Twv0p6HML0Rh",
+  "native_paths": [
+   "action.yml",
+   "index.js",
+   "package.json",
+   "index.test.js"
+  ],
+  "shared": [
+   "action.yml",
+   "index.js"
+  ],
+  "sweet_marginal_saved_if_one_request": 0.00013304
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "sweet": "rp-oc-tab-20260827/agent-state/bfgroup__b2-113-sweet rep2 (session-1787858728180-1442751-b4b96f81)",
+  "sweet_req_idx": [
+   24,
+   25
+  ],
+  "sweet_msgs": [
+   "msg_044b3b5df001lbUVYDkuZDdhpM",
+   "msg_044b3c56a001Xz2r4V41xx8URJ"
+  ],
+  "sweet_paths": [
+   "test/stage.py",
+   "test/transitive_skip.py"
+  ],
+  "sweet_cmds": [
+   "ss-read test/stage.py 1 155",
+   "ss-read test/transitive_skip.py 1 180"
+  ],
+  "native": "fp-opencode-tab-20260826/agent-state/bfgroup__b2-113-native rep2 (session-1787759552838-1040662-8ebd6d1d)",
+  "native_req_idx": 4,
+  "native_msg": "msg_03ec92f6d001Dx0io1JUxYxzoK",
+  "native_paths": [
+   "test/transitive_skip.py",
+   "test/stage.py"
+  ],
+  "shared": [
+   "test/stage.py",
+   "test/transitive_skip.py"
+  ],
+  "sweet_marginal_saved_if_one_request": 0.0006869700000000001
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "sweet": "rp-oc-tab-20260827/agent-state/devlooped__moq-1262-sweet rep2 (session-1787859832153-1442751-bb37c5b1)",
+  "sweet_req_idx": [
+   16,
+   17,
+   18,
+   19,
+   20
+  ],
+  "sweet_msgs": [
+   "msg_044c17d720012fmJnFpAFU0HPp",
+   "msg_044c18b6f001yTr8PxF5SxMkqT",
+   "msg_044c1985b001U5RPw32047UcKF",
+   "msg_044c1b3c0001KEUwaIycQYfjSh",
+   "msg_044c1bf02001GH70pJh154rDwp"
+  ],
+  "sweet_paths": [
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/Match.cs"
+  ],
+  "sweet_cmds": [
+   "ss-read src/Moq/ExpressionComparer.cs 240 300",
+   "ss-read src/Moq/ExpressionExtensions.cs 1 90",
+   "ss-read src/Moq/ExpressionComparer.cs 1 180",
+   "ss-read src/Moq/ExpressionComparer.cs 175 240",
+   "ss-read src/Moq/Match.cs 55 155"
+  ],
+  "native": "fp-opencode-tab-20260826/agent-state/devlooped__moq-1262-native rep0 (session-1787762148033-1040662-2528fbd9)",
+  "native_req_idx": 8,
+  "native_msg": "msg_03eee7625001lzj4XCmgDEARBl",
+  "native_paths": [
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/Setup.cs"
+  ],
+  "shared": [
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs"
+  ],
+  "sweet_marginal_saved_if_one_request": 0.00220231
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "sweet": "fp-opencode-tab-20260826/agent-state/gitbookio__markup-it-56-sweet rep2 (session-1787762733434-1040662-be6e45ee)",
+  "sweet_req_idx": [
+   9,
+   10,
+   11
+  ],
+  "sweet_msgs": [
+   "msg_03ef71302001cvIIdv8UOzdtaV",
+   "msg_03ef718ec001cNte4i1HGk0ylP",
+   "msg_03ef72ebb00101HIOD6aJ9TUqz"
+  ],
+  "sweet_paths": [
+   "src/markdown/re/inline.js",
+   "src/models/state.js",
+   "src/markdown/re/block.js"
+  ],
+  "sweet_cmds": [
+   "ss-read src/markdown/re/inline.js 1 50",
+   "ss-read src/models/state.js 1 360",
+   "ss-read src/markdown/re/block.js 1 60"
+  ],
+  "native": "fp-opencode-tab-20260826/agent-state/gitbookio__markup-it-56-native rep2 (session-1787763082138-1040662-44287b5b)",
+  "native_req_idx": 4,
+  "native_msg": "msg_03efc1bf8001BU2kr3Jd6r0uMB",
+  "native_paths": [
+   "src/models/state.js",
+   "test/deserializer.js",
+   "src/markdown/re/block.js",
+   "src/markdown/blocks/index.js",
+   "src/markdown/inlines/link.js"
+  ],
+  "shared": [
+   "src/markdown/re/block.js",
+   "src/models/state.js"
+  ],
+  "sweet_marginal_saved_if_one_request": 0.00062794
+ }
+]

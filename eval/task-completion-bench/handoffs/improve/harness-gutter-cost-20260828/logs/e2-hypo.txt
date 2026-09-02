@@ -1,0 +1,181 @@
+### Additive decomposition of the paired ideal-cost delta (Shapley split of the context integral)
+
+harness	epoch	tasks	d_ideal$	d_ideal%	=turns$	+guide$	+ctxRest$	+output$	check$	dT	C̄_N	dC̄	dC̄_guide	dC̄_rest
+codex	A	17	-0.000550	-6.5%	0.000232	0.000319	-0.001202	0.000040	-0.000610	0.97	25492	-3380	1457	-4837
+codex	B	13	-0.000598	-5.6%	-0.000056	0.000387	-0.000839	-0.000115	-0.000624	-0.44	25432	-1113	1457	-2570
+codex	C	22	0.000040	0.3%	0.000386	0.000426	-0.000603	-0.000157	0.000052	0.76	26446	-515	1457	-1972
+opencode	A	17	-0.001415	-17.8%	-0.000080	0.000364	-0.001426	-0.000319	-0.001461	-0.44	20628	-3834	1457	-5291
+opencode	B	13	-0.000241	-2.8%	0.000579	0.000393	-0.001377	0.000045	-0.000359	2.10	21418	-3272	1457	-4729
+opencode	C	22	0.000296	3.3%	0.000914	0.000408	-0.001074	0.000023	0.000271	3.38	21773	-2460	1457	-3917
+claude-code	A	17	0.000279	2.4%	-0.000229	0.000458	0.000005	0.000100	0.000334	-1.41	26704	1195	1588	-392
+claude-code	B	13	-0.001955	-14.2%	-0.001122	0.000480	-0.000490	-0.000809	-0.001941	-4.21	28426	34	1570	-1536
+claude-code	C	22	-0.000591	-3.9%	-0.000335	0.000530	0.000109	-0.000700	-0.000397	-1.14	28554	1707	1570	137
+
+(guide$ = the instruction-file offset priced as ingest-once + resident-every-turn;
+ turns$ = extra turns at the native mean context; ctxRest$ = every other context-size change;
+ check$ = the four parts summed, against d_ideal$.)
+
+### H1 pool composition — per-task delta distribution, epoch C, sweet TAB minus native
+harness	epoch	n	mean$	median$	tasksCheaper	tasksDearer	top3 dearest share of mean
+codex	A	17	-0.000550	-0.000491	11	6	-79.0%
+codex	B	13	-0.000598	-0.000850	9	4	-81.5%
+codex	C	22	0.000040	-0.001110	14	8	2490.4%
+opencode	A	17	-0.001415	-0.001110	15	2	-2.6%
+opencode	B	13	-0.000241	-0.000808	9	4	-327.6%
+opencode	C	22	0.000296	-0.000208	13	9	268.8%
+claude-code	A	17	0.000279	-0.000135	9	8	347.2%
+claude-code	B	13	-0.001955	-0.001630	9	4	-20.3%
+claude-code	C	22	-0.000591	-0.000485	13	9	-291.2%
+
+### H2 per-call read size, native vs sweet (bytes per call), and the paired byte delta
+(see census.json for the full family table; here: native read+grep bytes/call and sweet ss-read bytes/call)
+codex	A	pipe	34	nativeRead 0.03c @ 4647B = 137B/rollout		ss-read 1.06c @ 8289B
+codex	A	native	34	nativeRead 3.62c @ 13661B = 49420B/rollout	nativeGrep 0.21c @ 5522B	
+codex	B	tab	39	nativeRead 0.26c @ 5317B = 1363B/rollout	nativeGrep 0.03c @ 1054B	ss-read 2.26c @ 6274B
+codex	B	native	39	nativeRead 6.92c @ 7376B = 51065B/rollout	nativeGrep 0.31c @ 6077B	
+codex	C	tab	66	nativeRead 0.39c @ 2039B = 803B/rollout	nativeGrep 0.05c @ 500B	ss-read 3.18c @ 5931B
+codex	C	none	66	nativeRead 0.30c @ 1236B = 375B/rollout	nativeGrep 0.05c @ 1113B	ss-read 2.92c @ 5953B
+codex	C	pipe	66	nativeRead 0.50c @ 5672B = 2836B/rollout	nativeGrep 0.11c @ 1932B	ss-read 3.26c @ 6006B
+codex	C	native	66	nativeRead 7.32c @ 7345B = 53750B/rollout	nativeGrep 0.45c @ 4233B	
+opencode	A	pipe	34		nativeGrep 0.12c @ 1051B	ss-read 4.15c @ 4469B
+opencode	A	native	34	nativeRead 7.26c @ 4457B = 32380B/rollout	nativeGrep 5.62c @ 3222B	
+opencode	B	tab	39	nativeRead 0.13c @ 8125B = 1042B/rollout	nativeGrep 0.08c @ 64B	ss-read 4.23c @ 4518B
+opencode	B	native	39	nativeRead 9.77c @ 4342B = 42422B/rollout	nativeGrep 5.72c @ 2611B	
+opencode	C	tab	66	nativeRead 0.27c @ 9940B = 2711B/rollout	nativeGrep 0.39c @ 380B	ss-read 5.56c @ 4862B
+opencode	C	none	66	nativeRead 0.39c @ 5168B = 2036B/rollout	nativeGrep 0.48c @ 666B	ss-read 5.52c @ 3857B
+opencode	C	pipe	66	nativeRead 0.33c @ 3927B = 1309B/rollout	nativeGrep 0.27c @ 910B	ss-read 4.56c @ 5070B
+opencode	C	native	66	nativeRead 9.03c @ 4387B = 39618B/rollout	nativeGrep 5.76c @ 3084B	
+claude-code	A	pipe	34	nativeRead 0.38c @ 1021B = 390B/rollout		ss-read 3.21c @ 5467B
+claude-code	A	native	34	nativeRead 9.65c @ 3013B = 29071B/rollout	nativeGrep 1.59c @ 2774B	
+claude-code	B	tab	39	nativeRead 0.13c @ 6343B = 813B/rollout		ss-read 3.79c @ 5364B
+claude-code	B	native	39	nativeRead 11.03c @ 3324B = 36650B/rollout	nativeGrep 1.67c @ 2635B	
+claude-code	C	tab	66	nativeRead 0.77c @ 2744B = 2120B/rollout	nativeGrep 0.05c @ 783B	ss-read 3.76c @ 5189B
+claude-code	C	none	66	nativeRead 0.48c @ 2102B = 1019B/rollout	nativeGrep 0.03c @ 148B	ss-read 4.33c @ 4174B
+claude-code	C	pipe	66	nativeRead 0.39c @ 876B = 345B/rollout	nativeGrep 0.02c @ 33B	ss-read 4.11c @ 4669B
+claude-code	C	native	66	nativeRead 12.83c @ 3073B = 39436B/rollout	nativeGrep 1.56c @ 2094B	
+
+### H4 output tokens: per rollout and per turn
+harness	epoch	form	out/rollout	out/turn	turns
+codex	A	native	4062	355	11.4
+codex	A	pipe	4129	333	12.4
+codex	B	native	5386	323	16.7
+codex	B	tab	5195	320	16.3
+codex	C	native	5786	307	18.8
+codex	C	tab	5524	282	19.6
+codex	C	none	5676	292	19.4
+codex	C	pipe	5728	290	19.8
+opencode	A	native	3488	229	15.2
+opencode	A	pipe	2955	200	14.8
+opencode	B	native	3841	241	15.9
+opencode	B	tab	3917	217	18.1
+opencode	C	native	3606	221	16.3
+opencode	C	tab	3645	185	19.7
+opencode	C	none	3647	193	18.9
+opencode	C	pipe	3479	189	18.4
+claude-code	A	native	5099	261	19.5
+claude-code	A	pipe	5266	291	18.1
+claude-code	B	native	6022	265	22.7
+claude-code	B	tab	4674	253	18.5
+claude-code	C	native	6415	264	24.3
+claude-code	C	tab	5248	227	23.2
+claude-code	C	none	5552	248	22.4
+claude-code	C	pipe	4487	211	21.3
+
+### H6 cache-hit ratio and cache-miss turns; concurrency 2 (fp) vs 1 (rp), opencode repair tasks
+codex	C	native	hit	0.9197	missTurns/rollout	0.000	rolloutsWithMiss	0/66
+codex	C	tab	hit	0.9194	missTurns/rollout	0.000	rolloutsWithMiss	0/66
+codex	C	none	hit	0.9191	missTurns/rollout	0.000	rolloutsWithMiss	0/66
+codex	C	pipe	hit	0.9214	missTurns/rollout	0.000	rolloutsWithMiss	0/66
+opencode	C	native	hit	0.9056	missTurns/rollout	0.000	rolloutsWithMiss	0/66
+opencode	C	tab	hit	0.9138	missTurns/rollout	0.000	rolloutsWithMiss	0/66
+opencode	C	none	hit	0.9145	missTurns/rollout	0.000	rolloutsWithMiss	0/66
+opencode	C	pipe	hit	0.9105	missTurns/rollout	0.061	rolloutsWithMiss	3/66
+claude-code	C	native	hit	0.9244	missTurns/rollout	0.000	rolloutsWithMiss	0/66
+claude-code	C	tab	hit	0.9191	missTurns/rollout	0.076	rolloutsWithMiss	4/66
+claude-code	C	none	hit	0.9191	missTurns/rollout	0.000	rolloutsWithMiss	0/66
+claude-code	C	pipe	hit	0.9177	missTurns/rollout	0.015	rolloutsWithMiss	1/66
+fp (CONCURRENCY=2, surviving repair-task rollouts) n=81 hit=0.9222 miss/rollout=0.000 ideal=$0.010845
+rp (CONCURRENCY=1, same 11 tasks)                n=99 hit=0.9223 miss/rollout=0.010 ideal=$0.010882
+
+### H7 failed-edit retries
+harness	epoch	form	n	editCalls/rollout	failedEdits	rolloutsWithFail	$ideal fail-vs-clean
+codex	A	native	34	1.85	7	6/34	$0.013922 vs $0.007350
+codex	A	pipe	34	1.65	5	4/34	$0.011931 vs $0.007431
+codex	B	native	39	1.59	9	8/39	$0.012897 vs $0.010228
+codex	B	tab	39	1.69	4	3/39	$0.012154 vs $0.010012
+codex	C	native	66	1.88	8	7/66	$0.027260 vs $0.010434
+codex	C	tab	66	1.70	8	5/66	$0.024627 vs $0.011244
+codex	C	none	66	1.88	4	2/66	$0.027632 vs $0.011767
+codex	C	pipe	66	1.82	4	4/66	$0.019354 vs $0.012251
+opencode	A	native	34	1.88	6	4/34	$0.012449 vs $0.007370
+opencode	A	pipe	34	1.53	4	4/34	$0.009125 vs $0.006209
+opencode	B	native	39	2.18	9	7/39	$0.014462 vs $0.007441
+opencode	B	tab	39	2.67	16	5/39	$0.018187 vs $0.007029
+opencode	C	native	66	1.77	3	3/66	$0.020574 vs $0.008412
+opencode	C	tab	66	1.86	0	0/66	$0.000000 vs $0.009260
+opencode	C	none	66	1.61	7	6/66	$0.015804 vs $0.007857
+opencode	C	pipe	66	1.82	4	4/66	$0.011691 vs $0.008432
+claude-code	A	native	34	4.41	18	10/34	$0.018412 vs $0.008930
+claude-code	A	pipe	34	4.15	32	8/34	$0.025185 vs $0.007940
+claude-code	B	native	39	5.13	14	8/39	$0.022640 vs $0.011487
+claude-code	B	tab	39	3.85	8	3/39	$0.029408 vs $0.010354
+claude-code	C	native	66	4.67	52	17/66	$0.028181 vs $0.010871
+claude-code	C	tab	66	3.71	41	16/66	$0.023420 vs $0.011961
+claude-code	C	none	66	3.65	34	13/66	$0.026436 vs $0.011397
+claude-code	C	pipe	66	3.00	23	14/66	$0.019875 vs $0.012048
+
+### H8 poll turns (codex write_stdin) and recorded wall time
+codex	A	native	poll/rollout	0.00	pollBytes/rollout	0	wallSec/rollout	0.0	ssWallSec/rollout	0.0
+codex	A	pipe	poll/rollout	0.00	pollBytes/rollout	0	wallSec/rollout	0.0	ssWallSec/rollout	0.0
+codex	B	native	poll/rollout	0.18	pollBytes/rollout	757	wallSec/rollout	24.4	ssWallSec/rollout	0.0
+codex	B	tab	poll/rollout	0.18	pollBytes/rollout	894	wallSec/rollout	25.8	ssWallSec/rollout	2.0
+codex	C	native	poll/rollout	0.58	pollBytes/rollout	2646	wallSec/rollout	82.2	ssWallSec/rollout	0.0
+codex	C	tab	poll/rollout	0.68	pollBytes/rollout	2921	wallSec/rollout	88.4	ssWallSec/rollout	3.3
+codex	C	none	poll/rollout	0.59	pollBytes/rollout	2717	wallSec/rollout	86.2	ssWallSec/rollout	3.4
+codex	C	pipe	poll/rollout	0.70	pollBytes/rollout	2998	wallSec/rollout	93.8	ssWallSec/rollout	3.6
+
+### H9 verification tail: calls after the first successful edit
+harness	epoch	form	firstEditIdx	callsAfter	calls	tailShare
+codex	A	native	5.7	3.7	10.4	35.4%
+codex	A	pipe	6.9	3.5	11.4	30.7%
+codex	B	native	9.5	5.2	15.7	32.8%
+codex	B	tab	8.9	5.3	15.3	34.8%
+codex	C	native	10.1	6.8	17.8	37.9%
+codex	C	tab	10.7	6.9	18.6	37.1%
+codex	C	none	10.5	6.9	18.4	37.7%
+codex	C	pipe	11.0	6.8	18.8	36.2%
+opencode	A	native	15.2	6.6	22.8	28.8%
+opencode	A	pipe	11.1	6.0	18.0	33.1%
+opencode	B	native	17.2	8.1	26.2	30.7%
+opencode	B	tab	10.9	8.1	20.1	40.5%
+opencode	C	native	16.5	7.7	25.2	30.7%
+opencode	C	tab	13.4	7.4	21.8	33.9%
+opencode	C	none	13.3	7.5	21.9	34.4%
+opencode	C	pipe	11.8	7.6	20.5	37.3%
+claude-code	A	native	12.3	8.4	21.8	38.8%
+claude-code	A	pipe	8.7	8.3	18.0	46.1%
+claude-code	B	native	14.0	10.3	25.2	40.7%
+claude-code	B	tab	9.4	7.5	17.9	41.9%
+claude-code	C	native	15.1	10.3	26.4	39.0%
+claude-code	C	tab	12.9	8.8	22.7	38.8%
+claude-code	C	none	12.7	8.5	22.1	38.2%
+claude-code	C	pipe	11.7	8.3	21.0	39.5%
+
+### H10 claude-code delegation: paired cost on rollouts where NEITHER arm delegated
+epoch A: inclusive all tasks -8.9% (n=17); non-delegating-both main-only -0.7% (n=13) CI [-9.6%,7.6%]
+   delegating rollouts: sweet 3/34, native 11/34; sidechain $/rollout sweet 0.000696 native 0.002313
+epoch B: inclusive all tasks -30.9% (n=13); non-delegating-both main-only -11.6% (n=10) CI [-21.7%,-1.1%]
+   delegating rollouts: sweet 0/39, native 20/39; sidechain $/rollout sweet 0.000000 native 0.003718
+epoch C: inclusive all tasks -8.8% (n=22); non-delegating-both main-only 6.8% (n=18) CI [-9.7%,29.4%]
+   delegating rollouts: sweet 9/66, native 28/66; sidechain $/rollout sweet 0.002811 native 0.004429
+
+### H11 newly-numbered search surfaces — extra gutter tokens and their price (epoch C sweet TAB)
+codex: epoch B search lines numbered 11.4%, epoch C 94.1%; 305 numbered search lines/rollout = 443 gutter tokens ≈ $0.000088/rollout (0.7% of the sweet arm)
+opencode: epoch B search lines numbered 0.0%, epoch C 95.0%; 242 numbered search lines/rollout = 351 gutter tokens ≈ $0.000070/rollout (0.8% of the sweet arm)
+claude-code: epoch B search lines numbered 4.7%, epoch C 95.5%; 394 numbered search lines/rollout = 571 gutter tokens ≈ $0.000123/rollout (0.8% of the sweet arm)
+
+### cross-harness absolute gap, epoch C native arm
+harness	$ideal	$incl	turns	firstTurnIn	ctxInt	out	toolBytes	calls	sidechain$
+codex	0.012218	0.012287	18.8	14359	551210	5786	70234	17.8	0.000000
+opencode	0.008964	0.008969	16.3	6898	406824	3606	71912	25.2	0.000000
+claude-code	0.015329	0.020972	24.3	17674	818991	6415	60077	26.4	0.004429

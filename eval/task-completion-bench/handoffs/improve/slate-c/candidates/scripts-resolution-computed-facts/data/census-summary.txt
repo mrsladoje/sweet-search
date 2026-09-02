@@ -1,0 +1,90 @@
+cells: 390
+codex        native  resolved=True  n= 41 editedFnFound=40/41 = 97.6% callers>=2=22/41 = 53.7% single-caller=9/41 = 22.0% possiblyEmptyArg=0/41 = 0.0% testObserved=13/41 = 31.7%
+codex        native  resolved=False n= 25 editedFnFound=16/25 = 64.0% callers>=2=6/25 = 24.0% single-caller=4/25 = 16.0% possiblyEmptyArg=3/25 = 12.0% testObserved=3/25 = 12.0%
+codex        sweet   resolved=True  n= 39 editedFnFound=39/39 = 100.0% callers>=2=21/39 = 53.8% single-caller=7/39 = 17.9% possiblyEmptyArg=1/39 = 2.6% testObserved=11/39 = 28.2%
+codex        sweet   resolved=False n= 27 editedFnFound=21/27 = 77.8% callers>=2=6/27 = 22.2% single-caller=3/27 = 11.1% possiblyEmptyArg=1/27 = 3.7% testObserved=7/27 = 25.9%
+opencode     native  resolved=True  n= 35 editedFnFound=35/35 = 100.0% callers>=2=17/35 = 48.6% single-caller=8/35 = 22.9% possiblyEmptyArg=2/35 = 5.7% testObserved=11/35 = 31.4%
+opencode     native  resolved=False n= 25 editedFnFound=19/25 = 76.0% callers>=2=8/25 = 32.0% single-caller=1/25 = 4.0% possiblyEmptyArg=1/25 = 4.0% testObserved=5/25 = 20.0%
+opencode     sweet   resolved=True  n= 41 editedFnFound=41/41 = 100.0% callers>=2=23/41 = 56.1% single-caller=10/41 = 24.4% possiblyEmptyArg=1/41 = 2.4% testObserved=13/41 = 31.7%
+opencode     sweet   resolved=False n= 25 editedFnFound=20/25 = 80.0% callers>=2=6/25 = 24.0% single-caller=6/25 = 24.0% possiblyEmptyArg=0/25 = 0.0% testObserved=6/25 = 24.0%
+claude-code  native  resolved=True  n= 43 editedFnFound=43/43 = 100.0% callers>=2=24/43 = 55.8% single-caller=10/43 = 23.3% possiblyEmptyArg=3/43 = 7.0% testObserved=12/43 = 27.9%
+claude-code  native  resolved=False n= 23 editedFnFound=13/23 = 56.5% callers>=2=4/23 = 17.4% single-caller=4/23 = 17.4% possiblyEmptyArg=0/23 = 0.0% testObserved=5/23 = 21.7%
+claude-code  sweet   resolved=True  n= 40 editedFnFound=40/40 = 100.0% callers>=2=22/40 = 55.0% single-caller=7/40 = 17.5% possiblyEmptyArg=2/40 = 5.0% testObserved=9/40 = 22.5%
+claude-code  sweet   resolved=False n= 26 editedFnFound=19/26 = 73.1% callers>=2=3/26 = 11.5% single-caller=5/26 = 19.2% possiblyEmptyArg=1/26 = 3.8% testObserved=6/26 = 23.1%
+
+per-task: cells | editedFnFound | callers>=2 | single | possiblyEmpty | testObserved | example functions
+absinthe-graphql__absinthe-998              18 |  18 |  18 |   0 |   0 |   0 | [('render_default_value', 18)]
+accenture__sfmc-devtools-1974               18 |  18 |  15 |   0 |  15 |   0 | [('#runMethod', 15), ('fixKeys', 3), ('_isValidType', 1)]
+aio-libs__aiohttp-8038                      18 |  17 |   7 |   4 |   0 |   6 | [('__init__', 13), ('_request', 9), ('data_received', 7), ('connect', 5)]
+apigee__registry-961                        18 |  18 |  15 |   0 |   0 |   0 | [('ListDeploymentRevisionArtifacts', 15), ('ListSpecRevisionArtifacts', 15), ('ListArtifacts', 3)]
+asynkron__protoactor-dotnet-1909            18 |  18 |   0 |   0 |   0 |   0 | [('Add', 18)]
+aws-actions__configure-aws-credentials-42   15 |  15 |  13 |   0 |   0 |   0 | [('run', 23), ('exportCredentials', 21)]
+awslabs__aws-embedded-metrics-node-21       18 |  18 |   7 |  12 |   0 |  15 | [('getDimensions', 12), ('setDimensions', 12), ('putDimensions', 12), ('createCopyWithContext', 4)]
+axelrod-python__axelrod-671                 18 |  18 |   0 |  18 |   0 |   0 | [('build_payoff_diffs_means', 18)]
+bfgroup__b2-113                             18 |  15 |   0 |   3 |   0 |   0 | [('generate', 11), ('compute_usage_requirements', 7), ('construct', 7), ('update_location', 2)]
+bfgroup__b2-259                             18 |  13 |   2 |   0 |   0 |   2 | [('check', 6), ('common-properties', 2), ('check-target-builds', 1), ('builds-raw', 1)]
+callstack__react-native-paper-972           18 |  18 |  18 |   0 |   0 |  18 | [('render', 18)]
+celestiaorg__nmt-192                        18 |  17 |  17 |   0 |   0 |  17 | [('IsEmptyProof', 17)]
+devlooped__moq-1262                         18 |  18 |  16 |  12 |   0 |  18 | [('Equals', 23), ('ExpressionComparer', 8), ('Match', 7), ('SetupEvaluatedSuccessfully', 6)]
+fastify__fastify-cors-285                   18 |  18 |   0 |   0 |   0 |   0 | [('fastifyCors', 18)]
+final-form__final-form-64                   18 |  18 |   0 |   0 |   0 |  18 | [('submit', 18)]
+gitbookio__markup-it-56                     18 |   1 |   0 |   1 |   0 |   0 | [('parse', 1)]
+hotmeteor__spectator-181                    18 |  18 |   0 |   6 |   0 |   6 | [('assertValidResponse', 14), ('response', 6)]
+jazzband__tablib-454                        18 |  18 |   0 |   0 |   0 |   0 | [('rpush', 18), ('lpush', 18)]
+locationtech__jts-622                       18 |  18 |  18 |   0 |   0 |   0 | [('writePoint', 18)]
+mathnet__mathnet-numerics-1072              15 |  15 |  15 |   0 |   0 |   0 | [('Hypotenuse', 47)]
+mirumee__ariadne-codegen-218                18 |  18 |   0 |  18 |   0 |   0 | [('parse_operation_field', 18)]
+protofire__solhint-224                      18 |   1 |   1 |   0 |   0 |   1 | [('loadRules', 1)]
+
+detail (first cell per task/arm with a non-ambiguous edited function):
+  absinthe-graphql__absinthe-998     absinthe/type/built_ins/introspection.ex render_default_value         def=  352 callers=  5 test=  0 flagged=0 shapes=4 defs=1 asserted=[]
+  accenture__sfmc-devtools-1974      lib/index.js                             #runMethod                   def= 1670 callers=  9 test=  0 flagged=2 shapes=8 defs=1 asserted=[]
+  aio-libs__aiohttp-8038             aiohttp/client_proto.py                  should_close                 def=   46 callers=  0 test=  0 flagged=0 shapes=0 defs=1 asserted=[]
+  aws-actions__configure-aws-credent dist/index.js                            exportCredentials            def=  217 callers=  2 test=  0 flagged=0 shapes=2 defs=1 asserted=[]
+  axelrod-python__axelrod-671        axelrod/result_set.py                    build_payoff_diffs_means     def=  450 callers=  1 test=  0 flagged=0 shapes=1 defs=1 asserted=[]
+  awslabs__aws-embedded-metrics-node src/logger/MetricsContext.ts             getDimensions                def=  108 callers=  1 test=  9 flagged=0 shapes=1 defs=1 asserted=['empty', 'events', 'get', 'metrics', 'properties', 'random']
+  awslabs__aws-embedded-metrics-node src/logger/MetricsContext.ts             createCopyWithContext        def=  144 callers=  3 test=  3 flagged=0 shapes=1 defs=1 asserted=['empty']
+  callstack__react-native-paper-972  src/components/Searchbar.js              render                       def=  126 callers=143 test= 29 flagged=0 shapes=3 defs=1 asserted=['Accordion', 'Action', 'Actions', 'BackAction', 'Content', 'Group']
+  celestiaorg__nmt-192               proof.go                                 IsEmptyProof                 def=  110 callers=  3 test=  2 flagged=0 shapes=1 defs=1 asserted=['Errorf', 'Hash', 'VerifyNamespace', 'args', 'hasher', 'isValidEmptyProof']
+  final-form__final-form-64          src/FinalForm.js                         submit                       def=  568 callers=  0 test= 17 flagged=0 shapes=0 defs=0 asserted=['calls', 'change', 'fn', 'foo', 'mock', 'registerField']
+  devlooped__moq-1262                src/Moq/ExpressionComparer.cs            Equals                       def=   21 callers= 65 test= 48 flagged=0 shapes=45 defs=0 asserted=['CallBase', 'First', 'GetHashCode', 'IsAny', 'IsOverridden', 'Name']
+  devlooped__moq-1262                src/Moq/ExpressionComparer.cs            ExpressionComparer           def=   17 callers=  1 test=  0 flagged=0 shapes=1 defs=1 asserted=[]
+  devlooped__moq-1262                /Moq/Interception/InterceptionAspects.cs Handle                       def=   90 callers= 12 test=  2 flagged=0 shapes=3 defs=0 asserted=['Contains', 'Count', 'Exactly', 'HandleImpl', 'Protected', 'ReadOnlyProperty']
+  devlooped__moq-1262                src/Moq/Match.cs                         Match                        def=  168 callers=  0 test=  2 flagged=0 shapes=0 defs=1 asserted=['Captures', 'Message', 'OrdinalIgnoreCase', 'Success', 'Value']
+  devlooped__moq-1262                src/Moq/MethodExpectation.cs             SetupEvaluatedSuccessfully   def=  145 callers= 20 test=  1 flagged=0 shapes=8 defs=0 asserted=[]
+  devlooped__moq-1262                src/Moq/SetupCollection.cs               FindLast                     def=  104 callers=  5 test=  0 flagged=0 shapes=3 defs=0 asserted=[]
+  locationtech__jts-622              a/org/locationtech/jts/io/WKBWriter.java writePoint                   def=  342 callers=  6 test=  0 flagged=0 shapes=6 defs=0 asserted=[]
+  mirumee__ariadne-codegen-218       degen/client_generators/result_fields.py parse_operation_field        def=   55 callers=  1 test=  4 flagged=0 shapes=1 defs=1 asserted=[]
+  mathnet__mathnet-numerics-1072     c/Numerics/SpecialFunctions/Stability.cs Hypotenuse                   def=   68 callers= 26 test=  0 flagged=0 shapes=11 defs=0 asserted=[]
+  aio-libs__aiohttp-8038             aiohttp/client_proto.py                  upgraded                     def=   42 callers=  1 test=  0 flagged=0 shapes=1 defs=1 asserted=[]
+  apigee__registry-961               server/registry/internal/storage/list.go ListDeploymentRevisionArtifacts def= 1194 callers=  2 test=  0 flagged=0 shapes=2 defs=1 asserted=[]
+  apigee__registry-961               server/registry/internal/storage/list.go ListSpecRevisionArtifacts    def= 1059 callers=  2 test=  0 flagged=0 shapes=2 defs=1 asserted=[]
+  bfgroup__b2-113                    src/build/alias.py                       compute_usage_requirements   def=   47 callers=  0 test=  0 flagged=0 shapes=0 defs=0 asserted=[]
+  aio-libs__aiohttp-8038             aiohttp/client_proto.py                  set_response_params          def=  139 callers=  2 test=  7 flagged=0 shapes=2 defs=1 asserted=['HttpProcessingError', '_drop_timeout', '_read_timeout_handle', '_reschedule_timeout', 'called', 'close']
+  aio-libs__aiohttp-8038             aiohttp/connector.py                     add_callback                 def=  153 callers=  1 test=  4 flagged=0 shapes=1 defs=1 asserted=['Mock', 'close', 'is_closed', 'release', 'return_value']
+  devlooped__moq-1262                src/Moq/ExpressionComparer.cs            EqualsConstant               def=  158 callers=  1 test=  0 flagged=0 shapes=1 defs=0 asserted=[]
+  bfgroup__b2-259                    src/build/configure.jam                  check-target-builds          def=  600 callers=  4 test=  1 flagged=0 shapes=1 defs=0 asserted=['Tester', 'cpp', 'write']
+  devlooped__moq-1262                src/Moq/MatcherFactory.cs                CreateMatcher                def=  129 callers=  4 test=  7 flagged=0 shapes=4 defs=0 asserted=['Body', 'IsAny', 'IsType', 'Matches', 'Setup', 'SetupEvaluatedSuccessfully']
+  hotmeteor__spectator-181           src/Validation/ResponseValidator.php     response                     def=  115 callers=  1 test=  9 flagged=0 shapes=1 defs=1 asserted=['test']
+  aio-libs__aiohttp-8038             aiohttp/connector.py                     _release                     def=  651 callers=  4 test= 10 flagged=0 shapes=3 defs=1 asserted=['BaseConnector', 'Mock', '_acquired_per_host', '_cleanup_closed_transports', '_cleanup_handle', '_conns']
+  awslabs__aws-embedded-metrics-node src/serializers/LogSerializer.ts         serialize                    def=   28 callers=  3 test=  5 flagged=0 shapes=2 defs=1 asserted=['random', 'word']
+  bfgroup__b2-259                    src/build/configure.jam                  builds-raw                   def=  346 callers=  0 test=  0 flagged=0 shapes=0 defs=0 asserted=[]
+  bfgroup__b2-259                    src/build/property.jam                   evaluate-conditional-relevance def=  158 callers=  0 test=  0 flagged=0 shapes=0 defs=0 asserted=[]
+  aio-libs__aiohttp-8038             aiohttp/client_proto.py                  is_connected                 def=   70 callers=  3 test=  0 flagged=0 shapes=1 defs=1 asserted=[]
+  bfgroup__b2-259                    src/build/targets.jam                    common-properties            def= 1026 callers=  0 test=  0 flagged=0 shapes=0 defs=0 asserted=[]
+  bfgroup__b2-113                    src/tools/stage.py                       update_location              def=   41 callers=  1 test=  0 flagged=0 shapes=1 defs=1 asserted=[]
+  devlooped__moq-1262                src/Moq/SetupCollection.cs               Reset                        def=  130 callers=  7 test=  7 flagged=0 shapes=2 defs=0 asserted=['ConfiguredDefaultValues', 'Empty', 'Execute', 'Extensions', 'GetMethod', 'IsExtensionMethod']
+  bfgroup__b2-259                    src/build/configure.jam                  get-relevant-features        def=  431 callers=  0 test=  0 flagged=0 shapes=0 defs=0 asserted=[]
+  protofire__solhint-224             lib/load-rules.js                        loadRules                    def=    9 callers=  4 test=  1 flagged=0 shapes=1 defs=0 asserted=['has', 'meta']
+  bfgroup__b2-259                    src/build/configure.jam                  builds                       def=  442 callers= 23 test= 25 flagged=0 shapes=1 defs=0 asserted=['Tester', 'cleanup', 'cpp', 'dylib', 'expect_addition', 'expect_nothing_more']
+  bfgroup__b2-259                    src/build/configure.jam                  find-builds                  def=  460 callers=  0 test=  0 flagged=0 shapes=0 defs=0 asserted=[]
+  bfgroup__b2-259                    src/build/targets.jam                    evaluate-requirements        def= 1057 callers=  0 test=  0 flagged=0 shapes=0 defs=0 asserted=[]
+  gitbookio__markup-it-56            src/html/deserializeHtml.js              parse                        def=  137 callers=  1 test=  0 flagged=0 shapes=1 defs=1 asserted=[]
+  devlooped__moq-1262                src/Moq/Match.cs                         MatchFactory                 def=  239 callers=  1 test=  0 flagged=0 shapes=1 defs=1 asserted=[]
+  bfgroup__b2-113                    src/tools/stage.py                       targets_to_stage             def=  139 callers=  1 test=  0 flagged=0 shapes=1 defs=1 asserted=[]
+  devlooped__moq-1262                src/Moq/MethodExpectation.cs             IsOverride                   def=  155 callers=  1 test=  0 flagged=0 shapes=1 defs=0 asserted=[]
+  accenture__sfmc-devtools-1974      lib/util/util.js                         _isValidType                 def=  204 callers= 16 test=  0 flagged=0 shapes=2 defs=1 asserted=[]
+  aio-libs__aiohttp-8038             aiohttp/connector.py                     _get                         def=  579 callers=  1 test= 15 flagged=0 shapes=1 defs=1 asserted=['BaseConnector', 'Mock', '_cleanup_closed_transports', '_conns', 'close', 'is_connected']
+  bfgroup__b2-113                    src/build/targets.py                     create_subvariant            def= 1344 callers=  0 test=  0 flagged=0 shapes=0 defs=0 asserted=[]
+  bfgroup__b2-113                    src/build/targets.py                     generate_dependency_targets  def= 1134 callers=  0 test=  0 flagged=0 shapes=0 defs=0 asserted=[]
+  bfgroup__b2-113                    src/build/targets.py                     generate_dependency_properties def= 1147 callers=  0 test=  0 flagged=0 shapes=0 defs=0 asserted=[]

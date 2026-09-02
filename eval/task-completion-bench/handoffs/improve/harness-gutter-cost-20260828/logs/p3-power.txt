@@ -1,0 +1,36 @@
+== codex: totals native/TAB/NONE/PIPE = [41, 39, 41, 42]
+   task-bootstrap TAB-NONE: sd=2.40 rollouts, P(|diff|>=6)=0.081, 95% band [-7,2]
+   task-bootstrap TAB-PIPE: sd=2.13 rollouts, P(|diff|>=6)=0.127, 95% band [-8,0]
+   task-bootstrap NONE-PIPE: sd=0.98 rollouts, P(|diff|>=6)=0.000, 95% band [-3,0]
+   task-bootstrap native-TAB: sd=2.42 rollouts, P(|diff|>=6)=0.086, 95% band [-2,7]
+   parametric null: P(loss>=6 in one arm pair)=0.008, sd=2.23
+   parametric delta_p=0.15: expected diff=-2.50, P(observed loss>=6)=0.079
+   parametric delta_p=0.25: expected diff=-3.74, P(observed loss>=6)=0.190
+   parametric delta_p=0.35: expected diff=-4.60, P(observed loss>=6)=0.324
+   parametric delta_p=0.5: expected diff=-5.50, P(observed loss>=6)=0.499
+   discriminating tasks (not all-solved, not dead): 6 -> ['awslabs', 'jts', 'accenture', 'aiohttp', 'moq', 'b2-113']
+== opencode: totals native/TAB/NONE/PIPE = [41, 41, 39, 38]
+   task-bootstrap TAB-NONE: sd=1.35 rollouts, P(|diff|>=6)=0.012, 95% band [0,5]
+   task-bootstrap TAB-PIPE: sd=2.57 rollouts, P(|diff|>=6)=0.162, 95% band [-1,9]
+   task-bootstrap NONE-PIPE: sd=1.72 rollouts, P(|diff|>=6)=0.006, 95% band [-2,4]
+   task-bootstrap native-TAB: sd=2.00 rollouts, P(|diff|>=6)=0.006, 95% band [-4,4]
+   parametric null: P(loss>=6 in one arm pair)=0.003, sd=2.04
+   parametric delta_p=0.15: expected diff=-1.84, P(observed loss>=6)=0.034
+   parametric delta_p=0.25: expected diff=-2.77, P(observed loss>=6)=0.085
+   parametric delta_p=0.35: expected diff=-3.63, P(observed loss>=6)=0.173
+   parametric delta_p=0.5: expected diff=-5.01, P(observed loss>=6)=0.398
+   discriminating tasks (not all-solved, not dead): 5 -> ['accenture', 'aiohttp', 'registry', 'awslabs', 'b2-113']
+== claude-code: totals native/TAB/NONE/PIPE = [43, 40, 41, 39]
+   task-bootstrap TAB-NONE: sd=1.72 rollouts, P(|diff|>=6)=0.006, 95% band [-4,2]
+   task-bootstrap TAB-PIPE: sd=1.72 rollouts, P(|diff|>=6)=0.007, 95% band [-2,4]
+   task-bootstrap NONE-PIPE: sd=1.96 rollouts, P(|diff|>=6)=0.077, 95% band [0,6]
+   task-bootstrap native-TAB: sd=2.14 rollouts, P(|diff|>=6)=0.119, 95% band [-1,7]
+   parametric null: P(loss>=6 in one arm pair)=0.001, sd=1.89
+   parametric delta_p=0.15: expected diff=-1.83, P(observed loss>=6)=0.026
+   parametric delta_p=0.25: expected diff=-2.76, P(observed loss>=6)=0.083
+   parametric delta_p=0.35: expected diff=-3.65, P(observed loss>=6)=0.175
+   parametric delta_p=0.5: expected diff=-5.02, P(observed loss>=6)=0.412
+   discriminating tasks (not all-solved, not dead): 5 -> ['accenture', 'awslabs', 'nmt', 'aiohttp', 'b2-113']
+
+Family-wise false-kill under the null (parametric, three independent harness tests):
+  per-harness P(false kill)= [0.007, 0.003, 0.002]  any-of-three= 0.012

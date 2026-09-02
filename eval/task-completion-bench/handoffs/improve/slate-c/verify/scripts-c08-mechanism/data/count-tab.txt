@@ -1,0 +1,54 @@
+run fp-claudecode-tab-20260826
+Agent launches by arm/subagent_type (deduped tool_use blocks in main transcripts): {"native":{"Explore":30,"general-purpose":3},"sweet":{"Explore":8,"general-purpose":3}}
+Agent isolation param by arm: {"native":{"worktree":33},"sweet":{"worktree":11}}
+
+Subagent transcripts:
+{"arm":"native","task":"absinthe-graphql__absinthe-998","id":"agent-aa2de5f7788e9a8e0","type":"Explore","bashTotal":10,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":19,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"accenture__sfmc-devtools-1974","id":"agent-a367cbe9e56222a8b","type":"Explore","bashTotal":14,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":23,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"aio-libs__aiohttp-8038","id":"agent-a97443cbc5fd14e99","type":"?","bashTotal":10,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":13,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"aio-libs__aiohttp-8038","id":"agent-ab87f0ae9864e44bc","type":"?","bashTotal":8,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":12,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"aio-libs__aiohttp-8038","id":"agent-a84764c22e2afe54e","type":"?","bashTotal":11,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":13,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"apigee__registry-961","id":"agent-a6821e9a8a4ecbfb6","type":"?","bashTotal":10,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":16,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"aws-actions__configure-aws-credentials-42","id":"agent-ac37f1921b3e442d4","type":"Explore","bashTotal":5,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":9,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"aws-actions__configure-aws-credentials-42","id":"agent-a81e5594c726fdac7","type":"?","bashTotal":7,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":11,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"awslabs__aws-embedded-metrics-node-21","id":"agent-a2642f4b5a3101b3d","type":"Explore","bashTotal":12,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":9,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"awslabs__aws-embedded-metrics-node-21","id":"agent-a5fb5788e06290db4","type":"?","bashTotal":9,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":17,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"axelrod-python__axelrod-671","id":"agent-a7a5a7881718edb9c","type":"?","bashTotal":10,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":21,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"bfgroup__b2-113","id":"agent-aa5fe81bbe593a6bd","type":"?","bashTotal":11,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":14,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"bfgroup__b2-113","id":"agent-ac1a0bd3f79c600a4","type":"?","bashTotal":10,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":16,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"bfgroup__b2-113","id":"agent-a1d6db22e25a06d81","type":"?","bashTotal":8,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":17,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"bfgroup__b2-113","id":"agent-af2971174705babe7","type":"?","bashTotal":10,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":19,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"bfgroup__b2-259","id":"agent-a80938bc43dd35a52","type":"?","bashTotal":13,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":17,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"bfgroup__b2-259","id":"agent-abfa315ce7efff2db","type":"?","bashTotal":11,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":19,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"bfgroup__b2-259","id":"agent-a292575fb125a2acd","type":"?","bashTotal":12,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":15,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"celestiaorg__nmt-192","id":"agent-a8d7e92e79df9d65b","type":"?","bashTotal":5,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":12,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"devlooped__moq-1262","id":"agent-a32737803ea895dfe","type":"Explore","bashTotal":15,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":22,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"devlooped__moq-1262","id":"agent-a0d8e779e425ed4a7","type":"Explore","bashTotal":11,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":25,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"devlooped__moq-1262","id":"agent-ab16b34db3903cf02","type":"Explore","bashTotal":8,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":21,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"devlooped__moq-1262","id":"agent-a39b87d1fc658f8a9","type":"?","bashTotal":12,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":20,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"gitbookio__markup-it-56","id":"agent-a00958e2a710cd959","type":"?","bashTotal":19,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":31,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"gitbookio__markup-it-56","id":"agent-a1e0e34e34cd22718","type":"?","bashTotal":11,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":21,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"gitbookio__markup-it-56","id":"agent-a5dfa16ae0cc5d489","type":"Explore","bashTotal":14,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":28,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"hotmeteor__spectator-181","id":"agent-ac1239bdb5e7576a2","type":"?","bashTotal":10,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":11,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"mirumee__ariadne-codegen-218","id":"agent-a6028b4dc9db83a42","type":"Explore","bashTotal":11,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":16,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"mirumee__ariadne-codegen-218","id":"agent-a1b0179e5f7b8a879","type":"?","bashTotal":10,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":14,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"protofire__solhint-224","id":"agent-a4bc77367d44b8485","type":"?","bashTotal":10,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":23,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"protofire__solhint-224","id":"agent-a63b54c1761dc351a","type":"Explore","bashTotal":14,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":31,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"protofire__solhint-224","id":"agent-a6ee32b98fc8de5f7","type":"general-purpose","bashTotal":9,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":18,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"native","task":"protofire__solhint-224","id":"agent-ade70c62400f7de10","type":"Explore","bashTotal":7,"bashSS":0,"bashSSabs":0,"bashSSbare":0,"ssFail":0,"help":0,"hunt":0,"Read":17,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"sweet","task":"asynkron__protoactor-dotnet-1909","id":"agent-a3d311866bfc0b7cb","type":"?","bashTotal":25,"bashSS":18,"bashSSabs":17,"bashSSbare":1,"ssFail":1,"help":2,"hunt":1,"Read":5,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"sweet","task":"awslabs__aws-embedded-metrics-node-21","id":"agent-a0d415047c0776a3e","type":"Explore","bashTotal":16,"bashSS":9,"bashSSabs":8,"bashSSbare":1,"ssFail":4,"help":3,"hunt":2,"Read":9,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"sweet","task":"awslabs__aws-embedded-metrics-node-21","id":"agent-a484cf2677177e8ef","type":"Explore","bashTotal":30,"bashSS":22,"bashSSabs":21,"bashSSbare":1,"ssFail":5,"help":3,"hunt":1,"Read":0,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"sweet","task":"bfgroup__b2-113","id":"agent-abd536db90e42b25d","type":"?","bashTotal":56,"bashSS":51,"bashSSabs":50,"bashSSbare":1,"ssFail":2,"help":1,"hunt":2,"Read":5,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"sweet","task":"bfgroup__b2-113","id":"agent-a41e46d3e2671aa14","type":"Explore","bashTotal":47,"bashSS":41,"bashSSabs":41,"bashSSbare":0,"ssFail":5,"help":1,"hunt":2,"Read":18,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"sweet","task":"bfgroup__b2-259","id":"agent-a04ad28e63dd30186","type":"Explore","bashTotal":61,"bashSS":61,"bashSSabs":60,"bashSSbare":1,"ssFail":6,"help":0,"hunt":1,"Read":1,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"sweet","task":"bfgroup__b2-259","id":"agent-a8d5f1d037a62e83b","type":"general-purpose","bashTotal":57,"bashSS":57,"bashSSabs":0,"bashSSbare":57,"ssFail":3,"help":0,"hunt":0,"Read":15,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"sweet","task":"bfgroup__b2-259","id":"agent-a914bc3d20e9a67cc","type":"general-purpose","bashTotal":32,"bashSS":32,"bashSSabs":0,"bashSSbare":32,"ssFail":3,"help":0,"hunt":0,"Read":10,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"sweet","task":"bfgroup__b2-259","id":"agent-abf1061910955a4c6","type":"?","bashTotal":26,"bashSS":15,"bashSSabs":0,"bashSSbare":15,"ssFail":3,"help":0,"hunt":3,"Read":11,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"sweet","task":"fastify__fastify-cors-285","id":"agent-a61852622b2fb2c36","type":"general-purpose","bashTotal":14,"bashSS":13,"bashSSabs":0,"bashSSbare":13,"ssFail":0,"help":0,"hunt":0,"Read":0,"Grep":0,"Glob":0,"Agent":0}
+{"arm":"sweet","task":"final-form__final-form-64","id":"agent-a38e681945774a613","type":"?","bashTotal":21,"bashSS":16,"bashSSabs":15,"bashSSbare":1,"ssFail":4,"help":2,"hunt":1,"Read":13,"Grep":0,"Glob":0,"Agent":0}
+
+sweet subagents n= 11 bashSS range 9 - 61 bashTotal range 14 - 61
+sweet Explore: n 4 ss calls 133 abs 130 bare 3 fails 20 help 7 hunt 6 Read 28 Grep 0 Glob 0
+sweet non-Explore: n 7 ss calls 202 abs 82 bare 120 fails 16 help 5 hunt 7 Read 59
+native subagents n= 33 Bash total 347 Read 590 Grep 0 Glob 0 types {"Explore":11,"?":21,"general-purpose":1}

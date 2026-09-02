@@ -1,0 +1,56 @@
+### Cost anatomy of one sweet TAB rollout, epoch C (ideal columns, exact identity)
+
+harness	$ideal	INGEST$	INGEST%	RESIDENT$	RESIDENT%	OUTPUT$	OUTPUT%	sidechain$	sidechain%
+codex/native	0.012218	0.003594	29.4%	0.005153	42.2%	0.003472	28.4%	0.000000	0.0%
+codex/tab	0.012258	0.003454	28.2%	0.005490	44.8%	0.003315	27.0%	0.000000	0.0%
+opencode/native	0.008964	0.003036	33.9%	0.003765	42.0%	0.002164	24.1%	0.000000	0.0%
+opencode/tab	0.009260	0.002832	30.6%	0.004242	45.8%	0.002187	23.6%	0.000000	0.0%
+claude-code/native	0.015329	0.003656	18.5%	0.007824	39.6%	0.003849	19.5%	0.004429	22.4%
+claude-code/tab	0.014739	0.003855	22.0%	0.007735	44.1%	0.003149	17.9%	0.002811	16.0%
+
+### Ranked drivers of the sweet-minus-native delta, epoch C (paired over tasks)
+
+--- codex (native baseline $0.012287/rollout) ---
+-0.000603	-4.9%	context size, everything but the guide (retrieval payload)
++0.000426	3.5%	instruction-file tax (M± guide, resident every turn)
++0.000386	3.1%	turn count
+-0.000157	-1.3%	output + reasoning tokens
++0.000000	0.0%	sub-agent (sidechain) spend
+= +0.000052	0.4%	sum (measured paired delta 0.3%)
+
+--- opencode (native baseline $0.008969/rollout) ---
+-0.001074	-12.0%	context size, everything but the guide (retrieval payload)
++0.000914	10.2%	turn count
++0.000408	4.6%	instruction-file tax (M± guide, resident every turn)
++0.000023	0.3%	output + reasoning tokens
++0.000000	0.0%	sub-agent (sidechain) spend
+= +0.000271	3.0%	sum (measured paired delta 3.3%)
+
+--- claude-code (native baseline $0.020972/rollout) ---
+-0.001619	-7.7%	sub-agent (sidechain) spend
+-0.000700	-3.3%	output + reasoning tokens
++0.000530	2.5%	instruction-file tax (M± guide, resident every turn)
+-0.000335	-1.6%	turn count
++0.000109	0.5%	context size, everything but the guide (retrieval payload)
+= -0.002015	-9.6%	sum (measured paired delta -8.8%)
+
+### What a lever must move to buy −15% on the epoch-C sweet arm
+
+codex: $0.012258/rollout, target saving $0.001839
+   via context alone: −9285 tokens of payload (≈6403 gutter-line-equivalents, 26.9% of everything the arm ingests)
+   via output alone:  −3065 output tokens (55.5% of the arm's output)
+   via turns alone:   −4.4 turns of 19.6 (22.2%)
+opencode: $0.009260/rollout, target saving $0.001389
+   via context alone: −6998 tokens of payload (≈4826 gutter-line-equivalents, 24.7% of everything the arm ingests)
+   via output alone:  −2315 output tokens (63.5% of the arm's output)
+   via turns alone:   −4.6 turns of 19.7 (23.3%)
+claude-code: $0.017550/rollout, target saving $0.002632
+   via context alone: −12197 tokens of payload (≈8411 gutter-line-equivalents, 31.6% of everything the arm ingests)
+   via output alone:  −4387 output tokens (83.6% of the arm's output)
+   via turns alone:   −6.1 turns of 23.2 (26.2%)
+
+### claude-code: three cost conventions for the same cell
+native	n=66	row-matched main $1.091794 + sidechain $0.292341 = $1.384135 ($0.020972/rollout); abandoned duplicate invocations $0.055906; every-dollar-spent $1.440040 ($0.021819/rollout)
+tab	n=66	row-matched main $1.076701 + sidechain $0.185518 = $1.262219 ($0.019125/rollout); abandoned duplicate invocations $0.205798; every-dollar-spent $1.468017 ($0.022243/rollout)
+none	n=66	row-matched main $1.022211 + sidechain $0.122539 = $1.144751 ($0.017345/rollout); abandoned duplicate invocations $0.222460; every-dollar-spent $1.367211 ($0.020715/rollout)
+pipe	n=66	row-matched main $0.987638 + sidechain $0.116536 = $1.104174 ($0.016730/rollout); abandoned duplicate invocations $0.094050; every-dollar-spent $1.198225 ($0.018155/rollout)

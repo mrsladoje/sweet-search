@@ -1,0 +1,27 @@
+total cells 390
+cells by harness/arm {('codex', 'native'): 66, ('codex', 'sweet'): 66, ('opencode', 'native'): 60, ('opencode', 'sweet'): 66, ('claude-code', 'native'): 66, ('claude-code', 'sweet'): 66}
+flagged cells 15
+flagged tasks Counter({'accenture__sfmc-devtools-1974': 15})
+flagged functions Counter({'#runMethod': 15})
+
+accenture cells (run, arm, rep, resolved, f2pFrac, edited fns, flaggedCallers):
+  fp-claudecode-tab-20260826 native 0 resolved=True f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  fp-claudecode-tab-20260826 native 1 resolved=True f2p=1 [('#runMethod', 2), ('_isValidType', 0)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  fp-claudecode-tab-20260826 native 2 resolved=True f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  fp-claudecode-tab-20260826 sweet 0 resolved=True f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  fp-claudecode-tab-20260826 sweet 1 resolved=False f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  fp-claudecode-tab-20260826 sweet 2 resolved=True f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  fp-codex-tab-20260826 native 0 resolved=False f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  fp-codex-tab-20260826 native 1 resolved=False f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  fp-codex-tab-20260826 native 2 resolved=False f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  fp-codex-tab-20260826 sweet 0 resolved=False f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  fp-codex-tab-20260826 sweet 1 resolved=False f2p=0 [('fixKeys', 0)] []
+  fp-codex-tab-20260826 sweet 2 resolved=True f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  fp-opencode-tab-20260826 native 0 resolved=True f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  fp-opencode-tab-20260826 native 1 resolved=False f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  fp-opencode-tab-20260826 native 2 resolved=True f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+  rp-oc-tab-20260827 sweet 0 resolved=False f2p=0 [('fixKeys', 0)] []
+  rp-oc-tab-20260827 sweet 1 resolved=False f2p=0 [('fixKeys', 0)] []
+  rp-oc-tab-20260827 sweet 2 resolved=True f2p=1 [('#runMethod', 2)] [[[None, 'lib/index.js', 1568], ['fixKeys', 'lib/index.js', 1642]]]
+
+SHORT opencode native 60 {}

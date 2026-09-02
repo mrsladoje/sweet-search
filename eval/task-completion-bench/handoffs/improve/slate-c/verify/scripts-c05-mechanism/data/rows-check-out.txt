@@ -1,0 +1,32 @@
+fp-codex-tab-20260826 rows 132 {'sweet': 66, 'native': 66}
+    native rep 0 resolved=False f2p=1 hunks=1 calls=17 cost=0.015975 gradeable=True
+    native rep 1 resolved=False f2p=1 hunks=1 calls=14 cost=0.011625 gradeable=True
+    native rep 2 resolved=False f2p=1 hunks=1 calls=16 cost=0.015346 gradeable=True
+    sweet rep 0 resolved=False f2p=1 hunks=1 calls=13 cost=0.010975 gradeable=True
+    sweet rep 1 resolved=False f2p=0 hunks=1 calls=7 cost=0.008292 gradeable=True
+    sweet rep 2 resolved=True f2p=1 hunks=1 calls=13 cost=0.010553 gradeable=True
+   total native 41 / 66
+   total sweet 39 / 66
+fp-opencode-tab-20260826 rows 129 {'sweet': 63, 'native': 66}
+    native rep 0 resolved=True f2p=1 hunks=2 calls=41 cost=0.014488 gradeable=True
+    native rep 1 resolved=False f2p=1 hunks=1 calls=30 cost=0.011774 gradeable=True
+    native rep 2 resolved=True f2p=1 hunks=1 calls=28 cost=0.010813 gradeable=True
+    sweet rep 0 resolved=True f2p=1 hunks=1 calls=26 cost=0.010544 gradeable=True
+    sweet rep 1 resolved=False f2p=0 hunks=1 calls=24 cost=0.009328 gradeable=True
+   total native 41 / 66
+   total sweet 36 / 63
+rp-oc-tab-20260827 rows 33 {'sweet': 33}
+    sweet rep 0 resolved=False f2p=0 hunks=1 calls=18 cost=0.00963 gradeable=True
+    sweet rep 1 resolved=False f2p=0 hunks=1 calls=25 cost=0.009162 gradeable=True
+    sweet rep 2 resolved=True f2p=1 hunks=1 calls=23 cost=0.009623 gradeable=True
+   total native 0 / 0
+   total sweet 20 / 33
+fp-claudecode-tab-20260826 rows 132 {'sweet': 66, 'native': 66}
+    native rep 0 resolved=True f2p=1 hunks=1 calls=24 cost=0.013191 gradeable=True
+    native rep 1 resolved=True f2p=1 hunks=2 calls=70 cost=None gradeable=True
+    native rep 2 resolved=True f2p=1 hunks=1 calls=25 cost=0.013366 gradeable=True
+    sweet rep 0 resolved=True f2p=1 hunks=1 calls=17 cost=0.012358 gradeable=True
+    sweet rep 1 resolved=False f2p=1 hunks=1 calls=19 cost=0.014445 gradeable=True
+    sweet rep 2 resolved=True f2p=1 hunks=1 calls=17 cost=0.01314 gradeable=True
+   total native 43 / 66
+   total sweet 40 / 66

@@ -1,0 +1,1170 @@
+{
+ "jump_direction_and_outline_size": {
+  "codex": {
+   "jump_up": 23,
+   "jump_down_inside_trailer_span": 33,
+   "jump_down_outside": 13,
+   "first_window_lines_median": 86,
+   "files_with_entity_count": 154,
+   "entities_per_read_file_median": 4.0,
+   "entities_p90": 30,
+   "outline_chars_median": 199.0,
+   "outline_chars_p90": 2060,
+   "files_with_zero_entities": 58
+  },
+  "opencode": {
+   "jump_up": 14,
+   "jump_down_inside_trailer_span": 35,
+   "jump_down_outside": 1,
+   "first_window_lines_median": 98.5,
+   "files_with_entity_count": 143,
+   "entities_per_read_file_median": 4,
+   "entities_p90": 31,
+   "outline_chars_median": 220,
+   "outline_chars_p90": 2278,
+   "files_with_zero_entities": 50
+  },
+  "claude-code": {
+   "jump_up": 17,
+   "jump_down_inside_trailer_span": 29,
+   "jump_down_outside": 3,
+   "first_window_lines_median": 91,
+   "files_with_entity_count": 136,
+   "entities_per_read_file_median": 4.0,
+   "entities_p90": 30,
+   "outline_chars_median": 228.0,
+   "outline_chars_p90": 2060,
+   "files_with_zero_entities": 43
+  }
+ },
+ "run_tests_targeted_vs_full": {
+  "codex/native": {
+   "targeted_calls": 19,
+   "targeted_ignored_by_shim": 7,
+   "targeted_median_tokOut": 1114,
+   "full_calls": 180,
+   "full_median_tokOut": 829.5,
+   "full_mean_tokOut": 861.3,
+   "targeted_mean_tokOut": 894.8
+  },
+  "codex/sweet": {
+   "targeted_calls": 33,
+   "targeted_ignored_by_shim": 7,
+   "targeted_median_tokOut": 391,
+   "full_calls": 164,
+   "full_median_tokOut": 827.5,
+   "full_mean_tokOut": 844.0,
+   "targeted_mean_tokOut": 606.1
+  },
+  "opencode/native": {
+   "targeted_calls": 16,
+   "targeted_ignored_by_shim": 10,
+   "targeted_median_tokOut": 1064.5,
+   "full_calls": 163,
+   "full_median_tokOut": 934,
+   "full_mean_tokOut": 1036.9,
+   "targeted_mean_tokOut": 1090.6
+  },
+  "opencode/sweet": {
+   "targeted_calls": 19,
+   "targeted_ignored_by_shim": 10,
+   "targeted_median_tokOut": 1212,
+   "full_calls": 174,
+   "full_median_tokOut": 930.0,
+   "full_mean_tokOut": 1040.1,
+   "targeted_mean_tokOut": 1126.6
+  },
+  "claude-code/native": {
+   "targeted_calls": 21,
+   "targeted_ignored_by_shim": 2,
+   "targeted_median_tokOut": 1092,
+   "full_calls": 186,
+   "full_median_tokOut": 930.0,
+   "full_mean_tokOut": 1060.8,
+   "targeted_mean_tokOut": 867.1
+  },
+  "claude-code/sweet": {
+   "targeted_calls": 13,
+   "targeted_ignored_by_shim": 4,
+   "targeted_median_tokOut": 751,
+   "full_calls": 187,
+   "full_median_tokOut": 930,
+   "full_mean_tokOut": 1014.9,
+   "targeted_mean_tokOut": 1052.5
+  }
+ },
+ "own_code_zero_probes": {
+  "summary": {
+   "codex/own-code-probe-hit": 9,
+   "codex/excluded-scope": 3,
+   "opencode/new-code-not-in-base": 1,
+   "opencode/own-code-probe-hit": 4,
+   "opencode/pattern-in-base": 1,
+   "claude-code/own-code-probe-hit": 18,
+   "claude-code/excluded-scope": 8,
+   "claude-code/pattern-in-base": 3,
+   "claude-code/new-code-not-in-base": 6
+  },
+  "details": [
+   {
+    "h": "codex",
+    "task": "aws-actions__configure-aws-credentials-42",
+    "rep": 0,
+    "call": 13,
+    "req": 13,
+    "text": "ss-grep \"AWS_ACCESS_KEY_ID\" --in dist/index.js -k 10",
+    "own_literals": [
+     "AWS_ACCESS_KEY_ID"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "excluded-scope",
+    "next_calls": [
+     [
+      "ss-read:read.range"
+     ],
+     [
+      "ss-semantic:read.range"
+     ],
+     [
+      "git:git.history",
+      "git:git.state"
+     ]
+    ],
+    "requests_until_edit_or_test": 6
+   },
+   {
+    "h": "codex",
+    "task": "aws-actions__configure-aws-credentials-42",
+    "rep": 0,
+    "call": 17,
+    "req": 17,
+    "text": "ss-grep \"aws-access-key-id|getInput|exportCredentials\" --in dist/index.js -k 20",
+    "own_literals": [
+     "aws-access-key-id",
+     "getInput"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "excluded-scope",
+    "next_calls": [
+     [
+      "ss-grep:grep.regex"
+     ],
+     [
+      "git:git.state",
+      "git:git.state"
+     ]
+    ],
+    "requests_until_edit_or_test": 2
+   },
+   {
+    "h": "codex",
+    "task": "aws-actions__configure-aws-credentials-42",
+    "rep": 0,
+    "call": 18,
+    "req": 18,
+    "text": "ss-grep \"aws-access-key-id|AWS_ACCESS_KEY_ID|AWS Secret Access Key\" --in README.md -k 10",
+    "own_literals": [
+     "aws-access-key-id",
+     "AWS_ACCESS_KEY_ID"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "excluded-scope",
+    "next_calls": [
+     [
+      "git:git.state",
+      "git:git.state"
+     ]
+    ],
+    "requests_until_edit_or_test": 1
+   },
+   {
+    "h": "opencode",
+    "task": "fastify__fastify-cors-285",
+    "rep": 1,
+    "call": 11,
+    "req": 10,
+    "text": "ss-grep \"fastify.prefix|\\.prefix\" -k 20",
+    "own_literals": [
+     "fastify.prefix"
+    ],
+    "in_base_tree": false,
+    "scoped": false,
+    "cls": "new-code-not-in-base",
+    "next_calls": [
+     [
+      "ss-search:search.semantic"
+     ],
+     [
+      "apply_patch:edit"
+     ]
+    ],
+    "requests_until_edit_or_test": 1
+   },
+   {
+    "h": "opencode",
+    "task": "aws-actions__configure-aws-credentials-42",
+    "rep": 1,
+    "call": 14,
+    "req": 11,
+    "text": "ss-grep \"AWS_ACCESS_KEY_ID|aws-access-key-id\" -k 10",
+    "own_literals": [
+     "AWS_ACCESS_KEY_ID",
+     "aws-access-key-id"
+    ],
+    "in_base_tree": true,
+    "scoped": false,
+    "cls": "pattern-in-base",
+    "next_calls": [
+     [
+      "npm:build"
+     ],
+     [
+      "ss-read:read.range"
+     ],
+     [
+      "ss-semantic:read.range"
+     ]
+    ],
+    "requests_until_edit_or_test": 6
+   },
+   {
+    "h": "claude-code",
+    "task": "aws-actions__configure-aws-credentials-42",
+    "rep": 1,
+    "call": 7,
+    "req": 7,
+    "text": "ss-grep \"AWS_ACCESS_KEY_ID|aws-access-key-id|function exportCredentials\" --in dist/index.js -k 20",
+    "own_literals": [
+     "AWS_ACCESS_KEY_ID",
+     "aws-access-key-id"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "excluded-scope",
+    "next_calls": [
+     [
+      "ss-find:grep.regex"
+     ],
+     [
+      "Edit:edit"
+     ]
+    ],
+    "requests_until_edit_or_test": 1
+   },
+   {
+    "h": "claude-code",
+    "task": "aws-actions__configure-aws-credentials-42",
+    "rep": 1,
+    "call": 12,
+    "req": 12,
+    "text": "ss-grep \"AWS_ACCESS_KEY_ID\" --in dist/index.js -k 10",
+    "own_literals": [
+     "AWS_ACCESS_KEY_ID"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "excluded-scope",
+    "next_calls": [
+     [
+      "ss-grep:grep.literal"
+     ],
+     [
+      "ss-grep:grep.regex"
+     ],
+     [
+      "git:git.state",
+      "git:git.state"
+     ]
+    ],
+    "requests_until_edit_or_test": 3
+   },
+   {
+    "h": "claude-code",
+    "task": "aws-actions__configure-aws-credentials-42",
+    "rep": 1,
+    "call": 13,
+    "req": 13,
+    "text": "ss-grep \"accessKeyId\" --in dist/index.js -k 10",
+    "own_literals": [
+     "accessKeyId"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "excluded-scope",
+    "next_calls": [
+     [
+      "ss-grep:grep.regex"
+     ],
+     [
+      "git:git.state",
+      "git:git.state"
+     ],
+     [
+      "run_tests:test"
+     ]
+    ],
+    "requests_until_edit_or_test": 2
+   },
+   {
+    "h": "claude-code",
+    "task": "aws-actions__configure-aws-credentials-42",
+    "rep": 1,
+    "call": 18,
+    "req": 18,
+    "text": "ss-grep \"Access Key ID|Secret Access Key|aws-access\" --in dist/index.js -k 20",
+    "own_literals": [
+     "aws-access"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "excluded-scope",
+    "next_calls": [
+     [
+      "ss-read:read.range"
+     ],
+     [
+      "ss-grep:grep.literal"
+     ]
+    ],
+    "requests_until_edit_or_test": 3
+   },
+   {
+    "h": "claude-code",
+    "task": "aws-actions__configure-aws-credentials-42",
+    "rep": 1,
+    "call": 21,
+    "req": 21,
+    "text": "ss-grep \"getInput\" --in dist/index.js -k 20",
+    "own_literals": [
+     "getInput"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "excluded-scope",
+    "next_calls": [],
+    "requests_until_edit_or_test": 0
+   },
+   {
+    "h": "claude-code",
+    "task": "bfgroup__b2-259",
+    "rep": 2,
+    "call": 50,
+    "req": 49,
+    "text": "ss-grep \"build\" --in src/build/alias.jam -k 50",
+    "own_literals": [
+     "build"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "excluded-scope",
+    "next_calls": [
+     [
+      "run_tests:test"
+     ]
+    ],
+    "requests_until_edit_or_test": 0
+   },
+   {
+    "h": "claude-code",
+    "task": "bfgroup__b2-259",
+    "rep": 2,
+    "call": 58,
+    "req": 57,
+    "text": "ss-grep \"build\" --in src/build/targets.jam -k 300",
+    "own_literals": [
+     "build"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "excluded-scope",
+    "next_calls": [
+     [
+      "ss-search:search.semantic"
+     ],
+     [
+      "git:git.state"
+     ],
+     [
+      "ss-grep:grep.literal"
+     ]
+    ],
+    "requests_until_edit_or_test": 5
+   },
+   {
+    "h": "claude-code",
+    "task": "bfgroup__b2-259",
+    "rep": 2,
+    "call": 61,
+    "req": 60,
+    "text": "ss-grep \"build\" --in src/tools/testing.jam -k 100",
+    "own_literals": [
+     "build"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "excluded-scope",
+    "next_calls": [
+     [
+      "ss-grep:grep.literal"
+     ],
+     [
+      "ss-search:search.semantic"
+     ],
+     [
+      "Edit:edit"
+     ]
+    ],
+    "requests_until_edit_or_test": 2
+   },
+   {
+    "h": "claude-code",
+    "task": "bfgroup__b2-259",
+    "rep": 2,
+    "call": 62,
+    "req": 61,
+    "text": "ss-grep \"build\" --in src/b2 -k 100",
+    "own_literals": [
+     "build"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "pattern-in-base",
+    "next_calls": [
+     [
+      "ss-search:search.semantic"
+     ],
+     [
+      "Edit:edit"
+     ]
+    ],
+    "requests_until_edit_or_test": 1
+   },
+   {
+    "h": "claude-code",
+    "task": "callstack__react-native-paper-972",
+    "rep": 0,
+    "call": 13,
+    "req": 13,
+    "text": "ss-grep \"color: _\" -k 20 --in src",
+    "own_literals": [
+     "color: _"
+    ],
+    "in_base_tree": false,
+    "scoped": true,
+    "cls": "new-code-not-in-base",
+    "next_calls": [
+     [
+      "Edit:edit"
+     ]
+    ],
+    "requests_until_edit_or_test": 0
+   },
+   {
+    "h": "claude-code",
+    "task": "callstack__react-native-paper-972",
+    "rep": 2,
+    "call": 16,
+    "req": 16,
+    "text": "ss-grep \"_color|_.*,\" --in src/components -k 30",
+    "own_literals": [
+     "_color"
+    ],
+    "in_base_tree": false,
+    "scoped": true,
+    "cls": "new-code-not-in-base",
+    "next_calls": [
+     [
+      "ss-grep:grep.regex"
+     ],
+     [
+      "ss-grep:grep.regex"
+     ],
+     [
+      "ss-grep:grep.literal"
+     ]
+    ],
+    "requests_until_edit_or_test": 6
+   },
+   {
+    "h": "claude-code",
+    "task": "callstack__react-native-paper-972",
+    "rep": 2,
+    "call": 19,
+    "req": 19,
+    "text": "ss-grep \"color: _\" -k 10",
+    "own_literals": [
+     "color: _"
+    ],
+    "in_base_tree": false,
+    "scoped": false,
+    "cls": "new-code-not-in-base",
+    "next_calls": [
+     [
+      "ss-grep:grep.regex"
+     ],
+     [
+      "ss-grep:grep.literal"
+     ]
+    ],
+    "requests_until_edit_or_test": 3
+   },
+   {
+    "h": "claude-code",
+    "task": "gitbookio__markup-it-56",
+    "rep": 1,
+    "call": 32,
+    "req": 30,
+    "text": "ss-grep \"Serialize an HTML block to markdown\" -k 5",
+    "own_literals": [
+     "Serialize an HTML block to markdown"
+    ],
+    "in_base_tree": false,
+    "scoped": false,
+    "cls": "new-code-not-in-base",
+    "next_calls": [
+     [
+      "Read:read.range"
+     ],
+     [
+      "ls:glob",
+      "git:git.state"
+     ],
+     [
+      "run_tests:test",
+      "git:git.other"
+     ]
+    ],
+    "requests_until_edit_or_test": 2
+   },
+   {
+    "h": "claude-code",
+    "task": "mathnet__mathnet-numerics-1072",
+    "rep": 0,
+    "call": 9,
+    "req": 9,
+    "text": "ss-grep \"public bool IsNaN|bool IsNaN|IsNaN\\(\\)\" --in src/Numerics/Complex.cs -k 20",
+    "own_literals": [
+     "IsNaN"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "pattern-in-base",
+    "next_calls": [
+     [
+      "ss-grep:grep.literal"
+     ],
+     [
+      "git:git.state"
+     ],
+     [
+      "run_tests:test"
+     ]
+    ],
+    "requests_until_edit_or_test": 2
+   },
+   {
+    "h": "claude-code",
+    "task": "mathnet__mathnet-numerics-1072",
+    "rep": 2,
+    "call": 12,
+    "req": 12,
+    "text": "ss-grep \"IsNaN\" --in src/Numerics/Complex.cs -k 10",
+    "own_literals": [
+     "IsNaN"
+    ],
+    "in_base_tree": true,
+    "scoped": true,
+    "cls": "pattern-in-base",
+    "next_calls": [
+     [
+      "ss-search:search.semantic"
+     ],
+     [
+      "run_tests:test"
+     ]
+    ],
+    "requests_until_edit_or_test": 1
+   },
+   {
+    "h": "claude-code",
+    "task": "protofire__solhint-224",
+    "rep": 1,
+    "call": 16,
+    "req": 16,
+    "text": "ss-grep \"ordering\" -k 20",
+    "own_literals": [
+     "ordering"
+    ],
+    "in_base_tree": false,
+    "scoped": false,
+    "cls": "new-code-not-in-base",
+    "next_calls": [
+     [
+      "ss-read:read.range",
+      "ss-read:read.range",
+      "ss-read:read.range"
+     ],
+     [
+      "Edit:edit"
+     ]
+    ],
+    "requests_until_edit_or_test": 1
+   },
+   {
+    "h": "claude-code",
+    "task": "protofire__solhint-224",
+    "rep": 2,
+    "call": 18,
+    "req": 18,
+    "text": "ss-grep \"OrderingChecker\" --in lib/rules/order -k 10",
+    "own_literals": [
+     "OrderingChecker"
+    ],
+    "in_base_tree": false,
+    "scoped": true,
+    "cls": "new-code-not-in-base",
+    "next_calls": [
+     [
+      "Edit:edit"
+     ]
+    ],
+    "requests_until_edit_or_test": 0
+   }
+  ]
+ },
+ "index_path_coverage": {
+  "per_task": {
+   "absinthe-graphql__absinthe-998": {
+    "golden": "absinthe-graphql__absinthe@8e9bb8673e6c138bf37fe8e487532bca2270ee10",
+    "tracked": 555,
+    "indexed": 544,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 98.0,
+    "missing_examples": [
+     ".gitignore",
+     "config/dev.exs",
+     "guides/assets/tutorial/graphiql.png",
+     "guides/assets/tutorial/graphiql_blank.png",
+     "guides/assets/tutorial/graphiql_create_user.png",
+     "guides/assets/tutorial/graphiql_new_post_sub.png"
+    ]
+   },
+   "accenture__sfmc-devtools-1974": {
+    "golden": "Accenture__sfmc-devtools@775a1b0c5c0f7f1d47a901c071f2ce4defd78e97",
+    "tracked": 972,
+    "indexed": 775,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 79.7,
+    "missing_examples": [
+     ".editorconfig",
+     ".fork/.prettierrc",
+     ".gitattributes",
+     ".github/ISSUE_TEMPLATE/task.md",
+     ".gitignore",
+     ".husky/.gitignore"
+    ]
+   },
+   "aio-libs__aiohttp-8038": {
+    "golden": "aio-libs__aiohttp@c465e850f67f95150d474c3313082b2b47abd490",
+    "tracked": 273,
+    "indexed": 240,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 87.9,
+    "missing_examples": [
+     ".codecov.yml",
+     ".coveragerc",
+     ".editorconfig",
+     ".gitattributes",
+     ".github/CODEOWNERS",
+     ".github/config.yml"
+    ]
+   },
+   "apigee__registry-961": {
+    "golden": "apigee__registry@36826a87410870b118360948a4615eaf0bc64190",
+    "tracked": 600,
+    "indexed": 533,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 88.8,
+    "missing_examples": [
+     ".gcloudignore",
+     ".gitattributes",
+     ".gitignore",
+     "LICENSE",
+     "auth/HOSTED.bat",
+     "cmd/registry/cmd/rpc/generated/README.md"
+    ]
+   },
+   "asynkron__protoactor-dotnet-1909": {
+    "golden": "asynkron__protoactor-dotnet@3a998bc9fa8549829c53282f31dfe95685efc1b8",
+    "tracked": 897,
+    "indexed": 821,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 91.5,
+    "missing_examples": [
+     ".all-contributorsrc",
+     ".dockerignore",
+     ".github/ISSUE_TEMPLATE/feature_request.md",
+     ".gitignore",
+     ".images/asynkron.png",
+     ".images/etteplan.png"
+    ]
+   },
+   "aws-actions__configure-aws-credentials-42": {
+    "golden": "aws-actions__configure-aws-credentials@ee662900a535695aa526bd6dbba07d8f16805198",
+    "tracked": 19,
+    "indexed": 14,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 73.7,
+    "missing_examples": [
+     ".gitignore",
+     "LICENSE",
+     "THIRD-PARTY",
+     "dist/index.js",
+     "package-lock.json"
+    ]
+   },
+   "awslabs__aws-embedded-metrics-node-21": {
+    "golden": "awslabs__aws-embedded-metrics-node@6132122fcf550eeafee86d1c3f2167fbd65ca08f",
+    "tracked": 75,
+    "indexed": 64,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 85.3,
+    "missing_examples": [
+     ".eslintrc",
+     ".gitignore",
+     ".prettierignore",
+     ".prettierrc",
+     "LICENSE",
+     "NOTICE"
+    ]
+   },
+   "axelrod-python__axelrod-671": {
+    "golden": "Axelrod-Python__Axelrod@46ad8990affd6b9a792c84af4cc0987670cd515a",
+    "tracked": 194,
+    "indexed": 180,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 92.8,
+    "missing_examples": [
+     ".editorconfig",
+     ".gitattributes",
+     ".gitignore",
+     ".mailmap",
+     "axelrod/tests/__init__.py",
+     "axelrod/tests/integration/__init__.py"
+    ]
+   },
+   "bfgroup__b2-113": {
+    "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+    "tracked": 951,
+    "indexed": 896,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 94.2,
+    "missing_examples": [
+     ".editorconfig",
+     ".gitattributes",
+     ".gitignore",
+     "bootstrap.bat",
+     "bootstrap_vms.com",
+     "doc/src/hljs/highlight.min.js"
+    ]
+   },
+   "bfgroup__b2-259": {
+    "golden": "bfgroup__b2@7cf7bdabb3d3d8e3c41a411a5932626cee690b18",
+    "tracked": 885,
+    "indexed": 838,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 94.7,
+    "missing_examples": [
+     ".clang-format",
+     ".editorconfig",
+     ".gitattributes",
+     ".github/FUNDING.yml",
+     ".gitignore",
+     "bootstrap.bat"
+    ]
+   },
+   "callstack__react-native-paper-972": {
+    "golden": "callstack__react-native-paper@3bba0304e6b03e9a5bdc7baeb5547ac67bb32e7b",
+    "tracked": 444,
+    "indexed": 315,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 70.9,
+    "missing_examples": [
+     ".all-contributorsrc",
+     ".editorconfig",
+     ".eslintignore",
+     ".eslintrc",
+     ".flowconfig",
+     ".gitignore"
+    ]
+   },
+   "celestiaorg__nmt-192": {
+    "golden": "celestiaorg__nmt@4b97a09e0b64e59d8ec67eb28b3769d79f15db39",
+    "tracked": 26,
+    "indexed": 21,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 80.8,
+    "missing_examples": [
+     ".gitignore",
+     "LICENSE",
+     "NOTICE",
+     "go.sum",
+     "imgs/example_4-leaves.png"
+    ]
+   },
+   "devlooped__moq-1262": {
+    "golden": "devlooped__moq@6c7e7a103381b25324be1675a97a533082bce226",
+    "tracked": 308,
+    "indexed": 285,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 92.5,
+    "missing_examples": [
+     "GitInfo.txt",
+     "Moq.snk",
+     "build/AssemblyInfo.props",
+     "build/GitVersion.props",
+     "build/SignAssembly.props",
+     "build/SourceLink.props"
+    ]
+   },
+   "fastify__fastify-cors-285": {
+    "golden": "fastify__fastify-cors@79b3de99c77dea3e32bf1be1d748bba22a270ed1",
+    "tracked": 22,
+    "indexed": 16,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 72.7,
+    "missing_examples": [
+     ".editorconfig",
+     ".gitattributes",
+     ".gitignore",
+     ".npmrc",
+     ".taprc",
+     "LICENSE"
+    ]
+   },
+   "final-form__final-form-64": {
+    "golden": "final-form__final-form@449955e7ef3090c13d7921aa8a71acb95f5ba443",
+    "tracked": 57,
+    "indexed": 45,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 78.9,
+    "missing_examples": [
+     ".babelrc",
+     ".eslintignore",
+     ".eslintrc",
+     ".flowconfig",
+     ".gitignore",
+     ".prettierrc"
+    ]
+   },
+   "gitbookio__markup-it-56": {
+    "golden": "GitbookIO__markup-it@e06072d6a2a585c99c635cabbea979b4011eab5f",
+    "tracked": 516,
+    "indexed": 379,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 73.4,
+    "missing_examples": [
+     ".babelrc",
+     ".eslintrc",
+     ".gitignore",
+     ".npmignore",
+     ".travis.yml",
+     "test/from-asciidoc/blockquotes/paragraph/input.adoc"
+    ]
+   },
+   "hotmeteor__spectator-181": {
+    "golden": "hotmeteor__spectator@9d7f4c19fa834f9a48840d40cc080470fec62b01",
+    "tracked": 63,
+    "indexed": 57,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 90.5,
+    "missing_examples": [
+     ".github/CODEOWNERS",
+     ".gitignore",
+     "LICENSE",
+     "phpstan-baseline.neon",
+     "phpstan.neon.dist",
+     "tests/Fixtures/Invalid.v1.txt"
+    ]
+   },
+   "jazzband__tablib-454": {
+    "golden": "jazzband__tablib@f7e39c1ad5fb20b125f23cfa8766cc1f308591eb",
+    "tracked": 62,
+    "indexed": 52,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 83.9,
+    "missing_examples": [
+     ".coveragerc",
+     ".gitignore",
+     "AUTHORS",
+     "LICENSE",
+     "docs/__init__.py",
+     "docs/krstyle.sty"
+    ]
+   },
+   "locationtech__jts-622": {
+    "golden": "locationtech__jts@516fafa9624de0f6ee835bd7595dc613b49ed9b7",
+    "tracked": 1475,
+    "indexed": 1373,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 93.1,
+    "missing_examples": [
+     ".gitignore",
+     "bin/jtsop.bat",
+     "bin/test.bat",
+     "bin/test_robust.bat",
+     "bin/testbuilder.bat",
+     "bin/testbuilder.command"
+    ]
+   },
+   "mathnet__mathnet-numerics-1072": {
+    "golden": "mathnet__mathnet-numerics@f19641843048df073b80f6ecfcbb229d3258049b",
+    "tracked": 1326,
+    "indexed": 1133,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 85.4,
+    "missing_examples": [
+     ".editorconfig",
+     ".gitattributes",
+     ".gitignore",
+     ".mailmap",
+     "MathNet.Numerics.sln.DotSettings",
+     "NuGet.config"
+    ]
+   },
+   "mirumee__ariadne-codegen-218": {
+    "golden": "mirumee__ariadne-codegen@6ce4f1d24fa950a8216178913e6d90c4ef5687fa",
+    "tracked": 308,
+    "indexed": 268,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 87.0,
+    "missing_examples": [
+     ".gitignore",
+     "LICENSE",
+     "ariadne_codegen/client_generators/__init__.py",
+     "ariadne_codegen/client_generators/dependencies/__init__.py",
+     "ariadne_codegen/graphql_schema_generators/__init__.py",
+     "ariadne_codegen/plugins/__init__.py"
+    ]
+   },
+   "protofire__solhint-224": {
+    "golden": "protofire__solhint@063cb8d08d5231264dbcc36582471beae2142cfb",
+    "tracked": 231,
+    "indexed": 224,
+    "indexed_not_tracked": 0,
+    "coverage_pct": 97.0,
+    "missing_examples": [
+     ".eslintignore",
+     ".gitignore",
+     ".prettierrc",
+     "LICENSE",
+     "package-lock.json",
+     "solhint.png"
+    ]
+   }
+  },
+  "missing_by_ext": [
+   [
+    ".png",
+    184
+   ],
+   [
+    ".map",
+    101
+   ],
+   [
+    "(dotfile)",
+    94
+   ],
+   [
+    ".md",
+    89
+   ],
+   [
+    ".dat",
+    58
+   ],
+   [
+    ".go",
+    51
+   ],
+   [
+    ".py",
+    46
+   ],
+   [
+    "(noext)",
+    39
+   ],
+   [
+    ".adoc",
+    39
+   ],
+   [
+    ".json",
+    36
+   ],
+   [
+    ".amp",
+    29
+   ],
+   [
+    ".gif",
+    24
+   ],
+   [
+    ".razor",
+    22
+   ],
+   [
+    ".snap",
+    22
+   ],
+   [
+    ".spark",
+    16
+   ],
+   [
+    ".jpg",
+    15
+   ],
+   [
+    ".bat",
+    15
+   ],
+   [
+    ".nuspec",
+    15
+   ],
+   [
+    ".pc",
+    14
+   ],
+   [
+    ".csv",
+    11
+   ],
+   [
+    ".txt",
+    10
+   ],
+   [
+    ".html",
+    10
+   ],
+   [
+    ".wkt",
+    10
+   ],
+   [
+    ".mat",
+    10
+   ],
+   [
+    ".mtx",
+    9
+   ]
+  ],
+  "missing_dotfiles": [
+   [
+    ".gitignore",
+    36
+   ],
+   [
+    ".editorconfig",
+    9
+   ],
+   [
+    ".gitattributes",
+    9
+   ],
+   [
+    ".prettierrc",
+    7
+   ],
+   [
+    ".eslintrc",
+    6
+   ],
+   [
+    ".npmrc",
+    3
+   ],
+   [
+    ".eslintignore",
+    3
+   ],
+   [
+    ".prettierignore",
+    2
+   ],
+   [
+    ".coveragerc",
+    2
+   ],
+   [
+    ".dockerignore",
+    2
+   ],
+   [
+    ".all-contributorsrc",
+    2
+   ],
+   [
+    ".mailmap",
+    2
+   ],
+   [
+    ".npmignore",
+    2
+   ],
+   [
+    ".flowconfig",
+    2
+   ],
+   [
+    ".babelrc",
+    2
+   ],
+   [
+    ".issuetracker",
+    1
+   ],
+   [
+    ".gitmodules",
+    1
+   ],
+   [
+    ".codecov.yml",
+    1
+   ],
+   [
+    ".gcloudignore",
+    1
+   ],
+   [
+    ".clang-format",
+    1
+   ],
+   [
+    ".taprc",
+    1
+   ],
+   [
+    ".travis.yml",
+    1
+   ]
+  ]
+ },
+ "deps": {
+  "counts": {
+   "codex/sweet/dep-path-touch": 2,
+   "codex/native/dep-path-touch": 2,
+   "claude-code/native/dep-path-touch": 1
+  },
+  "examples": []
+ }
+}

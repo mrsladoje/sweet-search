@@ -1,0 +1,4626 @@
+[
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "form": "native",
+  "rep": 0,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 24,
+  "ssCalls": 0,
+  "editFails": 3,
+  "goldFiles": [
+   "lib/index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Read",
+   "Edit"
+  ],
+  "firstSurfaceCall": "0:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "lib/index.js"
+  ],
+  "patchFiles": [
+   "lib/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 16,
+  "sidechain": 0
+ },
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "form": "native",
+  "rep": 1,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 70,
+  "ssCalls": 0,
+  "editFails": 2,
+  "goldFiles": [
+   "lib/index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Agent",
+   "Edit"
+  ],
+  "firstSurfaceCall": "0:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "lib/index.js"
+  ],
+  "patchFiles": [
+   "lib/index.js",
+   "lib/util/util.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 52,
+  "sidechain": 1
+ },
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "form": "native",
+  "rep": 2,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 25,
+  "ssCalls": 0,
+  "editFails": 2,
+  "goldFiles": [
+   "lib/index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Edit"
+  ],
+  "firstSurfaceCall": "0:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "lib/index.js"
+  ],
+  "patchFiles": [
+   "lib/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 13,
+  "sidechain": 0
+ },
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "form": "TAB",
+  "rep": 0,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 17,
+  "ssCalls": 11,
+  "editFails": 0,
+  "goldFiles": [
+   "lib/index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "ss-search",
+   "ss-grep",
+   "ss-read+ss-read+ss-read",
+   "ss-find",
+   "ss-read+ss-read+ss-grep",
+   "ss-read+ss-read",
+   "ss-read",
+   "Edit",
+   "ss-read+ss-grep"
+  ],
+  "firstSurfaceCall": "1:bash",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-read",
+   "ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "lib/index.js"
+  ],
+  "patchFiles": [
+   "lib/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 12,
+  "sidechain": 0
+ },
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "form": "TAB",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 1,
+  "calls": 19,
+  "ssCalls": 14,
+  "editFails": 0,
+  "goldFiles": [
+   "lib/index.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "bash",
+   "ss-grep",
+   "ss-read+ss-read+ss-read+ss-read",
+   "ss-read+ss-read+ss-grep",
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-grep",
+   "ss-grep+ss-read+ss-read",
+   "ss-read",
+   "ss-grep+ss-grep",
+   "ss-read+ss-read",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read+ss-read+ss-read+ss-read",
+   "ss-read+ss-read+ss-grep",
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-grep",
+   "ss-grep+ss-read+ss-read",
+   "ss-read",
+   "ss-grep+ss-grep",
+   "ss-read+ss-read"
+  ],
+  "goldEdited": [
+   "lib/index.js"
+  ],
+  "patchFiles": [
+   "lib/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 16,
+  "sidechain": 0
+ },
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "form": "TAB",
+  "rep": 2,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 17,
+  "ssCalls": 13,
+  "editFails": 1,
+  "goldFiles": [
+   "lib/index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "ss-search",
+   "ss-grep",
+   "ss-read+ss-read+ss-read",
+   "ss-find",
+   "ss-grep+ss-read+ss-read",
+   "ss-grep+ss-read",
+   "ss-read",
+   "ss-read+ss-trace",
+   "Edit",
+   "ss-search+ss-grep",
+   "ss-read+ss-read"
+  ],
+  "firstSurfaceCall": "0:bash",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "ss-grep+ss-read+ss-read",
+   "ss-grep+ss-read",
+   "ss-read",
+   "ss-read+ss-trace",
+   "ss-read+ss-read"
+  ],
+  "goldEdited": [
+   "lib/index.js"
+  ],
+  "patchFiles": [
+   "lib/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 13,
+  "sidechain": 0
+ },
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "form": "NONE",
+  "rep": 0,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 22,
+  "ssCalls": 14,
+  "editFails": 1,
+  "goldFiles": [
+   "lib/index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "ss-search",
+   "ss-grep",
+   "ss-read+ss-read+ss-read",
+   "ss-find",
+   "ss-grep+ss-read+ss-read",
+   "ss-read+ss-read",
+   "ss-read",
+   "ss-read+ss-grep",
+   "Edit"
+  ],
+  "firstSurfaceCall": "2:bash",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "ss-grep+ss-read+ss-read",
+   "ss-read+ss-read",
+   "ss-grep",
+   "ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "lib/index.js"
+  ],
+  "patchFiles": [
+   "lib/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 17,
+  "sidechain": 0
+ },
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "form": "NONE",
+  "rep": 1,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 21,
+  "ssCalls": 14,
+  "editFails": 1,
+  "goldFiles": [
+   "lib/index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "ss-search",
+   "ss-grep",
+   "ss-read+ss-read",
+   "ss-find",
+   "ss-grep+ss-search",
+   "ss-read",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:bash",
+  "readBy": [
+   "ss-read+ss-read",
+   "ss-grep+ss-search",
+   "ss-read"
+  ],
+  "goldEdited": [
+   "lib/index.js"
+  ],
+  "patchFiles": [
+   "lib/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 16,
+  "sidechain": 0
+ },
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "form": "NONE",
+  "rep": 2,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 28,
+  "ssCalls": 20,
+  "editFails": 0,
+  "goldFiles": [
+   "lib/index.js"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "bash",
+   "ss-semantic",
+   "ss-read",
+   "ss-find",
+   "Edit",
+   "ss-trace"
+  ],
+  "firstSurfaceCall": "1:ss-grep",
+  "readBy": [
+   "ss-semantic",
+   "ss-grep",
+   "ss-read",
+   "ss-trace",
+   "bash"
+  ],
+  "goldEdited": [
+   "lib/index.js"
+  ],
+  "patchFiles": [
+   "lib/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 19,
+  "sidechain": 0
+ },
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "form": "PIPE",
+  "rep": 0,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 22,
+  "ssCalls": 13,
+  "editFails": 2,
+  "goldFiles": [
+   "lib/index.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "bash",
+   "ss-read",
+   "ss-grep",
+   "ss-semantic",
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-read+ss-trace",
+   "ss-read+ss-read+ss-read+ss-read",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read",
+   "ss-semantic",
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-read+ss-trace",
+   "ss-read+ss-read+ss-read+ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "lib/index.js"
+  ],
+  "patchFiles": [
+   "lib/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 14,
+  "sidechain": 0
+ },
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "form": "PIPE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 19,
+  "ssCalls": 8,
+  "editFails": 4,
+  "goldFiles": [
+   "lib/index.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-find",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "lib/cli.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 8,
+  "sidechain": 0
+ },
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "form": "PIPE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 1,
+  "calls": 17,
+  "ssCalls": 10,
+  "editFails": 1,
+  "goldFiles": [
+   "lib/index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "ss-search",
+   "ss-grep",
+   "ss-read+ss-read+ss-read",
+   "ss-find",
+   "ss-grep+ss-read",
+   "ss-read+ss-read",
+   "ss-read+ss-grep",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:bash",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "ss-grep+ss-read",
+   "ss-read+ss-read",
+   "ss-read+ss-grep"
+  ],
+  "goldEdited": [
+   "lib/index.js"
+  ],
+  "patchFiles": [
+   "lib/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 13,
+  "sidechain": 0
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "form": "native",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 20,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "aiohttp/client.py"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "1:bash",
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "aiohttp/client_proto.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 14,
+  "sidechain": 0
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "form": "native",
+  "rep": 1,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 125,
+  "ssCalls": 0,
+  "editFails": 4,
+  "goldFiles": [
+   "aiohttp/client.py"
+  ],
+  "surfacedBy": [
+   "bash",
+   "TaskOutput",
+   "Edit"
+  ],
+  "firstSurfaceCall": "0:bash",
+  "readBy": [
+   "bash",
+   "Read"
+  ],
+  "goldEdited": [
+   "aiohttp/client.py"
+  ],
+  "patchFiles": [
+   "aiohttp/client.py",
+   "aiohttp/connector.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 57,
+  "sidechain": 2
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "form": "native",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 78,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "aiohttp/client.py"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Edit"
+  ],
+  "firstSurfaceCall": "23:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "aiohttp/client.py"
+  ],
+  "patchFiles": [],
+  "emptyPatch": true,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 43,
+  "sidechain": 1
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "form": "TAB",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 43,
+  "ssCalls": 19,
+  "editFails": 1,
+  "goldFiles": [
+   "aiohttp/client.py"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-search+ss-grep",
+   "ss-read+ss-read",
+   "ss-grep+ss-grep",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read+ss-read",
+   "ss-grep+ss-grep"
+  ],
+  "goldEdited": [
+   "aiohttp/client.py"
+  ],
+  "patchFiles": [
+   "aiohttp/client.py",
+   "aiohttp/client_proto.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 14,
+  "sidechain": 0
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "form": "TAB",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 105,
+  "ssCalls": 39,
+  "editFails": 3,
+  "goldFiles": [
+   "aiohttp/client.py"
+  ],
+  "surfacedBy": [
+   "ss-read+ss-read+ss-find",
+   "ss-read+ss-find",
+   "ss-find",
+   "ss-read",
+   "ss-grep",
+   "Edit",
+   "ss-search",
+   "bash"
+  ],
+  "firstSurfaceCall": "5:ss-read+ss-read+ss-find",
+  "readBy": [
+   "ss-read",
+   "ss-grep",
+   "bash"
+  ],
+  "goldEdited": [
+   "aiohttp/client.py"
+  ],
+  "patchFiles": [
+   "aiohttp/connector.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 14,
+  "sidechain": 0
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "form": "TAB",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 51,
+  "ssCalls": 28,
+  "editFails": 1,
+  "goldFiles": [
+   "aiohttp/client.py"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep+ss-find",
+   "ss-read",
+   "ss-grep+ss-grep",
+   "ss-read+ss-grep",
+   "Edit"
+  ],
+  "firstSurfaceCall": "3:ss-search",
+  "readBy": [
+   "ss-read",
+   "ss-grep+ss-grep",
+   "ss-read+ss-grep"
+  ],
+  "goldEdited": [
+   "aiohttp/client.py"
+  ],
+  "patchFiles": [
+   "aiohttp/client_proto.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 9,
+  "sidechain": 0
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "form": "NONE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 46,
+  "ssCalls": 16,
+  "editFails": 0,
+  "goldFiles": [
+   "aiohttp/client.py"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-search+ss-find",
+   "ss-read+ss-read",
+   "ss-read+ss-grep",
+   "ss-grep",
+   "ss-read",
+   "Edit",
+   "bash",
+   "ss-grep+ss-read"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read+ss-read",
+   "ss-read+ss-grep",
+   "ss-read",
+   "bash",
+   "ss-grep+ss-read"
+  ],
+  "goldEdited": [
+   "aiohttp/client.py"
+  ],
+  "patchFiles": [
+   "aiohttp/client.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 18,
+  "sidechain": 0
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "form": "NONE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 69,
+  "ssCalls": 35,
+  "editFails": 0,
+  "goldFiles": [
+   "aiohttp/client.py"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-find",
+   "ss-read",
+   "ss-grep",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "7:ss-search",
+  "readBy": [
+   "ss-read",
+   "ss-grep",
+   "bash",
+   "Read"
+  ],
+  "goldEdited": [
+   "aiohttp/client.py"
+  ],
+  "patchFiles": [
+   "aiohttp/client_proto.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 54,
+  "sidechain": 1
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "form": "NONE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 59,
+  "ssCalls": 37,
+  "editFails": 2,
+  "goldFiles": [
+   "aiohttp/client.py"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-find",
+   "ss-read",
+   "ss-grep",
+   "Edit",
+   "ss-read+ss-read+ss-find",
+   "bash"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-read",
+   "bash",
+   "ss-grep"
+  ],
+  "goldEdited": [
+   "aiohttp/client.py"
+  ],
+  "patchFiles": [
+   "aiohttp/client.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 19,
+  "sidechain": 0
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "form": "PIPE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 17,
+  "ssCalls": 10,
+  "editFails": 0,
+  "goldFiles": [
+   "aiohttp/client.py"
+  ],
+  "surfacedBy": [
+   "ss-search"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "aiohttp/client_proto.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 13,
+  "sidechain": 0
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "form": "PIPE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 51,
+  "ssCalls": 23,
+  "editFails": 1,
+  "goldFiles": [
+   "aiohttp/client.py"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-semantic",
+   "ss-read",
+   "ss-read+ss-grep",
+   "ss-grep",
+   "ss-read+ss-read+ss-read",
+   "ss-grep+ss-grep",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "9:ss-search",
+  "readBy": [
+   "ss-semantic",
+   "ss-read",
+   "ss-read+ss-grep",
+   "ss-grep",
+   "ss-read+ss-read+ss-read",
+   "ss-grep+ss-grep",
+   "bash"
+  ],
+  "goldEdited": [
+   "aiohttp/client.py"
+  ],
+  "patchFiles": [
+   "aiohttp/client.py",
+   "aiohttp/client_proto.py",
+   "aiohttp/connector.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 19,
+  "sidechain": 0
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "form": "PIPE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 18,
+  "ssCalls": 12,
+  "editFails": 0,
+  "goldFiles": [
+   "aiohttp/client.py"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-find",
+   "ss-read+ss-read",
+   "ss-grep"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read+ss-read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "aiohttp/connector.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 15,
+  "sidechain": 0
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "form": "native",
+  "rep": 0,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 26,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Edit"
+  ],
+  "firstSurfaceCall": "4:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "patchFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 15,
+  "sidechain": 0
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "form": "native",
+  "rep": 1,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 59,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Agent",
+   "Edit"
+  ],
+  "firstSurfaceCall": "3:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "patchFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 43,
+  "sidechain": 1
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "form": "native",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 63,
+  "ssCalls": 0,
+  "editFails": 2,
+  "goldFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "4:bash",
+  "readBy": [
+   "Read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/serializers/LogSerializer.ts"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 38,
+  "sidechain": 1
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "form": "TAB",
+  "rep": 0,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 41,
+  "ssCalls": 10,
+  "editFails": 0,
+  "goldFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-find",
+   "ss-read+ss-read",
+   "Edit",
+   "ss-grep",
+   "Agent",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read+ss-read",
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "patchFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 7,
+  "sidechain": 1
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "form": "TAB",
+  "rep": 1,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 14,
+  "ssCalls": 7,
+  "editFails": 0,
+  "goldFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read",
+   "ss-grep",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "patchFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 11,
+  "sidechain": 0
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "form": "TAB",
+  "rep": 2,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 64,
+  "ssCalls": 8,
+  "editFails": 1,
+  "goldFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "surfacedBy": [
+   "Agent",
+   "ss-search",
+   "ss-read",
+   "ss-grep",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:Agent",
+  "readBy": [
+   "ss-read",
+   "bash",
+   "Read"
+  ],
+  "goldEdited": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "patchFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 41,
+  "sidechain": 1
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "form": "NONE",
+  "rep": 0,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 12,
+  "ssCalls": 6,
+  "editFails": 0,
+  "goldFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep",
+   "Edit"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [],
+  "goldEdited": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "patchFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 10,
+  "sidechain": 0
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "form": "NONE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 19,
+  "ssCalls": 9,
+  "editFails": 2,
+  "goldFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep",
+   "ss-read"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/serializers/LogSerializer.ts"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 12,
+  "sidechain": 0
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "form": "NONE",
+  "rep": 2,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 47,
+  "ssCalls": 24,
+  "editFails": 2,
+  "goldFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read",
+   "ss-grep",
+   "Edit",
+   "bash",
+   "ss-trace"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read",
+   "bash",
+   "ss-trace"
+  ],
+  "goldEdited": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "patchFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 11,
+  "sidechain": 0
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "form": "PIPE",
+  "rep": 0,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 23,
+  "ssCalls": 12,
+  "editFails": 0,
+  "goldFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep",
+   "ss-read",
+   "ss-trace",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "3:ss-search",
+  "readBy": [
+   "ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "patchFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 16,
+  "sidechain": 0
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "form": "PIPE",
+  "rep": 1,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 19,
+  "ssCalls": 10,
+  "editFails": 0,
+  "goldFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-find",
+   "ss-read",
+   "ss-trace",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read",
+   "ss-trace",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "patchFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 8,
+  "sidechain": 0
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "form": "PIPE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 22,
+  "ssCalls": 12,
+  "editFails": 0,
+  "goldFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep",
+   "ss-read",
+   "ss-trace",
+   "Edit",
+   "ss-read+ss-read",
+   "bash"
+  ],
+  "firstSurfaceCall": "3:ss-search",
+  "readBy": [
+   "ss-read",
+   "ss-trace",
+   "ss-read+ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "patchFiles": [
+   "src/logger/MetricsContext.ts"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 13,
+  "sidechain": 0
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "form": "native",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 71,
+  "ssCalls": 0,
+  "editFails": 2,
+  "goldFiles": [
+   "src/tools/stage.jam"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "11:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/targets.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 57,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "form": "native",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 74,
+  "ssCalls": 0,
+  "editFails": 2,
+  "goldFiles": [
+   "src/tools/stage.jam"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "46:bash",
+  "readBy": [
+   "bash",
+   "Read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/alias.py",
+   "src/build/targets.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 55,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "form": "native",
+  "rep": 2,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 101,
+  "ssCalls": 0,
+  "editFails": 1,
+  "goldFiles": [
+   "src/tools/stage.jam"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Edit"
+  ],
+  "firstSurfaceCall": "4:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/tools/stage.jam"
+  ],
+  "patchFiles": [
+   "src/build/alias.py",
+   "src/build/targets.py",
+   "src/tools/stage.jam",
+   "src/tools/stage.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 68,
+  "sidechain": 2
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "form": "TAB",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 45,
+  "ssCalls": 40,
+  "editFails": 1,
+  "goldFiles": [
+   "src/tools/stage.jam"
+  ],
+  "surfacedBy": [],
+  "firstSurfaceCall": null,
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/targets.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 42,
+  "sidechain": 0
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "form": "TAB",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 119,
+  "ssCalls": 45,
+  "editFails": 0,
+  "goldFiles": [
+   "src/tools/stage.jam"
+  ],
+  "surfacedBy": [],
+  "firstSurfaceCall": null,
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/targets.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 102,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "form": "TAB",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 103,
+  "ssCalls": 27,
+  "editFails": 0,
+  "goldFiles": [
+   "src/tools/stage.jam"
+  ],
+  "surfacedBy": [],
+  "firstSurfaceCall": null,
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/targets.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 98,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "form": "NONE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 30,
+  "ssCalls": 26,
+  "editFails": 0,
+  "goldFiles": [
+   "src/tools/stage.jam"
+  ],
+  "surfacedBy": [],
+  "firstSurfaceCall": null,
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/targets.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 28,
+  "sidechain": 0
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "form": "NONE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 67,
+  "ssCalls": 18,
+  "editFails": 0,
+  "goldFiles": [
+   "src/tools/stage.jam"
+  ],
+  "surfacedBy": [],
+  "firstSurfaceCall": null,
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/targets.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 63,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "form": "NONE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 49,
+  "ssCalls": 37,
+  "editFails": 0,
+  "goldFiles": [
+   "src/tools/stage.jam"
+  ],
+  "surfacedBy": [],
+  "firstSurfaceCall": null,
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/targets.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 46,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "form": "PIPE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 83,
+  "ssCalls": 35,
+  "editFails": 0,
+  "goldFiles": [
+   "src/tools/stage.jam"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "47:bash",
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/targets.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 78,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "form": "PIPE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 96,
+  "ssCalls": 58,
+  "editFails": 0,
+  "goldFiles": [
+   "src/tools/stage.jam"
+  ],
+  "surfacedBy": [],
+  "firstSurfaceCall": null,
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/targets.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 86,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "form": "PIPE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 114,
+  "ssCalls": 87,
+  "editFails": 0,
+  "goldFiles": [
+   "src/tools/stage.jam"
+  ],
+  "surfacedBy": [],
+  "firstSurfaceCall": null,
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/targets.py"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 112,
+  "sidechain": 1
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "form": "native",
+  "rep": 0,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 10,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "proof.go"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Edit"
+  ],
+  "firstSurfaceCall": "0:bash",
+  "readBy": [
+   "Read"
+  ],
+  "goldEdited": [
+   "proof.go"
+  ],
+  "patchFiles": [
+   "proof.go"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 6,
+  "sidechain": 0
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "form": "native",
+  "rep": 1,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 7,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "proof.go"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Edit"
+  ],
+  "firstSurfaceCall": "0:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "proof.go"
+  ],
+  "patchFiles": [
+   "proof.go"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 5,
+  "sidechain": 0
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "form": "native",
+  "rep": 2,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 35,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "proof.go"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Edit",
+   "Read"
+  ],
+  "firstSurfaceCall": "3:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "proof.go"
+  ],
+  "patchFiles": [
+   "proof.go"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 31,
+  "sidechain": 1
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "form": "TAB",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 4,
+  "ssCalls": 2,
+  "editFails": 0,
+  "goldFiles": [
+   "proof.go"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "ss-read"
+  ],
+  "firstSurfaceCall": "2:ss-grep",
+  "readBy": [
+   "ss-read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [],
+  "emptyPatch": true,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 4,
+  "sidechain": 0
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "form": "TAB",
+  "rep": 1,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 9,
+  "ssCalls": 4,
+  "editFails": 0,
+  "goldFiles": [
+   "proof.go"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "ss-read",
+   "Edit"
+  ],
+  "firstSurfaceCall": "2:ss-grep",
+  "readBy": [
+   "ss-read"
+  ],
+  "goldEdited": [
+   "proof.go"
+  ],
+  "patchFiles": [
+   "proof.go"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 5,
+  "sidechain": 0
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "form": "TAB",
+  "rep": 2,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 6,
+  "ssCalls": 1,
+  "editFails": 0,
+  "goldFiles": [
+   "proof.go"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:ss-grep",
+  "readBy": [
+   "Read"
+  ],
+  "goldEdited": [
+   "proof.go"
+  ],
+  "patchFiles": [
+   "proof.go"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 5,
+  "sidechain": 0
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "form": "NONE",
+  "rep": 0,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 10,
+  "ssCalls": 5,
+  "editFails": 0,
+  "goldFiles": [
+   "proof.go"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "ss-read",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:ss-grep",
+  "readBy": [
+   "ss-read"
+  ],
+  "goldEdited": [
+   "proof.go"
+  ],
+  "patchFiles": [
+   "proof.go"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 5,
+  "sidechain": 0
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "form": "NONE",
+  "rep": 1,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 10,
+  "ssCalls": 4,
+  "editFails": 0,
+  "goldFiles": [
+   "proof.go"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "ss-read",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-grep",
+  "readBy": [
+   "ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "proof.go"
+  ],
+  "patchFiles": [
+   "proof.go"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 5,
+  "sidechain": 0
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "form": "NONE",
+  "rep": 2,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 7,
+  "ssCalls": 2,
+  "editFails": 0,
+  "goldFiles": [
+   "proof.go"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "ss-read",
+   "Edit"
+  ],
+  "firstSurfaceCall": "2:ss-grep",
+  "readBy": [
+   "ss-read"
+  ],
+  "goldEdited": [
+   "proof.go"
+  ],
+  "patchFiles": [
+   "proof.go"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 5,
+  "sidechain": 0
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "form": "PIPE",
+  "rep": 0,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 7,
+  "ssCalls": 4,
+  "editFails": 0,
+  "goldFiles": [
+   "proof.go"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "ss-read",
+   "ss-trace",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:ss-grep",
+  "readBy": [
+   "ss-read"
+  ],
+  "goldEdited": [
+   "proof.go"
+  ],
+  "patchFiles": [
+   "proof.go"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 6,
+  "sidechain": 0
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "form": "PIPE",
+  "rep": 1,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 8,
+  "ssCalls": 2,
+  "editFails": 0,
+  "goldFiles": [
+   "proof.go"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "ss-read",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "2:ss-grep",
+  "readBy": [
+   "ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "proof.go"
+  ],
+  "patchFiles": [
+   "proof.go"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 5,
+  "sidechain": 0
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "form": "PIPE",
+  "rep": 2,
+  "resolved": true,
+  "f2p": 1,
+  "calls": 10,
+  "ssCalls": 4,
+  "editFails": 0,
+  "goldFiles": [
+   "proof.go"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "ss-read",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-grep",
+  "readBy": [
+   "ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "proof.go"
+  ],
+  "patchFiles": [
+   "proof.go"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 5,
+  "sidechain": 0
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "form": "native",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 55,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "src/build/property.jam"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "10:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/tools/features/build-feature.jam"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 53,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "form": "native",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 52,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "src/build/property.jam"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "24:bash",
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/tools/features/build-feature.jam"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 47,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "form": "native",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 61,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "src/build/property.jam"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "7:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/tools/features/build-feature.jam"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 46,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "form": "TAB",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 224,
+  "ssCalls": 116,
+  "editFails": 0,
+  "goldFiles": [
+   "src/build/property.jam"
+  ],
+  "surfacedBy": [],
+  "firstSurfaceCall": null,
+  "readBy": [
+   "Read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/configure.jam"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 220,
+  "sidechain": 3
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "form": "TAB",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 86,
+  "ssCalls": 54,
+  "editFails": 0,
+  "goldFiles": [
+   "src/build/property.jam"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "bash"
+  ],
+  "firstSurfaceCall": "36:ss-grep",
+  "readBy": [
+   "ss-grep"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/configure.jam"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 81,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "form": "TAB",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 66,
+  "ssCalls": 50,
+  "editFails": 0,
+  "goldFiles": [
+   "src/build/property.jam"
+  ],
+  "surfacedBy": [
+   "bash",
+   "ss-grep",
+   "ss-read"
+  ],
+  "firstSurfaceCall": "32:bash",
+  "readBy": [
+   "ss-grep",
+   "ss-read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/configure.jam"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 50,
+  "sidechain": 0
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "form": "NONE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 88,
+  "ssCalls": 29,
+  "editFails": 0,
+  "goldFiles": [
+   "src/build/property.jam"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "38:bash",
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/configure.jam"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 85,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "form": "NONE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 71,
+  "ssCalls": 37,
+  "editFails": 0,
+  "goldFiles": [
+   "src/build/property.jam"
+  ],
+  "surfacedBy": [
+   "ss-grep"
+  ],
+  "firstSurfaceCall": "44:ss-grep",
+  "readBy": [
+   "ss-grep",
+   "Read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/configure.jam"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 66,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "form": "NONE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 108,
+  "ssCalls": 96,
+  "editFails": 0,
+  "goldFiles": [
+   "src/build/property.jam"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "ss-read"
+  ],
+  "firstSurfaceCall": "41:ss-grep",
+  "readBy": [
+   "ss-grep",
+   "ss-read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/configure.jam"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 103,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "form": "PIPE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 130,
+  "ssCalls": 96,
+  "editFails": 1,
+  "goldFiles": [
+   "src/build/property.jam"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "41:bash",
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/configure.jam"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 115,
+  "sidechain": 2
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "form": "PIPE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 53,
+  "ssCalls": 17,
+  "editFails": 0,
+  "goldFiles": [
+   "src/build/property.jam"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "27:bash",
+  "readBy": [],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/configure.jam"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 49,
+  "sidechain": 1
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "form": "PIPE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 58,
+  "ssCalls": 19,
+  "editFails": 0,
+  "goldFiles": [
+   "src/build/property.jam"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "26:bash",
+  "readBy": [
+   "bash"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/build/configure.jam"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 52,
+  "sidechain": 1
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "form": "native",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 93,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "CHANGELOG.md",
+   "src/Moq/Evaluator.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/Expressions/Visitors/EvaluateCaptures.cs"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "19:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/Moq/Interception/InterceptionAspects.cs",
+   "src/Moq/MethodExpectation.cs"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 74,
+  "sidechain": 1
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "form": "native",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 117,
+  "ssCalls": 0,
+  "editFails": 4,
+  "goldFiles": [
+   "CHANGELOG.md",
+   "src/Moq/Evaluator.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/Expressions/Visitors/EvaluateCaptures.cs"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Agent",
+   "Edit"
+  ],
+  "firstSurfaceCall": "0:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Moq/ExpressionComparer.cs"
+  ],
+  "patchFiles": [
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/Match.cs"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 104,
+  "sidechain": 2
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "form": "native",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 136,
+  "ssCalls": 0,
+  "editFails": 6,
+  "goldFiles": [
+   "CHANGELOG.md",
+   "src/Moq/Evaluator.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/Expressions/Visitors/EvaluateCaptures.cs"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/Evaluator.cs"
+  ],
+  "patchFiles": [
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/Match.cs"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 82,
+  "sidechain": 1
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "form": "TAB",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 53,
+  "ssCalls": 19,
+  "editFails": 9,
+  "goldFiles": [
+   "CHANGELOG.md",
+   "src/Moq/Evaluator.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/Expressions/Visitors/EvaluateCaptures.cs"
+  ],
+  "surfacedBy": [
+   "ss-read+ss-read+ss-read",
+   "ss-search+ss-grep+ss-grep",
+   "ss-search+ss-search",
+   "ss-grep+ss-search",
+   "ss-grep+ss-read+ss-read",
+   "ss-read",
+   "ss-read+ss-read",
+   "Edit",
+   "ss-grep+ss-read",
+   "bash"
+  ],
+  "firstSurfaceCall": "2:ss-read+ss-read+ss-read",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "ss-read",
+   "ss-read+ss-read",
+   "ss-grep+ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Moq/ExpressionComparer.cs"
+  ],
+  "patchFiles": [
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/Match.cs",
+   "src/Moq/SetupCollection.cs"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 12,
+  "sidechain": 0
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "form": "TAB",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 26,
+  "ssCalls": 13,
+  "editFails": 3,
+  "goldFiles": [
+   "CHANGELOG.md",
+   "src/Moq/Evaluator.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/Expressions/Visitors/EvaluateCaptures.cs"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read+ss-search",
+   "ss-search+ss-read+ss-read",
+   "ss-read+ss-find",
+   "ss-find+ss-read+ss-read",
+   "ss-search+ss-trace",
+   "ss-search+ss-find"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-read+ss-search"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/Moq/Match.cs"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 13,
+  "sidechain": 0
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "form": "TAB",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 42,
+  "ssCalls": 23,
+  "editFails": 2,
+  "goldFiles": [
+   "CHANGELOG.md",
+   "src/Moq/Evaluator.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/Expressions/Visitors/EvaluateCaptures.cs"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-trace",
+   "ss-read",
+   "ss-find"
+  ],
+  "firstSurfaceCall": "4:ss-search",
+  "readBy": [
+   "ss-read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/Moq/Match.cs"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 26,
+  "sidechain": 0
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "form": "NONE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 45,
+  "ssCalls": 26,
+  "editFails": 2,
+  "goldFiles": [
+   "CHANGELOG.md",
+   "src/Moq/Evaluator.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/Expressions/Visitors/EvaluateCaptures.cs"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read+ss-read+ss-read",
+   "ss-grep",
+   "ss-read+ss-read+ss-grep",
+   "ss-search+ss-search",
+   "ss-read+ss-read+ss-search",
+   "ss-grep+ss-read+ss-read",
+   "ss-read+ss-read",
+   "ss-search+ss-grep+ss-read",
+   "Edit",
+   "ss-grep+ss-read",
+   "ss-read",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "ss-grep",
+   "ss-grep+ss-read+ss-read",
+   "ss-read+ss-read",
+   "ss-search+ss-grep+ss-read",
+   "ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Moq/ExpressionComparer.cs"
+  ],
+  "patchFiles": [
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/Match.cs"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 24,
+  "sidechain": 0
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "form": "NONE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 80,
+  "ssCalls": 36,
+  "editFails": 11,
+  "goldFiles": [
+   "CHANGELOG.md",
+   "src/Moq/Evaluator.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/Expressions/Visitors/EvaluateCaptures.cs"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read",
+   "ss-grep",
+   "ss-find",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read"
+  ],
+  "goldEdited": [
+   "src/Moq/ExpressionComparer.cs"
+  ],
+  "patchFiles": [
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/Match.cs",
+   "src/Moq/Matchers/LazyEvalMatcher.cs"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 25,
+  "sidechain": 0
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "form": "NONE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 137,
+  "ssCalls": 68,
+  "editFails": 5,
+  "goldFiles": [
+   "CHANGELOG.md",
+   "src/Moq/Evaluator.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/Expressions/Visitors/EvaluateCaptures.cs"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep",
+   "ss-read+ss-read+ss-grep",
+   "ss-read+ss-read+ss-trace",
+   "ss-grep+ss-read+ss-read",
+   "ss-find+ss-read",
+   "ss-search+ss-read+ss-read",
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-read",
+   "ss-read+ss-grep",
+   "Edit",
+   "bash",
+   "ss-trace",
+   "ss-find",
+   "ss-read"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read+ss-read+ss-grep",
+   "ss-read+ss-read+ss-trace",
+   "ss-grep+ss-read+ss-read",
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-read",
+   "ss-read+ss-grep",
+   "bash",
+   "ss-read"
+  ],
+  "goldEdited": [
+   "src/Moq/ExpressionComparer.cs"
+  ],
+  "patchFiles": [
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/Match.cs"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 53,
+  "sidechain": 1
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "form": "PIPE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 50,
+  "ssCalls": 29,
+  "editFails": 0,
+  "goldFiles": [
+   "CHANGELOG.md",
+   "src/Moq/Evaluator.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/Expressions/Visitors/EvaluateCaptures.cs"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read+ss-search",
+   "ss-grep",
+   "ss-grep+ss-search",
+   "ss-read+ss-read+ss-read+ss-read",
+   "ss-read+ss-grep+ss-read",
+   "ss-grep+ss-read",
+   "ss-read+ss-read",
+   "ss-read",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-grep",
+   "ss-grep+ss-search",
+   "ss-read+ss-read+ss-read+ss-read",
+   "ss-read+ss-grep+ss-read",
+   "ss-read+ss-read",
+   "ss-grep+ss-read",
+   "ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Moq/ExpressionComparer.cs"
+  ],
+  "patchFiles": [
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/Match.cs"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 20,
+  "sidechain": 0
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "form": "PIPE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 44,
+  "ssCalls": 21,
+  "editFails": 1,
+  "goldFiles": [
+   "CHANGELOG.md",
+   "src/Moq/Evaluator.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/Expressions/Visitors/EvaluateCaptures.cs"
+  ],
+  "surfacedBy": [
+   "ss-read+ss-trace",
+   "ss-search+ss-read+ss-read",
+   "ss-read+ss-read+ss-read",
+   "ss-grep+ss-read",
+   "ss-read+ss-read",
+   "ss-grep+ss-read+ss-read",
+   "ss-search+ss-grep"
+  ],
+  "firstSurfaceCall": "3:ss-read+ss-trace",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "ss-grep+ss-read",
+   "ss-read+ss-read",
+   "ss-grep+ss-read+ss-read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/Moq/Match.cs"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 21,
+  "sidechain": 0
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "form": "PIPE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 48,
+  "ssCalls": 19,
+  "editFails": 2,
+  "goldFiles": [
+   "CHANGELOG.md",
+   "src/Moq/Evaluator.cs",
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/ExpressionExtensions.cs",
+   "src/Moq/Expressions/Visitors/EvaluateCaptures.cs"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-trace",
+   "ss-read+ss-read+ss-read",
+   "ss-grep+ss-read+ss-read+ss-read",
+   "ss-search+ss-grep",
+   "ss-grep",
+   "ss-read+ss-read",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-read",
+   "ss-grep",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Moq/ExpressionComparer.cs"
+  ],
+  "patchFiles": [
+   "src/Moq/ExpressionComparer.cs",
+   "src/Moq/Match.cs",
+   "src/Moq/Matchers/LazyEvalMatcher.cs"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 11,
+  "sidechain": 0
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "form": "native",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 15,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Read",
+   "Edit"
+  ],
+  "firstSurfaceCall": "0:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "index.js"
+  ],
+  "patchFiles": [
+   "index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 9,
+  "sidechain": 0
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "form": "native",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 12,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Read",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "index.js"
+  ],
+  "patchFiles": [
+   "index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 9,
+  "sidechain": 0
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "form": "native",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 15,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Read",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "index.js"
+  ],
+  "patchFiles": [
+   "index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 11,
+  "sidechain": 0
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "form": "TAB",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 60,
+  "ssCalls": 28,
+  "editFails": 1,
+  "goldFiles": [
+   "index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "ss-search",
+   "ss-read+ss-grep",
+   "Edit",
+   "ss-read",
+   "Agent",
+   "ss-grep",
+   "ss-find"
+  ],
+  "firstSurfaceCall": "1:bash",
+  "readBy": [
+   "ss-read+ss-grep",
+   "bash",
+   "ss-read"
+  ],
+  "goldEdited": [
+   "index.js"
+  ],
+  "patchFiles": [
+   "index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 7,
+  "sidechain": 1
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "form": "TAB",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 14,
+  "ssCalls": 5,
+  "editFails": 0,
+  "goldFiles": [
+   "index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "ss-grep",
+   "ss-search",
+   "Edit"
+  ],
+  "firstSurfaceCall": "0:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "index.js"
+  ],
+  "patchFiles": [
+   "index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 10,
+  "sidechain": 0
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "form": "TAB",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 19,
+  "ssCalls": 8,
+  "editFails": 0,
+  "goldFiles": [
+   "index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "ss-search",
+   "ss-read",
+   "ss-grep",
+   "ss-read+ss-read",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:bash",
+  "readBy": [
+   "ss-read",
+   "ss-read+ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "index.js"
+  ],
+  "patchFiles": [
+   "index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 11,
+  "sidechain": 0
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "form": "NONE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 17,
+  "ssCalls": 7,
+  "editFails": 0,
+  "goldFiles": [
+   "index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "ss-search",
+   "ss-read",
+   "ss-grep",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:bash",
+  "readBy": [
+   "ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "index.js"
+  ],
+  "patchFiles": [
+   "index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 7,
+  "sidechain": 0
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "form": "NONE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 41,
+  "ssCalls": 16,
+  "editFails": 2,
+  "goldFiles": [
+   "index.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "bash",
+   "ss-read",
+   "ss-find",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "index.js"
+  ],
+  "patchFiles": [
+   "index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 7,
+  "sidechain": 0
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "form": "NONE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 19,
+  "ssCalls": 9,
+  "editFails": 0,
+  "goldFiles": [
+   "index.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "bash",
+   "ss-read+ss-search",
+   "ss-grep",
+   "ss-read+ss-read+ss-trace",
+   "Edit",
+   "ss-read"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read+ss-search",
+   "ss-read+ss-read+ss-trace",
+   "ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "index.js"
+  ],
+  "patchFiles": [
+   "index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 10,
+  "sidechain": 0
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "form": "PIPE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 12,
+  "ssCalls": 6,
+  "editFails": 0,
+  "goldFiles": [
+   "index.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "bash",
+   "ss-grep",
+   "ss-read+ss-read",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read+ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "index.js"
+  ],
+  "patchFiles": [
+   "index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 9,
+  "sidechain": 0
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "form": "PIPE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 19,
+  "ssCalls": 9,
+  "editFails": 0,
+  "goldFiles": [
+   "index.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "bash",
+   "ss-read",
+   "ss-grep",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read",
+   "ss-grep",
+   "bash"
+  ],
+  "goldEdited": [
+   "index.js"
+  ],
+  "patchFiles": [
+   "index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 6,
+  "sidechain": 0
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "form": "PIPE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 17,
+  "ssCalls": 11,
+  "editFails": 0,
+  "goldFiles": [
+   "index.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "ss-grep",
+   "ss-read",
+   "ss-search",
+   "Edit"
+  ],
+  "firstSurfaceCall": "1:bash",
+  "readBy": [
+   "ss-read",
+   "ss-grep"
+  ],
+  "goldEdited": [
+   "index.js"
+  ],
+  "patchFiles": [
+   "index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 14,
+  "sidechain": 0
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "form": "native",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 164,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Edit"
+  ],
+  "firstSurfaceCall": "6:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/markdown/inlines/html.js"
+  ],
+  "patchFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 146,
+  "sidechain": 2
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "form": "native",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 37,
+  "ssCalls": 0,
+  "editFails": 1,
+  "goldFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "5:bash",
+  "readBy": [
+   "Read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/markdown/re/inline.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 28,
+  "sidechain": 0
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "form": "native",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 87,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "surfacedBy": [
+   "Agent",
+   "bash"
+  ],
+  "firstSurfaceCall": "4:Agent",
+  "readBy": [
+   "Read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/markdown/re/inline.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 80,
+  "sidechain": 1
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "form": "TAB",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 29,
+  "ssCalls": 14,
+  "editFails": 0,
+  "goldFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "ss-search",
+   "ss-read+ss-read",
+   "ss-search+ss-read"
+  ],
+  "firstSurfaceCall": "4:ss-grep",
+  "readBy": [
+   "ss-read+ss-read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/markdown/re/inline.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 22,
+  "sidechain": 0
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "form": "TAB",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 37,
+  "ssCalls": 22,
+  "editFails": 0,
+  "goldFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read",
+   "ss-grep",
+   "ss-read+ss-search"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-read",
+   "ss-read+ss-trace"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/markdown/blocks/html.js",
+   "src/markdown/blocks/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 28,
+  "sidechain": 0
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "form": "TAB",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 20,
+  "ssCalls": 14,
+  "editFails": 0,
+  "goldFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read+ss-read",
+   "ss-grep",
+   "ss-read+ss-read+ss-grep"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-read+ss-read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/markdown/re/inline.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 19,
+  "sidechain": 0
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "form": "NONE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 41,
+  "ssCalls": 32,
+  "editFails": 0,
+  "goldFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read+ss-grep",
+   "ss-find",
+   "ss-grep+ss-grep",
+   "ss-read+ss-read+ss-read"
+  ],
+  "firstSurfaceCall": "3:ss-search",
+  "readBy": [
+   "ss-read+ss-grep",
+   "ss-read+ss-read+ss-read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/markdown/re/inline.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 39,
+  "sidechain": 1
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "form": "NONE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 63,
+  "ssCalls": 31,
+  "editFails": 5,
+  "goldFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read+ss-read",
+   "ss-grep+ss-read",
+   "ss-grep",
+   "ss-find"
+  ],
+  "firstSurfaceCall": "3:ss-search",
+  "readBy": [
+   "ss-read+ss-read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/markdown/re/inline.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 25,
+  "sidechain": 0
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "form": "NONE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 13,
+  "ssCalls": 7,
+  "editFails": 0,
+  "goldFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep",
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-read+ss-find",
+   "ss-read+ss-search"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-read+ss-read+ss-trace"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/markdown/re/inline.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 9,
+  "sidechain": 0
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "form": "PIPE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 36,
+  "ssCalls": 19,
+  "editFails": 0,
+  "goldFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "ss-read+ss-read+ss-read",
+   "ss-find",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "9:ss-grep",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/markdown/inlines/html.js"
+  ],
+  "patchFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 23,
+  "sidechain": 0
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "form": "PIPE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 21,
+  "ssCalls": 9,
+  "editFails": 0,
+  "goldFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "surfacedBy": [
+   "ss-find",
+   "ss-read+ss-read",
+   "ss-grep"
+  ],
+  "firstSurfaceCall": "3:ss-find",
+  "readBy": [
+   "ss-read+ss-read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/markdown/re/inline.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 9,
+  "sidechain": 0
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "form": "PIPE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 31,
+  "ssCalls": 23,
+  "editFails": 0,
+  "goldFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "surfacedBy": [
+   "ss-find",
+   "ss-read",
+   "ss-grep",
+   "Edit"
+  ],
+  "firstSurfaceCall": "9:ss-find",
+  "readBy": [
+   "ss-read",
+   "ss-trace"
+  ],
+  "goldEdited": [
+   "src/markdown/inlines/html.js"
+  ],
+  "patchFiles": [
+   "src/markdown/inlines/html.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 26,
+  "sidechain": 0
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "form": "native",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 53,
+  "ssCalls": 0,
+  "editFails": 8,
+  "goldFiles": [
+   "src/Assertions.php"
+  ],
+  "surfacedBy": [
+   "bash"
+  ],
+  "firstSurfaceCall": "3:bash",
+  "readBy": [
+   "Read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/Validation/ResponseValidator.php"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 17,
+  "sidechain": 0
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "form": "native",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 60,
+  "ssCalls": 0,
+  "editFails": 2,
+  "goldFiles": [
+   "src/Assertions.php"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Edit"
+  ],
+  "firstSurfaceCall": "2:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Assertions.php"
+  ],
+  "patchFiles": [
+   "src/Assertions.php"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 35,
+  "sidechain": 1
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "form": "native",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 24,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "src/Assertions.php"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Edit"
+  ],
+  "firstSurfaceCall": "2:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Assertions.php"
+  ],
+  "patchFiles": [
+   "src/Assertions.php"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 13,
+  "sidechain": 0
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "form": "TAB",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 33,
+  "ssCalls": 18,
+  "editFails": 0,
+  "goldFiles": [
+   "src/Assertions.php"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read",
+   "ss-grep",
+   "Edit"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-read"
+  ],
+  "goldEdited": [
+   "src/Assertions.php"
+  ],
+  "patchFiles": [
+   "src/Assertions.php"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 17,
+  "sidechain": 0
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "form": "TAB",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 36,
+  "ssCalls": 16,
+  "editFails": 1,
+  "goldFiles": [
+   "src/Assertions.php"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read+ss-grep",
+   "ss-read+ss-read",
+   "ss-read+ss-read+ss-read",
+   "ss-grep",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "0:ss-search",
+  "readBy": [
+   "ss-read+ss-read",
+   "ss-read+ss-read+ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Assertions.php"
+  ],
+  "patchFiles": [
+   "src/Assertions.php",
+   "src/Validation/ResponseValidator.php"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 10,
+  "sidechain": 0
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "form": "TAB",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 16,
+  "ssCalls": 10,
+  "editFails": 0,
+  "goldFiles": [
+   "src/Assertions.php"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read"
+  ],
+  "goldEdited": [],
+  "patchFiles": [
+   "src/Validation/ResponseValidator.php"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 10,
+  "sidechain": 0
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "form": "NONE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 29,
+  "ssCalls": 6,
+  "editFails": 1,
+  "goldFiles": [
+   "src/Assertions.php"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep",
+   "ss-trace",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "Read",
+   "ss-trace",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Assertions.php"
+  ],
+  "patchFiles": [
+   "src/Assertions.php"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 13,
+  "sidechain": 0
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "form": "NONE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 26,
+  "ssCalls": 14,
+  "editFails": 0,
+  "goldFiles": [
+   "src/Assertions.php"
+  ],
+  "surfacedBy": [
+   "ss-grep",
+   "ss-read+ss-read+ss-read",
+   "ss-read",
+   "ss-search",
+   "ss-find",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "4:ss-grep",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "ss-read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Assertions.php"
+  ],
+  "patchFiles": [
+   "src/Assertions.php"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 16,
+  "sidechain": 0
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "form": "NONE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 24,
+  "ssCalls": 8,
+  "editFails": 1,
+  "goldFiles": [
+   "src/Assertions.php"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read",
+   "ss-trace",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read",
+   "ss-trace",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Assertions.php"
+  ],
+  "patchFiles": [
+   "src/Assertions.php"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 10,
+  "sidechain": 0
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "form": "PIPE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 16,
+  "ssCalls": 3,
+  "editFails": 0,
+  "goldFiles": [
+   "src/Assertions.php"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-semantic",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-semantic",
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Assertions.php"
+  ],
+  "patchFiles": [
+   "src/Assertions.php"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 9,
+  "sidechain": 0
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "form": "PIPE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 13,
+  "ssCalls": 5,
+  "editFails": 0,
+  "goldFiles": [
+   "src/Assertions.php"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "bash"
+  ],
+  "goldEdited": [
+   "src/Assertions.php"
+  ],
+  "patchFiles": [
+   "src/Assertions.php"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 7,
+  "sidechain": 0
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "form": "PIPE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 43,
+  "ssCalls": 16,
+  "editFails": 1,
+  "goldFiles": [
+   "src/Assertions.php"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep",
+   "Edit",
+   "ss-read+ss-read",
+   "ss-find",
+   "ss-read+ss-read+ss-search"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read+ss-read",
+   "ss-read+ss-read+ss-search"
+  ],
+  "goldEdited": [
+   "src/Assertions.php"
+  ],
+  "patchFiles": [
+   "src/Assertions.php"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 9,
+  "sidechain": 0
+ },
+ {
+  "task": "protofire__solhint-224",
+  "form": "native",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0.4,
+  "calls": 87,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "lib/common/ast-types.js",
+   "lib/rules/index.js",
+   "lib/rules/order/func-order.js",
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Write",
+   "Edit",
+   "Read"
+  ],
+  "firstSurfaceCall": "4:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "lib/rules/order/ordering.js",
+   "lib/rules/order/index.js"
+  ],
+  "patchFiles": [
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 65,
+  "sidechain": 1
+ },
+ {
+  "task": "protofire__solhint-224",
+  "form": "native",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0,
+  "calls": 87,
+  "ssCalls": 0,
+  "editFails": 0,
+  "goldFiles": [
+   "lib/common/ast-types.js",
+   "lib/rules/index.js",
+   "lib/rules/order/func-order.js",
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "surfacedBy": [
+   "Agent",
+   "bash",
+   "Edit",
+   "Read"
+  ],
+  "firstSurfaceCall": "2:Agent",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "lib/rules/order/index.js"
+  ],
+  "patchFiles": [
+   "lib/rules/order/index.js",
+   "lib/rules/order/order-of-layout.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 71,
+  "sidechain": 1
+ },
+ {
+  "task": "protofire__solhint-224",
+  "form": "native",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0.4,
+  "calls": 136,
+  "ssCalls": 0,
+  "editFails": 2,
+  "goldFiles": [
+   "lib/common/ast-types.js",
+   "lib/rules/index.js",
+   "lib/rules/order/func-order.js",
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "surfacedBy": [
+   "bash",
+   "Write",
+   "Edit",
+   "Agent",
+   "Read"
+  ],
+  "firstSurfaceCall": "2:bash",
+  "readBy": [
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "patchFiles": [
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 83,
+  "sidechain": 2
+ },
+ {
+  "task": "protofire__solhint-224",
+  "form": "TAB",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0.4,
+  "calls": 59,
+  "ssCalls": 27,
+  "editFails": 2,
+  "goldFiles": [
+   "lib/common/ast-types.js",
+   "lib/rules/index.js",
+   "lib/rules/order/func-order.js",
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep",
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-search",
+   "ss-grep+ss-grep",
+   "ss-search+ss-grep+ss-grep",
+   "Edit",
+   "ss-search+ss-grep",
+   "bash",
+   "ss-read+ss-grep",
+   "ss-read+ss-read",
+   "ss-grep+ss-read",
+   "Write",
+   "ss-read"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "bash",
+   "ss-read+ss-grep",
+   "ss-read+ss-read",
+   "ss-read"
+  ],
+  "goldEdited": [
+   "lib/rules/order/index.js"
+  ],
+  "patchFiles": [
+   "lib/rules/order/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 17,
+  "sidechain": 0
+ },
+ {
+  "task": "protofire__solhint-224",
+  "form": "TAB",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0.4,
+  "calls": 31,
+  "ssCalls": 12,
+  "editFails": 1,
+  "goldFiles": [
+   "lib/common/ast-types.js",
+   "lib/rules/index.js",
+   "lib/rules/order/func-order.js",
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "surfacedBy": [
+   "ss-find",
+   "ss-read+ss-read+ss-search",
+   "ss-read+ss-grep+ss-search",
+   "ss-grep+ss-read",
+   "ss-search+ss-grep",
+   "Write",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "2:ss-find",
+  "readBy": [
+   "ss-read+ss-read+ss-search",
+   "ss-read+ss-grep+ss-search",
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "patchFiles": [
+   "lib/rules/order/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 11,
+  "sidechain": 0
+ },
+ {
+  "task": "protofire__solhint-224",
+  "form": "TAB",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0.4,
+  "calls": 67,
+  "ssCalls": 25,
+  "editFails": 1,
+  "goldFiles": [
+   "lib/common/ast-types.js",
+   "lib/rules/index.js",
+   "lib/rules/order/func-order.js",
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read",
+   "ss-grep",
+   "ss-read+ss-read+ss-read+ss-read",
+   "ss-read+ss-search",
+   "ss-find",
+   "Write",
+   "Edit",
+   "bash",
+   "ss-read+ss-read+ss-search",
+   "ss-grep+ss-read+ss-read",
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-read",
+   "ss-search+ss-grep",
+   "ss-grep+ss-read"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-read",
+   "ss-read+ss-read+ss-read+ss-read",
+   "ss-read+ss-search",
+   "Read",
+   "bash",
+   "ss-read+ss-read+ss-search",
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-read"
+  ],
+  "goldEdited": [
+   "lib/rules/order/index.js"
+  ],
+  "patchFiles": [
+   "lib/rules/order/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 15,
+  "sidechain": 0
+ },
+ {
+  "task": "protofire__solhint-224",
+  "form": "NONE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0.4,
+  "calls": 72,
+  "ssCalls": 35,
+  "editFails": 3,
+  "goldFiles": [
+   "lib/common/ast-types.js",
+   "lib/rules/index.js",
+   "lib/rules/order/func-order.js",
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep",
+   "ss-read+ss-read+ss-read+ss-read",
+   "ss-read+ss-read+ss-read+ss-search",
+   "Write",
+   "Edit",
+   "bash",
+   "ss-read+ss-search",
+   "ss-read",
+   "ss-find",
+   "ss-read+ss-read"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read+ss-read+ss-read+ss-read",
+   "ss-read+ss-read+ss-read+ss-search",
+   "Read",
+   "bash",
+   "ss-read",
+   "ss-read+ss-read"
+  ],
+  "goldEdited": [
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "patchFiles": [
+   "lib/rules/order/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 19,
+  "sidechain": 0
+ },
+ {
+  "task": "protofire__solhint-224",
+  "form": "NONE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0.4,
+  "calls": 30,
+  "ssCalls": 17,
+  "editFails": 0,
+  "goldFiles": [
+   "lib/common/ast-types.js",
+   "lib/rules/index.js",
+   "lib/rules/order/func-order.js",
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read+ss-read",
+   "ss-grep",
+   "Write",
+   "Edit",
+   "bash",
+   "ss-read"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-read+ss-read",
+   "bash",
+   "Read",
+   "ss-read"
+  ],
+  "goldEdited": [
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "patchFiles": [
+   "lib/rules/order/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 18,
+  "sidechain": 0
+ },
+ {
+  "task": "protofire__solhint-224",
+  "form": "NONE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0.4,
+  "calls": 71,
+  "ssCalls": 15,
+  "editFails": 0,
+  "goldFiles": [
+   "lib/common/ast-types.js",
+   "lib/rules/index.js",
+   "lib/rules/order/func-order.js",
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-read+ss-read",
+   "ss-search+ss-grep",
+   "ss-read+ss-read+ss-search",
+   "ss-grep+ss-read+ss-read",
+   "ss-grep+ss-read",
+   "ss-find",
+   "ss-grep+ss-grep",
+   "Write",
+   "Edit",
+   "bash",
+   "ss-grep",
+   "ss-read",
+   "Read"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-read+ss-read",
+   "ss-grep+ss-read+ss-read",
+   "ss-read",
+   "bash",
+   "Read"
+  ],
+  "goldEdited": [
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "patchFiles": [
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 48,
+  "sidechain": 1
+ },
+ {
+  "task": "protofire__solhint-224",
+  "form": "PIPE",
+  "rep": 0,
+  "resolved": false,
+  "f2p": 0.4,
+  "calls": 61,
+  "ssCalls": 29,
+  "editFails": 3,
+  "goldFiles": [
+   "lib/common/ast-types.js",
+   "lib/rules/index.js",
+   "lib/rules/order/func-order.js",
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep",
+   "ss-read+ss-read+ss-read",
+   "Write",
+   "Edit",
+   "bash",
+   "ss-read+ss-read"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "Read",
+   "bash",
+   "ss-read+ss-read"
+  ],
+  "goldEdited": [
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "patchFiles": [
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 15,
+  "sidechain": 0
+ },
+ {
+  "task": "protofire__solhint-224",
+  "form": "PIPE",
+  "rep": 1,
+  "resolved": false,
+  "f2p": 0.4,
+  "calls": 28,
+  "ssCalls": 15,
+  "editFails": 0,
+  "goldFiles": [
+   "lib/common/ast-types.js",
+   "lib/rules/index.js",
+   "lib/rules/order/func-order.js",
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep",
+   "ss-read",
+   "Write",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "1:ss-search",
+  "readBy": [
+   "ss-read",
+   "ss-grep",
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "lib/rules/order/index.js"
+  ],
+  "patchFiles": [
+   "lib/rules/order/index.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 15,
+  "sidechain": 0
+ },
+ {
+  "task": "protofire__solhint-224",
+  "form": "PIPE",
+  "rep": 2,
+  "resolved": false,
+  "f2p": 0.4,
+  "calls": 26,
+  "ssCalls": 15,
+  "editFails": 0,
+  "goldFiles": [
+   "lib/common/ast-types.js",
+   "lib/rules/index.js",
+   "lib/rules/order/func-order.js",
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "surfacedBy": [
+   "ss-search",
+   "ss-grep",
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-search",
+   "ss-search+ss-grep",
+   "ss-grep+ss-read+ss-read",
+   "ss-find",
+   "ss-grep+ss-grep",
+   "Write",
+   "Edit",
+   "bash"
+  ],
+  "firstSurfaceCall": "2:ss-search",
+  "readBy": [
+   "ss-read+ss-read+ss-read",
+   "ss-read+ss-search",
+   "Read",
+   "bash"
+  ],
+  "goldEdited": [
+   "lib/rules/order/index.js"
+  ],
+  "patchFiles": [
+   "lib/rules/order/index.js",
+   "lib/rules/order/ordering.js"
+  ],
+  "emptyPatch": false,
+  "exitReason": "model_stopped",
+  "stepsToFirstEdit": 18,
+  "sidechain": 0
+ }
+]

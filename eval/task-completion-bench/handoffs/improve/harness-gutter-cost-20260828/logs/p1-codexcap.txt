@@ -1,0 +1,28 @@
+cell | rollouts | outputs | withOrigTok | truncMarker | trunc/rollout | rolloutsWithTrunc | producedTok/rollout | deliveredTok/rollout(cap=2500) | deletedTok/rollout | deleted% | bytes/rollout | B/tok(delivered)
+A native | 34 | 353 | 0 | 8 | 0.24 | 7/34 | 0 | 0 | 0 | NaN% | 68337 | -
+     largest UNtruncated original token count=0; smallest TRUNCATED=n/a
+A sweet | 34 | 388 | 0 | 0 | 0.00 | 0/34 | 0 | 0 | 0 | NaN% | 43688 | -
+     largest UNtruncated original token count=0; smallest TRUNCATED=n/a
+B native | 39 | 612 | 404 | 142 | 3.64 | 34/39 | 28383 | 16077 | 12305 | 43.4% | 65960 | -
+     largest UNtruncated original token count=2489; smallest TRUNCATED=2511
+B sweet | 39 | 595 | 394 | 51 | 1.31 | 21/39 | 13538 | 11955 | 1582 | 11.7% | 49127 | -
+     largest UNtruncated original token count=2460; smallest TRUNCATED=2521
+C native | 66 | 1178 | 803 | 238 | 3.61 | 61/66 | 26302 | 17058 | 9244 | 35.1% | 70128 | -
+     largest UNtruncated original token count=2495; smallest TRUNCATED=2509
+C sweetTAB | 66 | 1228 | 867 | 105 | 1.59 | 39/66 | 15558 | 13911 | 1647 | 10.6% | 57344 | -
+     largest UNtruncated original token count=2486; smallest TRUNCATED=2502
+
+--- the 02 claim: "deletes ~10,505 of native 26,302 (40%) and ~2,357 of sweet 15,558 (15%)" ---
+  my direct census, epoch C: native produced=26302 deleted=9244 (35.1%)
+                              sweet  produced=15558 deleted=1647 (10.6%)
+  02 derived "reached the context" by subtraction newIn-firstTurn-output; my figure is codex own counts minus the cap.
+  A native: 02's subtraction (ingestTok - firstTurn - output) = 15980 tok/rollout
+  A sweet: 02's subtraction (ingestTok - firstTurn - output) = 9770 tok/rollout
+  B native: 02's subtraction (ingestTok - firstTurn - output) = 15244 tok/rollout
+  B sweet: 02's subtraction (ingestTok - firstTurn - output) = 11275 tok/rollout
+  C native: 02's subtraction (ingestTok - firstTurn - output) = 15797 tok/rollout
+  C sweetTAB: 02's subtraction (ingestTok - firstTurn - output) = 13201 tok/rollout
+
+--- epoch A counterfactual inputs ---
+  A native: rollouts=34 outputs over 10,214B=79 over-cap bytes/rollout=24639 total tool bytes/rollout=68337
+  A sweet: rollouts=34 outputs over 10,214B=29 over-cap bytes/rollout=3184 total tool bytes/rollout=43688

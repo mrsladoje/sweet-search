@@ -1,0 +1,74 @@
+{
+ "perForm": {
+  "native": {
+   "n": 66,
+   "emptyPatch": 1,
+   "zeroEdit": 0,
+   "rtEndedUnverified": 0,
+   "exitReasons": {
+    "model_stopped": 66
+   },
+   "stateSummaryStop": 0,
+   "solved": 43
+  },
+  "TAB": {
+   "n": 66,
+   "emptyPatch": 1,
+   "zeroEdit": 1,
+   "rtEndedUnverified": 0,
+   "exitReasons": {
+    "model_stopped": 66
+   },
+   "stateSummaryStop": 1,
+   "solved": 40
+  },
+  "NONE": {
+   "n": 66,
+   "emptyPatch": 0,
+   "zeroEdit": 0,
+   "rtEndedUnverified": 0,
+   "exitReasons": {
+    "model_stopped": 65,
+    "agent_error": 1
+   },
+   "stateSummaryStop": 0,
+   "solved": 41
+  },
+  "PIPE": {
+   "n": 66,
+   "emptyPatch": 0,
+   "zeroEdit": 0,
+   "rtEndedUnverified": 0,
+   "exitReasons": {
+    "model_stopped": 66
+   },
+   "stateSummaryStop": 0,
+   "solved": 39
+  }
+ },
+ "emptyPatchRollouts": [
+  {
+   "rid": "native/aio-libs__aiohttp-8038/r2",
+   "calls": 78,
+   "edits": 19,
+   "exitReason": "model_stopped",
+   "resolved": false
+  },
+  {
+   "rid": "TAB/celestiaorg__nmt-192/r0",
+   "calls": 4,
+   "edits": 0,
+   "exitReason": "model_stopped",
+   "resolved": false
+  }
+ ],
+ "stateSummaryStops": [
+  {
+   "rid": "TAB/celestiaorg__nmt-192/r0",
+   "calls": 4,
+   "resolved": false,
+   "tail": "<state_summary>\nEstablished that `proof.go:110-112` defines `IsEmptyProof()` solely using equal bounds and an empty `nodes` slice, while `IsOfAbsence()` is true whenever `leafHash` is non-empty; this "
+  }
+ ],
+ "noVerdict": []
+}

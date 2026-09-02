@@ -1,0 +1,362 @@
+EXIT=0
+{
+ "native": {
+  "rollouts": 66,
+  "edits": 308,
+  "editCalls": {
+   "Edit": 302,
+   "Write": 6,
+   "MultiEdit": 0,
+   "NotebookEdit": 0
+  },
+  "editsWithPriorRead": 295,
+  "editsWithoutPriorRead": 13,
+  "editsWithoutPriorReadButPriorSsRead": 0,
+  "gateErrors": 0,
+  "staleErrors": 0,
+  "gateErrorFiles": 0,
+  "reads": 690,
+  "readsOfLaterEditedFiles": 274,
+  "readsAfterSsReadSameFile": 0,
+  "distinctEditedFiles": 93,
+  "distinctReadFiles": 386,
+  "firstEditPrecededByReadSameTurnWindow": 0,
+  "examples": [
+   {
+    "task": "devlooped__moq-1262",
+    "rep": 2,
+    "tool": "Edit",
+    "resultHead": "<tool_use_error>InputValidationError: Edit was called with input that could not be parsed as JSON.\nYou sent (first 200 of 62851 bytes): {\"file_path\":\"/root/.ss-"
+   },
+   {
+    "task": "hotmeteor__spectator-181",
+    "rep": 1,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/r1-105/src/Assertions.php",
+    "resultHead": "<tool_use_error>File does not exist. Note: your current working directory is /root/.ss-eval/runs/r1-105.</tool_use_error>"
+   },
+   {
+    "task": "protofire__solhint-224",
+    "rep": 0,
+    "tool": "Write",
+    "file": "/root/.ss-eval/runs/r0-135/lib/rules/order/ordering.js",
+    "resultHead": "File created successfully at: /root/.ss-eval/runs/r0-135/lib/rules/order/ordering.js (file state is current in your context — no need to Read it back)"
+   },
+   {
+    "task": "protofire__solhint-224",
+    "rep": 0,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r0-135/lib/rules/order/ordering.js",
+    "resultHead": "The file /root/.ss-eval/runs/r0-135/lib/rules/order/ordering.js has been updated successfully. (file state is current in your context — no need to Read it back)"
+   },
+   {
+    "task": "protofire__solhint-224",
+    "rep": 0,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r0-135/lib/rules/order/ordering.js",
+    "resultHead": "The file /root/.ss-eval/runs/r0-135/lib/rules/order/ordering.js has been updated successfully. (file state is current in your context — no need to Read it back)"
+   },
+   {
+    "task": "protofire__solhint-224",
+    "rep": 0,
+    "tool": "Write",
+    "file": "/root/.ss-eval/runs/r0-135/lib/rules/order/ordering.js",
+    "resultHead": "The file /root/.ss-eval/runs/r0-135/lib/rules/order/ordering.js has been updated successfully. (file state is current in your context — no need to Read it back)"
+   },
+   {
+    "task": "protofire__solhint-224",
+    "rep": 0,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r0-135/lib/rules/order/ordering.js",
+    "resultHead": "The file /root/.ss-eval/runs/r0-135/lib/rules/order/ordering.js has been updated successfully. (file state is current in your context — no need to Read it back)"
+   },
+   {
+    "task": "protofire__solhint-224",
+    "rep": 0,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r0-135/lib/rules/order/ordering.js",
+    "resultHead": "The file /root/.ss-eval/runs/r0-135/lib/rules/order/ordering.js has been updated successfully. (file state is current in your context — no need to Read it back)"
+   }
+  ],
+  "gateExamples": [],
+  "perRollout": {
+   "reads": 10.45,
+   "edits": 4.67,
+   "distinctEditedFiles": 1.41,
+   "readsOfLaterEditedFiles": 4.15,
+   "readsAfterSsReadSameFile": 0
+  },
+  "shareEditsWithPriorRead": 0.958,
+  "shareReadsServingAnEdit": 0.397
+ },
+ "TAB": {
+  "rollouts": 66,
+  "edits": 259,
+  "editCalls": {
+   "Edit": 255,
+   "Write": 4,
+   "MultiEdit": 0,
+   "NotebookEdit": 0
+  },
+  "editsWithPriorRead": 41,
+  "editsWithoutPriorRead": 218,
+  "editsWithoutPriorReadButPriorSsRead": 205,
+  "gateErrors": 0,
+  "staleErrors": 0,
+  "gateErrorFiles": 0,
+  "reads": 53,
+  "readsOfLaterEditedFiles": 41,
+  "readsAfterSsReadSameFile": 16,
+  "distinctEditedFiles": 85,
+  "distinctReadFiles": 28,
+  "firstEditPrecededByReadSameTurnWindow": 0,
+  "examples": [
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 0,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r0-1/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r0-1/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   },
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 1,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   },
+   {
+    "task": "accenture__sfmc-devtools-1974",
+    "rep": 0,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r0-2/lib/index.js",
+    "resultHead": "The file /root/.ss-eval/runs/r0-2/lib/index.js has been updated successfully. (file state is current in your context — no need to Read it back)"
+   },
+   {
+    "task": "accenture__sfmc-devtools-1974",
+    "rep": 1,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r1-4/lib/index.js",
+    "resultHead": "The file /root/.ss-eval/runs/r1-4/lib/index.js has been updated successfully. (file state is current in your context — no need to Read it back)"
+   },
+   {
+    "task": "accenture__sfmc-devtools-1974",
+    "rep": 2,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r2-6/lib/index.js",
+    "resultHead": "<tool_use_error>Found 3 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occ"
+   },
+   {
+    "task": "accenture__sfmc-devtools-1974",
+    "rep": 2,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r2-6/lib/index.js",
+    "resultHead": "The file /root/.ss-eval/runs/r2-6/lib/index.js has been updated successfully. (file state is current in your context — no need to Read it back)"
+   },
+   {
+    "task": "aio-libs__aiohttp-8038",
+    "rep": 0,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r0-12/aiohttp/client.py",
+    "resultHead": "The file /root/.ss-eval/runs/r0-12/aiohttp/client.py has been updated successfully. (file state is current in your context — no need to Read it back)"
+   },
+   {
+    "task": "aio-libs__aiohttp-8038",
+    "rep": 0,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r0-12/aiohttp/client.py",
+    "resultHead": "The file /root/.ss-eval/runs/r0-12/aiohttp/client.py has been updated successfully. (file state is current in your context — no need to Read it back)"
+   }
+  ],
+  "gateExamples": [],
+  "perRollout": {
+   "reads": 0.8,
+   "edits": 3.92,
+   "distinctEditedFiles": 1.29,
+   "readsOfLaterEditedFiles": 0.62,
+   "readsAfterSsReadSameFile": 0.24
+  },
+  "shareEditsWithPriorRead": 0.158,
+  "shareReadsServingAnEdit": 0.774
+ },
+ "NONE": {
+  "rollouts": 66,
+  "edits": 270,
+  "editCalls": {
+   "Edit": 266,
+   "Write": 4,
+   "MultiEdit": 0,
+   "NotebookEdit": 0
+  },
+  "editsWithPriorRead": 21,
+  "editsWithoutPriorRead": 249,
+  "editsWithoutPriorReadButPriorSsRead": 236,
+  "gateErrors": 0,
+  "staleErrors": 0,
+  "gateErrorFiles": 0,
+  "reads": 30,
+  "readsOfLaterEditedFiles": 18,
+  "readsAfterSsReadSameFile": 3,
+  "distinctEditedFiles": 90,
+  "distinctReadFiles": 15,
+  "firstEditPrecededByReadSameTurnWindow": 0,
+  "examples": [
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 0,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r0-1/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r0-1/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   },
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 1,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   },
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 2,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r2-5/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r2-5/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   },
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 2,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r2-5/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r2-5/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   },
+   {
+    "task": "accenture__sfmc-devtools-1974",
+    "rep": 0,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r0-2/lib/index.js",
+    "resultHead": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occ"
+   },
+   {
+    "task": "accenture__sfmc-devtools-1974",
+    "rep": 0,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r0-2/lib/index.js",
+    "resultHead": "The file /root/.ss-eval/runs/r0-2/lib/index.js has been updated successfully. (file state is current in your context — no need to Read it back)"
+   },
+   {
+    "task": "accenture__sfmc-devtools-1974",
+    "rep": 1,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r1-4/lib/index.js",
+    "resultHead": "<tool_use_error>Found 3 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occ"
+   },
+   {
+    "task": "accenture__sfmc-devtools-1974",
+    "rep": 1,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r1-4/lib/index.js",
+    "resultHead": "The file /root/.ss-eval/runs/r1-4/lib/index.js has been updated successfully. (file state is current in your context — no need to Read it back)"
+   }
+  ],
+  "gateExamples": [],
+  "perRollout": {
+   "reads": 0.45,
+   "edits": 4.09,
+   "distinctEditedFiles": 1.36,
+   "readsOfLaterEditedFiles": 0.27,
+   "readsAfterSsReadSameFile": 0.05
+  },
+  "shareEditsWithPriorRead": 0.078,
+  "shareReadsServingAnEdit": 0.6
+ },
+ "PIPE": {
+  "rollouts": 66,
+  "edits": 207,
+  "editCalls": {
+   "Edit": 202,
+   "Write": 5,
+   "MultiEdit": 0,
+   "NotebookEdit": 0
+  },
+  "editsWithPriorRead": 31,
+  "editsWithoutPriorRead": 176,
+  "editsWithoutPriorReadButPriorSsRead": 163,
+  "gateErrors": 0,
+  "staleErrors": 0,
+  "gateErrorFiles": 0,
+  "reads": 27,
+  "readsOfLaterEditedFiles": 22,
+  "readsAfterSsReadSameFile": 10,
+  "distinctEditedFiles": 85,
+  "distinctReadFiles": 15,
+  "firstEditPrecededByReadSameTurnWindow": 0,
+  "examples": [
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 0,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r0-1/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r0-1/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   },
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 1,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   },
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 1,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   },
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 1,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   },
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 1,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   },
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 1,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   },
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 1,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   },
+   {
+    "task": "absinthe-graphql__absinthe-998",
+    "rep": 2,
+    "tool": "Edit",
+    "file": "/root/.ss-eval/runs/r2-5/lib/absinthe/type/built_ins/introspection.ex",
+    "resultHead": "The file /root/.ss-eval/runs/r2-5/lib/absinthe/type/built_ins/introspection.ex has been updated successfully. (file state is current in your context — no need t"
+   }
+  ],
+  "gateExamples": [],
+  "perRollout": {
+   "reads": 0.41,
+   "edits": 3.14,
+   "distinctEditedFiles": 1.29,
+   "readsOfLaterEditedFiles": 0.33,
+   "readsAfterSsReadSameFile": 0.15
+  },
+  "shareEditsWithPriorRead": 0.15,
+  "shareReadsServingAnEdit": 0.815
+ }
+}

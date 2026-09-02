@@ -1,0 +1,30 @@
+run	arm	degenReran	shimReran	startRetried	rows
+fp-codex-tab-20260826	sweet	0	0	0	66
+fp-codex-tab-20260826	native	0	0	0	66
+fp-codex-none-20260826	sweet	0	0	0	66
+fp-codex-pipe-20260826	sweet	0	0	0	66
+fp-opencode-tab-20260826	sweet	0	0	0	63
+fp-opencode-tab-20260826	native	0	1	0	66
+fp-opencode-none-20260826	sweet	0	2	0	57
+fp-opencode-pipe-20260826	sweet	0	1	0	60
+rp-oc-tab-20260827	sweet	0	0	0	33
+rp-oc-none-20260827	sweet	0	0	0	33
+rp-oc-pipe-20260827	sweet	0	0	0	33
+fp-claudecode-tab-20260826	sweet	5	0	0	66
+fp-claudecode-tab-20260826	native	1	0	0	66
+fp-claudecode-none-20260826	sweet	4	0	0	66
+fp-claudecode-pipe-20260826	sweet	2	0	0	66
+rb-codex-20260825	sweet	0	0	0	39
+rb-codex-20260825	native	0	0	0	39
+rb-opencode-20260824	sweet	0	0	0	39
+rb-opencode-20260824	native	0	0	0	39
+rb-claudecode-20260824	sweet	0	0	0	39
+rb-claudecode-20260824	native	1	0	0	39
+sb-codex-20260811	sweet	0	0	0	34
+sb-codex-20260811	native	0	0	0	34
+sb-opencode-20260811	sweet	0	0	0	34
+sb-opencode-20260811	native	0	0	0	34
+sb-claudecode-20260811	sweet	0	0	0	34
+sb-claudecode-20260811	native	0	0	0	34
+
+codex cells whose transcript count exceeds the reps recorded:

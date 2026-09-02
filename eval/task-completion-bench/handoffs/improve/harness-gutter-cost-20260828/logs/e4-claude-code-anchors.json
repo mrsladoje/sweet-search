@@ -1,0 +1,477 @@
+{
+ "perForm": {
+  "TAB": {
+   "edits": 255,
+   "notFound": 15,
+   "located": 14,
+   "deltas": {
+    "0": 4,
+    "1": 8,
+    "5": 1,
+    "-4": 1
+   },
+   "unlocated": 1,
+   "rolloutsWithNotFound": 7
+  },
+  "NONE": {
+   "edits": 266,
+   "notFound": 14,
+   "located": 10,
+   "deltas": {
+    "0": 9,
+    "-1": 1
+   },
+   "unlocated": 4,
+   "rolloutsWithNotFound": 8
+  },
+  "PIPE": {
+   "edits": 202,
+   "notFound": 9,
+   "located": 9,
+   "deltas": {
+    "0": 3,
+    "1": 6
+   },
+   "unlocated": 0,
+   "rolloutsWithNotFound": 6
+  },
+  "native": {
+   "edits": 302,
+   "notFound": 24,
+   "located": 20,
+   "deltas": {
+    "0": 11,
+    "1": 7,
+    "4": 2
+   },
+   "unlocated": 4,
+   "rolloutsWithNotFound": 11
+  }
+ },
+ "cases": [
+  {
+   "rid": "TAB/axelrod-python__axelrod-671/r2",
+   "delta": 0,
+   "attemptedIndent": 8,
+   "shownIndent": 8,
+   "file": "result_set.py",
+   "line": "plist = list(range(self.nplayers))"
+  },
+  {
+   "rid": "TAB/bfgroup__b2-113/r0",
+   "delta": 0,
+   "attemptedIndent": 16,
+   "shownIndent": 16,
+   "file": "targets.py",
+   "line": "# If this target fails to build, add <build>no to properties"
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r0",
+   "delta": 1,
+   "attemptedIndent": 4,
+   "shownIndent": 3,
+   "file": "Match.cs",
+   "line": "this.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r0",
+   "delta": 1,
+   "attemptedIndent": 4,
+   "shownIndent": 3,
+   "file": "ExpressionComparer.cs",
+   "line": "if (x is MemberExpression)"
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r0",
+   "delta": 0,
+   "attemptedIndent": 3,
+   "shownIndent": 3,
+   "file": "Match.cs",
+   "line": "internal Match(Predicate<T> condition, Expression<Func<T>> renderExpression, Action<T> suc"
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r0",
+   "delta": 1,
+   "attemptedIndent": 5,
+   "shownIndent": 4,
+   "file": "SetupCollection.cs",
+   "line": "this.setups.Add(setup);"
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r0",
+   "delta": -4,
+   "attemptedIndent": 0,
+   "shownIndent": 4,
+   "file": "SetupCollection.cs",
+   "line": "this.setups.Add(setup);"
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r0",
+   "delta": 1,
+   "attemptedIndent": 5,
+   "shownIndent": 4,
+   "file": "SetupCollection.cs",
+   "line": "this.setups.Add(setup);"
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r0",
+   "delta": 1,
+   "attemptedIndent": 5,
+   "shownIndent": 4,
+   "file": "SetupCollection.cs",
+   "line": "this.setups.Add(setup);"
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r1",
+   "delta": 1,
+   "attemptedIndent": 4,
+   "shownIndent": 3,
+   "file": "Match.cs",
+   "line": "this.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r1",
+   "delta": 1,
+   "attemptedIndent": 4,
+   "shownIndent": 3,
+   "file": "Match.cs",
+   "line": "this.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r1",
+   "delta": 5,
+   "attemptedIndent": 8,
+   "shownIndent": 3,
+   "file": "Match.cs",
+   "line": "this.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r2",
+   "delta": 1,
+   "attemptedIndent": 4,
+   "shownIndent": 3,
+   "file": "Match.cs",
+   "line": "this.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+  },
+  {
+   "rid": "TAB/mathnet__mathnet-numerics-1072/r1",
+   "delta": 0,
+   "attemptedIndent": 12,
+   "shownIndent": 12,
+   "file": "Stability.cs",
+   "line": "return 0f;"
+  },
+  {
+   "rid": "NONE/aio-libs__aiohttp-8038/r2",
+   "delta": 0,
+   "attemptedIndent": 20,
+   "shownIndent": 20,
+   "file": "client.py",
+   "line": "except ClientError:"
+  },
+  {
+   "rid": "NONE/awslabs__aws-embedded-metrics-node-21/r1",
+   "delta": 0,
+   "attemptedIndent": 4,
+   "shownIndent": 4,
+   "file": "LogSerializer.ts",
+   "line": "context.getDimensions().forEach(d => {"
+  },
+  {
+   "rid": "NONE/awslabs__aws-embedded-metrics-node-21/r1",
+   "delta": 0,
+   "attemptedIndent": 4,
+   "shownIndent": 4,
+   "file": "LogSerializer.ts",
+   "line": "context.getDimensions().forEach(d => {"
+  },
+  {
+   "rid": "NONE/devlooped__moq-1262/r0",
+   "delta": 0,
+   "attemptedIndent": 2,
+   "shownIndent": 2,
+   "file": "ExpressionComparer.cs",
+   "line": "public static readonly ExpressionComparer Default = new ExpressionComparer();"
+  },
+  {
+   "rid": "NONE/devlooped__moq-1262/r1",
+   "delta": 0,
+   "attemptedIndent": 3,
+   "shownIndent": 3,
+   "file": "ExpressionComparer.cs",
+   "line": "if (x is MemberExpression)"
+  },
+  {
+   "rid": "NONE/devlooped__moq-1262/r1",
+   "delta": 0,
+   "attemptedIndent": 3,
+   "shownIndent": 3,
+   "file": "Match.cs",
+   "line": "this.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+  },
+  {
+   "rid": "NONE/devlooped__moq-1262/r1",
+   "delta": 0,
+   "attemptedIndent": 2,
+   "shownIndent": 2,
+   "file": "Match.cs",
+   "line": "internal Expression RenderExpression { get; set; }"
+  },
+  {
+   "rid": "NONE/devlooped__moq-1262/r2",
+   "delta": 0,
+   "attemptedIndent": 3,
+   "shownIndent": 3,
+   "file": "ExpressionComparer.cs",
+   "line": "if (x is MemberExpression)"
+  },
+  {
+   "rid": "NONE/devlooped__moq-1262/r2",
+   "delta": -1,
+   "attemptedIndent": 3,
+   "shownIndent": 4,
+   "file": "Match.cs",
+   "line": "this.Condition = condition;"
+  },
+  {
+   "rid": "NONE/fastify__fastify-cors-285/r1",
+   "delta": 0,
+   "attemptedIndent": 2,
+   "shownIndent": 2,
+   "file": "index.js",
+   "line": "const preflightHandler = (req, reply) => {"
+  },
+  {
+   "rid": "PIPE/accenture__sfmc-devtools-1974/r1",
+   "delta": 1,
+   "attemptedIndent": 17,
+   "shownIndent": 16,
+   "file": "cli.js",
+   "line": ".option('metadata', {"
+  },
+  {
+   "rid": "PIPE/accenture__sfmc-devtools-1974/r1",
+   "delta": 1,
+   "attemptedIndent": 17,
+   "shownIndent": 16,
+   "file": "cli.js",
+   "line": ".option('metadata', {"
+  },
+  {
+   "rid": "PIPE/accenture__sfmc-devtools-1974/r1",
+   "delta": 1,
+   "attemptedIndent": 9,
+   "shownIndent": 8,
+   "file": "cli.js",
+   "line": "(argv) => {"
+  },
+  {
+   "rid": "PIPE/accenture__sfmc-devtools-1974/r1",
+   "delta": 1,
+   "attemptedIndent": 21,
+   "shownIndent": 20,
+   "file": "cli.js",
+   "line": "describe: 'type or type:key or type:i:id or type:n:name to fix',"
+  },
+  {
+   "rid": "PIPE/bfgroup__b2-259/r0",
+   "delta": 0,
+   "attemptedIndent": 12,
+   "shownIndent": 12,
+   "file": "configure.jam",
+   "line": "if [ UPDATE_NOW $(jam-targets) :"
+  },
+  {
+   "rid": "PIPE/callstack__react-native-paper-972/r1",
+   "delta": 1,
+   "attemptedIndent": 7,
+   "shownIndent": 6,
+   "file": "Searchbar.js",
+   "line": "clearIcon,"
+  },
+  {
+   "rid": "PIPE/callstack__react-native-paper-972/r2",
+   "delta": 1,
+   "attemptedIndent": 7,
+   "shownIndent": 6,
+   "file": "Searchbar.js",
+   "line": "clearIcon,"
+  },
+  {
+   "rid": "PIPE/devlooped__moq-1262/r1",
+   "delta": 0,
+   "attemptedIndent": 2,
+   "shownIndent": 2,
+   "file": "Match.cs",
+   "line": "internal Predicate<T> Condition { get; set; }"
+  },
+  {
+   "rid": "PIPE/mathnet__mathnet-numerics-1072/r1",
+   "delta": 0,
+   "attemptedIndent": 12,
+   "shownIndent": 12,
+   "file": "Stability.cs",
+   "line": "return 0d;"
+  },
+  {
+   "rid": "native/aio-libs__aiohttp-8038/r1",
+   "delta": 0,
+   "attemptedIndent": 8,
+   "shownIndent": 8,
+   "file": "client_proto.py",
+   "line": "self._should_close = False"
+  },
+  {
+   "rid": "native/aws-actions__configure-aws-credentials-42/r2",
+   "delta": 0,
+   "attemptedIndent": 4,
+   "shownIndent": 4,
+   "file": "index.js",
+   "line": "const roleExternalId = core.getInput('role-external-id', { required: false });"
+  },
+  {
+   "rid": "native/awslabs__aws-embedded-metrics-node-21/r2",
+   "delta": 0,
+   "attemptedIndent": 4,
+   "shownIndent": 4,
+   "file": "LogSerializer.ts",
+   "line": "const dimensionKeys: string[][] = [];"
+  },
+  {
+   "rid": "native/awslabs__aws-embedded-metrics-node-21/r2",
+   "delta": 0,
+   "attemptedIndent": 4,
+   "shownIndent": 4,
+   "file": "LogSerializer.ts",
+   "line": "const dimensionKeys: string[][] = [];"
+  },
+  {
+   "rid": "native/bfgroup__b2-113/r0",
+   "delta": 4,
+   "attemptedIndent": 16,
+   "shownIndent": 12,
+   "file": "targets.py",
+   "line": "else:"
+  },
+  {
+   "rid": "native/bfgroup__b2-113/r1",
+   "delta": 4,
+   "attemptedIndent": 16,
+   "shownIndent": 12,
+   "file": "targets.py",
+   "line": "self.manager().targets().log("
+  },
+  {
+   "rid": "native/devlooped__moq-1262/r1",
+   "delta": 1,
+   "attemptedIndent": 4,
+   "shownIndent": 3,
+   "file": "ExpressionComparer.cs",
+   "line": "if (x is MemberExpression)"
+  },
+  {
+   "rid": "native/devlooped__moq-1262/r1",
+   "delta": 1,
+   "attemptedIndent": 4,
+   "shownIndent": 3,
+   "file": "ExpressionComparer.cs",
+   "line": "}<!-- -->"
+  },
+  {
+   "rid": "native/devlooped__moq-1262/r1",
+   "delta": 1,
+   "attemptedIndent": 5,
+   "shownIndent": 4,
+   "file": "Match.cs",
+   "line": "return ExpressionComparer.Default.Equals(this.RenderExpression, other.RenderExpression);"
+  },
+  {
+   "rid": "native/devlooped__moq-1262/r1",
+   "delta": 1,
+   "attemptedIndent": 5,
+   "shownIndent": 4,
+   "file": "Match.cs",
+   "line": "return ExpressionComparer.Default.Equals(this.RenderExpression, other.RenderExpression);"
+  },
+  {
+   "rid": "native/devlooped__moq-1262/r2",
+   "delta": 1,
+   "attemptedIndent": 4,
+   "shownIndent": 3,
+   "file": "ExpressionComparer.cs",
+   "line": "if (x is MemberExpression)"
+  },
+  {
+   "rid": "native/devlooped__moq-1262/r2",
+   "delta": 1,
+   "attemptedIndent": 4,
+   "shownIndent": 3,
+   "file": "ExpressionComparer.cs",
+   "line": "if (x is MemberExpression)"
+  },
+  {
+   "rid": "native/devlooped__moq-1262/r2",
+   "delta": 1,
+   "attemptedIndent": 4,
+   "shownIndent": 3,
+   "file": "Evaluator.cs",
+   "line": "}ನ್ನ"
+  },
+  {
+   "rid": "native/hotmeteor__spectator-181/r0",
+   "delta": 0,
+   "attemptedIndent": 8,
+   "shownIndent": 8,
+   "file": "ResponseValidator.php",
+   "line": "throw new ResponseValidationException("
+  },
+  {
+   "rid": "native/hotmeteor__spectator-181/r0",
+   "delta": 0,
+   "attemptedIndent": 8,
+   "shownIndent": 8,
+   "file": "ResponseValidator.php",
+   "line": "throw new ResponseValidationException("
+  },
+  {
+   "rid": "native/hotmeteor__spectator-181/r0",
+   "delta": 0,
+   "attemptedIndent": 8,
+   "shownIndent": 8,
+   "file": "ResponseValidator.php",
+   "line": "throw new ResponseValidationException("
+  },
+  {
+   "rid": "native/hotmeteor__spectator-181/r0",
+   "delta": 0,
+   "attemptedIndent": 8,
+   "shownIndent": 8,
+   "file": "ResponseValidator.php",
+   "line": "throw new ResponseValidationException("
+  },
+  {
+   "rid": "native/hotmeteor__spectator-181/r0",
+   "delta": 0,
+   "attemptedIndent": 8,
+   "shownIndent": 8,
+   "file": "ResponseValidator.php",
+   "line": "throw new ResponseValidationException("
+  },
+  {
+   "rid": "native/hotmeteor__spectator-181/r0",
+   "delta": 0,
+   "attemptedIndent": 12,
+   "shownIndent": 12,
+   "file": "ResponseValidator.php",
+   "line": "'No response object matching expected status code ['.$this->expectedStatusCodes().'], rece"
+  },
+  {
+   "rid": "native/hotmeteor__spectator-181/r1",
+   "delta": 0,
+   "attemptedIndent": 8,
+   "shownIndent": 8,
+   "file": "Assertions.php",
+   "line": "return fn ($status = null) => $this->runAssertion(function () use ($status) {"
+  }
+ ]
+}

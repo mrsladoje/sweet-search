@@ -1,0 +1,181 @@
+task	harness	run	arm	rep	outcome	f2p	calls	hunks	files	rolloutFile
+accenture__sfmc-devtools-1974	codex	fp-codex-tab-20260826	native	0	fail	1	17	1	lib/index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/accenture__sfmc-devtools-1974-native/codex-home/sessions/2026/08/26/rollout-2026-08-26T22-33-59-01a04035-710a-7072-8e45-e7fbf5a02081.jsonl
+accenture__sfmc-devtools-1974	codex	fp-codex-tab-20260826	native	1	fail	1	14	1	lib/index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/accenture__sfmc-devtools-1974-native/codex-home/sessions/2026/08/26/rollout-2026-08-26T22-36-07-01a04037-648f-7c01-b71a-7c91683a478f.jsonl
+accenture__sfmc-devtools-1974	codex	fp-codex-tab-20260826	native	2	fail	1	16	1	lib/index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/accenture__sfmc-devtools-1974-native/codex-home/sessions/2026/08/26/rollout-2026-08-26T22-38-01-01a04039-2392-7b11-8388-01192d99c935.jsonl
+accenture__sfmc-devtools-1974	codex	fp-codex-tab-20260826	sweet	0	fail	1	13	1	lib/index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/accenture__sfmc-devtools-1974-sweet/codex-home/sessions/2026/08/26/rollout-2026-08-26T22-28-06-01a04030-0d43-7062-bfac-05358042a140.jsonl
+accenture__sfmc-devtools-1974	codex	fp-codex-tab-20260826	sweet	1	fail	0	7	1	lib/index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/accenture__sfmc-devtools-1974-sweet/codex-home/sessions/2026/08/26/rollout-2026-08-26T22-30-34-01a04032-4f6f-7b12-b5e5-190431514aaf.jsonl
+accenture__sfmc-devtools-1974	codex	fp-codex-tab-20260826	sweet	2	SOLVE	1	13	1	lib/index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/accenture__sfmc-devtools-1974-sweet/codex-home/sessions/2026/08/26/rollout-2026-08-26T22-32-13-01a04033-d1de-7de0-a0ad-d607ce4410e3.jsonl
+accenture__sfmc-devtools-1974	opencode	fp-opencode-tab-20260826	native	0	SOLVE	1	41	2	lib/cli.js;lib/index.js	
+accenture__sfmc-devtools-1974	opencode	fp-opencode-tab-20260826	native	1	fail	1	30	1	lib/index.js	
+accenture__sfmc-devtools-1974	opencode	fp-opencode-tab-20260826	native	2	SOLVE	1	28	1	lib/index.js	
+accenture__sfmc-devtools-1974	opencode	rp-oc-tab-20260827	sweet	0	fail	0	18	1	lib/index.js	
+accenture__sfmc-devtools-1974	opencode	rp-oc-tab-20260827	sweet	1	fail	0	25	1	lib/index.js	
+accenture__sfmc-devtools-1974	opencode	rp-oc-tab-20260827	sweet	2	SOLVE	1	23	1	lib/index.js	
+accenture__sfmc-devtools-1974	claude-code	fp-claudecode-tab-20260826	native	0	SOLVE	1	24	1	lib/index.js	
+accenture__sfmc-devtools-1974	claude-code	fp-claudecode-tab-20260826	native	1	SOLVE	1	70	2	lib/index.js;lib/util/util.js	
+accenture__sfmc-devtools-1974	claude-code	fp-claudecode-tab-20260826	native	2	SOLVE	1	25	1	lib/index.js	
+accenture__sfmc-devtools-1974	claude-code	fp-claudecode-tab-20260826	sweet	0	SOLVE	1	17	1	lib/index.js	
+accenture__sfmc-devtools-1974	claude-code	fp-claudecode-tab-20260826	sweet	1	fail	1	19	1	lib/index.js	
+accenture__sfmc-devtools-1974	claude-code	fp-claudecode-tab-20260826	sweet	2	SOLVE	1	17	1	lib/index.js	
+aio-libs__aiohttp-8038	codex	fp-codex-tab-20260826	native	0	fail	0	14	4	aiohttp/client_proto.py	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/aio-libs__aiohttp-8038-native/codex-home/sessions/2026/08/26/rollout-2026-08-26T22-46-18-01a04040-b7c3-7ff2-97d1-83db8364d4f2.jsonl
+aio-libs__aiohttp-8038	codex	fp-codex-tab-20260826	native	1	fail	0	20	6	aiohttp/client.py;aiohttp/client_proto.py	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/aio-libs__aiohttp-8038-native/codex-home/sessions/2026/08/26/rollout-2026-08-26T22-49-06-01a04043-491c-7ad0-8c6d-4c013ef2ec32.jsonl
+aio-libs__aiohttp-8038	codex	fp-codex-tab-20260826	native	2	fail	0	22	11	aiohttp/client.py;aiohttp/client_proto.py;aiohttp/connector.py	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/aio-libs__aiohttp-8038-native/codex-home/sessions/2026/08/26/rollout-2026-08-26T22-53-28-01a04047-471b-7563-8d99-8bcb076cc946.jsonl
+aio-libs__aiohttp-8038	codex	fp-codex-tab-20260826	sweet	0	fail	0	17	1	aiohttp/client_reqrep.py	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/aio-libs__aiohttp-8038-sweet/codex-home/sessions/2026/08/26/rollout-2026-08-26T22-37-23-01a04038-8f40-7a21-85ed-f6fee48358b7.jsonl
+aio-libs__aiohttp-8038	codex	fp-codex-tab-20260826	sweet	1	fail	0	12	1	aiohttp/connector.py	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/aio-libs__aiohttp-8038-sweet/codex-home/sessions/2026/08/26/rollout-2026-08-26T22-40-40-01a0403b-91c4-7593-a200-3d0ec5aaab70.jsonl
+aio-libs__aiohttp-8038	codex	fp-codex-tab-20260826	sweet	2	fail	0	19	7	aiohttp/client.py;aiohttp/client_proto.py;aiohttp/connector.py	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/aio-libs__aiohttp-8038-sweet/codex-home/sessions/2026/08/26/rollout-2026-08-26T22-43-13-01a0403d-e443-7e63-b267-1e2778098d7b.jsonl
+aio-libs__aiohttp-8038	opencode	fp-opencode-tab-20260826	native	0	fail	0	34	10	aiohttp/client.py;aiohttp/client_proto.py;aiohttp/connector.py	
+aio-libs__aiohttp-8038	opencode	fp-opencode-tab-20260826	native	1	fail	0	35	7	aiohttp/client.py;aiohttp/client_proto.py;aiohttp/connector.py	
+aio-libs__aiohttp-8038	opencode	fp-opencode-tab-20260826	native	2	fail	0	25	1	aiohttp/client_proto.py	
+aio-libs__aiohttp-8038	opencode	rp-oc-tab-20260827	sweet	0	fail	0	34	6	aiohttp/client.py;aiohttp/client_proto.py;aiohttp/client_reqrep.py	
+aio-libs__aiohttp-8038	opencode	rp-oc-tab-20260827	sweet	1	SOLVE	1	44	6	aiohttp/client.py;aiohttp/connector.py	
+aio-libs__aiohttp-8038	opencode	rp-oc-tab-20260827	sweet	2	fail	0	16	1	aiohttp/connector.py	
+aio-libs__aiohttp-8038	claude-code	fp-claudecode-tab-20260826	native	0	fail	0	20	1	aiohttp/client_proto.py	
+aio-libs__aiohttp-8038	claude-code	fp-claudecode-tab-20260826	native	1	SOLVE	1	125	4	aiohttp/client.py;aiohttp/connector.py	
+aio-libs__aiohttp-8038	claude-code	fp-claudecode-tab-20260826	native	2	fail	0	78	0		
+aio-libs__aiohttp-8038	claude-code	fp-claudecode-tab-20260826	sweet	0	fail	0	43	5	aiohttp/client.py;aiohttp/client_proto.py	
+aio-libs__aiohttp-8038	claude-code	fp-claudecode-tab-20260826	sweet	1	fail	0	68	1	aiohttp/connector.py	
+aio-libs__aiohttp-8038	claude-code	fp-claudecode-tab-20260826	sweet	2	fail	0	11	1	aiohttp/client_proto.py	
+awslabs__aws-embedded-metrics-node-21	codex	fp-codex-tab-20260826	native	0	SOLVE	1	10	5	src/logger/MetricsContext.ts	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/awslabs__aws-embedded-metrics-node-21-native/codex-home/sessions/2026/08/26/rollout-2026-08-26T23-24-00-01a04063-3c6c-73c3-9a32-22d38965fffe.jsonl
+awslabs__aws-embedded-metrics-node-21	codex	fp-codex-tab-20260826	native	1	SOLVE	1	10	1	src/logger/MetricsContext.ts	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/awslabs__aws-embedded-metrics-node-21-native/codex-home/sessions/2026/08/26/rollout-2026-08-26T23-25-33-01a04064-a92f-7d53-ab64-d92073f1600e.jsonl
+awslabs__aws-embedded-metrics-node-21	codex	fp-codex-tab-20260826	native	2	SOLVE	1	8	4	src/logger/MetricsContext.ts	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/awslabs__aws-embedded-metrics-node-21-native/codex-home/sessions/2026/08/26/rollout-2026-08-26T23-27-11-01a04066-2583-7932-a102-dec76fdd5f1c.jsonl
+awslabs__aws-embedded-metrics-node-21	codex	fp-codex-tab-20260826	sweet	0	SOLVE	1	7	1	src/logger/MetricsContext.ts	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/awslabs__aws-embedded-metrics-node-21-sweet/codex-home/sessions/2026/08/26/rollout-2026-08-26T23-18-58-01a0405e-a11b-7001-b3f9-44805c6568bd.jsonl
+awslabs__aws-embedded-metrics-node-21	codex	fp-codex-tab-20260826	sweet	1	fail	0	9	2	src/serializers/LogSerializer.ts	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/awslabs__aws-embedded-metrics-node-21-sweet/codex-home/sessions/2026/08/26/rollout-2026-08-26T23-21-05-01a04060-8ee4-7c20-9671-16e185e4bd90.jsonl
+awslabs__aws-embedded-metrics-node-21	codex	fp-codex-tab-20260826	sweet	2	fail	1	8	3	src/logger/MetricsContext.ts	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/awslabs__aws-embedded-metrics-node-21-sweet/codex-home/sessions/2026/08/26/rollout-2026-08-26T23-22-32-01a04061-e31b-7432-af48-5f34d951b009.jsonl
+awslabs__aws-embedded-metrics-node-21	opencode	fp-opencode-tab-20260826	native	0	fail	0	21	1	src/serializers/LogSerializer.ts	
+awslabs__aws-embedded-metrics-node-21	opencode	fp-opencode-tab-20260826	native	1	SOLVE	1	20	4	src/logger/MetricsContext.ts	
+awslabs__aws-embedded-metrics-node-21	opencode	fp-opencode-tab-20260826	native	2	SOLVE	1	24	4	src/logger/MetricsContext.ts	
+awslabs__aws-embedded-metrics-node-21	opencode	rp-oc-tab-20260827	sweet	0	SOLVE	1	22	4	src/logger/MetricsContext.ts	
+awslabs__aws-embedded-metrics-node-21	opencode	rp-oc-tab-20260827	sweet	1	SOLVE	1	20	5	src/logger/MetricsContext.ts	
+awslabs__aws-embedded-metrics-node-21	opencode	rp-oc-tab-20260827	sweet	2	SOLVE	1	21	4	src/logger/MetricsContext.ts	
+awslabs__aws-embedded-metrics-node-21	claude-code	fp-claudecode-tab-20260826	native	0	SOLVE	1	26	4	src/logger/MetricsContext.ts	
+awslabs__aws-embedded-metrics-node-21	claude-code	fp-claudecode-tab-20260826	native	1	SOLVE	1	59	4	src/logger/MetricsContext.ts	
+awslabs__aws-embedded-metrics-node-21	claude-code	fp-claudecode-tab-20260826	native	2	fail	0	63	2	src/serializers/LogSerializer.ts	
+awslabs__aws-embedded-metrics-node-21	claude-code	fp-claudecode-tab-20260826	sweet	0	SOLVE	1	41	2	src/logger/MetricsContext.ts	
+awslabs__aws-embedded-metrics-node-21	claude-code	fp-claudecode-tab-20260826	sweet	1	SOLVE	1	14	2	src/logger/MetricsContext.ts	
+awslabs__aws-embedded-metrics-node-21	claude-code	fp-claudecode-tab-20260826	sweet	2	SOLVE	1	64	1	src/logger/MetricsContext.ts	
+bfgroup__b2-259	codex	fp-codex-tab-20260826	native	0	fail	0	11	1	src/build/configure.jam	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/bfgroup__b2-259-native/codex-home/sessions/2026/08/26/rollout-2026-08-26T23-55-58-01a04080-805d-7603-b3c7-29e7d04bd701.jsonl
+bfgroup__b2-259	codex	fp-codex-tab-20260826	native	1	fail	0	14	1	src/tools/features/build-feature.jam	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/bfgroup__b2-259-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-04-02-01a04087-e276-74e0-bb07-b940a0da68fe.jsonl
+bfgroup__b2-259	codex	fp-codex-tab-20260826	native	2	fail	0	14	1	src/tools/features/build-feature.jam	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/bfgroup__b2-259-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-12-00-01a0408f-2e5a-7583-82ce-43bbb6fec590.jsonl
+bfgroup__b2-259	codex	fp-codex-tab-20260826	sweet	0	fail	0	26	1	src/build/configure.jam	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/bfgroup__b2-259-sweet/codex-home/sessions/2026/08/26/rollout-2026-08-26T23-28-50-01a04067-aa4d-7b00-b859-0db19327d5dd.jsonl
+bfgroup__b2-259	codex	fp-codex-tab-20260826	sweet	1	fail	0	25	1	src/build/configure.jam	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/bfgroup__b2-259-sweet/codex-home/sessions/2026/08/26/rollout-2026-08-26T23-37-56-01a0406f-fdf9-71f0-90d7-c87c7108a019.jsonl
+bfgroup__b2-259	codex	fp-codex-tab-20260826	sweet	2	fail	0	24	2	src/build/property.jam	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/bfgroup__b2-259-sweet/codex-home/sessions/2026/08/26/rollout-2026-08-26T23-47-15-01a04078-84b3-7262-85e7-50987672e8aa.jsonl
+bfgroup__b2-259	opencode	fp-opencode-tab-20260826	native	0	fail	0	30	1	src/build/targets.jam	
+bfgroup__b2-259	opencode	fp-opencode-tab-20260826	native	1	fail	0	31	1	src/build/targets.jam	
+bfgroup__b2-259	opencode	fp-opencode-tab-20260826	native	2	fail	0	28	1	src/build/configure.jam	
+bfgroup__b2-259	opencode	fp-opencode-tab-20260826	sweet	0	fail	0	27	2	src/build/configure.jam	
+bfgroup__b2-259	opencode	fp-opencode-tab-20260826	sweet	1	fail	0	47	2	src/build/targets.jam	
+bfgroup__b2-259	opencode	fp-opencode-tab-20260826	sweet	2	fail	0	34	1	src/build/configure.jam	
+bfgroup__b2-259	claude-code	fp-claudecode-tab-20260826	native	0	fail	0	55	1	src/tools/features/build-feature.jam	
+bfgroup__b2-259	claude-code	fp-claudecode-tab-20260826	native	1	fail	0	52	1	src/tools/features/build-feature.jam	
+bfgroup__b2-259	claude-code	fp-claudecode-tab-20260826	native	2	fail	0	61	1	src/tools/features/build-feature.jam	
+bfgroup__b2-259	claude-code	fp-claudecode-tab-20260826	sweet	0	fail	0	224	1	src/build/configure.jam	
+bfgroup__b2-259	claude-code	fp-claudecode-tab-20260826	sweet	1	fail	0	86	1	src/build/configure.jam	
+bfgroup__b2-259	claude-code	fp-claudecode-tab-20260826	sweet	2	fail	0	66	2	src/build/configure.jam	
+celestiaorg__nmt-192	codex	fp-codex-tab-20260826	native	0	SOLVE	1	5	1	proof.go	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/celestiaorg__nmt-192-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-26-16-01a0409c-3fbe-74e1-a1a7-51a16d40ecaf.jsonl
+celestiaorg__nmt-192	codex	fp-codex-tab-20260826	native	1	SOLVE	1	6	1	proof.go	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/celestiaorg__nmt-192-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-27-45-01a0409d-9971-7e02-8b33-62a2974a6f53.jsonl
+celestiaorg__nmt-192	codex	fp-codex-tab-20260826	native	2	SOLVE	1	6	1	proof.go	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/celestiaorg__nmt-192-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-29-11-01a0409e-e9ad-7733-bc17-04131e9eeab6.jsonl
+celestiaorg__nmt-192	codex	fp-codex-tab-20260826	sweet	0	SOLVE	1	5	1	proof.go	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/celestiaorg__nmt-192-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-21-14-01a04097-a3a2-7470-8168-581e10a644d1.jsonl
+celestiaorg__nmt-192	codex	fp-codex-tab-20260826	sweet	1	SOLVE	1	5	1	proof.go	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/celestiaorg__nmt-192-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-22-58-01a04099-37f4-7023-8291-632b1d84e9f7.jsonl
+celestiaorg__nmt-192	codex	fp-codex-tab-20260826	sweet	2	SOLVE	1	5	1	proof.go	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/celestiaorg__nmt-192-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-24-31-01a0409a-a3e1-7293-a32f-80a72b643ef9.jsonl
+celestiaorg__nmt-192	opencode	fp-opencode-tab-20260826	native	0	SOLVE	1	16	1	proof.go	
+celestiaorg__nmt-192	opencode	fp-opencode-tab-20260826	native	1	SOLVE	1	15	1	proof.go	
+celestiaorg__nmt-192	opencode	fp-opencode-tab-20260826	native	2	SOLVE	1	17	1	proof.go	
+celestiaorg__nmt-192	opencode	fp-opencode-tab-20260826	sweet	0	SOLVE	1	11	1	proof.go	
+celestiaorg__nmt-192	opencode	fp-opencode-tab-20260826	sweet	1	SOLVE	1	10	1	proof.go	
+celestiaorg__nmt-192	opencode	fp-opencode-tab-20260826	sweet	2	SOLVE	1	9	1	proof.go	
+celestiaorg__nmt-192	claude-code	fp-claudecode-tab-20260826	native	0	SOLVE	1	10	1	proof.go	
+celestiaorg__nmt-192	claude-code	fp-claudecode-tab-20260826	native	1	SOLVE	1	7	1	proof.go	
+celestiaorg__nmt-192	claude-code	fp-claudecode-tab-20260826	native	2	SOLVE	1	35	1	proof.go	
+celestiaorg__nmt-192	claude-code	fp-claudecode-tab-20260826	sweet	0	fail	0	4	0		
+celestiaorg__nmt-192	claude-code	fp-claudecode-tab-20260826	sweet	1	SOLVE	1	9	1	proof.go	
+celestiaorg__nmt-192	claude-code	fp-claudecode-tab-20260826	sweet	2	SOLVE	1	6	1	proof.go	
+devlooped__moq-1262	codex	fp-codex-tab-20260826	native	0	fail	0	39	9	src/Moq/ExpressionComparer.cs;src/Moq/Interception/InterceptionAspects.cs;src/Moq/Match.cs;src/Moq/MethodExpectation.cs;src/Moq/SetupCollection.cs	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/devlooped__moq-1262-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-41-28-01a040aa-2a39-7e21-b926-ca6891ae6065.jsonl
+devlooped__moq-1262	codex	fp-codex-tab-20260826	native	1	SOLVE	1	22	2	src/Moq/MethodExpectation.cs	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/devlooped__moq-1262-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-48-38-01a040b0-b7ed-7101-9df1-6f083ad99490.jsonl
+devlooped__moq-1262	codex	fp-codex-tab-20260826	native	2	fail	0	29	7	src/Moq/ExpressionComparer.cs;src/Moq/Match.cs	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/devlooped__moq-1262-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-51-36-01a040b3-6e76-7533-b6ee-c05f2d1b0514.jsonl
+devlooped__moq-1262	codex	fp-codex-tab-20260826	sweet	0	fail	0	38	1	src/Moq/MatcherFactory.cs	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/devlooped__moq-1262-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-21-58-01a04098-4d7f-72c0-bfa1-89f6b26dbebe.jsonl
+devlooped__moq-1262	codex	fp-codex-tab-20260826	sweet	1	fail	0	34	10	src/Moq/ExpressionComparer.cs;src/Moq/Interception/InterceptionAspects.cs;src/Moq/Match.cs;src/Moq/MethodExpectation.cs	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/devlooped__moq-1262-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-27-41-01a0409d-896a-76f0-94c7-c87a35a88375.jsonl
+devlooped__moq-1262	codex	fp-codex-tab-20260826	sweet	2	SOLVE	1	42	5	src/Moq/Expectation.cs;src/Moq/Interception/InterceptionAspects.cs;src/Moq/MethodExpectation.cs;src/Moq/SetupCollection.cs	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/devlooped__moq-1262-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-34-45-01a040a4-030e-7403-8c80-488d4f889ec7.jsonl
+devlooped__moq-1262	opencode	fp-opencode-tab-20260826	native	0	fail	0	34	1	src/Moq/MethodExpectation.cs	
+devlooped__moq-1262	opencode	fp-opencode-tab-20260826	native	1	fail	0	61	6	src/Moq/Interception/InterceptionAspects.cs;src/Moq/Match.cs;src/Moq/MethodExpectation.cs;src/Moq/SetupCollection.cs	
+devlooped__moq-1262	opencode	fp-opencode-tab-20260826	native	2	fail	0	60	5	src/Moq/Match.cs;src/Moq/MethodExpectation.cs;src/Moq/SetupCollection.cs	
+devlooped__moq-1262	opencode	rp-oc-tab-20260827	sweet	0	fail	0	29	4	src/Moq/ExpressionComparer.cs;src/Moq/Match.cs;src/Moq/MethodExpectation.cs	
+devlooped__moq-1262	opencode	rp-oc-tab-20260827	sweet	1	fail	0	60	4	src/Moq/Match.cs	
+devlooped__moq-1262	opencode	rp-oc-tab-20260827	sweet	2	fail	0	53	3	src/Moq/ExpressionComparer.cs;src/Moq/MethodExpectation.cs	
+devlooped__moq-1262	claude-code	fp-claudecode-tab-20260826	native	0	fail	0	93	2	src/Moq/Interception/InterceptionAspects.cs;src/Moq/MethodExpectation.cs	
+devlooped__moq-1262	claude-code	fp-claudecode-tab-20260826	native	1	fail	0	117	3	src/Moq/ExpressionComparer.cs;src/Moq/Match.cs	
+devlooped__moq-1262	claude-code	fp-claudecode-tab-20260826	native	2	fail	0	136	3	src/Moq/ExpressionComparer.cs;src/Moq/Match.cs	
+devlooped__moq-1262	claude-code	fp-claudecode-tab-20260826	sweet	0	fail	0	53	4	src/Moq/ExpressionComparer.cs;src/Moq/Match.cs;src/Moq/SetupCollection.cs	
+devlooped__moq-1262	claude-code	fp-claudecode-tab-20260826	sweet	1	fail	0	26	2	src/Moq/Match.cs	
+devlooped__moq-1262	claude-code	fp-claudecode-tab-20260826	sweet	2	fail	0	42	3	src/Moq/Match.cs	
+fastify__fastify-cors-285	codex	fp-codex-tab-20260826	native	0	fail	0	10	2	index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/fastify__fastify-cors-285-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-35-47-01a040a4-f363-7441-af98-e8994a925137.jsonl
+fastify__fastify-cors-285	codex	fp-codex-tab-20260826	native	1	fail	0	11	2	index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/fastify__fastify-cors-285-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-37-16-01a040a6-5013-7da1-9391-96590fad1901.jsonl
+fastify__fastify-cors-285	codex	fp-codex-tab-20260826	native	2	fail	0	9	2	index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/fastify__fastify-cors-285-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-39-12-01a040a8-149d-7aa2-bd91-95cf7c413cd6.jsonl
+fastify__fastify-cors-285	codex	fp-codex-tab-20260826	sweet	0	fail	0	8	3	index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/fastify__fastify-cors-285-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-31-14-01a040a0-c9a6-7ba3-8fcf-63c491de1ca2.jsonl
+fastify__fastify-cors-285	codex	fp-codex-tab-20260826	sweet	1	fail	0	8	2	index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/fastify__fastify-cors-285-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-32-47-01a040a2-3622-7961-9359-f204a3502bad.jsonl
+fastify__fastify-cors-285	codex	fp-codex-tab-20260826	sweet	2	fail	0	8	2	index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/fastify__fastify-cors-285-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-34-23-01a040a3-aa73-7303-8d4e-6dbf9564c6af.jsonl
+fastify__fastify-cors-285	opencode	fp-opencode-tab-20260826	native	0	fail	0	24	2	index.js	
+fastify__fastify-cors-285	opencode	fp-opencode-tab-20260826	native	1	fail	0	25	2	index.js	
+fastify__fastify-cors-285	opencode	fp-opencode-tab-20260826	native	2	fail	0	21	2	index.js	
+fastify__fastify-cors-285	opencode	fp-opencode-tab-20260826	sweet	0	fail	0	15	2	index.js	
+fastify__fastify-cors-285	opencode	fp-opencode-tab-20260826	sweet	1	fail	0	19	2	index.js	
+fastify__fastify-cors-285	opencode	fp-opencode-tab-20260826	sweet	2	fail	0	17	2	index.js	
+fastify__fastify-cors-285	claude-code	fp-claudecode-tab-20260826	native	0	fail	0	15	2	index.js	
+fastify__fastify-cors-285	claude-code	fp-claudecode-tab-20260826	native	1	fail	0	12	2	index.js	
+fastify__fastify-cors-285	claude-code	fp-claudecode-tab-20260826	native	2	fail	0	15	2	index.js	
+fastify__fastify-cors-285	claude-code	fp-claudecode-tab-20260826	sweet	0	fail	0	44	2	index.js	
+fastify__fastify-cors-285	claude-code	fp-claudecode-tab-20260826	sweet	1	fail	0	14	2	index.js	
+fastify__fastify-cors-285	claude-code	fp-claudecode-tab-20260826	sweet	2	fail	0	19	2	index.js	
+gitbookio__markup-it-56	codex	fp-codex-tab-20260826	native	0	fail	0	19	2	src/markdown/blocks/paragraph.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/gitbookio__markup-it-56-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-53-31-01a040b5-303a-7ae1-9e19-6364e20abf15.jsonl
+gitbookio__markup-it-56	codex	fp-codex-tab-20260826	native	1	fail	0	23	3	src/markdown/blocks/unstyled.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/gitbookio__markup-it-56-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-56-10-01a040b7-9cb6-7491-ad22-848580e78a62.jsonl
+gitbookio__markup-it-56	codex	fp-codex-tab-20260826	native	2	fail	0	20	4	src/markdown/blocks/unstyled.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/gitbookio__markup-it-56-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-58-19-01a040b9-9421-72e3-a44a-fdac13c86083.jsonl
+gitbookio__markup-it-56	codex	fp-codex-tab-20260826	sweet	0	fail	0	16	1	src/markdown/inlines/html.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/gitbookio__markup-it-56-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-47-04-01a040af-4967-7831-a517-a641ee32754f.jsonl
+gitbookio__markup-it-56	codex	fp-codex-tab-20260826	sweet	1	fail	0	15	1	src/markdown/inlines/html.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/gitbookio__markup-it-56-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-49-04-01a040b1-1e7a-7cd2-8a0f-de9bc720edf4.jsonl
+gitbookio__markup-it-56	codex	fp-codex-tab-20260826	sweet	2	fail	0	25	2	src/markdown/blocks/paragraph.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/gitbookio__markup-it-56-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-50-56-01a040b2-d3aa-7560-a250-2b83ae53a553.jsonl
+gitbookio__markup-it-56	opencode	fp-opencode-tab-20260826	native	0	fail	0	42	1	src/markdown/inlines/html.js	
+gitbookio__markup-it-56	opencode	fp-opencode-tab-20260826	native	1	fail	0	37	1	src/markdown/inlines/html.js	
+gitbookio__markup-it-56	opencode	fp-opencode-tab-20260826	native	2	fail	0	51	1	src/markdown/re/inline.js	
+gitbookio__markup-it-56	opencode	fp-opencode-tab-20260826	sweet	0	fail	0	48	1	src/markdown/blocks/index.js	
+gitbookio__markup-it-56	opencode	fp-opencode-tab-20260826	sweet	1	fail	0	52	3	src/markdown/blocks/index.js	
+gitbookio__markup-it-56	opencode	fp-opencode-tab-20260826	sweet	2	fail	0	34	1	src/html/deserializeHtml.js	
+gitbookio__markup-it-56	claude-code	fp-claudecode-tab-20260826	native	0	fail	0	164	1	src/markdown/inlines/html.js	
+gitbookio__markup-it-56	claude-code	fp-claudecode-tab-20260826	native	1	fail	0	37	1	src/markdown/re/inline.js	
+gitbookio__markup-it-56	claude-code	fp-claudecode-tab-20260826	native	2	fail	0	87	1	src/markdown/re/inline.js	
+gitbookio__markup-it-56	claude-code	fp-claudecode-tab-20260826	sweet	0	fail	0	29	1	src/markdown/re/inline.js	
+gitbookio__markup-it-56	claude-code	fp-claudecode-tab-20260826	sweet	1	fail	0	37	2	src/markdown/blocks/html.js;src/markdown/blocks/index.js	
+gitbookio__markup-it-56	claude-code	fp-claudecode-tab-20260826	sweet	2	fail	0	20	1	src/markdown/re/inline.js	
+hotmeteor__spectator-181	codex	fp-codex-tab-20260826	native	0	fail	0	12	2	src/Assertions.php	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/hotmeteor__spectator-181-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T01-02-41-01a040bd-95f7-7852-99b8-2c2fc2d61886.jsonl
+hotmeteor__spectator-181	codex	fp-codex-tab-20260826	native	1	fail	0	10	1	src/Assertions.php	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/hotmeteor__spectator-181-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T01-04-10-01a040be-f057-7fb1-a335-bd7f9fcae74a.jsonl
+hotmeteor__spectator-181	codex	fp-codex-tab-20260826	native	2	fail	0	16	2	src/Assertions.php	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/hotmeteor__spectator-181-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T01-05-38-01a040c0-4701-7962-99e8-be944916c20b.jsonl
+hotmeteor__spectator-181	codex	fp-codex-tab-20260826	sweet	0	fail	0	17	3	src/Assertions.php;src/Validation/ResponseValidator.php	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/hotmeteor__spectator-181-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-56-34-01a040b7-f9f7-75a3-ab4e-2d917b7dd055.jsonl
+hotmeteor__spectator-181	codex	fp-codex-tab-20260826	sweet	1	fail	0	14	1	src/Validation/ResponseValidator.php	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/hotmeteor__spectator-181-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T00-58-51-01a040ba-135d-75e1-8704-b1c72bd9aa7a.jsonl
+hotmeteor__spectator-181	codex	fp-codex-tab-20260826	sweet	2	fail	0	11	2	src/Assertions.php	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/hotmeteor__spectator-181-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T01-01-01-01a040bc-0df9-7cd2-bfd8-05d90e06949e.jsonl
+hotmeteor__spectator-181	opencode	fp-opencode-tab-20260826	native	0	fail	0	20	1	src/Assertions.php	
+hotmeteor__spectator-181	opencode	fp-opencode-tab-20260826	native	1	fail	0	28	1	src/Assertions.php	
+hotmeteor__spectator-181	opencode	fp-opencode-tab-20260826	native	2	fail	0	23	1	src/Assertions.php	
+hotmeteor__spectator-181	opencode	fp-opencode-tab-20260826	sweet	0	fail	0	20	2	src/Assertions.php	
+hotmeteor__spectator-181	opencode	fp-opencode-tab-20260826	sweet	1	fail	0	20	1	src/Validation/ResponseValidator.php	
+hotmeteor__spectator-181	opencode	fp-opencode-tab-20260826	sweet	2	fail	0	19	2	src/Assertions.php	
+hotmeteor__spectator-181	claude-code	fp-claudecode-tab-20260826	native	0	fail	0	53	1	src/Validation/ResponseValidator.php	
+hotmeteor__spectator-181	claude-code	fp-claudecode-tab-20260826	native	1	fail	0	60	1	src/Assertions.php	
+hotmeteor__spectator-181	claude-code	fp-claudecode-tab-20260826	native	2	fail	0	24	2	src/Assertions.php	
+hotmeteor__spectator-181	claude-code	fp-claudecode-tab-20260826	sweet	0	fail	0	33	2	src/Assertions.php	
+hotmeteor__spectator-181	claude-code	fp-claudecode-tab-20260826	sweet	1	fail	0	36	3	src/Assertions.php;src/Validation/ResponseValidator.php	
+hotmeteor__spectator-181	claude-code	fp-claudecode-tab-20260826	sweet	2	fail	0	16	1	src/Validation/ResponseValidator.php	
+protofire__solhint-224	codex	fp-codex-tab-20260826	native	0	fail	0.4	14	1	lib/rules/order/index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/protofire__solhint-224-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T01-28-54-01a040d5-973b-7bf0-8a37-a18095d8aabc.jsonl
+protofire__solhint-224	codex	fp-codex-tab-20260826	native	1	fail	0.4	15	1	lib/rules/order/index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/protofire__solhint-224-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T01-31-03-01a040d7-8ce8-7591-8120-79773aaa2255.jsonl
+protofire__solhint-224	codex	fp-codex-tab-20260826	native	2	fail	0.4	18	1	lib/rules/order/index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/protofire__solhint-224-native/codex-home/sessions/2026/08/27/rollout-2026-08-27T01-33-02-01a040d9-5d6b-70a1-9363-36785ef7f0d0.jsonl
+protofire__solhint-224	codex	fp-codex-tab-20260826	sweet	0	fail	0.4	16	1	lib/rules/order/index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/protofire__solhint-224-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T01-23-15-01a040d0-68ad-7143-8649-122746fb7a09.jsonl
+protofire__solhint-224	codex	fp-codex-tab-20260826	sweet	1	fail	0	15	1	lib/rules/order/index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/protofire__solhint-224-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T01-25-21-01a040d2-55d4-7fb1-b607-cd62ac2c77e0.jsonl
+protofire__solhint-224	codex	fp-codex-tab-20260826	sweet	2	fail	0.4	13	1	lib/rules/order/index.js	/root/sweet-search-private/eval/task-completion-bench/results/fp-codex-tab-20260826/agent-state/protofire__solhint-224-sweet/codex-home/sessions/2026/08/27/rollout-2026-08-27T01-27-07-01a040d3-f241-7141-813f-c0c43f7a3872.jsonl
+protofire__solhint-224	opencode	fp-opencode-tab-20260826	native	0	fail	0.4	40	2	lib/rules/order/index.js;lib/rules/order/ordering.js	
+protofire__solhint-224	opencode	fp-opencode-tab-20260826	native	1	fail	0.4	39	2	lib/rules/order/index.js;lib/rules/order/ordering.js	
+protofire__solhint-224	opencode	fp-opencode-tab-20260826	native	2	fail	0.4	44	5	lib/load-rules.js;lib/rules/order/func-order.js;lib/rules/order/index.js	
+protofire__solhint-224	opencode	rp-oc-tab-20260827	sweet	0	fail	0.4	23	1	lib/rules/order/index.js	
+protofire__solhint-224	opencode	rp-oc-tab-20260827	sweet	1	fail	0	33	1	lib/rules/order/index.js	
+protofire__solhint-224	opencode	rp-oc-tab-20260827	sweet	2	fail	0.4	25	2	lib/rules/order/index.js	
+protofire__solhint-224	claude-code	fp-claudecode-tab-20260826	native	0	fail	0.4	87	2	lib/rules/order/index.js;lib/rules/order/ordering.js	
+protofire__solhint-224	claude-code	fp-claudecode-tab-20260826	native	1	fail	0	87	2	lib/rules/order/index.js;lib/rules/order/order-of-layout.js	
+protofire__solhint-224	claude-code	fp-claudecode-tab-20260826	native	2	fail	0.4	95	2	lib/rules/order/index.js;lib/rules/order/ordering.js	
+protofire__solhint-224	claude-code	fp-claudecode-tab-20260826	sweet	0	fail	0.4	26	1	lib/rules/order/index.js	
+protofire__solhint-224	claude-code	fp-claudecode-tab-20260826	sweet	1	fail	0.4	31	1	lib/rules/order/index.js	
+protofire__solhint-224	claude-code	fp-claudecode-tab-20260826	sweet	2	fail	0.4	37	1	lib/rules/order/index.js	

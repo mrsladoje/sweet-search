@@ -1,0 +1,255 @@
+[
+ {
+  "task": "absinthe-graphql__absinthe-998",
+  "repo": "absinthe-graphql__absinthe",
+  "indexed": 496,
+  "onDisk": 552,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "repo": "Accenture__sfmc-devtools",
+  "indexed": 303,
+  "onDisk": 958,
+  "underExcludedDirKnownExt": 1,
+  "unindexedExt": [
+   [
+    "map",
+    100
+   ],
+   [
+    "amp",
+    29
+   ]
+  ],
+  "note": ""
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "repo": "aio-libs__aiohttp",
+  "indexed": 152,
+  "onDisk": 264,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "apigee__registry-961",
+  "repo": "apigee__registry",
+  "indexed": 493,
+  "onDisk": 625,
+  "underExcludedDirKnownExt": 52,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "asynkron__protoactor-dotnet-1909",
+  "repo": "asynkron__protoactor-dotnet",
+  "indexed": 739,
+  "onDisk": 890,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [
+   [
+    "csproj",
+    96
+   ],
+   [
+    "razor",
+    22
+   ]
+  ],
+  "note": ""
+ },
+ {
+  "task": "aws-actions__configure-aws-credentials-42",
+  "repo": "aws-actions__configure-aws-credentials",
+  "indexed": 7,
+  "onDisk": 17,
+  "underExcludedDirKnownExt": 1,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "repo": "awslabs__aws-embedded-metrics-node",
+  "indexed": 37,
+  "onDisk": 76,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "axelrod-python__axelrod-671",
+  "repo": "Axelrod-Python__Axelrod",
+  "indexed": 118,
+  "onDisk": 195,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "repo": "bfgroup__b2",
+  "indexed": 330,
+  "onDisk": 950,
+  "underExcludedDirKnownExt": 18,
+  "unindexedExt": [
+   [
+    "jam",
+    321
+   ],
+   [
+    "adoc",
+    33
+   ]
+  ],
+  "note": ""
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "repo": "bfgroup__b2",
+  "indexed": 330,
+  "onDisk": 950,
+  "underExcludedDirKnownExt": 18,
+  "unindexedExt": [
+   [
+    "jam",
+    321
+   ],
+   [
+    "adoc",
+    33
+   ]
+  ],
+  "note": ""
+ },
+ {
+  "task": "callstack__react-native-paper-972",
+  "repo": "callstack__react-native-paper",
+  "indexed": 236,
+  "onDisk": 443,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [
+   [
+    "png",
+    79
+   ],
+   [
+    "snap",
+    22
+   ]
+  ],
+  "note": ""
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "repo": "celestiaorg__nmt",
+  "indexed": 15,
+  "onDisk": 25,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "repo": "devlooped__moq",
+  "indexed": 255,
+  "onDisk": 312,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "repo": "fastify__fastify-cors",
+  "indexed": 12,
+  "onDisk": 19,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "final-form__final-form-64",
+  "repo": "final-form__final-form",
+  "indexed": 24,
+  "onDisk": 54,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "repo": "GitbookIO__markup-it",
+  "indexed": 178,
+  "onDisk": 378,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "repo": "hotmeteor__spectator",
+  "indexed": 45,
+  "onDisk": 59,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "jazzband__tablib-454",
+  "repo": "jazzband__tablib",
+  "indexed": 33,
+  "onDisk": 60,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "locationtech__jts-622",
+  "repo": "locationtech__jts",
+  "indexed": 1303,
+  "onDisk": 1475,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [
+   [
+    "png",
+    60
+   ]
+  ],
+  "note": ""
+ },
+ {
+  "task": "mathnet__mathnet-numerics-1072",
+  "repo": "mathnet__mathnet-numerics",
+  "indexed": 1062,
+  "onDisk": 1325,
+  "underExcludedDirKnownExt": 8,
+  "unindexedExt": [
+   [
+    "dat",
+    58
+   ]
+  ],
+  "note": ""
+ },
+ {
+  "task": "mirumee__ariadne-codegen-218",
+  "repo": "mirumee__ariadne-codegen",
+  "indexed": 255,
+  "onDisk": 309,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [],
+  "note": ""
+ },
+ {
+  "task": "protofire__solhint-224",
+  "repo": "protofire__solhint",
+  "indexed": 116,
+  "onDisk": 232,
+  "underExcludedDirKnownExt": 0,
+  "unindexedExt": [],
+  "note": ""
+ }
+]

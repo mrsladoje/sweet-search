@@ -1,0 +1,78 @@
+EXIT=0
+{
+ "TAB": {
+  "rollouts": 66,
+  "requests": 1569,
+  "cellIdealUsd": 1.0499,
+  "wasted": {
+   "crash": 12,
+   "usage": 12,
+   "enoent": 8,
+   "scopedNoMatch": 12
+  },
+  "wastedUsd": {
+   "crash": 0.00583,
+   "usage": 0.00698,
+   "enoent": 0.00494,
+   "scopedNoMatch": 0.00665
+  },
+  "rolloutsWithWaste": 21,
+  "meanRequestUsd": 0.000669,
+  "cellIdealUsdPerRollout": 0.015908,
+  "wastedCallsPerRollout": 0.67,
+  "wastedUsdPerRollout": 0.00037,
+  "wastedShareOfCell": 0.0232
+ },
+ "NONE": {
+  "rollouts": 66,
+  "requests": 1524,
+  "cellIdealUsd": 1.05393,
+  "wasted": {
+   "crash": 9,
+   "usage": 10,
+   "enoent": 17,
+   "scopedNoMatch": 8
+  },
+  "wastedUsd": {
+   "crash": 0.00518,
+   "usage": 0.00538,
+   "enoent": 0.00945,
+   "scopedNoMatch": 0.00464
+  },
+  "rolloutsWithWaste": 21,
+  "meanRequestUsd": 0.000692,
+  "cellIdealUsdPerRollout": 0.015969,
+  "wastedCallsPerRollout": 0.67,
+  "wastedUsdPerRollout": 0.000373,
+  "wastedShareOfCell": 0.0234
+ },
+ "PIPE": {
+  "rollouts": 66,
+  "requests": 1418,
+  "cellIdealUsd": 0.98278,
+  "wasted": {
+   "crash": 14,
+   "usage": 22,
+   "enoent": 8,
+   "scopedNoMatch": 16
+  },
+  "wastedUsd": {
+   "crash": 0.0287,
+   "usage": 0.01139,
+   "enoent": 0.00504,
+   "scopedNoMatch": 0.01019
+  },
+  "rolloutsWithWaste": 24,
+  "meanRequestUsd": 0.000693,
+  "cellIdealUsdPerRollout": 0.014891,
+  "wastedCallsPerRollout": 0.91,
+  "wastedUsdPerRollout": 0.000838,
+  "wastedShareOfCell": 0.0563
+ },
+ "nativeReadCensus": {
+  "rollouts": 66,
+  "mainReadsPerRollout": 10.45,
+  "subagentReadsPerRollout": 8.94,
+  "totalPerRollout": 19.39
+ }
+}

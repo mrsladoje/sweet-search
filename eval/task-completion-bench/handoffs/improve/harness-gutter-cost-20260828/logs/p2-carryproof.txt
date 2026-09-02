@@ -1,0 +1,20 @@
+====================================================================================================
+opencode fp-opencode-tab-20260826 apigee__registry-961-sweet | needle '\\t\\t\\treturn nil, err'
+====================================================================================================
+codex fp-codex-tab-20260826 devlooped__moq-1262-sweet | needle '\\t\\t\\t\\tif (x is MemberExpression)'
+ PATCH in rollout-2026-08-27T00-34-45-01a040a4-030e-7403-8c80-488d4f889ec7.jsonl call call_ADEK3QSj7eIywkhn1mkeUSfv
+   patch line '-\\t\\t\\t\\tif (x is MemberExpression)'
+   prior showing: '36\\t\\t\\t\\tif (x is MemberExpression)'
+   prior showing: '36\\t\\t\\t\\tif (x is MemberExpression)'
+   OUTCOME: Wall time: 0.0000 seconds\nOutput:\nExit code: 0\nWall time: 0 seconds\nOutput:\nSuccess. Updated the following files:\nM src/Moq/ExpressionComparer.cs\nM src/Moq/Match.cs\n
+ PATCH in rollout-2026-08-27T00-34-45-01a040a4-030e-7403-8c80-488d4f889ec7.jsonl call call_UVz3dma79fC2okJOnPE766bG
+   patch line '+\\t\\t\\t\\tif (x is MemberExpression)'
+   prior showing: '-\\t\\t\\tif (x is MemberExpression)'
+   OUTCOME: apply_patch verification failed: Failed to read file to update /root/.ss-eval/r2-78/src/Moq/ExpressionComparer.cs: No such file or directory (os error 2)
+ PATCH in rollout-2026-08-27T00-34-45-01a040a4-030e-7403-8c80-488d4f889ec7.jsonl call call_j7DqXR8sI0NtATl0NYLk4RMM
+   patch line '+\\t\\t\\t\\tif (x is MemberExpression)'
+   OUTCOME: Wall time: 0.0000 seconds\nOutput:\nExit code: 0\nWall time: 0 seconds\nOutput:\nSuccess. Updated the following files:\nM /root/.ss-eval/runs/r2-78/src/Moq/ExpressionComparer.cs\nM /root/.ss-eval/runs/r2-78/
+ PATCH in rollout-2026-08-27T00-34-45-01a040a4-030e-7403-8c80-488d4f889ec7.jsonl call call_LcDbYjryVbuZAoiUkF0ctP5C
+   patch line '-\\t\\t\\t\\tif (x is MemberExpression)'
+   prior showing: '-\\t\\t\\tif (x is MemberExpression)'
+   OUTCOME: Wall time: 0.0000 seconds\nOutput:\nExit code: 0\nWall time: 0 seconds\nOutput:\nSuccess. Updated the following files:\nM /root/.ss-eval/runs/r2-78/src/Moq/ExpressionComparer.cs\nM /root/.ss-eval/runs/r2-78/

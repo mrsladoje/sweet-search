@@ -1,0 +1,287 @@
+{
+  "task": "E4",
+  "tag": "e4-claude-code",
+  "harness": "claude-code",
+  "generated": "2026-08-28",
+  "runs": {
+    "TAB": "fp-claudecode-tab-20260826",
+    "NONE": "fp-claudecode-none-20260826",
+    "PIPE": "fp-claudecode-pipe-20260826",
+    "native": "fp-claudecode-tab-20260826 (native arm)"
+  },
+  "meta": {
+    "rollouts": 264,
+    "tasks": 22,
+    "arms": ["native", "TAB", "NONE", "PIPE"],
+    "reps": 3,
+    "model": "openai/gpt-5.6-luna via openrouter",
+    "resolvedNullAssertion": "PASSED — 0 rows with resolved==null in all three runs",
+    "transcriptConvention": "one transcript per rep, largest when a cell retains an extra (trap 5); TAB cell holds 71 transcripts for 66 rollouts, NONE 70, PIPE 68, native 67",
+    "notUsed": ["turns/ (trap 3)", "trajectories/ (trap 7)", "rows.json cost columns (trap 2)"],
+    "scriptsDir": "eval/task-completion-bench/handoffs/improve/harness-gutter-cost-20260828/scripts/",
+    "machineOutputs": "eval/task-completion-bench/handoffs/improve/harness-gutter-cost-20260828/logs/e4-claude-code-*.json",
+    "boxScratch": "/tmp/fp-inv/e4-claude-code/"
+  },
+  "verdict": {
+    "headline": "Four rollouts separate sweet TAB from native, in four different tasks; only one has a sweet product mechanism, and it is index coverage, not the gutter.",
+    "solved": { "native": 43, "TAB": 40, "NONE": 41, "PIPE": 39, "denominator": 66 },
+    "preRegisteredBar": 6,
+    "observedLargestGap": 3,
+    "corrections": [
+      "GUTTER-AB-RESULTS.md claude-code anchor table withdrawn: TAB 16.5% vs PIPE 12.4% of edits failing at 66 rollouts/cell, against 1.6% vs 7.6% at 18.",
+      "The +1 indent carry is a delimiter-equals-indent-character defect: N<TAB> produces it on tab-indented files, N| on space-indented files, NONE on neither, and native's own Read produces it at the same rate.",
+      "commit ba5b4ee is confirmed live: ss-search and ss-find hit blocks are numbered in these traces.",
+      "A new defect class is on the board: index coverage. 2 of 22 pool tasks have gold sweet-search cannot index."
+    ]
+  },
+  "solveMatrix": {
+    "absinthe-graphql__absinthe-998":            { "native": 3, "TAB": 3, "NONE": 3, "PIPE": 3, "class": "solved-everywhere" },
+    "apigee__registry-961":                      { "native": 3, "TAB": 3, "NONE": 3, "PIPE": 3, "class": "solved-everywhere" },
+    "asynkron__protoactor-dotnet-1909":          { "native": 3, "TAB": 3, "NONE": 3, "PIPE": 3, "class": "solved-everywhere" },
+    "aws-actions__configure-aws-credentials-42": { "native": 3, "TAB": 3, "NONE": 3, "PIPE": 3, "class": "solved-everywhere" },
+    "axelrod-python__axelrod-671":               { "native": 3, "TAB": 3, "NONE": 3, "PIPE": 3, "class": "solved-everywhere" },
+    "callstack__react-native-paper-972":         { "native": 3, "TAB": 3, "NONE": 3, "PIPE": 3, "class": "solved-everywhere" },
+    "final-form__final-form-64":                 { "native": 3, "TAB": 3, "NONE": 3, "PIPE": 3, "class": "solved-everywhere" },
+    "jazzband__tablib-454":                      { "native": 3, "TAB": 3, "NONE": 3, "PIPE": 3, "class": "solved-everywhere" },
+    "locationtech__jts-622":                     { "native": 3, "TAB": 3, "NONE": 3, "PIPE": 3, "class": "solved-everywhere" },
+    "mathnet__mathnet-numerics-1072":            { "native": 3, "TAB": 3, "NONE": 3, "PIPE": 3, "class": "solved-everywhere" },
+    "mirumee__ariadne-codegen-218":              { "native": 3, "TAB": 3, "NONE": 3, "PIPE": 3, "class": "solved-everywhere" },
+    "accenture__sfmc-devtools-1974":             { "native": 3, "TAB": 2, "NONE": 3, "PIPE": 1, "class": "discordant-majority" },
+    "awslabs__aws-embedded-metrics-node-21":     { "native": 2, "TAB": 3, "NONE": 2, "PIPE": 2, "class": "discordant-reps" },
+    "celestiaorg__nmt-192":                      { "native": 3, "TAB": 2, "NONE": 3, "PIPE": 3, "class": "discordant-reps" },
+    "aio-libs__aiohttp-8038":                    { "native": 1, "TAB": 0, "NONE": 0, "PIPE": 0, "class": "discordant-reps" },
+    "bfgroup__b2-113":                           { "native": 1, "TAB": 0, "NONE": 0, "PIPE": 0, "class": "discordant-reps" },
+    "bfgroup__b2-259":                           { "native": 0, "TAB": 0, "NONE": 0, "PIPE": 0, "class": "dead-everywhere" },
+    "devlooped__moq-1262":                       { "native": 0, "TAB": 0, "NONE": 0, "PIPE": 0, "class": "dead-everywhere" },
+    "fastify__fastify-cors-285":                 { "native": 0, "TAB": 0, "NONE": 0, "PIPE": 0, "class": "dead-everywhere" },
+    "gitbookio__markup-it-56":                   { "native": 0, "TAB": 0, "NONE": 0, "PIPE": 0, "class": "dead-everywhere" },
+    "hotmeteor__spectator-181":                  { "native": 0, "TAB": 0, "NONE": 0, "PIPE": 0, "class": "dead-everywhere" },
+    "protofire__solhint-224":                    { "native": 0, "TAB": 0, "NONE": 0, "PIPE": 0, "class": "dead-everywhere" }
+  },
+  "classCounts": { "solved-everywhere": 11, "discordant-majority": 1, "discordant-reps": 4, "dead-everywhere": 6 },
+  "whereTheDifferenceLives": {
+    "note": "The 11 solved-everywhere tasks give every arm 33 solves; the 6 dead ones give 0. All arm variation is the 5 discordant tasks.",
+    "solvedOnDiscordantTasks": { "native": "10/15", "TAB": "7/15", "NONE": "8/15", "PIPE": "6/15" }
+  },
+  "discordantTasks": [
+    {
+      "task": "accenture__sfmc-devtools-1974",
+      "gold": ["lib/index.js"],
+      "failToPass": ["Should not refresh anything due to missing type"],
+      "majority": { "native": 1, "TAB": 1, "NONE": 1, "PIPE": 0 },
+      "decidingSemanticChoice": "whether the empty-collection check on selectedTypes is scoped to methodName === 'refresh'; the shared #runMethod dispatcher also serves fixKeys",
+      "lostCells": [
+        { "cell": "TAB/r1", "mode": "wrong-fix", "detail": "guard `!selectedTypes || !Object.keys(selectedTypes).length` also fires for fixKeys; grader failed_from_pass_to_pass=[\"Should exit fixKeys because event is not supported intentionally\"], f2pFrac=1", "ssContribution": "none — retrieval located lib/index.js correctly", "gutterCouldMatter": false },
+        { "cell": "PIPE/r1", "mode": "not-localised", "detail": "patched lib/cli.js with a yargs .check() guard; the unit test calls Mcdev.refresh() directly, f2pFrac=0", "ssContribution": "contributory — ss-find \"refresh\" --regex \"refresh\" and ss-search ranked lib/cli.js first; the agent never opened lib/index.js", "gutterCouldMatter": true, "gutterEvidence": "4 of 5 Edit calls failed with String to replace not found; ss-read printed '738|                 .option(...' = 16 content spaces after the 'N| ' delimiter, the attempt used 17 spaces. Cost 4 calls; the wrong file was already chosen at call 5." },
+        { "cell": "PIPE/r2", "mode": "wrong-fix", "detail": "same over-broad predicate as TAB/r1; same P2P regression", "ssContribution": "none", "gutterCouldMatter": false }
+      ]
+    },
+    {
+      "task": "bfgroup__b2-113",
+      "gold": ["src/tools/stage.jam"],
+      "majority": { "native": 0, "TAB": 0, "NONE": 0, "PIPE": 0 },
+      "solved": { "native": 1, "TAB": 0, "NONE": 0, "PIPE": 0 },
+      "mode": "not-localised",
+      "ssContribution": "CAUSAL — no ss-search/ss-find/ss-grep/ss-semantic result ever named src/tools/stage.jam in 8 of 9 sweet rollouts; the ninth saw it at call 47 from plain bash. Native surfaced it in all 3 with grep/find and solved rep2.",
+      "mechanism": [
+        "[C] core/infrastructure/config/search.js:51 FILE_PATTERNS.include has no '**/*.jam' glob",
+        "[C] the same file's exclude list has '**/build/**' (line 188), which excludes src/build/ — source, not build output, in this repo",
+        "[M] over all 198 sweet rollouts, the extension histogram of ss-search/ss-find result blocks contains no 'jam'; ss-grep returned .jam 4 times, all inside a .claude/worktrees/ copy; ss-read opened .jam 44 times because it reads the disk directly"
+      ],
+      "allSweetPatchedInstead": "src/build/targets.py (the Python half of the repo)",
+      "gutterCouldMatter": false
+    },
+    {
+      "task": "aio-libs__aiohttp-8038",
+      "gold": ["aiohttp/client.py"],
+      "solved": { "native": 1, "TAB": 0, "NONE": 0, "PIPE": 0 },
+      "mode": "wrong-fix",
+      "detail": "sweet reached and edited aiohttp/client.py in 4 of 9 rollouts. NONE/r0 wrote the right variable and continue but narrowed the catch to ServerDisconnectedError plus two extra conditions; gold catches (ClientOSError, ServerDisconnectedError) and gates only on the method being idempotent.",
+      "nativeWin": "rep1 only: 125 tool calls, 36 edits, 9 run_tests cycles, 2 subagents, 539 s — an effort outlier, not a retrieval win. native rep2 made 19 edits and shipped an EMPTY patch.",
+      "ssContribution": "none negative shown; the two (no matches) results were probes for a symbol that does not exist before the fix",
+      "gutterCouldMatter": false
+    },
+    {
+      "task": "awslabs__aws-embedded-metrics-node-21",
+      "gold": ["src/logger/MetricsContext.ts"],
+      "solved": { "native": 2, "TAB": 3, "NONE": 2, "PIPE": 2 },
+      "lostCells": [
+        { "cell": "native/r2", "mode": "not-localised", "detail": "patched src/serializers/LogSerializer.ts; never edited the gold file" },
+        { "cell": "NONE/r1", "mode": "not-localised", "detail": "same wrong file" },
+        { "cell": "PIPE/r2", "mode": "incomplete", "detail": "right file, 1 hunk, f2pFrac=0 — missed the reordered-key case" }
+      ],
+      "ssContribution": "none — ss-search surfaced the gold file at call 1-3 in every sweet rollout",
+      "gutterCouldMatter": false
+    },
+    {
+      "task": "celestiaorg__nmt-192",
+      "gold": ["proof.go"],
+      "solved": { "native": 3, "TAB": 2, "NONE": 3, "PIPE": 3 },
+      "lostCells": [
+        { "cell": "TAB/r0", "mode": "gave-up", "detail": "4 tool calls, 0 edits, EMPTY model_patch, exitReason=model_stopped, 49 s; the last assistant text is a <state_summary> condenser artefact", "ssContribution": "none — ss-grep returned proof.go:109/110 on the first try and ss-read showed IsOfAbsence at 66-70", "gutterCouldMatter": false }
+      ],
+      "rate": "the only rollout of 264 whose last assistant text is a <state_summary>; one of only two empty patches (the other is native/aio-libs/r2)"
+    }
+  ],
+  "deadTasks": [
+    { "task": "fastify__fastify-cors-285", "gold": ["index.js"], "mode": "over-scoped wrong-fix", "detail": "the gold patch changes one character, '/*' -> '*'. All 12 of 12 rollouts, both arms, instead extract the handler into a named const and register extra routes.", "ssContribution": "none — gold file surfaced and read in all 12", "gutterCouldMatter": false, "leverable": false },
+    { "task": "bfgroup__b2-259", "gold": ["src/build/property.jam"], "mode": "not-localised", "detail": "no arm edits the gold file. native patches src/tools/features/build-feature.jam, every sweet rollout patches src/build/configure.jam.", "ssContribution": "YES — same index blindness as b2-113, doubled: .jam unindexed AND src/build/ excluded. Worst empty-result load in the run: 30, 28, 23, 16, 16, 13 (no matches) in single rollouts.", "gutterCouldMatter": false, "leverable": "partly — coverage is necessary but not sufficient; native also fails" },
+    { "task": "devlooped__moq-1262", "gold": ["CHANGELOG.md", "src/Moq/Evaluator.cs", "src/Moq/ExpressionComparer.cs", "src/Moq/ExpressionExtensions.cs", "src/Moq/Expressions/Visitors/EvaluateCaptures.cs"], "mode": "incomplete", "detail": "every arm edits ExpressionComparer.cs + Match.cs; no rollout in any arm touches ExpressionExtensions.cs or EvaluateCaptures.cs", "ssContribution": "none", "gutterCouldMatter": true, "gutterEvidence": "81.3% of ss-read body lines for this task are tab-indented. ss-read printed '171<TAB><TAB><TAB><TAB>this.RenderExpression = ...'; the failed old_string used FOUR tabs where the file has three — the model kept the gutter's own tab. 8 of the 14 locatable TAB anchor failures across the harness are this signature and all 8 are here. Native's Read has the same defect (7 of 20 native failures are +1, 6 of them in this repo).", "leverable": false },
+    { "task": "gitbookio__markup-it-56", "gold": ["src/markdown/inlines/html.js"], "mode": "wrong-fix", "detail": "7 of 12 rollouts patch src/markdown/re/inline.js (the regex table) instead of adding mergeHTMLNodes. native r0 and sweet PIPE r0/r2 do edit the gold file and still fail.", "ssContribution": "none — sweet PIPE localises better than native here", "gutterCouldMatter": false, "leverable": false },
+    { "task": "hotmeteor__spectator-181", "gold": ["src/Assertions.php"], "mode": "wrong-fix", "detail": "10 of 12 rollouts edit the gold file; all fail", "ssContribution": "none — ss-search surfaces src/Assertions.php at call 1-2 in every sweet rollout", "gutterCouldMatter": false, "leverable": false },
+    { "task": "protofire__solhint-224", "gold": ["lib/common/ast-types.js", "lib/rules/index.js", "lib/rules/order/func-order.js", "lib/rules/order/index.js", "lib/rules/order/ordering.js"], "mode": "incomplete", "detail": "11 of 12 rollouts score f2pFrac=0.4 — the same 2 of 5 F2P tests. Every arm creates part of the rule and misses the registration surface.", "ssContribution": "none", "gutterCouldMatter": false, "leverable": false }
+  ],
+  "modeCounts": {
+    "lostCellsOnDiscordantTasks": { "denominator": 29, "not-localised": 17, "wrong-fix": 9, "incomplete": 1, "gave-up": 1, "other": 1, "edit-mechanics": 0, "environment": 0, "refused": 0 },
+    "deadTasksByDominantMode": { "wrong-fix": 3, "incomplete": 2, "not-localised": 1 },
+    "note": "No rollout in this harness lost to a failed edit that was never retried."
+  },
+  "toolHealth": {
+    "denominator": "198 sweet rollouts (66 per gutter form)",
+    "perForm": {
+      "TAB":  { "allCalls": 2007, "bashCalls": 1449, "ssBearingBashCalls": 915, "ssInvocations": 1124, "byTool": { "ss-search": 198, "ss-read": 421, "ss-grep": 389, "ss-find": 97, "ss-trace": 13, "ss-semantic": 6 }, "emptyResults": 139, "usageErrors": 19, "crashes": 13, "ssReadEnoent": 9, "stderrLeakCalls": 13, "nativeRetrievalCalls": 179, "nativeAfterSSAny": 94 },
+      "NONE": { "allCalls": 1771, "bashCalls": 1276, "ssBearingBashCalls": 892, "ssInvocations": 1117, "byTool": { "ss-search": 151, "ss-read": 499, "ss-grep": 328, "ss-find": 110, "ss-trace": 16, "ss-semantic": 12, "ss-files": 1 }, "emptyResults": 102, "usageErrors": 22, "crashes": 10, "ssReadEnoent": 21, "stderrLeakCalls": 10, "nativeRetrievalCalls": 91, "nativeAfterSSAny": 52 },
+      "PIPE": { "allCalls": 1683, "bashCalls": 1199, "ssBearingBashCalls": 894, "ssInvocations": 1088, "byTool": { "ss-search": 176, "ss-read": 455, "ss-grep": 334, "ss-find": 81, "ss-trace": 23, "ss-semantic": 19 }, "emptyResults": 81, "usageErrors": 29, "crashes": 14, "ssReadEnoent": 15, "stderrLeakCalls": 14, "nativeRetrievalCalls": 163, "nativeAfterSSAny": 116 }
+    },
+    "exitCodeHistogram": { "0": 2544, "1": 89, "2": 67, "127": 1 },
+    "timeouts": { "count": 0, "note": "'Command timed out' and 'Command was killed' appear zero times in any claude-code transcript of these runs. An earlier pass reporting 127 timeouts was a false positive matching the word 'timeout' inside delivered source code; retracted." },
+    "latency": { "surface": "ss-trace only, via <<SS_TRACE_META>> latencyMs", "n": 50, "minMs": 5, "medianMs": 60, "p90Ms": 153, "maxMs": 180, "note": "ss-search, ss-grep, ss-find, ss-read and ss-semantic report no duration to the agent" },
+    "defects": [
+      { "id": "D1", "name": "(no matches) cannot be told apart from 'not indexed'", "calls": 322, "scopedOnProvenFile": 69, "rollouts": 74, "example": "ss-grep \"build\" --in src/build/targets.jam -k 100 -> (no matches), while '# ss-read src/build/targets.jam (...)' succeeded in the same rollout", "concentration": "62 of the 69 fall in three tasks whose target directory or extension is not indexed: dist/ (13), src/build/ + .jam (49)", "caveat": "most of the 322 are legitimate absence probes; the defect is the 69" },
+      { "id": "D2", "name": "native re-read of a file an ss-* call already returned", "calls": 262, "rollouts": 49, "example": "TAB/asynkron__protoactor-dotnet-1909/r0: ss-read showed src/Proto.Actor/Utils/TypedDictionary.cs lines 1-70, then Read {\"file_path\":\".../TypedDictionary.cs\",\"offset\":1,\"limit\":70} — the identical span", "detail": "147 native Read calls followed an ss-read of the same file; 108 overlap the span ss-read had delivered. Only 11 of 284 TAB edits and 5 of 207 PIPE edits are preceded immediately by a native Read of the same file, against 43 of 302 on native.", "perFormRollouts": { "TAB": 14, "NONE": 5, "PIPE": 13 }, "reading": "does not order with delimiter width; read as noise at this n" },
+      { "id": "D3", "name": "ss-grep rejects positional path scopes (exit 2)", "calls": 70, "rollouts": 33, "example": "ss-grep \"KEEPALIVE\\|CONNECTION\" aiohttp/hdrs.py -k 10 -> Exit code 2 / [ss] 1 argument(s) not consumed: \"aiohttp/hdrs.py\"" },
+      { "id": "D4", "name": "ss-* crash: a raw ripgrep parse error reaches the agent, caret line truncated", "calls": 37, "rollouts": 27, "example": "ss-grep \"func (.*ListArtifacts\" -k 20 -> [ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:" },
+      { "id": "D5", "name": "engine stderr leaks into agent output", "calls": 37, "rollouts": 27, "example": "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r0-14/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false) | LateInteraction: Streaming load 5000 documents...", "detail": "the same 37 calls as D4 — identical rid lists. [I] the warm-server grep rejects the pattern, the wrapper falls back to a cold in-process bareGrep (_ss-helpers.mjs:343-347) which loads the models, prints the chatter, and then fails on the same pattern. A regex typo pays for a full model load before it errors." },
+      { "id": "D6", "name": "ss-read ENOENT on a path a previous ss-* result named", "calls": 51, "onPathShownByAnSSResult": 21, "rollouts": 24, "example": "ss-read src/Moq/ExpressionExtensions.cs 420 460 && ss-read src/Moq/Expressions/Visitors/PartialMatcherAwareEval.cs 1 160 -> [ss-read] error: stat failed: ENOENT", "caveat": "the 21/51 split is [I] from traces alone; the golden checkouts are removed so on-disk absence was not verified" },
+      { "id": "D7", "name": "BRE alternation written by the model", "retries": 87, "bothFormsZero": 13, "rollouts": 47, "example": "ss-grep \"ListSpecArtifacts.*NotFound\\|list.*spec.*artifacts\" --in server/registry/actions_artifacts_test.go -k 20 -> BRE operators were retried with unescaped Rust operators; both forms returned 0 matches.", "status": "already mitigated — writeRegexDialectHint recovered 74 of 87" },
+      { "id": "D8", "name": "ss-find has no --in, ss-grep does", "calls": "part of D3's 70", "example": "ss-find \"generate\" --regex \"def generate|class .*Target\" --in src/build -k 20 -> [ss] unrecognised option \"--in\"" },
+      { "id": "D9", "name": "ss-trace target not found (exit 1)", "calls": 10, "rollouts": 10, "example": "<<SS_TRACE_META>>{... \"sufficient\":false}" },
+      { "id": "D10", "name": "shell metacharacters in a query kill the command (exit 127)", "calls": 1, "rollouts": 1, "example": "ss-search \"$(properties:<feature>) Jam variable property list\" -k 20 -> Exit code 127 / /bin/bash: eval: line 1: syntax error near unexpected token ')'" },
+      { "id": "D11", "name": "ss-semantic error (exit 1)", "calls": 2, "rollouts": 2, "example": "[ss-semantic] error: ..." }
+    ]
+  },
+  "editMechanics": {
+    "perArm": {
+      "native": { "editCalls": 302, "failed": 52, "rate": 0.172, "rolloutsWithFailure": "17/66", "notFound": 24, "notUnique": 12, "noChange": 14, "jsonError": 1, "other": 1 },
+      "TAB":    { "editCalls": 255, "failed": 42, "rate": 0.165, "rolloutsWithFailure": "17/66", "notFound": 15 },
+      "NONE":   { "editCalls": 266, "failed": 41, "rate": 0.154, "rolloutsWithFailure": "15/66", "notFound": 14 },
+      "PIPE":   { "editCalls": 202, "failed": 25, "rate": 0.124, "rolloutsWithFailure": "15/66", "notFound": 9 },
+      "sweetTotal": { "editCalls": 723, "failed": 108, "rate": 0.149, "rolloutsWithFailure": "47/198", "notFound": 38, "notUnique": 25, "noChange": 34, "jsonError": 9, "other": 2 }
+    },
+    "indentDeltasOnLocatableNotFound": {
+      "native": { "located": 20, "0": 11, "+1": 7, "other": "+4 x2" },
+      "TAB":    { "located": 14, "0": 4,  "+1": 8, "other": "+5 x1, -4 x1" },
+      "NONE":   { "located": 10, "0": 9,  "+1": 0, "other": "-1 x1" },
+      "PIPE":   { "located": 9,  "0": 3,  "+1": 6, "other": "none" }
+    },
+    "tabExposure": { "ssReadBodyLinesUnderTAB": 47171, "tabIndented": 6571, "share": 0.139, "byTask": { "devlooped__moq-1262": 0.813, "apigee__registry-961": 0.742, "celestiaorg__nmt-192": 0.328, "other19Tasks": 0.0 } },
+    "conclusion": "The delimiter does not decide whether the carry happens; it decides which files it happens in. TAB carries a tab on tab-indented files, PIPE carries a space on space-indented files, NONE has no delimiter to carry, and native's own Read has the TAB defect at the same rate."
+  },
+  "effort": {
+    "note": "means per rollout; hard = the 11 tasks that are not solved-everywhere",
+    "all":  { "native": { "calls": 41.8, "runTests": 2.88, "edits": 4.67, "ss": 0,    "nativeRead": 19.4, "nativeGrep": 6.2, "subagents": 0.50, "solved": "43/66" },
+              "TAB":    { "calls": 29.9, "runTests": 2.91, "edits": 3.71, "ss": 13.6, "nativeRead": 2.1,  "nativeGrep": 0.3, "subagents": 0.17, "solved": "40/66" },
+              "NONE":   { "calls": 26.5, "runTests": 2.89, "edits": 3.65, "ss": 13.8, "nativeRead": 1.1,  "nativeGrep": 0.2, "subagents": 0.14, "solved": "41/66" },
+              "PIPE":   { "calls": 25.3, "runTests": 2.80, "edits": 3.00, "ss": 13.5, "nativeRead": 1.9,  "nativeGrep": 0.5, "subagents": 0.11, "solved": "39/66" } },
+    "hard": { "native": { "calls": 61.8, "runTests": 3.58, "edits": 6.70, "ss": 0,    "nativeRead": 29.8, "nativeGrep": 9.1, "subagents": 0.79, "solved": "10/33" },
+              "TAB":    { "calls": 43.0, "runTests": 3.48, "edits": 5.12, "ss": 20.2, "nativeRead": 3.1,  "nativeGrep": 0.4, "subagents": 0.27, "solved": "7/33" },
+              "NONE":   { "calls": 39.7, "runTests": 3.58, "edits": 5.55, "ss": 20.8, "nativeRead": 1.9,  "nativeGrep": 0.3, "subagents": 0.27, "solved": "8/33" },
+              "PIPE":   { "calls": 35.5, "runTests": 3.18, "edits": 3.61, "ss": 19.2, "nativeRead": 3.4,  "nativeGrep": 0.9, "subagents": 0.21, "solved": "6/33" } },
+    "reading": "run_tests count is arm-identical; the whole call-count difference is retrieval. PIPE is the cheapest arm and the weakest — cheaper and worse."
+  },
+  "levers": [
+    {
+      "rank": 1, "id": "L1", "name": "Index the file types and directories the task lives in",
+      "tasks": ["bfgroup__b2-113", "bfgroup__b2-259", "aws-actions__configure-aws-credentials-42"],
+      "mechanism": "[C] FILE_PATTERNS.include has no '**/*.jam'; exclude has '**/build/**' and '**/dist/**'. [M] no ss-search/ss-find result block ever named a .jam file over 198 rollouts; 62 --in-scoped greps returned (no matches) on files that exist. 2 of 22 pool tasks (9%) have gold sweet-search cannot index; 2 more are part-blind.",
+      "scope": "bounded — worth at most the 1 rollout native gets on b2-113; b2-259 is dead in both arms so coverage is necessary and not sufficient",
+      "zeroCostFalsifier": "re-index the two b2 goldens with .jam added and src/build/ un-excluded, then replay the exact ss-search / ss-grep queries recorded in the traces",
+      "kill": "src/tools/stage.jam still absent from the top-20 for the queries the agents actually wrote",
+      "discardLogCheck": "not in SLATE-A section 9 or SLATE-B section 8. SLATE-A 9.3 ('more sibling retrieval') is a ranking proposal; this is a corpus proposal — the file is absent from the index, not ranked low.",
+      "status": "NEW"
+    },
+    {
+      "rank": 2, "id": "L2", "name": "Say 'not indexed', never (no matches)",
+      "tasks": ["bfgroup__b2-113", "bfgroup__b2-259", "aws-actions__configure-aws-credentials-42"],
+      "mechanism": "[M] 69 single-invocation ss-* calls answered (no matches) for an --in scope the same rollout had already read successfully. bfgroup__b2-259/r0 burned 30 empty results in one rollout.",
+      "change": "in cmdGrep's scoped branch (_ss-helpers.mjs:324) and in cmdFind/cmdAgentSearch (:474, :771), print '(not indexed: <path> — use native grep)' when the scope exists on disk but contributes no indexed content",
+      "zeroCostFalsifier": "count how many of the 69 were followed within 3 calls by another ss-* call with the same scope",
+      "kill": "fewer than a third are followed by a retry — then the message would not change behaviour",
+      "discardLogCheck": "not a 'return the same information more compactly' move (SLATE-B section 8, banned) — it adds information the agent does not have. Not in either log.",
+      "status": "NEW"
+    },
+    {
+      "rank": 3, "id": "L3", "name": "Accept a positional path as a scope in ss-grep; give ss-find --in",
+      "tasks": ["aio-libs__aiohttp-8038", "bfgroup__b2-113", "bfgroup__b2-259", "+30 others"],
+      "mechanism": "[M] 70 exit-2 usage errors in 33 of 198 rollouts. Dominant form is grep muscle memory 'ss-grep \"<pat>\" <path> -k N'; second is ss-find ... --in <path>, an option ss-grep has and ss-find does not ([C] FIND_USAGE).",
+      "zeroCostFalsifier": "re-parse the 70 rejected command lines with the proposed rule; count recoveries and check no currently-valid command changes meaning",
+      "kill": "fewer than 50 of 70 recover, or any currently-working call changes result",
+      "discardLogCheck": "not present. Not SLATE-A 9.12 free-argument call packing — no calls are merged; a rejected call becomes an executed one.",
+      "status": "NEW"
+    },
+    {
+      "rank": 4, "id": "L4", "name": "Fail a bad regex before loading the models, and print the rg diagnostic",
+      "tasks": ["apigee__registry-961", "bfgroup__b2-113", "+25 others"],
+      "mechanism": "[M] 37 calls in 27 rollouts crash with a truncated 'rg: regex parse error:'; the same 37 calls carry BinaryHNSW/LateInteraction load chatter, because the crash happens on the cold fallback path after the models load ([C] _ss-helpers.mjs:343-347)",
+      "zeroCostFalsifier": "compile the 37 recorded patterns with the same regex engine; confirm all 37 fail at compile time before any index work",
+      "kill": "any of the 37 compiles cleanly — then the diagnosis is wrong",
+      "discardLogCheck": "not present. Related to the ss-grep BRE bug in project_cost_forensics_results, which is now fixed (dialect retry recovers 74 of 87); this is a different, unmitigated path.",
+      "status": "NEW"
+    },
+    {
+      "rank": 5, "id": "L5", "name": "Give ss-read an unambiguous gutter on tab-indented files",
+      "tasks": ["devlooped__moq-1262", "apigee__registry-961", "celestiaorg__nmt-192"],
+      "mechanism": "[M] 8 of 14 locatable TAB anchor failures are exactly one tab too deep, all in the one tab-indented repo. Native's Read has the same defect (7 of 20).",
+      "whyStillOpen": "FRESH-POOL closed 'which of tab, pipe or none is best' (p >= 0.72). The open question is narrower and has a mechanism: a delimiter equal to the file's own indent character is ambiguous. A form unambiguous in BOTH families is not one of the three that were tested.",
+      "scope": "small — 13.9% of delivered ss-read lines are tab-indented; the failures cost calls, not rollouts (moq is dead for an unrelated reason)",
+      "zeroCostFalsifier": "re-render the 14 TAB and 9 PIPE failed anchors under the candidate delimiter and check the strip is unique",
+      "kill": "the candidate costs more than 0.93 tokens/line over tab (the whole delimiter budget), or the count of rollouts it would have saved is 0 — which on this evidence it is",
+      "discardLogCheck": "the delimiter A/B is superseded by FRESH-POOL-RESULTS.md section 5, which withdraws the per-harness recommendation. My evidence is new — no earlier pool had a tab-indented file — but the disposition stands: do NOT ship a delimiter change on resolution grounds. File as a rendering-correctness fix with a cost ceiling, or not at all.",
+      "status": "NEW EVIDENCE, OLD DISPOSITION"
+    },
+    {
+      "rank": 6, "id": "L6", "name": "Stop-discipline: never end a turn on a condenser summary",
+      "tasks": ["celestiaorg__nmt-192"],
+      "mechanism": "[M] TAB/r0: 4 calls, 0 edits, empty patch, last assistant text is <state_summary>. The only such rollout in 264.",
+      "zeroCostFalsifier": "grep the harness condenser path for the case where a summary is emitted with no following turn",
+      "kill": "n = 1 in 264 is not a lever, it is a bug report",
+      "discardLogCheck": "stop-discipline is a live class (project_mpp_stop_discipline_fix_tasks, project_engine_harness_fixes_p2_audit — condenser gates already shipped). Report it; run nothing for it.",
+      "status": "KNOWN CLASS, NEW INSTANCE"
+    }
+  ],
+  "leversDropped": [
+    { "idea": "more sibling retrieval for protofire__solhint-224 and devlooped__moq-1262", "why": "SLATE-A section 9.3, already killed — the sibling is present in context and the agent does not act on it. Every moq rollout had ExpressionExtensions.cs named in a search result and none opened it.", "verdict": "DEAD; my evidence adds a third instance, not a new argument" },
+    { "idea": "a prompt clause scoping guards to the calling method (accenture) or preferring the smallest route-pattern change (fastify-cors)", "why": "project_clause_candidate_dead — general clauses are dead, 3/8 tasks in every condition, originating signal reverses", "verdict": "DEAD" },
+    { "idea": "a completeness card for protofire__solhint-224's 5-file gold", "why": "project_lever4_completeness_card_dead killed it at $0", "verdict": "DEAD" },
+    { "idea": "force more iterations on hard tasks (the aio-libs shape)", "why": "project_turnfix_program records packing CLOSED and thrash DEAD; it also contradicts the only surviving product claim, 28% fewer calls", "verdict": "DO NOT PROPOSE" }
+  ],
+  "correctionsToTheRecord": [
+    "GUTTER-AB-RESULTS.md section 0's claude-code anchor table is withdrawn: TAB 16.5% vs PIPE 12.4% at 66 rollouts per cell, against 1.6% vs 7.6% at 18. The six-task number was three transcripts of one task.",
+    "The +1 carry is a tab-versus-tab-indentation defect, not a pipe defect. It appears under TAB on C#, under PIPE on JavaScript, under neither on NONE, and in the native arm at the same rate.",
+    "ba5b4ee is confirmed live in this run: ss-find and ss-search hit blocks are numbered (40|, 95|, 738| appear in their output). The 27-36% un-numbered share reported for epoch B is gone.",
+    "A new product-defect class is on the board: index coverage. Two of 22 pool tasks have gold sweet-search cannot index. Never measured before because no earlier pool contained a DSL outside FILE_PATTERNS."
+  ],
+  "notFinished": [
+    { "item": "per-call latency for ss-search, ss-grep, ss-find, ss-read, ss-semantic", "why": "[C] those surfaces emit no duration to the agent; only ss-trace writes latencyMs. rows.json wallMs cannot be attributed to a call. Needs an instrumentation change, not a re-read." },
+    { "item": "on-disk verification that the D6 ENOENT paths are truly absent", "why": "the golden checkouts under /root/.ss-eval/runs/ are removed after a run. The 21-of-51 split is [I] from traces alone. $0 check available: re-create either b2 golden from the task spec and stat the 21 paths." },
+    { "item": "any cost figure", "why": "E4 is a resolution task; FRESH-POOL-RESULTS.md section 2 already establishes that claude-code cost cannot be summed from rows.json. No rollout was re-priced." }
+  ],
+  "scripts": [
+    "scripts/e4-claude-code-parse.mjs",
+    "scripts/e4-claude-code-solve-matrix.mjs",
+    "scripts/e4-claude-code-toolhealth.mjs",
+    "scripts/e4-claude-code-toolhealth2.mjs",
+    "scripts/e4-claude-code-anchors.mjs",
+    "scripts/e4-claude-code-anchorbytes.mjs",
+    "scripts/e4-claude-code-cellcard.mjs",
+    "scripts/e4-claude-code-taskspec.mjs",
+    "scripts/e4-claude-code-localisation.mjs",
+    "scripts/e4-claude-code-jamcheck.mjs",
+    "scripts/e4-claude-code-indexgap.mjs",
+    "scripts/e4-claude-code-goldcoverage.mjs",
+    "scripts/e4-claude-code-silentblind.mjs",
+    "scripts/e4-claude-code-stopcensus.mjs",
+    "scripts/e4-claude-code-effort.mjs",
+    "scripts/e4-claude-code-tabexposure.mjs"
+  ]
+}

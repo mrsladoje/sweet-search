@@ -1,0 +1,608 @@
+{
+ "calls": {
+  "native": {},
+  "TAB": {
+   "ss-read": 542,
+   "ss-find": 27,
+   "ss-search": 123,
+   "ss-grep": 219,
+   "ss-semantic": 46,
+   "ss-trace": 13
+  },
+  "NONE": {
+   "ss-search": 139,
+   "ss-read": 484,
+   "ss-grep": 218,
+   "ss-semantic": 30,
+   "ss-find": 46,
+   "ss-trace": 14
+  },
+  "PIPE": {
+   "ss-grep": 221,
+   "ss-read": 531,
+   "ss-search": 122,
+   "ss-semantic": 30,
+   "ss-find": 42,
+   "ss-trace": 9
+  }
+ },
+ "zero": {
+  "native": {},
+  "TAB": {
+   "ss-grep": 35
+  },
+  "NONE": {
+   "ss-grep": 56
+  },
+  "PIPE": {
+   "ss-grep": 40
+  }
+ },
+ "events": {
+  "native": {},
+  "TAB": {
+   "ss_envelopes": 552,
+   "codex_cap_truncation": 105,
+   "envelope_nonzero_exit": 25,
+   "error:stat failed": 12,
+   "no_section_for_call": 112,
+   "reread_omitted": 43,
+   "force_retry": 7,
+   "loader_noise": 8,
+   "native_fallback": 9,
+   "error:file not indexed for semantic span selec": 1
+  },
+  "NONE": {
+   "ss_envelopes": 546,
+   "codex_cap_truncation": 100,
+   "no_section_for_call": 96,
+   "reread_omitted": 40,
+   "force_retry": 2,
+   "loader_noise": 5,
+   "envelope_nonzero_exit": 20,
+   "native_fallback": 10,
+   "error:stat failed": 9
+  },
+  "PIPE": {
+   "ss_envelopes": 539,
+   "codex_cap_truncation": 107,
+   "native_fallback": 20,
+   "reread_omitted": 46,
+   "no_section_for_call": 95,
+   "envelope_nonzero_exit": 21,
+   "loader_noise": 5,
+   "force_retry": 10,
+   "error:stat failed": 6
+  }
+ },
+ "rolloutsWith": {
+  "native": {},
+  "TAB": {
+   "codex_cap_truncation": [
+    "absinthe-graphql__absinthe-998/TAB/rep0",
+    "accenture__sfmc-devtools-1974/TAB/rep0",
+    "accenture__sfmc-devtools-1974/TAB/rep1",
+    "accenture__sfmc-devtools-1974/TAB/rep2",
+    "aio-libs__aiohttp-8038/TAB/rep0",
+    "aio-libs__aiohttp-8038/TAB/rep1",
+    "aio-libs__aiohttp-8038/TAB/rep2",
+    "apigee__registry-961/TAB/rep0",
+    "apigee__registry-961/TAB/rep1",
+    "apigee__registry-961/TAB/rep2",
+    "aws-actions__configure-aws-credentials-42/TAB/rep0",
+    "aws-actions__configure-aws-credentials-42/TAB/rep1",
+    "aws-actions__configure-aws-credentials-42/TAB/rep2",
+    "awslabs__aws-embedded-metrics-node-21/TAB/rep0",
+    "awslabs__aws-embedded-metrics-node-21/TAB/rep2",
+    "axelrod-python__axelrod-671/TAB/rep0",
+    "bfgroup__b2-113/TAB/rep0",
+    "bfgroup__b2-113/TAB/rep1",
+    "bfgroup__b2-113/TAB/rep2",
+    "bfgroup__b2-259/TAB/rep0",
+    "bfgroup__b2-259/TAB/rep1",
+    "bfgroup__b2-259/TAB/rep2",
+    "callstack__react-native-paper-972/TAB/rep0",
+    "callstack__react-native-paper-972/TAB/rep2",
+    "celestiaorg__nmt-192/TAB/rep0",
+    "devlooped__moq-1262/TAB/rep0",
+    "devlooped__moq-1262/TAB/rep1",
+    "devlooped__moq-1262/TAB/rep2",
+    "fastify__fastify-cors-285/TAB/rep1",
+    "gitbookio__markup-it-56/TAB/rep0",
+    "gitbookio__markup-it-56/TAB/rep1",
+    "gitbookio__markup-it-56/TAB/rep2",
+    "hotmeteor__spectator-181/TAB/rep0",
+    "hotmeteor__spectator-181/TAB/rep2",
+    "mathnet__mathnet-numerics-1072/TAB/rep0",
+    "mathnet__mathnet-numerics-1072/TAB/rep2",
+    "protofire__solhint-224/TAB/rep0",
+    "protofire__solhint-224/TAB/rep1",
+    "protofire__solhint-224/TAB/rep2"
+   ],
+   "envelope_nonzero_exit": [
+    "absinthe-graphql__absinthe-998/TAB/rep0",
+    "aio-libs__aiohttp-8038/TAB/rep2",
+    "apigee__registry-961/TAB/rep0",
+    "apigee__registry-961/TAB/rep1",
+    "apigee__registry-961/TAB/rep2",
+    "aws-actions__configure-aws-credentials-42/TAB/rep1",
+    "bfgroup__b2-113/TAB/rep0",
+    "bfgroup__b2-113/TAB/rep1",
+    "devlooped__moq-1262/TAB/rep1",
+    "devlooped__moq-1262/TAB/rep2",
+    "gitbookio__markup-it-56/TAB/rep0",
+    "gitbookio__markup-it-56/TAB/rep1",
+    "gitbookio__markup-it-56/TAB/rep2",
+    "hotmeteor__spectator-181/TAB/rep0",
+    "hotmeteor__spectator-181/TAB/rep2"
+   ],
+   "ss_error": [
+    "absinthe-graphql__absinthe-998/TAB/rep0",
+    "bfgroup__b2-113/TAB/rep0",
+    "devlooped__moq-1262/TAB/rep1",
+    "gitbookio__markup-it-56/TAB/rep0",
+    "gitbookio__markup-it-56/TAB/rep1",
+    "gitbookio__markup-it-56/TAB/rep2",
+    "protofire__solhint-224/TAB/rep0"
+   ],
+   "errkind:stat failed": [
+    "absinthe-graphql__absinthe-998/TAB/rep0",
+    "devlooped__moq-1262/TAB/rep1",
+    "gitbookio__markup-it-56/TAB/rep0",
+    "gitbookio__markup-it-56/TAB/rep1",
+    "gitbookio__markup-it-56/TAB/rep2",
+    "protofire__solhint-224/TAB/rep0"
+   ],
+   "reread_omitted": [
+    "accenture__sfmc-devtools-1974/TAB/rep0",
+    "accenture__sfmc-devtools-1974/TAB/rep2",
+    "aio-libs__aiohttp-8038/TAB/rep0",
+    "aio-libs__aiohttp-8038/TAB/rep1",
+    "aio-libs__aiohttp-8038/TAB/rep2",
+    "aws-actions__configure-aws-credentials-42/TAB/rep0",
+    "aws-actions__configure-aws-credentials-42/TAB/rep1",
+    "aws-actions__configure-aws-credentials-42/TAB/rep2",
+    "awslabs__aws-embedded-metrics-node-21/TAB/rep0",
+    "awslabs__aws-embedded-metrics-node-21/TAB/rep1",
+    "bfgroup__b2-113/TAB/rep0",
+    "devlooped__moq-1262/TAB/rep0",
+    "devlooped__moq-1262/TAB/rep1",
+    "devlooped__moq-1262/TAB/rep2",
+    "gitbookio__markup-it-56/TAB/rep0",
+    "gitbookio__markup-it-56/TAB/rep1",
+    "jazzband__tablib-454/TAB/rep2",
+    "mirumee__ariadne-codegen-218/TAB/rep0",
+    "protofire__solhint-224/TAB/rep0",
+    "protofire__solhint-224/TAB/rep2"
+   ],
+   "force_retry": [
+    "accenture__sfmc-devtools-1974/TAB/rep2",
+    "aio-libs__aiohttp-8038/TAB/rep2",
+    "aws-actions__configure-aws-credentials-42/TAB/rep0",
+    "bfgroup__b2-113/TAB/rep0",
+    "devlooped__moq-1262/TAB/rep0",
+    "protofire__solhint-224/TAB/rep0"
+   ],
+   "ss_grep_zero": [
+    "aio-libs__aiohttp-8038/TAB/rep1",
+    "aio-libs__aiohttp-8038/TAB/rep2",
+    "aws-actions__configure-aws-credentials-42/TAB/rep0",
+    "bfgroup__b2-113/TAB/rep0",
+    "bfgroup__b2-113/TAB/rep1",
+    "bfgroup__b2-113/TAB/rep2",
+    "bfgroup__b2-259/TAB/rep0",
+    "bfgroup__b2-259/TAB/rep1",
+    "bfgroup__b2-259/TAB/rep2",
+    "devlooped__moq-1262/TAB/rep0",
+    "gitbookio__markup-it-56/TAB/rep1",
+    "hotmeteor__spectator-181/TAB/rep1",
+    "hotmeteor__spectator-181/TAB/rep2",
+    "jazzband__tablib-454/TAB/rep2",
+    "protofire__solhint-224/TAB/rep0"
+   ],
+   "loader_noise": [
+    "apigee__registry-961/TAB/rep0",
+    "apigee__registry-961/TAB/rep1",
+    "apigee__registry-961/TAB/rep2",
+    "aws-actions__configure-aws-credentials-42/TAB/rep1",
+    "bfgroup__b2-113/TAB/rep0",
+    "devlooped__moq-1262/TAB/rep2",
+    "hotmeteor__spectator-181/TAB/rep0"
+   ],
+   "native_fallback": [
+    "aws-actions__configure-aws-credentials-42/TAB/rep1",
+    "bfgroup__b2-259/TAB/rep0",
+    "fastify__fastify-cors-285/TAB/rep2",
+    "protofire__solhint-224/TAB/rep1"
+   ],
+   "errkind:file not indexed for semantic span selec": [
+    "bfgroup__b2-113/TAB/rep0"
+   ]
+  },
+  "NONE": {
+   "codex_cap_truncation": [
+    "accenture__sfmc-devtools-1974/NONE/rep0",
+    "accenture__sfmc-devtools-1974/NONE/rep1",
+    "accenture__sfmc-devtools-1974/NONE/rep2",
+    "aio-libs__aiohttp-8038/NONE/rep0",
+    "aio-libs__aiohttp-8038/NONE/rep1",
+    "aio-libs__aiohttp-8038/NONE/rep2",
+    "apigee__registry-961/NONE/rep0",
+    "apigee__registry-961/NONE/rep1",
+    "apigee__registry-961/NONE/rep2",
+    "aws-actions__configure-aws-credentials-42/NONE/rep0",
+    "aws-actions__configure-aws-credentials-42/NONE/rep1",
+    "awslabs__aws-embedded-metrics-node-21/NONE/rep0",
+    "awslabs__aws-embedded-metrics-node-21/NONE/rep1",
+    "bfgroup__b2-113/NONE/rep0",
+    "bfgroup__b2-113/NONE/rep1",
+    "bfgroup__b2-113/NONE/rep2",
+    "bfgroup__b2-259/NONE/rep0",
+    "bfgroup__b2-259/NONE/rep1",
+    "bfgroup__b2-259/NONE/rep2",
+    "callstack__react-native-paper-972/NONE/rep1",
+    "callstack__react-native-paper-972/NONE/rep2",
+    "celestiaorg__nmt-192/NONE/rep1",
+    "devlooped__moq-1262/NONE/rep0",
+    "devlooped__moq-1262/NONE/rep1",
+    "devlooped__moq-1262/NONE/rep2",
+    "hotmeteor__spectator-181/NONE/rep1",
+    "locationtech__jts-622/NONE/rep0",
+    "locationtech__jts-622/NONE/rep1",
+    "mathnet__mathnet-numerics-1072/NONE/rep2",
+    "mirumee__ariadne-codegen-218/NONE/rep1",
+    "mirumee__ariadne-codegen-218/NONE/rep2",
+    "protofire__solhint-224/NONE/rep0",
+    "protofire__solhint-224/NONE/rep1",
+    "protofire__solhint-224/NONE/rep2"
+   ],
+   "reread_omitted": [
+    "accenture__sfmc-devtools-1974/NONE/rep2",
+    "aio-libs__aiohttp-8038/NONE/rep0",
+    "aio-libs__aiohttp-8038/NONE/rep2",
+    "awslabs__aws-embedded-metrics-node-21/NONE/rep2",
+    "bfgroup__b2-113/NONE/rep0",
+    "bfgroup__b2-113/NONE/rep1",
+    "devlooped__moq-1262/NONE/rep0",
+    "devlooped__moq-1262/NONE/rep1",
+    "devlooped__moq-1262/NONE/rep2",
+    "fastify__fastify-cors-285/NONE/rep2",
+    "gitbookio__markup-it-56/NONE/rep0",
+    "gitbookio__markup-it-56/NONE/rep2",
+    "jazzband__tablib-454/NONE/rep1",
+    "jazzband__tablib-454/NONE/rep2",
+    "protofire__solhint-224/NONE/rep0",
+    "protofire__solhint-224/NONE/rep2"
+   ],
+   "ss_grep_zero": [
+    "aio-libs__aiohttp-8038/NONE/rep0",
+    "aio-libs__aiohttp-8038/NONE/rep2",
+    "aws-actions__configure-aws-credentials-42/NONE/rep1",
+    "bfgroup__b2-113/NONE/rep0",
+    "bfgroup__b2-113/NONE/rep1",
+    "bfgroup__b2-113/NONE/rep2",
+    "bfgroup__b2-259/NONE/rep0",
+    "bfgroup__b2-259/NONE/rep1",
+    "bfgroup__b2-259/NONE/rep2",
+    "callstack__react-native-paper-972/NONE/rep1",
+    "gitbookio__markup-it-56/NONE/rep0",
+    "gitbookio__markup-it-56/NONE/rep2",
+    "hotmeteor__spectator-181/NONE/rep0",
+    "protofire__solhint-224/NONE/rep2"
+   ],
+   "force_retry": [
+    "aio-libs__aiohttp-8038/NONE/rep0",
+    "aio-libs__aiohttp-8038/NONE/rep2"
+   ],
+   "loader_noise": [
+    "apigee__registry-961/NONE/rep1",
+    "apigee__registry-961/NONE/rep2",
+    "aws-actions__configure-aws-credentials-42/NONE/rep0",
+    "devlooped__moq-1262/NONE/rep0",
+    "fastify__fastify-cors-285/NONE/rep2"
+   ],
+   "envelope_nonzero_exit": [
+    "apigee__registry-961/NONE/rep1",
+    "apigee__registry-961/NONE/rep2",
+    "asynkron__protoactor-dotnet-1909/NONE/rep2",
+    "aws-actions__configure-aws-credentials-42/NONE/rep0",
+    "bfgroup__b2-113/NONE/rep0",
+    "bfgroup__b2-113/NONE/rep1",
+    "bfgroup__b2-259/NONE/rep2",
+    "devlooped__moq-1262/NONE/rep0",
+    "devlooped__moq-1262/NONE/rep1",
+    "fastify__fastify-cors-285/NONE/rep2",
+    "gitbookio__markup-it-56/NONE/rep0",
+    "gitbookio__markup-it-56/NONE/rep1",
+    "gitbookio__markup-it-56/NONE/rep2"
+   ],
+   "native_fallback": [
+    "aws-actions__configure-aws-credentials-42/NONE/rep2",
+    "bfgroup__b2-113/NONE/rep0",
+    "gitbookio__markup-it-56/NONE/rep2",
+    "protofire__solhint-224/NONE/rep0",
+    "protofire__solhint-224/NONE/rep2"
+   ],
+   "ss_error": [
+    "devlooped__moq-1262/NONE/rep0",
+    "devlooped__moq-1262/NONE/rep1",
+    "gitbookio__markup-it-56/NONE/rep0",
+    "gitbookio__markup-it-56/NONE/rep1",
+    "gitbookio__markup-it-56/NONE/rep2"
+   ],
+   "errkind:stat failed": [
+    "devlooped__moq-1262/NONE/rep0",
+    "devlooped__moq-1262/NONE/rep1",
+    "gitbookio__markup-it-56/NONE/rep0",
+    "gitbookio__markup-it-56/NONE/rep1",
+    "gitbookio__markup-it-56/NONE/rep2"
+   ]
+  },
+  "PIPE": {
+   "codex_cap_truncation": [
+    "absinthe-graphql__absinthe-998/PIPE/rep2",
+    "accenture__sfmc-devtools-1974/PIPE/rep0",
+    "accenture__sfmc-devtools-1974/PIPE/rep1",
+    "accenture__sfmc-devtools-1974/PIPE/rep2",
+    "aio-libs__aiohttp-8038/PIPE/rep0",
+    "aio-libs__aiohttp-8038/PIPE/rep1",
+    "aio-libs__aiohttp-8038/PIPE/rep2",
+    "apigee__registry-961/PIPE/rep0",
+    "apigee__registry-961/PIPE/rep1",
+    "apigee__registry-961/PIPE/rep2",
+    "aws-actions__configure-aws-credentials-42/PIPE/rep0",
+    "aws-actions__configure-aws-credentials-42/PIPE/rep1",
+    "awslabs__aws-embedded-metrics-node-21/PIPE/rep1",
+    "awslabs__aws-embedded-metrics-node-21/PIPE/rep2",
+    "bfgroup__b2-113/PIPE/rep0",
+    "bfgroup__b2-113/PIPE/rep1",
+    "bfgroup__b2-113/PIPE/rep2",
+    "bfgroup__b2-259/PIPE/rep0",
+    "bfgroup__b2-259/PIPE/rep1",
+    "bfgroup__b2-259/PIPE/rep2",
+    "callstack__react-native-paper-972/PIPE/rep0",
+    "devlooped__moq-1262/PIPE/rep0",
+    "devlooped__moq-1262/PIPE/rep1",
+    "devlooped__moq-1262/PIPE/rep2",
+    "gitbookio__markup-it-56/PIPE/rep0",
+    "hotmeteor__spectator-181/PIPE/rep0",
+    "locationtech__jts-622/PIPE/rep1",
+    "locationtech__jts-622/PIPE/rep2",
+    "mirumee__ariadne-codegen-218/PIPE/rep0",
+    "mirumee__ariadne-codegen-218/PIPE/rep1",
+    "mirumee__ariadne-codegen-218/PIPE/rep2",
+    "protofire__solhint-224/PIPE/rep0",
+    "protofire__solhint-224/PIPE/rep1",
+    "protofire__solhint-224/PIPE/rep2"
+   ],
+   "native_fallback": [
+    "absinthe-graphql__absinthe-998/PIPE/rep1",
+    "accenture__sfmc-devtools-1974/PIPE/rep2",
+    "aws-actions__configure-aws-credentials-42/PIPE/rep0",
+    "axelrod-python__axelrod-671/PIPE/rep2",
+    "bfgroup__b2-113/PIPE/rep1",
+    "bfgroup__b2-113/PIPE/rep2",
+    "bfgroup__b2-259/PIPE/rep2",
+    "gitbookio__markup-it-56/PIPE/rep1",
+    "protofire__solhint-224/PIPE/rep2"
+   ],
+   "reread_omitted": [
+    "absinthe-graphql__absinthe-998/PIPE/rep2",
+    "accenture__sfmc-devtools-1974/PIPE/rep1",
+    "aio-libs__aiohttp-8038/PIPE/rep0",
+    "aio-libs__aiohttp-8038/PIPE/rep1",
+    "aio-libs__aiohttp-8038/PIPE/rep2",
+    "apigee__registry-961/PIPE/rep1",
+    "apigee__registry-961/PIPE/rep2",
+    "aws-actions__configure-aws-credentials-42/PIPE/rep1",
+    "awslabs__aws-embedded-metrics-node-21/PIPE/rep1",
+    "awslabs__aws-embedded-metrics-node-21/PIPE/rep2",
+    "bfgroup__b2-113/PIPE/rep0",
+    "bfgroup__b2-113/PIPE/rep1",
+    "bfgroup__b2-113/PIPE/rep2",
+    "callstack__react-native-paper-972/PIPE/rep0",
+    "devlooped__moq-1262/PIPE/rep0",
+    "devlooped__moq-1262/PIPE/rep2",
+    "fastify__fastify-cors-285/PIPE/rep1",
+    "gitbookio__markup-it-56/PIPE/rep0",
+    "gitbookio__markup-it-56/PIPE/rep2",
+    "mirumee__ariadne-codegen-218/PIPE/rep1",
+    "protofire__solhint-224/PIPE/rep0",
+    "protofire__solhint-224/PIPE/rep2"
+   ],
+   "envelope_nonzero_exit": [
+    "accenture__sfmc-devtools-1974/PIPE/rep2",
+    "aio-libs__aiohttp-8038/PIPE/rep1",
+    "apigee__registry-961/PIPE/rep0",
+    "aws-actions__configure-aws-credentials-42/PIPE/rep0",
+    "bfgroup__b2-113/PIPE/rep0",
+    "bfgroup__b2-113/PIPE/rep1",
+    "bfgroup__b2-259/PIPE/rep0",
+    "bfgroup__b2-259/PIPE/rep1",
+    "devlooped__moq-1262/PIPE/rep1",
+    "gitbookio__markup-it-56/PIPE/rep0",
+    "gitbookio__markup-it-56/PIPE/rep1",
+    "gitbookio__markup-it-56/PIPE/rep2",
+    "hotmeteor__spectator-181/PIPE/rep0",
+    "mirumee__ariadne-codegen-218/PIPE/rep2"
+   ],
+   "loader_noise": [
+    "accenture__sfmc-devtools-1974/PIPE/rep2",
+    "apigee__registry-961/PIPE/rep0",
+    "aws-actions__configure-aws-credentials-42/PIPE/rep0",
+    "gitbookio__markup-it-56/PIPE/rep0",
+    "gitbookio__markup-it-56/PIPE/rep1"
+   ],
+   "ss_grep_zero": [
+    "aio-libs__aiohttp-8038/PIPE/rep1",
+    "aio-libs__aiohttp-8038/PIPE/rep2",
+    "apigee__registry-961/PIPE/rep0",
+    "aws-actions__configure-aws-credentials-42/PIPE/rep0",
+    "aws-actions__configure-aws-credentials-42/PIPE/rep1",
+    "bfgroup__b2-113/PIPE/rep0",
+    "bfgroup__b2-113/PIPE/rep1",
+    "bfgroup__b2-113/PIPE/rep2",
+    "bfgroup__b2-259/PIPE/rep0",
+    "bfgroup__b2-259/PIPE/rep1",
+    "bfgroup__b2-259/PIPE/rep2",
+    "gitbookio__markup-it-56/PIPE/rep1",
+    "gitbookio__markup-it-56/PIPE/rep2",
+    "mathnet__mathnet-numerics-1072/PIPE/rep2",
+    "protofire__solhint-224/PIPE/rep0"
+   ],
+   "force_retry": [
+    "aws-actions__configure-aws-credentials-42/PIPE/rep1",
+    "devlooped__moq-1262/PIPE/rep0",
+    "protofire__solhint-224/PIPE/rep0"
+   ],
+   "ss_error": [
+    "devlooped__moq-1262/PIPE/rep1",
+    "gitbookio__markup-it-56/PIPE/rep0",
+    "gitbookio__markup-it-56/PIPE/rep1",
+    "gitbookio__markup-it-56/PIPE/rep2"
+   ],
+   "errkind:stat failed": [
+    "devlooped__moq-1262/PIPE/rep1",
+    "gitbookio__markup-it-56/PIPE/rep0",
+    "gitbookio__markup-it-56/PIPE/rep1",
+    "gitbookio__markup-it-56/PIPE/rep2"
+   ]
+  }
+ },
+ "quotes": {
+  "codex_cap_truncation": [
+   [
+    "absinthe-graphql__absinthe-998/TAB/rep0",
+    "orig 2937 tokens :: ss-read AGENTS.md 1 240; printf '\\n-- introspection references --\\n'; ss-find 'render_default_value' --regex 'render_default_value"
+   ],
+   [
+    "absinthe-graphql__absinthe-998/TAB/rep0",
+    "orig 2512 tokens :: ss-read test/absinthe/introspection_test.exs 150 280; run_tests introspection"
+   ],
+   [
+    "accenture__sfmc-devtools-1974/TAB/rep0",
+    "orig 2989 tokens :: ss-search \"refresh called without type or key missing validation error\" -k 8"
+   ],
+   [
+    "accenture__sfmc-devtools-1974/TAB/rep0",
+    "orig 2773 tokens :: ss-read lib/index.js 700 820 && ss-read test/general.test.js 2280 2365 && ss-read lib/cli.js 120 155"
+   ]
+  ],
+  "envelope_nonzero_exit": [
+   [
+    "absinthe-graphql__absinthe-998/TAB/rep0",
+    "exit=1 :: ss-find 'default value introspection' --regex 'render_default_value|default_value' -k 30; ss-read test/absinthe/type/built_ins/introspection_test.exs "
+   ],
+   [
+    "aio-libs__aiohttp-8038/TAB/rep2",
+    "exit=2 :: ss-read --force aiohttp/client_proto.py 1 22 && ss-grep \"CONNECTION\" aiohttp/hdrs.py -k 5"
+   ],
+   [
+    "apigee__registry-961/TAB/rep0",
+    "exit=1 :: ss-grep \"func (s *RegistryServer) ListApiDeployments\\|func (s *RegistryServer) ListApiSpecs\\|GetDeployment(ctx\\|GetSpec(ctx\" -k 30"
+   ],
+   [
+    "apigee__registry-961/TAB/rep0",
+    "exit=1 :: ss-read server/registry/actions_specs.go 175 255 && ss-grep \"GetApi(ctx\" -k 20"
+   ]
+  ],
+  "error:stat failed": [
+   [
+    "absinthe-graphql__absinthe-998/TAB/rep0",
+    "ss-read test/absinthe/type/built_ins/introspection_test.exs 1 260 :: [ss-read] error: stat failed: ENOENT"
+   ],
+   [
+    "devlooped__moq-1262/TAB/rep1",
+    "ss-read src/Moq/Expressions/Visitors/PartialMatcherAwareEval.cs 1 180 :: [ss-read] error: stat failed: ENOENT"
+   ],
+   [
+    "gitbookio__markup-it-56/TAB/rep0",
+    "ss-read src/html/serializeHtml.js 1 180 :: [ss-read] error: stat failed: ENOENT"
+   ]
+  ],
+  "reread_omitted": [
+   [
+    "accenture__sfmc-devtools-1974/TAB/rep0",
+    "# ss-read lib/index.js (lines 1738-1810 of 2279) | [unchanged reread omitted; these exact source lines were already shown 2 sweet-search calls ago within lib/index.js:1660-1815. Continue from that copy. ONLY if the prior copy is una"
+   ],
+   [
+    "accenture__sfmc-devtools-1974/TAB/rep2",
+    "# ss-read lib/index.js (lines 250-390 of 2279) | [unchanged reread omitted; these exact source lines were already shown 2 sweet-search calls ago within lib/index.js:145-390. Continue from that copy. ONLY if the prior copy is unavail"
+   ],
+   [
+    "aio-libs__aiohttp-8038/TAB/rep0",
+    "# ss-read aiohttp/connector.py (lines 535-620 of 1545) | [unchanged reread omitted; these exact source lines were already shown 2 sweet-search calls ago within aiohttp/connector.py:430-620. Continue from that copy. ONLY if the prior"
+   ],
+   [
+    "aio-libs__aiohttp-8038/TAB/rep1",
+    "# ss-read aiohttp/client_proto.py (lines 107-145 of 264) | [unchanged reread omitted; these exact source lines were already shown 1 sweet-search call ago within aiohttp/client_proto.py:107-264. Continue from that copy. ONLY if the p"
+   ]
+  ],
+  "force_retry": [
+   [
+    "accenture__sfmc-devtools-1974/TAB/rep2",
+    "ss-read --force lib/index.js 250 390"
+   ],
+   [
+    "aio-libs__aiohttp-8038/TAB/rep2",
+    "ss-read --force aiohttp/client_proto.py 1 22 && ss-grep \"CONNECTION\" aiohttp/hdrs.py -k 5"
+   ],
+   [
+    "aws-actions__configure-aws-credentials-42/TAB/rep0",
+    "ss-read --force index.js 80 165 && ss-read --force index.test.js 1 55"
+   ],
+   [
+    "aws-actions__configure-aws-credentials-42/TAB/rep0",
+    "ss-read --force index.js 141 194 && ss-read --force index.test.js 1 40"
+   ]
+  ],
+  "loader_noise": [
+   [
+    "apigee__registry-961/TAB/rep0",
+    "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r0-14/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false) | LateInteraction: Streaming load 5000 documents... | LateInteraction: Loaded 5266 "
+   ],
+   [
+    "apigee__registry-961/TAB/rep0",
+    "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r0-14/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false) | LateInteraction: Streaming load 5000 documents... | LateInteraction: Loaded 5266 "
+   ],
+   [
+    "apigee__registry-961/TAB/rep1",
+    "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r1-18/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false) | LateInteraction: Streaming load 5000 documents... | LateInteraction: Loaded 5266 "
+   ],
+   [
+    "apigee__registry-961/TAB/rep2",
+    "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r2-20/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false) | LateInteraction: Streaming load 5000 documents... | LateInteraction: Loaded 5266 "
+   ]
+  ],
+  "native_fallback": [
+   [
+    "aws-actions__configure-aws-credentials-42/TAB/rep1",
+    "rg -n -F -C 8 \"AWS_ACCESS_KEY_ID\" dist/index.js"
+   ],
+   [
+    "aws-actions__configure-aws-credentials-42/TAB/rep1",
+    "rg -n -F -C 10 \"core.getInput('aws-access-key-id'\" dist/index.js"
+   ],
+   [
+    "bfgroup__b2-259/TAB/rep0",
+    "sed -n '180,220p' test/configure.py"
+   ],
+   [
+    "bfgroup__b2-259/TAB/rep0",
+    "sed -n '600,612p' src/build/configure.jam"
+   ]
+  ],
+  "error:file not indexed for semantic span selec": [
+   [
+    "bfgroup__b2-113/TAB/rep0",
+    "ss-read src/tools/targets.py 1 260 :: [ss-semantic] error: file not indexed for semantic span selection \u2014 returning whole file via plain read"
+   ]
+  ]
+ },
+ "nRollouts": {
+  "TAB": 66,
+  "native": 66,
+  "NONE": 66,
+  "PIPE": 66
+ }
+}

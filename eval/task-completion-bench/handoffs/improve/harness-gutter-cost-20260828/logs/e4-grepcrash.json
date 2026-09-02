@@ -1,0 +1,261 @@
+{
+ "crash": [
+  {
+   "task": "gitbookio__markup-it-56",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-grep \"INLINES.HTML\\|type: INLINES.HTML\\|matchType(INLINES\" -k 20",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:INLINES.HTML\\|type: INLINES.HTML\\|matchType(INLINES)\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:intern",
+   "bre": true
+  },
+  {
+   "task": "callstack__react-native-paper-972",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-grep \"const {.*theme|...rest\" -k 20",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:const {.*theme|...rest)\n              ^\nerror: repetition quantifier expects a valid decimal\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit ",
+   "bre": false
+  },
+  {
+   "task": "apigee__registry-961",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-search \"List resource validates parent exists before listing\" -k 10 && ss-grep \"GetProject(ctx\\|GetApi(ctx\\|GetVersion(ctx\\|GetSpec(ctx\\|GetDeployment(ctx\" -k 50",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:GetProject(ctx\\|GetApi(ctx\\|GetVersion(ctx\\|GetSpec(ctx\\|GetDeployment(ctx)\n                                                          ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:in",
+   "bre": true
+  },
+  {
+   "task": "apigee__registry-961",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-grep \"GetApi(ctx\" -k 30",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:GetApi(ctx)\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at Socket.<anonymous> (node:internal/child_process:456:11)\n    at Socket.emit (node:",
+   "bre": false
+  },
+  {
+   "task": "apigee__registry-961",
+   "arm": "none",
+   "rep": 1,
+   "cmd": "ss-grep \"parseArtifactParent\" -k 10 && ss-grep \"GetApi(ctx\" -k 10",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:GetApi(ctx)\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)\n",
+   "bre": false
+  },
+  {
+   "task": "apigee__registry-961",
+   "arm": "none",
+   "rep": 1,
+   "cmd": "ss-grep \"GetDeploymentRevision(ctx\" -k 10",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:GetDeploymentRevision(ctx)\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at Socket.<anonymous> (node:internal/child_process:456:11)\n    at Soc",
+   "bre": false
+  },
+  {
+   "task": "aws-actions__configure-aws-credentials-42",
+   "arm": "none",
+   "rep": 1,
+   "cmd": "ss-grep \"getInput('aws-access-key-id'|AWS_ACCESS_KEY_ID\" -k 10",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:getInput('aws-access-key-id'|AWS_ACCESS_KEY_ID)\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/ch",
+   "bre": false
+  },
+  {
+   "task": "aws-actions__configure-aws-credentials-42",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-grep \"core.exportVariable('AWS_ACCESS_KEY_ID'|getInput('aws-access-key-id'\" --in dist/index.js -k 10",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:core.exportVariable('AWS_ACCESS_KEY_ID'|getInput('aws-access-key-id')\n                          ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at C",
+   "bre": false
+  },
+  {
+   "task": "aio-libs__aiohttp-8038",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-grep \"Connection(\" -k 20",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:Connection()\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)\n",
+   "bre": false
+  },
+  {
+   "task": "apigee__registry-961",
+   "arm": "pipe",
+   "rep": 1,
+   "cmd": "ss-grep \"core.ListArtifacts\\|ListArtifacts(ctx\" -k 40 && ss-grep \"func Test.*Artifact\" -k 30",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:core.ListArtifacts\\|ListArtifacts(ctx)\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at Socket.<anonymous> (node:internal/child_process:456:11",
+   "bre": true
+  },
+  {
+   "task": "apigee__registry-961",
+   "arm": "pipe",
+   "rep": 1,
+   "cmd": "ss-read server/registry/names/spec_revision.go 55 105 && ss-read server/registry/names/deployment_revision.go 45 90 && ss-grep \"GetApiSpec(ctx\" --in server -k 20",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:GetApiSpec(ctx)\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)\n",
+   "bre": false
+  },
+  {
+   "task": "apigee__registry-961",
+   "arm": "pipe",
+   "rep": 2,
+   "cmd": "ss-grep \"GetSpecRevision\\|GetDeploymentRevision\\|GetVersion(ctx\\|GetApi(ctx\\|GetProject(ctx\" --in server/registry/internal/storage -k 30",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:GetSpecRevision\\|GetDeploymentRevision\\|GetVersion(ctx\\|GetApi(ctx\\|GetProject(ctx)\n                                                                     ^\nerror: unclosed\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeCl",
+   "bre": true
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-grep \"generate (\" -k 30",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:generate ()\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at Socket.<anonymous> (node:internal/child_process:456:11)\n    at Socket.emit (node:",
+   "bre": false
+  },
+  {
+   "task": "devlooped__moq-1262",
+   "arm": "pipe",
+   "rep": 1,
+   "cmd": "ss-grep \"class MatcherFactory\" -k 10 && ss-grep \"FindLast(setup|Matches(invocation|MarkOverriddenSetups\" -k 20",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:FindLast(setup|Matches(invocation|MarkOverriddenSetups)\n               ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexi",
+   "bre": false
+  },
+  {
+   "task": "devlooped__moq-1262",
+   "arm": "pipe",
+   "rep": 2,
+   "cmd": "ss-grep \"FindLast(\\|FindAll(\\|IsMatch(invocation)\" -k 20",
+   "err": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:FindLast(\\|FindAll(\\|IsMatch(invocation))\n               ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:intern",
+   "bre": true
+  }
+ ],
+ "usage": [
+  {
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-grep \"feature.*build|build.*feature|<build>\" --in src/build src/tools -k 30",
+   "out": "[ss] 1 argument(s) not consumed: \"src/tools\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings]"
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-find \"build property main target generation\" --regex \"generate|build|property-set\" --in src/build/targets.jam -k 20",
+   "out": "[ss] unrecognised option \"--in\"\nUsage: ss-find \"<query>\" --regex \"<regex>\" [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--full|--xl] [-k N]\n"
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 2,
+   "cmd": "ss-grep \"build\" src/build/targets.jam -k 40",
+   "out": "[ss] 1 argument(s) not consumed: \"src/build/targets.jam\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fi"
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-grep \"build\" src/build/targets.jam src/build/property-set.jam src/build/feature.jam -k 50",
+   "out": "[ss] 3 argument(s) not consumed: \"src/build/targets.jam\", \"src/build/property-set.jam\", \"src/build/feature.jam\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep"
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "arm": "tab",
+   "rep": 2,
+   "cmd": "ss-grep \"build\" src/build/targets.py src/build/*.py -k 100",
+   "out": "[ss] 18 argument(s) not consumed: \"src/build/targets.py\", \"src/build/alias.py\", \"src/build/build_request.py\", \"src/build/configure.py\", \"src/build/engine.py\", \"src/build/errors.py\", \"src/build/feature.py\", \"src/build/generators.py\", \"src/build/__init__.py\", \"s"
+  },
+  {
+   "task": "devlooped__moq-1262",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-grep \"derived|generic|lazy|Setup.*order|registration\" tests/Moq.Tests/Regressions/IssueReportsFixture.cs -k 50",
+   "out": "[ss] 1 argument(s) not consumed: \"tests/Moq.Tests/Regressions/IssueReportsFixture.cs\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case"
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "arm": "none",
+   "rep": 0,
+   "cmd": "ss-grep \"expand_no|build.*no|build-no\" src test -k 120",
+   "out": "[ss] 2 argument(s) not consumed: \"src\", \"test\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-string"
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "arm": "none",
+   "rep": 1,
+   "cmd": "ss-grep \"build\" src/build/targets.py -k 100",
+   "out": "[ss] 1 argument(s) not consumed: \"src/build/targets.py\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fix"
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-grep \"get('build')|get(\\\"build\\\")|build.*yes|build.*no\" --regex \"(get\\(['\\\"]build|build.*(yes|no)|\\bbuild\\b)\" -k 50",
+   "out": "[ss] 1 argument(s) not consumed: \"(get\\(['\"]build|build.*(yes|no)|\\bbuild\\b)\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--"
+  },
+  {
+   "task": "devlooped__moq-1262",
+   "arm": "none",
+   "rep": 1,
+   "cmd": "ss-grep \"overrid|registration order|most recent|derived|base interface\" tests/Moq.Tests -k 80",
+   "out": "[ss] 1 argument(s) not consumed: \"tests/Moq.Tests\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-st"
+  },
+  {
+   "task": "protofire__solhint-224",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-grep \"order\" docs README.md package.json -k 30",
+   "out": "[ss] 3 argument(s) not consumed: \"docs\", \"README.md\", \"package.json\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-rege"
+  },
+  {
+   "task": "apigee__registry-961",
+   "arm": "pipe",
+   "rep": 1,
+   "cmd": "ss-read server/registry/names/artifact.go 451 540 && ss-grep \"ListArtifacts\" --in cmd/registry/core --regex \"ListArtifacts\" -k 30",
+   "out": "# ss-read server/registry/names/artifact.go (lines 451-540 of 540)\n```go\n451| func parseSpecArtifactCollection(name string) (specArtifact, error) {\n452| \tif !specArtifactCollectionRegexp.MatchString(name) {\n453| \t\treturn specArtifact{}, fmt.Errorf(\"invalid spe"
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-find \"generate\" --regex \"generate\" --in src/build/targets.py -k 40",
+   "out": "[ss] unrecognised option \"--in\"\nUsage: ss-find \"<query>\" --regex \"<regex>\" [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--full|--xl] [-k N]\n"
+  }
+ ],
+ "zero": [
+  {
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-grep \"build-no\" -k 20",
+   "out": "# ss-grep: 0 total match(es) for /build-no/\n(no matches)\n"
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-grep \"evaluate-conditional-relevance\" -k 10",
+   "out": "# ss-grep: 0 total match(es) for /evaluate-conditional-relevance/\n(no matches)\n"
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-grep \"build-no\" -k 50",
+   "out": "# ss-grep: 0 total match(es) for /build-no/\n(no matches)\n"
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-grep \"evaluate-conditional-relevance\" -k 20",
+   "out": "# ss-grep: 0 total match(es) for /evaluate-conditional-relevance/\n(no matches)\n"
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-grep \"evaluate-conditional|conditional-relevance|build.*no|feature.*build\" --in src/build/property-set.jam -k 30",
+   "out": "# ss-grep: 0 total match(es) for /evaluate-conditional|conditional-relevance|build.*no|feature.*build/ (scope: --in src/build/property-set.jam)\n(no matches)\n"
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-grep \"evaluate-conditionals\" --in src/build/property.jam -k 20",
+   "out": "# ss-grep: 0 total match(es) for /evaluate-conditionals/ (scope: --in src/build/property.jam)\n(no matches)\n"
+  }
+ ]
+}

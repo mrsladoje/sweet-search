@@ -1,0 +1,6 @@
+--- gate function body (search for rji( near the throw)
+function MSy({absoluteFilePath:e,fileContents:t,lastRead:r,oldString:n,replaceAll:o,model:i,readNotAutoAllowed:s}){if(!r){if(!rji(i)&&!s())return!1;throw new j1e(veo)}
+
+--- rji definition
+--- any other user of grg
+eturn oa(e)==="claude-opus-4-8"}function nOc(e){return!1}function rji(e){return grg.has(oa(e))}function nji(e,t){return`${e}_${tJt(t)}`}function m6e(e){return/-eap($|\

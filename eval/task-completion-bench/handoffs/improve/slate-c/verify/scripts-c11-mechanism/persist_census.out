@@ -1,0 +1,51 @@
+=== fp-claudecode-tab-20260826  native_dirs=22 sweet_dirs=22 jsonl_files=182 versions={'2.1.218': 17148}
+  persisted events (unique tool_use_id): 50  by (arm,loc,ss): {('native', 'sub', 'other'): 30, ('native', 'main', 'other'): 4, ('sweet', 'sub', 'other'): 12, ('sweet', 'sub', 'ss'): 2, ('sweet', 'main', 'ss'): 2}
+  persisted size bytes: min=30208  median=48025  max=1363148
+  inline ss-* results ('sweet', 'main'): n=846 max=23416  >20000:4  >25000:0  >28000:0  >29000:0
+  inline ss-* results ('sweet', 'sub'): n=125 max=28896  >20000:2  >25000:2  >28000:1  >29000:0
+  ss-* persisted events: 4
+    SS bfgroup__b2-259 sweet sub -root--ss-eval-runs-r0-52 dd934da6 size=31846.4 stub=2192 | ss-find "target requirements" --regex "TARGET|target" -k 200
+    SS bfgroup__b2-259 sweet sub -root--ss-eval-runs-r0-52 dd934da6 size=39321.6 stub=2196 | ss-find "configure" --regex ".*" -k 200
+    SS devlooped__moq-1262 sweet main -root--ss-eval-runs-r0-74 a0ea3568 size=31334.4 stub=2197 | ss-search "MatcherFactory predicate Match Create lazy matcher" -k 8 && ss-read src/Moq/MatcherFactory.cs 1 300
+    SS aws-actions__configure-aws-credentials-42 sweet main -root--ss-eval-runs-r1-33 59292a49 size=72806.4 stub=2142 | ss-read dist/index.js 34500 35000
+  non-ss persisted command heads: [(('native', 'grep'), 26), (('sweet', '/root/sweet-search-private/eval/agent-read-workflows/bin/ss-find'), 11), (('native', 'find'), 3), (('native', 'pwd'), 2), (('native', 'git'), 2), (('native', 'rg'), 1), (('sweet', 'grep'), 1)]
+  stub lengths (chars): min=2074 max=2226
+=== fp-claudecode-none-20260826  native_dirs=0 sweet_dirs=22 jsonl_files=79 versions={'2.1.218': 6860}
+  persisted events (unique tool_use_id): 12  by (arm,loc,ss): {('sweet', 'main', 'ss'): 1, ('sweet', 'sub', 'ss'): 9, ('sweet', 'sub', 'other'): 2}
+  persisted size bytes: min=33382  median=52326  max=81920
+  inline ss-* results ('sweet', 'main'): n=854 max=24739  >20000:2  >25000:0  >28000:0  >29000:0
+  inline ss-* results ('sweet', 'sub'): n=117 max=25575  >20000:3  >25000:1  >28000:0  >29000:0
+  ss-* persisted events: 10
+    SS bfgroup__b2-259 sweet main -root--ss-eval-runs-r2-38 26998406 size=34304.0 stub=2208 | ss-find "configuration" --regex ".*" -k 200
+    SS bfgroup__b2-259 sweet sub -root--ss-eval-runs-r2-38 26998406 size=33996.8 stub=2168 | ss-find ".jam" --regex "jam$|\.jam" --full -k 200
+    SS bfgroup__b2-259 sweet sub -root--ss-eval-runs-r2-38 26998406 size=33382.4 stub=2225 | ss-find "configure module" --regex "module|check|configuration" --full -k 200
+    SS bfgroup__b2-259 sweet sub -root--ss-eval-runs-r2-38 26998406 size=52326.4 stub=2216 | ss-find "configure file" --regex "configure|\.jam" --xl -k 300
+    SS bfgroup__b2-259 sweet sub -root--ss-eval-runs-r2-38 26998406 size=44134.4 stub=2203 | ss-find "check target" --regex "check|target|build" --xl -k 300
+    SS bfgroup__b2-259 sweet sub -root--ss-eval-runs-r2-38 26998406 size=74547.2 stub=2197 | ss-find "jam" --regex "^.*$" --full -k 500
+    SS bfgroup__b2-259 sweet sub -root--ss-eval-runs-r2-38 26998406 size=72601.6 stub=2226 | ss-find "src/tools" --regex "tools|configure|jam" --full -k 500
+    SS bfgroup__b2-113 sweet sub -root--ss-eval-runs-r2-30 1ada723a size=34406.4 stub=2189 | ss-read src/tools/builtin.py
+    SS bfgroup__b2-113 sweet sub -root--ss-eval-runs-r2-30 1ada723a size=61440.0 stub=2202 | ss-read src/build/targets.py
+    SS bfgroup__b2-113 sweet sub -root--ss-eval-runs-r1-27 c186f555 size=81920.0 stub=2206 | command -v ss-find || true; command -v ss-grep || true; command -v ss || true; grep -RInE 'stage|install|build
+  non-ss persisted command heads: [(('sweet', 'grep'), 1), (('sweet', '/root/sweet-search-private/eval/agent-read-workflows/bin/ss-read'), 1)]
+  stub lengths (chars): min=2151 max=2226
+=== fp-claudecode-pipe-20260826  native_dirs=0 sweet_dirs=22 jsonl_files=75 versions={'2.1.218': 6237}
+  persisted events (unique tool_use_id): 4  by (arm,loc,ss): {('sweet', 'sub', 'other'): 2, ('sweet', 'sub', 'ss'): 2}
+  persisted size bytes: min=32051  median=37683  max=37990
+  inline ss-* results ('sweet', 'main'): n=791 max=23079  >20000:4  >25000:0  >28000:0  >29000:0
+  inline ss-* results ('sweet', 'sub'): n=125 max=20052  >20000:1  >25000:0  >28000:0  >29000:0
+  ss-* persisted events: 2
+    SS bfgroup__b2-259 sweet sub -root--ss-eval-runs-r0-26 a4476826 size=36147.2 stub=2202 | ss-find "check target builds" --regex ".*" -k 200
+    SS bfgroup__b2-113 sweet sub -root--ss-eval-runs-r2-28 368a43f1 size=32051.2 stub=2214 | ss-find "target" --regex '.*targets.*' --full -k 200
+  non-ss persisted command heads: [(('sweet', 'grep'), 2)]
+  stub lengths (chars): min=2151 max=2214
+=== rb-claudecode-20260824  native_dirs=13 sweet_dirs=13 jsonl_files=100 versions={'2.1.218': 7951}
+  persisted events (unique tool_use_id): 28  by (arm,loc,ss): {('sweet', 'main', 'ss'): 2, ('native', 'sub', 'other'): 25, ('native', 'main', 'other'): 1}
+  persisted size bytes: min=34099  median=49664  max=446361
+  inline ss-* results ('sweet', 'main'): n=363 max=28327  >20000:2  >25000:1  >28000:1  >29000:0
+  ss-* persisted events: 2
+    SS apple__swift-nio-http2-145 sweet main -root--ss-eval-runs-r2-39 77753f4a size=39526.4 stub=2118 | ss-read Sources/NIOHTTP2/StreamStateMachine.swift 680 735 && ss-trace receivePushPromise callers --in Sources/
+    SS apple__swift-nio-http2-145 sweet main -root--ss-eval-runs-r1-38 940bae36 size=34508.8 stub=1963 | ss-trace receivePushPromise impact --in Sources/NIOHTTP2/StreamStateMachine.swift
+  non-ss persisted command heads: [(('native', 'grep'), 25), (('native', 'pwd'), 1)]
+  stub lengths (chars): min=1963 max=2227
+MISSING fixval-claude-code-20260828
+GRAND total persisted events across runs: 94   fp-only: 66   ss-*: 18

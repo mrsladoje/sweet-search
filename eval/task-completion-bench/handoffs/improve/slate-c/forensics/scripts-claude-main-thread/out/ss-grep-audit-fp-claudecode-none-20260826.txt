@@ -1,0 +1,91 @@
+{
+ "run": "fp-claudecode-none-20260826",
+ "sweetRollouts": 66,
+ "ssGrepCalls": 259,
+ "ssGrepSingleInvocation": 233,
+ "zeroMatchAnswers": 75,
+ "byVerdict": {
+  "true-negative": {
+   "n": 48,
+   "nextReal": 0.02884657,
+   "bre": 9,
+   "posix": 0
+  },
+  "false-negative-candidate": {
+   "n": 24,
+   "nextReal": 0.01417274,
+   "bre": 1,
+   "posix": 0
+  },
+  "grep-error": {
+   "n": 2,
+   "nextReal": 0.000723775,
+   "bre": 1,
+   "posix": 0
+  },
+  "scope-missing": {
+   "n": 1,
+   "nextReal": 0.00045001000000000004,
+   "bre": 0,
+   "posix": 0
+  }
+ },
+ "crashes": {
+  "Error: ripgrep failed (code N): rg: regex parse error:": {
+   "n": 8,
+   "tasks": [
+    "accenture__sfmc-devtools-1974",
+    "apigee__registry-961",
+    "bfgroup__b2-113",
+    "bfgroup__b2-259",
+    "fastify__fastify-cors-285",
+    "hotmeteor__spectator-181",
+    "mirumee__ariadne-codegen-218"
+   ],
+   "tools": [
+    "ss-grep",
+    "ss-read"
+   ],
+   "example": "ss-grep \"refresh(\" --in test -k 30"
+  },
+  "Error: Pattern search requires a late interaction index with line spans. Re-index with late interaction enabled.": {
+   "n": 1,
+   "tasks": [
+    "mathnet__mathnet-numerics-1072"
+   ],
+   "tools": [
+    "ss-find"
+   ],
+   "example": "ss-find \"Hypotenuse tests\" --regex \"Hypotenuse\" -k 20"
+  }
+ }
+}
+
+--- false-negative candidates ---
+aws-actions__configure-aws-credentials-42 r0 k=11 | ss-grep "aws-access-key-id" --in dist/index.js -k 10 | bre=false hint=false | grep: 1 lines in 1+ files [271] | e.g. "271:    const accessKeyId = core.getInput('aws-access-key-id', { required: true });"
+aws-actions__configure-aws-credentials-42 r0 k=12 | ss-grep "aws-region" --in dist/index.js -k 10 | bre=false hint=false | grep: 1 lines in 1+ files [273] | e.g. "273:    const region = core.getInput('aws-region', { required: true });"
+bfgroup__b2-113 r0 k=7 | ss-grep "boost-install" -k 20 | bre=false hint=false | grep: 3 lines in 2+ files [./src/tools/boostbook.jam, ./src/contrib/modular.jam] | e.g. "./src/tools/boostbook.jam:308:        local boost-installer-versions = snapshot cvs 1.33.0 ;"
+bfgroup__b2-113 r0 k=12 | ss-grep "build" --in src/build/targets.py -k 50 | bre=false hint=false | grep: 110 lines in 12+ files [29, 85, 86, 88] | e.g. "29:#   Rules supplied by the build system will use only targets derived"
+bfgroup__b2-113 r0 k=19 | ss-grep "class Basic" --in src/build/targets.py -k 10 | bre=false hint=false | grep: 1 lines in 1+ files [890] | e.g. "890:class BasicTarget (AbstractTarget):"
+bfgroup__b2-259 r0 k=23 | ss-grep "feature.*build" --in src -k 20 | bre=false hint=false | grep: 19 lines in 12+ files [src/tools/libtiff.jam, src/tools/features/tag-feature.jam, src/tools/features/build-feature.jam, src/tools/features/internal-feature.jam] | e.g. "src/tools/libtiff.jam:121:    local build-name = [ feature.get-values <build-name> : $(options) ] ;"
+bfgroup__b2-259 r0 k=27 | ss-grep "property.select" --in src -k 30 | bre=false hint=false | grep: 24 lines in 12+ files [src/build-system.jam, src/tools/libtiff.jam, src/tools/msvc.jam, src/tools/docutils.jam] | e.g. "src/build-system.jam:516:        local toolset-property = [ property.select <toolset> : $(properties) ] ;"
+bfgroup__b2-259 r1 k=18 | ss-grep "check-target-builds" --in src --in build --in tools -k 50 | bre=false hint=false | grep: 1 lines in 1+ files [src/tools/flags.jam] | e.g. "src/tools/flags.jam:71:    return [ check-target-builds /check/flags//flags_$(id) $(message)"
+bfgroup__b2-259 r1 k=24 | ss-grep "check-target" --in . -k 100 | bre=false hint=false | grep: 22 lines in 6+ files [./test/configure.py, ./src/tools/qcc.jam, ./src/tools/flags.jam, ./example/try_compile/Jamroot.jam] | e.g. "./test/configure.py:8:# Tests configure.check-target-builds and friends"
+bfgroup__b2-259 r1 k=29 | ss-grep "configure.jam" -k 20 | bre=false hint=false | grep: 1 lines in 1+ files [./.vault-manifest.sha256] | e.g. "./.vault-manifest.sha256:1287:fb02234d3c5d5da6144969fb3446024dcd292e50718fa91aa9e38070c21ef79b  ./src/build/configure.jam"
+bfgroup__b2-259 r1 k=44 | ss-grep "conditional" --in src/build/property.jam -k 50 | bre=false hint=false | grep: 24 lines in 12+ files [19, 31, 63, 67] | e.g. "19:# Refines 'properties' by overriding any non-free and non-conditional properties"
+bfgroup__b2-259 r1 k=50 | ss-grep "conditional" --in src/build/property-set.jam -k 30 | bre=false hint=false | grep: 16 lines in 12+ files [153, 155, 157, 159] | e.g. "153:    rule conditional ( )"
+bfgroup__b2-259 r2 k=6 | ss-grep "check-target-builds" --in src -k 50 | bre=false hint=false | grep: 1 lines in 1+ files [src/tools/flags.jam] | e.g. "src/tools/flags.jam:71:    return [ check-target-builds /check/flags//flags_$(id) $(message)"
+bfgroup__b2-259 r2 k=9 | ss-grep "configuration" --in src/tools -k 30 | bre=false hint=false | grep: 267 lines in 12+ files [src/tools/boostbook-config.jam, src/tools/rc.jam, src/tools/libtiff.jam, src/tools/msvc.jam] | e.g. "src/tools/boostbook-config.jam:5:# Automatic configuration for BoostBook tools. To use, just import this module."
+bfgroup__b2-259 r2 k=23 | ss-grep "check_target_builds|check-target-builds|check-target" --in . -k 100 | bre=false hint=false | grep: 24 lines in 6+ files [./test/configure.py, ./src/tools/qcc.jam, ./src/tools/flags.jam, ./example/try_compile/Jamroot.jam] | e.g. "./test/configure.py:8:# Tests configure.check-target-builds and friends"
+bfgroup__b2-259 r2 k=24 | ss-grep "build :" --in src -k 100 | bre=false hint=false | grep: 3 lines in 3+ files [src/tools/message.jam, src/tools/link.jam, src/contrib/modular.jam] | e.g. "src/tools/message.jam:56:            : [ targets.main-target-default-build : $(project) ]"
+bfgroup__b2-259 r2 k=37 | ss-grep "\.base|base \(" --in src/build/property-set.jam -k 30 | bre=true hint=true | grep: 10 lines in 10+ files [71, 73, 77, 84] | e.g. "71:    rule base ( )"
+bfgroup__b2-259 r2 k=41 | ss-grep "evaluate-conditionals-in-context" --in src/build/property.jam -k 20 | bre=false hint=false | grep: 5 lines in 5+ files [67, 909, 914, 919] | e.g. "67:rule evaluate-conditionals-in-context ( properties * : context * )"
+bfgroup__b2-259 r2 k=43 | ss-grep "build" --in src/build/configure.jam -k 30 | bre=false hint=false | grep: 32 lines in 12+ files [10, 53, 126, 130] | e.g. "10:# - Discovering build-time configuration for the purposes of adjusting the build"
+bfgroup__b2-259 r2 k=45 | ss-grep "remove|select|filter" --in src/build/property-set.jam -k 50 | bre=false hint=false | grep: 5 lines in 5+ files [512, 529, 536, 544] | e.g. "512:# \"-<property>value\" syntax in specification to remove given requirements."
+bfgroup__b2-259 r2 k=51 | ss-grep "feature\.feature build|build :" --in src -k 20 | bre=false hint=false | grep: 4 lines in 4+ files [src/tools/message.jam, src/tools/features/build-feature.jam, src/tools/link.jam, src/contrib/modular.jam] | e.g. "src/tools/message.jam:56:            : [ targets.main-target-default-build : $(project) ]"
+devlooped__moq-1262 r0 k=15 | ss-grep "lazy|captur|predicate" --in CHANGELOG.md -k 30 | bre=false hint=false | grep: 9 lines in 9+ files [47, 114, 192, 275] | e.g. "47:* Regression with lazy evaluation of `It.Is` predicates in setup expressions after updating from 4.13.1 to 4.16.1 (@b3go, #1217)"
+gitbookio__markup-it-56 r2 k=5 | ss-grep "@SamyPesse|localhost:5000|html-span" -k 20 | bre=false hint=false | grep: 2 lines in 1+ files [./.vault-manifest.sha256] | e.g. "./.vault-manifest.sha256:803:d0fc27b091eb1a33fdf00a68ee2d131b61e8a99b759d717c0d2941068632dc20  ./test/to-html/html-span/input.yaml"
+hotmeteor__spectator-181 r1 k=14 | ss-grep "assertValidResponse" --in README.md -k 20 | bre=false hint=false | grep: 4 lines in 4+ files [150, 223, 239, 253] | e.g. "150:            ->assertValidResponse(201);"
+
+--- scope-missing ---
+bfgroup__b2-259 r2 k=14 | ss-grep "check-target-builds" --in .claude -k 20 | missing: .claude

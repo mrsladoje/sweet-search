@@ -1,0 +1,432 @@
+========================================================================================
+PART 1 — tokens per line, by gutter form, real source files (o200k_base) [M]
+========================================================================================
+
+detect_mistakes.R  (391 lines, 11975 bytes)
+  form             tokens  tok/line   +/line   ratio
+  none               2785     7.123   +0.000  1.0000
+  tab                3232     8.266   +1.143  1.1605
+  pipe               3615     9.246   +2.123  1.2980
+  colon_space        3615     9.246   +2.123  1.2980
+  colon              3568     9.125   +2.003  1.2811
+  space              3224     8.246   +1.123  1.1576
+  pad5_tab           4014    10.266   +3.143  1.4413
+  pad5_2sp           4010    10.256   +3.133  1.4399
+  sp_pipe            3568     9.125   +2.003  1.2811
+  pad05_sp_pipe      3959    10.125   +3.003  1.4215
+  pipe_nosp          3567     9.123   +2.000  1.2808
+  sparse5            2872     7.345   +0.223  1.0312
+  sparse10           2827     7.230   +0.107  1.0151
+  landmark           2791     7.138   +0.015  1.0022
+
+eth.go  (706 lines, 23387 bytes)
+  form             tokens  tok/line   +/line   ratio
+  none               6272     8.884   +0.000  1.0000
+  tab                7381    10.455   +1.571  1.1768
+  pipe               7983    11.307   +2.424  1.2728
+  colon_space        7983    11.307   +2.424  1.2728
+  colon              7659    10.848   +1.965  1.2211
+  space              7277    10.307   +1.424  1.1602
+  pad5_tab           8793    12.455   +3.571  1.4019
+  pad5_2sp           8840    12.521   +3.637  1.4094
+  sp_pipe            7724    10.941   +2.057  1.2315
+  pad05_sp_pipe      8430    11.941   +3.057  1.3441
+  pipe_nosp          7685    10.885   +2.001  1.2253
+  sparse5            6500     9.207   +0.323  1.0364
+  sparse10           6379     9.035   +0.152  1.0171
+  landmark           6311     8.939   +0.055  1.0062
+
+grade_code.R  (167 lines, 5515 bytes)
+  form             tokens  tok/line   +/line   ratio
+  none               1450     8.683   +0.000  1.0000
+  tab                1705    10.210   +1.527  1.1759
+  pipe               1743    10.437   +1.754  1.2021
+  colon_space        1743    10.437   +1.754  1.2021
+  colon              1710    10.240   +1.557  1.1793
+  space              1576     9.437   +0.754  1.0869
+  pad5_tab           2039    12.210   +3.527  1.4062
+  pad5_2sp           1987    11.898   +3.216  1.3703
+  sp_pipe            1784    10.683   +2.000  1.2303
+  pad05_sp_pipe      1951    11.683   +3.000  1.3455
+  pipe_nosp          1783    10.677   +1.994  1.2297
+  sparse5            1501     8.988   +0.305  1.0352
+  sparse10           1474     8.826   +0.144  1.0166
+  landmark           1453     8.701   +0.018  1.0021
+
+traceback.py  (100 lines, 2931 bytes)
+  form             tokens  tok/line   +/line   ratio
+  none                672     6.720   +0.000  1.0000
+  tab                 809     8.090   +1.370  1.2039
+  pipe                902     9.020   +2.300  1.3423
+  colon_space         902     9.020   +2.300  1.3423
+  colon               860     8.600   +1.880  1.2798
+  space               802     8.020   +1.300  1.1935
+  pad5_tab           1009    10.090   +3.370  1.5015
+  pad5_2sp           1027    10.270   +3.550  1.5283
+  sp_pipe             871     8.710   +1.990  1.2961
+  pad05_sp_pipe       971     9.710   +2.990  1.4449
+  pipe_nosp           873     8.730   +2.010  1.2991
+  sparse5             699     6.990   +0.270  1.0402
+  sparse10            685     6.850   +0.130  1.0193
+  landmark            679     6.790   +0.070  1.0104
+
+underscore.js  (1688 lines, 58221 bytes)
+  form             tokens  tok/line   +/line   ratio
+  none              14811     8.774   +0.000  1.0000
+  tab               17384    10.299   +1.524  1.1737
+  pipe              19065    11.294   +2.520  1.2872
+  colon_space       19065    11.294   +2.520  1.2872
+  colon             18869    11.178   +2.404  1.2740
+  space             17377    10.294   +1.520  1.1732
+  pad5_tab          20071    11.890   +3.116  1.3551
+  pad5_2sp          20070    11.890   +3.116  1.3551
+  sp_pipe           18874    11.181   +2.407  1.2743
+  pad05_sp_pipe     19873    11.773   +2.999  1.3418
+  pipe_nosp         18873    11.181   +2.406  1.2743
+  sparse5           15333     9.084   +0.309  1.0352
+  sparse10          15076     8.931   +0.157  1.0179
+  landmark          14959     8.862   +0.088  1.0100
+
+========================================================================================
+AGGREGATE over all fixture files [M]
+========================================================================================
+  form              tokens  tok/line   +/line   ratio
+  none               25990     8.516   +0.000  1.0000
+  tab                30511     9.997   +1.481  1.1740
+  pipe               33308    10.913   +2.398  1.2816
+  colon_space        33308    10.913   +2.398  1.2816
+  colon              32666    10.703   +2.187  1.2569
+  space              30256     9.913   +1.398  1.1641
+  pad5_tab           35926    11.771   +3.256  1.3823
+  pad5_2sp           35934    11.774   +3.258  1.3826
+  sp_pipe            32821    10.754   +2.238  1.2628
+  pad05_sp_pipe      35184    11.528   +3.012  1.3538
+  pipe_nosp          32781    10.741   +2.225  1.2613
+  sparse5            26905     8.816   +0.300  1.0352
+  sparse10           26441     8.663   +0.148  1.0174
+  landmark           26193     8.582   +0.067  1.0078
+
+========================================================================================
+PART 2 — WHERE the boundaries fall: indentation 0/2/4/8 spaces + TAB [M]
+     · = space   \t = tab   | token separators shown as  [tok]
+========================================================================================
+
+--- form none  (no gutter) ---
+    0sp: [res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    2sp: [·] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    4sp: [···] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    6sp: [·····] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    8sp: [·······] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    tab: [\tif] [·err] [·!=] [·nil] [·{]
+   2tab: [\t] [\treturn] [·nil] [,] [·err]
+
+--- form tab  (N<TAB>   (shipped)) ---
+    0sp: [35] [\tres] [·<-] [·detect] [_m] [ist] [akes] [(]
+    2sp: [35] [\t·] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    4sp: [35] [\t···] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    6sp: [35] [\t·····] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    8sp: [35] [\t·······] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    tab: [35] [\t] [\tif] [·err] [·!=] [·nil] [·{]
+   2tab: [35] [\t\t] [\treturn] [·nil] [,] [·err]
+
+--- form pipe  (N|) ---
+    0sp: [35] [|] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    2sp: [35] [|] [··] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    4sp: [35] [|] [····] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    6sp: [35] [|] [······] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    8sp: [35] [|] [········] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    tab: [35] [|] [·] [\tif] [·err] [·!=] [·nil] [·{]
+   2tab: [35] [|] [·\t] [\treturn] [·nil] [,] [·err]
+
+--- form colon_space  (N:       (opencode's own)) ---
+    0sp: [35] [:] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    2sp: [35] [:] [··] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    4sp: [35] [:] [····] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    6sp: [35] [:] [······] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    8sp: [35] [:] [········] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    tab: [35] [:] [·] [\tif] [·err] [·!=] [·nil] [·{]
+   2tab: [35] [:] [·\t] [\treturn] [·nil] [,] [·err]
+
+--- form colon  (N:       no trailing space) ---
+    0sp: [35] [:] [res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    2sp: [35] [:] [·] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    4sp: [35] [:] [···] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    6sp: [35] [:] [·····] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    8sp: [35] [:] [·······] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    tab: [35] [:] [\tif] [·err] [·!=] [·nil] [·{]
+   2tab: [35] [:] [\t] [\treturn] [·nil] [,] [·err]
+
+--- form space  (N        single space) ---
+    0sp: [35] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    2sp: [35] [··] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    4sp: [35] [····] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    6sp: [35] [······] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    8sp: [35] [········] [·res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    tab: [35] [·] [\tif] [·err] [·!=] [·nil] [·{]
+   2tab: [35] [·\t] [\treturn] [·nil] [,] [·err]
+
+--- form pad5_tab  (%5d<TAB> right-padded) ---
+    0sp: [··] [·] [35] [\tres] [·<-] [·detect] [_m] [ist] [akes]
+    2sp: [··] [·] [35] [\t·] [·res] [·<-] [·detect] [_m] [ist]
+    4sp: [··] [·] [35] [\t···] [·res] [·<-] [·detect] [_m] [ist]
+    6sp: [··] [·] [35] [\t·····] [·res] [·<-] [·detect] [_m] [ist]
+    8sp: [··] [·] [35] [\t·······] [·res] [·<-] [·detect] [_m] [ist]
+    tab: [··] [·] [35] [\t] [\tif] [·err] [·!=] [·nil] [·{]
+   2tab: [··] [·] [35] [\t\t] [\treturn] [·nil] [,] [·err]
+
+--- form pad5_2sp  (%5d__    padded, cat -n style) ---
+    0sp: [··] [·] [35] [·] [·res] [·<-] [·detect] [_m] [ist]
+    2sp: [··] [·] [35] [···] [·res] [·<-] [·detect] [_m] [ist]
+    4sp: [··] [·] [35] [·····] [·res] [·<-] [·detect] [_m] [ist]
+    6sp: [··] [·] [35] [·······] [·res] [·<-] [·detect] [_m] [ist]
+    8sp: [··] [·] [35] [·········] [·res] [·<-] [·detect] [_m] [ist]
+    tab: [··] [·] [35] [··] [\tif] [·err] [·!=] [·nil] [·{]
+   2tab: [··] [·] [35] [··\t] [\treturn] [·nil] [,] [·err]
+
+--- form sp_pipe  (N_|      space BEFORE pipe (opencode PR 12030)) ---
+    0sp: [35] [·|] [res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    2sp: [35] [·|] [·] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    4sp: [35] [·|] [···] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    6sp: [35] [·|] [·····] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    8sp: [35] [·|] [·······] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    tab: [35] [·|] [\tif] [·err] [·!=] [·nil] [·{]
+   2tab: [35] [·|] [\t] [\treturn] [·nil] [,] [·err]
+
+--- form pad05_sp_pipe  (%05d_|   opencode PR 12030 exact) ---
+    0sp: [000] [35] [·|] [res] [·<-] [·detect] [_m] [ist] [akes]
+    2sp: [000] [35] [·|] [·] [·res] [·<-] [·detect] [_m] [ist]
+    4sp: [000] [35] [·|] [···] [·res] [·<-] [·detect] [_m] [ist]
+    6sp: [000] [35] [·|] [·····] [·res] [·<-] [·detect] [_m] [ist]
+    8sp: [000] [35] [·|] [·······] [·res] [·<-] [·detect] [_m] [ist]
+    tab: [000] [35] [·|] [\tif] [·err] [·!=] [·nil] [·{]
+   2tab: [000] [35] [·|] [\t] [\treturn] [·nil] [,] [·err]
+
+--- form pipe_nosp  (N|       no trailing space) ---
+    0sp: [35] [|] [res] [·<-] [·detect] [_m] [ist] [akes] [(]
+    2sp: [35] [|] [·] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    4sp: [35] [|] [···] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    6sp: [35] [|] [·····] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    8sp: [35] [|] [·······] [·res] [·<-] [·detect] [_m] [ist] [akes]
+    tab: [35] [|] [\tif] [·err] [·!=] [·nil] [·{]
+   2tab: [35] [|] [\t] [\treturn] [·nil] [,] [·err]
+
+========================================================================================
+PART 3 — the merge test: is there a token boundary between the gutter
+         delimiter and the code's own indentation? [M]
+========================================================================================
+  form            indent  gutter token     next token       merged?
+  none               2sp  -                ·                n/a
+  none               4sp  -                ···              n/a
+  none               6sp  -                ·····            n/a
+  none               8sp  -                ·······          n/a
+  none               tab  -                \tx              n/a
+  tab                2sp  \t·              ·x               YES  <-- no boundary
+  tab                4sp  \t···            ·x               YES  <-- no boundary
+  tab                6sp  \t·····          ·x               YES  <-- no boundary
+  tab                8sp  \t·······        ·x               YES  <-- no boundary
+  tab                tab  \t               \tx              no
+  pipe               2sp  ··               ·x               YES  <-- no boundary
+  pipe               4sp  ····             ·x               YES  <-- no boundary
+  pipe               6sp  ······           ·x               YES  <-- no boundary
+  pipe               8sp  ········         ·x               YES  <-- no boundary
+  pipe               tab  ·                \tx              no
+  colon_space        2sp  ··               ·x               YES  <-- no boundary
+  colon_space        4sp  ····             ·x               YES  <-- no boundary
+  colon_space        6sp  ······           ·x               YES  <-- no boundary
+  colon_space        8sp  ········         ·x               YES  <-- no boundary
+  colon_space        tab  ·                \tx              no
+  colon              2sp  :                ·                no
+  colon              4sp  :                ···              no
+  colon              6sp  :                ·····            no
+  colon              8sp  :                ·······          no
+  colon              tab  :                \tx              no
+  space              2sp  ··               ·x               YES  <-- no boundary
+  space              4sp  ····             ·x               YES  <-- no boundary
+  space              6sp  ······           ·x               YES  <-- no boundary
+  space              8sp  ········         ·x               YES  <-- no boundary
+  space              tab  ·                \tx              no
+  pad5_tab           2sp  \t·              ·x               YES  <-- no boundary
+  pad5_tab           4sp  \t···            ·x               YES  <-- no boundary
+  pad5_tab           6sp  \t·····          ·x               YES  <-- no boundary
+  pad5_tab           8sp  \t·······        ·x               YES  <-- no boundary
+  pad5_tab           tab  \t               \tx              no
+  pad5_2sp           2sp  ···              ·x               YES  <-- no boundary
+  pad5_2sp           4sp  ·····            ·x               YES  <-- no boundary
+  pad5_2sp           6sp  ·······          ·x               YES  <-- no boundary
+  pad5_2sp           8sp  ·········        ·x               YES  <-- no boundary
+  pad5_2sp           tab  ··               \tx              no
+  sp_pipe            2sp  ·|               ·                no
+  sp_pipe            4sp  ·|               ···              no
+  sp_pipe            6sp  ·|               ·····            no
+  sp_pipe            8sp  ·|               ·······          no
+  sp_pipe            tab  ·|               \tx              no
+  pad05_sp_pipe      2sp  ·|               ·                no
+  pad05_sp_pipe      4sp  ·|               ···              no
+  pad05_sp_pipe      6sp  ·|               ·····            no
+  pad05_sp_pipe      8sp  ·|               ·······          no
+  pad05_sp_pipe      tab  ·|               \tx              no
+  pipe_nosp          2sp  |                ·                no
+  pipe_nosp          4sp  |                ···              no
+  pipe_nosp          6sp  |                ·····            no
+  pipe_nosp          8sp  |                ·······          no
+  pipe_nosp          tab  |                \tx              no
+
+========================================================================================
+PART 4 — six real fixture lines per form, full token strings [M]
+========================================================================================
+
+--- form none ---
+  detect_mistakes.R:2  n=3
+     [···························] [·solution] [,]
+  detect_mistakes.R:3  n=9
+     [···························] [·env] [·=] [·r] [lang] [::] [env] [_parent] [(),]
+  eth.go:4  n=3
+     [\t] ["context] ["]
+  eth.go:5  n=4
+     [\t] ["encoding] [/json] ["]
+  underscore.js:8  n=5
+     [·] [·//] [·Bas] [eline] [·setup]
+  underscore.js:9  n=4
+     [·] [·//] [·] [--------------]
+
+--- form tab ---
+  detect_mistakes.R:2  n=5
+     [2] [\t] [···························] [·solution] [,]
+  detect_mistakes.R:3  n=11
+     [3] [\t] [···························] [·env] [·=] [·r] [lang] [::] [env] [_parent] [(),]
+  eth.go:4  n=5
+     [4] [\t] [\t] ["context] ["]
+  eth.go:5  n=6
+     [5] [\t] [\t] ["encoding] [/json] ["]
+  underscore.js:8  n=6
+     [8] [\t·] [·//] [·Bas] [eline] [·setup]
+  underscore.js:9  n=5
+     [9] [\t·] [·//] [·] [--------------]
+
+--- form pipe ---
+  detect_mistakes.R:2  n=5
+     [2] [|] [····························] [·solution] [,]
+  detect_mistakes.R:3  n=11
+     [3] [|] [····························] [·env] [·=] [·r] [lang] [::] [env] [_parent] [(),]
+  eth.go:4  n=6
+     [4] [|] [·] [\t] ["context] ["]
+  eth.go:5  n=7
+     [5] [|] [·] [\t] ["encoding] [/json] ["]
+  underscore.js:8  n=7
+     [8] [|] [··] [·//] [·Bas] [eline] [·setup]
+  underscore.js:9  n=6
+     [9] [|] [··] [·//] [·] [--------------]
+
+--- form colon_space ---
+  detect_mistakes.R:2  n=5
+     [2] [:] [····························] [·solution] [,]
+  detect_mistakes.R:3  n=11
+     [3] [:] [····························] [·env] [·=] [·r] [lang] [::] [env] [_parent] [(),]
+  eth.go:4  n=6
+     [4] [:] [·] [\t] ["context] ["]
+  eth.go:5  n=7
+     [5] [:] [·] [\t] ["encoding] [/json] ["]
+  underscore.js:8  n=7
+     [8] [:] [··] [·//] [·Bas] [eline] [·setup]
+  underscore.js:9  n=6
+     [9] [:] [··] [·//] [·] [--------------]
+
+--- form colon ---
+  detect_mistakes.R:2  n=5
+     [2] [:] [···························] [·solution] [,]
+  detect_mistakes.R:3  n=11
+     [3] [:] [···························] [·env] [·=] [·r] [lang] [::] [env] [_parent] [(),]
+  eth.go:4  n=5
+     [4] [:] [\t] ["context] ["]
+  eth.go:5  n=6
+     [5] [:] [\t] ["encoding] [/json] ["]
+  underscore.js:8  n=7
+     [8] [:] [·] [·//] [·Bas] [eline] [·setup]
+  underscore.js:9  n=6
+     [9] [:] [·] [·//] [·] [--------------]
+
+--- form space ---
+  detect_mistakes.R:2  n=4
+     [2] [····························] [·solution] [,]
+  detect_mistakes.R:3  n=10
+     [3] [····························] [·env] [·=] [·r] [lang] [::] [env] [_parent] [(),]
+  eth.go:4  n=5
+     [4] [·] [\t] ["context] ["]
+  eth.go:5  n=6
+     [5] [·] [\t] ["encoding] [/json] ["]
+  underscore.js:8  n=6
+     [8] [··] [·//] [·Bas] [eline] [·setup]
+  underscore.js:9  n=5
+     [9] [··] [·//] [·] [--------------]
+
+--- form pad5_tab ---
+  detect_mistakes.R:2  n=7
+     [···] [·] [2] [\t] [···························] [·solution] [,]
+  detect_mistakes.R:3  n=13
+     [···] [·] [3] [\t] [···························] [·env] [·=] [·r] [lang] [::] [env] [_parent] [(),]
+  eth.go:4  n=7
+     [···] [·] [4] [\t] [\t] ["context] ["]
+  eth.go:5  n=8
+     [···] [·] [5] [\t] [\t] ["encoding] [/json] ["]
+  underscore.js:8  n=8
+     [···] [·] [8] [\t·] [·//] [·Bas] [eline] [·setup]
+  underscore.js:9  n=7
+     [···] [·] [9] [\t·] [·//] [·] [--------------]
+
+--- form pad5_2sp ---
+  detect_mistakes.R:2  n=6
+     [···] [·] [2] [·····························] [·solution] [,]
+  detect_mistakes.R:3  n=12
+     [···] [·] [3] [·····························] [·env] [·=] [·r] [lang] [::] [env] [_parent] [(),]
+  eth.go:4  n=7
+     [···] [·] [4] [··] [\t] ["context] ["]
+  eth.go:5  n=8
+     [···] [·] [5] [··] [\t] ["encoding] [/json] ["]
+  underscore.js:8  n=8
+     [···] [·] [8] [···] [·//] [·Bas] [eline] [·setup]
+  underscore.js:9  n=7
+     [···] [·] [9] [···] [·//] [·] [--------------]
+
+--- form sp_pipe ---
+  detect_mistakes.R:2  n=5
+     [2] [·|] [···························] [·solution] [,]
+  detect_mistakes.R:3  n=11
+     [3] [·|] [···························] [·env] [·=] [·r] [lang] [::] [env] [_parent] [(),]
+  eth.go:4  n=5
+     [4] [·|] [\t] ["context] ["]
+  eth.go:5  n=6
+     [5] [·|] [\t] ["encoding] [/json] ["]
+  underscore.js:8  n=7
+     [8] [·|] [·] [·//] [·Bas] [eline] [·setup]
+  underscore.js:9  n=6
+     [9] [·|] [·] [·//] [·] [--------------]
+
+--- form pad05_sp_pipe ---
+  detect_mistakes.R:2  n=6
+     [000] [02] [·|] [···························] [·solution] [,]
+  detect_mistakes.R:3  n=12
+     [000] [03] [·|] [···························] [·env] [·=] [·r] [lang] [::] [env] [_parent] [(),]
+  eth.go:4  n=6
+     [000] [04] [·|] [\t] ["context] ["]
+  eth.go:5  n=7
+     [000] [05] [·|] [\t] ["encoding] [/json] ["]
+  underscore.js:8  n=8
+     [000] [08] [·|] [·] [·//] [·Bas] [eline] [·setup]
+  underscore.js:9  n=7
+     [000] [09] [·|] [·] [·//] [·] [--------------]
+
+--- form pipe_nosp ---
+  detect_mistakes.R:2  n=5
+     [2] [|] [···························] [·solution] [,]
+  detect_mistakes.R:3  n=11
+     [3] [|] [···························] [·env] [·=] [·r] [lang] [::] [env] [_parent] [(),]
+  eth.go:4  n=5
+     [4] [|] [\t] ["context] ["]
+  eth.go:5  n=6
+     [5] [|] [\t] ["encoding] [/json] ["]
+  underscore.js:8  n=7
+     [8] [|] [·] [·//] [·Bas] [eline] [·setup]
+  underscore.js:9  n=6
+     [9] [|] [·] [·//] [·] [--------------]
+
+[json] logs/r1-tokens.json

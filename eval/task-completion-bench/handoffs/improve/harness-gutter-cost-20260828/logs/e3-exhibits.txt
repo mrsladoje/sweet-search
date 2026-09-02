@@ -1,0 +1,42 @@
+=== 1. ONE READ WINDOW, THREE FORMS, EXACT TOKENS ===
+
+-- opencode, 363 lines, id=opencode|tab|sweet|fastify__fastify-cors-285|1
+   none  tokens=2313   first line = "'use strict'"
+   tab   tokens=2739   first line = "1\t'use strict'"
+   pipe  tokens=3087   first line = "1| 'use strict'"
+   overhead: TAB +426 tok (1.174/line, +18.4%)   PIPE +774 tok (2.132/line, +33.5%)   PIPE-TAB = 0.959 tok/line
+
+-- opencode, 324 lines, id=opencode|tab|sweet|gitbookio__markup-it-56|0
+   none  tokens=1873   first line = "const detectNewLine = require('detect-newline');"
+   tab   tokens=2293   first line = "1\tconst detectNewLine = require('detect-newline');"
+   pipe  tokens=2595   first line = "1| const detectNewLine = require('detect-newline');"
+   overhead: TAB +420 tok (1.296/line, +22.4%)   PIPE +722 tok (2.228/line, +38.5%)   PIPE-TAB = 0.932 tok/line
+
+=== 2. HEADERS ARE OUTSIDE THE FENCE, SO NONE KEEPS ITS LINE NUMBERS ===
+  ss-read block under NONE: id=codex|none|sweet|absinthe-graphql__absinthe-998|0 start=280 n=108
+    first body line (no gutter) = ""
+    the range came from the header line, which the gutter env vars never touch
+  ss-search hit under NONE: id=codex|none|sweet|absinthe-graphql__absinthe-998|0 start=352 n=34
+    first body line (no gutter) = "  def render_default_value(schema, adapter, type, value) do"
+
+=== 3. SUB-15-LINE ss-read BLOCKS (the >=15 threshold leaves them un-numbered) ===
+  claude-code none   ss-read blocks=445   under 15 lines=23 (5.2%)
+  claude-code pipe   ss-read blocks=445   under 15 lines=22 (4.9%)
+  claude-code tab    ss-read blocks=414   under 15 lines=27 (6.5%)
+  codex       none   ss-read blocks=414   under 15 lines=27 (6.5%)
+  codex       pipe   ss-read blocks=460   under 15 lines=20 (4.3%)
+  codex       tab    ss-read blocks=453   under 15 lines=35 (7.7%)
+  opencode    none   ss-read blocks=385   under 15 lines=16 (4.2%)
+  opencode    pipe   ss-read blocks=353   under 15 lines=11 (3.1%)
+  opencode    tab    ss-read blocks=426   under 15 lines=23 (5.4%)
+
+=== 4. GUTTER-BEARING BLOCKS BY SURFACE (epoch C numbers EVERY ss-* surface) ===
+  claude-code none   gutter-bearing/total blocks  ss-find:0/152 ss-read:0/445 ss-search:0/334 ss-semantic:0/12
+  claude-code pipe   gutter-bearing/total blocks  ss-find:90/96 ss-read:419/445 ss-search:341/363 ss-semantic:21/21
+  claude-code tab    gutter-bearing/total blocks  ss-find:94/102 ss-read:383/414 ss-search:386/422 ss-semantic:4/4
+  codex       none   gutter-bearing/total blocks  ss-find:0/64 ss-read:0/414 ss-search:0/320 ss-semantic:0/33
+  codex       pipe   gutter-bearing/total blocks  ss-find:53/61 ss-read:436/460 ss-search:240/268 ss-semantic:30/30
+  codex       tab    gutter-bearing/total blocks  ss-find:46/51 ss-read:415/453 ss-search:254/273 ss-semantic:51/54
+  opencode    none   gutter-bearing/total blocks  ss-find:0/72 ss-read:0/385 ss-search:0/287 ss-semantic:0/24
+  opencode    pipe   gutter-bearing/total blocks  ss-find:58/68 ss-read:341/353 ss-search:247/264 ss-semantic:12/12
+  opencode    tab    gutter-bearing/total blocks  ss-find:62/67 ss-read:400/426 ss-search:238/259 ss-semantic:7/7

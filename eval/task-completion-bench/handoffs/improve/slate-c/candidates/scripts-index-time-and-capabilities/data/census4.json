@@ -1,0 +1,288 @@
+{
+ "jump_by_symbol_presence": {
+  "codex": {
+   "has-symbols": {
+    "ranged": 398,
+    "jump": 68,
+    "overlap": 80,
+    "jump_pct": 17.1,
+    "overlap_pct": 20.1
+   },
+   "indexed-no-symbols": {
+    "ranged": 72,
+    "jump": 1,
+    "overlap": 7,
+    "jump_pct": 1.4,
+    "overlap_pct": 9.7
+   },
+   "not-indexed": {
+    "ranged": 14,
+    "jump": 0,
+    "overlap": 1,
+    "jump_pct": 0.0,
+    "overlap_pct": 7.1
+   }
+  },
+  "opencode": {
+   "has-symbols": {
+    "ranged": 328,
+    "jump": 44,
+    "overlap": 38,
+    "jump_pct": 13.4,
+    "overlap_pct": 11.6
+   },
+   "indexed-no-symbols": {
+    "ranged": 65,
+    "jump": 0,
+    "overlap": 4,
+    "jump_pct": 0.0,
+    "overlap_pct": 6.2
+   },
+   "not-indexed": {
+    "ranged": 20,
+    "jump": 6,
+    "overlap": 1,
+    "jump_pct": 30.0,
+    "overlap_pct": 5.0
+   }
+  },
+  "claude-code": {
+   "has-symbols": {
+    "ranged": 333,
+    "jump": 46,
+    "overlap": 43,
+    "jump_pct": 13.8,
+    "overlap_pct": 12.9
+   },
+   "indexed-no-symbols": {
+    "ranged": 53,
+    "jump": 1,
+    "overlap": 1,
+    "jump_pct": 1.9,
+    "overlap_pct": 1.9
+   },
+   "not-indexed": {
+    "ranged": 10,
+    "jump": 1,
+    "overlap": 0,
+    "jump_pct": 10.0,
+    "overlap_pct": 0.0
+   }
+  }
+ },
+ "symbol_coverage_any_code_type": {
+  ".cs": {
+   "files": 1817,
+   "with_symbol": 1764,
+   "pct": 97.1,
+   "zero_symbol_files_in_test_or_fixture_dirs": 10,
+   "samples": [
+    "asynkron__protoactor-dotnet-1909:tests/Proto.Persistence.Tests/AssemblyInfo.cs",
+    "asynkron__protoactor-dotnet-1909:src/Proto.Cluster/Partition/PartitionConfig.cs",
+    "asynkron__protoactor-dotnet-1909:src/Proto.Cluster/Properties/AssemblyInfo.cs",
+    "asynkron__protoactor-dotnet-1909:src/Proto.Cluster.TestProvider/Messages.cs",
+    "asynkron__protoactor-dotnet-1909:src/Proto.Cluster/Member/LocalAffinityOptions.cs",
+    "asynkron__protoactor-dotnet-1909:src/Proto.Cluster/Seed/SeedNodeClusterProviderOptions.cs"
+   ]
+  },
+  ".java": {
+   "files": 1158,
+   "with_symbol": 1158,
+   "pct": 100.0,
+   "zero_symbol_files_in_test_or_fixture_dirs": 0,
+   "samples": []
+  },
+  ".py": {
+   "files": 975,
+   "with_symbol": 641,
+   "pct": 65.7,
+   "zero_symbol_files_in_test_or_fixture_dirs": 308,
+   "samples": [
+    "aio-libs__aiohttp-8038:docs/conf.py",
+    "aio-libs__aiohttp-8038:aiohttp/typedefs.py",
+    "aio-libs__aiohttp-8038:requirements/sync-direct-runtime-deps.py",
+    "aio-libs__aiohttp-8038:aiohttp/hdrs.py",
+    "aio-libs__aiohttp-8038:setup.py",
+    "aio-libs__aiohttp-8038:examples/static_files.py"
+   ]
+  },
+  ".js": {
+   "files": 649,
+   "with_symbol": 384,
+   "pct": 59.2,
+   "zero_symbol_files_in_test_or_fixture_dirs": 99,
+   "samples": [
+    "accenture__sfmc-devtools-1974:lib/metadataTypes/definitions/TransactionalPush.definition.js",
+    "accenture__sfmc-devtools-1974:test/type.importFile.test.js",
+    "accenture__sfmc-devtools-1974:test/type.senderProfile.test.js",
+    "accenture__sfmc-devtools-1974:test/type.event.test.js",
+    "accenture__sfmc-devtools-1974:lib/metadataTypes/definitions/AttributeGroup.definition.js",
+    "accenture__sfmc-devtools-1974:lib/metadataTypes/definitions/Query.definition.js"
+   ]
+  },
+  ".jam": {
+   "files": 618,
+   "with_symbol": 0,
+   "pct": 0.0,
+   "zero_symbol_files_in_test_or_fixture_dirs": 89,
+   "samples": [
+    "bfgroup__b2-113:src/tools/stage.jam",
+    "bfgroup__b2-113:src/tools/types/objc.jam",
+    "bfgroup__b2-113:src/tools/features/internal-feature.jam",
+    "bfgroup__b2-113:src/tools/testing.jam",
+    "bfgroup__b2-113:src/tools/builtin.jam",
+    "bfgroup__b2-113:example/named-install-dirs/x/z/build.jam"
+   ]
+  },
+  ".cpp": {
+   "files": 364,
+   "with_symbol": 344,
+   "pct": 94.5,
+   "zero_symbol_files_in_test_or_fixture_dirs": 18,
+   "samples": [
+    "bfgroup__b2-113:test/project-test3/lib3/f.cpp",
+    "bfgroup__b2-113:test/project-test3/a.cpp",
+    "bfgroup__b2-113:test/project-test3/lib2/d.cpp",
+    "bfgroup__b2-113:test/project-test3/lib/b.cpp",
+    "bfgroup__b2-113:src/engine/mem.cpp",
+    "bfgroup__b2-113:test/project-test3/lib2/c.cpp"
+   ]
+  },
+  ".go": {
+   "files": 338,
+   "with_symbol": 334,
+   "pct": 98.8,
+   "zero_symbol_files_in_test_or_fixture_dirs": 0,
+   "samples": [
+    "apigee__registry-961:pkg/models/doc.go",
+    "apigee__registry-961:cmd/registry/cmd/check/lint/task.go",
+    "apigee__registry-961:cmd/registry/cmd/upload/bulk.go",
+    "celestiaorg__nmt-192:namespace/doc.go"
+   ]
+  },
+  ".ex": {
+   "files": 273,
+   "with_symbol": 273,
+   "pct": 100.0,
+   "zero_symbol_files_in_test_or_fixture_dirs": 0,
+   "samples": []
+  },
+  ".exs": {
+   "files": 219,
+   "with_symbol": 214,
+   "pct": 97.7,
+   "zero_symbol_files_in_test_or_fixture_dirs": 1,
+   "samples": [
+    "absinthe-graphql__absinthe-998:.dialyzer_ignore.exs",
+    "absinthe-graphql__absinthe-998:config/test.exs",
+    "absinthe-graphql__absinthe-998:config/config.exs",
+    "absinthe-graphql__absinthe-998:test/test_helper.exs",
+    "absinthe-graphql__absinthe-998:.formatter.exs"
+   ]
+  },
+  ".ts": {
+   "files": 182,
+   "with_symbol": 171,
+   "pct": 94.0,
+   "zero_symbol_files_in_test_or_fixture_dirs": 8,
+   "samples": [
+    "accenture__sfmc-devtools-1974:@types/lib/retrieveChangelog.d.ts",
+    "awslabs__aws-embedded-metrics-node-21:src/sinks/__tests__/LambdaSink.test.ts",
+    "awslabs__aws-embedded-metrics-node-21:src/logger/__tests__/MetricsContext.test.ts",
+    "awslabs__aws-embedded-metrics-node-21:src/environment/__tests__/EnvironmentDetector.test.ts",
+    "awslabs__aws-embedded-metrics-node-21:src/environment/__tests__/DefaultEnvironment.test.ts",
+    "awslabs__aws-embedded-metrics-node-21:src/sinks/__tests__/TcpClient.test.ts"
+   ]
+  },
+  ".h": {
+   "files": 125,
+   "with_symbol": 114,
+   "pct": 91.2,
+   "zero_symbol_files_in_test_or_fixture_dirs": 4,
+   "samples": [
+    "bfgroup__b2-113:src/engine/jamgramtab.h",
+    "bfgroup__b2-113:example/libraries/util/foo/include/lib1.h",
+    "bfgroup__b2-113:test/prebuilt/ext/debug/a.h",
+    "bfgroup__b2-113:test/prebuilt/ext/release/a.h",
+    "bfgroup__b2-113:src/engine/builtins.h",
+    "bfgroup__b2-259:src/engine/jamgramtab.h"
+   ]
+  },
+  ".tsx": {
+   "files": 54,
+   "with_symbol": 54,
+   "pct": 100.0,
+   "zero_symbol_files_in_test_or_fixture_dirs": 0,
+   "samples": []
+  },
+  ".php": {
+   "files": 26,
+   "with_symbol": 25,
+   "pct": 96.2,
+   "zero_symbol_files_in_test_or_fixture_dirs": 0,
+   "samples": [
+    "hotmeteor__spectator-181:config/spectator.php"
+   ]
+  },
+  ".c": {
+   "files": 5,
+   "with_symbol": 5,
+   "pct": 100.0,
+   "zero_symbol_files_in_test_or_fixture_dirs": 0,
+   "samples": []
+  },
+  ".rb": {
+   "files": 2,
+   "with_symbol": 1,
+   "pct": 50.0,
+   "zero_symbol_files_in_test_or_fixture_dirs": 0,
+   "samples": [
+    "bfgroup__b2-113:doc/src/pygments/pygments_init.rb"
+   ]
+  }
+ },
+ "pattern_ignored_reasons": [
+  [
+   "compound/piped command not safely filterable",
+   38
+  ],
+  [
+   "runner not supported for targeting",
+   9
+  ]
+ ],
+ "ss_read_first_line_shapes": [
+  [
+   "Warning: truncated output (original token count: N)",
+   69
+  ],
+  [
+   "# ss-read lib/index.js (lines N-N of N)",
+   39
+  ],
+  [
+   "# ss-read index.js (lines N-N of N)",
+   25
+  ],
+  [
+   "# ss-read aiohttp/connector.py (lines N-N of N)",
+   24
+  ],
+  [
+   "# ss-read src/build/targets.py (lines N-N of N)",
+   22
+  ],
+  [
+   "# ss-read src/FinalForm.js (lines N-N of N)",
+   18
+  ],
+  [
+   "# ss-read src/tablib/core.py (lines N-N of N)",
+   18
+  ],
+  [
+   "# ss-read modules/core/src/main/java/org/locationtech/jts/io",
+   18
+  ]
+ ]
+}

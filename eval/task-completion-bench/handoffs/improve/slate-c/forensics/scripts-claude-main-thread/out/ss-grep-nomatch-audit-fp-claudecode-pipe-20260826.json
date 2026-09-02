@@ -1,0 +1,1733 @@
+{
+ "run": "fp-claudecode-pipe-20260826",
+ "ssGrepCalls": 250,
+ "ssGrepSingle": 218,
+ "noMatch": 57,
+ "byVerdict": {
+  "true-negative": {
+   "n": 37,
+   "nextReal": 0.022168324999999996,
+   "bre": 7,
+   "posix": 0
+  },
+  "false-negative-candidate": {
+   "n": 18,
+   "nextReal": 0.01003301,
+   "bre": 1,
+   "posix": 0
+  },
+  "scope-missing": {
+   "n": 1,
+   "nextReal": 0.000460305,
+   "bre": 0,
+   "posix": 0
+  },
+  "grep-error": {
+   "n": 1,
+   "nextReal": 0.00049998,
+   "bre": 1,
+   "posix": 0
+  }
+ },
+ "crashes": {
+  "Error: ripgrep failed (code N): rg: regex parse error:": {
+   "n": 13,
+   "tasks": [
+    "aio-libs__aiohttp-8038",
+    "apigee__registry-961",
+    "bfgroup__b2-113",
+    "callstack__react-native-paper-972",
+    "devlooped__moq-1262",
+    "gitbookio__markup-it-56"
+   ],
+   "tools": [
+    "ss-grep",
+    "ss-read"
+   ],
+   "example": "ss-grep \"Connection(\" --in aiohttp --in tests -k 30"
+  }
+ },
+ "audit": [
+  {
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 1,
+   "k": 14,
+   "cmd": "ss-grep \"retry\" --in aiohttp/client.py --in tests/test_client_functional.py -k 30",
+   "pattern": "retry",
+   "inPaths": [
+    "aiohttp/client.py",
+    "tests/test_client_functional.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "aio-libs__aiohttp@c465e850f67f95150d474c3313082b2b47abd490",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00061817
+  },
+  {
+   "task": "apigee__registry-961",
+   "rep": 0,
+   "k": 12,
+   "cmd": "ss-grep \"func (c \\*Client) GetProject\\|func (c \\*Client) GetApi\\|func (c \\*Client) GetVersion\" --in server/registry/internal/storage/get.go -k 20",
+   "pattern": "func (c \\*Client) GetProject\\|func (c \\*Client) GetApi\\|func (c \\*Client) GetVersion",
+   "inPaths": [
+    "server/registry/internal/storage/get.go"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "apigee__registry@36826a87410870b118360948a4615eaf0bc64190",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0004711900000000001
+  },
+  {
+   "task": "apigee__registry-961",
+   "rep": 1,
+   "k": 2,
+   "cmd": "ss-grep \"ListApiDeploymentArtifacts\" -k 20",
+   "pattern": "ListApiDeploymentArtifacts",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "apigee__registry@36826a87410870b118360948a4615eaf0bc64190",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000931125
+  },
+  {
+   "task": "apigee__registry-961",
+   "rep": 1,
+   "k": 2,
+   "cmd": "ss-grep \"ListApiSpecArtifacts\" -k 20",
+   "pattern": "ListApiSpecArtifacts",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "apigee__registry@36826a87410870b118360948a4615eaf0bc64190",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000931125
+  },
+  {
+   "task": "apigee__registry-961",
+   "rep": 1,
+   "k": 12,
+   "cmd": "ss-grep \"strings.Contains.*-\" --in server/registry -k 20",
+   "pattern": "strings.Contains.*-",
+   "inPaths": [
+    "server/registry"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "apigee__registry@36826a87410870b118360948a4615eaf0bc64190",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00142471
+  },
+  {
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 1,
+   "k": 24,
+   "cmd": "ss-grep \"required: true\" --in dist/index.js -k 10",
+   "pattern": "required: true",
+   "inPaths": [
+    "dist/index.js"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "aws-actions__configure-aws-credentials@ee662900a535695aa526bd6dbba07d8f16805198",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 3,
+    "files": [
+     "271",
+     "272",
+     "273"
+    ],
+    "sample": [
+     "271:    const accessKeyId = core.getInput('aws-access-key-id', { required: true });",
+     "272:    const secretAccessKey = core.getInput('aws-secret-access-key', { required: true });",
+     "273:    const region = core.getInput('aws-region', { required: true });"
+    ]
+   },
+   "nextReal": 0.00045178
+  },
+  {
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 1,
+   "k": 25,
+   "cmd": "ss-grep \"aws-access-key-id\" --in dist/index.js -k 10",
+   "pattern": "aws-access-key-id",
+   "inPaths": [
+    "dist/index.js"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "aws-actions__configure-aws-credentials@ee662900a535695aa526bd6dbba07d8f16805198",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 1,
+    "files": [
+     "271"
+    ],
+    "sample": [
+     "271:    const accessKeyId = core.getInput('aws-access-key-id', { required: true });"
+    ]
+   },
+   "nextReal": 0.00045082499999999997
+  },
+  {
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 1,
+   "k": 27,
+   "cmd": "ss-grep \"role-to-assume\" --in dist/index.js -k 10",
+   "pattern": "role-to-assume",
+   "inPaths": [
+    "dist/index.js"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "aws-actions__configure-aws-credentials@ee662900a535695aa526bd6dbba07d8f16805198",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 1,
+    "files": [
+     "276"
+    ],
+    "sample": [
+     "276:    const roleToAssume = core.getInput('role-to-assume', {required: false});"
+    ]
+   },
+   "nextReal": 0.00046337
+  },
+  {
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 1,
+   "k": 28,
+   "cmd": "ss-grep \"Missing required environment value\" --in dist/index.js -k 5",
+   "pattern": "Missing required environment value",
+   "inPaths": [
+    "dist/index.js"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "aws-actions__configure-aws-credentials@ee662900a535695aa526bd6dbba07d8f16805198",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 1,
+    "files": [
+     "161"
+    ],
+    "sample": [
+     "161:      'Missing required environment value. Are you running in GitHub Actions?'"
+    ]
+   },
+   "nextReal": 0.000363975
+  },
+  {
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 1,
+   "k": 30,
+   "cmd": "ss-grep \"AWS_SECRET_ACCESS_KEY\" --in dist/index.js -k 10",
+   "pattern": "AWS_SECRET_ACCESS_KEY",
+   "inPaths": [
+    "dist/index.js"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "aws-actions__configure-aws-credentials@ee662900a535695aa526bd6dbba07d8f16805198",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 3,
+    "files": [
+     "227",
+     "229",
+     "3135"
+    ],
+    "sample": [
+     "227:  // AWS_SECRET_ACCESS_KEY:",
+     "229:  core.exportVariable('AWS_SECRET_ACCESS_KEY', secretAccessKey);",
+     "3135: *     AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN"
+    ]
+   },
+   "nextReal": 0.000418
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "k": 18,
+   "cmd": "ss-grep \"def generate\" --in src/build -k 20",
+   "pattern": "def generate",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00047867
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "k": 20,
+   "cmd": "ss-grep \"class MainTarget\" --in src -k 10",
+   "pattern": "class MainTarget",
+   "inPaths": [
+    "src"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000499245
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "k": 21,
+   "cmd": "ss-grep \"class.*Target\" --in src/build/targets.py -k 20",
+   "pattern": "class.*Target",
+   "inPaths": [
+    "src/build/targets.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 9,
+    "files": [
+     "13",
+     "93",
+     "289",
+     "358",
+     "359",
+     "667",
+     "805",
+     "890",
+     "1380"
+    ],
+    "sample": [
+     "13:#   Abstract targets are represented by classes derived from 'AbstractTarget' class.",
+     "93:class TargetRegistry:",
+     "289:class AbstractTarget:"
+    ]
+   },
+   "nextReal": 0.00048127
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "k": 23,
+   "cmd": "ss-grep \"class MainTarget\\|def generate\" --in src/build/targets.py -k 30",
+   "pattern": "class MainTarget\\|def generate",
+   "inPaths": [
+    "src/build/targets.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0005258250000000001
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "k": 24,
+   "cmd": "ss-grep \"MainTarget\" --in src/build -k 20",
+   "pattern": "MainTarget",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000569575
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "k": 27,
+   "cmd": "ss-grep \"generate\" --in src/build/targets.py -k 30",
+   "pattern": "generate",
+   "inPaths": [
+    "src/build/targets.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 38,
+    "files": [
+     "41",
+     "55",
+     "303",
+     "340",
+     "433",
+     "444",
+     "752",
+     "756",
+     "770",
+     "776",
+     "779",
+     "780"
+    ],
+    "sample": [
+     "41:#                         |generate(properties) = 0|",
+     "55:# | generate(properties) |o-----------+ generate    |<>------------->| generate     |",
+     "303:        # paths for sources and generated files."
+    ]
+   },
+   "nextReal": 0.00058079
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "k": 29,
+   "cmd": "ss-grep \"class\" --in src/build/targets.py -k 40",
+   "pattern": "class",
+   "inPaths": [
+    "src/build/targets.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 24,
+    "files": [
+     "13",
+     "25",
+     "26",
+     "30",
+     "31",
+     "93",
+     "263",
+     "289",
+     "290",
+     "306",
+     "350",
+     "352"
+    ],
+    "sample": [
+     "13:#   Abstract targets are represented by classes derived from 'AbstractTarget' class.",
+     "25:#   subvariant is defined by some rule, that rule will decide what class to",
+     "26:#   use, create an instance of that class and add it to the list of alternatives"
+    ]
+   },
+   "nextReal": 0.0005623099999999999
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "k": 30,
+   "cmd": "ss-grep \"MainTarget\" --in src -k 30",
+   "pattern": "MainTarget",
+   "inPaths": [
+    "src"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0005649599999999999
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "k": 25,
+   "cmd": "ss-grep \"class ProjectTarget\" --in src -k 10",
+   "pattern": "class ProjectTarget",
+   "inPaths": [
+    "src"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0004795050000000001
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "k": 26,
+   "cmd": "ss-grep \"ProjectTarget\" --in src/b2 -k 20",
+   "pattern": "ProjectTarget",
+   "inPaths": [
+    "src/b2"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "scope-missing",
+   "grep": {
+    "scopeMissing": [
+     "src/b2"
+    ],
+    "lines": 0,
+    "files": []
+   },
+   "nextReal": 0.000460305
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "k": 31,
+   "cmd": "ss-grep \"class Target\" --in src/build -k 20",
+   "pattern": "class Target",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00052109
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "k": 33,
+   "cmd": "ss-grep \"build-no\\|build-no\" -k 20",
+   "pattern": "build-no\\|build-no",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0005180600000000001
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "k": 35,
+   "cmd": "ss-grep \"class BasicTarget\" -k 10",
+   "pattern": "class BasicTarget",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0005376749999999999
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "k": 40,
+   "cmd": "ss-grep \"boost-install\\|install.*libraries\" --in src/contrib/boost.py -k 20",
+   "pattern": "boost-install\\|install.*libraries",
+   "inPaths": [
+    "src/contrib/boost.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0006204749999999999
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "k": 41,
+   "cmd": "ss-grep \"install\" --in src/contrib/boost.py -k 30",
+   "pattern": "install",
+   "inPaths": [
+    "src/contrib/boost.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0006178249999999999
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "k": 43,
+   "cmd": "ss-grep \"class BasicTarget\" --in src/build/targets.py -k 10",
+   "pattern": "class BasicTarget",
+   "inPaths": [
+    "src/build/targets.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 1,
+    "files": [
+     "890"
+    ],
+    "sample": [
+     "890:class BasicTarget (AbstractTarget):"
+    ]
+   },
+   "nextReal": 0.00062774
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 2,
+   "k": 14,
+   "cmd": "ss-grep \"get('build')\" -k 20",
+   "pattern": "get('build')",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0005146
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 2,
+   "k": 25,
+   "cmd": "ss-grep \"class BasicTarget\" -k 10",
+   "pattern": "class BasicTarget",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000644045
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 2,
+   "k": 30,
+   "cmd": "ss-grep \"class.*Target\" --in src/build/targets.py -k 30",
+   "pattern": "class.*Target",
+   "inPaths": [
+    "src/build/targets.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 9,
+    "files": [
+     "13",
+     "93",
+     "289",
+     "358",
+     "359",
+     "667",
+     "805",
+     "890",
+     "1380"
+    ],
+    "sample": [
+     "13:#   Abstract targets are represented by classes derived from 'AbstractTarget' class.",
+     "93:class TargetRegistry:",
+     "289:class AbstractTarget:"
+    ]
+   },
+   "nextReal": 0.000721505
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 2,
+   "k": 34,
+   "cmd": "ss-grep \"build\" --in src/build/targets.py -k 100",
+   "pattern": "build",
+   "inPaths": [
+    "src/build/targets.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 110,
+    "files": [
+     "29",
+     "85",
+     "86",
+     "88",
+     "103",
+     "190",
+     "191",
+     "193",
+     "194",
+     "202",
+     "204",
+     "217"
+    ],
+    "sample": [
+     "29:#   Rules supplied by the build system will use only targets derived",
+     "85:from b2.build import errors",
+     "86:from b2.build.errors import user_error_checkpoint"
+    ]
+   },
+   "nextReal": 0.0007800449999999999
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 2,
+   "k": 38,
+   "cmd": "ss-grep \"boost-install\" -k 20",
+   "pattern": "boost-install",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 3,
+    "files": [
+     "./src/tools/boostbook.jam",
+     "./src/contrib/modular.jam"
+    ],
+    "sample": [
+     "./src/tools/boostbook.jam:308:        local boost-installer-versions = snapshot cvs 1.33.0 ;",
+     "./src/tools/boostbook.jam:315:            Boost.org\\\\$(boost-installer-versions) ] ;",
+     "./src/contrib/modular.jam:228:    rule boost-install ( libraries * ) { }"
+    ]
+   },
+   "nextReal": 0.0008365749999999999
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 2,
+   "k": 44,
+   "cmd": "ss-grep \"install\" --in src/contrib/boost.py -k 30",
+   "pattern": "install",
+   "inPaths": [
+    "src/contrib/boost.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00093492
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 2,
+   "cmd": "ss-grep \"build-no\" -k 30",
+   "pattern": "build-no",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00044933
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 12,
+   "cmd": "ss-grep \"generate-from-reference\" --in src/build/targets.jam -k 10",
+   "pattern": "generate-from-reference",
+   "inPaths": [
+    "src/build/targets.jam"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 2,
+    "files": [
+     "912",
+     "1276"
+    ],
+    "sample": [
+     "912:rule generate-from-reference (",
+     "1276:            local result = [ targets.generate-from-reference $(id) :"
+    ]
+   },
+   "nextReal": 0.00044531999999999997
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 15,
+   "cmd": "ss-grep \"evaluate-conditional-relevance\" --in src/build -k 10",
+   "pattern": "evaluate-conditional-relevance",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0007161649999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 16,
+   "cmd": "ss-grep \"property-set.create.*get <build>\\|\\.get <build>\" --in src -k 20",
+   "pattern": "property-set.create.*get <build>\\|\\.get <build>",
+   "inPaths": [
+    "src"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000603725
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 17,
+   "cmd": "ss-grep \"in \\$\\(.*\\)\" --in src/build/configure.jam -k 10",
+   "pattern": "in \\$\\(.*\\)",
+   "inPaths": [
+    "src/build/configure.jam"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 11,
+    "files": [
+     "121",
+     "124",
+     "133",
+     "147",
+     "156",
+     "175",
+     "200",
+     "280",
+     "301",
+     "308",
+     "382"
+    ],
+    "sample": [
+     "121:    for c in $(.components)",
+     "124:        if $(c) in $(.built-components)",
+     "133:        for local m in $(.component-logs.$(c))"
+    ]
+   },
+   "nextReal": 0.0007312149999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 21,
+   "cmd": "ss-grep \"config-cache.get\" --in src/build -k 20",
+   "pattern": "config-cache.get",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00057314
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 22,
+   "cmd": "ss-grep \"actualize ]\" --in src -k 20",
+   "pattern": "actualize ]",
+   "inPaths": [
+    "src"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 11,
+    "files": [
+     "src/build-system.jam",
+     "src/tools/qt3.jam",
+     "src/tools/msvc.jam",
+     "src/tools/qt5.jam",
+     "src/tools/qt4.jam",
+     "src/tools/flags.jam"
+    ],
+    "sample": [
+     "src/build-system.jam:170:        to-clean-actual += [ $(t).actualize ] ;",
+     "src/build-system.jam:818:        actual-targets += [ $(t).actualize ] ;",
+     "src/tools/qt3.jam:151:            DEPENDS all : [ $(r).actualize ] ;"
+    ]
+   },
+   "nextReal": 0.0006011800000000001
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 3,
+   "cmd": "ss-grep \"check-target-builds-worker\" -k 5",
+   "pattern": "check-target-builds-worker",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00072025
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 5,
+   "cmd": "ss-grep \"configure.builds\" -k 10",
+   "pattern": "configure.builds",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000346345
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 9,
+   "cmd": "ss-grep \"skip-downstream\" -k 20",
+   "pattern": "skip-downstream",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000495485
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 15,
+   "cmd": "ss-grep \"conditional-relevance\" -k 20",
+   "pattern": "conditional-relevance",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000564355
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 16,
+   "cmd": "ss-grep \"evaluate-conditional\" -k 20",
+   "pattern": "evaluate-conditional",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0005448050000000001
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 9,
+   "cmd": "ss-grep \"check-target-builds\" -k 50 --in .",
+   "pattern": "check-target-builds",
+   "inPaths": [
+    "."
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 15,
+    "files": [
+     "./test/configure.py",
+     "./src/tools/flags.jam",
+     "./example/try_compile/Jamroot.jam",
+     "./doc/src/hljs/highlight.min.js",
+     "./doc/src/reference.adoc"
+    ],
+    "sample": [
+     "./test/configure.py:8:# Tests configure.check-target-builds and friends",
+     "./test/configure.py:20:  [ configure.check-target-builds pass : <define>PASS : <define>FAIL ] ;",
+     "./test/configure.py:22:  [ configure.check-target-builds fail : <define>FAIL : <define>PASS ] ;"
+    ]
+   },
+   "nextReal": 0.00039029
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 12,
+   "cmd": "ss-grep \"check-target\" -k 50 --in src",
+   "pattern": "check-target",
+   "inPaths": [
+    "src"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 8,
+    "files": [
+     "src/tools/qcc.jam",
+     "src/tools/flags.jam"
+    ],
+    "sample": [
+     "src/tools/qcc.jam:75:local rule check-target-platform",
+     "src/tools/qcc.jam:142:    check-target-platform $(1) ;",
+     "src/tools/qcc.jam:152:    check-target-platform $(1) ;"
+    ]
+   },
+   "nextReal": 0.0005155650000000001
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 15,
+   "cmd": "ss-grep \"<build>\" -k 30 --in src/build",
+   "pattern": "<build>",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00054193
+  },
+  {
+   "task": "callstack__react-native-paper-972",
+   "rep": 1,
+   "k": 8,
+   "cmd": "ss-grep \"color: _\" -k 10",
+   "pattern": "color: _",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "callstack__react-native-paper@3bba0304e6b03e9a5bdc7baeb5547ac67bb32e7b",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00040484
+  },
+  {
+   "task": "callstack__react-native-paper-972",
+   "rep": 1,
+   "k": 12,
+   "cmd": "ss-grep \"varsIgnorePattern\\|argsIgnorePattern\" -k 10",
+   "pattern": "varsIgnorePattern\\|argsIgnorePattern",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "callstack__react-native-paper@3bba0304e6b03e9a5bdc7baeb5547ac67bb32e7b",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00047885
+  },
+  {
+   "task": "callstack__react-native-paper-972",
+   "rep": 2,
+   "k": 17,
+   "cmd": "ss-grep \"_color\" -k 20",
+   "pattern": "_color",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "callstack__react-native-paper@3bba0304e6b03e9a5bdc7baeb5547ac67bb32e7b",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000389265
+  },
+  {
+   "task": "callstack__react-native-paper-972",
+   "rep": 2,
+   "k": 24,
+   "cmd": "ss-grep \"argsIgnorePattern\" -k 10",
+   "pattern": "argsIgnorePattern",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "callstack__react-native-paper@3bba0304e6b03e9a5bdc7baeb5547ac67bb32e7b",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000460975
+  },
+  {
+   "task": "fastify__fastify-cors-285",
+   "rep": 1,
+   "k": 12,
+   "cmd": "ss-grep \"fastify\\.prefix|instance\\.prefix|opts\\.prefix\" --in . -k 20",
+   "pattern": "fastify\\.prefix|instance\\.prefix|opts\\.prefix",
+   "inPaths": [
+    "."
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "fastify__fastify-cors@79b3de99c77dea3e32bf1be1d748bba22a270ed1",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0006419199999999999
+  },
+  {
+   "task": "fastify__fastify-cors-285",
+   "rep": 2,
+   "k": 11,
+   "cmd": "ss-grep \"fastify\\.prefix|prefix\\s*=\" --in index.js --in test -k 20",
+   "pattern": "fastify\\.prefix|prefix\\s*=",
+   "inPaths": [
+    "index.js",
+    "test"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "fastify__fastify-cors@79b3de99c77dea3e32bf1be1d748bba22a270ed1",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000551795
+  },
+  {
+   "task": "gitbookio__markup-it-56",
+   "rep": 1,
+   "k": 16,
+   "cmd": "ss-grep \"Deserializer\\(\\).*use\\|use\\(\\[\" -k 20",
+   "pattern": "Deserializer\\(\\).*use\\|use\\(\\[",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "GitbookIO__markup-it@5d7ff8646af05bb621ff5be0825fb3ab99dd90ba",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000792675
+  },
+  {
+   "task": "gitbookio__markup-it-56",
+   "rep": 2,
+   "k": 20,
+   "cmd": "ss-grep \"matchRegExp(reBlock.html\\|reBlock.html\\|block.html\" -k 20",
+   "pattern": "matchRegExp(reBlock.html\\|reBlock.html\\|block.html",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "GitbookIO__markup-it@5d7ff8646af05bb621ff5be0825fb3ab99dd90ba",
+   "verdict": "grep-error",
+   "grep": {
+    "scopeMissing": [],
+    "lines": -1,
+    "files": [],
+    "grepError": "Command failed: grep -r -n -E --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.sweet-search --exclude-dir=dist --exclude-dir=build --exclude-dir=vendor -I -- matchRegExp(reBlock.html\\|reBl"
+   },
+   "nextReal": 0.00049998
+  },
+  {
+   "task": "protofire__solhint-224",
+   "rep": 0,
+   "k": 17,
+   "cmd": "ss-grep \"Order of layout is incorrect\" -k 5",
+   "pattern": "Order of layout is incorrect",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "protofire__solhint@063cb8d08d5231264dbcc36582471beae2142cfb",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000489685
+  },
+  {
+   "task": "protofire__solhint-224",
+   "rep": 1,
+   "k": 8,
+   "cmd": "ss-grep \"func-order\" --in docs --in README.md --in .solhint.json -k 20",
+   "pattern": "func-order",
+   "inPaths": [
+    "docs",
+    "README.md",
+    ".solhint.json"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "protofire__solhint@063cb8d08d5231264dbcc36582471beae2142cfb",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [
+     ".solhint.json"
+    ],
+    "lines": 7,
+    "files": [
+     "docs/rules.md",
+     "docs/rules/order/func-order.md"
+    ],
+    "sample": [
+     "docs/rules.md:36:| [func-order](./rules/order/func-order.md)                                            | Function order is incorrect.                          ",
+     "docs/rules/order/func-order.md:4:title:       \"func-order | Solhint\"",
+     "docs/rules/order/func-order.md:7:# func-order"
+    ]
+   },
+   "nextReal": 0.000611255
+  }
+ ]
+}

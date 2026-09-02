@@ -1,0 +1,977 @@
+{
+ "task": "E4 resolution forensics, harness = opencode",
+ "runs": {
+  "sweet": [
+   "fp-opencode-{tab,none,pipe}-20260826",
+   "rp-oc-{tab,none,pipe}-20260827 (11 repair tasks replace the fp sweet rows)"
+  ],
+  "native": "fp-opencode-tab-20260826"
+ },
+ "denominator": {
+  "rollouts": 264,
+  "tasks": 22,
+  "arms": 4,
+  "reps": 3,
+  "missingRollouts": 0,
+  "resolvedNull": 0,
+  "duplicateReps": 0,
+  "gradeRecordNull": 1,
+  "gradeRecordNullDetail": "bfgroup__b2-259 / PIPE / rep2 in fp-opencode-pipe-20260826 carries resolved=false with f2pFrac, resolveStatus and testResults all null and no rep-2 grader log on disk. PIPE is therefore 38/65 measured plus 1 unmeasured. b2-259 is 0/11 in every other cell, so no arm ranking changes."
+ },
+ "solveTotals": {
+  "native": 41,
+  "tab": 41,
+  "none": 39,
+  "pipe": 38,
+  "denominatorPerArm": 66
+ },
+ "classification": {
+  "solvedEverywhere": [
+   "absinthe-graphql__absinthe-998",
+   "asynkron__protoactor-dotnet-1909",
+   "aws-actions__configure-aws-credentials-42",
+   "axelrod-python__axelrod-671",
+   "callstack__react-native-paper-972",
+   "celestiaorg__nmt-192",
+   "final-form__final-form-64",
+   "jazzband__tablib-454",
+   "locationtech__jts-622",
+   "mathnet__mathnet-numerics-1072",
+   "mirumee__ariadne-codegen-218"
+  ],
+  "deadEverywhere": [
+   "bfgroup__b2-259",
+   "devlooped__moq-1262",
+   "fastify__fastify-cors-285",
+   "gitbookio__markup-it-56",
+   "hotmeteor__spectator-181",
+   "protofire__solhint-224"
+  ],
+  "majorityDiscordant": [
+   "accenture__sfmc-devtools-1974",
+   "awslabs__aws-embedded-metrics-node-21"
+  ],
+  "repDiscordantOnly": [
+   "aio-libs__aiohttp-8038",
+   "apigee__registry-961",
+   "bfgroup__b2-113"
+  ]
+ },
+ "discordantMajorities": {
+  "accenture__sfmc-devtools-1974": {
+   "nativeMajority": "solve (2/3)",
+   "sweetMajority": "dead (TAB 1/3, NONE 1/3, PIPE 2/3; pooled sweet 4/9)"
+  },
+  "awslabs__aws-embedded-metrics-node-21": {
+   "nativeMajority": "solve (2/3)",
+   "sweetMajority": "solve (TAB 3/3, NONE 2/3, PIPE 1/3; pooled sweet 6/9)"
+  }
+ },
+ "tasks": {
+  "absinthe-graphql__absinthe-998": {
+   "class": "solved-everywhere",
+   "arms": {
+    "native": {
+     "solved": 3,
+     "n": 3
+    },
+    "tab": {
+     "solved": 3,
+     "n": 3
+    },
+    "none": {
+     "solved": 3,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 3,
+     "n": 3
+    }
+   }
+  },
+  "accenture__sfmc-devtools-1974": {
+   "class": "discordant",
+   "arms": {
+    "native": {
+     "solved": 2,
+     "n": 3
+    },
+    "tab": {
+     "solved": 1,
+     "n": 3
+    },
+    "none": {
+     "solved": 1,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 2,
+     "n": 3
+    }
+   },
+   "cells": {
+    "native/0": "solved",
+    "native/1": "over-scoped (empty-array/object guard breaks a PASS_TO_PASS; f2pFrac=1 yet resolved=false)",
+    "native/2": "solved",
+    "tab/0": "edit-mechanics (bare @@ anchor matched fixKeys:1595 first; landed in the wrong method; git diff showed it; no retry)",
+    "tab/1": "edit-mechanics (same)",
+    "tab/2": "solved",
+    "none/0": "edit-mechanics (same)",
+    "none/1": "solved",
+    "none/2": "edit-mechanics (same)",
+    "pipe/0": "solved",
+    "pipe/1": "edit-mechanics (same)",
+    "pipe/2": "solved (saw @@ -1593 in git diff, moved the hunk to 1740)"
+   }
+  },
+  "aio-libs__aiohttp-8038": {
+   "class": "stable-majority-dead",
+   "arms": {
+    "native": {
+     "solved": 0,
+     "n": 3
+    },
+    "tab": {
+     "solved": 1,
+     "n": 3
+    },
+    "none": {
+     "solved": 0,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 0,
+     "n": 3
+    }
+   },
+   "cells": {
+    "native/0": "not-localised (client_proto.py transport layer alongside client.py)",
+    "native/1": "not-localised (same)",
+    "native/2": "incomplete (single line in client_proto.py)",
+    "tab/0": "not-localised (client_proto.py + client_reqrep.py)",
+    "tab/1": "solved",
+    "tab/2": "incomplete (one line in connector.py)",
+    "none/0": "incomplete (one line in connector.py)",
+    "none/1": "incomplete (2 lines, connector+proto)",
+    "none/2": "not-localised (client_proto.py)",
+    "pipe/0": "over-scoped (4 files incl. client_reqrep.py)",
+    "pipe/1": "not-localised (client_proto.py)",
+    "pipe/2": "not-localised (client_proto.py); ss-read returned an empty body and the model fell back to the harness read"
+   }
+  },
+  "apigee__registry-961": {
+   "class": "stable-majority-solve",
+   "arms": {
+    "native": {
+     "solved": 3,
+     "n": 3
+    },
+    "tab": {
+     "solved": 3,
+     "n": 3
+    },
+    "none": {
+     "solved": 3,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 2,
+     "n": 3
+    }
+   },
+   "cells": {
+    "native/0": "solved",
+    "native/1": "solved",
+    "native/2": "solved",
+    "tab/0": "solved",
+    "tab/1": "solved",
+    "tab/2": "solved",
+    "none/0": "solved",
+    "none/1": "solved",
+    "none/2": "solved",
+    "pipe/0": "solved",
+    "pipe/1": "not-localised (patched cmd/registry/core/list.go, the CLI copy, not server/registry/internal/storage/list.go); 3 of its 8 ss-grep calls failed on CLI or engine errors",
+    "pipe/2": "solved"
+   }
+  },
+  "asynkron__protoactor-dotnet-1909": {
+   "class": "solved-everywhere",
+   "arms": {
+    "native": {
+     "solved": 3,
+     "n": 3
+    },
+    "tab": {
+     "solved": 3,
+     "n": 3
+    },
+    "none": {
+     "solved": 3,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 3,
+     "n": 3
+    }
+   }
+  },
+  "aws-actions__configure-aws-credentials-42": {
+   "class": "solved-everywhere",
+   "arms": {
+    "native": {
+     "solved": 3,
+     "n": 3
+    },
+    "tab": {
+     "solved": 3,
+     "n": 3
+    },
+    "none": {
+     "solved": 3,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 3,
+     "n": 3
+    }
+   }
+  },
+  "awslabs__aws-embedded-metrics-node-21": {
+   "class": "discordant",
+   "arms": {
+    "native": {
+     "solved": 2,
+     "n": 3
+    },
+    "tab": {
+     "solved": 3,
+     "n": 3
+    },
+    "none": {
+     "solved": 2,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 1,
+     "n": 3
+    }
+   },
+   "cells": {
+    "native/0": "wrong-fix (deduplicated in LogSerializer.serialize, not MetricsContext.putDimensions)",
+    "native/1": "solved",
+    "native/2": "solved",
+    "tab/0": "solved",
+    "tab/1": "solved",
+    "tab/2": "solved",
+    "none/0": "wrong-fix (LogSerializer layer)",
+    "none/1": "solved",
+    "none/2": "solved",
+    "pipe/0": "solved",
+    "pipe/1": "wrong-fix (LogSerializer layer; shortest rollout, 13 calls)",
+    "pipe/2": "wrong-fix (LogSerializer layer)"
+   }
+  },
+  "axelrod-python__axelrod-671": {
+   "class": "solved-everywhere",
+   "arms": {
+    "native": {
+     "solved": 3,
+     "n": 3
+    },
+    "tab": {
+     "solved": 3,
+     "n": 3
+    },
+    "none": {
+     "solved": 3,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 3,
+     "n": 3
+    }
+   }
+  },
+  "bfgroup__b2-113": {
+   "class": "stable-majority-dead",
+   "arms": {
+    "native": {
+     "solved": 1,
+     "n": 3
+    },
+    "tab": {
+     "solved": 0,
+     "n": 3
+    },
+    "none": {
+     "solved": 0,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 0,
+     "n": 3
+    }
+   },
+   "cells": {
+    "native/0": "solved (edited src/tools/stage.jam)",
+    "native/1": "not-localised (edited the dormant .py port)",
+    "native/2": "wrong-fix (right file stage.jam, wrong rule)",
+    "tab/0": "not-localised (.py port; index holds 0 .jam chunks)",
+    "tab/1": "not-localised (.py port)",
+    "tab/2": "not-localised (.py port)",
+    "none/0": "not-localised (.py port)",
+    "none/1": "not-localised (.py port)",
+    "none/2": "not-localised (.py port)",
+    "pipe/0": "not-localised (.py port)",
+    "pipe/1": "not-localised (.py port)",
+    "pipe/2": "not-localised (.py port)"
+   }
+  },
+  "bfgroup__b2-259": {
+   "class": "dead-everywhere",
+   "arms": {
+    "native": {
+     "solved": 0,
+     "n": 3
+    },
+    "tab": {
+     "solved": 0,
+     "n": 3
+    },
+    "none": {
+     "solved": 0,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 0,
+     "n": 3
+    }
+   },
+   "failureMode": "not-localised + wrong-fix, all 12: gold is src/build/property.jam; the index holds 0 .jam chunks, so ss-search/ss-find/ss-semantic can never return it. One sweet cell (none/1) reached property.jam through the harness glob and still got the semantics wrong. pipe/2 is the single ungraded row in the whole harness."
+  },
+  "callstack__react-native-paper-972": {
+   "class": "solved-everywhere",
+   "arms": {
+    "native": {
+     "solved": 3,
+     "n": 3
+    },
+    "tab": {
+     "solved": 3,
+     "n": 3
+    },
+    "none": {
+     "solved": 3,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 3,
+     "n": 3
+    }
+   }
+  },
+  "celestiaorg__nmt-192": {
+   "class": "solved-everywhere",
+   "arms": {
+    "native": {
+     "solved": 3,
+     "n": 3
+    },
+    "tab": {
+     "solved": 3,
+     "n": 3
+    },
+    "none": {
+     "solved": 3,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 3,
+     "n": 3
+    }
+   }
+  },
+  "devlooped__moq-1262": {
+   "class": "dead-everywhere",
+   "arms": {
+    "native": {
+     "solved": 0,
+     "n": 3
+    },
+    "tab": {
+     "solved": 0,
+     "n": 3
+    },
+    "none": {
+     "solved": 0,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 0,
+     "n": 3
+    }
+   },
+   "failureMode": "wrong-fix, all 12: the gold suppresses capture evaluation under ExpressionType.Quote across four coordinated files with a thread-static depth counter. Every arm patched Match.cs / MethodExpectation.cs / InterceptionAspects.cs instead."
+  },
+  "fastify__fastify-cors-285": {
+   "class": "dead-everywhere",
+   "arms": {
+    "native": {
+     "solved": 0,
+     "n": 3
+    },
+    "tab": {
+     "solved": 0,
+     "n": 3
+    },
+    "none": {
+     "solved": 0,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 0,
+     "n": 3
+    }
+   },
+   "failureMode": "wrong-fix and over-scoped, all 12: the gold changes one token, fastify.options('/*') to fastify.options('*'), which the issue text names verbatim; every arm ADDED a second route and kept '/*'. The hidden test matches route.url === '*' exactly, so an added route can never satisfy it."
+  },
+  "final-form__final-form-64": {
+   "class": "solved-everywhere",
+   "arms": {
+    "native": {
+     "solved": 3,
+     "n": 3
+    },
+    "tab": {
+     "solved": 3,
+     "n": 3
+    },
+    "none": {
+     "solved": 3,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 3,
+     "n": 3
+    }
+   }
+  },
+  "gitbookio__markup-it-56": {
+   "class": "dead-everywhere",
+   "arms": {
+    "native": {
+     "solved": 0,
+     "n": 3
+    },
+    "tab": {
+     "solved": 0,
+     "n": 3
+    },
+    "none": {
+     "solved": 0,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 0,
+     "n": 3
+    }
+   },
+   "failureMode": "wrong-fix, all 12: the gold merges consecutive inline HTML nodes on deserialisation (mergeHTMLNodes). Arms attacked serialisation (node.text to node.data.get('html')) or added block-level HTML rules."
+  },
+  "hotmeteor__spectator-181": {
+   "class": "dead-everywhere",
+   "arms": {
+    "native": {
+     "solved": 0,
+     "n": 3
+    },
+    "tab": {
+     "solved": 0,
+     "n": 3
+    },
+    "none": {
+     "solved": 0,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 0,
+     "n": 3
+    }
+   },
+   "failureMode": "wrong-fix, all 12: the hidden test asserts the exact Laravel message 'Expected response status code [200] but received 500.', which only Illuminate\\Testing\\TestResponse::assertStatus emits. Every arm hand-rolled its own message. The checkout has no vendor/ tree and the string appears nowhere in it."
+  },
+  "jazzband__tablib-454": {
+   "class": "solved-everywhere",
+   "arms": {
+    "native": {
+     "solved": 3,
+     "n": 3
+    },
+    "tab": {
+     "solved": 3,
+     "n": 3
+    },
+    "none": {
+     "solved": 3,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 3,
+     "n": 3
+    }
+   }
+  },
+  "locationtech__jts-622": {
+   "class": "solved-everywhere",
+   "arms": {
+    "native": {
+     "solved": 3,
+     "n": 3
+    },
+    "tab": {
+     "solved": 3,
+     "n": 3
+    },
+    "none": {
+     "solved": 3,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 3,
+     "n": 3
+    }
+   }
+  },
+  "mathnet__mathnet-numerics-1072": {
+   "class": "solved-everywhere",
+   "arms": {
+    "native": {
+     "solved": 3,
+     "n": 3
+    },
+    "tab": {
+     "solved": 3,
+     "n": 3
+    },
+    "none": {
+     "solved": 3,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 3,
+     "n": 3
+    }
+   }
+  },
+  "mirumee__ariadne-codegen-218": {
+   "class": "solved-everywhere",
+   "arms": {
+    "native": {
+     "solved": 3,
+     "n": 3
+    },
+    "tab": {
+     "solved": 3,
+     "n": 3
+    },
+    "none": {
+     "solved": 3,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 3,
+     "n": 3
+    }
+   }
+  },
+  "protofire__solhint-224": {
+   "class": "dead-everywhere",
+   "arms": {
+    "native": {
+     "solved": 0,
+     "n": 3
+    },
+    "tab": {
+     "solved": 0,
+     "n": 3
+    },
+    "none": {
+     "solved": 0,
+     "n": 3
+    },
+    "pipe": {
+     "solved": 0,
+     "n": 3
+    }
+   },
+   "failureMode": "other: authoring obligation, all 12. The task requires a whole new lint rule with a specific member order and message; 9 of 12 cells reach f2pFrac 0.4 (2 of 5 hidden tests)."
+  }
+ },
+ "toolHealth": {
+  "sweetRollouts": 198,
+  "ssBashCalls": 2082,
+  "callsByTool": {
+   "ss-grep": 562,
+   "ss-search": 316,
+   "ss-read": 1059,
+   "ss-find": 107,
+   "ss-trace": 30,
+   "ss-semantic": 38
+  },
+  "rolloutsUsingTool": {
+   "ss-grep": 186,
+   "ss-search": 164,
+   "ss-read": 189,
+   "ss-find": 67,
+   "ss-trace": 29,
+   "ss-semantic": 30
+  },
+  "nonZeroExitByTool": {
+   "ss-grep": 27,
+   "ss-find": 2,
+   "ss-trace": 7,
+   "ss-read": 35,
+   "ss-search": 1
+  },
+  "latencyMsByTool": {
+   "ss-grep": {
+    "n": 562,
+    "p50": 7,
+    "p90": 15,
+    "max": 46,
+    "mean": 8.7
+   },
+   "ss-search": {
+    "n": 316,
+    "p50": 16,
+    "p90": 30,
+    "max": 308,
+    "mean": 18.9
+   },
+   "ss-read": {
+    "n": 1059,
+    "p50": 7,
+    "p90": 14,
+    "max": 89,
+    "mean": 8.5
+   },
+   "ss-find": {
+    "n": 107,
+    "p50": 9,
+    "p90": 20,
+    "max": 42,
+    "mean": 10.9
+   },
+   "ss-trace": {
+    "n": 30,
+    "p50": 7,
+    "p90": 9,
+    "max": 106,
+    "mean": 9.9
+   },
+   "ss-semantic": {
+    "n": 38,
+    "p50": 10,
+    "p90": 34,
+    "max": 46,
+    "mean": 14.2
+   }
+  },
+  "applyPatch": {
+   "calls": 466,
+   "failed": 14,
+   "gutterResidue": 0,
+   "failuresByArm_rollouts": {
+    "native": 3,
+    "tab": 0,
+    "none": 6,
+    "pipe": 4
+   },
+   "failureKinds": {
+    "text-present(order/ambiguity)": 11,
+    "text-absent(paraphrase/own-insert)": 3,
+    "whitespace-carry(+1 or -1 space)": 0
+   },
+   "bareAtHunks": "869 of 869 - the model never wrote a @@ locator on this harness"
+  },
+  "defects": [
+   {
+    "id": "D1",
+    "name": "engine cold-start banner and Node stack trace replayed on any ss-grep failure",
+    "calls": 15,
+    "rollouts": 12,
+    "bytesPerOccurrence": 830,
+    "quote": "BinaryHNSW: Loaded 1247 vectors from /root/.ss-eval/runs/r0-91/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\\n...\\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\\n    (?:INLINES.HTML\\\\|type: INLINES.HTML\\\\|matchType(INLINES)\\n    ^\\nerror: unclosed group",
+    "cause": "eval/agent-read-workflows/bin/ss-grep buffers stderr to a temp file and cats the whole buffer when RC != 0; _ss-helpers.mjs redirects console.log to stderr, so the model-load banner sits in that buffer"
+   },
+   {
+    "id": "D2",
+    "name": "ss-grep rejects a positional path the way grep accepts it",
+    "calls": 11,
+    "rollouts": 11,
+    "quote": "ss-grep \"build\" src/build/targets.jam -k 40  ->  [ss] 1 argument(s) not consumed: \"src/build/targets.jam\""
+   },
+   {
+    "id": "D3",
+    "name": "ss-find has no --in, although ss-grep does",
+    "calls": 2,
+    "rollouts": 2,
+    "quote": "ss-find \"generate\" --regex \"generate\" --in src/build/targets.py -k 40  ->  [ss] unrecognised option \"--in\""
+   },
+   {
+    "id": "D4",
+    "name": "ss-read fails with a bare ENOENT on a path the model believed existed",
+    "calls": 30,
+    "rollouts": 18,
+    "quote": "ss-read src/markdown/blocks/html.js 1 100  ->  [ss-read] error: stat failed: ENOENT"
+   },
+   {
+    "id": "D5",
+    "name": "ss-* returns an empty body with no error and no exit code",
+    "calls": 15,
+    "rollouts": 9,
+    "quote": "ss-read aiohttp/client.py 400 650  ->  '' (status=error, no exit code); the model then re-fetched the same file with the harness glob and read"
+   },
+   {
+    "id": "D6",
+    "name": "POSIX BRE alternation is detected and reported but usually not retried",
+    "calls": 6,
+    "rollouts": 6,
+    "patternsUsingBRE": 31,
+    "outputsCarryingHint": 34,
+    "quote": "# ss-grep: 0 total match(es) for /Mcdev.refresh\\\\|refresh\\\\(/ (scope: --in test)\\n(no matches)\\nregex note: Rust syntax treats \\\\| as a literal pipe; use | for alternation (or -F for a literal search). The original pattern was used unchanged."
+   },
+   {
+    "id": "D7",
+    "name": "ss-trace reports no indexed symbol for symbols that exist in the tree",
+    "calls": 6,
+    "rollouts": 6,
+    "quote": "ss-trace submit callees --in src/FinalForm.js  ->  No indexed symbol found for \"submit\"."
+   },
+   {
+    "id": "D8",
+    "name": "the tool guide's bracketed placeholder is pasteable and breaks the shell",
+    "calls": 1,
+    "rollouts": 1,
+    "quote": "ss-trace submit [callers|callees|impact] --in src/FinalForm.js  ->  /bin/bash: line 1: callees: command not found (exit 127)"
+   },
+   {
+    "id": "D9",
+    "name": "the file kind that carries the answer is absent from the index",
+    "calls": null,
+    "rollouts": 12,
+    "quote": "bfgroup/b2 golden 371b47af: 321 .jam files in the tree (225 under src/), 270 .py files, 0 .jam chunks in .sweet-search/codebase.db (2484 chunks: .cpp 933, .py 861, .css 438, .h 88, ...). '.jam' does not appear in FILE_PATTERNS.include (core/infrastructure/config/search.js:51)."
+   },
+   {
+    "id": "D10",
+    "name": "ss-grep returns zero hits on one call in five",
+    "calls": 113,
+    "rollouts": 52,
+    "ofHeaders": 543
+   }
+  ],
+  "nativeFallback": {
+   "nativeCallWithin2StepsOfSsCall": 85,
+   "rollouts": 38,
+   "namingAPathTheSsCallJustNamed": 2,
+   "afterAFailedOrEmptySsCall": 4,
+   "sweetArmHarnessToolCalls": {
+    "read": 66,
+    "glob": 65,
+    "grep": 2
+   },
+   "reading": "sweet rollouts stay inside ss-*; the fallback is file discovery through the harness glob, not distrust of an ss-* result"
+  },
+  "unusedSurfaces": {
+   "ss-batch": 0,
+   "ss-edit": "not present in the deployed shim directory"
+  }
+ },
+ "indexBlindSpots": {
+  "accenture__sfmc-devtools-1974": [
+   [
+    ".amp",
+    29
+   ]
+  ],
+  "asynkron__protoactor-dotnet-1909": [
+   [
+    ".razor",
+    22
+   ]
+  ],
+  "bfgroup__b2-113": [
+   [
+    ".jam",
+    321
+   ],
+   [
+    ".adoc",
+    33
+   ]
+  ],
+  "bfgroup__b2-259": [
+   [
+    ".jam",
+    297
+   ],
+   [
+    ".adoc",
+    33
+   ]
+  ],
+  "gitbookio__markup-it-56": [
+   [
+    ".adoc",
+    39
+   ]
+  ],
+  "locationtech__jts-622": [
+   [
+    ".wkt",
+    10
+   ]
+  ],
+  "mathnet__mathnet-numerics-1072": [
+   [
+    ".spark",
+    16
+   ],
+   [
+    ".nuspec",
+    15
+   ],
+   [
+    ".mat",
+    10
+   ]
+  ]
+ },
+ "levers": [
+  {
+   "rank": 1,
+   "id": "L1",
+   "name": "report where an edit landed, and flag an anchor that matches more than once",
+   "tasks": [
+    "accenture__sfmc-devtools-1974"
+   ],
+   "mechanism": "apply_patch resolves a bare @@ hunk to the first context match from a moving index and answers 'Success. Updated the following files: M lib/index.js' without naming a line. lib/index.js carries a byte-identical six-line region at 1595 (fixKeys) and 1742 (#runMethod). Five sweet rollouts and one native rollout inserted the guard into fixKeys, the wrong method, after stating they were editing #runMethod.",
+   "dollarZeroFalsifier": "already run: scripts/e4-opencode-ambiguity.py counts, for every first-edit-of-a-file, how many places the hunk's context sequence matches in the base file. 41 of 295 measurable edits carry an ambiguous anchor; native 12, TAB 12, NONE 11, PIPE 6.",
+   "existenceProof": "PIPE rep2 read @@ -1593 in its own git diff, moved the hunk to 1740 and solved. The five losing rollouts saw the same @@ -1593 line and stopped.",
+   "discardCheck": "not killed. SLATE-A section 9 item 7 kills an 'insertion-position oracle' - deciding which position is semantically right. This is a different question: where did the edit actually land. SLATE-A keeps edit addressing as C-9 and SLATE-B keeps anchored ss-edit as a P7 component, judged below the standalone COST bar; this is a resolution claim, so the evidence is new.",
+   "caveat": "the surface is the harness's apply_patch, which sweet does not own, and the phase-1 no-new-tools rule bars shipping a new ss-edit. The version sweet can own is an ss-read trailer that reports how many times the shown window's text occurs in the file."
+  },
+  {
+   "rank": 2,
+   "id": "L2",
+   "name": "index the .jam file kind and re-audit FILE_PATTERNS against the pool",
+   "tasks": [
+    "bfgroup__b2-113",
+    "bfgroup__b2-259"
+   ],
+   "mechanism": "bfgroup/b2 ships a live Jam implementation (225 .jam files) beside a dormant Python port (66 .py files). FILE_PATTERNS.include has no .jam glob, so all three b2 goldens hold zero .jam chunks. ss-search, ss-find and ss-semantic can never return the file the gold patch touches. Across nine sweet rollouts on b2-113 the retrieval named .py paths 185 to 327 times and .jam paths 0 to 2 times; native's first grep returned 18 .jam paths and no .py. All nine sweet rollouts patched .py; native patched .jam in two of three and solved once.",
+   "dollarZeroFalsifier": "add '**/*.jam' plus Jamfile/Jamroot to FILE_PATTERNS, re-index one b2 golden offline, replay the nine recorded ss-search queries and check whether src/tools/stage.jam enters the top ten. Kill if it does not.",
+   "discardCheck": "not in either discard log. It contradicts the completeness of project_taskbench_extension_coverage_audit, which concluded 'only zeek .bif blind spot'. Evidence is new.",
+   "ranking": "discovery only, no ranking signal, so the CLAUDE.md _isAgentFormat gate does not apply."
+  },
+  {
+   "rank": 3,
+   "id": "L3",
+   "name": "make ss-grep survive a pattern ripgrep rejects, and never print the engine banner",
+   "tasks": [
+    "apigee__registry-961",
+    "gitbookio__markup-it-56",
+    "callstack__react-native-paper-972",
+    "devlooped__moq-1262"
+   ],
+   "mechanism": "15 ss-grep calls in 12 rollouts crashed and replayed about 830 bytes of model-load banner plus a Node stack trace into the agent's context. 11 more were rejected for a positional path. 6 returned zero hits because of GNU BRE alternation, where the tool prints the right diagnosis and then says 'The original pattern was used unchanged'. On the one apigee rollout that lost, three of eight ss-grep calls failed this way and the model patched the CLI copy of list.go.",
+   "dollarZeroFalsifier": "replay the 34 failed or zero-hit patterns against their goldens with (a) the escaped-alternation translation the hint already computes and (b) a -F fallback; count how many then return the file the gold patch touches. Kill below one third.",
+   "discardCheck": "not in either log. project_failure_forensics_review already names the ss-grep BRE bug; the hint shipped, the retry did not, so this is a recurrence, not a new idea."
+  },
+  {
+   "rank": 4,
+   "id": "L4",
+   "name": "accept the grep-shaped invocations the model actually types",
+   "tasks": [
+    "bfgroup__b2-113",
+    "bfgroup__b2-259",
+    "devlooped__moq-1262",
+    "protofire__solhint-224",
+    "apigee__registry-961"
+   ],
+   "mechanism": "13 calls in 12 rollouts were rejected for CLI shape alone: ss-grep refuses positional paths, ss-find has no --in although ss-grep does.",
+   "dollarZeroFalsifier": "none needed; it is a parser change with a unit test. Kill only if accepting positional paths makes a pattern containing a space ambiguous, which is why the current message exists.",
+   "discardCheck": "not in either log. Low ceiling, near-zero risk."
+  },
+  {
+   "rank": 5,
+   "id": "L5",
+   "name": "never return an empty body without an error",
+   "tasks": [
+    "aio-libs__aiohttp-8038",
+    "celestiaorg__nmt-192",
+    "devlooped__moq-1262"
+   ],
+   "mechanism": "15 ss-* calls returned an empty string with status=error and no exit code. In aiohttp PIPE rep2 the model immediately re-fetched the same file through the harness glob and read.",
+   "dollarZeroFalsifier": "replay ss-read aiohttp/client.py 400 650 and ss-read src/Moq/Extensions.cs 300 430 against their goldens under the recorded environment. Kill if they cannot be reproduced, which would make it an opencode transport abort rather than a sweet defect.",
+   "discardCheck": "not in either log."
+  },
+  {
+   "rank": 6,
+   "id": "L6",
+   "name": "close the ss-trace symbol gap",
+   "tasks": [
+    "final-form__final-form-64",
+    "apigee__registry-961",
+    "gitbookio__markup-it-56",
+    "hotmeteor__spectator-181",
+    "bfgroup__b2-259"
+   ],
+   "mechanism": "6 ss-trace calls answered 'No indexed symbol found' for symbols that exist in the tree: submit, deserialize, ListDeploymentArtifacts, expectsFalse, get-relevant-features. ss-trace is used 30 times in 198 rollouts, so the ceiling is small.",
+   "dollarZeroFalsifier": "query each of the six symbols against the matching golden's code-graph.db. Kill if the symbol genuinely is not a definition in that file.",
+   "discardCheck": "not in either log."
+  }
+ ],
+ "leversDropped": [
+  {
+   "idea": "change the read gutter delimiter on opencode",
+   "why": "dead with new evidence: 0 gutter residue in 466 apply_patch bodies; 14 failed edits, none a whitespace carry; TAB has zero rollouts with a failed edit against NONE 6 and PIPE 4. Extends GUTTER-MECHANISM section 4.3 from 6 tasks to 22."
+  },
+  {
+   "idea": "more sibling or mirror retrieval",
+   "why": "already dead (SLATE-A section 9 item 3, SLATE-B section 8 row 1) and this run confirms it: the losing aws-embedded-metrics PIPE rep1 read src/logger/MetricsContext.ts at call 5 and still patched the serializer."
+  },
+  {
+   "idea": "a prompt clause about hunk order or anchoring on code rather than comments",
+   "why": "the clause graveyard (project_clause_candidate_dead) kills general clauses; GUTTER-MECHANISM R7 already argued against it."
+  },
+  {
+   "idea": "a dependency-source corpus to reach the Laravel assertStatus message on spectator-181",
+   "why": "negative result for SLATE-B P1 on this pool: the golden has no vendor/ tree and the expected string appears nowhere in the checkout, so an index-time corpus over the checkout cannot supply it. Native rep0 did read the README line naming ->assertStatus and still hand-rolled its own message."
+  }
+ ],
+ "scripts": [
+  "e4-opencode-ambiguity.py",
+  "e4-opencode-assemble.py",
+  "e4-opencode-b2dialect.py",
+  "e4-opencode-banner.py",
+  "e4-opencode-bundle.py",
+  "e4-opencode-cellmap.py",
+  "e4-opencode-census.py",
+  "e4-opencode-defects.py",
+  "e4-opencode-digest.py",
+  "e4-opencode-editanchors.py",
+  "e4-opencode-exposure.py",
+  "e4-opencode-extgap.py",
+  "e4-opencode-f2ptail.py",
+  "e4-opencode-fallback.py",
+  "e4-opencode-grepcrash.py",
+  "e4-opencode-grepdialect.py",
+  "e4-opencode-gutterresidue.py",
+  "e4-opencode-lib.py",
+  "e4-opencode-solve-matrix.py",
+  "e4-opencode-storyline.py",
+  "e4-opencode-toolhealth.py",
+  "e4-opencode-ungraded.py"
+ ]
+}

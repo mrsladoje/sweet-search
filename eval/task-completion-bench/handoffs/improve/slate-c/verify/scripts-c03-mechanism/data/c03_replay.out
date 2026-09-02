@@ -1,0 +1,20 @@
+=== (A) golden replay of worktree-zero patterns (filesystem grep, prefix stripped) ===
+replay entries: 45 {'hit': 43, 'hit-in-a-file-the-subagent-later-Read': 34, 'hit-only-in-jam-or-src-build (pre-E1 blind)': 6, 'zero': 2}
+   asynkron__protoactor-dotnet-1909 {'hit': 5}
+   bfgroup__b2-113 {'hit': 17}
+   bfgroup__b2-259 {'hit': 12}
+   final-form__final-form-64 {'hit': 9, 'zero': 2}
+scoped subpath present in golden: Counter({True: 25})
+
+=== (B)/(C) per affected subagent: sequence letters and ss-read vs Read ===
+legend: Z=worktree-scoped zero/usage, S=other ss-* hit, s=other ss-* zero/usage, R=native Read, G=native grep, F=find/ls, .=other
+  asynkron__protoactor-dotnet-1909 agent-a3d311866bfc0b7cb: ss-read=0 Read=5 unscoped-ss-hits-after-first-zero=9 Reads-after-first-such-hit=3
+    GGGFRG.RsssZZSZSSSZRRRZ.ZS.SSSS.
+  bfgroup__b2-113 agent-abd536db90e42b25d: ss-read=0 Read=5 unscoped-ss-hits-after-first-zero=36 Reads-after-first-such-hit=5
+    .FssZZZFZZZSSSSZZSSSSSSSSSSSSSSSSSSSSSSSZSSFZSSSRSRZSSZS.ZRRR..
+  bfgroup__b2-113 agent-a41e46d3e2671aa14: ss-read=0 Read=18 unscoped-ss-hits-after-first-zero=14 Reads-after-first-such-hit=18
+    .sssZZZZZZZZSSssssSSSRRRRRRRRssSsRssS.SSSRSSssRRRGssssRssGRRRsS.RS
+  bfgroup__b2-259 agent-a04ad28e63dd30186: ss-read=0 Read=1 unscoped-ss-hits-after-first-zero=42 Reads-after-first-such-hit=1
+    sZSZZSZZZZZZSSSZZZRSSSZSZSZSSZZZSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS.
+  final-form__final-form-64 agent-a38e681945774a613: ss-read=0 Read=13 unscoped-ss-hits-after-first-zero=0 Reads-after-first-such-hit=0
+    .sssZZZZZZZRRRRRRZZ.RZZZZRRGRRR..GR.

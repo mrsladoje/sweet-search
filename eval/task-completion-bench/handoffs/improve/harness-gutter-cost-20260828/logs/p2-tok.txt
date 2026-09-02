@@ -1,0 +1,29 @@
+corpus lines=3052  space-indented=1955 (64.1%)  tab-indented=458 (15.0%)
+window=whole file
+form          tok/line  overhead   ratio
+none            8.5157    0.0000   1.000
+tab             9.9971    1.4813   1.174
+space           9.9135    1.3978   1.164
+colon          10.7031    2.1874   1.257
+pipe           10.7408    2.2251   1.261
+sp_pipe        10.7539    2.2382   1.263
+pipe_sp        10.9135    2.3978   1.282
+colon_sp       10.9135    2.3978   1.282
+pad05pipe      11.5282    3.0125   1.354
+pad5tab        11.7713    3.2556   1.382
+pad5sp2        11.7739    3.2582   1.383
+sparse5         8.8188    0.3031   1.036
+sparse10        8.6668    0.1510   1.018
+landmark        8.6586    0.1429   1.017
+landmark lines numbered: 321 of 3052 = 10.5%
+
+PIPE_SP - TAB per line = 0.9164
+COLON   - TAB per line = 0.7061
+PIPE    - TAB per line = 0.7438
+
+per file tok/line:
+  detect_mistakes.R n=391 none=7.123 tab=8.266 tab_ovh=1.143 pipe_sp_ovh=2.123
+  eth.go n=706 none=8.884 tab=10.455 tab_ovh=1.571 pipe_sp_ovh=2.423
+  grade_code.R n=167 none=8.683 tab=10.210 tab_ovh=1.527 pipe_sp_ovh=1.754
+  traceback.py n=100 none=6.720 tab=8.090 tab_ovh=1.370 pipe_sp_ovh=2.300
+  underscore.js n=1688 none=8.774 tab=10.299 tab_ovh=1.524 pipe_sp_ovh=2.520

@@ -1,0 +1,26 @@
+3052 lines
+form        transparent   ambiguous(pure-space merge)   delim own token
+none            100.0%                          0.0%            100.0%
+tab              24.3%                          0.0%             24.3%
+space            17.6%                         64.1%             17.6%
+colon            94.8%                          0.0%             94.8%
+pipe             99.9%                          0.0%            100.0%
+sp_pipe          99.9%                          0.0%             99.9%
+pipe_sp          17.6%                         64.1%             17.6%
+colon_sp         17.6%                         64.1%             17.6%
+pad05pipe        99.9%                          0.0%             99.9%
+pad5tab          24.3%                          0.0%             24.3%
+pad5sp2          17.9%                         64.1%             17.9%
+
+MERGE PROBES — token after the number, per indent style
+  none       0sp:'' 2sp:'' 4sp:'' 6sp:'' 8sp:'' tab:'' 2tab:''
+  tab        0sp:'\tres' 2sp:'\t ' 4sp:'\t   ' 6sp:'\t     ' 8sp:'\t       ' tab:'\t' 2tab:'\t\t'
+  space      0sp:' res' 2sp:'  ' 4sp:'    ' 6sp:'      ' 8sp:'        ' tab:' ' 2tab:' \t'
+  colon      0sp:':' 2sp:':' 4sp:':' 6sp:':' 8sp:':' tab:':' 2tab:':'
+  pipe       0sp:'|' 2sp:'|' 4sp:'|' 6sp:'|' 8sp:'|' tab:'|' 2tab:'|'
+  sp_pipe    0sp:' |' 2sp:' |' 4sp:' |' 6sp:' |' 8sp:' |' tab:' |' 2tab:' |'
+  pipe_sp    0sp:' res' 2sp:'  ' 4sp:'    ' 6sp:'      ' 8sp:'        ' tab:' ' 2tab:' \t'
+  colon_sp   0sp:' res' 2sp:'  ' 4sp:'    ' 6sp:'      ' 8sp:'        ' tab:' ' 2tab:' \t'
+  pad05pipe  0sp:' |' 2sp:' |' 4sp:' |' 6sp:' |' 8sp:' |' tab:' |' 2tab:' |'
+  pad5tab    0sp:'\tres' 2sp:'\t ' 4sp:'\t   ' 6sp:'\t     ' 8sp:'\t       ' tab:'\t' 2tab:'\t\t'
+  pad5sp2    0sp:' res' 2sp:'   ' 4sp:'     ' 6sp:'       ' 8sp:'         ' tab:'  ' 2tab:'  \t'

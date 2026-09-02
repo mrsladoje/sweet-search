@@ -1,0 +1,25 @@
+=== bytes per token, codex epoch B/C untruncated outputs (codex own token counts) ===
+  C native: untruncated outputs=565 bytes/token=3.989 | outputs>1000tok: n=243 bytes/token=3.996
+  C sweetTAB: untruncated outputs=762 bytes/token=3.987 | outputs>1000tok: n=298 bytes/token=3.992
+  B native: untruncated outputs=261 bytes/token=3.981 | outputs>1000tok: n=121 bytes/token=3.991
+  B sweet: untruncated outputs=342 bytes/token=3.980 | outputs>1000tok: n=158 bytes/token=3.991
+
+=== epoch A cap counterfactual, residency-aware ===
+  bytes/token=2.67: removedTok/rollout native=9228 sweet=1192 | epochA as-run=-6.4% -> capped=14.2% CI=[2.5%, 28.1%] (tasks=17)
+  bytes/token=3: removedTok/rollout native=8213 sweet=1061 | epochA as-run=-6.4% -> capped=11.4% CI=[-0.1%, 25.1%] (tasks=17)
+  bytes/token=3.5: removedTok/rollout native=7040 sweet=910 | epochA as-run=-6.4% -> capped=8.4% CI=[-3.1%, 21.9%] (tasks=17)
+  bytes/token=4: removedTok/rollout native=6160 sweet=796 | epochA as-run=-6.4% -> capped=6.3% CI=[-5.2%, 19.6%] (tasks=17)
+  bytes/token=4.4: removedTok/rollout native=5600 sweet=724 | epochA as-run=-6.4% -> capped=5.0% CI=[-6.5%, 18.3%] (tasks=17)
+
+=== 02 H2: native read calls and bytes (toolCounts.nativeRead + tool output bytes) ===
+  A native: toolCounts.nativeRead/rollout=2.53 calls/rollout=7.53
+  B native: toolCounts.nativeRead/rollout=4.64 calls/rollout=10.18
+  C native: toolCounts.nativeRead/rollout=4.59 calls/rollout=11.59
+
+=== requests (turns) vs tool calls, epoch C ===
+  codex native: requests(turns)=18.85 rows.calls=11.59 mainReqs=-
+  codex sweet: requests(turns)=19.61 rows.calls=12.45 mainReqs=-
+  opencode native: requests(turns)=16.32 rows.calls=25.23 mainReqs=-
+  opencode sweet: requests(turns)=20.19 rows.calls=22.83 mainReqs=-
+  claude-code native: requests(turns)=24.30 rows.calls=41.85 mainReqs=24.30
+  claude-code sweet: requests(turns)=23.17 rows.calls=29.86 mainReqs=23.17

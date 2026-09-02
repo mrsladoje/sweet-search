@@ -1,0 +1,89 @@
+=== A. sweet-arm native retrieval ops: main vs subagent [M]
+  ('claude-code', 'main', 'glob'): ops=3 tokens=336 rollouts=3 requests=3
+  ('claude-code', 'main', 'read.range'): ops=51 tokens=37,834 rollouts=18 requests=51
+  ('claude-code', 'side', 'glob'): ops=18 tokens=17,398 rollouts=7 requests=17
+  ('claude-code', 'side', 'grep.regex'): ops=13 tokens=38,278 rollouts=6 requests=13
+  ('claude-code', 'side', 'list'): ops=9 tokens=13,184 rollouts=6 requests=8
+  ('claude-code', 'side', 'read.range'): ops=87 tokens=115,610 rollouts=7 requests=63
+  ('codex', 'main', 'glob'): ops=20 tokens=5,838 rollouts=13 requests=13
+  ('codex', 'main', 'grep.literal'): ops=3 tokens=1,169 rollouts=2 requests=3
+  ('codex', 'main', 'grep.regex'): ops=8 tokens=2,628 rollouts=4 requests=8
+  ('codex', 'main', 'read.range'): ops=13 tokens=5,280 rollouts=4 requests=10
+  ('opencode', 'main', 'glob'): ops=24 tokens=3,948 rollouts=13 requests=24
+  ('opencode', 'main', 'grep.literal'): ops=1 tokens=83 rollouts=1 requests=1
+  ('opencode', 'main', 'grep.regex'): ops=1 tokens=106 rollouts=1 requests=1
+  ('opencode', 'main', 'read.range'): ops=18 tokens=44,428 rollouts=5 requests=18
+  totals: {'claude-code/main': (54, 38170), 'claude-code/side': (127, 184470), 'codex/main': (44, 14914), 'opencode/main': (44, 48566)}
+  sweet arm calls main/side and tokens main/side: {'claude-code': [1481, 490, 1177339, 743399], 'codex': [1228, 0, 1042773, 0], 'opencode': [1438, 0, 1138153, 0]}
+  rollouts with any subagent activity: {'claude-code/native': 27, 'claude-code/sweet': 9}
+
+=== B. sweet-arm native retrieval ops per task [M]
+  codex: bfgroup__b2-259: 15 ops / 6,044 tok (41%); devlooped__moq-1262: 7 ops / 1,988 tok (13%); fastify__fastify-cors-285: 4 ops / 1,380 tok (9%); protofire__solhint-224: 5 ops / 1,318 tok (9%); aws-actions__configure-aws-credentials-42: 4 ops / 1,014 tok (7%); absinthe-graphql__absinthe-998: 2 ops / 885 tok (6%); callstack__react-native-paper-972: 2 ops / 793 tok (5%); final-form__final-form-64: 2 ops / 741 tok (5%)
+     b2 share of fallback tokens: 41%  (b2-113 + b2-259)
+  opencode: bfgroup__b2-113: 15 ops / 30,844 tok (64%); bfgroup__b2-259: 14 ops / 14,968 tok (31%); axelrod-python__axelrod-671: 2 ops / 1,847 tok (4%); gitbookio__markup-it-56: 4 ops / 420 tok (1%); protofire__solhint-224: 2 ops / 250 tok (1%); aws-actions__configure-aws-credentials-42: 5 ops / 178 tok (0%); fastify__fastify-cors-285: 2 ops / 59 tok (0%)
+     b2 share of fallback tokens: 94%  (b2-113 + b2-259)
+  claude-code: bfgroup__b2-259: 61 ops / 97,054 tok (44%); bfgroup__b2-113: 32 ops / 43,600 tok (20%); final-form__final-form-64: 17 ops / 36,267 tok (16%); asynkron__protoactor-dotnet-1909: 13 ops / 21,245 tok (10%); awslabs__aws-embedded-metrics-node-21: 24 ops / 13,325 tok (6%); fastify__fastify-cors-285: 5 ops / 4,893 tok (2%); mathnet__mathnet-numerics-1072: 5 ops / 1,428 tok (1%); celestiaorg__nmt-192: 2 ops / 1,168 tok (1%)
+     b2 share of fallback tokens: 63%  (b2-113 + b2-259)
+
+=== C. claude-code sweet subagents: how ss-* was invoked [M]
+  invocations: {('main', 'bare'): 779, ('side', 'bare'): 127, ('side', 'absolute-path'): 212}
+  'command not found' results: {}
+  sweet Agent() delegation prompts: {'mentions ss-': 11}
+  claude sweet rollouts with subagents: ss-used? -> native retrieval ops / tokens
+    claude-code/asynkron__protoactor-dotnet-1909/sweet/rep1: ss_used=True native_ret_ops=11 tok=20,627
+    claude-code/awslabs__aws-embedded-metrics-node-21/sweet/rep0: ss_used=True native_ret_ops=15 tok=9,312
+    claude-code/awslabs__aws-embedded-metrics-node-21/sweet/rep2: ss_used=True native_ret_ops=7 tok=3,519
+    claude-code/bfgroup__b2-113/sweet/rep1: ss_used=True native_ret_ops=10 tok=17,744
+    claude-code/bfgroup__b2-113/sweet/rep2: ss_used=True native_ret_ops=21 tok=25,777
+    claude-code/bfgroup__b2-259/sweet/rep0: ss_used=True native_ret_ops=27 tok=37,742
+    claude-code/bfgroup__b2-259/sweet/rep1: ss_used=True native_ret_ops=19 tok=33,482
+    claude-code/fastify__fastify-cors-285/sweet/rep0: ss_used=True native_ret_ops=0 tok=0
+    claude-code/final-form__final-form-64/sweet/rep2: ss_used=True native_ret_ops=17 tok=36,267
+
+=== D. validation of multi-pattern tag on codex native rg [M]
+  codex native grep ops 316; tagged multi-pattern 274; pattern contains unescaped | : 274
+    ['head-limited', 'multi-pattern', 'scoped', 'type-filter'] | rg -n "build.*no|<build>|build.*feature|build-request|build-properties" src -g '*.jam' -g '*.py' | head -240
+    ['head-limited', 'multi-pattern', 'scoped', 'test-path'] | rg -n "\.children|\.subNodes|ContractDefinition\(|StateVariableDeclaration|EventDefinition|ModifierDefinition|EnumDefini
+    ['manifest', 'multi-pattern', 'scoped'] | rg -n "TargetFramework|TargetFrameworks" src/Numerics/*.csproj Directory.Build.props
+    ['multi-pattern', 'scoped'] | rg -n "specRevisionRegexp|revisionTag|type (Version|Spec|Deployment) struct" server/registry/names/{common.go,version.go
+    ['scoped'] | rg -n "EvaluateCaptures" src/Moq
+    ['defn', 'head-limited', 'multi-pattern', 'scoped'] | rg -n "func-order|imports-on-top|visibility-modifier-order|recommended" lib/config README.md docs/configuration.md | hea
+    ['multi-pattern', 'scoped', 'tail-limited'] | rg -n "deserializeToDocument|deserialize\(" src/models/state.js | tail -20
+    ['head-limited', 'multi-pattern', 'scoped', 'test-path', 'type-filter'] | rg -n "skip|include|Optional|default|nullable|directive" ariadne_codegen tests -g '*.py' -g '*.graphql' | head -240
+    ['head-limited', 'multi-pattern', 'scoped', 'test-path'] | rg -n "keep_alive|keepalive|_release|release\(|is_connected|should_close|closed" aiohttp tests 2>/dev/null | head -200
+    ['head-limited', 'multi-pattern', 'scoped', 'test-path'] | rg -n "rules/order|func-order|imports-on-top|order" lib test docs/rules.md docs/configuration.md | head -160
+
+=== E. repeated identical native reads in the sweet arm [M]
+  identical consecutive native reads: {'claude-code': 18}
+    ('claude-code/axelrod-python__axelrod-671/sweet/rep2', 6, False, '466\t        """ 467\t        plist = list(range(self.nplayers)) 468\t        payoff_diffs_means = [[0 for opponent in plist] for player in plist] 469\t 470\t       ')
+    ('claude-code/bfgroup__b2-113/sweet/rep1', 106, False, '1\t# Status: ported. 2\t# Base revision: 64488 3\t 4\t# Copyright Vladimir Prus 2002-2007. 5\t# Copyright Rene Rivera 2006. 6\t# 7\t# Distributed under the Boost Softw')
+    ('claude-code/bfgroup__b2-259/sweet/rep0', 25, True, 'File does not exist. Note: your current working directory is /root/.ss-eval/runs/r0-52.')
+    ('claude-code/bfgroup__b2-259/sweet/rep0', 113, False, '0\t#!/usr/bin/python 1\t 2\t# Copyright (C) Vladimir Prus 2006. 3\t# Distributed under the Boost Software License, Version 1.0. (See 4\t# accompanying file LICENSE.t')
+    ('claude-code/bfgroup__b2-259/sweet/rep0', 221, False, '240\t    { 241\t        log-check-result "$(x)" "$(cache-min:J= )" ; 242\t    } 243\t    if ! $(value) 244\t    { 245\t        if $(result) 246\t        { 247\t        ')
+    ('claude-code/bfgroup__b2-259/sweet/rep1', 62, False, '1\t# Copyright (c) 2010 Vladimir Prus. 2\t# Copyright 2017-2021 Rene Ferdinand Rivera Morell 3\t# 4\t# Use, modification and distribution is subject to the Boost So')
+    ('claude-code/bfgroup__b2-259/sweet/rep2', 16, False, '0\t# Copyright (c) 2010 Vladimir Prus. 1\t# Copyright 2017-2021 Rene Ferdinand Rivera Morell 2\t# 3\t# Use, modification and distribution is subject to the Boost So')
+    ('claude-code/celestiaorg__nmt-192/sweet/rep2', 3, False, '45\t\t// omitted if feasible. For a more in-depth understanding of this field, 46\t\t// refer to the "HashNode" method in the "Hasher. 47\t\tisMaxNamespaceIDIgnored b')
+
+=== F. read-before-edit: is a read followed by an Edit of the same file within 3 calls? (claude-code) [M]
+  native: {('native-Read', 'no-edit'): 596, ('native-Read', 'edit-follows'): 94}
+  sweet: {('ss-read', 'edit-follows'): 78, ('ss-read', 'no-edit'): 339, ('native-Read', 'no-edit'): 28, ('native-Read', 'edit-follows'): 23}
+  sweet claude-code Edits by what preceded them: {'ss-read only': 199, 'native Read before': 37, 'no read at all': 9}
+
+=== G. native-arm feature shares [M]
+  codex grep ops 316: multi-pattern 274/316, type-filter 135/316, head-limited 167/316, ctx 14/316, files-only 1/316, count 0/316, invert 0/316, icase 7/316, word 0/316, defn 79/316, scoped 312/316, unscoped(repo-wide) 4
+  codex read ops 1017: whole-file 155, range 862, open-ended 0/1017, suffix 0/1017, prefix 0/1017, numbered 70/1017, by-pattern 0/1017, manifest 33/1017, dep-path 0/1017, build-path 97/1017
+  codex native sed -n span lines: n=786 p50=131 p90=260 max=700
+  opencode grep ops 240: multi-pattern 0/240, type-filter 240/240, head-limited 0/240, ctx 0/240, files-only 0/240, count 0/240, invert 0/240, icase 0/240, word 0/240, defn 42/240, scoped 150/240, unscoped(repo-wide) 90
+  opencode read ops 596: whole-file 0, range 596, open-ended 0/596, suffix 0/596, prefix 0/596, numbered 0/596, by-pattern 0/596, manifest 33/596, dep-path 0/596, build-path 44/596
+  opencode native read-tool limit: n=596 p50=160 p90=260 max=520
+  claude-code grep ops 425: multi-pattern 348/425, type-filter 64/425, head-limited 236/425, ctx 5/425, files-only 3/425, count 0/425, invert 0/425, icase 11/425, word 0/425, defn 75/425, scoped 424/425, unscoped(repo-wide) 1
+  claude-code read ops 1250: whole-file 1, range 1249, open-ended 0/1250, suffix 0/1250, prefix 0/1250, numbered 0/1250, by-pattern 0/1250, manifest 42/1250, dep-path 0/1250, build-path 132/1250
+  claude-code native read-tool limit: n=1245 p50=170 p90=1000 max=1150000000000000
+
+=== H. first tool call of each rollout (main thread) [M]
+  ('claude-code', 'native'): {'plan/TaskCreate': 40, 'test/shim': 12, 'list/find-enumerate': 11, 'glob/find-name': 2, 'list/ls': 1}
+  ('claude-code', 'sweet'): {'plan/TaskCreate': 47, 'test/shim': 15, 'search.semantic/ss-search': 3, 'grep.literal/ss-grep': 1}
+  ('codex', 'native'): {'plan/update_plan': 63, 'grep.regex/rg': 2, 'glob/rg-files': 1}
+  ('codex', 'sweet'): {'plan/update_plan': 66}
+  ('opencode', 'native'): {'plan/todowrite': 66}
+  ('opencode', 'sweet'): {'plan/todowrite': 66}

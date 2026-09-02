@@ -1,0 +1,13 @@
+two-way additive fit of the native first-turn prompt, epoch C (22 issues x 3 harnesses)
+  mean |residual| = 4 tokens, max = 35
+  issue text spread: 0 .. 2046 tokens (median 250)
+  fixed harness preamble (system prompt + tool schemas + frame + smallest issue):
+    codex	13959 tokens
+    opencode	6498 tokens
+    claude-code	17273 tokens
+  differences: claude-code − codex = 3315, codex − opencode = 7461
+
+Whole-rollout cost of the fixed preamble alone (resident every turn + ingested once):
+  codex	13959 tok x 18.8 turns = $0.004027/rollout (33.0% of the arm)
+  opencode	6498 tok x 16.3 turns = $0.001710/rollout (19.1% of the arm)
+  claude-code	17273 tok x 24.3 turns = $0.005925/rollout (30.0% of the arm)

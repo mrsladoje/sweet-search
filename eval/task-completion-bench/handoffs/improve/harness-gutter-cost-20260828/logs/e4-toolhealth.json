@@ -1,0 +1,491 @@
+{
+ "calls": {
+  "ss-grep": 562,
+  "ss-search": 316,
+  "ss-read": 1059,
+  "ss-find": 107,
+  "ss-trace": 30,
+  "ss-semantic": 38
+ },
+ "nonzero": {
+  "ss-grep": 27,
+  "ss-find": 2,
+  "ss-trace": 7,
+  "ss-read": 35,
+  "ss-search": 1
+ },
+ "empty": {
+  "ss-grep/blank-output": 5,
+  "ss-find/blank-output": 3,
+  "ss-read/blank-output": 5,
+  "ss-search/blank-output": 2
+ },
+ "trunc": {
+  "ss-read": 4
+ },
+ "rolloutsWith": {
+  "ss-grep": 186,
+  "ss-search": 164,
+  "ss-read": 189,
+  "ss-find": 67,
+  "ss-trace": 29,
+  "ss-semantic": 30
+ },
+ "latencyMs": {
+  "ss-grep": {
+   "n": 562,
+   "p50": 7,
+   "p90": 15,
+   "max": 46,
+   "mean": 8.7
+  },
+  "ss-search": {
+   "n": 316,
+   "p50": 16,
+   "p90": 30,
+   "max": 308,
+   "mean": 18.9
+  },
+  "ss-read": {
+   "n": 1059,
+   "p50": 7,
+   "p90": 14,
+   "max": 89,
+   "mean": 8.5
+  },
+  "ss-find": {
+   "n": 107,
+   "p50": 9,
+   "p90": 20,
+   "max": 42,
+   "mean": 10.9
+  },
+  "ss-trace": {
+   "n": 30,
+   "p50": 7,
+   "p90": 9,
+   "max": 106,
+   "mean": 9.9
+  },
+  "ss-semantic": {
+   "n": 38,
+   "p50": 10,
+   "p90": 34,
+   "max": 46,
+   "mean": 14.2
+  }
+ },
+ "applyPatch": {
+  "completed": 338,
+  "error": 11,
+  "FAILISH": 11
+ },
+ "bashNonZeroNonSs": {
+  "node": 3,
+  "npm": 1,
+  "run_tests": 1,
+  "git": 2
+ },
+ "examples": {
+  "nonzero:ss-grep": [
+   {
+    "task": "bfgroup__b2-259",
+    "arm": "tab",
+    "rep": 1,
+    "cmd": "ss-grep \"feature.*build|build.*feature|<build>\" --in src/build src/tools -k 30",
+    "exit": 2,
+    "out": "[ss] 1 argument(s) not consumed: \"src/tools\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]\n"
+   },
+   {
+    "task": "bfgroup__b2-259",
+    "arm": "tab",
+    "rep": 2,
+    "cmd": "ss-grep \"build\" src/build/targets.jam -k 40",
+    "exit": 2,
+    "out": "[ss] 1 argument(s) not consumed: \"src/build/targets.jam\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]\n"
+   },
+   {
+    "task": "gitbookio__markup-it-56",
+    "arm": "tab",
+    "rep": 0,
+    "cmd": "ss-grep \"INLINES.HTML\\|type: INLINES.HTML\\|matchType(INLINES\" -k 20",
+    "exit": 1,
+    "out": "BinaryHNSW: Loaded 1247 vectors from /root/.ss-eval/runs/r0-91/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Loaded 473 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 2664ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarmi"
+   },
+   {
+    "task": "gitbookio__markup-it-56",
+    "arm": "none",
+    "rep": 2,
+    "cmd": "ss-read src/markdown/blocks 1 30 && ss-grep \"html\" -k 30",
+    "exit": 1,
+    "out": "[ss-read] error: not a regular file\n"
+   },
+   {
+    "task": "bfgroup__b2-259",
+    "arm": "none",
+    "rep": 2,
+    "cmd": "ss-grep \"build\" src/build/targets.jam src/build/property-set.jam src/build/feature.jam -k 50",
+    "exit": 2,
+    "out": "[ss] 3 argument(s) not consumed: \"src/build/targets.jam\", \"src/build/property-set.jam\", \"src/build/feature.jam\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]\n"
+   },
+   {
+    "task": "callstack__react-native-paper-972",
+    "arm": "pipe",
+    "rep": 0,
+    "cmd": "ss-grep \"const {.*theme|...rest\" -k 20",
+    "exit": 1,
+    "out": "BinaryHNSW: Loaded 753 vectors from /root/.ss-eval/runs/r0-31/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Loaded 752 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 1791ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarmin"
+   }
+  ],
+  "nonzero:ss-find": [
+   {
+    "task": "bfgroup__b2-259",
+    "arm": "tab",
+    "rep": 1,
+    "cmd": "ss-find \"build property main target generation\" --regex \"generate|build|property-set\" --in src/build/targets.jam -k 20",
+    "exit": 2,
+    "out": "[ss] unrecognised option \"--in\"\nUsage: ss-find \"<query>\" --regex \"<regex>\" [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--full|--xl] [-k N]\n"
+   },
+   {
+    "task": "bfgroup__b2-113",
+    "arm": "pipe",
+    "rep": 0,
+    "cmd": "ss-find \"generate\" --regex \"generate\" --in src/build/targets.py -k 40",
+    "exit": 2,
+    "out": "[ss] unrecognised option \"--in\"\nUsage: ss-find \"<query>\" --regex \"<regex>\" [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--full|--xl] [-k N]\n"
+   }
+  ],
+  "empty:ss-grep": [
+   {
+    "task": "bfgroup__b2-259",
+    "arm": "tab",
+    "rep": 2,
+    "cmd": "ss-grep \"check-target-builds[[:space:]]*\\(\" -k 30",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   },
+   {
+    "task": "bfgroup__b2-259",
+    "arm": "pipe",
+    "rep": 2,
+    "cmd": "ss-grep \"evaluate\" -k 50",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   },
+   {
+    "task": "awslabs__aws-embedded-metrics-node-21",
+    "arm": "tab",
+    "rep": 2,
+    "cmd": "ss-grep \"setDimensions|dimension set|Dimensions\" src/logger/__tests__ src/serializers/__tests__ -k 40",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   },
+   {
+    "task": "aio-libs__aiohttp-8038",
+    "arm": "pipe",
+    "rep": 2,
+    "cmd": "ss-grep \"ServerDisconnectedError\" -k 20",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   },
+   {
+    "task": "protofire__solhint-224",
+    "arm": "pipe",
+    "rep": 1,
+    "cmd": "ss-grep \"ruleId = '.*order\" -k 20",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   }
+  ],
+  "empty:ss-find": [
+   {
+    "task": "bfgroup__b2-259",
+    "arm": "tab",
+    "rep": 2,
+    "cmd": "ss-find \"check-target-builds\" --regex \"check-target-builds\" -k 30",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   },
+   {
+    "task": "gitbookio__markup-it-56",
+    "arm": "tab",
+    "rep": 0,
+    "cmd": "ss-find \"raw HTML inline serializer\" --regex \"src/html/inlines|INLINES\\.HTML|data\\.get\\(['\\\"]html\" -k 20",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   },
+   {
+    "task": "aio-libs__aiohttp-8038",
+    "arm": "pipe",
+    "rep": 2,
+    "cmd": "ss-find \"retry request when reused connection disconnects\" --regex \"ServerDisconnectedError|retry_persistent|while True\" -k 20",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   }
+  ],
+  "nonzero:ss-trace": [
+   {
+    "task": "bfgroup__b2-259",
+    "arm": "tab",
+    "rep": 2,
+    "cmd": "ss-trace get-relevant-features callees --in src/build/configure.jam",
+    "exit": 1,
+    "out": "No indexed symbol found for \"get-relevant-features\".\n\n<<SS_TRACE_META>>{\"symbol\":\"get-relevant-features\",\"queryHash\":\"4f8b1bdab449d4fe\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":14,\"sufficient\":false}\n"
+   },
+   {
+    "task": "final-form__final-form-64",
+    "arm": "tab",
+    "rep": 2,
+    "cmd": "ss-trace submit [callers|callees|impact] --in src/FinalForm.js",
+    "exit": 127,
+    "out": "/bin/bash: line 1: callees: command not found\n/bin/bash: line 1: impact]: command not found\n"
+   },
+   {
+    "task": "final-form__final-form-64",
+    "arm": "tab",
+    "rep": 2,
+    "cmd": "ss-trace submit callees --in src/FinalForm.js",
+    "exit": 1,
+    "out": "No indexed symbol found for \"submit\".\n\n<<SS_TRACE_META>>{\"symbol\":\"submit\",\"queryHash\":\"bb998d9ae5e70fdf\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":5,\"sufficient\":false}\n"
+   },
+   {
+    "task": "hotmeteor__spectator-181",
+    "arm": "none",
+    "rep": 2,
+    "cmd": "ss-read src/Concerns/HasExpectations.php 1 80 && ss-read src/Exceptions/SchemaValidationException.php 1 45 && ss-trace expectsFalse callers --in src/Assertions.php",
+    "exit": 1,
+    "out": "# ss-read src/Concerns/HasExpectations.php (lines 1-51 of 51)\n```php\n<?php\n\nnamespace Spectator\\Concerns;\n\nuse PHPUnit\\Framework\\Assert as PHPUnit;\nuse Throwable;\n\ntrait HasExpectations\n{\n    public function expectsFalse()\n    {\n        /*\n         * @param Throwable|null $throwable\n         * @param array $exceptions\n         * @return void\n         */\n        return function (?Throwable $throwab"
+   },
+   {
+    "task": "gitbookio__markup-it-56",
+    "arm": "pipe",
+    "rep": 2,
+    "cmd": "ss-trace deserialize [callees] --in src/markdown/inlines/html.js",
+    "exit": 1,
+    "out": "No indexed symbol found for \"deserialize\".\n\n<<SS_TRACE_META>>{\"symbol\":\"deserialize\",\"queryHash\":\"a8866f8672ed0879\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":8,\"sufficient\":false}\n"
+   },
+   {
+    "task": "apigee__registry-961",
+    "arm": "tab",
+    "rep": 1,
+    "cmd": "ss-trace ListDeploymentArtifacts callees --in server/registry/actions_artifacts.go",
+    "exit": 1,
+    "out": "No indexed symbol found for \"ListDeploymentArtifacts\".\n\n<<SS_TRACE_META>>{\"symbol\":\"ListDeploymentArtifacts\",\"queryHash\":\"71173e28d1d3d2cd\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":14,\"sufficient\":false}\n"
+   }
+  ],
+  "nonzero:ss-read": [
+   {
+    "task": "callstack__react-native-paper-972",
+    "arm": "tab",
+    "rep": 1,
+    "cmd": "ss-read src/components/Appbar/__tests__/Appbar.test.js 1 180",
+    "exit": 1,
+    "out": "[ss-read] error: stat failed: ENOENT\n"
+   },
+   {
+    "task": "gitbookio__markup-it-56",
+    "arm": "tab",
+    "rep": 0,
+    "cmd": "ss-read src/markdown/blocks/html.js 1 100",
+    "exit": 1,
+    "out": "[ss-read] error: stat failed: ENOENT\n"
+   },
+   {
+    "task": "gitbookio__markup-it-56",
+    "arm": "tab",
+    "rep": 0,
+    "cmd": "ss-read test/from-markdown/html/input.md 1 80",
+    "exit": 1,
+    "out": "[ss-read] error: stat failed: ENOENT\n"
+   },
+   {
+    "task": "gitbookio__markup-it-56",
+    "arm": "tab",
+    "rep": 0,
+    "cmd": "ss-read test/from-markdown/html/output.yaml 1 100",
+    "exit": 1,
+    "out": "[ss-read] error: stat failed: ENOENT\n"
+   },
+   {
+    "task": "gitbookio__markup-it-56",
+    "arm": "tab",
+    "rep": 1,
+    "cmd": "ss-read test/from-markdown/html 1 80",
+    "exit": 1,
+    "out": "[ss-read] error: not a regular file\n"
+   },
+   {
+    "task": "gitbookio__markup-it-56",
+    "arm": "tab",
+    "rep": 1,
+    "cmd": "ss-read src/markdown/deserialize.js 1 180",
+    "exit": 1,
+    "out": "[ss-read] error: stat failed: ENOENT\n"
+   }
+  ],
+  "empty:ss-read": [
+   {
+    "task": "celestiaorg__nmt-192",
+    "arm": "pipe",
+    "rep": 2,
+    "cmd": "ss-read proof.go 45 180",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   },
+   {
+    "task": "devlooped__moq-1262",
+    "arm": "tab",
+    "rep": 1,
+    "cmd": "ss-read src/Moq/ExpressionExtensions.cs 160 205",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   },
+   {
+    "task": "devlooped__moq-1262",
+    "arm": "tab",
+    "rep": 2,
+    "cmd": "ss-read src/Moq/Extensions.cs 300 430",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   },
+   {
+    "task": "devlooped__moq-1262",
+    "arm": "tab",
+    "rep": 2,
+    "cmd": "ss-read src/Moq/SetupCollection.cs 1 90",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   },
+   {
+    "task": "aio-libs__aiohttp-8038",
+    "arm": "pipe",
+    "rep": 2,
+    "cmd": "ss-read aiohttp/client.py 400 650",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   }
+  ],
+  "empty:ss-search": [
+   {
+    "task": "bfgroup__b2-259",
+    "arm": "pipe",
+    "rep": 2,
+    "cmd": "ss-search \"evaluate conditional properties context property-set\" -k 20",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   },
+   {
+    "task": "aio-libs__aiohttp-8038",
+    "arm": "pipe",
+    "rep": 2,
+    "cmd": "ss-search \"ClientSession request catches server disconnected and retries connection\" -k 10",
+    "kind": "blank-output",
+    "exit": null,
+    "out": ""
+   }
+  ],
+  "nonzero:ss-search": [
+   {
+    "task": "apigee__registry-961",
+    "arm": "tab",
+    "rep": 0,
+    "cmd": "ss-search \"List resource validates parent exists before listing\" -k 10 && ss-grep \"GetProject(ctx\\|GetApi(ctx\\|GetVersion(ctx\\|GetSpec(ctx\\|GetDeployment(ctx\" -k 50",
+    "exit": 1,
+    "out": "# ss-search: routed=hybrid conf=0.99 budget=3000 used=203 results=1 subMode=agent_preview\n# confidence=high (single_result) sufficient=no (no_query_evidence)\n\n## #1 pkg/models/list.go:1-21 [struct: List] (full kind=chunk) score=0.314\n```\n1\t// Copyright 2023 Google LLC. All Rights Reserved.\n2\t//\n3\t// Licensed under the Apache License, Version 2.0 (the \"License\");\n4\t// you may not use this file exce"
+   }
+  ]
+ },
+ "applyFailExamples": [
+  {
+   "task": "fastify__fastify-cors-285",
+   "arm": "pipe",
+   "rep": 0,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "arm": "none",
+   "rep": 0,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "arm": "none",
+   "rep": 2,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "task": "devlooped__moq-1262",
+   "arm": "none",
+   "rep": 1,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "task": "devlooped__moq-1262",
+   "arm": "none",
+   "rep": 2,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "task": "mathnet__mathnet-numerics-1072",
+   "arm": "none",
+   "rep": 2,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "task": "protofire__solhint-224",
+   "arm": "none",
+   "rep": 0,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "task": "protofire__solhint-224",
+   "arm": "none",
+   "rep": 0,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "task": "accenture__sfmc-devtools-1974",
+   "arm": "pipe",
+   "rep": 1,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "arm": "pipe",
+   "rep": 1,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "task": "protofire__solhint-224",
+   "arm": "pipe",
+   "rep": 1,
+   "status": "error",
+   "out": ""
+  }
+ ]
+}

@@ -1,0 +1,10 @@
+harness form  n  payload$/rollout  gutter$/rollout  gutter%ofPayload
+claude-code  none    62         0.002467         0.000000             0.0%
+claude-code  pipe    64         0.002165         0.000630            29.1%
+claude-code  tab     62         0.002385         0.000417            17.5%
+codex        none    66         0.001814         0.000000             0.0%
+codex        pipe    66         0.001715         0.000496            28.9%
+codex        tab     66         0.001761         0.000302            17.2%
+opencode     none    66         0.001734         0.000000             0.0%
+opencode     pipe    66         0.001647         0.000493            29.9%
+opencode     tab     66         0.001904         0.000338            17.8%

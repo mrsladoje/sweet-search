@@ -1,0 +1,6 @@
+codex     sweet tab   tab-carry lines=15   rollouts with >=1 carry=4/66 tasks=['apigee__registry-961', 'devlooped__moq-1262']
+codex     sweet none  tab-carry lines=0    rollouts with >=1 carry=0/66 tasks=[]
+codex     sweet pipe  tab-carry lines=0    rollouts with >=1 carry=0/66 tasks=[]
+opencode  sweet tab   tab-carry lines=15   rollouts with >=1 carry=3/66 tasks=['apigee__registry-961', 'devlooped__moq-1262']
+opencode  sweet none  tab-carry lines=0    rollouts with >=1 carry=0/68 tasks=[]
+opencode  sweet pipe  tab-carry lines=0    rollouts with >=1 carry=0/67 tasks=[]

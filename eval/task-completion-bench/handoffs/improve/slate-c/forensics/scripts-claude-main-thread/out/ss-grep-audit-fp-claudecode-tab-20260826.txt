@@ -1,0 +1,101 @@
+{
+ "run": "fp-claudecode-tab-20260826",
+ "sweetRollouts": 66,
+ "ssGrepCalls": 275,
+ "ssGrepSingleInvocation": 241,
+ "zeroMatchAnswers": 87,
+ "byVerdict": {
+  "true-negative": {
+   "n": 47,
+   "nextReal": 0.032430009999999995,
+   "bre": 4,
+   "posix": 0
+  },
+  "false-negative-candidate": {
+   "n": 29,
+   "nextReal": 0.018403165,
+   "bre": 0,
+   "posix": 0
+  },
+  "scope-missing": {
+   "n": 9,
+   "nextReal": 0.0045808,
+   "bre": 1,
+   "posix": 0
+  },
+  "grep-error": {
+   "n": 2,
+   "nextReal": 0.00118472,
+   "bre": 2,
+   "posix": 0
+  }
+ },
+ "crashes": {
+  "Error: ripgrep failed (code N): rg: regex parse error:": {
+   "n": 11,
+   "tasks": [
+    "apigee__registry-961",
+    "aws-actions__configure-aws-credentials-42",
+    "callstack__react-native-paper-972",
+    "hotmeteor__spectator-181"
+   ],
+   "tools": [
+    "ss-grep",
+    "ss-read"
+   ],
+   "example": "ss-grep \"func (.*ListArtifacts\" -k 20"
+  },
+  "Error: Pattern search requires a late interaction index with line spans. Re-index with late interaction enabled.": {
+   "n": 1,
+   "tasks": [
+    "mathnet__mathnet-numerics-1072"
+   ],
+   "tools": [
+    "ss-find"
+   ],
+   "example": "ss-find \"Complex NaN detection\" --regex \"IsNaN|NaN\" -k 10"
+  }
+ }
+}
+
+--- false-negative candidates ---
+aws-actions__configure-aws-credentials-42 r1 k=7 | ss-grep "AWS_ACCESS_KEY_ID|aws-access-key-id|function exportCredentials" --in dist/index.js -k 20 | bre=false hint=false | grep: 6 lines in 6+ files [217, 222, 224, 271] | e.g. "217:function exportCredentials(params){"
+aws-actions__configure-aws-credentials-42 r1 k=12 | ss-grep "AWS_ACCESS_KEY_ID" --in dist/index.js -k 10 | bre=false hint=false | grep: 4 lines in 4+ files [222, 224, 3135, 3151] | e.g. "222:  // AWS_ACCESS_KEY_ID:"
+aws-actions__configure-aws-credentials-42 r1 k=13 | ss-grep "accessKeyId" --in dist/index.js -k 10 | bre=false hint=false | grep: 68 lines in 12+ files [195, 220, 224, 225] | e.g. "195:      accessKeyId: data.Credentials.AccessKeyId,"
+aws-actions__configure-aws-credentials-42 r1 k=14 | ss-grep "Missing required input when assuming|aws-region|configure-aws-credentials" --in dist/index.js -k 20 | bre=false hint=false | grep: 3 lines in 3+ files [136, 155, 273] | e.g. "136:const USER_AGENT = 'configure-aws-credentials-for-github-actions';"
+aws-actions__configure-aws-credentials-42 r1 k=18 | ss-grep "Access Key ID|Secret Access Key|aws-access" --in dist/index.js -k 20 | bre=false hint=false | grep: 1 lines in 1+ files [271] | e.g. "271:    const accessKeyId = core.getInput('aws-access-key-id', { required: true });"
+aws-actions__configure-aws-credentials-42 r1 k=21 | ss-grep "getInput" --in dist/index.js -k 20 | bre=false hint=false | grep: 11 lines in 11+ files [271, 272, 273, 274] | e.g. "271:    const accessKeyId = core.getInput('aws-access-key-id', { required: true });"
+bfgroup__b2-113 r0 k=35 | ss-grep "class MainTarget|class BasicTarget|def generate" --in src/build/targets.py -k 30 | bre=false hint=false | grep: 10 lines in 10+ files [340, 433, 667, 752] | e.g. "340:    def generate (self, property_set):"
+bfgroup__b2-113 r1 k=3 | ss-grep "boost-install" -k 20 | bre=false hint=false | grep: 3 lines in 2+ files [./src/tools/boostbook.jam, ./src/contrib/modular.jam] | e.g. "./src/tools/boostbook.jam:308:        local boost-installer-versions = snapshot cvs 1.33.0 ;"
+bfgroup__b2-113 r1 k=33 | ss-grep "BasicTarget" --in . -k 50 | bre=false hint=false | grep: 7 lines in 4+ files [./src/tools/stage.py, ./src/tools/message.py, ./src/tools/make.py, ./src/tools/symlink.py] | e.g. "./src/tools/stage.py:39:class InstallTargetClass(targets.BasicTarget):"
+bfgroup__b2-113 r2 k=22 | ss-grep "boost-install" -k 20 | bre=false hint=false | grep: 3 lines in 2+ files [./src/tools/boostbook.jam, ./src/contrib/modular.jam] | e.g. "./src/tools/boostbook.jam:308:        local boost-installer-versions = snapshot cvs 1.33.0 ;"
+bfgroup__b2-259 r0 k=38 | ss-grep "build :" -k 20 | bre=false hint=false | grep: 5 lines in 4+ files [./src/tools/message.jam, ./src/tools/link.jam, ./src/contrib/modular.jam, ./Jamroot.jam] | e.g. "./src/tools/message.jam:56:            : [ targets.main-target-default-build : $(project) ]"
+bfgroup__b2-259 r1 k=36 | ss-grep "conditional" --in src/build/property.jam -k 50 | bre=false hint=false | grep: 24 lines in 12+ files [19, 31, 63, 67] | e.g. "19:# Refines 'properties' by overriding any non-free and non-conditional properties"
+bfgroup__b2-259 r2 k=16 | ss-grep "builds-raw|check-target-builds|<build>" --in src/build/configure.jam -k 50 | bre=false hint=false | grep: 8 lines in 8+ files [346, 373, 456, 467] | e.g. "346:rule builds-raw ( metatarget-reference : project : ps : what : retry ? )"
+bfgroup__b2-259 r2 k=19 | ss-grep "build" --in src/build/feature.jam -k 100 | bre=false hint=false | grep: 1 lines in 1+ files [987] | e.g. "987:# This rule probably should not be needed, but build-request.expand-no-defaults"
+bfgroup__b2-259 r2 k=23 | ss-grep "build" --in src/build-system.jam -k 50 | bre=false hint=false | grep: 59 lines in 12+ files [11, 48, 58, 74] | e.g. "11:import build-request ;"
+bfgroup__b2-259 r2 k=26 | ss-grep "build" --in src/build/property-set.jam -k 100 | bre=false hint=false | grep: 4 lines in 4+ files [23, 24, 270, 305] | e.g. "23:#   Each property is classified with regard to its effect on build results."
+bfgroup__b2-259 r2 k=27 | ss-grep "feature.*build|build.*feature|build" --in src/build/targets.jam -k 100 | bre=false hint=false | grep: 110 lines in 12+ files [25, 69, 135, 150] | e.g. "25:# Rules supplied by the build system will use only targets derived from the"
+bfgroup__b2-259 r2 k=37 | ss-grep "evaluate-conditional-relevance" --in src/build/property.jam -k 20 | bre=false hint=false | grep: 1 lines in 1+ files [158] | e.g. "158:rule evaluate-conditional-relevance ( properties * :  cond * )"
+bfgroup__b2-259 r2 k=39 | ss-grep "build" --in src/build/build-request.jam -k 50 | bre=false hint=false | grep: 29 lines in 12+ files [24, 170, 172, 214] | e.g. "24:# Expand the given build request by combining all property-sets which do not"
+bfgroup__b2-259 r2 k=41 | ss-grep "build" --in src/build/virtual-target.jam -k 100 | bre=false hint=false | grep: 22 lines in 12+ files [9, 72, 129, 190] | e.g. "9:# build, but are not yet targets in Jam sense. They are needed, for example,"
+bfgroup__b2-259 r2 k=43 | ss-grep "feature" --in src/build-system.jam -k 100 | bre=false hint=false | grep: 13 lines in 12+ files [16, 73, 76, 78] | e.g. "16:import feature ;"
+bfgroup__b2-259 r2 k=44 | ss-grep "build :" -k 50 | bre=false hint=false | grep: 5 lines in 4+ files [./src/tools/message.jam, ./src/tools/link.jam, ./src/contrib/modular.jam, ./Jamroot.jam] | e.g. "./src/tools/message.jam:56:            : [ targets.main-target-default-build : $(project) ]"
+bfgroup__b2-259 r2 k=49 | ss-grep "build" --in src/build/alias.jam -k 50 | bre=false hint=false | grep: 5 lines in 5+ files [36, 39, 62, 66] | e.g. "36:        : default-build * : usage-requirements * )"
+bfgroup__b2-259 r2 k=52 | ss-grep "generate-really|property-set" --in src/build/targets.jam -k 30 | bre=false hint=false | grep: 84 lines in 12+ files [75, 133, 135, 138] | e.g. "75:import property-set ;"
+bfgroup__b2-259 r2 k=53 | ss-grep "generate" --in src/build/targets.jam -k 100 | bre=false hint=false | grep: 34 lines in 12+ files [36, 50, 97, 138] | e.g. "36:#                  | generate(properties) = 0 |"
+bfgroup__b2-259 r2 k=57 | ss-grep "build" --in src/build/targets.jam -k 300 | bre=false hint=false | grep: 110 lines in 12+ files [25, 69, 135, 150] | e.g. "25:# Rules supplied by the build system will use only targets derived from the"
+bfgroup__b2-259 r2 k=60 | ss-grep "build" --in src/tools/testing.jam -k 100 | bre=false hint=false | grep: 13 lines in 12+ files [37, 116, 117, 132] | e.g. "37:import build-system ;"
+callstack__react-native-paper-972 r2 k=16 | ss-grep "_color|_.*," --in src/components -k 30 | bre=false hint=false | grep: 59 lines in 12+ files [src/components/__tests__/BottomNavigation.test.js, src/components/Menu/Menu.js, src/components/BottomNavigation.js, src/components/Snackbar.js] | e.g. "src/components/__tests__/BottomNavigation.test.js:31:  routes: Array.from({ length }, (_, i) => ({"
+protofire__solhint-224 r2 k=12 | ss-grep "imports-on-top|func-order|visibility-modifier-order" --in conf --in .soliumrc.json --in .solhint.json --in README.md --in docs -k 20 | bre=false hint=false | grep: 21 lines in 4+ files [docs/rules.md, docs/rules/order/imports-on-top.md, docs/rules/order/func-order.md, docs/rules/order/visibility-modifier-order.md] | e.g. "docs/rules.md:36:| [func-order](./rules/order/func-order.md)                                            | Function order is incorrect.                          "
+
+--- scope-missing ---
+bfgroup__b2-113 r0 k=9 | ss-grep "build" --in src/b2/build/targets.py -k 30 | missing: src/b2/build/targets.py
+bfgroup__b2-113 r0 k=12 | ss-grep "def generate" --in src/b2/build/targets.py -k 20 | missing: src/b2/build/targets.py
+bfgroup__b2-113 r0 k=14 | ss-grep "class MainTarget|def generate" --in src/b2/build -k 30 | missing: src/b2/build
+bfgroup__b2-113 r0 k=28 | ss-grep "BasicTarget" --in src/b2 -k 50 | missing: src/b2
+bfgroup__b2-113 r1 k=43 | ss-grep "class .*Target" --in src/b2 -k 100 | missing: src/b2
+bfgroup__b2-259 r2 k=61 | ss-grep "build" --in src/b2 -k 100 | missing: src/b2
+mathnet__mathnet-numerics-1072 r0 k=9 | ss-grep "public bool IsNaN|bool IsNaN|IsNaN\(\)" --in src/Numerics/Complex.cs -k 20 | missing: src/Numerics/Complex.cs
+mathnet__mathnet-numerics-1072 r0 k=10 | ss-grep "NaN" --in src/Numerics/Complex.cs -k 20 | missing: src/Numerics/Complex.cs
+mathnet__mathnet-numerics-1072 r2 k=12 | ss-grep "IsNaN" --in src/Numerics/Complex.cs -k 10 | missing: src/Numerics/Complex.cs

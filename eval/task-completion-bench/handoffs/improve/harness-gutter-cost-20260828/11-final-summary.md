@@ -1,0 +1,13 @@
+# Summary for the project owner (2026-08-28)
+
+**Which gutter, per harness.** Keep the tab form (`N<TAB>`) on codex, opencode and claude-code. No form won or lost more than 3 solves of 66. Cost differences between forms sit inside the noise; the tab is the cheapest numbered form. Its one real defect: in tab-indented files the model sometimes keeps the gutter tab in its edit. On claude-code that fails the edit. On codex and opencode the patch tool absorbs it and writes one extra tab into the file. It fired in 3 of 22 tasks and changed no result. The colon form (`N:`) would remove the defect for 1–2% more cost, but claude-code still tells the model to expect a tab.
+
+**Why sweet stopped being cheaper.** Codex now cuts every tool output at about 2,500 tokens, which trims native's large reads for free. That alone covers the whole old advantage. On opencode native runs several file reads inside one request, while sweet's shell calls run one per request. Sweet pays about 3.4 extra requests per task, about 10% of cost. On claude-code sweet is still 8.8% cheaper per graded task, but only because native spawns subagents. Where neither side delegated, sweet's main thread was dearer. Three constant sweet-only costs sit on top: the tool guide (2.6–4.5%), the gutter (2.0–3.7%), and requests spent reacting to failed tool calls (about 2%).
+
+**The biggest fixable driver.** The index cannot see `.jam` files and excludes every `src/build/` path. On the two Boost.Build tasks sweet searched a corpus with no answer, ran 11–17 requests longer than native, and solved nothing. Dropping one of those tasks turns codex from +0.3% to −3.3% and opencode from +3.3% to −0.1%. Fixing the index, rebuilding the affected checkouts, and saying "not indexed" instead of "no matches" costs no run.
+
+**New gutter designs.** None is worth a paid run. Sparse and symbol-only numbering save under $0.0004 per task, below detection, and break shipped tests. Screen them at zero cost.
+
+**Top levers.** Cost: the index fix, and a hygiene package for the search tools (no crashes, no banner, plain paths, no empty results). Resolution: the same index fix, a "not indexed" signal, and zero-cost censuses of test scope and stale-index exposure. The guide shrink stays closed: you excluded the guidance block on 2026-08-10, and any change goes through the prompt process. Call packing on opencode is closed on record.
+
+**Next run.** Ship the zero-cost fixes and their replays first. Then run one sweet-versus-native re-baseline on a fresh 22-task pool plus the five fixed control tasks. Three harnesses, three reps, both arms in one window, versions recorded. About 486 rollouts, about $7.5 at the registered price or $15 at today's listed price.

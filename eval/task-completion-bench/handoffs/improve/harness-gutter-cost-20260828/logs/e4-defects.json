@@ -1,0 +1,968 @@
+{
+ "buckets": {
+  "cli-positional-path-rejected|ss-grep": {
+   "calls": 10,
+   "rollouts": 10
+  },
+  "cli-unknown-flag|ss-find": {
+   "calls": 2,
+   "rollouts": 2
+  },
+  "harness-aborted(status=error)|ss-grep": {
+   "calls": 5,
+   "rollouts": 5
+  },
+  "harness-aborted(status=error)|ss-find": {
+   "calls": 3,
+   "rollouts": 3
+  },
+  "ss-trace-symbol-not-indexed|ss-trace": {
+   "calls": 5,
+   "rollouts": 5
+  },
+  "ss-read-ENOENT|ss-read": {
+   "calls": 30,
+   "rollouts": 18
+  },
+  "guide-placeholder-pasted|ss-trace": {
+   "calls": 1,
+   "rollouts": 1
+  },
+  "engine-banner-leak|ss-grep": {
+   "calls": 13,
+   "rollouts": 12
+  },
+  "ss-read-not-a-file|ss-read": {
+   "calls": 2,
+   "rollouts": 2
+  },
+  "ss-trace-symbol-not-indexed|ss-read": {
+   "calls": 1,
+   "rollouts": 1
+  },
+  "harness-aborted(status=error)|ss-read": {
+   "calls": 5,
+   "rollouts": 4
+  },
+  "harness-aborted(status=error)|ss-search": {
+   "calls": 2,
+   "rollouts": 2
+  },
+  "engine-banner-leak|ss-search": {
+   "calls": 1,
+   "rollouts": 1
+  },
+  "cli-positional-path-rejected|ss-read": {
+   "calls": 1,
+   "rollouts": 1
+  },
+  "engine-banner-leak|ss-read": {
+   "calls": 1,
+   "rollouts": 1
+  }
+ },
+ "all": [
+  {
+   "bucket": "cli-positional-path-rejected",
+   "tool": "ss-grep",
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-grep \"feature.*build|build.*feature|<build>\" --in src/build src/tools -k 30",
+   "exit": 2,
+   "status": "completed",
+   "out": "[ss] 1 argument(s) not consumed: \"src/tools\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]\n"
+  },
+  {
+   "bucket": "cli-unknown-flag",
+   "tool": "ss-find",
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-find \"build property main target generation\" --regex \"generate|build|property-set\" --in src/build/targets.jam -k 20",
+   "exit": 2,
+   "status": "completed",
+   "out": "[ss] unrecognised option \"--in\"\nUsage: ss-find \"<query>\" --regex \"<regex>\" [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--full|--xl] [-k N]\n"
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-grep",
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 2,
+   "cmd": "ss-grep \"check-target-builds[[:space:]]*\\(\" -k 30",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-find",
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 2,
+   "cmd": "ss-find \"check-target-builds\" --regex \"check-target-builds\" -k 30",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "cli-positional-path-rejected",
+   "tool": "ss-grep",
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 2,
+   "cmd": "ss-grep \"build\" src/build/targets.jam -k 40",
+   "exit": 2,
+   "status": "completed",
+   "out": "[ss] 1 argument(s) not consumed: \"src/build/targets.jam\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]\n"
+  },
+  {
+   "bucket": "ss-trace-symbol-not-indexed",
+   "tool": "ss-trace",
+   "task": "bfgroup__b2-259",
+   "arm": "tab",
+   "rep": 2,
+   "cmd": "ss-trace get-relevant-features callees --in src/build/configure.jam",
+   "exit": 1,
+   "status": "completed",
+   "out": "No indexed symbol found for \"get-relevant-features\".\n\n<<SS_TRACE_META>>{\"symbol\":\"get-relevant-features\",\"queryHash\":\"4f8b1bdab449d4fe\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":14,\"sufficient\":false}\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "callstack__react-native-paper-972",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-read src/components/Appbar/__tests__/Appbar.test.js 1 180",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "guide-placeholder-pasted",
+   "tool": "ss-trace",
+   "task": "final-form__final-form-64",
+   "arm": "tab",
+   "rep": 2,
+   "cmd": "ss-trace submit [callers|callees|impact] --in src/FinalForm.js",
+   "exit": 127,
+   "status": "completed",
+   "out": "/bin/bash: line 1: callees: command not found\n/bin/bash: line 1: impact]: command not found\n"
+  },
+  {
+   "bucket": "ss-trace-symbol-not-indexed",
+   "tool": "ss-trace",
+   "task": "final-form__final-form-64",
+   "arm": "tab",
+   "rep": 2,
+   "cmd": "ss-trace submit callees --in src/FinalForm.js",
+   "exit": 1,
+   "status": "completed",
+   "out": "No indexed symbol found for \"submit\".\n\n<<SS_TRACE_META>>{\"symbol\":\"submit\",\"queryHash\":\"bb998d9ae5e70fdf\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":5,\"sufficient\":false}\n"
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-grep",
+   "task": "gitbookio__markup-it-56",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-grep \"INLINES.HTML\\|type: INLINES.HTML\\|matchType(INLINES\" -k 20",
+   "exit": 1,
+   "status": "completed",
+   "out": "BinaryHNSW: Loaded 1247 vectors from /root/.ss-eval/runs/r0-91/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Loaded 473 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 2664ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarming up embedding service...\n  Provider: local (jalipalo/CodeRankEmbed-onnx)\n  Dimensions: 768d full, 512d HNSW\nLoading local model: mrsladoje/CodeRankEmbed-onnx-int8...\n  \u2713 Vocabulary loaded (0 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 6861ms (threads: 8, backend: cpu, quantized: q8)\n  \u2713 Local embedding model loaded\nWarmup complete in 6862ms\n\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:INLINES.HTML\\|type: INLINES.HTML\\|matchType(INLINES)\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-read src/markdown/blocks/html.js 1 100",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-find",
+   "task": "gitbookio__markup-it-56",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-find \"raw HTML inline serializer\" --regex \"src/html/inlines|INLINES\\.HTML|data\\.get\\(['\\\"]html\" -k 20",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-read test/from-markdown/html/input.md 1 80",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-read test/from-markdown/html/output.yaml 1 100",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-not-a-file",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-read test/from-markdown/html 1 80",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: not a regular file\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-read src/markdown/deserialize.js 1 180",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-read src/markdown/blocks/html.js 1 180",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-read src/deserialize.js 1 140",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "tab",
+   "rep": 2,
+   "cmd": "ss-read test/from-html/links/only/input.yaml 1 80",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "none",
+   "rep": 0,
+   "cmd": "ss-read src/markdown/deserialize.js 1 220",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "none",
+   "rep": 0,
+   "cmd": "ss-read src/markdown/deserialize.js 1 220",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "none",
+   "rep": 0,
+   "cmd": "ss-read src/markdown/blocks/html.js 1 120",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "none",
+   "rep": 1,
+   "cmd": "ss-read src/html/serializeHtml.js 1 260",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "none",
+   "rep": 1,
+   "cmd": "ss-read src/markdown/blocks/html.js 1 140",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-read src/markdown/blocks/html.js 1 160",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-not-a-file",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-read src/markdown/blocks 1 30 && ss-grep \"html\" -k 30",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: not a regular file\n"
+  },
+  {
+   "bucket": "cli-positional-path-rejected",
+   "tool": "ss-grep",
+   "task": "bfgroup__b2-259",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-grep \"build\" src/build/targets.jam src/build/property-set.jam src/build/feature.jam -k 50",
+   "exit": 2,
+   "status": "completed",
+   "out": "[ss] 3 argument(s) not consumed: \"src/build/targets.jam\", \"src/build/property-set.jam\", \"src/build/feature.jam\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]\n"
+  },
+  {
+   "bucket": "ss-trace-symbol-not-indexed",
+   "tool": "ss-read",
+   "task": "hotmeteor__spectator-181",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-read src/Concerns/HasExpectations.php 1 80 && ss-read src/Exceptions/SchemaValidationException.php 1 45 && ss-trace expectsFalse callers --in src/Assertions.php",
+   "exit": 1,
+   "status": "completed",
+   "out": "# ss-read src/Concerns/HasExpectations.php (lines 1-51 of 51)\n```php\n<?php\n\nnamespace Spectator\\Concerns;\n\nuse PHPUnit\\Framework\\Assert as PHPUnit;\nuse Throwable;\n\ntrait HasExpectations\n{\n    public function expectsFalse()\n    {\n        /*\n         * @param Throwable|null $throwable\n         * @param array $exceptions\n         * @return void\n         */\n        return function (?Throwable $throwable = null, array $exceptions = []) {\n            if ($throwable) {\n                $class = get_class($throwable);\n\n                PHPUnit::assertFalse(\n                    in_array($class, $exceptions),\n                    $throwable->getMessage(),\n                );\n            } else {\n                PHPUnit::assertFalse(false);\n            }\n        };\n    }\n\n    public function expectsTrue()\n    {\n        /*\n         * @param Throwable|null $throwable\n         * @param array $exceptions\n         * @return void\n         */\n        return function (?Throwable $throwable = null, array $exceptions = [], string $message = '') {\n            if ($throwable) {\n                $class = get_class($throwable);\n\n                PHPUnit::assertTrue(\n                    in_array($class, $exceptions),\n                    $throwable->getMessage(),\n                );\n            } else {\n                PHPUnit::assertTrue(false, $message);\n            }\n        };\n    }\n}\n\n```\n# ss-read src/Exceptions/SchemaValidationException.php (lines 1-45 of 308)\n```php\n<?php\n\nnamespace Spectator\\Exceptio"
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-grep",
+   "task": "callstack__react-native-paper-972",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-grep \"const {.*theme|...rest\" -k 20",
+   "exit": 1,
+   "status": "completed",
+   "out": "BinaryHNSW: Loaded 753 vectors from /root/.ss-eval/runs/r0-31/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Loaded 752 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 1791ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarming up embedding service...\n  Provider: local (jalipalo/CodeRankEmbed-onnx)\n  Dimensions: 768d full, 512d HNSW\nLoading local model: mrsladoje/CodeRankEmbed-onnx-int8...\n  \u2713 Vocabulary loaded (0 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 3750ms (threads: 8, backend: cpu, quantized: q8)\n  \u2713 Local embedding model loaded\nWarmup complete in 3750ms\n\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:const {.*theme|...rest)\n              ^\nerror: repetition quantifier expects a valid decimal\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "callstack__react-native-paper-972",
+   "arm": "pipe",
+   "rep": 1,
+   "cmd": "ss-read src/components/__tests__/Appbar.test.js 1 220",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-read",
+   "task": "celestiaorg__nmt-192",
+   "arm": "pipe",
+   "rep": 2,
+   "cmd": "ss-read proof.go 45 180",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-search",
+   "task": "bfgroup__b2-259",
+   "arm": "pipe",
+   "rep": 2,
+   "cmd": "ss-search \"evaluate conditional properties context property-set\" -k 20",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-grep",
+   "task": "bfgroup__b2-259",
+   "arm": "pipe",
+   "rep": 2,
+   "cmd": "ss-grep \"evaluate\" -k 50",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-read src/markdown/deserialize.js 1 180",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-read src/markdown/blocks/html.js 1 120",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-trace-symbol-not-indexed",
+   "tool": "ss-trace",
+   "task": "gitbookio__markup-it-56",
+   "arm": "pipe",
+   "rep": 2,
+   "cmd": "ss-trace deserialize [callees] --in src/markdown/inlines/html.js",
+   "exit": 1,
+   "status": "completed",
+   "out": "No indexed symbol found for \"deserialize\".\n\n<<SS_TRACE_META>>{\"symbol\":\"deserialize\",\"queryHash\":\"a8866f8672ed0879\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":8,\"sufficient\":false}\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "gitbookio__markup-it-56",
+   "arm": "pipe",
+   "rep": 2,
+   "cmd": "ss-read src/markdown/deserialize.js 1 220",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-search",
+   "task": "apigee__registry-961",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-search \"List resource validates parent exists before listing\" -k 10 && ss-grep \"GetProject(ctx\\|GetApi(ctx\\|GetVersion(ctx\\|GetSpec(ctx\\|GetDeployment(ctx\" -k 50",
+   "exit": 1,
+   "status": "completed",
+   "out": "# ss-search: routed=hybrid conf=0.99 budget=3000 used=203 results=1 subMode=agent_preview\n# confidence=high (single_result) sufficient=no (no_query_evidence)\n\n## #1 pkg/models/list.go:1-21 [struct: List] (full kind=chunk) score=0.314\n```\n1\t// Copyright 2023 Google LLC. All Rights Reserved.\n2\t//\n3\t// Licensed under the Apache License, Version 2.0 (the \"License\");\n4\t// you may not use this file except in compliance with the License.\n5\t// You may obtain a copy of the License at\n6\t//\n7\t//    http://www.apache.org/licenses/LICENSE-2.0\n8\t//\n9\t// Unless required by applicable law or agreed to in writing, software\n10\t// distributed under the License is distributed on an \"AS IS\" BASIS,\n11\t// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n12\t// See the License for the specific language governing permissions and\n13\t// limitations under the License.\n14\t\n15\tpackage models\n16\t\n17\ttype List struct {\n18\t\tHeader `yaml:\",inline\"`\n19\t\tItems  []interface{} `yaml:\"items\"`\n20\t}\n\n```\n\nroute=hybrid confidence=high sufficient=no reason=no_query_evidence repo=ok results=1\nBinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r0-7/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Streaming load 5000 documents...\nLateInteraction: Loaded 5266 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 1500ms (128d, ep: cpu, skip"
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-grep",
+   "task": "apigee__registry-961",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-grep \"GetApi(ctx\" -k 30",
+   "exit": 1,
+   "status": "completed",
+   "out": "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r0-7/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Streaming load 5000 documents...\nLateInteraction: Loaded 5266 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 1501ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarming up embedding service...\n  Provider: local (jalipalo/CodeRankEmbed-onnx)\n  Dimensions: 768d full, 512d HNSW\nLoading local model: mrsladoje/CodeRankEmbed-onnx-int8...\n  \u2713 Vocabulary loaded (0 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 2500ms (threads: 8, backend: cpu, quantized: q8)\n  \u2713 Local embedding model loaded\nWarmup complete in 2500ms\n\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:GetApi(ctx)\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at Socket.<anonymous> (node:internal/child_process:456:11)\n    at Socket.emit (node:events:524:28)\n    at Pipe.<anonymous> (node:net:343:12)\n"
+  },
+  {
+   "bucket": "ss-trace-symbol-not-indexed",
+   "tool": "ss-trace",
+   "task": "apigee__registry-961",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-trace ListDeploymentArtifacts callees --in server/registry/actions_artifacts.go",
+   "exit": 1,
+   "status": "completed",
+   "out": "No indexed symbol found for \"ListDeploymentArtifacts\".\n\n<<SS_TRACE_META>>{\"symbol\":\"ListDeploymentArtifacts\",\"queryHash\":\"71173e28d1d3d2cd\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":14,\"sufficient\":false}\n"
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-grep",
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "arm": "tab",
+   "rep": 2,
+   "cmd": "ss-grep \"setDimensions|dimension set|Dimensions\" src/logger/__tests__ src/serializers/__tests__ -k 40",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "bfgroup__b2-113",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-read src/tools/alias.py 1 180",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "cli-positional-path-rejected",
+   "tool": "ss-grep",
+   "task": "bfgroup__b2-113",
+   "arm": "tab",
+   "rep": 2,
+   "cmd": "ss-grep \"build\" src/build/targets.py src/build/*.py -k 100",
+   "exit": 2,
+   "status": "completed",
+   "out": "[ss] 18 argument(s) not consumed: \"src/build/targets.py\", \"src/build/alias.py\", \"src/build/build_request.py\", \"src/build/configure.py\", \"src/build/engine.py\", \"src/build/errors.py\", \"src/build/feature.py\", \"src/build/generators.py\", \"src/build/__init__.py\", \"src/build/project.py\", \"src/build/property.py\", \"src/build/property_set.py\", \"src/build/scanner.py\", \"src/build/targets.py\", \"src/build/toolset.py\", \"src/build/type.py\", \"src/build/version.py\", \"src/build/virtual_target.py\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "devlooped__moq-1262",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-read src/Moq/It.cs 120 250 && ss-read src/Moq/Expressions/Visitors/MatcherObserver.cs 1 180",
+   "exit": 1,
+   "status": "completed",
+   "out": "# ss-read src/Moq/It.cs (lines 120-250 of 408)\n```csharp\n120\t\t\t/// <remarks>\n121\t\t\t///   Allows the specification of a predicate to perform matching of method call arguments.\n122\t\t\t/// </remarks>\n123\t\t\t/// <example>\n124\t\t\t///   This example shows how to return the value <c>1</c> whenever the argument to\n125\t\t\t///   the <c>Do</c> method is an even number.\n126\t\t\t///   <code>\n127\t\t\t///     mock.Setup(x =&gt; x.Do(It.Is&lt;int&gt;(i =&gt; i % 2 == 0)))\n128\t\t\t///         .Returns(1);\n129\t\t\t///   </code>\n130\t\t\t/// </example>\n131\t\t\t/// <example>\n132\t\t\t///   This example shows how to throw an exception if the argument to the method\n133\t\t\t///   is a negative number:\n134\t\t\t///   <code>\n135\t\t\t///     mock.Setup(x =&gt; x.GetUser(It.Is&lt;int&gt;(i =&gt; i &lt; 0)))\n136\t\t\t///         .Throws(new ArgumentException());\n137\t\t\t///   </code>\n138\t\t\t/// </example>\n139\t\t\tpublic static TValue Is<TValue>(Expression<Func<TValue, bool>> match)\n140\t\t\t{\n141\t\t\t\tif (typeof(TValue).IsOrContainsTypeMatcher())\n142\t\t\t\t{\n143\t\t\t\t\tthrow new ArgumentException(Resources.UseItIsOtherOverload, nameof(match));\n144\t\t\t\t}\n145\t\n146\t\t\t\tvar thisMethod = (MethodInfo)MethodBase.GetCurrentMethod();\n147\t\n148\t\t\t\treturn Match.Create<TValue>(\n149\t\t\t\t\targument => match.CompileUsingExpressionCompiler().Invoke(argument),\n150\t\t\t\t\tExpression.Lambda<Func<TValue>>(Expression.Call(thisMethod.MakeGenericMethod(typeof(TValue)), match)));\n151\t\t\t}\n152\t\n153\t\t\t/// <summary>\n154\t\t\t///   Matches any value that satisfies the given predicate.\n15"
+  },
+  {
+   "bucket": "cli-positional-path-rejected",
+   "tool": "ss-grep",
+   "task": "devlooped__moq-1262",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-grep \"derived|generic|lazy|Setup.*order|registration\" tests/Moq.Tests/Regressions/IssueReportsFixture.cs -k 50",
+   "exit": 2,
+   "status": "completed",
+   "out": "[ss] 1 argument(s) not consumed: \"tests/Moq.Tests/Regressions/IssueReportsFixture.cs\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]\n"
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-read",
+   "task": "devlooped__moq-1262",
+   "arm": "tab",
+   "rep": 1,
+   "cmd": "ss-read src/Moq/ExpressionExtensions.cs 160 205",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-read",
+   "task": "devlooped__moq-1262",
+   "arm": "tab",
+   "rep": 2,
+   "cmd": "ss-read src/Moq/Extensions.cs 300 430",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-read",
+   "task": "devlooped__moq-1262",
+   "arm": "tab",
+   "rep": 2,
+   "cmd": "ss-read src/Moq/SetupCollection.cs 1 90",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "protofire__solhint-224",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-read lib/config/config.js 1 180 && ss-read lib/config/index.js 1 120",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "protofire__solhint-224",
+   "arm": "tab",
+   "rep": 0,
+   "cmd": "ss-read lib/rules/index.js 101 125 && ss-read lib/visitor.js 1 180",
+   "exit": 1,
+   "status": "completed",
+   "out": "# ss-read lib/rules/index.js (lines 101-120 of 120)\n```javascript\n101\t    .value()\n102\t}\n103\t\n104\tfunction ruleEnabled(coreRule, rules) {\n105\t  let ruleValue\n106\t  if (rules && !Array.isArray(rules[coreRule.ruleId])) {\n107\t    ruleValue = rules[coreRule.ruleId]\n108\t  } else if (rules && Array.isArray(rules[coreRule.ruleId])) {\n109\t    ruleValue = rules[coreRule.ruleId][0]\n110\t  }\n111\t\n112\t  if (\n113\t    rules &&\n114\t    rules[coreRule.ruleId] !== undefined &&\n115\t    ruleValue &&\n116\t    validSeverityMap.includes(ruleValue)\n117\t  ) {\n118\t    return coreRule\n119\t  }\n120\t}\n\n```\n[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-grep",
+   "task": "apigee__registry-961",
+   "arm": "none",
+   "rep": 1,
+   "cmd": "ss-grep \"parseArtifactParent\" -k 10 && ss-grep \"GetApi(ctx\" -k 10",
+   "exit": 1,
+   "status": "completed",
+   "out": "# ss-grep: 3 total match(es) for /parseArtifactParent/\nserver/registry/actions_artifacts.go:36: parseArtifactParent\nserver/registry/actions_artifacts.go:59: parseArtifactParent\nserver/registry/actions_artifacts.go:216: parseArtifactParent\nBinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r1-8/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Streaming load 5000 documents...\nLateInteraction: Loaded 5266 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 1538ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarming up embedding service...\n  Provider: local (jalipalo/CodeRankEmbed-onnx)\n  Dimensions: 768d full, 512d HNSW\nLoading local model: mrsladoje/CodeRankEmbed-onnx-int8...\n  \u2713 Vocabulary loaded (0 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 2479ms (threads: 8, backend: cpu, quantized: q8)\n  \u2713 Local embedding model loaded\nWarmup complete in 2479ms\n\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:GetApi(ctx)\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:inte"
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-grep",
+   "task": "apigee__registry-961",
+   "arm": "none",
+   "rep": 1,
+   "cmd": "ss-grep \"GetDeploymentRevision(ctx\" -k 10",
+   "exit": 1,
+   "status": "completed",
+   "out": "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r1-8/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Streaming load 5000 documents...\nLateInteraction: Loaded 5266 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 1551ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarming up embedding service...\n  Provider: local (jalipalo/CodeRankEmbed-onnx)\n  Dimensions: 768d full, 512d HNSW\nLoading local model: mrsladoje/CodeRankEmbed-onnx-int8...\n  \u2713 Vocabulary loaded (0 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 2508ms (threads: 8, backend: cpu, quantized: q8)\n  \u2713 Local embedding model loaded\nWarmup complete in 2508ms\n\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:GetDeploymentRevision(ctx)\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at Socket.<anonymous> (node:internal/child_process:456:11)\n    at Socket.emit (node:events:524:28)\n    at Pipe.<anonymous> (node:net:343:12)\n"
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-grep",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "arm": "none",
+   "rep": 1,
+   "cmd": "ss-grep \"getInput('aws-access-key-id'|AWS_ACCESS_KEY_ID\" -k 10",
+   "exit": 1,
+   "status": "completed",
+   "out": "BinaryHNSW: Loaded 79 vectors from /root/.ss-eval/runs/r1-14/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Loaded 78 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 1559ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarming up embedding service...\n  Provider: local (jalipalo/CodeRankEmbed-onnx)\n  Dimensions: 768d full, 512d HNSW\nLoading local model: mrsladoje/CodeRankEmbed-onnx-int8...\n  \u2713 Vocabulary loaded (0 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 2502ms (threads: 8, backend: cpu, quantized: q8)\n  \u2713 Local embedding model loaded\nWarmup complete in 2503ms\n\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:getInput('aws-access-key-id'|AWS_ACCESS_KEY_ID)\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)\n"
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-grep",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-grep \"core.exportVariable('AWS_ACCESS_KEY_ID'|getInput('aws-access-key-id'\" --in dist/index.js -k 10",
+   "exit": 1,
+   "status": "completed",
+   "out": "BinaryHNSW: Loaded 79 vectors from /root/.ss-eval/runs/r2-15/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Loaded 78 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 1550ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarming up embedding service...\n  Provider: local (jalipalo/CodeRankEmbed-onnx)\n  Dimensions: 768d full, 512d HNSW\nLoading local model: mrsladoje/CodeRankEmbed-onnx-int8...\n  \u2713 Vocabulary loaded (0 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 2523ms (threads: 8, backend: cpu, quantized: q8)\n  \u2713 Local embedding model loaded\nWarmup complete in 2523ms\n\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:core.exportVariable('AWS_ACCESS_KEY_ID'|getInput('aws-access-key-id')\n                          ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)\n"
+  },
+  {
+   "bucket": "cli-positional-path-rejected",
+   "tool": "ss-grep",
+   "task": "bfgroup__b2-113",
+   "arm": "none",
+   "rep": 0,
+   "cmd": "ss-grep \"expand_no|build.*no|build-no\" src test -k 120",
+   "exit": 2,
+   "status": "completed",
+   "out": "[ss] 2 argument(s) not consumed: \"src\", \"test\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]\n"
+  },
+  {
+   "bucket": "cli-positional-path-rejected",
+   "tool": "ss-grep",
+   "task": "bfgroup__b2-113",
+   "arm": "none",
+   "rep": 1,
+   "cmd": "ss-grep \"build\" src/build/targets.py -k 100",
+   "exit": 2,
+   "status": "completed",
+   "out": "[ss] 1 argument(s) not consumed: \"src/build/targets.py\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]\n"
+  },
+  {
+   "bucket": "cli-positional-path-rejected",
+   "tool": "ss-grep",
+   "task": "bfgroup__b2-113",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-grep \"get('build')|get(\\\"build\\\")|build.*yes|build.*no\" --regex \"(get\\(['\\\"]build|build.*(yes|no)|\\bbuild\\b)\" -k 50",
+   "exit": 2,
+   "status": "completed",
+   "out": "[ss] 1 argument(s) not consumed: \"(get\\(['\"]build|build.*(yes|no)|\\bbuild\\b)\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "bfgroup__b2-113",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-read test/transitive_skip.py 1 100 && ss-read src/tools/builtin.py 470 560 && ss-read src/tools/alias.py 1 100",
+   "exit": 1,
+   "status": "completed",
+   "out": "# ss-read test/transitive_skip.py (lines 1-30 of 30)\n```python\n#!/usr/bin/python\n\n# Copyright 2021 Dmitry Arkhipov (grisumbras@gmail.com)\n# Distributed under the Boost Software License, Version 1.0.\n# (See accompanying file LICENSE.txt or https://www.bfgroup.xyz/b2/LICENSE.txt)\n\n# Regression test: it was possible that due to evaluation of conditional\n# requirements, two different values of non-free features were present in a\n# property set.\n\nimport BoostBuild\n\nt = BoostBuild.Tester()\n\nt.write(\"a.cpp\", \"\")\n\nt.write(\"jamroot.jam\", \"\"\"\nalias dep : : <build>no ;\nmake a : dep : maker ;\n\nactions maker\n{\n    this-command-is-unlikely-to-succeed ;\n}\n\n\"\"\")\n\nt.run_build_system()\n\nt.cleanup()\n\n```\n# ss-read src/tools/builtin.py (lines 470-560 of 816)\n```python\n            properties = prop_set.raw()\n            # Determine the needed target type\n            actual_type = None\n            properties_grist = get_grist(properties)\n            if '<source>' not in properties_grist  and \\\n               ('<search>' in properties_grist or '<name>' in properties_grist):\n                actual_type = 'SEARCHED_LIB'\n            elif '<file>' in properties_grist:\n                # The generator for\n                actual_type = 'LIB'\n            elif '<link>shared' in properties:\n                actual_type = 'SHARED_LIB'\n            else:\n                actual_type = 'STATIC_LIB'\n\n            prop_set = prop_set.add_raw(['<main-target-type>LIB'])\n\n            # Construct the target.\n            "
+  },
+  {
+   "bucket": "cli-positional-path-rejected",
+   "tool": "ss-grep",
+   "task": "devlooped__moq-1262",
+   "arm": "none",
+   "rep": 1,
+   "cmd": "ss-grep \"overrid|registration order|most recent|derived|base interface\" tests/Moq.Tests -k 80",
+   "exit": 2,
+   "status": "completed",
+   "out": "[ss] 1 argument(s) not consumed: \"tests/Moq.Tests\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "protofire__solhint-224",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-read lib/rules/imports-on-top.js 1 160",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "cli-positional-path-rejected",
+   "tool": "ss-grep",
+   "task": "protofire__solhint-224",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-grep \"order\" docs README.md package.json -k 30",
+   "exit": 2,
+   "status": "completed",
+   "out": "[ss] 3 argument(s) not consumed: \"docs\", \"README.md\", \"package.json\"\n[ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B\n[ss] if this is part of the pattern, quote the whole pattern\nUsage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "protofire__solhint-224",
+   "arm": "none",
+   "rep": 2,
+   "cmd": "ss-read .eslintrc 1 160",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-grep",
+   "task": "aio-libs__aiohttp-8038",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-grep \"Connection(\" -k 20",
+   "exit": 1,
+   "status": "completed",
+   "out": "BinaryHNSW: Loaded 2590 vectors from /root/.ss-eval/runs/r0-4/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Loaded 2572 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 2334ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarming up embedding service...\n  Provider: local (jalipalo/CodeRankEmbed-onnx)\n  Dimensions: 768d full, 512d HNSW\nLoading local model: mrsladoje/CodeRankEmbed-onnx-int8...\n  \u2713 Vocabulary loaded (0 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 2694ms (threads: 8, backend: cpu, quantized: q8)\n  \u2713 Local embedding model loaded\nWarmup complete in 2694ms\n\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:Connection()\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)\n"
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-find",
+   "task": "aio-libs__aiohttp-8038",
+   "arm": "pipe",
+   "rep": 2,
+   "cmd": "ss-find \"retry request when reused connection disconnects\" --regex \"ServerDisconnectedError|retry_persistent|while True\" -k 20",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-grep",
+   "task": "aio-libs__aiohttp-8038",
+   "arm": "pipe",
+   "rep": 2,
+   "cmd": "ss-grep \"ServerDisconnectedError\" -k 20",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-search",
+   "task": "aio-libs__aiohttp-8038",
+   "arm": "pipe",
+   "rep": 2,
+   "cmd": "ss-search \"ClientSession request catches server disconnected and retries connection\" -k 10",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-read",
+   "task": "aio-libs__aiohttp-8038",
+   "arm": "pipe",
+   "rep": 2,
+   "cmd": "ss-read aiohttp/client.py 400 650",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-grep",
+   "task": "apigee__registry-961",
+   "arm": "pipe",
+   "rep": 1,
+   "cmd": "ss-grep \"core.ListArtifacts\\|ListArtifacts(ctx\" -k 40 && ss-grep \"func Test.*Artifact\" -k 30",
+   "exit": 1,
+   "status": "completed",
+   "out": "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r1-8/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Streaming load 5000 documents...\nLateInteraction: Loaded 5266 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 1526ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarming up embedding service...\n  Provider: local (jalipalo/CodeRankEmbed-onnx)\n  Dimensions: 768d full, 512d HNSW\nLoading local model: mrsladoje/CodeRankEmbed-onnx-int8...\n  \u2713 Vocabulary loaded (0 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 2500ms (threads: 8, backend: cpu, quantized: q8)\n  \u2713 Local embedding model loaded\nWarmup complete in 2500ms\n\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:core.ListArtifacts\\|ListArtifacts(ctx)\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at Socket.<anonymous> (node:internal/child_process:456:11)\n    at Socket.emit (node:events:524:28)\n    at Pipe.<anonymous> (node:net:343:12)\n"
+  },
+  {
+   "bucket": "cli-positional-path-rejected",
+   "tool": "ss-read",
+   "task": "apigee__registry-961",
+   "arm": "pipe",
+   "rep": 1,
+   "cmd": "ss-read server/registry/names/artifact.go 451 540 && ss-grep \"ListArtifacts\" --in cmd/registry/core --regex \"ListArtifacts\" -k 30",
+   "exit": 2,
+   "status": "completed",
+   "out": "# ss-read server/registry/names/artifact.go (lines 451-540 of 540)\n```go\n451| func parseSpecArtifactCollection(name string) (specArtifact, error) {\n452| \tif !specArtifactCollectionRegexp.MatchString(name) {\n453| \t\treturn specArtifact{}, fmt.Errorf(\"invalid spec artifact name %q: must match %q\", name, specArtifactCollectionRegexp)\n454| \t}\n455| \n456| \tm := specArtifactCollectionRegexp.FindStringSubmatch(name)\n457| \tartifact := specArtifact{\n458| \t\tProjectID:  m[1],\n459| \t\tApiID:      m[2],\n460| \t\tVersionID:  m[3],\n461| \t\tSpecID:     m[4],\n462| \t\tRevisionID: m[5],\n463| \t\tArtifactID: \"\",\n464| \t}\n465| \n466| \treturn artifact, nil\n467| }\n468| \n469| type deploymentArtifact struct {\n470| \tProjectID    string\n471| \tApiID        string\n472| \tDeploymentID string\n473| \tRevisionID   string\n474| \tArtifactID   string\n475| }\n476| \n477| func (a deploymentArtifact) Validate() error {\n478| \tif err := validateID(a.ArtifactID); err != nil {\n479| \t\treturn err\n480| \t}\n481| \n482| \tif name := a.String(); !deploymentArtifactRegexp.MatchString(name) {\n483| \t\treturn fmt.Errorf(\"invalid version artifact name %q: must match %q\", name, deploymentArtifactRegexp)\n484| \t}\n485| \n486| \treturn nil\n487| }\n488| \n489| func (a deploymentArtifact) Parent() string {\n490| \treturn DeploymentRevision{\n491| \t\tProjectID:    a.ProjectID,\n492| \t\tApiID:        a.ApiID,\n493| \t\tDeploymentID: a.DeploymentID,\n494| \t\tRevisionID:   a.RevisionID,\n495| \t}.String()\n496| }\n497| \n498| func (a deploymentArtifact) String() string {\n499| \ti"
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-read",
+   "task": "apigee__registry-961",
+   "arm": "pipe",
+   "rep": 1,
+   "cmd": "ss-read server/registry/names/spec_revision.go 55 105 && ss-read server/registry/names/deployment_revision.go 45 90 && ss-grep \"GetApiSpec(ctx\" --in server -k 20",
+   "exit": 1,
+   "status": "completed",
+   "out": "# ss-read server/registry/names/spec_revision.go (lines 55-105 of 135)\n```go\n55| \t\tProjectID: s.ProjectID,\n56| \t\tApiID:     s.ApiID,\n57| \t\tVersionID: s.VersionID,\n58| \t}\n59| }\n60| \n61| // Spec returns the parent spec for this resource.\n62| func (s SpecRevision) Spec() Spec {\n63| \treturn Spec{\n64| \t\tProjectID: s.ProjectID,\n65| \t\tApiID:     s.ApiID,\n66| \t\tVersionID: s.VersionID,\n67| \t\tSpecID:    s.SpecID,\n68| \t}\n69| }\n70| \n71| // Artifact returns an artifact with the provided ID and this resource as its parent.\n72| func (s SpecRevision) Artifact(id string) Artifact {\n73| \treturn Artifact{\n74| \t\tname: specArtifact{\n75| \t\t\tProjectID:  s.ProjectID,\n76| \t\t\tApiID:      s.ApiID,\n77| \t\t\tVersionID:  s.VersionID,\n78| \t\t\tSpecID:     s.SpecID,\n79| \t\t\tRevisionID: s.RevisionID,\n80| \t\t\tArtifactID: id,\n81| \t\t},\n82| \t}\n83| }\n84| \n85| // Parent returns this resource's parent version resource name.\n86| func (s SpecRevision) Parent() string {\n87| \treturn s.Spec().Parent()\n88| }\n89| \n90| func (s SpecRevision) String() string {\n91| \tif s.RevisionID == \"\" { // use latest revision\n92| \t\treturn normalize(fmt.Sprintf(\"projects/%s/locations/%s/apis/%s/versions/%s/specs/%s\",\n93| \t\t\ts.ProjectID, Location, s.ApiID, s.VersionID, s.SpecID))\n94| \t} else {\n95| \t\treturn normalize(fmt.Sprintf(\"projects/%s/locations/%s/apis/%s/versions/%s/specs/%s@%s\",\n96| \t\t\ts.ProjectID, Location, s.ApiID, s.VersionID, s.SpecID, s.RevisionID))\n97| \t}\n98| }\n99| \n100| // ParseSpecRevision parses the name of a spec.\n101| func Parse"
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-grep",
+   "task": "apigee__registry-961",
+   "arm": "pipe",
+   "rep": 2,
+   "cmd": "ss-grep \"GetSpecRevision\\|GetDeploymentRevision\\|GetVersion(ctx\\|GetApi(ctx\\|GetProject(ctx\" --in server/registry/internal/storage -k 30",
+   "exit": 1,
+   "status": "completed",
+   "out": "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r2-9/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Streaming load 5000 documents...\nLateInteraction: Loaded 5266 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 1672ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarming up embedding service...\n  Provider: local (jalipalo/CodeRankEmbed-onnx)\n  Dimensions: 768d full, 512d HNSW\nLoading local model: mrsladoje/CodeRankEmbed-onnx-int8...\n  \u2713 Vocabulary loaded (0 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 2554ms (threads: 8, backend: cpu, quantized: q8)\n  \u2713 Local embedding model loaded\nWarmup complete in 2555ms\n\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:GetSpecRevision\\|GetDeploymentRevision\\|GetVersion(ctx\\|GetApi(ctx\\|GetProject(ctx)\n                                                                     ^\nerror: unclosed\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at Socket.<anonymous> (node:internal/child_process:456:11)\n    at Socket.emit (node:events:524:28)\n    at Pipe.<anonymous> (node:net:343:12)\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "bfgroup__b2-113",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-read src/b2/build/targets.py 1 260",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-grep",
+   "task": "bfgroup__b2-113",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-grep \"generate (\" -k 30",
+   "exit": 1,
+   "status": "completed",
+   "out": "BinaryHNSW: Loaded 2510 vectors from /root/.ss-eval/runs/r0-19/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Loaded 2480 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 1539ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarming up embedding service...\n  Provider: local (jalipalo/CodeRankEmbed-onnx)\n  Dimensions: 768d full, 512d HNSW\nLoading local model: mrsladoje/CodeRankEmbed-onnx-int8...\n  \u2713 Vocabulary loaded (0 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 2594ms (threads: 8, backend: cpu, quantized: q8)\n  \u2713 Local embedding model loaded\nWarmup complete in 2594ms\n\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:generate ()\n    ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at Socket.<anonymous> (node:internal/child_process:456:11)\n    at Socket.emit (node:events:524:28)\n    at Pipe.<anonymous> (node:net:343:12)\n"
+  },
+  {
+   "bucket": "cli-unknown-flag",
+   "tool": "ss-find",
+   "task": "bfgroup__b2-113",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-find \"generate\" --regex \"generate\" --in src/build/targets.py -k 40",
+   "exit": 2,
+   "status": "completed",
+   "out": "[ss] unrecognised option \"--in\"\nUsage: ss-find \"<query>\" --regex \"<regex>\" [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--full|--xl] [-k N]\n"
+  },
+  {
+   "bucket": "ss-trace-symbol-not-indexed",
+   "tool": "ss-trace",
+   "task": "bfgroup__b2-113",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-trace generate callees --in src/build/targets.py",
+   "exit": 1,
+   "status": "completed",
+   "out": "No indexed symbol found for \"generate\".\n\n<<SS_TRACE_META>>{\"symbol\":\"generate\",\"queryHash\":\"a736482a3266d69f\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":14,\"sufficient\":false}\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "devlooped__moq-1262",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-read src/Moq/Expressions/Visitors/ExpressionComparer.cs 1 220",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "devlooped__moq-1262",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-read src/Moq/Matchers/PredicateMatcher.cs 1 120",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "devlooped__moq-1262",
+   "arm": "pipe",
+   "rep": 0,
+   "cmd": "ss-read src/Moq/Expressions/Visitors/ExpressionComparer.cs 1 220",
+   "exit": 1,
+   "status": "completed",
+   "out": "[ss-read] error: stat failed: ENOENT\n"
+  },
+  {
+   "bucket": "ss-read-ENOENT",
+   "tool": "ss-read",
+   "task": "devlooped__moq-1262",
+   "arm": "pipe",
+   "rep": 1,
+   "cmd": "ss-read src/Moq/Match.cs 157 277 && ss-read src/Moq/Matchers/MatcherFactory.cs 1 260 && ss-read src/Moq/SetupCollection.cs 1 170",
+   "exit": 1,
+   "status": "completed",
+   "out": "# ss-read src/Moq/Match.cs (lines 157-277 of 277)\n```csharp\n157| \t/// <summary>\n158| \t///   Allows creating custom value matchers that can be used on setups and verification,\n159| \t///   completely replacing the built-in <see cref=\"It\"/> class with your own\n160| \t///   argument matching rules.\n161| \t/// </summary>\n162| \t/// <typeparam name=\"T\">Type of the value to match.</typeparam>\n163| \tpublic class Match<T> : Match, IEquatable<Match<T>>\n164| \t{\n165| \t\tinternal Predicate<T> Condition { get; set; }\n166| \t\tinternal Action<T> Success { get; set; }\n167| \n168| \t\tinternal Match(Predicate<T> condition, Expression<Func<T>> renderExpression, Action<T> success = null)\n169| \t\t{\n170| \t\t\tthis.Condition = condition;\n171| \t\t\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);\n172| \t\t\tthis.Success = success;\n173| \t\t}\n174| \n175| \t\tinternal override bool Matches(object argument, Type parameterType)\n176| \t\t{\n177| \t\t\treturn CanCast(argument) && this.Condition((T)argument);\n178| \t\t}\n179| \n180| \t\tinternal override void SetupEvaluatedSuccessfully(object argument, Type parameterType)\n181| \t\t{\n182| \t\t\tDebug.Assert(this.Matches(argument, parameterType));\n183| \t\t\tDebug.Assert(CanCast(argument));\n184| \n185| \t\t\tthis.Success?.Invoke((T)argument);\n186| \t\t}\n187| \n188| \t\tprivate static bool CanCast(object value)\n189| \t\t{\n190| \t\t\tif (value != null)\n191| \t\t\t{\n192| \t\t\t\treturn value is T;\n193| \t\t\t}\n194| \t\t\telse\n195| \t\t\t{\n196| \t\t\t\tvar t = typeof(T);\n197| \t\t\t\treturn !t.IsValueType || "
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-grep",
+   "task": "devlooped__moq-1262",
+   "arm": "pipe",
+   "rep": 1,
+   "cmd": "ss-grep \"class MatcherFactory\" -k 10 && ss-grep \"FindLast(setup|Matches(invocation|MarkOverriddenSetups\" -k 20",
+   "exit": 1,
+   "status": "completed",
+   "out": "# ss-grep: 1 total match(es) for /class MatcherFactory/\nsrc/Moq/MatcherFactory.cs:18: class MatcherFactory\nBinaryHNSW: Loaded 2194 vectors from /root/.ss-eval/runs/r1-23/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Loaded 2124 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 1541ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarming up embedding service...\n  Provider: local (jalipalo/CodeRankEmbed-onnx)\n  Dimensions: 768d full, 512d HNSW\nLoading local model: mrsladoje/CodeRankEmbed-onnx-int8...\n  \u2713 Vocabulary loaded (0 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 2716ms (threads: 8, backend: cpu, quantized: q8)\n  \u2713 Local embedding model loaded\nWarmup complete in 2716ms\n\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:FindLast(setup|Matches(invocation|MarkOverriddenSetups)\n               ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)\n"
+  },
+  {
+   "bucket": "engine-banner-leak",
+   "tool": "ss-grep",
+   "task": "devlooped__moq-1262",
+   "arm": "pipe",
+   "rep": 2,
+   "cmd": "ss-grep \"FindLast(\\|FindAll(\\|IsMatch(invocation)\" -k 20",
+   "exit": 1,
+   "status": "completed",
+   "out": "BinaryHNSW: Loaded 2194 vectors from /root/.ss-eval/runs/r2-24/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false)\nLateInteraction: Loaded 2124 documents (model: lateon-code, 128d)\n[LateInteraction] Loading lateon-code (128d)...\n[LateInteraction] ONNX output is 128d \u2014 projection baked in\n[LateInteraction] Loaded lateon-code in 1575ms (128d, ep: cpu, skiplist: 32 IDs, projection: baked)\n\nWarming up embedding service...\n  Provider: local (jalipalo/CodeRankEmbed-onnx)\n  Dimensions: 768d full, 512d HNSW\nLoading local model: mrsladoje/CodeRankEmbed-onnx-int8...\n  \u2713 Vocabulary loaded (0 terms)\n[ORT] Direct session: inputs=[input_ids,attention_mask], outputs=[token_embeddings,sentence_embedding]\nLocal model loaded in 2540ms (threads: 8, backend: cpu, quantized: q8)\n  \u2713 Local embedding model loaded\nWarmup complete in 2541ms\n\n[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:\n    (?:FindLast(\\|FindAll(\\|IsMatch(invocation))\n               ^\nerror: unclosed group\n\n    at ChildProcess.<anonymous> (file:///root/sweet-search-private/core/search/search-pattern-ripgrep.js:271:16)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)\n"
+  },
+  {
+   "bucket": "harness-aborted(status=error)",
+   "tool": "ss-grep",
+   "task": "protofire__solhint-224",
+   "arm": "pipe",
+   "rep": 1,
+   "cmd": "ss-grep \"ruleId = '.*order\" -k 20",
+   "exit": null,
+   "status": "error",
+   "out": ""
+  }
+ ]
+}

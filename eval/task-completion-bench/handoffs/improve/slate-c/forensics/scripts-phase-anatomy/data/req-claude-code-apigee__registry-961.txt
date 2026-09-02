@@ -1,0 +1,194 @@
+
+#### claude-code/apigee__registry-961/native/rep0  n_req=35 calls=37 cost=0.027431 edited=['server/registry/internal/storage/list.go'] marks={'first_read': 9, 'first_sight': 8, 'first_edit': 13, 'last_tool': 33}
+     fp-claudecode-tab-20260826/agent-state/apigee__registry-961-native/claude-home/projects/-root--ss-eval-runs-r0-20/fb00f86b-ae23-4347-9983-a49a25603f36.jsonl
+   0 localize   plan     c=1 new=17547 out=  89     | TaskCreate
+   1 localize   test     c=2 new=   90 out= 152     | pwd && rg -n "artifacts|Artifact" . --glob '!CLAUDE.md' --glob '!*test*' || run_tests
+   2 localize   read     c=2 new= 1674 out= 164     | rg -n "func .*ListArtifacts|ListArtifacts\(|listArtifacts|artifacts" server --glob '*.go' || rg -n "ApiDeployment|ApiSpec|Deployment|Spec" server/registry --glob '*.go' | head -200
+   3 localize   read     c=2 new= 5817 out= 177     | rg -n "ListApi.*Artifacts|ListArtifacts" server/registry/actions_artifacts.go server/registry/actions_artifacts_test.go || rg -n "func \(.*\) Get(Api|.*)|NotFound|Parse.*parent|GetApi" server/registry/actions_artifacts.go server/registry/actio
+   4 localize   read     c=1 new= 8086 out=  48 ERR | Read server/registry/actions_artifacts.go 1+330
+   5 localize   read     c=1 new=   96 out=  58     | Read server/registry/actions_artifacts.go 1+330
+   6 localize   read     c=1 new= 3212 out=  84     | Read server/registry/actions_versions.go 190+90
+   7 localize   read     c=1 new=  102 out=  90     | Read server/registry/actions_artifacts_test.go 539+530
+   8 understand search   c=1 new= 6045 out= 134     | rg -n "func \(.*\) List(Spec|Deployment|Api).*Artifacts|ListSpecArtifacts|ListDeploymentArtifacts|ListApiArtifacts" serv
+   9 understand read     c=1 new=  297 out=  93     | Read server/registry/internal/storage/list.go 1020+280
+  10 understand read     c=1 new= 3328 out=  49     | Read server/registry/internal/storage/list.go 1260+90
+  11 understand read     c=1 new= 1052 out= 186     | Read server/registry/names/names.go 1+180
+  12 understand read     c=1 new=  813 out= 211     | Read server/registry/names/spec.go 1+180
+  13 edit       edit     c=1 new= 1510 out= 647 ERR | Edit server/registry/internal/storage/list.go
+  14 edit       edit     c=1 new=  489 out= 165 ERR | Edit server/registry/internal/storage/list.go
+  15 edit       edit     c=1 new=  166 out= 400 ERR | Edit server/registry/internal/storage/list.go
+  16 edit       edit     c=1 new=  536 out= 159 ERR | Edit server/registry/internal/storage/list.go
+  17 verify     read     c=1 new=  166 out= 122     | Read server/registry/names/spec_revision.go 45+45
+  18 edit       edit     c=1 new=  509 out= 688     | Edit server/registry/internal/storage/list.go
+  19 edit       edit     c=1 new=  657 out= 626     | Edit server/registry/internal/storage/list.go
+  20 verify     git      c=1 new=  653 out= 125 ERR | gofmt -w server/registry/internal/storage/list.go && git diff -- server/registry/internal/storage/list.go
+  21 verify     test     c=1 new=   95 out=  85     | run_tests server/registry
+  22 verify     search   c=1 new= 1152 out= 133     | rg -n "List(Spec|Deployment)(Revision)?Artifacts|ListArtifacts" pkg server --glob '*.go'
+  23 verify     read     c=1 new= 3749 out=  76     | Read server/registry/names/deployment_revision.go 40+45
+  24 verify     test     c=1 new=  464 out= 310     | run_tests github.com/apigee/registry/server/registry
+  25 verify     read     c=1 new= 1158 out= 112     | Read pkg/wipeout/wipeout_test.go 165+50
+  26 edit       edit     c=1 new=  691 out= 605     | Edit server/registry/internal/storage/list.go
+  27 edit       edit     c=1 new=  225 out= 175     | Edit server/registry/internal/storage/list.go
+  28 edit       edit     c=1 new=  330 out= 386     | Edit server/registry/internal/storage/list.go
+  29 edit       edit     c=1 new=  225 out= 246     | Edit server/registry/internal/storage/list.go
+  30 verify     read     c=1 new=  227 out= 311     | Read server/registry/internal/storage/list.go 1050+190
+  31 verify     test     c=1 new= 2334 out= 113     | run_tests
+  32 verify     git      c=1 new=  988 out= 273     | git diff --check && git diff --stat && git diff -- server/registry/internal/storage/list.go
+  33 verify     plan     c=1 new=  512 out= 105     | TaskUpdate
+  34 finalize   text     c=0 new=   39 out= 244     | TEXT: Implemented the missing parent-resource existence checks for artifact listing.  ### Changes  Updated `server/registry/in
+
+#### claude-code/apigee__registry-961/native/rep1  n_req=24 calls=30 cost=0.016573 edited=['server/registry/internal/storage/list.go'] marks={'first_read': 3, 'first_sight': 2, 'first_edit': 10, 'last_tool': 22}
+     fp-claudecode-tab-20260826/agent-state/apigee__registry-961-native/claude-home/projects/-root--ss-eval-runs-r1-24/a3e64811-e2c7-45c5-b066-b5d41054685b.jsonl
+   0 localize   plan     c=1 new=17547 out=  98     | TaskCreate
+   1 localize   read     c=1 new=   85 out=  63     | pwd && find . -maxdepth 2 -type f | sort | head -80
+   2 understand test     c=2 new=  633 out= 134     | grep -RIn "List.*Artifact\|artifacts" --include='*.go' . | head -120 || run_tests
+   3 understand read     c=3 new= 4920 out= 164 ERR | Read server/registry/actions_artifacts.go 180+130 || Read server/registry/internal/storage/list.go 1040+210 || Read server/registry/actions_artifacts_test.go 1+260
+   4 understand read     c=3 new=  294 out= 164     | Read server/registry/actions_artifacts.go 180+130 || Read server/registry/internal/storage/list.go 1040+210 || Read server/registry/actions_artifacts_test.go 1+260
+   5 understand read     c=3 new= 6420 out= 196     | Read server/registry/internal/storage/list.go 850+200 || grep -RIn "List.*ResponseCodes\|ListArtifacts" server/registry/actions_artifacts_test.go || Read server/registry/actions_apis.go 180+100
+   6 understand read     c=1 new= 5205 out=  64     | Read server/registry/actions_artifacts_test.go 943+110
+   7 understand search   c=1 new= 1071 out= 215     | grep -RIn "func (c \*Client) GetSpec\|func (c \*Client) GetDeployment\|func (c \*Client) ListApiArtifacts\|func (c \*Cli
+   8 understand read     c=1 new=  367 out=  49     | Read server/registry/internal/storage/list.go 1188+160
+   9 understand read     c=1 new= 1950 out= 142     | Read server/registry/internal/storage/get.go 1+170
+  10 edit       edit     c=1 new= 1946 out= 695 ERR | Edit server/registry/internal/storage/list.go
+  11 edit       edit     c=1 new=  687 out= 166 ERR | Edit server/registry/internal/storage/list.go
+  12 edit       edit     c=1 new=  166 out= 608 ERR | Edit server/registry/internal/storage/list.go
+  13 edit       edit     c=1 new=  740 out= 239 ERR | Edit server/registry/internal/storage/list.go
+  14 edit       edit     c=1 new=  166 out= 848     | Edit server/registry/internal/storage/list.go
+  15 edit       edit     c=1 new=  849 out= 234 ERR | Edit server/registry/internal/storage/list.go
+  16 edit       edit     c=1 new=  271 out= 872     | Edit server/registry/internal/storage/list.go
+  17 verify     test     c=1 new=  761 out=  85 ERR | gofmt -w server/registry/internal/storage/list.go && run_tests
+  18 verify     test     c=1 new=   89 out=  75     | run_tests
+  19 verify     search   c=1 new=  988 out= 105     | grep -RIn "type SpecRevision\|func (.*SpecRevision.*Spec\|func (.*SpecRevision.*Version\|func (.*DeploymentRevision.*Dep
+  20 verify     read     c=1 new=  174 out=  49     | Read server/registry/names/spec_revision.go 20+55
+  21 verify     git      c=1 new=  525 out= 196     | git diff --check && git diff -- server/registry/internal/storage/list.go
+  22 verify     plan     c=1 new=  783 out= 140     | TaskUpdate
+  23 finalize   text     c=0 new=   39 out= 225     | TEXT: Implemented the missing parent-resource existence checks for artifact listing.  ### Changes  Updated `server/registry/in
+
+#### claude-code/apigee__registry-961/native/rep2  n_req=26 calls=26 cost=0.017252 edited=['server/registry/internal/storage/list.go'] marks={'first_read': 10, 'first_sight': 9, 'first_edit': 14, 'last_tool': 24}
+     fp-claudecode-tab-20260826/agent-state/apigee__registry-961-native/claude-home/projects/-root--ss-eval-runs-r2-25/735cc398-5801-4139-9059-b9c6dafc4d40.jsonl
+   0 localize   plan     c=1 new=17547 out= 112     | TaskCreate
+   1 localize   test     c=2 new=   85 out= 133     | pwd && find . -maxdepth 2 -type f | sort | head -80 || run_tests
+   2 localize   delegate c=1 new= 1628 out=  87     | Agent Locate artifact list handlers
+   3 localize   read     c=1 new=  359 out=  99     | rg -n "ListArtifacts|artifacts" server | head -120
+   4 localize   search   c=1 new= 3672 out=  63     | rg -n "func .*ListArtifacts|ListArtifacts\(" server/registry --glob '*.go'
+   5 localize   read     c=1 new= 1301 out=  48 ERR | Read server/registry/actions_artifacts.go 1+280
+   6 localize   read     c=1 new=   96 out=  58     | Read server/registry/actions_artifacts.go 1+280
+   7 localize   read     c=1 new= 2789 out=  48     | Read server/registry/actions_artifacts.go 270+50
+   8 localize   read     c=1 new=  497 out=  71     | Read server/registry/actions_artifacts_test.go 930+125
+   9 understand read     c=1 new= 1276 out= 171     | rg -n "List.*Artifacts|Get.*Revision|List.*\(ctx" server/registry/internal/storage | head -160
+  10 understand read     c=1 new= 1291 out=  49     | Read server/registry/internal/storage/list.go 1040+300
+  11 understand read     c=1 new= 3607 out= 199     | Read server/registry/internal/storage/get.go 1+180
+  12 understand read     c=1 new= 2053 out= 220     | Read server/registry/actions_artifacts_test.go 539+180
+  13 understand read     c=1 new= 2311 out= 160     | Read server/registry/internal/storage/list.go 679+80
+  14 edit       edit     c=1 new=  969 out= 682 ERR | Edit server/registry/internal/storage/list.go
+  15 edit       edit     c=1 new= 1217 out= 204 ERR | Edit server/registry/internal/storage/list.go
+  16 edit       edit     c=1 new=  166 out= 668     | Edit server/registry/internal/storage/list.go
+  17 edit       edit     c=1 new=  910 out= 441     | Edit server/registry/internal/storage/list.go
+  18 edit       edit     c=1 new=  353 out= 651     | Edit server/registry/internal/storage/list.go
+  19 edit       edit     c=1 new= 2044 out= 772     | Edit server/registry/internal/storage/list.go
+  20 edit       edit     c=1 new=  749 out= 560     | Edit server/registry/internal/storage/list.go
+  21 verify     test     c=1 new=  538 out= 123 ERR | gofmt -w server/registry/internal/storage/list.go && run_tests 'TestListArtifactsResponseCodes|TestListArtifacts'
+  22 verify     test     c=1 new=   99 out=  85     | run_tests 'TestListArtifactsResponseCodes|TestListArtifacts'
+  23 verify     test     c=1 new= 1160 out= 193     | git diff --check && git diff -- server/registry/internal/storage/list.go && run_tests
+  24 verify     plan     c=1 new= 1785 out= 318     | TaskUpdate
+  25 finalize   text     c=0 new=   39 out= 264     | TEXT: Implemented the missing parent-resource existence checks for artifact listing.  ### Changes  Updated `server/registry/in
+
+#### claude-code/apigee__registry-961/sweet/rep0  n_req=35 calls=34 cost=0.022417 edited=['server/registry/internal/storage/list.go'] marks={'first_read': 11, 'first_sight': 4, 'first_edit': 18, 'last_tool': 33}
+     fp-claudecode-tab-20260826/agent-state/apigee__registry-961-sweet/claude-home/projects/-root--ss-eval-runs-r0-14/2924c6bb-0af6-49d4-ab51-b4b088ce95ff.jsonl
+   0 localize   plan     c=1 new=19117 out= 111     | TaskCreate
+   1 localize   test     c=1 new=   85 out= 100     | run_tests
+   2 localize   search   c=1 new=  988 out=  77     | ss-search "list artifacts parent ApiDeployment ApiSpec existence check" -k 10
+   3 localize   search   c=1 new= 2199 out=  86     | ss-grep "ListArtifacts" -k 20
+   4 understand search   c=1 new=  618 out= 148     | ss-search "server ListArtifacts request parent resource validation ApiSpec ApiDeployment" -k 10
+   5 understand search   c=1 new= 3978 out=  57 ERR | ss-grep "func (.*ListArtifacts" -k 20
+   6 understand search   c=1 new=  471 out= 107 ERR | ss-grep "ListArtifacts(ctx" -k 20
+   7 understand search   c=1 new=  468 out=  95     | ss-grep "ListArtifacts" --in server/registry -k 50
+   8 understand search   c=1 new=  804 out= 160     | ss-search "artifact list action parent" -k 20
+   9 understand read     c=1 new= 6688 out=  56     | ss-read server/registry/actions_artifacts.go 180 280
+  10 understand search   c=1 new= 1093 out= 100     | ss-grep "ListSpecArtifacts" --in server/registry/internal/storage -k 10
+  11 understand read     c=1 new=  116 out=  60     | ss-read server/registry/internal/storage/list.go 1040 1165
+  12 understand read     c=1 new= 1654 out=  59     | ss-read server/registry/internal/storage/list.go 1166 1427
+  13 understand search   c=1 new= 2974 out= 205     | ss-grep "ListSpecArtifacts.*NotFound\|list.*spec.*artifacts\|ListDeploymentArtifacts.*NotFound" --in server/registry/act
+  14 understand search   c=1 new=  170 out= 183     | ss-grep "func (c \*Client) GetSpecRevision\|func (c \*Client) GetDeploymentRevision" --in server/registry/internal/stora
+  15 understand search   c=1 new=  177 out= 131     | ss-grep "GetSpecRevision" --in server/registry/internal/storage -k 20
+  16 understand read     c=1 new=  142 out= 148     | ss-read server/registry/internal/storage/get.go 55 115
+  17 understand read     c=1 new=  777 out= 131     | ss-read server/registry/internal/storage/list.go 650 730
+  18 edit       edit     c=1 new= 1043 out= 699 ERR | Edit server/registry/internal/storage/list.go
+  19 edit       edit     c=1 new=  836 out= 158 ERR | Edit server/registry/internal/storage/list.go
+  20 edit       edit     c=1 new=  166 out= 165 ERR | Edit server/registry/internal/storage/list.go
+  21 edit       edit     c=1 new=  166 out= 643 ERR | Edit server/registry/internal/storage/list.go
+  22 edit       edit     c=1 new=  780 out= 176 ERR | Edit server/registry/internal/storage/list.go
+  23 edit       edit     c=1 new=  166 out= 252 ERR | Edit server/registry/internal/storage/list.go
+  24 edit       edit     c=1 new=  166 out= 169 ERR | Edit server/registry/internal/storage/list.go
+  25 edit       edit     c=1 new=  166 out= 703 ERR | Edit server/registry/internal/storage/list.go
+  26 edit       edit     c=1 new=  830 out= 189 ERR | Edit server/registry/internal/storage/list.go
+  27 edit       edit     c=1 new=  166 out= 590     | Edit server/registry/internal/storage/list.go
+  28 edit       edit     c=1 new=  537 out= 427     | Edit server/registry/internal/storage/list.go
+  29 verify     test     c=1 new=  548 out=  46     | run_tests
+  30 verify     git      c=1 new=  987 out=  78     | git diff -- server/registry/internal/storage/list.go
+  31 verify     test     c=1 new=  857 out= 186 ERR | gofmt -w server/registry/internal/storage/list.go && run_tests
+  32 verify     test     c=1 new=   89 out= 137     | run_tests
+  33 verify     plan     c=1 new=  295 out= 136     | TaskUpdate
+  34 finalize   text     c=0 new=   39 out= 210     | TEXT: Implemented the missing parent-resource existence checks for artifact listing.  ### Changes  Updated `server/registry/in
+
+#### claude-code/apigee__registry-961/sweet/rep1  n_req=28 calls=27 cost=0.018554 edited=['server/registry/internal/storage/list.go'] marks={'first_read': 11, 'first_sight': 5, 'first_edit': 18, 'last_tool': 26}
+     fp-claudecode-tab-20260826/agent-state/apigee__registry-961-sweet/claude-home/projects/-root--ss-eval-runs-r1-16/dc29d0c2-c414-47d2-b992-345cd6678d7b.jsonl
+   0 localize   plan     c=1 new=19117 out=  92     | TaskCreate
+   1 localize   test     c=1 new=   80 out=  68     | run_tests
+   2 localize   search   c=1 new=  988 out=  78     | ss-search "list artifacts parent resource existence check ApiDeployment ApiSpec" -k 10
+   3 localize   search   c=1 new= 2330 out= 150     | ss-grep "ListArtifacts" -k 20
+   4 localize   read     c=1 new=  685 out=  70     | ss-read cmd/registry/controller/list.go 1 220 && ss-read cmd/registry/core/list.go 180 280
+   5 understand search   c=1 new= 1868 out=  88     | ss-find "artifact listing RPC server parent validation" --regex "ListArtifacts" -k 30
+   6 understand search   c=1 new= 3180 out= 115     | ss-grep "func (s \*RegistryServer) ListApi|func (s \*RegistryServer) ListApiSpec|GetApi" --in server/registry -k 30
+   7 understand search   c=1 new=  579 out= 114     | ss-grep "ListApiDeployments" --in server/registry -k 20
+   8 understand search   c=1 new=  445 out=  64 ERR | ss-grep "func (s .*List" --in server/registry -k 100
+   9 understand search   c=1 new=  478 out= 100 ERR | ss-grep "ListApis(ctx" --in server/registry -k 10
+  10 understand search   c=1 new=  549 out= 108     | ss-search "server ListApis checks parent exists before listing" -k 10
+  11 understand read     c=1 new= 3838 out=  98     | ss-read server/registry/internal/storage/list.go 1035 1275
+  12 understand read     c=1 new= 3018 out=  84     | ss-read server/registry/internal/storage/list.go 1264 1365
+  13 understand search   c=1 new= 1265 out= 231     | ss-trace "ListDeploymentRevisionArtifacts" callees --in server/registry/internal/storage/list.go
+  14 understand search   c=1 new= 3643 out= 195 ERR | ss-grep "GetDeploymentRevision(ctx" --in server/registry/internal/storage -k 5 && ss-grep "GetSpecRevision(ctx" --in ser
+  15 understand read     c=1 new=  470 out= 186     | ss-read server/registry/names/deployment.go 1 180 && ss-read server/registry/names/spec.go 1 160
+  16 understand search   c=1 new= 2841 out=  92     | ss-grep "GetDeploymentRevision" --in server/registry/internal/storage -k 10
+  17 understand read     c=1 new=  127 out=  77     | ss-read server/registry/internal/storage/get.go 90 155 && ss-grep "GetSpecRevision" --in server/registry/internal/storag
+  18 edit       edit     c=1 new=  928 out= 920 ERR | Edit server/registry/internal/storage/list.go
+  19 edit       edit     c=1 new=  843 out= 161 ERR | Edit server/registry/internal/storage/list.go
+  20 edit       edit     c=1 new=  166 out= 778     | Edit server/registry/internal/storage/list.go
+  21 edit       edit     c=1 new=  809 out= 155 ERR | Edit server/registry/internal/storage/list.go
+  22 edit       edit     c=1 new=  168 out= 261 ERR | Edit server/registry/internal/storage/list.go
+  23 edit       edit     c=1 new=  282 out= 669     | Edit server/registry/internal/storage/list.go
+  24 verify     test     c=1 new=  709 out=  95     | run_tests
+  25 verify     read     c=1 new=  987 out=  95     | ss-read server/registry/names/deployment_revision.go 35 125 && ss-read server/registry/names/spec_revision.go 35 125
+  26 verify     plan     c=1 new= 1716 out= 220     | TaskUpdate
+  27 finalize   text     c=0 new=   39 out= 213     | TEXT: Implemented the missing parent-resource existence checks for artifact listings.  ### Changes  Updated `server/registry/i
+
+#### claude-code/apigee__registry-961/sweet/rep2  n_req=28 calls=27 cost=0.020990 edited=['server/registry/internal/storage/list.go'] marks={'first_read': 6, 'first_sight': 3, 'first_edit': 13, 'last_tool': 26}
+     fp-claudecode-tab-20260826/agent-state/apigee__registry-961-sweet/claude-home/projects/-root--ss-eval-runs-r2-18/bcf80890-c2a8-4a8b-b788-19dd239f1642.jsonl
+   0 localize   plan     c=1 new=19117 out=  92     | TaskCreate
+   1 localize   search   c=1 new=   84 out= 116     | ss-search "artifact listing parent resource existence check ApiDeployment ApiSpec" -k 10
+   2 localize   test     c=1 new= 2168 out=  79     | run_tests
+   3 understand search   c=1 new=  987 out= 154     | ss-grep "ListApiDeploymentArtifacts\|ListApiSpecArtifacts\|Artifacts" -k 80
+   4 understand read     c=1 new= 1746 out=  55     | ss-read server/registry/actions_artifacts.go 1 280
+   5 understand read     c=1 new= 2848 out= 100     | ss-read server/registry/actions_artifacts.go 281 328 && ss-trace ListArtifacts callers --in server/registry/actions_arti
+   6 understand read     c=1 new= 4199 out= 125     | ss-read server/registry/actions_artifacts_test.go 900 1065 && ss-read server/registry/internal/storage/list.go 1030 1085
+   7 understand search   c=1 new= 2485 out= 239     | ss-search "List.* parent not found existence check LockSpecs LockDeployments" -k 10
+   8 understand read     c=1 new= 1979 out=  82 ERR | ss-read server/registry/internal/storage/list.go 380 470 && ss-grep "GetSpecRevision(ctx\|GetDeploymentRevision(ctx\|Get
+   9 understand search   c=1 new= 1462 out= 131     | ss-grep "GetSpecRevision" -k 20
+  10 understand read     c=1 new=  353 out=  73     | ss-read server/registry/internal/storage/list.go 515 740 && ss-read server/registry/internal/storage/list.go 1080 1268
+  11 understand read     c=1 new= 4803 out= 196     | ss-read server/registry/internal/storage/get.go 1 150 && ss-read server/registry/internal/storage/list.go 1264 1427
+  12 understand read     c=1 new= 3517 out= 243     | ss-read server/registry/internal/storage/list.go 760 900
+  13 edit       edit     c=1 new= 1337 out= 700 ERR | Edit server/registry/internal/storage/list.go
+  14 edit       edit     c=1 new=  735 out= 184 ERR | Edit server/registry/internal/storage/list.go
+  15 edit       edit     c=1 new=  166 out= 647 ERR | Edit server/registry/internal/storage/list.go
+  16 edit       edit     c=1 new=  780 out= 614     | Edit server/registry/actions_artifacts.go
+  17 verify     plan     c=1 new=  392 out=  46     | TaskUpdate
+  18 verify     test     c=1 new=   40 out= 140     | run_tests server/registry -run 'TestListArtifactsResponseCodes|TestSpecRevisionArtifacts|TestDeploymentRevisionArtifacts
+  19 verify     search   c=1 new= 1170 out=  88     | ss-search "wipeout ListArtifacts parent" -k 10
+  20 edit       edit     c=1 new= 2582 out= 330     | Edit server/registry/actions_artifacts.go
+  21 edit       edit     c=1 new=  294 out= 235 ERR | Edit server/registry/internal/storage/list.go
+  22 edit       edit     c=1 new=  166 out= 883     | Edit server/registry/internal/storage/list.go
+  23 edit       edit     c=1 new=  907 out= 777     | Edit server/registry/internal/storage/list.go
+  24 verify     test     c=1 new=  813 out=  70     | run_tests
+  25 verify     git      c=1 new=  987 out=  59     | git diff -- server/registry/internal/storage/list.go server/registry/actions_artifacts.go
+  26 verify     plan     c=1 new=  837 out= 160     | TaskUpdate
+  27 finalize   text     c=0 new=   39 out= 226     | TEXT: Implemented the missing parent-resource existence checks for artifact listing.  ### Changes  Added validation in:  - `se

@@ -1,0 +1,31 @@
+blocks=7515 rollouts=584 weight-model mismatches=0
+
+=== per-rollout gutter cost (my tokenisation) ===
+harness     form      n  blocks   lines gutLines   gutTok     gutUsd    ingest     resid residShare tok/line
+claude-code none     62    15.2  1018.6      0.0      0.0   0.000000  0.000000  0.000000      0.000    0.000
+claude-code pipe     64    14.5   980.0    961.1   2202.5   0.000630  0.000220  0.000410      0.650    2.292
+claude-code tab      62    15.2  1060.0   1034.8   1408.2   0.000417  0.000141  0.000276      0.662    1.361
+codex       none     66    12.6   904.9      0.0      0.0   0.000000  0.000000  0.000000      0.000    0.000
+codex       pipe     66    12.4   851.3    831.8   1903.4   0.000496  0.000190  0.000306      0.616    2.288
+codex       tab      66    12.6   877.7    859.4   1163.3   0.000302  0.000116  0.000186      0.615    1.354
+opencode    none     66    11.6   926.2      0.0      0.0   0.000000  0.000000  0.000000      0.000    0.000
+opencode    pipe     66    10.6   871.5    856.6   1972.8   0.000493  0.000197  0.000296      0.600    2.303
+opencode    tab      66    11.5   947.5    930.3   1264.7   0.000338  0.000126  0.000212      0.626    1.360
+
+=== per-gutted-line token overhead (all cells with a gutter, my tokenisation) ===
+  claude-code|pipe: guttedLines=61509 tabExtra/line=1.356 pipeExtra/line=2.292 pipe-tab=0.936
+  claude-code|tab: guttedLines=64158 tabExtra/line=1.361 pipeExtra/line=2.298 pipe-tab=0.937
+  codex|pipe: guttedLines=54897 tabExtra/line=1.362 pipeExtra/line=2.288 pipe-tab=0.926
+  codex|tab: guttedLines=56721 tabExtra/line=1.354 pipeExtra/line=2.283 pipe-tab=0.929
+  opencode|pipe: guttedLines=56533 tabExtra/line=1.363 pipeExtra/line=2.303 pipe-tab=0.940
+  opencode|tab: guttedLines=61398 tabExtra/line=1.360 pipeExtra/line=2.293 pipe-tab=0.933
+
+=== counterfactual: TAB cell re-rendered as NONE / PIPE (behaviour held fixed) ===
+  codex: TAB gutter costs $0.000302/rollout; as PIPE it would cost $0.000509; direct TAB->NONE = $-0.000302; direct TAB->PIPE = $0.000207
+  opencode: TAB gutter costs $0.000338/rollout; as PIPE it would cost $0.000574; direct TAB->NONE = $-0.000338; direct TAB->PIPE = $0.000236
+  claude-code: TAB gutter costs $0.000417/rollout; as PIPE it would cost $0.000704; direct TAB->NONE = $-0.000417; direct TAB->PIPE = $0.000287
+
+=== delivered code lines by surface (TAB cells) ===
+  codex: lines/rollout=877.7 ss-read=602.7(68.7%) ss-search=195.4(22.3%) ss-semantic=46.2(5.3%) ss-find=33.4(3.8%)
+  opencode: lines/rollout=947.5 ss-read=707.4(74.7%) ss-search=163.2(17.2%) ss-find=71.7(7.6%) ss-semantic=5.1(0.5%)
+  claude-code: lines/rollout=1060.0 ss-read=660.9(62.3%) ss-search=277.6(26.2%) ss-find=116.6(11.0%) ss-semantic=4.9(0.5%)

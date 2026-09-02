@@ -1,0 +1,525 @@
+{
+ "symbol_coverage_by_ext": {
+  ".cs": {
+   "indexed_source_files": 1817,
+   "with_code_entity": 1764,
+   "pct": 97.1
+  },
+  ".java": {
+   "indexed_source_files": 1158,
+   "with_code_entity": 1158,
+   "pct": 100.0
+  },
+  ".py": {
+   "indexed_source_files": 975,
+   "with_code_entity": 641,
+   "pct": 65.7
+  },
+  ".js": {
+   "indexed_source_files": 649,
+   "with_code_entity": 282,
+   "pct": 43.5
+  },
+  ".jam": {
+   "indexed_source_files": 618,
+   "with_code_entity": 0,
+   "pct": 0.0
+  },
+  ".cpp": {
+   "indexed_source_files": 364,
+   "with_code_entity": 344,
+   "pct": 94.5
+  },
+  ".go": {
+   "indexed_source_files": 338,
+   "with_code_entity": 331,
+   "pct": 97.9
+  },
+  ".ex": {
+   "indexed_source_files": 273,
+   "with_code_entity": 273,
+   "pct": 100.0
+  },
+  ".exs": {
+   "indexed_source_files": 219,
+   "with_code_entity": 214,
+   "pct": 97.7
+  },
+  ".ts": {
+   "indexed_source_files": 182,
+   "with_code_entity": 101,
+   "pct": 55.5
+  },
+  ".h": {
+   "indexed_source_files": 125,
+   "with_code_entity": 107,
+   "pct": 85.6
+  },
+  ".tsx": {
+   "indexed_source_files": 54,
+   "with_code_entity": 28,
+   "pct": 51.9
+  },
+  ".php": {
+   "indexed_source_files": 26,
+   "with_code_entity": 25,
+   "pct": 96.2
+  },
+  ".c": {
+   "indexed_source_files": 5,
+   "with_code_entity": 5,
+   "pct": 100.0
+  },
+  ".rb": {
+   "indexed_source_files": 2,
+   "with_code_entity": 1,
+   "pct": 50.0
+  }
+ },
+ "symbol_coverage_by_task": {
+  "absinthe-graphql__absinthe-998": {
+   "language": "elixir",
+   "indexed_files": 544,
+   "source_files": 492,
+   "source_with_code_entity": 487,
+   "source_with_any_entity": 487,
+   "entity_types": "private|952 function|927 module|629 macro|74 topKey|31 enum|9 input|8 type|8"
+  },
+  "accenture__sfmc-devtools-1974": {
+   "language": "js",
+   "indexed_files": 775,
+   "source_files": 230,
+   "source_with_code_entity": 107,
+   "source_with_any_entity": 162,
+   "entity_types": "element|5676 typeAlias|761 method|645 namespace|257 topKey|230 class|89 variable|44 function|35"
+  },
+  "aio-libs__aiohttp-8038": {
+   "language": "python",
+   "indexed_files": 240,
+   "source_files": 133,
+   "source_with_code_entity": 125,
+   "source_with_any_entity": 128,
+   "entity_types": "function|4635 decorator|695 class|379 topKey|266 field|91 target|70 keyVal|19 variable|15"
+  },
+  "apigee__registry-961": {
+   "language": "go",
+   "indexed_files": 533,
+   "source_files": 325,
+   "source_with_code_entity": 321,
+   "source_with_any_entity": 322,
+   "entity_types": "topKey|4664 method|1894 function|1079 struct|343 message|212 rpc|76 interface|32 typeAlias|24"
+  },
+  "asynkron__protoactor-dotnet-1909": {
+   "language": "csharp",
+   "indexed_files": 821,
+   "source_files": 606,
+   "source_with_code_entity": 568,
+   "source_with_any_entity": 574,
+   "entity_types": "method|2090 field|1096 element|1091 class|739 topKey|534 property|436 message|139 interface|63"
+  },
+  "aws-actions__configure-aws-credentials-42": {
+   "language": "ts",
+   "indexed_files": 14,
+   "source_files": 2,
+   "source_with_code_entity": 2,
+   "source_with_any_entity": 2,
+   "entity_types": "topKey|69 function|9 method|3 arrowFunction|1"
+  },
+  "awslabs__aws-embedded-metrics-node-21": {
+   "language": "ts",
+   "indexed_files": 64,
+   "source_files": 46,
+   "source_with_code_entity": 22,
+   "source_with_any_entity": 35,
+   "entity_types": "method|60 arrowFunction|28 class|13 topKey|13 interface|8 enum|4 component|2 typeAlias|2"
+  },
+  "axelrod-python__axelrod-671": {
+   "language": "python",
+   "indexed_files": 180,
+   "source_files": 122,
+   "source_with_code_entity": 116,
+   "source_with_any_entity": 116,
+   "entity_types": "function|1032 class|397 decorator|196 target|25 topKey|11 variable|8"
+  },
+  "bfgroup__b2-113": {
+   "language": "cpp",
+   "indexed_files": 896,
+   "source_files": 810,
+   "source_with_code_entity": 322,
+   "source_with_any_entity": 325,
+   "entity_types": "function|2347 struct|408 selector|244 class|129 topKey|107 macro|78 decorator|44 method|30"
+  },
+  "bfgroup__b2-259": {
+   "language": "cpp",
+   "indexed_files": 838,
+   "source_files": 750,
+   "source_with_code_entity": 285,
+   "source_with_any_entity": 288,
+   "entity_types": "function|1675 struct|438 selector|244 topKey|214 method|123 namespace|67 typeAlias|56 class|39"
+  },
+  "callstack__react-native-paper-972": {
+   "language": "ts",
+   "indexed_files": 315,
+   "source_files": 291,
+   "source_with_code_entity": 153,
+   "source_with_any_entity": 233,
+   "entity_types": "variable|260 class|163 method|120 arrowFunction|93 component|83 interface|67 topKey|35 function|15"
+  },
+  "celestiaorg__nmt-192": {
+   "language": "go",
+   "indexed_files": 21,
+   "source_files": 13,
+   "source_with_code_entity": 10,
+   "source_with_any_entity": 12,
+   "entity_types": "function|84 method|52 topKey|42 struct|21 typeAlias|7"
+  },
+  "devlooped__moq-1262": {
+   "language": "csharp",
+   "indexed_files": 285,
+   "source_files": 240,
+   "source_with_code_entity": 231,
+   "source_with_any_entity": 231,
+   "entity_types": "method|2329 class|600 element|349 interface|274 field|243 property|126 topKey|22 struct|15"
+  },
+  "fastify__fastify-cors-285": {
+   "language": "js",
+   "indexed_files": 16,
+   "source_files": 10,
+   "source_with_code_entity": 6,
+   "source_with_any_entity": 9,
+   "entity_types": "topKey|27 method|26 arrowFunction|16 function|14 typeAlias|8 interface|4 component|2 namespace|1"
+  },
+  "final-form__final-form-64": {
+   "language": "ts",
+   "indexed_files": 45,
+   "source_files": 35,
+   "source_with_code_entity": 3,
+   "source_with_any_entity": 23,
+   "entity_types": "arrowFunction|74 typeAlias|14 interface|13 topKey|11 variable|5 component|3 function|1 method|1"
+  },
+  "gitbookio__markup-it-56": {
+   "language": "js",
+   "indexed_files": 379,
+   "source_files": 105,
+   "source_with_code_entity": 24,
+   "source_with_any_entity": 38,
+   "entity_types": "topKey|1315 function|54 method|44 component|24 arrowFunction|8 class|4 id|4"
+  },
+  "hotmeteor__spectator-181": {
+   "language": "php",
+   "indexed_files": 57,
+   "source_files": 26,
+   "source_with_code_entity": 25,
+   "source_with_any_entity": 25,
+   "entity_types": "topKey|527 method|172 class|25 element|10 enum|1 trait|1"
+  },
+  "jazzband__tablib-454": {
+   "language": "python",
+   "indexed_files": 52,
+   "source_files": 30,
+   "source_with_code_entity": 27,
+   "source_with_any_entity": 27,
+   "entity_types": "function|365 class|65 decorator|63 topKey|63 target|19 variable|7 keyVal|6 section|1"
+  },
+  "locationtech__jts-622": {
+   "language": "java",
+   "indexed_files": 1373,
+   "source_files": 1159,
+   "source_with_code_entity": 1159,
+   "source_with_any_entity": 1159,
+   "entity_types": "method|12089 field|4186 element|3532 class|1275 interface|75 component|24 topKey|21 enum_constant|4"
+  },
+  "mathnet__mathnet-numerics-1072": {
+   "language": "csharp",
+   "indexed_files": 1133,
+   "source_files": 1000,
+   "source_with_code_entity": 990,
+   "source_with_any_entity": 991,
+   "entity_types": "method|9662 element|1052 class|1007 let|967 field|609 function|217 property|207 member|69"
+  },
+  "mirumee__ariadne-codegen-218": {
+   "language": "python",
+   "indexed_files": 268,
+   "source_files": 217,
+   "source_with_code_entity": 198,
+   "source_with_any_entity": 200,
+   "entity_types": "function|1166 class|334 decorator|183 keyVal|110 query|49 type|44 topKey|34 section|33"
+  },
+  "protofire__solhint-224": {
+   "language": "js",
+   "indexed_files": 224,
+   "source_files": 163,
+   "source_with_code_entity": 93,
+   "source_with_any_entity": 108,
+   "entity_types": "method|313 function|165 selector|97 class|72 component|56 topKey|17 arrowFunction|13 section|3"
+  }
+ },
+ "missing_source_breakdown": {
+  ".md other": {
+   "n": 83,
+   "ex": [
+    "awslabs__aws-embedded-metrics-node-21:RELEASE_NOTES.md:43",
+    "gitbookio__markup-it-56:test/from-markdown/paragraphs/hardline-break/input.md:14",
+    "gitbookio__markup-it-56:test/from-markdown/marks/italic/normal/input.md:14"
+   ]
+  },
+  ".go excluded-dir:generated": {
+   "n": 51,
+   "ex": [
+    "apigee__registry-961:cmd/registry/cmd/rpc/generated/create-project.go:2058",
+    "apigee__registry-961:cmd/registry/cmd/rpc/generated/rollback-api-spec.go:1808",
+    "apigee__registry-961:cmd/registry/cmd/rpc/generated/get-artifact-contents.go:1725"
+   ]
+  },
+  ".py empty-file": {
+   "n": 40,
+   "ex": [
+    "aio-libs__aiohttp-8038:examples/__init__.py:0",
+    "axelrod-python__axelrod-671:axelrod/tests/unit/__init__.py:0",
+    "axelrod-python__axelrod-671:axelrod/tests/__init__.py:0"
+   ]
+  },
+  ".json other": {
+   "n": 24,
+   "ex": [
+    "accenture__sfmc-devtools-1974:test/resources/9999999/automation/v1/queries/549f0568-607c-4940-afef-437965094dat/delete-response.json:5",
+    "accenture__sfmc-devtools-1974:test/resources/9999999/legacy/v1/beta/mobile/message/post-response.json:28",
+    "accenture__sfmc-devtools-1974:test/resources/9999999/journey/publish-callout-expected.json:3"
+   ]
+  },
+  ".json empty-file": {
+   "n": 6,
+   "ex": [
+    "accenture__sfmc-devtools-1974:test/resources/9999999/automation/v1/dataverifications/testExisting_39f6a488-20eb-4ba0-b0b9/delete-response.json:0",
+    "accenture__sfmc-devtools-1974:test/resources/9999999/legacy/v1/beta/mobile/message/NTIzOjc4OjA/post-response.json:0",
+    "accenture__sfmc-devtools-1974:test/resources/9999999/legacy/v1/beta/mobile/keyword/cTVJaG5oSDJPVUNHcUh6Z3pQT2tVdzo4Njow/delete-response.json:0"
+   ]
+  },
+  ".json excluded-dir:examples": {
+   "n": 6,
+   "ex": [
+    "asynkron__protoactor-dotnet-1909:examples/Proto.Cluster.Dashboard.Host/appsettings.Development.json:145",
+    "asynkron__protoactor-dotnet-1909:examples/ActorMetrics/appsettings.Development.json:159",
+    "asynkron__protoactor-dotnet-1909:examples/AspNetGrains/Node1/appsettings.Development.json:119"
+   ]
+  },
+  ".py other": {
+   "n": 6,
+   "ex": [
+    "mirumee__ariadne-codegen-218:tests/main/clients/extended_models/expected_client/common_mixins.py:28",
+    "mirumee__ariadne-codegen-218:tests/main/clients/extended_models/mixins_a.py:23",
+    "mirumee__ariadne-codegen-218:tests/main/clients/extended_models/expected_client/mixins_b.py:23"
+   ]
+  },
+  ".md excluded-dir:.github": {
+   "n": 2,
+   "ex": [
+    "accenture__sfmc-devtools-1974:.github/ISSUE_TEMPLATE/task.md:159",
+    "asynkron__protoactor-dotnet-1909:.github/ISSUE_TEMPLATE/feature_request.md:78"
+   ]
+  },
+  ".md excluded-dir:docs": {
+   "n": 2,
+   "ex": [
+    "accenture__sfmc-devtools-1974:docs/dist/considerations.md:2043",
+    "callstack__react-native-paper-972:docs/pages/6.contributing.md:52"
+   ]
+  },
+  ".js excluded-dir:doc": {
+   "n": 2,
+   "ex": [
+    "bfgroup__b2-113:doc/src/hljs/highlight.min.js:13988",
+    "bfgroup__b2-259:doc/src/hljs/highlight.min.js:13988"
+   ]
+  },
+  ".exs other": {
+   "n": 1,
+   "ex": [
+    "absinthe-graphql__absinthe-998:config/dev.exs:15"
+   ]
+  },
+  ".md excluded-dir:generated": {
+   "n": 1,
+   "ex": [
+    "apigee__registry-961:cmd/registry/cmd/rpc/generated/README.md:105"
+   ]
+  },
+  ".cs empty-file": {
+   "n": 1,
+   "ex": [
+    "asynkron__protoactor-dotnet-1909:src/Proto.Persistence.DynamoDB/DynamoDBHelper.cs:0"
+   ]
+  },
+  ".js excluded-dir:dist": {
+   "n": 1,
+   "ex": [
+    "aws-actions__configure-aws-credentials-42:dist/index.js:5239473"
+   ]
+  },
+  ".md empty-file": {
+   "n": 1,
+   "ex": [
+    "gitbookio__markup-it-56:test/from-markdown/empty/input.md:0"
+   ]
+  },
+  ".js other": {
+   "n": 1,
+   "ex": [
+    "mathnet__mathnet-numerics-1072:tools/docu/templates/js/jquery-1.3.2.min.js:57254"
+   ]
+  },
+  ".js excluded-dir:fixtures": {
+   "n": 1,
+   "ex": [
+    "protofire__solhint-224:test/fixtures/security/send-result-ignored.js:31"
+   ]
+  }
+ },
+ "grep_then_read": {
+  "codex/sweet": {
+   "rollouts": 66,
+   "greps_with_hits": 178,
+   "grep_then_read_of_hit_file_within2": 96,
+   "per_rollout": 1.45,
+   "definition_shaped_greps_with_hits": 25,
+   "defn_then_read_hit": 19
+  },
+  "codex/native": {
+   "rollouts": 66,
+   "greps_with_hits": 238,
+   "grep_then_read_of_hit_file_within2": 131,
+   "per_rollout": 1.98,
+   "definition_shaped_greps_with_hits": 59,
+   "defn_then_read_hit": 38
+  },
+  "opencode/sweet": {
+   "rollouts": 66,
+   "greps_with_hits": 178,
+   "grep_then_read_of_hit_file_within2": 99,
+   "per_rollout": 1.5,
+   "definition_shaped_greps_with_hits": 21,
+   "defn_then_read_hit": 9
+  },
+  "opencode/native": {
+   "rollouts": 66,
+   "greps_with_hits": 0,
+   "grep_then_read_of_hit_file_within2": 0,
+   "per_rollout": 0.0,
+   "definition_shaped_greps_with_hits": 0,
+   "defn_then_read_hit": 0
+  },
+  "claude-code/sweet": {
+   "rollouts": 66,
+   "greps_with_hits": 228,
+   "grep_then_read_of_hit_file_within2": 99,
+   "per_rollout": 1.5,
+   "definition_shaped_greps_with_hits": 23,
+   "defn_then_read_hit": 14
+  },
+  "claude-code/native": {
+   "rollouts": 66,
+   "greps_with_hits": 163,
+   "grep_then_read_of_hit_file_within2": 89,
+   "per_rollout": 1.35,
+   "definition_shaped_greps_with_hits": 29,
+   "defn_then_read_hit": 21
+  }
+ },
+ "awslabs_test_read_by_outcome": {
+  "codex/sweet/rep0": {
+   "resolved": true,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "codex/sweet/rep1": {
+   "resolved": false,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "codex/sweet/rep2": {
+   "resolved": false,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "codex/native/rep0": {
+   "resolved": true,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "codex/native/rep1": {
+   "resolved": true,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "codex/native/rep2": {
+   "resolved": true,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "opencode/native/rep0": {
+   "resolved": false,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "opencode/native/rep1": {
+   "resolved": true,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "opencode/native/rep2": {
+   "resolved": true,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "opencode/sweet/rep0": {
+   "resolved": true,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "opencode/sweet/rep1": {
+   "resolved": true,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "opencode/sweet/rep2": {
+   "resolved": true,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "claude-code/sweet/rep0": {
+   "resolved": true,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "claude-code/sweet/rep1": {
+   "resolved": true,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "claude-code/sweet/rep2": {
+   "resolved": true,
+   "read_context_test_before_edit": false,
+   "read_any_test_before_edit": false
+  },
+  "claude-code/native/rep0": {
+   "resolved": true,
+   "read_context_test_before_edit": false,
+   "read_any_test_before_edit": false
+  },
+  "claude-code/native/rep1": {
+   "resolved": true,
+   "read_context_test_before_edit": true,
+   "read_any_test_before_edit": true
+  },
+  "claude-code/native/rep2": {
+   "resolved": false,
+   "read_context_test_before_edit": false,
+   "read_any_test_before_edit": true
+  }
+ },
+ "ss_read_symbols_header": {
+  "codex/no symbols header": 542,
+  "opencode/no symbols header": 438,
+  "claude-code/no symbols header": 429
+ }
+}

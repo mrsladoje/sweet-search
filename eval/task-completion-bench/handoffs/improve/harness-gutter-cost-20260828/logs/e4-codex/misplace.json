@@ -1,0 +1,78 @@
+{
+ "stats": {
+  "TAB": {
+   "cited": 68,
+   "consistent": 65,
+   "inconsistent": 3
+  },
+  "native": {
+   "cited": 69,
+   "consistent": 69
+  },
+  "NONE": {
+   "cited": 74,
+   "consistent": 74
+  },
+  "PIPE": {
+   "cited": 82,
+   "consistent": 82
+  }
+ },
+ "cases": [
+  {
+   "rollout": "accenture__sfmc-devtools-1974/TAB/rep1",
+   "arm": "TAB",
+   "resolved": false,
+   "file": "lib/index.js",
+   "citedLine": 1743,
+   "hunks": [
+    [
+     1593,
+     1608
+    ]
+   ]
+  },
+  {
+   "rollout": "aws-actions__configure-aws-credentials-42/TAB/rep1",
+   "arm": "TAB",
+   "resolved": true,
+   "file": "dist/index.js",
+   "citedLine": 97,
+   "hunks": [
+    [
+     221,
+     238
+    ],
+    [
+     272,
+     280
+    ],
+    [
+     35001,
+     35005
+    ]
+   ]
+  },
+  {
+   "rollout": "aws-actions__configure-aws-credentials-42/TAB/rep1",
+   "arm": "TAB",
+   "resolved": true,
+   "file": "dist/index.js",
+   "citedLine": 102,
+   "hunks": [
+    [
+     221,
+     238
+    ],
+    [
+     272,
+     280
+    ],
+    [
+     35001,
+     35005
+    ]
+   ]
+  }
+ ]
+}

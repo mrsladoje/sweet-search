@@ -1,0 +1,71 @@
+sweet claude tab calls loaded: 1971  side=490  main=1481
+
+=== (1) worktree-scoped ss-* calls in sweet subagents, tab run ===
+total worktree-scoped ss calls: 71 {'usage': 13, 'zero': 45, 'other': 13}
+by tool x outcome: {('ss-grep', 'usage'): 8, ('ss-grep', 'zero'): 44, ('ss-find', 'usage'): 5, ('ss-find', 'other'): 13, ('ss-find', 'zero'): 1}
+scope is the worktree root itself (True) vs a subpath (False): {True: 44, False: 27}
+   ('asynkron__protoactor-dotnet-1909', 1) {'usage': 1, 'zero': 5}
+   ('bfgroup__b2-113', 1) {'zero': 12, 'usage': 1}
+   ('bfgroup__b2-113', 2) {'zero': 5, 'usage': 3}
+   ('bfgroup__b2-259', 0) {'other': 12, 'usage': 6, 'zero': 12}
+   ('final-form__final-form-64', 2) {'other': 1, 'zero': 11, 'usage': 2}
+
+=== (1b) ANY absolute --in / positional path NOT under a worktree, in sweet arm (main+side): outcome ===
+{}
+
+=== (1c) 'no Sweet Search index' anywhere in sweet-arm outputs ===
+0
+
+=== (2) native retrieval ops in sweet subagents: total vs downstream of worktree zeros ===
+all subagent native retrieval: ops=40 tok=68,860 reqs=31 -> $0.0425 total = $0.000644/rollout = 3.11% of cell
+in subagents that had >=1 worktree zero/usage: ops=19 tok=43,081 reqs=16 -> 1.77% of cell
+  of which BEFORE the first worktree zero: ops=13 tok=25,891
+after the first worktree zero (same subagent): ops=6 tok=17,190 reqs=6 -> $0.000142/rollout = 0.69% of cell
+within 3 calls after a worktree zero: ops=3 tok=11,370 reqs=3 -> $0.000084/rollout = 0.40% of cell
+
+per subagent: task rep agent calls wtZeroOrUsage natOps natTok natOpsAfter natTokAfter natOpsW3 natTokW3
+   asynkron__protoactor-dotnet-1909 1 2b6fd5e0-6cc1-49cd-a9d2- 32 6 6 18103 0 0 0 0
+   awslabs__aws-embedded-metrics-node-21 0 f6d0427f-f063-4441-83bd- 26 0 6 3736 0 0 0 0
+   awslabs__aws-embedded-metrics-node-21 2 747e66eb-60e7-4b8f-b32a- 32 0 7 3519 0 0 0 0
+   bfgroup__b2-113 1 47129fb0-de9c-445c-99a9- 63 13 5 4776 2 1827 2 1827
+   bfgroup__b2-113 2 565a2ec6-68e0-4b8f-ad0f- 66 8 3 4980 2 2094 0 0
+   bfgroup__b2-259 0 dd934da6-fca2-4064-b8ac- 179 18 1 119 0 0 0 0
+   bfgroup__b2-259 1 d39f6feb-3cfe-4923-89aa- 39 0 8 18524 0 0 0 0
+   fastify__fastify-cors-285 0 05b1eb42-cbbd-431e-96a9- 17 0 0 0 0 0 0 0
+   final-form__final-form-64 2 271d31a9-23df-42cf-862e- 36 13 4 15103 2 13269 1 9543
+
+=== (2b) native retrieval ops in wz-subagents by cap, before vs after first worktree zero ===
+   ('glob', 'after') 2
+   ('glob', 'before') 6
+   ('grep.regex', 'after') 3
+   ('grep.regex', 'before') 2
+   ('list', 'after') 1
+   ('list', 'before') 5
+
+=== (3) same-pattern unscoped re-run after a worktree zero, per subagent ===
+   asynkron__protoactor-dotnet-1909 rep 1 2b6fd5e0-6cc1-49cd-a9d2- unique zero patterns: 5 {'not-rerun': 5}
+   bfgroup__b2-113 rep 1 47129fb0-de9c-445c-99a9- unique zero patterns: 10 {'not-rerun': 10}
+   bfgroup__b2-259 rep 0 dd934da6-fca2-4064-b8ac- unique zero patterns: 11 {'not-rerun': 5, 'hit': 5, 'other': 1}
+   bfgroup__b2-113 rep 2 565a2ec6-68e0-4b8f-ad0f- unique zero patterns: 5 {'zero': 1, 'not-rerun': 1, 'hit': 3}
+   final-form__final-form-64 rep 2 271d31a9-23df-42cf-862e- unique zero patterns: 8 {'not-rerun': 8}
+total: {'not-rerun': 29, 'hit': 8, 'other': 1, 'zero': 1}
+
+=== (3b) unique worktree-zero patterns per task (for the golden replay; pattern text shown as agent typed it) ===
+   asynkron__protoactor-dotnet-1909 5 unique patterns; 5 zero calls
+   bfgroup__b2-113 14 unique patterns; 17 zero calls
+   bfgroup__b2-259 11 unique patterns; 12 zero calls
+   final-form__final-form-64 8 unique patterns; 11 zero calls
+
+=== (4) hit path form: first path stem of a successful unscoped ss-grep in a subagent ===
+   awslabs__aws-embedded-metrics-node-21 rep 0 path form: relative e.g. examples/...
+
+=== (5) the 9 delegating rollouts: which had worktree zeros ===
+   ('asynkron__protoactor-dotnet-1909', 1) worktree zero+usage: 6
+   ('awslabs__aws-embedded-metrics-node-21', 0) worktree zero+usage: 0
+   ('awslabs__aws-embedded-metrics-node-21', 2) worktree zero+usage: 0
+   ('bfgroup__b2-113', 1) worktree zero+usage: 13
+   ('bfgroup__b2-113', 2) worktree zero+usage: 8
+   ('bfgroup__b2-259', 0) worktree zero+usage: 18
+   ('bfgroup__b2-259', 1) worktree zero+usage: 0
+   ('fastify__fastify-cors-285', 0) worktree zero+usage: 0
+   ('final-form__final-form-64', 2) worktree zero+usage: 13
