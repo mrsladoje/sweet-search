@@ -1,0 +1,23 @@
+task                                          jam  srcBuild  bundlesIn  gitattr   VERDICT
+getmoto__moto-6716                             0         0          0        0   no change
+python-markdown__markdown-1294                 0         0          0      360   no change
+mirumee__ariadne-codegen-223                   0         0          0        0   no change
+projectlombok__lombok-3619                     0         0         14        0   REBUILD
+squashql__squashql-295                         0         0          1        0   REBUILD
+eclipse-ee4j__yasson-395                       0         0          0        0   no change
+gleam-lang__gleam-3458                         0        13          1        2   REBUILD
+rust-analyzer__rust-analyzer-2616              0         0          0        0   no change
+raphlinus__pulldown-cmark-754                  0         0          0        0   no change
+maxgraph__maxgraph-365                         0         0          1        0   REBUILD
+vazco__uniforms-787                            0         0          0        0   no change
+firebase__firebase-tools-2933                  0         2          0        0   REBUILD
+joshuakgoldberg__bingo-271                     0        21          0        0   REBUILD
+rokucommunity__brighterscript-1050             0         0          0        0   no change
+yargs__yargs-1422                              0         0          0        0   no change
+singapore__renovate-1153                       0         0          0        0   no change
+chaijs__chai-990                               0         0          0        0   no change
+jensneuse__graphql-go-tools-174                0         0          1        0   REBUILD
+sqlkata__querybuilder-557                      0         0          0        0   no change
+intel__rohd-458                                0         0          0        0   no change
+
+7 of 20 goldens need a rebuild: projectlombok__lombok-3619, squashql__squashql-295, gleam-lang__gleam-3458, maxgraph__maxgraph-365, firebase__firebase-tools-2933, joshuakgoldberg__bingo-271, jensneuse__graphql-go-tools-174
