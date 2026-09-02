@@ -1,0 +1,17 @@
+grader logs scanned: 284 across 12 run(s), 22 task(s)
+
+task                                          logs  old-INFRA  new-INFRA  flipped
+accenture__sfmc-devtools-1974                  15         15          0       15
+
+every distinct "Could not resolve" form in the corpus (digits normalised to N):
+  not infra  x  30  accenture__sfmc-devtools-1974
+              Could not resolve ID of asset N: structuredClone is not defined
+  not infra  x  15  accenture__sfmc-devtools-1974
+              Could not resolve ID of asset -N: structuredClone is not defined
+
+logs reclassified OUT of INFRA: 15
+logs reclassified INTO INFRA (must be 0 — the fix only narrows): 0
+
+accenture__sfmc-devtools-1974: 15 log(s); old INFRA 15, new INFRA 0
+
+ACCEPTANCE PASS — accenture no longer classifies INFRA and nothing became INFRA that was not already

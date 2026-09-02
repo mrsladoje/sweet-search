@@ -23,7 +23,7 @@ import path from 'node:path';
 import {
   extractFailureSignatures, diffFailureSets, renderBaselineDiff,
   buildAuthorityBanner, applyTestPattern,
-  buildUnresolvedIdentifierWarning, buildRunTestsFooter,
+  buildUnresolvedIdentifierWarning, buildRunTestsFooter, NETWORK_ERROR_ERE,
 } from './rt-condense-lib.mjs';
 import {
   RT_DEDUP_ON, parseRunTestsArgv, untrackedFingerprint, computeStateKey,
@@ -42,8 +42,14 @@ import { CodeGraphRepository } from '../../../core/infrastructure/code-graph-rep
 // plenary/busted (`Fail\t||\t<test>`, `Failed :\tN`) and qunit-cli (`✖ <test>`). The
 // zero-count filter grew the matching green forms so a passing summary is still
 // never promoted. Kept in step with FAILURE_INDICATOR_RE / FAILURE_NEGATIVE_RE.
+//
+// 2026-09-02: the banner's own grep is a SECOND path to status=INFRA, because the banner
+// text it prints matches INFRA_ERROR_RE's `NETWORK UNAVAILABLE` alternative. Anchoring the
+// classifier alone would have left this one firing, so both read the same alternation from
+// NETWORK_ERROR_ERE. `grep -E` has no non-capturing groups, which is why that constant is
+// written ERE-safe.
 export const RT_CONDENSE =
-  "grep -qaE 'Could not resolve|Temporary failure in name resolution|Network is unreachable' /tmp/__rt_out && " +
+  `grep -qaE '${NETWORK_ERROR_ERE}' /tmp/__rt_out && ` +
   "echo '[run_tests] NETWORK UNAVAILABLE in the test container (bench lockdown): dependency downloads cannot work; do not retry or debug the harness.'; " +
   "grep -aE '(FAILED|FAIL:|not ok |AssertionError|panicked at|[0-9]+ tests? failed|[Ee]rror:|error\\[|Fail[[:space:]]*\\|\\||Failed[[:space:]]*:[[:space:]]*[1-9]|✖)' /tmp/__rt_out | " +
   "grep -avE '(0 fail|failures?: 0|failed: 0|: 0 error|Failed[[:space:]]*:[[:space:]]*0|[0-9]+% tests passed)' | head -40; " +
