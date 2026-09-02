@@ -8,7 +8,10 @@ import {
   condenseOutput, extractFailureSignatures, diffFailureSets, renderBaselineDiff,
   buildAuthorityBanner, sanitizeTestPattern, applyTestPattern, normalizeFailureSignature,
   buildUnresolvedIdentifierWarning, extractAddedIdentifierReferences, buildRunTestsFooter,
+  INFRA_ERROR_RE, NETWORK_ERROR_ERE, COULD_NOT_RESOLVE_ERE,
 } from '../harness/rt-condense-lib.mjs';
+import { RT_CONDENSE } from '../harness/rt-shim-runtime.mjs';
+import { execFileSync } from 'node:child_process';
 
 let ok = true;
 const assert = (c, name) => { console.log((c ? '  ✓ ' : '  ✗ ') + name); if (!c) ok = false; };
@@ -344,6 +347,67 @@ console.log('== verdict repair: previously-working detections still work ==');
   for (const [name, line] of keep) {
     const n = extractFailureSignatures(line).sigs.size;
     assert(n >= 1 || name === 'mocha', `${name} failure still detected`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+console.log('== INFRA classification: "Could not resolve" is anchored to resolvers ==');
+{
+  // The false positive this anchoring exists to remove. accenture__sfmc-devtools-1974
+  // prints this as an APPLICATION log line; the bare alternative made the shim force
+  // status=INFRA, zero the baseline diff and print a "do not investigate" banner. Result:
+  // 0 of 104 run_tests calls trustworthy across 44 rollouts, 21 of which resolved blind.
+  // The suite had run offline to completion every time (mocha exit 233/234).
+  const accenture = 'Could not resolve ID of asset 12345 (assetType: templatebasedemail): structuredClone is not defined';
+  assert(!INFRA_ERROR_RE.test(accenture), 'the accenture application log line is NOT infra');
+
+  // Real resolver and package-manager forms must still classify as infra, or a genuinely
+  // networkless run gets graded as if its failures were the agent's.
+  const infra = [
+    ['curl/git host', 'curl: (6) Could not resolve host: registry.npmjs.org'],
+    ['ssh hostname', 'ssh: Could not resolve hostname github.com: Name or service not known'],
+    ['maven dependencies', '[ERROR] Failed to execute goal on project x: Could not resolve dependencies for project com.a:b:jar:1.0'],
+    ['npm dependency', 'npm ERR! Could not resolve dependency:'],
+    ['gradle files', "Could not resolve all files for configuration ':compileClasspath'."],
+    ['gradle artifacts', "Could not resolve all artifacts for configuration ':runtimeClasspath'."],
+    ['curl proxy', 'curl: (5) Could not resolve proxy: proxy.internal'],
+    ['glibc resolver', 'Temporary failure in name resolution'],
+    ['unreachable', 'connect: Network is unreachable'],
+    ['docker daemon', 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock'],
+    ['broker', 'no response from test broker'],
+  ];
+  for (const [name, line] of infra) assert(INFRA_ERROR_RE.test(line), `${name} IS infra`);
+
+  // Other bare "could not resolve" phrases from compilers and bundlers are ordinary build
+  // failures. Classifying them as infra would blind the agent the same way.
+  const notInfra = [
+    ['esbuild module', 'error: Could not resolve "./missing-module"'],
+    ['typescript type', "Could not resolve the path './types' with extensions"],
+    ['spring placeholder', 'Could not resolve placeholder \'db.url\' in value "${db.url}"'],
+    ['generic symbol', 'Could not resolve symbol: foo'],
+  ];
+  for (const [name, line] of notInfra) assert(!INFRA_ERROR_RE.test(line), `${name} is NOT infra`);
+
+  // The generated shim greps the SAME alternation. It is a second, independent path to
+  // status=INFRA, because the banner it prints matches INFRA_ERROR_RE's own
+  // "NETWORK UNAVAILABLE" alternative. If the two ever drift, anchoring the classifier
+  // achieves nothing. `grep -E` also has no non-capturing groups, so the constant must
+  // stay ERE-safe.
+  assert(RT_CONDENSE.includes(NETWORK_ERROR_ERE), 'the shim banner greps the shared alternation, not its own copy');
+  assert(!/\(\?[:=!]/.test(NETWORK_ERROR_ERE), 'the shared alternation is ERE-safe (no non-capturing groups)');
+  assert(NETWORK_ERROR_ERE.startsWith(COULD_NOT_RESOLVE_ERE), 'the resolver forms lead the network alternation');
+
+  // Prove it against a real `grep -E`, not just against the JS engine.
+  const grepMatches = (line) => {
+    try {
+      execFileSync('grep', ['-qaE', NETWORK_ERROR_ERE], { input: line + '\n' });
+      return true;
+    } catch { return false; }
+  };
+  assert(!grepMatches(accenture), 'real grep -E: the accenture line does not fire the banner');
+  for (const [name, line] of infra) {
+    if (/docker|broker/.test(name)) continue;   // banner covers network forms only
+    assert(grepMatches(line), `real grep -E: ${name} fires the banner`);
   }
 }
 

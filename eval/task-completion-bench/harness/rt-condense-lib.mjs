@@ -40,11 +40,36 @@ export const FAILURE_INDICATOR_RE =
 export const FAILURE_NEGATIVE_RE =
   /(0 fail|failures?: 0|failed: 0|: 0 error|0 error|no failures|all tests passed|0 failing|\bx?fail(?:ed|ures?)?\s*[:=|]?\s*0\b|\b0\s+(?:tests?\s+)?fail(?:ed|ures?)?\b|\b\d+%\s+tests\s+passed\b|\bxfail)/i;
 
+// "Could not resolve" is a NAME-RESOLUTION phrase only when a resolver or package
+// manager says it. Anchored 2026-09-02 after the bare alternative cost a whole task its
+// test signal: accenture__sfmc-devtools-1974 prints the application log line
+// "Could not resolve ID of asset ...: structuredClone is not defined", the shim forced
+// status=INFRA, and 0 of 104 run_tests calls across 44 rollouts were trustworthy — 21 of
+// those rollouts resolved blind. The suite had run to completion offline every time
+// (mocha exit 233/234 = its own failure count).
+//
+// The anchored forms, and who prints them: curl/git "could not resolve host|proxy",
+// ssh "could not resolve hostname", maven "Could not resolve dependencies for project",
+// npm "npm ERR! Could not resolve dependency:", gradle "Could not resolve all
+// files/artifacts/dependencies for configuration". Keep this list narrow: every widening
+// buys back the false positive it was written to remove.
+//
+// ERE-SAFE by construction — the generated shim greps the same alternation with `grep -E`,
+// which has no non-capturing groups. Keep it that way or the two classifiers drift and the
+// banner path re-forces INFRA on output the regex here has already cleared.
+export const COULD_NOT_RESOLVE_ERE =
+  'Could not resolve (host|hostname|proxy|dependency|dependencies|all dependencies|all files|all artifacts)';
+
+// Network markers shared by the in-container banner and the classifier below, in the order
+// the shim greps them.
+export const NETWORK_ERROR_ERE =
+  `${COULD_NOT_RESOLVE_ERE}|Temporary failure in name resolution|Network is unreachable`;
+
 // Infra / harness-error markers: when the CURRENT run is an infra failure (lockdown
 // network, broker timeout, docker error) rather than real test failures, baseline
 // labeling is suppressed entirely — those "failures" are not the agent's tests.
 export const INFRA_ERROR_RE =
-  /(NETWORK UNAVAILABLE|no response from test broker|\[run_tests exit=|Could not resolve|Temporary failure in name resolution|Network is unreachable|Cannot connect to the Docker daemon|docker: Error)/;
+  new RegExp(`(NETWORK UNAVAILABLE|no response from test broker|\\[run_tests exit=|${NETWORK_ERROR_ERE}|Cannot connect to the Docker daemon|docker: Error)`);
 
 // Aggregate SUMMARY-count lines ("2 tests failed", "Failures: 1", "1 failed, 600
 // passed"). These are useful to PROMOTE in the condenser (they carry the count) but
