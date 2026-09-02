@@ -264,6 +264,97 @@ codex leg; if it is still dead, run the other two and say the codex leg did not 
 
 ---
 
+---
+
+## 9A. Pre-launch amendment, 2026-09-02 21:0x UTC — command corrections only
+
+Written **before the first rollout**. Nothing about the population, the outcomes, the bars or
+the stop rules changes; every edit below is to the *launch command* in §9, and each was
+verified against `/root/fresh-driver.sh` (the driver that produced the fresh pool) or against
+the harness source. The driver actually used is `/root/smoke20-driver.sh`.
+
+| # | §9 as written | corrected to | why |
+|---|---|---|---|
+| 1 | `HARNESS=claude-code` | `HARNESS=claudecode` | run-pilot's routing name. `claude-code` matches no branch and would fall through to `bareapi`, the retired 60-call loop. |
+| 2 | (absent) | `PROVIDER=openrouter` | run-pilot defaults `PROVIDER=deepseek`. The field is written into every row and drives cost attribution. The fresh pool's rows read `provider=openrouter`. |
+| 3 | (absent) | `REASONING=medium` | run-pilot defaults `standard`. The fresh pool ran `medium`; leaving it out changes the model's reasoning setting between the two pools. |
+| 4 | (absent) | `SS_DERIVED_BACKUP=/mnt/benchvol/tar-vault` | the docker-save tar vault moved off `/workspace`. Six of the 20 use a prep-warmed image; without this the env-ledger records `infra/derived-image-missing` for all six and the run refuses to launch. Measured: the first sweep pass failed exactly these six. |
+| 5 | `--out /root/env-ledger/luna-smoke20-v5` | unchanged | ledger version as named. |
+
+Also fixed on the box, not in the command: the deployed tree at `/root/sweet-search-private`
+carried **none** of the eleven fixes (no `core/search/gutter-form.js`, no
+`--append-subagent-system-prompt`, the pre-F4 `INFRA_ERROR_RE`). It was rsynced from the Mac
+at `b669674` before the sweep, so the sweep and the run share one harness. Dependencies were
+byte-identical, so no `npm install` was needed. The rsync ran **without `--delete`**, which
+would have removed box-local task caches including `tasks_full_luna_rotate20.json`.
+
+### 9A.1 Stop rules, checked before launch
+
+| rule | verdict |
+|---|---|
+| 1 — green ledger on the new fingerprint | **PASS.** Swept on the deployed post-F4 harness: 20 of 20 `gold-valid`, every row carrying a `configHash`. `preflightEnvLedger` re-run offline exactly as run-pilot runs it (transient `docker load` per warmed image, then `rmi`): **GREEN, all 20**. |
+| 2 — no golden carrying a pre-2026-08-28 index where one was needed | **PASS.** All 7 rebuilt 2026-09-02, pushed checksum-verified, and stamped. The other 13 keep their 2026-07 index by the rule (their admitted file set does not move). |
+| 3 — codex authentication dead on the box | **DOES NOT FIRE.** The box's `~/.codex/auth.json` id_token did expire on 2026-08-06, but that token is only used when `CODEX_SUBSCRIPTION=1`. This run leaves it unset, so `codex exec` routes through `model_provider="openrouter"` with `OPENROUTER_API_KEY`, which was live-checked against the OpenRouter key endpoint from the box. The codex leg runs. |
+| 4 — trustworthy-verdict census, >4 of 20 flagged | post-run, as stated. |
+
+### 9A.2 Goldens: rebuilt on the Mac, not on RunPod, and pinned to the box's encoder
+
+Owner instruction, 2026-09-02: rebuild locally on the M3 Max rather than spinning up RunPod.
+
+The indexer was forced onto the **ORT INT8 CPU** path
+(`SWEET_SEARCH_NATIVE_INFERENCE=0`, `SWEET_SEARCH_COREML_CASCADE=0`; the log line reads
+`No inference accelerator detected — indexing on ORT INT8 CPU`, `backend: cpu, quantized: q8`).
+This is not a performance choice, it is a correctness one. The 13 reused goldens were built on
+the box's ORT INT8 path, and every query the agent issues at run time is embedded on that same
+path. Letting the Mac use its CoreML/candle FP32 route would have encoded the documents of 7 of
+20 tasks with a different model precision from the queries that search them — an uncontrolled
+retrieval difference on a third of the pool. The cost of parity was wall-clock only:
+**90 minutes for all seven, serial, one repository at a time.**
+
+Acceptance, measured on the rebuilt indexes rather than asserted:
+
+| golden | committed bundles left in index | build-dir sources admitted | indexed files before → after | build |
+|---|---:|---|---:|---|
+| `projectlombok__lombok` | 0 (was 14) | 0/0 | 2004 → 2004 | 22m52s |
+| `squashql__squashql` | 0 (was 1) | 0/0 | 485 → 485 | 6m47s |
+| `gleam-lang__gleam` | 0 (was 1) | **11/11** | 362 → 448 | 13m28s |
+| `maxGraph__maxGraph` | 0 (was 1) | 0/0 | 421 → 420 | 26m13s |
+| `firebase__firebase-tools` | 0 | **2/2** | 518 → 520 | 7m48s |
+| `JoshuaKGoldberg__bingo` | 0 | **21/21** | 335 → 356 | 1m57s |
+| `jensneuse__graphql-go-tools` | 0 (was 1) | 0/0 | 151 → 150 | 10m44s |
+
+Two `packages.toml` files under gleam's `test/*/build/packages/` are 11 bytes each and stay
+out; they carry no content. Every one of the seven **git tree hashes is unchanged** — the
+rebuild moved the index and nothing else, asserted before the push, and the push was
+`--verify`'d against a per-file sha256 manifest on the box.
+
+`golden-rebuild-need.mjs` re-reports non-zero `srcBuild` for gleam, firebase and bingo after
+the rebuild. That is a property of the **tree** under the current policy, not of the index, so
+a reindex cannot clear it; the script is a pre-rebuild selector and its verdict column should
+not be read as a post-rebuild acceptance. The acceptance used here is index **membership**,
+the table above.
+
+Each rebuilt golden carries an index-build stamp at
+`~/.ss-eval/golden/.provenance-index/<key>.json` (engine version and commit, backend and the
+env that forced it, indexer arguments, host, golden tree hash, per-artifact sizes), shipped to
+the box alongside the golden. Base-commit provenance is still **unstamped** for all 20, exactly
+as before: these goldens predate `golden-provenance.mjs` and their history was destroyed by
+fresh-init, so the stamp is not recoverable without a re-clone. Rebuilding from the vault tree
+rather than a fresh clone was deliberate — it keeps the seven trees bit-identical to the
+thirteen they sit beside.
+
+### 9A.3 Deviation to record: the three legs overlap
+
+The fresh pool ran its three harness legs back to back. This run staggers them 20 minutes apart
+and lets them overlap, because three sequential legs at this pool's size is roughly 30 hours.
+Each leg still runs `CONCURRENCY=1`. Wall-clock is not a pre-registered outcome and token counts
+do not depend on machine load, but a loaded box can push a slow rollout into the 30-minute
+hang-guard, and the sweet arm carries an extra index server per rollout, so the risk is not
+perfectly symmetric. Check `exitReason` for timeout-driven exits before reading the solve
+column, and say so in the report.
+
+---
+
 ## 10. Launch checklist
 
 - [x] Gutter commit landed; F1–F11 landed as separate commits with tests
@@ -282,9 +373,9 @@ codex leg; if it is still dead, run the other two and say the codex leg did not 
 - [x] Register rows filed (F11)
 - [x] Goldens: all 20 present on the box and in the vault, with `.git` and an index
 - [x] The 20 screened clean and stamped not name-locked
-- [ ] **New ledger version named and swept** for the 20 on the new fingerprint
-- [ ] **Seven goldens rebuilt on RunPod and stamped**, then pushed to the box
+- [x] **New ledger version named and swept** — `luna-smoke20-v5`, 20/20 gold-valid, preflight GREEN (§9A.1)
+- [x] **Seven goldens rebuilt (M3 Max, ORT INT8 CPU) and stamped**, pushed checksum-verified (§9A.2)
 - [ ] Trustworthy-verdict census run on the smoke's own rows (≤ 4 of 20 flagged) — post-run
       stop rule, cannot run before launch
 
-The two unticked build items and the post-run census are the owner's, not this session's.
+The two build items are done (§9A). The post-run census is the only item left, and it cannot run before rollouts exist.
