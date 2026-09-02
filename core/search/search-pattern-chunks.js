@@ -317,10 +317,66 @@ export function getChunkLocationMap() {
   ) {
     return this._chunkLocationMap;
   }
-  this._chunkLocationMap = buildChunkLocationMap(this.lateInteractionIndex);
+  let map = buildChunkLocationMap(this.lateInteractionIndex);
+  // An index whose late-interaction documents carry no line spans yields an empty map.
+  // `ss-find` used to THROW there ("Re-index with late interaction enabled"), which is a
+  // crash the agent cannot act on: the index it was handed is the only one it has. The
+  // codebase vector rows carry the same spans in their own metadata, and their ids are the
+  // same chunk ids, so the map can be rebuilt from them — ranking included.
+  if (map.size === 0 && currentSize > 0) {
+    const fallback = buildCodebaseChunkLocationMap(this);
+    if (fallback && fallback.size > 0) map = fallback;
+  }
+  this._chunkLocationMap = map;
   this._chunkLocationMapSize = currentSize;
   this._chunkLocationMapIndex = this.lateInteractionIndex;
   return this._chunkLocationMap;
+}
+
+/**
+ * Chunk spans rebuilt from the codebase vector rows: same shape as
+ * `buildChunkLocationMap`, same chunk ids, sourced from `vectors.metadata` instead of the
+ * late-interaction documents. Returns null when the database is absent or unreadable.
+ */
+export function buildCodebaseChunkLocationMap(searcher) {
+  if (!searcher?.codebaseRepo) return null;
+  if (searcher._codebaseChunkLocationMap) return searcher._codebaseChunkLocationMap;
+
+  const map = new Map();
+  try {
+    for (const row of searcher.codebaseRepo.iterateVectors()) {
+      if (!row.file_path || !row.id) continue;
+      let metadata;
+      try { metadata = JSON.parse(row.metadata || '{}'); } catch { continue; }
+      if (metadata.startLine == null || metadata.endLine == null) continue;
+
+      let bucket = map.get(row.file_path);
+      if (!bucket) { bucket = []; map.set(row.file_path, bucket); }
+      bucket.push({
+        startLine: metadata.startLine,
+        endLine: metadata.endLine,
+        id: row.id,
+        type: metadata.type || null,
+        name: metadata.name || null,
+      });
+    }
+  } catch {
+    return null;   // no database, or unreadable — the caller degrades, it does not crash
+  }
+
+  // Same sort + running max the LI-derived map builds, so findChunkIntervalForLine's
+  // binary search behaves identically on either source.
+  for (const bucket of map.values()) {
+    bucket.sort((a, b) => a.startLine - b.startLine);
+    let maxEnd = -Infinity;
+    for (const interval of bucket) {
+      maxEnd = Math.max(maxEnd, interval.endLine);
+      interval._maxEndSoFar = maxEnd;
+    }
+  }
+
+  searcher._codebaseChunkLocationMap = map;
+  return map;
 }
 
 export function getCodebaseChunkTypeMap(searcher) {
