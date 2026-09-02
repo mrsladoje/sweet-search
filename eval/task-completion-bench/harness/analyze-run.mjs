@@ -251,6 +251,154 @@ for (const [label, stratum] of [
 console.log('');
 }
 
+
+// ---- claude-code ledger disclosures (F3 / slate C §4.1) ----------------------------------
+// Every claude-code cost figure on this bench is a CONSTRUCTION choice, not a reading. Seven
+// constructions of the same 132-row run span -8.8% to +1.9%. So no claude-code number is
+// printed here without the four facts that decide how to read it: which construction it is,
+// how many rows have no inclusive cost at all, that the native total is a LOWER bound, and
+// that a harness defect sat asymmetrically on the native arm. None of this changes a number.
+const VECTORS = [
+  // Ratios to the input rate: w = cache write, r = cache read, o = output. Named in
+  // verify/c14-measurability.md R4 and SLATE-C-UBER.md §0.2.
+  { id: 'luna-as-shipped', label: 'luna as shipped (the ledger)', w: 1.25, r: 0.10, o: 6.0 },
+  { id: 'luna-no-write-surcharge', label: 'luna, no cache-write surcharge (pre-2026-09-02 basis)', w: 1.00, r: 0.10, o: 6.0 },
+  { id: 'opus5-5m', label: 'Opus 5 five-minute cache (API-key real-user path)', w: 1.25, r: 0.10, o: 5.0 },
+  { id: 'opus5-1h', label: 'Opus 5 one-hour cache (subscription, plan-usage consumption)', w: 2.00, r: 0.10, o: 5.0 },
+  { id: 'fable51-5m', label: 'Fable-5.1-like five-minute cache', w: 1.25, r: 0.025, o: 5.0 },
+];
+
+// Reprice one row's recorded aggregate usage under a vector. Aggregate-only by design: it is
+// the one basis reproducible from rows.json alone, so a reader can re-derive every number
+// below without the transcripts, which do not outlive the run.
+function repriceUsage(usage, v) {
+  if (!usage) return null;
+  const fresh = usage.input_tokens ?? null;
+  const write = usage.cache_creation_input_tokens ?? null;
+  const read = usage.cache_read_input_tokens ?? null;
+  const out = usage.output_tokens ?? null;
+  if ([fresh, write, read, out].some(x => x == null)) return null;
+  // Unit input rate: the vector is scale-free, so the ratio between arms is all that is read.
+  return fresh + write * v.w + read * v.r + out * v.o;
+}
+
+function taskMeans(rows, arm, valueOf) {
+  const byTask = new Map();
+  for (const r of rows) {
+    if (r.arm !== arm) continue;
+    const val = valueOf(r);
+    if (!Number.isFinite(val)) continue;
+    if (!byTask.has(r.taskId)) byTask.set(r.taskId, []);
+    byTask.get(r.taskId).push(val);
+  }
+  const out = new Map();
+  for (const [t, vals] of byTask) out.set(t, mean(vals));
+  return out;
+}
+
+// Paired task bootstrap on the aggregate percentage, same estimator and seed discipline as
+// pairedBoot above. Printed with every point estimate, because on this run the interval is
+// 47 points wide and a 2-point repricing move cannot decide anything inside it.
+function bootPct(tasks, nat, sw, seed) {
+  const rng = mulberry32(seed);
+  const pcts = [];
+  for (let b = 0; b < B; b++) {
+    let sn = 0, ss = 0;
+    for (let i = 0; i < tasks.length; i++) {
+      const t = tasks[(rng() * tasks.length) | 0];
+      sn += nat.get(t); ss += sw.get(t);
+    }
+    pcts.push(sn ? 100 * (ss - sn) / sn : 0);
+  }
+  pcts.sort((a, b) => a - b);
+  const q = p => pcts[Math.min(pcts.length - 1, Math.max(0, Math.floor(p * pcts.length)))];
+  return [q(0.025), q(0.975)];
+}
+
+// The runner writes `claudecode`; report text, run ids and the register all say `claude-code`.
+// Match both, or the disclosures silently never print on the runs that need them most.
+const isClaudeCode = r => /^claude-?code$/.test(String(r.harness || ''));
+
+function claudeCodeDisclosures(rows) {
+  const cc = rows.filter(isClaudeCode);
+  if (!cc.length) return;
+  console.log(`\n${'='.repeat(78)}`);
+  console.log('CLAUDE-CODE LEDGER DISCLOSURES — read every claude-code figure above through these');
+  console.log('='.repeat(78));
+
+  // 1. Construction. Which column the headline actually summed.
+  const inclusive = cc.filter(r => Number.isFinite(r.costRealizedUsd)).length;
+  const mainOnly = cc.filter(r => Number.isFinite(r.costRealizedMainOnlyUsd)).length;
+  console.log('  construction: ROW-MATCHED — every recorded row priced from the transcript the harness graded.');
+  console.log('    The published fresh-pool figure used "dearest-3" instead: the three dearest transcripts');
+  console.log('    per cell, substituting 12 discarded degeneration re-runs. On the same run row-matched');
+  console.log('    reads -8.8% and dearest-3 reads -3.9%; both are the same data. Never compare across them.');
+  console.log(`    rows with an inclusive cost: ${inclusive}/${cc.length}   rows with a main-only cost: ${mainOnly}/${cc.length}`);
+
+  // 2. Null rows, per arm. A null summed as zero is the one error a cost bench must not make,
+  //    so the columns fail closed and the count is the disclosure.
+  for (const arm of [...new Set(cc.map(r => r.arm).filter(Boolean))].sort()) {
+    const armRows = cc.filter(r => r.arm === arm);
+    const nulls = armRows.filter(r => !Number.isFinite(r.costRealizedUsd));
+    const incomplete = armRows.filter(r => r.sidechainAccountingComplete === false);
+    console.log(`  ${arm}: ${nulls.length}/${armRows.length} row(s) have NO inclusive cost`
+      + ` (${incomplete.length} with an incomplete delegated transcript).`);
+  }
+
+  // 3. Lower bound. Delegated requests that carry no usage record at all are billed work the
+  //    ledger cannot see, and native delegates far more than sweet, so the native total is
+  //    understated by more than sweet's.
+  const missing = cc.map(r => r.sidechainMissingRequests).filter(Number.isFinite);
+  const missingTotal = missing.reduce((a, b) => a + b, 0);
+  const sideCount = cc.reduce((a, r) => a + (r.sidechainCount || 0), 0);
+  console.log(`  LOWER BOUND: the native inclusive cost is a floor, not a total. ${sideCount} delegated`);
+  console.log(missing.length
+    ? `    transcript(s) recorded; ${missingTotal} delegated request(s) carry no usage record (${missing.length}/${cc.length} rows instrumented).`
+    : '    transcript(s) recorded; this run predates the sidechainMissingRequests counter, so the'
+      + '\n    count is unavailable here. On the fresh pool it was 205 delegated requests (register G6).');
+
+  // 4. The pages asymmetry. A harness defect, not agent behaviour, and it sat on native.
+  const repaired = cc.every(r => r.readPagesSubagentNote === true);
+  console.log('  `pages` ASYMMETRY: native Read calls failed on an empty `pages` argument 159 of 690');
+  console.log('    times (23.0%) against sweet 23 of 51, wasting 92 native requests per 66 rollouts against');
+  console.log('    sweet 23. That is a harness defect sitting on the arm that uses Read more, so it');
+  console.log('    flattered sweet. Repaired 2026-09-02 by sending the note to both arms\' subagents');
+  console.log('    (--append-subagent-system-prompt, byte-identical). Any native improvement from it is a');
+  console.log('    repair of our own defect and is NEVER a sweet regression.');
+  console.log(`    this run: ${repaired ? 'carries the subagent-note repair' : 'PRE-REPAIR or unlabelled — re-measure the failed-`pages` count per arm from the subagent transcripts'}`);
+
+  // 5. One sensitivity row, five price vectors, each with its interval.
+  const arms = new Set(cc.map(r => r.arm));
+  if (!arms.has('native') || !arms.has('sweet')) {
+    console.log('  price-vector sensitivity: unavailable (both arms are not present)');
+    console.log('='.repeat(78));
+    return;
+  }
+  console.log('\n  PRICE-VECTOR SENSITIVITY (sweet minus native, aggregate recorded `usage`, per task).');
+  console.log('    Ratios are to the input rate: w = cache write, r = cache read, o = output. Repriced from');
+  console.log('    rows.json alone, so every row here is re-derivable without the transcripts.');
+  console.log('    Every figure is a point estimate inside its own interval; none is a detection.');
+  let printed = 0;
+  for (const v of VECTORS) {
+    const nat = taskMeans(cc, 'native', r => repriceUsage(r.usage, v));
+    const sw = taskMeans(cc, 'sweet', r => repriceUsage(r.usage, v));
+    const tasks = [...nat.keys()].filter(t => sw.has(t));
+    if (!tasks.length) continue;
+    const sn = tasks.reduce((a, t) => a + nat.get(t), 0);
+    const ss = tasks.reduce((a, t) => a + sw.get(t), 0);
+    const pct = sn ? 100 * (ss - sn) / sn : 0;
+    const [lo, hi] = bootPct(tasks, nat, sw, 0xC14 ^ v.id.length ^ tasks.length);
+    console.log(`    ${v.label.padEnd(56)} w${v.w.toFixed(2)}/r${v.r.toFixed(3)}/o${v.o.toFixed(1)}  sweet ${fmt(pct)}%  95% CI [${fmt(lo)}%, ${fmt(hi)}%]  n=${tasks.length}`);
+    printed++;
+  }
+  if (!printed) console.log('    unavailable: no row carries a complete recorded `usage` aggregate');
+  console.log('    NOT SHOWN, and deliberately: repricing delegated subagents at 0.2x the main rate. The');
+  console.log('    runner pins all three model slots to one slug, so every subagent RAN as the pinned model');
+  console.log('    and the ledger already charges what was billed. A 0.2x row is a REAL-USER SENSITIVITY');
+  console.log('    about a different deployment, never a bill correction and never a ledger defect.');
+  console.log('='.repeat(78));
+}
+
 // ---- output/content diagnostics (item 6) ----
 // Raw, untrimmed realized cost is the sole headline. Flags are descriptive:
 // arm-blind classification prevents explicit arm conditioning but does not imply
@@ -337,6 +485,7 @@ function diagnosticSensitivities(rows, flagged) {
 // ---- driver ----
 rowLevelRealized(allRows, { label: 'RAW UNTRIMMED REALIZED COST; all recorded rows', headline: true });
 costBlocks(report(allRows, 'RAW — NO DIAGNOSTIC EXCLUSION'));
+claudeCodeDisclosures(allRows);
 const degen = degenerationReport(allRows);
 if (degen.collected && degen.flagged.length) diagnosticSensitivities(allRows, degen.flagged);
 if (EXCLUDE.size) {

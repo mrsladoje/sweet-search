@@ -1,0 +1,70 @@
+
+==============================================================================
+SOLE COST HEADLINE — RAW UNTRIMMED REALIZED COST; all recorded rows
+  estimand: sum of costRealizedUsd over every listed row (no task-cell averaging)
+  ledger basis: UNLABELLED ROWS — basis unknown, pre-2026-09-02 collection
+  native: unavailable (28/66 row(s) missing realized cost)
+  sweet: unavailable (9/66 row(s) missing realized cost)
+==============================================================================
+
+=== A/B run report — RAW — NO DIAGNOSTIC EXCLUSION: 132 rows, 22 paired tasks ===
+
+RESOLUTION (parity check):
+  native 16/22 [52–87%]   sweet 14/22 [43–80%]
+  resolved REPS  native 43/66   sweet 40/66   << task solve above uses any-rep; a task carried by ONE rep is unstable
+  both=14  native-only=2  sweet-only=0  neither=6
+
+BOTH-SOLVED (descriptive post-treatment stratum; not a causal estimate)  (n=14)
+  ledger basis: UNLABELLED ROWS — basis unknown, pre-2026-09-02 collection
+    realized   unavailable (10/14 paired task(s) have missing row costs)
+    idealCost  unavailable (10/14 paired task(s) have missing row costs)
+    breakPriced unavailable (10/14 paired task(s) have missing row costs)
+
+ALL PAIRED  (n=22)
+  ledger basis: UNLABELLED ROWS — basis unknown, pre-2026-09-02 collection
+    realized   unavailable (18/22 paired task(s) have missing row costs)
+    idealCost  unavailable (18/22 paired task(s) have missing row costs)
+    breakPriced unavailable (18/22 paired task(s) have missing row costs)
+
+
+==============================================================================
+CLAUDE-CODE LEDGER DISCLOSURES — read every claude-code figure above through these
+==============================================================================
+  construction: ROW-MATCHED — every recorded row priced from the transcript the harness graded.
+    The published fresh-pool figure used "dearest-3" instead: the three dearest transcripts
+    per cell, substituting 12 discarded degeneration re-runs. On the same run row-matched
+    reads -8.8% and dearest-3 reads -3.9%; both are the same data. Never compare across them.
+    rows with an inclusive cost: 95/132   rows with a main-only cost: 132/132
+  native: 28/66 row(s) have NO inclusive cost (28 with an incomplete delegated transcript).
+  sweet: 9/66 row(s) have NO inclusive cost (9 with an incomplete delegated transcript).
+  LOWER BOUND: the native inclusive cost is a floor, not a total. 44 delegated
+    transcript(s) recorded; this run predates the sidechainMissingRequests counter, so the
+    count is unavailable here. On the fresh pool it was 205 delegated requests (register G6).
+  `pages` ASYMMETRY: native Read calls failed on an empty `pages` argument 159 of 690
+    times (23.0%) against sweet 23 of 51, wasting 92 native requests per 66 rollouts against
+    sweet 23. That is a harness defect sitting on the arm that uses Read more, so it
+    flattered sweet. Repaired 2026-09-02 by sending the note to both arms' subagents
+    (--append-subagent-system-prompt, byte-identical). Any native improvement from it is a
+    repair of our own defect and is NEVER a sweet regression.
+    this run: PRE-REPAIR or unlabelled — re-measure the failed-`pages` count per arm from the subagent transcripts
+
+  PRICE-VECTOR SENSITIVITY (sweet minus native, aggregate recorded `usage`, per task).
+    Ratios are to the input rate: w = cache write, r = cache read, o = output. Repriced from
+    rows.json alone, so every row here is re-derivable without the transcripts.
+    Every figure is a point estimate inside its own interval; none is a detection.
+    luna as shipped (the ledger)                             w1.25/r0.100/o6.0  sweet +1.1%  95% CI [-19.4%, +33.0%]  n=22
+    luna, no cache-write surcharge (pre-2026-09-02 basis)    w1.00/r0.100/o6.0  sweet +0.2%  95% CI [-19.4%, +30.2%]  n=22
+    Opus 5 five-minute cache (API-key real-user path)        w1.25/r0.100/o5.0  sweet +1.8%  95% CI [-18.1%, +33.4%]  n=22
+    Opus 5 one-hour cache (subscription, plan-usage consumption) w2.00/r0.100/o5.0  sweet +3.9%  95% CI [-14.7%, +32.8%]  n=22
+    Fable-5.1-like five-minute cache                         w1.25/r0.025/o5.0  sweet +2.5%  95% CI [-15.5%, +27.8%]  n=22
+    NOT SHOWN, and deliberately: repricing delegated subagents at 0.2x the main rate. The
+    runner pins all three model slots to one slug, so every subagent RAN as the pinned model
+    and the ledger already charges what was billed. A 0.2x row is a REAL-USER SENSITIVITY
+    about a different deployment, never a bill correction and never a ledger defect.
+==============================================================================
+
+==============================================================================
+DIAGNOSTIC INSTRUMENTATION INCOMPLETE: 37/132 row(s) missing a verdict, structured detail, or explicit complete-instrumentation attestation.
+  Fail closed: flags and exclusion sensitivities are not reported; raw untrimmed cost remains the sole headline.
+  examples: absinthe-graphql__absinthe-998/native/r1, accenture__sfmc-devtools-1974/native/r1, aio-libs__aiohttp-8038/native/r1, apigee__registry-961/native/r2, asynkron__protoactor-dotnet-1909/sweet/r1
+==============================================================================

@@ -471,6 +471,10 @@ export async function runClaudeCodeTask(task, {
     degenerate: degeneration.degenerate, degeneration,
     degenerationInstrumentationComplete: degeneration.instrumentation.complete,
     readPagesNormalization: 'pretool-hook-v1',
+    // Marks a run that carried the F2 repair, so an analyzer can tell whether the `pages`
+    // asymmetry disclosure describes this run's own data or a pre-repair baseline. Never
+    // pool a pre-repair run with a post-repair one on any Read-derived figure.
+    readPagesSubagentNote: true,
     sidechainTurns: sideSets.reduce((a, s) => a + s.turns.length, 0),
     ...costs, turnsFile,
     wallMs, trajectory, finalAssistantText: answer,
