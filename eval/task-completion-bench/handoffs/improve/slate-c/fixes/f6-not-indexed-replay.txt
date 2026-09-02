@@ -1,0 +1,27 @@
+F6 REPLAY — aws-actions__configure-aws-credentials-42 golden (2026-07-16 build, vault copy)
+dist/index.js is 5.2 MB and absent from the index (0 of 14 indexed paths are under dist/).
+
+$ ss-grep credential --in dist/index.js
+# ss-grep: 0 total match(es) for /credential/ (scope: --in dist/index.js)
+(not indexed: dist/index.js — over the index size limit. It is not searchable; look at the source it was built from.)
+
+$ ss-grep credential --in dist
+# ss-grep: 0 total match(es) for /credential/ (scope: --in dist)
+(not indexed: dist — build output, a dependency directory, or an ignored path. Nothing under it is searchable; look at tracked source instead.)
+
+$ ss-read dist/index.js 1 30
+[ss-read] (not indexed: dist/index.js — over the index size limit. It is not searchable; look at the source it was built from.)
+[ss-read] ss-read will not return its contents. If you truly need the bytes, read dist/index.js with your own file-reading tool.
+
+$ ss-semantic dist/index.js 'how are credentials assumed'
+[ss-semantic] (not indexed: dist/index.js — over the index size limit. It is not searchable; look at the source it was built from.)
+[ss-semantic] There is nothing to rank inside it, so no span is returned. Ask this question of the source it was built from.
+
+$ ss-read index.js 1 3
+# ss-read index.js (lines 1-3 of 194)
+```javascript
+const core = require('@actions/core');
+const aws = require('aws-sdk');
+const assert = require('assert');
+
+
