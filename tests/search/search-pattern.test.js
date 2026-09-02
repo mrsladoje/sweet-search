@@ -1299,7 +1299,13 @@ describe('patternSearch', () => {
     ).rejects.toThrow('late interaction index');
   });
 
-  it.skipIf(!rgAvailable)('fails fast when the LI index lacks line span metadata', async () => {
+  // WAS "fails fast when the LI index lacks line span metadata" — it asserted a throw that
+  // was removed on 2026-09-02. Crashing here is the one answer an agent cannot act on: the
+  // index it was handed is the only index it has, and it cannot re-index the repository
+  // mid-task. It fired on mathnet in the fresh pool. getChunkLocationMap now rebuilds the
+  // spans from the codebase vector rows; when even that is empty every match routes to the
+  // unindexed path and the agent still gets its grep results, unranked.
+  it.skipIf(!rgAvailable)('degrades to unranked results when no chunk line spans exist', async () => {
     const mockThis = {
       verbose: false,
       hasLateInteractionIndex: true,
@@ -1307,16 +1313,20 @@ describe('patternSearch', () => {
         documents: new Map([
           ['c1', { metadata: { file: 'a.js' }, tokens: new Int8Array(10), numTokens: 1, dim: 10, min: 0, scale: 1 }],
         ]),
+        aliasPointers: new Map(),
         init: vi.fn(),
+        hasTokens: () => new Set(),
       },
       getChunkLocationMap() {
         return new Map();
       },
     };
 
-    await expect(
-      patternSearch.call(mockThis, 'auth', null, { regex: 'class.*', k: 5 })
-    ).rejects.toThrow('line spans');
+    const result = await patternSearch.call(mockThis, 'auth', null, { regex: 'class.*', k: 5 });
+    expect(result).toBeTruthy();
+    expect(Array.isArray(result.results)).toBe(true);
+    // Nothing could be ranked, so nothing claims to be indexed.
+    expect(result.results.every(r => !r.indexed)).toBe(true);
   });
 
   it.skipIf(!rgAvailable)('returns empty results when grep finds no matches', async () => {
