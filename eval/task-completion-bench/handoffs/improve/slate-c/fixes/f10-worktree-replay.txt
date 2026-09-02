@@ -1,0 +1,31 @@
+F10 REPLAY — ss-* inside a linked git worktree (reproduced with git worktree add)
+
+1. No index anywhere: REFUSE with a hint, never a silent redirect
+
+2. Main checkout indexed, worktree diverged (its src/orders.js calls WORKTREE_VERSION)
+$ ss-grep processOrder      # index comes from the main checkout
+(linked git worktree: index from /private/tmp/claude-501/-Users-admin-Projects-sweet-search-private/b8b1d867-922f-48d6-b0b9-777c154d3b6a/scratchpad/wtrepo, file contents from this worktree. A result may name a file this worktree has since changed.)
+# ss-grep: 1 total match(es) for /processOrder/
+src/orders.js:1: processOrder
+
+$ ss-read src/orders.js     # bytes come from THIS worktree, not the parent
+(linked git worktree: index from /private/tmp/claude-501/-Users-admin-Projects-sweet-search-private/b8b1d867-922f-48d6-b0b9-777c154d3b6a/scratchpad/wtrepo, file contents from this worktree. A result may name a file this worktree has since changed.)
+# ss-read src/orders.js (3 lines)
+```
+export function processOrder(order) {
+  return WORKTREE_VERSION(order);
+}
+
+```
+
+parent's src/orders.js, for contrast:
+    export function processOrder(order) {
+      return validate(order);
+    }
+    export function validate(order) {
+      return !!order.id;
+    }
+
+3. Control: the same command in the main checkout prints no notice
+# ss-grep: 1 total match(es) for /processOrder/
+src/orders.js:1: processOrder
