@@ -6,7 +6,7 @@
 
 import { dirname } from 'node:path';
 import { DB_PATHS } from '../infrastructure/config/index.js';
-import { StructuralContextBuilder, formatStructuralContext } from '../graph/structural-context.js';
+import { StructuralContextBuilder, formatStructuralContext, TRACE_MODES } from '../graph/structural-context.js';
 import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
 import { emitToolIdentityAuto } from './cli-decoration.js';
 
@@ -104,4 +104,4 @@ Examples:
   console.log(formatStructuralContext(result));
 }
 
-export { formatStructuralContext };
+export { formatStructuralContext, TRACE_MODES };
