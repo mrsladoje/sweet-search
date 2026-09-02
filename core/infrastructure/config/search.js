@@ -209,6 +209,13 @@ export const FILE_PATTERNS = {
 
     // ── VCS & IDE ─────────────────────────────────────────────────────────
     '**/.git/**',
+    // A linked git worktree is a SECOND CHECKOUT of the same repository. Indexing one
+    // duplicates every file under a path that is not where the agent will edit, and
+    // worktree copies have been observed inside a real index. `.claude/` is on the
+    // agentic gitignore allowlist, so without this line the deny never applies to
+    // `.claude/worktrees/`. Deny at admission rather than de-duplicating later.
+    '**/.claude/worktrees/**',
+    '**/.git/worktrees/**',
     '**/.idea/**',
     '**/.vscode/**',
     '**/.vs/**',

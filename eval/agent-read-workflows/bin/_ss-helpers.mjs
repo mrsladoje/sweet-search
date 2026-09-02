@@ -26,6 +26,7 @@ import {
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
 import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.js';
 import { createIndexCoverage } from '../../../core/search/index-coverage.js';
+import { resolveRoots } from '../../../core/search/worktree-roots.js';
 import { numberCodeLines, lineGutterEnabled } from '../../../core/search/search-read.js';
 import { renderRegexDialectHint } from '../../../core/search/regex-dialect.js';
 import {
@@ -136,8 +137,29 @@ process.env.SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS ??= '120000';
 
 // The agent's cwd is the target repo. SWEET_SEARCH_PROJECT_ROOT must point
 // at the repo so DB_PATHS resolves to the repo's own .sweet-search/.
-const PROJECT_ROOT = process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
+//
+// TWO ROOTS, NOT ONE, when the session runs inside a LINKED GIT WORKTREE. A worktree is a
+// second checkout sharing the main repository's `.git`, and it has no `.sweet-search/` of
+// its own, so every ss-* call used to exit 2 — on a surface Claude Code's desktop app,
+// `claude --worktree` and worktree-isolated subagents all put agents on.
+//
+//   PROJECT_ROOT  where the index lives. One index describes the repository and serves
+//                 every checkout of it.
+//   FILE_ROOT     where the agent's own files are. ss-read and ss-semantic resolve paths
+//                 here, because every byte the agent edits comes from its own worktree.
+//
+// Pointing BOTH at the main checkout is what the bench pin did, and it was worse than
+// failing: the tools read the parent's uncommitted tree while `Read` saw the clean
+// worktree (45 worktree-scoped zeros in 5 of 66 rollouts; 6 of 22 subagent results echoed
+// the parent's own edit). So the split is announced, never silent, and with no index
+// anywhere the tools REFUSE with a hint instead of guessing.
+const { indexRoot: PROJECT_ROOT, fileRoot: FILE_ROOT, split: WORKTREE_SPLIT, refusal: ROOT_REFUSAL, notice: ROOT_NOTICE } =
+  resolveRoots({ cwd: process.cwd(), explicitRoot: process.env.SWEET_SEARCH_PROJECT_ROOT || '' });
 
+if (ROOT_REFUSAL) {
+  process.stderr.write(`${ROOT_REFUSAL}\n`);
+  process.exit(2);
+}
 if (!existsSync(path.join(PROJECT_ROOT, '.sweet-search', 'codebase.db'))) {
   process.stderr.write(
     `[ss-*] no Sweet Search index at ${PROJECT_ROOT}/.sweet-search/codebase.db\n` +
@@ -145,6 +167,11 @@ if (!existsSync(path.join(PROJECT_ROOT, '.sweet-search', 'codebase.db'))) {
   );
   process.exit(2);
 }
+// STDOUT, not stderr: the ss-* shell wrappers discard stderr on a zero exit, so a notice
+// written there would never reach the agent — and "never redirect silently" is the whole
+// requirement. One line, once per process, and only inside a linked worktree, so it costs
+// the benchmark nothing and costs a real worktree user one line.
+if (WORKTREE_SPLIT && ROOT_NOTICE) process.stdout.write(`${ROOT_NOTICE}\n`);
 process.env.SWEET_SEARCH_PROJECT_ROOT = PROJECT_ROOT;
 
 const AGENT_SESSION_ID = resolveAgentSessionId();
@@ -248,7 +275,7 @@ function rejectUnknownOptions(args, usage) {
 // it is unit-tested; the path predicate is injected here).
 function absorbPositionalPaths(args, inPaths) {
   absorbPositionalPathsPure(args, inPaths,
-    (tok) => existsSync(path.isAbsolute(tok) ? tok : path.resolve(PROJECT_ROOT, tok)));
+    (tok) => existsSync(path.isAbsolute(tok) ? tok : path.resolve(FILE_ROOT, tok)));
 }
 
 // When a scope resolves to a real path on disk but the index does not hold it, a 0-result
@@ -288,7 +315,7 @@ async function notIndexedNote(scopePath) {
 function missingScopes(scopePaths) {
   return (scopePaths || []).filter((p) => {
     if (!p) return false;
-    try { return !existsSync(path.isAbsolute(p) ? p : path.resolve(PROJECT_ROOT, p)); }
+    try { return !existsSync(path.isAbsolute(p) ? p : path.resolve(FILE_ROOT, p)); }
     catch { return false; }
   });
 }
@@ -530,7 +557,7 @@ async function cmdFind(rawArgs) {
     });
   }
   const shownSpans = SPAN_POLICY_ENABLED
-    ? collectAgentShownSpans(response.results, { projectRoot: PROJECT_ROOT }) : [];
+    ? collectAgentShownSpans(response.results, { projectRoot: FILE_ROOT }) : [];
   await recordAgentToolCall({
     spans: shownSpans,
     query: fixedString ? undefined : query,
@@ -682,7 +709,7 @@ async function cmdRead(rawArgs) {
   const { readFile, renderUnreadBelow, numberCodeLines } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
   // Agent-facing ss-read: span gate on, same as the CLI and the daemon route.
   const r = await readFile({
-    path: file, projectRoot: PROJECT_ROOT,
+    path: file, projectRoot: FILE_ROOT,
     startLine: start ?? undefined, endLine: end ?? undefined,
     spanExpand: true, format: 'agent',
   });
@@ -704,7 +731,7 @@ async function cmdRead(rawArgs) {
   }
   const readBatch = { files: [r], totalMs: r.timings?.totalMs ?? 0 };
   const shownSpans = EXACT_REREAD_OMISSION
-    ? collectReadShownSpans(readBatch, { projectRoot: PROJECT_ROOT }) : [];
+    ? collectReadShownSpans(readBatch, { projectRoot: FILE_ROOT }) : [];
   const receiptResponse = await recordAgentToolCall({
     operation: 'read',
     spans: shownSpans,
@@ -832,7 +859,7 @@ async function cmdAgentSearch(rawArgs) {
     process.exit(3);
   }
   const shownSpans = SPAN_POLICY_ENABLED
-    ? collectAgentShownSpans(response.results, { projectRoot: PROJECT_ROOT }) : [];
+    ? collectAgentShownSpans(response.results, { projectRoot: FILE_ROOT }) : [];
   await recordAgentToolCall({ spans: shownSpans, query });
 
   // The packaged response shape comes from packageForAgent (or pattern's own
@@ -982,13 +1009,13 @@ async function cmdSemantic(rawArgs) {
     if (!await ensureWarmServerReady({ timeoutMs: 5000 })) throw new Error('warm server is not ready');
     const { queryReadSemanticServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
     r = await queryReadSemanticServer({
-      path: file, query, projectRoot: PROJECT_ROOT, maxChars: maxTokens * 4,
+      path: file, query, projectRoot: FILE_ROOT, maxChars: maxTokens * 4,
     });
     if (r?.error) throw new Error(r.error);
   } catch {
     const { readSemantic } = await import(path.join(REPO_ROOT, 'core/search/search-read-semantic.js'));
     r = await readSemantic({
-      path: file, query, projectRoot: PROJECT_ROOT,
+      path: file, query, projectRoot: FILE_ROOT,
       maxChars: maxTokens * 4, verbose: false,
     });
   }
@@ -997,7 +1024,7 @@ async function cmdSemantic(rawArgs) {
     process.exit(1);
   }
   const shownSpans = SPAN_POLICY_ENABLED
-    ? collectSemanticShownSpans(r, { projectRoot: PROJECT_ROOT }) : [];
+    ? collectSemanticShownSpans(r, { projectRoot: FILE_ROOT }) : [];
   await recordAgentToolCall({ spans: shownSpans, query });
   process.stdout.write(`# ss-semantic ${r.file} | "${query}" | spans=${r.spans?.length ?? 0} | ~tokens=${r.approxTokensReturned}${r.fellBack ? ' [FALLBACK]' : ''}\n`);
   for (const span of r.spans || []) {
