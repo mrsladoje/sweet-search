@@ -1,0 +1,21 @@
+=== CONCURRENCY: the 11 repair tasks, fp (CONC=2, surviving) vs rp (CONC=1) ===
+  fp surviving sweet rollouts on the 11 repair tasks: 81; rp rollouts: 99
+  ideal $: fp=0.010845 rp=0.010882  (0.34%)
+  realized $: fp=0.010853 rp=0.010903
+  cacheHit: fp=0.9222 rp=0.9223
+  turns: fp=21.12 rp=21.71  solved: fp=44/81 rp=55/99
+  per-form:
+    tab: fp n=30 $0.011419 solved=15 | rp n=33 $0.011345 solved=20
+    none: fp n=24 $0.010139 solved=14 | rp n=33 $0.010267 solved=18
+    pipe: fp n=27 $0.010857 solved=15 | rp n=33 $0.011097 solved=17
+
+=== SUBSTITUTION EFFECT: opencode sweet cell with fp-only (where it exists) vs merged ===
+  tab: merged n=66 $0.009265 solved=41 | fp-only n=63 $0.009201 solved=36 (57.1%)
+  none: merged n=66 $0.008584 solved=39 | fp-only n=57 $0.008264 solved=35 (61.4%)
+  pipe: merged n=66 $0.008764 solved=38 | fp-only n=60 $0.008422 solved=36 (60.0%)
+
+=== degenReran census, all runs ===
+  fp-claudecode-tab-20260826: 6 (native 1, sweet 5)
+  fp-claudecode-none-20260826: 4 (native 0, sweet 4)
+  fp-claudecode-pipe-20260826: 2 (native 0, sweet 2)
+  rb-claudecode-20260824: 1 (native 1, sweet 0)

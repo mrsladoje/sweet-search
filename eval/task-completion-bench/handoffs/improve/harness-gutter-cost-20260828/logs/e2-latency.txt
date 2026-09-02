@@ -1,0 +1,23 @@
+--- codex tab (n=66 rollouts) recorded wall time per call ---
+poll	calls 45	mean 66.786s	max 248.9s	total 45.5s/rollout
+run_tests	calls 191	mean 13.660s	max 30.0s	total 39.5s/rollout
+ss-read	calls 205	mean 0.340s	max 30.0s	total 1.1s/rollout
+ss-search	calls 116	mean 0.554s	max 7.7s	total 1.0s/rollout
+ss-grep	calls 156	mean 0.393s	max 10.0s	total 0.9s/rollout
+ss-find	calls 21	mean 0.835s	max 8.4s	total 0.3s/rollout
+ss-semantic	calls 38	mean 0.095s	max 0.8s	total 0.1s/rollout
+ss-trace	calls 9	mean 0.143s	max 0.5s	total 0.0s/rollout
+nativeRead	calls 26	mean 0.000s	max 0.0s	total 0.0s/rollout
+edit	calls 95	mean 0.000s	max 0.0s	total 0.0s/rollout
+other	calls 52	mean 0.000s	max 0.0s	total 0.0s/rollout
+nativeGrep	calls 3	mean 0.000s	max 0.0s	total 0.0s/rollout
+--- codex native (n=66 rollouts) recorded wall time per call ---
+poll	calls 38	mean 76.112s	max 284.7s	total 43.8s/rollout
+run_tests	calls 201	mean 12.615s	max 30.0s	total 38.4s/rollout
+other	calls 38	mean 0.000s	max 0.0s	total 0.0s/rollout
+nativeRead	calls 483	mean 0.000s	max 0.0s	total 0.0s/rollout
+nativeGrep	calls 30	mean 0.000s	max 0.0s	total 0.0s/rollout
+edit	calls 108	mean 0.000s	max 0.0s	total 0.0s/rollout
+
+opencode wall time recorded on 66/66 rollouts (state.time present)
+claude-code wall time recorded on 0/66 rollouts

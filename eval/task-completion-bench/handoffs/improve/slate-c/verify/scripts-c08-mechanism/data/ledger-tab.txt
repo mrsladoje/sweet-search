@@ -1,0 +1,19 @@
+{"id":"a3d311866bfc0b7cb","type":"Explore","task":"asynkron__protoactor-dotnet-1909","requests":14,"zeroUsage":4,"firstOkReq":6,"preReq":6,"preUsd":0.004099,"failReqAfter":0,"failUsd":0,"totalImputedUsd":0.012902,"recordedUsd":0.010504}
+{"id":"a0d415047c0776a3e","type":"Explore","task":"awslabs__aws-embedded-metrics-node-21","requests":11,"zeroUsage":7,"firstOkReq":7,"preReq":7,"preUsd":0.004125,"failReqAfter":0,"failUsd":0,"totalImputedUsd":0.006693,"recordedUsd":0.003961}
+{"id":"a484cf2677177e8ef","type":"Explore","task":"awslabs__aws-embedded-metrics-node-21","requests":15,"zeroUsage":9,"firstOkReq":4,"preReq":4,"preUsd":0.003171,"failReqAfter":1,"failUsd":0.00059,"totalImputedUsd":0.008548,"recordedUsd":0.005025}
+{"id":"abd536db90e42b25d","type":"Explore","task":"bfgroup__b2-113","requests":58,"zeroUsage":21,"firstOkReq":4,"preReq":4,"preUsd":0.00137,"failReqAfter":0,"failUsd":0,"totalImputedUsd":0.08495,"recordedUsd":0.050623}
+{"id":"a41e46d3e2671aa14","type":"Explore","task":"bfgroup__b2-113","requests":34,"zeroUsage":21,"firstOkReq":4,"preReq":4,"preUsd":0.001729,"failReqAfter":0,"failUsd":0,"totalImputedUsd":0.018362,"recordedUsd":0.00909}
+{"id":"a04ad28e63dd30186","type":"Explore","task":"bfgroup__b2-259","requests":54,"zeroUsage":25,"firstOkReq":2,"preReq":2,"preUsd":0.001121,"failReqAfter":1,"failUsd":0.000427,"totalImputedUsd":0.060623,"recordedUsd":0.035427}
+{"id":"a8d5f1d037a62e83b","type":"general-purpose","task":"bfgroup__b2-259","requests":74,"zeroUsage":38,"firstOkReq":0,"preReq":0,"preUsd":0,"failReqAfter":3,"failUsd":0.001529,"totalImputedUsd":0.074067,"recordedUsd":0.039868}
+{"id":"a914bc3d20e9a67cc","type":"general-purpose","task":"bfgroup__b2-259","requests":41,"zeroUsage":17,"firstOkReq":0,"preReq":0,"preUsd":0,"failReqAfter":3,"failUsd":0.002262,"totalImputedUsd":0.02625,"recordedUsd":0.017176}
+{"id":"abf1061910955a4c6","type":"Explore","task":"bfgroup__b2-259","requests":30,"zeroUsage":9,"firstOkReq":5,"preReq":5,"preUsd":0.002295,"failReqAfter":0,"failUsd":0,"totalImputedUsd":0.014418,"recordedUsd":0.011262}
+{"id":"a61852622b2fb2c36","type":"general-purpose","task":"fastify__fastify-cors-285","requests":18,"zeroUsage":6,"firstOkReq":0,"preReq":0,"preUsd":0,"failReqAfter":0,"failUsd":0,"totalImputedUsd":0.009255,"recordedUsd":0.007021}
+{"id":"a38e681945774a613","type":"Explore","task":"final-form__final-form-64","requests":15,"zeroUsage":8,"firstOkReq":2,"preReq":2,"preUsd":0.001416,"failReqAfter":0,"failUsd":0,"totalImputedUsd":0.012041,"recordedUsd":0.007788}
+
+SWEET SIDE by type: {"Explore":{"n":8,"req":231,"zero":104,"pre":34,"preUsd":0.019326,"failReq":2,"failUsd":0.001017,"totUsd":0.218537,"recUsd":0.133681},"general-purpose":{"n":3,"req":133,"zero":61,"pre":0,"preUsd":0,"failReq":6,"failUsd":0.003791,"totUsd":0.109572,"recUsd":0.064065}}
+NATIVE SIDE: {"req":519,"zero":205,"totUsd":0.421045,"recUsd":0.298656,"n":33}
+sweet main-only: idealCostMainOnlyUsd sum 0.9728 costRealizedMainOnlyUsd sum 1.0767 rows with main-only null 0
+sweet arm inclusive imputed ideal = main 0.9728 + side 0.3281 = 1.3009  per rollout 0.019710
+added cost, guide only (1,516 tok): $0.004593 over 66 rollouts = $0.0000696/rollout (Explore requests: 14+11+15+58+34+54+30+15=231)
+added cost, guide+frame via CLAUDE.md hierarchy (2,270 tok): $0.006878 over 66 rollouts = $0.0001042/rollout (Explore requests: 14+11+15+58+34+54+30+15=231)
+added cost, guide in body + guide via rules + frame (3,727 tok): $0.011293 over 66 rollouts = $0.0001711/rollout (Explore requests: 14+11+15+58+34+54+30+15=231)

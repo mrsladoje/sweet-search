@@ -1,0 +1,2 @@
+sweet rollouts=66 steps/rollout=19.70 envelopes/rollout=21.79 ops/rollout=28.56 ssOps/rollout=11.94 envelopes/step=1.106 ops/step=1.450 bash envelopes with >1 op: 213/1024 (20.8%)
+native rollouts=66 steps/rollout=16.32 envelopes/rollout=25.23 ops/rollout=27.47 ssOps/rollout=0.00 envelopes/step=1.546 ops/step=1.683 bash envelopes with >1 op: 42/314 (13.4%)

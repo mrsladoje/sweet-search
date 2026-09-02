@@ -1,0 +1,405 @@
+====================================================================================================
+CASE 0 fp-claudecode-tab-20260826 | devlooped__moq-1262-native
+CALL call_4yjuf0qEp30q9Xgn4nbAWPIV tool Edit file /root/.ss-eval/runs/r2-94/src/Moq/ExpressionComparer.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/ExpressionComparer.cs
+anchor first line occurs at disk lines [36] (n=1)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\tif (x is MemberExpression)'
+        disk36    3ch[\t\t\t]    '\\t\\t\\tif (x is MemberExpression)'
+  !! a1  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t{'
+        disk37    3ch[\t\t\t]    '\\t\\t\\t{'
+  !! a2  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\tx = x.Apply(EvaluateCaptures.Rewriter);'
+        disk38    4ch[\t\t\t\t]  '\\t\\t\\t\\tx = x.Apply(EvaluateCaptures.Rewriter);'
+  !! a3  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t}'
+        disk39    3ch[\t\t\t]    '\\t\\t\\t}'
+  == a4  anchor 0ch[]          ''
+  !! a5  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\tif (y is MemberExpression)'
+        disk41    3ch[\t\t\t]    '\\t\\t\\tif (y is MemberExpression)'
+  !! a6  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t{'
+        disk42    3ch[\t\t\t]    '\\t\\t\\t{'
+  !! a7  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\ty = y.Apply(EvaluateCaptures.Rewriter);'
+        disk43    4ch[\t\t\t\t]  '\\t\\t\\t\\ty = y.Apply(EvaluateCaptures.Rewriter);'
+  !! a8  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t}'
+        disk44    3ch[\t\t\t]    '\\t\\t\\t}'
+--- earlier tool_results containing the anchor first line ---
+  block81   tool=Read         err=False 0ch[]          '36\\t\\t\\t\\tif (x is MemberExpression)'
+
+====================================================================================================
+CASE 1 fp-claudecode-tab-20260826 | devlooped__moq-1262-native
+CALL call_CVtPy5aLRrtXnTEHR52KY1Bg tool Edit file /root/.ss-eval/runs/r2-94/src/Moq/ExpressionComparer.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/ExpressionComparer.cs
+anchor first line occurs at disk lines [36] (n=1)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\tif (x is MemberExpression)'
+        disk36    3ch[\t\t\t]    '\\t\\t\\tif (x is MemberExpression)'
+  !! a1  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t{'
+        disk37    3ch[\t\t\t]    '\\t\\t\\t{'
+  !! a2  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\tx = x.Apply(EvaluateCaptures.Rewriter);'
+        disk38    4ch[\t\t\t\t]  '\\t\\t\\t\\tx = x.Apply(EvaluateCaptures.Rewriter);'
+  !! a3  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t}'
+        disk39    3ch[\t\t\t]    '\\t\\t\\t}'
+  == a4  anchor 0ch[]          ''
+  !! a5  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\tif (y is MemberExpression)'
+        disk41    3ch[\t\t\t]    '\\t\\t\\tif (y is MemberExpression)'
+  !! a6  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t{'
+        disk42    3ch[\t\t\t]    '\\t\\t\\t{'
+  !! a7  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\ty = y.Apply(EvaluateCaptures.Rewriter);'
+        disk43    4ch[\t\t\t\t]  '\\t\\t\\t\\ty = y.Apply(EvaluateCaptures.Rewriter);'
+  !! a8  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t}'
+        disk44    3ch[\t\t\t]    '\\t\\t\\t}'
+--- earlier tool_results containing the anchor first line ---
+  block113  tool=Read         err=False 0ch[]          '39\\t\\t\\t\\tif (x is MemberExpression)'
+  block111  tool=Edit         err=True  0ch[]          'String: \\t\\t\\t\\tif (x is MemberExpression)'
+  block81   tool=Read         err=False 0ch[]          '36\\t\\t\\t\\tif (x is MemberExpression)'
+
+====================================================================================================
+CASE 2 fp-claudecode-tab-20260826 | devlooped__moq-1262-native
+CALL call_I9H6EtGlxQC0bA2lpQR2tLPG tool Edit file /root/.ss-eval/runs/r1-86/src/Moq/ExpressionComparer.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/ExpressionComparer.cs
+anchor first line occurs at disk lines [36] (n=1)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\tif (x is MemberExpression)'
+        disk36    3ch[\t\t\t]    '\\t\\t\\tif (x is MemberExpression)'
+  !! a1  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t{'
+        disk37    3ch[\t\t\t]    '\\t\\t\\t{'
+  !! a2  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\tx = x.Apply(EvaluateCaptures.Rewriter);'
+        disk38    4ch[\t\t\t\t]  '\\t\\t\\t\\tx = x.Apply(EvaluateCaptures.Rewriter);'
+  !! a3  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t}'
+        disk39    3ch[\t\t\t]    '\\t\\t\\t}'
+  == a4  anchor 0ch[]          ''
+  !! a5  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\tif (y is MemberExpression)'
+        disk41    3ch[\t\t\t]    '\\t\\t\\tif (y is MemberExpression)'
+  !! a6  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t{'
+        disk42    3ch[\t\t\t]    '\\t\\t\\t{'
+  !! a7  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\ty = y.Apply(EvaluateCaptures.Rewriter);'
+        disk43    4ch[\t\t\t\t]  '\\t\\t\\t\\ty = y.Apply(EvaluateCaptures.Rewriter);'
+  !! a8  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t}'
+        disk44    3ch[\t\t\t]    '\\t\\t\\t}'
+--- earlier tool_results containing the anchor first line ---
+  block49   tool=Read         err=False 0ch[]          '36\\t\\t\\t\\tif (x is MemberExpression)'
+
+====================================================================================================
+CASE 3 fp-claudecode-tab-20260826 | devlooped__moq-1262-native
+CALL call_8izUrmJHlLpa3T5cER8ji3Yn tool Edit file /root/.ss-eval/runs/r1-86/src/Moq/ExpressionComparer.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/ExpressionComparer.cs
+anchor first line occurs at disk lines [] (n=0)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t}<!-- -->'
+--- earlier tool_results containing the anchor first line ---
+  block77   tool=Read         err=False 0ch[]          '48\\t\\t\\t\\t}<!-- -->'
+
+====================================================================================================
+CASE 4 fp-claudecode-tab-20260826 | devlooped__moq-1262-native
+CALL call_2Ln2iqr42ecYlOQMWn8QrpgT tool Edit file /root/.ss-eval/runs/r1-86/src/Moq/Match.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/Match.cs
+anchor first line occurs at disk lines [220] (n=1)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\treturn ExpressionComparer.Default.Equals(this.RenderExpression, other.'
+        disk220   4ch[\t\t\t\t]  '\\t\\t\\t\\treturn ExpressionComparer.Default.Equals(this.RenderExpression, other.Re'
+--- earlier tool_results containing the anchor first line ---
+  block14   tool=Read         err=False 0ch[]          '220\\t\\t\\t\\t\\treturn ExpressionComparer.Default.Equals(this.RenderExpression, other.RenderE'
+
+====================================================================================================
+CASE 5 fp-claudecode-tab-20260826 | devlooped__moq-1262-native
+CALL call_mv7J7I2uRYCK4JZNYcUbwhev tool Edit file /root/.ss-eval/runs/r1-86/src/Moq/Match.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/Match.cs
+anchor first line occurs at disk lines [220] (n=1)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\treturn ExpressionComparer.Default.Equals(this.RenderExpression, other.'
+        disk220   4ch[\t\t\t\t]  '\\t\\t\\t\\treturn ExpressionComparer.Default.Equals(this.RenderExpression, other.Re'
+--- earlier tool_results containing the anchor first line ---
+  block87   tool=Read         err=False 0ch[]          '220\\t\\t\\t\\t\\treturn ExpressionComparer.Default.Equals(this.RenderExpression, other.RenderE'
+  block85   tool=Edit         err=True  0ch[]          'String: \\t\\t\\t\\t\\treturn ExpressionComparer.Default.Equals(this.RenderExpression, other.Re'
+  block14   tool=Read         err=False 0ch[]          '220\\t\\t\\t\\t\\treturn ExpressionComparer.Default.Equals(this.RenderExpression, other.RenderE'
+
+====================================================================================================
+CASE 6 fp-claudecode-tab-20260826 | devlooped__moq-1262-sweet
+CALL call_Rc9vCWDFmCQRqbOiyRRrsbkl tool Edit file /root/.ss-eval/runs/r0-74/src/Moq/Match.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/Match.cs
+anchor first line occurs at disk lines [171, 245] (n=2)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rew'
+        disk171   3ch[\t\t\t]    '\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewri'
+--- earlier tool_results containing the anchor first line ---
+  block21   tool=Bash         err=False 0ch[]          '245\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);'
+  block17   tool=Bash         err=False 0ch[]          '171\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);'
+  block15   tool=Bash         err=False 0ch[]          '171\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);'
+
+====================================================================================================
+CASE 7 fp-claudecode-tab-20260826 | devlooped__moq-1262-sweet
+CALL call_Jh0DiFgR7NNnN33LjOmDnXXZ tool Edit file /root/.ss-eval/runs/r0-74/src/Moq/ExpressionComparer.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/ExpressionComparer.cs
+anchor first line occurs at disk lines [36] (n=1)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\tif (x is MemberExpression)'
+        disk36    3ch[\t\t\t]    '\\t\\t\\tif (x is MemberExpression)'
+  !! a1  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t{'
+        disk37    3ch[\t\t\t]    '\\t\\t\\t{'
+  !! a2  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\tx = x.Apply(EvaluateCaptures.Rewriter);'
+        disk38    4ch[\t\t\t\t]  '\\t\\t\\t\\tx = x.Apply(EvaluateCaptures.Rewriter);'
+  !! a3  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t}'
+        disk39    3ch[\t\t\t]    '\\t\\t\\t}'
+  == a4  anchor 0ch[]          ''
+  !! a5  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\tif (y is MemberExpression)'
+        disk41    3ch[\t\t\t]    '\\t\\t\\tif (y is MemberExpression)'
+  !! a6  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t{'
+        disk42    3ch[\t\t\t]    '\\t\\t\\t{'
+  !! a7  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\ty = y.Apply(EvaluateCaptures.Rewriter);'
+        disk43    4ch[\t\t\t\t]  '\\t\\t\\t\\ty = y.Apply(EvaluateCaptures.Rewriter);'
+  !! a8  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\t}'
+        disk44    3ch[\t\t\t]    '\\t\\t\\t}'
+--- earlier tool_results containing the anchor first line ---
+  block27   tool=Bash         err=False 0ch[]          '36\\t\\t\\t\\tif (x is MemberExpression)'
+  block19   tool=Bash         err=False 0ch[]          '36\\t\\t\\t\\tif (x is MemberExpression)'
+
+====================================================================================================
+CASE 8 fp-claudecode-tab-20260826 | devlooped__moq-1262-sweet
+CALL call_mH28K5Udk1P2KyQtGQNkQ8EI tool Edit file /root/.ss-eval/runs/r0-74/src/Moq/SetupCollection.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/SetupCollection.cs
+anchor first line occurs at disk lines [47] (n=1)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\tthis.setups.Add(setup);'
+        disk47    4ch[\t\t\t\t]  '\\t\\t\\t\\tthis.setups.Add(setup);'
+  !! a1  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\tif (!this.activeSetups.Add(setup.Expectation))'
+        disk48    4ch[\t\t\t\t]  '\\t\\t\\t\\tif (!this.activeSetups.Add(setup.Expectation))'
+  !! a2  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\t{'
+        disk49    4ch[\t\t\t\t]  '\\t\\t\\t\\t{'
+  !! a3  anchor 6ch[\t\t\t\t\t\t] '\\t\\t\\t\\t\\t\\tthis.MarkOverriddenSetups();'
+        disk50    5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\tthis.MarkOverriddenSetups();'
+  !! a4  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\t}'
+        disk51    4ch[\t\t\t\t]  '\\t\\t\\t\\t}'
+--- earlier tool_results containing the anchor first line ---
+  block13   tool=Bash         err=False 0ch[]          '47\\t\\t\\t\\t\\tthis.setups.Add(setup);'
+
+====================================================================================================
+CASE 9 fp-claudecode-tab-20260826 | devlooped__moq-1262-sweet
+CALL call_vMkwTsfMo8xmE294MaaieQTO tool Edit file /root/.ss-eval/runs/r0-74/src/Moq/SetupCollection.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/SetupCollection.cs
+anchor first line occurs at disk lines [47] (n=1)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\tthis.setups.Add(setup);'
+        disk47    4ch[\t\t\t\t]  '\\t\\t\\t\\tthis.setups.Add(setup);'
+  !! a1  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\tif (!this.activeSetups.Add(setup.Expectation))'
+        disk48    4ch[\t\t\t\t]  '\\t\\t\\t\\tif (!this.activeSetups.Add(setup.Expectation))'
+  !! a2  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\t{'
+        disk49    4ch[\t\t\t\t]  '\\t\\t\\t\\t{'
+  !! a3  anchor 6ch[\t\t\t\t\t\t] '\\t\\t\\t\\t\\t\\tthis.MarkOverriddenSetups();'
+        disk50    5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\tthis.MarkOverriddenSetups();'
+  !! a4  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\t}'
+        disk51    4ch[\t\t\t\t]  '\\t\\t\\t\\t}'
+--- earlier tool_results containing the anchor first line ---
+  block77   tool=Edit         err=True  0ch[]          'String: this.setups.Add(setup);'
+  block75   tool=Bash         err=False 0ch[]          '47\\t\\t\\t\\t\\tthis.setups.Add(setup);'
+  block73   tool=Edit         err=True  0ch[]          'String: \\t\\t\\t\\t\\tthis.setups.Add(setup);'
+  block13   tool=Bash         err=False 0ch[]          '47\\t\\t\\t\\t\\tthis.setups.Add(setup);'
+
+====================================================================================================
+CASE 10 fp-claudecode-tab-20260826 | devlooped__moq-1262-sweet
+CALL call_WfPUg5FQYE2BUNvzkvlKoRb0 tool Edit file /root/.ss-eval/runs/r0-74/src/Moq/SetupCollection.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/SetupCollection.cs
+anchor first line occurs at disk lines [47] (n=1)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\tthis.setups.Add(setup);'
+        disk47    4ch[\t\t\t\t]  '\\t\\t\\t\\tthis.setups.Add(setup);'
+  !! a1  anchor 5ch[\t\t\t\t\t] '\\t\\t\\t\\t\\tif (!this.activeSetups.Add(setup.Expectation))'
+        disk48    4ch[\t\t\t\t]  '\\t\\t\\t\\tif (!this.activeSetups.Add(setup.Expectation))'
+--- earlier tool_results containing the anchor first line ---
+  block79   tool=Edit         err=True  0ch[]          'String: \\t\\t\\t\\t\\tthis.setups.Add(setup);'
+  block77   tool=Edit         err=True  0ch[]          'String: this.setups.Add(setup);'
+  block75   tool=Bash         err=False 0ch[]          '47\\t\\t\\t\\t\\tthis.setups.Add(setup);'
+  block73   tool=Edit         err=True  0ch[]          'String: \\t\\t\\t\\t\\tthis.setups.Add(setup);'
+  block13   tool=Bash         err=False 0ch[]          '47\\t\\t\\t\\t\\tthis.setups.Add(setup);'
+
+====================================================================================================
+CASE 11 fp-claudecode-tab-20260826 | devlooped__moq-1262-sweet
+CALL call_ylYAqa17Kcu7mJ7a11xKKd34 tool Edit file /root/.ss-eval/runs/r2-79/src/Moq/Match.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/Match.cs
+anchor first line occurs at disk lines [171, 245] (n=2)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rew'
+        disk171   3ch[\t\t\t]    '\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewri'
+--- earlier tool_results containing the anchor first line ---
+  block35   tool=Bash         err=False 0ch[]          '171\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);'
+  block29   tool=Bash         err=False 0ch[]          '171\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);'
+
+====================================================================================================
+CASE 12 fp-claudecode-tab-20260826 | devlooped__moq-1262-sweet
+CALL call_Y6cgvyQevedQ2hhkQZqoNN2v tool Edit file /root/.ss-eval/runs/r1-77/src/Moq/Match.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/Match.cs
+anchor first line occurs at disk lines [171, 245] (n=2)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rew'
+        disk171   3ch[\t\t\t]    '\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewri'
+--- earlier tool_results containing the anchor first line ---
+  block19   tool=Bash         err=False 0ch[]          '171\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);'
+  block17   tool=Bash         err=False 0ch[]          '171\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);'
+  block15   tool=Bash         err=False 0ch[]          '171\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);'
+
+====================================================================================================
+CASE 13 fp-claudecode-tab-20260826 | devlooped__moq-1262-sweet
+CALL call_D4AMSHJGvvlQ3UiMVHrt83ea tool Edit file /root/.ss-eval/runs/r1-77/src/Moq/Match.cs
+GOLD /root/.ss-eval/golden/devlooped__moq@eef6e1b8f9686f227e247956f4b235f9774f0afc/src/Moq/Match.cs
+anchor first line occurs at disk lines [171, 245] (n=2)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 4ch[\t\t\t\t]  '\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rew'
+        disk171   3ch[\t\t\t]    '\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewri'
+--- earlier tool_results containing the anchor first line ---
+  block29   tool=Read         err=False 0ch[]          '171\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);'
+  block25   tool=Edit         err=True  0ch[]          'String: \\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewri'
+  block19   tool=Bash         err=False 0ch[]          '171\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);'
+  block17   tool=Bash         err=False 0ch[]          '171\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);'
+  block15   tool=Bash         err=False 0ch[]          '171\\t\\t\\t\\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);'
+
+====================================================================================================
+CASE 14 fp-claudecode-pipe-20260826 | accenture__sfmc-devtools-1974-sweet
+CALL call_GOmI2jWPMotpszyl7NJMutJN tool Edit file /root/.ss-eval/runs/r1-4/lib/cli.js
+GOLD /root/.ss-eval/golden/Accenture__sfmc-devtools@775a1b0c5c0f7f1d47a901c071f2ce4defd78e97/lib/cli.js
+anchor first line occurs at disk lines [40, 95, 304, 387, 487, 562] (n=16)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 17ch[                 ] "                 .option('metadata', {"
+        disk40    16ch[                ] "                .option('metadata', {"
+  !! a1  anchor 21ch[                     ] "                     type: 'string',"
+        disk41    20ch[                    ] "                    type: 'string',"
+  !! a2  anchor 21ch[                     ] '                     array: true,'
+        disk42    20ch[                    ] '                    array: true,'
+  !! a3  anchor 21ch[                     ] "                     alias: 'm',"
+        disk43    20ch[                    ] "                    alias: 'm',"
+  !! a4  anchor 21ch[                     ] "                     group: 'Options for execute:',"
+        disk44    20ch[                    ] "                    group: 'Options for retrieve:',"
+  !! a5  anchor 21ch[                     ] "                     describe: 'type or type:key or type:i:id or type:n:name to "
+        disk45    20ch[                    ] '                    describe:'
+  !! a6  anchor 17ch[                 ] '                 }),'
+        disk46    24ch[                        ] "                        'type or type:key or type:i:id or type:n:name to retriev"
+  !! a7  anchor 9ch[         ] '         (argv) => {'
+        disk47    16ch[                ] '                })'
+  !! a8  anchor 13ch[             ] '             Mcdev.setOptions(argv);'
+        disk48    16ch[                ] "                .option('like', {"
+  !! a9  anchor 13ch[             ] '             const typeKeyCombo = Mcdev.metadataToTypeKey(argv.metadata);'
+        disk49    20ch[                    ] "                    type: 'string',"
+  !! a10 anchor 0ch[]          ''
+        disk50    20ch[                    ] "                    group: 'Options for retrieve:',"
+--- earlier tool_results containing the anchor first line ---
+  block13   tool=Bash         err=False 0ch[]          "772|                 .option('metadata', {"
+  block11   tool=Bash         err=False 0ch[]          "738|                 .option('metadata', {"
+  block7    tool=Bash         err=False 0ch[]          "738|                 .option('metadata', {"
+  block5    tool=Bash         err=False 0ch[]          "40|                 .option('metadata', {"
+
+====================================================================================================
+CASE 15 fp-claudecode-pipe-20260826 | accenture__sfmc-devtools-1974-sweet
+CALL call_8Cv6HJZ3PbhCQmT5mBHqx2Ox tool Edit file /root/.ss-eval/runs/r1-4/lib/cli.js
+GOLD /root/.ss-eval/golden/Accenture__sfmc-devtools@775a1b0c5c0f7f1d47a901c071f2ce4defd78e97/lib/cli.js
+anchor first line occurs at disk lines [40, 95, 304, 387, 487, 562] (n=16)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 17ch[                 ] "                 .option('metadata', {"
+        disk40    16ch[                ] "                .option('metadata', {"
+  !! a1  anchor 21ch[                     ] "                     type: 'string',"
+        disk41    20ch[                    ] "                    type: 'string',"
+  !! a2  anchor 21ch[                     ] '                     array: true,'
+        disk42    20ch[                    ] '                    array: true,'
+  !! a3  anchor 21ch[                     ] "                     alias: 'm',"
+        disk43    20ch[                    ] "                    alias: 'm',"
+  !! a4  anchor 21ch[                     ] "                     group: 'Options for execute:',"
+        disk44    20ch[                    ] "                    group: 'Options for retrieve:',"
+  !! a5  anchor 21ch[                     ] "                     describe: 'type or type:key or type:i:id or type:n:name to "
+        disk45    20ch[                    ] '                    describe:'
+  !! a6  anchor 17ch[                 ] '                 }),'
+        disk46    24ch[                        ] "                        'type or type:key or type:i:id or type:n:name to retriev"
+  !! a7  anchor 9ch[         ] '         (argv) => {'
+        disk47    16ch[                ] '                })'
+  !! a8  anchor 13ch[             ] '             Mcdev.setOptions(argv);'
+        disk48    16ch[                ] "                .option('like', {"
+  !! a9  anchor 13ch[             ] '             const typeKeyCombo = Mcdev.metadataToTypeKey(argv.metadata);'
+        disk49    20ch[                    ] "                    type: 'string',"
+  !! a10 anchor 13ch[             ] "             if ('undefined' === typeof typeKeyCombo) {"
+        disk50    20ch[                    ] "                    group: 'Options for retrieve:',"
+  !! a11 anchor 17ch[                 ] '                 Mcdev.refresh(argv.BU, csvToArray(argv.TYPE), csvToArray(argv.K'
+        disk51    20ch[                    ] '                    describe:'
+  !! a12 anchor 0ch[]          ''
+        disk52    24ch[                        ] "                        'filter metadata components (can include % as wildcard o"
+--- earlier tool_results containing the anchor first line ---
+  block15   tool=Edit         err=True  0ch[]          "String:                  .option('metadata', {"
+  block13   tool=Bash         err=False 0ch[]          "772|                 .option('metadata', {"
+  block11   tool=Bash         err=False 0ch[]          "738|                 .option('metadata', {"
+  block7    tool=Bash         err=False 0ch[]          "738|                 .option('metadata', {"
+  block5    tool=Bash         err=False 0ch[]          "40|                 .option('metadata', {"
+
+====================================================================================================
+CASE 16 fp-claudecode-pipe-20260826 | accenture__sfmc-devtools-1974-sweet
+CALL call_c88ppCJZKFIQuY68S3RXAGQ4 tool Edit file /root/.ss-eval/runs/r1-4/lib/cli.js
+GOLD /root/.ss-eval/golden/Accenture__sfmc-devtools@775a1b0c5c0f7f1d47a901c071f2ce4defd78e97/lib/cli.js
+anchor first line occurs at disk lines [66, 210, 230, 247, 260, 280] (n=26)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 17ch[                 ] '                 }),'
+        disk66    16ch[                ] '                }),'
+  !! a1  anchor 9ch[         ] '         (argv) => {'
+        disk67    8ch[        ]  '        (argv) => {'
+  !! a2  anchor 13ch[             ] '             Mcdev.setOptions(argv);'
+        disk68    12ch[            ] '            Mcdev.setOptions(argv);'
+  !! a3  anchor 13ch[             ] '             const typeKeyCombo = Mcdev.metadataToTypeKey(argv.metadata);'
+        disk69    12ch[            ] '            const typeKeyCombo = Mcdev.metadataToTypeKey(argv.metadata);'
+  !! a4  anchor 13ch[             ] "             if ('undefined' === typeof typeKeyCombo) {"
+        disk70    12ch[            ] "            if ('undefined' === typeof typeKeyCombo) {"
+  !! a5  anchor 17ch[                 ] '                 Mcdev.refresh(argv.BU, csvToArray(argv.TYPE), csvToArray(argv.K'
+        disk71    16ch[                ] '                Mcdev.retrieve(argv.BU, csvToArray(argv.TYPE), csvToArray(argv.K'
+  !! a6  anchor 0ch[]          ''
+        disk72    12ch[            ] '            } else {'
+--- earlier tool_results containing the anchor first line ---
+  block21   tool=Bash         err=False 0ch[]          '744|                 }),'
+  block17   tool=Edit         err=True  17ch[                 ] '                 }),'
+  block15   tool=Edit         err=True  17ch[                 ] '                 }),'
+  block13   tool=Bash         err=False 0ch[]          '798|                 }),'
+  block11   tool=Bash         err=False 0ch[]          '691|                 }),'
+  block7    tool=Bash         err=False 0ch[]          '744|                 }),'
+
+====================================================================================================
+CASE 17 fp-claudecode-pipe-20260826 | accenture__sfmc-devtools-1974-sweet
+CALL call_d40jJt9ObnwiMyWIQGd4c437 tool Edit file /root/.ss-eval/runs/r1-4/lib/cli.js
+GOLD /root/.ss-eval/golden/Accenture__sfmc-devtools@775a1b0c5c0f7f1d47a901c071f2ce4defd78e97/lib/cli.js
+anchor first line occurs at disk lines [743, 777, 831, 877, 918, 966] (n=9)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 21ch[                     ] "                     describe: 'type or type:key or type:i:id or type:n:name to "
+        disk743   20ch[                    ] "                    describe: 'type or type:key or type:i:id or type:n:name to f"
+  !! a1  anchor 17ch[                 ] '                 }),'
+        disk744   16ch[                ] '                }),'
+--- earlier tool_results containing the anchor first line ---
+  block21   tool=Bash         err=False 0ch[]          "743|                     describe: 'type or type:key or type:i:id or type:n:name to fix',"
+  block17   tool=Edit         err=True  21ch[                     ] "                     describe: 'type or type:key or type:i:id or type:n:name to fix',"
+  block15   tool=Edit         err=True  21ch[                     ] "                     describe: 'type or type:key or type:i:id or type:n:name to fix',"
+  block13   tool=Bash         err=False 0ch[]          "777|                     describe: 'type or type:key or type:i:id or type:n:name to fix',"
+  block11   tool=Bash         err=False 0ch[]          "743|                     describe: 'type or type:key or type:i:id or type:n:name to fix',"
+  block7    tool=Bash         err=False 0ch[]          "743|                     describe: 'type or type:key or type:i:id or type:n:name to fix',"
+
+====================================================================================================
+CASE 18 fp-claudecode-pipe-20260826 | callstack__react-native-paper-972-sweet
+CALL call_tmm6Nj1QepR2NoqXixdQI8hp tool Edit file /root/.ss-eval/runs/r2-32/src/components/Searchbar.js
+GOLD /root/.ss-eval/golden/callstack__react-native-paper@3bba0304e6b03e9a5bdc7baeb5547ac67bb32e7b/src/components/Searchbar.js
+anchor first line occurs at disk lines [135] (n=1)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 7ch[       ]   '       clearIcon,'
+        disk135   6ch[      ]    '      clearIcon,'
+  !! a1  anchor 7ch[       ]   '       inputStyle,'
+        disk136   6ch[      ]    '      inputStyle,'
+  !! a2  anchor 7ch[       ]   '       ...rest'
+        disk137   6ch[      ]    '      ...rest'
+  !! a3  anchor 0ch[]          ''
+        disk138   4ch[    ]      '    } = this.props;'
+--- earlier tool_results containing the anchor first line ---
+  block9    tool=Bash         err=False 0ch[]          '135|       clearIcon,'
+
+====================================================================================================
+CASE 19 fp-claudecode-pipe-20260826 | callstack__react-native-paper-972-sweet
+CALL call_EwfIzGbLq2qIo327Mo0vHZVE tool Edit file /root/.ss-eval/runs/r1-31/src/components/Searchbar.js
+GOLD /root/.ss-eval/golden/callstack__react-native-paper@3bba0304e6b03e9a5bdc7baeb5547ac67bb32e7b/src/components/Searchbar.js
+anchor first line occurs at disk lines [135] (n=1)
+--- anchor vs disk, indent compared ---
+  !! a0  anchor 7ch[       ]   '       clearIcon,'
+        disk135   6ch[      ]    '      clearIcon,'
+  !! a1  anchor 7ch[       ]   '       inputStyle,'
+        disk136   6ch[      ]    '      inputStyle,'
+  !! a2  anchor 7ch[       ]   '       ...rest'
+        disk137   6ch[      ]    '      ...rest'
+  !! a3  anchor 0ch[]          ''
+        disk138   4ch[    ]      '    } = this.props;'
+--- earlier tool_results containing the anchor first line ---
+  block9    tool=Bash         err=False 0ch[]          '135|       clearIcon,'
+

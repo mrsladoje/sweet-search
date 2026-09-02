@@ -1,0 +1,91 @@
+
+#### claude-code/jazzband__tablib-454/native/rep0  n_req=10 calls=9 cost=0.005753 edited=['src/tablib/core.py'] marks={'first_read': 2, 'first_sight': 1, 'first_edit': 6, 'last_tool': 8}
+     fp-claudecode-tab-20260826/agent-state/jazzband__tablib-454-native/claude-home/projects/-root--ss-eval-runs-r0-109/82884e18-1fac-43f0-8945-e9c016c052c4.jsonl
+   0 localize   test     c=1 new=17275 out=  98     | run_tests
+   1 understand search   c=1 new= 1073 out=  98     | grep -R "def [lr]push\|lpush\|rpush" -n . --exclude-dir=.git
+   2 understand read     c=1 new=  459 out=  58 ERR | Read src/tablib/core.py 1+1000
+   3 understand read     c=1 new=   95 out=  57 ERR | Read src/tablib/core.py 1+1100
+   4 understand read     c=1 new=   95 out=  56 ERR | Read src/tablib/core.py 1+700
+   5 understand read     c=1 new=   94 out=  93     | Read src/tablib/core.py 1+7000
+   6 edit       edit     c=1 new= 7287 out= 262     | Edit src/tablib/core.py
+   7 verify     read     c=1 new=  177 out= 116     | Read tests/test_tablib.py 530+55
+   8 verify     test     c=1 new=  444 out= 155     | run_tests
+   9 finalize   text     c=0 new= 1448 out= 665     | TEXT: Implemented the `Row` push-direction fix in `src/tablib/core.py`:  - `Row.lpush(value)` now prepends the value. - `Row.r
+
+#### claude-code/jazzband__tablib-454/native/rep1  n_req=10 calls=9 cost=0.005812 edited=['src/tablib/core.py'] marks={'first_read': 4, 'first_sight': 2, 'first_edit': 7, 'last_tool': 8}
+     fp-claudecode-tab-20260826/agent-state/jazzband__tablib-454-native/claude-home/projects/-root--ss-eval-runs-r1-110/70b5d0fa-b681-4c23-aa92-33fc9f7c0035.jsonl
+   0 localize   plan     c=1 new=17275 out=  98     | TaskCreate
+   1 localize   read     c=1 new=   80 out=  62     | pwd && find . -maxdepth 3 -type f | sort | head -200
+   2 understand read     c=1 new=  531 out=  99     | grep -RInE "def (lpush|rpush)|lpush|rpush" src tests | head -100
+   3 understand test     c=1 new=  284 out=  64     | run_tests
+   4 understand read     c=1 new= 1073 out=  47 ERR | Read src/tablib/core.py 1+1000
+   5 understand read     c=1 new=   95 out=  57     | Read src/tablib/core.py 1+1100
+   6 understand read     c=1 new= 7287 out=  74     | Read tests/test_tablib.py 520+75
+   7 edit       edit     c=1 new=  607 out= 448     | Edit src/tablib/core.py
+   8 verify     test     c=1 new=  177 out=  94     | run_tests
+   9 finalize   text     c=0 new= 1448 out= 658     | TEXT: Implemented the `Row` push-direction fix in `src/tablib/core.py`:  - `Row.lpush(value)` now prepends the value. - `Row.r
+
+#### claude-code/jazzband__tablib-454/native/rep2  n_req=9 calls=9 cost=0.004989 edited=['src/tablib/core.py'] marks={'first_read': 2, 'first_sight': 1, 'first_edit': 4, 'last_tool': 7}
+     fp-claudecode-tab-20260826/agent-state/jazzband__tablib-454-native/claude-home/projects/-root--ss-eval-runs-r2-112/b63da5e8-f22b-42e2-86b5-ad0d2bbcb025.jsonl
+   0 localize   test     c=1 new=17275 out=  83     | run_tests
+   1 understand read     c=2 new= 1072 out= 137 ERR | grep -R "def [lr]push\|lpush\|rpush" -n . --exclude-dir=.git || Read CLAUDE.md 1+200
+   2 understand read     c=1 new=  563 out=  56     | Read src/tablib/core.py 1+110
+   3 understand read     c=1 new=  818 out=  66     | Read src/tablib/core.py 435+45
+   4 edit       edit     c=1 new=  416 out= 242     | Edit src/tablib/core.py
+   5 verify     test     c=1 new=  177 out=  76     | run_tests
+   6 verify     read     c=1 new= 1447 out= 147     | Read tests/test_tablib.py 535+45
+   7 verify     git      c=1 new=  368 out= 454     | git diff -- src/tablib/core.py && git status --short
+   8 finalize   text     c=0 new=  228 out= 683     | TEXT: Implemented the `Row` push-direction fix in `src/tablib/core.py`:  - `Row.rpush(value)` now appends to the right/end of 
+
+#### claude-code/jazzband__tablib-454/sweet/rep0  n_req=13 calls=12 cost=0.008740 edited=['src/tablib/core.py'] marks={'first_read': 4, 'first_sight': 1, 'first_edit': 5, 'last_tool': 11}
+     fp-claudecode-tab-20260826/agent-state/jazzband__tablib-454-sweet/claude-home/projects/-root--ss-eval-runs-r0-104/e672dfd2-4782-44a2-a074-24b55a52f296.jsonl
+   0 localize   test     c=1 new=18845 out= 107     | run_tests
+   1 understand search   c=1 new= 1072 out=  80     | ss-search "Row lpush rpush append prepend behavior" -k 10
+   2 understand search   c=1 new= 1565 out=  91     | ss-trace Row [callees] --in src/tablib/core.py
+   3 understand search   c=1 new= 4676 out= 174     | ss-grep "def lpush\|def rpush" -k 20
+   4 understand read     c=1 new=  280 out=  53     | ss-read src/tablib/core.py 430 475
+   5 edit       edit     c=1 new=  505 out= 272     | Edit src/tablib/core.py
+   6 verify     test     c=1 new=  177 out=  73     | run_tests
+   7 verify     read     c=1 new= 1447 out= 178     | ss-read tests/test_tablib.py 490 515
+   8 verify     search   c=1 new=  381 out=  84     | ss-find "row lpush append tests" --regex "test_row_(append|lpush|rpush)" -k 10
+   9 verify     git      c=1 new=  968 out= 946     | git diff -- src/tablib/core.py
+  10 edit       edit     c=1 new=  204 out= 486     | Edit src/tablib/core.py
+  11 verify     test     c=1 new=  137 out= 418     | run_tests
+  12 finalize   text     c=0 new= 1445 out=1076     | TEXT: Implemented the `Row.lpush`/`Row.rpush` behavior correction in `src/tablib/core.py`:  - `Row.rpush(value)` now appends t
+
+#### claude-code/jazzband__tablib-454/sweet/rep1  n_req=15 calls=14 cost=0.008225 edited=['src/tablib/core.py'] marks={'first_read': 4, 'first_sight': 2, 'first_edit': 6, 'last_tool': 13}
+     fp-claudecode-tab-20260826/agent-state/jazzband__tablib-454-sweet/claude-home/projects/-root--ss-eval-runs-r1-106/abd105b5-6eaf-4ec8-b4b7-5ac3ff1fc549.jsonl
+   0 localize   plan     c=1 new=18845 out=  90     | TaskCreate
+   1 localize   test     c=1 new=   77 out=  89     | run_tests
+   2 understand search   c=1 new= 1072 out=  68     | ss-grep "Row" -k 20
+   3 understand search   c=1 new=  326 out= 101     | ss-find "row push methods" --regex "lpush|rpush" -k 20
+   4 understand read     c=1 new= 2225 out= 156     | ss-read src/tablib/core.py 32 106
+   5 understand search   c=1 new=  717 out= 154     | ss-trace rpush callees
+   6 edit       edit     c=1 new=  575 out= 230     | Edit src/tablib/core.py
+   7 verify     test     c=1 new=  177 out=  59     | run_tests
+   8 verify     read     c=1 new= 1447 out= 230     | ss-read tests/test_tablib.py 510 565
+   9 verify     read     c=1 new=  755 out=  56     | ss-read tests/test_tablib.py 557 610
+  10 verify     search   c=1 new=  505 out= 450     | ss-find "Dataset push operations" --regex "def (lpush|rpush|append)" -k 10
+  11 verify     read     c=1 new= 2361 out= 485     | ss-read src/tablib/core.py 430 470
+  12 verify     read     c=1 new=  464 out= 308     | ss-read src/tablib/core.py 467 485
+  13 verify     plan     c=1 new=  272 out= 462     | TaskUpdate
+  14 finalize   text     c=0 new=   39 out= 151     | TEXT: Implemented the `Row.lpush`/`Row.rpush` direction fix in `src/tablib/core.py`:  - `Row.lpush(value)` now prepends to the
+
+#### claude-code/jazzband__tablib-454/sweet/rep2  n_req=16 calls=15 cost=0.009144 edited=['src/tablib/core.py'] marks={'first_read': 2, 'first_sight': 1, 'first_edit': 4, 'last_tool': 14}
+     fp-claudecode-tab-20260826/agent-state/jazzband__tablib-454-sweet/claude-home/projects/-root--ss-eval-runs-r2-107/a545c185-065c-4bfb-9823-77aa47b99542.jsonl
+   0 localize   plan     c=1 new=18845 out=  89     | TaskCreate
+   1 understand search   c=1 new=   77 out=  82     | ss-grep "lpush|rpush" -k 20
+   2 understand read     c=1 new=  227 out=  93     | ss-read src/tablib/core.py 430 485 && ss-read src/tablib/core.py 540 615
+   3 understand test     c=1 new= 1260 out= 155     | ss-read src/tablib/core.py 1 110 && run_tests
+   4 edit       edit     c=1 new= 1969 out= 259     | Edit src/tablib/core.py
+   5 verify     test     c=1 new=  177 out=  74     | run_tests
+   6 verify     read     c=1 new= 1448 out= 482     | ss-read tests/test_tablib.py 530 575
+   7 verify     read     c=1 new=  465 out= 333     | ss-read tests/test_tablib.py 557 595
+   8 verify     search   c=1 new=  390 out= 691     | ss-search "Row lpush rpush append usage" -k 10
+   9 edit       edit     c=1 new= 1737 out= 557     | Edit src/tablib/core.py
+  10 edit       edit     c=1 new=  131 out= 251     | Edit src/tablib/core.py
+  11 verify     git      c=1 new=  131 out= 473     | git diff -- src/tablib/core.py
+  12 verify     test     c=1 new=  204 out=  46     | run_tests
+  13 verify     plan     c=1 new=  358 out= 396     | TaskUpdate
+  14 verify     plan     c=1 new=   40 out= 541     | TaskUpdate
+  15 finalize   text     c=0 new=   39 out= 174     | TEXT: Implemented the `Row.lpush`/`Row.rpush` direction fix in `src/tablib/core.py`:  - `Row.rpush(value)` now appends to the 

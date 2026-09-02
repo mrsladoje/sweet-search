@@ -1,0 +1,71 @@
+EXIT=0
+{
+ "codex-sweet": {
+  "rollouts": 66,
+  "assistantChars": 120863,
+  "stateChars": 18640,
+  "blocks": 59,
+  "perRollout": {
+   "assistantChars": 1831,
+   "stateChars": 282,
+   "blocks": 0.89
+  },
+  "stateShareOfAssistantText": 0.154,
+  "approx": {
+   "stateTokensPerRollout": 71,
+   "usdOutput": 0.000042,
+   "usdWithResidency15": 0.000053
+  }
+ },
+ "codex-native": {
+  "rollouts": 66,
+  "assistantChars": 98963,
+  "stateChars": 0,
+  "blocks": 0,
+  "perRollout": {
+   "assistantChars": 1499,
+   "stateChars": 0,
+   "blocks": 0
+  },
+  "stateShareOfAssistantText": 0,
+  "approx": {
+   "stateTokensPerRollout": 0,
+   "usdOutput": 0,
+   "usdWithResidency15": 0
+  }
+ },
+ "claude-sweet": {
+  "rollouts": 66,
+  "assistantChars": 96554,
+  "stateChars": 31724,
+  "blocks": 85,
+  "perRollout": {
+   "assistantChars": 1463,
+   "stateChars": 481,
+   "blocks": 1.29
+  },
+  "stateShareOfAssistantText": 0.329,
+  "approx": {
+   "stateTokensPerRollout": 120,
+   "usdOutput": 0.000072,
+   "usdWithResidency15": 0.00009
+  }
+ },
+ "claude-native": {
+  "rollouts": 66,
+  "assistantChars": 54043,
+  "stateChars": 0,
+  "blocks": 0,
+  "perRollout": {
+   "assistantChars": 819,
+   "stateChars": 0,
+   "blocks": 0
+  },
+  "stateShareOfAssistantText": 0,
+  "approx": {
+   "stateTokensPerRollout": 0,
+   "usdOutput": 0,
+   "usdWithResidency15": 0
+  }
+ }
+}

@@ -1,0 +1,101 @@
+============================================================================================
+TOKEN TRANSPARENCY — share of lines whose CONTENT tokens survive the gutter [M]
+  transparent%% = content token sequence identical to the no-gutter tokenisation
+  ambiguous%%   = gutter's trailing space fused into a pure-space token (+1 hazard)
+============================================================================================
+
+detect_mistakes.R  (391 lines)
+  form           transparent    ambiguous
+  none             391/391   100.0%      0/391     0.0%
+  tab               54/391    13.8%      0/391     0.0%
+  pipe              47/391    12.0%    340/391    87.0%
+  colon_space       47/391    12.0%    340/391    87.0%
+  colon            391/391   100.0%      0/391     0.0%
+  space             47/391    12.0%    340/391    87.0%
+  pad5_tab          54/391    13.8%      0/391     0.0%
+  pad5_2sp          47/391    12.0%    340/391    87.0%
+  sp_pipe          391/391   100.0%      0/391     0.0%
+  pad05_sp_pipe    391/391   100.0%      0/391     0.0%
+  pipe_nosp        391/391   100.0%      0/391     0.0%
+  arrow            391/391   100.0%      0/391     0.0%
+
+eth.go  (706 lines)
+  form           transparent    ambiguous
+  none             706/706   100.0%      0/706     0.0%
+  tab              363/706    51.4%      0/706     0.0%
+  pipe             259/706    36.7%      0/706     0.0%
+  colon_space      259/706    36.7%      0/706     0.0%
+  colon            641/706    90.8%      0/706     0.0%
+  space            259/706    36.7%      0/706     0.0%
+  pad5_tab         363/706    51.4%      0/706     0.0%
+  pad5_2sp         266/706    37.7%      0/706     0.0%
+  sp_pipe          706/706   100.0%      0/706     0.0%
+  pad05_sp_pipe    706/706   100.0%      0/706     0.0%
+  pipe_nosp        706/706   100.0%      0/706     0.0%
+  arrow            706/706   100.0%      0/706     0.0%
+
+grade_code.R  (167 lines)
+  form           transparent    ambiguous
+  none             167/167   100.0%      0/167     0.0%
+  tab               88/167    52.7%      0/167     0.0%
+  pipe              12/167     7.2%     78/167    46.7%
+  colon_space       12/167     7.2%     78/167    46.7%
+  colon             93/167    55.7%      0/167     0.0%
+  space             12/167     7.2%     78/167    46.7%
+  pad5_tab          88/167    52.7%      0/167     0.0%
+  pad5_2sp          12/167     7.2%     78/167    46.7%
+  sp_pipe          167/167   100.0%      0/167     0.0%
+  pad05_sp_pipe    167/167   100.0%      0/167     0.0%
+  pipe_nosp        167/167   100.0%      0/167     0.0%
+  arrow            167/167   100.0%      0/167     0.0%
+
+traceback.py  (100 lines)
+  form           transparent    ambiguous
+  none             100/100   100.0%      0/100     0.0%
+  tab               37/100    37.0%      0/100     0.0%
+  pipe              29/100    29.0%     46/100    46.0%
+  colon_space       29/100    29.0%     46/100    46.0%
+  colon             86/100    86.0%      0/100     0.0%
+  space             29/100    29.0%     46/100    46.0%
+  pad5_tab          37/100    37.0%      0/100     0.0%
+  pad5_2sp          29/100    29.0%     46/100    46.0%
+  sp_pipe           98/100    98.0%      0/100     0.0%
+  pad05_sp_pipe     98/100    98.0%      0/100     0.0%
+  pipe_nosp         98/100    98.0%      0/100     0.0%
+  arrow             98/100    98.0%      0/100     0.0%
+
+underscore.js  (1688 lines)
+  form           transparent    ambiguous
+  none            1688/1688  100.0%      0/1688    0.0%
+  tab              199/1688   11.8%      0/1688    0.0%
+  pipe             191/1688   11.3%   1491/1688   88.3%
+  colon_space      191/1688   11.3%   1491/1688   88.3%
+  colon           1683/1688   99.7%      0/1688    0.0%
+  space            191/1688   11.3%   1491/1688   88.3%
+  pad5_tab         199/1688   11.8%      0/1688    0.0%
+  pad5_2sp         191/1688   11.3%   1491/1688   88.3%
+  sp_pipe         1687/1688   99.9%      0/1688    0.0%
+  pad05_sp_pipe   1687/1688   99.9%      0/1688    0.0%
+  pipe_nosp       1687/1688   99.9%      0/1688    0.0%
+  arrow           1687/1688   99.9%      0/1688    0.0%
+
+============================================================================================
+AGGREGATE [M]
+============================================================================================
+  form                 transparent      ambiguous space run
+  none              3052/3052   100.0%          0/3052     0.0%
+  tab                741/3052    24.3%          0/3052     0.0%
+  pipe               538/3052    17.6%       1955/3052    64.1%
+  colon_space        538/3052    17.6%       1955/3052    64.1%
+  colon             2894/3052    94.8%          0/3052     0.0%
+  space              538/3052    17.6%       1955/3052    64.1%
+  pad5_tab           741/3052    24.3%          0/3052     0.0%
+  pad5_2sp           545/3052    17.9%       1955/3052    64.1%
+  sp_pipe           3049/3052    99.9%          0/3052     0.0%
+  pad05_sp_pipe     3049/3052    99.9%          0/3052     0.0%
+  pipe_nosp         3049/3052    99.9%          0/3052     0.0%
+  arrow             3049/3052    99.9%          0/3052     0.0%
+
+note: lines that are empty or start at column 0 are transparent under every
+      form, so the ambiguous share is bounded by the indented-line share.
+      space-indented lines in this corpus: 1955/3052 = 64.1%

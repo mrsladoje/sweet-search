@@ -1,0 +1,557 @@
+{
+ "absinthe-graphql__absinthe-998": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  }
+ },
+ "accenture__sfmc-devtools-1974": {
+  "TAB": {
+   "n": 6,
+   "shown": 6,
+   "named": 3,
+   "patched": 3
+  },
+  "native": {
+   "n": 6,
+   "shown": 6,
+   "named": 3,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 6,
+   "shown": 6,
+   "named": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 6,
+   "shown": 6,
+   "named": 3,
+   "patched": 3
+  }
+ },
+ "aio-libs__aiohttp-8038": {
+  "TAB": {
+   "n": 3,
+   "named": 2,
+   "shown": 2,
+   "patched": 1
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 2
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 2
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 2
+  }
+ },
+ "apigee__registry-961": {
+  "TAB": {
+   "n": 3,
+   "shown": 3,
+   "named": 1,
+   "patched": 1
+  },
+  "native": {
+   "n": 3,
+   "shown": 3,
+   "named": 2,
+   "patched": 2
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 2,
+   "shown": 3,
+   "patched": 2
+  }
+ },
+ "asynkron__protoactor-dotnet-1909": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  }
+ },
+ "aws-actions__configure-aws-credentials-42": {
+  "TAB": {
+   "n": 6,
+   "named": 6,
+   "shown": 6,
+   "patched": 6
+  },
+  "native": {
+   "n": 6,
+   "named": 6,
+   "shown": 6,
+   "patched": 6
+  },
+  "NONE": {
+   "n": 6,
+   "named": 6,
+   "shown": 6,
+   "patched": 6
+  },
+  "PIPE": {
+   "n": 6,
+   "named": 6,
+   "shown": 6,
+   "patched": 6
+  }
+ },
+ "awslabs__aws-embedded-metrics-node-21": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 2
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  }
+ },
+ "axelrod-python__axelrod-671": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  }
+ },
+ "bfgroup__b2-113": {
+  "TAB": {
+   "n": 3
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 2
+  },
+  "NONE": {
+   "n": 3
+  },
+  "PIPE": {
+   "n": 3
+  }
+ },
+ "bfgroup__b2-259": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 1
+  },
+  "native": {
+   "n": 3,
+   "shown": 2,
+   "named": 1
+  },
+  "NONE": {
+   "n": 3,
+   "shown": 3,
+   "named": 2
+  },
+  "PIPE": {
+   "n": 3,
+   "shown": 2,
+   "named": 1
+  }
+ },
+ "callstack__react-native-paper-972": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 2
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3
+  }
+ },
+ "celestiaorg__nmt-192": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  }
+ },
+ "devlooped__moq-1262": {
+  "TAB": {
+   "n": 12,
+   "shown": 12,
+   "named": 9,
+   "patched": 1
+  },
+  "native": {
+   "n": 12,
+   "named": 10,
+   "shown": 12,
+   "patched": 2
+  },
+  "NONE": {
+   "n": 12,
+   "shown": 11,
+   "named": 6,
+   "patched": 2
+  },
+  "PIPE": {
+   "n": 12,
+   "shown": 12,
+   "named": 10,
+   "patched": 1
+  }
+ },
+ "fastify__fastify-cors-285": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  }
+ },
+ "final-form__final-form-64": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  }
+ },
+ "gitbookio__markup-it-56": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 2
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 2
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 1
+  }
+ },
+ "hotmeteor__spectator-181": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 2
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  }
+ },
+ "jazzband__tablib-454": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  }
+ },
+ "locationtech__jts-622": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  }
+ },
+ "mathnet__mathnet-numerics-1072": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  }
+ },
+ "mirumee__ariadne-codegen-218": {
+  "TAB": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "native": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  },
+  "PIPE": {
+   "n": 3,
+   "named": 3,
+   "shown": 3,
+   "patched": 3
+  }
+ },
+ "protofire__solhint-224": {
+  "TAB": {
+   "n": 15,
+   "named": 13,
+   "shown": 13,
+   "patched": 3
+  },
+  "native": {
+   "n": 15,
+   "named": 13,
+   "shown": 12,
+   "patched": 3
+  },
+  "NONE": {
+   "n": 15,
+   "named": 12,
+   "shown": 12,
+   "patched": 4
+  },
+  "PIPE": {
+   "n": 15,
+   "named": 13,
+   "shown": 14,
+   "patched": 3
+  }
+ }
+}

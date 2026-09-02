@@ -1,0 +1,67 @@
+sweet subagent transcripts: 11
+
+--- asynkron__protoactor-dotnet-1909 rep1 agent-a3d311866bfc0b7cb: calls=32 ss=18 worktree-scoped=6 {'usage': 1, 'zero': 5} scope={'root': 2, 'subpath': 4}
+    tools x outcome: {('ss-grep', 'usage'): 1, ('ss-grep', 'zero'): 5}
+    native retrieval: all={'grep': 4, 'list': 1, 'read': 5} chars=65,948 | before-first-wz={'grep': 4, 'list': 1, 'read': 2} chars=58,396 | after-first-wz={'read': 3} chars=7,552 | within3={'read': 3} chars=7,552
+    unique zero patterns=5 unscoped rerun outcomes={'not-rerun': 5}
+
+--- awslabs__aws-embedded-metrics-node-21 rep0 agent-a0d415047c0776a3e: calls=26 ss=9 worktree-scoped=0 {} scope={}
+    tools x outcome: {}
+    native retrieval: all={'list': 1, 'grep': 2, 'read': 9, 'glob': 2} chars=38,022 | before-first-wz={} chars=0 | after-first-wz={} chars=0 | within3={} chars=0
+    unique zero patterns=0 unscoped rerun outcomes={}
+
+--- awslabs__aws-embedded-metrics-node-21 rep2 agent-a484cf2677177e8ef: calls=32 ss=22 worktree-scoped=0 {} scope={}
+    tools x outcome: {}
+    native retrieval: all={'glob': 3, 'list': 2, 'grep': 1} chars=10,392 | before-first-wz={} chars=0 | after-first-wz={} chars=0 | within3={} chars=0
+    unique zero patterns=0 unscoped rerun outcomes={}
+
+--- bfgroup__b2-113 rep1 agent-abd536db90e42b25d: calls=63 ss=51 worktree-scoped=13 {'zero': 12, 'usage': 1} scope={'root': 1, 'subpath': 12}
+    tools x outcome: {('ss-grep', 'zero'): 12, ('ss-find', 'usage'): 1}
+    native retrieval: all={'list': 3, 'glob': 1, 'read': 5} chars=73,414 | before-first-wz={'list': 1, 'glob': 1} chars=7,823 | after-first-wz={'list': 2, 'read': 5} chars=65,591 | within3={'list': 2, 'read': 3} chars=52,547
+    unique zero patterns=10 unscoped rerun outcomes={'not-rerun': 9, 'other': 1}
+
+--- bfgroup__b2-113 rep2 agent-a41e46d3e2671aa14: calls=66 ss=43 worktree-scoped=8 {'zero': 5, 'usage': 3} scope={'root': 8}
+    tools x outcome: {('ss-grep', 'zero'): 5, ('ss-grep', 'usage'): 1, ('ss-find', 'usage'): 2}
+    native retrieval: all={'list': 1, 'read': 18, 'grep': 2} chars=100,468 | before-first-wz={'list': 1} chars=7,435 | after-first-wz={'read': 18, 'grep': 2} chars=93,033 | within3={} chars=0
+    unique zero patterns=5 unscoped rerun outcomes={'zero': 1, 'not-rerun': 1, 'hit': 3}
+
+--- bfgroup__b2-259 rep0 agent-a04ad28e63dd30186: calls=63 ss=61 worktree-scoped=30 {'other': 12, 'usage': 6, 'zero': 12} scope={'root': 30}
+    tools x outcome: {('ss-find', 'other'): 12, ('ss-find', 'usage'): 1, ('ss-grep', 'usage'): 5, ('ss-grep', 'zero'): 11, ('ss-find', 'zero'): 1}
+    native retrieval: all={'read': 1} chars=265 | before-first-wz={} chars=0 | after-first-wz={'read': 1} chars=265 | within3={'read': 1} chars=265
+    unique zero patterns=11 unscoped rerun outcomes={'other': 3, 'not-rerun': 8}
+    'other' outcome heads (tool, first line): [('ss-find', '/root/sweet-search-private/eval/agent-read-workflows/bin/ss-find'), ('ss-find', '# ss-find: ColGrep 6 for "/root/.ss-eval/runs/r0-52/.claude/worktrees/agent-a04ad28e63dd30186" /(?i)'), ('ss-find', '# ss-find: ColGrep 6 for "/root/.ss-eval/runs/r0-52/.claude/worktrees/agent-a04ad28e63dd30186" /(?i)'), ('ss-find', '# ss-find: ColGrep 100 for "/root/.ss-eval/runs/r0-52/.claude/worktrees/agent-a04ad28e63dd30186" /(?'), ('ss-find', '<persisted-output>'), ('ss-find', '# ss-find: ColGrep 14 for "/root/.ss-eval/runs/r0-52/.claude/worktrees/agent-a04ad28e63dd30186" /(?i')]
+
+--- bfgroup__b2-259 rep0 agent-a8d5f1d037a62e83b: calls=73 ss=57 worktree-scoped=0 {} scope={}
+    tools x outcome: {}
+    native retrieval: all={'read': 15} chars=120,855 | before-first-wz={} chars=0 | after-first-wz={} chars=0 | within3={} chars=0
+    unique zero patterns=0 unscoped rerun outcomes={}
+
+--- bfgroup__b2-259 rep0 agent-a914bc3d20e9a67cc: calls=43 ss=32 worktree-scoped=0 {} scope={}
+    tools x outcome: {}
+    native retrieval: all={'read': 10} chars=27,961 | before-first-wz={} chars=0 | after-first-wz={} chars=0 | within3={} chars=0
+    unique zero patterns=0 unscoped rerun outcomes={}
+
+--- bfgroup__b2-259 rep1 agent-abf1061910955a4c6: calls=39 ss=17 worktree-scoped=0 {} scope={}
+    tools x outcome: {}
+    native retrieval: all={'glob': 1, 'grep': 7, 'read': 11} chars=109,692 | before-first-wz={} chars=0 | after-first-wz={} chars=0 | within3={} chars=0
+    unique zero patterns=0 unscoped rerun outcomes={}
+
+--- fastify__fastify-cors-285 rep0 agent-a61852622b2fb2c36: calls=17 ss=13 worktree-scoped=0 {} scope={}
+    tools x outcome: {}
+    native retrieval: all={} chars=0 | before-first-wz={} chars=0 | after-first-wz={} chars=0 | within3={} chars=0
+    unique zero patterns=0 unscoped rerun outcomes={}
+
+--- final-form__final-form-64 rep2 agent-a38e681945774a613: calls=36 ss=16 worktree-scoped=14 {'other': 1, 'zero': 11, 'usage': 2} scope={'root': 3, 'subpath': 11}
+    tools x outcome: {('ss-find', 'other'): 1, ('ss-grep', 'zero'): 11, ('ss-find', 'usage'): 1, ('ss-grep', 'usage'): 1}
+    native retrieval: all={'list': 1, 'read': 13, 'grep': 2} chars=126,840 | before-first-wz={'list': 1} chars=4,916 | after-first-wz={'read': 13, 'grep': 2} chars=121,924 | within3={'read': 6, 'grep': 1} chars=39,009
+    unique zero patterns=8 unscoped rerun outcomes={'not-rerun': 8}
+    'other' outcome heads (tool, first line): [('ss-find', '/root/sweet-search-private/eval/agent-read-workflows/bin/ss-find')]
+
+=== totals over the 11 subagents ===
+worktree-scoped ss calls by outcome: {'usage': 13, 'zero': 45, 'other': 13} sum= 71
+native retrieval ops all: {'grep': 18, 'chars': 673857, 'list': 9, 'read': 87, 'glob': 7}
+native retrieval ops after first worktree zero (5 subagents): {'read': 40, 'chars': 288365, 'list': 2, 'grep': 4}
+native retrieval ops before first worktree zero (5 subagents): {'grep': 4, 'chars': 78570, 'list': 4, 'read': 2, 'glob': 1}
+native retrieval ops within 3 calls after a worktree zero: {'read': 13, 'chars': 99373, 'list': 2, 'grep': 1}
+total side chars (inputs+outputs): 2,631,005  -> at 4 chars/tok = 657,751 tok (corpus said 743,399 side tokens)
+replay entries (zero calls): 45

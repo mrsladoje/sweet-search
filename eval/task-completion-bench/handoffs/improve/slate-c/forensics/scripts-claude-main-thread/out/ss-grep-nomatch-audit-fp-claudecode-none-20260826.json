@@ -1,0 +1,2288 @@
+{
+ "run": "fp-claudecode-none-20260826",
+ "ssGrepCalls": 259,
+ "ssGrepSingle": 233,
+ "noMatch": 75,
+ "byVerdict": {
+  "true-negative": {
+   "n": 48,
+   "nextReal": 0.02884657,
+   "bre": 9,
+   "posix": 0
+  },
+  "false-negative-candidate": {
+   "n": 24,
+   "nextReal": 0.01417274,
+   "bre": 1,
+   "posix": 0
+  },
+  "grep-error": {
+   "n": 2,
+   "nextReal": 0.000723775,
+   "bre": 1,
+   "posix": 0
+  },
+  "scope-missing": {
+   "n": 1,
+   "nextReal": 0.00045001000000000004,
+   "bre": 0,
+   "posix": 0
+  }
+ },
+ "crashes": {
+  "Error: ripgrep failed (code N): rg: regex parse error:": {
+   "n": 8,
+   "tasks": [
+    "accenture__sfmc-devtools-1974",
+    "apigee__registry-961",
+    "bfgroup__b2-113",
+    "bfgroup__b2-259",
+    "fastify__fastify-cors-285",
+    "hotmeteor__spectator-181",
+    "mirumee__ariadne-codegen-218"
+   ],
+   "tools": [
+    "ss-grep",
+    "ss-read"
+   ],
+   "example": "ss-grep \"refresh(\" --in test -k 30"
+  },
+  "Error: Pattern search requires a late interaction index with line spans. Re-index with late interaction enabled.": {
+   "n": 1,
+   "tasks": [
+    "mathnet__mathnet-numerics-1072"
+   ],
+   "tools": [
+    "ss-find"
+   ],
+   "example": "ss-find \"Hypotenuse tests\" --regex \"Hypotenuse\" -k 20"
+  }
+ },
+ "audit": [
+  {
+   "task": "accenture__sfmc-devtools-1974",
+   "rep": 2,
+   "k": 9,
+   "cmd": "ss-grep \"At least one\" --in test -k 30",
+   "pattern": "At least one",
+   "inPaths": [
+    "test"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "Accenture__sfmc-devtools@775a1b0c5c0f7f1d47a901c071f2ce4defd78e97",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000579125
+  },
+  {
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 1,
+   "k": 14,
+   "cmd": "ss-grep \"retry_persistent_connection\" -k 10",
+   "pattern": "retry_persistent_connection",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "aio-libs__aiohttp@c465e850f67f95150d474c3313082b2b47abd490",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00064375
+  },
+  {
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 1,
+   "k": 17,
+   "cmd": "ss-grep \"retry\" --in aiohttp/client.py -k 30",
+   "pattern": "retry",
+   "inPaths": [
+    "aiohttp/client.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "aio-libs__aiohttp@c465e850f67f95150d474c3313082b2b47abd490",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00107675
+  },
+  {
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 1,
+   "k": 21,
+   "cmd": "ss-grep \"IDEMPOTENT_METHODS\" -k 10",
+   "pattern": "IDEMPOTENT_METHODS",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "aio-libs__aiohttp@c465e850f67f95150d474c3313082b2b47abd490",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00048454000000000005
+  },
+  {
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 1,
+   "k": 25,
+   "cmd": "ss-grep \"retry_connection\" -k 20",
+   "pattern": "retry_connection",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "aio-libs__aiohttp@c465e850f67f95150d474c3313082b2b47abd490",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0009379749999999999
+  },
+  {
+   "task": "apigee__registry-961",
+   "rep": 2,
+   "k": 7,
+   "cmd": "ss-grep \"GetApi\\(ctx.*names.Api\\|GetVersion\\(ctx.*names.Version\\|GetSpecRevision\\|GetDeploymentRevision\" -k 30",
+   "pattern": "GetApi\\(ctx.*names.Api\\|GetVersion\\(ctx.*names.Version\\|GetSpecRevision\\|GetDeploymentRevision",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "apigee__registry@36826a87410870b118360948a4615eaf0bc64190",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00040158500000000004
+  },
+  {
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 0,
+   "k": 11,
+   "cmd": "ss-grep \"aws-access-key-id\" --in dist/index.js -k 10",
+   "pattern": "aws-access-key-id",
+   "inPaths": [
+    "dist/index.js"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "aws-actions__configure-aws-credentials@ee662900a535695aa526bd6dbba07d8f16805198",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 1,
+    "files": [
+     "271"
+    ],
+    "sample": [
+     "271:    const accessKeyId = core.getInput('aws-access-key-id', { required: true });"
+    ]
+   },
+   "nextReal": 0.00033199
+  },
+  {
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 0,
+   "k": 12,
+   "cmd": "ss-grep \"aws-region\" --in dist/index.js -k 10",
+   "pattern": "aws-region",
+   "inPaths": [
+    "dist/index.js"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "aws-actions__configure-aws-credentials@ee662900a535695aa526bd6dbba07d8f16805198",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 1,
+    "files": [
+     "273"
+    ],
+    "sample": [
+     "273:    const region = core.getInput('aws-region', { required: true });"
+    ]
+   },
+   "nextReal": 0.00032148
+  },
+  {
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 1,
+   "k": 8,
+   "cmd": "ss-grep \"getInput\\('aws-access-key-id'\\|function exportCredentials\" -k 20",
+   "pattern": "getInput\\('aws-access-key-id'\\|function exportCredentials",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "aws-actions__configure-aws-credentials@ee662900a535695aa526bd6dbba07d8f16805198",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00033963499999999997
+  },
+  {
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "rep": 2,
+   "k": 9,
+   "cmd": "ss-grep \"JSON.stringify\\|sort\\(\\|isEqual\" -k 20",
+   "pattern": "JSON.stringify\\|sort\\(\\|isEqual",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "awslabs__aws-embedded-metrics-node@6132122fcf550eeafee86d1c3f2167fbd65ca08f",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000738715
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "k": 7,
+   "cmd": "ss-grep \"boost-install\" -k 20",
+   "pattern": "boost-install",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 3,
+    "files": [
+     "./src/tools/boostbook.jam",
+     "./src/contrib/modular.jam"
+    ],
+    "sample": [
+     "./src/tools/boostbook.jam:308:        local boost-installer-versions = snapshot cvs 1.33.0 ;",
+     "./src/tools/boostbook.jam:315:            Boost.org\\\\$(boost-installer-versions) ] ;",
+     "./src/contrib/modular.jam:228:    rule boost-install ( libraries * ) { }"
+    ]
+   },
+   "nextReal": 0.000362345
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "k": 12,
+   "cmd": "ss-grep \"build\" --in src/build/targets.py -k 50",
+   "pattern": "build",
+   "inPaths": [
+    "src/build/targets.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 110,
+    "files": [
+     "29",
+     "85",
+     "86",
+     "88",
+     "103",
+     "190",
+     "191",
+     "193",
+     "194",
+     "202",
+     "204",
+     "217"
+    ],
+    "sample": [
+     "29:#   Rules supplied by the build system will use only targets derived",
+     "85:from b2.build import errors",
+     "86:from b2.build.errors import user_error_checkpoint"
+    ]
+   },
+   "nextReal": 0.00049101
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "k": 19,
+   "cmd": "ss-grep \"class Basic\" --in src/build/targets.py -k 10",
+   "pattern": "class Basic",
+   "inPaths": [
+    "src/build/targets.py"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 1,
+    "files": [
+     "890"
+    ],
+    "sample": [
+     "890:class BasicTarget (AbstractTarget):"
+    ]
+   },
+   "nextReal": 0.000452765
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "k": 13,
+   "cmd": "ss-grep \"class MainTarget\" -k 10",
+   "pattern": "class MainTarget",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00040691500000000004
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "k": 17,
+   "cmd": "ss-grep \"def generate_dependency_properties\\|def generate_dependency_targets\" -k 10",
+   "pattern": "def generate_dependency_properties\\|def generate_dependency_targets",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000417195
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "k": 18,
+   "cmd": "ss-grep \"generate_dependency_properties\" -k 10",
+   "pattern": "generate_dependency_properties",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00040923
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "rep": 2,
+   "k": 5,
+   "cmd": "ss-grep \"GenerateResult(property_set.create([\\\"<build>no\\\"]), [])\" -k 10",
+   "pattern": "GenerateResult(property_set.create([\"<build>no\"]), [])",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "grep-error",
+   "grep": {
+    "scopeMissing": [],
+    "lines": -1,
+    "files": [],
+    "grepError": "Command failed: grep -r -n -E --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.sweet-search --exclude-dir=dist --exclude-dir=build --exclude-dir=vendor -I -- GenerateResult(property_set.cr"
+   },
+   "nextReal": 0.00037934
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 4,
+   "cmd": "ss-grep \"build-no\" -k 30",
+   "pattern": "build-no",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00028764000000000003
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 14,
+   "cmd": "ss-grep \"ignore-minus-n\" --in src/build -k 30",
+   "pattern": "ignore-minus-n",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0004992000000000001
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 20,
+   "cmd": "ss-grep \"build>yes\\|build.*yes\\|<build\" --in src/build -k 30",
+   "pattern": "build>yes\\|build.*yes\\|<build",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000568335
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 21,
+   "cmd": "ss-grep \"\\.actualize\\|\\.boundname\\|\\.actions\" --in src/build -k 40",
+   "pattern": "\\.actualize\\|\\.boundname\\|\\.actions",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0006008400000000001
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 23,
+   "cmd": "ss-grep \"feature.*build\" --in src -k 20",
+   "pattern": "feature.*build",
+   "inPaths": [
+    "src"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 19,
+    "files": [
+     "src/tools/libtiff.jam",
+     "src/tools/features/tag-feature.jam",
+     "src/tools/features/build-feature.jam",
+     "src/tools/features/internal-feature.jam",
+     "src/tools/asciidoctor.jam",
+     "src/tools/gcc.jam",
+     "src/tools/libpng.jam",
+     "src/tools/stage.py",
+     "src/tools/builtin.py",
+     "src/tools/libjpeg.jam",
+     "src/tools/symlink.jam",
+     "src/tools/bzip2.jam"
+    ],
+    "sample": [
+     "src/tools/libtiff.jam:121:    local build-name = [ feature.get-values <build-name> : $(options) ] ;",
+     "src/tools/features/tag-feature.jam:29:Most typical use of the `tag` feature is to encode build properties, or library",
+     "src/tools/features/build-feature.jam:10:[[bbv2.builtin.features.build]]`build`::"
+    ]
+   },
+   "nextReal": 0.000612955
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 24,
+   "cmd": "ss-grep \"\\[ MATCH\" --in src/build -k 20",
+   "pattern": "\\[ MATCH",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00060888
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 25,
+   "cmd": "ss-grep \"property-set.*get\\|\\.get.*property\\|property.*value\" --in src/build -k 40",
+   "pattern": "property-set.*get\\|\\.get.*property\\|property.*value",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0006407100000000001
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "k": 27,
+   "cmd": "ss-grep \"property.select\" --in src -k 30",
+   "pattern": "property.select",
+   "inPaths": [
+    "src"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 24,
+    "files": [
+     "src/build-system.jam",
+     "src/tools/libtiff.jam",
+     "src/tools/msvc.jam",
+     "src/tools/docutils.jam",
+     "src/tools/mpi.jam",
+     "src/tools/package.py",
+     "src/tools/libpng.jam",
+     "src/tools/pkg-config.jam",
+     "src/tools/link.jam",
+     "src/tools/libjpeg.jam",
+     "src/tools/symlink.jam",
+     "src/tools/bzip2.jam"
+    ],
+    "sample": [
+     "src/build-system.jam:516:        local toolset-property = [ property.select <toolset> : $(properties) ] ;",
+     "src/tools/libtiff.jam:138:                [ property.select <search> <include> <name> : $(options) ] \"and\"",
+     "src/tools/libtiff.jam:139:                [ property.select <source> <tag> <build-name> : $(options) ] ;"
+    ]
+   },
+   "nextReal": 0.0007423099999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 5,
+   "cmd": "ss-grep \"build-no\" -k 30",
+   "pattern": "build-no",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00032193
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 11,
+   "cmd": "ss-grep \"def check-target-builds\" -k 20",
+   "pattern": "def check-target-builds",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0003953
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 18,
+   "cmd": "ss-grep \"check-target-builds\" --in src --in build --in tools -k 50",
+   "pattern": "check-target-builds",
+   "inPaths": [
+    "src",
+    "build",
+    "tools"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [
+     "build",
+     "tools"
+    ],
+    "lines": 1,
+    "files": [
+     "src/tools/flags.jam"
+    ],
+    "sample": [
+     "src/tools/flags.jam:71:    return [ check-target-builds /check/flags//flags_$(id) $(message)"
+    ]
+   },
+   "nextReal": 0.000507035
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 24,
+   "cmd": "ss-grep \"check-target\" --in . -k 100",
+   "pattern": "check-target",
+   "inPaths": [
+    "."
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 22,
+    "files": [
+     "./test/configure.py",
+     "./src/tools/qcc.jam",
+     "./src/tools/flags.jam",
+     "./example/try_compile/Jamroot.jam",
+     "./doc/src/hljs/highlight.min.js",
+     "./doc/src/reference.adoc"
+    ],
+    "sample": [
+     "./test/configure.py:8:# Tests configure.check-target-builds and friends",
+     "./test/configure.py:20:  [ configure.check-target-builds pass : <define>PASS : <define>FAIL ] ;",
+     "./test/configure.py:22:  [ configure.check-target-builds fail : <define>FAIL : <define>PASS ] ;"
+    ]
+   },
+   "nextReal": 0.00057803
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 29,
+   "cmd": "ss-grep \"configure.jam\" -k 20",
+   "pattern": "configure.jam",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 1,
+    "files": [
+     "./.vault-manifest.sha256"
+    ],
+    "sample": [
+     "./.vault-manifest.sha256:1287:fb02234d3c5d5da6144969fb3446024dcd292e50718fa91aa9e38070c21ef79b  ./src/build/configure.jam"
+    ]
+   },
+   "nextReal": 0.0005439300000000001
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 31,
+   "cmd": "ss-grep \"check-target-builds\" --in src/engine -k 10",
+   "pattern": "check-target-builds",
+   "inPaths": [
+    "src/engine"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00055286
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 35,
+   "cmd": "ss-grep \"evaluate-conditional-relevance\" -k 20",
+   "pattern": "evaluate-conditional-relevance",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0007397099999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 39,
+   "cmd": "ss-grep \"evaluate-conditionals\" -k 30",
+   "pattern": "evaluate-conditionals",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0008012949999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 40,
+   "cmd": "ss-grep \"conditional relevance\" --in src/engine -k 20",
+   "pattern": "conditional relevance",
+   "inPaths": [
+    "src/engine"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0007927699999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 42,
+   "cmd": "ss-grep \"evaluate-conditional\" --in src/build -k 20",
+   "pattern": "evaluate-conditional",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0007710649999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 43,
+   "cmd": "ss-grep \"build\" --in src/build -k 80",
+   "pattern": "build",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000729305
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 44,
+   "cmd": "ss-grep \"conditional\" --in src/build/property.jam -k 50",
+   "pattern": "conditional",
+   "inPaths": [
+    "src/build/property.jam"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 24,
+    "files": [
+     "19",
+     "31",
+     "63",
+     "67",
+     "75",
+     "81",
+     "83",
+     "94",
+     "154",
+     "158",
+     "480",
+     "485"
+    ],
+    "sample": [
+     "19:# Refines 'properties' by overriding any non-free and non-conditional properties",
+     "31:        # Do not consider conditional requirements.",
+     "63:# Removes all conditional properties whose conditions are not met. For those"
+    ]
+   },
+   "nextReal": 0.000697385
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 45,
+   "cmd": "ss-grep \"evaluate\" --in src/build -k 100",
+   "pattern": "evaluate",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000697625
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 47,
+   "cmd": "ss-grep \"build.*no\" --in src/build -k 30",
+   "pattern": "build.*no",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00086698
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "k": 50,
+   "cmd": "ss-grep \"conditional\" --in src/build/property-set.jam -k 30",
+   "pattern": "conditional",
+   "inPaths": [
+    "src/build/property-set.jam"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 16,
+    "files": [
+     "153",
+     "155",
+     "157",
+     "159",
+     "162",
+     "164",
+     "166",
+     "168",
+     "219",
+     "225",
+     "432",
+     "436"
+    ],
+    "sample": [
+     "153:    rule conditional ( )",
+     "155:        if ! $(self.conditional-initialized)",
+     "157:            init-conditional ;"
+    ]
+   },
+   "nextReal": 0.0007815449999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 6,
+   "cmd": "ss-grep \"check-target-builds\" --in src -k 50",
+   "pattern": "check-target-builds",
+   "inPaths": [
+    "src"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 1,
+    "files": [
+     "src/tools/flags.jam"
+    ],
+    "sample": [
+     "src/tools/flags.jam:71:    return [ check-target-builds /check/flags//flags_$(id) $(message)"
+    ]
+   },
+   "nextReal": 0.000332345
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 9,
+   "cmd": "ss-grep \"configuration\" --in src/tools -k 30",
+   "pattern": "configuration",
+   "inPaths": [
+    "src/tools"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 267,
+    "files": [
+     "src/tools/boostbook-config.jam",
+     "src/tools/rc.jam",
+     "src/tools/libtiff.jam",
+     "src/tools/msvc.jam",
+     "src/tools/cw.jam",
+     "src/tools/features/variant-feature.jam",
+     "src/tools/features/os-feature.jam",
+     "src/tools/features/build-feature.jam",
+     "src/tools/python.jam",
+     "src/tools/intel-vxworks.jam",
+     "src/tools/doxygen.jam",
+     "src/tools/mpi.jam"
+    ],
+    "sample": [
+     "src/tools/boostbook-config.jam:5:# Automatic configuration for BoostBook tools. To use, just import this module.",
+     "src/tools/rc.jam:18:if [ MATCH (--debug-configuration) : [ modules.peek : ARGV ] ]",
+     "src/tools/rc.jam:20:    .debug-configuration = true ;"
+    ]
+   },
+   "nextReal": 0.00041659000000000005
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 13,
+   "cmd": "ss-grep \"build-no\" -k 50",
+   "pattern": "build-no",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00042087
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 14,
+   "cmd": "ss-grep \"check-target-builds\" --in .claude -k 20",
+   "pattern": "check-target-builds",
+   "inPaths": [
+    ".claude"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "scope-missing",
+   "grep": {
+    "scopeMissing": [
+     ".claude"
+    ],
+    "lines": 0,
+    "files": []
+   },
+   "nextReal": 0.00045001000000000004
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 18,
+   "cmd": "ss-grep \"check_target_builds|check-target|configuration\" --in src/kernel -k 100",
+   "pattern": "check_target_builds|check-target|configuration",
+   "inPaths": [
+    "src/kernel"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000515805
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 23,
+   "cmd": "ss-grep \"check_target_builds|check-target-builds|check-target\" --in . -k 100",
+   "pattern": "check_target_builds|check-target-builds|check-target",
+   "inPaths": [
+    "."
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 24,
+    "files": [
+     "./test/configure.py",
+     "./src/tools/qcc.jam",
+     "./src/tools/flags.jam",
+     "./example/try_compile/Jamroot.jam",
+     "./doc/src/hljs/highlight.min.js",
+     "./doc/src/reference.adoc"
+    ],
+    "sample": [
+     "./test/configure.py:8:# Tests configure.check-target-builds and friends",
+     "./test/configure.py:12:def test_check_target_builds():",
+     "./test/configure.py:20:  [ configure.check-target-builds pass : <define>PASS : <define>FAIL ] ;"
+    ]
+   },
+   "nextReal": 0.000661845
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 24,
+   "cmd": "ss-grep \"build :\" --in src -k 100",
+   "pattern": "build :",
+   "inPaths": [
+    "src"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 3,
+    "files": [
+     "src/tools/message.jam",
+     "src/tools/link.jam",
+     "src/contrib/modular.jam"
+    ],
+    "sample": [
+     "src/tools/message.jam:56:            : [ targets.main-target-default-build : $(project) ]",
+     "src/tools/link.jam:542:            : [ targets.main-target-default-build : $(project) ]",
+     "src/contrib/modular.jam:279:        default-build = [ modular.apply-external $(mod) : default-build : $(default-build) ] ;"
+    ]
+   },
+   "nextReal": 0.000568445
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 30,
+   "cmd": "ss-grep \"configuration-check\" --in src -k 100",
+   "pattern": "configuration-check",
+   "inPaths": [
+    "src"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0006517399999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 36,
+   "cmd": "ss-grep \"evaluate-conditional-relevance\" --in src -k 20",
+   "pattern": "evaluate-conditional-relevance",
+   "inPaths": [
+    "src"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000723735
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 37,
+   "cmd": "ss-grep \"\\.base|base \\(\" --in src/build/property-set.jam -k 30",
+   "pattern": "\\.base|base \\(",
+   "inPaths": [
+    "src/build/property-set.jam"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 10,
+    "files": [
+     "71",
+     "73",
+     "77",
+     "84",
+     "101",
+     "175",
+     "369",
+     "386",
+     "389",
+     "408"
+    ],
+    "sample": [
+     "71:    rule base ( )",
+     "73:        if ! $(self.base-initialized)",
+     "77:        return $(self.base) ;"
+    ]
+   },
+   "nextReal": 0.0008205999999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 38,
+   "cmd": "ss-grep \"conditional-relevance\" --in src/build -k 50",
+   "pattern": "conditional-relevance",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0007401449999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 41,
+   "cmd": "ss-grep \"evaluate-conditionals-in-context\" --in src/build/property.jam -k 20",
+   "pattern": "evaluate-conditionals-in-context",
+   "inPaths": [
+    "src/build/property.jam"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 5,
+    "files": [
+     "67",
+     "909",
+     "914",
+     "919",
+     "924"
+    ],
+    "sample": [
+     "67:rule evaluate-conditionals-in-context ( properties * : context * )",
+     "909:        : evaluate-conditionals-in-context",
+     "914:        : evaluate-conditionals-in-context"
+    ]
+   },
+   "nextReal": 0.0006953749999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 42,
+   "cmd": "ss-grep \"evaluate-conditionals\" --in src/build -k 30",
+   "pattern": "evaluate-conditionals",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000764795
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 43,
+   "cmd": "ss-grep \"build\" --in src/build/configure.jam -k 30",
+   "pattern": "build",
+   "inPaths": [
+    "src/build/configure.jam"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 32,
+    "files": [
+     "10",
+     "53",
+     "126",
+     "130",
+     "170",
+     "186",
+     "187",
+     "198",
+     "257",
+     "258",
+     "259",
+     "264"
+    ],
+    "sample": [
+     "10:# - Discovering build-time configuration for the purposes of adjusting the build",
+     "53:rule components-building ( components * )",
+     "126:            s = \"building\" ;"
+    ]
+   },
+   "nextReal": 0.00078079
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 44,
+   "cmd": "ss-grep \"<build>yes|<build>no|build.*yes\" --in src/build -k 50",
+   "pattern": "<build>yes|<build>no|build.*yes",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0007845349999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 45,
+   "cmd": "ss-grep \"remove|select|filter\" --in src/build/property-set.jam -k 50",
+   "pattern": "remove|select|filter",
+   "inPaths": [
+    "src/build/property-set.jam"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 5,
+    "files": [
+     "512",
+     "529",
+     "536",
+     "544",
+     "550"
+    ],
+    "sample": [
+     "512:# \"-<property>value\" syntax in specification to remove given requirements.",
+     "529:        local remove-requirements ;",
+     "536:                remove-requirements += $(m) ;"
+    ]
+   },
+   "nextReal": 0.000731675
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 47,
+   "cmd": "ss-grep \"feature.*build|build.*feature\" --in src/build -k 50",
+   "pattern": "feature.*build|build.*feature",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0007960249999999999
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 48,
+   "cmd": "ss-grep \"property\\.refine\" --in src/build -k 30",
+   "pattern": "property\\.refine",
+   "inPaths": [
+    "src/build"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000934925
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "k": 51,
+   "cmd": "ss-grep \"feature\\.feature build|build :\" --in src -k 20",
+   "pattern": "feature\\.feature build|build :",
+   "inPaths": [
+    "src"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "bfgroup__b2@371b47af9dc837624d7af50906653074f8ea1475",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 4,
+    "files": [
+     "src/tools/message.jam",
+     "src/tools/features/build-feature.jam",
+     "src/tools/link.jam",
+     "src/contrib/modular.jam"
+    ],
+    "sample": [
+     "src/tools/message.jam:56:            : [ targets.main-target-default-build : $(project) ]",
+     "src/tools/features/build-feature.jam:20:feature.feature build",
+     "src/tools/link.jam:542:            : [ targets.main-target-default-build : $(project) ]"
+    ]
+   },
+   "nextReal": 0.000884915
+  },
+  {
+   "task": "callstack__react-native-paper-972",
+   "rep": 0,
+   "k": 8,
+   "cmd": "ss-grep \"_color\" -k 10",
+   "pattern": "_color",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "callstack__react-native-paper@3bba0304e6b03e9a5bdc7baeb5547ac67bb32e7b",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00040211500000000004
+  },
+  {
+   "task": "callstack__react-native-paper-972",
+   "rep": 2,
+   "k": 5,
+   "cmd": "ss-grep \"color: dark\" -k 20",
+   "pattern": "color: dark",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "callstack__react-native-paper@3bba0304e6b03e9a5bdc7baeb5547ac67bb32e7b",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000288855
+  },
+  {
+   "task": "callstack__react-native-paper-972",
+   "rep": 2,
+   "k": 8,
+   "cmd": "ss-grep \"color: _\" -k 20",
+   "pattern": "color: _",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "callstack__react-native-paper@3bba0304e6b03e9a5bdc7baeb5547ac67bb32e7b",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00042927
+  },
+  {
+   "task": "callstack__react-native-paper-972",
+   "rep": 2,
+   "k": 10,
+   "cmd": "ss-grep \"_color\" -k 20",
+   "pattern": "_color",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "callstack__react-native-paper@3bba0304e6b03e9a5bdc7baeb5547ac67bb32e7b",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000401985
+  },
+  {
+   "task": "devlooped__moq-1262",
+   "rep": 0,
+   "k": 15,
+   "cmd": "ss-grep \"lazy|captur|predicate\" --in CHANGELOG.md -k 30",
+   "pattern": "lazy|captur|predicate",
+   "inPaths": [
+    "CHANGELOG.md"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "devlooped__moq@1f2827f8f6be3701b0058dccaa52ada2b0cbee5c",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 9,
+    "files": [
+     "47",
+     "114",
+     "192",
+     "275",
+     "396",
+     "397",
+     "463",
+     "469",
+     "909"
+    ],
+    "sample": [
+     "47:* Regression with lazy evaluation of `It.Is` predicates in setup expressions after updating from 4.13.1 to 4.16.1 (@b3go, #1217)",
+     "114:* Improved error message formatting of `It.Is` lambda expressions that capture local variables. (@bfriesen, #1140)",
+     "192:* Expression tree argument not matched when it contains a captured variable &ndash; evaluate all captures to their current values when comparing two express"
+    ]
+   },
+   "nextReal": 0.00066422
+  },
+  {
+   "task": "fastify__fastify-cors-285",
+   "rep": 1,
+   "k": 26,
+   "cmd": "ss-grep \"prefixTrailingSlash\" -k 20",
+   "pattern": "prefixTrailingSlash",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "fastify__fastify-cors@79b3de99c77dea3e32bf1be1d748bba22a270ed1",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.000837165
+  },
+  {
+   "task": "gitbookio__markup-it-56",
+   "rep": 1,
+   "k": 10,
+   "cmd": "ss-grep \"require('./blocks\\|markdown/blocks\\|deserialize = Deserializer\" -k 40",
+   "pattern": "require('./blocks\\|markdown/blocks\\|deserialize = Deserializer",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "GitbookIO__markup-it@5d7ff8646af05bb621ff5be0825fb3ab99dd90ba",
+   "verdict": "grep-error",
+   "grep": {
+    "scopeMissing": [],
+    "lines": -1,
+    "files": [],
+    "grepError": "Command failed: grep -r -n -E --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.sweet-search --exclude-dir=dist --exclude-dir=build --exclude-dir=vendor -I -- require('./blocks\\|markdown/bl"
+   },
+   "nextReal": 0.000344435
+  },
+  {
+   "task": "gitbookio__markup-it-56",
+   "rep": 1,
+   "k": 33,
+   "cmd": "ss-grep \"const Block|function Block|models/node|createFactory\" -k 50",
+   "pattern": "const Block|function Block|models/node|createFactory",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "GitbookIO__markup-it@5d7ff8646af05bb621ff5be0825fb3ab99dd90ba",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0005381800000000001
+  },
+  {
+   "task": "gitbookio__markup-it-56",
+   "rep": 2,
+   "k": 5,
+   "cmd": "ss-grep \"@SamyPesse|localhost:5000|html-span\" -k 20",
+   "pattern": "@SamyPesse|localhost:5000|html-span",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "GitbookIO__markup-it@5d7ff8646af05bb621ff5be0825fb3ab99dd90ba",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 2,
+    "files": [
+     "./.vault-manifest.sha256"
+    ],
+    "sample": [
+     "./.vault-manifest.sha256:803:d0fc27b091eb1a33fdf00a68ee2d131b61e8a99b759d717c0d2941068632dc20  ./test/to-html/html-span/input.yaml",
+     "./.vault-manifest.sha256:804:a173ab6eb1e1fabf113d2e0114aeb42819759fa29d286d60bc08dbe0f49dd21e  ./test/to-html/html-span/output.html"
+    ]
+   },
+   "nextReal": 0.00037034000000000004
+  },
+  {
+   "task": "hotmeteor__spectator-181",
+   "rep": 1,
+   "k": 11,
+   "cmd": "ss-grep \"test_exception_points_to_mixin_method\\|responses:\" --in tests/Fixtures/Test.v1.json -k 20",
+   "pattern": "test_exception_points_to_mixin_method\\|responses:",
+   "inPaths": [
+    "tests/Fixtures/Test.v1.json"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "hotmeteor__spectator@9d7f4c19fa834f9a48840d40cc080470fec62b01",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0004786650000000001
+  },
+  {
+   "task": "hotmeteor__spectator-181",
+   "rep": 1,
+   "k": 14,
+   "cmd": "ss-grep \"assertValidResponse\" --in README.md -k 20",
+   "pattern": "assertValidResponse",
+   "inPaths": [
+    "README.md"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "hotmeteor__spectator@9d7f4c19fa834f9a48840d40cc080470fec62b01",
+   "verdict": "false-negative-candidate",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 4,
+    "files": [
+     "150",
+     "223",
+     "239",
+     "253"
+    ],
+    "sample": [
+     "150:            ->assertValidResponse(201);",
+     "223:$this->assertValidResponse($status = null);",
+     "239:    ->assertValidResponse();"
+    ]
+   },
+   "nextReal": 0.0008228199999999999
+  },
+  {
+   "task": "hotmeteor__spectator-181",
+   "rep": 1,
+   "k": 22,
+   "cmd": "ss-grep \"Expected status code\" --in tests -k 30",
+   "pattern": "Expected status code",
+   "inPaths": [
+    "tests"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "hotmeteor__spectator@9d7f4c19fa834f9a48840d40cc080470fec62b01",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00041958
+  },
+  {
+   "task": "mathnet__mathnet-numerics-1072",
+   "rep": 1,
+   "k": 7,
+   "cmd": "ss-grep \"Complex.NaN\\|static Complex NaN\" -k 10",
+   "pattern": "Complex.NaN\\|static Complex NaN",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": true,
+   "posix": false,
+   "dialectHintShown": true,
+   "golden": "mathnet__mathnet-numerics@f19641843048df073b80f6ecfcbb229d3258049b",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00036340000000000005
+  },
+  {
+   "task": "mathnet__mathnet-numerics-1072",
+   "rep": 2,
+   "k": 10,
+   "cmd": "ss-grep \"Hypotenuse\" --in src/Numerics.Tests -k 50",
+   "pattern": "Hypotenuse",
+   "inPaths": [
+    "src/Numerics.Tests"
+   ],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "mathnet__mathnet-numerics@f19641843048df073b80f6ecfcbb229d3258049b",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0006485550000000001
+  },
+  {
+   "task": "protofire__solhint-224",
+   "rep": 0,
+   "k": 27,
+   "cmd": "ss-grep \"ContractDefinition(node)\" -k 20",
+   "pattern": "ContractDefinition(node)",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "protofire__solhint@063cb8d08d5231264dbcc36582471beae2142cfb",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.0009384349999999999
+  },
+  {
+   "task": "protofire__solhint-224",
+   "rep": 1,
+   "k": 22,
+   "cmd": "ss-grep \"Order of contract elements is incorrect\" -k 5",
+   "pattern": "Order of contract elements is incorrect",
+   "inPaths": [],
+   "flags": {
+    "i": false,
+    "w": false,
+    "F": false
+   },
+   "bre": false,
+   "posix": false,
+   "dialectHintShown": false,
+   "golden": "protofire__solhint@063cb8d08d5231264dbcc36582471beae2142cfb",
+   "verdict": "true-negative",
+   "grep": {
+    "scopeMissing": [],
+    "lines": 0,
+    "files": [],
+    "sample": []
+   },
+   "nextReal": 0.00045793
+  }
+ ]
+}

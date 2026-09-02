@@ -1,0 +1,39 @@
+cells 390
+claude-code native  lost   n= 23 narrow(possiblyEmpty)=  0  described(+divergent literal)=  0
+claude-code native  solved n= 43 narrow(possiblyEmpty)=  3  described(+divergent literal)=  3
+claude-code sweet   lost   n= 26 narrow(possiblyEmpty)=  1  described(+divergent literal)=  1
+claude-code sweet   solved n= 40 narrow(possiblyEmpty)=  2  described(+divergent literal)=  2
+codex      native  lost   n= 25 narrow(possiblyEmpty)=  3  described(+divergent literal)=  3
+codex      native  solved n= 41 narrow(possiblyEmpty)=  0  described(+divergent literal)=  0
+codex      sweet   lost   n= 27 narrow(possiblyEmpty)=  1  described(+divergent literal)=  1
+codex      sweet   solved n= 39 narrow(possiblyEmpty)=  1  described(+divergent literal)=  1
+opencode   native  lost   n= 25 narrow(possiblyEmpty)=  1  described(+divergent literal)=  1
+opencode   native  solved n= 35 narrow(possiblyEmpty)=  2  described(+divergent literal)=  2
+opencode   sweet   lost   n= 25 narrow(possiblyEmpty)=  0  described(+divergent literal)=  0
+opencode   sweet   solved n= 41 narrow(possiblyEmpty)=  1  described(+divergent literal)=  1
+TOTAL narrow 15 described 15 of 390
+described-trigger firing by task (cells firing / cells):
+  absinthe-graphql__absinthe-998              0 / 18
+  accenture__sfmc-devtools-1974              15 / 18
+  aio-libs__aiohttp-8038                      0 / 18
+  apigee__registry-961                        0 / 18
+  asynkron__protoactor-dotnet-1909            0 / 18
+  aws-actions__configure-aws-credentials-42   0 / 15
+  awslabs__aws-embedded-metrics-node-21       0 / 18
+  axelrod-python__axelrod-671                 0 / 18
+  bfgroup__b2-113                             0 / 18
+  bfgroup__b2-259                             0 / 18
+  callstack__react-native-paper-972           0 / 18
+  celestiaorg__nmt-192                        0 / 18
+  devlooped__moq-1262                         0 / 18
+  fastify__fastify-cors-285                   0 / 18
+  final-form__final-form-64                   0 / 18
+  gitbookio__markup-it-56                     0 / 18
+  hotmeteor__spectator-181                    0 / 18
+  jazzband__tablib-454                        0 / 18
+  locationtech__jts-622                       0 / 18
+  mathnet__mathnet-numerics-1072              0 / 15
+  mirumee__ariadne-codegen-218                0 / 18
+  protofire__solhint-224                      0 / 18
+functions that fire on the divergent-literal rule (task, function): cells
+   accenture__sfmc-devtools-1974 #runMethod 15

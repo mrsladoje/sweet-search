@@ -1,0 +1,6 @@
+fp-claudecode-tab-20260826	native	cells 22	3-dearest main $1.130494	every-transcript main $1.147700
+fp-claudecode-tab-20260826	sweet	cells 22	3-dearest main $1.182496	every-transcript main $1.282499
+fp-claudecode-none-20260826	sweet	cells 22	3-dearest main $1.163153	every-transcript main $1.244671
+fp-claudecode-pipe-20260826	sweet	cells 22	3-dearest main $1.055723	every-transcript main $1.081689
+rb-claudecode-20260824	native	cells 13	3-dearest main $0.613629	every-transcript main $0.623628
+rb-claudecode-20260824	sweet	cells 13	3-dearest main $0.502954	every-transcript main $0.502954

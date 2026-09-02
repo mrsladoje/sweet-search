@@ -1,0 +1,18 @@
+run=fp-claudecode-tab-20260826 rollouts=132 matchedByCost=132 (unmatched: none)
+bytes-per-token from 299 native single-Read requests: median 4.37 (p25 3.82, p75 4.96)
+output tokens of a single-Read request: median 103 (n=406)
+node:path:1305
+      validateString(arg, 'path');
+      ^
+
+TypeError [ERR_INVALID_ARG_TYPE]: The "path" argument must be of type string. Received undefined
+    at Object.join (node:path:1305:7)
+    at goldenBytes (file:///tmp/wf-slatec/claude-main-thread/cc-readgate-census.mjs:31:20)
+    at file:///tmp/wf-slatec/claude-main-thread/cc-readgate-census.mjs:121:22
+    at ModuleJob.run (node:internal/modules/esm/module_job:325:25)
+    at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5) {
+  code: 'ERR_INVALID_ARG_TYPE'
+}
+
+Node.js v20.20.2

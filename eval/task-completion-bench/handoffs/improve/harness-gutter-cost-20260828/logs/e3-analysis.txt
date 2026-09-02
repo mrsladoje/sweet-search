@@ -1,0 +1,169 @@
+
+=== A. HEADLINE COST AND THE DIRECT GUTTER COMPONENT (per rollout) ===
+harness     form    $/rollout   vs TAB    $ delta gutter tok  gutter $  ingest $  resid $  g% of $
+codex       tab      0.012330     0.0%   0.000000       1163  0.000302  0.000116 0.000186    2.45%
+codex       none     0.012319    -0.1%  -0.000011          0  0.000000  0.000000 0.000000    0.00%
+codex       pipe     0.012754     3.4%   0.000424       1903  0.000496  0.000190 0.000306    3.89%
+opencode    tab      0.009265     0.0%   0.000000       1265  0.000338  0.000126 0.000212    3.65%
+opencode    none     0.008584    -7.4%  -0.000681          0  0.000000  0.000000 0.000000    0.00%
+opencode    pipe     0.008764    -5.4%  -0.000501       1973  0.000493  0.000197 0.000296    5.63%
+claude-code tab      0.020727     0.0%   0.000000       1448  0.000440  0.000145 0.000295    2.12%
+claude-code none     0.019424    -6.3%  -0.001304          0  0.000000  0.000000 0.000000    0.00%
+claude-code pipe     0.017761   -14.3%  -0.002966       2267  0.000648  0.000227 0.000421    3.65%
+
+--- how much of the FORM-TO-FORM $ gap is direct gutter tokens? ---
+harness     pair          observed $   direct $  explained  residual $
+codex       TAB->NONE      -0.000011  -0.000302    2800.3%    0.000291
+codex       TAB->PIPE       0.000424   0.000217      51.2%    0.000207
+opencode    TAB->NONE      -0.000681  -0.000338      49.6%   -0.000343
+opencode    TAB->PIPE      -0.000501   0.000248     -49.4%   -0.000749
+claude-code TAB->NONE      -0.001304  -0.000440      33.7%   -0.000864
+claude-code TAB->PIPE      -0.002966   0.000328     -11.0%   -0.003294
+
+--- gutter overhead per delivered code line, measured ---
+harness     form   lines/roll gutter tok tok/line  blocks
+codex       tab           867       1163    1.341    12.6
+codex       none            0          0    0.000    12.6
+codex       pipe          840       1903    2.267    12.4
+opencode    tab           937       1265    1.350    11.5
+opencode    none            0          0    0.000    11.6
+opencode    pipe          862       1973    2.288    10.6
+claude-code tab          1076       1448    1.345    15.8
+claude-code none            0          0    0.000    16.9
+claude-code pipe         1000       2267    2.268    15.0
+
+--- delivered code lines by ss-* surface (per rollout) ---
+harness     form        ss-read    ss-search      ss-find  ss-semantic    total
+codex       tab             603          195           33           46      878
+codex       none            629          185           63           28      905
+codex       pipe            610          157           55           29      851
+opencode    tab             707          163           72            5      947
+opencode    none            643          188           74           21      926
+opencode    pipe            623          172           67            9      871
+claude-code tab             689          285          119            5     1097
+claude-code none            722          221          175           11     1129
+claude-code pipe            633          250          111           18     1011
+
+=== B. BEHAVIOUR PER FORM (mean per rollout, sweet arm) ===
+harness     form      turns    calls  ss-read  ss-srch  rangeRd  wholeRd   codeLn   reread    files    trunc    edits editFail   outTok    newIn   resent    toolB failRoll
+codex       tab        19.6     18.6      8.2      1.9      7.7      0.5    877.7      1.6      4.7      1.6      1.7      0.1   5524.2  34540.8 548951.7  57344.1     5/66
+codex       none       19.4     18.4      7.3      2.1      7.3      0.1    904.9      1.2      4.3      1.5      1.9      0.1   5676.2  34183.2 542397.8  56864.1     3/66
+codex       pipe       19.8     18.8      8.0      1.8      7.7      0.3    851.3      1.7      4.6      1.8      1.8      0.1   5728.0  35785.1 566607.4  59639.0     4/66
+opencode    tab        19.7     21.8      6.6      1.5      6.6      0.0    947.5      0.9      4.7      0.0      1.9      0.0   3644.9  28315.5 424150.0  63239.2     0/66
+opencode    none       18.9     21.9      6.0      1.7      6.0      0.0    926.2      0.6      4.3      0.0      1.6      0.1   3646.7  26581.6 373290.2  57577.5     6/66
+opencode    pipe       18.4     20.5      5.5      1.6      5.5      0.0    871.5      0.7      3.9      0.0      1.8      0.1   3479.4  27259.6 381595.6  57680.9     4/66
+claude-code tab        23.4     22.7      6.2      2.7      6.2      0.0   1097.4      1.0      4.1      0.0      3.8      0.7   7668.9  38735.2 786165.0  65443.4    19/66
+claude-code none       23.2     22.8      6.8      2.0      6.8      0.0   1128.9      1.5      4.4      0.0      4.1      0.6   8161.0  37401.6 778641.5  60736.7    15/66
+claude-code pipe       21.6     21.2      6.7      2.3      6.6      0.1   1011.4      1.1      4.4      0.0      3.1      0.4   6008.6  38861.5 724567.9  63626.7    16/66
+codex       NATIVE     18.8     17.8      0.0      0.0      0.0      0.0      0.0      0.0      0.0      3.6      1.9      0.1   5785.9  35941.8 515268.7  70127.9     7/66
+opencode    NATIVE     16.3     25.2      0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0      1.8      0.0   3606.5  30358.5 376465.7  71874.0     3/66
+claude-code NATIVE     24.3     26.4      0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0      4.7      0.8   7395.2  36534.4 782770.4  59889.9    18/66
+
+--- read window sizes (ss-read blocks delivered), lines ---
+harness     form    n blocks    mean  median     p90    max
+codex       tab          453    87.8      70     189    349
+codex       none         414   100.3      82     215    327
+codex       pipe         460    87.6      71     187    341
+opencode    tab          426   109.6      90     218    601
+opencode    none         385   110.2      91     222    521
+opencode    pipe         353   116.4      87     241    521
+claude-code tab          414    99.0      81     195    701
+claude-code none         445    90.4      81     181    352
+claude-code pipe         445    88.5      72     180    509
+
+--- edit-failure classes (edit-level), sweet ---
+harness     form     edits  fails   rate  anchor_ambiguous anchor_notfound input_invalid noop other parse seek_context seek_lines
+codex       tab        112      8   7.1%  roll 5/66   other=2 parse=1 seek_context=1 seek_lines=4
+codex       none       124      5   4.0%  roll 3/66   other=1 seek_lines=4
+codex       pipe       121      4   3.3%  roll 4/66   seek_lines=4
+codex       native     124      8   6.5%  roll 7/66   seek_lines=8
+opencode    tab        123      0   0.0%  roll 0/66   
+opencode    none       106      7   6.6%  roll 6/66   seek_lines=7
+opencode    pipe       120      4   3.3%  roll 4/66   seek_lines=4
+opencode    native     117      3   2.6%  roll 3/66   seek_lines=3
+claude-code tab        252     45  17.9%  roll 19/66   anchor_ambiguous=11 anchor_notfound=15 input_invalid=6 noop=13
+claude-code none       269     40  14.9%  roll 15/66   anchor_ambiguous=5 anchor_notfound=12 input_invalid=6 noop=16 other=1
+claude-code pipe       206     26  12.6%  roll 16/66   anchor_ambiguous=9 anchor_notfound=9 input_invalid=3 noop=4 other=1
+claude-code native     312     54  17.3%  roll 18/66   anchor_ambiguous=12 anchor_notfound=24 input_invalid=3 noop=14 other=1
+
+=== C. CLAUDE-CODE DELEGATION ===
+form      roll  delegating  sidechain $  main $/roll  main $/roll (non-deleg only)    n
+tab         66           9     0.185518     0.017917                      0.016983   57
+none        66           9     0.122539     0.017567                      0.016113   57
+pipe        66           6     0.116536     0.015996                      0.014390   60
+native      66          27     0.284326     0.017129                      0.011339   39
+
+--- claude-code paired per task, main-only, on the 14 tasks that never delegated in ANY form ---
+tasks with zero delegation in all three forms: 12 of 22
+  tab      0.010913  vs TAB     0.0%
+  none     0.010223  vs TAB    -6.3%
+  pipe     0.011297  vs TAB     3.5%
+
+=== D. BOOTSTRAP CI, RESAMPLING TASKS (10,000 draws, seed 20260828) ===
+harness     form      delta $   95% CI lo   95% CI hi  % vs TAB  CI excl 0
+codex       none    -0.000011   -0.000964    0.001172     -0.1%         no
+codex       pipe     0.000424   -0.000600    0.001447      3.4%         no
+opencode    none    -0.000681   -0.001512    0.000050     -7.4%         no
+opencode    pipe    -0.000501   -0.001320    0.000238     -5.4%         no
+claude-code none    -0.001304   -0.005690    0.003184     -6.3%         no
+claude-code pipe    -0.002966   -0.008137    0.001151    -14.3%         no
+
+--- same, MAIN-ONLY cost with delegation held fixed (claude-code, zero-delegation tasks) ---
+claude-code none    -0.000689   -0.001722    0.000364     -6.3%         no
+claude-code pipe     0.000385   -0.000320    0.001030      3.5%         no
+
+--- claude-code, ALL tasks, main-only (delegation cost excluded but behaviour not) ---
+claude-code none    -0.000349   -0.003725    0.003421     -1.9%         no
+claude-code pipe    -0.001921   -0.005630    0.001136    -10.7%         no
+
+=== E. THE SAME TABLE ON idealCost AND breakPriced ===
+harness     form     realized      ideal      break  ideal vs TAB  break vs TAB
+codex       tab      0.012330   0.012258   0.012258          0.0%          0.0%
+codex       none     0.012319   0.012248   0.012248         -0.1%         -0.1%
+codex       pipe     0.012754   0.012681   0.012681          3.5%          3.5%
+opencode    tab      0.009265   0.009260   0.009260          0.0%          0.0%
+opencode    none     0.008584   0.008579   0.008579         -7.4%         -7.4%
+opencode    pipe     0.008764   0.008630   0.008630         -6.8%         -6.8%
+claude-code tab      0.020727   0.019333   0.019333          0.0%          0.0%
+claude-code none     0.019424   0.018299   0.018299         -5.3%         -5.3%
+claude-code pipe     0.017761   0.016398   0.016398        -15.2%        -15.2%
+note: contextRewrites are 0 everywhere in this run, so breakPriced == ideal by construction
+
+=== F. WHAT THE CHEAPEST GUTTER WOULD SAVE, BEHAVIOUR HELD FIXED ===
+harness     from    $/rollout  drop gutter $      %  PIPE->TAB $      %
+codex       tab      0.012330      -0.000302 -2.45%     0.000003  0.03%
+codex       none     0.012319       0.000000  0.00%     0.000328  2.66%
+codex       pipe     0.012754      -0.000496 -3.89%    -0.000194 -1.52%
+opencode    tab      0.009265      -0.000338 -3.65%     0.000004  0.04%
+opencode    none     0.008584       0.000000  0.00%     0.000310  3.62%
+opencode    pipe     0.008764      -0.000493 -5.63%    -0.000196 -2.24%
+claude-code tab      0.020727      -0.000440 -2.12%     0.000009  0.04%
+claude-code none     0.019424       0.000000  0.00%     0.000499  2.57%
+claude-code pipe     0.017761      -0.000648 -3.65%    -0.000258 -1.46%
+
+=== G. TRANSCRIPT-SELECTION SENSITIVITY (claude-code only) ===
+3-dearest (published convention)     TAB 0.020727  NONE 0.019424 (-6.3%)  PIPE 0.017761 (-14.3%)
+rep-from-slug, dearest per rep       TAB 0.020106  NONE 0.018908 (-6.0%)  PIPE 0.017685 (-12.0%)
+
+=== H. PAIRED SIGN TEST OVER THE 22 TASKS (mean of 3 reps per cell) ===
+harness     pair          cheaper  dearer  tie  p (2-sided)
+codex       TAB->NONE          13       9    0        0.523
+codex       TAB->PIPE           9      13    0        0.523
+opencode    TAB->NONE          10      12    0        0.832
+opencode    TAB->PIPE          13       9    0        0.523
+claude-code TAB->NONE          14       8    0        0.286
+claude-code TAB->PIPE          11      11    0        1.000
+
+=== I. SANITY: delivered ss-* code tokens vs the rollout bill ===
+harness     form    code tok gutter tok  modelled code $ share of $
+codex       tab         7825       1163         0.002063      16.7%
+codex       none        6888          0         0.001814      14.7%
+codex       pipe        8348       1903         0.002211      17.3%
+opencode    tab         8313       1265         0.002242      24.2%
+opencode    none        6916          0         0.001734      20.2%
+opencode    pipe        8485       1973         0.002140      24.4%
+claude-code tab         9618       1448         0.002950      14.2%
+claude-code none        8470          0         0.002863      14.7%
+claude-code pipe        9945       2267         0.002864      16.1%
+
+wrote 03-gutter-form-cost.json

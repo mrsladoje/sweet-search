@@ -1,0 +1,1778 @@
+{
+ "task": "E4 resolution forensics, harness=codex",
+ "runs": [
+  "fp-codex-tab-20260826",
+  "fp-codex-none-20260826",
+  "fp-codex-pipe-20260826"
+ ],
+ "rollouts": 264,
+ "nullResolved": 0,
+ "solveTotals": {
+  "native": 41,
+  "TAB": 39,
+  "NONE": 41,
+  "PIPE": 42
+ },
+ "fisherVsNative": {
+  "TAB": 0.859,
+  "NONE": 1.0,
+  "PIPE": 1.0
+ },
+ "costPerRolloutIdealUsd": {
+  "native": 0.012218,
+  "TAB": 0.012258,
+  "NONE": 0.012248,
+  "PIPE": 0.012681
+ },
+ "taskClasses": {
+  "partial-concordant": 5,
+  "dead-everywhere": 5,
+  "discordant-majority": 1,
+  "solved-everywhere": 11
+ },
+ "perTask": [
+  {
+   "task": "absinthe-graphql__absinthe-998",
+   "solvedReps": {
+    "native": 3,
+    "TAB": 3,
+    "NONE": 3,
+    "PIPE": 3
+   },
+   "class": "solved-everywhere",
+   "sweetFormsWithMajority": 3,
+   "nativeMajority": 1,
+   "failureModes": {},
+   "ssContribution": "n/a - solved in every cell",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "accenture__sfmc-devtools-1974",
+   "solvedReps": {
+    "native": 0,
+    "TAB": 1,
+    "NONE": 1,
+    "PIPE": 1
+   },
+   "class": "partial-concordant",
+   "sweetFormsWithMajority": 0,
+   "nativeMajority": 0,
+   "failureModes": {
+    "native": {
+     "0": "wrong-fix",
+     "1": "wrong-fix",
+     "2": "wrong-fix"
+    },
+    "TAB": {
+     "0": "wrong-fix",
+     "1": "edit-mechanics"
+    },
+    "NONE": {
+     "0": "wrong-fix",
+     "2": "edit-mechanics"
+    },
+    "PIPE": {
+     "0": "edit-mechanics",
+     "1": "wrong-fix"
+    }
+   },
+   "ssContribution": "none-negative: gold files named 3/6 and shown 6/6 in every arm; ss-read reread-suppression fired and cost one --force call",
+   "goldFileReach": {
+    "TAB": {
+     "n": 6,
+     "shown": 6,
+     "named": 3,
+     "patched": 3
+    },
+    "native": {
+     "n": 6,
+     "shown": 6,
+     "named": 3,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 6,
+     "shown": 6,
+     "named": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 6,
+     "shown": 6,
+     "named": 3,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "aio-libs__aiohttp-8038",
+   "solvedReps": {
+    "native": 0,
+    "TAB": 0,
+    "NONE": 1,
+    "PIPE": 1
+   },
+   "class": "partial-concordant",
+   "sweetFormsWithMajority": 0,
+   "nativeMajority": 0,
+   "failureModes": {
+    "native": {
+     "0": "not-localised",
+     "1": "wrong-fix",
+     "2": "wrong-fix"
+    },
+    "TAB": {
+     "0": "not-localised",
+     "1": "not-localised",
+     "2": "wrong-fix"
+    },
+    "NONE": {
+     "1": "not-localised",
+     "2": "wrong-fix"
+    },
+    "PIPE": {
+     "1": "wrong-fix",
+     "2": "wrong-fix"
+    }
+   },
+   "ssContribution": "none-negative: aiohttp/client.py named+shown in 2-3 of 3 in every arm",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 2,
+     "shown": 2,
+     "patched": 1
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 2
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 2
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 2
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "apigee__registry-961",
+   "solvedReps": {
+    "native": 3,
+    "TAB": 3,
+    "NONE": 3,
+    "PIPE": 3
+   },
+   "class": "solved-everywhere",
+   "sweetFormsWithMajority": 3,
+   "nativeMajority": 1,
+   "failureModes": {},
+   "ssContribution": "n/a - solved in every cell",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "shown": 3,
+     "named": 1,
+     "patched": 1
+    },
+    "native": {
+     "n": 3,
+     "shown": 3,
+     "named": 2,
+     "patched": 2
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 2,
+     "shown": 3,
+     "patched": 2
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "asynkron__protoactor-dotnet-1909",
+   "solvedReps": {
+    "native": 3,
+    "TAB": 3,
+    "NONE": 3,
+    "PIPE": 3
+   },
+   "class": "solved-everywhere",
+   "sweetFormsWithMajority": 3,
+   "nativeMajority": 1,
+   "failureModes": {},
+   "ssContribution": "n/a - solved in every cell",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "aws-actions__configure-aws-credentials-42",
+   "solvedReps": {
+    "native": 3,
+    "TAB": 3,
+    "NONE": 3,
+    "PIPE": 3
+   },
+   "class": "solved-everywhere",
+   "sweetFormsWithMajority": 3,
+   "nativeMajority": 1,
+   "failureModes": {},
+   "ssContribution": "n/a - solved in every cell",
+   "goldFileReach": {
+    "TAB": {
+     "n": 6,
+     "named": 6,
+     "shown": 6,
+     "patched": 6
+    },
+    "native": {
+     "n": 6,
+     "named": 6,
+     "shown": 6,
+     "patched": 6
+    },
+    "NONE": {
+     "n": 6,
+     "named": 6,
+     "shown": 6,
+     "patched": 6
+    },
+    "PIPE": {
+     "n": 6,
+     "named": 6,
+     "shown": 6,
+     "patched": 6
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "solvedReps": {
+    "native": 3,
+    "TAB": 1,
+    "NONE": 3,
+    "PIPE": 3
+   },
+   "class": "discordant-majority",
+   "sweetFormsWithMajority": 2,
+   "nativeMajority": 1,
+   "failureModes": {
+    "TAB": {
+     "1": "not-localised",
+     "2": "test-harness"
+    }
+   },
+   "ssContribution": "none-negative: the deciding file was inside an ss-read window the losing rep issued",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 2
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "axelrod-python__axelrod-671",
+   "solvedReps": {
+    "native": 3,
+    "TAB": 3,
+    "NONE": 3,
+    "PIPE": 3
+   },
+   "class": "solved-everywhere",
+   "sweetFormsWithMajority": 3,
+   "nativeMajority": 1,
+   "failureModes": {},
+   "ssContribution": "n/a - solved in every cell",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "solvedReps": {
+    "native": 1,
+    "TAB": 0,
+    "NONE": 0,
+    "PIPE": 0
+   },
+   "class": "partial-concordant",
+   "sweetFormsWithMajority": 0,
+   "nativeMajority": 0,
+   "failureModes": {
+    "native": {
+     "1": "not-localised",
+     "2": "wrong-fix"
+    },
+    "TAB": {
+     "0": "not-localised",
+     "1": "not-localised",
+     "2": "not-localised"
+    },
+    "NONE": {
+     "0": "not-localised",
+     "1": "not-localised",
+     "2": "not-localised"
+    },
+    "PIPE": {
+     "0": "not-localised",
+     "1": "not-localised",
+     "2": "not-localised"
+    }
+   },
+   "ssContribution": "DECISIVE NEGATIVE: .jam files are not in FILE_PATTERNS.include and src/build/** is removed by '**/build/**'; stage.jam never named or shown in 9/9 sweet rollouts; native found it in 3/3",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 2
+    },
+    "NONE": {
+     "n": 3
+    },
+    "PIPE": {
+     "n": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "solvedReps": {
+    "native": 0,
+    "TAB": 0,
+    "NONE": 0,
+    "PIPE": 0
+   },
+   "class": "dead-everywhere",
+   "sweetFormsWithMajority": 0,
+   "nativeMajority": 0,
+   "failureModes": {
+    "native": {
+     "0": "not-localised",
+     "1": "not-localised",
+     "2": "not-localised"
+    },
+    "TAB": {
+     "0": "not-localised",
+     "1": "not-localised",
+     "2": "wrong-fix"
+    },
+    "NONE": {
+     "0": "not-localised",
+     "1": "not-localised",
+     "2": "not-localised"
+    },
+    "PIPE": {
+     "0": "not-localised",
+     "1": "not-localised",
+     "2": "not-localised"
+    }
+   },
+   "ssContribution": "negative but not decisive: same index gap; sweet still reached property.jam by path more often than native",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 1
+    },
+    "native": {
+     "n": 3,
+     "shown": 2,
+     "named": 1
+    },
+    "NONE": {
+     "n": 3,
+     "shown": 3,
+     "named": 2
+    },
+    "PIPE": {
+     "n": 3,
+     "shown": 2,
+     "named": 1
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "callstack__react-native-paper-972",
+   "solvedReps": {
+    "native": 3,
+    "TAB": 3,
+    "NONE": 3,
+    "PIPE": 3
+   },
+   "class": "solved-everywhere",
+   "sweetFormsWithMajority": 3,
+   "nativeMajority": 1,
+   "failureModes": {},
+   "ssContribution": "n/a - solved in every cell",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 2
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "celestiaorg__nmt-192",
+   "solvedReps": {
+    "native": 3,
+    "TAB": 3,
+    "NONE": 3,
+    "PIPE": 3
+   },
+   "class": "solved-everywhere",
+   "sweetFormsWithMajority": 3,
+   "nativeMajority": 1,
+   "failureModes": {},
+   "ssContribution": "n/a - solved in every cell",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "devlooped__moq-1262",
+   "solvedReps": {
+    "native": 1,
+    "TAB": 1,
+    "NONE": 1,
+    "PIPE": 1
+   },
+   "class": "partial-concordant",
+   "sweetFormsWithMajority": 0,
+   "nativeMajority": 0,
+   "failureModes": {
+    "native": {
+     "0": "wrong-fix",
+     "2": "wrong-fix"
+    },
+    "TAB": {
+     "0": "wrong-fix",
+     "1": "wrong-fix"
+    },
+    "NONE": {
+     "1": "wrong-fix",
+     "2": "wrong-fix"
+    },
+    "PIPE": {
+     "0": "wrong-fix",
+     "1": "wrong-fix"
+    }
+   },
+   "ssContribution": "friction only: 20 ss-read --force re-reads, 1 ENOENT on a guessed path; no effect on outcome",
+   "goldFileReach": {
+    "TAB": {
+     "n": 12,
+     "shown": 12,
+     "named": 9,
+     "patched": 1
+    },
+    "native": {
+     "n": 12,
+     "named": 10,
+     "shown": 12,
+     "patched": 2
+    },
+    "NONE": {
+     "n": 12,
+     "shown": 11,
+     "named": 6,
+     "patched": 2
+    },
+    "PIPE": {
+     "n": 12,
+     "shown": 12,
+     "named": 10,
+     "patched": 1
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "fastify__fastify-cors-285",
+   "solvedReps": {
+    "native": 0,
+    "TAB": 0,
+    "NONE": 0,
+    "PIPE": 0
+   },
+   "class": "dead-everywhere",
+   "sweetFormsWithMajority": 0,
+   "nativeMajority": 0,
+   "failureModes": {
+    "native": {
+     "0": "wrong-fix",
+     "1": "wrong-fix",
+     "2": "wrong-fix"
+    },
+    "TAB": {
+     "0": "wrong-fix",
+     "1": "wrong-fix",
+     "2": "wrong-fix"
+    },
+    "NONE": {
+     "0": "wrong-fix",
+     "1": "wrong-fix",
+     "2": "wrong-fix"
+    },
+    "PIPE": {
+     "0": "wrong-fix",
+     "1": "wrong-fix",
+     "2": "wrong-fix"
+    }
+   },
+   "ssContribution": "none: single file, found by every arm; the answer is router semantics, not repo text",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "final-form__final-form-64",
+   "solvedReps": {
+    "native": 3,
+    "TAB": 3,
+    "NONE": 3,
+    "PIPE": 3
+   },
+   "class": "solved-everywhere",
+   "sweetFormsWithMajority": 3,
+   "nativeMajority": 1,
+   "failureModes": {},
+   "ssContribution": "n/a - solved in every cell",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "gitbookio__markup-it-56",
+   "solvedReps": {
+    "native": 0,
+    "TAB": 0,
+    "NONE": 0,
+    "PIPE": 0
+   },
+   "class": "dead-everywhere",
+   "sweetFormsWithMajority": 0,
+   "nativeMajority": 0,
+   "failureModes": {
+    "native": {
+     "0": "not-localised",
+     "1": "not-localised",
+     "2": "not-localised"
+    },
+    "TAB": {
+     "0": "wrong-fix",
+     "1": "incomplete",
+     "2": "not-localised"
+    },
+    "NONE": {
+     "0": "incomplete",
+     "1": "wrong-fix",
+     "2": "not-localised"
+    },
+    "PIPE": {
+     "0": "not-localised",
+     "1": "wrong-fix",
+     "2": "wrong-fix"
+    }
+   },
+   "ssContribution": "positive: sweet patched the gold file 2/2/1 of 3 against native 0 of 3, and still failed on completeness",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 2
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 2
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 1
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "hotmeteor__spectator-181",
+   "solvedReps": {
+    "native": 0,
+    "TAB": 0,
+    "NONE": 0,
+    "PIPE": 0
+   },
+   "class": "dead-everywhere",
+   "sweetFormsWithMajority": 0,
+   "nativeMajority": 0,
+   "failureModes": {
+    "native": {
+     "0": "wrong-fix",
+     "1": "wrong-fix",
+     "2": "wrong-fix"
+    },
+    "TAB": {
+     "0": "wrong-fix",
+     "1": "not-localised",
+     "2": "wrong-fix"
+    },
+    "NONE": {
+     "0": "wrong-fix",
+     "1": "wrong-fix",
+     "2": "wrong-fix"
+    },
+    "PIPE": {
+     "0": "wrong-fix",
+     "1": "wrong-fix",
+     "2": "wrong-fix"
+    }
+   },
+   "ssContribution": "none: single small file found by every arm",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 2
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "jazzband__tablib-454",
+   "solvedReps": {
+    "native": 3,
+    "TAB": 3,
+    "NONE": 3,
+    "PIPE": 3
+   },
+   "class": "solved-everywhere",
+   "sweetFormsWithMajority": 3,
+   "nativeMajority": 1,
+   "failureModes": {},
+   "ssContribution": "n/a - solved in every cell",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "locationtech__jts-622",
+   "solvedReps": {
+    "native": 3,
+    "TAB": 3,
+    "NONE": 2,
+    "PIPE": 3
+   },
+   "class": "partial-concordant",
+   "sweetFormsWithMajority": 3,
+   "nativeMajority": 1,
+   "failureModes": {
+    "NONE": {
+     "2": "wrong-fix"
+    }
+   },
+   "ssContribution": "none-negative: the winner used ss-grep --in on the same file the loser skipped",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "mathnet__mathnet-numerics-1072",
+   "solvedReps": {
+    "native": 3,
+    "TAB": 3,
+    "NONE": 3,
+    "PIPE": 3
+   },
+   "class": "solved-everywhere",
+   "sweetFormsWithMajority": 3,
+   "nativeMajority": 1,
+   "failureModes": {},
+   "ssContribution": "n/a - solved in every cell",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "mirumee__ariadne-codegen-218",
+   "solvedReps": {
+    "native": 3,
+    "TAB": 3,
+    "NONE": 3,
+    "PIPE": 3
+   },
+   "class": "solved-everywhere",
+   "sweetFormsWithMajority": 3,
+   "nativeMajority": 1,
+   "failureModes": {},
+   "ssContribution": "n/a - solved in every cell",
+   "goldFileReach": {
+    "TAB": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "native": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    },
+    "PIPE": {
+     "n": 3,
+     "named": 3,
+     "shown": 3,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  },
+  {
+   "task": "protofire__solhint-224",
+   "solvedReps": {
+    "native": 0,
+    "TAB": 0,
+    "NONE": 0,
+    "PIPE": 0
+   },
+   "class": "dead-everywhere",
+   "sweetFormsWithMajority": 0,
+   "nativeMajority": 0,
+   "failureModes": {
+    "native": {
+     "0": "incomplete",
+     "1": "incomplete",
+     "2": "incomplete"
+    },
+    "TAB": {
+     "0": "incomplete",
+     "1": "incomplete",
+     "2": "incomplete"
+    },
+    "NONE": {
+     "0": "incomplete",
+     "1": "incomplete",
+     "2": "incomplete"
+    },
+    "PIPE": {
+     "0": "incomplete",
+     "1": "incomplete",
+     "2": "incomplete"
+    }
+   },
+   "ssContribution": "friction only: one stale-index ss-grep zero on the agent's own insert",
+   "goldFileReach": {
+    "TAB": {
+     "n": 15,
+     "named": 13,
+     "shown": 13,
+     "patched": 3
+    },
+    "native": {
+     "n": 15,
+     "named": 13,
+     "shown": 12,
+     "patched": 3
+    },
+    "NONE": {
+     "n": 15,
+     "named": 12,
+     "shown": 12,
+     "patched": 4
+    },
+    "PIPE": {
+     "n": 15,
+     "named": 13,
+     "shown": 14,
+     "patched": 3
+    }
+   },
+   "gutterCouldMatter": false,
+   "gutterNote": "no failed hunk in any arm contained gutter residue; codex seek_sequence trims both sides"
+  }
+ ],
+ "failureModeTotals": {
+  "not-localised": 33,
+  "test-harness": 1,
+  "wrong-fix": 50,
+  "edit-mechanics": 3,
+  "incomplete": 14
+ },
+ "toolHealth": {
+  "callsByTool": {
+   "ss-read": 1557,
+   "ss-grep": 658,
+   "ss-search": 384,
+   "ss-find": 115,
+   "ss-semantic": 106,
+   "ss-trace": 36
+  },
+  "ssEditCalls": 0,
+  "ssFilesCalls": 0,
+  "zeroResult": {
+   "ss-grep": 131,
+   "ss-search": 0,
+   "ss-find": 0,
+   "ss-semantic": 0
+  },
+  "events": {
+   "native": {},
+   "TAB": {
+    "ss_envelopes": 552,
+    "codex_cap_truncation": 105,
+    "envelope_nonzero_exit": 25,
+    "error:stat failed": 12,
+    "no_section_for_call": 112,
+    "reread_omitted": 43,
+    "force_retry": 7,
+    "loader_noise": 8,
+    "native_fallback": 9,
+    "error:file not indexed for semantic span selec": 1
+   },
+   "NONE": {
+    "ss_envelopes": 546,
+    "codex_cap_truncation": 100,
+    "no_section_for_call": 96,
+    "reread_omitted": 40,
+    "force_retry": 2,
+    "loader_noise": 5,
+    "envelope_nonzero_exit": 20,
+    "native_fallback": 10,
+    "error:stat failed": 9
+   },
+   "PIPE": {
+    "ss_envelopes": 539,
+    "codex_cap_truncation": 107,
+    "native_fallback": 20,
+    "reread_omitted": 46,
+    "no_section_for_call": 95,
+    "envelope_nonzero_exit": 21,
+    "loader_noise": 5,
+    "force_retry": 10,
+    "error:stat failed": 6
+   }
+  },
+  "rolloutsWithCounts": {
+   "native": {},
+   "TAB": {
+    "codex_cap_truncation": 39,
+    "envelope_nonzero_exit": 15,
+    "ss_error": 7,
+    "errkind:stat failed": 6,
+    "reread_omitted": 20,
+    "force_retry": 6,
+    "ss_grep_zero": 15,
+    "loader_noise": 7,
+    "native_fallback": 4,
+    "errkind:file not indexed for semantic span selec": 1
+   },
+   "NONE": {
+    "codex_cap_truncation": 34,
+    "reread_omitted": 16,
+    "ss_grep_zero": 14,
+    "force_retry": 2,
+    "loader_noise": 5,
+    "envelope_nonzero_exit": 13,
+    "native_fallback": 5,
+    "ss_error": 5,
+    "errkind:stat failed": 5
+   },
+   "PIPE": {
+    "codex_cap_truncation": 34,
+    "native_fallback": 9,
+    "reread_omitted": 22,
+    "envelope_nonzero_exit": 14,
+    "loader_noise": 5,
+    "ss_grep_zero": 15,
+    "force_retry": 3,
+    "ss_error": 4,
+    "errkind:stat failed": 4
+   }
+  },
+  "latencySecEnvelope": {
+   "TAB": {
+    "median": 0.069,
+    "p90": 0.401
+   },
+   "NONE": {
+    "median": 0.081,
+    "p90": 0.404
+   },
+   "PIPE": {
+    "median": 0.075,
+    "p90": 0.446
+   }
+  },
+  "yieldPolls": {
+   "native": {
+    "polls": 38,
+    "rollouts": 18
+   },
+   "TAB": {
+    "polls": 45,
+    "rollouts": 23
+   },
+   "NONE": {
+    "polls": 39,
+    "rollouts": 22
+   },
+   "PIPE": {
+    "polls": 46,
+    "rollouts": 23
+   },
+   "afterSsEnvelope": {
+    "TAB": 2,
+    "NONE": 2,
+    "PIPE": 3
+   },
+   "ssTimeouts": 0
+  }
+ },
+ "defects": [
+  {
+   "id": "D1",
+   "title": "index excludes any build/dist/out/target dir and every .jam file",
+   "evidence": {
+    "scopedContradictions": 26,
+    "byTask": {
+     "aws-actions__configure-aws-credentials-42": 1,
+     "bfgroup__b2-113": 17,
+     "bfgroup__b2-259": 6,
+     "aio-libs__aiohttp-8038": 1,
+     "protofire__solhint-224": 1
+    },
+    "goldenIndex": {
+     "repo": "bfgroup/b2",
+     "indexedFiles": 330,
+     "jamOnDisk": 321,
+     "jamEntities": 0,
+     "underBuildEntities": 0,
+     "stageJamEntities": 0,
+     "srcBuildTargetsPyEntities": 0
+    }
+   },
+   "source": "core/infrastructure/config/search.js FILE_PATTERNS.exclude '**/build/**' etc; include has no **/*.jam",
+   "costsRollouts": "bfgroup__b2-113: sweet 0/9 vs native 1/3"
+  },
+  {
+   "id": "D2",
+   "title": "ss-* crashes with a Node stack trace on a non-regex pattern",
+   "evidence": {
+    "crashes": 18,
+    "rollouts": 17,
+    "byArm": {
+     "TAB": 8,
+     "NONE": 5,
+     "PIPE": 5
+    },
+    "quote": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error: (?:GetApi(ctx) ^ error: unclosed group"
+   },
+   "costsRollouts": "none observed"
+  },
+  {
+   "id": "D3",
+   "title": "ss-grep reads a stale index and cannot see the agent's own edits",
+   "evidence": {
+    "flaggedRollouts": 9,
+    "cleanRollouts": 4,
+    "quote": "ss-grep \"OrderingChecker\" -k 10 && ss-read lib/rules/order/index.js 1 30 -> 0 matches then the class on screen"
+   },
+   "costsRollouts": "none observed"
+  },
+  {
+   "id": "D4",
+   "title": "codex truncates ss output at ~2500 tokens",
+   "evidence": {
+    "envelopes": 312,
+    "rolloutsWith": {
+     "TAB": 39,
+     "NONE": 34,
+     "PIPE": 34
+    }
+   },
+   "costsRollouts": "none observed; mechanism already tested and near-dead (0 of 6 never-shown anchors in a truncated span)"
+  },
+  {
+   "id": "D5",
+   "title": "unchanged-reread suppression costs a --force retry call",
+   "evidence": {
+    "omissions": 129,
+    "forceRetries": 19
+   }
+  },
+  {
+   "id": "D6",
+   "title": "ss-read ENOENT with no recovery hint",
+   "evidence": {
+    "calls": 27,
+    "rollouts": 15
+   }
+  },
+  {
+   "id": "D7",
+   "title": "loader and warm-up diagnostics printed into agent context",
+   "evidence": {
+    "envelopes": 18,
+    "rollouts": 17,
+    "bytes": 13304
+   }
+  },
+  {
+   "id": "D8",
+   "title": "envelope exits non-zero after an ss-* call, which can break an && chain",
+   "evidence": {
+    "calls": 66,
+    "rollouts": 42,
+    "byTool": {
+     "ss-read": 29,
+     "ss-grep": 20,
+     "ss-trace": 8,
+     "ss-search": 4,
+     "ss-find": 1,
+     "ss-semantic": 1
+    }
+   }
+  },
+  {
+   "id": "D9",
+   "title": "ss-semantic degrades silently on an unindexed file",
+   "evidence": {
+    "calls": 1
+   }
+  },
+  {
+   "id": "D10",
+   "title": "ss-search/ss-find/ss-semantic never return a not-found signal",
+   "evidence": {
+    "zeroResultCalls": 0,
+    "totalCalls": 605
+   }
+  }
+ ],
+ "editMechanics": {
+  "applyPatchCalls": {
+   "native": 124,
+   "TAB": 112,
+   "NONE": 124,
+   "PIPE": 121
+  },
+  "failedCalls": {
+   "native": 8,
+   "TAB": 6,
+   "NONE": 4,
+   "PIPE": 4
+  },
+  "rolloutsWithFailedEdit": {
+   "native": 7,
+   "TAB": 5,
+   "NONE": 2,
+   "PIPE": 4
+  },
+  "hunksBareAtAt": {
+   "native": 259,
+   "TAB": 211,
+   "NONE": 269,
+   "PIPE": 213
+  },
+  "hunksLocatedAtAt": {
+   "native": 0,
+   "TAB": 0,
+   "NONE": 0,
+   "PIPE": 0
+  },
+  "postEditRealGitDiffRollouts": {
+   "native": 54,
+   "TAB": 48,
+   "NONE": 46,
+   "PIPE": 44
+  },
+  "silentMisplacement": {
+   "TAB": {
+    "cited": 68,
+    "consistent": 65,
+    "inconsistent": 3
+   },
+   "native": {
+    "cited": 69,
+    "consistent": 69
+   },
+   "NONE": {
+    "cited": 74,
+    "consistent": 74
+   },
+   "PIPE": {
+    "cited": 82,
+    "consistent": 82
+   }
+  },
+  "gutterResidueInFailedHunks": 0
+ },
+ "levers": [
+  {
+   "id": "L1",
+   "title": "anchor the build-output exclude globs and add .jam to FILE_PATTERNS.include",
+   "tasks": [
+    "bfgroup__b2-113",
+    "bfgroup__b2-259",
+    "aws-actions__configure-aws-credentials-42",
+    "apigee__registry-961"
+   ],
+   "mechanism": "unanchored '**/build/**' deletes src/build/** from the index; no **/*.jam glob at all; verified on the deployed golden index",
+   "zeroCostFalsifier": "re-index the 3 b2 goldens with the globs anchored and .jam added; replay the 50 recorded zero-match ss-grep queries; kill if under half return the line ss-read printed",
+   "discardCheck": "absent from SLATE-A s9 and SLATE-B s8; contradicts project_taskbench_extension_coverage_audit which tested extensions only",
+   "newEvidence": true,
+   "expectedResolutionGain": "at most +1 to +2 rollouts of 66, below the bar of 6",
+   "status": "ship as a correctness fix, not a resolution claim"
+  },
+  {
+   "id": "L2",
+   "title": "ss-grep must not crash on a pattern that is not a valid regex",
+   "tasks": [
+    "apigee__registry-961",
+    "aws-actions__configure-aws-credentials-42",
+    "devlooped__moq-1262",
+    "gitbookio__markup-it-56",
+    "bfgroup__b2-113",
+    "hotmeteor__spectator-181",
+    "fastify__fastify-cors-285",
+    "accenture__sfmc-devtools-1974"
+   ],
+   "mechanism": "the wrapper hands the pattern to ripgrep unchanged; a parse error escapes as an unhandled rejection; writeRegexDialectHint only runs on success",
+   "zeroCostFalsifier": "replay the 18 recorded patterns with a -F fallback on regex-parse error; kill if under half return matches",
+   "discardCheck": "absent from both logs; the BRE \\| half is a known open bug (2026-07-14 forensics review)",
+   "newEvidence": true,
+   "status": "product-quality fix, cost benefit only"
+  },
+  {
+   "id": "L3",
+   "title": "make ss-grep see the working tree or say it cannot",
+   "tasks": [
+    "protofire__solhint-224",
+    "aio-libs__aiohttp-8038",
+    "callstack__react-native-paper-972"
+   ],
+   "mechanism": "ss-grep is index-backed; nothing re-indexes during a rollout; the tool contract says ss-* tracks the working tree",
+   "zeroCostFalsifier": "count ss-grep calls after the first successful edit; kill if under 5% of ss-grep calls",
+   "discardCheck": "absent from both logs",
+   "newEvidence": true,
+   "status": "contract fix, no measured resolution effect"
+  },
+  {
+   "id": "L4",
+   "title": "keep rendered ss-read under codex's ~2500-token cap",
+   "status": "DEAD - already falsified in GUTTER-MECHANISM R6 (0 of 6 never-shown anchors in a truncated span); this run adds population, no mechanism"
+  },
+  {
+   "id": "L5",
+   "title": "price the unchanged-reread suppression",
+   "status": "LOW VALUE - same family as SLATE-B s8 'return the same slice more compactly'; report the 129/19 number only"
+  },
+  {
+   "id": "L6",
+   "title": "ambiguous-anchor silent misplacement",
+   "status": "DROP - 1 in 293 cited claims; the obvious remedy fails its own population test (post-edit git diff: 113/192 solved vs 50/72 without, p=0.12, wrong direction); prompt form dead by project_clause_candidate_dead"
+  },
+  {
+   "id": "L7",
+   "title": "gutter delimiter",
+   "status": "NO LEVER - 952 hunks, 26 failed edits, 0 with gutter residue; codex seek_sequence trims both sides"
+  }
+ ],
+ "indexGapPerPoolRepo": [
+  {
+   "task": "absinthe-graphql__absinthe-998",
+   "repo": "absinthe-graphql__absinthe",
+   "indexed": 496,
+   "onDisk": 552,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "accenture__sfmc-devtools-1974",
+   "repo": "Accenture__sfmc-devtools",
+   "indexed": 303,
+   "onDisk": 958,
+   "underExcludedDirKnownExt": 1,
+   "unindexedExt": [
+    [
+     "map",
+     100
+    ],
+    [
+     "amp",
+     29
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "task": "aio-libs__aiohttp-8038",
+   "repo": "aio-libs__aiohttp",
+   "indexed": 152,
+   "onDisk": 264,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "apigee__registry-961",
+   "repo": "apigee__registry",
+   "indexed": 493,
+   "onDisk": 625,
+   "underExcludedDirKnownExt": 52,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "asynkron__protoactor-dotnet-1909",
+   "repo": "asynkron__protoactor-dotnet",
+   "indexed": 739,
+   "onDisk": 890,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [
+    [
+     "csproj",
+     96
+    ],
+    [
+     "razor",
+     22
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "task": "aws-actions__configure-aws-credentials-42",
+   "repo": "aws-actions__configure-aws-credentials",
+   "indexed": 7,
+   "onDisk": 17,
+   "underExcludedDirKnownExt": 1,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "repo": "awslabs__aws-embedded-metrics-node",
+   "indexed": 37,
+   "onDisk": 76,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "axelrod-python__axelrod-671",
+   "repo": "Axelrod-Python__Axelrod",
+   "indexed": 118,
+   "onDisk": 195,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "bfgroup__b2-113",
+   "repo": "bfgroup__b2",
+   "indexed": 330,
+   "onDisk": 950,
+   "underExcludedDirKnownExt": 18,
+   "unindexedExt": [
+    [
+     "jam",
+     321
+    ],
+    [
+     "adoc",
+     33
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "task": "bfgroup__b2-259",
+   "repo": "bfgroup__b2",
+   "indexed": 330,
+   "onDisk": 950,
+   "underExcludedDirKnownExt": 18,
+   "unindexedExt": [
+    [
+     "jam",
+     321
+    ],
+    [
+     "adoc",
+     33
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "task": "callstack__react-native-paper-972",
+   "repo": "callstack__react-native-paper",
+   "indexed": 236,
+   "onDisk": 443,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [
+    [
+     "png",
+     79
+    ],
+    [
+     "snap",
+     22
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "task": "celestiaorg__nmt-192",
+   "repo": "celestiaorg__nmt",
+   "indexed": 15,
+   "onDisk": 25,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "devlooped__moq-1262",
+   "repo": "devlooped__moq",
+   "indexed": 255,
+   "onDisk": 312,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "fastify__fastify-cors-285",
+   "repo": "fastify__fastify-cors",
+   "indexed": 12,
+   "onDisk": 19,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "final-form__final-form-64",
+   "repo": "final-form__final-form",
+   "indexed": 24,
+   "onDisk": 54,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "gitbookio__markup-it-56",
+   "repo": "GitbookIO__markup-it",
+   "indexed": 178,
+   "onDisk": 378,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "hotmeteor__spectator-181",
+   "repo": "hotmeteor__spectator",
+   "indexed": 45,
+   "onDisk": 59,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "jazzband__tablib-454",
+   "repo": "jazzband__tablib",
+   "indexed": 33,
+   "onDisk": 60,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "locationtech__jts-622",
+   "repo": "locationtech__jts",
+   "indexed": 1303,
+   "onDisk": 1475,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [
+    [
+     "png",
+     60
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "task": "mathnet__mathnet-numerics-1072",
+   "repo": "mathnet__mathnet-numerics",
+   "indexed": 1062,
+   "onDisk": 1325,
+   "underExcludedDirKnownExt": 8,
+   "unindexedExt": [
+    [
+     "dat",
+     58
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "task": "mirumee__ariadne-codegen-218",
+   "repo": "mirumee__ariadne-codegen",
+   "indexed": 255,
+   "onDisk": 309,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [],
+   "note": ""
+  },
+  {
+   "task": "protofire__solhint-224",
+   "repo": "protofire__solhint",
+   "indexed": 116,
+   "onDisk": 232,
+   "underExcludedDirKnownExt": 0,
+   "unindexedExt": [],
+   "note": ""
+  }
+ ],
+ "caveats": [
+  "10.1% of ss-* calls (288 of 2856) could not be matched to a banner in their envelope output - 25% inside codex-truncated envelopes - so zero-result and error counts are lower bounds",
+  "the 131 zero-match ss-grep calls yield 80 unscoped contradictions but only 26 scoped ones; 26 is the number quoted",
+  "rollout-to-rep mapping uses rows.json rolloutFile, so the extra-transcript trap cannot apply",
+  "cost figures use idealCostUsd; the published table used costRealizedUsd; they agree to 0.6% and rank the arms identically"
+ ]
+}

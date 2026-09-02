@@ -1,0 +1,3 @@
+codex epoch C: outputs with a token-count header: untruncated 2844 truncated 563
+largest UNtruncated token count: 2496
+smallest TRUNCATED token count : 2502

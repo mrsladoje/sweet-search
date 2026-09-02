@@ -1,0 +1,47 @@
+=== A. CLAUDE TRANSCRIPT-SELECTION CONVENTIONS (fp-claudecode-*, epoch C) ===
+tab/native: n=66 tasks=22 sessions=67 extraSessions=1
+   rowMatched  total=$1.384135 perRollout=$0.020972
+   dearest3    total=$1.414820 perRollout=$0.021437
+   everyDollar total=$1.440040 perRollout=$0.021819
+tab/sweet: n=66 tasks=22 sessions=71 extraSessions=5
+   rowMatched  total=$1.262219 perRollout=$0.019125
+   dearest3    total=$1.368014 perRollout=$0.020727
+   everyDollar total=$1.468017 perRollout=$0.022243
+none/sweet: n=66 tasks=22 sessions=70 extraSessions=4
+   rowMatched  total=$1.144751 perRollout=$0.017345
+   dearest3    total=$1.281978 perRollout=$0.019424
+   everyDollar total=$1.367211 perRollout=$0.020715
+pipe/sweet: n=66 tasks=22 sessions=68 extraSessions=2
+   rowMatched  total=$1.104174 perRollout=$0.016730
+   dearest3    total=$1.172259 perRollout=$0.017761
+   everyDollar total=$1.198225 perRollout=$0.018155
+CLAUDE FP TOTALS: rowMatched=$4.8953 dearest3=$5.2371 everyDollar=$5.4735
+
+=== B. DELEGATION SUBSETS (claude epoch C, sweet TAB vs native), 3 definitions ===
+  delegating task set (either arm) size=18; tasks with NO delegation anywhere=4 (callstack__react-native-paper-972, jazzband__tablib-454, locationtech__jts-622, mathnet__mathnet-numerics-1072)
+  def1 task-level clean: tasks=4 main-only Δ=26.29% (mean Δ=$0.002094, native base $0.007963)
+  all 22 tasks (main-only): tasks=22 main-only Δ=-1.38% (mean Δ=$-0.000229, native base $0.016542)
+  22 minus moq-1262 (LOO): tasks=21 main-only Δ=6.83% (mean Δ=$0.000993, native base $0.014525)
+  def2 rollout-pair clean: pairs=34 main-only Δ=7.88% (sweet $0.011163 vs native $0.010348)
+  def2 touches 17 distinct tasks
+
+=== C. MEDIANS of paired per-task deltas (claude epoch C) ===
+  inclusive: mean=$-0.001847 median=$-0.002389 cheaper=13/22
+  main-only: mean=$-0.000229 median=$-0.000535 cheaper=13/22
+
+=== D. contextRewrites and retries ===
+  rollouts with contextRewrites>0 in MY reconstruction: 1
+    fp-claudecode-none-20260826 mathnet__mathnet-numerics-1072 sweet r2: rewrites=1 ideal=0.007044 brk=0.007044 diff=0.000000
+  codex epoch C: rows=264 rows with >1 attempt/candidate=0 degenReran=0
+  opencode epoch C: rows=345 rows with >1 attempt/candidate=0 degenReran=0
+
+=== E. SPEND RE-SUM, three conventions ===
+  codex (all 3 runs, every row)      = $3.2796
+  opencode (all 6 runs, every row)   = $3.2274
+  claude rowMatched                  = $4.8953
+  claude dearest3 (published)        = $5.2371
+  claude everyDollar                 = $5.4735
+  TOTAL rowMatched  = $11.4023
+  TOTAL dearest3    = $11.7441
+  TOTAL everyDollar = $11.9805
+  12-cell table sum: codex+opencode cells = $5.6280; + claude dearest3 $5.2371 = $10.8650

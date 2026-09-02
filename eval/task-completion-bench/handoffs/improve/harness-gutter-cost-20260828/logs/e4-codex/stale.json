@@ -1,0 +1,149 @@
+{
+ "counts": {
+  "zero": 132,
+  "stale_vs_own_edit": 14,
+  "bad_regex": 3
+ },
+ "findings": [
+  {
+   "rollout": "aws-actions__configure-aws-credentials-42/TAB/rep0",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "arm": "TAB",
+   "pattern": "AWS_ACCESS_KEY_ID",
+   "grepCall": 13,
+   "editCall": 10,
+   "addedLine": "  // AWS_ACCESS_KEY_ID:",
+   "cmd": "ss-grep \"AWS_ACCESS_KEY_ID\" --in dist/index.js -k 10"
+  },
+  {
+   "rollout": "aws-actions__configure-aws-credentials-42/TAB/rep0",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "arm": "TAB",
+   "pattern": "aws-access-key-id|getInput|exportCredentials",
+   "grepCall": 17,
+   "editCall": 10,
+   "addedLine": "    const accessKeyId = core.getInput('aws-access-key-id', { required: false });",
+   "cmd": "ss-grep \"aws-access-key-id|getInput|exportCredentials\" --in dist/index.js -k 20"
+  },
+  {
+   "rollout": "aws-actions__configure-aws-credentials-42/TAB/rep0",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "arm": "TAB",
+   "pattern": "aws-access-key-id|AWS_ACCESS_KEY_ID|AWS Secret Access Key",
+   "grepCall": 18,
+   "editCall": 10,
+   "addedLine": "  // AWS_ACCESS_KEY_ID:",
+   "cmd": "ss-grep \"aws-access-key-id|AWS_ACCESS_KEY_ID|AWS Secret Access Key\" --in README.md -k 10"
+  },
+  {
+   "rollout": "aio-libs__aiohttp-8038/NONE/rep0",
+   "task": "aio-libs__aiohttp-8038",
+   "arm": "NONE",
+   "pattern": "keepalive",
+   "grepCall": 40,
+   "editCall": 27,
+   "addedLine": "        self.keepalive = False",
+   "cmd": "ss-grep \"keepalive\" --in aiohttp/client_proto.py -k 10 && ss-grep \"keepalive\" --in aiohttp/client_reqrep.py -k 10"
+  },
+  {
+   "rollout": "aio-libs__aiohttp-8038/NONE/rep0",
+   "task": "aio-libs__aiohttp-8038",
+   "arm": "NONE",
+   "pattern": "keepalive",
+   "grepCall": 40,
+   "editCall": 27,
+   "addedLine": "        self.keepalive = False",
+   "cmd": "ss-grep \"keepalive\" --in aiohttp/client_proto.py -k 10 && ss-grep \"keepalive\" --in aiohttp/client_reqrep.py -k 10"
+  },
+  {
+   "rollout": "aio-libs__aiohttp-8038/NONE/rep2",
+   "task": "aio-libs__aiohttp-8038",
+   "arm": "NONE",
+   "pattern": "retry_persistent_connection|has_keep_alive_header|should_retry",
+   "grepCall": 28,
+   "editCall": 15,
+   "addedLine": "        retry_persistent_connection = True",
+   "cmd": "ss-grep \"retry_persistent_connection|has_keep_alive_header|should_retry\" -k 10"
+  },
+  {
+   "rollout": "aws-actions__configure-aws-credentials-42/NONE/rep1",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "arm": "NONE",
+   "pattern": "aws-access-key-id",
+   "grepCall": 18,
+   "editCall": 9,
+   "addedLine": "    const accessKeyId = core.getInput('aws-access-key-id', { required: false });",
+   "cmd": "ss-grep \"aws-access-key-id\" --in dist/index.js -k 10"
+  },
+  {
+   "rollout": "callstack__react-native-paper-972/NONE/rep1",
+   "task": "callstack__react-native-paper-972",
+   "arm": "NONE",
+   "pattern": "_color",
+   "grepCall": 9,
+   "editCall": 6,
+   "addedLine": "      color: _color,",
+   "cmd": "ss-grep \"_color\" -k 10 && printf '\\n--- package scripts ---\\n' && ss-read package.json 28 48"
+  },
+  {
+   "rollout": "protofire__solhint-224/NONE/rep2",
+   "task": "protofire__solhint-224",
+   "arm": "NONE",
+   "pattern": "OrderingChecker",
+   "grepCall": 15,
+   "editCall": 12,
+   "addedLine": "class OrderingChecker extends BaseChecker {",
+   "cmd": "ss-grep \"OrderingChecker\" -k 10 && ss-read lib/rules/order/index.js 1 30"
+  },
+  {
+   "rollout": "aio-libs__aiohttp-8038/PIPE/rep2",
+   "task": "aio-libs__aiohttp-8038",
+   "arm": "PIPE",
+   "pattern": "connection",
+   "grepCall": 18,
+   "editCall": 13,
+   "addedLine": "        retry_persistent_connection = True",
+   "cmd": "ss-grep \"should_close\" --in aiohttp/_http_parser.pyx -k 10 && ss-grep \"connection\" --in aiohttp/_http_parser.pyx -k 10"
+  },
+  {
+   "rollout": "aws-actions__configure-aws-credentials-42/PIPE/rep0",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "arm": "PIPE",
+   "pattern": "aws-access-key-id",
+   "grepCall": 14,
+   "editCall": 10,
+   "addedLine": "    const accessKeyId = core.getInput('aws-access-key-id', { required: false });",
+   "cmd": "ss-grep \"aws-access-key-id\" --in dist/index.js -k 10 && ss-grep \"required: true\" --in dist/index.js -k 20 && ss-grep \"exportCredentials\" --in dist/index.js -k 20"
+  },
+  {
+   "rollout": "aws-actions__configure-aws-credentials-42/PIPE/rep0",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "arm": "PIPE",
+   "pattern": "exportCredentials",
+   "grepCall": 14,
+   "editCall": 10,
+   "addedLine": "      exportCredentials({accessKeyId, secretAccessKey, sessionToken});",
+   "cmd": "ss-grep \"aws-access-key-id\" --in dist/index.js -k 10 && ss-grep \"required: true\" --in dist/index.js -k 20 && ss-grep \"exportCredentials\" --in dist/index.js -k 20"
+  },
+  {
+   "rollout": "aws-actions__configure-aws-credentials-42/PIPE/rep0",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "arm": "PIPE",
+   "pattern": "aws-secret-access-key",
+   "grepCall": 15,
+   "editCall": 10,
+   "addedLine": "    const secretAccessKey = core.getInput('aws-secret-access-key', { required: false });",
+   "cmd": "ss-grep \"AWS_ACCESS_KEY_ID\" --in dist/index.js -k 10 && ss-grep \"aws-secret-access-key\" --in dist/index.js -k 10 && ss-grep \"Missing required input\" --in dist/index.js -k"
+  },
+  {
+   "rollout": "aws-actions__configure-aws-credentials-42/PIPE/rep1",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "arm": "PIPE",
+   "pattern": "AWS_ACCESS_KEY_ID|aws-access-key-id",
+   "grepCall": 18,
+   "editCall": 11,
+   "addedLine": "  // AWS_ACCESS_KEY_ID:",
+   "cmd": "ss-grep \"AWS_ACCESS_KEY_ID|aws-access-key-id\" --in dist/index.js -k 20"
+  }
+ ]
+}

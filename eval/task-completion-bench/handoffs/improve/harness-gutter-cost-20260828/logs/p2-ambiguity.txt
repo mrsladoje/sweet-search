@@ -1,0 +1,8 @@
+3052 lines: space-indent 1955 (64.1%), tab-indent 458 (15.0%), none 639 (20.9%)
+form        05-metric amb   SYMMETRIC amb   amb on tab-indent   amb on space-indent
+tab                 0.0%            9.9%                9.9%                  0.0%
+pipe_sp            64.1%           64.1%                0.0%                 64.1%
+colon_sp           64.1%           64.1%                0.0%                 64.1%
+space              64.1%           64.1%                0.0%                 64.1%
+colon               0.0%            0.0%                0.0%                  0.0%
+pipe                0.0%            0.0%                0.0%                  0.0%

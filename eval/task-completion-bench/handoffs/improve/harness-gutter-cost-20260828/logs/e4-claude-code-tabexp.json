@@ -1,0 +1,138 @@
+{
+ "perForm": {
+  "native": {
+   "rollouts": 67,
+   "ssReadLines": 0,
+   "ssReadTabIndentLines": 0,
+   "rolloutsWithNativeRereadOfSSSpan": 0,
+   "nativeRereads": 0,
+   "editsWithNativeReadImmediatelyBefore": 43,
+   "edits": 308,
+   "nativeReadTabLines": 19316,
+   "nativeReadLines": 111519
+  },
+  "TAB": {
+   "rollouts": 71,
+   "ssReadLines": 47171,
+   "ssReadTabIndentLines": 6571,
+   "rolloutsWithNativeRereadOfSSSpan": 14,
+   "nativeRereads": 54,
+   "editsWithNativeReadImmediatelyBefore": 11,
+   "edits": 284,
+   "nativeReadTabLines": 28,
+   "nativeReadLines": 16536
+  },
+  "NONE": {
+   "rollouts": 70,
+   "ssReadLines": 0,
+   "ssReadTabIndentLines": 0,
+   "rolloutsWithNativeRereadOfSSSpan": 5,
+   "nativeRereads": 29,
+   "editsWithNativeReadImmediatelyBefore": 3,
+   "edits": 285,
+   "nativeReadTabLines": 233,
+   "nativeReadLines": 6424
+  },
+  "PIPE": {
+   "rollouts": 68,
+   "ssReadLines": 42211,
+   "ssReadTabIndentLines": 8110,
+   "rolloutsWithNativeRereadOfSSSpan": 13,
+   "nativeRereads": 69,
+   "editsWithNativeReadImmediatelyBefore": 5,
+   "edits": 207,
+   "nativeReadTabLines": 2,
+   "nativeReadLines": 12328
+  }
+ },
+ "perTaskTabShare": {
+  "absinthe-graphql__absinthe-998": {
+   "lines": 1019,
+   "tab": 0
+  },
+  "accenture__sfmc-devtools-1974": {
+   "lines": 6088,
+   "tab": 0
+  },
+  "aio-libs__aiohttp-8038": {
+   "lines": 9707,
+   "tab": 0
+  },
+  "apigee__registry-961": {
+   "lines": 6894,
+   "tab": 5115
+  },
+  "asynkron__protoactor-dotnet-1909": {
+   "lines": 252,
+   "tab": 0
+  },
+  "aws-actions__configure-aws-credentials-42": {
+   "lines": 1776,
+   "tab": 0
+  },
+  "awslabs__aws-embedded-metrics-node-21": {
+   "lines": 3837,
+   "tab": 0
+  },
+  "axelrod-python__axelrod-671": {
+   "lines": 1232,
+   "tab": 0
+  },
+  "bfgroup__b2-113": {
+   "lines": 7562,
+   "tab": 0
+  },
+  "bfgroup__b2-259": {
+   "lines": 6675,
+   "tab": 2
+  },
+  "callstack__react-native-paper-972": {
+   "lines": 2846,
+   "tab": 0
+  },
+  "celestiaorg__nmt-192": {
+   "lines": 497,
+   "tab": 163
+  },
+  "devlooped__moq-1262": {
+   "lines": 11565,
+   "tab": 9401
+  },
+  "fastify__fastify-cors-285": {
+   "lines": 2627,
+   "tab": 0
+  },
+  "final-form__final-form-64": {
+   "lines": 3176,
+   "tab": 0
+  },
+  "gitbookio__markup-it-56": {
+   "lines": 7126,
+   "tab": 0
+  },
+  "hotmeteor__spectator-181": {
+   "lines": 3255,
+   "tab": 0
+  },
+  "jazzband__tablib-454": {
+   "lines": 1297,
+   "tab": 0
+  },
+  "locationtech__jts-622": {
+   "lines": 1018,
+   "tab": 0
+  },
+  "mathnet__mathnet-numerics-1072": {
+   "lines": 883,
+   "tab": 0
+  },
+  "mirumee__ariadne-codegen-218": {
+   "lines": 2377,
+   "tab": 0
+  },
+  "protofire__solhint-224": {
+   "lines": 7673,
+   "tab": 0
+  }
+ }
+}

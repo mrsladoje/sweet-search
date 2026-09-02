@@ -1,0 +1,55 @@
+=== per-task cost, sweet arm, mean of 3 reps ($) — sorted by |PIPE-TAB| ===
+
+--- codex --- mean/rollout: TAB 0.012330  NONE 0.012319  PIPE 0.012754
+task                                               TAB      NONE      PIPE       P-T  share of P-T gap
+bfgroup__b2-113                                0.02427   0.02423   0.03071   0.00644               69%
+apigee__registry-961                           0.02053   0.01569   0.01448  -0.00605              -65%
+aio-libs__aiohttp-8038                         0.01655   0.02646   0.02046   0.00391               42%
+devlooped__moq-1262                            0.04147   0.03725   0.03792  -0.00355              -38%
+accenture__sfmc-devtools-1974                  0.00994   0.01032   0.01280   0.00286               31%
+hotmeteor__spectator-181                       0.01374   0.01327   0.01171  -0.00203              -22%
+  top-3 tasks carry 46% of the PIPE-TAB gap; sign count PIPE<TAB on 9/22 tasks, NONE<TAB on 13/22
+  top-3 |NONE-TAB| carry -359% of the NONE-TAB gap
+
+--- opencode --- mean/rollout: TAB 0.009265  NONE 0.008584  PIPE 0.008764
+task                                               TAB      NONE      PIPE       P-T  share of P-T gap
+gitbookio__markup-it-56                        0.01603   0.01251   0.01049  -0.00554               50%
+aws-actions__configure-aws-credentials-42      0.01060   0.00733   0.00708  -0.00352               32%
+aio-libs__aiohttp-8038                         0.01565   0.01216   0.01915   0.00350              -32%
+devlooped__moq-1262                            0.02749   0.02571   0.02441  -0.00308               28%
+bfgroup__b2-259                                0.01723   0.01745   0.01493  -0.00230               21%
+accenture__sfmc-devtools-1974                  0.00947   0.00909   0.01118   0.00171              -15%
+  top-3 tasks carry 50% of the PIPE-TAB gap; sign count PIPE<TAB on 13/22 tasks, NONE<TAB on 10/22
+  top-3 |NONE-TAB| carry 89% of the NONE-TAB gap
+
+--- claude-code --- mean/rollout: TAB 0.020727  NONE 0.019424  PIPE 0.017761
+task                                               TAB      NONE      PIPE       P-T  share of P-T gap
+bfgroup__b2-259                                0.07622   0.05264   0.03550  -0.04072               62%
+aio-libs__aiohttp-8038                         0.04682   0.03811   0.01984  -0.02698               41%
+bfgroup__b2-113                                0.05332   0.02700   0.06746   0.01414              -22%
+fastify__fastify-cors-285                      0.02355   0.01870   0.01045  -0.01311               20%
+devlooped__moq-1262                            0.03304   0.06353   0.04359   0.01055              -16%
+protofire__solhint-224                         0.03791   0.03990   0.03201  -0.00590                9%
+  top-3 tasks carry 82% of the PIPE-TAB gap; sign count PIPE<TAB on 11/22 tasks, NONE<TAB on 14/22
+  top-3 |NONE-TAB| carry 68% of the NONE-TAB gap
+
+=== resident profile: how long a delivered gutter token stays in context ===
+harness     form    gutter tok  mean resident turns  resident/ingest $ ratio
+claude-code pipe        140959                 18.6                     1.86
+claude-code tab          87307                 19.6                     1.96
+codex       pipe        125625                 16.1                     1.61
+codex       tab          76778                 16.0                     1.60
+opencode    pipe        130205                 15.0                     1.50
+opencode    tab          83473                 16.7                     1.67
+
+=== ingest vs resident split of the direct gutter cost (per rollout, $) ===
+harness     form     ingest $  resident $    total $  resident share
+claude-code none     0.000000    0.000000   0.000000              0%
+claude-code pipe     0.000227    0.000421   0.000648             65%
+claude-code tab      0.000145    0.000295   0.000440             67%
+codex       none     0.000000    0.000000   0.000000              0%
+codex       pipe     0.000190    0.000306   0.000496             62%
+codex       tab      0.000116    0.000186   0.000302             61%
+opencode    none     0.000000    0.000000   0.000000              0%
+opencode    pipe     0.000197    0.000296   0.000493             60%
+opencode    tab      0.000126    0.000212   0.000338             63%

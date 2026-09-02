@@ -1,0 +1,136 @@
+rows 132  matched 132  unmatched 0
+
+=== A. MAIN-ONLY per rollout (66 rows/arm, row-matched transcripts) ===
+vector                                     native        sweet  sweet-native
+luna_w1.25 (ledger)                      0.016542     0.016314        -1.38%
+luna_w1.00 (no write surcharge)          0.015565     0.015218        -2.23%
+opus5_5m                                 0.795043     0.789444        -0.70%
+opus5_1h                                 0.941685     0.953739        +1.28%
+sonnet5_5m                               0.318017     0.315777        -0.70%
+fable51_5m                               1.005226     1.002774        -0.24%
+
+=== A2. token totals per rollout (main) ===
+  native  requests  24.30 usage-bearing  24.30 | uncached-in        73 cache-write     39105 cache-read     779814 out    6415 | ttl5m 0 ttl1h 0 | inline-sidechain-records 0
+  sweet   requests  23.17 usage-bearing  23.17 | uncached-in        70 cache-write     43812 cache-read     768150 out    5248 | ttl5m 0 ttl1h 0 | inline-sidechain-records 0
+
+=== B. SIDECHAIN (recorded usage only = lower bound) per rollout ===
+  native  subagents 33  requests 519  usage-bearing 314  zero-usage 205  ttl5m 0 ttl1h 0
+          requested (type, model): {('Explore', 'sonnet'): 11, ('Explore', 'haiku'): 19, ('general-purpose', 'sonnet'): 3}
+          luna_w1.25 (ledger)                  sidechain/rollout 0.004429
+          luna_w1.00 (no write surcharge)      sidechain/rollout 0.004008
+          opus5_5m                             sidechain/rollout 0.213334
+          opus5_1h                             sidechain/rollout 0.276551
+          sonnet5_5m                           sidechain/rollout 0.085333
+          fable51_5m                           sidechain/rollout 0.325841
+  sweet   subagents 11  requests 364  usage-bearing 199  zero-usage 165  ttl5m 0 ttl1h 0
+          requested (type, model): {('Explore', 'haiku'): 6, ('Explore', 'sonnet'): 2, ('general-purpose', 'sonnet'): 3}
+          luna_w1.25 (ledger)                  sidechain/rollout 0.002811
+          luna_w1.00 (no write surcharge)      sidechain/rollout 0.002603
+          opus5_5m                             sidechain/rollout 0.137843
+          opus5_1h                             sidechain/rollout 0.168963
+          sonnet5_5m                           sidechain/rollout 0.055137
+          fable51_5m                           sidechain/rollout 0.167042
+
+=== C. INCLUSIVE (main + recorded sidechain, LOWER BOUND) per rollout ===
+vector                                     native        sweet  sweet-native
+luna_w1.25 (ledger)                      0.020972     0.019125        -8.81%
+luna_w1.00 (no write surcharge)          0.019573     0.017822        -8.95%
+opus5_5m                                 1.008377     0.927287        -8.04%
+opus5_1h                                 1.218236     1.122702        -7.84%
+sonnet5_5m                               0.403351     0.370915        -8.04%
+fable51_5m                               1.331066     1.169816       -12.11%
+
+=== C2. subscription mix: main at opus5_1h, subagents at opus5_5m (candidate's item 1) ===
+  inclusive-LB native 1.155019 sweet 1.091582  sweet-native -5.49%
+
+=== C3. requested-model repricing of subagents (haiku at 0.2x of opus5 rate; sonnet at 0.4x) ===
+  base opus5_5m               haiku0.2/sonnet0.4   native 0.856690 sweet 0.835671  sweet-native -2.45%
+  base opus5_5m               haiku0.2 only        native 0.913629 sweet 0.891646  sweet-native -2.41%
+  base opus5_5m               haiku0.33 only       native 0.929025 sweet 0.897437  sweet-native -3.40%
+  base luna_w1.25 (ledger)    haiku0.2/sonnet0.4   native 0.017825 sweet 0.017255  sweet-native -3.20%
+  base luna_w1.25 (ledger)    haiku0.2 only        native 0.019014 sweet 0.018393  sweet-native -3.27%
+  base luna_w1.25 (ledger)    haiku0.33 only       native 0.019332 sweet 0.018512  sweet-native -4.24%
+  native  haiku-requested subagents 19/33  haiku share of RECORDED sidechain $ 55.2%
+  sweet   haiku-requested subagents 6/11  haiku share of RECORDED sidechain $ 32.5%
+
+=== D. PAGES: wholly-wasted main-thread requests ===
+  native  Read calls 690  failed-on-pages calls 159  rollouts hit 66/66  wholly-wasted requests 92 (1.39/rollout)
+          wasted requests' own luna cost $0.037120 total = $0.000562/rollout = 3.40% of main-only; per wasted request $0.000403; tokens cr 1802284 cw 114308 in 276 out 7968
+  sweet   Read calls 51  failed-on-pages calls 23  rollouts hit 18/66  wholly-wasted requests 23 (0.35/rollout)
+          wasted requests' own luna cost $0.010814 total = $0.000164/rollout = 1.00% of main-only; per wasted request $0.000470; tokens cr 695585 cw 18573 in 69 out 2550
+  main-only minus wasted requests, luna_w1.25 (ledger)   : native 0.015980 sweet 0.016150 sweet-native +1.06%
+  main-only minus wasted requests, opus5_5m              : native 0.767526 sweet 0.781444 sweet-native +1.81%
+
+=== E. no-delegation subset (rollouts with 0 subagents in BOTH arms of the same task-rep) ===
+  rep-matched pairs 66; neither delegated 34
+  luna_w1.25 (ledger)                  native 0.010348 sweet 0.011163 sweet-native +7.88%
+  opus5_5m                             native 0.500951 sweet 0.540078 sweet-native +7.81%
+  opus5_1h                             native 0.623828 sweet 0.668906 sweet-native +7.23%
+  tasks with any no-delegation pair: 17
+
+=== F. SIDECHAIN detail: recorded vs ratio-imputed (recorded x requests/usage-bearing) per rollout, luna ledger ===
+  native  recorded $0.2923 total ($0.004429/rollout), haiku share 55.2% | ratio-imputed $0.5326 ($0.008069/rollout), haiku share 61.8%
+  sweet   recorded $0.1855 total ($0.002811/rollout), haiku share 32.5% | ratio-imputed $0.3343 ($0.005065/rollout), haiku share 35.9%
+
+=== G. INCLUSIVE scenarios (main + sidechain), per rollout ===
+--- sidechain RECORDED-ONLY (lower bound) ---
+  ledger: luna w1.25 everywhere                                                  native 0.020972 sweet 0.019125 sweet-native -8.81%
+  ledger + haiku subagents at 0.2x                                               native 0.019014 sweet 0.018393 sweet-native -3.27%
+  ledger + haiku subagents at 0.33x                                              native 0.019332 sweet 0.018512 sweet-native -4.24%
+  ledger + pages wasted requests removed (both arms)                             native 0.020409 sweet 0.018961 sweet-native -7.10%
+  ledger + haiku 0.2x + pages removed                                            native 0.018452 sweet 0.018229 sweet-native -1.21%
+  API-key path: opus5 5m main+sub, subagents at requested model (haiku 0.2x, sonnet 0.4x) native 0.856690 sweet 0.835671 sweet-native -2.45%
+  API-key path + pages removed                                                   native 0.829172 sweet 0.827671 sweet-native -0.18%
+  subscription path: opus5 1h main, 5m subs at requested model (0.2/0.4)         native 1.003332 sweet 0.999966 sweet-native -0.34%
+  subscription path + pages removed                                              native 0.969319 sweet 0.990911 sweet-native +2.23%
+  candidate item(1) literal: opus5 1h main, opus5 5m subs (no model repricing)   native 1.155019 sweet 1.091582 sweet-native -5.49%
+  sonnet5 5m main, subs at requested (haiku 0.5x of sonnet, sonnet 1x)           native 0.379664 sweet 0.362004 sweet-native -4.65%
+--- sidechain IMPUTED ---
+  ledger: luna w1.25 everywhere                                                  native 0.024612 sweet 0.021379 sweet-native -13.13%
+  ledger + haiku subagents at 0.2x                                               native 0.020621 sweet 0.019925 sweet-native -3.37%
+  ledger + haiku subagents at 0.33x                                              native 0.021269 sweet 0.020162 sweet-native -5.21%
+  ledger + pages wasted requests removed (both arms)                             native 0.024049 sweet 0.021215 sweet-native -11.78%
+  ledger + haiku 0.2x + pages removed                                            native 0.020058 sweet 0.019762 sweet-native -1.48%
+  API-key path: opus5 5m main+sub, subagents at requested model (haiku 0.2x, sonnet 0.4x) native 0.902540 sweet 0.871084 sweet-native -3.49%
+  API-key path + pages removed                                                   native 0.875023 sweet 0.863084 sweet-native -1.36%
+  subscription path: opus5 1h main, 5m subs at requested model (0.2/0.4)         native 1.049182 sweet 1.035379 sweet-native -1.32%
+  subscription path + pages removed                                              native 1.015170 sweet 1.026324 sweet-native +1.10%
+  candidate item(1) literal: opus5 1h main, opus5 5m subs (no model repricing)   native 1.331654 sweet 1.202069 sweet-native -9.73%
+  sonnet5 5m main, subs at requested (haiku 0.5x of sonnet, sonnet 1x)           native 0.425514 sweet 0.397417 sweet-native -6.60%
+
+
+######## DEAREST-3 CONVENTION (published cells): all session files per task x arm, keep 3 dearest by ledger inclusive-LB ########
+session files parsed: Counter({'sweet': 71, 'native': 67})
+selected: Counter({'native': 66, 'sweet': 66})
+
+=== D3. main-only, dearest-3 ===
+luna_w1.25 (ledger)                  native 0.017129 sweet 0.017917 sweet-native +4.60%
+luna_w1.00 (no write surcharge)      native 0.016152 sweet 0.016817 sweet-native +4.11%
+opus5_5m                             native 0.819459 sweet 0.857486 sweet-native +4.64%
+opus5_1h                             native 0.965935 sweet 1.022483 sweet-native +5.85%
+sonnet5_5m                           native 0.327783 sweet 0.342994 sweet-native +4.64%
+fable51_5m                           native 1.053788 sweet 1.129349 sweet-native +7.17%
+  native wholly-wasted pages requests 91 failed calls 155
+  sweet wholly-wasted pages requests 23 failed calls 23
+
+=== G3. INCLUSIVE scenarios, dearest-3 ===
+--- sidechain RECORDED-ONLY (lower bound) ---
+  ledger: luna w1.25 everywhere                                                  native 0.021437 sweet 0.020727 sweet-native -3.31%
+  ledger + haiku subagents at 0.2x                                               native 0.019576 sweet 0.019996 sweet-native +2.14%
+  ledger + haiku subagents at 0.33x                                              native 0.019879 sweet 0.020115 sweet-native +1.19%
+  ledger + pages wasted requests removed (both arms)                             native 0.020885 sweet 0.020561 sweet-native -1.55%
+  API-key path: opus5 5m main+sub, subagents at requested model (haiku 0.2x, sonnet 0.4x) native 0.879936 sweet 0.903713 sweet-native +2.70%
+  API-key path + pages removed                                                   native 0.852950 sweet 0.895596 sweet-native +5.00%
+  subscription path: opus5 1h main, 5m subs at requested model (0.2/0.4)         native 1.026412 sweet 1.068710 sweet-native +4.12%
+  subscription path + pages removed                                              native 0.993107 sweet 1.059554 sweet-native +6.69%
+  candidate item(1) literal: opus5 1h main, opus5 5m subs (no model repricing)   native 1.173424 sweet 1.160327 sweet-native -1.12%
+--- sidechain IMPUTED ---
+  ledger: luna w1.25 everywhere                                                  native 0.024972 sweet 0.022982 sweet-native -7.97%
+  ledger + haiku subagents at 0.2x                                               native 0.021162 sweet 0.021528 sweet-native +1.73%
+  ledger + haiku subagents at 0.33x                                              native 0.021781 sweet 0.021765 sweet-native -0.08%
+  ledger + pages wasted requests removed (both arms)                             native 0.024421 sweet 0.022816 sweet-native -6.57%
+  API-key path: opus5 5m main+sub, subagents at requested model (haiku 0.2x, sonnet 0.4x) native 0.924785 sweet 0.939126 sweet-native +1.55%
+  API-key path + pages removed                                                   native 0.897799 sweet 0.931009 sweet-native +3.70%
+  subscription path: opus5 1h main, 5m subs at requested model (0.2/0.4)         native 1.071261 sweet 1.104123 sweet-native +3.07%
+  subscription path + pages removed                                              native 1.037956 sweet 1.094967 sweet-native +5.49%
+  candidate item(1) literal: opus5 1h main, opus5 5m subs (no model repricing)   native 1.345049 sweet 1.270814 sweet-native -5.52%

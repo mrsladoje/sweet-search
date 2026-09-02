@@ -1,0 +1,12 @@
+c:n? 22-33-59 {'total_calls': 23, 'edits': 2, 'calls_after_last_edit': 5, 'run_tests_after': 1, 'names_after': ['update_plan', 'exec_command', 'exec_command', 'exec_command', 'update_plan']}
+c:n? 22-36-07 {'total_calls': 20, 'edits': 2, 'calls_after_last_edit': 3, 'run_tests_after': 1, 'names_after': ['exec_command', 'exec_command', 'update_plan']}
+c:n? 22-38-01 {'total_calls': 21, 'edits': 2, 'calls_after_last_edit': 2, 'run_tests_after': 1, 'names_after': ['exec_command', 'update_plan']}
+c:s0? 22-28-06 {'total_calls': 20, 'edits': 1, 'calls_after_last_edit': 4, 'run_tests_after': 3, 'names_after': ['update_plan', 'exec_command', 'exec_command', 'update_plan']}
+c:s1? 22-30-34 {'total_calls': 12, 'edits': 1, 'calls_after_last_edit': 4, 'run_tests_after': 4, 'names_after': ['update_plan', 'exec_command', 'exec_command', 'update_plan']}
+c:s2? 22-32-13 {'total_calls': 18, 'edits': 1, 'calls_after_last_edit': 4, 'run_tests_after': 3, 'names_after': ['update_plan', 'exec_command', 'exec_command', 'update_plan']}
+cc:s0 {'requests': 18, 'edits': 1, 'requests_after_last_edit': 6, 'tools_after': ['TaskUpdate']}
+cc:s1 {'requests': 20, 'edits': 1, 'requests_after_last_edit': 4, 'tools_after': []}
+cc:s2 {'requests': 18, 'edits': 2, 'requests_after_last_edit': 4, 'tools_after': []}
+o:n0? -243277 {'events': 87, 'tool_events': 37, 'last_edit_event': 63, 'tool_events_after': 6, 'run_tests_after': 1}
+o:n1? -354348 {'events': 78, 'tool_events': 26, 'last_edit_event': 56, 'tool_events_after': 6, 'run_tests_after': 1}
+o:n2? -473387 {'events': 65, 'tool_events': 24, 'last_edit_event': 41, 'tool_events_after': 5, 'run_tests_after': 1}

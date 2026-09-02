@@ -1,0 +1,6 @@
+codex        native: post-first-edit search/read requests 1.00/rollout (cost 0.000543); followed by an edit of a NEW file 0.19, by a re-edit of an already-edited file 0.08, by no further edit 0.72  [7/3/26 of 36]
+codex        sweet : post-first-edit search/read requests 1.00/rollout (cost 0.000526); followed by an edit of a NEW file 0.19, by a re-edit of an already-edited file 0.42, by no further edit 0.39  [7/15/14 of 36]
+opencode     native: post-first-edit search/read requests 0.64/rollout (cost 0.000314); followed by an edit of a NEW file 0.00, by a re-edit of an already-edited file 0.00, by no further edit 0.64  [0/0/23 of 23]
+opencode     sweet : post-first-edit search/read requests 0.86/rollout (cost 0.000407); followed by an edit of a NEW file 0.50, by a re-edit of an already-edited file 0.06, by no further edit 0.31  [18/2/11 of 31]
+claude-code  native: post-first-edit search/read requests 1.03/rollout (cost 0.000505); followed by an edit of a NEW file 0.15, by a re-edit of an already-edited file 0.45, by no further edit 0.42  [5/15/14 of 34]
+claude-code  sweet : post-first-edit search/read requests 2.21/rollout (cost 0.001024); followed by an edit of a NEW file 0.00, by a re-edit of an already-edited file 1.30, by no further edit 0.91  [0/43/30 of 73]

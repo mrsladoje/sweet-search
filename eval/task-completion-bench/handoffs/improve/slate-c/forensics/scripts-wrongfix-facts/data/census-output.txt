@@ -1,0 +1,56 @@
+
+== fastify__fastify-cors-285  cells=18 solved=0
+  18  kept /* and ADDED a second route   [c:s0 c:s1 c:s2 c:n0 c:n1 c:n2 o:s0 o:s1 o:s2 o:n0 o:n1 o:n2 cc:s0 cc:s1 cc:s2 cc:n0 cc:n1 cc:n2]
+
+== hotmeteor__spectator-181  cells=18 solved=0
+  12  hand-rolled own status message in Assertions.php   [c:s2 c:n0 c:n1 c:n2 o:s0 o:s2 o:n0 o:n1 o:n2 cc:s0 cc:n1 cc:n2]
+   4  rewrote validator exception message only   [c:s1 o:s1 cc:s2 cc:n0]
+   2  hand-rolled own status message in Assertions.php + validator message   [c:s0 cc:s1]
+
+== gitbookio__markup-it-56  cells=18 solved=0
+   7  block-level HTML rule added   [c:s2 c:n0 c:n1 c:n2 o:s0 o:s1 cc:s1]
+   5  inline html regex change   [o:n2 cc:s0 cc:s2 cc:n1 cc:n2]
+   3  inline-html deserializer tag split (no merge)   [c:s0 o:n1 cc:n0]
+   2  inline-html serializer text only (no merge)   [c:s1 o:n0]
+   1  html-input parser (wrong syntax)   [o:s2]
+
+== bfgroup__b2-259  cells=18 solved=0
+   5  guard inside worker check() on its argument   [c:n0 o:s2 cc:s0 cc:s1 cc:s2]
+   5  made the feature incidental (feature declaration)   [c:n1 c:n2 cc:n0 cc:n1 cc:n2]
+   4  guard elsewhere in configure.jam (builds/find-builds/relevance)   [c:s0 c:s1 o:s0 o:n2]
+   3  guard in targets.jam on build-request/requirements   [o:s1 o:n0 o:n1]
+   1  edited property.jam relevance rule (adjacent, wrong rule)   [c:s2]
+
+== protofire__solhint-224  cells=18 solved=0
+  14  ruleId=ordering; contract-level order only   [c:s0 c:s2 c:n0 c:n1 o:n0 o:n1 o:n2 o:s0 o:s2 cc:s0 cc:s1 cc:s2 cc:n0 cc:n2]
+   2  ruleId=ordering; contract-level order only + source-unit pragma/import order   [c:n2 o:s1]
+   1  ruleId=order; contract-level order only   [c:s1]
+   1  ruleId=order-of-layout; contract-level order only   [cc:n1]
+
+== devlooped__moq-1262  cells=18 solved=2
+  13  changed Match.Equals / ExpressionComparer (not on override path for It.Is)   [c:s1 c:n0 c:n2 o:n1 o:n2 o:s0 o:s1 o:s2 cc:s0 cc:s1 cc:s2 cc:n1 cc:n2]
+   2  changed setup selection/specificity, not the capture evaluation   [o:n0 cc:n0]
+   1  MatcherFactory expression swap   [c:s0]
+   1  SOLVED: skip override-marking for non-constant matchers   [c:s2]
+   1  SOLVED: MethodExpectation equality: distinct matcher instances unequal   [c:n1]
+
+== accenture__sfmc-devtools-1974  cells=18 solved=9
+   9  SOLVED   [c:s2 o:n0 o:n2 o:s2 cc:s0 cc:s2 cc:n0 cc:n1 cc:n2]
+   6  blanket guard also rejects EMPTY selection (breaks sibling caller)   [c:s0 c:n0 c:n1 c:n2 o:n1 cc:s1]
+   3  hunk landed in the wrong method (duplicate anchor, line 1593)   [c:s1 o:s0 o:s1]
+
+== awslabs__aws-embedded-metrics-node-21  cells=18 solved=14
+  14  SOLVED (context-layer dedupe)   [c:s0 c:n0 c:n1 c:n2 o:n1 o:n2 o:s0 o:s1 o:s2 cc:s0 cc:s1 cc:s2 cc:n0 cc:n1]
+   3  dedupe at serializer layer (invisible to state-level tests)   [c:s1 o:n0 cc:n2]
+   1  context layer, F2P pass, P2P timestamp flake   [c:s2]
+
+== aio-libs__aiohttp-8038  cells=18 solved=2
+   8  no retry: close-detection tweak at release/eof   [c:s0 c:s1 c:n0 o:n2 o:s2 cc:s1 cc:s2 cc:n0]
+   7  retry CONDITIONED on keep-alive header   [c:s2 c:n1 c:n2 o:n0 o:n1 o:s0 cc:s0]
+   1  SOLVED: retry not conditioned on header (connection reused)   [o:s1]
+   1  SOLVED: retry not conditioned on header (idempotent methods)   [cc:n1]
+   1  no patch   [cc:n2]
+
+== celestiaorg__nmt-192  cells=18 solved=17
+  17  SOLVED   [c:s0 c:s1 c:s2 c:n0 c:n1 c:n2 o:s0 o:s1 o:s2 o:n0 o:n1 o:n2 cc:s1 cc:s2 cc:n0 cc:n1 cc:n2]
+   1  no patch (stopped after analysis)   [cc:s0]

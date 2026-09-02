@@ -1,0 +1,2337 @@
+{
+ "cells": {
+  "claude-code|native": {
+   "rollouts": 66,
+   "priced_rollouts": 38,
+   "usd_per_request": 0.0006141891891891893,
+   "tool_tokens": 2081273
+  },
+  "claude-code|sweet": {
+   "rollouts": 66,
+   "priced_rollouts": 57,
+   "usd_per_request": 0.000701593165174939,
+   "tool_tokens": 1920738
+  },
+  "codex|native": {
+   "rollouts": 66,
+   "priced_rollouts": 66,
+   "usd_per_request": 0.0006519091639871383,
+   "tool_tokens": 1235986
+  },
+  "codex|sweet": {
+   "rollouts": 66,
+   "priced_rollouts": 66,
+   "usd_per_request": 0.0006288948995363215,
+   "tool_tokens": 1042773
+  },
+  "opencode|native": {
+   "rollouts": 66,
+   "priced_rollouts": 66,
+   "usd_per_request": 0.0005496007428040853,
+   "tool_tokens": 1393962
+  },
+  "opencode|sweet": {
+   "rollouts": 66,
+   "priced_rollouts": 66,
+   "usd_per_request": 0.00047037846153846156,
+   "tool_tokens": 1138153
+  }
+ },
+ "census": {
+  "claude-code|native": {
+   "read.range|native": {
+    "ops": 1249,
+    "calls_primary": 1245,
+    "rollouts": 66,
+    "tok": 1031063,
+    "tokIn": 61485,
+    "tokOut": 969578,
+    "subs": {
+     "Read-tool": 1245,
+     "sed-n": 4
+    },
+    "tags": {
+     "test-path": 227,
+     "build-path": 132,
+     "manifest": 41
+    }
+   },
+   "grep.regex|native": {
+    "ops": 273,
+    "calls_primary": 260,
+    "rollouts": 51,
+    "tok": 378992,
+    "tokIn": 11167,
+    "tokOut": 367825,
+    "subs": {
+     "grep": 241,
+     "rg": 32
+    },
+    "tags": {
+     "scoped": 273,
+     "multi-pattern": 254,
+     "ere": 149,
+     "head-limited": 149,
+     "test-path": 117,
+     "type-filter": 58,
+     "defn": 45,
+     "build-path": 39,
+     "grep-chain": 14,
+     "icase": 8,
+     "manifest": 8,
+     "tail-limited": 6,
+     "files-only": 2,
+     "post-filter": 2,
+     "counted": 1,
+     "dep-path": 1
+    }
+   },
+   "test|native": {
+    "ops": 207,
+    "calls_primary": 207,
+    "rollouts": 66,
+    "tok": 208412,
+    "tokIn": 664,
+    "tokOut": 207748,
+    "subs": {
+     "shim": 207
+    },
+    "tags": {}
+   },
+   "list|native": {
+    "ops": 99,
+    "calls_primary": 93,
+    "rollouts": 50,
+    "tok": 98478,
+    "tokIn": 1888,
+    "tokOut": 96590,
+    "subs": {
+     "find-enumerate": 94,
+     "ls": 5
+    },
+    "tags": {
+     "post-filter": 79,
+     "maxdepth": 76,
+     "head-limited": 37,
+     "test-path": 10,
+     "counted": 2,
+     "dep-path": 1,
+     "dirs": 1
+    }
+   },
+   "grep.literal|native": {
+    "ops": 152,
+    "calls_primary": 139,
+    "rollouts": 47,
+    "tok": 97400,
+    "tokIn": 3913,
+    "tokOut": 93487,
+    "subs": {
+     "grep": 148,
+     "rg": 4
+    },
+    "tags": {
+     "scoped": 151,
+     "multi-pattern": 94,
+     "head-limited": 87,
+     "test-path": 56,
+     "defn": 30,
+     "build-path": 12,
+     "manifest": 11,
+     "type-filter": 6,
+     "ctx": 5,
+     "icase": 3,
+     "ere": 2,
+     "grep-chain": 2,
+     "files-only": 1,
+     "over-glob": 1,
+     "dep-path": 1
+    }
+   },
+   "edit|native": {
+    "ops": 312,
+    "calls_primary": 312,
+    "rollouts": 66,
+    "tok": 75342,
+    "tokIn": 60869,
+    "tokOut": 14473,
+    "subs": {
+     "Edit": 304,
+     "Write": 7,
+     "sed-i": 1
+    },
+    "tags": {}
+   },
+   "glob|native": {
+    "ops": 43,
+    "calls_primary": 41,
+    "rollouts": 28,
+    "tok": 54727,
+    "tokIn": 1626,
+    "tokOut": 53100,
+    "subs": {
+     "find-name": 24,
+     "find-enumerate": 18,
+     "git-ls-files": 1
+    },
+    "tags": {
+     "name-filter": 21,
+     "post-filter": 19,
+     "maxdepth": 12,
+     "head-limited": 12,
+     "test-path": 11,
+     "dep-path": 3,
+     "dirs": 3,
+     "exec-grep": 1,
+     "manifest": 1
+    }
+   },
+   "git.state|native": {
+    "ops": 206,
+    "calls_primary": 77,
+    "rollouts": 60,
+    "tok": 39605,
+    "tokIn": 2015,
+    "tokOut": 37590,
+    "subs": {
+     "diff": 108,
+     "status": 75,
+     "remote": 11,
+     "branch": 11,
+     "config": 1
+    },
+    "tags": {}
+   },
+   "delegate|native": {
+    "ops": 96,
+    "calls_primary": 96,
+    "rollouts": 27,
+    "tok": 37128,
+    "tokIn": 19293,
+    "tokOut": 17835,
+    "subs": {
+     "SendMessage": 65,
+     "Agent": 31
+    },
+    "tags": {}
+   },
+   "plan|native": {
+    "ops": 139,
+    "calls_primary": 139,
+    "rollouts": 42,
+    "tok": 28625,
+    "tokIn": 3831,
+    "tokOut": 24794,
+    "subs": {
+     "TaskUpdate": 80,
+     "TaskCreate": 55,
+     "TaskOutput": 2,
+     "TaskList": 1,
+     "TaskStop": 1
+    },
+    "tags": {}
+   },
+   "git.history|native": {
+    "ops": 52,
+    "calls_primary": 41,
+    "rollouts": 23,
+    "tok": 12348,
+    "tokIn": 635,
+    "tokOut": 11713,
+    "subs": {
+     "log": 39,
+     "show": 8,
+     "tag": 4,
+     "blame": 1
+    },
+    "tags": {
+     "head-limited": 9,
+     "tail-limited": 3,
+     "grep-filtered": 1
+    }
+   },
+   "runtime|native": {
+    "ops": 34,
+    "calls_primary": 33,
+    "rollouts": 10,
+    "tok": 11916,
+    "tokIn": 3455,
+    "tokOut": 8460,
+    "subs": {
+     "inline": 34
+    },
+    "tags": {
+     "regex-probe": 17,
+     "imports": 15
+    }
+   },
+   "web|native": {
+    "ops": 11,
+    "calls_primary": 11,
+    "rollouts": 4,
+    "tok": 4114,
+    "tokIn": 407,
+    "tokOut": 3707,
+    "subs": {
+     "WebSearch": 7,
+     "WebFetch": 4
+    },
+    "tags": {}
+   },
+   "git.other|native": {
+    "ops": 23,
+    "calls_primary": 9,
+    "rollouts": 9,
+    "tok": 2355,
+    "tokIn": 679,
+    "tokOut": 1676,
+    "subs": {
+     "-C": 10,
+     "add": 6,
+     "checkout": 4,
+     "fsck": 2,
+     "ls-remote": 1
+    },
+    "tags": {
+     "head-limited": 3
+    }
+   },
+   "read.whole|native": {
+    "ops": 1,
+    "calls_primary": 1,
+    "rollouts": 1,
+    "tok": 504,
+    "tokIn": 6,
+    "tokOut": 499,
+    "subs": {
+     "cat": 1
+    },
+    "tags": {
+     "manifest": 1
+    }
+   },
+   "build|native": {
+    "ops": 4,
+    "calls_primary": 2,
+    "rollouts": 4,
+    "tok": 224,
+    "tokIn": 42,
+    "tokOut": 182,
+    "subs": {
+     "lint-format": 3,
+     "build": 1
+    },
+    "tags": {}
+   },
+   "misc|native": {
+    "ops": 84,
+    "calls_primary": 2,
+    "rollouts": 54,
+    "tok": 38,
+    "tokIn": 26,
+    "tokOut": 12,
+    "subs": {
+     "shell": 78,
+     "fs-probe": 2,
+     "Skill": 2,
+     "probe-tool": 1,
+     "fs-mutate": 1
+    },
+    "tags": {
+     "dep-path": 1
+    }
+   }
+  },
+  "claude-code|sweet": {
+   "grep.regex|ss": {
+    "ops": 316,
+    "calls_primary": 312,
+    "rollouts": 46,
+    "tok": 540024,
+    "tokIn": 9379,
+    "tokOut": 530644,
+    "subs": {
+     "ss-grep": 162,
+     "ss-find": 154
+    },
+    "tags": {
+     "with-query": 154,
+     "scoped": 97,
+     "defn": 25,
+     "build-path": 25,
+     "test-path": 14,
+     "positional-path": 9,
+     "icase": 9
+    }
+   },
+   "read.range|ss": {
+    "ops": 429,
+    "calls_primary": 263,
+    "rollouts": 63,
+    "tok": 373332,
+    "tokIn": 5666,
+    "tokOut": 367666,
+    "subs": {
+     "ss-read": 422,
+     "ss-semantic": 7
+    },
+    "tags": {
+     "test-path": 57,
+     "build-path": 22,
+     "manifest": 9,
+     "semantic": 7
+    }
+   },
+   "search.semantic|ss": {
+    "ops": 207,
+    "calls_primary": 191,
+    "rollouts": 58,
+    "tok": 332067,
+    "tokIn": 3421,
+    "tokOut": 328646,
+    "subs": {
+     "ss-search": 198,
+     "ss-find": 9
+    },
+    "tags": {
+     "scoped": 2,
+     "head-limited": 1,
+     "test-path": 1
+    }
+   },
+   "test|native": {
+    "ops": 200,
+    "calls_primary": 200,
+    "rollouts": 66,
+    "tok": 201782,
+    "tokIn": 512,
+    "tokOut": 201270,
+    "subs": {
+     "shim": 200
+    },
+    "tags": {}
+   },
+   "read.range|native": {
+    "ops": 138,
+    "calls_primary": 138,
+    "rollouts": 23,
+    "tok": 153444,
+    "tokIn": 7241,
+    "tokOut": 146203,
+    "subs": {
+     "Read-tool": 138
+    },
+    "tags": {
+     "build-path": 44,
+     "test-path": 17
+    }
+   },
+   "grep.literal|ss": {
+    "ops": 332,
+    "calls_primary": 321,
+    "rollouts": 62,
+    "tok": 127314,
+    "tokIn": 6865,
+    "tokOut": 120448,
+    "subs": {
+     "ss-grep": 303,
+     "ss-find": 29
+    },
+    "tags": {
+     "scoped": 141,
+     "build-path": 45,
+     "defn": 33,
+     "with-query": 29,
+     "icase": 11,
+     "test-path": 11,
+     "positional-path": 6,
+     "manifest": 3,
+     "head-limited": 2,
+     "grep-chain": 1
+    }
+   },
+   "edit|native": {
+    "ops": 245,
+    "calls_primary": 245,
+    "rollouts": 65,
+    "tok": 58195,
+    "tokIn": 47196,
+    "tokOut": 10999,
+    "subs": {
+     "Edit": 241,
+     "Write": 4
+    },
+    "tags": {}
+   },
+   "grep.regex|native": {
+    "ops": 13,
+    "calls_primary": 13,
+    "rollouts": 6,
+    "tok": 38278,
+    "tokIn": 924,
+    "tokOut": 37354,
+    "subs": {
+     "grep": 13
+    },
+    "tags": {
+     "ere": 13,
+     "multi-pattern": 13,
+     "scoped": 13,
+     "head-limited": 9,
+     "manifest": 3,
+     "icase": 2,
+     "test-path": 1,
+     "build-path": 1
+    }
+   },
+   "symbol|ss": {
+    "ops": 15,
+    "calls_primary": 14,
+    "rollouts": 13,
+    "tok": 21690,
+    "tokIn": 262,
+    "tokOut": 21428,
+    "subs": {
+     "ss-trace": 15
+    },
+    "tags": {
+     "scoped": 13
+    }
+   },
+   "glob|native": {
+    "ops": 21,
+    "calls_primary": 21,
+    "rollouts": 10,
+    "tok": 17734,
+    "tokIn": 889,
+    "tokOut": 16846,
+    "subs": {
+     "find-name": 13,
+     "find-enumerate": 5,
+     "git-ls-files": 2,
+     "ls": 1
+    },
+    "tags": {
+     "head-limited": 8,
+     "maxdepth": 8,
+     "post-filter": 6,
+     "name-filter": 5,
+     "build-path": 4,
+     "pattern": 2,
+     "exists-check": 1
+    }
+   },
+   "git.state|native": {
+    "ops": 77,
+    "calls_primary": 45,
+    "rollouts": 43,
+    "tok": 14642,
+    "tokIn": 663,
+    "tokOut": 13980,
+    "subs": {
+     "diff": 52,
+     "status": 23,
+     "branch": 1,
+     "check-ignore": 1
+    },
+    "tags": {
+     "post-filter": 1
+    }
+   },
+   "list|native": {
+    "ops": 9,
+    "calls_primary": 9,
+    "rollouts": 6,
+    "tok": 13184,
+    "tokIn": 389,
+    "tokOut": 12795,
+    "subs": {
+     "find-enumerate": 8,
+     "ls": 1
+    },
+    "tags": {
+     "maxdepth": 6,
+     "post-filter": 2,
+     "head-limited": 2,
+     "test-path": 1,
+     "dirs": 1,
+     "counted": 1
+    }
+   },
+   "delegate|native": {
+    "ops": 30,
+    "calls_primary": 30,
+    "rollouts": 9,
+    "tok": 12636,
+    "tokIn": 5876,
+    "tokOut": 6760,
+    "subs": {
+     "SendMessage": 19,
+     "Agent": 11
+    },
+    "tags": {}
+   },
+   "runtime|native": {
+    "ops": 20,
+    "calls_primary": 20,
+    "rollouts": 7,
+    "tok": 5198,
+    "tokIn": 2321,
+    "tokOut": 2877,
+    "subs": {
+     "inline": 20
+    },
+    "tags": {
+     "imports": 12,
+     "regex-probe": 9
+    }
+   },
+   "read.whole|ss": {
+    "ops": 7,
+    "calls_primary": 5,
+    "rollouts": 1,
+    "tok": 4902,
+    "tokIn": 164,
+    "tokOut": 4739,
+    "subs": {
+     "ss-read": 7
+    },
+    "tags": {
+     "test-path": 2
+    }
+   },
+   "plan|native": {
+    "ops": 128,
+    "calls_primary": 128,
+    "rollouts": 47,
+    "tok": 4570,
+    "tokIn": 3563,
+    "tokOut": 1007,
+    "subs": {
+     "TaskUpdate": 73,
+     "TaskCreate": 52,
+     "TaskList": 2,
+     "TaskGet": 1
+    },
+    "tags": {}
+   },
+   "git.other|native": {
+    "ops": 11,
+    "calls_primary": 5,
+    "rollouts": 5,
+    "tok": 645,
+    "tokIn": 342,
+    "tokOut": 302,
+    "subs": {
+     "-C": 9,
+     "add": 1,
+     "rm": 1
+    },
+    "tags": {
+     "tail-limited": 1
+    }
+   },
+   "git.history|native": {
+    "ops": 6,
+    "calls_primary": 5,
+    "rollouts": 4,
+    "tok": 552,
+    "tokIn": 87,
+    "tokOut": 465,
+    "subs": {
+     "log": 6
+    },
+    "tags": {
+     "head-limited": 1
+    }
+   },
+   "misc|native": {
+    "ops": 64,
+    "calls_primary": 5,
+    "rollouts": 13,
+    "tok": 493,
+    "tokIn": 132,
+    "tokOut": 361,
+    "subs": {
+     "probe-tool": 32,
+     "shell": 28,
+     "unknown": 2,
+     "fs-mutate": 2
+    },
+    "tags": {
+     "grep-filtered": 2,
+     "post-filter": 2,
+     "head-limited": 1
+    }
+   },
+   "build|native": {
+    "ops": 2,
+    "calls_primary": 1,
+    "rollouts": 2,
+    "tok": 56,
+    "tokIn": 44,
+    "tokOut": 12,
+    "subs": {
+     "lint-format": 1,
+     "build": 1
+    },
+    "tags": {}
+   }
+  },
+  "codex|native": {
+   "read.range|native": {
+    "ops": 862,
+    "calls_primary": 181,
+    "rollouts": 66,
+    "tok": 500589,
+    "tokIn": 16337,
+    "tokOut": 484253,
+    "subs": {
+     "sed-n": 786,
+     "nl": 70,
+     "cat": 6
+    },
+    "tags": {
+     "test-path": 131,
+     "build-path": 96,
+     "piped-sed": 75,
+     "numbered": 70,
+     "manifest": 11,
+     "piped-head": 2,
+     "piped-tail": 1,
+     "multi-file": 1
+    }
+   },
+   "grep.regex|native": {
+    "ops": 277,
+    "calls_primary": 240,
+    "rollouts": 66,
+    "tok": 216860,
+    "tokIn": 7119,
+    "tokOut": 209742,
+    "subs": {
+     "rg": 277
+    },
+    "tags": {
+     "multi-pattern": 274,
+     "scoped": 273,
+     "head-limited": 149,
+     "type-filter": 120,
+     "test-path": 100,
+     "defn": 79,
+     "build-path": 27,
+     "manifest": 12,
+     "ctx": 11,
+     "sed-filtered": 10,
+     "icase": 7,
+     "tail-limited": 3,
+     "post-filter": 2,
+     "files-only": 1
+    }
+   },
+   "test|native": {
+    "ops": 199,
+    "calls_primary": 189,
+    "rollouts": 66,
+    "tok": 167504,
+    "tokIn": 1339,
+    "tokOut": 166165,
+    "subs": {
+     "shim": 199
+    },
+    "tags": {
+     "post-filter": 1
+    }
+   },
+   "read.whole|native": {
+    "ops": 155,
+    "calls_primary": 8,
+    "rollouts": 59,
+    "tok": 99321,
+    "tokIn": 2888,
+    "tokOut": 96433,
+    "subs": {
+     "cat": 155
+    },
+    "tags": {
+     "manifest": 22,
+     "test-path": 5,
+     "multi-file": 2,
+     "build-path": 1,
+     "glob-arg": 1
+    }
+   },
+   "glob|native": {
+    "ops": 125,
+    "calls_primary": 42,
+    "rollouts": 63,
+    "tok": 65232,
+    "tokIn": 4369,
+    "tokOut": 60862,
+    "subs": {
+     "rg-files": 120,
+     "ls": 3,
+     "find-enumerate": 1,
+     "find-name": 1
+    },
+    "tags": {
+     "rg-files": 120,
+     "type-filter": 107,
+     "head-limited": 56,
+     "post-filter": 17,
+     "name-filter": 13,
+     "sed-filtered": 9,
+     "test-path": 4,
+     "scoped": 3,
+     "exists-check": 3,
+     "maxdepth": 1
+    }
+   },
+   "poll|native": {
+    "ops": 38,
+    "calls_primary": 38,
+    "rollouts": 18,
+    "tok": 48736,
+    "tokIn": 1140,
+    "tokOut": 47596,
+    "subs": {
+     "write_stdin": 38
+    },
+    "tags": {}
+   },
+   "git.state|native": {
+    "ops": 160,
+    "calls_primary": 33,
+    "rollouts": 57,
+    "tok": 45477,
+    "tokIn": 1994,
+    "tokOut": 43482,
+    "subs": {
+     "diff": 96,
+     "status": 64
+    },
+    "tags": {
+     "sed-filtered": 1
+    }
+   },
+   "edit|native": {
+    "ops": 131,
+    "calls_primary": 124,
+    "rollouts": 66,
+    "tok": 37377,
+    "tokIn": 26280,
+    "tokOut": 11097,
+    "subs": {
+     "apply_patch": 130,
+     "heredoc-write": 1
+    },
+    "tags": {}
+   },
+   "plan|native": {
+    "ops": 273,
+    "calls_primary": 273,
+    "rollouts": 64,
+    "tok": 22732,
+    "tokIn": 22186,
+    "tokOut": 546,
+    "subs": {
+     "update_plan": 273
+    },
+    "tags": {}
+   },
+   "grep.literal|native": {
+    "ops": 39,
+    "calls_primary": 37,
+    "rollouts": 24,
+    "tok": 19077,
+    "tokIn": 772,
+    "tokOut": 18306,
+    "subs": {
+     "rg": 39
+    },
+    "tags": {
+     "scoped": 39,
+     "head-limited": 18,
+     "type-filter": 15,
+     "test-path": 12,
+     "ctx": 3,
+     "build-path": 2,
+     "manifest": 2,
+     "dep-path": 1
+    }
+   },
+   "list|native": {
+    "ops": 11,
+    "calls_primary": 4,
+    "rollouts": 10,
+    "tok": 7518,
+    "tokIn": 220,
+    "tokOut": 7298,
+    "subs": {
+     "ls": 6,
+     "find-enumerate": 5
+    },
+    "tags": {
+     "head-limited": 4,
+     "maxdepth": 4,
+     "test-path": 4,
+     "post-filter": 3,
+     "sed-filtered": 2
+    }
+   },
+   "runtime|native": {
+    "ops": 8,
+    "calls_primary": 8,
+    "rollouts": 5,
+    "tok": 4024,
+    "tokIn": 898,
+    "tokOut": 3126,
+    "subs": {
+     "inline": 7,
+     "script-file": 1
+    },
+    "tags": {
+     "regex-probe": 5,
+     "imports": 3
+    }
+   },
+   "git.history|native": {
+    "ops": 2,
+    "calls_primary": 0,
+    "rollouts": 2,
+    "tok": 1240,
+    "tokIn": 31,
+    "tokOut": 1209,
+    "subs": {
+     "log": 2
+    },
+    "tags": {}
+   },
+   "build|native": {
+    "ops": 2,
+    "calls_primary": 1,
+    "rollouts": 1,
+    "tok": 298,
+    "tokIn": 79,
+    "tokOut": 219,
+    "subs": {
+     "syntax-check": 2
+    },
+    "tags": {}
+   },
+   "misc|native": {
+    "ops": 392,
+    "calls_primary": 0,
+    "rollouts": 66,
+    "tok": 0,
+    "tokIn": 0,
+    "tokOut": 0,
+    "subs": {
+     "shell": 379,
+     "fs-probe": 5,
+     "fs-mutate": 4,
+     "probe-tool": 3,
+     "unknown": 1
+    },
+    "tags": {
+     "dep-path": 2,
+     "head-limited": 1
+    }
+   }
+  },
+  "codex|sweet": {
+   "read.range|ss": {
+    "ops": 565,
+    "calls_primary": 233,
+    "rollouts": 65,
+    "tok": 409858,
+    "tokIn": 8222,
+    "tokOut": 401636,
+    "subs": {
+     "ss-read": 519,
+     "ss-semantic": 46
+    },
+    "tags": {
+     "test-path": 93,
+     "build-path": 49,
+     "semantic": 46,
+     "force": 20,
+     "manifest": 14
+    }
+   },
+   "search.semantic|ss": {
+    "ops": 123,
+    "calls_primary": 88,
+    "rollouts": 48,
+    "tok": 180279,
+    "tokIn": 2174,
+    "tokOut": 178105,
+    "subs": {
+     "ss-search": 123
+    },
+    "tags": {}
+   },
+   "test|native": {
+    "ops": 197,
+    "calls_primary": 184,
+    "rollouts": 66,
+    "tok": 146000,
+    "tokIn": 1888,
+    "tokOut": 144112,
+    "subs": {
+     "shim": 197
+    },
+    "tags": {}
+   },
+   "grep.regex|ss": {
+    "ops": 95,
+    "calls_primary": 79,
+    "rollouts": 35,
+    "tok": 70278,
+    "tokIn": 1918,
+    "tokOut": 68360,
+    "subs": {
+     "ss-grep": 71,
+     "ss-find": 24
+    },
+    "tags": {
+     "with-query": 24,
+     "defn": 15,
+     "scoped": 14,
+     "build-path": 2
+    }
+   },
+   "grep.literal|ss": {
+    "ops": 151,
+    "calls_primary": 132,
+    "rollouts": 59,
+    "tok": 63442,
+    "tokIn": 2136,
+    "tokOut": 61305,
+    "subs": {
+     "ss-grep": 148,
+     "ss-find": 3
+    },
+    "tags": {
+     "defn": 19,
+     "scoped": 12,
+     "build-path": 4,
+     "with-query": 3,
+     "test-path": 2,
+     "positional-path": 1
+    }
+   },
+   "poll|native": {
+    "ops": 45,
+    "calls_primary": 45,
+    "rollouts": 23,
+    "tok": 53516,
+    "tokIn": 1350,
+    "tokOut": 52166,
+    "subs": {
+     "write_stdin": 45
+    },
+    "tags": {}
+   },
+   "edit|native": {
+    "ops": 113,
+    "calls_primary": 112,
+    "rollouts": 66,
+    "tok": 32692,
+    "tokIn": 20785,
+    "tokOut": 11907,
+    "subs": {
+     "apply_patch": 113
+    },
+    "tags": {}
+   },
+   "plan|native": {
+    "ops": 259,
+    "calls_primary": 259,
+    "rollouts": 66,
+    "tok": 22215,
+    "tokIn": 21697,
+    "tokOut": 518,
+    "subs": {
+     "update_plan": 259
+    },
+    "tags": {}
+   },
+   "git.state|native": {
+    "ops": 120,
+    "calls_primary": 45,
+    "rollouts": 50,
+    "tok": 22204,
+    "tokIn": 1143,
+    "tokOut": 21061,
+    "subs": {
+     "diff": 94,
+     "status": 25,
+     "check-ignore": 1
+    },
+    "tags": {}
+   },
+   "symbol|ss": {
+    "ops": 13,
+    "calls_primary": 10,
+    "rollouts": 11,
+    "tok": 15615,
+    "tokIn": 190,
+    "tokOut": 15425,
+    "subs": {
+     "ss-trace": 13
+    },
+    "tags": {
+     "scoped": 10
+    }
+   },
+   "read.whole|ss": {
+    "ops": 23,
+    "calls_primary": 4,
+    "rollouts": 1,
+    "tok": 9198,
+    "tokIn": 243,
+    "tokOut": 8956,
+    "subs": {
+     "ss-read": 23
+    },
+    "tags": {
+     "test-path": 3,
+     "force": 3,
+     "manifest": 1
+    }
+   },
+   "glob|native": {
+    "ops": 20,
+    "calls_primary": 12,
+    "rollouts": 13,
+    "tok": 5838,
+    "tokIn": 724,
+    "tokOut": 5114,
+    "subs": {
+     "rg-files": 18,
+     "git-ls-files": 2
+    },
+    "tags": {
+     "rg-files": 18,
+     "type-filter": 15,
+     "head-limited": 12,
+     "sed-filtered": 3,
+     "pattern": 2,
+     "name-filter": 2,
+     "post-filter": 1
+    }
+   },
+   "read.range|native": {
+    "ops": 13,
+    "calls_primary": 9,
+    "rollouts": 4,
+    "tok": 5280,
+    "tokIn": 191,
+    "tokOut": 5089,
+    "subs": {
+     "sed-n": 11,
+     "nl": 2
+    },
+    "tags": {
+     "build-path": 4,
+     "test-path": 2,
+     "numbered": 2,
+     "piped-sed": 2
+    }
+   },
+   "grep.regex|native": {
+    "ops": 8,
+    "calls_primary": 6,
+    "rollouts": 4,
+    "tok": 2628,
+    "tokIn": 210,
+    "tokOut": 2418,
+    "subs": {
+     "rg": 8
+    },
+    "tags": {
+     "head-limited": 8,
+     "scoped": 8,
+     "multi-pattern": 7,
+     "build-path": 4,
+     "test-path": 3,
+     "defn": 1
+    }
+   },
+   "runtime|native": {
+    "ops": 5,
+    "calls_primary": 5,
+    "rollouts": 2,
+    "tok": 2096,
+    "tokIn": 798,
+    "tokOut": 1298,
+    "subs": {
+     "inline": 5
+    },
+    "tags": {
+     "regex-probe": 3,
+     "imports": 2
+    }
+   },
+   "grep.literal|native": {
+    "ops": 3,
+    "calls_primary": 3,
+    "rollouts": 2,
+    "tok": 1169,
+    "tokIn": 56,
+    "tokOut": 1112,
+    "subs": {
+     "rg": 3
+    },
+    "tags": {
+     "build-path": 3,
+     "scoped": 3,
+     "ctx": 2,
+     "head-limited": 1
+    }
+   },
+   "git.history|native": {
+    "ops": 1,
+    "calls_primary": 1,
+    "rollouts": 1,
+    "tok": 402,
+    "tokIn": 8,
+    "tokOut": 394,
+    "subs": {
+     "log": 1
+    },
+    "tags": {}
+   },
+   "misc|native": {
+    "ops": 97,
+    "calls_primary": 1,
+    "rollouts": 20,
+    "tok": 65,
+    "tokIn": 26,
+    "tokOut": 39,
+    "subs": {
+     "shell": 92,
+     "fs-probe": 3,
+     "fs-mutate": 2
+    },
+    "tags": {
+     "dep-path": 2
+    }
+   }
+  },
+  "opencode|native": {
+   "read.range|native": {
+    "ops": 596,
+    "calls_primary": 596,
+    "rollouts": 66,
+    "tok": 730443,
+    "tokIn": 21125,
+    "tokOut": 709318,
+    "subs": {
+     "read-tool": 596
+    },
+    "tags": {
+     "test-path": 130,
+     "build-path": 44,
+     "manifest": 33
+    }
+   },
+   "grep.regex|native": {
+    "ops": 202,
+    "calls_primary": 202,
+    "rollouts": 65,
+    "tok": 212563,
+    "tokIn": 8340,
+    "tokOut": 204223,
+    "subs": {
+     "grep-tool": 202
+    },
+    "tags": {
+     "type-filter": 202,
+     "scoped": 125,
+     "defn": 35,
+     "test-path": 31,
+     "build-path": 6,
+     "manifest": 1
+    }
+   },
+   "test|native": {
+    "ops": 179,
+    "calls_primary": 179,
+    "rollouts": 66,
+    "tok": 186528,
+    "tokIn": 424,
+    "tokOut": 186105,
+    "subs": {
+     "shim": 179
+    },
+    "tags": {}
+   },
+   "glob|native": {
+    "ops": 107,
+    "calls_primary": 107,
+    "rollouts": 52,
+    "tok": 74509,
+    "tokIn": 2553,
+    "tokOut": 71956,
+    "subs": {
+     "glob-tool": 107
+    },
+    "tags": {}
+   },
+   "plan|native": {
+    "ops": 259,
+    "calls_primary": 259,
+    "rollouts": 66,
+    "tok": 60286,
+    "tokIn": 26790,
+    "tokOut": 33496,
+    "subs": {
+     "todowrite": 259
+    },
+    "tags": {}
+   },
+   "list|native": {
+    "ops": 33,
+    "calls_primary": 33,
+    "rollouts": 32,
+    "tok": 50358,
+    "tokIn": 705,
+    "tokOut": 49653,
+    "subs": {
+     "glob-tool": 32,
+     "ls": 1
+    },
+    "tags": {
+     "enumerate": 32,
+     "dep-path": 1
+    }
+   },
+   "edit|native": {
+    "ops": 117,
+    "calls_primary": 117,
+    "rollouts": 66,
+    "tok": 31956,
+    "tokIn": 29763,
+    "tokOut": 2193,
+    "subs": {
+     "apply_patch": 117
+    },
+    "tags": {}
+   },
+   "git.state|native": {
+    "ops": 154,
+    "calls_primary": 120,
+    "rollouts": 60,
+    "tok": 23576,
+    "tokIn": 1103,
+    "tokOut": 22473,
+    "subs": {
+     "diff": 88,
+     "status": 66
+    },
+    "tags": {}
+   },
+   "grep.literal|native": {
+    "ops": 38,
+    "calls_primary": 38,
+    "rollouts": 23,
+    "tok": 20441,
+    "tokIn": 1233,
+    "tokOut": 19208,
+    "subs": {
+     "grep-tool": 38
+    },
+    "tags": {
+     "type-filter": 38,
+     "scoped": 25,
+     "defn": 7,
+     "test-path": 4,
+     "build-path": 3
+    }
+   },
+   "runtime|native": {
+    "ops": 9,
+    "calls_primary": 9,
+    "rollouts": 3,
+    "tok": 3232,
+    "tokIn": 1628,
+    "tokOut": 1604,
+    "subs": {
+     "inline": 9
+    },
+    "tags": {
+     "regex-probe": 9
+    }
+   },
+   "git.other|native": {
+    "ops": 3,
+    "calls_primary": 3,
+    "rollouts": 2,
+    "tok": 42,
+    "tokIn": 33,
+    "tokOut": 9,
+    "subs": {
+     "add": 3
+    },
+    "tags": {}
+   },
+   "git.history|native": {
+    "ops": 2,
+    "calls_primary": 2,
+    "rollouts": 2,
+    "tok": 27,
+    "tokIn": 12,
+    "tokOut": 15,
+    "subs": {
+     "log": 2
+    },
+    "tags": {}
+   },
+   "misc|native": {
+    "ops": 1,
+    "calls_primary": 0,
+    "rollouts": 1,
+    "tok": 0,
+    "tokIn": 0,
+    "tokOut": 0,
+    "subs": {
+     "shell": 1
+    },
+    "tags": {}
+   }
+  },
+  "opencode|sweet": {
+   "read.range|ss": {
+    "ops": 444,
+    "calls_primary": 373,
+    "rollouts": 64,
+    "tok": 464513,
+    "tokIn": 5624,
+    "tokOut": 458888,
+    "subs": {
+     "ss-read": 438,
+     "ss-semantic": 6
+    },
+    "tags": {
+     "test-path": 82,
+     "build-path": 30,
+     "manifest": 12,
+     "semantic": 6
+    }
+   },
+   "test|native": {
+    "ops": 193,
+    "calls_primary": 193,
+    "rollouts": 66,
+    "tok": 202846,
+    "tokIn": 469,
+    "tokOut": 202377,
+    "subs": {
+     "shim": 193
+    },
+    "tags": {}
+   },
+   "search.semantic|ss": {
+    "ops": 102,
+    "calls_primary": 100,
+    "rollouts": 53,
+    "tok": 170081,
+    "tokIn": 1807,
+    "tokOut": 168274,
+    "subs": {
+     "ss-search": 102
+    },
+    "tags": {}
+   },
+   "grep.regex|ss": {
+    "ops": 117,
+    "calls_primary": 115,
+    "rollouts": 40,
+    "tok": 93855,
+    "tokIn": 2679,
+    "tokOut": 91177,
+    "subs": {
+     "ss-grep": 91,
+     "ss-find": 26
+    },
+    "tags": {
+     "with-query": 26,
+     "scoped": 25,
+     "defn": 17,
+     "build-path": 9,
+     "test-path": 8,
+     "positional-path": 3,
+     "manifest": 1
+    }
+   },
+   "plan|native": {
+    "ops": 250,
+    "calls_primary": 250,
+    "rollouts": 66,
+    "tok": 56918,
+    "tokIn": 25265,
+    "tokOut": 31653,
+    "subs": {
+     "todowrite": 250
+    },
+    "tags": {}
+   },
+   "read.range|native": {
+    "ops": 18,
+    "calls_primary": 18,
+    "rollouts": 5,
+    "tok": 44428,
+    "tokIn": 623,
+    "tokOut": 43805,
+    "subs": {
+     "read-tool": 18
+    },
+    "tags": {
+     "build-path": 12,
+     "test-path": 3
+    }
+   },
+   "grep.literal|ss": {
+    "ops": 117,
+    "calls_primary": 116,
+    "rollouts": 52,
+    "tok": 37562,
+    "tokIn": 1653,
+    "tokOut": 35909,
+    "subs": {
+     "ss-grep": 108,
+     "ss-find": 9
+    },
+    "tags": {
+     "scoped": 17,
+     "defn": 11,
+     "build-path": 11,
+     "with-query": 9,
+     "positional-path": 2
+    }
+   },
+   "edit|native": {
+    "ops": 123,
+    "calls_primary": 123,
+    "rollouts": 66,
+    "tok": 29921,
+    "tokIn": 27960,
+    "tokOut": 1961,
+    "subs": {
+     "apply_patch": 123
+    },
+    "tags": {}
+   },
+   "git.state|native": {
+    "ops": 162,
+    "calls_primary": 107,
+    "rollouts": 63,
+    "tok": 25779,
+    "tokIn": 1202,
+    "tokOut": 24577,
+    "subs": {
+     "diff": 91,
+     "status": 71
+    },
+    "tags": {}
+   },
+   "symbol|ss": {
+    "ops": 8,
+    "calls_primary": 8,
+    "rollouts": 7,
+    "tok": 6264,
+    "tokIn": 113,
+    "tokOut": 6151,
+    "subs": {
+     "ss-trace": 8
+    },
+    "tags": {
+     "scoped": 5
+    }
+   },
+   "glob|native": {
+    "ops": 24,
+    "calls_primary": 24,
+    "rollouts": 13,
+    "tok": 3948,
+    "tokIn": 572,
+    "tokOut": 3377,
+    "subs": {
+     "glob-tool": 22,
+     "git-ls-files": 2
+    },
+    "tags": {
+     "pattern": 2
+    }
+   },
+   "runtime|native": {
+    "ops": 6,
+    "calls_primary": 6,
+    "rollouts": 3,
+    "tok": 1765,
+    "tokIn": 869,
+    "tokOut": 896,
+    "subs": {
+     "inline": 6
+    },
+    "tags": {
+     "regex-probe": 6,
+     "imports": 1
+    }
+   },
+   "grep.regex|native": {
+    "ops": 1,
+    "calls_primary": 1,
+    "rollouts": 1,
+    "tok": 106,
+    "tokIn": 43,
+    "tokOut": 63,
+    "subs": {
+     "grep-tool": 1
+    },
+    "tags": {
+     "build-path": 1,
+     "defn": 1,
+     "scoped": 1,
+     "type-filter": 1
+    }
+   },
+   "grep.literal|native": {
+    "ops": 1,
+    "calls_primary": 1,
+    "rollouts": 1,
+    "tok": 83,
+    "tokIn": 16,
+    "tokOut": 67,
+    "subs": {
+     "rg": 1
+    },
+    "tags": {
+     "build-path": 1,
+     "scoped": 1
+    }
+   },
+   "build|native": {
+    "ops": 1,
+    "calls_primary": 1,
+    "rollouts": 1,
+    "tok": 42,
+    "tokIn": 3,
+    "tokOut": 39,
+    "subs": {
+     "build": 1
+    },
+    "tags": {}
+   },
+   "git.history|native": {
+    "ops": 1,
+    "calls_primary": 1,
+    "rollouts": 1,
+    "tok": 31,
+    "tokIn": 18,
+    "tokOut": 13,
+    "subs": {
+     "log": 1
+    },
+    "tags": {}
+   },
+   "misc|native": {
+    "ops": 4,
+    "calls_primary": 1,
+    "rollouts": 3,
+    "tok": 10,
+    "tokIn": 7,
+    "tokOut": 3,
+    "subs": {
+     "shell": 2,
+     "count": 1,
+     "probe-tool": 1
+    },
+    "tags": {
+     "build-path": 1,
+     "line-count": 1
+    }
+   }
+  }
+ },
+ "gaps": {
+  "codex": {
+   "git.state": {
+    "ops": 120,
+    "rollouts": 50,
+    "tok": 22204,
+    "tok_usd_per_rollout": 8.713355176767678e-05,
+    "requests": 67,
+    "sole_native_requests": 57,
+    "req_usd_per_rollout": 0.0005431365041450049,
+    "attr": {
+     "after-ss-failure": 4,
+     "feature-absent": 116
+    },
+    "feat": {
+     "git.state": 116,
+     "0 total match(es)": 2,
+     "[ss-read] error": 1,
+     "[ss-*] crash": 1
+    },
+    "progs": {
+     "git": 120
+    }
+   },
+   "glob": {
+    "ops": 20,
+    "rollouts": 13,
+    "tok": 5838,
+    "tok_usd_per_rollout": 2.2909073232323238e-05,
+    "requests": 13,
+    "sole_native_requests": 13,
+    "req_usd_per_rollout": 0.00012387323778745727,
+    "attr": {
+     "feature-absent": 18,
+     "after-ss-failure": 2
+    },
+    "feat": {
+     "glob": 18,
+     "[ss-*] crash": 1,
+     "[ss-read] error": 1
+    },
+    "progs": {
+     "rg": 18,
+     "git": 2
+    }
+   },
+   "read.range": {
+    "ops": 13,
+    "rollouts": 4,
+    "tok": 5280,
+    "tok_usd_per_rollout": 2.071869191919192e-05,
+    "requests": 10,
+    "sole_native_requests": 10,
+    "req_usd_per_rollout": 9.528710599035173e-05,
+    "attr": {
+     "feature-absent": 6,
+     "plain-fallback": 7
+    },
+    "feat": {
+     "build-path": 4,
+     "numbered": 2
+    },
+    "progs": {
+     "sed": 11,
+     "nl": 2
+    }
+   },
+   "grep.regex": {
+    "ops": 8,
+    "rollouts": 4,
+    "tok": 2628,
+    "tok_usd_per_rollout": 1.0310946969696971e-05,
+    "requests": 8,
+    "sole_native_requests": 8,
+    "req_usd_per_rollout": 7.62296847922814e-05,
+    "attr": {
+     "feature-absent": 3,
+     "plain-fallback": 4,
+     "after-ss-failure": 1
+    },
+    "feat": {
+     "build-path": 3,
+     "0 total match(es)": 1
+    },
+    "progs": {
+     "rg": 8
+    }
+   },
+   "runtime": {
+    "ops": 5,
+    "rollouts": 2,
+    "tok": 2096,
+    "tok_usd_per_rollout": 8.225212121212122e-06,
+    "requests": 5,
+    "sole_native_requests": 5,
+    "req_usd_per_rollout": 4.7643552995175867e-05,
+    "attr": {
+     "feature-absent": 4,
+     "after-ss-failure": 1
+    },
+    "feat": {
+     "runtime": 4,
+     "[ss-read] error": 1
+    },
+    "progs": {
+     "node": 5
+    }
+   },
+   "grep.literal": {
+    "ops": 3,
+    "rollouts": 2,
+    "tok": 1169,
+    "tok_usd_per_rollout": 4.586131313131313e-06,
+    "requests": 3,
+    "sole_native_requests": 2,
+    "req_usd_per_rollout": 1.905742119807035e-05,
+    "attr": {
+     "feature-absent": 3
+    },
+    "feat": {
+     "build-path": 3,
+     "ctx": 2
+    },
+    "progs": {
+     "rg": 3
+    }
+   },
+   "git.history": {
+    "ops": 1,
+    "rollouts": 1,
+    "tok": 402,
+    "tok_usd_per_rollout": 1.5775454545454548e-06,
+    "requests": 1,
+    "sole_native_requests": 1,
+    "req_usd_per_rollout": 9.528710599035175e-06,
+    "attr": {
+     "feature-absent": 1
+    },
+    "feat": {
+     "git.history": 1
+    },
+    "progs": {
+     "git": 1
+    }
+   },
+   "misc": {
+    "ops": 97,
+    "rollouts": 20,
+    "tok": 65,
+    "tok_usd_per_rollout": 2.5507575757575756e-07,
+    "requests": 53,
+    "sole_native_requests": 17,
+    "req_usd_per_rollout": 0.00016198808018359797,
+    "attr": {
+     "plain-fallback": 89,
+     "after-ss-failure": 8
+    },
+    "feat": {
+     "0 total match(es)": 7,
+     "No indexed symbol": 1
+    },
+    "progs": {
+     "printf": 77,
+     "pwd": 7,
+     "echo": 5,
+     "[": 2,
+     "true": 2,
+     "rm": 2,
+     "exit": 1,
+     "test": 1
+    }
+   }
+  },
+  "opencode": {
+   "read.range": {
+    "ops": 18,
+    "rollouts": 5,
+    "tok": 44428,
+    "tok_usd_per_rollout": 0.00016828787878787877,
+    "requests": 18,
+    "sole_native_requests": 18,
+    "req_usd_per_rollout": 0.00012828503496503497,
+    "attr": {
+     "plain-fallback": 6,
+     "after-ss-failure": 3,
+     "feature-absent": 9
+    },
+    "feat": {
+     "build-path": 9,
+     "0 total match(es)": 3
+    },
+    "progs": {
+     "read": 18
+    }
+   },
+   "git.state": {
+    "ops": 162,
+    "rollouts": 63,
+    "tok": 25779,
+    "tok_usd_per_rollout": 9.764835858585861e-05,
+    "requests": 88,
+    "sole_native_requests": 82,
+    "req_usd_per_rollout": 0.0005844096037296038,
+    "attr": {
+     "feature-absent": 160,
+     "after-ss-failure": 2
+    },
+    "feat": {
+     "git.state": 160,
+     "0 total match(es)": 2
+    },
+    "progs": {
+     "git": 162
+    }
+   },
+   "glob": {
+    "ops": 24,
+    "rollouts": 13,
+    "tok": 3948,
+    "tok_usd_per_rollout": 1.4956439393939392e-05,
+    "requests": 24,
+    "sole_native_requests": 24,
+    "req_usd_per_rollout": 0.0001710467132867133,
+    "attr": {
+     "feature-absent": 13,
+     "after-ss-failure": 11
+    },
+    "feat": {
+     "glob": 13,
+     "0 total match(es)": 7,
+     "[ss-read] error": 2,
+     "error": 1,
+     "[ss-*] crash": 1
+    },
+    "progs": {
+     "glob": 22,
+     "git": 2
+    }
+   },
+   "runtime": {
+    "ops": 6,
+    "rollouts": 3,
+    "tok": 1765,
+    "tok_usd_per_rollout": 6.68560606060606e-06,
+    "requests": 6,
+    "sole_native_requests": 6,
+    "req_usd_per_rollout": 4.2761678321678327e-05,
+    "attr": {
+     "feature-absent": 5,
+     "after-ss-failure": 1
+    },
+    "feat": {
+     "runtime": 5,
+     "[ss-read] error": 1
+    },
+    "progs": {
+     "node": 6
+    }
+   },
+   "grep.regex": {
+    "ops": 1,
+    "rollouts": 1,
+    "tok": 106,
+    "tok_usd_per_rollout": 4.015151515151515e-07,
+    "requests": 1,
+    "sole_native_requests": 1,
+    "req_usd_per_rollout": 7.126946386946387e-06,
+    "attr": {
+     "after-ss-failure": 1
+    },
+    "feat": {
+     "0 total match(es)": 1
+    },
+    "progs": {
+     "grep": 1
+    }
+   },
+   "grep.literal": {
+    "ops": 1,
+    "rollouts": 1,
+    "tok": 83,
+    "tok_usd_per_rollout": 3.143939393939394e-07,
+    "requests": 1,
+    "sole_native_requests": 1,
+    "req_usd_per_rollout": 7.126946386946387e-06,
+    "attr": {
+     "feature-absent": 1
+    },
+    "feat": {
+     "build-path": 1
+    },
+    "progs": {
+     "rg": 1
+    }
+   },
+   "git.history": {
+    "ops": 1,
+    "rollouts": 1,
+    "tok": 31,
+    "tok_usd_per_rollout": 1.1742424242424243e-07,
+    "requests": 1,
+    "sole_native_requests": 1,
+    "req_usd_per_rollout": 7.126946386946387e-06,
+    "attr": {
+     "feature-absent": 1
+    },
+    "feat": {
+     "git.history": 1
+    },
+    "progs": {
+     "git": 1
+    }
+   },
+   "misc": {
+    "ops": 4,
+    "rollouts": 3,
+    "tok": 10,
+    "tok_usd_per_rollout": 3.7878787878787874e-08,
+    "requests": 3,
+    "sole_native_requests": 2,
+    "req_usd_per_rollout": 1.4253892773892774e-05,
+    "attr": {
+     "feature-absent": 1,
+     "plain-fallback": 3
+    },
+    "feat": {
+     "line-count": 1
+    },
+    "progs": {
+     "wc": 1,
+     "command": 1,
+     "true": 1,
+     "pwd": 1
+    }
+   }
+  },
+  "claude-code": {
+   "read.range": {
+    "ops": 138,
+    "rollouts": 23,
+    "tok": 153444,
+    "tok_usd_per_rollout": 0.0006997976363636365,
+    "requests": 114,
+    "sole_native_requests": 114,
+    "req_usd_per_rollout": 0.0012118427398476218,
+    "attr": {
+     "plain-fallback": 73,
+     "after-ss-failure": 37,
+     "feature-absent": 28
+    },
+    "feat": {
+     "0 total match(es)": 30,
+     "build-path": 28,
+     "Usage: ss-": 3,
+     "(no matches)": 2,
+     "[ss-read] error": 1,
+     "No indexed symbol": 1
+    },
+    "progs": {
+     "Read": 138
+    }
+   },
+   "grep.regex": {
+    "ops": 13,
+    "rollouts": 6,
+    "tok": 38278,
+    "tok_usd_per_rollout": 0.00017457087878787881,
+    "requests": 13,
+    "sole_native_requests": 13,
+    "req_usd_per_rollout": 0.0001381925931405183,
+    "attr": {
+     "plain-fallback": 12,
+     "after-ss-failure": 1
+    },
+    "feat": {
+     "0 total match(es)": 1
+    },
+    "progs": {
+     "grep": 13
+    }
+   },
+   "glob": {
+    "ops": 21,
+    "rollouts": 10,
+    "tok": 17734,
+    "tok_usd_per_rollout": 8.088006818181821e-05,
+    "requests": 20,
+    "sole_native_requests": 20,
+    "req_usd_per_rollout": 0.00021260398944695122,
+    "attr": {
+     "feature-absent": 19,
+     "after-ss-failure": 2
+    },
+    "feat": {
+     "glob": 19,
+     "0 total match(es)": 2
+    },
+    "progs": {
+     "find": 18,
+     "git": 2,
+     "ls": 1
+    }
+   },
+   "git.state": {
+    "ops": 77,
+    "rollouts": 43,
+    "tok": 14642,
+    "tok_usd_per_rollout": 6.677791414141416e-05,
+    "requests": 57,
+    "sole_native_requests": 52,
+    "req_usd_per_rollout": 0.0005527703725620732,
+    "attr": {
+     "feature-absent": 64,
+     "after-ss-failure": 13
+    },
+    "feat": {
+     "git.state": 64,
+     "0 total match(es)": 7,
+     "[ss-*] crash": 2,
+     "Usage: ss-": 2,
+     "(no matches)": 2
+    },
+    "progs": {
+     "git": 77
+    }
+   },
+   "list": {
+    "ops": 9,
+    "rollouts": 6,
+    "tok": 13184,
+    "tok_usd_per_rollout": 6.012703030303032e-05,
+    "requests": 8,
+    "sole_native_requests": 8,
+    "req_usd_per_rollout": 8.504159577878048e-05,
+    "attr": {
+     "feature-absent": 8,
+     "after-ss-failure": 1
+    },
+    "feat": {
+     "list": 8,
+     "[ss]": 1
+    },
+    "progs": {
+     "find": 8,
+     "ls": 1
+    }
+   },
+   "runtime": {
+    "ops": 20,
+    "rollouts": 7,
+    "tok": 5198,
+    "tok_usd_per_rollout": 2.3706030303030308e-05,
+    "requests": 20,
+    "sole_native_requests": 20,
+    "req_usd_per_rollout": 0.00021260398944695122,
+    "attr": {
+     "feature-absent": 15,
+     "after-ss-failure": 5
+    },
+    "feat": {
+     "runtime": 15,
+     "0 total match(es)": 3,
+     "[ss-read] error": 1,
+     "No indexed symbol": 1
+    },
+    "progs": {
+     "node": 12,
+     "python3": 6,
+     "python": 2
+    }
+   },
+   "git.other": {
+    "ops": 11,
+    "rollouts": 5,
+    "tok": 645,
+    "tok_usd_per_rollout": 2.9415909090909094e-06,
+    "requests": 7,
+    "sole_native_requests": 7,
+    "req_usd_per_rollout": 7.441139630643292e-05,
+    "attr": {
+     "after-ss-failure": 6,
+     "feature-absent": 5
+    },
+    "feat": {
+     "git.other": 5,
+     "0 total match(es)": 5,
+     "[ss]": 1
+    },
+    "progs": {
+     "git": 11
+    }
+   },
+   "git.history": {
+    "ops": 6,
+    "rollouts": 4,
+    "tok": 552,
+    "tok_usd_per_rollout": 2.517454545454546e-06,
+    "requests": 5,
+    "sole_native_requests": 5,
+    "req_usd_per_rollout": 5.3150997361737805e-05,
+    "attr": {
+     "feature-absent": 4,
+     "after-ss-failure": 2
+    },
+    "feat": {
+     "git.history": 4,
+     "0 total match(es)": 2
+    },
+    "progs": {
+     "git": 6
+    }
+   },
+   "misc": {
+    "ops": 64,
+    "rollouts": 13,
+    "tok": 493,
+    "tok_usd_per_rollout": 2.2483787878787884e-06,
+    "requests": 21,
+    "sole_native_requests": 21,
+    "req_usd_per_rollout": 0.00022323418891929877,
+    "attr": {
+     "plain-fallback": 62,
+     "after-ss-failure": 2
+    },
+    "feat": {
+     "0 total match(es)": 1,
+     "(no matches)": 1
+    },
+    "progs": {
+     "command": 32,
+     "true": 18,
+     "pwd": 7,
+     "printf": 3,
+     "compgen": 2,
+     "rm": 2
+    }
+   }
+  }
+ },
+ "sole_native_requests": {
+  "claude-code": 119,
+  "codex": 23,
+  "opencode": 41
+ },
+ "fallback_totals": {
+  "codex|main": {
+   "ops": 44,
+   "tok": 14914,
+   "tok_usd_per_rollout": 5.8524843434343435e-05,
+   "sole_requests": 23,
+   "req_usd_per_rollout": 0.00021916034377780902,
+   "sum_usd_per_rollout": 0.0002776851872121525,
+   "mean_sweet_cost": 0.012330151515151516,
+   "share": 0.022520825220268204
+  },
+  "codex|side": {
+   "ops": 0,
+   "tok": 0,
+   "tok_usd_per_rollout": 0.0,
+   "sole_requests": 0,
+   "req_usd_per_rollout": 0.0,
+   "sum_usd_per_rollout": 0.0,
+   "mean_sweet_cost": 0.012330151515151516,
+   "share": 0.0
+  },
+  "opencode|main": {
+   "ops": 44,
+   "tok": 48566,
+   "tok_usd_per_rollout": 0.00018396022727272727,
+   "sole_requests": 43,
+   "req_usd_per_rollout": 0.00030645869463869467,
+   "sum_usd_per_rollout": 0.0004904189219114219,
+   "mean_sweet_cost": 0.009265030303030303,
+   "share": 0.0529322523371587
+  },
+  "opencode|side": {
+   "ops": 0,
+   "tok": 0,
+   "tok_usd_per_rollout": 0.0,
+   "sole_requests": 0,
+   "req_usd_per_rollout": 0.0,
+   "sum_usd_per_rollout": 0.0,
+   "mean_sweet_cost": 0.009265030303030303,
+   "share": 0.0
+  },
+  "claude-code|main": {
+   "ops": 54,
+   "tok": 38170,
+   "tok_usd_per_rollout": 0.00017408061363636366,
+   "sole_requests": 51,
+   "req_usd_per_rollout": 0.0005421401730897256,
+   "sum_usd_per_rollout": 0.0007162207867260893,
+   "mean_sweet_cost": 0.015127333333333333,
+   "share": 0.04734613635754854
+  },
+  "claude-code|side": {
+   "ops": 127,
+   "tok": 184470,
+   "tok_usd_per_rollout": 0.0008412950000000003,
+   "sole_requests": 91,
+   "req_usd_per_rollout": 0.000967348151983628,
+   "sum_usd_per_rollout": 0.0018086431519836283,
+   "mean_sweet_cost": 0.015127333333333333,
+   "share": 0.11956126781435118
+  }
+ },
+ "same_pattern": {
+  "codex": {
+   "raw_greps": 11,
+   "kinds": {
+    "exact": 2,
+    "none": 7,
+    "loose": 2
+   },
+   "ss_outcomes": {
+    "hits": 2,
+    "zero": 2
+   },
+   "deltas": {
+    "build-path+ctx+scoped": 1,
+    "scoped": 1,
+    "build-path+scoped": 2
+   },
+   "rollouts": 3
+  },
+  "opencode": {
+   "raw_greps": 2,
+   "kinds": {
+    "exact": 2
+   },
+   "ss_outcomes": {
+    "hits": 1,
+    "zero": 1
+   },
+   "deltas": {
+    "build-path+scoped": 1,
+    "build-path+scoped+type-filter": 1
+   },
+   "rollouts": 2
+  },
+  "claude-code": {
+   "raw_greps": 13,
+   "kinds": {
+    "none": 5,
+    "loose": 8
+   },
+   "ss_outcomes": {
+    "zero": 8
+   },
+   "deltas": {
+    "build-path+scoped": 1,
+    "scoped": 5,
+    "icase+scoped": 2
+   },
+   "rollouts": 3
+  }
+ },
+ "same_file": {
+  "codex": {
+   "cases": 6,
+   "outcomes": {
+    "ok": 6
+   }
+  },
+  "opencode": {
+   "cases": 4,
+   "outcomes": {
+    "ok": 4
+   }
+  },
+  "claude-code": {
+   "cases": 24,
+   "outcomes": {
+    "ok": 17,
+    "enoent": 7
+   }
+  }
+ }
+}

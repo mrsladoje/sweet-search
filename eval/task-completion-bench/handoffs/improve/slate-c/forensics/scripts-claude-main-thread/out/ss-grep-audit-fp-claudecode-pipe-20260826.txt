@@ -1,0 +1,74 @@
+{
+ "run": "fp-claudecode-pipe-20260826",
+ "sweetRollouts": 66,
+ "ssGrepCalls": 250,
+ "ssGrepSingleInvocation": 218,
+ "zeroMatchAnswers": 57,
+ "byVerdict": {
+  "true-negative": {
+   "n": 37,
+   "nextReal": 0.022168324999999996,
+   "bre": 7,
+   "posix": 0
+  },
+  "false-negative-candidate": {
+   "n": 18,
+   "nextReal": 0.01003301,
+   "bre": 1,
+   "posix": 0
+  },
+  "scope-missing": {
+   "n": 1,
+   "nextReal": 0.000460305,
+   "bre": 0,
+   "posix": 0
+  },
+  "grep-error": {
+   "n": 1,
+   "nextReal": 0.00049998,
+   "bre": 1,
+   "posix": 0
+  }
+ },
+ "crashes": {
+  "Error: ripgrep failed (code N): rg: regex parse error:": {
+   "n": 13,
+   "tasks": [
+    "aio-libs__aiohttp-8038",
+    "apigee__registry-961",
+    "bfgroup__b2-113",
+    "callstack__react-native-paper-972",
+    "devlooped__moq-1262",
+    "gitbookio__markup-it-56"
+   ],
+   "tools": [
+    "ss-grep",
+    "ss-read"
+   ],
+   "example": "ss-grep \"Connection(\" --in aiohttp --in tests -k 30"
+  }
+ }
+}
+
+--- false-negative candidates ---
+aws-actions__configure-aws-credentials-42 r1 k=24 | ss-grep "required: true" --in dist/index.js -k 10 | bre=false hint=false | grep: 3 lines in 3+ files [271, 272, 273] | e.g. "271:    const accessKeyId = core.getInput('aws-access-key-id', { required: true });"
+aws-actions__configure-aws-credentials-42 r1 k=25 | ss-grep "aws-access-key-id" --in dist/index.js -k 10 | bre=false hint=false | grep: 1 lines in 1+ files [271] | e.g. "271:    const accessKeyId = core.getInput('aws-access-key-id', { required: true });"
+aws-actions__configure-aws-credentials-42 r1 k=27 | ss-grep "role-to-assume" --in dist/index.js -k 10 | bre=false hint=false | grep: 1 lines in 1+ files [276] | e.g. "276:    const roleToAssume = core.getInput('role-to-assume', {required: false});"
+aws-actions__configure-aws-credentials-42 r1 k=28 | ss-grep "Missing required environment value" --in dist/index.js -k 5 | bre=false hint=false | grep: 1 lines in 1+ files [161] | e.g. "161:      'Missing required environment value. Are you running in GitHub Actions?'"
+aws-actions__configure-aws-credentials-42 r1 k=30 | ss-grep "AWS_SECRET_ACCESS_KEY" --in dist/index.js -k 10 | bre=false hint=false | grep: 3 lines in 3+ files [227, 229, 3135] | e.g. "227:  // AWS_SECRET_ACCESS_KEY:"
+bfgroup__b2-113 r0 k=21 | ss-grep "class.*Target" --in src/build/targets.py -k 20 | bre=false hint=false | grep: 9 lines in 9+ files [13, 93, 289, 358] | e.g. "13:#   Abstract targets are represented by classes derived from 'AbstractTarget' class."
+bfgroup__b2-113 r0 k=27 | ss-grep "generate" --in src/build/targets.py -k 30 | bre=false hint=false | grep: 38 lines in 12+ files [41, 55, 303, 340] | e.g. "41:#                         |generate(properties) = 0|"
+bfgroup__b2-113 r0 k=29 | ss-grep "class" --in src/build/targets.py -k 40 | bre=false hint=false | grep: 24 lines in 12+ files [13, 25, 26, 30] | e.g. "13:#   Abstract targets are represented by classes derived from 'AbstractTarget' class."
+bfgroup__b2-113 r1 k=43 | ss-grep "class BasicTarget" --in src/build/targets.py -k 10 | bre=false hint=false | grep: 1 lines in 1+ files [890] | e.g. "890:class BasicTarget (AbstractTarget):"
+bfgroup__b2-113 r2 k=30 | ss-grep "class.*Target" --in src/build/targets.py -k 30 | bre=false hint=false | grep: 9 lines in 9+ files [13, 93, 289, 358] | e.g. "13:#   Abstract targets are represented by classes derived from 'AbstractTarget' class."
+bfgroup__b2-113 r2 k=34 | ss-grep "build" --in src/build/targets.py -k 100 | bre=false hint=false | grep: 110 lines in 12+ files [29, 85, 86, 88] | e.g. "29:#   Rules supplied by the build system will use only targets derived"
+bfgroup__b2-113 r2 k=38 | ss-grep "boost-install" -k 20 | bre=false hint=false | grep: 3 lines in 2+ files [./src/tools/boostbook.jam, ./src/contrib/modular.jam] | e.g. "./src/tools/boostbook.jam:308:        local boost-installer-versions = snapshot cvs 1.33.0 ;"
+bfgroup__b2-259 r0 k=12 | ss-grep "generate-from-reference" --in src/build/targets.jam -k 10 | bre=false hint=false | grep: 2 lines in 2+ files [912, 1276] | e.g. "912:rule generate-from-reference ("
+bfgroup__b2-259 r0 k=17 | ss-grep "in \$\(.*\)" --in src/build/configure.jam -k 10 | bre=true hint=true | grep: 11 lines in 11+ files [121, 124, 133, 147] | e.g. "121:    for c in $(.components)"
+bfgroup__b2-259 r0 k=22 | ss-grep "actualize ]" --in src -k 20 | bre=false hint=false | grep: 11 lines in 6+ files [src/build-system.jam, src/tools/qt3.jam, src/tools/msvc.jam, src/tools/qt5.jam] | e.g. "src/build-system.jam:170:        to-clean-actual += [ $(t).actualize ] ;"
+bfgroup__b2-259 r2 k=9 | ss-grep "check-target-builds" -k 50 --in . | bre=false hint=false | grep: 15 lines in 5+ files [./test/configure.py, ./src/tools/flags.jam, ./example/try_compile/Jamroot.jam, ./doc/src/hljs/highlight.min.js] | e.g. "./test/configure.py:8:# Tests configure.check-target-builds and friends"
+bfgroup__b2-259 r2 k=12 | ss-grep "check-target" -k 50 --in src | bre=false hint=false | grep: 8 lines in 2+ files [src/tools/qcc.jam, src/tools/flags.jam] | e.g. "src/tools/qcc.jam:75:local rule check-target-platform"
+protofire__solhint-224 r1 k=8 | ss-grep "func-order" --in docs --in README.md --in .solhint.json -k 20 | bre=false hint=false | grep: 7 lines in 2+ files [docs/rules.md, docs/rules/order/func-order.md] | e.g. "docs/rules.md:36:| [func-order](./rules/order/func-order.md)                                            | Function order is incorrect.                          "
+
+--- scope-missing ---
+bfgroup__b2-113 r1 k=26 | ss-grep "ProjectTarget" --in src/b2 -k 20 | missing: src/b2

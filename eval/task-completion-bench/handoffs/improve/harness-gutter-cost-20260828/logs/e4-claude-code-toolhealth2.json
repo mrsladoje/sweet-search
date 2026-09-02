@@ -1,0 +1,674 @@
+{
+ "breHint": {
+  "total": 87,
+  "zeroBoth": 13,
+  "recovered": 74,
+  "rollouts": 47,
+  "ex": [
+   {
+    "rid": "TAB/aio-libs__aiohttp-8038/r0",
+    "cmd": "ss-search \"retry request when persistent connection disconnects before response\" -k 8 && ss-grep \"ServerDisconnectedError\\|retry_persistent\" -k 20",
+    "hint": "BRE operators were retried with unescaped Rust operators; showing 26 retry matches."
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r0",
+    "cmd": "ss-grep \"ListSpecArtifacts.*NotFound\\|list.*spec.*artifacts\\|ListDeploymentArtifacts.*NotFound\" --in server/registry/actions_artifacts_test.go -k 20",
+    "hint": "BRE operators were retried with unescaped Rust operators; both forms returned 0 matches."
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r2",
+    "cmd": "ss-grep \"ListApiDeploymentArtifacts\\|ListApiSpecArtifacts\\|Artifacts\" -k 80",
+    "hint": "BRE operators were retried with unescaped Rust operators; showing 500 retry matches."
+   },
+   {
+    "rid": "TAB/asynkron__protoactor-dotnet-1909/r2",
+    "cmd": "ss-grep \"new TypeDictionary\\|TypeDictionary<\" -k 20",
+    "hint": "BRE operators were retried with unescaped Rust operators; showing 3 retry matches."
+   },
+   {
+    "rid": "TAB/aws-actions__configure-aws-credentials-42/r2",
+    "cmd": "ss-read index.js 131 194 && ss-grep \"getInput\\|access-key\\|secret-access\\|getStsClient\" -k 30",
+    "hint": "BRE operators were retried with unescaped Rust operators; showing 26 retry matches."
+   },
+   {
+    "rid": "TAB/aws-actions__configure-aws-credentials-42/r2",
+    "cmd": "ss-grep \"AWS_ACCESS_KEY_ID\\|required: true\\|exportCredentials\" -k 30",
+    "hint": "BRE operators were retried with unescaped Rust operators; showing 12 retry matches."
+   },
+   {
+    "rid": "TAB/awslabs__aws-embedded-metrics-node-21/r0",
+    "cmd": "ss-grep \"isEqual\\|JSON.stringify\\|duplicate\\|dimensions\" -k 20",
+    "hint": "BRE operators were retried with unescaped Rust operators; showing 81 retry matches."
+   },
+   {
+    "rid": "TAB/awslabs__aws-embedded-metrics-node-21/r2",
+    "cmd": "ss-grep \"putDimensions\\|setDimensions\\|getDimensions\" -k 20",
+    "hint": "BRE operators were retried with unescaped Rust operators; showing 39 retry matches."
+   }
+  ]
+ },
+ "enoent": {
+  "total": 51,
+  "pathFromSS": 21,
+  "pathInvented": 30,
+  "ex": [
+   {
+    "rid": "TAB/bfgroup__b2-113/r0",
+    "paths": [
+     "src/b2/build/targets.py"
+    ],
+    "fromSS": [
+     "src/b2/build/targets.py"
+    ]
+   },
+   {
+    "rid": "TAB/bfgroup__b2-113/r1",
+    "paths": [
+     "src/b2/build/targets.py"
+    ],
+    "fromSS": []
+   },
+   {
+    "rid": "TAB/bfgroup__b2-259/r0",
+    "paths": [
+     "src/tools/configure.jam"
+    ],
+    "fromSS": []
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r0",
+    "paths": [
+     "src/Moq/ExpressionExtensions.cs",
+     "src/Moq/Expressions/Visitors/PartialMatcherAwareEval.cs"
+    ],
+    "fromSS": [
+     "src/Moq/ExpressionExtensions.cs"
+    ]
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r0",
+    "paths": [
+     "src/Moq/Expressions/MatchExpression.cs",
+     "src/Moq/Match.cs"
+    ],
+    "fromSS": [
+     "src/Moq/Match.cs"
+    ]
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r2",
+    "paths": [
+     "src/Moq/Matchers/MatcherFactory.cs"
+    ],
+    "fromSS": []
+   },
+   {
+    "rid": "TAB/gitbookio__markup-it-56/r0",
+    "paths": [
+     "src/markdown/blocks/html.js"
+    ],
+    "fromSS": []
+   },
+   {
+    "rid": "TAB/gitbookio__markup-it-56/r2",
+    "paths": [
+     "src/markdown/re/block.js",
+     "src/markdown/blocks/html.js"
+    ],
+    "fromSS": []
+   },
+   {
+    "rid": "TAB/mirumee__ariadne-codegen-218/r1",
+    "paths": [
+     "ariadne_codegen/client_generators/result_fields.py",
+     "tests/client_generators/result_fields.py"
+    ],
+    "fromSS": [
+     "ariadne_codegen/client_generators/result_fields.py"
+    ]
+   },
+   {
+    "rid": "NONE/apigee__registry-961/r0",
+    "paths": [
+     "server/registry/names/revision.go"
+    ],
+    "fromSS": []
+   }
+  ]
+ },
+ "readBeforeEdit": {
+  "edits": 723,
+  "nativeReadWithin3": 38,
+  "ssReadWithin3": 235
+ },
+ "editFail": {
+  "calls": 723,
+  "fail": 108,
+  "notFound": 38,
+  "notUnique": 25,
+  "noChange": 34,
+  "jsonErr": 9,
+  "other": 2,
+  "rollouts": 47,
+  "ex": [
+   {
+    "rid": "TAB/accenture__sfmc-devtools-1974/r2",
+    "file": "/root/.ss-eval/runs/r2-6/lib/index.js",
+    "err": "<tool_use_error>Found 3 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "        /** @typedef {string[]} */\n        let selectedTypesArr;\n\n        /** @typedef {TypeKeyCombo} */\n        let selectedTypesObj;"
+   },
+   {
+    "rid": "TAB/aio-libs__aiohttp-8038/r0",
+    "file": "/root/.ss-eval/runs/r0-12/aiohttp/connector.py",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "            if proto.is_connected():\n                if t1 - t0 > self._keepalive_timeout:\n"
+   },
+   {
+    "rid": "TAB/aio-libs__aiohttp-8038/r1",
+    "file": "/root/.ss-eval/runs/r1-17/aiohttp/client.py",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "                    except ServerDisconnectedError:\n                        if retry_persistent_connection:\n                            retry_persistent_connection = False\n                            "
+   },
+   {
+    "rid": "TAB/aio-libs__aiohttp-8038/r2",
+    "file": "",
+    "err": "<tool_use_error>InputValidationError: Edit was called with input that could not be parsed as JSON.\nYou sent (first 200 of 63490 bytes): {\"file_path\":\"/root/.ss-eval/runs/r2-19/aiohttp/connector.py\",\"o",
+    "old": ""
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r0",
+    "file": "/root/.ss-eval/runs/r0-14/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "\tif err := token.ValidateOrder(opts.Order); err != nil {\n\t\treturn ArtifactList{}, status.Errorf(codes.InvalidArgument, \"invalid order_by %q: %s\", opts.Order, err)\n\t} else {\n\t\ttoken.Order = opts.Order\n"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r0",
+    "file": "/root/.ss-eval/runs/r0-14/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListSpecRevisionArtifacts(ctx context.Context, parent names.SpecRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r0",
+    "file": "/root/.ss-eval/runs/r0-14/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListSpecRevisionArtifacts(ctx context.Context, parent names.SpecRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r0",
+    "file": "/root/.ss-eval/runs/r0-14/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "\tif err := token.ValidateOrder(opts.Order); err != nil {\n\t\treturn ArtifactList{}, status.Errorf(codes.InvalidArgument, \"invalid order_by %q: %s\", opts.Order, err)\n\t} else {\n\t\ttoken.Order = opts.Order\n"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r0",
+    "file": "/root/.ss-eval/runs/r0-14/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListSpecRevisionArtifacts(ctx context.Context, parent names.SpecRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r0",
+    "file": "/root/.ss-eval/runs/r0-14/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListSpecRevisionArtifacts(ctx context.Context, parent names.SpecRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r0",
+    "file": "/root/.ss-eval/runs/r0-14/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListSpecRevisionArtifacts(ctx context.Context, parent names.SpecRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r0",
+    "file": "/root/.ss-eval/runs/r0-14/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "\tif err := token.ValidateOrder(opts.Order); err != nil {\n\t\treturn ArtifactList{}, status.Errorf(codes.InvalidArgument, \"invalid order_by %q: %s\", opts.Order, err)\n\t} else {\n\t\ttoken.Order = opts.Order\n"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r0",
+    "file": "/root/.ss-eval/runs/r0-14/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListSpecRevisionArtifacts(ctx context.Context, parent names.SpecRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r1",
+    "file": "/root/.ss-eval/runs/r1-16/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "\tif err := token.ValidateOrder(opts.Order); err != nil {\n\t\treturn ArtifactList{}, status.Errorf(codes.InvalidArgument, \"invalid order_by %q: %s\", opts.Order, err)\n\t} else {\n\t\ttoken.Order = opts.Order\n"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r1",
+    "file": "/root/.ss-eval/runs/r1-16/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListSpecRevisionArtifacts(ctx context.Context, parent names.SpecRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r1",
+    "file": "/root/.ss-eval/runs/r1-16/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListDeploymentRevisionArtifacts(ctx context.Context, parent names.DeploymentRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r1",
+    "file": "/root/.ss-eval/runs/r1-16/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListDeploymentRevisionArtifacts(ctx context.Context, parent names.DeploymentRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)\n\tif err != nil {"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r2",
+    "file": "/root/.ss-eval/runs/r2-18/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "\tif err := token.ValidateOrder(opts.Order); err != nil {\n\t\treturn ArtifactList{}, status.Errorf(codes.InvalidArgument, \"invalid order_by %q: %s\", opts.Order, err)\n\t} else {\n\t\ttoken.Order = opts.Order\n"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r2",
+    "file": "/root/.ss-eval/runs/r2-18/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListSpecRevisionArtifacts(ctx context.Context, parent names.SpecRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r2",
+    "file": "/root/.ss-eval/runs/r2-18/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "\tif err := token.ValidateOrder(opts.Order); err != nil {\n\t\treturn ArtifactList{}, status.Errorf(codes.InvalidArgument, \"invalid order_by %q: %s\", opts.Order, err)\n\t} else {\n\t\ttoken.Order = opts.Order\n"
+   },
+   {
+    "rid": "TAB/apigee__registry-961/r2",
+    "file": "/root/.ss-eval/runs/r2-18/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListSpecRevisionArtifacts(ctx context.Context, parent names.SpecRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)"
+   },
+   {
+    "rid": "TAB/awslabs__aws-embedded-metrics-node-21/r2",
+    "file": "/root/.ss-eval/runs/r2-40/src/logger/MetricsContext.ts",
+    "err": "<tool_use_error>String to replace not found in file.\nString:       const key = Object.keys(dimensionSet).sort().join(\"\u0000\");</tool_use_error>",
+    "old": "      const key = Object.keys(dimensionSet).sort().join(\"\u0000\");"
+   },
+   {
+    "rid": "TAB/axelrod-python__axelrod-671/r2",
+    "file": "/root/.ss-eval/runs/r2-45/axelrod/result_set.py",
+    "err": "<tool_use_error>String to replace not found in file.\nString:         plist = list(range(self.nplayers))\n        payoff_diffs_means = [[0 for opponent in plist] for player in plist]\n\n        for player",
+    "old": "        plist = list(range(self.nplayers))\n        payoff_diffs_means = [[0 for opponent in plist] for player in plist]\n\n        for player in plist:\n            for opponent in plist:\n               "
+   },
+   {
+    "rid": "TAB/bfgroup__b2-113/r0",
+    "file": "/root/.ss-eval/runs/r0-51/src/build/targets.py",
+    "err": "<tool_use_error>String to replace not found in file.\nString:                 # If this target fails to build, add <build>no to properties\n                # to cause any parent target to fail to build.",
+    "old": "                # If this target fails to build, add <build>no to properties\n                # to cause any parent target to fail to build.  Except that it\n                # - does not work now, since"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r0",
+    "file": "/root/.ss-eval/runs/r0-74/src/Moq/Match.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString: \t\t\t\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);</tool_use_error>",
+    "old": "\t\t\t\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r0",
+    "file": "/root/.ss-eval/runs/r0-74/src/Moq/Match.cs",
+    "err": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "\t\t\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r0",
+    "file": "/root/.ss-eval/runs/r0-74/src/Moq/ExpressionComparer.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString: \t\t\t\tif (x is MemberExpression)\n\t\t\t\t{\n\t\t\t\t\tx = x.Apply(EvaluateCaptures.Rewriter);\n\t\t\t\t}\n\n\t\t\t\tif (y is MemberExpression)\n\t\t\t\t{\n\t\t\t\t\ty = y.Ap",
+    "old": "\t\t\t\tif (x is MemberExpression)\n\t\t\t\t{\n\t\t\t\t\tx = x.Apply(EvaluateCaptures.Rewriter);\n\t\t\t\t}\n\n\t\t\t\tif (y is MemberExpression)\n\t\t\t\t{\n\t\t\t\t\ty = y.Apply(EvaluateCaptures.Rewriter);\n\t\t\t\t}"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r0",
+    "file": "/root/.ss-eval/runs/r0-74/src/Moq/Match.cs",
+    "err": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "this.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r0",
+    "file": "/root/.ss-eval/runs/r0-74/src/Moq/Match.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString: \t\t\tinternal Match(Predicate<T> condition, Expression<Func<T>> renderExpression, Action<T> success = null)\n\t\t\t{\n\t\t\t\tthis.Condition = conditi",
+    "old": "\t\t\tinternal Match(Predicate<T> condition, Expression<Func<T>> renderExpression, Action<T> success = null)\n\t\t\t{\n\t\t\t\tthis.Condition = condition;\n\t\t\t\tthis.RenderExpression = renderExpression.Body.Apply(E"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r0",
+    "file": "/root/.ss-eval/runs/r0-74/src/Moq/SetupCollection.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString: \t\t\t\t\tthis.setups.Add(setup);\n\t\t\t\t\tif (!this.activeSetups.Add(setup.Expectation))\n\t\t\t\t\t{\n\t\t\t\t\t\tthis.MarkOverriddenSetups();\n\t\t\t\t\t}</tool_use",
+    "old": "\t\t\t\t\tthis.setups.Add(setup);\n\t\t\t\t\tif (!this.activeSetups.Add(setup.Expectation))\n\t\t\t\t\t{\n\t\t\t\t\t\tthis.MarkOverriddenSetups();\n\t\t\t\t\t}"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r0",
+    "file": "/root/.ss-eval/runs/r0-74/src/Moq/SetupCollection.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString: this.setups.Add(setup);\n\t\t\t\t\tif (!this.activeSetups.Add(setup.Expectation))</tool_use_error>",
+    "old": "this.setups.Add(setup);\n\t\t\t\t\tif (!this.activeSetups.Add(setup.Expectation))"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r0",
+    "file": "/root/.ss-eval/runs/r0-74/src/Moq/SetupCollection.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString: \t\t\t\t\tthis.setups.Add(setup);\n\t\t\t\t\tif (!this.activeSetups.Add(setup.Expectation))\n\t\t\t\t\t{\n\t\t\t\t\t\tthis.MarkOverriddenSetups();\n\t\t\t\t\t}</tool_use",
+    "old": "\t\t\t\t\tthis.setups.Add(setup);\n\t\t\t\t\tif (!this.activeSetups.Add(setup.Expectation))\n\t\t\t\t\t{\n\t\t\t\t\t\tthis.MarkOverriddenSetups();\n\t\t\t\t\t}"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r0",
+    "file": "/root/.ss-eval/runs/r0-74/src/Moq/SetupCollection.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString: \t\t\t\t\tthis.setups.Add(setup);\n\t\t\t\t\tif (!this.activeSetups.Add(setup.Expectation))</tool_use_error>",
+    "old": "\t\t\t\t\tthis.setups.Add(setup);\n\t\t\t\t\tif (!this.activeSetups.Add(setup.Expectation))"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r1",
+    "file": "/root/.ss-eval/runs/r1-77/src/Moq/Match.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString: \t\t\t\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);</tool_use_error>",
+    "old": "\t\t\t\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r1",
+    "file": "/root/.ss-eval/runs/r1-77/src/Moq/Match.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString: \t\t\t\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);</tool_use_error>",
+    "old": "\t\t\t\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r1",
+    "file": "/root/.ss-eval/runs/r1-77/src/Moq/Match.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString:         this.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);</tool_use_error>",
+    "old": "        this.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r2",
+    "file": "/root/.ss-eval/runs/r2-79/src/Moq/Match.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString: \t\t\t\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);</tool_use_error>",
+    "old": "\t\t\t\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+   },
+   {
+    "rid": "TAB/devlooped__moq-1262/r2",
+    "file": "/root/.ss-eval/runs/r2-79/src/Moq/Match.cs",
+    "err": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "\t\t\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+   },
+   {
+    "rid": "TAB/hotmeteor__spectator-181/r1",
+    "file": "/root/.ss-eval/runs/r1-100/src/Assertions.php",
+    "err": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "        return fn ($status = null) => $this->runAssertion(function () use ($status) {\n            $exception = app('spectator')->responseException;\n"
+   },
+   {
+    "rid": "TAB/mathnet__mathnet-numerics-1072/r1",
+    "file": "/root/.ss-eval/runs/r1-120/src/Numerics/SpecialFunctions/Stability.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString:             return 0f;\n        }\n    }\n}</tool_use_error>",
+    "old": "            return 0f;\n        }\n    }\n}"
+   },
+   {
+    "rid": "TAB/protofire__solhint-224/r0",
+    "file": "",
+    "err": "<tool_use_error>InputValidationError: Edit was called with input that could not be parsed as JSON.\nYou sent (first 200 of 201633 bytes): {\"file_path\":\"/root/.ss-eval/runs/r0-126/lib/rules/order/layout",
+    "old": ""
+   },
+   {
+    "rid": "TAB/protofire__solhint-224/r1",
+    "file": "/root/.ss-eval/runs/r1-130/lib/rules/order/index.js",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "    new VisibilityModifierOrderChecker(reporter, tokens),\n    new OrderingChecker(reporter)\n"
+   },
+   {
+    "rid": "NONE/accenture__sfmc-devtools-1974/r0",
+    "file": "/root/.ss-eval/runs/r0-2/lib/index.js",
+    "err": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "        /** @typedef {string[]} */\n        let selectedTypesArr;\n\n        /** @typedef {TypeKeyCombo} */\n        let selectedTypesObj;\n        if (selectedTypes) {"
+   },
+   {
+    "rid": "NONE/accenture__sfmc-devtools-1974/r1",
+    "file": "/root/.ss-eval/runs/r1-4/lib/index.js",
+    "err": "<tool_use_error>Found 3 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "        /** @typedef {string[]} */\n        let selectedTypesArr;\n\n        /** @typedef {TypeKeyCombo} */\n        let selectedTypesObj;\n"
+   },
+   {
+    "rid": "NONE/aio-libs__aiohttp-8038/r2",
+    "file": "/root/.ss-eval/runs/r2-13/aiohttp/client.py",
+    "err": "<tool_use_error>String to replace not found in file.\nString:                     except ClientError:\n        }\n</tool_use_error>",
+    "old": "                    except ClientError:\n        }\n"
+   },
+   {
+    "rid": "NONE/apigee__registry-961/r1",
+    "file": "/root/.ss-eval/runs/r1-10/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "\tif err := token.ValidateOrder(opts.Order); err != nil {\n\t\treturn ArtifactList{}, status.Errorf(codes.InvalidArgument, \"invalid order_by %q: %s\", opts.Order, err)\n\t} else {\n\t\ttoken.Order = opts.Order\n"
+   },
+   {
+    "rid": "NONE/apigee__registry-961/r1",
+    "file": "/root/.ss-eval/runs/r1-10/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListSpecRevisionArtifacts(ctx context.Context, parent names.SpecRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)"
+   },
+   {
+    "rid": "NONE/apigee__registry-961/r1",
+    "file": "/root/.ss-eval/runs/r1-10/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListDeploymentRevisionArtifacts(ctx context.Context, parent names.DeploymentRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)"
+   },
+   {
+    "rid": "NONE/apigee__registry-961/r1",
+    "file": "/root/.ss-eval/runs/r1-10/server/registry/internal/storage/list.go",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "func (c *Client) ListDeploymentRevisionArtifacts(ctx context.Context, parent names.DeploymentRevision, opts PageOptions) (ArtifactList, error) {\n\ttoken, err := decodeToken(opts.Token)"
+   },
+   {
+    "rid": "NONE/awslabs__aws-embedded-metrics-node-21/r1",
+    "file": "/root/.ss-eval/runs/r1-22/src/serializers/LogSerializer.ts",
+    "err": "<tool_use_error>String to replace not found in file.\nString:     context.getDimensions().forEach(d => {\n      // we can only take the first 10 defined dimensions\n      // the reason for this is in the",
+    "old": "    context.getDimensions().forEach(d => {\n      // we can only take the first 10 defined dimensions\n      // the reason for this is in the serializer because it is\n      // possible that other sinks "
+   },
+   {
+    "rid": "NONE/awslabs__aws-embedded-metrics-node-21/r1",
+    "file": "/root/.ss-eval/runs/r1-22/src/serializers/LogSerializer.ts",
+    "err": "<tool_use_error>String to replace not found in file.\nString:     context.getDimensions().forEach(d => {\n      // we can only take the first 10 defined dimensions\n      // the reason for this do this i",
+    "old": "    context.getDimensions().forEach(d => {\n      // we can only take the first 10 defined dimensions\n      // the reason for this do this in the serializer is because\n      // it is possible that othe"
+   },
+   {
+    "rid": "NONE/awslabs__aws-embedded-metrics-node-21/r2",
+    "file": "",
+    "err": "<tool_use_error>InputValidationError: Edit was called with input that could not be parsed as JSON.\nYou sent (first 200 of 51153 bytes): {\"file_path\":\"/root/.ss-eval/runs/r2-25/src/logger/MetricsContex",
+    "old": ""
+   },
+   {
+    "rid": "NONE/awslabs__aws-embedded-metrics-node-21/r2",
+    "file": "",
+    "err": "<tool_use_error>InputValidationError: Edit was called with input that could not be parsed as JSON.\nYou sent (first 200 of 128091 bytes): {\"file_path\":\"/root/.ss-eval/runs/r2-25/src/logger/MetricsConte",
+    "old": ""
+   },
+   {
+    "rid": "NONE/bfgroup__b2-259/r1",
+    "file": "/root/.ss-eval/r1-31/src/build/configure.jam",
+    "err": "<tool_use_error>File does not exist. Note: your current working directory is /root/.ss-eval/runs/r1-31.</tool_use_error>",
+    "old": "    rule check ( properties * )\n    {\n        local choosen ;\n        if [ configure.builds $(self.target) : $(properties) : $(self.message) ]\n"
+   },
+   {
+    "rid": "NONE/devlooped__moq-1262/r0",
+    "file": "/root/.ss-eval/runs/r0-39/src/Moq/ExpressionComparer.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString: \t\tpublic static readonly ExpressionComparer Default = new ExpressionComparer();\n\n\t\tprivate ExpressionComparer()\n\t\t{\n\t\t}\n</tool_use_error>",
+    "old": "\t\tpublic static readonly ExpressionComparer Default = new ExpressionComparer();\n\n\t\tprivate ExpressionComparer()\n\t\t{\n\t\t}\n"
+   },
+   {
+    "rid": "NONE/devlooped__moq-1262/r0",
+    "file": "/root/.ss-eval/runs/r0-39/src/Moq/ExpressionComparer.cs",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "\t\tprivate readonly bool evaluateCaptures;\n\n\t\tprivate ExpressionComparer(bool evaluateCaptures)\n"
+   },
+   {
+    "rid": "NONE/devlooped__moq-1262/r1",
+    "file": "/root/.ss-eval/runs/r1-40/src/Moq/Match.cs",
+    "err": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to ",
+    "old": "\t\t\tthis.RenderExpression = renderExpression.Body.Apply(EvaluateCaptures.Rewriter);"
+   },
+   {
+    "rid": "NONE/devlooped__moq-1262/r1",
+    "file": "/root/.ss-eval/runs/r1-40/src/Moq/Match.cs",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "\t\t\tthis.RenderExpression = renderExpression.Body;"
+   },
+   {
+    "rid": "NONE/devlooped__moq-1262/r1",
+    "file": "/root/.ss-eval/runs/r1-40/src/Moq/ExpressionComparer.cs",
+    "err": "<tool_use_error>String to replace not found in file.\nString: \t\t\tif (x is MemberExpression)\n\t\t\t{\n\t\t\t\tx = x.Apply(EvaluateCaptures.Rewriter);\n\t\t\t}\n\n\t\t\tif (y is MemberExpression)\n\t\t\t{\n\t\t\t\ty = y.Apply(Eva",
+    "old": "\t\t\tif (x is MemberExpression)\n\t\t\t{\n\t\t\t\tx = x.Apply(EvaluateCaptures.Rewriter);\n\t\t\t}\n\n\t\t\tif (y is MemberExpression)\n\t\t\t{\n\t\t\t\ty = y.Apply(EvaluateCaptures.Rewriter);\n\t\t\t}"
+   },
+   {
+    "rid": "NONE/devlooped__moq-1262/r1",
+    "file": "/root/.ss-eval/runs/r1-40/src/Moq/ExpressionComparer.cs",
+    "err": "<tool_use_error>No changes to make: old_string and new_string are exactly the same.</tool_use_error>",
+    "old": "\t\t\t// Before actually comparing two nodes, make sure that captures variables have been\n\t\t\t// evaluated to their current values (as we don't want to compare their identities):\n\n\t\t\tif (this.evaluateCapt"
+   }
+  ]
+ },
+ "perForm": {
+  "TAB": {
+   "edits": 255,
+   "editFail": 42,
+   "editFailRollouts": 17,
+   "nativeRead": 140,
+   "nativeReadAfterSSRead": 51,
+   "breHint": 17,
+   "breZero": 1,
+   "enoent": 9
+  },
+  "NONE": {
+   "edits": 266,
+   "editFail": 41,
+   "editFailRollouts": 15,
+   "nativeRead": 70,
+   "nativeReadAfterSSRead": 27,
+   "breHint": 35,
+   "breZero": 6,
+   "enoent": 27
+  },
+  "PIPE": {
+   "edits": 202,
+   "editFail": 25,
+   "editFailRollouts": 15,
+   "nativeRead": 124,
+   "nativeReadAfterSSRead": 69,
+   "breHint": 35,
+   "breZero": 6,
+   "enoent": 15
+  }
+ },
+ "nativeReadAfterSSRead": {
+  "total": 147,
+  "sameSpan": 108,
+  "ex": [
+   {
+    "rid": "TAB/asynkron__protoactor-dotnet-1909/r0",
+    "file": "src/Proto.Actor/Utils/TypedDictionary.cs",
+    "ssSpan": [
+     1,
+     70
+    ],
+    "nativeOffsetLimit": [
+     1,
+     70
+    ]
+   },
+   {
+    "rid": "TAB/asynkron__protoactor-dotnet-1909/r1",
+    "file": "src/Proto.Actor/Utils/TypedDictionary.cs",
+    "ssSpan": [
+     1,
+     70
+    ],
+    "nativeOffsetLimit": [
+     0,
+     4000
+    ]
+   },
+   {
+    "rid": "TAB/asynkron__protoactor-dotnet-1909/r1",
+    "file": "src/Proto.Actor/Utils/TypedDictionary.cs",
+    "ssSpan": [
+     1,
+     70
+    ],
+    "nativeOffsetLimit": [
+     0,
+     200
+    ]
+   },
+   {
+    "rid": "TAB/awslabs__aws-embedded-metrics-node-21/r0",
+    "file": "src/logger/MetricsContext.ts",
+    "ssSpan": [
+     80,
+     104
+    ],
+    "nativeOffsetLimit": [
+     0,
+     220
+    ]
+   },
+   {
+    "rid": "TAB/awslabs__aws-embedded-metrics-node-21/r0",
+    "file": "src/logger/MetricsLogger.ts",
+    "ssSpan": [
+     84,
+     105
+    ],
+    "nativeOffsetLimit": [
+     0,
+     150
+    ]
+   },
+   {
+    "rid": "TAB/awslabs__aws-embedded-metrics-node-21/r0",
+    "file": "src/logger/__tests__/MetricsContext.test.ts",
+    "ssSpan": [
+     1,
+     144
+    ],
+    "nativeOffsetLimit": [
+     0,
+     220
+    ]
+   },
+   {
+    "rid": "TAB/awslabs__aws-embedded-metrics-node-21/r0",
+    "file": "src/logger/MetricsContext.ts",
+    "ssSpan": [
+     80,
+     104
+    ],
+    "nativeOffsetLimit": [
+     0,
+     220
+    ]
+   },
+   {
+    "rid": "TAB/awslabs__aws-embedded-metrics-node-21/r0",
+    "file": "src/logger/MetricsLogger.ts",
+    "ssSpan": [
+     84,
+     105
+    ],
+    "nativeOffsetLimit": [
+     0,
+     150
+    ]
+   },
+   {
+    "rid": "TAB/awslabs__aws-embedded-metrics-node-21/r0",
+    "file": "src/logger/__tests__/MetricsContext.test.ts",
+    "ssSpan": [
+     1,
+     144
+    ],
+    "nativeOffsetLimit": [
+     0,
+     220
+    ]
+   },
+   {
+    "rid": "TAB/awslabs__aws-embedded-metrics-node-21/r0",
+    "file": "src/serializers/LogSerializer.ts",
+    "ssSpan": [
+     24,
+     50
+    ],
+    "nativeOffsetLimit": [
+     0,
+     140
+    ]
+   }
+  ]
+ }
+}

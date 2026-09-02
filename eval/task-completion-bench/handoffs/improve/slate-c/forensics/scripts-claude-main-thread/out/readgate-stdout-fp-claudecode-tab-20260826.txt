@@ -1,0 +1,117 @@
+run=fp-claudecode-tab-20260826 rollouts=132 matchedByCost=132 (unmatched: none)
+bytes-per-token from 299 native single-Read requests: median 4.37 (p25 3.82, p75 4.96)
+output tokens of a single-Read request: median 103 (n=406)
+{
+ "run": "fp-claudecode-tab-20260826",
+ "BPT": 4.372230428360414,
+ "READ_REQ_OUT": 103,
+ "gatedModelSet_2_1_218": [
+  "claude-opus-4-6",
+  "claude-haiku-4-5",
+  "claude-opus-4-5",
+  "claude-opus-4-1",
+  "claude-opus-4-0",
+  "claude-sonnet-4-5",
+  "claude-sonnet-4-0",
+  "claude-3-7-sonnet",
+  "claude-3-5-sonnet",
+  "claude-3-5-haiku"
+ ],
+ "summary": {
+  "native": {
+   "rollouts": 66,
+   "requests": 1604,
+   "cellRealMainOnly": 1.0917941199999999,
+   "meanRequestUsd": 0.0006806696508728178,
+   "perCall": {
+    "edits": 308,
+    "byTool": {
+     "Edit": 302,
+     "Write": 6
+    },
+    "noPriorRead": 4,
+    "noPriorReadButSsRead": 0,
+    "noPriorReadButCat": 0,
+    "noPriorReadNothing": 4,
+    "noPriorReadButSubRead": 0,
+    "gateErrorsObserved": 0
+   },
+   "firstEdits": 92,
+   "firstEditsWithoutPriorRead": 4,
+   "gatedEditFiles": 0,
+   "gatedWriteFiles": 0,
+   "gatedFilesPerRollout": 0,
+   "rolloutsWithAnyGatedFile": 0,
+   "gatedEditFilesWithSsRead": 0,
+   "gatedEditFilesWithCatOnly": 0,
+   "gatedEditFilesWithNothing": 0,
+   "readTokMean": 0,
+   "readSizeSource": {
+    "native": 0,
+    "golden": 0,
+    "median": 0
+   },
+   "tax": {
+    "immediateTotal": 0,
+    "lifetimeTotal": 0,
+    "simpleTotal": 0,
+    "immediatePerRollout": 0,
+    "lifetimePerRollout": 0,
+    "simplePerRollout": 0,
+    "immediatePctOfArm": 0,
+    "lifetimePctOfArm": 0,
+    "simplePctOfArm": 0
+   },
+   "readsAfterSsRead": 0,
+   "reads": 690
+  },
+  "sweet": {
+   "rollouts": 66,
+   "requests": 1529,
+   "cellRealMainOnly": 1.0767012550000004,
+   "meanRequestUsd": 0.000704186563113146,
+   "perCall": {
+    "edits": 245,
+    "byTool": {
+     "Edit": 241,
+     "Write": 4
+    },
+    "noPriorRead": 98,
+    "noPriorReadButSsRead": 92,
+    "noPriorReadButCat": 0,
+    "noPriorReadNothing": 6,
+    "noPriorReadButSubRead": 0,
+    "gateErrorsObserved": 0
+   },
+   "firstEdits": 81,
+   "firstEditsWithoutPriorRead": 72,
+   "gatedEditFiles": 68,
+   "gatedWriteFiles": 0,
+   "gatedFilesPerRollout": 1.0303030303030303,
+   "rolloutsWithAnyGatedFile": 56,
+   "gatedEditFilesWithSsRead": 66,
+   "gatedEditFilesWithCatOnly": 0,
+   "gatedEditFilesWithNothing": 2,
+   "readTokMean": 1313.8108627669021,
+   "readSizeSource": {
+    "native": 68,
+    "golden": 0,
+    "median": 0
+   },
+   "tax": {
+    "immediateTotal": 0.08379157233351868,
+    "lifetimeTotal": 0.10095092607543574,
+    "simpleTotal": 0.09576937258338795,
+    "immediatePerRollout": 0.001269569277780586,
+    "lifetimePerRollout": 0.0015295594859914506,
+    "simplePerRollout": 0.0014510510997483024,
+    "immediatePctOfArm": 7.7822489705855,
+    "lifetimePctOfArm": 9.375945798023213,
+    "simplePctOfArm": 8.894702419882284
+   },
+   "readsAfterSsRead": 16,
+   "reads": 51
+  }
+ }
+}
+wrote /tmp/wf-slatec/claude-main-thread/out/readgate-census-fp-claudecode-tab-20260826.json

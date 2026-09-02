@@ -1,0 +1,1869 @@
+{
+ "aio-libs__aiohttp-8038": {
+  "native/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "aiohttp/client.py",
+    "aiohttp/client_proto.py",
+    "aiohttp/connector.py"
+   ],
+   "adds": 38,
+   "dels": 1,
+   "calls": 34,
+   "edits": 4,
+   "editFail": 0,
+   "runTests": 5,
+   "ss": {},
+   "native": {
+    "hz:glob": 2,
+    "hz:grep": 5,
+    "hz:read": 10
+   },
+   "exit": "model_stopped"
+  },
+  "native/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "aiohttp/client.py",
+    "aiohttp/client_proto.py",
+    "aiohttp/connector.py"
+   ],
+   "adds": 28,
+   "dels": 1,
+   "calls": 35,
+   "edits": 5,
+   "editFail": 1,
+   "runTests": 3,
+   "ss": {},
+   "native": {
+    "hz:glob": 2,
+    "hz:grep": 7,
+    "hz:read": 12
+   },
+   "exit": "model_stopped"
+  },
+  "native/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "aiohttp/client_proto.py"
+   ],
+   "adds": 1,
+   "dels": 0,
+   "calls": 25,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {},
+   "native": {
+    "hz:glob": 3,
+    "hz:grep": 4,
+    "hz:read": 10
+   },
+   "exit": "model_stopped"
+  },
+  "none/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "aiohttp/connector.py"
+   ],
+   "adds": 1,
+   "dels": 1,
+   "calls": 25,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 1,
+    "ss-find": 1,
+    "ss-semantic": 2,
+    "ss-grep": 4,
+    "ss-read": 9
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "none/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "aiohttp/client_proto.py",
+    "aiohttp/connector.py"
+   ],
+   "adds": 2,
+   "dels": 1,
+   "calls": 25,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 2,
+    "ss-find": 1,
+    "ss-semantic": 1,
+    "ss-grep": 3,
+    "ss-read": 11
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "none/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "aiohttp/client.py",
+    "aiohttp/client_proto.py"
+   ],
+   "adds": 16,
+   "dels": 0,
+   "calls": 27,
+   "edits": 2,
+   "editFail": 0,
+   "runTests": 4,
+   "ss": {
+    "ss-grep": 1,
+    "ss-search": 2,
+    "ss-read": 7,
+    "ss-semantic": 3,
+    "ss-trace": 1,
+    "ss-find": 2
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "pipe/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "aiohttp/client.py",
+    "aiohttp/client_proto.py",
+    "aiohttp/client_reqrep.py",
+    "aiohttp/connector.py"
+   ],
+   "adds": 19,
+   "dels": 1,
+   "calls": 28,
+   "edits": 3,
+   "editFail": 0,
+   "runTests": 7,
+   "ss": {
+    "ss-search": 2,
+    "ss-grep": 4,
+    "ss-read": 8,
+    "ss-find": 1
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "pipe/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "aiohttp/client.py",
+    "aiohttp/client_proto.py"
+   ],
+   "adds": 21,
+   "dels": 0,
+   "calls": 31,
+   "edits": 6,
+   "editFail": 0,
+   "runTests": 4,
+   "ss": {
+    "ss-search": 1,
+    "ss-find": 3,
+    "ss-semantic": 2,
+    "ss-read": 9,
+    "ss-grep": 1
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "pipe/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "aiohttp/client.py",
+    "aiohttp/client_proto.py"
+   ],
+   "adds": 22,
+   "dels": 0,
+   "calls": 44,
+   "edits": 7,
+   "editFail": 0,
+   "runTests": 6,
+   "ss": {
+    "ss-search": 2,
+    "ss-semantic": 1,
+    "ss-trace": 1,
+    "ss-grep": 3,
+    "ss-read": 8,
+    "ss-find": 2
+   },
+   "native": {
+    "hz:glob": 1,
+    "hz:read": 6
+   },
+   "exit": "model_stopped"
+  },
+  "tab/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "aiohttp/client.py",
+    "aiohttp/client_proto.py",
+    "aiohttp/client_reqrep.py"
+   ],
+   "adds": 18,
+   "dels": 0,
+   "calls": 34,
+   "edits": 6,
+   "editFail": 0,
+   "runTests": 5,
+   "ss": {
+    "ss-search": 1,
+    "ss-read": 12,
+    "ss-grep": 5
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "tab/1": {
+   "resolved": true,
+   "f2p": 1,
+   "files": [
+    "aiohttp/client.py",
+    "aiohttp/connector.py"
+   ],
+   "adds": 20,
+   "dels": 2,
+   "calls": 44,
+   "edits": 8,
+   "editFail": 0,
+   "runTests": 8,
+   "ss": {
+    "ss-grep": 4,
+    "ss-read": 15,
+    "ss-find": 4,
+    "ss-search": 1
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "tab/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "aiohttp/connector.py"
+   ],
+   "adds": 1,
+   "dels": 1,
+   "calls": 16,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 1,
+    "ss-grep": 1,
+    "ss-read": 6,
+    "ss-find": 1
+   },
+   "native": {},
+   "exit": "model_stopped"
+  }
+ },
+ "apigee__registry-961": {
+  "native/0": {
+   "resolved": true,
+   "f2p": 1,
+   "files": [
+    "server/registry/internal/storage/list.go"
+   ],
+   "adds": 40,
+   "dels": 0,
+   "calls": 33,
+   "edits": 2,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {},
+   "native": {
+    "hz:glob": 2,
+    "hz:grep": 7,
+    "hz:read": 12
+   },
+   "exit": "model_stopped"
+  },
+  "native/1": {
+   "resolved": true,
+   "f2p": 1,
+   "files": [
+    "server/registry/internal/storage/list.go"
+   ],
+   "adds": 40,
+   "dels": 0,
+   "calls": 29,
+   "edits": 2,
+   "editFail": 1,
+   "runTests": 2,
+   "ss": {},
+   "native": {
+    "hz:glob": 1,
+    "hz:grep": 7,
+    "hz:read": 11
+   },
+   "exit": "model_stopped"
+  },
+  "native/2": {
+   "resolved": true,
+   "f2p": 1,
+   "files": [
+    "server/registry/internal/storage/list.go"
+   ],
+   "adds": 20,
+   "dels": 0,
+   "calls": 29,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {},
+   "native": {
+    "hz:glob": 1,
+    "hz:grep": 8,
+    "hz:read": 12
+   },
+   "exit": "model_stopped"
+  },
+  "none/0": {
+   "resolved": true,
+   "f2p": 1,
+   "files": [
+    "server/registry/internal/storage/list.go"
+   ],
+   "adds": 42,
+   "dels": 0,
+   "calls": 18,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 3,
+    "ss-grep": 2,
+    "ss-read": 5
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "none/1": {
+   "resolved": true,
+   "f2p": 1,
+   "files": [
+    "server/registry/actions_artifacts.go"
+   ],
+   "adds": 34,
+   "dels": 0,
+   "calls": 25,
+   "edits": 2,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 2,
+    "ss-grep": 6,
+    "ss-semantic": 1,
+    "ss-trace": 1,
+    "ss-read": 6
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "none/2": {
+   "resolved": true,
+   "f2p": 1,
+   "files": [
+    "server/registry/internal/storage/list.go"
+   ],
+   "adds": 40,
+   "dels": 0,
+   "calls": 29,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 1,
+    "ss-grep": 3,
+    "ss-trace": 1,
+    "ss-find": 1,
+    "ss-read": 10,
+    "ss-semantic": 4
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "pipe/0": {
+   "resolved": true,
+   "f2p": 1,
+   "files": [
+    "server/registry/internal/storage/list.go"
+   ],
+   "adds": 42,
+   "dels": 0,
+   "calls": 20,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 2,
+    "ss-find": 3,
+    "ss-read": 5
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "pipe/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "cmd/registry/core/list.go"
+   ],
+   "adds": 10,
+   "dels": 0,
+   "calls": 21,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 2,
+    "ss-grep": 8,
+    "ss-read": 6,
+    "ss-trace": 1
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "pipe/2": {
+   "resolved": true,
+   "f2p": 1,
+   "files": [
+    "server/registry/actions_artifacts.go"
+   ],
+   "adds": 26,
+   "dels": 0,
+   "calls": 27,
+   "edits": 4,
+   "editFail": 0,
+   "runTests": 4,
+   "ss": {
+    "ss-search": 2,
+    "ss-grep": 3,
+    "ss-semantic": 1,
+    "ss-read": 5,
+    "ss-find": 1
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "tab/0": {
+   "resolved": true,
+   "f2p": 1,
+   "files": [
+    "server/registry/internal/storage/list.go"
+   ],
+   "adds": 42,
+   "dels": 0,
+   "calls": 27,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 2,
+    "ss-find": 1,
+    "ss-read": 8,
+    "ss-grep": 8
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "tab/1": {
+   "resolved": true,
+   "f2p": 1,
+   "files": [
+    "server/registry/internal/storage/list.go"
+   ],
+   "adds": 40,
+   "dels": 0,
+   "calls": 23,
+   "edits": 3,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 2,
+    "ss-grep": 4,
+    "ss-read": 5,
+    "ss-trace": 1
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "tab/2": {
+   "resolved": true,
+   "f2p": 1,
+   "files": [
+    "server/registry/internal/storage/list.go"
+   ],
+   "adds": 12,
+   "dels": 0,
+   "calls": 18,
+   "edits": 2,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 2,
+    "ss-grep": 2,
+    "ss-read": 4,
+    "ss-trace": 1,
+    "ss-find": 2
+   },
+   "native": {},
+   "exit": "model_stopped"
+  }
+ },
+ "bfgroup__b2-113": {
+  "native/0": {
+   "resolved": true,
+   "f2p": 1,
+   "files": [
+    "src/tools/stage.jam"
+   ],
+   "adds": 6,
+   "dels": 0,
+   "calls": 27,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {},
+   "native": {
+    "hz:glob": 4,
+    "hz:grep": 5,
+    "hz:read": 9
+   },
+   "exit": "model_stopped"
+  },
+  "native/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/alias.py",
+    "src/build/targets.py",
+    "src/tools/stage.py"
+   ],
+   "adds": 22,
+   "dels": 2,
+   "calls": 49,
+   "edits": 4,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {},
+   "native": {
+    "hz:glob": 4,
+    "hz:grep": 10,
+    "hz:read": 22
+   },
+   "exit": "model_stopped"
+  },
+  "native/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/tools/stage.jam"
+   ],
+   "adds": 7,
+   "dels": 0,
+   "calls": 35,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {},
+   "native": {
+    "hz:glob": 2,
+    "hz:grep": 11,
+    "hz:read": 13
+   },
+   "exit": "model_stopped"
+  },
+  "none/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/targets.py"
+   ],
+   "adds": 1,
+   "dels": 10,
+   "calls": 31,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 4,
+    "ss-grep": 7,
+    "ss-semantic": 1,
+    "ss-read": 5,
+    "ss-find": 1
+   },
+   "native": {
+    "hz:glob": 1,
+    "hz:read": 4
+   },
+   "exit": "model_stopped"
+  },
+  "none/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/targets.py"
+   ],
+   "adds": 4,
+   "dels": 10,
+   "calls": 22,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 2,
+    "ss-read": 6,
+    "ss-grep": 4
+   },
+   "native": {
+    "hz:glob": 2
+   },
+   "exit": "model_stopped"
+  },
+  "none/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/alias.py"
+   ],
+   "adds": 5,
+   "dels": 2,
+   "calls": 29,
+   "edits": 2,
+   "editFail": 1,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 4,
+    "ss-grep": 6,
+    "ss-semantic": 1,
+    "ss-read": 9,
+    "ss-find": 3
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "pipe/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/tools/stage.py"
+   ],
+   "adds": 11,
+   "dels": 1,
+   "calls": 40,
+   "edits": 3,
+   "editFail": 0,
+   "runTests": 4,
+   "ss": {
+    "ss-search": 5,
+    "ss-read": 10,
+    "ss-grep": 5,
+    "ss-find": 4,
+    "ss-semantic": 1,
+    "ss-trace": 1
+   },
+   "native": {
+    "hz:glob": 1
+   },
+   "exit": "model_stopped"
+  },
+  "pipe/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/tools/stage.py"
+   ],
+   "adds": 10,
+   "dels": 1,
+   "calls": 34,
+   "edits": 4,
+   "editFail": 1,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 5,
+    "ss-read": 8,
+    "ss-find": 3,
+    "ss-grep": 5
+   },
+   "native": {
+    "hz:glob": 1
+   },
+   "exit": "model_stopped"
+  },
+  "pipe/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/tools/stage.py"
+   ],
+   "adds": 2,
+   "dels": 3,
+   "calls": 38,
+   "edits": 2,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 4,
+    "ss-grep": 9,
+    "ss-read": 13,
+    "ss-find": 1,
+    "ss-semantic": 1
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "tab/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/targets.py"
+   ],
+   "adds": 4,
+   "dels": 10,
+   "calls": 43,
+   "edits": 2,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 5,
+    "ss-grep": 10,
+    "ss-semantic": 1,
+    "ss-read": 6,
+    "ss-find": 3
+   },
+   "native": {
+    "hz:glob": 3,
+    "hz:read": 4,
+    "hz:grep": 1
+   },
+   "exit": "model_stopped"
+  },
+  "tab/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/targets.py"
+   ],
+   "adds": 4,
+   "dels": 10,
+   "calls": 30,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 4,
+    "ss-grep": 5,
+    "ss-read": 4,
+    "ss-find": 2
+   },
+   "native": {
+    "hz:glob": 2,
+    "hz:read": 5
+   },
+   "exit": "model_stopped"
+  },
+  "tab/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/tools/stage.py"
+   ],
+   "adds": 9,
+   "dels": 1,
+   "calls": 40,
+   "edits": 3,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 2,
+    "ss-grep": 9,
+    "ss-read": 14,
+    "ss-find": 3
+   },
+   "native": {},
+   "exit": "model_stopped"
+  }
+ },
+ "bfgroup__b2-259": {
+  "native/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/targets.jam"
+   ],
+   "adds": 8,
+   "dels": 0,
+   "calls": 30,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {},
+   "native": {
+    "hz:glob": 4,
+    "hz:grep": 8,
+    "hz:read": 10
+   },
+   "exit": "model_stopped"
+  },
+  "native/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/targets.jam"
+   ],
+   "adds": 9,
+   "dels": 0,
+   "calls": 31,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {},
+   "native": {
+    "hz:glob": 2,
+    "hz:grep": 8,
+    "hz:read": 12
+   },
+   "exit": "model_stopped"
+  },
+  "native/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/configure.jam"
+   ],
+   "adds": 12,
+   "dels": 0,
+   "calls": 28,
+   "edits": 2,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {},
+   "native": {
+    "hz:glob": 1,
+    "hz:grep": 6,
+    "hz:read": 12
+   },
+   "exit": "model_stopped"
+  },
+  "none/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/configure.jam"
+   ],
+   "adds": 9,
+   "dels": 1,
+   "calls": 32,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 6,
+    "ss-grep": 7,
+    "ss-read": 7,
+    "ss-find": 1
+   },
+   "native": {
+    "hz:glob": 2
+   },
+   "exit": "model_stopped"
+  },
+  "none/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/property.jam"
+   ],
+   "adds": 18,
+   "dels": 13,
+   "calls": 47,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-grep": 16,
+    "ss-search": 3,
+    "ss-read": 11,
+    "ss-find": 2,
+    "ss-semantic": 2
+   },
+   "native": {
+    "hz:glob": 5
+   },
+   "exit": "model_stopped"
+  },
+  "none/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/configure.jam"
+   ],
+   "adds": 7,
+   "dels": 0,
+   "calls": 30,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 5,
+    "ss-grep": 8,
+    "ss-find": 1
+   },
+   "native": {
+    "hz:glob": 2,
+    "hz:grep": 1,
+    "hz:read": 5
+   },
+   "exit": "model_stopped"
+  },
+  "pipe/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/configure.jam"
+   ],
+   "adds": 4,
+   "dels": 0,
+   "calls": 30,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 5,
+    "ss-grep": 7,
+    "ss-read": 6,
+    "ss-find": 1
+   },
+   "native": {
+    "hz:glob": 3
+   },
+   "exit": "model_stopped"
+  },
+  "pipe/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/configure.jam"
+   ],
+   "adds": 10,
+   "dels": 1,
+   "calls": 33,
+   "edits": 2,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 3,
+    "ss-grep": 8,
+    "ss-read": 1,
+    "ss-find": 1
+   },
+   "native": {
+    "hz:glob": 3,
+    "hz:read": 6
+   },
+   "exit": "model_stopped"
+  },
+  "pipe/2": {
+   "resolved": false,
+   "f2p": null,
+   "files": [
+    "src/build/configure.jam"
+   ],
+   "adds": 4,
+   "dels": 0,
+   "calls": 23,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-grep": 3,
+    "ss-search": 4,
+    "ss-read": 4,
+    "ss-find": 3
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "tab/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/configure.jam"
+   ],
+   "adds": 10,
+   "dels": 0,
+   "calls": 27,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 4,
+    "ss-grep": 5,
+    "ss-find": 1
+   },
+   "native": {
+    "hz:glob": 3,
+    "hz:read": 6
+   },
+   "exit": "model_stopped"
+  },
+  "tab/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/targets.jam"
+   ],
+   "adds": 15,
+   "dels": 2,
+   "calls": 47,
+   "edits": 5,
+   "editFail": 0,
+   "runTests": 5,
+   "ss": {
+    "ss-search": 4,
+    "ss-grep": 12,
+    "ss-find": 4,
+    "ss-read": 8
+   },
+   "native": {
+    "hz:glob": 3
+   },
+   "exit": "model_stopped"
+  },
+  "tab/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/build/configure.jam"
+   ],
+   "adds": 5,
+   "dels": 1,
+   "calls": 34,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 3,
+    "ss-grep": 12,
+    "ss-read": 6,
+    "ss-find": 2,
+    "ss-trace": 1
+   },
+   "native": {
+    "hz:glob": 2
+   },
+   "exit": "model_stopped"
+  }
+ },
+ "devlooped__moq-1262": {
+  "native/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/Moq/MethodExpectation.cs"
+   ],
+   "adds": 13,
+   "dels": 0,
+   "calls": 34,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {},
+   "native": {
+    "hz:glob": 3,
+    "hz:grep": 8,
+    "hz:read": 15
+   },
+   "exit": "model_stopped"
+  },
+  "native/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/Moq/Interception/InterceptionAspects.cs",
+    "src/Moq/Match.cs",
+    "src/Moq/MethodExpectation.cs",
+    "src/Moq/SetupCollection.cs"
+   ],
+   "adds": 101,
+   "dels": 1,
+   "calls": 61,
+   "edits": 9,
+   "editFail": 0,
+   "runTests": 10,
+   "ss": {},
+   "native": {
+    "hz:glob": 3,
+    "hz:grep": 9,
+    "hz:read": 24
+   },
+   "exit": "model_stopped"
+  },
+  "native/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/Moq/Match.cs",
+    "src/Moq/MethodExpectation.cs",
+    "src/Moq/SetupCollection.cs"
+   ],
+   "adds": 43,
+   "dels": 4,
+   "calls": 60,
+   "edits": 5,
+   "editFail": 1,
+   "runTests": 6,
+   "ss": {},
+   "native": {
+    "hz:glob": 3,
+    "hz:grep": 14,
+    "hz:read": 26
+   },
+   "exit": "model_stopped"
+  },
+  "none/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/Moq/MethodExpectation.cs"
+   ],
+   "adds": 16,
+   "dels": 0,
+   "calls": 60,
+   "edits": 6,
+   "editFail": 0,
+   "runTests": 9,
+   "ss": {
+    "ss-search": 2,
+    "ss-grep": 11,
+    "ss-read": 25,
+    "ss-trace": 1
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "none/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/Moq/ExpressionComparer.cs",
+    "src/Moq/Interception/InterceptionAspects.cs",
+    "src/Moq/Match.cs",
+    "src/Moq/MethodExpectation.cs"
+   ],
+   "adds": 44,
+   "dels": 5,
+   "calls": 55,
+   "edits": 5,
+   "editFail": 1,
+   "runTests": 5,
+   "ss": {
+    "ss-search": 3,
+    "ss-trace": 1,
+    "ss-read": 26,
+    "ss-grep": 7,
+    "ss-find": 2
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "none/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/Moq/MethodExpectation.cs"
+   ],
+   "adds": 9,
+   "dels": 1,
+   "calls": 48,
+   "edits": 8,
+   "editFail": 1,
+   "runTests": 8,
+   "ss": {
+    "ss-search": 3,
+    "ss-grep": 3,
+    "ss-read": 17,
+    "ss-find": 3,
+    "ss-trace": 1
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "pipe/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/Moq/Interception/InterceptionAspects.cs",
+    "src/Moq/Match.cs"
+   ],
+   "adds": 62,
+   "dels": 2,
+   "calls": 59,
+   "edits": 9,
+   "editFail": 0,
+   "runTests": 13,
+   "ss": {
+    "ss-search": 3,
+    "ss-read": 18,
+    "ss-find": 2,
+    "ss-grep": 6
+   },
+   "native": {
+    "hz:read": 3
+   },
+   "exit": "model_stopped"
+  },
+  "pipe/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/Moq/MethodExpectation.cs"
+   ],
+   "adds": 19,
+   "dels": 0,
+   "calls": 32,
+   "edits": 4,
+   "editFail": 0,
+   "runTests": 5,
+   "ss": {
+    "ss-search": 3,
+    "ss-read": 10,
+    "ss-grep": 8,
+    "ss-semantic": 1,
+    "ss-find": 2
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "pipe/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/Moq/Match.cs"
+   ],
+   "adds": 5,
+   "dels": 1,
+   "calls": 33,
+   "edits": 3,
+   "editFail": 0,
+   "runTests": 5,
+   "ss": {
+    "ss-search": 4,
+    "ss-read": 10,
+    "ss-find": 3,
+    "ss-grep": 4
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "tab/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/Moq/ExpressionComparer.cs",
+    "src/Moq/Match.cs",
+    "src/Moq/MethodExpectation.cs"
+   ],
+   "adds": 13,
+   "dels": 4,
+   "calls": 29,
+   "edits": 2,
+   "editFail": 0,
+   "runTests": 5,
+   "ss": {
+    "ss-search": 2,
+    "ss-read": 12,
+    "ss-trace": 1,
+    "ss-find": 1,
+    "ss-grep": 4
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "tab/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/Moq/Match.cs"
+   ],
+   "adds": 5,
+   "dels": 1,
+   "calls": 60,
+   "edits": 8,
+   "editFail": 0,
+   "runTests": 11,
+   "ss": {
+    "ss-search": 5,
+    "ss-grep": 11,
+    "ss-read": 19
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "tab/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/Moq/ExpressionComparer.cs",
+    "src/Moq/MethodExpectation.cs"
+   ],
+   "adds": 12,
+   "dels": 4,
+   "calls": 53,
+   "edits": 4,
+   "editFail": 0,
+   "runTests": 6,
+   "ss": {
+    "ss-search": 7,
+    "ss-read": 22,
+    "ss-grep": 6,
+    "ss-find": 1
+   },
+   "native": {},
+   "exit": "model_stopped"
+  }
+ },
+ "gitbookio__markup-it-56": {
+  "native/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/markdown/inlines/html.js"
+   ],
+   "adds": 1,
+   "dels": 1,
+   "calls": 42,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {},
+   "native": {
+    "hz:glob": 3,
+    "hz:grep": 3,
+    "hz:read": 23
+   },
+   "exit": "model_stopped"
+  },
+  "native/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/markdown/inlines/html.js"
+   ],
+   "adds": 2,
+   "dels": 1,
+   "calls": 37,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {},
+   "native": {
+    "hz:glob": 4,
+    "hz:grep": 3,
+    "hz:read": 20
+   },
+   "exit": "model_stopped"
+  },
+  "native/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/markdown/re/inline.js"
+   ],
+   "adds": 1,
+   "dels": 1,
+   "calls": 51,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {},
+   "native": {
+    "hz:glob": 3,
+    "hz:grep": 3,
+    "hz:read": 33
+   },
+   "exit": "model_stopped"
+  },
+  "none/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/markdown/inlines/html.js"
+   ],
+   "adds": 1,
+   "dels": 24,
+   "calls": 47,
+   "edits": 2,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 2,
+    "ss-grep": 6,
+    "ss-read": 23
+   },
+   "native": {
+    "hz:glob": 2
+   },
+   "exit": "model_stopped"
+  },
+  "none/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/markdown/re/block.js",
+    "src/markdown/re/inline.js"
+   ],
+   "adds": 2,
+   "dels": 2,
+   "calls": 33,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 3,
+    "ss-find": 2,
+    "ss-semantic": 1,
+    "ss-read": 15,
+    "ss-grep": 2
+   },
+   "native": {
+    "hz:glob": 1
+   },
+   "exit": "model_stopped"
+  },
+  "none/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/markdown/inlines/html.js"
+   ],
+   "adds": 1,
+   "dels": 24,
+   "calls": 42,
+   "edits": 2,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 4,
+    "ss-grep": 5,
+    "ss-read": 19
+   },
+   "native": {
+    "hz:glob": 1
+   },
+   "exit": "model_stopped"
+  },
+  "pipe/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/markdown/inlines/html.js"
+   ],
+   "adds": 1,
+   "dels": 1,
+   "calls": 34,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 3,
+    "ss-grep": 3,
+    "ss-read": 15,
+    "ss-find": 2
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "pipe/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/markdown/inlines/html.js"
+   ],
+   "adds": 1,
+   "dels": 1,
+   "calls": 30,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 4,
+    "ss-read": 10,
+    "ss-grep": 3,
+    "ss-find": 1
+   },
+   "native": {
+    "hz:glob": 1
+   },
+   "exit": "model_stopped"
+  },
+  "pipe/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/markdown/inlines/html.js"
+   ],
+   "adds": 3,
+   "dels": 2,
+   "calls": 19,
+   "edits": 1,
+   "editFail": 0,
+   "runTests": 2,
+   "ss": {
+    "ss-search": 3,
+    "ss-read": 7,
+    "ss-grep": 1,
+    "ss-trace": 1
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "tab/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/markdown/blocks/index.js"
+   ],
+   "adds": 24,
+   "dels": 0,
+   "calls": 48,
+   "edits": 3,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {
+    "ss-grep": 3,
+    "ss-search": 2,
+    "ss-read": 26,
+    "ss-find": 2
+   },
+   "native": {
+    "hz:glob": 3
+   },
+   "exit": "model_stopped"
+  },
+  "tab/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/markdown/blocks/index.js"
+   ],
+   "adds": 16,
+   "dels": 0,
+   "calls": 52,
+   "edits": 3,
+   "editFail": 0,
+   "runTests": 4,
+   "ss": {
+    "ss-search": 3,
+    "ss-read": 28,
+    "ss-grep": 3,
+    "ss-find": 1
+   },
+   "native": {
+    "hz:read": 1
+   },
+   "exit": "model_stopped"
+  },
+  "tab/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "src/html/deserializeHtml.js"
+   ],
+   "adds": 7,
+   "dels": 2,
+   "calls": 34,
+   "edits": 2,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 4,
+    "ss-read": 15,
+    "ss-grep": 4,
+    "ss-find": 1
+   },
+   "native": {},
+   "exit": "model_stopped"
+  }
+ },
+ "protofire__solhint-224": {
+  "native/0": {
+   "resolved": false,
+   "f2p": 0.4,
+   "files": [
+    "lib/rules/order/index.js",
+    "lib/rules/order/ordering.js"
+   ],
+   "adds": 50,
+   "dels": 0,
+   "calls": 40,
+   "edits": 4,
+   "editFail": 0,
+   "runTests": 4,
+   "ss": {},
+   "native": {
+    "hz:glob": 4,
+    "hz:grep": 3,
+    "hz:read": 18
+   },
+   "exit": "model_stopped"
+  },
+  "native/1": {
+   "resolved": false,
+   "f2p": 0.4,
+   "files": [
+    "lib/rules/order/index.js",
+    "lib/rules/order/ordering.js"
+   ],
+   "adds": 58,
+   "dels": 1,
+   "calls": 39,
+   "edits": 5,
+   "editFail": 0,
+   "runTests": 6,
+   "ss": {},
+   "native": {
+    "hz:glob": 3,
+    "hz:read": 15,
+    "hz:grep": 3
+   },
+   "exit": "model_stopped"
+  },
+  "native/2": {
+   "resolved": false,
+   "f2p": 0.4,
+   "files": [
+    "lib/load-rules.js",
+    "lib/rules/order/func-order.js",
+    "lib/rules/order/index.js"
+   ],
+   "adds": 61,
+   "dels": 4,
+   "calls": 44,
+   "edits": 4,
+   "editFail": 0,
+   "runTests": 4,
+   "ss": {},
+   "native": {
+    "hz:glob": 4,
+    "hz:grep": 3,
+    "hz:read": 23
+   },
+   "exit": "model_stopped"
+  },
+  "none/0": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "lib/rules/order/index.js"
+   ],
+   "adds": 51,
+   "dels": 0,
+   "calls": 30,
+   "edits": 4,
+   "editFail": 2,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 4,
+    "ss-find": 1,
+    "ss-read": 6,
+    "ss-grep": 3
+   },
+   "native": {
+    "hz:glob": 1,
+    "hz:read": 3
+   },
+   "exit": "model_stopped"
+  },
+  "none/1": {
+   "resolved": false,
+   "f2p": 0.4,
+   "files": [
+    "lib/rules/order/index.js"
+   ],
+   "adds": 50,
+   "dels": 0,
+   "calls": 30,
+   "edits": 3,
+   "editFail": 0,
+   "runTests": 4,
+   "ss": {
+    "ss-search": 3,
+    "ss-find": 2,
+    "ss-read": 8,
+    "ss-grep": 3
+   },
+   "native": {
+    "hz:glob": 1
+   },
+   "exit": "model_stopped"
+  },
+  "none/2": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "lib/rules/order/index.js"
+   ],
+   "adds": 55,
+   "dels": 0,
+   "calls": 29,
+   "edits": 3,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 2,
+    "ss-read": 11,
+    "ss-grep": 4
+   },
+   "native": {
+    "hz:glob": 1
+   },
+   "exit": "model_stopped"
+  },
+  "pipe/0": {
+   "resolved": false,
+   "f2p": 0.4,
+   "files": [
+    "lib/rules/order/index.js"
+   ],
+   "adds": 48,
+   "dels": 0,
+   "calls": 21,
+   "edits": 3,
+   "editFail": 0,
+   "runTests": 3,
+   "ss": {
+    "ss-search": 3,
+    "ss-read": 4,
+    "ss-grep": 3
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "pipe/1": {
+   "resolved": false,
+   "f2p": 0.4,
+   "files": [
+    "lib/rules/order/index.js"
+   ],
+   "adds": 50,
+   "dels": 0,
+   "calls": 34,
+   "edits": 4,
+   "editFail": 1,
+   "runTests": 4,
+   "ss": {
+    "ss-search": 2,
+    "ss-grep": 5,
+    "ss-semantic": 1,
+    "ss-read": 9
+   },
+   "native": {
+    "hz:glob": 1,
+    "hz:read": 1
+   },
+   "exit": "model_stopped"
+  },
+  "pipe/2": {
+   "resolved": false,
+   "f2p": 0.4,
+   "files": [
+    "lib/rules/order/index.js"
+   ],
+   "adds": 56,
+   "dels": 0,
+   "calls": 23,
+   "edits": 3,
+   "editFail": 0,
+   "runTests": 4,
+   "ss": {
+    "ss-search": 1,
+    "ss-grep": 3,
+    "ss-read": 7
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "tab/0": {
+   "resolved": false,
+   "f2p": 0.4,
+   "files": [
+    "lib/rules/order/index.js"
+   ],
+   "adds": 47,
+   "dels": 0,
+   "calls": 23,
+   "edits": 3,
+   "editFail": 0,
+   "runTests": 4,
+   "ss": {
+    "ss-search": 2,
+    "ss-grep": 3,
+    "ss-read": 5
+   },
+   "native": {},
+   "exit": "model_stopped"
+  },
+  "tab/1": {
+   "resolved": false,
+   "f2p": 0,
+   "files": [
+    "lib/rules/order/index.js"
+   ],
+   "adds": 61,
+   "dels": 0,
+   "calls": 33,
+   "edits": 4,
+   "editFail": 0,
+   "runTests": 5,
+   "ss": {
+    "ss-search": 3,
+    "ss-read": 10,
+    "ss-grep": 4
+   },
+   "native": {
+    "hz:glob": 1
+   },
+   "exit": "model_stopped"
+  },
+  "tab/2": {
+   "resolved": false,
+   "f2p": 0.4,
+   "files": [
+    "lib/rules/order/index.js"
+   ],
+   "adds": 46,
+   "dels": 0,
+   "calls": 25,
+   "edits": 3,
+   "editFail": 0,
+   "runTests": 4,
+   "ss": {
+    "ss-search": 2,
+    "ss-grep": 3,
+    "ss-read": 7
+   },
+   "native": {
+    "hz:glob": 1
+   },
+   "exit": "model_stopped"
+  }
+ }
+}

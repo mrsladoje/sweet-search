@@ -1,0 +1,24 @@
+=== cost per rollout by REP INDEX within a cell (inclusive realized) ===
+  codex tab: n=22/22/22 $=0.012150 / 0.012065 / 0.012776 spread=5.9%
+  codex none: n=22/22/22 $=0.012484 / 0.011230 / 0.013243 spread=17.9%
+  codex pipe: n=22/22/22 $=0.012471 / 0.013399 / 0.012393 spread=8.1%
+  opencode tab: n=22/22/22 $=0.008634 / 0.010612 / 0.008549 spread=24.1%
+  opencode none: n=22/22/22 $=0.008020 / 0.008814 / 0.008918 spread=11.2%
+  opencode pipe: n=22/22/22 $=0.009856 / 0.008247 / 0.008188 spread=20.4%
+  claude-code tab: n=22/22/22 $=0.021250 / 0.019618 / 0.016505 spread=28.7%
+  claude-code none: n=22/22/22 $=0.017356 / 0.018629 / 0.016049 spread=16.1%
+  claude-code pipe: n=22/22/22 $=0.015624 / 0.017816 / 0.016749 spread=14.0%
+
+=== solve counts per cell (check vs FRESH-POOL) ===
+  codex tab/native: n=66 solved=41 unresolvedNull=0 f2pNull=0 testResultsNull=0
+  codex tab/sweet: n=66 solved=39 unresolvedNull=0 f2pNull=0 testResultsNull=0
+  codex none/sweet: n=66 solved=41 unresolvedNull=0 f2pNull=0 testResultsNull=0
+  codex pipe/sweet: n=66 solved=42 unresolvedNull=0 f2pNull=0 testResultsNull=0
+  opencode tab/native: n=66 solved=41 unresolvedNull=0 f2pNull=0 testResultsNull=0
+  opencode tab/sweet: n=66 solved=41 unresolvedNull=0 f2pNull=0 testResultsNull=0
+  opencode none/sweet: n=66 solved=39 unresolvedNull=0 f2pNull=0 testResultsNull=0
+  opencode pipe/sweet: n=66 solved=38 unresolvedNull=0 f2pNull=1 testResultsNull=1
+  claude-code tab/native: n=66 solved=43 unresolvedNull=0 f2pNull=0 testResultsNull=0
+  claude-code tab/sweet: n=66 solved=40 unresolvedNull=0 f2pNull=0 testResultsNull=0
+  claude-code none/sweet: n=66 solved=41 unresolvedNull=0 f2pNull=0 testResultsNull=0
+  claude-code pipe/sweet: n=66 solved=39 unresolvedNull=0 f2pNull=0 testResultsNull=0

@@ -1,0 +1,81 @@
+EXIT=0
+{
+ "TAB": {
+  "rollouts": 66,
+  "requests": 1294,
+  "cellUsd": 0.81379,
+  "wasted": {
+   "crash": 8,
+   "usage": 1,
+   "enoent": 14,
+   "scopedNoMatch": 6
+  },
+  "wastedUsd": {
+   "crash": 0.00481,
+   "usage": 0.00092,
+   "enoent": 0.00958,
+   "scopedNoMatch": 0.00406
+  },
+  "forceRetry": 7,
+  "forceRetryUsd": 0.00612,
+  "rolloutsWithWaste": 17,
+  "meanRequestUsd": 0.000629,
+  "cellUsdPerRollout": 0.01233,
+  "wastedCallsPerRollout": 0.44,
+  "wastedUsdPerRollout": 0.000294,
+  "wastedShareOfCell": 0.0238,
+  "forceRetryUsdPerRollout": 0.000093
+ },
+ "NONE": {
+  "rollouts": 66,
+  "requests": 1282,
+  "cellUsd": 0.81308,
+  "wasted": {
+   "crash": 5,
+   "usage": 4,
+   "enoent": 10,
+   "scopedNoMatch": 11
+  },
+  "wastedUsd": {
+   "crash": 0.00323,
+   "usage": 0.00294,
+   "enoent": 0.00539,
+   "scopedNoMatch": 0.00661
+  },
+  "forceRetry": 2,
+  "forceRetryUsd": 0.00129,
+  "rolloutsWithWaste": 15,
+  "meanRequestUsd": 0.000634,
+  "cellUsdPerRollout": 0.012319,
+  "wastedCallsPerRollout": 0.45,
+  "wastedUsdPerRollout": 0.000275,
+  "wastedShareOfCell": 0.0223,
+  "forceRetryUsdPerRollout": 0.00002
+ },
+ "PIPE": {
+  "rollouts": 66,
+  "requests": 1305,
+  "cellUsd": 0.84177,
+  "wasted": {
+   "crash": 5,
+   "usage": 4,
+   "enoent": 8,
+   "scopedNoMatch": 5
+  },
+  "wastedUsd": {
+   "crash": 0.00235,
+   "usage": 0.00146,
+   "enoent": 0.00524,
+   "scopedNoMatch": 0.00295
+  },
+  "forceRetry": 10,
+  "forceRetryUsd": 0.00914,
+  "rolloutsWithWaste": 12,
+  "meanRequestUsd": 0.000645,
+  "cellUsdPerRollout": 0.012754,
+  "wastedCallsPerRollout": 0.33,
+  "wastedUsdPerRollout": 0.000182,
+  "wastedShareOfCell": 0.0143,
+  "forceRetryUsdPerRollout": 0.000138
+ }
+}

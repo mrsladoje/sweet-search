@@ -1,0 +1,1323 @@
+[
+ {
+  "task": "absinthe-graphql__absinthe-998",
+  "repo": "absinthe-graphql/absinthe",
+  "lang": "elixir",
+  "treeTop": [
+   [
+    ".ex",
+    273
+   ],
+   [
+    ".exs",
+    220
+   ],
+   [
+    ".md",
+    44
+   ],
+   [
+    ".graphql",
+    8
+   ],
+   [
+    ".png",
+    6
+   ],
+   [
+    ".lock",
+    1
+   ]
+  ],
+  "idxChunks": 2453,
+  "idxTop": [
+   [
+    ".ex",
+    1496
+   ],
+   [
+    ".exs",
+    600
+   ],
+   [
+    ".md",
+    317
+   ],
+   [
+    ".graphql",
+    30
+   ],
+   [
+    ".yml",
+    10
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "accenture__sfmc-devtools-1974",
+  "repo": "Accenture/sfmc-devtools",
+  "lang": "js",
+  "treeTop": [
+   [
+    ".json",
+    376
+   ],
+   [
+    ".js",
+    130
+   ],
+   [
+    ".xml",
+    124
+   ],
+   [
+    ".map",
+    100
+   ],
+   [
+    ".ts",
+    100
+   ],
+   [
+    ".amp",
+    29
+   ]
+  ],
+  "idxChunks": 15371,
+  "idxTop": [
+   [
+    ".xml",
+    10844
+   ],
+   [
+    ".js",
+    2466
+   ],
+   [
+    ".json",
+    1103
+   ],
+   [
+    ".ts",
+    745
+   ],
+   [
+    ".yml",
+    103
+   ],
+   [
+    ".html",
+    58
+   ]
+  ],
+  "gaps": [
+   [
+    ".amp",
+    29
+   ]
+  ]
+ },
+ {
+  "task": "aio-libs__aiohttp-8038",
+  "repo": "aio-libs/aiohttp",
+  "lang": "python",
+  "treeTop": [
+   [
+    ".py",
+    133
+   ],
+   [
+    ".rst",
+    43
+   ],
+   [
+    ".txt",
+    15
+   ],
+   [
+    ".in",
+    13
+   ],
+   [
+    "",
+    10
+   ],
+   [
+    ".yml",
+    9
+   ]
+  ],
+  "idxChunks": 2580,
+  "idxTop": [
+   [
+    ".py",
+    1506
+   ],
+   [
+    ".rst",
+    760
+   ],
+   [
+    ".yml",
+    98
+   ],
+   [
+    "",
+    69
+   ],
+   [
+    ".txt",
+    35
+   ],
+   [
+    ".pyx",
+    30
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "apigee__registry-961",
+  "repo": "apigee/registry",
+  "lang": "go",
+  "treeTop": [
+   [
+    ".go",
+    376
+   ],
+   [
+    ".yaml",
+    101
+   ],
+   [
+    ".proto",
+    33
+   ],
+   [
+    ".md",
+    31
+   ],
+   [
+    ".sh",
+    23
+   ],
+   [
+    "",
+    9
+   ]
+  ],
+  "idxChunks": 6853,
+  "idxTop": [
+   [
+    ".yaml",
+    3715
+   ],
+   [
+    ".go",
+    2458
+   ],
+   [
+    ".proto",
+    331
+   ],
+   [
+    ".json",
+    140
+   ],
+   [
+    ".md",
+    65
+   ],
+   [
+    ".yml",
+    46
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "asynkron__protoactor-dotnet-1909",
+  "repo": "asynkron/protoactor-dotnet",
+  "lang": "csharp",
+  "treeTop": [
+   [
+    ".cs",
+    607
+   ],
+   [
+    ".csproj",
+    96
+   ],
+   [
+    ".json",
+    34
+   ],
+   [
+    ".proto",
+    31
+   ],
+   [
+    ".razor",
+    22
+   ],
+   [
+    ".yml",
+    18
+   ]
+  ],
+  "idxChunks": 4385,
+  "idxTop": [
+   [
+    ".cs",
+    2575
+   ],
+   [
+    ".csproj",
+    1126
+   ],
+   [
+    ".proto",
+    155
+   ],
+   [
+    ".yml",
+    127
+   ],
+   [
+    ".md",
+    118
+   ],
+   [
+    ".yaml",
+    75
+   ]
+  ],
+  "gaps": [
+   [
+    ".razor",
+    22
+   ]
+  ]
+ },
+ {
+  "task": "aws-actions__configure-aws-credentials-42",
+  "repo": "aws-actions/configure-aws-credentials",
+  "lang": "ts",
+  "treeTop": [
+   [
+    ".md",
+    5
+   ],
+   [
+    ".yml",
+    5
+   ],
+   [
+    ".json",
+    3
+   ],
+   [
+    "",
+    3
+   ],
+   [
+    ".js",
+    2
+   ],
+   [
+    ".sha256",
+    1
+   ]
+  ],
+  "idxChunks": 69,
+  "idxTop": [
+   [
+    ".md",
+    26
+   ],
+   [
+    ".yml",
+    23
+   ],
+   [
+    ".js",
+    18
+   ],
+   [
+    ".json",
+    2
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "awslabs__aws-embedded-metrics-node-21",
+  "repo": "awslabs/aws-embedded-metrics-node",
+  "lang": "ts",
+  "treeTop": [
+   [
+    ".ts",
+    44
+   ],
+   [
+    ".json",
+    10
+   ],
+   [
+    "",
+    9
+   ],
+   [
+    ".md",
+    5
+   ],
+   [
+    ".sh",
+    4
+   ],
+   [
+    ".js",
+    2
+   ]
+  ],
+  "idxChunks": 140,
+  "idxTop": [
+   [
+    ".ts",
+    75
+   ],
+   [
+    ".md",
+    40
+   ],
+   [
+    ".json",
+    8
+   ],
+   [
+    "",
+    6
+   ],
+   [
+    ".yml",
+    5
+   ],
+   [
+    ".sh",
+    4
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "axelrod-python__axelrod-671",
+  "repo": "Axelrod-Python/Axelrod",
+  "lang": "python",
+  "treeTop": [
+   [
+    ".py",
+    125
+   ],
+   [
+    ".rst",
+    43
+   ],
+   [
+    ".svg",
+    9
+   ],
+   [
+    "",
+    6
+   ],
+   [
+    ".txt",
+    3
+   ],
+   [
+    ".png",
+    2
+   ]
+  ],
+  "idxChunks": 1388,
+  "idxTop": [
+   [
+    ".py",
+    574
+   ],
+   [
+    ".svg",
+    490
+   ],
+   [
+    ".rst",
+    244
+   ],
+   [
+    ".md",
+    39
+   ],
+   [
+    "",
+    32
+   ],
+   [
+    ".yml",
+    6
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "bfgroup__b2-113",
+  "repo": "bfgroup/b2",
+  "lang": "cpp",
+  "treeTop": [
+   [
+    ".jam",
+    321
+   ],
+   [
+    ".py",
+    270
+   ],
+   [
+    ".cpp",
+    176
+   ],
+   [
+    ".h",
+    48
+   ],
+   [
+    ".adoc",
+    33
+   ],
+   [
+    ".txt",
+    22
+   ]
+  ],
+  "idxChunks": 2484,
+  "idxTop": [
+   [
+    ".cpp",
+    933
+   ],
+   [
+    ".py",
+    861
+   ],
+   [
+    ".css",
+    438
+   ],
+   [
+    ".h",
+    88
+   ],
+   [
+    ".yml",
+    59
+   ],
+   [
+    ".txt",
+    33
+   ]
+  ],
+  "gaps": [
+   [
+    ".jam",
+    321
+   ],
+   [
+    ".adoc",
+    33
+   ]
+  ]
+ },
+ {
+  "task": "bfgroup__b2-259",
+  "repo": "bfgroup/b2",
+  "lang": "cpp",
+  "treeTop": [
+   [
+    ".jam",
+    297
+   ],
+   [
+    ".py",
+    208
+   ],
+   [
+    ".cpp",
+    183
+   ],
+   [
+    ".h",
+    64
+   ],
+   [
+    ".adoc",
+    33
+   ],
+   [
+    ".txt",
+    17
+   ]
+  ],
+  "idxChunks": 2347,
+  "idxTop": [
+   [
+    ".cpp",
+    966
+   ],
+   [
+    ".py",
+    558
+   ],
+   [
+    ".css",
+    438
+   ],
+   [
+    ".h",
+    188
+   ],
+   [
+    ".yml",
+    96
+   ],
+   [
+    ".txt",
+    29
+   ]
+  ],
+  "gaps": [
+   [
+    ".jam",
+    297
+   ],
+   [
+    ".adoc",
+    33
+   ]
+  ]
+ },
+ {
+  "task": "callstack__react-native-paper-972",
+  "repo": "callstack/react-native-paper",
+  "lang": "ts",
+  "treeTop": [
+   [
+    ".js",
+    203
+   ],
+   [
+    ".png",
+    79
+   ],
+   [
+    ".tsx",
+    54
+   ],
+   [
+    ".ts",
+    34
+   ],
+   [
+    ".snap",
+    22
+   ],
+   [
+    "",
+    12
+   ]
+  ],
+  "idxChunks": 743,
+  "idxTop": [
+   [
+    ".js",
+    519
+   ],
+   [
+    ".md",
+    73
+   ],
+   [
+    ".tsx",
+    54
+   ],
+   [
+    ".ts",
+    36
+   ],
+   [
+    ".yml",
+    28
+   ],
+   [
+    ".css",
+    14
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "celestiaorg__nmt-192",
+  "repo": "celestiaorg/nmt",
+  "lang": "go",
+  "treeTop": [
+   [
+    ".go",
+    13
+   ],
+   [
+    "",
+    3
+   ],
+   [
+    ".md",
+    3
+   ],
+   [
+    ".yml",
+    3
+   ],
+   [
+    ".sha256",
+    1
+   ],
+   [
+    ".mod",
+    1
+   ]
+  ],
+  "idxChunks": 203,
+  "idxTop": [
+   [
+    ".go",
+    150
+   ],
+   [
+    ".md",
+    36
+   ],
+   [
+    ".yml",
+    15
+   ],
+   [
+    ".yaml",
+    1
+   ],
+   [
+    ".mod",
+    1
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "devlooped__moq-1262",
+  "repo": "devlooped/moq",
+  "lang": "csharp",
+  "treeTop": [
+   [
+    ".cs",
+    240
+   ],
+   [
+    ".fs",
+    11
+   ],
+   [
+    ".scss",
+    11
+   ],
+   [
+    ".png",
+    6
+   ],
+   [
+    ".md",
+    6
+   ],
+   [
+    ".props",
+    6
+   ]
+  ],
+  "idxChunks": 2184,
+  "idxTop": [
+   [
+    ".cs",
+    1532
+   ],
+   [
+    ".md",
+    207
+   ],
+   [
+    ".resx",
+    186
+   ],
+   [
+    ".csproj",
+    133
+   ],
+   [
+    ".scss",
+    44
+   ],
+   [
+    ".fsproj",
+    24
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "fastify__fastify-cors-285",
+  "repo": "fastify/fastify-cors",
+  "lang": "js",
+  "treeTop": [
+   [
+    ".js",
+    8
+   ],
+   [
+    "",
+    6
+   ],
+   [
+    ".yml",
+    3
+   ],
+   [
+    ".json",
+    2
+   ],
+   [
+    ".ts",
+    2
+   ],
+   [
+    ".md",
+    1
+   ]
+  ],
+  "idxChunks": 97,
+  "idxTop": [
+   [
+    ".js",
+    59
+   ],
+   [
+    ".ts",
+    13
+   ],
+   [
+    ".md",
+    12
+   ],
+   [
+    ".yml",
+    11
+   ],
+   [
+    ".json",
+    2
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "final-form__final-form-64",
+  "repo": "final-form/final-form",
+  "lang": "ts",
+  "treeTop": [
+   [
+    ".js",
+    33
+   ],
+   [
+    "",
+    7
+   ],
+   [
+    ".md",
+    6
+   ],
+   [
+    ".json",
+    4
+   ],
+   [
+    ".png",
+    2
+   ],
+   [
+    ".flow",
+    2
+   ]
+  ],
+  "idxChunks": 308,
+  "idxTop": [
+   [
+    ".md",
+    180
+   ],
+   [
+    ".js",
+    118
+   ],
+   [
+    ".json",
+    4
+   ],
+   [
+    ".ts",
+    4
+   ],
+   [
+    ".yml",
+    2
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "gitbookio__markup-it-56",
+  "repo": "GitbookIO/markup-it",
+  "lang": "js",
+  "treeTop": [
+   [
+    ".yaml",
+    201
+   ],
+   [
+    ".md",
+    116
+   ],
+   [
+    ".js",
+    105
+   ],
+   [
+    ".html",
+    48
+   ],
+   [
+    ".adoc",
+    39
+   ],
+   [
+    "",
+    4
+   ]
+  ],
+  "idxChunks": 1237,
+  "idxTop": [
+   [
+    ".yaml",
+    988
+   ],
+   [
+    ".js",
+    162
+   ],
+   [
+    ".md",
+    47
+   ],
+   [
+    ".html",
+    39
+   ],
+   [
+    ".json",
+    1
+   ]
+  ],
+  "gaps": [
+   [
+    ".adoc",
+    39
+   ]
+  ]
+ },
+ {
+  "task": "hotmeteor__spectator-181",
+  "repo": "hotmeteor/spectator",
+  "lang": "php",
+  "treeTop": [
+   [
+    ".php",
+    26
+   ],
+   [
+    ".yml",
+    18
+   ],
+   [
+    ".json",
+    10
+   ],
+   [
+    "",
+    3
+   ],
+   [
+    ".xml",
+    1
+   ],
+   [
+    ".sha256",
+    1
+   ]
+  ],
+  "idxChunks": 434,
+  "idxTop": [
+   [
+    ".yml",
+    217
+   ],
+   [
+    ".php",
+    128
+   ],
+   [
+    ".md",
+    29
+   ],
+   [
+    ".json",
+    27
+   ],
+   [
+    ".yaml",
+    23
+   ],
+   [
+    ".xml",
+    10
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "jazzband__tablib-454",
+  "repo": "jazzband/tablib",
+  "lang": "python",
+  "treeTop": [
+   [
+    ".py",
+    33
+   ],
+   [
+    ".rst",
+    7
+   ],
+   [
+    "",
+    5
+   ],
+   [
+    ".md",
+    4
+   ],
+   [
+    ".yml",
+    3
+   ],
+   [
+    ".ini",
+    2
+   ]
+  ],
+  "idxChunks": 315,
+  "idxTop": [
+   [
+    ".py",
+    151
+   ],
+   [
+    ".rst",
+    58
+   ],
+   [
+    ".md",
+    52
+   ],
+   [
+    "",
+    25
+   ],
+   [
+    ".yml",
+    17
+   ],
+   [
+    ".yaml",
+    5
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "locationtech__jts-622",
+  "repo": "locationtech/jts",
+  "lang": "java",
+  "treeTop": [
+   [
+    ".java",
+    1158
+   ],
+   [
+    ".xml",
+    137
+   ],
+   [
+    ".png",
+    60
+   ],
+   [
+    ".html",
+    51
+   ],
+   [
+    ".gif",
+    19
+   ],
+   [
+    ".md",
+    16
+   ]
+  ],
+  "idxChunks": 18150,
+  "idxTop": [
+   [
+    ".xml",
+    12186
+   ],
+   [
+    ".java",
+    5481
+   ],
+   [
+    ".md",
+    205
+   ],
+   [
+    ".xsd",
+    173
+   ],
+   [
+    ".html",
+    76
+   ],
+   [
+    ".txt",
+    13
+   ]
+  ],
+  "gaps": [
+   [
+    ".wkt",
+    10
+   ]
+  ]
+ },
+ {
+  "task": "mathnet__mathnet-numerics-1072",
+  "repo": "mathnet/mathnet-numerics",
+  "lang": "csharp",
+  "treeTop": [
+   [
+    ".cs",
+    971
+   ],
+   [
+    ".dat",
+    58
+   ],
+   [
+    ".fs",
+    51
+   ],
+   [
+    ".md",
+    34
+   ],
+   [
+    ".csproj",
+    18
+   ],
+   [
+    ".sln",
+    16
+   ]
+  ],
+  "idxChunks": 15636,
+  "idxTop": [
+   [
+    ".cs",
+    12957
+   ],
+   [
+    ".fs",
+    1051
+   ],
+   [
+    ".csproj",
+    664
+   ],
+   [
+    ".md",
+    282
+   ],
+   [
+    ".fsproj",
+    277
+   ],
+   [
+    ".targets",
+    184
+   ]
+  ],
+  "gaps": [
+   [
+    ".spark",
+    16
+   ],
+   [
+    ".nuspec",
+    15
+   ],
+   [
+    ".mat",
+    10
+   ]
+  ]
+ },
+ {
+  "task": "mirumee__ariadne-codegen-218",
+  "repo": "mirumee/ariadne-codegen",
+  "lang": "python",
+  "treeTop": [
+   [
+    ".py",
+    252
+   ],
+   [
+    ".graphql",
+    27
+   ],
+   [
+    ".toml",
+    18
+   ],
+   [
+    ".md",
+    5
+   ],
+   [
+    "",
+    2
+   ],
+   [
+    ".yml",
+    2
+   ]
+  ],
+  "idxChunks": 1102,
+  "idxTop": [
+   [
+    ".py",
+    811
+   ],
+   [
+    ".graphql",
+    113
+   ],
+   [
+    ".md",
+    97
+   ],
+   [
+    ".toml",
+    48
+   ],
+   [
+    ".json",
+    21
+   ],
+   [
+    ".yml",
+    12
+   ]
+  ],
+  "gaps": []
+ },
+ {
+  "task": "protofire__solhint-224",
+  "repo": "protofire/solhint",
+  "lang": "js",
+  "treeTop": [
+   [
+    ".js",
+    164
+   ],
+   [
+    ".md",
+    49
+   ],
+   [
+    ".yml",
+    4
+   ],
+   [
+    "",
+    4
+   ],
+   [
+    ".html",
+    4
+   ],
+   [
+    ".json",
+    3
+   ]
+  ],
+  "idxChunks": 761,
+  "idxTop": [
+   [
+    ".md",
+    374
+   ],
+   [
+    ".js",
+    223
+   ],
+   [
+    ".css",
+    149
+   ],
+   [
+    ".yml",
+    7
+   ],
+   [
+    ".html",
+    6
+   ],
+   [
+    ".json",
+    2
+   ]
+  ],
+  "gaps": []
+ }
+]

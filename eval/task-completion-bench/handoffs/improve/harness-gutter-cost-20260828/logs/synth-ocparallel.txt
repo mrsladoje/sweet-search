@@ -1,0 +1,243 @@
+EXIT=0
+{
+ "tab": {
+  "rollouts": 66,
+  "turns_per_rollout": 19.7,
+  "calls_per_rollout": 21.79,
+  "calls_per_turn": 1.106,
+  "steps_with_2plus_calls": 105,
+  "share_steps_with_2plus_calls": 0.081,
+  "share_calls_in_multi_steps": 0.215,
+  "bash_calls_per_rollout": 15.52,
+  "ss_bash_calls_per_rollout": 10.79,
+  "native_tool_calls_per_rollout": 0.62,
+  "bash_calls_in_multi_steps": 307,
+  "ss_bash_calls_in_multi_steps": 228,
+  "top_combos": [
+   [
+    "bash,bash,bash",
+    45
+   ],
+   [
+    "bash,bash",
+    34
+   ],
+   [
+    "bash,bash,bash,bash",
+    20
+   ],
+   [
+    "bash,bash,bash,bash,bash",
+    3
+   ],
+   [
+    "bash,bash,glob",
+    1
+   ],
+   [
+    "bash,glob",
+    1
+   ],
+   [
+    "bash,bash,bash,bash,bash,bash",
+    1
+   ]
+  ],
+  "tools_in_multi": [
+   [
+    "bash",
+    307
+   ],
+   [
+    "glob",
+    2
+   ]
+  ]
+ },
+ "native": {
+  "rollouts": 66,
+  "turns_per_rollout": 16.32,
+  "calls_per_rollout": 25.23,
+  "calls_per_turn": 1.546,
+  "steps_with_2plus_calls": 271,
+  "share_steps_with_2plus_calls": 0.252,
+  "share_calls_in_multi_steps": 0.556,
+  "bash_calls_per_rollout": 4.76,
+  "ss_bash_calls_per_rollout": 0.0,
+  "native_tool_calls_per_rollout": 14.77,
+  "bash_calls_in_multi_steps": 117,
+  "ss_bash_calls_in_multi_steps": 0,
+  "top_combos": [
+   [
+    "read,read,read,read",
+    35
+   ],
+   [
+    "bash,bash",
+    20
+   ],
+   [
+    "glob,glob,grep",
+    19
+   ],
+   [
+    "read,read,read",
+    19
+   ],
+   [
+    "grep,read,read,read",
+    18
+   ],
+   [
+    "grep,grep,read,read",
+    11
+   ],
+   [
+    "grep,read,read",
+    11
+   ],
+   [
+    "glob,grep",
+    11
+   ]
+  ],
+  "tools_in_multi": [
+   [
+    "read",
+    503
+   ],
+   [
+    "grep",
+    180
+   ],
+   [
+    "glob",
+    125
+   ],
+   [
+    "bash",
+    117
+   ]
+  ]
+ },
+ "none": {
+  "rollouts": 66,
+  "turns_per_rollout": 18.91,
+  "calls_per_rollout": 21.88,
+  "calls_per_turn": 1.157,
+  "steps_with_2plus_calls": 129,
+  "share_steps_with_2plus_calls": 0.103,
+  "share_calls_in_multi_steps": 0.271,
+  "bash_calls_per_rollout": 15.73,
+  "ss_bash_calls_per_rollout": 11.17,
+  "native_tool_calls_per_rollout": 0.83,
+  "bash_calls_in_multi_steps": 374,
+  "ss_bash_calls_in_multi_steps": 280,
+  "top_combos": [
+   [
+    "bash,bash,bash",
+    57
+   ],
+   [
+    "bash,bash",
+    32
+   ],
+   [
+    "bash,bash,bash,bash",
+    25
+   ],
+   [
+    "bash,bash,bash,bash,bash",
+    5
+   ],
+   [
+    "bash,glob",
+    2
+   ],
+   [
+    "bash,bash,glob",
+    2
+   ],
+   [
+    "bash,read,read,read",
+    1
+   ],
+   [
+    "bash,bash,read",
+    1
+   ]
+  ],
+  "tools_in_multi": [
+   [
+    "bash",
+    374
+   ],
+   [
+    "read",
+    11
+   ],
+   [
+    "glob",
+    6
+   ]
+  ]
+ },
+ "pipe": {
+  "rollouts": 66,
+  "turns_per_rollout": 18.39,
+  "calls_per_rollout": 20.45,
+  "calls_per_turn": 1.112,
+  "steps_with_2plus_calls": 109,
+  "share_steps_with_2plus_calls": 0.09,
+  "share_calls_in_multi_steps": 0.23,
+  "bash_calls_per_rollout": 14.38,
+  "ss_bash_calls_per_rollout": 9.59,
+  "native_tool_calls_per_rollout": 0.56,
+  "bash_calls_in_multi_steps": 305,
+  "ss_bash_calls_in_multi_steps": 216,
+  "top_combos": [
+   [
+    "bash,bash,bash",
+    53
+   ],
+   [
+    "bash,bash",
+    34
+   ],
+   [
+    "bash,bash,bash,bash",
+    17
+   ],
+   [
+    "bash,bash,glob",
+    2
+   ],
+   [
+    "read,read,read",
+    1
+   ],
+   [
+    "bash,glob",
+    1
+   ],
+   [
+    "bash,bash,bash,bash,bash",
+    1
+   ]
+  ],
+  "tools_in_multi": [
+   [
+    "bash",
+    305
+   ],
+   [
+    "read",
+    3
+   ],
+   [
+    "glob",
+    3
+   ]
+  ]
+ }
+}

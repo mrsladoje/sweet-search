@@ -1,0 +1,76 @@
+EXIT=0
+{
+ "tab": {
+  "rollouts": 66,
+  "steps": 1300,
+  "cellUsd": 0.61149,
+  "wasted": {
+   "usage": 6,
+   "emptyBody": 7,
+   "enoent": 12,
+   "scopedNoMatch": 3,
+   "crash": 3
+  },
+  "wastedUsd": {
+   "usage": 0.0021,
+   "emptyBody": 0.00355,
+   "enoent": 0.00546,
+   "scopedNoMatch": 0.00103,
+   "crash": 0.0013
+  },
+  "rolloutsWithWaste": 16,
+  "meanStepUsd": 0.00047,
+  "cellUsdPerRollout": 0.009265,
+  "wastedCallsPerRollout": 0.47,
+  "wastedUsdPerRollout": 0.000204,
+  "wastedShareOfCell": 0.022
+ },
+ "none": {
+  "rollouts": 66,
+  "steps": 1248,
+  "cellUsd": 0.56654,
+  "wasted": {
+   "scopedNoMatch": 7,
+   "enoent": 9,
+   "usage": 7,
+   "crash": 4
+  },
+  "wastedUsd": {
+   "scopedNoMatch": 0.00287,
+   "enoent": 0.0037,
+   "usage": 0.00298,
+   "crash": 0.00148
+  },
+  "rolloutsWithWaste": 16,
+  "meanStepUsd": 0.000454,
+  "cellUsdPerRollout": 0.008584,
+  "wastedCallsPerRollout": 0.41,
+  "wastedUsdPerRollout": 0.000167,
+  "wastedShareOfCell": 0.0195
+ },
+ "pipe": {
+  "rollouts": 66,
+  "steps": 1214,
+  "cellUsd": 0.5784,
+  "wasted": {
+   "crash": 8,
+   "enoent": 9,
+   "emptyBody": 8,
+   "usage": 2,
+   "scopedNoMatch": 2
+  },
+  "wastedUsd": {
+   "crash": 0.00423,
+   "enoent": 0.00489,
+   "emptyBody": 0.00332,
+   "usage": 0.00098,
+   "scopedNoMatch": 0.00101
+  },
+  "rolloutsWithWaste": 16,
+  "meanStepUsd": 0.000476,
+  "cellUsdPerRollout": 0.008764,
+  "wastedCallsPerRollout": 0.44,
+  "wastedUsdPerRollout": 0.000219,
+  "wastedShareOfCell": 0.0249
+ }
+}

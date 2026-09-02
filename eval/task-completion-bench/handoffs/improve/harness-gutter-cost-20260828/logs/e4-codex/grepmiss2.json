@@ -1,0 +1,374 @@
+{
+ "counts": {
+  "zero": 131,
+  "unconfirmed": 102,
+  "contradicted": 26,
+  "bad_regex": 3
+ },
+ "findings": [
+  {
+   "rollout": "aws-actions__configure-aws-credentials-42/TAB/rep0",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "arm": "TAB",
+   "pattern": "aws-access-key-id|getInput|exportCredentials",
+   "scope": "dist/index.js",
+   "evidence": {
+    "callIdx": 14,
+    "path": "dist/index.js",
+    "line": "# unread below (21-35000): assumeRole, sanitizeGithubActor, sanitizeGithubWorkflowName, exportCredentials, exportRegion +29 more \u2014 continue: ss-read dist/index.js 21 3500",
+    "cmd": "ss-read dist/index.js 1 20"
+   },
+   "grepCallIdx": 17
+  },
+  {
+   "rollout": "bfgroup__b2-113/TAB/rep0",
+   "task": "bfgroup__b2-113",
+   "arm": "TAB",
+   "pattern": "class BasicTarget",
+   "scope": null,
+   "evidence": {
+    "callIdx": 24,
+    "path": "src/build/targets.py",
+    "line": "890\tclass BasicTarget (AbstractTarget):",
+    "cmd": "ss-read --force src/build/targets.py 866 920 && ss-read --force src/build/targets.py 1080 1170"
+   },
+   "grepCallIdx": 13
+  },
+  {
+   "rollout": "bfgroup__b2-113/TAB/rep1",
+   "task": "bfgroup__b2-113",
+   "arm": "TAB",
+   "pattern": "class BasicTarget",
+   "scope": null,
+   "evidence": {
+    "callIdx": 33,
+    "path": "src/build/targets.py",
+    "line": "890\tclass BasicTarget (AbstractTarget):",
+    "cmd": "ss-read src/build/targets.py 700 950"
+   },
+   "grepCallIdx": 21
+  },
+  {
+   "rollout": "bfgroup__b2-113/TAB/rep1",
+   "task": "bfgroup__b2-113",
+   "arm": "TAB",
+   "pattern": "MainTarget",
+   "scope": null,
+   "evidence": {
+    "callIdx": 29,
+    "path": "src/build/targets.py",
+    "line": "18\t#   Project targets keep a list of 'MainTarget' instances.",
+    "cmd": "ss-read src/build/targets.py 1 320"
+   },
+   "grepCallIdx": 28
+  },
+  {
+   "rollout": "bfgroup__b2-259/TAB/rep1",
+   "task": "bfgroup__b2-259",
+   "arm": "TAB",
+   "pattern": "evaluate-conditionals-in-context",
+   "scope": null,
+   "evidence": {
+    "callIdx": 15,
+    "path": "src/build/configure.jam",
+    "line": "520\t        return [ property.evaluate-conditionals-in-context $(choosen) :",
+    "cmd": "ss-read src/build/configure.jam 321 629"
+   },
+   "grepCallIdx": 16
+  },
+  {
+   "rollout": "bfgroup__b2-259/TAB/rep2",
+   "task": "bfgroup__b2-259",
+   "arm": "TAB",
+   "pattern": "evaluate-conditional-relevance",
+   "scope": null,
+   "evidence": {
+    "callIdx": 17,
+    "path": "src/build/configure.jam",
+    "line": "607\t        [ property.evaluate-conditional-relevance",
+    "cmd": "ss-read src/build/configure.jam 488 629"
+   },
+   "grepCallIdx": 20
+  },
+  {
+   "rollout": "aio-libs__aiohttp-8038/NONE/rep0",
+   "task": "aio-libs__aiohttp-8038",
+   "arm": "NONE",
+   "pattern": "retry_persistent_connection",
+   "scope": null,
+   "evidence": {
+    "callIdx": 49,
+    "path": "aiohttp/client.py",
+    "line": "                            retry_persistent_connection",
+    "cmd": "ss-read aiohttp/client.py 600 630"
+   },
+   "grepCallIdx": 13
+  },
+  {
+   "rollout": "bfgroup__b2-113/NONE/rep0",
+   "task": "bfgroup__b2-113",
+   "arm": "NONE",
+   "pattern": "no",
+   "scope": "src/build/targets.py",
+   "evidence": {
+    "callIdx": 10,
+    "path": "src/build/targets.py",
+    "line": "        # We don't use 'refine-from-user-input' because I'm not sure if:",
+    "cmd": "ss-grep \"build\" --in src/build/targets.py -k 100 && ss-read src/build/targets.py 1 260"
+   },
+   "grepCallIdx": 11
+  },
+  {
+   "rollout": "bfgroup__b2-113/NONE/rep0",
+   "task": "bfgroup__b2-113",
+   "arm": "NONE",
+   "pattern": "GenerateResult",
+   "scope": null,
+   "evidence": {
+    "callIdx": 16,
+    "path": "src/build_system.py",
+    "line": "                result = GenerateResult ()",
+    "cmd": "ss-read src/build_system.py 1 140 && ss-read src/build/targets.py 520 900 && ss-read src/build/targets.py 900 "
+   },
+   "grepCallIdx": 26
+  },
+  {
+   "rollout": "bfgroup__b2-259/NONE/rep0",
+   "task": "bfgroup__b2-259",
+   "arm": "NONE",
+   "pattern": "check-target-builds",
+   "scope": "src",
+   "evidence": {
+    "callIdx": 16,
+    "path": "src/build/configure.jam",
+    "line": "class check-target-builds-worker",
+    "cmd": "ss-read src/build/configure.jam 321 629"
+   },
+   "grepCallIdx": 11
+  },
+  {
+   "rollout": "bfgroup__b2-113/NONE/rep1",
+   "task": "bfgroup__b2-113",
+   "arm": "NONE",
+   "pattern": "class MainTarget|def generate|build.*no",
+   "scope": "src/build",
+   "evidence": {
+    "callIdx": 22,
+    "path": "src/build/targets.py",
+    "line": "    def generate (self, property_set):",
+    "cmd": "ss-read src/build/targets.py 300 520 && ss-read src/build/targets.py 900 1120"
+   },
+   "grepCallIdx": 16
+  },
+  {
+   "rollout": "bfgroup__b2-113/NONE/rep1",
+   "task": "bfgroup__b2-113",
+   "arm": "NONE",
+   "pattern": "class MainTarget|class BasicTarget|def generate|def all_referenced_targets|build.*no",
+   "scope": "src/build/targets.py",
+   "evidence": {
+    "callIdx": 22,
+    "path": "src/build/targets.py",
+    "line": "    def generate (self, property_set):",
+    "cmd": "ss-read src/build/targets.py 300 520 && ss-read src/build/targets.py 900 1120"
+   },
+   "grepCallIdx": 21
+  },
+  {
+   "rollout": "bfgroup__b2-259/NONE/rep1",
+   "task": "bfgroup__b2-259",
+   "arm": "NONE",
+   "pattern": "evaluate-conditional-relevance",
+   "scope": null,
+   "evidence": {
+    "callIdx": 12,
+    "path": "src/build/configure.jam",
+    "line": "        [ property.evaluate-conditional-relevance",
+    "cmd": "ss-read src/build/configure.jam 261 629"
+   },
+   "grepCallIdx": 17
+  },
+  {
+   "rollout": "bfgroup__b2-113/NONE/rep2",
+   "task": "bfgroup__b2-113",
+   "arm": "NONE",
+   "pattern": "def generate",
+   "scope": "src/build/targets.py",
+   "evidence": {
+    "callIdx": 17,
+    "path": "src/build/targets.py",
+    "line": "    def generate (self, properties):",
+    "cmd": "ss-read src/build/targets.py 600 900"
+   },
+   "grepCallIdx": 15
+  },
+  {
+   "rollout": "bfgroup__b2-113/NONE/rep2",
+   "task": "bfgroup__b2-113",
+   "arm": "NONE",
+   "pattern": "<build>",
+   "scope": "src/build/targets.py",
+   "evidence": {
+    "callIdx": 18,
+    "path": "src/build/targets.py",
+    "line": "            if rproperties.get(\"<build>\") != [\"no\"]:",
+    "cmd": "ss-read src/build/targets.py 900 1220"
+   },
+   "grepCallIdx": 15
+  },
+  {
+   "rollout": "bfgroup__b2-113/NONE/rep2",
+   "task": "bfgroup__b2-113",
+   "arm": "NONE",
+   "pattern": "class MainTarget",
+   "scope": null,
+   "evidence": {
+    "callIdx": 17,
+    "path": "src/build/targets.py",
+    "line": "class MainTarget (AbstractTarget):",
+    "cmd": "ss-read src/build/targets.py 600 900"
+   },
+   "grepCallIdx": 16
+  },
+  {
+   "rollout": "bfgroup__b2-259/NONE/rep2",
+   "task": "bfgroup__b2-259",
+   "arm": "NONE",
+   "pattern": "evaluate-conditional-relevance",
+   "scope": null,
+   "evidence": {
+    "callIdx": 12,
+    "path": "src/build/configure.jam",
+    "line": "        [ property.evaluate-conditional-relevance",
+    "cmd": "ss-read src/build/configure.jam 261 629"
+   },
+   "grepCallIdx": 33
+  },
+  {
+   "rollout": "bfgroup__b2-259/NONE/rep2",
+   "task": "bfgroup__b2-259",
+   "arm": "NONE",
+   "pattern": "rule get-relevant-features",
+   "scope": null,
+   "evidence": {
+    "callIdx": 12,
+    "path": "src/build/configure.jam",
+    "line": "rule get-relevant-features ( properties * )\u2026340 tokens truncated\u2026ecify the file to receive the",
+    "cmd": "ss-read src/build/configure.jam 261 629"
+   },
+   "grepCallIdx": 45
+  },
+  {
+   "rollout": "protofire__solhint-224/NONE/rep2",
+   "task": "protofire__solhint-224",
+   "arm": "NONE",
+   "pattern": "OrderingChecker",
+   "scope": null,
+   "evidence": {
+    "callIdx": 22,
+    "path": "lib/rules/order/index.js",
+    "line": "    28\tclass OrderingChecker {",
+    "cmd": "nl -ba lib/rules/order/index.js | sed -n '1,90p'"
+   },
+   "grepCallIdx": 15
+  },
+  {
+   "rollout": "bfgroup__b2-113/PIPE/rep0",
+   "task": "bfgroup__b2-113",
+   "arm": "PIPE",
+   "pattern": "class MainTarget",
+   "scope": "src",
+   "evidence": {
+    "callIdx": 24,
+    "path": "src/build/targets.py",
+    "line": "667| class MainTarget (AbstractTarget):",
+    "cmd": "ss-read src/build/targets.py 260 700"
+   },
+   "grepCallIdx": 16
+  },
+  {
+   "rollout": "bfgroup__b2-113/PIPE/rep0",
+   "task": "bfgroup__b2-113",
+   "arm": "PIPE",
+   "pattern": "class BasicTarget",
+   "scope": null,
+   "evidence": {
+    "callIdx": 26,
+    "path": "src/build/targets.py",
+    "line": "890| class BasicTarget (AbstractTarget):",
+    "cmd": "ss-read src/build/targets.py 880 1065"
+   },
+   "grepCallIdx": 20
+  },
+  {
+   "rollout": "bfgroup__b2-113/PIPE/rep0",
+   "task": "bfgroup__b2-113",
+   "arm": "PIPE",
+   "pattern": "def get",
+   "scope": "src/build/property_set.py",
+   "evidence": {
+    "callIdx": 32,
+    "path": "src/build/property_set.py",
+    "line": "457|     def get (self, feature):",
+    "cmd": "ss-read src/build/property_set.py 446 490"
+   },
+   "grepCallIdx": 29
+  },
+  {
+   "rollout": "bfgroup__b2-113/PIPE/rep0",
+   "task": "bfgroup__b2-113",
+   "arm": "PIPE",
+   "pattern": "def get",
+   "scope": "src/build/feature.py",
+   "evidence": {
+    "callIdx": 35,
+    "path": "src/build/feature.py",
+    "line": "125| def get(name):",
+    "cmd": "ss-read src/build/feature.py 120 175"
+   },
+   "grepCallIdx": 33
+  },
+  {
+   "rollout": "bfgroup__b2-113/PIPE/rep2",
+   "task": "bfgroup__b2-113",
+   "arm": "PIPE",
+   "pattern": "class TargetRegistry",
+   "scope": null,
+   "evidence": {
+    "callIdx": 23,
+    "path": "src/build/targets.py",
+    "line": "class TargetRegistry:",
+    "cmd": "sed -n '1,260p' src/build/targets.py | tail -n 180; sed -n '560,630p' src/build_system.py; sed -n '70,105p' sr"
+   },
+   "grepCallIdx": 19
+  },
+  {
+   "rollout": "bfgroup__b2-113/PIPE/rep2",
+   "task": "bfgroup__b2-113",
+   "arm": "PIPE",
+   "pattern": "def main_target",
+   "scope": null,
+   "evidence": {
+    "callIdx": 23,
+    "path": "src/build/targets.py",
+    "line": "    def main_target_alternative (self, target):",
+    "cmd": "sed -n '1,260p' src/build/targets.py | tail -n 180; sed -n '560,630p' src/build_system.py; sed -n '70,105p' sr"
+   },
+   "grepCallIdx": 19
+  },
+  {
+   "rollout": "bfgroup__b2-113/PIPE/rep2",
+   "task": "bfgroup__b2-113",
+   "arm": "PIPE",
+   "pattern": "expand_no",
+   "scope": "src/build",
+   "evidence": {
+    "callIdx": 23,
+    "path": "src/build/targets.py",
+    "line": "        expanded = build_request.expand_no_defaults(expanded)",
+    "cmd": "sed -n '1,260p' src/build/targets.py | tail -n 180; sed -n '560,630p' src/build_system.py; sed -n '70,105p' sr"
+   },
+   "grepCallIdx": 19
+  }
+ ]
+}

@@ -1,0 +1,25 @@
+codex     sweet tab   calls=112   failed=6    anchor_lines=840    tasks=22  residue={}
+     fail ex [devlooped__moq-1262] apply_patch verification failed: Failed to read file to update /root/.ss-eval/r2-78/src/Moq/ExpressionComparer.cs: No such file or directory (os error 2)
+     fail ex [devlooped__moq-1262] Chunk ID: 7374e4\nWall time: 13.9119 seconds\nProcess exited with code 0\nOriginal token count: 1183\nOutput:\nFailed to find expected lines in /root/.ss-eval/runs/r1-72/src/Moq/ExpressionComparer.cs:\n	public sealed class Exp
+     fail ex [jazzband__tablib-454] apply_patch verification failed: Failed to find expected lines in /root/.ss-eval/runs/r1-101/src/tablib/core.py:\n    def rpush(self, value):\n        """Adds a value to the right of the :class:`Row`."""\n        self.inser
+     fail ex [protofire__solhint-224] apply_patch verification failed: Failed to find expected lines in /root/.ss-eval/runs/r2-127/lib/rules/order/index.js:\n    new FuncOrderChecker(reporter),\n    new ImportsOnTopChecker(reporter),\n    new VisibilityModifier
+codex     sweet none  calls=124   failed=2    anchor_lines=1116   tasks=22  residue={}
+     fail ex [aio-libs__aiohttp-8038] apply_patch verification failed: Failed to find expected lines in /root/.ss-eval/runs/r0-7/aiohttp/client_reqrep.py:\n        self._headers = message.headers  # type: ignore[assignment]\n        self._raw_headers = message
+     fail ex [mathnet__mathnet-numerics-1072] apply_patch verification failed: Failed to find expected lines in /root/.ss-eval/runs/r0-56/src/Numerics/SpecialFunctions/Stability.cs:\n        /// <returns>Returns <code>sqrt(a<sup>2</sup> + b^2)</code> without underflo
+codex     sweet pipe  calls=121   failed=3    anchor_lines=863    tasks=22  residue={}
+     fail ex [absinthe-graphql__absinthe-998] Chunk ID: 3f6171\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 34\nOutput:\nFailed to find expected lines in /root/.ss-eval/runs/r1-3/lib/absinthe/type/built_ins/introspection.ex:\n      end\n   
+     fail ex [aws-actions__configure-aws-credentials-42] apply_patch verification failed: Failed to find expected lines in /root/.ss-eval/runs/r0-16/index.js:\n    core.getInput('aws-access-key-id', { required: true });\n    const secretAccessKey = core.getInput('aws-secret-acce
+     fail ex [protofire__solhint-224] apply_patch verification failed: Failed to find expected lines in /root/.ss-eval/runs/r0-63/lib/rules/order/index.js:\n    new FuncOrderChecker(reporter),\n    new ImportsOnTopChecker(reporter),\n    new VisibilityModifierO
+opencode  sweet tab   calls=123   failed=0    anchor_lines=992    tasks=22  residue={}
+opencode  sweet none  calls=108   failed=7    anchor_lines=888    tasks=22  residue={}
+     fail ex [awslabs__aws-embedded-metrics-node-21] \napply_patch verification failed: Error: Failed to find expected lines in /root/.ss-eval/runs/r0-16/src/serializers/LogSerializer.ts:\n      // future it may make sense to introduce a higher-order\n      // representation 
+     fail ex [bfgroup__b2-113] \napply_patch verification failed: Error: Failed to find expected lines in /root/.ss-eval/runs/r2-21/src/build/alias.py:\n    def compute_usage_requirements(self, subvariant):\n        if __debug__:\n            from .virtua
+     fail ex [devlooped__moq-1262] \napply_patch verification failed: Error: Failed to find expected lines in /root/.ss-eval/runs/r1-23/src/Moq/Match.cs:\n				return ExpressionComparer.Default.Equals(this.RenderExpression, other.RenderExpression);\nSTATUS=er
+     fail ex [devlooped__moq-1262] \napply_patch verification failed: Error: Failed to find expected lines in /root/.ss-eval/runs/r2-24/src/Moq/MethodExpectation.cs:\n		private bool IsOverride(Invocation invocation)\n		{\n			Debug.Assert(invocation.Method != 
+opencode  sweet pipe  calls=122   failed=4    anchor_lines=996    tasks=22  residue={}
+     fail ex [fastify__fastify-cors-285] \napply_patch verification failed: Error: Failed to find expected lines in /root/.ss-eval/runs/r0-41/index.js:\nfunction validateHook (hook, next) {\nSTATUS=error
+     fail ex [accenture__sfmc-devtools-1974] \napply_patch verification failed: Error: Failed to find expected lines in /root/.ss-eval/runs/r1-2/lib/index.js:\n        /** @type {TypeKeyCombo} */\n        let selectedTypesObj;\n        if (selectedTypes) {\n            
+     fail ex [bfgroup__b2-113] \napply_patch verification failed: Error: Failed to find expected lines in /root/.ss-eval/runs/r1-20/src/tools/stage.py:\n        return property_set.create(properties)\n\n    def construct(self, name, source_targets, ps):\nS
+     fail ex [protofire__solhint-224] \napply_patch verification failed: Error: Failed to find expected lines in /root/.ss-eval/runs/r1-32/lib/rules/order/index.js:\n    new FuncOrderChecker(reporter),\n    new ImportsOnTopChecker(reporter),\n    new VisibilityM
+codex     native      calls=124   failed=6    anchor_lines=1102   residue={}
+opencode  native      calls=118   failed=3    anchor_lines=1026   residue={}

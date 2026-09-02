@@ -1,0 +1,20 @@
+cells 390
+resolved=True: n=239 closureFires=0 (0.0%) provenanceFires=24 (10.0%)
+resolved=False: n=151 closureFires=1 (0.7%) provenanceFires=52 (34.4%)
+closure firings by task/outcome:
+  gitbookio__markup-it-56                    resolved=False 1
+closure examples:
+  gitbookio__markup-it-56        native0 res=False lit='noframes' sibs=['pre'] decl=src/html/deserializeHtml.js:29 BLOCK_TAGS consumers=4
+  gitbookio__markup-it-56        native0 res=False lit='optgroup' sibs=['pre'] decl=src/html/deserializeHtml.js:29 BLOCK_TAGS consumers=4
+  gitbookio__markup-it-56        native0 res=False lit='option' sibs=['pre'] decl=src/html/deserializeHtml.js:29 BLOCK_TAGS consumers=4
+  gitbookio__markup-it-56        native0 res=False lit='param' sibs=['pre'] decl=src/html/deserializeHtml.js:29 BLOCK_TAGS consumers=4
+  gitbookio__markup-it-56        native0 res=False lit='script' sibs=['pre'] decl=src/html/deserializeHtml.js:29 BLOCK_TAGS consumers=4
+  gitbookio__markup-it-56        native0 res=False lit='section' sibs=['pre'] decl=src/html/deserializeHtml.js:29 BLOCK_TAGS consumers=4
+aiohttp provenance (header-conditioned cells):
+  codex native1 res=False keep-alive: 12 sites e.g. [('aiohttp/web_protocol.py', 108, None), ('aiohttp/web_protocol.py', 110, None)]
+  codex native2 res=False keep-alive: 12 sites e.g. [('aiohttp/web_protocol.py', 108, None), ('aiohttp/web_protocol.py', 110, None)]
+  codex sweet0 res=False keep-alive: 12 sites e.g. [('aiohttp/web_protocol.py', 108, None), ('aiohttp/web_protocol.py', 110, None)]
+  codex sweet2 res=False Connection: 40 sites e.g. [('aiohttp/client.py', 42, None), ('aiohttp/client.py', 50, None)]; keep-alive: 12 sites e.g. [('aiohttp/web_protocol.py', 108, None), ('aiohttp/web_protocol.py', 110, None)]
+  opencode native0 res=False keep-alive: 12 sites e.g. [('aiohttp/web_protocol.py', 108, None), ('aiohttp/web_protocol.py', 110, None)]
+  opencode native1 res=False Connection: 40 sites e.g. [('aiohttp/client.py', 42, None), ('aiohttp/client.py', 50, None)]; keep-alive: 12 sites e.g. [('aiohttp/web_protocol.py', 108, None), ('aiohttp/web_protocol.py', 110, None)]
+  claude-code sweet0 res=False Connection: 40 sites e.g. [('aiohttp/client.py', 42, None), ('aiohttp/client.py', 50, None)]; keep-alive: 12 sites e.g. [('aiohttp/web_protocol.py', 108, None), ('aiohttp/web_protocol.py', 110, None)]

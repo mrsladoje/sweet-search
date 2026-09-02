@@ -1,0 +1,142 @@
+=== rates (native | sweet) ===
+ requests/rollout 16.32 | 19.70 ; tool-bearing 15.32 | 18.70 ; calls 25.23 | 21.79 ; ops 25.74 | 23.79 ; cost $0.008969 | $0.009265
+ native ops per request by kind: R 2.154 (n=156) S 1.961 (n=180) exploration pooled (R,S,RS) 2.484 (n=444); sweet: R 1.567 S 1.229 pooled 1.459
+
+=== sweet request price by kind (mean of the request's own tokens; registered luna price) ===
+ kind  n   mean cache-read tok  mean uncached-in tok  mean out+reason tok  full cost  marginal(prefix+out)  prefix-only
+ R     240      22540          3      152  $0.000450  $0.000317  $0.000225
+ S     380      19912          3      151  $0.000407  $0.000290  $0.000199
+ RS     42      18969          3      284  $0.000514  $0.000360  $0.000190
+ E     123      29123          3      537  $0.000740  $0.000614  $0.000291
+ T     191      24247          3       73  $0.000337  $0.000286  $0.000242
+ O       7      20108          3      348  $0.000516  $0.000410  $0.000201
+ N     251      16022          3      176  $0.000566  $0.000266  $0.000160
+ X      66      27906          3      125  $0.000395  $0.000354  $0.000279
+ all sweet requests: mean full cost $0.000470, mean marginal $0.000326; exploration requests: mean marginal $0.000304, prefix-only $0.000208
+
+=== A. global-rate ceilings (08-28 style: every sweet request compressible at native's mean rate) ===
+ envelope / all requests (08-28 -20% form)                  saved 5.60 req/rollout (28.4% of 19.70) = -$0.001703/rollout (-18.4% of $0.009265) [priced at mean exploration marginal $0.000304]
+   same, priced at the 08-28 $0.000341/request: -$0.001911 (-20.6%); at mean full request cost $0.000470: -$0.002636 (-28.4%)
+ envelope / tool-bearing requests only                      saved 5.47 req/rollout (27.8% of 19.70) = -$0.001662/rollout (-17.9% of $0.009265) [priced at mean exploration marginal $0.000304]
+   same, priced at the 08-28 $0.000341/request: -$0.001864 (-20.1%); at mean full request cost $0.000470: -$0.002572 (-27.8%)
+ operation / all requests (08-28 -9.5% form)                saved 4.62 req/rollout (23.4% of 19.70) = -$0.001403/rollout (-15.1% of $0.009265) [priced at mean exploration marginal $0.000304]
+   same, priced at the 08-28 $0.000341/request: -$0.001575 (-17.0%); at mean full request cost $0.000470: -$0.002172 (-23.4%)
+ operation / tool-bearing requests only                     saved 4.54 req/rollout (23.1% of 19.70) = -$0.001380/rollout (-14.9% of $0.009265) [priced at mean exploration marginal $0.000304]
+   same, priced at the 08-28 $0.000341/request: -$0.001549 (-16.7%); at mean full request cost $0.000470: -$0.002136 (-23.1%)
+
+=== B. kind-specific, dependency-respecting ceilings (only consecutive same-kind exploration requests merge) ===
+ R runs at native R width 2.154                             saved 0.64 req/rollout (3.2% of 19.70) = -$0.000253/rollout (-2.7% of $0.009265) [prefix-only -$0.000180 = -1.9%; 156 runs, 240 requests]
+ S runs at native S width 1.961                             saved 0.59 req/rollout (3.0% of 19.70) = -$0.000171/rollout (-1.8% of $0.009265) [prefix-only -$0.000136 = -1.5%; 236 runs, 380 requests]
+ exploration runs (R,S,RS mixed) at native pooled width 2.484 saved 3.06 req/rollout (15.5% of 19.70) = -$0.001030/rollout (-11.1% of $0.009265) [prefix-only -$0.000780 = -8.4%; 197 runs, 662 requests]
+   [control] native compressed at its own pooled width: saved 0.77 req/rollout (187 runs) -- residual packing slack in native itself
+
+=== C. observed floor: runs of consecutive single-`ss-read` requests (1 bash call, exactly one ss-read op, no chain) ===
+ run-length distribution: {1: 80, 2: 24, 3: 7, 4: 1, 5: 1}
+ runs of length>=2: 33, requests in them 78 (1.18/rollout); consecutive pairs reading the SAME file: 22
+ single-ss-read runs (len>=2) packed at native R width 2.154 saved 0.53 req/rollout (2.7% of 19.70) = -$0.000203/rollout (-2.2% of $0.009265) [prefix-only -$0.000147]
+ single-ss-read runs (len>=2) fully packed to ONE request   saved 0.68 req/rollout (3.5% of 19.70) = -$0.000263/rollout (-2.8% of $0.009265) [prefix-only -$0.000192]
+ single-ss-read requests: 158 of 267 ss-read-bearing requests (59.2%); 2.39 per rollout
+
+=== D. search -> next request fan-out (what follows a search-only request) ===
+ native: after 144 search-only requests the next request is: {'R': '74 (51%)', 'RS': '30 (21%)', 'S': '19 (13%)', 'E': '16 (11%)', 'T': '4 (3%)', 'O': '1 (1%)'}; when it is a read request it carries 2.28 read ops on average (n=74); share of those with >=2 reads 45.9%
+ sweet: after 334 search-only requests the next request is: {'S': '146 (44%)', 'R': '120 (36%)', 'E': '33 (10%)', 'RS': '18 (5%)', 'T': '14 (4%)', 'O': '3 (1%)'}; when it is a read request it carries 1.63 read ops on average (n=120); share of those with >=2 reads 29.2%
+
+=== E. per-task alignment: sweet consecutive single-ss-read runs vs native multi-read requests, same task ===
+ native multi-read requests with >=2 distinct-or-repeated file paths: 144; sweet single-ss-read runs (len>=2): 33; path-matched pairs (>=2 shared files): 12 across 5 tasks
+
+ TASK aio-libs__aiohttp-8038
+  sweet  rp-oc-tab-20260827/agent-state/aio-libs__aiohttp-8038-sweet rep0 (session-1787855170125-1442751-294e0a0a) requests #[10, 11] msgs ['msg_04479fbba001L5086qsc4i8eSW', 'msg_0447a04700016iKzlW9Q2Gcf4M']
+     $ ss-read aiohttp/client_proto.py 1 150
+     $ ss-read aiohttp/connector.py 94 190
+  native fp-opencode-tab-20260826/agent-state/aio-libs__aiohttp-8038-native rep0 (session-1787755067101-1040662-f1242589) request #2 msg msg_03e819b02001AWTZaO2h5SYK5j read 4 files in ONE request: ['AGENTS.md', 'aiohttp/client_proto.py', 'aiohttp/connector.py', 'aiohttp/connector.py']
+  shared files: ['aiohttp/client_proto.py', 'aiohttp/connector.py'] ; marginal saving if the sweet run were one request: $0.000234
+
+ TASK aio-libs__aiohttp-8038
+  sweet  rp-oc-tab-20260827/agent-state/aio-libs__aiohttp-8038-sweet rep2 (session-1787855671429-1442751-56a79545) requests #[3, 4, 5, 6] msgs ['msg_044814857001TpmA4o2ApDTKSI', 'msg_0448154b8001R7zTXZs4BLB0Bh', 'msg_044815d98001A734HINhyvX5jw', 'msg_0448167ad001vriHhzdHMabmfT']
+     $ ss-read aiohttp/connector.py 230 390
+     $ ss-read aiohttp/connector.py 490 650
+     $ ss-read aiohttp/client_proto.py 50 90
+     $ ss-read aiohttp/connector.py 650 710
+  native fp-opencode-tab-20260826/agent-state/aio-libs__aiohttp-8038-native rep0 (session-1787755067101-1040662-f1242589) request #2 msg msg_03e819b02001AWTZaO2h5SYK5j read 4 files in ONE request: ['AGENTS.md', 'aiohttp/client_proto.py', 'aiohttp/connector.py', 'aiohttp/connector.py']
+  shared files: ['aiohttp/client_proto.py', 'aiohttp/connector.py'] ; marginal saving if the sweet run were one request: $0.000625
+
+ TASK aws-actions__configure-aws-credentials-42
+  sweet  rp-oc-tab-20260827/agent-state/aws-actions__configure-aws-credentials-42-sweet rep1 (session-1787857170849-1442751-be4edc1d) requests #[3, 4] msgs ['msg_04497b6b2001f0epdbKoU7ncxn', 'msg_04497bd26001IMIYCwp1KCAIXk']
+     $ ss-read action.yml 1 80
+     $ ss-read index.js 1 180
+  native fp-opencode-tab-20260826/agent-state/aws-actions__configure-aws-credentials-42-native rep0 (session-1787756493001-1040662-4702aee0) request #2 msg msg_03e976502001Cy6AG6BXaHTvaj read 4 files in ONE request: ['index.js', 'action.yml', 'index.test.js', 'package.json']
+  shared files: ['action.yml', 'index.js'] ; marginal saving if the sweet run were one request: $0.000133
+
+ TASK bfgroup__b2-113
+  sweet  rp-oc-tab-20260827/agent-state/bfgroup__b2-113-sweet rep2 (session-1787858728180-1442751-b4b96f81) requests #[24, 25] msgs ['msg_044b3b5df001lbUVYDkuZDdhpM', 'msg_044b3c56a001Xz2r4V41xx8URJ']
+     $ ss-read test/stage.py 1 155
+     $ ss-read test/transitive_skip.py 1 180
+  native fp-opencode-tab-20260826/agent-state/bfgroup__b2-113-native rep2 (session-1787759552838-1040662-8ebd6d1d) request #4 msg msg_03ec92f6d001Dx0io1JUxYxzoK read 2 files in ONE request: ['test/transitive_skip.py', 'test/stage.py']
+  shared files: ['test/stage.py', 'test/transitive_skip.py'] ; marginal saving if the sweet run were one request: $0.000687
+
+ TASK devlooped__moq-1262
+  sweet  rp-oc-tab-20260827/agent-state/devlooped__moq-1262-sweet rep2 (session-1787859832153-1442751-bb37c5b1) requests #[16, 17, 18, 19, 20] msgs ['msg_044c17d720012fmJnFpAFU0HPp', 'msg_044c18b6f001yTr8PxF5SxMkqT', 'msg_044c1985b001U5RPw32047UcKF', 'msg_044c1b3c0001KEUwaIycQYfjSh', 'msg_044c1bf02001GH70pJh154rDwp']
+     $ ss-read src/Moq/ExpressionComparer.cs 240 300
+     $ ss-read src/Moq/ExpressionExtensions.cs 1 90
+     $ ss-read src/Moq/ExpressionComparer.cs 1 180
+     $ ss-read src/Moq/ExpressionComparer.cs 175 240
+     $ ss-read src/Moq/Match.cs 55 155
+  native fp-opencode-tab-20260826/agent-state/devlooped__moq-1262-native rep0 (session-1787762148033-1040662-2528fbd9) request #8 msg msg_03eee7625001lzj4XCmgDEARBl read 3 files in ONE request: ['src/Moq/ExpressionComparer.cs', 'src/Moq/ExpressionExtensions.cs', 'src/Moq/Setup.cs']
+  shared files: ['src/Moq/ExpressionComparer.cs', 'src/Moq/ExpressionExtensions.cs'] ; marginal saving if the sweet run were one request: $0.002202
+
+ TASK gitbookio__markup-it-56
+  sweet  fp-opencode-tab-20260826/agent-state/gitbookio__markup-it-56-sweet rep2 (session-1787762733434-1040662-be6e45ee) requests #[9, 10, 11] msgs ['msg_03ef71302001cvIIdv8UOzdtaV', 'msg_03ef718ec001cNte4i1HGk0ylP', 'msg_03ef72ebb00101HIOD6aJ9TUqz']
+     $ ss-read src/markdown/re/inline.js 1 50
+     $ ss-read src/models/state.js 1 360
+     $ ss-read src/markdown/re/block.js 1 60
+  native fp-opencode-tab-20260826/agent-state/gitbookio__markup-it-56-native rep2 (session-1787763082138-1040662-44287b5b) request #4 msg msg_03efc1bf8001BU2kr3Jd6r0uMB read 5 files in ONE request: ['src/models/state.js', 'test/deserializer.js', 'src/markdown/re/block.js', 'src/markdown/blocks/index.js', 'src/markdown/inlines/link.js']
+  shared files: ['src/markdown/re/block.js', 'src/models/state.js'] ; marginal saving if the sweet run were one request: $0.000628
+
+=== F. the +requests gap by request kind (sweet minus native, per rollout) ===
+ kind | native req/rollout | sweet req/rollout | gap | native marginal $/rollout | sweet marginal $/rollout | sweet full $/rollout (share)
+  R     2.36   3.64  +1.27  $0.000859  $0.001151  $0.001635 (17.6%)
+  S     2.73   5.76  +3.03  $0.000948  $0.001668  $0.002343 (25.3%)
+  RS    1.64   0.64  -1.00  $0.000526  $0.000229  $0.000327 (3.5%)
+  E     1.77   1.86  +0.09  $0.001193  $0.001144  $0.001380 (14.9%)
+  T     2.71   2.89  +0.18  $0.000820  $0.000828  $0.000976 (10.5%)
+  O     0.18   0.11  -0.08  $0.000090  $0.000043  $0.000055 (0.6%)
+  N     3.92   3.80  -0.12  $0.001132  $0.001010  $0.002154 (23.3%)
+  X     1.00   1.00  +0.00  $0.000360  $0.000354  $0.000395 (4.3%)
+  total gap +3.38 requests/rollout
+
+=== G. shared sinks: todo-only requests (opencode's built-in todowrite tool), both arms ===
+ native: 259 todo-only requests (3.92/rollout, 24.0% of requests); marginal $0.001132/rollout (12.6% of the arm), full $0.002373/rollout; mean out+reasoning 195 tok; position {'first-3': 66, 'middle': 127, 'last-3': 66}
+ sweet: 251 todo-only requests (3.80/rollout, 19.3% of requests); marginal $0.001010/rollout (10.9% of the arm), full $0.002154/rollout; mean out+reasoning 176 tok; position {'first-3': 66, 'middle': 120, 'last-3': 65}
+
+=== H. per-task table and concentration of parallel ss-* emission (sweet) ===
+ task | native req | sweet req | native calls/req | sweet calls/req | native multi-read req/rollout | sweet ss-req/rollout | sweet parallel-ss req (3 reps) | sweet chained req (3 reps) | solved native/sweet | $ native/sweet
+  absinthe-graphql__absinthe-998                13.0  13.3  1.54  1.30  2.33   3.3   6   0 3/3 $0.00618/$0.00641
+  accenture__sfmc-devtools-1974                 19.0  21.3  1.74  1.03  5.33  12.7   1  11 2/1 $0.01236/$0.00947
+  aio-libs__aiohttp-8038                        22.7  30.0  1.38  1.04  3.67  15.0   3   0 0/1 $0.01348/$0.01565
+  apigee__registry-961                          17.0  20.7  1.78  1.10  5.67  10.0   4   9 3/3 $0.01209/$0.01098
+  asynkron__protoactor-dotnet-1909              12.7  12.7  1.45  0.95  2.33   3.7   1   0 3/3 $0.00422/$0.00406
+  aws-actions__configure-aws-credentials-42     12.0  24.3  1.39  1.11  2.33  11.0   4   2 3/3 $0.00544/$0.01060
+  awslabs__aws-embedded-metrics-node-21         13.7  16.0  1.59  1.31  3.00   5.0   6   0 2/3 $0.00699/$0.00728
+  axelrod-python__axelrod-671                   11.0  11.7  1.39  0.91  2.00   2.0   0   1 3/3 $0.00429/$0.00404
+  bfgroup__b2-113                               21.7  34.7  1.71  1.09  5.33  19.3   6   0 1/0 $0.01384/$0.01950
+  bfgroup__b2-259                               18.7  36.0  1.59  1.00  4.67  20.0   1   0 0/0 $0.01055/$0.01723
+  callstack__react-native-paper-972             13.7  12.3  1.51  1.19  2.67   4.0   3   1 3/3 $0.00496/$0.00438
+  celestiaorg__nmt-192                          11.7  10.3  1.37  0.97  2.00   2.3   0   0 3/3 $0.00481/$0.00360
+  devlooped__moq-1262                           35.0  39.7  1.48  1.19  6.00  22.3   7   9 0/0 $0.02837/$0.02749
+  fastify__fastify-cors-285                     18.0  15.3  1.30  1.11  2.00   6.3   2   1 0/0 $0.00882/$0.00667
+  final-form__final-form-64                     11.0  11.7  1.39  1.03  2.00   4.0   0   2 3/3 $0.00494/$0.00398
+  gitbookio__markup-it-56                       21.7  32.0  2.00  1.40  6.33  17.3  16   4 0/0 $0.01304/$0.01603
+  hotmeteor__spectator-181                      14.7  19.3  1.61  1.02  3.33   6.7   2   4 0/0 $0.00732/$0.00797
+  jazzband__tablib-454                          12.0  13.0  1.44  1.08  2.67   4.0   3   1 3/3 $0.00448/$0.00458
+  locationtech__jts-622                         11.0  12.7  1.36  1.00  2.00   4.0   0   1 3/3 $0.00428/$0.00411
+  mathnet__mathnet-numerics-1072                14.0  11.3  1.24  0.97  1.67   2.0   0   0 3/3 $0.00710/$0.00464
+  mirumee__ariadne-codegen-218                  12.0  11.3  1.42  1.03  2.67   3.3   1   2 3/3 $0.00572/$0.00462
+  protofire__solhint-224                        23.0  23.7  1.78  1.14  5.00   9.0   4   5 0/0 $0.01403/$0.01053
+ sweet rollouts with >=1 parallel-ss request: 31/66; distribution: {0: 35, 1: 12, 2: 9, 3: 6, 4: 2, 7: 2}
+ parallel-ss request widths (ss envelopes per request): {2: 17, 3: 31, 4: 18, 5: 3, 6: 1}
+ top parallel-ss compositions: [('read,read,read', 17), ('read,read,read,read', 13), ('grep,search', 5), ('grep,read,read', 5), ('read,read', 4), ('grep,grep', 3), ('grep,read', 3), ('find,read,read', 3), ('read,read,read,read,read', 2), ('grep,read,read,read', 2)]
+ native multi-call requests containing bash: 78, compositions [('bash,bash', 20), ('bash,glob,grep', 8), ('bash,read', 8), ('bash,bash,bash', 6), ('bash,grep', 6), ('bash,grep,read', 5), ('bash,glob,glob,grep', 5), ('bash,read,read', 3)]
+
+=== I. operation-count reconciliation with 08-28 p3-ops-per-envelope (three segmenter definitions) ===
+ native: ops/rollout pipeline=1&quotes-masked 25.74 | pipes-split&quotes-masked 25.76 | naive (08-28 as run) 27.47 ; bash envelopes 314, with >1 naive segment 42 (13.4%)
+ sweet: ops/rollout pipeline=1&quotes-masked 23.79 | pipes-split&quotes-masked 23.85 | naive (08-28 as run) 28.56 ; bash envelopes 1024, with >1 naive segment 213 (20.8%)

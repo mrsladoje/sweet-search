@@ -1,0 +1,11 @@
+=== cost per rollout by REP INDEX (is rep order a confound?) ===
+harness     form        rep0      rep1      rep2    n0/n1/n2
+codex       tab     0.012150  0.012065  0.012776    22/22/22
+codex       none    0.012484  0.011230  0.013243    22/22/22
+codex       pipe    0.012471  0.013399  0.012393    22/22/22
+opencode    tab     0.008634  0.010612  0.008549    22/22/22
+opencode    none    0.008020  0.008814  0.008918    22/22/22
+opencode    pipe    0.009856  0.008247  0.008188    22/22/22
+claude-code tab     0.021915  0.021332  0.018908    23/21/22
+claude-code none    0.017902  0.018632  0.021448    21/21/24
+claude-code pipe    0.017482  0.018300  0.017573    23/20/23

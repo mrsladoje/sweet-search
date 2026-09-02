@@ -1,0 +1,65 @@
+================================================================================================
+What the line-number gutter costs per rollout [M inputs, I arithmetic]
+  price: $0.10/M new input, $0.01/M cached re-send
+  assumption: a read is re-sent as cached prefix on half the remaining turns
+================================================================================================
+
+codex: 394 numbered lines/rollout, 12.5 turns, observed $0.012330/rollout
+  form           tok/roll  gutter tok    $ gutter  % of rollout   Δ$ vs tab  Δ% vs tab
+  none               3354           0    0.000000         0.00%   +0.000000     +0.00%
+  tab                3937         583    0.000092         0.75%   +0.000000     +0.00%
+  space              3904         550    0.000087         0.70%   -0.000005     -0.04%
+  colon              4215         861    0.000136         1.10%   +0.000044     +0.36%
+  pipe_nosp          4230         876    0.000138         1.12%   +0.000046     +0.37%
+  sp_pipe            4235         881    0.000139         1.13%   +0.000047     +0.38%
+  colon_space        4298         944    0.000149         1.21%   +0.000057     +0.46%
+  pipe               4298         944    0.000149         1.21%   +0.000057     +0.46%
+  pad5_tab           4636        1282    0.000202         1.64%   +0.000110     +0.89%
+  pad5_2sp           4637        1283    0.000202         1.64%   +0.000110     +0.89%
+  sparse5            3472         118    0.000019         0.15%   -0.000073     -0.59%
+  sparse10           3412          58    0.000009         0.07%   -0.000083     -0.67%
+  landmark           3380          26    0.000004         0.03%   -0.000088     -0.71%
+
+opencode: 478 numbered lines/rollout, 21.8 turns, observed $0.009265/rollout
+  form           tok/roll  gutter tok    $ gutter  % of rollout   Δ$ vs tab  Δ% vs tab
+  none               4068           0    0.000000         0.00%   +0.000000     +0.00%
+  tab                4776         708    0.000144         1.56%   +0.000000     +0.00%
+  space              4736         667    0.000136         1.47%   -0.000008     -0.09%
+  colon              5113        1045    0.000213         2.30%   +0.000069     +0.74%
+  pipe_nosp          5131        1063    0.000217         2.34%   +0.000073     +0.78%
+  sp_pipe            5138        1069    0.000218         2.35%   +0.000074     +0.80%
+  colon_space        5214        1145    0.000234         2.52%   +0.000089     +0.96%
+  pipe               5214        1145    0.000234         2.52%   +0.000089     +0.96%
+  pad5_tab           5624        1555    0.000317         3.42%   +0.000173     +1.87%
+  pad5_2sp           5625        1556    0.000318         3.43%   +0.000173     +1.87%
+  sparse5            4212         143    0.000029         0.32%   -0.000115     -1.24%
+  sparse10           4139          70    0.000014         0.15%   -0.000130     -1.40%
+  landmark           4100          32    0.000006         0.07%   -0.000138     -1.49%
+
+claude-code: 517 numbered lines/rollout, 29.9 turns, observed $0.020727/rollout
+  form           tok/roll  gutter tok    $ gutter  % of rollout   Δ$ vs tab  Δ% vs tab
+  none               4399           0    0.000000         0.00%   +0.000000     +0.00%
+  tab                5164         765    0.000187         0.90%   +0.000000     +0.00%
+  space              5121         722    0.000176         0.85%   -0.000011     -0.05%
+  colon              5529        1130    0.000276         1.33%   +0.000089     +0.43%
+  pipe_nosp          5548        1149    0.000281         1.36%   +0.000094     +0.45%
+  sp_pipe            5555        1156    0.000283         1.36%   +0.000096     +0.46%
+  colon_space        5637        1238    0.000303         1.46%   +0.000116     +0.56%
+  pipe               5637        1238    0.000303         1.46%   +0.000116     +0.56%
+  pad5_tab           6080        1681    0.000411         1.98%   +0.000224     +1.08%
+  pad5_2sp           6082        1683    0.000411         1.99%   +0.000224     +1.08%
+  sparse5            4554         155    0.000038         0.18%   -0.000149     -0.72%
+  sparse10           4475          76    0.000019         0.09%   -0.000168     -0.81%
+  landmark           4433          34    0.000008         0.04%   -0.000179     -0.86%
+
+================================================================================================
+Sensitivity: the same table for codex under resend_frac 0 (read on the
+last turn only) and 1.0 (read on turn 1, re-sent every turn after).
+================================================================================================
+  resend_frac=0.0  tab $0.000058 (0.47% of rollout)   pipe $0.000094 (0.77%)   pipe-tab +0.29%
+  resend_frac=0.5  tab $0.000092 (0.75% of rollout)   pipe $0.000149 (1.21%)   pipe-tab +0.46%
+  resend_frac=1.0  tab $0.000125 (1.02% of rollout)   pipe $0.000203 (1.65%)   pipe-tab +0.63%
+
+  measured codex PIPE vs TAB in FRESH-POOL-RESULTS.md section 1: $0.012754 vs $0.012330 = +3.44%
+  token arithmetic explains at most the figure above; the remainder is
+  behavioural (turn count), not the gutter's own bytes.

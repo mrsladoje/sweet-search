@@ -1,0 +1,5127 @@
+{
+ "perForm": {
+  "TAB": {
+   "rollouts": 66,
+   "allCalls": 2007,
+   "bashCalls": 1449,
+   "ssCalls": 1124,
+   "ssBashCalls": 915,
+   "byTool": {
+    "ss-search": 198,
+    "ss-read": 421,
+    "ss-grep": 389,
+    "ss-find": 97,
+    "ss-trace": 13,
+    "ss-semantic": 6
+   },
+   "byToolEmpty": {
+    "ss-grep": 130,
+    "ss-find": 7,
+    "ss-search": 2
+   },
+   "errByClass": {
+    "empty result: (no matches)": 139,
+    "ss-trace symbol not found (exit 1)": 4,
+    "ss-* usage error (exit 2) — argument form rejected": 19,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 13,
+    "engine stderr leaked into agent output (model-load chatter)": 13,
+    "ss-read error (exit 1) — path not readable": 9,
+    "ss-semantic error (exit 1)": 1
+   },
+   "exitCodes": {
+    "0": 869,
+    "1": 27,
+    "2": 19
+   },
+   "nativeRetrievalCalls": 179,
+   "nativeAfterSS_any": 94,
+   "nativeAfterSS_immediate": 39,
+   "traceLatencyMs": [
+    21,
+    61,
+    146,
+    128,
+    21,
+    20,
+    12,
+    75,
+    9,
+    29,
+    29,
+    60,
+    19
+   ],
+   "noiseCalls": 13,
+   "timeouts": 0,
+   "ssSearchUsedTokens": [
+    906,
+    720,
+    906,
+    763,
+    2373,
+    2392,
+    2373,
+    848,
+    1864,
+    1007,
+    1765,
+    639,
+    2701,
+    2363,
+    2379,
+    449,
+    1616,
+    1336,
+    1864,
+    1039,
+    2859,
+    4866,
+    1047,
+    2669,
+    1047,
+    834,
+    1927,
+    958,
+    48,
+    60,
+    375,
+    528,
+    1289,
+    163,
+    1289,
+    201,
+    623,
+    360,
+    2495,
+    1448,
+    665,
+    483,
+    975,
+    719,
+    1446,
+    1358,
+    1328,
+    1526,
+    1829,
+    1998,
+    833,
+    1647,
+    2446,
+    778,
+    1316,
+    1150,
+    1839,
+    529,
+    1237,
+    1235,
+    507,
+    32,
+    1433,
+    3179,
+    926,
+    1244,
+    893,
+    1072,
+    398,
+    160,
+    508,
+    60,
+    515,
+    73,
+    599,
+    947,
+    1870,
+    205,
+    469,
+    2282,
+    705,
+    2385,
+    2543,
+    406,
+    919,
+    674,
+    406,
+    445,
+    466,
+    951,
+    725,
+    550,
+    918,
+    684,
+    491,
+    1814,
+    1433,
+    2105,
+    704,
+    782,
+    1110,
+    1091,
+    4354,
+    191,
+    2388,
+    893,
+    1158,
+    73,
+    1217,
+    1574,
+    2164,
+    354,
+    1094,
+    1366,
+    2421,
+    1862,
+    2143,
+    1453,
+    1454,
+    285,
+    2742,
+    210,
+    478,
+    868,
+    2165,
+    204,
+    622,
+    1062,
+    751,
+    957,
+    868,
+    925,
+    1070,
+    1070,
+    1101,
+    662,
+    1841,
+    646,
+    484,
+    1852,
+    631,
+    1070,
+    631,
+    144,
+    345,
+    711,
+    795,
+    87,
+    467,
+    526,
+    218,
+    950,
+    248,
+    291,
+    908,
+    126,
+    46,
+    850,
+    554,
+    496,
+    238,
+    754,
+    850,
+    2556,
+    2050,
+    850,
+    644,
+    588,
+    835,
+    836,
+    156,
+    1170,
+    540,
+    1170,
+    1194,
+    1170,
+    1188,
+    323,
+    1579,
+    1579,
+    1210,
+    265,
+    859,
+    677,
+    241,
+    496,
+    1284,
+    1234,
+    1290,
+    595,
+    629,
+    1192,
+    82,
+    431,
+    1161
+   ],
+   "ssGrepZero": 130
+  },
+  "NONE": {
+   "rollouts": 66,
+   "allCalls": 1771,
+   "bashCalls": 1276,
+   "ssCalls": 1117,
+   "ssBashCalls": 892,
+   "byTool": {
+    "ss-search": 151,
+    "ss-read": 499,
+    "ss-trace": 16,
+    "ss-grep": 328,
+    "ss-find": 110,
+    "ss-semantic": 12,
+    "ss-files": 1
+   },
+   "byToolEmpty": {
+    "ss-grep": 93,
+    "ss-read": 2,
+    "ss-find": 7
+   },
+   "errByClass": {
+    "empty result: (no matches)": 102,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 10,
+    "engine stderr leaked into agent output (model-load chatter)": 10,
+    "ss-* usage error (exit 2) — argument form rejected": 22,
+    "ss-read error (exit 1) — path not readable": 21,
+    "ss-read invalid line args (exit 2)": 1,
+    "command not found (exit 127)": 1,
+    "ss-trace symbol not found (exit 1)": 1,
+    "ss-semantic error (exit 1)": 1
+   },
+   "exitCodes": {
+    "0": 843,
+    "1": 29,
+    "2": 19,
+    "127": 1
+   },
+   "nativeRetrievalCalls": 91,
+   "nativeAfterSS_any": 52,
+   "nativeAfterSS_immediate": 24,
+   "traceLatencyMs": [
+    127,
+    85,
+    129,
+    129,
+    56,
+    36,
+    5,
+    37,
+    64,
+    35,
+    25,
+    164,
+    144,
+    180,
+    153
+   ],
+   "noiseCalls": 10,
+   "timeouts": 0,
+   "ssSearchUsedTokens": [
+    720,
+    515,
+    951,
+    906,
+    515,
+    634,
+    346,
+    2392,
+    2373,
+    1264,
+    1785,
+    879,
+    632,
+    2503,
+    2071,
+    131,
+    1047,
+    2214,
+    1047,
+    1047,
+    1927,
+    2072,
+    549,
+    48,
+    41,
+    60,
+    32,
+    587,
+    739,
+    24,
+    2251,
+    22,
+    1289,
+    117,
+    186,
+    117,
+    1238,
+    186,
+    673,
+    632,
+    919,
+    555,
+    2351,
+    1493,
+    2376,
+    1280,
+    719,
+    1017,
+    915,
+    1483,
+    765,
+    1157,
+    1805,
+    1259,
+    449,
+    1562,
+    1668,
+    1443,
+    2154,
+    2404,
+    1005,
+    1265,
+    1271,
+    1455,
+    2105,
+    160,
+    1934,
+    900,
+    995,
+    1397,
+    837,
+    2012,
+    1410,
+    2048,
+    1592,
+    819,
+    1525,
+    60,
+    1592,
+    1189,
+    84,
+    2262,
+    354,
+    455,
+    1457,
+    1779,
+    208,
+    537,
+    214,
+    1988,
+    1637,
+    604,
+    616,
+    1106,
+    437,
+    138,
+    1217,
+    783,
+    1070,
+    1139,
+    662,
+    1070,
+    1070,
+    664,
+    1070,
+    631,
+    1256,
+    26,
+    1460,
+    120,
+    962,
+    81,
+    291,
+    1090,
+    120,
+    455,
+    120,
+    794,
+    291,
+    888,
+    558,
+    226,
+    530,
+    850,
+    355,
+    1170,
+    1170,
+    1400,
+    1029,
+    1553,
+    1643,
+    1367,
+    40,
+    1929,
+    932,
+    265,
+    1149,
+    1187,
+    186,
+    544,
+    703,
+    859
+   ],
+   "ssGrepZero": 94
+  },
+  "PIPE": {
+   "rollouts": 66,
+   "allCalls": 1683,
+   "bashCalls": 1199,
+   "ssCalls": 1088,
+   "ssBashCalls": 894,
+   "byTool": {
+    "ss-search": 176,
+    "ss-read": 455,
+    "ss-grep": 334,
+    "ss-trace": 23,
+    "ss-find": 81,
+    "ss-semantic": 19
+   },
+   "byToolEmpty": {
+    "ss-read": 1,
+    "ss-grep": 77,
+    "ss-find": 3
+   },
+   "errByClass": {
+    "ss-* usage error (exit 2) — argument form rejected": 29,
+    "ss-trace symbol not found (exit 1)": 5,
+    "empty result: (no matches)": 81,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 14,
+    "engine stderr leaked into agent output (model-load chatter)": 14,
+    "ss-read error (exit 1) — path not readable": 15
+   },
+   "exitCodes": {
+    "0": 832,
+    "1": 33,
+    "2": 29
+   },
+   "nativeRetrievalCalls": 163,
+   "nativeAfterSS_any": 116,
+   "nativeAfterSS_immediate": 44,
+   "traceLatencyMs": [
+    74,
+    22,
+    118,
+    67,
+    131,
+    130,
+    41,
+    21,
+    21,
+    55,
+    13,
+    13,
+    14,
+    23,
+    125,
+    77,
+    7,
+    19,
+    132,
+    158,
+    160,
+    105
+   ],
+   "noiseCalls": 14,
+   "timeouts": 0,
+   "ssSearchUsedTokens": [
+    736,
+    656,
+    935,
+    720,
+    2594,
+    2392,
+    1344,
+    2723,
+    225,
+    2315,
+    987,
+    2536,
+    1047,
+    775,
+    873,
+    1042,
+    2947,
+    811,
+    272,
+    1716,
+    2132,
+    1047,
+    219,
+    1876,
+    566,
+    663,
+    60,
+    12,
+    411,
+    601,
+    60,
+    48,
+    375,
+    223,
+    545,
+    117,
+    192,
+    375,
+    223,
+    238,
+    763,
+    1493,
+    1257,
+    1188,
+    1380,
+    719,
+    1838,
+    1422,
+    923,
+    1519,
+    1668,
+    1870,
+    1013,
+    953,
+    1476,
+    845,
+    1562,
+    1076,
+    1475,
+    2501,
+    1452,
+    796,
+    1280,
+    1668,
+    1742,
+    1134,
+    2165,
+    1671,
+    1697,
+    595,
+    1872,
+    779,
+    871,
+    1011,
+    726,
+    649,
+    1163,
+    1200,
+    590,
+    2397,
+    1397,
+    1980,
+    492,
+    1993,
+    1397,
+    713,
+    2262,
+    2665,
+    1971,
+    1200,
+    1292,
+    2094,
+    742,
+    2970,
+    2538,
+    66,
+    893,
+    2492,
+    2105,
+    653,
+    1193,
+    2767,
+    1038,
+    1240,
+    2421,
+    1689,
+    860,
+    1274,
+    1107,
+    1444,
+    3533,
+    1862,
+    1282,
+    2143,
+    301,
+    153,
+    193,
+    784,
+    630,
+    690,
+    830,
+    784,
+    2347,
+    1203,
+    1454,
+    600,
+    868,
+    151,
+    2802,
+    634,
+    1070,
+    631,
+    1070,
+    285,
+    1070,
+    631,
+    1202,
+    48,
+    1460,
+    711,
+    196,
+    711,
+    120,
+    151,
+    298,
+    351,
+    1662,
+    2357,
+    1662,
+    1776,
+    487,
+    548,
+    835,
+    2363,
+    2363,
+    1170,
+    1170,
+    1170,
+    1367,
+    486,
+    1357,
+    501,
+    629,
+    677,
+    472,
+    544,
+    677,
+    1407,
+    265,
+    415,
+    1387,
+    734,
+    845
+   ],
+   "ssGrepZero": 76
+  }
+ },
+ "rollouts": [
+  {
+   "rid": "TAB/absinthe-graphql__absinthe-998/r0",
+   "form": "TAB",
+   "task": "absinthe-graphql__absinthe-998",
+   "rep": 0,
+   "solved": true,
+   "calls": 9,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 3,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/absinthe-graphql__absinthe-998/r1",
+   "form": "TAB",
+   "task": "absinthe-graphql__absinthe-998",
+   "rep": 1,
+   "solved": true,
+   "calls": 8,
+   "ssCalls": 3,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 1,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/absinthe-graphql__absinthe-998/r2",
+   "form": "TAB",
+   "task": "absinthe-graphql__absinthe-998",
+   "rep": 2,
+   "solved": true,
+   "calls": 11,
+   "ssCalls": 3,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "TAB/accenture__sfmc-devtools-1974/r0",
+   "form": "TAB",
+   "task": "accenture__sfmc-devtools-1974",
+   "rep": 0,
+   "solved": true,
+   "calls": 17,
+   "ssCalls": 19,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 3,
+    "ss-read": 14,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/accenture__sfmc-devtools-1974/r1",
+   "form": "TAB",
+   "task": "accenture__sfmc-devtools-1974",
+   "rep": 1,
+   "solved": false,
+   "calls": 19,
+   "ssCalls": 26,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 7,
+    "ss-read": 17
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/accenture__sfmc-devtools-1974/r2",
+   "form": "TAB",
+   "task": "accenture__sfmc-devtools-1974",
+   "rep": 2,
+   "solved": true,
+   "calls": 17,
+   "ssCalls": 23,
+   "byTool": {
+    "ss-search": 3,
+    "ss-grep": 4,
+    "ss-read": 14,
+    "ss-find": 1,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {
+    "ss-trace symbol not found (exit 1)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/aio-libs__aiohttp-8038/r0",
+   "form": "TAB",
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 0,
+   "solved": false,
+   "calls": 43,
+   "ssCalls": 30,
+   "byTool": {
+    "ss-search": 3,
+    "ss-read": 17,
+    "ss-grep": 8,
+    "ss-find": 1,
+    "ss-semantic": 1
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1,
+    "ss-* usage error (exit 2) — argument form rejected": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/aio-libs__aiohttp-8038/r1",
+   "form": "TAB",
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 1,
+   "solved": false,
+   "calls": 68,
+   "ssCalls": 23,
+   "byTool": {
+    "ss-search": 3,
+    "ss-grep": 6,
+    "ss-read": 13,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/aio-libs__aiohttp-8038/r2",
+   "form": "TAB",
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 2,
+   "solved": false,
+   "calls": 40,
+   "ssCalls": 38,
+   "byTool": {
+    "ss-grep": 15,
+    "ss-search": 3,
+    "ss-read": 18,
+    "ss-trace": 1,
+    "ss-find": 1
+   },
+   "empty": 6,
+   "errs": {
+    "empty result: (no matches)": 6
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/apigee__registry-961/r0",
+   "form": "TAB",
+   "task": "apigee__registry-961",
+   "rep": 0,
+   "solved": true,
+   "calls": 34,
+   "ssCalls": 16,
+   "byTool": {
+    "ss-search": 3,
+    "ss-grep": 8,
+    "ss-read": 5
+   },
+   "empty": 2,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 2,
+    "engine stderr leaked into agent output (model-load chatter)": 2,
+    "empty result: (no matches)": 2
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/apigee__registry-961/r1",
+   "form": "TAB",
+   "task": "apigee__registry-961",
+   "rep": 1,
+   "solved": true,
+   "calls": 27,
+   "ssCalls": 22,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 9,
+    "ss-read": 9,
+    "ss-find": 1,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 3,
+    "engine stderr leaked into agent output (model-load chatter)": 3
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/apigee__registry-961/r2",
+   "form": "TAB",
+   "task": "apigee__registry-961",
+   "rep": 2,
+   "solved": true,
+   "calls": 27,
+   "ssCalls": 17,
+   "byTool": {
+    "ss-search": 3,
+    "ss-grep": 3,
+    "ss-read": 10,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/asynkron__protoactor-dotnet-1909/r0",
+   "form": "TAB",
+   "task": "asynkron__protoactor-dotnet-1909",
+   "rep": 0,
+   "solved": true,
+   "calls": 7,
+   "ssCalls": 2,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-read": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "TAB/asynkron__protoactor-dotnet-1909/r1",
+   "form": "TAB",
+   "task": "asynkron__protoactor-dotnet-1909",
+   "rep": 1,
+   "solved": true,
+   "calls": 45,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-grep": 2,
+    "ss-read": 1,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "TAB/asynkron__protoactor-dotnet-1909/r2",
+   "form": "TAB",
+   "task": "asynkron__protoactor-dotnet-1909",
+   "rep": 2,
+   "solved": true,
+   "calls": 6,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 1,
+    "ss-read": 2
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/aws-actions__configure-aws-credentials-42/r0",
+   "form": "TAB",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 0,
+   "solved": true,
+   "calls": 24,
+   "ssCalls": 12,
+   "byTool": {
+    "ss-grep": 7,
+    "ss-read": 3,
+    "ss-find": 2
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 2,
+    "engine stderr leaked into agent output (model-load chatter)": 2
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/aws-actions__configure-aws-credentials-42/r1",
+   "form": "TAB",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 1,
+   "solved": true,
+   "calls": 23,
+   "ssCalls": 14,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 8,
+    "ss-read": 4,
+    "ss-find": 1
+   },
+   "empty": 6,
+   "errs": {
+    "empty result: (no matches)": 6,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/aws-actions__configure-aws-credentials-42/r2",
+   "form": "TAB",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 2,
+   "solved": true,
+   "calls": 16,
+   "ssCalls": 10,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 3,
+    "ss-grep": 5,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/awslabs__aws-embedded-metrics-node-21/r0",
+   "form": "TAB",
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "rep": 0,
+   "solved": true,
+   "calls": 41,
+   "ssCalls": 15,
+   "byTool": {
+    "ss-search": 4,
+    "ss-find": 2,
+    "ss-read": 6,
+    "ss-grep": 2,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 7
+  },
+  {
+   "rid": "TAB/awslabs__aws-embedded-metrics-node-21/r1",
+   "form": "TAB",
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "rep": 1,
+   "solved": true,
+   "calls": 14,
+   "ssCalls": 7,
+   "byTool": {
+    "ss-search": 2,
+    "ss-read": 4,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/awslabs__aws-embedded-metrics-node-21/r2",
+   "form": "TAB",
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "rep": 2,
+   "solved": true,
+   "calls": 64,
+   "ssCalls": 10,
+   "byTool": {
+    "ss-search": 3,
+    "ss-read": 6,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "TAB/axelrod-python__axelrod-671/r0",
+   "form": "TAB",
+   "task": "axelrod-python__axelrod-671",
+   "rep": 0,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 1,
+    "ss-read": 3
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/axelrod-python__axelrod-671/r1",
+   "form": "TAB",
+   "task": "axelrod-python__axelrod-671",
+   "rep": 1,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 1,
+    "ss-read": 3
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/axelrod-python__axelrod-671/r2",
+   "form": "TAB",
+   "task": "axelrod-python__axelrod-671",
+   "rep": 2,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 2,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "TAB/bfgroup__b2-113/r0",
+   "form": "TAB",
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "solved": false,
+   "calls": 45,
+   "ssCalls": 41,
+   "byTool": {
+    "ss-search": 8,
+    "ss-grep": 19,
+    "ss-read": 10,
+    "ss-find": 4
+   },
+   "empty": 10,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 1,
+    "empty result: (no matches)": 10,
+    "ss-read error (exit 1) — path not readable": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/bfgroup__b2-113/r1",
+   "form": "TAB",
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "solved": false,
+   "calls": 119,
+   "ssCalls": 47,
+   "byTool": {
+    "ss-search": 8,
+    "ss-grep": 24,
+    "ss-read": 9,
+    "ss-find": 6
+   },
+   "empty": 12,
+   "errs": {
+    "empty result: (no matches)": 12,
+    "ss-* usage error (exit 2) — argument form rejected": 2,
+    "ss-read error (exit 1) — path not readable": 1
+   },
+   "nativeAfterSS": 6
+  },
+  {
+   "rid": "TAB/bfgroup__b2-113/r2",
+   "form": "TAB",
+   "task": "bfgroup__b2-113",
+   "rep": 2,
+   "solved": false,
+   "calls": 103,
+   "ssCalls": 27,
+   "byTool": {
+    "ss-search": 5,
+    "ss-semantic": 1,
+    "ss-read": 8,
+    "ss-trace": 1,
+    "ss-grep": 10,
+    "ss-find": 2
+   },
+   "empty": 8,
+   "errs": {
+    "ss-trace symbol not found (exit 1)": 1,
+    "empty result: (no matches)": 8
+   },
+   "nativeAfterSS": 14
+  },
+  {
+   "rid": "TAB/bfgroup__b2-259/r0",
+   "form": "TAB",
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "solved": false,
+   "calls": 224,
+   "ssCalls": 117,
+   "byTool": {
+    "ss-search": 26,
+    "ss-grep": 56,
+    "ss-find": 34,
+    "ss-read": 1
+   },
+   "empty": 30,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 6,
+    "empty result: (no matches)": 30,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1,
+    "ss-read error (exit 1) — path not readable": 1
+   },
+   "nativeAfterSS": 15
+  },
+  {
+   "rid": "TAB/bfgroup__b2-259/r1",
+   "form": "TAB",
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "solved": false,
+   "calls": 86,
+   "ssCalls": 56,
+   "byTool": {
+    "ss-search": 8,
+    "ss-grep": 32,
+    "ss-find": 6,
+    "ss-read": 10
+   },
+   "empty": 16,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 5,
+    "empty result: (no matches)": 16
+   },
+   "nativeAfterSS": 10
+  },
+  {
+   "rid": "TAB/bfgroup__b2-259/r2",
+   "form": "TAB",
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "solved": false,
+   "calls": 66,
+   "ssCalls": 50,
+   "byTool": {
+    "ss-search": 14,
+    "ss-grep": 30,
+    "ss-read": 2,
+    "ss-find": 4
+   },
+   "empty": 23,
+   "errs": {
+    "empty result: (no matches)": 23
+   },
+   "nativeAfterSS": 4
+  },
+  {
+   "rid": "TAB/callstack__react-native-paper-972/r0",
+   "form": "TAB",
+   "task": "callstack__react-native-paper-972",
+   "rep": 0,
+   "solved": true,
+   "calls": 18,
+   "ssCalls": 13,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 6,
+    "ss-semantic": 1,
+    "ss-read": 4,
+    "ss-find": 1
+   },
+   "empty": 1,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/callstack__react-native-paper-972/r1",
+   "form": "TAB",
+   "task": "callstack__react-native-paper-972",
+   "rep": 1,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 3,
+    "ss-read": 2
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/callstack__react-native-paper-972/r2",
+   "form": "TAB",
+   "task": "callstack__react-native-paper-972",
+   "rep": 2,
+   "solved": true,
+   "calls": 36,
+   "ssCalls": 25,
+   "byTool": {
+    "ss-grep": 14,
+    "ss-read": 8,
+    "ss-search": 2,
+    "ss-find": 1
+   },
+   "empty": 4,
+   "errs": {
+    "empty result: (no matches)": 4
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/celestiaorg__nmt-192/r0",
+   "form": "TAB",
+   "task": "celestiaorg__nmt-192",
+   "rep": 0,
+   "solved": false,
+   "calls": 4,
+   "ssCalls": 2,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-read": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/celestiaorg__nmt-192/r1",
+   "form": "TAB",
+   "task": "celestiaorg__nmt-192",
+   "rep": 1,
+   "solved": true,
+   "calls": 9,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-grep": 2,
+    "ss-read": 2
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/celestiaorg__nmt-192/r2",
+   "form": "TAB",
+   "task": "celestiaorg__nmt-192",
+   "rep": 2,
+   "solved": true,
+   "calls": 6,
+   "ssCalls": 1,
+   "byTool": {
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r0",
+   "form": "TAB",
+   "task": "devlooped__moq-1262",
+   "rep": 0,
+   "solved": false,
+   "calls": 53,
+   "ssCalls": 43,
+   "byTool": {
+    "ss-search": 6,
+    "ss-read": 26,
+    "ss-grep": 11
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1,
+    "ss-read error (exit 1) — path not readable": 2
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r1",
+   "form": "TAB",
+   "task": "devlooped__moq-1262",
+   "rep": 1,
+   "solved": false,
+   "calls": 26,
+   "ssCalls": 25,
+   "byTool": {
+    "ss-search": 8,
+    "ss-read": 13,
+    "ss-find": 3,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {
+    "ss-trace symbol not found (exit 1)": 1
+   },
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "TAB/devlooped__moq-1262/r2",
+   "form": "TAB",
+   "task": "devlooped__moq-1262",
+   "rep": 2,
+   "solved": false,
+   "calls": 42,
+   "ssCalls": 23,
+   "byTool": {
+    "ss-search": 5,
+    "ss-trace": 1,
+    "ss-read": 11,
+    "ss-find": 5,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {
+    "ss-read error (exit 1) — path not readable": 1
+   },
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "TAB/fastify__fastify-cors-285/r0",
+   "form": "TAB",
+   "task": "fastify__fastify-cors-285",
+   "rep": 0,
+   "solved": false,
+   "calls": 44,
+   "ssCalls": 21,
+   "byTool": {
+    "ss-search": 8,
+    "ss-read": 8,
+    "ss-grep": 4,
+    "ss-find": 1
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/fastify__fastify-cors-285/r1",
+   "form": "TAB",
+   "task": "fastify__fastify-cors-285",
+   "rep": 1,
+   "solved": false,
+   "calls": 14,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-grep": 4,
+    "ss-search": 1
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "TAB/fastify__fastify-cors-285/r2",
+   "form": "TAB",
+   "task": "fastify__fastify-cors-285",
+   "rep": 2,
+   "solved": false,
+   "calls": 19,
+   "ssCalls": 9,
+   "byTool": {
+    "ss-search": 2,
+    "ss-read": 5,
+    "ss-grep": 2
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/final-form__final-form-64/r0",
+   "form": "TAB",
+   "task": "final-form__final-form-64",
+   "rep": 0,
+   "solved": true,
+   "calls": 11,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 1,
+    "ss-read": 3
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/final-form__final-form-64/r1",
+   "form": "TAB",
+   "task": "final-form__final-form-64",
+   "rep": 1,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 1,
+    "ss-read": 3
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/final-form__final-form-64/r2",
+   "form": "TAB",
+   "task": "final-form__final-form-64",
+   "rep": 2,
+   "solved": true,
+   "calls": 53,
+   "ssCalls": 9,
+   "byTool": {
+    "ss-grep": 3,
+    "ss-read": 5,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 8
+  },
+  {
+   "rid": "TAB/gitbookio__markup-it-56/r0",
+   "form": "TAB",
+   "task": "gitbookio__markup-it-56",
+   "rep": 0,
+   "solved": false,
+   "calls": 29,
+   "ssCalls": 25,
+   "byTool": {
+    "ss-search": 4,
+    "ss-read": 16,
+    "ss-grep": 3,
+    "ss-find": 2
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 1,
+    "ss-read error (exit 1) — path not readable": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/gitbookio__markup-it-56/r1",
+   "form": "TAB",
+   "task": "gitbookio__markup-it-56",
+   "rep": 1,
+   "solved": false,
+   "calls": 37,
+   "ssCalls": 33,
+   "byTool": {
+    "ss-search": 4,
+    "ss-read": 20,
+    "ss-grep": 5,
+    "ss-find": 3,
+    "ss-trace": 1
+   },
+   "empty": 1,
+   "errs": {
+    "ss-trace symbol not found (exit 1)": 1,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/gitbookio__markup-it-56/r2",
+   "form": "TAB",
+   "task": "gitbookio__markup-it-56",
+   "rep": 2,
+   "solved": false,
+   "calls": 20,
+   "ssCalls": 28,
+   "byTool": {
+    "ss-search": 5,
+    "ss-read": 19,
+    "ss-grep": 4
+   },
+   "empty": 1,
+   "errs": {
+    "ss-read error (exit 1) — path not readable": 1,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/hotmeteor__spectator-181/r0",
+   "form": "TAB",
+   "task": "hotmeteor__spectator-181",
+   "rep": 0,
+   "solved": false,
+   "calls": 33,
+   "ssCalls": 18,
+   "byTool": {
+    "ss-search": 5,
+    "ss-read": 6,
+    "ss-grep": 6,
+    "ss-trace": 1
+   },
+   "empty": 1,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/hotmeteor__spectator-181/r1",
+   "form": "TAB",
+   "task": "hotmeteor__spectator-181",
+   "rep": 1,
+   "solved": false,
+   "calls": 36,
+   "ssCalls": 20,
+   "byTool": {
+    "ss-search": 3,
+    "ss-grep": 8,
+    "ss-read": 9
+   },
+   "empty": 2,
+   "errs": {
+    "empty result: (no matches)": 2,
+    "ss-* usage error (exit 2) — argument form rejected": 2
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/hotmeteor__spectator-181/r2",
+   "form": "TAB",
+   "task": "hotmeteor__spectator-181",
+   "rep": 2,
+   "solved": false,
+   "calls": 16,
+   "ssCalls": 11,
+   "byTool": {
+    "ss-search": 3,
+    "ss-read": 4,
+    "ss-grep": 3,
+    "ss-trace": 1
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/jazzband__tablib-454/r0",
+   "form": "TAB",
+   "task": "jazzband__tablib-454",
+   "rep": 0,
+   "solved": true,
+   "calls": 12,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-search": 1,
+    "ss-trace": 1,
+    "ss-grep": 1,
+    "ss-read": 2,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/jazzband__tablib-454/r1",
+   "form": "TAB",
+   "task": "jazzband__tablib-454",
+   "rep": 1,
+   "solved": true,
+   "calls": 14,
+   "ssCalls": 9,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-find": 2,
+    "ss-read": 5,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/jazzband__tablib-454/r2",
+   "form": "TAB",
+   "task": "jazzband__tablib-454",
+   "rep": 2,
+   "solved": true,
+   "calls": 15,
+   "ssCalls": 7,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-read": 5,
+    "ss-search": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/locationtech__jts-622/r0",
+   "form": "TAB",
+   "task": "locationtech__jts-622",
+   "rep": 0,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-find": 1,
+    "ss-read": 2
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 4
+  },
+  {
+   "rid": "TAB/locationtech__jts-622/r1",
+   "form": "TAB",
+   "task": "locationtech__jts-622",
+   "rep": 1,
+   "solved": true,
+   "calls": 9,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-find": 1,
+    "ss-semantic": 1,
+    "ss-read": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/locationtech__jts-622/r2",
+   "form": "TAB",
+   "task": "locationtech__jts-622",
+   "rep": 2,
+   "solved": true,
+   "calls": 11,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 2,
+    "ss-read": 3
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "TAB/mathnet__mathnet-numerics-1072/r0",
+   "form": "TAB",
+   "task": "mathnet__mathnet-numerics-1072",
+   "rep": 0,
+   "solved": true,
+   "calls": 14,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 3,
+    "ss-semantic": 1
+   },
+   "empty": 2,
+   "errs": {
+    "ss-semantic error (exit 1)": 1,
+    "empty result: (no matches)": 2
+   },
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "TAB/mathnet__mathnet-numerics-1072/r1",
+   "form": "TAB",
+   "task": "mathnet__mathnet-numerics-1072",
+   "rep": 1,
+   "solved": true,
+   "calls": 17,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 1,
+    "ss-read": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "TAB/mathnet__mathnet-numerics-1072/r2",
+   "form": "TAB",
+   "task": "mathnet__mathnet-numerics-1072",
+   "rep": 2,
+   "solved": true,
+   "calls": 18,
+   "ssCalls": 7,
+   "byTool": {
+    "ss-search": 3,
+    "ss-read": 1,
+    "ss-grep": 2,
+    "ss-find": 1
+   },
+   "empty": 1,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 1
+  },
+  {
+   "rid": "TAB/mirumee__ariadne-codegen-218/r0",
+   "form": "TAB",
+   "task": "mirumee__ariadne-codegen-218",
+   "rep": 0,
+   "solved": true,
+   "calls": 7,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 2,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/mirumee__ariadne-codegen-218/r1",
+   "form": "TAB",
+   "task": "mirumee__ariadne-codegen-218",
+   "rep": 1,
+   "solved": true,
+   "calls": 8,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 3,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {
+    "ss-read error (exit 1) — path not readable": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/mirumee__ariadne-codegen-218/r2",
+   "form": "TAB",
+   "task": "mirumee__ariadne-codegen-218",
+   "rep": 2,
+   "solved": true,
+   "calls": 12,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 1,
+    "ss-semantic": 1,
+    "ss-read": 2,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/protofire__solhint-224/r0",
+   "form": "TAB",
+   "task": "protofire__solhint-224",
+   "rep": 0,
+   "solved": false,
+   "calls": 33,
+   "ssCalls": 23,
+   "byTool": {
+    "ss-search": 4,
+    "ss-grep": 9,
+    "ss-read": 9,
+    "ss-find": 1
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "TAB/protofire__solhint-224/r1",
+   "form": "TAB",
+   "task": "protofire__solhint-224",
+   "rep": 1,
+   "solved": false,
+   "calls": 31,
+   "ssCalls": 25,
+   "byTool": {
+    "ss-search": 5,
+    "ss-find": 2,
+    "ss-read": 9,
+    "ss-grep": 9
+   },
+   "empty": 2,
+   "errs": {
+    "empty result: (no matches)": 2
+   },
+   "nativeAfterSS": 3
+  },
+  {
+   "rid": "TAB/protofire__solhint-224/r2",
+   "form": "TAB",
+   "task": "protofire__solhint-224",
+   "rep": 2,
+   "solved": false,
+   "calls": 37,
+   "ssCalls": 25,
+   "byTool": {
+    "ss-search": 5,
+    "ss-read": 13,
+    "ss-grep": 7
+   },
+   "empty": 3,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 1,
+    "empty result: (no matches)": 3
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/absinthe-graphql__absinthe-998/r0",
+   "form": "NONE",
+   "task": "absinthe-graphql__absinthe-998",
+   "rep": 0,
+   "solved": true,
+   "calls": 15,
+   "ssCalls": 8,
+   "byTool": {
+    "ss-search": 3,
+    "ss-read": 4,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/absinthe-graphql__absinthe-998/r1",
+   "form": "NONE",
+   "task": "absinthe-graphql__absinthe-998",
+   "rep": 1,
+   "solved": true,
+   "calls": 13,
+   "ssCalls": 8,
+   "byTool": {
+    "ss-search": 3,
+    "ss-read": 4,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/absinthe-graphql__absinthe-998/r2",
+   "form": "NONE",
+   "task": "absinthe-graphql__absinthe-998",
+   "rep": 2,
+   "solved": true,
+   "calls": 15,
+   "ssCalls": 7,
+   "byTool": {
+    "ss-grep": 2,
+    "ss-read": 3,
+    "ss-search": 1,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/accenture__sfmc-devtools-1974/r0",
+   "form": "NONE",
+   "task": "accenture__sfmc-devtools-1974",
+   "rep": 0,
+   "solved": true,
+   "calls": 22,
+   "ssCalls": 25,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 6,
+    "ss-read": 17,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/accenture__sfmc-devtools-1974/r1",
+   "form": "NONE",
+   "task": "accenture__sfmc-devtools-1974",
+   "rep": 1,
+   "solved": true,
+   "calls": 21,
+   "ssCalls": 19,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 3,
+    "ss-read": 12,
+    "ss-find": 2
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/accenture__sfmc-devtools-1974/r2",
+   "form": "NONE",
+   "task": "accenture__sfmc-devtools-1974",
+   "rep": 2,
+   "solved": true,
+   "calls": 28,
+   "ssCalls": 20,
+   "byTool": {
+    "ss-grep": 8,
+    "ss-semantic": 3,
+    "ss-read": 7,
+    "ss-find": 1,
+    "ss-trace": 1
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/aio-libs__aiohttp-8038/r0",
+   "form": "NONE",
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 0,
+   "solved": false,
+   "calls": 46,
+   "ssCalls": 29,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 6,
+    "ss-read": 18,
+    "ss-find": 3
+   },
+   "empty": 3,
+   "errs": {
+    "empty result: (no matches)": 3
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/aio-libs__aiohttp-8038/r1",
+   "form": "NONE",
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 1,
+   "solved": false,
+   "calls": 69,
+   "ssCalls": 37,
+   "byTool": {
+    "ss-grep": 18,
+    "ss-read": 13,
+    "ss-search": 2,
+    "ss-find": 4
+   },
+   "empty": 5,
+   "errs": {
+    "empty result: (no matches)": 5,
+    "ss-* usage error (exit 2) — argument form rejected": 4
+   },
+   "nativeAfterSS": 10
+  },
+  {
+   "rid": "NONE/aio-libs__aiohttp-8038/r2",
+   "form": "NONE",
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 2,
+   "solved": false,
+   "calls": 32,
+   "ssCalls": 21,
+   "byTool": {
+    "ss-search": 2,
+    "ss-read": 13,
+    "ss-grep": 4,
+    "ss-find": 2
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 2
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/apigee__registry-961/r0",
+   "form": "NONE",
+   "task": "apigee__registry-961",
+   "rep": 0,
+   "solved": true,
+   "calls": 37,
+   "ssCalls": 32,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 6,
+    "ss-read": 19,
+    "ss-find": 5
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 2,
+    "engine stderr leaked into agent output (model-load chatter)": 2,
+    "ss-read error (exit 1) — path not readable": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/apigee__registry-961/r1",
+   "form": "NONE",
+   "task": "apigee__registry-961",
+   "rep": 1,
+   "solved": true,
+   "calls": 16,
+   "ssCalls": 11,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 1,
+    "ss-read": 6,
+    "ss-find": 2,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/apigee__registry-961/r2",
+   "form": "NONE",
+   "task": "apigee__registry-961",
+   "rep": 2,
+   "solved": true,
+   "calls": 23,
+   "ssCalls": 16,
+   "byTool": {
+    "ss-search": 3,
+    "ss-grep": 4,
+    "ss-read": 8,
+    "ss-trace": 1
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/asynkron__protoactor-dotnet-1909/r0",
+   "form": "NONE",
+   "task": "asynkron__protoactor-dotnet-1909",
+   "rep": 0,
+   "solved": true,
+   "calls": 11,
+   "ssCalls": 1,
+   "byTool": {
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 5
+  },
+  {
+   "rid": "NONE/asynkron__protoactor-dotnet-1909/r1",
+   "form": "NONE",
+   "task": "asynkron__protoactor-dotnet-1909",
+   "rep": 1,
+   "solved": true,
+   "calls": 7,
+   "ssCalls": 3,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-read": 1,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/asynkron__protoactor-dotnet-1909/r2",
+   "form": "NONE",
+   "task": "asynkron__protoactor-dotnet-1909",
+   "rep": 2,
+   "solved": true,
+   "calls": 9,
+   "ssCalls": 2,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/aws-actions__configure-aws-credentials-42/r0",
+   "form": "NONE",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 0,
+   "solved": true,
+   "calls": 17,
+   "ssCalls": 13,
+   "byTool": {
+    "ss-search": 2,
+    "ss-read": 5,
+    "ss-grep": 5,
+    "ss-find": 1
+   },
+   "empty": 2,
+   "errs": {
+    "empty result: (no matches)": 2
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/aws-actions__configure-aws-credentials-42/r1",
+   "form": "NONE",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 1,
+   "solved": true,
+   "calls": 23,
+   "ssCalls": 14,
+   "byTool": {
+    "ss-search": 3,
+    "ss-read": 5,
+    "ss-grep": 5,
+    "ss-find": 1
+   },
+   "empty": 2,
+   "errs": {
+    "empty result: (no matches)": 2
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/aws-actions__configure-aws-credentials-42/r2",
+   "form": "NONE",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 2,
+   "solved": true,
+   "calls": 22,
+   "ssCalls": 12,
+   "byTool": {
+    "ss-search": 4,
+    "ss-read": 2,
+    "ss-grep": 5,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/awslabs__aws-embedded-metrics-node-21/r0",
+   "form": "NONE",
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "rep": 0,
+   "solved": true,
+   "calls": 12,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 2,
+    "ss-read": 3
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/awslabs__aws-embedded-metrics-node-21/r1",
+   "form": "NONE",
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "rep": 1,
+   "solved": false,
+   "calls": 19,
+   "ssCalls": 9,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 1,
+    "ss-read": 6
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/awslabs__aws-embedded-metrics-node-21/r2",
+   "form": "NONE",
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "rep": 2,
+   "solved": true,
+   "calls": 29,
+   "ssCalls": 14,
+   "byTool": {
+    "ss-search": 5,
+    "ss-read": 6,
+    "ss-grep": 3
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/axelrod-python__axelrod-671/r0",
+   "form": "NONE",
+   "task": "axelrod-python__axelrod-671",
+   "rep": 0,
+   "solved": true,
+   "calls": 9,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-search": 1,
+    "ss-find": 1,
+    "ss-read": 3,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/axelrod-python__axelrod-671/r1",
+   "form": "NONE",
+   "task": "axelrod-python__axelrod-671",
+   "rep": 1,
+   "solved": true,
+   "calls": 8,
+   "ssCalls": 3,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 1,
+    "ss-read": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/axelrod-python__axelrod-671/r2",
+   "form": "NONE",
+   "task": "axelrod-python__axelrod-671",
+   "rep": 2,
+   "solved": true,
+   "calls": 9,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 2,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/bfgroup__b2-113/r0",
+   "form": "NONE",
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "solved": false,
+   "calls": 30,
+   "ssCalls": 31,
+   "byTool": {
+    "ss-search": 9,
+    "ss-grep": 13,
+    "ss-read": 7,
+    "ss-find": 1,
+    "ss-semantic": 1
+   },
+   "empty": 5,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 2,
+    "empty result: (no matches)": 5,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/bfgroup__b2-113/r1",
+   "form": "NONE",
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "solved": false,
+   "calls": 67,
+   "ssCalls": 19,
+   "byTool": {
+    "ss-search": 6,
+    "ss-semantic": 1,
+    "ss-read": 4,
+    "ss-find": 2,
+    "ss-grep": 6
+   },
+   "empty": 3,
+   "errs": {
+    "empty result: (no matches)": 3
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/bfgroup__b2-113/r2",
+   "form": "NONE",
+   "task": "bfgroup__b2-113",
+   "rep": 2,
+   "solved": false,
+   "calls": 49,
+   "ssCalls": 55,
+   "byTool": {
+    "ss-search": 12,
+    "ss-grep": 16,
+    "ss-read": 27
+   },
+   "empty": 5,
+   "errs": {
+    "empty result: (no matches)": 5,
+    "ss-* usage error (exit 2) — argument form rejected": 4,
+    "ss-read error (exit 1) — path not readable": 4,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1,
+    "ss-read invalid line args (exit 2)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/bfgroup__b2-259/r0",
+   "form": "NONE",
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "solved": false,
+   "calls": 88,
+   "ssCalls": 29,
+   "byTool": {
+    "ss-search": 6,
+    "ss-grep": 14,
+    "ss-find": 3,
+    "ss-read": 6
+   },
+   "empty": 8,
+   "errs": {
+    "empty result: (no matches)": 8,
+    "command not found (exit 127)": 1
+   },
+   "nativeAfterSS": 8
+  },
+  {
+   "rid": "NONE/bfgroup__b2-259/r1",
+   "form": "NONE",
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "solved": false,
+   "calls": 71,
+   "ssCalls": 38,
+   "byTool": {
+    "ss-search": 9,
+    "ss-grep": 23,
+    "ss-read": 1,
+    "ss-find": 4,
+    "ss-files": 1
+   },
+   "empty": 16,
+   "errs": {
+    "empty result: (no matches)": 16,
+    "ss-* usage error (exit 2) — argument form rejected": 1
+   },
+   "nativeAfterSS": 3
+  },
+  {
+   "rid": "NONE/bfgroup__b2-259/r2",
+   "form": "NONE",
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "solved": false,
+   "calls": 108,
+   "ssCalls": 96,
+   "byTool": {
+    "ss-search": 4,
+    "ss-grep": 40,
+    "ss-read": 7,
+    "ss-find": 44,
+    "ss-semantic": 1
+   },
+   "empty": 28,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 5,
+    "empty result: (no matches)": 28,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1
+   },
+   "nativeAfterSS": 1
+  },
+  {
+   "rid": "NONE/callstack__react-native-paper-972/r0",
+   "form": "NONE",
+   "task": "callstack__react-native-paper-972",
+   "rep": 0,
+   "solved": true,
+   "calls": 15,
+   "ssCalls": 13,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 6,
+    "ss-read": 4,
+    "ss-find": 1
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/callstack__react-native-paper-972/r1",
+   "form": "NONE",
+   "task": "callstack__react-native-paper-972",
+   "rep": 1,
+   "solved": true,
+   "calls": 15,
+   "ssCalls": 8,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 4,
+    "ss-read": 2,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/callstack__react-native-paper-972/r2",
+   "form": "NONE",
+   "task": "callstack__react-native-paper-972",
+   "rep": 2,
+   "solved": true,
+   "calls": 18,
+   "ssCalls": 10,
+   "byTool": {
+    "ss-grep": 6,
+    "ss-read": 2,
+    "ss-search": 1,
+    "ss-find": 1
+   },
+   "empty": 3,
+   "errs": {
+    "empty result: (no matches)": 3
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/celestiaorg__nmt-192/r0",
+   "form": "NONE",
+   "task": "celestiaorg__nmt-192",
+   "rep": 0,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-grep": 2,
+    "ss-read": 4
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/celestiaorg__nmt-192/r1",
+   "form": "NONE",
+   "task": "celestiaorg__nmt-192",
+   "rep": 1,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-read": 3
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/celestiaorg__nmt-192/r2",
+   "form": "NONE",
+   "task": "celestiaorg__nmt-192",
+   "rep": 2,
+   "solved": true,
+   "calls": 7,
+   "ssCalls": 2,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-read": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/devlooped__moq-1262/r0",
+   "form": "NONE",
+   "task": "devlooped__moq-1262",
+   "rep": 0,
+   "solved": false,
+   "calls": 45,
+   "ssCalls": 52,
+   "byTool": {
+    "ss-search": 7,
+    "ss-read": 31,
+    "ss-find": 1,
+    "ss-grep": 13
+   },
+   "empty": 1,
+   "errs": {
+    "ss-read error (exit 1) — path not readable": 2,
+    "ss-* usage error (exit 2) — argument form rejected": 1,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/devlooped__moq-1262/r1",
+   "form": "NONE",
+   "task": "devlooped__moq-1262",
+   "rep": 1,
+   "solved": false,
+   "calls": 80,
+   "ssCalls": 36,
+   "byTool": {
+    "ss-search": 4,
+    "ss-read": 23,
+    "ss-grep": 6,
+    "ss-find": 3
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/devlooped__moq-1262/r2",
+   "form": "NONE",
+   "task": "devlooped__moq-1262",
+   "rep": 2,
+   "solved": false,
+   "calls": 74,
+   "ssCalls": 44,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 6,
+    "ss-read": 34,
+    "ss-trace": 1,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/fastify__fastify-cors-285/r0",
+   "form": "NONE",
+   "task": "fastify__fastify-cors-285",
+   "rep": 0,
+   "solved": false,
+   "calls": 17,
+   "ssCalls": 7,
+   "byTool": {
+    "ss-search": 3,
+    "ss-read": 2,
+    "ss-grep": 2
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/fastify__fastify-cors-285/r1",
+   "form": "NONE",
+   "task": "fastify__fastify-cors-285",
+   "rep": 1,
+   "solved": false,
+   "calls": 41,
+   "ssCalls": 16,
+   "byTool": {
+    "ss-search": 3,
+    "ss-read": 10,
+    "ss-find": 2,
+    "ss-grep": 1
+   },
+   "empty": 2,
+   "errs": {
+    "empty result: (no matches)": 2
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/fastify__fastify-cors-285/r2",
+   "form": "NONE",
+   "task": "fastify__fastify-cors-285",
+   "rep": 2,
+   "solved": false,
+   "calls": 19,
+   "ssCalls": 13,
+   "byTool": {
+    "ss-search": 2,
+    "ss-read": 6,
+    "ss-grep": 3,
+    "ss-find": 1,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/final-form__final-form-64/r0",
+   "form": "NONE",
+   "task": "final-form__final-form-64",
+   "rep": 0,
+   "solved": true,
+   "calls": 12,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 2,
+    "ss-grep": 2
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/final-form__final-form-64/r1",
+   "form": "NONE",
+   "task": "final-form__final-form-64",
+   "rep": 1,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 7,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 1,
+    "ss-semantic": 1,
+    "ss-read": 3,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/final-form__final-form-64/r2",
+   "form": "NONE",
+   "task": "final-form__final-form-64",
+   "rep": 2,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-search": 1,
+    "ss-trace": 1,
+    "ss-read": 2,
+    "ss-grep": 1,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {
+    "ss-trace symbol not found (exit 1)": 1
+   },
+   "nativeAfterSS": 1
+  },
+  {
+   "rid": "NONE/gitbookio__markup-it-56/r0",
+   "form": "NONE",
+   "task": "gitbookio__markup-it-56",
+   "rep": 0,
+   "solved": false,
+   "calls": 41,
+   "ssCalls": 60,
+   "byTool": {
+    "ss-search": 7,
+    "ss-read": 36,
+    "ss-grep": 15,
+    "ss-find": 1,
+    "ss-semantic": 1
+   },
+   "empty": 2,
+   "errs": {
+    "empty result: (no matches)": 2,
+    "ss-* usage error (exit 2) — argument form rejected": 1,
+    "ss-read error (exit 1) — path not readable": 2
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/gitbookio__markup-it-56/r1",
+   "form": "NONE",
+   "task": "gitbookio__markup-it-56",
+   "rep": 1,
+   "solved": false,
+   "calls": 63,
+   "ssCalls": 47,
+   "byTool": {
+    "ss-search": 3,
+    "ss-read": 25,
+    "ss-grep": 11,
+    "ss-find": 6,
+    "ss-semantic": 2
+   },
+   "empty": 3,
+   "errs": {
+    "ss-read error (exit 1) — path not readable": 6,
+    "empty result: (no matches)": 3,
+    "ss-semantic error (exit 1)": 1
+   },
+   "nativeAfterSS": 1
+  },
+  {
+   "rid": "NONE/gitbookio__markup-it-56/r2",
+   "form": "NONE",
+   "task": "gitbookio__markup-it-56",
+   "rep": 2,
+   "solved": false,
+   "calls": 13,
+   "ssCalls": 15,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 2,
+    "ss-read": 9,
+    "ss-trace": 1,
+    "ss-find": 1
+   },
+   "empty": 1,
+   "errs": {
+    "ss-read error (exit 1) — path not readable": 1,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/hotmeteor__spectator-181/r0",
+   "form": "NONE",
+   "task": "hotmeteor__spectator-181",
+   "rep": 0,
+   "solved": false,
+   "calls": 29,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 3,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 6
+  },
+  {
+   "rid": "NONE/hotmeteor__spectator-181/r1",
+   "form": "NONE",
+   "task": "hotmeteor__spectator-181",
+   "rep": 1,
+   "solved": false,
+   "calls": 26,
+   "ssCalls": 17,
+   "byTool": {
+    "ss-grep": 7,
+    "ss-read": 7,
+    "ss-trace": 1,
+    "ss-search": 1,
+    "ss-find": 1
+   },
+   "empty": 3,
+   "errs": {
+    "empty result: (no matches)": 3
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/hotmeteor__spectator-181/r2",
+   "form": "NONE",
+   "task": "hotmeteor__spectator-181",
+   "rep": 2,
+   "solved": false,
+   "calls": 24,
+   "ssCalls": 8,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 4,
+    "ss-grep": 2,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/jazzband__tablib-454/r0",
+   "form": "NONE",
+   "task": "jazzband__tablib-454",
+   "rep": 0,
+   "solved": true,
+   "calls": 5,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-semantic": 1,
+    "ss-read": 3
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/jazzband__tablib-454/r1",
+   "form": "NONE",
+   "task": "jazzband__tablib-454",
+   "rep": 1,
+   "solved": true,
+   "calls": 12,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-read": 4,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/jazzband__tablib-454/r2",
+   "form": "NONE",
+   "task": "jazzband__tablib-454",
+   "rep": 2,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 7,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-read": 5,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/locationtech__jts-622/r0",
+   "form": "NONE",
+   "task": "locationtech__jts-622",
+   "rep": 0,
+   "solved": true,
+   "calls": 9,
+   "ssCalls": 7,
+   "byTool": {
+    "ss-grep": 3,
+    "ss-read": 4
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/locationtech__jts-622/r1",
+   "form": "NONE",
+   "task": "locationtech__jts-622",
+   "rep": 1,
+   "solved": true,
+   "calls": 7,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 2,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/locationtech__jts-622/r2",
+   "form": "NONE",
+   "task": "locationtech__jts-622",
+   "rep": 2,
+   "solved": true,
+   "calls": 13,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-grep": 2,
+    "ss-semantic": 1,
+    "ss-read": 2,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/mathnet__mathnet-numerics-1072/r0",
+   "form": "NONE",
+   "task": "mathnet__mathnet-numerics-1072",
+   "rep": 0,
+   "solved": true,
+   "calls": 8,
+   "ssCalls": 3,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 1,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/mathnet__mathnet-numerics-1072/r1",
+   "form": "NONE",
+   "task": "mathnet__mathnet-numerics-1072",
+   "rep": 1,
+   "solved": true,
+   "calls": 17,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 1,
+    "ss-trace": 1,
+    "ss-read": 2,
+    "ss-grep": 1
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/mathnet__mathnet-numerics-1072/r2",
+   "form": "NONE",
+   "task": "mathnet__mathnet-numerics-1072",
+   "rep": 2,
+   "solved": true,
+   "calls": 12,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-grep": 4,
+    "ss-read": 1,
+    "ss-find": 1
+   },
+   "empty": 1,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 1,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/mirumee__ariadne-codegen-218/r0",
+   "form": "NONE",
+   "task": "mirumee__ariadne-codegen-218",
+   "rep": 0,
+   "solved": true,
+   "calls": 11,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 2,
+    "ss-read": 1,
+    "ss-grep": 1,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/mirumee__ariadne-codegen-218/r1",
+   "form": "NONE",
+   "task": "mirumee__ariadne-codegen-218",
+   "rep": 1,
+   "solved": true,
+   "calls": 11,
+   "ssCalls": 7,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 1,
+    "ss-read": 4
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/mirumee__ariadne-codegen-218/r2",
+   "form": "NONE",
+   "task": "mirumee__ariadne-codegen-218",
+   "rep": 2,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 3,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 1,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/protofire__solhint-224/r0",
+   "form": "NONE",
+   "task": "protofire__solhint-224",
+   "rep": 0,
+   "solved": false,
+   "calls": 41,
+   "ssCalls": 29,
+   "byTool": {
+    "ss-search": 3,
+    "ss-read": 18,
+    "ss-find": 2,
+    "ss-grep": 6
+   },
+   "empty": 1,
+   "errs": {
+    "ss-read error (exit 1) — path not readable": 2,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 3
+  },
+  {
+   "rid": "NONE/protofire__solhint-224/r1",
+   "form": "NONE",
+   "task": "protofire__solhint-224",
+   "rep": 1,
+   "solved": false,
+   "calls": 30,
+   "ssCalls": 25,
+   "byTool": {
+    "ss-search": 4,
+    "ss-read": 15,
+    "ss-grep": 6
+   },
+   "empty": 1,
+   "errs": {
+    "ss-read error (exit 1) — path not readable": 2,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "NONE/protofire__solhint-224/r2",
+   "form": "NONE",
+   "task": "protofire__solhint-224",
+   "rep": 2,
+   "solved": false,
+   "calls": 71,
+   "ssCalls": 29,
+   "byTool": {
+    "ss-search": 3,
+    "ss-read": 15,
+    "ss-grep": 9,
+    "ss-find": 2
+   },
+   "empty": 3,
+   "errs": {
+    "empty result: (no matches)": 3,
+    "ss-read error (exit 1) — path not readable": 1
+   },
+   "nativeAfterSS": 14
+  },
+  {
+   "rid": "PIPE/absinthe-graphql__absinthe-998/r0",
+   "form": "PIPE",
+   "task": "absinthe-graphql__absinthe-998",
+   "rep": 0,
+   "solved": true,
+   "calls": 8,
+   "ssCalls": 8,
+   "byTool": {
+    "ss-search": 2,
+    "ss-read": 5,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/absinthe-graphql__absinthe-998/r1",
+   "form": "PIPE",
+   "task": "absinthe-graphql__absinthe-998",
+   "rep": 1,
+   "solved": true,
+   "calls": 17,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 2,
+    "ss-trace": 1,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/absinthe-graphql__absinthe-998/r2",
+   "form": "PIPE",
+   "task": "absinthe-graphql__absinthe-998",
+   "rep": 2,
+   "solved": true,
+   "calls": 14,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 2,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/accenture__sfmc-devtools-1974/r0",
+   "form": "PIPE",
+   "task": "accenture__sfmc-devtools-1974",
+   "rep": 0,
+   "solved": true,
+   "calls": 22,
+   "ssCalls": 21,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 14,
+    "ss-grep": 4,
+    "ss-semantic": 1,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 1,
+    "ss-trace symbol not found (exit 1)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/accenture__sfmc-devtools-1974/r1",
+   "form": "PIPE",
+   "task": "accenture__sfmc-devtools-1974",
+   "rep": 1,
+   "solved": false,
+   "calls": 19,
+   "ssCalls": 8,
+   "byTool": {
+    "ss-search": 2,
+    "ss-find": 1,
+    "ss-read": 4,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "PIPE/accenture__sfmc-devtools-1974/r2",
+   "form": "PIPE",
+   "task": "accenture__sfmc-devtools-1974",
+   "rep": 2,
+   "solved": false,
+   "calls": 17,
+   "ssCalls": 20,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 5,
+    "ss-read": 13,
+    "ss-find": 1
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/aio-libs__aiohttp-8038/r0",
+   "form": "PIPE",
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 0,
+   "solved": false,
+   "calls": 17,
+   "ssCalls": 10,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 2,
+    "ss-read": 6
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/aio-libs__aiohttp-8038/r1",
+   "form": "PIPE",
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 1,
+   "solved": false,
+   "calls": 51,
+   "ssCalls": 34,
+   "byTool": {
+    "ss-grep": 13,
+    "ss-semantic": 4,
+    "ss-read": 15,
+    "ss-trace": 1,
+    "ss-search": 1
+   },
+   "empty": 2,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 1,
+    "empty result: (no matches)": 2,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/aio-libs__aiohttp-8038/r2",
+   "form": "PIPE",
+   "task": "aio-libs__aiohttp-8038",
+   "rep": 2,
+   "solved": false,
+   "calls": 18,
+   "ssCalls": 24,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 6,
+    "ss-read": 13,
+    "ss-semantic": 2,
+    "ss-trace": 1,
+    "ss-find": 1
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/apigee__registry-961/r0",
+   "form": "PIPE",
+   "task": "apigee__registry-961",
+   "rep": 0,
+   "solved": true,
+   "calls": 31,
+   "ssCalls": 24,
+   "byTool": {
+    "ss-search": 3,
+    "ss-grep": 10,
+    "ss-read": 10,
+    "ss-trace": 1
+   },
+   "empty": 1,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 2,
+    "empty result: (no matches)": 1,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1,
+    "ss-read error (exit 1) — path not readable": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/apigee__registry-961/r1",
+   "form": "PIPE",
+   "task": "apigee__registry-961",
+   "rep": 1,
+   "solved": true,
+   "calls": 46,
+   "ssCalls": 24,
+   "byTool": {
+    "ss-search": 6,
+    "ss-grep": 8,
+    "ss-find": 1,
+    "ss-trace": 1,
+    "ss-read": 8
+   },
+   "empty": 3,
+   "errs": {
+    "empty result: (no matches)": 3,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 3,
+    "engine stderr leaked into agent output (model-load chatter)": 3
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/apigee__registry-961/r2",
+   "form": "PIPE",
+   "task": "apigee__registry-961",
+   "rep": 2,
+   "solved": true,
+   "calls": 23,
+   "ssCalls": 24,
+   "byTool": {
+    "ss-search": 3,
+    "ss-grep": 6,
+    "ss-read": 14,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 3,
+    "engine stderr leaked into agent output (model-load chatter)": 3
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/asynkron__protoactor-dotnet-1909/r0",
+   "form": "PIPE",
+   "task": "asynkron__protoactor-dotnet-1909",
+   "rep": 0,
+   "solved": true,
+   "calls": 6,
+   "ssCalls": 1,
+   "byTool": {
+    "ss-search": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "PIPE/asynkron__protoactor-dotnet-1909/r1",
+   "form": "PIPE",
+   "task": "asynkron__protoactor-dotnet-1909",
+   "rep": 1,
+   "solved": true,
+   "calls": 9,
+   "ssCalls": 2,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "PIPE/asynkron__protoactor-dotnet-1909/r2",
+   "form": "PIPE",
+   "task": "asynkron__protoactor-dotnet-1909",
+   "rep": 2,
+   "solved": true,
+   "calls": 8,
+   "ssCalls": 3,
+   "byTool": {
+    "ss-grep": 2,
+    "ss-read": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/aws-actions__configure-aws-credentials-42/r0",
+   "form": "PIPE",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 0,
+   "solved": true,
+   "calls": 23,
+   "ssCalls": 12,
+   "byTool": {
+    "ss-search": 4,
+    "ss-read": 3,
+    "ss-grep": 4,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 1
+  },
+  {
+   "rid": "PIPE/aws-actions__configure-aws-credentials-42/r1",
+   "form": "PIPE",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 1,
+   "solved": true,
+   "calls": 32,
+   "ssCalls": 20,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 4,
+    "ss-grep": 12,
+    "ss-find": 2,
+    "ss-semantic": 1
+   },
+   "empty": 5,
+   "errs": {
+    "empty result: (no matches)": 5
+   },
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "PIPE/aws-actions__configure-aws-credentials-42/r2",
+   "form": "PIPE",
+   "task": "aws-actions__configure-aws-credentials-42",
+   "rep": 2,
+   "solved": true,
+   "calls": 14,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 4,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/awslabs__aws-embedded-metrics-node-21/r0",
+   "form": "PIPE",
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "rep": 0,
+   "solved": true,
+   "calls": 23,
+   "ssCalls": 15,
+   "byTool": {
+    "ss-search": 3,
+    "ss-grep": 3,
+    "ss-read": 8,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/awslabs__aws-embedded-metrics-node-21/r1",
+   "form": "PIPE",
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "rep": 1,
+   "solved": true,
+   "calls": 19,
+   "ssCalls": 10,
+   "byTool": {
+    "ss-search": 2,
+    "ss-find": 1,
+    "ss-read": 5,
+    "ss-trace": 1,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/awslabs__aws-embedded-metrics-node-21/r2",
+   "form": "PIPE",
+   "task": "awslabs__aws-embedded-metrics-node-21",
+   "rep": 2,
+   "solved": false,
+   "calls": 22,
+   "ssCalls": 15,
+   "byTool": {
+    "ss-search": 3,
+    "ss-grep": 2,
+    "ss-read": 9,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/axelrod-python__axelrod-671/r0",
+   "form": "PIPE",
+   "task": "axelrod-python__axelrod-671",
+   "rep": 0,
+   "solved": true,
+   "calls": 6,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-read": 3
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/axelrod-python__axelrod-671/r1",
+   "form": "PIPE",
+   "task": "axelrod-python__axelrod-671",
+   "rep": 1,
+   "solved": true,
+   "calls": 8,
+   "ssCalls": 3,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-read": 2
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/axelrod-python__axelrod-671/r2",
+   "form": "PIPE",
+   "task": "axelrod-python__axelrod-671",
+   "rep": 2,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 1,
+    "ss-read": 3,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/bfgroup__b2-113/r0",
+   "form": "PIPE",
+   "task": "bfgroup__b2-113",
+   "rep": 0,
+   "solved": false,
+   "calls": 83,
+   "ssCalls": 36,
+   "byTool": {
+    "ss-search": 7,
+    "ss-semantic": 2,
+    "ss-read": 7,
+    "ss-grep": 15,
+    "ss-find": 4,
+    "ss-trace": 1
+   },
+   "empty": 8,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 1,
+    "empty result: (no matches)": 8,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 2,
+    "engine stderr leaked into agent output (model-load chatter)": 2,
+    "ss-trace symbol not found (exit 1)": 1
+   },
+   "nativeAfterSS": 17
+  },
+  {
+   "rid": "PIPE/bfgroup__b2-113/r1",
+   "form": "PIPE",
+   "task": "bfgroup__b2-113",
+   "rep": 1,
+   "solved": false,
+   "calls": 96,
+   "ssCalls": 60,
+   "byTool": {
+    "ss-search": 8,
+    "ss-semantic": 2,
+    "ss-read": 9,
+    "ss-grep": 29,
+    "ss-find": 12
+   },
+   "empty": 12,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 3,
+    "empty result: (no matches)": 12
+   },
+   "nativeAfterSS": 15
+  },
+  {
+   "rid": "PIPE/bfgroup__b2-113/r2",
+   "form": "PIPE",
+   "task": "bfgroup__b2-113",
+   "rep": 2,
+   "solved": false,
+   "calls": 114,
+   "ssCalls": 87,
+   "byTool": {
+    "ss-search": 29,
+    "ss-find": 20,
+    "ss-semantic": 1,
+    "ss-read": 12,
+    "ss-grep": 24,
+    "ss-trace": 1
+   },
+   "empty": 12,
+   "errs": {
+    "empty result: (no matches)": 12,
+    "ss-* usage error (exit 2) — argument form rejected": 5,
+    "ss-trace symbol not found (exit 1)": 1
+   },
+   "nativeAfterSS": 16
+  },
+  {
+   "rid": "PIPE/bfgroup__b2-259/r0",
+   "form": "PIPE",
+   "task": "bfgroup__b2-259",
+   "rep": 0,
+   "solved": false,
+   "calls": 130,
+   "ssCalls": 97,
+   "byTool": {
+    "ss-search": 14,
+    "ss-grep": 39,
+    "ss-read": 28,
+    "ss-trace": 1,
+    "ss-find": 15
+   },
+   "empty": 13,
+   "errs": {
+    "empty result: (no matches)": 13,
+    "ss-trace symbol not found (exit 1)": 1,
+    "ss-* usage error (exit 2) — argument form rejected": 5,
+    "ss-read error (exit 1) — path not readable": 7
+   },
+   "nativeAfterSS": 14
+  },
+  {
+   "rid": "PIPE/bfgroup__b2-259/r1",
+   "form": "PIPE",
+   "task": "bfgroup__b2-259",
+   "rep": 1,
+   "solved": false,
+   "calls": 53,
+   "ssCalls": 17,
+   "byTool": {
+    "ss-grep": 6,
+    "ss-search": 4,
+    "ss-find": 3,
+    "ss-read": 4
+   },
+   "empty": 6,
+   "errs": {
+    "empty result: (no matches)": 6
+   },
+   "nativeAfterSS": 14
+  },
+  {
+   "rid": "PIPE/bfgroup__b2-259/r2",
+   "form": "PIPE",
+   "task": "bfgroup__b2-259",
+   "rep": 2,
+   "solved": false,
+   "calls": 58,
+   "ssCalls": 23,
+   "byTool": {
+    "ss-search": 4,
+    "ss-grep": 7,
+    "ss-read": 10,
+    "ss-find": 2
+   },
+   "empty": 3,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 1,
+    "empty result: (no matches)": 3
+   },
+   "nativeAfterSS": 13
+  },
+  {
+   "rid": "PIPE/callstack__react-native-paper-972/r0",
+   "form": "PIPE",
+   "task": "callstack__react-native-paper-972",
+   "rep": 0,
+   "solved": true,
+   "calls": 22,
+   "ssCalls": 15,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 7,
+    "ss-read": 6,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/callstack__react-native-paper-972/r1",
+   "form": "PIPE",
+   "task": "callstack__react-native-paper-972",
+   "rep": 1,
+   "solved": true,
+   "calls": 19,
+   "ssCalls": 12,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 7,
+    "ss-read": 3
+   },
+   "empty": 2,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1,
+    "empty result: (no matches)": 2
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/callstack__react-native-paper-972/r2",
+   "form": "PIPE",
+   "task": "callstack__react-native-paper-972",
+   "rep": 2,
+   "solved": true,
+   "calls": 28,
+   "ssCalls": 20,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 9,
+    "ss-read": 8,
+    "ss-find": 2
+   },
+   "empty": 3,
+   "errs": {
+    "empty result: (no matches)": 3
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/celestiaorg__nmt-192/r0",
+   "form": "PIPE",
+   "task": "celestiaorg__nmt-192",
+   "rep": 0,
+   "solved": true,
+   "calls": 7,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-grep": 2,
+    "ss-read": 1,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/celestiaorg__nmt-192/r1",
+   "form": "PIPE",
+   "task": "celestiaorg__nmt-192",
+   "rep": 1,
+   "solved": true,
+   "calls": 8,
+   "ssCalls": 2,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-read": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/celestiaorg__nmt-192/r2",
+   "form": "PIPE",
+   "task": "celestiaorg__nmt-192",
+   "rep": 2,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-grep": 2,
+    "ss-read": 2
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/devlooped__moq-1262/r0",
+   "form": "PIPE",
+   "task": "devlooped__moq-1262",
+   "rep": 0,
+   "solved": false,
+   "calls": 50,
+   "ssCalls": 53,
+   "byTool": {
+    "ss-search": 10,
+    "ss-read": 30,
+    "ss-grep": 13
+   },
+   "empty": 1,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 2,
+    "empty result: (no matches)": 1,
+    "ss-read error (exit 1) — path not readable": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/devlooped__moq-1262/r1",
+   "form": "PIPE",
+   "task": "devlooped__moq-1262",
+   "rep": 1,
+   "solved": false,
+   "calls": 44,
+   "ssCalls": 45,
+   "byTool": {
+    "ss-search": 5,
+    "ss-read": 28,
+    "ss-trace": 1,
+    "ss-grep": 11
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 1
+   },
+   "nativeAfterSS": 1
+  },
+  {
+   "rid": "PIPE/devlooped__moq-1262/r2",
+   "form": "PIPE",
+   "task": "devlooped__moq-1262",
+   "rep": 2,
+   "solved": false,
+   "calls": 48,
+   "ssCalls": 37,
+   "byTool": {
+    "ss-search": 7,
+    "ss-trace": 1,
+    "ss-read": 22,
+    "ss-grep": 7
+   },
+   "empty": 0,
+   "errs": {
+    "ss-read error (exit 1) — path not readable": 1,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/fastify__fastify-cors-285/r0",
+   "form": "PIPE",
+   "task": "fastify__fastify-cors-285",
+   "rep": 0,
+   "solved": false,
+   "calls": 12,
+   "ssCalls": 8,
+   "byTool": {
+    "ss-search": 2,
+    "ss-grep": 2,
+    "ss-read": 4
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/fastify__fastify-cors-285/r1",
+   "form": "PIPE",
+   "task": "fastify__fastify-cors-285",
+   "rep": 1,
+   "solved": false,
+   "calls": 19,
+   "ssCalls": 9,
+   "byTool": {
+    "ss-search": 2,
+    "ss-read": 2,
+    "ss-grep": 4,
+    "ss-semantic": 1
+   },
+   "empty": 1,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 1,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/fastify__fastify-cors-285/r2",
+   "form": "PIPE",
+   "task": "fastify__fastify-cors-285",
+   "rep": 2,
+   "solved": false,
+   "calls": 17,
+   "ssCalls": 11,
+   "byTool": {
+    "ss-grep": 6,
+    "ss-read": 3,
+    "ss-search": 2
+   },
+   "empty": 1,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 1,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/final-form__final-form-64/r0",
+   "form": "PIPE",
+   "task": "final-form__final-form-64",
+   "rep": 0,
+   "solved": true,
+   "calls": 10,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 1,
+    "ss-read": 2,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/final-form__final-form-64/r1",
+   "form": "PIPE",
+   "task": "final-form__final-form-64",
+   "rep": 1,
+   "solved": true,
+   "calls": 15,
+   "ssCalls": 8,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 2,
+    "ss-read": 3,
+    "ss-find": 1,
+    "ss-semantic": 1
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/final-form__final-form-64/r2",
+   "form": "PIPE",
+   "task": "final-form__final-form-64",
+   "rep": 2,
+   "solved": true,
+   "calls": 7,
+   "ssCalls": 4,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 2,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/gitbookio__markup-it-56/r0",
+   "form": "PIPE",
+   "task": "gitbookio__markup-it-56",
+   "rep": 0,
+   "solved": false,
+   "calls": 36,
+   "ssCalls": 35,
+   "byTool": {
+    "ss-search": 2,
+    "ss-read": 26,
+    "ss-grep": 5,
+    "ss-find": 2
+   },
+   "empty": 0,
+   "errs": {
+    "ss-read error (exit 1) — path not readable": 2,
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/gitbookio__markup-it-56/r1",
+   "form": "PIPE",
+   "task": "gitbookio__markup-it-56",
+   "rep": 1,
+   "solved": false,
+   "calls": 21,
+   "ssCalls": 12,
+   "byTool": {
+    "ss-search": 2,
+    "ss-find": 1,
+    "ss-read": 5,
+    "ss-grep": 4
+   },
+   "empty": 1,
+   "errs": {
+    "ss-read error (exit 1) — path not readable": 2,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/gitbookio__markup-it-56/r2",
+   "form": "PIPE",
+   "task": "gitbookio__markup-it-56",
+   "rep": 2,
+   "solved": false,
+   "calls": 31,
+   "ssCalls": 29,
+   "byTool": {
+    "ss-search": 3,
+    "ss-read": 17,
+    "ss-grep": 5,
+    "ss-find": 3,
+    "ss-trace": 1
+   },
+   "empty": 1,
+   "errs": {
+    "ss-trace symbol not found (exit 1)": 1,
+    "ss-read error (exit 1) — path not readable": 1,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/hotmeteor__spectator-181/r0",
+   "form": "PIPE",
+   "task": "hotmeteor__spectator-181",
+   "rep": 0,
+   "solved": false,
+   "calls": 16,
+   "ssCalls": 3,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 1,
+    "ss-semantic": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 5
+  },
+  {
+   "rid": "PIPE/hotmeteor__spectator-181/r1",
+   "form": "PIPE",
+   "task": "hotmeteor__spectator-181",
+   "rep": 1,
+   "solved": false,
+   "calls": 13,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 1,
+    "ss-read": 3
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/hotmeteor__spectator-181/r2",
+   "form": "PIPE",
+   "task": "hotmeteor__spectator-181",
+   "rep": 2,
+   "solved": false,
+   "calls": 26,
+   "ssCalls": 9,
+   "byTool": {
+    "ss-search": 4,
+    "ss-read": 2,
+    "ss-grep": 3
+   },
+   "empty": 0,
+   "errs": {
+    "ss-* crash (exit 1) — underlying engine error surfaced raw": 1,
+    "engine stderr leaked into agent output (model-load chatter)": 1
+   },
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/jazzband__tablib-454/r0",
+   "form": "PIPE",
+   "task": "jazzband__tablib-454",
+   "rep": 0,
+   "solved": true,
+   "calls": 13,
+   "ssCalls": 7,
+   "byTool": {
+    "ss-search": 1,
+    "ss-grep": 2,
+    "ss-read": 4
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "PIPE/jazzband__tablib-454/r1",
+   "form": "PIPE",
+   "task": "jazzband__tablib-454",
+   "rep": 1,
+   "solved": true,
+   "calls": 11,
+   "ssCalls": 7,
+   "byTool": {
+    "ss-grep": 2,
+    "ss-read": 4,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/jazzband__tablib-454/r2",
+   "form": "PIPE",
+   "task": "jazzband__tablib-454",
+   "rep": 2,
+   "solved": true,
+   "calls": 8,
+   "ssCalls": 7,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-trace": 1,
+    "ss-read": 5
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/locationtech__jts-622/r0",
+   "form": "PIPE",
+   "task": "locationtech__jts-622",
+   "rep": 0,
+   "solved": true,
+   "calls": 5,
+   "ssCalls": 2,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/locationtech__jts-622/r1",
+   "form": "PIPE",
+   "task": "locationtech__jts-622",
+   "rep": 1,
+   "solved": true,
+   "calls": 8,
+   "ssCalls": 3,
+   "byTool": {
+    "ss-search": 1,
+    "ss-trace": 1,
+    "ss-read": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/locationtech__jts-622/r2",
+   "form": "PIPE",
+   "task": "locationtech__jts-622",
+   "rep": 2,
+   "solved": true,
+   "calls": 8,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-grep": 1,
+    "ss-read": 3,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/mathnet__mathnet-numerics-1072/r0",
+   "form": "PIPE",
+   "task": "mathnet__mathnet-numerics-1072",
+   "rep": 0,
+   "solved": true,
+   "calls": 12,
+   "ssCalls": 3,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 2
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/mathnet__mathnet-numerics-1072/r1",
+   "form": "PIPE",
+   "task": "mathnet__mathnet-numerics-1072",
+   "rep": 1,
+   "solved": true,
+   "calls": 18,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-search": 1,
+    "ss-read": 4,
+    "ss-trace": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/mathnet__mathnet-numerics-1072/r2",
+   "form": "PIPE",
+   "task": "mathnet__mathnet-numerics-1072",
+   "rep": 2,
+   "solved": true,
+   "calls": 22,
+   "ssCalls": 6,
+   "byTool": {
+    "ss-search": 1,
+    "ss-trace": 1,
+    "ss-read": 3,
+    "ss-grep": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 2
+  },
+  {
+   "rid": "PIPE/mirumee__ariadne-codegen-218/r0",
+   "form": "PIPE",
+   "task": "mirumee__ariadne-codegen-218",
+   "rep": 0,
+   "solved": true,
+   "calls": 11,
+   "ssCalls": 7,
+   "byTool": {
+    "ss-search": 1,
+    "ss-semantic": 1,
+    "ss-grep": 1,
+    "ss-read": 4
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/mirumee__ariadne-codegen-218/r1",
+   "form": "PIPE",
+   "task": "mirumee__ariadne-codegen-218",
+   "rep": 1,
+   "solved": true,
+   "calls": 15,
+   "ssCalls": 9,
+   "byTool": {
+    "ss-search": 1,
+    "ss-semantic": 2,
+    "ss-grep": 2,
+    "ss-read": 4
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/mirumee__ariadne-codegen-218/r2",
+   "form": "PIPE",
+   "task": "mirumee__ariadne-codegen-218",
+   "rep": 2,
+   "solved": true,
+   "calls": 9,
+   "ssCalls": 5,
+   "byTool": {
+    "ss-search": 2,
+    "ss-read": 1,
+    "ss-trace": 1,
+    "ss-find": 1
+   },
+   "empty": 0,
+   "errs": {},
+   "nativeAfterSS": 0
+  },
+  {
+   "rid": "PIPE/protofire__solhint-224/r0",
+   "form": "PIPE",
+   "task": "protofire__solhint-224",
+   "rep": 0,
+   "solved": false,
+   "calls": 33,
+   "ssCalls": 21,
+   "byTool": {
+    "ss-search": 3,
+    "ss-grep": 8,
+    "ss-read": 10
+   },
+   "empty": 1,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 2,
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 3
+  },
+  {
+   "rid": "PIPE/protofire__solhint-224/r1",
+   "form": "PIPE",
+   "task": "protofire__solhint-224",
+   "rep": 1,
+   "solved": false,
+   "calls": 28,
+   "ssCalls": 19,
+   "byTool": {
+    "ss-search": 3,
+    "ss-grep": 6,
+    "ss-read": 10
+   },
+   "empty": 2,
+   "errs": {
+    "ss-* usage error (exit 2) — argument form rejected": 2,
+    "empty result: (no matches)": 2
+   },
+   "nativeAfterSS": 3
+  },
+  {
+   "rid": "PIPE/protofire__solhint-224/r2",
+   "form": "PIPE",
+   "task": "protofire__solhint-224",
+   "rep": 2,
+   "solved": false,
+   "calls": 26,
+   "ssCalls": 28,
+   "byTool": {
+    "ss-search": 5,
+    "ss-grep": 10,
+    "ss-read": 11,
+    "ss-find": 2
+   },
+   "empty": 1,
+   "errs": {
+    "empty result: (no matches)": 1
+   },
+   "nativeAfterSS": 2
+  }
+ ],
+ "exitCodeHist": {
+  "0": 2544,
+  "1": 89,
+  "2": 67,
+  "127": 1
+ },
+ "defects": {
+  "native re-read of a file an ss-* call already returned": {
+   "count": 262,
+   "rollouts": 49,
+   "ridList": [
+    "TAB/absinthe-graphql__absinthe-998/r2",
+    "TAB/asynkron__protoactor-dotnet-1909/r0",
+    "TAB/asynkron__protoactor-dotnet-1909/r1",
+    "TAB/awslabs__aws-embedded-metrics-node-21/r0",
+    "TAB/awslabs__aws-embedded-metrics-node-21/r2",
+    "TAB/axelrod-python__axelrod-671/r2",
+    "TAB/bfgroup__b2-113/r1",
+    "TAB/bfgroup__b2-113/r2",
+    "TAB/bfgroup__b2-259/r0",
+    "TAB/bfgroup__b2-259/r1",
+    "TAB/bfgroup__b2-259/r2",
+    "TAB/devlooped__moq-1262/r1",
+    "TAB/devlooped__moq-1262/r2",
+    "TAB/fastify__fastify-cors-285/r1",
+    "TAB/final-form__final-form-64/r2",
+    "TAB/locationtech__jts-622/r0",
+    "TAB/locationtech__jts-622/r2",
+    "TAB/mathnet__mathnet-numerics-1072/r0",
+    "TAB/mathnet__mathnet-numerics-1072/r1",
+    "TAB/mathnet__mathnet-numerics-1072/r2",
+    "TAB/protofire__solhint-224/r1",
+    "NONE/aio-libs__aiohttp-8038/r1",
+    "NONE/asynkron__protoactor-dotnet-1909/r0",
+    "NONE/bfgroup__b2-259/r0",
+    "NONE/bfgroup__b2-259/r1",
+    "NONE/bfgroup__b2-259/r2",
+    "NONE/final-form__final-form-64/r2",
+    "NONE/gitbookio__markup-it-56/r1",
+    "NONE/hotmeteor__spectator-181/r0",
+    "NONE/protofire__solhint-224/r0",
+    "NONE/protofire__solhint-224/r2",
+    "PIPE/accenture__sfmc-devtools-1974/r1",
+    "PIPE/asynkron__protoactor-dotnet-1909/r0",
+    "PIPE/asynkron__protoactor-dotnet-1909/r1",
+    "PIPE/aws-actions__configure-aws-credentials-42/r0",
+    "PIPE/aws-actions__configure-aws-credentials-42/r1",
+    "PIPE/bfgroup__b2-113/r0",
+    "PIPE/bfgroup__b2-113/r1",
+    "PIPE/bfgroup__b2-113/r2",
+    "PIPE/bfgroup__b2-259/r0"
+   ],
+   "examples": [
+    {
+     "rid": "TAB/absinthe-graphql__absinthe-998/r2",
+     "file": "lib/absinthe/type/built_ins/introspection.ex",
+     "cmd": "Read {\"file_path\":\"/root/.ss-eval/runs/r2-5/lib/absinthe/type/built_ins/introspection.ex\",\"offset\":320,\"limit\":70,\"pages\":\"\"}"
+    },
+    {
+     "rid": "TAB/absinthe-graphql__absinthe-998/r2",
+     "file": "lib/absinthe/type/built_ins/introspection.ex",
+     "cmd": "Read {\"file_path\":\"/root/.ss-eval/runs/r2-5/lib/absinthe/type/built_ins/introspection.ex\",\"offset\":280,\"limit\":110,\"pages\":\"1\"}"
+    },
+    {
+     "rid": "TAB/asynkron__protoactor-dotnet-1909/r0",
+     "file": "src/Proto.Actor/Utils/TypedDictionary.cs",
+     "cmd": "Read {\"file_path\":\"/root/.ss-eval/runs/r0-27/src/Proto.Actor/Utils/TypedDictionary.cs\",\"offset\":0,\"limit\":240,\"pages\":\"\"}"
+    },
+    {
+     "rid": "TAB/asynkron__protoactor-dotnet-1909/r0",
+     "file": "src/Proto.Actor/Utils/TypedDictionary.cs",
+     "cmd": "Read {\"file_path\":\"/root/.ss-eval/runs/r0-27/src/Proto.Actor/Utils/TypedDictionary.cs\",\"offset\":1,\"limit\":70,\"pages\":\"1\"}"
+    },
+    {
+     "rid": "TAB/asynkron__protoactor-dotnet-1909/r1",
+     "file": "src/Proto.Actor/Utils/TypedDictionary.cs",
+     "cmd": "Read {\"file_path\":\"/root/.ss-eval/runs/r1-28/.claude/worktrees/agent-a3d311866bfc0b7cb/src/Proto.Actor/Utils/TypedDictionary.cs\",\"offset\":0,\"limit\":4000,\"pages\":\"\"}"
+    },
+    {
+     "rid": "TAB/asynkron__protoactor-dotnet-1909/r1",
+     "file": "src/Proto.Actor/Utils/TypedDictionary.cs",
+     "cmd": "Read {\"file_path\":\"/root/.ss-eval/runs/r1-28/.claude/worktrees/agent-a3d311866bfc0b7cb/src/Proto.Actor/Utils/TypedDictionary.cs\",\"offset\":0,\"limit\":200,\"pages\":\"1\"}"
+    }
+   ]
+  },
+  "empty result: (no matches)": {
+   "count": 322,
+   "rollouts": 74,
+   "ridList": [
+    "TAB/accenture__sfmc-devtools-1974/r1",
+    "TAB/aio-libs__aiohttp-8038/r0",
+    "TAB/aio-libs__aiohttp-8038/r2",
+    "TAB/apigee__registry-961/r0",
+    "TAB/aws-actions__configure-aws-credentials-42/r1",
+    "TAB/bfgroup__b2-113/r0",
+    "TAB/bfgroup__b2-113/r1",
+    "TAB/bfgroup__b2-113/r2",
+    "TAB/bfgroup__b2-259/r0",
+    "TAB/bfgroup__b2-259/r1",
+    "TAB/bfgroup__b2-259/r2",
+    "TAB/callstack__react-native-paper-972/r0",
+    "TAB/callstack__react-native-paper-972/r2",
+    "TAB/devlooped__moq-1262/r0",
+    "TAB/fastify__fastify-cors-285/r0",
+    "TAB/fastify__fastify-cors-285/r1",
+    "TAB/gitbookio__markup-it-56/r1",
+    "TAB/gitbookio__markup-it-56/r2",
+    "TAB/hotmeteor__spectator-181/r0",
+    "TAB/hotmeteor__spectator-181/r1",
+    "TAB/hotmeteor__spectator-181/r2",
+    "TAB/locationtech__jts-622/r2",
+    "TAB/mathnet__mathnet-numerics-1072/r0",
+    "TAB/mathnet__mathnet-numerics-1072/r2",
+    "TAB/protofire__solhint-224/r0",
+    "TAB/protofire__solhint-224/r1",
+    "TAB/protofire__solhint-224/r2",
+    "NONE/accenture__sfmc-devtools-1974/r2",
+    "NONE/aio-libs__aiohttp-8038/r0",
+    "NONE/aio-libs__aiohttp-8038/r1",
+    "NONE/apigee__registry-961/r2",
+    "NONE/aws-actions__configure-aws-credentials-42/r0",
+    "NONE/aws-actions__configure-aws-credentials-42/r1",
+    "NONE/bfgroup__b2-113/r0",
+    "NONE/bfgroup__b2-113/r1",
+    "NONE/bfgroup__b2-113/r2",
+    "NONE/bfgroup__b2-259/r0",
+    "NONE/bfgroup__b2-259/r1",
+    "NONE/bfgroup__b2-259/r2",
+    "NONE/callstack__react-native-paper-972/r0"
+   ],
+   "examples": [
+    {
+     "rid": "TAB/accenture__sfmc-devtools-1974/r1",
+     "tool": "ss-grep",
+     "chained": false,
+     "exit": 0,
+     "cmd": "ss-grep \"At least one key|No keys set|type.*required|type.*given|Object.keys\\(selectedTypesObj\\)\" --in test -k 30",
+     "out": "(no matches)"
+    },
+    {
+     "rid": "TAB/aio-libs__aiohttp-8038/r0",
+     "tool": "ss-grep",
+     "chained": true,
+     "exit": 0,
+     "cmd": "ss-grep \"retry_persistent_connection\" -k 10 && ss-grep \"while True:\" --in aiohttp/client.py -k 10",
+     "out": "(no matches)"
+    },
+    {
+     "rid": "TAB/aio-libs__aiohttp-8038/r2",
+     "tool": "ss-grep",
+     "chained": true,
+     "exit": 0,
+     "cmd": "ss-grep \"retry_persistent_connection\" -k 10 && ss-find \"request exception retry\" --regex \"except.*Server|retry\" -k 10",
+     "out": "(no matches)"
+    },
+    {
+     "rid": "TAB/aio-libs__aiohttp-8038/r2",
+     "tool": "ss-grep",
+     "chained": true,
+     "exit": 0,
+     "cmd": "ss-grep \"retry_connection\" -k 20 && ss-grep \"ServerDisconnectedError\" --in aiohttp/client.py -k 10",
+     "out": "(no matches)"
+    },
+    {
+     "rid": "TAB/aio-libs__aiohttp-8038/r2",
+     "tool": "ss-grep",
+     "chained": true,
+     "exit": 0,
+     "cmd": "ss-grep \"retry_persistent\" -k 10 && ss-grep \"ClientOSError\" --in aiohttp/client.py -k 10",
+     "out": "(no matches)"
+    },
+    {
+     "rid": "TAB/aio-libs__aiohttp-8038/r2",
+     "tool": "ss-grep",
+     "chained": true,
+     "exit": 0,
+     "cmd": "ss-grep \"ServerDisconnectedError\" --in tests -k 20 && ss-grep \"ClientOSError\" --in tests/test_client_functional.py -k 10",
+     "out": "(no matches)"
+    }
+   ]
+  },
+  "ss-trace symbol not found (exit 1)": {
+   "count": 10,
+   "rollouts": 10,
+   "ridList": [
+    "TAB/accenture__sfmc-devtools-1974/r2",
+    "TAB/bfgroup__b2-113/r2",
+    "TAB/devlooped__moq-1262/r1",
+    "TAB/gitbookio__markup-it-56/r1",
+    "NONE/final-form__final-form-64/r2",
+    "PIPE/accenture__sfmc-devtools-1974/r0",
+    "PIPE/bfgroup__b2-113/r0",
+    "PIPE/bfgroup__b2-113/r2",
+    "PIPE/bfgroup__b2-259/r0",
+    "PIPE/gitbookio__markup-it-56/r2"
+   ],
+   "examples": [
+    {
+     "rid": "TAB/accenture__sfmc-devtools-1974/r2",
+     "tool": "ss-read",
+     "chained": true,
+     "exit": 1,
+     "cmd": "ss-read lib/index.js 1635 1685 && ss-trace \"#runMethod\" callers --in lib/index.js",
+     "out": "<<SS_TRACE_META>>{\"symbol\":\"#runMethod\",\"queryHash\":\"22f18876b3e3d5c7\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":21,\"sufficient\":false"
+    },
+    {
+     "rid": "TAB/bfgroup__b2-113/r2",
+     "tool": "ss-trace",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-trace generate_dependency_targets callees --in src/build/targets.py",
+     "out": "<<SS_TRACE_META>>{\"symbol\":\"generate_dependency_targets\",\"queryHash\":\"fdc23d28815fba26\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":20,\"sufficient\":false"
+    },
+    {
+     "rid": "TAB/devlooped__moq-1262/r1",
+     "tool": "ss-search",
+     "chained": true,
+     "exit": 1,
+     "cmd": "ss-search \"class MethodCall\" -k 10 && ss-trace MethodCallExpectation callees --in src/Moq",
+     "out": "<<SS_TRACE_META>>{\"symbol\":\"MethodCallExpectation\",\"queryHash\":\"1f843678a0a48107\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":12,\"sufficient\":false"
+    },
+    {
+     "rid": "TAB/gitbookio__markup-it-56/r1",
+     "tool": "ss-read",
+     "chained": true,
+     "exit": 1,
+     "cmd": "ss-read src/markdown/inlines/link.js 1 140 && ss-trace deserialize [callees] --in src/markdown/inlines/html.js",
+     "out": "<<SS_TRACE_META>>{\"symbol\":\"deserialize\",\"queryHash\":\"a8866f8672ed0879\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":9,\"sufficient\":false"
+    },
+    {
+     "rid": "NONE/final-form__final-form-64/r2",
+     "tool": "ss-trace",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-trace submit callees --in src/FinalForm.js",
+     "out": "<<SS_TRACE_META>>{\"symbol\":\"submit\",\"queryHash\":\"bb998d9ae5e70fdf\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":5,\"sufficient\":false"
+    },
+    {
+     "rid": "PIPE/accenture__sfmc-devtools-1974/r0",
+     "tool": "ss-read",
+     "chained": true,
+     "exit": 1,
+     "cmd": "ss-read lib/index.js 90 130 && ss-read lib/cli.js 110 150 && ss-trace _runMethod callers --in lib/index.js",
+     "out": "<<SS_TRACE_META>>{\"symbol\":\"_runMethod\",\"queryHash\":\"40f278cc47cba4f7\",\"target\":null,\"tokenBudget\":4000,\"tokensUsed\":0,\"budgetTier\":\"preview\",\"budgetReason\":\"not_found\",\"callers\":0,\"callees\":0,\"impactPaths\":0,\"latencyMs\":22,\"sufficient\":false"
+    }
+   ]
+  },
+  "ss-* usage error (exit 2) — argument form rejected": {
+   "count": 70,
+   "rollouts": 33,
+   "ridList": [
+    "TAB/aio-libs__aiohttp-8038/r0",
+    "TAB/bfgroup__b2-113/r0",
+    "TAB/bfgroup__b2-113/r1",
+    "TAB/bfgroup__b2-259/r0",
+    "TAB/bfgroup__b2-259/r1",
+    "TAB/gitbookio__markup-it-56/r0",
+    "TAB/hotmeteor__spectator-181/r1",
+    "TAB/protofire__solhint-224/r2",
+    "NONE/aio-libs__aiohttp-8038/r1",
+    "NONE/aio-libs__aiohttp-8038/r2",
+    "NONE/awslabs__aws-embedded-metrics-node-21/r2",
+    "NONE/bfgroup__b2-113/r0",
+    "NONE/bfgroup__b2-113/r2",
+    "NONE/bfgroup__b2-259/r1",
+    "NONE/bfgroup__b2-259/r2",
+    "NONE/devlooped__moq-1262/r0",
+    "NONE/gitbookio__markup-it-56/r0",
+    "NONE/mathnet__mathnet-numerics-1072/r2",
+    "PIPE/accenture__sfmc-devtools-1974/r0",
+    "PIPE/aio-libs__aiohttp-8038/r1",
+    "PIPE/apigee__registry-961/r0",
+    "PIPE/bfgroup__b2-113/r0",
+    "PIPE/bfgroup__b2-113/r1",
+    "PIPE/bfgroup__b2-113/r2",
+    "PIPE/bfgroup__b2-259/r0",
+    "PIPE/bfgroup__b2-259/r2",
+    "PIPE/devlooped__moq-1262/r0",
+    "PIPE/devlooped__moq-1262/r1",
+    "PIPE/fastify__fastify-cors-285/r1",
+    "PIPE/fastify__fastify-cors-285/r2",
+    "PIPE/final-form__final-form-64/r1",
+    "PIPE/protofire__solhint-224/r0",
+    "PIPE/protofire__solhint-224/r1"
+   ],
+   "examples": [
+    {
+     "rid": "TAB/aio-libs__aiohttp-8038/r0",
+     "tool": "ss-grep",
+     "chained": false,
+     "exit": 2,
+     "cmd": "ss-grep \"KEEPALIVE\\|CONNECTION\" aiohttp/hdrs.py -k 10",
+     "out": "[ss] 1 argument(s) not consumed: \"aiohttp/hdrs.py\" | [ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B | [ss] if this is part of the pattern, quote the whole pattern"
+    },
+    {
+     "rid": "TAB/bfgroup__b2-113/r0",
+     "tool": "ss-grep",
+     "chained": false,
+     "exit": 2,
+     "cmd": "ss-grep \"build.*no|<build>\" src/b2 src/tools test -k 30",
+     "out": "[ss] 3 argument(s) not consumed: \"src/b2\", \"src/tools\", \"test\" | [ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B | [ss] if this is part of the pattern, quote the whole pattern"
+    },
+    {
+     "rid": "TAB/bfgroup__b2-113/r1",
+     "tool": "ss-grep",
+     "chained": false,
+     "exit": 2,
+     "cmd": "ss-grep \"build.*no\\|no.*build\" src/b2 src/tools src/engine -k 30",
+     "out": "[ss] 3 argument(s) not consumed: \"src/b2\", \"src/tools\", \"src/engine\" | [ss] for several scopes repeat the flag: ss-grep \"<regex>\" --in A --in B | [ss] if this is part of the pattern, quote the whole pattern"
+    },
+    {
+     "rid": "TAB/bfgroup__b2-113/r1",
+     "tool": "ss-find",
+     "chained": false,
+     "exit": 2,
+     "cmd": "ss-find \"generate\" --regex \"def generate|class .*Target\" --in src/build -k 20",
+     "out": "[ss] unrecognised option \"--in\" | Usage: ss-find \"<query>\" --regex \"<regex>\" [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--full|--xl] [-k N]"
+    },
+    {
+     "rid": "TAB/bfgroup__b2-259/r0",
+     "tool": "ss-grep",
+     "chained": false,
+     "exit": 2,
+     "cmd": "ss-grep \"check-target-builds\" --include='*.jam' -k 20",
+     "out": "[ss] unrecognised option \"--include=*.jam\" | Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]"
+    },
+    {
+     "rid": "TAB/bfgroup__b2-259/r0",
+     "tool": "ss-find",
+     "chained": false,
+     "exit": 2,
+     "cmd": "ss-find \"\" --regex \"configure\" -k 200",
+     "out": "Usage: ss-find \"<query>\" --regex \"<regex>\" [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--full|--xl] [-k N]"
+    }
+   ]
+  },
+  "ss-* crash (exit 1) — underlying engine error surfaced raw": {
+   "count": 37,
+   "rollouts": 27,
+   "ridList": [
+    "TAB/apigee__registry-961/r0",
+    "TAB/apigee__registry-961/r1",
+    "TAB/apigee__registry-961/r2",
+    "TAB/aws-actions__configure-aws-credentials-42/r0",
+    "TAB/aws-actions__configure-aws-credentials-42/r1",
+    "TAB/bfgroup__b2-259/r0",
+    "TAB/callstack__react-native-paper-972/r0",
+    "TAB/hotmeteor__spectator-181/r0",
+    "TAB/mathnet__mathnet-numerics-1072/r2",
+    "NONE/accenture__sfmc-devtools-1974/r2",
+    "NONE/apigee__registry-961/r0",
+    "NONE/bfgroup__b2-113/r0",
+    "NONE/bfgroup__b2-113/r2",
+    "NONE/bfgroup__b2-259/r2",
+    "NONE/fastify__fastify-cors-285/r2",
+    "NONE/hotmeteor__spectator-181/r2",
+    "NONE/mathnet__mathnet-numerics-1072/r2",
+    "NONE/mirumee__ariadne-codegen-218/r0",
+    "PIPE/aio-libs__aiohttp-8038/r1",
+    "PIPE/apigee__registry-961/r0",
+    "PIPE/apigee__registry-961/r1",
+    "PIPE/apigee__registry-961/r2",
+    "PIPE/bfgroup__b2-113/r0",
+    "PIPE/callstack__react-native-paper-972/r1",
+    "PIPE/devlooped__moq-1262/r2",
+    "PIPE/gitbookio__markup-it-56/r0",
+    "PIPE/hotmeteor__spectator-181/r2"
+   ],
+   "examples": [
+    {
+     "rid": "TAB/apigee__registry-961/r0",
+     "tool": "ss-grep",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-grep \"func (.*ListArtifacts\" -k 20",
+     "out": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:"
+    },
+    {
+     "rid": "TAB/apigee__registry-961/r0",
+     "tool": "ss-grep",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-grep \"ListArtifacts(ctx\" -k 20",
+     "out": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:"
+    },
+    {
+     "rid": "TAB/apigee__registry-961/r1",
+     "tool": "ss-grep",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-grep \"func (s .*List\" --in server/registry -k 100",
+     "out": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:"
+    },
+    {
+     "rid": "TAB/apigee__registry-961/r1",
+     "tool": "ss-grep",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-grep \"ListApis(ctx\" --in server/registry -k 10",
+     "out": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:"
+    },
+    {
+     "rid": "TAB/apigee__registry-961/r1",
+     "tool": "ss-grep",
+     "chained": true,
+     "exit": 1,
+     "cmd": "ss-grep \"GetDeploymentRevision(ctx\" --in server/registry/internal/storage -k 5 && ss-grep \"GetSpecRevision(ctx\" --in server/registry/internal/storage -k 5",
+     "out": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:"
+    },
+    {
+     "rid": "TAB/apigee__registry-961/r2",
+     "tool": "ss-read",
+     "chained": true,
+     "exit": 1,
+     "cmd": "ss-read server/registry/internal/storage/list.go 380 470 && ss-grep \"GetSpecRevision(ctx\\|GetDeploymentRevision(ctx\\|GetVersion(ctx\" -k 30",
+     "out": "[ss-*] crash: Error: ripgrep failed (code 2): rg: regex parse error:"
+    }
+   ]
+  },
+  "engine stderr leaked into agent output (model-load chatter)": {
+   "count": 37,
+   "rollouts": 27,
+   "ridList": [
+    "TAB/apigee__registry-961/r0",
+    "TAB/apigee__registry-961/r1",
+    "TAB/apigee__registry-961/r2",
+    "TAB/aws-actions__configure-aws-credentials-42/r0",
+    "TAB/aws-actions__configure-aws-credentials-42/r1",
+    "TAB/bfgroup__b2-259/r0",
+    "TAB/callstack__react-native-paper-972/r0",
+    "TAB/hotmeteor__spectator-181/r0",
+    "TAB/mathnet__mathnet-numerics-1072/r2",
+    "NONE/accenture__sfmc-devtools-1974/r2",
+    "NONE/apigee__registry-961/r0",
+    "NONE/bfgroup__b2-113/r0",
+    "NONE/bfgroup__b2-113/r2",
+    "NONE/bfgroup__b2-259/r2",
+    "NONE/fastify__fastify-cors-285/r2",
+    "NONE/hotmeteor__spectator-181/r2",
+    "NONE/mathnet__mathnet-numerics-1072/r2",
+    "NONE/mirumee__ariadne-codegen-218/r0",
+    "PIPE/aio-libs__aiohttp-8038/r1",
+    "PIPE/apigee__registry-961/r0",
+    "PIPE/apigee__registry-961/r1",
+    "PIPE/apigee__registry-961/r2",
+    "PIPE/bfgroup__b2-113/r0",
+    "PIPE/callstack__react-native-paper-972/r1",
+    "PIPE/devlooped__moq-1262/r2",
+    "PIPE/gitbookio__markup-it-56/r0",
+    "PIPE/hotmeteor__spectator-181/r2"
+   ],
+   "examples": [
+    {
+     "rid": "TAB/apigee__registry-961/r0",
+     "tool": "ss-grep",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-grep \"func (.*ListArtifacts\" -k 20",
+     "out": "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r0-14/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false) | LateInteraction: Streaming load 5000 documents... | LateInteraction: Loaded 5266 documents (model: lateon-code, 128d)"
+    },
+    {
+     "rid": "TAB/apigee__registry-961/r0",
+     "tool": "ss-grep",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-grep \"ListArtifacts(ctx\" -k 20",
+     "out": "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r0-14/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false) | LateInteraction: Streaming load 5000 documents... | LateInteraction: Loaded 5266 documents (model: lateon-code, 128d)"
+    },
+    {
+     "rid": "TAB/apigee__registry-961/r1",
+     "tool": "ss-grep",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-grep \"func (s .*List\" --in server/registry -k 100",
+     "out": "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r1-16/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false) | LateInteraction: Streaming load 5000 documents... | LateInteraction: Loaded 5266 documents (model: lateon-code, 128d)"
+    },
+    {
+     "rid": "TAB/apigee__registry-961/r1",
+     "tool": "ss-grep",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-grep \"ListApis(ctx\" --in server/registry -k 10",
+     "out": "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r1-16/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false) | LateInteraction: Streaming load 5000 documents... | LateInteraction: Loaded 5266 documents (model: lateon-code, 128d)"
+    },
+    {
+     "rid": "TAB/apigee__registry-961/r1",
+     "tool": "ss-grep",
+     "chained": true,
+     "exit": 1,
+     "cmd": "ss-grep \"GetDeploymentRevision(ctx\" --in server/registry/internal/storage -k 5 && ss-grep \"GetSpecRevision(ctx\" --in server/registry/internal/storage -k 5",
+     "out": "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r1-16/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false) | LateInteraction: Streaming load 5000 documents... | LateInteraction: Loaded 5266 documents (model: lateon-code, 128d)"
+    },
+    {
+     "rid": "TAB/apigee__registry-961/r2",
+     "tool": "ss-read",
+     "chained": true,
+     "exit": 1,
+     "cmd": "ss-read server/registry/internal/storage/list.go 380 470 && ss-grep \"GetSpecRevision(ctx\\|GetDeploymentRevision(ctx\\|GetVersion(ctx\" -k 30",
+     "out": "BinaryHNSW: Loaded 6863 vectors from /root/.ss-eval/runs/r2-18/.sweet-search/codebase-binary-hnsw.idx (asymmetric=false) | LateInteraction: Streaming load 5000 documents... | LateInteraction: Loaded 5266 documents (model: lateon-code, 128d)"
+    }
+   ]
+  },
+  "ss-read error (exit 1) — path not readable": {
+   "count": 45,
+   "rollouts": 24,
+   "ridList": [
+    "TAB/bfgroup__b2-113/r0",
+    "TAB/bfgroup__b2-113/r1",
+    "TAB/bfgroup__b2-259/r0",
+    "TAB/devlooped__moq-1262/r0",
+    "TAB/devlooped__moq-1262/r2",
+    "TAB/gitbookio__markup-it-56/r0",
+    "TAB/gitbookio__markup-it-56/r2",
+    "TAB/mirumee__ariadne-codegen-218/r1",
+    "NONE/apigee__registry-961/r0",
+    "NONE/bfgroup__b2-113/r2",
+    "NONE/devlooped__moq-1262/r0",
+    "NONE/gitbookio__markup-it-56/r0",
+    "NONE/gitbookio__markup-it-56/r1",
+    "NONE/gitbookio__markup-it-56/r2",
+    "NONE/protofire__solhint-224/r0",
+    "NONE/protofire__solhint-224/r1",
+    "NONE/protofire__solhint-224/r2",
+    "PIPE/apigee__registry-961/r0",
+    "PIPE/bfgroup__b2-259/r0",
+    "PIPE/devlooped__moq-1262/r0",
+    "PIPE/devlooped__moq-1262/r2",
+    "PIPE/gitbookio__markup-it-56/r0",
+    "PIPE/gitbookio__markup-it-56/r1",
+    "PIPE/gitbookio__markup-it-56/r2"
+   ],
+   "examples": [
+    {
+     "rid": "TAB/bfgroup__b2-113/r0",
+     "tool": "ss-read",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-read src/b2/build/targets.py 1 260",
+     "out": "[ss-read] error: stat failed: ENOENT"
+    },
+    {
+     "rid": "TAB/bfgroup__b2-113/r1",
+     "tool": "ss-read",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-read src/b2/build/targets.py 1 500",
+     "out": "[ss-read] error: stat failed: ENOENT"
+    },
+    {
+     "rid": "TAB/bfgroup__b2-259/r0",
+     "tool": "ss-read",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-read src/tools/configure.jam 1 260",
+     "out": "[ss-read] error: stat failed: ENOENT"
+    },
+    {
+     "rid": "TAB/devlooped__moq-1262/r0",
+     "tool": "ss-read",
+     "chained": true,
+     "exit": 1,
+     "cmd": "ss-read src/Moq/ExpressionExtensions.cs 420 460 && ss-read src/Moq/Expressions/Visitors/PartialMatcherAwareEval.cs 1 160",
+     "out": "[ss-read] error: stat failed: ENOENT"
+    },
+    {
+     "rid": "TAB/devlooped__moq-1262/r0",
+     "tool": "ss-grep",
+     "chained": true,
+     "exit": 1,
+     "cmd": "ss-grep \"class MatchExpression\" -k 10 && ss-read src/Moq/Expressions/MatchExpression.cs 1 100 && ss-read src/Moq/Match.cs 90 180",
+     "out": "[ss-read] error: stat failed: ENOENT"
+    },
+    {
+     "rid": "TAB/devlooped__moq-1262/r2",
+     "tool": "ss-read",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-read src/Moq/Matchers/MatcherFactory.cs 1 220",
+     "out": "[ss-read] error: stat failed: ENOENT"
+    }
+   ]
+  },
+  "ss-semantic error (exit 1)": {
+   "count": 2,
+   "rollouts": 2,
+   "ridList": [
+    "TAB/mathnet__mathnet-numerics-1072/r0",
+    "NONE/gitbookio__markup-it-56/r1"
+   ],
+   "examples": [
+    {
+     "rid": "TAB/mathnet__mathnet-numerics-1072/r0",
+     "tool": "ss-semantic",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-semantic src/Numerics/Complex.cs \"how to determine whether a complex value is NaN\"",
+     "out": "[ss-semantic] error: file not indexed for semantic span selection — returning whole file via plain read"
+    },
+    {
+     "rid": "NONE/gitbookio__markup-it-56/r1",
+     "tool": "ss-semantic",
+     "chained": false,
+     "exit": 1,
+     "cmd": "ss-semantic src/models/node.js \"how block text and data are represented\"",
+     "out": "[ss-semantic] error: file not indexed for semantic span selection — returning whole file via plain read"
+    }
+   ]
+  },
+  "ss-read invalid line args (exit 2)": {
+   "count": 1,
+   "rollouts": 1,
+   "ridList": [
+    "NONE/bfgroup__b2-113/r2"
+   ],
+   "examples": [
+    {
+     "rid": "NONE/bfgroup__b2-113/r2",
+     "tool": "ss-read",
+     "chained": false,
+     "exit": 0,
+     "cmd": "ss-read --help 2>&1 || true",
+     "out": "[ss-read] \"--help\" looks like a flag, but ss-read takes a file path first."
+    }
+   ]
+  },
+  "command not found (exit 127)": {
+   "count": 1,
+   "rollouts": 1,
+   "ridList": [
+    "NONE/bfgroup__b2-259/r0"
+   ],
+   "examples": [
+    {
+     "rid": "NONE/bfgroup__b2-259/r0",
+     "tool": "ss-search",
+     "chained": false,
+     "exit": 127,
+     "cmd": "ss-search \"$(properties:<feature>) Jam variable property list\" -k 20",
+     "out": "Exit code 127\n/bin/bash: eval: line 1: syntax error near unexpected token `)'\n/bin/bash: eval: line 1: `ss-search \"$(properties:<feature>) Jam variable property list\" -k 20'"
+    }
+   ]
+  }
+ }
+}

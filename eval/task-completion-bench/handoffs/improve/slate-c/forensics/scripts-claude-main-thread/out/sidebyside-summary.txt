@@ -1,0 +1,66 @@
+
+=== A. HEADLINE on the 4 no-delegation tasks (per-rollout means; def1 = mean of per-task means) ===
+  realized $ (main-only)             native=0.007963  sweet=0.010057  Δ=0.002094 (26.3%)
+  ideal $                            native=0.007089  sweet=0.009107  Δ=0.002018 (28.5%)
+  cache-write surcharge $            native=0.000874  sweet=0.000950  Δ=0.000076 (8.7%)
+  requests                           native=13.5  sweet=16.3  Δ=2.8 (21.0%)
+  ingest tokens                      native=28067.8  sweet=30912.7  Δ=2844.8 (10.1%)
+  resident (re-sent) tokens          native=293047.1  sweet=395839.2  Δ=102792.1 (35.1%)
+  output tokens                      native=2252.9  sweet=3428.1  Δ=1175.2 (52.2%)
+  tool-result bytes                  native=35267.4  sweet=38691.3  Δ=3423.8 (9.7%)
+  preamble tokens (turn-1 input)     native=17372.0  sweet=18942.0  Δ=1570.0 (9.0%)
+  preamble lifetime $                native=0.003910  sweet=0.004803  Δ=0.000893 (22.8%)
+  verification-tail requests         native=3.4  sweet=4.2  Δ=0.750000 (22.0%)
+  verification-tail $                native=0.001552  sweet=0.002116  Δ=0.000564 (36.3%)
+  tool calls per request: native 1.04 (1.17 multi-call requests/rollout) | sweet 0.94 (0.00)
+
+=== B. PER TASK (mean per rollout, 3 reps each; solved = resolved rows) ===
+  callstack__react-native-paper-972: native $0.008125 (14.0 req, 2667 out, 30.8 kB in, solved 3/3) | sweet $0.012355 (22.3 req, 4236 out, 41.5 kB in, solved 3/3) | Δ 52.0%
+      r0 native $0.008972 req=16 out=3187 ingest=27608 resident=343328 maxCtx=27608 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=3req/$0.001155 resolved=true
+      r0 sweet  $0.010115 req=19 out=2423 ingest=30746 resident=463961 maxCtx=30746 editsFailed=0 readAfterSsRead=0 ssFailed=2 tail=4req/$0.001577 resolved=true
+      r1 native $0.008608 req=16 out=2721 ingest=26589 resident=347471 maxCtx=26589 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=4req/$0.001505 resolved=true
+      r1 sweet  $0.006563 req=11 out=1583 ingest=25775 resident=221496 maxCtx=25775 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=4req/$0.001613 resolved=true
+      r2 native $0.006797 req=10 out=2092 ingest=26407 resident=206713 maxCtx=26407 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=5req/$0.002045 resolved=true
+      r2 sweet  $0.020387 req=37 out=8701 ingest=38336 resident=1016703 maxCtx=38336 editsFailed=0 readAfterSsRead=0 ssFailed=4 tail=5req/$0.002982 resolved=true
+  jazzband__tablib-454: native $0.006345 (9.7 req, 1768 out, 34.7 kB in, solved 3/3) | sweet $0.009621 (14.7 req, 3941 out, 36.8 kB in, solved 3/3) | Δ 51.6%
+      r0 native $0.006628 req=10 out=1658 ingest=28447 resident=191352 maxCtx=28447 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=3req/$0.001620 resolved=true
+      r0 sweet  $0.009707 req=13 out=4038 ingest=31702 resident=314711 maxCtx=31702 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=2req/$0.001698 resolved=true
+      r1 native $0.006697 req=10 out=1701 ingest=28857 resident=190533 maxCtx=28857 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=2req/$0.001201 resolved=true
+      r1 sweet  $0.009148 req=15 out=3089 ingest=29857 resident=338583 maxCtx=29857 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=8req/$0.004234 resolved=true
+      r2 native $0.005712 req=9 out=1944 ingest=22364 resident=158629 maxCtx=22364 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=4req/$0.001938 resolved=true
+      r2 sweet  $0.010009 req=16 out=4696 ingest=27498 resident=357704 maxCtx=27498 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=5req/$0.002431 resolved=true
+  locationtech__jts-622: native $0.006173 (12.0 req, 1073 out, 23.7 kB in, solved 3/3) | sweet $0.006526 (11.0 req, 1186 out, 26.2 kB in, solved 3/3) | Δ 5.7%
+      r0 native $0.007380 req=14 out=1272 ingest=28441 resident=288685 maxCtx=28441 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=2req/$0.000821 resolved=true
+      r0 sweet  $0.006692 req=11 out=1261 ingest=27004 resident=238641 maxCtx=27004 editsFailed=0 readAfterSsRead=4 ssFailed=0 tail=2req/$0.000819 resolved=true
+      r1 native $0.006319 req=13 out=1117 ingest=24535 resident=240735 maxCtx=24535 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=2req/$0.000742 resolved=true
+      r1 sweet  $0.006174 req=10 out=1025 ingest=26706 resident=205716 maxCtx=26706 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=3req/$0.001086 resolved=true
+      r2 native $0.004820 req=9 out=831 ingest=21245 resident=150224 maxCtx=21245 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=3req/$0.000940 resolved=true
+      r2 sweet  $0.006713 req=12 out=1272 ingest=26518 resident=246104 maxCtx=26518 editsFailed=0 readAfterSsRead=0 ssFailed=1 tail=2req/$0.000837 resolved=true
+  mathnet__mathnet-numerics-1072: native $0.011209 (18.3 req, 3504 out, 51.8 kB in, solved 3/3) | sweet $0.011725 (17.3 req, 4350 out, 50.2 kB in, solved 3/3) | Δ 4.6%
+      r0 native $0.010894 req=17 out=3373 ingest=35209 resident=429378 maxCtx=35209 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=3req/$0.001683 resolved=true
+      r0 sweet  $0.009640 req=15 out=3158 ingest=31717 resident=360594 maxCtx=31717 editsFailed=0 readAfterSsRead=0 ssFailed=2 tail=10req/$0.005245 resolved=true
+      r1 native $0.011017 req=17 out=3204 ingest=34726 resident=457677 maxCtx=34726 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=3req/$0.001261 resolved=true
+      r1 sweet  $0.012145 req=18 out=4441 ingest=37109 resident=466643 maxCtx=37109 editsFailed=1 readAfterSsRead=0 ssFailed=0 tail=3req/$0.001776 resolved=true
+      r2 native $0.011714 req=21 out=3935 ingest=32386 resident=511840 maxCtx=32386 editsFailed=0 readAfterSsRead=0 ssFailed=0 tail=7req/$0.003712 resolved=true
+      r2 sweet  $0.013388 req=19 out=5450 ingest=37984 resident=519214 maxCtx=37984 editsFailed=0 readAfterSsRead=0 ssFailed=2 tail=2req/$0.001093 resolved=true
+
+=== C. LIFETIME-ATTRIBUTED IDEAL COST BY REQUEST CLASS (mean per rollout; class = what the request called; cost = its output + the ingest it caused + that ingest re-sent for the rest of the rollout) ===
+  class             nat n      nat $  swt n      swt $         Δ$   nat kB  swt kB  nat out swt out
+  ss-search          0.00   0.000000   5.00   0.001579   0.001579      0.0    17.5        0     946
+  ss-read            0.00   0.000000   2.50   0.000719   0.000719      0.0     7.2        0     479
+  ss-mixed           0.00   0.000000   0.08   0.000016   0.000016      0.0     0.1        0      14
+  Read               4.17   0.000915   0.92   0.000092  -0.000823     14.8     0.4      441      88
+  shell-retrieval    2.50   0.000735   0.00   0.000000  -0.000735      7.5     0.0      459       0
+  edit               2.00   0.000399   2.08   0.000538   0.000138      0.3     0.3      567     781
+  edit-failed        0.00   0.000000   0.08   0.000013   0.000013      0.0     0.0        0      19
+  test               1.92   0.000486   2.67   0.000865   0.000380      9.0    12.7      148     358
+  git                0.75   0.000132   0.67   0.000145   0.000013      0.6     0.3      178     212
+  tasklist           0.67   0.000048   1.33   0.000177   0.000129      0.0     0.1       67     267
+  multi              0.50   0.000277   0.00   0.000000  -0.000277      3.0     0.0       81       0
+  final-answer       1.00   0.000188   1.00   0.000159  -0.000029      0.0     0.0      313     265
+  preamble                  0.003910          0.004803   0.000893  (turn-1 tokens 17372 vs 18942)
+  sum of class deltas = $0.002018 ; ideal Δ (pooled per rollout) = $0.002018 ; realized Δ = $0.002094 ; surcharge Δ = $0.000076
+
+=== D. NAMED MECHANISMS (mean per rollout, pooled over the 4 tasks) ===
+  native: Read-after-ss-read 0.00/rollout ($0.000000 direct) | re-Read same file 0.67 | failed edits 0.00 ($0.000000 failed request + $0.000000 immediate retry) | ss failures 0.00 ($0.000000 next request) | tail 3.42 req $0.001552 | output 2253 tok of which visible chars 6148 (≈1537 tok) → hidden reasoning ≈ 716 tok
+  sweet: Read-after-ss-read 0.33/rollout ($0.000117 direct) | re-Read same file 0.00 | failed edits 0.08 ($0.000064 failed request + $0.000042 immediate retry) | ss failures 0.92 ($0.000399 next request) | tail 4.17 req $0.002116 | output 3428 tok of which visible chars 8387 (≈2097 tok) → hidden reasoning ≈ 1331 tok
