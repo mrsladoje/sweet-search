@@ -1,0 +1,142 @@
+[
+ {
+  "instance_id": "getmoto__moto-6716",
+  "repo": "getmoto/moto",
+  "base_commit": "a853fd714d133c9a9ca0479cb99537d9a39d85bf",
+  "golden": "getmoto__moto@a853fd714d133c9a9ca0479cb99537d9a39d85bf",
+  "goldenNeedsRebuild": false
+ },
+ {
+  "instance_id": "python-markdown__markdown-1294",
+  "repo": "Python-Markdown/markdown",
+  "base_commit": "acdbdc19959f5c02c13f741413d76e23366b4aa5",
+  "golden": "Python-Markdown__markdown@acdbdc19959f5c02c13f741413d76e23366b4aa5",
+  "goldenNeedsRebuild": false
+ },
+ {
+  "instance_id": "mirumee__ariadne-codegen-223",
+  "repo": "mirumee/ariadne-codegen",
+  "base_commit": "5f6bc48079aff19139ac7f60ec63303d07921c76",
+  "golden": "mirumee__ariadne-codegen@5f6bc48079aff19139ac7f60ec63303d07921c76",
+  "goldenNeedsRebuild": false
+ },
+ {
+  "instance_id": "projectlombok__lombok-3619",
+  "repo": "projectlombok/lombok",
+  "base_commit": "8bea25107de8177596546574c02ed204366e1281",
+  "golden": "projectlombok__lombok@8bea25107de8177596546574c02ed204366e1281",
+  "goldenNeedsRebuild": true
+ },
+ {
+  "instance_id": "squashql__squashql-295",
+  "repo": "squashql/squashql",
+  "base_commit": "5e866a8e82fa8b04603bc536c3bad67ae8c2a40d",
+  "golden": "squashql__squashql@5e866a8e82fa8b04603bc536c3bad67ae8c2a40d",
+  "goldenNeedsRebuild": true
+ },
+ {
+  "instance_id": "eclipse-ee4j__yasson-395",
+  "repo": "eclipse-ee4j/yasson",
+  "base_commit": "6e6fccaa1842ea847543b1abd4cffb31c741864d",
+  "golden": "eclipse-ee4j__yasson@6e6fccaa1842ea847543b1abd4cffb31c741864d",
+  "goldenNeedsRebuild": false
+ },
+ {
+  "instance_id": "gleam-lang__gleam-3458",
+  "repo": "gleam-lang/gleam",
+  "base_commit": "65c2efb56bac46ebc56f6ba383ad9c34e4b0bd38",
+  "golden": "gleam-lang__gleam@65c2efb56bac46ebc56f6ba383ad9c34e4b0bd38",
+  "goldenNeedsRebuild": true
+ },
+ {
+  "instance_id": "rust-analyzer__rust-analyzer-2616",
+  "repo": "rust-analyzer/rust-analyzer",
+  "base_commit": "cfc50ff160d0af2ce5cd931c6d41161abfdb2fbd",
+  "golden": "rust-analyzer__rust-analyzer@cfc50ff160d0af2ce5cd931c6d41161abfdb2fbd",
+  "goldenNeedsRebuild": false
+ },
+ {
+  "instance_id": "raphlinus__pulldown-cmark-754",
+  "repo": "raphlinus/pulldown-cmark",
+  "base_commit": "61f9beb70657c7ced7b38a67033c7d89444e25aa",
+  "golden": "raphlinus__pulldown-cmark@61f9beb70657c7ced7b38a67033c7d89444e25aa",
+  "goldenNeedsRebuild": false
+ },
+ {
+  "instance_id": "maxgraph__maxgraph-365",
+  "repo": "maxGraph/maxGraph",
+  "base_commit": "7d1644bb72e98e087d4f2b9210ceb6cd62129f36",
+  "golden": "maxGraph__maxGraph@7d1644bb72e98e087d4f2b9210ceb6cd62129f36",
+  "goldenNeedsRebuild": true
+ },
+ {
+  "instance_id": "vazco__uniforms-787",
+  "repo": "vazco/uniforms",
+  "base_commit": "7ffe89dadec88fe42382d91d355ae3d88f28d6e4",
+  "golden": "vazco__uniforms@7ffe89dadec88fe42382d91d355ae3d88f28d6e4",
+  "goldenNeedsRebuild": false
+ },
+ {
+  "instance_id": "firebase__firebase-tools-2933",
+  "repo": "firebase/firebase-tools",
+  "base_commit": "a37e0a97d78d3c9439ab6af5ba0222d5bf944a84",
+  "golden": "firebase__firebase-tools@a37e0a97d78d3c9439ab6af5ba0222d5bf944a84",
+  "goldenNeedsRebuild": true
+ },
+ {
+  "instance_id": "joshuakgoldberg__bingo-271",
+  "repo": "JoshuaKGoldberg/bingo",
+  "base_commit": "688cf8d3c39389125fcc13b2c8d8e5008d52c151",
+  "golden": "JoshuaKGoldberg__bingo@688cf8d3c39389125fcc13b2c8d8e5008d52c151",
+  "goldenNeedsRebuild": true
+ },
+ {
+  "instance_id": "rokucommunity__brighterscript-1050",
+  "repo": "rokucommunity/brighterscript",
+  "base_commit": "338b8eb5c00c7e0c60427dde1de02d522375d022",
+  "golden": "rokucommunity__brighterscript@338b8eb5c00c7e0c60427dde1de02d522375d022",
+  "goldenNeedsRebuild": false
+ },
+ {
+  "instance_id": "yargs__yargs-1422",
+  "repo": "yargs/yargs",
+  "base_commit": "a05a49c2f3209569318f57442eeb917f2a6b64b6",
+  "golden": "yargs__yargs@a05a49c2f3209569318f57442eeb917f2a6b64b6",
+  "goldenNeedsRebuild": false
+ },
+ {
+  "instance_id": "singapore__renovate-1153",
+  "repo": "singapore/renovate",
+  "base_commit": "47d9cabfda400474cc38296d8de8c94aca2da871",
+  "golden": "singapore__renovate@47d9cabfda400474cc38296d8de8c94aca2da871",
+  "goldenNeedsRebuild": false
+ },
+ {
+  "instance_id": "chaijs__chai-990",
+  "repo": "chaijs/chai",
+  "base_commit": "5daceabe7d030e746dd997b9753fe85875830a73",
+  "golden": "chaijs__chai@5daceabe7d030e746dd997b9753fe85875830a73",
+  "goldenNeedsRebuild": false
+ },
+ {
+  "instance_id": "jensneuse__graphql-go-tools-174",
+  "repo": "jensneuse/graphql-go-tools",
+  "base_commit": "f8c0c76c325e332b01db202c1b03b1d1275fda5b",
+  "golden": "jensneuse__graphql-go-tools@f8c0c76c325e332b01db202c1b03b1d1275fda5b",
+  "goldenNeedsRebuild": true
+ },
+ {
+  "instance_id": "sqlkata__querybuilder-557",
+  "repo": "sqlkata/querybuilder",
+  "base_commit": "4486be6eb6cdb5c0f3267868f7455761853ba092",
+  "golden": "sqlkata__querybuilder@4486be6eb6cdb5c0f3267868f7455761853ba092",
+  "goldenNeedsRebuild": false
+ },
+ {
+  "instance_id": "intel__rohd-458",
+  "repo": "intel/rohd",
+  "base_commit": "395921c5501612c62c812d3aa7c57517018c4fc8",
+  "golden": "intel__rohd@395921c5501612c62c812d3aa7c57517018c4fc8",
+  "goldenNeedsRebuild": false
+ }
+]
