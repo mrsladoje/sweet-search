@@ -15,7 +15,9 @@ import { writeRunTestsShim } from '../harness/codex-task-runner.mjs';
 import {
   RUNNING_BANNER, ATTACH_NOTE, findInflight, markInflight, clearInflight,
   publishVerdict, readVerdict, hasVerdict, newRunId, inflightInlineSource,
+  verdictOf, runTestsTelemetry,
 } from '../harness/rt-inflight.mjs';
+import { buildRunTestsFooter } from '../harness/rt-condense-lib.mjs';
 
 let ok = true;
 const assert = (c, name) => { console.log((c ? '  ✓ ' : '  ✗ ') + name); if (!c) ok = false; };
@@ -168,6 +170,73 @@ exit 0
   try { broker.kill('SIGKILL'); } catch { /* already gone */ }
 }
 
+
+// ---------------------------------------------------------------------------
+// F5 / slate C §4.2 — rtTrustworthy and rtInfra row counters.
+//
+// The four D-6 columns count whether a verdict ARRIVED and never what it said, so a rollout
+// in which every verdict was untrustworthy looked exactly like one in which every verdict
+// passed. accenture__sfmc-devtools-1974 ran 104 run_tests calls across 44 rollouts without a
+// single trustworthy answer and rows.json could not show it.
+console.log('\n== F5: verdict-status row counters ==');
+{
+  // Real footers from the real builder, so a change to the footer format breaks this test
+  // rather than silently zeroing the counters in production.
+  const foot = (status, trustworthy) => buildRunTestsFooter({
+    status, scope: 'full', exitCode: status === 'PASS' ? 0 : 1,
+    baselineDiff: { introduced: [], preExisting: [] }, trustworthy,
+  });
+
+  assert(verdictOf(`suite output\n${foot('PASS', true)}`)?.trustworthy === true, 'verdictOf reads trustworthy=yes');
+  assert(verdictOf(`suite output\n${foot('FAIL', false)}`)?.trustworthy === false, 'verdictOf reads trustworthy=no');
+  assert(verdictOf(`x\n${foot('INFRA', false)}`)?.status === 'INFRA', 'verdictOf reads status=INFRA');
+  assert(verdictOf('launched, still running') === null, 'a result with no footer has no verdict');
+
+  // A PASS can be untrustworthy: no clean baseline was captured, so the diff is unusable.
+  // Collapsing those two into one counter is exactly the blindness being fixed.
+  const untrustedPass = buildRunTestsFooter({ status: 'PASS', baselineDiff: null, trustworthy: true });
+  assert(verdictOf(untrustedPass)?.status === 'PASS' && verdictOf(untrustedPass)?.trustworthy === false,
+    'a PASS with no baseline is counted as NOT trustworthy');
+
+  // The accenture shape: every verdict present, every one INFRA, none trustworthy. This is
+  // the rollout that used to be indistinguishable from an all-PASS one.
+  const allUntrusted = runTestsTelemetry(
+    Array.from({ length: 4 }, () => ({ kind: 'test', resultText: `mocha output\n${foot('INFRA', false)}` })));
+  assert(allUntrusted.rtLaunched === 4 && allUntrusted.rtVerdicts === 4, 'all-untrusted rollout: 4 launches, 4 verdicts');
+  assert(allUntrusted.rtTrustworthy === 0 && allUntrusted.rtInfra === 4, 'all-untrusted rollout: rtTrustworthy=0, rtInfra=N');
+  const allGreen = runTestsTelemetry(
+    Array.from({ length: 4 }, () => ({ kind: 'test', resultText: `ok\n${foot('PASS', true)}` })));
+  assert(allGreen.rtTrustworthy === 4 && allGreen.rtInfra === 0, 'all-PASS rollout: rtTrustworthy=N, rtInfra=0');
+  assert(allUntrusted.rtVerdicts === allGreen.rtVerdicts && allUntrusted.rtTrustworthy !== allGreen.rtTrustworthy,
+    'the two rollouts are identical on the OLD columns and separated by the new ones');
+
+  // Appendix B trap 3: opencode and claude-code transcripts store each tool result twice, and
+  // a call that attaches to an in-flight run replays that run's verdict before its own. Both
+  // produce two footers in ONE result. Counting per call, taking the LAST footer, keeps these
+  // columns summing to rtLaunched instead of to a transcript-duplication artefact.
+  const doubled = `${foot('INFRA', false)}\n--- repeated tool result ---\n${foot('INFRA', false)}`;
+  const dup = runTestsTelemetry([{ kind: 'test', resultText: doubled }]);
+  assert(dup.rtLaunched === 1 && dup.rtVerdicts === 1 && dup.rtInfra === 1,
+    'a duplicated tool result counts ONE verdict, not two', JSON.stringify(dup));
+  // Attach case: the replayed verdict comes first, this call's own verdict last.
+  const attached = `${ATTACH_NOTE}${foot('INFRA', false)}\n${foot('PASS', true)}`;
+  const att = runTestsTelemetry([{ kind: 'test', resultText: attached }]);
+  assert(att.rtVerdicts === 1 && att.rtTrustworthy === 1 && att.rtInfra === 0,
+    'when a result holds two footers the LAST (terminal) one is the verdict', JSON.stringify(att));
+
+  // Non-test calls never contribute, and a rollout that never tested reports zeros.
+  const mixed = runTestsTelemetry([
+    { kind: 'read', resultText: foot('PASS', true) },
+    { kind: 'test', resultText: foot('FAIL', true) },
+  ]);
+  assert(mixed.rtLaunched === 1 && mixed.rtTrustworthy === 1, 'only kind=test calls are counted');
+  const none = runTestsTelemetry([]);
+  assert(none.rtLaunched === 0 && none.rtTrustworthy === 0 && none.rtInfra === 0 && none.rtEndedUnverified === false,
+    'a rollout that never ran the tests reports zeros, not a false untrusted flag');
+
+  // The counters live host-side; the shim must not grow by them.
+  assert(!inflightInlineSource().includes('function verdictOf'), 'verdictOf stays OUT of the generated shim');
+}
 
 console.log(ok ? '\nD-6: all assertions passed' : '\nD-6: FAILURES');
 process.exit(ok ? 0 : 1);

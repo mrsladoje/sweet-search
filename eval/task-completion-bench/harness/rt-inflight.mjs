@@ -153,6 +153,28 @@ export function inflightInlineSource() {
 }
 
 /**
+ * The verdict a completed run_tests result reports, or null when there is none.
+ *
+ * A result text can legitimately hold MORE than one footer — a call that attached to an
+ * in-flight run replays that run's published verdict before its own — and opencode and
+ * claude-code transcripts store each tool result twice (Appendix B trap 3). Both are handled
+ * by taking the LAST footer: it is the terminal one, and one verdict per CALL is what keeps
+ * these counters summing to rtLaunched instead of to a transcript-duplication artefact.
+ *
+ * `trustworthy` is read from the baseline-diff footer, which is a separate line from the
+ * status line: a run can report status=PASS and still be untrustworthy when no clean
+ * baseline was captured. That distinction is the whole point of the counter.
+ */
+export function verdictOf(text) {
+  const t = String(text ?? '');
+  let status = null, trustworthy = false;
+  for (const m of t.matchAll(/^\[run_tests verdict\] status=(PASS|FAIL|INFRA)\b/gm)) status = m[1];
+  if (status === null) return null;
+  for (const m of t.matchAll(/^\[run_tests baseline-diff\][^\n]*\btrustworthy=(yes|no)\b/gm)) trustworthy = m[1] === 'yes';
+  return { status, trustworthy };
+}
+
+/**
  * D-6 ROW TELEMETRY (HANDOFF-SLATE-A-RESIDUE §3.G.2).
  *
  * The banner above made "did the agent actually receive a verdict" decidable from the
@@ -177,15 +199,30 @@ export function inflightInlineSource() {
  *
  * A rollout that never ran the tests reports rtLaunched = 0 and rtEndedUnverified = false —
  * that is a different failure and must not be pooled with this one.
+ *
+ * WHAT THE VERDICT SAID (F5 / slate C §4.2, 2026-09-02). The four columns above count whether
+ * a verdict ARRIVED and never what it said, so a rollout in which every verdict was
+ * untrustworthy was indistinguishable in `rows.json` from one in which every verdict passed.
+ * That is how accenture__sfmc-devtools-1974 ran 104 run_tests calls across 44 rollouts without
+ * one trustworthy answer, and nobody could see it without grepping transcripts. Two more:
+ *
+ *   rtTrustworthy   verdicts whose baseline-diff footer reads trustworthy=yes. A verdict the
+ *                   agent could actually act on.
+ *   rtInfra         verdicts whose status is INFRA. The suite result was suppressed.
+ *
+ * Both count VERDICTS, not launches, so rtTrustworthy + (untrustworthy) = rtVerdicts and a
+ * one-line jq over rows.json replaces the per-cell census script.
  */
 export function runTestsTelemetry(calls = []) {
   const tests = calls.filter(s => s && s.kind === 'test');
-  const withVerdict = tests.map(s => hasVerdict(s.resultText));
-  const rtVerdicts = withVerdict.filter(Boolean).length;
+  const verdicts = tests.map(s => verdictOf(s.resultText));
+  const rtVerdicts = verdicts.filter(Boolean).length;
   return {
     rtLaunched: tests.length,
     rtVerdicts,
     rtNoVerdict: tests.length - rtVerdicts,
-    rtEndedUnverified: tests.length > 0 && !withVerdict[withVerdict.length - 1],
+    rtEndedUnverified: tests.length > 0 && verdicts[verdicts.length - 1] === null,
+    rtTrustworthy: verdicts.filter(v => v?.trustworthy === true).length,
+    rtInfra: verdicts.filter(v => v?.status === 'INFRA').length,
   };
 }
