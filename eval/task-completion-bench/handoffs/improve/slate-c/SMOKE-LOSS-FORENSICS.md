@@ -498,7 +498,7 @@ gold file **absent from the pack entirely** under `confidence=high sufficient=no
 late-interaction index in the SEGMENTED SSLX v3 format (≥10k documents). (1) Segments store
 ids and token slabs only, no per-document metadata, so `search-pattern.js` resolved every hit
 to `file: ''`. (2) Stage-and-swap rebuilds wrote the alias sidecar as `<index>.tmp.aliases.json`
-and never promoted it, so every shipped index — segmented or not — loaded zero aliases.
+and never promoted it, so every shipped index — segmented or not — loaded zero aliases (box census: 0 of 454 goldens had a canonical sidecar; 425 carried the staged name).
 (3) Once aliases loaded, the LI-derived chunk location map was "non-empty" (364 alias spans)
 and skipped the codebase fallback, routing every real chunk to the unranked path. Fixes:
 hydrate metadata from `codebase.db` (`getChunkMetaByIds`), promote the sidecar on swap plus a
