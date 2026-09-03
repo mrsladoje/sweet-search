@@ -446,9 +446,12 @@ yasson and squashql OFF > ON by 2 and 1 rep, inside the codex-cell variance the 
 documented (native 3/3 → 1/3 → 2/3), not evidence of harm. Cost: ON is 7% cheaper on codex
 (ideal, and 14 fewer calls) and equal on opencode; noise at n=15.
 
-**Disposition (`3e2ee4a`).** Both lines are now OPT-IN (`SS_SIBLING_LINE=1`,
-`SS_UNREAD_ABOVE=1`); code, unit tests and the $0 replay tooling stay for a future cohort with
-a different failure shape (the mechanism does deliver the fact; the model declines it). L2
+**Disposition (owner's call, same evening).** `3e2ee4a` had flipped both lines to opt-in.
+The owner overruled: a mechanism that delivers the right fact, costs ≤0.6% of prompt tokens
+with a hard per-call cap (one line, ≤4 sites × 90 chars / ≤5 names), and regressed no
+control is shipped as a cheap mechanism, not withheld for lack of a proven flip. Both lines
+are **default ON** again with `SS_SIBLING_LINE=0` / `SS_UNREAD_ABOVE=0` as the opt-outs, the
+v3 state-read gate kept. Booked in the register as "no measured solve effect", not as a win. L2
 (grader) and L4 (ss-trace Java + receiver-member term boost) are correctness and stay on.
 Register: F21. Still owed: re-grade of the two gleam rows under the fixed cargo parser; the
 gold re-sweep of the full 20-task ledger under fingerprint v5 (only the five Gate-1 tasks were

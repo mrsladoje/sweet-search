@@ -465,7 +465,7 @@ async function cmdGrep(rawArgs) {
       perFileCap: Math.min(k, 100), maxFiles: k,
       expand: false, rerank: false, useLateInteraction: false,
       _isAgentFormat: !fixedString,
-      _siblingLine: process.env.SS_SIBLING_LINE === '1', // opt-in: Gate 2 (2026-09-03) found it inert on solves
+      _siblingLine: process.env.SS_SIBLING_LINE !== '0', // default ON; cost bounded (≤0.6% prompt tokens), see SMOKE-LOSS-FORENSICS §9
     });
   } catch {
     const s = await getSweetSearch();
@@ -473,7 +473,7 @@ async function cmdGrep(rawArgs) {
       regex, maxMatches: 0, contextLines: 0,
       perFileCap: Math.min(k, 100), maxFiles: k,
       _isAgentFormat: !fixedString,
-      _siblingLine: process.env.SS_SIBLING_LINE === '1', // opt-in: Gate 2 (2026-09-03) found it inert on solves
+      _siblingLine: process.env.SS_SIBLING_LINE !== '0', // default ON; cost bounded (≤0.6% prompt tokens), see SMOKE-LOSS-FORENSICS §9
     });
   }
   const total = result.stats?.totalMatches ?? result.results.length;
@@ -542,7 +542,7 @@ async function cmdFind(rawArgs) {
     response = await queryWarmSearch(query, {
       mode: 'pattern', regex: effectiveRegex || `\\b\\w+\\b`, topK: k, format,
       _isAgentFormat: !fixedString,
-      _siblingLine: process.env.SS_SIBLING_LINE === '1', // opt-in: Gate 2 (2026-09-03) found it inert on solves
+      _siblingLine: process.env.SS_SIBLING_LINE !== '0', // default ON; cost bounded (≤0.6% prompt tokens), see SMOKE-LOSS-FORENSICS §9
       ...(findFileFilter ? { fileFilter: findFileFilter } : {}),
       ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
     });
