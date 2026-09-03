@@ -120,6 +120,7 @@ as specified), **OWNER-EXCLUDED** (a decision, not a measurement).
 | F19 | a 20×-priced backbone | BUYS NOTHING | terra 0/10 unaided; 2/2 with the certificate | `HINT-LADDER-RESULTS.md` | — |
 | F20 | naming-lottery tasks (bingo, dart) | UNWINNABLE | hidden tests import an invented identifier; 4/18 rotation tasks | `NAME-LOCK-CENSUS.md` | admission filter, not a lever |
 | F21 | same-file identifier family on singleton/near-singleton `ss-grep` + method top-1 packs, and `# unread above` on `ss-read` (smoke-loss L1) | NO MEASURED SOLVE EFFECT; shipped default-on as a bounded mechanism (owner's call) | $0 replay named the field before the first edit in 14/15 reachable failures; live Gate 2 (luna, codex+opencode, REPS=3, sweet on/off): squashql 0/6 ON vs 1/6 OFF with 6/6 exposure; all six patched only the guard; controls 3/3 everywhere; 0.3-0.6% of prompt tokens | `SMOKE-LOSS-FORENSICS.md` §9 | a cohort whose failures are "never saw it" rather than "saw it and declined" |
+| F22 | flat `file:line` hit list beside a low-confidence `ss-find` pack (smoke-loss L3) | DEAD by $0 screen | 117 packs replayed on the fixed engine: strict flags (hit set ≤12, gold file absent from the pack) = 2; 14/16 small-set flags already name the gold file as a rank-4+ summary | `SMOKE-LOSS-FORENSICS.md` §10 | — |
 
 ## G. Measurement (not levers; do not book as wins)
 
@@ -131,3 +132,4 @@ as specified), **OWNER-EXCLUDED** (a decision, not a measurement).
 | G4 | HO2 frozen, denominator 199 | never per-task |
 | G5 | recommended next paid run: fresh 22-task pool + 5 controls × 3 harnesses × 3 reps ≈ 486 rollouts, ~$7.5–15 | not launched |
 | G6 | claude-code native cost is a lower bound (205 delegated requests without usage) | disclose always |
+| G7 | segmented (≥10k-doc) late-interaction index made `ss-find` packs `:null-null`; alias sidecar never promoted (all goldens); FIXED `81901f1` 2026-09-03 | 9 HO2 + 13 dev-ret + 1 rotate20 tasks ran sweet with a blind ss-find before the fix; never pool sweet across it |
