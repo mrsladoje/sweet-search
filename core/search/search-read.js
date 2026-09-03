@@ -406,12 +406,14 @@ function _sniffRemainderDefinitions(text, isCFamily) {
 }
 
 /**
- * SS_UNREAD_ABOVE=0 switches the above-trailer off (A/B and rollback lever).
- * Consulted at RENDER time only, in the wrapper's own process: the field is
- * always computed so a daemon spawned under a polluted env cannot pin it off.
+ * SS_UNREAD_ABOVE=1 switches the above-trailer ON (opt-in). Default OFF since
+ * the 2026-09-03 Gate 2 microsmoke: exposed in 6/6 squashql treatment
+ * rollouts, flipped 0 of them (0/6 vs 0/6 control), at 0.3-0.6% of prompt
+ * tokens. Consulted at RENDER time only, in the wrapper's own process; the
+ * structured field is always computed.
  */
 export function unreadAboveEnabled() {
-  return process.env.SS_UNREAD_ABOVE !== '0';
+  return process.env.SS_UNREAD_ABOVE === '1';
 }
 
 /**

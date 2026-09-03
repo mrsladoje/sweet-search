@@ -465,7 +465,7 @@ async function cmdGrep(rawArgs) {
       perFileCap: Math.min(k, 100), maxFiles: k,
       expand: false, rerank: false, useLateInteraction: false,
       _isAgentFormat: !fixedString,
-      _siblingLine: process.env.SS_SIBLING_LINE !== '0',
+      _siblingLine: process.env.SS_SIBLING_LINE === '1', // opt-in: Gate 2 (2026-09-03) found it inert on solves
     });
   } catch {
     const s = await getSweetSearch();
@@ -473,7 +473,7 @@ async function cmdGrep(rawArgs) {
       regex, maxMatches: 0, contextLines: 0,
       perFileCap: Math.min(k, 100), maxFiles: k,
       _isAgentFormat: !fixedString,
-      _siblingLine: process.env.SS_SIBLING_LINE !== '0',
+      _siblingLine: process.env.SS_SIBLING_LINE === '1', // opt-in: Gate 2 (2026-09-03) found it inert on solves
     });
   }
   const total = result.stats?.totalMatches ?? result.results.length;
@@ -542,7 +542,7 @@ async function cmdFind(rawArgs) {
     response = await queryWarmSearch(query, {
       mode: 'pattern', regex: effectiveRegex || `\\b\\w+\\b`, topK: k, format,
       _isAgentFormat: !fixedString,
-      _siblingLine: process.env.SS_SIBLING_LINE !== '0',
+      _siblingLine: process.env.SS_SIBLING_LINE === '1', // opt-in: Gate 2 (2026-09-03) found it inert on solves
       ...(findFileFilter ? { fileFilter: findFileFilter } : {}),
       ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
     });
