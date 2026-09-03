@@ -373,6 +373,7 @@ const UNREAD_SYMBOLS_MAX = 5;        // hard cap on named symbols in the trailer
 const UNREAD_SYMBOLS_MIN_LINES = 20; // smaller remainders get the short form
 const C_FAMILY_EXTS = new Set(['.c', '.h', '.cc', '.cpp', '.cxx', '.hpp', '.hh', '.hxx', '.java', '.cs', '.m', '.mm']);
 const _unreadSymbolCandidates = new WeakMap();
+const ABOVE_STATE_TYPES = new Set(['field', 'property', 'variable', 'constant', 'const', 'static', 'enum_constant']);
 
 // Keyword-introduced definitions (Python/Ruby/JS/TS/Go/Rust/Kotlin/PHP/...).
 const KEYWORD_DEF_RE = /^\s*(?:export\s+|default\s+|pub(?:\([^)]*\))?\s+|static\s+|async\s+|abstract\s+|final\s+|public\s+|private\s+|protected\s+|inline\s+|constexpr\s+|unsafe\s+|override\s+|open\s+|sealed\s+)*(?:def|fn|func|function\*?|class|struct|enum|trait|interface|impl|object|module|proc)\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*(?:(?:::|\.)[A-Za-z_][\w]*)*)/;
@@ -442,9 +443,20 @@ function _collectAboveSymbols(chunks, filePathRel, projectRoot, windowStart, win
   // Symbols the shown window READS come first: a field referenced by the
   // code in view is the state the reader has not seen, and it must survive
   // the five-slot cap even when no query evidence is available to rank it.
+  // "Referenced" means a STATE read: a field/constant named in the window, or
+  // any symbol read through the receiver (`this.x`, `self.x`, `self::x`, `@x`).
+  // A plain call to a same-file method is not a signal — a Java window nearly
+  // always makes one, and the 2026-09-03 replay showed that loose rule fired
+  // on 80% of reads for no navigational gain (the below-trailer already
+  // covers method-to-method movement).
   if (windowText) {
-    for (const [identifier] of String(windowText).matchAll(/[A-Za-z_$][A-Za-z0-9_$]{2,}/g)) {
+    const text = String(windowText);
+    for (const [identifier] of text.matchAll(/[A-Za-z_$][A-Za-z0-9_$]{2,}/g)) {
       const hit = byName.get(identifier);
+      if (hit && ABOVE_STATE_TYPES.has(String(hit.type || '').toLowerCase())) hit.referenced = true;
+    }
+    for (const m of text.matchAll(/(?:\b(?:this|self)\s*(?:\.|::)\s*|(?<![\w$])@)([A-Za-z_$][A-Za-z0-9_$]{2,})/g)) {
+      const hit = byName.get(m[1]);
       if (hit) hit.referenced = true;
     }
   }

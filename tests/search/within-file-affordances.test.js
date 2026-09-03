@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -654,6 +654,30 @@ describe('unread above (squashql-295 shape)', () => {
     expect(tiny.unreadAbove).toEqual({ startLine: 1, endLine: 11, symbols: [], moreCount: 0 });
     // No symbol above, no signal: nothing printed (the structured field stays).
     expect(renderUnreadAbove(tiny, { command: 'ss-read' })).toBe('');
+  });
+
+  it('a plain call to an above METHOD is not a signal; a receiver read is', async () => {
+    writeSquashqlFixture();
+    const stateDir = path.join(TMP, '.sweet-search');
+    const graph = new Database(path.join(stateDir, 'code-graph.db'));
+    try {
+      graph.prepare('INSERT INTO entities (id, name, type, file_path, start_line, end_line, parent_class) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(30, 'resolveField', 'method', JAVA_FILE, 100, 110, 'QueryResolver');
+    } finally {
+      graph.close();
+    }
+    const abs = path.join(TMP, JAVA_FILE);
+    const lines = readFileSync(abs, 'utf8').split('\n');
+    lines[249] = '    resolveField(x);';           // L250: bare call → no signal
+    writeFileSync(abs, lines.join('\n'));
+    __resetReadCachesForTests();
+    let r = await readFile({ path: JAVA_FILE, startLine: 240, endLine: 300, projectRoot: TMP });
+    expect(renderUnreadAbove(r, { command: 'ss-read' })).toBe('');
+    lines[249] = '    this.resolveField(x);';      // receiver read → signal
+    writeFileSync(abs, lines.join('\n'));
+    __resetReadCachesForTests();
+    r = await readFile({ path: JAVA_FILE, startLine: 240, endLine: 300, projectRoot: TMP });
+    expect(renderUnreadAbove(r, { command: 'ss-read' }).startsWith('# unread above (1-239): resolveField')).toBe(true);
   });
 
   it('prints nothing when the window reads none of the above symbols and the query names none', async () => {
