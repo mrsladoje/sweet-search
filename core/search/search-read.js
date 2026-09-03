@@ -8,6 +8,7 @@ import { promises as fs, realpathSync, statSync } from 'node:fs';
 import { GUTTER_FORMS, resolveGutterForm, gutterDelimiter } from './gutter-form.js';
 import path from 'node:path';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
+import { CodeGraphRepository } from '../infrastructure/code-graph-repository.js';
 import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { withPinnedRead } from './search-reader-pin.js';
 import { emitToolIdentityAuto } from './cli-decoration.js';
@@ -145,6 +146,24 @@ function _codebasePathForProject(projectRoot) {
   if (root === path.resolve(PROJECT_ROOT || process.cwd())) return DB_PATHS.codebase;
   const stateDir = path.basename(path.dirname(DB_PATHS.codebase || '.sweet-search/codebase.db'));
   return path.join(root, stateDir, 'codebase.db');
+}
+
+// Code-graph (entities) access for the unread-ABOVE trailer. The chunk table
+// names functions and classes; the entity table also names fields, enum
+// constants and properties — the state a method reads, which is exactly what
+// sits above a mid-file read window (squashql-295: a field declared at L35,
+// read at L207, window 170-235). Opened lazily, cached per project.
+const _graphRepos = new Map();
+function _getGraphRepo(projectRoot) {
+  const root = path.resolve(projectRoot || process.cwd());
+  const dbPath = root === path.resolve(PROJECT_ROOT || process.cwd())
+    ? DB_PATHS.codeGraph
+    : path.join(root, path.basename(path.dirname(DB_PATHS.codeGraph || '.sweet-search/code-graph.db')), 'code-graph.db');
+  if (!_graphRepos.has(dbPath)) {
+    try { _graphRepos.set(dbPath, new CodeGraphRepository(dbPath)); }
+    catch { _graphRepos.set(dbPath, false); }
+  }
+  return _graphRepos.get(dbPath) || null;
 }
 
 function _resolvePath(p, projectRoot) {
@@ -384,6 +403,44 @@ function _sniffRemainderDefinitions(text, isCFamily) {
   return names;
 }
 
+/**
+ * SS_UNREAD_ABOVE=0 switches the above-trailer off (A/B and rollback lever).
+ * Consulted at RENDER time only, in the wrapper's own process: the field is
+ * always computed so a daemon spawned under a polluted env cannot pin it off.
+ */
+export function unreadAboveEnabled() {
+  return process.env.SS_UNREAD_ABOVE !== '0';
+}
+
+/**
+ * Named symbols lying fully above `windowStart`, in file order, deduped by
+ * name. Chunk rows first (functions/classes), then code-graph entities
+ * (adds fields/constants/properties). Entities enclosing the window — the
+ * class the window sits inside — are excluded: they are not "unread".
+ */
+function _collectAboveSymbols(chunks, filePathRel, projectRoot, windowStart) {
+  const byName = new Map();
+  const push = (symbol, type, startLine) => {
+    if (!symbol || byName.has(symbol)) return;
+    byName.set(symbol, { symbol, type: type ?? null, startLine });
+  };
+  for (const c of chunks) {
+    if (c.startLine == null || c.endLine == null || c.endLine >= windowStart) continue;
+    push(c.symbol, c.type, c.startLine);
+  }
+  const graph = _getGraphRepo(projectRoot);
+  if (graph && typeof graph.findEntitiesInRange === 'function') {
+    let entities = [];
+    try { entities = graph.findEntitiesInRange(filePathRel, 1, windowStart - 1) || []; }
+    catch { entities = []; }
+    for (const e of entities) {
+      if (!Number.isInteger(e?.endLine) || e.endLine >= windowStart) continue;
+      push(e.name, e.type, e.startLine);
+    }
+  }
+  return [...byName.values()].sort((a, b) => (a.startLine ?? 0) - (b.startLine ?? 0));
+}
+
 // ---------------------------------------------------------------------------
 // Public API — single read
 // ---------------------------------------------------------------------------
@@ -485,6 +542,35 @@ async function _readFileUnpinned(req) {
     _unreadSymbolCandidates.set(unreadBelow, symbols);
   }
 
+  // Mirror trailer for the span ABOVE the window (2026-09-03, smoke-loss
+  // forensics L1b). The below-trailer was built for the botan shape (fix
+  // surface below the last read); squashql-295 is the first documented
+  // above-window miss, with 18 rollouts: the field a method reads was declared
+  // and assigned above a 170-235 window and nothing named it. Same diet, same
+  // cap. Symbols come from the chunk table UNIONED with code-graph entities
+  // (fields are entities, not chunks), then the sniff fallback. Rendered only
+  // by the ss-read surface; readFile callers merely receive the field.
+  let unreadAbove = null;
+  if (wantsRange && sliced.totalLines > 0 && sliced.startLine > 1) {
+    const aboveLines = sliced.startLine - 1;
+    let symbols = [];
+    if (aboveLines >= UNREAD_SYMBOLS_MIN_LINES) {
+      symbols = _collectAboveSymbols(chunks, relForIndex, projectRoot, sliced.startLine);
+      if (symbols.length === 0 && disk.text != null) {
+        const above = _sliceLines(disk.text, disk.lineOffsets, 1, aboveLines);
+        const isCFamily = C_FAMILY_EXTS.has(path.extname(absPath).toLowerCase());
+        symbols = _sniffRemainderDefinitions(above.text, isCFamily);
+      }
+    }
+    unreadAbove = {
+      startLine: 1,
+      endLine: aboveLines,
+      symbols: symbols.slice(0, UNREAD_SYMBOLS_MAX),
+      moreCount: Math.max(0, symbols.length - UNREAD_SYMBOLS_MAX),
+    };
+    _unreadSymbolCandidates.set(unreadAbove, symbols);
+  }
+
   // If a line range was requested, narrow attached chunks to the overlap.
   if (wantsRange && chunks.length) {
     chunks = chunks.filter(c =>
@@ -509,6 +595,7 @@ async function _readFileUnpinned(req) {
     text: sliced.text,
     chunks,
     unreadBelow,
+    unreadAbove,
     timings: { totalMs: +(performance.now() - t0).toFixed(2) },
   };
 }
@@ -587,6 +674,28 @@ export function renderUnreadBelow(result, { command = 'read', queryEvidence = nu
     ? `ss-read ${result.file} ${u.startLine} ${u.endLine}`
     : `read ${result.file} ${u.startLine}-${u.endLine}`;
   return `# unread below (${u.startLine}-${u.endLine})${names ? ': ' + names + more : ''} — continue: ${cont}`;
+}
+
+/**
+ * Mirror of renderUnreadBelow for the span above a range read's window.
+ * Gated on `command === 'ss-read'`, NOT on format: `agent` is the CLI's
+ * default read format, so a format gate would leak into human output. Only
+ * the ss-read wrapper passes the command. Returns '' otherwise.
+ */
+export function renderUnreadAbove(result, { command = 'read', queryEvidence = null } = {}) {
+  const u = result?.unreadAbove;
+  if (!u || command !== 'ss-read' || !unreadAboveEnabled()) return '';
+  let symbols = u.symbols || [];
+  let moreCount = u.moreCount || 0;
+  if (queryEvidence) {
+    const candidates = _unreadSymbolCandidates.get(u) || u.symbols || [];
+    const selected = selectUnreadSymbols(candidates, queryEvidence, UNREAD_SYMBOLS_MAX);
+    symbols = selected.symbols;
+    moreCount = selected.moreCount;
+  }
+  const names = symbols.map(s => s.symbol).join(', ');
+  const more = moreCount > 0 ? ` +${moreCount} more` : '';
+  return `# unread above (${u.startLine}-${u.endLine})${names ? ': ' + names + more : ''} — continue: ss-read ${result.file} ${u.startLine} ${u.endLine}`;
 }
 
 function _formatAgent(result, opts = {}) {
@@ -856,6 +965,8 @@ export function __resetReadCachesForTests() {
   _cache.clear();
   for (const repo of _repos.values()) repo?.close?.();
   _repos.clear();
+  for (const repo of _graphRepos.values()) repo?.close?.();
+  _graphRepos.clear();
 }
 
 export const __testing = { projectRelative: _projectRelative, codebasePathForProject: _codebasePathForProject };

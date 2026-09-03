@@ -711,6 +711,7 @@ export class SweetSearch {
           stats,
           ...(grepResult.fileSummary ? { fileSummary: grepResult.fileSummary } : {}),
           ...(grepResult.familyManifest ? { familyManifest: grepResult.familyManifest } : {}),
+          ...(grepResult.siblingLine ? { siblingLine: grepResult.siblingLine } : {}),
         };
       }
       case 'pattern': {

@@ -22,7 +22,7 @@ import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js'
 import { ensureSparseGramIndex } from './search-pattern-prefilter.js';
 import { packageForAgent } from './context-expander.js';
 import { retryBreDialectAfterZero } from './regex-dialect.js';
-import { buildIndexedGrepFamilyManifest } from './agent-pack-completion.js';
+import { buildIndexedGrepFamilyManifest, buildSingletonSiblingLine } from './agent-pack-completion.js';
 import { applyFileKindRanking, applyResultDemotions } from '../ranking/file-kind-ranking.js';
 
 // =============================================================================
@@ -222,11 +222,18 @@ export async function bareGrep(query, routing, options = {}) {
   const familyManifest = options._isAgentFormat === true && !options.fileFilter
     ? buildIndexedGrepFamilyManifest(results, this?.codeGraphRepo)
     : null;
+  // Singleton hit: name the same-file identifier family WITH code lines (the
+  // one enrichment a 1-match grep can take; see agent-pack-completion.js).
+  const siblingLine = options._isAgentFormat === true && !options.fileFilter
+      && options._siblingLine !== false && results.length === 1
+    ? buildSingletonSiblingLine(results, this?.codeGraphRepo, { regex, projectRoot: searchDir })
+    : null;
 
   return {
     results,
     ...(fileSummary ? { fileSummary } : {}),
     ...(familyManifest ? { familyManifest } : {}),
+    ...(siblingLine ? { siblingLine } : {}),
     stats: {
       path: 'grep',
       regex,

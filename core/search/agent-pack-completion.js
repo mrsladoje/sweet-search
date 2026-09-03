@@ -321,6 +321,133 @@ export function buildIndexedGrepFamilyManifest(results, codeGraphRepo) {
   return findIndexedFamily(seeds, codeGraphRepo)?.manifest || null;
 }
 
+// ---------------------------------------------------------------------------
+// Singleton-grep sibling line (2026-09-03, smoke-loss forensics L1a).
+//
+// A 1-match ss-grep took NO enrichment path: the family manifest needs >=2
+// results and digit-bearing names, the "across N files" header needs >1 file,
+// and the same-file span map lives in packageForAgent, which grep never
+// enters. squashql-295: the hit sat in checkSubQuery; the fix also needed the
+// field subQueryMeasures (declared L35, assigned L55, read in toSubQuery L207)
+// and nothing named it. Native saw all three lines in one wide grep in 20/21
+// rollouts; sweet in 3/21. In the transcripts, three sites co-listed WITH
+// their code lines converted 4/4; a bare name list converted 0/2. So this
+// prints code lines, not names, and is additive (a singleton has no body
+// lines to reclaim). Gate: agent format, no --in, exactly one result, and
+// the client-side SS_SIBLING_LINE=0 off-switch (option `_siblingLine`).
+// ---------------------------------------------------------------------------
+
+const MAX_SIBLING_SITES = 4;
+const MAX_SIBLING_ENTITIES = 3;
+const SIBLING_LINE_MAX_CHARS = 90;
+const STATE_ENTITY_TYPES = new Set(['field', 'property', 'variable', 'constant', 'const', 'static', 'enum_constant']);
+
+function siblingTokens(name) {
+  return [...informativeSubtokens(name)].filter((token) => !BODY_REFERENCE_GENERIC_TOKENS.has(token));
+}
+
+function compactSourceLine(text) {
+  const oneLine = String(text || '').replace(/\s+/g, ' ').trim();
+  return oneLine.length > SIBLING_LINE_MAX_CHARS ? `${oneLine.slice(0, SIBLING_LINE_MAX_CHARS - 1)}…` : oneLine;
+}
+
+/** First line assigning `name` outside the enclosing entity and the declaration. */
+function findAssignmentLine(lines, name, { declarationLine, excludeStart, excludeEnd }) {
+  const re = new RegExp(`(?:^|[^A-Za-z0-9_$.])(?:this\\.|self\\.|@)?${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=[^=]`);
+  for (let i = 0; i < lines.length; i++) {
+    const line = i + 1;
+    if (line === declarationLine || (line >= excludeStart && line <= excludeEnd)) continue;
+    if (re.test(lines[i])) return line;
+  }
+  return null;
+}
+
+/**
+ * Same-file identifier family for a single grep hit: declarations sharing the
+ * enclosing symbol's informative subtokens, plus state (fields) its body
+ * references. Returns { rendered, tokens, sites } or null.
+ */
+export function buildSingletonSiblingLine(results, codeGraphRepo, {
+  regex = '', projectRoot, fileCache = new Map(), estimateTokens = defaultEstimateTokens,
+} = {}) {
+  // No env gate HERE: this runs inside the warm daemon, whose env is whatever
+  // the first client that spawned it happened to carry. SS_SIBLING_LINE=0 is
+  // read by the ss-grep wrapper and travels as the `_siblingLine` option.
+  if (!Array.isArray(results) || results.length !== 1) return null;
+  if (typeof codeGraphRepo?.findEnclosingEntity !== 'function'
+      || typeof codeGraphRepo?.findEntitiesInFile !== 'function') return null;
+  const hit = results[0];
+  if (!hit?.file || !Number.isInteger(hit.line)) return null;
+
+  let enclosing = null;
+  try { enclosing = codeGraphRepo.findEnclosingEntity(hit.file, hit.line, hit.line); } catch { enclosing = null; }
+  if (!enclosing?.name || !Number.isInteger(enclosing.startLine) || !Number.isInteger(enclosing.endLine)) return null;
+  let entities = [];
+  try { entities = codeGraphRepo.findEntitiesInFile(hit.file) || []; } catch { entities = []; }
+  if (entities.length === 0) return null;
+
+  const evidence = extractQueryEvidence('', regex);
+  const ownTokens = new Set(siblingTokens(enclosing.name));
+  const fileText = readFileRange(fileCache, hit.file, 1, 1_000_000, projectRoot);
+  const lines = fileText ? fileText.split('\n') : [];
+  const body = lines.slice(enclosing.startLine - 1, enclosing.endLine).join('\n');
+
+  const scored = [];
+  for (const entity of entities) {
+    if (!entity?.name || !Number.isInteger(entity.startLine) || !Number.isInteger(entity.endLine)) continue;
+    if (entity.id === enclosing.id) continue;
+    // Parents (the class around the hit) and children (closures inside it) are
+    // already in view or are the hit itself; only true siblings count.
+    if (entity.startLine <= hit.line && entity.endLine >= hit.line) continue;
+    if (entity.startLine >= enclosing.startLine && entity.endLine <= enclosing.endLine) continue;
+    if (entity.name === enclosing.name && entity.startLine === enclosing.startLine) continue;
+
+    const tokens = siblingTokens(entity.name);
+    let overlap = 0;
+    for (const token of tokens) if (ownTokens.has(token)) overlap++;
+    // Family: >=2 shared subtokens, or every subtoken of a short enclosing name.
+    const family = overlap >= 2 || (overlap >= 1 && overlap === ownTokens.size);
+    const isState = STATE_ENTITY_TYPES.has(String(entity.type || '').toLowerCase());
+    const referenced = isState && body
+      && new RegExp(`(?:^|[^A-Za-z0-9_$])${entity.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_$])`).test(body);
+    const queryHit = identifierMatchesQuery(entity.name, evidence);
+    let score = 0;
+    if (family) score += 20 + overlap * 10;
+    if (referenced) score += 30;
+    if (queryHit) score += 15;
+    if (score === 0) continue;
+    if (isState) score += 5; // state first: it is what a method-local read cannot show
+    scored.push({ entity, score, isState, distance: Math.abs(entity.startLine - hit.line) });
+  }
+  if (scored.length === 0) return null;
+  scored.sort((a, b) => b.score - a.score || a.distance - b.distance || a.entity.startLine - b.entity.startLine);
+
+  const sites = [];
+  const seenLines = new Set();
+  const pushSite = (line, kind) => {
+    if (!Number.isInteger(line) || seenLines.has(line) || sites.length >= MAX_SIBLING_SITES) return;
+    const text = lines[line - 1];
+    if (typeof text !== 'string' || !text.trim()) return;
+    seenLines.add(line);
+    sites.push({ line, kind, text: compactSourceLine(text) });
+  };
+  for (const { entity, isState } of scored.slice(0, MAX_SIBLING_ENTITIES)) {
+    pushSite(entity.startLine, entity.type || 'symbol');
+    if (isState && lines.length) {
+      pushSite(findAssignmentLine(lines, entity.name, {
+        declarationLine: entity.startLine,
+        excludeStart: enclosing.startLine,
+        excludeEnd: enclosing.endLine,
+      }), 'assignment');
+    }
+  }
+  if (sites.length === 0) return null;
+  sites.sort((a, b) => a.line - b.line);
+  const rendered = `# same file (siblings of ${enclosing.name}): `
+    + sites.map((site) => `${site.line}: ${site.text}`).join(' · ');
+  return { rendered, tokens: estimateTokens(rendered), enclosing: enclosing.name, sites };
+}
+
 function discoverFamily(results, codeGraphRepo, query, regex) {
   if (!codeGraphRepo
       || typeof codeGraphRepo.findEntitiesByAnyName !== 'function'

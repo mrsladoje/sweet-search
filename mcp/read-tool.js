@@ -39,6 +39,16 @@ const ReadFileResultSchema = z.object({
     })),
     moreCount: z.number().int(),
   }).nullable().optional(),
+  unreadAbove: z.object({
+    startLine: z.number().int(),
+    endLine: z.number().int(),
+    symbols: z.array(z.object({
+      symbol: z.string(),
+      type: z.string().nullable().optional(),
+      startLine: z.number().int().nullable().optional(),
+    })),
+    moreCount: z.number().int(),
+  }).nullable().optional(),
   omitted: z.object({
     file: z.string(),
     startLine: z.number().int(),

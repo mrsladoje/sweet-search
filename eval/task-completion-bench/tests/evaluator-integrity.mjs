@@ -24,6 +24,12 @@ const logs = [
   'test dropped ... output\nrunning 1 test\nok',
   'test skipped ... ignored\nok',
   'test truncated ... output',
+  // Glued status (gleam-3458): concurrent stdout `Locked!` welded onto the token.
+  'test dependencies::provided_local_to_manifest ... okLocked!',
+  'test glued_fail ... FAILEDLocked!',
+  'test standalone_glued ... output\nokLocked!',
+  // A lowercase continuation is a word, never a status: `okay` stays pending output.
+  'test okay_noise ... okay\nok',
 ];
 const parseScript = `
 import importlib.util, json, sys
@@ -47,6 +53,10 @@ assert.deepEqual(parsed[7], {});
 assert.deepEqual(parsed[8], {});
 assert.deepEqual(parsed[9], {});
 assert.deepEqual(parsed[10], {});
+assert.deepEqual(parsed[11], { 'dependencies::provided_local_to_manifest': 'PASSED' });
+assert.deepEqual(parsed[12], { glued_fail: 'FAILED' });
+assert.deepEqual(parsed[13], { standalone_glued: 'PASSED' });
+assert.deepEqual(parsed[14], { okay_noise: 'PASSED' });
 
 const dir = mkdtempSync(path.join(tmpdir(), 'evaluator-integrity-'));
 try {
@@ -235,7 +245,7 @@ try {
 {
   const { RT_HARNESS_FINGERPRINT, taskConfigHash } = await import('../harness/env-ledger.mjs');
   const graderNames = (RT_HARNESS_FINGERPRINT.grader || []).map(s => s.name);
-  for (const required of ['evaluator-runtime.mjs', 'sr-eval.py', 'upstream-patches/eval.py']) {
+  for (const required of ['evaluator-runtime.mjs', 'sr-eval.py', 'upstream-patches/eval.py', 'cargo_log_parser.py']) {
     assert.ok(graderNames.includes(required),
       `grader source ${required} must be inside the ledger fingerprint`);
   }

@@ -465,6 +465,7 @@ async function cmdGrep(rawArgs) {
       perFileCap: Math.min(k, 100), maxFiles: k,
       expand: false, rerank: false, useLateInteraction: false,
       _isAgentFormat: !fixedString,
+      _siblingLine: process.env.SS_SIBLING_LINE !== '0',
     });
   } catch {
     const s = await getSweetSearch();
@@ -472,6 +473,7 @@ async function cmdGrep(rawArgs) {
       regex, maxMatches: 0, contextLines: 0,
       perFileCap: Math.min(k, 100), maxFiles: k,
       _isAgentFormat: !fixedString,
+      _siblingLine: process.env.SS_SIBLING_LINE !== '0',
     });
   }
   const total = result.stats?.totalMatches ?? result.results.length;
@@ -496,6 +498,8 @@ async function cmdGrep(rawArgs) {
   }
   for (const line of completed.lines) process.stdout.write(line + '\n');
   if (completed.familyManifest) process.stdout.write(`${completed.familyManifest.rendered}\n`);
+  // Singleton hit: the same-file identifier family, with code lines (L1a).
+  if (result.siblingLine?.rendered) process.stdout.write(`${result.siblingLine.rendered}\n`);
   if (body.hiddenLine) process.stdout.write(body.hiddenLine + '\n');
   if (body.shownMatches === 0) process.stdout.write('(no matches)\n');
   writeRegexDialectHint(result.stats);
@@ -706,7 +710,7 @@ async function cmdRead(rawArgs) {
     }
   }
 
-  const { readFile, renderUnreadBelow, numberCodeLines } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
+  const { readFile, renderUnreadBelow, renderUnreadAbove, numberCodeLines } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
   // Agent-facing ss-read: span gate on, same as the CLI and the daemon route.
   const r = await readFile({
     path: file, projectRoot: FILE_ROOT,
@@ -753,6 +757,13 @@ async function cmdRead(rawArgs) {
     command: 'ss-read',
     queryEvidence: receiptResponse?.queryEvidence,
   });
+  // Mirror for the span ABOVE the window, printed BEFORE the fence: the
+  // below-trailer keeps the last line (recency), this one sits with the header
+  // (squashql-295: the field the fix needed was declared above a 170-235 read).
+  const aboveLine = coveredWholeFile ? '' : renderUnreadAbove(r, {
+    command: 'ss-read',
+    queryEvidence: receiptResponse?.queryEvidence,
+  });
   const omitted = renderReadOmission(r, { surface: 'ss-read' });
   // Optional line-number gutter (SS_READ_LINENUMS=0 disables), skipped under 15
   // lines. Native Claude Code Read numbers every line; this closes that
@@ -771,7 +782,7 @@ async function cmdRead(rawArgs) {
     bodyText = numberCodeLines(r.text, startAt);
   }
   if (omitted) process.stdout.write(`# ss-read ${r.file}${range}\n${omitted}\n`);
-  else process.stdout.write(`# ss-read ${r.file}${range}\n${fence}\n${bodyText}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`);
+  else process.stdout.write(`# ss-read ${r.file}${range}\n${aboveLine ? aboveLine + '\n' : ''}${fence}\n${bodyText}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`);
   process.exit(0);
 }
 

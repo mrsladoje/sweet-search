@@ -7,6 +7,13 @@ import re
 
 _TEST_HEADER_RE = re.compile(r"^test\s+(\S+)\s+\.\.\.(?:\s+(.*))?$")
 _STANDALONE_STATUS = {"ok": "PASSED", "FAILED": "FAILED"}
+# A status token with another test's captured stdout glued onto it, e.g.
+# ``test dependencies::provided_local_to_manifest ... okLocked!`` (gleam's
+# build_lock tests print ``Locked!`` while sibling tests report). The status is
+# still the status: cargo never prints a lowercase/digit continuation after
+# ``ok`` (that would be a word such as ``okay``), and nothing may follow ``ok``
+# or ``FAILED`` on a genuine header line at all.
+_GLUED_STATUS_RE = re.compile(r"^(ok|FAILED)(?=[^a-z0-9_])")
 _SUITE_BOUNDARY_RE = re.compile(r"^(?:running\s+\d+\s+tests?|test result:)")
 
 
@@ -35,8 +42,9 @@ def parse_log_cargo(log: str) -> dict[str, str]:
         header = _TEST_HEADER_RE.match(line)
         if header:
             test_name, suffix = header.groups()
-            if suffix in _STANDALONE_STATUS:
-                results[test_name] = _STANDALONE_STATUS[suffix]
+            header_outcome = _status_token(suffix)
+            if header_outcome is not None:
+                results[test_name] = header_outcome
                 continue
             if suffix == "ignored":
                 continue
@@ -50,7 +58,7 @@ def parse_log_cargo(log: str) -> dict[str, str]:
                 ambiguous_remaining = 2
             continue
 
-        outcome = _STANDALONE_STATUS.get(line)
+        outcome = _status_token(line)
         if outcome is None:
             continue
         if ambiguous_remaining:
@@ -61,3 +69,15 @@ def parse_log_cargo(log: str) -> dict[str, str]:
             pending_name = None
 
     return results
+
+
+def _status_token(token: str | None) -> str | None:
+    """Map ``ok``/``FAILED`` (bare or with glued stdout) to an outcome, else None."""
+
+    if token is None:
+        return None
+    outcome = _STANDALONE_STATUS.get(token)
+    if outcome is not None:
+        return outcome
+    glued = _GLUED_STATUS_RE.match(token)
+    return _STANDALONE_STATUS[glued.group(1)] if glued else None

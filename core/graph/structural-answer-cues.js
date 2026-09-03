@@ -8,9 +8,17 @@ const STOP = new Set([
   'when', 'where', 'which', 'from', 'into', 'will', 'can', 'may', 'not', 'and', 'or',
 ]);
 
+// A member read through the receiver (`this.x`, `self.x`, `self::x`, `@x`) is
+// state coupling: the field a method reads is the fix surface a body-local
+// read cannot show (squashql-295: `this.subQueryMeasures` was the one term
+// that mattered and it ranked below `FIXME` and `private`, past the 24 cap).
+const RECEIVER_MEMBER_RE = /(?:\b(?:this|self)\s*(?:\.|::)\s*|(?<![\w$])@)([A-Za-z_$][A-Za-z0-9_$]{2,})/g;
+const RECEIVER_MEMBER_BONUS = 4;
+
 function terms(text) {
   const out = new Map();
-  for (const m of String(text || '').matchAll(/[A-Za-z_$][A-Za-z0-9_$]{2,}/g)) {
+  const source = String(text || '');
+  for (const m of source.matchAll(/[A-Za-z_$][A-Za-z0-9_$]{2,}/g)) {
     const raw = m[0];
     const key = raw.toLowerCase();
     if (STOP.has(key)) continue;
@@ -18,6 +26,14 @@ function terms(text) {
     prev.count++;
     prev.score += /[A-Z_]/.test(raw.slice(1)) || /^[A-Z]/.test(raw) ? 2 : 1;
     out.set(key, prev);
+  }
+  const boosted = new Set();
+  for (const m of source.matchAll(RECEIVER_MEMBER_RE)) {
+    const key = m[1].toLowerCase();
+    const entry = out.get(key);
+    if (!entry || boosted.has(key)) continue;
+    boosted.add(key);
+    entry.score += RECEIVER_MEMBER_BONUS;
   }
   return out;
 }

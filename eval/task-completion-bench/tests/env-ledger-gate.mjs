@@ -27,13 +27,13 @@ assert.equal(h1.length, 16);
 // the fingerprint without updating this file, so this test sat red on main for four
 // days — the same "nobody checked the grader against itself" shape as D-1. The grader
 // assertions below are what make a future silent bump fail here instead.
-assert.equal(RT_HARNESS_FINGERPRINT.version, 4);
+assert.equal(RT_HARNESS_FINGERPRINT.version, 5);
 assert.deepEqual(
   RT_HARNESS_FINGERPRINT.sources.map(({ name }) => name),
   ['rt-condense-lib.mjs', 'rt-shim-runtime.mjs', 'rt-dedup.mjs', 'rt-progress-controller.mjs']);
 assert.deepEqual(
   RT_HARNESS_FINGERPRINT.grader.map(({ name }) => name),
-  ['evaluator-runtime.mjs', 'sr-eval.py', 'upstream-patches/eval.py']);
+  ['evaluator-runtime.mjs', 'sr-eval.py', 'upstream-patches/eval.py', 'cargo_log_parser.py']);
 for (const { name, sha256 } of [...RT_HARNESS_FINGERPRINT.sources, ...RT_HARNESS_FINGERPRINT.grader]) {
   const sourcePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../harness', name);
   assert.equal(sha256, createHash('sha256').update(readFileSync(sourcePath)).digest('hex'));

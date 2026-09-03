@@ -22,6 +22,7 @@ import {
   readFile,
   formatReadResults,
   renderUnreadBelow,
+  renderUnreadAbove,
   __resetReadCachesForTests,
 } from '../../core/search/search-read.js';
 
@@ -511,5 +512,134 @@ describe('renderUnreadBelow + formatReadResults', () => {
     const r = await readFile({ path: BOTAN_FILE, startLine: 170, endLine: 205, projectRoot: TMP });
     const parsed = JSON.parse(formatReadResults({ files: [r], totalMs: 1 }, 'json'));
     expect(parsed.files[0].unreadBelow.startLine).toBe(206);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// unread ABOVE (2026-09-03, squashql-295 shape): a field declared and assigned
+// above a mid-file window; the trailer must name it. Entities come from
+// code-graph.db (fields are entities, not chunks), chunks from codebase.db.
+// ---------------------------------------------------------------------------
+
+const JAVA_FILE = 'src/QueryResolver.java';
+
+function writeSquashqlFixture() {
+  const lines = [];
+  for (let i = 1; i <= 300; i++) {
+    if (i === 10) lines.push('public class QueryResolver {');
+    else if (i === 35) lines.push('  private final Map<Measure, CompiledMeasure> subQueryMeasures;');
+    else if (i === 50) lines.push('  public QueryResolver(QueryDto query, Map<String, Store> storesByName) {');
+    else if (i === 55) lines.push('    this.subQueryMeasures = compileMeasures(query.table.subQuery.measures, false);');
+    else if (i === 60) lines.push('  }');
+    else if (i === 191) lines.push('  private DatabaseQuery toSubQuery(QueryDto subQuery) {');
+    else if (i === 207) lines.push('    List<CompiledMeasure> measures = new ArrayList<>(this.subQueryMeasures.values());');
+    else if (i === 208) lines.push('  }');
+    else if (i === 210) lines.push('  private void checkSubQuery(QueryDto subQuery) {');
+    else if (i === 228) lines.push('  }');
+    else if (i === 300) lines.push('}');
+    else lines.push(`    // line ${i}`);
+  }
+  writeTmp(JAVA_FILE, lines.join('\n') + '\n');
+  const stateDir = path.join(TMP, '.sweet-search');
+  mkdirSync(stateDir, { recursive: true });
+  const db = new Database(path.join(stateDir, 'codebase.db'));
+  try {
+    db.exec('CREATE TABLE vectors (id TEXT PRIMARY KEY, file_path TEXT, text TEXT, metadata TEXT)');
+    const insert = db.prepare('INSERT INTO vectors (id, file_path, text, metadata) VALUES (?, ?, ?, ?)');
+    insert.run('c1', JAVA_FILE, '// x', JSON.stringify({ symbol: 'QueryResolver', chunk_type: 'method', line_start: 50, line_end: 60, language: 'java' }));
+    insert.run('c2', JAVA_FILE, '// x', JSON.stringify({ symbol: 'toSubQuery', chunk_type: 'method', line_start: 191, line_end: 208, language: 'java' }));
+    insert.run('c3', JAVA_FILE, '// x', JSON.stringify({ symbol: 'checkSubQuery', chunk_type: 'method', line_start: 210, line_end: 228, language: 'java' }));
+    insert.run('c4', JAVA_FILE, '// x', JSON.stringify({ symbol: 'QueryResolverClass', chunk_type: 'class', line_start: 10, line_end: 300, language: 'java' }));
+  } finally {
+    db.close();
+  }
+  const graph = new Database(path.join(stateDir, 'code-graph.db'));
+  try {
+    graph.exec(`CREATE TABLE entities (id INTEGER PRIMARY KEY, name TEXT, type TEXT, file_path TEXT,
+      start_line INTEGER, end_line INTEGER, parent_class TEXT, signature TEXT, summary TEXT,
+      stale_since INTEGER DEFAULT NULL)`);
+    const ins = graph.prepare('INSERT INTO entities (id, name, type, file_path, start_line, end_line, parent_class) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    ins.run(1, 'QueryResolver', 'class', JAVA_FILE, 10, 300, null);
+    ins.run(2, 'subQueryMeasures', 'field', JAVA_FILE, 35, 35, 'QueryResolver');
+    ins.run(3, 'QueryResolver', 'method', JAVA_FILE, 50, 60, 'QueryResolver');
+    ins.run(4, 'toSubQuery', 'method', JAVA_FILE, 191, 208, 'QueryResolver');
+    ins.run(5, 'checkSubQuery', 'method', JAVA_FILE, 210, 228, 'QueryResolver');
+  } finally {
+    graph.close();
+  }
+}
+
+describe('unread above (squashql-295 shape)', () => {
+  it('names the field declared above the window, via the entity table', async () => {
+    writeSquashqlFixture();
+    const r = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
+    expect(r.unreadAbove).toEqual({
+      startLine: 1,
+      endLine: 169,
+      symbols: [
+        { symbol: 'subQueryMeasures', type: 'field', startLine: 35 },
+        { symbol: 'QueryResolver', type: 'method', startLine: 50 },
+      ],
+      moreCount: 0,
+    });
+    // The enclosing class (10-300) is not "unread"; the below side is unchanged.
+    expect(r.unreadAbove.symbols.map(s => s.symbol)).not.toContain('QueryResolverClass');
+    expect(r.unreadBelow.startLine).toBe(236);
+  });
+
+  it('renders only for the ss-read surface, before-the-fence form, and honours SS_UNREAD_ABOVE=0', async () => {
+    writeSquashqlFixture();
+    const r = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
+    expect(renderUnreadAbove(r, { command: 'ss-read' })).toBe(
+      `# unread above (1-169): subQueryMeasures, QueryResolver — continue: ss-read ${JAVA_FILE} 1 169`,
+    );
+    expect(renderUnreadAbove(r)).toBe('');
+    // Human CLI output stays byte-identical: the agent formatter never prints it.
+    const out = formatReadResults({ files: [r], totalMs: 1 }, 'agent');
+    expect(out).not.toContain('# unread above');
+    process.env.SS_UNREAD_ABOVE = '0';
+    try {
+      expect(renderUnreadAbove(r, { command: 'ss-read' })).toBe('');
+      // The field itself is still computed: the switch is a render-time, client-side gate.
+      const off = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
+      expect(off.unreadAbove.symbols[0].symbol).toBe('subQueryMeasures');
+    } finally {
+      delete process.env.SS_UNREAD_ABOVE;
+    }
+  });
+
+  it('ranks the above list by query evidence (the grep phrase) when it overflows', async () => {
+    writeSquashqlFixture();
+    const stateDir = path.join(TMP, '.sweet-search');
+    const graph = new Database(path.join(stateDir, 'code-graph.db'));
+    try {
+      const ins = graph.prepare('INSERT INTO entities (id, name, type, file_path, start_line, end_line, parent_class) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      for (let i = 0; i < 6; i++) ins.run(10 + i, `helper${i}`, 'method', JAVA_FILE, 61 + i * 2, 62 + i * 2, 'QueryResolver');
+    } finally {
+      graph.close();
+    }
+    const r = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
+    expect(r.unreadAbove.moreCount).toBe(3);
+    const line = renderUnreadAbove(r, { command: 'ss-read', queryEvidence: { anchors: ['subQuery'], subtokens: ['sub', 'query'] } });
+    expect(line.startsWith('# unread above (1-169): subQueryMeasures,')).toBe(true);
+    expect(line).toContain('+3 more');
+  });
+
+  it('read from line 1, whole file, and tiny above-span keep the short/no form', async () => {
+    writeSquashqlFixture();
+    const fromTop = await readFile({ path: JAVA_FILE, startLine: 1, endLine: 40, projectRoot: TMP });
+    expect(fromTop.unreadAbove).toBeNull();
+    const whole = await readFile({ path: JAVA_FILE, projectRoot: TMP });
+    expect(whole.unreadAbove).toBeNull();
+    const tiny = await readFile({ path: JAVA_FILE, startLine: 12, endLine: 40, projectRoot: TMP });
+    expect(tiny.unreadAbove).toEqual({ startLine: 1, endLine: 11, symbols: [], moreCount: 0 });
+    expect(renderUnreadAbove(tiny, { command: 'ss-read' })).toBe(`# unread above (1-11) — continue: ss-read ${JAVA_FILE} 1 11`);
+  });
+
+  it('json format carries the structured unreadAbove field', async () => {
+    writeSquashqlFixture();
+    const r = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
+    const parsed = JSON.parse(formatReadResults({ files: [r], totalMs: 1 }, 'json'));
+    expect(parsed.files[0].unreadAbove.symbols[0].symbol).toBe('subQueryMeasures');
   });
 });
