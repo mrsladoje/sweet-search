@@ -22,6 +22,7 @@ import {
 } from './agent-span-ledger.js';
 import { sendAgentSpanOperation } from './agent-span-client.js';
 import { selectUnreadSymbols } from './unread-symbol-ranking.js';
+import { containsToken, informativeSubtokens } from './query-sufficiency.js';
 
 const CACHE_MAX_ENTRIES = 64;
 const CACHE_LARGE_FILE_BYTES = 4 * 1024 * 1024; // 4MB — switch to range-read mode
@@ -422,7 +423,7 @@ function _collectAboveSymbols(chunks, filePathRel, projectRoot, windowStart, win
   const byName = new Map();
   const push = (symbol, type, startLine) => {
     if (!symbol || byName.has(symbol)) return;
-    byName.set(symbol, { symbol, type: type ?? null, startLine });
+    byName.set(symbol, { symbol, type: type ?? null, startLine, referenced: false });
   };
   for (const c of chunks) {
     if (c.startLine == null || c.endLine == null || c.endLine >= windowStart) continue;
@@ -441,15 +442,37 @@ function _collectAboveSymbols(chunks, filePathRel, projectRoot, windowStart, win
   // Symbols the shown window READS come first: a field referenced by the
   // code in view is the state the reader has not seen, and it must survive
   // the five-slot cap even when no query evidence is available to rank it.
-  const referenced = new Set();
   if (windowText) {
     for (const [identifier] of String(windowText).matchAll(/[A-Za-z_$][A-Za-z0-9_$]{2,}/g)) {
-      if (byName.has(identifier)) referenced.add(identifier);
+      const hit = byName.get(identifier);
+      if (hit) hit.referenced = true;
     }
   }
   return [...byName.values()].sort((a, b) =>
-    Number(referenced.has(b.symbol)) - Number(referenced.has(a.symbol))
+    Number(b.referenced) - Number(a.referenced)
     || (a.startLine ?? 0) - (b.startLine ?? 0));
+}
+
+/**
+ * Does the above-list carry a reason to print? Either the window READS one of
+ * the symbols, or the session's query evidence names one. Without a signal the
+ * trailer is pure re-send cost: the 2026-09-03 replay over 180 rollouts put an
+ * unconditional above-line at 78% of all added tokens, firing on 80% of reads.
+ */
+function _aboveHasSignal(candidates, queryEvidence) {
+  if (candidates.some((c) => c.referenced)) return true;
+  const anchors = Array.isArray(queryEvidence?.anchors) ? queryEvidence.anchors.filter((a) => typeof a === 'string' && a.length >= 3) : [];
+  const subtokens = new Set(Array.isArray(queryEvidence?.subtokens) ? queryEvidence.subtokens.filter((t) => typeof t === 'string' && t.length >= 3) : []);
+  if (anchors.length === 0 && subtokens.size === 0) return false;
+  for (const c of candidates) {
+    const name = String(c.symbol || '');
+    const lower = name.toLowerCase();
+    for (const anchor of anchors) {
+      if (containsToken(name, anchor, { caseSensitive: /[A-Z]/.test(anchor) }) || lower.includes(anchor.toLowerCase())) return true;
+    }
+    for (const term of informativeSubtokens(name)) if (subtokens.has(term)) return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -696,10 +719,13 @@ export function renderUnreadBelow(result, { command = 'read', queryEvidence = nu
 export function renderUnreadAbove(result, { command = 'read', queryEvidence = null } = {}) {
   const u = result?.unreadAbove;
   if (!u || command !== 'ss-read' || !unreadAboveEnabled()) return '';
+  const candidates = _unreadSymbolCandidates.get(u) || u.symbols || [];
+  // Signal gate (render-time, so the structured field stays complete): print
+  // only when the window reads one of these symbols or the query names one.
+  if (!_aboveHasSignal(candidates, queryEvidence)) return '';
   let symbols = u.symbols || [];
   let moreCount = u.moreCount || 0;
   if (queryEvidence) {
-    const candidates = _unreadSymbolCandidates.get(u) || u.symbols || [];
     const selected = selectUnreadSymbols(candidates, queryEvidence, UNREAD_SYMBOLS_MAX);
     symbols = selected.symbols;
     moreCount = selected.moreCount;
