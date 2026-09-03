@@ -226,7 +226,7 @@ export async function bareGrep(query, routing, options = {}) {
   // code lines (the one enrichment a near-singleton grep can take; see
   // agent-pack-completion.js).
   const siblingLine = options._isAgentFormat === true && !options.fileFilter
-      && options._siblingLine !== false
+      && options._siblingLine === true // opt-in (SS_SIBLING_LINE=1): Gate 2 2026-09-03 found it inert on solves
       && results.length >= 1 && results.length <= 3
       && results.every((result) => result.file === results[0].file)
     ? buildSingletonSiblingLine(results, this?.codeGraphRepo, { regex, projectRoot: searchDir })

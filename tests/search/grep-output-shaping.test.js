@@ -577,24 +577,24 @@ describe('singleton sibling line (squashql-295)', () => {
     expect(repo.findEntitiesInFile).toHaveBeenCalledTimes(1); // only the in-entity miss did file work
   });
 
-  it('bareGrep attaches it only for agent format without --in', async () => {
+  it('bareGrep attaches it only for agent format without --in, and only when opted in', async () => {
     const searcher = { ...makeSearcher([m(JAVA, 212, 'throw new IllegalArgumentException("sub-query in a sub-query is not supported");')]), projectRoot: root };
     searcher.codeGraphRepo = squashqlRepo();
     const agent = await bareGrep.call(searcher, 'not supported', null, {
-      regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true,
+      regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true, _siblingLine: true,
     });
     expect(agent.results).toHaveLength(1);
     expect(agent.siblingLine.rendered).toContain('35: private final Map<Measure, CompiledMeasure> subQueryMeasures;');
     const human = await bareGrep.call(searcher, 'not supported', null, { regex: 'not supported', maxMatches: 0 });
     expect(human.siblingLine).toBeUndefined();
     const scoped = await bareGrep.call(searcher, 'not supported', null, {
-      regex: 'not supported', maxMatches: 20, fileFilter: 'src', _isAgentFormat: true,
+      regex: 'not supported', maxMatches: 20, fileFilter: 'src', _isAgentFormat: true, _siblingLine: true,
     });
     expect(scoped.siblingLine).toBeUndefined();
-    // The off-switch is an OPTION, not an env read: the daemon's env is whatever
-    // spawned it (a client that ran with SS_SIBLING_LINE=0 must not disable it for all).
+    // The switch is an OPTION, not an env read (the daemon's env is whatever spawned
+    // it), and it is OPT-IN: without `_siblingLine: true` nothing is attached.
     const off = await bareGrep.call(searcher, 'not supported', null, {
-      regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true, _siblingLine: false,
+      regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true,
     });
     expect(off.siblingLine).toBeUndefined();
   });
