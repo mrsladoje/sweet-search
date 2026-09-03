@@ -663,6 +663,7 @@ export function renderAgentSearchResponse(response) {
       out += `### related (1-hop graph, ~${result.neighbors.tokens} tok)\n${result.neighbors.rendered}\n`;
     }
     if (result.sameFile?.rendered) out += `${result.sameFile.rendered}\n`;
+    if (result.siblingLine?.rendered) out += `${result.siblingLine.rendered}\n`;
     if (result.continuation?.rendered) {
       out += `${result.continuation.rendered}\n`;
       if (result.continuation.kind === 'symbol' && result.continuation.code) {

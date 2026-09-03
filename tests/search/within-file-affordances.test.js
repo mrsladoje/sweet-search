@@ -18,6 +18,7 @@ import {
   packageForAgent,
   buildSameFileMap,
 } from '../../core/search/context-expander.js';
+import { buildPackSiblingLine } from '../../core/search/agent-pack-completion.js';
 import {
   readFile,
   formatReadResults,
@@ -608,6 +609,24 @@ describe('unread above (squashql-295 shape)', () => {
     }
   });
 
+  it('with no query evidence, the field the window READS still leads the list', async () => {
+    writeSquashqlFixture();
+    const stateDir = path.join(TMP, '.sweet-search');
+    const graph = new Database(path.join(stateDir, 'code-graph.db'));
+    try {
+      const ins = graph.prepare('INSERT INTO entities (id, name, type, file_path, start_line, end_line, parent_class) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      ins.run(9, 'aaaEarlyField', 'field', JAVA_FILE, 12, 12, 'QueryResolver');
+      for (let i = 0; i < 6; i++) ins.run(10 + i, `helper${i}`, 'method', JAVA_FILE, 61 + i * 2, 62 + i * 2, 'QueryResolver');
+    } finally {
+      graph.close();
+    }
+    // Window 170-235 contains L207 `this.subQueryMeasures.values()`; aaaEarlyField (L12) is not read there.
+    const r = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
+    expect(r.unreadAbove.symbols[0].symbol).toBe('subQueryMeasures');
+    expect(r.unreadAbove.symbols[1].symbol).toBe('aaaEarlyField');
+    expect(renderUnreadAbove(r, { command: 'ss-read' }).startsWith('# unread above (1-169): subQueryMeasures, aaaEarlyField,')).toBe(true);
+  });
+
   it('ranks the above list by query evidence (the grep phrase) when it overflows', async () => {
     writeSquashqlFixture();
     const stateDir = path.join(TMP, '.sweet-search');
@@ -641,5 +660,60 @@ describe('unread above (squashql-295 shape)', () => {
     const r = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
     const parsed = JSON.parse(formatReadResults({ files: [r], totalMs: 1 }, 'json'));
     expect(parsed.files[0].unreadAbove.symbols[0].symbol).toBe('subQueryMeasures');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pack-side sibling line: ss-find "checkSubQuery" returns a chunk labelled
+// checkSubQuery that STARTS inside toSubQuery (191-227). The family must be
+// computed for the symbol's own declaration line, and the line must render.
+// ---------------------------------------------------------------------------
+
+describe('pack sibling line (ss-search / ss-find top-1)', () => {
+  const ENTITIES = [
+    { id: 1, name: 'QueryResolver', type: 'class', startLine: 10, endLine: 300 },
+    { id: 2, name: 'subQueryMeasures', type: 'field', startLine: 35, endLine: 35 },
+    { id: 4, name: 'QueryResolver', type: 'method', startLine: 50, endLine: 60 },
+    { id: 6, name: 'toSubQuery', type: 'method', startLine: 191, endLine: 208 },
+    { id: 7, name: 'checkSubQuery', type: 'method', startLine: 210, endLine: 228 },
+  ];
+  const repo = () => ({
+    findEnclosingEntity: (file, line) => ENTITIES.filter(e => e.startLine <= line && e.endLine >= line)
+      .sort((a, b) => (a.endLine - a.startLine) - (b.endLine - b.startLine))[0] || null,
+    findEntitiesInFile: () => ENTITIES,
+    findEntityWithNameInRange: (file, start, end, name) => ENTITIES.find(e => e.name === name && e.startLine >= start && e.startLine <= end) || null,
+    findAdjacentEntities: () => ({ above: [], below: [] }),
+  });
+
+  it('keys the family on the symbol declaration, not the chunk start', () => {
+    writeSquashqlFixture();
+    const top = { file: JAVA_FILE, symbol: 'checkSubQuery', symbolType: 'method', startLine: 191, endLine: 227 };
+    const line = buildPackSiblingLine(top, repo(), { projectRoot: TMP, regex: '\\bcheckSubQuery\\b' });
+    expect(line.rendered).toContain('siblings of checkSubQuery');
+    expect(line.rendered).toContain('35: private final Map<Measure, CompiledMeasure> subQueryMeasures;');
+    expect(line.rendered).toContain('191: private DatabaseQuery toSubQuery(QueryDto subQuery) {');
+    // A class top-1 gets nothing: its "family" is every top-level entity.
+    expect(buildPackSiblingLine({ ...top, symbol: 'QueryResolver', symbolType: 'class', startLine: 10, endLine: 300 }, repo(), { projectRoot: TMP })).toBeNull();
+  });
+
+  it('packageForAgent attaches it to top-1 under agent format and counts its tokens', () => {
+    writeSquashqlFixture();
+    const code = Array.from({ length: 37 }, (_, i) => `    // chunk line ${191 + i}`).join('\n');
+    const results = [{
+      id: 'c-check', file: JAVA_FILE, startLine: 191, endLine: 227, score: 0.9, lateInteractionScore: 0.9,
+      symbol: 'checkSubQuery', symbolType: 'method', text: code, code,
+    }];
+    const response = packageForAgent(results, { grepMatches: 2 }, {
+      query: 'checkSubQuery', format: 'agent_full', tokenBudget: 4000, projectRoot: TMP,
+      codeGraphRepo: repo(), _isAgentFormat: true,
+    });
+    const top = response.results[0];
+    expect(top.siblingLine.rendered).toContain('35: private final Map<Measure, CompiledMeasure> subQueryMeasures;');
+    expect(response.tokensUsed).toBeGreaterThanOrEqual(top.siblingLine.tokens);
+    const off = packageForAgent(results.map(r => ({ ...r })), { grepMatches: 2 }, {
+      query: 'checkSubQuery', format: 'agent_full', tokenBudget: 4000, projectRoot: TMP,
+      codeGraphRepo: repo(), _isAgentFormat: true, _siblingLine: false,
+    });
+    expect(off.results[0].siblingLine).toBeUndefined();
   });
 });

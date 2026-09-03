@@ -413,12 +413,12 @@ export function unreadAboveEnabled() {
 }
 
 /**
- * Named symbols lying fully above `windowStart`, in file order, deduped by
- * name. Chunk rows first (functions/classes), then code-graph entities
+ * Named symbols lying fully above `windowStart`, deduped by name: the ones
+ * the window's text references first, then file order. Chunk rows first (functions/classes), then code-graph entities
  * (adds fields/constants/properties). Entities enclosing the window — the
  * class the window sits inside — are excluded: they are not "unread".
  */
-function _collectAboveSymbols(chunks, filePathRel, projectRoot, windowStart) {
+function _collectAboveSymbols(chunks, filePathRel, projectRoot, windowStart, windowText = '') {
   const byName = new Map();
   const push = (symbol, type, startLine) => {
     if (!symbol || byName.has(symbol)) return;
@@ -438,7 +438,18 @@ function _collectAboveSymbols(chunks, filePathRel, projectRoot, windowStart) {
       push(e.name, e.type, e.startLine);
     }
   }
-  return [...byName.values()].sort((a, b) => (a.startLine ?? 0) - (b.startLine ?? 0));
+  // Symbols the shown window READS come first: a field referenced by the
+  // code in view is the state the reader has not seen, and it must survive
+  // the five-slot cap even when no query evidence is available to rank it.
+  const referenced = new Set();
+  if (windowText) {
+    for (const [identifier] of String(windowText).matchAll(/[A-Za-z_$][A-Za-z0-9_$]{2,}/g)) {
+      if (byName.has(identifier)) referenced.add(identifier);
+    }
+  }
+  return [...byName.values()].sort((a, b) =>
+    Number(referenced.has(b.symbol)) - Number(referenced.has(a.symbol))
+    || (a.startLine ?? 0) - (b.startLine ?? 0));
 }
 
 // ---------------------------------------------------------------------------
@@ -555,7 +566,7 @@ async function _readFileUnpinned(req) {
     const aboveLines = sliced.startLine - 1;
     let symbols = [];
     if (aboveLines >= UNREAD_SYMBOLS_MIN_LINES) {
-      symbols = _collectAboveSymbols(chunks, relForIndex, projectRoot, sliced.startLine);
+      symbols = _collectAboveSymbols(chunks, relForIndex, projectRoot, sliced.startLine, sliced.text);
       if (symbols.length === 0 && disk.text != null) {
         const above = _sliceLines(disk.text, disk.lineOffsets, 1, aboveLines);
         const isCFamily = C_FAMILY_EXTS.has(path.extname(absPath).toLowerCase());
