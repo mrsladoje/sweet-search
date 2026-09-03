@@ -406,14 +406,16 @@ function _sniffRemainderDefinitions(text, isCFamily) {
 }
 
 /**
- * SS_UNREAD_ABOVE=1 switches the above-trailer ON (opt-in). Default OFF since
- * the 2026-09-03 Gate 2 microsmoke: exposed in 6/6 squashql treatment
- * rollouts, flipped 0 of them (0/6 vs 0/6 control), at 0.3-0.6% of prompt
- * tokens. Consulted at RENDER time only, in the wrapper's own process; the
- * structured field is always computed.
+ * SS_UNREAD_ABOVE=0 switches the above-trailer off. Default ON as a bounded
+ * mechanism (one capped line, only when the window reads state declared
+ * above; ≤0.6% of prompt tokens on the 2026-09-03 180-rollout replay). The
+ * Gate 2 microsmoke that day showed no solve flip on squashql (0/6 with 6/6
+ * exposure) and no control regression; the owner chose to ship it as a
+ * cheap mechanism rather than a proven lever. Consulted at RENDER time only,
+ * in the wrapper's own process; the structured field is always computed.
  */
 export function unreadAboveEnabled() {
-  return process.env.SS_UNREAD_ABOVE === '1';
+  return process.env.SS_UNREAD_ABOVE !== '0';
 }
 
 /**

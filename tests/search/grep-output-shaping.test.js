@@ -577,7 +577,7 @@ describe('singleton sibling line (squashql-295)', () => {
     expect(repo.findEntitiesInFile).toHaveBeenCalledTimes(1); // only the in-entity miss did file work
   });
 
-  it('bareGrep attaches it only for agent format without --in, and only when opted in', async () => {
+  it('bareGrep attaches it only for agent format without --in, and honours the opt-out', async () => {
     const searcher = { ...makeSearcher([m(JAVA, 212, 'throw new IllegalArgumentException("sub-query in a sub-query is not supported");')]), projectRoot: root };
     searcher.codeGraphRepo = squashqlRepo();
     const agent = await bareGrep.call(searcher, 'not supported', null, {
@@ -592,9 +592,9 @@ describe('singleton sibling line (squashql-295)', () => {
     });
     expect(scoped.siblingLine).toBeUndefined();
     // The switch is an OPTION, not an env read (the daemon's env is whatever spawned
-    // it), and it is OPT-IN: without `_siblingLine: true` nothing is attached.
+    // it); default on, `_siblingLine: false` opts out.
     const off = await bareGrep.call(searcher, 'not supported', null, {
-      regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true,
+      regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true, _siblingLine: false,
     });
     expect(off.siblingLine).toBeUndefined();
   });

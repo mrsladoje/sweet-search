@@ -2464,7 +2464,7 @@ export function packageForAgent(rankedResults, searchStats, opts) {
   // family plus the fields its body reads, with their code lines. Additive,
   // counted inside tokensUsed, dropped on overflow like the span map.
   if (_isAgentFormat === true && agentResults.length > 0 && !ablations.has('no-sibling-line')
-      && opts._siblingLine === true && codeGraphRepo) { // opt-in (SS_SIBLING_LINE=1)
+      && opts._siblingLine !== false && codeGraphRepo) { // SS_SIBLING_LINE=0 opts out
     const top = agentResults[0];
     const sibling = buildPackSiblingLine(top, codeGraphRepo, { regex, projectRoot, fileCache, estimateTokens });
     if (sibling && sibling.tokens <= Math.max(0, tokenBudget - tokensUsed)) {
