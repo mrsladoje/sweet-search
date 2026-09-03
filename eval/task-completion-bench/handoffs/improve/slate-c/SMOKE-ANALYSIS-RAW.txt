@@ -1,0 +1,307 @@
+
+################ sm-opencode-20260902
+---- analyze-run (ledger basis: current = cache-write 1.25x on all three harnesses)
+
+==============================================================================
+SOLE COST HEADLINE — RAW UNTRIMMED REALIZED COST; all recorded rows
+  estimand: sum of costRealizedUsd over every listed row (no task-cell averaging)
+  ledger basis: cache-write-1.25x-all-harnesses
+  cache-write tokens/row: mean 32661 over 120/120 row(s)
+  native: 60 row(s), $0.676139 raw realized
+  sweet: 60 row(s), $0.645088 raw realized
+==============================================================================
+
+=== A/B run report — RAW — NO DIAGNOSTIC EXCLUSION: 120 rows, 20 paired tasks ===
+
+  build broken by the patch (counted UNRESOLVED, kept in the denominator): firebase__firebase-tools-2933/native/r1, chaijs__chai-990/native/r0
+
+RESOLUTION (parity check):
+  native 8/20 [22–61%]   sweet 8/20 [22–61%]
+  resolved REPS  native 23/60   sweet 18/60   << task solve above uses any-rep; a task carried by ONE rep is unstable
+  both=8  native-only=0  sweet-only=0  neither=12
+
+BOTH-SOLVED (descriptive post-treatment stratum; not a causal estimate)  (n=8)
+  ledger basis: cache-write-1.25x-all-harnesses
+    realized   sweet −1.1% vs native   ($0.086566 → $0.085650)
+               paired Δ/task $0.0001  95% CI [$-0.0012, $0.0013]  %CI [-10.4%, +11.7%]  p=0.848
+    idealCost  sweet −0.7% vs native   ($0.079929 → $0.079373)   %CI [-11.3%, +11.8%]  p=0.887
+    breakPriced sweet −0.7% vs native   ($0.079929 → $0.079373)   %CI [-11.3%, +12.0%]  p=0.902   (== idealCost: context measured append-only)
+
+ALL PAIRED  (n=20)
+  ledger basis: cache-write-1.25x-all-harnesses
+    realized   sweet −4.6% vs native   ($0.225380 → $0.215029)
+               paired Δ/task $0.0005  95% CI [$-0.0003, $0.0013]  %CI [-2.9%, +11.4%]  p=0.223
+    idealCost  sweet −4.9% vs native   ($0.208416 → $0.198273)   %CI [-3.2%, +11.9%]  p=0.228
+    breakPriced sweet −4.9% vs native   ($0.208416 → $0.198273)   %CI [-3.2%, +12.0%]  p=0.235   (== idealCost: context measured append-only)
+
+
+==============================================================================
+DIAGNOSTIC INSTRUMENTATION INCOMPLETE: 120/120 row(s) missing a verdict, structured detail, or explicit complete-instrumentation attestation.
+  Fail closed: flags and exclusion sensitivities are not reported; raw untrimmed cost remains the sole headline.
+  examples: getmoto__moto-6716/native/r0, getmoto__moto-6716/native/r1, getmoto__moto-6716/native/r2, getmoto__moto-6716/sweet/r0, getmoto__moto-6716/sweet/r1
+==============================================================================
+---- analyze-run (legacy basis, for the disclosure row)
+
+==============================================================================
+SOLE COST HEADLINE — RAW UNTRIMMED REALIZED COST; all recorded rows
+  estimand: sum of costRealizedUsd over every listed row (no task-cell averaging)
+  ledger basis: cache-write-1.25x-claudecode-only (LEGACY, disclosure only)
+  cache-write tokens/row: mean 32661 over 120/120 row(s)
+  native: 60 row(s), $0.625544 raw realized
+  sweet: 60 row(s), $0.597690 raw realized
+==============================================================================
+
+=== A/B run report — RAW — NO DIAGNOSTIC EXCLUSION: 120 rows, 20 paired tasks ===
+
+  build broken by the patch (counted UNRESOLVED, kept in the denominator): firebase__firebase-tools-2933/native/r1, chaijs__chai-990/native/r0
+
+RESOLUTION (parity check):
+  native 8/20 [22–61%]   sweet 8/20 [22–61%]
+  resolved REPS  native 23/60   sweet 18/60   << task solve above uses any-rep; a task carried by ONE rep is unstable
+  both=8  native-only=0  sweet-only=0  neither=12
+
+BOTH-SOLVED (descriptive post-treatment stratum; not a causal estimate)  (n=8)
+  ledger basis: cache-write-1.25x-claudecode-only (LEGACY, disclosure only)
+    realized   sweet −0.7% vs native   ($0.079967 → $0.079414)
+               paired Δ/task $0.0001  95% CI [$-0.0012, $0.0013]  %CI [-11.3%, +11.8%]  p=0.905
+    idealCost  sweet −0.7% vs native   ($0.079929 → $0.079373)   %CI [-11.3%, +11.8%]  p=0.887
+    breakPriced sweet −0.7% vs native   ($0.079929 → $0.079373)   %CI [-11.3%, +12.0%]  p=0.902   (== idealCost: context measured append-only)
+
+ALL PAIRED  (n=20)
+  ledger basis: cache-write-1.25x-claudecode-only (LEGACY, disclosure only)
+    realized   sweet −4.5% vs native   ($0.208515 → $0.199230)
+               paired Δ/task $0.0005  95% CI [$-0.0003, $0.0013]  %CI [-3.3%, +11.5%]  p=0.251
+    idealCost  sweet −4.9% vs native   ($0.208416 → $0.198273)   %CI [-3.2%, +11.9%]  p=0.228
+    breakPriced sweet −4.9% vs native   ($0.208416 → $0.198273)   %CI [-3.2%, +12.0%]  p=0.235   (== idealCost: context measured append-only)
+
+
+==============================================================================
+DIAGNOSTIC INSTRUMENTATION INCOMPLETE: 120/120 row(s) missing a verdict, structured detail, or explicit complete-instrumentation attestation.
+  Fail closed: flags and exclusion sensitivities are not reported; raw untrimmed cost remains the sole headline.
+  examples: getmoto__moto-6716/native/r0, getmoto__moto-6716/native/r1, getmoto__moto-6716/native/r2, getmoto__moto-6716/sweet/r0, getmoto__moto-6716/sweet/r1
+==============================================================================
+---- stop rule 4: trustworthy-verdict census, BEFORE any admission filter
+== /root/sweet-search-private/eval/task-completion-bench/results/sm-opencode-20260902/rows.json
+   ALL-UNTRUSTED getmoto__moto-6716/native  verdicts=9 infra=0
+   ALL-UNTRUSTED getmoto__moto-6716/sweet  verdicts=11 infra=0
+   ALL-UNTRUSTED jensneuse__graphql-go-tools-174/native  verdicts=10 infra=0
+   ALL-UNTRUSTED jensneuse__graphql-go-tools-174/sweet  verdicts=13 infra=0
+---- exit reasons (timeout check: the three legs overlapped)
+exitReason: {"model_stopped":120}
+wall median 1.9m  p90 4.1m  max 6.5m
+native: n=60 solved=23 predOk=60 $realized=0.676 $ideal=0.625
+sweet: n=60 solved=18 predOk=60 $realized=0.645 $ideal=0.595
+
+################ sm-claudecode-20260902
+---- analyze-run (ledger basis: current = cache-write 1.25x on all three harnesses)
+
+==============================================================================
+SOLE COST HEADLINE — RAW UNTRIMMED REALIZED COST; all recorded rows
+  estimand: sum of costRealizedUsd over every listed row (no task-cell averaging)
+  ledger basis: cache-write-1.25x-all-harnesses
+  cache-write tokens/row: mean 41119 over 68/120 row(s)
+  native: unavailable (43/60 row(s) missing realized cost)
+  sweet: unavailable (9/60 row(s) missing realized cost)
+==============================================================================
+
+=== A/B run report — RAW — NO DIAGNOSTIC EXCLUSION: 120 rows, 20 paired tasks ===
+
+RESOLUTION (parity check):
+  native 8/20 [22–61%]   sweet 8/20 [22–61%]
+  resolved REPS  native 21/60   sweet 22/60   << task solve above uses any-rep; a task carried by ONE rep is unstable
+  both=8  native-only=0  sweet-only=0  neither=12
+
+BOTH-SOLVED (descriptive post-treatment stratum; not a causal estimate)  (n=8)
+  ledger basis: cache-write-1.25x-all-harnesses
+    realized   unavailable (7/8 paired task(s) have missing row costs)
+    idealCost  unavailable (7/8 paired task(s) have missing row costs)
+    breakPriced unavailable (7/8 paired task(s) have missing row costs)
+
+ALL PAIRED  (n=20)
+  ledger basis: cache-write-1.25x-all-harnesses
+    realized   unavailable (18/20 paired task(s) have missing row costs)
+    idealCost  unavailable (18/20 paired task(s) have missing row costs)
+    breakPriced unavailable (18/20 paired task(s) have missing row costs)
+
+
+==============================================================================
+CLAUDE-CODE LEDGER DISCLOSURES — read every claude-code figure above through these
+==============================================================================
+  construction: ROW-MATCHED — every recorded row priced from the transcript the harness graded.
+    The published fresh-pool figure used "dearest-3" instead: the three dearest transcripts
+    per cell, substituting 12 discarded degeneration re-runs. On the same run row-matched
+    reads -8.8% and dearest-3 reads -3.9%; both are the same data. Never compare across them.
+    rows with an inclusive cost: 68/120   rows with a main-only cost: 120/120
+  native: 43/60 row(s) have NO inclusive cost (43 with an incomplete delegated transcript).
+  sweet: 9/60 row(s) have NO inclusive cost (9 with an incomplete delegated transcript).
+  LOWER BOUND: the native inclusive cost is a floor, not a total. 59 delegated
+    transcript(s) recorded; 431 delegated request(s) carry no usage record (120/120 rows instrumented).
+  `pages` ASYMMETRY: native Read calls failed on an empty `pages` argument 159 of 690
+    times (23.0%) against sweet 23 of 51, wasting 92 native requests per 66 rollouts against
+    sweet 23. That is a harness defect sitting on the arm that uses Read more, so it
+    flattered sweet. Repaired 2026-09-02 by sending the note to both arms' subagents
+    (--append-subagent-system-prompt, byte-identical). Any native improvement from it is a
+    repair of our own defect and is NEVER a sweet regression.
+    this run: carries the subagent-note repair
+
+  PRICE-VECTOR SENSITIVITY (sweet minus native, aggregate recorded `usage`, per task).
+    Ratios are to the input rate: w = cache write, r = cache read, o = output. Repriced from
+    rows.json alone, so every row here is re-derivable without the transcripts.
+    Every figure is a point estimate inside its own interval; none is a detection.
+    luna as shipped (the ledger)                             w1.25/r0.100/o6.0  sweet -4.3%  95% CI [-16.2%, +11.8%]  n=20
+    luna, no cache-write surcharge (pre-2026-09-02 basis)    w1.00/r0.100/o6.0  sweet -5.2%  95% CI [-17.4%, +11.1%]  n=20
+    Opus 5 five-minute cache (API-key real-user path)        w1.25/r0.100/o5.0  sweet -3.7%  95% CI [-15.5%, +12.1%]  n=20
+    Opus 5 one-hour cache (subscription, plan-usage consumption) w2.00/r0.100/o5.0  sweet -1.6%  95% CI [-13.1%, +13.9%]  n=20
+    Fable-5.1-like five-minute cache                         w1.25/r0.025/o5.0  sweet -2.7%  95% CI [-15.3%, +13.1%]  n=20
+    NOT SHOWN, and deliberately: repricing delegated subagents at 0.2x the main rate. The
+    runner pins all three model slots to one slug, so every subagent RAN as the pinned model
+    and the ledger already charges what was billed. A 0.2x row is a REAL-USER SENSITIVITY
+    about a different deployment, never a bill correction and never a ledger defect.
+==============================================================================
+
+==============================================================================
+DIAGNOSTIC INSTRUMENTATION INCOMPLETE: 52/120 row(s) missing a verdict, structured detail, or explicit complete-instrumentation attestation.
+  Fail closed: flags and exclusion sensitivities are not reported; raw untrimmed cost remains the sole headline.
+  examples: getmoto__moto-6716/native/r1, getmoto__moto-6716/native/r2, getmoto__moto-6716/sweet/r2, projectlombok__lombok-3619/native/r0, projectlombok__lombok-3619/native/r1
+==============================================================================
+---- analyze-run (legacy basis, for the disclosure row)
+
+==============================================================================
+SOLE COST HEADLINE — RAW UNTRIMMED REALIZED COST; all recorded rows
+  estimand: sum of costRealizedUsd over every listed row (no task-cell averaging)
+  ledger basis: cache-write-1.25x-claudecode-only (LEGACY, disclosure only)
+  cache-write tokens/row: mean 41119 over 68/120 row(s)
+  native: unavailable (43/60 row(s) missing realized cost)
+  sweet: unavailable (9/60 row(s) missing realized cost)
+==============================================================================
+
+=== A/B run report — RAW — NO DIAGNOSTIC EXCLUSION: 120 rows, 20 paired tasks ===
+
+RESOLUTION (parity check):
+  native 8/20 [22–61%]   sweet 8/20 [22–61%]
+  resolved REPS  native 21/60   sweet 22/60   << task solve above uses any-rep; a task carried by ONE rep is unstable
+  both=8  native-only=0  sweet-only=0  neither=12
+
+BOTH-SOLVED (descriptive post-treatment stratum; not a causal estimate)  (n=8)
+  ledger basis: cache-write-1.25x-claudecode-only (LEGACY, disclosure only)
+    realized   unavailable (7/8 paired task(s) have missing row costs)
+    idealCost  unavailable (7/8 paired task(s) have missing row costs)
+    breakPriced unavailable (7/8 paired task(s) have missing row costs)
+
+ALL PAIRED  (n=20)
+  ledger basis: cache-write-1.25x-claudecode-only (LEGACY, disclosure only)
+    realized   unavailable (18/20 paired task(s) have missing row costs)
+    idealCost  unavailable (18/20 paired task(s) have missing row costs)
+    breakPriced unavailable (18/20 paired task(s) have missing row costs)
+
+
+==============================================================================
+CLAUDE-CODE LEDGER DISCLOSURES — read every claude-code figure above through these
+==============================================================================
+  construction: ROW-MATCHED — every recorded row priced from the transcript the harness graded.
+    The published fresh-pool figure used "dearest-3" instead: the three dearest transcripts
+    per cell, substituting 12 discarded degeneration re-runs. On the same run row-matched
+    reads -8.8% and dearest-3 reads -3.9%; both are the same data. Never compare across them.
+    rows with an inclusive cost: 68/120   rows with a main-only cost: 119/120
+  native: 43/60 row(s) have NO inclusive cost (43 with an incomplete delegated transcript).
+  sweet: 9/60 row(s) have NO inclusive cost (9 with an incomplete delegated transcript).
+---- stop rule 4: trustworthy-verdict census, BEFORE any admission filter
+== /root/sweet-search-private/eval/task-completion-bench/results/sm-claudecode-20260902/rows.json
+   ALL-UNTRUSTED getmoto__moto-6716/native  verdicts=10 infra=0
+   ALL-UNTRUSTED getmoto__moto-6716/sweet  verdicts=10 infra=0
+   ALL-UNTRUSTED jensneuse__graphql-go-tools-174/native  verdicts=9 infra=0
+   ALL-UNTRUSTED jensneuse__graphql-go-tools-174/sweet  verdicts=14 infra=0
+---- exit reasons (timeout check: the three legs overlapped)
+exitReason: {"model_stopped":120}
+wall median 2.9m  p90 6.6m  max 14.4m
+native: n=60 solved=21 predOk=60 $realized=0.262 $ideal=0.243
+sweet: n=60 solved=22 predOk=60 $realized=0.851 $ideal=0.789
+
+################ sm-codex-20260902
+---- analyze-run (ledger basis: current = cache-write 1.25x on all three harnesses)
+
+==============================================================================
+SOLE COST HEADLINE — RAW UNTRIMMED REALIZED COST; all recorded rows
+  estimand: sum of costRealizedUsd over every listed row (no task-cell averaging)
+  ledger basis: cache-write-1.25x-all-harnesses
+  cache-write tokens/row: mean 37513 over 120/120 row(s)
+  native: 60 row(s), $0.882546 raw realized
+  sweet: 60 row(s), $0.773575 raw realized
+==============================================================================
+
+=== A/B run report — RAW — NO DIAGNOSTIC EXCLUSION: 120 rows, 20 paired tasks ===
+
+RESOLUTION (parity check):
+  native 8/20 [22–61%]   sweet 8/20 [22–61%]
+  resolved REPS  native 20/60   sweet 18/60   << task solve above uses any-rep; a task carried by ONE rep is unstable
+  both=7  native-only=1  sweet-only=1  neither=11
+
+BOTH-SOLVED (descriptive post-treatment stratum; not a causal estimate)  (n=7)
+  ledger basis: cache-write-1.25x-all-harnesses
+    realized   sweet −9.0% vs native   ($0.103099 → $0.093856)
+               paired Δ/task $0.0013  95% CI [$-0.0019, $0.0045]  %CI [-13.6%, +25.6%]  p=0.408
+    idealCost  sweet −8.8% vs native   ($0.094970 → $0.086656)   %CI [-16.4%, +26.1%]  p=0.448
+    breakPriced sweet −8.8% vs native   ($0.094970 → $0.086656)   %CI [-14.9%, +26.0%]  p=0.433   (== idealCost: context measured append-only)
+
+ALL PAIRED  (n=20)
+  ledger basis: cache-write-1.25x-all-harnesses
+    realized   sweet −12.3% vs native   ($0.294182 → $0.257858)
+               paired Δ/task $0.0018  95% CI [$0.0002, $0.0034]  %CI [+1.3%, +22.0%]  p=0.029
+    idealCost  sweet −12.2% vs native   ($0.271565 → $0.238306)   %CI [+0.9%, +22.4%]  p=0.032
+    breakPriced sweet −12.2% vs native   ($0.271565 → $0.238306)   %CI [+1.3%, +22.5%]  p=0.033   (== idealCost: context measured append-only)
+
+
+==============================================================================
+DIAGNOSTIC INSTRUMENTATION INCOMPLETE: 120/120 row(s) missing a verdict, structured detail, or explicit complete-instrumentation attestation.
+  Fail closed: flags and exclusion sensitivities are not reported; raw untrimmed cost remains the sole headline.
+  examples: getmoto__moto-6716/native/r0, getmoto__moto-6716/native/r1, getmoto__moto-6716/native/r2, getmoto__moto-6716/sweet/r0, getmoto__moto-6716/sweet/r1
+==============================================================================
+---- analyze-run (legacy basis, for the disclosure row)
+
+==============================================================================
+SOLE COST HEADLINE — RAW UNTRIMMED REALIZED COST; all recorded rows
+  estimand: sum of costRealizedUsd over every listed row (no task-cell averaging)
+  ledger basis: cache-write-1.25x-claudecode-only (LEGACY, disclosure only)
+  cache-write tokens/row: mean 37513 over 120/120 row(s)
+  native: 60 row(s), $0.821811 raw realized
+  sweet: 60 row(s), $0.721770 raw realized
+==============================================================================
+
+=== A/B run report — RAW — NO DIAGNOSTIC EXCLUSION: 120 rows, 20 paired tasks ===
+
+RESOLUTION (parity check):
+  native 8/20 [22–61%]   sweet 8/20 [22–61%]
+  resolved REPS  native 20/60   sweet 18/60   << task solve above uses any-rep; a task carried by ONE rep is unstable
+  both=7  native-only=1  sweet-only=1  neither=11
+
+BOTH-SOLVED (descriptive post-treatment stratum; not a causal estimate)  (n=7)
+  ledger basis: cache-write-1.25x-claudecode-only (LEGACY, disclosure only)
+    realized   sweet −8.7% vs native   ($0.095820 → $0.087488)
+               paired Δ/task $0.0012  95% CI [$-0.0019, $0.0042]  %CI [-14.8%, +26.0%]  p=0.443
+    idealCost  sweet −8.8% vs native   ($0.094970 → $0.086656)   %CI [-16.4%, +26.1%]  p=0.448
+    breakPriced sweet −8.8% vs native   ($0.094970 → $0.086656)   %CI [-14.9%, +26.0%]  p=0.433   (== idealCost: context measured append-only)
+
+ALL PAIRED  (n=20)
+  ledger basis: cache-write-1.25x-claudecode-only (LEGACY, disclosure only)
+    realized   sweet −12.2% vs native   ($0.273937 → $0.240590)
+               paired Δ/task $0.0017  95% CI [$0.0001, $0.0032]  %CI [+0.7%, +22.2%]  p=0.038
+    idealCost  sweet −12.2% vs native   ($0.271565 → $0.238306)   %CI [+0.9%, +22.4%]  p=0.032
+    breakPriced sweet −12.2% vs native   ($0.271565 → $0.238306)   %CI [+1.3%, +22.5%]  p=0.033   (== idealCost: context measured append-only)
+
+
+==============================================================================
+DIAGNOSTIC INSTRUMENTATION INCOMPLETE: 120/120 row(s) missing a verdict, structured detail, or explicit complete-instrumentation attestation.
+  Fail closed: flags and exclusion sensitivities are not reported; raw untrimmed cost remains the sole headline.
+  examples: getmoto__moto-6716/native/r0, getmoto__moto-6716/native/r1, getmoto__moto-6716/native/r2, getmoto__moto-6716/sweet/r0, getmoto__moto-6716/sweet/r1
+==============================================================================
+---- stop rule 4: trustworthy-verdict census, BEFORE any admission filter
+== /root/sweet-search-private/eval/task-completion-bench/results/sm-codex-20260902/rows.json
+   ALL-UNTRUSTED getmoto__moto-6716/native  verdicts=10 infra=0
+   ALL-UNTRUSTED getmoto__moto-6716/sweet  verdicts=8 infra=0
+   ALL-UNTRUSTED jensneuse__graphql-go-tools-174/native  verdicts=17 infra=0
+   ALL-UNTRUSTED jensneuse__graphql-go-tools-174/sweet  verdicts=7 infra=0
+---- exit reasons (timeout check: the three legs overlapped)
+exitReason: {"model_stopped":120}
+wall median 2.2m  p90 4.2m  max 8.3m
+native: n=60 solved=20 predOk=60 $realized=0.883 $ideal=0.815
+sweet: n=60 solved=18 predOk=60 $realized=0.774 $ideal=0.715
