@@ -67,6 +67,108 @@ concentrated on native, so any figure computed from the survivors would flatter 
 construction is ROW-MATCHED; the published fresh-pool figure was dearest-3, and the two are
 never comparable.
 
+---
+
+## 2A. Cost, corrected — added 2026-09-03 after two measurement defects were found and fixed
+
+§2 above is what the harness reported at the time. Both of its problems are now closed, and the
+corrected picture is below. **No percentage in §2 changed**: one defect was a scalar and the
+other only ever affected claude-code.
+
+**Defect 1 — luna was priced at the `:batch` rate.** `MODEL_PRICES` carried
+`{in .10, cache .01, out .60}`, byte-identical to `openai/gpt-5.6-luna:batch`; the bench uses
+the standard endpoint at `{in .20, cache .02, out 1.20}`. Correct when fetched 2026-08-04, stale
+since. Verified against the provider's own billing, not its price list: a real request
+(prompt 8524, cached 0, completion 159) was billed $0.002322 and cacheWrite 0.25 / cacheRead
+0.02 / out 1.20 predicts $0.002322 — 0.009% match, with a second generation matching to 0.004%.
+Plain input at 0.20 is off by 18.4%, so **the provider really does bill every uncached prompt
+token as a cache write at 1.25x input, confirming D1 from the provider side.** A 2026-08-27
+fresh-pool generation prices identically, so **every luna figure this bench published from at
+least 2026-08-26 is half the real cost.** Exact scalar 2.0, so no ratio, interval or p-value
+moves. Fixed in `6f7ba9d`.
+
+**Defect 2 — claude-code's delegated spend was invisible.** Claude Code reaches luna through
+OpenRouter's Anthropic skin, which writes an all-zero `usage` object into every SIDECHAIN
+transcript. `instrumentationComplete` therefore goes false on all 61 subagent files and
+`addSidechainCostsChecked` correctly nulls the row rather than under-count. Native delegates far
+more than sweet (873 delegated requests against 213), so 43 of 60 native rows nulled against 9
+of 60 sweet, and summing that column as zero inverted the comparison. But `message.id` in those
+records is an **OpenRouter generation id**, and `/api/v1/generation` returns the billed cost.
+`harness/reprice-openrouter-generations.mjs` recovers it: **4,827 of 4,827 ids resolved, zero
+unresolved**, arm-symmetric by construction. Retroactive — 2026-08-26 ids still resolve. Fixed
+in `11fca0f`.
+
+**Reconciliation, which is what closes the question.**
+
+| | |
+|---|---:|
+| harness reported, all three legs | $4.0898 |
+| corrected (claude-code billed; opencode + codex at the fixed rate) | **$13.3142** |
+| the account's cumulative usage across the run window | **$13.4330** |
+| residual | $0.119 (**0.9%**) |
+
+A 0.9% residual means opencode and codex capture is ~98% complete once the price is right, and
+claude-code's subagent blindness was the *only* missing-instrumentation defect. Nothing else is
+hiding.
+
+### 2A.1 Native versus sweet, corrected
+
+| harness | metric | native | sweet | sweet vs native |
+|---|---|---:|---:|---|
+| **opencode** | total cost | $1.3523 | $1.2902 | **sweet −4.6%** |
+| | cost / rollout | $0.0225 | $0.0215 | sweet −4.6% |
+| | cost / resolved rep | $0.0588 | $0.0717 | native better, −21.9% |
+| | solved rollouts /60 | 23 | 18 | native +5 |
+| | solved tasks /20 | 8 | 8 | tie |
+| | tool calls | 1769 | 1368 | sweet −22.7% |
+| **codex** | total cost | $1.7651 | $1.5471 | **sweet −12.3%**, %CI [+1.3%, +22.0%], p=0.029 |
+| | cost / rollout | $0.0294 | $0.0258 | sweet −12.3% |
+| | cost / resolved rep | $0.0883 | $0.0860 | sweet −2.6% |
+| | solved rollouts /60 | 20 | 18 | native +2 |
+| | solved tasks /20 | 8 | 8 | tie |
+| | tool calls | 783 | 750 | sweet −4.2% |
+| **claude-code** | total cost | $4.2411 | $3.1184 | **sweet −26.5%**, %CI [−46.9%, +0.6%] |
+| | cost / rollout | $0.0707 | $0.0520 | sweet −26.5% |
+| | cost / resolved rep | $0.2020 | $0.1417 | **sweet −29.8%** |
+| | solved rollouts /60 | 21 | 22 | **sweet +1** |
+| | solved tasks /20 | 8 | 8 | tie |
+| | tool calls | 3378 | 1818 | **sweet −46.2%** |
+| | mean wall | 4.0m | 3.2m | sweet −18.5% |
+| **pooled** | total cost | $7.3585 | $5.9557 | sweet −19.1% |
+| | solved rollouts /180 | 64 | 58 | native +6 |
+| | cost / resolved rep | $0.1150 | $0.1027 | sweet −10.7% |
+
+Pooling three harnesses is descriptive only — they are different populations and claude-code
+carries 55% of the spend. Read the per-harness rows.
+
+### 2A.2 How to read this, including against it
+
+**Cost favours sweet on all three harnesses**, and the claude-code figure is the most
+trustworthy number in the run because it is the provider's own bill rather than a
+reconstruction. The mechanism is visible and consistent: **sweet issues 46.2% fewer tool calls
+on claude-code** and native spends **40.2% of its cost on delegated subagents against sweet's
+8.7%** — sweet answers with `ss-*` where native fans out into Task subagents.
+
+**But solves do not move, and one cell is worse.** Task-level resolution is **8 of 20 in every
+arm of every harness**. At rep level sweet is down 6 of 180. On opencode sweet solved 5 fewer
+reps, so its **cost per resolved rep is 21.9% WORSE** even though total cost is lower — the one
+row in this table that clearly favours native, and it should not be dropped when quoting the
+rest.
+
+**Only codex's interval excludes zero** (p=0.029, uncorrected for three harnesses).
+Claude-code's −26.5% grazes zero at [−46.9%, +0.6%] on n=20 tasks, and its both-solved stratum
+is −34.4% with a far wider interval.
+
+**One caveat that could move the headline.** Native's claude-code cost advantage for sweet comes
+substantially from native's subagent fan-out, and **F2 — the empty-`pages` repair aimed at
+exactly that subagent traffic — failed its acceptance (§5)**. If fixing F2 changes how much
+native delegates, this number moves. Root-cause F2 before quoting −26.5% anywhere.
+
+This supports the registered headline of **efficiency at parity**: the same tasks get solved for
+less money. It is not evidence that sweet solves more.
+
+---
+
 ## 3. Stop rules — all four pass
 
 | rule | verdict |
