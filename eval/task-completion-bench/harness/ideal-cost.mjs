@@ -48,15 +48,29 @@ export const MODEL_PRICES = {
   'anthropic/claude-sonnet-5': { in: 2.0, cache: 0.20, out: 10.0 },   // OpenRouter intro ($2/$10) — what we pay via the Anthropic skin
   'x-ai/grok-4.5': { in: 2.0, cache: 0.30, out: 6.0 },
   'meta/muse-spark-1.1': { in: 1.25, cache: 0.15, out: 4.25 },
-  // Re-fetched from OpenRouter /api/v1/models 2026-08-04 after OpenAI's 2026-07-30
-  // 80% Luna cut (announced $0.20/$1.20; OpenRouter serves $0.10/$0.60).
-  'openai/gpt-5.6-luna': { in: 0.10, cache: 0.01, out: 0.60 },
+  // Re-fetched 2026-09-03. OpenRouter served $0.10/$0.60 when this was last checked on
+  // 2026-08-04, but it now serves OpenAI's announced $0.20/$1.20 and the old numbers are
+  // byte-identical to the `:batch` variant, which the bench does not use.
+  //
+  // MEASURED, not assumed. Priced against OpenRouter's own per-generation billing
+  // (/api/v1/generation, the endpoint reprice-openrouter-generations.mjs uses): a real
+  // rollout request with prompt=8524 cached=0 completion=159 was billed $0.002322, and
+  // cacheWrite 0.25 / cacheRead 0.02 / out 1.20 predicts $0.002322 — a 0.009% match. The
+  // same check on a 2026-08-27 fresh-pool generation lands on the same rates, so EVERY luna
+  // figure this bench published from at least 2026-08-26 is HALF the real cost.
+  //
+  // The correction is an exact scalar 2.0 on every component (cacheWrite included, since the
+  // D1 basis charges in x 1.25 and 0.20 x 1.25 = 0.25 is exactly what the provider bills), so
+  // it moves absolute dollars only. No sweet-versus-native percentage, interval or p-value
+  // changes. It also confirms D1 from the provider side: cache write really is 1.25x input.
+  'openai/gpt-5.6-luna': { in: 0.20, cache: 0.02, out: 1.20 },
   // Fetched from OpenRouter /api/v1/models 2026-08-18 for the hint-ladder backbone probe.
   // Both carry a >272k-prompt tier at double these rates; bench rollouts run at ~8-30k
   // prompt tokens, so the base tier is the one we pay. Re-check before pricing a long-context
   // run at these numbers.
   'openai/gpt-5.6-terra': { in: 2.00, cache: 0.20, out: 12.0 },
-  'openai/gpt-5.6-sol': { in: 2.50, cache: 0.25, out: 15.0 },
+  // Re-fetched 2026-09-03: sol came DOWN from 2.50/0.25/15.0. No bench run has used it.
+  'openai/gpt-5.6-sol': { in: 2.00, cache: 0.20, out: 10.0 },
 };
 
 // Fail loudly rather than silently billing an unregistered backbone at gpt-5.5's
