@@ -46,6 +46,7 @@ const ReadFileResultSchema = z.object({
       symbol: z.string(),
       type: z.string().nullable().optional(),
       startLine: z.number().int().nullable().optional(),
+      referenced: z.boolean().optional(),
     })),
     moreCount: z.number().int(),
   }).nullable().optional(),
