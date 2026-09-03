@@ -474,3 +474,46 @@ code with `SS_SIBLING_LINE=0 SS_UNREAD_ABOVE=0` in the leg env (client-side swit
 codex-task-runner spreads `process.env` into the rollout, so they reach the wrappers). Read:
 squashql sweet ≥4/6 pooled over the two `on` legs, and the four controls lose ≤1 rep in total
 versus `off`; `breakPricedCostUsd` beside realised.
+
+---
+
+## 10. L3 screen and what it actually found (2026-09-03, later)
+
+**L3 as proposed is dead; the screen found a shipped engine bug instead.**
+
+The $0 screen (`/root/l3-screen.py`, results `/root/replay/l3-screen.jsonl`) re-issued every
+`ss-find` and identifier-shaped `ss-search` call from the 180 sweet rollouts against the shipped
+goldens and asked, per pack: gold source file in the regex's flat hit set, absent from the
+top-3 rendered bodies, verdict low/unknown/no?
+
+**First pass: 53 of 117 packs flagged, 13 distinct tasks** — far above the ≥3 bar, and
+suspicious for it. Slicing by hit-set size showed the getmoto packs at 1-2 hit files with the
+gold file **absent from the pack entirely** under `confidence=high sufficient=no`. Reproduced:
+
+```
+## #1 :null-null (full STALE) score=0.509   used=0
+```
+
+**Root cause — three shipped defects (`81901f1`).** getmoto's golden is a 751 MB
+late-interaction index in the SEGMENTED SSLX v3 format (≥10k documents). (1) Segments store
+ids and token slabs only, no per-document metadata, so `search-pattern.js` resolved every hit
+to `file: ''`. (2) Stage-and-swap rebuilds wrote the alias sidecar as `<index>.tmp.aliases.json`
+and never promoted it, so every shipped index — segmented or not — loaded zero aliases.
+(3) Once aliases loaded, the LI-derived chunk location map was "non-empty" (364 alias spans)
+and skipped the codebase fallback, routing every real chunk to the unranked path. Fixes:
+hydrate metadata from `codebase.db` (`getChunkMetaByIds`), promote the sidecar on swap plus a
+read-side fallback, and a coverage rule that merges codebase spans into a partial map.
+Verified live on the getmoto golden: grep 3 / indexed 3 / maxsim 3, top-1
+`moto/iam/models.py:325-443 [class: ManagedPolicy]`, `sufficient=YES`.
+
+**Blast radius (box census, 28 segmented goldens):** HO2 9/200 tasks, dev-ret heldout 13/200,
+rotate20 1/18 (statamic-9029), smoke-20 getmoto only. Every sweet-arm rollout on those tasks
+before `81901f1` ran with a blind `ss-find`; `ss-grep`/`ss-read` were unaffected. **Never pool
+sweet results across `81901f1`.** getmoto's own forensics (§2.2) stands — all 18 rollouts still
+reached both sites through `ss-read`/`ss-grep` — so its −3 is not explained by this bug.
+
+**Second pass, fixed engine: 45/117 flagged, 13 tasks; getmoto 12 → 4.** With the strict
+reading — hit set ≤12 files (a list an agent can act on) AND gold file absent from the pack
+entirely — **2 packs remain**. In 14 of the 16 small-hit-set flags the gold file is already in
+the pack as a summary at rank 4+; the flat list would repeat a file the pack names. L3 is
+therefore not built. Register: F22 (L3, dead by screen), G7 (the engine bug, disclosure).
