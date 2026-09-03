@@ -391,12 +391,44 @@ call until the daemon died (reproduced live). The grep switch now travels as the
 request option (`siblingLine=false` URL param); the read switch gates render only, the field is
 always computed.
 
-**Gate 0 status.** (1) unit tests: done. (2) box replay of the 21 sweet rollouts' `ss-grep`/`ss-read`
-calls against the shipped squashql index, bar ≥14/15 failures named before first edit: **not run**
-(needs the box). The local replay of the two calls every failed rollout made shows both lines name
-`subQueryMeasures`, which is the necessary condition; whether the agents' other 12 grep forms
-also trigger is what the box replay measures. (3) token replay over 180 rollouts, bar ≤0.6% of
-prompt tokens: **not run**; per-call sizes above are the inputs. Byte-identity of JSON/raw/GCSN:
-`readFile` JSON now carries an `unreadAbove` key on range reads (structured field, mirrors
-`unreadBelow`); grep JSON carries `siblingLine` only under agent format; raw and GCSN paths are
-untouched (`tests/search` 1989/1989 green).
+**Gate 0 status — CLEARED (box, 2026-09-03, $0).** Replay tooling: `/root/replay-squashql.py`
+(21 squashql sweet rollouts, all ss-* calls re-issued in order against a writable copy of the
+shipped golden, per-rollout session ids so the span ledger's query evidence flows) and
+`/root/replay-all.py` + `/root/replay-tokens{,2}.py` (all 180 sweet smoke rollouts, 1,973 ss-*
+calls; results `/root/replay/all-replay-v3.jsonl`).
+
+(2) *named before first edit*, bar ≥14/15 failures. First cut (singleton grep + unconditional
+above-line): **11/15**. The misses were a 2-hit same-file `ss-grep "checkSubQuery"`, two packs
+(`ss-search` top-1 was the class; `ss-find "checkSubQuery"` top-1 a method chunk), a read whose
+session had no query evidence (native `rg` first), and claude-code r0, which made **no ss-* call
+before its first edit** (unreachable by any tool-side lever). Trigger widened in `03d2401`:
+1-3 hits in one file (families merged), a pack-side line on a method/function top-1 keyed on
+the symbol's own declaration line, and window-referenced symbols ranked first in the above-list.
+Result **14/15**, i.e. every reachable failure; 19/21 overall.
+
+(3) *added tokens ≤0.6% of prompt tokens* under the pessimistic re-send model (an added line
+is re-sent on every later turn; prompt tokens from `rows.json` for codex, `turns/` for
+opencode, the OpenRouter billed json for claude-code):
+
+| version | what fired | codex | opencode | claude-code |
+|---|---|---:|---:|---:|
+| v1 (`03d2401`) | above-line on every ranged read (80% of reads, 78% of all added tokens) | 0.402% | 0.724% | 0.521% |
+| v2 (`739b376`) | above-line only when the window names an above symbol or the query does | 0.364% | 0.657% | 0.472% |
+| v3 (`04b3d50`) | signal = a STATE read (field/constant in window, or `this.x`/`self.x`) or query evidence | **0.327%** | **0.577%** | **0.418%** |
+
+v3 clears the bar on all three harnesses; squashql stays 14/15 (its 170-235 window reads
+`this.subQueryMeasures`). One-shot (no re-send) pooled share is 0.079%. The §5 estimate of
+0.26-0.44% was for the singleton form only and did not count the above-line's fire rate.
+
+Byte-identity: `readFile` JSON carries an `unreadAbove` key on range reads (structured, mirrors
+`unreadBelow`, `referenced` flag per symbol); grep/pack JSON carries `siblingLine` only under
+agent format; raw and GCSN paths untouched (`tests/search` + `tests/graph` + `tests/mcp` green).
+
+**Gate 1/2 — LAUNCHED 2026-09-03 15:19Z** (`/root/gate12-driver.sh`, logs `/root/gate1/`, ledger
+`/root/env-ledger/luna-gate1-fp5` re-swept 5/5 gold-valid under fingerprint v5, preflight
+green). Four legs staggered 15 min, each `CONCURRENCY=1 REPS=3 ARMS=sweet`, luna via OpenRouter,
+`REASONING=medium`, default caps: `g1-{on,off}-{codex,opencode}-20260903`. Control = same
+code with `SS_SIBLING_LINE=0 SS_UNREAD_ABOVE=0` in the leg env (client-side switches; the
+codex-task-runner spreads `process.env` into the rollout, so they reach the wrappers). Read:
+squashql sweet ≥4/6 pooled over the two `on` legs, and the four controls lose ≤1 rep in total
+versus `off`; `breakPricedCostUsd` beside realised.
