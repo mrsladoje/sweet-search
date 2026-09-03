@@ -1081,6 +1081,8 @@ export async function startServer() {
           fusion,
           useLateInteraction,
           _isAgentFormat: isAgentFormat,
+          // SS_SIBLING_LINE=0 lives in the CLIENT's env; the daemon must be told.
+          _siblingLine: url.searchParams.get('siblingLine') !== 'false',
           ...(agentFormat && { format: agentFormat, tokenBudget }),
         });
 
@@ -1138,6 +1140,7 @@ export async function startServer() {
             res.end(buildJsonSearchResponse(results, stats, totalTime, {
               ...(searchResult.fileSummary ? { fileSummary: searchResult.fileSummary } : {}),
               ...(searchResult.familyManifest ? { familyManifest: searchResult.familyManifest } : {}),
+              ...(searchResult.siblingLine ? { siblingLine: searchResult.siblingLine } : {}),
             }));
           }
         }
@@ -1494,6 +1497,7 @@ export async function queryServer(query, options = {}) {
     projectRoot,
     trackAgentSpans = true,
     _isAgentFormat = false,
+    _siblingLine = true,
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -1528,6 +1532,7 @@ export async function queryServer(query, options = {}) {
     if (tokenBudget) params.set('budget', tokenBudget.toString());
     if (projectRoot) params.set('projectRoot', projectRoot);
     if (_isAgentFormat) params.set('agent', 'true');
+    if (_siblingLine === false) params.set('siblingLine', 'false');
     if (!trackAgentSpans) params.set('trackAgentSpans', 'false');
     if (trackAgentSpans && format?.startsWith('agent') && exactRereadOmissionEnabled()) {
       const sessionId = resolveAgentSessionId();

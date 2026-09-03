@@ -77,6 +77,10 @@ function createGraphDb(dbPath) {
   ent.run(23, 'render', 'method', 'tests/response.test.js', 1, 3, 'render: function () {', 'Test render helper', '');
   ent.run(24, 'pageHandler', 'function', 'src/page.js', 1, 4, 'function pageHandler(req, res) {', 'Calls response render', '');
   ent.run(25, 'renderSentinel', 'function', 'src/response.js', 7, 9, 'function renderSentinel() {', 'Keeps response file in graph', '');
+  // Java field + method in one file (squashql-295 shape): the regex-only resolver
+  // knows no Java declaration form, the entity table holds both.
+  ent.run(26, 'subQueryMeasures', 'field', 'src/QueryResolver.java', 3, 3, 'private final Map<Measure, CompiledMeasure> subQueryMeasures;', '', '');
+  ent.run(27, 'toSubQuery', 'method', 'src/QueryResolver.java', 5, 9, 'private DatabaseQuery toSubQuery(QueryDto subQuery) {', '', '');
 
   const rel = db.prepare(`
     INSERT INTO relationships (source_id, target_id, target_name, type, weight, context_line)
@@ -211,6 +215,18 @@ describe('StructuralContextBuilder', () => {
     writeFileLines(root, 'src/pcre2/error.rs', ['pub enum ErrorKind {', '    Regex(String),', '}']);
     writeFileLines(root, 'src/regex/error.rs', ['pub enum ErrorKind {', '    NotAllowed,', '    InvalidClass,', '}']);
     writeFileLines(root, 'src/context.go', ['const abortIndex int8 = 63', '', 'func (c *Context) Abort() {', '    c.index = abortIndex', '}']);
+    writeFileLines(root, 'src/QueryResolver.java', [
+      'public class QueryResolver {',
+      '',
+      '  private final Map<Measure, CompiledMeasure> subQueryMeasures;',
+      '',
+      '  private DatabaseQuery toSubQuery(QueryDto subQuery) {',
+      '    List<CompiledMeasure> measures = new ArrayList<>(this.subQueryMeasures.values());',
+      '    DatabaseQuery prefetchQuery = new DatabaseQuery(subQuery.table);',
+      '    return prefetchQuery.withMeasures(measures);',
+      '  }',
+      '}',
+    ]);
     writeFileLines(root, 'src/legacy.js', [
       'function Legacy() {}',
       '',
@@ -530,6 +546,18 @@ describe('StructuralContextBuilder', () => {
     expect(result.target.filePath).toBe('src/old-widget.js');
     expect(result.sections.callees.items.map(item => item.name)).toContain('OldOnly');
     expect(result.sections.callees.items.map(item => item.name)).not.toContain('NewOnly');
+  });
+
+  it('resolves Java fields read by the target through the entity table (no regex form exists)', () => {
+    const result = builder.build('toSubQuery', { queryHint: 'sub query measures', tokenBudget: 4000 });
+    expect(result.target.name).toBe('toSubQuery');
+    // A `this.`-read member outranks every body-local term: it is the state coupling.
+    const terms = result.answerCues.targetTerms;
+    expect(terms.indexOf('subQueryMeasures')).toBeGreaterThanOrEqual(0);
+    expect(terms.indexOf('subQueryMeasures')).toBeLessThan(terms.indexOf('ArrayList'));
+    expect(result.answerCues.relatedDefinitions).toContain(
+      'subQueryMeasures [field] src/QueryResolver.java:3 - private final Map<Measure, CompiledMeasure> subQueryMeasures;',
+    );
   });
 
   it('surfaces same-file related definitions from target identifiers', () => {

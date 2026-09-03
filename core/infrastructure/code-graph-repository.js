@@ -317,6 +317,44 @@ export class CodeGraphRepository {
   }
 
   /**
+   * Every visible named entity in one file, in start_line order. Powers the
+   * singleton-grep sibling line: a whole-file symbol table (fields included)
+   * is what "which same-file declarations share this hit's identifier
+   * family" needs. Capped (default 512) to bound the scan on generated files.
+   *
+   * @param {string} filePath
+   * @param {{ limit?: number }} [opts]
+   * @returns {Array<{ id, name, type, startLine, endLine, parentClass }>}
+   */
+  findEntitiesInFile(filePath, opts = {}) {
+    const db = this._open();
+    if (!db || !filePath) return [];
+    const limit = Math.min(Math.max(1, opts.limit | 0 || 512), 2048);
+    try {
+      const rows = prepareCached(db, `
+        SELECT id, name, type, start_line, end_line, parent_class
+        FROM entities
+        WHERE file_path = ?
+          AND name IS NOT NULL AND name != ''
+          AND start_line IS NOT NULL AND end_line IS NOT NULL
+          AND ${this._entityVisibilitySql(db)}
+        ORDER BY start_line ASC, end_line DESC
+        LIMIT ?
+      `).all(filePath, ...this._entityVisibilityParams(db), limit);
+      return rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        startLine: row.start_line,
+        endLine: row.end_line,
+        parentClass: row.parent_class || null,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Find the named entities immediately ADJACENT to a shown line window in
    * the same file: the nearest ones lying fully ABOVE the window
    * (end_line < startLine) and the nearest ones starting BELOW it

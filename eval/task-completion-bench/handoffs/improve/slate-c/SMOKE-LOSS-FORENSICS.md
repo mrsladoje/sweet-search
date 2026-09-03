@@ -364,3 +364,39 @@ Measurement traps met and fixed in the census (keep): `sufficient=YES` is upperc
 `no`/`unknown` are lowercase; codex sometimes applies patches as a shell heredoc with no tool
 call; opencode's grep prints `path:` then `  Line N:`; native never calls `ss-read`, so file
 lengths must be harvested from any rollout's `ss-read` header for the same task.
+
+---
+
+## 9. Implementation status (2026-09-03, same day)
+
+Built from §5, in the order the register ranks them. Every item below has unit tests
+(`tests/search/grep-output-shaping.test.js`, `tests/search/within-file-affordances.test.js`,
+`tests/graph/structural-context.test.js`, `eval/task-completion-bench/tests/evaluator-integrity.mjs`)
+and was replayed live against a fresh local index of squashql at `5e866a8` (the parent of the
+#295 merge; `QueryResolver.java` is line-for-line the shape in §2.1: field L35, assignment L55,
+`toSubQuery` L191, read L207, `checkSubQuery` L210, error string L212).
+
+| lever | shipped as | live output on the transcript's own calls |
+|---|---|---|
+| L1(a) singleton sibling line | `buildSingletonSiblingLine` (`agent-pack-completion.js`), wired in `bareGrep` → `sweet-search.js` grep case → daemon JSON → `ss-grep` print. Gate: agent format, no `--in`, exactly one result. New repo method `findEntitiesInFile`. | `ss-grep "sub-query in a sub-query is not supported"` now appends `# same file (siblings of checkSubQuery): 35: private final Map<Measure, CompiledMeasure> subQueryMeasures; · 55: this.subQueryMeasures = … · 183: protected void checkQuery(…) { · 191: private DatabaseQuery toSubQuery(QueryDto subQuery) {` — the three-site co-listing that converted 4/4, plus one extra family sibling. Measured 321 chars ≈ 92 tokens on this call with the 90-char per-site cap (the §5 estimate of 40-60 was low; four sites, and the L55 line is long). |
+| L1(b) `# unread above` | `unreadAbove` field in `readFile` (chunks ∪ code-graph entities, so fields count; sniff fallback), `renderUnreadAbove` gated on `command === 'ss-read'`, printed before the fence by the wrapper. `mcp/read-tool.js` schema extended. | `ss-read QueryResolver.java 170 235` → `# unread above (1-169): subQueryMeasures, QueryResolver, query, storesByName, cteTableNames +12 more — continue: ss-read … 1 169` (182 chars ≈ 52 tokens). `subQueryMeasures` leads ONLY under an agent session (the span ledger's query evidence ranks it); with no session the list is file-ordered and the field is in the `+12 more`. |
+| L2 cargo glued status | `_GLUED_STATUS_RE = ^(ok\|FAILED)(?=[^a-z0-9_])` on header suffix AND standalone line; `cargo_log_parser.py` added to `GRADER_SOURCE_NAMES`; fingerprint **version 5**. | Parser unit fixtures include the literal `test dependencies::provided_local_to_manifest ... okLocked!`. **Consequence: every ledger row is now stale by construction. A gold re-sweep (→ `luna-smoke20-v5`) is required before Gate 1/2, and the two gleam rows (codex native r0, codex sweet r0) still need re-grading on the box.** |
+| L4 ss-trace Java definitions | `findSameFileDefinition` consults the entity table first (`_findIndexedSameFileDefinition`), regex scan is the unindexed-file fallback. Plus: `this.x` / `self.x` / `self::x` / `@x` member reads get +4 in `rankedTerms` — the audit's §5 claim that `this.subQueryMeasures` was already a target term was wrong (it ranked below `FIXME` and `private`, past the 24-term cap). | `ss-trace toSubQuery` → `related definitions=resolveField [method] …:85 … \| subQueryMeasures [field] …:35`. `checkSubQuery` still shows nothing here, as §2.1 predicted (its body does not read the field). |
+| L3 flat hit list | **Not built.** It is a $0 screen first (replay all 180 sweet rollouts' `ss-find`/`ss-search` calls against the goldens; bar ≥3 distinct tasks) and the transcripts live only on the box. | — |
+
+**Off-switches.** `SS_SIBLING_LINE=0` and `SS_UNREAD_ABOVE=0`, read in the wrapper's own
+process. The first cut read them in core and that was wrong: the warm daemon inherits the env of
+whichever client spawned it, so one `SS_SIBLING_LINE=0` call pinned the line off for every later
+call until the daemon died (reproduced live). The grep switch now travels as the `_siblingLine`
+request option (`siblingLine=false` URL param); the read switch gates render only, the field is
+always computed.
+
+**Gate 0 status.** (1) unit tests: done. (2) box replay of the 21 sweet rollouts' `ss-grep`/`ss-read`
+calls against the shipped squashql index, bar ≥14/15 failures named before first edit: **not run**
+(needs the box). The local replay of the two calls every failed rollout made shows both lines name
+`subQueryMeasures`, which is the necessary condition; whether the agents' other 12 grep forms
+also trigger is what the box replay measures. (3) token replay over 180 rollouts, bar ≤0.6% of
+prompt tokens: **not run**; per-call sizes above are the inputs. Byte-identity of JSON/raw/GCSN:
+`readFile` JSON now carries an `unreadAbove` key on range reads (structured field, mirrors
+`unreadBelow`); grep JSON carries `siblingLine` only under agent format; raw and GCSN paths are
+untouched (`tests/search` 1989/1989 green).

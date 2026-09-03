@@ -42,10 +42,16 @@ const RT_HARNESS_SOURCE_NAMES = Object.freeze([
 // including for cosmetic edits. That is the correct trade: a re-sweep costs
 // container time and NO model spend, while a silent divergence costs the
 // credibility of every solve number derived under it.
+//
+// cargo_log_parser.py (added 2026-09-03, fingerprint version 5): the Rust log parser
+// sr-eval.py installs over the upstream one. It was outside the fingerprint, so the
+// gleam-3458 glued-status fix (`... okLocked!` graded as a PASS_TO_PASS failure) would
+// neither have forced a re-sweep nor been noticed by one.
 const GRADER_SOURCE_NAMES = Object.freeze([
   'evaluator-runtime.mjs',
   'sr-eval.py',
   'upstream-patches/eval.py',
+  'cargo_log_parser.py',
 ]);
 
 const hashSource = (name) => ({
@@ -76,7 +82,7 @@ const hashShimText = () => ({
 });
 
 export const RT_HARNESS_FINGERPRINT = Object.freeze({
-  version: 4,
+  version: 5,
   sources: Object.freeze(RT_HARNESS_SOURCE_NAMES.map(name => Object.freeze(hashSource(name)))),
   grader: Object.freeze(GRADER_SOURCE_NAMES.map(name => Object.freeze(hashSource(name)))),
   shim: Object.freeze(hashShimText()),

@@ -5,7 +5,7 @@
  * matches than -k consumed every output slot and structurally hid the test
  * file the agent needed, with no signal that elision happened.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -17,6 +17,8 @@ import {
   matchesGrepFileFilter,
 } from '../../core/search/grep-output-shaping.js';
 import { bareGrep, SweetSearch } from '../../core/search/index.js';
+import { buildSingletonSiblingLine } from '../../core/search/agent-pack-completion.js';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 
 function m(file, line, text = 'detect_mistakes(x)') {
   return { file, line, column: 1, matchText: text, content: text };
@@ -478,5 +480,110 @@ describe('SweetSearch grep dispatch', () => {
     const result = await SweetSearch.prototype.search.call(searcher, 'needle', { mode: 'grep' });
     expect(result.fileSummary).toEqual(fileSummary);
     expect(result.familyManifest.rendered).toBe('# indexed family: Vec{2,3,4}');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Singleton sibling line (2026-09-03, squashql-295 shape). A 1-match grep in
+// checkSubQuery must co-list, WITH code, the field the fix needs (declared
+// L35, assigned L55) and the sibling method that reads it (L191).
+// ---------------------------------------------------------------------------
+
+const JAVA = 'src/QueryResolver.java';
+
+function writeSquashql(root) {
+  const lines = [];
+  for (let i = 1; i <= 300; i++) {
+    if (i === 10) lines.push('public class QueryResolver {');
+    else if (i === 35) lines.push('  private final Map<Measure, CompiledMeasure> subQueryMeasures;');
+    else if (i === 36) lines.push('  private final Map<String, Store> storesByName;');
+    else if (i === 50) lines.push('  public QueryResolver(QueryDto query, Map<String, Store> storesByName) {');
+    else if (i === 55) lines.push('    this.subQueryMeasures = compileMeasures(query.table.subQuery.measures, false);');
+    else if (i === 60) lines.push('  }');
+    else if (i === 100) lines.push('  private CompiledMeasure compileMeasure(Measure m) {');
+    else if (i === 110) lines.push('  }');
+    else if (i === 191) lines.push('  private DatabaseQuery toSubQuery(QueryDto subQuery) {');
+    else if (i === 207) lines.push('    List<CompiledMeasure> measures = new ArrayList<>(this.subQueryMeasures.values());');
+    else if (i === 208) lines.push('  }');
+    else if (i === 210) lines.push('  private void checkSubQuery(QueryDto subQuery) {');
+    else if (i === 212) lines.push('      throw new IllegalArgumentException("sub-query in a sub-query is not supported");');
+    else if (i === 228) lines.push('  }');
+    else if (i === 300) lines.push('}');
+    else lines.push(`    // line ${i}`);
+  }
+  mkdirSync(path.join(root, 'src'), { recursive: true });
+  writeFileSync(path.join(root, JAVA), lines.join('\n') + '\n');
+}
+
+const ENTITIES = [
+  { id: 1, name: 'QueryResolver', type: 'class', startLine: 10, endLine: 300 },
+  { id: 2, name: 'subQueryMeasures', type: 'field', startLine: 35, endLine: 35 },
+  { id: 3, name: 'storesByName', type: 'field', startLine: 36, endLine: 36 },
+  { id: 4, name: 'QueryResolver', type: 'method', startLine: 50, endLine: 60 },
+  { id: 5, name: 'compileMeasure', type: 'method', startLine: 100, endLine: 110 },
+  { id: 6, name: 'toSubQuery', type: 'method', startLine: 191, endLine: 208 },
+  { id: 7, name: 'checkSubQuery', type: 'method', startLine: 210, endLine: 228 },
+];
+
+function squashqlRepo() {
+  return {
+    findEnclosingEntity: vi.fn((file, line) => ENTITIES
+      .filter(e => e.startLine <= line && e.endLine >= line)
+      .sort((a, b) => (a.endLine - a.startLine) - (b.endLine - b.startLine))[0] || null),
+    findEntitiesInFile: vi.fn(() => ENTITIES),
+  };
+}
+
+describe('singleton sibling line (squashql-295)', () => {
+  let root;
+  beforeEach(() => { root = mkdtempSync(path.join(os.tmpdir(), 'sibling-line-')); writeSquashql(root); });
+  afterEach(() => { rmSync(root, { recursive: true, force: true }); });
+
+  it('co-lists the field declaration, its assignment and the sibling reader, with code', () => {
+    const line = buildSingletonSiblingLine([m(JAVA, 212, 'throw new IllegalArgumentException(...)')], squashqlRepo(), {
+      regex: 'sub-query in a sub-query is not supported', projectRoot: root,
+    });
+    expect(line.rendered).toBe(
+      '# same file (siblings of checkSubQuery): '
+      + '35: private final Map<Measure, CompiledMeasure> subQueryMeasures; · '
+      + '55: this.subQueryMeasures = compileMeasures(query.table.subQuery.measures, false); · '
+      + '191: private DatabaseQuery toSubQuery(QueryDto subQuery) {',
+    );
+    // Unrelated siblings (storesByName, compileMeasure) and the enclosing class never appear.
+    expect(line.rendered).not.toContain('storesByName');
+    expect(line.rendered).not.toContain('compileMeasure(');
+    expect(line.tokens).toBeGreaterThan(0);
+    expect(line.tokens).toBeLessThan(80);
+  });
+
+  it('is silent for multi-hit, no-enclosing-entity and no-family hits', () => {
+    const repo = squashqlRepo();
+    expect(buildSingletonSiblingLine([m(JAVA, 212), m(JAVA, 213)], repo, { projectRoot: root })).toBeNull();
+    expect(buildSingletonSiblingLine([m(JAVA, 5)], repo, { projectRoot: root })).toBeNull();
+    // compileMeasure shares no family token with anything and reads no field.
+    expect(buildSingletonSiblingLine([m(JAVA, 105)], repo, { projectRoot: root })).toBeNull();
+    expect(repo.findEntitiesInFile).toHaveBeenCalledTimes(1); // only the in-entity miss did file work
+  });
+
+  it('bareGrep attaches it only for agent format without --in', async () => {
+    const searcher = { ...makeSearcher([m(JAVA, 212, 'throw new IllegalArgumentException("sub-query in a sub-query is not supported");')]), projectRoot: root };
+    searcher.codeGraphRepo = squashqlRepo();
+    const agent = await bareGrep.call(searcher, 'not supported', null, {
+      regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true,
+    });
+    expect(agent.results).toHaveLength(1);
+    expect(agent.siblingLine.rendered).toContain('35: private final Map<Measure, CompiledMeasure> subQueryMeasures;');
+    const human = await bareGrep.call(searcher, 'not supported', null, { regex: 'not supported', maxMatches: 0 });
+    expect(human.siblingLine).toBeUndefined();
+    const scoped = await bareGrep.call(searcher, 'not supported', null, {
+      regex: 'not supported', maxMatches: 20, fileFilter: 'src', _isAgentFormat: true,
+    });
+    expect(scoped.siblingLine).toBeUndefined();
+    // The off-switch is an OPTION, not an env read: the daemon's env is whatever
+    // spawned it (a client that ran with SS_SIBLING_LINE=0 must not disable it for all).
+    const off = await bareGrep.call(searcher, 'not supported', null, {
+      regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true, _siblingLine: false,
+    });
+    expect(off.siblingLine).toBeUndefined();
   });
 });

@@ -504,7 +504,50 @@ export class StructuralContextRepository {
     return fetchFrontierForwardEdges(db, frontierIds, { ...opts, relationshipVisibilitySql: db ? this._relationshipSql(db, '') : undefined, relationshipVisibilityParams: db ? this._relationshipParams(db) : undefined });
   }
 
-  findSameFileDefinition(name, filePath) { return findSameFileDefinition({ name, filePath, readFileRange: this.readFileRange.bind(this) }); }
+  /**
+   * Resolve a term to its same-file definition. The entity table is consulted
+   * FIRST: it is language-agnostic and already holds Java fields, C# properties,
+   * Kotlin members and every other shape the regex list below never learned
+   * (smoke-loss forensics 2026-09-03: `subQueryMeasures`, a Java field, was a
+   * top target term of the traced method and resolved to nothing while the
+   * graph held it as type 'field'). The source-text regex scan remains as the
+   * fallback for unindexed files only.
+   */
+  findSameFileDefinition(name, filePath) {
+    const indexed = this._findIndexedSameFileDefinition(name, filePath);
+    if (indexed) return indexed;
+    return findSameFileDefinition({ name, filePath, readFileRange: this.readFileRange.bind(this) });
+  }
+
+  _findIndexedSameFileDefinition(name, filePath) {
+    const db = this._open();
+    const raw = String(name || '').trim();
+    if (!db || !raw || !filePath) return null;
+    try {
+      // Smallest span wins so a field beats the class that declares it and a
+      // method beats its enclosing class; an unnamed-span row (start = end,
+      // typical of a bare declaration) is fine here — a field IS one line.
+      const row = db.prepare(`
+        SELECT id, name, type, file_path, start_line, end_line, signature,
+               summary, parent_class, package
+        FROM entities
+        WHERE ${this._entitySql(db)}
+          AND file_path = ?
+          AND name = ?
+          AND start_line IS NOT NULL
+        ORDER BY (end_line - start_line) ASC, start_line ASC
+        LIMIT 1
+      `).get(...this._entityParams(db), filePath, raw);
+      if (!row) return null;
+      const entity = this._entityFromRow(row);
+      if (!entity) return null;
+      // The related-definitions line prints the summary as its snippet; a
+      // declaration's signature is the honest snippet when no summary exists.
+      return { ...entity, summary: entity.summary || entity.signature || '' };
+    } catch {
+      return null;
+    }
+  }
 
   getEntityCount() {
     const db = this._open();
