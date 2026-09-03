@@ -462,8 +462,9 @@ merits (f2p 0/30). Codex leg is now native **21/60**, sweet **19/60**, exactly a
 the task-level tally is unchanged (8/20 both arms). Original `rows.json` untouched; the corrected
 rows live beside it as `rows-regraded.json` (archived in `smoke-rows/`, with
 `smoke-rows/gleam-regrade-20260903.json`). The full 20-task ledger re-sweep under fingerprint v5
-is running into `/root/env-ledger/luna-smoke20-fp5` (10/20 gold-valid at the time of writing;
-the 5 Gate-1 tasks are also in `luna-gate1-fp5`).
+is **DONE: 20/20 gold-valid**, `/root/env-ledger/luna-smoke20-fp5/ledger.jsonl` — this is the
+live ledger for any further run on the smoke-20 set (`luna-smoke20-v5` is stale by
+construction and must not be pointed at again).
 
 *(Launch record follows.)* **LAUNCHED 2026-09-03 15:19Z** (`/root/gate12-driver.sh`, logs `/root/gate1/`, ledger
 `/root/env-ledger/luna-gate1-fp5` re-swept 5/5 gold-valid under fingerprint v5, preflight
