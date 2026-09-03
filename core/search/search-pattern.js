@@ -458,9 +458,25 @@ export async function patternSearch(query, routing, options = {}) {
 
   const fileCache = new Map();
 
+  // Segmented (SSLX v3) late-interaction indexes carry NO per-document
+  // metadata; the chunk table does. Hydrate every hit whose LI record lacks
+  // a file from codebase.db in one query (2026-09-03: ss-find rendered
+  // `:null-null (full STALE)` packs on every segmented golden, getmoto first).
+  const needsMeta = scored
+    .filter((s) => {
+      const doc = this.lateInteractionIndex.documents.get(s.id);
+      const meta = doc?.metadata || this.lateInteractionIndex.aliasPointers?.get(s.id)?.metadata;
+      return !meta?.file;
+    })
+    .map((s) => s.id);
+  const hydrated = needsMeta.length > 0 && typeof this.codebaseRepo?.getChunkMetaByIds === 'function'
+    ? this.codebaseRepo.getChunkMetaByIds(needsMeta.slice(0, 500))
+    : new Map();
+
   let rankedResults = scored.map((s, rank) => {
     const doc = this.lateInteractionIndex.documents.get(s.id);
-    const meta = doc?.metadata || this.lateInteractionIndex.aliasPointers?.get(s.id)?.metadata || {};
+    const liMeta = doc?.metadata || this.lateInteractionIndex.aliasPointers?.get(s.id)?.metadata;
+    const meta = liMeta?.file ? liMeta : (hydrated.get(s.id) || liMeta || {});
     const text = readFileRange(fileCache, meta.file, meta.startLine, meta.endLine, this.projectRoot);
 
     return {

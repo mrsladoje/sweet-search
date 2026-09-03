@@ -132,6 +132,15 @@ async function atomicSwapLateInteractionIndex(stagedStubPath, finalStubPath) {
       newSegMoved = true;
     }
     await atomicSwapDatabase(stagedStubPath, finalStubPath);
+    // Promote the alias sidecar with the stub. It is written as
+    // `<stagedStub>.aliases.json` (2026-09-03: every shipped index left it
+    // under the staged name, so the reader found no sidecar and loaded ZERO
+    // aliases; the reader now also falls back to that name for old indexes).
+    const stagedAliases = stagedStubPath + '.aliases.json';
+    if (existsSync(stagedAliases)) {
+      await unlinkIfExists(finalStubPath + '.aliases.json');
+      await fs.rename(stagedAliases, finalStubPath + '.aliases.json');
+    }
   } catch (err) {
     // Each step runs in its own try so a partial rollback failure still
     // attempts the remaining steps. Order matters: move new segments aside
