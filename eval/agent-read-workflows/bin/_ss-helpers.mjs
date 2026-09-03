@@ -542,6 +542,7 @@ async function cmdFind(rawArgs) {
     response = await queryWarmSearch(query, {
       mode: 'pattern', regex: effectiveRegex || `\\b\\w+\\b`, topK: k, format,
       _isAgentFormat: !fixedString,
+      _siblingLine: process.env.SS_SIBLING_LINE !== '0',
       ...(findFileFilter ? { fileFilter: findFileFilter } : {}),
       ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
     });
@@ -598,6 +599,8 @@ async function cmdFind(rawArgs) {
     if (r.sameFile && r.sameFile.rendered) {
       process.stdout.write(`${r.sameFile.rendered}\n`);
     }
+    // Same-file identifier family of a method/function top-1, with code lines.
+    if (r.siblingLine?.rendered) process.stdout.write(`${r.siblingLine.rendered}\n`);
     if (r.continuation?.rendered) {
       process.stdout.write(`${r.continuation.rendered}\n`);
       if (r.continuation.kind === 'symbol' && r.continuation.code) {
@@ -932,6 +935,8 @@ async function cmdAgentSearch(rawArgs) {
     if (r.sameFile && r.sameFile.rendered) {
       process.stdout.write(`${r.sameFile.rendered}\n`);
     }
+    // Same-file identifier family of a method/function top-1, with code lines.
+    if (r.siblingLine?.rendered) process.stdout.write(`${r.siblingLine.rendered}\n`);
     if (r.continuation?.rendered) {
       process.stdout.write(`${r.continuation.rendered}\n`);
       if (r.continuation.kind === 'symbol' && r.continuation.code) {

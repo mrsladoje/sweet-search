@@ -556,9 +556,21 @@ describe('singleton sibling line (squashql-295)', () => {
     expect(line.tokens).toBeLessThan(80);
   });
 
-  it('is silent for multi-hit, no-enclosing-entity and no-family hits', () => {
+  it('two hits in one file (the call site inside toSubQuery + the definition) merge their families', () => {
+    // ss-grep "checkSubQuery" -k 20 → L192 (inside toSubQuery) and L210 (checkSubQuery itself).
+    const line = buildSingletonSiblingLine([m(JAVA, 192, 'checkSubQuery(subQuery);'), m(JAVA, 210, 'private void checkSubQuery')], squashqlRepo(), {
+      regex: 'checkSubQuery', projectRoot: root,
+    });
+    expect(line.rendered.startsWith('# same file (siblings of toSubQuery, checkSubQuery): 35: private final Map<Measure, CompiledMeasure> subQueryMeasures; · 55: this.subQueryMeasures =')).toBe(true);
+    // Neither enclosing method is listed as its own sibling.
+    expect(line.rendered).not.toContain('191:');
+    expect(line.rendered).not.toContain('210:');
+  });
+
+  it('is silent for >3 hits, hits across files, no-enclosing-entity and no-family hits', () => {
     const repo = squashqlRepo();
-    expect(buildSingletonSiblingLine([m(JAVA, 212), m(JAVA, 213)], repo, { projectRoot: root })).toBeNull();
+    expect(buildSingletonSiblingLine([m(JAVA, 212), m(JAVA, 213), m(JAVA, 214), m(JAVA, 215)], repo, { projectRoot: root })).toBeNull();
+    expect(buildSingletonSiblingLine([m(JAVA, 212), m('src/Other.java', 3)], repo, { projectRoot: root })).toBeNull();
     expect(buildSingletonSiblingLine([m(JAVA, 5)], repo, { projectRoot: root })).toBeNull();
     // compileMeasure shares no family token with anything and reads no field.
     expect(buildSingletonSiblingLine([m(JAVA, 105)], repo, { projectRoot: root })).toBeNull();

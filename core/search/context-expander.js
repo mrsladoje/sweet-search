@@ -20,7 +20,7 @@
 
 import { readFileRange } from './search-pattern-chunks.js';
 import { computeSufficiencyVerdict } from './query-sufficiency.js';
-import { applyAgentPackCompletion, shownSourceEndLine } from './agent-pack-completion.js';
+import { applyAgentPackCompletion, buildPackSiblingLine, shownSourceEndLine } from './agent-pack-completion.js';
 import { statSync } from 'fs';
 import path from 'path';
 
@@ -2455,6 +2455,21 @@ export function packageForAgent(rankedResults, searchStats, opts) {
         top.sameFile = map;
         tokensUsed += map.tokens;
       }
+    }
+  }
+
+  // Same-file identifier family for a method/function top-1 (2026-09-03,
+  // smoke-loss forensics L1a, pack form). The span map above names positional
+  // neighbours; this names the declarations that SHARE the symbol's name
+  // family plus the fields its body reads, with their code lines. Additive,
+  // counted inside tokensUsed, dropped on overflow like the span map.
+  if (_isAgentFormat === true && agentResults.length > 0 && !ablations.has('no-sibling-line')
+      && opts._siblingLine !== false && codeGraphRepo) {
+    const top = agentResults[0];
+    const sibling = buildPackSiblingLine(top, codeGraphRepo, { regex, projectRoot, fileCache, estimateTokens });
+    if (sibling && sibling.tokens <= Math.max(0, tokenBudget - tokensUsed)) {
+      top.siblingLine = sibling;
+      tokensUsed += sibling.tokens;
     }
   }
 

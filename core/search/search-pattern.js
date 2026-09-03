@@ -222,10 +222,13 @@ export async function bareGrep(query, routing, options = {}) {
   const familyManifest = options._isAgentFormat === true && !options.fileFilter
     ? buildIndexedGrepFamilyManifest(results, this?.codeGraphRepo)
     : null;
-  // Singleton hit: name the same-file identifier family WITH code lines (the
-  // one enrichment a 1-match grep can take; see agent-pack-completion.js).
+  // One to three hits in one file: name the same-file identifier family WITH
+  // code lines (the one enrichment a near-singleton grep can take; see
+  // agent-pack-completion.js).
   const siblingLine = options._isAgentFormat === true && !options.fileFilter
-      && options._siblingLine !== false && results.length === 1
+      && options._siblingLine !== false
+      && results.length >= 1 && results.length <= 3
+      && results.every((result) => result.file === results[0].file)
     ? buildSingletonSiblingLine(results, this?.codeGraphRepo, { regex, projectRoot: searchDir })
     : null;
 
@@ -618,6 +621,7 @@ export async function patternSearch(query, routing, options = {}) {
       projectRoot: searchDir,
       ablations,
       _isAgentFormat: true,
+      _siblingLine: options._siblingLine,
     });
     agentResponse.stats = stats;
     return agentResponse;

@@ -888,6 +888,7 @@ export class SweetSearch {
         projectRoot: this.projectRoot,
         ablations: options.ablations,
         _isAgentFormat: true,
+        _siblingLine: options._siblingLine,
       });
       __ptEnd('packageForAgent', __t_pkg);
       // Preserve the underlying retrieval stats so callers can inspect both layers

@@ -333,11 +333,13 @@ export function buildIndexedGrepFamilyManifest(results, codeGraphRepo) {
 // rollouts; sweet in 3/21. In the transcripts, three sites co-listed WITH
 // their code lines converted 4/4; a bare name list converted 0/2. So this
 // prints code lines, not names, and is additive (a singleton has no body
-// lines to reclaim). Gate: agent format, no --in, exactly one result, and
+// lines to reclaim). Gate: agent format, no --in, 1-3 hits in ONE file, and
 // the client-side SS_SIBLING_LINE=0 off-switch (option `_siblingLine`).
 // ---------------------------------------------------------------------------
 
 const MAX_SIBLING_SITES = 4;
+const MAX_SIBLING_HITS = 3;
+const PACK_SIBLING_TYPES = new Set(['method', 'function', 'constructor']);
 const MAX_SIBLING_ENTITIES = 3;
 const SIBLING_LINE_MAX_CHARS = 90;
 const STATE_ENTITY_TYPES = new Set(['field', 'property', 'variable', 'constant', 'const', 'static', 'enum_constant']);
@@ -352,55 +354,68 @@ function compactSourceLine(text) {
 }
 
 /** First line assigning `name` outside the enclosing entity and the declaration. */
-function findAssignmentLine(lines, name, { declarationLine, excludeStart, excludeEnd }) {
+function findAssignmentLine(lines, name, { declarationLine, excludeRanges = [] }) {
   const re = new RegExp(`(?:^|[^A-Za-z0-9_$.])(?:this\\.|self\\.|@)?${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=[^=]`);
   for (let i = 0; i < lines.length; i++) {
     const line = i + 1;
-    if (line === declarationLine || (line >= excludeStart && line <= excludeEnd)) continue;
+    if (line === declarationLine || excludeRanges.some(([start, end]) => line >= start && line <= end)) continue;
     if (re.test(lines[i])) return line;
   }
   return null;
 }
 
 /**
- * Same-file identifier family for a single grep hit: declarations sharing the
- * enclosing symbol's informative subtokens, plus state (fields) its body
- * references. Returns { rendered, tokens, sites } or null.
+ * Same-file identifier family for one to three hits in ONE file: declarations
+ * sharing the enclosing symbols' informative subtokens, plus state (fields)
+ * their bodies reference. `hits` are `{ file, line }`. Returns
+ * { rendered, tokens, enclosing, sites } or null.
  */
-export function buildSingletonSiblingLine(results, codeGraphRepo, {
+export function buildSameFileSiblingLine(hits, codeGraphRepo, {
   regex = '', projectRoot, fileCache = new Map(), estimateTokens = defaultEstimateTokens,
 } = {}) {
   // No env gate HERE: this runs inside the warm daemon, whose env is whatever
   // the first client that spawned it happened to carry. SS_SIBLING_LINE=0 is
   // read by the ss-grep wrapper and travels as the `_siblingLine` option.
-  if (!Array.isArray(results) || results.length !== 1) return null;
+  if (!Array.isArray(hits) || hits.length < 1 || hits.length > MAX_SIBLING_HITS) return null;
   if (typeof codeGraphRepo?.findEnclosingEntity !== 'function'
       || typeof codeGraphRepo?.findEntitiesInFile !== 'function') return null;
-  const hit = results[0];
-  if (!hit?.file || !Number.isInteger(hit.line)) return null;
+  const file = hits[0]?.file;
+  if (!file || hits.some((hit) => hit?.file !== file || !Number.isInteger(hit.line))) return null;
 
-  let enclosing = null;
-  try { enclosing = codeGraphRepo.findEnclosingEntity(hit.file, hit.line, hit.line); } catch { enclosing = null; }
-  if (!enclosing?.name || !Number.isInteger(enclosing.startLine) || !Number.isInteger(enclosing.endLine)) return null;
+  const enclosings = [];
+  const seenEnclosing = new Set();
+  for (const hit of hits) {
+    let enclosing = null;
+    try { enclosing = codeGraphRepo.findEnclosingEntity(file, hit.line, hit.line); } catch { enclosing = null; }
+    if (!enclosing?.name || !Number.isInteger(enclosing.startLine) || !Number.isInteger(enclosing.endLine)) continue;
+    const key = `${enclosing.name}:${enclosing.startLine}`;
+    if (seenEnclosing.has(key)) continue;
+    seenEnclosing.add(key);
+    enclosings.push(enclosing);
+  }
+  if (enclosings.length === 0) return null;
   let entities = [];
-  try { entities = codeGraphRepo.findEntitiesInFile(hit.file) || []; } catch { entities = []; }
+  try { entities = codeGraphRepo.findEntitiesInFile(file) || []; } catch { entities = []; }
   if (entities.length === 0) return null;
 
   const evidence = extractQueryEvidence('', regex);
-  const ownTokens = new Set(siblingTokens(enclosing.name));
-  const fileText = readFileRange(fileCache, hit.file, 1, 1_000_000, projectRoot);
+  const ownTokens = new Set(enclosings.flatMap((entity) => siblingTokens(entity.name)));
+  const fileText = readFileRange(fileCache, file, 1, 1_000_000, projectRoot);
   const lines = fileText ? fileText.split('\n') : [];
-  const body = lines.slice(enclosing.startLine - 1, enclosing.endLine).join('\n');
+  const body = enclosings.map((entity) => lines.slice(entity.startLine - 1, entity.endLine).join('\n')).join('\n');
+  const hitLines = hits.map((hit) => hit.line);
+  const isEnclosingOrKin = (entity) => enclosings.some((own) =>
+    (entity.id != null && entity.id === own.id)
+    || (entity.name === own.name && entity.startLine === own.startLine)
+    || (entity.startLine >= own.startLine && entity.endLine <= own.endLine));
 
   const scored = [];
   for (const entity of entities) {
     if (!entity?.name || !Number.isInteger(entity.startLine) || !Number.isInteger(entity.endLine)) continue;
-    if (entity.id === enclosing.id) continue;
     // Parents (the class around the hit) and children (closures inside it) are
     // already in view or are the hit itself; only true siblings count.
-    if (entity.startLine <= hit.line && entity.endLine >= hit.line) continue;
-    if (entity.startLine >= enclosing.startLine && entity.endLine <= enclosing.endLine) continue;
-    if (entity.name === enclosing.name && entity.startLine === enclosing.startLine) continue;
+    if (hitLines.some((line) => entity.startLine <= line && entity.endLine >= line)) continue;
+    if (isEnclosingOrKin(entity)) continue;
 
     const tokens = siblingTokens(entity.name);
     let overlap = 0;
@@ -417,7 +432,8 @@ export function buildSingletonSiblingLine(results, codeGraphRepo, {
     if (queryHit) score += 15;
     if (score === 0) continue;
     if (isState) score += 5; // state first: it is what a method-local read cannot show
-    scored.push({ entity, score, isState, distance: Math.abs(entity.startLine - hit.line) });
+    const distance = Math.min(...hitLines.map((line) => Math.abs(entity.startLine - line)));
+    scored.push({ entity, score, isState, distance });
   }
   if (scored.length === 0) return null;
   scored.sort((a, b) => b.score - a.score || a.distance - b.distance || a.entity.startLine - b.entity.startLine);
@@ -434,18 +450,40 @@ export function buildSingletonSiblingLine(results, codeGraphRepo, {
   for (const { entity, isState } of scored.slice(0, MAX_SIBLING_ENTITIES)) {
     pushSite(entity.startLine, entity.type || 'symbol');
     if (isState && lines.length) {
-      pushSite(findAssignmentLine(lines, entity.name, {
-        declarationLine: entity.startLine,
-        excludeStart: enclosing.startLine,
-        excludeEnd: enclosing.endLine,
-      }), 'assignment');
+      const inside = enclosings.map((own) => [own.startLine, own.endLine]);
+      pushSite(findAssignmentLine(lines, entity.name, { declarationLine: entity.startLine, excludeRanges: inside }), 'assignment');
     }
   }
   if (sites.length === 0) return null;
   sites.sort((a, b) => a.line - b.line);
-  const rendered = `# same file (siblings of ${enclosing.name}): `
+  const label = enclosings.map((entity) => entity.name).join(', ');
+  const rendered = `# same file (siblings of ${label}): `
     + sites.map((site) => `${site.line}: ${site.text}`).join(' · ');
-  return { rendered, tokens: estimateTokens(rendered), enclosing: enclosing.name, sites };
+  return { rendered, tokens: estimateTokens(rendered), enclosing: label, sites };
+}
+
+/** Grep form: 1-3 bare grep results, all in one file. */
+export function buildSingletonSiblingLine(results, codeGraphRepo, opts = {}) {
+  if (!Array.isArray(results) || results.length < 1 || results.length > MAX_SIBLING_HITS) return null;
+  return buildSameFileSiblingLine(results.map((result) => ({ file: result?.file, line: result?.line })), codeGraphRepo, opts);
+}
+
+/**
+ * Pack form (ss-search / ss-find): the top-1 result when it is a method or
+ * function chunk. The hit is the symbol's own declaration line, so the
+ * family is computed for that symbol, not for the chunk's first line (a
+ * chunk labelled checkSubQuery can start inside the previous method).
+ */
+export function buildPackSiblingLine(top, codeGraphRepo, opts = {}) {
+  if (!top?.file || !top.symbol || !PACK_SIBLING_TYPES.has(String(top.symbolType || '').toLowerCase())) return null;
+  if (typeof codeGraphRepo?.findEntityWithNameInRange !== 'function') return null;
+  let entity = null;
+  try {
+    entity = codeGraphRepo.findEntityWithNameInRange(top.file, top.startLine, top.endLine, top.symbol);
+  } catch { entity = null; }
+  const line = Number.isInteger(entity?.startLine) ? entity.startLine : null;
+  if (line == null) return null;
+  return buildSameFileSiblingLine([{ file: top.file, line }], codeGraphRepo, opts);
 }
 
 function discoverFamily(results, codeGraphRepo, query, regex) {
