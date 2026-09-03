@@ -119,6 +119,7 @@ as specified), **OWNER-EXCLUDED** (a decision, not a measurement).
 | F18 | insertion-position oracle; mirror-switch echo; git-diff absorber | DEAD | deciding adjacency already in context; both arms ignore the mirror; git self-state arm-similar | `SLATE-A` §9.6–9.8 | — |
 | F19 | a 20×-priced backbone | BUYS NOTHING | terra 0/10 unaided; 2/2 with the certificate | `HINT-LADDER-RESULTS.md` | — |
 | F20 | naming-lottery tasks (bingo, dart) | UNWINNABLE | hidden tests import an invented identifier; 4/18 rotation tasks | `NAME-LOCK-CENSUS.md` | admission filter, not a lever |
+| F21 | same-file identifier family on singleton/near-singleton `ss-grep` + method top-1 packs, and `# unread above` on `ss-read` (smoke-loss L1) | DEAD on solves, OPT-IN | $0 replay named the field before the first edit in 14/15 reachable failures; live Gate 2 (luna, codex+opencode, REPS=3, sweet on/off): squashql 0/6 ON vs 1/6 OFF with 6/6 exposure; all six patched only the guard; controls 3/3 everywhere; 0.3-0.6% of prompt tokens | `SMOKE-LOSS-FORENSICS.md` §9 | a cohort whose failures are "never saw it" rather than "saw it and declined" |
 
 ## G. Measurement (not levers; do not book as wins)
 

@@ -424,7 +424,37 @@ Byte-identity: `readFile` JSON carries an `unreadAbove` key on range reads (stru
 `unreadBelow`, `referenced` flag per symbol); grep/pack JSON carries `siblingLine` only under
 agent format; raw and GCSN paths untouched (`tests/search` + `tests/graph` + `tests/mcp` green).
 
-**Gate 1/2 — LAUNCHED 2026-09-03 15:19Z** (`/root/gate12-driver.sh`, logs `/root/gate1/`, ledger
+**Gate 1/2 — RUN 2026-09-03 15:19-16:47Z, VERDICT: L1 IS DEAD ON SOLVES.** Realised spend $0.65.
+
+| leg | squashql (diagnostic) | pulldown-cmark | uniforms | rust-analyzer | yasson | calls | ideal $ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| codex, lines ON | **0/3** | 3/3 | 3/3 | 3/3 | 0/3 | 175 | 0.161 |
+| codex, lines OFF | 0/3 | 3/3 | 3/3 | 3/3 | 0/3 | 189 | 0.173 |
+| opencode, lines ON | **0/3** | 3/3 | 3/3 | 3/3 | 0/3 | 311 | 0.135 |
+| opencode, lines OFF | 1/3 | 3/3 | 3/3 | 3/3 | 2/3 | 301 | 0.135 |
+
+Diagnostic pooled: ON 0/6 vs OFF 1/6 against a bar of ≥4/6. Exposure was complete — every ON
+squashql rollout had `subQueryMeasures` named before its first edit (codex: r1 and r2 by the
+sibling line at call 1-2, r0 by the above-line at call 2; opencode: r1 by the sibling line at
+call 2, r0 and r2 by the above-line at call 3) — and every one of the six patched only the
+`checkSubQuery` guard. Two codex agents wrote the same sentence: "the compiler already recurses
+through `compileTable` → `toSubQuery`; the explicit guard is the sole blocker." The 4/4
+co-listing conversion in the smoke transcripts was therefore an effect of intent (those agents
+had already searched FOR the field), not a cause; §2.1's two "surfacing is not enough"
+counterexamples were the rule. Controls: the three passing tasks stayed 3/3 in all four legs;
+yasson and squashql OFF > ON by 2 and 1 rep, inside the codex-cell variance the ablation
+documented (native 3/3 → 1/3 → 2/3), not evidence of harm. Cost: ON is 7% cheaper on codex
+(ideal, and 14 fewer calls) and equal on opencode; noise at n=15.
+
+**Disposition (`3e2ee4a`).** Both lines are now OPT-IN (`SS_SIBLING_LINE=1`,
+`SS_UNREAD_ABOVE=1`); code, unit tests and the $0 replay tooling stay for a future cohort with
+a different failure shape (the mechanism does deliver the fact; the model declines it). L2
+(grader) and L4 (ss-trace Java + receiver-member term boost) are correctness and stay on.
+Register: F21. Still owed: re-grade of the two gleam rows under the fixed cargo parser; the
+gold re-sweep of the full 20-task ledger under fingerprint v5 (only the five Gate-1 tasks were
+re-swept, `/root/env-ledger/luna-gate1-fp5`).
+
+*(Launch record follows.)* **LAUNCHED 2026-09-03 15:19Z** (`/root/gate12-driver.sh`, logs `/root/gate1/`, ledger
 `/root/env-ledger/luna-gate1-fp5` re-swept 5/5 gold-valid under fingerprint v5, preflight
 green). Four legs staggered 15 min, each `CONCURRENCY=1 REPS=3 ARMS=sweet`, luna via OpenRouter,
 `REASONING=medium`, default caps: `g1-{on,off}-{codex,opencode}-20260903`. Control = same
