@@ -578,8 +578,8 @@ describe('unread above (squashql-295 shape)', () => {
       startLine: 1,
       endLine: 169,
       symbols: [
-        { symbol: 'subQueryMeasures', type: 'field', startLine: 35 },
-        { symbol: 'QueryResolver', type: 'method', startLine: 50 },
+        { symbol: 'subQueryMeasures', type: 'field', startLine: 35, referenced: true },
+        { symbol: 'QueryResolver', type: 'method', startLine: 50, referenced: false },
       ],
       moreCount: 0,
     });
@@ -652,7 +652,19 @@ describe('unread above (squashql-295 shape)', () => {
     expect(whole.unreadAbove).toBeNull();
     const tiny = await readFile({ path: JAVA_FILE, startLine: 12, endLine: 40, projectRoot: TMP });
     expect(tiny.unreadAbove).toEqual({ startLine: 1, endLine: 11, symbols: [], moreCount: 0 });
-    expect(renderUnreadAbove(tiny, { command: 'ss-read' })).toBe(`# unread above (1-11) — continue: ss-read ${JAVA_FILE} 1 11`);
+    // No symbol above, no signal: nothing printed (the structured field stays).
+    expect(renderUnreadAbove(tiny, { command: 'ss-read' })).toBe('');
+  });
+
+  it('prints nothing when the window reads none of the above symbols and the query names none', async () => {
+    writeSquashqlFixture();
+    // Window 240-300 reads no field; the above list (fields, methods) is unmotivated.
+    const r = await readFile({ path: JAVA_FILE, startLine: 240, endLine: 300, projectRoot: TMP });
+    expect(r.unreadAbove.symbols.length).toBeGreaterThan(0);
+    expect(renderUnreadAbove(r, { command: 'ss-read' })).toBe('');
+    // ...unless the session's query evidence names one of them.
+    expect(renderUnreadAbove(r, { command: 'ss-read', queryEvidence: { anchors: ['toSubQuery'], subtokens: [] } }))
+      .toContain('toSubQuery');
   });
 
   it('json format carries the structured unreadAbove field', async () => {
