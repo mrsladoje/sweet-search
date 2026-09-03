@@ -48,7 +48,7 @@ files from `results/sm-*/agent-state/`.
 | opencode | 23/60 | 18/60 | 8/20 | 8/20 |
 | claude-code | 21/60 | 22/60 | 8/20 | 8/20 |
 | codex (as graded) | 20/60 | 18/60 | 8/20 | 8/20 |
-| codex (grader artifact corrected, §2.3) | 21/60 | 19/60 | 8/20 | 8/20 |
+| codex (grader artifact corrected, §2.3; **regraded 2026-09-03**, `smoke-rows/sm-codex-20260902-rows-regraded.json`) | 21/60 | 19/60 | 8/20 | 8/20 |
 
 Per-task rep deltas, sweet minus native, summed over harnesses (only tasks with a non-zero
 delta): squashql **−6**, getmoto **−3**, gleam **−1** (opencode −2, codex +1), yasson **+2**,
@@ -453,9 +453,17 @@ control is shipped as a cheap mechanism, not withheld for lack of a proven flip.
 are **default ON** again with `SS_SIBLING_LINE=0` / `SS_UNREAD_ABOVE=0` as the opt-outs, the
 v3 state-read gate kept. Booked in the register as "no measured solve effect", not as a win. L2
 (grader) and L4 (ss-trace Java + receiver-member term boost) are correctness and stay on.
-Register: F21. Still owed: re-grade of the two gleam rows under the fixed cargo parser; the
-gold re-sweep of the full 20-task ledger under fingerprint v5 (only the five Gate-1 tasks were
-re-swept, `/root/env-ledger/luna-gate1-fp5`).
+Register: F21.
+
+**L2 regrade — DONE 2026-09-03 (offline, retained patches, warm image, `/root/gleam-regrade.mjs`).**
+Gold control FULL (2,615 tests). codex native r0 NO→FULL, codex sweet r0 NO→FULL (both had
+f2p=1.0 and only the glued `okLocked!` lines as failures); opencode sweet r1 stays NO on its own
+merits (f2p 0/30). Codex leg is now native **21/60**, sweet **19/60**, exactly as §2.3 predicted;
+the task-level tally is unchanged (8/20 both arms). Original `rows.json` untouched; the corrected
+rows live beside it as `rows-regraded.json` (archived in `smoke-rows/`, with
+`smoke-rows/gleam-regrade-20260903.json`). The full 20-task ledger re-sweep under fingerprint v5
+is running into `/root/env-ledger/luna-smoke20-fp5` (10/20 gold-valid at the time of writing;
+the 5 Gate-1 tasks are also in `luna-gate1-fp5`).
 
 *(Launch record follows.)* **LAUNCHED 2026-09-03 15:19Z** (`/root/gate12-driver.sh`, logs `/root/gate1/`, ledger
 `/root/env-ledger/luna-gate1-fp5` re-swept 5/5 gold-valid under fingerprint v5, preflight
