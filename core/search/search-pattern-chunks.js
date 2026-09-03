@@ -323,14 +323,50 @@ export function getChunkLocationMap() {
   // crash the agent cannot act on: the index it was handed is the only one it has. The
   // codebase vector rows carry the same spans in their own metadata, and their ids are the
   // same chunk ids, so the map can be rebuilt from them — ranking included.
-  if (map.size === 0 && currentSize > 0) {
+  //
+  // PARTIAL maps are the sharper case (2026-09-03): a segmented (SSLX v3) index stores
+  // no per-document metadata, but its alias sidecar does — so the LI-derived map held
+  // the 364 alias spans and nothing else, was "non-empty", skipped the fallback, and
+  // every real chunk routed to the unranked path (getmoto: `indexed 0 / unindexed 3`).
+  // The rule is coverage, not emptiness: when the LI map holds fewer spans than the
+  // index holds documents, merge in the codebase spans it is missing.
+  let spanCount = 0;
+  for (const bucket of map.values()) spanCount += bucket.length;
+  if (spanCount < currentSize) {
     const fallback = buildCodebaseChunkLocationMap(this);
-    if (fallback && fallback.size > 0) map = fallback;
+    if (fallback && fallback.size > 0) {
+      map = spanCount === 0 ? fallback : mergeChunkLocationMaps(map, fallback);
+    }
   }
   this._chunkLocationMap = map;
   this._chunkLocationMapSize = currentSize;
   this._chunkLocationMapIndex = this.lateInteractionIndex;
   return this._chunkLocationMap;
+}
+
+/** Union of two location maps by chunk id, re-sorted with the running max rebuilt. */
+export function mergeChunkLocationMaps(primary, secondary) {
+  const out = new Map();
+  for (const [file, bucket] of primary) out.set(file, bucket.map((i) => ({ ...i })));
+  for (const [file, bucket] of secondary) {
+    let target = out.get(file);
+    if (!target) { target = []; out.set(file, target); }
+    const seen = new Set(target.map((i) => i.id));
+    for (const interval of bucket) {
+      if (seen.has(interval.id)) continue;
+      seen.add(interval.id);
+      target.push({ ...interval });
+    }
+  }
+  for (const bucket of out.values()) {
+    bucket.sort((a, b) => a.startLine - b.startLine);
+    let maxEnd = -Infinity;
+    for (const interval of bucket) {
+      maxEnd = Math.max(maxEnd, interval.endLine);
+      interval._maxEndSoFar = maxEnd;
+    }
+  }
+  return out;
 }
 
 /**

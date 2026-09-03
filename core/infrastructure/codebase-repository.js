@@ -155,6 +155,48 @@ export class CodebaseRepository {
   }
 
   /**
+   * Chunk location metadata for a set of ids, in the shape the late-interaction
+   * index carries per document ({ file, name, type, startLine, endLine }).
+   *
+   * Why this exists (2026-09-03): the SSLX v3 SEGMENTED late-interaction format
+   * stores ids and token slabs only — no per-document metadata — so on every
+   * repo large enough to segment (>= one segment of documents) a pattern
+   * search resolved its hits to `file: ''` and rendered `:null-null` packs.
+   * The chunk table is the durable home of that metadata; this is the lookup.
+   *
+   * @param {string[]} ids
+   * @returns {Map<string, { file: string, name: string|null, type: string|null, startLine: number|null, endLine: number|null }>}
+   */
+  getChunkMetaByIds(ids) {
+    if (!ids || ids.length === 0) return new Map();
+    try {
+      assertInClauseSize(ids.length, 'CodebaseRepository.getChunkMetaByIds');
+      const db = this._open();
+      const ph = ids.map(() => '?').join(',');
+      const visibility = this._visibility(db);
+      const visibilityClause = visibility.sql ? ` AND ${visibility.sql}` : '';
+      const rows = db.prepare(
+        `SELECT id, file_path, metadata FROM vectors WHERE id IN (${ph})${visibilityClause}`
+      ).all(...ids, ...visibility.params);
+      const out = new Map();
+      for (const row of rows) {
+        let meta = {};
+        try { meta = row.metadata ? JSON.parse(row.metadata) : {}; } catch { meta = {}; }
+        out.set(row.id, {
+          file: row.file_path,
+          name: meta.symbol ?? meta.name ?? null,
+          type: meta.chunk_type ?? meta.type ?? null,
+          startLine: meta.line_start ?? meta.startLine ?? null,
+          endLine: meta.line_end ?? meta.endLine ?? null,
+        });
+      }
+      return out;
+    } catch {
+      return new Map();
+    }
+  }
+
+  /**
    * Return all chunk metadata rows for a single file_path.
    * Used by sweet-search read / read-semantic for symbol-aware metadata
    * and for in-file candidate enumeration. Returns empty array if the file

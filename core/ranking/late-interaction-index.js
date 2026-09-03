@@ -1232,8 +1232,17 @@ export class LateInteractionIndex {
   }
 
   async _loadAliasSidecar(indexPath = this.indexPath) {
-    const p = this._aliasSidecarPath(indexPath);
-    if (!existsSync(p)) return;
+    let p = this._aliasSidecarPath(indexPath);
+    if (!existsSync(p)) {
+      // Stage-and-swap rebuilds wrote the sidecar under the STAGED stub name
+      // (`<index>.tmp.aliases.json`) and the swap renamed only the stub and the
+      // segments directory, so every shipped index loaded zero aliases. The
+      // swap now renames the sidecar too; this fallback heals indexes built
+      // before that fix without a re-index.
+      const staged = this._aliasSidecarPath(indexPath + '.tmp');
+      if (!existsSync(staged)) return;
+      p = staged;
+    }
     // Streamed line-by-line so no single string approaches V8's ~512 MB
     // ceiling. Two on-disk formats:
     //   v1 — one JSON.stringify'd { version: 1, aliases: [...] } line
