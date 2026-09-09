@@ -61,7 +61,14 @@ const LOG_FILE = path.join(STATE_DIR, 'proxy.log');
 // Anything that could carry repository content, upstream patches, package
 // registries or dataset rows is deliberately absent — including npm/pypi, which
 // were how several "upstream exposure" wins were assembled.
-const DEFAULT_ALLOW = ['openrouter.ai'];
+// The openrouter API host is the only thing a default run needs. A codex-SUBSCRIPTION run
+// talks to chatgpt.com instead, and with the bare default every rollout dies inside the TLS
+// ClientHello as `stream disconnected before completion: tls handshake eof` — a silent,
+// arm-symmetric wipeout that looks like a dead treatment (2026-09-09: 400/400 rollouts, 33,952
+// refusals, all chatgpt.com). EGRESS_ALLOW is the documented override; put the host the run
+// actually depends on FIRST, because assertGuardReachable probes only allow[0].
+const DEFAULT_ALLOW = (process.env.EGRESS_ALLOW || 'openrouter.ai')
+  .split(',').map(s => s.trim()).filter(Boolean);
 
 const sh = (bin, args, opts = {}) => execFileSync(bin, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts });
 const shq = (bin, args) => { try { return sh(bin, args); } catch { return null; } };
@@ -283,13 +290,15 @@ export function guardStatus() {
 export function ensureGuard(allow) {
   const s = guardStatus();
   if (s.ns && s.proxy) {
-    // Reconcile: if an explicit allowlist is requested and differs from the
-    // running one, restart the guard so EGRESS_ALLOW is authoritative (needed
-    // e.g. for codex-subscription hosts vs the openrouter default).
-    if (allow && allow.length &&
-        JSON.stringify([...allow].sort()) !== JSON.stringify([...s.allow].sort())) {
+    // Reconcile: if the wanted allowlist differs from the running one, restart the guard so
+    // EGRESS_ALLOW is authoritative (needed e.g. for codex-subscription hosts vs the openrouter
+    // default). `allow` is usually undefined, so fall back to DEFAULT_ALLOW — otherwise a guard
+    // left running by an earlier run keeps serving ITS allowlist and silently overrides the env.
+    const want = allow && allow.length ? allow : DEFAULT_ALLOW;
+    if (want && want.length &&
+        JSON.stringify([...want].sort()) !== JSON.stringify([...s.allow].sort())) {
       down();
-      return up(allow);
+      return up(want);
     }
     return s;
   }
