@@ -4,6 +4,32 @@
 after the draw except through the replacement policy in §7.
 **Date:** 2026-07-30
 **Seed:** `20260731`
+**Amendment 2 (2026-09-08), before any rollout existed on the affected tasks:** §7 gained
+reason (d), vacuity. The original list (a)-(c) was written before vacuity was known to be a
+failure mode; it was discovered later, when a broken cell submitted empty patches and the
+grader passed them. A vacuous task builds fine and grades gold-FULL — it simply cannot FAIL,
+so it measures nothing and inflates both arms identically.
+
+*Why this is inside §7's stated principle, not an extension of it.* §7 admits a replacement
+for "a mechanical, arm-neutral reason" and forbids anything "derived from inspecting a diff or
+an issue". Vacuity is established by a static scan of the task's own FAIL_TO_PASS list for the
+test runner's success markers, and confirmed by a NULL ARM (`AGENT_TIMEOUT_MS=1000`, zero tool
+calls, empty patch) behind a green ledger. Neither step reads a diff, an issue, or any arm's
+behaviour, and an empty patch passes for both arms equally, so the finding cannot favour either.
+
+*Precedent and consistency.* `ucl__stir-1442` was found vacuous on 2026-08-24 and REMOVED,
+dropping the denominator to 199 and recorded as a freeze break in `HO2-VALIDITY-REPAIR.md`,
+because §7 had no reason that fit. Replacing a task whose Maven repository was unreachable
+while merely deleting a task that cannot fail is an inconsistency rather than a principle.
+Amendment 2 removes it. The three affected tasks — `ucl__stir-1442`, `symfony__flex-685`,
+`pheature-flags__pheature-flags-196`, the last two proven by null arm in run `ho2-nullarm-6`
+on 2026-09-08 — are replaced under the unchanged promotion order in §7, which is deterministic
+and leaves no room to choose a replacement.
+
+*Disclosure.* This amendment was made while preparing the first held-out-2 run and it raises
+the denominator from 197 to 200. No rollout existed on any affected task when it was written,
+and no result of any kind had been observed. Any publication using this set must cite it.
+
 **Amendment 1 (2026-07-30), before any task content was inspected:** the first draw under
 seed `20260730` exposed a degenerate deficit rule and an exclusion rule that is more
 expensive than it is protective. Both were amended (§2, §3), the burned seed was retired
@@ -161,7 +187,8 @@ proceeds on the deduplicated pool. This is deliberately a seeded pick rather tha
 - **A task may be replaced only for a mechanical, arm-neutral reason:**
   (a) the golden image or checkout will not build; (b) the suite will not reach gold-FULL
   under the exact run config after reasonable environment repair
-  (`harness/task-overrides.json`); (c) the repo or commit has vanished upstream.
+  (`harness/task-overrides.json`); (c) the repo or commit has vanished upstream;
+  (d) **the task is VACUOUS — it grades RESOLVED for an empty patch** (Amendment 2).
   **"The task looks odd / hard / easy / unrepresentative" is not a reason**, and neither is
   anything derived from inspecting a diff or an issue.
 - Order: lowest-rank unused reserve of the same language; if exhausted, the reserve of the
