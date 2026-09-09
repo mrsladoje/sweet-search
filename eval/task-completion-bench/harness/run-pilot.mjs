@@ -673,9 +673,21 @@ async function runOneTask(id) {
     // image_name — it NEVER touches the indexed goldens under ~/.ss-eval/golden
     // (plain dirs + .sweet-search/codebase.db, separate from docker image storage)
     // and is never a broad `docker system prune`. A later grade pass re-pulls.
-    if (image && SR_MODE && !process.env.NO_IMAGE_GC && !t._origImage) {
+    // Derived (warm/fixed) images were exempted here, which silently defeated the whole
+    // scheme: they are the multi-GB ones, ~47 of them in a full 200, so a run accumulated
+    // them until the disk watchdog killed it (2026-09-09: dead at 78/400 with 14 warm
+    // images resident, 55GB). ensureImage reloads a derived image from its vault tar on
+    // demand and says so, so GC them too — but ONLY when that tar exists, since a derived
+    // image is not pullable and deleting an unvaulted one would strand the task.
+    const gcVaultTar = t._origImage
+      ? path.join(process.env.SS_DERIVED_BACKUP || '/workspace/docker-derived-backup', vaultTarName(image))
+      : null;
+    const gcRestorable = !t._origImage || (gcVaultTar && existsSync(gcVaultTar));
+    if (image && SR_MODE && !process.env.NO_IMAGE_GC && gcRestorable) {
       try { execFileSync('docker', ['rmi', '-f', image], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 60000 }); }
       catch { /* image still referenced or already gone — ignore */ }
+    } else if (image && SR_MODE && !process.env.NO_IMAGE_GC && t._origImage) {
+      console.log(`  [image-gc] KEEPING ${image} — no vault tar at ${gcVaultTar}; it could not be reloaded if dropped`);
     }
   } catch (e) {
     console.error(`### ${id} FAILED: ${String(e.message).slice(0, 200)} — skipping`);
