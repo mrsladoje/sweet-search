@@ -368,6 +368,13 @@ function reapRunDir(rundir) {
   try { rmSync(rundir, { recursive: true, force: true }); } catch { /* */ }
 }
 
+// SS_AGGREGATE_ONLY=1 — for a FROZEN held-out set, where the standing rule is that only
+// aggregate metrics may be looked at. The summary otherwise prints every task's solve
+// outcome by name, so merely tailing a run log breaks the rule before anyone decides to.
+// Suppresses per-task solve listings only; aggregates, the gold tripwire and the
+// NO-TEST-EVIDENCE list stay, because those are integrity alarms rather than results.
+// rows.json is unaffected — the artifact still holds everything for the final analysis.
+const AGG_ONLY = process.env.SS_AGGREGATE_ONLY === '1';
 const runId = process.env.RUN_ID || `pilot-${INSTANCES.length}x${REPS}`;
 const RT_PROGRESS_ROW = progressRowFields({ flags: resolveProgressFlags() });
 // L3 run_tests output dedup (rt-dedup.mjs): harness-side, BOTH arms, tests always run.
@@ -708,14 +715,80 @@ function stripBig(r) { const { finalPatch, trajectory, ...rest } = r; return res
 
 console.log(`\n### running ${INSTANCES.length} task(s) × ${ARMS.length} arm(s) [${ARMS.join(',')}] × ${REPS} reps = ${TOTAL_RUNS} runs | CONCURRENCY=${CONCURRENCY} provider=${PROVIDER} model=${MODEL} frame=${process.env.TASK_FRAME !== '0' ? 'ON' : 'OFF'}`);
 emitProgress(' (start)');
-await runPool(INSTANCES, CONCURRENCY);
-// reap ss-* daemons ONCE, after the whole pool drains (never mid-pool — would kill
-// sibling tasks' live servers).
-reapServers();
+// GRADE_ONLY_FROM=<results dir | run id>: skip the agent phase and grade rollouts that
+// are already on disk. A run killed mid-flight (disk watchdog, crash) keeps its rows and
+// its preds-*.jsonl but never reaches the grading pass, so its solve column is empty
+// while every cost and effort column is complete. Re-running the agents to recover the
+// solves would throw away the rollouts AND produce different ones. This grades exactly
+// the retained patches, through the same gradeArm the normal path uses, so the recovered
+// leg is graded identically to any other.
+const GRADE_ONLY_FROM = process.env.GRADE_ONLY_FROM || '';
+if (GRADE_ONLY_FROM) {
+  const src = path.isAbsolute(GRADE_ONLY_FROM) ? GRADE_ONLY_FROM : path.join(BENCH, 'results', GRADE_ONLY_FROM);
+  const prior = JSON.parse(readFileSync(path.join(src, 'rows.json'), 'utf8'));
+  rows.push(...prior);
+  for (const arm of ARMS) {
+    const f = path.join(src, `preds-${arm}.jsonl`);
+    if (!existsSync(f)) { console.error(`GRADE_ONLY_FROM: no ${f}`); process.exit(3); }
+    const sel = new Set(INSTANCES);
+    const preds = readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
+      .filter(p => sel.has(p.instance_id));
+    predsByArm[arm].push(...preds);
+    (predsByRepArm[0] ||= {})[arm] = preds;
+    console.log(`[grade-only] ${arm}: ${preds.length} prediction(s) loaded from ${f}`);
+  }
+  console.log(`[grade-only] ${rows.length} row(s) loaded from ${src} — AGENT PHASE SKIPPED, grading only`);
+} else {
+  await runPool(INSTANCES, CONCURRENCY);
+  // reap ss-* daemons ONCE, after the whole pool drains (never mid-pool — would kill
+  // sibling tasks' live servers).
+  reapServers();
+}
 
 // Grade EVERY rep × arm via the swebench/SR Docker harness (multi-rep = variance power).
 // Each arm/rep keeps task-merged report/patch artifacts; row resolution is also
 // set per (arm, rep).
+// Grading runs after the whole pool, by which point per-task GC has dropped the images.
+// A stock image eval.py just re-pulls; a DERIVED (warm/fixed) one is in no registry, so
+// `docker run` exits 125, the batch returns zero test results, and the D-1 rule records
+// NO-TEST-EVIDENCE. That wiped the solve column of all 32 warm tasks in a 161-task leg on
+// 2026-09-10 while every non-warm task graded normally. So restore derived images from
+// their vault tars in small chunks, grade the chunk, drop them again: peak disk stays at a
+// few images instead of the ~190GB the whole warm set would need at once. The grader
+// itself is untouched — it is part of RT_HARNESS_FINGERPRINT and changing it would stale
+// every env-ledger row.
+function gradeWithDerivedImages(arm, preds, rid, rep) {
+  const CHUNK = Math.max(1, +(process.env.GRADE_RESTORE_CHUNK || 4));
+  const derivedOf = (chunk) => chunk
+    .map(p => taskById.get(p.instance_id))
+    .filter(t => t && t._origImage && t.image_name);
+  const needsRestore = derivedOf(preds).length;
+  if (!needsRestore) return gradeArm(arm, preds, rid, rep);
+  console.log(`  [grade-images] ${arm} rep${rep}: ${needsRestore} derived image(s) to restore from the vault, ${CHUNK} at a time`);
+  const merged = { resolved_ids: [], error_ids: [], missing_report_ids: [], no_test_evidence_ids: [], score: {}, stripped_paths: {}, resolved_instances: 0, total_instances: preds.length };
+  for (let i = 0; i < preds.length; i += CHUNK) {
+    const chunk = preds.slice(i, i + CHUNK);
+    const derived = derivedOf(chunk);
+    for (const t of derived) {
+      try { ensureImage(t); }
+      catch (e) { console.error(`  [grade-images] restore FAILED ${t.image_name} (${t.instance_id}): ${String(e.message).slice(0, 160)}`); }
+    }
+    const r = gradeArm(arm, chunk, rid, rep) || {};
+    for (const k of ['resolved_ids', 'error_ids', 'missing_report_ids', 'no_test_evidence_ids']) {
+      if (Array.isArray(r[k])) merged[k].push(...r[k]);
+    }
+    Object.assign(merged.score, r.score || {});
+    Object.assign(merged.stripped_paths, r.stripped_paths || {});
+    // gcBatchImages deliberately never drops a derived image, so do it here — otherwise
+    // restoring the whole warm set accumulates exactly the way the run loop used to.
+    for (const t of derived) {
+      try { execFileSync('docker', ['rmi', '-f', t.image_name], { env: { ...process.env, DOCKER_HOST }, stdio: 'ignore', timeout: 60000 }); }
+      catch { /* still referenced or already gone */ }
+    }
+  }
+  merged.resolved_instances = merged.resolved_ids.length;
+  return merged;
+}
 console.log('\n### grading via swebench (Docker, authoritative) — all reps');
 const repsToGrade = process.env.GRADE === '0' ? [] : Object.keys(predsByRepArm).map(Number).sort((a, b) => a - b);
 if (process.env.GRADE === '0') console.log('### grading SKIPPED (GRADE=0)');
@@ -723,7 +796,7 @@ for (const rep of repsToGrade) {
   for (const arm of ARMS) {
     const preds = predsByRepArm[rep]?.[arm] || [];
     if (!preds.length) continue;
-    const report = gradeArm(arm, preds, runId, rep);
+    const report = gradeWithDerivedImages(arm, preds, runId, rep);
     const resolvedIds = new Set(report?.resolved_ids || []);
     const errorIds = new Set(report?.error_ids || []);
     // D-1 tripwire: tasks whose grading log carried no framework test-result line at all.
@@ -733,7 +806,12 @@ for (const rep of repsToGrade) {
     // Grader test-collision fix: which agent edits (if any) were discarded because
     // they collided with the hidden test patch. Empty list on a normal task.
     const strippedPaths = report?.stripped_paths || {};
+    // In GRADE_ONLY_FROM the loaded rows can cover MORE tasks than this pass graded (that is
+    // the point — re-grade the handful that failed, keep the rest). Writing every row of the
+    // arm would stamp gradeable=true / resolved=false onto tasks nobody just graded.
+    const gradedIds = new Set(preds.map(p => p.instance_id));
     for (const row of rows) if (row.arm === arm && row.rep === rep) {
+      if (GRADE_ONLY_FROM && !gradedIds.has(row.taskId)) continue;
       row.noTestEvidence = noEvidenceIds.has(row.taskId);
       row.testResults = score[row.taskId]?.nTestResults ?? null;
       row.gradeable = !errorIds.has(row.taskId) && !row.noTestEvidence;
@@ -746,7 +824,7 @@ for (const rep of repsToGrade) {
     const nStripped = Object.keys(strippedPaths).length;
     if (nStripped) console.log(`  ${arm} rep${rep}: test-collision strip fired on ${nStripped} task(s): ${Object.keys(strippedPaths).join(',')}`);
     if (noEvidenceIds.size) console.log(`  ${arm} rep${rep}: *** NO TEST EVIDENCE on ${noEvidenceIds.size} task(s): ${[...noEvidenceIds].join(',')} — marked UNGRADEABLE, not scored zero ***`);
-    console.log(`  ${arm} rep${rep}: resolved ${resolvedIds.size}/${preds.length - errorIds.size} gradeable  ids=${[...resolvedIds].join(',') || '(none)'}`);
+    console.log(`  ${arm} rep${rep}: resolved ${resolvedIds.size}/${preds.length - errorIds.size} gradeable${AGG_ONLY ? '' : `  ids=${[...resolvedIds].join(',') || '(none)'}`}`);
   }
 }
 
@@ -838,7 +916,8 @@ for (const arm of ARMS) {
   const byTask = {}; rs.forEach(r => { (byTask[r.taskId] = byTask[r.taskId] || []).push(r.resolved ? 1 : 0); });
   const perTask = Object.entries(byTask).map(([t, v]) => `${t.split('__')[1] || t}:${v.reduce((a, b) => a + b, 0)}/${v.length}`).join(' ');
   console.log(`${arm}: resolved ${resolved}/${rs.length} task×rep (rate ${(100 * resolved / rs.length).toFixed(0)}%, partial-macro ${partialMacro.toFixed(3)})  avgCalls=${calls}  ss=${ss}  realized$${costN.toFixed(3)}  CPS=${cps}`);
-  console.log(`   per-task (reps solved): ${perTask}`);
+  if (AGG_ONLY) console.log('   per-task (reps solved): SUPPRESSED — SS_AGGREGATE_ONLY=1');
+  else console.log(`   per-task (reps solved): ${perTask}`);
 }
 console.log(`rows → ${path.join(outDir, 'rows.json')}`);
 // Force exit: lingering ss-* server sockets/handles can keep Node's event loop
