@@ -254,3 +254,92 @@ environment was never recorded and the box has no accelerator. Do not cite it as
 | box-built §7 replacements, backend inferred | 14 |
 
 That is a **three-way** mix, not two-way. Publish this table, not §5's.
+
+---
+
+# RESULT — frozen held-out 2, codex leg, 1 rep, ChatGPT subscription
+
+**Completed 2026-09-10.** 400 rollouts, 200/200 tasks paired on both arms, **0 zero-call
+rollouts, 0 ungradeable rows**. Model cost billed: **$0**.
+
+## 1. Headline
+
+**Sweet solves fewer and costs less. The solve gap is not statistically distinguishable from
+noise at 1 rep; the cost gap at parity is smaller than the pooled number suggests.**
+
+| | sweet | native |
+|---|---:|---:|
+| resolved | **72/200 (36.0%)** | **79/200 (39.5%)** |
+| discordant | 4 sweet-only | 11 native-only |
+| both solved | 68 | |
+| neither | 117 | |
+
+Δ = **−7 solves**. McNemar exact on the 15 discordant tasks: **p = 0.1185**.
+
+## 2. Cost
+
+| basis | sweet | native | pooled Δ | median per-task | sweet cheaper on |
+|---|---:|---:|---:|---:|---:|
+| realised | $2.0107 | $2.1575 | **−6.8%** | −5.4% | 116/200 |
+| ideal | $1.8979 | $2.0894 | **−9.2%** | −6.1% | 121/200 |
+| break-priced | $1.8979 | $2.0894 | **−9.2%** | −6.1% | 121/200 |
+
+**Restricted to the 68 tasks BOTH arms solved — the like-for-like comparison:**
+
+| basis | sweet | native | Δ |
+|---|---:|---:|---:|
+| realised | $0.5887 | $0.6014 | **−2.1%** |
+| ideal | $0.5665 | $0.5879 | **−3.6%** |
+
+**Report the parity figure, not the pooled one, whenever the claim is "same work, less money".**
+The pooled −6.8% is partly sweet spending less on tasks it does not solve, which is not a saving.
+
+Effort: sweet 10.6 tool calls per rollout, native 8.8. Leak counters: sweet **0**, native **6**.
+
+## 3. This disagrees with the 27-task rebaseline
+
+| | rebaseline (27 tasks, 3 reps) | frozen set (200 tasks, 1 rep) |
+|---|---|---|
+| solves | +1 | **−7** |
+| cost | −9.5% | −6.8% pooled, **−2.1% at parity** |
+
+The standing claim is efficiency at parity. On this set the efficiency is real but small, and the
+solve column moves the wrong way. Neither result overturns the other on its own — the rebaseline
+had 3 reps on 27 tasks, this has 1 rep on 200 — but **do not publish the rebaseline's numbers as
+if the frozen set confirmed them.** It did not.
+
+## 4. Limits — every one of these must travel with the numbers
+
+1. **REPS=1.** A single codex cell has been observed swinging 3/3 → 1/3 → 2/3 across identical
+   runs. The entire solve gap is 15 discordant tasks.
+2. **codex only** — one of three harnesses. The pre-registered read is per-harness.
+3. **37 of 199 stamped tasks (18.6%) are naming lotteries**; 1 task is unstamped. That fifth of
+   the denominator measures guessing, not retrieval. The 27-task pool was 0%.
+4. **The dollars are notional.** Nothing was billed. They are priced at the OpenRouter luna rate,
+   and luna is priced at the `:batch` rate, so every absolute figure is roughly **half** the true
+   dollar amount. Percentages are unaffected. Use them only as a relative sweet-vs-native
+   comparison inside this leg.
+5. **Two legs.** Leg 1 (39 tasks) and leg 2 (161 tasks) are split by a disk-watchdog kill. Same
+   code, same ledger, same harness pins; `run-pilot.mjs` is not in `RT_HARNESS_FINGERPRINT`, so
+   the fixes between them changed no measured quantity.
+6. **`tableauio__tableau-122`** was re-graded on 2026-09-09 on a rebuilt warm image after the
+   originally graded one was destroyed. Its environment verdict is newer than the other 199.
+7. **32 warm tasks were re-graded** on 2026-09-10 after a GC regression left them ungradeable.
+   Verified against the pre-regrade backup: of 258 previously-gradeable rows, 0 became
+   ungradeable and 0 flipped verdict.
+8. **`escape=` carries a nonzero arm-symmetric floor** (1800 per arm) from an OpenAI content CDN
+   the guard deliberately refuses. Not agent escape behaviour.
+
+## 5. What broke on the way, and what fixed it
+
+| failure | effect | fix |
+|---|---|---|
+| jail egress allowlist lacked `chatgpt.com` | 27/27 rollouts dead, 0 calls, looked like a dead treatment | `4017a54` — `EGRESS_ALLOW`, needed host first so the reachability probe tests it |
+| per-task image GC exempted derived images | run died at 78/400 on the disk watchdog | `a8f2138` — GC them too, only when a vault tar exists |
+| grading could not see derived images | all 32 warm tasks ungradeable, nothing else | `3bd2f16` — restore from the vault around each grade batch |
+| subset re-grade rewrote every row of an arm | would have stamped `resolved:false` on 129 good tasks | `3bd2f16` — restrict row updates to the graded set |
+| the run summary printed every task's solve | broke aggregate-only on a frozen set by default | `3bd2f16` — `SS_AGGREGATE_ONLY=1` |
+
+Recovery tooling worth keeping: **`GRADE_ONLY_FROM=<run>`** grades rollouts already on disk with
+the agent phase skipped. A run killed before its grade pass keeps every cost column but loses its
+solve column, and re-running the agents would destroy the rollouts rather than recover them.
