@@ -162,6 +162,18 @@ function startDns() {
       if (!hostAllowed(name)) denyLog({ kind: 'dns', host: name, qtype });
     } catch { /* malformed query — ignore */ }
   });
+  // A predecessor can still be releasing the socket for a moment after it exits. Retry
+  // rather than let an unhandled 'error' kill the proxy and strand the guard.
+  let tries = 0;
+  sock.on('error', (e) => {
+    if (e && e.code === 'EADDRINUSE' && tries < 25) {
+      tries++;
+      setTimeout(() => { try { sock.bind(53, HOST_IP); } catch { /* retried below */ } }, 200);
+      return;
+    }
+    console.error(`[egress-guard] DNS socket error: ${e && e.message}`);
+    process.exit(1);
+  });
   sock.bind(53, HOST_IP);
   return sock;
 }
@@ -277,7 +289,21 @@ function up(allow) {
 }
 
 function down() {
-  try { process.kill(Number(readFileSync(PID_FILE, 'utf8').trim()), 'SIGTERM'); } catch { /* */ }
+  // SIGTERM then RETURN raced the restart: the dying proxy still held udp 10.201.0.1:53,
+  // the new one died on `bind EADDRINUSE`, and the guard was left ns=up/proxy=dead. Every
+  // rollout then failed `egress guard unreachable` — 400/400 on 2026-09-10, 1.5h, no
+  // money spent but nothing measured either. So wait for the pid to actually go.
+  let pid = 0;
+  try { pid = Number(readFileSync(PID_FILE, 'utf8').trim()); } catch { /* no pid file */ }
+  if (pid > 0) {
+    try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ }
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      try { process.kill(pid, 0); } catch { break; }          // throws once it is gone
+      try { execFileSync('sleep', ['0.1']); } catch { /* */ }
+    }
+    try { process.kill(pid, 0); process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
+  }
   rmSync(PID_FILE, { force: true });
   shq('iptables', ['-D', 'FORWARD', '-s', SUBNET, '-j', 'REJECT', '--reject-with', 'icmp-admin-prohibited']);
   shq('ip', ['netns', 'del', NS]);

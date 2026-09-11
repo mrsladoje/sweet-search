@@ -670,6 +670,16 @@ async function runOneTask(id) {
           emitProgress(`  (${id} ${arm} r${rep}: ${r.calls}c ${r.patchHunks}h ${(r.wallMs / 1000).toFixed(0)}s ${r.exitReason})`);
         } catch (e) {
           console.error(`  [${arm} rep${rep}] run error: ${String(e.message).slice(0, 160)}`);
+          // Some failures are the RUN's, not the task's: a dead egress guard fails every
+          // rollout identically and there is nothing to salvage by continuing. On
+          // 2026-09-10 that burned 1.5h producing 400/400 errors before anyone looked.
+          // Abort on the first one and say so, instead of grinding through the set.
+          if (/egress guard unreachable|jail unavailable/i.test(String(e.message))) {
+            console.error('\n*** RUN-WIDE INFRASTRUCTURE FAILURE — aborting instead of erroring every rollout ***');
+            console.error(`*** ${String(e.message).slice(0, 300)}`);
+            console.error('*** Fix the guard, then relaunch. Nothing was measured; nothing was billed.');
+            process.exit(9);
+          }
           prog.done++; prog.errors++; prog.byArm[arm]++; emitProgress(`  (${id} ${arm} r${rep}: ERROR)`);
         }
       }
