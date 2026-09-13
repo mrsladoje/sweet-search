@@ -315,10 +315,14 @@ if the frozen set confirmed them.** It did not.
 2. **codex only** — one of three harnesses. The pre-registered read is per-harness.
 3. **37 of 199 stamped tasks (18.6%) are naming lotteries**; 1 task is unstamped. That fifth of
    the denominator measures guessing, not retrieval. The 27-task pool was 0%.
-4. **The dollars are notional.** Nothing was billed. They are priced at the OpenRouter luna rate,
-   and luna is priced at the `:batch` rate, so every absolute figure is roughly **half** the true
-   dollar amount. Percentages are unaffected. Use them only as a relative sweet-vs-native
-   comparison inside this leg.
+4. **The dollars are notional but correctly priced.** Nothing was billed — the leg ran on a
+   ChatGPT subscription, which issues no per-request billing record, so there is no invoice to
+   recover for it. They are priced at OpenRouter's list rate for `openai/gpt-5.6-luna`.
+   **CORRECTION (2026-09-13): the earlier claim that these figures are half the truth because
+   luna is priced at the `:batch` rate is WRONG.** Checked against OpenRouter's live model list:
+   `openai/gpt-5.6-luna` is $0.20/M prompt, $1.20/M completion, $0.02/M cache-read, which is
+   exactly what `ideal-cost.mjs` carries. `openai/gpt-5.6-luna:batch` is the half-price variant
+   and is not what the table uses. Treat these as list-price-equivalent, not as half.
 5. **Two legs.** Leg 1 (39 tasks) and leg 2 (161 tasks) are split by a disk-watchdog kill. Same
    code, same ledger, same harness pins; `run-pilot.mjs` is not in `RT_HARNESS_FINGERPRINT`, so
    the fixes between them changed no measured quantity.
@@ -402,9 +406,36 @@ sweet **66/200**, native **69/200**, Δ = **−3**. Discordant 9 sweet-only / 12
 | codex | −7 (p = 0.12) | −2.1% realised / −3.6% ideal | notional, subscription billed $0 |
 | claude-code | −3 (p = 0.66) | **−31.0% inclusive** | **real OpenRouter billing** |
 
-**Do not pool these two numbers.** One is notional and priced at luna's `:batch` rate (so
-absolute dollars are ~half the truth); the other is a real bill. The directions agree: sweet
+**Do not pool these two numbers.** One is notional (a subscription leg, priced at OpenRouter
+list rate, never invoiced); the other is a real bill. The directions agree: sweet
 solves slightly fewer and costs less, and the size of "less" depends entirely on whether the
 harness delegates.
 
 opencode remains unrun. The pre-registered read is per-harness.
+
+
+---
+
+# CAN THE CODEX LEG BE PRICED FROM A REAL BILL? No — and token-modelling cannot stand in
+
+**There is no codex invoice to recover.** It ran on the owner's ChatGPT login. A subscription
+issues no per-request billing record, so the `reprice-claudecode-openrouter.mjs` trick — which
+works because Claude Code's requests carry OpenRouter generation ids — has nothing to query.
+
+**The pricing itself is fine.** OpenRouter's live list for `openai/gpt-5.6-luna` is $0.20/M
+prompt, $1.20/M completion, $0.02/M cache-read; `ideal-cost.mjs` carries exactly that. The
+`:batch` variant is the half-price one and is not in use. The long-standing "every published
+luna dollar is half" note is retired.
+
+**Modelling dollars from recorded tokens is NOT a substitute for a bill, and the failure is
+arm-asymmetric — the worst possible shape.** Validated against the claude-code leg, where both
+the tokens and the real invoice exist:
+
+| arm | main-loop ACTUAL | modelled at list price | error |
+|---|---:|---:|---:|
+| sweet | $7.0199 | $6.9004 | **−1.7%** |
+| native | $7.4728 | $9.4373 | **+26.3%** |
+
+A model that is 1.7% low on one arm and 26.3% high on the other would manufacture a ~28-point
+cost gap out of nothing. **Never reprice a leg from token counts and present it beside a real
+bill.** If real codex dollars are wanted, the leg has to be re-run metered through OpenRouter.
