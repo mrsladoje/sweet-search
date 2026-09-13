@@ -343,3 +343,68 @@ if the frozen set confirmed them.** It did not.
 Recovery tooling worth keeping: **`GRADE_ONLY_FROM=<run>`** grades rollouts already on disk with
 the agent phase skipped. A run killed before its grade pass keeps every cost column but loses its
 solve column, and re-running the agents would destroy the rollouts rather than recover them.
+
+---
+
+# RESULT — frozen held-out 2, CLAUDE-CODE leg, luna via OpenRouter
+
+**Completed 2026-09-12.** 400 rollouts, 200/200 paired, **0 zero-call, 0 run errors,
+0 ungradeable**, 8 degenerate-kept (2%). Wall clock 25.6h. **Billed: $17.46 real.**
+
+## 1. Cost — from OpenRouter's own billing, never from rows.json
+
+`rows.json` nulled `costRealizedUsd` on **88 native rows against 8 sweet rows**. That
+asymmetry reverses the sign, so every figure below comes from
+`reprice-claudecode-openrouter.mjs`: 10,371 generation records, **0 unresolved**.
+Sidechain-INCLUSIVE, which is the pre-registered definition since 2026-08-13.
+
+| slice | basis | sweet | native | Δ |
+|---|---|---:|---:|---:|
+| **all 200 tasks** | inclusive | $7.3456 | $10.1112 | **−27.4%** |
+| | main loop | $7.0199 | $7.4728 | −6.1% |
+| | delegated | $0.3257 | $2.6383 | −87.7% |
+| **both-solved (n=57)** | inclusive | $1.6139 | $2.3403 | **−31.0%** |
+| | main loop | $1.5005 | $1.6304 | −8.0% |
+| | delegated | $0.1134 | $0.7099 | −84.0% |
+| **neither-solved (n=122)** | inclusive | $5.0974 | $6.7959 | −25.0% |
+
+Median per-task inclusive **−26.8%** on both-solved, **−25.6%** overall. Sweet is cheaper on
+**142/200** tasks overall and **42/57** of the both-solved tasks.
+
+**The saving is stable across slices** — −31% where both arms solve, −25% where neither does —
+so it is not an artefact of sweet giving up early on tasks it fails.
+
+## 2. What actually drives it: delegation, not main-loop efficiency
+
+**Main loops are nearly level (−6.1%). Delegated spend is not (−87.7%).**
+
+| | sweet | native |
+|---|---:|---:|
+| delegated requests, all tasks | 150 | **1191** |
+| delegated requests, both-solved | 24 | **309** |
+
+Native fires roughly **8× the subagent requests**. The mechanism to claim is that better
+retrieval removes the need to delegate exploration — **not** that sweet makes the main loop
+cheaper, which it barely does.
+
+**This is why codex shows −2.1% at parity and claude-code shows −31%.** codex has no subagent
+tier for the effect to act on. **Do not generalise the 27% to harnesses without delegation.**
+
+## 3. Solves
+
+sweet **66/200**, native **69/200**, Δ = **−3**. Discordant 9 sweet-only / 12 native-only,
+**McNemar exact p = 0.6636** — indistinguishable from noise.
+
+## 4. Two-harness picture on the frozen set
+
+| harness | solves Δ | cost Δ at parity | cost basis |
+|---|---:|---:|---|
+| codex | −7 (p = 0.12) | −2.1% realised / −3.6% ideal | notional, subscription billed $0 |
+| claude-code | −3 (p = 0.66) | **−31.0% inclusive** | **real OpenRouter billing** |
+
+**Do not pool these two numbers.** One is notional and priced at luna's `:batch` rate (so
+absolute dollars are ~half the truth); the other is a real bill. The directions agree: sweet
+solves slightly fewer and costs less, and the size of "less" depends entirely on whether the
+harness delegates.
+
+opencode remains unrun. The pre-registered read is per-harness.
