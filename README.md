@@ -235,8 +235,8 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 </td>
 <td width="50%" valign="top">
 
-🚧 **② [Task-completion](#bench-task-completion)** *(coming soon)*<br>
-<sub>Does cheaper, denser context **compound** into a higher resolve-rate on multi-step engineering tasks? Harness in progress.</sub>
+🛠️ **② [Task-completion](#bench-task-completion)** *(frozen held-out)*<br>
+<sub>Does cheaper, denser context **compound** across multi-step engineering tasks? 200 SWE-rebench tasks, three harnesses, 1,200 paired rollouts.</sub>
 
 </td>
 </tr>
@@ -312,9 +312,77 @@ The win is **harness-adaptive**: where the native loop is disciplined (Claude Co
 ---
 
 <a id="bench-task-completion"></a>
-### 🚧 2. Task-completion benchmarks — *coming soon*
+### 🛠️ 2. Task-completion benchmarks — *does it compound?*
 
-> Retrieval quality is necessary but not sufficient. Cheaper, denser context only matters if it **compounds across a real, multi-step engineering task** — finding the code, understanding it, changing it, and not breaking anything. The next suite measures exactly that: **resolve-rate on SWE-bench-style multi-file tasks**, sweet-search-wired vs. native, on the same paired, multiplicity-controlled bar as above. Harness and pilot are in progress — numbers land here when they clear that bar, and not before.
+Retrieval quality is necessary but not sufficient. Cheaper, denser context only matters if it
+**compounds across a real, multi-step engineering task** — find the code, understand it, change it,
+don't break anything. This suite measures exactly that: **resolve-rate and cost on SWE-rebench-style
+multi-file tasks**, sweet-search-wired vs. the same model's native loop.
+
+One variable changes, again: **how the agent searches.** Same model, same tasks, same grader, paired
+per task. The harnesses run **as they ship** — no tools disabled, no delegation switched on or off.
+
+<div align="center">
+
+<img src="assets/task-completion-stats.svg" alt="Three harness profiles comparing sweet-search with native grep-and-read on task-completion cost, resolve rate, subagent calls and tool calls" width="100%" />
+
+<sub>frozen held-out set · 200 tasks · 1 rep · 1,200 rollouts · gpt-5.6-luna · opened once</sub>
+
+</div>
+
+**The headline, honestly:**
+
+- 💰 **Cheaper on every harness, by 2% to 31%** — measured on the tasks **both arms solved**, so it's
+  like-for-like and not sweet giving up early on hard tasks.
+- 🤝 **Resolve rate is a tie, and sweet is slightly behind** — −3, −6 and −7 tasks out of 200. None
+  significant (McNemar p = 0.66, 0.18, 0.12). **This is not a resolve-rate win and we don't claim one.**
+- 🪆 **The saving scales with how much the harness delegates** — Claude Code's native arm fired
+  **1,191 subagent requests against sweet-search's 150**, and that gap *is* the 31%. Codex has no
+  subagent tier and shows 2.1%.
+- 🧭 **Fewer tool calls where it matters** — 19.6 vs 35.8 on Claude Code, 19.0 vs 24.4 on opencode.
+
+<details>
+<summary><b>📋 Full per-harness results & how it's measured</b></summary>
+
+| 🧰 Harness | 💰 Cost, same tasks solved | 💰 Cost, all tasks | 🎯 Resolved | 🪆 Subagent requests | 🔧 Tool calls |
+|---|---:|---:|:--|---:|---:|
+| 🟣 **Claude Code** | **−31.0%** ᵃ | −27.4% | 66 / 69 · *p=0.66* | **150 / 1,191** | 19.6 / 35.8 |
+| 🐚 **opencode** | **−7.7%** | −11.5% | 65 / 71 · *p=0.18* | not instrumented | 19.0 / 24.4 |
+| 🤖 **Codex** | **−2.1%** ᵇ | −6.8% | 72 / 79 · *p=0.12* | none (no subagent tier) | 10.6 / 8.8 |
+
+<sub>All figures sweet-search / native. ᵃ Claude Code is the only leg priced from a **real OpenRouter
+invoice** (10,371 generation records, 0 unresolved), sidechain-**inclusive**, because its `rows.json`
+nulls cost arm-asymmetrically and would reverse the sign. ᵇ Codex ran on a ChatGPT subscription, so
+**nothing was billed** — its dollars are list-price-equivalent, not an invoice. opencode is
+list-price ledger with 0 nulls on both arms.</sub>
+
+**The mechanism, stated plainly.** Sweet-search's main-loop spend is close to native's (−6.1% on
+Claude Code). The gap is delegation: native spawns subagents to explore a repo it can't navigate
+cheaply, and each one is a fresh context that gets billed. Better retrieval removes the reason to
+delegate. That's why the same product shows 31% on a harness with a subagent tier and 2% on one
+without — and why we quote a **range, not one number**.
+
+- **What's compared:** the installed `sweet-search` agent prompt + tools vs. the *same model* using
+  its built-in file-reading and shell-grep loop. The sweet-search system prompt says nothing about
+  subagents or delegation — it only routes code search through `ss-*`.
+- **Design:** 200 tasks × 2 arms × 1 rep × 3 harnesses = **1,200 rollouts**. Tasks drawn from
+  SWE-rebench V1+V2, admitted only if the official gold patch grades FULL in the exact run
+  environment (a "green ledger" gate), and re-verified per run.
+- **Isolation:** every rollout runs in its own mount/PID/network jail with an SNI-allowlist egress
+  proxy — the agent can reach the model API and nothing else. No GitHub, no package registries.
+  Escape attempts are counted, not assumed to be zero.
+- **Grading:** the official SWE-bench/SWE-rebench Docker evaluator, `FAIL_TO_PASS` +
+  `PASS_TO_PASS`. A patch that produces no test evidence is marked **ungradeable**, never scored
+  zero. Final run: **0 ungradeable, 0 zero-call rollouts, 0 run errors** across all 1,200.
+- **Honest caveats we keep attached:** (1) **1 rep** — a single cell on this bench has been observed
+  swinging 3/3 → 1/3 → 2/3 across identical runs, so the solve column is a point estimate.
+  (2) **37 of 199 stamped tasks (18.6%) are naming lotteries** — the hidden test needs an identifier
+  the reference patch invented, which no amount of retrieval can recover. (3) Three legs, three cost
+  bases, only one a real invoice — **do not pool the dollar figures**. (4) The three solve deltas all
+  lean the same way (−3, −6, −7); individually noise, collectively a hint that sweet-search may cost
+  a little accuracy, and we'd rather say so than round it to zero.
+
+</details>
 
 ---
 
