@@ -1,7 +1,7 @@
 {
   "name": "sweet-search",
   "version": "2.7.2",
-  "description": "Local code search for AI agents: six fast, purpose-built tools that return ranked answers, not raw grep. Because maybe grep isn't all you need... 🍬",
+  "description": "Local code search for AI agents: six fast, purpose-built tools that return ranked answers, not raw grep. Because maybe grep isn't all you need... \ud83c\udf6c",
   "type": "module",
   "main": "core/search/sweet-search.js",
   "exports": {
@@ -92,8 +92,8 @@
     "build": "node -e \"import('./core/search/sweet-search.js')\" && echo 'Build OK'",
     "build:wasm": "node scripts/build-wasm.js && cd crates/wasm-maxsim && RUSTFLAGS=\"-C target-feature=+simd128\" cargo build --target wasm32-unknown-unknown --release && cp target/wasm32-unknown-unknown/release/maxsim_wasm.wasm ../../core/infrastructure/maxsim.wasm && echo 'WASM build OK'",
     "build:native": "cd crates/sweet-search-native && npx napi build --release --platform --features coreml,accelerate && echo 'Native build OK'",
-    "build:native:cuda": "cd crates/sweet-search-native && npx napi build --release --platform --features cuda,flash-attn && echo 'CUDA native build OK (Ampere+ — flash-attn compiled in, runtime-gated on SM 8.0+)'",
-    "build:native:cuda-no-flashattn": "cd crates/sweet-search-native && npx napi build --release --platform --features cuda && echo 'CUDA native build OK (no flash-attn — SM 7.0+ compatible, naive attention)'",
+    "build:native:cuda": "cd crates/sweet-search-native && npx napi build --release --platform --features cuda,flash-attn && echo 'CUDA native build OK (Ampere+ \u2014 flash-attn compiled in, runtime-gated on SM 8.0+)'",
+    "build:native:cuda-no-flashattn": "cd crates/sweet-search-native && npx napi build --release --platform --features cuda && echo 'CUDA native build OK (no flash-attn \u2014 SM 7.0+ compatible, naive attention)'",
     "build:bg-priority": "cd native/bg-priority && npx napi build --platform --release && echo 'bg-priority native addon build OK'",
     "build:mem-pressure": "cd native/mem-pressure && npx napi build --platform --release && echo 'mem-pressure native addon build OK'",
     "build:cli": "cd crates/sweet-search-cli && cargo build --release && echo 'CLI build OK'",
@@ -179,5 +179,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.7"
   }
 }
