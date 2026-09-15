@@ -48,8 +48,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned: rustc 1.98 passes --fix-cortex-a53-843419 on aarch64-linux,
+      # which zig 0.16.0's linker rejects; bump together with zig/zigbuild.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.97.1
           targets: ${{ matrix.target }}
 
       # Linux targets cross-compile against glibc 2.17 via cargo-zigbuild, so the
@@ -113,8 +116,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned: rustc 1.98 passes --fix-cortex-a53-843419 on aarch64-linux,
+      # which zig 0.16.0's linker rejects; bump together with zig/zigbuild.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.97.1
           targets: ${{ matrix.target }}
       - uses: actions/setup-node@v4
         with:
@@ -163,8 +169,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned: rustc 1.98 passes --fix-cortex-a53-843419 on aarch64-linux,
+      # which zig 0.16.0's linker rejects; bump together with zig/zigbuild.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.97.1
           targets: aarch64-unknown-linux-gnu
       - uses: mlugg/setup-zig@v2
         with:
@@ -213,8 +222,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned: rustc 1.98 passes --fix-cortex-a53-843419 on aarch64-linux,
+      # which zig 0.16.0's linker rejects; bump together with zig/zigbuild.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.97.1
           targets: ${{ matrix.target }}
       - uses: actions/setup-node@v4
         with:
@@ -251,8 +263,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned: rustc 1.98 passes --fix-cortex-a53-843419 on aarch64-linux,
+      # which zig 0.16.0's linker rejects; bump together with zig/zigbuild.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.97.1
           targets: aarch64-unknown-linux-gnu
       - uses: mlugg/setup-zig@v2
         with:
