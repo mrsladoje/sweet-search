@@ -200,12 +200,14 @@ describe('a maintainer that keeps working is not the victim', () => {
   };
 
   it('sheds the maintainer that stopped working, not the one that started first', async () => {
+    // startedAt stays inside the last minute: pruneRegistry drops entries that
+    // predate boot (60 s slack), and a fresh CI runner has only minutes of uptime.
     const now = Date.now();
     seedRegistry([
       // Started FIRST, but still working — the busy main repo.
-      { pid: 11, kind: 'm', startedAt: now - 3 * 3600_000, lastActivityMs: now, rss: 0 },
+      { pid: 11, kind: 'm', startedAt: now - 50_000, lastActivityMs: now, rss: 0 },
       // Started later, but has done nothing for an hour — the abandoned repo.
-      { pid: 12, kind: 'm', startedAt: now - 60_000, lastActivityMs: now - 3600_000, rss: 0 },
+      { pid: 12, kind: 'm', startedAt: now - 10_000, lastActivityMs: now - 3600_000, rss: 0 },
       { pid: 13, kind: 's', startedAt: now, lastActivityMs: now, rss: 0 }, // self
     ]);
     const signalled = [];
@@ -222,8 +224,8 @@ describe('a maintainer that keeps working is not the victim', () => {
     // "started first" and the busy main repo is chosen.
     const now = Date.now();
     seedRegistry([
-      { pid: 11, kind: 'm', startedAt: now - 3 * 3600_000, lastActivityMs: now - 3 * 3600_000, rss: 0 },
-      { pid: 12, kind: 'm', startedAt: now - 60_000, lastActivityMs: now - 60_000, rss: 0 },
+      { pid: 11, kind: 'm', startedAt: now - 50_000, lastActivityMs: now - 50_000, rss: 0 },
+      { pid: 12, kind: 'm', startedAt: now - 10_000, lastActivityMs: now - 10_000, rss: 0 },
       { pid: 13, kind: 's', startedAt: now, lastActivityMs: now, rss: 0 },
     ]);
     const signalled = [];
