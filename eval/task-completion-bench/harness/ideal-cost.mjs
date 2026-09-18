@@ -47,6 +47,21 @@ export const MODEL_PRICES = {
   // /api/v1/models 2026-07-23 (prompt / completion / input_cache_read, $ per 1M tokens).
   'anthropic/claude-sonnet-5': { in: 2.0, cache: 0.20, out: 10.0 },   // OpenRouter intro ($2/$10) — what we pay via the Anthropic skin
   'x-ai/grok-4.5': { in: 2.0, cache: 0.30, out: 6.0 },
+  // Grok 4.6, quoted by Cursor itself on cursor.com/grok (2026-09-18): "$2/M input,
+  // $0.50/M cached input, and $6/M output". The Fast variant is double on every component
+  // ($4 / $1 / $12) — pick the id that matches the model actually run.
+  //
+  // CAVEAT specific to the cursor harness: these are xAI/Cursor LIST prices. A cursor run on
+  // a Pro+ subscription bills against the Cursor Models pool, not per request, so nothing is
+  // invoiced at these rates. They make the cost column comparable to the other harnesses;
+  // they are NOT a bill. Cursor publishes no per-request billing record to reconcile against,
+  // unlike OpenRouter's /api/v1/generation.
+  'x-ai/grok-4.6': { in: 2.0, cache: 0.50, out: 6.0 },
+  'cursor-grok-4.6-medium': { in: 2.0, cache: 0.50, out: 6.0 },
+  'cursor-grok-4.6-high': { in: 2.0, cache: 0.50, out: 6.0 },
+  'cursor-grok-4.6-low': { in: 2.0, cache: 0.50, out: 6.0 },
+  'cursor-grok-4.6-medium-fast': { in: 4.0, cache: 1.00, out: 12.0 },
+  'cursor-grok-4.6-high-fast': { in: 4.0, cache: 1.00, out: 12.0 },
   'meta/muse-spark-1.1': { in: 1.25, cache: 0.15, out: 4.25 },
   // Re-fetched 2026-09-03. OpenRouter served $0.10/$0.60 when this was last checked on
   // 2026-08-04, but it now serves OpenAI's announced $0.20/$1.20 and the old numbers are
