@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { runTask } from './api-task-runner.mjs';
 import { runCodexTask } from './codex-task-runner.mjs';
 import { runClaudeCodeTask } from './claude-code-task-runner.mjs';
+import { runCursorTask } from './cursor-task-runner.mjs';
 import { runOpencodeTask } from './opencode-task-runner.mjs';
 import { shimVerdict } from './shim-policy.mjs';
 import { gradeFromReportItem, loadLedger, preflightEnvLedger, vaultTarName } from './env-ledger.mjs';
@@ -170,7 +171,7 @@ if (NET_LOCKDOWN && HARNESS === 'codex' && process.platform === 'linux' && !ISOL
 // start quietly and produce numbers that look identical to isolated ones — the whole
 // failure mode last time was contamination that no column recorded. Emergency override:
 // SS_ISOLATION=0, which stamps every row so the result can never be mistaken for clean.
-const CLI_HARNESS = ['codex', 'claudecode', 'opencode'].includes(HARNESS);
+const CLI_HARNESS = ['codex', 'claudecode', 'opencode', 'cursor'].includes(HARNESS);
 if (CLI_HARNESS && ISOLATION_ON) {
   const pf = jailPreflight();
   if (!pf.ok) {
@@ -616,6 +617,7 @@ async function runOneTask(id) {
             if (HARNESS === 'codex') return await runCodexTask(task, agentOpts);
             if (HARNESS === 'claudecode') return await runClaudeCodeTask(task, agentOpts);
             if (HARNESS === 'opencode') return await runOpencodeTask(task, agentOpts);
+            if (HARNESS === 'cursor') return await runCursorTask(task, agentOpts);
             return await runTask(task, { arm, model: MODEL, apiModel: MODEL, provider: PROVIDER, reasoning: REASONING, maxToolCalls: MAX_TOOL_CALLS, ssBinDir: SS_BIN, mppText, policy: process.env.POLICY, runTests });
           } finally {
             reapRunDir(rundir); // kill this run's server/maintainer + delete its copy; golden untouched
