@@ -27,6 +27,24 @@
 //                          gutter is pure token cost there (none 8.66 tok/line,
 //                          tab 10.11, pipe/colon 11.04). Unnumbered matched
 //                          native's solve count (41 of 66) at the cheapest price.
+//   cursor       `N:`      Cursor's edit is a two-model APPLY: the frontier model
+//                          emits a deliberately lazy sketch ("... existing code
+//                          ...") and a separate trained apply model reconciles it
+//                          against the whole file with layered exact-then-fuzzy
+//                          matching. That is the opencode/codex family, not the
+//                          claude-code one — a tolerant matcher never REJECTS a
+//                          stray delimiter, it absorbs it. Tab is therefore the
+//                          worst form here for the same reason it was on opencode
+//                          (one extra tab silently written into tab-indented
+//                          files, 7 of 132 rollouts, p=0.0004). Colon cannot be
+//                          read as indentation and keeps the numbers range reads
+//                          use. Codex's `none` does not transfer: that was chosen
+//                          because codex clips every tool output at ~2,500 tokens
+//                          so the gutter is pure cost, and cursor has no such clip.
+//                          INFERRED from cursor's published apply design, NOT yet
+//                          measured the way the other three were — the deciding
+//                          test is a gutter-prefixed read of a TAB-INDENTED file
+//                          followed by an edit, checked for a leaked delimiter.
 //   anything else `N<TAB>` The historically validated default.
 //
 // HOW THE HARNESS IS FOUND, cheapest signal first. The ss-* wrappers are a fresh
@@ -71,6 +89,7 @@ export const HARNESS_DEFAULT_FORM = Object.freeze({
   'claude-code': 'tab',
   opencode: 'colon',
   codex: 'none',
+  cursor: 'colon',
 });
 
 export const DEFAULT_FORM = 'tab';
@@ -92,6 +111,9 @@ export function classifyProcess({ comm = '', args = '' } = {}) {
   if (base === 'claude' || /@anthropic-ai\/claude-code|\/claude-code\/cli\.js/.test(hay)) return 'claude-code';
   if (base === 'codex' || base.startsWith('codex-') || /@openai\/codex/.test(hay)) return 'codex';
   if (base === 'opencode' || /\/opencode\/bin\/opencode|opencode-ai/.test(hay)) return 'opencode';
+  // `cursor` alone is the IDE, not the agent CLI, and the IDE is not a harness for
+  // our tools — only the agent binary and its npm entry point count.
+  if (base === 'cursor-agent' || /\/cursor-agent\b|@cursor\/(cli|agent)/.test(hay)) return 'cursor';
   return null;
 }
 
@@ -100,6 +122,7 @@ export function detectHarnessFromEnv(env = process.env) {
   if (truthy(env.CLAUDECODE) || truthy(env.CLAUDE_CODE_ENTRYPOINT)) return 'claude-code';
   if (Object.keys(env).some(k => k.startsWith('CODEX_SANDBOX'))) return 'codex';
   if (truthy(env.OPENCODE)) return 'opencode';
+  if (truthy(env.CURSOR_AGENT) || truthy(env.CURSOR_TRACE_ID)) return 'cursor';
   return null;
 }
 

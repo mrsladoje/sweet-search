@@ -38,7 +38,9 @@ const table = (rows) => (pid) => rows[pid] || null;
 
 describe('harness → form mapping', () => {
   it('is exactly the decided table', () => {
-    expect(HARNESS_DEFAULT_FORM).toEqual({ 'claude-code': 'tab', opencode: 'colon', codex: 'none' });
+    expect(HARNESS_DEFAULT_FORM).toEqual({
+      'claude-code': 'tab', opencode: 'colon', codex: 'none', cursor: 'colon',
+    });
     expect(GUTTER_FORMS).toEqual({ tab: '\t', pipe: '| ', colon: ':', none: '' });
   });
 });
@@ -149,7 +151,7 @@ describe('macOS harness cache', () => {
     const file = path.join(dir, 'h.json');
     writeFileSync(file, 'not json');
     expect(readHarnessCache(file, { isAlive: () => true })).toBe(null);
-    writeFileSync(file, JSON.stringify({ v: 1, harness: 'cursor', pid: 5, ts: Date.now() }));
+    writeFileSync(file, JSON.stringify({ v: 1, harness: 'zed', pid: 5, ts: Date.now() }));
     expect(readHarnessCache(file, { isAlive: () => true })).toBe(null);
     writeFileSync(file, JSON.stringify({ v: 1, harness: 'codex', pid: 1, ts: Date.now() }));
     expect(readHarnessCache(file, { isAlive: () => true })).toBe(null);
@@ -299,5 +301,30 @@ describe('rendering under every form', () => {
   it('the default renderer follows the resolved form', () => {
     process.env.SS_READ_GUTTER = 'tab';
     expect(numberCodeLines('x', 3)).toBe('3\tx');
+  });
+});
+
+// Cursor: its edit is a two-model fuzzy APPLY, so it belongs to the tolerant-matcher
+// family (opencode/codex) where a stray delimiter is absorbed rather than rejected.
+// Colon, never tab. See the decision block at the top of gutter-form.js.
+describe('cursor', () => {
+  it('uses colon, the tolerant-matcher form, never tab', () => {
+    expect(HARNESS_DEFAULT_FORM.cursor).toBe('colon');
+    expect(GUTTER_FORMS[HARNESS_DEFAULT_FORM.cursor]).toBe(':');
+  });
+
+  it('classifies the agent CLI but NOT the bare IDE binary', () => {
+    expect(classifyProcess({ args: '/usr/local/bin/cursor-agent --print "fix it"' })).toBe('cursor');
+    expect(classifyProcess({ args: 'node /p/node_modules/@cursor/cli/dist/index.js' })).toBe('cursor');
+    expect(classifyProcess({ args: '/opt/homebrew/bin/cursor-agent' })).toBe('cursor');
+    // the IDE is not a harness for our tools
+    expect(classifyProcess({ args: '/Applications/Cursor.app/Contents/MacOS/cursor' })).toBe(null);
+  });
+
+  it('detects cursor from its env markers', () => {
+    expect(detectHarnessFromEnv({ CURSOR_AGENT: '1' })).toBe('cursor');
+    expect(detectHarnessFromEnv({ CURSOR_TRACE_ID: 'abc123' })).toBe('cursor');
+    expect(detectHarnessFromEnv({ CURSOR_AGENT: '0' })).toBe(null);
+    expect(detectHarnessFromEnv({})).toBe(null);
   });
 });
