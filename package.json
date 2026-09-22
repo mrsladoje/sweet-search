@@ -1,6 +1,6 @@
 {
   "name": "sweet-search",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "description": "Local code search for AI agents: six fast, purpose-built tools that return ranked answers, not raw grep. Because maybe grep isn't all you need... 🍬",
   "type": "module",
   "main": "core/search/sweet-search.js",
@@ -169,13 +169,13 @@
     "vitest": "^4.0.16"
   },
   "optionalDependencies": {
-    "@sweet-search/native-darwin-arm64": "2.8.0",
-    "@sweet-search/native-darwin-x64": "2.8.0",
-    "@sweet-search/native-linux-arm64-gnu": "2.8.0",
-    "@sweet-search/native-linux-arm64-gnu-cuda": "2.8.0",
-    "@sweet-search/native-linux-x64-gnu": "2.8.0",
-    "@sweet-search/native-linux-x64-gnu-cuda": "2.8.0",
-    "@sweet-search/bg-priority": "2.8.0"
+    "@sweet-search/native-darwin-arm64": "2.8.1",
+    "@sweet-search/native-darwin-x64": "2.8.1",
+    "@sweet-search/native-linux-arm64-gnu": "2.8.1",
+    "@sweet-search/native-linux-arm64-gnu-cuda": "2.8.1",
+    "@sweet-search/native-linux-x64-gnu": "2.8.1",
+    "@sweet-search/native-linux-x64-gnu-cuda": "2.8.1",
+    "@sweet-search/bg-priority": "2.8.1"
   },
   "engines": {
     "node": ">=18.0.0"
