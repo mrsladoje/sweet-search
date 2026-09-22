@@ -771,8 +771,9 @@ function _formatAgent(result, opts = {}) {
   const remainder = renderUnreadBelow(result, opts);
   // Optional line-number gutter (SS_READ_LINENUMS=0 disables). Native Claude Code Read
   // numbers every line; ss-read did not, so sweet edited with less line grounding than
-  // its comparison arm. `N<TAB>` form — see numberCodeLines for why the delimiter is a
-  // tab and not the `N| ` it replaced, nor cat -n's padded field. Skipped for spans
+  // its comparison arm. The delimiter is the resolved per-harness form (`N<TAB>` on
+  // claude-code) — see numberCodeLines for why the claude-code delimiter is a tab and
+  // not the `N| ` it replaced, nor cat -n's padded field. Skipped for spans
   // < 15 lines (short reads don't need it and the prefix is pure token cost).
   // Prior art: pi-hashline +14pp Sonnet.
   const body = shouldNumberLines(result, opts)
@@ -828,12 +829,16 @@ export function lineGutterEnabled(opts = {}) {
 // (`%6d`), which is what was tried and rejected for miscalibrating edit
 // wrapping (Claude Code #36654). The number here stays unpadded, so the prefix
 // width still varies with digit count exactly as `N| ` did.
-// PER-HARNESS FORM (2026-09-02). The tab above is the claude-code form and the
-// default. Opencode gets `N:` and codex gets no gutter — see gutter-form.js for
-// the measured reasons (silent tab carry on tab-indented files under the
-// four-pass edit seek those two harnesses use; codex's ~2,500-token output cap
-// makes the gutter pure cost there). The harness is detected from process
-// ancestry, then env markers; `SS_READ_GUTTER=tab|pipe|colon|none` overrides.
+// PER-HARNESS FORM (2026-09-02, extended 2026-09-22). The tab above is the
+// exact-anchor form: claude-code, pi and devin. Opencode, cursor and
+// deepseek-harness get `N:` (tolerant matchers, where a carried tab is absorbed
+// silently and written into tab-indented files), grok-build gets `N→` (the
+// prefix its own read tool prints), and codex gets no gutter (its ~2,500-token
+// output cap makes it pure cost). An undetected harness gets `N:`, the one form
+// that cannot corrupt a file. See gutter-form.js for the evidence per harness.
+// The harness is detected from the measured harnesses' env markers, then
+// process ancestry, then the inferred harnesses' env markers;
+// `SS_READ_GUTTER=tab|pipe|colon|arrow|none` overrides.
 // numberCodeLines and stripCodeLineNumbers both default to the resolved
 // delimiter, so the round-trip stays exact under every form.
 export const GUTTER_DELIMITER = GUTTER_FORMS.tab;
