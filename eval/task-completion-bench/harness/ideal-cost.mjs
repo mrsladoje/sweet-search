@@ -42,6 +42,10 @@ export const MODEL_PRICES = {
   // pricing runs through 2026-08-31 — list is used here so published cost
   // figures stay valid past the promo window; disclose if intro rates are used.
   'claude-sonnet-5': { in: 3.0, cache: 0.3, out: 15.0 },
+  // Claude Opus 5.5, Anthropic list rate (claude-api skill model table, cached 2026-06-24):
+  // $4 input / $0.20 cache read / $20 output per 1M. The Opus leg runs on a Max SUBSCRIPTION,
+  // so no per-token bill exists: this prices its tokens at list, a modelled figure, not a charge.
+  'claude-opus-5-5': { in: 4.0, cache: 0.20, out: 20.0 },
   // Held-out-run backbones, priced at the ACTUAL OpenRouter rates we pay (all four route
   // via OpenRouter — realized cost must reflect the paid rate). Fetched from OpenRouter
   // /api/v1/models 2026-07-23 (prompt / completion / input_cache_read, $ per 1M tokens).

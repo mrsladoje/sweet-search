@@ -172,6 +172,14 @@ if (NET_LOCKDOWN && HARNESS === 'codex' && process.platform === 'linux' && !ISOL
 // failure mode last time was contamination that no column recorded. Emergency override:
 // SS_ISOLATION=0, which stamps every row so the result can never be mistaken for clean.
 const CLI_HARNESS = ['codex', 'claudecode', 'opencode', 'cursor'].includes(HARNESS);
+// The harness CLI version is part of the result (codex 0.146.1 / claude 2.1.218 / opencode 1.18.4
+// on the Luna legs; claude 2.1.281 from the Opus leg on). Stamp it on every row so a leg can be
+// matched to its binary without digging through transcripts.
+const HARNESS_BIN = { codex: 'codex', claudecode: 'claude', opencode: 'opencode', cursor: 'cursor-agent' }[HARNESS];
+let HARNESS_VERSION = null;
+if (HARNESS_BIN) {
+  try { HARNESS_VERSION = execFileSync(HARNESS_BIN, ['--version'], { encoding: 'utf8', timeout: 30000 }).trim().split('\n')[0]; } catch { /* recorded as null */ }
+}
 if (CLI_HARNESS && ISOLATION_ON) {
   const pf = jailPreflight();
   if (!pf.ok) {
@@ -665,7 +673,7 @@ async function runOneTask(id) {
             if (rep === 0) predsByArm[arm].push(pred);
             (predsByRepArm[rep] = predsByRepArm[rep] || { native: [], sweet: [] })[arm].push(pred);
           }
-          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, provider: PROVIDER, harness: HARNESS, reasoning: REASONING, envConfigHash: preflightConfigHashes.get(id) || null, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, degenReran: d.reran, degenerateAfterRetry: d.degenerateAfterRetry, isolated: CLI_HARNESS && ISOLATION_ON, rtDedup: RT_DEDUP_ON, ...RT_PROGRESS_ROW, ...packingTreatmentRowFields({ sweet }), ...stripBig(r) });
+          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, provider: PROVIDER, harness: HARNESS, harnessVersion: HARNESS_VERSION, reasoning: REASONING, envConfigHash: preflightConfigHashes.get(id) || null, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, degenReran: d.reran, degenerateAfterRetry: d.degenerateAfterRetry, isolated: CLI_HARNESS && ISOLATION_ON, rtDedup: RT_DEDUP_ON, ...RT_PROGRESS_ROW, ...packingTreatmentRowFields({ sweet }), ...stripBig(r) });
           try { const td = path.join(BENCH, 'results', runId, 'trajectories'); mkdirSync(td, { recursive: true }); writeFileSync(path.join(td, `${id}-${arm}-r${rep}.json`), JSON.stringify({ taskId: id, arm, rep, exitReason: r.exitReason, toolCounts: r.toolCounts, ranTests, escapeExamples: r.escapeExamples, trajectory: r.trajectory }, null, 2)); } catch { /* */ }
           prog.done++; prog.byArm[arm]++; if (r.patchHunks > 0 && !v.excluded) prog.predOk[arm]++; prog.cost += attemptCost;
           if (v.excluded) prog.shimExcluded = (prog.shimExcluded || 0) + 1;
@@ -676,10 +684,17 @@ async function runOneTask(id) {
           // rollout identically and there is nothing to salvage by continuing. On
           // 2026-09-10 that burned 1.5h producing 400/400 errors before anyone looked.
           // Abort on the first one and say so, instead of grinding through the set.
-          if (/egress guard unreachable|jail unavailable/i.test(String(e.message))) {
+          if (/egress guard unreachable|jail unavailable|claude account fatal/i.test(String(e.message))) {
             console.error('\n*** RUN-WIDE INFRASTRUCTURE FAILURE — aborting instead of erroring every rollout ***');
             console.error(`*** ${String(e.message).slice(0, 300)}`);
-            console.error('*** Fix the guard, then relaunch. Nothing was measured; nothing was billed.');
+            if (/claude account fatal/i.test(String(e.message))) {
+              // Usage limit or login failure on a subscription run. Rollouts finished before
+              // this one are real; keep them and relaunch the rest (INSTANCES=...) later.
+              checkpoint();
+              console.error(`*** ${rows.length} finished rollout(s) kept in rows.json. Relaunch the remaining tasks after the limit resets.`);
+            } else {
+              console.error('*** Fix the guard, then relaunch. Nothing was measured; nothing was billed.');
+            }
             process.exit(9);
           }
           prog.done++; prog.errors++; prog.byArm[arm]++; emitProgress(`  (${id} ${arm} r${rep}: ERROR)`);
@@ -725,7 +740,7 @@ async function runPool(ids, concurrency) {
 
 function stripBig(r) { const { finalPatch, trajectory, ...rest } = r; return rest; }
 
-console.log(`\n### running ${INSTANCES.length} task(s) × ${ARMS.length} arm(s) [${ARMS.join(',')}] × ${REPS} reps = ${TOTAL_RUNS} runs | CONCURRENCY=${CONCURRENCY} provider=${PROVIDER} model=${MODEL} frame=${process.env.TASK_FRAME !== '0' ? 'ON' : 'OFF'}`);
+console.log(`\n### running ${INSTANCES.length} task(s) × ${ARMS.length} arm(s) [${ARMS.join(',')}] × ${REPS} reps = ${TOTAL_RUNS} runs | CONCURRENCY=${CONCURRENCY} provider=${PROVIDER} model=${MODEL} harness=${HARNESS}${HARNESS_VERSION ? ` (${HARNESS_VERSION})` : ''} frame=${process.env.TASK_FRAME !== '0' ? 'ON' : 'OFF'}`);
 emitProgress(' (start)');
 // GRADE_ONLY_FROM=<results dir | run id>: skip the agent phase and grade rollouts that
 // are already on disk. A run killed mid-flight (disk watchdog, crash) keeps its rows and

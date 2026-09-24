@@ -61,7 +61,9 @@ export const READ_PAGES_TOOL_NOTE =
  * 2.1.218 binary; it only works with `--print` (which `-p` is) and sets its own gate,
  * CLAUDE_CODE_ENABLE_APPEND_SUBAGENT_PROMPT=1, so no env plumbing is needed.
  */
-export function buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, settingsPath = null }) {
+const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+
+export function buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, effort = null, settingsPath = null }) {
   const appendedSystemPrompt = sweet
     ? `${READ_PAGES_TOOL_NOTE}\n\n${SWEET_SEARCH_SYSTEM_OVERRIDE}`
     : READ_PAGES_TOOL_NOTE;
@@ -108,6 +110,9 @@ export function buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, setti
     // READ_PAGES_TOOL_NOTE below is the only lever that works. It is prompt-level,
     // byte-identical across both arms, and gets 189 of 299 calls to a valid value.
     '--model', claudeModelId,
+    // Effort is sent ONLY when the caller resolved one (direct-Anthropic route). The Luna leg
+    // (OpenRouter, 2.1.218) never sent it, so its args stay byte-identical on a re-run.
+    ...(effort ? ['--effort', effort] : []),
     '--permission-mode', 'bypassPermissions',
     '--output-format', 'stream-json', '--verbose',
   ];
@@ -180,10 +185,19 @@ function classifyToolUse(name, input) {
 // on the direct-Anthropic route, and the caller checks whether it is all-zero before
 // trusting it, so the skin's zeroing degrades to an aggregate turn log rather than to
 // silently fabricated per-turn numbers.
+// Account-level failures. On a subscription these are the usage-limit and login errors; they
+// return 0 tool calls, which grades exactly like a treatment that broke the agent (the codex
+// auth-decay trap). Matched ONLY on the CLI's own error surfaces — the `error` field of a
+// synthetic assistant message and an is_error result — never on tool output, where repo code
+// (HTTP clients, rate limiters) says "rate_limit" all the time.
+const ACCOUNT_FATAL_ERRORS = new Set(['rate_limit', 'authentication_failed', 'billing_error']);
+const ACCOUNT_FATAL_TEXT = /usage limit|hit your (usage )?limit|limit (reached|will reset)|resets? (at|in) |rate_limit_error|authentication_error|invalid (api key|bearer token)|oauth token|please run \/login|not logged in/i;
+
 export function parseClaudeStream(stdout) {
   const toolCalls = [];         // {id, kind, command, resultText, isError}
   const resultById = new Map(); // tool_use_id → {text, isError}
   const errors = [];
+  let accountFatal = null;      // usage limit / login failure: the RUN is dead, not the task
   const turns = [];             // {in = full context incl. cache, cached, out}
   // Degeneration accounting: every payload the model emitted, and how many
   // output chars the transcript actually retained, so the billed-vs-retained
@@ -203,6 +217,8 @@ export function parseClaudeStream(stdout) {
     // Every event carries it; needed to find this rollout's session transcript, which is
     // where per-message usage survives the skin's zeroing.
     if (!sessionId && ev.session_id) sessionId = ev.session_id;
+    // Synthetic assistant messages carry `error` when the API refused the whole account.
+    if (ev.type === 'assistant' && ACCOUNT_FATAL_ERRORS.has(ev.error)) accountFatal ??= `assistant error: ${ev.error}`;
     if (ev.type === 'assistant' && ev.message) {
       const mu = ev.message.usage;
       if (mu) {
@@ -246,6 +262,9 @@ export function parseClaudeStream(stdout) {
       if (ev.usage) resultUsage = ev.usage;
       if (ev.num_turns != null) numTurns = ev.num_turns;
       if (ev.subtype && ev.subtype !== 'success') errors.push(`result: ${ev.subtype}`);
+      if (ev.is_error && typeof ev.result === 'string' && ACCOUNT_FATAL_TEXT.test(ev.result)) {
+        accountFatal ??= `result: ${ev.result.slice(0, 200)}`;
+      }
     }
   }
   for (const tc of toolCalls) {
@@ -264,12 +283,12 @@ export function parseClaudeStream(stdout) {
   }
   return {
     toolCalls, answer, resultUsage, numTurns, turns, sessionId, errors,
-    payloads, retainedOutputChars, billedOutputTokens, billedOutputSource,
+    payloads, retainedOutputChars, billedOutputTokens, billedOutputSource, accountFatal,
   };
 }
 
 export async function runClaudeCodeTask(task, {
-  arm, apiModel = 'anthropic/claude-sonnet-5', provider = 'openrouter',
+  arm, apiModel = 'anthropic/claude-sonnet-5', provider = 'openrouter', reasoning = null,
   ssBinDir, mppText, image, t, perCallTimeoutMs = 900000,
 } = {}) {
   const sweet = arm === 'sweet';
@@ -286,8 +305,14 @@ export async function runClaudeCodeTask(task, {
   // OpenRouter exposes a native /v1/messages "skin" that forwards Claude models to
   // Anthropic — set base_url + auth token, blank ANTHROPIC_API_KEY so a stale key can't
   // win precedence, and pin ALL three model slots or the unset ones 404 at startup.
+  // provider=anthropic has two credentials. A subscription token from `claude setup-token`
+  // (CLAUDE_CODE_OAUTH_TOKEN, one-year, no refresh — so the codex refresh-token decay trap
+  // cannot happen) wins; ANTHROPIC_API_KEY is then deleted, because a key outranks OAuth.
+  const subscriptionToken = provider === 'anthropic' ? process.env.CLAUDE_CODE_OAUTH_TOKEN || '' : '';
   const routingEnv = provider === 'anthropic'
-    ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '' }
+    ? (subscriptionToken
+        ? { CLAUDE_CODE_OAUTH_TOKEN: subscriptionToken }
+        : { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '' })
     : {
         ANTHROPIC_BASE_URL: 'https://openrouter.ai/api',
         ANTHROPIC_AUTH_TOKEN: process.env.OPENROUTER_API_KEY || '',
@@ -300,6 +325,11 @@ export async function runClaudeCodeTask(task, {
   // isolation is now the per-rollout jail (mount+pid+net namespaces), so declare it.
   routingEnv.IS_SANDBOX = '1';
   routingEnv.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+  // The CLI version is part of the result (2.1.218 = Luna leg, 2.1.281 = Opus leg). Never let
+  // a rollout self-update mid-run.
+  routingEnv.DISABLE_AUTOUPDATER = '1';
+  // Claude effort levels. Anything else (the pilot's 'standard' default) sends no flag.
+  const effort = provider === 'anthropic' && CLAUDE_EFFORTS.has(reasoning) ? reasoning : null;
   // ss-* gutter form pinned per harness (core/search/gutter-form.js): claude-code → `N<TAB>`.
   // Pinned so the timed run never pays a process-tree walk; operator env (A/B arm) wins.
   routingEnv.SS_READ_GUTTER = process.env.SS_READ_GUTTER ?? 'tab';
@@ -343,6 +373,9 @@ export async function runClaudeCodeTask(task, {
   });
 
   const env = buildAgentEnv({ rundir, binDir, ssBinDir, sweet, extraEnv: routingEnv, jail });
+  if (subscriptionToken) {
+    for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']) delete env[k];
+  }
   if (sweet && ssBinDir) warmupSweet({ ssBinDir, rundir, env, jail });
 
   // Prompt = the issue ONLY (both arms). CLAUDE.md carries only the benchmark
@@ -361,7 +394,7 @@ export async function runClaudeCodeTask(task, {
   // than replace Claude Code's native system prompt so its standard coding-agent and tool
   // behavior remains intact. `buildClaudeCliArgs` deliberately emits ONE append flag,
   // preserving the shared pages note in both arms. bypassPermissions avoids a headless hang.
-  const args = buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId });
+  const args = buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, effort });
 
   const t0 = Date.now();
   const spawnOnce = () => spawnWithTimeout('claude', args, { cwd: rundir, env, timeoutMs: perCallTimeoutMs, jail });
@@ -373,6 +406,10 @@ export async function runClaudeCodeTask(task, {
     console.log(`  [claude-retry ${task.id || ''}] 0-call start failure (exit=${r.exitCode}${parsed.errors[0] ? '; ' + parsed.errors[0] : ''}) — relaunching once`);
     r = await spawnOnce();
     parsed = parseClaudeStream(r.stdout);
+  }
+  if (parsed.accountFatal) {
+    teardownRunner(runnerStateDir, { jail, broker });
+    throw new Error(`claude account fatal (${task.id || 'task'} ${arm}): ${parsed.accountFatal}`);
   }
   const wallMs = Date.now() - t0;
   const { toolCalls, answer, resultUsage, numTurns, turns, sessionId, errors } = parsed;
