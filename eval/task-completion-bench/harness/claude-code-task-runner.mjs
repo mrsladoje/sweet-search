@@ -9,7 +9,7 @@
 // Returns the canonical bench row shape (see codex-task-runner) so grading/metrics match.
 import { isZeroCallStartFailure } from './codex-task-runner.mjs';
 import {
-  appendFileSync, mkdirSync, copyFileSync, existsSync, readFileSync, writeFileSync,
+  appendFileSync, mkdirSync, copyFileSync, existsSync, readFileSync, writeFileSync, renameSync, chmodSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -340,6 +340,23 @@ export async function runClaudeCodeTask(task, {
   const claudeHome = rolloutStateDir(label, 'claude-home');
   const HOMEDIR = process.env.HOME || '/root';
   installClaudeReadPagesNormalizer(claudeHome, HOMEDIR);
+  // Subscription via `claude auth login` on the host (no token env). The per-rollout home would
+  // hide ~/.claude/.credentials.json, so seed a private copy, and after the rollout WRITE THE
+  // REFRESHED COPY BACK. Without the write-back the master keeps a spent single-use refresh
+  // token and every later rollout fails — the codex auth-decay trap (2026-08-17). Safe only
+  // because claude-code legs run CONCURRENCY=1. Nothing here reads or logs the secret.
+  const masterCreds = join(HOMEDIR, '.claude', '.credentials.json');
+  const rolloutCreds = join(claudeHome, '.credentials.json');
+  const loginCreds = provider === 'anthropic' && !subscriptionToken && existsSync(masterCreds);
+  if (loginCreds) { copyFileSync(masterCreds, rolloutCreds); chmodSync(rolloutCreds, 0o600); }
+  const syncLoginBack = () => {
+    if (!loginCreds || !existsSync(rolloutCreds)) return;
+    const fresh = readFileSync(rolloutCreds);
+    if (fresh.equals(readFileSync(masterCreds))) return;
+    const tmp = `${masterCreds}.tmp-${process.pid}`;
+    writeFileSync(tmp, fresh, { mode: 0o600 });
+    renameSync(tmp, masterCreds);
+  };
   // ~/.claude.json holds onboarding state and Claude Code WRITES to it, so it gets a
   // private seeded COPY rather than a read-only bind of the shared file.
   const claudeJson = join(rolloutStateDir(label, 'claude-conf'), '.claude.json');
@@ -373,7 +390,7 @@ export async function runClaudeCodeTask(task, {
   });
 
   const env = buildAgentEnv({ rundir, binDir, ssBinDir, sweet, extraEnv: routingEnv, jail });
-  if (subscriptionToken) {
+  if (subscriptionToken || loginCreds) {
     for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']) delete env[k];
   }
   if (sweet && ssBinDir) warmupSweet({ ssBinDir, rundir, env, jail });
@@ -407,6 +424,7 @@ export async function runClaudeCodeTask(task, {
     r = await spawnOnce();
     parsed = parseClaudeStream(r.stdout);
   }
+  syncLoginBack();
   if (parsed.accountFatal) {
     teardownRunner(runnerStateDir, { jail, broker });
     throw new Error(`claude account fatal (${task.id || 'task'} ${arm}): ${parsed.accountFatal}`);
