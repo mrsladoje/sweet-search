@@ -392,6 +392,11 @@ export async function runClaudeCodeTask(task, {
   const env = buildAgentEnv({ rundir, binDir, ssBinDir, sweet, extraEnv: routingEnv, jail });
   if (subscriptionToken || loginCreds) {
     for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']) delete env[k];
+    // A claude.ai login also pulls the account's claude.ai connectors (Gmail, Drive, …) through
+    // mcp-proxy.anthropic.com. The jail refused them — 51 denials per rollout on 2026-09-24,
+    // both arms, inflating escape= — but they must not even be attempted: an API-key run
+    // never sees them, and the owner's mailbox has no business near a benchmark agent.
+    env.ENABLE_CLAUDEAI_MCP_SERVERS = 'false';
   }
   if (sweet && ssBinDir) warmupSweet({ ssBinDir, rundir, env, jail });
 
