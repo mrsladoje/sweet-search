@@ -30,6 +30,7 @@ export {
   addSidechainCosts, addSidechainCostsChecked, claudeCosts, selectClaudeMainCosts,
 } from './claude-code-accounting.mjs';
 import { installSedCmds } from './env-ledger.mjs';
+import { ISOLATION_ON } from './agent-jail.mjs';
 import { persistTurns } from './turn-log.mjs';
 import { classifyRollout } from './degeneration.mjs';
 import {
@@ -118,15 +119,63 @@ export function buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, effor
   ];
 }
 
+// --- HARNESS TRIM (CC_HARNESS_TRIM, default OFF) — handoffs/improve/harness-prompt-trim ---
+// Research switch that removes parts of Claude Code's OWN request which a benchmark coding
+// task never uses or which contradict the ss-* rules. The sweet rules file, the override, the
+// frame and READ_PAGES_TOOL_NOTE are untouched. Verified at $0 on 2.1.281 and 2.1.282
+// (captures in that handoff):
+//   tools  — `--disallowedTools` for 16 tools, leaving Agent, Bash, Edit, Read, Write. In the
+//            REAL request shape (subscription OAuth + tool search, which a capture proxy only
+//            reproduces with ENABLE_TOOL_SEARCH=true) the sweet first request drops from
+//            18,941 to ~11,100 Opus 5.5 tokens; the skills listing goes with Skill.
+//   steer  — CLAUDE_CODE_THRIFTY_SONIC=0 switches off the "bash-first" attachment that
+//            bypassPermissions adds ("read files with cat, head, or sed -n, search with grep
+//            and find"). Off, the Bash tool description instead carries its default
+//            "avoid cat/head/tail/sed/awk/echo" line — the shape a user in a normal
+//            permission mode sees. UNDOCUMENTED internal variable: research only, re-verify
+//            with a capture on every Claude Code version before trusting a run.
+// Mode values: unset/'0' = off (args and env byte-identical), 'tools', 'steer', '1' = both.
+export const CLAUDE_HARNESS_TRIM_DENY = Object.freeze([
+  'SendMessage', 'Workflow', 'ScheduleWakeup', 'CronCreate', 'EnterWorktree', 'ExitWorktree',
+  'ReportFindings', 'Skill', 'NotebookEdit', 'ListAgents', 'WebSearch', 'WebFetch', 'TaskStop',
+  'CronDelete', 'CronList',
+  // Subscription (OAuth) route only — the API-key route never offers it. Left in, it alone
+  // keeps ToolSearch and its placeholder in the request.
+  'RemoteTrigger',
+  // Subagent TYPES whose listing steers search into delegation ("When you are searching for a
+  // keyword or file … use this agent"). The Agent tool itself stays, with its catch-all type.
+  'Agent(Explore)', 'Agent(general-purpose)', 'Agent(statusline-setup)',
+]);
+
+export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
+  const m = String(mode ?? '').trim();
+  if (!m || m === '0') return { mode: null, args: [], env: {} };
+  if (!['1', 'tools', 'steer'].includes(m)) throw new Error(`CC_HARNESS_TRIM=${m}: expected 0, 1, tools or steer`);
+  const tools = m === '1' || m === 'tools';
+  const steer = m === '1' || m === 'steer';
+  return {
+    mode: m === '1' ? 'tools+steer' : m,
+    // Variadic flag: it must stay LAST in the argv or it swallows the options after it.
+    args: tools ? ['--disallowedTools', ...CLAUDE_HARNESS_TRIM_DENY] : [],
+    env: steer ? { CLAUDE_CODE_THRIFTY_SONIC: '0' } : {},
+  };
+}
+
 const CLAUDE_READ_PAGES_HOOK = fileURLToPath(
   new URL('./claude-read-pages-hook.mjs', import.meta.url),
 );
 
-/** Install the deterministic Read-input normalizer into one private Claude home. */
-export function installClaudeReadPagesNormalizer(claudeHome, visibleHome) {
+/**
+ * Install the deterministic Read-input normalizer into one private Claude home.
+ * `visibleClaudeDir` is where the CLI sees that home: `$HOME/.claude` inside the jail (the
+ * default), or the private home itself when the run is unjailed (CLAUDE_CONFIG_DIR).
+ */
+export function installClaudeReadPagesNormalizer(claudeHome, visibleHome, {
+  visibleClaudeDir = join(visibleHome, '.claude'),
+} = {}) {
   const hooksDir = join(claudeHome, 'hooks');
   const installedHook = join(hooksDir, 'normalize-read-pages.mjs');
-  const visibleHook = join(visibleHome, '.claude', 'hooks', 'normalize-read-pages.mjs');
+  const visibleHook = join(visibleClaudeDir, 'hooks', 'normalize-read-pages.mjs');
   const settingsPath = join(claudeHome, 'settings.json');
   mkdirSync(hooksDir, { recursive: true });
   copyFileSync(CLAUDE_READ_PAGES_HOOK, installedHook);
@@ -147,7 +196,7 @@ export function installClaudeReadPagesNormalizer(claudeHome, visibleHome) {
   writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
   // visibleSettings is the IN-JAIL path (claudeHome is bind-mounted at
   // $HOME/.claude), which is what `--settings` must receive.
-  const visibleSettings = join(visibleHome, '.claude', 'settings.json');
+  const visibleSettings = join(visibleClaudeDir, 'settings.json');
   return { installedHook, settingsPath, visibleHook, visibleSettings };
 }
 
@@ -333,13 +382,25 @@ export async function runClaudeCodeTask(task, {
   // ss-* gutter form pinned per harness (core/search/gutter-form.js): claude-code → `N<TAB>`.
   // Pinned so the timed run never pays a process-tree walk; operator env (A/B arm) wins.
   routingEnv.SS_READ_GUTTER = process.env.SS_READ_GUTTER ?? 'tab';
+  // Harness trim (research switch, default OFF): adds nothing to env or argv when off.
+  // SWEET ARM ONLY. The trim removes harness text that contradicts the ss-* rules; native has
+  // no ss-* rules to contradict and keeps Claude Code's full prompt in every condition.
+  const harnessTrim = claudeHarnessTrim(sweet ? process.env.CC_HARNESS_TRIM : '0');
+  Object.assign(routingEnv, harnessTrim.env);
 
   const netArgs = computeNetArgs(t);
   const label = `${task.id || 'task'}-${arm}`;
   // Claude Code's config + session store, per rollout rather than shared across the run.
   const claudeHome = rolloutStateDir(label, 'claude-home');
   const HOMEDIR = process.env.HOME || '/root';
-  installClaudeReadPagesNormalizer(claudeHome, HOMEDIR);
+  // UNJAILED (SS_ISOLATION=0, e.g. the owner's Mac): nothing bind-mounts the private home at
+  // $HOME/.claude, so the CLI would load the operator's OWN ~/.claude and ~/.claude.json —
+  // global CLAUDE.md, memories, skills, plugins, hooks, MCP servers — into the agent, and
+  // write its transcripts where the cost reader never looks. Point CLAUDE_CONFIG_DIR at the
+  // private home instead. Jailed runs are unchanged (no env var, same hook path).
+  const unjailed = !ISOLATION_ON;
+  if (unjailed) routingEnv.CLAUDE_CONFIG_DIR = claudeHome;
+  installClaudeReadPagesNormalizer(claudeHome, HOMEDIR, unjailed ? { visibleClaudeDir: claudeHome } : {});
   // Subscription via `claude auth login` on the host (no token env). The per-rollout home would
   // hide ~/.claude/.credentials.json, so seed a private copy, and after the rollout WRITE THE
   // REFRESHED COPY BACK. Without the write-back the master keeps a spent single-use refresh
@@ -416,7 +477,7 @@ export async function runClaudeCodeTask(task, {
   // than replace Claude Code's native system prompt so its standard coding-agent and tool
   // behavior remains intact. `buildClaudeCliArgs` deliberately emits ONE append flag,
   // preserving the shared pages note in both arms. bypassPermissions avoids a headless hang.
-  const args = buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, effort });
+  const args = [...buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, effort }), ...harnessTrim.args];
 
   const t0 = Date.now();
   const spawnOnce = () => spawnWithTimeout('claude', args, { cwd: rundir, env, timeoutMs: perCallTimeoutMs, jail });
@@ -531,6 +592,9 @@ export async function runClaudeCodeTask(task, {
     degenerate: degeneration.degenerate, degeneration,
     degenerationInstrumentationComplete: degeneration.instrumentation.complete,
     readPagesNormalization: 'pretool-hook-v1',
+    // CC_HARNESS_TRIM mode ('tools', 'steer', 'tools+steer') or null when off.
+    harnessTrim: harnessTrim.mode,
+    claudeConfigDir: unjailed ? 'private-config-dir' : 'jail-bind',
     // Marks a run that carried the F2 repair, so an analyzer can tell whether the `pages`
     // asymmetry disclosure describes this run's own data or a pre-repair baseline. Never
     // pool a pre-repair run with a post-repair one on any Read-derived figure.

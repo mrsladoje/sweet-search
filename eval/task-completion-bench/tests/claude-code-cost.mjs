@@ -18,7 +18,7 @@ import {
   addSidechainCostsChecked, aggregateUsageFromTurns, recoveredTurnsMatchAggregate,
   recoveredTurnsCoverAggregate,
   buildClaudeCliArgs, installClaudeReadPagesNormalizer, parseClaudeStream,
-  selectClaudeMainCosts, READ_PAGES_TOOL_NOTE,
+  selectClaudeMainCosts, READ_PAGES_TOOL_NOTE, claudeHarnessTrim, CLAUDE_HARNESS_TRIM_DENY,
 } from '../harness/claude-code-task-runner.mjs';
 import { transcriptMetricsFromFile, repOfSlug } from '../harness/claude-code-accounting.mjs';
 import { normalizeReadInput, readHookDecision } from '../harness/claude-read-pages-hook.mjs';
@@ -274,6 +274,25 @@ for (const sweet of [false, true]) {
 }
 assert(subagentAppended.native === subagentAppended.sweet,
   'the subagent pages note is byte-identical across arms (zero head-to-head differential)');
+
+console.log('\nharness trim switch (CC_HARNESS_TRIM, default OFF):');
+for (const off of [undefined, '', '0']) {
+  const t = claudeHarnessTrim(off);
+  assert(t.mode === null && t.args.length === 0 && Object.keys(t.env).length === 0,
+    `trim ${JSON.stringify(off)} adds no argv and no env (held-out legs stay byte-identical)`);
+}
+const trimBoth = claudeHarnessTrim('1');
+assert(trimBoth.mode === 'tools+steer' && trimBoth.args[0] === '--disallowedTools'
+    && trimBoth.args.length === 1 + CLAUDE_HARNESS_TRIM_DENY.length
+    && CLAUDE_HARNESS_TRIM_DENY.length === 19 && trimBoth.env.CLAUDE_CODE_THRIFTY_SONIC === '0',
+  'trim 1 denies the 16 unused tools and 3 search-steering subagent types, and switches the bash-first steer off');
+assert(!['Agent', 'Bash', 'Edit', 'Read', 'Write'].some(n => CLAUDE_HARNESS_TRIM_DENY.includes(n)),
+  'trim keeps Agent, Bash, Edit, Read and Write');
+assert(claudeHarnessTrim('tools').env.CLAUDE_CODE_THRIFTY_SONIC === undefined
+    && claudeHarnessTrim('steer').args.length === 0, 'tools and steer modes are separable');
+let badTrim = null;
+try { claudeHarnessTrim('yes'); } catch (e) { badTrim = e; }
+assert(badTrim !== null, 'an unknown trim value throws instead of silently running untrimmed');
 
 console.log('\ndeterministic Read pages normalization:');
 assert(!Object.hasOwn(normalizeReadInput({ file_path: '/repo/a.js', pages: '' }), 'pages'),
