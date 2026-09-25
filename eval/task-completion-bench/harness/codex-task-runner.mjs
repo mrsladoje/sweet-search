@@ -227,12 +227,18 @@ export function codexHarnessTrim({ sweet, mode = process.env.CODEX_HARNESS_TRIM,
   // Native has no ss-* rules to contradict and keeps Codex's full request in every condition.
   const m = sweet ? String(mode ?? '').trim() : '';
   if (!m || m === '0') return { mode: null };
-  if (m !== '1') throw new Error(`CODEX_HARNESS_TRIM=${m}: expected 0 or 1`);
+  if (m !== '1' && m !== 'max-wait') throw new Error(`CODEX_HARNESS_TRIM=${m}: expected 0, 1 or max-wait`);
   const source = CODEX_HARNESS_TRIM_SOURCES[String(model).replace(/^openai\//, '')];
   if (!source) {
     throw new Error(`CODEX_HARNESS_TRIM=1: no edited base prompt for ${model} (have ${Object.keys(CODEX_HARNESS_TRIM_SOURCES).join(', ')}) — capture and edit it first`);
   }
-  return { mode: 'instructions+tools', source };
+  // max-wait = 1 + features.code_mode_buffered_exec=true: in Luna's code mode the outer exec cell
+  // yields after 10 s by default, so every run_tests longer than that cost one extra `wait` turn
+  // (11 of 120 untrimmed Luna turns in the 2026-09-25 smoke). The flag raises that default to 30 s.
+  // It is marked "under development" in 0.146.1 — night A/B candidate, not a default.
+  return m === 'max-wait'
+    ? { mode: 'instructions+tools+wait', source, extra: ['features.code_mode_buffered_exec=true'] }
+    : { mode: 'instructions+tools', source };
 }
 
 /** `codex exec` argv for an ON trim; writes the instructions (license header stripped) into stateDir. */
@@ -241,7 +247,7 @@ export function codexHarnessTrimArgs(trim, stateDir) {
   const file = path.join(stateDir, CODEX_HARNESS_TRIM_STATE_FILE);
   writeFileSync(file, readFileSync(trim.source, 'utf8').replace(/^<!--[\s\S]*?-->\n/, ''));
   return ['-c', `model_instructions_file=${JSON.stringify(file)}`,
-    ...CODEX_HARNESS_TRIM_CONFIG.flatMap(kv => ['-c', kv])];
+    ...[...CODEX_HARNESS_TRIM_CONFIG, ...(trim.extra || [])].flatMap(kv => ['-c', kv])];
 }
 
 // Broker mode (agent sandbox): codex's Linux sandbox blocks unix-socket connects, so a
