@@ -82,11 +82,14 @@ sweet-search rules.
 | `features.goals=false` | `get_goal`, `create_goal`, `update_goal` |
 | `tools.experimental_request_user_input.enabled=false` | `request_user_input` |
 | `skills.include_instructions=false` | the `<skills_instructions>` block in the developer message (~6,900 chars gpt-5.5, ~3,500 luna) |
+| `include_permissions_instructions=false` | the `<permissions instructions>` developer message ("Network access is enabled" contradicts the frame's OFFLINE block) |
+| `include_environment_context=false` | `<environment_context>` (cwd, shell, date, timezone; the AGENTS.md header still names the cwd) |
+| `tools.update_plan.enabled=false` | `update_plan` (in code mode each call is a separate turn) |
 
 On luna, `web_search` is not sent at all, so that key does nothing there; the goal tools and `request_user_input` disappear from the nested `exec` tool and the
 `additional_tools` item (verified by capture).
 
-Kept: `exec_command`, `write_stdin`, `update_plan`, `apply_patch`, and `tool_search` with the
+Kept: `exec_command`, `write_stdin`, `apply_patch`, and `tool_search` with the
 deferred sub-agent tools behind it: delegation is a real capability, and the Claude Code trim keeps
 its Agent tool too (`features.multi_agent=false` would remove `tool_search`; it is deliberately
 not sent). `view_image` also stays: no
@@ -99,3 +102,14 @@ because it also covers skills that a repository could bring.
 
 Re-verify with a capture on every Codex version bump: the base prompt, the model catalog and the
 config keys change between releases.
+
+## Second pass (independent audit, 2026-09-25)
+
+Further whole-line deletions (see `build-codex-instructions.mjs` for the exact line ranges and
+reasons): gpt-5.5 — "You let test coverage scale with risk…" (the frame forbids test edits),
+mid-turn user-message and post-resume rules, relay-output / save-this-file answer rules, the
+"## Intermediary updates" heading and checklist bullet (update_plan is removed). luna — mid-turn
+user messages, "Avoid blocking sleep or wait calls longer than 60 seconds" (the frame asks for a
+300 s run_tests wait), a verbatim duplicate `$HOME` line, the Answer/Diagnose/Monitor request
+types, the babysit terminal-condition line, and the clarifying-questions line. Sizes as sent:
+gpt-5.5 7,214 → 5,663 chars; luna 8,062 → 6,034.

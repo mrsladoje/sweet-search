@@ -189,7 +189,7 @@ export function buildPrivateHome(privateHome, { realHome, codexHome }) {
 //                  change list in trim/NOTICE-codex.md): the "reach first for `rg`" line (and on
 //                  gpt-5.5 the "file reads such as `cat`, `rg`, `sed`" clause) go, with the
 //                  personality, formatting, commentary and frontend/skills sections.
-//                  gpt-5.5 21,335 → 7,214 chars as sent; luna 17,730 → 8,062. Any other model
+//                  gpt-5.5 21,335 → 5,663 chars as sent; luna 17,730 → 6,034. Any other model
 //                  is refused until its prompt is captured and edited.
 //   tools        — the -c keys below drop web_search, the three goal tools, request_user_input
 //                  and the skills block in the developer message (~6,900 chars gpt-5.5, ~3,500
@@ -197,7 +197,12 @@ export function buildPrivateHome(privateHome, { realHome, codexHome }) {
 //                  real capability (the Claude Code trim keeps Agent too); features.multi_agent
 //                  =false would remove them. Luna sends no web_search, so that key is a no-op there.
 //                  view_image has no config key in 0.146.1 (it follows the model's image-input
-//                  capability) and stays.
+//                  capability) and stays. include_permissions_instructions=false drops the
+//                  <permissions instructions> developer message (its "Network access is enabled"
+//                  contradicts the frame's OFFLINE block); include_environment_context=false drops
+//                  <environment_context> (cwd — also named by the AGENTS.md header — shell, date,
+//                  timezone); tools.update_plan.enabled=false drops update_plan (a separate turn per
+//                  call in code mode; 3 calls in 1 of 6 untrimmed Luna smoke rollouts, 0 trimmed).
 //                  Captured on the OpenRouter route only; re-capture before a subscription run.
 // Mode values: unset/'0' = off (argv and state dir byte-identical), '1' = on.
 export const CODEX_HARNESS_TRIM_CONFIG = Object.freeze([
@@ -205,6 +210,9 @@ export const CODEX_HARNESS_TRIM_CONFIG = Object.freeze([
   'features.goals=false',
   'tools.experimental_request_user_input.enabled=false',
   'skills.include_instructions=false',
+  'include_permissions_instructions=false',
+  'include_environment_context=false',
+  'tools.update_plan.enabled=false',
 ]);
 // Edited base prompt per model id (the `openai/` prefix is stripped before lookup).
 export const CODEX_HARNESS_TRIM_SOURCES = Object.freeze({

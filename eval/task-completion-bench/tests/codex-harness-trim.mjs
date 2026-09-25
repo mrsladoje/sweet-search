@@ -52,10 +52,11 @@ assert(args[1] === `model_instructions_file=${JSON.stringify(file)}`,
 assert(JSON.stringify(args.slice(2).filter((_, i) => i % 2)) === JSON.stringify([
   'web_search="disabled"', 'features.goals=false',
   'tools.experimental_request_user_input.enabled=false', 'skills.include_instructions=false',
-]), 'sweet + 1 sends exactly the four capture-verified tool/skills keys');
+  'include_permissions_instructions=false', 'include_environment_context=false', 'tools.update_plan.enabled=false',
+]), 'sweet + 1 sends exactly the seven capture-verified tool/context keys');
 assert(!args.join(' ').includes('multi_agent'), 'sweet + 1 keeps delegation (no multi_agent key; tool_search stays)');
-assert(!args.join(' ').match(/exec_command|write_stdin|apply_patch|update_plan|shell_tool|unified_exec/),
-  'no key touches exec_command, write_stdin, apply_patch or update_plan');
+assert(!args.join(' ').match(/exec_command|write_stdin|apply_patch|shell_tool|unified_exec|code_mode/),
+  'no key touches exec_command, write_stdin, apply_patch or the code-mode exec tool');
 
 const sent = readFileSync(file, 'utf8');
 const source = readFileSync(CODEX_HARNESS_TRIM_SOURCES['gpt-5.5'], 'utf8');
@@ -69,7 +70,8 @@ for (const model of Object.keys(CODEX_HARNESS_TRIM_SOURCES)) {
   const body = text.slice(headerFor(model).length);
   assert(text.startsWith(headerFor(model)) && body === buildInstructions(model, sourceFor(model)),
     `${model}: the committed file equals the reviewed deletion build of the 0.146.1 capture`);
-  for (const s of ['reach first for `rg`', 'file reads such as', '`rg --files`', 'Skills', '# Personality', 'Formatting rules', 'Frontend', 'Visualizations']) {
+  for (const s of ['reach first for `rg`', 'file reads such as', '`rg --files`', 'Skills', '# Personality', 'Formatting rules', 'Frontend', 'Visualizations',
+    'may send', 'checklist', 'test coverage scale', 'longer than 60 seconds', 'Diagnose:', 'babysit']) {
     assert(!body.includes(s), `${model}: steering/unused text removed: ${s}`);
   }
   for (const s of KEEP) assert(body.includes(s), `${model}: coding rule kept: ${s}`);
