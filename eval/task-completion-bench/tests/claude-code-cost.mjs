@@ -292,10 +292,17 @@ assert(claudeHarnessTrim('tools').env.CLAUDE_CODE_THRIFTY_SONIC === undefined
     && claudeHarnessTrim('steer').args.length === 0, 'tools and steer modes are separable');
 const trimMax = claudeHarnessTrim('max');
 const sp = trimMax.args.indexOf('--system-prompt');
+const ag = trimMax.args.indexOf('--agents');
 const dt = trimMax.args.indexOf('--disallowedTools');
-assert(trimMax.mode === 'max' && sp === 0 && dt === 2 && trimMax.args.includes('Agent(Plan)')
-    && !trimMax.args.includes('Agent') && trimMax.args.at(-1) !== '--system-prompt',
-  'max: our base prompt first, the variadic deny list last, Agent kept (only Agent(Plan) added)');
+const denyMax = trimMax.args.slice(dt + 1);
+assert(trimMax.mode === 'max' && sp === 0 && ag === 2 && dt === 4 && !trimMax.args.includes('Agent')
+    && denyMax.includes('Agent(Plan)') && denyMax.includes('Agent(claude)')
+    && !denyMax.includes('Agent(general-purpose)'),
+  'max: base prompt, then --agents, then the variadic deny list LAST; general-purpose replaced, not denied');
+const agentsJson = JSON.parse(trimMax.args[ag + 1]);
+assert(Object.keys(agentsJson).join() === 'general-purpose' && !('tools' in agentsJson['general-purpose'])
+    && !/grep|find|cat |search/i.test(agentsJson['general-purpose'].prompt),
+  'max subagent: one general-purpose type, inherits the trimmed tools, no search/read advice');
 assert(['CLAUDE_CODE_THRIFTY_SONIC', 'CLAUDE_CODE_DISABLE_AUTO_MEMORY', 'CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS',
   'CLAUDE_CODE_TOTAL_TOKENS_REMINDER', 'CLAUDE_CODE_PARCHMENT_FERN'].every(k => k in trimMax.env),
   'max sets the five measured env switches');

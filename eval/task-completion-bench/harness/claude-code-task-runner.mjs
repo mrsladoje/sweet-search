@@ -186,18 +186,52 @@ export const CLAUDE_HARNESS_TRIM_ENV_MAX = Object.freeze({
   CLAUDE_CODE_PARCHMENT_FERN: '1',
 });
 
+// Subagents in 'max'. `--system-prompt` does not reach subagents: they still got Claude Code's own
+// subagent prompt ("For noisy investigation (grep sweeps, log trawls, broad search), spawn a
+// subagent", background-job conventions). Owner rule: a sweet subagent carries the trimmed harness
+// prompt AND the rules. The rules already arrive through CLAUDE.md (verified: same block as the
+// parent). This definition REPLACES the built-in `general-purpose` type, so both an explicit call
+// and an omitted `subagent_type` (which Claude Code maps to general-purpose) run it. Before, modes
+// 1/max denied Agent(general-purpose), and an omitted type failed with "has been denied". No
+// `tools` key: the subagent inherits the parent's trimmed tool set. Claude Code appends its fixed
+// subagent notes and the byte-identical `--append-subagent-system-prompt` after this text.
+export const CLAUDE_TRIM_SUBAGENT_PROMPT = [
+  "You are a coding agent working as a subagent: another agent launched you with one task in the user's repository.",
+  '',
+  '- Do the task with the tools: run commands with Bash, change files with Edit or Write. Tool calls that do not depend on each other can go in parallel in one response.',
+  '- Before you delete or overwrite anything, look at it first. Do not commit, push or rewrite git history.',
+  '- Your final message is all the launching agent sees: state what you found and what you changed, and name any step you did not do.',
+].join('\n');
+export const CLAUDE_TRIM_AGENTS_JSON = JSON.stringify({
+  'general-purpose': {
+    description: 'Agent for a self-contained part of the task that you want done in a separate context.',
+    prompt: CLAUDE_TRIM_SUBAGENT_PROMPT,
+  },
+});
+
+
 export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
   const m = String(mode ?? '').trim();
   if (!m || m === '0') return { mode: null, args: [], env: {} };
-  if (m === 'max' || m === 'lean') {
+  if (m === 'lean') {
     // lean also drops the Agent tool (no delegation): opt-in only, reported separately.
-    const deny = m === 'lean'
-      ? [...CLAUDE_HARNESS_TRIM_DENY.filter(t => !t.startsWith('Agent(')), 'Agent']
-      : [...CLAUDE_HARNESS_TRIM_DENY, 'Agent(Plan)'];
     return {
       mode: m,
-      // --system-prompt BEFORE the variadic --disallowedTools, which must stay LAST.
-      args: ['--system-prompt', CLAUDE_TRIM_BASE_PROMPT, '--disallowedTools', ...deny],
+      args: ['--system-prompt', CLAUDE_TRIM_BASE_PROMPT, '--disallowedTools',
+        ...CLAUDE_HARNESS_TRIM_DENY.filter(t => !t.startsWith('Agent(')), 'Agent'],
+      env: { ...CLAUDE_HARNESS_TRIM_ENV_MAX },
+    };
+  }
+  if (m === 'max') {
+    // general-purpose is REPLACED by --agents (not denied); the built-in catch-all `claude`
+    // (Claude Code's default subagent prompt) and Plan are denied, so our type is the only one.
+    const deny = [...CLAUDE_HARNESS_TRIM_DENY.filter(t => t !== 'Agent(general-purpose)'),
+      'Agent(Plan)', 'Agent(claude)'];
+    return {
+      mode: m,
+      // --system-prompt and --agents BEFORE the variadic --disallowedTools, which must stay LAST.
+      args: ['--system-prompt', CLAUDE_TRIM_BASE_PROMPT, '--agents', CLAUDE_TRIM_AGENTS_JSON,
+        '--disallowedTools', ...deny],
       env: { ...CLAUDE_HARNESS_TRIM_ENV_MAX },
     };
   }
