@@ -15,7 +15,8 @@
 # leg shares that subscription; a usage-limit hit stops this script, finished rows are kept.
 # Never run two of these at once (one run-pilot per machine).
 set -u
-H=${1:?usage: mac-smoke.sh claudecode|codex|opencode}
+H=${1:?usage: mac-smoke.sh claudecode|codex|opencode [trim-value]}
+ON=${2:-1}   # trim value for the TRIM legs: 1, or max (claudecode/opencode)
 REPO=/Users/admin/Projects/sweet-search-private
 BENCH=$REPO/eval/task-completion-bench
 cd "$BENCH" || exit 2
@@ -66,7 +67,7 @@ RUNS=()
 # Neutral run ids: on the Mac the run id is part of paths the agent sees (the memory path in
 # Claude Code's system prompt), so it must not name the condition. Rows carry harnessTrim.
 N=0
-for LEG in asnow-r1:0 trim-r1:1 trim-r2:1 asnow-r2:0; do
+for LEG in asnow-r1:0 trim-r1:$ON trim-r2:$ON asnow-r2:0; do
   NAME=${LEG%%:*}; TRIM=${LEG##*:}; N=$((N+1))
   RUN=hsmoke-$H-$STAMP-L$N
   echo "$(date +%T) launching $RUN = $NAME ($SWITCH=$TRIM)"
