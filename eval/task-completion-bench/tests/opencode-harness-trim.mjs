@@ -11,6 +11,7 @@
 import {
   buildMainOpencodeConfig, opencodeHarnessTrim, opencodeArmHarnessTrim, opencodePromptFamily,
   validateMainOpencodePreflight, OPENCODE_TRIM_DISABLED_TOOLS, OPENCODE_TRIM_TOOL_EDITS,
+  OPENCODE_TRIM_MAX_DISABLED_TOOLS, OPENCODE_TRIM_MAX_TOOL_EDITS,
   OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT, opencodeUnjailedEnv,
 } from '../harness/opencode-task-runner.mjs';
 import { spawnSync } from 'node:child_process';
@@ -44,9 +45,11 @@ assert(JSON.stringify(capped) === PRE_TRIM_CONFIG.slice(0, -1) + ',"agent":{"bui
 
 console.log('\nnative arm is never trimmed:');
 for (const model of ['x-ai/grok-4.5', 'meta/muse-spark-1.1', 'openai/gpt-5.1', 'anthropic/claude-sonnet-5']) {
-  const t = opencodeArmHarnessTrim({ sweet: false, env: { OC_HARNESS_TRIM: '1' }, apiModel: model, stateDir: STATE });
-  assert(t.mode === null && JSON.stringify(buildMainOpencodeConfig({ env: {}, trim: t })) === PRE_TRIM_CONFIG,
-    `native + OC_HARNESS_TRIM=1 on ${model}: full opencode config`);
+  for (const mode of ['1', 'max']) {
+    const t = opencodeArmHarnessTrim({ sweet: false, env: { OC_HARNESS_TRIM: mode }, apiModel: model, stateDir: STATE });
+    assert(t.mode === null && JSON.stringify(buildMainOpencodeConfig({ env: {}, trim: t })) === PRE_TRIM_CONFIG,
+      `native + OC_HARNESS_TRIM=${mode} on ${model}: full opencode config`);
+  }
 }
 assert(opencodeArmHarnessTrim({ sweet: true, env: {}, apiModel: 'x-ai/grok-4.5', stateDir: STATE }).mode === null,
   'sweet with the switch unset: off');
@@ -65,7 +68,37 @@ for (const [model, family] of Object.entries(FAMILIES)) {
   assert(cfg.plugin.length === 1 && cfg.plugin[0][0] === `file://${join(STATE, OPENCODE_TRIM_PLUGIN)}`
       && cfg.plugin[0][1].report === join(STATE, OPENCODE_TRIM_REPORT), `${family}: plugin and report live in the runner state dir`);
   assert(!/\{(env|file):/.test(prompt), `${family}: prompt has no opencode {env:}/{file:} substitution markers`);
+  assert(!cfg.agent.general && !cfg.agent.explore, `${family}: round 1 leaves the subagents alone`);
 }
+
+console.log('\nsweet + OC_HARNESS_TRIM=max:');
+const explorePrompt = readFileSync(join(BENCH, 'harness/trim/opencode-1.18.4-prompt-explore-max.txt'), 'utf8');
+for (const [model, family] of Object.entries(FAMILIES)) {
+  const t = opencodeArmHarnessTrim({ sweet: true, env: { OC_HARNESS_TRIM: 'max' }, apiModel: model, stateDir: STATE });
+  const cfg = buildMainOpencodeConfig({ env: {}, trim: t });
+  const prompt = readFileSync(join(BENCH, `harness/trim/opencode-1.18.4-prompt-${family}-max.txt`), 'utf8');
+  assert(t.mode === `max:prompt:${family}+subagents+tools+tooldesc` && cfg.agent.build.prompt === prompt,
+    `${family}: agent.build.prompt is the max copy`, t.mode);
+  assert(cfg.agent.general.prompt === prompt && cfg.agent.explore.prompt === explorePrompt
+      && Object.keys(cfg.agent).join() === 'build,general,explore',
+    `${family}: general gets the build prompt, explore its edited prompt, nothing else`);
+  assert(JSON.stringify(Object.keys(cfg.tools)) === JSON.stringify(OPENCODE_TRIM_MAX_DISABLED_TOOLS)
+      && Object.values(cfg.tools).every(v => v === false), `${family}: glob, grep, skill and todowrite disabled`);
+  assert(cfg.plugin[0][1].edits === OPENCODE_TRIM_MAX_TOOL_EDITS, `${family}: plugin gets the max edits`);
+  for (const gone of ['TodoWrite', 'ask one short question', 'stop and ask the user', 'commentary', 'extensively',
+    'Glob', 'Grep', 'Code References', 'Check the README']) {
+    if (prompt.includes(gone)) assert(false, `${family}: "${gone}" removed`);
+  }
+  assert(/NEVER revert|Only use tools|apply_patch|Edit for editing/.test(prompt) && /Persist until|Implement the solution|NEVER create files/.test(prompt),
+    `${family}: max keeps the coding rules`);
+}
+assert(!/Use Glob|Use Grep/.test(explorePrompt) && explorePrompt.includes('Use Read when you know'), 'explore: only the Glob/Grep lines go');
+assert(OPENCODE_TRIM_MAX_DISABLED_TOOLS.includes('todowrite')
+    && !OPENCODE_TRIM_MAX_DISABLED_TOOLS.some(n => ['bash', 'read', 'edit', 'write', 'apply_patch', 'task'].includes(n)),
+  'max: todowrite off; bash, read, edit, write, apply_patch and task stay enabled');
+const capMax = buildMainOpencodeConfig({ env: { SS_HARD_TURN_CAP: '40' }, trim: opencodeHarnessTrim('max', { apiModel: 'openai/gpt-5.6-luna', stateDir: STATE }) });
+assert(capMax.agent.build.maxSteps === 40 && !capMax.agent.general.maxSteps, 'max keeps the hard turn cap on build only');
+
 const t1 = opencodeHarnessTrim('1', { apiModel: 'x-ai/grok-4.5', stateDir: STATE });
 assert(!OPENCODE_TRIM_DISABLED_TOOLS.some(n => ['bash', 'read', 'edit', 'write', 'apply_patch', 'todowrite', 'task'].includes(n)),
   'bash, read, edit, write, apply_patch, todowrite and task stay enabled');
@@ -81,8 +114,8 @@ try { validateMainOpencodePreflight({ version: '1.18.4', resolved: { plugin: t1.
 assert(ambientOff !== null, 'preflight with the switch off rejects the trim plugin (plugins default to [])');
 
 console.log('\nbad values throw:');
-for (const [mode, model] of [['yes', 'x-ai/grok-4.5'], ['2', 'x-ai/grok-4.5'], ['tools', 'x-ai/grok-4.5'],
-  ['1', 'google/gemini-3.8-pro'], ['1', 'openai/gpt-5.3-codex'], ['1', 'moonshotai/kimi-k3']]) {
+for (const [mode, model] of [['yes', 'x-ai/grok-4.5'], ['2', 'x-ai/grok-4.5'], ['tools', 'x-ai/grok-4.5'], ['MAX', 'x-ai/grok-4.5'],
+  ['1', 'google/gemini-3.8-pro'], ['1', 'openai/gpt-5.3-codex'], ['1', 'moonshotai/kimi-k3'], ['max', 'openai/gpt-5.3-codex']]) {
   let err = null;
   try { opencodeHarnessTrim(mode, { apiModel: model, stateDir: STATE }); } catch (e) { err = e; }
   assert(err !== null, `OC_HARNESS_TRIM=${mode} on ${model} throws instead of running half-trimmed`);
@@ -123,6 +156,31 @@ const drifted = { description: 'some other bash text' };
 await hooks['tool.definition']({ toolID: 'bash' }, drifted);
 assert(JSON.parse(readFileSync(reportPath, 'utf8')).bash.missing.length === 4, 'a drifted description is reported as missing edits');
 
+console.log('\nmax plugin edits:');
+const maxReportPath = join(STATE, 'max-report.json');
+const maxHooks = await plugin({}, { edits: OPENCODE_TRIM_MAX_TOOL_EDITS, report: maxReportPath });
+const maxOut = {};
+for (const name of ['bash', 'read', 'edit', 'write', 'task']) {
+  const params = { marker: name };
+  maxOut[name] = { description: tool(name).description, parameters: params };
+  await maxHooks['tool.definition']({ toolID: name }, maxOut[name]);
+  assert(maxOut[name].parameters === params, `max ${name}: parameters object untouched`);
+}
+const maxReport = JSON.parse(readFileSync(maxReportPath, 'utf8'));
+assert(Object.entries(OPENCODE_TRIM_MAX_TOOL_EDITS).every(([name, list]) => maxReport[name]?.applied === list.length && !maxReport[name].missing.length),
+  'every max edit applies to the captured 1.18.4 descriptions', JSON.stringify(maxReport));
+for (const gone of ['DO NOT use it for file operations', 'Use Grep (NOT grep or rg)', 'Edit files: Use Edit', '# Git and GitHub',
+  'git push', 'Directory Verification', '<good-example>']) {
+  assert(!maxOut.bash.description.includes(gone), `max bash: "${gone}" removed`);
+}
+for (const kept of ['workdir', 'will be truncated', 'timeout', 'multiple bash tool calls in a single message', "Use ';' only"]) {
+  assert(maxOut.bash.description.includes(kept), `max bash: "${kept}" kept`);
+}
+assert(!/must use your `Read` tool|MUST use the Read tool first/.test(maxOut.edit.description + maxOut.write.description)
+    && maxOut.edit.description.includes('oldString'), 'max edit/write: only the Read-first claim goes');
+assert(!maxOut.task.description.includes('not visible to the user') && maxOut.task.description.includes('task_id'),
+  'max task: user-visibility and proactive notes go; resume and delegation text stay');
+
 console.log('\ntrimmed prompts are the reproducible build of the captured originals:');
 const build = spawnSync('python3', [join(BENCH, 'handoffs/improve/harness-prompt-trim/scripts/build_oc_trim_prompts.py'), '--check'], { encoding: 'utf8' });
 assert(build.status === 0, 'build_oc_trim_prompts.py --check passes', build.stderr || build.stdout);
@@ -135,6 +193,7 @@ for (const family of Object.values(FAMILIES)) {
   assert(/NEVER commit|NEVER revert|Only use tools|Code References|apply_patch/.test(text), `${family}: steering removed, coding rules kept`);
 }
 assert(existsSync(join(BENCH, 'harness/trim/NOTICE-opencode.md')), 'MIT notice for the opencode copies is present');
+assert(existsSync(join(CAPTURES, 'opencode-1.18.4-request-sweet-trim-off-explore-subagent.json')), 'explore original is captured');
 
 // Unjailed (SS_ISOLATION=0, the Mac): no $HOME mask, so opencode must get private dirs or it
 // reads the operator's ~/.config/opencode, ~/.claude, ~/.agents and writes its DB outside

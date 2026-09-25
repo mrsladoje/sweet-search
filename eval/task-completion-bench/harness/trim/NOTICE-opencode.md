@@ -51,6 +51,12 @@ opencode chooses its base prompt from the provider model id. The runner mirrors 
 
 Not copied (the trim throws for them): `gpt-4`/`o1`/`o3`, `*codex*`, `gemini-`, `trinity`, `kimi`.
 
+`OC_HARNESS_TRIM=max` uses `opencode-1.18.4-prompt-<family>-max.txt` for the build agent AND the
+`general` subagent, and `opencode-1.18.4-prompt-explore-max.txt` for the `explore` subagent
+(opencode's own explore prompt, any model; source text from
+`captures/opencode-1.18.4-request-sweet-trim-off-explore-subagent.json`). The same build script
+makes them: the family's round-1 list plus its `*_MAX` list.
+
 ## Changes
 
 Rebuild with `handoffs/improve/harness-prompt-trim/scripts/build_oc_trim_prompts.py`; each edit must match
