@@ -2,10 +2,14 @@
 
 ## 1. Conclusion
 
-On both Luna harnesses, the sweet-only trim made the sweet arm **cheaper and lost no solve**:
-Codex cost −40%, opencode cost −21% (realized), and each gained one solve (1/6 → 2/6). With
-6 rollouts per condition this is a **direction, not a finding**. Native did not run, so nothing
-here compares sweet with native. The Claude Code (Opus 5.5) smoke is §5.
+The trim is **safe** — 0 solves lost in 36 rollouts on three harnesses — but it is **not yet a
+proven win**. On the two Luna harnesses the sweet arm got cheaper (Codex −40%, opencode −21%
+realized) and gained one solve each (1/6 → 2/6). On Claude Code with Opus 5.5 solves were equal
+(4/6 v 4/6) and cost did not move (ideal −0.6%, realized +8%): the predicted fixed-token saving
+(about −14% realized) is smaller than the run-to-run spread, and one trimmed rollout alone cost
+$0.60 against $0.31–0.39 for the same task untrimmed. With 6 rollouts per condition every number
+here is a **direction, not a finding**. Native did not run, so nothing here compares sweet with
+native.
 
 ## 2. Design
 
@@ -66,10 +70,36 @@ grep/read in both.
 - pytask failed in all 12 Luna rollouts (a real partial fix: one `ValueError-True` variant of
   the hidden test fails). It is a floor task for Luna; it says nothing about the trim.
 
-## 5. Claude Code 2.1.281, Opus 5.5 medium (subscription)
+## 5. Claude Code 2.1.281, Opus 5.5 medium (owner's subscription)
 
-Running; results to follow. Pre-registered diet-only expectation (FINDINGS-STEP-A.md §5):
-about −14% realized, −21% ideal.
+Run ids `results/trim-smoke-claudecode-20260925-1915-*`. Treatment verified: every trimmed row
+records `tools+steer`; first request 10,611–10,842 tokens trimmed v 19,470–19,701 untrimmed
+(the box's held-out median is 19,194). 0 of 12 SHIM-TAMPERED; private config dir on every
+rollout; 0 subagent requests.
+
+| condition | solved | realized $ (sum / median) | ideal $ (sum / median) | turns | output tokens |
+|---|---|---|---|---|---|
+| sweet as now | 4/6 | 1.937 / 0.314 | 2.011 / 0.325 | 85 | 31,179 |
+| sweet + trim | 4/6 | 2.094 / 0.361 (+8%) | 1.999 / 0.336 (−0.6%) | 99 | 36,122 |
+
+Per task, realized $ (rep 1, rep 2), as-now → trim:
+markup-it 0.388, 0.315 → 0.306, **0.601** (unsolved in all 4);
+graphql-go-tools 0.677, 0.313 → 0.540, 0.416 (solved in all 4);
+pytask 0.123, 0.121 → 0.109, 0.122 (solved in all 4).
+
+Calls before the first edit (all 6 rollouts, Claude transcripts):
+
+| | ss-* | shell search | shell read | Read tool |
+|---|---|---|---|---|
+| sweet as now | 14 | 16 | 19 | 0 |
+| sweet + trim | 32 | 13 | 13 | 2 |
+
+Reading: the trim moved search toward ss-* (+18 calls) with fewer shell searches and reads
+(−9), in the direction the bash-first hypothesis predicts — but the agent still made 26 shell
+search/read calls, so the duplication is reduced, not removed. The fixed-token saving (~8,800
+tokens per request) did not show in the cost totals; the trimmed arm made more turns (99 v 85)
+and one long markup-it rollout. Decisive reading needs more tasks and reps (Gate 4), not this
+smoke.
 
 ## 6. Defects found and fixed while running
 
