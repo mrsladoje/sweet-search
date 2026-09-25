@@ -366,7 +366,25 @@ function warmupRun(rundir) {
 // Tear down a finished run: SIGKILL exactly THIS run's ss-* server + maintainer,
 // matched precisely by SWEET_SEARCH_PROJECT_ROOT in /proc/<pid>/environ (Linux,
 // root) — concurrency-safe, never touches a sibling run's procs — then delete it.
+// macOS has no /proc and no readable environ, and the daemon retitles itself (no argv), so
+// match by OPEN FILES instead: this run's server and maintainer hold its .sweet-search/*
+// files open. Still exact per run dir, so concurrency-safe. Without this, every Mac
+// rollout leaked its ~3-4GB server + maintainer.
+function reapRunDirDarwin(rundir) {
+  const pids = sh('pgrep -x sweet-search-daemon; pgrep -x sweet-search-maintainer; true').split(/\s+/).filter(p => /^\d+$/.test(p));
+  for (const pid of pids) {
+    let open = '';
+    try { open = sh(`lsof -p ${pid} -Fn 2>/dev/null || true`); } catch { /* process gone */ }
+    if (open.split('\n').some(l => l.startsWith(`n${rundir}/`))) { try { process.kill(+pid, 'SIGKILL'); } catch { /* */ } }
+  }
+}
+
 function reapRunDir(rundir) {
+  if (process.platform === 'darwin') {
+    try { reapRunDirDarwin(rundir); } catch { /* */ }
+    try { rmSync(rundir, { recursive: true, force: true }); } catch { /* */ }
+    return;
+  }
   try {
     const out = sh(`grep -lZ "SWEET_SEARCH_PROJECT_ROOT=${rundir}" /proc/[0-9]*/environ 2>/dev/null || true`);
     for (const f of out.split('\0').filter(Boolean)) {
