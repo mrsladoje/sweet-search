@@ -10,7 +10,7 @@
 // engineered). parseOpencodeStream is defensive and is validated/adjusted from a real
 // smoke's raw NDJSON before any counted run.
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isZeroCallStartFailure } from './codex-task-runner.mjs';
@@ -66,14 +66,127 @@ function sanitizedConfig(value) {
   ]));
 }
 
-export function validateMainOpencodePreflight({ version, resolved }) {
+// `plugins` is the list the runner itself configured (the harness-trim plugin, or none);
+// anything else in the resolved config is ambient and fails the preflight.
+export function validateMainOpencodePreflight({ version, resolved, plugins = [] }) {
   const versionPattern = new RegExp(`(^|\\D)${PINNED_OPENCODE_VERSION.replaceAll('.', '\\.')}($|\\D)`);
   if (!versionPattern.test(String(version || ''))) {
     throw new Error(`pinned OpenCode ${PINNED_OPENCODE_VERSION} is unavailable`);
   }
   if (!resolved || typeof resolved !== 'object' || !Array.isArray(resolved.plugin)
-      || resolved.plugin.length !== 0) throw new Error('ambient OpenCode plugin detected');
+      || JSON.stringify(resolved.plugin) !== JSON.stringify(plugins)) throw new Error('ambient OpenCode plugin detected');
   return true;
+}
+
+// --- HARNESS TRIM (OC_HARNESS_TRIM, default OFF) — handoffs/improve/harness-prompt-trim ---
+// Research switch, SWEET ARM ONLY: removes the parts of opencode's OWN request that
+// contradict the ss-* rules (Glob/Grep-first, Task-instead-of-search, Read-instead-of-cat,
+// bash-only-for-system-commands) or that a headless task never uses. The rules file, the
+// frame and AGENTS.md are untouched. Verified at $0 on 1.18.4 (captures in that handoff):
+//   prompt   — agent.build.prompt REPLACES the model-family prompt (environment block,
+//              AGENTS.md and tools stay). Edited copies of opencode's MIT prompts live in
+//              harness/trim/ (NOTICE there); one per family the bench can route here.
+//   tools    — tools.<name>: false drops glob and grep (ss-* duplicates whose descriptions
+//              push "use the Task tool instead") and skill (no skills in a rollout). task
+//              stays: delegation is a real capability.
+//   tooldesc — a local plugin's `tool.definition` hook deletes the contradicting passages
+//              from the bash, read and task DESCRIPTIONS. Execution stays opencode's built-in
+//              tool; only the text the model reads changes. Config cannot do this
+//              (tools.bash accepts only a boolean). The plugin writes a report of what it
+//              applied; a plugin that fails to load is silently ignored by opencode, so the
+//              row carries that report as positive proof.
+// Plugin and report live in the runner state dir (outside the rundir: never in the patch;
+// eval/ is masked in the jail, so harness/trim/ itself is not readable there).
+// Mode values: unset/'0' = off (config, env and argv byte-identical), '1' = on.
+const TRIM_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'trim');
+export const OPENCODE_TRIM_PLUGIN = 'opencode-trim-plugin.mjs';
+export const OPENCODE_TRIM_REPORT = 'opencode-trim-report.json';
+export const OPENCODE_TRIM_DISABLED_TOOLS = Object.freeze(['glob', 'grep', 'skill']);
+const OPENCODE_TRIM_PROMPTS = Object.freeze({
+  default: 'opencode-1.18.4-prompt-default.txt', muse: 'opencode-1.18.4-prompt-muse.txt',
+  gpt: 'opencode-1.18.4-prompt-gpt.txt', claude: 'opencode-1.18.4-prompt-claude.txt',
+});
+// [find, replace] pairs per built-in tool. Only fixed text — never the templated parts
+// (OS, shell, temp dir, timeout) — so every edit applies on every host.
+export const OPENCODE_TRIM_TOOL_EDITS = Object.freeze({
+  bash: [
+    ['IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.\n\n', ''],
+    [' or Grep to search the full content', ''],
+    ['  - Avoid using Bash with the `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands,', '  - Avoid using Bash with the `sed`, `awk`, or `echo` commands,'],
+    ['    - File search: Use Glob (NOT find or ls)\n    - Content search: Use Grep (NOT grep or rg)\n    - Read files: Use Read (NOT cat/head/tail)\n', ''],
+  ],
+  read: [
+    ['- Use the grep tool to find specific content in large files or files with long lines.\n', ''],
+    ['- If you are unsure of the correct file path, use the glob tool to look up filenames by glob pattern.\n', ''],
+  ],
+  // task stays enabled; only its pointers to the disabled glob/grep tools go.
+  task: [
+    ['use the Read or Glob tool instead of the Task tool', 'use the Read tool instead of the Task tool'],
+    ['- If you are searching for a specific class definition like "class Foo", use the Grep tool instead, to find the match more quickly\n', ''],
+  ],
+});
+
+// Mirror of opencode 1.18.4's model → base prompt choice (`wd` in the binary, keyed on the
+// provider model id). null = a family with no trimmed copy; the switch then refuses to run
+// rather than trim only half the request.
+export function opencodePromptFamily(apiModel) {
+  const id = String(apiModel || '');
+  if (id.includes('muse-spark')) return 'muse';
+  if (id.includes('gpt-4') || id.includes('o1') || id.includes('o3')) return null;
+  if (id.includes('gpt')) return id.includes('codex') ? null : 'gpt';
+  if (id.includes('gemini-')) return null;
+  if (id.includes('claude')) return 'claude';
+  if (/trinity|kimi/.test(id.toLowerCase())) return null;
+  return 'default';
+}
+
+export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiModel, stateDir } = {}) {
+  const m = String(mode ?? '').trim();
+  if (!m || m === '0') return { mode: null, config: {}, files: {}, plugins: [], stateEntries: [] };
+  if (m !== '1') throw new Error(`OC_HARNESS_TRIM=${m}: expected 0 or 1`);
+  const family = opencodePromptFamily(apiModel);
+  if (!family) throw new Error(`OC_HARNESS_TRIM: no trimmed opencode prompt for model ${apiModel}`);
+  if (!stateDir) throw new Error('OC_HARNESS_TRIM: stateDir required');
+  const plugin = [`file://${path.join(stateDir, OPENCODE_TRIM_PLUGIN)}`,
+    { edits: OPENCODE_TRIM_TOOL_EDITS, report: path.join(stateDir, OPENCODE_TRIM_REPORT) }];
+  return {
+    mode: `prompt:${family}+tools+tooldesc`,
+    config: {
+      plugin: [plugin],
+      tools: Object.fromEntries(OPENCODE_TRIM_DISABLED_TOOLS.map(name => [name, false])),
+      agentBuild: { prompt: readFileSync(path.join(TRIM_DIR, OPENCODE_TRIM_PROMPTS[family]), 'utf8') },
+    },
+    files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(path.join(TRIM_DIR, OPENCODE_TRIM_PLUGIN), 'utf8') },
+    plugins: [plugin],
+    stateEntries: [OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT],
+  };
+}
+
+// SWEET ARM ONLY — native has no ss-* rules to contradict and keeps opencode's full prompt
+// and tools in every condition, whatever the switch says.
+export function opencodeArmHarnessTrim({ sweet, env = process.env, apiModel, stateDir } = {}) {
+  return opencodeHarnessTrim(sweet ? env.OC_HARNESS_TRIM : '0', { apiModel, stateDir });
+}
+
+// UNJAILED (SS_ISOLATION=0, e.g. the owner's Mac): the jail's $HOME mask and the ocData bind
+// do not exist, so opencode would load the OPERATOR's ~/.config/opencode (plugins, agents,
+// MCP servers, AGENTS.md), ~/.opencode, ~/.claude/CLAUDE.md and the ~/.claude + ~/.agents
+// skills into the agent, read ~/.local/share/opencode/auth.json, and write its session DB
+// there instead of ocData. 1.18.4 takes its config/data/state dirs from XDG_*_HOME and every
+// home-relative lookup from OPENCODE_TEST_HOME ?? os.homedir() (verified in the binary and
+// by capture). Point all of them at private per-rollout dirs; data/opencode is a link to
+// ocData so the session DB lands where the cost reader looks. $HOME itself is untouched, so
+// the agent's shell (git, ss-* caches) behaves as in the jail. XDG_CACHE_HOME stays unset:
+// ~/.cache/opencode holds only models.json and provider SDKs (read-only in the jail too).
+export function opencodeUnjailedEnv({ root, ocData }) {
+  const dirs = { config: path.join(root, 'config'), data: path.join(root, 'data'), state: path.join(root, 'state'), home: path.join(root, 'home') };
+  for (const dir of Object.values(dirs)) mkdirSync(dir, { recursive: true });
+  const link = path.join(dirs.data, 'opencode');
+  if (!existsSync(link)) symlinkSync(ocData, link, 'dir');
+  return {
+    XDG_CONFIG_HOME: dirs.config, XDG_DATA_HOME: dirs.data, XDG_STATE_HOME: dirs.state,
+    OPENCODE_TEST_HOME: dirs.home,
+  };
 }
 
 // Runner-enforced hard turn budget (EDIT_THRASHING §7). OpenCode's own loop
@@ -91,14 +204,19 @@ export function resolveHardTurnCap(env = process.env) {
   return cap;
 }
 
-export function buildMainOpencodeConfig({ env = process.env } = {}) {
+// `trim` is opencodeHarnessTrim's result; off (or absent) it adds nothing, so the config is
+// byte-identical to the pre-trim harness.
+export function buildMainOpencodeConfig({ env = process.env, trim = null } = {}) {
   const cap = resolveHardTurnCap(env);
+  const { plugin = [], tools, agentBuild = {} } = trim?.config || {};
+  const build = { ...(cap ? { maxSteps: cap } : {}), ...agentBuild };
   return {
     $schema: 'https://opencode.ai/config.json',
-    plugin: [],
+    plugin,
     provider: { openrouter: { options: { apiKey: '{env:OPENROUTER_API_KEY}' } } },
     permission: { bash: 'allow', edit: 'allow', write: 'allow', read: 'allow', webfetch: 'deny', websearch: 'deny' },
-    ...(cap ? { agent: { build: { maxSteps: cap } } } : {}),
+    ...(tools ? { tools } : {}),
+    ...(Object.keys(build).length ? { agent: { build } } : {}),
   };
 }
 
@@ -210,8 +328,18 @@ export async function runOpencodeTask(task, {
   // permissions so the headless agent edits/bashes without prompts (the #13851 write-gap
   // mitigation is `build` agent + explicit allow + --auto), and web tools denied (host
   // /etc/hosts lockdown already blocks egress, this stops opencode's own fetch/search).
+  // Harness trim (research switch, default OFF, sweet arm only): adds nothing to config,
+  // env or argv when off.
+  let harnessTrim;
+  try {
+    harnessTrim = opencodeArmHarnessTrim({ sweet, apiModel, stateDir: runnerStateDir });
+  } catch (error) {
+    teardownRunner(runnerStateDir, { jail, broker });
+    throw error;
+  }
+  for (const [name, text] of Object.entries(harnessTrim.files)) writeFileSync(path.join(runnerStateDir, name), text);
   const ocConfig = path.join(runnerStateDir, 'opencode.json');
-  const ocConfigValue = buildMainOpencodeConfig();
+  const ocConfigValue = buildMainOpencodeConfig({ trim: harnessTrim });
   const ocConfigText = JSON.stringify(ocConfigValue);
   writeFileSync(ocConfig, ocConfigText);
   const retainedConfig = path.join(retainedSession, 'opencode.generated.json');
@@ -227,9 +355,13 @@ export async function runOpencodeTask(task, {
   // future build drops it, in which case the 120 s default is back and B6 reopens.
   const rtDeadlineSec = 2 * (t._testTimeoutSec || 300) + 120;
   const agentBashTimeoutMs = Number(process.env.SS_AGENT_BASH_TIMEOUT_MS) || (rtDeadlineSec + 60) * 1000;
+  // No jail → no masks or binds: give opencode private dirs instead (see opencodeUnjailedEnv).
+  // Jailed runs add nothing.
+  const unjailedEnv = jail ? {} : opencodeUnjailedEnv({ root: rolloutStateDir(label, 'opencode-home'), ocData });
   const env = buildAgentEnv({
     rundir, binDir, ssBinDir, sweet, jail,
     extraEnv: {
+      ...unjailedEnv,
       OPENCODE_CONFIG: ocConfig,
       OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: String(agentBashTimeoutMs),
       // ss-* gutter form pinned per harness (core/search/gutter-form.js): opencode → `N:`.
@@ -250,7 +382,7 @@ export async function runOpencodeTask(task, {
       throw new Error('OpenCode preflight process failed');
     }
     const resolved = parseResolvedConfig(configResult.stdout);
-    validateMainOpencodePreflight({ version: versionResult.stdout, resolved });
+    validateMainOpencodePreflight({ version: versionResult.stdout, resolved, plugins: harnessTrim.plugins });
     const apiKey = String(process.env.OPENROUTER_API_KEY || '');
     let safeResolved = JSON.stringify(sanitizedConfig(resolved));
     if (apiKey) safeResolved = safeResolved.replaceAll(apiKey, '[REDACTED]');
@@ -312,7 +444,12 @@ export async function runOpencodeTask(task, {
   });
   // opencode.json is this adapter's own generated config and lives in the runner state
   // dir by design; declare it so the tamper check does not read it as an injected file.
-  const shimTamperedFiles = verifyIntegrity({ integrity, runnerFiles, binDir, integrityStateDir, allowedStateEntries: ['opencode.json'] });
+  // The same holds for the trim plugin and its report when the switch is on.
+  const shimTamperedFiles = verifyIntegrity({ integrity, runnerFiles, binDir, integrityStateDir, allowedStateEntries: ['opencode.json', ...harnessTrim.stateEntries] });
+  const trimReportPath = path.join(runnerStateDir, OPENCODE_TRIM_REPORT);
+  const harnessTrimToolEdits = harnessTrim.mode && existsSync(trimReportPath)
+    ? JSON.parse(readFileSync(trimReportPath, 'utf8')) : null;
+  if (harnessTrim.mode && !harnessTrimToolEdits) console.log(`  [HARNESS-TRIM ${task.id || ''}] plugin wrote no report — tool descriptions were NOT trimmed`);
   if (shimTamperedFiles.length) console.log(`  [SHIM-TAMPERED ${task.id || ''}] ${shimTamperedFiles.join(', ')} — test signals untrusted`);
   // Audit BEFORE teardown: the jail handle carries the wall-clock window that attributes
   // egress denials to this rollout.
@@ -329,6 +466,11 @@ export async function runOpencodeTask(task, {
     openCodeConfigSha256: createHash('sha256').update(ocConfigText).digest('hex'),
     openCodeRawAttempts: rawAttempts,
     openCodeDataDir: retainedPath(ocData),
+    openCodeHome: jail ? 'jail-mask' : 'private-xdg',
+    // OC_HARNESS_TRIM mode ('prompt:<family>+tools+tooldesc') or null when off; when on, the
+    // plugin's own report of the description edits it applied (null = it never ran).
+    harnessTrim: harnessTrim.mode,
+    ...(harnessTrim.mode ? { harnessTrimToolEdits } : {}),
     secretLeakDetected: false,
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
     patchHunks, patchFiles, finalPatch,
