@@ -68,6 +68,44 @@ def transcript_split(run, label):
     return dict(pre=pre, post=post, firstIn=first_in, calls=c, sidechainFiles=subagent_files)
 
 
+CMD_IN_JS = re.compile(r'cmd:\s*"((?:[^"\\]|\\.)*)"')
+
+
+def codex_split(run, label):
+    """Codex session log: shell commands per call, before the first edit. Luna runs Codex in
+    "code mode", where every call is JavaScript inside one `exec` tool, so rows.toolCounts
+    counts ss-* as 0; read the commands out of the call bodies instead."""
+    files = sorted(glob.glob(f'{run}/agent-state/{label}/codex-home/sessions/**/*.jsonl', recursive=True))
+    if not files:
+        return None
+    c, edited = collections.Counter(), False
+    for f in files:
+        for line in open(f):
+            if not line.strip():
+                continue
+            p = json.loads(line).get('payload') or {}
+            if p.get('type') not in ('function_call', 'custom_tool_call'):
+                continue
+            body = str(p.get('arguments') or p.get('input') or '')
+            if 'apply_patch' in body or '*** Begin Patch' in body:
+                edited = True
+                continue
+            cmds = [bytes(m, 'utf8').decode('unicode_escape') for m in CMD_IN_JS.findall(body)]
+            if not cmds:
+                try: cmds = [json.loads(body).get('cmd', '')]
+                except Exception: cmds = []
+            if edited:
+                continue
+            for cmd in cmds:
+                if not cmd: continue
+                if SS.search(cmd): c['ss'] += 1
+                elif re.search(r'(^|\s)run_tests\b', cmd): c['runTests'] += 1
+                elif SEARCH.search(cmd): c['shellSearch'] += 1
+                elif READ.search(cmd): c['shellRead'] += 1
+                else: c['bashOther'] += 1
+    return dict(pre=0.0, post=0.0, firstIn=None, calls=c, sidechainFiles=0)
+
+
 rows = []
 for run in sys.argv[1:]:
     for r in json.load(open(f'{run}/rows.json')):
@@ -77,7 +115,8 @@ for run in sys.argv[1:]:
 by = collections.defaultdict(list)
 for r in rows:
     cond = 'TRIM' if r.get('harnessTrim') else 'as-now'
-    s = transcript_split(r['_run'], f"{r['taskId']}-{r['arm']}")
+    lbl = f"{r['taskId']}-{r['arm']}"
+    s = transcript_split(r['_run'], lbl) if r.get('harness') == 'claudecode' else codex_split(r['_run'], lbl) if r.get('harness') == 'codex' else None
     by[cond].append((r, s))
 
 print('# per rollout')
