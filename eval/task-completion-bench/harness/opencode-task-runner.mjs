@@ -97,15 +97,28 @@ export function validateMainOpencodePreflight({ version, resolved, plugins = [] 
 //              row carries that report as positive proof.
 // Plugin and report live in the runner state dir (outside the rundir: never in the patch;
 // eval/ is masked in the jail, so harness/trim/ itself is not readable there).
-// Mode values: unset/'0' = off (config, env and argv byte-identical), '1' = on.
+// Mode values: unset/'0' = off (config, env and argv byte-identical), '1' = on (round 1,
+// the 2026-09-25 smoke), 'max' = round 1 plus (audit 2026-09-25, same captures dir):
+//   subagents — agent.general.prompt = the build prompt (general otherwise gets the UNTRIMMED
+//              family prompt, "prefer Glob and Grep"), agent.explore.prompt = opencode's
+//              explore prompt minus its Glob/Grep lines (tools the trim disables).
+//   todowrite — disabled: Luna spent 22 of 101 turns (smoke) on todo lists that restate the
+//              frame's five steps; the claude/muse prompts lose their TodoWrite sections.
+//   text     — *-max.txt prompts drop the user-facing channel/format sections and every
+//              "ask the user" line (a question ends a headless run); the default prompt drops
+//              "search extensively" and README/lint hunting (the frame names run_tests);
+//              bash drops its mkdir/quoting walkthrough, git examples and the Git/PR section;
+//              edit/write drop the false "Read first" claim (1.18.4 does not enforce it).
 const TRIM_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'trim');
 export const OPENCODE_TRIM_PLUGIN = 'opencode-trim-plugin.mjs';
 export const OPENCODE_TRIM_REPORT = 'opencode-trim-report.json';
 export const OPENCODE_TRIM_DISABLED_TOOLS = Object.freeze(['glob', 'grep', 'skill']);
+export const OPENCODE_TRIM_MAX_DISABLED_TOOLS = Object.freeze([...OPENCODE_TRIM_DISABLED_TOOLS, 'todowrite']);
 const OPENCODE_TRIM_PROMPTS = Object.freeze({
   default: 'opencode-1.18.4-prompt-default.txt', muse: 'opencode-1.18.4-prompt-muse.txt',
   gpt: 'opencode-1.18.4-prompt-gpt.txt', claude: 'opencode-1.18.4-prompt-claude.txt',
 });
+const opencodeTrimMaxPrompt = name => `opencode-1.18.4-prompt-${name}-max.txt`;
 // [find, replace] pairs per built-in tool. Only fixed text — never the templated parts
 // (OS, shell, temp dir, timeout) — so every edit applies on every host.
 export const OPENCODE_TRIM_TOOL_EDITS = Object.freeze({
@@ -125,6 +138,37 @@ export const OPENCODE_TRIM_TOOL_EDITS = Object.freeze({
     ['- If you are searching for a specific class definition like "class Foo", use the Grep tool instead, to find the match more quickly\n', ''],
   ],
 });
+// OC_HARNESS_TRIM=max: round 1's edits, the avoid-shell bullet removed whole (its Edit/Write
+// lines name tools the GPT family does not have; every base prompt already says how to
+// edit), and text a rollout never uses. Applied in order, so each find is the text as
+// opencode sends it.
+export const OPENCODE_TRIM_MAX_TOOL_EDITS = Object.freeze({
+  bash: [
+    OPENCODE_TRIM_TOOL_EDITS.bash[0],
+    ['Before executing the command, please follow these steps:\n\n1. Directory Verification:\n   - If the command will create new directories or files, first use `ls` to verify the parent directory exists and is the correct location\n   - For example, before running "mkdir foo/bar", first use `ls foo` to check that "foo" exists and is the intended parent directory\n\n2. Command Execution:\n   - Always quote file paths that contain spaces with double quotes (e.g., rm "path with spaces/file.txt")\n   - Examples of proper quoting:\n     - mkdir "/Users/name/My Documents" (correct)\n     - mkdir /Users/name/My Documents (incorrect - will fail)\n     - python "/path/with spaces/script.py" (correct)\n     - python /path/with spaces/script.py (incorrect - will fail)\n   - After ensuring proper quoting, execute the command.\n   - Capture the output of the command.\n\n', ''],
+    OPENCODE_TRIM_TOOL_EDITS.bash[1],
+    ['  - Avoid using Bash with the `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or when these commands are truly necessary for the task. Instead, always prefer using the dedicated tools for these commands:\n    - File search: Use Glob (NOT find or ls)\n    - Content search: Use Grep (NOT grep or rg)\n    - Read files: Use Read (NOT cat/head/tail)\n    - Edit files: Use Edit (NOT sed/awk)\n    - Write files: Use Write (NOT echo >/cat <<EOF)\n    - Communication: Output text directly (NOT echo/printf)\n', ''],
+    [' For example, if you need to run "git status" and "git diff", send a single message with two bash tool calls in parallel.', ''],
+    [' (e.g., `git add . && git commit -m "message" && git push`). For instance, if one operation must complete before another starts (like mkdir before cp, Write before Bash for git operations, or git add before git commit), run these operations sequentially instead.', '.'],
+    // second copy of the workdir rule; the first stays at the top
+    ['  - AVOID using `cd <directory> && <command>`. Use the `workdir` parameter to change directories instead.\n    <good-example>\n    Use workdir="/foo/bar" with command: pytest tests\n    </good-example>\n    <bad-example>\n    cd /foo/bar && pytest tests\n    </bad-example>\n', ''],
+    ['\n# Git and GitHub\n- Only commit, amend, push, or create PRs when explicitly requested.\n- Before committing, inspect `git status`, `git diff`, and `git log --oneline -10`; stage only intended files and never commit secrets.\n- Write a concise commit message that matches the repo style.\n- Do not update git config, skip hooks, use interactive `-i`, force-push, or create empty commits unless explicitly requested.\n- If a commit fails or hooks reject it, fix the issue and create a new commit; do not amend the failed commit.\n- Before creating a PR, inspect status, diff, remote tracking, recent commits, and the diff from the base branch.\n- Review all commits included in the PR, not just the latest commit.\n- Use `gh` for GitHub tasks, including PRs, issues, checks, and releases; return the PR URL when done.\n', ''],
+  ],
+  read: [
+    ...OPENCODE_TRIM_TOOL_EDITS.read,
+    ['- This tool can read image files and PDFs and return them as file attachments.\n', ''],
+  ],
+  task: [
+    ...OPENCODE_TRIM_TOOL_EDITS.task,
+    [' The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.', ''],
+    ['7. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.\n', ''],
+  ],
+  // claude/muse/default families only (gpt has apply_patch): 1.18.4 runs an edit or an
+  // overwrite without a prior Read (verified by capture), so the claim only pushes a native
+  // Read before every ss-read-guided edit.
+  edit: [['- You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file. \n', '']],
+  write: [["- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.\n", '']],
+});
 
 // Mirror of opencode 1.18.4's model → base prompt choice (`wd` in the binary, keyed on the
 // provider model id). null = a family with no trimmed copy; the switch then refuses to run
@@ -143,18 +187,22 @@ export function opencodePromptFamily(apiModel) {
 export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiModel, stateDir } = {}) {
   const m = String(mode ?? '').trim();
   if (!m || m === '0') return { mode: null, config: {}, files: {}, plugins: [], stateEntries: [] };
-  if (m !== '1') throw new Error(`OC_HARNESS_TRIM=${m}: expected 0 or 1`);
+  if (m !== '1' && m !== 'max') throw new Error(`OC_HARNESS_TRIM=${m}: expected 0, 1 or max`);
+  const max = m === 'max';
   const family = opencodePromptFamily(apiModel);
   if (!family) throw new Error(`OC_HARNESS_TRIM: no trimmed opencode prompt for model ${apiModel}`);
   if (!stateDir) throw new Error('OC_HARNESS_TRIM: stateDir required');
   const plugin = [`file://${path.join(stateDir, OPENCODE_TRIM_PLUGIN)}`,
-    { edits: OPENCODE_TRIM_TOOL_EDITS, report: path.join(stateDir, OPENCODE_TRIM_REPORT) }];
+    { edits: max ? OPENCODE_TRIM_MAX_TOOL_EDITS : OPENCODE_TRIM_TOOL_EDITS, report: path.join(stateDir, OPENCODE_TRIM_REPORT) }];
+  const readPrompt = file => readFileSync(path.join(TRIM_DIR, file), 'utf8');
+  const prompt = readPrompt(max ? opencodeTrimMaxPrompt(family) : OPENCODE_TRIM_PROMPTS[family]);
   return {
-    mode: `prompt:${family}+tools+tooldesc`,
+    mode: max ? `max:prompt:${family}+subagents+tools+tooldesc` : `prompt:${family}+tools+tooldesc`,
     config: {
       plugin: [plugin],
-      tools: Object.fromEntries(OPENCODE_TRIM_DISABLED_TOOLS.map(name => [name, false])),
-      agentBuild: { prompt: readFileSync(path.join(TRIM_DIR, OPENCODE_TRIM_PROMPTS[family]), 'utf8') },
+      tools: Object.fromEntries((max ? OPENCODE_TRIM_MAX_DISABLED_TOOLS : OPENCODE_TRIM_DISABLED_TOOLS).map(name => [name, false])),
+      agentBuild: { prompt },
+      ...(max ? { agents: { general: { prompt }, explore: { prompt: readPrompt(opencodeTrimMaxPrompt('explore')) } } } : {}),
     },
     files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(path.join(TRIM_DIR, OPENCODE_TRIM_PLUGIN), 'utf8') },
     plugins: [plugin],
@@ -208,15 +256,16 @@ export function resolveHardTurnCap(env = process.env) {
 // byte-identical to the pre-trim harness.
 export function buildMainOpencodeConfig({ env = process.env, trim = null } = {}) {
   const cap = resolveHardTurnCap(env);
-  const { plugin = [], tools, agentBuild = {} } = trim?.config || {};
+  const { plugin = [], tools, agentBuild = {}, agents = {} } = trim?.config || {};
   const build = { ...(cap ? { maxSteps: cap } : {}), ...agentBuild };
+  const agent = { ...(Object.keys(build).length ? { build } : {}), ...agents };
   return {
     $schema: 'https://opencode.ai/config.json',
     plugin,
     provider: { openrouter: { options: { apiKey: '{env:OPENROUTER_API_KEY}' } } },
     permission: { bash: 'allow', edit: 'allow', write: 'allow', read: 'allow', webfetch: 'deny', websearch: 'deny' },
     ...(tools ? { tools } : {}),
-    ...(Object.keys(build).length ? { agent: { build } } : {}),
+    ...(Object.keys(agent).length ? { agent } : {}),
   };
 }
 
@@ -467,7 +516,8 @@ export async function runOpencodeTask(task, {
     openCodeRawAttempts: rawAttempts,
     openCodeDataDir: retainedPath(ocData),
     openCodeHome: jail ? 'jail-mask' : 'private-xdg',
-    // OC_HARNESS_TRIM mode ('prompt:<family>+tools+tooldesc') or null when off; when on, the
+    // OC_HARNESS_TRIM mode ('prompt:<family>+tools+tooldesc', 'max:prompt:<family>+subagents+
+    // tools+tooldesc') or null when off; when on, the
     // plugin's own report of the description edits it applied (null = it never ran).
     harnessTrim: harnessTrim.mode,
     ...(harnessTrim.mode ? { harnessTrimToolEdits } : {}),

@@ -5,12 +5,18 @@ capture (system message up to "You are powered by the model named", minus the jo
 Every edit must match exactly once, or the build fails.
 
   python3 build_oc_trim_prompts.py            # writes harness/trim/opencode-1.18.4-prompt-*.txt
+                                              # (OC_HARNESS_TRIM=1) and *-max.txt (=max)
   python3 build_oc_trim_prompts.py --check    # fails if a written file differs from a rebuild
 
 Rules (handoff): (a) delete what contradicts the ss-* rules (search/read/delegation
 steering); (b) delete what a headless benchmark task never uses; (c) keep everything that
 governs correct coding-agent behaviour. Delete, do not paraphrase; a minimal in-sentence edit
 only where one sentence mixes a contradiction with a keeper. Tags below: A / B / A+B.
+
+Max trim (OC_HARNESS_TRIM=max) = the round-1 list + the family's *_MAX list, built into
+*-max.txt. It also covers TodoWrite (disabled in the max trim), the "ask the user"
+instructions (a question ends a headless run), the user-facing sections, and the explore
+subagent's own prompt. repl UNTIL(marker) deletes up to the marker; TO_END to the end.
 """
 import json, os, sys
 
@@ -59,6 +65,9 @@ OBJECTIVITY_BODY = ("Prioritize technical accuracy and truthfulness over validat
                     "Objective guidance and respectful correction are more valuable than false agreement. Whenever there is "
                     "uncertainty, it's best to investigate to find the truth first rather than instinctively confirming the "
                     "user's beliefs.\n")
+
+TO_END = ('TO_END',)
+def UNTIL(marker): return ('UNTIL', marker)
 
 # Claude-family prompt (Na) and Muse Spark prompt (Za) share their body; Claude has blank
 # lines between blocks, Muse does not.
@@ -137,22 +146,68 @@ GPT = [  # GPT prompt (Ka): ids containing "gpt" but not "gpt-4" or "codex"
     ('B', '## Formatting rules\n\n', None),  # whole section, up to the next heading (see below)
 ]
 
+TODO_MAX = [  # claude / muse: todowrite is disabled in the max trim
+    ('B', '# Task Management\n', UNTIL('# Doing tasks\n')),
+    ('B', '- Use the TodoWrite tool to plan the task if required\n', ''),
+    ('B', 'IMPORTANT: Always use the TodoWrite tool to plan and track tasks throughout the conversation.\n', ''),
+    ('B', '# Code References', TO_END),  # user-facing navigation hint
+]
+DEFAULT_MAX = [
+    # "search extensively" v the rules' one probe; the frame names run_tests and says the
+    # shell has no dependencies, so README hunting and lint/typecheck runs are wasted calls
+    ('A', "- Use the available search tools to understand the codebase and the user's query. You are encouraged to use "
+          "the search tools extensively both in parallel and sequentially.\n", ''),
+    ('A', ' NEVER assume specific test framework or test script. Check the README or search codebase to determine the '
+          'testing approach.', ''),
+    ('A', '- VERY IMPORTANT: When you have completed a task, you MUST run the lint and typecheck commands (e.g. npm run '
+          'lint, npm run typecheck, ruff, etc.) with Bash if they were provided to you to ensure your code is correct.\n', ''),
+    ('B', 'NEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTANT to only commit when explicitly '
+          'asked, otherwise the user will feel that you are being too proactive.\n', ''),
+    ('B', ' For example, if you need to run "git status" and "git diff", send a single message with two tool calls to run '
+          'the calls in parallel.', ''),
+    ('B', '\nYou MUST answer concisely with fewer than 4 lines of text (not including tool use or code generation), unless '
+          'user asks for detail.\n', ''),  # second copy
+    ('B', '# Code References', TO_END),
+]
+GPT_MAX = [
+    # a question ends a headless run. The dirty-worktree, amend and "stop and ask the user"
+    # bullets repeat the Autonomy paragraph (that copy stays).
+    ('A+B', '; if unclear, ask one short question instead of guessing.', '.'),
+    ('A+B', '- You may be in a dirty git worktree.\n', UNTIL('- **NEVER** use destructive commands')),
+    # commentary/final channels: user-facing progress updates nobody reads headless; each
+    # "send an update before X" adds output tokens (the Codex trim removed the same rules)
+    ('B', '# Working with the user\n', TO_END),
+]
+# opencode's explore subagent prompt (`ae`, every model): its Glob/Grep lines name tools the
+# trim disables.
+EXPLORE = [
+    ('A', '- Use Glob for broad file pattern matching\n- Use Grep for searching file contents with regex\n', ''),
+]
+
 FAMILIES = {'claude': CLAUDE, 'muse': claude_like(False), 'default': DEFAULT, 'gpt': GPT}
+MAX = {'claude': CLAUDE + TODO_MAX, 'muse': claude_like(False) + TODO_MAX, 'default': DEFAULT + DEFAULT_MAX,
+       'gpt': GPT + GPT_MAX, 'explore': EXPLORE}
+ORIGINALS = {'explore': 'opencode-1.18.4-request-sweet-trim-off-explore-subagent.json'}
 
 
 def original(family):
-    body = json.load(open(os.path.join(CAPTURES, f'opencode-1.18.4-request-sweet-trim-off-{family}.json')))
+    name = ORIGINALS.get(family, f'opencode-1.18.4-request-sweet-trim-off-{family}.json')
+    body = json.load(open(os.path.join(CAPTURES, name)))
     content = body['messages'][0]['content']
     text = content if isinstance(content, str) else ''.join(p['text'] for p in content)
     return text[:text.index('You are powered by the model named')][:-1]  # drop the join newline
 
 
-def build(family):
+def build(family, lists=FAMILIES):
     text = original(family)
-    for tag, find, repl in FAMILIES[family]:
+    for tag, find, repl in lists[family]:
         if repl is None:  # delete from `find` up to (not including) the next "## " heading
             start = text.index(find)
             end = text.index('\n## ', start + len(find)) + 1
+            find, repl = text[start:end], ''
+        elif isinstance(repl, tuple):  # UNTIL(marker) / TO_END
+            start = text.index(find)
+            end = text.index(repl[1], start) if repl[0] == 'UNTIL' else len(text)
             find, repl = text[start:end], ''
         count = text.count(find)
         if count != 1:
@@ -163,12 +218,12 @@ def build(family):
 
 if __name__ == '__main__':
     check = '--check' in sys.argv
-    for family in FAMILIES:
-        out = os.path.join(TRIM, f'opencode-1.18.4-prompt-{family}.txt')
-        text = build(family)
+    for family, lists, suffix in ([(f, FAMILIES, '') for f in FAMILIES] + [(f, MAX, '-max') for f in MAX]):
+        out = os.path.join(TRIM, f'opencode-1.18.4-prompt-{family}{suffix}.txt')
+        text = build(family, lists)
         if check:
             if open(out).read() != text:
                 raise SystemExit(f'{out} differs from a rebuild')
         else:
             open(out, 'w').write(text)
-        print(f'{family}: {len(original(family))} -> {len(text)} chars')
+        print(f'{family}{suffix}: {len(original(family))} -> {len(text)} chars')
