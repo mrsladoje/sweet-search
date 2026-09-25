@@ -69,18 +69,26 @@ for t in "$HOME"/.ss-eval/image-tars/*.tar; do
   docker image inspect "$img" >/dev/null 2>&1 || docker load -i "$t" | tail -1
 done
 
-TASKS=gitbookio__markup-it-56,pytask-dev__pytask-210,jensneuse__graphql-go-tools-174
-LEDGER=$BENCH/results/ledger-trim-mac-20260925c/ledger.jsonl
+# Overridable for the confirm phase: SMOKE_TASKS (comma list), SMOKE_LEDGER, SMOKE_TASKS_FILE.
+TASKS=${SMOKE_TASKS:-gitbookio__markup-it-56,pytask-dev__pytask-210,jensneuse__graphql-go-tools-174}
+LEDGER=${SMOKE_LEDGER:-$BENCH/results/ledger-trim-mac-20260925c/ledger.jsonl}
+TASKS_FILE=${SMOKE_TASKS_FILE:-select/.cache/tasks_full_heldout.json}
+# LEGS=trim runs only the trimmed legs (screens reuse the as-now baseline already measured);
+# SMOKE_REPS=N runs N reps per leg pair (default 2 = A-B-B-A).
+case "${LEGS:-all}" in
+  trim) LEGLIST="trim-r1:$ON trim-r2:$ON" ;;
+  *)    LEGLIST="asnow-r1:0 trim-r1:$ON trim-r2:$ON asnow-r2:0" ;;
+esac
 STAMP=$(date +%Y%m%d-%H%M)
 RUNS=()
 # Neutral run ids: on the Mac the run id is part of paths the agent sees (the memory path in
 # Claude Code's system prompt), so it must not name the condition. Rows carry harnessTrim.
 N=0
-for LEG in asnow-r1:0 trim-r1:$ON trim-r2:$ON asnow-r2:0; do
+for LEG in $LEGLIST; do
   NAME=${LEG%%:*}; TRIM=${LEG##*:}; N=$((N+1))
   RUN=hsmoke-${H_TAG:-$H}-$STAMP-L$N
   echo "$(date +%T) launching $RUN = $NAME ($SWITCH=$TRIM)"
-  env "$SWITCH=$TRIM" TASKS_FILE=select/.cache/tasks_full_heldout.json INSTANCES=$TASKS \
+  env "$SWITCH=$TRIM" TASKS_FILE=$TASKS_FILE INSTANCES=$TASKS \
     ARMS=sweet REPS=1 CONCURRENCY=1 HARNESS=$H MODEL=$MODEL PROVIDER=$PROVIDER \
     REASONING=medium RUN_ID=$RUN ENV_LEDGER=$LEDGER \
     node harness/run-pilot.mjs > "results/$RUN.log" 2>&1

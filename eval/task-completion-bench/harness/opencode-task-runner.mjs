@@ -187,8 +187,12 @@ export function opencodePromptFamily(apiModel) {
 export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiModel, stateDir } = {}) {
   const m = String(mode ?? '').trim();
   if (!m || m === '0') return { mode: null, config: {}, files: {}, plugins: [], stateEntries: [] };
-  if (m !== '1' && m !== 'max') throw new Error(`OC_HARNESS_TRIM=${m}: expected 0, 1 or max`);
-  const max = m === 'max';
+  if (!['1', 'max', 'max-todo'].includes(m)) throw new Error(`OC_HARNESS_TRIM=${m}: expected 0, 1, max or max-todo`);
+  // max-todo = max with todowrite KEPT. The 2026-09-26 Luna smoke lost 2 solves under max (3/6 ->
+  // 1/6, shorter rollouts, narrower fixes); todowrite removal is max's only behaviour lever, so
+  // this isolates it.
+  const max = m === 'max' || m === 'max-todo';
+  const keepTodo = m === 'max-todo';
   const family = opencodePromptFamily(apiModel);
   if (!family) throw new Error(`OC_HARNESS_TRIM: no trimmed opencode prompt for model ${apiModel}`);
   if (!stateDir) throw new Error('OC_HARNESS_TRIM: stateDir required');
@@ -197,10 +201,10 @@ export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiMod
   const readPrompt = file => readFileSync(path.join(TRIM_DIR, file), 'utf8');
   const prompt = readPrompt(max ? opencodeTrimMaxPrompt(family) : OPENCODE_TRIM_PROMPTS[family]);
   return {
-    mode: max ? `max:prompt:${family}+subagents+tools+tooldesc` : `prompt:${family}+tools+tooldesc`,
+    mode: max ? `${m}:prompt:${family}+subagents+tools+tooldesc` : `prompt:${family}+tools+tooldesc`,
     config: {
       plugin: [plugin],
-      tools: Object.fromEntries((max ? OPENCODE_TRIM_MAX_DISABLED_TOOLS : OPENCODE_TRIM_DISABLED_TOOLS).map(name => [name, false])),
+      tools: Object.fromEntries((max && !keepTodo ? OPENCODE_TRIM_MAX_DISABLED_TOOLS : OPENCODE_TRIM_DISABLED_TOOLS).map(name => [name, false])),
       agentBuild: { prompt },
       ...(max ? { agents: { general: { prompt }, explore: { prompt: readPrompt(opencodeTrimMaxPrompt('explore')) } } } : {}),
     },

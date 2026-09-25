@@ -1,0 +1,49 @@
+# Night A/B plan — best sweet-only harness trim per harness (2026-09-26 night)
+
+Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
+
+## Goal and rules (from the owner)
+
+- Find the BEST sweet-arm harness configuration for each harness: Claude Code (Opus 5.5 and
+  Luna), Codex (Luna), opencode (Luna).
+- Rank: **solves first, then cost, then turns** (then tool calls).
+- Change ONLY the harness's own prompt / tools / settings on the sweet arm. NEVER touch the
+  sweet-search rules file (p7-final), the frame, the ss-* engine, run_tests, or native.
+  Every sweet subagent must carry the trimmed harness prompt AND the sweet rules.
+- Opus on the owner's subscription: allowed freely.
+- Design: screen on the 3 smoke tasks (trim legs only, baseline reused), confirm the best 1-2 per
+  harness on ~10 fresh dev / held-out-1 (DEV-RET) tasks x 2 reps, as-now v best.
+- Never a held-out-2 task. One run-pilot at a time. Commit + push to main.
+
+## Machinery
+
+- Queue: `scripts/night-queue.sh results/night-queue.txt` (running in the background). Append a
+  line `<id>|<env>|<harness>|<trim>` to add a cell. Status: `results/night-queue.txt.status`;
+  per-cell log `results/night-<id>.log`; rows under `results/hsmoke-*`.
+- Report per cell: `python3 scripts/analyze_trim_smoke.py results/<run dirs>`; Claude Code +
+  Luna costs: `scratchpad/kept_billed.py` (OpenRouter bill of the KEPT attempt only).
+- Baselines (sweet as now, 3 tasks x 2 reps each round): Codex r1 1/6 $0.146, r2 0/6 $0.104;
+  opencode r1 1/6 $0.113, r2 3/6 $0.121; CC-Luna 3/6 $0.930 billed; CC-Opus (running).
+
+## Results so far (3 tasks x 2 reps per condition, direction only)
+
+| harness | variant | solves | cost v as-now | calls |
+|---|---|---|---|---|
+| Codex Luna | 1 (first trim) | 1/6 → 2/6 | −40% | −28% |
+| Codex Luna | 1 (= max since e9a888b) | 0/6 → 3/6 | −3% | −4% |
+| opencode Luna | 1 | 1/6 → 2/6 | −21% | −10% |
+| opencode Luna | max (todowrite off) | 3/6 → 1/6 | −38% | −39% — shorter, narrower fixes |
+| CC Luna | max | 3/6 → 2/6 | −67% billed | fewer; 0 subagents v 2/6 |
+| CC Opus | 1 | contaminated (owner CLAUDE.md) — void |
+| CC Opus | max | running (chain, started 00:31) |
+
+## Queue (screens first)
+
+1. oc-maxtodo: opencode max with todowrite kept (isolates the todowrite lever).
+2. cc-luna-lean: Claude Code Luna, max without the Agent tool (delegation cost 86 subagent
+   requests on as-now; max already stopped delegating).
+3. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
+
+## Decision log
+
+- 00:35 night plan written; queue + prep agent + loop started.
