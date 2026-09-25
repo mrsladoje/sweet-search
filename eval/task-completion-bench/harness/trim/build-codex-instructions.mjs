@@ -34,6 +34,11 @@ export const VARIANTS = {
       [139, 140], // final answer: tone matches personality; creature ban
       [144, 152], // ## Intermediary updates: every bullet but the checklist one ...
       [154, 155], // ... and the edits-preamble and tone bullets
+      [36, 36],   // "You let test coverage scale with risk ..." (pushes writing tests; the frame forbids test edits)
+      [103, 106], // mid-turn user messages; post-resume sanity check (no user in a headless run)
+      [134, 136], // final answer: relay command output, "save/copy this file", code explanations
+      [141, 143], // "## Intermediary updates" heading ...
+      [153, 153], // ... and its checklist bullet (update_plan is removed by tools.update_plan.enabled=false)
     ],
     edits: [{
       line: 26,
@@ -53,6 +58,13 @@ export const VARIANTS = {
       [47, 75],   // ### Formatting rules (clickable file links), ### Visualizations
       [78, 78],   // "When you search for text or files, you reach first for `rg` or `rg --files` ..."
       [133, 167], // # Using skills (the skills list itself is dropped by skills.include_instructions=false)
+      [29, 30],   // mid-turn user messages (no user in a headless run)
+      [82, 82],   // "Avoid blocking sleep or wait calls longer than 60 seconds" (the frame asks for a 300 s run_tests wait)
+      [83, 83],   // "Never repurpose `$HOME` ..." — verbatim duplicate of line 124, which stays
+      [97, 98],   // request types "Answer, explain, review" and "Diagnose ... Do not implement the fix"
+      [100, 100], // request type "Monitor or wait"
+      [106, 107], // "A terminal condition such as finish, babysit ..."
+      [110, 111], // "When presented with clarifying questions or objections from the user ..."
     ],
     edits: [],
   },
