@@ -72,6 +72,16 @@ grep/read in both.
 
 ## 5. Claude Code 2.1.281, Opus 5.5 medium (owner's subscription)
 
+> **CONTAMINATED — do not use for decisions.** An independent audit found that all 12 rollouts
+> (both arms) loaded the operator's own `~/.claude/CLAUDE.md` as a "project" instruction file:
+> Claude Code walks every ancestor of the working dir, and the Mac run dirs sit under `$HOME`.
+> The private CLAUDE_CONFIG_DIR did not cover that path. Fixed after the run (runner writes
+> `claudeMdExcludes` for every ancestor instruction file on unjailed runs; verified by capture).
+> The run ids also named the condition (`...-trim-r1`) inside the memory path the model sees;
+> the launcher now uses neutral ids. The same audit found that the cost difference is driven by
+> one outlier (markup-it trim r2, a degeneration re-run) and that a 3x2 smoke cannot resolve a
+> ~10% cost effect. Re-run before reading anything from this section.
+
 Run ids `results/trim-smoke-claudecode-20260925-1915-*`. Treatment verified: every trimmed row
 records `tools+steer`; first request 10,611–10,842 tokens trimmed v 19,470–19,701 untrimmed
 (the box's held-out median is 19,194). 0 of 12 SHIM-TAMPERED; private config dir on every
@@ -112,3 +122,8 @@ smoke.
 3. On the Mac, all three harnesses read the operator's home config (global CLAUDE.md / AGENTS.md,
    skills, MCP servers, auth). Each runner now isolates it on the unjailed path (`0749caa`,
    `a84b079`, `1574f2b`).
+   **Correction:** Claude Code's ancestor-directory CLAUDE.md walk was NOT covered by
+   `0749caa`; the operator's `~/.claude/CLAUDE.md` reached every Claude Code smoke rollout (§5).
+   Fixed with `claudeMdExcludes` (unjailed only).
+4. Run ids named the condition and appear in agent-visible paths on the Mac (Claude Code memory
+   path; Codex skill paths in the untrimmed arm). The launcher now uses neutral ids (`hsmoke-*-L1..4`).

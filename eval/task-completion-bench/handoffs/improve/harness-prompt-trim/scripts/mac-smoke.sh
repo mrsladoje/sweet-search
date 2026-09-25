@@ -63,10 +63,13 @@ TASKS=gitbookio__markup-it-56,pytask-dev__pytask-210,jensneuse__graphql-go-tools
 LEDGER=$BENCH/results/ledger-trim-mac-20260925c/ledger.jsonl
 STAMP=$(date +%Y%m%d-%H%M)
 RUNS=()
+# Neutral run ids: on the Mac the run id is part of paths the agent sees (the memory path in
+# Claude Code's system prompt), so it must not name the condition. Rows carry harnessTrim.
+N=0
 for LEG in asnow-r1:0 trim-r1:1 trim-r2:1 asnow-r2:0; do
-  NAME=${LEG%%:*}; TRIM=${LEG##*:}
-  RUN=trim-smoke-$H-$STAMP-$NAME
-  echo "$(date +%T) launching $RUN ($SWITCH=$TRIM)"
+  NAME=${LEG%%:*}; TRIM=${LEG##*:}; N=$((N+1))
+  RUN=hsmoke-$H-$STAMP-L$N
+  echo "$(date +%T) launching $RUN = $NAME ($SWITCH=$TRIM)"
   env "$SWITCH=$TRIM" TASKS_FILE=select/.cache/tasks_full_heldout.json INSTANCES=$TASKS \
     ARMS=sweet REPS=1 CONCURRENCY=1 HARNESS=$H MODEL=$MODEL PROVIDER=$PROVIDER \
     REASONING=medium RUN_ID=$RUN ENV_LEDGER=$LEDGER \
@@ -79,4 +82,4 @@ for LEG in asnow-r1:0 trim-r1:1 trim-r2:1 asnow-r2:0; do
   fi
 done
 
-python3 handoffs/improve/harness-prompt-trim/scripts/analyze_trim_smoke.py "${RUNS[@]}" | tee "results/trim-smoke-$H-$STAMP-report.txt"
+python3 handoffs/improve/harness-prompt-trim/scripts/analyze_trim_smoke.py "${RUNS[@]}" | tee "results/hsmoke-$H-$STAMP-report.txt"
