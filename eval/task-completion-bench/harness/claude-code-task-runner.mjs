@@ -11,7 +11,7 @@ import { isZeroCallStartFailure } from './codex-task-runner.mjs';
 import {
   appendFileSync, mkdirSync, copyFileSync, existsSync, readFileSync, writeFileSync, renameSync, chmodSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   setupRunner, buildAgentEnv, warmupSweet, issuePrompt, computeNetArgs, writeInstructionFile,
@@ -198,6 +198,25 @@ export function installClaudeReadPagesNormalizer(claudeHome, visibleHome, {
   // $HOME/.claude), which is what `--settings` must receive.
   const visibleSettings = join(visibleClaudeDir, 'settings.json');
   return { installedHook, settingsPath, visibleHook, visibleSettings };
+}
+
+/**
+ * Write `claudeMdExcludes` for every CLAUDE.md / CLAUDE.local.md / .claude/CLAUDE.md /
+ * .claude/rules/** in the ancestors of `rundir` (never the run dir itself) into a user
+ * settings file. Returns the patterns.
+ */
+export function excludeAncestorClaudeMd(settingsPath, rundir) {
+  const patterns = [];
+  for (let dir = dirname(resolve(rundir)); ; dir = dirname(dir)) {
+    patterns.push(join(dir, 'CLAUDE.md'), join(dir, 'CLAUDE.local.md'),
+      join(dir, '.claude', 'CLAUDE.md'), join(dir, '.claude', 'rules', '**'));
+    if (dirname(dir) === dir) break;
+  }
+  let settings = {};
+  if (existsSync(settingsPath)) settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+  settings.claudeMdExcludes = patterns;
+  writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+  return patterns;
 }
 
 // Classify a shell command run via Claude Code's Bash tool into a bucket. Claude Code
@@ -401,6 +420,12 @@ export async function runClaudeCodeTask(task, {
   const unjailed = !ISOLATION_ON;
   if (unjailed) routingEnv.CLAUDE_CONFIG_DIR = claudeHome;
   installClaudeReadPagesNormalizer(claudeHome, HOMEDIR, unjailed ? { visibleClaudeDir: claudeHome } : {});
+  // UNJAILED, part 2: Claude Code also walks every ANCESTOR of the working dir for CLAUDE.md
+  // and .claude/rules. The Mac run dirs live under $HOME, so the operator's own
+  // ~/.claude/CLAUDE.md loaded as a "project" file into every rollout of the 2026-09-25 smoke
+  // (both arms). Exclude every instruction file above the run dir; the run dir's own
+  // CLAUDE.md (the frame) and .claude/rules (M±) still load.
+  if (unjailed) excludeAncestorClaudeMd(join(claudeHome, 'settings.json'), rundir);
   // Subscription via `claude auth login` on the host (no token env). The per-rollout home would
   // hide ~/.claude/.credentials.json, so seed a private copy, and after the rollout WRITE THE
   // REFRESHED COPY BACK. Without the write-back the master keeps a spent single-use refresh

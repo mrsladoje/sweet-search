@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = join(HERE, '../../../../../..');
 const HARNESS = join(ROOT, 'eval/task-completion-bench/harness');
-const { buildClaudeCliArgs, claudeHarnessTrim } = await import(join(HARNESS, 'claude-code-task-runner.mjs'));
+const { buildClaudeCliArgs, claudeHarnessTrim, excludeAncestorClaudeMd } = await import(join(HARNESS, 'claude-code-task-runner.mjs'));
 const { writeInstructionFile, issuePrompt } = await import(join(HARNESS, 'agent-runner-shared.mjs'));
 
 const argv = process.argv.slice(2);
@@ -37,7 +37,9 @@ const mppText = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
 const sweet = arm === 'sweet';
 
 // A tiny git repo carrying exactly the files the runner injects.
-const work = mkdtempSync(join(tmpdir(), 'cc-capture-'));
+// --rundir-parent <dir>: put the repo where the real runs put it (e.g. ~/.ss-eval/runs) so the
+// ancestor CLAUDE.md walk sees what a Mac rollout sees; --exclude-ancestors applies the runner fix.
+const work = mkdtempSync(join(opt('rundir-parent', tmpdir()), 'cc-capture-'));
 const rundir = join(work, 'repo');
 const home = join(work, 'home');
 mkdirSync(rundir); mkdirSync(home);
@@ -74,6 +76,10 @@ if (projectSettings) {
 }
 
 const realHome = argv.includes('--real-home');
+if (argv.includes('--exclude-ancestors')) {
+  mkdirSync(join(home, '.claude'), { recursive: true });
+  excludeAncestorClaudeMd(join(home, '.claude', 'settings.json'), rundir);
+}
 const r = spawnSync(bin, args, {
   cwd: rundir,
   env: {
