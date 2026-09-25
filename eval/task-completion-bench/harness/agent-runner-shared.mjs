@@ -99,7 +99,11 @@ export function setupRunner({
   // treats every unexpected entry in binDir as tampering, so an `_rt_ipc` dir there
   // would mark every rollout SHIM-TAMPERED, force the policy re-run, and then exclude
   // the run. Same placement codex has always used.
-  const ipcStateDir = isolate ? runnerStateDir : binDir;
+  // Unjailed runs used binDir here, and the direct shim then created `_rt_inflight` inside it
+  // on the first run_tests call — so EVERY unjailed rollout that ran the tests was marked
+  // SHIM-TAMPERED, re-run and excluded (found on the Mac, 2026-09-25). runnerStateDir holds it
+  // in both modes now; unjailed runs skip the state-dir check (integrityStateDir below).
+  const ipcStateDir = runnerStateDir;
   const shimInfo = writeRunTestsShim(binDir, {
     image, workdir, testScript, rundir, testTimeoutSec,
     netArgs, brokerMode: isolate, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY,
