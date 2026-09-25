@@ -42,8 +42,11 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 1. oc-maxtodo: opencode max with todowrite kept (isolates the todowrite lever).
 2. cc-luna-lean: Claude Code Luna, max without the Agent tool (delegation cost 86 subagent
    requests on as-now; max already stopped delegating).
-3. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
+3. codex-maxwait: Codex 1 + features.code_mode_buffered_exec=true (exec yield 10 s -> 30 s;
+   verified by capture: the exec tool text says "Defaults to 30000 ms").
+4. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
 
 ## Decision log
 
-- 00:35 night plan written; queue + prep agent + loop started.
+- 00:35 night plan written; queue + prep agent + loop started (cron every 20 min).
+- 00:50 added Codex mode max-wait (verified at $0) and queued its screen.
