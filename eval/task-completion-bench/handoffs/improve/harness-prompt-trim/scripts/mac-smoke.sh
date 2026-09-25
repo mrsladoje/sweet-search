@@ -31,11 +31,20 @@ mkdir -p "$TMPDIR"
 
 case $H in
   claudecode)
+    if [ "${CC_BACKBONE:-opus}" = luna ]; then
+      # Claude Code driving Luna through OpenRouter's Anthropic-compatible API (as the Luna
+      # claude-code leg did): isolates harness effects from the Claude model.
+      [ -n "${OPENROUTER_API_KEY:-}" ] || { echo "no OPENROUTER_API_KEY"; exit 2; }
+      export PATH=$HOME/.ss-eval/bin-claude-2.1.281:$PATH
+      [ "$(claude --version | cut -d' ' -f1)" = "2.1.281" ] || { echo "claude is not 2.1.281 via the shim"; exit 2; }
+      MODEL=openai/gpt-5.6-luna; PROVIDER=openrouter; SWITCH=CC_HARNESS_TRIM; H_TAG=claudecode-luna
+    else
     [ -f "$HOME/.ss-eval/claude-sub.env" ] && { set -a; . "$HOME/.ss-eval/claude-sub.env"; set +a; }
     [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || { echo "no CLAUDE_CODE_OAUTH_TOKEN (write ~/.ss-eval/claude-sub.env)"; exit 2; }
     export PATH=$HOME/.ss-eval/bin-claude-2.1.281:$PATH
     [ "$(claude --version | cut -d' ' -f1)" = "2.1.281" ] || { echo "claude is not 2.1.281 via the shim"; exit 2; }
-    MODEL=claude-opus-5-5; PROVIDER=anthropic; SWITCH=CC_HARNESS_TRIM ;;
+    MODEL=claude-opus-5-5; PROVIDER=anthropic; SWITCH=CC_HARNESS_TRIM
+    fi ;;
   codex)
     [ -n "${OPENROUTER_API_KEY:-}" ] || { echo "no OPENROUTER_API_KEY"; exit 2; }
     export PATH=$HOME/.ss-eval/bin-codex-0.146.1:$PATH
@@ -69,7 +78,7 @@ RUNS=()
 N=0
 for LEG in asnow-r1:0 trim-r1:$ON trim-r2:$ON asnow-r2:0; do
   NAME=${LEG%%:*}; TRIM=${LEG##*:}; N=$((N+1))
-  RUN=hsmoke-$H-$STAMP-L$N
+  RUN=hsmoke-${H_TAG:-$H}-$STAMP-L$N
   echo "$(date +%T) launching $RUN = $NAME ($SWITCH=$TRIM)"
   env "$SWITCH=$TRIM" TASKS_FILE=select/.cache/tasks_full_heldout.json INSTANCES=$TASKS \
     ARMS=sweet REPS=1 CONCURRENCY=1 HARNESS=$H MODEL=$MODEL PROVIDER=$PROVIDER \
@@ -83,4 +92,4 @@ for LEG in asnow-r1:0 trim-r1:$ON trim-r2:$ON asnow-r2:0; do
   fi
 done
 
-python3 handoffs/improve/harness-prompt-trim/scripts/analyze_trim_smoke.py "${RUNS[@]}" | tee "results/hsmoke-$H-$STAMP-report.txt"
+python3 handoffs/improve/harness-prompt-trim/scripts/analyze_trim_smoke.py "${RUNS[@]}" | tee "results/hsmoke-${H_TAG:-$H}-$STAMP-report.txt"
