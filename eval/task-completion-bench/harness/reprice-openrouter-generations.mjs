@@ -16,7 +16,8 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 
 const RUN = process.argv[2];
-const BENCH = '/root/sweet-search-private/eval/task-completion-bench';
+// Resolved from this file so the script also runs off the box (the Mac smokes).
+const BENCH = process.env.BENCH_DIR || path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const BASE = path.join(BENCH, 'results', RUN, 'agent-state');
 const KEY = process.env.OPENROUTER_API_KEY;
 if (!KEY) { console.error('no OPENROUTER_API_KEY'); process.exit(2); }
@@ -99,8 +100,8 @@ for (const [key, c] of cells) {
   });
 }
 rows.sort((a, b) => a.task.localeCompare(b.task) || a.arm.localeCompare(b.arm) || a.rep - b.rep);
-fs.writeFileSync(`/root/smoke20/${RUN}-openrouter-billed.json`, JSON.stringify(rows, null, 1) + '\n');
-console.error(`[reprice] wrote /root/smoke20/${RUN}-openrouter-billed.json`);
+fs.writeFileSync(path.join(BENCH, "results", RUN, "openrouter-billed.json"), JSON.stringify(rows, null, 1) + '\n');
+console.error(`[reprice] wrote results/${RUN}/openrouter-billed.json`);
 for (const arm of ['native', 'sweet']) {
   const s = rows.filter(r => r.arm === arm);
   console.log(`${arm.padEnd(7)} rollouts=${s.length}  main=$${s.reduce((t, r) => t + r.mainBilledUsd, 0).toFixed(4)}`
