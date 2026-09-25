@@ -10,7 +10,7 @@ import { spawn } from 'node:child_process';
 import { execSync, execFileSync } from 'node:child_process';
 import {
   chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync,
-  copyFileSync, existsSync,
+  copyFileSync, existsSync, symlinkSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -141,6 +141,100 @@ export const ANTI_THRASH_TEXT =
   '- ss-search and ss-grep return the matching code AT file:line, inline in the result. Once a span has been shown to you, do NOT ss-read or re-grep that same span/symbol again — edit directly from the body you already have; only read a DIFFERENT file, or a range OUTSIDE what was shown.\n' +
   '- One search per target. If the top hit answers your question (especially when the trailer says sufficient=YES), act on it — do not fire multiple keyword/regex variants for the same symbol.\n' +
   '- To find where a symbol is CALLED or what it calls (to trace a value downstream before editing), use `ss-trace <symbol>` — do not re-search by hand.';
+
+// Bench-owned config.toml for an UNJAILED rollout (see privateCodexHome in runCodexTask): the
+// box's openrouter provider definition, byte for byte. No [projects] trust entry: exec mode
+// with --dangerously-bypass-approvals-and-sandbox reads the repo's AGENTS.md without one
+// (checked by capture on 0.146.1). SS_CODEX_OPENROUTER_BASE_URL exists ONLY to point a $0
+// capture at a local proxy; a real run never sets it.
+export function codexBenchConfigToml(baseUrl = process.env.SS_CODEX_OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1') {
+  return `[model_providers.openrouter]
+name = "OpenRouter"
+base_url = ${JSON.stringify(baseUrl)}
+env_key = "OPENROUTER_API_KEY"
+wire_api = "responses"
+
+[features]
+suppress_unstable_features_warning = true
+`;
+}
+
+// Private $HOME for an UNJAILED rollout: CODEX_HOME alone is not enough, because codex also
+// reads $HOME/.agents/skills (50 of the operator's personal skills, ~12.8k chars, reached the
+// request in a $0 capture) and the agent's shells see the operator's home. Mirrors the jail's
+// $HOME whitelist (agent-jail.mjs buildOps §4 plus the codexHome bind) with symlinks, so the
+// agent sees the same HOME shape as on the box.
+export const PRIVATE_HOME_LINKS = Object.freeze(['.gitconfig', '.local/bin', '.cache/sweet-search']);
+export function buildPrivateHome(privateHome, { realHome, codexHome }) {
+  for (const rel of PRIVATE_HOME_LINKS) {
+    const link = path.join(privateHome, rel);
+    mkdirSync(path.dirname(link), { recursive: true });
+    rmSync(link, { force: true });
+    symlinkSync(path.join(realHome, rel), link);
+  }
+  const codexLink = path.join(privateHome, '.codex');
+  rmSync(codexLink, { force: true });
+  symlinkSync(codexHome, codexLink);
+  return privateHome;
+}
+
+// --- HARNESS TRIM (CODEX_HARNESS_TRIM, default OFF) — handoffs/improve/harness-prompt-trim ---
+// Research switch, SWEET ARM ONLY, that removes parts of Codex's OWN request which contradict
+// the ss-* rules or which a headless benchmark task never uses. AGENTS.md (frame + M±) and the
+// prompt are untouched. Verified at $0 on 0.146.1 by capture (captures in that handoff):
+//   instructions — `model_instructions_file` REPLACES the base prompt, which differs by model
+//                  (gpt-5.5 sends it as `instructions`; gpt-5.6-luna runs in "code mode" and
+//                  sends it as a developer message — the file replaces it there too). The
+//                  replacement is an edited copy of that model's prompt (trim/, Apache-2.0,
+//                  change list in trim/NOTICE-codex.md): the "reach first for `rg`" line (and on
+//                  gpt-5.5 the "file reads such as `cat`, `rg`, `sed`" clause) go, with the
+//                  personality, formatting, commentary and frontend/skills sections.
+//                  gpt-5.5 21,335 → 7,214 chars as sent; luna 17,730 → 8,062. Any other model
+//                  is refused until its prompt is captured and edited.
+//   tools        — the -c keys below drop web_search, the three goal tools, request_user_input
+//                  and the skills block in the developer message (~6,900 chars gpt-5.5, ~3,500
+//                  luna). tool_search and the sub-agent tools behind it STAY: delegation is a
+//                  real capability (the Claude Code trim keeps Agent too); features.multi_agent
+//                  =false would remove them. Luna sends no web_search, so that key is a no-op there.
+//                  view_image has no config key in 0.146.1 (it follows the model's image-input
+//                  capability) and stays.
+//                  Captured on the OpenRouter route only; re-capture before a subscription run.
+// Mode values: unset/'0' = off (argv and state dir byte-identical), '1' = on.
+export const CODEX_HARNESS_TRIM_CONFIG = Object.freeze([
+  'web_search="disabled"',
+  'features.goals=false',
+  'tools.experimental_request_user_input.enabled=false',
+  'skills.include_instructions=false',
+]);
+// Edited base prompt per model id (the `openai/` prefix is stripped before lookup).
+export const CODEX_HARNESS_TRIM_SOURCES = Object.freeze({
+  'gpt-5.5': path.join(__dirname, 'trim', 'codex-0.146.1-instructions-sweet.md'),
+  'gpt-5.6-luna': path.join(__dirname, 'trim', 'codex-0.146.1-instructions-sweet-gpt-5.6-luna.md'),
+});
+// Written into the runner state dir: that dir is bound at the same path inside the jail,
+// while harness/ (under <repo>/eval) is masked there.
+export const CODEX_HARNESS_TRIM_STATE_FILE = 'codex-instructions.md';
+
+export function codexHarnessTrim({ sweet, mode = process.env.CODEX_HARNESS_TRIM, model = 'openai/gpt-5.5' } = {}) {
+  // Native has no ss-* rules to contradict and keeps Codex's full request in every condition.
+  const m = sweet ? String(mode ?? '').trim() : '';
+  if (!m || m === '0') return { mode: null };
+  if (m !== '1') throw new Error(`CODEX_HARNESS_TRIM=${m}: expected 0 or 1`);
+  const source = CODEX_HARNESS_TRIM_SOURCES[String(model).replace(/^openai\//, '')];
+  if (!source) {
+    throw new Error(`CODEX_HARNESS_TRIM=1: no edited base prompt for ${model} (have ${Object.keys(CODEX_HARNESS_TRIM_SOURCES).join(', ')}) — capture and edit it first`);
+  }
+  return { mode: 'instructions+tools', source };
+}
+
+/** `codex exec` argv for an ON trim; writes the instructions (license header stripped) into stateDir. */
+export function codexHarnessTrimArgs(trim, stateDir) {
+  if (!trim?.mode) return [];
+  const file = path.join(stateDir, CODEX_HARNESS_TRIM_STATE_FILE);
+  writeFileSync(file, readFileSync(trim.source, 'utf8').replace(/^<!--[\s\S]*?-->\n/, ''));
+  return ['-c', `model_instructions_file=${JSON.stringify(file)}`,
+    ...CODEX_HARNESS_TRIM_CONFIG.flatMap(kv => ['-c', kv])];
+}
 
 // Broker mode (agent sandbox): codex's Linux sandbox blocks unix-socket connects, so a
 // sandboxed run_tests cannot reach the docker daemon directly (verified: "permission
@@ -425,6 +519,9 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // (e.g. gpt-5.6-luna) are now priced correctly instead of at gpt-5.5's rate.
   const _p = priceFor(apiModel);
   const price = { in: _p.in, cacheHit: _p.cache, out: _p.out };
+  // Harness trim (research switch, default OFF, sweet arm only): resolved before any side
+  // effect so a bad value fails the rollout up front.
+  const harnessTrim = codexHarnessTrim({ sweet, model: apiModel });
   const workdir = t.workdir || `/${t.repo.split('/')[1]}`;
   const testScript = [].concat(t.install_config?.test_cmd || []).join(' && ');
 
@@ -459,10 +556,22 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // instantly with "No such file or directory (os error 2)" and record calls=0 — a
   // failure that looks exactly like a provider outage in the rows. Seed the config in;
   // only the session/log state stays per-rollout.
-  for (const f of ['config.toml', 'auth.json', 'installation_id']) {
-    const src = path.join(process.env.HOME || '/root', '.codex', f);
-    const dst = path.join(codexHome, f);
-    try { if (existsSync(src) && !existsSync(dst)) copyFileSync(src, dst); } catch { /* codex will report it */ }
+  // UNJAILED (SS_ISOLATION=0, the Mac) nothing binds codexHome over ~/.codex, so codex read
+  // the OPERATOR's home: a global AGENTS.md (prompt contamination), a personal config.toml
+  // (MCP servers, profiles), the ChatGPT auth.json, ~/.agents/skills — and wrote its sessions
+  // where the cost reader never looked. There the codex process gets a private per-rollout
+  // HOME (buildPrivateHome) and CODEX_HOME=codexHome with a bench-owned config and no
+  // operator file. Subscription mode needs the operator's ChatGPT login and keeps the
+  // seeding; the jailed path is unchanged.
+  const privateCodexHome = !ISOLATION_ON && !codexSubscription;
+  if (privateCodexHome) {
+    writeFileSync(path.join(codexHome, 'config.toml'), codexBenchConfigToml());
+  } else {
+    for (const f of ['config.toml', 'auth.json', 'installation_id']) {
+      const src = path.join(process.env.HOME || '/root', '.codex', f);
+      const dst = path.join(codexHome, f);
+      try { if (existsSync(src) && !existsSync(dst)) copyFileSync(src, dst); } catch { /* codex will report it */ }
+    }
   }
   const jailBinds = [{ src: codexHome, dst: path.join(process.env.HOME || '/root', '.codex') }];
   // Resolve the REAL docker binary from the HARNESS PATH (no binDir → no self-ref), so
@@ -506,6 +615,11 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   const gutterPin = { SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'none' };
   let env = { ...process.env, PATH: [...pathDirs, process.env.PATH].join(':'), SWEET_SEARCH_PROJECT_ROOT: rundir, DOCKER_HOST, ...gutterPin };
   if (jail) env = jailEnv(env);
+  // Before the warmup below, so ss-* warms up under the same HOME the agent's shells get.
+  if (privateCodexHome) {
+    env.HOME = buildPrivateHome(rolloutStateDir(jailLabel, 'home'), { realHome: process.env.HOME || '/root', codexHome });
+    env.CODEX_HOME = codexHome;
+  }
 
   // Off-clock warmup (sweet arm) — arm the per-run ss-* server's models BEFORE the
   // measured agent loop. Without this, the cold-start model-load banner (a console.log
@@ -599,8 +713,10 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // Subscription mode omits the openrouter provider override so codex uses its built-in
   // ChatGPT backend (selected by the seeded auth.json); the openrouter path is unchanged.
   const providerArgs = codexSubscription ? [] : ['-c', 'model_provider="openrouter"'];
+  // Empty when the trim is off, so the argv stays byte-identical to the held-out legs.
+  const trimArgs = codexHarnessTrimArgs(harnessTrim, runnerStateDir);
   const baseArgs = ['exec', ...sandboxArgs, '--json',
-    '-c', `model_reasoning_effort="${reasoning}"`, ...providerArgs,
+    '-c', `model_reasoning_effort="${reasoning}"`, ...providerArgs, ...trimArgs,
     '-m', codexModel, '-C', rundir];
   const args = [...baseArgs, prompt];
 
@@ -713,12 +829,13 @@ ${ho}`;
       // gives it to us with no ambiguity and no dependency on what "most recent" means when
       // rollouts run concurrently.
       const p1File = rolloutFilesForRundir(rundir, {
-        sinceMs: t0 - 60000, sessionsDir: jail ? path.join(codexHome, 'sessions') : undefined,
+        sinceMs: t0 - 60000, sessionsDir: (jail || privateCodexHome) ? path.join(codexHome, 'sessions') : undefined,
       }).pop();
       const sid = /rollout-[\dT-]+-([0-9a-f-]{36})\.jsonl$/.exec(p1File || '')?.[1] || null;
       const argv2 = C3 === 'v5'
+        // trimArgs: `resume` honours model_instructions_file and the tool keys (capture, 0.146.1).
         ? (sid ? ['exec', 'resume', sid, '--dangerously-bypass-approvals-and-sandbox', '--json',
-          '-c', `model_reasoning_effort="${reasoning}"`, ...providerArgs, '-m', codexModel, p2] : null)
+          '-c', `model_reasoning_effort="${reasoning}"`, ...providerArgs, ...trimArgs, '-m', codexModel, p2] : null)
         : [...baseArgs, p2];
       if (!argv2) {
         // Refuse to spawn a malformed resume rather than emit a cell that looks like a result.
@@ -791,6 +908,7 @@ ${ho}`;
     ...verifyShimIntegrity(shimInfo?.integrity),
     ...verifyRunnerDirectoryIntegrity({
       binDir, expectedFiles: runnerFiles, stateDir: runnerStateDir,
+      allowedStateEntries: harnessTrim.mode ? [CODEX_HARNESS_TRIM_STATE_FILE] : [],
     }),
   ];
   if (shimTamperedFiles.length) {
@@ -819,7 +937,7 @@ ${ho}`;
   // realFromTurnsUsd sits on the new one, and a cross-harness table mixes two ledgers.
   let cacheWriteTokens = 0;
   try {
-    const sessionsDir = jail ? path.join(codexHome, 'sessions') : undefined;
+    const sessionsDir = (jail || privateCodexHome) ? path.join(codexHome, 'sessions') : undefined;
     // C-3 invokes the agent twice, so there are two rollout files and the cost columns must be
     // combined according to how many prompt-cache CONTEXTS those files represent:
     //   v1 RESET  → two independent growing prefixes. Sum the columns PER FILE. This is the
@@ -900,6 +1018,8 @@ ${ho}`;
     costContentUsd, idealCostUsd, realFromTurnsUsd, breakPricedCostUsd, contextRewrites, rolloutFile, idealTurns, turnsFile,
     wallMs, trajectory, finalAssistantText: answer, c3, r1, ...rtTelemetry,
     codexErrors: parsed.errors.slice(0, 5), startRetried,
+    // CODEX_HARNESS_TRIM mode ('instructions+tools') or null when off.
+    harnessTrim: harnessTrim.mode,
     stderrPreview: String(r.stderr || '').replace(STDIN_BANNER, '').slice(0, 300),
   };
 }
