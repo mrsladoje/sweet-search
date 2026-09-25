@@ -134,7 +134,8 @@ export function buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, effor
 //            "avoid cat/head/tail/sed/awk/echo" line — the shape a user in a normal
 //            permission mode sees. UNDOCUMENTED internal variable: research only, re-verify
 //            with a capture on every Claude Code version before trusting a run.
-// Mode values: unset/'0' = off (args and env byte-identical), 'tools', 'steer', '1' = both.
+// Mode values: unset/'0' = off (args and env byte-identical), 'tools', 'steer', '1' = both,
+// 'max' / 'lean' = the second pass below.
 export const CLAUDE_HARNESS_TRIM_DENY = Object.freeze([
   'SendMessage', 'Workflow', 'ScheduleWakeup', 'CronCreate', 'EnterWorktree', 'ExitWorktree',
   'ReportFindings', 'Skill', 'NotebookEdit', 'ListAgents', 'WebSearch', 'WebFetch', 'TaskStop',
@@ -147,10 +148,60 @@ export const CLAUDE_HARNESS_TRIM_DENY = Object.freeze([
   'Agent(Explore)', 'Agent(general-purpose)', 'Agent(statusline-setup)',
 ]);
 
+// Modes 'max' / 'lean' (second pass, independent audit 2026-09-25). The base prompt below is OUR
+// text, not Anthropic's: `--system-prompt` REPLACES Claude Code's base system block (verified by
+// capture: the append prompts, CLAUDE.md, the rules file, the issue, the env message and the tools
+// are unchanged). It says nothing about search or reading, so "Prefer the dedicated file/search
+// tools over shell commands" goes. Product form: a project agent file + settings `agent` key.
+export const CLAUDE_TRIM_BASE_PROMPT = [
+  "You are a coding agent. You work in the user's repository through the tools provided.",
+  '',
+  '- Do the task with the tools: run commands with Bash, change files with Edit or Write. Tool calls that do not depend on each other can go in parallel in one response.',
+  '- Write code that matches the surrounding code: its naming, idiom and comment density.',
+  '- Before you delete or overwrite anything, look at it first. Do not commit, push or rewrite git history unless the task asks for it.',
+  '- Say what really happened: show the output of a failing test, name any step you did not do, and call a change finished only after you checked it.',
+  '- When you have enough information to act, act.',
+].join('\n');
+
+// Env for 'max' / 'lean'. Measured with count_tokens on the real request shape:
+//   THRIFTY_SONIC=0          bash-first attachment off (as mode 1). Internal.
+//   DISABLE_AUTO_MEMORY=1    the # Memory section (768 tokens) carries a per-rollout path, so
+//                            the main system block was re-written every rollout; off, it is
+//                            byte-identical and cached across rollouts. = settings
+//                            autoMemoryEnabled:false (public).
+//   DISABLE_GIT_INSTRUCTIONS=1  gitStatus, the commit-attribution reminder and the Bash "# Git"
+//                            section (540 tokens). = settings includeGitInstructions:false
+//                            (public). The no-commit guard moves into the base prompt above.
+//   TOTAL_TOKENS_REMINDER=off   the <total_tokens> block, also appended after every tool result.
+//                            Internal.
+//   PARCHMENT_FERN=1         Edit stops claiming "You must Read the file … or the call will fail",
+//                            which is false inside the working dir (11/11 unread Edits succeeded in
+//                            the smoke) and pushes the Read tool the sweet rules discourage. Internal.
+// Internal variables are research-grade: re-verify by capture on every Claude Code version.
+export const CLAUDE_HARNESS_TRIM_ENV_MAX = Object.freeze({
+  CLAUDE_CODE_THRIFTY_SONIC: '0',
+  CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+  CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS: '1',
+  CLAUDE_CODE_TOTAL_TOKENS_REMINDER: 'off',
+  CLAUDE_CODE_PARCHMENT_FERN: '1',
+});
+
 export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
   const m = String(mode ?? '').trim();
   if (!m || m === '0') return { mode: null, args: [], env: {} };
-  if (!['1', 'tools', 'steer'].includes(m)) throw new Error(`CC_HARNESS_TRIM=${m}: expected 0, 1, tools or steer`);
+  if (m === 'max' || m === 'lean') {
+    // lean also drops the Agent tool (no delegation): opt-in only, reported separately.
+    const deny = m === 'lean'
+      ? [...CLAUDE_HARNESS_TRIM_DENY.filter(t => !t.startsWith('Agent(')), 'Agent']
+      : [...CLAUDE_HARNESS_TRIM_DENY, 'Agent(Plan)'];
+    return {
+      mode: m,
+      // --system-prompt BEFORE the variadic --disallowedTools, which must stay LAST.
+      args: ['--system-prompt', CLAUDE_TRIM_BASE_PROMPT, '--disallowedTools', ...deny],
+      env: { ...CLAUDE_HARNESS_TRIM_ENV_MAX },
+    };
+  }
+  if (!['1', 'tools', 'steer'].includes(m)) throw new Error(`CC_HARNESS_TRIM=${m}: expected 0, 1, tools, steer, max or lean`);
   const tools = m === '1' || m === 'tools';
   const steer = m === '1' || m === 'steer';
   return {

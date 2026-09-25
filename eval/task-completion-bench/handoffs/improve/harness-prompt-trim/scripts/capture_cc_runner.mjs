@@ -56,7 +56,7 @@ if (sweet) {
 const prompt = issuePrompt('The add function should also accept a third optional argument c.');
 let args = buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId: 'claude-opus-5-5', effort: 'medium' });
 // The runner's own trim switch, exactly as CC_HARNESS_TRIM applies it.
-const trim = claudeHarnessTrim({ trim: '1', deny15: 'tools', steer: 'steer' }[variant] ?? '0');
+const trim = claudeHarnessTrim({ trim: '1', deny15: 'tools', steer: 'steer', max: 'max', lean: 'lean' }[variant] ?? '0');
 args = [...args, ...trim.args];
 if (variant === 'exclude-dynamic') args.push('--exclude-dynamic-system-prompt-sections');
 const extra = opt('extra');
