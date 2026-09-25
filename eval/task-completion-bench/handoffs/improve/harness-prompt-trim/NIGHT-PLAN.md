@@ -27,15 +27,15 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 
 ## Results so far (3 tasks x 2 reps per condition, direction only)
 
-| harness | variant | solves | cost v as-now | calls |
+| harness | variant | solves (as-now → variant) | cost v as-now | calls / turns |
 |---|---|---|---|---|
-| Codex Luna | 1 (first trim) | 1/6 → 2/6 | −40% | −28% |
-| Codex Luna | 1 (= max since e9a888b) | 0/6 → 3/6 | −3% | −4% |
-| opencode Luna | 1 | 1/6 → 2/6 | −21% | −10% |
-| opencode Luna | max (todowrite off) | 3/6 → 1/6 | −38% | −39% — shorter, narrower fixes |
-| CC Luna | max | 3/6 → 2/6 | −67% billed | fewer; 0 subagents v 2/6 |
-| CC Opus | 1 | contaminated (owner CLAUDE.md) — void |
-| CC Opus | max | running (chain, started 00:31) |
+| Codex Luna | 1 (first trim), round 1 | 1/6 → 2/6 | −40% | −28% |
+| Codex Luna | 1 (= max since e9a888b), round 2 | 0/6 → 3/6 | −3% | −4% |
+| opencode Luna | 1, round 1 | 1/6 → 2/6 | −21% | −10% |
+| opencode Luna | max (todowrite off), round 2 | 3/6 → 1/6 | −38% | −39% — shorter, narrower fixes |
+| CC Luna | max | 3/6 → 2/6 | −67% (OpenRouter bill, kept attempts) | 0 subagents v 2/6 delegating |
+| CC Opus | 1 | void (owner CLAUDE.md leaked) | | |
+| CC Opus | max | as-now r1 2/3 $1.069; max r1 2/3 $0.771, max r2 2/3 $0.527; as-now r2 running | ≈ −40% so far | graphql 29 → 25 / 14 calls |
 
 ## Queue (screens first)
 
@@ -50,3 +50,4 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 
 - 00:35 night plan written; queue + prep agent + loop started (cron every 20 min).
 - 00:50 added Codex mode max-wait (verified at $0) and queued its screen.
+- 01:23 Opus max legs done (2/3, 2/3, both cheaper than as-now r1); waiting for as-now r2. Confirm-set prep sweeping the ledger.
