@@ -290,6 +290,22 @@ assert(!['Agent', 'Bash', 'Edit', 'Read', 'Write'].some(n => CLAUDE_HARNESS_TRIM
   'trim keeps Agent, Bash, Edit, Read and Write');
 assert(claudeHarnessTrim('tools').env.CLAUDE_CODE_THRIFTY_SONIC === undefined
     && claudeHarnessTrim('steer').args.length === 0, 'tools and steer modes are separable');
+const trimMax = claudeHarnessTrim('max');
+const sp = trimMax.args.indexOf('--system-prompt');
+const dt = trimMax.args.indexOf('--disallowedTools');
+assert(trimMax.mode === 'max' && sp === 0 && dt === 2 && trimMax.args.includes('Agent(Plan)')
+    && !trimMax.args.includes('Agent') && trimMax.args.at(-1) !== '--system-prompt',
+  'max: our base prompt first, the variadic deny list last, Agent kept (only Agent(Plan) added)');
+assert(['CLAUDE_CODE_THRIFTY_SONIC', 'CLAUDE_CODE_DISABLE_AUTO_MEMORY', 'CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS',
+  'CLAUDE_CODE_TOTAL_TOKENS_REMINDER', 'CLAUDE_CODE_PARCHMENT_FERN'].every(k => k in trimMax.env),
+  'max sets the five measured env switches');
+assert(!/grep|find|cat |search|Read tool/i.test(trimMax.args[1]) && /Do not commit/.test(trimMax.args[1]),
+  'the max base prompt gives no search/read advice and keeps the no-commit guard');
+const trimLean = claudeHarnessTrim('lean');
+assert(trimLean.args.includes('Agent') && !trimLean.args.some(a => a.startsWith('Agent(')),
+  'lean denies the whole Agent tool');
+assert(claudeHarnessTrim('1').args.length === 1 + CLAUDE_HARNESS_TRIM_DENY.length,
+  'mode 1 is unchanged by the second pass (the smoked condition keeps its meaning)');
 let badTrim = null;
 try { claudeHarnessTrim('yes'); } catch (e) { badTrim = e; }
 assert(badTrim !== null, 'an unknown trim value throws instead of silently running untrimmed');
