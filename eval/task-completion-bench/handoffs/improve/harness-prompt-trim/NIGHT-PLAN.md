@@ -48,6 +48,10 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 
 ## Decision log
 
+- RULE: never edit mac-smoke.sh or night-queue.sh while bash runs them (bash reads scripts
+  incrementally). 01:55 a stale Opus launcher picked up an edited mac-smoke.sh and started a
+  stray run-pilot (killed; its golden build was interrupted — checking flask/pdm goldens).
+
 - 00:35 night plan written; queue + prep agent + loop started (cron every 20 min).
 - 00:50 added Codex mode max-wait (verified at $0) and queued its screen.
 - 01:50 Opus smoke complete: max = best Claude Code (Opus) variant so far — +1 solve, −22% cost, search shifted to ss-*.
