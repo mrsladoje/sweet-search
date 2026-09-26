@@ -2,12 +2,13 @@
 
 <img src="assets/sweet-search-banner-pixelated.svg" alt="sweet-search — local code search for AI coding agents" width="100%" />
 
-<br/>
 
-**Local code search for AI coding agents.** Six fast, purpose-built tools that hand *Claude Code*, *Codex* & friends ranked answers, not raw grep. Zero API keys, 100% on-device.
+## **Local code search for AI coding agents**<br>
 
-*Maybe grep isn't all you need…* 🍬<br/>
-Every coding agent today reaches for grep + Read by reflex. *sweet-search* challenges the narrative. 😎
+
+Six fast, purpose-built tools made for *Claude Code*, *Codex* & friends 🍬
+
+Every coding agent today reaches for grep + Read by reflex. *sweet-search* challenges the narrative 😎
 
 [![npm](https://img.shields.io/npm/v/sweet-search?color=cb3837&label=npm)](https://www.npmjs.com/package/sweet-search)
 [![GitHub stars](https://img.shields.io/github/stars/mrsladoje/sweet-search?style=social)](https://github.com/mrsladoje/sweet-search/stargazers)
@@ -26,14 +27,14 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 <tr>
 <td width="50%" valign="top">
 
-💰 **[7–27% cheaper agent runs](#bench-task-completion)**<br>
+💰 **7–27% cheaper agent runs**<br>
 <sub>on 200 real engineering tasks · up to 45% fewer tool calls · solve rate statistically tied</sub>
 
 </td>
 <td width="50%" valign="top">
 
 ⚡ **Saves your time**<br>
-<sub>faster retrieval than classic grep-and-read · ranked answers instead of pages of matches</sub>
+<sub>faster retrieval than classic grep-and-read · reduced walltime of agentic tasks</sub>
 
 </td>
 </tr>
@@ -52,6 +53,8 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 </td>
 </tr>
 </table>
+
+---
 
 ## 📚 Table of Contents
 
