@@ -54,6 +54,12 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 
 ## Decision log
 
+- 04:10 Colima VM disk FULL ("no space left on device") → 4/10 tasks of the Opus confirm leg 1
+  graded NO-TEST-EVIDENCE. Freed ~30 GB by removing only swerebenchv2 images the night no longer
+  needs (10 dropped candidates + 3 smoke images; tars kept); moved the smoke tars out of the
+  launcher's load folder. Recovered the 4 ungraded rollouts with GRADE_ONLY_FROM (retained
+  patches, no model calls): leg 1 as-now = 3/10. Original rows kept as rows.orig-before-regrade.json.
+
 - 03:45 confirm-opus/confirm-codex failed at preflight (eslint-plugin-ember golden still building
   at 03:26); golden now complete. Re-queued as c2-opus (max), c2-codex (1), c2-opencode (1),
   c2-cc-luna (max). opencode max-p1 = 1/6 → opencode best = 1.
