@@ -9,6 +9,7 @@
 // NOTE: opencode's `--format json` event schema is not officially documented (reverse-
 // engineered). parseOpencodeStream is defensive and is validated/adjusted from a real
 // smoke's raw NDJSON before any counted run.
+import { opencodeBatchPrompt, opencodeBatchToolEdits } from './trim/batch-variants.mjs';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -207,7 +208,27 @@ export function opencodePromptFamily(apiModel) {
 export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiModel, stateDir } = {}) {
   const m = String(mode ?? '').trim();
   if (!m || m === '0') return { mode: null, config: {}, files: {}, plugins: [], stateEntries: [] };
-  if (!['1', 'max', 'max-todo', 'max-p1', 'v3'].includes(m)) throw new Error(`OC_HARNESS_TRIM=${m}: expected 0, 1, max, max-todo, max-p1 or v3`);
+  // batch-<variant> (batching micro-smoke, trim/batch-variants.mjs): the UNTRIMMED gpt prompt
+  // with only its tool-grouping bullet swapped, for the main agent and the general subagent. No
+  // tool, description or subagent change: everything else equals trim off.
+  if (m.startsWith('batch-')) {
+    if (opencodePromptFamily(apiModel) !== 'gpt') throw new Error(`OC_HARNESS_TRIM=${m}: gpt family only (model ${apiModel})`);
+    const variant = m.slice('batch-'.length);
+    const prompt = opencodeBatchPrompt(variant);
+    const edits = opencodeBatchToolEdits(variant);
+    if (!edits) return { mode: `${m}:prompt:gpt+general`, config: { agentBuild: { prompt }, agents: { general: { prompt } } }, files: {}, plugins: [], stateEntries: [] };
+    // Round-2 variants that also edit a tool description go through the trim plugin (report on the row).
+    if (!stateDir) throw new Error(`OC_HARNESS_TRIM=${m}: stateDir required`);
+    const plugin = [`file://${path.join(stateDir, OPENCODE_TRIM_PLUGIN)}`, { edits, report: path.join(stateDir, OPENCODE_TRIM_REPORT) }];
+    return {
+      mode: `${m}:prompt:gpt+general+tooldesc`,
+      config: { plugin: [plugin], agentBuild: { prompt }, agents: { general: { prompt } } },
+      files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(path.join(TRIM_DIR, OPENCODE_TRIM_PLUGIN), 'utf8') },
+      plugins: [plugin],
+      stateEntries: [OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT],
+    };
+  }
+  if (!['1', 'max', 'max-todo', 'max-p1', 'v3'].includes(m)) throw new Error(`OC_HARNESS_TRIM=${m}: expected 0, 1, max, max-todo, max-p1, v3 or batch-*`);
   // v3 = round 1 (prompt, glob/grep/skill off, todowrite KEPT) + the general subagent gets the
   // same trimmed prompt (round 1 left it the untrimmed family prompt) + explore disabled (as-now
   // never delegated to it; its prompt names the disabled Glob/Grep) + OPENCODE_TRIM_V3_TOOL_EDITS.
@@ -550,7 +571,7 @@ export async function runOpencodeTask(task, {
   const trimReportPath = path.join(runnerStateDir, OPENCODE_TRIM_REPORT);
   const harnessTrimToolEdits = harnessTrim.mode && existsSync(trimReportPath)
     ? JSON.parse(readFileSync(trimReportPath, 'utf8')) : null;
-  if (harnessTrim.mode && !harnessTrimToolEdits) console.log(`  [HARNESS-TRIM ${task.id || ''}] plugin wrote no report — tool descriptions were NOT trimmed`);
+  if (harnessTrim.mode && harnessTrim.plugins.length && !harnessTrimToolEdits) console.log(`  [HARNESS-TRIM ${task.id || ''}] plugin wrote no report — tool descriptions were NOT trimmed`);
   if (shimTamperedFiles.length) console.log(`  [SHIM-TAMPERED ${task.id || ''}] ${shimTamperedFiles.join(', ')} — test signals untrusted`);
   // Audit BEFORE teardown: the jail handle carries the wall-clock window that attributes
   // egress denials to this rollout.

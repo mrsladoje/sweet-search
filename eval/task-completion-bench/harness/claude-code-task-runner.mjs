@@ -7,6 +7,7 @@
 // the compact system-priority override; CLAUDE.md carries only the benchmark frame.
 // Codex/OpenCode keep their existing AGENTS.md delivery.
 // Returns the canonical bench row shape (see codex-task-runner) so grading/metrics match.
+import { CC_BATCH_VARIANTS, applyClaudeBatch } from './trim/batch-variants.mjs';
 import { isZeroCallStartFailure } from './codex-task-runner.mjs';
 import {
   appendFileSync, mkdirSync, copyFileSync, existsSync, readFileSync, writeFileSync, renameSync, chmodSync,
@@ -210,7 +211,11 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
   // (settings `agent` + agent files + permissions.deny + env) instead of CLI flags. The runner
   // installs them into the run dir. Verified by capture: the request is byte-identical to
   // max-batch. The frozen-set run uses this mode so the published number is the product's.
-  if (m === 'product') return { mode: m, args: [], env: {}, installLean: true };
+  if (m === 'product') {
+    const batch = String(process.env.CC_TRIM_BATCH ?? '').trim();
+    if (batch && !CC_BATCH_VARIANTS[batch]) throw new Error(`CC_TRIM_BATCH=${batch}: expected ${Object.keys(CC_BATCH_VARIANTS).join(', ')}`);
+    return { mode: batch ? `${m}+batch-${batch}` : m, args: [], env: {}, installLean: true, ...(batch ? { batch } : {}) };
+  }
   if (m === 'lean' || m === 'lean-batch') {
     // lean also drops the Agent tool (no delegation): opt-in only, reported separately.
     // lean-batch = lean + the max-batch batching line. For Luna: Luna fills every optional Agent
@@ -560,6 +565,12 @@ export async function runClaudeCodeTask(task, {
     const lean = installClaudeLeanHarness({ projectRoot: rundir, appendOverride: false });
     if (lean.active !== true) throw new Error(`CC_HARNESS_TRIM=product: lean harness not active (${lean.status}: ${lean.detail})`);
     injectedFiles.push(CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, '.claude/settings.json', CLAUDE_LEAN_MANIFEST_REL);
+    // CC_TRIM_BATCH (batching micro-smoke, trim/batch-variants.mjs): swaps the max-batch line
+    // of the installed main agent file for one variant; the subagent file is unchanged.
+    if (harnessTrim.batch) {
+      const agentFile = join(rundir, CLAUDE_LEAN_AGENT_REL);
+      writeFileSync(agentFile, applyClaudeBatch(readFileSync(agentFile, 'utf8'), harnessTrim.batch));
+    }
   }
   const {
     runnerStateDir, binDir, runnerFiles, integrity, jail, broker, integrityStateDir, controller,
