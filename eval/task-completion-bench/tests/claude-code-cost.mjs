@@ -19,6 +19,7 @@ import {
   recoveredTurnsCoverAggregate,
   buildClaudeCliArgs, installClaudeReadPagesNormalizer, parseClaudeStream,
   selectClaudeMainCosts, READ_PAGES_TOOL_NOTE, claudeHarnessTrim, CLAUDE_HARNESS_TRIM_DENY,
+  CLAUDE_TRIM_BASE_PROMPT, CLAUDE_TRIM_BASE_PROMPT_BATCH, CLAUDE_HARNESS_TRIM_ENV_MAX,
 } from '../harness/claude-code-task-runner.mjs';
 import { transcriptMetricsFromFile, repOfSlug } from '../harness/claude-code-accounting.mjs';
 import { normalizeReadInput, readHookDecision } from '../harness/claude-read-pages-hook.mjs';
@@ -311,6 +312,19 @@ assert(!/grep|find|cat |search|Read tool/i.test(trimMax.args[1]) && /Do not comm
 const trimLean = claudeHarnessTrim('lean');
 assert(trimLean.args.includes('Agent') && !trimLean.args.some(a => a.startsWith('Agent(')),
   'lean denies the whole Agent tool');
+const trimMaxBatch = claudeHarnessTrim('max-batch');
+assert(trimMaxBatch.args[1] === CLAUDE_TRIM_BASE_PROMPT_BATCH
+    && trimMaxBatch.args.slice(2).join('\u0000') === trimMax.args.slice(2).join('\u0000'),
+  'max-batch = max with the batching line; agents and deny list identical');
+const trimLeanBatch = claudeHarnessTrim('lean-batch');
+assert(trimLeanBatch.mode === 'lean-batch' && trimLeanBatch.args[0] === '--system-prompt'
+    && trimLeanBatch.args[1] === CLAUDE_TRIM_BASE_PROMPT_BATCH
+    && trimLeanBatch.args.slice(2).join('\u0000') === trimLean.args.slice(2).join('\u0000')
+    && trimLeanBatch.args[trimLeanBatch.args.length - 1] === 'Agent' && !trimLeanBatch.args.includes('--agents'),
+  'lean-batch = lean with the batching line: same deny list (whole Agent tool LAST), no --agents');
+assert(JSON.stringify(trimLeanBatch.env) === JSON.stringify(CLAUDE_HARNESS_TRIM_ENV_MAX)
+    && trimLean.args[1] === CLAUDE_TRIM_BASE_PROMPT,
+  'lean-batch uses the max env; lean itself is unchanged');
 assert(claudeHarnessTrim('1').args.length === 1 + CLAUDE_HARNESS_TRIM_DENY.length,
   'mode 1 is unchanged by the second pass (the smoked condition keeps its meaning)');
 let badTrim = null;

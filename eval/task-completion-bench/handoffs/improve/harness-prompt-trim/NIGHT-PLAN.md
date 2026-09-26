@@ -6,7 +6,7 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 
 | harness | best option | evidence | status |
 |---|---|---|---|
-| Claude Code, Opus 5.5 | **`CC_HARNESS_TRIM=max-batch`** | confirm 10x2: 8/20 → 9/20 (no task lost); −22% realized, −26% ideal; turns +5% (max alone: +25%) | confirmed — best option. Caveat: its legs ran after the as-now legs, not interleaved |
+| Claude Code, Opus 5.5 | **`CC_HARNESS_TRIM=max-batch`** | confirm 10x2: 8/20 → 9/20, but the +1 (eslint) is harness-infra (as-now L1 ran in the disk fault) → solves EQUAL; −22% realized on kept attempts, **−18% with discarded re-run attempts** (max: −10% → −0.3%); turns +5% | confirmed — best option. Caveat: its legs ran after the as-now legs, not interleaved |
 | Claude Code, Luna | `CC_HARNESS_TRIM=max` | confirm 10x2: 6/20 → 6/20 (identical per task); −71% billed; 0 subagent requests (as-now 140) | confirmed — best Luna option. max-batch lost: 5/20, +10% billed (below) |
 | Codex, Luna | `CODEX_HARNESS_TRIM=1` (max) | confirm 10x2: 6/20 → 4/20, −10% cost, turns flat; pooled with screen 6/26 → 7/26 | NOT a proven solve win; small cost saving. max-wait loses (+17% cost) |
 | opencode, Luna | `OC_HARNESS_TRIM=1` (round-1 trim) | confirm 10x2: 6/20 → 5/20, −12% realized/ideal, −13% turns. Screens: max/max-todo/max-p1 each 1/6 (lost solves) | confirmed: cost + turn saving, solves ≈ equal |
@@ -77,6 +77,8 @@ All numbers: 6-20 rollouts per condition — directions, not publishable finding
 5. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
 
 ## Decision log
+
+- 18:30 Claude Code transcript audit done ($0; DIAG-CLAUDECODE.md, 162 rollouts): integrity clean (prompt sha per mode, frame+rules byte-identical, trimmed subagents carry frame+rules). No flip is trim-caused. Discarded re-run cost verified here per leg (Opus confirm: as-now $0.41, max $0.78, max-batch $0.50) → Opus max −0.3%, max-batch −18%. As-now arm defects: Explore/Plan subagents load no CLAUDE.md (no frame/rules); live WebFetch/WebSearch on the unjailed Mac. Added `CC_HARNESS_TRIM=lean-batch` (lean + batching line, no Agent tool; default off, tests pass) for a Luna screen — NOT run, waits for the owner. Loop stopped.
 
 - 18:05 CC Luna max-batch: 5/20 (one eslint solve lost v max and as-now), $0.577 billed v max $0.524; one svgr rollout delegated 91 subagent requests. → CC Luna best stays **max**; max-batch is Opus-only. Queue empty; next runs wait for the owner. Interim transcript audit (not yet verified here): Opus eslint +1 is harness-infra (as-now L1 ran in the disk fault); counting the discarded degeneration re-run attempts, Opus max ≈ −0.3% and max-batch ≈ −18% realized; untrimmed Mac arm had live WebFetch (one Explore subagent fetched the upstream fix, rollout still unsolved).
 
