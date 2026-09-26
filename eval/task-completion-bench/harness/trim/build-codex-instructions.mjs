@@ -68,11 +68,36 @@ export const VARIANTS = {
     ],
     edits: [],
   },
+  // v3 (CODEX_HARNESS_TRIM=v3, 2026-09-26): the FIRST edition (a84b079) plus only zero-risk
+  // cuts, and the first edition's commentary cut undone. Goal: solves >= as-now. The second
+  // pass (mode 1) finished on a red run_tests verdict after a green baseline in 3/26 rollouts,
+  // as-now in 0/32; after a FAIL verdict it wrote commentary 27% of the time (as-now 50%).
+  // So v3 keeps everything that can steer persistence, verification or verdict reading:
+  // "Autonomy and persistence" whole (request types, "exhaust safe in-scope checks"), the
+  // commentary rules, update_plan, the permissions message and <environment_context>.
+  'gpt-5.6-luna-v3': {
+    model: 'gpt-5.6-luna',
+    capture: 'codex-0.146.1-request-luna-base.json',
+    extract: body => body.input.find(m => m.type === 'message' && m.role === 'developer').content[0].text,
+    sha256: 'cbefa6b0bede0e332d957fca70ccacf9f12f4c0ecdf81b819e5cbe1a3b16e265', // 17,730 chars
+    out: 'codex-0.146.1-instructions-sweet-gpt-5.6-luna-v3.md',
+    delete: [
+      [3, 22],    // # Personality, ## Writing style, ## Technical communication (tone only)       — first edition
+      [41, 42],   // "Never praise your plan ..." (tone only)                                        — first edition
+      [47, 75],   // ### Formatting rules (clickable links), ### Visualizations (client rendering)   — first edition
+      [78, 78],   // "reach first for `rg`" — contradicts the ss-* rules                              — first edition
+      [133, 167], // # Using skills (the list itself is dropped by skills.include_instructions=false) — first edition
+      [29, 30],   // "The user may send a new message while you are still working" (no user mid-run)
+      [82, 82],   // "Avoid blocking sleep or wait calls longer than 60 seconds" (contradicts the frame's 300 s run_tests yield)
+      [83, 83],   // "Never repurpose `$HOME` ..." — verbatim duplicate of line 124, which stays
+    ],
+    edits: [],
+  },
 };
 
 export const headerFor = (model) => `<!--
 Modified copy of the base instructions that codex-cli 0.146.1 (https://github.com/openai/codex,
-Apache-2.0) sends for model ${model}. Changed for the sweet-search task-completion benchmark:
+Apache-2.0) sends for model ${VARIANTS[model].model || model}. Changed for the sweet-search task-completion benchmark:
 passages deleted${VARIANTS[model].edits.length ? ' and one sentence shortened' : ''}. Change list: NOTICE-codex.md in this directory.
 The runner strips this comment; the model never sees it.
 -->
