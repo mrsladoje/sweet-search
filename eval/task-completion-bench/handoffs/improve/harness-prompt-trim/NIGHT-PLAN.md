@@ -35,6 +35,7 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 | opencode Luna | max (todowrite off), round 2 | 3/6 → 1/6 | −38% | −39% — shorter, narrower fixes |
 | opencode Luna | max-todo (screen, trim legs only) | 1/6 (graphql 1/2) v baselines 1/6, 3/6 | ≈ 0% ($0.117) | calls ≈ as-now — todowrite is NOT the cause, and keeping it removes the saving |
 | CC Luna | max | 3/6 → 2/6 | −67% (OpenRouter bill, kept attempts) | 0 subagents v 2/6 delegating |
+| CC Luna | lean (no Agent tool; screen) | 2/6 (graphql 2/2) | ≈ max: $0.297 v $0.308 billed | tie with max; max keeps delegation, so max stays |
 | CC Opus | 1 | void (owner CLAUDE.md leaked) | | |
 | CC Opus | max | 3/6 → 4/6 (graphql 1/2 → 2/2; as-now r2 graphql TIMED OUT at 30 min) | −22% (transcript cost, all 12) | calls 81 → 75; before 1st edit ss 16→37, shell search 29→13, shell read 12→5 |
 
@@ -50,6 +51,8 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 5. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
 
 ## Decision log
+
+- 03:05 CC Luna lean = tie with max (2/6, −3.5% cost, noise) → keep max. Codex max-wait screen running.
 
 - 02:43 opencode ranking so far: mode 1 (2/6, $0.089) > max (1/6, $0.075) ≈ max-todo (1/6, $0.117).
   Next opencode test: max-p1 (queued).
