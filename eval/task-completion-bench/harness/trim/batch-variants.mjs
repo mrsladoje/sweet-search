@@ -93,10 +93,15 @@ export function opencodeBatchPrompt(variant) {
 
 // --- Claude Code (lean agent file installed by `sweet-search init`) ---
 const CC_DEP = `- ${dep('Bash')}`;
+const CC_SSREAD = '- Inside a chained Bash call, read with `ss-read <file> <start> <end>` and search with `ss-grep`, not `cat`, `sed -n` or `grep`.';
 export const CC_BATCH_VARIANTS = Object.freeze({
   two: `- ${two('Bash')}`,
   plan: `- ${two('Bash')} ${PLAN}`,
   amp: `${CC_DEP} ${PLAN}`,
+  // Round 2 (trace analysis): Opus max-batch chained ~50 raw cat/sed -n/grep reads v 34 ss-*
+  // calls in 8 rollouts; the line points chained reads at the ss-* commands (sweet-search fit).
+  ssread: `${CC_DEP}\n${CC_SSREAD}`,
+  ampssread: `${CC_DEP} ${PLAN}\n${CC_SSREAD}`,
 });
 export function applyClaudeBatch(text, variant) {
   const repl = CC_BATCH_VARIANTS[variant];
