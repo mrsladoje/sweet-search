@@ -41,6 +41,12 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 | CC Opus | 1 | void (owner CLAUDE.md leaked) | | |
 | CC Opus | max | 3/6 → 4/6 (graphql 1/2 → 2/2; as-now r2 graphql TIMED OUT at 30 min) | −22% (transcript cost, all 12) | calls 81 → 75; before 1st edit ss 16→37, shell search 29→13, shell read 12→5 |
 
+## Confirm results (10 tasks x 2 reps per condition, confirm10 set)
+
+| harness | variant | solves as-now → variant | realized cost | ideal cost | turns | before 1st edit (ss / shell search+read) |
+|---|---|---|---|---|---|---|
+| CC Opus 5.5 | max | 8/20 → 8/20 (eslint 1→2, svgr 1→0) | $3.79 → $3.40 (−10%) | $4.19 → $3.58 (−15%) | 155 → 194 (+25%) | 27/68 → 56/30 |
+
 ## Queue (screens first)
 
 1. oc-maxtodo: opencode max with todowrite kept (isolates the todowrite lever).
@@ -53,6 +59,10 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 5. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
 
 ## Decision log
+
+- 05:25 Opus confirm done (0 ungraded, 0 timeouts): max ties solves, −10% realized / −15% ideal,
+  but +25% turns (Edit + separate run_tests + single-range ss-read instead of one batched shell
+  call). By the owner's ranking (solves, cost, turns) → CC Opus best = max. Codex confirm running.
 
 - 04:10 Colima VM disk FULL ("no space left on device") → 4/10 tasks of the Opus confirm leg 1
   graded NO-TEST-EVIDENCE. Freed ~30 GB by removing only swerebenchv2 images the night no longer
