@@ -31,6 +31,7 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 |---|---|---|---|---|
 | Codex Luna | 1 (first trim), round 1 | 1/6 → 2/6 | −40% | −28% |
 | Codex Luna | 1 (= max since e9a888b), round 2 | 0/6 → 3/6 | −3% | −4% |
+| Codex Luna | max-wait (exec yield 30 s; screen) | 3/6 (= max) | +17% v max | turns 91 → 107 — worse; max stays |
 | opencode Luna | 1, round 1 | 1/6 → 2/6 | −21% | −10% |
 | opencode Luna | max (todowrite off), round 2 | 3/6 → 1/6 | −38% | −39% — shorter, narrower fixes |
 | opencode Luna | max-todo (screen, trim legs only) | 1/6 (graphql 1/2) v baselines 1/6, 3/6 | ≈ 0% ($0.117) | calls ≈ as-now — todowrite is NOT the cause, and keeping it removes the saving |
@@ -51,6 +52,12 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 5. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
 
 ## Decision log
+
+- 03:25 Codex max-wait loses to max (same solves, +17% cost, +18% turns) → Codex best = 1.
+  confirm10 ready (10 gold-valid: svgr, maxgraph, brighterscript, datadog, fastify-cors,
+  super_editor, bingo-271, jupytext-360, zlint-299, eslint-plugin-ember-551; 7/10 JS/TS).
+  Queued confirm-opus (CC Opus as-now v max) then confirm-codex (as-now v 1); opencode confirm
+  after max-p1; CC Luna confirm last if time.
 
 - 03:05 CC Luna lean = tie with max (2/6, −3.5% cost, noise) → keep max. Codex max-wait screen running.
 
