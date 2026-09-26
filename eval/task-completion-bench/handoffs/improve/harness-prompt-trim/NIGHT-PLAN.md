@@ -35,6 +35,7 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 | opencode Luna | 1, round 1 | 1/6 → 2/6 | −21% | −10% |
 | opencode Luna | max (todowrite off), round 2 | 3/6 → 1/6 | −38% | −39% — shorter, narrower fixes |
 | opencode Luna | max-todo (screen, trim legs only) | 1/6 (graphql 1/2) v baselines 1/6, 3/6 | ≈ 0% ($0.117) | calls ≈ as-now — todowrite is NOT the cause, and keeping it removes the saving |
+| opencode Luna | max-p1 (max tools/desc + round-1 prompt; screen) | 1/6 | $0.067 | not better on solves → opencode best stays 1 |
 | CC Luna | max | 3/6 → 2/6 | −67% (OpenRouter bill, kept attempts) | 0 subagents v 2/6 delegating |
 | CC Luna | lean (no Agent tool; screen) | 2/6 (graphql 2/2) | ≈ max: $0.297 v $0.308 billed | tie with max; max keeps delegation, so max stays |
 | CC Opus | 1 | void (owner CLAUDE.md leaked) | | |
@@ -52,6 +53,10 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 5. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
 
 ## Decision log
+
+- 03:45 confirm-opus/confirm-codex failed at preflight (eslint-plugin-ember golden still building
+  at 03:26); golden now complete. Re-queued as c2-opus (max), c2-codex (1), c2-opencode (1),
+  c2-cc-luna (max). opencode max-p1 = 1/6 → opencode best = 1.
 
 - 03:25 Codex max-wait loses to max (same solves, +17% cost, +18% turns) → Codex best = 1.
   confirm10 ready (10 gold-valid: svgr, maxgraph, brighterscript, datadog, fastify-cors,
