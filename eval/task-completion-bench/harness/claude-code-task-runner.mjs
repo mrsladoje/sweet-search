@@ -36,6 +36,12 @@ import { classifyRollout } from './degeneration.mjs';
 import {
   CLAUDE_SYSTEM_OVERRIDE as SWEET_SEARCH_SYSTEM_OVERRIDE,
 } from '../../../scripts/install-claude-system-prompt.js';
+import {
+  CLAUDE_LEAN_BASE_PROMPT, CLAUDE_LEAN_BASE_PROMPT_BATCH, CLAUDE_LEAN_ENV,
+  CLAUDE_LEAN_SUBAGENT_DESCRIPTION, CLAUDE_LEAN_SUBAGENT_PROMPT,
+  CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_MANIFEST_REL,
+  installClaudeLeanHarness,
+} from '../../../scripts/install-claude-lean-harness.js';
 
 // D-4: shared, arm-symmetric tool-usage note. Kept to the single malformed argument it
 // repairs — it names no file, tool strategy or retrieval policy, so neither arm gains
@@ -153,21 +159,14 @@ export const CLAUDE_HARNESS_TRIM_DENY = Object.freeze([
 // capture: the append prompts, CLAUDE.md, the rules file, the issue, the env message and the tools
 // are unchanged). It says nothing about search or reading, so "Prefer the dedicated file/search
 // tools over shell commands" goes. Product form: a project agent file + settings `agent` key.
-export const CLAUDE_TRIM_BASE_PROMPT = [
-  "You are a coding agent. You work in the user's repository through the tools provided.",
-  '',
-  '- Do the task with the tools: run commands with Bash, change files with Edit or Write. Tool calls that do not depend on each other can go in parallel in one response.',
-  '- Write code that matches the surrounding code: its naming, idiom and comment density.',
-  '- Before you delete or overwrite anything, look at it first. Do not commit, push or rewrite git history unless the task asks for it.',
-  '- Say what really happened: show the output of a failing test, name any step you did not do, and call a change finished only after you checked it.',
-  '- When you have enough information to act, act.',
-].join('\n');
+// The texts live in the product (scripts/install-claude-lean-harness.js) so the benchmark and
+// what `sweet-search init` ships cannot drift apart.
+export const CLAUDE_TRIM_BASE_PROMPT = CLAUDE_LEAN_BASE_PROMPT;
 
 // max-batch = max + one generic batching line. On the Opus confirm set, max tied solves and cut
 // cost but took +25% turns: without the bypass-mode "edit with sed/heredocs" text the agent
 // splits an edit, its check and the test run into separate calls.
-export const CLAUDE_TRIM_BASE_PROMPT_BATCH = `${CLAUDE_TRIM_BASE_PROMPT}
-- Combine dependent shell steps into one Bash call where you can, for example an edit made with a short script together with the command that checks it.`;
+export const CLAUDE_TRIM_BASE_PROMPT_BATCH = CLAUDE_LEAN_BASE_PROMPT_BATCH;
 
 // Env for 'max' / 'lean'. Measured with count_tokens on the real request shape:
 //   THRIFTY_SONIC=0          bash-first attachment off (as mode 1). Internal.
@@ -184,13 +183,7 @@ export const CLAUDE_TRIM_BASE_PROMPT_BATCH = `${CLAUDE_TRIM_BASE_PROMPT}
 //                            which is false inside the working dir (11/11 unread Edits succeeded in
 //                            the smoke) and pushes the Read tool the sweet rules discourage. Internal.
 // Internal variables are research-grade: re-verify by capture on every Claude Code version.
-export const CLAUDE_HARNESS_TRIM_ENV_MAX = Object.freeze({
-  CLAUDE_CODE_THRIFTY_SONIC: '0',
-  CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
-  CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS: '1',
-  CLAUDE_CODE_TOTAL_TOKENS_REMINDER: 'off',
-  CLAUDE_CODE_PARCHMENT_FERN: '1',
-});
+export const CLAUDE_HARNESS_TRIM_ENV_MAX = CLAUDE_LEAN_ENV;
 
 // Subagents in 'max'. `--system-prompt` does not reach subagents: they still got Claude Code's own
 // subagent prompt ("For noisy investigation (grep sweeps, log trawls, broad search), spawn a
@@ -201,16 +194,10 @@ export const CLAUDE_HARNESS_TRIM_ENV_MAX = Object.freeze({
 // 1/max denied Agent(general-purpose), and an omitted type failed with "has been denied". No
 // `tools` key: the subagent inherits the parent's trimmed tool set. Claude Code appends its fixed
 // subagent notes and the byte-identical `--append-subagent-system-prompt` after this text.
-export const CLAUDE_TRIM_SUBAGENT_PROMPT = [
-  "You are a coding agent working as a subagent: another agent launched you with one task in the user's repository.",
-  '',
-  '- Do the task with the tools: run commands with Bash, change files with Edit or Write. Tool calls that do not depend on each other can go in parallel in one response.',
-  '- Before you delete or overwrite anything, look at it first. Do not commit, push or rewrite git history.',
-  '- Your final message is all the launching agent sees: state what you found and what you changed, and name any step you did not do.',
-].join('\n');
+export const CLAUDE_TRIM_SUBAGENT_PROMPT = CLAUDE_LEAN_SUBAGENT_PROMPT;
 export const CLAUDE_TRIM_AGENTS_JSON = JSON.stringify({
   'general-purpose': {
-    description: 'Agent for a self-contained part of the task that you want done in a separate context.',
+    description: CLAUDE_LEAN_SUBAGENT_DESCRIPTION,
     prompt: CLAUDE_TRIM_SUBAGENT_PROMPT,
   },
 });
@@ -219,6 +206,11 @@ export const CLAUDE_TRIM_AGENTS_JSON = JSON.stringify({
 export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
   const m = String(mode ?? '').trim();
   if (!m || m === '0') return { mode: null, args: [], env: {} };
+  // 'product' = max-batch delivered the way `sweet-search init` ships it: project files
+  // (settings `agent` + agent files + permissions.deny + env) instead of CLI flags. The runner
+  // installs them into the run dir. Verified by capture: the request is byte-identical to
+  // max-batch. The frozen-set run uses this mode so the published number is the product's.
+  if (m === 'product') return { mode: m, args: [], env: {}, installLean: true };
   if (m === 'lean' || m === 'lean-batch') {
     // lean also drops the Agent tool (no delegation): opt-in only, reported separately.
     // lean-batch = lean + the max-batch batching line. For Luna: Luna fills every optional Agent
@@ -245,7 +237,7 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
       env: { ...CLAUDE_HARNESS_TRIM_ENV_MAX },
     };
   }
-  if (!['1', 'tools', 'steer'].includes(m)) throw new Error(`CC_HARNESS_TRIM=${m}: expected 0, 1, tools, steer, max, max-batch, lean or lean-batch`);
+  if (!['1', 'tools', 'steer'].includes(m)) throw new Error(`CC_HARNESS_TRIM=${m}: expected 0, 1, tools, steer, max, max-batch, lean, lean-batch or product`);
   const tools = m === '1' || m === 'tools';
   const steer = m === '1' || m === 'steer';
   return {
@@ -561,6 +553,13 @@ export async function runClaudeCodeTask(task, {
     mkdirSync(rulesDir, { recursive: true });
     appendFileSync(join(rulesDir, 'sweet-search.md'), `${mppText.trimEnd()}\n`);
     injectedFiles.push('.claude/rules/sweet-search.md');
+  }
+  if (sweet && harnessTrim.installLean) {
+    // The benchmark passes the override through its own --append-system-prompt (both modes),
+    // so the agent file carries the base prompt only: the request equals max-batch.
+    const lean = installClaudeLeanHarness({ projectRoot: rundir, appendOverride: false });
+    if (lean.active !== true) throw new Error(`CC_HARNESS_TRIM=product: lean harness not active (${lean.status}: ${lean.detail})`);
+    injectedFiles.push(CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, '.claude/settings.json', CLAUDE_LEAN_MANIFEST_REL);
   }
   const {
     runnerStateDir, binDir, runnerFiles, integrity, jail, broker, integrityStateDir, controller,

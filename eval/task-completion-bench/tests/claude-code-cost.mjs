@@ -325,6 +325,10 @@ assert(trimLeanBatch.mode === 'lean-batch' && trimLeanBatch.args[0] === '--syste
 assert(JSON.stringify(trimLeanBatch.env) === JSON.stringify(CLAUDE_HARNESS_TRIM_ENV_MAX)
     && trimLean.args[1] === CLAUDE_TRIM_BASE_PROMPT,
   'lean-batch uses the max env; lean itself is unchanged');
+const trimProduct = claudeHarnessTrim('product');
+assert(trimProduct.mode === 'product' && trimProduct.installLean === true
+    && trimProduct.args.length === 0 && Object.keys(trimProduct.env).length === 0,
+  'product mode adds no flags or env: the lean harness arrives as project files');
 assert(claudeHarnessTrim('1').args.length === 1 + CLAUDE_HARNESS_TRIM_DENY.length,
   'mode 1 is unchanged by the second pass (the smoked condition keeps its meaning)');
 let badTrim = null;

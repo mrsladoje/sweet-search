@@ -44,6 +44,11 @@ import {
   installClaudeSystemPrompt,
   removeClaudeSystemPrompt,
 } from './install-claude-system-prompt.js';
+import {
+  formatClaudeLeanHarnessGuidance,
+  installClaudeLeanHarness,
+  removeClaudeLeanHarness,
+} from './install-claude-lean-harness.js';
 import { installMcpServer } from './install-mcp-server.js';
 import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { installToolEnforcement, removeToolEnforcement } from './install-tool-enforcement.js';
@@ -2093,10 +2098,32 @@ export async function runInit(args) {
         // but never replaces an existing user-selected output style silently.
         // It also detects a higher-priority settings.local.json selection and
         // returns prominent, actionable guidance when our style is not active.
+        //
+        // Default (CLI surface): the lean harness replaces Claude Code's base
+        // system prompt with a short one that carries the same override, trims
+        // unused tools and search-delegation subagents, and gives every subagent
+        // the trimmed prompt (install-claude-lean-harness.js). While it is active
+        // the output style would only repeat the override, so it is removed. If a
+        // user's own `agent` selection or agent file blocks it, the output style
+        // stays the fallback.
         try {
-          claudeSystemPromptReport = parsed.noCli
-            ? removeClaudeSystemPrompt({ projectRoot })
-            : installClaudeSystemPrompt({ projectRoot });
+          let leanReport = null;
+          if (parsed.noCli) {
+            removeClaudeLeanHarness({ projectRoot });
+            claudeSystemPromptReport = removeClaudeSystemPrompt({ projectRoot });
+          } else {
+            leanReport = installClaudeLeanHarness({ projectRoot });
+            if (leanReport.active === true) {
+              const styleRemoved = removeClaudeSystemPrompt({ projectRoot });
+              claudeSystemPromptReport = {
+                ...leanReport,
+                detail: `lean harness: ${leanReport.detail}`
+                  + (styleRemoved.status === 'removed' ? '; output style removed (override now in the agent prompt)' : ''),
+              };
+            } else {
+              claudeSystemPromptReport = installClaudeSystemPrompt({ projectRoot });
+            }
+          }
           process.stderr.write(
             `[init] Claude system prompt: ${claudeSystemPromptReport.status}`
             + (parsed.noCli ? ' (--no-cli)' : '')
@@ -2104,9 +2131,9 @@ export async function runInit(args) {
             + '\n',
           );
           if (!parsed.noCli) {
-            process.stderr.write(
-              formatClaudeSystemPromptGuidance(claudeSystemPromptReport),
-            );
+            process.stderr.write(leanReport?.active === true
+              ? formatClaudeLeanHarnessGuidance(leanReport)
+              : formatClaudeLeanHarnessGuidance(leanReport) + formatClaudeSystemPromptGuidance(claudeSystemPromptReport));
           }
         } catch (err) {
           claudeSystemPromptReport = { status: 'error', detail: err.message };

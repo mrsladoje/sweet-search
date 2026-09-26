@@ -21,6 +21,7 @@ import { PREWARM_HOOK_FILENAME } from './init.js';
 import { removeAgentInstructions } from './inject-agent-instructions.js';
 import { removeClaudeRules } from './write-claude-rules.js';
 import { removeClaudeSystemPrompt } from './install-claude-system-prompt.js';
+import { removeClaudeLeanHarness } from './install-claude-lean-harness.js';
 import { removeMcpServer } from './install-mcp-server.js';
 import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { removeToolEnforcement } from './install-tool-enforcement.js';
@@ -713,6 +714,8 @@ export async function runUninstall(args) {
   const hasClaudeRules = claudeRulesPreview === 'dry-run';
   const claudeSystemPromptPreview = removeClaudeSystemPrompt({ projectRoot, dryRun: true });
   const hasClaudeSystemPrompt = claudeSystemPromptPreview.status === 'dry-run';
+  const claudeLeanPreview = removeClaudeLeanHarness({ projectRoot, dryRun: true });
+  const hasClaudeLean = claudeLeanPreview.status === 'dry-run';
 
   // P2: UserPromptSubmit reminder hook (.claude/hooks/sweet-search-remind-tools.mjs
   // + the matching settings.json entry).
@@ -735,7 +738,7 @@ export async function runUninstall(args) {
   // Nothing to remove?
   if (
     removals.length === 0 && !hasHookEntry && !hasSkillEntry && !hasIndexMaintainerHook
-    && !agentInstructionsTouched && !hasClaudeRules && !hasClaudeSystemPrompt
+    && !agentInstructionsTouched && !hasClaudeRules && !hasClaudeSystemPrompt && !hasClaudeLean
     && !hasPromptReminder && !hasToolEnforcement && !hasCodexHook && !hasMcpServer
   ) {
     console.log('Nothing to remove — Sweet Search is not initialized in this project.');
@@ -774,6 +777,9 @@ export async function runUninstall(args) {
     console.log(
       `    Claude system-prompt output style (${claudeSystemPromptPreview.detail})`,
     );
+  }
+  if (hasClaudeLean) {
+    console.log(`    Claude lean harness (${claudeLeanPreview.detail})`);
   }
   if (hasPromptReminder) {
     console.log(`    UserPromptSubmit reminder hook (${promptReminderPreview.detail})`);
@@ -979,6 +985,18 @@ export async function runUninstall(args) {
     && claudeSystemPromptResult.detail === 'output style is user-authored'
   ) {
     console.log('  Kept: Claude output style — no sweet-search sentinel (user-authored)');
+    kept++;
+  }
+
+  // Remove the lean harness (main agent, general-purpose subagent, agent
+  // selection, deny entries, env). Only what its manifest records as added
+  // and unchanged since is removed.
+  const claudeLeanResult = removeClaudeLeanHarness({ projectRoot, dryRun: parsed.dryRun });
+  if (claudeLeanResult.status === 'removed') {
+    console.log(`  Removed: Claude lean harness (${claudeLeanResult.detail})`);
+    removed++;
+  } else if (claudeLeanResult.status === 'error') {
+    console.log(`  Failed to remove Claude lean harness: ${claudeLeanResult.detail}`);
     kept++;
   }
 

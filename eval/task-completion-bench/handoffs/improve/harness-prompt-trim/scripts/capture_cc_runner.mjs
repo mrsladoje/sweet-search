@@ -56,7 +56,7 @@ if (sweet) {
 const prompt = issuePrompt('The add function should also accept a third optional argument c.');
 let args = buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId: opt('model', 'claude-opus-5-5'), effort: opt('model') ? null : 'medium' });
 // The runner's own trim switch, exactly as CC_HARNESS_TRIM applies it.
-const trim = claudeHarnessTrim({ trim: '1', deny15: 'tools', steer: 'steer', max: 'max', lean: 'lean' }[variant] ?? '0');
+const trim = claudeHarnessTrim({ trim: '1', deny15: 'tools', steer: 'steer', max: 'max', 'max-batch': 'max-batch', lean: 'lean', 'lean-batch': 'lean-batch' }[variant] ?? '0');
 args = [...args, ...trim.args];
 if (variant === 'exclude-dynamic') args.push('--exclude-dynamic-system-prompt-sections');
 const extra = opt('extra');
@@ -69,6 +69,14 @@ if (variant === 'style-nocoding') {
   writeFileSync(join(rundir, '.claude/output-styles/probe.md'),
     '---\nname: probe\ndescription: probe\nkeep-coding-instructions: false\n---\n\nPROBE-STYLE-BODY\n');
   writeFileSync(join(rundir, '.claude/settings.json'), JSON.stringify({ outputStyle: 'probe' }, null, 2));
+}
+// --project-files <json file>: {"rel/path": "content"} written into the repo (product-form probes).
+const projectFiles = opt('project-files');
+if (projectFiles) {
+  for (const [rel, content] of Object.entries(JSON.parse(readFileSync(projectFiles, 'utf8')))) {
+    mkdirSync(join(rundir, rel, '..'), { recursive: true });
+    writeFileSync(join(rundir, rel), content);
+  }
 }
 if (projectSettings) {
   mkdirSync(join(rundir, '.claude'), { recursive: true });

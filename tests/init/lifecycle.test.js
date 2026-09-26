@@ -30,6 +30,12 @@ import {
   CLAUDE_SYSTEM_OVERRIDE,
 } from '../../scripts/install-claude-system-prompt.js';
 import {
+  CLAUDE_LEAN_AGENT_NAME,
+  CLAUDE_LEAN_AGENT_REL,
+  CLAUDE_LEAN_MANIFEST_REL,
+  CLAUDE_LEAN_SUBAGENT_REL,
+} from '../../scripts/install-claude-lean-harness.js';
+import {
   CANONICAL_POLICY_BODY,
   MARKER_BEGIN,
   MARKER_END,
@@ -78,9 +84,8 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
   it('init leaves CLAUDE.md absent and installs the exact Claude rule + override', () => {
     const r = runCli(COMMON_INIT_ARGS);
     expect(r.code, `init failed: ${r.stderr}`).toBe(0);
-    expect(r.stderr).toContain('activated the `sweet-search` output style');
-    expect(r.stderr).toContain('Start a new session or run `/clear`');
-    expect(r.stderr).toContain('Keep this style selected');
+    expect(r.stderr).toContain('installed the sweet-search lean harness');
+    expect(r.stderr).toContain('Start a new session');
 
     // Claude Code auto-loads the project rule; init never touches CLAUDE.md.
     expect(exists('CLAUDE.md')).toBe(false);
@@ -94,42 +99,45 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
     expect(readFileSync(join(tmpRoot, CLAUDE_RULES_REL), 'utf8')).toBe(
       `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
     );
-    expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(true);
-    expect(readFileSync(join(tmpRoot, CLAUDE_OUTPUT_STYLE_REL), 'utf8')).toContain(
+    // The lean harness carries the override in the main-agent prompt; the output
+    // style would only repeat it, so it is not installed.
+    expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(false);
+    expect(readFileSync(join(tmpRoot, CLAUDE_LEAN_AGENT_REL), 'utf8')).toContain(
       CLAUDE_SYSTEM_OVERRIDE,
     );
+    expect(exists(CLAUDE_LEAN_SUBAGENT_REL)).toBe(true);
     expect(exists('.claude/hooks/index-maintainer.mjs')).toBe(true);
     expect(exists('.claude/skills/sweet-index/SKILL.md')).toBe(true);
     // No duplicate hand-authored UserPromptSubmit guidance.
     expect(exists('.claude/hooks/sweet-search-remind-tools.mjs')).toBe(false);
     const settings = readJson('.claude/settings.json');
-    expect(settings.outputStyle).toBe(CLAUDE_OUTPUT_STYLE_NAME);
+    expect(settings.outputStyle).toBeUndefined();
+    expect(settings.agent).toBe(CLAUDE_LEAN_AGENT_NAME);
     expect(settings.hooks?.UserPromptSubmit).toBeUndefined();
-    // P3: tool enforcement NOT installed without --enforce-tools
+    // P3: tool enforcement NOT installed without --enforce-tools (the lean
+    // harness denies unused tools, never Grep).
     expect(exists('.claude/hooks/sweet-search-intercept-read.mjs')).toBe(false);
-    expect(settings.permissions).toBeUndefined();
+    expect(settings.permissions.deny).not.toContain('Grep');
     expect(settings.hooks?.PreToolUse).toBeUndefined();
   });
 
-  it('installs the style but warns when settings.local.json overrides it', () => {
+  it('falls back to the output style and warns when settings.local.json selects another agent', () => {
     mkdirSync(join(tmpRoot, '.claude'), { recursive: true });
     writeFileSync(
       join(tmpRoot, '.claude', 'settings.local.json'),
-      JSON.stringify({ outputStyle: 'Explanatory' }, null, 2) + '\n',
+      JSON.stringify({ agent: 'my-agent' }, null, 2) + '\n',
     );
 
     const r = runCli(COMMON_INIT_ARGS);
     expect(r.code, `init failed: ${r.stderr}`).toBe(0);
+    expect(readJson('.claude/settings.local.json').agent).toBe('my-agent');
+    expect(r.stderr).toContain('WARNING');
+    expect(r.stderr).toContain('overrides the sweet-search lean harness');
+    // The override still reaches the system prompt through the output style.
     expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(true);
     expect(readJson('.claude/settings.json').outputStyle).toBe(
       CLAUDE_OUTPUT_STYLE_NAME,
     );
-    expect(readJson('.claude/settings.local.json').outputStyle).toBe('Explanatory');
-    expect(r.stderr).toContain('WARNING');
-    expect(r.stderr).toContain(
-      'system-prompt routing is not active because another output style overrides it',
-    );
-    expect(r.stderr).toContain('Select `sweet-search` under `/config`');
   });
 
   it('uninstall removes everything sweet-search-managed', () => {
@@ -146,6 +154,9 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
     // .claude/ artifacts gone
     expect(exists('.claude/rules/sweet-search.md')).toBe(false);
     expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(false);
+    expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(false);
+    expect(exists(CLAUDE_LEAN_SUBAGENT_REL)).toBe(false);
+    expect(exists(CLAUDE_LEAN_MANIFEST_REL)).toBe(false);
     expect(exists('.claude/hooks/index-maintainer.mjs')).toBe(false);
     expect(exists('.claude/skills/sweet-index')).toBe(false);
     expect(exists('.claude/hooks/sweet-search-remind-tools.mjs')).toBe(false);
@@ -212,7 +223,7 @@ describe('lifecycle: full surface init → uninstall (Scenario B)', () => {
     // P3 enforcement landed
     expect(exists('.claude/hooks/sweet-search-intercept-read.mjs')).toBe(true);
     const settings = readJson('.claude/settings.json');
-    expect(settings.outputStyle).toBe(CLAUDE_OUTPUT_STYLE_NAME);
+    expect(settings.agent).toBe(CLAUDE_LEAN_AGENT_NAME);
     expect(settings.permissions.deny).toContain('Grep');
     expect(settings.hooks.PreToolUse).toBeDefined();
     expect(settings.hooks.PreToolUse[0].matcher).toBe('Read');
@@ -234,6 +245,7 @@ describe('lifecycle: full surface init → uninstall (Scenario B)', () => {
     expect(exists('.claude/hooks/sweet-search-intercept-read.mjs')).toBe(false);
     expect(exists('.claude/hooks/sweet-search-remind-tools.mjs')).toBe(false);
     expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(false);
+    expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(false);
     if (exists('.claude/settings.json')) {
       expect(readJson('.claude/settings.json')).toEqual({});
     }
@@ -265,7 +277,7 @@ describe('lifecycle: Claude CLI → MCP-only contact surface', () => {
   it('removes the CLI override and swaps the same rule file to the MCP body', () => {
     const cli = runCli(COMMON_INIT_ARGS);
     expect(cli.code, `CLI init failed: ${cli.stderr}`).toBe(0);
-    expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(true);
+    expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(true);
     expect(readFileSync(join(tmpRoot, CLAUDE_RULES_REL), 'utf8')).toBe(
       `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
     );
@@ -273,7 +285,9 @@ describe('lifecycle: Claude CLI → MCP-only contact surface', () => {
     const mcp = runCli([...COMMON_INIT_ARGS, '--mcp', '--no-cli']);
     expect(mcp.code, `MCP re-init failed: ${mcp.stderr}`).toBe(0);
     expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(false);
+    expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(false);
     expect(readJson('.claude/settings.json').outputStyle).toBeUndefined();
+    expect(readJson('.claude/settings.json').agent).toBeUndefined();
     expect(readFileSync(join(tmpRoot, CLAUDE_RULES_REL), 'utf8')).toBe(
       `${claudeRulesInternal.SENTINEL}\n${getMcpPolicyBody()}\n`,
     );
