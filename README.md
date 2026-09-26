@@ -22,14 +22,36 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 
 ## ✨ Highlights
 
-- **Hybrid retrieval** — one of the six tools uses BM25F lexical + dense semantic + structural graph signals, fused per query and reranked by late-interaction
-- **Agent-native by design** — token-budgeted output tiers, an optional MCP server (and default zero-overhead CLI), and a GEPA-evolved system prompt — one `init` installs it into Claude Code by default (Codex, Gemini CLI, and Cursor via flags)
-- **Indexed grep, ~10× faster than ripgrep** — a sparse n-gram prefilter skips the files that provably can't match
-- **ColBERT-style reranking, locally** — per-token MaxSim late interaction on hand-written SIMD kernels
-- **GPU-accelerated indexing** — Apple Metal, CUDA, CoreML Neural Engine, or plain CPU via ORT; same engine, auto-selected
-- **Never stale** — incremental indexing keeps the index aligned with your *working tree*, uncommitted edits included
-- **No storage hassle** — indexed artifacts maximally optimized without any accuracy tradeoff; up to INT4 quantization
-- **Local-first** — all models run on-device; nothing is sent anywhere, ever. CPU-inference supported for all models
+<table>
+<tr>
+<td width="50%" valign="top">
+
+💰 **[7–27% cheaper agent runs](#bench-task-completion)**<br>
+<sub>on 200 real engineering tasks · up to 45% fewer tool calls · solve rate statistically tied</sub>
+
+</td>
+<td width="50%" valign="top">
+
+⚡ **Saves your time**<br>
+<sub>faster retrieval than classic grep-and-read · ranked answers instead of pages of matches</sub>
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+🔄 **Index once, then forget it**<br>
+<sub>one command, GPU-accelerated · updates itself as you edit, uncommitted changes included</sub>
+
+</td>
+<td width="50%" valign="top">
+
+🔒 **100% local**<br>
+<sub>no API keys · no cloud · no Docker · your code never leaves your machine</sub>
+
+</td>
+</tr>
+</table>
 
 ## 📚 Table of Contents
 
