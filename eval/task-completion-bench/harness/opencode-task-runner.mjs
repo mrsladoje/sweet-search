@@ -169,6 +169,26 @@ export const OPENCODE_TRIM_MAX_TOOL_EDITS = Object.freeze({
   edit: [['- You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file. \n', '']],
   write: [["- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.\n", '']],
 });
+// OC_HARNESS_TRIM=v3: round 1's edits with ONE change and three zero-risk cuts (diagnosis
+// 2026-09-26, handoffs/improve/harness-prompt-trim). Round 1 deleted the task tool's "class Foo
+// -> use the Grep tool instead" line; with glob/grep gone the trimmed arm then delegated searches
+// to explore in 5 of 26 rollouts (as-now: 0 of 32), and that subagent spend is off the row
+// ledger. v3 keeps the line and names no disabled tool. The cuts: the task result-visibility and
+// "use proactively" notes (no listed agent is proactive; a headless run has no user to show a
+// result to) and read's image/PDF note (no task reads images).
+export const OPENCODE_TRIM_V3_TOOL_EDITS = Object.freeze({
+  bash: OPENCODE_TRIM_TOOL_EDITS.bash,
+  read: [
+    ...OPENCODE_TRIM_TOOL_EDITS.read,
+    ['- This tool can read image files and PDFs and return them as file attachments.\n', ''],
+  ],
+  task: [
+    OPENCODE_TRIM_TOOL_EDITS.task[0],
+    ['use the Grep tool instead, to find the match more quickly', 'search for it directly instead, to find the match more quickly'],
+    [' The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.', ''],
+    ['7. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.\n', ''],
+  ],
+});
 
 // Mirror of opencode 1.18.4's model → base prompt choice (`wd` in the binary, keyed on the
 // provider model id). null = a family with no trimmed copy; the switch then refuses to run
@@ -187,7 +207,11 @@ export function opencodePromptFamily(apiModel) {
 export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiModel, stateDir } = {}) {
   const m = String(mode ?? '').trim();
   if (!m || m === '0') return { mode: null, config: {}, files: {}, plugins: [], stateEntries: [] };
-  if (!['1', 'max', 'max-todo', 'max-p1'].includes(m)) throw new Error(`OC_HARNESS_TRIM=${m}: expected 0, 1, max, max-todo or max-p1`);
+  if (!['1', 'max', 'max-todo', 'max-p1', 'v3'].includes(m)) throw new Error(`OC_HARNESS_TRIM=${m}: expected 0, 1, max, max-todo, max-p1 or v3`);
+  // v3 = round 1 (prompt, glob/grep/skill off, todowrite KEPT) + the general subagent gets the
+  // same trimmed prompt (round 1 left it the untrimmed family prompt) + explore disabled (as-now
+  // never delegated to it; its prompt names the disabled Glob/Grep) + OPENCODE_TRIM_V3_TOOL_EDITS.
+  if (m === 'v3') return opencodeHarnessTrimV3({ apiModel, stateDir });
   // max-todo = max with todowrite KEPT. The 2026-09-26 Luna smoke lost 2 solves under max (3/6 ->
   // 1/6, shorter rollouts, narrower fixes); todowrite removal is max's only behaviour lever, so
   // this isolates it.
@@ -210,6 +234,27 @@ export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiMod
       tools: Object.fromEntries((max && !keepTodo ? OPENCODE_TRIM_MAX_DISABLED_TOOLS : OPENCODE_TRIM_DISABLED_TOOLS).map(name => [name, false])),
       agentBuild: { prompt },
       ...(max ? { agents: { general: { prompt }, explore: { prompt: readPrompt(opencodeTrimMaxPrompt('explore')) } } } : {}),
+    },
+    files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(path.join(TRIM_DIR, OPENCODE_TRIM_PLUGIN), 'utf8') },
+    plugins: [plugin],
+    stateEntries: [OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT],
+  };
+}
+
+function opencodeHarnessTrimV3({ apiModel, stateDir }) {
+  const family = opencodePromptFamily(apiModel);
+  if (!family) throw new Error(`OC_HARNESS_TRIM: no trimmed opencode prompt for model ${apiModel}`);
+  if (!stateDir) throw new Error('OC_HARNESS_TRIM: stateDir required');
+  const plugin = [`file://${path.join(stateDir, OPENCODE_TRIM_PLUGIN)}`,
+    { edits: OPENCODE_TRIM_V3_TOOL_EDITS, report: path.join(stateDir, OPENCODE_TRIM_REPORT) }];
+  const prompt = readFileSync(path.join(TRIM_DIR, OPENCODE_TRIM_PROMPTS[family]), 'utf8');
+  return {
+    mode: `v3:prompt:${family}+general+noexplore+tools+tooldesc`,
+    config: {
+      plugin: [plugin],
+      tools: Object.fromEntries(OPENCODE_TRIM_DISABLED_TOOLS.map(name => [name, false])),
+      agentBuild: { prompt },
+      agents: { general: { prompt }, explore: { disable: true } },
     },
     files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(path.join(TRIM_DIR, OPENCODE_TRIM_PLUGIN), 'utf8') },
     plugins: [plugin],

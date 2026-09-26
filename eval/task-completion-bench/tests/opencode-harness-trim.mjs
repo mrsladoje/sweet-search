@@ -11,7 +11,7 @@
 import {
   buildMainOpencodeConfig, opencodeHarnessTrim, opencodeArmHarnessTrim, opencodePromptFamily,
   validateMainOpencodePreflight, OPENCODE_TRIM_DISABLED_TOOLS, OPENCODE_TRIM_TOOL_EDITS,
-  OPENCODE_TRIM_MAX_DISABLED_TOOLS, OPENCODE_TRIM_MAX_TOOL_EDITS,
+  OPENCODE_TRIM_MAX_DISABLED_TOOLS, OPENCODE_TRIM_MAX_TOOL_EDITS, OPENCODE_TRIM_V3_TOOL_EDITS,
   OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT, opencodeUnjailedEnv,
 } from '../harness/opencode-task-runner.mjs';
 import { spawnSync } from 'node:child_process';
@@ -114,7 +114,7 @@ try { validateMainOpencodePreflight({ version: '1.18.4', resolved: { plugin: t1.
 assert(ambientOff !== null, 'preflight with the switch off rejects the trim plugin (plugins default to [])');
 
 console.log('\nbad values throw:');
-for (const [mode, model] of [['yes', 'x-ai/grok-4.5'], ['2', 'x-ai/grok-4.5'], ['tools', 'x-ai/grok-4.5'], ['MAX', 'x-ai/grok-4.5'],
+for (const [mode, model] of [['yes', 'x-ai/grok-4.5'], ['2', 'x-ai/grok-4.5'], ['tools', 'x-ai/grok-4.5'], ['MAX', 'x-ai/grok-4.5'], ['V3', 'x-ai/grok-4.5'], ['v3', 'openai/gpt-5.3-codex'],
   ['1', 'google/gemini-3.8-pro'], ['1', 'openai/gpt-5.3-codex'], ['1', 'moonshotai/kimi-k3'], ['max', 'openai/gpt-5.3-codex']]) {
   let err = null;
   try { opencodeHarnessTrim(mode, { apiModel: model, stateDir: STATE }); } catch (e) { err = e; }
@@ -155,6 +155,37 @@ for (const kept of ['Edit files: Use Edit (NOT sed/awk)', '# Git and GitHub', 'O
 const drifted = { description: 'some other bash text' };
 await hooks['tool.definition']({ toolID: 'bash' }, drifted);
 assert(JSON.parse(readFileSync(reportPath, 'utf8')).bash.missing.length === 4, 'a drifted description is reported as missing edits');
+
+
+console.log('\nv3 (round 1 + general gets the trimmed prompt + explore disabled + v3 edits):');
+for (const [model, family] of [['openai/gpt-5.6-luna', 'gpt'], ['x-ai/grok-4.5', 'default'], ['anthropic/claude-opus-5.5', 'claude']]) {
+  const t = opencodeHarnessTrim('v3', { apiModel: model, stateDir: STATE });
+  const cfg = buildMainOpencodeConfig({ env: {}, trim: t });
+  const round1 = readFileSync(join(BENCH, 'harness/trim', `opencode-1.18.4-prompt-${family}.txt`), 'utf8');
+  assert(t.mode === `v3:prompt:${family}+general+noexplore+tools+tooldesc` && cfg.agent.build.prompt === round1,
+    `${family}: v3 build prompt is the round-1 prompt, byte for byte`);
+  assert(cfg.agent.general.prompt === round1 && JSON.stringify(cfg.agent.explore) === '{"disable":true}',
+    `${family}: general gets the same trimmed prompt; explore is disabled`);
+  assert(JSON.stringify(Object.keys(cfg.tools)) === JSON.stringify(OPENCODE_TRIM_DISABLED_TOOLS) && !('todowrite' in cfg.tools),
+    `${family}: v3 disables glob/grep/skill only (todowrite and task stay)`);
+  assert(cfg.plugin[0][1].edits === OPENCODE_TRIM_V3_TOOL_EDITS, `${family}: plugin gets the v3 edits`);
+}
+const capV3 = buildMainOpencodeConfig({ env: { SS_HARD_TURN_CAP: '40' }, trim: opencodeHarnessTrim('v3', { apiModel: 'openai/gpt-5.6-luna', stateDir: STATE }) });
+assert(capV3.agent.build.maxSteps === 40 && !capV3.agent.general.maxSteps, 'v3 keeps the hard turn cap on build only');
+const v3Hooks = await plugin({}, { edits: OPENCODE_TRIM_V3_TOOL_EDITS, report: join(STATE, 'v3-report.json') });
+const v3Out = {};
+for (const name of ['bash', 'read', 'task']) {
+  v3Out[name] = { description: tool(name).description, parameters: { marker: name } };
+  await v3Hooks['tool.definition']({ toolID: name }, v3Out[name]);
+}
+const v3Report = JSON.parse(readFileSync(join(STATE, 'v3-report.json'), 'utf8'));
+assert(Object.entries(OPENCODE_TRIM_V3_TOOL_EDITS).every(([name, list]) => v3Report[name]?.applied === list.length && !v3Report[name].missing.length),
+  'every v3 edit applies to the captured 1.18.4 descriptions', JSON.stringify(v3Report));
+assert(v3Out.bash.description === bashOut.description, 'v3 bash description = round-1 bash description');
+assert(v3Out.task.description.includes('If you are searching for a specific class definition like "class Foo", search for it directly instead')
+    && !/Glob tool|Grep tool|used proactively|not visible to the user/.test(v3Out.task.description) && v3Out.task.description.includes('- general:'),
+  'v3 task: the class-Foo deterrent stays (no disabled tool named); proactive and visibility notes go');
+assert(!v3Out.read.description.includes('image files and PDFs') && !/grep tool|glob tool/.test(v3Out.read.description), 'v3 read: image note and glob/grep pointers go');
 
 console.log('\nmax plugin edits:');
 const maxReportPath = join(STATE, 'max-report.json');
