@@ -7,7 +7,7 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 | harness | best option | evidence | status |
 |---|---|---|---|
 | Claude Code, Opus 5.5 | **`CC_HARNESS_TRIM=max-batch`** | confirm 10x2: 8/20 → 9/20 (no task lost); −22% realized, −26% ideal; turns +5% (max alone: +25%) | confirmed — best option. Caveat: its legs ran after the as-now legs, not interleaved |
-| Claude Code, Luna | `max` | screen 3x2: 3/6 → 2/6, −67% billed, 0 subagent calls; lean ties max | screen only (confirm queued last) |
+| Claude Code, Luna | `CC_HARNESS_TRIM=max` | confirm 10x2: 6/20 → 6/20 (identical per task); −71% billed; 0 subagent requests (as-now 140) | confirmed. max-batch cell running (trim legs, ~17:00) |
 | Codex, Luna | `CODEX_HARNESS_TRIM=1` (max) | confirm 10x2: 6/20 → 4/20, −10% cost, turns flat; pooled with screen 6/26 → 7/26 | NOT a proven solve win; small cost saving. max-wait loses (+17% cost) |
 | opencode, Luna | `OC_HARNESS_TRIM=1` (round-1 trim) | confirm 10x2: 6/20 → 5/20, −12% realized/ideal, −13% turns. Screens: max/max-todo/max-p1 each 1/6 (lost solves) | confirmed: cost + turn saving, solves ≈ equal |
 
@@ -62,6 +62,7 @@ All numbers: 6-20 rollouts per condition — directions, not publishable finding
 | CC Opus 5.5 | **max-batch** (trim legs 09:07–10:00, v the as-now legs of the same set) | 8/20 → **9/20** (eslint 1→2, no task lost) | $3.79 → $2.95 (**−22%**) | $4.19 → $3.11 (**−26%**) | 155 → 163 (+5%) | 27/68 → 63/36; cache writes −34% |
 | Codex Luna | 1 (max) | 6/20 → 4/20 (eslint 2→1, zlint 2→1; both look like variance: alternate fix / self-added P2P break) | $0.374 → $0.335 (−10%) | $0.350 → $0.315 | 355 → 356 | all ss-* both arms |
 | opencode Luna | 1 (round-1 trim) | 6/20 → 5/20 | $0.371 → $0.326 (−12%) | $0.344 → $0.302 (−12%) | 379 → 331 (−13%) | 0 tamper |
+| CC Luna | max | 6/20 → 6/20 (identical per task) | $1.779 → $0.524 billed (**−71%**) | main-only ideal −33% (lower bound: as-now subagents excluded) | main turns 437 → 495; subagent requests 140 → 0 | |
 
 ## Queue (screens first)
 
@@ -75,6 +76,8 @@ All numbers: 6-20 rollouts per condition — directions, not publishable finding
 5. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
 
 ## Decision log
+
+- 15:36 CC Luna confirm: max 6/20 = as-now 6/20, −71% billed (subagents 140 → 0) → confirmed. max-batch trim legs running.
 
 - 10:03 Opus max-batch: 9/20 v as-now 8/20, −22% realized / −26% ideal, turns +5% → CC Opus best = max-batch. CC Luna confirm (max) running.
 
