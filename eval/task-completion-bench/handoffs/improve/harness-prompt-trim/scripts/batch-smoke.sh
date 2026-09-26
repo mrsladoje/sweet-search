@@ -51,8 +51,17 @@ if pgrep -x sweet-search-daemon >/dev/null || pgrep -x sweet-search-maintainer >
   echo "ss-* daemons are running; stop them first"; exit 2
 fi
 
+# The ledger sweep deletes task images; reload any that are missing from the kept tars.
+for t in "$HOME"/.ss-eval/image-tars/*.tar; do
+  img=$(basename "$t" .tar | sed -E 's#^docker.io_swerebenchv2_#swerebenchv2/#; s#_([^_]+)$#:\1#')
+  docker image inspect "$img" >/dev/null 2>&1 || docker load -i "$t" | tail -1
+done
+# Round 2+ runs with the both-arm validity fixes on (BENCH_INCLUDE_UNTRACKED,
+# RT_ATTACH_REQUIRE_SAME_DIFF); they pass through from the caller's env. Never pool across them.
+echo "fix switches: BENCH_INCLUDE_UNTRACKED=${BENCH_INCLUDE_UNTRACKED:-0} RT_ATTACH_REQUIRE_SAME_DIFF=${RT_ATTACH_REQUIRE_SAME_DIFF:-0} ledger=${SMOKE_LEDGER:-confirm10}"
+
 TASKS=${SMOKE_TASKS:-zmap__zlint-299,superlistapp__super_editor-2516,ember-cli__eslint-plugin-ember-551,joshuakgoldberg__bingo-271}
-LEDGER=$BENCH/results/confirm10/ledger/ledger.jsonl
+LEDGER=${SMOKE_LEDGER:-$BENCH/results/confirm10/ledger/ledger.jsonl}
 TASKS_FILE=$BENCH/results/confirm10/specs.json
 STAMP=$(date +%Y%m%d-%H%M)
 RUNS=()
