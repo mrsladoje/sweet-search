@@ -75,3 +75,11 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 - 00:50 added Codex mode max-wait (verified at $0) and queued its screen.
 - 01:50 Opus smoke complete: max = best Claude Code (Opus) variant so far — +1 solve, −22% cost, search shifted to ss-*.
 - 01:23 Opus max legs done (2/3, 2/3, both cheaper than as-now r1); waiting for as-now r2. Confirm-set prep sweeping the ledger.
+
+## Morning follow-ups (not part of the A/B)
+
+- ~/.ss-eval/golden/pallets__flask@4c288bc… is PARTIAL: the stray run-pilot (01:49–01:55) was
+  indexing it when it was killed. Rebuild (ORT INT8 recipe) before any run uses that task.
+- Both-arm items for the owner (outside tonight's scope): run_tests' self-contradicting verdict
+  on build-failed packages; ss-search sufficient=YES on weak results; Luna code-mode exec wait
+  (tested sweet-only as Codex max-wait: no gain); gitDiffPatch against the recorded base SHA.
