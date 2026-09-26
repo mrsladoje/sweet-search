@@ -29,6 +29,8 @@ import { createEvaluatorRuntime } from './evaluator-runtime.mjs';
 import { ISOLATION_ON, jailPreflight, guardStatus, DENY_LOG } from './agent-jail.mjs';
 import { warnOnGateViolations, reportNameLockCensus } from './task-gates.mjs';
 import { RT_DEDUP_ON } from './rt-dedup.mjs';
+import { attachRequireSameDiffFromEnv } from './rt-inflight.mjs';
+import { includeUntrackedFromEnv } from './rt-untracked-diff.mjs';
 import { ensureGuard } from './egress-guard.mjs';
 import { scanPredictions } from './gold-tripwire.mjs';
 import { loadTaskFile } from './task-file-loader.mjs';
@@ -404,6 +406,17 @@ function reapRunDir(rundir) {
 const AGG_ONLY = process.env.SS_AGGREGATE_ONLY === '1';
 const runId = process.env.RUN_ID || `pilot-${INSTANCES.length}x${REPS}`;
 const RT_PROGRESS_ROW = progressRowFields({ flags: resolveProgressFlags() });
+// Both-arm validity switches, default OFF. Stamped on a row ONLY when on, so a default run's
+// rows stay byte-identical to the pre-switch schema.
+//   BENCH_INCLUDE_UNTRACKED=1      new files the agent never `git add`ed enter the run_tests
+//                                  diff and the graded patch (rt-untracked-diff.mjs).
+//   RT_ATTACH_REQUIRE_SAME_DIFF=1  a run_tests call attaches to an in-flight launch only when
+//                                  that launch was made on the same working tree (rt-inflight.mjs).
+const BENCH_SWITCH_ROW = {
+  ...(includeUntrackedFromEnv() ? { benchIncludeUntracked: true } : {}),
+  ...(attachRequireSameDiffFromEnv() ? { rtAttachRequireSameDiff: true } : {}),
+};
+if (Object.keys(BENCH_SWITCH_ROW).length) console.log(`[bench-switches] ON: ${Object.keys(BENCH_SWITCH_ROW).join(', ')}`);
 // L3 run_tests output dedup (rt-dedup.mjs): harness-side, BOTH arms, tests always run.
 // Stamped on every row like `isolated`, so a run's rows always say which way it ran.
 console.log(RT_DEDUP_ON
@@ -691,7 +704,7 @@ async function runOneTask(id) {
             if (rep === 0) predsByArm[arm].push(pred);
             (predsByRepArm[rep] = predsByRepArm[rep] || { native: [], sweet: [] })[arm].push(pred);
           }
-          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, provider: PROVIDER, harness: HARNESS, harnessVersion: HARNESS_VERSION, reasoning: REASONING, envConfigHash: preflightConfigHashes.get(id) || null, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, degenReran: d.reran, degenerateAfterRetry: d.degenerateAfterRetry, isolated: CLI_HARNESS && ISOLATION_ON, rtDedup: RT_DEDUP_ON, ...RT_PROGRESS_ROW, ...packingTreatmentRowFields({ sweet }), ...stripBig(r) });
+          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, provider: PROVIDER, harness: HARNESS, harnessVersion: HARNESS_VERSION, reasoning: REASONING, envConfigHash: preflightConfigHashes.get(id) || null, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, degenReran: d.reran, degenerateAfterRetry: d.degenerateAfterRetry, isolated: CLI_HARNESS && ISOLATION_ON, rtDedup: RT_DEDUP_ON, ...BENCH_SWITCH_ROW, ...RT_PROGRESS_ROW, ...packingTreatmentRowFields({ sweet }), ...stripBig(r) });
           try { const td = path.join(BENCH, 'results', runId, 'trajectories'); mkdirSync(td, { recursive: true }); writeFileSync(path.join(td, `${id}-${arm}-r${rep}.json`), JSON.stringify({ taskId: id, arm, rep, exitReason: r.exitReason, toolCounts: r.toolCounts, ranTests, escapeExamples: r.escapeExamples, trajectory: r.trajectory }, null, 2)); } catch { /* */ }
           prog.done++; prog.byArm[arm]++; if (r.patchHunks > 0 && !v.excluded) prog.predOk[arm]++; prog.cost += attemptCost;
           if (v.excluded) prog.shimExcluded = (prog.shimExcluded || 0) + 1;

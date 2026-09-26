@@ -132,6 +132,113 @@ export function newRunId() {
 // Below the boundary, so the inlined shim text never carries an import it does not use.
 import { fileURLToPath } from 'node:url';
 
+// ---- SAME-DIFF ATTACH: BEGIN ----
+// RT_ATTACH_REQUIRE_SAME_DIFF=1 — attach only to a run that tested THIS working tree.
+//
+// THE DEFECT. The attach rule above keys on nothing but "a launch is in flight". A baseline
+// launched before an edit and attached to after it returned the PRE-edit numbers under
+// "Authoritative test result for your CURRENT edits". With the switch on, every launch records
+// a key of the working tree it was started on, and a later call attaches only when its own key
+// is identical. Otherwise it starts a fresh run.
+//
+// THE STALE RUN IS LEFT TO FINISH, NEVER KILLED. Killing the docker CLIENT of a `docker run
+// --rm` leaves the container running, so a kill leaks exactly the resource it meant to save.
+// The fresh run is SERIALISED behind it instead: the broker already handles requests one at a
+// time, and the direct shim waits (bounded by one suite budget) for the stale verdict before
+// it starts. Per rollout, at most one suite runs at a time in both modes. The stale result
+// still reaches its own launcher; it is only never shown as the answer to the later call.
+//
+// Inlined into the shim ONLY when the switch is on, so the switch-off shim text is
+// byte-identical to the pre-switch one. Same import rule as above: `node:` builtins only, and
+// namespace bindings whose names cannot collide with the region above or the shim template.
+import * as attachCp from 'node:child_process';
+import * as attachCrypto from 'node:crypto';
+
+/** Untracked paths that never change what a suite sees. Kept equal to rt-untracked-diff.mjs. */
+export const ATTACH_KEY_UNTRACKED_EXCLUDES = [
+  '.sweet-search', 'CLAUDE.md', 'AGENTS.md', '.c3-handoff.md',
+  '.claude', '.codex', '.opencode', '.cursor',
+];
+const ATTACH_KEY_MAX_FILES = 500;
+const ATTACH_KEY_MAX_FILE_BYTES = 2 * 1024 * 1024;
+const ATTACH_KEY_MAX_TOTAL_BYTES = 16 * 1024 * 1024;   // past this, size+mtime stand in for content
+
+/** Written when a call refuses to attach to a run that was started on a different tree. */
+export const STALE_INFLIGHT_NOTE =
+  '[run_tests] A previous run_tests launch is still in flight, but it was started before your\n'
+  + '[run_tests] latest edits. Not attaching to it: a fresh run on your CURRENT edits starts once\n'
+  + '[run_tests] that one finishes, and its verdict follows below.\n';
+
+/**
+ * A hash of the tree a suite would test: `git diff HEAD` plus every untracked, non-ignored
+ * file (content when the set is small, size and mtime when it is not). Null when git fails;
+ * a null key never matches, so the call runs fresh rather than attach on unknown state.
+ */
+export function workingTreeKey(rundir) {
+  // GIT_OPTIONAL_LOCKS=0: this read must never take index.lock under the agent's own git.
+  const run = (args) => attachCp.execFileSync('git', ['-C', rundir, ...args], {
+    maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+  });
+  try {
+    const h = attachCrypto.createHash('sha256');
+    h.update(run(['diff', 'HEAD', '--', '.', ':(exclude).sweet-search']));
+    const names = run(['ls-files', '--others', '--exclude-standard', '-z', '--', '.',
+      ...ATTACH_KEY_UNTRACKED_EXCLUDES.map(p => ':(exclude)' + p)])
+      .toString('utf8').split('\0').filter(Boolean).sort();
+    let budget = names.length <= ATTACH_KEY_MAX_FILES ? ATTACH_KEY_MAX_TOTAL_BYTES : 0;
+    h.update('\0untracked\0' + names.length);
+    for (const name of names) {
+      h.update('\0' + name + '\0');
+      try {
+        const st = statSync(path.join(rundir, name));
+        if (st.isFile() && st.size <= ATTACH_KEY_MAX_FILE_BYTES && st.size <= budget) {
+          budget -= st.size;
+          h.update(readFileSync(path.join(rundir, name)));
+        } else h.update(st.size + ':' + st.mtimeMs);
+      } catch { h.update('?'); }
+    }
+    return h.digest('hex');
+  } catch { return null; }
+}
+
+/** markInflight, plus the key of the tree this run was launched on. */
+export function markInflightKeyed(ipcDir, id, argv = [], key = null) {
+  try { mkdirSync(ipcDir, { recursive: true }); } catch { /* exists */ }
+  try { writeFileSync(path.join(ipcDir, INFLIGHT + id), JSON.stringify({ argv, t: Date.now(), key })); } catch { /* best effort */ }
+}
+
+/**
+ * The live in-flight runs split by key: `match` is the youngest one launched on `key`,
+ * `other` the youngest one that was not. Stale markers are swept exactly as findInflight
+ * sweeps them. A run with no recorded key (an unkeyed marker) never matches.
+ * @returns {{match:string|null, other:string|null}}
+ */
+export function findInflightForKey(ipcDir, ttlMs, key, { now = Date.now() } = {}) {
+  findInflight(ipcDir, ttlMs, { now });                  // sweeps stale markers
+  let names = [];
+  try { names = readdirSync(ipcDir); } catch { return { match: null, other: null }; }
+  let match = null, matchAge = Infinity, other = null, otherAge = Infinity;
+  for (const n of names) {
+    if (!n.startsWith(INFLIGHT)) continue;
+    const id = n.slice(INFLIGHT.length);
+    if (existsSync(path.join(ipcDir, VERDICT + id))) continue;   // already answered
+    const age = ageOf(path.join(ipcDir, n), now);
+    if (age >= ttlMs) continue;
+    let launchedOn = null;
+    try { launchedOn = JSON.parse(readFileSync(path.join(ipcDir, n), 'utf8')).key ?? null; } catch { /* torn */ }
+    if (key !== null && launchedOn === key) { if (age < matchAge) { match = id; matchAge = age; } }
+    else if (age < otherAge) { other = id; otherAge = age; }
+  }
+  return { match, other };
+}
+
+/** True while run `id` is live: its marker exists and its verdict has not landed. */
+export function inflightPending(ipcDir, id) {
+  return existsSync(path.join(ipcDir, INFLIGHT + id)) && !existsSync(path.join(ipcDir, VERDICT + id));
+}
+// ---- SAME-DIFF ATTACH: END ----
+
 const INLINE_BOUNDARY = '// ============================ INLINE BOUNDARY ====';
 
 /**
@@ -148,6 +255,31 @@ export function inflightInlineSource() {
   // it must fail at shim-generation time on the host, not at run_tests time inside the jail.
   for (const m of body.matchAll(/^\s*import\s[^;]*?from\s*['"]([^'"]+)['"]/gm)) {
     if (!m[1].startsWith('node:')) throw new Error(`rt-inflight.mjs: "${m[1]}" is imported above the inline boundary; the shim cannot resolve it inside the jail`);
+  }
+  return body;
+}
+
+// Built by concatenation so the constants never match their own marker lines.
+const SAME_DIFF_BEGIN = '// ---- SAME-DIFF ' + 'ATTACH: BEGIN ----';
+const SAME_DIFF_END = '// ---- SAME-DIFF ' + 'ATTACH: END ----';
+
+/** RT_ATTACH_REQUIRE_SAME_DIFF=1. Read by the HOST at shim-generation time. */
+export function attachRequireSameDiffFromEnv(env = process.env) {
+  return env.RT_ATTACH_REQUIRE_SAME_DIFF === '1';
+}
+
+/**
+ * The SAME-DIFF ATTACH region, `export` stripped, for a shim generated with the switch on.
+ * It runs in the same scope as inflightInlineSource(), whose names it uses, so it is always
+ * appended AFTER that text and never on its own.
+ */
+export function sameDiffAttachInlineSource() {
+  const src = readFileSync(fileURLToPath(import.meta.url), 'utf8');
+  const a = src.indexOf(SAME_DIFF_BEGIN), b = src.indexOf(SAME_DIFF_END);
+  if (a < 0 || b < a) throw new Error('rt-inflight.mjs: SAME-DIFF ATTACH markers missing — the shim would be generated without its attach check');
+  const body = src.slice(a, b).replace(/^export /gm, '');
+  for (const m of body.matchAll(/^\s*import\s[^;]*?from\s*['"]([^'"]+)['"]/gm)) {
+    if (!m[1].startsWith('node:')) throw new Error(`rt-inflight.mjs: "${m[1]}" is imported in the SAME-DIFF ATTACH region; the shim cannot resolve it inside the jail`);
   }
   return body;
 }

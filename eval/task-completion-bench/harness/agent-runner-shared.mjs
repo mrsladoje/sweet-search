@@ -27,6 +27,7 @@ import {
   verifyShimIntegrity, verifyRunnerDirectoryIntegrity,
 } from './codex-task-runner.mjs';
 import { priceFor, costFromTurns, LEDGER_BASIS } from './ideal-cost.mjs';
+import { includeUntrackedFromEnv, untrackedBaselineFor, benchGitDiff } from './rt-untracked-diff.mjs';
 
 export { FRAME_OPEN, FRAME_CLOSE, priceFor, costFromTurns };
 
@@ -264,15 +265,26 @@ export function issuePrompt(problemStatement) {
 // Authoritative patch from git diff (counts edits even if not visible as tool calls).
 // Excludes the sweet-search index and every benchmark instruction surface so
 // neither arm's injected frame/policy appears in the graded patch.
-export function gitDiffPatch(rundir) {
+export function gitDiffPatch(rundir, { includeUntracked = includeUntrackedFromEnv() } = {}) {
   let finalPatch = '';
-  try {
-    finalPatch = execSync(
-      `git -C ${rundir} diff HEAD -- . ':(exclude).sweet-search' ':(exclude)CLAUDE.md' `
-      + `':(exclude)AGENTS.md' ':(exclude).claude/rules/sweet-search.md'`,
-      { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
-    );
-  } catch {}
+  if (includeUntracked) {
+    // BENCH_INCLUDE_UNTRACKED=1 (rt-untracked-diff.mjs): new files the agent never `git add`ed
+    // are graded too. Same exclusions as below, plus the harness-owned untracked paths and
+    // the pre-agent baseline writeRunTestsShim recorded for this rundir.
+    finalPatch = benchGitDiff(rundir, {
+      pathspecs: ['.', ':(exclude).sweet-search', ':(exclude)CLAUDE.md', ':(exclude)AGENTS.md',
+        ':(exclude).claude/rules/sweet-search.md'],
+      includeUntracked: true, baseline: untrackedBaselineFor(rundir),
+    }).diff;
+  } else {
+    try {
+      finalPatch = execSync(
+        `git -C ${rundir} diff HEAD -- . ':(exclude).sweet-search' ':(exclude)CLAUDE.md' `
+        + `':(exclude)AGENTS.md' ':(exclude).claude/rules/sweet-search.md'`,
+        { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
+      );
+    } catch {}
+  }
   const patchHunks = (finalPatch.match(/^@@ /gm) || []).length;
   const patchFiles = (finalPatch.match(/^diff --git /gm) || []).length;
   return { finalPatch, patchHunks, patchFiles };
