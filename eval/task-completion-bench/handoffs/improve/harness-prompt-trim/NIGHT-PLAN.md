@@ -44,9 +44,14 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
    requests on as-now; max already stopped delegating).
 3. codex-maxwait: Codex 1 + features.code_mode_buffered_exec=true (exec yield 10 s -> 30 s;
    verified by capture: the exec tool text says "Defaults to 30000 ms").
-4. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
+4. oc-maxp1: opencode max-todo tools/descriptions + ROUND-1 GPT prompt (isolates the
+   second-pass prompt cuts).
+5. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
 
 ## Decision log
+
+- 02:25 opencode max-todo r1: 0/3 (graphql failed despite 2 files) — todowrite alone does not
+  restore solves; queued max-p1 to test the second-pass prompt cuts.
 
 - RULE: never edit mac-smoke.sh or night-queue.sh while bash runs them (bash reads scripts
   incrementally). 01:55 a stale Opus launcher picked up an edited mac-smoke.sh and started a
