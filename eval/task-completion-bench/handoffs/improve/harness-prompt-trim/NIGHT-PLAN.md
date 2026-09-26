@@ -7,7 +7,7 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 | harness | best option | evidence | status |
 |---|---|---|---|
 | Claude Code, Opus 5.5 | **`CC_HARNESS_TRIM=max-batch`** | confirm 10x2: 8/20 → 9/20 (no task lost); −22% realized, −26% ideal; turns +5% (max alone: +25%) | confirmed — best option. Caveat: its legs ran after the as-now legs, not interleaved |
-| Claude Code, Luna | `CC_HARNESS_TRIM=max` | confirm 10x2: 6/20 → 6/20 (identical per task); −71% billed; 0 subagent requests (as-now 140) | confirmed. max-batch cell running (trim legs, ~17:00) |
+| Claude Code, Luna | `CC_HARNESS_TRIM=max` | confirm 10x2: 6/20 → 6/20 (identical per task); −71% billed; 0 subagent requests (as-now 140) | confirmed — best Luna option. max-batch lost: 5/20, +10% billed (below) |
 | Codex, Luna | `CODEX_HARNESS_TRIM=1` (max) | confirm 10x2: 6/20 → 4/20, −10% cost, turns flat; pooled with screen 6/26 → 7/26 | NOT a proven solve win; small cost saving. max-wait loses (+17% cost) |
 | opencode, Luna | `OC_HARNESS_TRIM=1` (round-1 trim) | confirm 10x2: 6/20 → 5/20, −12% realized/ideal, −13% turns. Screens: max/max-todo/max-p1 each 1/6 (lost solves) | confirmed: cost + turn saving, solves ≈ equal |
 
@@ -63,6 +63,7 @@ All numbers: 6-20 rollouts per condition — directions, not publishable finding
 | Codex Luna | 1 (max) | 6/20 → 4/20 (eslint 2→1, zlint 2→1; both look like variance: alternate fix / self-added P2P break) | $0.374 → $0.335 (−10%) | $0.350 → $0.315 | 355 → 356 | all ss-* both arms |
 | opencode Luna | 1 (round-1 trim) | 6/20 → 5/20 | $0.371 → $0.326 (−12%) | $0.344 → $0.302 (−12%) | 379 → 331 (−13%) | 0 tamper |
 | CC Luna | max | 6/20 → 6/20 (identical per task) | $1.779 → $0.524 billed (**−71%**) | main-only ideal −33% (lower bound: as-now subagents excluded) | main turns 437 → 495; subagent requests 140 → 0 | |
+| CC Luna | max-batch (trim legs 15:25–18:02) | 6/20 → 5/20 (eslint 2/2 → 1/2; max had 2/2) | $0.577 billed (−68% v as-now, **+10% v max**) | | main requests 419 (max 495); subagent requests 91, all in one svgr rollout ($0.174 of $0.577) | 180 / 0 |
 
 ## Queue (screens first)
 
@@ -76,6 +77,8 @@ All numbers: 6-20 rollouts per condition — directions, not publishable finding
 5. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
 
 ## Decision log
+
+- 18:05 CC Luna max-batch: 5/20 (one eslint solve lost v max and as-now), $0.577 billed v max $0.524; one svgr rollout delegated 91 subagent requests. → CC Luna best stays **max**; max-batch is Opus-only. Queue empty; next runs wait for the owner. Interim transcript audit (not yet verified here): Opus eslint +1 is harness-infra (as-now L1 ran in the disk fault); counting the discarded degeneration re-run attempts, Opus max ≈ −0.3% and max-batch ≈ −18% realized; untrimmed Mac arm had live WebFetch (one Explore subagent fetched the upstream fix, rollout still unsolved).
 
 - 15:36 CC Luna confirm: max 6/20 = as-now 6/20, −71% billed (subagents 140 → 0) → confirmed. max-batch trim legs running.
 
