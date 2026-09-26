@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { CANONICAL_POLICY_BODY, getMcpPolicyBody } from '../../scripts/inject-agent-instructions.js';
 import { _internal as claudeRulesInternal } from '../../scripts/write-claude-rules.js';
 import { CLAUDE_OUTPUT_STYLE_REL } from '../../scripts/install-claude-system-prompt.js';
+import { CLAUDE_LEAN_AGENT_REL } from '../../scripts/install-claude-lean-harness.js';
 
 const CLI = join(import.meta.dirname, '../..', 'core', 'cli.js');
 const NODE = process.execPath;
@@ -138,7 +139,9 @@ describe('sweet-search init (integration)', () => {
     expect(readFileSync(rulesPath(), 'utf8')).toBe(
       `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
     );
-    expect(existsSync(join(tempDir, CLAUDE_OUTPUT_STYLE_REL))).toBe(true);
+    // The CLI override ships in the lean-harness main agent (not the output style).
+    expect(existsSync(join(tempDir, CLAUDE_LEAN_AGENT_REL))).toBe(true);
+    expect(existsSync(join(tempDir, CLAUDE_OUTPUT_STYLE_REL))).toBe(false);
     expect(existsSync(reminderHookPath())).toBe(false);
     expect(stdout).toContain('MCP server'); // surfaced in the final report
   });
@@ -150,7 +153,9 @@ describe('sweet-search init (integration)', () => {
     expect(readFileSync(rulesPath(), 'utf8')).toBe(
       `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
     );
-    expect(existsSync(join(tempDir, CLAUDE_OUTPUT_STYLE_REL))).toBe(true);
+    // The CLI override ships in the lean-harness main agent (not the output style).
+    expect(existsSync(join(tempDir, CLAUDE_LEAN_AGENT_REL))).toBe(true);
+    expect(existsSync(join(tempDir, CLAUDE_OUTPUT_STYLE_REL))).toBe(false);
     expect(existsSync(reminderHookPath())).toBe(false);
     expect(existsSync(join(tempDir, 'CLAUDE.md'))).toBe(false);
 
@@ -162,6 +167,7 @@ describe('sweet-search init (integration)', () => {
       `${claudeRulesInternal.SENTINEL}\n${getMcpPolicyBody()}\n`,
     );
     expect(existsSync(join(tempDir, CLAUDE_OUTPUT_STYLE_REL))).toBe(false);
+    expect(existsSync(join(tempDir, CLAUDE_LEAN_AGENT_REL))).toBe(false);
     expect(existsSync(join(tempDir, 'CLAUDE.md'))).toBe(false);
     expect(existsSync(join(tempDir, '.mcp.json'))).toBe(true);
 
