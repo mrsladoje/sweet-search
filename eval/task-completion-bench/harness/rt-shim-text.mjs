@@ -16,7 +16,7 @@
 // test verdict compared as ledger-identical. Hashing the generated TEXT covers the inlined
 // protocol, the template, and any future inlining, without false-staling a ledger every time
 // an unrelated line of the 58 KB codex adapter is edited.
-import { inflightInlineSource } from './rt-inflight.mjs';
+import { inflightInlineSource, sameDiffAttachInlineSource } from './rt-inflight.mjs';
 
 /**
  * BROKER REQUESTER — the variant that runs under isolation, INSIDE the jail.
@@ -27,20 +27,37 @@ import { inflightInlineSource } from './rt-inflight.mjs';
  * rmSync / existsSync, so this text must not declare its own — a duplicate binding is a
  * SyntaxError, and the shim would die before writing a byte.
  */
-export function brokerRequesterSource({ reqDir, testTimeoutSec }) {
-  return `${inflightInlineSource()}
-const IPC = ${JSON.stringify(reqDir)};
-const tSec = ${Number(testTimeoutSec) || 300};
-const waitSec = 2 * tSec + 120;                          // baseline + current suite + overhead
-process.stdout.write(RUNNING_BANNER);
-const attachId = findInflight(IPC, waitSec * 1000);
+export function brokerRequesterSource({ reqDir, testTimeoutSec, sameDiff = null }) {
+  // RT_ATTACH_REQUIRE_SAME_DIFF=1 (`sameDiff` = { rundir }): attach only to a launch made on
+  // the same working tree, else queue a fresh request behind it. The broker serves requests
+  // one at a time, so the stale suite finishes first and no second suite runs beside it.
+  // Switch off, the text below is byte-identical to the pre-switch requester.
+  const attach = sameDiff
+    ? `const treeKey = workingTreeKey(${JSON.stringify(sameDiff.rundir)});
+const live = findInflightForKey(IPC, waitSec * 1000, treeKey);
+const attachId = live.match;
+const id = attachId || newRunId();
+if (attachId) process.stdout.write(ATTACH_NOTE);
+else {
+  if (live.other) process.stdout.write(STALE_INFLIGHT_NOTE);
+  markInflightKeyed(IPC, id, process.argv.slice(2), treeKey);
+  writeFileSync(IPC + '/req-' + id, JSON.stringify(process.argv.slice(2)));
+}
+`
+    : `const attachId = findInflight(IPC, waitSec * 1000);
 const id = attachId || newRunId();
 if (attachId) process.stdout.write(ATTACH_NOTE);
 else {
   markInflight(IPC, id, process.argv.slice(2));
   writeFileSync(IPC + '/req-' + id, JSON.stringify(process.argv.slice(2)));
 }
-const deadline = Date.now() + waitSec * 1000;
+`;
+  return `${inflightInlineSource()}${sameDiff ? sameDiffAttachInlineSource() : ''}
+const IPC = ${JSON.stringify(reqDir)};
+const tSec = ${Number(testTimeoutSec) || 300};
+const waitSec = 2 * tSec + 120;                          // baseline + current suite + overhead
+process.stdout.write(RUNNING_BANNER);
+${attach}const deadline = Date.now() + waitSec * 1000;
 const res = IPC + '/res-' + id;
 while (Date.now() < deadline) {
   if (!attachId && existsSync(res)) {
@@ -66,15 +83,37 @@ process.stdout.write(NO_VERDICT_NOTE(waitSec));
  * the runtime by absolute path. That module is large and has its own dependency tree; there
  * is nothing to gain from inlining it.
  */
-export function directShimSource({ cfgPath, runtimePath, ipcDir, testTimeoutSec }) {
-  return `${inflightInlineSource()}
+export function directShimSource({ cfgPath, runtimePath, ipcDir, testTimeoutSec, sameDiff = null }) {
+  // RT_ATTACH_REQUIRE_SAME_DIFF=1: as in the requester, plus the serialisation the broker
+  // gives for free — a fresh run waits (at most one suite budget) for the stale one to land,
+  // so a rollout never has two suites running at once. Off, byte-identical to before.
+  const tSecDirect = Number(testTimeoutSec) || 300;
+  const findLine = sameDiff
+    ? `const treeKey = workingTreeKey(${JSON.stringify(sameDiff.rundir)});
+const live = findInflightForKey(IPC, waitSec * 1000, treeKey);
+const attachId = live.match;
+`
+    : `const attachId = findInflight(IPC, waitSec * 1000);
+`;
+  const launch = sameDiff
+    ? `const id = newRunId();
+markInflightKeyed(IPC, id, process.argv.slice(2), treeKey);
+if (live.other) {
+  process.stdout.write(STALE_INFLIGHT_NOTE);
+  const until = Date.now() + ${tSecDirect} * 1000;
+  while (Date.now() < until && inflightPending(IPC, live.other)) await new Promise(r => setTimeout(r, 400));
+}
+`
+    : `const id = newRunId();
+markInflight(IPC, id, process.argv.slice(2));
+`;
+  return `${inflightInlineSource()}${sameDiff ? sameDiffAttachInlineSource() : ''}
 import { runTestsWithLevers } from ${JSON.stringify(runtimePath)};
 const c = JSON.parse(readFileSync(${JSON.stringify(cfgPath)}, 'utf8'));
 const IPC = ${JSON.stringify(ipcDir)};
-const waitSec = 2 * (${Number(testTimeoutSec) || 300}) + 120;
+const waitSec = 2 * (${tSecDirect}) + 120;
 process.stdout.write(RUNNING_BANNER);
-const attachId = findInflight(IPC, waitSec * 1000);
-if (attachId) {
+${findLine}if (attachId) {
   process.stdout.write(ATTACH_NOTE);
   const deadline = Date.now() + waitSec * 1000;
   while (Date.now() < deadline) {
@@ -85,9 +124,7 @@ if (attachId) {
   process.stdout.write(NO_VERDICT_NOTE(waitSec));
   process.exit(0);
 }
-const id = newRunId();
-markInflight(IPC, id, process.argv.slice(2));
-let out;
+${launch}let out;
 try { out = runTestsWithLevers(c, { argv: process.argv.slice(2) }); }
 catch (e) { out = '[run_tests error] ' + String(e && e.message || e); }
 publishVerdict(IPC, id, out);
@@ -107,7 +144,12 @@ const CANON = Object.freeze({
   testTimeoutSec: 300,
 });
 
+// The same, with RT_ATTACH_REQUIRE_SAME_DIFF=1. Hashed too, so a change to the switch-on
+// text stales the ledger even though a default run never generates it.
+const CANON_SAME_DIFF = Object.freeze({ ...CANON, sameDiff: Object.freeze({ rundir: '/CANON/rundir' }) });
+
 /** Both shim variants under canonical parameters — the bytes the fingerprint hashes. */
 export function shimFingerprintSource() {
-  return brokerRequesterSource(CANON) + '\n---\n' + directShimSource(CANON);
+  return brokerRequesterSource(CANON) + '\n---\n' + directShimSource(CANON)
+    + '\n---\n' + brokerRequesterSource(CANON_SAME_DIFF) + '\n---\n' + directShimSource(CANON_SAME_DIFF);
 }
