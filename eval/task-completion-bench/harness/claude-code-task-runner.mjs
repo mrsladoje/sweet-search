@@ -163,6 +163,12 @@ export const CLAUDE_TRIM_BASE_PROMPT = [
   '- When you have enough information to act, act.',
 ].join('\n');
 
+// max-batch = max + one generic batching line. On the Opus confirm set, max tied solves and cut
+// cost but took +25% turns: without the bypass-mode "edit with sed/heredocs" text the agent
+// splits an edit, its check and the test run into separate calls.
+export const CLAUDE_TRIM_BASE_PROMPT_BATCH = `${CLAUDE_TRIM_BASE_PROMPT}
+- Combine dependent shell steps into one Bash call where you can, for example an edit made with a short script together with the command that checks it.`;
+
 // Env for 'max' / 'lean'. Measured with count_tokens on the real request shape:
 //   THRIFTY_SONIC=0          bash-first attachment off (as mode 1). Internal.
 //   DISABLE_AUTO_MEMORY=1    the # Memory section (768 tokens) carries a per-rollout path, so
@@ -222,7 +228,7 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
       env: { ...CLAUDE_HARNESS_TRIM_ENV_MAX },
     };
   }
-  if (m === 'max') {
+  if (m === 'max' || m === 'max-batch') {
     // general-purpose is REPLACED by --agents (not denied); the built-in catch-all `claude`
     // (Claude Code's default subagent prompt) and Plan are denied, so our type is the only one.
     const deny = [...CLAUDE_HARNESS_TRIM_DENY.filter(t => t !== 'Agent(general-purpose)'),
@@ -230,12 +236,12 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
     return {
       mode: m,
       // --system-prompt and --agents BEFORE the variadic --disallowedTools, which must stay LAST.
-      args: ['--system-prompt', CLAUDE_TRIM_BASE_PROMPT, '--agents', CLAUDE_TRIM_AGENTS_JSON,
+      args: ['--system-prompt', m === 'max-batch' ? CLAUDE_TRIM_BASE_PROMPT_BATCH : CLAUDE_TRIM_BASE_PROMPT, '--agents', CLAUDE_TRIM_AGENTS_JSON,
         '--disallowedTools', ...deny],
       env: { ...CLAUDE_HARNESS_TRIM_ENV_MAX },
     };
   }
-  if (!['1', 'tools', 'steer'].includes(m)) throw new Error(`CC_HARNESS_TRIM=${m}: expected 0, 1, tools, steer, max or lean`);
+  if (!['1', 'tools', 'steer'].includes(m)) throw new Error(`CC_HARNESS_TRIM=${m}: expected 0, 1, tools, steer, max, max-batch or lean`);
   const tools = m === '1' || m === 'tools';
   const steer = m === '1' || m === 'steer';
   return {
