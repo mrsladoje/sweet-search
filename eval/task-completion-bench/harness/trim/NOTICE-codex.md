@@ -113,3 +113,21 @@ user messages, "Avoid blocking sleep or wait calls longer than 60 seconds" (the 
 300 s run_tests wait), a verbatim duplicate `$HOME` line, the Answer/Diagnose/Monitor request
 types, the babysit terminal-condition line, and the clarifying-questions line. Sizes as sent:
 gpt-5.5 7,214 → 5,663 chars; luna 8,062 → 6,034.
+
+## v3 (luna only, `CODEX_HARNESS_TRIM=v3`, 2026-09-26)
+
+`codex-0.146.1-instructions-sweet-gpt-5.6-luna-v3.md`: built from the same capture and sha256 as
+the luna edit. It starts from the FIRST edition (commit a84b079) and changes it in two ways.
+
+| # | Source lines | What | Why |
+|---|---|---|---|
+| 1 | 35–38 | `## Intermediate commentary` cadence paragraphs | **Restored** (the first edition deleted them). After a FAIL `run_tests` verdict, as-now wrote commentary next 50% of the time and finished 4%; the second pass (without these lines) 27% and 14%. |
+| 2 | 29–30 | "The user may send a new message while you are still working…" | Deleted: no user writes during a headless run. |
+| 3 | 82 | "Avoid performing blocking sleep or wait calls longer than 60 seconds…" | Deleted: contradicts the frame's `yield_time_ms=300000` rule for `run_tests`. |
+| 4 | 83 | "Never repurpose `$HOME`…" | Deleted: verbatim duplicate of line 124, which stays. |
+
+Kept (unlike mode 1): all of `## Autonomy and persistence` (request types, "exhaust safe
+in-scope checks and alternatives", the clarifying-questions line), the `<permissions instructions>`
+message, `<environment_context>` and `update_plan`. Config keys: the first four only
+(`web_search`, `features.goals`, `tools.experimental_request_user_input`,
+`skills.include_instructions`). As sent: 7,789 chars (first edition 8,062; mode 1 6,034).

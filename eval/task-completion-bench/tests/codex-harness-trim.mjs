@@ -8,7 +8,7 @@
 import {
   codexHarnessTrim, codexHarnessTrimArgs, codexBenchConfigToml, buildPrivateHome, PRIVATE_HOME_LINKS,
   CODEX_HARNESS_TRIM_CONFIG,
-  CODEX_HARNESS_TRIM_SOURCES, CODEX_HARNESS_TRIM_STATE_FILE,
+  CODEX_HARNESS_TRIM_SOURCES, CODEX_HARNESS_TRIM_STATE_FILE, CODEX_HARNESS_TRIM_V3_SOURCES,
 } from '../harness/codex-task-runner.mjs';
 import { buildInstructions, headerFor, sourceFor } from '../harness/trim/build-codex-instructions.mjs';
 import { mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
@@ -85,6 +85,34 @@ const luna = readFileSync(CODEX_HARNESS_TRIM_SOURCES['gpt-5.6-luna'], 'utf8');
 for (const s of ['you preserve them, ignore unrelated edits', 'Change or build: implement the requested change',
   'Never run commands such as `rm -rf $HOME`', 'prefer parallelization over sequential tool calls']) {
   assert(luna.includes(s), `gpt-5.6-luna: coding rule kept: ${s.slice(0, 50)}`);
+}
+
+console.log('\nmode v3 (first edition + zero-risk cuts, luna only):');
+{
+  const S3 = mkdtempSync(join(tmpdir(), 'codex-trim-v3-test-'));
+  const v3 = codexHarnessTrim({ sweet: true, mode: 'v3', model: 'openai/gpt-5.6-luna' });
+  const a3 = codexHarnessTrimArgs(v3, S3);
+  assert(v3.mode === 'instructions-v3+tools-v3' && v3.source === CODEX_HARNESS_TRIM_V3_SOURCES['gpt-5.6-luna'],
+    'sweet + v3 on luna picks the v3 edit and records its own mode');
+  assert(throws(() => codexHarnessTrim({ sweet: true, mode: 'v3', model: 'gpt-5.5' })), 'sweet + v3 refuses gpt-5.5 (no v3 edit)');
+  assert(codexHarnessTrim({ sweet: false, mode: 'v3', model: 'openai/gpt-5.6-luna' }).mode === null, 'native + v3 never gets the trim');
+  assert(JSON.stringify(a3.slice(2).filter((_, i) => i % 2)) === JSON.stringify([
+    'web_search="disabled"', 'features.goals=false',
+    'tools.experimental_request_user_input.enabled=false', 'skills.include_instructions=false',
+  ]), 'sweet + v3 sends only the first-edition keys (permissions, environment context and update_plan stay)');
+  const text = readFileSync(CODEX_HARNESS_TRIM_V3_SOURCES['gpt-5.6-luna'], 'utf8');
+  const body = text.slice(headerFor('gpt-5.6-luna-v3').length);
+  assert(text.startsWith(headerFor('gpt-5.6-luna-v3')) && body === buildInstructions('gpt-5.6-luna-v3', sourceFor('gpt-5.6-luna-v3')),
+    'v3: the committed file equals the reviewed deletion build of the 0.146.1 capture');
+  assert(readFileSync(join(S3, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8') === body, 'v3: the model gets the edit with the header stripped');
+  for (const s of ['reach first for `rg`', 'Skills', '# Personality', 'Formatting rules', 'Visualizations', 'may send',
+    'longer than 60 seconds', 'Never praise your plan']) assert(!body.includes(s), `v3: removed: ${s}`);
+  for (const s of ['Diagnose:', 'babysit', 'exhaust safe in-scope checks and alternatives', 'clarifying questions or objections',
+    'start with a message in the `commentary` channel', 'Change or build: implement the requested change',
+    'Never run commands such as `rm -rf $HOME`', 'Use `apply_patch` for'])
+    assert(body.includes(s), `v3: kept: ${s.slice(0, 50)}`);
+  assert(body.split('Never repurpose `$HOME`').length === 2, 'v3: the $HOME rule appears once (duplicate removed)');
+  rmSync(S3, { recursive: true, force: true });
 }
 
 console.log('\nunjailed bench-owned CODEX_HOME config:');

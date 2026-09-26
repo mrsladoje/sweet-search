@@ -204,7 +204,8 @@ export function buildPrivateHome(privateHome, { realHome, codexHome }) {
 //                  timezone); tools.update_plan.enabled=false drops update_plan (a separate turn per
 //                  call in code mode; 3 calls in 1 of 6 untrimmed Luna smoke rollouts, 0 trimmed).
 //                  Captured on the OpenRouter route only; re-capture before a subscription run.
-// Mode values: unset/'0' = off (argv and state dir byte-identical), '1' = on.
+// Mode values: unset/'0' = off (argv and state dir byte-identical), '1' = on, 'max-wait',
+// 'v3' (see CODEX_HARNESS_TRIM_V3_CONFIG).
 export const CODEX_HARNESS_TRIM_CONFIG = Object.freeze([
   'web_search="disabled"',
   'features.goals=false',
@@ -214,10 +215,20 @@ export const CODEX_HARNESS_TRIM_CONFIG = Object.freeze([
   'include_environment_context=false',
   'tools.update_plan.enabled=false',
 ]);
+// v3 (2026-09-26, handoffs/improve/harness-prompt-trim): the FIRST edition's keys only. The
+// permissions message, <environment_context> and update_plan stay: update_plan ran in 4 of 32
+// as-now Luna rollouts (3 solved, incl. both multi-file eslint solves), and mode 1 — which drops
+// all three — finished on a red run_tests verdict after a green baseline in 3/26 rollouts
+// (as-now 0/32). Solves >= as-now is the goal; these cost ~200 cached tokens a turn.
+export const CODEX_HARNESS_TRIM_V3_CONFIG = Object.freeze(CODEX_HARNESS_TRIM_CONFIG.slice(0, 4));
 // Edited base prompt per model id (the `openai/` prefix is stripped before lookup).
 export const CODEX_HARNESS_TRIM_SOURCES = Object.freeze({
   'gpt-5.5': path.join(__dirname, 'trim', 'codex-0.146.1-instructions-sweet.md'),
   'gpt-5.6-luna': path.join(__dirname, 'trim', 'codex-0.146.1-instructions-sweet-gpt-5.6-luna.md'),
+});
+// v3 edits exist for luna only; any other model is refused under v3.
+export const CODEX_HARNESS_TRIM_V3_SOURCES = Object.freeze({
+  'gpt-5.6-luna': path.join(__dirname, 'trim', 'codex-0.146.1-instructions-sweet-gpt-5.6-luna-v3.md'),
 });
 // Written into the runner state dir: that dir is bound at the same path inside the jail,
 // while harness/ (under <repo>/eval) is masked there.
@@ -227,7 +238,12 @@ export function codexHarnessTrim({ sweet, mode = process.env.CODEX_HARNESS_TRIM,
   // Native has no ss-* rules to contradict and keeps Codex's full request in every condition.
   const m = sweet ? String(mode ?? '').trim() : '';
   if (!m || m === '0') return { mode: null };
-  if (m !== '1' && m !== 'max-wait') throw new Error(`CODEX_HARNESS_TRIM=${m}: expected 0, 1 or max-wait`);
+  if (m !== '1' && m !== 'max-wait' && m !== 'v3') throw new Error(`CODEX_HARNESS_TRIM=${m}: expected 0, 1, max-wait or v3`);
+  if (m === 'v3') {
+    const v3 = CODEX_HARNESS_TRIM_V3_SOURCES[String(model).replace(/^openai\//, '')];
+    if (!v3) throw new Error(`CODEX_HARNESS_TRIM=v3: no v3 edit for ${model} (have ${Object.keys(CODEX_HARNESS_TRIM_V3_SOURCES).join(', ')})`);
+    return { mode: 'instructions-v3+tools-v3', source: v3, config: CODEX_HARNESS_TRIM_V3_CONFIG };
+  }
   const source = CODEX_HARNESS_TRIM_SOURCES[String(model).replace(/^openai\//, '')];
   if (!source) {
     throw new Error(`CODEX_HARNESS_TRIM=1: no edited base prompt for ${model} (have ${Object.keys(CODEX_HARNESS_TRIM_SOURCES).join(', ')}) — capture and edit it first`);
@@ -247,7 +263,7 @@ export function codexHarnessTrimArgs(trim, stateDir) {
   const file = path.join(stateDir, CODEX_HARNESS_TRIM_STATE_FILE);
   writeFileSync(file, readFileSync(trim.source, 'utf8').replace(/^<!--[\s\S]*?-->\n/, ''));
   return ['-c', `model_instructions_file=${JSON.stringify(file)}`,
-    ...[...CODEX_HARNESS_TRIM_CONFIG, ...(trim.extra || [])].flatMap(kv => ['-c', kv])];
+    ...[...(trim.config || CODEX_HARNESS_TRIM_CONFIG), ...(trim.extra || [])].flatMap(kv => ['-c', kv])];
 }
 
 // Broker mode (agent sandbox): codex's Linux sandbox blocks unix-socket connects, so a
