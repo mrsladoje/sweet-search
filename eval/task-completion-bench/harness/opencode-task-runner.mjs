@@ -187,19 +187,22 @@ export function opencodePromptFamily(apiModel) {
 export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiModel, stateDir } = {}) {
   const m = String(mode ?? '').trim();
   if (!m || m === '0') return { mode: null, config: {}, files: {}, plugins: [], stateEntries: [] };
-  if (!['1', 'max', 'max-todo'].includes(m)) throw new Error(`OC_HARNESS_TRIM=${m}: expected 0, 1, max or max-todo`);
+  if (!['1', 'max', 'max-todo', 'max-p1'].includes(m)) throw new Error(`OC_HARNESS_TRIM=${m}: expected 0, 1, max, max-todo or max-p1`);
   // max-todo = max with todowrite KEPT. The 2026-09-26 Luna smoke lost 2 solves under max (3/6 ->
   // 1/6, shorter rollouts, narrower fixes); todowrite removal is max's only behaviour lever, so
   // this isolates it.
-  const max = m === 'max' || m === 'max-todo';
-  const keepTodo = m === 'max-todo';
+  // max-p1 = max-todo but with the ROUND-1 (lighter) model-family prompt, for the main agent and
+  // the general subagent: isolates the second-pass prompt cuts from the tool/description cuts.
+  const max = m === 'max' || m === 'max-todo' || m === 'max-p1';
+  const keepTodo = m === 'max-todo' || m === 'max-p1';
+  const round1Prompt = m === 'max-p1';
   const family = opencodePromptFamily(apiModel);
   if (!family) throw new Error(`OC_HARNESS_TRIM: no trimmed opencode prompt for model ${apiModel}`);
   if (!stateDir) throw new Error('OC_HARNESS_TRIM: stateDir required');
   const plugin = [`file://${path.join(stateDir, OPENCODE_TRIM_PLUGIN)}`,
     { edits: max ? OPENCODE_TRIM_MAX_TOOL_EDITS : OPENCODE_TRIM_TOOL_EDITS, report: path.join(stateDir, OPENCODE_TRIM_REPORT) }];
   const readPrompt = file => readFileSync(path.join(TRIM_DIR, file), 'utf8');
-  const prompt = readPrompt(max ? opencodeTrimMaxPrompt(family) : OPENCODE_TRIM_PROMPTS[family]);
+  const prompt = readPrompt(max && !round1Prompt ? opencodeTrimMaxPrompt(family) : OPENCODE_TRIM_PROMPTS[family]);
   return {
     mode: max ? `${m}:prompt:${family}+subagents+tools+tooldesc` : `prompt:${family}+tools+tooldesc`,
     config: {
