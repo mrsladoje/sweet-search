@@ -135,7 +135,7 @@ export function buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, effor
 //            permission mode sees. UNDOCUMENTED internal variable: research only, re-verify
 //            with a capture on every Claude Code version before trusting a run.
 // Mode values: unset/'0' = off (args and env byte-identical), 'tools', 'steer', '1' = both,
-// 'max' / 'lean' = the second pass below.
+// 'max' / 'max-batch' / 'lean' / 'lean-batch' = the second pass below.
 export const CLAUDE_HARNESS_TRIM_DENY = Object.freeze([
   'SendMessage', 'Workflow', 'ScheduleWakeup', 'CronCreate', 'EnterWorktree', 'ExitWorktree',
   'ReportFindings', 'Skill', 'NotebookEdit', 'ListAgents', 'WebSearch', 'WebFetch', 'TaskStop',
@@ -219,11 +219,15 @@ export const CLAUDE_TRIM_AGENTS_JSON = JSON.stringify({
 export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
   const m = String(mode ?? '').trim();
   if (!m || m === '0') return { mode: null, args: [], env: {} };
-  if (m === 'lean') {
+  if (m === 'lean' || m === 'lean-batch') {
     // lean also drops the Agent tool (no delegation): opt-in only, reported separately.
+    // lean-batch = lean + the max-batch batching line. For Luna: Luna fills every optional Agent
+    // parameter (run_in_background, isolation: worktree, model), so a delegation becomes background
+    // worktree subagents — 140 subagent requests on the as-now confirm set and 91 subagent turns on
+    // one max-batch rollout, none of them changing a solve (DIAG-CLAUDECODE.md).
     return {
       mode: m,
-      args: ['--system-prompt', CLAUDE_TRIM_BASE_PROMPT, '--disallowedTools',
+      args: ['--system-prompt', m === 'lean-batch' ? CLAUDE_TRIM_BASE_PROMPT_BATCH : CLAUDE_TRIM_BASE_PROMPT, '--disallowedTools',
         ...CLAUDE_HARNESS_TRIM_DENY.filter(t => !t.startsWith('Agent(')), 'Agent'],
       env: { ...CLAUDE_HARNESS_TRIM_ENV_MAX },
     };
@@ -241,7 +245,7 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
       env: { ...CLAUDE_HARNESS_TRIM_ENV_MAX },
     };
   }
-  if (!['1', 'tools', 'steer'].includes(m)) throw new Error(`CC_HARNESS_TRIM=${m}: expected 0, 1, tools, steer, max, max-batch or lean`);
+  if (!['1', 'tools', 'steer'].includes(m)) throw new Error(`CC_HARNESS_TRIM=${m}: expected 0, 1, tools, steer, max, max-batch, lean or lean-batch`);
   const tools = m === '1' || m === 'tools';
   const steer = m === '1' || m === 'steer';
   return {
