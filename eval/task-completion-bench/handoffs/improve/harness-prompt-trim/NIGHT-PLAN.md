@@ -46,6 +46,7 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 | harness | variant | solves as-now → variant | realized cost | ideal cost | turns | before 1st edit (ss / shell search+read) |
 |---|---|---|---|---|---|---|
 | CC Opus 5.5 | max | 8/20 → 8/20 (eslint 1→2, svgr 1→0) | $3.79 → $3.40 (−10%) | $4.19 → $3.58 (−15%) | 155 → 194 (+25%) | 27/68 → 56/30 |
+| Codex Luna | 1 (max) | 6/20 → 4/20 (eslint 2→1, zlint 2→1; both look like variance: alternate fix / self-added P2P break) | $0.374 → $0.335 (−10%) | $0.350 → $0.315 | 355 → 356 | all ss-* both arms |
 
 ## Queue (screens first)
 
@@ -59,6 +60,10 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 5. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
 
 ## Decision log
+
+- 07:05 Codex confirm: trim −2 solves (6/20 → 4/20), −10% cost, turns flat. Pooled with the
+  round-2 screen (same trim): as-now 6/26 v trim 7/26, cost ≈ −8%. Verdict: NOT a proven solve
+  win for Codex; solves ≈ equal, small consistent cost saving. opencode confirm running.
 
 - 05:25 Opus confirm done (0 ungraded, 0 timeouts): max ties solves, −10% realized / −15% ideal,
   but +25% turns (Edit + separate run_tests + single-range ss-read instead of one batched shell
