@@ -4,6 +4,7 @@ import path from 'node:path';
 import { mergeEvaluationReportFile, mergeTaskRecordFile } from './result-retention.mjs';
 import { vaultTarName } from './env-ledger.mjs';   // derived-image vault tar filename (single source of truth)
 import { stripCollidingPaths } from './patch-strip.mjs';
+import { includeUntrackedFromEnv, benchGitDiff } from './rt-untracked-diff.mjs';
 
 const DERIVED_VAULT = process.env.SS_DERIVED_BACKUP || '/workspace/docker-derived-backup';
 
@@ -104,11 +105,16 @@ export function createEvaluatorRuntime(options) {
         const testScript = [].concat(task.install_config?.test_cmd || []).join(' && ');
         if (!testScript) return '[run_tests] no test_cmd for this task';
         let diff = '';
-        try {
-          diff = execSync(`git -C ${checkoutDir} diff HEAD -- . ':(exclude).sweet-search'`, {
-            encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
-          });
-        } catch { /* */ }
+        if (includeUntrackedFromEnv()) {
+          // BENCH_INCLUDE_UNTRACKED=1 (rt-untracked-diff.mjs): the agent's new files ride along.
+          diff = benchGitDiff(checkoutDir, { pathspecs: ['.', ':(exclude).sweet-search'], includeUntracked: true }).diff;
+        } else {
+          try {
+            diff = execSync(`git -C ${checkoutDir} diff HEAD -- . ':(exclude).sweet-search'`, {
+              encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
+            });
+          } catch { /* */ }
+        }
         const patchDir = `${checkoutDir}__rt`;
         try {
           rmSync(patchDir, { recursive: true, force: true });

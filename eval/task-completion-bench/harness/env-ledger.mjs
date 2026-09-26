@@ -21,6 +21,10 @@ const RT_HARNESS_SOURCE_NAMES = Object.freeze([
   'rt-shim-runtime.mjs',
   'rt-dedup.mjs',
   'rt-progress-controller.mjs',
+  // BENCH_INCLUDE_UNTRACKED's diff builder (added 2026-09-26, fingerprint version 6): the
+  // shim runtime and the grader both call it, so its bytes decide what patch a suite and a
+  // grade see.
+  'rt-untracked-diff.mjs',
 ]);
 
 // THE GRADER ITSELF (added 2026-08-12, fingerprint version 3).
@@ -82,7 +86,7 @@ const hashShimText = () => ({
 });
 
 export const RT_HARNESS_FINGERPRINT = Object.freeze({
-  version: 5,
+  version: 6,
   sources: Object.freeze(RT_HARNESS_SOURCE_NAMES.map(name => Object.freeze(hashSource(name)))),
   grader: Object.freeze(GRADER_SOURCE_NAMES.map(name => Object.freeze(hashSource(name)))),
   shim: Object.freeze(hashShimText()),
