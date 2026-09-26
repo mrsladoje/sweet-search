@@ -31,6 +31,7 @@ import {
   buildDedupSummary, buildChangedResultNote, parseExitCode,
 } from './rt-dedup.mjs';
 import { recordProgressInvocation } from './rt-progress-controller.mjs';
+import { benchGitDiff } from './rt-untracked-diff.mjs';
 import { CodeGraphRepository } from '../../../core/infrastructure/code-graph-repository.js';
 
 // In-container failure-aware condenser (H1, unchanged): network-unavailable banner,
@@ -204,11 +205,20 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = nul
   const L2 = cfg.rtAuthority !== false;
   const parsed = parseRunTestsArgv(argv != null ? argv : (pattern ? [pattern] : []));
   let diff = '';
-  try {
-    diff = execFileSync('git', ['-C', cfg.rundir, 'diff', 'HEAD', '--', '.', ':(exclude).sweet-search'], {
-      encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
-    });
-  } catch { /* */ }
+  if (cfg.includeUntracked === true) {
+    // BENCH_INCLUDE_UNTRACKED=1 (rt-untracked-diff.mjs): the agent's new, never-`git add`ed
+    // files ride along, so the suite does not run against a patch that lacks them.
+    diff = benchGitDiff(cfg.rundir, {
+      pathspecs: ['.', ':(exclude).sweet-search'], includeUntracked: true,
+      baseline: Array.isArray(cfg.untrackedBaseline) ? cfg.untrackedBaseline : null,
+    }).diff;
+  } else {
+    try {
+      diff = execFileSync('git', ['-C', cfg.rundir, 'diff', 'HEAD', '--', '.', ':(exclude).sweet-search'], {
+        encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch { /* */ }
+  }
 
   // (c) targeted single-test mode — degrade to full suite when unsupported.
   let testCmd = cfg.testScript, note = '', scope = 'full';

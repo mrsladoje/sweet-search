@@ -25,6 +25,7 @@ import { execFileSync, execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { costFromTurns } from './ideal-cost.mjs';   // cache-normalized idealCost (headline metric; both harness paths must emit it)
+import { includeUntrackedFromEnv, benchGitDiff } from './rt-untracked-diff.mjs';
 import { persistTurns } from './turn-log.mjs';      // per-turn {in,cached,out} archive (P7)
 
 const DEEPSEEK_BASE = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1';
@@ -399,7 +400,13 @@ export async function runTask(task, { arm, provider = 'deepseek', apiModel, mode
   // Prediction patch = git diff against base_commit, EXCLUDING .sweet-search/
   // (the ss-* index lives inside the checkout and must never enter the patch).
   let finalPatch = '';
-  try { finalPatch = execFileSync('git', ['-C', checkoutDir, 'diff', '--', '.', ':(exclude).sweet-search'], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); } catch { /* no git */ }
+  if (includeUntrackedFromEnv()) {
+    // BENCH_INCLUDE_UNTRACKED=1 (rt-untracked-diff.mjs): new files the agent never `git add`ed
+    // are graded too. Same base (the index) and exclusion as the line below.
+    finalPatch = benchGitDiff(checkoutDir, { pathspecs: ['.', ':(exclude).sweet-search'], base: null, includeUntracked: true }).diff;
+  } else {
+    try { finalPatch = execFileSync('git', ['-C', checkoutDir, 'diff', '--', '.', ':(exclude).sweet-search'], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); } catch { /* no git */ }
+  }
 
   // Cost lookup keys on the provider's apiModel (resolvedModel); fall back to a
   // sane default so an unlisted model still produces a finite cost.

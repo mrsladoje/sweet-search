@@ -18,8 +18,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { recoverIdealCost, rolloutFilesForRundir, turnsFromRollout, costFromTurns, priceFor, LEDGER_BASIS, PRICE as IDEAL_PRICE } from './ideal-cost.mjs';
 import { persistTurns } from './turn-log.mjs';
-import { runTestsTelemetry } from './rt-inflight.mjs';
+import { runTestsTelemetry, attachRequireSameDiffFromEnv } from './rt-inflight.mjs';
 import { brokerRequesterSource, directShimSource } from './rt-shim-text.mjs';
+import {
+  includeUntrackedFromEnv, recordUntrackedBaseline, untrackedBaselineFor, benchGitDiff,
+} from './rt-untracked-diff.mjs';
 // Isolation is imported DIRECTLY (not via agent-runner-shared) because that module
 // imports this one — going through it would close an import cycle.
 import { ISOLATION_ON, startJail, stopJail, jailArgv, jailEnv, jailDenials, rolloutStateDir } from './agent-jail.mjs';
@@ -324,8 +327,17 @@ export function writeRunTestsShim(binDir, {
   rtDedup = RT_DEDUP_ON, rtProgressFlags = resolveProgressFlags(),
   controllerDir = null, taskId = null, arm = null, injectedFiles = [],
   installSeds = [],
+  includeUntracked = includeUntrackedFromEnv(), attachRequireSameDiff = attachRequireSameDiffFromEnv(),
 }) {
   mkdirSync(binDir, { recursive: true });
+  // BENCH_INCLUDE_UNTRACKED=1: snapshot the untracked set NOW — after every runner has
+  // injected its instruction/harness files, before the agent starts — so neither the
+  // run_tests diff nor the graded patch can pick up a harness file the static exclude list
+  // missed. The shim reads it from cfg; gitDiffPatch and this module's final diff read the
+  // in-process copy. Off, nothing is recorded and cfg is byte-identical to before.
+  const untrackedBaseline = includeUntracked ? recordUntrackedBaseline(rundir) : null;
+  // RT_ATTACH_REQUIRE_SAME_DIFF=1: both shim variants key the in-flight attach on the tree.
+  const sameDiff = attachRequireSameDiff ? { rundir } : null;
   // L3 dedup state/audit log: append-only JSONL outside the agent's tree, opened with a
   // session boundary here — writeRunTestsShim runs exactly once per rollout attempt, so
   // that boundary is what resets dedup state between rollouts (see rt-dedup.mjs).
@@ -344,6 +356,7 @@ export function writeRunTestsShim(binDir, {
     image, workdir, testScript, rundir, dockerHost: DOCKER_HOST, testTimeoutSec,
     netArgs, dockerBin, binDir, stateDir, rtAuthority, _isAgentFormat,
     rtDedup: rtDedup && !!dedupLog, dedupLog, rtProgress, installSeds,
+    ...(includeUntracked ? { includeUntracked: true, untrackedBaseline } : {}),
   }));
   const mjs = path.join(binDir, '_run_tests.mjs');
   if (brokerMode) {
@@ -365,7 +378,7 @@ export function writeRunTestsShim(binDir, {
     // module is ERR_MODULE_NOT_FOUND here — see the inline boundary note in rt-inflight.mjs.
     // Its `node:fs` import covers writeFileSync/readFileSync/rmSync/existsSync, so this shim
     // must not declare its own or the duplicate binding is a SyntaxError.
-    writeFileSync(mjs, brokerRequesterSource({ reqDir, testTimeoutSec }));
+    writeFileSync(mjs, brokerRequesterSource({ reqDir, testTimeoutSec, sameDiff }));
     const shim = path.join(binDir, 'run_tests');
     writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
     chmodSync(shim, 0o755);
@@ -387,7 +400,7 @@ export function writeRunTestsShim(binDir, {
   // reached only with isolation OFF, so a jail-resolution bug in it would never surface in a
   // production run and would sit here until someone turned isolation off. The runtime import
   // below stays — it is large, it has its own dependency tree, and it never runs in a jail.
-  writeFileSync(mjs, directShimSource({ cfgPath: cfg, runtimePath: RT_RUNTIME_PATH, ipcDir: directIpc, testTimeoutSec }));
+  writeFileSync(mjs, directShimSource({ cfgPath: cfg, runtimePath: RT_RUNTIME_PATH, ipcDir: directIpc, testTimeoutSec, sameDiff }));
   const shim = path.join(binDir, 'run_tests');
   writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
   chmodSync(shim, 0o755);
@@ -912,7 +925,16 @@ ${ho}`;
   });
   // patch from git diff (authoritative — counts even edits not visible as commands)
   let finalPatch = '';
-  try { finalPatch = execSync(`git -C ${rundir} diff HEAD -- . ':(exclude).sweet-search' ':(exclude)CLAUDE.md' ':(exclude)AGENTS.md' ':(exclude).c3-handoff.md'`, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); } catch {}
+  if (includeUntrackedFromEnv()) {
+    // BENCH_INCLUDE_UNTRACKED=1 (rt-untracked-diff.mjs): new files the agent never `git add`ed
+    // are graded too. Same exclusions as the line below, plus the pre-agent baseline.
+    finalPatch = benchGitDiff(rundir, {
+      pathspecs: ['.', ':(exclude).sweet-search', ':(exclude)CLAUDE.md', ':(exclude)AGENTS.md', ':(exclude).c3-handoff.md'],
+      includeUntracked: true, baseline: untrackedBaselineFor(rundir),
+    }).diff;
+  } else {
+    try { finalPatch = execSync(`git -C ${rundir} diff HEAD -- . ':(exclude).sweet-search' ':(exclude)CLAUDE.md' ':(exclude)AGENTS.md' ':(exclude).c3-handoff.md'`, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); } catch {}
+  }
   const patchHunks = (finalPatch.match(/^@@ /gm) || []).length;
   const patchFiles = (finalPatch.match(/^diff --git /gm) || []).length;
   // NO patchFiles backfill into toolCounts.edit (PLAN.md §3 B3) — it made an
