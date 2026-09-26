@@ -70,9 +70,6 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 [🔄 An Index That Never Goes Stale](#-an-index-that-never-goes-stale)<br>
 <sub>reconcile daemon tracks your working tree</sub>
 
-[🦀 The Native Engine Room](#-the-native-engine-room)<br>
-<sub>four Rust crates + INT4 LI compression</sub>
-
 </td>
 <td width="24%" valign="top">
 
@@ -898,46 +895,6 @@ and four independent mechanisms keep that bounded:
 
 A recycle or eviction never touches index state: every tick publishes atomically
 before the process exits, and the next edit (or query) respawns a fresh daemon.
-
-</details>
-
-## 🦀 The Native Engine Room
-
-Four Rust crates do the heavy lifting, each with a graceful fallback so the engine runs everywhere:
-
-| Crate | What it does |
-|-------|--------------|
-| `sweet-search-native` | candle GPU/CPU inference, sparse-gram grep engine, SIMD posting-list intersection, SimHash/MinHash-LSH dedup, HuggingFace tokenizers — all over zero-copy NAPI |
-| `wasm-maxsim` | a hand-written WASM SIMD kernel computing ColBERT MaxSim in ~4 KB (~1.6 KB gzipped), with fused INT8 dequantization inside the SIMD pipeline plus a 4-bit nibble-packed path |
-| `wasm-router` | the 498-tree CatBoost query router, loop-unrolled, zero-allocation |
-| `sweet-search-cli` | a native CLI that talks to a warm search daemon over a per-project Unix socket — **2.9 ms** measured warm-path queries |
-
-<details>
-<summary><b>Deep dive</b></summary>
-
-- **MaxSim, three speeds:** scoring auto-selects the best available tier — native Rust + Rayon across all cores (**47×** vs baseline JS in our microbenchmark), portable WASM SIMD (**16×**), or a norm-cached pure-JS fallback (3.5×). Equivalent rankings, any platform.
-- **SIMD set intersection:** posting-list intersection dispatches per-pair — galloping search when one list is ≥8× smaller, 4-wide NEON/SSE2 block merges for balanced lists, scalar merge for small ones — following the Lemire/Clausecker line of work.
-- **Dedup at index time:** near-duplicate chunks are fingerprinted (64-bit SimHash + 128-permutation MinHash), clustered with banded LSH + union-find, then *re-validated pairwise* against the exemplar so transitive weak links can't glue unrelated clusters together. Duplicates skip embedding entirely — and at query time the best-matching *sibling* can take the exemplar's slot, so collapsing copies never hides the right answer.
-- **Per-project warm daemon:** the CLI derives an isolated socket path from an FNV-1a hash of the project root, auto-starts the server on first use, and falls back to pure JS where no native binary exists (measured: 2.9 ms warm / 108 ms cold / 64.7 ms JS fallback).
-- **Native tokenization:** the official HuggingFace `tokenizers` crate over NAPI — batched, cached, no Python anywhere in the stack.
-
-</details>
-
-### 🗜️ INT4 binary segments: the on-disk format behind the RAM-sized index
-
-The quantization headline lives [up in indexing](#-gpu-accelerated-indexing-fully-local) — `1.34 GiB → ~396 MiB`,
-INT4-halved again. Here's the **SSLX** segment format that delivers it: crash-safe by construction, and
-the three-stage retrieval it feeds at query time.
-
-<details>
-<summary><b>Deep dive</b></summary>
-
-- **INT4 by default:** per-token min/scale quantization with nibble packing (two values per byte), A/B-tested against the INT8 baseline with no meaningful retrieval regression before becoming the default. We borrowed the *rotation insight* from Google's [TurboQuant](docs/LI_QUANTIZATION_STRATEGY.md), but ship plain INT4 — the full TurboQuant algorithm (WHT + PolarQuant + QJL) is researched and deferred, not in the product path.
-- **SSLX binary segments:** the index persists as ~10k-document binary segment files with structured headers and CRC32 footers — a crash costs you at most one segment, not the index.
-- **Three-stage retrieval:** a binary HNSW (Hamming distance over 64-byte binarized vectors, ~32× smaller than float HNSW) produces candidates in ~100 µs, INT8 rescoring narrows them, and a float32 sidecar rescores the final pool — speed without giving up top-result quality.
-- **Memory-mapped HNSW:** the float graph index loads via `mmap` (USearch `view()`), contributing **0 MB** to the V8 heap at search time; the OS reclaims pages under pressure.
-- **Streaming indexer:** vectors stream from SQLite cursors instead of materializing in arrays — peak JS heap during indexing dropped from ~785 MB to ~213 MB, with 30-second fsync-ordered checkpoints bounding crash loss. The OOM cliff that used to appear above ~200k chunks is gone; large repos index comfortably on an 8 GB machine.
-- Tuned HNSW parameters and zero-GC search internals (typed-array heaps, generation-stamped visited lists) cut search p50 by 33% while *raising* recall@200 by 5.9 pp in our internal evaluation ([`docs/HNSW_APPROACH.md`](docs/HNSW_APPROACH.md)).
 
 </details>
 
