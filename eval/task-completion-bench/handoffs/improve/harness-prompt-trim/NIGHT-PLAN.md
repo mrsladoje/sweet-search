@@ -9,7 +9,7 @@ Owner asleep; loop wakes every 20 min. Read this file first on every wake-up.
 | Claude Code, Opus 5.5 | `CC_HARNESS_TRIM=max` | confirm 10x2: solves 8/20 = 8/20; cost −10% realized, −15% ideal; +25% turns. Screen 3x2: 3/6 → 4/6, −22% | confirmed (cost win, solves tie). max-batch (fewer turns?) running next |
 | Claude Code, Luna | `max` | screen 3x2: 3/6 → 2/6, −67% billed, 0 subagent calls; lean ties max | screen only (confirm queued last) |
 | Codex, Luna | `CODEX_HARNESS_TRIM=1` (max) | confirm 10x2: 6/20 → 4/20, −10% cost, turns flat; pooled with screen 6/26 → 7/26 | NOT a proven solve win; small cost saving. max-wait loses (+17% cost) |
-| opencode, Luna | `OC_HARNESS_TRIM=1` (round-1 trim) | screens: max 3/6 → 1/6, max-todo 1/6, max-p1 1/6, 1 = 2/6. Confirm 10x2 in progress: as-now r1 3/10 $0.194; trim 5/20 $0.327 | confirm finishing |
+| opencode, Luna | `OC_HARNESS_TRIM=1` (round-1 trim) | confirm 10x2: 6/20 → 5/20, −12% realized/ideal, −13% turns. Screens: max/max-todo/max-p1 each 1/6 (lost solves) | confirmed: cost + turn saving, solves ≈ equal |
 
 Reading: every trim cuts cost; none shows a reliable solve gain at these sample sizes; the more
 aggressive opencode cuts (max) lost solves on the screen, so opencode keeps the lighter trim.
@@ -60,6 +60,7 @@ All numbers: 6-20 rollouts per condition — directions, not publishable finding
 |---|---|---|---|---|---|---|
 | CC Opus 5.5 | max | 8/20 → 8/20 (eslint 1→2, svgr 1→0) | $3.79 → $3.40 (−10%) | $4.19 → $3.58 (−15%) | 155 → 194 (+25%) | 27/68 → 56/30 |
 | Codex Luna | 1 (max) | 6/20 → 4/20 (eslint 2→1, zlint 2→1; both look like variance: alternate fix / self-added P2P break) | $0.374 → $0.335 (−10%) | $0.350 → $0.315 | 355 → 356 | all ss-* both arms |
+| opencode Luna | 1 (round-1 trim) | 6/20 → 5/20 | $0.371 → $0.326 (−12%) | $0.344 → $0.302 (−12%) | 379 → 331 (−13%) | 0 tamper |
 
 ## Queue (screens first)
 
@@ -73,6 +74,8 @@ All numbers: 6-20 rollouts per condition — directions, not publishable finding
 5. Then decide; confirm best per harness on the 10-task set (prep running in parallel).
 
 ## Decision log
+
+- 09:08 opencode confirm done: 6/20 → 5/20, −12% cost, −13% turns → opencode best = 1. Opus max-batch running (~10:10); CC Luna confirm last (~13:00-14:00).
 
 - 07:05 Codex confirm: trim −2 solves (6/20 → 4/20), −10% cost, turns flat. Pooled with the
   round-2 screen (same trim): as-now 6/26 v trim 7/26, cost ≈ −8%. Verdict: NOT a proven solve
