@@ -6,6 +6,7 @@
 // shell (the box) lacks the repo's deps — tests must run in the task's Docker image
 // (exactly like the bare harness's run_tests tool). Returns the same row shape as
 // api-task-runner.runTask so grading/metrics are identical.
+import { CODEX_BATCH_VARIANTS, applyCodexBatch } from './trim/batch-variants.mjs';
 import { spawn } from 'node:child_process';
 import { execSync, execFileSync } from 'node:child_process';
 import {
@@ -242,7 +243,11 @@ export function codexHarnessTrim({ sweet, mode = process.env.CODEX_HARNESS_TRIM,
   if (m === 'v3') {
     const v3 = CODEX_HARNESS_TRIM_V3_SOURCES[String(model).replace(/^openai\//, '')];
     if (!v3) throw new Error(`CODEX_HARNESS_TRIM=v3: no v3 edit for ${model} (have ${Object.keys(CODEX_HARNESS_TRIM_V3_SOURCES).join(', ')})`);
-    return { mode: 'instructions-v3+tools-v3', source: v3, config: CODEX_HARNESS_TRIM_V3_CONFIG };
+    // CODEX_TRIM_BATCH (batching micro-smoke, trim/batch-variants.mjs): swaps v3's two
+    // tool-grouping lines for one variant; unset = v3 unchanged.
+    const batch = String(process.env.CODEX_TRIM_BATCH ?? '').trim();
+    if (batch && !CODEX_BATCH_VARIANTS[batch]) throw new Error(`CODEX_TRIM_BATCH=${batch}: expected ${Object.keys(CODEX_BATCH_VARIANTS).join(', ')}`);
+    return { mode: `instructions-v3+tools-v3${batch ? `+batch-${batch}` : ''}`, source: v3, config: CODEX_HARNESS_TRIM_V3_CONFIG, ...(batch ? { batch } : {}) };
   }
   const source = CODEX_HARNESS_TRIM_SOURCES[String(model).replace(/^openai\//, '')];
   if (!source) {
@@ -261,7 +266,8 @@ export function codexHarnessTrim({ sweet, mode = process.env.CODEX_HARNESS_TRIM,
 export function codexHarnessTrimArgs(trim, stateDir) {
   if (!trim?.mode) return [];
   const file = path.join(stateDir, CODEX_HARNESS_TRIM_STATE_FILE);
-  writeFileSync(file, readFileSync(trim.source, 'utf8').replace(/^<!--[\s\S]*?-->\n/, ''));
+  const text = readFileSync(trim.source, 'utf8').replace(/^<!--[\s\S]*?-->\n/, '');
+  writeFileSync(file, trim.batch ? applyCodexBatch(text, trim.batch) : text);
   return ['-c', `model_instructions_file=${JSON.stringify(file)}`,
     ...[...(trim.config || CODEX_HARNESS_TRIM_CONFIG), ...(trim.extra || [])].flatMap(kv => ['-c', kv])];
 }
