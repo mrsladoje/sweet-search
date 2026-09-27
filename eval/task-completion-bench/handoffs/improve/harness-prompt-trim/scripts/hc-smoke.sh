@@ -70,6 +70,8 @@ RUNS=()
 N=0
 for V in $VARIANTS; do
   N=$((N+1))
+  # A trailing @system moves the sweet-search rules into the system prompt (SWEET_RULES_PLACEMENT).
+  PLACE=file; case $V in *@system) PLACE=system; V=${V%@system} ;; esac
   case $H in
     # Codex: base = v3 (phase 1); untrimmed = trim off; <trim>/<batch> = trim + batch variant
     # (e.g. conflict/yt2); conflict or v3 alone = that trim; any other name = v3 + that batch variant.
@@ -101,7 +103,7 @@ for V in $VARIANTS; do
   # Neutral run ids (the run id reaches paths the agent can see); rows carry harnessTrim.
   RUN=hc-$H-$STAMP-L$N
   echo "$(date +%T) launching $RUN = $V (${SW[*]})"
-  env "${SW[@]}" TASKS_FILE=$TASKS_FILE INSTANCES=$TASKS \
+  env "${SW[@]}" SWEET_RULES_PLACEMENT=$PLACE TASKS_FILE=$TASKS_FILE INSTANCES=$TASKS \
     ARMS=sweet REPS=1 CONCURRENCY=$CONC HARNESS=$H MODEL=$MODEL PROVIDER=$PROVIDER \
     REASONING=medium RUN_ID=$RUN ENV_LEDGER=$LEDGER \
     node harness/run-pilot.mjs > "results/$RUN.log" 2>&1
