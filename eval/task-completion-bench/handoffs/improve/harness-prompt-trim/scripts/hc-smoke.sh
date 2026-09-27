@@ -89,7 +89,14 @@ for V in $VARIANTS; do
         *conflict*|*+*) SW=("OC_HARNESS_TRIM=$V") ;;
         *)              SW=("OC_HARNESS_TRIM=batch-$V") ;;
       esac ;;
-    claudecode) SW=(CC_HARNESS_TRIM=product "CC_TRIM_BATCH=$([ "$V" = base ] || echo "$V")") ;;
+    # Claude Code: base = product (what init installs); untrimmed = stock harness; other names =
+    # product + that CC_TRIM_BATCH variant.
+    claudecode)
+      case $V in
+        base)      SW=(CC_HARNESS_TRIM=product CC_TRIM_BATCH=) ;;
+        untrimmed) SW=(CC_HARNESS_TRIM=0 CC_TRIM_BATCH=) ;;
+        *)         SW=(CC_HARNESS_TRIM=product "CC_TRIM_BATCH=$V") ;;
+      esac ;;
   esac
   # Neutral run ids (the run id reaches paths the agent can see); rows carry harnessTrim.
   RUN=hc-$H-$STAMP-L$N
