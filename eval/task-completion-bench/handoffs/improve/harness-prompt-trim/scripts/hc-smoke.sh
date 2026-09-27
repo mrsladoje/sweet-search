@@ -71,8 +71,24 @@ N=0
 for V in $VARIANTS; do
   N=$((N+1))
   case $H in
-    codex)      SW=(CODEX_HARNESS_TRIM=v3 "CODEX_TRIM_BATCH=$([ "$V" = base ] || echo "$V")") ;;
-    opencode)   SW=("OC_HARNESS_TRIM=$([ "$V" = base ] && echo 0 || echo "batch-$V")") ;;
+    # Codex: base = v3 (phase 1); untrimmed = trim off; <trim>/<batch> = trim + batch variant
+    # (e.g. conflict/yt2); conflict or v3 alone = that trim; any other name = v3 + that batch variant.
+    codex)
+      case $V in
+        base)          SW=(CODEX_HARNESS_TRIM=v3 CODEX_TRIM_BATCH=) ;;
+        untrimmed)     SW=(CODEX_HARNESS_TRIM=0 CODEX_TRIM_BATCH=) ;;
+        */*)           SW=("CODEX_HARNESS_TRIM=${V%%/*}" "CODEX_TRIM_BATCH=${V#*/}") ;;
+        conflict|v3)   SW=("CODEX_HARNESS_TRIM=$V" CODEX_TRIM_BATCH=) ;;
+        *)             SW=(CODEX_HARNESS_TRIM=v3 "CODEX_TRIM_BATCH=$V") ;;
+      esac ;;
+    # opencode: base/untrimmed = trim off; names with 'conflict' or '+' pass through
+    # (conflict, conflict-noglob, conflict+todo2, untrimmed+todo2); others = batch-<name>.
+    opencode)
+      case $V in
+        base|untrimmed) SW=(OC_HARNESS_TRIM=0) ;;
+        *conflict*|*+*) SW=("OC_HARNESS_TRIM=$V") ;;
+        *)              SW=("OC_HARNESS_TRIM=batch-$V") ;;
+      esac ;;
     claudecode) SW=(CC_HARNESS_TRIM=product "CC_TRIM_BATCH=$([ "$V" = base ] || echo "$V")") ;;
   esac
   # Neutral run ids (the run id reaches paths the agent can see); rows carry harnessTrim.
