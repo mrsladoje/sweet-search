@@ -209,7 +209,8 @@ export function buildPrivateHome(privateHome, { realHome, codexHome }) {
 //                  call in code mode; 3 calls in 1 of 6 untrimmed Luna smoke rollouts, 0 trimmed).
 //                  Captured on the OpenRouter route only; re-capture before a subscription run.
 // Mode values: unset/'0' = off (argv and state dir byte-identical), '1' = on, 'max-wait',
-// 'v3' (see CODEX_HARNESS_TRIM_V3_CONFIG).
+// 'v3' (see CODEX_HARNESS_TRIM_V3_CONFIG), 'conflict' (see CODEX_HARNESS_TRIM_CONFLICT_SOURCES).
+// CODEX_TRIM_BATCH=<variant> (trim/batch-variants.mjs) works on top of 'v3' and 'conflict'.
 export const CODEX_HARNESS_TRIM_CONFIG = Object.freeze([
   'web_search="disabled"',
   'features.goals=false',
@@ -234,6 +235,13 @@ export const CODEX_HARNESS_TRIM_SOURCES = Object.freeze({
 export const CODEX_HARNESS_TRIM_V3_SOURCES = Object.freeze({
   'gpt-5.6-luna': path.join(__dirname, 'trim', 'codex-0.146.1-instructions-sweet-gpt-5.6-luna-v3.md'),
 });
+// conflict (2026-09-27, CONFLICT-ONLY trim): the ORIGINAL luna prompt minus only the line that
+// contradicts the ss-* rules ("reach first for `rg`") and a verbatim duplicate `$HOME` line. No
+// -c keys: web_search, the goal tools, request_user_input, skills, permissions, environment
+// context and update_plan all stay as stock. Isolates the conflict from the bloat cuts.
+export const CODEX_HARNESS_TRIM_CONFLICT_SOURCES = Object.freeze({
+  'gpt-5.6-luna': path.join(__dirname, 'trim', 'codex-0.146.1-instructions-conflict-gpt-5.6-luna.md'),
+});
 // Written into the runner state dir: that dir is bound at the same path inside the jail,
 // while harness/ (under <repo>/eval) is masked there.
 export const CODEX_HARNESS_TRIM_STATE_FILE = 'codex-instructions.md';
@@ -242,7 +250,14 @@ export function codexHarnessTrim({ sweet, mode = process.env.CODEX_HARNESS_TRIM,
   // Native has no ss-* rules to contradict and keeps Codex's full request in every condition.
   const m = sweet ? String(mode ?? '').trim() : '';
   if (!m || m === '0') return { mode: null };
-  if (m !== '1' && m !== 'max-wait' && m !== 'v3') throw new Error(`CODEX_HARNESS_TRIM=${m}: expected 0, 1, max-wait or v3`);
+  if (m !== '1' && m !== 'max-wait' && m !== 'v3' && m !== 'conflict') throw new Error(`CODEX_HARNESS_TRIM=${m}: expected 0, 1, max-wait, v3 or conflict`);
+  if (m === 'conflict') {
+    const source = CODEX_HARNESS_TRIM_CONFLICT_SOURCES[String(model).replace(/^openai\//, '')];
+    if (!source) throw new Error(`CODEX_HARNESS_TRIM=conflict: no conflict edit for ${model} (have ${Object.keys(CODEX_HARNESS_TRIM_CONFLICT_SOURCES).join(', ')})`);
+    const batch = String(process.env.CODEX_TRIM_BATCH ?? '').trim();
+    if (batch && !CODEX_BATCH_VARIANTS[batch]) throw new Error(`CODEX_TRIM_BATCH=${batch}: expected ${Object.keys(CODEX_BATCH_VARIANTS).join(', ')}`);
+    return { mode: `instructions-conflict${batch ? `+batch-${batch}` : ''}`, source, config: [], ...(batch ? { batch } : {}) };
+  }
   if (m === 'v3') {
     const v3 = CODEX_HARNESS_TRIM_V3_SOURCES[String(model).replace(/^openai\//, '')];
     if (!v3) throw new Error(`CODEX_HARNESS_TRIM=v3: no v3 edit for ${model} (have ${Object.keys(CODEX_HARNESS_TRIM_V3_SOURCES).join(', ')})`);

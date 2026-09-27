@@ -13,7 +13,9 @@ import {
   validateMainOpencodePreflight, OPENCODE_TRIM_DISABLED_TOOLS, OPENCODE_TRIM_TOOL_EDITS,
   OPENCODE_TRIM_MAX_DISABLED_TOOLS, OPENCODE_TRIM_MAX_TOOL_EDITS, OPENCODE_TRIM_V3_TOOL_EDITS,
   OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT, opencodeUnjailedEnv,
+  OPENCODE_CONFLICT_TOOL_EDITS, OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS, OPENCODE_CONFLICT_PROMPT_BULLET,
 } from '../harness/opencode-task-runner.mjs';
+import { OPENCODE_GPT_ORIGINAL, EFFICIENCY_LINE, opencodeBatchPrompt, opencodeBatchToolEdits } from '../harness/trim/batch-variants.mjs';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
@@ -211,6 +213,143 @@ assert(!/must use your `Read` tool|MUST use the Read tool first/.test(maxOut.edi
     && maxOut.edit.description.includes('oldString'), 'max edit/write: only the Read-first claim goes');
 assert(!maxOut.task.description.includes('not visible to the user') && maxOut.task.description.includes('task_id'),
   'max task: user-visibility and proactive notes go; resume and delegation text stay');
+
+console.log('\nconflict-only trims (conflict, conflict-noglob) and <base>+<variant> combos:');
+{
+  // LCS line diff: what an edit removed and added, line by line.
+  const lineDiff = (a, b) => {
+    const A = a.split('\n'), B = b.split('\n');
+    const L = Array.from({ length: A.length + 1 }, () => new Int32Array(B.length + 1));
+    for (let i = A.length - 1; i >= 0; i--) for (let j = B.length - 1; j >= 0; j--)
+      L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    const removed = [], added = [];
+    let i = 0, j = 0;
+    while (i < A.length && j < B.length) {
+      if (A[i] === B[j]) { i++; j++; } else if (L[i + 1][j] >= L[i][j + 1]) removed.push(A[i++]); else added.push(B[j++]);
+    }
+    return { removed: [...removed, ...A.slice(i)], added: [...added, ...B.slice(j)] };
+  };
+  const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+  const LUNA = 'openai/gpt-5.6-luna';
+  const original = readFileSync(OPENCODE_GPT_ORIGINAL, 'utf8');
+  const gptBody = JSON.parse(readFileSync(join(CAPTURES, 'opencode-1.18.4-request-sweet-trim-off-gpt.json'), 'utf8'));
+  const gtool = name => gptBody.tools.find(x => x.function.name === name).function.description;
+
+  for (const off of [undefined, '', '0']) {
+    const t = opencodeArmHarnessTrim({ sweet: true, env: { OC_HARNESS_TRIM: off }, apiModel: LUNA, stateDir: STATE });
+    assert(JSON.stringify(buildMainOpencodeConfig({ env: {}, trim: t })) === PRE_TRIM_CONFIG, `luna, switch ${JSON.stringify(off)}: config byte-identical`);
+  }
+  for (const mode of ['conflict', 'conflict-noglob', 'conflict+todo2', 'untrimmed+todo2']) {
+    const t = opencodeArmHarnessTrim({ sweet: false, env: { OC_HARNESS_TRIM: mode }, apiModel: LUNA, stateDir: STATE });
+    assert(t.mode === null && JSON.stringify(buildMainOpencodeConfig({ env: {}, trim: t })) === PRE_TRIM_CONFIG, `native + ${mode}: full opencode config`);
+  }
+
+  const conflictPrompt = original.replace(OPENCODE_CONFLICT_PROMPT_BULLET, '');
+  assert(same(lineDiff(original, conflictPrompt), { removed: [OPENCODE_CONFLICT_PROMPT_BULLET.trimEnd()], added: [] }),
+    'conflict prompt: line diff v the untrimmed gpt prompt = only the "prefer using Glob and Grep" bullet');
+  for (const kept of ['## Special user requests', 'asking for the time', 'for a "review"', '## Frontend tasks', '## Formatting rules', '## Response channels', 'Parallelize tool calls whenever possible'])
+    assert(conflictPrompt.includes(kept), `conflict prompt keeps: ${kept}`);
+
+  for (const [mode, noglob] of [['conflict', false], ['conflict-noglob', true]]) {
+    const t = opencodeHarnessTrim(mode, { apiModel: LUNA, stateDir: STATE });
+    const cfg = buildMainOpencodeConfig({ env: {}, trim: t });
+    assert(t.mode === `${mode}:prompt:gpt+general+noexplore+${noglob ? 'noglob+' : ''}nogrep+tooldesc`, `${mode}: mode label`, t.mode);
+    assert(cfg.agent.build.prompt === conflictPrompt && cfg.agent.general.prompt === conflictPrompt && same(cfg.agent.explore, { disable: true })
+        && Object.keys(cfg.agent).join() === 'build,general,explore', `${mode}: build and general get the conflict prompt; explore disabled`);
+    assert(same(cfg.tools, noglob ? { glob: false, grep: false } : { grep: false }), `${mode}: disables ${noglob ? 'glob and grep' : 'grep only (glob, skill, todowrite, task stay)'}`);
+    assert(cfg.plugin.length === 1 && same(cfg.plugin[0][1].edits, noglob ? OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS : OPENCODE_CONFLICT_TOOL_EDITS)
+        && same(t.stateEntries, [OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT]), `${mode}: plugin with the ${mode} edits; report recorded like the other modes`);
+    const capped = buildMainOpencodeConfig({ env: { SS_HARD_TURN_CAP: '40' }, trim: t });
+    assert(capped.agent.build.maxSteps === 40 && !capped.agent.general.maxSteps, `${mode}: hard turn cap on build only`);
+  }
+
+  // Tool descriptions: run the plugin on the captured 1.18.4 gpt-family descriptions and list the diff.
+  const truncLine = gtool('bash').split('\n').find(l => l.includes(' or Grep to search the full content'));
+  const EXPECT = {
+    conflict: {
+      bash: {
+        removed: [
+          'IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.', '',
+          truncLine,
+          '  - Avoid using Bash with the `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or when these commands are truly necessary for the task. Instead, always prefer using the dedicated tools for these commands:',
+          '    - Content search: Use Grep (NOT grep or rg)', '    - Read files: Use Read (NOT cat/head/tail)'],
+        added: [
+          truncLine.replace(' or Grep to search the full content', ''),
+          '  - Avoid using Bash with the `find`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or when these commands are truly necessary for the task. Instead, always prefer using the dedicated tools for these commands:'],
+      },
+      read: { removed: ['- Use the grep tool to find specific content in large files or files with long lines.'], added: [] },
+      task: { removed: ['- If you are searching for a specific class definition like "class Foo", use the Grep tool instead, to find the match more quickly'],
+        added: ['- If you are searching for a specific class definition like "class Foo", search for it directly instead, to find the match more quickly'] },
+      glob: { removed: ['- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead'], added: [] },
+    },
+  };
+  EXPECT['conflict-noglob'] = {
+    bash: {
+      removed: [...EXPECT.conflict.bash.removed.slice(0, 4), '    - File search: Use Glob (NOT find or ls)', ...EXPECT.conflict.bash.removed.slice(4)],
+      added: [EXPECT.conflict.bash.added[0], '  - Avoid using Bash with the `sed`, `awk`, or `echo` commands, unless explicitly instructed or when these commands are truly necessary for the task. Instead, always prefer using the dedicated tools for these commands:'],
+    },
+    read: { removed: [...EXPECT.conflict.read.removed, '- If you are unsure of the correct file path, use the glob tool to look up filenames by glob pattern.'], added: [] },
+    task: {
+      removed: ['- If you want to read a specific file path, use the Read or Glob tool instead of the Task tool, to find the match more quickly', ...EXPECT.conflict.task.removed],
+      added: ['- If you want to read a specific file path, use the Read tool instead of the Task tool, to find the match more quickly', ...EXPECT.conflict.task.added],
+    },
+  };
+  for (const [mode, edits] of [['conflict', OPENCODE_CONFLICT_TOOL_EDITS], ['conflict-noglob', OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS]]) {
+    const rp = join(STATE, `${mode}-report.json`);
+    const hooks = await plugin({}, { edits, report: rp });
+    const out = {};
+    for (const name of ['bash', 'read', 'task', 'glob', 'apply_patch', 'todowrite', 'skill']) {
+      out[name] = { description: gtool(name), parameters: { marker: name } };
+      await hooks['tool.definition']({ toolID: name }, out[name]);
+    }
+    const rep = JSON.parse(readFileSync(rp, 'utf8'));
+    assert(Object.entries(edits).every(([name, list]) => rep[name]?.applied === list.length && !rep[name].missing.length)
+        && same(Object.keys(rep).sort(), Object.keys(edits).sort()), `${mode}: every edit applies to the captured gpt descriptions; nothing else is touched`, JSON.stringify(rep));
+    for (const name of Object.keys(EXPECT[mode]))
+      assert(same(lineDiff(gtool(name), out[name].description), EXPECT[mode][name]), `${mode} ${name}: line diff v the original is exactly the intended category-A text`,
+        JSON.stringify(lineDiff(gtool(name), out[name].description)));
+    for (const name of ['apply_patch', 'todowrite', 'skill', ...(mode === 'conflict-noglob' ? ['glob'] : [])])
+      assert(out[name].description === gtool(name), `${mode} ${name}: description untouched`);
+    assert(out.read.description.includes('image files and PDFs'), `${mode} read keeps: image files and PDFs`);
+    for (const kept of ['not visible to the user', 'used proactively', '- explore:', '- general:']) assert(out.task.description.includes(kept), `${mode} task keeps: ${kept}`);
+    for (const kept of ['# Git and GitHub', 'Edit files: Use Edit (NOT sed/awk)', 'workdir', ...(mode === 'conflict' ? ['File search: Use Glob (NOT find or ls)'] : [])])
+      assert(out.bash.description.includes(kept), `${mode} bash keeps: ${kept}`);
+  }
+
+  // Combos: <base>+<variant>.
+  const combo = m => opencodeHarnessTrim(m, { apiModel: LUNA, stateDir: STATE });
+  for (const [m, variant] of [['conflict+todoall', 'todoall'], ['conflict+todo2', 'todo2'], ['conflict+todo2eff', 'todo2eff'], ['conflict-noglob+todo2', 'todo2']]) {
+    const t = combo(m);
+    const cfg = buildMainOpencodeConfig({ env: {}, trim: t });
+    const base = m.startsWith('conflict-noglob') ? OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS : OPENCODE_CONFLICT_TOOL_EDITS;
+    assert(cfg.agent.build.prompt === opencodeBatchPrompt(variant, conflictPrompt) && cfg.agent.general.prompt === cfg.agent.build.prompt,
+      `${m}: prompt = conflict prompt with the ${variant} line`);
+    assert(same(cfg.plugin[0][1].edits, { ...base, ...opencodeBatchToolEdits(variant) }) && same(cfg.tools, combo(m.split('+')[0]).config.tools)
+        && same(cfg.agent.explore, { disable: true }), `${m}: base tools/edits + the variant's todowrite edit`);
+    assert(t.mode.startsWith(`${m}:prompt:gpt+general+noexplore+`), `${m}: mode label`, t.mode);
+  }
+  const u = combo('untrimmed+todoall'), b = opencodeHarnessTrim('batch-todoall', { apiModel: LUNA, stateDir: STATE });
+  assert(same(u.config, b.config) && same(u.files, b.files) && same(u.plugins, b.plugins) && u.mode === 'untrimmed+todoall:prompt:gpt+general+tooldesc',
+    'untrimmed+todoall = batch-todoall (the current champion), only the mode label differs');
+  const u2 = combo('untrimmed+todo2');
+  assert(u2.config.agentBuild.prompt === opencodeBatchPrompt('todo2') && !u2.config.tools && !u2.config.agents.explore,
+    'untrimmed+todo2: the untrimmed prompt with the todo2 line; no tool or subagent change');
+  const TODO2 = '- Send todowrite as a parallel call in the same turn as your next tool call, never as a turn of its own. Mark a step in_progress in the call that starts it, and completed in the call that starts the next one.';
+  assert(same(lineDiff(original, opencodeBatchPrompt('todo2')), { removed: [], added: [TODO2] }), 'todo2 prompt: exactly one line added to the untrimmed prompt');
+  assert(same(lineDiff(original, opencodeBatchPrompt('todo2eff')), { removed: [], added: [TODO2, EFFICIENCY_LINE] }), 'todo2eff prompt: the todo2 line and the efficiency line added');
+  const tdHooks = await plugin({}, { edits: opencodeBatchToolEdits('todo2'), report: join(STATE, 'todo2-report.json') });
+  const td = { description: gtool('todowrite') };
+  await tdHooks['tool.definition']({ toolID: 'todowrite' }, td);
+  assert(!td.description.includes('When in doubt, use it.') && td.description.includes("Update status in real time; don't batch completions")
+      && JSON.parse(readFileSync(join(STATE, 'todo2-report.json'), 'utf8')).todowrite.applied === 1,
+    'todo2 todowrite: "When in doubt, use it." removed; "Update status in real time" kept');
+  for (const [m, model] of [['untrimmed', LUNA], ['conflict+nope', LUNA], ['conflict+todo2+todoall', LUNA], ['conflict+todoallfit', LUNA],
+    ['Conflict', LUNA], ['conflict', 'x-ai/grok-4.5'], ['conflict-noglob', 'anthropic/claude-sonnet-5'], ['untrimmed+todo2', 'x-ai/grok-4.5']]) {
+    let err = null;
+    try { opencodeHarnessTrim(m, { apiModel: model, stateDir: STATE }); } catch (e) { err = e; }
+    assert(err !== null, `OC_HARNESS_TRIM=${m} on ${model} throws`);
+  }
+}
 
 console.log('\ntrimmed prompts are the reproducible build of the captured originals:');
 const build = spawnSync('python3', [join(BENCH, 'handoffs/improve/harness-prompt-trim/scripts/build_oc_trim_prompts.py'), '--check'], { encoding: 'utf8' });

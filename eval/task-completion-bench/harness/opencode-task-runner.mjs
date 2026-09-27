@@ -9,7 +9,7 @@
 // NOTE: opencode's `--format json` event schema is not officially documented (reverse-
 // engineered). parseOpencodeStream is defensive and is validated/adjusted from a real
 // smoke's raw NDJSON before any counted run.
-import { opencodeBatchPrompt, opencodeBatchToolEdits } from './trim/batch-variants.mjs';
+import { opencodeBatchPrompt, opencodeBatchToolEdits, OPENCODE_GPT_ORIGINAL, OPENCODE_VARIANT_NAMES } from './trim/batch-variants.mjs';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -191,6 +191,73 @@ export const OPENCODE_TRIM_V3_TOOL_EDITS = Object.freeze({
   ],
 });
 
+// OC_HARNESS_TRIM=conflict | conflict-noglob (2026-09-27, CONFLICT-ONLY trim, gpt family): the
+// UNTRIMMED gpt prompt minus ONLY its "prefer using Glob and Grep tools" bullet (for build and
+// the general subagent); grep disabled; explore disabled (its prompt is built on Glob/Grep, as
+// in v3); and tool-description edits that remove only text contradicting the ss-* rules or
+// naming a disabled tool. Skills, review, frontend, formatting, image/PDF, result-visibility
+// and todowrite text all stay. 'conflict' KEEPS glob (only its "use the Task tool instead"
+// line goes); 'conflict-noglob' also disables glob — the one axis between the two.
+//   Combined with a line: OC_HARNESS_TRIM=<base>+<variant>, base = conflict | conflict-noglob |
+//   untrimmed, variant = any opencode variant in trim/batch-variants.mjs (todoall, todo2,
+//   todo2eff, ...). The variant edits the base prompt's batching bullet and adds its own
+//   tool-description edits. untrimmed+<variant> is exactly batch-<variant> (other mode label).
+export const OPENCODE_CONFLICT_PROMPT_BULLET = '- When searching for text or files, prefer using Glob and Grep tools (they are powered by `rg`)\n';
+export const OPENCODE_CONFLICT_BASES = Object.freeze(['conflict', 'conflict-noglob', 'untrimmed']);
+export const OPENCODE_CONFLICT_TOOL_EDITS = Object.freeze({
+  bash: [
+    OPENCODE_TRIM_TOOL_EDITS.bash[0],   // "DO NOT use it for ... searching, finding files" — ss-* run through bash
+    OPENCODE_TRIM_TOOL_EDITS.bash[1],   // " or Grep to search the full content" — grep is disabled
+    // the avoid-list pushes Grep/Read over ss-grep/ss-read; find stays (its Glob line stays)
+    ['  - Avoid using Bash with the `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands,', '  - Avoid using Bash with the `find`, `sed`, `awk`, or `echo` commands,'],
+    ['    - Content search: Use Grep (NOT grep or rg)\n    - Read files: Use Read (NOT cat/head/tail)\n', ''],
+  ],
+  read: [OPENCODE_TRIM_TOOL_EDITS.read[0]],   // "Use the grep tool ..." — grep is disabled
+  task: [OPENCODE_TRIM_V3_TOOL_EDITS.task[1]], // "class Foo" -> no disabled Grep tool named; the deterrent stays
+  glob: [['- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead\n', '']],
+});
+export const OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS = Object.freeze({
+  bash: OPENCODE_TRIM_TOOL_EDITS.bash,   // round 1: also the "File search: Use Glob" line and `find`
+  read: OPENCODE_TRIM_TOOL_EDITS.read,   // round 1: also the glob-tool pointer
+  task: [OPENCODE_TRIM_TOOL_EDITS.task[0], OPENCODE_TRIM_V3_TOOL_EDITS.task[1]],
+});
+
+function opencodeHarnessTrimCombo(m, { apiModel, stateDir }) {
+  const [base, variant, ...rest] = m.split('+');
+  const expected = `expected ${OPENCODE_CONFLICT_BASES.join(' | ')}[+<variant>] (untrimmed needs a variant); variants: ${OPENCODE_VARIANT_NAMES.join(', ')}`;
+  if (rest.length || !OPENCODE_CONFLICT_BASES.includes(base) || (variant !== undefined && !OPENCODE_VARIANT_NAMES.includes(variant))
+      || (base === 'untrimmed' && !variant)) throw new Error(`OC_HARNESS_TRIM=${m}: ${expected}`);
+  if (opencodePromptFamily(apiModel) !== 'gpt') throw new Error(`OC_HARNESS_TRIM=${m}: gpt family only (model ${apiModel})`);
+  if (base === 'untrimmed') {
+    const t = opencodeHarnessTrim(`batch-${variant}`, { apiModel, stateDir });
+    return { ...t, mode: t.mode.replace(`batch-${variant}:`, `${m}:`) };
+  }
+  if (!stateDir) throw new Error(`OC_HARNESS_TRIM=${m}: stateDir required`);
+  const noglob = base === 'conflict-noglob';
+  const original = readFileSync(OPENCODE_GPT_ORIGINAL, 'utf8');
+  if (original.split(OPENCODE_CONFLICT_PROMPT_BULLET).length !== 2) throw new Error(`OC_HARNESS_TRIM=${m}: Glob/Grep bullet not found once in the original prompt`);
+  const conflictPrompt = original.replace(OPENCODE_CONFLICT_PROMPT_BULLET, '');
+  const prompt = variant ? opencodeBatchPrompt(variant, conflictPrompt) : conflictPrompt;
+  const baseEdits = noglob ? OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS : OPENCODE_CONFLICT_TOOL_EDITS;
+  const lineEdits = (variant && opencodeBatchToolEdits(variant)) || {};
+  const clash = Object.keys(lineEdits).filter(k => k in baseEdits);
+  if (clash.length) throw new Error(`OC_HARNESS_TRIM=${m}: the variant and the base both edit ${clash.join(', ')}`);
+  const edits = { ...baseEdits, ...lineEdits };
+  const plugin = [`file://${path.join(stateDir, OPENCODE_TRIM_PLUGIN)}`, { edits, report: path.join(stateDir, OPENCODE_TRIM_REPORT) }];
+  return {
+    mode: `${m}:prompt:gpt+general+noexplore+${noglob ? 'noglob+' : ''}nogrep+tooldesc`,
+    config: {
+      plugin: [plugin],
+      tools: noglob ? { glob: false, grep: false } : { grep: false },
+      agentBuild: { prompt },
+      agents: { general: { prompt }, explore: { disable: true } },
+    },
+    files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(path.join(TRIM_DIR, OPENCODE_TRIM_PLUGIN), 'utf8') },
+    plugins: [plugin],
+    stateEntries: [OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT],
+  };
+}
+
 // Mirror of opencode 1.18.4's model → base prompt choice (`wd` in the binary, keyed on the
 // provider model id). null = a family with no trimmed copy; the switch then refuses to run
 // rather than trim only half the request.
@@ -208,6 +275,7 @@ export function opencodePromptFamily(apiModel) {
 export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiModel, stateDir } = {}) {
   const m = String(mode ?? '').trim();
   if (!m || m === '0') return { mode: null, config: {}, files: {}, plugins: [], stateEntries: [] };
+  if (m.includes('+') || OPENCODE_CONFLICT_BASES.includes(m)) return opencodeHarnessTrimCombo(m, { apiModel, stateDir });
   // batch-<variant> (batching micro-smoke, trim/batch-variants.mjs): the UNTRIMMED gpt prompt
   // with only its tool-grouping bullet swapped, for the main agent and the general subagent. No
   // tool, description or subagent change: everything else equals trim off.
@@ -228,7 +296,7 @@ export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiMod
       stateEntries: [OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT],
     };
   }
-  if (!['1', 'max', 'max-todo', 'max-p1', 'v3'].includes(m)) throw new Error(`OC_HARNESS_TRIM=${m}: expected 0, 1, max, max-todo, max-p1, v3 or batch-*`);
+  if (!['1', 'max', 'max-todo', 'max-p1', 'v3'].includes(m)) throw new Error(`OC_HARNESS_TRIM=${m}: expected 0, 1, max, max-todo, max-p1, v3, batch-*, conflict, conflict-noglob or <base>+<variant>`);
   // v3 = round 1 (prompt, glob/grep/skill off, todowrite KEPT) + the general subagent gets the
   // same trimmed prompt (round 1 left it the untrimmed family prompt) + explore disabled (as-now
   // never delegated to it; its prompt names the disabled Glob/Grep) + OPENCODE_TRIM_V3_TOOL_EDITS.
