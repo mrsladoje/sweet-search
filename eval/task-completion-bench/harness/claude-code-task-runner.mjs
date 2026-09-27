@@ -566,7 +566,14 @@ export async function runClaudeCodeTask(task, {
   if (sweet && harnessTrim.installLean) {
     // The benchmark passes the override through its own --append-system-prompt (both modes),
     // so the agent file carries the base prompt only.
-    const lean = installClaudeLeanHarness({ projectRoot: rundir, appendOverride: false });
+    // The memory path in the agent file must be the one THIS rollout's CLI uses, as for native's
+    // stock # Memory section: the private home (its settings), seen at $HOME/.claude in the jail
+    // or directly via CLAUDE_CONFIG_DIR when unjailed. Written once per rollout, so it is stable
+    // across the rollout's turns; its shape (<home>/projects/<rundir slug>/memory/) matches native.
+    const lean = installClaudeLeanHarness({
+      projectRoot: rundir, appendOverride: false, env: routingEnv,
+      configDir: claudeHome, visibleConfigDir: unjailed ? claudeHome : join(HOMEDIR, '.claude'),
+    });
     if (lean.active !== true) throw new Error(`CC_HARNESS_TRIM=product: lean harness not active (${lean.status}: ${lean.detail})`);
     injectedFiles.push(CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL, '.claude/settings.json', CLAUDE_LEAN_MANIFEST_REL);
     // CC_TRIM_BATCH (batching micro-smoke, trim/batch-variants.mjs): swaps the max-batch line
