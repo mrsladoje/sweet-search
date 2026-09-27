@@ -116,3 +116,16 @@ Audits (scratchpad solve-wins/, trim-audit/, research-2/):
 - Winner lines carry bench flavour: Codex template can hang on non-terminating commands; CC batching example pushes script edits (skips Edit's diff/approval); opencode todo line lets visible progress go stale. General rewordings drafted.
 - Research: strongest measured levers = REMOVING "double-check/think deeply/be thorough" text, a bounded-efficiency line (−19% CC in a preregistered study), scope discipline; Karpathy-style CLAUDE.md −3..−10% cost, quality flat.
 Owner decisions: (1) rebuild the shipped Claude Code harness CONFLICT-ONLY, restoring every user capability (first request ≈15.5k tok v 7.7k lean, 18.9k stock) and re-measure its saving; (2) rebuild all three harnesses as conflict-only trims, screen each v untrimmed (opencode first, eslint repeated), then stack general reworded winners + research levers, then test sweet rules OUTSIDE v INSIDE the system prompt. Rotation A + B each step.
+
+## Owner rules for phase 2 (standing; check before every queued variant)
+1. Cheaper at EQUAL OR BETTER solves; keep climbing until a decisive win.
+2. No bench overfit: general wording only; must help or be neutral in repos without tests, interactive use, non-coding tasks.
+3. Never remove user functionality; trim ONLY sweet-search-conflicting text + pure bloat.
+4. Solve gains count when a visible, sensible mechanism causes them (check traces); flips without a mechanism are noise.
+5. Verify every win by mechanism (Opus trace audit): (a) tool use, (b) prompt size, (c) fewer turns.
+6. Realized cost first (ideal as a check); solves first.
+7. Micro-smokes, fresh same-cell baseline, max useful concurrency; rotate tasks; promote only winners that also win on fresh tasks.
+8. Research (web + traces) before inventing variants.
+9. Final per harness: sweet rules OUTSIDE v INSIDE the system prompt (inside = seamless-UX goal).
+Phase-2 baselines: Codex/opencode = UNTRIMMED stock harness; Claude Code = stock (and the conflict-only product rebuild).
+Concurrency: cells run all tasks at once (4-6); 10-task A+B cells are tried at concurrency 10 once the queue2 cells finish — drop back to 6 if run_tests INFRA/timeouts appear.
