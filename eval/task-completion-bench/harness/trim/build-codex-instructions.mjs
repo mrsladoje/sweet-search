@@ -137,6 +137,19 @@ export function sourceFor(model) {
   return v.extract(JSON.parse(readFileSync(path.join(CAPTURES, v.capture), 'utf8')));
 }
 
+// The UNMODIFIED base instructions codex-cli 0.146.1 sends for a model, from the same pinned
+// capture the edits start from (sha256 checked). SWEET_RULES_PLACEMENT=system with the trim off
+// hands this text + the rules to `model_instructions_file`, so the request differs from stock
+// only by the rules. Models: the base-model keys of VARIANTS (gpt-5.5, gpt-5.6-luna).
+export const STOCK_MODELS = Object.freeze(Object.keys(VARIANTS).filter(k => !VARIANTS[k].model));
+export function stockInstructions(model) {
+  if (!STOCK_MODELS.includes(model)) throw new Error(`no captured 0.146.1 base instructions for ${model} (have ${STOCK_MODELS.join(', ')})`);
+  const source = sourceFor(model);
+  const sha = createHash('sha256').update(source).digest('hex');
+  if (sha !== VARIANTS[model].sha256) throw new Error(`${model}: capture sha256 ${sha} is not the reviewed 0.146.1 text`);
+  return source;
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   let same = true;
   for (const [model, v] of Object.entries(VARIANTS)) {

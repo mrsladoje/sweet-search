@@ -7,6 +7,8 @@
 // (exactly like the bare harness's run_tests tool). Returns the same row shape as
 // api-task-runner.runTask so grading/metrics are identical.
 import { CODEX_BATCH_VARIANTS, applyCodexBatch } from './trim/batch-variants.mjs';
+import { stockInstructions } from './trim/build-codex-instructions.mjs';
+import { resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules } from './sweet-rules-placement.mjs';
 import { spawn } from 'node:child_process';
 import { execSync, execFileSync } from 'node:child_process';
 import {
@@ -146,6 +148,15 @@ export const ANTI_THRASH_TEXT =
   '- One search per target. If the top hit answers your question (especially when the trailer says sufficient=YES), act on it — do not fire multiple keyword/regex variants for the same symbol.\n' +
   '- To find where a symbol is CALLED or what it calls (to trace a value downstream before editing), use `ss-trace <symbol>` — do not re-search by hand.';
 
+// The AGENTS.md block codex gets: frame + M± (sweet) / frame only (native). M± is bracketed by
+// the frame so FRAME_CLOSE's completion authority overrides M±'s stop-early guidance. With
+// SWEET_RULES_PLACEMENT=system the sweet file is the frame only — byte-identical to native's —
+// and the rules go to the base instructions instead (codexHarnessTrimArgs).
+export function codexInstructionFile({ sweet, mppText, rulesPlacement = 'file' }) {
+  const rules = sweet && rulesPlacement !== 'system';
+  return `${FRAME_OPEN}${rules ? `\n\n${mppText}` : ''}\n\n${FRAME_CLOSE}`;
+}
+
 // Bench-owned config.toml for an UNJAILED rollout (see privateCodexHome in runCodexTask): the
 // box's openrouter provider definition, byte for byte. No [projects] trust entry: exec mode
 // with --dangerously-bypass-approvals-and-sandbox reads the repo's AGENTS.md without one
@@ -280,13 +291,33 @@ export function codexHarnessTrim({ sweet, mode = process.env.CODEX_HARNESS_TRIM,
     : { mode: 'instructions+tools', source };
 }
 
-/** `codex exec` argv for an ON trim; writes the instructions (license header stripped) into stateDir. */
-export function codexHarnessTrimArgs(trim, stateDir) {
-  if (!trim?.mode) return [];
+/**
+ * `codex exec` argv for an ON trim; writes the instructions (license header stripped) into stateDir.
+ *
+ * `rules` (SWEET_RULES_PLACEMENT=system, sweet arm only; see sweet-rules-placement.mjs): the
+ * sweet rules are appended to the instructions the model gets as its base prompt. That text is
+ * the `instructions` field on gpt-5.5 and the FIRST developer message on gpt-5.6-luna (code mode)
+ * — both are what `model_instructions_file` replaces (verified by capture on 0.146.1). With a trim
+ * on, the rules go after the trim's text. With the trim off, the file is the model's UNMODIFIED
+ * captured base prompt (trim/build-codex-instructions.mjs stockInstructions, sha-pinned) + the
+ * rules, and only `model_instructions_file` is passed: no tool or context key changes, so the
+ * request differs from stock only by the rules. `model` picks that stock text; any model without
+ * a captured prompt is refused rather than silently running with the wrong base prompt.
+ */
+export function codexHarnessTrimArgs(trim, stateDir, { rules = null, model = 'openai/gpt-5.5' } = {}) {
+  if (!trim?.mode && !rules) return [];
   const file = path.join(stateDir, CODEX_HARNESS_TRIM_STATE_FILE);
-  const text = readFileSync(trim.source, 'utf8').replace(/^<!--[\s\S]*?-->\n/, '');
-  writeFileSync(file, trim.batch ? applyCodexBatch(text, trim.batch) : text);
-  return ['-c', `model_instructions_file=${JSON.stringify(file)}`,
+  let text;
+  if (trim?.mode) {
+    text = readFileSync(trim.source, 'utf8').replace(/^<!--[\s\S]*?-->\n/, '');
+    if (trim.batch) text = applyCodexBatch(text, trim.batch);
+  } else {
+    text = stockInstructions(String(model).replace(/^openai\//, ''));
+  }
+  writeFileSync(file, rules ? appendSweetRules(text, rules) : text);
+  const fileArg = ['-c', `model_instructions_file=${JSON.stringify(file)}`];
+  if (!trim?.mode) return fileArg;
+  return [...fileArg,
     ...[...(trim.config || CODEX_HARNESS_TRIM_CONFIG), ...(trim.extra || [])].flatMap(kv => ['-c', kv])];
 }
 
@@ -586,6 +617,9 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // Harness trim (research switch, default OFF, sweet arm only): resolved before any side
   // effect so a bad value fails the rollout up front.
   const harnessTrim = codexHarnessTrim({ sweet, model: apiModel });
+  // SWEET_RULES_PLACEMENT (default 'file'): 'system' moves the rules out of AGENTS.md into the
+  // base instructions (codexHarnessTrimArgs). Resolved up front for the same reason.
+  const rulesPlacement = resolveSweetRulesPlacement({ sweet });
   const workdir = t.workdir || `/${t.repo.split('/')[1]}`;
   const testScript = [].concat(t.install_config?.test_cmd || []).join(' && ');
 
@@ -644,8 +678,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   try { realDocker = execSync('command -v docker', { encoding: 'utf8' }).trim() || 'docker'; } catch { /* fall back to bare 'docker' */ }
   // Inject before shim generation so telemetry fingerprints these harness-owned
   // bytes; a later agent modification is still reported as a prohibited change.
-  const instructions = `${FRAME_OPEN}${sweet ? `\n\n${mppText}` : ''}\n\n${FRAME_CLOSE}`;
-  appendFileSync(path.join(rundir, 'AGENTS.md'), `\n\n${instructions}\n`);
+  appendFileSync(path.join(rundir, 'AGENTS.md'), `\n\n${codexInstructionFile({ sweet, mppText, rulesPlacement })}\n`);
   const shimInfo = writeRunTestsShim(binDir, {
     image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300,
     netArgs, brokerMode: true, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY,
@@ -778,7 +811,10 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // ChatGPT backend (selected by the seeded auth.json); the openrouter path is unchanged.
   const providerArgs = codexSubscription ? [] : ['-c', 'model_provider="openrouter"'];
   // Empty when the trim is off, so the argv stays byte-identical to the held-out legs.
-  const trimArgs = codexHarnessTrimArgs(harnessTrim, runnerStateDir);
+  // With SWEET_RULES_PLACEMENT=system the rules ride in model_instructions_file (trim on or off).
+  const trimArgs = codexHarnessTrimArgs(harnessTrim, runnerStateDir, {
+    rules: rulesPlacement === 'system' ? mppText : null, model: apiModel,
+  });
   const baseArgs = ['exec', ...sandboxArgs, '--json',
     '-c', `model_reasoning_effort="${reasoning}"`, ...providerArgs, ...trimArgs,
     '-m', codexModel, '-C', rundir];
@@ -981,7 +1017,7 @@ ${ho}`;
     ...verifyShimIntegrity(shimInfo?.integrity),
     ...verifyRunnerDirectoryIntegrity({
       binDir, expectedFiles: runnerFiles, stateDir: runnerStateDir,
-      allowedStateEntries: harnessTrim.mode ? [CODEX_HARNESS_TRIM_STATE_FILE] : [],
+      allowedStateEntries: (harnessTrim.mode || rulesPlacement === 'system') ? [CODEX_HARNESS_TRIM_STATE_FILE] : [],
     }),
   ];
   if (shimTamperedFiles.length) {
@@ -1093,6 +1129,8 @@ ${ho}`;
     codexErrors: parsed.errors.slice(0, 5), startRetried,
     // CODEX_HARNESS_TRIM mode ('instructions+tools') or null when off.
     harnessTrim: harnessTrim.mode,
+    // SWEET_RULES_PLACEMENT: { sweetRulesPlacement: 'system' } only when on; nothing when off.
+    ...sweetRulesRowFields(rulesPlacement),
     stderrPreview: String(r.stderr || '').replace(STDIN_BANNER, '').slice(0, 300),
   };
 }

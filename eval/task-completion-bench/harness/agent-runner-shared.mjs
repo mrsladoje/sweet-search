@@ -30,6 +30,7 @@ import { priceFor, costFromTurns, LEDGER_BASIS } from './ideal-cost.mjs';
 import { includeUntrackedFromEnv, untrackedBaselineFor, benchGitDiff } from './rt-untracked-diff.mjs';
 
 export { FRAME_OPEN, FRAME_CLOSE, priceFor, costFromTurns };
+export { resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules } from './sweet-rules-placement.mjs';
 
 const DOCKER_HOST = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock';
 const L1_CONDENSE = process.env.SS_NO_CMD_CONDENSE !== '1';
@@ -248,14 +249,23 @@ export function buildTrajectory(toolCalls) {
 // calls this with sweet:false so CLAUDE.md contains only the benchmark frame and
 // writes M± to Claude's auto-loaded project rule instead. Injected instruction
 // surfaces are excluded from the graded patch.
-export function buildInstructionFile({ sweet, mppText, env = process.env }) {
-  const packing = packingTreatmentRowFields({ sweet, env });
+//
+// SWEET_RULES_PLACEMENT=system (sweet-rules-placement.mjs): the sweet block (M± + any packing
+// treatment) leaves the file for the harness system prompt, so the file is the frame only —
+// byte-identical to native's — and sweetRulesBlock() is what the runner puts in the prompt.
+export function sweetRulesBlock({ mppText, env = process.env }) {
+  const packing = packingTreatmentRowFields({ sweet: true, env });
   const treatment = packing.packingTreatment === 'off'
     ? '' : `\n\n${PACKING_INSTRUCTIONS[packing.packingTreatment]}`;
-  return `${FRAME_OPEN}${sweet ? `\n\n${mppText}${treatment}` : ''}\n\n${FRAME_CLOSE}${frameReflectText(env)}`;
+  return `${mppText}${treatment}`;
 }
-export function writeInstructionFile(rundir, fileName, { sweet, mppText, env = process.env }) {
-  appendFileSync(path.join(rundir, fileName), `\n\n${buildInstructionFile({ sweet, mppText, env })}\n`);
+export function buildInstructionFile({ sweet, mppText, env = process.env, rulesPlacement = 'file' }) {
+  packingTreatmentRowFields({ sweet, env });
+  const rules = sweet && rulesPlacement !== 'system';
+  return `${FRAME_OPEN}${rules ? `\n\n${sweetRulesBlock({ mppText, env })}` : ''}\n\n${FRAME_CLOSE}${frameReflectText(env)}`;
+}
+export function writeInstructionFile(rundir, fileName, { sweet, mppText, env = process.env, rulesPlacement = 'file' }) {
+  appendFileSync(path.join(rundir, fileName), `\n\n${buildInstructionFile({ sweet, mppText, env, rulesPlacement })}\n`);
 }
 // The prompt is the issue ONLY (both arms) — the frame lives in the instruction file above.
 export function issuePrompt(problemStatement) {
