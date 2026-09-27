@@ -231,7 +231,10 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
   if (m === 'product') {
     const batch = String(process.env.CC_TRIM_BATCH ?? '').trim();
     if (batch && !CC_BATCH_VARIANTS[batch]) throw new Error(`CC_TRIM_BATCH=${batch}: expected ${Object.keys(CC_BATCH_VARIANTS).join(', ')}`);
-    return { mode: batch ? `${m}+batch-${batch}` : m, args: [], env: {}, installLean: true, ...(batch ? { batch } : {}) };
+    // CC_PRODUCT_STEER=1 (bench only, audit mech-cc2): keep Claude Code's own bypass-mode steer
+    // (drop THRIFTY_SONIC=0 from the installed settings env) to measure its cost effect.
+    const steer = process.env.CC_PRODUCT_STEER === '1';
+    return { mode: `${batch ? `${m}+batch-${batch}` : m}${steer ? '+steer' : ''}`, args: [], env: {}, installLean: true, ...(batch ? { batch } : {}), ...(steer ? { steer: true } : {}) };
   }
   if (m === 'lean' || m === 'lean-batch') {
     // lean also drops the Agent tool (no delegation): opt-in only, reported separately.
@@ -613,6 +616,13 @@ export async function runClaudeCodeTask(task, {
     if (harnessTrim.batch) {
       const agentFile = join(rundir, CLAUDE_LEAN_AGENT_REL);
       writeFileSync(agentFile, applyClaudeBatch(readFileSync(agentFile, 'utf8'), harnessTrim.batch));
+    }
+    if (harnessTrim.steer) {
+      const settingsFile = join(rundir, '.claude', 'settings.json');
+      const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+      if (settings.env?.CLAUDE_CODE_THRIFTY_SONIC !== '0') throw new Error('CC_PRODUCT_STEER: THRIFTY_SONIC=0 not found in the installed settings');
+      delete settings.env.CLAUDE_CODE_THRIFTY_SONIC;
+      writeFileSync(settingsFile, `${JSON.stringify(settings, null, 2)}\n`);
     }
     if (systemRules) appendRulesToLeanAgentFiles(rundir, systemRules);
   }
