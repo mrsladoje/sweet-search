@@ -9,7 +9,9 @@ import {
   codexHarnessTrim, codexHarnessTrimArgs, codexBenchConfigToml, buildPrivateHome, PRIVATE_HOME_LINKS,
   CODEX_HARNESS_TRIM_CONFIG,
   CODEX_HARNESS_TRIM_SOURCES, CODEX_HARNESS_TRIM_STATE_FILE, CODEX_HARNESS_TRIM_V3_SOURCES,
+  CODEX_HARNESS_TRIM_CONFLICT_SOURCES,
 } from '../harness/codex-task-runner.mjs';
+import { CODEX_BATCH_VARIANTS, EFFICIENCY_LINE, applyCodexBatch } from '../harness/trim/batch-variants.mjs';
 import { buildInstructions, headerFor, sourceFor } from '../harness/trim/build-codex-instructions.mjs';
 import { mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -113,6 +115,73 @@ console.log('\nmode v3 (first edition + zero-risk cuts, luna only):');
     assert(body.includes(s), `v3: kept: ${s.slice(0, 50)}`);
   assert(body.split('Never repurpose `$HOME`').length === 2, 'v3: the $HOME rule appears once (duplicate removed)');
   rmSync(S3, { recursive: true, force: true });
+}
+
+console.log('\nmode conflict (original luna prompt minus the category-A line and the duplicate, no -c keys):');
+{
+  const SC = mkdtempSync(join(tmpdir(), 'codex-trim-conflict-test-'));
+  const saved = process.env.CODEX_TRIM_BATCH;
+  delete process.env.CODEX_TRIM_BATCH;
+  const c = codexHarnessTrim({ sweet: true, mode: 'conflict', model: 'openai/gpt-5.6-luna' });
+  const ac = codexHarnessTrimArgs(c, SC);
+  assert(c.mode === 'instructions-conflict' && c.source === CODEX_HARNESS_TRIM_CONFLICT_SOURCES['gpt-5.6-luna'],
+    'sweet + conflict on luna picks the conflict edit and records its own mode');
+  assert(ac.length === 2 && ac[0] === '-c' && ac[1] === `model_instructions_file=${JSON.stringify(join(SC, CODEX_HARNESS_TRIM_STATE_FILE))}`,
+    'sweet + conflict sends ONLY model_instructions_file (web_search, goals, request_user_input, skills, permissions, env context, update_plan stay stock)', JSON.stringify(ac));
+  assert(throws(() => codexHarnessTrim({ sweet: true, mode: 'conflict', model: 'openai/gpt-5.5' })), 'sweet + conflict refuses gpt-5.5 (no conflict edit)');
+  assert(codexHarnessTrim({ sweet: false, mode: 'conflict', model: 'openai/gpt-5.6-luna' }).mode === null, 'native + conflict never gets the trim');
+  const text = readFileSync(CODEX_HARNESS_TRIM_CONFLICT_SOURCES['gpt-5.6-luna'], 'utf8');
+  const header = headerFor('gpt-5.6-luna-conflict');
+  const body = text.slice(header.length);
+  assert(text.startsWith(header) && header.includes('Apache-2.0') && body === buildInstructions('gpt-5.6-luna-conflict', sourceFor('gpt-5.6-luna-conflict')),
+    'conflict: the committed file equals the reviewed deletion build of the 0.146.1 capture (licence header kept)');
+  assert(readFileSync(join(SC, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8') === body, 'conflict: the model gets the edit with the header stripped');
+  // Exactly two whole lines removed from the capture, nothing else changed: the body is the
+  // original with those lines dropped, in order.
+  const orig = sourceFor('gpt-5.6-luna-conflict').replace(/\n+$/, '').split('\n');   // the build normalises the final line break
+  const kept = body.replace(/\n$/, '').split('\n');
+  const removed = [];
+  let j = 0;
+  for (const line of orig) { if (j < kept.length && kept[j] === line) j++; else removed.push(line); }
+  assert(j === kept.length && JSON.stringify(removed) === JSON.stringify([
+    '- When you search for text or files, you reach first for `rg` or `rg --files`; they are much faster than alternatives like `grep`. If `rg` is unavailable, you use the next best tool without fuss.',
+    '- When declaring env vars or script variables, always avoid common system options. Never repurpose `$HOME`, `$home`, or `$CODEX_HOME`. Instead, use a task-specific variable name.',
+  ]), 'conflict: line diff v the original = exactly the rg line and the first of the two identical $HOME lines', JSON.stringify(removed));
+  assert(body.split('Never repurpose `$HOME`').length === 2, 'conflict: the $HOME rule still appears once');
+  for (const s of ['# Personality', '# Using skills', 'Formatting rules', 'longer than 60 seconds', 'may send a new message', 'Never praise your plan'])
+    assert(body.includes(s), `conflict: kept (not a conflict): ${s}`);
+  for (const [k] of Object.entries(CODEX_BATCH_VARIANTS)) {
+    let err = null;
+    try { applyCodexBatch(body, k); } catch (e) { err = e; }
+    assert(!err, `conflict: CODEX_TRIM_BATCH=${k} anchors exist in the conflict text`, err?.message);
+  }
+  process.env.CODEX_TRIM_BATCH = 'yt2';
+  const cb = codexHarnessTrim({ sweet: true, mode: 'conflict', model: 'openai/gpt-5.6-luna' });
+  const SB = mkdtempSync(join(tmpdir(), 'codex-trim-conflict-batch-test-'));
+  const ab = codexHarnessTrimArgs(cb, SB);
+  const sentB = readFileSync(join(SB, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8');
+  assert(cb.mode === 'instructions-conflict+batch-yt2' && ab.length === 2 && sentB === applyCodexBatch(body, 'yt2'),
+    'conflict + CODEX_TRIM_BATCH=yt2: the batch line swap is applied to the conflict text, still no -c keys');
+  assert(codexHarnessTrim({ sweet: false, mode: 'conflict', model: 'openai/gpt-5.6-luna' }).mode === null
+      && codexHarnessTrim({ sweet: true, mode: '0', model: 'openai/gpt-5.6-luna' }).mode === null,
+    'CODEX_TRIM_BATCH alone (trim off, or native) adds nothing');
+  process.env.CODEX_TRIM_BATCH = 'nope';
+  assert(throws(() => codexHarnessTrim({ sweet: true, mode: 'conflict', model: 'openai/gpt-5.6-luna' })), 'conflict + unknown CODEX_TRIM_BATCH throws');
+  if (saved === undefined) delete process.env.CODEX_TRIM_BATCH; else process.env.CODEX_TRIM_BATCH = saved;
+  rmSync(SC, { recursive: true, force: true });
+  rmSync(SB, { recursive: true, force: true });
+}
+
+console.log('\nCodex lines yt2 / yt2eff (general wording):');
+{
+  const yt2 = CODEX_BATCH_VARIANTS.yt2;
+  assert(!yt2.includes('Promise.allSettled') && yt2.includes('// @exec: {"yield_time_ms": 600000}') && yt2.includes('tools.write_stdin'),
+    'yt2: template only (pragma + write_stdin), no Promise.allSettled line');
+  assert(/ends by itself but takes longer than 10 seconds/.test(yt2) && /keeps running until it is stopped, such as a dev server or a watch mode/.test(yt2),
+    'yt2: says which commands use the form and which (dev servers, watch modes) must not');
+  assert(CODEX_BATCH_VARIANTS.yt2eff === `${yt2}\n${EFFICIENCY_LINE}`, 'yt2eff = yt2 + the efficiency line');
+  for (const [name, t] of [['yt2', yt2], ['efficiency line', EFFICIENCY_LINE]])
+    assert(!/bench|test suite|run_tests|failing test|frame|acceptance/i.test(t), `${name}: no benchmark-specific words`);
 }
 
 console.log('\nunjailed bench-owned CODEX_HOME config:');

@@ -6,6 +6,10 @@
 //   CODEX_TRIM_BATCH=unchain|dep|two|plan   (with CODEX_HARNESS_TRIM=v3)
 //   OC_HARNESS_TRIM=batch-unchain|batch-dep|batch-two|batch-plan   (untrimmed opencode otherwise)
 //   CC_TRIM_BATCH=two|plan|amp              (with CC_HARNESS_TRIM=product)
+// 2026-09-27 (conflict-only trims, general wording): CODEX_TRIM_BATCH=yt2|yt2eff (with
+// CODEX_HARNESS_TRIM=v3 or conflict); OC_HARNESS_TRIM=<base>+<variant> with base conflict,
+// conflict-noglob or untrimmed and any opencode variant below (e.g. conflict+todo2eff);
+// CC_TRIM_BATCH=eff (inserts EFFICIENCY_LINE after the "act" line, no line replaced).
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +24,9 @@ const PLAN = 'Before each turn, work out every read and check you already know y
 
 // Round 5 (trace analysis 2, 2026-09-27 04:40): lines on top of each harness's candidate.
 const R5_FIND = '- If you need the code at an exact name, not only where it is, use `ss-find "<what it does>" --regex "\\bName\\b"`: it returns the code blocks, so no separate ss-read turn is needed.';
+// Research candidate #2 (research-2/candidates.md), reworded so it assumes no failing test and
+// names no benchmark: general bounded-efficiency workflow line, shared by all three harnesses.
+export const EFFICIENCY_LINE = '- Work efficiently: start from the files the task and any error output point to; open more files only when the evidence requires it; make the smallest change that solves the task; verify it once with the checks the project has; stop when it is done.';
 const R5_ALT = '- When you guess at a name that may not exist, put every spelling you would try into one regex alternation `(a|b|c)` in a single ss-grep, not one guess per turn.';
 
 // --- Codex (v3 instructions for gpt-5.6-luna) ---
@@ -41,6 +48,10 @@ const CODEX_YIELD_TEMPLATE = '- For a long command such as the test suite, use o
 // cells used it (the agent copied yield_time_ms onto exec_command, which does not keep the cell open).
 const CODEX_YT_EVERY = ' Use this form for every run of the test suite, the first run included. The yield_time_ms of exec_command or write_stdin does not keep the cell open; only the first line does.';
 const CODEX_OPEN = '- In your first cell, under that first line, run the test suite and your first searches together with Promise.allSettled, so one turn returns the test result and the search results.';
+// yt2 (2026-09-27): the pallyt template without the Promise.allSettled line, reworded to hold
+// for any repository: it names the class of command it is for (ends by itself, takes over 10 s)
+// and the class it must not be used for (runs until stopped).
+const CODEX_YIELD_TEMPLATE2 = '- An exec cell returns after 10 seconds unless its first line sets a longer limit. For a command that ends by itself but takes longer than 10 seconds, such as a build or a test run, use one cell of this form: first line `// @exec: {"yield_time_ms": 600000}`, then `const r = await tools.exec_command({cmd: <command>, yield_time_ms: 300000}); text(r.output); if (r.session_id) text((await tools.write_stdin({session_id: r.session_id, chars: "", yield_time_ms: 300000})).output);` A cell that ends without the write_stdin step returns before the command finishes, and its result is lost. Do not use this form for a command that keeps running until it is stopped, such as a dev server or a watch mode.';
 const CODEX_BASE = `${CODEX_PAR}\n${CODEX_CHAIN}`;
 export const CODEX_BATCH_VARIANTS = Object.freeze({
   unchain: CODEX_PAR,
@@ -57,6 +68,8 @@ export const CODEX_BATCH_VARIANTS = Object.freeze({
   pallyt1open: `${CODEX_BASE}\n${CODEX_PALL}\n${CODEX_YIELD_TEMPLATE}${CODEX_YT_EVERY}\n${CODEX_OPEN}`,
   pallfind: `${CODEX_BASE}\n${CODEX_PALL}\n${R5_FIND}\n${R5_ALT}`,
   pallytfind: `${CODEX_BASE}\n${CODEX_PALL}\n${CODEX_YIELD_TEMPLATE}\n${R5_FIND}\n${R5_ALT}`,
+  yt2: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE2}`,
+  yt2eff: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE2}\n${EFFICIENCY_LINE}`,
 });
 export function applyCodexBatch(text, variant) {
   const repl = CODEX_BATCH_VARIANTS[variant];
@@ -88,6 +101,7 @@ const OC_FIT = '- For code search and reading use the ss-* commands through bash
 const OC_TODO_END = '- After the final test run passes, write the final answer. Do not spend a turn only on todowrite to mark items completed.';
 const OC_TODO_OPEN = '- Send your first todo list together with your first searches, as parallel calls in one turn.';
 const OC_DIFF = '- When you run the test suite after your last edit, send git diff as a parallel call in the same turn. If the result passes and the diff shows nothing left to do, write the final answer next.';
+const OC_TODO2 = '- Send todowrite as a parallel call in the same turn as your next tool call, never as a turn of its own. Mark a step in_progress in the call that starts it, and completed in the call that starts the next one.';
 const OC_TODO_DESC_EDITS = [
   ["- Update status in real time; don't batch completions\n", ''],
   ['\nWhen in doubt, use it.\n', '\n'],
@@ -104,16 +118,26 @@ Object.assign(OPENCODE_BATCH_VARIANTS_R2, {
   todoall2diff: { bullet: `${OC_BULLET}\n${OC_TODO}\n${OC_TODO_OPEN}\n${OC_TODO_END}\n${OC_DIFF}`, edits: { todowrite: OC_TODO_DESC_EDITS } },
   todoall2find: { bullet: `${OC_BULLET}\n${OC_TODO}\n${OC_TODO_OPEN}\n${OC_TODO_END}\n${R5_FIND}\n${R5_ALT}`, edits: { todowrite: OC_TODO_DESC_EDITS } },
   comboall: { bullet: `${OC_BULLET}\n${OC_TODO}\n${OC_FIRSTRUN}\n${OC_NOREVIEW}`, edits: { todowrite: OC_TODO_DESC_EDITS } },
+  // 2026-09-27: todoall reworded as a general line. todoall deletes the description's "Update
+  // status in real time" rule and says "update the list only when a step is finished"; todo2 keeps
+  // that rule, says in which call each status changes, and removes only "When in doubt, use it."
+  // Same no-solo-todowrite-turn instruction as todoall.
+  todo2: { bullet: `${OC_BULLET}\n${OC_TODO2}`, edits: { todowrite: [OC_TODO_DESC_EDITS[1]] } },
+  todo2eff: { bullet: `${OC_BULLET}\n${OC_TODO2}\n${EFFICIENCY_LINE}`, edits: { todowrite: [OC_TODO_DESC_EDITS[1]] } },
 });
 /** Tool-description edits for an opencode batch variant (applied by opencode-trim-plugin.mjs), or null. */
 export function opencodeBatchToolEdits(variant) {
   return OPENCODE_BATCH_VARIANTS_R2[variant]?.edits || null;
 }
 
-export function opencodeBatchPrompt(variant) {
+/** Every opencode variant name (batch-<name>, or the <name> in <base>+<name>). */
+export const OPENCODE_VARIANT_NAMES = Object.freeze([...Object.keys(OPENCODE_BATCH_VARIANTS), ...Object.keys(OPENCODE_BATCH_VARIANTS_R2)]);
+
+// `text` = the prompt the variant edits: the untrimmed gpt prompt by default, or a conflict-trim
+// base (OC_HARNESS_TRIM=conflict+<variant>). The batching bullet must be in it unchanged.
+export function opencodeBatchPrompt(variant, text = readFileSync(OPENCODE_GPT_ORIGINAL, 'utf8')) {
   const repl = OPENCODE_BATCH_VARIANTS[variant] ?? OPENCODE_BATCH_VARIANTS_R2[variant]?.bullet;
-  if (!repl) throw new Error(`OC_HARNESS_TRIM=batch-${variant}: expected batch-${[...Object.keys(OPENCODE_BATCH_VARIANTS), ...Object.keys(OPENCODE_BATCH_VARIANTS_R2)].join(', batch-')}`);
-  const text = readFileSync(OPENCODE_GPT_ORIGINAL, 'utf8');
+  if (!repl) throw new Error(`OC_HARNESS_TRIM=batch-${variant}: expected batch-${OPENCODE_VARIANT_NAMES.join(', batch-')}`);
   if (!text.includes(OC_BULLET)) throw new Error('OC_HARNESS_TRIM=batch-*: batching bullet not found in the original prompt');
   let out = text.replace(OC_BULLET, repl);
   for (const [find, rep] of OPENCODE_BATCH_VARIANTS_R2[variant]?.prompt || []) {
@@ -145,10 +169,22 @@ export const CC_BATCH_VARIANTS = Object.freeze({
   ampsaferange: `${CC_DEP} ${PLAN}\n${CC_ROOT}\n${CC_TIMEOUT}\n${CC_TAIL}\n${CC_RANGES}`,
   saferange: `${CC_DEP}\n${CC_ROOT}\n${CC_TIMEOUT}\n${CC_TAIL}\n${CC_RANGES}`,
   saferangefinal: `${CC_DEP}\n${CC_ROOT}\n${CC_TIMEOUT}\n${CC_TAIL}\n${CC_RANGES}\n${CC_FINAL}`,
+  // 2026-09-27: the product prompt + the general efficiency line. It INSERTS (replaces nothing),
+  // after the base prompt's "act" line, so it does not depend on the max-batch line's wording
+  // (the product module is being rebuilt); a missing anchor throws.
+  eff: EFFICIENCY_LINE,
 });
+const CC_INSERT_AFTER = Object.freeze({ eff: 'When you have enough information to act, act.' });
 export function applyClaudeBatch(text, variant) {
   const repl = CC_BATCH_VARIANTS[variant];
   if (!repl) throw new Error(`CC_TRIM_BATCH=${variant}: expected ${Object.keys(CC_BATCH_VARIANTS).join(', ')}`);
+  const anchor = CC_INSERT_AFTER[variant];
+  if (anchor) {
+    const at = text.indexOf(anchor);
+    if (at < 0 || text.indexOf(anchor, at + 1) >= 0) throw new Error(`CC_TRIM_BATCH=${variant}: anchor "${anchor}" not found exactly once in the agent file`);
+    const eol = text.indexOf('\n', at);
+    return eol < 0 ? `${text}\n${repl}` : `${text.slice(0, eol)}\n${repl}${text.slice(eol)}`;
+  }
   if (!text.includes(CC_DEP)) throw new Error('CC_TRIM_BATCH: max-batch line not found in the agent file');
   return text.replace(CC_DEP, repl);
 }

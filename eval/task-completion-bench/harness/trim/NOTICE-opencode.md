@@ -96,3 +96,18 @@ headless benchmark task never uses. Everything else is unchanged.
 - read — A: "Use the grep tool to find specific content …" and "use the glob tool to look up filenames …".
 - task — A (the tool stays enabled; only pointers to the disabled glob/grep tools go): "use the Read or Glob tool instead of the Task tool" → "use the Read tool instead of the Task tool"; the line "If you are searching for a specific class definition like "class Foo", use the Grep tool instead, …" is removed. The rest of the description and the agent list are unchanged.
 - Not edited: `edit`, `write`, `apply_patch`, `todowrite`.
+
+## Conflict-only trim (`OC_HARNESS_TRIM=conflict`, `conflict-noglob`, 2026-09-27, gpt family)
+
+No new file: the runner derives the prompt at run time from `opencode-1.18.4-prompt-gpt-original.txt`
+(the untrimmed gpt prompt as 1.18.4 sends it) and fails if the removed bullet is not found exactly once.
+Only tag **A** changes; no **B** cut is made. The build agent and the `general` subagent get the same prompt.
+
+- prompt — A: the one bullet "When searching for text or files, prefer using Glob and Grep tools (they are powered by `rg`)". Nothing else: "Special user requests" (time, review), "Frontend tasks", "General", "Formatting rules" and "Response channels" stay.
+- tools — `grep` disabled. `glob` stays in `conflict` and is disabled in `conflict-noglob`. `skill`, `todowrite` and `task` stay.
+- subagents — `explore` disabled (its prompt tells it to search with Glob/Grep, as in v3).
+- glob (`conflict` only) — A: "When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead".
+- bash — A: the "IMPORTANT: … DO NOT use it for file operations (… searching, finding files)" paragraph; " or Grep to search the full content"; the avoid list loses `grep`, `cat`, `head`, `tail` with the lines "Content search: Use Grep (NOT grep or rg)" and "Read files: Use Read (NOT cat/head/tail)". In `conflict` the "File search: Use Glob (NOT find or ls)" line and `find` stay (glob is enabled); `conflict-noglob` removes them too (the round-1 bash edits).
+- read — A: "Use the grep tool to find specific content …". `conflict-noglob` also removes "use the glob tool to look up filenames …". The image/PDF line stays.
+- task — A: "use the Grep tool instead, to find the match more quickly" → "search for it directly instead, to find the match more quickly" (as v3). `conflict-noglob` also changes "use the Read or Glob tool" → "use the Read tool". The result-visibility and "used proactively" notes stay.
+- `<base>+<variant>` (for example `conflict+todo2`) adds the variant's own prompt line and tool-description edits from `batch-variants.mjs` (our own text). `untrimmed+<variant>` equals `batch-<variant>`.
