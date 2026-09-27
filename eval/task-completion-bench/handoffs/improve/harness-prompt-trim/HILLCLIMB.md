@@ -129,3 +129,8 @@ Owner decisions: (1) rebuild the shipped Claude Code harness CONFLICT-ONLY, rest
 9. Final per harness: sweet rules OUTSIDE v INSIDE the system prompt (inside = seamless-UX goal).
 Phase-2 baselines: Codex/opencode = UNTRIMMED stock harness; Claude Code = stock (and the conflict-only product rebuild).
 Concurrency: cells run all tasks at once (4-6); 10-task A+B cells are tried at concurrency 10 once the queue2 cells finish — drop back to 6 if run_tests INFRA/timeouts appear.
+
+## Phase 2 log
+- 12:53 queue2 started (opencode trims, eslint repeats, Codex conflict).
+- Claude Code product rebuilt conflict-only (merge 7485e10) + memory/git-context guidance restored as paraphrase with computed memory dir (merge e45e567, "product v2.1"). First request: stock 12,619 tok; old lean 4,730; v2 11,653; **v2.1 12,409 (−1.7% v stock)**. Removed v stock: only "prefer dedicated file/search tools", Explore + claude subagent types, bypass-mode cat/grep steer, token reminder, gitStatus snapshot (model told to run git status itself). Rules reach main, general-purpose AND Plan subagents (stock Plan gets none). Expected cost effect ≈ 0 (prefix nearly equal; retrieval shift cost-neutral in audit). Bench product mode now keeps web like native (old product denied it on sweet only — do not pool pre/post). Cells p2-cc-A/B (stock v product v2.1) queued.
+- opencode phase-2 baseline (untrimmed, A): 3/4, $0.084, 80 turns.
