@@ -209,6 +209,8 @@ export const CC_BATCH_VARIANTS = Object.freeze({
   // stock has no such sentence, and in bypass mode stock says the opposite; the tools stay available.
   noedit: CC_NOEDIT_LINE,
   read3: CC_NOEDIT_LINE, // + CC_TEXT_EDITS.read3 (applied in applyClaudeBatch)
+  read4: CC_NOEDIT_LINE, // + read3 + CC_READ4_EXTRA
+  read4out: CC_NOEDIT_LINE, // + read4 + CC_OUT_EXTRA
 });
 const CC_INSERT_AFTER = Object.freeze({ eff: 'When you have enough information to act, act.' });
 // The line a replacing variant swaps: the v1 max-batch line, or (since the conflict-only product
@@ -217,6 +219,7 @@ const CC_INSERT_AFTER = Object.freeze({ eff: 'When you have enough information t
 // read3 (audit mech-cc3): product+noedit plus three paraphrased edits to the product agent text —
 // the gap v stock is +30% tool output per rollout (wider reads), extra end-of-task git calls and
 // narration. Each edit keeps every capability; checking stays required.
+const CC_TEXT_EDITS_EXTRA = {};
 const CC_TEXT_EDITS = Object.freeze({
   read3: [
     ['- When you have enough information to act, act. Do not re-derive settled facts or reopen decisions the user made. When you weigh a choice, recommend one option instead of surveying them all.',
@@ -227,8 +230,25 @@ const CC_TEXT_EDITS = Object.freeze({
      'When git state matters, run `git status --short --branch`, and `git log --oneline -5` only when recent commits matter.'],
   ],
 });
+// read4 / read4out (research cc-research + audit cc-turns, 2026-09-28): read3 plus
+// (a) a firmer parallel-calls line (Anthropic's guidance lifts parallel calling; fewer turns),
+// (b) commit to a plausible approach (Opus-class over-exploration), (c) one-off probes instead of
+// temporary project files + full re-runs; read4out adds (d) keep long output in a file instead of
+// re-running a command to see another part of it. General wording; no capability removed.
+const CC_READ4_EXTRA = [
+  ['- Tool calls that do not depend on each other can go in parallel in one response.',
+   '- When you already know two or more tool calls that do not depend on each other, such as searches, reads or lookups, make them all in the same response instead of one per turn.'],
+  ['unless you need all of it.',
+   'unless you need all of it.\n- Once you have a plausible approach, follow it; change course when new evidence contradicts it, not to survey alternatives.\n- To try out one behaviour, run a one-off command or script instead of adding temporary files to the project and running the full check for it.'],
+];
+const CC_OUT_EXTRA = [
+  ['running the full check for it.',
+   'running the full check for it.\n- When a command prints a lot, save its full output to a file on the first run and show the part you need, such as the end and the error lines; look in that file again instead of running the command again.'],
+];
+CC_TEXT_EDITS_EXTRA.read4 = [...CC_TEXT_EDITS.read3, ...CC_READ4_EXTRA];
+CC_TEXT_EDITS_EXTRA.read4out = [...CC_TEXT_EDITS.read3, ...CC_READ4_EXTRA, ...CC_OUT_EXTRA];
 export function applyClaudeBatch(text, variant) {
-  const edits = CC_TEXT_EDITS[variant];
+  const edits = CC_TEXT_EDITS[variant] ?? CC_TEXT_EDITS_EXTRA[variant];
   if (edits) {
     let out = applyClaudeBatch(text, 'noedit');
     for (const [from, to] of edits) {
