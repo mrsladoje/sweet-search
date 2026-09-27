@@ -137,3 +137,6 @@ Concurrency: cells run all tasks at once (4-6); 10-task A+B cells are tried at c
 - p2-oc-trim-A (A, 4 tasks): untrimmed $0.084 (80 turns); conflict $0.086 (+2% real, +1% ideal, 70 turns); **conflict-noglob $0.075 (−11% real, −12% ideal, 67 turns)**; all 3/4, eslint solved by all. Removing glob keeps the capability (bash find/ls lists files by name).
 - p2-oc-trim-eslint-1: untrimmed $0.021 (20 turns), conflict $0.022 (18), conflict-noglob $0.015 (15); all SOLVED (old trims lost eslint).
 - Queued p2-oc-stack-A (conflict-noglob + todoall / todo2 / todo2eff) ahead of the Codex cells.
+- p2-oc-trim-B (B, 6 tasks): untrimmed $0.081 (95 turns); conflict $0.077 (−5% real, −7% ideal, 76); conflict-noglob $0.077 (−5%, −5%, 80); all 0/6.
+- p2-oc-trim-eslint-2: untrimmed $0.020, conflict $0.024, conflict-noglob $0.025; all SOLVED. eslint across A + 2 repeats: both trims 3/3 solved — the old trims' eslint loss does not recur.
+- opencode trim verdict so far: conflict-noglob −11% (A), −5% (B) → trim CANDIDATE (≈ −900 tok prompt+tool text ⇒ ≈ −4..−5% by prefix arithmetic); conflict +2% (A), −5% (B). Next: stack todo lines on conflict-noglob (p2-oc-stack-A running).
