@@ -93,6 +93,21 @@ export const VARIANTS = {
     ],
     edits: [],
   },
+  // conflict (CODEX_HARNESS_TRIM=conflict, 2026-09-27): the ORIGINAL luna prompt with only the
+  // line that contradicts the ss-* rules and one verbatim duplicate removed. Nothing else: no
+  // bloat, user-capability or bench-only cuts, and the runner sends no -c keys with it.
+  'gpt-5.6-luna-conflict': {
+    model: 'gpt-5.6-luna',
+    capture: 'codex-0.146.1-request-luna-base.json',
+    extract: body => body.input.find(m => m.type === 'message' && m.role === 'developer').content[0].text,
+    sha256: 'cbefa6b0bede0e332d957fca70ccacf9f12f4c0ecdf81b819e5cbe1a3b16e265', // 17,730 chars
+    out: 'codex-0.146.1-instructions-conflict-gpt-5.6-luna.md',
+    delete: [
+      [78, 78],   // "reach first for `rg` or `rg --files`" — contradicts the ss-* rules
+      [83, 83],   // "Never repurpose `$HOME` ..." — verbatim duplicate of line 124, which stays
+    ],
+    edits: [],
+  },
 };
 
 export const headerFor = (model) => `<!--

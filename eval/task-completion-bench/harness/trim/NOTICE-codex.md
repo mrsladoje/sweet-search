@@ -131,3 +131,19 @@ in-scope checks and alternatives", the clarifying-questions line), the `<permiss
 message, `<environment_context>` and `update_plan`. Config keys: the first four only
 (`web_search`, `features.goals`, `tools.experimental_request_user_input`,
 `skills.include_instructions`). As sent: 7,789 chars (first edition 8,062; mode 1 6,034).
+
+## Conflict-only (luna only, `CODEX_HARNESS_TRIM=conflict`, 2026-09-27)
+
+`codex-0.146.1-instructions-conflict-gpt-5.6-luna.md`: built from the same capture and sha256 as
+the luna edit (`build-codex-instructions.mjs`, variant `gpt-5.6-luna-conflict`). It is the ORIGINAL
+prompt with two lines deleted and nothing else.
+
+| # | Source lines | What | Why |
+|---|---|---|---|
+| 1 | 78 | "When you search for text or files, you reach first for `rg` or `rg --files`…" | **Contradicts** the sweet-search rules. |
+| 2 | 83 | "Never repurpose `$HOME`…" | Verbatim duplicate of line 124, which stays. |
+
+No `-c` keys are sent: `web_search`, the goal tools, `request_user_input`, the skills block, the
+permissions message, `<environment_context>` and `update_plan` all stay as stock. As sent: 17,354
+chars (original 17,730). `CODEX_TRIM_BATCH` works on top of it: the two batching lines it replaces
+(source lines 79–80) are unchanged.
