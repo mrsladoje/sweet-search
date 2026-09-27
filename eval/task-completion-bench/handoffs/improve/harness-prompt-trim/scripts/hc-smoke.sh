@@ -95,11 +95,13 @@ for V in $VARIANTS; do
     # product + that CC_TRIM_BATCH variant.
     claudecode)
       # A trailing +steer keeps Claude Code's bypass-mode steer (CC_PRODUCT_STEER=1).
+      # A trailing +tokrem keeps the token-budget reminder (CC_PRODUCT_TOKREM=1).
+      TR=; case $V in *+tokrem) TR=1; V=${V%+tokrem} ;; esac
       ST=; case $V in *+steer) ST=1; V=${V%+steer} ;; esac
       case $V in
-        base)      SW=(CC_HARNESS_TRIM=product CC_TRIM_BATCH= "CC_PRODUCT_STEER=$ST") ;;
-        untrimmed) SW=(CC_HARNESS_TRIM=0 CC_TRIM_BATCH= CC_PRODUCT_STEER=) ;;
-        *)         SW=(CC_HARNESS_TRIM=product "CC_TRIM_BATCH=$V" "CC_PRODUCT_STEER=$ST") ;;
+        base)      SW=(CC_HARNESS_TRIM=product CC_TRIM_BATCH= "CC_PRODUCT_STEER=$ST" "CC_PRODUCT_TOKREM=$TR") ;;
+        untrimmed) SW=(CC_HARNESS_TRIM=0 CC_TRIM_BATCH= CC_PRODUCT_STEER= CC_PRODUCT_TOKREM=) ;;
+        *)         SW=(CC_HARNESS_TRIM=product "CC_TRIM_BATCH=$V" "CC_PRODUCT_STEER=$ST" "CC_PRODUCT_TOKREM=$TR") ;;
       esac ;;
   esac
   # Neutral run ids (the run id reaches paths the agent can see); rows carry harnessTrim.

@@ -27,7 +27,7 @@ assert(h(pick(CC_BATCH_VARIANTS, CC)) === '4d797f36dd7502ba', 'Claude Code varia
 assert(h(OC.map(v => opencodeBatchPrompt(v))) === '9555d90ecb17ee82', 'opencode variant prompts');
 assert(h(OC.map(v => opencodeBatchToolEdits(v))) === '3a98a3d0bc479340', 'opencode variant tool edits');
 assert(JSON.stringify(Object.keys(CODEX_BATCH_VARIANTS)) === JSON.stringify([...CX, 'yt2', 'poll', 'yt2eff', 'yt3', 'yt3batch', 'rbatch', 'rbatch2', 'yt3batch2'])
-    && JSON.stringify(Object.keys(CC_BATCH_VARIANTS)) === JSON.stringify([...CC, 'eff', 'noedit'])
+    && JSON.stringify(Object.keys(CC_BATCH_VARIANTS)) === JSON.stringify([...CC, 'eff', 'noedit', 'read3'])
     && JSON.stringify(OPENCODE_VARIANT_NAMES) === JSON.stringify([...OC, 'todo2', 'todo3eff', 'todo3eff2', 'todo2eff']),
   'only new keys were added: Codex yt2, poll, yt2eff; Claude Code eff; opencode todo2, todo2eff, todo3eff, todo3eff2');
 

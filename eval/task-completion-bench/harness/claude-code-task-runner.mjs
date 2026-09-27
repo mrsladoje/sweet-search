@@ -233,8 +233,12 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
     if (batch && !CC_BATCH_VARIANTS[batch]) throw new Error(`CC_TRIM_BATCH=${batch}: expected ${Object.keys(CC_BATCH_VARIANTS).join(', ')}`);
     // CC_PRODUCT_STEER=1 (bench only, audit mech-cc2): keep Claude Code's own bypass-mode steer
     // (drop THRIFTY_SONIC=0 from the installed settings env) to measure its cost effect.
+    // CC_PRODUCT_TOKREM=1 (bench only, audit mech-cc3): keep stock's token-budget reminder
+    // (drop TOTAL_TOKENS_REMINDER=off from the installed settings env).
     const steer = process.env.CC_PRODUCT_STEER === '1';
-    return { mode: `${batch ? `${m}+batch-${batch}` : m}${steer ? '+steer' : ''}`, args: [], env: {}, installLean: true, ...(batch ? { batch } : {}), ...(steer ? { steer: true } : {}) };
+    const tokrem = process.env.CC_PRODUCT_TOKREM === '1';
+    const dropEnv = [...(steer ? ['CLAUDE_CODE_THRIFTY_SONIC'] : []), ...(tokrem ? ['CLAUDE_CODE_TOTAL_TOKENS_REMINDER'] : [])];
+    return { mode: `${batch ? `${m}+batch-${batch}` : m}${steer ? '+steer' : ''}${tokrem ? '+tokrem' : ''}`, args: [], env: {}, installLean: true, ...(batch ? { batch } : {}), ...(dropEnv.length ? { dropEnv } : {}) };
   }
   if (m === 'lean' || m === 'lean-batch') {
     // lean also drops the Agent tool (no delegation): opt-in only, reported separately.
@@ -617,11 +621,13 @@ export async function runClaudeCodeTask(task, {
       const agentFile = join(rundir, CLAUDE_LEAN_AGENT_REL);
       writeFileSync(agentFile, applyClaudeBatch(readFileSync(agentFile, 'utf8'), harnessTrim.batch));
     }
-    if (harnessTrim.steer) {
+    if (harnessTrim.dropEnv) {
       const settingsFile = join(rundir, '.claude', 'settings.json');
       const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
-      if (settings.env?.CLAUDE_CODE_THRIFTY_SONIC !== '0') throw new Error('CC_PRODUCT_STEER: THRIFTY_SONIC=0 not found in the installed settings');
-      delete settings.env.CLAUDE_CODE_THRIFTY_SONIC;
+      for (const key of harnessTrim.dropEnv) {
+        if (settings.env?.[key] === undefined) throw new Error(`CC_PRODUCT_*: ${key} not found in the installed settings`);
+        delete settings.env[key];
+      }
       writeFileSync(settingsFile, `${JSON.stringify(settings, null, 2)}\n`);
     }
     if (systemRules) appendRulesToLeanAgentFiles(rundir, systemRules);

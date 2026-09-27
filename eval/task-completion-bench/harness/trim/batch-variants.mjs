@@ -208,12 +208,36 @@ export const CC_BATCH_VARIANTS = Object.freeze({
   // noedit (audit mech-cc2): the product batching line without "Make file changes with Edit or Write." —
   // stock has no such sentence, and in bypass mode stock says the opposite; the tools stay available.
   noedit: CC_NOEDIT_LINE,
+  read3: CC_NOEDIT_LINE, // + CC_TEXT_EDITS.read3 (applied in applyClaudeBatch)
 });
 const CC_INSERT_AFTER = Object.freeze({ eff: 'When you have enough information to act, act.' });
 // The line a replacing variant swaps: the v1 max-batch line, or (since the conflict-only product
 // rebuild, 2026-09-27) the v2 batching line that the product agent file now carries. 'eff' inserts
 // a line after its anchor instead of replacing.
+// read3 (audit mech-cc3): product+noedit plus three paraphrased edits to the product agent text —
+// the gap v stock is +30% tool output per rollout (wider reads), extra end-of-task git calls and
+// narration. Each edit keeps every capability; checking stays required.
+const CC_TEXT_EDITS = Object.freeze({
+  read3: [
+    ['- When you have enough information to act, act. Do not re-derive settled facts or reopen decisions the user made. When you weigh a choice, recommend one option instead of surveying them all.',
+     '- When you have enough information to act, act. Do not re-derive settled facts or reopen decisions the user made. When you weigh a choice, recommend one option instead of surveying them all, and do not describe options you will not take.\n- Read only what you need: find the place first, then open the lines around it rather than a whole file or a long range, unless you need all of it.'],
+    ['- Report what really happened: show the output of a failing test, name any step you skipped, and call work finished only after you checked it. When it is done and checked, say so plainly.',
+     '- Report what really happened: show the output of a failing check and name any step you skipped. When the work is done and checked, say so plainly and stop; if you could not check it, say so.'],
+    ['When git state matters (the branch, uncommitted changes, recent commits), run `git status --short --branch` and `git log --oneline -5` first.',
+     'When git state matters, run `git status --short --branch`, and `git log --oneline -5` only when recent commits matter.'],
+  ],
+});
 export function applyClaudeBatch(text, variant) {
+  const edits = CC_TEXT_EDITS[variant];
+  if (edits) {
+    let out = applyClaudeBatch(text, 'noedit');
+    for (const [from, to] of edits) {
+      const at = out.indexOf(from);
+      if (at < 0 || out.indexOf(from, at + 1) >= 0) throw new Error(`CC_TRIM_BATCH=${variant}: text "${from.slice(0, 50)}..." not found exactly once in the agent file`);
+      out = out.replace(from, to);
+    }
+    return out;
+  }
   const repl = CC_BATCH_VARIANTS[variant];
   if (!repl) throw new Error(`CC_TRIM_BATCH=${variant}: expected ${Object.keys(CC_BATCH_VARIANTS).join(', ')}`);
   const anchor = CC_INSERT_AFTER[variant];
