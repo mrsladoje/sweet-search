@@ -49,7 +49,16 @@ ss-* engine or native. No held-out-2 task, ever. Do not push the box; nothing he
 - R3: Codex pall −13% (3/4 v 2/4). opencode todoall −24%, combo −15%, comboall −16%.
   Claude Code amp −12%, ssread −4% (bingo flagged degenerate in every Claude Code baseline: noise, both sides).
 - Rotation B ledger: all 10 confirm10 tasks gold-valid under the fixed code (04:00).
-- Queue: rotB-codex-1 (base pall), rotB-opencode-1 (base todoall), rotB-claudecode-1 (base amp).
+- R4: Codex pall −3% (3/4 = 3/4; stronger baseline). Codex totals R2-R4: pall 9/12 v base 7/12, never dearer.
+- Trace analysis 2 (04:40): opencode todoall acts as intended (solo todo turns 31 -> 12, todo calls unchanged);
+  Codex pall mostly NOT via Promise.all (baseline already used it) — saving is fewer lost-verdict relaunches;
+  Claude Code amp shows no behaviour change (saving mostly on the unsolved bingo). Remaining sinks: Codex
+  test cell without write_stdin loses the verdict; opencode opener/closing solo todo turns; Claude Code
+  whole-file reads (35-40% of a task's cost), `cd subdir; ss-read relative` ENOENT (12 in 28 rollouts),
+  `run_tests | grep` lost the verdict 4/16 (`| tail` 0/51). Round 5 lines built from these.
+- Queue: rotB-codex-1 (base pall), rotB-opencode-1 (base todoall), rotB-claudecode-1 (base amp), then R5 on
+  rotation A: Codex pall/pallyt/pallfind/pallytfind, opencode todoall/todoall2/todoall2find, Claude Code
+  amp/ampsafe/ampsaferange.
 
 ## Queue plan
 
