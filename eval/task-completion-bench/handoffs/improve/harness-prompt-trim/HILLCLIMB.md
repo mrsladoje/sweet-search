@@ -35,7 +35,7 @@ ss-* engine or native. No held-out-2 task, ever. Do not push the box; nothing he
 
 | harness | shipped/base | champion | candidates | leads | dead |
 |---|---|---|---|---|---|
-| Codex (v3, Luna code mode) | v3 | **pallyt** (A −3%, −16%; rotB −28%, 0/6=0/6) — replaces pall (6 cells avg ≈ −7%) | pall (r2 −11% 3/4 v 2/4; r3 −13% 3/4 v 2/4; r4 −3% 3/4=3/4) | **pallyt candidate** (r5 −3%, r6 −16%; cheaper than pall both times), yield (r2 −7%) | unchain, dep, two, plan, yieldedit, yieldeditpall, pallyield (r4 +10%), pallfind (r5 +15%), pallyt1 (r7 +19%), pallyt1open (r7 +11%) |
+| Codex (v3, Luna code mode) | v3 | **pallyt** (A −2%, −16%, −14%; rotB −28%, −30%) — replaces pall (6 cells avg ≈ −7%) | pall (r2 −11% 3/4 v 2/4; r3 −13% 3/4 v 2/4; r4 −3% 3/4=3/4) | **pallyt candidate** (r5 −3%, r6 −16%; cheaper than pall both times), yield (r2 −7%) | unchain, dep, two, plan, yieldedit, yieldeditpall, pallyield (r4 +10%), pallfind (r5 +15%), pallyt1 (r7 +19%), pallyt1open (r7 +11%) |
 | opencode (untrimmed, Luna) | untrimmed | **todoall** (rotB −18%, turns −38%, 0/6=0/6: cost-only on B) | todoall (r2 −10%, r3 −24%, r4 +1%; turns −25..−37% every time; 3/4=3/4); combo (r2 −12%, r3 −15%) | todoall2 (r5 −23%, 43 v 81 turns), comboall (r3 −16%) | unchain, dep, two, plan, todo, tododesc, todoallfit (r4 = todoall: Luna already uses ss-* almost only), todoall2find (r5, ss-find lines add cost), todoall2 (no consistent gain over todoall), todoall2diff (r7 flat) |
 | Claude Code (product, Opus 5.5) | product (max-batch) | **shipped max-batch** (no variant generalises: all A wins lost on B) | **amp** (r2 −15%, r3 −12%, 3/4=3/4; r1 −2% fix off; rotB +8% but 2/6 v 1/6 — not promoted) | **saferangefinal** (r7 −23%), saferange (r7 −12%), ampsaferange (r5 −15%, r7 −3%, rotB +9%), ampsafe (r5 −6%), ssread (r2 −14%, r3 −4%) | two, plan, ampssread |
 
@@ -70,6 +70,15 @@ ss-* engine or native. No held-out-2 task, ever. Do not push the box; nothing he
 - R7 opencode (A): base $0.068 (61 turns); todoall2 $0.078 (+15%, 56); todoall2diff $0.069 (+1%, 46). Lines on top of todoall cut turns but not cost (todoall2: −22, +16, +15 v todoall/base; todoall2diff flat): opencode climb CONVERGED at todoall.
 - R7 Claude Code (A): base $0.767 (34 turns); ampsaferange $0.746 (−3%); saferange $0.675 (−12%); **saferangefinal $0.587 (−23%, 27 turns; cheaper than base on all 4 tasks)**. All 3/4. The removal of 'work out every read' helped as predicted; the short-final line adds a further −13%.
 - rotB-claudecode-3: base $0.806 (1/6, 42 turns); saferange $0.841 (+4%, 2/6); saferangefinal $0.875 (+9%, 1/6, 51 turns). Every Claude Code line that won on rotation A lost on rotation B (amp +9, ampsaferange +9, saferange +4, saferangefinal +9): the Claude Code gains were OVERFIT to the 4 rotation-A tasks. Claude Code champion stays the SHIPPED max-batch prompt. Climbing Claude Code further on rotation A is not useful; any new Claude Code line must be screened on B first.
+- rotB-codex-3: pallyt $0.075 v $0.107 (−30% realized, −31% ideal), turns 80 v 115, 0/6 = 0/6. pallyt beat base in 5/5 cells (A −2, −16, −14; B −28, −30), never lost a solve.
+
+## FINAL (2026-09-27 10:55) — loop stopped, queue empty
+| harness | champion | evidence |
+|---|---|---|
+| Codex (Luna) | **pallyt** (v3 + Promise.allSettled line + wait-safe test-cell template; +715 chars) | 5/5 cells cheaper: A −2/−16/−14%, B −28/−30%; solves never lower |
+| opencode (Luna) | **todoall** (todo-in-same-turn line + 2 phrases removed from the todowrite description; +75 chars) | A −10/−23/+1/−1/−16%, B −17%; solves never lower |
+| Claude Code (Opus 5.5) | **shipped max-batch, unchanged** | every A-winning line (amp, ampsaferange, saferange, saferangefinal) cost +4..+9% on B |
+Rules file, frame, ss-* engine, native and product untouched throughout. Next step (owner): decide whether pallyt / todoall go into the product/bench defaults and whether to confirm them on a larger set.
 - Queue: rotB-codex-3 (base pallyt) — second rotation-B cell for the Codex champion.
 - Round 7 queued: Codex pallyt1 (template for EVERY test run), pallyt1open (+ first tests and searches in one cell); opencode todoall2diff (git diff in parallel with the final test run); Claude Code saferange (ampsaferange minus 'work out every read' — a removal), saferangefinal (+ short final message); rotB for the two Claude Code variants. r6-claudecode folded into r7.
 - Trace analysis 2 (04:40): opencode todoall acts as intended (solo todo turns 31 -> 12, todo calls unchanged);
