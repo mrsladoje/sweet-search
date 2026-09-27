@@ -94,6 +94,8 @@ export const CODEX_BATCH_VARIANTS = Object.freeze({
   // rbatch: the read-batch line alone (isolates it from the yt3 template).
   rbatch: `${CODEX_BASE}\n${CODEX_READ_BATCH}`,
   rbatch2: `${CODEX_BASE}\n${CODEX_READ_BATCH2}`,
+  // yt3batch2: the champion yt3batch with the audit's keep-separate clause (rbatch2 lost without the template).
+  yt3batch2: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE3}\n${CODEX_READ_BATCH2}`,
 });
 export function applyCodexBatch(text, variant) {
   const repl = CODEX_BATCH_VARIANTS[variant];
