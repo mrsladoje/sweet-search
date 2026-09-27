@@ -5,8 +5,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -27,7 +30,11 @@ import {
   CLAUDE_LEAN_SUBAGENT_DESCRIPTION,
   CLAUDE_LEAN_SUBAGENT_PROMPT,
   CLAUDE_LEAN_SUBAGENT_REL,
+  claudeAutoMemoryDir,
+  claudeCanonicalProjectRoot,
   claudeLeanAgentFile,
+  claudeLeanContextSection,
+  claudeProjectSlug,
   formatClaudeLeanHarnessGuidance,
   installClaudeLeanHarness,
   removeClaudeLeanHarness,
@@ -207,6 +214,97 @@ describe('installClaudeLeanHarness', () => {
   });
 });
 
+// What a custom main prompt costs in Claude Code 2.1.281 (the # Memory section, the gitStatus
+// snapshot, the environment notes), put back in our own words.
+describe('memory and session context (v2.1)', () => {
+  // Real pairs from $0 captures of stock Claude Code 2.1.281 (cwd -> the slug in its # Memory path).
+  // The second is longer than 200 characters, so Claude Code cut it and added a hash.
+  const CAPTURED = [
+    ['/private/tmp/claude-501/-Users-admin-Projects-sweet-search-private/b437d8d1-f05b-4d69-9207-b175ab10cb22/scratchpad/lean3/work-ceUDDB/repo',
+      '-private-tmp-claude-501--Users-admin-Projects-sweet-search-private-b437d8d1-f05b-4d69-9207-b175ab10cb22-scratchpad-lean3-work-ceUDDB-repo'],
+    ['/private/tmp/claude-501/-Users-admin-Projects-sweet-search-private/b437d8d1-f05b-4d69-9207-b175ab10cb22/scratchpad/lean3/work-nZcNlV/we_ird.name v2/deep_dir.with.dots/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      '-private-tmp-claude-501--Users-admin-Projects-sweet-search-private-b437d8d1-f05b-4d69-9207-b175ab10cb22-scratchpad-lean3-work-nZcNlV-we-ird-name-v2-deep-dir-with-dots-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-r8axar'],
+  ];
+  it('derives the project slug exactly as Claude Code does', () => {
+    for (const [path, slug] of CAPTURED) expect(claudeProjectSlug(path)).toBe(slug);
+  });
+
+  const cfg = () => join(root, 'cfg');
+  const gitInit = dir => {
+    mkdirSync(dir, { recursive: true });
+    const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+    const g = (...a) => execFileSync('git', a, { cwd: dir, env, stdio: 'ignore' });
+    g('init', '-q'); writeFileSync(join(dir, 'a.txt'), 'a\n'); g('add', '.'); g('commit', '-qm', 'init');
+    return g;
+  };
+
+  it('keys the memory on the main working tree, so linked worktrees share it', () => {
+    const main = join(root, 'main_repo');
+    const g = gitInit(main);
+    g('worktree', 'add', '-q', join(root, 'linked.wt'), '-b', 'feature');
+    mkdirSync(join(main, 'sub'));
+    const real = realpathSync(main);
+    expect(claudeCanonicalProjectRoot(join(root, 'linked.wt'))).toBe(real);
+    expect(claudeCanonicalProjectRoot(join(main, 'sub'))).toBe(real);
+    expect(claudeAutoMemoryDir({ projectRoot: join(root, 'linked.wt'), configDir: cfg(), env: {} }))
+      .toEqual({ dir: `${cfg()}/projects/${claudeProjectSlug(real)}/memory/`, enabled: true });
+  });
+
+  it('honours CLAUDE_CONFIG_DIR, then the settings that move or turn off auto memory', () => {
+    const real = realpathSync(root);
+    const expected = `${cfg()}/projects/${claudeProjectSlug(real)}/memory/`;
+    expect(claudeAutoMemoryDir({ projectRoot: root, env: { CLAUDE_CONFIG_DIR: cfg() } }).dir).toBe(expected);
+    expect(claudeAutoMemoryDir({ projectRoot: root, configDir: cfg(), visibleConfigDir: '/home/u/.claude', env: {} }).dir)
+      .toBe(`/home/u/.claude/projects/${claudeProjectSlug(real)}/memory/`);
+    // Claude Code ignores autoMemoryDirectory in the checked-in project settings.
+    write('.claude/settings.json', JSON.stringify({ autoMemoryDirectory: '/elsewhere' }));
+    expect(claudeAutoMemoryDir({ projectRoot: root, configDir: cfg(), env: {} }).dir).toBe(expected);
+    write('.claude/settings.local.json', JSON.stringify({ autoMemoryDirectory: '/mine/mem' }));
+    expect(claudeAutoMemoryDir({ projectRoot: root, configDir: cfg(), env: {} }).dir).toBe('/mine/mem/');
+    expect(claudeAutoMemoryDir({ projectRoot: root, configDir: cfg(), env: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } }).enabled).toBe(false);
+    write('cfg/settings.json', JSON.stringify({ autoMemoryEnabled: false }));
+    expect(claudeAutoMemoryDir({ projectRoot: root, configDir: cfg(), env: {} }).enabled).toBe(false);
+  });
+
+  it('the installed main agent tells the model its memory directory and how to save', () => {
+    installClaudeLeanHarness({ projectRoot: root, configDir: cfg(), env: {} });
+    const main = read(CLAUDE_LEAN_AGENT_REL);
+    const dir = `${cfg()}/projects/${claudeProjectSlug(realpathSync(root))}/memory/`;
+    expect(main).toContain(`in \`${dir}\``);
+    for (const needle of [
+      '# Memory', 'One fact per file', '`name`', '`description`', 'type:', 'user, feedback, project or reference',
+      '**Why:**', '**How to apply:**', '[[name]]', '`MEMORY.md`', '- [Title](file.md) — hook',
+      'update it instead', 'Delete a memory', 'Do not save what the repository already records',
+      'not instructions from the user', 'still exists',
+      '# Session context', 'git status --short --branch', 'git log --oneline -5', '/fast',
+    ]) expect(main).toContain(needle);
+    // Order: base prompt, then the context section, then the routing override.
+    expect(main.indexOf(CLAUDE_LEAN_HARNESS_PROMPT_BATCH)).toBeLessThan(main.indexOf('# Memory'));
+    expect(main.indexOf('# Session context')).toBeLessThan(main.indexOf(CLAUDE_SYSTEM_OVERRIDE));
+  });
+
+  it('says how to find the directory when it could not be computed, and drops memory when it is off', () => {
+    const fallback = claudeLeanContextSection({ memoryDir: null });
+    expect(fallback).toContain('$CLAUDE_CONFIG_DIR, else ~/.claude');
+    expect(fallback).toContain('A MEMORY.md loaded into your context shows its directory');
+    const off = claudeLeanContextSection({ memoryDir: '/x/memory/', memoryEnabled: false });
+    expect(off).not.toContain('# Memory');
+    expect(off).toContain('# Session context');
+    write('.claude/settings.json', JSON.stringify({ autoMemoryEnabled: false }));
+    installClaudeLeanHarness({ projectRoot: root, configDir: cfg(), env: {} });
+    expect(read(CLAUDE_LEAN_AGENT_REL)).not.toContain('# Memory');
+  });
+
+  it('is our paraphrase: no search steer and no stock wording', () => {
+    const text = claudeLeanContextSection({ memoryDir: '/x/memory/' });
+    expect(text).not.toMatch(/dedicated (file|search) tools|\bgrep\b|\bfind\b|\bglob\b|Explore/);
+    for (const stock of ['one file holding one fact', 'This directory already exists', 'Link liberally',
+      'background context, not user instructions', 'The most recent Claude models']) {
+      expect(text).not.toContain(stock);
+    }
+  });
+});
+
 describe('upgrade from a v1 install', () => {
   // Exactly what the v1 installer left behind, built from the v1 texts it used.
   const V1_AGENT = `---\nname: ${CLAUDE_LEAN_AGENT_NAME}\ndescription: sweet-search lean harness (main session)\n---\n\n${CLAUDE_LEAN_BASE_PROMPT_BATCH}\n\n${CLAUDE_SYSTEM_OVERRIDE}\n`;
@@ -241,7 +339,8 @@ describe('upgrade from a v1 install', () => {
     const r = installClaudeLeanHarness({ projectRoot: root });
     expect(r.status).toBe('installed');
     expect(r.active).toBe(true);
-    expect(read(CLAUDE_LEAN_AGENT_REL)).toBe(claudeLeanAgentFile());
+    const mem = claudeAutoMemoryDir({ projectRoot: root });
+    expect(read(CLAUDE_LEAN_AGENT_REL)).toBe(claudeLeanAgentFile({ memoryDir: mem.dir, memoryEnabled: mem.enabled }));
     expect(read(CLAUDE_LEAN_SUBAGENT_REL)).toBe(V1_SUB);
     expect(existsSync(join(root, CLAUDE_LEAN_PLAN_REL))).toBe(true);
     const s = settings();

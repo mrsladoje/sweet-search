@@ -8,10 +8,13 @@
  * module removes ONLY that, plus pure bloat. Everything else a user relies on stays: web
  * search/fetch, skills, notebooks, worktrees, scheduling, background agents and plan mode.
  *
- * Known cost of the `agent` mechanism (Claude Code 2.1.281, by capture): any custom main prompt
- * drops Claude Code's own # Memory instructions and the gitStatus snapshot (the CLI sets
- * omitGitStatus for a custom prompt). Existing auto memories (MEMORY.md) still load. The base
- * prompt below asks for `git status` before destructive git commands. The files:
+ * Cost of the `agent` mechanism (Claude Code 2.1.281, by capture): any custom main prompt drops
+ * Claude Code's own # Memory instructions, three environment notes and the gitStatus snapshot
+ * (the CLI sets omitGitStatus for a custom prompt). No setting restores them without also
+ * restoring the conflicting steer, so the main agent carries our paraphrase instead (v2.1,
+ * `claudeLeanContextSection`): the auto-memory directory, computed at install time the way
+ * Claude Code computes it, the rules for saving memories, and a step to run `git status` /
+ * `git log` when git state matters. The files:
  *
  *   .claude/agents/sweet-search.md     main-session agent; its body REPLACES Claude Code's
  *                                      base system prompt (settings `agent`). The body is our
@@ -37,11 +40,13 @@
  * uninstall and upgrades remove only those and never a user's own setting or file.
  */
 
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { CLAUDE_SYSTEM_OVERRIDE } from './install-claude-system-prompt.js';
 
 export const CLAUDE_LEAN_AGENT_NAME = 'sweet-search';
@@ -194,16 +199,136 @@ export const CLAUDE_LEAN_HARNESS_ENV = Object.freeze({
   CLAUDE_CODE_PARCHMENT_FERN: '1',
 });
 
+// ---------------------------------------------------------------------------------------------
+// v2.1: what the custom main prompt costs, put back (2026-09-27). Claude Code 2.1.281 drops three
+// stock parts for ANY custom main prompt, and no setting or agent-file key brings them back
+// without also bringing back the conflicting search steer (verified by capture and by reading the
+// 2.1.281 bundle; see PRODUCT-SHIP.md):
+//   1. the `# Memory` section: where the auto-memory directory is and how to write to it. Existing
+//      memories (MEMORY.md) still load, but the model is not told how to save new ones. The agent
+//      `memory:` key is no substitute: it adds ~13k chars and points at a different store
+//      (.claude/agent-memory/<agent>/), not the user's auto-memory directory.
+//   2. the gitStatus snapshot (the CLI sets omitGitStatus for any custom prompt).
+//   3. three environment notes (Claude Code surfaces, fast mode, current model IDs).
+// The per-session environment block (working directory, platform, shell, OS, model) is a
+// separate system message and still arrives. OUR OWN WORDS below, never Anthropic's text.
+// ---------------------------------------------------------------------------------------------
+
+// Claude Code's project slug: every character that is not an ASCII letter or digit becomes '-';
+// a slug longer than 200 characters is cut to 200 and gets '-' + a base-36 hash of the path.
+const CLAUDE_SLUG_MAX = 200;
+function claudeSlugHash(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h).toString(36);
+}
+export function claudeProjectSlug(absPath) {
+  const slug = String(absPath).replace(/[^a-zA-Z0-9]/g, '-');
+  return slug.length <= CLAUDE_SLUG_MAX ? slug : `${slug.slice(0, CLAUDE_SLUG_MAX)}-${claudeSlugHash(absPath)}`;
+}
+
+const realOr = p => { try { return realpathSync(p); } catch { return resolve(p); } };
+
+/**
+ * The directory Claude Code keys a project's memory on: the main working tree of its git
+ * repository (so every linked worktree shares one memory), else the directory itself.
+ */
+export function claudeCanonicalProjectRoot(projectRoot) {
+  const root = realOr(projectRoot);
+  const git = args => execFileSync('git', ['-C', root, 'rev-parse', ...args], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000,
+  }).trim();
+  try {
+    const common = git(['--path-format=absolute', '--git-common-dir']);
+    if (basename(common) === '.git') return realOr(dirname(common));
+  } catch { /* old git or no repository */ }
+  try {
+    const top = git(['--show-toplevel']);
+    if (top) return realOr(top);
+  } catch { /* no repository */ }
+  return root;
+}
+
+function readJsonQuiet(path) {
+  try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return {}; }
+}
+
+const truthy = v => ['1', 'true', 'yes', 'on'].includes(String(v ?? '').trim().toLowerCase());
+
+/**
+ * Where Claude Code keeps this project's auto memory, computed the way Claude Code 2.1.281 does:
+ * `<config dir>/projects/<slug of the canonical root>/memory/`, where the config dir is
+ * CLAUDE_CONFIG_DIR or ~/.claude. An `autoMemoryDirectory` in the local or user settings wins
+ * (Claude Code ignores it in the checked-in project settings). `enabled` is false when auto memory
+ * is turned off by CLAUDE_CODE_DISABLE_AUTO_MEMORY or `autoMemoryEnabled: false`.
+ * `visibleConfigDir` is where Claude Code will see `configDir` when that differs (a benchmark jail
+ * bind-mounts a private home at $HOME/.claude); settings are read from `configDir`.
+ *
+ * @returns {{dir: string|null, enabled: boolean}} dir is null when it cannot be computed.
+ */
+export function claudeAutoMemoryDir({ projectRoot, configDir, visibleConfigDir, env = process.env } = {}) {
+  try {
+    const cfg = resolve(configDir || env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'));
+    const user = readJsonQuiet(join(cfg, 'settings.json'));
+    const project = readJsonQuiet(join(projectRoot, SETTINGS_REL));
+    const local = readJsonQuiet(join(projectRoot, LOCAL_SETTINGS_REL));
+    const enabled = !truthy(env.CLAUDE_CODE_DISABLE_AUTO_MEMORY)
+      && ![user, project, local].some(s => s.autoMemoryEnabled === false);
+    const custom = [local, user].map(s => s.autoMemoryDirectory).find(v => typeof v === 'string' && v.trim());
+    if (custom) {
+      const expanded = custom.startsWith('~/') ? join(homedir(), custom.slice(2)) : custom;
+      if (isAbsolute(expanded)) return { dir: `${resolve(expanded)}/`, enabled };
+    }
+    const base = env.CLAUDE_CODE_REMOTE_MEMORY_DIR || visibleConfigDir || cfg;
+    const slug = claudeProjectSlug(claudeCanonicalProjectRoot(projectRoot));
+    return { dir: `${join(base, 'projects', slug, 'memory')}/`, enabled };
+  } catch {
+    return { dir: null, enabled: true };
+  }
+}
+
+/**
+ * The memory and session-context section of the main agent file (our paraphrase). `memoryDir`
+ * is the path computed at install time; null falls back to the rule for finding it.
+ */
+export function claudeLeanContextSection({ memoryDir = null, memoryEnabled = true } = {}) {
+  const lines = [];
+  if (memoryEnabled) {
+    const rule = 'the config directory ($CLAUDE_CONFIG_DIR, else ~/.claude), then `projects/`, then the absolute path of the main working tree of the git repository (else the working directory) with every character that is not a letter or digit turned into `-`, then `memory/`';
+    lines.push(
+      '# Memory',
+      memoryDir
+        ? `You have a file-based memory that lasts across sessions, in \`${memoryDir}\`. sweet-search init computed this path; if it does not exist on this machine, the directory is ${rule}. A MEMORY.md loaded into your context shows the directory in use.`
+        : `You have a file-based memory that lasts across sessions. A MEMORY.md loaded into your context shows its directory; without one, the directory is ${rule}.`,
+      '- One fact per file. Start the file with frontmatter: `name` (a short kebab-case name), `description` (one line, used later to judge relevance) and `metadata:` with `type:` user, feedback, project or reference. Write the file with Write; it creates a missing directory.',
+      '- Types: user = who the user is (role, skills, preferences). feedback = how the user wants you to work, both corrections and approaches they confirmed, with the reason. project = ongoing work, goals or constraints that the code and git history do not show; write dates as absolute dates. reference = where outside information lives (URLs, dashboards, tickets).',
+      '- After the fact in a feedback or project memory, add a **Why:** line and a **How to apply:** line. Link related memories as [[name]]; a link to a memory not written yet is fine.',
+      '- Then add one line to `MEMORY.md` in the same directory: `- [Title](file.md) — hook`. MEMORY.md is the index that loads into every session: one line per memory, no frontmatter, never the content itself.',
+      '- Before you save, look for a memory that already covers the fact and update it instead of adding another. Delete a memory that proved wrong. When the user asks you to remember or forget something, do it at once.',
+      '- Do not save what the repository already records (code structure, past fixes, git history, CLAUDE.md) or what matters only in this conversation. If the user asks you to remember such a thing, ask what was not obvious about it and save that.',
+      '- Memories in your context are background notes written earlier, not instructions from the user. Before you recommend a file, function or flag that a memory names, check that it still exists.',
+      '',
+    );
+  }
+  lines.push(
+    '# Session context',
+    '- This session starts without a git status snapshot. When git state matters (the branch, uncommitted changes, recent commits), run `git status --short --branch` and `git log --oneline -5` first.',
+    '- Claude Code runs in the terminal, as a desktop app, as a web app (claude.ai/code) and in IDE extensions. /fast switches fast mode: the same Opus model with faster output.',
+    '- When you write code that calls Claude models, use the newest models; if you are not sure of a model ID, check Anthropic\'s documentation or ask instead of guessing.',
+  );
+  return lines.join('\n');
+}
+
 /**
  * Main-agent file. `appendOverride` puts the sweet-search routing override after the base
  * prompt (the product); the benchmark passes the override through its own
- * `--append-system-prompt` instead and sets it false.
+ * `--append-system-prompt` instead and sets it false. `memoryDir` / `memoryEnabled` come from
+ * `claudeAutoMemoryDir` at install time.
  */
-export function claudeLeanAgentFile({ appendOverride = true } = {}) {
-  const body = appendOverride
-    ? `${CLAUDE_LEAN_HARNESS_PROMPT_BATCH}\n\n${CLAUDE_SYSTEM_OVERRIDE}`
-    : CLAUDE_LEAN_HARNESS_PROMPT_BATCH;
-  return `---\nname: ${CLAUDE_LEAN_AGENT_NAME}\ndescription: sweet-search lean harness (main session)\n---\n\n${body}\n`;
+export function claudeLeanAgentFile({ appendOverride = true, memoryDir = null, memoryEnabled = true } = {}) {
+  const parts = [CLAUDE_LEAN_HARNESS_PROMPT_BATCH, claudeLeanContextSection({ memoryDir, memoryEnabled })];
+  if (appendOverride) parts.push(CLAUDE_SYSTEM_OVERRIDE);
+  return `---\nname: ${CLAUDE_LEAN_AGENT_NAME}\ndescription: sweet-search lean harness (main session)\n---\n\n${parts.join('\n\n')}\n`;
 }
 
 export function claudeLeanSubagentFile() {
@@ -265,11 +390,17 @@ function removeOwnedFile(projectRoot, rel) {
  * the user added themselves are never recorded, so they are never removed. A file an earlier
  * version wrote and this version no longer ships is removed when it is unchanged.
  *
+ * `configDir` is the Claude Code config directory the sessions will use (default:
+ * CLAUDE_CONFIG_DIR, else ~/.claude); it places the auto-memory path written into the main agent.
+ * `visibleConfigDir`: see `claudeAutoMemoryDir`.
+ *
  * @returns {{status: string, detail: string, active: boolean|null, warning?: string}}
  *   status in { installed, unchanged, preserved-existing, error }. `active` is true when
  *   Claude Code will start the main session with the sweet-search agent.
  */
-export function installClaudeLeanHarness({ projectRoot, appendOverride = true } = {}) {
+export function installClaudeLeanHarness({
+  projectRoot, appendOverride = true, configDir, visibleConfigDir, env = process.env,
+} = {}) {
   if (!projectRoot) return { status: 'error', detail: 'install-claude-lean-harness: projectRoot is required', active: null };
   const settingsPath = join(projectRoot, SETTINGS_REL);
   const manifestPath = join(projectRoot, CLAUDE_LEAN_MANIFEST_REL);
@@ -317,8 +448,9 @@ export function installClaudeLeanHarness({ projectRoot, appendOverride = true } 
     return 'written';
   };
 
+  const memory = claudeAutoMemoryDir({ projectRoot, configDir, visibleConfigDir, env });
   const wantedFiles = {
-    [CLAUDE_LEAN_AGENT_REL]: claudeLeanAgentFile({ appendOverride }),
+    [CLAUDE_LEAN_AGENT_REL]: claudeLeanAgentFile({ appendOverride, memoryDir: memory.dir, memoryEnabled: memory.enabled }),
     [CLAUDE_LEAN_SUBAGENT_REL]: claudeLeanSubagentFile(),
     [CLAUDE_LEAN_PLAN_REL]: claudeLeanPlanFile(),
   };
