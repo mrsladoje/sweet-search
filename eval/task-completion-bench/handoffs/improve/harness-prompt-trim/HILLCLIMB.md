@@ -108,3 +108,11 @@ Next step (owner): decide whether pallyt / todoall go into the product/bench def
    by an ss-* line: sweet-search fit).
 2. Rotation B promotion cells for each harness's candidate (6 tasks, concurrency 6).
 3. New trace analysis on R2-R4 to find the next lines per harness; climb from the champions.
+
+## Phase 2 (owner decisions 2026-09-27 ~13:00)
+Audits (scratchpad solve-wins/, trim-audit/, research-2/):
+- Solve gains: ALL luck. Codex eslint = a judgement call on "no test edits" v a local test-file-per-rule check (both failing baselines broke working code to make the local suite pass — a FRAME mechanism, not a variant one; frame untouched); CC svgr = keep-CSS v remove-<style> design coin flip (saferangefinal, which contains saferange's text, failed it in the same cell). No solve loss with fixes on.
+- Trims are NOT conflict-only. The SHIPPED Claude Code product denies web search/fetch, Skill, NotebookEdit, worktrees, TaskStop/SendMessage/ListAgents, cron/schedule, Workflow, ReportFindings, the Plan agent, auto memory and git instructions, and drops safety/confirm/formatting/hooks guidance. Codex/opencode trims (bench-only) also cut user items (ask-user, skills, frontend, formatting, review).
+- Winner lines carry bench flavour: Codex template can hang on non-terminating commands; CC batching example pushes script edits (skips Edit's diff/approval); opencode todo line lets visible progress go stale. General rewordings drafted.
+- Research: strongest measured levers = REMOVING "double-check/think deeply/be thorough" text, a bounded-efficiency line (−19% CC in a preregistered study), scope discipline; Karpathy-style CLAUDE.md −3..−10% cost, quality flat.
+Owner decisions: (1) rebuild the shipped Claude Code harness CONFLICT-ONLY, restoring every user capability (first request ≈15.5k tok v 7.7k lean, 18.9k stock) and re-measure its saving; (2) rebuild all three harnesses as conflict-only trims, screen each v untrimmed (opencode first, eslint repeated), then stack general reworded winners + research levers, then test sweet rules OUTSIDE v INSIDE the system prompt. Rotation A + B each step.
