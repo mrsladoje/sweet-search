@@ -35,7 +35,7 @@ ss-* engine or native. No held-out-2 task, ever. Do not push the box; nothing he
 
 | harness | shipped/base | champion | candidates | leads | dead |
 |---|---|---|---|---|---|
-| Codex (v3, Luna code mode) | v3 | **pall** (rotB −11%, 0/6=0/6: cost-only evidence on B) | pall (r2 −11% 3/4 v 2/4; r3 −13% 3/4 v 2/4; r4 −3% 3/4=3/4) | **pallyt candidate** (r5 −3%, r6 −16%; cheaper than pall both times), yield (r2 −7%) | unchain, dep, two, plan, yieldedit, yieldeditpall, pallyield (r4 +10%), pallfind (r5 +15%) |
+| Codex (v3, Luna code mode) | v3 | **pallyt** (A −3%, −16%; rotB −28%, 0/6=0/6) — replaces pall (6 cells avg ≈ −7%) | pall (r2 −11% 3/4 v 2/4; r3 −13% 3/4 v 2/4; r4 −3% 3/4=3/4) | **pallyt candidate** (r5 −3%, r6 −16%; cheaper than pall both times), yield (r2 −7%) | unchain, dep, two, plan, yieldedit, yieldeditpall, pallyield (r4 +10%), pallfind (r5 +15%) |
 | opencode (untrimmed, Luna) | untrimmed | **todoall** (rotB −18%, turns −38%, 0/6=0/6: cost-only on B) | todoall (r2 −10%, r3 −24%, r4 +1%; turns −25..−37% every time; 3/4=3/4); combo (r2 −12%, r3 −15%) | todoall2 (r5 −23%, 43 v 81 turns), comboall (r3 −16%) | unchain, dep, two, plan, todo, tododesc, todoallfit (r4 = todoall: Luna already uses ss-* almost only), todoall2find (r5, ss-find lines add cost) |
 | Claude Code (product, Opus 5.5) | product (max-batch) | — | **amp** (r2 −15%, r3 −12%, 3/4=3/4; r1 −2% fix off; rotB +8% but 2/6 v 1/6 — not promoted) | ampsaferange (r5 −15%, 29 v 36 turns), ampsafe (r5 −6%), ssread (r2 −14%, r3 −4%) | two, plan, ampssread |
 
@@ -61,6 +61,7 @@ ss-* engine or native. No held-out-2 task, ever. Do not push the box; nothing he
 - R5 Claude Code (rotation A): base $0.792 (36 turns); amp $0.731 (−8%); ampsafe $0.743 (−6%); **ampsaferange $0.672 (−15%, 29 turns; super_editor −40%)**. All 3/4. amp on A with fix on: −15, −12, −8 (3/3), rotB +8% (2/6 v 1/6).
 - Queue: rotB-claudecode-2 (base ampsaferange), r6-claudecode (base amp ampsaferange).
 - R6 Codex (A): base $0.099 (109 turns); pall $0.088 (−11%, 89); **pallyt $0.083 (−16%, 75)**. All 3/4. pallyt is a CANDIDATE (cheaper than base and pall in 2/2 cells); rotB-codex-2 decides champion.
+- rotB-codex-2: pallyt $0.078 v $0.109 (−28%), turns 77 v 101, cheaper on 4/6 tasks (longest test suite $0.046 -> $0.018), 0/6 = 0/6. -> Codex CHAMPION = pallyt.
 - Trace analysis 2 (04:40): opencode todoall acts as intended (solo todo turns 31 -> 12, todo calls unchanged);
   Codex pall mostly NOT via Promise.all (baseline already used it) — saving is fewer lost-verdict relaunches;
   Claude Code amp shows no behaviour change (saving mostly on the unsolved bingo). Remaining sinks: Codex
