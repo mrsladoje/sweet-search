@@ -177,6 +177,8 @@ export function opencodeBatchPrompt(variant, text = readFileSync(OPENCODE_GPT_OR
 
 // --- Claude Code (lean agent file installed by `sweet-search init`) ---
 const CC_DEP = `- ${dep('Bash')}`;
+const CC_NOEDIT_LINE = CLAUDE_LEAN_BATCH_LINE.replace(' Make file changes with Edit or Write.', '');
+if (CC_NOEDIT_LINE === CLAUDE_LEAN_BATCH_LINE) throw new Error('noedit: Edit/Write sentence not found in CLAUDE_LEAN_BATCH_LINE');
 const CC_SSREAD = '- Inside a chained Bash call, read with `ss-read <file> <start> <end>` and search with `ss-grep`, not `cat`, `sed -n` or `grep`.';
 const CC_ROOT = '- Run ss-* commands from the repository root with root-relative paths; they do not resolve paths against a subdirectory you cd into.';
 const CC_TIMEOUT = '- Run long commands such as the test suite in the foreground with the Bash timeout parameter set to 600000; a call that reaches the default 2-minute limit moves to the background and costs extra turns.';
@@ -201,6 +203,9 @@ export const CC_BATCH_VARIANTS = Object.freeze({
   // after the base prompt's "act" line, so it does not depend on the max-batch line's wording
   // (the product module is being rebuilt); a missing anchor throws.
   eff: EFFICIENCY_LINE,
+  // noedit (audit mech-cc2): the product batching line without "Make file changes with Edit or Write." —
+  // stock has no such sentence, and in bypass mode stock says the opposite; the tools stay available.
+  noedit: CC_NOEDIT_LINE,
 });
 const CC_INSERT_AFTER = Object.freeze({ eff: 'When you have enough information to act, act.' });
 // The line a replacing variant swaps: the v1 max-batch line, or (since the conflict-only product

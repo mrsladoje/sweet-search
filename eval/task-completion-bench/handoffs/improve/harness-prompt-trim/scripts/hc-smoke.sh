@@ -94,10 +94,12 @@ for V in $VARIANTS; do
     # Claude Code: base = product (what init installs); untrimmed = stock harness; other names =
     # product + that CC_TRIM_BATCH variant.
     claudecode)
+      # A trailing +steer keeps Claude Code's bypass-mode steer (CC_PRODUCT_STEER=1).
+      ST=; case $V in *+steer) ST=1; V=${V%+steer} ;; esac
       case $V in
-        base)      SW=(CC_HARNESS_TRIM=product CC_TRIM_BATCH=) ;;
-        untrimmed) SW=(CC_HARNESS_TRIM=0 CC_TRIM_BATCH=) ;;
-        *)         SW=(CC_HARNESS_TRIM=product "CC_TRIM_BATCH=$V") ;;
+        base)      SW=(CC_HARNESS_TRIM=product CC_TRIM_BATCH= "CC_PRODUCT_STEER=$ST") ;;
+        untrimmed) SW=(CC_HARNESS_TRIM=0 CC_TRIM_BATCH= CC_PRODUCT_STEER=) ;;
+        *)         SW=(CC_HARNESS_TRIM=product "CC_TRIM_BATCH=$V" "CC_PRODUCT_STEER=$ST") ;;
       esac ;;
   esac
   # Neutral run ids (the run id reaches paths the agent can see); rows carry harnessTrim.
