@@ -13,6 +13,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CLAUDE_LEAN_BATCH_LINE } from '../../../../scripts/install-claude-lean-harness.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -175,6 +176,9 @@ export const CC_BATCH_VARIANTS = Object.freeze({
   eff: EFFICIENCY_LINE,
 });
 const CC_INSERT_AFTER = Object.freeze({ eff: 'When you have enough information to act, act.' });
+// The line a replacing variant swaps: the v1 max-batch line, or (since the conflict-only product
+// rebuild, 2026-09-27) the v2 batching line that the product agent file now carries. 'eff' inserts
+// a line after its anchor instead of replacing.
 export function applyClaudeBatch(text, variant) {
   const repl = CC_BATCH_VARIANTS[variant];
   if (!repl) throw new Error(`CC_TRIM_BATCH=${variant}: expected ${Object.keys(CC_BATCH_VARIANTS).join(', ')}`);
@@ -185,6 +189,7 @@ export function applyClaudeBatch(text, variant) {
     const eol = text.indexOf('\n', at);
     return eol < 0 ? `${text}\n${repl}` : `${text.slice(0, eol)}\n${repl}${text.slice(eol)}`;
   }
-  if (!text.includes(CC_DEP)) throw new Error('CC_TRIM_BATCH: max-batch line not found in the agent file');
-  return text.replace(CC_DEP, repl);
+  const find = [CC_DEP, CLAUDE_LEAN_BATCH_LINE].find(line => text.includes(line));
+  if (!find) throw new Error('CC_TRIM_BATCH: batching line not found in the agent file');
+  return text.replace(find, repl);
 }
