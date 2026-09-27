@@ -67,6 +67,9 @@ const CODEX_POLL = '- When exec_command returns a session_id because the command
 const CODEX_YIELD_TEMPLATE3 = '- An exec cell returns after 10 seconds unless its first line sets a longer limit. For a command that ends by itself but takes longer than 10 seconds, such as a build or a test run, copy this cell exactly, both lines, and replace <command>:\n```\n// @exec: {"yield_time_ms": 600000}\nconst r = await tools.exec_command({cmd: <command>, yield_time_ms: 300000}); text(r.output); if (r.session_id) text((await tools.write_stdin({session_id: r.session_id, chars: "", yield_time_ms: 300000})).output);\n```\nWithout the first line the cell returns after 10 seconds; without the write_stdin step the result is lost. Do not use this form for a command that keeps running until it is stopped or that waits for input, such as a dev server, a watch mode or an interactive prompt.';
 // Read batch (sinks-3): 65/147 Codex turns run ONE search or read. General, read-only only.
 const CODEX_READ_BATCH = '- When you already know several read-only commands you need, such as searches, file reads or listings, run them in one exec_command joined with `;` and read all the output in one turn. Keep a command whose output decides your next step on its own.';
+// rbatch2 (audit mech-cx3): the model twice joined a search with the test run (not read-only);
+// the second sentence now also keeps builds, tests, installs and file-changing commands separate.
+const CODEX_READ_BATCH2 = '- When you already know several read-only commands you need, such as searches, file reads or listings, run them in one exec_command joined with `;` and read all the output in one turn. Keep a command whose output decides your next step on its own, and run builds, tests, installs and commands that change files separately.';
 const CODEX_BASE = `${CODEX_PAR}\n${CODEX_CHAIN}`;
 export const CODEX_BATCH_VARIANTS = Object.freeze({
   unchain: CODEX_PAR,
@@ -90,6 +93,7 @@ export const CODEX_BATCH_VARIANTS = Object.freeze({
   yt3batch: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE3}\n${CODEX_READ_BATCH}`,
   // rbatch: the read-batch line alone (isolates it from the yt3 template).
   rbatch: `${CODEX_BASE}\n${CODEX_READ_BATCH}`,
+  rbatch2: `${CODEX_BASE}\n${CODEX_READ_BATCH2}`,
 });
 export function applyCodexBatch(text, variant) {
   const repl = CODEX_BATCH_VARIANTS[variant];
