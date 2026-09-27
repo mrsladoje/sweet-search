@@ -16,11 +16,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isZeroCallStartFailure } from './codex-task-runner.mjs';
 import {
-  setupRunner, buildAgentEnv, warmupSweet, issuePrompt, computeNetArgs, writeInstructionFile,
+  setupRunner, buildAgentEnv, warmupSweet, issuePrompt, computeNetArgs, writeInstructionFile, sweetRulesBlock,
   buildTrajectory, gitDiffPatch, verifyIntegrity, teardownRunner, auditEscape, rolloutStateDir,
   costsFromTurns, spawnWithTimeout, exitReasonFrom, priceFor,
 } from './agent-runner-shared.mjs';
 import { runTestsTelemetry } from './rt-inflight.mjs';
+import { resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules } from './sweet-rules-placement.mjs';
 import { installSedCmds } from './env-ledger.mjs';
 import { persistTurns } from './turn-log.mjs';
 import { finalizeProgressModelTurns } from './rt-progress-controller.mjs';
@@ -351,6 +352,66 @@ function opencodeHarnessTrimV3({ apiModel, stateDir }) {
   };
 }
 
+// --- SWEET_RULES_PLACEMENT=system (sweet-rules-placement.mjs), SWEET ARM ONLY ---
+// The rules leave AGENTS.md (which keeps the frame only, native's bytes) and are appended to the
+// agent prompts opencode sends as the system prompt. `agent.<name>.prompt` REPLACES the prompt
+// opencode would pick (the model-family prompt for build/general, the explore prompt for
+// explore); the environment block, AGENTS.md and the tools stay (verified by capture, 1.18.4).
+// Every agent that can run in a rollout gets them: build (main), general and explore
+// (subagents), each as (trim prompt, or opencode's UNMODIFIED prompt when the trim sets none)
+// + rules. An explore the trim disables stays disabled. The unmodified prompts are opencode's own
+// text from the $0 captures (MIT, trim/NOTICE-opencode.md), pinned by sha256.
+const OC_CAPTURES = path.join(BENCH_DIR, 'handoffs', 'improve', 'harness-prompt-trim', 'captures');
+export const OPENCODE_STOCK_PROMPTS = Object.freeze({
+  gpt: { file: OPENCODE_GPT_ORIGINAL, sha256: '83a66a46a5febbc21454161d5f053638b22d25d95e09d77b8f6da33debc848ad' },
+  default: { capture: 'opencode-1.18.4-request-sweet-trim-off-default.json', sha256: '962fbf3cb3ec659c9a5244425ee2e7bb141ad4428f489a630a7738566880dc6a' },
+  claude: { capture: 'opencode-1.18.4-request-sweet-trim-off-claude.json', sha256: '8324e4cf58eb45d4d9d6fd120f5e8da59e0548de48e7e6aefcdfbf2923f40b4e' },
+  muse: { capture: 'opencode-1.18.4-request-sweet-trim-off-muse.json', sha256: '9c5323f076a032f305386bfab3220a764f90489e9fa2a4c4796bffe031ce03e8' },
+  explore: { capture: 'opencode-1.18.4-request-sweet-trim-off-explore-subagent.json', sha256: '97c4780dea390f347fed0879fb30aaa08c0fc65c8cad0f6c1aec02ca6fd91e13' },
+});
+/** opencode 1.18.4's unmodified prompt for a model family ('gpt' | 'default' | 'claude' | 'muse') or 'explore'. */
+export function opencodeStockPrompt(name) {
+  const src = OPENCODE_STOCK_PROMPTS[name];
+  if (!src) throw new Error(`no captured opencode 1.18.4 prompt for ${name}`);
+  let text;
+  if (src.file) text = readFileSync(src.file, 'utf8');
+  else {
+    // The system message is the prompt, a joining newline, then the environment block.
+    const content = JSON.parse(readFileSync(path.join(OC_CAPTURES, src.capture), 'utf8')).messages[0].content;
+    const whole = typeof content === 'string' ? content : content.map(p => p.text || '').join('');
+    text = whole.slice(0, whole.indexOf('You are powered by the model named') - 1);
+  }
+  const sha = createHash('sha256').update(text).digest('hex');
+  if (sha !== src.sha256) throw new Error(`opencode ${name} prompt sha256 ${sha} is not the pinned 1.18.4 text`);
+  return text;
+}
+/** `trim` (opencodeHarnessTrim's result) with the rules appended to every agent prompt; `rules` null = unchanged. */
+export function opencodeRulesInSystem(trim, { rules, apiModel }) {
+  if (!rules) return trim;
+  const config = trim?.config || {};
+  const agents = config.agents || {};
+  const stockFamily = () => {
+    const family = opencodePromptFamily(apiModel);
+    if (!family) throw new Error(`SWEET_RULES_PLACEMENT=system: no captured opencode prompt for model ${apiModel}`);
+    return opencodeStockPrompt(family);
+  };
+  const withRules = text => appendSweetRules(text, rules);
+  const explore = agents.explore?.disable ? agents.explore
+    : { ...(agents.explore || {}), prompt: withRules(agents.explore?.prompt ?? opencodeStockPrompt('explore')) };
+  return {
+    ...trim,
+    config: {
+      ...config,
+      agentBuild: { ...(config.agentBuild || {}), prompt: withRules(config.agentBuild?.prompt ?? stockFamily()) },
+      agents: {
+        ...agents,
+        general: { ...(agents.general || {}), prompt: withRules(agents.general?.prompt ?? stockFamily()) },
+        explore,
+      },
+    },
+  };
+}
+
 // SWEET ARM ONLY — native has no ss-* rules to contradict and keeps opencode's full prompt
 // and tools in every condition, whatever the switch says.
 export function opencodeArmHarnessTrim({ sweet, env = process.env, apiModel, stateDir } = {}) {
@@ -505,7 +566,10 @@ export async function runOpencodeTask(task, {
   ];
   // Inject before runner setup so T0 can fingerprint this harness-owned surface and
   // distinguish it from a later agent modification without retaining it in checkpoints.
-  writeInstructionFile(rundir, 'AGENTS.md', { sweet, mppText });
+  // SWEET_RULES_PLACEMENT=system: AGENTS.md carries the frame only; the rules go to the agent
+  // prompts below (opencodeRulesInSystem). Resolved first so a bad value fails before any setup.
+  const rulesPlacement = resolveSweetRulesPlacement({ sweet });
+  writeInstructionFile(rundir, 'AGENTS.md', { sweet, mppText, rulesPlacement });
   const {
     runnerStateDir, binDir, runnerFiles, integrity, jail, broker, integrityStateDir, controller,
     progressConfig,
@@ -523,6 +587,9 @@ export async function runOpencodeTask(task, {
   let harnessTrim;
   try {
     harnessTrim = opencodeArmHarnessTrim({ sweet, apiModel, stateDir: runnerStateDir });
+    harnessTrim = opencodeRulesInSystem(harnessTrim, {
+      rules: rulesPlacement === 'system' ? sweetRulesBlock({ mppText }) : null, apiModel,
+    });
   } catch (error) {
     teardownRunner(runnerStateDir, { jail, broker });
     throw error;
@@ -662,6 +729,7 @@ export async function runOpencodeTask(task, {
     // plugin's own report of the description edits it applied (null = it never ran).
     harnessTrim: harnessTrim.mode,
     ...(harnessTrim.mode ? { harnessTrimToolEdits } : {}),
+    ...sweetRulesRowFields(rulesPlacement),
     secretLeakDetected: false,
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
     patchHunks, patchFiles, finalPatch,

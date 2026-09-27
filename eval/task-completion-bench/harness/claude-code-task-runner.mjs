@@ -20,6 +20,7 @@ import {
   spawnWithTimeout, exitReasonFrom, priceFor,
 } from './agent-runner-shared.mjs';
 import { runTestsTelemetry } from './rt-inflight.mjs';
+import { resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules } from './sweet-rules-placement.mjs';
 import {
   turnsFromTranscript, sidechainTurnSets, addSidechainCostsChecked,
   selectClaudeMainCosts, aggregateTurn,
@@ -71,17 +72,29 @@ export const READ_PAGES_TOOL_NOTE =
  */
 const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 
-export function buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, effort = null, settingsPath = null }) {
-  const appendedSystemPrompt = sweet
+// `systemRules` (SWEET_RULES_PLACEMENT=system with the stock harness, sweet arm only): the rules
+// text, appended to BOTH append flags — the main agent's system prompt after the override, and
+// every subagent's system prompt after the pages note. null (the default, and always on native)
+// leaves the argv byte-identical to the pre-switch harness.
+export function buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, effort = null, settingsPath = null, systemRules = null }) {
+  const rules = sweet ? systemRules : null;
+  const baseAppend = sweet
     ? `${READ_PAGES_TOOL_NOTE}\n\n${SWEET_SEARCH_SYSTEM_OVERRIDE}`
     : READ_PAGES_TOOL_NOTE;
+  const appendedSystemPrompt = rules ? appendSweetRules(baseAppend, rules).trimEnd() : baseAppend;
+  const subagentAppend = rules ? appendSweetRules(READ_PAGES_TOOL_NOTE, rules).trimEnd() : READ_PAGES_TOOL_NOTE;
   return [
     '-p', prompt, '--add-dir', rundir,
     '--append-system-prompt', appendedSystemPrompt,
     // Byte-identical on both arms: the sweet tool guide deliberately does NOT ride along
     // here. A subagent that learned about ss-* only in the sweet arm would be a retrieval
     // treatment, not a shared repair, and this flag must stay differential-free.
-    '--append-subagent-system-prompt', READ_PAGES_TOOL_NOTE,
+    // EXCEPTION, research switch only: SWEET_RULES_PLACEMENT=system on the sweet arm moves the
+    // rules HERE (and out of .claude/rules), so a general-purpose subagent keeps the rules it got
+    // from the project rule file. The stock Plan and Explore types omit project files, so they
+    // had NO rules under 'file' and gain them here (capture, 2.1.281): a coverage difference to
+    // disclose with any result. Off, this is the pages note alone on both arms.
+    '--append-subagent-system-prompt', subagentAppend,
     // THE PreToolUse READ NORMALIZER IS INERT. IT CANNOT WORK. DO NOT "FIX" IT.
     // (Settled 2026-08-13 by correlating every hook invocation against every Read
     // outcome across all 32 native sessions of screen-v3.)
@@ -255,6 +268,18 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
     args: tools ? ['--disallowedTools', ...CLAUDE_HARNESS_TRIM_DENY] : [],
     env: steer ? { CLAUDE_CODE_THRIFTY_SONIC: '0' } : {},
   };
+}
+
+// SWEET_RULES_PLACEMENT=system in product mode: the rules go at the end of the body of each agent
+// file the lean harness installs — main session (sweet-search.md, whose body REPLACES Claude Code's
+// base system prompt), general-purpose.md and Plan.md (the subagents' system prompts). Explore and
+// the built-in `claude` type are denied by the product; statusline-setup is not given them.
+export const CLAUDE_RULES_AGENT_FILES = Object.freeze([CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL]);
+export function appendRulesToLeanAgentFiles(rundir, rules) {
+  for (const rel of CLAUDE_RULES_AGENT_FILES) {
+    const file = join(rundir, rel);
+    writeFileSync(file, appendSweetRules(readFileSync(file, 'utf8'), rules));
+  }
 }
 
 const CLAUDE_READ_PAGES_HOOK = fileURLToPath(
@@ -554,10 +579,17 @@ export async function runClaudeCodeTask(task, {
     { src: claudeJson, dst: join(HOMEDIR, '.claude.json') },
     { src: claudeHome, dst: join(HOMEDIR, '.claude') },
   ];
+  // SWEET_RULES_PLACEMENT=system (sweet-rules-placement.mjs): the rules are NOT written to
+  // .claude/rules/sweet-search.md. Product mode appends them to the installed main, general-purpose
+  // and Plan agent files (the base prompts of the main session and its subagents); the stock harness
+  // passes them with --append-system-prompt and --append-subagent-system-prompt (buildClaudeCliArgs).
+  // CLAUDE.md is the frame only in both placements. The rules text is the rule file's body.
+  const rulesPlacement = resolveSweetRulesPlacement({ sweet });
+  const systemRules = rulesPlacement === 'system' ? mppText.trimEnd() : null;
   // Inject before runner setup so telemetry snapshots the harness-owned bytes.
   writeInstructionFile(rundir, 'CLAUDE.md', { sweet: false, mppText });
   const injectedFiles = ['CLAUDE.md'];
-  if (sweet) {
+  if (sweet && !systemRules) {
     const rulesDir = join(rundir, '.claude', 'rules');
     mkdirSync(rulesDir, { recursive: true });
     appendFileSync(join(rulesDir, 'sweet-search.md'), `${mppText.trimEnd()}\n`);
@@ -582,6 +614,7 @@ export async function runClaudeCodeTask(task, {
       const agentFile = join(rundir, CLAUDE_LEAN_AGENT_REL);
       writeFileSync(agentFile, applyClaudeBatch(readFileSync(agentFile, 'utf8'), harnessTrim.batch));
     }
+    if (systemRules) appendRulesToLeanAgentFiles(rundir, systemRules);
   }
   const {
     runnerStateDir, binDir, runnerFiles, integrity, jail, broker, integrityStateDir, controller,
@@ -618,7 +651,11 @@ export async function runClaudeCodeTask(task, {
   // than replace Claude Code's native system prompt so its standard coding-agent and tool
   // behavior remains intact. `buildClaudeCliArgs` deliberately emits ONE append flag,
   // preserving the shared pages note in both arms. bypassPermissions avoids a headless hang.
-  const args = [...buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, effort }), ...harnessTrim.args];
+  // Product mode carries the rules in its agent files, so the append flags stay as they were.
+  const args = [...buildClaudeCliArgs({
+    prompt, rundir, sweet, claudeModelId, effort,
+    systemRules: harnessTrim.installLean ? null : systemRules,
+  }), ...harnessTrim.args];
 
   const t0 = Date.now();
   const spawnOnce = () => spawnWithTimeout('claude', args, { cwd: rundir, env, timeoutMs: perCallTimeoutMs, jail });
@@ -735,6 +772,7 @@ export async function runClaudeCodeTask(task, {
     readPagesNormalization: 'pretool-hook-v1',
     // CC_HARNESS_TRIM mode ('tools', 'steer', 'tools+steer') or null when off.
     harnessTrim: harnessTrim.mode,
+    ...sweetRulesRowFields(rulesPlacement),
     claudeConfigDir: unjailed ? 'private-config-dir' : 'jail-bind',
     // Marks a run that carried the F2 repair, so an analyzer can tell whether the `pages`
     // asymmetry disclosure describes this run's own data or a pre-repair baseline. Never
