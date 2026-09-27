@@ -78,7 +78,17 @@ ss-* engine or native. No held-out-2 task, ever. Do not push the box; nothing he
 | Codex (Luna) | **pallyt** (v3 + Promise.allSettled line + wait-safe test-cell template; +715 chars) | 5/5 cells cheaper: A −2/−16/−14%, B −28/−30%; solves never lower |
 | opencode (Luna) | **todoall** (todo-in-same-turn line + 2 phrases removed from the todowrite description; +75 chars) | A −10/−23/+1/−1/−16%, B −17%; solves never lower |
 | Claude Code (Opus 5.5) | **shipped max-batch, unchanged** | every A-winning line (amp, ampsaferange, saferange, saferangefinal) cost +4..+9% on B |
-Rules file, frame, ss-* engine, native and product untouched throughout. Next step (owner): decide whether pallyt / todoall go into the product/bench defaults and whether to confirm them on a larger set.
+Rules file, frame, ss-* engine, native and product untouched throughout. 
+## Mechanism audit (3 Opus agents, 2026-09-27 ~12:00; notes in scratchpad mech-codex/, mech-opencode/, mech-cc/)
+| harness | winner | (a) retrieval shift | (b) prompt-size saving | (c) batching / fewer turns | honest size | verdict |
+|---|---|---|---|---|---|---|
+| Codex | pallyt | none (ss-* ≥94% in every arm, untrimmed included) | untrimmed→v3: −3.7k first-request tokens = ALL of v3's −8.6%; pallyt adds +181 tok (+0.5%) | wait-safe template real: waits 3.7→1.6, relaunches 0.83→0.21, verdict in-turn 24/24 when used; Promise.all line ~no effect (pall −5%, p=0.27) | −7% (template) to −13% (per-task median); pooled permutation −14.6% p=0.008. rotB −28/−30% driven by 2 baseline fix-fail loops (−4/−9% without) — DO NOT publish | PARTLY |
+| opencode | todoall | none (native 1.9% of calls; Grep/Task 0) | +18 tok, neutral | real: turns −29% (24/26 pairs, p<0.001); 40% solo-todo, 60% single retrieval turns turned parallel; saving = cache re-reads from fewer turns (r=0.83) | ≈ −8% (range −23..+1%); super_editor gives half | PARTLY |
+| Claude Code | shipped max-batch | ss-* share 18→59% before first edit but cost effect ≈ 0 | prefix cut explains >100% of the saving, cheaper on 10/10 tasks | batching line: −16% turns v max via fewer test/edit loops, not chaining | −18.9% (kept, turn-1 normalised) / −15.3% (with discarded re-runs); ~3 pts of −22% was a cache artefact | MECHANISM-DRIVEN |
+Tonight's Claude Code variants: A wins = noise + task mix (range line only helps whole-file-read tasks; bingo degenerate-inflated baselines); no variant merits another micro-screen. Solve risk: none measured anywhere; one flag — 2/36 Codex template rollouts edited after the last test run and claimed PASS (both resolved).
+Open: Codex template-only variant (drop the Promise.all line) never run — simpler and better founded; opencode v3 trim + todoall plausibly ≈ −5% more (prefix arithmetic), eslint solve risk unmeasured.
+
+Next step (owner): decide whether pallyt / todoall go into the product/bench defaults and whether to confirm them on a larger set.
 - Queue: rotB-codex-3 (base pallyt) — second rotation-B cell for the Codex champion.
 - Round 7 queued: Codex pallyt1 (template for EVERY test run), pallyt1open (+ first tests and searches in one cell); opencode todoall2diff (git diff in parallel with the final test run); Claude Code saferange (ampsaferange minus 'work out every read' — a removal), saferangefinal (+ short final message); rotB for the two Claude Code variants. r6-claudecode folded into r7.
 - Trace analysis 2 (04:40): opencode todoall acts as intended (solo todo turns 31 -> 12, todo calls unchanged);
