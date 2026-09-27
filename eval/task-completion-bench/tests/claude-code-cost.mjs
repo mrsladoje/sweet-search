@@ -25,6 +25,8 @@ import { transcriptMetricsFromFile, repOfSlug } from '../harness/claude-code-acc
 import { normalizeReadInput, readHookDecision } from '../harness/claude-read-pages-hook.mjs';
 import { costsFromTurns } from '../harness/agent-runner-shared.mjs';
 import { readTurnLog } from '../harness/turn-log.mjs';
+import { applyClaudeBatch } from '../harness/trim/batch-variants.mjs';
+import { installClaudeLeanHarness, CLAUDE_LEAN_PLAN_REL } from '../../../scripts/install-claude-lean-harness.js';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -329,6 +331,22 @@ const trimProduct = claudeHarnessTrim('product');
 assert(trimProduct.mode === 'product' && trimProduct.installLean === true
     && trimProduct.args.length === 0 && Object.keys(trimProduct.env).length === 0,
   'product mode adds no flags or env: the lean harness arrives as project files');
+// Product = what init installs (conflict-only trim v2). Arm symmetry: native never denies web,
+// so the product arm must not either.
+{
+  const productDir = join(ROOT, 'product-install');
+  mkdirSync(productDir, { recursive: true });
+  const lean = installClaudeLeanHarness({ projectRoot: productDir, appendOverride: false });
+  const st = JSON.parse(readFileSync(join(productDir, '.claude/settings.json'), 'utf8'));
+  assert(lean.active === true && !st.permissions.deny.some(e => ['WebSearch', 'WebFetch', 'Skill', 'NotebookEdit'].includes(e))
+      && st.permissions.deny.includes('Agent(Explore)') && !st.permissions.deny.includes('Agent(Plan)'),
+    'product install keeps web/skills/notebooks (native parity) and denies only search-delegation subagent types');
+  assert(readFileSync(join(productDir, CLAUDE_LEAN_PLAN_REL), 'utf8').includes('name: Plan'),
+    'product install replaces the Plan subagent (so it loads the rules)');
+  const agentText = readFileSync(join(productDir, '.claude/agents/sweet-search.md'), 'utf8');
+  assert(!agentText.includes('sweet-search guidance') && applyClaudeBatch(agentText, 'saferange') !== agentText,
+    'product agent file (bench form) carries no override and CC_TRIM_BATCH variants still apply to it');
+}
 assert(claudeHarnessTrim('1').args.length === 1 + CLAUDE_HARNESS_TRIM_DENY.length,
   'mode 1 is unchanged by the second pass (the smoked condition keeps its meaning)');
 let badTrim = null;

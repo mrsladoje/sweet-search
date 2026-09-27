@@ -32,7 +32,9 @@ import {
 import {
   CLAUDE_LEAN_AGENT_NAME,
   CLAUDE_LEAN_AGENT_REL,
+  CLAUDE_LEAN_HARNESS_DENY,
   CLAUDE_LEAN_MANIFEST_REL,
+  CLAUDE_LEAN_PLAN_REL,
   CLAUDE_LEAN_SUBAGENT_REL,
 } from '../../scripts/install-claude-lean-harness.js';
 import {
@@ -86,6 +88,10 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
     expect(r.code, `init failed: ${r.stderr}`).toBe(0);
     expect(r.stderr).toContain('installed the sweet-search lean harness');
     expect(r.stderr).toContain('Start a new session');
+    // The message names what changes and the opt-out; it no longer claims plan mode is off.
+    expect(r.stderr).toContain('conflicts with the sweet-search rules');
+    expect(r.stderr).toContain('--no-lean-harness');
+    expect(r.stderr).not.toMatch(/unused tools off|plan mode, worktrees/);
 
     // Claude Code auto-loads the project rule; init never touches CLAUDE.md.
     expect(exists('CLAUDE.md')).toBe(false);
@@ -106,6 +112,7 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
       CLAUDE_SYSTEM_OVERRIDE,
     );
     expect(exists(CLAUDE_LEAN_SUBAGENT_REL)).toBe(true);
+    expect(exists(CLAUDE_LEAN_PLAN_REL)).toBe(true);
     expect(exists('.claude/hooks/index-maintainer.mjs')).toBe(true);
     expect(exists('.claude/skills/sweet-index/SKILL.md')).toBe(true);
     // No duplicate hand-authored UserPromptSubmit guidance.
@@ -115,9 +122,11 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
     expect(settings.agent).toBe(CLAUDE_LEAN_AGENT_NAME);
     expect(settings.hooks?.UserPromptSubmit).toBeUndefined();
     // P3: tool enforcement NOT installed without --enforce-tools (the lean
-    // harness denies unused tools, never Grep).
+    // harness denies only search-delegation subagent types, never Grep).
     expect(exists('.claude/hooks/sweet-search-intercept-read.mjs')).toBe(false);
-    expect(settings.permissions.deny).not.toContain('Grep');
+    expect(settings.permissions.deny).toEqual([...CLAUDE_LEAN_HARNESS_DENY]);
+    expect(settings.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
+    expect(settings.env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS).toBeUndefined();
     expect(settings.hooks?.PreToolUse).toBeUndefined();
   });
 
@@ -156,6 +165,7 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
     expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(false);
     expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(false);
     expect(exists(CLAUDE_LEAN_SUBAGENT_REL)).toBe(false);
+    expect(exists(CLAUDE_LEAN_PLAN_REL)).toBe(false);
     expect(exists(CLAUDE_LEAN_MANIFEST_REL)).toBe(false);
     expect(exists('.claude/hooks/index-maintainer.mjs')).toBe(false);
     expect(exists('.claude/skills/sweet-index')).toBe(false);
@@ -167,6 +177,39 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
     // CLAUDE.md was never modified.
     expect(exists('CLAUDE.md')).toBe(true);
     expect(readFileSync(join(tmpRoot, 'CLAUDE.md'), 'utf8')).toBe(userClaude);
+  });
+});
+
+describe('lifecycle: --no-lean-harness opt-out', () => {
+  it('installs only the rules and the output style', () => {
+    const r = runCli([...COMMON_INIT_ARGS, '--no-lean-harness']);
+    expect(r.code, `init failed: ${r.stderr}`).toBe(0);
+    expect(exists(CLAUDE_RULES_REL)).toBe(true);
+    expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(true);
+    expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(false);
+    expect(exists(CLAUDE_LEAN_PLAN_REL)).toBe(false);
+    expect(exists(CLAUDE_LEAN_MANIFEST_REL)).toBe(false);
+    const settings = readJson('.claude/settings.json');
+    expect(settings.outputStyle).toBe(CLAUDE_OUTPUT_STYLE_NAME);
+    expect(settings.agent).toBeUndefined();
+    expect(settings.permissions?.deny ?? []).toEqual([]);
+    expect(r.stderr).not.toContain('installed the sweet-search lean harness');
+  });
+
+  it('removes a lean harness that an earlier init installed', () => {
+    expect(runCli(COMMON_INIT_ARGS).code).toBe(0);
+    expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(true);
+    const r = runCli([...COMMON_INIT_ARGS, '--no-lean-harness']);
+    expect(r.code, `re-init failed: ${r.stderr}`).toBe(0);
+    expect(r.stderr).toContain('lean harness removed (--no-lean-harness)');
+    expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(false);
+    expect(exists(CLAUDE_LEAN_SUBAGENT_REL)).toBe(false);
+    expect(exists(CLAUDE_LEAN_PLAN_REL)).toBe(false);
+    expect(exists(CLAUDE_LEAN_MANIFEST_REL)).toBe(false);
+    const settings = readJson('.claude/settings.json');
+    expect(settings.agent).toBeUndefined();
+    expect(settings.env).toBeUndefined();
+    expect(settings.outputStyle).toBe(CLAUDE_OUTPUT_STYLE_NAME);
   });
 });
 
