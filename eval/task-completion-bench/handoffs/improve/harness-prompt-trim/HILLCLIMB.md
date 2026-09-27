@@ -35,7 +35,7 @@ ss-* engine or native. No held-out-2 task, ever. Do not push the box; nothing he
 
 | harness | shipped/base | champion | candidates | leads | dead |
 |---|---|---|---|---|---|
-| Codex (v3, Luna code mode) | v3 | **pall** (rotB −11%, 0/6=0/6: cost-only evidence on B) | pall (r2 −11% 3/4 v 2/4; r3 −13% 3/4 v 2/4; r4 −3% 3/4=3/4) | yield (r2 −7%) | unchain, dep, two, plan, yieldedit, yieldeditpall, pallyield (r4 +10%) |
+| Codex (v3, Luna code mode) | v3 | **pall** (rotB −11%, 0/6=0/6: cost-only evidence on B) | pall (r2 −11% 3/4 v 2/4; r3 −13% 3/4 v 2/4; r4 −3% 3/4=3/4) | pallyt (r5 −3% v base, −10% v pall; waits halved), yield (r2 −7%) | unchain, dep, two, plan, yieldedit, yieldeditpall, pallyield (r4 +10%), pallfind (r5 +15%) |
 | opencode (untrimmed, Luna) | untrimmed | **todoall** (rotB −18%, turns −38%, 0/6=0/6: cost-only on B) | todoall (r2 −10%, r3 −24%, r4 +1%; turns −25..−37% every time; 3/4=3/4); combo (r2 −12%, r3 −15%) | comboall (r3 −16%) | unchain, dep, two, plan, todo, tododesc, todoallfit (r4 = todoall: Luna already uses ss-* almost only) |
 | Claude Code (product, Opus 5.5) | product (max-batch) | — | **amp** (r2 −15%, r3 −12%, 3/4=3/4; r1 −2% fix off; rotB +8% but 2/6 v 1/6 — not promoted) | ssread (r2 −14%, r3 −4%) | two, plan, ampssread |
 
@@ -54,6 +54,8 @@ ss-* engine or native. No held-out-2 task, ever. Do not push the box; nothing he
 - rotB-codex-1: pall −11% ($0.086 v $0.097), 0/6 = 0/6 (Luna solves none of rotation B under Codex; cost evidence only), turns 91 v 103. -> Codex CHAMPION = pall.
 - rotB-opencode-1: todoall −18% ($0.066 v $0.080), turns 58 v 93, fewer turns on all 6 tasks, 0/6 = 0/6. -> opencode CHAMPION = todoall.
 - rotB-claudecode-1: amp 2/6 v 1/6 (gained svgr), cost +8% ($0.885 v $0.816; brighterscript +$0.09), turns 44 = 44. Cost saving did NOT transfer -> amp NOT promoted; Claude Code champion stays the shipped product prompt. amp remains a candidate (R5 tests amp+safe lines).
+- R5 Codex (rotation A): base $0.078 (72 turns); pall $0.084 (+8%); pallyt $0.076 (−3%, 66 turns, waits 6 v 13, template used in 9 test cells); pallfind $0.090 (+15%); pallytfind $0.076 (65 turns). All 3/4. The wait-safe test-cell template is the only line that helps; ss-find/alternation lines add nothing. pall over 5 cells: −11, −13, −3, +8 (A), −11 (B) — small, likely real, noisy.
+- Queue: r6-codex (base pall pallyt), rotB-codex-2 (base pallyt).
 - Trace analysis 2 (04:40): opencode todoall acts as intended (solo todo turns 31 -> 12, todo calls unchanged);
   Codex pall mostly NOT via Promise.all (baseline already used it) — saving is fewer lost-verdict relaunches;
   Claude Code amp shows no behaviour change (saving mostly on the unsolved bingo). Remaining sinks: Codex
