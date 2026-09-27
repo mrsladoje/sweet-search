@@ -62,6 +62,8 @@ ss-* engine or native. No held-out-2 task, ever. Do not push the box; nothing he
 - Queue: rotB-claudecode-2 (base ampsaferange), r6-claudecode (base amp ampsaferange).
 - R6 Codex (A): base $0.099 (109 turns); pall $0.088 (−11%, 89); **pallyt $0.083 (−16%, 75)**. All 3/4. pallyt is a CANDIDATE (cheaper than base and pall in 2/2 cells); rotB-codex-2 decides champion.
 - rotB-codex-2: pallyt $0.078 v $0.109 (−28%), turns 77 v 101, cheaper on 4/6 tasks (longest test suite $0.046 -> $0.018), 0/6 = 0/6. -> Codex CHAMPION = pallyt.
+- Trace analysis 3 (08:20): pallyt's template returns the verdict in 1 turn in 15/15 cells that use it, but 0/14 FIRST test cells use it (the agent copies yield_time_ms onto exec_command). todoall2: solo todo turns 17 -> 1; post-test review turns remain (10-13% of cost). amp lost rotB because 'work out every read' makes read batches bigger; ampsaferange's A gain is mostly one large whole-file read (super_editor), so it may not generalise. No removals proposed for Codex/opencode (past trims lost solves).
+- Round 7 queued: Codex pallyt1 (template for EVERY test run), pallyt1open (+ first tests and searches in one cell); opencode todoall2diff (git diff in parallel with the final test run); Claude Code saferange (ampsaferange minus 'work out every read' — a removal), saferangefinal (+ short final message); rotB for the two Claude Code variants. r6-claudecode folded into r7.
 - Trace analysis 2 (04:40): opencode todoall acts as intended (solo todo turns 31 -> 12, todo calls unchanged);
   Codex pall mostly NOT via Promise.all (baseline already used it) — saving is fewer lost-verdict relaunches;
   Claude Code amp shows no behaviour change (saving mostly on the unsolved bingo). Remaining sinks: Codex

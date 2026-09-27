@@ -37,6 +37,10 @@ const CODEX_YIELD = '- An exec cell yields after 10 seconds unless its first lin
 // v3 forbids shell-script edits, so the round-1 "dep" example could not apply; this names apply_patch.
 const CODEX_INCELL_DEP = '- When a check follows an edit, do both in one exec cell: await tools.apply_patch(patch), then run the check with tools.exec_command, and print both results.';
 const CODEX_YIELD_TEMPLATE = '- For a long command such as the test suite, use one cell of this form: first line `// @exec: {"yield_time_ms": 600000}`, then `const r = await tools.exec_command({cmd: <command>, yield_time_ms: 300000}); text(r.output); if (r.session_id) text((await tools.write_stdin({session_id: r.session_id, chars: "", yield_time_ms: 300000})).output);` A cell that ends without the write_stdin step returns before the command finishes, and its result is lost.';
+// Round 7 (trace analysis 3): the template worked in 15/15 cells that used it, but 0/14 FIRST test
+// cells used it (the agent copied yield_time_ms onto exec_command, which does not keep the cell open).
+const CODEX_YT_EVERY = ' Use this form for every run of the test suite, the first run included. The yield_time_ms of exec_command or write_stdin does not keep the cell open; only the first line does.';
+const CODEX_OPEN = '- In your first cell, under that first line, run the test suite and your first searches together with Promise.allSettled, so one turn returns the test result and the search results.';
 const CODEX_BASE = `${CODEX_PAR}\n${CODEX_CHAIN}`;
 export const CODEX_BATCH_VARIANTS = Object.freeze({
   unchain: CODEX_PAR,
@@ -49,6 +53,8 @@ export const CODEX_BATCH_VARIANTS = Object.freeze({
   yieldedit: `${CODEX_BASE}\n${CODEX_YIELD}\n${CODEX_INCELL_DEP}`,
   yieldeditpall: `${CODEX_BASE}\n${CODEX_PALL}\n${CODEX_YIELD}\n${CODEX_INCELL_DEP}`,
   pallyt: `${CODEX_BASE}\n${CODEX_PALL}\n${CODEX_YIELD_TEMPLATE}`,
+  pallyt1: `${CODEX_BASE}\n${CODEX_PALL}\n${CODEX_YIELD_TEMPLATE}${CODEX_YT_EVERY}`,
+  pallyt1open: `${CODEX_BASE}\n${CODEX_PALL}\n${CODEX_YIELD_TEMPLATE}${CODEX_YT_EVERY}\n${CODEX_OPEN}`,
   pallfind: `${CODEX_BASE}\n${CODEX_PALL}\n${R5_FIND}\n${R5_ALT}`,
   pallytfind: `${CODEX_BASE}\n${CODEX_PALL}\n${CODEX_YIELD_TEMPLATE}\n${R5_FIND}\n${R5_ALT}`,
 });
@@ -81,6 +87,7 @@ const OC_GLOBGREP = '- When searching for text or files, prefer using Glob and G
 const OC_FIT = '- For code search and reading use the ss-* commands through bash, as the instructions say; use Glob only to list files by name.';
 const OC_TODO_END = '- After the final test run passes, write the final answer. Do not spend a turn only on todowrite to mark items completed.';
 const OC_TODO_OPEN = '- Send your first todo list together with your first searches, as parallel calls in one turn.';
+const OC_DIFF = '- When you run the test suite after your last edit, send git diff as a parallel call in the same turn. If the result passes and the diff shows nothing left to do, write the final answer next.';
 const OC_TODO_DESC_EDITS = [
   ["- Update status in real time; don't batch completions\n", ''],
   ['\nWhen in doubt, use it.\n', '\n'],
@@ -94,6 +101,7 @@ Object.assign(OPENCODE_BATCH_VARIANTS_R2, {
   // tools" bullet conflicts with the rules; replace only that bullet.
   todoallfit: { bullet: `${OC_BULLET}\n${OC_TODO}`, edits: { todowrite: OC_TODO_DESC_EDITS }, prompt: [[OC_GLOBGREP, OC_FIT]] },
   todoall2: { bullet: `${OC_BULLET}\n${OC_TODO}\n${OC_TODO_OPEN}\n${OC_TODO_END}`, edits: { todowrite: OC_TODO_DESC_EDITS } },
+  todoall2diff: { bullet: `${OC_BULLET}\n${OC_TODO}\n${OC_TODO_OPEN}\n${OC_TODO_END}\n${OC_DIFF}`, edits: { todowrite: OC_TODO_DESC_EDITS } },
   todoall2find: { bullet: `${OC_BULLET}\n${OC_TODO}\n${OC_TODO_OPEN}\n${OC_TODO_END}\n${R5_FIND}\n${R5_ALT}`, edits: { todowrite: OC_TODO_DESC_EDITS } },
   comboall: { bullet: `${OC_BULLET}\n${OC_TODO}\n${OC_FIRSTRUN}\n${OC_NOREVIEW}`, edits: { todowrite: OC_TODO_DESC_EDITS } },
 });
@@ -122,6 +130,9 @@ const CC_ROOT = '- Run ss-* commands from the repository root with root-relative
 const CC_TIMEOUT = '- Run long commands such as the test suite in the foreground with the Bash timeout parameter set to 600000; a call that reaches the default 2-minute limit moves to the background and costs extra turns.';
 const CC_TAIL = '- To shorten a long command\'s output, pipe it through `tail -n 60`, not grep: result lines come last, and a filter that matches nothing shows you nothing.';
 const CC_RANGES = '- Read ranges, not whole files: take the line numbers from ss-grep or ss-search and read each place with `ss-read <file> <start> <end>` up to the end of the enclosing function, several ranges in one Bash call. Read a whole file only when it is short (under about 200 lines).';
+// Round 7: amp's "work out every read" sentence made read turns bigger and cost +8% on rotation B;
+// saferange drops it (a removal). The final turn is ~16% of Claude Code cost.
+const CC_FINAL = '- Keep the final message short, about five lines: what you changed and where, the last test result, and any step you did not do.';
 export const CC_BATCH_VARIANTS = Object.freeze({
   two: `- ${two('Bash')}`,
   plan: `- ${two('Bash')} ${PLAN}`,
@@ -132,6 +143,8 @@ export const CC_BATCH_VARIANTS = Object.freeze({
   ampssread: `${CC_DEP} ${PLAN}\n${CC_SSREAD}`,
   ampsafe: `${CC_DEP} ${PLAN}\n${CC_ROOT}\n${CC_TIMEOUT}\n${CC_TAIL}`,
   ampsaferange: `${CC_DEP} ${PLAN}\n${CC_ROOT}\n${CC_TIMEOUT}\n${CC_TAIL}\n${CC_RANGES}`,
+  saferange: `${CC_DEP}\n${CC_ROOT}\n${CC_TIMEOUT}\n${CC_TAIL}\n${CC_RANGES}`,
+  saferangefinal: `${CC_DEP}\n${CC_ROOT}\n${CC_TIMEOUT}\n${CC_TAIL}\n${CC_RANGES}\n${CC_FINAL}`,
 });
 export function applyClaudeBatch(text, variant) {
   const repl = CC_BATCH_VARIANTS[variant];
