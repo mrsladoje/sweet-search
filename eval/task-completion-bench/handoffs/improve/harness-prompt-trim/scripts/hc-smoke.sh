@@ -96,12 +96,14 @@ for V in $VARIANTS; do
     claudecode)
       # A trailing +steer keeps Claude Code's bypass-mode steer (CC_PRODUCT_STEER=1).
       # A trailing +tokrem keeps the token-budget reminder (CC_PRODUCT_TOKREM=1).
+      # A trailing +skill250 sets skillListingMaxDescChars=250 (CC_PRODUCT_SKILLDESC).
+      SK=; case $V in *+skill250) SK=250; V=${V%+skill250} ;; esac
       TR=; case $V in *+tokrem) TR=1; V=${V%+tokrem} ;; esac
       ST=; case $V in *+steer) ST=1; V=${V%+steer} ;; esac
       case $V in
-        base)      SW=(CC_HARNESS_TRIM=product CC_TRIM_BATCH= "CC_PRODUCT_STEER=$ST" "CC_PRODUCT_TOKREM=$TR") ;;
-        untrimmed) SW=(CC_HARNESS_TRIM=0 CC_TRIM_BATCH= CC_PRODUCT_STEER= CC_PRODUCT_TOKREM=) ;;
-        *)         SW=(CC_HARNESS_TRIM=product "CC_TRIM_BATCH=$V" "CC_PRODUCT_STEER=$ST" "CC_PRODUCT_TOKREM=$TR") ;;
+        base)      SW=(CC_HARNESS_TRIM=product CC_TRIM_BATCH= "CC_PRODUCT_STEER=$ST" "CC_PRODUCT_TOKREM=$TR" "CC_PRODUCT_SKILLDESC=$SK") ;;
+        untrimmed) SW=(CC_HARNESS_TRIM=0 CC_TRIM_BATCH= CC_PRODUCT_STEER= CC_PRODUCT_TOKREM= CC_PRODUCT_SKILLDESC=) ;;
+        *)         SW=(CC_HARNESS_TRIM=product "CC_TRIM_BATCH=$V" "CC_PRODUCT_STEER=$ST" "CC_PRODUCT_TOKREM=$TR" "CC_PRODUCT_SKILLDESC=$SK") ;;
       esac ;;
   esac
   # Neutral run ids (the run id reaches paths the agent can see); rows carry harnessTrim.

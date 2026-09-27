@@ -238,7 +238,10 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
     const steer = process.env.CC_PRODUCT_STEER === '1';
     const tokrem = process.env.CC_PRODUCT_TOKREM === '1';
     const dropEnv = [...(steer ? ['CLAUDE_CODE_THRIFTY_SONIC'] : []), ...(tokrem ? ['CLAUDE_CODE_TOTAL_TOKENS_REMINDER'] : [])];
-    return { mode: `${batch ? `${m}+batch-${batch}` : m}${steer ? '+steer' : ''}${tokrem ? '+tokrem' : ''}`, args: [], env: {}, installLean: true, ...(batch ? { batch } : {}), ...(dropEnv.length ? { dropEnv } : {}) };
+    // CC_PRODUCT_SKILLDESC=<n> (bench only, audit cc-prefix): public setting skillListingMaxDescChars
+    // (default 1536) — every skill stays listed and callable; only long trigger text is cut.
+    const skillDesc = /^\d+$/.test(String(process.env.CC_PRODUCT_SKILLDESC ?? '')) ? Number(process.env.CC_PRODUCT_SKILLDESC) : null;
+    return { mode: `${batch ? `${m}+batch-${batch}` : m}${steer ? '+steer' : ''}${tokrem ? '+tokrem' : ''}${skillDesc ? `+skill${skillDesc}` : ''}`, args: [], env: {}, installLean: true, ...(batch ? { batch } : {}), ...(dropEnv.length ? { dropEnv } : {}), ...(skillDesc ? { skillDesc } : {}) };
   }
   if (m === 'lean' || m === 'lean-batch') {
     // lean also drops the Agent tool (no delegation): opt-in only, reported separately.
@@ -620,6 +623,12 @@ export async function runClaudeCodeTask(task, {
     if (harnessTrim.batch) {
       const agentFile = join(rundir, CLAUDE_LEAN_AGENT_REL);
       writeFileSync(agentFile, applyClaudeBatch(readFileSync(agentFile, 'utf8'), harnessTrim.batch));
+    }
+    if (harnessTrim.skillDesc) {
+      const settingsFile = join(rundir, '.claude', 'settings.json');
+      const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+      settings.skillListingMaxDescChars = harnessTrim.skillDesc;
+      writeFileSync(settingsFile, `${JSON.stringify(settings, null, 2)}\n`);
     }
     if (harnessTrim.dropEnv) {
       const settingsFile = join(rundir, '.claude', 'settings.json');
