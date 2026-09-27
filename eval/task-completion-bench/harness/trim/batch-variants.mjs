@@ -57,6 +57,10 @@ const CODEX_OPEN = '- In your first cell, under that first line, run the test su
 // for any repository: it names the class of command it is for (ends by itself, takes over 10 s)
 // and the class it must not be used for (runs until stopped).
 const CODEX_YIELD_TEMPLATE2 = '- An exec cell returns after 10 seconds unless its first line sets a longer limit. For a command that ends by itself but takes longer than 10 seconds, such as a build or a test run, use one cell of this form: first line `// @exec: {"yield_time_ms": 600000}`, then `const r = await tools.exec_command({cmd: <command>, yield_time_ms: 300000}); text(r.output); if (r.session_id) text((await tools.write_stdin({session_id: r.session_id, chars: "", yield_time_ms: 300000})).output);` A cell that ends without the write_stdin step returns before the command finishes, and its result is lost. Do not use this form for a command that keeps running until it is stopped, such as a dev server or a watch mode.';
+// Poll (audit mech-cx2, 2026-09-27): yt2's saving came from always awaiting write_stdin for a
+// still-running command (verdict lost 9x -> 0x), not from the 600 s cell pragma (used in 5/28 cells).
+// This keeps only the poll, drops the pragma (no 10-minute cell), and widens the exclusion.
+const CODEX_POLL = '- When exec_command returns a session_id because the command is still running, await one `tools.write_stdin({session_id, chars: "", yield_time_ms: 300000})` in the same cell before you print the result, so the complete result comes back in one turn. Do not do this for a command that keeps running until it is stopped or that waits for input, such as a dev server, a watch mode or an interactive prompt.';
 const CODEX_BASE = `${CODEX_PAR}\n${CODEX_CHAIN}`;
 export const CODEX_BATCH_VARIANTS = Object.freeze({
   unchain: CODEX_PAR,
@@ -74,6 +78,7 @@ export const CODEX_BATCH_VARIANTS = Object.freeze({
   pallfind: `${CODEX_BASE}\n${CODEX_PALL}\n${R5_FIND}\n${R5_ALT}`,
   pallytfind: `${CODEX_BASE}\n${CODEX_PALL}\n${CODEX_YIELD_TEMPLATE}\n${R5_FIND}\n${R5_ALT}`,
   yt2: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE2}`,
+  poll: `${CODEX_BASE}\n${CODEX_POLL}`,
   yt2eff: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE2}\n${EFFICIENCY_LINE}`,
 });
 export function applyCodexBatch(text, variant) {
