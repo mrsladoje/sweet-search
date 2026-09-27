@@ -102,6 +102,9 @@ export function parseInitArgs(args) {
     //             Indexing still runs through the CLI/engine. Requires --mcp.
     mcp: false,
     noCli: false,
+    // --no-lean-harness: keep Claude Code's own system prompt and subagents; install only the
+    // rules file and the routing-override output style (the pre-lean-harness fallback).
+    noLeanHarness: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -212,6 +215,11 @@ export function parseInitArgs(args) {
       // agent would otherwise have no way to reach sweet-search). Indexing
       // still uses the CLI/engine.
       result.noCli = true;
+    } else if (arg === '--no-lean-harness') {
+      // Opt out of the Claude Code lean harness (main agent + subagent files,
+      // settings `agent`/deny/env). Removes a previously installed one and
+      // falls back to the routing-override output style.
+      result.noLeanHarness = true;
     }
   }
 
@@ -1521,6 +1529,14 @@ Options:
                             Requires --mcp. NOTE: the MCP prompt variant is
                             hand-derived from the frozen CLI champion and is not
                             yet benchmarked on the MCP transport.
+  --no-lean-harness         Keep Claude Code's own system prompt and subagents.
+                            By default init installs the lean harness: a main
+                            agent and Plan/general-purpose subagents without
+                            Claude Code's search guidance (it conflicts with
+                            the sweet-search rules), with the Explore subagent
+                            off. With this flag init removes a previously
+                            installed lean harness and installs only the rules
+                            file and the routing-override output style.
   --verbose, -v             Enable verbose output
   --help, -h                Show this help
 
@@ -2100,17 +2116,28 @@ export async function runInit(args) {
         // returns prominent, actionable guidance when our style is not active.
         //
         // Default (CLI surface): the lean harness replaces Claude Code's base
-        // system prompt with a short one that carries the same override, trims
-        // unused tools and search-delegation subagents, and gives every subagent
-        // the trimmed prompt (install-claude-lean-harness.js). While it is active
-        // the output style would only repeat the override, so it is removed. If a
-        // user's own `agent` selection or agent file blocks it, the output style
-        // stays the fallback.
+        // system prompt with our own paraphrase minus the search guidance that
+        // conflicts with the rules, carries the same override, replaces the
+        // Plan and general-purpose subagents so they load the rules, and turns
+        // off the Explore search subagent (install-claude-lean-harness.js).
+        // While it is active the output style would only repeat the override,
+        // so it is removed. If a user's own `agent` selection or agent file
+        // blocks it, or the user passes --no-lean-harness, the output style is
+        // the fallback.
         try {
           let leanReport = null;
           if (parsed.noCli) {
             removeClaudeLeanHarness({ projectRoot });
             claudeSystemPromptReport = removeClaudeSystemPrompt({ projectRoot });
+          } else if (parsed.noLeanHarness) {
+            const leanRemoved = removeClaudeLeanHarness({ projectRoot });
+            claudeSystemPromptReport = installClaudeSystemPrompt({ projectRoot });
+            if (leanRemoved.status === 'removed') {
+              claudeSystemPromptReport = {
+                ...claudeSystemPromptReport,
+                detail: `${claudeSystemPromptReport.detail ? `${claudeSystemPromptReport.detail}; ` : ''}lean harness removed (--no-lean-harness)`,
+              };
+            }
           } else {
             leanReport = installClaudeLeanHarness({ projectRoot });
             if (leanReport.active === true) {

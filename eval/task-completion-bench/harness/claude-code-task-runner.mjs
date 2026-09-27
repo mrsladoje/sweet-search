@@ -40,7 +40,7 @@ import {
 import {
   CLAUDE_LEAN_BASE_PROMPT, CLAUDE_LEAN_BASE_PROMPT_BATCH, CLAUDE_LEAN_ENV,
   CLAUDE_LEAN_SUBAGENT_DESCRIPTION, CLAUDE_LEAN_SUBAGENT_PROMPT,
-  CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_MANIFEST_REL,
+  CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL, CLAUDE_LEAN_MANIFEST_REL,
   installClaudeLeanHarness,
 } from '../../../scripts/install-claude-lean-harness.js';
 
@@ -207,10 +207,14 @@ export const CLAUDE_TRIM_AGENTS_JSON = JSON.stringify({
 export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
   const m = String(mode ?? '').trim();
   if (!m || m === '0') return { mode: null, args: [], env: {} };
-  // 'product' = max-batch delivered the way `sweet-search init` ships it: project files
-  // (settings `agent` + agent files + permissions.deny + env) instead of CLI flags. The runner
-  // installs them into the run dir. Verified by capture: the request is byte-identical to
-  // max-batch. The frozen-set run uses this mode so the published number is the product's.
+  // 'product' = exactly what `sweet-search init` installs, as project files (settings `agent` +
+  // main/general-purpose/Plan agent files + permissions.deny + env). The runner installs them into
+  // the run dir. Since the conflict-only trim (v2, 2026-09-27) this is NO LONGER max-batch: web,
+  // skills, notebooks, scheduling, worktrees etc. stay available, only the Explore/claude subagent
+  // types are denied, and the base prompt is the v2 paraphrase. ARM SYMMETRY: the native arm never
+  // denies WebSearch/WebFetch either (it runs stock Claude Code), and the offline frame comes from
+  // the rollout's network namespace for both arms, so the product arm keeps web exactly like native.
+  // Runs before 2026-09-27 measured the v1 form; never pool them with v2 product runs.
   if (m === 'product') {
     const batch = String(process.env.CC_TRIM_BATCH ?? '').trim();
     if (batch && !CC_BATCH_VARIANTS[batch]) throw new Error(`CC_TRIM_BATCH=${batch}: expected ${Object.keys(CC_BATCH_VARIANTS).join(', ')}`);
@@ -561,10 +565,10 @@ export async function runClaudeCodeTask(task, {
   }
   if (sweet && harnessTrim.installLean) {
     // The benchmark passes the override through its own --append-system-prompt (both modes),
-    // so the agent file carries the base prompt only: the request equals max-batch.
+    // so the agent file carries the base prompt only.
     const lean = installClaudeLeanHarness({ projectRoot: rundir, appendOverride: false });
     if (lean.active !== true) throw new Error(`CC_HARNESS_TRIM=product: lean harness not active (${lean.status}: ${lean.detail})`);
-    injectedFiles.push(CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, '.claude/settings.json', CLAUDE_LEAN_MANIFEST_REL);
+    injectedFiles.push(CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL, '.claude/settings.json', CLAUDE_LEAN_MANIFEST_REL);
     // CC_TRIM_BATCH (batching micro-smoke, trim/batch-variants.mjs): swaps the max-batch line
     // of the installed main agent file for one variant; the subagent file is unchanged.
     if (harnessTrim.batch) {
