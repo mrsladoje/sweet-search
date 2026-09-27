@@ -61,6 +61,12 @@ const CODEX_YIELD_TEMPLATE2 = '- An exec cell returns after 10 seconds unless it
 // still-running command (verdict lost 9x -> 0x), not from the 600 s cell pragma (used in 5/28 cells).
 // This keeps only the poll, drops the pragma (no 10-minute cell), and widens the exclusion.
 const CODEX_POLL = '- When exec_command returns a session_id because the command is still running, await one `tools.write_stdin({session_id, chars: "", yield_time_ms: 300000})` in the same cell before you print the result, so the complete result comes back in one turn. Do not do this for a command that keeps running until it is stopped or that waits for input, such as a dev server, a watch mode or an interactive prompt.';
+// yt3 (sink audit sinks-3, 2026-09-27): the model copied yt2's inline `const r ...` part but
+// used the separate first-line pragma in only 5/28 cells, so 18/23 other cells returned early
+// (20 wait turns). yt3 gives both lines as ONE fenced cell to copy, with yt2's widened exclusion.
+const CODEX_YIELD_TEMPLATE3 = '- An exec cell returns after 10 seconds unless its first line sets a longer limit. For a command that ends by itself but takes longer than 10 seconds, such as a build or a test run, copy this cell exactly, both lines, and replace <command>:\n```\n// @exec: {"yield_time_ms": 600000}\nconst r = await tools.exec_command({cmd: <command>, yield_time_ms: 300000}); text(r.output); if (r.session_id) text((await tools.write_stdin({session_id: r.session_id, chars: "", yield_time_ms: 300000})).output);\n```\nWithout the first line the cell returns after 10 seconds; without the write_stdin step the result is lost. Do not use this form for a command that keeps running until it is stopped or that waits for input, such as a dev server, a watch mode or an interactive prompt.';
+// Read batch (sinks-3): 65/147 Codex turns run ONE search or read. General, read-only only.
+const CODEX_READ_BATCH = '- When you already know several read-only commands you need, such as searches, file reads or listings, run them in one exec_command joined with `;` and read all the output in one turn. Keep a command whose output decides your next step on its own.';
 const CODEX_BASE = `${CODEX_PAR}\n${CODEX_CHAIN}`;
 export const CODEX_BATCH_VARIANTS = Object.freeze({
   unchain: CODEX_PAR,
@@ -80,6 +86,8 @@ export const CODEX_BATCH_VARIANTS = Object.freeze({
   yt2: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE2}`,
   poll: `${CODEX_BASE}\n${CODEX_POLL}`,
   yt2eff: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE2}\n${EFFICIENCY_LINE}`,
+  yt3: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE3}`,
+  yt3batch: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE3}\n${CODEX_READ_BATCH}`,
 });
 export function applyCodexBatch(text, variant) {
   const repl = CODEX_BATCH_VARIANTS[variant];
