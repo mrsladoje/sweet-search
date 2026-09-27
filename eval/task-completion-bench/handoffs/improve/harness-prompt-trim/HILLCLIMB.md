@@ -37,7 +37,7 @@ ss-* engine or native. No held-out-2 task, ever. Do not push the box; nothing he
 |---|---|---|---|---|---|
 | Codex (v3, Luna code mode) | v3 | — | **pall** (r2 −11% 3/4 v 2/4; r3 −13% 3/4 v 2/4) | yield (r2 −7%) | unchain, dep, two, plan, yieldedit, yieldeditpall |
 | opencode (untrimmed, Luna) | untrimmed | — | **todoall** (r2 −10%, r3 −24%, 3/4=3/4); combo (r2 −12%, r3 −15%) | comboall (r3 −16%) | unchain, dep, two, plan, todo, tododesc |
-| Claude Code (product, Opus 5.5) | product (max-batch) | — | — | amp (r1 −2%, r2 −15%), ssread (r2 −14%) | two, plan, ampssread |
+| Claude Code (product, Opus 5.5) | product (max-batch) | — | **amp** (r2 −15%, r3 −12%, 3/4=3/4; r1 −2% fix off) | ssread (r2 −14%, r3 −4%) | two, plan, ampssread |
 
 ## Results log (cost vs same-cell baseline; solves variant/baseline)
 
@@ -47,6 +47,9 @@ ss-* engine or native. No held-out-2 task, ever. Do not push the box; nothing he
   opencode todo +4% (turns −15%), tododesc −4%, todoall −10%, combo −12% (turns −35%).
   Claude Code amp −15%, ssread −14%, ampssread +9% (baseline had a degenerate re-run).
 - R3: Codex pall −13% (3/4 v 2/4). opencode todoall −24%, combo −15%, comboall −16%.
+  Claude Code amp −12%, ssread −4% (bingo flagged degenerate in every Claude Code baseline: noise, both sides).
+- Rotation B ledger: all 10 confirm10 tasks gold-valid under the fixed code (04:00).
+- Queue: rotB-codex-1 (base pall), rotB-opencode-1 (base todoall), rotB-claudecode-1 (base amp).
 
 ## Queue plan
 
