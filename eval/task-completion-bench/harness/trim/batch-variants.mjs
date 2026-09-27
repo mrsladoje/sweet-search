@@ -40,6 +40,7 @@ export const CODEX_BATCH_VARIANTS = Object.freeze({
   plan: `- ${two('shell')} ${PLAN}`,
   pall: `${CODEX_BASE}\n${CODEX_PALL}`,
   yield: `${CODEX_BASE}\n${CODEX_YIELD}`,
+  pallyield: `${CODEX_BASE}\n${CODEX_PALL}\n${CODEX_YIELD}`,
   yieldedit: `${CODEX_BASE}\n${CODEX_YIELD}\n${CODEX_INCELL_DEP}`,
   yieldeditpall: `${CODEX_BASE}\n${CODEX_PALL}\n${CODEX_YIELD}\n${CODEX_INCELL_DEP}`,
 });
@@ -68,6 +69,8 @@ export const OPENCODE_BATCH_VARIANTS = Object.freeze({
 const OC_TODO = '- Send todowrite in the same turn as your next tool call, as a parallel call, never as a turn of its own. Update the list only when a step is finished.';
 const OC_FIRSTRUN = '- Start the first run of the test suite as a parallel call together with your first searches.';
 const OC_NOREVIEW = '- After the test suite passes on your final edit, write the final answer. Do not add a separate review turn; if you want a diff summary, chain it after the test command in the same call.';
+const OC_GLOBGREP = '- When searching for text or files, prefer using Glob and Grep tools (they are powered by `rg`)';
+const OC_FIT = '- For code search and reading use the ss-* commands through bash, as the instructions say; use Glob only to list files by name.';
 const OC_TODO_DESC_EDITS = [
   ["- Update status in real time; don't batch completions\n", ''],
   ['\nWhen in doubt, use it.\n', '\n'],
@@ -77,6 +80,10 @@ Object.assign(OPENCODE_BATCH_VARIANTS_R2, {
   tododesc: { bullet: OC_BULLET, edits: { todowrite: OC_TODO_DESC_EDITS } },
   todoall: { bullet: `${OC_BULLET}\n${OC_TODO}`, edits: { todowrite: OC_TODO_DESC_EDITS } },
   combo: { bullet: `${OC_BULLET}\n${OC_TODO}\n${OC_FIRSTRUN}\n${OC_NOREVIEW}` },
+  // Round 4 (sweet-search fit, trace analysis #8): the gpt prompt's "prefer using Glob and Grep
+  // tools" bullet conflicts with the rules; replace only that bullet.
+  todoallfit: { bullet: `${OC_BULLET}\n${OC_TODO}`, edits: { todowrite: OC_TODO_DESC_EDITS }, prompt: [[OC_GLOBGREP, OC_FIT]] },
+  comboall: { bullet: `${OC_BULLET}\n${OC_TODO}\n${OC_FIRSTRUN}\n${OC_NOREVIEW}`, edits: { todowrite: OC_TODO_DESC_EDITS } },
 });
 /** Tool-description edits for an opencode batch variant (applied by opencode-trim-plugin.mjs), or null. */
 export function opencodeBatchToolEdits(variant) {
@@ -88,7 +95,12 @@ export function opencodeBatchPrompt(variant) {
   if (!repl) throw new Error(`OC_HARNESS_TRIM=batch-${variant}: expected batch-${[...Object.keys(OPENCODE_BATCH_VARIANTS), ...Object.keys(OPENCODE_BATCH_VARIANTS_R2)].join(', batch-')}`);
   const text = readFileSync(OPENCODE_GPT_ORIGINAL, 'utf8');
   if (!text.includes(OC_BULLET)) throw new Error('OC_HARNESS_TRIM=batch-*: batching bullet not found in the original prompt');
-  return text.replace(OC_BULLET, repl);
+  let out = text.replace(OC_BULLET, repl);
+  for (const [find, rep] of OPENCODE_BATCH_VARIANTS_R2[variant]?.prompt || []) {
+    if (!out.includes(find)) throw new Error(`OC_HARNESS_TRIM=batch-${variant}: prompt line not found: ${find.slice(0, 60)}`);
+    out = out.replace(find, rep);
+  }
+  return out;
 }
 
 // --- Claude Code (lean agent file installed by `sweet-search init`) ---
