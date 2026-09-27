@@ -28,8 +28,8 @@ assert(h(OC.map(v => opencodeBatchPrompt(v))) === '9555d90ecb17ee82', 'opencode 
 assert(h(OC.map(v => opencodeBatchToolEdits(v))) === '3a98a3d0bc479340', 'opencode variant tool edits');
 assert(JSON.stringify(Object.keys(CODEX_BATCH_VARIANTS)) === JSON.stringify([...CX, 'yt2', 'yt2eff'])
     && JSON.stringify(Object.keys(CC_BATCH_VARIANTS)) === JSON.stringify([...CC, 'eff'])
-    && JSON.stringify(OPENCODE_VARIANT_NAMES) === JSON.stringify([...OC, 'todo2', 'todo2eff']),
-  'only new keys were added: Codex yt2, yt2eff; Claude Code eff; opencode todo2, todo2eff');
+    && JSON.stringify(OPENCODE_VARIANT_NAMES) === JSON.stringify([...OC, 'todo2', 'todo3eff', 'todo3eff2', 'todo2eff']),
+  'only new keys were added: Codex yt2, yt2eff; Claude Code eff; opencode todo2, todo2eff, todo3eff, todo3eff2');
 
 console.log('\nClaude Code eff (inserted after the "act" line):');
 const ACT = '- When you have enough information to act, act.';

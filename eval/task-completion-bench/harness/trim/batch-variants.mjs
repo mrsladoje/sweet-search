@@ -27,6 +27,10 @@ const PLAN = 'Before each turn, work out every read and check you already know y
 const R5_FIND = '- If you need the code at an exact name, not only where it is, use `ss-find "<what it does>" --regex "\\bName\\b"`: it returns the code blocks, so no separate ss-read turn is needed.';
 // Research candidate #2 (research-2/candidates.md), reworded so it assumes no failing test and
 // names no benchmark: general bounded-efficiency workflow line, shared by all three harnesses.
+// v2 (audit mech-oc2, 2026-09-27): keeps the mechanism (fewer exploratory reads, no redundant
+// re-runs) but drops wording that could hurt interactive work, questions or repos without tests:
+// finish the change where it needs follow-up edits, re-check after a fix, answer questions from evidence.
+export const EFFICIENCY_LINE_2 = '- Work efficiently: start from the files the request and any error output point to, and open more only when the evidence requires it. Make the change that fully solves the request, including the edits it needs elsewhere, and nothing unrelated. Check it with the checks the project has, again after each fix, and stop when it is done. For a question, answer from the evidence you gathered.';
 export const EFFICIENCY_LINE = '- Work efficiently: start from the files the task and any error output point to; open more files only when the evidence requires it; make the smallest change that solves the task; verify it once with the checks the project has; stop when it is done.';
 const R5_ALT = '- When you guess at a name that may not exist, put every spelling you would try into one regex alternation `(a|b|c)` in a single ss-grep, not one guess per turn.';
 
@@ -102,6 +106,8 @@ const OC_FIT = '- For code search and reading use the ss-* commands through bash
 const OC_TODO_END = '- After the final test run passes, write the final answer. Do not spend a turn only on todowrite to mark items completed.';
 const OC_TODO_OPEN = '- Send your first todo list together with your first searches, as parallel calls in one turn.';
 const OC_DIFF = '- When you run the test suite after your last edit, send git diff as a parallel call in the same turn. If the result passes and the diff shows nothing left to do, write the final answer next.';
+// todo3: todo2 + the last step (audit: with todo2 the final item could stay in_progress).
+const OC_TODO3 = '- Send todowrite as a parallel call in the same turn as your next tool call, never as a turn of its own. Mark a step in_progress in the call that starts it, and completed in the call that starts the next one; mark the last step completed together with your final check.';
 const OC_TODO2 = '- Send todowrite as a parallel call in the same turn as your next tool call, never as a turn of its own. Mark a step in_progress in the call that starts it, and completed in the call that starts the next one.';
 const OC_TODO_DESC_EDITS = [
   ["- Update status in real time; don't batch completions\n", ''],
@@ -124,6 +130,8 @@ Object.assign(OPENCODE_BATCH_VARIANTS_R2, {
   // that rule, says in which call each status changes, and removes only "When in doubt, use it."
   // Same no-solo-todowrite-turn instruction as todoall.
   todo2: { bullet: `${OC_BULLET}\n${OC_TODO2}`, edits: { todowrite: [OC_TODO_DESC_EDITS[1]] } },
+  todo3eff: { bullet: `${OC_BULLET}\n${OC_TODO3}\n${EFFICIENCY_LINE}`, edits: { todowrite: [OC_TODO_DESC_EDITS[1]] } },
+  todo3eff2: { bullet: `${OC_BULLET}\n${OC_TODO3}\n${EFFICIENCY_LINE_2}`, edits: { todowrite: [OC_TODO_DESC_EDITS[1]] } },
   todo2eff: { bullet: `${OC_BULLET}\n${OC_TODO2}\n${EFFICIENCY_LINE}`, edits: { todowrite: [OC_TODO_DESC_EDITS[1]] } },
 });
 /** Tool-description edits for an opencode batch variant (applied by opencode-trim-plugin.mjs), or null. */
