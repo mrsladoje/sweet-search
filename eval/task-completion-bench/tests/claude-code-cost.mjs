@@ -346,6 +346,16 @@ assert(trimProduct.mode === 'product' && trimProduct.installLean === true
   const agentText = readFileSync(join(productDir, '.claude/agents/sweet-search.md'), 'utf8');
   assert(!agentText.includes('sweet-search guidance') && applyClaudeBatch(agentText, 'saferange') !== agentText,
     'product agent file (bench form) carries no override and CC_TRIM_BATCH variants still apply to it');
+  // The runner's call: memory path = where THIS rollout's CLI keeps it (like native's stock
+  // # Memory section), never the operator's own ~/.claude.
+  const benchDir = join(ROOT, 'product-install-bench');
+  mkdirSync(benchDir, { recursive: true });
+  installClaudeLeanHarness({ projectRoot: benchDir, appendOverride: false, env: {},
+    configDir: join(ROOT, 'private-home'), visibleConfigDir: '/root/.claude' });
+  const benchAgent = readFileSync(join(benchDir, '.claude/agents/sweet-search.md'), 'utf8');
+  assert(benchAgent.includes('# Memory') && /in `\/root\/\.claude\/projects\/[^`]+\/memory\/`/.test(benchAgent)
+      && !benchAgent.includes('private-home') && benchAgent.includes('git status --short --branch'),
+    'product agent file (bench form) names the rollout-visible memory directory and the git-status step');
 }
 assert(claudeHarnessTrim('1').args.length === 1 + CLAUDE_HARNESS_TRIM_DENY.length,
   'mode 1 is unchanged by the second pass (the smoked condition keeps its meaning)');
