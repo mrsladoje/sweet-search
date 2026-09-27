@@ -88,6 +88,8 @@ export const CODEX_BATCH_VARIANTS = Object.freeze({
   yt2eff: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE2}\n${EFFICIENCY_LINE}`,
   yt3: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE3}`,
   yt3batch: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE3}\n${CODEX_READ_BATCH}`,
+  // rbatch: the read-batch line alone (isolates it from the yt3 template).
+  rbatch: `${CODEX_BASE}\n${CODEX_READ_BATCH}`,
 });
 export function applyCodexBatch(text, variant) {
   const repl = CODEX_BATCH_VARIANTS[variant];
