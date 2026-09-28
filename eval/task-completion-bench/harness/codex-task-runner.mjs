@@ -1002,7 +1002,7 @@ ${ho}`;
   // unified "no cache at all" definition (§3 B4): `input_tokens` is the sum of every
   // turn's full prompt, so the re-sent prefix is charged again on each turn.
   const u = usage || {};
-  const inTok = u.input_tokens || 0, cached = u.cached_input_tokens || 0, out = (u.output_tokens || 0) + (u.reasoning_output_tokens || 0);
+  const inTok = u.input_tokens || 0, cached = u.cached_input_tokens || 0, out = u.output_tokens || 0; // reasoning is already inside output_tokens (see ideal-cost.mjs)
   // Legacy ledger basis: every uncached prompt token at plain input rate. Kept as its own
   // column so a disclosure row can restate a pre-2026-09-02 codex figure from rows.json alone.
   const costRealizedNoCacheWrite = ((inTok - cached) * price.in + cached * price.cacheHit + out * price.out) / 1e6;

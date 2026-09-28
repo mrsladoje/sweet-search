@@ -173,7 +173,9 @@ export function turnsFromRollout(file) {
       turns.push({
         in: u.input_tokens || 0, cached: u.cached_input_tokens || 0,
         cacheWrite: u.cache_write_input_tokens || 0,
-        out: (u.output_tokens || 0) + (u.reasoning_output_tokens || 0),
+        // output_tokens already INCLUDES reasoning_output_tokens (total_tokens == input + output;
+        // verified 2026-09-29 on real rollouts) — adding reasoning again double-charged it (~11–13%).
+        out: u.output_tokens || 0,
       });
     }
   }

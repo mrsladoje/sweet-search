@@ -114,12 +114,12 @@ const big = path.join(sess, 'rollout-biglineheader.jsonl');
 writeFileSync(big, bigLine);
 assert(rolloutCwd(big) === bigCwd, 'rolloutCwd handles a >64KB session_meta first line (system-prompt embed)');
 const tp = turnsFromRollout(match);
-assert(tp.length === 2 && tp[1].out === 50, 'turnsFromRollout: 2 turns, out folds reasoning (40+10=50)');
+assert(tp.length === 2 && tp[1].out === 40, 'turnsFromRollout: 2 turns, out = output_tokens (reasoning already included, not added again)');
 const found = findRolloutForRundir(rundir, { sinceMs: t0 - 60_000, sessionsDir: path.join(dir, 'sessions') });
 assert(found === match, 'findRolloutForRundir picks exact-cwd, fresh file (not the other cwd, not the stale one)', `got ${found}`);
 const rec = recoverIdealCost(rundir, { sinceMs: t0 - 60_000, sessionsDir: path.join(dir, 'sessions') });
-assert(approx(rec.idealCostUsd, 0.0125) && rec.turns === 2 && rec.rolloutFile === match, 'recoverIdealCost matches costFromTurns + reports rolloutFile', JSON.stringify(rec));
-assert(approx(rec.breakPricedCostUsd, 0.0125) && rec.contextRewrites === 0, 'recoverIdealCost emits breakPricedCostUsd + contextRewrites', JSON.stringify(rec));
+assert(approx(rec.idealCostUsd, 0.0122) && rec.turns === 2 && rec.rolloutFile === match, 'recoverIdealCost matches costFromTurns + reports rolloutFile', JSON.stringify(rec));
+assert(approx(rec.breakPricedCostUsd, 0.0122) && rec.contextRewrites === 0, 'recoverIdealCost emits breakPricedCostUsd + contextRewrites', JSON.stringify(rec));
 // no rollout for an unknown rundir → graceful nulls (never throws)
 const none = recoverIdealCost('/root/.ss-eval/runs/nope__sweet__r9__99', { sinceMs: t0 - 60_000, sessionsDir: path.join(dir, 'sessions') });
 assert(none.idealCostUsd === null && none.rolloutFile === null && none.breakPricedCostUsd === null, 'no rollout → null idealCost AND null breakPriced (fallback to realized)');
