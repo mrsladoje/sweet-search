@@ -25,7 +25,7 @@ for (const f of walk(SESS)) {
     if (t === 'session_meta' || p.cwd) cwd = cwd || p.cwd || '';
     if (t === 'token_count' && p.info?.last_token_usage) {
       const u = p.info.last_token_usage;
-      turns.push({ in: u.input_tokens || 0, cached: u.cached_input_tokens || 0, out: (u.output_tokens || 0) + (u.reasoning_output_tokens || 0) });
+      turns.push({ in: u.input_tokens || 0, cached: u.cached_input_tokens || 0, out: u.output_tokens || 0 }); // reasoning already inside output_tokens
     }
     if (t === 'function_call') {
       const cmd = String(p.arguments || '');
