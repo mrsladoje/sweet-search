@@ -211,6 +211,8 @@ export const CC_BATCH_VARIANTS = Object.freeze({
   read3: CC_NOEDIT_LINE, // + CC_TEXT_EDITS.read3 (applied in applyClaudeBatch)
   read4: CC_NOEDIT_LINE, // + read3 + CC_READ4_EXTRA
   read4out: CC_NOEDIT_LINE, // + read4 + CC_OUT_EXTRA
+  read5: CC_NOEDIT_LINE, // + read3 minus its report-line edit
+  read5pack: CC_NOEDIT_LINE, // + read5 + read-batch line
 });
 const CC_INSERT_AFTER = Object.freeze({ eff: 'When you have enough information to act, act.' });
 // The line a replacing variant swaps: the v1 max-batch line, or (since the conflict-only product
@@ -246,6 +248,18 @@ const CC_OUT_EXTRA = [
    'running the full check for it.\n- When a command prints a lot, save its full output to a file on the first run and show the part you need, such as the end and the error lines; look in that file again instead of running the command again.'],
 ];
 CC_TEXT_EDITS_EXTRA.read4 = [...CC_TEXT_EDITS.read3, ...CC_READ4_EXTRA];
+// read5 (audit conflict-audit, 2026-09-29): read3 WITHOUT its report-line edit, so the product's
+// "call work finished only after you checked it" stays (it does not conflict with the rules).
+CC_TEXT_EDITS_EXTRA.read5 = CC_TEXT_EDITS.read3.filter(([from]) => !from.startsWith('- Report what really happened'));
+if (CC_TEXT_EDITS_EXTRA.read5.length !== CC_TEXT_EDITS.read3.length - 1) throw new Error('read5: report edit not found in read3');
+// read5pack (2026-09-29): read5 + the Codex read-batch line (Codex yt3batch: lone read commands
+// 60% -> 19–33%, turns −28%), adapted to Claude Code: parallel calls or one joined Bash call for
+// read-only commands already known; commands whose output decides the next step, and builds,
+// tests, installs and file-changing commands, stay separate. Replaces the product's weaker
+// "can go in parallel" line.
+CC_TEXT_EDITS_EXTRA.read5pack = [...CC_TEXT_EDITS_EXTRA.read5,
+  ['- Tool calls that do not depend on each other can go in parallel in one response.',
+   '- When you already know several read-only steps you need, such as searches, file reads or listings, get them in one response: send them as parallel tool calls, or join the commands in one Bash call with `;`, and read all the output in one turn. Keep a command whose output decides your next step on its own, and run builds, tests, installs and commands that change files separately.']];
 CC_TEXT_EDITS_EXTRA.read4out = [...CC_TEXT_EDITS.read3, ...CC_READ4_EXTRA, ...CC_OUT_EXTRA];
 export function applyClaudeBatch(text, variant) {
   const edits = CC_TEXT_EDITS[variant] ?? CC_TEXT_EDITS_EXTRA[variant];
