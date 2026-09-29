@@ -340,3 +340,11 @@ todo4 packs more calls per turn (2.24 v 2.12) but not fewer turns than todo3eff3
 | conflict3+todo3eff3k | 0/6 | 0.056 | −32% | 50 | 104 |
 | conflict4+todo4 | 0/6 | 0.067 | −18% | 57 | 111 |
 0/6 in all arms, as in p4-oc-B1/B2 (opencode never solves rotation B). todo3eff3k cheaper than todo4 in 4/6 tasks; the gap is fastify (9 v 15 turns). Running: todo3eff3k −12/−32, todo4 −6/−18.
+
+### p5-oc-A2 (opencode, rotation A; ledger fix3)
+| arm | solved | real $ (4 tasks) | Δ | turns |
+|---|---|---|---|---|
+| untrimmed | 3/4 | 0.0749 | — | 70 |
+| conflict3+todo3eff3k | 3/4 | 0.0809 | +8% | 58 |
+| conflict4+todo4 | 3/4 | 0.0664 | −11% | 48 |
+todo3eff3k's loss is bingo (0.0274, 20 turns, 36 calls; bingo = degenerate never-solved task). Without bingo: −8% / −17%. Running: todo3eff3k −12/−32/+8, todo4 −6/−18/−11.
