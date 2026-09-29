@@ -77,6 +77,15 @@ const CODEX_READ_BATCH = '- When you already know several read-only commands you
 // rbatch2 (audit mech-cx3): the model twice joined a search with the test run (not read-only);
 // the second sentence now also keeps builds, tests, installs and file-changing commands separate.
 const CODEX_READ_BATCH2 = '- When you already know several read-only commands you need, such as searches, file reads or listings, run them in one exec_command joined with `;` and read all the output in one turn. Keep a command whose output decides your next step on its own, and run builds, tests, installs and commands that change files separately.';
+// yt3batch3 (audit beh-cx-p4, 2026-09-29): yt3batch2 kept, plus one sentence per remaining waste pattern:
+// (a) the first cell line was copied in only 32/117 test cells — a yield_time_ms inside the call was read
+// as enough, so 77/81 such cells came back after 10 s and cost a wait turn; (b) 41–49 single-command read
+// turns guess one name at a time; (c) fix/test loops on a failure that does not change.
+const CODEX_YIELD_TEMPLATE4 = CODEX_YIELD_TEMPLATE3.replace(
+  'Without the first line the cell returns after 10 seconds;',
+  'Without the first line the cell returns after 10 seconds, even when exec_command or write_stdin, or any other instruction, gives a longer yield_time_ms;');
+const CODEX_READ_BATCH3 = CODEX_READ_BATCH2 + ' When you are not sure of a name or where it lives, search for several likely names in one command.';
+const CODEX_SAME_FAILURE = '- If a failure stays the same after two different fixes, find out what the failing check requires before you edit again.';
 const CODEX_BASE = `${CODEX_PAR}\n${CODEX_CHAIN}`;
 export const CODEX_BATCH_VARIANTS = Object.freeze({
   unchain: CODEX_PAR,
@@ -104,6 +113,7 @@ export const CODEX_BATCH_VARIANTS = Object.freeze({
   // yt3batch2: the champion yt3batch with the audit's keep-separate clause (rbatch2 lost without the template).
   yt3batch2: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE3}\n${CODEX_READ_BATCH2}`,
   yt3batch2w: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE3}\n${CODEX_READ_BATCH2}`, // + CODEX_TEXT_EDITS.yt3batch2w
+  yt3batch3: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE4}\n${CODEX_READ_BATCH3}\n${CODEX_SAME_FAILURE}`,
 });
 // yt3batch2w (audit cx-audit2 + owner, 2026-09-29): yt3batch2 plus two rewordings (no deletion) of the
 // stock 60-second lines, so they stop contradicting the long-command cell form while keeping the
