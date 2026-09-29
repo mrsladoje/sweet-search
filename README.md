@@ -729,7 +729,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <img src="assets/tools/ss-semantic-io.svg" alt="ss-semantic takes src/auth/session.ts plus the question how is the cookie expiry set. A map of the 140-line file marks 3 spans, and the output lists those 3 spans with line numbers, best first." width="100%" />
 
 ### 📍 Ask one file a question
-> You already know the file. `ss-semantic` gives you only the lines that answer your question, with line numbers. The rest of the file stays out of your context.
+> You already know the file. `ss-semantic` gives you the code spans that answer your question, each with its line range. The rest of the file stays out of your context.
 
 <table>
 <tr><td colspan="2"><b>How it picks the lines</b></td></tr>
