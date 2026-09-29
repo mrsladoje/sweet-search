@@ -296,3 +296,13 @@ Smaller than A1 (−24/−26%); turns −24%/−22% hold in both cells. Running 
 
 ### run_tests timestamp defect (owner go 2026-09-29)
 brighterscript lines start `[12:43:09:4620 PM]`; LEADING_TIMESTAMP_RE missed the ':' fraction and AM/PM, so 2 "Error when calling plugin" lines were NEW failures every run (all arms). Fix 1efeeec (branch rt-timestamp-fix) — applied after p4-cx-B2 with a ledger re-sweep; p5 cells run on the fixed tool; never pool across it.
+
+### p4-cx-B2 (Codex, rotation B, cell 2; fixed ledger, pre-timestamp-fix)
+| arm | solved | real $/task | Δ | turns | calls |
+|---|---|---|---|---|---|
+| untrimmed | 0/6 | 0.0158 | — | 104 | 63 |
+| yt3batch2 | 0/6 | 0.0134 | −16% | 80 | 49 |
+| yt3batch2w | 0/6 | 0.0120 | −24% | 64 | 43 |
+0/6 in all arms matches B1 (Codex never solves rotation B; predOk, model_stopped — not infra).
+
+**Codex phase 4, 4 cells (mean of per-cell Δ):** yt3batch2 −24/−28/−8/−16 → **−19%**; yt3batch2w −26/−21/−5/−24 → **−19%**. Solves equal in every cell. Tie on cost; 4-cell MDE is 15–19%, so both sit at the edge of detectability. Turns −22..−38% in every cell for both arms (mechanism consistent). Final pick waits on the Codex behaviour audit (does 2w change wait/poll behaviour, or is it the same as yt3batch2).
