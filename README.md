@@ -781,36 +781,42 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <tr>
 <td width="50%" valign="top">
 
-**🏗️ Call graph, built at index time**
+**🏗️ 1. A map of who calls what**
 
-- Tree-sitter extracts symbols and typed edges: calls, imports, extends, implements, overrides, uses.
-- Each call is linked to its definition. A global PageRank is stored with the graph.
+- Built once, at index time. Tree-sitter reads your code and records every function, class and method.
+- It also records the links between them: A calls, imports, extends, implements, overrides or uses B.
+- Each link points to the real definition of B.
+- Each symbol gets an importance score (PageRank). Code that many places depend on scores higher.
 
 </td>
 <td width="50%" valign="top">
 
-**🔎 Missed callers recovered**
+**🔎 2. Fixing the gaps in the map**
 
-- Calls through import aliases, and same-file calls with no stored edge.
-- Name clashes are filtered out, so `this.fetch()` does not match an unrelated `fetch`.
+- Some calls have no link, for example a function imported under another name. `ss-trace` finds these when you ask.
+- It also finds calls inside the same file that the map missed.
+- Some links point to the wrong symbol, for example `this.fetch()` linked to an unrelated `fetch`. These are dropped.
 
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
 
-**🧭 Ranked from your symbol**
+**🧭 3. Best results first**
 
-- Personalized PageRank, backward for callers and forward for callees. Busy helpers like loggers do not win.
-- Also: distance, edge type, exports, fan-in. Tests rank lower.
+- It walks out from your symbol along the links: backward to rank callers, forward to rank callees (Personalized PageRank).
+- Code closely tied to your symbol scores high. A logger that everything calls scores low.
+- It also counts: fewer hops, direct calls, exported names, code called from many places.
+- Test files rank lower.
 
 </td>
 <td width="50%" valign="top">
 
-**📦 Fit to a token budget**
+**📦 4. Only what fits**
 
-- 4k, 8k or 12k tokens, picked from the graph. The side with more links gets more room.
-- Full code when it fits, otherwise the lines around the call.
+- The answer gets 4k, 8k or 12k tokens. A few clear results get the small budget. Many close results get the big one.
+- If your symbol has many callers, the callers get more of the space. Same for callees.
+- Each result shows its full code if it fits. If not, its first lines and the lines around the call.
 
 </td>
 </tr>
