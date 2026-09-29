@@ -324,3 +324,11 @@ brighterscript lines start `[12:43:09:4620 PM]`; LEADING_TIMESTAMP_RE missed the
 - RUNNING banner only after 8 s without a verdict (a slow run read once at the end still shows it).
 - Codex telemetry: Codex 0.146 wraps commands in `/bin/zsh -lc` (classifier unwrapped only bash/sh) → ranTests/test/ss counts were 0. New fields subCommandCounts and codexPollCalls.
 - Fingerprint changes → ledger re-sweep (fix4) before p6-cx; p5 cells stay on fix3; never pool across.
+
+### p5-oc-A1 (opencode, rotation A; ledger fix3)
+| arm | solved | real $ (4 tasks) | Δ | turns | calls |
+|---|---|---|---|---|---|
+| untrimmed | 3/4 | 0.080 | — | 67 | 101 |
+| conflict3+todo3eff3k | 3/4 | 0.070 | −12% | 48 | 102 |
+| conflict4+todo4 | 3/4 | 0.075 | −6% | 54 | 121 |
+todo4 packs more calls per turn (2.24 v 2.12) but not fewer turns than todo3eff3k; one cell is below the MDE.
