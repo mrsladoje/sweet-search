@@ -197,7 +197,9 @@ export const SUMMARY_COUNT_RE =
   /^\s*(?:\d+\s+(?:tests?\s+)?(?:failed|failing|failures)\b|failures?:\s*\d+|tests?:?\s*\d+\s+failed|\d+\s+failed,\s*\d+\s+passed|Ran\s+\d+\s+tests?\b|Failed\s*:\s*\d+)/i;
 
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
-const LEADING_TIMESTAMP_RE = /^\s*(?:\[(?:\d{2}:\d{2}:\d{2}(?:[.,]\d+)?|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:\d{2})?)\]|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:\d{2})?|\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\s+/;
+// Bracketed clock times also accept 1-digit hours, a ':' before the fraction and an AM/PM suffix
+// (brighterscript logger: "[12:43:09:4620 PM]"), so such lines keep one signature across runs.
+const LEADING_TIMESTAMP_RE = /^\s*(?:\[(?:\d{1,2}:\d{2}:\d{2}(?:[.,:]\d+)?(?:\s?[AaPp][Mm])?|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:\d{2})?)\]|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:\d{2})?|\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\s+/;
 const MSBUILD_NODE_PREFIX_RE = /^\s*\d+>\s?/;
 const GENERIC_BUILD_FAILURE_RE = /^Build FAILED\.?$/i;
 

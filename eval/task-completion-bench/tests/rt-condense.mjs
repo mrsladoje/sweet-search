@@ -173,6 +173,10 @@ console.log('== L2 signature normalization: line-shift → false-new (safe), not
   const ms2 = normalizeFailureSignature('[12:05:09.900] 7>MigratesAClient ... FAILED');
   assert(ms1 === ms2, 'MSBuild node/timestamp prefixes normalize in either order');
   assert(ms1.includes('MigratesAClient'), 'volatile-prefix normalization preserves the named failure');
+  const bs1 = normalizeFailureSignature('[12:43:09:4620 PM]    Error when calling plugin BscPlugin.onFileValidate: TypeError: x');
+  const bs2 = normalizeFailureSignature('[1:02:13:0010 AM]    Error when calling plugin BscPlugin.onFileValidate: TypeError: x');
+  assert(bs1 === bs2 && bs1.startsWith('Error when calling plugin'), '12-hour bracketed timestamps with a colon fraction normalize away');
+  assert(extractFailureSignatures('[12:43:09:4620 PM]    Error when calling plugin BscPlugin.onFileValidate: TypeError: x').sigs.has(bs1), 'baseline and current share the timestamp-free signature');
   assert(
     normalizeFailureSignature('1>MigratesAClient ... FAILED') !== normalizeFailureSignature('1>InitializesAsync ... FAILED'),
     'different named failures remain distinct after MSBuild normalization',
