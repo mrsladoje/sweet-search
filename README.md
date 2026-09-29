@@ -129,10 +129,7 @@ sweet-search "where do we validate JWT tokens?"
 
 That's it. From then on, the index updates itself as you work.
 
-For Claude Code, init automatically installs and activates the `sweet-search`
-output style, which adds the compact routing override at system-prompt priority.
-Start a new Claude session or run `/clear` after init, and keep that output style
-selected for reliable `ss-*` routing.
+**Claude Code:** keep the `sweet-search` output style selected. Claude Code needs it to use sweet-search reliably. `init` turns it on for you; start a new session or run `/clear` afterwards.
 
 To uninstall 😢:
 
