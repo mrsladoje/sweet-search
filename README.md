@@ -552,7 +552,7 @@ flowchart TD
     Q(["🔍  natural-language query"]) --> ROUTE{{"🧭 WASM CatBoost router · lexical / hybrid"}}
 
     ROUTE --> BM["📑 <b>BM25F</b><br/>field-weighted FTS5"]
-    ROUTE --> ANN
+    ROUTE --> EMB["🔢 <b>CodeRankEmbed</b><br/>dense query embedding"] --> ANN
 
     subgraph ANN ["🧬 three-stage ANN cascade"]
         direction LR
@@ -581,10 +581,12 @@ flowchart TD
     classDef lex   fill:#dbeafe,stroke:#60a5fa,color:#000;
     classDef fuse  fill:#f3e8ff,stroke:#c084fc,color:#000;
     classDef rank  fill:#ffe4e6,stroke:#fb7185,color:#000;
+    classDef emb   fill:#ecfeff,stroke:#22d3ee,color:#000;
 
     class Q io;
     class OUT out;
     class ROUTE route;
+    class EMB emb;
     class BM,BIN,INT,FL lex;
     class FUSE,IAR fuse;
     class INTENT,GRAPH,MAXSIM rank;
