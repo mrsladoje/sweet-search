@@ -8,7 +8,7 @@ import {
   condenseOutput, extractFailureSignatures, diffFailureSets, renderBaselineDiff,
   buildAuthorityBanner, sanitizeTestPattern, applyTestPattern, normalizeFailureSignature,
   buildUnresolvedIdentifierWarning, extractAddedIdentifierReferences, buildRunTestsFooter,
-  INFRA_ERROR_RE, NETWORK_ERROR_ERE, COULD_NOT_RESOLVE_ERE,
+  INFRA_ERROR_RE, NETWORK_ERROR_ERE, COULD_NOT_RESOLVE_ERE, RAW_STATUS_PRE_EXISTING_NOTE,
 } from '../harness/rt-condense-lib.mjs';
 import { RT_CONDENSE } from '../harness/rt-shim-runtime.mjs';
 import { execFileSync } from 'node:child_process';
@@ -262,6 +262,31 @@ console.log('== Phase 0a footer: exact, bounded, machine-parseable three-line co
   assert(lines[2] === '[run_tests guidance] verdict=FAIL action=none',
     'guidance line carries the same verdict and defaults to none');
   assert(lines.every(line => line.length < 500), 'every footer line is bounded');
+}
+
+// ---------------------------------------------------------------------------
+// Codex phase-6 audit (2026-09-29): brighterscript printed `status=FAIL scope=full exit=0` directly
+// above `verdict=PASS ... pre_existing_failures=2`, and every arm re-ran the tests on it.
+console.log('== footer: raw status FAIL with verdict PASS (pre-existing only) does not contradict ==');
+{
+  const baselineDiff = { introduced: [], preExisting: ['FAILED a::old1', 'FAILED a::old2'] };
+  const footer = buildRunTestsFooter({ status: 'FAIL', verdict: 'PASS', exitCode: 0, baselineDiff, trustworthy: true });
+  const lines = footer.split('\n');
+  assert(lines.length === 3, 'still exactly three lines');
+  assert(lines[0] === '[run_tests verdict] status=FAIL scope=full exit=0' + RAW_STATUS_PRE_EXISTING_NOTE,
+    'the raw status is kept and labelled as the raw runner result');
+  assert(/raw runner result/.test(lines[0]) && /verdict=PASS on the next line/.test(lines[0]) && /introduced none/.test(lines[0]),
+    'the status line names the verdict line as the result and says the edits introduced no failure');
+  assert(/^\[run_tests baseline-diff\] verdict=PASS introduced_failures=0 pre_existing_failures=2 trustworthy=yes /.test(lines[1]),
+    'the verdict line is unchanged');
+  // Every parser of this line reads it as a prefix (stats/*, verdictOf): they still get FAIL/full/0.
+  const m = /\[run_tests verdict\] status=(\w+) scope=(\w+) exit=(-?\d+)/.exec(footer);
+  assert(m && m[1] === 'FAIL' && m[2] === 'full' && m[3] === '0', 'the status/scope/exit prefix still parses the same');
+  assert(lines[0].length < 500, 'the line stays bounded');
+  for (const [status, verdict] of [['FAIL', 'FAIL'], ['PASS', 'PASS'], ['ERROR', 'ERROR'], ['INFRA', 'INFRA']]) {
+    const first = buildRunTestsFooter({ status, verdict, exitCode: 1, baselineDiff, trustworthy: true }).split('\n')[0];
+    assert(first === `[run_tests verdict] status=${status} scope=full exit=1`, `status=${status} verdict=${verdict}: line unchanged (no note when they agree)`);
+  }
 }
 
 // ---------------------------------------------------------------------------

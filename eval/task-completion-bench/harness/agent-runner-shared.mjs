@@ -24,7 +24,7 @@ import { auditRollout, UNAUDITED } from './escape-audit.mjs';
 import {
   FRAME_OPEN, FRAME_CLOSE, ANTI_THRASH_TEXT,
   writeRunTestsShim, installCommandWrappers, shimIntegritySnapshot,
-  verifyShimIntegrity, verifyRunnerDirectoryIntegrity,
+  verifyShimIntegrity, verifyRunnerDirectoryIntegrity, writePromptToStdin,
 } from './codex-task-runner.mjs';
 import { priceFor, costFromTurns, LEDGER_BASIS } from './ideal-cost.mjs';
 import { includeUntrackedFromEnv, untrackedBaselineFor, benchGitDiff } from './rt-untracked-diff.mjs';
@@ -391,11 +391,20 @@ export function costsFromTurns(turns, price) {
 // by signalling the wrapper. So the timeout path also kills the jail's init: the PID
 // namespace dies and the agent goes with it. Without that, a timed-out agent would keep
 // editing the checkout while we were computing its final patch.
-export function spawnWithTimeout(bin, args, { cwd, env, timeoutMs, jail = null }) {
+//
+// `stdinText` (2026-09-29): the task prompt goes to the agent on stdin, NEVER in argv. A
+// process's argv is readable by every process on the host (`ps -eo args`), and the agents of
+// concurrent rollouts run as the same user on the same host, so a prompt in argv put one
+// task's issue text in front of another task's agent (Codex phase-6 audit: a `ps` in the
+// ember rollout printed the zlint issue). stdin is a private pipe. It is written in full and
+// then closed, so a CLI that reads to EOF never blocks (writePromptToStdin, codex-task-runner.mjs).
+// null = stdin is /dev/null, as before.
+export function spawnWithTimeout(bin, args, { cwd, env, timeoutMs, jail = null, stdinText = null }) {
   if (jail) [bin, args] = jailArgv(jail, bin, args, cwd);
   return new Promise((resolve) => {
     let stdout = '', stderr = '', timedOut = false;
-    const proc = spawn(bin, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawn(bin, args, { cwd, env, stdio: [stdinText == null ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+    writePromptToStdin(proc, stdinText);
     const timer = setTimeout(() => {
       timedOut = true;
       if (jail) { try { process.kill(jail.initPid, 'SIGKILL'); } catch {} }

@@ -46,7 +46,28 @@ export const RUNNING_BANNER =
   '[run_tests] RUNNING — the suite has been launched and has NOT produced a verdict yet.\n'
   + '[run_tests] This text is NOT a result. A completed run always ends with a line beginning\n'
   + '[run_tests] "[run_tests verdict] status=". Until that line appears below, you do not know\n'
-  + '[run_tests] whether anything passed or failed — do not report, conclude or finish on this.\n';
+  + '[run_tests] whether anything passed or failed — do not report, conclude or finish on this.\n'
+  + '[run_tests] The command is still running: wait for its output. The verdict comes when the suite ends.\n';
+
+// THE CODEX STEP (2026-09-29, Codex phase-6 audit). In Codex, `exec_command` hands a
+// still-running command back after its yield with a session_id, and the verdict reaches the
+// model only if it polls that session with `write_stdin`. The untrimmed baseline did not poll
+// in 21 of 56 test runs and lost the verdict in 15 of them. So under Codex, and only there,
+// the banner names the exact step. Other harnesses block on the tool call and have no
+// write_stdin, so for them this line would be a wrong instruction. The step is the same for
+// both arms (one shim serves both). The fallback line is true in both attach modes: a repeat
+// call on an unchanged tree attaches to this run and returns ITS verdict.
+export const RUNNING_BANNER_CODEX_STEP =
+  '[run_tests] To get the verdict, call write_stdin with the session_id that exec_command returned\n'
+  + '[run_tests] for this command and empty input, e.g. in the same cell:\n'
+  + '[run_tests]   tools.write_stdin({session_id: r.session_id, chars: "", yield_time_ms: 300000})\n'
+  + '[run_tests] If you do not have that session_id, call run_tests again without editing: it\n'
+  + '[run_tests] attaches to this run and returns its verdict.\n';
+
+/** The banner a harness gets: the Codex step only under Codex, the plain banner elsewhere. */
+export function runningBanner(harness = null) {
+  return harness === 'codex' ? RUNNING_BANNER + RUNNING_BANNER_CODEX_STEP : RUNNING_BANNER;
+}
 
 /** Below Codex's default 10 s `exec_command` yield, so a default-yield read is never empty. */
 export const RUNNING_BANNER_DELAY_MS = 8000;
@@ -57,19 +78,20 @@ export const RUNNING_BANNER_DELAY_MS = 8000;
  * `blocking: true` keeps the timer in a child process: the direct shim runs the suite
  * synchronously, and a timer in its own event loop would fire only after the verdict.
  */
-export function startRunningBanner(delayMs = RUNNING_BANNER_DELAY_MS, { blocking = false } = {}) {
-  if (!(Number(delayMs) > 0)) { process.stdout.write(RUNNING_BANNER); return async () => {}; }
+export function startRunningBanner(delayMs = RUNNING_BANNER_DELAY_MS, { blocking = false, harness = null } = {}) {
+  const banner = runningBanner(harness);
+  if (!(Number(delayMs) > 0)) { process.stdout.write(banner); return async () => {}; }
   if (!blocking) {
-    const timer = setTimeout(() => process.stdout.write(RUNNING_BANNER), Number(delayMs));
+    const timer = setTimeout(() => process.stdout.write(banner), Number(delayMs));
     return async () => clearTimeout(timer);
   }
   let child;
   try {
     child = bannerCp.spawn(process.execPath, ['-e',
-      `setTimeout(() => process.stdout.write(${JSON.stringify(RUNNING_BANNER)}), ${Number(delayMs)})`],
+      `setTimeout(() => process.stdout.write(${JSON.stringify(banner)}), ${Number(delayMs)})`],
     { stdio: ['ignore', 'inherit', 'ignore'] });
     child.unref();
-  } catch { process.stdout.write(RUNNING_BANNER); return async () => {}; }
+  } catch { process.stdout.write(banner); return async () => {}; }
   return () => new Promise(resolve => {
     if (child.exitCode !== null || child.signalCode !== null) return resolve();
     const done = setTimeout(resolve, 2000);                // never hold a verdict on a stuck child

@@ -13,6 +13,7 @@ import {
   getBaseline, resolveDiffIdentifierWarning, runTestsWithLevers, buildSuiteScript,
 } from '../harness/rt-shim-runtime.mjs';
 import { DEDUP_MARKER, startDedupSession } from '../harness/rt-dedup.mjs';
+import { RAW_STATUS_PRE_EXISTING_NOTE } from '../harness/rt-condense-lib.mjs';
 
 let ok = true;
 const assert = (c, name) => { console.log((c ? '  ✓ ' : '  ✗ ') + name); if (!c) ok = false; };
@@ -208,8 +209,11 @@ console.log('== Phase 0a run_tests footer: full status/scope/dedup/fallback fixt
   const finalLines = output => output.split('\n').slice(-3);
   const assertFooter = (output, { status, scope = 'full', exit, verdict, introduced = 0, pre = 0, trust }) => {
     const lines = finalLines(output);
-    assert(lines[0] === `[run_tests verdict] status=${status} scope=${scope} exit=${exit}`,
-      `${status}/${scope} verdict line agrees with raw exit`);
+    // status=FAIL + verdict=PASS (only pre-existing failures): the raw status line says so and
+    // points at the verdict line, so the two cannot be read as contradicting.
+    const rawNote = status === 'FAIL' && verdict === 'PASS' ? RAW_STATUS_PRE_EXISTING_NOTE : '';
+    assert(lines[0] === `[run_tests verdict] status=${status} scope=${scope} exit=${exit}${rawNote}`,
+      `${status}/${scope} verdict line agrees with raw exit${rawNote ? ' and names the verdict=PASS line' : ''}`);
     assert(lines[1].startsWith(`[run_tests baseline-diff] verdict=${verdict} introduced_failures=${introduced} pre_existing_failures=${pre} trustworthy=${trust} `),
       `${status}/${scope} baseline classification is encoded in the footer`);
     assert(lines[2] === `[run_tests guidance] verdict=${verdict} action=none`,

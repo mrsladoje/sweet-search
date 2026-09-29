@@ -76,7 +76,14 @@ const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 // text, appended to BOTH append flags — the main agent's system prompt after the override, and
 // every subagent's system prompt after the pages note. null (the default, and always on native)
 // leaves the argv byte-identical to the pre-switch harness.
-export function buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, effort = null, settingsPath = null, systemRules = null }) {
+//
+// NO PROMPT IN ARGV (2026-09-29). The task prompt is not an argument: argv is readable host-wide
+// with `ps`, and a concurrent rollout's agent read another task's issue text that way (Codex
+// phase-6 audit). `-p` is `--print`, a boolean; with no prompt argument the CLI reads the prompt
+// from stdin, and the runner writes it there (spawnWithTimeout `stdinText`). The 2.1.281 binary
+// joins them as [promptArg, stdin].filter(Boolean).join("\n"), so stdin alone is the prompt
+// byte for byte.
+export function buildClaudeCliArgs({ rundir, sweet, claudeModelId, effort = null, settingsPath = null, systemRules = null }) {
   const rules = sweet ? systemRules : null;
   const baseAppend = sweet
     ? `${READ_PAGES_TOOL_NOTE}\n\n${SWEET_SEARCH_SYSTEM_OVERRIDE}`
@@ -84,7 +91,7 @@ export function buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId, effor
   const appendedSystemPrompt = rules ? appendSweetRules(baseAppend, rules).trimEnd() : baseAppend;
   const subagentAppend = rules ? appendSweetRules(READ_PAGES_TOOL_NOTE, rules).trimEnd() : READ_PAGES_TOOL_NOTE;
   return [
-    '-p', prompt, '--add-dir', rundir,
+    '-p', '--add-dir', rundir,
     '--append-system-prompt', appendedSystemPrompt,
     // Byte-identical on both arms: the sweet tool guide deliberately does NOT ride along
     // here. A subagent that learned about ss-* only in the sweet arm would be a retrieval
@@ -711,12 +718,12 @@ export async function runClaudeCodeTask(task, {
   // preserving the shared pages note in both arms. bypassPermissions avoids a headless hang.
   // Product mode carries the rules in its agent files, so the append flags stay as they were.
   const args = [...buildClaudeCliArgs({
-    prompt, rundir, sweet, claudeModelId, effort,
+    rundir, sweet, claudeModelId, effort,
     systemRules: harnessTrim.installLean ? null : systemRules,
   }), ...harnessTrim.args];
 
   const t0 = Date.now();
-  const spawnOnce = () => spawnWithTimeout('claude', args, { cwd: rundir, env, timeoutMs: perCallTimeoutMs, jail });
+  const spawnOnce = () => spawnWithTimeout('claude', args, { cwd: rundir, env, timeoutMs: perCallTimeoutMs, jail, stdinText: prompt });
   let r = await spawnOnce();
   let parsed = parseClaudeStream(r.stdout);
   let startRetried = false;
