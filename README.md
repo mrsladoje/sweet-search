@@ -648,7 +648,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 <img src="assets/tools/ss-grep-io.svg" alt="ss-grep takes an exact string or regex and returns every file:line hit, with the match highlighted" width="100%" />
 
-> ### ⚡ 10.2× faster than ripgrep
+### ⚡ 10.2× faster than ripgrep
 > Median, end to end, on 353 real queries across 5 repos. 8.5–17.7× per repo, about 1 ms per query. Same match count on every query.
 
 | | How | Why it is fast |
