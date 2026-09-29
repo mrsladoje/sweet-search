@@ -681,15 +681,14 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <img src="assets/tools/ss-find-io.svg" alt="ss-find takes a query plus a regex. The regex finds 4 matches in file order, each gets a meaning score, then they slide into order, best first." width="100%" />
 
 ### 🎯 Exact matches, semantically reranked
-> The idea comes from LightOn's [ColGrep](https://github.com/lightonai/next-plaid/tree/main/colgrep). We rebuilt it on the `ss-grep` index, with our own MaxSim kernels.
+> The idea comes from LightOn's [ColGrep](https://github.com/lightonai/next-plaid/tree/main/colgrep). We rebuilt it on the `ss-grep` index, with our own MaxSim kernel.
 
 <table><tr><td>
 
-**Why it helps**
+**What makes it fast**
 
-- 🥇 **Right match on top.** On 60 pattern queries, MRR@10 is 0.45. Grep order gets 0.11, and semantic search without the regex gets 0.30.
-- 📦 **Find and read in one call.** Each hit is a ranked, self-contained code snippet. On 30 agent questions, follow-up reads fell from 4.9 to 0 per question and tokens fell 25.4% versus grep + read, at equal quality.
-- ⚡ **Fast.** The regex runs on the `ss-grep` index. Token embeddings are built at index time, so no model reads your code at query time. Our Rust kernel scores 231 candidates in 27 ms (1.26 s in plain JS).
+- ⚡ **Built on `ss-grep`.** The regex runs on the same index that makes `ss-grep` 10.2× faster than ripgrep. At the same time, your query is encoded into token embeddings.
+- 🦀 **Our own MaxSim kernel.** Rust scores every match against code embeddings stored at index time, on all cores. 231 matches take 27 ms (1.26 s in plain JS). No model reads your code at query time.
 
 </td></tr></table>
 
@@ -698,10 +697,12 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 <br/>
 
+- **Ranking:** on 60 pattern queries, MRR@10 is 0.45. Grep order gets 0.11, and semantic search without the regex gets 0.30.
+- **One call:** each hit is a ranked, self-contained code snippet. On 30 agent questions (fastify, blind Opus judge), follow-up reads fell from 4.9 to 0 and tokens fell 25.4% versus grep + read, at equal quality (4.81 vs 4.80 out of 5).
 - Regex tokens are also added to the semantic query, so the ranking sees both what you typed and what you matched.
 - Needs the late-interaction index. It is built by default, and `--li-model none` turns pattern mode off.
 - Also available as `sweet-search --mode pattern` and as the `regex` argument of the MCP `search` tool.
-- Agent eval: fastify, blind Opus judge, quality 4.81 vs 4.80 out of 5. Kernel numbers: [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md).
+- Kernel numbers: [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md).
 
 </details>
 
