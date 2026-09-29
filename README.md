@@ -751,7 +751,6 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 - The best spans are read again from disk.
 - Each span gets 2 lines of context on each side. Overlapping spans are merged.
 - So you see the current code, even during an edit.
-- If the file is newer than its index, you get a warning.
 
 </td>
 </tr>
@@ -762,8 +761,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 <br/>
 
-- **Defaults:** top 5 spans, score floor 0.4, 8,000-character limit.
-- Chunks with no symbol get a 0.85× penalty, so real definitions win ties.
+- Returns the top 5 spans by default. Change it with `--top`.
 - A file that is not indexed falls back to a plain read.
 - Also available as `sweet-search read-semantic` and as the `read-semantic` MCP tool.
 
