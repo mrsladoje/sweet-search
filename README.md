@@ -724,18 +724,23 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 ---
 
 <a id="tool-ss-semantic"></a>
-### <img src="assets/tools/ss-semantic.svg" width="40" align="center" alt="" /> 4. `ss-semantic` — hybrid retrieval, scoped to one file
+### <img src="assets/tools/ss-semantic.svg" width="40" align="center" alt="" /> 4. `ss-semantic`: hybrid search inside one file
 
 <img src="assets/tools/ss-semantic-io.svg" alt="ss-semantic takes a file plus a question and returns only the lines that answer it" width="100%" />
 
-You know the file; this finds the lines. Every indexed chunk of the file is scored by **three independent
-signals** — BM25-style lexical term match, exact symbol-name match (weighted 1.5×), and per-token
-**MaxSim** late interaction over the **LateOn-Code** embeddings — fused with **Reciprocal Rank Fusion** (k=60), with
-symbol-less fragment chunks demoted 0.85× so real definitions win ties. The top spans are then
-**re-read from disk** (±2 context lines, overlapping spans merged), so the answer is filesystem ground
-truth even mid-edit; if the file is newer than its index entry you get an explicit staleness warning.
+You already know the file. `ss-semantic` finds the lines in it that answer your question.
 
-The useful answer: just the relevant spans with line numbers — not the whole file through your context window.
+Each indexed chunk of the file gets three scores:
+
+- **Words:** BM25-style match on your query terms.
+- **Symbols:** exact match on symbol names, weighted 1.5×.
+- **Meaning:** MaxSim over the **LateOn-Code** token embeddings.
+
+**Reciprocal Rank Fusion** (k=60) merges the three rankings. Chunks with no symbol get a 0.85× penalty, so real definitions win ties.
+
+The best spans are then read again from disk, with 2 lines of context on each side. Spans that overlap are merged. So you always see the current file, even during an edit. If the file is newer than its index, you get a warning.
+
+You get the lines that matter, with line numbers. The rest of the file stays out of your context.
 
 <details>
 <summary><b>More</b></summary>
