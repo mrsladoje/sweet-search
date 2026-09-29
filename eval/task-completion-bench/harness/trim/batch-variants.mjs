@@ -250,6 +250,7 @@ export const CC_BATCH_VARIANTS = Object.freeze({
   read5pack: CC_NOEDIT_LINE, // + read5 + read-batch line
   read6: CC_NOEDIT_LINE, // owner-revised text (see CC_TEXT_EDITS_EXTRA.read6)
   read6fs: CC_NOEDIT_LINE, // read6 + packed-turn example
+  read7: CC_NOEDIT_LINE, // read6 + known-files packing + edits-with-check; product combine line removed
 });
 const CC_INSERT_AFTER = Object.freeze({ eff: 'When you have enough information to act, act.' });
 // The line a replacing variant swaps: the v1 max-batch line, or (since the conflict-only product
@@ -302,6 +303,16 @@ CC_TEXT_EDITS_EXTRA.read6 = [
 CC_TEXT_EDITS_EXTRA.read6fs = [...CC_TEXT_EDITS_EXTRA.read6,
   ['- Tool calls that do not depend on each other can go in parallel in one response.',
    '- Pack independent steps into one response. Example: when you need a search and two files you already know about, send the search and both reads as parallel tool calls in the same response, not in three turns; when several edits do not depend on each other, send them together; join shell commands whose intermediate output you do not need into one Bash call with `&&`. Keep a step whose result decides your next step on its own.']];
+// read7 (audit beh-cc-p4): read6fs's packing gain over read6 was task luck; two real waste patterns
+// remain — packed GUESSED paths (reads of files not yet known) and edits followed by the check in a
+// separate turn (the product's "Combine dependent shell steps" line overlapped with "Keep a step whose
+// result decides your next step on its own"). read7 = read6 + a packing line limited to known files that
+// sends edits together with their check, and the product's "Combine dependent shell steps…" line removed.
+CC_TEXT_EDITS_EXTRA.read7 = [...CC_TEXT_EDITS_EXTRA.read6,
+  ['- Tool calls that do not depend on each other can go in parallel in one response.',
+   '- Pack independent steps into one response: searches and reads of files you already know about (named in the request or shown by an earlier search or listing) go out together as parallel calls, and edits go out together with the check that tests them. A step whose result names the file or decides your next step stays on its own.'],
+  ['\n- Combine dependent shell steps into one Bash call when you do not need the intermediate output, for example a build and the command that checks its result.', ''],
+];
 // read5pack (2026-09-29): read5 + the Codex read-batch line (Codex yt3batch: lone read commands
 // 60% -> 19–33%, turns −28%), adapted to Claude Code: parallel calls or one joined Bash call for
 // read-only commands already known; commands whose output decides the next step, and builds,
