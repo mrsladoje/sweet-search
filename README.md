@@ -876,8 +876,8 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 ## 🧠 The System Prompt
 
-> 🧰 **Six tools** give the agent its power, but to <u>no avail</u> if it doesn't use them efficiently.<br>
-> 🧠 **One prompt** tells the agent how to <u>optimally</u> use them.<br>
+> 🧰 **Six tools** give the agent its power, but to <ins>no avail</ins> if it doesn't use them efficiently.<br>
+> 🧠 **One prompt** tells the agent how to <ins>optimally</ins> use them.<br>
 > 📈 We **hill-climbed** that prompt for the *largest cost saving at unharmed retrieval quality*.
 
 `sweet-search init` installs the prompt in the correct place per harness.
