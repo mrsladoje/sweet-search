@@ -12,7 +12,7 @@ import {
   buildMainOpencodeConfig, opencodeHarnessTrim, opencodeArmHarnessTrim, opencodePromptFamily,
   validateMainOpencodePreflight, OPENCODE_TRIM_DISABLED_TOOLS, OPENCODE_TRIM_TOOL_EDITS,
   OPENCODE_TRIM_MAX_DISABLED_TOOLS, OPENCODE_TRIM_MAX_TOOL_EDITS, OPENCODE_TRIM_V3_TOOL_EDITS,
-  OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT, opencodeUnjailedEnv,
+  OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT, opencodeUnjailedEnv, runOpencodePreflight,
   OPENCODE_CONFLICT_TOOL_EDITS, OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS, OPENCODE_CONFLICT_PROMPT_BULLET,
 } from '../harness/opencode-task-runner.mjs';
 import { OPENCODE_GPT_ORIGINAL, EFFICIENCY_LINE, opencodeBatchPrompt, opencodeBatchToolEdits } from '../harness/trim/batch-variants.mjs';
@@ -379,6 +379,55 @@ assert(Object.values(uenv).every(dir => dir.startsWith(join(STATE, 'opencode-hom
 assert(realpathSync(join(uenv.XDG_DATA_HOME, 'opencode')) === realpathSync(ocData), 'data/opencode resolves to ocData (session DB lands where the cost reader looks)');
 assert(!readdirSync(join(uenv.XDG_CONFIG_HOME)).length && !readdirSync(uenv.OPENCODE_TEST_HOME).length, 'config and home dirs start empty');
 assert(JSON.stringify(opencodeUnjailedEnv({ root: join(STATE, 'opencode-home'), ocData })) === JSON.stringify(uenv), 'idempotent (a start retry reuses the same dirs)');
+
+console.log('\npreflight retry (2026-09-29 INFRA defect):');
+{
+  const CFG = JSON.stringify({ plugin: [] });
+  // Scripted spawn: each call pops the next outcome for its subcommand.
+  const fake = script => {
+    const calls = [];
+    const spawn = async (bin, args, opts) => {
+      calls.push({ args: args.join(' '), timeoutMs: opts.timeoutMs });
+      const key = args[0] === '--version' ? 'version' : 'config';
+      return script[key].shift() ?? { stdout: '', stderr: 'script exhausted', exitCode: 1, timedOut: false };
+    };
+    return { spawn, calls };
+  };
+  const okRun = (stdout) => ({ stdout, stderr: '', exitCode: 0, timedOut: false });
+  const quiet = { sleep: async () => {}, log: () => {} };
+
+  const f1 = fake({ version: [okRun('1.18.4'), okRun('1.18.4')], config: [{ stdout: '', stderr: 'installing plugin…', exitCode: 0, timedOut: true }, okRun(CFG)] });
+  const r1 = await runOpencodePreflight({ spawn: f1.spawn, cwd: STATE, env: {}, plugins: [], ...quiet });
+  assert(r1.attempts === 2 && f1.calls.length === 4, 'transient debug-config timeout is retried once and then passes', JSON.stringify(f1.calls));
+  assert(/attempt 1: debug config: exit=0 timedOut/.test(r1.processFailures[0]) && /installing plugin/.test(r1.processFailures[0]),
+    'first-attempt process detail (exit, timeout, stderr tail) is kept on the result', r1.processFailures.join());
+  assert(f1.calls.every(c => c.timeoutMs >= 120000), 'per-process timeout is at least 120 s (was 30 s)');
+
+  const f2 = fake({ version: [{ stdout: '', stderr: 'bus error', exitCode: 1, timedOut: false, signal: 'SIGBUS' }, okRun('1.18.4')], config: [okRun(CFG)] });
+  const r2 = await runOpencodePreflight({ spawn: f2.spawn, cwd: STATE, env: {}, plugins: [], ...quiet });
+  assert(r2.attempts === 2 && f2.calls.length === 3, 'a failed --version skips debug config and is retried');
+
+  const f3 = fake({ version: [okRun('1.18.4'), okRun('1.18.4')], config: [{ stdout: '', stderr: 'boom', exitCode: 3, timedOut: false }, { stdout: '', stderr: 'boom again', exitCode: 3, timedOut: false }] });
+  let e3 = null;
+  try { await runOpencodePreflight({ spawn: f3.spawn, cwd: STATE, env: {}, plugins: [], ...quiet }); } catch (e) { e3 = e; }
+  assert(e3 && /^OpenCode preflight process failed \(attempt 1: debug config: exit=3.*attempt 2: debug config: exit=3.*boom again/.test(e3.message)
+    && f3.calls.length === 4, 'bounded: two process failures still fail, with exit code and stderr tail in the message', e3?.message);
+
+  const f4 = fake({ version: [okRun('1.18.4'), okRun('1.18.4')], config: [okRun(JSON.stringify({ plugin: ['evil'] })), okRun(CFG)] });
+  let e4 = null;
+  try { await runOpencodePreflight({ spawn: f4.spawn, cwd: STATE, env: {}, plugins: [], ...quiet }); } catch (e) { e4 = e; }
+  assert(e4 && /ambient OpenCode plugin/.test(e4.message) && f4.calls.length === 2, 'a real config mismatch (ambient plugin) fails at once, never retried', e4?.message);
+
+  const f5 = fake({ version: [okRun('1.17.0'), okRun('1.18.4')], config: [okRun(CFG), okRun(CFG)] });
+  let e5 = null;
+  try { await runOpencodePreflight({ spawn: f5.spawn, cwd: STATE, env: {}, plugins: [], ...quiet }); } catch (e) { e5 = e; }
+  assert(e5 && /pinned OpenCode/.test(e5.message) && f5.calls.length === 2, 'a wrong opencode version fails at once, never retried', e5?.message);
+
+  const f6 = fake({ version: [okRun('1.18.4')], config: [okRun('not json at all')] });
+  let e6 = null;
+  try { await runOpencodePreflight({ spawn: f6.spawn, cwd: STATE, env: {}, plugins: [], ...quiet }); } catch (e) { e6 = e; }
+  assert(e6 && /did not return JSON/.test(e6.message) && f6.calls.length === 2, 'non-JSON debug config (exit 0) fails at once, never retried', e6?.message);
+}
 
 rmSync(STATE, { recursive: true, force: true });
 console.log(ok ? '\nALL PASS' : '\nFAILED');

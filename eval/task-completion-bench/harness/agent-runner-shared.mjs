@@ -405,7 +405,7 @@ export function spawnWithTimeout(bin, args, { cwd, env, timeoutMs, jail = null }
     proc.stdout.on('data', d => stdout += d.toString('utf8'));
     proc.stderr.on('data', d => stderr += d.toString('utf8'));
     proc.on('error', e => { clearTimeout(timer); resolve({ stdout, stderr: stderr + e.message, exitCode: -1, timedOut }); });
-    proc.on('exit', code => { clearTimeout(timer); resolve({ stdout, stderr, exitCode: code ?? 0, timedOut }); });
+    proc.on('exit', (code, signal) => { clearTimeout(timer); resolve({ stdout, stderr, exitCode: code ?? 0, timedOut, ...(signal ? { signal } : {}) }); });
   });
 }
 
