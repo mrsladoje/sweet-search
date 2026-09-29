@@ -1364,7 +1364,7 @@ Before starting a real run, `node core/prompt-optimization/sweep/p7-preflight.mj
 | Token-bucket scheduler self-test | feed scheduler 100 fake calls; verify it blocks at TPM ceiling | scheduler enforces TPM, not just RPM |
 | Embedding API smoke | Call Gemini Embedding 2 with "test" → expect 768-dim vector | Vector returned, correct dim |
 | `~/.gemini/settings.json` auth | Confirm `selectedType: "gemini-api-key"` (not `oauth-personal`) | Match — else AUTO-FIX (with backup) |
-| Orphan process check | `pgrep -f "track-b\|gepa\|aqe-mcp\|_ss-helpers"` | Count ≤ 5 (user's interactive sessions); else surface and ask user to clean |
+| Orphan process check | `pgrep -f "track-b\|gepa\|_ss-helpers"` | Count ≤ 5 (user's interactive sessions); else surface and ask user to clean |
 | Disk space | ≥ 5GB free under `core/prompt-optimization/data/results/` | yes |
 | Git tree clean (or near-clean) | `git status --short` shows ≤ 2 modified files (the run produces uncommitted artifacts) | warn if dirty |
 | Pre-registration tag | `prereg/p7-v1` exists and points to current HEAD | yes — else require `--allow-no-prereg` flag |
