@@ -130,8 +130,7 @@ sweet-search index    # builds the index — GPU-accelerated where available
 sweet-search "where do we validate JWT tokens?"
 ```
 
-That's it. `init` is idempotent and SHA256-verifies every model binary; re-running it is always safe.
-From then on, the index stays up to date automatically as you work.
+That's it. From then on, the index updates itself as you work.
 
 <details>
 <summary><b>If your package manager blocks install scripts</b> (npm 11.16+)</summary>
