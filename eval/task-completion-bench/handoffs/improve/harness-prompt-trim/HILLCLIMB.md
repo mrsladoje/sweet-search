@@ -348,3 +348,14 @@ todo4 packs more calls per turn (2.24 v 2.12) but not fewer turns than todo3eff3
 | conflict3+todo3eff3k | 3/4 | 0.0809 | +8% | 58 |
 | conflict4+todo4 | 3/4 | 0.0664 | −11% | 48 |
 todo3eff3k's loss is bingo (0.0274, 20 turns, 36 calls; bingo = degenerate never-solved task). Without bingo: −8% / −17%. Running: todo3eff3k −12/−32/+8, todo4 −6/−18/−11.
+
+### p5-oc-B2 (opencode, rotation B; ledger fix3)
+untrimmed 0.077 (0/6, 93 turns) · todo3eff3k 0.064 **−17%** (0/6, 51) · todo4 0.074 **−4%** (0/6, 61; jupytext 15 turns / 29 calls).
+
+### opencode pooled (task-cell pairs v same-cell baseline, bingo excluded, bootstrap 5,000, seed 42)
+| arm | pairs | geo-mean Δ | 95% CI |
+|---|---|---|---|
+| conflict3+todo3eff3k (8 cells) | 33 | −11.3% | [−19.6, −0.5] |
+| conflict4+todo4 (4 cells) | 18 | −13.0% | [−21.2, −3.9] |
+| conflict3+todo3eff2k (4 cells) | 17 | −8.2% | [−17.2, +1.6] |
+Head-to-head in the same p5 cells: todo3eff3k −12/−32/+8/−17 v todo4 −6/−18/−11/−4 (sum-of-task $). Tie within noise. **opencode FINAL stays conflict3+todo3eff3k** (neutral efficiency line; fewer text changes; 8 cells of evidence). The neutral line won, so the retrieval-only check for the old line is not needed. Solves equal in all 8 cells.
