@@ -896,7 +896,7 @@ We <b>hill-climbed</b> that prompt for the <i>largest cost saving at unharmed re
 </tr>
 </table>
 
-`sweet-search init` installs the prompt in the correct place per harness.
+`sweet-search init` installs the prompt for you. Here is how we found it 👇
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"titleColor": "#1e1b4b", "textColor": "#1e1b4b", "lineColor": "#8e9baa", "edgeLabelBackground": "#f4f8fb"}, "themeCSS": ".cluster-label span { font-size: 19px; font-weight: 700; }", "flowchart": {"wrappingWidth": 400, "rankSpacing": 65, "nodeSpacing": 60, "subGraphTitleMargin": {"top": 6, "bottom": 14}}}}%%
