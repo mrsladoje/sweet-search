@@ -486,7 +486,7 @@ Code search is a crowded space. Here's an honest read on where sweet-search wins
 | Permissive license (free commercial use) | ✅ Apache-2.0 | ✅ MIT | ❌⁶ | ✅ MIT | ✅ MIT | ⚠️ AGPL-3.0 |
 | *…and where sweet-search gives ground* | | | | | | |
 | Native Windows | ❌⁷ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Deep-AST language coverage | ⚠️ 14 (+70 via regex) | ✅ 34 | ⚠️ 16 | ✅ 162 | ⚠️ | ⚠️ |
+| Deep-AST language coverage | ⚠️ 14 (+70 via regex) | ✅ 34 | ⚠️ 16 | ✅ 162 | ⚠️ 13 | ✅ 22 |
 | Org-wide, multi-repo scale | ❌ | ⚠️⁸ | ✅ | ✅ | ⚠️ | ✅ |
 
 <sub>✅ yes · ⚠️ partial / with caveats · ❌ no. Verified September 2026; capabilities drift.</sub>
