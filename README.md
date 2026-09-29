@@ -738,9 +738,9 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 **🧮 Words and meaning, one ranking**
 
-- **Words:** BM25-style match on your terms, plus exact symbol names at 1.5× weight.
-- **Meaning:** MaxSim over LateOn-Code token embeddings.
-- Reciprocal Rank Fusion merges the lists.
+- ***Words:*** BM25-style match on your terms, plus exact symbol names at 1.5× weight.
+- ***Meaning:*** MaxSim over LateOn-Code token embeddings.
+- ***Reciprocal Rank Fusion*** merges the lists.
 
 </td>
 <td width="50%" valign="top">
