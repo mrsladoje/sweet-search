@@ -463,3 +463,10 @@ Stop rule applied to all three harnesses: no remaining prompt lever is measurabl
 - grep/explore were used 0 times even in the baseline — removing them saves only tool-definition tokens.
 - **Why turns ≠ $:** cache-read $ −24%, but uncached input +7% (L3 +17%) and output +10% (204 → 324 tokens/turn); calls +23%. Net −2.7%. A dropped turn saves ≈$0.00035 of cached re-read.
 - No tool defects on the fixed tool (153 run_tests calls, all with a verdict).
+
+### Codex fixed-tool behaviour audit (beh-cx-p6, Opus)
+- **Extra ember solve = BEHAVIOUR (one draw):** the template's write_stdin step delivers the run_tests verdict. Baseline A2 ember never used it → 5 runs, 0 verdicts, turns 12–20 spent on `ps`/`sleep`, ended with an unverified edit. Both variants got "5 NEW failure(s): rules setup is correct…" and solved it. Baseline solves ember 2 of 3 when the tool does not block it.
+- **Verdict loss (tool/harness defect):** baseline lost the verdict in 15/56 test runs (all without write_stdin; 6/20 rollouts never used it); variants 1/52 each. run_tests returns ≈17 s after launch with only the RUNNING banner in Codex exec cells.
+- **Turns/waits = BEHAVIOUR:** multi-command read cells 16% → 63% / 52%; pragma in test cells 1 → 4 → 12 (yt3batch3 tripled it; never in the first test cell); pragma cells never return early (0/17). Wait turns 58/44/37. Same-failure line never fired (0 unchanged-failure loops in any arm). No arm did less than needed.
+- **Why waits ≠ $:** a wait turn ≈ $0.0004; yt3batch3 has +19 read/edit turns v yt3batch2 (mwouts B2 +$0.014, brighterscript B1 +$0.007). Sign-flip: L2 v base p=0.33, L3 v base p=0.98.
+- **Defects:** (1) verdict delivery depends on write_stdin — make run_tests block until the verdict or make the banner say how to poll; (2) top line `status=FAIL exit=0` contradicts `baseline-diff verdict=PASS` on tasks with pre-existing failures; (4) **cross-task leak:** `ps -eo` shows other concurrent rollouts' codex command lines incl. another task's issue text (memory host-escape V7).
