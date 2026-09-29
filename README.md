@@ -545,7 +545,7 @@ read a file
 
 A hybrid search pipeline with late interaction reranking that returns actual code blocks.
 
-See how it scores in [Benchmarks](#-benchmarks).
+**SOTA on 3 of 4 academic code-search benchmarks** (June 2026), zero-shot and against the full corpus. See [Benchmarks](#-benchmarks).
 
 ```mermaid
 flowchart TD
