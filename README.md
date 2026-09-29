@@ -503,40 +503,34 @@ to be *consumed by an agent* — a useful answer, not a wall of matches to scrol
 <td align="center" valign="top" width="33%">
 <a href="#tool-ss-search"><img src="assets/tools/ss-search.svg" width="80" alt="ss-search icon" /></a><br/>
 <b>1. <a href="#tool-ss-search"><code>ss-search</code></a></b><br/>
-<sub>YOU GIVE</sub><br/>a natural-language query<br/>
-<sub>YOU GET</sub><br/>ranked, <b>self-contained code blocks</b>
+search by meaning
 </td>
 <td align="center" valign="top" width="33%">
 <a href="#tool-ss-grep"><img src="assets/tools/ss-grep.svg" width="80" alt="ss-grep icon" /></a><br/>
 <b>2. <a href="#tool-ss-grep"><code>ss-grep</code></a></b><br/>
-<sub>YOU GIVE</sub><br/>an exact regex or literal<br/>
-<sub>YOU GET</sub><br/>every <code>file:line</code> hit, <b>ripgrep&#8209;identical</b>
+exact text, fast
 </td>
 <td align="center" valign="top" width="33%">
 <a href="#tool-ss-find"><img src="assets/tools/ss-find.svg" width="80" alt="ss-find icon" /></a><br/>
 <b>3. <a href="#tool-ss-find"><code>ss-find</code></a></b><br/>
-<sub>YOU GIVE</sub><br/>a regex <b>+</b> a query<br/>
-<sub>YOU GET</sub><br/>regex matches, <b>semantically re&#8209;ranked, as code blocks</b>
+a pattern, ranked by meaning
 </td>
 </tr>
 <tr>
 <td align="center" valign="top" width="33%">
 <a href="#tool-ss-semantic"><img src="assets/tools/ss-semantic.svg" width="80" alt="ss-semantic icon" /></a><br/>
 <b>4. <a href="#tool-ss-semantic"><code>ss-semantic</code></a></b><br/>
-<sub>YOU GIVE</sub><br/>a file <b>+</b> a question<br/>
-<sub>YOU GET</sub><br/>just the <b>relevant spans</b> of that file
+search inside one file
 </td>
 <td align="center" valign="top" width="33%">
 <a href="#tool-ss-trace"><img src="assets/tools/ss-trace.svg" width="80" alt="ss-trace icon" /></a><br/>
 <b>5. <a href="#tool-ss-trace"><code>ss-trace</code></a></b><br/>
-<sub>YOU GIVE</sub><br/>a symbol<br/>
-<sub>YOU GET</sub><br/><b>callers + callees + impact</b>, in one call
+who calls what
 </td>
 <td align="center" valign="top" width="33%">
 <a href="#tool-ss-read"><img src="assets/tools/ss-read.svg" width="80" alt="ss-read icon" /></a><br/>
 <b>6. <a href="#tool-ss-read"><code>ss-read</code></a></b><br/>
-<sub>YOU GIVE</sub><br/>a file (± line range)<br/>
-<sub>YOU GET</sub><br/>exact bytes <b>+ what's left unread</b>
+read a file
 </td>
 </tr>
 </table>
@@ -545,6 +539,8 @@ to be *consumed by an agent* — a useful answer, not a wall of matches to scrol
 
 <a id="tool-ss-search"></a>
 ### <img src="assets/tools/ss-search.svg" width="40" align="center" alt="" /> 1. `ss-search` — hybrid search powerhouse
+
+<img src="assets/tools/ss-search-io.svg" alt="ss-search takes a plain-English question and returns ranked, whole code blocks" width="100%" />
 
 A hybrid search pipeline with late interaction reranking that returns actual code blocks.
 
@@ -645,6 +641,8 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <a id="tool-ss-grep"></a>
 ### <img src="assets/tools/ss-grep.svg" width="40" align="center" alt="" /> 2. `ss-grep` — grep, minus every wasted millisecond
 
+<img src="assets/tools/ss-grep-io.svg" alt="ss-grep takes an exact string or regex and returns every file:line hit" width="100%" />
+
 **10.2× faster than ripgrep end-to-end at the median** — measured across **353 realistic queries on 5 real repos**
 (range 8.5–17.7× per repo, 1 ms p50), with **identical match counts on every single query**. Three things buy that:
 
@@ -668,9 +666,7 @@ Every match comes back in stable `file:line` order — ripgrep-identical counts,
 <a id="tool-ss-find"></a>
 ### <img src="assets/tools/ss-find.svg" width="40" align="center" alt="" /> 3. `ss-find` — ColGrep, on a faster engine
 
-```bash
-ss-find "token refresh logic" --regex "refresh.*[Tt]oken"
-```
+<img src="assets/tools/ss-find-io.svg" alt="ss-find takes a query plus a regex and returns the regex matches ranked by meaning" width="100%" />
 
 Inspired by LightOn's [ColGrep](https://github.com/lightonai/next-plaid/tree/main/colgrep) — regex precision,
 semantically ranked — but rebuilt on our own substrate:
@@ -694,9 +690,7 @@ semantically ranked — but rebuilt on our own substrate:
 <a id="tool-ss-semantic"></a>
 ### <img src="assets/tools/ss-semantic.svg" width="40" align="center" alt="" /> 4. `ss-semantic` — hybrid retrieval, scoped to one file
 
-```bash
-ss-semantic src/auth/session.ts "where does the cookie get its expiry?"
-```
+<img src="assets/tools/ss-semantic-io.svg" alt="ss-semantic takes a file plus a question and returns only the lines that answer it" width="100%" />
 
 You know the file; this finds the lines. Every indexed chunk of the file is scored by **three independent
 signals** — BM25-style lexical term match, exact symbol-name match (weighted 1.5×), and per-token
@@ -720,9 +714,7 @@ The useful answer: just the relevant spans with line numbers — not the whole f
 <a id="tool-ss-trace"></a>
 ### <img src="assets/tools/ss-trace.svg" width="40" align="center" alt="" /> 5. `ss-trace` — graph algorithms, not grep guesswork
 
-```bash
-ss-trace processOrder --in src/orders/service.py
-```
+<img src="assets/tools/ss-trace-io.svg" alt="ss-trace takes a symbol and returns its callers, callees and impact" width="100%" />
 
 One call returns a symbol's **callers, callees, and transitive impact paths** from the AST-derived code
 graph (entities + typed `calls`/`imports`/`extends`/`uses` edges, persisted in SQLite at index time).
@@ -750,9 +742,7 @@ bounds impact traversal (1–4).
 <a id="tool-ss-read"></a>
 ### <img src="assets/tools/ss-read.svg" width="40" align="center" alt="" /> 6. `ss-read`: read a file from disk
 
-```bash
-ss-read src/db/pool.js 120 180
-```
+<img src="assets/tools/ss-read-io.svg" alt="ss-read takes a file and a line range and returns the lines from disk plus what is left unread" width="100%" />
 
 It reads the file from disk, not from the index, so the code is always current. It also does three things for the agent:
 
