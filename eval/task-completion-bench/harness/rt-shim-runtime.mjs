@@ -24,6 +24,7 @@ import {
   extractFailureSignatures, diffFailureSets, renderBaselineDiff,
   buildAuthorityBanner, applyTestPattern,
   buildUnresolvedIdentifierWarning, buildRunTestsFooter, NETWORK_ERROR_ERE,
+  FIRST_ERROR_ERE, extractBuildErrorMarkers, classifyBuildError, firstErrorLines, renderBuildErrorNote,
 } from './rt-condense-lib.mjs';
 import {
   RT_DEDUP_ON, parseRunTestsArgv, untrackedFingerprint, computeStateKey,
@@ -49,9 +50,26 @@ import { CodeGraphRepository } from '../../../core/infrastructure/code-graph-rep
 // classifier alone would have left this one firing, so both read the same alternation from
 // NETWORK_ERROR_ERE. `grep -E` has no non-capturing groups, which is why that constant is
 // written ERE-safe.
+//
+// 2026-09-29: FIRST ERROR LINES. On zmap__zlint-299 `go test` failed to compile; go prints
+// `FAIL\t<pkg> [build failed]` and `<file>.go:L:C: undefined: X`, neither matched the
+// promote grep, and `tail -45` held only a later, passing package — the agent got exit=2
+// with no reason. When the command exits non-zero AND the output is longer than the tail
+// window, the first (at most 8) lines matching FIRST_ERROR_ERE (compiler / collection /
+// import / load errors, language-general) are printed FIRST, each cut to 240 chars, so they
+// also survive the 8000-char capture cap. Exit 0 or output that fits in the tail: this block
+// prints nothing, so those results stay byte-identical to the previous condenser.
+export const RT_CONDENSE_FIRST_ERRORS =
+  'rc=$(cat /tmp/__rt_exit 2>/dev/null || printf 1); ' +
+  'if [ "$rc" != 0 ] && [ $(wc -l < /tmp/__rt_out) -gt 45 ]; then ' +
+  `e=$(grep -aE '${FIRST_ERROR_ERE}' /tmp/__rt_out | cut -c1-240 | head -8); ` +
+  `[ -n "$e" ] && { echo "--- first error lines (exit $rc) ---"; printf '%s\n' "$e"; }; ` +
+  'fi; ';
+
 export const RT_CONDENSE =
   `grep -qaE '${NETWORK_ERROR_ERE}' /tmp/__rt_out && ` +
   "echo '[run_tests] NETWORK UNAVAILABLE in the test container (bench lockdown): dependency downloads cannot work; do not retry or debug the harness.'; " +
+  RT_CONDENSE_FIRST_ERRORS +
   "grep -aE '(FAILED|FAIL:|not ok |AssertionError|panicked at|[0-9]+ tests? failed|[Ee]rror:|error\\[|Fail[[:space:]]*\\|\\||Failed[[:space:]]*:[[:space:]]*[1-9]|✖)' /tmp/__rt_out | " +
   "grep -avE '(0 fail|failures?: 0|failed: 0|: 0 error|Failed[[:space:]]*:[[:space:]]*0|[0-9]+% tests passed)' | head -40; " +
   "echo '--- output tail ---'; tail -45 /tmp/__rt_out";
@@ -132,9 +150,12 @@ export function getBaseline(cfg, { runCleanSuite = runSuite } = {}) {
   // untrustworthy → ok:false (no baseline labeling).
   const infra = base?.infra === true || sig.infra || exitCode === 124 || exitCode === 137;
   const ok = sig.ok && !infra && !(exitCode !== 0 && sig.sigs.size === 0);
-  const value = { ok, sigs: new Set(sig.sigs) };
+  // Build/collection markers of the CLEAN checkout: a marker already present here (a
+  // package that never builds in the image) is pre-existing and must not force ERROR.
+  const markers = infra ? new Set() : extractBuildErrorMarkers(base?.out);
+  const value = { ok, sigs: new Set(sig.sigs), markers };
   baselineByConfig.set(cfg, value);
-  return { ok: value.ok, sigs: new Set(value.sigs) };
+  return { ok: value.ok, sigs: new Set(value.sigs), markers: new Set(value.markers) };
 }
 
 const symbolRepos = new Map();
@@ -186,16 +207,34 @@ function appendFooter(body, footer) {
   return text + (text.endsWith('\n') ? '' : '\n') + footer;
 }
 
-function classifySuiteResult(cur, current, baselineDiff) {
+// status=ERROR (2026-09-29, zmap__zlint-299): a non-zero, non-infra exit whose output is a
+// build / collection / load error (see classifyBuildError) — there is NO test result, so it
+// is never PASS and never trustworthy. A non-zero exit with ZERO parsed failure signatures
+// is never trustworthy either, even when a summary shows it is a genuine test failure
+// (status stays FAIL): an empty introduced set says nothing about what the edit broke.
+// Before this, both shapes read trustworthy=yes and the dedup repeat said "suite green".
+// INFRA keeps precedence (network / broker / docker / timeout), unchanged.
+export function classifySuiteResult(cur, current, baselineDiff, baseline = null) {
   const suppliedExit = Number.isInteger(cur?.exitCode) ? cur.exitCode : null;
   let exitCode = suppliedExit ?? parseExitCode(cur?.out);
   if (suppliedExit === null && exitCode === 0 && current.sigs.size > 0) exitCode = 1;
   const infra = cur?.infra === true || current.infra || exitCode === 124 || exitCode === 137;
-  const status = infra ? 'INFRA' : (exitCode !== 0 || current.sigs.size > 0 ? 'FAIL' : 'PASS');
+  const build = infra
+    ? { buildError: false, unparsedFailure: false }
+    : classifyBuildError({
+      text: cur?.out, exitCode, sigCount: current.sigs.size,
+      baselineMarkers: baseline?.markers instanceof Set ? baseline.markers : null,
+    });
+  const status = infra ? 'INFRA'
+    : build.buildError ? 'ERROR'
+      : (exitCode !== 0 || current.sigs.size > 0 ? 'FAIL' : 'PASS');
   const baselineOnly = status === 'FAIL' && baselineDiff !== null && current.sigs.size > 0 &&
     baselineDiff.introduced.length === 0 && baselineDiff.preExisting.length === current.sigs.size;
-  const verdict = status === 'INFRA' ? 'INFRA' : (status === 'PASS' || baselineOnly ? 'PASS' : 'FAIL');
-  return { exitCode, status, verdict, trustworthy: baselineDiff !== null && !infra };
+  const verdict = (status === 'INFRA' || status === 'ERROR') ? status
+    : (status === 'PASS' || baselineOnly ? 'PASS' : 'FAIL');
+  const unparsedNonZero = exitCode !== 0 && current.sigs.size === 0;
+  const trustworthy = baselineDiff !== null && !infra && status !== 'ERROR' && !unparsedNonZero;
+  return { exitCode, status, verdict, trustworthy };
 }
 
 // Main entry: run the suite on the agent's current diff, prepend the L2 levers, then
@@ -245,14 +284,19 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = nul
   // suppress authority and always render above the final machine footer.
   let head = L2 ? buildAuthorityBanner() : '';
   const curSig = extractFailureSignatures(cur.out);
+  const baseline = L2 ? getBaseline(cfg, { runCleanSuite: runSuiteFn }) : null;
   const bdiff = L2
-    ? diffFailureSets(getBaseline(cfg, { runCleanSuite: runSuiteFn }), curSig)
+    ? diffFailureSets(baseline, curSig)
     : null;   // null when disabled/untrustworthy → no labeling
   const bd = L2 ? renderBaselineDiff(bdiff) : '';
   if (bd) head += (head ? '\n' : '') + bd;
   if (note) head += (head ? '\n' : '') + note;
-  const classified = classifySuiteResult(cur, curSig, bdiff);
-  const full = [head, cur.out, identifierWarning].filter(Boolean).join('\n');
+  const classified = classifySuiteResult(cur, curSig, bdiff, baseline);
+  const firstErrors = classified.status === 'ERROR' ? firstErrorLines(cur.out) : [];
+  const errorNote = classified.status === 'ERROR'
+    ? renderBuildErrorNote({ exitCode: classified.exitCode, firstErrors })
+    : '';
+  const full = [head, cur.out, identifierWarning, errorNote].filter(Boolean).join('\n');
   // T0 records at the broker seam but returns `guidance=none`, preserving output bytes.
   // T1 can change only the existing third footer line; controller failures abstain.
   const footerForDecision = (dedupDecision) => {
@@ -277,7 +321,7 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = nul
   };
   return applyDedup(cfg, {
     key, untracked, parsed, diff, reqId, out: full, raw: cur.out,
-    rawExitCode: classified.exitCode, footerForDecision,
+    rawExitCode: classified.exitCode, status: classified.status, footerForDecision,
   });
 }
 
@@ -291,7 +335,7 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = nul
  * append disables condensation for that call — the log IS the state, so an unwritable
  * log must not silently make every call look like a repeat.
  */
-function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw, rawExitCode, footerForDecision }) {
+function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw, rawExitCode, status = null, footerForDecision }) {
   if (!key) {
     // Still leave an audit trail when the lever was live but abstained, so a smoke can
     // tell "never fired because the agent never repeated" from "could not fingerprint".
@@ -307,7 +351,7 @@ function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw, rawExi
     return appendFooter(out, footer);
   }
   const state = readDedupState(cfg.dedupLog);
-  const result = summarizeRunTestsResult(raw, { exitCode: rawExitCode });
+  const result = summarizeRunTestsResult(raw, { exitCode: rawExitCode, status });
   const decision = dedupDecision(state, key, result.digest);
   const suppress = decision.mode === 'unchanged' && !result.infra;
   const auditDecision = result.infra && decision.mode !== 'first' ? 'infra-passthrough' : decision.mode;
@@ -320,7 +364,7 @@ function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw, rawExi
     diffSha: sha256Hex(String(diff ?? '')), diffBytes: Buffer.byteLength(String(diff ?? ''), 'utf8'),
     untracked: untracked.entries,
     exit: result.exitCode, failures: result.failureCount, infra: result.infra,
-    firstFailure: result.firstFailure,
+    status: result.status, firstFailure: result.firstFailure,
     outBytes: Buffer.byteLength(appendFooter(out, footer), 'utf8'),
   });
   if (!wrote) return appendFooter(out, footer);

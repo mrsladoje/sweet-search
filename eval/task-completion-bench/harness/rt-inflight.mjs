@@ -300,7 +300,7 @@ export function sameDiffAttachInlineSource() {
 export function verdictOf(text) {
   const t = String(text ?? '');
   let status = null, trustworthy = false;
-  for (const m of t.matchAll(/^\[run_tests verdict\] status=(PASS|FAIL|INFRA)\b/gm)) status = m[1];
+  for (const m of t.matchAll(/^\[run_tests verdict\] status=(PASS|FAIL|INFRA|ERROR)\b/gm)) status = m[1];
   if (status === null) return null;
   for (const m of t.matchAll(/^\[run_tests baseline-diff\][^\n]*\btrustworthy=(yes|no)\b/gm)) trustworthy = m[1] === 'yes';
   return { status, trustworthy };
@@ -341,6 +341,9 @@ export function verdictOf(text) {
  *   rtTrustworthy   verdicts whose baseline-diff footer reads trustworthy=yes. A verdict the
  *                   agent could actually act on.
  *   rtInfra         verdicts whose status is INFRA. The suite result was suppressed.
+ *   rtError         verdicts whose status is ERROR (2026-09-29): the suite did not build,
+ *                   collect or load, so no test result exists (zmap__zlint-299 Go compile
+ *                   failure). Always untrustworthy.
  *
  * Both count VERDICTS, not launches, so rtTrustworthy + (untrustworthy) = rtVerdicts and a
  * one-line jq over rows.json replaces the per-cell census script.
@@ -356,5 +359,6 @@ export function runTestsTelemetry(calls = []) {
     rtEndedUnverified: tests.length > 0 && verdicts[verdicts.length - 1] === null,
     rtTrustworthy: verdicts.filter(v => v?.trustworthy === true).length,
     rtInfra: verdicts.filter(v => v?.status === 'INFRA').length,
+    rtError: verdicts.filter(v => v?.status === 'ERROR').length,
   };
 }
