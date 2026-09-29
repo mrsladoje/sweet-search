@@ -64,12 +64,22 @@ function fakeModelCache() {
 describe('repo registry', () => {
   it('records each repo once and forgets it on unregister', () => {
     const e = { SWEET_SEARCH_REPO_REGISTRY: registry };
-    registerRepo('/tmp/a', e);
-    registerRepo('/tmp/b', e);
-    registerRepo('/tmp/a', e);
-    expect(readRepoRegistry(e)).toEqual(['/tmp/a', '/tmp/b']);
-    unregisterRepos(['/tmp/a'], e);
-    expect(readRepoRegistry(e)).toEqual(['/tmp/b']);
+    const a = makeRepo('a');
+    const b = makeRepo('b');
+    registerRepo(a, e);
+    registerRepo(b, e);
+    registerRepo(a, e);
+    expect(readRepoRegistry(e)).toEqual([a, b]);
+    unregisterRepos([a], e);
+    expect(readRepoRegistry(e)).toEqual([b]);
+  });
+
+  it('drops repos that no longer exist when it records a new one', () => {
+    const e = { SWEET_SEARCH_REPO_REGISTRY: registry };
+    const live = makeRepo('live');
+    registerRepo('/definitely/gone/repo', e);
+    registerRepo(live, e);
+    expect(readRepoRegistry(e)).toEqual([live]);
   });
 
   it('reads a missing or corrupt record as empty', () => {
@@ -82,11 +92,25 @@ describe('repo registry', () => {
 });
 
 describe('detectPackageInstall', () => {
-  it('recognises global, project-local and source-checkout installs', () => {
+  it('recognises global and source-checkout installs', () => {
     expect(detectPackageInstall('/g/lib/node_modules/sweet-search', '/g/lib/node_modules')).toEqual({ kind: 'global' });
-    expect(detectPackageInstall('/work/app/node_modules/sweet-search', '/g/lib/node_modules'))
-      .toEqual({ kind: 'local', cwd: '/work/app' });
     expect(detectPackageInstall('/src/sweet-search', '/g/lib/node_modules')).toEqual({ kind: 'none' });
+    expect(detectPackageInstall('/u/.npm/_npx/ab12/node_modules/sweet-search', '/g/lib/node_modules'))
+      .toEqual({ kind: 'none' });
+  });
+
+  it('calls it local only when the project declares sweet-search', () => {
+    const app = join(home, 'app');
+    mkdirSync(join(app, 'node_modules', 'sweet-search'), { recursive: true });
+    writeFileSync(join(app, 'package.json'), JSON.stringify({ devDependencies: { 'sweet-search': '^2.9.0' } }));
+    expect(detectPackageInstall(join(app, 'node_modules', 'sweet-search'), '/g/lib/node_modules'))
+      .toEqual({ kind: 'local', cwd: app });
+  });
+
+  it('calls a store layout it cannot verify "other" instead of guessing an npm command', () => {
+    const store = join(home, '.pnpm', 'sweet-search@2.9.0', 'node_modules', 'sweet-search');
+    mkdirSync(store, { recursive: true });
+    expect(detectPackageInstall(store, '/g/lib/node_modules')).toEqual({ kind: 'other', path: store });
   });
 });
 
@@ -153,6 +177,41 @@ describe('uninstall scope', () => {
     expect(existsSync(join(b, '.sweet-search'))).toBe(false);
     expect(existsSync(join(home, '.cache', 'sweet-search'))).toBe(false);
     expect(r.out).not.toContain('npm uninstall');
+  });
+
+  it('--all refuses to run without a terminal unless --force is given', () => {
+    const a = makeRepo('repo-a');
+    initRepo(a);
+    const models = fakeModelCache();
+    const r = runCli(a, ['uninstall', '--all']);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('--force');
+    expect(existsSync(join(a, '.sweet-search'))).toBe(true);
+    expect(existsSync(models)).toBe(true);
+  });
+
+  it('--all with a custom SWEET_SEARCH_MODEL_CACHE removes only the recorded model dirs', () => {
+    const custom = join(home, 'my-models');
+    const theirs = join(custom, 'someone-elses-file.bin');
+    mkdirSync(custom, { recursive: true });
+    writeFileSync(theirs, 'keep me');
+    env.SWEET_SEARCH_MODEL_CACHE = custom;
+    const a = makeRepo('repo-a');
+    initRepo(a);
+    // Simulate a model init recorded under the custom root.
+    const modelDir = join(custom, 'recorded-model');
+    mkdirSync(modelDir, { recursive: true });
+    writeFileSync(join(modelDir, 'model.onnx'), 'x');
+    const cfgPath = join(a, '.sweet-search', 'config.json');
+    const cfg = JSON.parse(readFileSync(cfgPath, 'utf8'));
+    cfg.models = { 'recorded-model': { cacheDir: modelDir } };
+    writeFileSync(cfgPath, JSON.stringify(cfg));
+
+    const r = runCli(a, ['uninstall', '--all', '--force']);
+    expect(r.code, r.out).toBe(0);
+    expect(existsSync(modelDir)).toBe(false);
+    expect(existsSync(theirs)).toBe(true);
+    expect(existsSync(custom)).toBe(true);
   });
 
   it('--purge is an alias for --all', () => {
