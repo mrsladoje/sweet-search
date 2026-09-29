@@ -13,7 +13,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 [![npm](https://img.shields.io/npm/v/sweet-search?color=cb3837&label=npm)](https://www.npmjs.com/package/sweet-search)
 [![GitHub stars](https://img.shields.io/github/stars/mrsladoje/sweet-search?style=social)](https://github.com/mrsladoje/sweet-search/stargazers)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)](package.json)
+[![node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)](package.json)
 [![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#platform-support)
 [![inference](https://img.shields.io/badge/inference-100%25%20local-success)](#-gpu-accelerated-indexing-fully-local)
 
@@ -81,9 +81,6 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 [🧠 The Evolved Agent Prompt](#-an-agent-prompt-that-was-evolved-not-written)<br>
 <sub>GEPA-optimized search discipline</sub>
 
-[🔌 Works With Your Agent](#-works-with-your-agent)<br>
-<sub>MCP · Claude Code · Codex · Gemini · Cursor</sub>
-
 </td>
 <td width="27%" valign="top">
 
@@ -118,7 +115,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 
 ## 🚀 Quickstart
 
-**Requirements:** Node.js 18+ on macOS (Apple silicon or Intel) or Linux (x64 or ARM64). On Windows, run sweet-search inside WSL2.
+**Requirements:** Node.js 22+ on macOS (Apple silicon or Intel) or Linux (x64 or ARM64). On Windows, run sweet-search inside WSL2.
 
 ```bash
 npm install -g sweet-search
@@ -131,34 +128,6 @@ sweet-search "where do we validate JWT tokens?"
 ```
 
 That's it. From then on, the index updates itself as you work.
-
-<details>
-<summary><b>If your package manager blocks install scripts</b> (npm 11.16+)</summary>
-
-<br>
-
-sweet-search stores its index in SQLite via `better-sqlite3`, which downloads its
-prebuilt native binary from an install script. Recent npm versions block those
-scripts by default and only print a warning, which leaves the binding missing and
-makes indexing fail. `sweet-search init` detects this and stops with instructions
-rather than reporting success.
-
-For a global install, approve the scripts once:
-
-```bash
-npm install -g sweet-search --allow-scripts=sweet-search,better-sqlite3
-```
-
-For a project-local install, add the allowlist to that project's `package.json`
-(npm rejects the flag for project-scoped installs), then reinstall:
-
-```jsonc
-"allowScripts": { "sweet-search": true, "better-sqlite3": true }
-```
-
-Verify with `sweet-search init` — the `native:sqlite` check must pass.
-
-</details>
 
 For Claude Code, init automatically installs and activates the `sweet-search`
 output style, which adds the compact routing override at system-prompt priority.
@@ -192,6 +161,27 @@ sweet-search uninstall --dry-run    # preview cleanup for the current repo
 - **Output-style conflicts:** init never silently replaces another selected style. It still installs the Sweet Search style so it appears under `/config`, then emits a warning. A higher-priority `.claude/settings.local.json` selection is also detected and reported. Select `sweet-search`, then run `/clear` or restart Claude Code.
 - **Codex/OpenCode wiring:** pass `--agents` to place the same verbatim guide directly in `AGENTS.md`. Use `--no-claude --agents` when AGENTS.md is the only integration you want; `--codex` additionally installs Codex's project prewarm hook.
 - **What gets indexed:** what you'd expect — `.gitignore` is respected, `node_modules`/build dirs/minified artifacts are denied, files over 1 MB skipped, with a `.sweet-search-ignore` for extra rules.
+
+### MCP and other integrations
+
+The CLI is the default contact surface. To also register the MCP server, run
+`sweet-search init --mcp`, or add it to `.mcp.json` yourself:
+
+```jsonc
+{
+  "mcpServers": {
+    "sweet-search": {
+      "command": "npx",
+      "args": ["-y", "sweet-search-mcp", "--project-root", "/absolute/path/to/your/repo"]
+    }
+  }
+}
+```
+
+- **MCP server:** 8 tools (`search`, `trace`, `read`, `read-semantic`, `index`, `health`, `repo-map`, `vocab-prewarm`), 2 resources, 2 prompts. All search tools are declared read-only and idempotent.
+- **Repo maps for sub-agents:** the `repo-map` tool returns a PageRank-ranked symbol overview that fits any token budget, for briefing a delegated agent.
+- **Vocabulary prewarm:** `sweet-search prewarm-vocab` mines your repo's real identifiers, detects code communities (Leiden), and pre-warms all three search modes, so the first semantic query of a session is already cache-warm.
+- **Committed files stay portable:** init never writes machine-specific absolute paths into committed settings files. All instruction injection is marker-delimited and reversible.
 
 ### Init flags
 
@@ -751,7 +741,7 @@ without another search.
 
 > The `ss-*` wrappers ship in the npm package and are what the installed agent prompt drives. Every
 > capability is equally available as `sweet-search` CLI subcommands and as MCP tools — see
-> [Works With Your Agent](#-works-with-your-agent).
+> *Setup options & details* under [Quickstart](#-quickstart).
 
 ---
 
@@ -922,38 +912,6 @@ before the process exits, and the next edit (or query) respawns a fresh daemon.
 
 </details>
 
-## 🔌 Works With Your Agent
-
-sweet-search meets your agent wherever it is — shell tools, MCP, or injected instructions:
-
-```jsonc
-// .mcp.json (project root) — that's the whole integration
-// or just run: sweet-search init --mcp
-{
-  "mcpServers": {
-    "sweet-search": {
-      "command": "npx",
-      "args": ["-y", "sweet-search-mcp", "--project-root", "/absolute/path/to/your/repo"]
-    }
-  }
-}
-```
-
-- **MCP server** — 8 tools (`search`, `trace`, `read`, `read-semantic`, `index`, `health`, `repo-map`, `vocab-prewarm`), 2 resources, 2 prompts; all search tools declared read-only and idempotent
-- **Harness injection** — Claude Code gets the canonical guide through `.claude/rules/sweet-search.md` plus an automatically selected output style; Codex/OpenCode use `AGENTS.md` (`--agents` or `--codex`), while Gemini (`--gemini`) and Cursor (`--cursor`) use their native project files
-- **Repo maps for sub-agents** — the `repo-map` tool returns a PageRank-ranked symbol overview squeezed into any token budget, perfect for briefing a delegated agent
-- **Warm from the first query** — a SessionStart hook pre-launches the search daemon so models, vocabulary, and indexes are loaded before you ask anything
-
-<details>
-<summary><b>Deep dive</b></summary>
-
-- **Tool routing enforcement (opt-in):** `init --enforce-tools` denies the native Grep tool in Claude Code and installs a hint hook nudging native Read toward `ss-read`/`ss-semantic` — for when you want the discipline guaranteed, not suggested.
-- **`/sweet-index` skill:** a Claude Code slash command for a full GPU-aware reindex, installed by init.
-- **Vocabulary prewarm:** `sweet-search prewarm-vocab` mines your repo's real identifiers, detects code communities (Leiden), and pre-warms all three search modes so even the first semantic query of a session is cache-warm.
-- **Honest committed-state:** init never writes machine-specific absolute paths into committed settings files, and all instruction injection is marker-delimited and reversible.
-
-</details>
-
 <a id="platform-support"></a>
 
 ## 🖥️ Platform Support
@@ -965,7 +923,7 @@ sweet-search meets your agent wherever it is — shell tools, MCP, or injected i
 | Linux x64 (glibc) | native | CUDA (SM 7.0+, flash-attn on Ampere+) or INT8 CPU |
 | Linux arm64 (glibc) | native | CUDA (Jetson Orin / Grace) or INT8 CPU |
 | Windows | — | via WSL2 (= Linux x64) |
-| Everything else | WASM/JS fallback | runs everywhere Node ≥ 18 runs |
+| Everything else | WASM/JS fallback | runs everywhere Node ≥ 22 runs |
 
 Native binaries are selected automatically at `npm install` time via optionalDependencies — no flags, no postinstall scripts to debug. Every native fast path has a WASM or JS fallback that produces the same results.
 
