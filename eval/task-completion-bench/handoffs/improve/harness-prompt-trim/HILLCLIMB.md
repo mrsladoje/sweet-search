@@ -435,3 +435,6 @@ Turns still −22%/−37%, but $ is higher: todo3eff3k's ember rollout ran 47 ca
 ### p7-oc-B1 (opencode re-check on the FIXED tool, rotation B)
 untrimmed 0.076 (0/6, 84 turns) · todo3eff3k 0.063 **−17%** (0/6, 51) · todo4 0.068 **−11%** (0/6, 53).
 Unlike Codex, the opencode untrimmed baseline on B barely moved with the tool fix (0.077–0.082 before → 0.076), so the opencode saving on B survives. Running fixed-tool: todo3eff3k +9/−17, todo4 +4/−11.
+
+### p7-oc-A2 (opencode re-check on the FIXED tool, rotation A)
+untrimmed 0.075 (2/4, 75 turns) · todo3eff3k 0.074 **−1%** (3/4, 55) · todo4 0.078 **+4%** (3/4, 57). Baseline missed super_editor (solved by both variants). Running fixed-tool: todo3eff3k +9/−17/−1, todo4 +4/−11/+4.
