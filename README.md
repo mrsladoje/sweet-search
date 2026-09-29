@@ -15,7 +15,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)](package.json)
 [![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#platform-support)
-[![inference](https://img.shields.io/badge/inference-100%25%20local-success)](#-gpu-accelerated-indexing-fully-local)
+[![inference](https://img.shields.io/badge/inference-100%25%20local-success)](#the-index)
 
 </div>
 
@@ -86,7 +86,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 
 **UNDER THE HOOD**
 
-[⚡ GPU-Accelerated Indexing](#-gpu-accelerated-indexing-fully-local)<br>
+[🗂️ The Index](#the-index)<br>
 <sub>candle · fused kernels · cAST chunking</sub>
 
 [🔄 An Index That Never Goes Stale](#-an-index-that-never-goes-stale)<br>
@@ -1047,7 +1047,9 @@ A score of 1.00 means every question was answered correctly. For Claude Code and
 
 ---
 
-## ⚡ GPU-Accelerated Indexing, Fully Local
+<a id="the-index"></a>
+
+## 🗂️ The Index
 
 > **Chunk → enrich → embed → quantize** — every step on-device and in Rust. Batches are sized to *your CPU's actual cache*, two open code-models do the encoding, and two separate quantizations make the index both **faster to build** and **small enough to live in RAM**. Zero API keys; nothing ever leaves the machine.
 
