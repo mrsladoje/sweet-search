@@ -263,7 +263,7 @@ export const OPENCODE_TRIM_V3_TOOL_EDITS = Object.freeze({
 //   todo2eff, ...). The variant edits the base prompt's batching bullet and adds its own
 //   tool-description edits. untrimmed+<variant> is exactly batch-<variant> (other mode label).
 export const OPENCODE_CONFLICT_PROMPT_BULLET = '- When searching for text or files, prefer using Glob and Grep tools (they are powered by `rg`)\n';
-export const OPENCODE_CONFLICT_BASES = Object.freeze(['conflict', 'conflict-noglob', 'conflict2', 'conflict3', 'untrimmed']);
+export const OPENCODE_CONFLICT_BASES = Object.freeze(['conflict', 'conflict-noglob', 'conflict2', 'conflict3', 'conflict4', 'untrimmed']);
 export const OPENCODE_CONFLICT_TOOL_EDITS = Object.freeze({
   bash: [
     OPENCODE_TRIM_TOOL_EDITS.bash[0],   // "DO NOT use it for ... searching, finding files" — ss-* run through bash
@@ -298,6 +298,14 @@ export const OPENCODE_CONFLICT3_TOOL_EDITS = Object.freeze({
   task: OPENCODE_CONFLICT2_TOOL_EDITS.task,
   glob: OPENCODE_CONFLICT2_TOOL_EDITS.glob,
 });
+// OC_HARNESS_TRIM=conflict4 (audit beh-oc-p4): conflict3 + the glob description's "always better to
+// speculatively perform multiple searches as a batch" sentence removed (it pulls against the efficiency
+// line; its intent is restated there as "send the searches you would try in one turn").
+export const OPENCODE_CONFLICT4_TOOL_EDITS = Object.freeze({
+  ...OPENCODE_CONFLICT3_TOOL_EDITS,
+  glob: [...OPENCODE_CONFLICT3_TOOL_EDITS.glob,
+    ['- You have the capability to call multiple tools in a single response. It is always better to speculatively perform multiple searches as a batch that are potentially useful.', '']],
+});
 export const OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS = Object.freeze({
   bash: OPENCODE_TRIM_TOOL_EDITS.bash,   // round 1: also the "File search: Use Glob" line and `find`
   read: OPENCODE_TRIM_TOOL_EDITS.read,   // round 1: also the glob-tool pointer
@@ -317,7 +325,8 @@ function opencodeHarnessTrimCombo(m, { apiModel, stateDir }) {
   if (!stateDir) throw new Error(`OC_HARNESS_TRIM=${m}: stateDir required`);
   const noglob = base === 'conflict-noglob';
   const keepAll = base === 'conflict2';
-  const c3 = base === 'conflict3';
+  const c3 = base === 'conflict3' || base === 'conflict4';
+  const c4 = base === 'conflict4';
   const original = readFileSync(OPENCODE_GPT_ORIGINAL, 'utf8');
   if (original.split(OPENCODE_CONFLICT_PROMPT_BULLET).length !== 2) throw new Error(`OC_HARNESS_TRIM=${m}: Glob/Grep bullet not found once in the original prompt`);
   const conflictPrompt = original.replace(OPENCODE_CONFLICT_PROMPT_BULLET, '');
@@ -326,7 +335,7 @@ function opencodeHarnessTrimCombo(m, { apiModel, stateDir }) {
     if (!prompt.includes(OPENCODE_CONFLICT2_PROMPT_EDIT[0])) throw new Error(`OC_HARNESS_TRIM=${m}: "especially file reads" not found in the prompt`);
     prompt = prompt.split(OPENCODE_CONFLICT2_PROMPT_EDIT[0]).join(OPENCODE_CONFLICT2_PROMPT_EDIT[1]);
   }
-  const baseEdits = c3 ? OPENCODE_CONFLICT3_TOOL_EDITS : keepAll ? OPENCODE_CONFLICT2_TOOL_EDITS : noglob ? OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS : OPENCODE_CONFLICT_TOOL_EDITS;
+  const baseEdits = c4 ? OPENCODE_CONFLICT4_TOOL_EDITS : c3 ? OPENCODE_CONFLICT3_TOOL_EDITS : keepAll ? OPENCODE_CONFLICT2_TOOL_EDITS : noglob ? OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS : OPENCODE_CONFLICT_TOOL_EDITS;
   const lineEdits = (variant && opencodeBatchToolEdits(variant)) || {};
   const clash = Object.keys(lineEdits).filter(k => k in baseEdits);
   if (clash.length) throw new Error(`OC_HARNESS_TRIM=${m}: the variant and the base both edit ${clash.join(', ')}`);

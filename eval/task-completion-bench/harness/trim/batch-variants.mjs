@@ -33,6 +33,10 @@ const R5_FIND = '- If you need the code at an exact name, not only where it is, 
 // EFFICIENCY_LINE_3 (owner 2026-09-29): EFFICIENCY_LINE_2 made request-neutral — the change/check part
 // applies only to requests that need code changes; answers and plans are named as their own outcomes.
 export const EFFICIENCY_LINE_3 = '- Work efficiently: start from what the request and any error output point to, and open more only when the evidence requires it. Do what the request asks, whether an answer, a plan or a change, and nothing unrelated. For requests that need code changes, make the change that fully solves the request, including the edits it needs elsewhere, check it with the checks the project has, again after each fix, and stop when it is done. For a question, answer from the evidence you gathered.';
+// EFFICIENCY_LINE_4 / OC_TODO4 (audit beh-oc-p4, 2026-09-29): EFFICIENCY_LINE_3 plus fixes for the three
+// residual waste patterns — chains of one-search turns (22.9% of cost), a separate review turn after the
+// passing check (9.7%), and edits after the passing check (5.4%).
+export const EFFICIENCY_LINE_4 = '- Work efficiently: start from what the request and any error output point to. When you need to search, send the searches you would try in one turn, and open files only when the evidence requires it. Do what the request asks, whether an answer, a plan or a change, and nothing unrelated. For requests that need code changes, make the change that fully solves the request in one pass, including the related edits elsewhere and in comments or docs, before you check it; check it with the checks the project has, again after each fix, and when that check passes, give your final answer. For a question, answer from the evidence you gathered.';
 export const EFFICIENCY_LINE_2 = '- Work efficiently: start from the files the request and any error output point to, and open more only when the evidence requires it. Make the change that fully solves the request, including the edits it needs elsewhere, and nothing unrelated. Check it with the checks the project has, again after each fix, and stop when it is done. For a question, answer from the evidence you gathered.';
 export const EFFICIENCY_LINE = '- Work efficiently: start from the files the task and any error output point to; open more files only when the evidence requires it; make the smallest change that solves the task; verify it once with the checks the project has; stop when it is done.';
 const R5_ALT = '- When you guess at a name that may not exist, put every spelling you would try into one regex alternation `(a|b|c)` in a single ss-grep, not one guess per turn.';
@@ -155,6 +159,7 @@ const OC_DIFF = '- When you run the test suite after your last edit, send git di
 // todo3: todo2 + the last step (audit: with todo2 the final item could stay in_progress).
 const OC_TODO3 = '- Send todowrite as a parallel call in the same turn as your next tool call, never as a turn of its own. Mark a step in_progress in the call that starts it, and completed in the call that starts the next one; mark the last step completed together with your final check.';
 const OC_TODO2 = '- Send todowrite as a parallel call in the same turn as your next tool call, never as a turn of its own. Mark a step in_progress in the call that starts it, and completed in the call that starts the next one.';
+const OC_TODO4 = '- Send todowrite as a parallel call in the same turn as your next tool call, never as a turn of its own. Mark a step in_progress in the call that starts it, and completed in the call that starts the next one; mark the last step completed in the same turn as the check that confirms it.';
 const OC_TODO_DESC_EDITS = [
   ["- Update status in real time; don't batch completions\n", ''],
   ['\nWhen in doubt, use it.\n', '\n'],
@@ -181,6 +186,8 @@ Object.assign(OPENCODE_BATCH_VARIANTS_R2, {
   // owner 2026-09-29: keep "When in doubt, use it." in the todowrite description (no todowrite edit).
   todo3eff2k: { bullet: `${OC_BULLET}\n${OC_TODO3}\n${EFFICIENCY_LINE_2}` },
   todo3eff3k: { bullet: `${OC_BULLET}\n${OC_TODO3}\n${EFFICIENCY_LINE_3}` },
+  // todo4: audit beh-oc-p4 fixes (glob 'speculative batch' sentence removed; its intent moves into the efficiency line).
+  todo4: { bullet: `${OC_BULLET}\n${OC_TODO4}\n${EFFICIENCY_LINE_4}` }, // pair with base conflict4 (drops the glob 'speculative batch' sentence)
   todo2eff: { bullet: `${OC_BULLET}\n${OC_TODO2}\n${EFFICIENCY_LINE}`, edits: { todowrite: [OC_TODO_DESC_EDITS[1]] } },
 });
 /** Tool-description edits for an opencode batch variant (applied by opencode-trim-plugin.mjs), or null. */
