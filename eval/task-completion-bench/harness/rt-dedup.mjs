@@ -39,7 +39,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, appendFileSync, readdirSync, statSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { extractFailureSignatures } from './rt-condense-lib.mjs';
+import { extractFailureSignatures, firstErrorLines } from './rt-condense-lib.mjs';
 
 /** Kill-switch. SS_RUNTESTS_DEDUP=0 → the lever is inert (rows stamped rtDedup:false). */
 export const RT_DEDUP_ON = process.env.SS_RUNTESTS_DEDUP !== '0';
@@ -140,14 +140,20 @@ export function parseExitCode(text) {
  * `infra:true` (network/broker/docker error rather than test failures) suppresses
  * condensation entirely — that output is not a test result.
  */
-export function summarizeRunTestsResult(text, { exitCode = parseExitCode(text) } = {}) {
+export function summarizeRunTestsResult(text, { exitCode = parseExitCode(text), status = null } = {}) {
   const normalizedExit = Number.isInteger(exitCode) ? exitCode : parseExitCode(text);
   const { sigs, infra } = extractFailureSignatures(text);
   const ordered = [...sigs];
   const failures = ordered.slice().sort();
   const firstFailure = ordered.slice(0, 2).join(' | ').slice(0, 220);
+  // `status` is the shim's classified status (PASS/FAIL/INFRA/ERROR) when the caller has
+  // it. ERROR = build/collection/load error: the summary cites the first error line instead
+  // of a failure count. The digest is deliberately unchanged (exit + failure set).
+  const buildError = status === 'ERROR';
+  const firstError = buildError ? (firstErrorLines(text, { max: 1, maxChars: 200 })[0] || '') : '';
   return {
     exitCode: normalizedExit, infra, failures, failureCount: failures.length, firstFailure,
+    status: status || null, buildError, firstError,
     digest: sha(String(normalizedExit) + '\n' + failures.join('\n')),
   };
 }
@@ -225,10 +231,22 @@ export function dedupDecision(state, key, digest) {
  * different key, hence full output by construction. The flag still works for
  * hand-debugging; it is simply undocumented to the agent.
  */
+//
+// "suite green" is said ONLY for exit 0 with no parsed failure (2026-09-29): zmap__zlint-299
+// got "exit 2, 0 failed (suite green)" for a Go COMPILE failure, and jest runs whose `✕`
+// names the parser cannot read got the same line with "Tests: 3 failed" above it.
 export function buildDedupSummary({ citeCall, result }) {
-  const failClause = result.failureCount
-    ? `${result.failureCount} failed, first failure: ${result.firstFailure}`
-    : '0 failed (suite green)';
+  let failClause;
+  if (result.buildError) {
+    failClause = 'BUILD/COLLECTION ERROR - the suite did not build, collect or load, so there is no test result (NOT green)' +
+      (result.firstError ? `, first error: ${result.firstError}` : '');
+  } else if (result.failureCount) {
+    failClause = `${result.failureCount} failed, first failure: ${result.firstFailure}`;
+  } else if (result.exitCode !== 0) {
+    failClause = 'no failing test could be parsed, but the exit code is non-zero - NOT green; read the output of that call';
+  } else {
+    failClause = '0 failed (suite green)';
+  }
   return `${DEDUP_MARKER} identical source diff + command as call #${citeCall}; result unchanged: ` +
     `exit ${result.exitCode}, ${failClause}.\n` +
     `Change the code before re-running.`;

@@ -162,7 +162,7 @@ function buildTimeline(rollout) {
     for (const p of surfaced) seen.add(p);
 
     // test-status change
-    const vm = [...t.outText.matchAll(/\[run_tests verdict\] status=(PASS|FAIL|INFRA)/g)];
+    const vm = [...t.outText.matchAll(/\[run_tests verdict\] status=(PASS|FAIL|INFRA|ERROR)/g)];
     let testChange = false, verdict = null;
     if (vm.length) {
       verdict = vm[vm.length - 1][1];

@@ -71,6 +71,124 @@ export const NETWORK_ERROR_ERE =
 export const INFRA_ERROR_RE =
   new RegExp(`(NETWORK UNAVAILABLE|no response from test broker|\\[run_tests exit=|${NETWORK_ERROR_ERE}|Cannot connect to the Docker daemon|docker: Error)`);
 
+// ---- Build / collection / load errors (2026-09-29) ------------------------------
+// zmap__zlint-299 (hc-claudecode-20260929-0423-L2): `go test` did not COMPILE
+// (`undefined: util.PoisonOID`), exit 2. The in-container promote grep matches neither
+// `undefined:` nor go's `FAIL\t<pkg> [build failed]`, `tail -45` held only the passing
+// util package, so the shim parsed 0 failures, footer said trustworthy=yes and the dedup
+// repeat said "0 failed (suite green)". The agent never saw the compiler line.
+//
+// Two vocabularies, deliberately different widths:
+//
+// BUILD_ERROR_MARKER_ERE — CLASSIFICATION. High precision only: phrases a toolchain prints
+// when the suite could not be built, collected or loaded, never on an ordinary failing
+// test. It decides status=ERROR, so every alternative must be one that a passing or a
+// normally-failing suite cannot print. `error:` is NOT here: cargo prints
+// "error: test failed, to rerun pass --lib" on every ordinary failing test.
+//
+// FIRST_ERROR_ERE — DISPLAY ONLY. The wider set of lines worth showing the agent first when
+// the output is too long for the tail to hold them (the "first errors" excerpt the shim
+// prints on a non-zero exit). A false positive here costs a few bytes, never a verdict.
+//
+// Both ERE-safe (the shim greps them with `grep -E`: no non-capturing groups, no \b, no \d).
+export const BUILD_ERROR_MARKER_ERE = [
+  '\\[build failed\\]', '\\[setup failed\\]',                          // go test
+  'ERROR collecting', 'errors? during collection',                     // pytest
+  'ImportError while importing test module', 'Failed to import test module', // pytest / unittest
+  'Test suite failed to run',                                          // jest
+  'error: could not compile', 'could not compile `',                   // cargo
+  'error TS[0-9]+', 'error CS[0-9]+',                                  // tsc / dotnet csc
+  'COMPILATION ERROR', 'Compilation failure', 'Compilation failed',    // maven / gradle / swift
+  'cannot find symbol',                                                // javac
+  '\\.go:[0-9]+:[0-9]+: ',                                             // go compiler / vet line
+  '\\.(c|cc|cpp|cxx|h|hpp|m|mm):[0-9]+:[0-9]+: (fatal )?error:',       // gcc / clang
+].join('|');
+
+export const FIRST_ERROR_ERE = [
+  BUILD_ERROR_MARKER_ERE,
+  'undefined: ', 'undefined reference', '[Cc]annot find', 'No module named',
+  'SyntaxError', 'ModuleNotFoundError', 'ImportError', 'IndentationError',
+  'error\\[E[0-9]+\\]', '^error: ', '^Error: ', '^panic: ', 'BUILD FAILED', 'Build FAILED',
+].join('|');
+
+export const BUILD_ERROR_MARKER_RE = new RegExp(BUILD_ERROR_MARKER_ERE);
+export const FIRST_ERROR_RE = new RegExp(FIRST_ERROR_ERE);
+
+// A summary that reports a NON-ZERO failed-test count ("Tests: 3 failed", "1 failed,
+// 600 passed", "Failed: 2", "FAILED (failures=1)"). When the output carries one, a run
+// with exit≠0 and no parsed per-test signature is an UNPARSED TEST FAILURE (jest `✕`
+// names, observed on ember-cli__eslint-plugin-ember-551), not a build error: status stays
+// FAIL, but it is still untrustworthy — an empty introduced set proves nothing.
+const NONZERO_FAILURE_SUMMARY_RE =
+  /(?:\b[1-9]\d*\s+(?:tests?\s+)?(?:failed|failing|failures?)\b|\b(?:failed|failures?|failing)\s*[:=(]?\s*[1-9]\d*\b)/i;
+
+/**
+ * First `max` display-worthy error lines, in output order, de-duplicated, each cut to
+ * `maxChars`. Display only — never feeds a verdict.
+ */
+export function firstErrorLines(text, { max = 6, maxChars = 240 } = {}) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of String(text ?? '').split('\n')) {
+    const line = stripAnsi(raw).replace(/\s+$/, '');
+    if (!line.trim() || !FIRST_ERROR_RE.test(line)) continue;
+    const cut = line.length > maxChars ? line.slice(0, maxChars) + '…' : line;
+    if (seen.has(cut)) continue;
+    seen.add(cut); out.push(cut);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** Normalized build/collection marker lines (for baseline comparison). */
+export function extractBuildErrorMarkers(text) {
+  const markers = new Set();
+  for (const raw of String(text ?? '').split('\n')) {
+    const line = stripVolatileFailurePrefix(stripAnsi(raw));
+    if (!BUILD_ERROR_MARKER_RE.test(line)) continue;
+    const sig = normalizeFailureSignature(line);
+    if (sig) markers.add(sig);
+  }
+  return markers;
+}
+
+/**
+ * Decide whether a non-zero, non-infra run is a BUILD/COLLECTION/LOAD error (no test
+ * result exists) rather than a test failure. Pure; the caller has already ruled out infra
+ * and timeouts.
+ *
+ *   exit 0                                   → never an error (the runner said it ran).
+ *   a build marker NOT present in baseline   → error. Pre-existing markers (a package that
+ *                                              never builds in the image) stay FAIL, so the
+ *                                              sfmc-devtools trap — one pre-existing line
+ *                                              forcing EVERY call untrustworthy — cannot recur.
+ *   0 parsed failures + no non-zero summary  → error (nothing says a test ran and failed).
+ *   0 parsed failures + non-zero summary     → unparsed test failure (FAIL, untrustworthy).
+ *
+ * @returns {{ buildError: boolean, unparsedFailure: boolean, newMarkers: string[] }}
+ */
+export function classifyBuildError({ text, exitCode, sigCount, baselineMarkers = null }) {
+  if (!Number.isInteger(exitCode) || exitCode === 0) return { buildError: false, unparsedFailure: false, newMarkers: [] };
+  const markers = extractBuildErrorMarkers(text);
+  const newMarkers = [...markers].filter(m => !(baselineMarkers instanceof Set && baselineMarkers.has(m)));
+  if (newMarkers.length) return { buildError: true, unparsedFailure: false, newMarkers };
+  if (sigCount > 0) return { buildError: false, unparsedFailure: false, newMarkers: [] };
+  const summary = String(text ?? '').split('\n').some(l => {
+    const line = stripAnsi(l);
+    return NONZERO_FAILURE_SUMMARY_RE.test(line) && !FAILURE_NEGATIVE_RE.test(line);
+  });
+  return summary
+    ? { buildError: false, unparsedFailure: true, newMarkers: [] }
+    : { buildError: true, unparsedFailure: false, newMarkers: [] };
+}
+
+/** One-line, tail-safe note rendered directly above the footer on status=ERROR. */
+export function renderBuildErrorNote({ exitCode, firstErrors = [] }) {
+  const first = firstErrors.length ? ` First error: ${firstErrors[0].trim().slice(0, 200)}` : '';
+  return `[run_tests] BUILD/COLLECTION ERROR: exit ${exitCode} and the suite did not build, collect or load ` +
+    `- this is NOT a test result and NOT green. Fix the error first.${first}`;
+}
+
 // Aggregate SUMMARY-count lines ("2 tests failed", "Failures: 1", "1 failed, 600
 // passed"). These are useful to PROMOTE in the condenser (they carry the count) but
 // must NOT become per-test failure SIGNATURES — the count varies run to run, so a
@@ -300,8 +418,11 @@ export function buildRunTestsFooter({
   status, verdict = status, scope = 'full', exitCode = 0,
   baselineDiff = null, trustworthy = false, guidance = 'none',
 } = {}) {
-  const normalizedStatus = ['PASS', 'FAIL', 'INFRA'].includes(status) ? status : 'INFRA';
-  const normalizedVerdict = ['PASS', 'FAIL', 'INFRA'].includes(verdict) ? verdict : 'INFRA';
+  // ERROR (2026-09-29) = the suite did not build/collect/load: no test result exists.
+  // Distinct from INFRA (environment, "do not debug the harness") and from FAIL (tests ran).
+  const STATUSES = ['PASS', 'FAIL', 'INFRA', 'ERROR'];
+  const normalizedStatus = STATUSES.includes(status) ? status : 'INFRA';
+  const normalizedVerdict = STATUSES.includes(verdict) ? verdict : 'INFRA';
   const normalizedScope = scope === 'targeted' ? 'targeted' : 'full';
   const normalizedExit = Number.isInteger(exitCode) ? exitCode : 1;
   const introduced = baselineDiff?.introduced || [];
