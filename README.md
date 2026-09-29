@@ -541,7 +541,7 @@ who calls what
 <td align="center" valign="top" width="33%">
 <a href="#tool-ss-read"><img src="assets/tools/ss-read.svg" width="80" alt="ss-read icon" /></a><br/>
 <b>6. <a href="#tool-ss-read"><code>ss-read</code></a></b><br/>
-read files in batches
+read files from disk
 </td>
 </tr>
 </table>
@@ -834,33 +834,43 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 ---
 
 <a id="tool-ss-read"></a>
-### <img src="assets/tools/ss-read.svg" width="40" align="center" alt="" /> 6. `ss-read`: batched reads from disk
+### <img src="assets/tools/ss-read.svg" width="40" align="center" alt="" /> 6. `ss-read`: read files from disk
 
 <img src="assets/tools/ss-read-io.svg" alt="One read call names three files with line ranges. All three come back from disk at once: code with line numbers, a note on what is left unread, and a one-line reminder for lines the agent already saw." width="100%" />
 
-### 📚 Many files, one call
-> Read up to 20 files in one call, each with its own line range. Every file comes straight from disk, so the agent always sees your current code.
+### 📖 Read the code, see what you skipped
+> Give `ss-read` a file and a line range. It reads straight from disk, so the agent always sees your current code. It also tells the agent what it has not read yet.
 
 <table>
 <tr><td colspan="2"><b>What the agent gets</b></td></tr>
-<tr>
-<td width="50%" valign="top">
+<tr><td width="50%" valign="top">
 
 **🔢 Line numbers that fit the agent**
 
 - Each agent's edit tool expects its own format. Claude Code gets `12<TAB>`, opencode and Cursor get `12:`, Codex gets none.
 - The wrong format can end up inside an edit. The agent is detected automatically.
 
-</td>
-<td width="50%" valign="top">
+</td><td width="50%" valign="top">
 
-**🧭 Less reading, no rereading**
+**🧭 What is left in the file**
 
-- ***What is left:*** a partial read names the functions it skipped and the command to read them.
-- ***No double reads:*** lines the agent already saw, unchanged since, come back as a one-line reminder.
+- ***Below:*** a partial read names the functions after it and the command to read them. Names that match the agent's searches come first.
+- ***Above:*** if the code uses a field or constant declared above the range, that name is shown too.
 
-</td>
-</tr>
+</td></tr>
+<tr><td width="50%" valign="top">
+
+**♻️ No double reads**
+
+- Lines the agent already saw, unchanged since, come back as a one-line reminder instead of the same code again.
+
+</td><td width="50%" valign="top">
+
+**📚 Many files, one call**
+
+- The `read` MCP tool takes up to 20 files, each with its own line range, and reads them in parallel.
+
+</td></tr>
 </table>
 
 <details>
@@ -868,9 +878,11 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 <br/>
 
-- `ss-read <file> <start> <end>` reads one file. Batches go through the `read` MCP tool or `sweet-search read`.
+- Ranges are forgiving: `ss-read f.js 10 20`, `10-20` and `10:20` all work. `ss-read f.js 40 5` reads 5 lines from line 40.
+- A wrong path gets a hint to find the file with `ss-grep` or `ss-search`.
 - Minified and generated files are refused, so the agent cannot load thousands of useless tokens by mistake.
 - Set the line-number format yourself with `SS_READ_GUTTER=tab|colon|none`.
+- Also available as `sweet-search read`.
 
 </details>
 
