@@ -271,9 +271,9 @@ export function resolveActiveHarnesses({ optInHarnesses, noClaude = false } = {}
 
 export function checkNodeVersion() {
   const major = parseInt(process.versions.node, 10);
-  if (major < 18) {
+  if (major < 22) {
     throw new Error(
-      `Node.js ${process.versions.node} is below the minimum required version (18.0.0).\n` +
+      `Node.js ${process.versions.node} is below the minimum required version (22.0.0).\n` +
       `  Please upgrade Node.js: https://nodejs.org/`
     );
   }

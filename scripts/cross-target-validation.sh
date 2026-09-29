@@ -168,7 +168,7 @@ ls -lh "$STAGING/"
 
 sync 2>/dev/null || true
 
-# NOTE: No Docker build step. We use node:20-slim directly for all platforms
+# NOTE: No Docker build step. We use node:22-slim directly for all platforms
 # with inline apt-get. This avoids Colima VZ mount propagation bugs where
 # `docker build` invalidates the mount state between pack and run.
 # The Dockerfile.cross-validation is kept for CI workflows that use BuildKit.
@@ -213,7 +213,7 @@ run_docker_test() {
       --platform "$docker_platform" \
       -v "$RESULTS_DIR:/results" \
       "${env_flags[@]}" \
-      node:20-slim \
+      node:22-slim \
       bash -c 'mkdir -p /tarballs && cd /tarballs && tar xf - && mv run-validation.sh / && chmod +x /run-validation.sh && apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq --no-install-recommends python3 make g++ file >/dev/null 2>&1 && bash /run-validation.sh' \
       2>&1 | tail -50 || exit_code=$?
 

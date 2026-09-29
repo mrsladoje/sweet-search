@@ -101,8 +101,8 @@ describe('parseInitArgs', () => {
 // ---------------------------------------------------------------------------
 
 describe('checkNodeVersion', () => {
-  it('does not throw for Node >= 18', () => {
-    // Current runtime is >= 18 or tests would not be running
+  it('does not throw for Node >= 22', () => {
+    // Current runtime is >= 22 or tests would not be running
     expect(() => checkNodeVersion()).not.toThrow();
   });
 });
