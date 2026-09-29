@@ -389,3 +389,11 @@ untrimmed 0.989 (1/6) · read6 1.057 **+7%** (1/6) · read7 0.915 **−7%** (2/6
 | read6fs (4 cells) | 20 | −3.5% | [−12.5, +6.0] | −7.8% [−16.8, +1.8] |
 | read7 (4 cells) | 20 | +2.6% | [−8.2, +14.1] | +7.3% [−4.4, +19.9] |
 **STOP RULE (Claude Code):** 3 rounds without a gain whose interval excludes zero; the behaviour audit showed read6fs's lead is task luck. Claude Code final = **no text change** (the shipped product harness stays as is). Solves equal within the svgr lottery.
+
+### p6-cx-A1 (Codex, rotation A; ledger fix4 — defect batch 2 applied)
+| arm | solved | real $ (4 tasks) | Δ | w/o bingo | turns |
+|---|---|---|---|---|---|
+| untrimmed | 3/4 | 0.0799 | — | 0.0593 | 87 |
+| yt3batch2 | 3/4 | 0.0767 | −4% | 0.0481 (−19%) | 62 |
+| yt3batch3 | 3/4 | 0.0728 | −9% | 0.0540 (−9%) | 66 |
+First Codex cell where ember is SOLVED in every arm (3/4, was 2/4): the jest-name fix lets the agent see which test broke. rows.json now reports ranTests=true and codexPollCalls.
