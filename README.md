@@ -505,7 +505,7 @@ to be *consumed by an agent* — a useful answer, not a wall of matches to scrol
 | 3. [`ss-find`](#tool-ss-find) | a regex **+** a query | regex matches, **semantically re-ranked, as code blocks** |
 | 4. [`ss-semantic`](#tool-ss-semantic) | a file **+** a question | just the **relevant spans** of that file |
 | 5. [`ss-trace`](#tool-ss-trace) | a symbol | **callers + callees + impact**, in one call |
-| 6. [`ss-read`](#tool-ss-read) | a file (± line range) | exact bytes **+ symbol metadata** |
+| 6. [`ss-read`](#tool-ss-read) | a file (± line range) | exact bytes **+ what's left unread** |
 
 ---
 
@@ -714,24 +714,24 @@ bounds impact traversal (1–4).
 ---
 
 <a id="tool-ss-read"></a>
-### 6. `ss-read` — exact bytes, with the index's knowledge attached
+### 6. `ss-read` — the file, straight from disk
 
 ```bash
 ss-read src/db/pool.js 120 180
 ```
 
-A read tool that is **filesystem-grounded by construction**: bytes come straight from disk (never from
-the index, so never stale), but each indexed file arrives annotated with its **cAST chunk metadata** —
-symbol name, entity type, signature, line span — joined from the AST chunk index. The agent gets the
-code *and* the structural map of what it's looking at in one call: cite, navigate, or trace next
-without another search.
+Exact bytes from disk, never from the index, so never stale. On top, three small things aimed at the agent's next move:
+
+- **Line numbers in your harness's dialect.** `N<TAB>` for Claude Code, `N:` for opencode and Cursor, none for Codex — each matched to how that harness's edit tool finds its anchor, so a gutter never leaks into an edit.
+- **What you haven't read.** A range read names the unread symbols around it — ranked by what the session has been searching for — plus the exact command to continue.
+- **No paying twice.** Re-read a span the agent has already seen and you get a one-line receipt, not the bytes again.
 
 <details>
 <summary><b>More</b></summary>
 
-- The CLI/MCP form scales it up: `sweet-search read <file...>` (and the `read` MCP tool) batches **1–20 files in a single call**, each with the same symbol metadata — twenty files for the price of one tool invocation.
-- **Query-aware continuation** (agent mode): a range read that stops before EOF names the unread symbols below it — ranked by relevance to the session's recent queries, not just declaration order — plus the exact command to continue.
-- **Shown-span receipts** (agent mode, default-on): the daemon remembers what a session has already been shown; an exact re-read collapses to a one-line receipt instead of resending the bytes.
+- `sweet-search read <file...>` and the `read` MCP tool take up to 20 files per call.
+- Files the indexer skipped by content (minified bundles, generated code) are refused with a pointer to the native read — no 13k-token surprise in context.
+- The harness is detected from its environment or process tree; force a form with `SS_READ_GUTTER=tab|colon|none`. Reads under 15 lines get no gutter.
 
 </details>
 
@@ -835,7 +835,7 @@ agent to search *well*.
 
 <a id="idx-enrich"></a>
 ### 🏷️ Metadata — context the encoder can actually see
-- Every chunk ships its **symbol name · entity type · signature · line span** — the metadata that powers the code graph, `ss-read` annotations, and the self-contained answers everywhere else.
+- Every chunk ships its **symbol name · entity type · signature · line span** — the metadata that powers the code graph, `ss-read`'s unread-symbol hints, and the self-contained answers everywhere else.
 - **Contextual enrichment:** before embedding, each chunk is prefixed with a structured preamble assembled from the AST + code graph — *file path · enclosing-scope breadcrumb · name & type · merged siblings · the imports it actually uses*. **Both** encoders see it, so a bare `getId()` still retrieves on the class and module around it.
 - Our nod to **[Anthropic's Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval)** — except they prepend an *LLM-generated* summary (one model call per chunk); we derive the context **deterministically from structure**: no LLM, no per-chunk inference, regenerated for free on every reindex. **Tuned per language** from GenCodeSearchNet ablations — Python stays minimal, the Java family keeps a slug-stripped path, JS/Ruby/Go/C/C++/Rust get the full preamble where closures and imports earn their keep.
 
