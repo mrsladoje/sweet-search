@@ -285,3 +285,14 @@ Queue results/hc-queue4.txt: p4-oc x4 (untrimmed v conflict3+todo3eff2k v confli
 - Residual waste: (1) guessed paths packed with reads ($0.111, 3.1%); (2) edits, then the check in a separate turn ($0.108) — the product's "Combine dependent shell steps…" line overlaps the packing rule; (3) brighterscript re-runs because the run_tests baseline diff flags 2 timestamped "Error when calling plugin" lines as new failures in ALL arms (harness defect, owner decision).
 - First request ≈ $0.049/rollout = largest single cost (not addressable by prompt wording without cutting text).
 - Next: `read7` = read6 + packing limited to known files (named in the request or shown by a search/listing) + "edits go out together with the check that tests them"; product "Combine dependent shell steps…" line removed. Queued p5-cc ×4 (untrimmed v read6 v read7).
+
+### p4-cx-A2 (Codex, rotation A, cell 2; fixed ledger)
+| arm | solved | real $/task | Δ | turns | calls |
+|---|---|---|---|---|---|
+| untrimmed | 2/4 | 0.0211 | — | 91 | 52 |
+| yt3batch2 | 2/4 | 0.0196 | −8% | 69 | 44 |
+| yt3batch2w | 2/4 | 0.0203 | −5% | 71 | 43 |
+Smaller than A1 (−24/−26%); turns −24%/−22% hold in both cells. Running mean A: yt3batch2 −16%, 2w −16%.
+
+### run_tests timestamp defect (owner go 2026-09-29)
+brighterscript lines start `[12:43:09:4620 PM]`; LEADING_TIMESTAMP_RE missed the ':' fraction and AM/PM, so 2 "Error when calling plugin" lines were NEW failures every run (all arms). Fix 1efeeec (branch rt-timestamp-fix) — applied after p4-cx-B2 with a ledger re-sweep; p5 cells run on the fixed tool; never pool across it.
