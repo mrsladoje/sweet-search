@@ -318,14 +318,14 @@ export async function checkOrphans({ exec } = {}) {
     return { ok: true, message: 'Orphan check skipped (no exec injected)' };
   }
   try {
-    const r = await exec('pgrep -c -f "track-b|gepa|aqe-mcp|_ss-helpers"');
+    const r = await exec('pgrep -c -f "track-b|gepa|_ss-helpers"');
     const count = parseInt((r.stdout || '0').trim(), 10);
     if (count > 5) {
       return {
         ok: false,
         message:
-          `${count} orphan processes detected (pgrep: track-b|gepa|aqe-mcp|_ss-helpers). ` +
-          `Clean them up before starting a run (see memory/project_aqe_mcp_orphans.md).`,
+          `${count} orphan processes detected (pgrep: track-b|gepa|_ss-helpers). ` +
+          `Clean them up before starting a run.`,
       };
     }
     return { ok: true, message: `Orphan processes: ${count} (≤5, OK)` };

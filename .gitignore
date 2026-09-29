@@ -130,8 +130,7 @@ memory/
 # Bun lockfile (project uses npm)
 bun.lock
 
-# Claude Flow and AgenticQE
-.agentic-qe/
+# Claude Flow
 .agentdb/
 .claude-flow/
 .claude/agent-overrides/
