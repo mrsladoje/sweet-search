@@ -683,14 +683,30 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 ### 🎯 Exact matches, semantically reranked
 > The idea comes from LightOn's [ColGrep](https://github.com/lightonai/next-plaid/tree/main/colgrep). We rebuilt it on the `ss-grep` index, with our own MaxSim kernel.
 
-<table><tr><td>
+<table>
+<tr><td colspan="2"><b>What makes it fast</b></td></tr>
+<tr>
+<td width="50%" valign="top">
 
-**What makes it fast**
+**⚡ Built on `ss-grep`**
 
-- ⚡ **Built on `ss-grep`.** The regex runs on the same index that makes `ss-grep` 10.2× faster than ripgrep. At the same time, your query is encoded into token embeddings.
-- 🦀 **Our own MaxSim kernel.** Rust scores every match against code embeddings stored at index time, on all cores. 231 matches take 27 ms (1.26 s in plain JS). No model reads your code at query time.
+- The regex runs on the sparse n-gram index.
+- That index makes `ss-grep` 10.2× faster than ripgrep.
+- Your query is turned into embeddings at the same time.
 
-</td></tr></table>
+</td>
+<td width="50%" valign="top">
+
+**🦀 Our own MaxSim kernel**
+
+- Rust + SIMD, on all cores.
+- Code embeddings are stored at index time, so no model reads your code at query time.
+- 231 matches: 1.26 s in plain JS → 27 ms.
+- July rewrite: another 4–6× faster.
+
+</td>
+</tr>
+</table>
 
 <details>
 <summary><b>More</b></summary>
