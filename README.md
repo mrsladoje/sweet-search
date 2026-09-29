@@ -485,13 +485,15 @@ Code search is a crowded space. Here's an honest read on where sweet-search wins
 
 <sub>✅ yes · ⚠️ partial / with caveats · ❌ no. Verified September 2026; capabilities drift.</sub>
 
-<details><summary><sub>Footnotes</sub></summary>
+<details><summary>Footnotes</summary>
 
 <sub>¹ claude-context defaults to OpenAI/Voyage embeddings + Zilliz Cloud. Its local path (Milvus Lite + Ollama) needs no API key, but still runs Milvus + Ollama.<br/>² SocratiCode runs Qdrant and Ollama for you in Docker, so Docker must be running.<br/>³ GitNexus local embeddings are opt-in (`analyze --embeddings`).<br/>⁴ Outside this table, [ColGREP](https://github.com/lightonai/next-plaid) (LightOn) also runs ColBERT code search locally, as a grep-style search CLI.<br/>⁵ Reports token / cost / tool-call savings, not NL→code retrieval quality.<br/>⁶ PolyForm Noncommercial.<br/>⁷ Runs on Windows via WSL2.<br/>⁸ Indexes each project separately; one session can query several indexed projects, with no cross-repo links.</sub>
 
 </details>
 
 <sub>Competitors: <a href="https://github.com/colbymchenry/codegraph">CodeGraph</a> · <a href="https://github.com/abhigyanpatwari/GitNexus">GitNexus</a> · <a href="https://github.com/DeusData/codebase-memory-mcp">codebase-memory</a> · <a href="https://github.com/zilliztech/claude-context">claude-context</a> · <a href="https://github.com/giancarloerra/socraticode">SocratiCode</a> · <a href="https://github.com/lightonai/next-plaid">ColGREP</a> · <a href="https://github.com/oraios/serena">Serena</a> · <a href="https://sourcegraph.com">Sourcegraph</a> · <a href="https://github.com/continuedev/continue">Continue</a> · <a href="https://github.com/yoanbernabeu/grepai">grepai</a> · <a href="https://github.com/cocoindex-io/cocoindex-code">cocoindex-code</a></sub>
+
+---
 
 ## 🧰 The Six Tools
 
