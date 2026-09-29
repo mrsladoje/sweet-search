@@ -30,8 +30,22 @@
 // observed from real runners — because blanket case-insensitive `fail` matching was
 // measured on 12,752 retained output lines and fired on passing test NAMES
 // ("✓ should show failures and exit with 1 on fail") plus JUnit XML attributes.
+//
+// Jest (2026-09-29, ember-cli__eslint-plugin-ember-551): a failing test is named ONLY by its
+// `● <describe> › <test>` block header and, in verbose mode, by a `✕ <test>` list line; the
+// file-level `FAIL <path>` line is often in the elided middle. Neither form matched, so
+// "Tests: 4 failed" parsed to 0 signatures and every verdict read trustworthy=no. The header
+// form is anchored to line start; `● Console` and jest's warning blocks are not failures
+// (JEST_NON_FAILURE_HEADER_RE below).
 export const FAILURE_INDICATOR_RE =
-  /(\bFAILED\b|\bFAIL:|\bFAIL\b|not ok |AssertionError|panicked at|thread '[^']*' panicked|[0-9]+ tests? failed|[0-9]+ (?:failing|failures)|[Ee]rror:|error\[|Exception\b|Traceback|--- FAIL|✗|✘|✖|×|\bTests?\s+Failed\b|\bFail\s*\|\||\bFailed\s*:\s*[1-9][0-9]*\b|Failure \(|SEGFAULT|Segmentation fault|core dumped|assert(?:ion)? failed|expected .* but| FAILED\b)/;
+  /(\bFAILED\b|\bFAIL:|\bFAIL\b|not ok |AssertionError|panicked at|thread '[^']*' panicked|[0-9]+ tests? failed|[0-9]+ (?:failing|failures)|[Ee]rror:|error\[|Exception\b|Traceback|--- FAIL|✗|✘|✖|✕|×|^\s*● \S|\bTests?\s+Failed\b|\bFail\s*\|\||\bFailed\s*:\s*[1-9][0-9]*\b|Failure \(|SEGFAULT|Segmentation fault|core dumped|assert(?:ion)? failed|expected .* but| FAILED\b)/;
+
+// Jest `●` headers that open a NON-failure block: captured console output and config
+// warnings. Never a signature. (`● Validation Error` is a usage error, see USAGE_ERROR_RE.)
+const JEST_NON_FAILURE_HEADER_RE = /^\s*●\s+(?:Console\s*$|Validation (?:Warning|Error)\b|Deprecation Warning\b|Multiple configurations found\b)/;
+const JEST_CONSOLE_HEADER_RE = /^(\s*)●\s+Console\s*$/;
+const JEST_FAILURE_HEADER_RE = /^\s*●\s+\S/;
+const JEST_CROSS_LINE_RE = /^\s*✕\s/;
 
 // Negative guard: lines that MENTION failure vocabulary but report ZERO failures
 // (a green summary) must NOT be promoted or counted as failures. The zero can sit on
@@ -189,6 +203,79 @@ export function renderBuildErrorNote({ exitCode, firstErrors = [] }) {
     `- this is NOT a test result and NOT green. Fix the error first.${first}`;
 }
 
+// ---- Usage errors and empty selections (2026-09-29) ------------------------------
+// mwouts__jupytext-360 (hc-codex-20260929-1618-L3): `run_tests -k pipe` reached pytest as
+// `-k '-k'`, pytest printed "pytest: error: argument -k: expected one argument" (exit 4),
+// and the `error:` line became "1 NEW failure(s) introduced by your edits". A runner that
+// rejected its command line, or a selection that matched no test, has produced NO test
+// result: status=ERROR with a note that the command or its arguments were wrong, never a
+// failure signature.
+//
+// USAGE_ERROR_RE — the runner rejected the command line (argparse / pytest / jest config /
+// generic `usage:`). Lines matching it are never failure signatures (extractFailureSignatures).
+// NO_TESTS_RE — the command was accepted but selected nothing (pytest exit 5, jest "No tests
+// found", go "[no test files]" / "[no tests to run]", mocha "0 passing", unittest "Ran 0").
+//
+// Both only classify when (a) the marker line is NOT already on the clean baseline (the
+// full suite of a Go module prints "? pkg [no test files]" for test-less packages on every
+// green run — the same pre-existing rule as build markers), and (b) nothing in the output
+// shows that a test actually executed (TESTS_EXECUTED_RE). A usage marker also needs exit≠0.
+// A CLI project whose failing test prints its own `usage:` text still has a pass/fail
+// summary, so (b) keeps that a FAIL.
+export const USAGE_ERROR_RE =
+  /^\s*(?:ERROR: usage: |usage: |Usage: |\S+: error: (?:argument |unrecognized arguments|the following arguments are required)|ERROR: file or directory not found: |ERROR: not found: |ERROR: Wrong expression passed to '-k'|●\s+Validation Error\b|error: unexpected argument |error: Found argument )/;
+export const NO_TESTS_RE =
+  /(\bno tests ran\b|\bcollected 0 items\b|\/ 0 selected\b|^\s*No tests found\b|^\s*0 passing\b|\[no test files\]|\[no tests to run\]|^testing: warning: no tests to run|^\s*Ran 0 tests\b|^\s*running 0 tests\b)/i;
+const TESTS_EXECUTED_RE =
+  /(\b[1-9]\d*\s+(?:passed|passing|failed|failing|skipped|pending|xfailed|xpassed)\b|^\s*Ran [1-9]\d* tests?\b|^--- (?:PASS|FAIL|SKIP):|^ok\s+\S+\s+(?:\(cached\)|[\d.]+s)\s*$|^FAIL\s+\S+\s+[\d.]+s\s*$|\b(?:Passed|Failed|Total)\s*:\s*[1-9]|\bTests:\s*[1-9]|\bOK \([1-9]\d* tests?\b)/im;
+
+/** Normalized usage / no-test marker lines (for baseline comparison). */
+export function extractNoResultMarkers(text) {
+  const markers = new Set();
+  for (const raw of String(text ?? '').split('\n')) {
+    const line = stripVolatileFailurePrefix(stripAnsi(raw));
+    if (!USAGE_ERROR_RE.test(line) && !NO_TESTS_RE.test(line)) continue;
+    const sig = normalizeFailureSignature(line);
+    if (sig) markers.add(sig);
+  }
+  return markers;
+}
+
+/**
+ * Decide whether a non-infra run produced NO test result because of its command line.
+ * Pure; the caller has already ruled out infra and timeouts.
+ * @returns {{ kind: 'usage'|'no-tests'|null, line: string }}
+ */
+export function classifyNoTestResult({ text, exitCode, baselineMarkers = null }) {
+  const t = String(text ?? '');
+  const none = { kind: null, line: '' };
+  if (TESTS_EXECUTED_RE.test(stripAnsi(t))) return none;
+  const isNew = line => {
+    const sig = normalizeFailureSignature(line);
+    return !(baselineMarkers instanceof Set && baselineMarkers.has(sig));
+  };
+  let noTests = '';
+  for (const raw of t.split('\n')) {
+    const line = stripVolatileFailurePrefix(stripAnsi(raw)).replace(/\s+$/, '');
+    if (USAGE_ERROR_RE.test(line) && Number.isInteger(exitCode) && exitCode !== 0 && isNew(line)) {
+      return { kind: 'usage', line: line.trim() };
+    }
+    if (!noTests && NO_TESTS_RE.test(line) && isNew(line)) noTests = line.trim();
+  }
+  return noTests ? { kind: 'no-tests', line: noTests } : none;
+}
+
+/** One-line, tail-safe note rendered directly above the footer for a usage / empty selection. */
+export function renderNoTestResultNote({ kind, line = '', exitCode }) {
+  const what = kind === 'usage'
+    ? 'the test runner rejected the command or its arguments'
+    : 'the command selected no test';
+  const shown = line ? ` Runner said: ${line.slice(0, 200)}` : '';
+  return `[run_tests] NO TEST RAN: exit ${exitCode} and ${what} - the command/arguments were wrong. ` +
+    'This is NOT a test result, NOT green and NOT caused by your edits. `run_tests` takes no runner options: ' +
+    `pass ONE test name pattern or ONE test file path, or nothing for the full suite.${shown}`;
+}
+
 // Aggregate SUMMARY-count lines ("2 tests failed", "Failures: 1", "1 failed, 600
 // passed"). These are useful to PROMOTE in the condenser (they carry the count) but
 // must NOT become per-test failure SIGNATURES — the count varies run to run, so a
@@ -309,7 +396,7 @@ export function normalizeFailureSignature(line) {
   s = s.replace(/\b\d+(?:\.\d+)?\s*(?:ms|s|sec|secs|seconds)\b/gi, '');       // 0.03s
   s = s.replace(/0x[0-9a-fA-F]+/g, '');                                       // hex addrs
   s = s.replace(/^\s*\d+\)\s*/, '');                                          // mocha "12) "
-  s = s.replace(/^\s*(?:✗|✘|✖|×|-|\*|•)\s*/, '');                             // bullet markers
+  s = s.replace(/^\s*(?:✗|✘|✖|✕|×|●|-|\*|•)\s*/, '');                         // bullet markers
   s = s.replace(/^\s*(?:not ok\s+\d+\s*-?\s*|FAIL(?:ED)?:?\s*|--- FAIL:\s*)/i, ''); // status prefixes
   s = s.replace(/\s+/g, ' ').trim();
   return s;
@@ -327,13 +414,32 @@ export function extractFailureSignatures(text) {
   if (!t.trim()) return { ok: false, sigs: new Set(), infra: false };
   const infra = INFRA_ERROR_RE.test(t);
   const sigs = new Set();
+  const crossSigs = [];            // jest `✕ <test>` list lines, reconciled with ● headers below
+  const headerSigs = [];
+  let consoleIndent = -1;          // inside a jest `● Console` block: captured output, not failures
   for (const rawLine of t.split('\n')) {
     const line = stripVolatileFailurePrefix(stripAnsi(rawLine));
+    if (consoleIndent >= 0) {
+      if (!line.trim() || line.match(/^\s*/)[0].length > consoleIndent) continue;
+      consoleIndent = -1;
+    }
+    const consoleHeader = JEST_CONSOLE_HEADER_RE.exec(line);
+    if (consoleHeader) { consoleIndent = consoleHeader[1].length; continue; }
+    if (JEST_NON_FAILURE_HEADER_RE.test(line)) continue;
+    if (USAGE_ERROR_RE.test(line)) continue;     // the command line was rejected: no test failed
     if (!isFailureLine(line)) continue;
     if (SUMMARY_COUNT_RE.test(line)) continue;   // aggregate count, not a per-test signature
     const sig = normalizeFailureSignature(line);
     if (GENERIC_BUILD_FAILURE_RE.test(sig)) continue;
-    if (sig.length >= 6) sigs.add(sig);   // drop trivially-short signatures (collision guard)
+    if (sig.length < 6) continue;                // drop trivially-short signatures (collision guard)
+    if (JEST_CROSS_LINE_RE.test(line)) { crossSigs.push(sig); continue; }
+    if (JEST_FAILURE_HEADER_RE.test(line)) headerSigs.push(sig);
+    sigs.add(sig);
+  }
+  // One jest failure prints both `✕ <test>` and `● <describe> › <test>`. Keep the header
+  // (it carries the describe path); a `✕` line with no matching header still counts.
+  for (const sig of crossSigs) {
+    if (!headerSigs.some(h => h === sig || h.endsWith(' › ' + sig))) sigs.add(sig);
   }
   return { ok: true, sigs, infra };
 }
@@ -600,14 +706,34 @@ export function sanitizeTestPattern(s) {
 // simple invocation (no pipes / && / ; — appending a filter flag would otherwise
 // corrupt a chain), return the filtered command. Otherwise return null → caller
 // runs the full suite and notes the pattern was ignored (graceful degrade).
+//
+// A FILE PATH is not a name filter (2026-09-29, mwouts__jupytext-360): `run_tests
+// tests/test_black.py` became `pytest ... -k 'tests/test_black.py'`, which matches no test
+// name ("452 deselected / 0 selected", exit 5). pytest keywords include the module name, so a
+// path (or `path::test` node id) is narrowed to its stem (or the node's last segment); jest
+// takes a path as its positional test-path pattern. Any other runner cannot filter by file
+// through its name flag (go -run, mocha --grep, ... would select nothing and exit 0), so the
+// call degrades to the full suite with a note.
+const PATH_LIKE_RE = /\/|::|\.(?:py|js|jsx|ts|tsx|mjs|cjs|go|rs|rb|php|java|kt|cs|swift|lua|ex|exs)$/;
 export function applyTestPattern(testScript, rawPattern) {
   const pattern = sanitizeTestPattern(rawPattern);
   if (!pattern) return { cmd: testScript, applied: false, reason: 'empty pattern' };
   const compound = /[|;&]|&&|\btail\b|\bhead\b|\bfind\b/.test(testScript);
   if (compound) return { cmd: testScript, applied: false, reason: 'compound/piped command not safely filterable' };
   const s = testScript;
+  const pytest = /\bpython\b.*-m\s+pytest\b|\bpytest\b/.test(s);
+  if (PATH_LIKE_RE.test(pattern)) {
+    if (pytest) {
+      const node = pattern.includes('::') ? pattern.split('::').filter(Boolean).pop() : '';
+      const stem = node || pathStem(pattern);
+      if (stem) return { cmd: `${s} -k ${shq(stem)}`, applied: true, reason: `targeted: ${stem} (from ${pattern})` };
+    } else if (/\bjest\b/.test(s)) {
+      return { cmd: `${s} ${shq(pattern)}`, applied: true, reason: `targeted: ${pattern}` };
+    }
+    return { cmd: testScript, applied: false, reason: 'a test file path cannot be targeted for this runner' };
+  }
   let filtered = null;
-  if (/\bpython\b.*-m\s+pytest\b|\bpytest\b/.test(s)) filtered = `${s} -k ${shq(pattern)}`;
+  if (pytest) filtered = `${s} -k ${shq(pattern)}`;
   else if (/\bgo test\b/.test(s)) filtered = `${s} -run ${shq(pattern)}`;
   else if (/\bmocha\b/.test(s)) filtered = `${s} --grep ${shq(pattern)}`;
   else if (/\bjest\b/.test(s)) filtered = `${s} -t ${shq(pattern)}`;
@@ -619,3 +745,20 @@ export function applyTestPattern(testScript, rawPattern) {
 }
 
 function shq(x) { return "'" + String(x).replace(/'/g, "'\\''") + "'"; }
+function pathStem(p) { return String(p).split('/').filter(Boolean).pop()?.replace(/\.[A-Za-z]+$/, '') || ''; }
+
+// The agent's run_tests argv → the ONE test pattern. `run_tests -k pipe` used to take `-k`
+// itself as the pattern (pytest then got `-k '-k'` and exited with a usage error). A leading
+// runner name-filter flag now yields its value; any other option is dropped with a note —
+// run_tests never passes runner options through.
+const SELECTOR_FLAGS = new Set(['-k', '-t', '--testNamePattern', '--grep', '-g', '-run', '--run', '--filter']);
+export function testPatternFromArgv(argv) {
+  const list = (Array.isArray(argv) ? argv : [argv]).map(a => String(a ?? '').trim()).filter(Boolean);
+  const [first = '', second = ''] = list;
+  if (!first) return { pattern: '', ignored: '' };
+  const eq = /^(--?[A-Za-z][\w-]*)=(.+)$/.exec(first);
+  if (eq && SELECTOR_FLAGS.has(eq[1])) return { pattern: eq[2], ignored: '' };
+  if (SELECTOR_FLAGS.has(first)) return second ? { pattern: second, ignored: '' } : { pattern: '', ignored: first };
+  if (first.startsWith('-')) return { pattern: '', ignored: first };
+  return { pattern: first, ignored: '' };
+}

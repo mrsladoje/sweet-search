@@ -25,6 +25,7 @@ import {
   buildAuthorityBanner, applyTestPattern,
   buildUnresolvedIdentifierWarning, buildRunTestsFooter, NETWORK_ERROR_ERE,
   FIRST_ERROR_ERE, extractBuildErrorMarkers, classifyBuildError, firstErrorLines, renderBuildErrorNote,
+  extractNoResultMarkers, classifyNoTestResult, renderNoTestResultNote, testPatternFromArgv,
 } from './rt-condense-lib.mjs';
 import {
   RT_DEDUP_ON, parseRunTestsArgv, untrackedFingerprint, computeStateKey,
@@ -44,6 +45,10 @@ import { CodeGraphRepository } from '../../../core/infrastructure/code-graph-rep
 // plenary/busted (`Fail\t||\t<test>`, `Failed :\tN`) and qunit-cli (`✖ <test>`). The
 // zero-count filter grew the matching green forms so a passing summary is still
 // never promoted. Kept in step with FAILURE_INDICATOR_RE / FAILURE_NEGATIVE_RE.
+// 2026-09-29: jest's per-test failure names — `✕ <test>` and the `● <describe> › <test>`
+// block header — are promoted too (ember-cli__eslint-plugin-ember-551: the first failing
+// tests' headers sat in the elided middle, so "Tests: 4 failed" parsed to no name). `● Console`
+// and jest's config-warning headers are filtered out: they are not failures.
 //
 // 2026-09-02: the banner's own grep is a SECOND path to status=INFRA, because the banner
 // text it prints matches INFRA_ERROR_RE's `NETWORK UNAVAILABLE` alternative. Anchoring the
@@ -70,8 +75,8 @@ export const RT_CONDENSE =
   `grep -qaE '${NETWORK_ERROR_ERE}' /tmp/__rt_out && ` +
   "echo '[run_tests] NETWORK UNAVAILABLE in the test container (bench lockdown): dependency downloads cannot work; do not retry or debug the harness.'; " +
   RT_CONDENSE_FIRST_ERRORS +
-  "grep -aE '(FAILED|FAIL:|not ok |AssertionError|panicked at|[0-9]+ tests? failed|[Ee]rror:|error\\[|Fail[[:space:]]*\\|\\||Failed[[:space:]]*:[[:space:]]*[1-9]|✖)' /tmp/__rt_out | " +
-  "grep -avE '(0 fail|failures?: 0|failed: 0|: 0 error|Failed[[:space:]]*:[[:space:]]*0|[0-9]+% tests passed)' | head -40; " +
+  "grep -aE '(FAILED|FAIL:|not ok |AssertionError|panicked at|[0-9]+ tests? failed|[Ee]rror:|error\\[|Fail[[:space:]]*\\|\\||Failed[[:space:]]*:[[:space:]]*[1-9]|✖|✕|^[[:space:]]*● )' /tmp/__rt_out | " +
+  "grep -avE '(0 fail|failures?: 0|failed: 0|: 0 error|Failed[[:space:]]*:[[:space:]]*0|[0-9]+% tests passed|●[[:space:]]+(Console|Validation Warning|Deprecation Warning))' | head -40; " +
   "echo '--- output tail ---'; tail -45 /tmp/__rt_out";
 
 const q = s => "'" + String(s).replace(/'/g, "'\\''") + "'";
@@ -153,9 +158,15 @@ export function getBaseline(cfg, { runCleanSuite = runSuite } = {}) {
   // Build/collection markers of the CLEAN checkout: a marker already present here (a
   // package that never builds in the image) is pre-existing and must not force ERROR.
   const markers = infra ? new Set() : extractBuildErrorMarkers(base?.out);
-  const value = { ok, sigs: new Set(sig.sigs), markers };
+  // Usage / no-test marker lines of the clean full suite (Go's "? pkg [no test files]" on
+  // every green run): pre-existing, so they never force ERROR on a later call.
+  const noResultMarkers = infra ? new Set() : extractNoResultMarkers(base?.out);
+  const value = { ok, sigs: new Set(sig.sigs), markers, noResultMarkers };
   baselineByConfig.set(cfg, value);
-  return { ok: value.ok, sigs: new Set(value.sigs), markers: new Set(value.markers) };
+  return {
+    ok: value.ok, sigs: new Set(value.sigs), markers: new Set(value.markers),
+    noResultMarkers: new Set(value.noResultMarkers),
+  };
 }
 
 const symbolRepos = new Map();
@@ -214,19 +225,32 @@ function appendFooter(body, footer) {
 // (status stays FAIL): an empty introduced set says nothing about what the edit broke.
 // Before this, both shapes read trustworthy=yes and the dedup repeat said "suite green".
 // INFRA keeps precedence (network / broker / docker / timeout), unchanged.
+//
+// Usage error / empty selection (2026-09-29, mwouts__jupytext-360): the runner rejected the
+// command line or selected no test (classifyNoTestResult) — also status=ERROR, with
+// `noResult` telling the caller to render the "command/arguments were wrong" note instead of
+// the build note. It outranks the build classifier's catch-all branch (non-zero exit, nothing
+// parsed): pytest's exit 5 "0 selected" used to land there with a note that sent the agent
+// looking for a compile error. A NEW build marker still wins.
 export function classifySuiteResult(cur, current, baselineDiff, baseline = null) {
   const suppliedExit = Number.isInteger(cur?.exitCode) ? cur.exitCode : null;
   let exitCode = suppliedExit ?? parseExitCode(cur?.out);
   if (suppliedExit === null && exitCode === 0 && current.sigs.size > 0) exitCode = 1;
   const infra = cur?.infra === true || current.infra || exitCode === 124 || exitCode === 137;
   const build = infra
-    ? { buildError: false, unparsedFailure: false }
+    ? { buildError: false, unparsedFailure: false, newMarkers: [] }
     : classifyBuildError({
       text: cur?.out, exitCode, sigCount: current.sigs.size,
       baselineMarkers: baseline?.markers instanceof Set ? baseline.markers : null,
     });
+  // A NEW build marker outranks an empty selection: a Go package that did not compile also
+  // prints "testing: warning: no tests to run" for the packages that did (zmap__zlint-299).
+  const noResult = infra || build.newMarkers?.length ? { kind: null, line: '' } : classifyNoTestResult({
+    text: cur?.out, exitCode,
+    baselineMarkers: baseline?.noResultMarkers instanceof Set ? baseline.noResultMarkers : null,
+  });
   const status = infra ? 'INFRA'
-    : build.buildError ? 'ERROR'
+    : (noResult.kind || build.buildError) ? 'ERROR'
       : (exitCode !== 0 || current.sigs.size > 0 ? 'FAIL' : 'PASS');
   const baselineOnly = status === 'FAIL' && baselineDiff !== null && current.sigs.size > 0 &&
     baselineDiff.introduced.length === 0 && baselineDiff.preExisting.length === current.sigs.size;
@@ -234,7 +258,7 @@ export function classifySuiteResult(cur, current, baselineDiff, baseline = null)
     : (status === 'PASS' || baselineOnly ? 'PASS' : 'FAIL');
   const unparsedNonZero = exitCode !== 0 && current.sigs.size === 0;
   const trustworthy = baselineDiff !== null && !infra && status !== 'ERROR' && !unparsedNonZero;
-  return { exitCode, status, verdict, trustworthy };
+  return { exitCode, status, verdict, trustworthy, noResult: noResult.kind ? noResult : null };
 }
 
 // Main entry: run the suite on the agent's current diff, prepend the L2 levers, then
@@ -259,13 +283,19 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = nul
     } catch { /* */ }
   }
 
-  // (c) targeted single-test mode — degrade to full suite when unsupported.
+  // (c) targeted single-test mode — degrade to full suite when unsupported. The pattern
+  // comes from testPatternFromArgv, not argv[0]: `run_tests -k pipe` must target `pipe`,
+  // never hand the runner `-k '-k'` (parsed.pattern stays argv[0] for the dedup key).
   let testCmd = cfg.testScript, note = '', scope = 'full';
-  if (parsed.pattern) {
-    const ap = applyTestPattern(cfg.testScript, parsed.pattern);
+  const target = testPatternFromArgv(parsed.argv);
+  if (target.ignored) {
+    note = `[run_tests] option '${target.ignored}' ignored (run_tests passes no options to the runner) — ran the full suite.`;
+  }
+  if (target.pattern) {
+    const ap = applyTestPattern(cfg.testScript, target.pattern);
     testCmd = ap.cmd;
     if (ap.applied) scope = 'targeted';
-    if (!ap.applied) note = `[run_tests] targeted pattern '${parsed.pattern}' ignored (${ap.reason}) — ran the full suite.`;
+    if (!ap.applied) note = `[run_tests] targeted pattern '${target.pattern}' ignored (${ap.reason}) — ran the full suite.`;
   }
 
   // (d) L3 state key — computed BEFORE the suite runs, over the exact tree the suite
@@ -292,10 +322,11 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = nul
   if (bd) head += (head ? '\n' : '') + bd;
   if (note) head += (head ? '\n' : '') + note;
   const classified = classifySuiteResult(cur, curSig, bdiff, baseline);
-  const firstErrors = classified.status === 'ERROR' ? firstErrorLines(cur.out) : [];
-  const errorNote = classified.status === 'ERROR'
-    ? renderBuildErrorNote({ exitCode: classified.exitCode, firstErrors })
-    : '';
+  const firstErrors = classified.status === 'ERROR' && !classified.noResult ? firstErrorLines(cur.out) : [];
+  const errorNote = classified.status !== 'ERROR' ? ''
+    : classified.noResult
+      ? renderNoTestResultNote({ ...classified.noResult, exitCode: classified.exitCode })
+      : renderBuildErrorNote({ exitCode: classified.exitCode, firstErrors });
   const full = [head, cur.out, identifierWarning, errorNote].filter(Boolean).join('\n');
   // T0 records at the broker seam but returns `guidance=none`, preserving output bytes.
   // T1 can change only the existing third footer line; controller failures abstain.
