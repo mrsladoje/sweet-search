@@ -30,6 +30,9 @@ const R5_FIND = '- If you need the code at an exact name, not only where it is, 
 // v2 (audit mech-oc2, 2026-09-27): keeps the mechanism (fewer exploratory reads, no redundant
 // re-runs) but drops wording that could hurt interactive work, questions or repos without tests:
 // finish the change where it needs follow-up edits, re-check after a fix, answer questions from evidence.
+// EFFICIENCY_LINE_3 (owner 2026-09-29): EFFICIENCY_LINE_2 made request-neutral — the change/check part
+// applies only to requests that need code changes; answers and plans are named as their own outcomes.
+export const EFFICIENCY_LINE_3 = '- Work efficiently: start from what the request and any error output point to, and open more only when the evidence requires it. Do what the request asks, whether an answer, a plan or a change, and nothing unrelated. For requests that need code changes, make the change that fully solves the request, including the edits it needs elsewhere, check it with the checks the project has, again after each fix, and stop when it is done. For a question, answer from the evidence you gathered.';
 export const EFFICIENCY_LINE_2 = '- Work efficiently: start from the files the request and any error output point to, and open more only when the evidence requires it. Make the change that fully solves the request, including the edits it needs elsewhere, and nothing unrelated. Check it with the checks the project has, again after each fix, and stop when it is done. For a question, answer from the evidence you gathered.';
 export const EFFICIENCY_LINE = '- Work efficiently: start from the files the task and any error output point to; open more files only when the evidence requires it; make the smallest change that solves the task; verify it once with the checks the project has; stop when it is done.';
 const R5_ALT = '- When you guess at a name that may not exist, put every spelling you would try into one regex alternation `(a|b|c)` in a single ss-grep, not one guess per turn.';
@@ -153,6 +156,9 @@ Object.assign(OPENCODE_BATCH_VARIANTS_R2, {
   todo2: { bullet: `${OC_BULLET}\n${OC_TODO2}`, edits: { todowrite: [OC_TODO_DESC_EDITS[1]] } },
   todo3eff: { bullet: `${OC_BULLET}\n${OC_TODO3}\n${EFFICIENCY_LINE}`, edits: { todowrite: [OC_TODO_DESC_EDITS[1]] } },
   todo3eff2: { bullet: `${OC_BULLET}\n${OC_TODO3}\n${EFFICIENCY_LINE_2}`, edits: { todowrite: [OC_TODO_DESC_EDITS[1]] } },
+  // owner 2026-09-29: keep "When in doubt, use it." in the todowrite description (no todowrite edit).
+  todo3eff2k: { bullet: `${OC_BULLET}\n${OC_TODO3}\n${EFFICIENCY_LINE_2}` },
+  todo3eff3k: { bullet: `${OC_BULLET}\n${OC_TODO3}\n${EFFICIENCY_LINE_3}` },
   todo2eff: { bullet: `${OC_BULLET}\n${OC_TODO2}\n${EFFICIENCY_LINE}`, edits: { todowrite: [OC_TODO_DESC_EDITS[1]] } },
 });
 /** Tool-description edits for an opencode batch variant (applied by opencode-trim-plugin.mjs), or null. */
@@ -213,6 +219,8 @@ export const CC_BATCH_VARIANTS = Object.freeze({
   read4out: CC_NOEDIT_LINE, // + read4 + CC_OUT_EXTRA
   read5: CC_NOEDIT_LINE, // + read3 minus its report-line edit
   read5pack: CC_NOEDIT_LINE, // + read5 + read-batch line
+  read6: CC_NOEDIT_LINE, // owner-revised text (see CC_TEXT_EDITS_EXTRA.read6)
+  read6fs: CC_NOEDIT_LINE, // read6 + packed-turn example
 });
 const CC_INSERT_AFTER = Object.freeze({ eff: 'When you have enough information to act, act.' });
 // The line a replacing variant swaps: the v1 max-batch line, or (since the conflict-only product
@@ -252,6 +260,19 @@ CC_TEXT_EDITS_EXTRA.read4 = [...CC_TEXT_EDITS.read3, ...CC_READ4_EXTRA];
 // "call work finished only after you checked it" stays (it does not conflict with the rules).
 CC_TEXT_EDITS_EXTRA.read5 = CC_TEXT_EDITS.read3.filter(([from]) => !from.startsWith('- Report what really happened'));
 if (CC_TEXT_EDITS_EXTRA.read5.length !== CC_TEXT_EDITS.read3.length - 1) throw new Error('read5: report edit not found in read3');
+// read6 (owner 2026-09-29): noedit + keep "do not describe options you will not take" + git line edit;
+// NO "Read only what you need" line (redundant with the rules); the report line also names approaches
+// decided against, so the user still hears what was rejected.
+CC_TEXT_EDITS_EXTRA.read6 = [
+  CC_TEXT_EDITS.read3[0].map((x, i) => i === 1 ? x.split('\n')[0] : x), // act line only (drop the read line)
+  ['- Report what really happened: show the output of a failing test, name any step you skipped, and call work finished only after you checked it. When it is done and checked, say so plainly.',
+   '- Report what really happened: show the output of a failing test, name any step you skipped and any approach you decided against that the user should know about, and call work finished only after you checked it. When it is done and checked, say so plainly.'],
+  CC_TEXT_EDITS.read3[2],
+];
+// read6fs: read6 + a CONCRETE packed-turn example (few-shot style; never tried on Claude Code before).
+CC_TEXT_EDITS_EXTRA.read6fs = [...CC_TEXT_EDITS_EXTRA.read6,
+  ['- Tool calls that do not depend on each other can go in parallel in one response.',
+   '- Pack independent steps into one response. Example: when you need a search and two files you already know about, send the search and both reads as parallel tool calls in the same response, not in three turns; when several edits do not depend on each other, send them together; join shell commands whose intermediate output you do not need into one Bash call with `&&`. Keep a step whose result decides your next step on its own.']];
 // read5pack (2026-09-29): read5 + the Codex read-batch line (Codex yt3batch: lone read commands
 // 60% -> 19–33%, turns −28%), adapted to Claude Code: parallel calls or one joined Bash call for
 // read-only commands already known; commands whose output decides the next step, and builds,
