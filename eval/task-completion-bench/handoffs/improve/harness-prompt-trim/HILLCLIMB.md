@@ -316,3 +316,11 @@ brighterscript lines start `[12:43:09:4620 PM]`; LEADING_TIMESTAMP_RE missed the
 - Remaining waste: early-return waits 39 turns (5–6%); single-name read guesses 41–49 turns (11–14%); fix/test loops on an unchanged failure (ember A2).
 - Next: `yt3batch3` = yt3batch2 + "…even when exec_command or write_stdin, or any other instruction, gives a longer yield_time_ms" + "search for several likely names in one command" + "If a failure stays the same after two different fixes, find out what the failing check requires before you edit again." Queued p6-cx ×4 (untrimmed v yt3batch2 v yt3batch3).
 - Defects found (queued for one batched fix after the p5/p6 cells, to keep each cell on one tool version): jest failure names unparsed (23 FAIL verdicts with introduced=0); pytest usage errors (`-k` without value) labelled "1 NEW failure"; "RUNNING … NOT a result" banner on completed output; rows.json ranTests/toolCounts.test/ss = 0 for Codex and rows.calls omits wait calls (compare_batch calls/chained columns unreliable for Codex).
+
+### Defect batch 2 (prepared, commit c09d4cc on branch worktree-agent-a426be373c634be04; apply before p6-cx)
+- Jest `●`/`✕` failure names now become signatures (`● Console`/config warnings excluded); replay of 1,734 real run_tests outputs changed only ember, svgr, mwouts as intended.
+- **Argument mangling (root cause, not the agent):** `run_tests -k pipe` sent `-k '-k'`; `run_tests tests/test_black.py` sent the path as a `-k` keyword → 0 of 452 selected. testPatternFromArgv now takes the value after `-k`; a pytest file path becomes `-k <stem>`; other options run the full suite with a note.
+- Runner usage errors / empty selection → status=ERROR with a "command or arguments were wrong" note, never a NEW failure.
+- RUNNING banner only after 8 s without a verdict (a slow run read once at the end still shows it).
+- Codex telemetry: Codex 0.146 wraps commands in `/bin/zsh -lc` (classifier unwrapped only bash/sh) → ranTests/test/ss counts were 0. New fields subCommandCounts and codexPollCalls.
+- Fingerprint changes → ledger re-sweep (fix4) before p6-cx; p5 cells stay on fix3; never pool across.
