@@ -774,7 +774,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <img src="assets/tools/ss-trace-io.svg" alt="ss-trace takes the symbol processOrder. One call returns its callers checkout, retryOrder and handleWebhook, its callees chargeCard, reserveStock and sendReceipt, and what breaks if it changes." width="100%" />
 
 ### 🕸️ Know what breaks before you edit
-> Give `ss-trace` a symbol. It returns who calls it, what it calls, and the call chains that break if it changes, with the code. The call graph is built at index time, so this is one call and no grep chain.
+> Give `ss-trace` a symbol. It returns who calls it, what it calls, and the call chains that break if it changes, with the code. The call graph is built at index time, so one call is enough.
 
 <table>
 <tr><td colspan="2"><b>How it builds the answer</b></td></tr>
@@ -789,11 +789,10 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 </td>
 <td width="50%" valign="top">
 
-**🔎 2. Fixing the gaps in the map**
+**🔎 2. Filling the gaps**
 
-- Some calls have no link, for example a function imported under another name. `ss-trace` finds these when you ask.
-- It also finds calls inside the same file that the map missed.
-- Some links point to the wrong symbol, for example `this.fetch()` linked to an unrelated `fetch`. These are dropped.
+- When you ask, it finds calls the graph missed: renamed imports and calls in the same file.
+- It drops wrong links, like `this.fetch()` linked to an unrelated `fetch`.
 
 </td>
 </tr>
@@ -802,10 +801,8 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 **🧭 3. Best results first**
 
-- It walks out from your symbol along the links: backward to rank callers, forward to rank callees (Personalized PageRank).
-- Code closely tied to your symbol scores high. A logger that everything calls scores low.
-- It also counts: fewer hops, direct calls, exported names, code called from many places.
-- Test files rank lower.
+- Personalized PageRank walks out from your symbol: backward for callers, forward for callees. Code close to your symbol ranks high. A logger that everything calls ranks low.
+- Fewer hops, direct calls, exported names and many callers rank higher. Test files rank lower.
 
 </td>
 <td width="50%" valign="top">
