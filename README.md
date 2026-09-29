@@ -1045,6 +1045,8 @@ A score of 1.00 means every question was answered correctly. For Claude Code and
 
 </details>
 
+---
+
 ## ⚡ GPU-Accelerated Indexing, Fully Local
 
 > **Chunk → enrich → embed → quantize** — every step on-device and in Rust. Batches are sized to *your CPU's actual cache*, two open code-models do the encoding, and two separate quantizations make the index both **faster to build** and **small enough to live in RAM**. Zero API keys; nothing ever leaves the machine.
