@@ -644,18 +644,18 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 ---
 
 <a id="tool-ss-grep"></a>
-### <img src="assets/tools/ss-grep.svg" width="40" align="center" alt="" /> 2. `ss-grep` — grep, minus every wasted millisecond
+### <img src="assets/tools/ss-grep.svg" width="40" align="center" alt="" /> 2. `ss-grep`: grep, minus every wasted millisecond
 
 <img src="assets/tools/ss-grep-io.svg" alt="ss-grep takes an exact string or regex and returns every file:line hit" width="100%" />
 
-**10.2× faster than ripgrep end-to-end at the median** — measured across **353 realistic queries on 5 real repos**
+**10.2× faster than ripgrep end-to-end at the median**, measured across **353 realistic queries on 5 real repos**
 (range 8.5–17.7× per repo, 1 ms p50), with **identical match counts on every single query**. Three things buy that:
 
 - **A sparse n-gram index** (inspired by [Cursor's fast-regex-search](https://cursor.com/blog/fast-regex-search) and GitHub's Blackbird): instead of a fixed trigram table, gram boundaries adapt to *your* codebase's character-pair frequencies, so common trigrams get absorbed into longer, more selective grams.
-- **Regex-AST literal extraction + SIMD intersection**: required substrings are pulled from the pattern's syntax tree, posting lists are intersected with NEON/SSE2 block merges (galloping search for skewed sizes), and only the files that *can* match — typically 0.1–5% of the corpus — see the real regex.
-- **Fully in-process**: verification runs on Rust's regex crate with Rayon across all cores, inside the warm daemon, in a single NAPI call. No child process is ever spawned — zero fork/exec, zero pipe I/O, zero JSON re-parsing.
+- **Regex-AST literal extraction + SIMD intersection**: required substrings are pulled from the pattern's syntax tree, posting lists are intersected with NEON/SSE2 block merges (galloping search for skewed sizes), and only the files that *can* match (typically 0.1–5% of the corpus) see the real regex.
+- **Fully in-process**: verification runs on Rust's regex crate with Rayon across all cores, inside the warm daemon, in a single NAPI call. No child process is ever spawned, so there is zero fork/exec, zero pipe I/O and zero JSON re-parsing.
 
-Every match comes back in stable `file:line` order — ripgrep-identical counts, optional context lines — with no relevance guessing, no subprocess, in one warm call.
+Every match comes back in stable `file:line` order, with ripgrep-identical counts and optional context lines. No relevance guessing, no subprocess, one warm call.
 
 <details>
 <summary><b>More</b></summary>
@@ -664,7 +664,7 @@ Every match comes back in stable `file:line` order — ripgrep-identical counts,
 
 - Full methodology, per-repo table, and the optimization log: [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md).
 - Regexes with no extractable literals fall back to native grep over the indexed file set; fixed-string and glob queries use a ripgrep fallback.
-- **Dialect recovery** (agent mode): patterns written in GNU-grep BRE muscle memory (`foo\|bar`, `\(group\)`) are literals in Rust's regex dialect and used to silently match nothing — a zero-hit exact search now gets one gated auto-retry with the translated pattern instead of a false "no matches".
+- **Dialect recovery** (agent mode): patterns written in GNU-grep BRE muscle memory (`foo\|bar`, `\(group\)`) are literals in Rust's regex dialect and used to silently match nothing. A zero-hit exact search now gets one gated auto-retry with the translated pattern instead of a false "no matches".
 
 </details>
 
