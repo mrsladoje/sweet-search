@@ -86,8 +86,10 @@ try {
 writeFileSync(join(outDir, 'preflight.json'), JSON.stringify(preflight, null, 2));
 
 const prompt = issuePrompt('The add function should also accept a third optional argument c.');
-const args = ['run', '--format', 'json', '--agent', 'build', '--auto', '--model', `openrouter/${model}`, '--dir', rundir, prompt];
-const r = spawnSync(bin, args, { cwd: rundir, env, encoding: 'utf8', timeout: 90000 });
+// --stdin: the runner's current form (prompt on stdin, opencodeRunMessage); default = the old argv form.
+const viaStdin = argv.includes('--stdin');
+const args = ['run', '--format', 'json', '--agent', 'build', '--auto', '--model', `openrouter/${model}`, '--dir', rundir, ...(viaStdin ? [] : [prompt])];
+const r = spawnSync(bin, args, { cwd: rundir, env, encoding: 'utf8', timeout: 90000, ...(viaStdin ? { input: oc.opencodeRunMessage(prompt) } : {}) });
 console.error(`exit=${r.status} stderr=${String(r.stderr).slice(0, 300)}`);
 const report = join(stateDir, oc.OPENCODE_TRIM_REPORT);
 if (existsSync(report)) writeFileSync(join(outDir, 'trim-report.json'), readFileSync(report));

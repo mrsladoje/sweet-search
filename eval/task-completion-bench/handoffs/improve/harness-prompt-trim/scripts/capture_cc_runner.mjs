@@ -88,6 +88,8 @@ if (argv.includes('--exclude-ancestors')) {
   mkdirSync(join(home, '.claude'), { recursive: true });
   excludeAncestorClaudeMd(join(home, '.claude', 'settings.json'), rundir);
 }
+const viaStdin = argv.includes('--stdin');
+if (!viaStdin) args.splice(args.indexOf('-p') + 1, 0, prompt);
 const r = spawnSync(bin, args, {
   cwd: rundir,
   env: {
@@ -102,6 +104,8 @@ const r = spawnSync(bin, args, {
     ...JSON.parse(opt('env', '{}')),
   },
   encoding: 'utf8', timeout: 60000,
+  // --stdin: the runner's current form (prompt on stdin); default = the old argv form (`-p <prompt>`).
+  ...(viaStdin ? { input: prompt } : {}),
 });
 console.error(`exit=${r.status} stderr=${String(r.stderr).slice(0, 200)}`);
 writeFileSync(join(outDir, 'args.json'), JSON.stringify(args.map(a => a === prompt ? '<prompt>' : a), null, 2));
