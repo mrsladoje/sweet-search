@@ -306,3 +306,13 @@ brighterscript lines start `[12:43:09:4620 PM]`; LEADING_TIMESTAMP_RE missed the
 0/6 in all arms matches B1 (Codex never solves rotation B; predOk, model_stopped — not infra).
 
 **Codex phase 4, 4 cells (mean of per-cell Δ):** yt3batch2 −24/−28/−8/−16 → **−19%**; yt3batch2w −26/−21/−5/−24 → **−19%**. Solves equal in every cell. Tie on cost; 4-cell MDE is 15–19%, so both sit at the edge of detectability. Turns −22..−38% in every cell for both arms (mechanism consistent). Final pick waits on the Codex behaviour audit (does 2w change wait/poll behaviour, or is it the same as yt3batch2).
+
+### Codex behaviour audit (beh-cx-p4, Opus) — **Codex pick: yt3batch2**
+- yt3batch2w behaves the same as yt3batch2: paired sign-flip p=0.94 (2w cheaper 11/20). Wait turns 39 v 39, commentary-only turns 0 in all arms, polls 0 v 0. The 60-s rewording changed nothing → keep the simpler yt3batch2.
+- Read batching is real: read-only cells with ≥2 commands 31/189 base → 74/115 / 64/114; `;` used as told, 0 `&&`. Worth ≈6–10% cost and ≈20% of turns. Sign-flip v base: L2 p=0.005, L3 p=0.028.
+- ≈half of −19% came from base-arm loops on tool defects in 2 tasks (ember jest names, brighterscript timestamps — the latter FIXED b5f7aba). Without ember+brighterscript: −9.6% (L2), −5.8% (L3).
+- No "doing less": every rollout ends with a verdict after its last edit; test cells and read output ≈ equal. The saving is re-read context (cached input 6.84M → 4.6M tokens).
+- Compliance gap: the cell's first line (`// @exec` 600000) copied in only 32/117 test cells, never in the first test cell; without it 77/81 cells return after 10 s → a wait turn. Likely cause: the bench AGENTS.md run_tests line (AUTHORITATIVE: "Launch it with yield_time_ms=300000 … poll ONCE with write_stdin") — frame/rules text, owner-gated.
+- Remaining waste: early-return waits 39 turns (5–6%); single-name read guesses 41–49 turns (11–14%); fix/test loops on an unchanged failure (ember A2).
+- Next: `yt3batch3` = yt3batch2 + "…even when exec_command or write_stdin, or any other instruction, gives a longer yield_time_ms" + "search for several likely names in one command" + "If a failure stays the same after two different fixes, find out what the failing check requires before you edit again." Queued p6-cx ×4 (untrimmed v yt3batch2 v yt3batch3).
+- Defects found (queued for one batched fix after the p5/p6 cells, to keep each cell on one tool version): jest failure names unparsed (23 FAIL verdicts with introduced=0); pytest usage errors (`-k` without value) labelled "1 NEW failure"; "RUNNING … NOT a result" banner on completed output; rows.json ranTests/toolCounts.test/ss = 0 for Codex and rows.calls omits wait calls (compare_batch calls/chained columns unreliable for Codex).
