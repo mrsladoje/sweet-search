@@ -638,6 +638,26 @@ export function parseOpencodeStream(stdout) {
   return { toolCalls: callOrder.map(id => calls.get(id)), answer, turns, errors, sessionID };
 }
 
+/**
+ * The stdin text that makes `opencode run` (1.18.4) send the SAME message bytes the argv form
+ * sent (2026-09-29; the prompt left argv because `ps` showed it to concurrent rollouts).
+ *
+ * `opencode run --help` documents only the positional message, so this is read from the pinned
+ * 1.18.4 binary's bundled source (the `run` handler):
+ *   P = [...message, ...--].map(a => a.includes(" ") ? `"${a.replace(/"/g, '\\"')}"` : a).join(" ")
+ *   u = process.stdin.isTTY ? undefined : await Bun.stdin.text()
+ *   P = !P ? u : !u ? P : P + "\n" + u          then parts: [{ type: "text", text: P }]
+ * So an argv prompt with a space was sent wrapped in double quotes, inner quotes
+ * backslash-escaped (the capture handoffs/improve/harness-prompt-trim/captures/
+ * opencode-1.18.4-request-sweet-trim-off-gpt.json has the user message `"=== ISSUE ===\n..."`
+ * with the quotes), and with no positional the message is stdin verbatim. This returns the
+ * argv-form message, so the model's input does not change. Pinned to 1.18.4: re-check on a bump.
+ */
+export function opencodeRunMessage(prompt) {
+  const text = String(prompt ?? '');
+  return text.includes(' ') ? `"${text.replace(/"/g, '\\"')}"` : text;
+}
+
 export async function runOpencodeTask(task, {
   arm, apiModel = 'x-ai/grok-4.5', ssBinDir, mppText, image, t, perCallTimeoutMs = 900000,
 } = {}) {
@@ -746,10 +766,13 @@ export async function runOpencodeTask(task, {
 
   // Prompt = the issue ONLY (both arms). Frame + M± live in AGENTS.md above.
   const prompt = issuePrompt(task.problem_statement);
-  const args = ['run', '--format', 'json', '--agent', 'build', '--auto', '--model', openrouterModel, '--dir', rundir, prompt];
+  // The prompt rides on stdin, never in argv (see spawnWithTimeout). opencodeRunMessage keeps
+  // the message the model gets byte-identical to the argv form.
+  const args = ['run', '--format', 'json', '--agent', 'build', '--auto', '--model', openrouterModel, '--dir', rundir];
+  const stdinText = opencodeRunMessage(prompt);
 
   const t0 = Date.now();
-  const spawnOnce = () => spawnWithTimeout('opencode', args, { cwd: rundir, env, timeoutMs: perCallTimeoutMs, jail });
+  const spawnOnce = () => spawnWithTimeout('opencode', args, { cwd: rundir, env, timeoutMs: perCallTimeoutMs, jail, stdinText });
   let r = await spawnOnce();
   const retentionOptions = { secrets: [process.env.OPENROUTER_API_KEY] };
   const rawAttempts = [retainOpencodeAttempt(retainedSession, 1, r, retentionOptions)];

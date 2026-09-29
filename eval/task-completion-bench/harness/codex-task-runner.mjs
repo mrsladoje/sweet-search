@@ -372,6 +372,30 @@ setInterval(() => {
   return { brokerPath, reqDir };
 }
 
+/**
+ * Write the task prompt to a child's stdin pipe and close it (2026-09-29). Every CLI runner
+ * delivers the prompt this way instead of in argv: argv is readable host-wide with `ps`, and a
+ * concurrent rollout's agent read another task's issue text that way (Codex phase-6 audit).
+ * An agent that exits before reading its stdin makes the write fail with EPIPE; that is the
+ * child's failure, reported by its exit code, so the error is swallowed here.
+ * Lives here, not in agent-runner-shared.mjs, because that module imports this one.
+ */
+export function writePromptToStdin(proc, stdinText) {
+  if (stdinText == null || !proc?.stdin) return;
+  proc.stdin.on('error', () => { /* child exited before reading; its exit code reports it */ });
+  proc.stdin.end(String(stdinText), 'utf8');
+}
+
+/**
+ * The `codex exec` (or `codex exec resume <id>`) argv and stdin for one prompt: `-` as the
+ * PROMPT positional, the prompt bytes on stdin. `codex exec --help` (0.146.1): "If not provided
+ * as an argument (or if `-` is used), instructions are read from stdin." The prompt never
+ * appears in argv, so no other process on the host can read it with `ps`.
+ */
+export function codexPromptInvocation(baseArgs, prompt) {
+  return { argv: [...baseArgs, '-'], stdinText: String(prompt ?? '') };
+}
+
 export function writeRunTestsShim(binDir, {
   image, workdir, testScript, rundir, testTimeoutSec = 300, netArgs = '',
   brokerMode = false, dockerBin = 'docker', rtAuthority = true,
@@ -382,6 +406,9 @@ export function writeRunTestsShim(binDir, {
   includeUntracked = includeUntrackedFromEnv(), attachRequireSameDiff = attachRequireSameDiffFromEnv(),
   // Tests only: override RUNNING_BANNER_DELAY_MS (rt-inflight.mjs). null = the default.
   runningBannerDelayMs = null,
+  // The harness the shim serves. 'codex' adds the write_stdin step to the running banner
+  // (RUNNING_BANNER_CODEX_STEP in rt-inflight.mjs); null = the plain banner. Same on both arms.
+  harness = null,
 }) {
   mkdirSync(binDir, { recursive: true });
   // BENCH_INCLUDE_UNTRACKED=1: snapshot the untracked set NOW — after every runner has
@@ -433,7 +460,7 @@ export function writeRunTestsShim(binDir, {
     // module is ERR_MODULE_NOT_FOUND here — see the inline boundary note in rt-inflight.mjs.
     // Its `node:fs` import covers writeFileSync/readFileSync/rmSync/existsSync, so this shim
     // must not declare its own or the duplicate binding is a SyntaxError.
-    writeFileSync(mjs, brokerRequesterSource({ reqDir, testTimeoutSec, sameDiff, bannerDelayMs: runningBannerDelayMs }));
+    writeFileSync(mjs, brokerRequesterSource({ reqDir, testTimeoutSec, sameDiff, bannerDelayMs: runningBannerDelayMs, harness }));
     const shim = path.join(binDir, 'run_tests');
     writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
     chmodSync(shim, 0o755);
@@ -455,7 +482,7 @@ export function writeRunTestsShim(binDir, {
   // reached only with isolation OFF, so a jail-resolution bug in it would never surface in a
   // production run and would sit here until someone turned isolation off. The runtime import
   // below stays — it is large, it has its own dependency tree, and it never runs in a jail.
-  writeFileSync(mjs, directShimSource({ cfgPath: cfg, runtimePath: RT_RUNTIME_PATH, ipcDir: directIpc, testTimeoutSec, sameDiff, bannerDelayMs: runningBannerDelayMs }));
+  writeFileSync(mjs, directShimSource({ cfgPath: cfg, runtimePath: RT_RUNTIME_PATH, ipcDir: directIpc, testTimeoutSec, sameDiff, bannerDelayMs: runningBannerDelayMs, harness }));
   const shim = path.join(binDir, 'run_tests');
   writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
   chmodSync(shim, 0o755);
@@ -767,7 +794,7 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
     netArgs, brokerMode: true, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY,
     stateDir: runnerStateDir, _isAgentFormat: sweet, label: jailLabel,
     taskId: task.id, arm, injectedFiles: ['AGENTS.md'],
-    installSeds: installSedCmds(t),
+    installSeds: installSedCmds(t), harness: 'codex',
   });
   // L1: install the docker output-condenser wrapper (both arms). Flag-gated; a run
   // with SS_NO_CMD_CONDENSE=1 leaves the agent's docker == real docker (legacy).
@@ -901,7 +928,9 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   const baseArgs = ['exec', ...sandboxArgs, '--json',
     '-c', `model_reasoning_effort="${reasoning}"`, ...providerArgs, ...trimArgs,
     '-m', codexModel, '-C', rundir];
-  const args = [...baseArgs, prompt];
+  // The prompt rides on stdin (`-` = "read the prompt from stdin", `codex exec --help` on
+  // 0.146.1), never in argv — see writePromptToStdin.
+  const invocation = codexPromptInvocation(baseArgs, prompt);
 
   // ---- C-3 two-phase context handoff (SS_C3), default OFF ----------------------------
   // SLATE-A-RESIDUE §3.A re-opens C-3 as a LIVE A/B, because §0 established that a
@@ -950,15 +979,16 @@ ${ho}`;
   // ------------------------------------------------------------------------------------
 
   const t0 = Date.now();
-  // stdin MUST stay 'ignore' (= /dev/null): codex exec blocks forever on an open
-  // never-closed stdin pipe (upstream issues #20919/#27019); /dev/null gives EOF
-  // instantly. The "Reading additional input from stdin..." banner still prints —
-  // it is benign and appears on every non-TTY spawn.
+  // stdin must reach EOF: codex exec blocks forever on an open never-closed stdin pipe
+  // (upstream issues #20919/#27019). It used to be 'ignore' (= /dev/null). Now it is a pipe
+  // that carries the prompt and is closed right after the write (writePromptToStdin), which
+  // gives the same EOF. Without a prompt it stays /dev/null.
   const spawnArgv = argv => (jail ? jailArgv(jail, 'codex', argv, rundir) : ['codex', argv]);
-  const spawnWith = argv => new Promise((resolve) => {
+  const spawnWith = ({ argv, stdinText = null }) => new Promise((resolve) => {
     const [bin, a] = spawnArgv(argv);
     let stdout = '', stderr = '', timedOut = false;
-    const proc = spawn(bin, a, { cwd: rundir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawn(bin, a, { cwd: rundir, env, stdio: [stdinText == null ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+    writePromptToStdin(proc, stdinText);
     // Killing `nsenter` leaves its in-namespace child alive, so a jailed timeout must
     // also kill the jail's init — the PID namespace death takes the agent with it.
     const timer = setTimeout(() => { timedOut = true; if (jail) { try { process.kill(jail.initPid, 'SIGKILL'); } catch {} } try { proc.kill('SIGTERM'); } catch {} setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 2000).unref(); }, perCallTimeoutMs);
@@ -967,7 +997,7 @@ ${ho}`;
     proc.on('error', e => { clearTimeout(timer); resolve({ stdout, stderr: stderr + e.message, exitCode: -1, timedOut }); });
     proc.on('exit', code => { clearTimeout(timer); resolve({ stdout, stderr, exitCode: code ?? 0, timedOut }); });
   });
-  const spawnOnce = () => spawnWith(C3_ON ? [...baseArgs, c3Phase1Prompt] : args);
+  const spawnOnce = () => spawnWith(C3_ON ? codexPromptInvocation(baseArgs, c3Phase1Prompt) : invocation);
   let r = await spawnOnce();
   let parsed = parseCodexAgentStream(r.stdout);
   let startRetried = false;
@@ -1015,11 +1045,12 @@ ${ho}`;
         sinceMs: t0 - 60000, sessionsDir: (jail || privateCodexHome) ? path.join(codexHome, 'sessions') : undefined,
       }).pop();
       const sid = /rollout-[\dT-]+-([0-9a-f-]{36})\.jsonl$/.exec(p1File || '')?.[1] || null;
+      // `resume` also takes `-` for "read the prompt from stdin" (`codex exec resume --help`, 0.146.1).
       const argv2 = C3 === 'v5'
         // trimArgs: `resume` honours model_instructions_file and the tool keys (capture, 0.146.1).
-        ? (sid ? ['exec', 'resume', sid, '--dangerously-bypass-approvals-and-sandbox', '--json',
-          '-c', `model_reasoning_effort="${reasoning}"`, ...providerArgs, ...trimArgs, '-m', codexModel, p2] : null)
-        : [...baseArgs, p2];
+        ? (sid ? codexPromptInvocation(['exec', 'resume', sid, '--dangerously-bypass-approvals-and-sandbox', '--json',
+          '-c', `model_reasoning_effort="${reasoning}"`, ...providerArgs, ...trimArgs, '-m', codexModel], p2) : null)
+        : codexPromptInvocation(baseArgs, p2);
       if (!argv2) {
         // Refuse to spawn a malformed resume rather than emit a cell that looks like a result.
         console.log(`  [C-3 v5 ${task.id || ''}] phase-1 session id not recoverable from ${p1File || '(no rollout file)'} — INERT, not a null result`);

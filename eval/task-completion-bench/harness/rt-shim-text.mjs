@@ -27,7 +27,7 @@ import { inflightInlineSource, sameDiffAttachInlineSource } from './rt-inflight.
  * rmSync / existsSync, so this text must not declare its own — a duplicate binding is a
  * SyntaxError, and the shim would die before writing a byte.
  */
-export function brokerRequesterSource({ reqDir, testTimeoutSec, sameDiff = null, bannerDelayMs = null }) {
+export function brokerRequesterSource({ reqDir, testTimeoutSec, sameDiff = null, bannerDelayMs = null, harness = null }) {
   // RT_ATTACH_REQUIRE_SAME_DIFF=1 (`sameDiff` = { rundir }): attach only to a launch made on
   // the same working tree, else queue a fresh request behind it. The broker serves requests
   // one at a time, so the stale suite finishes first and no second suite runs beside it.
@@ -56,7 +56,7 @@ else {
 const IPC = ${JSON.stringify(reqDir)};
 const tSec = ${Number(testTimeoutSec) || 300};
 const waitSec = 2 * tSec + 120;                          // baseline + current suite + overhead
-const stopBanner = startRunningBanner(${bannerDelayArg(bannerDelayMs)});
+const stopBanner = startRunningBanner(${bannerDelayArg(bannerDelayMs)}${bannerHarnessArg(harness, false)});
 ${attach}const deadline = Date.now() + waitSec * 1000;
 const res = IPC + '/res-' + id;
 while (Date.now() < deadline) {
@@ -85,7 +85,7 @@ process.stdout.write(NO_VERDICT_NOTE(waitSec));
  * the runtime by absolute path. That module is large and has its own dependency tree; there
  * is nothing to gain from inlining it.
  */
-export function directShimSource({ cfgPath, runtimePath, ipcDir, testTimeoutSec, sameDiff = null, bannerDelayMs = null }) {
+export function directShimSource({ cfgPath, runtimePath, ipcDir, testTimeoutSec, sameDiff = null, bannerDelayMs = null, harness = null }) {
   // RT_ATTACH_REQUIRE_SAME_DIFF=1: as in the requester, plus the serialisation the broker
   // gives for free — a fresh run waits (at most one suite budget) for the stale one to land,
   // so a rollout never has two suites running at once. Off, byte-identical to before.
@@ -114,7 +114,7 @@ import { runTestsWithLevers } from ${JSON.stringify(runtimePath)};
 const c = JSON.parse(readFileSync(${JSON.stringify(cfgPath)}, 'utf8'));
 const IPC = ${JSON.stringify(ipcDir)};
 const waitSec = 2 * (${tSecDirect}) + 120;
-const stopBanner = startRunningBanner(${bannerDelayArg(bannerDelayMs)}, { blocking: true });
+const stopBanner = startRunningBanner(${bannerDelayArg(bannerDelayMs)}${bannerHarnessArg(harness, true)});
 ${findLine}if (attachId) {
   process.stdout.write(ATTACH_NOTE);
   const deadline = Date.now() + waitSec * 1000;
@@ -143,6 +143,14 @@ function bannerDelayArg(ms) {
   return Number.isFinite(ms) && ms >= 0 ? String(Math.floor(ms)) : 'RUNNING_BANNER_DELAY_MS';
 }
 
+// The banner options as shim source text. `harness` is set by the runner that generates the
+// shim ('codex' adds the write_stdin step, see RUNNING_BANNER_CODEX_STEP); null leaves the
+// call text exactly as it was before the option existed.
+function bannerHarnessArg(harness, blocking) {
+  const opts = [blocking ? 'blocking: true' : null, harness ? `harness: ${JSON.stringify(String(harness))}` : null].filter(Boolean);
+  return opts.length ? `, { ${opts.join(', ')} }` : '';
+}
+
 // Canonical arguments for the fingerprint. Fixed placeholders, so the hash tracks the CODE
 // that generates the shim and never a per-rollout temp path — otherwise every rollout would
 // produce a different fingerprint and the ledger would be permanently stale.
@@ -158,8 +166,13 @@ const CANON = Object.freeze({
 // text stales the ledger even though a default run never generates it.
 const CANON_SAME_DIFF = Object.freeze({ ...CANON, sameDiff: Object.freeze({ rundir: '/CANON/rundir' }) });
 
+// The Codex runner's shim (harness: 'codex' — the banner carries the write_stdin step). Hashed
+// so that option's text is covered too.
+const CANON_CODEX = Object.freeze({ ...CANON, harness: 'codex' });
+
 /** Both shim variants under canonical parameters — the bytes the fingerprint hashes. */
 export function shimFingerprintSource() {
   return brokerRequesterSource(CANON) + '\n---\n' + directShimSource(CANON)
-    + '\n---\n' + brokerRequesterSource(CANON_SAME_DIFF) + '\n---\n' + directShimSource(CANON_SAME_DIFF);
+    + '\n---\n' + brokerRequesterSource(CANON_SAME_DIFF) + '\n---\n' + directShimSource(CANON_SAME_DIFF)
+    + '\n---\n' + brokerRequesterSource(CANON_CODEX) + '\n---\n' + directShimSource(CANON_CODEX);
 }

@@ -521,6 +521,10 @@ function footerSignatures(signatures) {
   return values.length ? values.join(',') : 'none';
 }
 
+/** Suffix of the status line when status=FAIL but verdict=PASS (see buildRunTestsFooter). */
+export const RAW_STATUS_PRE_EXISTING_NOTE =
+  ' (raw runner result: every failure is pre-existing, your edits introduced none; your result is verdict=PASS on the next line)';
+
 /** Render the exact final three-line run_tests footer. */
 export function buildRunTestsFooter({
   status, verdict = status, scope = 'full', exitCode = 0,
@@ -537,8 +541,16 @@ export function buildRunTestsFooter({
   const preExisting = baselineDiff?.preExisting || [];
   const trusted = trustworthy === true && baselineDiff !== null;
   const action = String(guidance || 'none').replace(/[^A-Za-z0-9_.:-]+/g, '_').slice(0, 120) || 'none';
+  // RAW STATUS v VERDICT (2026-09-29, Codex phase-6 audit). `status` is the raw runner result;
+  // `verdict` is what the edit changed. They differ in one case only: the suite failed, but every
+  // failure also fails on the clean checkout (status=FAIL, verdict=PASS). The first line then read
+  // `[run_tests verdict] status=FAIL` directly above `verdict=PASS`, and every arm re-ran the
+  // tests on it. The line keeps its fields and their order (the stats scripts and the telemetry
+  // parse `status=... scope=... exit=...` as a prefix) and gets a suffix that says which line
+  // holds the verdict. When the two agree the line is unchanged.
+  const rawNote = normalizedStatus === 'FAIL' && normalizedVerdict === 'PASS' ? RAW_STATUS_PRE_EXISTING_NOTE : '';
   return [
-    `[run_tests verdict] status=${normalizedStatus} scope=${normalizedScope} exit=${normalizedExit}`,
+    `[run_tests verdict] status=${normalizedStatus} scope=${normalizedScope} exit=${normalizedExit}${rawNote}`,
     `[run_tests baseline-diff] verdict=${normalizedVerdict} introduced_failures=${introduced.length} ` +
       `pre_existing_failures=${preExisting.length} trustworthy=${trusted ? 'yes' : 'no'} ` +
       `introduced_signatures=${footerSignatures(introduced)} pre_existing_signatures=${footerSignatures(preExisting)}`,

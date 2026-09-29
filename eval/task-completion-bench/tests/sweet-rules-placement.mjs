@@ -180,7 +180,7 @@ console.log('opencode:');
 console.log('claude code:');
 {
   const base = { prompt: 'P', rundir: '/r', claudeModelId: 'm' };
-  const legacyArgs = sweet => ['-p', 'P', '--add-dir', '/r',
+  const legacyArgs = sweet => ['-p', '--add-dir', '/r',
     '--append-system-prompt', sweet ? `${READ_PAGES_TOOL_NOTE}\n\n${CLAUDE_SYSTEM_OVERRIDE}` : READ_PAGES_TOOL_NOTE,
     '--append-subagent-system-prompt', READ_PAGES_TOOL_NOTE,
     '--model', 'm', '--permission-mode', 'bypassPermissions', '--output-format', 'stream-json', '--verbose'];

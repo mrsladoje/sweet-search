@@ -13,14 +13,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { writeRunTestsShim } from '../harness/codex-task-runner.mjs';
 import {
-  RUNNING_BANNER, RUNNING_BANNER_DELAY_MS, ATTACH_NOTE, findInflight, markInflight, clearInflight,
+  RUNNING_BANNER, RUNNING_BANNER_CODEX_STEP, runningBanner, RUNNING_BANNER_DELAY_MS, ATTACH_NOTE, findInflight, markInflight, clearInflight,
   publishVerdict, readVerdict, hasVerdict, newRunId, inflightInlineSource,
   verdictOf, runTestsTelemetry,
 } from '../harness/rt-inflight.mjs';
 import { buildRunTestsFooter } from '../harness/rt-condense-lib.mjs';
+import { brokerRequesterSource, directShimSource } from '../harness/rt-shim-text.mjs';
 
 let ok = true;
-const assert = (c, name) => { console.log((c ? '  ✓ ' : '  ✗ ') + name); if (!c) ok = false; };
+const assert = (c, name, detail = '') => { console.log((c ? '  ✓ ' : '  ✗ ') + name + (c || !detail ? '' : `  — ${detail}`)); if (!c) ok = false; };
 const work = mkdtempSync(path.join(tmpdir(), 'rt-inflight-'));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -204,6 +205,57 @@ exit 0
   assert(slow.startsWith(RUNNING_BANNER) && hasVerdict(slow) && slow.indexOf(RUNNING_BANNER) < slow.search(/^\[run_tests verdict\]/m),
     'a run slower than the delay: banner first, verdict after it (in-flight readers saw the banner)');
   assert(slow.split(RUNNING_BANNER).length === 2, 'the banner is written once, never repeated');
+}
+
+// ---------- the banner says how to get the verdict (2026-09-29, Codex phase-6 audit) ----------
+// Codex exec_command returned after ~10-17 s with only the banner; the verdict came only to a
+// rollout that polled with write_stdin. The untrimmed baseline lost it in 15 of 56 test runs.
+console.log('\nbanner — "still running, wait"; the write_stdin step under Codex only');
+{
+  assert(/still running: wait for its output/.test(RUNNING_BANNER), 'every harness: the banner says the command is still running and to wait');
+  assert(!/write_stdin/.test(RUNNING_BANNER), 'the plain banner names no Codex tool');
+  assert(runningBanner() === RUNNING_BANNER && runningBanner('opencode') === RUNNING_BANNER && runningBanner('claude-code') === RUNNING_BANNER,
+    'non-Codex harnesses get the plain banner');
+  const cx = runningBanner('codex');
+  assert(cx === RUNNING_BANNER + RUNNING_BANNER_CODEX_STEP, 'Codex: plain banner + the Codex step');
+  assert(/write_stdin/.test(cx) && /session_id/.test(cx) && /chars: ""/.test(cx), 'Codex step: write_stdin with the session_id and empty input');
+  assert(/call run_tests again without editing: it\n\[run_tests\] attaches to this run/.test(cx), 'Codex step: the fallback when the session_id was not kept');
+  assert(!hasVerdict(cx), 'the Codex banner is not a verdict');
+  assert(cx.split('\n').filter(Boolean).every(l => l.startsWith('[run_tests]')), 'every banner line carries the [run_tests] prefix');
+
+  // The option changes ONLY the banner call: the wait loop, deadline and attach logic are the
+  // same bytes, so run_tests blocks the same way whatever the harness (and it is one shim for
+  // both arms of a harness).
+  const canon = { reqDir: '/C/ipc', cfgPath: '/C/cfg.json', runtimePath: '/C/rt.mjs', ipcDir: '/C/in', testTimeoutSec: 300 };
+  for (const [name, gen] of [['requester', brokerRequesterSource], ['direct', directShimSource]]) {
+    const plain = gen(canon), codex = gen({ ...canon, harness: 'codex' });
+    const diff = codex.split('\n').filter((l, i) => l !== plain.split('\n')[i]);
+    assert(plain.split('\n').length === codex.split('\n').length && diff.length === 1 && /^const stopBanner = startRunningBanner\(.*harness: "codex"/.test(diff[0]),
+      `${name}: the Codex shim differs from the plain one in the banner call only`, diff.join(' | '));
+    assert(!/harness:/.test(plain), `${name}: without the option the shim text is as before`);
+  }
+  const runnerSrc = readFileSync(new URL('../harness/codex-task-runner.mjs', import.meta.url), 'utf8');
+  assert(/installSeds: installSedCmds\(t\), harness: 'codex',\n  \}\);/.test(runnerSrc),
+    'the codex runner sets harness: \'codex\' unconditionally (same for the sweet and native arms)');
+
+  // Real generated requester + broker, slow suite: the in-flight Codex output names the step.
+  const binDir = path.join(work, 'bin-codex-banner');
+  const fakeDocker = path.join(work, 'slow-docker-codex');
+  writeFileSync(fakeDocker, `#!/usr/bin/env bash
+if [ "$1" = "run" ]; then sleep 3; echo "1 passed"; exit 0; fi
+exit 0
+`);
+  chmodSync(fakeDocker, 0o755);
+  const out = writeRunTestsShim(binDir, {
+    image: 'img', workdir: '/w', testScript: 'pytest', rundir: path.join(work, 'repo'), brokerMode: true,
+    testTimeoutSec: 20, dockerBin: fakeDocker, rtAuthority: false, rtDedup: false,
+    label: 'd6-codex-banner', stateDir: binDir, runningBannerDelayMs: 500, harness: 'codex',
+  });
+  const broker = spawn(process.execPath, [out.brokerPath], { stdio: 'ignore' });
+  const done = execFileSync(path.join(binDir, 'run_tests'), [], { encoding: 'utf8', timeout: 90000 });
+  assert(done.startsWith(RUNNING_BANNER + RUNNING_BANNER_CODEX_STEP) && hasVerdict(done),
+    'Codex requester: in-flight output = banner + write_stdin step, then the verdict');
+  try { broker.kill('SIGKILL'); } catch { /* gone */ }
 }
 
 
