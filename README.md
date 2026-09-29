@@ -655,7 +655,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 **What makes it fast**
 
-- 🧩 **Sparse n-gram index.** Grams are sized to your repo's own text, so each one points to few files. The idea comes from [Cursor's fast regex search](https://cursor.com/blog/fast-regex-search) and GitHub's Blackbird.
+- 🧩 **Sparse n-gram index.** Grams are sized to your repo's own text, so each one points to few files. The idea comes from [Cursor's fast regex search](https://cursor.com/blog/fast-regex-search) and [GitHub's Blackbird](https://github.blog/engineering/architecture-optimization/the-technology-behind-githubs-new-code-search/).
 - 🎯 **Literal filter.** The fixed text is pulled out of the regex, and SIMD intersects the file lists. Only 0.1–5% of files see the real regex.
 - 🦀 **All in-process.** Rust regex runs on all cores inside the warm daemon. No subprocess, no pipes, no JSON parsing.
 
