@@ -470,3 +470,7 @@ Stop rule applied to all three harnesses: no remaining prompt lever is measurabl
 - **Turns/waits = BEHAVIOUR:** multi-command read cells 16% → 63% / 52%; pragma in test cells 1 → 4 → 12 (yt3batch3 tripled it; never in the first test cell); pragma cells never return early (0/17). Wait turns 58/44/37. Same-failure line never fired (0 unchanged-failure loops in any arm). No arm did less than needed.
 - **Why waits ≠ $:** a wait turn ≈ $0.0004; yt3batch3 has +19 read/edit turns v yt3batch2 (mwouts B2 +$0.014, brighterscript B1 +$0.007). Sign-flip: L2 v base p=0.33, L3 v base p=0.98.
 - **Defects:** (1) verdict delivery depends on write_stdin — make run_tests block until the verdict or make the banner say how to poll; (2) top line `status=FAIL exit=0` contradicts `baseline-diff verdict=PASS` on tasks with pre-existing failures; (4) **cross-task leak:** `ps -eo` shows other concurrent rollouts' codex command lines incl. another task's issue text (memory host-escape V7).
+
+### p8 — Claude Code retest read6 v read6fs in the SAME cells (fixed tool, ledger fix5; owner request)
+Decision rule set before results: take read6fs only if, over all 8 cells, it stays clearly below read6 and at or below untrimmed, with no solve loss.
+- p8-cc-A1: untrimmed 0.884 (3/4, 33 turns) · read6 1.069 **+21%** (3/4, 35) · read6fs 0.686 **−22%** (3/4, 23). Without bingo (degenerate-reran in L1/L2): 0.505 · 0.646 (+28%) · 0.453 (−10%).
