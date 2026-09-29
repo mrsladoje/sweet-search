@@ -490,3 +490,4 @@ read6fs v read6 in the same cells: realized −2.2% [−10.0, +6.7], ideal −2.
 
 ### Rules placement A/B (rp1; rules in AGENTS.md v via CLI config v in the system prompt; zlint-299 + super_editor-2516)
 - rp1-oc-A1 (opencode, conflict3+todo3eff3k): file $0.026 (2/2, 19 turns) · **config $0.031 (+19%)** (2/2, 21) · system $0.033 (+27%) (2/2, 22). ss-* share of search/read calls: file 22/27 = 81% · **config 23/25 = 92%** · system 23/32 = 72% (5 native reads). Rows stamped placement file/config/system. The rules are seen and followed under config; cost gap is 2 tasks, within noise.
+- rp1-cx-A1 (Codex, conflict/yt3batch2): file $0.031 (2/2, 26 turns) · **config $0.024 (−23%)** (2/2, 20) · system $0.027 (−13%) (2/2, 20). ss-* sub-commands: file 25 (bash 3) · config 28 (bash 1) · system 25 (bash 4). developer_instructions delivery is followed; no sign of lost rules.
