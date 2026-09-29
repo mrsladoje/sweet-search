@@ -52,6 +52,7 @@ import { hasCompleteBaseIndex, WAITING_FOR_INITIAL_INDEX } from '../incremental-
 // a synchronous callback, so the launcher has to be resolved before any await
 // in the shutdown path can wedge.
 import { launchMaintainer } from './maintainer-launcher.mjs';
+import { recordSpawn } from '../infrastructure/spawn-ledger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -2923,6 +2924,8 @@ async function main() {
   // of an anonymous `node`. Cosmetic-only: all liveness/takeover checks are
   // lock/pid-based, never command-line matching.
   try { process.title = 'sweet-search-maintainer'; } catch { /* best-effort */ }
+  // Bench-only pid ledger (no-op unless SWEET_SEARCH_SPAWN_LEDGER_DIR is set).
+  recordSpawn({ pid: process.pid, role: 'maintainer-self' });
 
   // A.1 (Tier-1, UNGATED): demote the maintainer daemon to low OS priority so
   // the foreground (editor / git / shell) never feels the background indexer's
