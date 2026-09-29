@@ -876,10 +876,13 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 ## 🧠 The System Prompt
 
-`sweet-search init` installs a short system prompt next to the six tools. Its one job: make the agent use
-those tools for the **largest cost saving at unharmed retrieval quality**.
+> 🧰 **[Six tools](#-the-six-tools)** give the agent its power.<br>
+> 🧠 **One short prompt** tells the agent how to use them best.<br>
+> 📈 We **hill-climbed** that prompt for the **largest cost saving at unharmed retrieval quality**.
 
-We tuned it in two steps. Step 1 uses [**🧬 GEPA**](https://arxiv.org/abs/2507.19457), a prompt optimizer that evolves prompts from real agent runs.
+`sweet-search init` installs the prompt next to the tools. You do not have to write or edit anything.
+
+### 🧬 How we found the best prompt
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"titleColor": "#1e1b4b", "textColor": "#1e1b4b", "lineColor": "#8e9baa", "edgeLabelBackground": "#f4f8fb"}, "themeCSS": ".cluster-label span { font-size: 19px; font-weight: 700; }", "flowchart": {"wrappingWidth": 400, "rankSpacing": 65, "nodeSpacing": 60, "subGraphTitleMargin": {"top": 6, "bottom": 14}}}}%%
@@ -895,7 +898,7 @@ flowchart TB
     V -->|"it found the code, then stopped before the edit"| S2
     subgraph S2["② Task completion · tuned by hand"]
         direction LR
-        E["🔍 <b>400 dev tasks</b><br/>analyze the failed traces"] --> F["✍️ <b>Write</b> one<br/>new rule"]
+        E["🔍 <b>400 dev tasks</b><br/>Claude Code · Codex · opencode<br/>analyze the failed traces"] --> F["✍️ <b>Write</b> one<br/>new rule"]
         F --> G["🧪 <b>Microsmoke</b> on target<br/>and control tasks"]
         G -->|"helps"| H(["✅ <b>Keep</b>"])
         G -->|"no gain or<br/>costs more"| I(["❌ <b>Drop</b>"])
@@ -933,7 +936,24 @@ flowchart TB
     linkStyle 10 stroke:#ff5ba3,stroke-width:3px;
 ```
 
-In practice, it tells the agent to open with the cheapest tool, trust the ranking, treat two empty searches as proof of absence, and stop searching once it has the answer.
+#### ① Retrieval · evolved with [GEPA](https://arxiv.org/abs/2507.19457)
+
+GEPA is a prompt optimizer that evolves prompts from real agent runs.
+Each candidate prompt ran on **Claude Code** and **Codex**, which answered code-search questions in 10 languages.
+GEPA kept the **Pareto-best** prompts: the cheapest ones with the best retrieval.
+LLMs then read those runs and wrote new candidates, and the loop started again.
+Sealed checks on unseen questions, languages and model families confirmed that the winner did not overfit.
+
+#### ② Task completion · tuned by hand
+
+Retrieval was now cheap and accurate, but the agent sometimes found the code and then stopped before the edit.
+We analyzed the failed traces from **400 dev tasks** on **Claude Code, Codex and opencode**.
+Each fix became one new rule, tested in a microsmoke (a small, fast run) on target and control tasks.
+A rule stayed only if it helped and did not raise the cost.
+
+### 💡 What the prompt says
+
+> Open with the cheapest tool. Trust the ranking. Treat two empty searches as proof of absence. Stop searching once you have the answer.
 
 <details>
 <summary><b>📄 Read the full prompt</b> (<a href="core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md">source file</a>)</summary>
