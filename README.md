@@ -881,10 +881,26 @@ those tools for the **largest cost saving at unharmed retrieval quality**.
 
 We tuned it in two steps:
 
-1. **Retrieval.** A [GEPA](https://arxiv.org/abs/2507.19457)-style evolution loop rewrote candidate prompts and
-   kept the ones that found the right code at the lowest cost, on Claude Code (Claude Sonnet 4.6) and Codex (GPT-5.5) at once.
-2. **Task completion.** The retrieval prompt tended to stop once it found the code. We then tuned it by hand on
-   400 development tasks from our task-completion benchmark, one rule at a time, and kept only the rules that held up.
+```mermaid
+flowchart TB
+    subgraph S1["① Retrieval · evolved automatically · May 2026"]
+        direction LR
+        A["Candidate<br/>prompts"] --> B["Run on Claude Code<br/>and Codex"]
+        B --> C["Keep the cheapest<br/>that stays accurate"]
+        C --> D["An LLM reads the<br/>wasteful runs and<br/>rewrites the prompt"]
+        D --> A
+    end
+    S1 --> V["🔒 Sealed checks<br/>held-out questions<br/>8 unseen languages<br/>2 unseen model families"]
+    V -->|"it found the code, then stopped before the edit"| S2
+    subgraph S2["② Task completion · tuned by hand · Jun–Sep 2026"]
+        direction LR
+        E["400 dev tasks:<br/>read the failed runs"] --> F["Write one<br/>new rule"]
+        F --> G["Small test on target<br/>and control tasks"]
+        G -->|"helps"| H["✅ Keep"]
+        G -->|"no gain or<br/>costs more"| I["❌ Drop"]
+    end
+    S2 --> P["🧠 The shipped prompt"]
+```
 
 In practice, it tells the agent to open with the cheapest tool, trust the ranking, treat two empty searches as proof of absence, and stop searching once it has the answer.
 
@@ -941,15 +957,21 @@ apparent local success does not certify a shape the task did not ask for.
 
 </details>
 
-**🧾 The receipts** — *held-out discipline throughout: a dev set to iterate on, a held-out set touched only at milestones, a sealed vault opened exactly once.*
+<details>
+<summary><b>🧾 Did step 1 overfit? The sealed checks</b></summary>
 
-| Validation gate | Result |
+<br/>
+
+These checks ran on the step 1 prompt. None of these questions, languages or models was seen during tuning.
+A score of 1.00 means every question was answered correctly. For Claude Code and Codex, the score is the worse of the two agents.
+
+| Check | Score |
 |--|--|
-| 🎯 **Held-out** (30 probes × both agents) | joint score *(worst of the two)* **0.988** |
-| 🌍 **Out-of-distribution** (8 languages never seen in the loop) | **0.952** — *every* language ≥ 0.79, zero weak spots |
-| 🛡️ **Adversarial counter-probes** | **1.00 / 1.00** |
-| 🔀 **Held-out model families** (never optimized on) | MiMo **0.988** · Qwen **0.980** — it generalizes, it doesn't memorize |
-| 🧩 **Paraphrase robustness** (reword the prompt, same behavior) | correctness-weighted **0.95 / 0.93** |
+| 🎯 **Held-out questions** (30, Claude Code and Codex) | **0.988** |
+| 🌍 **8 unseen languages** (40 questions) | **0.952** · every language ≥ 0.79 |
+| 🔀 **2 unseen model families** | MiMo **0.988** · Qwen **0.980** |
+
+</details>
 
 <details>
 <summary><b>🔬 How it was actually built (the honest version)</b></summary>
