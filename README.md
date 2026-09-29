@@ -141,6 +141,8 @@ sweet-search uninstall --all  # everything: all repos, models, and the CLI
 <details>
 <summary><b>Setup options & details</b></summary>
 
+<br/>
+
 ```bash
 sweet-search init --wizard          # interactive: shows your hardware, recommends a model tier
 sweet-search init --profile core    # lexical-only, no model downloads (CI-friendly)
@@ -291,6 +293,8 @@ Same tasks, same judge, paired probe-for-probe.
 <details>
 <summary><b>📋 Full per-harness results & how it's measured</b></summary>
 
+<br/>
+
 The win is **harness-adaptive**: where the native loop is disciplined (Claude Code) it shows up as *denser, more useful context per token*; where it thrashes (Codex floods 30k+ tokens of its own grep output into context) it shows up as a *large cost and tool-call cut*. Either way, **final-answer accuracy never significantly regresses**.
 
 | 🧰 Native agent harness | 💰 Realized cost | 🔧 Tool calls | ✨ Useful content / response | 🎯 Final accuracy |
@@ -348,6 +352,8 @@ per task. The harnesses run **as they ship** — no tools disabled, no delegatio
 
 <details>
 <summary><b>📋 Full per-harness results & how it's measured</b></summary>
+
+<br/>
 
 | 🧰 Harness | 💰 Cost, same tasks solved | 💰 Cost, all tasks | 🎯 Resolved | 🪆 Subagent requests | 🔧 Tool calls |
 |---|---:|---:|:--|---:|---:|
@@ -433,6 +439,8 @@ We're SOTA in June 2026 on 3/4 attempted benchmarks at HARDER settings (running 
 <details>
 <summary><b>Methodology, protocol & honesty notes</b></summary>
 
+<br/>
+
 - **Reproduction:** result artifacts live in [`eval/results/`](eval/results/); rerun via `eval/run_all.js`. The canonical full-pool loaders are in `eval/download_data.py`.
 - **Full corpus, not distractors.** Published baselines for GCSN- and CoSQA-style benchmarks typically rank the gold against 99 sampled distractors; every number here ranks against the benchmark's *full* corpus (6k–19k candidates) — strictly harder.
 - **Zero-shot + docstring-stripped.** We never fine-tune on these tasks. For docstring-derived benchmarks (AdvTest, M2CRB) we strip the docstring from the indexed code — otherwise the NL query matches itself verbatim (a no-strip AdvTest run scores a meaningless 0.98). This is the standard protocol; it is also why our AdvTest is lower than naïve setups that leave the docstring in.
@@ -486,6 +494,8 @@ Code search is a crowded space. Here's an honest read on where sweet-search wins
 <sub>✅ yes · ⚠️ partial / with caveats · ❌ no. Verified September 2026; capabilities drift.</sub>
 
 <details><summary>Footnotes</summary>
+
+<br/>
 
 <sub>¹ claude-context defaults to OpenAI/Voyage embeddings + Zilliz Cloud. Its local path (Milvus Lite + Ollama) needs no API key, but still runs Milvus + Ollama.<br/>² SocratiCode runs Qdrant and Ollama for you in Docker, so Docker must be running.<br/>³ GitNexus local embeddings are opt-in (`analyze --embeddings`).<br/>⁴ Outside this table, [ColGREP](https://github.com/lightonai/next-plaid) (LightOn) also runs ColBERT code search locally, as a grep-style search CLI.<br/>⁵ Reports token / cost / tool-call savings, not NL→code retrieval quality.<br/>⁶ PolyForm Noncommercial.<br/>⁷ Runs on Windows via WSL2.<br/>⁸ Indexes each project separately; one session can query several indexed projects, with no cross-repo links.</sub>
 
@@ -601,6 +611,8 @@ flowchart TD
 <details>
 <summary><b>🗺️ Diagram explained</b></summary>
 
+<br/>
+
 | Stage | What it actually does |
 |-------|-----------------------|
 | 🧭 **Route** | **WASM-exported CatBoost** · lexical / hybrid · **~10 µs** routing · low-confidence → max-recall hybrid |
@@ -648,6 +660,8 @@ Every match comes back in stable `file:line` order — ripgrep-identical counts,
 <details>
 <summary><b>More</b></summary>
 
+<br/>
+
 - Full methodology, per-repo table, and the optimization log: [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md).
 - Regexes with no extractable literals fall back to native grep over the indexed file set; fixed-string and glob queries use a ripgrep fallback.
 - **Dialect recovery** (agent mode): patterns written in GNU-grep BRE muscle memory (`foo\|bar`, `\(group\)`) are literals in Rust's regex dialect and used to silently match nothing — a zero-hit exact search now gets one gated auto-retry with the translated pattern instead of a false "no matches".
@@ -673,6 +687,8 @@ semantically ranked — but rebuilt on our own substrate:
 <details>
 <summary><b>More</b></summary>
 
+<br/>
+
 - Requires the late-interaction index (built by default; `--li-model none` disables pattern mode).
 - Also available as `sweet-search --mode pattern` and via the `search` MCP tool's `regex` argument.
 
@@ -696,6 +712,8 @@ The useful answer: just the relevant spans with line numbers — not the whole f
 
 <details>
 <summary><b>More</b></summary>
+
+<br/>
 
 - Unindexed files degrade gracefully to a plain read. Defaults: top 5 spans, relevance threshold 0.4, 8k-char cap.
 - Also available as `sweet-search read-semantic` and the `read-semantic` MCP tool.
@@ -725,6 +743,8 @@ bounds impact traversal (1–4).
 <details>
 <summary><b>More</b></summary>
 
+<br/>
+
 - Honest caveat: call-graph extraction is precise but incomplete on highly dynamic code (bare-name dispatch, metaprogramming) — traces can be sparse there, and the agent prompt teaches a recovery strategy for exactly that case.
 - Also available as `sweet-search trace` and the `trace` MCP tool.
 
@@ -745,6 +765,8 @@ It reads the file from disk, not from the index, so the code is always current. 
 
 <details>
 <summary><b>More</b></summary>
+
+<br/>
 
 - Also available as `sweet-search read` and the `read` MCP tool, with up to 20 files per call.
 - Minified and generated files are refused, so the agent does not load thousands of useless tokens by mistake.
@@ -787,6 +809,8 @@ agent to search *well*.
 
 <details>
 <summary><b>🔬 How it was actually built (the honest version)</b></summary>
+
+<br/>
 
 - **Seeds → survivors:** 15 hand-authored seed prompts entered a reflective-evolution loop (an agent reads the *real* tool-call traces, proposes one targeted edit, we keep what helps). Operators included trajectory crossover, structural pivots, tool-name masking, and a pruner that fights prompt bloat.
 - **Two targets, jointly:** every candidate was scored on **both** Claude Code/Sonnet **and** Codex/GPT-5.5 with Maximin discipline (a prompt is only as good as its *worse* target), so it can't overfit one model's quirks.
@@ -874,6 +898,8 @@ agent to search *well*.
 <details>
 <summary><b>What's actually custom here — the kernels we hand-wrote</b></summary>
 
+<br/>
+
 - **Surgical attention swap:** we vendor the upstream model implementations (NomicBERT for embeddings, ModernBERT for late interaction) and replace **only the attention forward pass** — an MLX-ported fused SDPA kernel on Metal, `candle-flash-attn` with varlen packing on CUDA Ampere+, and byte-for-byte upstream math on CPU so the fallback is provably identical.
 - **A silent-NaN bug, found and fixed:** Apple's Metal SDPA kernel downcasts attention masks to F16, which saturates the standard `f32::MIN` mask to `-Inf` and quietly produces NaN on padded rows — collapsing retrieval quality. We clamp the mask and serialize Metal command-buffer submissions (concurrent submission corrupts outputs on shared queues). Details in [`crates/sweet-search-native/src/inference/`](crates/sweet-search-native/src/inference/).
 - **CoreML cascade:** 18 pre-traced `.mlpackage` variants (bucketed by sequence length) dispatched to the Apple Neural Engine through an Objective-C shim; oversized batches fall through to Metal. Gated to M3+ because on M1/M2 the ANE doesn't beat its own compile overhead — we measured, so it's off there.
@@ -895,6 +921,8 @@ without you ever running a command.
 
 <details>
 <summary><b>Deep dive</b></summary>
+
+<br/>
 
 - **Baseline gate:** the daemon never plays first-index-builder. It verifies a full-indexer fingerprint (epoch manifest + merkle config fingerprint + the vectors DB it names) before touching anything, and reports `waiting_for_initial_index` otherwise — no corrupted partial baselines.
 - **One admission policy:** the full indexer and the reconciler share a single `createAdmissionPolicy` module (include globs → deny list → `.sweet-search-ignore` → 1 MB size cap → batched `git check-ignore`), so the two paths cannot drift.
