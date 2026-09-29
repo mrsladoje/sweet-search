@@ -963,7 +963,9 @@ flowchart TB
 > Open with the cheapest tool. Trust the ranking. Treat two empty searches as proof of absence. Stop searching once you have the answer.
 
 <details>
-<summary><b>📄 Read the full prompt</b> (<a href="core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md">source file</a>)</summary>
+<summary><b>📄 Read the full prompt</b></summary>
+
+<br/>
 
 ```markdown
 # Sweet-search — code search tool guide
