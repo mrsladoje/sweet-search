@@ -617,6 +617,8 @@ flowchart TD
 <details>
 <summary><b>🌶️ Extra spice: what the diagram leaves out</b></summary>
 
+<br/>
+
 - 🧠 **A denser vector graph than most.** Our own binary HNSW raised recall@200 from 80.6% to 86.5% and got about a third faster.
 - ⚡ **Native reranking.** The MaxSim math runs in Rust on all CPU cores, 47× faster than plain code.
 - 📦 **A small index.** Token vectors are packed into 4 bits, which makes that index 3.4× smaller.
