@@ -646,7 +646,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <a id="tool-ss-grep"></a>
 ### <img src="assets/tools/ss-grep.svg" width="40" align="center" alt="" /> 2. `ss-grep`: grep, minus every wasted millisecond
 
-<img src="assets/tools/ss-grep-io.svg" alt="ss-grep takes an exact string or regex and returns every file:line hit, with the match highlighted" width="100%" />
+<img src="assets/tools/ss-grep-io.svg" alt="ss-grep takes the regex session.*expired and returns every file:line hit, with the match highlighted" width="100%" />
 
 ### ⚡ 10.2× faster than ripgrep
 > Median, end to end, on 353 real queries across 5 repos (8.5–17.7× per repo, about 1 ms per query). Same match count as ripgrep on every query.
