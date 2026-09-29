@@ -876,13 +876,11 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 ## 🧠 The System Prompt
 
-> 🧰 **[Six tools](#-the-six-tools)** give the agent its power.<br>
-> 🧠 **One short prompt** tells the agent how to use them best.<br>
-> 📈 We **hill-climbed** that prompt for the **largest cost saving at unharmed retrieval quality**.
+> 🧰 **Six tools** give the agent its power, but to <u>no avail</u> if it doesn't use them efficiently.<br>
+> 🧠 **One prompt** tells the agent how to <u>optimally</u> use them.<br>
+> 📈 We **hill-climbed** that prompt for the *largest cost saving at unharmed retrieval quality*.
 
-`sweet-search init` installs the prompt next to the tools. You do not have to write or edit anything.
-
-### 🧬 How we found the best prompt
+`sweet-search init` installs the prompt in the correct place per harness.
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"titleColor": "#1e1b4b", "textColor": "#1e1b4b", "lineColor": "#8e9baa", "edgeLabelBackground": "#f4f8fb"}, "themeCSS": ".cluster-label span { font-size: 19px; font-weight: 700; }", "flowchart": {"wrappingWidth": 400, "rankSpacing": 65, "nodeSpacing": 60, "subGraphTitleMargin": {"top": 6, "bottom": 14}}}}%%
