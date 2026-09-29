@@ -477,3 +477,13 @@ Decision rule set before results: take read6fs only if, over all 8 cells, it sta
 - p8-cc-B1: realized untrimmed 1.042 (1/6) · read6 0.893 **−14%** (2/6, svgr solved) · read6fs 1.267 **+22%** (1/6). **Cache artefact:** in each cell ONE variant arm pays ≈+10k cache-write tokens on every task (A1: read6 30.7k v 21.1k base; B1: read6fs 26.3k v 16.9k base) — a re-written system prefix, not behaviour — and that arm "loses" the cell. Cache-normalised (ideal$): A1 read6 +3%, read6fs −21%; B1 read6 −13%, read6fs −5%. Judge p8 on ideal$ as well as realized.
 - p8-cc-A2 / B2 failed at start (rc=2): the Ghostty crash restart let the Claude Code auto-updater install 2.1.285 and DELETE ~/.local/share/claude/versions/2.1.281, which the bench link pointed at. Restored 2.1.281 via npm into ~/.ss-eval/claude-2.1.281-pkg (outside the updater's folder) and re-pointed ~/.ss-eval/bin-claude-2.1.281/claude; re-queued as p8-cc-A2b / B2b.
 - p8-cc-A2b: realized untrimmed 0.768 (3/4) · read6 0.814 **+6%** · read6fs 0.846 **+10%**; ideal$ 0.844 · 0.876 (+4%) · 0.910 (+8%). No one-arm cache artefact in this cell (cache writes similar). Running ideal$: read6fs −21 / −5 / +8; read6 +3 / −13 / +4.
+- p8-cc-B2b: realized untrimmed 1.093 (1/6) · read6 1.006 **−8%** (2/6) · read6fs 0.989 **−10%** (2/6); ideal 1.223 · 1.133 (−7%) · 1.119 (−9%).
+
+### Claude Code pooled after the retest (bootstrap 5,000, seed 42; ideal$ = cache-normalised)
+| arm | pairs | realized | ideal$ | solves base/arm |
+|---|---|---|---|---|
+| read6 (12 cells) | 60 | +3.5% [−3.0, +10.1] | −0.1% [−5.0, +4.7] | 27 / 28 |
+| **read6fs (8 cells)** | 40 | **−1.2% [−8.3, +6.5]** | **−5.1% [−10.8, +0.7]** | 18 / 18 |
+| read7 (4 cells) | 20 | +2.6% [−8.2, +14.3] | +1.3% [−7.7, +11.1] | 9 / 10 |
+read6fs v read6 in the same cells: realized −2.2% [−10.0, +6.7], ideal −2.7% [−7.7, +2.6].
+**Against the pre-set rule:** at or below untrimmed — YES (realized −1%, ideal −5%); no solve loss — YES (18/18); clearly below read6 — NO (−2.7%, interval crosses zero). The packing line's own effect is small; read6fs is the best Claude Code variant and has the same standing as the opencode/Codex finals (≈ −5% cache-normalised, unproven). **Claude Code pick: read6fs** (owner decision to ship).
