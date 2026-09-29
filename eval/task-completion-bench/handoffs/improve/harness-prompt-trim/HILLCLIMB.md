@@ -413,3 +413,13 @@ First Codex cell where ember is SOLVED in every arm (3/4, was 2/4): the jest-nam
 | yt3batch2 | 3/4 | 0.0674 | −18% | 0.0485 (−14%) | 60 | 10 |
 | yt3batch3 | 3/4 | 0.0681 | −17% | 0.0479 (−15%) | 55 | 7 |
 Both variants solved ember where the baseline failed (28 turns). yt3batch3 has the fewest wait turns in every p6 cell so far (8/10/7 v 13/12/19 base).
+
+### p6-cx-B2 (Codex, rotation B; ledger fix4)
+untrimmed 0.066 (0/6, 79 turns) · yt3batch2 0.067 **+1%** (0/6, 68) · yt3batch3 0.083 **+26%** (0/6, 79).
+
+### Codex pooled on the FIXED tool (p6, 4 cells, 20 task pairs, bootstrap 5,000, seed 42)
+| arm | geo Δ | 95% CI | total $ | solves (base 5) | wait turns (base 58) |
+|---|---|---|---|---|---|
+| yt3batch2 | −5.9% | [−14.9, +4.2] | −5.4% | 6 | 44 |
+| yt3batch3 | +0.5% | [−10.5, +13.4] | −0.1% | 6 | 37 |
+**Reading:** on the fixed tool the Codex prompt saving shrinks from ≈−19% to ≈−5% (interval crosses zero). The rest of the old saving was the baseline's loops on tool defects. yt3batch3 cuts wait turns further (−36% v base) but the extra text costs as much as it saves. **Codex final stays yt3batch2** (≈−5%, unproven, mechanism real: read batching audited). Stop rule: Codex has no further lever with a measurable effect at this sample size.
