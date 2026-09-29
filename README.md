@@ -1062,6 +1062,8 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 </tr>
 </table>
 
+<img src="assets/index-build.svg" alt="How the index is built. Source files are chunked and enriched, embedded by two models, and stored compressed. One pass feeds six index parts: word index, n-gram index, binary HNSW, bi-encoder vectors, late-interaction vectors and code graph. The embedding runs on Apple Metal, the Apple Neural Engine, NVIDIA CUDA or any CPU. A maintainer daemon updates all six parts after each edit with an atomic swap." width="100%" />
+
 <table>
 <tr>
 <td width="50%" valign="top">
