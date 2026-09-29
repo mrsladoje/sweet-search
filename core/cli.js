@@ -118,6 +118,14 @@ if (args[0] === 'init') {
   // never command-line matching, so this is cosmetic-only.
   if (args[0] === '--serve') {
     try { process.title = 'sweet-search-daemon'; } catch { /* best-effort */ }
+    // Bench-only pid ledger (no-op unless SWEET_SEARCH_SPAWN_LEDGER_DIR is set).
+    // Self-registration covers every spawner (JS shims, native CLI, prewarm hook).
+    if (process.env.SWEET_SEARCH_SPAWN_LEDGER_DIR) {
+      try {
+        const { recordSpawn } = await import('./infrastructure/spawn-ledger.js');
+        recordSpawn({ pid: process.pid, role: 'daemon-self' });
+      } catch { /* best-effort */ }
+    }
   }
   // Warm search server lifecycle is implemented in JS.
   const { runCli } = await import('./search/index.js');

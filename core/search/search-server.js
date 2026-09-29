@@ -1819,6 +1819,12 @@ export async function autoSpawnServer() {
   });
 
   child.unref();
+  // Bench-only pid ledger (no-op unless SWEET_SEARCH_SPAWN_LEDGER_DIR is set):
+  // lets the harness that caused this spawn find and stop the detached daemon.
+  try {
+    const { recordSpawn } = await import('../infrastructure/spawn-ledger.js');
+    recordSpawn({ pid: child.pid, role: 'daemon' });
+  } catch { /* best-effort */ }
 
   // Wait for server to be ready (up to 5 seconds)
   const maxWait = 5000;

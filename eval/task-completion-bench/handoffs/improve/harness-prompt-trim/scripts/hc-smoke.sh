@@ -48,7 +48,14 @@ VARIANTS=${VARIANTS:-$ALL}
 
 if pgrep -f "harness/run-pilo[t].mjs" >/dev/null; then echo "another run-pilot is running — one at a time"; exit 2; fi
 if pgrep -x sweet-search-daemon >/dev/null || pgrep -x sweet-search-maintainer >/dev/null; then
-  echo "ss-* daemons are running; stop them first"; exit 2
+  echo "ss-* daemons are running; stop them first. Blocking process(es):"
+  for n in sweet-search-daemon sweet-search-maintainer; do
+    for p in $(pgrep -x $n); do
+      cwd=$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+      echo "  $n pid=$p ppid=$(ps -o ppid= -p "$p" | tr -d ' ') etime=$(ps -o etime= -p "$p" | tr -d ' ') cwd=${cwd:-?}"
+    done
+  done
+  exit 2
 fi
 
 # The ledger sweep deletes task images; reload any that are missing from the kept tars.

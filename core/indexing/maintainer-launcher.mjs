@@ -34,6 +34,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reconcileEnablement } from '../incremental-indexing/domain/interval-autotune.mjs';
 import { applyBackgroundPriority } from './os-priority.mjs';
+import { recordSpawn } from '../infrastructure/spawn-ledger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -266,6 +267,9 @@ export function launchMaintainer(options = {}) {
       log(`maintainer spawn reported an async error (child did not start): ${err?.message || err}`);
     });
     child.unref();
+    // Bench-only pid ledger (no-op unless SWEET_SEARCH_SPAWN_LEDGER_DIR is set):
+    // lets the harness that caused this spawn find and stop the detached child.
+    recordSpawn({ pid: child.pid, role: 'maintainer', projectRoot: env.SWEET_SEARCH_PROJECT_ROOT || cwd, env });
     // Demote the detached child to OS background priority (best-effort, never
     // throws). Runs in this foreground caller, targeting the child by pid, so
     // only the child is demoted. Gate default-on (Tier-1, output-identical).

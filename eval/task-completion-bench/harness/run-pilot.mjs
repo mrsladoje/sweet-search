@@ -40,6 +40,7 @@ import { assertBaseCommit, writeProvenance, verifyGolden, provenanceNote, proven
 import { materialiseDeps } from './dep-materialise.mjs';
 import { admissionReport, loadBlocklist, vacuityBlocklist } from './task-admission.mjs';
 import { degenerationVerdict } from './degeneration-policy.mjs';
+import { SPAWN_LEDGER_ENV, spawnLedgerFile, reapSpawnLedger, reapSpawnLedgerSync, reapLedgerDir, allLedgerFiles } from './spawn-ledger-reap.mjs';
 // HARNESS routes the agent loop through a REAL production coding agent (uncapped — runs
 // to completion) instead of the bare-API ReAct loop. All share grading/metrics + the
 // identical completion frame; native=vanilla agent, sweet=agent + M++ + ss-* on PATH.
@@ -282,6 +283,15 @@ function reapServers() {
 // written. Runs are `cp` copies in unique dirs under RUNS_DIR, deleted after use.
 const GOLDEN_DIR = path.join(EVAL_HOME, 'golden');
 const RUNS_DIR = path.join(EVAL_HOME, 'runs');
+// Pid ledger for every ss-* daemon/maintainer this pilot causes to start (see
+// spawn-ledger-reap.mjs). Set BEFORE any spawn so every child env (warmup, agent runners,
+// ss-* shims, daemons, maintainers) inherits it; per pilot, keyed per rundir inside core.
+const SPAWN_LEDGER_DIR = path.join(RUNS_DIR, '.spawn-ledger', String(process.pid));
+process.env[SPAWN_LEDGER_ENV] = SPAWN_LEDGER_DIR;
+// Last resort on any exit path (crash, SIGINT/SIGTERM via process.exit): never leave a
+// daemon/maintainer this pilot started. Synchronous; the async sweep after the pool is primary.
+process.on('exit', () => { try { reapSpawnLedgerSync(allLedgerFiles(SPAWN_LEDGER_DIR)); rmSync(SPAWN_LEDGER_DIR, { recursive: true, force: true }); } catch { /* */ } });
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.once(sig, () => process.exit(128 + ({ SIGINT: 2, SIGTERM: 15, SIGHUP: 1 })[sig]));
 const cacheKeyFor = (t) => `${t.repo.replace('/', '__')}@${t.base_commit}`;
 
 // Build (once) the read-only golden template for a repo@commit. The CALLER
@@ -381,7 +391,14 @@ function reapRunDirDarwin(rundir) {
   }
 }
 
-function reapRunDir(rundir) {
+// Primary teardown on every platform: SIGKILL what the spawn ledger lists for THIS rundir
+// (recorded by core at spawn and at process start, so it does not depend on open files or a
+// readable environ). The lsof / environ matchers below stay as a second net.
+async function reapRunDir(rundir) {
+  try {
+    const killed = await reapSpawnLedger(spawnLedgerFile(SPAWN_LEDGER_DIR, rundir));
+    if (process.env.SS_REAP_VERBOSE === '1' && killed.length) console.log(`  [reap] ${path.basename(rundir)}: ${killed.map(k => `${k.comm}(${k.pid})`).join(', ')}`);
+  } catch { /* */ }
   if (process.platform === 'darwin') {
     try { reapRunDirDarwin(rundir); } catch { /* */ }
     try { rmSync(rundir, { recursive: true, force: true }); } catch { /* */ }
@@ -659,7 +676,7 @@ async function runOneTask(id) {
             if (HARNESS === 'cursor') return await runCursorTask(task, agentOpts);
             return await runTask(task, { arm, model: MODEL, apiModel: MODEL, provider: PROVIDER, reasoning: REASONING, maxToolCalls: MAX_TOOL_CALLS, ssBinDir: SS_BIN, mppText, policy: process.env.POLICY, runTests });
           } finally {
-            reapRunDir(rundir); // kill this run's server/maintainer + delete its copy; golden untouched
+            await reapRunDir(rundir); // kill this run's server/maintainer + delete its copy; golden untouched
           }
         };
         try {
@@ -798,6 +815,9 @@ if (GRADE_ONLY_FROM) {
   console.log(`[grade-only] ${rows.length} row(s) loaded from ${src} — AGENT PHASE SKIPPED, grading only`);
 } else {
   await runPool(INSTANCES, CONCURRENCY);
+  // Catch-all: anything a rollout started after its own teardown (a late ss-* call from a
+  // straggling agent process) is still on this pilot's ledger.
+  { const late = await reapLedgerDir(SPAWN_LEDGER_DIR); if (late.length) console.log(`[reap] end-of-pool: killed ${late.length} late ss-* process(es): ${late.map(k => `${k.comm}(${k.pid})`).join(', ')}`); }
   // reap ss-* daemons ONCE, after the whole pool drains (never mid-pool — would kill
   // sibling tasks' live servers).
   reapServers();
