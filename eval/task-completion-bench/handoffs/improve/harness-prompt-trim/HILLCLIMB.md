@@ -405,3 +405,11 @@ First Codex cell where ember is SOLVED in every arm (3/4, was 2/4): the jest-nam
 | yt3batch2 | 0/6 | 0.071 | +1% | 67 | 11 |
 | yt3batch3 | 0/6 | 0.074 | +6% | 76 | 10 |
 **Key:** the untrimmed baseline on rotation B fell from 0.095–0.101 (p4 cells, old tool) to 0.070 on the fixed tool (−27%). The p4 Codex "savings" on B (−16..−28%) were mostly the baseline's loops on tool defects (timestamps, jest names, argv mangling). On the fixed tool, the variants ≈ parity on B. Turns still −14% for yt3batch2 but it does not show in $.
+
+### p6-cx-A2 (Codex, rotation A; ledger fix4)
+| arm | solved | real $ (4 tasks) | Δ | w/o bingo | turns | wait turns |
+|---|---|---|---|---|---|---|
+| untrimmed | 2/4 | 0.0823 | — | 0.0563 | 84 | 19 |
+| yt3batch2 | 3/4 | 0.0674 | −18% | 0.0485 (−14%) | 60 | 10 |
+| yt3batch3 | 3/4 | 0.0681 | −17% | 0.0479 (−15%) | 55 | 7 |
+Both variants solved ember where the baseline failed (28 turns). yt3batch3 has the fewest wait turns in every p6 cell so far (8/10/7 v 13/12/19 base).
