@@ -726,29 +726,46 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <a id="tool-ss-semantic"></a>
 ### <img src="assets/tools/ss-semantic.svg" width="40" align="center" alt="" /> 4. `ss-semantic`: hybrid search inside one file
 
-<img src="assets/tools/ss-semantic-io.svg" alt="ss-semantic takes a file plus a question and returns only the lines that answer it" width="100%" />
+<img src="assets/tools/ss-semantic-io.svg" alt="ss-semantic takes src/auth/session.ts plus the question how is the cookie expiry set. A map of the 140-line file marks 3 spans, and the output lists those 3 spans with line numbers, best first." width="100%" />
 
-You already know the file. `ss-semantic` finds the lines in it that answer your question.
+### 📍 Ask one file a question
+> You already know the file. `ss-semantic` gives you only the lines that answer your question, with line numbers. The rest of the file stays out of your context.
 
-Each indexed chunk of the file gets three scores:
+<table>
+<tr><td colspan="2"><b>How it picks the lines</b></td></tr>
+<tr>
+<td width="50%" valign="top">
 
-- **Words:** BM25-style match on your query terms.
-- **Symbols:** exact match on symbol names, weighted 1.5×.
-- **Meaning:** MaxSim over the **LateOn-Code** token embeddings.
+**🧮 Three scores, one ranking**
 
-**Reciprocal Rank Fusion** (k=60) merges the three rankings. Chunks with no symbol get a 0.85× penalty, so real definitions win ties.
+- **Words:** BM25-style match on your terms.
+- **Symbols:** exact symbol-name match, 1.5× weight.
+- **Meaning:** MaxSim over LateOn-Code token embeddings.
+- Reciprocal Rank Fusion merges the three lists.
 
-The best spans are then read again from disk, with 2 lines of context on each side. Spans that overlap are merged. So you always see the current file, even during an edit. If the file is newer than its index, you get a warning.
+</td>
+<td width="50%" valign="top">
 
-You get the lines that matter, with line numbers. The rest of the file stays out of your context.
+**📄 Always the live file**
+
+- The best spans are read again from disk.
+- Each span gets 2 lines of context on each side. Overlapping spans are merged.
+- So you see the current code, even during an edit.
+- If the file is newer than its index, you get a warning.
+
+</td>
+</tr>
+</table>
 
 <details>
 <summary><b>More</b></summary>
 
 <br/>
 
-- Unindexed files degrade gracefully to a plain read. Defaults: top 5 spans, relevance threshold 0.4, 8k-char cap.
-- Also available as `sweet-search read-semantic` and the `read-semantic` MCP tool.
+- **Defaults:** top 5 spans, score floor 0.4, 8,000-character limit.
+- Chunks with no symbol get a 0.85× penalty, so real definitions win ties.
+- A file that is not indexed falls back to a plain read.
+- Also available as `sweet-search read-semantic` and as the `read-semantic` MCP tool.
 
 </details>
 
