@@ -80,6 +80,65 @@ export function validateMainOpencodePreflight({ version, resolved, plugins = [] 
   return true;
 }
 
+// Exact-config preflight: `opencode --version` + `opencode debug config`, then
+// validateMainOpencodePreflight on the result. Defect 2026-09-29 (5+ INFRA rows, rising with
+// load avg ~20): each unjailed rollout gets a FRESH private XDG_CONFIG_HOME, and opencode
+// 1.18.4's first start there installs @opencode-ai/plugin into $XDG_CONFIG_HOME/opencode
+// (package.json + node_modules, ~16 s with six rollouts starting together). `debug config`
+// only prints after that, so under load it ran past the old fixed 30 s timeout and the row
+// became "OpenCode preflight process failed" with no detail. Fix: a longer timeout, and ONE
+// retry after a backoff that fires only on a PROCESS-level failure (non-zero exit, signal,
+// timeout). The retry reuses the same config dir, so the install is already done. A real
+// mismatch (wrong version, ambient plugin, non-JSON config) is never retried: the guarantee
+// the preflight exists for is unchanged. Same code path for both arms.
+export const OPENCODE_PREFLIGHT_TIMEOUT_MS = 120_000;
+export const OPENCODE_PREFLIGHT_ATTEMPTS = 2;
+export const OPENCODE_PREFLIGHT_BACKOFF_MS = 5_000;
+
+function preflightProcessDetail(name, result) {
+  let tail = String(result.stderr || '').replace(/\u001b\[[0-9;]*m/g, '').trim().slice(-300).replace(/\s+/g, ' ');
+  const apiKey = String(process.env.OPENROUTER_API_KEY || '');
+  if (apiKey) tail = tail.replaceAll(apiKey, '[REDACTED]');
+  return `${name}: exit=${result.exitCode}${result.signal ? ` signal=${result.signal}` : ''}`
+    + `${result.timedOut ? ' timedOut' : ''}${result.elapsedMs != null ? ` ${result.elapsedMs}ms` : ''}`
+    + `${tail ? ` stderr="${tail}"` : ''}`;
+}
+
+export async function runOpencodePreflight({
+  spawn = spawnWithTimeout, cwd, env, jail = null, plugins = [],
+  timeoutMs = Number(process.env.SS_OC_PREFLIGHT_TIMEOUT_MS) || OPENCODE_PREFLIGHT_TIMEOUT_MS,
+  attempts = OPENCODE_PREFLIGHT_ATTEMPTS, backoffMs = OPENCODE_PREFLIGHT_BACKOFF_MS,
+  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), log = console.log,
+} = {}) {
+  const failures = [];
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const timed = async args => {
+      const t0 = Date.now();
+      const result = await spawn('opencode', args, { cwd, env, timeoutMs, jail });
+      return { ...result, elapsedMs: Date.now() - t0 };
+    };
+    const versionResult = await timed(['--version']);
+    const bad = r => r.exitCode !== 0 || r.timedOut || Boolean(r.signal);
+    const configResult = bad(versionResult) ? null : await timed(['debug', 'config']);
+    if (bad(versionResult) || bad(configResult)) {
+      const detail = bad(versionResult) ? preflightProcessDetail('version', versionResult)
+        : preflightProcessDetail('debug config', configResult);
+      failures.push(`attempt ${attempt}: ${detail}`);
+      if (attempt < attempts) {
+        log(`  [opencode-preflight] process failure (${detail}) — retrying in ${backoffMs}ms`);
+        await sleep(backoffMs * attempt);
+        continue;
+      }
+      throw new Error(`OpenCode preflight process failed (${failures.join('; ')})`);
+    }
+    // Content checks: never retried.
+    const resolved = parseResolvedConfig(configResult.stdout);
+    validateMainOpencodePreflight({ version: versionResult.stdout, resolved, plugins });
+    return { resolved, versionResult, configResult, attempts: attempt, processFailures: failures };
+  }
+  throw new Error('OpenCode preflight process failed (no attempts)');
+}
+
 // --- HARNESS TRIM (OC_HARNESS_TRIM, default OFF) — handoffs/improve/harness-prompt-trim ---
 // Research switch, SWEET ARM ONLY: removes the parts of opencode's OWN request that
 // contradict the ss-* rules (Glob/Grep-first, Task-instead-of-search, Read-instead-of-cat,
@@ -657,18 +716,8 @@ export async function runOpencodeTask(task, {
   });
   let preflight;
   try {
-    const versionResult = await spawnWithTimeout('opencode', ['--version'], {
-      cwd: rundir, env, timeoutMs: 30_000, jail,
-    });
-    const configResult = await spawnWithTimeout('opencode', ['debug', 'config'], {
-      cwd: rundir, env, timeoutMs: 30_000, jail,
-    });
-    if (versionResult.exitCode !== 0 || versionResult.timedOut
-        || configResult.exitCode !== 0 || configResult.timedOut) {
-      throw new Error('OpenCode preflight process failed');
-    }
-    const resolved = parseResolvedConfig(configResult.stdout);
-    validateMainOpencodePreflight({ version: versionResult.stdout, resolved, plugins: harnessTrim.plugins });
+    const checked = await runOpencodePreflight({ cwd: rundir, env, jail, plugins: harnessTrim.plugins });
+    const { resolved } = checked;
     const apiKey = String(process.env.OPENROUTER_API_KEY || '');
     let safeResolved = JSON.stringify(sanitizedConfig(resolved));
     if (apiKey) safeResolved = safeResolved.replaceAll(apiKey, '[REDACTED]');
@@ -676,6 +725,7 @@ export async function runOpencodeTask(task, {
     writeFileSync(resolvedPath, safeResolved + '\n', { mode: 0o600 });
     preflight = {
       valid: true, version: PINNED_OPENCODE_VERSION, pluginCount: 0,
+      attempts: checked.attempts, processFailures: checked.processFailures,
       resolvedConfigPath: retainedPath(resolvedPath),
       resolvedConfigSha256: createHash('sha256').update(safeResolved).digest('hex'),
     };
