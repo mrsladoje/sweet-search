@@ -598,6 +598,9 @@ flowchart TD
 
 <sub>↑ The diagram shows the **hybrid** route. A pure keyword query or a literal file path goes from the router straight to BM25F and skips the vector search and fusion.</sub>
 
+<details>
+<summary><b>🗺️ Diagram explained</b></summary>
+
 | Stage | What it actually does |
 |-------|-----------------------|
 | 🧭 **Route** | **WASM-exported CatBoost** · lexical / hybrid · **~10 µs** routing · low-confidence → max-recall hybrid |
@@ -608,6 +611,8 @@ flowchart TD
 | 🕸️ **Graph Expansion** | • typed-edge walks (`imports`/`extends`/`calls`/`uses`) · adaptive 2-hop on the AST graph · edges picked by intent<br/>• **PathRAG** flow pruning + degree normalization → hubs can't dominate |
 | 🧮 **Late interaction Rerank** | • Query embedded per-token by **LateOn-Code** (149M; a 17M **edge** variant auto-selected on low-RAM hosts)<br/>• **MaxSim** against the pre-indexed quantized token vectors<br/>• native Rust+Rayon MaxSim kernel ⚡ · WASM-SIMD fallback (1.26 s → 27 ms on a 231-candidate rerank) |
 | 📦 **Package** | • entity-aware expansion → whole functions (imports, docstrings, decorators)<br/>• same-file overlap demotion → diverse, non-overlapping spans<br/>• **symbol-family completion** (agent mode): generated/width families surface as a compact indexed manifest instead of truncating silently, inside the same budget<br/>• auto-selected **3k / 8k / 12k** token budget |
+
+</details>
 
 <details>
 <summary><b>🌶️ Extra spice: the bits that didn't fit the diagram</b></summary>
