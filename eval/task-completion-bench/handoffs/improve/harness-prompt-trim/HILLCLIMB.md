@@ -375,3 +375,6 @@ Both arms lose this cell; the baseline is unusually lean (ember 6 turns, zlint 6
 | read6 | 1/6 | 1.023 | +20% | 0.706 (+7%) | 43 |
 | read7 | 2/6 | 0.969 | +13% | 0.802 (+21%) | 40 |
 read6 lost svgr (the known solve lottery). read7's loss is jupytext (12 turns / 14 calls v 6/5) and brighterscript (14 calls). Two p5 cells: both variants lose to untrimmed. Stop-rule check: Claude Code has now stalled for 3 rounds (p3 noise, p4 read6fs = luck, p5 losses) → after A2/B2, stop climbing Claude Code unless those cells reverse clearly.
+
+### p5-cc-A2 (Claude Code, rotation A; ledger fix3)
+untrimmed 0.875 (3/4, 33 turns) · read6 0.840 **−4%** (3/4, 34) · read7 0.829 **−5%** (3/4, 30). Without bingo: 0.515 · 0.545 (+6%) · 0.562 (+9%). The only gain is the never-solved bingo task; on the solvable tasks both arms cost more again.
