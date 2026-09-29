@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { writeRunTestsShim } from '../harness/codex-task-runner.mjs';
 import {
-  RUNNING_BANNER, ATTACH_NOTE, findInflight, markInflight, clearInflight,
+  RUNNING_BANNER, RUNNING_BANNER_DELAY_MS, ATTACH_NOTE, findInflight, markInflight, clearInflight,
   publishVerdict, readVerdict, hasVerdict, newRunId, inflightInlineSource,
   verdictOf, runTestsTelemetry,
 } from '../harness/rt-inflight.mjs';
@@ -67,7 +67,7 @@ exit 0
   const out = writeRunTestsShim(binDir, {
     image: 'img', workdir: '/w', testScript: 'pytest', rundir,
     testTimeoutSec: 20, dockerBin: fakeDocker, rtAuthority: false, rtDedup: false,
-    label: 'd6-test',
+    label: 'd6-test', runningBannerDelayMs: 500,   // the suite (4 s) outlasts the banner delay
   });
   assert(out.files.some(f => f.endsWith('rt-inflight.mjs')), 'rt-inflight.mjs is covered by shim integrity');
 
@@ -129,7 +129,7 @@ exit 0
   const out = writeRunTestsShim(binDir, {
     image: 'img', workdir: '/w', testScript: 'pytest', rundir, brokerMode: true,
     testTimeoutSec: 20, dockerBin: fakeDocker, rtAuthority: false, rtDedup: false,
-    label: 'd6-broker', stateDir: binDir,
+    label: 'd6-broker', stateDir: binDir, runningBannerDelayMs: 500,
   });
   const src = readFileSync(path.join(binDir, '_run_tests.mjs'), 'utf8');
   const specifiers = [...src.matchAll(/^\s*import\s[^;]*?from\s*['"]([^'"]+)['"]/gm)].map(m => m[1]);
@@ -168,6 +168,42 @@ exit 0
   const runs = existsSync(runLog) ? readFileSync(runLog, 'utf8').trim().split('\n').filter(Boolean).length : 0;
   assert(runs === 1, `exactly ONE suite ran for two overlapping requester calls (saw ${runs})`);
   try { broker.kill('SIGKILL'); } catch { /* already gone */ }
+}
+
+// ---------- the banner is IN-FLIGHT ONLY (2026-09-29, Codex phase-4 audit) ----------
+// Completed results started with "RUNNING ... This text is NOT a result" right above the
+// verdict. The banner now waits RUNNING_BANNER_DELAY_MS and is cancelled by the verdict.
+console.log('\nbanner — never on a result that completes inside the delay');
+for (const brokerMode of [false, true]) {
+  const label = brokerMode ? 'broker requester' : 'direct shim';
+  const binDir = path.join(work, `bin-fast-${brokerMode ? 'broker' : 'direct'}`);
+  const fast = path.join(work, `fast-docker-${brokerMode ? 'broker' : 'direct'}`);
+  writeFileSync(fast, `#!/usr/bin/env bash
+if [ "$1" = "run" ]; then echo "1 passed"; exit 0; fi
+exit 0
+`);
+  chmodSync(fast, 0o755);
+  const out = writeRunTestsShim(binDir, {
+    image: 'img', workdir: '/w', testScript: 'pytest', rundir: path.join(work, 'repo'), brokerMode,
+    testTimeoutSec: 20, dockerBin: fast, rtAuthority: false, rtDedup: false,
+    label: `d6-fast-${brokerMode}`, stateDir: binDir,          // default delay (RUNNING_BANNER_DELAY_MS)
+  });
+  const broker = brokerMode ? spawn(process.execPath, [out.brokerPath], { stdio: 'ignore' }) : null;
+  const t0 = Date.now();
+  const done = execFileSync(path.join(binDir, 'run_tests'), [], { encoding: 'utf8', timeout: 60000 });
+  const ms = Date.now() - t0;
+  assert(ms < RUNNING_BANNER_DELAY_MS, `${label}: the fast run completed inside the delay (${ms} ms)`);
+  assert(hasVerdict(done) && !done.includes('[run_tests] RUNNING'), `${label}: the completed result carries no RUNNING banner`);
+  if (broker) { try { broker.kill('SIGKILL'); } catch { /* gone */ } }
+}
+{
+  // Slow run, read once at the end: the banner was already written (a stream cannot retract
+  // it), and the verdict still follows it — the documented residue, pinned so it is visible.
+  const binDir = path.join(work, 'bin');
+  const slow = execFileSync(path.join(binDir, 'run_tests'), [], { encoding: 'utf8', timeout: 60000 });
+  assert(slow.startsWith(RUNNING_BANNER) && hasVerdict(slow) && slow.indexOf(RUNNING_BANNER) < slow.search(/^\[run_tests verdict\]/m),
+    'a run slower than the delay: banner first, verdict after it (in-flight readers saw the banner)');
+  assert(slow.split(RUNNING_BANNER).length === 2, 'the banner is written once, never repeated');
 }
 
 

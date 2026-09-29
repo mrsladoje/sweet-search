@@ -82,8 +82,9 @@ const PY_FAIL_LONG_RAW = ['collected 300 items', rep(150, i => `tests/test_a.py:
 
 // jest: failing test names use U+2715, which the parser does not read → 0 signatures,
 // but the summary says tests failed (ember-cli__eslint-plugin-ember-551 shape).
-const JEST_UNPARSED_RAW = ['  rules setup', '    ✕ should have a list of rules (12ms)',
-  '  ● rules setup › should have a list of rules', '    expect(received).toEqual(expected)',
+// A failing summary whose per-test names did not survive capture. (Jest's `✕` / `●` name
+// lines parse since 2026-09-29 — tests/rt-runner-shapes.mjs — so this fixture carries none.)
+const JEST_UNPARSED_RAW = ['  rules setup', '    expect(received).toEqual(expected)',
   'Test Suites: 1 failed, 62 passed, 63 total', 'Tests:       3 failed, 1360 passed, 1363 total',
   'Ran all test suites.'].join('\n') + '\n';
 

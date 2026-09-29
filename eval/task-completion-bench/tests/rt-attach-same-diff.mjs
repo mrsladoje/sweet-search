@@ -26,12 +26,13 @@ const git = (dir, args) => execFileSync('git', ['-C', dir, ...args], { encoding:
 
 // ---------- switch OFF: the generated shims are the pre-switch text, byte for byte ----------
 // Frozen copies of the two templates as they were before the switch existed. If a later change
-// needs to alter the default shim, it must change these too — deliberately.
+// needs to alter the default shim, it must change these too — deliberately. (2026-09-29: the
+// immediate RUNNING banner became startRunningBanner / stopBanner — see rt-inflight.mjs.)
 const LEGACY_BROKER = ({ reqDir, testTimeoutSec }) => `${inflightInlineSource()}
 const IPC = ${JSON.stringify(reqDir)};
 const tSec = ${Number(testTimeoutSec) || 300};
 const waitSec = 2 * tSec + 120;                          // baseline + current suite + overhead
-process.stdout.write(RUNNING_BANNER);
+const stopBanner = startRunningBanner(RUNNING_BANNER_DELAY_MS);
 const attachId = findInflight(IPC, waitSec * 1000);
 const id = attachId || newRunId();
 if (attachId) process.stdout.write(ATTACH_NOTE);
@@ -46,16 +47,18 @@ while (Date.now() < deadline) {
     const text = readFileSync(res, 'utf8');
     try { rmSync(res, { force: true }); } catch {}
     clearInflight(IPC, id);                              // the broker already published it
+    await stopBanner();
     process.stdout.write(text);
     process.exit(0);
   }
   if (attachId) {
     const text = readVerdict(IPC, id);
-    if (text != null) { process.stdout.write(text); process.exit(0); }
+    if (text != null) { await stopBanner(); process.stdout.write(text); process.exit(0); }
   }
   await new Promise(r => setTimeout(r, 400));
 }
 if (!attachId) clearInflight(IPC, id);
+await stopBanner();
 process.stdout.write(NO_VERDICT_NOTE(waitSec));
 `;
 const LEGACY_DIRECT = ({ cfgPath, runtimePath, ipcDir, testTimeoutSec }) => `${inflightInlineSource()}
@@ -63,16 +66,17 @@ import { runTestsWithLevers } from ${JSON.stringify(runtimePath)};
 const c = JSON.parse(readFileSync(${JSON.stringify(cfgPath)}, 'utf8'));
 const IPC = ${JSON.stringify(ipcDir)};
 const waitSec = 2 * (${Number(testTimeoutSec) || 300}) + 120;
-process.stdout.write(RUNNING_BANNER);
+const stopBanner = startRunningBanner(RUNNING_BANNER_DELAY_MS, { blocking: true });
 const attachId = findInflight(IPC, waitSec * 1000);
 if (attachId) {
   process.stdout.write(ATTACH_NOTE);
   const deadline = Date.now() + waitSec * 1000;
   while (Date.now() < deadline) {
     const text = readVerdict(IPC, attachId);
-    if (text != null) { process.stdout.write(text); process.exit(0); }
+    if (text != null) { await stopBanner(); process.stdout.write(text); process.exit(0); }
     await new Promise(r => setTimeout(r, 400));
   }
+  await stopBanner();
   process.stdout.write(NO_VERDICT_NOTE(waitSec));
   process.exit(0);
 }
@@ -83,6 +87,7 @@ try { out = runTestsWithLevers(c, { argv: process.argv.slice(2) }); }
 catch (e) { out = '[run_tests error] ' + String(e && e.message || e); }
 publishVerdict(IPC, id, out);
 clearInflight(IPC, id);
+await stopBanner();
 process.stdout.write(out);
 `;
 
@@ -232,7 +237,8 @@ async function scenario({ label, brokerMode }) {
   await sleep(1200);
   const same = await collect(call());
   const first = await p1;
-  assert(same.startsWith(RUNNING_BANNER) && same.includes(ATTACH_NOTE) && !same.includes(STALE_INFLIGHT_NOTE),
+  // It completes inside RUNNING_BANNER_DELAY_MS, so the ATTACH note is its first line (no banner).
+  assert(same.startsWith(ATTACH_NOTE) && !same.includes(RUNNING_BANNER) && !same.includes(STALE_INFLIGHT_NOTE),
     'same tree while in flight → attaches, with the unchanged ATTACH note');
   assert(hasVerdict(same) && hasVerdict(first), 'both calls receive a verdict');
   assert(runsOf(log).starts.length === 1, `one suite for two same-tree calls (saw ${runsOf(log).starts.length})`);

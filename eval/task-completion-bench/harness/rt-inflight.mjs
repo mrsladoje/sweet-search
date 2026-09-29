@@ -26,15 +26,57 @@
 //
 // ARM-UNIVERSAL BY CONSTRUCTION — one shim serves both arms, so this carries zero
 // head-to-head differential and must never be booked as a sweet win. It is a validity fix.
+//
+// THE BANNER IS DELAYED (2026-09-29, Codex phase-4 audit). Written at launch, it headed EVERY
+// completed result — "RUNNING ... This text is NOT a result" directly above the verdict — and
+// in Codex code mode it never reached the model in flight anyway: the JS cell prints only
+// after `exec_command` returns, so 1365 of the 1408 yielded Codex cells under results/
+// (checked 2026-09-29) carried no output at all, banner or not. It is now written only once the run has gone
+// RUNNING_BANNER_DELAY_MS without a verdict, and cancelled when the verdict lands first. A
+// result that completes inside the delay carries no banner; a harness that reads stdout
+// after the delay (a Codex `exec_command` yield, 10 s by default) still sees it. A stream
+// cannot retract bytes, so a run slower than the delay that is read only once, at the end,
+// still starts with the banner.
 import { writeFileSync, readFileSync, readdirSync, rmSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import path from 'node:path';
+import * as bannerCp from 'node:child_process';
 
-/** Written before any work, so a yielded cell is never empty and never reads as a result. */
+/** Written once a run has gone RUNNING_BANNER_DELAY_MS without a verdict; never on a fast result. */
 export const RUNNING_BANNER =
   '[run_tests] RUNNING — the suite has been launched and has NOT produced a verdict yet.\n'
   + '[run_tests] This text is NOT a result. A completed run always ends with a line beginning\n'
   + '[run_tests] "[run_tests verdict] status=". Until that line appears below, you do not know\n'
   + '[run_tests] whether anything passed or failed — do not report, conclude or finish on this.\n';
+
+/** Below Codex's default 10 s `exec_command` yield, so a default-yield read is never empty. */
+export const RUNNING_BANNER_DELAY_MS = 8000;
+
+/**
+ * Write RUNNING_BANNER after `delayMs` unless the returned stop() runs first. stop() resolves
+ * once no banner can still be written, so the caller writes its verdict only after it.
+ * `blocking: true` keeps the timer in a child process: the direct shim runs the suite
+ * synchronously, and a timer in its own event loop would fire only after the verdict.
+ */
+export function startRunningBanner(delayMs = RUNNING_BANNER_DELAY_MS, { blocking = false } = {}) {
+  if (!(Number(delayMs) > 0)) { process.stdout.write(RUNNING_BANNER); return async () => {}; }
+  if (!blocking) {
+    const timer = setTimeout(() => process.stdout.write(RUNNING_BANNER), Number(delayMs));
+    return async () => clearTimeout(timer);
+  }
+  let child;
+  try {
+    child = bannerCp.spawn(process.execPath, ['-e',
+      `setTimeout(() => process.stdout.write(${JSON.stringify(RUNNING_BANNER)}), ${Number(delayMs)})`],
+    { stdio: ['ignore', 'inherit', 'ignore'] });
+    child.unref();
+  } catch { process.stdout.write(RUNNING_BANNER); return async () => {}; }
+  return () => new Promise(resolve => {
+    if (child.exitCode !== null || child.signalCode !== null) return resolve();
+    const done = setTimeout(resolve, 2000);                // never hold a verdict on a stuck child
+    child.once('exit', () => { clearTimeout(done); resolve(); });
+    try { child.kill('SIGKILL'); } catch { clearTimeout(done); resolve(); }
+  });
+}
 
 /** Written when a call attaches to a run that was already in flight. */
 export const ATTACH_NOTE =

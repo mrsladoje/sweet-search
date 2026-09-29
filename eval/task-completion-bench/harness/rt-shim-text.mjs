@@ -27,7 +27,7 @@ import { inflightInlineSource, sameDiffAttachInlineSource } from './rt-inflight.
  * rmSync / existsSync, so this text must not declare its own — a duplicate binding is a
  * SyntaxError, and the shim would die before writing a byte.
  */
-export function brokerRequesterSource({ reqDir, testTimeoutSec, sameDiff = null }) {
+export function brokerRequesterSource({ reqDir, testTimeoutSec, sameDiff = null, bannerDelayMs = null }) {
   // RT_ATTACH_REQUIRE_SAME_DIFF=1 (`sameDiff` = { rundir }): attach only to a launch made on
   // the same working tree, else queue a fresh request behind it. The broker serves requests
   // one at a time, so the stale suite finishes first and no second suite runs beside it.
@@ -56,7 +56,7 @@ else {
 const IPC = ${JSON.stringify(reqDir)};
 const tSec = ${Number(testTimeoutSec) || 300};
 const waitSec = 2 * tSec + 120;                          // baseline + current suite + overhead
-process.stdout.write(RUNNING_BANNER);
+const stopBanner = startRunningBanner(${bannerDelayArg(bannerDelayMs)});
 ${attach}const deadline = Date.now() + waitSec * 1000;
 const res = IPC + '/res-' + id;
 while (Date.now() < deadline) {
@@ -64,16 +64,18 @@ while (Date.now() < deadline) {
     const text = readFileSync(res, 'utf8');
     try { rmSync(res, { force: true }); } catch {}
     clearInflight(IPC, id);                              // the broker already published it
+    await stopBanner();
     process.stdout.write(text);
     process.exit(0);
   }
   if (attachId) {
     const text = readVerdict(IPC, id);
-    if (text != null) { process.stdout.write(text); process.exit(0); }
+    if (text != null) { await stopBanner(); process.stdout.write(text); process.exit(0); }
   }
   await new Promise(r => setTimeout(r, 400));
 }
 if (!attachId) clearInflight(IPC, id);
+await stopBanner();
 process.stdout.write(NO_VERDICT_NOTE(waitSec));
 `;
 }
@@ -83,7 +85,7 @@ process.stdout.write(NO_VERDICT_NOTE(waitSec));
  * the runtime by absolute path. That module is large and has its own dependency tree; there
  * is nothing to gain from inlining it.
  */
-export function directShimSource({ cfgPath, runtimePath, ipcDir, testTimeoutSec, sameDiff = null }) {
+export function directShimSource({ cfgPath, runtimePath, ipcDir, testTimeoutSec, sameDiff = null, bannerDelayMs = null }) {
   // RT_ATTACH_REQUIRE_SAME_DIFF=1: as in the requester, plus the serialisation the broker
   // gives for free — a fresh run waits (at most one suite budget) for the stale one to land,
   // so a rollout never has two suites running at once. Off, byte-identical to before.
@@ -112,15 +114,16 @@ import { runTestsWithLevers } from ${JSON.stringify(runtimePath)};
 const c = JSON.parse(readFileSync(${JSON.stringify(cfgPath)}, 'utf8'));
 const IPC = ${JSON.stringify(ipcDir)};
 const waitSec = 2 * (${tSecDirect}) + 120;
-process.stdout.write(RUNNING_BANNER);
+const stopBanner = startRunningBanner(${bannerDelayArg(bannerDelayMs)}, { blocking: true });
 ${findLine}if (attachId) {
   process.stdout.write(ATTACH_NOTE);
   const deadline = Date.now() + waitSec * 1000;
   while (Date.now() < deadline) {
     const text = readVerdict(IPC, attachId);
-    if (text != null) { process.stdout.write(text); process.exit(0); }
+    if (text != null) { await stopBanner(); process.stdout.write(text); process.exit(0); }
     await new Promise(r => setTimeout(r, 400));
   }
+  await stopBanner();
   process.stdout.write(NO_VERDICT_NOTE(waitSec));
   process.exit(0);
 }
@@ -129,8 +132,15 @@ try { out = runTestsWithLevers(c, { argv: process.argv.slice(2) }); }
 catch (e) { out = '[run_tests error] ' + String(e && e.message || e); }
 publishVerdict(IPC, id, out);
 clearInflight(IPC, id);
+await stopBanner();
 process.stdout.write(out);
 `;
+}
+
+// The banner delay as shim source text: the named constant by default (so the canonical
+// fingerprint text tracks RUNNING_BANNER_DELAY_MS), a literal only when a caller overrides it.
+function bannerDelayArg(ms) {
+  return Number.isFinite(ms) && ms >= 0 ? String(Math.floor(ms)) : 'RUNNING_BANNER_DELAY_MS';
 }
 
 // Canonical arguments for the fingerprint. Fixed placeholders, so the hash tracks the CODE

@@ -380,6 +380,8 @@ export function writeRunTestsShim(binDir, {
   controllerDir = null, taskId = null, arm = null, injectedFiles = [],
   installSeds = [],
   includeUntracked = includeUntrackedFromEnv(), attachRequireSameDiff = attachRequireSameDiffFromEnv(),
+  // Tests only: override RUNNING_BANNER_DELAY_MS (rt-inflight.mjs). null = the default.
+  runningBannerDelayMs = null,
 }) {
   mkdirSync(binDir, { recursive: true });
   // BENCH_INCLUDE_UNTRACKED=1: snapshot the untracked set NOW — after every runner has
@@ -422,7 +424,8 @@ export function writeRunTestsShim(binDir, {
     // `tSec + 90` wait was structurally too short for any suite near its own budget. Wait for
     // both runs plus overhead. The agent-side tool timeout must exceed THIS number, or the
     // requester is killed mid-wait and its response is orphaned (see agentBashTimeoutMs).
-    // D-6: the banner is written BEFORE the request, so a yielded cell is never empty; and a
+    // D-6: the banner is written once the request has gone RUNNING_BANNER_DELAY_MS without a
+    // verdict (never on a fast completed result — see rt-inflight.mjs); and a
     // call made while an earlier launch is still in flight attaches to it instead of queueing
     // a second suite. See rt-inflight.mjs for why a prompt sentence could not do this.
     // The in-flight protocol is INLINED, never imported. This shim runs INSIDE the jail, and
@@ -430,7 +433,7 @@ export function writeRunTestsShim(binDir, {
     // module is ERR_MODULE_NOT_FOUND here — see the inline boundary note in rt-inflight.mjs.
     // Its `node:fs` import covers writeFileSync/readFileSync/rmSync/existsSync, so this shim
     // must not declare its own or the duplicate binding is a SyntaxError.
-    writeFileSync(mjs, brokerRequesterSource({ reqDir, testTimeoutSec, sameDiff }));
+    writeFileSync(mjs, brokerRequesterSource({ reqDir, testTimeoutSec, sameDiff, bannerDelayMs: runningBannerDelayMs }));
     const shim = path.join(binDir, 'run_tests');
     writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
     chmodSync(shim, 0o755);
@@ -443,8 +446,8 @@ export function writeRunTestsShim(binDir, {
   // Direct shim: run the suite + L2/L3 levers via the shared runtime. argv = optional
   // targeted test pattern and/or --ss-full. Output IS the signal (shim exits 0; PASS/FAIL
   // is in the text).
-  // D-6: same two properties as the broker requester, without a second process. The banner
-  // lands before the suite starts; a call made while an earlier one is still running attaches
+  // D-6: same two properties as the broker requester. The banner timer runs in a small child
+  // process (the suite call below is synchronous); a call made while an earlier one is still running attaches
   // to it and returns its verdict instead of starting a second suite.
   const directIpc = path.join(stateDir, '_rt_inflight');
   mkdirSync(directIpc, { recursive: true });
@@ -452,7 +455,7 @@ export function writeRunTestsShim(binDir, {
   // reached only with isolation OFF, so a jail-resolution bug in it would never surface in a
   // production run and would sit here until someone turned isolation off. The runtime import
   // below stays — it is large, it has its own dependency tree, and it never runs in a jail.
-  writeFileSync(mjs, directShimSource({ cfgPath: cfg, runtimePath: RT_RUNTIME_PATH, ipcDir: directIpc, testTimeoutSec, sameDiff }));
+  writeFileSync(mjs, directShimSource({ cfgPath: cfg, runtimePath: RT_RUNTIME_PATH, ipcDir: directIpc, testTimeoutSec, sameDiff, bannerDelayMs: runningBannerDelayMs }));
   const shim = path.join(binDir, 'run_tests');
   writeFileSync(shim, `#!/usr/bin/env bash\nexec node ${mjs} "$@"\n`);
   chmodSync(shim, 0o755);
@@ -581,22 +584,102 @@ export function verifyRunnerDirectoryIntegrity({ binDir, expectedFiles = [], sta
 }
 
 // classify a Codex shell command into a tool bucket. Codex wraps commands as
-// `/bin/bash -lc '<inner>'`, so unwrap to the inner command before matching.
-function classify(cmd) {
+// `<shell> -lc '<inner>'`, so unwrap to the inner command before matching.
+//
+// 2026-09-29 (Codex phase-4 audit): codex 0.146 on macOS wraps with `/bin/zsh -lc run_tests`,
+// and the unwrap matched only bash/sh — so every row in hc-codex-20260929-1* had
+// ranTests=false, toolCounts.test=0 and toolCounts.ss=0, and the D-6 rt* columns counted no
+// launch, although every rollout ran run_tests and ss-*. Any `*sh` shell is unwrapped now.
+// A cell that joins several commands (`ss-read a; ss-read b`, `cd x && run_tests`) is split
+// on unquoted `;` / `&&` / `||` / newlines: the CALL takes the highest-priority kind among
+// its parts (test > edit > ss > nativeGrep > nativeRead > bash) — toolCounts stays one count
+// per call, as in every other harness runner — and each part is counted separately in the
+// row's `subCommandCounts`.
+export function unwrapShellCommand(cmd) {
   let c = String(cmd || '').trim();
-  const m = c.match(/^(?:\/usr\/bin\/|\/bin\/)?(?:ba)?sh\s+-[a-z]*c\s+([\s\S]*)$/);
+  const m = c.match(/^(?:\S*\/)?(?:ba|z|da|k|fi)?sh\s+-[a-z]*c\s+([\s\S]*)$/);
   if (m) {
     let inner = m[1].trim();
     const q = inner[0];
-    if ((q === "'" || q === '"') && inner[inner.length - 1] === q) inner = inner.slice(1, -1);
+    if ((q === "'" || q === '"') && inner[inner.length - 1] === q) {
+      inner = inner.slice(1, -1);
+      if (q === "'") inner = inner.replace(/'\\''/g, "'");      // '\'' is a quote inside '...'
+    }
     c = inner.trim();
   }
-  if (/^run_tests\b/.test(c)) return 'test';
-  if (/^(ss[-_](search|grep|find|read|semantic|trace)|sweet-search)\b/.test(c)) return 'ss';
+  return c;
+}
+
+/** Split a shell command on unquoted `;`, `&&`, `||` and newlines. A single `|` stays inside. */
+export function splitShellCommands(cmd) {
+  const s = String(cmd || '');
+  const parts = [];
+  let cur = '', quote = '';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (quote) {
+      if (ch === '\\' && quote === '"' && i + 1 < s.length) { cur += ch + s[++i]; continue; }
+      if (ch === quote) quote = '';
+      cur += ch; continue;
+    }
+    if (ch === '\\' && i + 1 < s.length) { cur += ch + s[++i]; continue; }
+    if (ch === "'" || ch === '"') { quote = ch; cur += ch; continue; }
+    const two = s.slice(i, i + 2);
+    if (ch === ';' || ch === '\n' || two === '&&' || two === '||') {
+      if (cur.trim()) parts.push(cur.trim());
+      cur = '';
+      if (two === '&&' || two === '||') i++;
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur.trim()) parts.push(cur.trim());
+  return parts;
+}
+
+function classifyOne(c) {
+  if (/^(?:\S*\/)?run_tests\b/.test(c)) return 'test';
+  if (/^(?:\S*\/)?(ss[-_](search|grep|find|read|semantic|trace)|sweet-search)\b/.test(c)) return 'ss';
   if (/\bapply_patch\b/.test(c)) return 'edit';
   if (/^(rg|grep|ag|ack|git grep)\b/.test(c) || /\| *(grep|rg)\b/.test(c)) return 'nativeGrep';
   if (/^(cat|head|tail|nl|bat|less)\b/.test(c) || /^sed\s+(-n|')/.test(c)) return 'nativeRead';
   return 'bash';
+}
+
+const KIND_PRIORITY = ['test', 'edit', 'ss', 'nativeGrep', 'nativeRead', 'bash'];
+
+/** @returns {{ kind: string, parts: string[] }} the call's bucket and one bucket per sub-command. */
+export function classifyCodexCommand(cmd) {
+  const parts = splitShellCommands(unwrapShellCommand(cmd)).map(classifyOne);
+  if (!parts.length) parts.push('bash');
+  const kind = KIND_PRIORITY.find(k => parts.includes(k)) || 'bash';
+  return { kind, parts };
+}
+
+function classify(cmd) { return classifyCodexCommand(cmd).kind; }
+
+/**
+ * Codex `wait` / `write_stdin` polls, read from the raw rollout JSONL (2026-09-29). The --json
+ * event stream that fills `toolCalls` (and so `rows.calls`) carries one command_execution per
+ * `exec_command` and nothing for a poll, so `calls` never counted them. Kept as a separate
+ * field so `calls` keeps its meaning.
+ *   wait                    top-level `wait` calls (code mode: resume a yielded cell)
+ *   writeStdin              top-level `write_stdin` calls (non-code mode)
+ *   writeStdinInCellSource  exec cells whose SOURCE calls tools.write_stdin — an upper bound:
+ *                           the model's template polls only when exec_command yielded
+ */
+export function codexPollCallsFromRollout(text) {
+  const out = { wait: 0, writeStdin: 0, writeStdinInCellSource: 0 };
+  for (const line of String(text || '').split('\n')) {
+    if (!line.includes('"response_item"')) continue;
+    let ev; try { ev = JSON.parse(line); } catch { continue; }
+    const p = ev?.payload;
+    if (ev?.type !== 'response_item' || !p) continue;
+    if (p.type === 'function_call' && p.name === 'wait') out.wait++;
+    else if (p.type === 'function_call' && p.name === 'write_stdin') out.writeStdin++;
+    else if (p.type === 'custom_tool_call' && /\btools\.write_stdin\s*\(/.test(String(p.input || ''))) out.writeStdinInCellSource++;
+  }
+  return out;
 }
 
 export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', reasoning = 'medium', ssBinDir, mppText, image, t, perCallTimeoutMs = 600000 } = {}) {
@@ -968,6 +1051,9 @@ ${ho}`;
 
   // tool composition + trajectory
   const toolCounts = { ss: 0, nativeGrep: 0, nativeRead: 0, edit: 0, bash: 0, test: 0 };
+  // One count per sub-command of a joined cell (`ss-read a; ss-read b` = 2 ss); toolCounts
+  // above stays one count per call. See classifyCodexCommand.
+  const subCommandCounts = { ss: 0, nativeGrep: 0, nativeRead: 0, edit: 0, bash: 0, test: 0 };
   const trajectory = []; let stepsToFirstEdit = null;
   // D-6 telemetry is computed from the UNTRUNCATED results, before buildTrajectory-style
   // truncation, because the verdict footer is the last line a completed run writes.
@@ -975,8 +1061,9 @@ ${ho}`;
     kind: classify(tc.input?.command), resultText: String(tc.result?.content ?? ''),
   })));
   toolCalls.forEach((tc, i) => {
-    const kind = classify(tc.input?.command);
+    const { kind, parts } = classifyCodexCommand(tc.input?.command);
     toolCounts[kind] = (toolCounts[kind] || 0) + 1;
+    for (const k of parts) subCommandCounts[k] = (subCommandCounts[k] || 0) + 1;
     if (kind === 'edit' && stepsToFirstEdit === null) stepsToFirstEdit = i + 1;
     trajectory.push({ call: i + 1, name: kind === 'ss' ? 'ss' : kind, kind, input: String(tc.input?.command || '').slice(0, 200), result: String(tc.result?.content || '').slice(0, 600), isError: !!tc.result?.isError });
   });
@@ -1114,9 +1201,22 @@ ${ho}`;
   // ledgerBasis label plus cacheWriteTokens=0 makes visible instead of silent.
   const costRealized = costRealizedNoCacheWrite + (cacheWriteTokens * price.in * 0.25) / 1e6;
 
+  // Poll calls live only in the rollout JSONL (see codexPollCallsFromRollout). null when no
+  // rollout file was recovered — never a silent zero.
+  let codexPollCalls = null;
+  try {
+    for (const f of String(rolloutFile || '').split(',').filter(Boolean)) {
+      const c = codexPollCallsFromRollout(readFileSync(f, 'utf8'));
+      codexPollCalls = codexPollCalls
+        ? { wait: codexPollCalls.wait + c.wait, writeStdin: codexPollCalls.writeStdin + c.writeStdin,
+          writeStdinInCellSource: codexPollCalls.writeStdinInCellSource + c.writeStdinInCellSource }
+        : c;
+    }
+  } catch { codexPollCalls = null; }
+
   return {
     ...shimInfo.controller,
-    calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
+    calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts, subCommandCounts, codexPollCalls,
     patchHunks, patchFiles, finalPatch, ranTests: toolCounts.test > 0,
     ...escapeAudit,
     shimTampered: shimTamperedFiles.length > 0, shimTamperedFiles,
