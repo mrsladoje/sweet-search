@@ -883,23 +883,53 @@ We tuned it in two steps:
 
 ```mermaid
 flowchart TB
-    subgraph S1["① Retrieval · evolved automatically · May 2026"]
+    subgraph S1["<b>① Retrieval</b> · evolved automatically · May 2026"]
         direction LR
-        A["Candidate<br/>prompts"] --> B["Run on Claude Code<br/>and Codex"]
-        B --> C["Keep the cheapest<br/>that stays accurate"]
-        C --> D["An LLM reads the<br/>wasteful runs and<br/>rewrites the prompt"]
-        D --> A
+        A(["📝 <b>Candidate</b><br/>prompts"]) --> B["🤖 <b>Run</b> on<br/>Claude Code + Codex"]
+        B --> C["💰 <b>Keep</b> the cheapest<br/>that stays accurate"]
+        C --> D["🔁 <b>An LLM</b> reads the<br/>wasteful runs and<br/>rewrites the prompt"]
+        D -.-> A
     end
-    S1 --> V["🔒 Sealed checks<br/>held-out questions<br/>8 unseen languages<br/>2 unseen model families"]
+    S1 --> V("🔒 <b>Sealed checks</b><br/>held-out questions · 8 unseen languages<br/>2 unseen model families")
     V -->|"it found the code, then stopped before the edit"| S2
-    subgraph S2["② Task completion · tuned by hand · Jun–Sep 2026"]
+    subgraph S2["<b>② Task completion</b> · tuned by hand · Jun–Sep 2026"]
         direction LR
-        E["400 dev tasks:<br/>read the failed runs"] --> F["Write one<br/>new rule"]
-        F --> G["Small test on target<br/>and control tasks"]
-        G -->|"helps"| H["✅ Keep"]
-        G -->|"no gain or<br/>costs more"| I["❌ Drop"]
+        E["🔍 <b>400 dev tasks</b><br/>read the failed runs"] --> F["✍️ <b>Write</b> one<br/>new rule"]
+        F --> G["🧪 <b>Small test</b> on target<br/>and control tasks"]
+        G -->|"helps"| H(["✅ <b>Keep</b>"])
+        G -->|"no gain or<br/>costs more"| I(["❌ <b>Drop</b>"])
     end
-    S2 --> P["🧠 The shipped prompt"]
+    S2 ==> P(["🍬 <b>The shipped prompt</b>"])
+
+    classDef cand  fill:#e0e7ff,stroke:#596fff,color:#000;
+    classDef run   fill:#dbeafe,stroke:#60a5fa,color:#000;
+    classDef score fill:#fde68a,stroke:#f59e0b,color:#000;
+    classDef llm   fill:#ffe4e6,stroke:#fb7185,color:#000;
+    classDef seal  fill:#fef3c7,stroke:#d97706,color:#000,stroke-width:2px;
+    classDef dig   fill:#ecfeff,stroke:#22d3ee,color:#000;
+    classDef rule  fill:#f3e8ff,stroke:#a78bfa,color:#000;
+    classDef keep  fill:#bbf7d0,stroke:#15803d,color:#000,stroke-width:2px;
+    classDef drop  fill:#fecaca,stroke:#dc2626,color:#000,stroke-width:2px;
+    classDef ship  fill:#ffd1e6,stroke:#ff5ba3,color:#000,stroke-width:3px;
+
+    class A cand;
+    class B run;
+    class C score;
+    class D llm;
+    class V seal;
+    class E dig;
+    class F,G rule;
+    class H keep;
+    class I drop;
+    class P ship;
+
+    style S1 fill:#f5f3ff,stroke:#a78bfa,stroke-width:2px,color:#000;
+    style S2 fill:#f0fdfa,stroke:#2dd4bf,stroke-width:2px,color:#000;
+
+    linkStyle 3 stroke:#fb7185,stroke-width:2px;
+    linkStyle 8 stroke:#15803d,stroke-width:2px;
+    linkStyle 9 stroke:#dc2626,stroke-width:2px;
+    linkStyle 10 stroke:#ff5ba3,stroke-width:3px;
 ```
 
 In practice, it tells the agent to open with the cheapest tool, trust the ranking, treat two empty searches as proof of absence, and stop searching once it has the answer.
