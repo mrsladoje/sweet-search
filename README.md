@@ -676,25 +676,32 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 ---
 
 <a id="tool-ss-find"></a>
-### <img src="assets/tools/ss-find.svg" width="40" align="center" alt="" /> 3. `ss-find`: ColGrep, on a faster engine
+### <img src="assets/tools/ss-find.svg" width="40" align="center" alt="" /> 3. `ss-find`: grep that knows what you meant
 
 <img src="assets/tools/ss-find-io.svg" alt="ss-find takes a query plus a regex. The regex finds 4 matches in file order, each gets a meaning score, then they slide into order, best first." width="100%" />
 
-Inspired by LightOn's [ColGrep](https://github.com/lightonai/next-plaid/tree/main/colgrep): regex precision with semantic ranking. We rebuilt it on our own engine.
+### 🎯 Exact matches, semantically reranked
+> The idea comes from LightOn's [ColGrep](https://github.com/lightonai/next-plaid/tree/main/colgrep). We rebuilt it on the `ss-grep` index, with our own MaxSim kernels.
 
-- The regex stage runs on the **same sparse n-gram index as `ss-grep`**, in-process. No subprocess and no filesystem scan.
-- The ranking stage scores candidates with **per-token MaxSim over pre-indexed late-interaction embeddings**, so no model runs over your code at query time. Our native Rust + Rayon kernel takes a 231-candidate MaxSim pass from **1.26 s to 27 ms** (16× faster with the WASM SIMD fallback).
-- Regex tokens are merged into the semantic query, so the ranking sees both what you typed and what you matched.
-- Like `ss-search`, it returns **ranked, self-contained code snippets**, so finding and reading take one tool call. In our 30-question agent-workflow eval, this removed **every follow-up read** and cut tokens by **25.4%** versus grep + read, at equal quality (a gap of 0.01 on a 5-point scale).
-- On the 60-query pattern benchmark, MaxSim ranking lifts MRR@10 to **0.45**, up from **0.11** for raw grep order. That is about 4× better.
+<table><tr><td>
+
+**Why it helps**
+
+- 🥇 **Right match on top.** On 60 pattern queries, MRR@10 is 0.45. Grep order gets 0.11, and semantic search without the regex gets 0.30.
+- 📦 **Find and read in one call.** Each hit is a ranked, self-contained code snippet. On 30 agent questions, follow-up reads fell from 4.9 to 0 per question and tokens fell 25.4% versus grep + read, at equal quality.
+- ⚡ **Fast.** The regex runs on the `ss-grep` index. Token embeddings are built at index time, so no model reads your code at query time. Our Rust kernel scores 231 candidates in 27 ms (1.26 s in plain JS).
+
+</td></tr></table>
 
 <details>
 <summary><b>More</b></summary>
 
 <br/>
 
-- Requires the late-interaction index (built by default; `--li-model none` disables pattern mode).
-- Also available as `sweet-search --mode pattern` and via the `search` MCP tool's `regex` argument.
+- Regex tokens are also added to the semantic query, so the ranking sees both what you typed and what you matched.
+- Needs the late-interaction index. It is built by default, and `--li-model none` turns pattern mode off.
+- Also available as `sweet-search --mode pattern` and as the `regex` argument of the MCP `search` tool.
+- Agent eval: fastify, blind Opus judge, quality 4.81 vs 4.80 out of 5. Kernel numbers: [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md).
 
 </details>
 
