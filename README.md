@@ -951,7 +951,8 @@ sweet-search stands on a lot of shoulders, and we'd rather name them than preten
 If sweet-search saves your agent's tokens, a ⭐ helps other agents' humans find it.
 
 <a href="https://github.com/mrsladoje/sweet-search">
-  <img src="https://img.shields.io/badge/⭐%20Star%20sweet--search%20on%20GitHub-181717?style=for-the-badge&logo=github&logoColor=white" alt="Star sweet-search on GitHub" />
+  <img src="assets/sweet-search-star.svg" alt="Clawd jumps on the star button" width="360" align="middle" />
+  <img src="https://img.shields.io/badge/⭐%20Star%20sweet--search%20on%20GitHub-181717?style=for-the-badge&logo=github&logoColor=white" alt="Star sweet-search on GitHub" align="middle" />
 </a>
 
 <br/><br/>
