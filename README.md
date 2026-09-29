@@ -1030,6 +1030,9 @@ A score of 1.00 means every question was answered correctly. For Claude Code and
 | 🎯 **Held-out questions** (30, Claude Code and Codex) | **0.988** |
 | 🌍 **8 unseen languages** (40 questions) | **0.952** · every language ≥ 0.79 |
 | 🔀 **2 unseen model families** | MiMo **0.988** · Qwen **0.980** |
+| 🧠 **An unseen reasoning model** (MiniMax M3) | **0.963** |
+| 🪤 **Trick questions** (10, reworded to break the tuning) | **1.00** on both agents |
+| 🔁 **Reworded prompt** (6 rewrites, 630 runs) | same answers: **0.95** Claude Code · **0.93** Codex |
 
 </details>
 
