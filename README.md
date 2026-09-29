@@ -1056,7 +1056,25 @@ A score of 1.00 means every question was answered correctly. For Claude Code and
 
 ## 🗂️ The Index
 
-> **Chunk → enrich → embed → quantize** — every step on-device and in Rust. Batches are sized to *your CPU's actual cache*, two open code-models do the encoding, and two separate quantizations make the index both **faster to build** and **small enough to live in RAM**. Zero API keys; nothing ever leaves the machine.
+<table>
+<tr>
+<td align="center" valign="top" width="33%">
+<h3>🔒<br/>Fully local</h3>
+Your code <i>never leaves</i> your machine. No API keys, no uploads.
+<br/><br/>
+</td>
+<td align="center" valign="top" width="33%">
+<h3>⚡<br/>Fast on any machine</h3>
+Metal, CUDA or a tuned CPU path. The <i>fastest one you have</i> is picked for you.
+<br/><br/>
+</td>
+<td align="center" valign="top" width="33%">
+<h3>🗜️<br/>Small</h3>
+Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss in retrieval quality.
+<br/><br/>
+</td>
+</tr>
+</table>
 
 <table>
 <tr>
