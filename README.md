@@ -617,33 +617,13 @@ flowchart TD
 <details>
 <summary><b>🌶️ Extra spice: what the diagram leaves out</b></summary>
 
-  <br/>
-  
-**🧠 The vector index** ([full writeup](docs/HNSW_APPROACH.md))
-- A binary HNSW we wrote ourselves, with the standard quality tricks (heuristic neighbor selection, shuffled insertion) all on.
-- The graph is denser than most (M=64, efC=800, efS=400). That raised recall@200 from 80.6% to 86.5% and cut median latency by about a third.
-- Easy queries stop early. Hard queries get the full search budget.
-- A search allocates no memory, so there are no garbage-collection pauses.
+- 🧠 **A denser vector graph than most.** Our own binary HNSW raised recall@200 from 80.6% to 86.5% and got about a third faster.
+- ⚡ **Native reranking.** The MaxSim math runs in Rust on all CPU cores, 47× faster than plain code.
+- 📦 **A small index.** Token vectors are packed into 4 bits, which makes that index 3.4× smaller.
+- 🎛️ **Quality scores.** Each chunk is scored on test proximity, git recency, call-graph centrality, comments and complexity. Production code rises and old fixtures sink.
+- 🛟 **A reranker we switched off.** We built a cross-encoder too. It was 3× slower and did not beat MaxSim, so it ships disabled.
 
-**⚡ Why it is fast**
-- The late-interaction math (MaxSim) runs in native Rust on all CPU cores: 47× faster than plain code, 16× with the WASM fallback.
-- Token vectors are packed into 4-bit numbers. That made their index about 3.4× smaller (1.34 GiB to 396 MiB).
-- Clear-cut queries rescore fewer candidates. Unclear ones rescore more.
-- A warm background process answers each search in one call and never starts a new process.
-
-**🎛️ Ranking signals**
-- Every chunk gets a quality score from test proximity, git recency, how often it is called, comments and complexity. Production code rises and old fixtures sink.
-- At index time, the Leiden algorithm groups the code graph into modules, and those groups feed ranking.
-- The router understands camelCase, snake_case, CJK text and German compound words.
-- Some structural boosts switch on only in agent mode. They help agent-style queries and hurt plain-English ones, so they stay off elsewhere.
-
-**🛟 Fallbacks and trade-offs**
-- If a long question would match nothing in full-text search, it is split into one search per keyword and the results are merged.
-- Copy-pasted and vendored code is found at index time. Copies reuse the original's vectors, so nothing is encoded twice.
-- We also built a cross-encoder reranker. It was 3× slower and did not beat MaxSim, so it ships switched off (`SWEET_SEARCH_CASCADE_ENABLED=true` turns it on).
-- The bigger 8k and 12k answers are used on only 1–5% of queries. Force them with `--full` or `--xl`, or pick a mode with `--mode lexical|semantic|hybrid|pattern`.
-
-Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
+Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool. Use `--full` or `--xl` for a bigger answer, and `--mode lexical|semantic|hybrid|pattern` to pick a mode. Full details: [vector index](docs/HNSW_APPROACH.md) · [quantization](docs/LI_QUANTIZATION_STRATEGY.md).
 
 </details>
 
