@@ -115,7 +115,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 
 ## 🚀 Quickstart
 
-**Requirements:** Node.js 22+ on macOS (Apple silicon or Intel) or Linux (x64 or ARM64). On Windows, run sweet-search inside WSL2.
+**Requires** Node.js 22+ · macOS (Apple silicon, Intel) · Linux (x64, ARM64) · Windows via WSL2
 
 ```bash
 npm install -g sweet-search
