@@ -332,3 +332,11 @@ brighterscript lines start `[12:43:09:4620 PM]`; LEADING_TIMESTAMP_RE missed the
 | conflict3+todo3eff3k | 3/4 | 0.070 | −12% | 48 | 102 |
 | conflict4+todo4 | 3/4 | 0.075 | −6% | 54 | 121 |
 todo4 packs more calls per turn (2.24 v 2.12) but not fewer turns than todo3eff3k; one cell is below the MDE.
+
+### p5-oc-B1 (opencode, rotation B; ledger fix3)
+| arm | solved | real $ (6 tasks) | Δ | turns | calls |
+|---|---|---|---|---|---|
+| untrimmed | 0/6 | 0.082 | — | 91 | 100 |
+| conflict3+todo3eff3k | 0/6 | 0.056 | −32% | 50 | 104 |
+| conflict4+todo4 | 0/6 | 0.067 | −18% | 57 | 111 |
+0/6 in all arms, as in p4-oc-B1/B2 (opencode never solves rotation B). todo3eff3k cheaper than todo4 in 4/6 tasks; the gap is fastify (9 v 15 turns). Running: todo3eff3k −12/−32, todo4 −6/−18.
