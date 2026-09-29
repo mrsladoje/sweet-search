@@ -397,3 +397,11 @@ untrimmed 0.989 (1/6) · read6 1.057 **+7%** (1/6) · read7 0.915 **−7%** (2/6
 | yt3batch2 | 3/4 | 0.0767 | −4% | 0.0481 (−19%) | 62 |
 | yt3batch3 | 3/4 | 0.0728 | −9% | 0.0540 (−9%) | 66 |
 First Codex cell where ember is SOLVED in every arm (3/4, was 2/4): the jest-name fix lets the agent see which test broke. rows.json now reports ranTests=true and codexPollCalls.
+
+### p6-cx-B1 (Codex, rotation B; ledger fix4)
+| arm | solved | real $ (6 tasks) | Δ | turns | wait turns |
+|---|---|---|---|---|---|
+| untrimmed | 0/6 | 0.070 | — | 78 | 12 |
+| yt3batch2 | 0/6 | 0.071 | +1% | 67 | 11 |
+| yt3batch3 | 0/6 | 0.074 | +6% | 76 | 10 |
+**Key:** the untrimmed baseline on rotation B fell from 0.095–0.101 (p4 cells, old tool) to 0.070 on the fixed tool (−27%). The p4 Codex "savings" on B (−16..−28%) were mostly the baseline's loops on tool defects (timestamps, jest names, argv mangling). On the fixed tool, the variants ≈ parity on B. Turns still −14% for yt3batch2 but it does not show in $.
