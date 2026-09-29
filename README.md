@@ -774,7 +774,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <img src="assets/tools/ss-trace-io.svg" alt="ss-trace takes the symbol processOrder. One call returns its callers checkout, retryOrder and handleWebhook, its callees chargeCard, reserveStock and sendReceipt, and what breaks if it changes." width="100%" />
 
 ### 🕸️ Know what breaks before you edit
-> Give `ss-trace` a symbol. It returns who calls it, what it calls, and the call chains that break if it changes, with the code. The call graph is built at index time, so one call is enough.
+> Give `ss-trace` a symbol. It returns who calls it, what it calls, and what breaks if it changes, with the code. The graph updates as you edit, so the answer matches your current code.
 
 <table>
 <tr><td colspan="2"><b>How it builds the answer</b></td></tr>
@@ -783,7 +783,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 **🏗️ 1. The codegraph**
 
-- Built once, at index time. Tree-sitter reads your code and records every function, class and method, and the links between them (imports, extends, ...)
+- Built at index time and updated as you edit. Tree-sitter reads your code and records every function, class and method, and the links between them (imports, extends, ...)
 - Each symbol gets an importance score (PageRank). Code that many places depend on scores higher.
 
 </td>
