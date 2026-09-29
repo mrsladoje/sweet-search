@@ -78,8 +78,8 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 [🧰 The Six Tools](#-the-six-tools)<br>
 <sub>search · grep · find · semantic · trace · read</sub>
 
-[🧠 The Evolved Agent Prompt](#-an-agent-prompt-that-was-evolved-not-written)<br>
-<sub>GEPA-optimized search discipline</sub>
+[🧠 The System Prompt](#-the-system-prompt)<br>
+<sub>tuned for search and task completion</sub>
 
 </td>
 <td width="27%" valign="top">
@@ -270,7 +270,7 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 
 One variable changes: **how the agent searches a real repository.**
 
-- 🍬 **sweet-search:** the model gets our [GEPA-evolved search discipline](#-an-agent-prompt-that-was-evolved-not-written) and search tools.
+- 🍬 **sweet-search:** the model gets our [tuned system prompt](#-the-system-prompt) and search tools.
 - 🐌 **Native:** the same model uses its built-in grep-and-read loop.
 
 Same tasks, same judge, paired probe-for-probe.
@@ -888,17 +888,19 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 ---
 
-## 🧠 An Agent Prompt That Was Evolved, Not Written
+## 🧠 The System Prompt
 
-Shipping six tools is easy. Getting an agent to *stop grepping in circles* is the hard part.
+`sweet-search init` installs a short system prompt next to the six tools. Its one job: make the agent use
+those tools for the **largest cost saving at unharmed retrieval quality**.
 
-So `sweet-search init` installs a ~1k-token system prompt that we **didn't write** — we *grew* it.
-A GEPA-style loop mutated candidate prompts, scored each on a dual Pareto front (**accuracy × cost**)
-against **two different production agents at once** — Claude Code (Sonnet) and Codex (GPT-5.5) — kept the
-survivors, and repeated. A final correctness pass hardened the winner. ~1k tokens, one job: teach the
-agent to search *well*.
+We tuned it in two steps:
 
-In practice: open with the cheapest tool, trust the ranking, treat two empty searches as proof of absence, and stop searching once it has the answer.
+1. **Retrieval.** A [GEPA](https://arxiv.org/abs/2507.19457)-style evolution loop rewrote candidate prompts and
+   kept the ones that found the right code at the lowest cost, on Claude Code (Claude Sonnet 4.6) and Codex (GPT-5.5) at once.
+2. **Task completion.** The retrieval prompt tended to stop once it found the code. We then tuned it by hand on
+   400 development tasks from our task-completion benchmark, one rule at a time, and kept only the rules that held up.
+
+In practice, it tells the agent to open with the cheapest tool, trust the ranking, treat two empty searches as proof of absence, and stop searching once it has the answer.
 
 <details>
 <summary><b>📄 Read the full prompt</b> (<a href="core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md">source file</a>)</summary>
