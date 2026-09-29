@@ -487,3 +487,6 @@ Decision rule set before results: take read6fs only if, over all 8 cells, it sta
 | read7 (4 cells) | 20 | +2.6% [−8.2, +14.3] | +1.3% [−7.7, +11.1] | 9 / 10 |
 read6fs v read6 in the same cells: realized −2.2% [−10.0, +6.7], ideal −2.7% [−7.7, +2.6].
 **Against the pre-set rule:** at or below untrimmed — YES (realized −1%, ideal −5%); no solve loss — YES (18/18); clearly below read6 — NO (−2.7%, interval crosses zero). The packing line's own effect is small; read6fs is the best Claude Code variant and has the same standing as the opencode/Codex finals (≈ −5% cache-normalised, unproven). **Claude Code pick: read6fs** (owner decision to ship).
+
+### Rules placement A/B (rp1; rules in AGENTS.md v via CLI config v in the system prompt; zlint-299 + super_editor-2516)
+- rp1-oc-A1 (opencode, conflict3+todo3eff3k): file $0.026 (2/2, 19 turns) · **config $0.031 (+19%)** (2/2, 21) · system $0.033 (+27%) (2/2, 22). ss-* share of search/read calls: file 22/27 = 81% · **config 23/25 = 92%** · system 23/32 = 72% (5 native reads). Rows stamped placement file/config/system. The rules are seen and followed under config; cost gap is 2 tasks, within noise.
