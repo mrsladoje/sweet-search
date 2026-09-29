@@ -661,16 +661,15 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 </td></tr></table>
 
-<img src="assets/tools/ss-grep-ngrams.svg" alt="Trigrams split MAX_RETRIES into 9 common pieces. Sparse n-grams use 2 rare pieces, so far fewer files are left to check." width="100%" />
+<img src="assets/tools/ss-grep-ngrams.svg" alt="For the regex session.*expired, trigrams give 10 common pieces. Sparse n-grams give 2 rare pieces, so far fewer files are left to check." width="100%" />
 
 <details>
 <summary><b>More</b></summary>
 
 <br/>
 
-- Full methodology, per-repo table, and the optimization log: [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md).
-- Regexes with no extractable literals fall back to native grep over the indexed file set; fixed-string and glob queries use a ripgrep fallback.
-- **Dialect recovery** (agent mode): patterns written in GNU-grep BRE muscle memory (`foo\|bar`, `\(group\)`) are literals in Rust's regex dialect and used to silently match nothing. A zero-hit exact search now gets one gated auto-retry with the translated pattern instead of a false "no matches".
+- Method, per-repo results and the optimization log: [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md).
+- A regex with no fixed text (for example `\w+\d`) cannot use the index, so it scans every indexed file.
 
 </details>
 
