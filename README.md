@@ -882,26 +882,41 @@ those tools for the **largest cost saving at unharmed retrieval quality**.
 We tuned it in two steps. Step 1 uses [**🧬 GEPA**](https://arxiv.org/abs/2507.19457), a prompt optimizer that evolves prompts from real agent runs.
 
 ```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
-    subgraph S1["<span style='font-size:20px'><b>① Retrieval</b> · evolved automatically</span>"]
-        direction LR
-        GEPA(["🧬 <b>GEPA</b>"]) ~~~ A
-        A(["📝 <b>Candidate</b><br/>prompts"]) --> B["🤖 <b>Run</b> on<br/>Claude Code + Codex"]
-        B --> C["💰 <b>Keep</b> the Pareto-best<br/>prompts: cheapest with<br/>the best retrieval"]
-        C --> D["🔁 <b>An LLM</b> reads the<br/>wasteful runs and<br/>rewrites the prompt"]
-        D -.-> A
+    subgraph S1[" "]
+        direction TB
+        subgraph H1[" "]
+            direction LR
+            GEPA(["🧬 <b>GEPA</b>"]) ~~~ T1["<b>① Retrieval</b><br/><small>evolved automatically</small>"]
+        end
+        subgraph L1[" "]
+            direction LR
+            A(["📝 <b>Candidate</b><br/>prompts"]) --> B["🤖 <b>Run</b> on<br/>Claude Code + Codex"]
+            B --> C["💰 <b>Keep</b> the Pareto-best<br/>prompts: cheapest with<br/>the best retrieval"]
+            C --> D["🔁 <b>Mutate</b><br/>LLMs read the runs and<br/>write new candidates"]
+            D -.-> A
+        end
+        H1 ~~~ L1
     end
     S1 --> V("🔒 <b>Sealed checks</b><br/>held-out questions<br/>8 unseen languages<br/>2 unseen model families")
     V -->|"it found the code, then stopped before the edit"| S2
-    subgraph S2["<span style='font-size:20px'><b>② Task completion</b> · tuned by hand</span>"]
-        direction LR
-        E["🔍 <b>400 dev tasks</b><br/>read the failed runs"] --> F["✍️ <b>Write</b> one<br/>new rule"]
-        F --> G["🧪 <b>Small test</b> on target<br/>and control tasks"]
-        G -->|"helps"| H(["✅ <b>Keep</b>"])
-        G -->|"no gain or<br/>costs more"| I(["❌ <b>Drop</b>"])
+    subgraph S2[" "]
+        direction TB
+        T2["<b>② Task completion</b><br/><small>tuned by hand</small>"]
+        subgraph L2[" "]
+            direction LR
+            E["🔍 <b>400 dev tasks</b><br/>read the failed runs"] --> F["✍️ <b>Write</b> one<br/>new rule"]
+            F --> G["🧪 <b>Small test</b> on target<br/>and control tasks"]
+            G -->|"helps"| H(["✅ <b>Keep</b>"])
+            G -->|"no gain or<br/>costs more"| I(["❌ <b>Drop</b>"])
+        end
+        T2 ~~~ L2
     end
     S2 ==> P(["🍬 <b>The shipped prompt</b>"])
 
+    classDef title fill:none,stroke:none,color:#1e1b4b,font-size:22px;
+    classDef gepa  fill:#a78bfa,stroke:#596fff,color:#fff,stroke-width:3px,font-size:22px;
     classDef cand  fill:#e0e7ff,stroke:#596fff,color:#000;
     classDef run   fill:#dbeafe,stroke:#60a5fa,color:#000;
     classDef score fill:#fde68a,stroke:#f59e0b,color:#000;
@@ -911,9 +926,10 @@ flowchart TB
     classDef rule  fill:#f3e8ff,stroke:#a78bfa,color:#000;
     classDef keep  fill:#bbf7d0,stroke:#15803d,color:#000,stroke-width:2px;
     classDef drop  fill:#fecaca,stroke:#dc2626,color:#000,stroke-width:2px;
-    classDef gepa  fill:#a78bfa,stroke:#596fff,color:#fff,stroke-width:3px,font-size:26px;
     classDef ship  fill:#ffd1e6,stroke:#ff5ba3,color:#000,stroke-width:3px;
 
+    class T1,T2 title;
+    class GEPA gepa;
     class A cand;
     class B run;
     class C score;
@@ -924,15 +940,17 @@ flowchart TB
     class H keep;
     class I drop;
     class P ship;
-    class GEPA gepa;
 
-    style S1 fill:#f5f3ff,stroke:#a78bfa,stroke-width:2px,color:#000;
-    style S2 fill:#f0fdfa,stroke:#2dd4bf,stroke-width:2px,color:#000;
+    style S1 fill:#f5f3ff,stroke:#a78bfa,stroke-width:2px;
+    style S2 fill:#f0fdfa,stroke:#2dd4bf,stroke-width:2px;
+    style H1 fill:none,stroke:none;
+    style L1 fill:none,stroke:none;
+    style L2 fill:none,stroke:none;
 
     linkStyle 4 stroke:#fb7185,stroke-width:2px;
-    linkStyle 9 stroke:#15803d,stroke-width:2px;
-    linkStyle 10 stroke:#dc2626,stroke-width:2px;
-    linkStyle 11 stroke:#ff5ba3,stroke-width:3px;
+    linkStyle 10 stroke:#15803d,stroke-width:2px;
+    linkStyle 11 stroke:#dc2626,stroke-width:2px;
+    linkStyle 13 stroke:#ff5ba3,stroke-width:3px;
 ```
 
 In practice, it tells the agent to open with the cheapest tool, trust the ranking, treat two empty searches as proof of absence, and stop searching once it has the answer.
