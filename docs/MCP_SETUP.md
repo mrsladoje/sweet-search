@@ -5,7 +5,7 @@ with Claude Code, Codex, and other MCP-compatible tools.
 
 ## Prerequisites
 
-- Node.js >= 18.0.0
+- Node.js >= 22.0.0
 - Sweet Search installed (`npm install sweet-search`)
 
 ## Claude Code Setup
@@ -98,7 +98,7 @@ Environment variables:
 
 ## Troubleshooting
 
-**Server not starting**: Check `node --version` >= 18, verify `npx sweet-search-mcp`
+**Server not starting**: Check `node --version` >= 22, verify `npx sweet-search-mcp`
 resolves, ensure project root exists and is absolute.
 
 **No search results**: Run the `index` tool first. Check `health` tool for

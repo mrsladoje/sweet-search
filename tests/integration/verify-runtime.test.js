@@ -69,8 +69,8 @@ describe('probeSqliteBinding', () => {
     expect(probeSqliteBinding()).toEqual({ ok: true });
   });
 
-  it('remedy text names the allowScripts fix and the reinstall step', () => {
-    expect(SQLITE_BINDING_REMEDY).toContain('allowScripts');
+  it('remedy text names the Node floor and the reinstall step', () => {
+    expect(SQLITE_BINDING_REMEDY).toContain('Node.js 22');
     expect(SQLITE_BINDING_REMEDY).toContain('better-sqlite3');
     expect(SQLITE_BINDING_REMEDY).toContain('npm install');
   });

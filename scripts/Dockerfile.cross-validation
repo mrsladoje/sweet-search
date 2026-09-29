@@ -4,7 +4,7 @@
 # Used by scripts/cross-target-validation.sh for the linux-arm64-gnu target.
 #
 # For linux-amd64: the legacy Docker builder cannot produce cross-arch images,
-# so the orchestrator uses node:20-slim directly with inline apt-get setup.
+# so the orchestrator uses node:22-slim directly with inline apt-get setup.
 # See run_docker_test() in cross-target-validation.sh.
 #
 # Usage (from repo root):
@@ -18,9 +18,9 @@
 #     -e TARGET=linux-arm64-gnu \
 #     ss-cross-val:arm64
 
-FROM node:20-slim
+FROM node:22-slim
 
-# System deps for native module compilation (better-sqlite3, usearch fallback)
+# System deps for native module compilation (usearch fallback)
 RUN apt-get update -qq && \
     apt-get install -y -qq --no-install-recommends \
       python3 make g++ file curl ca-certificates unzip && \

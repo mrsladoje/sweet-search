@@ -124,7 +124,7 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # Darwin builds the addon natively with napi-rs. The Linux addon is the
       # cdylib .so built via cargo-zigbuild against glibc 2.17 and renamed to
@@ -230,7 +230,7 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Set up zig (Linux)
         if: contains(matrix.target, 'linux')
         uses: mlugg/setup-zig@v2
@@ -316,7 +316,7 @@ jobs:
       # and the macOS native path by darwin-arm64.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Download CLI binary
         uses: actions/download-artifact@v4
@@ -417,7 +417,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
@@ -477,7 +477,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: 'https://registry.npmjs.org'
 
       # Download all platform artifacts
@@ -551,7 +551,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: 'https://registry.npmjs.org'
       - uses: actions/download-artifact@v4
         with:

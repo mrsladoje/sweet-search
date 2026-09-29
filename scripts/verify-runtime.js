@@ -19,26 +19,25 @@ const PACKAGE_ROOT = join(__dirname, '..');
 /**
  * Remedy text for a missing native SQLite binding.
  *
- * npm >= 11.16 gates package lifecycle scripts behind an `allow-scripts`
- * allowlist and, with `strict-allow-scripts=false`, only WARNS when it skips
- * them. better-sqlite3 obtains its prebuilt binary from exactly such a script
- * (`prebuild-install || node-gyp rebuild`), so a default `npm install` on those
- * npm versions yields a JS-only better-sqlite3 with no binding. Every index and
- * search path opens a database, so the install is unusable.
+ * better-sqlite3 >= 13 ships its prebuilt N-API binaries inside the npm
+ * tarball (macOS, Linux glibc + musl, Windows; x64 + arm64) and declares
+ * `gypfile: false`, so it needs no install script and survives npm >= 12
+ * blocking dependency scripts by default. A missing binding therefore means
+ * an unsupported platform, a Node.js older than 22, or a damaged install.
+ * Every index and search path opens a database, so the install is unusable.
  */
 export const SQLITE_BINDING_REMEDY = [
   'The native SQLite binding (better-sqlite3) could not be loaded, so indexing',
-  'and search cannot run. Your package manager almost certainly skipped install',
-  'scripts — npm >= 11.16 blocks them by default and only warns, and',
-  'better-sqlite3 fetches its prebuilt binary from one.',
+  'and search cannot run. better-sqlite3 ships prebuilt binaries for macOS and',
+  'Linux (x64 and arm64) and needs Node.js 22 or later.',
   '',
-  'Fix (global install) — approve the scripts and reinstall:',
-  '  npm install -g sweet-search --allow-scripts=sweet-search,better-sqlite3',
+  'Fix — check that `node --version` is v22 or later, then reinstall:',
+  '  npm install -g sweet-search@latest',
   '',
-  'Fix (project install) — npm rejects that flag for project-scoped installs,',
-  'so add the allowlist to your package.json, then reinstall:',
-  '  "allowScripts": { "sweet-search": true, "better-sqlite3": true }',
+  'For a project-local install, reinstall its dependencies instead:',
   '  rm -rf node_modules && npm install',
+  '',
+  'Other platforms (for example FreeBSD or 32-bit Linux) have no prebuilt binary.',
 ].join('\n         ');
 
 /**
