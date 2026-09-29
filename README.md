@@ -541,7 +541,7 @@ who calls what
 <td align="center" valign="top" width="33%">
 <a href="#tool-ss-read"><img src="assets/tools/ss-read.svg" width="80" alt="ss-read icon" /></a><br/>
 <b>6. <a href="#tool-ss-read"><code>ss-read</code></a></b><br/>
-read a file
+read files in batches
 </td>
 </tr>
 </table>
@@ -834,24 +834,43 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 ---
 
 <a id="tool-ss-read"></a>
-### <img src="assets/tools/ss-read.svg" width="40" align="center" alt="" /> 6. `ss-read`: read a file from disk
+### <img src="assets/tools/ss-read.svg" width="40" align="center" alt="" /> 6. `ss-read`: batched reads from disk
 
-<img src="assets/tools/ss-read-io.svg" alt="ss-read takes a file and a line range and returns the lines from disk plus what is left unread" width="100%" />
+<img src="assets/tools/ss-read-io.svg" alt="One read call names three files with line ranges. All three come back from disk at once: code with line numbers, a note on what is left unread, and a one-line reminder for lines the agent already saw." width="100%" />
 
-It reads the file from disk, not from the index, so the code is always current. It also does three things for the agent:
+### 📚 Many files, one call
+> Read up to 20 files in one call, each with its own line range. Every file comes straight from disk, so the agent always sees your current code.
 
-- **Line numbers that fit the agent.** Claude Code gets `12<TAB>`, opencode and Cursor get `12:`, and Codex gets none. Each agent's edit tool expects a different format, and the wrong one can end up inside an edit.
-- **A note on what is left.** If the agent reads only part of a file, it sees the names of the functions it skipped and the command to read them.
-- **No double reads.** If the agent reads the same lines again, it gets a one-line reminder instead of the same code twice.
+<table>
+<tr><td colspan="2"><b>What the agent gets</b></td></tr>
+<tr>
+<td width="50%" valign="top">
+
+**🔢 Line numbers that fit the agent**
+
+- Each agent's edit tool expects its own format. Claude Code gets `12<TAB>`, opencode and Cursor get `12:`, Codex gets none.
+- The wrong format can end up inside an edit. The agent is detected automatically.
+
+</td>
+<td width="50%" valign="top">
+
+**🧭 Less reading, no rereading**
+
+- ***What is left:*** a partial read names the functions it skipped and the command to read them.
+- ***No double reads:*** lines the agent already saw, unchanged since, come back as a one-line reminder.
+
+</td>
+</tr>
+</table>
 
 <details>
 <summary><b>More</b></summary>
 
 <br/>
 
-- Also available as `sweet-search read` and the `read` MCP tool, with up to 20 files per call.
-- Minified and generated files are refused, so the agent does not load thousands of useless tokens by mistake.
-- The agent is detected automatically. To set the format yourself, use `SS_READ_GUTTER=tab|colon|none`.
+- `ss-read <file> <start> <end>` reads one file. Batches go through the `read` MCP tool or `sweet-search read`.
+- Minified and generated files are refused, so the agent cannot load thousands of useless tokens by mistake.
+- Set the line-number format yourself with `SS_READ_GUTTER=tab|colon|none`.
 
 </details>
 
