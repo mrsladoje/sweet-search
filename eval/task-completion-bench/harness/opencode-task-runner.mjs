@@ -204,7 +204,7 @@ export const OPENCODE_TRIM_V3_TOOL_EDITS = Object.freeze({
 //   todo2eff, ...). The variant edits the base prompt's batching bullet and adds its own
 //   tool-description edits. untrimmed+<variant> is exactly batch-<variant> (other mode label).
 export const OPENCODE_CONFLICT_PROMPT_BULLET = '- When searching for text or files, prefer using Glob and Grep tools (they are powered by `rg`)\n';
-export const OPENCODE_CONFLICT_BASES = Object.freeze(['conflict', 'conflict-noglob', 'conflict2', 'untrimmed']);
+export const OPENCODE_CONFLICT_BASES = Object.freeze(['conflict', 'conflict-noglob', 'conflict2', 'conflict3', 'untrimmed']);
 export const OPENCODE_CONFLICT_TOOL_EDITS = Object.freeze({
   bash: [
     OPENCODE_TRIM_TOOL_EDITS.bash[0],   // "DO NOT use it for ... searching, finding files" — ss-* run through bash
@@ -230,6 +230,15 @@ export const OPENCODE_CONFLICT2_TOOL_EDITS = Object.freeze({
   grep: [['- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead', '']],
 });
 export const OPENCODE_CONFLICT2_PROMPT_EDIT = [' - especially file reads', ''];
+// OC_HARNESS_TRIM=conflict3 (owner 2026-09-29): conflict2's text edits, but the grep tool and the
+// explore subagent are DISABLED (both duplicate the ss-* retrieval the rules prescribe = conflicts);
+// glob stays (lists files by name, no conflict). No grep-description edit (the tool is gone).
+export const OPENCODE_CONFLICT3_TOOL_EDITS = Object.freeze({
+  bash: OPENCODE_CONFLICT2_TOOL_EDITS.bash,
+  read: OPENCODE_CONFLICT2_TOOL_EDITS.read,
+  task: OPENCODE_CONFLICT2_TOOL_EDITS.task,
+  glob: OPENCODE_CONFLICT2_TOOL_EDITS.glob,
+});
 export const OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS = Object.freeze({
   bash: OPENCODE_TRIM_TOOL_EDITS.bash,   // round 1: also the "File search: Use Glob" line and `find`
   read: OPENCODE_TRIM_TOOL_EDITS.read,   // round 1: also the glob-tool pointer
@@ -249,22 +258,23 @@ function opencodeHarnessTrimCombo(m, { apiModel, stateDir }) {
   if (!stateDir) throw new Error(`OC_HARNESS_TRIM=${m}: stateDir required`);
   const noglob = base === 'conflict-noglob';
   const keepAll = base === 'conflict2';
+  const c3 = base === 'conflict3';
   const original = readFileSync(OPENCODE_GPT_ORIGINAL, 'utf8');
   if (original.split(OPENCODE_CONFLICT_PROMPT_BULLET).length !== 2) throw new Error(`OC_HARNESS_TRIM=${m}: Glob/Grep bullet not found once in the original prompt`);
   const conflictPrompt = original.replace(OPENCODE_CONFLICT_PROMPT_BULLET, '');
   let prompt = variant ? opencodeBatchPrompt(variant, conflictPrompt) : conflictPrompt;
-  if (keepAll) {
+  if (keepAll || c3) {
     if (!prompt.includes(OPENCODE_CONFLICT2_PROMPT_EDIT[0])) throw new Error(`OC_HARNESS_TRIM=${m}: "especially file reads" not found in the prompt`);
     prompt = prompt.split(OPENCODE_CONFLICT2_PROMPT_EDIT[0]).join(OPENCODE_CONFLICT2_PROMPT_EDIT[1]);
   }
-  const baseEdits = keepAll ? OPENCODE_CONFLICT2_TOOL_EDITS : noglob ? OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS : OPENCODE_CONFLICT_TOOL_EDITS;
+  const baseEdits = c3 ? OPENCODE_CONFLICT3_TOOL_EDITS : keepAll ? OPENCODE_CONFLICT2_TOOL_EDITS : noglob ? OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS : OPENCODE_CONFLICT_TOOL_EDITS;
   const lineEdits = (variant && opencodeBatchToolEdits(variant)) || {};
   const clash = Object.keys(lineEdits).filter(k => k in baseEdits);
   if (clash.length) throw new Error(`OC_HARNESS_TRIM=${m}: the variant and the base both edit ${clash.join(', ')}`);
   const edits = { ...baseEdits, ...lineEdits };
   const plugin = [`file://${path.join(stateDir, OPENCODE_TRIM_PLUGIN)}`, { edits, report: path.join(stateDir, OPENCODE_TRIM_REPORT) }];
   return {
-    mode: keepAll ? `${m}:prompt:gpt+general+explore-trim+alltools+tooldesc` : `${m}:prompt:gpt+general+noexplore+${noglob ? 'noglob+' : ''}nogrep+tooldesc`,
+    mode: c3 ? `${m}:prompt:gpt+general+noexplore+nogrep+tooldesc` : keepAll ? `${m}:prompt:gpt+general+explore-trim+alltools+tooldesc` : `${m}:prompt:gpt+general+noexplore+${noglob ? 'noglob+' : ''}nogrep+tooldesc`,
     config: {
       plugin: [plugin],
       ...(keepAll ? {} : { tools: noglob ? { glob: false, grep: false } : { grep: false } }),
