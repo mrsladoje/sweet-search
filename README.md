@@ -539,14 +539,13 @@ read a file
 ---
 
 <a id="tool-ss-search"></a>
-### <img src="assets/tools/ss-search.svg" width="40" align="center" alt="" /> 1. `ss-search` — hybrid search powerhouse
+### <img src="assets/tools/ss-search.svg" width="40" align="center" alt="" /> 1. `ss-search`: hybrid code search
 
 <img src="assets/tools/ss-search-io.svg" alt="ss-search takes a plain-English question and returns ranked, whole code blocks" width="100%" />
 
 A hybrid search pipeline with late interaction reranking that returns actual code blocks.
 
-Leading published-benchmark results — strongest we can find on GenCodeSearchNet, and above every published
-zero-shot model on CoSQA. See [`benchmarks`](#-benchmarks).
+See how it scores in [Benchmarks](#-benchmarks).
 
 ```mermaid
 flowchart TD
@@ -595,21 +594,21 @@ flowchart TD
     style ROW2 fill:none,stroke:none;
 ```
 
-<sub>↑ The diagram traces the **hybrid** route. A pure-lexical query — or a literal file path — short-circuits at the router straight to BM25F, skipping the vector cascade and fusion.</sub>
+<sub>↑ The diagram shows the **hybrid** route. A pure keyword query or a literal file path goes from the router straight to BM25F and skips the vector search and fusion.</sub>
 
 | Stage | What it actually does |
 |-------|-----------------------|
 | 🧭 **Route** | **WASM-exported CatBoost** · lexical / hybrid · **~10 µs** routing · low-confidence → max-recall hybrid |
-| 🧬 **Retrieve** | • **Lexical** — **BM25F** over field-weighted FTS5 (name 10× · signature 5× · alias 4× · doc 1×)<br/>• **Embed** — query vectorized by the local **CodeRankEmbed** model (swappable for Voyage / Jina / Codestral)<br/>• **Vector cascade** — binary **HNSW** (Hamming, 64-byte, ~100 µs) → INT8 rescore → exact float32 from a memory-mapped sidecar |
-| 🔀 **Fuse** | • **CCFusion** — convex-combine both rankings · per-route weights · quantile-normalized<br/>• **MMR** (λ=0.9) diversity pass over the fused list<br/>• auto **RRF** (k=60) fallback on degenerate score distributions |
-| ⚓ **Anchor** | • **IAR** (Identifier Anchor Retrieval) — a real symbol in the query fires an exact-name code-graph lookup that injects that entity, even when the encoder ranked it too low |
+| 🧬 **Retrieve** | • **Lexical:** **BM25F** over field-weighted FTS5 (name 10× · signature 5× · alias 4× · doc 1×)<br/>• **Embed:** query vectorized by the local **CodeRankEmbed** model (swappable for Voyage / Jina / Codestral)<br/>• **Vector cascade:** binary **HNSW** (Hamming, 64-byte, ~100 µs) → INT8 rescore → exact float32 from a memory-mapped sidecar |
+| 🔀 **Fuse** | • **CCFusion:** convex-combine both rankings · per-route weights · quantile-normalized<br/>• **MMR** (λ=0.9) diversity pass over the fused list<br/>• auto **RRF** (k=60) fallback on degenerate score distributions |
+| ⚓ **Anchor** | • **IAR** (Identifier Anchor Retrieval): a real symbol in the query fires an exact-name code-graph lookup that injects that entity, even when the encoder ranked it too low |
 | 🎯 **Intent Rerank** | • demote docs / tests / config when you want implementation<br/>• log-scaled call-site boosts surface the most-referenced function |
 | 🕸️ **Graph Expansion** | • typed-edge walks (`imports`/`extends`/`calls`/`uses`) · adaptive 2-hop on the AST graph · edges picked by intent<br/>• **PathRAG** flow pruning + degree normalization → hubs can't dominate |
 | 🧮 **Late interaction Rerank** | • Query embedded per-token by **LateOn-Code** (149M; a 17M **edge** variant auto-selected on low-RAM hosts)<br/>• **MaxSim** against the pre-indexed quantized token vectors<br/>• native Rust+Rayon MaxSim kernel ⚡ · WASM-SIMD fallback (1.26 s → 27 ms on a 231-candidate rerank) |
-| 📦 **Package** | • entity-aware expansion → whole functions (imports, docstrings, decorators)<br/>• same-file overlap demotion → diverse, non-overlapping spans<br/>• **symbol-family completion** (agent mode) — generated/width families surface as a compact indexed manifest instead of truncating silently, inside the same budget<br/>• auto-selected **3k / 8k / 12k** token budget |
+| 📦 **Package** | • entity-aware expansion → whole functions (imports, docstrings, decorators)<br/>• same-file overlap demotion → diverse, non-overlapping spans<br/>• **symbol-family completion** (agent mode): generated/width families surface as a compact indexed manifest instead of truncating silently, inside the same budget<br/>• auto-selected **3k / 8k / 12k** token budget |
 
 <details>
-<summary><b>🌶️ Extra spice — the bits that didn't fit the diagram</b></summary>
+<summary><b>🌶️ Extra spice: the bits that didn't fit the diagram</b></summary>
 
 **🧠 The HNSW, in full** ([full writeup](docs/HNSW_APPROACH.md)). Stage 1 is a from-scratch binary HNSW, and every "advanced" trick ships **on by default**:
 - **Heuristic neighbor selection** (HNSW Algorithm 4) + **M0 = 2M** on layer 0 — a real graph backbone, not naïve closest-M
