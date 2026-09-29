@@ -438,3 +438,21 @@ Unlike Codex, the opencode untrimmed baseline on B barely moved with the tool fi
 
 ### p7-oc-A2 (opencode re-check on the FIXED tool, rotation A)
 untrimmed 0.075 (2/4, 75 turns) · todo3eff3k 0.074 **−1%** (3/4, 55) · todo4 0.078 **+4%** (3/4, 57). Baseline missed super_editor (solved by both variants). Running fixed-tool: todo3eff3k +9/−17/−1, todo4 +4/−11/+4.
+
+### p7-oc-B2 (opencode re-check on the FIXED tool, rotation B)
+untrimmed 0.066 (0/6, 82 turns) · todo3eff3k 0.065 **−2%** (0/6, 55) · todo4 0.060 **−9%** (0/6, 47).
+
+### opencode pooled on the FIXED tool (p7, 4 cells, 20 task pairs, bootstrap 5,000, seed 42)
+| arm | geo Δ | 95% CI | total $ | turns (base 320) | solves (base 5) |
+|---|---|---|---|---|---|
+| conflict3+todo3eff3k | −5.2% | [−13.0, +4.2] | −2.7% | 223 (−30%) | 6 |
+| conflict4+todo4 | −4.5% | [−14.2, +6.7] | −2.8% | 207 (−35%) | 6 |
+
+## PHASE 4–7 FINAL (fixed tool, 2026-09-29 22:40)
+On the fixed run_tests tool, the prompt-text savings shrink to a few percent in every harness; none has a 95% interval that excludes zero:
+- **opencode** conflict3+todo3eff3k: −5% typical task, −3% total bill, turns −30%, solves 6 v 5 (earlier −11%/−7% was on the defective tool).
+- **Codex** yt3batch2: −6% typical task, −5% total bill, solves 6 v 5.
+- **Claude Code**: no change (stop rule; read6/read6fs/read7 all flat).
+The turn reductions are real and audited (todo pairing in opencode, read batching in Codex), but each turn saved is cheap because it is mostly cached re-read context.
+**The biggest cost lever found today is the run_tests fix itself** (b5f7aba, e5c4cb3): the untrimmed Codex arm on rotation B fell −27% and Codex/opencode solve ember and super_editor more often. It helps every harness and both bench arms.
+Stop rule applied to all three harnesses: no remaining prompt lever is measurable at this sample size. Next steps are owner decisions: rotation C (never-tuned) to confirm, and the bench AGENTS.md run_tests launch line.
