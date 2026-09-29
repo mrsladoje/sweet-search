@@ -713,12 +713,11 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 <br/>
 
-- **Ranking:** on 60 pattern queries, MRR@10 is 0.45. Grep order gets 0.11, and semantic search without the regex gets 0.30.
-- **One call:** each hit is a ranked, self-contained code snippet. On 30 agent questions (fastify, blind Opus judge), follow-up reads fell from 4.9 to 0 and tokens fell 25.4% versus grep + read, at equal quality (4.81 vs 4.80 out of 5).
-- Regex tokens are also added to the semantic query, so the ranking sees both what you typed and what you matched.
-- Needs the late-interaction index. It is built by default, and `--li-model none` turns pattern mode off.
+- **Ranking:** on 60 pattern queries, MRR@10 is 0.45. Grep order gets 0.11, and search without the regex gets 0.30.
+- **Agent eval:** on 30 fastify questions, follow-up reads fell from 4.9 to 0 and tokens fell 25.4% versus grep + read, at equal quality (blind Opus judge).
+- Needs the late-interaction index, which is built by default.
 - Also available as `sweet-search --mode pattern` and as the `regex` argument of the MCP `search` tool.
-- Kernel numbers: [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md).
+- Kernel details: [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md).
 
 </details>
 
