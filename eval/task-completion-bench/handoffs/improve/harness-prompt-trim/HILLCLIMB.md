@@ -367,3 +367,11 @@ Head-to-head in the same p5 cells: todo3eff3k −12/−32/+8/−17 v todo4 −6/
 | read6 | 3/4 | 0.974 | +16% | 0.560 (+5%) | 38 |
 | read7 | 3/4 | 0.973 | +15% | 0.578 (+8%) | 38 |
 Both arms lose this cell; the baseline is unusually lean (ember 6 turns, zlint 6). bingo degenerate-reran in L1/L2. One cell < MDE (≈30–57%); read our running Claude Code picture as "no measurable effect" so far.
+
+### p5-cc-B1 (Claude Code, rotation B; ledger fix3)
+| arm | solved | real $ (6 tasks) | Δ | w/o svgr | turns |
+|---|---|---|---|---|---|
+| untrimmed | 2/6 | 0.856 | — | 0.662 | 35 |
+| read6 | 1/6 | 1.023 | +20% | 0.706 (+7%) | 43 |
+| read7 | 2/6 | 0.969 | +13% | 0.802 (+21%) | 40 |
+read6 lost svgr (the known solve lottery). read7's loss is jupytext (12 turns / 14 calls v 6/5) and brighterscript (14 calls). Two p5 cells: both variants lose to untrimmed. Stop-rule check: Claude Code has now stalled for 3 rounds (p3 noise, p4 read6fs = luck, p5 losses) → after A2/B2, stop climbing Claude Code unless those cells reverse clearly.
