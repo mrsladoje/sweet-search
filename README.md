@@ -876,9 +876,25 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 ## 🧠 The System Prompt
 
-> 🧰 **Six tools** give the agent its power, but to *no avail* if it doesn't use them efficiently.<br>
-> 🧠 **One prompt** tells the agent how to *optimally* use them.<br>
-> 📈 We **hill-climbed** that prompt for the *largest cost saving at unharmed retrieval quality*.
+<table>
+<tr>
+<td align="center" valign="top" width="33%">
+<h3>🧰<br/>Six tools</h3>
+give the agent its power, but to <i>no avail</i> if it doesn't use them efficiently.
+<br/><br/>
+</td>
+<td align="center" valign="top" width="33%">
+<h3>🧠<br/>One prompt</h3>
+tells the agent how to <i>optimally</i> use them.
+<br/><br/>
+</td>
+<td align="center" valign="top" width="33%">
+<h3>📈<br/>Hill-climbed</h3>
+We <b>hill-climbed</b> that prompt for the <i>largest cost saving at unharmed retrieval quality</i>.
+<br/><br/>
+</td>
+</tr>
+</table>
 
 `sweet-search init` installs the prompt in the correct place per harness.
 
