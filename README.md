@@ -678,7 +678,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <a id="tool-ss-find"></a>
 ### <img src="assets/tools/ss-find.svg" width="40" align="center" alt="" /> 3. `ss-find`: ColGrep, on a faster engine
 
-<img src="assets/tools/ss-find-io.svg" alt="ss-find takes a query plus a regex and returns the regex matches ranked by meaning" width="100%" />
+<img src="assets/tools/ss-find-io.svg" alt="ss-find takes a query plus a regex. The regex finds 4 matches in file order, then they move into order by meaning, best first." width="100%" />
 
 Inspired by LightOn's [ColGrep](https://github.com/lightonai/next-plaid/tree/main/colgrep): regex precision with semantic ranking. We rebuilt it on our own engine.
 
