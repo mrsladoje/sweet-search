@@ -431,3 +431,7 @@ untrimmed 0.066 (0/6, 79 turns) · yt3batch2 0.067 **+1%** (0/6, 68) · yt3batch
 | conflict3+todo3eff3k | 3/4 | 0.087 | +9% | 62 | 129 |
 | conflict4+todo4 | 3/4 | 0.083 | +4% | 50 | 103 |
 Turns still −22%/−37%, but $ is higher: todo3eff3k's ember rollout ran 47 calls (0.031 v 0.019); todo4's zlint 0.026 v 0.017. One cell < MDE.
+
+### p7-oc-B1 (opencode re-check on the FIXED tool, rotation B)
+untrimmed 0.076 (0/6, 84 turns) · todo3eff3k 0.063 **−17%** (0/6, 51) · todo4 0.068 **−11%** (0/6, 53).
+Unlike Codex, the opencode untrimmed baseline on B barely moved with the tool fix (0.077–0.082 before → 0.076), so the opencode saving on B survives. Running fixed-tool: todo3eff3k +9/−17, todo4 +4/−11.
