@@ -649,22 +649,25 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <img src="assets/tools/ss-grep-io.svg" alt="ss-grep takes an exact string or regex and returns every file:line hit, with the match highlighted" width="100%" />
 
 ### ⚡ 10.2× faster than ripgrep
-> Median, end to end, on 353 real queries across 5 repos. 8.5–17.7× per repo, about 1 ms per query. Same match count on every query.
+> Median, end to end, on 353 real queries across 5 repos (8.5–17.7× per repo, about 1 ms per query). Same match count as ripgrep on every query.
 
-| | How | Why it is fast |
-|---|---|---|
-| 🧩 **Sparse n-gram index** | Splits code into grams sized to your repo's own text. | Rare grams point to few files. |
-| 🎯 **Literal filter** | Pulls the fixed text out of the regex and intersects the file lists with SIMD. | Only 0.1–5% of files see the real regex. |
-| 🦀 **All in-process** | Rust regex on all cores, inside the warm daemon. | No subprocess, no pipes, no JSON parsing. |
+<table><tr><td>
 
-<img src="assets/tools/ss-grep-ngrams.svg" alt="Trigrams split retryUpload into 9 common pieces. Sparse n-grams use 2 rare pieces, so far fewer files are left to check." width="100%" />
+**What makes it fast**
+
+- 🧩 **Sparse n-gram index.** Grams are sized to your repo's own text, so each one points to few files. The idea comes from [Cursor's fast regex search](https://cursor.com/blog/fast-regex-search) and GitHub's Blackbird.
+- 🎯 **Literal filter.** The fixed text is pulled out of the regex, and SIMD intersects the file lists. Only 0.1–5% of files see the real regex.
+- 🦀 **All in-process.** Rust regex runs on all cores inside the warm daemon. No subprocess, no pipes, no JSON parsing.
+
+</td></tr></table>
+
+<img src="assets/tools/ss-grep-ngrams.svg" alt="Trigrams split MAX_RETRIES into 9 common pieces. Sparse n-grams use 2 rare pieces, so far fewer files are left to check." width="100%" />
 
 <details>
 <summary><b>More</b></summary>
 
 <br/>
 
-- Sparse n-grams follow [Cursor's fast regex search](https://cursor.com/blog/fast-regex-search) and GitHub's Blackbird.
 - Full methodology, per-repo table, and the optimization log: [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md).
 - Regexes with no extractable literals fall back to native grep over the indexed file set; fixed-string and glob queries use a ripgrep fallback.
 - **Dialect recovery** (agent mode): patterns written in GNU-grep BRE muscle memory (`foo\|bar`, `\(group\)`) are literals in Rust's regex dialect and used to silently match nothing. A zero-hit exact search now gets one gated auto-retry with the translated pattern instead of a false "no matches".
