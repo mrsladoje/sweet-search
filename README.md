@@ -936,20 +936,13 @@ flowchart TB
     linkStyle 10 stroke:#ff5ba3,stroke-width:3px;
 ```
 
-#### ① Retrieval · evolved with [GEPA](https://arxiv.org/abs/2507.19457)
-
-GEPA is a prompt optimizer that evolves prompts from real agent runs.
-Each candidate prompt ran on **Claude Code** and **Codex**, which answered code-search questions in 10 languages.
-GEPA kept the **Pareto-best** prompts: the cheapest ones with the best retrieval.
-LLMs then read those runs and wrote new candidates, and the loop started again.
-Sealed checks on unseen questions, languages and model families confirmed that the winner did not overfit.
-
-#### ② Task completion · tuned by hand
-
-Retrieval was now cheap and accurate, but the agent sometimes found the code and then stopped before the edit.
-We analyzed the failed traces from **400 dev tasks** on **Claude Code, Codex and opencode**.
-Each fix became one new rule, tested in a microsmoke (a small, fast run) on target and control tasks.
-A rule stayed only if it helped and did not raise the cost.
+| | ① Retrieval · [🧬 GEPA](https://arxiv.org/abs/2507.19457) | ② Task completion · by hand |
+|--|--|--|
+| 🎯 **Goal** | cheapest prompt that still finds the right code | agent finishes the edit, not only the search |
+| 🤖 **Agents** | Claude Code · Codex | Claude Code · Codex · opencode |
+| 🔁 **Loop** | LLMs read the runs, write new candidates | analyze failed traces → write one rule |
+| ✅ **Kept if** | Pareto-best: cheapest at the best retrieval | microsmoke: it helps and costs no more |
+| 🔒 **Checked on** | unseen questions, languages, model families | control tasks |
 
 ### 💡 What the prompt says
 
