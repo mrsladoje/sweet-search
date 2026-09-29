@@ -3,16 +3,18 @@
 /**
  * Sweet Search uninstall — reverses everything `sweet-search init` created.
  *
- * Removes .sweet-search/ config directory and init-managed model cache
- * contents for the current project. Does not touch user source code,
- * indexes, or database files outside of .sweet-search/.
+ * Default: removes .sweet-search/ and the agent wiring from the current repo
+ * only; the shared model cache stays for the user's other repos. `--all`
+ * removes sweet-search from the machine: every repo recorded by init
+ * (scripts/repo-registry.js), the shared model cache, and the npm package.
+ * Never touches user source code or user-authored files.
  *
  * Usage:
- *   sweet-search uninstall [--dry-run] [--keep-models] [--purge] [--force]
+ *   sweet-search uninstall [--all] [--dry-run] [--force]
  */
 
-import { existsSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -26,6 +28,7 @@ import { removeMcpServer } from './install-mcp-server.js';
 import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { removeToolEnforcement } from './install-tool-enforcement.js';
 import { projectSocketPath, projectPidFile } from '../core/search/server-identity.js';
+import { existingRegisteredRepos, unregisterRepos } from './repo-registry.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -36,11 +39,13 @@ const DATA_DIR_NAME = '.sweet-search';
 // ---------------------------------------------------------------------------
 
 function parseArgs(args) {
-  const result = { dryRun: false, keepModels: false, purge: false, force: false, help: false };
+  const result = { dryRun: false, all: false, force: false, help: false };
   for (const arg of args) {
     if (arg === '--dry-run') result.dryRun = true;
-    else if (arg === '--keep-models') result.keepModels = true;
-    else if (arg === '--purge') result.purge = true;
+    // --purge is the pre-2.9 name for --all; --keep-models is now the default
+    // behaviour and accepted as a no-op so old scripts keep working.
+    else if (arg === '--all' || arg === '--purge') result.all = true;
+    else if (arg === '--keep-models') { /* default since 2.9 */ }
     else if (arg === '--force') result.force = true;
     else if (arg === '--help' || arg === '-h') result.help = true;
   }
@@ -54,7 +59,8 @@ function parseArgs(args) {
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 function dirSize(dirPath) {
@@ -377,37 +383,6 @@ export function removeSweetIndexSkill(projectRoot, { dryRun = false } = {}) {
 }
 
 /**
- * Best-effort cleanup of empty parent directories left behind after rm -rf'ing
- * the per-model cache dirs and the CoreML cascade root.
- *
- * Walks up from `start` toward `stopAt` (exclusive) and removes each directory
- * iff it's empty. rmdirSync naturally fails on non-empty dirs, so this is
- * inherently safe — we never delete a directory that has files we didn't put
- * there. Stops at the first non-empty dir or when `stopAt` is reached.
- *
- * Used to clean ~/.cache/sweet-search/{models,coreml-cascade}/ → ~/.cache/sweet-search/
- * after their contents are removed. Without this, uninstall leaves an empty
- * sweet-search directory dangling under the user's cache root.
- */
-function pruneEmptyAncestors(start, stopAt) {
-  let dir = start;
-  while (dir && dir !== stopAt && dir !== dirname(dir)) {
-    if (!existsSync(dir)) {
-      dir = dirname(dir);
-      continue;
-    }
-    try {
-      const entries = readdirSync(dir);
-      if (entries.length > 0) return; // non-empty — stop walking
-      rmdirSync(dir);
-    } catch {
-      return; // permission / race / non-empty — stop walking
-    }
-    dir = dirname(dir);
-  }
-}
-
-/**
  * Remove the sweet-search-owned SessionStart and SessionEnd entries from `.claude/settings.json`,
  * preserving every other hook, permission, and top-level key. Detection is
  * filename-based (see PREWARM_HOOK_FILENAME) — only entries whose command
@@ -563,7 +538,7 @@ export function removeCodexSessionStartHook(projectRoot, { dryRun = false } = {}
 
 /**
  * Return the list of `@sweet-search/native-*` packages declared as
- * `optionalDependencies` in package.json. `--purge` walks this list so
+ * `optionalDependencies` in package.json. Kept for the package contract test so
  * additions (e.g. CUDA variants) are picked up automatically without
  * having to keep two hand-maintained lists in sync.
  *
@@ -598,44 +573,280 @@ export function getOptionalNativePackageNames() {
 
 function printHelp() {
   console.log(`
-Sweet Search uninstall — remove local state created by init
+Sweet Search uninstall — remove what init created
 
 Usage:
-  sweet-search uninstall [options]
+  sweet-search uninstall          Remove sweet-search from this repo
+  sweet-search uninstall --all    Remove sweet-search from this machine
 
 Options:
+  --all            Every repo where init ran, the shared model cache, and the
+                   sweet-search npm package itself
   --dry-run        Show what would be removed without deleting
-  --keep-models    Preserve the model cache AND the CoreML cascade
-                   (both are large/expensive; use this flag to
-                   preserve both when only removing .sweet-search/)
-  --purge          Also run \`npm uninstall sweet-search\` and remove @sweet-search/* packages
   --force          Skip confirmation prompt (for CI/scripted use)
   --help, -h       Show this help
 
-What gets removed:
-  - .sweet-search/ config directory and all generated config
-  - Init-managed model cache for this project's profile
-  - CoreML variant cascade (if built) — includes ~1.8 GB of .mlpackage
-    artifacts AND the sibling .mlmodelc compiled cache files next to
-    each variant. Skipped by --keep-models.
-  - .claude/skills/sweet-index/ (the per-project /sweet-index skill copy)
-  - .claude/hooks/index-maintainer.mjs (init-installed). User-modified
-    copies are detected via a byte-compare and left in place.
-  - daemon-prewarm SessionStart entry inside .claude/settings.json
-  - .claude/rules/sweet-search.md and the sweet-search output style +
-    outputStyle selection
+Removed from each repo:
+  - .sweet-search/ (config, index, and daemon state)
+  - Claude Code wiring: output style + selection, .claude/rules/sweet-search.md,
+    the /sweet-index skill, the index-maintainer and prewarm hooks, optional
+    tool-enforcement and reminder hooks
   - Sweet-search-owned blocks/files in AGENTS.md, GEMINI.md, CLAUDE.md
     (legacy installs), and .cursor/rules/sweet-search.mdc
-  - Optional tool-enforcement and legacy reminder hooks/settings
-  - Sweet-search Codex SessionStart hook and MCP server registration
+  - The Codex SessionStart hook and the MCP server registration
 
-What is NOT removed:
-  - User source code, indexes, or database files outside .sweet-search/
-  - .claude/ itself or any other hooks/skills/settings the user owns
+Also removed by --all:
+  - The shared model cache (~/.cache/sweet-search), including the CoreML cascade
+  - The sweet-search npm package (global or project-local install)
+
+Never removed:
+  - Your source code, and any hooks, skills, settings or prose you wrote
+  - User-modified copies of sweet-search files (detected and left in place)
   - Generic Codex [features] hooks = true flags (possibly shared with
     other tooling); an otherwise-empty settings.json may remain as {}
-  - The npm package itself (unless --purge)
 `);
+}
+
+// ---------------------------------------------------------------------------
+// Per-repo plan + execution
+// ---------------------------------------------------------------------------
+
+function loadProjectConfig(projectRoot) {
+  const configPath = join(projectRoot, DATA_DIR_NAME, 'config.json');
+  if (!existsSync(configPath)) return null;
+  try { return JSON.parse(readFileSync(configPath, 'utf-8')); } catch { return null; }
+}
+
+/**
+ * Detect everything init left in one repo, without changing anything.
+ * Returns `{ projectRoot, initConfig, removals, totalBytes, lines, empty }` —
+ * `lines` is the human-readable "will remove" list.
+ */
+export function planProjectUninstall(projectRoot) {
+  const dataDir = join(projectRoot, DATA_DIR_NAME);
+  const initConfig = loadProjectConfig(projectRoot);
+  const removals = [];
+  let totalBytes = 0;
+  const lines = [];
+
+  if (existsSync(dataDir)) {
+    const size = dirSize(dataDir);
+    removals.push({ label: DATA_DIR_NAME + '/', path: dataDir, size, type: 'config' });
+    totalBytes += size;
+    lines.push(`${DATA_DIR_NAME}/ (${formatBytes(size)})`);
+  }
+
+  if (removePrewarmSessionStartHook(projectRoot, { dryRun: true }).status === 'dry-run') {
+    lines.push('daemon-prewarm SessionStart hook in .claude/settings.json');
+  }
+  if (removeSweetIndexSkill(projectRoot, { dryRun: true }).status === 'dry-run') {
+    lines.push('/sweet-index skill (.claude/skills/sweet-index/)');
+  }
+  const maintainerHook = removeIndexMaintainerHook(projectRoot, { dryRun: true });
+  if (maintainerHook.status === 'dry-run') {
+    lines.push('index-maintainer hook (.claude/hooks/index-maintainer.mjs)');
+  } else if (maintainerHook.status === 'skipped') {
+    lines.push(`[skipped] ${maintainerHook.detail}`);
+  }
+  // Agent-instruction files, the Claude project rule, and any legacy CLAUDE.md
+  // marker. The marker/sentinel contracts preserve user-authored content.
+  const agentInstructions = removeAgentInstructions({ projectRoot, dryRun: true });
+  const agentTargets = Object.entries(agentInstructions.harnesses ?? {})
+    .filter(([, v]) => v === 'dry-run').map(([k]) => k);
+  if (agentTargets.length > 0) lines.push(`agent-instruction marker blocks (${agentTargets.join(', ')})`);
+  if (removeClaudeRules({ projectRoot, dryRun: true }) === 'dry-run') {
+    lines.push('.claude/rules/sweet-search.md');
+  }
+  const systemPrompt = removeClaudeSystemPrompt({ projectRoot, dryRun: true });
+  if (systemPrompt.status === 'dry-run') lines.push(`Claude system-prompt output style (${systemPrompt.detail})`);
+  const lean = removeClaudeLeanHarness({ projectRoot, dryRun: true });
+  if (lean.status === 'dry-run') lines.push(`Claude lean harness (${lean.detail})`);
+  const reminder = removePromptReminderHook({ projectRoot, dryRun: true });
+  if (reminder.status === 'dry-run') lines.push(`UserPromptSubmit reminder hook (${reminder.detail})`);
+  const enforcement = removeToolEnforcement({ projectRoot, dryRun: true });
+  if (enforcement.status === 'dry-run') lines.push(`tool-enforcement strict mode (${enforcement.detail})`);
+  if (removeCodexSessionStartHook(projectRoot, { dryRun: true }).status === 'dry-run') {
+    lines.push('Codex SessionStart hook (.codex/hooks.json)');
+  }
+  if (removeMcpServer({ projectRoot, dryRun: true }) === 'dry-run') {
+    lines.push('MCP server registration (.mcp.json — mcpServers.sweet-search)');
+  }
+
+  return { projectRoot, initConfig, removals, totalBytes, lines, empty: lines.length === 0 };
+}
+
+/** Remove everything `planProjectUninstall` found. Returns `{ removed, kept }`. */
+function executeProjectUninstall(plan) {
+  const { projectRoot } = plan;
+  let removed = 0;
+  let kept = 0;
+
+  // Stop the running daemon + maintainer BEFORE deleting .sweet-search/. The
+  // maintainer records its pid in .sweet-search/index-maintainer.lock; if we
+  // removed the state dir first, stopRunningMaintainer() would have no pid to
+  // signal — the maintainer would leak and, because its tick loop recreates the
+  // state dir (mkdirSync), resurrect the very directory we just deleted.
+  const daemonResult = stopRunningDaemon({ projectRoot });
+  if (daemonResult.killed) {
+    console.log('  Stopped: running prewarm daemon (SIGKILL via PID file)');
+  } else if (daemonResult.gracefulAttempted) {
+    console.log('  Stopped: running prewarm daemon (graceful via CLI)');
+  }
+  const maintainerResult = stopRunningMaintainer({ projectRoot });
+  if (maintainerResult.killed) {
+    console.log(`  Stopped: incremental-index maintainer (SIGKILL after grace, pid ${maintainerResult.pid})`);
+  } else if (maintainerResult.signalled) {
+    console.log(`  Stopped: incremental-index maintainer (SIGTERM, pid ${maintainerResult.pid})`);
+  } else if (maintainerResult.lockRemoved) {
+    console.log('  Cleared: stale incremental-index maintainer lock');
+  }
+
+  for (const r of plan.removals) {
+    try {
+      rmSync(r.path, { recursive: true, force: true });
+      console.log(`  Removed: ${r.label}`);
+      removed++;
+    } catch (err) {
+      console.log(`  Failed to remove ${r.label}: ${err.message}`);
+      kept++;
+    }
+  }
+
+  const report = (result, { ok = ['removed'], label, keptWhen = [] }) => {
+    if (ok.includes(result.status)) {
+      console.log(`  Removed: ${label}${result.detail ? ` (${result.detail})` : ''}`);
+      removed++;
+    } else if (keptWhen.includes(result.status)) {
+      console.log(`  Kept: ${label} — ${result.detail}`);
+      kept++;
+    } else if (result.status === 'error') {
+      console.log(`  Failed to remove ${label}: ${result.detail}`);
+      kept++;
+    }
+  };
+
+  report(removeSweetIndexSkill(projectRoot), { label: '/sweet-index skill' });
+  report(removePrewarmSessionStartHook(projectRoot), { label: 'daemon-prewarm SessionStart hook' });
+  // Bytes-match check inside the helper guarantees we never delete a
+  // user-customised file.
+  report(removeIndexMaintainerHook(projectRoot), { label: 'index-maintainer hook', keptWhen: ['skipped'] });
+  // The config.toml feature flag is left in place (harmless, possibly shared).
+  report(removeCodexSessionStartHook(projectRoot), { label: 'Codex SessionStart hook' });
+
+  const agentInstructionsResult = removeAgentInstructions({ projectRoot });
+  for (const [harness, status] of Object.entries(agentInstructionsResult.harnesses)) {
+    if (status === 'removed') {
+      console.log(`  Removed: ${harness} agent-instruction block`);
+      removed++;
+    } else if (status === 'file-deleted') {
+      console.log(`  Removed: ${harness} agent-instruction file (wholly sweet-search-managed)`);
+      removed++;
+    }
+  }
+
+  const claudeRulesResult = removeClaudeRules({ projectRoot });
+  if (claudeRulesResult === 'removed') {
+    console.log('  Removed: .claude/rules/sweet-search.md');
+    removed++;
+  } else if (claudeRulesResult === 'preserved-user-file') {
+    console.log('  Kept: .claude/rules/sweet-search.md — no sweet-search sentinel (user-edited)');
+    kept++;
+  }
+
+  // Only removes the sentinel-tagged style, and clears outputStyle only when it
+  // still selects that owned style.
+  const systemPromptResult = removeClaudeSystemPrompt({ projectRoot });
+  report(systemPromptResult, { label: 'Claude system-prompt output style' });
+  if (systemPromptResult.status === 'not-found' && systemPromptResult.detail === 'output style is user-authored') {
+    console.log('  Kept: Claude output style — no sweet-search sentinel (user-authored)');
+    kept++;
+  }
+
+  // Only what the lean-harness manifest records as added and unchanged since.
+  report(removeClaudeLeanHarness({ projectRoot }), { label: 'Claude lean harness' });
+  report(removePromptReminderHook({ projectRoot }), { label: 'UserPromptSubmit reminder hook' });
+  report(removeToolEnforcement({ projectRoot }), { label: 'tool-enforcement' });
+
+  const mcpServerResult = removeMcpServer({ projectRoot });
+  if (mcpServerResult === 'removed') {
+    console.log('  Removed: MCP server registration (.mcp.json — mcpServers.sweet-search)');
+    removed++;
+  } else if (mcpServerResult === 'file-deleted') {
+    console.log('  Removed: .mcp.json (wholly sweet-search-managed)');
+    removed++;
+  }
+
+  return { removed, kept };
+}
+
+// ---------------------------------------------------------------------------
+// Machine-wide plan (--all)
+// ---------------------------------------------------------------------------
+
+function sweetSearchCacheRoot() {
+  return join(homedir(), '.cache', 'sweet-search');
+}
+
+/**
+ * The shared caches `--all` removes. With the default layout that is the whole
+ * ~/.cache/sweet-search directory (models, CoreML cascade, optimized ONNX
+ * copies, repo record). A custom SWEET_SEARCH_MODEL_CACHE is never removed
+ * wholesale — the user may have pointed it at a shared directory — only the
+ * model dirs init recorded, plus the cascade inside it.
+ */
+function planSharedCacheRemovals(plans) {
+  const removals = [];
+  const cacheRoot = sweetSearchCacheRoot();
+  const modelRoot = resolveModelCacheRoot();
+  if (!modelRoot.startsWith(cacheRoot + '/')) {
+    const seen = new Set();
+    for (const plan of plans) {
+      for (const md of getModelCacheDirs(plan.initConfig)) {
+        if (seen.has(md.path)) continue;
+        seen.add(md.path);
+        removals.push({ label: `model cache: ${md.key}`, path: md.path, size: md.size });
+      }
+    }
+    removals.push(...getCoremlCascadeRemovals());
+  }
+  if (existsSync(cacheRoot)) {
+    removals.push({ label: 'shared model cache (~/.cache/sweet-search)', path: cacheRoot, size: dirSize(cacheRoot) });
+  }
+  return removals;
+}
+
+/**
+ * How this copy of sweet-search was installed, so `--all` can remove it the
+ * same way: `{ kind: 'global' }`, `{ kind: 'local', cwd }` for a project
+ * dependency, or `{ kind: 'none' }` for a source checkout (never removed).
+ */
+export function detectPackageInstall(packageRoot = PACKAGE_ROOT, globalRoot = npmGlobalRoot()) {
+  const real = (p) => { try { return realpathSync(p); } catch { return p; } };
+  const pkg = real(packageRoot);
+  const parent = dirname(pkg);
+  if (basename(parent) !== 'node_modules') return { kind: 'none' };
+  if (globalRoot && real(globalRoot) === parent) return { kind: 'global' };
+  return { kind: 'local', cwd: dirname(parent) };
+}
+
+function npmGlobalRoot() {
+  try {
+    return execSync('npm root -g', { stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 }).toString().trim();
+  } catch {
+    return null;
+  }
+}
+
+function removePackage(install) {
+  const cmd = install.kind === 'global' ? 'npm uninstall -g sweet-search' : 'npm uninstall sweet-search';
+  try {
+    execSync(cmd, { cwd: install.cwd, stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
+    console.log(`  Removed: sweet-search npm package (${cmd})`);
+    return true;
+  } catch {
+    console.log(`  Failed: ${cmd} — run it yourself to finish.`);
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -646,182 +857,39 @@ export async function runUninstall(args) {
   const parsed = parseArgs(args);
   if (parsed.help) { printHelp(); return; }
 
-  const projectRoot = detectProjectRoot();
-  const dataDir = join(projectRoot, DATA_DIR_NAME);
+  const currentRoot = detectProjectRoot();
+  const roots = parsed.all
+    ? [...new Set([currentRoot, ...existingRegisteredRepos()])]
+    : [currentRoot];
+  const plans = roots.map(planProjectUninstall).filter((p) => !p.empty);
+  const sharedRemovals = parsed.all ? planSharedCacheRemovals(plans) : [];
+  const install = parsed.all ? detectPackageInstall() : { kind: 'none' };
 
-  // Load existing init config (if any)
-  let initConfig = null;
-  const configPath = join(dataDir, 'config.json');
-  if (existsSync(configPath)) {
-    try { initConfig = JSON.parse(readFileSync(configPath, 'utf-8')); } catch { /* corrupted config */ }
-  }
-
-  // Collect what to remove
-  const removals = [];
-  let totalBytes = 0;
-
-  // 1. .sweet-search/ directory
-  if (existsSync(dataDir)) {
-    const size = dirSize(dataDir);
-    removals.push({ label: DATA_DIR_NAME + '/', path: dataDir, size, type: 'config' });
-    totalBytes += size;
-  }
-
-  // 2. Model cache (unless --keep-models)
-  if (!parsed.keepModels) {
-    const modelDirs = getModelCacheDirs(initConfig);
-    for (const md of modelDirs) {
-      removals.push({ label: `model cache: ${md.key}`, path: md.path, size: md.size, type: 'model' });
-      totalBytes += md.size;
-    }
-
-    // CoreML cascade. Cleaned alongside models — same --keep-models flag
-    // gates both because the cascade is part of the model delivery
-    // strategy, not a separate opt-in. Users who want to preserve
-    // the cascade specifically can use --keep-models.
-    const cascadeRemovals = getCoremlCascadeRemovals();
-    for (const cr of cascadeRemovals) {
-      removals.push(cr);
-      totalBytes += cr.size;
-    }
-  }
-
-  // Check for the SessionStart hook entry so we can report/clean it even
-  // when .sweet-search/ was already deleted by hand.
-  const hookPreview = removePrewarmSessionStartHook(projectRoot, { dryRun: true });
-  const hasHookEntry = hookPreview.status === 'dry-run';
-
-  // Check for the /sweet-index skill so we can report it even when
-  // .sweet-search/ was already deleted by hand.
-  const skillPreview = removeSweetIndexSkill(projectRoot, { dryRun: true });
-  const hasSkillEntry = skillPreview.status === 'dry-run';
-
-  // Check for the index-maintainer daemon hook init copies into
-  // `.claude/hooks/index-maintainer.mjs`.  Same dry-run pattern.
-  const indexMaintainerPreview = removeIndexMaintainerHook(projectRoot, { dryRun: true });
-  const hasIndexMaintainerHook = indexMaintainerPreview.status === 'dry-run';
-  const indexMaintainerSkippedReason =
-    indexMaintainerPreview.status === 'skipped' ? indexMaintainerPreview.detail : null;
-
-  // P1: agent-instruction files (AGENTS.md / GEMINI.md /
-  // .cursor/rules/sweet-search.mdc), the Claude project rule, and any legacy
-  // sweet-search marker left in CLAUDE.md. The marker/sentinel contracts
-  // preserve user-authored content.
-  const agentInstructionsPreview = removeAgentInstructions({ projectRoot, dryRun: true });
-  const agentInstructionsTouched = Object.values(agentInstructionsPreview.harnesses ?? {})
-    .some(s => s === 'dry-run');
-  const claudeRulesPreview = removeClaudeRules({ projectRoot, dryRun: true });
-  const hasClaudeRules = claudeRulesPreview === 'dry-run';
-  const claudeSystemPromptPreview = removeClaudeSystemPrompt({ projectRoot, dryRun: true });
-  const hasClaudeSystemPrompt = claudeSystemPromptPreview.status === 'dry-run';
-  const claudeLeanPreview = removeClaudeLeanHarness({ projectRoot, dryRun: true });
-  const hasClaudeLean = claudeLeanPreview.status === 'dry-run';
-
-  // P2: UserPromptSubmit reminder hook (.claude/hooks/sweet-search-remind-tools.mjs
-  // + the matching settings.json entry).
-  const promptReminderPreview = removePromptReminderHook({ projectRoot, dryRun: true });
-  const hasPromptReminder = promptReminderPreview.status === 'dry-run';
-
-  // P3: Tool enforcement (Grep deny + PreToolUse hint hook for Read).
-  const toolEnforcementPreview = removeToolEnforcement({ projectRoot, dryRun: true });
-  const hasToolEnforcement = toolEnforcementPreview.status === 'dry-run';
-
-  // Codex CLI SessionStart hook (.codex/hooks.json), written by `init --codex`.
-  const codexHookPreview = removeCodexSessionStartHook(projectRoot, { dryRun: true });
-  const hasCodexHook = codexHookPreview.status === 'dry-run';
-
-  // MCP server registration (.mcp.json mcpServers.sweet-search), written by
-  // `init --mcp`.
-  const mcpServerPreview = removeMcpServer({ projectRoot, dryRun: true });
-  const hasMcpServer = mcpServerPreview === 'dry-run';
-
-  // Nothing to remove?
-  if (
-    removals.length === 0 && !hasHookEntry && !hasSkillEntry && !hasIndexMaintainerHook
-    && !agentInstructionsTouched && !hasClaudeRules && !hasClaudeSystemPrompt && !hasClaudeLean
-    && !hasPromptReminder && !hasToolEnforcement && !hasCodexHook && !hasMcpServer
-  ) {
-    console.log('Nothing to remove — Sweet Search is not initialized in this project.');
+  if (plans.length === 0 && sharedRemovals.length === 0 && install.kind === 'none') {
+    console.log(parsed.all
+      ? 'Nothing to remove — Sweet Search is not installed on this machine.'
+      : 'Nothing to remove — Sweet Search is not initialized in this project.');
     return;
   }
 
   // Report
   console.log('');
-  console.log(`Sweet Search uninstall${parsed.dryRun ? ' (dry run)' : ''}`);
-  console.log(`  Project: ${projectRoot}`);
-  console.log('');
-  console.log('  Will remove:');
-  for (const r of removals) {
-    console.log(`    ${r.label} (${formatBytes(r.size)})`);
+  console.log(`Sweet Search uninstall${parsed.all ? ' --all' : ''}${parsed.dryRun ? ' (dry run)' : ''}`);
+  for (const plan of plans) {
+    console.log('');
+    console.log(`  Repo: ${plan.projectRoot}`);
+    for (const line of plan.lines) console.log(`    ${line}`);
   }
-  if (hasHookEntry) {
-    console.log(`    daemon-prewarm SessionStart hook in .claude/settings.json`);
-  }
-  if (hasSkillEntry) {
-    console.log(`    /sweet-index skill (.claude/skills/sweet-index/)`);
-  }
-  if (hasIndexMaintainerHook) {
-    console.log(`    index-maintainer hook (.claude/hooks/index-maintainer.mjs)`);
-  } else if (indexMaintainerSkippedReason) {
-    console.log(`    [skipped] ${indexMaintainerSkippedReason}`);
-  }
-  if (agentInstructionsTouched) {
-    const targets = Object.entries(agentInstructionsPreview.harnesses)
-      .filter(([, v]) => v === 'dry-run').map(([k]) => k).join(', ');
-    console.log(`    agent-instruction marker blocks (${targets})`);
-  }
-  if (hasClaudeRules) {
-    console.log(`    .claude/rules/sweet-search.md`);
-  }
-  if (hasClaudeSystemPrompt) {
-    console.log(
-      `    Claude system-prompt output style (${claudeSystemPromptPreview.detail})`,
-    );
-  }
-  if (hasClaudeLean) {
-    console.log(`    Claude lean harness (${claudeLeanPreview.detail})`);
-  }
-  if (hasPromptReminder) {
-    console.log(`    UserPromptSubmit reminder hook (${promptReminderPreview.detail})`);
-  }
-  if (hasToolEnforcement) {
-    console.log(`    tool-enforcement strict mode (${toolEnforcementPreview.detail})`);
-  }
-  if (hasCodexHook) {
-    console.log(`    Codex SessionStart hook (.codex/hooks.json)`);
-  }
-  if (hasMcpServer) {
-    console.log(`    MCP server registration (.mcp.json — mcpServers.sweet-search)`);
-  }
-  console.log(`  Total: ${formatBytes(totalBytes)}`);
-  if (parsed.keepModels) {
-    console.log('  Model cache: kept (--keep-models)');
+  if (parsed.all && (sharedRemovals.length > 0 || install.kind !== 'none')) {
+    console.log('');
+    console.log('  This machine:');
+    for (const r of sharedRemovals) console.log(`    ${r.label} (${formatBytes(r.size)})`);
+    if (install.kind === 'global') console.log('    sweet-search npm package (global)');
+    if (install.kind === 'local') console.log(`    sweet-search npm package (local, in ${install.cwd})`);
   }
   console.log('');
 
   if (parsed.dryRun) {
-    const dryHook = removePrewarmSessionStartHook(projectRoot, { dryRun: true });
-    if (dryHook.status === 'dry-run') {
-      console.log(`  Would also remove: prewarm SessionStart hook (.claude/settings.json — ${dryHook.detail})`);
-    }
-    const drySkill = removeSweetIndexSkill(projectRoot, { dryRun: true });
-    if (drySkill.status === 'dry-run') {
-      console.log(`  Would also remove: /sweet-index skill (${drySkill.detail})`);
-    }
-    const dryMaintainer = removeIndexMaintainerHook(projectRoot, { dryRun: true });
-    if (dryMaintainer.status === 'dry-run') {
-      console.log(`  Would also remove: index-maintainer hook (${dryMaintainer.detail})`);
-    } else if (dryMaintainer.status === 'skipped') {
-      console.log(`  Would skip: index-maintainer hook — ${dryMaintainer.detail}`);
-    }
-    const dryCodex = removeCodexSessionStartHook(projectRoot, { dryRun: true });
-    if (dryCodex.status === 'dry-run') {
-      console.log(`  Would also remove: Codex SessionStart hook (.codex/hooks.json — ${dryCodex.detail})`);
-    }
-    const dryMcp = removeMcpServer({ projectRoot, dryRun: true });
-    if (dryMcp === 'dry-run') {
-      console.log(`  Would also remove: MCP server registration (.mcp.json — mcpServers.sweet-search)`);
-    }
     console.log('Dry run — nothing was removed.');
     return;
   }
@@ -840,223 +908,41 @@ export async function runUninstall(args) {
     }
   }
 
-  // Stop the running daemon + maintainer BEFORE deleting .sweet-search/. The
-  // maintainer records its pid in .sweet-search/index-maintainer.lock; if we
-  // removed the state dir first, stopRunningMaintainer() would have no pid to
-  // signal — the maintainer would leak and, because its tick loop recreates the
-  // state dir (mkdirSync), resurrect the very directory we just deleted. So this
-  // must run after the confirmation/dry-run gates but before any removal.
-  const daemonResult = stopRunningDaemon({ projectRoot });
-  if (daemonResult.killed) {
-    console.log('  Stopped: running prewarm daemon (SIGKILL via PID file)');
-  } else if (daemonResult.gracefulAttempted) {
-    console.log('  Stopped: running prewarm daemon (graceful via CLI)');
-  }
-  // If neither happened, daemon wasn't running — silent.
-
-  const maintainerResult = stopRunningMaintainer({ projectRoot });
-  if (maintainerResult.killed) {
-    console.log(`  Stopped: incremental-index maintainer (SIGKILL after grace, pid ${maintainerResult.pid})`);
-  } else if (maintainerResult.signalled) {
-    console.log(`  Stopped: incremental-index maintainer (SIGTERM, pid ${maintainerResult.pid})`);
-  } else if (maintainerResult.lockRemoved) {
-    console.log('  Cleared: stale incremental-index maintainer lock');
-  }
-  // If none happened, the maintainer wasn't running — silent.
-
-  // Remove
   let removed = 0;
   let kept = 0;
-  for (const r of removals) {
-    try {
-      rmSync(r.path, { recursive: true, force: true });
-      console.log(`  Removed: ${r.label}`);
-      removed++;
-    } catch (err) {
-      console.log(`  Failed to remove ${r.label}: ${err.message}`);
-      kept++;
+  for (const plan of plans) {
+    if (plans.length > 1) console.log(`  [${plan.projectRoot}]`);
+    const result = executeProjectUninstall(plan);
+    removed += result.removed;
+    kept += result.kept;
+  }
+  unregisterRepos(roots);
+
+  if (parsed.all) {
+    for (const r of sharedRemovals) {
+      try {
+        rmSync(r.path, { recursive: true, force: true });
+        console.log(`  Removed: ${r.label}`);
+        removed++;
+      } catch (err) {
+        console.log(`  Failed to remove ${r.label}: ${err.message}`);
+        kept++;
+      }
+    }
+    // Last: this deletes the running CLI's own files.
+    if (install.kind !== 'none') {
+      if (removePackage(install)) removed++; else kept++;
     }
   }
 
-  // Prune empty parent directories left behind under the model cache root
-  // (~/.cache/sweet-search/{models,coreml-cascade}/ → ~/.cache/sweet-search/).
-  // rmdirSync naturally fails on non-empty dirs, so this only deletes
-  // directories we've effectively emptied. Stops before $HOME/.cache.
-  if (!parsed.keepModels) {
-    const cacheRoot = resolveModelCacheRoot();          // .../sweet-search/models
-    const sweetSearchCacheRoot = dirname(cacheRoot);    // .../sweet-search
-    const userCacheRoot = dirname(sweetSearchCacheRoot); // .../.cache (do not touch)
-    pruneEmptyAncestors(cacheRoot, userCacheRoot);
-  }
-
-  // Remove the per-project /sweet-index skill init copied into .claude/.
-  // Non-fatal — a failure here just leaves the SKILL.md stub behind.
-  const skillResult = removeSweetIndexSkill(projectRoot, { dryRun: parsed.dryRun });
-  if (skillResult.status === 'removed') {
-    console.log(`  Removed: /sweet-index skill (${skillResult.detail})`);
-    removed++;
-  } else if (skillResult.status === 'error') {
-    console.log(`  Failed to remove /sweet-index skill: ${skillResult.detail}`);
-    kept++;
-  }
-  // 'not-found' and 'dry-run' are silent in the main output.
-
-  // Reverse the Claude Code daemon-prewarm SessionStart entry init added to
-  // .claude/settings.json. Non-fatal — a failure here doesn't leave the
-  // user in a worse state than before uninstall ran.
-  const hookResult = removePrewarmSessionStartHook(projectRoot, { dryRun: parsed.dryRun });
-  if (hookResult.status === 'removed') {
-    console.log(`  Removed: daemon-prewarm SessionStart hook (.claude/settings.json — ${hookResult.detail})`);
-    removed++;
-  } else if (hookResult.status === 'error') {
-    console.log(`  Failed to remove daemon-prewarm SessionStart hook: ${hookResult.detail}`);
-    kept++;
-  }
-  // 'not-found' and 'dry-run' are silent in the main output.
-
-  // Reverse the index-maintainer daemon hook init copied into
-  // .claude/hooks/index-maintainer.mjs. Bytes-match check inside the
-  // helper guarantees we never delete a user-customised file.
-  const indexMaintainerResult = removeIndexMaintainerHook(projectRoot, { dryRun: parsed.dryRun });
-  if (indexMaintainerResult.status === 'removed') {
-    console.log(`  Removed: index-maintainer hook (${indexMaintainerResult.detail})`);
-    removed++;
-  } else if (indexMaintainerResult.status === 'skipped') {
-    console.log(`  Kept: index-maintainer hook — ${indexMaintainerResult.detail}`);
-    kept++;
-  } else if (indexMaintainerResult.status === 'error') {
-    console.log(`  Failed to remove index-maintainer hook: ${indexMaintainerResult.detail}`);
-    kept++;
-  }
-
-  // Reverse the Codex SessionStart hook written by `init --codex`. The
-  // config.toml feature flag is left in place (harmless, possibly shared).
-  const codexHookResult = removeCodexSessionStartHook(projectRoot, { dryRun: parsed.dryRun });
-  if (codexHookResult.status === 'removed') {
-    console.log(`  Removed: Codex SessionStart hook (.codex/hooks.json — ${codexHookResult.detail})`);
-    removed++;
-  } else if (codexHookResult.status === 'error') {
-    console.log(`  Failed to remove Codex SessionStart hook: ${codexHookResult.detail}`);
-    kept++;
-  }
-  // 'not-found' and 'dry-run' are silent in the main output.
-
-  // P1: strip agent-instruction marker blocks across all five harness files.
-  // The marker contract guarantees we never delete user prose outside of it.
-  const agentInstructionsResult = removeAgentInstructions({ projectRoot, dryRun: parsed.dryRun });
-  for (const [harness, status] of Object.entries(agentInstructionsResult.harnesses)) {
-    if (status === 'removed') {
-      console.log(`  Removed: ${harness} agent-instruction block`);
-      removed++;
-    } else if (status === 'file-deleted') {
-      console.log(`  Removed: ${harness} agent-instruction file (wholly sweet-search-managed)`);
-      removed++;
-    }
-    // 'not-found' / 'not-our-symlink' / 'dry-run' are silent.
-  }
-
-  // Remove the owned .claude/rules/sweet-search.md policy file. Any legacy
-  // CLAUDE.md marker was already stripped by removeAgentInstructions above.
-  const claudeRulesResult = removeClaudeRules({ projectRoot, dryRun: parsed.dryRun });
-  if (claudeRulesResult === 'removed') {
-    console.log(`  Removed: .claude/rules/sweet-search.md`);
-    removed++;
-  } else if (claudeRulesResult === 'preserved-user-file') {
-    console.log(`  Kept: .claude/rules/sweet-search.md — no sweet-search sentinel (user-edited)`);
-    kept++;
-  }
-  // 'not-found' / 'dry-run' are silent.
-
-  // Remove the system-prompt-priority output style installed alongside the
-  // Claude CLI policy. The helper only removes the sentinel-tagged style and
-  // clears outputStyle only when it still selects that owned style.
-  const claudeSystemPromptResult = removeClaudeSystemPrompt({
-    projectRoot,
-    dryRun: parsed.dryRun,
-  });
-  if (claudeSystemPromptResult.status === 'removed') {
-    console.log(`  Removed: Claude system-prompt output style (${claudeSystemPromptResult.detail})`);
-    removed++;
-  } else if (claudeSystemPromptResult.status === 'error') {
-    console.log(`  Failed to remove Claude system-prompt output style: ${claudeSystemPromptResult.detail}`);
-    kept++;
-  } else if (
-    claudeSystemPromptResult.status === 'not-found'
-    && claudeSystemPromptResult.detail === 'output style is user-authored'
-  ) {
-    console.log('  Kept: Claude output style — no sweet-search sentinel (user-authored)');
-    kept++;
-  }
-
-  // Remove the lean harness (main agent, general-purpose subagent, agent
-  // selection, deny entries, env). Only what its manifest records as added
-  // and unchanged since is removed.
-  const claudeLeanResult = removeClaudeLeanHarness({ projectRoot, dryRun: parsed.dryRun });
-  if (claudeLeanResult.status === 'removed') {
-    console.log(`  Removed: Claude lean harness (${claudeLeanResult.detail})`);
-    removed++;
-  } else if (claudeLeanResult.status === 'error') {
-    console.log(`  Failed to remove Claude lean harness: ${claudeLeanResult.detail}`);
-    kept++;
-  }
-
-  // P2: strip the UserPromptSubmit reminder hook + settings entry.
-  const promptReminderResult = removePromptReminderHook({ projectRoot, dryRun: parsed.dryRun });
-  if (promptReminderResult.status === 'removed') {
-    console.log(`  Removed: UserPromptSubmit reminder hook (${promptReminderResult.detail})`);
-    removed++;
-  } else if (promptReminderResult.status === 'error') {
-    console.log(`  Failed to remove UserPromptSubmit reminder hook: ${promptReminderResult.detail}`);
-    kept++;
-  }
-
-  // P3: strip the tool-enforcement Grep deny + PreToolUse hook + hook file.
-  const toolEnforcementResult = removeToolEnforcement({ projectRoot, dryRun: parsed.dryRun });
-  if (toolEnforcementResult.status === 'removed') {
-    console.log(`  Removed: tool-enforcement (${toolEnforcementResult.detail})`);
-    removed++;
-  } else if (toolEnforcementResult.status === 'error') {
-    console.log(`  Failed to remove tool-enforcement: ${toolEnforcementResult.detail}`);
-    kept++;
-  }
-
-  // MCP server registration (.mcp.json mcpServers.sweet-search). Only our entry
-  // is removed; other servers and JSON keys are preserved.
-  const mcpServerResult = removeMcpServer({ projectRoot, dryRun: parsed.dryRun });
-  if (mcpServerResult === 'removed') {
-    console.log(`  Removed: MCP server registration (.mcp.json — mcpServers.sweet-search)`);
-    removed++;
-  } else if (mcpServerResult === 'file-deleted') {
-    console.log(`  Removed: .mcp.json (wholly sweet-search-managed)`);
-    removed++;
-  }
-  // 'not-found' / 'dry-run' are silent.
-
-  // Purge npm packages
-  if (parsed.purge) {
-    console.log('');
-    console.log('  Purging npm packages...');
-    try {
-      const pkgs = ['sweet-search', ...getOptionalNativePackageNames()];
-      // Use shell-form so non-installed packages don't abort the whole
-      // command (npm exits non-zero per missing pkg). The OR-true keeps
-      // the script alive across npm exit codes from a partially-installed
-      // host (e.g. a Linux box without the darwin-* packages).
-      const cmd = `npm uninstall ${pkgs.join(' ')} 2>/dev/null || true`;
-      execSync(cmd, {
-        cwd: projectRoot,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      console.log(`  npm packages removed (${pkgs.length} candidates).`);
-    } catch {
-      console.log('  npm uninstall failed (packages may not be installed).');
-    }
-  }
-
-  // Summary
   console.log('');
   console.log(`Uninstall complete: ${removed} removed, ${kept} failed.`);
-  if (!parsed.purge) {
-    console.log('  Note: The sweet-search npm package is still installed. Use --purge to remove it.');
+  if (!parsed.all) {
+    const cacheRoot = sweetSearchCacheRoot();
+    const size = dirSize(cacheRoot);
+    if (size > 0) {
+      console.log(`  Shared models (${formatBytes(size)}) kept for your other repos.`);
+    }
+    console.log('  To remove sweet-search completely: sweet-search uninstall --all');
   }
 }

@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -9,6 +11,11 @@ export default defineConfig({
     // multiple tree-sitter grammars (cpp=4.4M, kotlin=3.9M, swift=3M).
     execArgv: ['--no-wasm-tier-up', '--no-wasm-dynamic-tiering', '--v8-pool-size=1'],
     include: ['tests/**/*.test.js'],
+    // `init` records each repo for `uninstall --all`. Tests must never write
+    // temp repos into the developer's real ~/.cache/sweet-search/repos.json.
+    env: {
+      SWEET_SEARCH_REPO_REGISTRY: join(tmpdir(), `sweet-search-test-repos-${process.pid}.json`),
+    },
     // Kill fixture processes orphaned by timed-out tests, before a run starts
     // and again after it ends. A run that inherits the previous run's orphans
     // measures machine load instead of the code under test — see the file

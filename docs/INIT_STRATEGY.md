@@ -317,9 +317,9 @@ cascade JSON.
 ### Uninstall
 
 `scripts/uninstall.js` detects the cascade cache dir via
-`getCoremlCascadeRoot()` and adds it to the removal list, gated by
-`--keep-models`. The removal is a single `rm -rf` of the root, which also
-takes out the `.mlmodelc` compiled siblings next to each `.mlpackage`.
+`getCoremlCascadeRoot()`. Only `uninstall --all` removes it, because the
+cascade is shared by every repo. The removal is a single `rm -rf` of the root,
+which also takes out the `.mlmodelc` compiled siblings next to each `.mlpackage`.
 
 ---
 
@@ -800,16 +800,19 @@ verify checksums against the HuggingFace API.
 `sweet-search uninstall` (`scripts/uninstall.js`) reverses everything `sweet-search init`
 created.
 
-- Removes `.sweet-search/` config directory
-- Removes init-managed model cache contents (reports size before deletion)
-- Removes the CoreML variant cascade cache at
-  `{modelCacheRoot}/coreml-cascade/` including the sibling `.mlmodelc`
-  compiled caches (also gated by `--keep-models`)
+- Default scope is the current repo: `.sweet-search/` and the agent wiring.
+  The shared model cache stays, because other repos use it.
+- `--all` removes sweet-search from the machine: every repo recorded in
+  `~/.cache/sweet-search/repos.json` (written by `init`, see
+  `scripts/repo-registry.js`), the shared cache `~/.cache/sweet-search`
+  (models and the CoreML cascade), and the npm package, global or
+  project-local. A custom `SWEET_SEARCH_MODEL_CACHE` is never removed
+  wholesale; only the model dirs init recorded and the cascade inside it.
 - Idempotent: second run reports "nothing to remove"
 - Works even when runtime is partially broken (graceful degradation)
 
-Flags: `--dry-run`, `--keep-models`, `--purge` (also npm uninstall), `--force` (skip
-confirmation).
+Flags: `--all` (alias `--purge`), `--dry-run`, `--force` (skip confirmation).
+`--keep-models` is accepted as a no-op; keeping the models is the default.
 
 Constraints: never touches files outside `.sweet-search/`, the managed model cache
 (including the CoreML cascade subtree), and (with `--purge`) `node_modules`. Never
