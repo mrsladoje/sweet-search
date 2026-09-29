@@ -13,7 +13,8 @@ touch "$ST"
 export BENCH_INCLUDE_UNTRACKED=1 RT_ATTACH_REQUIRE_SAME_DIFF=1 SMOKE_LEDGER=$BENCH/results/bsmoke-ledger-fix2/ledger.jsonl
 busy() {
   pgrep -f "harness/run-pilo[t].mjs" >/dev/null || pgrep -f "batch-smok[e].sh|hc-smok[e].sh" >/dev/null \
-    || pgrep -f "scratchpad/round[0-9][a-z]*\.s[h]" >/dev/null || pgrep -f "env-ledger-swee[p].mjs" >/dev/null
+    || pgrep -f "scratchpad/round[0-9][a-z]*\.s[h]" >/dev/null || pgrep -f "env-ledger-swee[p].mjs" >/dev/null \
+    || pgrep -x sweet-search-maintainer >/dev/null || pgrep -x sweet-search-daemon >/dev/null  # wait (never skip) while any ss process is alive between cells
 }
 while [ ! -f "$Q.stop" ]; do
   NEXT=""
