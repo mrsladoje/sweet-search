@@ -359,3 +359,11 @@ untrimmed 0.077 (0/6, 93 turns) · todo3eff3k 0.064 **−17%** (0/6, 51) · todo
 | conflict4+todo4 (4 cells) | 18 | −13.0% | [−21.2, −3.9] |
 | conflict3+todo3eff2k (4 cells) | 17 | −8.2% | [−17.2, +1.6] |
 Head-to-head in the same p5 cells: todo3eff3k −12/−32/+8/−17 v todo4 −6/−18/−11/−4 (sum-of-task $). Tie within noise. **opencode FINAL stays conflict3+todo3eff3k** (neutral efficiency line; fewer text changes; 8 cells of evidence). The neutral line won, so the retrieval-only check for the old line is not needed. Solves equal in all 8 cells.
+
+### p5-cc-A1 (Claude Code, rotation A; ledger fix3)
+| arm | solved | real $ (4 tasks) | Δ | w/o bingo | turns |
+|---|---|---|---|---|---|
+| untrimmed | 3/4 | 0.843 | — | 0.535 | 33 |
+| read6 | 3/4 | 0.974 | +16% | 0.560 (+5%) | 38 |
+| read7 | 3/4 | 0.973 | +15% | 0.578 (+8%) | 38 |
+Both arms lose this cell; the baseline is unusually lean (ember 6 turns, zlint 6). bingo degenerate-reran in L1/L2. One cell < MDE (≈30–57%); read our running Claude Code picture as "no measurable effect" so far.
