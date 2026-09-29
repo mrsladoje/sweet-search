@@ -378,3 +378,14 @@ read6 lost svgr (the known solve lottery). read7's loss is jupytext (12 turns / 
 
 ### p5-cc-A2 (Claude Code, rotation A; ledger fix3)
 untrimmed 0.875 (3/4, 33 turns) · read6 0.840 **−4%** (3/4, 34) · read7 0.829 **−5%** (3/4, 30). Without bingo: 0.515 · 0.545 (+6%) · 0.562 (+9%). The only gain is the never-solved bingo task; on the solvable tasks both arms cost more again.
+
+### p5-cc-B2 (Claude Code, rotation B; ledger fix3)
+untrimmed 0.989 (1/6) · read6 1.057 **+7%** (1/6) · read7 0.915 **−7%** (2/6, svgr solved cheaply). Without svgr: 0.779 · 0.780 (0%) · 0.778 (0%).
+
+### Claude Code pooled (phase 4 + 5 task-cell pairs v same-cell baseline, bootstrap 5,000, seed 42)
+| arm | pairs | geo Δ | 95% CI | w/o bingo+svgr |
+|---|---|---|---|---|
+| read6 (8 cells) | 40 | +5.5% | [−1.7, +12.9] | +2.0% [−5.5, +9.6] |
+| read6fs (4 cells) | 20 | −3.5% | [−12.5, +6.0] | −7.8% [−16.8, +1.8] |
+| read7 (4 cells) | 20 | +2.6% | [−8.2, +14.1] | +7.3% [−4.4, +19.9] |
+**STOP RULE (Claude Code):** 3 rounds without a gain whose interval excludes zero; the behaviour audit showed read6fs's lead is task luck. Claude Code final = **no text change** (the shipped product harness stays as is). Solves equal within the svgr lottery.
