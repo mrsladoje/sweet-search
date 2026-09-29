@@ -12,7 +12,7 @@
  * `--all` falls back to cleaning the current repo.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -42,15 +42,22 @@ function writeRepoRegistry(repos, env) {
   }
 }
 
+/** Canonical form, so a repo reached through a symlink is one entry. */
+function canonical(p) {
+  try { return realpathSync(p); } catch { return resolve(p); }
+}
+
 export function registerRepo(projectRoot, env = process.env) {
-  const root = resolve(projectRoot);
+  const root = canonical(projectRoot);
   const repos = readRepoRegistry(env);
   if (repos.includes(root)) return true;
-  return writeRepoRegistry([...repos, root], env);
+  // Drop repos that no longer exist, so benches and CI that init thousands of
+  // throwaway checkouts cannot grow the record without bound.
+  return writeRepoRegistry([...repos.filter((p) => existsSync(p)), root], env);
 }
 
 export function unregisterRepos(projectRoots, env = process.env) {
-  const drop = new Set(projectRoots.map((p) => resolve(p)));
+  const drop = new Set(projectRoots.map(canonical));
   const repos = readRepoRegistry(env);
   const kept = repos.filter((p) => !drop.has(p));
   if (kept.length === repos.length) return true;

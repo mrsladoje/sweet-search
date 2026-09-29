@@ -825,8 +825,19 @@ export function detectPackageInstall(packageRoot = PACKAGE_ROOT, globalRoot = np
   const pkg = real(packageRoot);
   const parent = dirname(pkg);
   if (basename(parent) !== 'node_modules') return { kind: 'none' };
+  // An `npx sweet-search` run lives in npm's own cache; nothing to uninstall.
+  if (pkg.split('/').includes('_npx')) return { kind: 'none' };
   if (globalRoot && real(globalRoot) === parent) return { kind: 'global' };
-  return { kind: 'local', cwd: dirname(parent) };
+  // Project-local only when that project's package.json declares us. Anything
+  // else (pnpm/yarn/bun stores, unusual layouts) is 'other': we say how to
+  // finish rather than guess an npm command in the wrong directory.
+  const projectDir = dirname(parent);
+  try {
+    const manifest = JSON.parse(readFileSync(join(projectDir, 'package.json'), 'utf-8'));
+    const declared = { ...manifest.dependencies, ...manifest.devDependencies, ...manifest.optionalDependencies };
+    if (declared['sweet-search']) return { kind: 'local', cwd: projectDir };
+  } catch { /* no readable manifest */ }
+  return { kind: 'other', path: pkg };
 }
 
 function npmGlobalRoot() {
@@ -865,7 +876,7 @@ export async function runUninstall(args) {
   const sharedRemovals = parsed.all ? planSharedCacheRemovals(plans) : [];
   const install = parsed.all ? detectPackageInstall() : { kind: 'none' };
 
-  if (plans.length === 0 && sharedRemovals.length === 0 && install.kind === 'none') {
+  if (plans.length === 0 && sharedRemovals.length === 0 && !['global', 'local'].includes(install.kind)) {
     console.log(parsed.all
       ? 'Nothing to remove — Sweet Search is not installed on this machine.'
       : 'Nothing to remove — Sweet Search is not initialized in this project.');
@@ -880,7 +891,7 @@ export async function runUninstall(args) {
     console.log(`  Repo: ${plan.projectRoot}`);
     for (const line of plan.lines) console.log(`    ${line}`);
   }
-  if (parsed.all && (sharedRemovals.length > 0 || install.kind !== 'none')) {
+  if (parsed.all && (sharedRemovals.length > 0 || ['global', 'local'].includes(install.kind))) {
     console.log('');
     console.log('  This machine:');
     for (const r of sharedRemovals) console.log(`    ${r.label} (${formatBytes(r.size)})`);
@@ -891,6 +902,14 @@ export async function runUninstall(args) {
 
   if (parsed.dryRun) {
     console.log('Dry run — nothing was removed.');
+    return;
+  }
+
+  // --all is machine-wide: without a terminal to confirm on (an agent's shell,
+  // a script), require an explicit --force instead of proceeding silently.
+  if (parsed.all && !parsed.force && !process.stdin.isTTY) {
+    console.log('Refusing to run --all without confirmation. Re-run with --force to proceed.');
+    process.exitCode = 1;
     return;
   }
 
@@ -910,13 +929,17 @@ export async function runUninstall(args) {
 
   let removed = 0;
   let kept = 0;
+  // Forget a repo only once it is clean, so a failed removal can still be
+  // found by a later `uninstall --all`. Repos with nothing left count as clean.
+  const cleaned = roots.filter((root) => !plans.some((p) => p.projectRoot === root));
   for (const plan of plans) {
     if (plans.length > 1) console.log(`  [${plan.projectRoot}]`);
     const result = executeProjectUninstall(plan);
     removed += result.removed;
     kept += result.kept;
+    if (result.kept === 0 && !existsSync(join(plan.projectRoot, DATA_DIR_NAME))) cleaned.push(plan.projectRoot);
   }
-  unregisterRepos(roots);
+  unregisterRepos(cleaned);
 
   if (parsed.all) {
     for (const r of sharedRemovals) {
@@ -930,8 +953,10 @@ export async function runUninstall(args) {
       }
     }
     // Last: this deletes the running CLI's own files.
-    if (install.kind !== 'none') {
+    if (install.kind === 'global' || install.kind === 'local') {
       if (removePackage(install)) removed++; else kept++;
+    } else if (install.kind === 'other') {
+      console.log(`  Note: remove the sweet-search package (${install.path}) with the package manager you installed it with.`);
     }
   }
 
