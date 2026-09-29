@@ -781,11 +781,9 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <tr>
 <td width="50%" valign="top">
 
-**🏗️ 1. A map of who calls what**
+**🏗️ 1. The codegraph**
 
-- Built once, at index time. Tree-sitter reads your code and records every function, class and method.
-- It also records the links between them: A calls, imports, extends, implements, overrides or uses B.
-- Each link points to the real definition of B.
+- Built once, at index time. Tree-sitter reads your code and records every function, class and method, and the links between them (imports, extends, ...)
 - Each symbol gets an importance score (PageRank). Code that many places depend on scores higher.
 
 </td>
