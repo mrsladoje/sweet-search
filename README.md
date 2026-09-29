@@ -617,6 +617,8 @@ flowchart TD
 <details>
 <summary><b>🌶️ Extra spice: what the diagram leaves out</b></summary>
 
+  <br/>
+  
 **🧠 The vector index** ([full writeup](docs/HNSW_APPROACH.md))
 - A binary HNSW we wrote ourselves, with the standard quality tricks (heuristic neighbor selection, shuffled insertion) all on.
 - The graph is denser than most (M=64, efC=800, efS=400). That raised recall@200 from 80.6% to 86.5% and cut median latency by about a third.
