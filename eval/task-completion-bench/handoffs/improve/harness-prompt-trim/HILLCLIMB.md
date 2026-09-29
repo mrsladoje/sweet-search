@@ -423,3 +423,11 @@ untrimmed 0.066 (0/6, 79 turns) · yt3batch2 0.067 **+1%** (0/6, 68) · yt3batch
 | yt3batch2 | −5.9% | [−14.9, +4.2] | −5.4% | 6 | 44 |
 | yt3batch3 | +0.5% | [−10.5, +13.4] | −0.1% | 6 | 37 |
 **Reading:** on the fixed tool the Codex prompt saving shrinks from ≈−19% to ≈−5% (interval crosses zero). The rest of the old saving was the baseline's loops on tool defects. yt3batch3 cuts wait turns further (−36% v base) but the extra text costs as much as it saves. **Codex final stays yt3batch2** (≈−5%, unproven, mechanism real: read batching audited). Stop rule: Codex has no further lever with a measurable effect at this sample size.
+
+### p7-oc-A1 (opencode re-check on the FIXED tool, rotation A; ledger fix4)
+| arm | solved | real $ (4 tasks) | Δ | turns | calls |
+|---|---|---|---|---|---|
+| untrimmed | 3/4 | 0.080 | — | 79 | 90 |
+| conflict3+todo3eff3k | 3/4 | 0.087 | +9% | 62 | 129 |
+| conflict4+todo4 | 3/4 | 0.083 | +4% | 50 | 103 |
+Turns still −22%/−37%, but $ is higher: todo3eff3k's ember rollout ran 47 calls (0.031 v 0.019); todo4's zlint 0.026 v 0.017. One cell < MDE.
