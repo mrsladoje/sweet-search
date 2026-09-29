@@ -28,7 +28,7 @@ const opt = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i
 const variant = opt('variant', 'shipped');
 const arm = opt('arm', 'sweet');
 const port = opt('port', '18777');
-const bin = opt('bin', join(process.env.HOME, '.local/share/claude/versions/2.1.281'));
+const bin = opt('bin', join(process.env.HOME, '.ss-eval/bin-claude-2.1.281/claude'));
 const outDir = opt('out');
 if (!outDir) throw new Error('--out required');
 
