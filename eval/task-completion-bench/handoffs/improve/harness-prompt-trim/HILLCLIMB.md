@@ -456,3 +456,10 @@ On the fixed run_tests tool, the prompt-text savings shrink to a few percent in 
 The turn reductions are real and audited (todo pairing in opencode, read batching in Codex), but each turn saved is cheap because it is mostly cached re-read context.
 **The biggest cost lever found today is the run_tests fix itself** (b5f7aba, e5c4cb3): the untrimmed Codex arm on rotation B fell −27% and Codex/opencode solve ember and super_editor more often. It helps every harness and both bench arms.
 Stop rule applied to all three harnesses: no remaining prompt lever is measurable at this sample size. Next steps are owner decisions: rotation C (never-tuned) to confirm, and the bench AGENTS.md run_tests launch line.
+
+### opencode fixed-tool behaviour audit (beh-oc-p7, Opus)
+- **Extra super_editor solve = LUCK.** The A2 baseline missed one call site (line 707) because it read a partial range and ignored its own grep hit; baseline solves super_editor 18/19 rollouts over 3 days, variants 38/38. No variant line causes whole-file reads.
+- **−30% turns = BEHAVIOUR.** 1-call turns 267 → 50/46; todowrite alone 74 → 6/5; multi-search turns 3/73 → 29/66. No less work: run_tests 50/53/50, 0 unverified final edits. Tail todo rule mostly not followed as written (pairs with git diff, not run_tests), still removes the lone closing todo turn.
+- grep/explore were used 0 times even in the baseline — removing them saves only tool-definition tokens.
+- **Why turns ≠ $:** cache-read $ −24%, but uncached input +7% (L3 +17%) and output +10% (204 → 324 tokens/turn); calls +23%. Net −2.7%. A dropped turn saves ≈$0.00035 of cached re-read.
+- No tool defects on the fixed tool (153 run_tests calls, all with a verdict).
