@@ -497,8 +497,7 @@ Code search is a crowded space. Here's an honest read on where sweet-search wins
 
 ## 🧰 The Six Tools
 
-Six small tools, one shared index. Each returns ranked, deduplicated, token-budgeted output designed
-to be *consumed by an agent* — a useful answer, not a wall of matches to scroll through.
+Six tools that share one index. Your agent picks the one that fits the question.
 
 <table>
 <tr>
