@@ -714,30 +714,26 @@ bounds impact traversal (1–4).
 ---
 
 <a id="tool-ss-read"></a>
-### 6. `ss-read` — the file, straight from disk
+### 6. `ss-read`: read a file from disk
 
 ```bash
 ss-read src/db/pool.js 120 180
 ```
 
-Exact bytes from disk, never from the index, so never stale. On top, three small things aimed at the agent's next move:
+It reads the file from disk, not from the index, so the code is always current. It also does three things for the agent:
 
-- **Line numbers in your harness's dialect.** `N<TAB>` for Claude Code, `N:` for opencode and Cursor, none for Codex — each matched to how that harness's edit tool finds its anchor, so a gutter never leaks into an edit.
-- **What you haven't read.** A range read names the unread symbols around it — ranked by what the session has been searching for — plus the exact command to continue.
-- **No paying twice.** Re-read a span the agent has already seen and you get a one-line receipt, not the bytes again.
+- **Line numbers that fit the agent.** Claude Code gets `12<TAB>`, opencode and Cursor get `12:`, and Codex gets none. Each agent's edit tool expects a different format, and the wrong one can end up inside an edit.
+- **A note on what is left.** If the agent reads only part of a file, it sees the names of the functions it skipped and the command to read them.
+- **No double reads.** If the agent reads the same lines again, it gets a one-line reminder instead of the same code twice.
 
 <details>
 <summary><b>More</b></summary>
 
-- `sweet-search read <file...>` and the `read` MCP tool take up to 20 files per call.
-- Files the indexer skipped by content (minified bundles, generated code) are refused with a pointer to the native read — no 13k-token surprise in context.
-- The harness is detected from its environment or process tree; force a form with `SS_READ_GUTTER=tab|colon|none`. Reads under 15 lines get no gutter.
+- Also available as `sweet-search read` and the `read` MCP tool, with up to 20 files per call.
+- Minified and generated files are refused, so the agent does not load thousands of useless tokens by mistake.
+- The agent is detected automatically. To set the format yourself, use `SS_READ_GUTTER=tab|colon|none`.
 
 </details>
-
-> The `ss-*` wrappers ship in the npm package and are what the installed agent prompt drives. Every
-> capability is equally available as `sweet-search` CLI subcommands and as MCP tools — see
-> *Setup options & details* under [Quickstart](#-quickstart).
 
 ---
 
