@@ -781,19 +781,18 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <tr>
 <td width="50%" valign="top">
 
-**🏗️ A real call graph, built at index time**
+**🏗️ Call graph, built at index time**
 
-- ***Parsed, not grepped:*** Tree-sitter (for most languages) turns the code into symbols and typed edges: calls, imports, extends, implements, overrides and uses.
-- ***Resolved:*** each call is linked to its definition, same file and package first. The graph is stored in SQLite with a global PageRank.
+- Tree-sitter extracts symbols and typed edges: calls, imports, extends, implements, overrides, uses.
+- Each call is linked to its definition. A global PageRank is stored with the graph.
 
 </td>
 <td width="50%" valign="top">
 
-**🔎 Callers the graph missed**
+**🔎 Missed callers recovered**
 
-- ***Import aliases:*** in JS and TS, `import { processOrder as run }` still counts as a call.
-- ***Same-file calls:*** the file is scanned for calls that have no stored edge.
-- ***False matches dropped:*** `this.fetch()` is not a call to an unrelated `fetch`.
+- Calls through import aliases, and same-file calls with no stored edge.
+- Name clashes are filtered out, so `this.fetch()` does not match an unrelated `fetch`.
 
 </td>
 </tr>
@@ -802,17 +801,16 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 **🧭 Ranked from your symbol**
 
-- ***Personalized PageRank*** runs from your symbol: backward for callers, forward for callees. Loggers and other busy helpers do not float to the top.
-- ***Then:*** distance, edge type, exported names and fan-in. Tests rank lower.
+- Personalized PageRank, backward for callers and forward for callees. Busy helpers like loggers do not win.
+- Also: distance, edge type, exports, fan-in. Tests rank lower.
 
 </td>
 <td width="50%" valign="top">
 
-**📦 Packed to fit**
+**📦 Fit to a token budget**
 
-- ***Budget:*** 4k, 8k or 12k tokens, picked from the size and spread of the graph.
-- ***Split:*** a symbol with many callers gets more room for callers, and the same for callees.
-- ***Code:*** the full body when it fits. If not, the lines around the call.
+- 4k, 8k or 12k tokens, picked from the graph. The side with more links gets more room.
+- Full code when it fits, otherwise the lines around the call.
 
 </td>
 </tr>
