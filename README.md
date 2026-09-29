@@ -134,12 +134,9 @@ That's it. From then on, the index updates itself as you work.
 To uninstall 😢:
 
 ```bash
-sweet-search uninstall --keep-models  # current repo only; keeps shared models and the global CLI
-sweet-search uninstall                # current repo plus its shared model downloads; keeps the global CLI
-npm uninstall -g sweet-search         # global CLI only; does not clean initialized repos
+sweet-search uninstall        # this repo only
+sweet-search uninstall --all  # everything: all repos, models, and the CLI
 ```
-
-Run `sweet-search uninstall` inside each initialized repo before removing the global CLI.
 
 <details>
 <summary><b>Setup options & details</b></summary>
@@ -214,15 +211,15 @@ The CLI is the default contact surface. To also register the MCP server, run
 
 | Flag | Behavior |
 |---|---|
+| `--all` | Remove sweet-search from this machine: every repo where `init` ran, the shared model cache, and the npm package. |
 | `--dry-run` | Preview all detected removals. |
-| `--keep-models` | Preserve shared model and CoreML caches. |
-| `--purge` | Also uninstall the npm package and Sweet Search native packages. |
 | `--force` | Skip the confirmation prompt. |
 | `--help`, `-h` | Show uninstall help. |
 
 `sweet-search uninstall` removes Sweet Search's rule, output style and active
 selection, AGENTS/GEMINI/Cursor instruction blocks, project hooks and skill,
-MCP registration, enforcement/reminder artifacts, and `.sweet-search/`. It
+MCP registration, enforcement/reminder artifacts, and `.sweet-search/` from the
+current repo. The shared model cache stays for your other repos. It
 preserves user-authored content. Generic Codex `[features] hooks = true` flags
 are left in place because other tools may share them, and an otherwise-empty
 settings file may remain as `{}`.

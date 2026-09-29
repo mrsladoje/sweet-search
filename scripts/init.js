@@ -53,6 +53,7 @@ import { installMcpServer } from './install-mcp-server.js';
 import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { installToolEnforcement, removeToolEnforcement } from './install-tool-enforcement.js';
 import { isNativeInferenceAvailable } from '../core/infrastructure/native-inference.js';
+import { registerRepo } from './repo-registry.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -1597,6 +1598,8 @@ export async function runInit(args) {
   if (parsed.verbose) {
     process.stderr.write(`[init] Project root: ${projectRoot}\n`);
   }
+  // Record the repo so `uninstall --all` can find and clean it later.
+  registerRepo(projectRoot);
 
   // 3. Ensure .sweet-search/ directory
   const dataDir = ensureDataDir(projectRoot);
