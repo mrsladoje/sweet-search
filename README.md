@@ -474,26 +474,26 @@ We're SOTA in June 2026 on 3/4 attempted benchmarks at HARDER settings (running 
 
 Code search is a crowded space. Here's an honest read on where sweet-search wins and where it gives ground, against the trending leaders and our closest local peers.
 
-| Capability | sweet-search | claude-context | Cursor index | codebase-memory | SocratiCode |
-|---|:---:|:---:|:---:|:---:|:---:|
-| 100% local — code never leaves your machine | ✅ | ✅¹ | ❌ | ✅ | ✅ |
-| Works with zero API keys | ✅ | ✅¹ | ❌ | ✅ | ✅ |
-| No external service to run (vector DB · Ollama · Docker) | ✅ | ❌ Milvus | ❌ cloud | ✅ | ⚠️⁵ |
-| ColBERT late-interaction rerank | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Faster-than-ripgrep exact grep | ✅ | ❌ | ✅⁷ | ❌ | ❌ |
-| Call-graph trace (callers · callees · impact) | ✅ | ❌ | ❌ | ✅ | ✅ |
-| Drives any terminal agent (Claude Code · Codex · Gemini CLI) | ✅ | ✅ | ❌² | ✅ | ✅ |
-| Published NL→code retrieval benchmarks | ✅ | ⚠️³ | ❌ | ⚠️³ | ⚠️³ |
-| *…and where sweet-search gives ground* | | | | | |
-| Native Windows | ❌⁴ | ✅ | ✅ | ✅ | ⚠️⁸ |
-| Deep-AST language coverage | ⚠️ 14 (+70 via regex) | ⚠️ | ⚠️ | ✅ 158 | ⚠️ |
-| In-editor GUI · writes & edits code | ❌ | ❌ | ✅ | ❌ | ❌⁶ |
-| Org-wide, multi-repo scale | ❌ | ⚠️ | ⚠️ | ⚠️ | ✅ |
+| Capability | sweet-search | claude-context | codebase-memory | SocratiCode |
+|---|:---:|:---:|:---:|:---:|
+| 100% local — code never leaves your machine | ✅ | ✅¹ | ✅ | ✅ |
+| Works with zero API keys | ✅ | ✅¹ | ✅ | ✅ |
+| No external service to run (vector DB · Ollama · Docker) | ✅ | ❌ Milvus | ✅ | ⚠️⁴ |
+| ColBERT late-interaction rerank | ✅ | ❌ | ❌ | ❌ |
+| Faster-than-ripgrep exact grep | ✅ | ❌ | ❌ | ❌ |
+| Call-graph trace (callers · callees · impact) | ✅ | ❌ | ✅ | ✅ |
+| Drives any terminal agent (Claude Code · Codex · Gemini CLI) | ✅ | ✅ | ✅ | ✅ |
+| Published NL→code retrieval benchmarks | ✅ | ⚠️² | ⚠️² | ⚠️² |
+| *…and where sweet-search gives ground* | | | | |
+| Native Windows | ❌³ | ✅ | ✅ | ⚠️⁶ |
+| Deep-AST language coverage | ⚠️ 14 (+70 via regex) | ⚠️ | ✅ 158 | ⚠️ |
+| In-editor GUI · writes & edits code | ❌ | ❌ | ❌ | ❌⁵ |
+| Org-wide, multi-repo scale | ❌ | ⚠️ | ⚠️ | ✅ |
 
 <sub>✅ yes · ⚠️ partial / with caveats · ❌ no. Verified June 2026; capabilities drift.<br/>
-¹ claude-context's local path (Milvus Lite + Ollama embeddings) needs no API key, but it defaults to OpenAI/Voyage embeddings + Zilliz Cloud — and still runs Milvus + Ollama either way. ² Cursor's index is editor-locked — external terminal agents can't query it. ³ Reports token-reduction / efficiency, not a public NL→code retrieval-quality leaderboard. ⁴ Runs on Windows via WSL2. ⁵ SocratiCode manages a bundled Qdrant for you, but uses an auto-detected Ollama for local embeddings. ⁶ Ships an interactive HTML graph viewer, but doesn't edit code. ⁷ Cursor's local Instant Grep — a literal + regex index it benchmarks at ripgrep 16.8 s → 13 ms (the post that inspired our own n-gram prefilter). ⁸ SocratiCode runs on Windows via Docker only — no native binary, and no GPU there.</sub>
+¹ claude-context's local path (Milvus Lite + Ollama embeddings) needs no API key, but it defaults to OpenAI/Voyage embeddings + Zilliz Cloud — and still runs Milvus + Ollama either way. ² Reports token-reduction / efficiency, not a public NL→code retrieval-quality leaderboard. ³ Runs on Windows via WSL2. ⁴ SocratiCode manages a bundled Qdrant for you, but uses an auto-detected Ollama for local embeddings. ⁵ Ships an interactive HTML graph viewer, but doesn't edit code. ⁶ SocratiCode runs on Windows via Docker only — no native binary, and no GPU there.</sub>
 
-**Where we lose, plainly:** no native Windows yet, no editor GUI, and we index one repo at a time. If you need org-wide search across many repos and branches, that's where [SocratiCode](https://github.com/giancarloerra/socraticode) and [Sourcegraph](https://sourcegraph.com) are built to win. If you live inside one editor, Cursor's index is already there. sweet-search is for the terminal agent that wants the best *local* retrieval on the repo in front of it. No one else combines all of it: ColBERT late-interaction reranking **and** faster-than-grep search, fully on-device, with nothing to sign up for.
+**Where we lose, plainly:** no native Windows yet, no editor GUI, and we index one repo at a time. If you need org-wide search across many repos and branches, that's where [SocratiCode](https://github.com/giancarloerra/socraticode) and [Sourcegraph](https://sourcegraph.com) are built to win. sweet-search is for the terminal agent that wants the best *local* retrieval on the repo in front of it. No one else combines all of it: ColBERT late-interaction reranking **and** faster-than-grep search, fully on-device, with nothing to sign up for.
 
 <sub>Also in the space: <a href="https://sourcegraph.com">Sourcegraph/Cody</a> (org-scale, server-based), <a href="https://github.com/continuedev/continue">Continue.dev</a> (local-default RAG), <a href="https://github.com/oraios/serena">Serena</a> (LSP symbol search, no embeddings), <a href="https://github.com/yoanbernabeu/grepai">grepai</a> (local CLI + trace), and <a href="https://github.com/cocoindex-io/cocoindex-code">cocoindex-code</a> (embedded AST search).</sub>
 
