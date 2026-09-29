@@ -3,10 +3,10 @@
 <img src="assets/sweet-search-banner-pixelated.svg" alt="sweet-search — local code search for AI coding agents" width="100%" />
 
 
-## **Local code search for AI coding agents**<br>
+## **🍬 Local code search for AI coding agents 🍬**<br>
 
 
-Six fast, purpose-built tools made for *Claude Code*, *Codex* & friends 🍬
+Six fast, purpose-built tools made for *Claude Code*, *Codex* & friends 👀
 
 Every coding agent today reaches for grep + Read by reflex. *sweet-search* challenges the narrative 😎
 
