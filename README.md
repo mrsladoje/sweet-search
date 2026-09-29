@@ -769,30 +769,47 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 ---
 
 <a id="tool-ss-trace"></a>
-### <img src="assets/tools/ss-trace.svg" width="40" align="center" alt="" /> 5. `ss-trace` — graph algorithms, not grep guesswork
+### <img src="assets/tools/ss-trace.svg" width="40" align="center" alt="" /> 5. `ss-trace`: callers, callees and impact from the code graph
 
-<img src="assets/tools/ss-trace-io.svg" alt="ss-trace takes a symbol and returns its callers, callees and impact" width="100%" />
+<img src="assets/tools/ss-trace-io.svg" alt="ss-trace takes the symbol processOrder. One call returns its callers checkout, retryOrder and handleWebhook, its callees chargeCard, reserveStock and sendReceipt, and what breaks if it changes." width="100%" />
 
-One call returns a symbol's **callers, callees, and transitive impact paths** from the AST-derived code
-graph (entities + typed `calls`/`imports`/`extends`/`uses` edges, persisted in SQLite at index time).
-Ranking fuses three signals:
+### 🕸️ Know what breaks before you edit
+> Give `ss-trace` a symbol. It returns who calls it, what it calls, and the call chains that break if it changes, with the code. The call graph is built at index time, so this is one call and no grep chain.
 
-- **Query-time Personalized PageRank** via Forward Push — a *local* algorithm that spreads mass directionally from your target symbol and touches only the neighborhood it reaches, never the whole graph;
-- **Index-time edge-weighted global PageRank** (damping 0.85), precomputed into a `page_rank` column — a function called from five sites carries five units of mass, and it costs *zero* at query time;
-- **Structural heuristics** — relationship type, depth, exported-API status, fan-in — with penalties for test-only and external paths.
+<table>
+<tr><td colspan="2"><b>How it ranks the graph</b></td></tr>
+<tr>
+<td width="50%" valign="top">
 
-Because the graph is prebuilt, the global ranking is precomputed, and the personalized walk is local,
-a full three-section trace costs milliseconds. The relation word (`callers` / `callees` / `impact`)
-re-weights how the response token budget is split; `--in` disambiguates duplicate names; `--depth`
-bounds impact traversal (1–4).
+**🧭 Walks out from your symbol**
+
+- ***Personalized PageRank*** runs from your symbol: backward for callers, forward for callees.
+- ***It stays local.*** It visits only the nearby graph, not the whole repo.
+- ***Impact paths*** go 3 hops deep. Change it with `--depth` (1 to 4).
+
+</td>
+<td width="50%" valign="top">
+
+**⚖️ Real callers first**
+
+- ***Global PageRank***, computed at index time, helps when the local graph is small.
+- ***Direct calls***, exported names and often-called code rank higher.
+- ***Tests and unresolved names*** rank lower.
+
+</td>
+</tr>
+</table>
 
 <details>
 <summary><b>More</b></summary>
 
 <br/>
 
-- Honest caveat: call-graph extraction is precise but incomplete on highly dynamic code (bare-name dispatch, metaprogramming) — traces can be sparse there, and the agent prompt teaches a recovery strategy for exactly that case.
-- Also available as `sweet-search trace` and the `trace` MCP tool.
+- Add `callers`, `callees` or `impact` after the symbol to get only that part.
+- Two symbols with the same name? Pick one with `--in <file>`.
+- The output fits a token budget that grows with the size of the graph. Set it with `--budget`.
+- On very dynamic code (calls by string name, metaprogramming), the graph can miss calls.
+- Also available as `sweet-search trace` and as the `trace` MCP tool.
 
 </details>
 
