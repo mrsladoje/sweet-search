@@ -99,8 +99,30 @@ export const CODEX_BATCH_VARIANTS = Object.freeze({
   rbatch2: `${CODEX_BASE}\n${CODEX_READ_BATCH2}`,
   // yt3batch2: the champion yt3batch with the audit's keep-separate clause (rbatch2 lost without the template).
   yt3batch2: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE3}\n${CODEX_READ_BATCH2}`,
+  yt3batch2w: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE3}\n${CODEX_READ_BATCH2}`, // + CODEX_TEXT_EDITS.yt3batch2w
+});
+// yt3batch2w (audit cx-audit2 + owner, 2026-09-29): yt3batch2 plus two rewordings (no deletion) of the
+// stock 60-second lines, so they stop contradicting the long-command cell form while keeping the
+// anti-hang and communication intent.
+const CODEX_TEXT_EDITS = Object.freeze({
+  yt3batch2w: [
+    ['- Avoid performing blocking sleep or wait calls longer than 60 seconds, as they may prevent you from communicating with the user for their duration.',
+     '- Do not sleep, poll, or wait on a command that may never finish for longer than 60 seconds, as it may prevent you from communicating with the user. A command that ends by itself, such as a build or a test run, may take longer: run it with the cell form above so its result comes back in the same turn.'],
+    ['should not be left without a commentary update for more than 60 seconds during ongoing work.',
+     'should not be left without a commentary update for more than 60 seconds during ongoing work, other than while a build or a test run you started is still running.'],
+  ],
 });
 export function applyCodexBatch(text, variant) {
+  const edits = CODEX_TEXT_EDITS[variant];
+  if (edits) {
+    let out = applyCodexBatch(text, variant.slice(0, -1));
+    for (const [from, to] of edits) {
+      const at = out.indexOf(from);
+      if (at < 0 || out.indexOf(from, at + 1) >= 0) throw new Error(`CODEX_TRIM_BATCH=${variant}: text "${from.slice(0, 50)}..." not found exactly once`);
+      out = out.replace(from, to);
+    }
+    return out;
+  }
   const repl = CODEX_BATCH_VARIANTS[variant];
   if (!repl) throw new Error(`CODEX_TRIM_BATCH=${variant}: expected ${Object.keys(CODEX_BATCH_VARIANTS).join(', ')}`);
   if (!text.includes(CODEX_BASE)) throw new Error('CODEX_TRIM_BATCH: batching lines not found in the instructions');
