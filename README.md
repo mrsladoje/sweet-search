@@ -879,20 +879,21 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 `sweet-search init` installs a short system prompt next to the six tools. Its one job: make the agent use
 those tools for the **largest cost saving at unharmed retrieval quality**.
 
-We tuned it in two steps:
+We tuned it in two steps. Step 1 uses [**🧬 GEPA**](https://arxiv.org/abs/2507.19457), a prompt optimizer that evolves prompts from real agent runs.
 
 ```mermaid
 flowchart TB
-    subgraph S1["<b>① Retrieval</b> · evolved automatically · May 2026"]
+    subgraph S1["<span style='font-size:20px'><b>① Retrieval</b> · evolved automatically</span>"]
         direction LR
+        GEPA(["🧬 <b>GEPA</b>"]) ~~~ A
         A(["📝 <b>Candidate</b><br/>prompts"]) --> B["🤖 <b>Run</b> on<br/>Claude Code + Codex"]
-        B --> C["💰 <b>Keep</b> the cheapest<br/>that stays accurate"]
+        B --> C["💰 <b>Keep</b> the Pareto-best<br/>prompts: cheapest with<br/>the best retrieval"]
         C --> D["🔁 <b>An LLM</b> reads the<br/>wasteful runs and<br/>rewrites the prompt"]
         D -.-> A
     end
-    S1 --> V("🔒 <b>Sealed checks</b><br/>held-out questions · 8 unseen languages<br/>2 unseen model families")
+    S1 --> V("🔒 <b>Sealed checks</b><br/>held-out questions<br/>8 unseen languages<br/>2 unseen model families")
     V -->|"it found the code, then stopped before the edit"| S2
-    subgraph S2["<b>② Task completion</b> · tuned by hand · Jun–Sep 2026"]
+    subgraph S2["<span style='font-size:20px'><b>② Task completion</b> · tuned by hand</span>"]
         direction LR
         E["🔍 <b>400 dev tasks</b><br/>read the failed runs"] --> F["✍️ <b>Write</b> one<br/>new rule"]
         F --> G["🧪 <b>Small test</b> on target<br/>and control tasks"]
@@ -910,6 +911,7 @@ flowchart TB
     classDef rule  fill:#f3e8ff,stroke:#a78bfa,color:#000;
     classDef keep  fill:#bbf7d0,stroke:#15803d,color:#000,stroke-width:2px;
     classDef drop  fill:#fecaca,stroke:#dc2626,color:#000,stroke-width:2px;
+    classDef gepa  fill:#a78bfa,stroke:#596fff,color:#fff,stroke-width:3px,font-size:26px;
     classDef ship  fill:#ffd1e6,stroke:#ff5ba3,color:#000,stroke-width:3px;
 
     class A cand;
@@ -922,14 +924,15 @@ flowchart TB
     class H keep;
     class I drop;
     class P ship;
+    class GEPA gepa;
 
     style S1 fill:#f5f3ff,stroke:#a78bfa,stroke-width:2px,color:#000;
     style S2 fill:#f0fdfa,stroke:#2dd4bf,stroke-width:2px,color:#000;
 
-    linkStyle 3 stroke:#fb7185,stroke-width:2px;
-    linkStyle 8 stroke:#15803d,stroke-width:2px;
-    linkStyle 9 stroke:#dc2626,stroke-width:2px;
-    linkStyle 10 stroke:#ff5ba3,stroke-width:3px;
+    linkStyle 4 stroke:#fb7185,stroke-width:2px;
+    linkStyle 9 stroke:#15803d,stroke-width:2px;
+    linkStyle 10 stroke:#dc2626,stroke-width:2px;
+    linkStyle 11 stroke:#ff5ba3,stroke-width:3px;
 ```
 
 In practice, it tells the agent to open with the cheapest tool, trust the ranking, treat two empty searches as proof of absence, and stop searching once it has the answer.
