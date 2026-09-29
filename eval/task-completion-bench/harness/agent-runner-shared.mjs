@@ -31,6 +31,7 @@ import { includeUntrackedFromEnv, untrackedBaselineFor, benchGitDiff } from './r
 
 export { FRAME_OPEN, FRAME_CLOSE, priceFor, costFromTurns };
 export { resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules } from './sweet-rules-placement.mjs';
+import { sweetRulesOutOfFile } from './sweet-rules-placement.mjs';
 
 const DOCKER_HOST = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock';
 const L1_CONDENSE = process.env.SS_NO_CMD_CONDENSE !== '1';
@@ -253,6 +254,8 @@ export function buildTrajectory(toolCalls) {
 // SWEET_RULES_PLACEMENT=system (sweet-rules-placement.mjs): the sweet block (M± + any packing
 // treatment) leaves the file for the harness system prompt, so the file is the frame only —
 // byte-identical to native's — and sweetRulesBlock() is what the runner puts in the prompt.
+// SWEET_RULES_PLACEMENT=config: the same frame-only file; sweetRulesBlock() goes to the
+// harness's own instruction config instead (opencode `instructions` file).
 export function sweetRulesBlock({ mppText, env = process.env }) {
   const packing = packingTreatmentRowFields({ sweet: true, env });
   const treatment = packing.packingTreatment === 'off'
@@ -261,7 +264,7 @@ export function sweetRulesBlock({ mppText, env = process.env }) {
 }
 export function buildInstructionFile({ sweet, mppText, env = process.env, rulesPlacement = 'file' }) {
   packingTreatmentRowFields({ sweet, env });
-  const rules = sweet && rulesPlacement !== 'system';
+  const rules = sweet && !sweetRulesOutOfFile(rulesPlacement);
   return `${FRAME_OPEN}${rules ? `\n\n${sweetRulesBlock({ mppText, env })}` : ''}\n\n${FRAME_CLOSE}${frameReflectText(env)}`;
 }
 export function writeInstructionFile(rundir, fileName, { sweet, mppText, env = process.env, rulesPlacement = 'file' }) {

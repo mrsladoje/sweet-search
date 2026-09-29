@@ -509,6 +509,27 @@ export function opencodeRulesInSystem(trim, { rules, apiModel }) {
   };
 }
 
+// --- SWEET_RULES_PLACEMENT=config (sweet-rules-placement.mjs), SWEET ARM ONLY ---
+// The rules leave AGENTS.md (frame only, native's bytes) for opencode's own `instructions`
+// config key: the rules block is written to OPENCODE_RULES_FILE in the runner's PRIVATE state
+// dir (the dir opencode.json and the trim plugin already live in — bound at the same path in the
+// jail, and never part of the graded repo), and its ABSOLUTE path is appended to the config's
+// `instructions` array. opencode 1.18.4 loads those files like AGENTS.md ("Instructions from:
+// <path>" + content, checked by $0 capture). The agent prompts are NOT touched, so this combines
+// with every OC_HARNESS_TRIM base unchanged. `rules` null = the trim object is returned untouched.
+export const OPENCODE_RULES_FILE = 'sweet-search-rules.md';
+export function opencodeRulesInConfig(trim, { rules, stateDir }) {
+  if (!rules) return trim;
+  if (!stateDir) throw new Error('SWEET_RULES_PLACEMENT=config: stateDir required');
+  const config = trim?.config || {};
+  return {
+    ...trim,
+    config: { ...config, instructions: [...(config.instructions || []), path.join(stateDir, OPENCODE_RULES_FILE)] },
+    files: { ...(trim?.files || {}), [OPENCODE_RULES_FILE]: String(rules) },
+    stateEntries: [...(trim?.stateEntries || []), OPENCODE_RULES_FILE],
+  };
+}
+
 // SWEET ARM ONLY — native has no ss-* rules to contradict and keeps opencode's full prompt
 // and tools in every condition, whatever the switch says.
 export function opencodeArmHarnessTrim({ sweet, env = process.env, apiModel, stateDir } = {}) {
@@ -555,7 +576,7 @@ export function resolveHardTurnCap(env = process.env) {
 // byte-identical to the pre-trim harness.
 export function buildMainOpencodeConfig({ env = process.env, trim = null } = {}) {
   const cap = resolveHardTurnCap(env);
-  const { plugin = [], tools, agentBuild = {}, agents = {} } = trim?.config || {};
+  const { plugin = [], tools, agentBuild = {}, agents = {}, instructions } = trim?.config || {};
   const build = { ...(cap ? { maxSteps: cap } : {}), ...agentBuild };
   const agent = { ...(Object.keys(build).length ? { build } : {}), ...agents };
   return {
@@ -565,6 +586,7 @@ export function buildMainOpencodeConfig({ env = process.env, trim = null } = {})
     permission: { bash: 'allow', edit: 'allow', write: 'allow', read: 'allow', webfetch: 'deny', websearch: 'deny' },
     ...(tools ? { tools } : {}),
     ...(Object.keys(agent).length ? { agent } : {}),
+    ...(instructions?.length ? { instructions } : {}),
   };
 }
 
@@ -706,6 +728,10 @@ export async function runOpencodeTask(task, {
     harnessTrim = opencodeArmHarnessTrim({ sweet, apiModel, stateDir: runnerStateDir });
     harnessTrim = opencodeRulesInSystem(harnessTrim, {
       rules: rulesPlacement === 'system' ? sweetRulesBlock({ mppText }) : null, apiModel,
+    });
+    // SWEET_RULES_PLACEMENT=config: rules file in the runner state dir + config `instructions`.
+    harnessTrim = opencodeRulesInConfig(harnessTrim, {
+      rules: rulesPlacement === 'config' ? sweetRulesBlock({ mppText }) : null, stateDir: runnerStateDir,
     });
   } catch (error) {
     teardownRunner(runnerStateDir, { jail, broker });

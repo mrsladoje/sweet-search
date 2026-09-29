@@ -6,7 +6,8 @@
 //
 //   python3 capture_proxy.py 18821 <outdir> &
 //   node capture_oc_runner.mjs --out <outdir> --model x-ai/grok-4.5 [--arm sweet|native]
-//        [--trim 0|1] [--bin <opencode 1.18.4>] [--port 18821]
+//        [--trim 0|1|<OC_HARNESS_TRIM value>] [--placement file|system|config]
+//        [--bin <opencode 1.18.4>] [--port 18821]
 //
 // The config is the runner's own (buildMainOpencodeConfig + opencodeHarnessTrim, the same
 // calls runOpencodeTask makes); the capture only adds provider.options.baseURL. The trim's
@@ -21,7 +22,7 @@ const HERE = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = join(HERE, '../../../../../..');
 const HARNESS = join(ROOT, 'eval/task-completion-bench/harness');
 const oc = await import(join(HARNESS, 'opencode-task-runner.mjs'));
-const { writeInstructionFile, issuePrompt } = await import(join(HARNESS, 'agent-runner-shared.mjs'));
+const { writeInstructionFile, issuePrompt, sweetRulesBlock, resolveSweetRulesPlacement } = await import(join(HARNESS, 'agent-runner-shared.mjs'));
 
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
@@ -35,6 +36,8 @@ if (!outDir || !bin) throw new Error('--out and --bin required');
 const MPP = join(ROOT, 'core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md');
 const mppText = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
 const sweet = arm === 'sweet';
+// --placement: SWEET_RULES_PLACEMENT as the runner resolves it (native always 'file').
+const placement = resolveSweetRulesPlacement({ sweet, env: { SWEET_RULES_PLACEMENT: opt('placement', 'file') } });
 
 const work = mkdtempSync(join(tmpdir(), 'oc-capture-'));
 const rundir = join(work, 'repo');
@@ -45,11 +48,13 @@ writeFileSync(join(rundir, 'main.py'), 'def add(a, b):\n    return a + b\n');
 execFileSync('git', ['init', '-q'], { cwd: rundir });
 execFileSync('git', ['-c', 'user.email=c@c', '-c', 'user.name=c', 'add', '.'], { cwd: rundir });
 execFileSync('git', ['-c', 'user.email=c@c', '-c', 'user.name=c', 'commit', '-qm', 'init'], { cwd: rundir });
-writeInstructionFile(rundir, 'AGENTS.md', { sweet, mppText });
+writeInstructionFile(rundir, 'AGENTS.md', { sweet, mppText, rulesPlacement: placement });
 
 // Same calls as runOpencodeTask: trim resolved from the switch (sweet arm only), files
 // written into the state dir, config built from both.
-const trim = oc.opencodeHarnessTrim(sweet ? opt('trim', '0') : '0', { apiModel: model, stateDir });
+let trim = oc.opencodeHarnessTrim(sweet ? opt('trim', '0') : '0', { apiModel: model, stateDir });
+trim = oc.opencodeRulesInSystem(trim, { rules: placement === 'system' ? sweetRulesBlock({ mppText }) : null, apiModel: model });
+trim = oc.opencodeRulesInConfig(trim, { rules: placement === 'config' ? sweetRulesBlock({ mppText }) : null, stateDir });
 for (const [name, text] of Object.entries(trim.files)) writeFileSync(join(stateDir, name), text);
 const config = oc.buildMainOpencodeConfig({ env: {}, trim });
 config.provider.openrouter.options.baseURL = `http://127.0.0.1:${port}/v1`;
@@ -93,8 +98,12 @@ const r = spawnSync(bin, args, { cwd: rundir, env, encoding: 'utf8', timeout: 90
 console.error(`exit=${r.status} stderr=${String(r.stderr).slice(0, 300)}`);
 const report = join(stateDir, oc.OPENCODE_TRIM_REPORT);
 if (existsSync(report)) writeFileSync(join(outDir, 'trim-report.json'), readFileSync(report));
-writeFileSync(join(outDir, 'config.json'), JSON.stringify({ ...config, provider: '<capture>' }, null, 2));
+writeFileSync(join(outDir, 'config.json'), JSON.stringify({ ...config, provider: '<capture>' }, null, 2).replaceAll(work, '<work>'));
 writeFileSync(join(outDir, 'stdout.ndjson'), String(r.stdout));
+// What the rollout left in the repo (the graded tree with BENCH_INCLUDE_UNTRACKED=1): AGENTS.md only.
+writeFileSync(join(outDir, 'rundir-status.txt'), execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: rundir, encoding: 'utf8' }));
+writeFileSync(join(outDir, 'meta.json'), JSON.stringify({ arm, model, trim: trim.mode, placement, work: '<work>',
+  stateDirFiles: readdirSync(stateDir).sort() }, null, 2));
 if (unjailed) {
   const paths = spawnSync(bin, ['debug', 'paths'], { cwd: rundir, env, encoding: 'utf8', timeout: 60000 });
   writeFileSync(join(outDir, 'unjailed-check.json'), JSON.stringify({

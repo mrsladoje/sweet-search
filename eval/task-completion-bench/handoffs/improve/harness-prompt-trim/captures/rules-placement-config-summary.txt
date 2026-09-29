@@ -1,0 +1,403 @@
+SWEET_RULES_PLACEMENT=file v config -- $0 captures 2026-09-30 (no model called; capture_proxy.py answered 400).
+opencode 1.18.4: capture_oc_runner.mjs --stdin --model openai/gpt-5.1. codex 0.146.1 native: capture_cx_runner.mjs, openai/gpt-5.6-luna, bench OpenRouter provider (Responses API).
+Normalised in the diffs: temp work dirs -> <work>, session/installation ids, dates. Long lines cut at 160 chars.
+
+#### opencode: where the rules land (main request, system message offsets)
+== oc-file-trim: req01_v1_chat_completions.json messages=2 tools=7
+  [0] role=system len=20222 rules_count=1 rules@11604 AGENTS.md@10385 env@9911
+      Instructions from: <work>/repo/AGENTS.md @ 10385
+  [1] role=user len=80 rules_count=0 
+== oc-config-trim: req01_v1_chat_completions.json messages=2 tools=7
+  [0] role=system len=20342 rules_count=1 rules@13635 AGENTS.md@10385 env@9911
+      Instructions from: <work>/repo/AGENTS.md @ 10385
+      Instructions from: <work>/runner-state/sweet-search-rules.md @ 13514
+  [1] role=user len=80 rules_count=0 
+== oc-file-untrim: req01_v1_chat_completions.json messages=2 tools=8
+  [0] role=system len=19586 rules_count=1 rules@10968 AGENTS.md@9749 env@9275
+      Instructions from: <work>/repo/AGENTS.md @ 9749
+  [1] role=user len=80 rules_count=0 
+== oc-config-untrim: req01_v1_chat_completions.json messages=2 tools=8
+  [0] role=system len=19706 rules_count=1 rules@12999 AGENTS.md@9749 env@9275
+      Instructions from: <work>/repo/AGENTS.md @ 9749
+      Instructions from: <work>/runner-state/sweet-search-rules.md @ 12878
+  [1] role=user len=80 rules_count=0 
+
+#### opencode diff, conflict3+todo3eff3k: file v config
+### aux: keys equal=True
+  messages 3 v 3
+  [0] system: identical after normalisation
+  [1] user: identical after normalisation
+  [2] user: identical after normalisation
+### main: keys equal=True
+  field prompt_cache_key DIFFERS
+  messages 2 v 2
+  [0] system: DIFFERS (20009 v 20069 chars)
+    --- oc-file-trim
+    +++ oc-config-trim
+    @@ -122,4 +122,17 @@
+     You are resolving a real software issue by editing the repository SOURCE code in your current working directory. These task-completion rules are AUTHORITATI...
+     
+    +=== TASK COMPLETION (authoritative — overrides all guidance above) ===
+    +You have NOT finished until (1) you made a SOURCE-code edit AND (2) `run_tests` shows the previously-failing test now PASSES. Locating, understanding, or ex...
+    +
+    +VALIDATION IS AUTHORITATIVE:
+    +- Use `run_tests` for validation. Never inspect, search, read, or modify `.codex-bin`, `_run_tests*`, `_rt_*`, benchmark harness files, baseline files, the ...
+    +- After the initial reproduction, re-run `run_tests` only after a source edit. If the source diff is unchanged, the result cannot improve. Use `run_tests <p...
+    +- `run_tests` runs the whole suite and blocks until it finishes. Launch it with `yield_time_ms=300000` so its complete PASS/FAIL result comes back in ONE ca...
+    +
+    +THIS ENVIRONMENT IS OFFLINE:
+    +- Every outbound request will be REFUSED — curl, wget, git fetch/clone/pull, and package installs (pip, npm, go get, cargo, gem, mix) alike. Mirrors, CDNs, ...
+    +- Solve the issue from the repository source and the issue text. Do not go looking for the upstream fix — not over the network, and not in git history, refs...
+    +
+    +Instructions from: <work>/runner-state/sweet-search-rules.md
+     # Sweet-search — code search tool guide
+     
+    @@ -168,17 +181,4 @@
+     apparent local success does not certify a shape the task did not ask for.
+     
+    -
+    -=== TASK COMPLETION (authoritative — overrides all guidance above) ===
+    -You have NOT finished until (1) you made a SOURCE-code edit AND (2) `run_tests` shows the previously-failing test now PASSES. Locating, understanding, or ex...
+    -
+    -VALIDATION IS AUTHORITATIVE:
+    -- Use `run_tests` for validation. Never inspect, search, read, or modify `.codex-bin`, `_run_tests*`, `_rt_*`, benchmark harness files, baseline files, the ...
+    -- After the initial reproduction, re-run `run_tests` only after a source edit. If the source diff is unchanged, the result cannot improve. Use `run_tests <p...
+    -- `run_tests` runs the whole suite and blocks until it finishes. Launch it with `yield_time_ms=300000` so its complete PASS/FAIL result comes back in ONE ca...
+    -
+    -THIS ENVIRONMENT IS OFFLINE:
+    -- Every outbound request will be REFUSED — curl, wget, git fetch/clone/pull, and package installs (pip, npm, go get, cargo, gem, mix) alike. Mirrors, CDNs, ...
+    -- Solve the issue from the repository source and the issue text. Do not go looking for the upstream fix — not over the network, and not in git history, refs...
+    -
+     Skills provide specialized instructions and workflows for specific tasks.
+     Use the skill tool to load a skill when a task matches its description.
+  [1] user: identical after normalisation
+
+#### opencode diff, untrimmed: file v config
+### aux: keys equal=True
+  messages 3 v 3
+  [0] system: identical after normalisation
+  [1] user: identical after normalisation
+  [2] user: identical after normalisation
+### main: keys equal=True
+  field prompt_cache_key DIFFERS
+  messages 2 v 2
+  [0] system: DIFFERS (19373 v 19433 chars)
+    --- oc-file-untrim
+    +++ oc-config-untrim
+    @@ -121,4 +121,17 @@
+     You are resolving a real software issue by editing the repository SOURCE code in your current working directory. These task-completion rules are AUTHORITATI...
+     
+    +=== TASK COMPLETION (authoritative — overrides all guidance above) ===
+    +You have NOT finished until (1) you made a SOURCE-code edit AND (2) `run_tests` shows the previously-failing test now PASSES. Locating, understanding, or ex...
+    +
+    +VALIDATION IS AUTHORITATIVE:
+    +- Use `run_tests` for validation. Never inspect, search, read, or modify `.codex-bin`, `_run_tests*`, `_rt_*`, benchmark harness files, baseline files, the ...
+    +- After the initial reproduction, re-run `run_tests` only after a source edit. If the source diff is unchanged, the result cannot improve. Use `run_tests <p...
+    +- `run_tests` runs the whole suite and blocks until it finishes. Launch it with `yield_time_ms=300000` so its complete PASS/FAIL result comes back in ONE ca...
+    +
+    +THIS ENVIRONMENT IS OFFLINE:
+    +- Every outbound request will be REFUSED — curl, wget, git fetch/clone/pull, and package installs (pip, npm, go get, cargo, gem, mix) alike. Mirrors, CDNs, ...
+    +- Solve the issue from the repository source and the issue text. Do not go looking for the upstream fix — not over the network, and not in git history, refs...
+    +
+    +Instructions from: <work>/runner-state/sweet-search-rules.md
+     # Sweet-search — code search tool guide
+     
+    @@ -167,17 +180,4 @@
+     apparent local success does not certify a shape the task did not ask for.
+     
+    -
+    -=== TASK COMPLETION (authoritative — overrides all guidance above) ===
+    -You have NOT finished until (1) you made a SOURCE-code edit AND (2) `run_tests` shows the previously-failing test now PASSES. Locating, understanding, or ex...
+    -
+    -VALIDATION IS AUTHORITATIVE:
+    -- Use `run_tests` for validation. Never inspect, search, read, or modify `.codex-bin`, `_run_tests*`, `_rt_*`, benchmark harness files, baseline files, the ...
+    -- After the initial reproduction, re-run `run_tests` only after a source edit. If the source diff is unchanged, the result cannot improve. Use `run_tests <p...
+    -- `run_tests` runs the whole suite and blocks until it finishes. Launch it with `yield_time_ms=300000` so its complete PASS/FAIL result comes back in ONE ca...
+    -
+    -THIS ENVIRONMENT IS OFFLINE:
+    -- Every outbound request will be REFUSED — curl, wget, git fetch/clone/pull, and package installs (pip, npm, go get, cargo, gem, mix) alike. Mirrors, CDNs, ...
+    -- Solve the issue from the repository source and the issue text. Do not go looking for the upstream fix — not over the network, and not in git history, refs...
+    -
+     Skills provide specialized instructions and workflows for specific tasks.
+     Use the skill tool to load a skill when a task matches its description.
+  [1] user: identical after normalisation
+
+#### codex: where the rules land (Responses input items, [item.part])
+== cx-file-trim: instructions=0 chars, rules in instructions=0
+  [0.0] additional_tools len=14811  | {"role": "developer", "tools": [{"description": "Run JavaScript code t
+  [1.0] message/developer len=18442  | You are Codex, an agent based on GPT-5. You and the user share one wor
+  [2.0] message/developer len=362 permissions | <permissions instructions> Filesystem sandboxing defines which files c
+  [2.1] message/developer len=3237  | <skills_instructions> ## Skills A skill is a set of instructions provi
+  [3.0] message/user len=9159 RULES@1227 exact=True exact_trimmed=True AGENTS.md FRAME_CLOSE | # AGENTS.md instructions for /var/folders/d0/ks3xjw392cx8t_sls8x5hhb00
+  [3.1] message/user len=470 env_context | <environment_context>   <cwd>/var/folders/d0/ks3xjw392cx8t_sls8x5hhb00
+  [4.0] message/user len=78 ISSUE | === ISSUE === The add function should also accept a third optional arg
+== cx-config-trim: instructions=0 chars, rules in instructions=0
+  [0.0] additional_tools len=14811  | {"role": "developer", "tools": [{"description": "Run JavaScript code t
+  [1.0] message/developer len=18442  | You are Codex, an agent based on GPT-5. You and the user share one wor
+  [2.0] message/developer len=6005 RULES@0 exact=True exact_trimmed=True | # Sweet-search — code search tool guide  These are code-search rules o
+  [2.1] message/developer len=362 permissions | <permissions instructions> Filesystem sandboxing defines which files c
+  [2.2] message/developer len=3237  | <skills_instructions> ## Skills A skill is a set of instructions provi
+  [3.0] message/user len=3152 AGENTS.md FRAME_CLOSE | # AGENTS.md instructions for /var/folders/d0/ks3xjw392cx8t_sls8x5hhb00
+  [3.1] message/user len=470 env_context | <environment_context>   <cwd>/var/folders/d0/ks3xjw392cx8t_sls8x5hhb00
+  [4.0] message/user len=78 ISSUE | === ISSUE === The add function should also accept a third optional arg
+== cx-file-untrim: instructions=0 chars, rules in instructions=0
+  [0.0] additional_tools len=14811  | {"role": "developer", "tools": [{"description": "Run JavaScript code t
+  [1.0] message/developer len=17730  | You are Codex, an agent based on GPT-5. You and the user share one wor
+  [2.0] message/developer len=362 permissions | <permissions instructions> Filesystem sandboxing defines which files c
+  [2.1] message/developer len=3237  | <skills_instructions> ## Skills A skill is a set of instructions provi
+  [3.0] message/user len=9159 RULES@1227 exact=True exact_trimmed=True AGENTS.md FRAME_CLOSE | # AGENTS.md instructions for /var/folders/d0/ks3xjw392cx8t_sls8x5hhb00
+  [3.1] message/user len=470 env_context | <environment_context>   <cwd>/var/folders/d0/ks3xjw392cx8t_sls8x5hhb00
+  [4.0] message/user len=78 ISSUE | === ISSUE === The add function should also accept a third optional arg
+== cx-config-untrim: instructions=0 chars, rules in instructions=0
+  [0.0] additional_tools len=14811  | {"role": "developer", "tools": [{"description": "Run JavaScript code t
+  [1.0] message/developer len=17730  | You are Codex, an agent based on GPT-5. You and the user share one wor
+  [2.0] message/developer len=6005 RULES@0 exact=True exact_trimmed=True | # Sweet-search — code search tool guide  These are code-search rules o
+  [2.1] message/developer len=362 permissions | <permissions instructions> Filesystem sandboxing defines which files c
+  [2.2] message/developer len=3237  | <skills_instructions> ## Skills A skill is a set of instructions provi
+  [3.0] message/user len=3152 AGENTS.md FRAME_CLOSE | # AGENTS.md instructions for /var/folders/d0/ks3xjw392cx8t_sls8x5hhb00
+  [3.1] message/user len=470 env_context | <environment_context>   <cwd>/var/folders/d0/ks3xjw392cx8t_sls8x5hhb00
+  [4.0] message/user len=78 ISSUE | === ISSUE === The add function should also accept a third optional arg
+
+#### codex diff, conflict/yt3batch2: file v config
+  field client_metadata DIFFERS
+  field prompt_cache_key DIFFERS
+  input parts 7 v 8
+    --- cx-file-trim
+    +++ cx-config-trim
+    @@ -176,2 +176,49 @@
+     --- item message/developer
+    +# Sweet-search — code search tool guide
+    +
+    +These are code-search rules only — they never decide when the task is done; the deliverable is whatever the task/prompt asks for. When the task calls for a ...
+    +
+    +Sweet-search indexes the working tree (uncommitted edits too) and searches it faster and cheaper than raw shell. Use the `ss-*` tools for all code search an...
+    +
+    +## Tools (search commands, invoked via Bash)
+    +`ss-search`/`ss-find` return ranked code blocks; `ss-grep` is file:line only; `ss-semantic` returns the top ranked spans in one file; `ss-trace` returns a s...
+    +- `ss-search "<query>" [-k N]` — semantic; default when you have no exact symbol
+    +- `ss-find "<query>" --regex "<regex>" [-k N]`
+    +- `ss-grep "<regex>" [-k N]` — exact literals
+    +- `ss-semantic <file> "<query>"` — top ranked spans in one known file (semantic query)
+    +- `ss-trace <symbol> [callers|callees|impact] [--in <file>]`
+    +- `ss-read <file> [start] [end]` — a narrow range
+    +
+    +## Open with the cheapest tool for what you hold
+    +- **An exact token** (identifier, function/class/constant, error string, config key, path you could copy-paste): ONE `ss-grep` on that literal (rarest token...
+    +- **Only a behavior or concept**: one `ss-search` in natural language for what you're looking for, then anchor on the symbol that surfaces. Shape it lightly...
+    +- **How something flows / dispatches / is called / what a change impacts**: anchor one symbol (a literal, or `ss-search`), then `ss-trace` it — one call ret...
+    +
+    +On `sufficient=YES`, trust the top ranked result outright; confirm with at most one narrow `ss-read`, never a re-run of a matching hit. Otherwise, scan the ...
+    +
+    +## Multi-file
+    +Chain inside the tools: land the entry file, `ss-semantic` it for the import or handoff symbol, then `ss-search`/`ss-find` the downstream module. The trace ...
+    +
+    +## A confirmed absence is a complete search answer
+    +When what you're looking for may not exist, absence is settled once TWO complementary index probes come back empty for the same concept: one `ss-search` in ...
+    +
+    +## Before the third probe
+    +Before your third sweet-search probe in the current search iteration — or before your final answer, whichever comes first — output a `<state_summary>` block...
+    +
+    +## Search output
+    +Stop searching the instant your evidence answers what you're looking for — one confirmed file+symbol, or one named cross-file link, is enough; gather no cor...
+    +
+    +Before editing a symbol with visible siblings — multiple call sites, a name family (`IVec2`/`I64Vec2`), branch variants, a generated family — spend ONE mapp...
+    +
+    +## Fix discipline
+    +Locating code and deciding HOW to change it are different jobs. The one-probe / trust-the-top-hit
+    +rule is for LOCATING. When you implement something new by copying an existing pattern (a rule, a
+    +handler, an endpoint), read AT MOST two examples of that pattern, then start writing — reading a
+    +third, fourth, or tenth sibling of the same shape does not improve the fix. Before implementing a
+    +new contract or compatibility shim, spend one probe on how this repository already solves the same
+    +kind of problem, and match that local convention rather than the first pattern that comes to mind.
+    +When your change alters a public contract, re-read the task's exact wording before finalizing:
+    +apparent local success does not certify a shape the task did not ask for.
+    +
+    +--- item message/developer
+     <permissions instructions>
+    @@ -199,49 +246,2 @@
+     
+    -# Sweet-search — code search tool guide
+    -
+    -These are code-search rules only — they never decide when the task is done; the deliverable is whatever the task/prompt asks for. When the task calls for a ...
+    -
+    -Sweet-search indexes the working tree (uncommitted edits too) and searches it faster and cheaper than raw shell. Use the `ss-*` tools for all code search an...
+    -
+    -## Tools (search commands, invoked via Bash)
+    -`ss-search`/`ss-find` return ranked code blocks; `ss-grep` is file:line only; `ss-semantic` returns the top ranked spans in one file; `ss-trace` returns a s...
+    -- `ss-search "<query>" [-k N]` — semantic; default when you have no exact symbol
+    -- `ss-find "<query>" --regex "<regex>" [-k N]`
+    -- `ss-grep "<regex>" [-k N]` — exact literals
+    -- `ss-semantic <file> "<query>"` — top ranked spans in one known file (semantic query)
+    -- `ss-trace <symbol> [callers|callees|impact] [--in <file>]`
+    -- `ss-read <file> [start] [end]` — a narrow range
+    -
+    -## Open with the cheapest tool for what you hold
+    -- **An exact token** (identifier, function/class/constant, error string, config key, path you could copy-paste): ONE `ss-grep` on that literal (rarest token...
+    -- **Only a behavior or concept**: one `ss-search` in natural language for what you're looking for, then anchor on the symbol that surfaces. Shape it lightly...
+    -- **How something flows / dispatches / is called / what a change impacts**: anchor one symbol (a literal, or `ss-search`), then `ss-trace` it — one call ret...
+    -
+    -On `sufficient=YES`, trust the top ranked result outright; confirm with at most one narrow `ss-read`, never a re-run of a matching hit. Otherwise, scan the ...
+    -
+    -## Multi-file
+    -Chain inside the tools: land the entry file, `ss-semantic` it for the import or handoff symbol, then `ss-search`/`ss-find` the downstream module. The trace ...
+    -
+    -## A confirmed absence is a complete search answer
+    -When what you're looking for may not exist, absence is settled once TWO complementary index probes come back empty for the same concept: one `ss-search` in ...
+    -
+    -## Before the third probe
+    -Before your third sweet-search probe in the current search iteration — or before your final answer, whichever comes first — output a `<state_summary>` block...
+    -
+    -## Search output
+    -Stop searching the instant your evidence answers what you're looking for — one confirmed file+symbol, or one named cross-file link, is enough; gather no cor...
+    -
+    -Before editing a symbol with visible siblings — multiple call sites, a name family (`IVec2`/`I64Vec2`), branch variants, a generated family — spend ONE mapp...
+    -
+    -## Fix discipline
+    -Locating code and deciding HOW to change it are different jobs. The one-probe / trust-the-top-hit
+    -rule is for LOCATING. When you implement something new by copying an existing pattern (a rule, a
+    -handler, an endpoint), read AT MOST two examples of that pattern, then start writing — reading a
+    -third, fourth, or tenth sibling of the same shape does not improve the fix. Before implementing a
+    -new contract or compatibility shim, spend one probe on how this repository already solves the same
+    -kind of problem, and match that local convention rather than the first pattern that comes to mind.
+    -When your change alters a public contract, re-read the task's exact wording before finalizing:
+    -apparent local success does not certify a shape the task did not ask for.
+    -
+    -
+     === TASK COMPLETION (authoritative — overrides all guidance above) ===
+
+#### codex diff, untrimmed: file v config
+  field client_metadata DIFFERS
+  field prompt_cache_key DIFFERS
+  input parts 7 v 8
+    --- cx-file-untrim
+    +++ cx-config-untrim
+    @@ -172,2 +172,49 @@
+     --- item message/developer
+    +# Sweet-search — code search tool guide
+    +
+    +These are code-search rules only — they never decide when the task is done; the deliverable is whatever the task/prompt asks for. When the task calls for a ...
+    +
+    +Sweet-search indexes the working tree (uncommitted edits too) and searches it faster and cheaper than raw shell. Use the `ss-*` tools for all code search an...
+    +
+    +## Tools (search commands, invoked via Bash)
+    +`ss-search`/`ss-find` return ranked code blocks; `ss-grep` is file:line only; `ss-semantic` returns the top ranked spans in one file; `ss-trace` returns a s...
+    +- `ss-search "<query>" [-k N]` — semantic; default when you have no exact symbol
+    +- `ss-find "<query>" --regex "<regex>" [-k N]`
+    +- `ss-grep "<regex>" [-k N]` — exact literals
+    +- `ss-semantic <file> "<query>"` — top ranked spans in one known file (semantic query)
+    +- `ss-trace <symbol> [callers|callees|impact] [--in <file>]`
+    +- `ss-read <file> [start] [end]` — a narrow range
+    +
+    +## Open with the cheapest tool for what you hold
+    +- **An exact token** (identifier, function/class/constant, error string, config key, path you could copy-paste): ONE `ss-grep` on that literal (rarest token...
+    +- **Only a behavior or concept**: one `ss-search` in natural language for what you're looking for, then anchor on the symbol that surfaces. Shape it lightly...
+    +- **How something flows / dispatches / is called / what a change impacts**: anchor one symbol (a literal, or `ss-search`), then `ss-trace` it — one call ret...
+    +
+    +On `sufficient=YES`, trust the top ranked result outright; confirm with at most one narrow `ss-read`, never a re-run of a matching hit. Otherwise, scan the ...
+    +
+    +## Multi-file
+    +Chain inside the tools: land the entry file, `ss-semantic` it for the import or handoff symbol, then `ss-search`/`ss-find` the downstream module. The trace ...
+    +
+    +## A confirmed absence is a complete search answer
+    +When what you're looking for may not exist, absence is settled once TWO complementary index probes come back empty for the same concept: one `ss-search` in ...
+    +
+    +## Before the third probe
+    +Before your third sweet-search probe in the current search iteration — or before your final answer, whichever comes first — output a `<state_summary>` block...
+    +
+    +## Search output
+    +Stop searching the instant your evidence answers what you're looking for — one confirmed file+symbol, or one named cross-file link, is enough; gather no cor...
+    +
+    +Before editing a symbol with visible siblings — multiple call sites, a name family (`IVec2`/`I64Vec2`), branch variants, a generated family — spend ONE mapp...
+    +
+    +## Fix discipline
+    +Locating code and deciding HOW to change it are different jobs. The one-probe / trust-the-top-hit
+    +rule is for LOCATING. When you implement something new by copying an existing pattern (a rule, a
+    +handler, an endpoint), read AT MOST two examples of that pattern, then start writing — reading a
+    +third, fourth, or tenth sibling of the same shape does not improve the fix. Before implementing a
+    +new contract or compatibility shim, spend one probe on how this repository already solves the same
+    +kind of problem, and match that local convention rather than the first pattern that comes to mind.
+    +When your change alters a public contract, re-read the task's exact wording before finalizing:
+    +apparent local success does not certify a shape the task did not ask for.
+    +
+    +--- item message/developer
+     <permissions instructions>
+    @@ -195,49 +242,2 @@
+     
+    -# Sweet-search — code search tool guide
+    -
+    -These are code-search rules only — they never decide when the task is done; the deliverable is whatever the task/prompt asks for. When the task calls for a ...
+    -
+    -Sweet-search indexes the working tree (uncommitted edits too) and searches it faster and cheaper than raw shell. Use the `ss-*` tools for all code search an...
+    -
+    -## Tools (search commands, invoked via Bash)
+    -`ss-search`/`ss-find` return ranked code blocks; `ss-grep` is file:line only; `ss-semantic` returns the top ranked spans in one file; `ss-trace` returns a s...
+    -- `ss-search "<query>" [-k N]` — semantic; default when you have no exact symbol
+    -- `ss-find "<query>" --regex "<regex>" [-k N]`
+    -- `ss-grep "<regex>" [-k N]` — exact literals
+    -- `ss-semantic <file> "<query>"` — top ranked spans in one known file (semantic query)
+    -- `ss-trace <symbol> [callers|callees|impact] [--in <file>]`
+    -- `ss-read <file> [start] [end]` — a narrow range
+    -
+    -## Open with the cheapest tool for what you hold
+    -- **An exact token** (identifier, function/class/constant, error string, config key, path you could copy-paste): ONE `ss-grep` on that literal (rarest token...
+    -- **Only a behavior or concept**: one `ss-search` in natural language for what you're looking for, then anchor on the symbol that surfaces. Shape it lightly...
+    -- **How something flows / dispatches / is called / what a change impacts**: anchor one symbol (a literal, or `ss-search`), then `ss-trace` it — one call ret...
+    -
+    -On `sufficient=YES`, trust the top ranked result outright; confirm with at most one narrow `ss-read`, never a re-run of a matching hit. Otherwise, scan the ...
+    -
+    -## Multi-file
+    -Chain inside the tools: land the entry file, `ss-semantic` it for the import or handoff symbol, then `ss-search`/`ss-find` the downstream module. The trace ...
+    -
+    -## A confirmed absence is a complete search answer
+    -When what you're looking for may not exist, absence is settled once TWO complementary index probes come back empty for the same concept: one `ss-search` in ...
+    -
+    -## Before the third probe
+    -Before your third sweet-search probe in the current search iteration — or before your final answer, whichever comes first — output a `<state_summary>` block...
+    -
+    -## Search output
+    -Stop searching the instant your evidence answers what you're looking for — one confirmed file+symbol, or one named cross-file link, is enough; gather no cor...
+    -
+    -Before editing a symbol with visible siblings — multiple call sites, a name family (`IVec2`/`I64Vec2`), branch variants, a generated family — spend ONE mapp...
+    -
+    -## Fix discipline
+    -Locating code and deciding HOW to change it are different jobs. The one-probe / trust-the-top-hit
+    -rule is for LOCATING. When you implement something new by copying an existing pattern (a rule, a
+    -handler, an endpoint), read AT MOST two examples of that pattern, then start writing — reading a
+    -third, fourth, or tenth sibling of the same shape does not improve the fix. Before implementing a
+    -new contract or compatibility shim, spend one probe on how this repository already solves the same
+    -kind of problem, and match that local convention rather than the first pattern that comes to mind.
+    -When your change alters a public contract, re-read the task's exact wording before finalizing:
+    -apparent local success does not certify a shape the task did not ask for.
+    -
+    -
+     === TASK COMPLETION (authoritative — overrides all guidance above) ===
+
+#### codex argv (config, conflict/yt3batch2; long values cut)
+[
+  "exec",
+  "--dangerously-bypass-approvals-and-sandbox",
+  "--json",
+  "-c",
+  "model_reasoning_effort=\"medium\"",
+  "-c",
+  "model_provider=\"openrouter\"",
+  "-c",
+  "model_instructions_file=\"<work>/runner-state/codex-instructions.md\"",
+  "-c",
+  "developer_instructions=\"# Sweet-search — code search tool guide\\n\\nThese are code-search rules only — they never decide when the task is done; the deliverable is whatever the task/prompt asks for. Whe…<6093 chars>",
+  "-m",
+  "openai/gpt-5.6-luna",
+  "-C",
+  "<work>/repo",
+  "-"
+]
+
+#### repo after each rollout (git status --porcelain --untracked-files=all) and runner state dir
+oc-file-trim: repo: ?? AGENTS.md | runner state dir: ['opencode-trim-plugin.mjs', 'opencode-trim-report.json', 'opencode.json']
+oc-config-trim: repo: ?? AGENTS.md | runner state dir: ['opencode-trim-plugin.mjs', 'opencode-trim-report.json', 'opencode.json', 'sweet-search-rules.md']
+oc-file-untrim: repo: ?? AGENTS.md | runner state dir: ['opencode.json']
+oc-config-untrim: repo: ?? AGENTS.md | runner state dir: ['opencode.json', 'sweet-search-rules.md']
+cx-file-trim: repo: ?? AGENTS.md | runner state dir: ['codex-instructions.md']
+cx-config-trim: repo: ?? AGENTS.md | runner state dir: ['codex-instructions.md']
+cx-file-untrim: repo: ?? AGENTS.md | runner state dir: []
+cx-config-untrim: repo: ?? AGENTS.md | runner state dir: []

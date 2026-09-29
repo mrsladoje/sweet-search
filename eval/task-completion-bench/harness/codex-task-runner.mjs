@@ -8,7 +8,9 @@
 // api-task-runner.runTask so grading/metrics are identical.
 import { CODEX_BATCH_VARIANTS, applyCodexBatch } from './trim/batch-variants.mjs';
 import { stockInstructions } from './trim/build-codex-instructions.mjs';
-import { resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules } from './sweet-rules-placement.mjs';
+import {
+  resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules, sweetRulesOutOfFile, tomlBasicString,
+} from './sweet-rules-placement.mjs';
 import { spawn } from 'node:child_process';
 import { execSync, execFileSync } from 'node:child_process';
 import {
@@ -153,8 +155,19 @@ export const ANTI_THRASH_TEXT =
 // SWEET_RULES_PLACEMENT=system the sweet file is the frame only — byte-identical to native's —
 // and the rules go to the base instructions instead (codexHarnessTrimArgs).
 export function codexInstructionFile({ sweet, mppText, rulesPlacement = 'file' }) {
-  const rules = sweet && rulesPlacement !== 'system';
+  const rules = sweet && !sweetRulesOutOfFile(rulesPlacement);
   return `${FRAME_OPEN}${rules ? `\n\n${mppText}` : ''}\n\n${FRAME_CLOSE}`;
+}
+
+// SWEET_RULES_PLACEMENT=config (sweet arm only): the rules ride in codex's own
+// `developer_instructions` config key — a developer message in the initial context — passed as
+// one `-c` override so it combines with any trim (model_instructions_file, tool keys) and reaches
+// `codex exec resume` the same way. AGENTS.md is the frame only (codexInstructionFile). The value
+// is the rules text byte for byte (the same bytes the 'file' placement puts in AGENTS.md), as a
+// TOML basic string. `rules` null = no argv (every other placement is byte-identical).
+export function codexRulesConfigArgs(rules) {
+  if (!rules) return [];
+  return ['-c', `developer_instructions=${tomlBasicString(rules)}`];
 }
 
 // Bench-owned config.toml for an UNJAILED rollout (see privateCodexHome in runCodexTask): the
@@ -728,7 +741,8 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // effect so a bad value fails the rollout up front.
   const harnessTrim = codexHarnessTrim({ sweet, model: apiModel });
   // SWEET_RULES_PLACEMENT (default 'file'): 'system' moves the rules out of AGENTS.md into the
-  // base instructions (codexHarnessTrimArgs). Resolved up front for the same reason.
+  // base instructions (codexHarnessTrimArgs); 'config' moves them to -c developer_instructions
+  // (codexRulesConfigArgs). Resolved up front for the same reason.
   const rulesPlacement = resolveSweetRulesPlacement({ sweet });
   const workdir = t.workdir || `/${t.repo.split('/')[1]}`;
   const testScript = [].concat(t.install_config?.test_cmd || []).join(' && ');
@@ -922,9 +936,10 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   const providerArgs = codexSubscription ? [] : ['-c', 'model_provider="openrouter"'];
   // Empty when the trim is off, so the argv stays byte-identical to the held-out legs.
   // With SWEET_RULES_PLACEMENT=system the rules ride in model_instructions_file (trim on or off).
-  const trimArgs = codexHarnessTrimArgs(harnessTrim, runnerStateDir, {
+  // With SWEET_RULES_PLACEMENT=config the rules ride in -c developer_instructions (after the trim keys).
+  const trimArgs = [...codexHarnessTrimArgs(harnessTrim, runnerStateDir, {
     rules: rulesPlacement === 'system' ? mppText : null, model: apiModel,
-  });
+  }), ...codexRulesConfigArgs(rulesPlacement === 'config' ? mppText : null)];
   const baseArgs = ['exec', ...sandboxArgs, '--json',
     '-c', `model_reasoning_effort="${reasoning}"`, ...providerArgs, ...trimArgs,
     '-m', codexModel, '-C', rundir];

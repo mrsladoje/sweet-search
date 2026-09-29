@@ -15,16 +15,17 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import {
-  resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules,
+  resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules, tomlBasicString,
 } from '../harness/sweet-rules-placement.mjs';
 import {
   FRAME_OPEN, FRAME_CLOSE, codexInstructionFile, codexHarnessTrim, codexHarnessTrimArgs,
-  CODEX_HARNESS_TRIM_STATE_FILE, CODEX_HARNESS_TRIM_CONFLICT_SOURCES,
+  CODEX_HARNESS_TRIM_STATE_FILE, CODEX_HARNESS_TRIM_CONFLICT_SOURCES, codexRulesConfigArgs,
 } from '../harness/codex-task-runner.mjs';
 import { stockInstructions, STOCK_MODELS } from '../harness/trim/build-codex-instructions.mjs';
-import { buildInstructionFile, sweetRulesBlock } from '../harness/agent-runner-shared.mjs';
+import { buildInstructionFile, writeInstructionFile, sweetRulesBlock } from '../harness/agent-runner-shared.mjs';
 import {
   opencodeHarnessTrim, opencodeRulesInSystem, opencodeStockPrompt, buildMainOpencodeConfig,
+  opencodeRulesInConfig, OPENCODE_RULES_FILE,
 } from '../harness/opencode-task-runner.mjs';
 import { OPENCODE_GPT_ORIGINAL } from '../harness/trim/batch-variants.mjs';
 import {
@@ -214,15 +215,95 @@ console.log('claude code:');
   rmSync(dir, { recursive: true, force: true });
 }
 
+// SWEET_RULES_PLACEMENT=config: the rules go to the harness's OWN instruction config (opencode
+// `instructions` file in the runner state dir; codex -c developer_instructions). AGENTS.md is the
+// frame only, the stock system prompt is untouched, and nothing new lands in the run dir.
+console.log('config placement:');
+{
+  assert(resolveSweetRulesPlacement({ sweet: true, env: { SWEET_RULES_PLACEMENT: 'config' } }) === 'config', 'sweet + config = config');
+  assert(resolveSweetRulesPlacement({ sweet: false, env: { SWEET_RULES_PLACEMENT: 'config' } }) === 'file', 'native + config = file');
+  assert(JSON.stringify(sweetRulesRowFields('config')) === '{"sweetRulesPlacement":"config"}', 'row: sweetRulesPlacement=config');
+  const legacy = sweet => `${FRAME_OPEN}${sweet ? `\n\n${mppText}` : ''}\n\n${FRAME_CLOSE}`;
+
+  // codex
+  assert(codexInstructionFile({ sweet: true, mppText, rulesPlacement: 'config' }) === legacy(false), 'codex: sweet AGENTS.md block = frame only = native bytes');
+  assert(JSON.stringify(codexRulesConfigArgs(null)) === '[]', 'codex: no rules = no argv');
+  const cx = codexRulesConfigArgs(mppText);
+  const prefix = 'developer_instructions=';
+  assert(cx.length === 2 && cx[0] === '-c' && cx[1].startsWith(prefix), 'codex: exactly one -c developer_instructions=');
+  const value = cx[1].slice(prefix.length);
+  assert(JSON.parse(value) === mppText, 'codex: the value decodes to the rules text byte for byte (= the file-placement block)');
+  let tomlOk = null;
+  try {
+    tomlOk = execFileSync('python3', ['-c', 'import sys,tomllib; sys.stdout.write(tomllib.loads(sys.stdin.read())["v"])'],
+      { input: `v = ${value}\n`, encoding: 'utf8' }) === mppText;
+  } catch { tomlOk = null; }
+  if (tomlOk === null) console.log('  - (python3 tomllib unavailable: TOML round-trip skipped)');
+  else assert(tomlOk, 'codex: the value is a TOML basic string that parses back to the rules text (tomllib)');
+  assert(tomlBasicString('a\u007fb"\\\n\t') === '"a\\u007Fb\\"\\\\\\n\\t"', 'toml: DEL, quote, backslash, newline, tab escaped');
+  const state = mkdtempSync(join(tmpdir(), 'rules-placement-codex-cfg-'));
+  process.env.CODEX_TRIM_BATCH = 'yt3batch2';
+  try {
+    const conflict = codexHarnessTrim({ sweet: true, mode: 'conflict', model: 'openai/gpt-5.6-luna' });
+    const trimOnly = codexHarnessTrimArgs(conflict, state, { rules: null, model: 'openai/gpt-5.6-luna' });
+    const trimText = readFileSync(join(state, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8');
+    const combined = [...trimOnly, ...codexRulesConfigArgs(mppText)];
+    assert(!trimText.includes(RULES), 'codex + conflict/yt3batch2: model_instructions_file does NOT carry the rules');
+    assert(JSON.stringify(combined.slice(0, trimOnly.length)) === JSON.stringify(trimOnly) && combined.length === trimOnly.length + 2,
+      'codex + conflict/yt3batch2: trim argv unchanged, developer_instructions appended');
+    assert(JSON.stringify(readdirSync(state)) === JSON.stringify([CODEX_HARNESS_TRIM_STATE_FILE]), 'codex: no new state file');
+  } finally { delete process.env.CODEX_TRIM_BATCH; rmSync(state, { recursive: true, force: true }); }
+
+  // opencode
+  assert(buildInstructionFile({ sweet: true, mppText, env: OFF_ENV, rulesPlacement: 'config' }) === legacy(false), 'opencode: sweet AGENTS.md = frame only = native bytes');
+  const batchEnv = { SS_PACKING_TREATMENT: 'ss-batch' };
+  assert(buildInstructionFile({ sweet: true, mppText, env: batchEnv, rulesPlacement: 'config' }) === legacy(false), 'opencode + packing: file is still the frame only');
+  // Run dir: only AGENTS.md is written, and it equals the native arm's AGENTS.md.
+  const repos = mkdtempSync(join(tmpdir(), 'rules-placement-rundir-'));
+  const [rs, rn] = [join(repos, 's'), join(repos, 'n')];
+  mkdirSync(rs); mkdirSync(rn);
+  writeInstructionFile(rs, 'AGENTS.md', { sweet: true, mppText, env: OFF_ENV, rulesPlacement: 'config' });
+  writeInstructionFile(rn, 'AGENTS.md', { sweet: false, mppText, env: OFF_ENV });
+  assert(JSON.stringify(readdirSync(rs)) === '["AGENTS.md"]' && readFileSync(join(rs, 'AGENTS.md'), 'utf8') === readFileSync(join(rn, 'AGENTS.md'), 'utf8'),
+    'run dir: only AGENTS.md, byte-identical to native');
+  rmSync(repos, { recursive: true, force: true });
+
+  const stateDir = mkdtempSync(join(tmpdir(), 'rules-placement-oc-cfg-'));
+  const luna = 'openai/gpt-5.6-luna';
+  const off = opencodeHarnessTrim('0', { apiModel: luna, stateDir });
+  assert(opencodeRulesInConfig(off, { rules: null, stateDir }) === off, 'opencode: no rules = trim object untouched');
+  for (const mode of ['0', 'conflict3+todo3eff3k', 'conflict']) {
+    for (const env of [OFF_ENV, batchEnv]) {
+      const block = sweetRulesBlock({ mppText, env });
+      const t = opencodeHarnessTrim(mode, { apiModel: luna, stateDir });
+      const tOn = opencodeRulesInConfig(t, { rules: block, stateDir });
+      const a = buildMainOpencodeConfig({ env: {}, trim: t }), b = buildMainOpencodeConfig({ env: {}, trim: tOn });
+      const rulesPath = join(stateDir, OPENCODE_RULES_FILE);
+      const tag = `opencode trim ${mode}${env === batchEnv ? ' + packing' : ''}`;
+      assert(JSON.stringify(b.instructions) === JSON.stringify([rulesPath]) && !('instructions' in a), `${tag}: config.instructions = [<state dir>/${OPENCODE_RULES_FILE}] (absolute)`);
+      assert(JSON.stringify({ ...b, instructions: undefined }) === JSON.stringify(a), `${tag}: every other config key unchanged (agent prompts, plugin, tools)`);
+      assert(tOn.files[OPENCODE_RULES_FILE] === block && buildInstructionFile({ sweet: true, mppText, env }).includes(`\n\n${block}\n\n`),
+        `${tag}: rules file = the exact block the file placement puts in AGENTS.md`);
+      assert(tOn.stateEntries.includes(OPENCODE_RULES_FILE) && tOn.mode === t.mode && JSON.stringify(tOn.plugins) === JSON.stringify(t.plugins),
+        `${tag}: rules file declared as a state entry; trim mode and plugins unchanged`);
+    }
+  }
+  assert(throws(() => opencodeRulesInConfig(off, { rules: mppText })), 'opencode: refuses without a state dir');
+  rmSync(stateDir, { recursive: true, force: true });
+}
+
 // Source-level guard: each runner resolves the switch, stamps the row and only moves the rules
 // when it is on. The spawn paths themselves are proven by the $0 captures.
 console.log('runner wiring:');
 for (const [file, needles] of Object.entries({
   'codex-task-runner.mjs': ['resolveSweetRulesPlacement({ sweet })', "rules: rulesPlacement === 'system' ? mppText : null", '...sweetRulesRowFields(rulesPlacement)',
-    "(harnessTrim.mode || rulesPlacement === 'system') ? [CODEX_HARNESS_TRIM_STATE_FILE]"],
+    "(harnessTrim.mode || rulesPlacement === 'system') ? [CODEX_HARNESS_TRIM_STATE_FILE]",
+    "...codexRulesConfigArgs(rulesPlacement === 'config' ? mppText : null)", '...providerArgs, ...trimArgs, \'-m\', codexModel]'],
   'opencode-task-runner.mjs': ['resolveSweetRulesPlacement({ sweet })', "writeInstructionFile(rundir, 'AGENTS.md', { sweet, mppText, rulesPlacement })",
-    'opencodeRulesInSystem(harnessTrim', '...sweetRulesRowFields(rulesPlacement)'],
-  'claude-code-task-runner.mjs': ['resolveSweetRulesPlacement({ sweet })', 'if (sweet && !systemRules) {', 'appendRulesToLeanAgentFiles(rundir, systemRules)',
+    'opencodeRulesInSystem(harnessTrim', '...sweetRulesRowFields(rulesPlacement)',
+    "harnessTrim = opencodeRulesInConfig(harnessTrim, {\n      rules: rulesPlacement === 'config' ? sweetRulesBlock({ mppText }) : null, stateDir: runnerStateDir,",
+    "allowedStateEntries: ['opencode.json', ...harnessTrim.stateEntries]"],
+  'claude-code-task-runner.mjs': ["if (rulesPlacement === 'config') throw", 'resolveSweetRulesPlacement({ sweet })','if (sweet && !systemRules) {', 'appendRulesToLeanAgentFiles(rundir, systemRules)',
     'systemRules: harnessTrim.installLean ? null : systemRules', '...sweetRulesRowFields(rulesPlacement)'],
 })) {
   const src = readFileSync(new URL(`../harness/${file}`, import.meta.url), 'utf8');

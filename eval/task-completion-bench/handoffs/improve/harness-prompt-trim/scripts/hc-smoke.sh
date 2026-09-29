@@ -78,7 +78,9 @@ N=0
 for V in $VARIANTS; do
   N=$((N+1))
   # A trailing @system moves the sweet-search rules into the system prompt (SWEET_RULES_PLACEMENT).
-  PLACE=file; case $V in *@system) PLACE=system; V=${V%@system} ;; esac
+  # A trailing @config moves them into the harness's own instruction config instead (codex
+  # -c developer_instructions, opencode `instructions`; not claudecode). AGENTS.md = frame only.
+  PLACE=file; case $V in *@system) PLACE=system; V=${V%@system} ;; *@config) PLACE=config; V=${V%@config} ;; esac
   case $H in
     # Codex: base = v3 (phase 1); untrimmed = trim off; <trim>/<batch> = trim + batch variant
     # (e.g. conflict/yt2); conflict or v3 alone = that trim; any other name = v3 + that batch variant.

@@ -629,6 +629,8 @@ export async function runClaudeCodeTask(task, {
   // passes them with --append-system-prompt and --append-subagent-system-prompt (buildClaudeCliArgs).
   // CLAUDE.md is the frame only in both placements. The rules text is the rule file's body.
   const rulesPlacement = resolveSweetRulesPlacement({ sweet });
+  // 'config' is codex/opencode only: for Claude Code the rules file IS its config mechanism.
+  if (rulesPlacement === 'config') throw new Error('SWEET_RULES_PLACEMENT=config: codex and opencode only (Claude Code: use file or system)');
   const systemRules = rulesPlacement === 'system' ? mppText.trimEnd() : null;
   // Inject before runner setup so telemetry snapshots the harness-owned bytes.
   writeInstructionFile(rundir, 'CLAUDE.md', { sweet: false, mppText });
