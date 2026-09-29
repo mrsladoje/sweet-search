@@ -777,24 +777,42 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 > Give `ss-trace` a symbol. It returns who calls it, what it calls, and the call chains that break if it changes, with the code. The call graph is built at index time, so this is one call and no grep chain.
 
 <table>
-<tr><td colspan="2"><b>How it ranks the graph</b></td></tr>
+<tr><td colspan="2"><b>How it builds the answer</b></td></tr>
 <tr>
 <td width="50%" valign="top">
 
-**🧭 Walks out from your symbol**
+**🏗️ A real call graph, built at index time**
 
-- ***Personalized PageRank*** runs from your symbol: backward for callers, forward for callees.
-- ***It stays local.*** It visits only the nearby graph, not the whole repo.
-- ***Impact paths*** go 3 hops deep. Change it with `--depth` (1 to 4).
+- ***Parsed, not grepped:*** Tree-sitter (for most languages) turns the code into symbols and typed edges: calls, imports, extends, implements, overrides and uses.
+- ***Resolved:*** each call is linked to its definition, same file and package first. The graph is stored in SQLite with a global PageRank.
 
 </td>
 <td width="50%" valign="top">
 
-**⚖️ Real callers first**
+**🔎 Callers the graph missed**
 
-- ***Global PageRank***, computed at index time, helps when the local graph is small.
-- ***Direct calls***, exported names and often-called code rank higher.
-- ***Tests and unresolved names*** rank lower.
+- ***Import aliases:*** in JS and TS, `import { processOrder as run }` still counts as a call.
+- ***Same-file calls:*** the file is scanned for calls that have no stored edge.
+- ***False matches dropped:*** `this.fetch()` is not a call to an unrelated `fetch`.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**🧭 Ranked from your symbol**
+
+- ***Personalized PageRank*** runs from your symbol: backward for callers, forward for callees. Loggers and other busy helpers do not float to the top.
+- ***Then:*** distance, edge type, exported names and fan-in. Tests rank lower.
+
+</td>
+<td width="50%" valign="top">
+
+**📦 Packed to fit**
+
+- ***Budget:*** 4k, 8k or 12k tokens, picked from the size and spread of the graph.
+- ***Split:*** a symbol with many callers gets more room for callers, and the same for callees.
+- ***Code:*** the full body when it fits. If not, the lines around the call.
 
 </td>
 </tr>
@@ -807,7 +825,8 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 - Add `callers`, `callees` or `impact` after the symbol to get only that part.
 - Two symbols with the same name? Pick one with `--in <file>`.
-- The output fits a token budget that grows with the size of the graph. Set it with `--budget`.
+- Impact paths go 3 hops deep by default. Change it with `--depth` (1 to 4).
+- Set your own token budget with `--budget`.
 - On very dynamic code (calls by string name, metaprogramming), the graph can miss calls.
 - Also available as `sweet-search trace` and as the `trace` MCP tool.
 
