@@ -1036,20 +1036,6 @@ A score of 1.00 means every question was answered correctly. For Claude Code and
 
 </details>
 
-<details>
-<summary><b>🔬 How it was actually built (the honest version)</b></summary>
-
-<br/>
-
-- **Seeds → survivors:** 15 hand-authored seed prompts entered a reflective-evolution loop (an agent reads the *real* tool-call traces, proposes one targeted edit, we keep what helps). Operators included trajectory crossover, structural pivots, tool-name masking, and a pruner that fights prompt bloat.
-- **Two targets, jointly:** every candidate was scored on **both** Claude Code/Sonnet **and** Codex/GPT-5.5 with Maximin discipline (a prompt is only as good as its *worse* target), so it can't overfit one model's quirks.
-- **What actually won:** not clever phrasing — **terseness** (a shorter prompt re-sent every turn is cheaper), a **leaner tool mix** (grep/read over heavy semantic blocks that fatten the transcript), and **decisiveness on no-match** (stop spiraling). We report this plainly because it's what the traces showed.
-- **The shipped lineage:** the current `p7-v1-mppppp-fs` guide is the evolved champion plus a verdict-gated trust rule and a narrowly triggered fix-surface mapping rule. The latter came from full-200 failure forensics and was retained only after targeted fix/control smokes rejected a costlier wording.
-- **Held-out everything:** dev to iterate, held-out checked only at milestones, a sealed vault opened once, plus held-out *model families* (MiMo, Qwen) and a reasoning-mode replay (MiniMax **0.963**) it never trained against. Figures: [`docs/PHASE7.md`](docs/PHASE7.md) (internal probe suites; an externally-reproducible suite is in progress).
-- **Idempotent install:** Claude receives the guide through its owned project rule plus output style; opt-in harnesses receive marker-delimited blocks in `AGENTS.md` / `GEMINI.md` / `.cursor/rules`. Re-run init freely: owned content updates in place and user prose is preserved.
-
-</details>
-
 ---
 
 <a id="the-index"></a>
