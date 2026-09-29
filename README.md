@@ -882,7 +882,7 @@ those tools for the **largest cost saving at unharmed retrieval quality**.
 We tuned it in two steps. Step 1 uses [**🧬 GEPA**](https://arxiv.org/abs/2507.19457), a prompt optimizer that evolves prompts from real agent runs.
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"titleColor": "#1e1b4b", "textColor": "#1e1b4b", "lineColor": "#8e9baa", "edgeLabelBackground": "#f4f8fb"}, "themeCSS": ".cluster-label span { font-size: 19px; font-weight: 700; }", "flowchart": {"wrappingWidth": 400}}}%%
+%%{init: {"theme": "base", "themeVariables": {"titleColor": "#1e1b4b", "textColor": "#1e1b4b", "lineColor": "#8e9baa", "edgeLabelBackground": "#f4f8fb"}, "themeCSS": ".cluster-label span { font-size: 19px; font-weight: 700; }", "flowchart": {"wrappingWidth": 400, "rankSpacing": 65, "nodeSpacing": 60, "subGraphTitleMargin": {"top": 6, "bottom": 14}}}}%%
 flowchart TB
     subgraph S1["① Retrieval · evolved with 🧬 GEPA"]
         direction LR
@@ -895,8 +895,8 @@ flowchart TB
     V -->|"it found the code, then stopped before the edit"| S2
     subgraph S2["② Task completion · tuned by hand"]
         direction LR
-        E["🔍 <b>400 dev tasks</b><br/>read the failed runs"] --> F["✍️ <b>Write</b> one<br/>new rule"]
-        F --> G["🧪 <b>Small test</b> on target<br/>and control tasks"]
+        E["🔍 <b>400 dev tasks</b><br/>analyze the failed traces"] --> F["✍️ <b>Write</b> one<br/>new rule"]
+        F --> G["🧪 <b>Microsmoke</b> on target<br/>and control tasks"]
         G -->|"helps"| H(["✅ <b>Keep</b>"])
         G -->|"no gain or<br/>costs more"| I(["❌ <b>Drop</b>"])
     end
