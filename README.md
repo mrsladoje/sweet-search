@@ -676,18 +676,17 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 ---
 
 <a id="tool-ss-find"></a>
-### <img src="assets/tools/ss-find.svg" width="40" align="center" alt="" /> 3. `ss-find` — ColGrep, on a faster engine
+### <img src="assets/tools/ss-find.svg" width="40" align="center" alt="" /> 3. `ss-find`: ColGrep, on a faster engine
 
 <img src="assets/tools/ss-find-io.svg" alt="ss-find takes a query plus a regex and returns the regex matches ranked by meaning" width="100%" />
 
-Inspired by LightOn's [ColGrep](https://github.com/lightonai/next-plaid/tree/main/colgrep) — regex precision,
-semantically ranked — but rebuilt on our own substrate:
+Inspired by LightOn's [ColGrep](https://github.com/lightonai/next-plaid/tree/main/colgrep): regex precision with semantic ranking. We rebuilt it on our own engine.
 
-- The regex stage runs on the **same indexed sparse-gram engine as `ss-grep`** (in-process, no subprocess), not a filesystem scan.
-- The ranking stage scores candidates with **per-token MaxSim over pre-indexed late-interaction embeddings** — no model inference over documents at query time — on our custom kernels: native Rust + Rayon takes a 231-candidate MaxSim pass from **1.26 s down to 27 ms** (WASM SIMD fallback at 16×).
+- The regex stage runs on the **same sparse n-gram index as `ss-grep`**, in-process. No subprocess and no filesystem scan.
+- The ranking stage scores candidates with **per-token MaxSim over pre-indexed late-interaction embeddings**, so no model runs over your code at query time. Our native Rust + Rayon kernel takes a 231-candidate MaxSim pass from **1.26 s to 27 ms** (16× faster with the WASM SIMD fallback).
 - Regex tokens are merged into the semantic query, so the ranking sees both what you typed and what you matched.
-- Like `ss-search`, it answers with **ranked, self-contained code snippets** — not bare `file:line` — so the find *and* the read collapse into one tool call. In our 30-question agent-workflow eval that eliminated **every follow-up read** and cut tokens **25.4%** vs a grep + read workflow, at quality parity (gap of 0.01 on a 5-point scale).
-- On the 60-query pattern benchmark, MaxSim ranking lifts MRR@10 to **0.45** vs **0.11** for raw grep ordering — 4× more likely the right hit lands on top.
+- Like `ss-search`, it returns **ranked, self-contained code snippets**, so finding and reading take one tool call. In our 30-question agent-workflow eval, this removed **every follow-up read** and cut tokens by **25.4%** versus grep + read, at equal quality (a gap of 0.01 on a 5-point scale).
+- On the 60-query pattern benchmark, MaxSim ranking lifts MRR@10 to **0.45**, up from **0.11** for raw grep order. That is about 4× better.
 
 <details>
 <summary><b>More</b></summary>
