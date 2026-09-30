@@ -904,6 +904,8 @@ async function cmdAgentSearch(rawArgs) {
   const conf = routeConfidence != null ? ` conf=${routeConfidence.toFixed(2)}` : '';
   process.stdout.write(`# ss-search: routed=${routedMode}${conf} budget=${response.tokenBudget} used=${response.tokensUsed}` +
     ` results=${response.results.length} subMode=${response.subMode}\n`);
+  // final-tuning: proves a bench run executes this tree's helpers (off = byte-identical).
+  if (process.env.SS_VARIANT_SENTINEL === '1') process.stdout.write('# variant-sentinel: final-tuning worktree\n');
   if (response.confidence) {
     process.stdout.write(`# confidence=${response.confidence}${response.confidenceReason ? ' (' + response.confidenceReason + ')' : ''}` +
       `${renderSufficiency(response)}\n`);

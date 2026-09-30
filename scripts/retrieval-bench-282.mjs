@@ -24,7 +24,10 @@
  *   CELL=cc-sonnet55-high  node scripts/retrieval-bench-282.mjs            # run / resume one cell
  *   CELL=cc-sonnet55-high  node scripts/retrieval-bench-282.mjs --smoke    # 1 probe × 2 arms
  *   CELL=cc-sonnet55-high  node scripts/retrieval-bench-282.mjs --report   # aggregates only
- *   options: --conc 3 (default)  --ids a,b  --arms native,sweet
+ *   options: --conc 3 (default)  --ids a,b  --arms native,sweet  --tag <name>
+ *   --tag (final-tuning, 2026-10-01): a separate results dir, harness state dir AND clone root per
+ *   tag. Separate clones = separate project roots = fresh ss-* daemons started with this run's env,
+ *   so an SS_VARIANT_* switch reaches the daemon (ss-search output is formatted server-side).
  *   Plan recorded before the run: core/prompt-optimization/data/r282-PREREG.md
  */
 process.env.SS_ISOLATION = '0'; // Mac, unjailed — must be set before the harness modules load
@@ -85,11 +88,14 @@ const CONC = Number(flag('--conc', 3));
 const onlyIds = String(flag('--ids', '')).split(',').map(s => s.trim()).filter(Boolean);
 const ARMS = String(flag('--arms', 'native,sweet')).split(',').map(s => s.trim()).filter(Boolean);
 const TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 900000);
+const TAG = flag('--tag', process.env.RESULTS_TAG || '');
+if (TAG && !/^[a-z0-9][a-z0-9._-]*$/i.test(TAG)) { console.error(`bad --tag ${TAG}`); process.exit(2); }
+const SUFFIX = `${SMOKE ? '-smoke' : ''}${TAG ? `-${TAG}` : ''}`;
 
-const OUT = path.join(REPO, 'core/prompt-optimization/data/results', `r282-${CELL_NAME}${SMOKE ? '-smoke' : ''}`);
+const OUT = path.join(REPO, 'core/prompt-optimization/data/results', `r282-${CELL_NAME}${SUFFIX}`);
 const RUNS = path.join(OUT, 'runs.jsonl');
 const CAP_DIR = path.join(OUT, 'captures');
-const STATE = path.join(EVAL, 'r282', `${CELL_NAME}${SMOKE ? '-smoke' : ''}`);
+const STATE = path.join(EVAL, 'r282', `${CELL_NAME}${SUFFIX}`);
 const SS_BIN = path.join(REPO, 'eval/agent-read-workflows/bin');
 const RULES = fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md'), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
 
@@ -117,7 +123,7 @@ if (onlyIds.length || SMOKE) PROBES = PROBES.filter(p => (onlyIds.length ? onlyI
 //   - every cell starts from the same index bytes (ss-* writes runtime state into .sweet-search/);
 //   - an agent that writes a file despite the frame pollutes only its cell's clone.
 // The index holds no absolute paths; ss-search output was byte-identical in a clone (3 queries).
-const CLONE_ROOT = path.join(EVAL, 'r282-repos', `${CELL_NAME}${SMOKE ? '-smoke' : ''}`);
+const CLONE_ROOT = path.join(EVAL, 'r282-repos', `${CELL_NAME}${SUFFIX}`);
 const cloneOf = (orig) => path.join(CLONE_ROOT, path.relative(REPO, orig).replace(/[\\/]/g, '__'));
 function ensureClone(orig) {
   const dst = cloneOf(orig);
