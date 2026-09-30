@@ -71,7 +71,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 <sub>macOS · Linux · WASM fallback</sub>
 
 [⭐ A star pls? 🥺🙏](#found-it-useful)<br>
-<sub>helps other agents' humans find it</sub>
+<sub>it really helps</sub>
 
 </td>
 <td width="27%" valign="top">
