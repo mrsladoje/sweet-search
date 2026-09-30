@@ -1065,36 +1065,17 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 
 <img src="assets/index-build.svg" alt="How the index is built. Source files are chunked and enriched, embedded by two models, and stored compressed. One pass feeds six indexes: 1 word index, 2 n-gram index, 3 binary HNSW, 4 bi-encoder vectors, 5 late-interaction vectors, 6 code graph. The embedding runs on Apple Metal, the Apple Neural Engine, NVIDIA CUDA or any CPU, picked automatically at start-up. A maintainer daemon updates all six indexes after each edit with an atomic swap." width="100%" />
 
-<table>
-<tr>
-<td width="50%" valign="top">
+**How it works**
+- 🧩 **[cAST chunking](#idx-chunk)**: tree-sitter ASTs, so every chunk is a whole function or class. 14 languages native, 70+ extensions.
+- 🏷️ **[Enrichment tuned per language family](#idx-enrich)**: context from the code graph, no LLM call. Each family's policy was picked by ablation on GenCodeSearchNet.
 
-① 🧩 **[Structure-aware chunk](#idx-chunk)**<br>
-<sub>cAST over tree-sitter ASTs — whole functions, never sliced mid-body</sub>
+### 🚀 The models, and how fast they run
+- 🤖 **[Two open, code-specialized models](#idx-embed)**: [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed) (137M, dense) for recall and [LateOn-Code](https://huggingface.co/lightonai/LateOn-Code) (149M, late interaction) for the rerank.
+- ⚡ **[GPU-accelerated](#idx-hardware)**: candle on Metal and CUDA, plus a Neural Engine cascade on M3+ (~18% faster full index). [Hand-written fused attention kernels](#idx-kernels) run inside both models.
+- 🧠 **[Cache-sized CPU batches](#idx-cache)**: each batch fits one layer's weights and activations in the CPU cache, so no GPU is needed for a fast build.
+- 🗜️ **[Two quantizations](#idx-quantize)**: INT8 weights make the CPU build ~2× faster. INT4 vectors shrink the late-interaction index from 1.34 GiB to ~396 MiB, with no measurable retrieval loss.
 
-</td>
-<td width="50%" valign="top">
-
-② 🏷️ **[Enrich from structure](#idx-enrich)**<br>
-<sub>deterministic preamble from the code graph — **no LLM call**</sub>
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-③ 🤖 **[Embed — two models](#idx-embed)**<br>
-<sub>dense **CodeRankEmbed** + per-token **LateOn-Code**</sub>
-
-</td>
-<td width="50%" valign="top">
-
-④ 🗜️ **[Quantize + persist](#idx-quantize)**<br>
-<sub>INT8 weights → **2× faster build** · INT4 vectors → **fits in RAM**</sub>
-
-</td>
-</tr>
-</table>
+<a id="idx-hardware"></a>
 
 **The inference engine, picked for your silicon:**
 
@@ -1116,6 +1097,7 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 - **Contextual enrichment:** before embedding, each chunk is prefixed with a structured preamble assembled from the AST + code graph — *file path · enclosing-scope breadcrumb · name & type · merged siblings · the imports it actually uses*. **Both** encoders see it, so a bare `getId()` still retrieves on the class and module around it.
 - Our nod to **[Anthropic's Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval)** — except they prepend an *LLM-generated* summary (one model call per chunk); we derive the context **deterministically from structure**: no LLM, no per-chunk inference, regenerated for free on every reindex. **Tuned per language** from GenCodeSearchNet ablations — Python stays minimal, the Java family keeps a slug-stripped path, JS/Ruby/Go/C/C++/Rust get the full preamble where closures and imports earn their keep.
 
+<a id="idx-cache"></a>
 ### 🧠 Cache-aware batching — we read your CPU before we batch it
 - We **detect your last-level cache at runtime** — `hw.perflevel0.l2cachesize` (the 16 MB P-cluster on Apple Silicon, *not* the smaller E-cluster), Intel L3, or `/sys/.../cache` on Linux — then size every embedding batch so **one transformer layer's weights *plus* the batch's activations stay resident in cache**. No spilling to main memory mid-layer; on a long-sequence tail that's the difference between B=1 and a measured **2.1× per-chunk slowdown**.
 - **Uses every core the hardware really has** — full count on ARM/Apple Silicon; x86 SMT siblings discounted because they don't scale inference linearly.
@@ -1134,6 +1116,8 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 - **[CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)** — 768-d dense bi-encoder (137M, Apache-2.0) for first-stage recall.
 - **[LateOn-Code](https://huggingface.co/lightonai/LateOn-Code)** — ModernBERT per-token **late interaction** (149M) for the rerank.
 - **Edge fallback for leaner machines:** a **17M `edge` LateOn-Code** (~9× smaller FP32 backbone) auto-selects on low-RAM hosts, and the whole CPU path runs INT8 with **no GPU weights ever downloaded** — full local search on a laptop with no accelerator.
+
+<a id="idx-kernels"></a>
 
 <details>
 <summary><b>What's actually custom here — the kernels we hand-wrote</b></summary>
