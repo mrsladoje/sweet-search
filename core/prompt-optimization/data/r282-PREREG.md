@@ -10,7 +10,7 @@ Rows: `core/prompt-optimization/data/results/r282-<cell>/runs.jsonl`.
 | `cc-sonnet55-high` | Claude Code 2.1.281 | claude-sonnet-5-5 | `--effort high` | subscription |
 | `cc-opus55-medium` | Claude Code 2.1.281 | claude-opus-5-5 | `--effort medium` | subscription |
 | `codex-sol61-high` | Codex 0.159.2 | gpt-6.1-sol | `model_reasoning_effort=high` | subscription |
-| `oc-sol61-high` | opencode 1.18.4 | openrouter/openai/gpt-6.1-sol | `--variant high` | OpenRouter API |
+| `oc-sol61-high` | opencode 1.18.4 | openai/gpt-6.1-sol | `--variant high` | ChatGPT subscription (opencode OAuth login) |
 | `oc-dsflash41` | opencode 1.18.4 | deepseek/deepseek-flash (= DeepSeek-V4.1-Flash, direct API) | API default: thinking on, high | DeepSeek API |
 
 opencode stays on 1.18.4 because the shipped opencode trim edits and the preflight are pinned to its text.
