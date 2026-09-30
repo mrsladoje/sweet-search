@@ -143,6 +143,7 @@ Captures: `captures/codex-0.146.1-request-*.json`, `captures/opencode-1.18.4-req
 ## 7. Step B — the switch
 
 `CC_HARNESS_TRIM` in `harness/claude-code-task-runner.mjs` (`claudeHarnessTrim`), default OFF:
+(Superseded 2026-09-30: an unset switch now means the shipped product on the sweet arm; `0` is the explicit opt-out. See PRODUCT-SHIP.md, "Bench default = the product".)
 
 - **Sweet arm only.** Native always runs untrimmed, whatever the switch says.
 - unset / `0` → no argv, no env: byte-identical to the held-out legs (tested).

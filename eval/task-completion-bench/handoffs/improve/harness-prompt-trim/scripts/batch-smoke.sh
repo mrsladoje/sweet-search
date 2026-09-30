@@ -8,6 +8,9 @@
 #   bash batch-smoke.sh opencode     # Luna via OpenRouter, untrimmed + OC_HARNESS_TRIM=batch-*
 #   bash batch-smoke.sh claudecode   # Opus 5.5 on the owner's subscription, CC_HARNESS_TRIM=product + CC_TRIM_BATCH
 # Optional: VARIANTS="base two" to run a subset.
+# Since 2026-09-30 unset switches mean the shipped product; every leg here sets its trim explicitly,
+# keeps the rules where they were (SWEET_RULES_PLACEMENT=file unless the caller exports another
+# value), and the claudecode base leg keeps the v2.1 product text (CC_TRIM_BATCH=none).
 set -u
 H=${1:?usage: batch-smoke.sh codex|opencode|claudecode}
 REPO=/Users/admin/Projects/sweet-search-private
@@ -71,12 +74,12 @@ for V in $VARIANTS; do
   case $H in
     codex)      SW=(CODEX_HARNESS_TRIM=v3 "CODEX_TRIM_BATCH=$([ "$V" = base ] || echo "$V")") ;;
     opencode)   SW=("OC_HARNESS_TRIM=$([ "$V" = base ] && echo 0 || echo "batch-$V")") ;;
-    claudecode) SW=(CC_HARNESS_TRIM=product "CC_TRIM_BATCH=$([ "$V" = base ] || echo "$V")") ;;
+    claudecode) SW=(CC_HARNESS_TRIM=product "CC_TRIM_BATCH=$([ "$V" = base ] && echo none || echo "$V")") ;;
   esac
   # Neutral run ids (the run id reaches paths the agent can see); rows carry harnessTrim.
   RUN=bsmoke-$H-$STAMP-L$N
   echo "$(date +%T) launching $RUN = $V (${SW[*]})"
-  env "${SW[@]}" TASKS_FILE=$TASKS_FILE INSTANCES=$TASKS \
+  env "${SW[@]}" "SWEET_RULES_PLACEMENT=${SWEET_RULES_PLACEMENT:-file}" TASKS_FILE=$TASKS_FILE INSTANCES=$TASKS \
     ARMS=sweet REPS=1 CONCURRENCY=4 HARNESS=$H MODEL=$MODEL PROVIDER=$PROVIDER \
     REASONING=medium RUN_ID=$RUN ENV_LEDGER=$LEDGER \
     node harness/run-pilot.mjs > "results/$RUN.log" 2>&1

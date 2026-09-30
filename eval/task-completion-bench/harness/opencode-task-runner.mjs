@@ -145,7 +145,17 @@ export async function runOpencodePreflight({
   throw new Error('OpenCode preflight process failed (no attempts)');
 }
 
-// --- HARNESS TRIM (OC_HARNESS_TRIM, default OFF) — handoffs/improve/harness-prompt-trim ---
+// --- HARNESS TRIM (OC_HARNESS_TRIM) — handoffs/improve/harness-prompt-trim ---
+// DEFAULT (since 2026-09-30, SWEET ARM ONLY) = the product: OC_HARNESS_TRIM unset or empty means
+// 'conflict3+todo3eff3k' (OC_HARNESS_TRIM_DEFAULT), and SWEET_RULES_PLACEMENT defaults to 'config'
+// (the rules in an `instructions` file in the runner's private state dir) — together what
+// `sweet-search init --opencode` 2.8.2 writes into .opencode/. The product installs the same prompt
+// (built from opencode's gpt-family text) for EVERY model, so the default never refuses a model
+// family: a grok, deepseek or minimax rollout gets the shipped prompt too, as a user's would.
+// OC_HARNESS_TRIM=0 (+ SWEET_RULES_PLACEMENT=file) is the explicit opt-out to stock opencode; every
+// other explicit value keeps its meaning, including the gpt-family-only refusal of the research
+// variants. The native arm is stock in every condition. Rows stamp the effective mode (harnessTrim)
+// and harnessTrimSource ('default' | 'env').
 // Research switch, SWEET ARM ONLY: removes the parts of opencode's OWN request that
 // contradict the ss-* rules (Glob/Grep-first, Task-instead-of-search, Read-instead-of-cat,
 // bash-only-for-system-commands) or that a headless task never uses. The rules file, the
@@ -164,7 +174,7 @@ export async function runOpencodePreflight({
 //              row carries that report as positive proof.
 // Plugin and report live in the runner state dir (outside the rundir: never in the patch;
 // eval/ is masked in the jail, so harness/trim/ itself is not readable there).
-// Mode values: unset/'0' = off (config, env and argv byte-identical), '1' = on (round 1,
+// Mode values: '0' = off (config, env and argv byte-identical), unset = the product (above), '1' = on (round 1,
 // the 2026-09-25 smoke), 'max' = round 1 plus (audit 2026-09-25, same captures dir):
 //   subagents — agent.general.prompt = the build prompt (general otherwise gets the UNTRIMMED
 //              family prompt, "prefer Glob and Grep"), agent.explore.prompt = opencode's
@@ -320,9 +330,10 @@ function opencodeHarnessTrimCombo(m, { apiModel, stateDir }) {
   const expected = `expected ${OPENCODE_CONFLICT_BASES.join(' | ')}[+<variant>] (untrimmed needs a variant); variants: ${OPENCODE_VARIANT_NAMES.join(', ')}`;
   if (rest.length || !OPENCODE_CONFLICT_BASES.includes(base) || (variant !== undefined && !OPENCODE_VARIANT_NAMES.includes(variant))
       || (base === 'untrimmed' && !variant)) throw new Error(`OC_HARNESS_TRIM=${m}: ${expected}`);
-  if (opencodePromptFamily(apiModel) !== 'gpt') throw new Error(`OC_HARNESS_TRIM=${m}: gpt family only (model ${apiModel})`);
+  // The shipped combination is model-agnostic, as `init --opencode` is; research combinations stay gpt-only.
+  if (m !== OC_HARNESS_TRIM_DEFAULT && opencodePromptFamily(apiModel) !== 'gpt') throw new Error(`OC_HARNESS_TRIM=${m}: gpt family only (model ${apiModel})`);
   if (base === 'untrimmed') {
-    const t = opencodeHarnessTrim(`batch-${variant}`, { apiModel, stateDir });
+    const t = opencodeHarnessTrimMode(`batch-${variant}`, { apiModel, stateDir });
     return { ...t, mode: t.mode.replace(`batch-${variant}:`, `${m}:`) };
   }
   if (!stateDir) throw new Error(`OC_HARNESS_TRIM=${m}: stateDir required`);
@@ -373,9 +384,18 @@ export function opencodePromptFamily(apiModel) {
   return 'default';
 }
 
+// What `sweet-search init --opencode` ships (scripts/harness-prompts/index.js header): the default.
+export const OC_HARNESS_TRIM_DEFAULT = 'conflict3+todo3eff3k';
+
+/** The trim for an OC_HARNESS_TRIM value; unset / empty = OC_HARNESS_TRIM_DEFAULT. `origin` = 'default' | 'env'. */
 export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiModel, stateDir } = {}) {
-  const m = String(mode ?? '').trim();
-  if (!m || m === '0') return { mode: null, config: {}, files: {}, plugins: [], stateEntries: [] };
+  const raw = String(mode ?? '').trim();
+  const origin = raw ? 'env' : 'default';
+  return { ...opencodeHarnessTrimMode(raw || OC_HARNESS_TRIM_DEFAULT, { apiModel, stateDir }), origin };
+}
+
+function opencodeHarnessTrimMode(m, { apiModel, stateDir }) {
+  if (m === '0') return { mode: null, config: {}, files: {}, plugins: [], stateEntries: [] };
   if (m.includes('+') || OPENCODE_CONFLICT_BASES.includes(m)) return opencodeHarnessTrimCombo(m, { apiModel, stateDir });
   // batch-<variant> (batching micro-smoke, trim/batch-variants.mjs): the UNTRIMMED gpt prompt
   // with only its tool-grouping bullet swapped, for the main agent and the general subagent. No
@@ -708,9 +728,10 @@ export async function runOpencodeTask(task, {
   ];
   // Inject before runner setup so T0 can fingerprint this harness-owned surface and
   // distinguish it from a later agent modification without retaining it in checkpoints.
-  // SWEET_RULES_PLACEMENT=system: AGENTS.md carries the frame only; the rules go to the agent
-  // prompts below (opencodeRulesInSystem). Resolved first so a bad value fails before any setup.
-  const rulesPlacement = resolveSweetRulesPlacement({ sweet });
+  // SWEET_RULES_PLACEMENT (opencode default 'config' = the product): 'config' and 'system' leave
+  // AGENTS.md the frame only; the rules go to an `instructions` file (opencodeRulesInConfig) or the
+  // agent prompts (opencodeRulesInSystem). Resolved first so a bad value fails before any setup.
+  const rulesPlacement = resolveSweetRulesPlacement({ sweet, harness: 'opencode' });
   writeInstructionFile(rundir, 'AGENTS.md', { sweet, mppText, rulesPlacement });
   const {
     runnerStateDir, binDir, runnerFiles, integrity, jail, broker, integrityStateDir, controller,
@@ -724,8 +745,8 @@ export async function runOpencodeTask(task, {
   // permissions so the headless agent edits/bashes without prompts (the #13851 write-gap
   // mitigation is `build` agent + explicit allow + --auto), and web tools denied (host
   // /etc/hosts lockdown already blocks egress, this stops opencode's own fetch/search).
-  // Harness trim (research switch, default OFF, sweet arm only): adds nothing to config,
-  // env or argv when off.
+  // Harness trim (sweet arm only; default = the product, conflict3+todo3eff3k, any model; 0 =
+  // stock, adding nothing to config, env or argv).
   let harnessTrim;
   try {
     harnessTrim = opencodeArmHarnessTrim({ sweet, apiModel, stateDir: runnerStateDir });
@@ -864,12 +885,14 @@ export async function runOpencodeTask(task, {
     openCodeRawAttempts: rawAttempts,
     openCodeDataDir: retainedPath(ocData),
     openCodeHome: jail ? 'jail-mask' : 'private-xdg',
-    // OC_HARNESS_TRIM mode ('prompt:<family>+tools+tooldesc', 'max:prompt:<family>+subagents+
-    // tools+tooldesc') or null when off; when on, the
+    // OC_HARNESS_TRIM mode ('conflict3+todo3eff3k:prompt:gpt+general+noexplore+nogrep+tooldesc' =
+    // the product default, 'max:prompt:<family>+subagents+tools+tooldesc', ...) or null when off;
+    // harnessTrimSource = 'default' | 'env' (sweet only); when on, the
     // plugin's own report of the description edits it applied (null = it never ran).
     harnessTrim: harnessTrim.mode,
+    ...(sweet ? { harnessTrimSource: harnessTrim.origin } : {}),
     ...(harnessTrim.mode ? { harnessTrimToolEdits } : {}),
-    ...sweetRulesRowFields(rulesPlacement),
+    ...sweetRulesRowFields(rulesPlacement, { sweet }),
     secretLeakDetected: false,
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
     patchHunks, patchFiles, finalPatch,

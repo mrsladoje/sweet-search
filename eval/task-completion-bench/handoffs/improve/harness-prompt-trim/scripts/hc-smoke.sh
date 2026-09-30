@@ -8,6 +8,10 @@
 #   bash batch-smoke.sh opencode     # Luna via OpenRouter, untrimmed + OC_HARNESS_TRIM=batch-*
 #   bash batch-smoke.sh claudecode   # Opus 5.5 on the owner's subscription, CC_HARNESS_TRIM=product + CC_TRIM_BATCH
 # Optional: VARIANTS="base two" to run a subset.
+# Since 2026-09-30 unset switches mean the shipped product; every leg here sets its trim and
+# SWEET_RULES_PLACEMENT (file unless @system / @config) explicitly, so a variant name keeps its
+# meaning. The claudecode base leg keeps the v2.1 product text (CC_TRIM_BATCH=none); the shipped
+# product is the variant read6fs.
 set -u
 H=${1:?usage: batch-smoke.sh codex|opencode|claudecode}
 REPO=/Users/admin/Projects/sweet-search-private
@@ -112,7 +116,7 @@ for V in $VARIANTS; do
       TR=; case $V in *+tokrem) TR=1; V=${V%+tokrem} ;; esac
       ST=; case $V in *+steer) ST=1; V=${V%+steer} ;; esac
       case $V in
-        base)      SW=(CC_HARNESS_TRIM=product CC_TRIM_BATCH= "CC_PRODUCT_STEER=$ST" "CC_PRODUCT_TOKREM=$TR" "CC_PRODUCT_SKILLDESC=$SK" "CC_PRODUCT_HOOKPLUG=$HP") ;;
+        base)      SW=(CC_HARNESS_TRIM=product CC_TRIM_BATCH=none "CC_PRODUCT_STEER=$ST" "CC_PRODUCT_TOKREM=$TR" "CC_PRODUCT_SKILLDESC=$SK" "CC_PRODUCT_HOOKPLUG=$HP") ;;
         untrimmed) SW=(CC_HARNESS_TRIM=0 CC_TRIM_BATCH= CC_PRODUCT_STEER= CC_PRODUCT_TOKREM= CC_PRODUCT_SKILLDESC= CC_PRODUCT_HOOKPLUG=) ;;
         *)         SW=(CC_HARNESS_TRIM=product "CC_TRIM_BATCH=$V" "CC_PRODUCT_STEER=$ST" "CC_PRODUCT_TOKREM=$TR" "CC_PRODUCT_SKILLDESC=$SK" "CC_PRODUCT_HOOKPLUG=$HP") ;;
       esac ;;

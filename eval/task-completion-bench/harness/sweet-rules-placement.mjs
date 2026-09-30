@@ -1,10 +1,13 @@
-// SWEET_RULES_PLACEMENT (research switch, default OFF = 'file'), SWEET ARM ONLY.
+// SWEET_RULES_PLACEMENT, SWEET ARM ONLY. DEFAULT (since 2026-09-30) = where the product puts the
+// rules (`sweet-search init` 2.8.2): 'config' for codex and opencode, 'file' for Claude Code
+// (SWEET_RULES_PLACEMENT_DEFAULTS). Unset or empty = that default; SWEET_RULES_PLACEMENT=file is
+// the explicit opt-out to the pre-2026-09-30 delivery (rules in AGENTS.md for codex/opencode).
 //
 // Where the sweet arm's ss-* rules (M±, core/prompt-optimization/data/p7-final/
 // sweet-search-system-prompt.md) reach the model:
-//   file   (unset / 'file') — today's delivery: the project instruction file (AGENTS.md for
-//          codex and opencode, bracketed by the frame; .claude/rules/sweet-search.md for
-//          Claude Code). Every runner is byte-identical to the pre-switch harness.
+//   file   — the project instruction file (AGENTS.md for codex and opencode, bracketed by the
+//          frame; .claude/rules/sweet-search.md for Claude Code). Every runner is byte-identical
+//          to the pre-switch harness. Claude Code's default.
 //   system — the harness SYSTEM prompt instead. The instruction file then carries the bench
 //          frame only, the same bytes as the native arm's file, so the ONLY difference between
 //          the two placements is where the rules sit. The rules text is byte-identical.
@@ -17,6 +20,7 @@
 //                      absolute path to the generated opencode.json `instructions` array
 //            codex     -c developer_instructions=<TOML string> (sent as a developer message)
 //          This is the product-shaped delivery: no AGENTS.md / CLAUDE.md edit in the user's repo.
+//          The codex and opencode default.
 // Per harness (each runner documents its own mechanism):
 //   codex       model_instructions_file = (trim instructions | stock instructions) + rules
 //   opencode    agent.build / general / explore prompts = (trim | stock) prompt + rules
@@ -28,19 +32,40 @@
 // (that module imports it), and all three runners need this.
 
 export const SWEET_RULES_PLACEMENTS = Object.freeze(['file', 'system', 'config']);
+// The product's placement per runner (what `sweet-search init` / `--codex` / `--opencode` ship).
+export const SWEET_RULES_PLACEMENT_DEFAULTS = Object.freeze({ 'claude-code': 'file', codex: 'config', opencode: 'config' });
 
-/** 'file' | 'system' | 'config'. Native is always 'file'. An unknown value throws on the sweet arm. */
-export function resolveSweetRulesPlacement({ sweet, env = process.env } = {}) {
+/**
+ * 'file' | 'system' | 'config'. Native is always 'file'. An unknown value throws on the sweet arm.
+ * Unset or empty = the product default for `harness` (SWEET_RULES_PLACEMENT_DEFAULTS); a caller
+ * that names no harness (a capture script with its own explicit value) gets 'file'.
+ */
+export function resolveSweetRulesPlacement({ sweet, env = process.env, harness } = {}) {
   const v = String(env.SWEET_RULES_PLACEMENT ?? '').trim();
   if (!sweet) return 'file';
-  if (!v || v === 'file') return 'file';
-  if (v === 'system' || v === 'config') return v;
+  if (!v) {
+    if (harness === undefined) return 'file';
+    const d = SWEET_RULES_PLACEMENT_DEFAULTS[harness];
+    if (!d) throw new Error(`SWEET_RULES_PLACEMENT: no default for harness ${harness}`);
+    return d;
+  }
+  if (v === 'file' || v === 'system' || v === 'config') return v;
   throw new Error(`SWEET_RULES_PLACEMENT=${v}: expected file, system or config`);
 }
 
-/** Row fields: stamped ONLY when the switch is on, so an off row is byte-identical. */
-export function sweetRulesRowFields(placement) {
-  return placement === 'system' || placement === 'config' ? { sweetRulesPlacement: placement } : {};
+/** 'default' when the sweet arm's placement comes from SWEET_RULES_PLACEMENT_DEFAULTS, else 'env'. */
+export function sweetRulesPlacementSource(env = process.env) {
+  return String(env.SWEET_RULES_PLACEMENT ?? '').trim() ? 'env' : 'default';
+}
+
+/**
+ * Row fields. Sweet arm: the effective placement ALWAYS (the default is stamped too, so a row
+ * states which delivery it measured) and where it came from ('default' | 'env'). Native: nothing.
+ * `sweet` omitted = the pre-2026-09-30 form (stamped only when the rules leave the file).
+ */
+export function sweetRulesRowFields(placement, { sweet, env = process.env } = {}) {
+  if (sweet === undefined) return placement === 'system' || placement === 'config' ? { sweetRulesPlacement: placement } : {};
+  return sweet ? { sweetRulesPlacement: placement, sweetRulesPlacementSource: sweetRulesPlacementSource(env) } : {};
 }
 
 /** True when the rules leave the instruction file (it then carries the frame only, native's bytes). */

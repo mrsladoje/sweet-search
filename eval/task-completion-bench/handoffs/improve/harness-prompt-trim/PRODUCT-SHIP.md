@@ -1,5 +1,39 @@
 # Claude Code lean harness — shipped by `sweet-search init` (2026-09-26)
 
+## UPDATE 2026-09-30: bench default = the product (sweet arm only)
+
+A run that sets no harness switch now measures what `sweet-search init` 2.8.2 ships. The native
+arm stays stock in every condition: each harness's own prompt and tools, no sweet rules.
+
+| Harness | Sweet arm, switches unset (new default) | Native arm |
+|---|---|---|
+| Claude Code | `CC_HARNESS_TRIM=product` + `CC_TRIM_BATCH=read6fs` (the lean agent files init installs); rules in `.claude/rules/sweet-search.md` (`SWEET_RULES_PLACEMENT=file`) | stock |
+| Codex | `CODEX_HARNESS_TRIM=conflict` + `CODEX_TRIM_BATCH=yt3batch2` (`model_instructions_file`); rules in `-c developer_instructions` (`SWEET_RULES_PLACEMENT=config`) | stock |
+| opencode | `OC_HARNESS_TRIM=conflict3+todo3eff3k`; rules in an `instructions` file in the runner's private state dir (`SWEET_RULES_PLACEMENT=config`) | stock |
+
+- Model scope mirrors the product: init ignores the model, so the default applies the same shipped
+  texts to every model. Codex `conflict` uses the shipped instructions for any model (it refused
+  every model but gpt-5.6-luna before). opencode `conflict3+todo3eff3k` no longer refuses non-GPT
+  families (grok, deepseek, minimax, claude, muse, gemini, kimi): they get the gpt-derived shipped
+  prompt, as a user's opencode would. Research-only opencode combinations keep the gpt-only check.
+- Opt-out to the stock harness (the pre-2026-09-30 default): `CC_HARNESS_TRIM=0`,
+  `CODEX_HARNESS_TRIM=0` (+ `CODEX_TRIM_BATCH=`), `OC_HARNESS_TRIM=0`, `SWEET_RULES_PLACEMENT=file`.
+  An explicit `CODEX_HARNESS_TRIM=conflict` without a batch keeps meaning conflict alone.
+  `CC_HARNESS_TRIM=product` with `CC_TRIM_BATCH` unset now means read6fs; `CC_TRIM_BATCH=none`
+  gives the v2.1 text that `product` alone meant before.
+- Rows: `harnessTrim` (effective mode, for example `product+batch-read6fs`,
+  `instructions-conflict+batch-yt3batch2`, `conflict3+todo3eff3k:prompt:gpt+…`),
+  `harnessTrimSource` (`default` | `env`), `sweetRulesPlacement` and `sweetRulesPlacementSource`
+  are now stamped on every sweet row, defaults included. Never pool rows across this change.
+- Known differences from a user install, by design: Claude Code's routing override rides in the
+  runner's `--append-system-prompt` (after the agent body) instead of inside the agent file; the
+  opencode rules file lives outside the repo, so its `Instructions from:` path differs.
+- The smoke scripts (`scripts/batch-smoke.sh`, `hc-smoke.sh`, `mac-smoke.sh`, `night-queue.sh`) and
+  the older launchers (phase1 hint ladder, slate-c smoke20 / ablation, codex checkpoint repair,
+  turnfix orchestrator) pin their historical form explicitly, so their leg names keep their meaning.
+- Tests: `tests/claude-code-cost.mjs`, `codex-harness-trim.mjs`, `opencode-harness-trim.mjs` and
+  `sweet-rules-placement.mjs` compare the default arm against the product installers' own output.
+
 ## UPDATE 2026-09-27 (v2.1): memory, git and environment guidance restored
 
 The main agent file now ends (before the routing override) with our own paraphrase of what a

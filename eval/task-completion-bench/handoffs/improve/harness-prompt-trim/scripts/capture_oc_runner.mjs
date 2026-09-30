@@ -6,7 +6,10 @@
 //
 //   python3 capture_proxy.py 18821 <outdir> &
 //   node capture_oc_runner.mjs --out <outdir> --model x-ai/grok-4.5 [--arm sweet|native]
-//        [--trim 0|1|<OC_HARNESS_TRIM value>] [--placement file|system|config]
+//        [--trim 0|1|<OC_HARNESS_TRIM value>|default] [--placement file|system|config|default]
+// `default` = the switch unset, as on a run that sets nothing: the product default since
+// 2026-09-30 (conflict3+todo3eff3k, rules in an `instructions` file). Without the flags the
+// capture keeps its old meaning (trim 0, placement file).
 //        [--bin <opencode 1.18.4>] [--port 18821]
 //
 // The config is the runner's own (buildMainOpencodeConfig + opencodeHarnessTrim, the same
@@ -37,7 +40,9 @@ const MPP = join(ROOT, 'core/prompt-optimization/data/p7-final/sweet-search-syst
 const mppText = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
 const sweet = arm === 'sweet';
 // --placement: SWEET_RULES_PLACEMENT as the runner resolves it (native always 'file').
-const placement = resolveSweetRulesPlacement({ sweet, env: { SWEET_RULES_PLACEMENT: opt('placement', 'file') } });
+const placementOpt = opt('placement', 'file');
+const placement = resolveSweetRulesPlacement({ sweet, harness: 'opencode',
+  env: placementOpt === 'default' ? {} : { SWEET_RULES_PLACEMENT: placementOpt } });
 
 const work = mkdtempSync(join(tmpdir(), 'oc-capture-'));
 const rundir = join(work, 'repo');
@@ -52,7 +57,8 @@ writeInstructionFile(rundir, 'AGENTS.md', { sweet, mppText, rulesPlacement: plac
 
 // Same calls as runOpencodeTask: trim resolved from the switch (sweet arm only), files
 // written into the state dir, config built from both.
-let trim = oc.opencodeHarnessTrim(sweet ? opt('trim', '0') : '0', { apiModel: model, stateDir });
+const trimOpt = opt('trim', '0');
+let trim = oc.opencodeHarnessTrim(sweet ? (trimOpt === 'default' ? undefined : trimOpt) : '0', { apiModel: model, stateDir });
 trim = oc.opencodeRulesInSystem(trim, { rules: placement === 'system' ? sweetRulesBlock({ mppText }) : null, apiModel: model });
 trim = oc.opencodeRulesInConfig(trim, { rules: placement === 'config' ? sweetRulesBlock({ mppText }) : null, stateDir });
 for (const [name, text] of Object.entries(trim.files)) writeFileSync(join(stateDir, name), text);
@@ -102,7 +108,7 @@ writeFileSync(join(outDir, 'config.json'), JSON.stringify({ ...config, provider:
 writeFileSync(join(outDir, 'stdout.ndjson'), String(r.stdout));
 // What the rollout left in the repo (the graded tree with BENCH_INCLUDE_UNTRACKED=1): AGENTS.md only.
 writeFileSync(join(outDir, 'rundir-status.txt'), execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: rundir, encoding: 'utf8' }));
-writeFileSync(join(outDir, 'meta.json'), JSON.stringify({ arm, model, trim: trim.mode, placement, work: '<work>',
+writeFileSync(join(outDir, 'meta.json'), JSON.stringify({ arm, model, trim: trim.mode, trimOrigin: trim.origin ?? null, placement, work: '<work>',
   stateDirFiles: readdirSync(stateDir).sort() }, null, 2));
 if (unjailed) {
   const paths = spawnSync(bin, ['debug', 'paths'], { cwd: rundir, env, encoding: 'utf8', timeout: 60000 });

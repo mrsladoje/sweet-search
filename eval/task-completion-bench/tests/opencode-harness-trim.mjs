@@ -1,4 +1,7 @@
-// Tests for the opencode harness trim (OC_HARNESS_TRIM, default OFF) — 2026-09-25.
+// Tests for the opencode harness trim (OC_HARNESS_TRIM) — 2026-09-25. Since 2026-09-30 the sweet
+// arm's DEFAULT (switch unset) is the product, conflict3+todo3eff3k with the rules in an
+// `instructions` file, byte-identical to what `sweet-search init --opencode` writes, for ANY model
+// (the product ignores the model family); OC_HARNESS_TRIM=0 is the explicit opt-out.
 //
 // The switch removes the parts of opencode 1.18.4's OWN request that contradict the ss-*
 // rules or that a headless task never uses: the model-family prompt is replaced by an
@@ -14,14 +17,20 @@ import {
   OPENCODE_TRIM_MAX_DISABLED_TOOLS, OPENCODE_TRIM_MAX_TOOL_EDITS, OPENCODE_TRIM_V3_TOOL_EDITS,
   OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT, opencodeUnjailedEnv, runOpencodePreflight,
   OPENCODE_CONFLICT_TOOL_EDITS, OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS, OPENCODE_CONFLICT_PROMPT_BULLET,
-  OPENCODE_CONFLICT2_TOOL_EDITS, OPENCODE_CONFLICT3_TOOL_EDITS,
+  OPENCODE_CONFLICT2_TOOL_EDITS, OPENCODE_CONFLICT3_TOOL_EDITS, OC_HARNESS_TRIM_DEFAULT, opencodeRulesInConfig,
+  OPENCODE_RULES_FILE,
 } from '../harness/opencode-task-runner.mjs';
+import { resolveSweetRulesPlacement, sweetRulesRowFields } from '../harness/sweet-rules-placement.mjs';
+import { buildInstructionFile, sweetRulesBlock } from '../harness/agent-runner-shared.mjs';
+import {
+  installOpencodeHarness, OPENCODE_CONFIG_REL, OPENCODE_RULES_REL, OPENCODE_PROMPT_REL,
+} from '../../../scripts/install-opencode-harness.js';
 import {
   OPENCODE_TRIM_PLUGIN_SOURCE, OPENCODE_TOOL_EDITS as SHIPPED_TOOL_EDITS, opencodePrompt as shippedOpencodePrompt,
 } from '../../../scripts/harness-prompts/index.js';
 import { OPENCODE_GPT_ORIGINAL, EFFICIENCY_LINE, opencodeBatchPrompt, opencodeBatchToolEdits } from '../harness/trim/batch-variants.mjs';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -36,8 +45,8 @@ mkdirSync(STATE, { recursive: true });
 // The generated config as it was before the switch existed (HEAD 00ef0e9), byte for byte.
 const PRE_TRIM_CONFIG = '{"$schema":"https://opencode.ai/config.json","plugin":[],"provider":{"openrouter":{"options":{"apiKey":"{env:OPENROUTER_API_KEY}"}}},"permission":{"bash":"allow","edit":"allow","write":"allow","read":"allow","webfetch":"deny","websearch":"deny"}}';
 
-console.log('switch OFF adds nothing:');
-for (const off of [undefined, '', '0', ' 0 ']) {
+console.log('switch OFF (explicit 0) adds nothing:');
+for (const off of ['0', ' 0 ']) {
   const t = opencodeHarnessTrim(off, { apiModel: 'x-ai/grok-4.5', stateDir: STATE });
   assert(t.mode === null && !Object.keys(t.config).length && !Object.keys(t.files).length
       && !t.plugins.length && !t.stateEntries.length, `trim ${JSON.stringify(off)} is inert`);
@@ -57,8 +66,18 @@ for (const model of ['x-ai/grok-4.5', 'meta/muse-spark-1.1', 'openai/gpt-5.1', '
       `native + OC_HARNESS_TRIM=${mode} on ${model}: full opencode config`);
   }
 }
-assert(opencodeArmHarnessTrim({ sweet: true, env: {}, apiModel: 'x-ai/grok-4.5', stateDir: STATE }).mode === null,
-  'sweet with the switch unset: off');
+for (const model of ['x-ai/grok-4.5', 'meta/muse-spark-1.1', 'openai/gpt-5.1', 'anthropic/claude-sonnet-5']) {
+  const t = opencodeArmHarnessTrim({ sweet: false, env: {}, apiModel: model, stateDir: STATE });
+  assert(t.mode === null && JSON.stringify(buildMainOpencodeConfig({ env: {}, trim: t })) === PRE_TRIM_CONFIG,
+    `native + switch unset (product default) on ${model}: full opencode config`);
+}
+for (const unset of [undefined, '', ' ']) {
+  const t = opencodeArmHarnessTrim({ sweet: true, env: { OC_HARNESS_TRIM: unset }, apiModel: 'x-ai/grok-4.5', stateDir: STATE });
+  assert(t.mode === `${OC_HARNESS_TRIM_DEFAULT}:prompt:gpt+general+noexplore+nogrep+tooldesc` && t.origin === 'default',
+    `sweet with the switch ${JSON.stringify(unset)}: the product default (conflict3+todo3eff3k), origin default`, t.mode);
+}
+assert(opencodeArmHarnessTrim({ sweet: true, env: { OC_HARNESS_TRIM: '0' }, apiModel: 'x-ai/grok-4.5', stateDir: STATE }).origin === 'env',
+  'sweet with an explicit value: origin env');
 
 console.log('\nsweet + OC_HARNESS_TRIM=1:');
 const FAMILIES = { 'x-ai/grok-4.5': 'default', 'meta/muse-spark-1.1': 'muse', 'openai/gpt-5.1': 'gpt', 'anthropic/claude-sonnet-5': 'claude' };
@@ -239,7 +258,7 @@ console.log('\nconflict-only trims (conflict, conflict-noglob) and <base>+<varia
   const gptBody = JSON.parse(readFileSync(join(CAPTURES, 'opencode-1.18.4-request-sweet-trim-off-gpt.json'), 'utf8'));
   const gtool = name => gptBody.tools.find(x => x.function.name === name).function.description;
 
-  for (const off of [undefined, '', '0']) {
+  for (const off of ['0']) {
     const t = opencodeArmHarnessTrim({ sweet: true, env: { OC_HARNESS_TRIM: off }, apiModel: LUNA, stateDir: STATE });
     assert(JSON.stringify(buildMainOpencodeConfig({ env: {}, trim: t })) === PRE_TRIM_CONFIG, `luna, switch ${JSON.stringify(off)}: config byte-identical`);
   }
@@ -448,6 +467,61 @@ console.log('\nshipped by `sweet-search init --opencode` = conflict3+todo3eff3k 
     "conflict3's tool edits = conflict2's bash/read/task/glob edits (defined once, in the product)");
   assert(t.files[OPENCODE_TRIM_PLUGIN] === readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8'),
     'the bench copies the shipped plugin file into the state dir');
+}
+
+// The DEFAULT sweet arm (no switch set) = what `sweet-search init --opencode` writes into .opencode/,
+// compared against the product installer's own output, for GPT and non-GPT models alike (the
+// product installs the same prompt whatever the model; opencode then uses it for build/general).
+console.log('\nproduct default (switches unset) = init --opencode bytes, any model:');
+{
+  const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+  const MPP = new URL('../../../core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md', import.meta.url);
+  const mppText = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
+  const proj = mkdtempSync(join(tmpdir(), 'oc-product-proj-'));
+  const report = installOpencodeHarness({ projectRoot: proj, rules: mppText, prompt: true });
+  assert(report.status !== 'error', 'product: installOpencodeHarness runs in a throwaway project', report.detail);
+  const shipped = JSON.parse(readFileSync(join(proj, OPENCODE_CONFIG_REL), 'utf8'));
+  // opencode's `{file:…}` substitution inserts the file's TRIMMED text (install-opencode-harness.js header).
+  const resolveRef = ref => ref.replace(/\{file:\.\/([^}]+)\}/, (_, f) => readFileSync(join(proj, '.opencode', f), 'utf8').trim());
+  const shippedBuild = resolveRef(shipped.agent.build.prompt);
+  const shippedRules = readFileSync(join(proj, OPENCODE_RULES_REL), 'utf8');
+  assert(readFileSync(join(proj, OPENCODE_PROMPT_REL), 'utf8') === shippedOpencodePrompt(), 'product: the prompt file is opencodePrompt()');
+  for (const model of ['openai/gpt-5.6-luna', 'x-ai/grok-4.5', 'deepseek/deepseek-v4-pro', 'minimax/minimax-m3', 'anthropic/claude-sonnet-5', 'meta/muse-spark-1.1', 'google/gemini-3-pro', 'moonshotai/kimi-k3']) {
+    const env = {};   // every switch unset
+    const SD = join(STATE, `product-${model.replace(/\W/g, '-')}`);
+    mkdirSync(SD, { recursive: true });
+    let t = null, err = null;
+    try { t = opencodeArmHarnessTrim({ sweet: true, env, apiModel: model, stateDir: SD }); } catch (e) { err = e; }
+    assert(!err && t?.mode?.startsWith(`${OC_HARNESS_TRIM_DEFAULT}:`), `${model}: the default does not throw (family ${opencodePromptFamily(model)})`, err?.message);
+    if (!t) continue;
+    const placement = resolveSweetRulesPlacement({ sweet: true, env, harness: 'opencode' });
+    assert(placement === 'config', `${model}: default placement = config (instructions file)`);
+    const tOn = opencodeRulesInConfig(t, { rules: placement === 'config' ? sweetRulesBlock({ mppText, env }) : null, stateDir: SD });
+    const cfg = buildMainOpencodeConfig({ env: {}, trim: tOn });
+    assert(cfg.agent.build.prompt === shippedBuild && cfg.agent.general.prompt === resolveRef(shipped.agent.general.prompt),
+      `${model}: build + general prompts = the prompt init --opencode ships, byte for byte`);
+    assert(same(cfg.plugin[0][1].edits, shipped.plugin[0][1].edits) && same(cfg.tools, shipped.tools) && same(cfg.agent.explore, shipped.agent.explore),
+      `${model}: tool-description edits, grep off and explore off = init --opencode`);
+    assert(tOn.files[OPENCODE_TRIM_PLUGIN] === readFileSync(join(proj, '.opencode/plugins/sweet-search.mjs'), 'utf8'),
+      `${model}: the plugin file = the installed plugin`);
+    assert(same(cfg.instructions, [join(SD, OPENCODE_RULES_FILE)]) && tOn.files[OPENCODE_RULES_FILE] === shippedRules,
+      `${model}: rules file bytes = .opencode/sweet-search.md (loaded through \`instructions\`)`);
+    assert(buildInstructionFile({ sweet: true, mppText, env, rulesPlacement: placement }) === buildInstructionFile({ sweet: false, mppText, env }),
+      `${model}: AGENTS.md = frame only = native bytes (init --opencode writes no AGENTS.md)`);
+    assert(same(sweetRulesRowFields(placement, { sweet: true, env }), { sweetRulesPlacement: 'config', sweetRulesPlacementSource: 'default' }) && tOn.origin === 'default',
+      `${model}: row stamps placement config + source default, harnessTrimSource default`);
+  }
+  // The research variants keep their gpt-only refusal.
+  let e = null;
+  try { opencodeHarnessTrim('conflict3+todo4', { apiModel: 'x-ai/grok-4.5', stateDir: STATE }); } catch (x) { e = x; }
+  assert(e && /gpt family only/.test(e.message), 'a research combination (conflict3+todo4) on grok still throws (gpt family only)');
+  // Explicit opt-out = stock.
+  const optOut = { OC_HARNESS_TRIM: '0', SWEET_RULES_PLACEMENT: 'file' };
+  const tOut = opencodeArmHarnessTrim({ sweet: true, env: optOut, apiModel: 'x-ai/grok-4.5', stateDir: STATE });
+  const pOut = resolveSweetRulesPlacement({ sweet: true, env: optOut, harness: 'opencode' });
+  assert(tOut.mode === null && pOut === 'file' && JSON.stringify(buildMainOpencodeConfig({ env: {}, trim: opencodeRulesInConfig(tOut, { rules: null, stateDir: STATE }) })) === PRE_TRIM_CONFIG,
+    'OC_HARNESS_TRIM=0 + SWEET_RULES_PLACEMENT=file: stock config, rules in AGENTS.md (the pre-default form)');
+  rmSync(proj, { recursive: true, force: true });
 }
 
 rmSync(STATE, { recursive: true, force: true });

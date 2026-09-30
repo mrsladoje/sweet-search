@@ -1,16 +1,20 @@
 // Tests for the Codex harness trim switch (CODEX_HARNESS_TRIM, 2026-09-25,
-// handoffs/improve/harness-prompt-trim). The switch is research-only and default OFF:
-// OFF must add nothing to the argv or the runner state dir (held-out legs stay
-// reproducible), native must never get it, and the edited instructions must still match
-// their reviewed build from the $0 capture.
+// handoffs/improve/harness-prompt-trim). Since 2026-09-30 the sweet arm's DEFAULT (switch unset)
+// is the product — conflict + yt3batch2 + rules in developer_instructions, byte-identical to what
+// `sweet-search init --codex` writes, for any model. An explicit 0 must add nothing to the argv or
+// the runner state dir (held-out legs stay reproducible), native must never get it, and the
+// edited instructions must still match their reviewed build from the $0 capture.
 //
 // Standalone: `node tests/codex-harness-trim.mjs` — exit 1 on fail.
 import {
   codexHarnessTrim, codexHarnessTrimArgs, codexBenchConfigToml, buildPrivateHome, PRIVATE_HOME_LINKS,
   CODEX_HARNESS_TRIM_CONFIG,
   CODEX_HARNESS_TRIM_SOURCES, CODEX_HARNESS_TRIM_STATE_FILE, CODEX_HARNESS_TRIM_V3_SOURCES,
-  CODEX_HARNESS_TRIM_CONFLICT_SOURCES,
+  CODEX_HARNESS_TRIM_CONFLICT_SOURCES, codexRulesConfigArgs, codexInstructionFile,
 } from '../harness/codex-task-runner.mjs';
+import { resolveSweetRulesPlacement, sweetRulesRowFields } from '../harness/sweet-rules-placement.mjs';
+import { installCodexHarness, CODEX_INSTRUCTIONS_REL, CODEX_CONFIG_REL } from '../../../scripts/install-codex-harness.js';
+import { execFileSync } from 'node:child_process';
 import { CODEX_BATCH_VARIANTS, EFFICIENCY_LINE, applyCodexBatch } from '../harness/trim/batch-variants.mjs';
 import { buildInstructions, headerFor, sourceFor } from '../harness/trim/build-codex-instructions.mjs';
 import { mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
@@ -22,14 +26,27 @@ const assert = (c, name, extra = '') => { console.log((c ? '  ✓ ' : '  ✗ ') 
 const throws = (fn) => { try { fn(); return false; } catch { return true; } };
 const STATE = mkdtempSync(join(tmpdir(), 'codex-trim-test-'));
 
-console.log('harness trim switch (CODEX_HARNESS_TRIM, default OFF):');
-for (const off of [undefined, '', '0', ' 0 ']) {
+console.log('harness trim switch (CODEX_HARNESS_TRIM, default = the product):');
+const savedBatch0 = process.env.CODEX_TRIM_BATCH;
+delete process.env.CODEX_TRIM_BATCH;
+for (const off of ['0', ' 0 ']) {
   const t = codexHarnessTrim({ sweet: true, mode: off });
   const args = codexHarnessTrimArgs(t, STATE);
-  assert(t.mode === null && args.length === 0 && readdirSync(STATE).length === 0,
-    `sweet + ${JSON.stringify(off)} adds no argv and writes nothing (byte-identical to the held-out legs)`);
+  assert(t.mode === null && t.origin === 'env' && args.length === 0 && readdirSync(STATE).length === 0,
+    `sweet + ${JSON.stringify(off)} (explicit opt-out) adds no argv and writes nothing (byte-identical to the held-out legs)`);
 }
-for (const mode of ['1', 'yes', 'tools']) {
+for (const unset of [undefined, '', ' ']) {
+  const t = codexHarnessTrim({ sweet: true, mode: unset, model: 'openai/gpt-5.6-luna' });
+  assert(t.mode === 'instructions-conflict+batch-yt3batch2' && t.batch === 'yt3batch2' && t.origin === 'default',
+    `sweet + ${JSON.stringify(unset)} = the product default (conflict + yt3batch2), origin default`);
+}
+process.env.CODEX_TRIM_BATCH = 'yt2';
+assert(codexHarnessTrim({ sweet: true, mode: '', model: 'openai/gpt-5.6-luna' }).mode === 'instructions-conflict+batch-yt2',
+  'sweet + unset trim + explicit CODEX_TRIM_BATCH: that batch on the conflict base');
+delete process.env.CODEX_TRIM_BATCH;
+assert(codexHarnessTrim({ sweet: true, mode: 'conflict', model: 'openai/gpt-5.6-luna' }).mode === 'instructions-conflict',
+  'explicit conflict + unset CODEX_TRIM_BATCH keeps its old meaning (conflict alone)');
+for (const mode of ['1', 'yes', 'tools', undefined, '']) {
   const t = codexHarnessTrim({ sweet: false, mode });
   assert(t.mode === null && codexHarnessTrimArgs(t, STATE).length === 0 && readdirSync(STATE).length === 0,
     `native + ${JSON.stringify(mode)} never gets the trim and never throws`);
@@ -128,7 +145,9 @@ console.log('\nmode conflict (original luna prompt minus the category-A line and
     'sweet + conflict on luna picks the conflict edit and records its own mode');
   assert(ac.length === 2 && ac[0] === '-c' && ac[1] === `model_instructions_file=${JSON.stringify(join(SC, CODEX_HARNESS_TRIM_STATE_FILE))}`,
     'sweet + conflict sends ONLY model_instructions_file (web_search, goals, request_user_input, skills, permissions, env context, update_plan stay stock)', JSON.stringify(ac));
-  assert(throws(() => codexHarnessTrim({ sweet: true, mode: 'conflict', model: 'openai/gpt-5.5' })), 'sweet + conflict refuses gpt-5.5 (no conflict edit)');
+  for (const model of ['openai/gpt-5.5', 'gpt-5.5', 'openai/gpt-5.6-sol', 'x-ai/grok-4.5'])
+    assert(codexHarnessTrim({ sweet: true, mode: 'conflict', model }).source === CODEX_HARNESS_TRIM_CONFLICT_SOURCES['gpt-5.6-luna'],
+      `sweet + conflict on ${model}: the shipped instructions (the product ignores the model)`);
   assert(codexHarnessTrim({ sweet: false, mode: 'conflict', model: 'openai/gpt-5.6-luna' }).mode === null, 'native + conflict never gets the trim');
   const text = readFileSync(CODEX_HARNESS_TRIM_CONFLICT_SOURCES['gpt-5.6-luna'], 'utf8');
   const header = headerFor('gpt-5.6-luna-conflict');
@@ -171,6 +190,63 @@ console.log('\nmode conflict (original luna prompt minus the category-A line and
   rmSync(SC, { recursive: true, force: true });
   rmSync(SB, { recursive: true, force: true });
 }
+
+// The DEFAULT sweet arm (no switch set) = what `sweet-search init --codex` writes into .codex/:
+// model_instructions_file = codexInstructions(), developer_instructions = the rules. Compared
+// against the product installer's own output for the same rules, for several models.
+console.log('\nproduct default (switches unset) = init --codex bytes, any model:');
+{
+  const MPP = new URL('../../../core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md', import.meta.url);
+  const mppText = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
+  const proj = mkdtempSync(join(tmpdir(), 'codex-product-proj-'));
+  const report = installCodexHarness({ projectRoot: proj, rules: mppText, prompt: true, hooksFlag: false });
+  assert(report.status !== 'error', 'product: installCodexHarness runs in a throwaway project', report.detail);
+  const shippedInstructions = readFileSync(join(proj, CODEX_INSTRUCTIONS_REL), 'utf8');
+  const configText = readFileSync(join(proj, CODEX_CONFIG_REL), 'utf8');
+  let shippedRules = null;
+  try {
+    shippedRules = execFileSync('python3', ['-c', 'import sys,tomllib; sys.stdout.write(tomllib.loads(sys.stdin.read())["developer_instructions"])'],
+      { input: configText, encoding: 'utf8' });
+  } catch { shippedRules = null; }
+  for (const model of ['openai/gpt-5.6-luna', 'openai/gpt-5.5', 'gpt-5.5', 'openai/gpt-5.6-sol']) {
+    const SD = mkdtempSync(join(tmpdir(), 'codex-product-default-'));
+    const env = {};   // every switch unset
+    const placement = resolveSweetRulesPlacement({ sweet: true, env, harness: 'codex' });
+    const t = codexHarnessTrim({ sweet: true, mode: env.CODEX_HARNESS_TRIM, model });
+    const args = [...codexHarnessTrimArgs(t, SD, { rules: placement === 'system' ? mppText : null, model }),
+      ...codexRulesConfigArgs(placement === 'config' ? mppText : null)];
+    const sent = readFileSync(join(SD, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8');
+    assert(placement === 'config', `${model}: default placement = config (developer_instructions)`);
+    assert(sent === shippedInstructions, `${model}: model_instructions_file bytes = .codex/sweet-search-instructions.md from init --codex`);
+    assert(args.length === 4 && args[0] === '-c' && args[1] === `model_instructions_file=${JSON.stringify(join(SD, CODEX_HARNESS_TRIM_STATE_FILE))}`
+      && args[2] === '-c' && args[3].startsWith('developer_instructions='),
+      `${model}: argv = exactly model_instructions_file + developer_instructions (the two keys init writes), no tool keys`, JSON.stringify(args.map(a => a.slice(0, 60))));
+    const devValue = JSON.parse(args[3].slice('developer_instructions='.length));
+    if (shippedRules === null) console.log('  - (python3 tomllib unavailable: developer_instructions byte check skipped)');
+    else assert(devValue === shippedRules, `${model}: developer_instructions bytes = the value init --codex writes to config.toml`);
+    assert(codexInstructionFile({ sweet: true, mppText, rulesPlacement: placement }) === codexInstructionFile({ sweet: false, mppText }),
+      `${model}: AGENTS.md = frame only = native bytes (init --codex writes no AGENTS.md)`);
+    assert(JSON.stringify(sweetRulesRowFields(placement, { sweet: true, env })) === '{"sweetRulesPlacement":"config","sweetRulesPlacementSource":"default"}'
+      && t.origin === 'default', `${model}: row stamps placement config + source default, harnessTrimSource default`);
+    rmSync(SD, { recursive: true, force: true });
+  }
+  // Native stays stock whatever the defaults say.
+  assert(resolveSweetRulesPlacement({ sweet: false, env: {}, harness: 'codex' }) === 'file'
+    && codexHarnessTrim({ sweet: false, mode: undefined, model: 'openai/gpt-5.6-luna' }).mode === null
+    && JSON.stringify(sweetRulesRowFields('file', { sweet: false, env: {} })) === '{}',
+    'native + defaults: stock (no trim, rules placement n/a, nothing stamped)');
+  // Explicit opt-out = stock.
+  const optOut = { CODEX_HARNESS_TRIM: '0', SWEET_RULES_PLACEMENT: 'file' };
+  const SO = mkdtempSync(join(tmpdir(), 'codex-product-optout-'));
+  const tOut = codexHarnessTrim({ sweet: true, mode: optOut.CODEX_HARNESS_TRIM, model: 'openai/gpt-5.6-luna' });
+  const pOut = resolveSweetRulesPlacement({ sweet: true, env: optOut, harness: 'codex' });
+  assert(tOut.mode === null && pOut === 'file' && codexHarnessTrimArgs(tOut, SO).length === 0 && readdirSync(SO).length === 0
+    && codexRulesConfigArgs(pOut === 'config' ? mppText : null).length === 0,
+    'CODEX_HARNESS_TRIM=0 + SWEET_RULES_PLACEMENT=file: stock argv, rules in AGENTS.md (the pre-default form)');
+  rmSync(SO, { recursive: true, force: true });
+  rmSync(proj, { recursive: true, force: true });
+}
+if (savedBatch0 === undefined) delete process.env.CODEX_TRIM_BATCH; else process.env.CODEX_TRIM_BATCH = savedBatch0;
 
 console.log('\nCodex lines yt2 / yt2eff (general wording):');
 {

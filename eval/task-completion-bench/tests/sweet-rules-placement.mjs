@@ -1,4 +1,6 @@
-// Tests for SWEET_RULES_PLACEMENT (research switch, default OFF = 'file', sweet arm only):
+// Tests for SWEET_RULES_PLACEMENT (sweet arm only). Since 2026-09-30 the default (unset / empty)
+// is the product's placement per runner: 'config' for codex and opencode, 'file' for Claude Code;
+// SWEET_RULES_PLACEMENT=file is the explicit opt-out. A caller that names no harness keeps 'file'.
 // 'system' moves the sweet rules (M±) out of the project instruction file into the harness
 // system prompt, for codex, opencode and Claude Code. Guards:
 //   off    — every runner surface (instruction file, codex argv + state dir, opencode config,
@@ -15,7 +17,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import {
-  resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules, tomlBasicString,
+  resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules, tomlBasicString, SWEET_RULES_PLACEMENT_DEFAULTS,
 } from '../harness/sweet-rules-placement.mjs';
 import {
   FRAME_OPEN, FRAME_CLOSE, codexInstructionFile, codexHarnessTrim, codexHarnessTrimArgs,
@@ -47,10 +49,25 @@ const mppText = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
 const RULES = mppText.trimEnd();
 const OFF_ENV = {};
 
-console.log('switch (SWEET_RULES_PLACEMENT, default file):');
+console.log('switch (SWEET_RULES_PLACEMENT; default per harness, file without one):');
 for (const v of [undefined, '', ' ', 'file', ' file ']) {
-  assert(resolveSweetRulesPlacement({ sweet: true, env: { SWEET_RULES_PLACEMENT: v } }) === 'file', `sweet + ${JSON.stringify(v)} = file`);
+  assert(resolveSweetRulesPlacement({ sweet: true, env: { SWEET_RULES_PLACEMENT: v } }) === 'file', `sweet + ${JSON.stringify(v)} (no harness named) = file`);
 }
+assert(JSON.stringify(SWEET_RULES_PLACEMENT_DEFAULTS) === '{"claude-code":"file","codex":"config","opencode":"config"}',
+  'product defaults: claude-code file, codex config, opencode config');
+for (const [harness, want] of Object.entries(SWEET_RULES_PLACEMENT_DEFAULTS)) {
+  for (const v of [undefined, '', ' ']) {
+    assert(resolveSweetRulesPlacement({ sweet: true, env: { SWEET_RULES_PLACEMENT: v }, harness }) === want, `${harness}: sweet + ${JSON.stringify(v)} = ${want} (the product)`);
+  }
+  assert(resolveSweetRulesPlacement({ sweet: true, env: { SWEET_RULES_PLACEMENT: 'file' }, harness }) === 'file', `${harness}: explicit file = file (opt-out)`);
+  assert(resolveSweetRulesPlacement({ sweet: false, env: {}, harness }) === 'file', `${harness}: native + unset = file (never moves)`);
+}
+assert(throws(() => resolveSweetRulesPlacement({ sweet: true, env: {}, harness: 'cursor' })), 'a harness with no default throws');
+assert(JSON.stringify(sweetRulesRowFields('config', { sweet: true, env: {} })) === '{"sweetRulesPlacement":"config","sweetRulesPlacementSource":"default"}',
+  'row (sweet, default): the effective placement and source default are stamped');
+assert(JSON.stringify(sweetRulesRowFields('file', { sweet: true, env: { SWEET_RULES_PLACEMENT: 'file' } })) === '{"sweetRulesPlacement":"file","sweetRulesPlacementSource":"env"}',
+  'row (sweet, explicit file): stamped too, source env');
+assert(JSON.stringify(sweetRulesRowFields('file', { sweet: false, env: {} })) === '{}', 'row (native): nothing stamped');
 assert(resolveSweetRulesPlacement({ sweet: true, env: { SWEET_RULES_PLACEMENT: 'system' } }) === 'system', 'sweet + system = system');
 for (const v of ['system', 'bogus']) {
   assert(resolveSweetRulesPlacement({ sweet: false, env: { SWEET_RULES_PLACEMENT: v } }) === 'file', `native + ${v} = file, never throws`);
@@ -296,15 +313,17 @@ console.log('config placement:');
 // when it is on. The spawn paths themselves are proven by the $0 captures.
 console.log('runner wiring:');
 for (const [file, needles] of Object.entries({
-  'codex-task-runner.mjs': ['resolveSweetRulesPlacement({ sweet })', "rules: rulesPlacement === 'system' ? mppText : null", '...sweetRulesRowFields(rulesPlacement)',
+  'codex-task-runner.mjs': ["resolveSweetRulesPlacement({ sweet, harness: 'codex' })", "rules: rulesPlacement === 'system' ? mppText : null", '...sweetRulesRowFields(rulesPlacement, { sweet })',
+    '...(sweet ? { harnessTrimSource: harnessTrim.origin } : {})',
     "(harnessTrim.mode || rulesPlacement === 'system') ? [CODEX_HARNESS_TRIM_STATE_FILE]",
     "...codexRulesConfigArgs(rulesPlacement === 'config' ? mppText : null)", '...providerArgs, ...trimArgs, \'-m\', codexModel]'],
-  'opencode-task-runner.mjs': ['resolveSweetRulesPlacement({ sweet })', "writeInstructionFile(rundir, 'AGENTS.md', { sweet, mppText, rulesPlacement })",
-    'opencodeRulesInSystem(harnessTrim', '...sweetRulesRowFields(rulesPlacement)',
+  'opencode-task-runner.mjs': ["resolveSweetRulesPlacement({ sweet, harness: 'opencode' })", "writeInstructionFile(rundir, 'AGENTS.md', { sweet, mppText, rulesPlacement })",
+    'opencodeRulesInSystem(harnessTrim', '...sweetRulesRowFields(rulesPlacement, { sweet })', '...(sweet ? { harnessTrimSource: harnessTrim.origin } : {})',
     "harnessTrim = opencodeRulesInConfig(harnessTrim, {\n      rules: rulesPlacement === 'config' ? sweetRulesBlock({ mppText }) : null, stateDir: runnerStateDir,",
     "allowedStateEntries: ['opencode.json', ...harnessTrim.stateEntries]"],
-  'claude-code-task-runner.mjs': ["if (rulesPlacement === 'config') throw", 'resolveSweetRulesPlacement({ sweet })','if (sweet && !systemRules) {', 'appendRulesToLeanAgentFiles(rundir, systemRules)',
-    'systemRules: harnessTrim.installLean ? null : systemRules', '...sweetRulesRowFields(rulesPlacement)'],
+  'claude-code-task-runner.mjs': ["if (rulesPlacement === 'config') throw", "resolveSweetRulesPlacement({ sweet, harness: 'claude-code' })",'if (sweet && !systemRules) {', 'appendRulesToLeanAgentFiles(rundir, systemRules)',
+    'systemRules: harnessTrim.installLean ? null : systemRules', '...sweetRulesRowFields(rulesPlacement, { sweet })',
+    '...(sweet ? { harnessTrimSource: harnessTrim.origin } : {})', "claudeHarnessTrim(sweet ? process.env.CC_HARNESS_TRIM : '0')"],
 })) {
   const src = readFileSync(new URL(`../harness/${file}`, import.meta.url), 'utf8');
   for (const n of needles) assert(src.includes(n), `${file}: ${n}`);

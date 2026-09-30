@@ -145,6 +145,7 @@ deny it too; report it separately.
 
 Implement TRIM in `harness/claude-code-task-runner.mjs` behind an env switch (e.g. `CC_HARNESS_TRIM=1`),
 **default OFF and byte-identical when OFF** (the medium and high held-out legs must stay reproducible).
+(Superseded 2026-09-30: an unset switch now means the shipped product on the sweet arm; `0` is the explicit opt-out. See PRODUCT-SHIP.md, "Bench default = the product".)
 Record the switch on every row. Do not change `READ_PAGES_TOOL_NOTE`, the override, the rules file,
 or the frame.
 

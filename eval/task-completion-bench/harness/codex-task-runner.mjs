@@ -208,7 +208,16 @@ export function buildPrivateHome(privateHome, { realHome, codexHome }) {
   return privateHome;
 }
 
-// --- HARNESS TRIM (CODEX_HARNESS_TRIM, default OFF) — handoffs/improve/harness-prompt-trim ---
+// --- HARNESS TRIM (CODEX_HARNESS_TRIM) — handoffs/improve/harness-prompt-trim ---
+// DEFAULT (since 2026-09-30, SWEET ARM ONLY) = the product: CODEX_HARNESS_TRIM unset or empty means
+// 'conflict' + CODEX_TRIM_BATCH=yt3batch2 (an unset or empty CODEX_TRIM_BATCH takes 'yt3batch2' only
+// then), and SWEET_RULES_PLACEMENT defaults to 'config' (-c developer_instructions) — together
+// exactly what `sweet-search init --codex` 2.8.2 writes (model_instructions_file + developer_instructions).
+// The product ignores the model, so 'conflict' uses the shipped instructions for EVERY model.
+// CODEX_HARNESS_TRIM=0 (+ SWEET_RULES_PLACEMENT=file) is the explicit opt-out to stock Codex. An
+// explicit CODEX_HARNESS_TRIM value keeps its pre-2026-09-30 meaning (explicit 'conflict' with no
+// CODEX_TRIM_BATCH = conflict alone). The native arm is stock in every condition. Rows stamp the
+// effective mode (harnessTrim) and harnessTrimSource ('default' | 'env').
 // Research switch, SWEET ARM ONLY, that removes parts of Codex's OWN request which contradict
 // the ss-* rules or which a headless benchmark task never uses. AGENTS.md (frame + M±) and the
 // prompt are untouched. Verified at $0 on 0.146.1 by capture (captures in that handoff):
@@ -234,7 +243,7 @@ export function buildPrivateHome(privateHome, { realHome, codexHome }) {
 //                  timezone); tools.update_plan.enabled=false drops update_plan (a separate turn per
 //                  call in code mode; 3 calls in 1 of 6 untrimmed Luna smoke rollouts, 0 trimmed).
 //                  Captured on the OpenRouter route only; re-capture before a subscription run.
-// Mode values: unset/'0' = off (argv and state dir byte-identical), '1' = on, 'max-wait',
+// Mode values: '0' = off (argv and state dir byte-identical), unset = the product (above), '1' = on, 'max-wait',
 // 'v3' (see CODEX_HARNESS_TRIM_V3_CONFIG), 'conflict' (see CODEX_HARNESS_TRIM_CONFLICT_SOURCES).
 // CODEX_TRIM_BATCH=<variant> (trim/batch-variants.mjs) works on top of 'v3' and 'conflict'.
 export const CODEX_HARNESS_TRIM_CONFIG = Object.freeze([
@@ -265,24 +274,35 @@ export const CODEX_HARNESS_TRIM_V3_SOURCES = Object.freeze({
 // contradicts the ss-* rules ("reach first for `rg`") and a verbatim duplicate `$HOME` line. No
 // -c keys: web_search, the goal tools, request_user_input, skills, permissions, environment
 // context and update_plan all stay as stock. Isolates the conflict from the bloat cuts.
+// Since 2026-09-30 this is the shipped text (scripts/harness-prompts/, `init --codex`), which the
+// product installs whatever the model: 'conflict' now applies it to EVERY model (it refused any
+// model but gpt-5.6-luna before). The map keeps the model it was captured from.
 export const CODEX_HARNESS_TRIM_CONFLICT_SOURCES = Object.freeze({
   'gpt-5.6-luna': CODEX_INSTRUCTIONS_SOURCE,
 });
+// The product default (see the header).
+export const CODEX_HARNESS_TRIM_DEFAULT = 'conflict';
+export const CODEX_TRIM_BATCH_DEFAULT = 'yt3batch2';
 // Written into the runner state dir: that dir is bound at the same path inside the jail,
 // while harness/ (under <repo>/eval) is masked there.
 export const CODEX_HARNESS_TRIM_STATE_FILE = 'codex-instructions.md';
 
 export function codexHarnessTrim({ sweet, mode = process.env.CODEX_HARNESS_TRIM, model = 'openai/gpt-5.5' } = {}) {
   // Native has no ss-* rules to contradict and keeps Codex's full request in every condition.
-  const m = sweet ? String(mode ?? '').trim() : '';
-  if (!m || m === '0') return { mode: null };
+  if (!sweet) return { mode: null };
+  const raw = String(mode ?? '').trim();
+  const defaulted = !raw;
+  const m = raw || CODEX_HARNESS_TRIM_DEFAULT;
+  // origin = where the mode came from ('default' | 'env'), stamped on the row as harnessTrimSource.
+  const origin = defaulted ? 'default' : 'env';
+  if (m === '0') return { mode: null, origin };
   if (m !== '1' && m !== 'max-wait' && m !== 'v3' && m !== 'conflict') throw new Error(`CODEX_HARNESS_TRIM=${m}: expected 0, 1, max-wait, v3 or conflict`);
   if (m === 'conflict') {
-    const source = CODEX_HARNESS_TRIM_CONFLICT_SOURCES[String(model).replace(/^openai\//, '')];
-    if (!source) throw new Error(`CODEX_HARNESS_TRIM=conflict: no conflict edit for ${model} (have ${Object.keys(CODEX_HARNESS_TRIM_CONFLICT_SOURCES).join(', ')})`);
-    const batch = String(process.env.CODEX_TRIM_BATCH ?? '').trim();
+    // The shipped instructions for any model (the product does not look at the model).
+    const rawBatch = String(process.env.CODEX_TRIM_BATCH ?? '').trim();
+    const batch = rawBatch || (defaulted ? CODEX_TRIM_BATCH_DEFAULT : '');
     if (batch && !CODEX_BATCH_VARIANTS[batch]) throw new Error(`CODEX_TRIM_BATCH=${batch}: expected ${Object.keys(CODEX_BATCH_VARIANTS).join(', ')}`);
-    return { mode: `instructions-conflict${batch ? `+batch-${batch}` : ''}`, source, config: [], ...(batch ? { batch } : {}) };
+    return { mode: `instructions-conflict${batch ? `+batch-${batch}` : ''}`, source: CODEX_INSTRUCTIONS_SOURCE, config: [], ...(batch ? { batch } : {}), origin };
   }
   if (m === 'v3') {
     const v3 = CODEX_HARNESS_TRIM_V3_SOURCES[String(model).replace(/^openai\//, '')];
@@ -291,7 +311,7 @@ export function codexHarnessTrim({ sweet, mode = process.env.CODEX_HARNESS_TRIM,
     // tool-grouping lines for one variant; unset = v3 unchanged.
     const batch = String(process.env.CODEX_TRIM_BATCH ?? '').trim();
     if (batch && !CODEX_BATCH_VARIANTS[batch]) throw new Error(`CODEX_TRIM_BATCH=${batch}: expected ${Object.keys(CODEX_BATCH_VARIANTS).join(', ')}`);
-    return { mode: `instructions-v3+tools-v3${batch ? `+batch-${batch}` : ''}`, source: v3, config: CODEX_HARNESS_TRIM_V3_CONFIG, ...(batch ? { batch } : {}) };
+    return { mode: `instructions-v3+tools-v3${batch ? `+batch-${batch}` : ''}`, source: v3, config: CODEX_HARNESS_TRIM_V3_CONFIG, ...(batch ? { batch } : {}), origin };
   }
   const source = CODEX_HARNESS_TRIM_SOURCES[String(model).replace(/^openai\//, '')];
   if (!source) {
@@ -302,8 +322,8 @@ export function codexHarnessTrim({ sweet, mode = process.env.CODEX_HARNESS_TRIM,
   // (11 of 120 untrimmed Luna turns in the 2026-09-25 smoke). The flag raises that default to 30 s.
   // It is marked "under development" in 0.146.1 — night A/B candidate, not a default.
   return m === 'max-wait'
-    ? { mode: 'instructions+tools+wait', source, extra: ['features.code_mode_buffered_exec=true'] }
-    : { mode: 'instructions+tools', source };
+    ? { mode: 'instructions+tools+wait', source, extra: ['features.code_mode_buffered_exec=true'], origin }
+    : { mode: 'instructions+tools', source, origin };
 }
 
 /**
@@ -739,13 +759,13 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // (e.g. gpt-5.6-luna) are now priced correctly instead of at gpt-5.5's rate.
   const _p = priceFor(apiModel);
   const price = { in: _p.in, cacheHit: _p.cache, out: _p.out };
-  // Harness trim (research switch, default OFF, sweet arm only): resolved before any side
-  // effect so a bad value fails the rollout up front.
+  // Harness trim (sweet arm only; default = the product, conflict + yt3batch2, any model; 0 =
+  // stock): resolved before any side effect so a bad value fails the rollout up front.
   const harnessTrim = codexHarnessTrim({ sweet, model: apiModel });
-  // SWEET_RULES_PLACEMENT (default 'file'): 'system' moves the rules out of AGENTS.md into the
-  // base instructions (codexHarnessTrimArgs); 'config' moves them to -c developer_instructions
-  // (codexRulesConfigArgs). Resolved up front for the same reason.
-  const rulesPlacement = resolveSweetRulesPlacement({ sweet });
+  // SWEET_RULES_PLACEMENT (codex default 'config' = the product): 'config' moves the rules out of
+  // AGENTS.md to -c developer_instructions (codexRulesConfigArgs); 'system' into the base
+  // instructions (codexHarnessTrimArgs); 'file' keeps them in AGENTS.md. Resolved up front too.
+  const rulesPlacement = resolveSweetRulesPlacement({ sweet, harness: 'codex' });
   const workdir = t.workdir || `/${t.repo.split('/')[1]}`;
   const testScript = [].concat(t.install_config?.test_cmd || []).join(' && ');
 
@@ -1275,10 +1295,12 @@ ${ho}`;
     costContentUsd, idealCostUsd, realFromTurnsUsd, breakPricedCostUsd, contextRewrites, rolloutFile, idealTurns, turnsFile,
     wallMs, trajectory, finalAssistantText: answer, c3, r1, ...rtTelemetry,
     codexErrors: parsed.errors.slice(0, 5), startRetried,
-    // CODEX_HARNESS_TRIM mode ('instructions+tools') or null when off.
+    // CODEX_HARNESS_TRIM mode ('instructions-conflict+batch-yt3batch2' = the product default,
+    // 'instructions+tools', ...) or null when off; harnessTrimSource = 'default' | 'env' (sweet only).
     harnessTrim: harnessTrim.mode,
-    // SWEET_RULES_PLACEMENT: { sweetRulesPlacement: 'system' } only when on; nothing when off.
-    ...sweetRulesRowFields(rulesPlacement),
+    ...(sweet ? { harnessTrimSource: harnessTrim.origin } : {}),
+    // SWEET_RULES_PLACEMENT: the effective placement + its source on the sweet arm; nothing on native.
+    ...sweetRulesRowFields(rulesPlacement, { sweet }),
     stderrPreview: String(r.stderr || '').replace(STDIN_BANNER, '').slice(0, 300),
   };
 }
