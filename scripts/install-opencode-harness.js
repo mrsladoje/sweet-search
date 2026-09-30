@@ -11,7 +11,10 @@
  *                                         steer, plus our lines = the benchmark arm
  *                                         OC_HARNESS_TRIM=conflict3+todo3eff3k)
  *   .opencode/plugins/sweet-search.mjs    the tool-description plugin (`tool.definition` hook)
- *   .opencode/opencode.json               keys that reference them (merged into an existing file):
+ *   .opencode/opencode.json               keys that reference them (merged into an existing file,
+ *                                         or into .opencode/opencode.jsonc when only that exists;
+ *                                         comments, trailing commas and the user's formatting are
+ *                                         kept: targeted jsonc-parser edits, never a rewrite):
  *                                           instructions: [".opencode/sweet-search.md"]
  *                                           plugin: [["./plugins/sweet-search.mjs", {edits}]]
  *                                           tools: {grep: false}
@@ -33,10 +36,12 @@ import {
   existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { applyEdits, modify, parse as parseJsonc, printParseErrorCode } from 'jsonc-parser';
 import { OPENCODE_TOOL_EDITS, OPENCODE_TRIM_PLUGIN_SOURCE, opencodePrompt } from './harness-prompts/index.js';
 
 export const OPENCODE_DIR_REL = '.opencode';
 export const OPENCODE_CONFIG_REL = '.opencode/opencode.json';
+export const OPENCODE_CONFIG_JSONC_REL = '.opencode/opencode.jsonc';
 export const OPENCODE_RULES_REL = '.opencode/sweet-search.md';
 export const OPENCODE_PROMPT_REL = '.opencode/sweet-search-prompt.txt';
 export const OPENCODE_PLUGIN_REL = '.opencode/plugins/sweet-search.mjs';
@@ -77,6 +82,78 @@ function readJson(path) {
   } catch (err) {
     return { error: `${path} is not valid JSON: ${err.message}` };
   }
+}
+
+/** A JSONC config (comments and trailing commas allowed, as opencode reads it). */
+function readJsonc(path) {
+  if (!existsSync(path)) return { value: {}, text: '', exists: false };
+  try {
+    const text = readFileSync(path, 'utf8');
+    const errors = [];
+    const value = parseJsonc(text, errors, { allowTrailingComma: true, disallowComments: false });
+    if (errors.length) {
+      return { error: `${path} is not valid JSON: ${printParseErrorCode(errors[0].error)} at offset ${errors[0].offset}` };
+    }
+    if (!isObj(value)) return { error: `${path} must contain a JSON object` };
+    return { value, text, exists: true };
+  } catch (err) {
+    return { error: `${path} is not readable: ${err.message}` };
+  }
+}
+
+/** The config file to edit: the one recorded, else .opencode/opencode.json, else an existing .jsonc. */
+function configRelFor(projectRoot, manifest) {
+  if (manifest?.config === OPENCODE_CONFIG_JSONC_REL || manifest?.config === OPENCODE_CONFIG_REL) return manifest.config;
+  if (!existsSync(join(projectRoot, OPENCODE_CONFIG_REL)) && existsSync(join(projectRoot, OPENCODE_CONFIG_JSONC_REL))) {
+    return OPENCODE_CONFIG_JSONC_REL;
+  }
+  return OPENCODE_CONFIG_REL;
+}
+
+/** The file's own indentation and line ending, for the text jsonc-parser inserts. */
+function formattingOf(text) {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const indent = text.match(/^[ \t]+(?=["\]}])/m)?.[0];
+  if (indent?.startsWith('\t')) return { insertSpaces: false, tabSize: 1, eol };
+  return { insertSpaces: true, tabSize: indent ? indent.length : 2, eol };
+}
+
+// Every config path this module sets or removes.
+const TOUCHED_PATHS = [['$schema'], ['instructions'], ['plugin'], ['tools', 'grep'],
+  ['agent', 'build', 'prompt'], ['agent', 'general', 'prompt'], ['agent', 'explore', 'disable']];
+
+/**
+ * Turn the config text into one whose value is `target`, with targeted edits at the paths this
+ * module touches, so everything else (comments, order, formatting) stays byte for byte.
+ */
+function editConfigText(text, target) {
+  const formattingOptions = formattingOf(text);
+  const edit = (path, value, extra = {}) => {
+    text = applyEdits(text, modify(text, path, value, { formattingOptions, ...extra }));
+  };
+  const current = () => parseJsonc(text, [], { allowTrailingComma: true }) ?? {};
+  for (const path of TOUCHED_PATHS) {
+    // A container the target dropped (it held only our key) goes as a whole.
+    const gone = path.map((_, i) => path.slice(0, i + 1))
+      .find(prefix => getPath(target, prefix) === undefined && getPath(current(), prefix) !== undefined);
+    if (gone) { edit(gone, undefined); continue; }
+    const want = getPath(target, path);
+    const have = getPath(current(), path);
+    if (same(have, want)) continue;
+    if (Array.isArray(have) && Array.isArray(want)) {
+      // Our list edits only remove entries and append ours: remove what the target lacks (from the
+      // end, so indexes stay valid), then append the rest.
+      const kept = [];
+      let j = 0;
+      const drop = [];
+      have.forEach((e, i) => { if (j < want.length && same(e, want[j])) { kept.push(e); j++; } else drop.push(i); });
+      for (const i of drop.reverse()) edit([...path, i], undefined);
+      want.slice(j).forEach((e, k) => edit([...path, kept.length + k], e, { isArrayInsertion: true }));
+      if (same(getPath(current(), path), want)) continue;
+    }
+    edit(path, want);
+  }
+  return text;
 }
 
 function writeAtomic(path, text) {
@@ -171,12 +248,13 @@ function unsetPath(obj, path) {
  */
 export function installOpencodeHarness({ projectRoot, rules = null, prompt = true } = {}) {
   if (!projectRoot) return { status: 'error', detail: 'install-opencode-harness: projectRoot is required' };
-  const configPath = join(projectRoot, OPENCODE_CONFIG_REL);
   const manifestPath = join(projectRoot, OPENCODE_MANIFEST_REL);
-  const configRead = readJson(configPath);
-  if (configRead.error) return { status: 'error', detail: configRead.error };
   const manifestRead = readJson(manifestPath);
   const manifest = manifestRead.error ? {} : manifestRead.value;
+  const configRel = configRelFor(projectRoot, manifest);
+  const configPath = join(projectRoot, configRel);
+  const configRead = readJsonc(configPath);
+  if (configRead.error) return { status: 'error', detail: configRead.error };
   const dirExisted = existsSync(join(projectRoot, OPENCODE_DIR_REL));
   const cfg = configRead.value;
   const before = JSON.stringify(cfg);
@@ -186,6 +264,7 @@ export function installOpencodeHarness({ projectRoot, rules = null, prompt = tru
     files: { ...(manifest.files || {}) },
     createdDir: manifestRead.exists ? Boolean(manifest.createdDir) : !dirExisted,
     createdConfig: manifestRead.exists ? Boolean(manifest.createdConfig) : !configRead.exists,
+    ...(configRel === OPENCODE_CONFIG_REL ? {} : { config: configRel }),
     added,
   };
   const changes = [];
@@ -228,7 +307,7 @@ export function installOpencodeHarness({ projectRoot, rules = null, prompt = tru
     };
     for (const [name, s] of Object.entries(SETTINGS)) {
       if (want[name]) {
-        if (!s.free(cfg)) { warnings.push(`${OPENCODE_CONFIG_REL} "${name}" is not a list; left as it is.`); continue; }
+        if (!s.free(cfg)) { warnings.push(`${configRel} "${name}" is not a list; left as it is.`); continue; }
         if (!s.has(cfg)) { s.add(cfg); added[name] = true; }
         else if (added[name] && s.current && !same(s.current(cfg), opencodePluginEntry())) s.add(cfg); // refresh our edits
       } else if (added[name]) {
@@ -243,9 +322,9 @@ export function installOpencodeHarness({ projectRoot, rules = null, prompt = tru
       if (wanted) {
         if (cur === undefined) {
           if (setPath(cfg, path, value)) added[key] = true;
-          else warnings.push(`${OPENCODE_CONFIG_REL} ${path.slice(0, -1).join('.')} is not an object; ${key} not set.`);
+          else warnings.push(`${configRel} ${path.slice(0, -1).join('.')} is not an object; ${key} not set.`);
         } else if (!added[key] && !same(cur, value)) {
-          warnings.push(`${OPENCODE_CONFIG_REL} already sets ${key}; kept yours.`);
+          warnings.push(`${configRel} already sets ${key}; kept yours.`);
         }
       } else if (added[key]) {
         if (same(cur, value)) unsetPath(cfg, path);
@@ -253,8 +332,8 @@ export function installOpencodeHarness({ projectRoot, rules = null, prompt = tru
       }
     }
     if (JSON.stringify(cfg) !== before || !configRead.exists) {
-      writeAtomic(configPath, JSON.stringify(cfg, null, 2) + '\n');
-      changes.push(`${OPENCODE_CONFIG_REL} (${Object.keys(added).filter(k => k !== '$schema').join(', ') || 'no keys'})`);
+      writeAtomic(configPath, configRead.exists ? editConfigText(configRead.text, cfg) : JSON.stringify(cfg, null, 2) + '\n');
+      changes.push(`${configRel} (${Object.keys(added).filter(k => k !== '$schema').join(', ') || 'no keys'})`);
     }
 
     if (!manifestRead.exists || !same(manifest, next)) writeAtomic(manifestPath, JSON.stringify(next, null, 2) + '\n');
@@ -284,16 +363,17 @@ export function removeOpencodeHarness({ projectRoot, dryRun = false } = {}) {
   if (!manifestRead.exists) return { status: 'not-found', detail: 'no opencode harness manifest' };
   const manifest = manifestRead.value;
   const added = manifest.added || {};
-  const configPath = join(projectRoot, OPENCODE_CONFIG_REL);
-  const configRead = readJson(configPath);
+  const configRel = configRelFor(projectRoot, manifest);
+  const configPath = join(projectRoot, configRel);
+  const configRead = readJsonc(configPath);
   const kept = [];
   const ownedFiles = Object.keys(manifest.files || {}).filter(rel => fileState(projectRoot, rel, manifest) === 'ours');
   for (const rel of Object.keys(manifest.files || {})) {
     if (!ownedFiles.includes(rel) && existsSync(join(projectRoot, rel))) kept.push(`${rel} (edited by hand)`);
   }
   const keys = Object.keys(added).filter(k => k !== '$schema');
-  const parts = [...ownedFiles, ...(keys.length ? [`${OPENCODE_CONFIG_REL} keys (${keys.join(', ')})`] : [])];
-  if (configRead.error) kept.push(`${OPENCODE_CONFIG_REL} (not valid JSON; left as it is)`);
+  const parts = [...ownedFiles, ...(keys.length ? [`${configRel} keys (${keys.join(', ')})`] : [])];
+  if (configRead.error) kept.push(`${configRel} (not valid JSON; left as it is)`);
   if (dryRun) return { status: 'dry-run', detail: parts.join(' + ') || 'manifest only', kept };
 
   try {
@@ -305,7 +385,10 @@ export function removeOpencodeHarness({ projectRoot, dryRun = false } = {}) {
       }
       if (added.$schema && cfg.$schema === SCHEMA_URL && Object.keys(cfg).length === 1) delete cfg.$schema;
       if (manifest.createdConfig && Object.keys(cfg).length === 0) unlinkSync(configPath);
-      else writeAtomic(configPath, JSON.stringify(cfg, null, 2) + '\n');
+      else {
+        const text = editConfigText(configRead.text, cfg);
+        if (text !== configRead.text) writeAtomic(configPath, text);
+      }
     }
     for (const rel of ownedFiles) unlinkSync(join(projectRoot, rel));
     unlinkSync(manifestPath);

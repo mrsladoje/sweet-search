@@ -17,7 +17,8 @@
  *                                             codex 0.146.1).
  *                                           developer_instructions = the sweet-search rules
  *                                             (sent as a developer message)
- *                                         plus `[features] hooks = true` for the SessionStart hook
+ *                                         plus `[features] hooks = true` when init installed the
+ *                                         SessionStart hook (.codex/hooks.json)
  *   .codex/sweet-search-harness.json      manifest: what this module added (file and block hashes,
  *                                         whether it created config.toml, the [features] table or
  *                                         the hooks flag), so uninstall removes only that and never
@@ -28,11 +29,13 @@
  * the contents of this directory?" on first start and records the answer in ~/.codex/config.toml.
  */
 
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, unlinkSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
 import { codexInstructions } from './harness-prompts/index.js';
 
 export const CODEX_DIR_REL = '.codex';
@@ -47,6 +50,9 @@ const BLOCK_BEGIN = '# >>> sweet-search: added by `sweet-search init --codex`; `
 const BLOCK_END = '# <<< sweet-search';
 const BLOCK_RE = /^# >>> sweet-search[^\n]*\n[\s\S]*?^# <<< sweet-search[^\n]*(?:\n|$)/m;
 const OWNED_KEYS = Object.freeze(['model_instructions_file', 'developer_instructions']);
+// The whole config.toml an init older than the manifest wrote (the hooks flag, before and after
+// the `codex_hooks` → `hooks` rename).
+const LEGACY_CONFIG_TEXTS = new Set(['[features]\nhooks = true\n', '[features]\ncodex_hooks = true\n']);
 
 const sha = s => createHash('sha256').update(s).digest('hex');
 
@@ -108,6 +114,116 @@ function userTopLevelKeys(text) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Project trust (read only)
+// ---------------------------------------------------------------------------------------------
+
+/** `$CODEX_HOME/config.toml`, default `~/.codex/config.toml`. */
+export function codexUserConfigPath(env = process.env) {
+  return join(env.CODEX_HOME || join(homedir(), '.codex'), 'config.toml');
+}
+
+const trimSlash = p => (p.length > 1 ? p.replace(/[\\/]+$/, '') : p);
+
+/** An absolute path in the form Codex records it: no trailing slash, symlinks resolved. */
+function normalizeProjectPath(p) {
+  const out = resolve(String(p));
+  try { return trimSlash(realpathSync(out)); } catch { return trimSlash(out); }
+}
+
+/** Both spellings of a path (as written and with symlinks resolved), for matching config keys. */
+function projectPathForms(p) {
+  return [...new Set([trimSlash(resolve(String(p))), normalizeProjectPath(p)])];
+}
+
+/** Decode a TOML key (basic string, literal string or bare key); null when it is none of them. */
+function tomlKey(raw) {
+  if (raw.startsWith('"')) {
+    const json = raw.replace(/\\U([0-9a-fA-F]{8})/g, (_, h) => JSON.stringify(String.fromCodePoint(parseInt(h, 16))).slice(1, -1));
+    try { return JSON.parse(json); } catch { return null; }
+  }
+  if (raw.startsWith("'")) return raw.slice(1, -1);
+  return /^[A-Za-z0-9_-]+$/.test(raw) ? raw : null;
+}
+
+const TOML_KEY = String.raw`"(?:[^"\\]|\\.)*"|'[^']*'|[A-Za-z0-9_-]+`;
+const PROJECT_HEADER_RE = new RegExp(String.raw`^[ \t]*\[[ \t]*projects[ \t]*\.[ \t]*(${TOML_KEY})[ \t]*\][ \t]*(?:#.*)?\r?$`);
+const PROJECTS_HEADER_RE = /^[ \t]*\[[ \t]*projects[ \t]*\][ \t]*(?:#.*)?\r?$/;
+const INLINE_PROJECT_RE = new RegExp(String.raw`^[ \t]*(${TOML_KEY})[ \t]*=[ \t]*\{([^}]*)\}`);
+const TRUST_LEVEL_RE = /(?:^|[,{\s])trust_level[ \t]*=[ \t]*(?:"([^"]*)"|'([^']*)')/;
+
+/**
+ * The `trust_level` of each `[projects."<path>"]` entry in a Codex user config (also the inline
+ * `[projects]` form `"<path>" = { trust_level = "trusted" }`), keyed by the path as written and
+ * with symlinks resolved, both without a trailing slash.
+ */
+export function parseCodexProjectTrust(text) {
+  const out = new Map();
+  let current = null; // the project path of the table we are in, '[projects]', or null
+  for (const line of String(text).split('\n')) {
+    if (TABLE_HEADER_RE.test(line)) {
+      const m = line.match(PROJECT_HEADER_RE);
+      const key = m ? tomlKey(m[1]) : null;
+      current = key != null ? key : (PROJECTS_HEADER_RE.test(line) ? '[projects]' : null);
+      continue;
+    }
+    if (current == null) continue;
+    if (current === '[projects]') {
+      const m = line.match(INLINE_PROJECT_RE);
+      const key = m ? tomlKey(m[1]) : null;
+      const t = key != null ? ` ${m[2]}`.match(TRUST_LEVEL_RE) : null;
+      if (t) for (const f of projectPathForms(key)) out.set(f, t[1] ?? t[2]);
+      continue;
+    }
+    const t = line.match(/^[ \t]*trust_level[ \t]*=[ \t]*(?:"([^"]*)"|'([^']*)')/);
+    if (t) for (const f of projectPathForms(current)) out.set(f, t[1] ?? t[2]);
+  }
+  return out;
+}
+
+/** The main working tree of the git repository that holds `dir` (Codex trusts a repo by it). */
+function gitMainRoot(dir) {
+  try {
+    const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000,
+    }).trim();
+    return common && basename(common) === '.git' ? dirname(common) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether Codex trusts the project, read from the user's Codex config (READ ONLY — never written).
+ * Codex looks up the session directory first and then the root of its git repository; a project
+ * with no entry is untrusted.
+ *
+ * @returns {{trusted: boolean, level: string|null, configPath: string, projectKey: string}}
+ *   `projectKey` is the path to trust (the git root, or the project root outside git).
+ */
+export function readCodexProjectTrust({ projectRoot, env = process.env } = {}) {
+  const configPath = codexUserConfigPath(env);
+  const root = normalizeProjectPath(projectRoot);
+  const gitRoot = gitMainRoot(root);
+  const projectKey = gitRoot ? normalizeProjectPath(gitRoot) : root;
+  let entries = new Map();
+  try {
+    if (existsSync(configPath)) entries = parseCodexProjectTrust(readFileSync(configPath, 'utf8'));
+  } catch { /* unreadable = no entries */ }
+  const lookup = p => projectPathForms(p).map(f => entries.get(f)).find(v => v != null);
+  const level = lookup(projectRoot) ?? lookup(projectKey) ?? null;
+  return { trusted: level === 'trusted', level, configPath, projectKey };
+}
+
+/** The short warning init prints for an untrusted project. */
+export function formatCodexUntrustedWarning({ projectKey, configPath }) {
+  return '[init] Codex: this project is not trusted yet, so Codex ignores .codex/config.toml (our prompt '
+    + 'and rules) — `codex exec` and CI silently, the interactive app asks once.\n'
+    + `         To trust it: run \`codex\` in this repo and answer "Yes", or add to ${configPath}:\n`
+    + `           [projects.${tomlBasicString(projectKey)}]\n`
+    + '           trust_level = "trusted"\n';
+}
+
+// ---------------------------------------------------------------------------------------------
 // [features] hooks flag
 // ---------------------------------------------------------------------------------------------
 
@@ -163,40 +279,55 @@ export function ensureCodexHooksFeatureFlag(configPath, { create = false } = {})
     return { status, path: configPath };
   };
 
+  // Every key check is scoped to the `[features]` table (a `hooks` key in another table is not
+  // the flag). The header may carry a trailing comment (`[features] # mine`) or a CR.
+  const lines = text.split('\n');
+  const { start, end } = featuresTableRange(lines);
+  const inTable = re => (start < 0 ? -1 : lines.findIndex((l, i) => i > start && i < end && re.test(l)));
   // `^[ \t]*hooks` cannot match a `codex_hooks` line (the prefix differs), so
   // these canonical-key checks never collide with the legacy key.
-  const HOOKS_TRUE = /^[ \t]*hooks[ \t]*=[ \t]*true\b/m;
-  const HOOKS_ANY = /^[ \t]*hooks[ \t]*=/m;
-  const LEGACY_ANY = /^[ \t]*codex_hooks[ \t]*=/m;
-  const LEGACY_LINE = /^[ \t]*codex_hooks[ \t]*=.*(?:\r?\n)?/m;
+  const hooksTrue = inTable(/^[ \t]*hooks[ \t]*=[ \t]*true\b/);
+  const hooksAny = inTable(/^[ \t]*hooks[ \t]*=/);
+  const legacyAny = inTable(/^[ \t]*codex_hooks[ \t]*=/);
 
   // Canonical flag already enabled.
-  if (HOOKS_TRUE.test(text)) {
-    if (LEGACY_ANY.test(text)) {
+  if (hooksTrue >= 0) {
+    if (legacyAny >= 0) {
       // Strip the deprecated `codex_hooks` line so Codex v0.132+ stops warning.
-      return write(text.replace(LEGACY_LINE, ''), 'migrated');
+      lines.splice(legacyAny, 1);
+      return write(lines.join('\n'), 'migrated');
     }
     return { status: 'already', path: configPath };
   }
 
   // Canonical flag present but explicitly non-true → respect the user's choice;
   // don't add a duplicate key (which would make the TOML invalid).
-  if (HOOKS_ANY.test(text)) {
+  if (hooksAny >= 0) {
     return { status: 'present-other', path: configPath };
   }
 
   // Deprecated `codex_hooks` present (no canonical key) → migrate the key name
   // in place, preserving its value and any inline comment.
-  if (LEGACY_ANY.test(text)) {
-    return write(text.replace(/^([ \t]*)codex_hooks([ \t]*=.*)$/m, '$1hooks$2'), 'migrated');
+  if (legacyAny >= 0) {
+    lines[legacyAny] = lines[legacyAny].replace(/^([ \t]*)codex_hooks/, '$1hooks');
+    return write(lines.join('\n'), 'migrated');
+  }
+
+  // The features table defined another way (dotted `features.x = …` keys or an inline table):
+  // appending a `[features]` header would redefine it, so leave the file to the user.
+  if (start < 0 && /^[ \t]*features[ \t]*[.=]/m.test(text)) {
+    return /^[ \t]*features[ \t]*\.[ \t]*hooks[ \t]*=[ \t]*true\b/m.test(text)
+      ? { status: 'already', path: configPath }
+      : { status: 'present-other', path: configPath };
   }
 
   // Neither key present → add the canonical flag.
   let next;
   if (!exists || text.trim() === '') {
     next = '[features]\nhooks = true\n';
-  } else if (/^[ \t]*\[features\][ \t]*$/m.test(text)) {
-    next = text.replace(/^([ \t]*\[features\][ \t]*)$/m, '$1\nhooks = true');
+  } else if (start >= 0) {
+    lines.splice(start + 1, 0, 'hooks = true');
+    next = lines.join('\n');
   } else {
     const sep = text.endsWith('\n') ? '' : '\n';
     next = `${text}${sep}\n[features]\nhooks = true\n`;
@@ -204,8 +335,16 @@ export function ensureCodexHooksFeatureFlag(configPath, { create = false } = {})
   return write(next, exists ? 'added' : 'created');
 }
 
-const FEATURES_HEADER_RE = /^[ \t]*\[features\][ \t]*(?:#.*)?$/;
+const FEATURES_HEADER_RE = /^[ \t]*\[[ \t]*features[ \t]*\][ \t]*(?:#.*)?\r?$/;
 const TABLE_HEADER_RE = /^[ \t]*\[/;
+
+/** The `[features]` table's header line index and the index of the next table header. */
+function featuresTableRange(lines) {
+  const start = lines.findIndex(l => FEATURES_HEADER_RE.test(l));
+  if (start < 0) return { start: -1, end: -1 };
+  const end = lines.findIndex((l, i) => i > start && TABLE_HEADER_RE.test(l));
+  return { start, end: end < 0 ? lines.length : end };
+}
 
 /**
  * Remove the `hooks = true` line from the `[features]` table (and the table header when
@@ -214,10 +353,8 @@ const TABLE_HEADER_RE = /^[ \t]*\[/;
  */
 export function removeCodexHooksFlagText(text, { dropEmptyTable = false } = {}) {
   const lines = text.split('\n');
-  const start = lines.findIndex(l => FEATURES_HEADER_RE.test(l));
+  let { start, end } = featuresTableRange(lines);
   if (start < 0) return null;
-  let end = lines.findIndex((l, i) => i > start && TABLE_HEADER_RE.test(l));
-  if (end < 0) end = lines.length;
   const at = lines.findIndex((l, i) => i > start && i < end && /^[ \t]*hooks[ \t]*=[ \t]*true[ \t]*(?:#.*)?\r?$/.test(l));
   if (at < 0) return null;
   lines.splice(at, 1);
@@ -242,7 +379,8 @@ export function removeCodexHooksFlagText(text, { dropEmptyTable = false } = {}) 
  * @param {string} args.projectRoot
  * @param {string|null} [args.rules]   the rules text for developer_instructions; null = none
  * @param {boolean} [args.prompt]      ship our base instructions (model_instructions_file)
- * @param {boolean} [args.hooksFlag]   enable `[features] hooks = true` (the SessionStart hook)
+ * @param {boolean} [args.hooksFlag]   enable `[features] hooks = true` (only when the SessionStart
+ *                                     hook is installed; false also takes back a flag this module added)
  * @returns {{status: string, detail: string, hooksFlag: {status: string}|null, warning?: string}}
  *   status in { installed, unchanged, error }
  */
@@ -253,13 +391,16 @@ export function installCodexHarness({ projectRoot, rules = null, prompt = true, 
   const manifestRead = readJson(manifestPath);
   const manifest = manifestRead.error ? {} : manifestRead.value;
   const configExisted = existsSync(configPath);
+  // An init older than this manifest created a config.toml that holds only the hooks flag:
+  // adopt it, so uninstall removes it.
+  const legacy = !manifestRead.exists && configExisted && LEGACY_CONFIG_TEXTS.has(readFileSync(configPath, 'utf8'));
   const next = {
     version: MANIFEST_VERSION,
     files: { ...(manifest.files || {}) },
     configBlock: manifest.configBlock || null,
-    createdConfig: manifestRead.exists ? Boolean(manifest.createdConfig) : !configExisted,
-    addedFeaturesTable: Boolean(manifest.addedFeaturesTable),
-    addedHooksFlag: Boolean(manifest.addedHooksFlag),
+    createdConfig: manifestRead.exists ? Boolean(manifest.createdConfig) : (!configExisted || legacy),
+    addedFeaturesTable: Boolean(manifest.addedFeaturesTable) || legacy,
+    addedHooksFlag: Boolean(manifest.addedHooksFlag) || legacy,
   };
   const changes = [];
   const warnings = [];
@@ -326,6 +467,17 @@ export function installCodexHarness({ projectRoot, rules = null, prompt = true, 
         if (!hadFeatures) next.addedFeaturesTable = true;
         changes.push(`${CODEX_CONFIG_REL} ([features] hooks = true)`);
       }
+    } else if (next.addedHooksFlag) {
+      // No hook to run: take back the flag this module added, so no half-set-up hook is left.
+      const cur = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
+      const stripped = removeCodexHooksFlagText(cur, { dropEmptyTable: next.addedFeaturesTable });
+      if (stripped != null) {
+        if (next.createdConfig && stripped.trim() === '') unlinkSync(configPath);
+        else writeAtomic(configPath, stripped);
+        changes.push(`${CODEX_CONFIG_REL} ([features] hooks flag removed: no SessionStart hook)`);
+      }
+      next.addedHooksFlag = false;
+      next.addedFeaturesTable = false;
     }
 
     const tracked = Object.keys(next.files).length || next.configBlock || next.addedHooksFlag

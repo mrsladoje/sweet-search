@@ -43,7 +43,7 @@ import {
   removeClaudeSystemPrompt,
   _internal as claudeSystemPromptInternal,
 } from '../../scripts/install-claude-system-prompt.js';
-import { parseInitArgs, resolveActiveHarnesses } from '../../scripts/init.js';
+import { parseInitArgs, resolveActiveHarnesses, validateInitArgs } from '../../scripts/init.js';
 
 let tmpRoot;
 beforeEach(() => {
@@ -543,7 +543,39 @@ describe('parseInitArgs — opt-in defaults + universal --no-claude', () => {
     expect(args.codex).toBe(true);
     expect(args.opencode).toBe(true);
     expect([...args.optInHarnesses]).toEqual([]);
-    expect(resolveActiveHarnesses(args)).toEqual(['claude-code']);
+    expect(resolveActiveHarnesses(args)).toEqual([]);
+  });
+
+  // Harness selection: no flag = Claude Code; --codex / --opencode select only
+  // themselves; --claude adds Claude Code back; --agents/--gemini/--cursor keep
+  // their meaning (on top of Claude Code unless --codex / --opencode exclude it).
+  for (const [flags, claude, codex, opencode, active] of [
+    [[], true, false, false, ['claude-code']],
+    [['--codex'], false, true, false, []],
+    [['--opencode'], false, false, true, []],
+    [['--codex', '--opencode'], false, true, true, []],
+    [['--claude', '--codex'], true, true, false, ['claude-code']],
+    [['--opencode', '--claude'], true, false, true, ['claude-code']],
+    [['--claude'], true, false, false, ['claude-code']],
+    [['--agents'], true, false, false, ['claude-code', 'agents']],
+    [['--codex', '--agents'], false, true, false, ['agents']],
+    [['--claude', '--codex', '--agents'], true, true, false, ['claude-code', 'agents']],
+    [['--no-claude', '--codex'], false, true, false, []],
+  ]) {
+    it(`harness selection: init ${flags.join(' ') || '(no flag)'}`, () => {
+      const args = parseInitArgs(flags);
+      expect(!args.noClaude).toBe(claude);
+      expect(args.codex).toBe(codex);
+      expect(args.opencode).toBe(opencode);
+      expect(resolveActiveHarnesses(args)).toEqual(active);
+      expect(validateInitArgs(args).ok).toBe(true);
+    });
+  }
+
+  it('--claude with --no-claude is rejected', () => {
+    const v = validateInitArgs(parseInitArgs(['--claude', '--no-claude', '--codex']));
+    expect(v.ok).toBe(false);
+    expect(v.error).toMatch(/--claude and --no-claude/);
   });
 
   it('--no-agent-instructions sets the umbrella flag', () => {
