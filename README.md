@@ -70,10 +70,13 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 [🖥️ Platform Support](#platform-support)<br>
 <sub>macOS · Linux · WASM fallback</sub>
 
+[⭐ A star pls? 🥺🙏](#found-it-useful)<br>
+<sub>helps other agents' humans find it</sub>
+
 </td>
 <td width="27%" valign="top">
 
-**USE IT**
+**THE ARCHITECTURE**
 
 [🧰 The Six Tools](#-the-six-tools)<br>
 <sub>search · grep · find · semantic · trace · read</sub>
@@ -84,7 +87,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 </td>
 <td width="27%" valign="top">
 
-**UNDER THE HOOD**
+**INDEXING**
 
 [🗂️ The Index](#the-index)<br>
 <sub>candle · fused kernels · cAST chunking</sub>
@@ -105,9 +108,6 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 
 [🙏 Prior Art & Acknowledgements](#-prior-art--acknowledgements)<br>
 <sub>the shoulders we stand on</sub>
-
-[📄 License](#-license)<br>
-<sub>Apache-2.0</sub>
 
 </td>
 </tr>
