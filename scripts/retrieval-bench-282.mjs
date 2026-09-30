@@ -471,7 +471,8 @@ async function runOne(probe, arm) {
   fs.writeFileSync(path.join(CAP_DIR, `${arm}.${probe.id}.json`), JSON.stringify({ ...base, answer: run.answer, rawResponse, calls: run.calls.map(c => ({ kind: c.kind, command: c.command, isError: c.isError, textChars: (c.text || '').length })) }));
   const [judged, usd] = await Promise.all([
     judgePanelScore({ probe, answer: run.answer, panel: JUDGE_PANEL }).catch(() => null),
-    scoreUsd(probe, rawResponse, sweet ? 'ss' : 'native'),
+    // SS_BENCH_NO_USD=1 (final-tuning, cash): skip the secondary USD/content judge panel; accuracy is unchanged.
+    process.env.SS_BENCH_NO_USD === '1' ? Promise.resolve({ usdSkipped: true }) : scoreUsd(probe, rawResponse, sweet ? 'ss' : 'native'),
   ]);
   const { calls, answer, ...rest } = run;
   return {

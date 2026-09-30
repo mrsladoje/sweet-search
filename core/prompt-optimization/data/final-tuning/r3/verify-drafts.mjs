@@ -31,7 +31,7 @@ async function gemini(prompt) {
 }
 async function glm(prompt) {
   for (let a = 0; a < 4; a++) {
-    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` }, body: JSON.stringify({ model: 'z-ai/glm-5.3', messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' }, temperature: 0, usage: { include: true } }) });
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` }, body: JSON.stringify({ model: process.env.R3_VERIFIER2 || 'z-ai/glm-5.3', messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' }, temperature: 0, usage: { include: true } }) });
     if (r.ok) { const j = await r.json(); spend += j.usage?.cost || 0; return j.choices?.[0]?.message?.content || ''; }
     await new Promise(res => setTimeout(res, 3000 * (a + 1)));
   }

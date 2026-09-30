@@ -1142,5 +1142,28 @@
    ],
    "why": "The freshness classification (Fresh / Updated / WorkingCopyStale / SiblingOperation) is decided in exactly one place, WorkingCopyFreshness::check_stale in lib/src/working_copy.rs, which compares the working copy's recorded operation id to the repo's and branches on the closest common ancestor operation; the CLI code in cli_util.rs only consumes that result (erroring or recovering), so a careful engineer would not reasonably give a different answer elsewhere."
   }
+ },
+ "r3-jj-01": {
+  "id": "r3-jj-01",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "cmd_git_push"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The push command logic and the revsets configuration specifically determine which bookmarks are pushed by default when no arguments are provided."
+  },
+  "glm": {
+   "ok": false,
+   "why": "unparsable"
+  }
  }
 }
