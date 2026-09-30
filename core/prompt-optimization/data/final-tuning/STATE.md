@@ -5,13 +5,14 @@ section.
 
 ## Now
 
-- Phase: **0 — setup and inventory** (in progress); Phase 1 agents and Phase 3 baselines started early (independent work, saves wall time).
-- Next step: when agents report → review TRIED-LEVERS.md + 3 normalisers (validate 3 rollouts myself) → common analyser (per-tool share, attribution, follow-up, rank usage, metadata share) → r282-TRACE-ANALYSIS.md.
-- Runs in flight (logs in `~/.ss-eval/final-tuning-logs/`):
-  - `ds-base-a2` — oc-dsflash41 sweet, train 78, variants OFF, `SS_BENCH_STABLE_RULES_PATH=1` (test-retest run A) — started 23:58
-  - `cx-base-a` — codex-sol61-high sweet, train 78, variants OFF — started 23:50 (Codex unaffected by the rules-path fix)
-  - (killed) `ds-base-a` — 22 rows on the old random rules path; kept as evidence, not used.
-- Background agents: TRIED-LEVERS sweep; trace normalisers opencode / Codex / Claude Code.
+- Phase: **3 — retrieval screens** (Phase 0 exit gate met: worktree + sentinel, TRIED-LEVERS.md, noise floor. Phase 1 exit gate met: reconciliation exact in all 5 cells, ranked waste list in `r282-TRACE-ANALYSIS.md`. Phase 2 exit gate met: 3 candidates in `LEVERS.md`).
+- Next step: read test-retest (ds-base-a2 vs ds-base-b2; cx-base-a vs cx-base-b) → V1 verdict on Opus train (cc-base-a vs cc-rp-a) → V2 verdicts (Codex, DeepSeek) → queue V3 (SEARCH_DEDUPE) → validation runs for passers.
+- Compare: `node core/prompt-optimization/data/final-tuning/scripts/compare.mjs <cell> <baseTag> <variantTag> [--base2 <tag>] [--native-r282]`
+- Queues (sequential per harness; `scripts/queue.sh`, logs `~/.ss-eval/final-tuning-logs/queue-*.log` + `<tag>.log`):
+  - cc-opus: `cc-base-a` (running) → `cc-rp-a` (V1)
+  - codex: waits for `cx-base-a` → `cx-prune3-a` (V2) → `cx-base-b` (retest)
+  - deepseek: `ds-base-b2` (retest) → `ds-prune3-a` (V2)
+- Done runs: `ds-base-a2` (78/78), `smoke-rulesprompt` (Opus, 4 Zig questions, V1 mechanism smoke).
 
 ## Baseline
 
@@ -38,8 +39,16 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 | Variant | Switch | Targets | Train | Validation | Opus confirm | Task guard | Status |
 |---|---|---|---|---|---|---|---|
 | sentinel | `SS_VARIANT_SENTINEL=1` | proof the bench runs the worktree | — | — | — | — | infra only |
+| bench fix | `SS_BENCH_STABLE_RULES_PATH=1` | opencode prefix cache broken by random rules path (waste #2) | DeepSeek vs r282 native: +7.9% (CI crosses 0), was +54.6% | — | n/a | n/a | **adopted for all new runs (measurement fix, not a product change)** |
+| V1 | `SS_VARIANT_CC_RULES_IN_PROMPT=1` | CC rules re-written each rollout (waste #1) | running | | | | screening |
+| V2 | `SS_VARIANT_PRUNE3=1` | drop ss-find/semantic/trace (owner hyp. 2) | queued | | | | |
+| V3 | `SS_VARIANT_SEARCH_DEDUPE=1` | repeated ss-search entries/lines (waste #5) | not queued | | | | |
 
 ## Decisions log
+
+- 00:12 **Bench fix confirmed:** DeepSeek sweet with the stable rules path (`ds-base-a2`, train 78) vs r282 native on the same ids: cost +7.9% [−$0.00010, +$0.00033] (was +54.6% in r282), accuracy 0.969 vs 0.964, native search calls −79%. — `compare.mjs oc-dsflash41 ds-base-a2 ds-base-a2 --native-r282`
+- 00:08 V1 mechanism smoke (Opus, 4 Zig train questions, conc 1): warm rollouts wrote 5,856 / 4,881 cache tokens vs r282 8,164 / 7,123; cost −22% per warm rollout. → full train screen queued.
+- 00:05 Codex queue started a second Codex run while `cx-base-a` was running (bad wait pattern). Killed it within ~1 min and deleted its partial results (`cx-prune3-a.aborted.log`); requeued with an anchored pattern.
 
 - 23:58 **Bench fix `SS_BENCH_STABLE_RULES_PATH=1`** (runner; default off keeps r282 reproducible). The r282 opencode sweet arm wrote the rules file into a random per-rollout temp dir; opencode prints "Instructions from: <absolute path>" into the system prompt, so the provider prefix cache broke on every sweet rollout. Evidence: DeepSeek req-0 cache hit sweet 2029/8384 tokens (24%) vs native 6254/7235 (86%); prefix = 43% of sweet cost vs 14% native; the prefix gap ($0.00077/q) ≈ the whole r282 DeepSeek cost gap ($0.00079/q). The product (`init`) uses the stable project path `.opencode/sweet-search.md`, so the stable path is production-faithful. **All new opencode runs use it; r282's opencode cost deltas (DeepSeek +55%, oc-Sol +6.8%) are inflated by this artifact.** Killed `ds-base-a` (old setting) and restarted as `ds-base-a2`.
 - 23:57 Phase 1 draft: prefix = 44–73% of cost in every cell and arm; ss-search results 7–12%; ss-read 4–8%. → caching/prefix levers first, output shaping second. — `trace/analyze-traces.mjs`
