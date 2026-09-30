@@ -41,7 +41,7 @@ import { existsSync } from 'fs';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 import { resolveRelationshipTargets } from '../graph/relationship-resolver.js';
-import { getStats as getIncrementalStats } from './incremental-tracker.js';
+import { getStats as getIncrementalStats, validateCurrentState } from './incremental-tracker.js';
 import { ARTIFACT_THRESHOLDS } from './artifact-builder.js';
 
 // Sub-module imports (used in main + re-exported for backward compatibility)
@@ -104,7 +104,7 @@ function parseArgs(argv) {
 async function main() {
   const startTime = Date.now();
 
-  const { dryRun, graphOnly, vectorsOnly, fullReindex, showStats, resolveOnly,
+  const { dryRun, graphOnly, vectorsOnly, fullReindex: fullReindexFlag, showStats, resolveOnly,
           skipSummaryRegen, filesFromStdin, quiet, forceArtifacts, help,
           noLateInteraction, lateInteractionModel, lateInteractionPool, lateInteractionExtendedSkiplist,
           sqliteFastMode, verbose } = parseArgs();
@@ -245,6 +245,20 @@ Output:
     }
 
     return;
+  }
+
+  // Index-format change (config fingerprint mismatch, e.g. after an upgrade
+  // that changed an encoder, the chunker, or the enrichment): rebuild from
+  // scratch exactly as `--full` would. An incremental run would load the
+  // old-format LI/HNSW stores and add new-format entries to them.
+  let fullReindex = fullReindexFlag;
+  if (!fullReindex && !dryRun && !graphOnly && !filesFromStdin && existsSync(DB_PATHS.merkle)) {
+    const { configValid, configValidation } = await validateCurrentState();
+    if (!configValid) {
+      fullReindex = true;
+      log('\nIndex format changed since the last index — rebuilding from scratch (as --full).', 'yellow');
+      if (configValidation?.details?.message) log(`  ${configValidation.details.message}`, 'dim');
+    }
   }
 
   try {

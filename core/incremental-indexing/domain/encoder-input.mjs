@@ -41,7 +41,7 @@ import { contentHashSync, stableStringify, metadataFingerprint } from '../infras
  * so changing the variant flushes the cache without renaming columns.
  *
  * EMBED_TEXT_POLICY_VERSION mirrors the cold-path `pipelineVersion` bump in
- * `core/indexing/incremental-tracker.js::buildConfigFingerprint`; LI policy
+ * `core/indexing/config-fingerprint.js::buildConfigFingerprint`; LI policy
  * has its own counter because LI input routing can change independently of
  * dense input.
  */

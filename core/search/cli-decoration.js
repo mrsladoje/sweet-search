@@ -9,6 +9,7 @@
  * semantic tools can import it without pulling the search engine.
  */
 
+import path from 'node:path';
 import { createDecorationWriter, detectOutputPolicy } from './output-policy.js';
 
 // =============================================================================
@@ -286,5 +287,44 @@ export function emitToolIdentity(policy, tool, detail = '') {
     );
   } finally {
     deco.close();
+  }
+}
+
+/**
+ * Warn, on the decoration channel, when the on-disk index was built in an
+ * older index format (config fingerprint mismatch after an upgrade). Reads at
+ * most 64 KiB of merkle-state.json. A no-op when the policy disables the
+ * banner (agents, pipes, --json), when there is no index yet, or on any error.
+ *
+ * @param {import('./output-policy.js').OutputPolicy} policy
+ * @param {string} [stateDir]  defaults to the project's `.sweet-search` dir
+ */
+export async function emitIndexFormatNotice(policy, stateDir) {
+  if (!policy || !policy.bannerEnabled) return;
+  try {
+    const [{ indexFormatStatus }, { formatIndexFormatNotice }, { applyPersistedLiModel }] = await Promise.all([
+      import('../incremental-indexing/infrastructure/baseline-readiness.mjs'),
+      import('../incremental-indexing/infrastructure/staleness-display.mjs'),
+      import('../infrastructure/init-config.js'),
+    ]);
+    let dir = stateDir;
+    if (!dir) {
+      const { DB_PATHS } = await import('../infrastructure/config/index.js');
+      dir = path.dirname(DB_PATHS.merkle);
+    }
+    // Resolve the LI model the way the indexer does, so an edge-model repo is
+    // not reported as changed.
+    applyPersistedLiModel(path.dirname(dir));
+    const status = indexFormatStatus(dir);
+    if (!status || status.match) return;
+    const style = policy.colorEnabled ? STYLE : PLAIN_STYLE;
+    const deco = createDecorationWriter(policy);
+    try {
+      deco.write(`${style.fg(style.colors.white)}${formatIndexFormatNotice(status.changes)}${style.reset}`);
+    } finally {
+      deco.close();
+    }
+  } catch {
+    // Decoration is best-effort and must never break results.
   }
 }

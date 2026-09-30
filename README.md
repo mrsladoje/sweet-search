@@ -1199,6 +1199,9 @@ A recycle or eviction never touches the index. Every update publishes before the
 - `sweet-search reconcile status` and `sweet-search reconcile inspect <path>` show what the daemon thinks, and why.
 - Turn it off with `SWEET_SEARCH_RECONCILE_V2=0`.
 
+**Want a clean slate?** `sweet-search index --full` rebuilds from scratch at any time. After an
+upgrade that changes the models or chunking, we tell you to run `sweet-search index`, which then re-embeds everything.
+
 </details>
 
 <a id="platform-support"></a>

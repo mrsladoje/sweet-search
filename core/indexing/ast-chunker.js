@@ -15,6 +15,30 @@ import { detectProjectBoundary } from '../infrastructure/project-detector.js';
 import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-patterns.js';
 import { DocumentChunker } from './document-chunker.js';
 
+// =============================================================================
+// Index-format versions — recorded in the index config fingerprint
+// (`core/indexing/config-fingerprint.js`). A mismatch against an on-disk index
+// makes `sweet-search index` re-embed every file and keeps the reconcile
+// daemon from writing new-format chunks into the old index.
+//
+// Bump CHUNKING_VERSION in the same diff as any change that alters chunk
+// boundaries or chunk content: this file's split rules and MAX_CHUNK_SIZE,
+// the cAST sibling merge / header overhead in
+// `core/infrastructure/tree-sitter-provider.js`, the document chunkers in
+// `core/indexing/document-chunker.js` + `core/indexing/chunking/`, or the
+// per-language configs in `core/infrastructure/language-patterns/`.
+//
+// Bump ENRICHMENT_VERSION in the same diff as any change to the text the
+// encoders see: `ASTChunker.enrichEmbeddingText`, the per-language
+// embedding/LI routing below, the enrichment passes in `indexer-build.js` and
+// `incremental-indexing/application/production-reconciler.mjs`, or
+// `pickLiInput` in `indexer-ann.js` / `production-reconciler.mjs`.
+//
+// Bumping either forces one full re-embed per existing index.
+// =============================================================================
+export const CHUNKING_VERSION = 1;
+export const ENRICHMENT_VERSION = 1;
+
 const MAX_CHUNK_SIZE = 2000;
 const MIN_CONTENT_LENGTH = 30;
 const MAX_PEEK_LINES = 3;

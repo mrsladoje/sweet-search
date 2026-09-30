@@ -47,7 +47,14 @@ import os from 'node:os';
 import { startupInterval, tierForHardware, reconcileEnablement, nextInterval, backstopWalkIntervalMs, resolveMaintainerMemoryProfile } from '../incremental-indexing/domain/interval-autotune.mjs';
 import { detectHardwareCapability } from '../infrastructure/hardware-capability.js';
 import { sweepStaleArtifactTemps, DEFAULT_TMP_SWEEP_MAX_AGE_MS } from '../incremental-indexing/infrastructure/artifact-temp-sweep.mjs';
-import { hasCompleteBaseIndex, WAITING_FOR_INITIAL_INDEX } from '../incremental-indexing/infrastructure/baseline-readiness.mjs';
+import {
+  hasCompleteBaseIndex,
+  WAITING_FOR_INITIAL_INDEX,
+  INDEX_REBUILD_REQUIRED,
+  CONFIG_FINGERPRINT_MISMATCH,
+} from '../incremental-indexing/infrastructure/baseline-readiness.mjs';
+import { formatIndexFormatNotice } from '../incremental-indexing/infrastructure/staleness-display.mjs';
+import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 // Static, not dynamic: the D.5 teardown watchdog must be able to hand off from
 // a synchronous callback, so the launcher has to be resolved before any await
 // in the shutdown path can wedge.
@@ -925,8 +932,20 @@ export async function runReconcileV2Tick(ctx) {
   // / HNSW / LI / sparse artifacts that make search think the repo is indexed).
   // No queue/artifact mutation here; the launcher still spawns the daemon, but
   // each tick is a no-op until `sweet-search index` lands a baseline.
+  // Resolve the LI model exactly as the full indexer does (env > persisted
+  // `runtime.li.model` in .sweet-search/config.json > default) BEFORE the gate
+  // builds its fingerprint and before any LI delta is encoded. Without this the
+  // daemon would encode an edge-model repo with the standard model.
+  applyPersistedLiModel(ctx.projectRoot);
+  // The same gate also holds the daemon dormant when the baseline was built in
+  // an older index format (config fingerprint mismatch after an upgrade), so it
+  // never writes new-format chunks into an old-format index.
   const baseline = hasCompleteBaseIndex(ctx.stateDir);
   if (!baseline.ready) {
+    if (baseline.reason === CONFIG_FINGERPRINT_MISMATCH) {
+      log('WARN', `${formatIndexFormatNotice(baseline.changes)} — reconcile dormant`);
+      return { skipped: true, reason: INDEX_REBUILD_REQUIRED, baseline: baseline.reason, changes: baseline.changes };
+    }
     log('INFO', `${WAITING_FOR_INITIAL_INDEX}: no complete baseline yet (${baseline.reason}); run "sweet-search index" first — reconcile dormant`);
     return { skipped: true, reason: WAITING_FOR_INITIAL_INDEX, baseline: baseline.reason };
   }
