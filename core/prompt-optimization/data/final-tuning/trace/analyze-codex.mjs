@@ -267,4 +267,89 @@ H('F. Counterfactuals (per-question mean, billed $)');
     ['cache-miss excess = billed - perfect', usd(real('sweet') - perfect('sweet')), usd(real('native') - perfect('native')), ''],
   ]);
 }
+
+// ─── G. warm-up confound ──────────────────────────────────────────────────────────────────────
+H('G. Cache warm-up over the run (rollouts ranked by start time within each arm)');
+{
+  const rank = {};
+  for (const arm of ARMS) { const r0 = R[arm].filter((q) => q.req === 0).sort((a, b) => Date.parse(a.x.ts) - Date.parse(b.x.ts)); r0.forEach((q, i) => { rank[`${arm}.${q.id}`] = i; }); }
+  const cost = (arm, id) => RO[arm].find((r) => r.id === id).costUsdSum;
+  const quart = (i) => Math.min(3, Math.floor(i / 32.5));
+  const rowsG = [];
+  for (let k = 0; k < 4; k++) {
+    const row = [`rollouts ${Math.round(k * 32.5) + 1}-${Math.round((k + 1) * 32.5)}`];
+    for (const arm of ARMS) {
+      const r0 = R[arm].filter((q) => q.req === 0 && quart(rank[`${arm}.${q.id}`]) === k);
+      const ids = new Set(r0.map((q) => q.id));
+      row.push(r0.length, f(mean(r0.map((q) => q.tok.cacheRead))), pc(r0.filter((q) => q.tok.cacheRead === 0).length / r0.length, 0), usd(mean([...ids].map((id) => cost(arm, id)))));
+    }
+    rowsG.push(row);
+  }
+  T(['run quarter', 'S n', 'S req0 cacheRead', 'S req0 zero-hit', 'S $/question', 'N n', 'N req0 cacheRead', 'N req0 zero-hit', 'N $/question'], rowsG);
+  out.push('\nNote: both arms ran the same probes in the same order (grouped by repo); native ran first (17:55-18:41 UTC), sweet second (18:43-19:31 UTC).');
+  // steady state: ids ranked in the second half in BOTH arms
+  const steady = RO.sweet.map((r) => r.id).filter((id) => rank[`sweet.${id}`] >= 65 && rank[`native.${id}`] >= 65);
+  const early = RO.sweet.map((r) => r.id).filter((id) => rank[`sweet.${id}`] < 65 && rank[`native.${id}`] < 65);
+  const agg = (arm, ids) => { const rs = ids.map((id) => RO[arm].find((r) => r.id === id)); const qs = rs.flatMap((r) => chain[`${arm}.${r.id}`]); return { n: ids.length, cost: mean(rs.map((r) => r.costUsdSum)), turns: mean(rs.map((r) => r.turns)), unc: sum(qs.map((q) => q.tok.inUncached)) / ids.length, cr: sum(qs.map((q) => q.tok.cacheRead)) / ids.length, out: sum(qs.map((q) => q.tok.out)) / ids.length, r0c: mean(qs.filter((q) => q.req === 0).map((q) => q.tok.cacheRead)), idealc: mean(rs.map((r) => costFromTurns(chain[`${arm}.${r.id}`].map((q) => ({ in: q.tok.inTotal, cached: q.tok.cacheRead, out: q.tok.out })), P).idealUsd)) }; };
+  const rowsS = [];
+  for (const [name, ids] of [['second half of the run in both arms', steady], ['first half of the run in both arms', early]]) {
+    const a = agg('sweet', ids), b = agg('native', ids);
+    rowsS.push([name, ids.length, usd(a.cost), usd(b.cost), pc(a.cost / b.cost - 1), usd(a.idealc), usd(b.idealc), pc(a.idealc / b.idealc - 1), f(a.r0c), f(b.r0c), f(a.unc), f(b.unc)]);
+  }
+  out.push('\nSame probe ids, split by run position:\n');
+  T(['subset', 'n ids', 'S billed $/q', 'N billed $/q', 'S vs N billed', 'S ideal-cache $/q', 'N ideal-cache $/q', 'S vs N ideal', 'S req0 cacheRead', 'N req0 cacheRead', 'S uncached tok/q', 'N uncached tok/q'], rowsS);
+  const pr = (ids) => { const pairs = ids.map((id) => ({ set: RO.sweet.find((r) => r.id === id).set, d: cost('sweet', id) - cost('native', id) })); const [lo, hi] = bootCI(pairs); return `${usd(mean(pairs.map((p) => p.d)), 5)} [${usd(lo, 5)}, ${usd(hi, 5)}]`; };
+  out.push(`\nPaired billed-$ diff per question (S-N), second half: ${pr(steady)}; first half: ${pr(early)}.`);
+}
+
+
+// ─── H. billed $ by content bucket ────────────────────────────────────────────────────────────
+H('H. Billed $ by content bucket (prefix = system prompt + tool definitions + developer messages + environment block)');
+{
+  const bk = (arm) => {
+    let prefixD = 0, convCached = 0, convUnc = 0, outD = 0, prefixTokSum = 0, reqN = 0;
+    for (const r of RO[arm]) for (const q of chain[`${arm}.${r.id}`]) {
+      const pf = Math.min(r.prefixTokens, q.tok.inTotal); const pfRead = Math.min(pf, q.tok.cacheRead);
+      prefixD += (pfRead * P.cache + (pf - pfRead) * P.in) / 1e6;
+      convCached += ((q.tok.cacheRead - pfRead) * P.cache) / 1e6;
+      convUnc += ((q.tok.inTotal - pf - (q.tok.cacheRead - pfRead)) * P.in) / 1e6;
+      outD += q.tok.out * P.out / 1e6; prefixTokSum += pf; reqN++;
+    }
+    return { prefixD, convCached, convUnc, outD, total: prefixD + convCached + convUnc + outD, prefixTokSum, reqN };
+  };
+  const a = bk('sweet'), b = bk('native');
+  T(['bucket', 'sweet $', 'sweet share', 'native $', 'native share', 'sweet - native $', 'as % of native total'], [
+    ['fixed prefix (cache reads + full-price misses)', usd(a.prefixD, 3), pc(a.prefixD / a.total), usd(b.prefixD, 3), pc(b.prefixD / b.total), usd(a.prefixD - b.prefixD, 3), pc((a.prefixD - b.prefixD) / b.total)],
+    ['conversation re-read from cache (question + earlier results)', usd(a.convCached, 3), pc(a.convCached / a.total), usd(b.convCached, 3), pc(b.convCached / b.total), usd(a.convCached - b.convCached, 3), pc((a.convCached - b.convCached) / b.total)],
+    ['conversation at full price (question, new results, missed cache)', usd(a.convUnc, 3), pc(a.convUnc / a.total), usd(b.convUnc, 3), pc(b.convUnc / b.total), usd(a.convUnc - b.convUnc, 3), pc((a.convUnc - b.convUnc) / b.total)],
+    ['output (answer, calls, reasoning)', usd(a.outD, 3), pc(a.outD / a.total), usd(b.outD, 3), pc(b.outD / b.total), usd(a.outD - b.outD, 3), pc((a.outD - b.outD) / b.total)],
+    ['total', usd(a.total, 3), '100%', usd(b.total, 3), '100%', usd(a.total - b.total, 3), pc((a.total - b.total) / b.total)],
+  ]);
+  out.push(`\nPrefix tokens billed in total: sweet ${f(a.prefixTokSum)} (${f(a.prefixTokSum / a.reqN)} per request), native ${f(b.prefixTokSum)} (${f(b.prefixTokSum / b.reqN)} per request). Prefix tokens read at the full price: sweet ${f(a.prefixTokSum - sum(R.sweet.map((q) => Math.min(RO.sweet.find((r) => r.id === q.id).prefixTokens, q.tok.cacheRead))))}, native ${f(b.prefixTokSum - sum(R.native.map((q) => Math.min(RO.native.find((r) => r.id === q.id).prefixTokens, q.tok.cacheRead))))}.`);
+  out.push(`Cost per request if the whole prefix were read at cache price: sweet ${usd(a.prefixTokSum / a.reqN * P.cache / 1e6, 5)}, native ${usd(b.prefixTokSum / b.reqN * P.cache / 1e6, 5)}.`);
+}
+H('B2. Shell sub-commands per question (a chained exec_command counts as one call)');
+{
+  const subs = (arm) => RO[arm].map((r) => sum(chain[`${arm}.${r.id}`].flatMap((q) => q.calls).map((c) => (c.chain ? c.chain.length : 1))));
+  const p = paired((r) => sum(chain[`${r.arm}.${r.id}`].flatMap((q) => q.calls).map((c) => (c.chain ? c.chain.length : 1))));
+  T(['metric', 'sweet mean', 'sweet median', 'native mean', 'native median', 'paired diff S-N [95% CI]'], [['shell sub-commands per question', f(mean(subs('sweet')), 2), f(median(subs('sweet')), 2), f(mean(subs('native')), 2), f(median(subs('native')), 2), `${f(p.d, 2)} [${f(p.lo, 2)}, ${f(p.hi, 2)}]`]]);
+}
+H('D2. Result tokens that reached the model (visible chars / 4, includes the exec wrapper)');
+{
+  const rowsV = ARMS.map((arm) => { const c = R[arm].flatMap((q) => q.calls).filter((x) => x.visibleChars != null); const v = c.map((x) => x.visibleChars / 4); return [arm, c.length, f(mean(v)), f(median(v)), f(pctile(v, 0.9)), f(sum(v) / RO[arm].length)]; });
+  T(['arm', 'calls', 'visible tokens/call mean', 'median', 'p90', 'visible tokens per question'], rowsV);
+}
+
+
+H('A2b. Kinds of cache outcome at requests n >= 1 (what the provider returned for the previous context)');
+{
+  const cls = (arm) => {
+    const c = { 'full reuse (cacheRead >= previous input - 128)': [], 'partial: only the fixed prefix or less read': [], 'partial: between prefix and previous input': [], 'zero (cacheRead = 0)': [] };
+    for (const r of RO[arm]) { const ch = chain[`${arm}.${r.id}`]; for (let i = 1; i < ch.length; i++) { const prev = ch[i - 1].tok.inTotal, ca = ch[i].tok.cacheRead, fl = Math.floor(prev / 128) * 128; const miss = Math.max(0, prev - ca); const k = ca === 0 ? 'zero (cacheRead = 0)' : ca >= fl - 128 ? 'full reuse (cacheRead >= previous input - 128)' : ca <= r.prefixTokens ? 'partial: only the fixed prefix or less read' : 'partial: between prefix and previous input'; c[k].push({ miss, in: ch[i].tok.inTotal }); } }
+    return c;
+  };
+  const cs = cls('sweet'), cn = cls('native'); const nS = sum(Object.values(cs).map((v) => v.length)), nN = sum(Object.values(cn).map((v) => v.length));
+  T(['outcome', 'S requests', 'S share', 'S tokens not reused', 'S excess $ (x 1.9/M)', 'N requests', 'N share', 'N tokens not reused', 'N excess $ (x 1.9/M)'], Object.keys(cs).map((k) => [k, cs[k].length, pc(cs[k].length / nS, 0), f(sum(cs[k].map((x) => x.miss))), usd(sum(cs[k].map((x) => x.miss)) * PR / 1e6, 3), cn[k].length, pc(cn[k].length / nN, 0), f(sum(cn[k].map((x) => x.miss))), usd(sum(cn[k].map((x) => x.miss)) * PR / 1e6, 3)]));
+}
+
 console.log(out.join('\n'));

@@ -199,10 +199,10 @@ function buildRequests({ thread, parsed, meta, price, sweet }) {
     const inTotal = u.inUncached + u.cacheRead + u.cacheWrite;
     const cw = Math.max(0, Math.min(u.cacheWrite, inTotal - u.cacheRead));
     const costUsd = (inTotal || u.out) ? ((inTotal - u.cacheRead - cw) * price.in + cw * price.in * 1.25 + u.cacheRead * price.cache + u.out * price.out) / 1e6 : 0;
-    let textOutChars = 0, thinkingChars = 0; const calls = [];
+    let textOutChars = 0, thinkingChars = 0, thinkingBlocks = 0; const calls = [];
     for (const b of g.blocks) {
       if (b.type === 'text' && typeof b.text === 'string') textOutChars += b.text.length;
-      else if (b.type === 'thinking' && typeof b.thinking === 'string') thinkingChars += b.thinking.length;
+      else if (b.type === 'thinking' || b.type === 'redacted_thinking') { thinkingBlocks++; if (typeof b.thinking === 'string') thinkingChars += b.thinking.length; }
       else if (b.type === 'tool_use') {
         const input = b.input || {};
         const argTextFull = b.name === 'Bash' ? String(input.command ?? '') : JSON.stringify(input);
@@ -238,7 +238,7 @@ function buildRequests({ thread, parsed, meta, price, sweet }) {
       textOutChars, thinkingChars, reasoningText: null,
       calls,
       // EXTRA (additive)
-      requestId: g.requestId, ts: g.ts, tsEnd: g.tsEnd, stopReason: g.stop, usageMissing: !g.usage || (!inTotal && !u.out),
+      thinkingBlocks, requestId: g.requestId, ts: g.ts, tsEnd: g.tsEnd, stopReason: g.stop, usageMissing: !g.usage || (!inTotal && !u.out),
     });
   }
   return recs;

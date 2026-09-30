@@ -24,8 +24,8 @@ const f0 = x => (Number.isFinite(x) ? Math.round(x).toLocaleString('en-US') : '-
 const f1 = x => (Number.isFinite(x) ? x.toFixed(1) : '-');
 const f2 = x => (Number.isFinite(x) ? x.toFixed(2) : '-');
 const f3 = x => (Number.isFinite(x) ? x.toFixed(3) : '-');
-const usd = x => (Number.isFinite(x) ? `$${x.toFixed(4)}` : '-');
-const usd5 = x => (Number.isFinite(x) ? `$${x.toFixed(5)}` : '-');
+const usd = x => (Number.isFinite(x) ? `${x < 0 ? '-' : ''}$${Math.abs(x).toFixed(4)}` : '-');
+const usd5 = x => (Number.isFinite(x) ? `${x < 0 ? '-' : ''}$${Math.abs(x).toFixed(5)}` : '-');
 const pc = x => (Number.isFinite(x) ? `${(x * 100).toFixed(1)}%` : '-');
 const sgn = x => (Number.isFinite(x) ? `${x >= 0 ? '+' : ''}${x.toFixed(1)}%` : '-');
 const table = (head, rows, left = 1) => [`| ${head.join(' | ')} |`, `|${head.map((_, i) => (i < left ? '---' : '---:')).join('|')}|`, ...rows.map(r => `| ${r.join(' | ')} |`)].join('\n');
@@ -57,6 +57,11 @@ for (const cell of cells) {
   console.log(`## T0 total cost (trace sum = runner costRealizedUsd, 130 questions per arm)\n`);
   console.log(table(['arm', 'total $ (130 questions)', '$ / question', 'naive $/question (no cache, runner)'], ['native', 'sweet'].map(a => [a, usd(tot(a)), usd5(tot(a) / 130), usd5(mean(A[a].rolls.map(r => r.costNaiveRunnerUsd)))])));
   console.log(`\nsweet vs native: realised ${sgn(((tot('sweet') / tot('native')) - 1) * 100)}; naive ${sgn(((mean(A.sweet.rolls.map(r => r.costNaiveRunnerUsd)) / mean(A.native.rolls.map(r => r.costNaiveRunnerUsd))) - 1) * 100)}`);
+  {
+    const nat = new Map(A.native.rolls.map(r => [r.id, r])); const pr = A.sweet.rolls.map(r => ({ set: r.set, d: r.costUsdSum - nat.get(r.id).costUsdSum }));
+    const [lo, hi] = bootCI(pr);
+    console.log(`paired sweet - native $/question: mean ${usd5(mean(pr.map(x => x.d)))}, 95% CI [${usd5(lo)}, ${usd5(hi)}] (stratified by set, B=20000, seed 42)`);
+  }
 
   // ---------- T1 cache per request position ----------
   console.log(`\n## T1 per request position (mean tokens per request; hit = sum cacheRead / sum inTotal)\n`);
@@ -123,7 +128,23 @@ for (const cell of cells) {
     ['req >=1 cache deficit, signed (+ earlier context re-billed; - provider also cached part of the previous response)', f0(U.native.df / 130), f0(U.sweet.df / 130), usd(U.native.df * P.in / 1e6), usd(U.sweet.df * P.in / 1e6)],
     ['sum = inUncached', f0((U.native.u0 + U.native.nw + U.native.df) / 130), f0((U.sweet.u0 + U.sweet.nw + U.sweet.df) / 130), usd((U.native.u0 + U.native.nw + U.native.df) * P.in / 1e6), usd((U.sweet.u0 + U.sweet.nw + U.sweet.df) * P.in / 1e6)],
   ]));
-  console.log(`(check: measured inUncached per question native ${f0(sum(A.native.reqs.map(r => r.tok.inUncached)) / 130)}, sweet ${f0(sum(A.sweet.reqs.map(r => r.tok.inUncached)) / 130)})`);
+  console.log(`\n(check: measured inUncached per question native ${f0(sum(A.native.reqs.map(r => r.tok.inUncached)) / 130)}, sweet ${f0(sum(A.sweet.reqs.map(r => r.tok.inUncached)) / 130)})`);
+
+  // ---------- T4d prefix vs rest ----------
+  console.log(`\n### T4d fixed prefix vs everything else (prefix = system prompt + tool definitions + rules, measured in the first-request table)\n`);
+  const pre = arm => {
+    let cp = 0, p0unc = 0, pRead = 0;
+    for (const r of A[arm].rolls) {
+      const v = A[arm].byId.get(r.id); const Pf = r.prefixTokens; const cr0 = Math.min(v[0].tok.cacheRead, Pf);
+      const first = ((Pf - cr0) * P.in + cr0 * P.cache) / 1e6;
+      const later = sum(v.slice(1).map(rq => Math.min(Pf, rq.tok.inTotal))) * P.cache / 1e6;     // assumes the prefix is re-read from cache after request 0 (approximation: ignores provider misses)
+      cp += first + later; p0unc += first; pRead += later;
+    }
+    return { cp, p0unc, pRead };
+  };
+  const PR = { native: pre('native'), sweet: pre('sweet') };
+  console.log(table(['arm', 'total $', 'prefix $ (approx.)', 'prefix share', 'of which request 0 (mostly uncached)', 'of which re-reads in requests >=1', 'everything else $'], ['native', 'sweet'].map(a => [a, usd(tot(a)), usd(PR[a].cp), pc(PR[a].cp / tot(a)), usd(PR[a].p0unc), usd(PR[a].pRead), usd(tot(a) - PR[a].cp)])));
+  console.log(`\nsweet - native: prefix ${usd(PR.sweet.cp - PR.native.cp)}, everything else ${usd((tot('sweet') - PR.sweet.cp) - (tot('native') - PR.native.cp))}, total ${usd(tot('sweet') - tot('native'))}.`);
 
   // ---------- counterfactual: first-request cache repaired ----------
   console.log(`\n### T4c counterfactual: sweet first request cached like native\n`);
@@ -145,12 +166,18 @@ for (const cell of cells) {
   };
   const ruleFull = (r, rq) => Math.max(rq.tok.cacheRead, Math.floor(r.prefixTokens / gran) * gran);                       // whole prefix cached (upper bound of saving)
   const ruleRepo = (r, rq) => (rq.tok.cacheRead > 0 && cell === 'oc-dsflash41' && rq.tok.cacheRead >= 2048 ? Math.max(rq.tok.cacheRead, Math.floor(r.prefixTokens / gran) * gran) : rq.tok.cacheRead);   // DeepSeek: rollouts that already hit the head get the full prefix (native's pattern)
-  const cfF = cfCost(ruleFull), cfR = cfCost(ruleRepo);
+  // Sol (OpenAI cache is a per-request lottery): native reaches ABOVE the shared head in a fraction of its head hits;
+  // give every sweet head-hit rollout that same probability of hitting its whole prefix (expected value, deterministic).
+  const natHits = natR0.filter(x => x > 0); const natHead = Math.min(...natHits);
+  const pUp = natHits.filter(x => x > natHead).length / natHits.length;
+  const ruleLottery = (r, rq) => (rq.tok.cacheRead > 0 && cell === 'oc-sol61-high' ? rq.tok.cacheRead + pUp * Math.max(0, Math.floor(r.prefixTokens / gran) * gran - rq.tok.cacheRead) : rq.tok.cacheRead);
+  const cfF = cfCost(ruleFull), cfR = cfCost(ruleRepo), cfL = cfCost(ruleLottery);
   const nTot = tot('native'), sTot = tot('sweet');
   console.log(table(['scenario', 'sweet total $', 'vs native'], [
     ['observed', usd(sTot), sgn((sTot / nTot - 1) * 100)],
     ['every sweet request 0 caches its whole prefix (floor to granularity)  [upper bound on the fix]', usd(cfF), sgn((cfF / nTot - 1) * 100)],
     ...(cell === 'oc-dsflash41' ? [['only rollouts that already hit the head cache (native pattern: all but the first rollout per repo)', usd(cfR), sgn((cfR / nTot - 1) * 100)]] : []),
+    ...(cell === 'oc-sol61-high' ? [[`sweet head-hit rollouts get native's chance (${pc(pUp)} of native head hits went above the head) to hit the whole prefix (expected value)`, usd(cfL), sgn((cfL / nTot - 1) * 100)]] : []),
     ['native (reference)', usd(nTot), '0.0%'],
   ]));
 
@@ -192,7 +219,7 @@ for (const cell of cells) {
   const afterTool = arm => { const m = {}; for (const v of A[arm].byId.values()) for (let n = 1; n < v.length; n++) { const prevTools = [...new Set(v[n - 1].calls.map(c => c.tool))]; const key = prevTools.length === 1 ? prevTools[0] : prevTools.length ? 'mixed' : 'none'; (m[key] ||= []).push(v[n].tok.reasoning || 0); } return m; };
   const at = { native: afterTool('native'), sweet: afterTool('sweet') };
   const akeys = [...new Set([...Object.keys(at.native), ...Object.keys(at.sweet)])];
-  console.log(`\nReasoning tokens of request n by the tool used in request n-1 (mean [n]); native | sweet:`);
+  console.log(`\nReasoning tokens of request n by the tool used in request n-1 (mean and n); native | sweet:\n`);
   console.log(table(['previous request used', 'native mean reasoning', 'native n', 'sweet mean reasoning', 'sweet n'], akeys.map(k => [k, f0(mean(at.native[k] || [])), (at.native[k] || []).length, f0(mean(at.sweet[k] || [])), (at.sweet[k] || []).length])));
   const first = arm => A[arm].reqs.filter(r => r.req === 0).map(r => r.tok.reasoning || 0);
   console.log(`\nReasoning in request 0 (before any tool result): native mean ${f0(mean(first('native')))}, sweet mean ${f0(mean(first('sweet')))}.`);

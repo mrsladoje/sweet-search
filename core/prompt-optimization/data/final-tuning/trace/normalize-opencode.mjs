@@ -277,7 +277,7 @@ for (const arm of ['native', 'sweet']) {
       costUsdSum: +costSum.toFixed(6), runnerCostUsd: runnerCost,
       reconDiffPct: runnerCost ? +(((costSum - runnerCost) / runnerCost) * 100).toFixed(4) : null,
       prefixTokens,
-      prefixMethod: 'req0.tok.inTotal minus ceil(userMessageChars/4); user message = frame + question (first user text part, includes the wrapping quotes). The store does not hold the request body, so this is an estimate (+-20 tokens).',
+      prefixMethod: 'req0.tok.inTotal minus ceil(userMessageChars/4); user message = frame + question (first user text part, includes the wrapping quotes). The store does not hold the request body, so this is an estimate (about +-150 tokens; the sweet-minus-native difference is exact because both arms send the same user message).',
       req0InTotal: req0?.tok.inTotal ?? null, req0CacheRead: req0?.tok.cacheRead ?? null, userMsgChars: userChars,
       answer: s.answer,
       // join / consistency evidence

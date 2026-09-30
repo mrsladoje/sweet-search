@@ -13,8 +13,8 @@ import { fileURLToPath } from 'node:url';
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
 const cell = process.argv[2];
 const section = (process.argv.includes('--section') ? process.argv[process.argv.indexOf('--section') + 1] : 'all');
-const PRICES = { 'cc-opus55-medium': { in: 4, cache: 0.2, out: 20 }, 'cc-sonnet55-high': { in: 3, cache: 0.3, out: 15 } };
-const P = PRICES[cell];
+const PRICES = { 'cc-opus55-medium': { in: 4, cache: 0.2, out: 20 }, 'cc-sonnet55-high': { in: 2, cache: 0.2, out: 10 } };
+const P = PRICES[cell]; // = ideal-cost.mjs MODEL_PRICES for claude-opus-5-5 / claude-sonnet-5-5, i.e. what the runner used
 const all = fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/results/final-tuning-trace', `${cell}.trace.jsonl`), 'utf8')
   .split('\n').filter(Boolean).map(JSON.parse);
 const roll = all.filter(r => r.type === 'rollout');
@@ -106,8 +106,11 @@ if (section === 'a' || section === 'all') {
     rows5.push([a, String(byCwd.size), 'first-in-repo', String(firsts.length), f0(mean(firsts.map(x => x.req0.cacheRead))), f0(mean(firsts.map(x => x.req0.cacheWrite))), f0(mean(firsts.map(tot)))]);
     rows5.push([a, '', 'later-in-repo', String(laters.length), f0(mean(laters.map(x => x.req0.cacheRead))), f0(mean(laters.map(x => x.req0.cacheWrite))), f0(mean(laters.map(tot)))]);
     // within-repo spread of req0 cacheRead for later rollouts (byte stability)
-    let maxSpread = 0; for (const v of byCwd.values()) { const cr = v.slice(1).map(x => x.req0.cacheRead); if (cr.length) maxSpread = Math.max(maxSpread, Math.max(...cr) - Math.min(...cr)); }
-    console.log(`${a}: max within-repo spread of req-0 cacheRead among non-first rollouts = ${maxSpread} tokens`);
+    const warmCr = arm(a).rolls.filter(x => x.req0.cacheRead >= 0.9 * median(arm(a).rolls.map(y => y.req0.cacheRead)));
+    const byCwdW = new Map(); for (const x of warmCr) { if (!byCwdW.has(x.cwd)) byCwdW.set(x.cwd, []); byCwdW.get(x.cwd).push(x.req0.cacheRead); }
+    const spread = Math.max(...[...byCwdW.values()].map(v => Math.max(...v) - Math.min(...v)));
+    const prefSpread = Math.max(...arm(a).rolls.map(x => x.prefixTokens)) - Math.min(...arm(a).rolls.map(x => x.prefixTokens));
+    console.log(`${a}: warm rollouts: max within-repo spread of req-0 cacheRead = ${spread} tokens; spread of prefix estimate across ALL rollouts = ${prefSpread} tokens`);
     const cold = arm(a).rolls.filter(x => x.req0.cacheRead === 0).length;
     console.log(`${a}: rollouts whose req 0 read NOTHING from cache (cold start): ${cold}`);
   }
@@ -134,6 +137,15 @@ if (section === 'b' || section === 'all') {
     for (const r of arm(a).reqs) for (const c of r.calls) { const k = c.tool === 'Bash' ? `Bash:${c.sub}` : c.tool; m[k] = (m[k] || 0) + 1; }
     console.log(`  ${a}: ` + Object.entries(m).sort((x, y) => y[1] - x[1]).map(([k, v]) => `${k} ${v}`).join(', '));
   }
+  console.log('\nPer-tool result size (tokens est = chars/4):');
+  const trows = [];
+  for (const a of ARMS) {
+    const m = {};
+    for (const r of arm(a).reqs) for (const c of r.calls) { const k = c.tool === 'Bash' ? `Bash:${c.sub}` : c.tool; (m[k] = m[k] || []).push(c.resultTokensEst); }
+    const tot = sum(Object.values(m).flat());
+    for (const [k, v] of Object.entries(m).sort((x, y) => sum(y[1]) - sum(x[1]))) trows.push([a, k, String(v.length), f0(mean(v)), f0(median(v)), pc(sum(v) / tot)]);
+  }
+  table(['arm', 'tool', 'calls', 'result tok mean', 'median', '% of result tokens'], trows);
   console.log('\nCalls per request distribution (parallel calls):');
   for (const a of ARMS) { const d = {}; for (const r of arm(a).reqs) { const k = r.calls.length; d[k] = (d[k] || 0) + 1; } console.log(`  ${a}: ` + Object.entries(d).map(([k, v]) => `${k} calls: ${v}`).join(', ')); }
   console.log('\nPer-request result size (tool output tokens est) and later-request cost driver:');
@@ -157,6 +169,39 @@ if (section === 'c' || section === 'all') {
   table(['arm', 'out tok / question', 'out tok / turn', 'visible text tok/q (chars/4)', 'tool_use tok/q (args/4 + 12/call)', 'thinking ESTIMATE tok/q (out - text - tool_use)', 'API-reported thinking_tokens /q', 'reported thinking share of out', 'readable thinking chars', 'requests with thinking_tokens>0'], rows);
   console.log('\nBy request position (out tokens):');
   table(['req', 'arm', 'n', 'out mean', 'text tok', 'tool tok', 'est thinking', 'reported thinking'], [0, 1, 2, '3+'].flatMap(p => ARMS.map(a => { const r = arm(a).reqs.filter(x => (p === '3+' ? x.req >= 3 : x.req === p)); const tt = mean(r.map(x => x.textOutChars / 4)); const tl = mean(r.map(x => sum(x.calls, c => c.argChars) / 4 + x.calls.length * 12)); const o = mean(r.map(x => x.tok.out)); return [String(p), a, String(r.length), f0(o), f0(tt), f0(tl), f0(o - tt - tl), f0(mean(r.map(x => x.tok.reasoning ?? 0)))]; })));
+  // Calibration: requests WITHOUT a thinking block give the non-thinking cost of text and of tool_use blocks.
+  console.log('\nThinking calibration (requests with no thinking block => out = visible text + tool_use envelope):');
+  const cal = (rs, xf) => { // OLS out = a + b*x
+    const n = rs.length, xs = rs.map(xf), ys = rs.map(r => r.tok.out); const mx = mean(xs), my = mean(ys);
+    const b = sum(xs.map((x, i) => (x - mx) * (ys[i] - my))) / sum(xs, x => (x - mx) ** 2); return { a: my - b * mx, b, n };
+  };
+  const calRows = []; const models = {};
+  for (const a of ARMS) {
+    const nt = arm(a).reqs.filter(r => r.thinkingBlocks === 0);
+    const tx = nt.filter(r => r.calls.length === 0 && r.textOutChars > 0);
+    const tl = nt.filter(r => r.calls.length > 0 && r.textOutChars === 0);
+    models[a] = { tx: cal(tx, r => r.textOutChars), tl: cal(tl, r => sum(r.calls, c => c.argChars)) };
+    calRows.push([a, String(tx.length), `${f1(models[a].tx.a)} + ${f3(models[a].tx.b)} x chars`, String(tl.length), `${f1(models[a].tl.a)} + ${f3(models[a].tl.b)} x argChars`]);
+  }
+  table(['arm', 'text-only requests (n)', 'out tokens fit', 'tool-only requests (n)', 'out tokens fit'], calRows);
+  const rows3 = [];
+  for (const a of ARMS) {
+    const M = models[a]; const rs = arm(a).reqs, n = arm(a).rolls.length;
+    let thinkEst = 0, thinkReqs = 0, rep = 0, noThinkResid = 0;
+    for (const r of rs) {
+      const pred = (r.textOutChars ? M.tx.a + M.tx.b * r.textOutChars : 0) + (r.calls.length ? M.tl.a + M.tl.b * sum(r.calls, c => c.argChars) : 0);
+      if (r.thinkingBlocks > 0) { thinkEst += Math.max(0, r.tok.out - pred); thinkReqs++; rep += r.tok.reasoning ?? 0; } else noThinkResid += r.tok.out - pred;
+    }
+    rows3.push([a, String(thinkReqs), pc(thinkReqs / rs.length), f1(thinkEst / n), f1(rep / n), pc(thinkEst / sum(rs, r => r.tok.out)), f1(noThinkResid / n)]);
+  }
+  table(['arm', 'requests with a thinking block', 'share of requests', 'thinking ESTIMATE tok/question (calibrated)', 'API thinking_tokens /question', 'estimate share of out', 'residual on non-thinking requests tok/q (sanity, ~0)'], rows3);
+  console.log('\nOutput tokens per question, calibrated split (text + tool_use + thinking = out):');
+  table(['arm', 'out / question', 'visible text', 'tool_use (args + envelope)', 'thinking (estimate)', 'out / turn', 'final-answer request out (mean)', 'non-final requests out (mean)'], ARMS.map(a => {
+    const M = models[a]; const rs = arm(a).reqs, n = arm(a).rolls.length;
+    const textT = sum(rs, r => (r.textOutChars ? M.tx.a + M.tx.b * r.textOutChars : 0)), toolT = sum(rs, r => (r.calls.length ? M.tl.a + M.tl.b * sum(r.calls, c => c.argChars) : 0));
+    const fin = rs.filter(r => r.calls.length === 0), non = rs.filter(r => r.calls.length > 0);
+    return [a, f1(sum(rs, r => r.tok.out) / n), f1(textT / n), f1(toolT / n), f1((sum(rs, r => r.tok.out) - textT - toolT) / n), f1(mean(rs.map(r => r.tok.out))), f1(mean(fin.map(r => r.tok.out))), f1(mean(non.map(r => r.tok.out)))];
+  }));
   console.log('\nBlock presence: thinking blocks exist in the transcript but carry no readable text (thinkingChars is 0 everywhere => encrypted/redacted); the only count is usage.output_tokens_details.thinking_tokens.');
 }
 
@@ -185,7 +230,8 @@ if (section === 'd' || section === 'all') {
   // (only the global tools prefix cached), cold (nothing cached). Level = median req-0 write of warm rollouts.
   console.log('\nReq-0 cache-write gap, split by req-0 cache state (tokens x write price; runner basis):');
   const W = P.in * 1.25 / 1e6;
-  const klass = (r) => (r.req0.cacheRead === 0 ? 'cold' : r.req0.cacheRead < 11000 && r.req0.cacheRead > 9000 && r.req0.cacheRead < median(arm(r.arm).rolls.map(x => x.req0.cacheRead)) ? 'first-touch' : 'warm');
+  const medCr = Object.fromEntries(ARMS.map(a => [a, median(arm(a).rolls.map(x => x.req0.cacheRead))]));
+  const klass = (r) => (r.req0.cacheRead === 0 ? 'cold' : r.req0.cacheRead < 0.9 * medCr[r.arm] ? 'first-touch' : 'warm');
   const info = (a) => {
     const rs = arm(a).rolls; const warm = rs.filter(r => klass(r) === 'warm');
     const level = median(warm.map(r => r.req0.cacheWrite));
@@ -256,4 +302,89 @@ if (section === 'e2' || section === 'all') {
   console.log('  ss-read :', ex(c => c.tool === 'ss-read' && c.resultText.length > 100));
   console.log('  Read    :', ex(c => c.tool === 'Read' && c.resultText.length > 100));
   console.log('  sed -n  :', ex(c => c.sub === 'sed' && c.resultText.length > 100));
+}
+
+if (section === 'f' || section === 'all') {
+  H('f. Cost attribution to tool results (runner basis). Result tokens = next request cacheWrite - this request out (what was appended), split over the request\'s calls by result chars; each token is written once (1.25x) and read in every later request');
+  const Wp = P.in * 1.25 / 1e6, Rp = P.cache / 1e6, Op = P.out / 1e6;
+  const tot = {}; const buckets = {};
+  for (const a of ARMS) {
+    const m = {}; let outCost = 0, resCost = 0, allCost = 0;
+    const byRoll = new Map(); for (const r of arm(a).reqs) { if (!byRoll.has(r.id)) byRoll.set(r.id, []); byRoll.get(r.id).push(r); }
+    for (const rs of byRoll.values()) {
+      rs.sort((x, y) => x.req - y.req); const N = rs.length;
+      for (let i = 0; i < N; i++) {
+        const r = rs[i]; allCost += r.costUsd; outCost += r.tok.out * Op;
+        if (!r.calls.length || i + 1 >= N) continue;
+        const appended = Math.max(0, rs[i + 1].tok.cacheWrite + rs[i + 1].tok.inUncached - r.tok.out);
+        const chars = sum(r.calls, c => c.resultChars) || 1; const laterReads = N - 2 - i; // requests after i+1
+        for (const c of r.calls) {
+          const k = c.tool === 'Bash' ? `Bash:${c.sub}` : c.tool; const tk = appended * c.resultChars / chars;
+          const cost = tk * Wp + tk * Rp * Math.max(0, laterReads);
+          const o = (m[k] = m[k] || { n: 0, tk: 0, cost: 0 }); o.n++; o.tk += tk; o.cost += cost; resCost += cost;
+        }
+      }
+    }
+    tot[a] = { m, allCost, outCost, resCost, nCalls: sum(Object.values(m), o => o.n) };
+  }
+  const rows = [];
+  for (const a of ARMS) {
+    const { m, allCost, nCalls } = tot[a];
+    for (const [k, o] of Object.entries(m).sort((x, y) => y[1].cost - x[1].cost).slice(0, 7)) rows.push([a, k, String(o.n), pc(o.n / nCalls), f0(o.tk / o.n), usd(o.cost), pc(o.cost / allCost)]);
+  }
+  table(['arm', 'tool', 'calls', '% of calls', 'result tokens / call (derived)', 'result cost (write + later reads)', '% of arm cost'], rows);
+  table(['arm', 'all tool results', 'output (args + text + thinking)', 'everything else (prefix, reminders, question, unattributed)', 'arm total'], ARMS.map(a => { const t = tot[a]; return [a, `${usd(t.resCost)} (${pc(t.resCost / t.allCost)})`, `${usd(t.outCost)} (${pc(t.outCost / t.allCost)})`, `${usd(t.allCost - t.resCost - t.outCost)} (${pc(1 - (t.resCost + t.outCost) / t.allCost)})`, usd(t.allCost)]; }));
+}
+
+if (section === 'g' || section === 'all') {
+  H('g. Paired sweet - native per question (n=130), stratified bootstrap by set (B=20000, seed 42, as the runner)');
+  const mulberry32 = (seed) => { let a = seed >>> 0; return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const per = (a) => { const m = new Map(); for (const r of roll.filter(x => x.arm === a)) m.set(r.id, { set: r.set, reqs: req.filter(q => q.arm === a && q.id === r.id), roll: r }); return m; };
+  const N = per('native'), S = per('sweet');
+  const cw2 = (r) => (r.tok.cacheWrite1h ?? 0) * P.in * 2 / 1e6 + (r.tok.cacheWrite5m ?? 0) * P.in * 1.25 / 1e6;
+  const metrics = {
+    'cost $ (runner basis, write 1.25x)': (x) => sum(x.reqs, r => r.costUsd),
+    'cost $ (1h write 2x, Claude Code ledger)': (x) => sum(x.reqs, r => r.costUsd - r.tok.cacheWrite * P.in * 1.25 / 1e6 + cw2(r)),
+    'req-0 cache-write $ (1.25x)': (x) => sum(x.reqs.filter(r => r.req === 0), r => r.tok.cacheWrite * P.in * 1.25 / 1e6),
+    'req-1+ cache-write $ (1.25x)': (x) => sum(x.reqs.filter(r => r.req > 0), r => r.tok.cacheWrite * P.in * 1.25 / 1e6),
+    'cache-read $': (x) => sum(x.reqs, r => r.tok.cacheRead * P.cache / 1e6),
+    'output $': (x) => sum(x.reqs, r => r.tok.out * P.out / 1e6),
+    'turns': (x) => x.reqs.length, 'calls': (x) => x.roll.calls,
+    'naive no-cache $': (x) => sum(x.reqs, r => r.tok.inTotal * P.in / 1e6 + r.tok.out * P.out / 1e6),
+  };
+  const rows = [];
+  for (const [name, f] of Object.entries(metrics)) {
+    const ids = [...N.keys()]; const d = ids.map(id => ({ set: N.get(id).set, d: f(S.get(id)) - f(N.get(id)) }));
+    const by = new Map(); for (const x of d) { if (!by.has(x.set)) by.set(x.set, []); by.get(x.set).push(x.d); }
+    const rnd = mulberry32(42); const ms = [];
+    for (let b = 0; b < 20000; b++) { let s = 0, n = 0; for (const ds of by.values()) for (let j = 0; j < ds.length; j++) { s += ds[Math.floor(rnd() * ds.length)]; n++; } ms.push(s / n); }
+    ms.sort((x, y) => x - y);
+    const nat = mean(ids.map(id => f(N.get(id)))), swt = mean(ids.map(id => f(S.get(id))));
+    const lo = ms[Math.floor(0.025 * 20000)], hi = ms[Math.floor(0.975 * 20000)];
+    rows.push([name, f4(nat), f4(swt), f4(swt - nat), pc(swt / nat - 1), `[${f4(lo)}, ${f4(hi)}]${lo > 0 || hi < 0 ? ' *' : ''}`]);
+  }
+  table(['metric (per question)', 'native', 'sweet', 'delta', 'rel', '95% CI of delta'], rows);
+  console.log('\nBy set (runner-basis cost, sum over questions):');
+  table(['set', 'n', 'native $', 'sweet $', 'rel'], ['vault', 'heldout', 'ood'].map(st => { const ids = [...N.keys()].filter(id => N.get(id).set === st); const a = sum(ids, id => sum(N.get(id).reqs, r => r.costUsd)), b = sum(ids, id => sum(S.get(id).reqs, r => r.costUsd)); return [st, String(ids.length), usd(a), usd(b), pc(b / a - 1)]; }));
+}
+
+if (section === 'sbs') {
+  // compact side-by-side (native / sweet) tables for the forensics note
+  const pair = (f) => ARMS.map(f).join(' / ');
+  console.log(`\n#### ${cell}: per request position, main thread, mean tokens (native / sweet)\n`);
+  table(['req', 'n', 'inUncached', 'cacheRead', 'cacheWrite', 'out', 'hit ratio'], [0, 1, 2, 3, 4, '5+'].map(p => {
+    const g = (a) => arm(a).reqs.filter(r => r.thread === 'main' && (p === '5+' ? r.req >= 5 : r.req === p));
+    return [String(p), pair(a => g(a).length), pair(a => f0(mean(g(a).map(r => r.tok.inUncached)))), pair(a => f0(mean(g(a).map(r => r.tok.cacheRead)))), pair(a => f0(mean(g(a).map(r => r.tok.cacheWrite)))), pair(a => f0(mean(g(a).map(r => r.tok.out)))), pair(a => pc(sum(g(a), r => r.tok.cacheRead) / sum(g(a), r => r.tok.inTotal)))];
+  }));
+  console.log(`\n#### ${cell}: dollars (native / sweet), 130 rollouts each\n`);
+  const C = Object.fromEntries(ARMS.map(a => [a, comp(arm(a).reqs)]));
+  const T = (a) => C[a].unc + C[a].cr + C[a].cw + C[a].out;
+  table(['bucket', 'native', 'sweet', 'sweet - native', 'share of native / sweet'], [
+    ['uncached input', usd(C.native.unc), usd(C.sweet.unc), usd(C.sweet.unc - C.native.unc), pair(a => pc(C[a].unc / T(a)))],
+    ['cache read', usd(C.native.cr), usd(C.sweet.cr), usd(C.sweet.cr - C.native.cr), pair(a => pc(C[a].cr / T(a)))],
+    ['cache write (1.25x)', usd(C.native.cw), usd(C.sweet.cw), usd(C.sweet.cw - C.native.cw), pair(a => pc(C[a].cw / T(a)))],
+    ['output', usd(C.native.out), usd(C.sweet.out), usd(C.sweet.out - C.native.out), pair(a => pc(C[a].out / T(a)))],
+    ['TOTAL runner basis', usd(T('native')), usd(T('sweet')), usd(T('sweet') - T('native')), pc(T('sweet') / T('native') - 1)],
+    ['TOTAL, 1h write at 2x', usd(T('native') - C.native.cw + C.native.cw1h2x), usd(T('sweet') - C.sweet.cw + C.sweet.cw1h2x), usd(T('sweet') - C.sweet.cw + C.sweet.cw1h2x - (T('native') - C.native.cw + C.native.cw1h2x)), pc((T('sweet') - C.sweet.cw + C.sweet.cw1h2x) / (T('native') - C.native.cw + C.native.cw1h2x) - 1)],
+  ]);
 }
