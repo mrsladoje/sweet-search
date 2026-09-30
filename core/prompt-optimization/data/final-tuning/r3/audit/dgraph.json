@@ -1,0 +1,87 @@
+{
+ "repo": "dgraph",
+ "keep": [
+  "r3-dgraph-01",
+  "r3-dgraph-02",
+  "r3-dgraph-03",
+  "r3-dgraph-05",
+  "r3-dgraph-06",
+  "r3-dgraph-08",
+  "r3-dgraph-09",
+  "r3-dgraph-10",
+  "r3-dgraph-12",
+  "r3-dgraph-14",
+  "r3-dgraph-15",
+  "r3-dgraph-16",
+  "r3-dgraph-17",
+  "r3-dgraph-19",
+  "r3-dgraph-20",
+  "r3-dgraph-21",
+  "r3-dgraph-23",
+  "r3-dgraph-25",
+  "r3-dgraph-27",
+  "r3-dgraph-28",
+  "r3-dgraph-29",
+  "r3-dgraph-30",
+  "r3-dgraph-31",
+  "r3-dgraph-32",
+  "r3-dgraph-33",
+  "r3-dgraph-34",
+  "r3-dgraph-35",
+  "r3-dgraph-36"
+ ],
+ "fixes": {
+  "r3-dgraph-02": {
+   "expectedFacts": [
+    "The alpha handling the write asks Zero's ShouldServe to serve the field, proposing its OWN group id as the requested owner.",
+    "Zero records the assignment by proposing it through its Raft group; if another group already owns it, the first assignment wins and the existing owner is returned.",
+    "Reserved internal predicates are forced onto group 1 by Zero's ShouldServe regardless of which group asked (so that ACL updates stream from one group and restore after a drop-all is simpler)."
+   ]
+  },
+  "r3-dgraph-03": {
+   "expectedFacts": [
+    "When the identifier map has no direct Zero connection (the live loader builds it with only a client connection to an alpha), its background refill goroutine calls the alpha's AllocateUIDs API for blocks of 100,000 IDs.",
+    "On the alpha, the allocate-IDs RPC first calls AuthorizeCapability with the lease-UIDs capability, then worker.AssignUidsOverNetwork.",
+    "That function goes through the active ZeroHooks; the default implementation forwards the request (with the incoming metadata) to the Zero leader's AssignIds."
+   ],
+   "expectedFiles": [
+    "xidmap/xidmap.go",
+    "edgraph/zero.go",
+    "worker/mutation.go",
+    "worker/default_zero_hooks.go"
+   ]
+  },
+  "r3-dgraph-05": {
+   "expectedFacts": [
+    "A gRPC identity interceptor (documented to be installed ahead of the audit interceptor) calls WithResolvedIdentity, which runs the installed or built-in Authenticator and attaches the resulting Principal to the request context; it never rejects the request.",
+    "The built-in ACL authenticator parses the ACL JWT, requires an exp claim, and builds a Principal with subject, groups, claims and method 'acl'.",
+    "edgraph.extractUserAndGroups first tries userDataFromPrincipal, which rebuilds user data from the Principal when Method is acl and the namespace claim is present; otherwise it falls back to parsing the JWT."
+   ]
+  },
+  "r3-dgraph-06": {
+   "expectedFacts": [
+    "The update is forwarded to the group-1 leader, which stores the schema text as a value of a reserved predicate on a single schema node and commits it.",
+    "Each alpha's admin server starts a background SubscribeForUpdates on that schema predicate's key prefix for group 1; it connects to a group-1 member and receives the updated posting list over a Subscribe stream.",
+    "The subscriber callback skips stale versions or unchanged text, regenerates the GraphQL schema, and swaps it in (resetSchema) only if the namespace's schema was already loaded; otherwise it is lazy-loaded later."
+   ]
+  },
+  "r3-dgraph-15": {
+   "query": "If I want an AI assistant to explore data through the tool endpoint that the database server process itself exposes (not a separately started helper), but never change anything, what is provided for that and what exactly keeps it from writing?"
+  },
+  "r3-dgraph-34": {
+   "expectedFacts": [
+    "Not implemented: NewUriHandler handles only file (or empty) and minio/s3 schemes; any other scheme returns 'Unable to handle url'.",
+    "The same two remote schemes (minio, s3) are all filestore and x.MinioClient recognise; the only mention of azure:// is a comment about how a new scheme handler would be added.",
+    "Other object stores can be reached only if they speak the S3 API, through the minio:// or s3:// scheme with a custom host; there is no native GCS or Azure client."
+   ]
+  },
+  "r3-dgraph-35": {
+   "expectedFacts": [
+    "Not implemented: the full-text functions (alloftext, anyoftext) return boolean matches; allof* is an intersection and anyof* a union of index posting lists, returned in UID order.",
+    "Users can only reorder with orderasc/orderdesc on a field; no term-frequency or scoring data is stored in the index.",
+    "The only scored ranking is vector similarity search (similar_to over HNSW vector indexes), which ranks by vector distance, not by text relevance."
+   ]
+  }
+ },
+ "dropped": {}
+}
