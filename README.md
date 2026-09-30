@@ -1072,15 +1072,15 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 | Whole functions and classes when they fit the embedder's context, split when they don't | Prepends file path · scope chain · symbol · merged siblings · imports used, built from the AST and the code graph |
 | 96 languages · 206 extensions · 18 with full tree-sitter grammars | Each language family's policy was picked by *ablation* on GenCodeSearchNet |
 
-### 🚀 The embedding models, and how we made it blazing fast
-- 🤖 **Two open, code-specialized models**: [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed) (137M, dense) for recall and [LateOn-Code](https://huggingface.co/lightonai/LateOn-Code) (149M, late interaction) for the rerank.
-- ⚡ **[GPU-accelerated](#idx-hardware)**: candle on Metal and CUDA, plus a Neural Engine cascade on M3+ (~18% faster full index). [Hand-written fused attention kernels](#idx-kernels) run inside both models.
-- 🧠 **[Cache-sized CPU batches](#idx-cache)**: each batch fits one layer's weights and activations in the CPU cache, so no GPU is needed for a fast build.
-- 🗜️ **[Two quantizations](#idx-quantize)**: INT8 weights make the CPU build ~2× faster. INT4 vectors shrink the late-interaction index from 1.34 GiB to ~396 MiB, with no measurable retrieval loss.
+<br>
 
-<a id="idx-hardware"></a>
-
-**The inference engine, picked for your silicon:**
+### 🚀 The embedding models, and how we made them blazing fast
+####   🤖 **Two open, code-specialized models**: 
+> - [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed) (137M, dense) for recall and [LateOn-Code](https://huggingface.co/lightonai/LateOn-Code) (149M, late interaction) for the rerank.<br>
+> - [Late-On-Code-edge](https://huggingface.co/lightonai/LateOn-Code-edge) (17M, late interaction) - edge fallback auto-selected for weaker hosts
+####   ⚡ **GPU-accelerated**: 
+> - candle on Metal and CUDA, plus a Neural Engine cascade on M3+ (~18% faster full index). <br>
+> - **Hand-written fused attention kernels** for both models
 
 | Your hardware | What runs |
 |--|--|
@@ -1089,41 +1089,17 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 | 🟩 NVIDIA GPU (SM 7.0+) | candle **CUDA**; **flash-attention** on Ampere+ |
 | 💻 No accelerator | **ONNX Runtime INT8** — tuned CPU path, 132 MB model, **zero GPU weights downloaded** |
 
-<a id="idx-chunk"></a>
-### 🧩 Chunking — cut along the syntax tree
-- **[cAST](https://arxiv.org/abs/2506.15655)** structure-aware chunking over real **tree-sitter** ASTs: a recursive *split-then-merge* greedily packs sibling AST nodes up to the size cap and recurses *into* nodes too big to fit. So a chunk is a **function, a class, or a contiguous run of declarations** whenever it fits the embedder's context (a cap of about 2,000 characters). A function too big for it is split between statements, never mid-statement or mid-literal.
-- **18 languages** get full tree-sitter grammars — `JS · TS · TSX · Python · Go · Rust · Java · C · C++ · Ruby · PHP · Kotlin · Swift · C# · Solidity · OCaml · ReScript · TLA+` — and regex patterns plus a lossless fallback chunker bring the total to **96 languages and file formats** across **206 file extensions**.
+####   🧠 **Cache-sized CPU batches**: 
+> - each batch fits one layer's weights and activations in the CPU cache *(which we auto-detect)* <br>
+> - maximum paralellization on all available cores <br>
+> - ORT drives the CPU path *(ONNX Runtime)*
 
-<a id="idx-enrich"></a>
-### 🏷️ Metadata — context the encoder can actually see
-- Every chunk ships its **symbol name · entity type · signature · line span** — the metadata that powers the code graph, `ss-read`'s unread-symbol hints, and the self-contained answers everywhere else.
-- **Contextual enrichment:** before embedding, each chunk is prefixed with a structured preamble assembled from the AST + code graph — *file path · enclosing-scope breadcrumb · name & type · merged siblings · the imports it actually uses*. **Both** encoders see it, so a bare `getId()` still retrieves on the class and module around it.
-- Our nod to **[Anthropic's Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval)** — except they prepend an *LLM-generated* summary (one model call per chunk); we derive the context **deterministically from structure**: no LLM, no per-chunk inference, regenerated for free on every reindex. **Tuned per language** from GenCodeSearchNet ablations — Python stays minimal, the Java family keeps a slug-stripped path, JS/Ruby/Go/C/C++/Rust get the full preamble where closures and imports earn their keep.
-
-<a id="idx-cache"></a>
-### 🧠 Cache-aware batching — we read your CPU before we batch it
-- We **detect your last-level cache at runtime** — `hw.perflevel0.l2cachesize` (the 16 MB P-cluster on Apple Silicon, *not* the smaller E-cluster), Intel L3, or `/sys/.../cache` on Linux — then size every embedding batch so **one transformer layer's weights *plus* the batch's activations stay resident in cache**. No spilling to main memory mid-layer; on a long-sequence tail that's the difference between B=1 and a measured **2.1× per-chunk slowdown**.
-- **Uses every core the hardware really has** — full count on ARM/Apple Silicon; x86 SMT siblings discounted because they don't scale inference linearly.
-- **ORT drives the CPU path** (ONNX Runtime); GPU hosts swap in fused kernels (below). Either way inference runs off the event loop as a napi `AsyncTask`, so tokenization and SQLite writes overlap compute instead of stalling behind it.
-
-<a id="idx-quantize"></a>
-### 🗜️ Two quantizations — one buys speed, one buys size
-| | **Model weights** · INT8 ORT | **Index vectors** · INT4 binary |
-|:--|:--|:--|
-| **Job** | build the index faster on CPU | keep the on-disk index tiny |
-| **Win** | **~2× faster** indexing · 4× smaller model (**132 MB**) | LI index **1.34 GiB → ~396 MiB** · INT4 nibble-packing halves it again |
-| **Fidelity** | **≥ 0.96 cosine** vs FP32 | **no measurable retrieval loss** (A/B-tested vs INT8) |
-
-<a id="idx-embed"></a>
-### 🤖 Two models — both open, both local, both code-specialized
-- **[CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)** — 768-d dense bi-encoder (137M, Apache-2.0) for first-stage recall.
-- **[LateOn-Code](https://huggingface.co/lightonai/LateOn-Code)** — ModernBERT per-token **late interaction** (149M) for the rerank.
-- **Edge fallback for leaner machines:** a **17M `edge` LateOn-Code** (~9× smaller FP32 backbone) auto-selects on low-RAM hosts, and the whole CPU path runs INT8 with **no GPU weights ever downloaded** — full local search on a laptop with no accelerator.
-
-<a id="idx-kernels"></a>
+####   🗜️ **Two quantizations**: 
+> - goals are improved speed and lower storage demand
+> - INT8 weights make the CPU build ~2× faster. INT4 vectors shrink the late-interaction index ~3x, with no measurable retrieval loss.
 
 <details>
-<summary><b>What's actually custom here — the kernels we hand-wrote</b></summary>
+<summary><b>The GPU kernels we hand-wrote</b></summary>
 
 <br/>
 
