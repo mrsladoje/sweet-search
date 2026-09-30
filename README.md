@@ -874,7 +874,7 @@ We <b>hill-climbed</b> that prompt for the <i>largest cost saving at unharmed re
 </tr>
 </table>
 
-`sweet-search init` installs the prompt for you. Here is how we found it 👇
+`sweet-search init` installs the prompt for you. Here is how we found it, with [🧬 GEPA](https://arxiv.org/abs/2507.19457) for step ① 👇
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"titleColor": "#1e1b4b", "textColor": "#1e1b4b", "lineColor": "#8e9baa", "edgeLabelBackground": "#f4f8fb"}, "themeCSS": ".cluster-label span { font-size: 19px; font-weight: 700; }", "flowchart": {"wrappingWidth": 400, "rankSpacing": 65, "nodeSpacing": 60, "subGraphTitleMargin": {"top": 6, "bottom": 14}}}}%%
@@ -943,14 +943,6 @@ flowchart TB
     linkStyle 14 stroke:#dc2626,stroke-width:2px;
     linkStyle 15 stroke:#ff5ba3,stroke-width:3px;
 ```
-
-| | ① Retrieval · [🧬 GEPA](https://arxiv.org/abs/2507.19457) | ② Task completion · by hand | ③ System prompt hill-climbing |
-|--|--|--|--|
-| 🎯 **Goal** | cheapest prompt that still finds the right code | agent finishes the edit, not only the search | the agent's own prompt stops fighting our rules |
-| 🤖 **Agents** | Claude Code · Codex | Claude Code · Codex · opencode | Claude Code · Codex · opencode |
-| 🔁 **Loop** | LLMs read the runs, write new candidates | analyze failed traces → write one rule | remove one conflicting line or add one focused line (e.g. turn packing) → rerun |
-| ✅ **Kept if** | Pareto-best: cheapest at the best retrieval | microsmoke: it helps and costs no more | microsmoke: cheaper at equal solves, every feature kept |
-| 🔒 **Checked on** | unseen questions, languages, model families | control tasks | a second, disjoint task rotation |
 
 ### 💡 What the prompt says
 
