@@ -30,6 +30,10 @@
  *
  * Verified by $0 request capture on Claude Code 2.1.281 (handoff harness-prompt-trim).
  *
+ * v2.2 (2026-09-30): the main-agent prompt ships with CLAUDE_LEAN_PROMPT_EDITS applied, i.e. the
+ * benchmark arm CC_HARNESS_TRIM=product + CC_TRIM_BATCH=read6fs, byte for byte
+ * (tests/init/harness-prompts.test.js).
+ *
  * v1 (the benchmarked "max-batch" form) also denied 16 tools and set 5 env switches. Its texts
  * stay exported below under their old names because the benchmark's old modes (max, max-batch,
  * lean, lean-batch) import them and must stay byte-identical. The product no longer installs
@@ -48,6 +52,7 @@ import {
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { CLAUDE_SYSTEM_OVERRIDE } from './install-claude-system-prompt.js';
+import { applyExactEdits } from './harness-prompts/index.js';
 
 export const CLAUDE_LEAN_AGENT_NAME = 'sweet-search';
 export const CLAUDE_LEAN_AGENT_REL = '.claude/agents/sweet-search.md';
@@ -161,6 +166,38 @@ export const CLAUDE_LEAN_HARNESS_PROMPT = [
 export const CLAUDE_LEAN_BATCH_LINE =
   '- Combine dependent shell steps into one Bash call when you do not need the intermediate output, for example a build and the command that checks its result. Make file changes with Edit or Write.';
 export const CLAUDE_LEAN_HARNESS_PROMPT_BATCH = `${CLAUDE_LEAN_HARNESS_PROMPT}\n${CLAUDE_LEAN_BATCH_LINE}`;
+
+// v2.2 (2026-09-30): the shipped main-agent prompt is the benchmark arm CC_HARNESS_TRIM=product +
+// CC_TRIM_BATCH=read6fs. These edits turn the v2.1 text above into it. SINGLE SOURCE: the
+// benchmark's read6/read6fs variants (eval/task-completion-bench/harness/trim/batch-variants.mjs)
+// import them from here. Each find must occur exactly once in the agent body.
+//   noedit  the batching line without "Make file changes with Edit or Write." (stock has no such
+//           sentence, and in bypass mode stock says the opposite; the tools stay available)
+//   act     keep "recommend one option", and do not describe options you will not take
+//   report  also name approaches decided against that the user should know about
+//   git     `git log` only when recent commits matter
+//   pack    a concrete packed-turn example instead of "can go in parallel"
+export const CLAUDE_LEAN_NOEDIT_LINE = CLAUDE_LEAN_BATCH_LINE.replace(' Make file changes with Edit or Write.', '');
+export const CLAUDE_LEAN_EDIT_ACT = Object.freeze([
+  '- When you have enough information to act, act. Do not re-derive settled facts or reopen decisions the user made. When you weigh a choice, recommend one option instead of surveying them all.',
+  '- When you have enough information to act, act. Do not re-derive settled facts or reopen decisions the user made. When you weigh a choice, recommend one option instead of surveying them all, and do not describe options you will not take.',
+]);
+export const CLAUDE_LEAN_EDIT_REPORT = Object.freeze([
+  '- Report what really happened: show the output of a failing test, name any step you skipped, and call work finished only after you checked it. When it is done and checked, say so plainly.',
+  '- Report what really happened: show the output of a failing test, name any step you skipped and any approach you decided against that the user should know about, and call work finished only after you checked it. When it is done and checked, say so plainly.',
+]);
+export const CLAUDE_LEAN_EDIT_GIT = Object.freeze([
+  'When git state matters (the branch, uncommitted changes, recent commits), run `git status --short --branch` and `git log --oneline -5` first.',
+  'When git state matters, run `git status --short --branch`, and `git log --oneline -5` only when recent commits matter.',
+]);
+export const CLAUDE_LEAN_EDIT_PACK = Object.freeze([
+  '- Tool calls that do not depend on each other can go in parallel in one response.',
+  '- Pack independent steps into one response. Example: when you need a search and two files you already know about, send the search and both reads as parallel tool calls in the same response, not in three turns; when several edits do not depend on each other, send them together; join shell commands whose intermediate output you do not need into one Bash call with `&&`. Keep a step whose result decides your next step on its own.',
+]);
+export const CLAUDE_LEAN_PROMPT_EDITS = Object.freeze([
+  Object.freeze([CLAUDE_LEAN_BATCH_LINE, CLAUDE_LEAN_NOEDIT_LINE]),
+  CLAUDE_LEAN_EDIT_ACT, CLAUDE_LEAN_EDIT_REPORT, CLAUDE_LEAN_EDIT_GIT, CLAUDE_LEAN_EDIT_PACK,
+]);
 
 // Plan subagent. The built-in Plan type omits the project rules (omitClaudeMd), so it searched
 // with Claude Code's own tools and advice. A project agent with the same name replaces it, and a
@@ -323,10 +360,15 @@ export function claudeLeanContextSection({ memoryDir = null, memoryEnabled = tru
  * Main-agent file. `appendOverride` puts the sweet-search routing override after the base
  * prompt (the product); the benchmark passes the override through its own
  * `--append-system-prompt` instead and sets it false. `memoryDir` / `memoryEnabled` come from
- * `claudeAutoMemoryDir` at install time.
+ * `claudeAutoMemoryDir` at install time. `promptEdits` applies CLAUDE_LEAN_PROMPT_EDITS (the
+ * shipped read6fs text); the benchmark sets it false and applies its own CC_TRIM_BATCH variant.
  */
-export function claudeLeanAgentFile({ appendOverride = true, memoryDir = null, memoryEnabled = true } = {}) {
-  const parts = [CLAUDE_LEAN_HARNESS_PROMPT_BATCH, claudeLeanContextSection({ memoryDir, memoryEnabled })];
+export function claudeLeanAgentFile({
+  appendOverride = true, memoryDir = null, memoryEnabled = true, promptEdits = true,
+} = {}) {
+  let body = [CLAUDE_LEAN_HARNESS_PROMPT_BATCH, claudeLeanContextSection({ memoryDir, memoryEnabled })].join('\n\n');
+  if (promptEdits) body = applyExactEdits(body, CLAUDE_LEAN_PROMPT_EDITS, 'claude lean prompt');
+  const parts = [body];
   if (appendOverride) parts.push(CLAUDE_SYSTEM_OVERRIDE);
   return `---\nname: ${CLAUDE_LEAN_AGENT_NAME}\ndescription: sweet-search lean harness (main session)\n---\n\n${parts.join('\n\n')}\n`;
 }
@@ -392,14 +434,14 @@ function removeOwnedFile(projectRoot, rel) {
  *
  * `configDir` is the Claude Code config directory the sessions will use (default:
  * CLAUDE_CONFIG_DIR, else ~/.claude); it places the auto-memory path written into the main agent.
- * `visibleConfigDir`: see `claudeAutoMemoryDir`.
+ * `visibleConfigDir`: see `claudeAutoMemoryDir`. `promptEdits`: see `claudeLeanAgentFile`.
  *
  * @returns {{status: string, detail: string, active: boolean|null, warning?: string}}
  *   status in { installed, unchanged, preserved-existing, error }. `active` is true when
  *   Claude Code will start the main session with the sweet-search agent.
  */
 export function installClaudeLeanHarness({
-  projectRoot, appendOverride = true, configDir, visibleConfigDir, env = process.env,
+  projectRoot, appendOverride = true, promptEdits = true, configDir, visibleConfigDir, env = process.env,
 } = {}) {
   if (!projectRoot) return { status: 'error', detail: 'install-claude-lean-harness: projectRoot is required', active: null };
   const settingsPath = join(projectRoot, SETTINGS_REL);
@@ -450,7 +492,9 @@ export function installClaudeLeanHarness({
 
   const memory = claudeAutoMemoryDir({ projectRoot, configDir, visibleConfigDir, env });
   const wantedFiles = {
-    [CLAUDE_LEAN_AGENT_REL]: claudeLeanAgentFile({ appendOverride, memoryDir: memory.dir, memoryEnabled: memory.enabled }),
+    [CLAUDE_LEAN_AGENT_REL]: claudeLeanAgentFile({
+      appendOverride, promptEdits, memoryDir: memory.dir, memoryEnabled: memory.enabled,
+    }),
     [CLAUDE_LEAN_SUBAGENT_REL]: claudeLeanSubagentFile(),
     [CLAUDE_LEAN_PLAN_REL]: claudeLeanPlanFile(),
   };

@@ -14,7 +14,11 @@ import {
   OPENCODE_TRIM_MAX_DISABLED_TOOLS, OPENCODE_TRIM_MAX_TOOL_EDITS, OPENCODE_TRIM_V3_TOOL_EDITS,
   OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT, opencodeUnjailedEnv, runOpencodePreflight,
   OPENCODE_CONFLICT_TOOL_EDITS, OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS, OPENCODE_CONFLICT_PROMPT_BULLET,
+  OPENCODE_CONFLICT2_TOOL_EDITS, OPENCODE_CONFLICT3_TOOL_EDITS,
 } from '../harness/opencode-task-runner.mjs';
+import {
+  OPENCODE_TRIM_PLUGIN_SOURCE, OPENCODE_TOOL_EDITS as SHIPPED_TOOL_EDITS, opencodePrompt as shippedOpencodePrompt,
+} from '../../../scripts/harness-prompts/index.js';
 import { OPENCODE_GPT_ORIGINAL, EFFICIENCY_LINE, opencodeBatchPrompt, opencodeBatchToolEdits } from '../harness/trim/batch-variants.mjs';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync } from 'node:fs';
@@ -124,7 +128,7 @@ for (const [mode, model] of [['yes', 'x-ai/grok-4.5'], ['2', 'x-ai/grok-4.5'], [
 }
 
 console.log('\nplugin edits only descriptions, and reports them:');
-const { default: plugin } = await import(join(BENCH, 'harness/trim', OPENCODE_TRIM_PLUGIN));
+const { default: plugin } = await import(OPENCODE_TRIM_PLUGIN_SOURCE); // shipped by init (scripts/harness-prompts/)
 const reportPath = join(STATE, OPENCODE_TRIM_REPORT);
 const hooks = await plugin({}, { edits: OPENCODE_TRIM_TOOL_EDITS, report: reportPath });
 const offBody = JSON.parse(readFileSync(join(CAPTURES, 'opencode-1.18.4-request-sweet-trim-off-default.json'), 'utf8'));
@@ -427,6 +431,23 @@ console.log('\npreflight retry (2026-09-29 INFRA defect):');
   let e6 = null;
   try { await runOpencodePreflight({ spawn: f6.spawn, cwd: STATE, env: {}, plugins: [], ...quiet }); } catch (e) { e6 = e; }
   assert(e6 && /did not return JSON/.test(e6.message) && f6.calls.length === 2, 'non-JSON debug config (exit 0) fails at once, never retried', e6?.message);
+}
+
+console.log('\nshipped by `sweet-search init --opencode` = conflict3+todo3eff3k (single source):');
+{
+  const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+  const t = opencodeHarnessTrim('conflict3+todo3eff3k', { apiModel: 'openai/gpt-5.6-luna', stateDir: STATE });
+  assert(t.config.agentBuild.prompt === shippedOpencodePrompt() && t.config.agents.general.prompt === shippedOpencodePrompt(),
+    'the shipped prompt is byte-identical to the bench arm (build + general)');
+  assert(same(t.config.plugin[0][1].edits, SHIPPED_TOOL_EDITS) && same(t.config.tools, { grep: false })
+      && same(t.config.agents.explore, { disable: true }),
+    'the shipped tool edits, grep off and explore off are the bench arm');
+  assert(OPENCODE_CONFLICT3_TOOL_EDITS === SHIPPED_TOOL_EDITS
+      && same(SHIPPED_TOOL_EDITS, { bash: OPENCODE_CONFLICT2_TOOL_EDITS.bash, read: OPENCODE_CONFLICT2_TOOL_EDITS.read,
+        task: OPENCODE_CONFLICT2_TOOL_EDITS.task, glob: OPENCODE_CONFLICT2_TOOL_EDITS.glob }),
+    "conflict3's tool edits = conflict2's bash/read/task/glob edits (defined once, in the product)");
+  assert(t.files[OPENCODE_TRIM_PLUGIN] === readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8'),
+    'the bench copies the shipped plugin file into the state dir');
 }
 
 rmSync(STATE, { recursive: true, force: true });

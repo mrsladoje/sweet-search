@@ -8,9 +8,13 @@
  * install. During an upgrade, this module removes only the marker block owned
  * by the older CLAUDE.md-based layout and preserves all user-authored prose.
  *
- * AGENTS.md remains the direct policy surface for Codex/OpenCode. Gemini may
- * symlink to AGENTS.md when both are enabled; otherwise its own file carries
- * the body. Cursor always carries the body behind its required frontmatter.
+ * AGENTS.md (--agents) carries the policy directly for any tool that reads it.
+ * Codex and opencode do NOT use it: `init --codex` / `--opencode` deliver the
+ * policy through their own project config (install-codex-harness.js,
+ * install-opencode-harness.js), and `stripLegacyAgentsBlock` migrates an older
+ * install's AGENTS.md block away. Gemini may symlink to AGENTS.md when both are
+ * enabled; otherwise its own file carries the body. Cursor always carries the
+ * body behind its required frontmatter.
  *
  * Marker contract (idempotent rewrite — never modify content outside it):
  *   <!-- sweet-search:agent-instructions:begin -->
@@ -312,7 +316,7 @@ export function injectAgentInstructions({
           : 'untouched';
   }
 
-  // 2. AGENTS.md is always a direct M± surface for Codex/OpenCode. It never
+  // 2. AGENTS.md (--agents) is always a direct M± surface. It never
   // imports CLAUDE.md, so Claude's project instructions cannot leak into those
   // harnesses and disabling Claude changes nothing about their delivery.
   if (enabled.has('agents')) {
@@ -378,6 +382,23 @@ export function injectAgentInstructions({
 
   if (!report.canonical && enabled.has('claude-code')) report.canonical = 'claude-rule';
   return report;
+}
+
+/**
+ * Migration for `init --codex` / `init --opencode` (without `--agents`): those harnesses now get the
+ * policy through their own project config (.codex/config.toml, .opencode/opencode.json), so an
+ * older install's AGENTS.md block would deliver it twice. Strip only our marker block (the file is
+ * deleted when nothing else remains, as for the legacy CLAUDE.md block), and remove a GEMINI.md
+ * symlink of ours that would now dangle.
+ * @returns 'removed' | 'file-deleted' | 'not-found'
+ */
+export function stripLegacyAgentsBlock({ projectRoot } = {}) {
+  if (!projectRoot) throw new TypeError('strip-legacy-agents-block: projectRoot is required');
+  const status = stripMarkerBlock({ filePath: join(projectRoot, AGENTS_FILE) });
+  if (status === 'file-deleted') {
+    removeSymlinkIfOurs({ linkPath: join(projectRoot, GEMINI_FILE), expectedTargets: [AGENTS_FILE] });
+  }
+  return status;
 }
 
 /**

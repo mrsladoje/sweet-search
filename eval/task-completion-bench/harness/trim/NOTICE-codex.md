@@ -134,7 +134,8 @@ message, `<environment_context>` and `update_plan`. Config keys: the first four 
 
 ## Conflict-only (luna only, `CODEX_HARNESS_TRIM=conflict`, 2026-09-27)
 
-`codex-0.146.1-instructions-conflict-gpt-5.6-luna.md`: built from the same capture and sha256 as
+`codex-0.146.1-instructions-conflict-gpt-5.6-luna.md` (now in `scripts/harness-prompts/`, because
+`sweet-search init --codex` ships it with `CODEX_TRIM_BATCH=yt3batch2`; see `NOTICE.md` there): built from the same capture and sha256 as
 the luna edit (`build-codex-instructions.mjs`, variant `gpt-5.6-luna-conflict`). It is the ORIGINAL
 prompt with two lines deleted and nothing else.
 

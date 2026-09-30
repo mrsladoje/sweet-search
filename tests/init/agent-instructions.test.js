@@ -538,6 +538,14 @@ describe('parseInitArgs — opt-in defaults + universal --no-claude', () => {
     expect(resolveActiveHarnesses(args)).toEqual(['agents']);
   });
 
+  it('--codex / --opencode no longer imply AGENTS.md (their rules go in the project config)', () => {
+    const args = parseInitArgs(['--codex', '--opencode']);
+    expect(args.codex).toBe(true);
+    expect(args.opencode).toBe(true);
+    expect([...args.optInHarnesses]).toEqual([]);
+    expect(resolveActiveHarnesses(args)).toEqual(['claude-code']);
+  });
+
   it('--no-agent-instructions sets the umbrella flag', () => {
     const args = parseInitArgs(['--no-agent-instructions']);
     expect(args.skipAgentInstructions).toBe(true);

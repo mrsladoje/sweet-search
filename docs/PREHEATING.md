@@ -138,13 +138,17 @@ harness-agnostic — reads only env/cwd, writes nothing to stdout):
   `codex_hooks`). The user-level `~/.codex/config.toml` is left untouched unless
   you pass the legacy/advanced `--codex-enable-global-hooks` (not required for
   normal setup).
-- **`AGENTS.md`** — `--codex` implies `--agents` (Codex's instruction file).
+- **The rules and base instructions** — `developer_instructions` (the rules) and
+  `model_instructions_file` (our tested base instructions,
+  `.codex/sweet-search-instructions.md`) in the same project `.codex/config.toml`.
+  `--codex` no longer writes `AGENTS.md`; an old sweet-search block there is removed.
 - **MCP is not touched.** `init --codex` never writes `.mcp.json`; MCP stays
   optional and unrelated to default incremental indexing.
 
 `uninstall` removes the sweet-search-owned `SessionStart` entry from
-`.codex/hooks.json` (deleting the file if it was the only entry); the config-flag
-is left in place (harmless, possibly shared).
+`.codex/hooks.json` (deleting the file if it was the only entry), the config keys
+and file init added, and the config flag when init added it (a manifest,
+`.codex/sweet-search-harness.json`, records that; a flag you had before stays).
 
 **The only manual step `init --codex` can't do for you is project trust:**
 

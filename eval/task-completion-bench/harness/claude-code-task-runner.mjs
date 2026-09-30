@@ -248,7 +248,7 @@ export function writeClaudeHookPlugin(dir, { deferRead = false } = {}) {
 export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
   const m = String(mode ?? '').trim();
   if (!m || m === '0') return { mode: null, args: [], env: {} };
-  // 'product' = exactly what `sweet-search init` installs, as project files (settings `agent` +
+  // 'product' = what `sweet-search init` installs, as project files (settings `agent` +
   // main/general-purpose/Plan agent files + permissions.deny + env). The runner installs them into
   // the run dir. Since the conflict-only trim (v2, 2026-09-27) this is NO LONGER max-batch: web,
   // skills, notebooks, scheduling, worktrees etc. stay available, only the Explore/claude subagent
@@ -256,6 +256,8 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
   // denies WebSearch/WebFetch either (it runs stock Claude Code), and the offline frame comes from
   // the rollout's network namespace for both arms, so the product arm keeps web exactly like native.
   // Runs before 2026-09-27 measured the v1 form; never pool them with v2 product runs.
+  // Since 2026-09-30 init ships the main-agent prompt WITH the read6fs edits: the shipped product is
+  // CC_HARNESS_TRIM=product + CC_TRIM_BATCH=read6fs ('product' alone stays the v2.1 text, byte-identical).
   if (m === 'product') {
     const batch = String(process.env.CC_TRIM_BATCH ?? '').trim();
     if (batch && !CC_BATCH_VARIANTS[batch]) throw new Error(`CC_TRIM_BATCH=${batch}: expected ${Object.keys(CC_BATCH_VARIANTS).join(', ')}`);
@@ -648,8 +650,10 @@ export async function runClaudeCodeTask(task, {
     // stock # Memory section: the private home (its settings), seen at $HOME/.claude in the jail
     // or directly via CLAUDE_CONFIG_DIR when unjailed. Written once per rollout, so it is stable
     // across the rollout's turns; its shape (<home>/projects/<rundir slug>/memory/) matches native.
+    // promptEdits: false = the v2.1 product text; CC_TRIM_BATCH applies the variant under test (the
+    // product itself now ships read6fs, i.e. CC_HARNESS_TRIM=product + CC_TRIM_BATCH=read6fs).
     const lean = installClaudeLeanHarness({
-      projectRoot: rundir, appendOverride: false, env: routingEnv,
+      projectRoot: rundir, appendOverride: false, promptEdits: false, env: routingEnv,
       configDir: claudeHome, visibleConfigDir: unjailed ? claudeHome : join(HOMEDIR, '.claude'),
     });
     if (lean.active !== true) throw new Error(`CC_HARNESS_TRIM=product: lean harness not active (${lean.status}: ${lean.detail})`);

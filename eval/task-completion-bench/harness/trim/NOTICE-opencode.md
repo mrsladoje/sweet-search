@@ -10,7 +10,7 @@ when `OC_HARNESS_TRIM=1`, on the sweet arm only. This notice is not sent to the 
 - The four prompts are opencode's own model-family system prompts. The source text is what 1.18.4 sent
   in a $0 capture (`handoffs/improve/harness-prompt-trim/captures/opencode-1.18.4-request-sweet-trim-off-<family>.json`),
   not a reconstruction.
-- `opencode-trim-plugin.mjs` is our own code (it uses opencode's documented `tool.definition` plugin hook).
+- `opencode-trim-plugin.mjs` (now in `scripts/harness-prompts/`, shipped by `sweet-search init --opencode`) is our own code (it uses opencode's documented `tool.definition` plugin hook).
   The tool-description edits it applies are listed in `OPENCODE_TRIM_TOOL_EDITS` in the runner.
 
 ## Licence
@@ -99,7 +99,8 @@ headless benchmark task never uses. Everything else is unchanged.
 
 ## Conflict-only trim (`OC_HARNESS_TRIM=conflict`, `conflict-noglob`, 2026-09-27, gpt family)
 
-No new file: the runner derives the prompt at run time from `opencode-1.18.4-prompt-gpt-original.txt`
+No new file: the runner derives the prompt at run time from `opencode-1.18.4-prompt-gpt-original.txt` (in `scripts/harness-prompts/`,
+where `sweet-search init --opencode` builds its shipped conflict3+todo3eff3k prompt from the same file)
 (the untrimmed gpt prompt as 1.18.4 sends it) and fails if the removed bullet is not found exactly once.
 Only tag **A** changes; no **B** cut is made. The build agent and the `general` subagent get the same prompt.
 

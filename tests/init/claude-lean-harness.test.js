@@ -12,12 +12,15 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { applyExactEdits } from '../../scripts/harness-prompts/index.js';
 
 import {
   CLAUDE_LEAN_AGENT_NAME,
   CLAUDE_LEAN_AGENT_REL,
   CLAUDE_LEAN_BASE_PROMPT_BATCH,
   CLAUDE_LEAN_BATCH_LINE,
+  CLAUDE_LEAN_EDIT_GIT,
+  CLAUDE_LEAN_PROMPT_EDITS,
   CLAUDE_LEAN_DENY,
   CLAUDE_LEAN_ENV,
   CLAUDE_LEAN_HARNESS_DENY,
@@ -111,7 +114,11 @@ describe('installClaudeLeanHarness', () => {
     expect(r.active).toBe(true);
     const main = read(CLAUDE_LEAN_AGENT_REL);
     expect(main).toContain(`name: ${CLAUDE_LEAN_AGENT_NAME}`);
-    expect(main).toContain(CLAUDE_LEAN_HARNESS_PROMPT_BATCH);
+    // The shipped text = the v2.1 prompt with the read6fs edits (one edit is in the context section).
+    const promptEdits = CLAUDE_LEAN_PROMPT_EDITS.filter(e => e !== CLAUDE_LEAN_EDIT_GIT);
+    expect(main).toContain(applyExactEdits(CLAUDE_LEAN_HARNESS_PROMPT_BATCH, promptEdits));
+    expect(main).toContain(CLAUDE_LEAN_EDIT_GIT[1]);
+    for (const [from] of CLAUDE_LEAN_PROMPT_EDITS) expect(main).not.toContain(from);
     expect(main).toContain(CLAUDE_SYSTEM_OVERRIDE);
     const sub = read(CLAUDE_LEAN_SUBAGENT_REL);
     expect(sub).toContain('name: general-purpose');
@@ -137,7 +144,8 @@ describe('installClaudeLeanHarness', () => {
 
   it('the benchmark form omits the override (the runner appends it itself)', () => {
     expect(claudeLeanAgentFile({ appendOverride: false })).not.toContain(CLAUDE_SYSTEM_OVERRIDE);
-    expect(claudeLeanAgentFile({ appendOverride: false })).toContain(CLAUDE_LEAN_HARNESS_PROMPT_BATCH);
+    // The runner's form: the v2.1 text, on which it applies its own CC_TRIM_BATCH variant.
+    expect(claudeLeanAgentFile({ appendOverride: false, promptEdits: false })).toContain(CLAUDE_LEAN_HARNESS_PROMPT_BATCH);
   });
 
   it('is idempotent', () => {
