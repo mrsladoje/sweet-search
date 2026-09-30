@@ -2,7 +2,7 @@
   "name": "query_router_wasm",
   "description": "Ultra-fast query router for code search (<5μs)",
   "version": "1.0.0",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "files": [
     "query_router_wasm_bg.wasm",
     "query_router_wasm.js",

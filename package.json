@@ -86,12 +86,14 @@
     "eval/agent-read-workflows/bin/_ss-env.sh",
     "crates/wasm-router/pkg/",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "THIRD_PARTY_LICENSES"
   ],
   "scripts": {
     "init": "node scripts/init.js",
     "postinstall": "node scripts/postinstall-banner.js",
     "bake:banner": "node scripts/bake-banner.mjs",
+    "licenses:third-party": "node scripts/licenses/generate-third-party-licenses.mjs",
     "build:assets": "node scripts/generate-asset-manifest.js",
     "lint": "eslint core/",
     "build": "node -e \"import('./core/search/sweet-search.js')\" && echo 'Build OK'",

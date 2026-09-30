@@ -3,7 +3,7 @@ name = "query_router_wasm"
 version = "1.0.0"
 edition = "2021"
 description = "Ultra-fast query router for code search (<5μs)"
-license = "MIT"
+license = "Apache-2.0"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
