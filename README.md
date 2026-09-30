@@ -1181,12 +1181,14 @@ before the process exits, and the next edit (or query) respawns a fresh daemon.
 |----------|--------|--------------|
 | macOS arm64 (Apple Silicon) | native | Metal (M1+) · CoreML Neural Engine (M3+) |
 | macOS x64 (Intel) | native | ONNX Runtime INT8 CPU |
-| Linux x64 (glibc) | native | CUDA (SM 7.0+, flash-attn on Ampere+) or INT8 CPU |
+| Linux x64 (glibc) | native | CUDA on NVIDIA Volta+ (V100, T4, RTX 20-series and newer; flash-attn on RTX 30 / A100+) or INT8 CPU |
 | Linux arm64 (glibc) | native | CUDA (Jetson Orin / Grace) or INT8 CPU |
-| Windows | — | via WSL2 (= Linux x64) |
-| Everything else | WASM/JS fallback | runs everywhere Node ≥ 22 runs |
+| Windows | native, inside WSL2 | same as Linux x64. Native Windows is not supported yet. |
+| Other (musl/Alpine, other CPUs) | WASM/JS fallback | untested |
 
-Native binaries are selected automatically at `npm install` time via optionalDependencies — no flags, no postinstall scripts to debug. Every native fast path has a WASM or JS fallback that produces the same results.
+Requires Node ≥ 22. `npm install` picks the right native binary for your machine, with no flags.
+
+On Linux x64, ONNX Runtime's own install step downloads its CUDA libraries. On offline or GPU-less machines, skip that download with `ONNXRUNTIME_NODE_INSTALL=skip npm install`.
 
 ## 🙏 Prior Art & Acknowledgements
 
