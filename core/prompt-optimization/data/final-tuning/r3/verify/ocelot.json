@@ -1,0 +1,1177 @@
+{
+ "r3-ocelot-01": {
+  "id": "r3-ocelot-01",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.DownstreamRouteFinder.Middleware.DownstreamRouteFinderMiddleware.Invoke",
+    "Ocelot.DownstreamRouteFinder.Finder.DownstreamRouteFinder.RouteIsApplicableToThisRequest"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The port parsing and host matching logic are uniquely implemented in DownstreamRouteFinderMiddleware.Invoke and DownstreamRouteFinder.RouteIsApplicableToThisRequest."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "DownstreamRouteFinderMiddleware.Invoke",
+    "DownstreamRouteFinder.Get",
+    "DownstreamRouteFinder.RouteIsApplicableToThisRequest"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The port is stripped only in DownstreamRouteFinderMiddleware.Invoke (hostHeader.Contains(':') ? hostHeader.Split(':')[0] : hostHeader), and the resulting upstreamHost is compared against route.UpstreamHost only in DownstreamRouteFinder.RouteIsApplicableToThisRequest (invoked via the Where clause in Get), so no other location in these files plausibly answers the question."
+  }
+ },
+ "r3-ocelot-07": {
+  "id": "r3-ocelot-07",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.LoadBalancer.LoadBalancerFactory.Get",
+    "Ocelot.ServiceDiscovery.ServiceDiscoveryProviderFactory.Get",
+    "Ocelot.ServiceDiscovery.ServiceDiscoveryProviderFactory.GetServiceDiscoveryProvider"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The load balancer construction and service discovery provider resolution/failure paths are uniquely implemented in LoadBalancerFactory and ServiceDiscoveryProviderFactory."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "LoadBalancerFactory.Get",
+    "ServiceDiscoveryProviderFactory.Get",
+    "ServiceDiscoveryProviderFactory.GetServiceDiscoveryProvider",
+    "ConfigurationServiceProvider",
+    "UnableToFindServiceDiscoveryProviderError"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The trace is uniquely defined: LoadBalancerFactory.Get delegates provider creation to ServiceDiscoveryProviderFactory, whose Get/GetServiceDiscoveryProvider implement the ServiceFabric shortcut, the delegate-based lookup, the warning-plus-UnableToFindServiceDiscoveryProviderError failure path, and the ConfigurationServiceProvider fallback for fixed addresses; no other code in the repo builds route providers or handles unknown discovery types."
+  }
+ },
+ "r3-ocelot-02": {
+  "id": "r3-ocelot-02",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Configuration.Parser.ClaimToThingConfigurationParser.Extract",
+    "Ocelot.Infrastructure.Claims.ClaimsParser.GetValue",
+    "Ocelot.QueryStrings.AddQueriesToRequest.SetQueriesOnDownstreamRequest"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The claim-to-query feature is specifically parsed in ClaimToThingConfigurationParser and evaluated/applied to downstream queries in ClaimsParser and AddQueriesToRequest."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ClaimToThingConfigurationParser.Extract",
+    "ClaimsParser.GetValue",
+    "AddQueriesToRequest.SetQueriesOnDownstreamRequest"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question maps one-to-one onto this pipeline: Extract interprets the 'Claims[key] > value[i] > delimiter' setting text, ClaimsParser.GetValue computes the requested part of the claim value, and AddQueriesToRequest.SetQueriesOnDownstreamRequest replaces/adds the query key and assigns the rebuilt string to downstreamRequest.Query; no other code shown performs these roles (the middleware that invokes SetQueriesOnDownstreamRequest merely wires it up per request)."
+  }
+ },
+ "r3-ocelot-09": {
+  "id": "r3-ocelot-09",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Requester.DelegatingHandlerFactory.Get",
+    "Ocelot.Requester.MessageInvokerPool.CreateMessageInvoker"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The construction and nesting order of the outgoing request handler pipeline is exclusively defined by DelegatingHandlerFactory and MessageInvokerPool."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "DelegatingHandlerFactory.Get",
+    "MessageInvokerPool.CreateMessageInvoker"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The chain order is built in exactly two places: DelegatingHandlerFactory.Get assembles the list (global handlers not named in the route config, then route-named handlers sorted by configured order, then tracing, then QoS), and MessageInvokerPool.CreateMessageInvoker reverses that list, wires each handler's InnerHandler down to the SocketsHttpHandler (so QoS sits innermost), and tops the whole chain with a TimeoutDelegatingHandler; no other code constructs this pipeline."
+  }
+ },
+ "r3-ocelot-03": {
+  "id": "r3-ocelot-03",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Multiplexer.MultiplexingMiddleware.ProcessRoutesWithRouteKeysAsync",
+    "Ocelot.Multiplexer.MultiplexingMiddleware.ProcessRouteWithComplexAggregation",
+    "Ocelot.DownstreamUrlCreator.DownstreamPathPlaceholderReplacer.Replace"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The multiplexing aggregation mechanism using route-keys JSON path extraction and downstream path placeholder replacement is uniquely implemented in these components."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "MultiplexingMiddleware.Invoke",
+    "MultiplexingMiddleware.ProcessRoutesWithRouteKeysAsync",
+    "MultiplexingMiddleware.ProcessRouteWithComplexAggregation",
+    "PlaceholderNameAndValue",
+    "DownstreamPathPlaceholderReplacer.Replace"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The route-key aggregation flow (main route processed first, its response parsed with JToken.Parse, values pulled via SelectTokens on the configured JsonPath, wrapped into a PlaceholderNameAndValue named after the config Parameter, and finally substituted into the downstream path template) exists only in MultiplexingMiddleware and DownstreamPathPlaceholderReplacer, so no other code reasonably answers it; note however that the shown code supports CLAIM 4's Replace behavior but not its assertion that the call site is DownstreamUrlCreatorMiddleware, since that middleware is not among the shown files."
+  }
+ },
+ "r3-ocelot-05": {
+  "id": "r3-ocelot-05",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.RateLimiting.RateLimitingMiddleware.Break",
+    "Ocelot.RateLimiting.RateLimitingMiddleware.ReturnQuotaExceededResponse",
+    "Ocelot.Responder.ErrorsToHttpStatusCodeMapper.Map",
+    "Ocelot.Responder.HttpContextResponder.SetErrorResponseOnContext",
+    "Ocelot.Responder.Middleware.ResponderMiddleware.SetErrorResponse"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The rate-limiting error propagation and response generation flow is uniquely implemented across RateLimitingMiddleware, ErrorsToHttpStatusCodeMapper, ResponderMiddleware, and HttpContextResponder."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "RateLimitingMiddleware.Invoke",
+    "RateLimitingMiddleware.Break",
+    "RateLimitingMiddleware.ReturnQuotaExceededResponse",
+    "RateLimitingMiddleware.GetResponseMessage",
+    "QuotaExceededError",
+    "ResponderMiddleware.Invoke",
+    "ResponderMiddleware.SetErrorResponse",
+    "ErrorsToHttpStatusCodeMapper.Map",
+    "HttpContextResponder.SetErrorResponseOnContext",
+    "HttpContextResponder.WriteToUpstreamAsync"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The quota-exceeded flow is uniquely localized to these symbols: Break stores a DownstreamResponse built by ReturnQuotaExceededResponse (status from options.StatusCode, body from the formatted QuotaMessage, Retry-After when EnableHeaders) and sets a QuotaExceededError carrying that status; ResponderMiddleware.SetErrorResponse maps errors via ErrorsToHttpStatusCodeMapper.Map, which for QuotaExceededError returns the error's own HttpStatusCode instead of a fixed code, sets it with the int overload, and then — only because a QuotaExceededError is present — writes the stored downstream body through the DownstreamResponse overload of SetErrorResponseOnContext (WriteToUpstreamAsync); no other pipeline error path invokes that body-writing overload, so a careful engineer would not find a different answer elsewhere."
+  }
+ },
+ "r3-ocelot-10": {
+  "id": "r3-ocelot-10",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.DownstreamRouteFinder.Finder.DownstreamRouteFinder.Get",
+    "Ocelot.Responder.ErrorsToHttpStatusCodeMapper.Map"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "DownstreamRouteFinder unambiguously produces UnableToFindDownstreamRouteError when no route matches, and ErrorsToHttpStatusCodeMapper maps that error to 404 Not Found."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "ErrorsToHttpStatusCodeMapper.Map",
+    "DownstreamRouteFinder.Get",
+    "UnableToFindDownstreamRouteError"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The caller receives 404 Not Found: DownstreamRouteFinder.Get returns an ErrorResponse with UnableToFindDownstreamRouteError when no applicable route matches the path/method (and headers/host), and ErrorsToHttpStatusCodeMapper.Map maps that error code — and, as its final fall-through, any unrecognised error — to Status404NotFound, so the mapper is the piece that decides the number; no other shown code path yields a different status for an unmatched route, and Claim 3 is unsupported because ResponderMiddleware/body-writing behavior is not present in the provided files."
+  }
+ },
+ "r3-ocelot-08": {
+  "id": "r3-ocelot-08",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.DownstreamRouteFinder.Middleware.DownstreamRouteFinderMiddleware.Invoke",
+    "Ocelot.Authorization.AuthorizationMiddleware.Invoke",
+    "Ocelot.Authorization.ClaimsAuthorizer.Authorize"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The pipeline flow from route finding to claims authorization directly traces through DownstreamRouteFinderMiddleware, AuthorizationMiddleware, and ClaimsAuthorizer."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "DownstreamRouteFinderMiddleware.Invoke",
+    "AuthorizationMiddleware.Invoke",
+    "ClaimsAuthorizer.Authorize"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The flow is a single well-defined chain with no alternative: DownstreamRouteFinderMiddleware.Invoke upserts the matched TemplatePlaceholderNameAndValues into HttpContext.Items, AuthorizationMiddleware.Invoke (when route.IsAuthorized) passes them along with context.User and route.RouteClaimsRequirement to ClaimsAuthorizer.Authorize, which treats a {name} requirement as dynamic, locates the single matching placeholder, and authorizes only if the user's claim values contain that placeholder's value (returning ClaimValueNotAuthorizedError 'config error' for zero or ambiguous matches)."
+  }
+ },
+ "r3-ocelot-04": {
+  "id": "r3-ocelot-04",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Administration.FileConfigurationController.Post",
+    "Ocelot.Configuration.Repository.FileAndInternalConfigurationSetter.SetAsync",
+    "Ocelot.Configuration.Repository.InMemoryInternalConfigurationRepository.AddOrReplace"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The administration HTTP interface route for updating file configuration is exclusively handled by FileConfigurationController.Post, delegating to FileAndInternalConfigurationSetter and InMemoryInternalConfigurationRepository."
+  },
+  "glm": {
+   "ok": false,
+   "why": "unparsable"
+  }
+ },
+ "r3-ocelot-12": {
+  "id": "r3-ocelot-12",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Cache.DefaultCacheKeyGenerator.GenerateRequestCacheKey",
+    "Ocelot.Configuration.CacheOptions"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Cache key generation logic and cache configuration options are uniquely defined in DefaultCacheKeyGenerator and CacheOptions."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "DefaultCacheKeyGenerator.GenerateRequestCacheKey",
+    "CacheOptions.Header",
+    "CacheOptions.Oc_Cache_Control",
+    "CacheOptions.EnableContentHashing"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Cache-key identity is computed in exactly one place — DefaultCacheKeyGenerator.GenerateRequestCacheKey, the default ICacheKeyGenerator consumed by the output-cache middleware — so the method + URL + nominated-header-value (+ request body when EnableContentHashing) → MD5 scheme is the only answer in the repo; only a custom ICacheKeyGenerator registered via DI could differ."
+  }
+ },
+ "r3-ocelot-14": {
+  "id": "r3-ocelot-14",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.RequestId.Middleware.RequestIdMiddleware.SetOcelotRequestId",
+    "Ocelot.RequestId.Middleware.RequestIdMiddleware.ShouldAddRequestId",
+    "Ocelot.RequestId.Middleware.RequestIdMiddleware.AddRequestIdHeader",
+    "Ocelot.Errors.ExceptionHandlerMiddleware.TrySetGlobalRequestId",
+    "Ocelot.RequestId.DefaultRequestIdKey.Value"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The correlation identifier resolution and forwarding rules are completely and specifically implemented across RequestIdMiddleware, ExceptionHandlerMiddleware, and DefaultRequestIdKey."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "RequestIdMiddleware.SetOcelotRequestId",
+    "RequestIdMiddleware.ShouldAddRequestId",
+    "ExceptionHandlerMiddleware.TrySetGlobalRequestId",
+    "DefaultRequestIdKey.Value"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The decision logic is centralized in these files: RequestIdMiddleware.SetOcelotRequestId resolves the key as downstreamRoute.RequestIdKey ?? DefaultRequestIdKey.Value, overrides HttpContext.TraceIdentifier with the client's first header value when present, and forwards the id downstream only per ShouldAddRequestId (route key configured, non-empty value, header not already present), while ExceptionHandlerMiddleware.TrySetGlobalRequestId performs the earlier global-configuration check before the rest of the pipeline runs; no other code in the repo decides this."
+  }
+ },
+ "r3-ocelot-15": {
+  "id": "r3-ocelot-15",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Configuration.Creator.HeaderFindAndReplaceCreator.ProcessHeaders"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The logic distinguishing an add-header entry from a find-and-replace pair is uniquely implemented in HeaderFindAndReplaceCreator.ProcessHeaders based on whether the value contains a comma."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "HeaderFindAndReplaceCreator.ProcessHeaders",
+    "HeaderFindAndReplaceCreator.Map",
+    "HeaderFindAndReplace.Comma",
+    "HeaderFindAndReplaceCreator.Merge"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The comma-based discrimination is centralized in HeaderFindAndReplaceCreator.ProcessHeaders (called from Create when FileRoute config is turned into HeaderTransformations), and downstream consumers only use the already-separated AddHeader and HeaderFindAndReplace lists, so no other code path makes this distinction."
+  }
+ },
+ "r3-ocelot-18": {
+  "id": "r3-ocelot-18",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Configuration.Validator.FileConfigurationFluentValidator",
+    "Ocelot.Configuration.Validator.FileConfigurationFluentValidator.IsNotDuplicateIn",
+    "Ocelot.Middleware.OcelotMiddlewareExtensions.UseOcelot",
+    "Ocelot.Middleware.OcelotMiddlewareExtensions.CreateConfiguration",
+    "Ocelot.Middleware.OcelotMiddlewareExtensions.ThrowToStopOcelotStarting"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The logic checking for duplicate route definitions with overlapping HTTP methods and identical path/host/header criteria is uniquely implemented in FileConfigurationFluentValidator and surfaced at startup in OcelotMiddlewareExtensions."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "FileConfigurationFluentValidator (RuleForEach(...).Must(IsNotDuplicateIn) duplicate-route rule)",
+    "FileConfigurationFluentValidator.IsNotDuplicateIn(FileRoute, IEnumerable<FileRoute>)",
+    "FileConfigurationFluentValidator.AreTheSame",
+    "OcelotMiddlewareExtensions.UseOcelot",
+    "OcelotMiddlewareExtensions.CreateConfiguration",
+    "OcelotMiddlewareExtensions.ThrowToStopOcelotStarting"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The indistinguishable-route (same upstream path template, host, and header templates) with overlapping HTTP method check exists only in FileConfigurationFluentValidator.IsNotDuplicateIn and its RuleForEach rule, and the refusal to start on the resulting validation error occurs only in OcelotMiddlewareExtensions.CreateConfiguration/ThrowToStopOcelotStarting called from UseOcelot; no other code path performs this check."
+  }
+ },
+ "r3-ocelot-13": {
+  "id": "r3-ocelot-13",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.LoadBalancer.Balancers.CookieStickySessions",
+    "Ocelot.LoadBalancer.Balancers.CookieStickySessions.CheckExpiry",
+    "Ocelot.LoadBalancer.Balancers.CookieStickySessions.LeaseAsync",
+    "Ocelot.LoadBalancer.Creators.CookieStickySessionsCreator.Create"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "CookieStickySessions is the sole sticky session load balancing implementation in Ocelot."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CookieStickySessions",
+    "CookieStickySessions.LeaseAsync",
+    "CookieStickySessions.CheckExpiry",
+    "CookieStickySessions.Update",
+    "CookieStickySessions.Stored",
+    "CookieStickySessions.DefSessionCookieName",
+    "CookieStickySessions.DefSessionExpiryMinutes",
+    "CookieStickySessionsCreator.Create",
+    "RoundRobin",
+    "InMemoryBus<StickySession>"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Cookie-based sticky sessions are implemented solely by CookieStickySessions (wired by CookieStickySessionsCreator, which wraps a RoundRobin balancer and an InMemoryBus); no other Ocelot balancer or middleware provides browser-to-instance affinity, so any careful engineer would arrive at the same answer."
+  }
+ },
+ "r3-ocelot-17": {
+  "id": "r3-ocelot-17",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Configuration.Creator.StaticRoutesCreator.CreateTimeout",
+    "Ocelot.Configuration.DownstreamRoute.DefaultTimeoutSeconds",
+    "Ocelot.Configuration.DownstreamRoute.DefTimeout",
+    "Ocelot.Infrastructure.Extensions.Int32Extensions.Positive"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The default timeout and route-level fallback logic for non-positive values are explicitly defined in CreateTimeout, DownstreamRoute, and Positive extension methods."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "DownstreamRoute.DefTimeout",
+    "DownstreamRoute.LowTimeout",
+    "DownstreamRoute.DefaultTimeoutSeconds",
+    "DownstreamRoute.Timeout",
+    "StaticRoutesCreator.CreateTimeout",
+    "Int32Extensions.Positive(Int32?, Int32)"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The default wait is defined solely by DownstreamRoute (DefaultTimeoutSeconds initialized to DefTimeout = 90, setter clamping values below LowTimeout = 3 back to 90), and StaticRoutesCreator.CreateTimeout together with the nullable Int32Extensions.Positive shows that only a null route timeout falls through to the global timeout, while a zero/negative route timeout is coerced directly to the default (90 s); no competing timeout default exists in the shown code."
+  }
+ },
+ "r3-ocelot-21": {
+  "id": "r3-ocelot-21",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Authentication.AuthenticationMiddleware.Invoke",
+    "Ocelot.Configuration.DownstreamRoute.IsAuthenticated"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Authentication credential checking and skipping rules are handled exclusively in AuthenticationMiddleware and DownstreamRoute.IsAuthenticated."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "AuthenticationMiddleware.Invoke",
+    "AuthenticationMiddleware.SetUnauthenticatedError",
+    "AuthenticationMiddleware.AuthenticateAsync",
+    "DownstreamRoute.IsAuthenticated"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The decision that a protected route lacks acceptable credentials is made only in AuthenticationMiddleware.Invoke (via SetUnauthenticatedError), with the skip condition (OPTIONS or !route.IsAuthenticated, where IsAuthenticated = non-null AuthenticationOptions && !AllowAnonymous && HasScheme) in the same method; the separate AuthorizationMiddleware concerns claim-to-policy authorization, not credentials, so no different answer is reasonable."
+  }
+ },
+ "r3-ocelot-19": {
+  "id": "r3-ocelot-19",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Configuration.Validator.RouteFluentValidator",
+    "Ocelot.Configuration.Validator.RouteFluentValidator.IsValidPeriod"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "RouteFluentValidator is the sole validator enforcing route rate-limit period format rules when configuration is validated."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "RouteFluentValidator (rate-limit rules in constructor)",
+    "RouteFluentValidator.IsValidPeriod",
+    "MilliSecondsRegex",
+    "SecondsRegex",
+    "MinutesRegex",
+    "HoursRegex",
+    "DaysRegex"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The only load-time rejection of a rate-limit period lacking a supported unit is in RouteFluentValidator: the When-gated rules (RateLimitOptions != null && EnableRateLimiting != false) call IsValidPeriod, which trims the period and matches it against the five unit regexes (ms/s/m/h/d), so a careful engineer would not find a different answer elsewhere."
+  }
+ },
+ "r3-ocelot-22": {
+  "id": "r3-ocelot-22",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Authorization.ScopesAuthorizer.Authorize"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "ScopesAuthorizer.Authorize is the dedicated implementation in Ocelot that parses token scopes (including space-separated scope claims) and checks for intersection with route allowed scopes."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ScopesAuthorizer.Authorize",
+    "AuthorizationMiddleware.Invoke"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The scope-intersection check with space-separated-scope splitting exists only in ScopesAuthorizer.Authorize, and AuthorizationMiddleware.Invoke is its sole caller (gated on non-OPTIONS authenticated routes), so no other location in these files performs this check."
+  }
+ },
+ "r3-ocelot-16": {
+  "id": "r3-ocelot-16",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "AuthenticationOptionsCreator.Create"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The authentication configuration creation logic in AuthenticationOptionsCreator strictly determines the behavior for routes inside and outside the global RouteKeys subset."
+  },
+  "glm": {
+   "ok": false,
+   "why": "unparsable"
+  }
+ },
+ "r3-ocelot-20": {
+  "id": "r3-ocelot-20",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Security.IPSecurityPolicy.Security"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The logic comparing the remote IP address against the route's blocked and allowed lists is uniquely located in IPSecurityPolicy.Security, checking blocked IPs first and allowed IPs second."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "IPSecurityPolicy.Security"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The caller's remote IP is compared against the route's allowed/blocked lists only in IPSecurityPolicy.Security, which checks the blocked list first and then the allowed list (membership required only when that list is non-empty); SecurityMiddleware merely drives the registered policies and SecurityOptionsCreator only builds the lists, so no other code location answers the question."
+  }
+ },
+ "r3-ocelot-25": {
+  "id": "r3-ocelot-25",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Requester.MessageInvokerPool.CreateHandler",
+    "Ocelot.WebSockets.WebSocketsProxyMiddleware.Proxy"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The two methods explicitly check DangerousAcceptAnyServerCertificateValidator to disable certificate verification for standard HTTP requests and WebSocket upgrade requests respectively."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "MessageInvokerPool.CreateHandler",
+    "WebSocketsProxyMiddleware.Proxy",
+    "WebSocketsProxyMiddleware.IgnoredSslWarningFormat"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The only places that gate on DownstreamRoute.DangerousAcceptAnyServerCertificateValidator to disable server certificate validation are MessageInvokerPool.CreateHandler (HTTP: sets SocketsHttpHandler.SslOptions.RemoteCertificateValidationCallback => true) and WebSocketsProxyMiddleware.Proxy (WebSockets: sets client.Options.RemoteCertificateValidationCallback => true), each logging a 'You have ignored all SSL warnings...' warning, so a careful engineer would identify the same two symbols."
+  }
+ },
+ "r3-ocelot-11": {
+  "id": "r3-ocelot-11",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.DownstreamRouteFinder.Finder.DownstreamRouteFinder.Get",
+    "Ocelot.Configuration.Creator.UpstreamTemplatePatternCreator.Create"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "Downstream route matching and winner selection are definitively handled in DownstreamRouteFinder.Get using route priorities and host matching."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "DownstreamRouteFinder.Get",
+    "DownstreamRouteFinder.RouteIsApplicableToThisRequest",
+    "UpstreamTemplatePatternCreator.Create"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The winner-selection algorithm is centralized in DownstreamRouteFinder.Get — it filters to applicable static routes, orders them by UpstreamTemplatePattern.Priority descending (values assigned in UpstreamTemplatePatternCreator.Create), and then prefers the first match with a non-empty UpstreamHost — so no other code location offers a different answer; note claim 3 is only partly supported because the '(default 1 in FileRoute)' detail is not present in the shown code."
+  }
+ },
+ "r3-ocelot-26": {
+  "id": "r3-ocelot-26",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Request.Mapper.StreamHttpContent",
+    "Ocelot.Request.Mapper.StreamHttpContent.CopyAsync",
+    "Ocelot.Request.Mapper.RequestMapper.MapContent"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "StreamHttpContent is the dedicated class handling request body streaming and validating the transferred byte count against the announced Content-Length."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "StreamHttpContent",
+    "StreamHttpContent.CopyAsync",
+    "StreamHttpContent.SerializeToStreamAsync",
+    "RequestMapper.MapContent"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The body is streamed to the backend solely by StreamHttpContent (created in RequestMapper.MapContent and driven by SerializeToStreamAsync/CopyAsync), and the Content-Length mismatch protection is the InvalidOperationException checks inside CopyAsync, so no other code location provides a different answer."
+  }
+ },
+ "r3-ocelot-23": {
+  "id": "r3-ocelot-23",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "HttpExceptionToErrorMapper.Map",
+    "PayloadTooLargeError",
+    "ErrorsToHttpStatusCodeMapper.Map"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The handling of 413 BadHttpRequestException and mapping to PayloadTooLargeError and HTTP 413 status code is uniquely centralized in HttpExceptionToErrorMapper and ErrorsToHttpStatusCodeMapper."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "HttpExceptionToErrorMapper.Map(Exception)",
+    "PayloadTooLargeError",
+    "ErrorsToHttpStatusCodeMapper.Map(List<Error>)"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The only 413 path is HttpExceptionToErrorMapper.Map detecting an HttpRequestException whose inner BadHttpRequestException has StatusCode 413 and returning PayloadTooLargeError (which carries 413 and is mapped by ErrorsToHttpStatusCodeMapper to Status413PayloadTooLarge), and nothing in the gateway measures body size — the 413 exception originates from the hosting server — so no other file/symbol reasonably answers it."
+  }
+ },
+ "r3-ocelot-29": {
+  "id": "r3-ocelot-29",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.LoadBalancer.Balancers.RoundRobin.LastIndices",
+    "Ocelot.LoadBalancer.Balancers.RoundRobin.LeaseAsync",
+    "Ocelot.LoadBalancer.Balancers.RoundRobin.TryScanNext",
+    "Ocelot.LoadBalancer.Creators.RoundRobinCreator.Create"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "RoundRobin is the only rotating load-balancing strategy in Ocelot, and its state management via LastIndices is unambiguous."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "RoundRobin.LastIndices (static Dictionary<string,int>)",
+    "RoundRobin.LeaseAsync",
+    "RoundRobin.TryScanNext",
+    "RoundRobinCreator.Create"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The round-robin position is stored only in the static RoundRobin.LastIndices dictionary, keyed by the service name (or LoadBalancerKey chosen in RoundRobinCreator.Create) and read/updated inside the static lock in LeaseAsync/TryScanNext; the per-instance _leasing list tracks connection counts, not the next index, so no other reasonable answer exists elsewhere."
+  }
+ },
+ "r3-ocelot-31": {
+  "id": "r3-ocelot-31",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-ocelot-32": {
+  "id": "r3-ocelot-32",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-ocelot-33": {
+  "id": "r3-ocelot-33",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-ocelot-34": {
+  "id": "r3-ocelot-34",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-ocelot-35": {
+  "id": "r3-ocelot-35",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-ocelot-36": {
+  "id": "r3-ocelot-36",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-ocelot-30": {
+  "id": "r3-ocelot-30",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.DependencyInjection.ConfigurationBuilderExtensions.GetMergedOcelotJson",
+    "Ocelot.DependencyInjection.ConfigurationBuilderExtensions.OcelotMergeConfiguration",
+    "Ocelot.DependencyInjection.ConfigurationBuilderExtensions.OcelotJMergeSection"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The split configuration merging mechanism is specifically defined in ConfigurationBuilderExtensions via GetMergedOcelotJson and related merge methods."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ConfigurationBuilderExtensions.GetMergedOcelotJson",
+    "ConfigurationBuilderExtensions.OcelotMergeConfiguration",
+    "ConfigurationBuilderExtensions.OcelotJMergeSection",
+    "ConfigurationBuilderExtensions.SubConfigRegex",
+    "ConfigurationBuilderExtensions.GlobalConfigFile",
+    "ConfigurationBuilderExtensions.EnvironmentConfigFile"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The split-file merging is centralized in GetMergedOcelotJson (which enumerates ocelot.*.json files via SubConfigRegex, excluding the environment file) and OcelotMergeConfiguration/OcelotJMergeSection, which merge Routes/Aggregates/DynamicRoutes arrays from every matched file while the GlobalConfiguration section is taken only from the file matching the global file name (ocelot.global.json by default) and replaces the destination wholesale; no other code path in this file (or plausible elsewhere) implements a different combination rule."
+  }
+ },
+ "r3-ocelot-27": {
+  "id": "r3-ocelot-27",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Request.Mapper.RequestMapper.UnsupportedHeaders"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The list of headers deliberately excluded when mapping incoming HTTP requests to downstream requests is defined directly in RequestMapper.UnsupportedHeaders."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "RequestMapper.UnsupportedHeaders",
+    "RequestMapper.MapHeaders",
+    "RequestMapper.IsSupportedHeader"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The only deliberate exclusion list is RequestMapper's static UnsupportedHeaders field (\"host\", \"transfer-encoding\", StringComparer.OrdinalIgnoreCase), enforced by IsSupportedHeader inside MapHeaders; content headers are not dropped but relocated onto the HttpContent object by AddContentHeaders, so no competing answer exists elsewhere in this code."
+  }
+ },
+ "r3-ocelot-28": {
+  "id": "r3-ocelot-28",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "UpstreamTemplatePatternCreator",
+    "UpstreamTemplatePatternCreator.GetRegex",
+    "UpstreamTemplatePatternCreator.RegexCachingTTL",
+    "DefaultMemoryCache<T>"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "UpstreamTemplatePatternCreator is the unique component in Ocelot that builds and caches regex patterns from upstream route templates."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "UpstreamTemplatePatternCreator.GetRegex",
+    "UpstreamTemplatePatternCreator.RegexCachingTTL",
+    "UpstreamTemplatePatternCreator._cache (IOcelotCache<Regex>)",
+    "UpstreamPathTemplate (cache region name)",
+    "DefaultMemoryCache<T>.Add",
+    "DefaultMemoryCache<T>.TryGetValue"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The shown code gives a single direct answer: UpstreamTemplatePatternCreator.GetRegex caches each built Regex in the injected IOcelotCache<Regex> — concretely DefaultMemoryCache<T> over ASP.NET's IMemoryCache — under the 'UpstreamPathTemplate' region with TTL RegexCachingTTL (default 1 minute), and no other shown code stores these expressions for reuse (note: CLAIM 1 is only partly supported because the shown code passes only RegexOptions.Singleline to RegexGlobal.New, whose definition is not among the files, so 'compiled' is not evidenced by the code shown)."
+  }
+ },
+ "r3-ocelot-24": {
+  "id": "r3-ocelot-24",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.RateLimiting.RateLimitingMiddleware.Invoke",
+    "Ocelot.RateLimiting.RateLimitingMiddleware.Identify"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Rate limiting identification and rejection for missing client IDs is handled solely within RateLimitingMiddleware."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "RateLimitingMiddleware.Invoke",
+    "RateLimitingMiddleware.Identify",
+    "RateLimitingMiddleware.IsWhitelisted",
+    "RateLimitingMiddleware.Break"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "No — the entire decision is centralized in RateLimitingMiddleware.Invoke in this one file (Identify reads the configured/default client-id header and yields an empty id when it is absent, IsWhitelisted is checked first, and Break then rejects an unidentified, non-whitelisted client with 503, the warning text as the message, and Retry-After -1 before the limiter is ever consulted), so a careful engineer would not reasonably give a different answer elsewhere; the only unsupported piece is CLAIM 1's specific name 'Oc-Client' for the default header, which the shown code never reveals (it only references RateLimitOptions.DefaultClientHeader, defined in another file), even though the configured-header fallback and empty-id behavior are exactly supported."
+  }
+ },
+ "r3-ocelot-06": {
+  "id": "r3-ocelot-06",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Ocelot.Administration.OutputCacheController",
+    "Ocelot.Administration.OutputCacheController.Delete",
+    "Ocelot.Cache.DefaultMemoryCache<T>",
+    "Ocelot.Cache.DefaultMemoryCache<T>.ClearRegion",
+    "Ocelot.Configuration.CacheOptions",
+    "Ocelot.Configuration.Creator.CacheOptionsCreator",
+    "Ocelot.Configuration.Creator.CacheOptionsCreator.Create",
+    "Ocelot.Configuration.Creator.CacheOptionsCreator.Merge"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The administration controller, caching abstraction, and cache options creation logic uniquely implement output cache region deletion and region fallback handling."
+  },
+  "glm": {
+   "ok": false,
+   "why": "unparsable"
+  }
+ }
+}

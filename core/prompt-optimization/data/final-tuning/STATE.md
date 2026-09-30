@@ -5,15 +5,15 @@ section.
 
 ## Now
 
-- Phase: **3 — retrieval screens** (Phase 0 exit gate met: worktree + sentinel, TRIED-LEVERS.md, noise floor. Phase 1 exit gate met: reconciliation exact in all 5 cells, ranked waste list in `r282-TRACE-ANALYSIS.md`. Phase 2 exit gate met: 3 candidates in `LEVERS.md`).
-- Next step: read test-retest (ds-base-a2 vs ds-base-b2; cx-base-a vs cx-base-b) → V1 verdict on Opus train (cc-base-a vs cc-rp-a) → V2 verdicts (Codex, DeepSeek) → queue V3 (SEARCH_DEDUPE) → validation runs for passers.
-- Compare: `node core/prompt-optimization/data/final-tuning/scripts/compare.mjs <cell> <baseTag> <variantTag> [--base2 <tag>] [--native-r282]`
-- Queues (sequential per harness; `scripts/queue.sh`, logs `~/.ss-eval/final-tuning-logs/queue-*.log` + `<tag>.log`):
-  - cc-opus: `cc-base-a` DONE → `cc-rp-a` (V1) running since 00:25 → queue cc-opus-val: `cc-base-v` → `cc-rp-v` (V1 validation, aggregates only)
-  - codex: `cx-base-a` DONE → `cx-prune3-a` (V2) running since 00:17 → `cx-base-b` (retest)
-  - deepseek: `ds-base-b2` DONE → `ds-prune3-a` (V2) running since 00:29
-- Phase 5 started early (no GPU needed yet): r3 repos chosen + cloned (`r3/REPOS.md`, `r3/repos.json`: jj Rust, dgraph Go, tortoise-orm Python, typedoc TS, zipkin Java, ocelot C#); 6 Sonnet drafting agents writing `r3/drafts/<repo>.json` per `r3/DRAFTING-BRIEF.md` (36 drafts each). **Indexing needs a window with NO bench running** (indexer swaps ORT CPU ↔ GPU models): ~4,750 files ≈ 95 min serial.
-- Done runs: `ds-base-a2` (78/78), `smoke-rulesprompt` (Opus, 4 Zig questions, V1 mechanism smoke).
+- Phase: **3 — retrieval screens** (+ Phase 5 r3 build in parallel).
+- **Judge route changed 00:52:** direct DeepSeek balance hit $0.13 (4 DeepSeek runs + judges ≈ $2; my per-run estimate was 4× too low). All new jobs use `SS_JUDGE_DEEPSEEK_VIA_OPENROUTER=1` (owner-authorized). Every finished run is re-judged for accuracy on the same route (`scripts/rescore.mjs` → `rescore-or.jsonl`; `compare.mjs` shows it as `accOR`). **Decisions use `accOR` from now on.**
+- **DeepSeek agent cell paused** (no direct balance). Restart only as a new cell on OpenRouter with fresh baselines if needed.
+- Queues (`~/.ss-eval/final-tuning-logs/queue-*.log`):
+  - codex: `cx-base-b` (retest, running) → codex4: `cx-dedupe-a` (V3) → `cx-base-v` → `cx-prune3-v` (V2 validation)
+  - cc-opus: `cc-base-v` (running) → cc-opus-val2: `cc-rp-v` (V1 validation)
+  - background: rescore batch 1 (6 finished runs); r3 verification (`r3/verify-drafts.mjs`, log `r3-verify.log`)
+- r3: 6 × 36 = 216 drafts done (`r3/drafts/`). Verification by two non-Claude models (gemini-3.8-flash direct, glm-5.3 OpenRouter) running; ocelot 20/30 positives kept. Next: Opus audit agent → split → manifest → index window (no bench) → pilot.
+- Killed: `ds-dedupe-a` (12 rows, balance), deepseek2/deepseek3 queues.
 
 ## Baseline
 
@@ -32,6 +32,8 @@ DeepSeek balance at start: **$2.18** (hard ceiling for DeepSeek agent runs + Dee
 | When | What | Cash $ | Running total $ |
 |---|---|---|---|
 | 00:05 | sentinel smoke (1 DeepSeek rollout + judges) | ~0.01 | 0.01 |
+| 00:50 | DeepSeek direct: 5 DeepSeek runs + all judges of all cells until now | 2.05 | 2.06 |
+| 00:52 | OpenRouter: MiniMax judge (all runs so far), r3 verification start | ~1 (est.) | ~3 |
 
 Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
@@ -41,11 +43,15 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 |---|---|---|---|---|---|---|---|
 | sentinel | `SS_VARIANT_SENTINEL=1` | proof the bench runs the worktree | — | — | — | — | infra only |
 | bench fix | `SS_BENCH_STABLE_RULES_PATH=1` | opencode prefix cache broken by random rules path (waste #2) | DeepSeek vs r282 native: +7.9% (CI crosses 0), was +54.6% | — | n/a | n/a | **adopted for all new runs (measurement fix, not a product change)** |
-| V1 | `SS_VARIANT_CC_RULES_IN_PROMPT=1` | CC rules re-written each rollout (waste #1) | partial 45/78: cost −13.9% (CI < 0), acc = | | | | screening |
-| V2 | `SS_VARIANT_PRUNE3=1` | drop ss-find/semantic/trace (owner hyp. 2) | queued | | | | |
-| V3 | `SS_VARIANT_SEARCH_DEDUPE=1` | repeated ss-search entries/lines (waste #5) | not queued | | | | |
+| V1 | `SS_VARIANT_CC_RULES_IN_PROMPT=1` | CC rules re-written each rollout (waste #1) | **PASS** Opus: cost −15.8% (CI < 0), acc +0.2 | | | | screening |
+| V2 | `SS_VARIANT_PRUNE3=1` | drop ss-find/semantic/trace (owner hyp. 2) | borderline: Codex −13.2% (CI touches 0), DS −9.9..−17% (CI < 0); acc within noise | | | | |
+| V3 | `SS_VARIANT_SEARCH_DEDUPE=1` | repeated ss-search entries/lines (waste #5) | Codex queued; DS killed (balance) | | | | |
 
 ## Decisions log
+
+- 00:55 **V2 (PRUNE3) → validation despite a borderline train result** — Codex: cost −13.2% [−27.1%, +0.3%], acc −0.6 pt [−2.6, +1.3]; DeepSeek vs base A: cost −9.9% (CI < 0), calls −11.5% (CI < 0), acc +0.7 [−1.0, +2.7]; vs base B: cost −17.0% (CI < 0), acc −1.1 [−2.4, +0.1]. The strict rule (acc lower CI > −2 pt) fails by 0.4–0.6 pt on 2 of 3 comparisons, but identical baselines differ by 1.9 pt (sig) → the accuracy CI at n=78 is inside test-retest noise. Validation decides (aggregate only); final call needs both cells.
+- 00:55 **V1 passes train** (Opus, n=78): cost −15.8% [−18.5%, −13.1%], cache write −1,867 tokens/rollout (−22%), naive −4.5%, acc +0.2 pt [−1.7, +2.0], calls −4% (ns).
+- 00:52 DeepSeek direct balance exhausted ($0.13) → judge route switched to OpenRouter for all new jobs; accuracy re-judged for finished runs (one grader per comparison).
 
 - 00:35 **Test-retest DeepSeek** (`ds-base-b2` vs `ds-base-a2`, identical code, train 78): cost +8.5% [−$0.00001, +$0.00029], accuracy +1.9 pt [+0.001, +0.038] (!), calls +6%. → DeepSeek screens need effects well above ~10% cost; an accuracy CI alone can move 2 points by chance. Recorded in noise-floor terms: real paired noise ≈ the pessimistic MDE.
 - 00:35 V1 partial (Opus, 45/78 train): cost −13.9% [−17.2%, −10.6%], cache write −1,686 tokens/rollout (−20%), accuracy 0.980 vs 0.979, calls equal, 0 native searches. Validation queued.

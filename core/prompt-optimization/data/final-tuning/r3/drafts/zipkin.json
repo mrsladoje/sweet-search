@@ -1,0 +1,956 @@
+{
+  "repo": "zipkin",
+  "sha": "878ce2a1fad54ca941d17fdcf2e1d924b148eb1f",
+  "probes": [
+    {
+      "id": "r3-zipkin-01",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "An older client posts spans in the legacy JSON format, where one record describes a whole RPC using client-send and server-receive timestamps. Which code turns that single record into separate client and server spans that share one span id?",
+      "expectedFiles": [
+        "zipkin/src/main/java/zipkin2/v1/V1SpanConverter.java",
+        "zipkin/src/main/java/zipkin2/internal/V1JsonSpanReader.java"
+      ],
+      "expectedSymbols": [
+        "V1SpanConverter.convert",
+        "V1SpanConverter.processAnnotations",
+        "V1JsonSpanReader.readList"
+      ],
+      "expectedFacts": [
+        "The legacy HTTP upload route decodes with SpanBytesDecoder.JSON_V1, whose list decoding calls V1JsonSpanReader.readList, which calls V1SpanConverter.convert for each v1 record.",
+        "When the converter sees both a client-send and a server-receive annotation, it produces a client span and a server span; the server span is marked shared and takes its timestamp from server-receive.",
+        "If client and server have the same service name (loopback), the converter forks a new span builder for the server side instead of reusing the client one."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: zipkin-server/.../ZipkinHttpCollector.java:75-78 (POST /api/v1/spans -> validateAndStoreSpans(SpanBytesDecoder.JSON_V1)); zipkin/.../codec/SpanBytesDecoder.java:39 (JSON_V1.decodeList -> new V1JsonSpanReader().readList); zipkin/.../internal/V1JsonSpanReader.java:23-39 (readList, converter.convert at :32); zipkin/.../v1/V1SpanConverter.java:53-95 (processAnnotations cs/sr/ss/cr), :97-115 (cs && sr branch; loopback fork at :104-107; server.shared(true).timestamp(sr.timestamp) at :113)."
+    },
+    {
+      "id": "r3-zipkin-02",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "multi-hop",
+      "difficulty": "medium",
+      "query": "On the Elasticsearch backend, how does a trace search with service, tag and duration filters first find the matching traces and then return complete traces rather than only the matching spans?",
+      "expectedFiles": [
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchSpanStore.java"
+      ],
+      "expectedSymbols": [
+        "ElasticsearchSpanStore.getTraces",
+        "ElasticsearchSpanStore.GetSpansByTraceId"
+      ],
+      "expectedFacts": [
+        "getTraces first sends a filtered search (time range, service, remote service, span name, _q tag terms, duration range) with a terms aggregation on traceId limited to the requested number and ordered by the minimum timestamp descending.",
+        "The resulting trace IDs are passed through GetSpansByTraceId, which issues a second search over the same daily indices for all spans whose traceId is in that list.",
+        "The spans are then grouped by trace ID, and when strict trace ID is enabled they are filtered again client-side."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ElasticsearchSpanStore.java:54-111 getTraces; filters built :60-84; aggregation Aggregation.terms(\"traceId\", limit).addSubAggregation(min timestamp_millis).orderBy(...desc) at :93-96; first call traceIdsCall :104; flatMap(new GetSpansByTraceId(search, indices)).map(groupByTraceId) at :106-107; strict filter :110; GetSpansByTraceId.map at :202-217 builds SearchRequest.create(indices).terms(\"traceId\", input)."
+    },
+    {
+      "id": "r3-zipkin-03",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "When the server is configured to trace itself, how do its own spans reach the configured storage, and what stops the act of saving them from producing more traces?",
+      "expectedFiles": [
+        "zipkin-server/src/main/java/zipkin2/server/internal/brave/ZipkinSelfTracingConfiguration.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/brave/TracingStorageComponent.java"
+      ],
+      "expectedSymbols": [
+        "ZipkinSelfTracingConfiguration.LocalSender",
+        "LocalSender.send",
+        "LocalSender.delegate",
+        "TracingStorageComponent"
+      ],
+      "expectedFacts": [
+        "LocalSender.send decodes each JSON-encoded span and calls the storage span consumer's accept(...).execute() directly in-process, with no HTTP hop.",
+        "LocalSender.delegate looks the StorageComponent bean up lazily and, when it is a TracingStorageComponent, unwraps it to the underlying storage, so the flush is not itself traced.",
+        "TracingStorageComponent wraps storage calls in TracedCall spans for reads and writes; the Tracing bean uses NEVER_SAMPLE and only the HTTP server sampler starts traces (for paths under /api or /zipkin/api)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ZipkinSelfTracingConfiguration.java:40-55 (reporter AsyncZipkinSpanHandler with LocalSender), :93-105 (Tracing with Sampler.NEVER_SAMPLE at :97), :107-118 (serverSampler limited to /api paths), :126-171 LocalSender; send() decodes JSON_V2 and calls delegate().spanConsumer().accept(spans).execute() at :141-149; delegate() unwraps TracingStorageComponent at :161-170 (component.delegate at :167). TracingStorageComponent.java:25-68 wraps spanConsumer/spanStore/etc. in Tracing* decorators using TracedCall."
+    },
+    {
+      "id": "r3-zipkin-04",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "multi-hop",
+      "difficulty": "medium",
+      "query": "Which setting turns on limiting of concurrent storage writes, and where is the configured storage replaced by the limiting wrapper once Spring has created it?",
+      "expectedFiles": [
+        "zipkin-server/src/main/java/zipkin2/server/internal/ZipkinConfiguration.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/ConditionalOnThrottledStorage.java"
+      ],
+      "expectedSymbols": [
+        "ZipkinConfiguration.ThrottledStorageComponentEnhancer",
+        "ThrottledStorageComponentEnhancer.postProcessAfterInitialization",
+        "ConditionalOnThrottledStorage.ThrottledStorageCondition"
+      ],
+      "expectedFacts": [
+        "The condition ThrottledStorageCondition reads the property zipkin.storage.throttle.enabled from the environment and only matches when it is true (it is false by default in zipkin-server-shared.yml).",
+        "ThrottledStorageComponentEnhancer is a BeanPostProcessor whose postProcessAfterInitialization wraps any StorageComponent bean in a ThrottledStorageComponent.",
+        "The wrapper is constructed with min concurrency, max concurrency and max queue size taken from ZipkinStorageThrottleProperties (yaml defaults 10, 200, 1000)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ConditionalOnThrottledStorage.java:17 (@Conditional), :21-30 (getProperty zipkin.storage.throttle.enabled at :25; noMatch at :28); ZipkinConfiguration.java:47-49 (@EnableConfigurationProperties + @ConditionalOnThrottledStorage on ThrottledStorageComponentEnhancer), :60-72 postProcessAfterInitialization (instanceof StorageComponent -> new ThrottledStorageComponent(... min,max,queue)); zipkin-server/src/main/resources/zipkin-server-shared.yml:119-123 (enabled false, 10, 200, 1000); ZipkinStorageThrottleProperties.java:9 prefix zipkin.storage.throttle."
+    },
+    {
+      "id": "r3-zipkin-05",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "With the MySQL backend, how is the service dependency graph answered when the precomputed daily link table has no rows?",
+      "expectedFiles": [
+        "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/MySQLSpanStore.java",
+        "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/AggregateDependencies.java",
+        "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/HasPreAggregatedDependencies.java"
+      ],
+      "expectedSymbols": [
+        "MySQLSpanStore.getDependencies",
+        "AggregateDependencies.apply",
+        "HasPreAggregatedDependencies.test"
+      ],
+      "expectedFacts": [
+        "When storage Schema is first built (lazily, once), HasPreAggregatedDependencies.test counts rows in zipkin_dependencies and sets hasPreAggregatedDependencies only if there is at least one.",
+        "If false, MySQLSpanStore.getDependencies runs AggregateDependencies over the span start-timestamp window (endTs - lookback .. endTs, converted to microseconds).",
+        "AggregateDependencies selects all spans of traces having a span in the window (subquery on trace IDs), left-joins the core annotation keys, groups by trace, feeds each trace to DependencyLinker.putTrace, and returns linker.link().",
+        "If pre-aggregated rows exist, SelectDependencies is used instead, reading rows for the epoch days and merging with DependencyLinker.merge."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: MySQLStorage.java:118-127 (lazy memoized Schema); Schema.java:42 (hasPreAggregatedDependencies = HasPreAggregatedDependencies.test); HasPreAggregatedDependencies.java:25-43 (count() > 0 at :28; 42S02 warning at :30-34); MySQLSpanStore.java:105-114 (branch at :109; AggregateDependencies(schema, endTs*1000 - lookback*1000, endTs*1000) at :112-113); AggregateDependencies.java:34-73 (traceIDs subquery :37-41, left join with core keys :47-52, new DependencyLinker :63, putTrace :69, link :73); SelectDependencies.java:27-41 (DAY.in(epochDays) at :32; DependencyLinker.merge at :41)."
+    },
+    {
+      "id": "r3-zipkin-06",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "Legacy log messages arrive over a raw TCP socket as length-prefixed frames, possibly many at once. How are those frames cut, decoded into spans, and kept in order in the replies?",
+      "expectedFiles": [
+        "zipkin-collector/scribe/src/main/java/zipkin2/collector/scribe/NettyScribeServer.java",
+        "zipkin-collector/scribe/src/main/java/zipkin2/collector/scribe/ScribeInboundHandler.java",
+        "zipkin-collector/scribe/src/main/java/zipkin2/collector/scribe/ScribeSpanConsumer.java"
+      ],
+      "expectedSymbols": [
+        "NettyScribeServer.start",
+        "ScribeInboundHandler.channelRead",
+        "ScribeInboundHandler.flushResponses",
+        "ScribeSpanConsumer.Log"
+      ],
+      "expectedFacts": [
+        "NettyScribeServer installs a LengthFieldBasedFrameDecoder (4-byte length prefix, stripped) in front of ScribeInboundHandler.",
+        "ScribeInboundHandler.channelRead wraps each frame as an HTTP thrift request to a THttpService and numbers it; a response is written immediately only if its index is previouslySent+1, otherwise it is parked in pendingResponses and flushed in order by flushResponses.",
+        "ScribeSpanConsumer.Log skips entries whose category differs from the configured one, base64 (MIME) decodes the ISO-8859-1 message, decodes a Thrift span with SpanBytesDecoder.THRIFT.decodeOne, then calls collector.accept on the blocking executor."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: NettyScribeServer.java:39-45 (pipeline: LengthFieldBasedFrameDecoder(Integer.MAX_VALUE,0,4,0,4) at :42, ScribeInboundHandler at :43); ScribeInboundHandler.java:53-55 (pendingResponses, nextResponseIndex, previouslySentResponseIndex), :57-77 channelRead (HttpRequest.of(THRIFT_HEADERS...) at :59, scribeService.serve at :72), :79-99 (responseIndex; in-order write at :91-95 else pending at :97), :116-126 flushResponses; ScribeSpanConsumer.java:34-65 Log (category check :40, ISO_8859_1 + Base64.getMimeDecoder :41-42, SpanBytesDecoder.THRIFT.decodeOne :44, collector.accept(..., CommonPools.blockingTaskExecutor()) :54-64)."
+    },
+    {
+      "id": "r3-zipkin-07",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "multi-hop",
+      "difficulty": "medium",
+      "query": "When the health endpoint reports DOWN because the Elasticsearch storage is unhealthy, which checks actually run and what makes the status DOWN?",
+      "expectedFiles": [
+        "zipkin-server/src/main/java/zipkin2/server/internal/health/ZipkinHealthController.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/health/ComponentHealth.java",
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchStorage.java"
+      ],
+      "expectedSymbols": [
+        "ZipkinHealthController.health",
+        "ComponentHealth.ofComponent",
+        "ElasticsearchStorage.check",
+        "ElasticsearchStorage.ensureIndexTemplatesAndClusterReady",
+        "ElasticsearchStorage.READ_STATUS"
+      ],
+      "expectedFacts": [
+        "ZipkinHealthController.health runs ComponentHealth.ofComponent(component) for every Component on the blocking executor; any DOWN makes the overall status DOWN and the HTTP status 503; a request timeout also yields DOWN.",
+        "ComponentHealth.ofComponent calls component.check() and turns a failed CheckResult or thrown exception into STATUS_DOWN with an error string.",
+        "ElasticsearchStorage.check calls ensureIndexTemplatesAndClusterReady, which resolves the version, ensures index templates, then GETs /_cluster/health/<span index pattern>.",
+        "The READ_STATUS converter marks the check failed when the cluster status is RED."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ZipkinHealthController.java:32-40 (/actuator/health and /health), :45-56 (timeout -> DOWN), :59-66 (supplyAsync ofComponent on blockingTaskExecutor), :85-103 overall status (STATUS_DOWN if any), :106 (SERVICE_UNAVAILABLE when not UP); ComponentHealth.java:19-38 (component.check() at :22); ElasticsearchStorage.java:280-282 check(), :290-308 ensureIndexTemplatesAndClusterReady (version() :292-293 region, GET /_cluster/health/ at :294, READ_STATUS at :295), :377-390 READ_STATUS ('RED' -> failed at :385)."
+    },
+    {
+      "id": "r3-zipkin-08",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "Cassandra storage keeps tables of known service and span names. How does it avoid issuing an insert for the same pair on every batch of spans?",
+      "expectedFiles": [
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraSpanConsumer.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/internal/call/DeduplicatingInsert.java",
+        "zipkin/src/main/java/zipkin2/internal/DelayLimiter.java"
+      ],
+      "expectedSymbols": [
+        "CassandraSpanConsumer.accept",
+        "DeduplicatingInsert.Factory.maybeAdd",
+        "DelayLimiter.shouldInvoke"
+      ],
+      "expectedFacts": [
+        "CassandraSpanConsumer builds insertServiceSpan as an InsertEntry.Factory (a DeduplicatingInsert.Factory) with the autocomplete TTL and cardinality, and accept() calls insertServiceSpan.maybeAdd for each (service, span) pair.",
+        "maybeAdd only creates the insert call when DelayLimiter.shouldInvoke returns true; the DelayLimiter suppresses the same context until its TTL expires, bounded by a maximum cardinality where the eldest suppression is evicted.",
+        "If the insert fails or is cancelled, DeduplicatingInsert invalidates the context in the DelayLimiter so it will be retried on a later batch."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: CassandraSpanConsumer.java:83-86 (insertServiceSpan = new InsertEntry.Factory(\"INSERT INTO span_by_service...\", session, autocompleteTtl, autocompleteCardinality)), :167-169 (maybeAdd loop); DeduplicatingInsert.java:15-34 (Factory with DelayLimiter, maybeAdd at :25-29), :44-69 (invalidate on error/cancel); InsertEntry.java:15-34; DelayLimiter.java:64-79 shouldInvoke, :91-94 invalidate, :81-89 removeOneSuppression."
+    },
+    {
+      "id": "r3-zipkin-09",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "An HTTP span upload is acknowledged as accepted, but the storage write fails afterwards. How is that loss counted, and where does an operator see the count?",
+      "expectedFiles": [
+        "zipkin-collector/core/src/main/java/zipkin2/collector/Collector.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/MicrometerCollectorMetrics.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/prometheus/ZipkinMetricsController.java"
+      ],
+      "expectedSymbols": [
+        "Collector.StoreSpans.onError",
+        "Collector.handleStorageError",
+        "MicrometerCollectorMetrics.incrementSpansDropped",
+        "ZipkinMetricsController.fetchMetricsFromMicrometer"
+      ],
+      "expectedFacts": [
+        "Collector.accept schedules StoreSpans on the executor and reports success to the caller before storage is attempted, so the HTTP response is 202 regardless of the later outcome.",
+        "When storage fails, StoreSpans.onError calls handleStorageError, which calls metrics.incrementSpansDropped(spans.size()) and logs only at debug level.",
+        "MicrometerCollectorMetrics increments the counter zipkin_collector.spans_dropped tagged transport=http (scoped via forTransport).",
+        "The counter is visible as counter.zipkin_collector.spans_dropped.http on /metrics (ZipkinMetricsController) and through the Prometheus endpoints."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: Collector.java:107-131 (executor.execute(new StoreSpans(...)); callback.onSuccess(null) at :125-126), :210-238 StoreSpans (onError -> handleStorageError at :231-233), :249-254 handleStorageError (incrementSpansDropped at :250); ZipkinHttpCollector.java:52-54 (metrics.forTransport(\"http\")), :143-145 (collector.acceptSpans with result callback), CompletableCallback ACCEPTED at :215-219; MicrometerCollectorMetrics.java:73-77 (spans_dropped counter), :124-128 incrementSpansDropped; ZipkinMetricsController.java:32-54 (writes counter.<name>.<transport>)."
+    },
+    {
+      "id": "r3-zipkin-10",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "A client span and its server counterpart reuse one span id, and each reporter sent its half in several separate messages. Where are these fragments combined, and what stops spans from different hosts being merged?",
+      "expectedFiles": [
+        "zipkin/src/main/java/zipkin2/internal/Trace.java",
+        "zipkin/src/main/java/zipkin2/Span.java"
+      ],
+      "expectedSymbols": [
+        "Trace.merge",
+        "Trace.EndpointTracker.tryMerge",
+        "Span.Builder.merge"
+      ],
+      "expectedFacts": [
+        "Trace.merge sorts spans by id, then shared flag (client first), then endpoint, and merges adjacent spans with the same id only when their shared flags are equal and their local endpoints are compatible.",
+        "Endpoint compatibility is decided by EndpointTracker.tryMerge, which refuses to merge when service name, IPv4, IPv6 or port conflict.",
+        "Span.Builder.merge fills missing fields from the other span and unions annotations and tags; Trace.merge also backfills a missing shared flag and parent id on the server half."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: Trace.java:19-96 merge; CLEANUP_COMPARATOR :98-105 (id, compareShared :108-123, compareEndpoint :130-141); same-id merge loop :46-67 (spanShared == nextShared && localEndpoint.tryMerge(next.localEndpoint()) at :58, replacement.merge(next) at :60); backfill shared :73-79 and parent id :81-85; EndpointTracker.tryMerge :157-182; Span.java:349-379 Builder.merge (fill-if-unset :351-362, annotations :364-368, tags :369-372, flags OR :377)."
+    },
+    {
+      "id": "r3-zipkin-11",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "If the very first span of a trace never arrives, how does the code that derives service-to-service calls still assemble one tree from the spans it has?",
+      "expectedFiles": [
+        "zipkin/src/main/java/zipkin2/internal/SpanNode.java"
+      ],
+      "expectedSymbols": [
+        "SpanNode.Builder.build",
+        "SpanNode.Builder.process",
+        "SpanNode.BreadthFirstIterator"
+      ],
+      "expectedFacts": [
+        "When no root span is found, SpanNode.Builder.build substitutes a synthetic root node with a null span.",
+        "Spans whose parent is not among the input (headless) are attached as children of that root.",
+        "process() treats the first span without a parent as the real root and attributes later parentless spans to it; the breadth-first iterator starts from the children of a synthetic root."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: SpanNode.java:137-182 build (Trace.merge at :143; synthetic root `rootSpan = new SpanNode(null)` at :161-166; headless attach `rootSpan.addChild(child)` at :174-176); process :234-281 (root selection :270-272, log of missing parent :257-264); BreadthFirstIterator :72-84 (synthetic root pushes children at :77-80)."
+    },
+    {
+      "id": "r3-zipkin-12",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "Why does a trace search by a mixed-case service name still find spans that were reported with a different capitalization?",
+      "expectedFiles": [
+        "zipkin/src/main/java/zipkin2/storage/QueryRequest.java",
+        "zipkin/src/main/java/zipkin2/Endpoint.java",
+        "zipkin/src/main/java/zipkin2/Span.java"
+      ],
+      "expectedSymbols": [
+        "QueryRequest.Builder.build",
+        "Endpoint.Builder.serviceName",
+        "Span.Builder.name"
+      ],
+      "expectedFacts": [
+        "Endpoint.Builder.serviceName lowercases service names when an endpoint is built.",
+        "Span.Builder.name lowercases span names.",
+        "QueryRequest.Builder.build lowercases the query's serviceName, remoteServiceName and spanName, and treats an empty name or the reserved name \"all\" as unset."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: Endpoint.java:127-130 (serviceName(...) -> toLowerCase(Locale.ROOT)); Span.java:473-475 (name(...) -> toLowerCase); QueryRequest.java:240-248 (toLowerCase at :242-244; \"all\" -> null at :248). Query-time lowercase also in ElasticsearchSpanStore.java:178 and InMemoryStorage.java:406,413 for names passed directly."
+    },
+    {
+      "id": "r3-zipkin-13",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "Some transports, such as message queues, carry no content type. How does the server work out whether a raw message is JSON v1, JSON v2, protobuf or Thrift?",
+      "expectedFiles": [
+        "zipkin/src/main/java/zipkin2/SpanBytesDecoderDetector.java"
+      ],
+      "expectedSymbols": [
+        "SpanBytesDecoderDetector.detectDecoder",
+        "SpanBytesDecoderDetector.decoderForListMessage",
+        "SpanBytesDecoderDetector.protobuf3"
+      ],
+      "expectedFacts": [
+        "If the first byte is 16 or less the message is binary: protobuf3 when the first byte is 10 and the next is not 0, otherwise Thrift.",
+        "If the first byte is '[' or '{' it is JSON, which is v2 when the bytes contain an Endpoint field suffix or a tags field, else v1; any other first byte is rejected as undetectable.",
+        "Collector.acceptSpans(byte[]) calls decoderForListMessage before decoding queue messages."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: SpanBytesDecoderDetector.java:84-95 detectDecoder (first<=16 :86-88; else not '['/'{' throws :89-91; Endpoint suffix/tags -> JSON_V2 :92-93; else JSON_V1 :94), :111-114 protobuf3, :72-81 decoderForListMessage, :39-47 byte patterns; Collector.java:153-162 acceptSpans(byte[]) uses SpanBytesDecoderDetector.decoderForListMessage at :156."
+    },
+    {
+      "id": "r3-zipkin-14",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "How can Cassandra answer a search on a span tag value when tags live in a map column that cannot be indexed directly?",
+      "expectedFiles": [
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraUtil.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/InsertSpan.java"
+      ],
+      "expectedSymbols": [
+        "CassandraUtil.annotationQuery",
+        "CassandraUtil.annotationKeys",
+        "InsertSpan.Factory.newInput"
+      ],
+      "expectedFacts": [
+        "On write, InsertSpan.Factory.newInput stores CassandraUtil.annotationQuery(span) in a separate annotation_query column when search is enabled.",
+        "annotationQuery joins annotation values, tag keys and key=value pairs with the delimiter '░' (skipping values longer than 256 characters); the column is indexed with a SASI index using a delimiter analyzer (zipkin2-schema-indexes.cql).",
+        "On read, CassandraSpanStore.getTraces turns each annotation query term into a lookup key with annotationKeys and intersects the resulting trace ID sets."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: CassandraUtil.java:48-76 annotationQuery (delimiter '░' :61; annotation values :63-67; tag key and key=value :69-73; 256 limit via SHORT_STRING_LENGTH :64,:70), :78-88 annotationKeys; InsertSpan.java:81-101 newInput (annotation_query at :83), :162-167 bound as annotation_query; CassandraSpanStore.java:130-139 (spanTable.newCall per annotation key), :149-158 intersect; zipkin-storage/cassandra/src/main/resources/zipkin2-schema-indexes.cql:6-12 (annotation_query SASI with DelimiterAnalyzer '░')."
+    },
+    {
+      "id": "r3-zipkin-15",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "Two collector instances receive different parts of one trace and cannot talk to each other. How can both still end up keeping it, or both dropping it?",
+      "expectedFiles": [
+        "zipkin-collector/core/src/main/java/zipkin2/collector/CollectorSampler.java"
+      ],
+      "expectedSymbols": [
+        "CollectorSampler.isSampled",
+        "CollectorSampler.create"
+      ],
+      "expectedFacts": [
+        "The decision depends only on the trace ID: the lower 64 bits are parsed and compared by absolute value with a boundary derived from the sample rate, so every instance reaches the same answer for the same trace.",
+        "Debug spans always pass the sampler.",
+        "The boundary is (long)(Long.MAX_VALUE * rate); Long.MIN_VALUE is mapped to Long.MAX_VALUE to avoid always dropping."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: CollectorSampler.java:32-42 create (boundary = (long)(Long.MAX_VALUE * rate) at :35), :58-65 isSampled (debug short-circuit :59; lowerHexToUnsignedLong :60; abs handling :61-63; t <= boundary() :64); Collector.java:197-208 sample() calls sampler.isSampled(s.traceId(), Boolean.TRUE.equals(s.debug())) at :201."
+    },
+    {
+      "id": "r3-zipkin-16",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "In the service dependency graph, what marks a call as failed, and how can a failure be attributed when the client and server halves of a call were reported as separate spans?",
+      "expectedFiles": [
+        "zipkin/src/main/java/zipkin2/internal/DependencyLinker.java"
+      ],
+      "expectedSymbols": [
+        "DependencyLinker.putTrace",
+        "DependencyLinker.addLink"
+      ],
+      "expectedFacts": [
+        "A call is an error when the span's tags contain the key \"error\" (any value).",
+        "When a server span is the direct child of a remote client span with the same id and the server span itself has no error tag, the client ancestor's error tag is used.",
+        "addLink increments a per-(parent, child) call count and, for errors, a separate error count."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: DependencyLinker.java:99 (isError = currentSpan.tags().containsKey(\"error\")), :125-128 (client ancestor error used when !isError && Kind.CLIENT && parentId equals remoteAncestor.id()), :154-170 addLink (callCounts :159-163, errorCounts :164-169)."
+    },
+    {
+      "id": "r3-zipkin-17",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "Why does a Cassandra trace search constrained by remote service, span name or latency fan out into one query per calendar day of the lookback window, and can the length of that window be changed?",
+      "expectedFiles": [
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraUtil.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraSpanStore.java"
+      ],
+      "expectedSymbols": [
+        "CassandraUtil.durationIndexBucket",
+        "CassandraSpanStore.newBucketedTraceIdCall"
+      ],
+      "expectedFacts": [
+        "The index tables are partitioned by a time bucket, computed by dividing the microsecond timestamp by a window of 24 hours by default.",
+        "newBucketedTraceIdCall loops from the end bucket down to the start bucket, creating one lookup per bucket (and per table needed).",
+        "The window length is read from the JVM system property zipkin.store.cassandra.internal.durationIndexBucket (seconds)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: CassandraUtil.java:40-41 (Long.getLong(\"zipkin.store.cassandra.internal.durationIndexBucket\", 24*60*60)), :43-46 durationIndexBucket; CassandraSpanStore.java:175-223 newBucketedTraceIdCall (startBucket/endBucket :180-181; loop `for (int bucket = endBucket; bucket >= startBucket; bucket--)` :195; per-bucket inputs :202-222); used when remote service/span name/min duration set or no annotation query :141-147. Schema comment in zipkin2-schema-indexes.cql trace_by_service_span partition key ((service, span, bucket))."
+    },
+    {
+      "id": "r3-zipkin-18",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "A trace search that sets an upper latency bound but no lower bound fails with a client error. Which code rejects it, and how does the exception become a 400 response with the message as the body?",
+      "expectedFiles": [
+        "zipkin/src/main/java/zipkin2/storage/QueryRequest.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/BodyIsExceptionMessage.java"
+      ],
+      "expectedSymbols": [
+        "QueryRequest.Builder.build",
+        "BodyIsExceptionMessage.handleException"
+      ],
+      "expectedFacts": [
+        "QueryRequest.Builder.build throws IllegalArgumentException(\"maxDuration is only valid with minDuration\") when maxDuration is set without minDuration.",
+        "ZipkinQueryApiV2.getTraces builds the QueryRequest and is annotated with @ExceptionHandler(BodyIsExceptionMessage.class).",
+        "BodyIsExceptionMessage.handleException maps IllegalArgumentException to HTTP 400 with the exception message as the body."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: QueryRequest.java:253-260 (minDuration/maxDuration checks; message at :259); ZipkinQueryApiV2.java:46-47 (@ExceptionHandler(BodyIsExceptionMessage.class)), :125-136 (QueryRequest.newBuilder()...build() in getTraces); BodyIsExceptionMessage.java:22-31 (IllegalArgumentException -> BAD_REQUEST with message at :30-31)."
+    },
+    {
+      "id": "r3-zipkin-19",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where is a trace identifier in a single-trace lookup request rejected when it is too long, not lower-case hex, or all zeros?",
+      "expectedFiles": [
+        "zipkin/src/main/java/zipkin2/Span.java"
+      ],
+      "expectedSymbols": [
+        "Span.normalizeTraceId",
+        "Span.validateHexAndReturnZeroPrefix"
+      ],
+      "expectedFacts": [
+        "Span.normalizeTraceId throws for an empty ID, for length above 32, for non-lower-hex characters (via validateHexAndReturnZeroPrefix) and for all-zero IDs.",
+        "It left-pads shorter IDs to 16 or 32 characters and drops a 32-character ID's zero high half.",
+        "ZipkinQueryApiV2.getTrace trims the path parameter and calls Span.normalizeTraceId before querying storage."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: Span.java:622-638 normalizeTraceId (empty :625, >32 :626, all zeros :628, padding/truncation :629-637), :678-695 validateHexAndReturnZeroPrefix (error message at :686); ZipkinQueryApiV2.java:142-147 getTrace (trim :145, normalizeTraceId :146)."
+    },
+    {
+      "id": "r3-zipkin-20",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "A client posts old-style JSON containing binary annotations to the newer spans upload endpoint. Where is that mismatch detected and rejected?",
+      "expectedFiles": [
+        "zipkin-server/src/main/java/zipkin2/server/internal/ZipkinHttpCollector.java"
+      ],
+      "expectedSymbols": [
+        "ZipkinHttpCollector.validateAndStoreSpans",
+        "ZipkinHttpCollector.testForUnexpectedFormat"
+      ],
+      "expectedFacts": [
+        "validateAndStoreSpans calls testForUnexpectedFormat(decoder, body) before handing the bytes to the collector; for the v2 JSON decoder it looks for the byte sequence ending in yAnnotations\" (binaryAnnotations) and reports JSON_V1.",
+        "On a mismatch it fails the request with an IllegalArgumentException(\"Expected a JSON_V2 encoded list, but received: JSON_V1\"), which BodyIsExceptionMessage turns into HTTP 400.",
+        "The byte-matching constants are copies of those in SpanBytesDecoderDetector, which only guesses format and is not what rejects the upload."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ZipkinHttpCollector.java:134-139 (unexpectedDecoder check and error), :169-180 testForUnexpectedFormat (JSON_V2 branch :170-173 with BINARY_ANNOTATION_FIELD_SUFFIX defined :182-183), :184 comment 'copy-pasted from SpanBytesDecoderDetector'; :43 @ExceptionHandler(BodyIsExceptionMessage.class); BodyIsExceptionMessage.java:30-31 (400 for IllegalArgumentException). Decoy: SpanBytesDecoderDetector.java:84-95."
+    },
+    {
+      "id": "r3-zipkin-21",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "When more storage writes are in flight than the write throttle allows, where is the rejection actually produced, and what decides how many writes may run at once?",
+      "expectedFiles": [
+        "zipkin-server/src/main/java/zipkin2/server/internal/throttle/ThrottledStorageComponent.java"
+      ],
+      "expectedSymbols": [
+        "ThrottledStorageComponent",
+        "ThrottledStorageComponent.NonLimitingLimiter",
+        "ThrottledStorageComponent.ThreadPoolExecutorResizer",
+        "ThrottledStorageComponent.createQueue"
+      ],
+      "expectedFacts": [
+        "The number of concurrent writes is the size of a ThreadPoolExecutor whose core and max sizes follow a Gradient2Limit, resized by ThreadPoolExecutorResizer whenever the limit changes.",
+        "The limiter is a NonLimitingLimiter whose acquire always returns a listener, so the limit's own concurrency check never rejects.",
+        "Rejection comes from the executor's bounded LinkedBlockingQueue: its rejection handler throws the RejectedExecutionException \"STORAGE_THROTTLE_MAX_QUEUE_SIZE reached\".",
+        "ThrottledCall's onError uses StorageComponent.isOverCapacity to tell the limiter whether to treat an error as a dropped request (lower the limit) or ignore it."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ThrottledStorageComponent.java:57-58 (STORAGE_THROTTLE_MAX_QUEUE_SIZE), :73-80 (Gradient2Limit, queueSize(0)), :80 (new Builder().limit(limit).build() -> NonLimitingLimiter), :84-106 (ThreadPoolExecutor sized to limit.getLimit(), createQueue, rejection handler throws at :104-106), :107 (limit.notifyOnChange(new ThreadPoolExecutorResizer(executor))), :164-173 createQueue, :175-205 resizer, :222-231 NonLimitingLimiter.acquire returns Optional.of(createListener()); ThrottledCall.java:90-93 (orElseThrow STORAGE_THROTTLE_MAX_CONCURRENCY never fires), :163-172 onError classification via isOverCapacity. Decoy: ThrottledCall.java."
+    },
+    {
+      "id": "r3-zipkin-22",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Which check stops startup when a Cassandra node is older than the minimum supported release, and does it always run?",
+      "expectedFiles": [
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/Schema.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraStorageBuilder.java"
+      ],
+      "expectedSymbols": [
+        "Schema.ensureVersion",
+        "Schema.ensureExists",
+        "CassandraStorageBuilder.ensureSchema"
+      ],
+      "expectedFacts": [
+        "Schema.ensureVersion iterates over all cluster nodes and throws a RuntimeException when any node's Cassandra version is below 3.11.3.",
+        "It is called from Schema.ensureExists, which is part of Schema.ensure.",
+        "The check runs only when ensure-schema is enabled (the default): with ensureSchema(false) the storage uses Schema.validate instead, which does not check the version."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: Schema.java:134-148 ensureVersion (Version.parse(\"3.11.3\") compare at :139; exception message :141-142); :150-152 ensureExists calls ensureVersion(session.getMetadata()); :39-43 ensure -> ensureExists + validate; :45 validate has no version check; CassandraStorageBuilder.java:40 (default Schema::ensure), :160-165 (ensureSchema(boolean) picks Schema::ensure or Schema::validate); LazySession.java:41 applies the function at session creation."
+    },
+    {
+      "id": "r3-zipkin-23",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "In the Elasticsearch backend, where is it decided at write time that a tag or annotation cannot be used in searches because it is too long?",
+      "expectedFiles": [
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/BulkIndexWriter.java"
+      ],
+      "expectedSymbols": [
+        "BulkIndexWriter.addSearchFields",
+        "BulkIndexWriter.write"
+      ],
+      "expectedFacts": [
+        "addSearchFields builds the non-stored _q array by skipping annotation values longer than SHORT_STRING_LENGTH (256) and tags whose key length + value length + 1 exceeds 256.",
+        "For each remaining tag it writes the key alone and key=value, so searches can match by key or by exact pair.",
+        "The index template additionally maps string fields with ignore_above 256."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: BulkIndexWriter.java:154-171 addSearchFields (annotation skip :160; tag length check :163-165; key and key=value :166-167); write(...) calls addSearchFields when searchEnabled at :77; RecyclableBuffers.java:15 SHORT_STRING_LENGTH = 256; VersionSpecificTemplates.java:131 (ignore_above SHORT_STRING_LENGTH). Decoy: ElasticsearchSpanConsumer.BulkSpanIndexer.addAutocompleteValues (:94-110) applies the same length limit to autocomplete values."
+    },
+    {
+      "id": "r3-zipkin-24",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where does the server refuse the HTTP TRACE method for every path?",
+      "expectedFiles": [
+        "zipkin-server/src/main/java/zipkin2/server/internal/ZipkinHttpConfiguration.java"
+      ],
+      "expectedSymbols": [
+        "ZipkinHttpConfiguration.serverConfigurator"
+      ],
+      "expectedFacts": [
+        "serverConfigurator registers a route decorator for the TRACE method on prefix \"/\".",
+        "That decorator returns HTTP 405 (METHOD_NOT_ALLOWED) without calling the delegate.",
+        "The code comment ties this to zipkin issue 2286."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ZipkinHttpConfiguration.java:74-76 (sb.routeDecorator().trace(\"prefix:/\").build((delegate, ctx, req) -> HttpResponse.of(HttpStatus.METHOD_NOT_ALLOWED)))."
+    },
+    {
+      "id": "r3-zipkin-25",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where does the multi-trace fetch endpoint reject a request that lists the same trace twice, or lists only one trace?",
+      "expectedFiles": [
+        "zipkin-server/src/main/java/zipkin2/server/internal/ZipkinQueryApiV2.java"
+      ],
+      "expectedSymbols": [
+        "ZipkinQueryApiV2.getTraces"
+      ],
+      "expectedFacts": [
+        "The traceMany handler returns 400 when the traceIds parameter is empty.",
+        "It normalizes each comma-separated ID into a LinkedHashSet and returns 400 \"redundant traceId\" when an ID is added twice.",
+        "If only one distinct ID remains it returns 400 telling the caller to use the single-trace endpoint."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ZipkinQueryApiV2.java:154-174 (@Get(\"/api/v2/traceMany\") getTraces(String traceIds): empty check :157-159; set add/redundant :161-165; single ID :167-170; storage.traces().getTraces(normalized) :172)."
+    },
+    {
+      "id": "r3-zipkin-26",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "locate-explain",
+      "difficulty": "medium",
+      "query": "When the query window spans several weeks, how does the Elasticsearch backend keep the list of daily indexes it searches short?",
+      "expectedFiles": [
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/IndexNameFormatter.java"
+      ],
+      "expectedSymbols": [
+        "IndexNameFormatter.formatTypeAndRange"
+      ],
+      "expectedFacts": [
+        "formatTypeAndRange walks day by day from midnight UTC of the start to the end and replaces whole years, months and ten-day blocks with wildcard patterns when the block lies entirely inside the range.",
+        "Full years become prefix-YYYY-*, full months prefix-YYYY-MM-*, and days 0-9, 10-19, 20-29 become patterns ending 0*, 1*, 2*.",
+        "Leftover days are emitted as individual dated index names; ElasticsearchSpanStore.getTraces calls it with the query's begin and end."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: IndexNameFormatter.java:102-156 (year compression :109-119, month :120-134, ten-day blocks :128-150, single days :152); midnightUTC :167-171; called at ElasticsearchSpanStore.java:98 (and :149,:172,:195)."
+    },
+    {
+      "id": "r3-zipkin-27",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "locate-explain",
+      "difficulty": "medium",
+      "query": "Why do responses listing service names sometimes carry cache headers and sometimes not?",
+      "expectedFiles": [
+        "zipkin-server/src/main/java/zipkin2/server/internal/ZipkinQueryApiV2.java"
+      ],
+      "expectedSymbols": [
+        "ZipkinQueryApiV2.maybeCacheNames",
+        "ZipkinQueryApiV2.getServiceNames"
+      ],
+      "expectedFacts": [
+        "maybeCacheNames adds a Cache-Control header of the form max-age=<names-max-age>, must-revalidate only when the caller passes true.",
+        "getServiceNames passes true only when more than 3 service names exist (it stores the count in the volatile serviceCount field); getSpanNames and getRemoteServiceNames reuse that stored count.",
+        "The comment explains empty or tiny results are not cached to avoid confusing people getting started; the max age defaults to 300 seconds."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ZipkinQueryApiV2.java:59 (volatile int serviceCount), :65 (names-max-age default 300), :85-91 getServiceNames (serviceCount = size; maybeCacheNames(serviceCount > 3, ...)), :93-110 (span/remote names use serviceCount > 3), :196-229 maybeCacheNames (header at :225-227; comment :196-200); autocompleteValues uses values.size() > 3 at :193."
+    },
+    {
+      "id": "r3-zipkin-28",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "locate-explain",
+      "difficulty": "medium",
+      "query": "When the web UI is mounted under a different base path, where is its HTML rewritten so assets still load?",
+      "expectedFiles": [
+        "zipkin-server/src/main/java/zipkin2/server/internal/ui/ZipkinUiConfiguration.java"
+      ],
+      "expectedSymbols": [
+        "ZipkinUiConfiguration.maybeResource",
+        "ZipkinUiConfiguration.maybeIndexService"
+      ],
+      "expectedFacts": [
+        "maybeResource returns index.html unchanged when the configured base path equals the default /zipkin.",
+        "Otherwise it maps \"/\" to the empty string, rewrites any =\"/zipkin attribute prefix to =\".\" (relative) and sets <base href> to the configured base path.",
+        "maybeIndexService serves the rewritten content with a one-minute Cache-Control."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ZipkinUiConfiguration.java:147-156 maybeIndexService (maxAgeSeconds(60) :151), :158-173 maybeResource (default check :163; \"/\" -> \"\" :165; replace(\"=\\\"\" + DEFAULT_BASEPATH, \"=\\\".\") :169; base href :171); ZipkinUiProperties.java:14 DEFAULT_BASEPATH = \"/zipkin\"; indexService bean :65-69."
+    },
+    {
+      "id": "r3-zipkin-29",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "locate-explain",
+      "difficulty": "medium",
+      "query": "When the default in-memory store is full, which stored spans are dropped to make room?",
+      "expectedFiles": [
+        "zipkin/src/main/java/zipkin2/storage/InMemoryStorage.java"
+      ],
+      "expectedSymbols": [
+        "InMemoryStorage.doAccept",
+        "InMemoryStorage.evictToRecoverSpans",
+        "InMemoryStorage.deleteOldestTrace"
+      ],
+      "expectedFacts": [
+        "doAccept computes how many spans must be recovered (current + incoming - maxSpanCount) and calls evictToRecoverSpans before adding the new spans.",
+        "deleteOldestTrace removes the trace whose timestamp key is last in the descending-by-timestamp map, i.e. the oldest, including all its spans.",
+        "After removal, services no longer referenced by any remaining trace have their span and remote-service name entries removed too."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: InMemoryStorage.java:178-183 doAccept (spansToRecover at :182; evictToRecoverSpans at :183), :243-251 evictToRecoverSpans loop, :254-269 deleteOldestTrace (lastKey of TIMESTAMP_DESCENDING map at :256; removes all timestamps of that lowTraceId :257-261; orphan service cleanup :262-267), :462-474 TIMESTAMP_DESCENDING; default maxSpanCount 500000 at :68, :88-92; server default zipkin.storage.mem.max-spans ZipkinConfiguration.java:117."
+    },
+    {
+      "id": "r3-zipkin-30",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "locate-explain",
+      "difficulty": "hard",
+      "query": "If the same span is reported twice to the Elasticsearch backend, why does it not end up as two documents?",
+      "expectedFiles": [
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/BulkIndexWriter.java",
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/BulkCallBuilder.java"
+      ],
+      "expectedSymbols": [
+        "BulkIndexWriter.write",
+        "BulkCallBuilder.writeIndexMetadata"
+      ],
+      "expectedFacts": [
+        "BulkIndexWriter.write returns the document ID as the trace ID, a hyphen, and the MD5 hash of the serialized JSON document.",
+        "BulkCallBuilder.writeIndexMetadata puts that ID in the bulk index action's _id field, so an identical span overwrites the same document.",
+        "A span whose content differs in any serialized field (for example an extra tag) gets a different ID and is stored as a separate document, to be merged at read time."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: BulkIndexWriter.java:73-119 write (slice of written document :115-116; return span.traceId() + '-' + md5(slice) at :118), :173-182 md5; BulkCallBuilder.java:174-197 serialize (id from writer.writeDocument at :181), :199-213 writeIndexMetadata (_id at :207)."
+    },
+    {
+      "id": "r3-zipkin-31",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where does the server accept trace exports sent in the OpenTelemetry wire protocol (OTLP over HTTP or gRPC)?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "The repository has no OTLP receiver; the only gRPC ingestion route is /zipkin.proto3.SpanService/Report in ZipkinGrpcCollector, which decodes Zipkin proto3 spans with SpanBytesDecoder.PROTO3.",
+        "HTTP ingestion routes are /api/v1/spans and /api/v2/spans in ZipkinHttpCollector, accepting Zipkin JSON, proto3 or Thrift only.",
+        "The only mention of OpenTelemetry in Java sources is an unrelated StringUtils import in PulsarCollector."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (absence): rg -il 'otlp' over *.java/*.yml/*.proto/*.xml excluding zipkin-lens -> no hits; rg -il 'opentelemetry' -> only zipkin-collector/pulsar/.../PulsarCollector.java:7 (import io.opentelemetry.api.internal.StringUtils); rg -il 'jaeger' -> no hits; find . -name '*.proto' (excluding zipkin-lens) -> none; rg 'SpanService|/Report|grpc' in zipkin-server/src/main -> only ZipkinGrpcCollector.java:24-37 (route '/zipkin.proto3.SpanService/Report' at :37) and CORS header names in ZipkinHttpConfiguration.java:92-94."
+    },
+    {
+      "id": "r3-zipkin-32",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where does the server verify an API key, token or login on incoming span uploads and trace queries?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "The server performs no inbound authentication or authorization: the HTTP configuration only adds CORS handling, a TRACE-method block, self-tracing and metrics decorators.",
+        "The only Authorization-header code is outbound: BasicAuthInterceptor adds Basic credentials to requests sent to Elasticsearch, and HttpClientFactory masks that header in client logs.",
+        "Other credentials in the repo (Cassandra, MySQL, Kafka, RabbitMQ, ActiveMQ, Eureka properties) are for connecting to backends."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (absence): rg -n 'AUTHORIZATION|Authorization' main Java -> only elasticsearch/HttpClientFactory.java:59,63 and elasticsearch/BasicAuthInterceptor.java:33 (outbound); rg -il 'bearer|oauth|jwt|api[-_ ]?key|Authorizer|AuthService' -> no hits; rg -il 'authenticat' in java/yml (non-lens, non-test) -> only CassandraStorageBuilder.java, eureka properties, zipkin-server-shared.yml (outbound connection settings); server decorators: rg 'decorator\\(' zipkin-server -> CORS at ZipkinHttpConfiguration.java:95, Brave at ZipkinSelfTracingConfiguration.java:122, ES client decorators only; TRACE block at ZipkinHttpConfiguration.java:74-76."
+    },
+    {
+      "id": "r3-zipkin-33",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where is the tail-based sampling logic that, after a whole trace is assembled, keeps traces that contain errors or slow spans?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "The repository has only head-style sampling: CollectorSampler decides per span from the trace ID hash (debug spans always kept), applied in Collector.sample before storage.",
+        "Nothing buffers a trace until complete before deciding; self-tracing uses Brave samplers for the server's own requests.",
+        "The search space contains no error- or latency-aware keep/drop policy."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (absence): rg -i 'tail[-_ ]?(based|sampl)' -> no hits; rg -i 'adaptive' -> no hits; rg -i 'error.*sampl|sampl.*error' -> no hits (Java/yml, non-lens, non-test); rg -il 'sampl' lists only CollectorSampler.java, Collector.java, transport configs passing the sampler, and ZipkinSelfTracingConfiguration/SelfTracingProperties (Brave head sampling). CollectorSampler.java:58-65 isSampled uses only trace ID and debug flag; Collector.java:197-208 sample()."
+    },
+    {
+      "id": "r3-zipkin-34",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "negative",
+      "difficulty": "hard",
+      "query": "Where does the server automatically create or upgrade the MySQL tables at startup, for example by running migration scripts?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "For MySQL the server only probes for optional columns and tables when the Schema object is first built (trace_id_high, ipv6, error_count, remote_service_name, pre-aggregated dependencies) and logs a warning telling the operator which ALTER or mysql.sql to run.",
+        "Automatic schema installation and upgrades exist only for Cassandra (Schema.ensureExists applying CQL files) and for Elasticsearch index templates, not for MySQL.",
+        "No migration library such as Flyway or Liquibase is used, and the MySQL storage configuration has no ensure-schema option."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (absence): rg -i 'flyway|liquibase' -> no hits; rg -i 'migrat' -> only zipkin/src/main/java/zipkin2/v1/V1Span.java (unrelated); rg -i 'initSql|schema\\.sql|ScriptUtils|ResourceDatabasePopulator|sql\\.init|executeScript' -> no hits in MySQL modules (applyCqlFile hits are Cassandra Schema.java:155-167,188); rg -n 'ensureSchema|ensure-schema' zipkin-server/.../mysql -> no hits; probes: mysql-v1 Schema.java:40-46, HasTraceIdHigh.java:22,38-39, HasIpv6.java:26-30, HasErrorCount.java:26-30, HasRemoteServiceName.java:22,32-33, HasPreAggregatedDependencies.java:30-34 (log-only 'Execute: ...')."
+    },
+    {
+      "id": "r3-zipkin-35",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where does a span record references (links) to spans in other traces, apart from its parent?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "The Span model has only traceId, parentId, id, kind, name, timestamp, duration, localEndpoint, remoteEndpoint, annotations, tags and debug/shared flags; there is no link or reference field.",
+        "DependencyLink is an aggregate of call and error counts between two service names, not a span-level link.",
+        "Spans relate to each other only through parentId and the shared-id client/server convention."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (absence): rg -i 'followsFrom|follows_from|SpanLink|spanLinks|causal' (Java, non-test, non-lens) -> no hits; rg -i 'references' -> only comments in SpanNode.java:154 and Span.java:721,725; Span.java field list :718-725 (traceId, parentId, id, kind, name, timestamp, duration, localEndpoint, remoteEndpoint, annotations, tags, flags); accessors :74-264 list no links; DependencyLink.java is service-level."
+    },
+    {
+      "id": "r3-zipkin-36",
+      "repo": "zipkin",
+      "language": "Java",
+      "stratum": "negative",
+      "difficulty": "hard",
+      "query": "Where does the server compute per-service request rate, error rate and latency percentiles from the collected spans?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "The server derives no such metrics from span data: MicrometerCollectorMetrics only counts messages, bytes and spans per transport, and the percentile histogram in ZipkinPrometheusMetricsConfiguration times the server's own HTTP API requests.",
+        "DependencyLinker produces only call and error counts per (parent, child) service pair, with no latency aggregation.",
+        "The error-rate thresholds in UI properties only colour the dependency view and are served in config.json."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-zipkin-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (absence): rg -i 'latency|p95|quantile' Java non-test non-lens -> only javadoc/comments in Annotation.java:12, Span.java:32,221 and Cassandra load-balancing comments; rg -i 'span.?metrics|RED metrics' -> no hits; rg -i 'percentile|histogram' -> ZipkinPrometheusMetricsConfiguration.java:135 (publishPercentileHistogram on http.server.requests timer for API calls); MicrometerCollectorMetrics.java:14-90 counters (messages, messages_dropped, bytes, spans, spans_dropped, gauges); DependencyLinker.java:154-170 call/error counts only; ZipkinUiProperties.java:128-129 and ZipkinUiConfiguration.java:139-140 (display thresholds)."
+    }
+  ]
+}
