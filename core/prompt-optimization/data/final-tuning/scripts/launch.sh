@@ -7,6 +7,6 @@ CELL="$1"; TAG="$2"; SPLIT="$3"; shift 3
 IDS=$(node -e "const s=require('$WT/core/prompt-optimization/data/final-tuning/r282-split.json'); console.log(('$SPLIT'==='all'?[...s.train,...s.validation]:s['$SPLIT']).join(','))")
 L="$HOME/.ss-eval/final-tuning-logs"; mkdir -p "$L"
 cd "$WT"
-env SWEET_SEARCH_MAX_DAEMONS=8 CELL="$CELL" "$@" nohup node scripts/retrieval-bench-282.mjs --conc 3 --arms sweet --ids "$IDS" --tag "$TAG" > "$L/$TAG.log" 2>&1 &
+env SWEET_SEARCH_MAX_DAEMONS=8 SS_BENCH_STABLE_RULES_PATH=1 CELL="$CELL" "$@" nohup node scripts/retrieval-bench-282.mjs --conc 3 --arms sweet --ids "$IDS" --tag "$TAG" > "$L/$TAG.log" 2>&1 &
 disown
 echo "launched $CELL $TAG ($SPLIT) pid $! → $L/$TAG.log"
