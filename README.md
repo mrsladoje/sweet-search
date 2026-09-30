@@ -1141,17 +1141,24 @@ Source: [`crates/sweet-search-native/src/inference/`](crates/sweet-search-native
 
 ## 🔄 An Index That Never Goes Stale
 
-Most code indexes rot the moment you start typing. sweet-search ships a **reconcile daemon** that
-keeps every tier of the index converged with your **working tree** — uncommitted edits included —
-without you ever running a command.
+Most code indexes go stale the moment you start typing. sweet-search runs a background daemon
+that keeps the whole index in sync with your **working tree**, uncommitted edits included.
+You never run a command.
 
-- **Save → searchable** at the next reconcile tick — auto-tuned per machine between 15 s and 300 s, typically 15–60 s on a warm, idle box
-- **Tracks the filesystem, not git** — unstaged and uncommitted changes are first-class; deleted or newly-gitignored files disappear from results automatically
-- **Atomic by construction** — every tick publishes all five index tiers (float HNSW, binary HNSW, late-interaction segments, sparse-gram, code graph) through a single fsync-renamed epoch manifest, so a query never sees a half-updated index
-- **No-op edits cost almost nothing** — content hashing collapses byte-identical rewrites and editor touch events into skipped re-encoding work
+| ⏱️ **Always current** | 🎯 **Re-embeds only what changed** | ⚛️ **Never half-updated** |
+|:--|:--|:--|
+| Edits are searchable within ~20–60 s, tuned to your machine | One edited function means one chunk to the encoder, not the whole file | All five index tiers switch to the new version in one atomic step |
+
+#### ⚙️ How it works
+> - **Chunk IDs follow symbols, not line numbers.** Add a function at the top of a file and everything below it keeps its embedding.
+> - **Dependency-aware.** When an import's symbols change, the files that use it update too. Comment-only edits skip the encoder entirely.
+> - **Append, don't rebuild.** Each tier takes a small delta. A background worker compacts later, so the index stays fast for months.
+> - **One atomic epoch.** Vectors, binary HNSW, late-interaction segments, sparse-grams and the code graph publish under one fsync-renamed manifest.
+> - **Follows the filesystem, not git.** Unstaged edits count. Deleted or newly ignored files leave the results.
+> - **Polite.** CPU-only, at most 50 files and 2 s of CPU per update. The GPU stays free for full index builds.
 
 <details>
-<summary><b>Deep dive</b></summary>
+<summary><b>Under the hood: safety rails and memory controls</b></summary>
 
 <br/>
 
@@ -1160,7 +1167,7 @@ without you ever running a command.
 - **Orphan sweep:** files that are deleted, newly excluded, or newly oversized get tombstoned across every tier; the index converges to exactly what a fresh full rebuild would produce.
 - **Self-maintenance:** per-tier health watermarks (tombstone fraction, stale-doc ratio, delta ratio) schedule low-priority background compaction in a separate worker — the index stays fast over months without a manual rebuild.
 - **Worktree-safe:** a worktree stamp plus a single-writer lockfile prevent two daemons from silently interleaving index histories across git worktrees.
-- **Resource-polite:** ticks are budgeted (≤50 files / ≤2 s CPU per tick), run CPU-only (the GPU is reserved for cold full indexing), and the interval auto-tunes from load average, churn, and backlog.
+- **Auto-tuned interval:** the update interval moves between 15 s and 300 s with load average, churn, and backlog.
 - `sweet-search reconcile status` / `reconcile inspect <path>` explain exactly what the daemon thinks and why. Opt out any time with `SWEET_SEARCH_RECONCILE_V2=0`.
 
 **Memory controls.** The resident daemons show up in `ps` / Activity Monitor as
