@@ -35,19 +35,13 @@ import {
 import { runReconcileV2Tick } from '../../core/indexing/index-maintainer.mjs';
 import { handleIncrementalCli } from '../../core/incremental-indexing/application/operator-cli.mjs';
 import { createVectorSchema } from '../../core/indexing/indexer-build.js';
+import { buildConfigFingerprint } from '../../core/indexing/config-fingerprint.js';
 
-// A `config_fingerprint` shaped like the one the full indexer's
-// incremental-tracker writes. Its mere presence is what distinguishes a real
-// full index from a reconciler-only partial run.
-const FULL_INDEX_FINGERPRINT = Object.freeze({
-  provider: 'test',
-  model: 'fake',
-  dimension: 8,
-  hnswDimension: 8,
-  pipelineVersion: 2,
-  hashAlgorithm: 'xxhash64',
-  version: '2.4',
-});
+// The `config_fingerprint` the full indexer's incremental-tracker writes for
+// the running configuration. Its presence distinguishes a real full index from
+// a reconciler-only partial run; it must also MATCH the running configuration
+// (see incremental-indexing-config-fingerprint.test.js for the mismatch gate).
+const FULL_INDEX_FINGERPRINT = Object.freeze(buildConfigFingerprint());
 
 function writeJson(filePath, value) {
   writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf-8');

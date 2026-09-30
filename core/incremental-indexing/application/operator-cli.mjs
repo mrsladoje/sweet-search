@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { readManifest } from '../infrastructure/manifest.mjs';
-import { baselineStatus, WAITING_FOR_INITIAL_INDEX } from '../infrastructure/baseline-readiness.mjs';
+import { baselineStatus } from '../infrastructure/baseline-readiness.mjs';
+import { formatBaselineNotice } from '../infrastructure/staleness-display.mjs';
+import { applyPersistedLiModel } from '../../infrastructure/init-config.js';
 import { canonicaliseInsideRoot } from '../infrastructure/dirty-set.mjs';
 import { contentHashSync } from '../infrastructure/hashing.mjs';
 import {
@@ -429,7 +431,7 @@ function print(payload, json) {
       if (!r.enabled && r.disabledReason) console.log(`disabled reason: ${r.disabledReason}`);
     }
     if (payload.baseline && !payload.baseline.ready) {
-      console.log(`baseline: ${WAITING_FOR_INITIAL_INDEX} (${payload.baseline.reason}) — run "sweet-search index" first`);
+      console.log(`baseline: ${formatBaselineNotice(payload.baseline)}`);
     }
     console.log(`index epoch: ${payload.manifest.epoch}   dirty files: ${payload.dirty.pending + payload.dirty.processing}   rebuild backlog: ${payload.rebuild.pending}`);
     if (payload.lock?.present) {
@@ -464,7 +466,7 @@ function print(payload, json) {
   }
   if (payload.kind === 'tick') {
     if (payload.skipped) {
-      console.log(`reconcile tick skipped: ${WAITING_FOR_INITIAL_INDEX} (${payload.baseline?.reason ?? 'no-baseline'}) — run "sweet-search index" first`);
+      console.log(`reconcile tick skipped: ${formatBaselineNotice(payload.baseline)}`);
       return;
     }
     console.log(`reconcile tick epoch ${payload.counters?.epoch ?? 'unknown'} (${payload.counters?.files_processed ?? 0} file(s) processed)`);
@@ -483,6 +485,9 @@ function print(payload, json) {
 export async function handleIncrementalCli(command, args) {
   const { positional, opts } = parseOptions(args);
   const ctx = context(opts);
+  // Same LI model resolution as the indexer and daemon, so the baseline gate's
+  // config fingerprint compares like with like.
+  applyPersistedLiModel(ctx.projectRoot);
   const sub = positional[0];
 
   if (command === 'reconcile') {
@@ -511,7 +516,7 @@ export async function handleIncrementalCli(command, args) {
           kind: 'tick',
           ok: false,
           skipped: true,
-          reason: WAITING_FOR_INITIAL_INDEX,
+          reason: baseline.state,
           baseline,
           projectRoot: ctx.projectRoot,
           stateDir: ctx.stateDir,

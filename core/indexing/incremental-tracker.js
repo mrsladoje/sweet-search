@@ -28,160 +28,16 @@
 import fs from 'fs/promises';
 import { existsSync, openSync, fsyncSync, closeSync } from 'fs';
 import path from 'path';
-import { DB_PATHS, EMBEDDING_CONFIG } from '../infrastructure/config/index.js';
-import { contentHashSync, HASH_ALGORITHM } from '../incremental-indexing/infrastructure/hashing.mjs';
+import { DB_PATHS } from '../infrastructure/config/index.js';
+import { contentHashSync } from '../incremental-indexing/infrastructure/hashing.mjs';
+import { STATE_VERSION, buildConfigFingerprint, validateConfigFingerprint, diffConfigFingerprint } from './config-fingerprint.js';
 
 const STATE_PATH = DB_PATHS.merkle;
 
 // =============================================================================
-// CONFIG FINGERPRINT (Sweet Search v2.4)
-// Detects embedding provider/dimension changes that require full reindex
+// CONFIG FINGERPRINT — see config-fingerprint.js. Detects index-format changes
+// (encoders, chunker, enrichment, sparse weights) that require a full re-embed.
 // =============================================================================
-
-const STATE_VERSION = '2.4';
-
-/**
- * Build config fingerprint from current embedding configuration
- * Changes to any of these values invalidate the entire index
- */
-function buildConfigFingerprint() {
-  return {
-    provider: EMBEDDING_CONFIG.provider,
-    model: EMBEDDING_CONFIG.model,
-    dimension: EMBEDDING_CONFIG.dimension,
-    hnswDimension: EMBEDDING_CONFIG.hnswDimension,
-    // Quantization pipeline version — bump when changing the embedding pipeline
-    // to invalidate all existing indexes. v2 = int8 quantized embeddings.
-    pipelineVersion: 2,
-    hashAlgorithm: HASH_ALGORITHM,
-    version: STATE_VERSION,
-  };
-}
-
-/**
- * Validate stored config fingerprint against current configuration
- * @param {Object} storedFingerprint - Fingerprint from merkle-state.json
- * @returns {Object} { valid: boolean, reason?: string, details?: Object }
- */
-function validateConfigFingerprint(storedFingerprint) {
-  const current = buildConfigFingerprint();
-
-  // No fingerprint in state = legacy state, migrate gracefully
-  if (!storedFingerprint) {
-    return {
-      valid: true,
-      migrated: true,
-      reason: 'legacy_state',
-      details: { message: 'Legacy state detected, adding config fingerprint' },
-    };
-  }
-
-  // Provider changed (e.g., voyage -> mistral)
-  if (storedFingerprint.provider !== current.provider) {
-    return {
-      valid: false,
-      reason: 'provider_changed',
-      details: {
-        previous: storedFingerprint.provider,
-        current: current.provider,
-        message: `Embedding provider changed: ${storedFingerprint.provider} -> ${current.provider}`,
-      },
-    };
-  }
-
-  // Model changed within same provider (e.g., voyage-code-2 -> voyage-code-3)
-  if (storedFingerprint.model !== current.model) {
-    return {
-      valid: false,
-      reason: 'model_changed',
-      details: {
-        previous: storedFingerprint.model,
-        current: current.model,
-        message: `Embedding model changed: ${storedFingerprint.model} -> ${current.model}`,
-      },
-    };
-  }
-
-  // Full dimension changed (vectors incompatible)
-  if (storedFingerprint.dimension !== current.dimension) {
-    return {
-      valid: false,
-      reason: 'dimension_changed',
-      details: {
-        previous: storedFingerprint.dimension,
-        current: current.dimension,
-        message: `Embedding dimension changed: ${storedFingerprint.dimension}d -> ${current.dimension}d`,
-      },
-    };
-  }
-
-  // HNSW dimension changed (index structure incompatible)
-  if (storedFingerprint.hnswDimension !== current.hnswDimension) {
-    return {
-      valid: false,
-      reason: 'hnsw_dimension_changed',
-      details: {
-        previous: storedFingerprint.hnswDimension,
-        current: current.hnswDimension,
-        message: `HNSW dimension changed: ${storedFingerprint.hnswDimension}d -> ${current.hnswDimension}d`,
-      },
-    };
-  }
-
-  if (storedFingerprint.hashAlgorithm !== current.hashAlgorithm) {
-    return {
-      valid: false,
-      reason: 'hash_algorithm_changed',
-      details: {
-        previous: storedFingerprint.hashAlgorithm ?? 'unknown',
-        current: current.hashAlgorithm,
-        message: `Content hash algorithm changed: ${storedFingerprint.hashAlgorithm ?? 'unknown'} -> ${current.hashAlgorithm}`,
-      },
-    };
-  }
-
-  // State version upgrade (may require reindex for new features)
-  if (storedFingerprint.version !== current.version) {
-    // Version 2.1 -> 2.2 is backward compatible, just add fingerprint
-    if (storedFingerprint.version === '2.1' && current.version === '2.2') {
-      return {
-        valid: true,
-        migrated: true,
-        reason: 'version_upgrade',
-        details: {
-          previous: storedFingerprint.version,
-          current: current.version,
-          message: `State version upgraded: ${storedFingerprint.version} -> ${current.version}`,
-        },
-      };
-    }
-    // Version 2.2 -> 2.3 is backward compatible (adds mtime/size/inode fast-path)
-    // First run will read all files but store new format with metadata
-    if (storedFingerprint.version === '2.2' && current.version === '2.3') {
-      return {
-        valid: true,
-        migrated: true,
-        reason: 'version_upgrade',
-        details: {
-          previous: storedFingerprint.version,
-          current: current.version,
-          message: `State version upgraded: ${storedFingerprint.version} -> ${current.version} (mtime/size/inode fast-path enabled)`,
-        },
-      };
-    }
-    return {
-      valid: false,
-      reason: 'state_version_changed',
-      details: {
-        previous: storedFingerprint.version,
-        current: current.version,
-        message: `State version changed: ${storedFingerprint.version} -> ${current.version}`,
-      },
-    };
-  }
-
-  return { valid: true };
-}
 
 /**
  * Compute the configured content hash of file content.
@@ -707,13 +563,9 @@ export async function getPhaseProgress() {
   try {
     const data = JSON.parse(await fs.readFile(PROGRESS_PATH, 'utf-8'));
     // Validate config fingerprint — discard stale progress if config changed
-    const currentFp = buildConfigFingerprint();
-    if (data.configFingerprint?.provider !== currentFp.provider ||
-        data.configFingerprint?.model !== currentFp.model ||
-        data.configFingerprint?.dimension !== currentFp.dimension ||
-        data.configFingerprint?.hnswDimension !== currentFp.hnswDimension ||
-        data.configFingerprint?.hashAlgorithm !== currentFp.hashAlgorithm ||
-        data.configFingerprint?.version !== currentFp.version) {
+    if (!data.configFingerprint ||
+        diffConfigFingerprint(data.configFingerprint).length > 0 ||
+        data.configFingerprint.version !== STATE_VERSION) {
       return null;
     }
     return data;

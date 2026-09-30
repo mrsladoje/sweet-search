@@ -99,6 +99,47 @@ export function renderStalenessLines(input) {
   return ['─────────', footer];
 }
 
+/**
+ * Describe changed config-fingerprint fields, e.g.
+ * "late-interaction model: lateon-code -> lateon-code-edge, chunking version: (none) -> 1".
+ * A `(none)` previous value means the index predates that field.
+ *
+ * @param {Array<{label: string, previous: *, current: *}>} changes
+ * @returns {string}
+ */
+export function describeFormatChanges(changes = []) {
+  const fmt = (v) => (v === null || v === undefined ? '(none)' : String(v));
+  return changes.map((c) => `${c.label}: ${fmt(c.previous)} -> ${fmt(c.current)}`).join(', ');
+}
+
+/**
+ * Notice for an index built in an older format (config fingerprint mismatch).
+ * Shown by search and `sweet-search reconcile status|tick`, and logged by the
+ * reconcile daemon while it stays paused.
+ *
+ * @param {Array} changes  from `validateConfigFingerprint(...).changes`
+ * @returns {string}
+ */
+export function formatIndexFormatNotice(changes = []) {
+  const what = describeFormatChanges(changes);
+  return '[sweet-search] ⚠ index built by an older sweet-search'
+    + (what ? ` (changed: ${what})` : '')
+    + ' — run "sweet-search index" to rebuild it; incremental updates are paused until then';
+}
+
+/**
+ * Explain why the reconcile daemon is dormant, for any baseline-gate reason.
+ *
+ * @param {{reason: string, changes?: Array}} baseline  from `hasCompleteBaseIndex`
+ * @returns {string}
+ */
+export function formatBaselineNotice(baseline) {
+  if (baseline?.reason === 'config-fingerprint-mismatch') {
+    return formatIndexFormatNotice(baseline.changes || []);
+  }
+  return `waiting_for_initial_index (${baseline?.reason ?? 'no-baseline'}) — run "sweet-search index" first`;
+}
+
 export const __testing = {
   YELLOW_AGE_MS, RED_AGE_MS, YELLOW_DIRTY, RED_DIRTY, RED_BACKLOG,
   GREEN, YELLOW, RED,

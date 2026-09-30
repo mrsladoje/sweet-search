@@ -16,13 +16,15 @@
  *
  * CORRECTNESS GATE (the §1.1 Tier-3 risk).
  * The cutoff key is `embedding_input_hash` + `li_input_hash` (from
- * `encoder-input.mjs::chunkInputHashes`). These fold in cross-file graph
- * enrichment (scope + imports injected by `enrichChunksFromGraph`), so a change
- * to a DEPENDENCY's symbols changes the dependent file's `embedding_text` and
- * therefore its `embedding_input_hash` — which means the dependent file is NOT
- * skipped. The key MUST NEVER be the file's own `chunk_text_hash` nor the raw
- * `contentUnchanged` flag, both of which miss cross-file enrichment and would
- * silently degrade recall. This module deliberately accepts ONLY the encoder-
+ * `encoder-input.mjs::chunkInputHashes`). These fold in the enrichment preamble
+ * (scope chain + import lines injected by `enrichChunksFromGraph`). That
+ * preamble is built only from the chunk's OWN file — its entities and its own
+ * import statements — so editing file A never changes file B's preamble, but
+ * an edit elsewhere in the SAME file (an import line, an enclosing class) can
+ * change a chunk's `embedding_text` while its own `chunk_text_hash` stays the
+ * same. The key MUST NEVER be the chunk's `chunk_text_hash` nor the raw
+ * `contentUnchanged` flag, both of which miss the preamble and would silently
+ * degrade recall. This module deliberately accepts ONLY the encoder-
  * input hashes and exposes no API that takes a text/content hash, so the
  * correctness gate is enforced structurally.
  *

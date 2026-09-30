@@ -19,7 +19,7 @@ import {
   formatMiddleRes,
 } from './search-format.js';
 import { detectOutputPolicy } from './output-policy.js';
-import { emitDecoration } from './cli-decoration.js';
+import { emitDecoration, emitIndexFormatNotice } from './cli-decoration.js';
 
 // =============================================================================
 // CLI entry point
@@ -312,6 +312,7 @@ Examples:
             console.log(JSON.stringify({ results, stats }, null, 2));
           } else {
             emitDecoration(outputPolicy, query, stats, true);
+            await emitIndexFormatNotice(outputPolicy);
 
             // Use pure formatting helpers (no full SweetSearch instantiation needed).
             // Contract note: formatResults currently only depends on `this` for
@@ -380,6 +381,7 @@ Examples:
           console.log(JSON.stringify({ results, stats }, null, 2));
         } else {
           emitDecoration(outputPolicy, query, stats, false);
+          await emitIndexFormatNotice(outputPolicy);
 
           if (stats.path === 'structural') {
             console.log(searcher.formatStructuralResults(results, stats));

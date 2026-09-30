@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import { contentHashSync } from '../../core/incremental-indexing/infrastructure/hashing.mjs';
 import { createVectorSchema } from '../../core/indexing/indexer-build.js';
+import { buildConfigFingerprint } from '../../core/indexing/config-fingerprint.js';
 
 /**
  * Seed a complete baseline so a default-on reconcile tick is allowed to run.
@@ -38,7 +39,7 @@ function seedBaseline(stateDir, epoch = 1) {
   }));
   writeFileSync(join(stateDir, 'merkle-state.json'), JSON.stringify({
     version: '2.4',
-    config_fingerprint: { provider: 'test', model: 'fake', dimension: 8, hnswDimension: 8, pipelineVersion: 2 },
+    config_fingerprint: buildConfigFingerprint(),
     files: {},
     lastIndex: new Date().toISOString(),
     stats: { totalFiles: 0 },
