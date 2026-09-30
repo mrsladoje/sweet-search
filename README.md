@@ -1233,7 +1233,7 @@ sweet-search stands on a lot of shoulders, and we'd rather name them than preten
 
 ## 📄 License
 
-[Apache-2.0](LICENSE) © [PanonIT](https://panonit.com)
+[Apache-2.0](LICENSE) © Marko Sladojević and [PanonIT](https://panonit.com)
 
 ---
 

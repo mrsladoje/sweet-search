@@ -20,11 +20,21 @@ Models are downloaded at runtime and are not included in this distribution:
   Alibaba-NLP/gte-reranker-modernbert-base         Apache-2.0
   nomic-ai/CodeRankEmbed and its ONNX conversions  MIT
 
-Harness prompts written by `sweet-search init` include modified third-party
-text. See scripts/harness-prompts/NOTICE.md for sources and changes:
+`sweet-search init` changes the system prompt of Claude Code, Codex and
+opencode. See scripts/harness-prompts/NOTICE.md for sources and changes.
+
+The Claude Code prompt is our own text. It contains no text from Claude Code.
+The Codex and opencode prompts are modified copies of third-party text:
 
   OpenAI Codex (Apache-2.0)
   Copyright 2025 OpenAI
 
   opencode (MIT)
   Copyright (c) 2025 opencode
+
+===============================================================================
+Trademarks
+
+Claude and Claude Code are trademarks of Anthropic PBC. Codex is a trademark
+of OpenAI. Other names belong to their owners. Sweet Search is not affiliated
+with or endorsed by these companies.
