@@ -23,8 +23,11 @@ Models are downloaded at runtime and are not included in this distribution:
 `sweet-search init` changes the system prompt of Claude Code, Codex and
 opencode. See scripts/harness-prompts/NOTICE.md for sources and changes.
 
-The Claude Code prompt is our own text. It contains no text from Claude Code.
-The Codex and opencode prompts are modified copies of third-party text:
+All three prompts are modified versions of the harness's own prompt:
+
+  Claude Code
+  Adapted from the system prompt of Claude Code, Anthropic PBC.
+  Claude Code is proprietary software; it is not licensed under Apache-2.0.
 
   OpenAI Codex (Apache-2.0)
   Copyright 2025 OpenAI

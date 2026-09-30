@@ -17,9 +17,9 @@
  * `git log` when git state matters. The files:
  *
  *   .claude/agents/sweet-search.md     main-session agent; its body REPLACES Claude Code's
- *                                      base system prompt (settings `agent`). The body is our
- *                                      own paraphrase of the user-relevant stock guidance,
- *                                      without the conflicting search steer.
+ *                                      base system prompt (settings `agent`). The body is
+ *                                      adapted from the user-relevant stock guidance, without
+ *                                      the conflicting search steer.
  *   .claude/agents/general-purpose.md  replaces the built-in catch-all subagent, so delegated
  *                                      work runs a prompt without search advice; the rules
  *                                      reach it through the project rules file
@@ -130,9 +130,9 @@ export const CLAUDE_LEAN_ENV = Object.freeze({
 // v2: what `sweet-search init` installs.
 // ---------------------------------------------------------------------------------------------
 
-// Main-session base prompt. OUR OWN WORDS: a paraphrase of the user-relevant guidance in Claude
-// Code's stock base prompt (safety, the harness conventions, careful actions, request discipline,
-// faithful reporting), never Anthropic's text. The one stock line left out is the steer to prefer
+// Main-session base prompt. ADAPTED FROM Claude Code's stock base prompt (Anthropic PBC,
+// proprietary; see scripts/harness-prompts/NOTICE.md): its user-relevant guidance (safety, the
+// harness conventions, careful actions, request discipline, faithful reporting), edited. The one stock line left out is the steer to prefer
 // the dedicated file/search tools over shell commands, which contradicts the sweet-search rules.
 export const CLAUDE_LEAN_HARNESS_PROMPT = [
   'You are an interactive coding agent. You help the user with software engineering work in their repository through the tools provided.',
@@ -248,7 +248,7 @@ export const CLAUDE_LEAN_HARNESS_ENV = Object.freeze({
 //   2. the gitStatus snapshot (the CLI sets omitGitStatus for any custom prompt).
 //   3. three environment notes (Claude Code surfaces, fast mode, current model IDs).
 // The per-session environment block (working directory, platform, shell, OS, model) is a
-// separate system message and still arrives. OUR OWN WORDS below, never Anthropic's text.
+// separate system message and still arrives. The text below is adapted from the stock sections.
 // ---------------------------------------------------------------------------------------------
 
 // Claude Code's project slug: every character that is not an ASCII letter or digit becomes '-';

@@ -34,10 +34,11 @@ benchmarked prompt and the shipped prompt are the same bytes.
 
 ## Claude Code (`scripts/install-claude-lean-harness.js`)
 
-- **Source:** none copied. Claude Code is proprietary, so the main-agent, general-purpose and Plan
-  prompts that `init` writes to `.claude/agents/` are **our own words**: a paraphrase of the
-  user-relevant guidance in Claude Code's stock prompt, without its search steer. No text from
-  Claude Code ships in this package. Keep it that way: never paste captured Claude Code text here.
+- **Source:** the system prompt of Claude Code (Anthropic PBC), extracted from the Claude Code
+  binary and edited. The main-agent, general-purpose and Plan prompts that `init` writes to
+  `.claude/agents/` follow the stock prompt section by section, without its search steer. Some
+  sentences are close to the stock wording.
+- **License:** Claude Code is proprietary. It is **not** under Apache-2.0 or any open-source license.
 - **Mechanism:** documented Claude Code settings (`agent`, `permissions.deny`, output styles) and
   three undocumented environment switches (`CLAUDE_CODE_THRIFTY_SONIC`,
   `CLAUDE_CODE_TOTAL_TOKENS_REMINDER`, `CLAUDE_CODE_PARCHMENT_FERN`).
