@@ -59,6 +59,9 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Owner decisions (picked conservatively, owner to review)
 
+- 2026-10-01 00:15 — owner message: "you can switch to using deepseek via openrouter when normal expires". **Authorized override of the memory rule "DeepSeek never OpenRouter", for this plan only, once the direct DeepSeek balance is spent.** Rule for use: a baseline and its variant must run on the SAME provider route; never pool or compare direct-API rows with OpenRouter rows (provider change = new cell, fresh baseline).
+- 2026-10-01 00:14 — owner read the preliminary report (chat) and went back to sleep; the loop continues.
+
 - 2026-10-01 00:00 — owner message: "if for the best results we require more than until 9AM please take more time … I don't have more than 24h". **End time changed from 09:00 to: when Phase 7 is done or the cash is spent, hard stop ~23:00 on 2026-10-01.**
 
 ## Problems
