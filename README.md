@@ -1212,16 +1212,12 @@ A recycle or eviction never touches the index. Every update publishes before the
 
 sweet-search stands on a lot of shoulders, and we'd rather name them than pretend otherwise:
 
-- **[ColBERT](https://arxiv.org/abs/2004.12832)** (Khattab & Zaharia) — late interaction; **[LightOn](https://huggingface.co/lightonai)** for the LateOn-Code models and the ColGrep concept our pattern mode parallels
-- **[ripgrep](https://github.com/BurntSushi/ripgrep)** (BurntSushi) — the bar for grep, and our verification baseline
-- **GitHub's [Blackbird](https://github.blog/engineering/the-technology-behind-githubs-new-code-search/)** — the sparse n-gram indexing idea we tuned per-codebase
-- **[candle](https://github.com/huggingface/candle)** & **[MLX](https://github.com/ml-explore/mlx)** — Rust ML and the fused SDPA kernels we build on; **[HuggingFace tokenizers](https://github.com/huggingface/tokenizers)**
-- **[Aider](https://github.com/Aider-AI/aider)** — the repo-map idea, here rebuilt on a real knowledge graph
-- **[USearch](https://github.com/unum-cloud/usearch)** — memory-mapped HNSW; **Malkov & Yashunin** for [HNSW](https://arxiv.org/abs/1603.09320) itself
-- **[CatBoost](https://catboost.ai/)** — the query router model; **Traag et al.** for the [Leiden algorithm](https://arxiv.org/abs/1810.08473); **Cormack et al.** for RRF; **[PathRAG](https://arxiv.org/abs/2502.14902)** for flow-pruned graph expansion; **[cAST](https://arxiv.org/abs/2506.15655)** for structure-aware chunking
-- **[GEPA](https://arxiv.org/abs/2507.19457)** — the reflective evolutionary prompt-optimization paradigm behind our agent prompt
-- **[nomic-ai](https://huggingface.co/nomic-ai)** — the CodeRankEmbed embedding model
-- **[Anthropic](https://www.anthropic.com/news/contextual-retrieval)** — the Contextual Retrieval idea behind our chunk enrichment, here derived from code structure instead of an LLM summary
+| | |
+|---|---|
+| 📚 **Research** | [ColBERT](https://arxiv.org/abs/2004.12832) (Khattab & Zaharia) · [HNSW](https://arxiv.org/abs/1603.09320) (Malkov & Yashunin) · [Leiden](https://arxiv.org/abs/1810.08473) (Traag et al.) · [RRF](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf) (Cormack et al.) · [BM25F](https://doi.org/10.1145/1031171.1031181) (Robertson et al.) · [PathRAG](https://arxiv.org/abs/2502.14902) (flow-pruned graph expansion) · [cAST](https://arxiv.org/abs/2506.15655) (structure-aware chunking) · [GEPA](https://arxiv.org/abs/2507.19457) (our agent prompt) · Anthropic's [Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval) (chunk enrichment, derived from code structure) |
+| 🧠 **Models** | [LightOn](https://huggingface.co/lightonai) LateOn-Code (late interaction, and the ColGrep idea) · [nomic-ai](https://huggingface.co/nomic-ai) CodeRankEmbed (embeddings) |
+| ⚙️ **Engines & libraries** | [tree-sitter](https://tree-sitter.github.io/) · [SQLite FTS5](https://sqlite.org/fts5.html) · [ONNX Runtime](https://onnxruntime.ai/) · [candle](https://github.com/huggingface/candle) · [MLX](https://github.com/ml-explore/mlx) · [tokenizers](https://github.com/huggingface/tokenizers) · [USearch](https://github.com/unum-cloud/usearch) · [CatBoost](https://catboost.ai/) (query router) · [napi-rs](https://napi.rs/) · [ripgrep](https://github.com/BurntSushi/ripgrep) (our grep baseline) |
+| 💡 **Ideas & benchmarks** | GitHub's [Blackbird](https://github.blog/engineering/the-technology-behind-githubs-new-code-search/) (sparse n-grams) · [Aider](https://github.com/Aider-AI/aider) (repo map) · [CodeSearchNet](https://github.com/github/CodeSearchNet) · [SWE-bench](https://www.swebench.com/) · [SWE-rebench](https://swe-rebench.com/) |
 
 ## 📄 License
 
