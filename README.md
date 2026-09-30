@@ -89,7 +89,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 [🗂️ The Index](#the-index)<br>
 <sub>candle · fused kernels · cAST chunking</sub>
 
-[🔄 Index Never Goes Stale](#-index-never-goes-stale)<br>
+[🔄 Incremental Indexing](#-incremental-indexing)<br>
 <sub>reconcile daemon tracks your working tree</sub>
 
 </td>
@@ -1139,7 +1139,7 @@ Source: [`crates/sweet-search-native/src/inference/`](crates/sweet-search-native
 
 </details>
 
-## 🔄 Index Never Goes Stale
+## 🔄 Incremental Indexing
 
 Most code indexes go stale the moment you start typing. sweet-search runs a background daemon
 that keeps the whole index in sync with your *working tree*.
@@ -1150,34 +1150,46 @@ You never run a command.
 | Edits are searchable within ~20–60 s, tuned to your machine | One edited function means one chunk to the encoder, not the whole file | All five index tiers switch to the new version in one atomic step |
 
 <details>
-<summary><b>Under the hood: safety rails and memory controls</b></summary>
+<summary><b>Under the hood: how the daemon stays fast, safe, and light</b></summary>
 
 <br/>
 
-- **Stable chunk identity:** each chunk's ID comes from its symbol and signature, so an edit re-embeds only the function you touched. The rest of the file keeps its vectors, even when your edit shifts every line below it.
-- **No-op saves are nearly free:** an xxHash3 content hash spots saves with no real change and skips the models.
-- **Light on your machine:** updates run on the CPU, at most 50 files and 2 s of CPU per update, so the GPU stays free for full builds. The interval moves between 15 s and 300 s with load average, churn, and backlog.
-- **Baseline gate:** the daemon never plays first-index-builder. It verifies a full-indexer fingerprint (epoch manifest + merkle config fingerprint + the vectors DB it names) before touching anything, and reports `waiting_for_initial_index` otherwise — no corrupted partial baselines.
-- **One admission policy:** the full indexer and the reconciler share a single `createAdmissionPolicy` module (include globs → deny list → `.sweet-search-ignore` → 1 MB size cap → batched `git check-ignore`), so the two paths cannot drift.
-- **Orphan sweep:** files that are deleted, newly excluded, or newly oversized get tombstoned across every tier; the index converges to exactly what a fresh full rebuild would produce.
-- **Self-maintenance:** per-tier health watermarks (tombstone fraction, stale-doc ratio, delta ratio) schedule low-priority background compaction in a separate worker — the index stays fast over months without a manual rebuild.
-- **Worktree-safe:** a worktree stamp plus a single-writer lockfile prevent two daemons from silently interleaving index histories across git worktrees.
-- `sweet-search reconcile status` / `reconcile inspect <path>` explain exactly what the daemon thinks and why. Opt out any time with `SWEET_SEARCH_RECONCILE_V2=0`.
+**By the numbers:** 5 index tiers · 1 atomic manifest · ≤50 files and ≤2 s of CPU per update · 4 independent memory limits
 
-**Memory controls.** The resident daemons show up in `ps` / Activity Monitor as
-`sweet-search-maintainer` and `sweet-search-daemon`. A maintainer's steady state is
-roughly 2–3 GB (embedding + late-interaction models stay loaded so ticks are fast),
-and four independent mechanisms keep that bounded:
+#### 🎯 Re-embed as little as possible
+- **Stable chunk IDs.** Each chunk's ID comes from its symbol and signature. An edit re-embeds only the function you touched, even when every line below it shifts.
+- **No-op saves are nearly free.** An xxHash3 content hash spots saves with no real change and skips the models.
 
-| Mechanism | Default | Override |
-|-----------|---------|----------|
-| Background ORT profile (arena-off + parked threads) in the maintainer | on | `SWEET_SEARCH_ORT_BACKGROUND=0` |
-| Per-process recycle ceiling — the maintainer finishes its tick, exits cleanly, and respawns fresh on the next edit when its RSS crosses the line | clamp(25 % of RAM, 4 GiB, 8 GiB) | `SWEET_SEARCH_MAINTAINER_RSS_MAX_MB` (0 disables) |
-| Idle TTL — unattended daemons shut down and respawn on demand | tier-aware | `SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS` / `SWEET_SEARCH_DAEMON_IDLE_TTL_MS` |
-| Fleet RSS budget — across all repos' daemons, the longest-idle one is evicted when the sum crosses a RAM-scaled budget | tier-aware | `SWEET_SEARCH_RSS_BUDGET_FRACTION` |
+#### ⚛️ Safe by construction
+- **One atomic switch.** Each update stages its writes, then publishes all five tiers through one fsync-renamed manifest. A query pins one manifest, so it never sees a half-updated index.
+- **Baseline gate.** The daemon never builds the first index. It checks the full indexer's fingerprint first, and waits (`waiting_for_initial_index`) until one exists.
+- **One admission policy.** The full indexer and the daemon share one module that decides what gets indexed: include globs → deny list → `.sweet-search-ignore` → 1 MB cap → `git check-ignore`. The two paths cannot drift.
+- **Worktree-safe.** A worktree stamp and a single-writer lock stop two daemons from mixing index histories.
 
-A recycle or eviction never touches index state: every tick publishes atomically
-before the process exits, and the next edit (or query) respawns a fresh daemon.
+#### 🧹 Stays clean over months
+- **Orphan sweep.** Deleted, newly ignored, and newly oversized files are tombstoned in every tier. The index converges to what a fresh full rebuild would produce.
+- **Self-maintenance.** Per-tier health watermarks (tombstone fraction, stale-doc ratio, delta ratio) trigger low-priority compaction in a separate worker.
+
+#### 🪶 Light on your machine
+- **CPU only**, with at most 50 files and 2 s of CPU per update. The GPU stays free for full builds.
+- **Adaptive interval** between 15 s and 300 s, tuned from load average, churn, and backlog.
+
+#### 🧠 Bounded memory
+The daemons show up in `ps` / Activity Monitor as `sweet-search-maintainer` and `sweet-search-daemon`.
+A maintainer holds roughly 2–3 GB, because the models stay loaded so updates are fast. Four independent limits keep it bounded:
+
+| Limit | What it does | Default | Override |
+|-------|--------------|---------|----------|
+| Background ORT profile | Arena off, parked threads | on | `SWEET_SEARCH_ORT_BACKGROUND=0` |
+| Recycle ceiling | Past the line, the maintainer finishes its update, exits cleanly, and respawns on the next edit | clamp(25 % of RAM, 4 GiB, 8 GiB) | `SWEET_SEARCH_MAINTAINER_RSS_MAX_MB` (0 disables) |
+| Idle timeout | Unattended daemons shut down and respawn on demand | tier-aware | `SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS` / `SWEET_SEARCH_DAEMON_IDLE_TTL_MS` |
+| Fleet budget | Across all repos, the longest-idle daemon is evicted when the total crosses a RAM-scaled budget | tier-aware | `SWEET_SEARCH_RSS_BUDGET_FRACTION` |
+
+A recycle or eviction never touches the index. Every update publishes before the process exits.
+
+#### 🔍 Inspect or opt out
+- `sweet-search reconcile status` and `sweet-search reconcile inspect <path>` show what the daemon thinks, and why.
+- Turn it off with `SWEET_SEARCH_RECONCILE_V2=0`.
 
 </details>
 
