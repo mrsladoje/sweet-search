@@ -100,7 +100,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 [📊 Benchmarks](#-benchmarks)<br>
 <sub>agent cost savings · engine speed · full-corpus MRR</sub>
 
-[🧭 Comparison with the Competition](#-comparison-with-the-competition)<br>
+[🧭 The Competition](#-the-competition)<br>
 <sub>honest wins & trade-offs vs peers</sub>
 
 [🙏 Prior Art & Acknowledgements](#-prior-art--acknowledgements)<br>
@@ -1188,7 +1188,7 @@ upgrade that changes the models or chunking, we tell you to run `sweet-search in
 - **WASM/JS fallback**: general-purpose, so it runs on more machines, but slower.
 - **Zero setup**: `npm install` picks the right package for your machine. Needs Node ≥ 22.
 
-## 🧭 Comparison with the Competition
+## 🧭 The Competition
 
 Code search is a crowded space. Here's an honest read on where sweet-search wins and where it gives ground, against the trending leaders and our closest local peers.
 
