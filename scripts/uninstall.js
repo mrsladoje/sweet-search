@@ -25,6 +25,8 @@ import { removeClaudeRules } from './write-claude-rules.js';
 import { removeClaudeSystemPrompt } from './install-claude-system-prompt.js';
 import { removeClaudeLeanHarness } from './install-claude-lean-harness.js';
 import { removeMcpServer } from './install-mcp-server.js';
+import { removeCodexHarness } from './install-codex-harness.js';
+import { removeOpencodeHarness } from './install-opencode-harness.js';
 import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { removeToolEnforcement } from './install-tool-enforcement.js';
 import { projectSocketPath, projectPidFile } from '../core/search/server-identity.js';
@@ -460,8 +462,9 @@ export function removePrewarmSessionStartHook(projectRoot, { dryRun = false } = 
  * sweet-search-owned entry (matched by the launcher filename) is spliced out;
  * other events/entries are preserved. When our entry was the only content the
  * file is deleted rather than left as an empty shell. The `[features] hooks`
- * feature flag in config.toml is intentionally left in place — it's harmless and
- * may be shared with other tooling.
+ * feature flag in config.toml is `removeCodexHarness`'s job: it goes only when
+ * the Codex harness manifest shows init added it (it may be shared with other
+ * tooling otherwise).
  *
  * Returns `{ status, detail }`:
  *   removed    — our entry was spliced out (file rewritten or deleted)
@@ -594,6 +597,12 @@ Removed from each repo:
   - Sweet-search-owned blocks/files in AGENTS.md, GEMINI.md, CLAUDE.md
     (legacy installs), and .cursor/rules/sweet-search.mdc
   - The Codex SessionStart hook and the MCP server registration
+  - Codex wiring: the config.toml keys init added (model_instructions_file,
+    developer_instructions, and [features] hooks when init added it),
+    .codex/sweet-search-instructions.md
+  - opencode wiring: .opencode/sweet-search.md, the prompt and plugin files,
+    and the keys init added to .opencode/opencode.json (the file and the
+    .opencode directory go too when nothing of yours is left)
 
 Also removed by --all:
   - The shared model cache (~/.cache/sweet-search), including the CoreML cascade
@@ -602,8 +611,9 @@ Also removed by --all:
 Never removed:
   - Your source code, and any hooks, skills, settings or prose you wrote
   - User-modified copies of sweet-search files (detected and left in place)
-  - Generic Codex [features] hooks = true flags (possibly shared with
-    other tooling); an otherwise-empty settings.json may remain as {}
+  - A Codex [features] hooks = true flag that was there before init (or that
+    an init older than the Codex harness manifest wrote); an otherwise-empty
+    settings.json may remain as {}
 `);
 }
 
@@ -668,6 +678,10 @@ export function planProjectUninstall(projectRoot) {
   if (removeCodexSessionStartHook(projectRoot, { dryRun: true }).status === 'dry-run') {
     lines.push('Codex SessionStart hook (.codex/hooks.json)');
   }
+  const codexHarness = removeCodexHarness({ projectRoot, dryRun: true });
+  if (codexHarness.status === 'dry-run') lines.push(`Codex harness (${codexHarness.detail})`);
+  const opencodeHarness = removeOpencodeHarness({ projectRoot, dryRun: true });
+  if (opencodeHarness.status === 'dry-run') lines.push(`opencode harness (${opencodeHarness.detail})`);
   if (removeMcpServer({ projectRoot, dryRun: true }) === 'dry-run') {
     lines.push('MCP server registration (.mcp.json — mcpServers.sweet-search)');
   }
@@ -730,8 +744,20 @@ function executeProjectUninstall(plan) {
   // Bytes-match check inside the helper guarantees we never delete a
   // user-customised file.
   report(removeIndexMaintainerHook(projectRoot), { label: 'index-maintainer hook', keptWhen: ['skipped'] });
-  // The config.toml feature flag is left in place (harmless, possibly shared).
   report(removeCodexSessionStartHook(projectRoot), { label: 'Codex SessionStart hook' });
+  // Only what the Codex / opencode harness manifests record as added and unchanged since
+  // (the config.toml hooks flag only when init added it). After the hook, so an emptied
+  // .codex/ directory can go too.
+  for (const [label, result] of [
+    ['Codex harness', removeCodexHarness({ projectRoot })],
+    ['opencode harness', removeOpencodeHarness({ projectRoot })],
+  ]) {
+    report(result, { label });
+    for (const k of result.kept ?? []) {
+      console.log(`  Kept: ${k}`);
+      kept++;
+    }
+  }
 
   const agentInstructionsResult = removeAgentInstructions({ projectRoot });
   for (const [harness, status] of Object.entries(agentInstructionsResult.harnesses)) {

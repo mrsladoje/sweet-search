@@ -11,11 +11,18 @@
 // conflict-noglob or untrimmed and any opencode variant below (e.g. conflict+todo2eff);
 // CC_TRIM_BATCH=eff (inserts EFFICIENCY_LINE after the "act" line, no line replaced).
 import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { CLAUDE_LEAN_BATCH_LINE } from '../../../../scripts/install-claude-lean-harness.js';
-
-const HERE = path.dirname(fileURLToPath(import.meta.url));
+// SHIPPED texts come from the product (single source): the Claude Code read6/read6fs edits from
+// install-claude-lean-harness.js, and the Codex yt3batch2 / opencode todo3eff3k lines from
+// scripts/harness-prompts/index.js. Research-only variants stay defined here.
+import {
+  CLAUDE_LEAN_BATCH_LINE, CLAUDE_LEAN_NOEDIT_LINE, CLAUDE_LEAN_EDIT_ACT, CLAUDE_LEAN_EDIT_REPORT,
+  CLAUDE_LEAN_EDIT_GIT, CLAUDE_LEAN_EDIT_PACK,
+} from '../../../../scripts/install-claude-lean-harness.js';
+import {
+  CODEX_PARALLEL_LINE, CODEX_CHAIN_LINE, CODEX_YIELD_TEMPLATE3 as SHIPPED_CODEX_YIELD_TEMPLATE3,
+  CODEX_READ_BATCH2 as SHIPPED_CODEX_READ_BATCH2, OPENCODE_GPT_ORIGINAL as SHIPPED_OPENCODE_GPT_ORIGINAL,
+  OPENCODE_BATCH_BULLET, OPENCODE_TODO3_LINE, EFFICIENCY_LINE_3 as SHIPPED_EFFICIENCY_LINE_3,
+} from '../../../../scripts/harness-prompts/index.js';
 
 const dep = shell => `Combine dependent shell steps into one ${shell} call where you can, for example an edit made with a short script together with the command that checks it.`;
 const two = shell => 'Save turns by batching. Independent calls, such as reads and searches you already know you need, go out together in one turn as parallel tool calls. '
@@ -32,7 +39,7 @@ const R5_FIND = '- If you need the code at an exact name, not only where it is, 
 // finish the change where it needs follow-up edits, re-check after a fix, answer questions from evidence.
 // EFFICIENCY_LINE_3 (owner 2026-09-29): EFFICIENCY_LINE_2 made request-neutral — the change/check part
 // applies only to requests that need code changes; answers and plans are named as their own outcomes.
-export const EFFICIENCY_LINE_3 = '- Work efficiently: start from what the request and any error output point to, and open more only when the evidence requires it. Do what the request asks, whether an answer, a plan or a change, and nothing unrelated. For requests that need code changes, make the change that fully solves the request, including the edits it needs elsewhere, check it with the checks the project has, again after each fix, and stop when it is done. For a question, answer from the evidence you gathered.';
+export const EFFICIENCY_LINE_3 = SHIPPED_EFFICIENCY_LINE_3; // shipped (opencode todo3eff3k)
 // EFFICIENCY_LINE_4 / OC_TODO4 (audit beh-oc-p4, 2026-09-29): EFFICIENCY_LINE_3 plus fixes for the three
 // residual waste patterns — chains of one-search turns (22.9% of cost), a separate review turn after the
 // passing check (9.7%), and edits after the passing check (5.4%).
@@ -42,8 +49,8 @@ export const EFFICIENCY_LINE = '- Work efficiently: start from the files the tas
 const R5_ALT = '- When you guess at a name that may not exist, put every spelling you would try into one regex alternation `(a|b|c)` in a single ss-grep, not one guess per turn.';
 
 // --- Codex (v3 instructions for gpt-5.6-luna) ---
-const CODEX_PAR = '- When possible, prefer parallelization over sequential tool calls, as this will help with round-trip latency and let you get work done faster.';
-const CODEX_CHAIN = "- Do not chain shell commands with separators like `echo \"====\";` or `printf '---'`; the output becomes noisy in a way that makes the user's side of the conversation worse.";
+const CODEX_PAR = CODEX_PARALLEL_LINE; // stock line (shipped instructions keep it)
+const CODEX_CHAIN = CODEX_CHAIN_LINE; // stock line (shipped instructions keep it)
 // Round 2 (web research + trace counts, 2026-09-26): Luna runs Codex in code mode with
 // parallel_tool_calls=false, so "parallel tool calls" names a mechanism it cannot use; batching
 // happens only inside one exec cell (Promise.allSettled — openai/codex#35050: ~50% fewer model
@@ -71,12 +78,12 @@ const CODEX_POLL = '- When exec_command returns a session_id because the command
 // yt3 (sink audit sinks-3, 2026-09-27): the model copied yt2's inline `const r ...` part but
 // used the separate first-line pragma in only 5/28 cells, so 18/23 other cells returned early
 // (20 wait turns). yt3 gives both lines as ONE fenced cell to copy, with yt2's widened exclusion.
-const CODEX_YIELD_TEMPLATE3 = '- An exec cell returns after 10 seconds unless its first line sets a longer limit. For a command that ends by itself but takes longer than 10 seconds, such as a build or a test run, copy this cell exactly, both lines, and replace <command>:\n```\n// @exec: {"yield_time_ms": 600000}\nconst r = await tools.exec_command({cmd: <command>, yield_time_ms: 300000}); text(r.output); if (r.session_id) text((await tools.write_stdin({session_id: r.session_id, chars: "", yield_time_ms: 300000})).output);\n```\nWithout the first line the cell returns after 10 seconds; without the write_stdin step the result is lost. Do not use this form for a command that keeps running until it is stopped or that waits for input, such as a dev server, a watch mode or an interactive prompt.';
+const CODEX_YIELD_TEMPLATE3 = SHIPPED_CODEX_YIELD_TEMPLATE3; // shipped (yt3batch2)
 // Read batch (sinks-3): 65/147 Codex turns run ONE search or read. General, read-only only.
 const CODEX_READ_BATCH = '- When you already know several read-only commands you need, such as searches, file reads or listings, run them in one exec_command joined with `;` and read all the output in one turn. Keep a command whose output decides your next step on its own.';
 // rbatch2 (audit mech-cx3): the model twice joined a search with the test run (not read-only);
 // the second sentence now also keeps builds, tests, installs and file-changing commands separate.
-const CODEX_READ_BATCH2 = '- When you already know several read-only commands you need, such as searches, file reads or listings, run them in one exec_command joined with `;` and read all the output in one turn. Keep a command whose output decides your next step on its own, and run builds, tests, installs and commands that change files separately.';
+const CODEX_READ_BATCH2 = SHIPPED_CODEX_READ_BATCH2; // shipped (yt3batch2)
 // yt3batch3 (audit beh-cx-p4, 2026-09-29): yt3batch2 kept, plus one sentence per remaining waste pattern:
 // (a) the first cell line was copied in only 32/117 test cells — a yield_time_ms inside the call was read
 // as enough, so 77/81 such cells came back after 10 s and cost a wait turn; (b) 41–49 single-command read
@@ -144,8 +151,8 @@ export function applyCodexBatch(text, variant) {
 }
 
 // --- opencode (untrimmed gpt family prompt, exactly as 1.18.4 sends it) ---
-export const OPENCODE_GPT_ORIGINAL = path.join(HERE, 'opencode-1.18.4-prompt-gpt-original.txt');
-const OC_BULLET = '- Parallelize tool calls whenever possible - especially file reads. Use `multi_tool_use.parallel` to parallelize tool calls and only this. Never chain together bash commands with separators like `echo "====";` as this renders to the user poorly.';
+export const OPENCODE_GPT_ORIGINAL = SHIPPED_OPENCODE_GPT_ORIGINAL; // scripts/harness-prompts/
+const OC_BULLET = OPENCODE_BATCH_BULLET; // stock bullet
 const OC_PAR = '- Parallelize tool calls whenever possible - especially file reads. Use `multi_tool_use.parallel` to parallelize tool calls and only this.';
 const OC_MECH = 'Use `multi_tool_use.parallel` for parallel tool calls.';
 const OPENCODE_BATCH_VARIANTS_R2 = {};
@@ -167,7 +174,7 @@ const OC_TODO_END = '- After the final test run passes, write the final answer. 
 const OC_TODO_OPEN = '- Send your first todo list together with your first searches, as parallel calls in one turn.';
 const OC_DIFF = '- When you run the test suite after your last edit, send git diff as a parallel call in the same turn. If the result passes and the diff shows nothing left to do, write the final answer next.';
 // todo3: todo2 + the last step (audit: with todo2 the final item could stay in_progress).
-const OC_TODO3 = '- Send todowrite as a parallel call in the same turn as your next tool call, never as a turn of its own. Mark a step in_progress in the call that starts it, and completed in the call that starts the next one; mark the last step completed together with your final check.';
+const OC_TODO3 = OPENCODE_TODO3_LINE; // shipped (todo3eff3k)
 const OC_TODO2 = '- Send todowrite as a parallel call in the same turn as your next tool call, never as a turn of its own. Mark a step in_progress in the call that starts it, and completed in the call that starts the next one.';
 const OC_TODO4 = '- Send todowrite as a parallel call in the same turn as your next tool call, never as a turn of its own. Mark a step in_progress in the call that starts it, and completed in the call that starts the next one; mark the last step completed in the same turn as the check that confirms it.';
 const OC_TODO_DESC_EDITS = [
@@ -224,7 +231,7 @@ export function opencodeBatchPrompt(variant, text = readFileSync(OPENCODE_GPT_OR
 
 // --- Claude Code (lean agent file installed by `sweet-search init`) ---
 const CC_DEP = `- ${dep('Bash')}`;
-const CC_NOEDIT_LINE = CLAUDE_LEAN_BATCH_LINE.replace(' Make file changes with Edit or Write.', '');
+const CC_NOEDIT_LINE = CLAUDE_LEAN_NOEDIT_LINE; // shipped
 if (CC_NOEDIT_LINE === CLAUDE_LEAN_BATCH_LINE) throw new Error('noedit: Edit/Write sentence not found in CLAUDE_LEAN_BATCH_LINE');
 const CC_SSREAD = '- Inside a chained Bash call, read with `ss-read <file> <start> <end>` and search with `ss-grep`, not `cat`, `sed -n` or `grep`.';
 const CC_ROOT = '- Run ss-* commands from the repository root with root-relative paths; they do not resolve paths against a subdirectory you cd into.';
@@ -272,12 +279,11 @@ const CC_INSERT_AFTER = Object.freeze({ eff: 'When you have enough information t
 const CC_TEXT_EDITS_EXTRA = {};
 const CC_TEXT_EDITS = Object.freeze({
   read3: [
-    ['- When you have enough information to act, act. Do not re-derive settled facts or reopen decisions the user made. When you weigh a choice, recommend one option instead of surveying them all.',
-     '- When you have enough information to act, act. Do not re-derive settled facts or reopen decisions the user made. When you weigh a choice, recommend one option instead of surveying them all, and do not describe options you will not take.\n- Read only what you need: find the place first, then open the lines around it rather than a whole file or a long range, unless you need all of it.'],
-    ['- Report what really happened: show the output of a failing test, name any step you skipped, and call work finished only after you checked it. When it is done and checked, say so plainly.',
+    [CLAUDE_LEAN_EDIT_ACT[0],
+     `${CLAUDE_LEAN_EDIT_ACT[1]}\n- Read only what you need: find the place first, then open the lines around it rather than a whole file or a long range, unless you need all of it.`],
+    [CLAUDE_LEAN_EDIT_REPORT[0],
      '- Report what really happened: show the output of a failing check and name any step you skipped. When the work is done and checked, say so plainly and stop; if you could not check it, say so.'],
-    ['When git state matters (the branch, uncommitted changes, recent commits), run `git status --short --branch` and `git log --oneline -5` first.',
-     'When git state matters, run `git status --short --branch`, and `git log --oneline -5` only when recent commits matter.'],
+    [...CLAUDE_LEAN_EDIT_GIT],
   ],
 });
 // read4 / read4out (research cc-research + audit cc-turns, 2026-09-28): read3 plus
@@ -303,16 +309,10 @@ if (CC_TEXT_EDITS_EXTRA.read5.length !== CC_TEXT_EDITS.read3.length - 1) throw n
 // read6 (owner 2026-09-29): noedit + keep "do not describe options you will not take" + git line edit;
 // NO "Read only what you need" line (redundant with the rules); the report line also names approaches
 // decided against, so the user still hears what was rejected.
-CC_TEXT_EDITS_EXTRA.read6 = [
-  CC_TEXT_EDITS.read3[0].map((x, i) => i === 1 ? x.split('\n')[0] : x), // act line only (drop the read line)
-  ['- Report what really happened: show the output of a failing test, name any step you skipped, and call work finished only after you checked it. When it is done and checked, say so plainly.',
-   '- Report what really happened: show the output of a failing test, name any step you skipped and any approach you decided against that the user should know about, and call work finished only after you checked it. When it is done and checked, say so plainly.'],
-  CC_TEXT_EDITS.read3[2],
-];
+// read6 and read6fs are what `sweet-search init` ships: the pairs come from the product module.
+CC_TEXT_EDITS_EXTRA.read6 = [[...CLAUDE_LEAN_EDIT_ACT], [...CLAUDE_LEAN_EDIT_REPORT], [...CLAUDE_LEAN_EDIT_GIT]];
 // read6fs: read6 + a CONCRETE packed-turn example (few-shot style; never tried on Claude Code before).
-CC_TEXT_EDITS_EXTRA.read6fs = [...CC_TEXT_EDITS_EXTRA.read6,
-  ['- Tool calls that do not depend on each other can go in parallel in one response.',
-   '- Pack independent steps into one response. Example: when you need a search and two files you already know about, send the search and both reads as parallel tool calls in the same response, not in three turns; when several edits do not depend on each other, send them together; join shell commands whose intermediate output you do not need into one Bash call with `&&`. Keep a step whose result decides your next step on its own.']];
+CC_TEXT_EDITS_EXTRA.read6fs = [...CC_TEXT_EDITS_EXTRA.read6, [...CLAUDE_LEAN_EDIT_PACK]];
 // read7 (audit beh-cc-p4): read6fs's packing gain over read6 was task luck; two real waste patterns
 // remain — packed GUESSED paths (reads of files not yet known) and edits followed by the check in a
 // separate turn (the product's "Combine dependent shell steps" line overlapped with "Keep a step whose

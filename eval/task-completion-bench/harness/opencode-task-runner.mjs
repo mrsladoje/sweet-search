@@ -10,6 +10,12 @@
 // engineered). parseOpencodeStream is defensive and is validated/adjusted from a real
 // smoke's raw NDJSON before any counted run.
 import { opencodeBatchPrompt, opencodeBatchToolEdits, OPENCODE_GPT_ORIGINAL, OPENCODE_VARIANT_NAMES } from './trim/batch-variants.mjs';
+// What `sweet-search init --opencode` ships (single source): conflict3's prompt and tool edits and
+// the trim plugin. The benchmark arm OC_HARNESS_TRIM=conflict3+todo3eff3k is built from them.
+import {
+  OPENCODE_CONFLICT_PROMPT_BULLET as SHIPPED_CONFLICT_PROMPT_BULLET, OPENCODE_FILE_READS_EDIT,
+  OPENCODE_TOOL_EDITS as SHIPPED_OPENCODE_TOOL_EDITS, OPENCODE_TRIM_PLUGIN_SOURCE,
+} from '../../../scripts/harness-prompts/index.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -262,7 +268,7 @@ export const OPENCODE_TRIM_V3_TOOL_EDITS = Object.freeze({
 //   untrimmed, variant = any opencode variant in trim/batch-variants.mjs (todoall, todo2,
 //   todo2eff, ...). The variant edits the base prompt's batching bullet and adds its own
 //   tool-description edits. untrimmed+<variant> is exactly batch-<variant> (other mode label).
-export const OPENCODE_CONFLICT_PROMPT_BULLET = '- When searching for text or files, prefer using Glob and Grep tools (they are powered by `rg`)\n';
+export const OPENCODE_CONFLICT_PROMPT_BULLET = SHIPPED_CONFLICT_PROMPT_BULLET;
 export const OPENCODE_CONFLICT_BASES = Object.freeze(['conflict', 'conflict-noglob', 'conflict2', 'conflict3', 'conflict4', 'untrimmed']);
 export const OPENCODE_CONFLICT_TOOL_EDITS = Object.freeze({
   bash: [
@@ -288,16 +294,13 @@ export const OPENCODE_CONFLICT2_TOOL_EDITS = Object.freeze({
   glob: OPENCODE_CONFLICT_TOOL_EDITS.glob,
   grep: [['- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead', '']],
 });
-export const OPENCODE_CONFLICT2_PROMPT_EDIT = [' - especially file reads', ''];
+export const OPENCODE_CONFLICT2_PROMPT_EDIT = OPENCODE_FILE_READS_EDIT;
 // OC_HARNESS_TRIM=conflict3 (owner 2026-09-29): conflict2's text edits, but the grep tool and the
 // explore subagent are DISABLED (both duplicate the ss-* retrieval the rules prescribe = conflicts);
 // glob stays (lists files by name, no conflict). No grep-description edit (the tool is gone).
-export const OPENCODE_CONFLICT3_TOOL_EDITS = Object.freeze({
-  bash: OPENCODE_CONFLICT2_TOOL_EDITS.bash,
-  read: OPENCODE_CONFLICT2_TOOL_EDITS.read,
-  task: OPENCODE_CONFLICT2_TOOL_EDITS.task,
-  glob: OPENCODE_CONFLICT2_TOOL_EDITS.glob,
-});
+// = conflict2's bash/read/task/glob edits (tests/opencode-harness-trim.mjs checks it); defined in the
+// product because `sweet-search init --opencode` ships them.
+export const OPENCODE_CONFLICT3_TOOL_EDITS = SHIPPED_OPENCODE_TOOL_EDITS;
 // OC_HARNESS_TRIM=conflict4 (audit beh-oc-p4): conflict3 + the glob description's "always better to
 // speculatively perform multiple searches as a batch" sentence removed (it pulls against the efficiency
 // line; its intent is restated there as "send the searches you would try in one turn").
@@ -350,7 +353,7 @@ function opencodeHarnessTrimCombo(m, { apiModel, stateDir }) {
       agents: keepAll ? { general: { prompt }, explore: { prompt: readFileSync(path.join(TRIM_DIR, opencodeTrimMaxPrompt('explore')), 'utf8') } }
         : { general: { prompt }, explore: { disable: true } },
     },
-    files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(path.join(TRIM_DIR, OPENCODE_TRIM_PLUGIN), 'utf8') },
+    files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8') },
     plugins: [plugin],
     stateEntries: [OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT],
   };
@@ -389,7 +392,7 @@ export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiMod
     return {
       mode: `${m}:prompt:gpt+general+tooldesc`,
       config: { plugin: [plugin], agentBuild: { prompt }, agents: { general: { prompt } } },
-      files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(path.join(TRIM_DIR, OPENCODE_TRIM_PLUGIN), 'utf8') },
+      files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8') },
       plugins: [plugin],
       stateEntries: [OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT],
     };
@@ -422,7 +425,7 @@ export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiMod
       agentBuild: { prompt },
       ...(max ? { agents: { general: { prompt }, explore: { prompt: readPrompt(opencodeTrimMaxPrompt('explore')) } } } : {}),
     },
-    files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(path.join(TRIM_DIR, OPENCODE_TRIM_PLUGIN), 'utf8') },
+    files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8') },
     plugins: [plugin],
     stateEntries: [OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT],
   };
@@ -443,7 +446,7 @@ function opencodeHarnessTrimV3({ apiModel, stateDir }) {
       agentBuild: { prompt },
       agents: { general: { prompt }, explore: { disable: true } },
     },
-    files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(path.join(TRIM_DIR, OPENCODE_TRIM_PLUGIN), 'utf8') },
+    files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8') },
     plugins: [plugin],
     stateEntries: [OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT],
   };

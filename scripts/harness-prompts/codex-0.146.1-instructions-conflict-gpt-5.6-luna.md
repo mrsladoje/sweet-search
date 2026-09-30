@@ -1,7 +1,7 @@
 <!--
 Modified copy of the base instructions that codex-cli 0.146.1 (https://github.com/openai/codex,
-Apache-2.0) sends for model gpt-5.6-luna. Changed for the sweet-search task-completion benchmark:
-passages deleted. Change list: NOTICE-codex.md in this directory.
+Apache-2.0) sends for model gpt-5.6-luna. Changed for sweet-search (shipped by `sweet-search init --codex`):
+passages deleted. Change list: NOTICE.md in this directory.
 The runner strips this comment; the model never sees it.
 -->
 You are Codex, an agent based on GPT-5. You and the user share one workspace, and your job is to collaborate with them until their goal is genuinely handled.

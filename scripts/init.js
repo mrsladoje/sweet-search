@@ -37,7 +37,9 @@ import {
 } from '../core/ranking/late-interaction-policy.js';
 import { describeDedupConfig } from '../core/infrastructure/index.js';
 import { verifyRuntime, getMaxsimTier, getRouterType } from './verify-runtime.js';
-import { ALL_HARNESSES, injectAgentInstructions } from './inject-agent-instructions.js';
+import {
+  ALL_HARNESSES, getPolicyBody, injectAgentInstructions, stripLegacyAgentsBlock,
+} from './inject-agent-instructions.js';
 import { writeClaudeRules } from './write-claude-rules.js';
 import {
   formatClaudeSystemPromptGuidance,
@@ -50,6 +52,8 @@ import {
   removeClaudeLeanHarness,
 } from './install-claude-lean-harness.js';
 import { installMcpServer } from './install-mcp-server.js';
+import { ensureCodexHooksFeatureFlag, installCodexHarness } from './install-codex-harness.js';
+import { installOpencodeHarness } from './install-opencode-harness.js';
 import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { installToolEnforcement, removeToolEnforcement } from './install-tool-enforcement.js';
 import { isNativeInferenceAvailable } from '../core/infrastructure/native-inference.js';
@@ -92,7 +96,8 @@ export function parseInitArgs(args) {
     optInHarnesses: new Set(),
     noClaude: false,
     enforceTools: false,        // P3: --enforce-tools (default OFF — opt-in strict mode)
-    codex: false,                // --codex: wire the Codex CLI SessionStart hook
+    codex: false,                // --codex: Codex CLI harness (rules + base instructions + SessionStart hook)
+    opencode: false,             // --opencode: opencode harness (rules + prompt + tool edits)
     codexEnableGlobalHooks: false, // --codex-enable-global-hooks: also enable the flag in ~/.codex/config.toml
     // Contact-surface flags (additive at install, exclusive at consumption):
     //   --mcp     registers the sweet-search MCP server in the project .mcp.json
@@ -189,12 +194,18 @@ export function parseInitArgs(args) {
       // P1: opt INTO writing .cursor/rules/sweet-search.mdc.
       result.optInHarnesses.add('cursor');
     } else if (arg === '--codex') {
-      // Wire the Codex CLI: write a SessionStart hook into .codex/hooks.json
-      // (Codex's hook surface) reusing the same launcher as the Claude prewarm
-      // hook, and ship AGENTS.md (Codex's instruction file) by implying
-      // --agents. Independent of --no-claude (writes .codex/, not .claude/).
+      // Wire the Codex CLI through its project `.codex/` layer: the rules
+      // (developer_instructions) and our base instructions
+      // (model_instructions_file) in .codex/config.toml, and a SessionStart hook
+      // in .codex/hooks.json reusing the Claude prewarm launcher. No AGENTS.md
+      // (pass --agents for that). Independent of --no-claude.
       result.codex = true;
-      result.optInHarnesses.add('agents');
+    } else if (arg === '--opencode') {
+      // Wire opencode through its project `.opencode/` layer: the rules
+      // (`instructions`), our build/general prompt, the tool-description
+      // plugin, grep and the explore subagent off. No AGENTS.md, no root
+      // opencode.json. Independent of --no-claude.
+      result.opencode = true;
     } else if (arg === '--codex-enable-global-hooks') {
       // Legacy/advanced opt-in: also enable the `[features] hooks` feature flag
       // in the user-level ~/.codex/config.toml. NOT required for the normal
@@ -765,6 +776,7 @@ function printReport(report) {
     capability, cascadeReport, dedupReport, prewarmHookReport, skillReport,
     liChoices, agentInstructionsReport, claudeRulesReport, claudeSystemPromptReport,
     promptReminderReport, toolEnforcementReport, mcpServerReport,
+    codexHarnessReport, opencodeHarnessReport,
   } = report;
 
   console.log('');
@@ -883,6 +895,12 @@ function printReport(report) {
       `  Claude system prompt: ${claudeSystemPromptReport.status}`
       + (claudeSystemPromptReport.detail ? ` — ${claudeSystemPromptReport.detail}` : ''),
     );
+  }
+  if (codexHarnessReport) {
+    console.log(`  Codex harness:        ${codexHarnessReport.status} (.codex/config.toml, .codex/sweet-search-instructions.md)`);
+  }
+  if (opencodeHarnessReport) {
+    console.log(`  opencode harness:     ${opencodeHarnessReport.status} (.opencode/)`);
   }
   if (promptReminderReport && promptReminderReport.status !== 'skipped') {
     console.log(`  Prompt reminder hook: ${promptReminderReport.status}`);
@@ -1206,98 +1224,9 @@ export function registerCodexSessionStartHook({ projectRoot, packageRoot, skippe
   };
 }
 
-/**
- * Ensure the canonical Codex hooks feature flag `[features] hooks = true` is
- * present in a Codex `config.toml`, preserving the file's existing content +
- * comments. Targeted text edit (no TOML round-trip) so a hand-curated config is
- * never reformatted.
- *
- * `hooks` is the canonical key as of Codex v0.132+. The earlier `codex_hooks`
- * key is deprecated (Codex now prints a deprecation warning for it), so this
- * function also MIGRATES a legacy `codex_hooks` flag to `hooks` instead of
- * writing the deprecated name. Legacy handling is deliberate: users who ran an
- * older sweet-search (which wrote `codex_hooks`) or older Codex shouldn't be
- * left with a deprecated, warning-producing flag.
- *
- * Behaviour:
- *   - `hooks = true` already present → no-op ('already'); if a deprecated
- *     `codex_hooks` line also lingers, strip it ('migrated')
- *   - `hooks` present but non-true → respect the user's choice ('present-other')
- *   - legacy `codex_hooks` present (no `hooks` key) → rename the key to `hooks`
- *     in place, preserving its value + inline comment ('migrated')
- *   - a `[features]` table exists → insert `hooks = true` under its header
- *   - no `[features]` table → append a fresh block at EOF
- *   - file absent + `create` → create it; absent + no `create` → 'absent'
- *
- * @param {string} configPath
- * @param {{create?:boolean}} [opts]
- * @returns {{status:'created'|'added'|'migrated'|'already'|'present-other'|'absent'|'error', path:string, detail?:string}}
- */
-export function ensureCodexHooksFeatureFlag(configPath, { create = false } = {}) {
-  const exists = existsSync(configPath);
-  if (!exists && !create) return { status: 'absent', path: configPath };
-
-  let text = '';
-  if (exists) {
-    try {
-      text = readFileSync(configPath, 'utf-8');
-    } catch (err) {
-      return { status: 'error', path: configPath, detail: `read failed: ${err.message}` };
-    }
-  }
-
-  const write = (next, status) => {
-    try {
-      mkdirSync(dirname(configPath), { recursive: true });
-      const tmp = configPath + '.tmp';
-      writeFileSync(tmp, next, 'utf-8');
-      renameSync(tmp, configPath);
-    } catch (err) {
-      return { status: 'error', path: configPath, detail: `write failed: ${err.message}` };
-    }
-    return { status, path: configPath };
-  };
-
-  // `^[ \t]*hooks` cannot match a `codex_hooks` line (the prefix differs), so
-  // these canonical-key checks never collide with the legacy key.
-  const HOOKS_TRUE = /^[ \t]*hooks[ \t]*=[ \t]*true\b/m;
-  const HOOKS_ANY = /^[ \t]*hooks[ \t]*=/m;
-  const LEGACY_ANY = /^[ \t]*codex_hooks[ \t]*=/m;
-  const LEGACY_LINE = /^[ \t]*codex_hooks[ \t]*=.*(?:\r?\n)?/m;
-
-  // Canonical flag already enabled.
-  if (HOOKS_TRUE.test(text)) {
-    if (LEGACY_ANY.test(text)) {
-      // Strip the deprecated `codex_hooks` line so Codex v0.132+ stops warning.
-      return write(text.replace(LEGACY_LINE, ''), 'migrated');
-    }
-    return { status: 'already', path: configPath };
-  }
-
-  // Canonical flag present but explicitly non-true → respect the user's choice;
-  // don't add a duplicate key (which would make the TOML invalid).
-  if (HOOKS_ANY.test(text)) {
-    return { status: 'present-other', path: configPath };
-  }
-
-  // Deprecated `codex_hooks` present (no canonical key) → migrate the key name
-  // in place, preserving its value and any inline comment.
-  if (LEGACY_ANY.test(text)) {
-    return write(text.replace(/^([ \t]*)codex_hooks([ \t]*=.*)$/m, '$1hooks$2'), 'migrated');
-  }
-
-  // Neither key present → add the canonical flag.
-  let next;
-  if (!exists || text.trim() === '') {
-    next = '[features]\nhooks = true\n';
-  } else if (/^[ \t]*\[features\][ \t]*$/m.test(text)) {
-    next = text.replace(/^([ \t]*\[features\][ \t]*)$/m, '$1\nhooks = true');
-  } else {
-    const sep = text.endsWith('\n') ? '' : '\n';
-    next = `${text}${sep}\n[features]\nhooks = true\n`;
-  }
-  return write(next, exists ? 'added' : 'created');
-}
+// `ensureCodexHooksFeatureFlag` lives in install-codex-harness.js (the Codex harness manifest
+// records whether init added the flag, so uninstall can remove it); re-exported here for callers.
+export { ensureCodexHooksFeatureFlag };
 
 /**
  * Build the post-init Codex guidance message (or `null` when the hook wasn't
@@ -1469,30 +1398,46 @@ Options:
                             Combine with --agents / --gemini / --cursor to
                             ship the policy through a non-Claude harness.
   --agents                  Also ship AGENTS.md, the multi-harness
-                            convention read by Codex CLI, OpenCode, and any
-                            other tool that adopts AGENTS.md. AGENTS.md
-                            always carries the full canonical policy body;
-                            it never imports CLAUDE.md.
+                            convention read by tools that adopt AGENTS.md.
+                            Not needed for Codex or opencode: --codex and
+                            --opencode deliver the rules through their own
+                            project config. AGENTS.md always carries the full
+                            canonical policy body; it never imports CLAUDE.md.
   --gemini                  Also ship GEMINI.md. When AGENTS.md is enabled,
                             GEMINI.md symlinks to it (or @imports it under
                             --no-symlink-instruction-files); otherwise
                             GEMINI.md carries the policy directly.
   --cursor                  Also ship .cursor/rules/sweet-search.mdc with
                             sweet-search frontmatter.
-  --codex                   Complete Codex CLI setup (the normal path): write a
-                            SessionStart hook into .codex/hooks.json (reusing the
-                            same launcher as the Claude prewarm hook, so Codex
-                            sessions also start the search server + default-on
-                            incremental maintainer), enable [features] hooks = true
-                            in the project .codex/config.toml (migrating a
-                            deprecated codex_hooks flag if present), and ship
-                            AGENTS.md (implies --agents). Independent of
-                            --no-claude. The only remaining manual step is to
-                            review/trust the repo-local hook with /hooks inside
-                            Codex. Index freshness does NOT depend on this hook —
-                            the sweet-search CLI/warm-server starts the maintainer
-                            on first use under any agent; the hook is just an early
-                            prewarm. MCP is optional and not required.
+  --codex                   Complete Codex CLI setup (the normal path), all in
+                            the project .codex/ layer: the rules
+                            (developer_instructions) and our tested base
+                            instructions, which replace Codex's own
+                            (model_instructions_file ->
+                            .codex/sweet-search-instructions.md), in
+                            .codex/config.toml; a SessionStart hook in
+                            .codex/hooks.json (reusing the Claude prewarm
+                            launcher, so Codex sessions also start the search
+                            server + incremental maintainer); and [features]
+                            hooks = true (migrating a deprecated codex_hooks).
+                            No AGENTS.md (an old sweet-search block there is
+                            removed). Independent of --no-claude. Codex loads a
+                            project .codex/ layer only for a trusted project:
+                            answer "Yes" to Codex's trust question, and review
+                            the hook with /hooks. Index freshness does NOT depend
+                            on the hook — the CLI/warm-server starts the
+                            maintainer on first use under any agent.
+  --opencode                opencode setup, all in the project .opencode/ layer:
+                            the rules (.opencode/sweet-search.md, listed in
+                            "instructions"), our tested build/general prompt,
+                            which replaces opencode's own
+                            (.opencode/sweet-search-prompt.txt), a plugin that
+                            removes tool-description text that conflicts with
+                            the rules (.opencode/plugins/sweet-search.mjs), and
+                            the grep tool and explore subagent off, all
+                            referenced from .opencode/opencode.json. No AGENTS.md
+                            and no root opencode.json. Independent of
+                            --no-claude.
   --codex-enable-global-hooks
                             [legacy/advanced] Not needed for normal setup — the
                             project-level flag written by --codex is sufficient.
@@ -1559,6 +1504,7 @@ Examples:
   sweet-search init                         # Full profile (default); CLI contact surface
   sweet-search init --profile core          # Core profile (no model downloads)
   sweet-search init --force                 # Re-download all models
+  sweet-search init --codex --opencode      # Also set up Codex and opencode
   sweet-search init --mcp                   # Also register the MCP server (CLI stays)
   sweet-search init --mcp --no-cli          # MCP-only contact surface (MCP-variant prompt)
   sweet-search init --build-coreml-cascade  # Trace the cascade locally (dev only)
@@ -1982,28 +1928,44 @@ export async function runInit(args) {
     }
   }
 
-  // 11.6. Codex CLI session-start hook + feature flag (opt-in via --codex).
-  //       `--codex` is the COMPLETE normal Codex setup: it writes Codex's hook
-  //       surface (.codex/hooks.json), enables the canonical [features] hooks
-  //       flag in the PROJECT .codex/config.toml (migrating a deprecated
-  //       codex_hooks), and ships AGENTS.md. Independent of --no-claude (it
-  //       touches .codex/, never .claude/). The one thing init can't do for the
-  //       user is project trust — surfaced as a single `/hooks` instruction. The
-  //       user-level global flag is a legacy/advanced opt-in
-  //       (--codex-enable-global-hooks), never required for the normal path. The
-  //       Codex hook is a prewarm convenience only: default index freshness is
-  //       guaranteed by the core CLI/warm-server first-use launcher regardless of
-  //       editor or MCP.
+  // Contact-surface variant: --no-cli makes MCP the agent's surface, so we
+  // inject the MCP-tool prompt variant instead of the ss-* CLI champion.
+  const promptVariant = parsed.noCli ? 'mcp' : 'cli';
+
+  // 11.6. Codex CLI harness (opt-in via --codex).
+  //       `--codex` is the COMPLETE normal Codex setup, all in the project
+  //       `.codex/` layer (install-codex-harness.js): the rules as
+  //       `developer_instructions` and our full base instructions as
+  //       `model_instructions_file` in .codex/config.toml (never AGENTS.md), the
+  //       SessionStart hook (.codex/hooks.json) and the canonical [features]
+  //       hooks flag (migrating a deprecated codex_hooks). Independent of
+  //       --no-claude (it touches .codex/, never .claude/). --no-cli keeps Codex's
+  //       own base instructions (ours are tuned to the ss-* CLI) and ships the MCP
+  //       rules; --no-agent-instructions keeps only the hook and its flag. The one
+  //       thing init can't do for the user is project trust: Codex loads a project
+  //       .codex/ layer only for a trusted project. The user-level global flag is a
+  //       legacy/advanced opt-in (--codex-enable-global-hooks). The Codex hook is a
+  //       prewarm convenience only: default index freshness is guaranteed by the
+  //       core CLI/warm-server first-use launcher regardless of editor or MCP.
   let codexHookReport = null;
+  let codexHarnessReport = null;
   if (parsed.codex) {
     codexHookReport = registerCodexSessionStartHook({
       projectRoot,
       packageRoot: PACKAGE_ROOT,
       skipped: parsed.skipPrewarmHook,
     });
-    const projectFlag = ensureCodexHooksFeatureFlag(
-      join(projectRoot, '.codex', 'config.toml'),
-      { create: true },
+    codexHarnessReport = installCodexHarness({
+      projectRoot,
+      rules: parsed.skipAgentInstructions ? null : getPolicyBody(promptVariant),
+      prompt: !parsed.skipAgentInstructions && !parsed.noCli,
+      hooksFlag: true,
+    });
+    const projectFlag = codexHarnessReport.hooksFlag ?? { status: codexHarnessReport.status };
+    process.stderr.write(
+      `[init] Codex harness: ${codexHarnessReport.status}`
+      + (codexHarnessReport.detail ? ` — ${codexHarnessReport.detail}` : '') + '\n'
+      + (codexHarnessReport.warning ? `[init] Note: ${codexHarnessReport.warning}\n` : ''),
     );
     let globalFlag = null;
     if (parsed.codexEnableGlobalHooks) {
@@ -2023,6 +1985,51 @@ export async function runInit(args) {
       projectFlagStatus: projectFlag.status,
     });
     if (guidance) process.stderr.write(guidance);
+    if (codexHarnessReport.status !== 'error' && !parsed.skipAgentInstructions) {
+      process.stderr.write(
+        '[init] Codex: the rules and our base instructions are in .codex/config.toml. Codex loads a project '
+        + '.codex/ layer only for a trusted project: answer "Yes" to the trust question when Codex starts '
+        + '(`codex exec` ignores the layer until then).\n',
+      );
+    }
+  }
+
+  // 11.7. opencode harness (opt-in via --opencode), all in the project
+  //       `.opencode/` layer (install-opencode-harness.js): the rules
+  //       (`instructions`), our full build/general prompt, the tool-description
+  //       plugin, grep and the explore subagent off — never AGENTS.md or a root
+  //       opencode.json. --no-cli keeps opencode's own prompt and tools and ships
+  //       the MCP rules; --no-agent-instructions skips it.
+  let opencodeHarnessReport = null;
+  if (parsed.opencode && !parsed.skipAgentInstructions) {
+    opencodeHarnessReport = installOpencodeHarness({
+      projectRoot,
+      rules: getPolicyBody(promptVariant),
+      prompt: !parsed.noCli,
+    });
+    process.stderr.write(
+      `[init] opencode harness: ${opencodeHarnessReport.status}`
+      + (opencodeHarnessReport.detail ? ` — ${opencodeHarnessReport.detail}` : '') + '\n'
+      + (opencodeHarnessReport.warning ? `[init] Note: ${opencodeHarnessReport.warning}\n` : ''),
+    );
+  }
+
+  // 11.8. Migration: before the per-project config layers, --codex implied
+  //       --agents and AGENTS.md carried the policy. Codex/opencode now read it
+  //       from their own config, so strip our old AGENTS.md block (unless the
+  //       user asks for AGENTS.md with --agents) — the rules would arrive twice.
+  if ((parsed.codex || parsed.opencode) && !parsed.skipAgentInstructions && !parsed.optInHarnesses.has('agents')) {
+    try {
+      const legacy = stripLegacyAgentsBlock({ projectRoot });
+      if (legacy !== 'not-found') {
+        process.stderr.write(
+          `[init] AGENTS.md: ${legacy === 'file-deleted' ? 'removed (it held only the old sweet-search block)' : 'removed the old sweet-search block'}`
+          + ' — Codex/opencode now read the rules from their project config\n',
+        );
+      }
+    } catch (err) {
+      process.stderr.write(`[init] Warning: AGENTS.md migration failed: ${err.message}\n`);
+    }
   }
 
   // 12-15. Inject the sweet-search policy across coding-agent harnesses.
@@ -2030,7 +2037,8 @@ export async function runInit(args) {
   //        auto-loaded `.claude/rules/sweet-search.md`; CLAUDE.md stays
   //        untouched. Opt INTO additional harnesses with --agents
   //        (AGENTS.md) / --gemini / --cursor. AGENTS.md always carries the
-  //        full policy directly for Codex/OpenCode.
+  //        full policy directly. Codex and opencode get it from their own
+  //        project config instead (11.6 / 11.7 above).
   //        Idempotent ownership markers make re-init and uninstall safe.
   //        `--no-agent-instructions` is the umbrella that skips the
   //        instruction-file injection layer entirely.
@@ -2054,10 +2062,6 @@ export async function runInit(args) {
     }
   }
 
-  // Contact-surface variant: --no-cli makes MCP the agent's surface, so we
-  // inject the MCP-tool prompt variant instead of the ss-* CLI champion.
-  const promptVariant = parsed.noCli ? 'mcp' : 'cli';
-
   let agentInstructionsReport = null;
   let claudeRulesReport = null;
   let claudeSystemPromptReport = null;
@@ -2067,10 +2071,12 @@ export async function runInit(args) {
       noClaude: parsed.noClaude,
     });
     if (activeHarnesses.length === 0) {
-      process.stderr.write(
-        `[init] Agent instructions: nothing to write — pass --agents / --gemini / --cursor `
-        + `to opt into additional harness files (claude-code is disabled by --no-claude).\n`,
-      );
+      if (!parsed.codex && !parsed.opencode) {
+        process.stderr.write(
+          `[init] Agent instructions: nothing to write — pass --codex / --opencode / --agents / --gemini / --cursor `
+          + `to set up another harness (claude-code is disabled by --no-claude).\n`,
+        );
+      }
     } else {
       try {
         agentInstructionsReport = injectAgentInstructions({
@@ -2242,6 +2248,8 @@ export async function runInit(args) {
     promptReminderReport,
     toolEnforcementReport,
     mcpServerReport,
+    codexHarnessReport,
+    opencodeHarnessReport,
   });
 }
 

@@ -336,7 +336,7 @@ assert(trimProduct.mode === 'product' && trimProduct.installLean === true
 {
   const productDir = join(ROOT, 'product-install');
   mkdirSync(productDir, { recursive: true });
-  const lean = installClaudeLeanHarness({ projectRoot: productDir, appendOverride: false });
+  const lean = installClaudeLeanHarness({ projectRoot: productDir, appendOverride: false, promptEdits: false });
   const st = JSON.parse(readFileSync(join(productDir, '.claude/settings.json'), 'utf8'));
   assert(lean.active === true && !st.permissions.deny.some(e => ['WebSearch', 'WebFetch', 'Skill', 'NotebookEdit'].includes(e))
       && st.permissions.deny.includes('Agent(Explore)') && !st.permissions.deny.includes('Agent(Plan)'),
@@ -350,7 +350,7 @@ assert(trimProduct.mode === 'product' && trimProduct.installLean === true
   // # Memory section), never the operator's own ~/.claude.
   const benchDir = join(ROOT, 'product-install-bench');
   mkdirSync(benchDir, { recursive: true });
-  installClaudeLeanHarness({ projectRoot: benchDir, appendOverride: false, env: {},
+  installClaudeLeanHarness({ projectRoot: benchDir, appendOverride: false, promptEdits: false, env: {},
     configDir: join(ROOT, 'private-home'), visibleConfigDir: '/root/.claude' });
   const benchAgent = readFileSync(join(benchDir, '.claude/agents/sweet-search.md'), 'utf8');
   assert(benchAgent.includes('# Memory') && /in `\/root\/\.claude\/projects\/[^`]+\/memory\/`/.test(benchAgent)

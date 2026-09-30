@@ -8,6 +8,8 @@
 // api-task-runner.runTask so grading/metrics are identical.
 import { CODEX_BATCH_VARIANTS, applyCodexBatch } from './trim/batch-variants.mjs';
 import { stockInstructions } from './trim/build-codex-instructions.mjs';
+// The conflict edit is what `sweet-search init --codex` ships (single source, scripts/harness-prompts/).
+import { CODEX_INSTRUCTIONS_SOURCE } from '../../../scripts/harness-prompts/index.js';
 import {
   resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules, sweetRulesOutOfFile, tomlBasicString,
 } from './sweet-rules-placement.mjs';
@@ -264,7 +266,7 @@ export const CODEX_HARNESS_TRIM_V3_SOURCES = Object.freeze({
 // -c keys: web_search, the goal tools, request_user_input, skills, permissions, environment
 // context and update_plan all stay as stock. Isolates the conflict from the bloat cuts.
 export const CODEX_HARNESS_TRIM_CONFLICT_SOURCES = Object.freeze({
-  'gpt-5.6-luna': path.join(__dirname, 'trim', 'codex-0.146.1-instructions-conflict-gpt-5.6-luna.md'),
+  'gpt-5.6-luna': CODEX_INSTRUCTIONS_SOURCE,
 });
 // Written into the runner state dir: that dir is bound at the same path inside the jail,
 // while harness/ (under <repo>/eval) is masked there.

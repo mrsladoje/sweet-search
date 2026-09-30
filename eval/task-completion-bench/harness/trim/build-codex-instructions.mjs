@@ -16,6 +16,9 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CAPTURES = path.join(HERE, '..', '..', 'handoffs', 'improve', 'harness-prompt-trim', 'captures');
+// The conflict edit is what `sweet-search init --codex` ships, so it lives in the product's
+// scripts/harness-prompts/ (package.json "files"); the benchmark reads it from there.
+const PRODUCT_DIR = path.join(HERE, '..', '..', '..', '..', 'scripts', 'harness-prompts');
 
 // sha256 pins the reviewed source text; line ranges are 1-based and inclusive.
 export const VARIANTS = {
@@ -102,6 +105,9 @@ export const VARIANTS = {
     extract: body => body.input.find(m => m.type === 'message' && m.role === 'developer').content[0].text,
     sha256: 'cbefa6b0bede0e332d957fca70ccacf9f12f4c0ecdf81b819e5cbe1a3b16e265', // 17,730 chars
     out: 'codex-0.146.1-instructions-conflict-gpt-5.6-luna.md',
+    dir: PRODUCT_DIR,
+    notice: 'NOTICE.md',
+    purpose: 'sweet-search (shipped by `sweet-search init --codex`)',
     delete: [
       [78, 78],   // "reach first for `rg` or `rg --files`" — contradicts the ss-* rules
       [83, 83],   // "Never repurpose `$HOME` ..." — verbatim duplicate of line 124, which stays
@@ -112,8 +118,8 @@ export const VARIANTS = {
 
 export const headerFor = (model) => `<!--
 Modified copy of the base instructions that codex-cli 0.146.1 (https://github.com/openai/codex,
-Apache-2.0) sends for model ${VARIANTS[model].model || model}. Changed for the sweet-search task-completion benchmark:
-passages deleted${VARIANTS[model].edits.length ? ' and one sentence shortened' : ''}. Change list: NOTICE-codex.md in this directory.
+Apache-2.0) sends for model ${VARIANTS[model].model || model}. Changed for ${VARIANTS[model].purpose || 'the sweet-search task-completion benchmark'}:
+passages deleted${VARIANTS[model].edits.length ? ' and one sentence shortened' : ''}. Change list: ${VARIANTS[model].notice || 'NOTICE-codex.md'} in this directory.
 The runner strips this comment; the model never sees it.
 -->
 `;
@@ -156,7 +162,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     const source = sourceFor(model);
     const header = headerFor(model);
     const text = header + buildInstructions(model, source);
-    const out = path.join(HERE, v.out);
+    const out = path.join(v.dir || HERE, v.out);
     if (process.argv.includes('--check')) {
       const ok = readFileSync(out, 'utf8') === text;
       same &&= ok;
