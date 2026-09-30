@@ -1069,7 +1069,7 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 
 | 🧩 **[cAST](https://arxiv.org/abs/2506.15655) chunking** | 🏷️ **Chunk enrichment, tuned per language family** |
 |:--|:--|
-| whole functions and classes when they fit the embedder's context, split between statements when they don't | context from the code graph |
+| whole functions and classes when they fit the embedder's context, split between statements when they don't | prepends file path · scope chain · symbol · merged siblings · imports used, built from the AST and the code graph |
 | 96 languages · 206 extensions · 18 with full tree-sitter grammars | each language family's policy was picked by ablation on GenCodeSearchNet |
 
 ### 🚀 The models, and how fast they run
