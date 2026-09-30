@@ -19,6 +19,11 @@ pkill -9 -f "index-maintainer" 2>/dev/null || true
 echo "[preflight] disk: $(df -h / | tail -1)"
 echo "[preflight] lockdown: $(bash $BENCH/harness/bench-net-lockdown.sh status)"
 export HARNESS=codex PROVIDER=openrouter MODEL=openai/gpt-5.5 REASONING=medium
+# Since 2026-09-30 an UNSET harness switch means the shipped product on the sweet arm (Claude Code
+# product+read6fs, Codex conflict+yt3batch2 with rules in developer_instructions, opencode
+# conflict3+todo3eff3k with rules in an instructions file). This launcher measured the stock harness
+# with the rules in AGENTS.md / .claude/rules, so it pins that form explicitly.
+export CC_HARNESS_TRIM=0 CODEX_HARNESS_TRIM=0 CODEX_TRIM_BATCH= OC_HARNESS_TRIM=0 SWEET_RULES_PLACEMENT=file
 export CONCURRENCY=4 CODEX_TIMEOUT_MS=5400000 SS_NO_ANTITHRASH=1 REPS=1
 export DOCKER_HOST=unix:///var/run/docker.sock
 export TASKS_FILE=$BENCH/select/.cache/tasks_full_multilingual.json

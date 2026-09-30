@@ -20,13 +20,18 @@ import {
   buildClaudeCliArgs, installClaudeReadPagesNormalizer, parseClaudeStream,
   selectClaudeMainCosts, READ_PAGES_TOOL_NOTE, claudeHarnessTrim, CLAUDE_HARNESS_TRIM_DENY,
   CLAUDE_TRIM_BASE_PROMPT, CLAUDE_TRIM_BASE_PROMPT_BATCH, CLAUDE_HARNESS_TRIM_ENV_MAX,
+  CC_HARNESS_TRIM_DEFAULT, CC_TRIM_BATCH_DEFAULT,
 } from '../harness/claude-code-task-runner.mjs';
+import { resolveSweetRulesPlacement, sweetRulesRowFields } from '../harness/sweet-rules-placement.mjs';
+import { CLAUDE_SYSTEM_OVERRIDE } from '../../../scripts/install-claude-system-prompt.js';
 import { transcriptMetricsFromFile, repOfSlug } from '../harness/claude-code-accounting.mjs';
 import { normalizeReadInput, readHookDecision } from '../harness/claude-read-pages-hook.mjs';
 import { costsFromTurns } from '../harness/agent-runner-shared.mjs';
 import { readTurnLog } from '../harness/turn-log.mjs';
 import { applyClaudeBatch } from '../harness/trim/batch-variants.mjs';
-import { installClaudeLeanHarness, CLAUDE_LEAN_PLAN_REL } from '../../../scripts/install-claude-lean-harness.js';
+import {
+  installClaudeLeanHarness, CLAUDE_LEAN_PLAN_REL, CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL,
+} from '../../../scripts/install-claude-lean-harness.js';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -278,12 +283,26 @@ for (const sweet of [false, true]) {
 assert(subagentAppended.native === subagentAppended.sweet,
   'the subagent pages note is byte-identical across arms (zero head-to-head differential)');
 
-console.log('\nharness trim switch (CC_HARNESS_TRIM, default OFF):');
-for (const off of [undefined, '', '0']) {
+console.log('\nharness trim switch (CC_HARNESS_TRIM, default = the product):');
+const savedCcBatch = process.env.CC_TRIM_BATCH;
+delete process.env.CC_TRIM_BATCH;
+for (const off of ['0', ' 0 ']) {
   const t = claudeHarnessTrim(off);
-  assert(t.mode === null && t.args.length === 0 && Object.keys(t.env).length === 0,
-    `trim ${JSON.stringify(off)} adds no argv and no env (held-out legs stay byte-identical)`);
+  assert(t.mode === null && t.args.length === 0 && Object.keys(t.env).length === 0 && t.origin === 'env',
+    `trim ${JSON.stringify(off)} (explicit opt-out) adds no argv and no env (held-out legs stay byte-identical)`);
 }
+assert(CC_HARNESS_TRIM_DEFAULT === 'product' && CC_TRIM_BATCH_DEFAULT === 'read6fs', 'defaults: product + read6fs');
+for (const unset of [undefined, '', ' ']) {
+  const t = claudeHarnessTrim(unset);
+  assert(t.mode === 'product+batch-read6fs' && t.batch === 'read6fs' && t.installLean === true && t.origin === 'default'
+      && t.args.length === 0 && Object.keys(t.env).length === 0,
+    `trim ${JSON.stringify(unset)} = the product default (product + read6fs), origin default`);
+}
+for (const [batch, want] of [['', 'product+batch-read6fs'], ['none', 'product'], ['two', 'product+batch-two']]) {
+  process.env.CC_TRIM_BATCH = batch;
+  assert(claudeHarnessTrim('product').mode === want, `product + CC_TRIM_BATCH=${JSON.stringify(batch)} = ${want}`);
+}
+delete process.env.CC_TRIM_BATCH;
 const trimBoth = claudeHarnessTrim('1');
 assert(trimBoth.mode === 'tools+steer' && trimBoth.args[0] === '--disallowedTools'
     && trimBoth.args.length === 1 + CLAUDE_HARNESS_TRIM_DENY.length
@@ -327,7 +346,9 @@ assert(trimLeanBatch.mode === 'lean-batch' && trimLeanBatch.args[0] === '--syste
 assert(JSON.stringify(trimLeanBatch.env) === JSON.stringify(CLAUDE_HARNESS_TRIM_ENV_MAX)
     && trimLean.args[1] === CLAUDE_TRIM_BASE_PROMPT,
   'lean-batch uses the max env; lean itself is unchanged');
+process.env.CC_TRIM_BATCH = 'none';
 const trimProduct = claudeHarnessTrim('product');
+delete process.env.CC_TRIM_BATCH;
 assert(trimProduct.mode === 'product' && trimProduct.installLean === true
     && trimProduct.args.length === 0 && Object.keys(trimProduct.env).length === 0,
   'product mode adds no flags or env: the lean harness arrives as project files');
@@ -357,6 +378,46 @@ assert(trimProduct.mode === 'product' && trimProduct.installLean === true
       && !benchAgent.includes('private-home') && benchAgent.includes('git status --short --branch'),
     'product agent file (bench form) names the rollout-visible memory directory and the git-status step');
 }
+// The DEFAULT sweet arm = what `sweet-search init` installs: the runner's product install
+// (promptEdits false) + the default CC_TRIM_BATCH (read6fs) must equal the installer's own shipped
+// text (promptEdits true), file by file. The one difference is by design: the routing override
+// rides in the runner's --append-system-prompt (after the agent body, as in every mode), so the
+// bench agent file is the shipped one without the override paragraph.
+{
+  const home = join(ROOT, 'product-default-home');
+  mkdirSync(home, { recursive: true });
+  const [benchDir, shipDir, shipNoOverride] = ['pd-bench', 'pd-ship', 'pd-ship-no-override'].map(d => join(ROOT, d));
+  for (const d of [benchDir, shipDir, shipNoOverride]) {
+    mkdirSync(d, { recursive: true });
+    spawnSync('git', ['init', '-q'], { cwd: d });
+  }
+  const opts = { env: {}, configDir: home, visibleConfigDir: home };
+  const t = claudeHarnessTrim(undefined);
+  installClaudeLeanHarness({ projectRoot: benchDir, appendOverride: false, promptEdits: false, ...opts });
+  const agentFile = join(benchDir, CLAUDE_LEAN_AGENT_REL);
+  writeFileSync(agentFile, applyClaudeBatch(readFileSync(agentFile, 'utf8'), t.batch));   // the runner's step
+  installClaudeLeanHarness({ projectRoot: shipDir, ...opts });   // init's call: appendOverride + promptEdits default true
+  installClaudeLeanHarness({ projectRoot: shipNoOverride, appendOverride: false, ...opts });
+  const read = (d, rel) => readFileSync(join(d, rel), 'utf8');
+  const bench = read(benchDir, CLAUDE_LEAN_AGENT_REL);
+  // Memory paths name each project's own slug; mask them before comparing across projects.
+  const mask = (text, d) => text.split(d.replace(/[^A-Za-z0-9]/g, '-')).join('<slug>');
+  assert(mask(bench, benchDir) === mask(read(shipNoOverride, CLAUDE_LEAN_AGENT_REL), shipNoOverride),
+    'default: bench main agent file (product + read6fs) = the shipped read6fs text, byte for byte');
+  assert(mask(read(shipDir, CLAUDE_LEAN_AGENT_REL), shipDir) === mask(bench.replace(/\n$/, `\n\n${CLAUDE_SYSTEM_OVERRIDE}\n`), benchDir),
+    'default: the shipped agent file = the bench file + the override paragraph (the bench sends that paragraph via --append-system-prompt)');
+  for (const rel of [CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL, '.claude/settings.json'])
+    assert(read(benchDir, rel) === read(shipDir, rel), `default: ${rel} = the shipped file, byte for byte`);
+  const placement = resolveSweetRulesPlacement({ sweet: true, env: {}, harness: 'claude-code' });
+  assert(placement === 'file' && JSON.stringify(sweetRulesRowFields(placement, { sweet: true, env: {} })) === '{"sweetRulesPlacement":"file","sweetRulesPlacementSource":"default"}',
+    'default: rules stay in .claude/rules (placement file, as init installs them); the row stamps it');
+  assert(claudeHarnessTrim('0').mode === null && resolveSweetRulesPlacement({ sweet: false, env: {}, harness: 'claude-code' }) === 'file',
+    'native (the runner passes 0) and the explicit opt-out: stock Claude Code');
+  let threw = null;
+  try { resolveSweetRulesPlacement({ sweet: true, env: {}, harness: 'claude-code' }); } catch (e) { threw = e; }
+  assert(threw === null, 'default placement never throws for Claude Code (config is codex/opencode only)');
+}
+if (savedCcBatch === undefined) delete process.env.CC_TRIM_BATCH; else process.env.CC_TRIM_BATCH = savedCcBatch;
 assert(claudeHarnessTrim('1').args.length === 1 + CLAUDE_HARNESS_TRIM_DENY.length,
   'mode 1 is unchanged by the second pass (the smoked condition keeps its meaning)');
 let badTrim = null;

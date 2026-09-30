@@ -5,6 +5,8 @@
 # e.g.  oc-maxtodo-screen|LEGS=trim|opencode|max-todo
 # Status goes to <queue>.status (one "<cell-id> <state> <time>" per line). Touch <queue>.stop to
 # stop after the current cell.
+# The as-now / trim legs and the rules placement are pinned in mac-smoke.sh (since 2026-09-30 an
+# unset switch means the shipped product); a queue line may still override them in its env field.
 set -u
 Q=${1:?usage: night-queue.sh <queue-file>}
 ST=$Q.status

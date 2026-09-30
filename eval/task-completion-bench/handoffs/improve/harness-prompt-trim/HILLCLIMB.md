@@ -13,7 +13,7 @@ ss-* engine or native. No held-out-2 task, ever. Do not push the box; nothing he
   `RT_ATTACH_REQUIRE_SAME_DIFF=1`, ledger `results/bsmoke-ledger-fix/ledger.jsonl`). Never pool
   with round-1 (fix off) numbers.
 - Variant texts: `harness/trim/batch-variants.mjs` (switches `CODEX_TRIM_BATCH`,
-  `OC_HARNESS_TRIM=batch-*`, `CC_TRIM_BATCH`). Unset = byte-identical to the shipped form.
+  `OC_HARNESS_TRIM=batch-*`, `CC_TRIM_BATCH`). Unset = byte-identical to the shipped form. (Since 2026-09-30 an unset trim switch means the shipped product; the smoke scripts pin every leg explicitly — see PRODUCT-SHIP.md.)
 - $0 check before a new variant's first paid cell (instruction-file diff or request capture).
 - Read: solves first (no variant may lose a solve the baseline has, in aggregate), then cost vs the
   SAME-cell baseline, then turns. One rollout per task is noisy (+-25% Codex baseline cost between

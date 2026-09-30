@@ -31,6 +31,8 @@ assert.equal(base.SS_RT_PROGRESS, '1');
 assert.equal(base.SS_PACKING_TREATMENT, 'ss-batch');
 assert.equal(base.PREFLIGHT_ONLY, '1');
 assert.equal(base.SS_RT_ADVISORY, undefined);
+assert.equal(base.OC_HARNESS_TRIM, '0');          // stock opencode, not the 2026-09-30 product default
+assert.equal(base.SWEET_RULES_PLACEMENT, 'file'); // rules in AGENTS.md, as the turnfix cells ran
 const t1 = pilotEnv({
   runId: 'turnfix-t1', tasksPath: '/repo/tasks_turnfix_discovery20.jsonl',
   arm: 'native', ledgerPath: '/tmp/devret-ledger.jsonl', advisoryH: 3,

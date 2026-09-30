@@ -14,6 +14,10 @@
 # `claude setup-token`, written by the owner; the token never goes into chat). The box's HIGH
 # leg shares that subscription; a usage-limit hit stops this script, finished rows are kept.
 # Never run two of these at once (one run-pilot per machine).
+# Since 2026-09-30 unset switches mean the shipped product on the sweet arm. The as-now legs set the
+# trim switch to 0 (stock), every leg keeps the rules where they were (SWEET_RULES_PLACEMENT=file
+# unless the caller exports another value), and a 'product' trim leg keeps the v2.1 text
+# (CC_TRIM_BATCH=none unless the caller exports a variant).
 set -u
 H=${1:?usage: mac-smoke.sh claudecode|codex|opencode [trim-value]}
 ON=${2:-1}   # trim value for the TRIM legs: 1, or max (claudecode/opencode)
@@ -88,7 +92,8 @@ for LEG in $LEGLIST; do
   NAME=${LEG%%:*}; TRIM=${LEG##*:}; N=$((N+1))
   RUN=hsmoke-${H_TAG:-$H}-$STAMP-L$N
   echo "$(date +%T) launching $RUN = $NAME ($SWITCH=$TRIM)"
-  env "$SWITCH=$TRIM" TASKS_FILE=$TASKS_FILE INSTANCES=$TASKS \
+  env "$SWITCH=$TRIM" "SWEET_RULES_PLACEMENT=${SWEET_RULES_PLACEMENT:-file}" "CC_TRIM_BATCH=${CC_TRIM_BATCH:-none}" \
+    TASKS_FILE=$TASKS_FILE INSTANCES=$TASKS \
     ARMS=sweet REPS=1 CONCURRENCY=1 HARNESS=$H MODEL=$MODEL PROVIDER=$PROVIDER \
     REASONING=medium RUN_ID=$RUN ENV_LEDGER=$LEDGER \
     node harness/run-pilot.mjs > "results/$RUN.log" 2>&1

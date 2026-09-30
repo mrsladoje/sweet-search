@@ -146,7 +146,13 @@ export function buildClaudeCliArgs({ rundir, sweet, claudeModelId, effort = null
   ];
 }
 
-// --- HARNESS TRIM (CC_HARNESS_TRIM, default OFF) — handoffs/improve/harness-prompt-trim ---
+// --- HARNESS TRIM (CC_HARNESS_TRIM) — handoffs/improve/harness-prompt-trim ---
+// DEFAULT (since 2026-09-30, SWEET ARM ONLY) = the product: CC_HARNESS_TRIM unset or empty means
+// 'product', and with 'product' an unset or empty CC_TRIM_BATCH means 'read6fs' — together exactly
+// what `sweet-search init` 2.8.2 installs. CC_HARNESS_TRIM=0 is the explicit opt-out to stock Claude
+// Code; CC_TRIM_BATCH=none keeps 'product' at its v2.1 text (the pre-read6fs meaning of 'product'
+// alone). The native arm is stock in every condition. Rows stamp the effective mode
+// (harnessTrim, e.g. 'product+batch-read6fs') and harnessTrimSource ('default' | 'env').
 // Research switch that removes parts of Claude Code's OWN request which a benchmark coding
 // task never uses or which contradict the ss-* rules. The sweet rules file, the override, the
 // frame and READ_PAGES_TOOL_NOTE are untouched. Verified at $0 on 2.1.281 and 2.1.282
@@ -161,8 +167,8 @@ export function buildClaudeCliArgs({ rundir, sweet, claudeModelId, effort = null
 //            "avoid cat/head/tail/sed/awk/echo" line — the shape a user in a normal
 //            permission mode sees. UNDOCUMENTED internal variable: research only, re-verify
 //            with a capture on every Claude Code version before trusting a run.
-// Mode values: unset/'0' = off (args and env byte-identical), 'tools', 'steer', '1' = both,
-// 'max' / 'max-batch' / 'lean' / 'lean-batch' = the second pass below.
+// Mode values: '0' = off (args and env byte-identical), unset = 'product', 'tools', 'steer',
+// '1' = both, 'max' / 'max-batch' / 'lean' / 'lean-batch' = the second pass below.
 export const CLAUDE_HARNESS_TRIM_DENY = Object.freeze([
   'SendMessage', 'Workflow', 'ScheduleWakeup', 'CronCreate', 'EnterWorktree', 'ExitWorktree',
   'ReportFindings', 'Skill', 'NotebookEdit', 'ListAgents', 'WebSearch', 'WebFetch', 'TaskStop',
@@ -245,9 +251,16 @@ export function writeClaudeHookPlugin(dir, { deferRead = false } = {}) {
   ].join('\n'));
 }
 
+// The product default (see the header): unset / empty CC_HARNESS_TRIM, and CC_TRIM_BATCH under 'product'.
+export const CC_HARNESS_TRIM_DEFAULT = 'product';
+export const CC_TRIM_BATCH_DEFAULT = 'read6fs';
+
 export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
-  const m = String(mode ?? '').trim();
-  if (!m || m === '0') return { mode: null, args: [], env: {} };
+  const raw = String(mode ?? '').trim();
+  const m = raw || CC_HARNESS_TRIM_DEFAULT;
+  // origin = where the mode came from ('default' | 'env'), stamped on the row as harnessTrimSource.
+  const origin = raw ? 'env' : 'default';
+  if (m === '0') return { mode: null, args: [], env: {}, origin };
   // 'product' = what `sweet-search init` installs, as project files (settings `agent` +
   // main/general-purpose/Plan agent files + permissions.deny + env). The runner installs them into
   // the run dir. Since the conflict-only trim (v2, 2026-09-27) this is NO LONGER max-batch: web,
@@ -257,10 +270,12 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
   // the rollout's network namespace for both arms, so the product arm keeps web exactly like native.
   // Runs before 2026-09-27 measured the v1 form; never pool them with v2 product runs.
   // Since 2026-09-30 init ships the main-agent prompt WITH the read6fs edits: the shipped product is
-  // CC_HARNESS_TRIM=product + CC_TRIM_BATCH=read6fs ('product' alone stays the v2.1 text, byte-identical).
+  // CC_HARNESS_TRIM=product + CC_TRIM_BATCH=read6fs, which is also what an unset or empty
+  // CC_TRIM_BATCH means here. CC_TRIM_BATCH=none = the v2.1 text (byte-identical to the old 'product').
   if (m === 'product') {
-    const batch = String(process.env.CC_TRIM_BATCH ?? '').trim();
-    if (batch && !CC_BATCH_VARIANTS[batch]) throw new Error(`CC_TRIM_BATCH=${batch}: expected ${Object.keys(CC_BATCH_VARIANTS).join(', ')}`);
+    const rawBatch = String(process.env.CC_TRIM_BATCH ?? '').trim();
+    const batch = rawBatch === 'none' ? '' : (rawBatch || CC_TRIM_BATCH_DEFAULT);
+    if (batch && !CC_BATCH_VARIANTS[batch]) throw new Error(`CC_TRIM_BATCH=${batch}: expected none, ${Object.keys(CC_BATCH_VARIANTS).join(', ')}`);
     // CC_PRODUCT_STEER=1 (bench only, audit mech-cc2): keep Claude Code's own bypass-mode steer
     // (drop THRIFTY_SONIC=0 from the installed settings env) to measure its cost effect.
     // CC_PRODUCT_TOKREM=1 (bench only, audit mech-cc3): keep stock's token-budget reminder
@@ -277,7 +292,7 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
     // CC_PRODUCT_SKILLDESC=<n> (bench only, audit cc-prefix): public setting skillListingMaxDescChars
     // (default 1536) — every skill stays listed and callable; only long trigger text is cut.
     const skillDesc = /^\d+$/.test(String(process.env.CC_PRODUCT_SKILLDESC ?? '')) ? Number(process.env.CC_PRODUCT_SKILLDESC) : null;
-    return { mode: `${batch ? `${m}+batch-${batch}` : m}${steer ? '+steer' : ''}${tokrem ? '+tokrem' : ''}${skillDesc ? `+skill${skillDesc}` : ''}${hookplug ? `+hook-${hookplug}` : ''}`, args: [], env: hookplug ? { CLAUDE_CODE_ENABLE_FUNCTION_HOOKS: '1' } : {}, installLean: true, ...(batch ? { batch } : {}), ...(dropEnv.length ? { dropEnv } : {}), ...(skillDesc ? { skillDesc } : {}), ...(hookplug ? { hookplug } : {}) };
+    return { mode: `${batch ? `${m}+batch-${batch}` : m}${steer ? '+steer' : ''}${tokrem ? '+tokrem' : ''}${skillDesc ? `+skill${skillDesc}` : ''}${hookplug ? `+hook-${hookplug}` : ''}`, origin, args: [], env: hookplug ? { CLAUDE_CODE_ENABLE_FUNCTION_HOOKS: '1' } : {}, installLean: true, ...(batch ? { batch } : {}), ...(dropEnv.length ? { dropEnv } : {}), ...(skillDesc ? { skillDesc } : {}), ...(hookplug ? { hookplug } : {}) };
   }
   if (m === 'lean' || m === 'lean-batch') {
     // lean also drops the Agent tool (no delegation): opt-in only, reported separately.
@@ -286,7 +301,7 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
     // worktree subagents — 140 subagent requests on the as-now confirm set and 91 subagent turns on
     // one max-batch rollout, none of them changing a solve (DIAG-CLAUDECODE.md).
     return {
-      mode: m,
+      mode: m, origin,
       args: ['--system-prompt', m === 'lean-batch' ? CLAUDE_TRIM_BASE_PROMPT_BATCH : CLAUDE_TRIM_BASE_PROMPT, '--disallowedTools',
         ...CLAUDE_HARNESS_TRIM_DENY.filter(t => !t.startsWith('Agent(')), 'Agent'],
       env: { ...CLAUDE_HARNESS_TRIM_ENV_MAX },
@@ -298,7 +313,7 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
     const deny = [...CLAUDE_HARNESS_TRIM_DENY.filter(t => t !== 'Agent(general-purpose)'),
       'Agent(Plan)', 'Agent(claude)'];
     return {
-      mode: m,
+      mode: m, origin,
       // --system-prompt and --agents BEFORE the variadic --disallowedTools, which must stay LAST.
       args: ['--system-prompt', m === 'max-batch' ? CLAUDE_TRIM_BASE_PROMPT_BATCH : CLAUDE_TRIM_BASE_PROMPT, '--agents', CLAUDE_TRIM_AGENTS_JSON,
         '--disallowedTools', ...deny],
@@ -309,7 +324,7 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
   const tools = m === '1' || m === 'tools';
   const steer = m === '1' || m === 'steer';
   return {
-    mode: m === '1' ? 'tools+steer' : m,
+    mode: m === '1' ? 'tools+steer' : m, origin,
     // Variadic flag: it must stay LAST in the argv or it swallows the options after it.
     args: tools ? ['--disallowedTools', ...CLAUDE_HARNESS_TRIM_DENY] : [],
     env: steer ? { CLAUDE_CODE_THRIFTY_SONIC: '0' } : {},
@@ -568,9 +583,10 @@ export async function runClaudeCodeTask(task, {
   // ss-* gutter form pinned per harness (core/search/gutter-form.js): claude-code → `N<TAB>`.
   // Pinned so the timed run never pays a process-tree walk; operator env (A/B arm) wins.
   routingEnv.SS_READ_GUTTER = process.env.SS_READ_GUTTER ?? 'tab';
-  // Harness trim (research switch, default OFF): adds nothing to env or argv when off.
-  // SWEET ARM ONLY. The trim removes harness text that contradicts the ss-* rules; native has
-  // no ss-* rules to contradict and keeps Claude Code's full prompt in every condition.
+  // Harness trim, SWEET ARM ONLY. Default (CC_HARNESS_TRIM unset) = the product (product +
+  // read6fs, what `sweet-search init` installs); CC_HARNESS_TRIM=0 = stock, adding nothing to env
+  // or argv. The trim removes harness text that contradicts the ss-* rules; native has no ss-*
+  // rules to contradict and keeps Claude Code's full prompt in every condition.
   const harnessTrim = claudeHarnessTrim(sweet ? process.env.CC_HARNESS_TRIM : '0');
   Object.assign(routingEnv, harnessTrim.env);
 
@@ -630,7 +646,8 @@ export async function runClaudeCodeTask(task, {
   // and Plan agent files (the base prompts of the main session and its subagents); the stock harness
   // passes them with --append-system-prompt and --append-subagent-system-prompt (buildClaudeCliArgs).
   // CLAUDE.md is the frame only in both placements. The rules text is the rule file's body.
-  const rulesPlacement = resolveSweetRulesPlacement({ sweet });
+  // Default for Claude Code = 'file' (.claude/rules/sweet-search.md, as the product installs it).
+  const rulesPlacement = resolveSweetRulesPlacement({ sweet, harness: 'claude-code' });
   // 'config' is codex/opencode only: for Claude Code the rules file IS its config mechanism.
   if (rulesPlacement === 'config') throw new Error('SWEET_RULES_PLACEMENT=config: codex and opencode only (Claude Code: use file or system)');
   const systemRules = rulesPlacement === 'system' ? mppText.trimEnd() : null;
@@ -651,7 +668,8 @@ export async function runClaudeCodeTask(task, {
     // or directly via CLAUDE_CONFIG_DIR when unjailed. Written once per rollout, so it is stable
     // across the rollout's turns; its shape (<home>/projects/<rundir slug>/memory/) matches native.
     // promptEdits: false = the v2.1 product text; CC_TRIM_BATCH applies the variant under test (the
-    // product itself now ships read6fs, i.e. CC_HARNESS_TRIM=product + CC_TRIM_BATCH=read6fs).
+    // product itself ships read6fs = the default CC_TRIM_BATCH; tests/claude-code-cost.mjs checks the
+    // result is byte-identical to installClaudeLeanHarness with its own promptEdits).
     const lean = installClaudeLeanHarness({
       projectRoot: rundir, appendOverride: false, promptEdits: false, env: routingEnv,
       configDir: claudeHome, visibleConfigDir: unjailed ? claudeHome : join(HOMEDIR, '.claude'),
@@ -841,9 +859,11 @@ export async function runClaudeCodeTask(task, {
     degenerate: degeneration.degenerate, degeneration,
     degenerationInstrumentationComplete: degeneration.instrumentation.complete,
     readPagesNormalization: 'pretool-hook-v1',
-    // CC_HARNESS_TRIM mode ('tools', 'steer', 'tools+steer') or null when off.
+    // CC_HARNESS_TRIM mode ('product+batch-read6fs' = the product default, 'tools', 'steer', ...) or
+    // null when off; harnessTrimSource says whether it came from the default or the env (sweet only).
     harnessTrim: harnessTrim.mode,
-    ...sweetRulesRowFields(rulesPlacement),
+    ...(sweet ? { harnessTrimSource: harnessTrim.origin } : {}),
+    ...sweetRulesRowFields(rulesPlacement, { sweet }),
     claudeConfigDir: unjailed ? 'private-config-dir' : 'jail-bind',
     // Marks a run that carried the F2 repair, so an analyzer can tell whether the `pages`
     // asymmetry disclosure describes this run's own data or a pre-repair baseline. Never

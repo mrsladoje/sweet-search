@@ -38,6 +38,12 @@ swap () {  # swap <sourcedir>
     d.close(); console.log(f+" files / "+r+" chunks");' $G)"
 }
 
+# Since 2026-09-30 an UNSET harness switch means the shipped product on the sweet arm (Claude Code
+# product+read6fs, Codex conflict+yt3batch2 with rules in developer_instructions, opencode
+# conflict3+todo3eff3k with rules in an instructions file). This launcher measured the stock harness
+# with the rules in AGENTS.md / .claude/rules, so it pins that form explicitly.
+export CC_HARNESS_TRIM=0 CODEX_HARNESS_TRIM=0 CODEX_TRIM_BATCH= OC_HARNESS_TRIM=0 SWEET_RULES_PLACEMENT=file
+
 cell () {  # cell <run_id> <harness>
   local id=$1 h=$2
   echo "=== $(date -u +%H:%M:%SZ) $id  harness=$h"

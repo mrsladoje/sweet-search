@@ -7,7 +7,10 @@
 //   python3 capture_proxy.py 18777 <outdir>/<variant> &
 //   node capture_cc_runner.mjs --variant <name> --out <outdir> [--bin <claude>] [--arm sweet|native]
 //
-// Variants: shipped | deny15 | steer | trim | style-nocoding | exclude-dynamic
+// Variants: shipped | deny15 | steer | trim | style-nocoding | exclude-dynamic | default
+//   default = CC_HARNESS_TRIM unset, as on a run that sets nothing: the product default since
+//   2026-09-30 (product + read6fs; the runner's lean install + CC_TRIM_BATCH step below).
+//   ('shipped' is the historical name of the STOCK harness, trim 0.)
 // --real-home: HOME is the operator's real home and CLAUDE_CONFIG_DIR a private dir — the
 //   unjailed (Mac) runner shape; proves the operator's ~/.claude does not leak in.
 // --env '<json object of extra env>'  --extra '<json array of extra CLI args>'  --project-settings '<json>' probe other mechanisms.
@@ -21,6 +24,8 @@ const HERE = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = join(HERE, '../../../../../..');
 const HARNESS = join(ROOT, 'eval/task-completion-bench/harness');
 const { buildClaudeCliArgs, claudeHarnessTrim, excludeAncestorClaudeMd } = await import(join(HARNESS, 'claude-code-task-runner.mjs'));
+const { installClaudeLeanHarness } = await import(join(ROOT, 'scripts/install-claude-lean-harness.js'));
+const { applyClaudeBatch } = await import(join(HARNESS, 'trim/batch-variants.mjs'));
 const { writeInstructionFile, issuePrompt } = await import(join(HARNESS, 'agent-runner-shared.mjs'));
 
 const argv = process.argv.slice(2);
@@ -56,8 +61,24 @@ if (sweet) {
 const prompt = issuePrompt('The add function should also accept a third optional argument c.');
 let args = buildClaudeCliArgs({ prompt, rundir, sweet, claudeModelId: opt('model', 'claude-opus-5-5'), effort: opt('model') ? null : 'medium' });
 // The runner's own trim switch, exactly as CC_HARNESS_TRIM applies it.
-const trim = claudeHarnessTrim({ trim: '1', deny15: 'tools', steer: 'steer', max: 'max', 'max-batch': 'max-batch', lean: 'lean', 'lean-batch': 'lean-batch' }[variant] ?? '0');
+if (variant === 'default') delete process.env.CC_TRIM_BATCH;
+const trim = sweet && variant === 'default' ? claudeHarnessTrim(undefined)
+  : claudeHarnessTrim({ trim: '1', deny15: 'tools', steer: 'steer', max: 'max', 'max-batch': 'max-batch', lean: 'lean', 'lean-batch': 'lean-batch' }[variant] ?? '0');
 args = [...args, ...trim.args];
+if (sweet && trim.installLean) {
+  // The runner's product step (runClaudeTask): the lean harness installed into the run dir with the
+  // override left to --append-system-prompt, then the CC_TRIM_BATCH variant applied to the main agent file.
+  const cfgDir = join(home, '.claude');
+  mkdirSync(cfgDir, { recursive: true });
+  const lean = installClaudeLeanHarness({ projectRoot: rundir, appendOverride: false, promptEdits: false,
+    env: { ...trim.env, CLAUDE_CONFIG_DIR: cfgDir }, configDir: cfgDir, visibleConfigDir: cfgDir });
+  if (lean.active !== true) throw new Error(`lean harness not active: ${lean.status} ${lean.detail}`);
+  if (trim.batch) {
+    const agentFile = join(rundir, '.claude/agents/sweet-search.md');
+    writeFileSync(agentFile, applyClaudeBatch(readFileSync(agentFile, 'utf8'), trim.batch));
+  }
+}
+console.error(`trim=${trim.mode} origin=${trim.origin}`);
 if (variant === 'exclude-dynamic') args.push('--exclude-dynamic-system-prompt-sections');
 const extra = opt('extra');
 if (extra) args.push(...JSON.parse(extra));

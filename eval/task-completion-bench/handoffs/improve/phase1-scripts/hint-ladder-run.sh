@@ -8,6 +8,11 @@
 set -u
 set -a; . /root/.openrouter.env; set +a
 cd /root/sweet-search-private
+# Since 2026-09-30 an UNSET harness switch means the shipped product on the sweet arm (Claude Code
+# product+read6fs, Codex conflict+yt3batch2 with rules in developer_instructions, opencode
+# conflict3+todo3eff3k with rules in an instructions file). This launcher measured the stock harness
+# with the rules in AGENTS.md / .claude/rules, so it pins that form explicitly.
+export CC_HARNESS_TRIM=0 CODEX_HARNESS_TRIM=0 CODEX_TRIM_BATCH= OC_HARNESS_TRIM=0 SWEET_RULES_PLACEMENT=file
 
 LEDGER=/root/env-ledger/luna-rotate20-v3/ledger.jsonl
 TARGETS=apple__swift-nio-http2-145,codeception__codeceptjs-367,dashbitco__nimble_options-43,joshuakgoldberg__bingo-274,dart-lang__http-1114

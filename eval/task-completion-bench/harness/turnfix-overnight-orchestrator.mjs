@@ -233,6 +233,9 @@ export function pilotEnv({ runId, tasksPath, arm, ledgerPath, packing = 'off', a
     REPS: '1', ARMS: arm, CONCURRENCY: '1', AGENT_TIMEOUT_MS: '1800000',
     TASK_FRAME: '1', SS_ISOLATION: '1', SS_RUNTESTS_DEDUP: '1', SS_BENCH_ALLOW_NET: '0',
     SS_RT_PROGRESS: '1', SS_PACKING_TREATMENT: packing, MPP,
+    // Since 2026-09-30 an unset switch means the shipped opencode product on the sweet arm; the
+    // turnfix cells measured stock opencode with the rules in AGENTS.md, so pin that form.
+    OC_HARNESS_TRIM: '0', SWEET_RULES_PLACEMENT: 'file',
     DOCKER_HOST: process.env.DOCKER_HOST || 'unix:///var/run/docker.sock',
     ...(advisoryH == null ? {} : { SS_RT_ADVISORY: '1', SS_RT_H: String(advisoryH) }),
     ...(preflight ? { PREFLIGHT_ONLY: '1' } : {}),
