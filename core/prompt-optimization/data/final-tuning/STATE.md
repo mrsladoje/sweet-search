@@ -5,18 +5,15 @@ section.
 
 ## Now
 
-- Phase: **3 — retrieval screens** (+ Phase 5 r3 build in parallel).
-- **Judge route changed 00:52:** direct DeepSeek balance hit $0.13 (4 DeepSeek runs + judges ≈ $2; my per-run estimate was 4× too low). All new jobs use `SS_JUDGE_DEEPSEEK_VIA_OPENROUTER=1` (owner-authorized). Every finished run is re-judged for accuracy on the same route (`scripts/rescore.mjs` → `rescore-or.jsonl`; `compare.mjs` shows it as `accOR`). **Decisions use `accOR` from now on.**
-- **DeepSeek agent cell paused** (no direct balance). Restart only as a new cell on OpenRouter with fresh baselines if needed.
-- Queues (`~/.ss-eval/final-tuning-logs/queue-*.log`):
-  - codex5 (INTERLEAVED): `cx-il-prune3` (V2 vs base, train) → `cx-il-dedupe` (V3 vs base, train). Compare: `compare.mjs codex-sol61-high <tag> x --within`
-  - cc-sonnet2 (A-B-A, V1 Sonnet confirm): `sb-base-a` → `sb-rp-a` → `sb-base-b` (starts after the Opus validation; new runs skip the USD panel `SS_BENCH_NO_USD=1`)
-  - Phase 4 prep agent: wiring V1 into the task runner + TASK-GUARD.md (no rollouts).
-  - background: rescore batch 1; r3 verification (`r3-verify.log`)
-- r3: 6 × 36 = 216 drafts done (`r3/drafts/`). Verification by two non-Claude models (gemini-3.8-flash direct, glm-5.3 OpenRouter) running; ocelot 20/30 positives kept. Next: Opus audit agent → split → manifest → index window (no bench) → pilot.
-- Killed: `ds-dedupe-a` (12 rows, balance), deepseek2/deepseek3 queues.
+- Phase: **3 (screens) + 4 (task guard ready) + 5 (r3 frozen)**.
+- Running: `cx-il-prune3` (V2 interleaved, Codex train, 156 rollouts, ~1 h left); cc-sonnet2 A-B-A (`sb-rp-a` running → `sb-base-b`).
+- Next, in order (each needs a quiet machine — no overlap):
+  1. after Codex + Sonnet finish (~02:45): **index r3** (`scripts/index-r3.sh`, ~95 min, waits by itself for no retrieval-bench process);
+  2. **task guard V1** (Opus, `TASK-GUARD.md`, `GUARD_STAMP=$(date +%Y%m%d-%H%M) bash core/prompt-optimization/data/final-tuning/scripts/task-guard.sh both`, ~1 h);
+  3. **r3 dev pilot / 2.8.2 baseline**: native vs sweet on r3 dev (Codex, Opus) → headroom check; then champion vs 2.8.2 on dev; then held-out once (Phase 7).
+- Judge route: OpenRouter DeepSeek (`SS_JUDGE_DEEPSEEK_VIA_OPENROUTER=1`), USD panel off (`SS_BENCH_NO_USD=1`), decisions on `accOR`.
+- r3: frozen `r3/r3-probes.json` sha256 ba49df55…, 163 = held-out 103 + dev 60 (train 36 / val 24); `r3/r3-PREREG.md`.
 
-## Baseline
 
 - Product: sweet-search 2.8.2, main @ 0e128ac6. Branch `final-tuning` in worktree `../sweet-search-final-tuning` (created from 0e128ac6).
 - Worktree runtime pieces are symlinks to the main checkout (gitignored, excluded in `.git/info/exclude`): `node_modules`, `eval/repos`, `eval/ast-tester-probes/_repos`, `crates/sweet-search-cli/target`, `crates/sweet-search-native/sweet-search-native.darwin-arm64.node`.
@@ -47,9 +44,12 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 | bench fix | `SS_BENCH_STABLE_RULES_PATH=1` | opencode prefix cache broken by random rules path (waste #2) | DeepSeek vs r282 native: +7.9% (CI crosses 0), was +54.6% | — | n/a | n/a | **adopted for all new runs (measurement fix, not a product change)** |
 | V1 | `SS_VARIANT_CC_RULES_IN_PROMPT=1` | CC rules re-written each rollout (waste #1) | **PASS** Opus: cost −15.8% (CI < 0), acc +0.2 | **PASS** Opus: −11.6% (CI < 0), accOR −0.1 | | | | screening |
 | V2 | `SS_VARIANT_PRUNE3=1` | drop ss-find/semantic/trace (owner hyp. 2) | borderline: Codex −13.2% (CI touches 0), DS −9.9..−17% (CI < 0); acc within noise | | | | |
-| V3 | `SS_VARIANT_SEARCH_DEDUPE=1` | repeated ss-search entries/lines (waste #5) | Codex queued; DS killed (balance) | | | | |
+| V3 | `SS_VARIANT_SEARCH_DEDUPE=1` | repeated ss-search entries/lines (waste #5) | $0 replay: ss-search −9.1% chars → ≈ −1% cost (below MDE); not screened live | | | | |
 
 ## Decisions log
+
+- 02:05 **V3 (SEARCH_DEDUPE) not screened live**: $0 replay of 60 r282 ss-search calls (Codex, Opus, DeepSeek) in their r282 clones: output −9.1% chars, entries −18% (572 → 467). ss-search results are 7–13% of cost → expected cost effect ≈ −1%, below every MDE (even interleaved). Kept as an optional low-risk hygiene switch for the owner; cancelled `cx-il-dedupe` to free the machine for r3 indexing + task guard. — `variants/replay-dedupe.json`
+- 02:00 **r3 frozen**: audits kept 163 (jj 28, dgraph 28, tortoise-orm 26, typedoc 29, zipkin 24, ocelot 28), fixed 48 facts/queries, dropped 2 (tortoise-orm-34 negative exists as a pre-save hook; typedoc-27 ambiguous mode). Split seed 42 stratified (repo, stratum). Pre-registration written before any r3 run.
 
 - 01:30 **V1 passes validation on Opus** (52, aggregates only): cost −11.6% [−15.5%, −8.0%], cache write −18%, accOR −0.1 pt [−1.0, +0.8], calls +8.4% [0.00, +0.33] (borderline, watch on Sonnet). → V1 confirmed on the priority cell; Sonnet A-B-A confirm queued; Phase 4 task guard being prepared.
 - 01:28 Cash: OpenRouter fell from $24.07 to $15.51 (MiniMax judge + USD content panel + GLM verifier on jj ≈ $2.9). Actions: new runs skip the USD/content panel (`SS_BENCH_NO_USD=1`; content is secondary and its CC drop is a gutter artifact); r3 second verifier switched from z-ai/glm-5.3 to deepseek/deepseek-v4-pro-0813 (OpenRouter, ~half the price) for dgraph (partly), tortoise-orm, typedoc, zipkin; ocelot + jj were verified with glm-5.3.
@@ -86,5 +86,7 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 - 2026-10-01 00:00 — owner message: "if for the best results we require more than until 9AM please take more time … I don't have more than 24h". **End time changed from 09:00 to: when Phase 7 is done or the cash is spent, hard stop ~23:00 on 2026-10-01.**
 
 ## Problems
+
+- 01:45 Second count-only slip: the task-guard prep agent ran a `grep -l` whose glob included `tasks_heldout2*.jsonl` (output filtered, no content viewed). No HO2 data entered any decision.
 
 - 00:20 The r3 repo-selection agent ran a COUNT-ONLY grep (`grep -c zipkin`) over `.cache/tasks_full_heldout2_reserve.json` while checking freshness. No content was read or printed (3 case-insensitive matches of the word, 0 of `openzipkin/`). Recorded as a breach of the "never touch HO2" rule by a subagent; no HO2 data entered any decision. Later agent prompts name the forbidden files explicitly.
