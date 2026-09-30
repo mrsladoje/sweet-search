@@ -25,10 +25,10 @@
  */
 
 import { EMBEDDING_CONFIG, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
-import { HASH_ALGORITHM } from '../incremental-indexing/infrastructure/hashing.mjs';
+import { HASH_ALGORITHM } from '../incremental-indexing/infrastructure/hash-algorithm.mjs';
 import { DEFAULT_SPARSE_GRAM_WEIGHTS_ID } from '../incremental-indexing/infrastructure/manifest.mjs';
 import { describeFormatChanges } from '../incremental-indexing/infrastructure/staleness-display.mjs';
-import { CHUNKING_VERSION, ENRICHMENT_VERSION } from './ast-chunker.js';
+import { CHUNKING_VERSION, ENRICHMENT_VERSION } from './index-format-versions.js';
 
 export const STATE_VERSION = '2.4';
 

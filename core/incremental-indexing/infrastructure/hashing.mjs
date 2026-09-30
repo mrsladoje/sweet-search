@@ -30,8 +30,9 @@
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 
-const ALGO_ENV = (process.env.SWEET_SEARCH_HASH_ALGORITHM || 'xxhash3').toLowerCase();
-export const HASH_ALGORITHM = ALGO_ENV === 'sha256' ? 'sha256' : 'xxhash3';
+import { resolveHashAlgorithm } from './hash-algorithm.mjs';
+
+export const HASH_ALGORITHM = resolveHashAlgorithm(process.env);
 const require = createRequire(import.meta.url);
 const PURE_JS_PRIME64_1 = 0x9E3779B185EBCA87n;
 const PURE_JS_PRIME64_2 = 0xC2B2AE3D27D4EB4Fn;
@@ -196,7 +197,7 @@ function makeNodeRsXxh3(mod) {
 }
 
 function resolveBackendsSync() {
-  if (ALGO_ENV === 'sha256') {
+  if (HASH_ALGORITHM === 'sha256') {
     resolved = true;
     return;
   }
@@ -257,7 +258,7 @@ export async function contentHash(input) {
  */
 export function contentHashSync(input) {
   const buf = bufFromInput(input);
-  if (ALGO_ENV === 'sha256') {
+  if (HASH_ALGORITHM === 'sha256') {
     return crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16);
   }
   if (nativeXxh3) return nativeXxh3(buf);
