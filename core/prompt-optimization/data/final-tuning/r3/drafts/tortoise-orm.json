@@ -1,0 +1,962 @@
+{
+  "repo": "tortoise-orm",
+  "sha": "1979f27d6a37db991ca5c934e2394faa6c942d52",
+  "probes": [
+    {
+      "id": "r3-tortoise-orm-01",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "Inside an async transaction block, an ordinary model query is run without naming any connection, yet it executes on the transaction's connection instead of a pooled one. How does that swap happen, where is it recorded per task, and where is it undone?",
+      "expectedFiles": [
+        "tortoise/backends/base/client.py",
+        "tortoise/connection.py",
+        "tortoise/models.py"
+      ],
+      "expectedSymbols": [
+        "TransactionContextPooled.__aenter__",
+        "TransactionContextPooled.__aexit__",
+        "ConnectionHandler.set",
+        "ConnectionHandler.get",
+        "ConnectionHandler.reset",
+        "MetaInfo.db"
+      ],
+      "expectedFacts": [
+        "TransactionContextPooled.__aenter__ acquires a pool connection and then calls get_connections().set(connection_name, client) to install the transaction client before begin().",
+        "ConnectionHandler.set copies the alias-to-client dict, puts the transaction client in the copy and stores it in a ContextVar, so the replacement is visible only to the current asyncio task; it returns a token.",
+        "A plain query resolves its connection through QuerySet._choose_db -> model._meta.db -> get_connection(default_connection) -> ConnectionHandler.get, which reads the same ContextVar storage and so returns the transaction client.",
+        "TransactionContextPooled.__aexit__ commits or rolls back and, in a finally block, calls get_connections().reset(token) to restore the previous storage."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/backends/base/client.py:362-371 (__aenter__ acquires pool conn, line 369 get_connections().set, line 370 begin); :373-385 (__aexit__, reset at 385). tortoise/connection.py:195-215 (set: copy storage dict, _storage_var.set(storage_copy), returns ConnectionToken), :229-246 (reset uses _storage_var.reset(cv_token)), :155-190 (get reads _get_storage()), :44-50 (_storage_var ContextVar). tortoise/queryset.py:91-100 (_choose_db falls back to self.model._meta.db), :1319-1321 (__await__ picks db). tortoise/models.py:290-296 (MetaInfo.db -> get_connection(default_connection)). Entry: tortoise/transactions.py:33-44 (in_transaction -> connection._in_transaction()). SQLite has its own context with the same set/reset: tortoise/backends/sqlite/client.py:172-210."
+    },
+    {
+      "id": "r3-tortoise-orm-02",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "multi-hop",
+      "difficulty": "medium",
+      "query": "For a model with a datetime column that refreshes itself every time the record is written, at which step of saving an already-stored instance is the current time computed, and what ends up on the object versus what is sent to the database?",
+      "expectedFiles": [
+        "tortoise/models.py",
+        "tortoise/backends/base/executor.py",
+        "tortoise/fields/data.py"
+      ],
+      "expectedSymbols": [
+        "Model.save",
+        "BaseExecutor.execute_update",
+        "DatetimeField.to_db_value"
+      ],
+      "expectedFacts": [
+        "Model.save() on an instance that is already stored (and has a pk) calls executor.execute_update(self, update_fields).",
+        "BaseExecutor.execute_update builds the parameter list by calling field.to_db_value(value, instance) for every non-pk, non-generated field.",
+        "DatetimeField.to_db_value, when the instance argument is a model instance and auto_now is set (or auto_now_add with a None attribute), computes timezone.localtime(), stores to_python_value(now) on the instance attribute and returns the aware now as the DB value.",
+        "The queryset-level update passes None as the instance to to_db_value, so this refresh does not happen there."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/models.py:1131-1195 (save; execute_update call at 1187). tortoise/backends/base/executor.py:461-505 (execute_update; to_db_value call at 501). tortoise/fields/data.py:484-496 (DatetimeField.to_db_value: hasattr(instance,'_saved_in_db') and auto_now / auto_now_add+None -> now = timezone.localtime(); setattr(instance, name, to_python_value(now)); return now). tortoise/queryset.py:1431 (UpdateQuery._make_query uses to_db_value(value, None))."
+    },
+    {
+      "id": "r3-tortoise-orm-03",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "On MySQL, substring-style text lookups in filters generate different SQL than on other databases. Where is the MySQL-specific replacement declared, and how and when does it get swapped into a model's table of available lookups?",
+      "expectedFiles": [
+        "tortoise/backends/mysql/executor.py",
+        "tortoise/backends/base/executor.py",
+        "tortoise/models.py"
+      ],
+      "expectedSymbols": [
+        "MySQLExecutor.FILTER_FUNC_OVERRIDE",
+        "mysql_contains",
+        "BaseExecutor.get_overridden_filter_func",
+        "MetaInfo._generate_filters",
+        "MetaInfo.finalise_model"
+      ],
+      "expectedFacts": [
+        "MySQLExecutor.FILTER_FUNC_OVERRIDE maps the generic contains/starts_with/ends_with and insensitive variants (plus search, json and posix_regex operators) to mysql_* functions that cast the column to CHAR, escape backslash, percent and underscore, and use a StrWrapper.",
+        "BaseExecutor.get_overridden_filter_func is a classmethod that looks the generic operator up in the executor class's FILTER_FUNC_OVERRIDE dict.",
+        "MetaInfo._generate_filters iterates the model's generic filters and, using the model's default connection's executor_class.get_overridden_filter_func, copies in the overridden operator for each filter that has one.",
+        "This runs from MetaInfo.finalise_model, which Apps._build_initial_querysets calls for every model during Tortoise init (only when connections are validated/initialised)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/backends/mysql/executor.py:58-63 (mysql_contains: Like(Cast(field, CHAR), StrWrapper(...), escape='')), :114-128 (FILTER_FUNC_OVERRIDE dict), :54-55 escape_like. tortoise/backends/base/executor.py:40 (FILTER_FUNC_OVERRIDE = {}), :791-795 (get_overridden_filter_func). tortoise/models.py:492-501 (_generate_filters), :311-319 (finalise_model calls _generate_filters). tortoise/apps.py:112-118 (_load_from_config -> _build_initial_querysets -> model._meta.finalise_model()). Custom-annotation filters apply the same override at query time in tortoise/expressions.py:371-376."
+    },
+    {
+      "id": "r3-tortoise-orm-04",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "When a user runs the command-line command that applies pending schema migrations, how does the tool work out which migration files to run and in what order, and where is the record of already-applied ones kept?",
+      "expectedFiles": [
+        "tortoise/migrations/executor.py",
+        "tortoise/migrations/graph.py",
+        "tortoise/migrations/loader.py",
+        "tortoise/migrations/recorder.py"
+      ],
+      "expectedSymbols": [
+        "MigrationLoader.load_disk",
+        "MigrationLoader.build_graph",
+        "MigrationExecutor.migrate",
+        "MigrationExecutor._forward_plan",
+        "MigrationGraph.forwards_plan",
+        "MigrationRecorder.applied_migrations",
+        "MigrationRecorder.record_applied"
+      ],
+      "expectedFacts": [
+        "MigrationLoader.load_disk imports each app's configured migrations package and every non-package module in it whose name does not start with _ or ~, instantiating its Migration class; build_graph adds nodes plus internal and external dependency edges.",
+        "MigrationExecutor.migrate loads applied keys from the recorder, then _migration_plan/_forward_plan call graph.forwards_plan(target) (an iterative DFS over parents, so dependencies come first) and skip keys that are already applied.",
+        "Applied migrations are stored in a table named tortoise_migrations (app, name, applied_at), read ordered by applied_at via MigrationRecorder.applied_migrations and written with record_applied after each applied step.",
+        "The CLI upgrade command calls the same migrate path with direction='forward'."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/cli/cli.py:553-567 (upgrade -> _run_migrate direction='forward'), :506-540 (_run_migrate -> migrate_api). tortoise/migrations/api/migrate.py:13-55 (migrate -> MigrationExecutor.migrate). tortoise/migrations/executor.py:47-69 (migrate: build_graph, ensure_schema, applied_migrations, _migration_plan), :268-319 (_migration_plan/_forward_plan skip applied), :120 (record_applied). tortoise/migrations/graph.py:129-154 (forwards_plan/_iterative_dfs over node.parents). tortoise/migrations/loader.py:33-71 (load_disk; names filtered at ~56-59 'name[0] not in \"_~\"'), :73-85 (build_graph). tortoise/migrations/recorder.py:11 (table_name='tortoise_migrations'), :36-46 (MigrationRecord model), :72-92."
+    },
+    {
+      "id": "r3-tortoise-orm-05",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "When loading many objects and asking to pre-load a many-to-many relation for all of them, how many extra statements run for that relation, how is the join table used, and how are the loaded rows handed back to each object?",
+      "expectedFiles": [
+        "tortoise/queryset.py",
+        "tortoise/backends/base/executor.py",
+        "tortoise/fields/relational.py"
+      ],
+      "expectedSymbols": [
+        "QuerySet.prefetch_related",
+        "BaseExecutor._execute_prefetch_queries",
+        "BaseExecutor._prefetch_m2m_relation",
+        "ReverseRelation._set_result_for_query"
+      ],
+      "expectedFacts": [
+        "QuerySet.prefetch_related only records the relation names in _prefetch_map; the work happens after the main SELECT, when execute_select calls _execute_prefetch_queries, which runs one _do_prefetch task per relation concurrently via asyncio.gather.",
+        "For a many-to-many field _prefetch_m2m_relation issues a single extra query: the related table joined to a subquery on the through table filtered by backward_key IN (all parent pks), selecting the parent key as _backward_relation_key.",
+        "Rows are grouped per parent pk and delivered with relation_container._set_result_for_query(...), which sets _fetched=True and related_objects (and optionally a to_attr attribute)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/queryset.py:1084-1111 (prefetch_related fills queryset._prefetch_map). tortoise/backends/base/executor.py:162 (execute_select calls _execute_prefetch_queries), :762-769 (asyncio.gather of _do_prefetch), :746-760 (_do_prefetch dispatch incl. m2m), :599-633 (m2m: subquery over through table with isin(instance_id_set), join on forward key), :671-683 (group by backward key, _set_result_for_query at 683). tortoise/fields/relational.py:154-158 (_set_result_for_query sets _fetched, related_objects, optional attr). tortoise/models.py:138-143 (_m2m_getter returns ManyToManyRelation container)."
+    },
+    {
+      "id": "r3-tortoise-orm-06",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "When a single joined SELECT returns a parent record together with the columns of a related record, how are the flat result columns told apart and turned back into a parent object with a nested related object, and what happens when the joined side is empty?",
+      "expectedFiles": [
+        "tortoise/queryset.py",
+        "tortoise/backends/base/executor.py"
+      ],
+      "expectedSymbols": [
+        "QuerySet._join_select_related",
+        "BaseExecutor.execute_select"
+      ],
+      "expectedFacts": [
+        "QuerySet._join_select_related joins the related table and selects the related model's db fields aliased as '<table>.<field>', and appends (related model, column count, field name, parent model, path) tuples to _select_related_idx.",
+        "BaseExecutor.execute_select slices each result row positionally using those column counts, strips the table prefix with k.split('.', 1)[1], and builds each related instance with _init_from_db.",
+        "If none of the related column values is truthy the relation is set to None (or an empty filler instance when the count is 0 for .only() paths); the related object is stored on the private '_<attr>' slot of its parent via object.__setattr__."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/queryset.py:1150-1181 (_join_select_related: aliasing f\"{table.get_table_name()}.{related_field}\" at 1175-1179, append_item to _select_related_idx at 1165-1174), :1268-1317 (_make_query seeds _select_related_idx at 1270-1282, calls _join_select_related at 1311), :1329-1337 (_execute passes select_related_idx). tortoise/backends/base/executor.py:119-155 (positional slicing row_items[current_idx: current_idx+index], _split_cache / k.split('.',1)[1] at 140, any(v for ...) at 135, index==0 filler at 143-147, obj=None at 149, object.__setattr__(target, f'_{attr}', obj) at 152)."
+    },
+    {
+      "id": "r3-tortoise-orm-07",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "An application supplies its database password as a function that returns a fresh token instead of a fixed string. For the two PostgreSQL drivers, where is that function actually invoked, and why does the handling differ between them?",
+      "expectedFiles": [
+        "tortoise/backends/psycopg/client.py",
+        "tortoise/backends/base/client.py",
+        "tortoise/backends/asyncpg/client.py"
+      ],
+      "expectedSymbols": [
+        "password_factory_connection_class",
+        "PsycopgClient.create_connection",
+        "resolve_password",
+        "AsyncpgDBClient.create_connection"
+      ],
+      "expectedFacts": [
+        "resolve_password in the base client module calls a callable password and awaits the result if it is awaitable, otherwise returns the string/None unchanged.",
+        "AsyncpgDBClient.create_connection passes password=self.password straight to asyncpg.create_pool, because asyncpg itself resolves a callable password once per new connection.",
+        "PsycopgClient.create_connection passes password=None into make_conninfo when the password is callable and builds a connection subclass (password_factory_connection_class) whose connect() awaits resolve_password(factory) for every new connection, because psycopg bakes credentials into an immutable conninfo string."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/backends/base/client.py:19-37 (PasswordFactory, PasswordType, resolve_password). tortoise/backends/base_postgres/client.py:65,74 (password: PasswordType stored as self.password). tortoise/backends/asyncpg/client.py:61-62 (comment + create_pool(password=self.password,...)). tortoise/backends/psycopg/client.py:37-51 (password_factory_connection_class, docstring about immutable conninfo, connect() awaits resolve_password), :100-111 (conninfo password=None if callable; connection_class swapped)."
+    },
+    {
+      "id": "r3-tortoise-orm-08",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "After saving a brand-new instance whose auto-incrementing primary key is assigned by PostgreSQL, how does that database-assigned value get back onto the Python object?",
+      "expectedFiles": [
+        "tortoise/backends/base_postgres/executor.py",
+        "tortoise/backends/base/executor.py",
+        "tortoise/backends/asyncpg/client.py"
+      ],
+      "expectedSymbols": [
+        "BasePostgresExecutor._prepare_insert_statement",
+        "BasePostgresExecutor._process_insert_result",
+        "BaseExecutor.execute_insert",
+        "AsyncpgDBClient.execute_insert"
+      ],
+      "expectedFacts": [
+        "BaseExecutor.__init__ builds the cached insert SQL via _prepare_insert_statement; the PostgreSQL override appends a RETURNING clause for the model's generated_db_fields.",
+        "BaseExecutor.execute_insert runs db.execute_insert(insert_query, values) and passes the result to _process_insert_result; the asyncpg client's execute_insert uses connection.fetchrow, so it returns the returned row.",
+        "BasePostgresExecutor._process_insert_result maps each returned DB column name to a model field via fields_db_projection_reverse and setattr's field.to_python_value(val) on the instance."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/models.py:1155,1191 (save: executor = db.executor_class(...); execute_insert). tortoise/backends/base/executor.py:59-63 (__init__ builds insert_query via _prepare_insert_statement), :328-344 (execute_insert -> db.execute_insert -> _process_insert_result). tortoise/backends/base_postgres/executor.py:96-105 (returning(*generated_fields) when has_generated), :118-125 (_process_insert_result). tortoise/backends/asyncpg/client.py:109-114 (execute_insert uses connection.fetchrow). Contrast SQLite: tortoise/backends/sqlite/executor.py:66-81 sets pk from int lastrowid."
+    },
+    {
+      "id": "r3-tortoise-orm-09",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "multi-hop",
+      "difficulty": "medium",
+      "query": "When the application passes a connection address string beginning with the scheme word 'postgres', which driver-specific client class ends up serving the queries, and which code turns the string into that choice?",
+      "expectedFiles": [
+        "tortoise/backends/base/config_generator.py",
+        "tortoise/connection.py",
+        "tortoise/backends/asyncpg/__init__.py"
+      ],
+      "expectedSymbols": [
+        "DB_LOOKUP",
+        "expand_db_url",
+        "ConnectionHandler._discover_client_class",
+        "AsyncpgDBClient"
+      ],
+      "expectedFacts": [
+        "DB_LOOKUP['postgres'] (and 'postgresql') is an alias of the asyncpg entry, whose engine is 'tortoise.backends.asyncpg'; expand_db_url returns {'engine': ..., 'credentials': ...} for it. The psycopg driver needs the 'psycopg' scheme instead.",
+        "ConnectionHandler._discover_client_class imports the engine module and uses its get_client_class(db_info) if present, otherwise its client_class attribute.",
+        "tortoise/backends/asyncpg/__init__.py sets client_class = AsyncpgDBClient, which _create_connection instantiates with the credentials plus connection_name."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/backends/base/config_generator.py:42-47 (asyncpg entry, engine tortoise.backends.asyncpg), :130-132 (DB_LOOKUP['postgres'] / ['postgresql'] = DB_LOOKUP['asyncpg']), :168-221 (expand_db_url), :224-236 (generate_config). tortoise/config.py:249-271 (from_db_url_and_modules -> generate_config). tortoise/connection.py:115-128 (_discover_client_class), :145-153 (_create_connection). tortoise/backends/asyncpg/__init__.py:1-3 (client_class = AsyncpgDBClient). psycopg scheme: config_generator.py:14-41 and tortoise/backends/psycopg/__init__.py."
+    },
+    {
+      "id": "r3-tortoise-orm-10",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "If I hand the library a datetime value that carries no timezone information while timezone support is switched on, what does it do with that value when writing it, and does it tell me?",
+      "expectedFiles": [
+        "tortoise/fields/data.py"
+      ],
+      "expectedSymbols": [
+        "DatetimeField.to_db_value"
+      ],
+      "expectedFacts": [
+        "DatetimeField.to_db_value emits a RuntimeWarning saying the field received a naive datetime while time zone support is active.",
+        "It then converts the value with timezone.make_aware (using the configured default timezone) and validates it, so the aware value is what is written.",
+        "TimeField.to_db_value has an analogous warning for naive times, but the datetime case lives in DatetimeField."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/fields/data.py:497-511 (naive check with get_use_tz(), warnings.warn(... RuntimeWarning), timezone.make_aware(value), self.validate(value)). tortoise/timezone.py:146-158 (make_aware uses _get_or_parse_timezone -> get_default_timezone, :89-96, :72-79), :43-49 (get_use_tz reads USE_TZ env). TimeField analogue: tortoise/fields/data.py:630-640."
+    },
+    {
+      "id": "r3-tortoise-orm-11",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "The convenience that fetches a record matching some criteria or otherwise inserts one can race with another writer. How does it avoid failing or duplicating, and what does it do after losing the race?",
+      "expectedFiles": [
+        "tortoise/models.py"
+      ],
+      "expectedSymbols": [
+        "Model.get_or_create",
+        "Model._create_or_get"
+      ],
+      "expectedFacts": [
+        "get_or_create first tries filter(**kwargs).get(); only on DoesNotExist does it call _create_or_get.",
+        "_create_or_get raises ParamsError if defaults and kwargs conflict on a key, then creates the row inside in_transaction(connection_name=...) with the merged kwargs+defaults.",
+        "If that create raises IntegrityError (lost the race), it re-fetches with filter(**kwargs).get() and returns (obj, False); if the row still cannot be found it re-raises the original IntegrityError."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/models.py:1267-1291 (get_or_create: filter().get() then _create_or_get on DoesNotExist), :1293-1309 (_create_or_get: ParamsError at 1297-1299, in_transaction at 1302, except IntegrityError at 1304, refetch at 1306, raise exc at 1309). Not in tortoise/queryset.py (no get_or_create on QuerySet)."
+    },
+    {
+      "id": "r3-tortoise-orm-12",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "On an object loaded from the database, what do I get when I read the attribute that points to its parent record and that parent was not pre-loaded, and where is that attribute installed on the class?",
+      "expectedFiles": [
+        "tortoise/models.py",
+        "tortoise/fields/relational.py"
+      ],
+      "expectedSymbols": [
+        "_fk_getter",
+        "MetaInfo._generate_lazy_fk_m2m_fields",
+        "NoneAwaitable"
+      ],
+      "expectedFacts": [
+        "MetaInfo._generate_lazy_fk_m2m_fields, run from finalise_model, installs a property on the model class for each foreign-key field, with _fk_getter as the getter and _fk_setter as setter/deleter.",
+        "_fk_getter returns the cached '_<name>' object if it was fetched; otherwise, if the raw id column value is not None, it returns an un-awaited single-row query related.filter(to_field=value).first() that must be awaited.",
+        "If the raw id value is None it returns NoneAwaitable, an object that can be awaited (yielding None) and is falsy."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/models.py:105-114 (_fk_getter: getattr(self,_key) except AttributeError -> ftype.filter(**{to_field: value}).first() or NoneAwaitable), :94-102 (_fk_setter), :360-392 (_generate_lazy_fk_m2m_fields installs property for fk_fields), :311-319 (finalise_model calls it). tortoise/fields/relational.py:20-30 (_NoneAwaitable: __await__ yields None, __bool__ False)."
+    },
+    {
+      "id": "r3-tortoise-orm-13",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "Some databases refuse a row offset unless a row cap is also present. What does the library do when I ask only to skip rows (or use an open-ended slice), and which backends trigger it?",
+      "expectedFiles": [
+        "tortoise/queryset.py",
+        "tortoise/backends/sqlite/client.py",
+        "tortoise/backends/mysql/client.py"
+      ],
+      "expectedSymbols": [
+        "QuerySet.offset",
+        "QuerySet.__getitem__",
+        "Capabilities.requires_limit"
+      ],
+      "expectedFacts": [
+        "QuerySet.offset sets _offset and, if capabilities.requires_limit is true and no limit is set, silently sets _limit = 1000000.",
+        "Slicing with an open end (qs[n:]) goes through offset(start), so it gets the same implicit limit.",
+        "requires_limit=True is declared in the SqliteClient capabilities (and the regexp variant) and in MySQLClient; the Capabilities default is False."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/queryset.py:558-571 (offset: line 569-570 requires_limit -> _limit = 1000000), :573-611 (__getitem__ calls self.offset(start) at 608). tortoise/backends/sqlite/client.py:58 and :283 (requires_limit=True). tortoise/backends/mysql/client.py:71 (requires_limit=True). tortoise/backends/base/client.py:54,77,95 (requires_limit doc/default False). grep requires_limit shows queryset.py:569 is the only consumer."
+    },
+    {
+      "id": "r3-tortoise-orm-14",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "What happens, on a database that cannot lock selected rows, when I ask a query to lock the rows it returns until the transaction ends? Is an error raised?",
+      "expectedFiles": [
+        "tortoise/queryset.py",
+        "tortoise/backends/sqlite/client.py"
+      ],
+      "expectedSymbols": [
+        "QuerySet.select_for_update",
+        "Capabilities.support_for_update"
+      ],
+      "expectedFacts": [
+        "QuerySet.select_for_update only clones the queryset and sets the lock flags when self.capabilities.support_for_update is true; otherwise it simply returns self, with no error and no locking.",
+        "The SQLite client declares support_for_update=False (and so does the MSSQL client); the Capabilities default is True."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/queryset.py:633-669 (select_for_update; if self.capabilities.support_for_update ... return queryset; return self at 669), :130-133 (capabilities property reads model._meta.db.capabilities). tortoise/backends/sqlite/client.py:60 and :285 (support_for_update=False). tortoise/backends/mssql/client.py:31 (support_for_update=False). tortoise/backends/base/client.py:80 (default True). Model.select_for_update delegates: tortoise/models.py:1319-1335."
+    },
+    {
+      "id": "r3-tortoise-orm-15",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "SQLite has no exact decimal column type. How does the library store a fixed-precision number column there, and how does it make filtering and sorting on that column behave numerically rather than as text?",
+      "expectedFiles": [
+        "tortoise/fields/data.py",
+        "tortoise/expressions.py",
+        "tortoise/queryset.py"
+      ],
+      "expectedSymbols": [
+        "DecimalField._db_sqlite",
+        "Q._process_filter_kwarg",
+        "AwaitableQuery.resolve_ordering"
+      ],
+      "expectedFacts": [
+        "DecimalField has a _db_sqlite override with SQL_TYPE = 'VARCHAR(40)' and a function_cast that wraps the column in CAST(... AS NUMERIC).",
+        "Filter building (Q._process_filter_kwarg) and ordering (resolve_ordering) look up the dialect's function_cast via field.get_for_dialect(dialect, 'function_cast') and apply it to the column term.",
+        "Values read back are converted by DecimalField.to_python_value into Decimal quantized to decimal_places; the SQLite executor also registers an adapter that stores Decimal as str."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/fields/data.py:383-396 (to_python_value quantize; _db_sqlite SQL_TYPE VARCHAR(40), function_cast Cast NUMERIC). tortoise/expressions.py:412-420 (function_cast applied in _process_filter_kwarg; also F.resolve at :168-172). tortoise/queryset.py:289-296 (resolve_ordering applies function_cast). tortoise/fields/base.py:430-447 (get_for_dialect). tortoise/backends/sqlite/executor.py:19 (sqlite3.register_adapter(Decimal, str))."
+    },
+    {
+      "id": "r3-tortoise-orm-16",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "When I filter a column for equality with Python's null value, the generated SQL does not use an equals comparison. Where is that rewrite decided, and what does it produce?",
+      "expectedFiles": [
+        "tortoise/expressions.py",
+        "tortoise/filters.py"
+      ],
+      "expectedSymbols": [
+        "Q._process_filter_kwarg",
+        "is_null"
+      ],
+      "expectedFacts": [
+        "In Q._process_filter_kwarg, if value is None and '<key>__isnull' exists in the model's filters, the filter info is switched to that isnull lookup and the value is set to True.",
+        "The isnull lookup's operator is filters.is_null, which returns field.isnull() for a truthy value (and notnull() otherwise), yielding IS NULL."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/expressions.py:388-392 (if value is None and f\"{key}__isnull\" in model._meta.filters: filter_info = get_filter(key__isnull); value = True). tortoise/filters.py:139-143 (is_null: field.isnull() if value else notnull()), :502-507 (generic '__isnull' entry uses is_null with bool_encoder)."
+    },
+    {
+      "id": "r3-tortoise-orm-17",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "If a relation is declared with a restrictive delete rule (refuse to delete the parent while children exist), what does the generated Oracle schema actually contain for that rule?",
+      "expectedFiles": [
+        "tortoise/backends/oracle/schema_generator.py",
+        "tortoise/migrations/schema_editor/oracle.py"
+      ],
+      "expectedSymbols": [
+        "OracleSchemaGenerator._create_fk_string",
+        "OracleSchemaEditor._get_fk_reference_string"
+      ],
+      "expectedFacts": [
+        "Both Oracle code paths replace any on_delete value other than CASCADE or SET NULL with CASCADE (so RESTRICT, NO ACTION and SET DEFAULT silently become CASCADE).",
+        "The same coercion exists twice: in the Oracle schema generator used by generate_schemas and in the Oracle migration schema editor (whose many-to-many through-table foreign keys are additionally hard-coded to CASCADE)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/backends/oracle/schema_generator.py:97-116 (_create_fk_string: lines 106-107 `if on_delete not in [CASCADE, SET_NULL]: on_delete = CASCADE`). tortoise/migrations/schema_editor/oracle.py:66-90 (_get_fk_reference_string, lines 75-76 same coercion), :95-102 (editor's _format_m2m_fk always on_delete=CASCADE). The declaration side accepts all five OnDelete values: tortoise/fields/relational.py:327-330."
+    },
+    {
+      "id": "r3-tortoise-orm-18",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where is the rule that a text value cannot exceed its column's declared size actually checked when a record is written?",
+      "expectedFiles": [
+        "tortoise/fields/base.py",
+        "tortoise/validators.py",
+        "tortoise/fields/data.py"
+      ],
+      "expectedSymbols": [
+        "Field.validate",
+        "Field.to_db_value",
+        "MaxLengthValidator.__call__",
+        "CharField.__init__"
+      ],
+      "expectedFacts": [
+        "CharField.__init__ appends MaxLengthValidator(self.max_length) to the field's validators list.",
+        "Field.to_db_value (used when building insert/update parameters) calls self.validate(value), which runs each validator, skipping None for nullable fields, and re-raises ValidationError prefixed with the field name.",
+        "MaxLengthValidator.__call__ raises ValidationError when len(value) > max_length; this is a Python-side check, not a database constraint."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/fields/data.py:238 (self.validators.append(MaxLengthValidator(self.max_length))). tortoise/fields/base.py:300-317 (to_db_value calls self.validate at 316), :329-347 (validate loop; None skipped if self.null; re-raise with model_field_name prefix). tortoise/validators.py:38-50 (MaxLengthValidator). Executor use: tortoise/backends/base/executor.py:337-341."
+    },
+    {
+      "id": "r3-tortoise-orm-19",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where does the library refuse a relation definition whose delete behaviour is to blank out the reference, when the column is not allowed to be empty?",
+      "expectedFiles": [
+        "tortoise/fields/relational.py"
+      ],
+      "expectedSymbols": [
+        "ForeignKeyFieldInstance.__init__"
+      ],
+      "expectedFacts": [
+        "ForeignKeyFieldInstance.__init__ raises ConfigurationError ('If on_delete is SET_NULL, then field must have null=True set') when on_delete == SET_NULL and null is not truthy in kwargs.",
+        "The same constructor rejects any on_delete value that is not one of the five OnDelete members; OneToOneFieldInstance inherits this check by subclassing."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/fields/relational.py:316-333 (ForeignKeyFieldInstance.__init__; 327-330 invalid on_delete; 331-332 SET_NULL requires null), :372-382 OneToOneFieldInstance(ForeignKeyFieldInstance) calls super().__init__(model_name, related_name, on_delete, unique=True, **kwargs). grep SET_NULL shows no other validation site (oracle files only coerce)."
+    },
+    {
+      "id": "r3-tortoise-orm-20",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "Where is it enforced that a brand-new object cannot be constructed pointing at a related object that has not been stored yet, and is the same rule applied when the relation is assigned later?",
+      "expectedFiles": [
+        "tortoise/models.py"
+      ],
+      "expectedSymbols": [
+        "Model._set_kwargs",
+        "Model._validate_relation_type",
+        "Model.__setattr__"
+      ],
+      "expectedFacts": [
+        "Model._set_kwargs (called from __init__) raises OperationalError('You should first call .save() on ... before referring to it') when a foreign-key or one-to-one kwarg is a model instance whose _saved_in_db is False.",
+        "Assignment after construction goes through Model.__setattr__, which only calls _validate_relation_type; that checks the field is a FK/O2O and the value's class is exactly the related model (FieldError / ValidationError) but does not check that the related object is saved."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/models.py:770-776 (__setattr__ -> _validate_relation_type for fk/o2o keys), :778-791 (_set_kwargs; 786-789 unsaved check raising OperationalError), :898-918 (_validate_relation_type: FieldError if not FK/O2O, ValidationError if type(value) is not related_model). Note: related code for many-to-many/reverse add: tortoise/fields/relational.py:185-196 (separate OperationalError, not the asked path)."
+    },
+    {
+      "id": "r3-tortoise-orm-21",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where is an attempt to overwrite a primary-key or database-generated column through a bulk filter-and-update call rejected, and with which exception class?",
+      "expectedFiles": [
+        "tortoise/queryset.py"
+      ],
+      "expectedSymbols": [
+        "UpdateQuery._make_query"
+      ],
+      "expectedFacts": [
+        "UpdateQuery._make_query loops over update_kwargs and raises IntegrityError('Field ... is PK and can not be updated') for a pk field and IntegrityError('... is generated and can not be updated') for a generated field.",
+        "Unknown keyword names raise FieldError, as does a virtual field with no DB column.",
+        "The instance-level path differs: BaseExecutor.execute_update raises OperationalError when save(update_fields=...) names a pk or generated field."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/queryset.py:1399-1406 (unknown -> FieldError 1402; pk -> IntegrityError 1404; generated -> IntegrityError 1406), :1417-1419 (virtual field FieldError). tortoise/backends/base/executor.py:474-483 (instance-level OperationalError for pk/generated in execute_update). QuerySet.update builds UpdateQuery at tortoise/queryset.py:802-823."
+    },
+    {
+      "id": "r3-tortoise-orm-22",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "When inserting many objects in one call and a column has a database-side default, where does the library detect that some objects supplied a value while others expected the default, and what does it do in that case?",
+      "expectedFiles": [
+        "tortoise/queryset.py"
+      ],
+      "expectedSymbols": [
+        "BulkCreateQuery._analyze_db_default_fields"
+      ],
+      "expectedFacts": [
+        "BulkCreateQuery._analyze_db_default_fields scans every instance for each db_default column: values that are DatabaseDefault sentinels count as 'default', anything else as 'explicit'.",
+        "If one column has both kinds it raises OperationalError explaining the options (set everywhere, omit everywhere, or split the call).",
+        "If all instances use the default the column is returned in omit_fields and left out of the INSERT so the DB default applies; it is called from both __await__ and sql()."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/queryset.py:2163-2197 (_analyze_db_default_fields; OperationalError at 2185-2194; omit_fields at 2195-2197), :2324 (__await__ call), :2340 (sql() call). DatabaseDefault sentinel: tortoise/fields/base.py:40-63. Docstring restating the rule: tortoise/models.py:1449-1498."
+    },
+    {
+      "id": "r3-tortoise-orm-23",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "When a relation points at a non-primary column of the other model, where is it verified that such a target is allowed, and when does that check run?",
+      "expectedFiles": [
+        "tortoise/apps.py"
+      ],
+      "expectedSymbols": [
+        "Apps._init_relations"
+      ],
+      "expectedFacts": [
+        "Inside Apps._init_relations the nested init_fk_o2o_field looks up the to_field on the related model and raises ConfigurationError if the field does not exist or if the related field is not unique.",
+        "It runs at initialisation (from init_app / _load_from_config), not when the model class is defined; without to_field it defaults to the related model's pk."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/apps.py:175-187 (to_field handling: missing field ConfigurationError 177-180; 'is not unique' 181-184; else default to pk 185-187), :163 (init_fk_o2o_field defined inside _init_relations), :71-86 (init_app calls _init_relations at 84) and :111 (_load_from_config calls _init_relations)."
+    },
+    {
+      "id": "r3-tortoise-orm-24",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "Where does the migration system refuse to roll back a migration containing steps that have no defined way to be undone, and what decides whether such a step counts as undoable?",
+      "expectedFiles": [
+        "tortoise/migrations/migration.py",
+        "tortoise/migrations/operations.py"
+      ],
+      "expectedSymbols": [
+        "Migration.unapply",
+        "Operation.reversible",
+        "RunPython.__init__",
+        "RunSQL.__init__"
+      ],
+      "expectedFacts": [
+        "Migration.unapply raises ValueError('Operation ... is not reversible') for any operation whose reversible attribute is false, before any rollback SQL is executed.",
+        "Operation.reversible defaults to True; RunPython sets reversible = reverse_code is not None and RunSQL sets reversible = reverse_sql is not None.",
+        "If such an operation were run backward anyway, RunPython/RunSQL.database_backward raise NotImplementedError."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/migrations/migration.py:104-106 (getattr(operation,'reversible',True) false -> ValueError). tortoise/migrations/operations.py:36-38 (Operation.reversible = True), :1103 (RunPython.reversible = reverse_code is not None), :1231 (RunSQL.reversible = reverse_sql is not None), :1134 and :1260 (NotImplementedError in RunPython/RunSQL database_backward)."
+    },
+    {
+      "id": "r3-tortoise-orm-25",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where does creating all tables in one shot give up when the tables' foreign keys point at each other in a loop?",
+      "expectedFiles": [
+        "tortoise/backends/base/schema_generator.py"
+      ],
+      "expectedSymbols": [
+        "BaseSchemaGenerator.get_create_schema_sql",
+        "BaseSchemaGenerator._get_table_sql"
+      ],
+      "expectedFacts": [
+        "_get_table_sql collects, per table, the set of referenced table names in a 'references' entry.",
+        "get_create_schema_sql repeatedly picks a not-yet-created table whose references are a subset of the created tables plus itself (self references are allowed); if none qualifies it raises ConfigurationError('Can't create schema due to cyclic fk references').",
+        "Many-to-many through tables are appended after all regular tables."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/backends/base/schema_generator.py:464 (references.add(related_table_name)), :511 ('references' in returned dict), :536-575 (get_create_schema_sql; 556-570 loop; 563 issubset(created_tables | {t['table']}); 566 ConfigurationError cyclic; 570 m2m tables appended; 572 all_parts order). Only raise site for 'cyclic' in the package (grep)."
+    },
+    {
+      "id": "r3-tortoise-orm-26",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "locate-explain",
+      "difficulty": "hard",
+      "query": "How are the names of automatically generated database indexes and foreign-key constraints built so that they stay short and stay the same from run to run?",
+      "expectedFiles": [
+        "tortoise/backends/base/schema_generator.py",
+        "tortoise/migrations/schema_editor/base.py"
+      ],
+      "expectedSymbols": [
+        "BaseSchemaGenerator._get_index_name",
+        "BaseSchemaGenerator._get_fk_name",
+        "BaseSchemaGenerator._make_hash",
+        "BaseSchemaEditor._generate_index_name",
+        "BaseSchemaEditor._generate_fk_name"
+      ],
+      "expectedFacts": [
+        "Index names are '<prefix>_<table[:11]>_<first field[:7]>_<hash>' where the hash is the first 6 hex chars of sha256 over the table name and all field names joined by ';'.",
+        "Foreign-key names are 'fk_<from_table[:8]>_<to_table[:8]>_<hash>' with an 8-char sha256 prefix over from_table, from_field, to_table and to_field; truncation is for the 30-character Oracle limit.",
+        "The same formula is implemented twice: in the schema generator used by generate_schemas and in the migration schema editor."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/backends/base/schema_generator.py:150-171 (_make_hash sha256[:length]; _get_index_name table[:11], field[:7], length=6; _get_fk_name length=8; Oracle-limit comments at 158-160 and 168). tortoise/migrations/schema_editor/base.py:157-175 (_make_hash, _generate_fk_name, _generate_index_name, _generate_index_name_for_table: identical formulas). Prefixes idx/uidx/uid: schema_generator.py:184, :198, :210."
+    },
+    {
+      "id": "r3-tortoise-orm-27",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "locate-explain",
+      "difficulty": "medium",
+      "query": "When a query returns a huge number of rows, how does turning them into model objects avoid starving other coroutines on the event loop, and what controls how often it yields?",
+      "expectedFiles": [
+        "tortoise/backends/base/executor.py"
+      ],
+      "expectedSymbols": [
+        "BaseExecutor.execute_select",
+        "CHUNK_SIZE"
+      ],
+      "expectedFacts": [
+        "CHUNK_SIZE is a module constant equal to 2000.",
+        "In execute_select's row loop, whenever row_idx != 0 and row_idx % CHUNK_SIZE == 0 it awaits asyncio.sleep(0) to yield control to the event loop.",
+        "execute_union uses the same pattern."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/backends/base/executor.py:36 (CHUNK_SIZE = 2000), :121-125 (execute_select yields), :165-175 (execute_union same pattern, sleep at 175)."
+    },
+    {
+      "id": "r3-tortoise-orm-28",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "locate-explain",
+      "difficulty": "medium",
+      "query": "How does the MySQL connection make the database session's time zone agree with the application's configured zone, and under which setting is that step skipped?",
+      "expectedFiles": [
+        "tortoise/backends/mysql/client.py"
+      ],
+      "expectedSymbols": [
+        "MySQLClient.create_connection"
+      ],
+      "expectedFacts": [
+        "After creating the pool, create_connection runs SET time_zone='<offset>' on a cursor only when get_use_tz() is true; with timezone support off the step is skipped.",
+        "The offset is computed as datetime.now(tz=get_default_timezone()).utcoffset() and formatted as +H:MM / -H:MM."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/backends/mysql/client.py:137-146 ('Only set session timezone when use_tz=True'; get_use_tz() at 138; offset math 141-145; SET time_zone at 146). Imports at :40 (get_default_timezone, get_use_tz from tortoise.timezone); timezone env: tortoise/timezone.py:43-49 (get_use_tz), :72-79 (get_default_timezone)."
+    },
+    {
+      "id": "r3-tortoise-orm-29",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "locate-explain",
+      "difficulty": "hard",
+      "query": "When updating a column on many already-loaded objects in one call, what shape of SQL does the library generate per batch, and what extra step does it take for PostgreSQL?",
+      "expectedFiles": [
+        "tortoise/queryset.py"
+      ],
+      "expectedSymbols": [
+        "BulkUpdateQuery._make_queries",
+        "BulkUpdateQuery._execute_many"
+      ],
+      "expectedFacts": [
+        "For each batch (chunk of objects) and each field, _make_queries builds a CASE expression with one WHEN pk = <pk> THEN <value> per object, assigns it with SET and adds WHERE pk IN (<batch pks>).",
+        "When the schema generator dialect is 'postgres', each THEN value is wrapped in a CAST to the field's dialect SQL_TYPE.",
+        "_execute_many runs one statement per batch sequentially and sums the affected-row counts."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/queryset.py:2073-2115 (_make_queries: chunk at 2089, Case() at 2092, case.when(pk == pk_value, Cast(...) if DIALECT == 'postgres' else value) at 2098-2110, query.set(field, case) at 2112, where(pk.isin(pk_list)) at 2113), :2117-2121 (_execute_many sums counts). Batching helper: tortoise/utils.py:49-57 (chunk)."
+    },
+    {
+      "id": "r3-tortoise-orm-30",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "locate-explain",
+      "difficulty": "hard",
+      "query": "When a transaction block is opened inside another one on SQLite, how is the inner block realised in SQL, how is it named, and what happens to it on success versus on an exception?",
+      "expectedFiles": [
+        "tortoise/backends/sqlite/client.py",
+        "tortoise/backends/base/client.py"
+      ],
+      "expectedSymbols": [
+        "SqliteTransactionWrapper._in_transaction",
+        "SqliteTransactionWrapper.savepoint",
+        "_gen_savepoint_name",
+        "NestedTransactionContext"
+      ],
+      "expectedFacts": [
+        "Inside an active transaction the task's connection is a SqliteTransactionWrapper, whose _in_transaction returns NestedTransactionContext(SqliteTransactionWrapper(self)).",
+        "NestedTransactionContext.__aenter__ calls client.savepoint(), which executes SAVEPOINT tortoise_savepoint_<n>, the name coming from a module-level counter in _gen_savepoint_name.",
+        "On a clean exit __aexit__ calls release_savepoint (RELEASE <name>); on an exception other than TransactionManagementError it calls savepoint_rollback (ROLLBACK TO <name>)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: tortoise/backends/sqlite/client.py:214-227 (SqliteTransactionWrapper._in_transaction -> NestedTransactionContext), :255-257 (savepoint: SAVEPOINT name), :259-272 (savepoint_rollback 'ROLLBACK TO', release_savepoint 'RELEASE'), :275-276 (_gen_savepoint_name counter). tortoise/backends/base/client.py:388-406 (NestedTransactionContext __aenter__/__aexit__). Contrast asyncpg uses native nested transactions: tortoise/backends/asyncpg/client.py:174-177 (TransactionWrapper._in_transaction -> NestedTransactionContext), :194-195 (savepoint() just calls begin())."
+    },
+    {
+      "id": "r3-tortoise-orm-31",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where is the lazily streaming iteration over a very large query result implemented, the kind that keeps a database cursor open and yields rows to the caller in batches?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "No streaming or server-side cursor facility exists; QuerySet.__aiter__ does 'for val in await self', i.e. it materialises the whole result list first.",
+        "Drivers fetch complete result sets (fetchall / execute_fetchall); the only large-result mitigation is yielding to the event loop every CHUNK_SIZE (2000) rows in execute_select, and utils.chunk only batches bulk writes."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION OF ABSENCE: grep -rniE 'fetchmany|stream|server_side|server-side|yield_per|itersize|arraysize' tortoise --include='*.py' -> 0 hits; grep -rniE 'named_cursor|\\.cursor\\(' tortoise -> only per-call cursors that are fully fetched (psycopg/client.py:173 then fetchall at 180; mysql/client.py:218 fetchall; sqlite/client.py:155 execute_fetchall); grep 'def chunk' -> tortoise/utils.py:49 (write batching only). Present instead: tortoise/queryset.py:1325-1327 (QuerySet.__aiter__ awaits full list), tortoise/backends/base/executor.py:36,122-125 (CHUNK_SIZE event-loop yield)."
+    },
+    {
+      "id": "r3-tortoise-orm-32",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where does the library mark a record as deleted without removing its row, and hide such records from ordinary queries by default?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "There is no soft-delete support: Model.delete issues a real DELETE through executor.execute_delete, and the default manager returns an unfiltered QuerySet.",
+        "No deleted flag, timestamp or default filtering exists anywhere in the package."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION OF ABSENCE: grep -rniE 'soft.?delete|deleted_at|is_deleted|tombstone|paranoid|archiv' tortoise --include='*.py' -> only an unrelated URL containing 'blog-archive' (tortoise/contrib/mysql/fields.py:29); grep -rniE 'trash|undelete|restore' tortoise --include='*.py' -> only 'restore the previous connection/context' wording in connection.py and context.py docstrings (unrelated to records). Present instead: tortoise/models.py:1197-1210 (delete -> executor.execute_delete), tortoise/backends/base/executor.py:508-513 (DELETE by pk), tortoise/manager.py:8-21 (Manager.get_queryset returns plain QuerySet)."
+    },
+    {
+      "id": "r3-tortoise-orm-33",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "negative",
+      "difficulty": "hard",
+      "query": "Where is the version-counter check that makes a save fail when someone else changed the same row after it was read?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "There is no optimistic-locking or row-version mechanism; saving an existing instance runs UPDATE ... WHERE pk = ? with no version or stale-data condition.",
+        "Concurrency help that does exist is pessimistic or conflict-retry based: select_for_update (queryset/model) and the bounded retry loop in update_or_create."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION OF ABSENCE: grep -rniE 'optimistic|row_version|version_id|version_field|stale|lost.?update' tortoise --include='*.py' -> 0 hits; grep -rn 'version' tortoise -> only python-version checks (config.py:17, utils.py:9, timezone.py:10, filters.py:25) and __version__ (__init__.py:572). Present instead: tortoise/backends/base/executor.py:412-459 (get_update_sql: WHERE pk only, line 454), tortoise/queryset.py:633-669 (select_for_update), tortoise/models.py:1338-1372 (update_or_create retry loop)."
+    },
+    {
+      "id": "r3-tortoise-orm-34",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where does the model class itself run a whole-record validation hook, able to compare several fields with each other, automatically before an instance is stored?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "Model has no cross-field clean/validate hook and save() does not run one; validation is per field: Field.validate runs each field's validators from Field.to_db_value.",
+        "Model.save only calls pre_save/post_save signal listeners; the pydantic integration builds separate schemas and is not part of saving."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION OF ABSENCE: grep -rniE 'full_clean|def clean\\b|def clean\\(|validate_model|cross.?field' tortoise --include='*.py' -> 0 hits (only cleandoc matches in models.py:563,1747); grep -rn 'def validate\\|def clean' tortoise -> Field.validate (fields/base.py:329), ip validators (validators.py:371-396), migration graph/state validators only; grep 'model_validate(' -> pydantic/query_api only. Present instead: tortoise/fields/base.py:306-347, tortoise/models.py:1131-1195 (save: signals, no validation), tortoise/signals.py:9."
+    },
+    {
+      "id": "r3-tortoise-orm-35",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "negative",
+      "difficulty": "hard",
+      "query": "Where are relations resolved that can point at rows of any one of several different models, chosen by a stored type column?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "No generic or polymorphic relation field exists; a foreign key targets exactly one model (validated as 'app.Model' or a model class by RelationalField.validate_model_name).",
+        "Assignment also requires the exact related model class: Model._validate_relation_type raises ValidationError if type(value) is not the related model; there is no content-type table or discriminator."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION OF ABSENCE: grep -rniE 'generic.?foreign|content.?type|polymorphic|discriminator|any_model|generic_relation' tortoise --include='*.py' -> 0 hits; grep -rn 'generic' tortoise -> only Python typing 'generics' in fields/data.py:721 and EXPLAIN option generic_plan in queryset.py:1124. Present instead: tortoise/fields/relational.py:301-318 (validate_model_name), :315-333 ForeignKeyFieldInstance stores a single model_name; tortoise/models.py:898-918 (_validate_relation_type exact-type check)."
+    },
+    {
+      "id": "r3-tortoise-orm-36",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "negative",
+      "difficulty": "hard",
+      "query": "Where can I register a function that runs only after the surrounding transaction has been successfully committed?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "There is no after-commit hook: the only hooks are the four model signals pre_save, post_save, pre_delete and post_delete (signals.Signals), which fire inside save()/delete() regardless of whether an enclosing transaction later commits.",
+        "Transaction contexts (TransactionContextPooled.__aexit__, SqliteTransactionContext.__aexit__) simply commit or roll back and release the connection; they call no callbacks."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION OF ABSENCE: grep -rniE 'on_commit|after_commit|commit_hook|run_after|transaction.*callback|callback' tortoise --include='*.py' -> 0 hits; grep -rn 'commit' models.py queryset.py transactions.py signals.py -> 0 hits. Present instead: tortoise/signals.py:9 (Signals enum of four), models.py:1105-1129 (_wait_for_listeners/_pre_save/_post_save), :1194-1195 (post_save fired right after the write), tortoise/backends/base/client.py:373-385 and tortoise/backends/sqlite/client.py:198-212 (commit/rollback only)."
+    }
+  ]
+}
