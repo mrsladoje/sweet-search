@@ -1086,7 +1086,7 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 | 🍏 Apple Silicon (M1+) | candle **Metal**, BF16, fused SDPA attention |
 | 🍏 Apple Silicon (M3+) | …​ plus a **CoreML Neural Engine cascade** |
 | 🟩 NVIDIA GPU (SM 7.0+) | candle **CUDA**; **flash-attention** on Ampere+ |
-| 💻 No accelerator | **ONNX Runtime INT8**: tuned CPU path, 132 MB model, **zero GPU weights downloaded** |
+| 💻 No accelerator | **ONNX Runtime INT8**: tuned CPU path, 132 MB model |
 
 ####   🧠 **Cache-sized CPU batches**: 
 > - each batch fits one layer's weights and activations in the CPU cache *(which we auto-detect)* <br>
