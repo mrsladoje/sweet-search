@@ -485,20 +485,20 @@ We're SOTA in June 2026 on 3/4 attempted benchmarks at HARDER settings (running 
 
 Code search is a crowded space. Here's an honest read on where sweet-search wins and where it gives ground, against the trending leaders and our closest local peers.
 
-| Capability | sweet-search | CodeGraph | GitNexus | codebase-memory | claude-context | SocratiCode |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| 100% local · zero API keys by default | ✅ | ✅ | ✅ | ✅ | ⚠️¹ | ✅ |
-| No external service to run (vector DB · Ollama · Docker) | ✅ | ✅ | ✅ | ✅ | ❌ Milvus | ⚠️² |
-| Embedding (semantic) search on by default | ✅ | ❌ | ⚠️³ | ✅ | ✅ | ✅ |
-| ColBERT late-interaction rerank⁴ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Faster-than-ripgrep exact grep | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Call-graph trace (callers · callees · impact) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
-| Published NL→code retrieval benchmarks | ✅ | ⚠️⁵ | ❌ | ⚠️⁵ | ⚠️⁵ | ⚠️⁵ |
-| Permissive license (free commercial use) | ✅ Apache-2.0 | ✅ MIT | ❌⁶ | ✅ MIT | ✅ MIT | ⚠️ AGPL-3.0 |
-| *…and where sweet-search gives ground* | | | | | | |
-| Native Windows | ❌⁷ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Deep-AST language coverage | ⚠️ 18 (+78 via regex & fallback) | ✅ 34 | ⚠️ 16 | ✅ 162 | ⚠️ 13 | ✅ 22 |
-| Org-wide, multi-repo scale | ❌ | ⚠️⁸ | ✅ | ✅ | ⚠️ | ✅ |
+| Capability | sweet-search | Graphify | CodeGraph | GitNexus | codebase-memory | claude-context | Semble |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| 100% local · zero API keys by default | ✅ | ✅² | ✅ | ✅ | ✅ | ⚠️¹ | ✅ |
+| No external service to run (vector DB · Ollama · Docker) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ Milvus | ✅ |
+| Embedding (semantic) search on by default | ✅ | ❌ | ❌ | ⚠️³ | ✅ | ✅ | ✅⁴ |
+| ColBERT late-interaction rerank⁵ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Faster-than-ripgrep exact grep | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Call-graph trace (callers · callees · impact) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Published NL→code retrieval benchmarks | ✅ | ⚠️⁷ | ⚠️⁶ | ❌ | ⚠️⁶ | ⚠️⁶ | ✅⁸ |
+| Permissive license (free commercial use) | ✅ Apache-2.0 | ✅ Apache-2.0 | ✅ MIT | ❌⁹ | ✅ MIT | ✅ MIT | ✅ MIT |
+| *…and where sweet-search gives ground* | | | | | | | |
+| Native Windows | ❌¹⁰ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Deep-AST language coverage | ⚠️ 18 (+78 via regex & fallback) | ✅ 37 | ✅ 34 | ⚠️ 16 | ✅ 162 | ⚠️ 13 | ✅ 77¹¹ |
+| Org-wide, multi-repo scale | ❌ | ✅ | ⚠️¹² | ✅ | ✅ | ⚠️ | ✅ |
 
 <sub>✅ yes · ⚠️ partial / with caveats · ❌ no. Verified September 2026; capabilities drift.</sub>
 
@@ -506,11 +506,11 @@ Code search is a crowded space. Here's an honest read on where sweet-search wins
 
 <br/>
 
-<sub>¹ claude-context defaults to OpenAI/Voyage embeddings + Zilliz Cloud. Its local path (Milvus Lite + Ollama) needs no API key, but still runs Milvus + Ollama.<br/>² SocratiCode runs Qdrant and Ollama for you in Docker, so Docker must be running.<br/>³ GitNexus local embeddings are opt-in (`analyze --embeddings`).<br/>⁴ Outside this table, [ColGREP](https://github.com/lightonai/next-plaid) (LightOn) also runs ColBERT code search locally, as a grep-style search CLI.<br/>⁵ Reports token / cost / tool-call savings, not NL→code retrieval quality.<br/>⁶ PolyForm Noncommercial.<br/>⁷ Runs on Windows via WSL2.<br/>⁸ Indexes each project separately; one session can query several indexed projects, with no cross-repo links.</sub>
+<sub>¹ claude-context defaults to OpenAI/Voyage embeddings + Zilliz Cloud. Its local path (Milvus Lite + Ollama) needs no API key, but still runs Milvus + Ollama.<br/>² Graphify parses code locally with no key. Docs, PDFs and images go through your agent's model or an API key.<br/>³ GitNexus local embeddings are opt-in (`analyze --embeddings`).<br/>⁴ Semble uses static (Model2Vec) embeddings, not a transformer.<br/>⁵ Outside this table, [ColGREP](https://github.com/lightonai/next-plaid) (LightOn) also runs ColBERT code search locally, as a grep-style search CLI.<br/>⁶ Reports token / cost / tool-call savings, not NL→code retrieval quality.<br/>⁷ Graphify's code result is answer coverage on 6 questions about one repo. Its retrieval benchmarks are on chat memory (LOCOMO, LongMemEval), not code.<br/>⁸ Semble's own set: ~1,250 queries over 63 repos, with queries and labels written by Claude Sonnet 4.6.<br/>⁹ PolyForm Noncommercial.<br/>¹⁰ Runs on Windows via WSL2.<br/>¹¹ Tree-sitter grammars, config and markup formats included.<br/>¹² Indexes each project separately; one session can query several indexed projects, with no cross-repo links.</sub>
 
 </details>
 
-<sub>Competitors: <a href="https://github.com/colbymchenry/codegraph">CodeGraph</a> · <a href="https://github.com/abhigyanpatwari/GitNexus">GitNexus</a> · <a href="https://github.com/DeusData/codebase-memory-mcp">codebase-memory</a> · <a href="https://github.com/zilliztech/claude-context">claude-context</a> · <a href="https://github.com/giancarloerra/socraticode">SocratiCode</a> · <a href="https://github.com/lightonai/next-plaid">ColGREP</a> · <a href="https://github.com/oraios/serena">Serena</a> · <a href="https://sourcegraph.com">Sourcegraph</a> · <a href="https://github.com/continuedev/continue">Continue</a> · <a href="https://github.com/yoanbernabeu/grepai">grepai</a> · <a href="https://github.com/cocoindex-io/cocoindex-code">cocoindex-code</a></sub>
+<sub>Competitors: <a href="https://github.com/Graphify-Labs/graphify">Graphify</a> · <a href="https://github.com/colbymchenry/codegraph">CodeGraph</a> · <a href="https://github.com/abhigyanpatwari/GitNexus">GitNexus</a> · <a href="https://github.com/DeusData/codebase-memory-mcp">codebase-memory</a> · <a href="https://github.com/zilliztech/claude-context">claude-context</a> · <a href="https://github.com/MinishLab/semble">Semble</a> · <a href="https://github.com/giancarloerra/socraticode">SocratiCode</a> · <a href="https://github.com/lightonai/next-plaid">ColGREP</a> · <a href="https://github.com/oraios/serena">Serena</a> · <a href="https://sourcegraph.com">Sourcegraph</a> · <a href="https://github.com/continuedev/continue">Continue</a> · <a href="https://github.com/yoanbernabeu/grepai">grepai</a> · <a href="https://github.com/cocoindex-io/cocoindex-code">cocoindex-code</a></sub>
 
 ---
 
