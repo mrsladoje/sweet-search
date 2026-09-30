@@ -887,7 +887,7 @@ flowchart TB
         D -.-> A
     end
     S1 --> V("🔒 <b>Sealed checks</b><br/>held-out questions<br/>8 unseen languages<br/>2 unseen model families")
-    V -->|"it found the code, then stopped before the edit"| S2
+    V --> S2
     subgraph S2["② Task completion · tuned by hand"]
         direction LR
         E["🔍 <b>400 dev tasks</b><br/>Claude Code · Codex · opencode<br/>analyze the failed traces"] --> F["✍️ <b>Write</b> one<br/>new rule"]
@@ -895,10 +895,10 @@ flowchart TB
         G -->|"helps"| H(["✅ <b>Keep</b>"])
         G -->|"no gain or<br/>costs more"| I(["❌ <b>Drop</b>"])
     end
-    S2 -->|"the agent's own prompt still pushed it to grep"| S3
+    S2 --> S3
     subgraph S3["③ System prompt hill-climbing · per agent"]
         direction LR
-        J["✂️ <b>Remove</b> the lines in each<br/>agent's own system prompt<br/>that conflict with our rules"] --> K["🧪 <b>Microsmoke</b> each edit<br/>Claude Code · Codex · opencode"]
+        J["✂️ <b>Remove</b> the lines in each<br/>agent's own system prompt<br/>that conflict with our rules,<br/>➕ <b>add</b> focused lines<br/>such as turn packing"] --> K["🧪 <b>Microsmoke</b> each edit<br/>Claude Code · Codex · opencode"]
         K -->|"cheaper,<br/>same solves"| M(["✅ <b>Keep</b>"])
         K -->|"no gain or<br/>removes a feature"| N(["❌ <b>Drop</b>"])
     end
@@ -944,7 +944,7 @@ flowchart TB
 |--|--|--|--|
 | 🎯 **Goal** | cheapest prompt that still finds the right code | agent finishes the edit, not only the search | the agent's own prompt stops fighting our rules |
 | 🤖 **Agents** | Claude Code · Codex | Claude Code · Codex · opencode | Claude Code · Codex · opencode |
-| 🔁 **Loop** | LLMs read the runs, write new candidates | analyze failed traces → write one rule | remove one conflicting line or add one general line → rerun |
+| 🔁 **Loop** | LLMs read the runs, write new candidates | analyze failed traces → write one rule | remove one conflicting line or add one focused line (e.g. turn packing) → rerun |
 | ✅ **Kept if** | Pareto-best: cheapest at the best retrieval | microsmoke: it helps and costs no more | microsmoke: cheaper at equal solves, every feature kept |
 | 🔒 **Checked on** | unseen questions, languages, model families | control tasks | a second, disjoint task rotation |
 
