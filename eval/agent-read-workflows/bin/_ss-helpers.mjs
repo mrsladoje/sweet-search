@@ -588,7 +588,7 @@ async function cmdFind(rawArgs) {
     }
     if (r.code) {
       process.stdout.write(`\`\`\`\n${gutter(r.code, r.startLine)}\n\`\`\`\n`);
-    } else if (r.summary) {
+    } else if (r.summary && !(DEDUPE && /^\S+:\d+ — .+ \([^)]*\)$/.test(String(r.summary).trim()))) {
       process.stdout.write(`${r.summary}\n`);
     }
     if (r.neighbors && r.neighbors.rendered) {
@@ -911,8 +911,19 @@ async function cmdAgentSearch(rawArgs) {
       `${renderSufficiency(response)}\n`);
   }
 
+  // final-tuning variant SS_VARIANT_SEARCH_DEDUPE=1 (default off = byte-identical): print no
+  // repeated information. A summary entry whose span lies inside a span already listed above, or
+  // that names the same file + symbol as an entry above, is dropped; a summary line that only
+  // restates its own header (`file:line — symbol (kind)`) is not printed.
+  const DEDUPE = process.env.SS_VARIANT_SEARCH_DEDUPE === '1';
+  const seenSpans = [];
   // Per-result blocks
   for (const r of response.results || []) {
+    if (DEDUPE) {
+      const covered = seenSpans.some(x => x.file === r.file && ((r.startLine >= x.start && r.endLine <= x.end) || (r.symbol && x.symbol === r.symbol)));
+      seenSpans.push({ file: r.file, start: r.startLine, end: r.endLine, symbol: r.symbol || null });
+      if (covered && r.presentation === 'summary') continue;
+    }
     const sym = r.symbol ? ` [${r.symbolType || 'code'}: ${r.symbol}]` : '';
     const kind = r.expansionKind ? ` kind=${r.expansionKind}` : '';
     const stale = r.stale ? ' STALE' : '';
@@ -922,7 +933,7 @@ async function cmdAgentSearch(rawArgs) {
     }
     if (r.code) {
       process.stdout.write(`\`\`\`\n${gutter(r.code, r.startLine)}\n\`\`\`\n`);
-    } else if (r.summary) {
+    } else if (r.summary && !(DEDUPE && /^\S+:\d+ — .+ \([^)]*\)$/.test(String(r.summary).trim()))) {
       process.stdout.write(`${r.summary}\n`);
     }
     // Render the 1-hop graph-neighbour tier directly under top-1's code block.

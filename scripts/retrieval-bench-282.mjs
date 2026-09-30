@@ -99,6 +99,22 @@ const CAP_DIR = path.join(OUT, 'captures');
 const STATE = path.join(EVAL, 'r282', `${CELL_NAME}${SUFFIX}`);
 const SS_BIN = path.join(REPO, 'eval/agent-read-workflows/bin');
 const RULES = fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md'), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
+// final-tuning variant SS_VARIANT_PRUNE3=1 (default off = byte-identical): ss-find, ss-semantic and
+// ss-trace are removed — from the rules text (variants/rules-prune3.md) AND from PATH (a bin dir with
+// only ss-search / ss-grep / ss-read and their shared helpers), so the agent can neither read about
+// nor call them. Codex / opencode only (Claude Code reads the rules via writeClaudeRules).
+const PRUNE3 = process.env.SS_VARIANT_PRUNE3 === '1';
+const RULES_EFFECTIVE = PRUNE3 ? fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/final-tuning/variants/rules-prune3.md'), 'utf8') : RULES;
+function prunedBin() {
+  const d = path.join(EVAL, 'final-tuning-bin-prune3');
+  fs.mkdirSync(d, { recursive: true });
+  for (const f of ['ss-search', 'ss-grep', 'ss-read', '_ss-env.sh', '_ss-helpers.mjs', '_ss-argparse.mjs']) {
+    const link = path.join(d, f), target = path.join(SS_BIN, f);
+    try { if (fs.readlinkSync(link) === target) continue; fs.rmSync(link); } catch {}
+    fs.symlinkSync(target, link);
+  }
+  return d;
+}
 
 // ─── probes: vault + held-out + OOD, merged ───────────────────────────────────────────────────
 const SETS = [
@@ -162,7 +178,7 @@ const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8',
 const harnessVersion = () => { try { return sh(path.join(BIN[CELL.harness], { cc: 'claude', codex: 'codex', opencode: 'opencode' }[CELL.harness]), ['--version']).split('\n')[0]; } catch { return null; } };
 const baseEnv = (sweet, cwd) => ({
   ...process.env,
-  PATH: [BIN[CELL.harness], sweet ? SS_BIN : null, process.env.PATH].filter(Boolean).join(':'),
+  PATH: [BIN[CELL.harness], sweet ? (PRUNE3 ? prunedBin() : SS_BIN) : null, process.env.PATH].filter(Boolean).join(':'),
   SWEET_SEARCH_PROJECT_ROOT: cwd,
   SWEET_SEARCH_OFFLINE: '1',
 });
@@ -323,7 +339,7 @@ async function runCodex(probe, sweet) {
   const { home, phome } = codexHome();
   const stateDir = fs.mkdtempSync(path.join(STATE, 'codex-state-'));
   const trim = codexHarnessTrim({ sweet, model: `openai/${CELL.model}` });
-  const trimArgs = sweet ? [...codexHarnessTrimArgs(trim, stateDir, { model: `openai/${CELL.model}` }), ...codexRulesConfigArgs(RULES)] : [];
+  const trimArgs = sweet ? [...codexHarnessTrimArgs(trim, stateDir, { model: `openai/${CELL.model}` }), ...codexRulesConfigArgs(RULES_EFFECTIVE)] : [];
   const env = { ...baseEnv(sweet, cwd), CODEX_HOME: home, HOME: phome, SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'none' };
   delete env.OPENAI_API_KEY;
   const args = ['exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check', '--json',
@@ -385,7 +401,7 @@ async function runOpencode(probe, sweet) {
   // (r282 DeepSeek sweet req-0 cache hit 24% vs native 86%). The product (`init`) uses the stable
   // project path .opencode/sweet-search.md, so the stable path is the production-faithful setting.
   const rulesDir = STABLE_RULES_PATH ? path.join(STATE, 'oc-rules') : stateDir;
-  trim = opencodeRulesInConfig(trim, { rules: sweet ? sweetRulesBlock({ mppText: RULES }) : null, stateDir: rulesDir });
+  trim = opencodeRulesInConfig(trim, { rules: sweet ? sweetRulesBlock({ mppText: RULES_EFFECTIVE }) : null, stateDir: rulesDir });
   if (STABLE_RULES_PATH && sweet) {
     fs.mkdirSync(rulesDir, { recursive: true });
     const f = path.join(rulesDir, OPENCODE_RULES_FILE), txt = trim.files[OPENCODE_RULES_FILE];
@@ -509,7 +525,8 @@ try {
     const cwds = [...new Set(tasks.map(p => p._cwd))];
     if (arm === 'sweet') { console.error(`[sweet] warming ${cwds.length} ss-* servers…`); for (const c of cwds) warmup(c); }
     let installed = [];
-    if (CELL.harness === 'cc' && arm === 'sweet') {
+    if (CELL.harness === 'cc' && PRUNE3) throw new Error('SS_VARIANT_PRUNE3 is not wired for Claude Code');
+  if (CELL.harness === 'cc' && arm === 'sweet') {
       installed = installClaudeProduct(cwds, claudeHome('sweet'));
       cleanup.push(() => uninstallClaudeProduct(installed));
     }
