@@ -1,0 +1,1156 @@
+{
+ "r3-zipkin-04": {
+  "id": "r3-zipkin-04",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.ConditionalOnThrottledStorage.ThrottledStorageCondition",
+    "zipkin2.server.internal.ZipkinConfiguration.ThrottledStorageComponentEnhancer",
+    "zipkin2.server.internal.ZipkinConfiguration.ThrottledStorageComponentEnhancer#postProcessAfterInitialization"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The property 'zipkin.storage.throttle.enabled' and the BeanPostProcessor 'ThrottledStorageComponentEnhancer.postProcessAfterInitialization' are the unambiguous locations handling storage write throttling in the codebase."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.ConditionalOnThrottledStorage",
+    "zipkin2.server.internal.ConditionalOnThrottledStorage.ThrottledStorageCondition",
+    "zipkin2.server.internal.ZipkinConfiguration.ThrottledStorageComponentEnhancer",
+    "zipkin2.server.internal.ZipkinConfiguration.ThrottledStorageComponentEnhancer.postProcessAfterInitialization",
+    "zipkin2.server.internal.throttle.ThrottledStorageComponent",
+    "zipkin2.server.internal.throttle.ZipkinStorageThrottleProperties"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The code shown directly answers the question: the throttle condition reads zipkin.storage.throttle.enabled, and the enhancer wraps StorageComponent in ThrottledStorageComponent after initialization. Claim 3 is unsupported because the yaml defaults are not present in these files."
+  }
+ },
+ "r3-zipkin-03": {
+  "id": "r3-zipkin-03",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.brave.ZipkinSelfTracingConfiguration.LocalSender",
+    "zipkin2.server.internal.brave.ZipkinSelfTracingConfiguration.LocalSender#send",
+    "zipkin2.server.internal.brave.ZipkinSelfTracingConfiguration.LocalSender#delegate",
+    "zipkin2.server.internal.brave.ZipkinSelfTracingConfiguration#tracing",
+    "zipkin2.server.internal.brave.ZipkinSelfTracingConfiguration#httpTracing",
+    "zipkin2.server.internal.brave.TracingStorageComponent"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Zipkin server self-tracing and its loop prevention mechanisms are entirely defined in ZipkinSelfTracingConfiguration and TracingStorageComponent."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ZipkinSelfTracingConfiguration.LocalSender.send",
+    "ZipkinSelfTracingConfiguration.LocalSender.delegate",
+    "ZipkinSelfTracingConfiguration.tracing",
+    "ZipkinSelfTracingConfiguration.httpTracing",
+    "TracingStorageComponent.TracingSpanConsumer.accept",
+    "TracingStorageComponent.TracedCall"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The self-tracing path is fully implemented in these two files: LocalSender sends spans directly to the unwrapped StorageComponent, and TracingStorageComponent/TracedCall plus the NEVER_SAMPLE/http server sampler configuration prevent recursive tracing."
+  }
+ },
+ "r3-zipkin-06": {
+  "id": "r3-zipkin-06",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.collector.scribe.NettyScribeServer#start",
+    "zipkin2.collector.scribe.ScribeInboundHandler#channelRead",
+    "zipkin2.collector.scribe.ScribeInboundHandler#flushResponses",
+    "zipkin2.collector.scribe.ScribeSpanConsumer#Log"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Scribe is the only legacy log collector over raw TCP in Zipkin, and the implementation uniquely spans NettyScribeServer, ScribeInboundHandler, and ScribeSpanConsumer."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "NettyScribeServer",
+    "NettyScribeServer.start",
+    "ScribeInboundHandler",
+    "ScribeInboundHandler.channelRead",
+    "ScribeInboundHandler.flushResponses",
+    "ScribeSpanConsumer.Log"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant raw TCP framing, HTTP/thrift dispatch, response ordering, and span decoding are all implemented in the provided scribe server and consumer classes."
+  }
+ },
+ "r3-zipkin-09": {
+  "id": "r3-zipkin-09",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.collector.Collector",
+    "zipkin2.collector.Collector.StoreSpans",
+    "zipkin2.collector.Collector.handleStorageError",
+    "zipkin2.server.internal.MicrometerCollectorMetrics",
+    "zipkin2.server.internal.MicrometerCollectorMetrics.incrementSpansDropped",
+    "zipkin2.server.internal.prometheus.ZipkinMetricsController.fetchMetricsFromMicrometer"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The collector metrics and /metrics controller unambiguously define how dropped spans from storage errors are recorded and exposed across the system."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Collector.accept",
+    "Collector.StoreSpans",
+    "Collector.handleStorageError",
+    "MicrometerCollectorMetrics.incrementSpansDropped",
+    "MicrometerCollectorMetrics.forTransport",
+    "ZipkinMetricsController.fetchMetricsFromMicrometer"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code path from Collector.accept through StoreSpans.onError to handleStorageError and MicrometerCollectorMetrics.incrementSpansDropped is consistent and unambiguous."
+  }
+ },
+ "r3-zipkin-01": {
+  "id": "r3-zipkin-01",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.v1.V1SpanConverter",
+    "zipkin2.v1.V1SpanConverter#convert",
+    "zipkin2.v1.V1SpanConverter#processAnnotations"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "V1SpanConverter is the dedicated component in Zipkin responsible for converting and splitting legacy V1 RPC spans into separate client and server spans sharing a span ID."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.v1.V1SpanConverter.convert",
+    "zipkin2.v1.V1SpanConverter.processAnnotations",
+    "zipkin2.internal.V1JsonSpanReader.readList"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The single-record split is uniquely handled by V1SpanConverter.processAnnotations; V1JsonSpanReader.readList only delegates to it."
+  }
+ },
+ "r3-zipkin-02": {
+  "id": "r3-zipkin-02",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.elasticsearch.ElasticsearchSpanStore#getTraces(QueryRequest)",
+    "zipkin2.elasticsearch.ElasticsearchSpanStore.GetSpansByTraceId"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "ElasticsearchSpanStore is the sole implementation handling Elasticsearch trace search queries and fetching complete traces."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ElasticsearchSpanStore#getTraces(QueryRequest)",
+    "ElasticsearchSpanStore.GetSpansByTraceId",
+    "ElasticsearchSpanStore.GetSpansByTraceId#map(List<String>)",
+    "zipkin2.storage.StrictTraceId#filterTraces(QueryRequest)"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The getTraces method in this file directly implements the two-phase search: an initial filtered aggregation for trace IDs, then a second search for all spans by those IDs, followed by grouping and optional strict trace ID filtering."
+  }
+ },
+ "r3-zipkin-07": {
+  "id": "r3-zipkin-07",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.health.ZipkinHealthController.health",
+    "zipkin2.server.internal.health.ZipkinHealthController.newHealthResponse",
+    "zipkin2.server.internal.health.ComponentHealth.ofComponent",
+    "zipkin2.elasticsearch.ElasticsearchStorage.check",
+    "zipkin2.elasticsearch.ElasticsearchStorage.ensureIndexTemplatesAndClusterReady",
+    "zipkin2.elasticsearch.ElasticsearchStorage.READ_STATUS"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The health check execution path from the HTTP controller down to Elasticsearch cluster status verification is uniquely and completely implemented in these classes."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ZipkinHealthController#health",
+    "ZipkinHealthController#newHealthResponse",
+    "ComponentHealth#ofComponent",
+    "ElasticsearchStorage#check",
+    "ElasticsearchStorage#ensureIndexTemplatesAndClusterReady",
+    "ElasticsearchStorage#version",
+    "ElasticsearchStorage#ensureIndexTemplates",
+    "ElasticsearchStorage#READ_STATUS"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The shown health controller, component health wrapper, and Elasticsearch check/READ_STATUS code directly determine the checks run and DOWN conditions."
+  }
+ },
+ "r3-zipkin-12": {
+  "id": "r3-zipkin-12",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.QueryRequest.Builder.build",
+    "zipkin2.Endpoint.Builder.serviceName"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Both the query criteria in QueryRequest.Builder.build and the reported service names in Endpoint.Builder.serviceName are normalized to lowercase using Locale.ROOT."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.QueryRequest.Builder.build",
+    "zipkin2.Endpoint.Builder.serviceName"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The shown code canonicalizes both query service names and reported endpoint service names to lowercase, so mixed-case search values match spans reported with different capitalization."
+  }
+ },
+ "r3-zipkin-10": {
+  "id": "r3-zipkin-10",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.internal.Trace.merge",
+    "zipkin2.internal.Trace.EndpointTracker.tryMerge",
+    "zipkin2.Span.Builder.merge"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Trace span merging and endpoint conflict checking are specifically implemented in Trace.merge, EndpointTracker.tryMerge, and Span.Builder.merge."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Trace.merge",
+    "Trace.EndpointTracker.tryMerge",
+    "Span.Builder.merge"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Trace.merge is the implementation that sorts and merges fragments, and EndpointTracker.tryMerge enforces local endpoint compatibility so no other code path is needed."
+  }
+ },
+ "r3-zipkin-08": {
+  "id": "r3-zipkin-08",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.cassandra.CassandraSpanConsumer#accept",
+    "zipkin2.storage.cassandra.internal.call.DeduplicatingInsert.Factory#maybeAdd",
+    "zipkin2.storage.cassandra.internal.call.DeduplicatingInsert",
+    "zipkin2.internal.DelayLimiter#shouldInvoke"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Cassandra storage deduplicates service and span name inserts using DeduplicatingInsert and DelayLimiter configured with autocomplete TTL and cardinality."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CassandraSpanConsumer.CassandraSpanConsumer",
+    "CassandraSpanConsumer.accept",
+    "DeduplicatingInsert.Factory.maybeAdd",
+    "DeduplicatingInsert.doExecute",
+    "DeduplicatingInsert.doEnqueue",
+    "DeduplicatingInsert.doCancel",
+    "DelayLimiter.shouldInvoke",
+    "DelayLimiter.removeOneSuppression",
+    "DelayLimiter.invalidate"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The shown code directly implements cross-batch deduplication through DeduplicatingInsert.Factory and DelayLimiter."
+  }
+ },
+ "r3-zipkin-15": {
+  "id": "r3-zipkin-15",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.collector.CollectorSampler",
+    "zipkin2.collector.CollectorSampler#isSampled"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "CollectorSampler provides deterministic sampling based solely on the lower 64 bits of the trace ID and the debug flag, ensuring independent collectors reach the exact same sampling decision."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.collector.CollectorSampler",
+    "zipkin2.collector.CollectorSampler#isSampled",
+    "zipkin2.collector.CollectorSampler#create",
+    "zipkin2.collector.CollectorSampler#boundary"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided CollectorSampler is the relevant implementation and directly explains deterministic per-trace sampling; no other file is needed."
+  }
+ },
+ "r3-zipkin-05": {
+  "id": "r3-zipkin-05",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.mysql.v1.MySQLSpanStore.getDependencies",
+    "zipkin2.storage.mysql.v1.AggregateDependencies",
+    "zipkin2.storage.mysql.v1.AggregateDependencies.apply"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The MySQL backend unambiguously falls back to on-the-fly aggregation via AggregateDependencies called from MySQLSpanStore.getDependencies when precomputed dependencies are not present."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "MySQLSpanStore.getDependencies",
+    "AggregateDependencies.apply",
+    "HasPreAggregatedDependencies.test"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The no-row case is unambiguously handled by HasPreAggregatedDependencies.test returning false, which makes MySQLSpanStore.getDependencies use AggregateDependencies."
+  }
+ },
+ "r3-zipkin-13": {
+  "id": "r3-zipkin-13",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.SpanBytesDecoderDetector",
+    "zipkin2.SpanBytesDecoderDetector#detectDecoder"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "SpanBytesDecoderDetector handles format detection for content-type-less messages using detectDecoder and related helper methods."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.SpanBytesDecoderDetector",
+    "zipkin2.SpanBytesDecoderDetector.detectDecoder",
+    "zipkin2.SpanBytesDecoderDetector.decoderForListMessage",
+    "zipkin2.SpanBytesDecoderDetector.protobuf3",
+    "zipkin2.SpanBytesDecoderDetector.ENDPOINT_FIELD_SUFFIX",
+    "zipkin2.SpanBytesDecoderDetector.TAGS_FIELD"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The detection logic for content-type-less transports is centralized in SpanBytesDecoderDetector, so a careful engineer would not reasonably point to a different implementation."
+  }
+ },
+ "r3-zipkin-17": {
+  "id": "r3-zipkin-17",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.cassandra.CassandraUtil.DURATION_INDEX_BUCKET_WINDOW_SECONDS",
+    "zipkin2.storage.cassandra.CassandraUtil.durationIndexBucket",
+    "zipkin2.storage.cassandra.CassandraSpanStore.newBucketedTraceIdCall"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The duration bucket calculation and query fanning logic across the time bucket range are explicitly implemented in CassandraUtil and CassandraSpanStore."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CassandraUtil.DURATION_INDEX_BUCKET_WINDOW_SECONDS",
+    "CassandraUtil.durationIndexBucket",
+    "CassandraSpanStore.newBucketedTraceIdCall",
+    "CassandraSpanStore.timestampRange"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code directly shows the 24-hour default bucket window, the per-bucket loop in newBucketedTraceIdCall, and the system property override, so there is no conflicting answer elsewhere."
+  }
+ },
+ "r3-zipkin-20": {
+  "id": "r3-zipkin-20",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "ZipkinHttpCollector.testForUnexpectedFormat",
+    "ZipkinHttpCollector.validateAndStoreSpans"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "ZipkinHttpCollector handles the /api/v2/spans endpoint and specifically detects binaryAnnotations via testForUnexpectedFormat in validateAndStoreSpans."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ZipkinHttpCollector.validateAndStoreSpans",
+    "ZipkinHttpCollector.testForUnexpectedFormat",
+    "ZipkinHttpCollector.BINARY_ANNOTATION_FIELD_SUFFIX"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The mismatch detection and rejection are fully contained in ZipkinHttpCollector.validateAndStoreSpans and testForUnexpectedFormat; no other code path in the provided files handles this."
+  }
+ },
+ "r3-zipkin-11": {
+  "id": "r3-zipkin-11",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.internal.SpanNode.Builder.build"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "SpanNode.Builder is the dedicated component responsible for assembling a trace tree, including creating a synthetic root node when no root span is present."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "SpanNode.Builder.build",
+    "SpanNode.Builder.process",
+    "SpanNode.BreadthFirstIterator"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The shown SpanNode.Builder.build directly implements synthetic-root creation and headless attachment for the missing-root case."
+  }
+ },
+ "r3-zipkin-22": {
+  "id": "r3-zipkin-22",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.cassandra.Schema.ensureVersion",
+    "zipkin2.storage.cassandra.CassandraStorageBuilder.ensureSchema"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Schema.ensureVersion uniquely implements the minimum Cassandra version check, and CassandraStorageBuilder defines whether it runs via ensureSchema."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Schema.ensureVersion",
+    "Schema.ensureExists",
+    "Schema.ensure",
+    "Schema.validate",
+    "CassandraStorageBuilder.ensureSchema"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided files contain the only version check and the only configuration path that controls whether it runs."
+  }
+ },
+ "r3-zipkin-14": {
+  "id": "r3-zipkin-14",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.cassandra.CassandraUtil.annotationQuery",
+    "zipkin2.storage.cassandra.InsertSpan.Factory.newInput"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "Cassandra tag searches rely specifically on flattening tags and annotations into the delimited annotation_query string column handled by CassandraUtil and InsertSpan."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "CassandraUtil.annotationQuery",
+    "InsertSpan.Factory.newInput",
+    "CassandraUtil.annotationKeys"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The included code directly shows the annotation_query workaround: CassandraUtil.annotationQuery flattens tag key=value pairs into a delimited string and InsertSpan.Factory.newInput stores it in a separate column."
+  }
+ },
+ "r3-zipkin-24": {
+  "id": "r3-zipkin-24",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.ZipkinHttpConfiguration#serverConfigurator"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "ZipkinHttpConfiguration.serverConfigurator is the dedicated and specific location where the server explicitly blocks HTTP TRACE for prefix:/."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ZipkinHttpConfiguration.serverConfigurator"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The TRACE-blocking route decorator is defined only in ZipkinHttpConfiguration.serverConfigurator, so there is no other plausible location in the provided files."
+  }
+ },
+ "r3-zipkin-16": {
+  "id": "r3-zipkin-16",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.internal.DependencyLinker",
+    "zipkin2.internal.DependencyLinker#putTrace",
+    "zipkin2.internal.DependencyLinker#addLink"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "DependencyLinker is the sole class responsible for traversing traces and building the service dependency links with call and error counts."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.internal.DependencyLinker",
+    "DependencyLinker.putTrace",
+    "DependencyLinker.firstRemoteAncestor",
+    "DependencyLinker.addLink"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The error marking and split-span attribution logic is localized in DependencyLinker.putTrace and its helpers."
+  }
+ },
+ "r3-zipkin-25": {
+  "id": "r3-zipkin-25",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.ZipkinQueryApiV2.getTraces"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The multi-trace fetch endpoint (/api/v2/traceMany) and its validation logic are uniquely defined in ZipkinQueryApiV2.getTraces(String)."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.ZipkinQueryApiV2.getTraces(String)"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The traceMany endpoint is implemented by ZipkinQueryApiV2.getTraces(String) and contains the described 400 rejections for empty, duplicate, and single traceId inputs."
+  }
+ },
+ "r3-zipkin-27": {
+  "id": "r3-zipkin-27",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.ZipkinQueryApiV2.getServiceNames",
+    "zipkin2.server.internal.ZipkinQueryApiV2.maybeCacheNames"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The logic controlling cache headers for service names is implemented directly in ZipkinQueryApiV2 via getServiceNames and maybeCacheNames based on the number of services exceeding 3."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ZipkinQueryApiV2.maybeCacheNames",
+    "ZipkinQueryApiV2.getServiceNames",
+    "ZipkinQueryApiV2.getSpanNames",
+    "ZipkinQueryApiV2.getRemoteServiceNames",
+    "ZipkinQueryApiV2.serviceCount",
+    "ZipkinQueryApiV2.namesMaxAge"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant logic is fully contained in ZipkinQueryApiV2; the only potential ambiguity is that getAutocompleteValues also uses maybeCacheNames with a local size check, but the question specifically asks about service names responses."
+  }
+ },
+ "r3-zipkin-18": {
+  "id": "r3-zipkin-18",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.QueryRequest.Builder.build",
+    "zipkin2.server.internal.BodyIsExceptionMessage.handleException"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "Query validation specifically rejects maxDuration without minDuration in QueryRequest.Builder.build, and BodyIsExceptionMessage.handleException specifically converts IllegalArgumentException into an HTTP 400 response with the exception message."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.QueryRequest.Builder.build",
+    "zipkin2.server.internal.BodyIsExceptionMessage.handleException"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The provided files directly show the maxDuration/minDuration validation in QueryRequest.Builder.build and the IllegalArgumentException-to-400 mapping in BodyIsExceptionMessage.handleException."
+  }
+ },
+ "r3-zipkin-19": {
+  "id": "r3-zipkin-19",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": true,
+   "symbols": [
+    "Span.normalizeTraceId"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "A developer could reasonably identify either the HTTP endpoint handling single-trace lookup requests (ZipkinQueryApiV2.getTrace) or the underlying validation method it delegates to (Span.normalizeTraceId)."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.Span.normalizeTraceId"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The actual throw conditions for too-long, non-lower-hex, and all-zero trace IDs are implemented in Span.normalizeTraceId; a request API would delegate to it."
+  }
+ },
+ "r3-zipkin-21": {
+  "id": "r3-zipkin-21",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.throttle.ThrottledStorageComponent",
+    "zipkin2.server.internal.throttle.ThrottledStorageComponent#STORAGE_THROTTLE_MAX_QUEUE_SIZE",
+    "zipkin2.server.internal.throttle.ThrottledStorageComponent.ThreadPoolExecutorResizer"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "Storage write throttling and queue saturation rejection are implemented exclusively in ThrottledStorageComponent."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "0/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "ThrottledStorageComponent.<init>",
+    "ThrottledStorageComponent.ThreadPoolExecutorResizer.accept",
+    "ThrottledStorageComponent.STORAGE_THROTTLE_MAX_QUEUE_SIZE",
+    "com.netflix.concurrency.limits.limit.Gradient2Limit"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The provided file directly shows the ThreadPoolExecutor rejection handler producing STORAGE_THROTTLE_MAX_QUEUE_SIZE and the Gradient2Limit/resizer controlling executor concurrency; no other rejection path is shown."
+  }
+ },
+ "r3-zipkin-31": {
+  "id": "r3-zipkin-31",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-zipkin-32": {
+  "id": "r3-zipkin-32",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-zipkin-33": {
+  "id": "r3-zipkin-33",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-zipkin-34": {
+  "id": "r3-zipkin-34",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-zipkin-35": {
+  "id": "r3-zipkin-35",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-zipkin-36": {
+  "id": "r3-zipkin-36",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-zipkin-23": {
+  "id": "r3-zipkin-23",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "BulkIndexWriter.addSearchFields"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The write-time decision to exclude tags and annotations exceeding the length threshold from the search field _q is uniquely located in BulkIndexWriter.addSearchFields."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": true,
+   "symbols": [
+    "BulkIndexWriter.addSearchFields(Span, JsonGenerator)"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "A careful engineer could also point to the Elasticsearch index template's ignore_above 256 mapping for string fields, which similarly prevents long tags or annotations from being indexed for search."
+  }
+ },
+ "r3-zipkin-28": {
+  "id": "r3-zipkin-28",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.ui.ZipkinUiConfiguration#maybeResource"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "ZipkinUiConfiguration.maybeResource is the sole location where index.html content is modified to adjust asset paths and the base href when basePath differs from the default."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.ui.ZipkinUiConfiguration.maybeResource"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The HTML rewriting logic is localized in ZipkinUiConfiguration.maybeResource; no other code path shown performs this rewrite."
+  }
+ },
+ "r3-zipkin-29": {
+  "id": "r3-zipkin-29",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.InMemoryStorage#evictToRecoverSpans",
+    "zipkin2.storage.InMemoryStorage#deleteOldestTrace"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The in-memory storage implementation is entirely contained in InMemoryStorage, where eviction unambiguously drops spans belonging to the oldest traces first."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "InMemoryStorage",
+    "doAccept",
+    "evictToRecoverSpans",
+    "deleteOldestTrace",
+    "TIMESTAMP_DESCENDING"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The InMemoryStorage code explicitly evicts the oldest trace via deleteOldestTrace, so the behavior is unambiguous."
+  }
+ },
+ "r3-zipkin-30": {
+  "id": "r3-zipkin-30",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.elasticsearch.internal.BulkIndexWriter#write",
+    "zipkin2.elasticsearch.internal.BulkCallBuilder#writeIndexMetadata"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "Elasticsearch document deduplication for identical spans is explicitly determined by the trace ID and content MD5 hash generated in BulkIndexWriter and set as the _id field in BulkCallBuilder."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.elasticsearch.internal.BulkIndexWriter.write",
+    "zipkin2.elasticsearch.internal.BulkIndexWriter.md5",
+    "zipkin2.elasticsearch.internal.BulkCallBuilder.writeIndexMetadata"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The supplied files show the content-hash _id deduplication path directly, so there is no conflicting alternative answer in the shown code."
+  }
+ }
+}

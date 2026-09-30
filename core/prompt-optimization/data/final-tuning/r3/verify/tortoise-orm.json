@@ -1149,5 +1149,42 @@
    ],
    "why": "The time zone handling and its skip guard are explicitly implemented in MySQLClient.create_connection; no other code path is implicated."
   }
+ },
+ "r3-tortoise-orm-20": {
+  "id": "r3-tortoise-orm-20",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Model.__init__",
+    "Model._set_kwargs",
+    "Model.__setattr__",
+    "Model._validate_relation_type"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The enforcement during object construction is explicitly located in Model._set_kwargs (called by Model.__init__), and post-construction assignment is handled in Model.__setattr__ which calls _validate_relation_type without checking _saved_in_db."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": true,
+   "symbols": [
+    "Model._set_kwargs",
+    "Model.__setattr__",
+    "Model._validate_relation_type"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The saved check is clear in Model._set_kwargs for normal construction, but later assignment paths differ: ordinary attribute assignment via Model.__setattr__ does not check _saved_in_db, while Model.update_from_dict reuses _set_kwargs and Model.construct bypasses FK checks, so the same rule is not uniformly applied and the question is underspecified."
+  }
  }
 }
