@@ -260,7 +260,7 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 <td width="50%" valign="top">
 
 📄 **③ [Paper-type IR](#bench-paper-type)** *(academic)*<br>
-<sub>The standard NL→code retrieval suites (GCSN, M2CRB, CoSQA…), full-corpus MRR@10.</sub>
+<sub>The standard academic code-retrieval suites (GCSN, M2CRB, CoSQA…), full-corpus MRR@10.</sub>
 
 </td>
 <td width="50%" valign="top">
@@ -407,25 +407,21 @@ without — and why we quote a **range, not one number**.
 ---
 
 <a id="bench-paper-type"></a>
-### 📄 3. Paper-type retrieval benchmarks — *academic NL→code IR*
+### 📄 3. Paper-type retrieval benchmarks
 
-Every number below is the **`ss-search` pipeline end-to-end** — the same binary you install — run
-against the **full benchmark corpus** (no 99-distractor shortcuts), **zero-shot** (we never
-fine-tune on these tasks). Where a benchmark's queries are docstrings, we strip the docstring out of the
-indexed code so the query can't trivially match itself — the standard retrieval protocol.
+One question: **how well does `ss-search` rank code on the standard academic suites?** The same binary you install, end to end.
 
-We're SOTA in June 2026 on 2/4 attempted benchmarks at HARDER settings (running on full pool) than most other attempts! GenCodeSearchNet is the one we tuned on, so we report only its held-out score and don't count it as SOTA.
+- 📂 **Full corpus:** each query ranks against the whole benchmark, not 99 sampled distractors.
+- 🧊 **Zero-shot:** no fine-tuning on any of these tasks.
+- ✂️ **Docstrings stripped:** where queries come from docstrings, the indexed code loses them.
 
-| 📚 Benchmark | 🔍 What it tests | # Queries | 📂 Pool | 🎯 MRR@10 | 🏆 SOTA? |
-|-----------|---------------|---------:|---------:|--------:|--------:|
-| 🌐 **GenCodeSearchNet** | NL→code, 6 languages | 2,400 held-out | full 6,000 | **86.1** | n/a (tuned on dev) |
-| 🐍 **CoSQA** | web queries → Python | 500 | full 6,267 | **65.5** | ✅ (zero-shot) |
-| 🗺️ M2CRB | multilingual NL→code (ES/PT/DE/FR → Py/Java/JS) | 5,795 | full 5,795 | 54.0 | YES ✅ |
-| 🛡️ AdvTest | adversarial, identifier-obfuscated Python | 19,210 | full 19,210 | 51.4 | NO ❌ |
+<div align="center">
 
-<sub>SOTA = best result we can find in the published literature as of June 2026. Every score ranks the gold answer against the full corpus, not 99 sampled distractors, with no fine-tuning. GCSN is held-out only: we tuned ranking on its dev split.</sub>
+<img src="assets/paper-bench-stats.svg" alt="Paper-type retrieval benchmarks, full-corpus MRR@10, zero-shot. GenCodeSearchNet 86.1 on 2,400 held-out queries, tuned on the dev split so no SOTA claim. CoSQA 65.5, zero-shot SOTA. M2CRB 54.0, SOTA. AdvTest 51.4, not SOTA." width="100%" />
 
-🧪 **AdvTest is our honest worst case, and we publish it anyway.** Obfuscated identifiers remove the lexical and graph signals our hybrid pipeline relies on.
+<sub>MRR@10 · SOTA = best published result we can find, rechecked September 2026 · GCSN held-out only: we tuned ranking on its dev split</sub>
+
+</div>
 
 <details>
 <summary><b>Per-benchmark notes & methodology</b></summary>
