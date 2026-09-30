@@ -2295,7 +2295,7 @@ export async function runInit(args) {
         // returns prominent, actionable guidance when our style is not active.
         //
         // Default (CLI surface): the lean harness replaces Claude Code's base
-        // system prompt with our own paraphrase minus the search guidance that
+        // system prompt with an edited copy of it minus the search guidance that
         // conflicts with the rules, carries the same override, replaces the
         // Plan and general-purpose subagents so they load the rules, and turns
         // off the Explore search subagent (install-claude-lean-harness.js).
