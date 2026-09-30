@@ -895,7 +895,14 @@ flowchart TB
         G -->|"helps"| H(["✅ <b>Keep</b>"])
         G -->|"no gain or<br/>costs more"| I(["❌ <b>Drop</b>"])
     end
-    S2 ==> P(["🍬 <b>The shipped prompt</b>"])
+    S2 -->|"the agent's own prompt still pushed it to grep"| S3
+    subgraph S3["③ System prompt hill-climbing · per agent"]
+        direction LR
+        J["✂️ <b>Remove</b> the lines in each<br/>agent's own system prompt<br/>that conflict with our rules"] --> K["🧪 <b>Microsmoke</b> each edit<br/>Claude Code · Codex · opencode"]
+        K -->|"cheaper,<br/>same solves"| M(["✅ <b>Keep</b>"])
+        K -->|"no gain or<br/>removes a feature"| N(["❌ <b>Drop</b>"])
+    end
+    S3 ==> P(["🍬 <b>The shipped prompt</b>"])
 
     classDef cand  fill:#e0e7ff,stroke:#596fff,color:#000;
     classDef run   fill:#dbeafe,stroke:#60a5fa,color:#000;
@@ -915,26 +922,31 @@ flowchart TB
     class V seal;
     class E dig;
     class F,G rule;
-    class H keep;
-    class I drop;
+    class H,M keep;
+    class I,N drop;
+    class J dig;
+    class K rule;
     class P ship;
 
     style S1 fill:#f5f3ff,stroke:#a78bfa,stroke-width:2px;
     style S2 fill:#f0fdfa,stroke:#2dd4bf,stroke-width:2px;
+    style S3 fill:#fff7ed,stroke:#fb923c,stroke-width:2px;
 
     linkStyle 3 stroke:#fb7185,stroke-width:2px;
     linkStyle 8 stroke:#15803d,stroke-width:2px;
     linkStyle 9 stroke:#dc2626,stroke-width:2px;
-    linkStyle 10 stroke:#ff5ba3,stroke-width:3px;
+    linkStyle 12 stroke:#15803d,stroke-width:2px;
+    linkStyle 13 stroke:#dc2626,stroke-width:2px;
+    linkStyle 14 stroke:#ff5ba3,stroke-width:3px;
 ```
 
-| | ① Retrieval · [🧬 GEPA](https://arxiv.org/abs/2507.19457) | ② Task completion · by hand |
-|--|--|--|
-| 🎯 **Goal** | cheapest prompt that still finds the right code | agent finishes the edit, not only the search |
-| 🤖 **Agents** | Claude Code · Codex | Claude Code · Codex · opencode |
-| 🔁 **Loop** | LLMs read the runs, write new candidates | analyze failed traces → write one rule |
-| ✅ **Kept if** | Pareto-best: cheapest at the best retrieval | microsmoke: it helps and costs no more |
-| 🔒 **Checked on** | unseen questions, languages, model families | control tasks |
+| | ① Retrieval · [🧬 GEPA](https://arxiv.org/abs/2507.19457) | ② Task completion · by hand | ③ System prompt hill-climbing |
+|--|--|--|--|
+| 🎯 **Goal** | cheapest prompt that still finds the right code | agent finishes the edit, not only the search | the agent's own prompt stops fighting our rules |
+| 🤖 **Agents** | Claude Code · Codex | Claude Code · Codex · opencode | Claude Code · Codex · opencode |
+| 🔁 **Loop** | LLMs read the runs, write new candidates | analyze failed traces → write one rule | remove one conflicting line or add one general line → rerun |
+| ✅ **Kept if** | Pareto-best: cheapest at the best retrieval | microsmoke: it helps and costs no more | microsmoke: cheaper at equal solves, every feature kept |
+| 🔒 **Checked on** | unseen questions, languages, model families | control tasks | a second, disjoint task rotation |
 
 ### 💡 What the prompt says
 
