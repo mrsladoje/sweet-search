@@ -1150,12 +1150,10 @@ You never run a command.
 | Edits are searchable within ~20–60 s, tuned to your machine | One edited function means one chunk to the encoder, not the whole file | All five index tiers switch to the new version in one atomic step |
 
 #### ⚙️ How it works
-> - **Chunk IDs follow symbols, not line numbers.** Add a function at the top of a file and everything below it keeps its embedding.
-> - **Dependency-aware.** When an import's symbols change, the files that use it update too. Comment-only edits skip the encoder entirely.
-> - **Append, don't rebuild.** Each tier takes a small delta. A background worker compacts later, so the index stays fast for months.
-> - **One atomic epoch.** Vectors, binary HNSW, late-interaction segments, sparse-grams and the code graph publish under one fsync-renamed manifest.
-> - **Follows the filesystem, not git.** Unstaged edits count. Deleted or newly ignored files leave the results.
-> - **Polite.** CPU-only, at most 50 files and 2 s of CPU per update. The GPU stays free for full index builds.
+> - **Only the function you edited is re-embedded.** The rest of the file keeps its vectors, even when your edit shifts every line below it.
+> - **Files that import it refresh too.** Rename a function and its callers pick up the new name. Comment-only edits skip re-embedding.
+> - **Uncommitted work counts.** The daemon reads files on disk. Deleted and newly ignored files drop out of results.
+> - **Light on your machine.** Updates run on the CPU in small batches of at most 50 files, and a background worker tidies the index later. The GPU stays free for full builds.
 
 <details>
 <summary><b>Under the hood: safety rails and memory controls</b></summary>
