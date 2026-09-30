@@ -1196,7 +1196,7 @@ before the process exits, and the next edit (or query) respawns a fresh daemon.
 | Windows | ⚡ Native, inside WSL2. Native Windows is not supported yet. |
 | Other (musl/Alpine, other CPUs) | WASM/JS fallback |
 
-- **⚡ Native**: every performance-critical path runs in our native engine, compiled ahead of time for your exact OS and CPU. Speedups reach **100× and more** over plain JavaScript.
+- **Native**: every performance-critical path runs in our native engine, compiled ahead of time for your exact OS and CPU. Speedups reach **100× and more** over plain JavaScript.
 - **WASM/JS fallback**: general-purpose, so it runs on more machines, but slower.
 - **Zero setup**: `npm install` picks the right package for your machine. Needs Node ≥ 22.
 
