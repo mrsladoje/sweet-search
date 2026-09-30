@@ -1,0 +1,43 @@
+{
+ "repo": "ocelot",
+ "keep": [
+  "r3-ocelot-01", "r3-ocelot-02", "r3-ocelot-03", "r3-ocelot-05", "r3-ocelot-07", "r3-ocelot-08",
+  "r3-ocelot-09", "r3-ocelot-12", "r3-ocelot-13", "r3-ocelot-14", "r3-ocelot-15", "r3-ocelot-17",
+  "r3-ocelot-18", "r3-ocelot-19", "r3-ocelot-21", "r3-ocelot-22", "r3-ocelot-23", "r3-ocelot-25",
+  "r3-ocelot-26", "r3-ocelot-27", "r3-ocelot-29", "r3-ocelot-30",
+  "r3-ocelot-31", "r3-ocelot-32", "r3-ocelot-33", "r3-ocelot-34", "r3-ocelot-35", "r3-ocelot-36"
+ ],
+ "fixes": {
+  "r3-ocelot-03": {
+   "expectedFacts": [
+    "The first downstream route is processed first; its response body is read as a string and parsed with JToken.Parse.",
+    "For each later route whose key has a matching route-keys config entry, the configured JSON path is applied with SelectTokens, distinct values are taken, and one downstream call is made per distinct value.",
+    "For each call, a placeholder named after the configured parameter and holding the extracted value is added to a copy of the request's placeholder list, which is stored on the cloned request context.",
+    "DownstreamPathPlaceholderReplacer.Replace substitutes each placeholder name with its value inside the downstream path template."
+   ]
+  },
+  "r3-ocelot-14": {
+   "expectedFacts": [
+    "The header name is the route's RequestIdKey, falling back to the default 'RequestId' key; if the client sent that header, its first value becomes HttpContext.TraceIdentifier, otherwise the existing TraceIdentifier stays.",
+    "ExceptionHandlerMiddleware applies the same idea earlier using the global configuration's request-id key.",
+    "The identifier is added as a header to the downstream request only when the downstream route's own RequestIdKey is non-empty, the value is non-empty, and that header is not already present; the fallback default key alone is not forwarded."
+   ]
+  },
+  "r3-ocelot-17": {
+   "query": "How long does the gateway wait for a backend to reply when nothing is configured, and what happens if one of the explicitly listed routes sets the waiting time to zero or a negative number?",
+   "expectedFacts": [
+    "The default timeout is 90 seconds (DefTimeout); the static DefaultTimeoutSeconds setter falls back to 90 if assigned a value below 3.",
+    "CreateTimeout evaluates route.Timeout.Positive(default) ?? global.Timeout.Positive(default) ?? default; Positive returns null for null, the value if above zero, otherwise the default.",
+    "So a zero or negative route timeout becomes the default timeout (90 seconds unless changed) directly; it does not fall through to the global timeout (only a missing route timeout does)."
+   ]
+  },
+  "r3-ocelot-23": {
+   "expectedFacts": [
+    "The gateway does not compare body size with a limit itself; it reacts to an exception raised while sending: an HttpRequestException (or TimeoutException) whose inner exception is a BadHttpRequestException with status 413 becomes a PayloadTooLargeError.",
+    "PayloadTooLargeError is created with status 413 (RequestEntityTooLarge), and ErrorsToHttpStatusCodeMapper returns 413 Payload Too Large when the errors contain the PayloadTooLargeError code.",
+    "Other HttpRequestExceptions map to ConnectionToDownstreamServiceError (502 Bad Gateway), except the invalid non-ASCII header case, which maps to a 400 BadRequestError."
+   ]
+  }
+ },
+ "dropped": {}
+}

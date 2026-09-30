@@ -1,0 +1,69 @@
+{
+ "repo": "zipkin",
+ "keep": [
+  "r3-zipkin-02", "r3-zipkin-03", "r3-zipkin-06", "r3-zipkin-07", "r3-zipkin-08", "r3-zipkin-09",
+  "r3-zipkin-10", "r3-zipkin-12", "r3-zipkin-15", "r3-zipkin-16", "r3-zipkin-17", "r3-zipkin-20",
+  "r3-zipkin-22", "r3-zipkin-24", "r3-zipkin-25", "r3-zipkin-27", "r3-zipkin-28", "r3-zipkin-29",
+  "r3-zipkin-31", "r3-zipkin-32", "r3-zipkin-33", "r3-zipkin-34", "r3-zipkin-35", "r3-zipkin-36"
+ ],
+ "fixes": {
+  "r3-zipkin-09": {
+   "query": "An HTTP span upload is acknowledged as accepted, but the storage write fails afterwards. How is that loss counted, and which server endpoint reports that count in its JSON metrics document?",
+   "expectedFacts": [
+    "Collector.accept schedules StoreSpans on the executor and calls the caller's callback onSuccess right after scheduling, before storage is attempted, so the upload is acknowledged regardless of the later storage outcome.",
+    "When storage fails, StoreSpans.onError calls handleStorageError, which calls metrics.incrementSpansDropped(spans.size()) and logs only at debug level.",
+    "MicrometerCollectorMetrics increments the counter zipkin_collector.spans_dropped tagged with the transport (http for HTTP uploads).",
+    "ZipkinMetricsController serves /metrics and writes each zipkin_collector counter as counter.<name>.<transport>, so the loss appears as counter.zipkin_collector.spans_dropped.http."
+   ]
+  },
+  "r3-zipkin-12": {
+   "expectedFiles": [
+    "zipkin/src/main/java/zipkin2/storage/QueryRequest.java",
+    "zipkin/src/main/java/zipkin2/Endpoint.java"
+   ],
+   "expectedSymbols": ["QueryRequest.Builder.build", "Endpoint.Builder.serviceName"],
+   "expectedFacts": [
+    "Endpoint.Builder.serviceName lowercases service names (Locale.ROOT) when a reported span's endpoint is built, so stored service names are always lowercase.",
+    "QueryRequest.Builder.build lowercases the query's serviceName, remoteServiceName and spanName, and treats an empty name (or the span name \"all\") as unset."
+   ]
+  },
+  "r3-zipkin-15": {
+   "expectedFacts": [
+    "Apart from the debug flag, the decision depends only on the trace ID and the configured rate: the lower 64 bits of the trace ID are parsed and their absolute value is compared with a boundary derived from the rate, so instances with the same rate reach the same answer for the same trace.",
+    "Debug spans always pass the sampler.",
+    "The boundary is (long)(Long.MAX_VALUE * rate); Long.MIN_VALUE is mapped to Long.MAX_VALUE to avoid always dropping."
+   ]
+  },
+  "r3-zipkin-16": {
+   "expectedFacts": [
+    "A call is an error when the span's tags contain the key \"error\" (any value).",
+    "When a span has no error tag and its nearest remote ancestor is a client span whose id equals the span's parent id (an RPC split into a client span and a child server span), the client ancestor's error tag decides whether the call counts as an error.",
+    "addLink increments a per-(parent, child) call count and, for errors, a separate error count."
+   ]
+  },
+  "r3-zipkin-20": {
+   "expectedFacts": [
+    "validateAndStoreSpans calls testForUnexpectedFormat(decoder, body) before handing the bytes to the collector; for the v2 JSON decoder it looks for the byte sequence ending in yAnnotations\" (binaryAnnotations) and reports JSON_V1.",
+    "On a mismatch it fails the request with an IllegalArgumentException (Expected a JSON_V2 encoded list, but received: JSON_V1) and does not pass the body to the collector."
+   ]
+  },
+  "r3-zipkin-22": {
+   "query": "Which check refuses a Cassandra cluster in which some node runs a release older than the minimum supported one, and does that check always run?"
+  },
+  "r3-zipkin-29": {
+   "expectedFacts": [
+    "doAccept computes how many spans must be recovered (current + incoming - maxSpanCount) and calls evictToRecoverSpans before adding the new spans.",
+    "deleteOldestTrace removes the trace whose timestamp key is last in the descending-by-timestamp map, i.e. the oldest, including all its spans; evictToRecoverSpans repeats this until enough spans are recovered.",
+    "When search is enabled, services no longer referenced by any remaining trace also have their span-name and remote-service-name entries removed."
+   ]
+  },
+  "r3-zipkin-33": {
+   "expectedFacts": [
+    "The repository has only head-style sampling: CollectorSampler decides per span from the trace ID alone (lower 64 bits compared with a rate boundary; debug spans always kept), applied in Collector.sample before storage.",
+    "Nothing buffers a trace until complete before deciding; self-tracing uses Brave samplers for the server's own requests.",
+    "There is no error-aware or latency-aware keep/drop policy anywhere in the server, collectors or storage."
+   ]
+  }
+ },
+ "dropped": {}
+}
