@@ -128,7 +128,12 @@ const loadSet = ([set, rel]) => {
   const raw = JSON.parse(fs.readFileSync(path.join(REPO, rel), 'utf8'));
   return (Array.isArray(raw) ? raw : raw.probes).map(p => ({ ...p, _set: set }));
 };
-let PROBES = SMOKE ? loadSet(['dev', 'core/prompt-optimization/data/p7-dev-probes.json']) : SETS.flatMap(loadSet);
+// --probes <file> (final-tuning r3): a probe file in the same schema instead of the r282 pool. Each
+// probe's `set` field (e.g. dev / heldout) becomes the bootstrap stratum; default 'r3'.
+const PROBE_FILE = flag('--probes', null);
+let PROBES = SMOKE ? loadSet(['dev', 'core/prompt-optimization/data/p7-dev-probes.json'])
+  : PROBE_FILE ? loadSet(['r3', path.relative(REPO, path.resolve(PROBE_FILE))]).map(p => ({ ...p, _set: p.set || 'r3' }))
+  : SETS.flatMap(loadSet);
 const dup = PROBES.map(p => p.id).filter((id, i, a) => a.indexOf(id) !== i);
 if (dup.length) throw new Error(`duplicate probe ids across sets: ${dup.join(',')}`);
 if (onlyIds.length || SMOKE) PROBES = PROBES.filter(p => (onlyIds.length ? onlyIds : ['go-005']).includes(p.id));
