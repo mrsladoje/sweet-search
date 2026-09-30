@@ -233,10 +233,12 @@ function installClaudeProduct(cwds, home) {
     const settingsBefore = fs.existsSync(settings) ? fs.readFileSync(settings) : null;
     const claudeDirExisted = fs.existsSync(path.join(cwd, '.claude'));
     installed.push({ cwd, settings, settingsBefore, claudeDirExisted });
-    const rules = writeClaudeRules({ projectRoot: cwd });
+    // SS_VARIANT_CC_RULES_IN_PROMPT=1: the rules go into the lean agent file (system prompt) instead.
+    const rulesInPrompt = process.env.SS_VARIANT_CC_RULES_IN_PROMPT === '1';
+    const rules = rulesInPrompt ? 'in-prompt' : writeClaudeRules({ projectRoot: cwd });
     const lean = installClaudeLeanHarness({ projectRoot: cwd, configDir: home, visibleConfigDir: home });
     if (lean.active !== true) throw new Error(`lean harness not active in ${cwd}: ${lean.status} ${lean.detail}`);
-    if (rules !== 'created') throw new Error(`rules not created in ${cwd}: ${rules}`);
+    if (rules !== 'created' && rules !== 'in-prompt') throw new Error(`rules not created in ${cwd}: ${rules}`);
   }
   return installed;
 }

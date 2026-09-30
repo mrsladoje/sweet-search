@@ -53,6 +53,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { CLAUDE_SYSTEM_OVERRIDE } from './install-claude-system-prompt.js';
 import { applyExactEdits } from './harness-prompts/index.js';
+import { getPolicyBody } from './inject-agent-instructions.js';
 
 export const CLAUDE_LEAN_AGENT_NAME = 'sweet-search';
 export const CLAUDE_LEAN_AGENT_REL = '.claude/agents/sweet-search.md';
@@ -364,10 +365,21 @@ export function claudeLeanContextSection({ memoryDir = null, memoryEnabled = tru
  * shipped read6fs text); the benchmark sets it false and applies its own CC_TRIM_BATCH variant.
  */
 export function claudeLeanAgentFile({
-  appendOverride = true, memoryDir = null, memoryEnabled = true, promptEdits = true,
+  appendOverride = true, memoryDir = null, memoryEnabled = true, promptEdits = true, rulesInPrompt = false,
 } = {}) {
   let body = [CLAUDE_LEAN_HARNESS_PROMPT_BATCH, claudeLeanContextSection({ memoryDir, memoryEnabled })].join('\n\n');
   if (promptEdits) body = applyExactEdits(body, CLAUDE_LEAN_PROMPT_EDITS, 'claude lean prompt');
+  // final-tuning variant SS_VARIANT_CC_RULES_IN_PROMPT (default off = byte-identical): the sweet
+  // rules ride in this system prompt, ahead of the per-repo memory section, instead of the
+  // .claude/rules file. Claude Code injects rules files as a reminder in the FIRST USER MESSAGE,
+  // after the cache marker, so r282 re-wrote ~1.4k rule tokens on every rollout (60% of the Opus
+  // +22% gap, trace/claude-FORENSICS.md §4a); inside the system prompt they are a cache read.
+  if (rulesInPrompt) {
+    const ctx = claudeLeanContextSection({ memoryDir, memoryEnabled });
+    const at = body.lastIndexOf(ctx.split('\n')[0]);
+    if (at < 0) throw new Error('claude lean prompt: context section not found for rulesInPrompt');
+    body = `${body.slice(0, at)}${getPolicyBody('cli').trimEnd()}\n\n${body.slice(at)}`;
+  }
   const parts = [body];
   if (appendOverride) parts.push(CLAUDE_SYSTEM_OVERRIDE);
   return `---\nname: ${CLAUDE_LEAN_AGENT_NAME}\ndescription: sweet-search lean harness (main session)\n---\n\n${parts.join('\n\n')}\n`;
@@ -494,6 +506,7 @@ export function installClaudeLeanHarness({
   const wantedFiles = {
     [CLAUDE_LEAN_AGENT_REL]: claudeLeanAgentFile({
       appendOverride, promptEdits, memoryDir: memory.dir, memoryEnabled: memory.enabled,
+      rulesInPrompt: env.SS_VARIANT_CC_RULES_IN_PROMPT === '1',
     }),
     [CLAUDE_LEAN_SUBAGENT_REL]: claudeLeanSubagentFile(),
     [CLAUDE_LEAN_PLAN_REL]: claudeLeanPlanFile(),
