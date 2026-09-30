@@ -1142,7 +1142,7 @@ Source: [`crates/sweet-search-native/src/inference/`](crates/sweet-search-native
 ## 🔄 Index Never Goes Stale
 
 Most code indexes go stale the moment you start typing. sweet-search runs a background daemon
-that keeps the whole index in sync with your **working tree**, uncommitted edits included.
+that keeps the whole index in sync with your *working tree*.
 You never run a command.
 
 | ⏱️ **Always current** | 🎯 **Re-embeds only what changed** | ⚛️ **Never half-updated** |
