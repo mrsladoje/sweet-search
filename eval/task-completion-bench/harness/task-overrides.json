@@ -813,6 +813,14 @@
     "aleph-alpha__ts-rs-212": {
       "image": "swerebenchv2-warm/aleph-alpha-ts-rs:212-5e9965b",
       "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "locationtech__jts-754": {
+      "_why": "prep-phase warmed image (env-ledger 2026-09-30): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/locationtech-jts:754-948f5ef"
+    },
+    "softwaremill__sttp-openai-163": {
+      "_why": "prep-phase warmed image (env-ledger 2026-09-30): test-time dependency fetch dies under egress lockdown; warmed arms-blind (task test_cmd on base + official gold patch, --network bridge container, host lockdown never lowered) and gold-grades FULL offline on the warmed image.",
+      "image": "swerebenchv2-warm/softwaremill-sttp-openai:163-9019344"
     }
   }
 }
