@@ -1065,9 +1065,9 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 
 <img src="assets/index-build.svg" alt="How the index is built. Source files are chunked and enriched, embedded by two models, and stored compressed. One pass feeds six indexes: 1 word index, 2 n-gram index, 3 binary HNSW, 4 bi-encoder vectors, 5 late-interaction vectors, 6 code graph. The embedding runs on Apple Metal, the Apple Neural Engine, NVIDIA CUDA or any CPU, picked automatically at start-up. A maintainer daemon updates all six indexes after each edit with an atomic swap." width="100%" />
 
-**How it works**
-- 🧩 **[cAST chunking](#idx-chunk)**: tree-sitter ASTs, so every chunk is a whole function or class. 14 languages native, 70+ extensions.
-- 🏷️ **[Enrichment tuned per language family](#idx-enrich)**: context from the code graph, no LLM call. Each family's policy was picked by ablation on GenCodeSearchNet.
+### 🛠️ How it works
+- 🧩 **cAST chunking**: tree-sitter ASTs, so every chunk is a whole function or class. 14 languages native, 70+ extensions.
+- 🏷️ **Chunk enrichment, tuned per language family**: context from the code graph. Each language family's policy was picked by ablation on GenCodeSearchNet.
 
 ### 🚀 The models, and how fast they run
 - 🤖 **[Two open, code-specialized models](#idx-embed)**: [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed) (137M, dense) for recall and [LateOn-Code](https://huggingface.co/lightonai/LateOn-Code) (149M, late interaction) for the rerank.
