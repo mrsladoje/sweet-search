@@ -214,7 +214,7 @@ For each candidate (one at a time, §5 rules):
    fresh baseline) — the priority cell. Then Sonnet / Claude Code and opencode / Sol if the
    subscription budget allows.
 
-Runner: `CELL=<cell> node scripts/retrieval-bench-282.mjs --conc 3 --arms sweet --ids <split>`
+Runner: `CELL=<cell> node scripts/retrieval-bench-282.mjs --conc 3 --arms sweet --ids <comma-separated train or validation ids>`
 from the worktree, with a distinct results dir per variant (add `--tag <variant>` or a
 `RESULTS_TAG` env if it does not exist yet — commit that runner change first).
 
