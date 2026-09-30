@@ -1072,7 +1072,6 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 | Whole functions and classes when they fit the embedder's context, split when they don't | Prepends file path · scope chain · symbol · merged siblings · imports used, built from the AST and the code graph |
 | 96 languages · 206 extensions · 18 with full tree-sitter grammars | Each language family's policy was picked by *ablation* on GenCodeSearchNet |
 
-<br>
 
 ### 🚀 The embedding models, and how we made them blazing fast
 ####   🤖 **Two open, code-specialized models**: 
@@ -1085,9 +1084,9 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 | Your hardware | What runs |
 |--|--|
 | 🍏 Apple Silicon (M1+) | candle **Metal**, BF16, fused SDPA attention |
-| 🍏 Apple Silicon (M3+) | …​ plus a **CoreML Neural Engine cascade** — ~18% faster full index (measured, M3 Max) |
+| 🍏 Apple Silicon (M3+) | …​ plus a **CoreML Neural Engine cascade** |
 | 🟩 NVIDIA GPU (SM 7.0+) | candle **CUDA**; **flash-attention** on Ampere+ |
-| 💻 No accelerator | **ONNX Runtime INT8** — tuned CPU path, 132 MB model, **zero GPU weights downloaded** |
+| 💻 No accelerator | **ONNX Runtime INT8**: tuned CPU path, 132 MB model, **zero GPU weights downloaded** |
 
 ####   🧠 **Cache-sized CPU batches**: 
 > - each batch fits one layer's weights and activations in the CPU cache *(which we auto-detect)* <br>
