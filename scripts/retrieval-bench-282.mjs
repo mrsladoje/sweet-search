@@ -65,7 +65,8 @@ const CELLS = {
   'cc-sonnet55-high':   { harness: 'cc', model: 'claude-sonnet-5-5', effort: 'high', price: 'claude-sonnet-5-5' },
   'cc-opus55-medium':   { harness: 'cc', model: 'claude-opus-5-5', effort: 'medium', price: 'claude-opus-5-5' },
   'codex-sol61-high':   { harness: 'codex', model: 'gpt-6.1-sol', effort: 'high', price: 'openai/gpt-6.1-sol' },
-  'oc-sol61-high':      { harness: 'opencode', model: 'openrouter/openai/gpt-6.1-sol', variant: 'high', price: 'openai/gpt-6.1-sol' },
+  // ChatGPT subscription login (`opencode auth login` → OpenAI → ChatGPT Plus/Pro), not OpenRouter.
+  'oc-sol61-high':      { harness: 'opencode', model: 'openai/gpt-6.1-sol', variant: 'high', price: 'openai/gpt-6.1-sol', ocAuth: 'openai' },
   // No --variant: opencode then sends no reasoning_effort, and the DeepSeek API default is thinking
   // ON at "high" (GET /models: effort.default_level = high). deepseek-flash = DeepSeek-V4.1-Flash.
   'oc-dsflash41':       { harness: 'opencode', model: 'deepseek/deepseek-flash', variant: null, price: 'deepseek/deepseek-flash' },
@@ -340,10 +341,34 @@ async function runCodex(probe, sweet) {
 }
 
 // ─── opencode ──────────────────────────────────────────────────────────────────────────────────
+// Subscription login for a cell (CELL.ocAuth): the operator's opencode auth entry is copied into the
+// private data dir, and a refreshed entry is written back after each rollout (OAuth refresh tokens are
+// single-use — the codex auth-decay trap). Only that provider's entry is ever touched.
+const MASTER_OC_AUTH = path.join(os.homedir(), '.local/share/opencode/auth.json');
+const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
+function ocSeedAuth(ocData, provider) {
+  const local = path.join(ocData, 'auth.json');
+  const entry = readJson(MASTER_OC_AUTH)?.[provider];
+  if (!entry) throw Object.assign(new Error(`no ${provider} login in ${MASTER_OC_AUTH} — run: opencode auth login`), { fatal: true });
+  const mine = readJson(local)?.[provider];
+  // Keep the local copy unless the master holds a newer one (the other arm refreshed it).
+  if (mine && (mine.expires ?? 0) >= (entry.expires ?? 0)) return;
+  fs.writeFileSync(local, JSON.stringify({ [provider]: entry }, null, 2), { mode: 0o600 });
+}
+function ocSyncAuthBack(ocData, provider) {
+  const mine = readJson(path.join(ocData, 'auth.json'))?.[provider];
+  const master = readJson(MASTER_OC_AUTH);
+  if (!mine || !master || JSON.stringify(master[provider]) === JSON.stringify(mine)) return;
+  if ((mine.expires ?? 0) < (master[provider]?.expires ?? 0)) return; // master is already newer
+  const tmp = `${MASTER_OC_AUTH}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify({ ...master, [provider]: mine }, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, MASTER_OC_AUTH);
+}
 async function runOpencode(probe, sweet) {
   const cwd = probe._cwd;
   const stateDir = fs.mkdtempSync(path.join(STATE, 'oc-state-'));
   const ocData = path.join(STATE, `oc-data-${sweet ? 'sweet' : 'native'}`); fs.mkdirSync(ocData, { recursive: true });
+  if (CELL.ocAuth) ocSeedAuth(ocData, CELL.ocAuth);
   let trim = opencodeArmHarnessTrim({ sweet, apiModel: CELL.model.replace(/^openrouter\//, ''), stateDir });
   trim = opencodeRulesInConfig(trim, { rules: sweet ? sweetRulesBlock({ mppText: RULES }) : null, stateDir });
   for (const [name, text] of Object.entries(trim.files || {})) fs.writeFileSync(path.join(stateDir, name), text);
@@ -355,12 +380,14 @@ async function runOpencode(probe, sweet) {
     ...opencodeUnjailedEnv({ root: path.join(STATE, `oc-home-${sweet ? 'sweet' : 'native'}`), ocData }),
     OPENCODE_CONFIG: cfgPath, SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'colon',
   };
+  if (CELL.ocAuth === 'openai') delete env.OPENAI_API_KEY; // the subscription login must pay, never a key
   await runOpencodePreflight({ cwd, env, plugins: trim.plugins || [] });
   const args = ['run', '--format', 'json', '--agent', 'build', '--auto', '--model', CELL.model, ...(CELL.variant ? ['--variant', CELL.variant] : []), '--dir', cwd];
   const t0 = Date.now();
   const once = () => spawnWithTimeout(path.join(BIN.opencode, 'opencode'), args, { cwd, env, timeoutMs: TIMEOUT_MS, stdinText: opencodeRunMessage(promptFor(probe)) });
   let r = await once(); let p = parseOpencodeStream(r.stdout); let startRetried = false;
   if (isZeroCallStartFailure(r, p.toolCalls, p.answer)) { startRetried = true; r = await once(); p = parseOpencodeStream(r.stdout); }
+  if (CELL.ocAuth) ocSyncAuthBack(ocData, CELL.ocAuth);
   const trimReport = path.join(stateDir, OPENCODE_TRIM_REPORT);
   const trimApplied = trim.mode ? fs.existsSync(trimReport) : null;
   fs.rmSync(stateDir, { recursive: true, force: true });
