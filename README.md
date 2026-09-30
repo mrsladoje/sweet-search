@@ -1066,7 +1066,7 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 <img src="assets/index-build.svg" alt="How the index is built. Source files are chunked and enriched, embedded by two models, and stored compressed. One pass feeds six indexes: 1 word index, 2 n-gram index, 3 binary HNSW, 4 bi-encoder vectors, 5 late-interaction vectors, 6 code graph. The embedding runs on Apple Metal, the Apple Neural Engine, NVIDIA CUDA or any CPU, picked automatically at start-up. A maintainer daemon updates all six indexes after each edit with an atomic swap." width="100%" />
 
 ### 🛠️ How it works
-- 🧩 **[cAST](https://arxiv.org/abs/2506.15655) chunking**: whole functions and classes when they fit, split between statements when they don't. 96 languages · 206 extensions · 18 with full tree-sitter grammars.
+- 🧩 **[cAST](https://arxiv.org/abs/2506.15655) chunking**: whole functions and classes when they fit the embedder's context, split between statements when they don't. 96 languages · 206 extensions · 18 with full tree-sitter grammars.
 - 🏷️ **Chunk enrichment, tuned per language family**: context from the code graph. Each language family's policy was picked by ablation on GenCodeSearchNet.
 
 ### 🚀 The models, and how fast they run
@@ -1088,7 +1088,7 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 
 <a id="idx-chunk"></a>
 ### 🧩 Chunking — cut along the syntax tree
-- **[cAST](https://arxiv.org/abs/2506.15655)** structure-aware chunking over real **tree-sitter** ASTs: a recursive *split-then-merge* greedily packs sibling AST nodes up to the size cap and recurses *into* nodes too big to fit. So a chunk is a **function, a class, or a contiguous run of declarations** whenever it fits the cap. A function too big for the cap is split between statements, never mid-statement or mid-literal.
+- **[cAST](https://arxiv.org/abs/2506.15655)** structure-aware chunking over real **tree-sitter** ASTs: a recursive *split-then-merge* greedily packs sibling AST nodes up to the size cap and recurses *into* nodes too big to fit. So a chunk is a **function, a class, or a contiguous run of declarations** whenever it fits the embedder's context (a cap of about 2,000 characters). A function too big for it is split between statements, never mid-statement or mid-literal.
 - **18 languages** get full tree-sitter grammars — `JS · TS · TSX · Python · Go · Rust · Java · C · C++ · Ruby · PHP · Kotlin · Swift · C# · Solidity · OCaml · ReScript · TLA+` — and regex patterns plus a lossless fallback chunker bring the total to **96 languages and file formats** across **206 file extensions**.
 
 <a id="idx-enrich"></a>
