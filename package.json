@@ -10,7 +10,7 @@
     "./mcp": "./mcp/server.js"
   },
   "license": "Apache-2.0",
-  "author": "Marko Sladojevic <marko@panonit.com> (https://panonit.com)",
+  "author": "Marko Sladojević <marko@panonit.com> (https://panonit.com)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mrsladoje/sweet-search.git"

@@ -1,8 +1,8 @@
 # NOTICE — harness prompts shipped by `sweet-search init`
 
-`sweet-search init --codex` and `sweet-search init --opencode` replace the harness's own system
-prompt with the version measured in the sweet-search task-completion benchmark. Two files in this
-directory are **modified copies of third-party text**; the rest is our own code and text.
+`sweet-search init` replaces the system prompt of Claude Code, Codex (`--codex`) and opencode
+(`--opencode`) with the version measured in the sweet-search task-completion benchmark. Two files in
+this directory are **modified copies of third-party text**; the rest is our own code and text.
 `index.js` builds the shipped prompts from them, and the benchmark imports `index.js`, so the
 benchmarked prompt and the shipped prompt are the same bytes.
 
@@ -31,6 +31,16 @@ benchmarked prompt and the shipped prompt are the same bytes.
   files, prefer using Glob and Grep tools (they are powered by `rg`)" and the words " - especially
   file reads", and adds our own lines after the parallel-calls bullet. `init --opencode` writes the
   result to `.opencode/sweet-search-prompt.txt`.
+
+## Claude Code (`scripts/install-claude-lean-harness.js`)
+
+- **Source:** none copied. Claude Code is proprietary, so the main-agent, general-purpose and Plan
+  prompts that `init` writes to `.claude/agents/` are **our own words**: a paraphrase of the
+  user-relevant guidance in Claude Code's stock prompt, without its search steer. No text from
+  Claude Code ships in this package. Keep it that way: never paste captured Claude Code text here.
+- **Mechanism:** documented Claude Code settings (`agent`, `permissions.deny`, output styles) and
+  three undocumented environment switches (`CLAUDE_CODE_THRIFTY_SONIC`,
+  `CLAUDE_CODE_TOTAL_TOKENS_REMINDER`, `CLAUDE_CODE_PARCHMENT_FERN`).
 
 ## `opencode-trim-plugin.mjs`
 
