@@ -481,37 +481,6 @@ We're SOTA in June 2026 on 3/4 attempted benchmarks at HARDER settings (running 
 | 💾 Indexing memory | peak JS heap **785 MB → 213 MB** | [`docs/DISK_FLUSHING_STRATEGY.md`](docs/DISK_FLUSHING_STRATEGY.md) |
 | 🍏 CoreML cascade (M3 Max) | **18% faster** full indexing vs the Metal baseline | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
 
-## 🧭 Where sweet-search Fits
-
-Code search is a crowded space. Here's an honest read on where sweet-search wins and where it gives ground, against the trending leaders and our closest local peers.
-
-| Capability | sweet-search | Graphify | CodeGraph | GitNexus | codebase-memory | claude-context | Semble |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| 100% local · zero API keys by default | ✅ | ✅² | ✅ | ✅ | ✅ | ⚠️¹ | ✅ |
-| No external service to run (vector DB · Ollama · Docker) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ Milvus | ✅ |
-| Embedding (semantic) search on by default | ✅ | ❌ | ❌ | ⚠️³ | ✅ | ✅ | ✅⁴ |
-| ColBERT late-interaction rerank⁵ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Faster-than-ripgrep exact grep | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Call-graph trace (callers · callees · impact) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| Published NL→code retrieval benchmarks | ✅ | ⚠️⁷ | ⚠️⁶ | ❌ | ⚠️⁶ | ⚠️⁶ | ✅⁸ |
-| Permissive license (free commercial use) | ✅ Apache-2.0 | ✅ Apache-2.0 | ✅ MIT | ❌⁹ | ✅ MIT | ✅ MIT | ✅ MIT |
-| *…and where sweet-search gives ground* | | | | | | | |
-| Native Windows | ❌¹⁰ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Deep-AST language coverage | ⚠️ 18 (+78 via regex & fallback) | ✅ 37 | ✅ 34 | ⚠️ 16 | ✅ 162 | ⚠️ 13 | ✅ 77¹¹ |
-| Org-wide, multi-repo scale | ❌ | ✅ | ⚠️¹² | ✅ | ✅ | ⚠️ | ✅ |
-
-<sub>✅ yes · ⚠️ partial / with caveats · ❌ no. Verified September 2026; capabilities drift.</sub>
-
-<details><summary>Footnotes</summary>
-
-<br/>
-
-<sub>¹ claude-context defaults to OpenAI/Voyage embeddings + Zilliz Cloud. Its local path (Milvus Lite + Ollama) needs no API key, but still runs Milvus + Ollama.<br/>² Graphify parses code locally with no key. Docs, PDFs and images go through your agent's model or an API key.<br/>³ GitNexus local embeddings are opt-in (`analyze --embeddings`).<br/>⁴ Semble uses static (Model2Vec) embeddings, not a transformer.<br/>⁵ Outside this table, [ColGREP](https://github.com/lightonai/next-plaid) (LightOn) also runs ColBERT code search locally, as a grep-style search CLI.<br/>⁶ Reports token / cost / tool-call savings, not NL→code retrieval quality.<br/>⁷ Graphify's code result is answer coverage on 6 questions about one repo. Its retrieval benchmarks are on chat memory (LOCOMO, LongMemEval), not code.<br/>⁸ Semble's own set: ~1,250 queries over 63 repos, with queries and labels written by Claude Sonnet 4.6.<br/>⁹ PolyForm Noncommercial.<br/>¹⁰ Runs on Windows via WSL2.<br/>¹¹ Tree-sitter grammars, config and markup formats included.<br/>¹² Indexes each project separately; one session can query several indexed projects, with no cross-repo links.</sub>
-
-</details>
-
-<sub>Competitors: <a href="https://github.com/Graphify-Labs/graphify">Graphify</a> · <a href="https://github.com/colbymchenry/codegraph">CodeGraph</a> · <a href="https://github.com/abhigyanpatwari/GitNexus">GitNexus</a> · <a href="https://github.com/DeusData/codebase-memory-mcp">codebase-memory</a> · <a href="https://github.com/zilliztech/claude-context">claude-context</a> · <a href="https://github.com/MinishLab/semble">Semble</a> · <a href="https://github.com/giancarloerra/socraticode">SocratiCode</a> · <a href="https://github.com/lightonai/next-plaid">ColGREP</a> · <a href="https://github.com/oraios/serena">Serena</a> · <a href="https://sourcegraph.com">Sourcegraph</a> · <a href="https://github.com/continuedev/continue">Continue</a> · <a href="https://github.com/yoanbernabeu/grepai">grepai</a> · <a href="https://github.com/cocoindex-io/cocoindex-code">cocoindex-code</a></sub>
-
 ---
 
 ## 🧰 The Six Tools
@@ -1218,6 +1187,37 @@ upgrade that changes the models or chunking, we tell you to run `sweet-search in
 - **Native**: every performance-critical path runs in our native engine, compiled ahead of time for your exact OS and CPU. Speedups reach *100× and more* over plain JavaScript.
 - **WASM/JS fallback**: general-purpose, so it runs on more machines, but slower.
 - **Zero setup**: `npm install` picks the right package for your machine. Needs Node ≥ 22.
+
+## 🧭 Where sweet-search Fits
+
+Code search is a crowded space. Here's an honest read on where sweet-search wins and where it gives ground, against the trending leaders and our closest local peers.
+
+<details><summary><b>Show the comparison table</b></summary>
+
+<br/>
+
+| Capability | sweet-search | Graphify | CodeGraph | GitNexus | codebase-memory | claude-context | Semble |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| 100% local · zero API keys by default | ✅ | ✅² | ✅ | ✅ | ✅ | ⚠️¹ | ✅ |
+| No external service to run (vector DB · Ollama · Docker) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ Milvus | ✅ |
+| Embedding (semantic) search on by default | ✅ | ❌ | ❌ | ⚠️³ | ✅ | ✅ | ✅⁴ |
+| ColBERT late-interaction rerank⁵ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Faster-than-ripgrep exact grep | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Call-graph trace (callers · callees · impact) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Published NL→code retrieval benchmarks | ✅ | ⚠️⁷ | ⚠️⁶ | ❌ | ⚠️⁶ | ⚠️⁶ | ✅⁸ |
+| Permissive license (free commercial use) | ✅ Apache-2.0 | ✅ Apache-2.0 | ✅ MIT | ❌⁹ | ✅ MIT | ✅ MIT | ✅ MIT |
+| *…and where sweet-search gives ground* | | | | | | | |
+| Native Windows | ❌¹⁰ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Deep-AST language coverage | ⚠️ 18 (+78 via regex & fallback) | ✅ 37 | ✅ 34 | ⚠️ 16 | ✅ 162 | ⚠️ 13 | ✅ 77¹¹ |
+| Org-wide, multi-repo scale | ❌ | ✅ | ⚠️¹² | ✅ | ✅ | ⚠️ | ✅ |
+
+<sub>✅ yes · ⚠️ partial / with caveats · ❌ no. Verified September 2026; capabilities drift.</sub>
+
+<sub>¹ claude-context defaults to OpenAI/Voyage embeddings + Zilliz Cloud. Its local path (Milvus Lite + Ollama) needs no API key, but still runs Milvus + Ollama.<br/>² Graphify parses code locally with no key. Docs, PDFs and images go through your agent's model or an API key.<br/>³ GitNexus local embeddings are opt-in (`analyze --embeddings`).<br/>⁴ Semble uses static (Model2Vec) embeddings, not a transformer.<br/>⁵ Outside this table, [ColGREP](https://github.com/lightonai/next-plaid) (LightOn) also runs ColBERT code search locally, as a grep-style search CLI.<br/>⁶ Reports token / cost / tool-call savings, not NL→code retrieval quality.<br/>⁷ Graphify's code result is answer coverage on 6 questions about one repo. Its retrieval benchmarks are on chat memory (LOCOMO, LongMemEval), not code.<br/>⁸ Semble's own set: ~1,250 queries over 63 repos, with queries and labels written by Claude Sonnet 4.6.<br/>⁹ PolyForm Noncommercial.<br/>¹⁰ Runs on Windows via WSL2.<br/>¹¹ Tree-sitter grammars, config and markup formats included.<br/>¹² Indexes each project separately; one session can query several indexed projects, with no cross-repo links.</sub>
+
+</details>
+
+<sub>Competitors: <a href="https://github.com/Graphify-Labs/graphify">Graphify</a> · <a href="https://github.com/colbymchenry/codegraph">CodeGraph</a> · <a href="https://github.com/abhigyanpatwari/GitNexus">GitNexus</a> · <a href="https://github.com/DeusData/codebase-memory-mcp">codebase-memory</a> · <a href="https://github.com/zilliztech/claude-context">claude-context</a> · <a href="https://github.com/MinishLab/semble">Semble</a> · <a href="https://github.com/giancarloerra/socraticode">SocratiCode</a> · <a href="https://github.com/lightonai/next-plaid">ColGREP</a> · <a href="https://github.com/oraios/serena">Serena</a> · <a href="https://sourcegraph.com">Sourcegraph</a> · <a href="https://github.com/continuedev/continue">Continue</a> · <a href="https://github.com/yoanbernabeu/grepai">grepai</a> · <a href="https://github.com/cocoindex-io/cocoindex-code">cocoindex-code</a></sub>
 
 ## 🙏 Prior Art & Acknowledgements
 
