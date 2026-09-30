@@ -104,6 +104,11 @@ export const MODEL_PRICES = {
   'openai/gpt-5.6-terra': { in: 2.00, cache: 0.20, out: 12.0 },
   // Re-fetched 2026-09-03: sol came DOWN from 2.50/0.25/15.0. No bench run has used it.
   'openai/gpt-5.6-sol': { in: 2.00, cache: 0.20, out: 10.0 },
+  // r282 retrieval rerun (2026-09-30), list prices from the models.dev catalog opencode caches
+  // (~/.cache/opencode/models.json, fetched 2026-09-30). Sol: the <=272k-context tier.
+  'claude-sonnet-5-5': { in: 2.00, cache: 0.20, out: 10.0 },
+  'openai/gpt-6.1-sol': { in: 2.00, cache: 0.10, out: 10.0 },
+  'deepseek/deepseek-flash': { in: 0.15, cache: 0.003, out: 0.60 },   // DeepSeek API direct = DeepSeek-V4.1-Flash
 };
 
 // Fail loudly rather than silently billing an unregistered backbone at gpt-5.5's
