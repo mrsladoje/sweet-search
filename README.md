@@ -1065,15 +1065,15 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 
 <img src="assets/index-build.svg" alt="How the index is built. Source files are chunked and enriched, embedded by two models, and stored compressed. One pass feeds six indexes: 1 word index, 2 n-gram index, 3 binary HNSW, 4 bi-encoder vectors, 5 late-interaction vectors, 6 code graph. The embedding runs on Apple Metal, the Apple Neural Engine, NVIDIA CUDA or any CPU, picked automatically at start-up. A maintainer daemon updates all six indexes after each edit with an atomic swap." width="100%" />
 
-### 🛠️ How it works
+### 🛠️ How we prepare for embedding
 
 | 🧩 **[cAST](https://arxiv.org/abs/2506.15655) chunking** | 🏷️ **Chunk enrichment, tuned per language family** |
 |:--|:--|
 | Whole functions and classes when they fit the embedder's context, split when they don't | Prepends file path · scope chain · symbol · merged siblings · imports used, built from the AST and the code graph |
 | 96 languages · 206 extensions · 18 with full tree-sitter grammars | Each language family's policy was picked by *ablation* on GenCodeSearchNet |
 
-### 🚀 The models, and how fast they run
-- 🤖 **[Two open, code-specialized models](#idx-embed)**: [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed) (137M, dense) for recall and [LateOn-Code](https://huggingface.co/lightonai/LateOn-Code) (149M, late interaction) for the rerank.
+### 🚀 The embedding models, and how we made it blazing fast
+- 🤖 **Two open, code-specialized models**: [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed) (137M, dense) for recall and [LateOn-Code](https://huggingface.co/lightonai/LateOn-Code) (149M, late interaction) for the rerank.
 - ⚡ **[GPU-accelerated](#idx-hardware)**: candle on Metal and CUDA, plus a Neural Engine cascade on M3+ (~18% faster full index). [Hand-written fused attention kernels](#idx-kernels) run inside both models.
 - 🧠 **[Cache-sized CPU batches](#idx-cache)**: each batch fits one layer's weights and activations in the CPU cache, so no GPU is needed for a fast build.
 - 🗜️ **[Two quantizations](#idx-quantize)**: INT8 weights make the CPU build ~2× faster. INT4 vectors shrink the late-interaction index from 1.34 GiB to ~396 MiB, with no measurable retrieval loss.
