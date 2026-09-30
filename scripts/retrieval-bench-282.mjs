@@ -103,8 +103,16 @@ const RULES = fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/p7-
 // ss-trace are removed — from the rules text (variants/rules-prune3.md) AND from PATH (a bin dir with
 // only ss-search / ss-grep / ss-read and their shared helpers), so the agent can neither read about
 // nor call them. Codex / opencode only (Claude Code reads the rules via writeClaudeRules).
-const PRUNE3 = process.env.SS_VARIANT_PRUNE3 === '1';
-const RULES_EFFECTIVE = PRUNE3 ? fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/final-tuning/variants/rules-prune3.md'), 'utf8') : RULES;
+// --interleave --armB-env "K=V,K2=V2" (final-tuning 2026-10-01): a second sweet arm `sweetB` with an env
+// overlay, run INTERLEAVED with `sweet` (A, B, A, B … per probe) in one queue, so both conditions see
+// the same provider/time drift. Needed because two identical Codex baselines run 25 min apart
+// differed by −24.5% in cost (significant). Not wired for Claude Code (per-repo installed files).
+const ARMB_ENV = Object.fromEntries(String(flag('--armB-env', '')).split(',').map(x => x.trim()).filter(Boolean).map(x => [x.slice(0, x.indexOf('=')), x.slice(x.indexOf('=') + 1)]));
+const envOf = (arm) => (arm === 'sweetB' ? { ...process.env, ...ARMB_ENV } : process.env);
+const prune3 = (arm) => envOf(arm).SS_VARIANT_PRUNE3 === '1';
+const PRUNE3 = prune3('sweet') || prune3('sweetB');
+const RULES_PRUNE3 = () => fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/final-tuning/variants/rules-prune3.md'), 'utf8');
+const rulesFor = (arm) => (prune3(arm) ? RULES_PRUNE3() : RULES);
 function prunedBin() {
   const d = path.join(EVAL, 'final-tuning-bin-prune3');
   fs.mkdirSync(d, { recursive: true });
@@ -181,9 +189,9 @@ const promptFor = (probe) => `${FRAME}\n\nQuestion: ${probe.query}`;
 // ─── helpers ───────────────────────────────────────────────────────────────────────────────────
 const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trim();
 const harnessVersion = () => { try { return sh(path.join(BIN[CELL.harness], { cc: 'claude', codex: 'codex', opencode: 'opencode' }[CELL.harness]), ['--version']).split('\n')[0]; } catch { return null; } };
-const baseEnv = (sweet, cwd) => ({
-  ...process.env,
-  PATH: [BIN[CELL.harness], sweet ? (PRUNE3 ? prunedBin() : SS_BIN) : null, process.env.PATH].filter(Boolean).join(':'),
+const baseEnv = (sweet, cwd, arm = sweet ? 'sweet' : 'native') => ({
+  ...envOf(arm),
+  PATH: [BIN[CELL.harness], sweet ? (prune3(arm) ? prunedBin() : SS_BIN) : null, process.env.PATH].filter(Boolean).join(':'),
   SWEET_SEARCH_PROJECT_ROOT: cwd,
   SWEET_SEARCH_OFFLINE: '1',
 });
@@ -339,13 +347,13 @@ function codexSyncAuthBack(home) {
     }
   } catch { /* nothing to sync */ }
 }
-async function runCodex(probe, sweet) {
+async function runCodex(probe, sweet, arm) {
   const cwd = probe._cwd;
   const { home, phome } = codexHome();
   const stateDir = fs.mkdtempSync(path.join(STATE, 'codex-state-'));
   const trim = codexHarnessTrim({ sweet, model: `openai/${CELL.model}` });
-  const trimArgs = sweet ? [...codexHarnessTrimArgs(trim, stateDir, { model: `openai/${CELL.model}` }), ...codexRulesConfigArgs(RULES_EFFECTIVE)] : [];
-  const env = { ...baseEnv(sweet, cwd), CODEX_HOME: home, HOME: phome, SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'none' };
+  const trimArgs = sweet ? [...codexHarnessTrimArgs(trim, stateDir, { model: `openai/${CELL.model}` }), ...codexRulesConfigArgs(rulesFor(arm))] : [];
+  const env = { ...baseEnv(sweet, cwd, arm), CODEX_HOME: home, HOME: phome, SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'none' };
   delete env.OPENAI_API_KEY;
   const args = ['exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check', '--json',
     '-c', `model_reasoning_effort="${CELL.effort}"`, ...trimArgs, '-m', CELL.model, '-C', cwd, '-'];
@@ -394,7 +402,7 @@ function ocSyncAuthBack(ocData, provider) {
   fs.writeFileSync(tmp, JSON.stringify({ ...master, [provider]: mine }, null, 2), { mode: 0o600 });
   fs.renameSync(tmp, MASTER_OC_AUTH);
 }
-async function runOpencode(probe, sweet) {
+async function runOpencode(probe, sweet, arm) {
   const cwd = probe._cwd;
   const stateDir = fs.mkdtempSync(path.join(STATE, 'oc-state-'));
   const ocData = path.join(STATE, `oc-data-${sweet ? 'sweet' : 'native'}`); fs.mkdirSync(ocData, { recursive: true });
@@ -405,8 +413,8 @@ async function runOpencode(probe, sweet) {
   // the system prompt, so the random dir broke the provider's prefix cache on every sweet rollout
   // (r282 DeepSeek sweet req-0 cache hit 24% vs native 86%). The product (`init`) uses the stable
   // project path .opencode/sweet-search.md, so the stable path is the production-faithful setting.
-  const rulesDir = STABLE_RULES_PATH ? path.join(STATE, 'oc-rules') : stateDir;
-  trim = opencodeRulesInConfig(trim, { rules: sweet ? sweetRulesBlock({ mppText: RULES_EFFECTIVE }) : null, stateDir: rulesDir });
+  const rulesDir = STABLE_RULES_PATH ? path.join(STATE, arm === 'sweetB' ? 'oc-rules-B' : 'oc-rules') : stateDir;
+  trim = opencodeRulesInConfig(trim, { rules: sweet ? sweetRulesBlock({ mppText: rulesFor(arm) }) : null, stateDir: rulesDir });
   if (STABLE_RULES_PATH && sweet) {
     fs.mkdirSync(rulesDir, { recursive: true });
     const f = path.join(rulesDir, OPENCODE_RULES_FILE), txt = trim.files[OPENCODE_RULES_FILE];
@@ -417,7 +425,7 @@ async function runOpencode(probe, sweet) {
   cfg.provider = { ...cfg.provider, deepseek: { options: { apiKey: '{env:DEEPSEEK_API_KEY}' } } };
   const cfgPath = path.join(stateDir, 'opencode.json'); fs.writeFileSync(cfgPath, JSON.stringify(cfg));
   const env = {
-    ...baseEnv(sweet, cwd),
+    ...baseEnv(sweet, cwd, arm),
     ...opencodeUnjailedEnv({ root: path.join(STATE, `oc-home-${sweet ? 'sweet' : 'native'}`), ocData }),
     OPENCODE_CONFIG: cfgPath, SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'colon',
   };
@@ -445,13 +453,13 @@ async function runOpencode(probe, sweet) {
 
 // ─── one rollout ───────────────────────────────────────────────────────────────────────────────
 async function runOne(probe, arm) {
-  const sweet = arm === 'sweet';
-  const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(Object.keys(process.env).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
+  const sweet = arm === 'sweet' || arm === 'sweetB';
+  const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
   let run;
   try {
     run = CELL.harness === 'cc' ? await runClaude(probe, sweet, arm)
-      : CELL.harness === 'codex' ? await runCodex(probe, sweet)
-      : await runOpencode(probe, sweet);
+      : CELL.harness === 'codex' ? await runCodex(probe, sweet, arm)
+      : await runOpencode(probe, sweet, arm);
   } catch (e) {
     if (e.fatal) throw e;
     return { ...base, error: String(e.message).slice(0, 400), exitCode: -1 };
@@ -524,22 +532,28 @@ const cleanup = [];
 const onSignal = () => { for (const f of cleanup.splice(0)) f(); process.exit(130); };
 process.on('SIGINT', onSignal); process.on('SIGTERM', onSignal);
 try {
-  for (const arm of ARMS) {
-    const tasks = PROBES.filter(p => !done.has(`${arm}|${p.id}`));
-    if (!tasks.length) { console.error(`[${arm}] all done`); continue; }
-    const cwds = [...new Set(tasks.map(p => p._cwd))];
-    if (arm === 'sweet') { console.error(`[sweet] warming ${cwds.length} ss-* servers…`); for (const c of cwds) warmup(c); }
+  const INTERLEAVE = argv.includes('--interleave');
+  if (INTERLEAVE && CELL.harness === 'cc') throw new Error('--interleave is not wired for Claude Code');
+  // phases: one per arm (default), or ONE mixed phase with sweet/sweetB alternating per probe.
+  const phases = INTERLEAVE ? [['sweet', 'sweetB']] : ARMS.map(a => [a]);
+  for (const arms of phases) {
+    const label = arms.join('+');
+    const tasks = [];
+    PROBES.forEach((p, i) => { const order = (INTERLEAVE && i % 2) ? [...arms].reverse() : arms; for (const arm of order) if (!done.has(`${arm}|${p.id}`)) tasks.push({ p, arm }); });
+    if (!tasks.length) { console.error(`[${label}] all done`); continue; }
+    const cwds = [...new Set(tasks.map(t => t.p._cwd))];
+    if (arms.some(a => a.startsWith('sweet'))) { console.error(`[${label}] warming ${cwds.length} ss-* servers…`); for (const c of cwds) warmup(c); }
     let installed = [];
     if (CELL.harness === 'cc' && PRUNE3) throw new Error('SS_VARIANT_PRUNE3 is not wired for Claude Code');
-  if (CELL.harness === 'cc' && arm === 'sweet') {
+    if (CELL.harness === 'cc' && arms.includes('sweet')) {
       installed = installClaudeProduct(cwds, claudeHome('sweet'));
       cleanup.push(() => uninstallClaudeProduct(installed));
     }
-    console.error(`\n[${arm}] ${tasks.length} rollouts`);
+    console.error(`\n[${label}] ${tasks.length} rollouts`);
     let idx = 0, fatal = null;
     const worker = async () => {
       while (idx < tasks.length && !fatal) {
-        const p = tasks[idx++];
+        const { p, arm } = tasks[idx++];
         let row;
         try { row = await runOne(p, arm); } catch (e) { fatal = e; break; }
         fs.appendFileSync(RUNS, JSON.stringify(row) + '\n');

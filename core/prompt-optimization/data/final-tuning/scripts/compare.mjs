@@ -15,12 +15,15 @@ const R282 = '/Users/admin/Projects/sweet-search-private/core/prompt-optimizatio
 const [cell, baseTag, varTag] = process.argv.slice(2);
 const flag = n => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : null; };
 const load = f => fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(JSON.parse).filter(r => !r.error && r.exitCode === 0) : [];
-const run = tag => {
+const run = (tag, arm = null) => {
   const dir = path.join(RES, `r282-${cell}-${tag}`);
-  const m = new Map(load(path.join(dir, 'runs.jsonl')).map(r => [r.id, r]));
+  const rows = load(path.join(dir, 'runs.jsonl')).filter(r => (arm ? r.arm === arm : r.arm !== 'sweetB'));
+  const m = new Map(rows.map(r => [r.id, r]));
   // accOR: accuracy re-judged with the OpenRouter DeepSeek route (rescore.mjs); only complete panels.
   const f = path.join(dir, 'rescore-or.jsonl');
-  if (fs.existsSync(f)) for (const x of fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(JSON.parse)) if (m.has(x.id) && (x.judgesOk || []).length === 3) m.get(x.id).accOR = x.score;
+  if (fs.existsSync(f)) for (const x of fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(JSON.parse)) {
+    const r = m.get(x.id); if (r && (x.arm || 'sweet') === r.arm && (x.judgesOk || []).length === 3) r.accOR = x.score;
+  }
   return m;
 };
 function mulberry32(seed) { let a = seed >>> 0; return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -55,7 +58,9 @@ function compare(label, A, B) {
   }
   return out;
 }
-const base = run(baseTag), variant = run(varTag);
+// --within: baseTag is ONE interleaved run; compare its arm `sweet` (A) with arm `sweetB` (B).
+const WITHIN = process.argv.includes('--within');
+const base = WITHIN ? run(baseTag, 'sweet') : run(baseTag), variant = WITHIN ? run(baseTag, 'sweetB') : run(varTag);
 console.log(`# ${cell}: ${varTag} vs ${baseTag}`);
 const res = compare(`B=${varTag} vs A=${baseTag}`, base, variant);
 const b2 = flag('--base2');

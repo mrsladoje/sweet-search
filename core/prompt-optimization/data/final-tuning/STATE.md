@@ -9,9 +9,9 @@ section.
 - **Judge route changed 00:52:** direct DeepSeek balance hit $0.13 (4 DeepSeek runs + judges ≈ $2; my per-run estimate was 4× too low). All new jobs use `SS_JUDGE_DEEPSEEK_VIA_OPENROUTER=1` (owner-authorized). Every finished run is re-judged for accuracy on the same route (`scripts/rescore.mjs` → `rescore-or.jsonl`; `compare.mjs` shows it as `accOR`). **Decisions use `accOR` from now on.**
 - **DeepSeek agent cell paused** (no direct balance). Restart only as a new cell on OpenRouter with fresh baselines if needed.
 - Queues (`~/.ss-eval/final-tuning-logs/queue-*.log`):
-  - codex: `cx-base-b` (retest, running) → codex4: `cx-dedupe-a` (V3) → `cx-base-v` → `cx-prune3-v` (V2 validation)
-  - cc-opus: `cc-base-v` (running) → cc-opus-val2: `cc-rp-v` (V1 validation)
-  - background: rescore batch 1 (6 finished runs); r3 verification (`r3/verify-drafts.mjs`, log `r3-verify.log`)
+  - codex5 (INTERLEAVED): `cx-il-prune3` (V2 vs base, train) → `cx-il-dedupe` (V3 vs base, train). Compare: `compare.mjs codex-sol61-high <tag> x --within`
+  - cc-opus: `cc-rp-v` (V1 validation, running) → cc-sonnet (A-B-A): `sb-base-a` → `sb-rp-a` (V1) → `sb-base-b`
+  - background: rescore batch 1; r3 verification (`r3-verify.log`)
 - r3: 6 × 36 = 216 drafts done (`r3/drafts/`). Verification by two non-Claude models (gemini-3.8-flash direct, glm-5.3 OpenRouter) running; ocelot 20/30 positives kept. Next: Opus audit agent → split → manifest → index window (no bench) → pilot.
 - Killed: `ds-dedupe-a` (12 rows, balance), deepseek2/deepseek3 queues.
 
@@ -48,6 +48,9 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 | V3 | `SS_VARIANT_SEARCH_DEDUPE=1` | repeated ss-search entries/lines (waste #5) | Codex queued; DS killed (balance) | | | | |
 
 ## Decisions log
+
+- 01:10 **Codex sequential A/B is invalid.** Test-retest `cx-base-b` vs `cx-base-a` (identical code, 25 min apart): cost −24.5% [−35.9%, −13.6%], naive −14.0% (both significant). V2 vs base A −13.2%, vs base B +15.0% (sig) → the Codex V2 train result is time drift, not the variant. Killed the sequential Codex jobs (`cx-dedupe-a`, codex4 validations). **New runner mode `--interleave --armB-env K=V`**: arms `sweet` and `sweetB` alternate per probe in one queue (order flipped on odd probes), so both see the same drift. Codex screens rerun interleaved. Claude Code cannot interleave (per-repo installed files) → A-B-A design for Sonnet; Opus is stable (fresh baseline reproduced r282 within 0.2 pt of cost %).
+- 01:10 DeepSeek V2 with one grader (accOR): vs base A cost −9.9% (CI < 0), accOR +0.2 pt [−1.3, +1.9]. DeepSeek sequential noise (+8.5%, ns) is smaller than Codex's, but the DeepSeek cell is paused (balance).
 
 - 00:55 **V2 (PRUNE3) → validation despite a borderline train result** — Codex: cost −13.2% [−27.1%, +0.3%], acc −0.6 pt [−2.6, +1.3]; DeepSeek vs base A: cost −9.9% (CI < 0), calls −11.5% (CI < 0), acc +0.7 [−1.0, +2.7]; vs base B: cost −17.0% (CI < 0), acc −1.1 [−2.4, +0.1]. The strict rule (acc lower CI > −2 pt) fails by 0.4–0.6 pt on 2 of 3 comparisons, but identical baselines differ by 1.9 pt (sig) → the accuracy CI at n=78 is inside test-retest noise. Validation decides (aggregate only); final call needs both cells.
 - 00:55 **V1 passes train** (Opus, n=78): cost −15.8% [−18.5%, −13.1%], cache write −1,867 tokens/rollout (−22%), naive −4.5%, acc +0.2 pt [−1.7, +2.0], calls −4% (ns).
