@@ -89,7 +89,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 [🗂️ The Index](#the-index)<br>
 <sub>candle · fused kernels · cAST chunking</sub>
 
-[🔄 An Index That Never Goes Stale](#-an-index-that-never-goes-stale)<br>
+[🔄 Index Never Goes Stale](#-index-never-goes-stale)<br>
 <sub>reconcile daemon tracks your working tree</sub>
 
 </td>
@@ -1139,7 +1139,7 @@ Source: [`crates/sweet-search-native/src/inference/`](crates/sweet-search-native
 
 </details>
 
-## 🔄 An Index That Never Goes Stale
+## 🔄 Index Never Goes Stale
 
 Most code indexes go stale the moment you start typing. sweet-search runs a background daemon
 that keeps the whole index in sync with your **working tree**, uncommitted edits included.
@@ -1149,23 +1149,19 @@ You never run a command.
 |:--|:--|:--|
 | Edits are searchable within ~20–60 s, tuned to your machine | One edited function means one chunk to the encoder, not the whole file | All five index tiers switch to the new version in one atomic step |
 
-#### ⚙️ How it works
-> - **Only the function you edited is re-embedded.** The rest of the file keeps its vectors, even when your edit shifts every line below it.
-> - **Saves with no real change cost almost nothing.** A content hash spots them and skips the models.
-> - **Uncommitted work counts.** The daemon reads files on disk. Deleted and newly ignored files drop out of results.
-> - **Light on your machine.** Updates run on the CPU in small batches of at most 50 files, and a background worker tidies the index later. The GPU stays free for full builds.
-
 <details>
 <summary><b>Under the hood: safety rails and memory controls</b></summary>
 
 <br/>
 
+- **Stable chunk identity:** each chunk's ID comes from its symbol and signature, so an edit re-embeds only the function you touched. The rest of the file keeps its vectors, even when your edit shifts every line below it.
+- **No-op saves are nearly free:** an xxHash3 content hash spots saves with no real change and skips the models.
+- **Light on your machine:** updates run on the CPU, at most 50 files and 2 s of CPU per update, so the GPU stays free for full builds. The interval moves between 15 s and 300 s with load average, churn, and backlog.
 - **Baseline gate:** the daemon never plays first-index-builder. It verifies a full-indexer fingerprint (epoch manifest + merkle config fingerprint + the vectors DB it names) before touching anything, and reports `waiting_for_initial_index` otherwise — no corrupted partial baselines.
 - **One admission policy:** the full indexer and the reconciler share a single `createAdmissionPolicy` module (include globs → deny list → `.sweet-search-ignore` → 1 MB size cap → batched `git check-ignore`), so the two paths cannot drift.
 - **Orphan sweep:** files that are deleted, newly excluded, or newly oversized get tombstoned across every tier; the index converges to exactly what a fresh full rebuild would produce.
 - **Self-maintenance:** per-tier health watermarks (tombstone fraction, stale-doc ratio, delta ratio) schedule low-priority background compaction in a separate worker — the index stays fast over months without a manual rebuild.
 - **Worktree-safe:** a worktree stamp plus a single-writer lockfile prevent two daemons from silently interleaving index histories across git worktrees.
-- **Auto-tuned interval:** the update interval moves between 15 s and 300 s with load average, churn, and backlog.
 - `sweet-search reconcile status` / `reconcile inspect <path>` explain exactly what the daemon thinks and why. Opt out any time with `SWEET_SEARCH_RECONCILE_V2=0`.
 
 **Memory controls.** The resident daemons show up in `ps` / Activity Monitor as
