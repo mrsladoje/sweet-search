@@ -409,7 +409,7 @@ without — and why we quote a **range, not one number**.
 <a id="bench-paper-type"></a>
 ### 📄 3. Academic retrieval benchmarks
 
-One question: **how well does `ss-search` rank code on the standard academic suites?** The same binary you install, end to end.
+One question: ***how well does `ss-search` rank code on the standard academic suites?***
 
 - 📂 **Full corpus:** each query ranks against the whole benchmark, not 99 sampled distractors.
 - 🧊 **Zero-shot:** no fine-tuning on any of these tasks.
@@ -425,9 +425,7 @@ One question: **how well does `ss-search` rank code on the standard academic sui
 
 <details>
 <summary><b>Per-benchmark notes & methodology</b></summary>
-
-<br/>
-
+  
 #### 🌐 GenCodeSearchNet → `86.1` held-out · 🔧 our tuning benchmark
 - We tuned ranking on a dev split (600 queries per language, stratified, seed=42). The table shows only the other 2,400 held-out queries, inspected aggregate-only. Dev scores 86.9; both splits together score 86.6.
 - The paper's baselines (≤ 0.42 fine-tuned, 0.79–0.94 zero-shot Ada-2) rank against 99 distractors. Ours ranks against all 6,000 documents, so the numbers aren't directly comparable.
