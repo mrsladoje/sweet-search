@@ -8,8 +8,8 @@ section.
 - Phase: **3 (screens) + 4 (task guard ready) + 5 (r3 frozen)**.
 - Running: `cx-il-prune3` (V2 interleaved, Codex train, 156 rollouts, ~1 h left); cc-sonnet2 A-B-A (`sb-rp-a` running → `sb-base-b`).
 - Next, in order (each needs a quiet machine — no overlap):
-  1. after Codex + Sonnet finish (~02:45): **index r3** (`scripts/index-r3.sh`, ~95 min, waits by itself for no retrieval-bench process);
-  2. **task guard V1** (Opus, `TASK-GUARD.md`, `GUARD_STAMP=$(date +%Y%m%d-%H%M) bash core/prompt-optimization/data/final-tuning/scripts/task-guard.sh both`, ~1 h);
+  1. **index r3** — LAUNCHED 02:10, waits by itself until no retrieval-bench/queue process, stops OUR daemons (cwd in the worktree or ~/.ss-eval/r282-repos), then indexes serially (log `index-r3.log`, per repo `index-r3-<repo>.log`);
+  2. **task guard V1** — CHAINED: starts automatically 60 s after `index-r3.log` says ALL DONE (log `task-guard.log`); dry run OK (8 legs, interleaved) (Opus, `TASK-GUARD.md`, `GUARD_STAMP=$(date +%Y%m%d-%H%M) bash core/prompt-optimization/data/final-tuning/scripts/task-guard.sh both`, ~1 h);
   3. **r3 dev pilot / 2.8.2 baseline**: native vs sweet on r3 dev (Codex, Opus) → headroom check; then champion vs 2.8.2 on dev; then held-out once (Phase 7).
 - Judge route: OpenRouter DeepSeek (`SS_JUDGE_DEEPSEEK_VIA_OPENROUTER=1`), USD panel off (`SS_BENCH_NO_USD=1`), decisions on `accOR`.
 - r3: frozen `r3/r3-probes.json` sha256 ba49df55…, 163 = held-out 103 + dev 60 (train 36 / val 24); `r3/r3-PREREG.md`.
