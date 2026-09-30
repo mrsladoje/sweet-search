@@ -337,11 +337,27 @@
     "supported",
     "unsupported"
    ],
-   "why": "The administration HTTP interface route for updating file configuration is exclusively handled by FileConfigurationController.Post, delegating to FileAndInternalConfigurationSetter and InMemoryInternalConfigurationRepository."
+   "why": "The administration endpoint and subsequent configuration propagation pipeline follow a single deterministic path through these components."
   },
   "glm": {
    "ok": false,
-   "why": "unparsable"
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "FileConfigurationController.Post",
+    "FileAndInternalConfigurationSetter.SetAsync",
+    "IInternalConfigurationCreator.Create",
+    "InMemoryInternalConfigurationRepository.AddOrReplace",
+    "InMemoryInternalConfigurationRepository.Get"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The management POST path has a single fixed chain — FileConfigurationController.Post calls FileAndInternalConfigurationSetter.SetAsync, which first persists via IFileConfigurationRepository, then builds/validates via IInternalConfigurationCreator (throwing ConfigurationRepositoryException on error), and finally activates the result via InMemoryInternalConfigurationRepository.AddOrReplace (lock + change token) with Get serving subsequent requests — so a careful engineer would trace the same components in the same order; only CLAIM 4's ConfigurationMiddleware is not evidenced by the shown files."
   }
  },
  "r3-ocelot-12": {
@@ -716,7 +732,7 @@
    "factsOk": false,
    "ambiguous": false,
    "symbols": [
-    "AuthenticationOptionsCreator.Create"
+    "Ocelot.Configuration.Creator.AuthenticationOptionsCreator.Create"
    ],
    "claims": [
     "supported",
@@ -724,11 +740,24 @@
     "unsupported",
     "supported"
    ],
-   "why": "The authentication configuration creation logic in AuthenticationOptionsCreator strictly determines the behavior for routes inside and outside the global RouteKeys subset."
+   "why": "The logic for determining route inclusion and resolving route-specific versus global authentication options is fully encapsulated in AuthenticationOptionsCreator.Create."
   },
   "glm": {
    "ok": false,
-   "why": "unparsable"
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "AuthenticationOptionsCreator.Create(IRouteGrouping, FileAuthenticationOptions, FileGlobalAuthenticationOptions)",
+    "AuthenticationOptionsCreator.Merge(FileAuthenticationOptions, FileAuthenticationOptions)"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The protected Create method in AuthenticationOptionsCreator is the single, centralized place where route-level and global authentication options are combined (isGlobal ? Merge(options, globalOptions) : new(options), with a final return new()), so no other code path yields a different answer; claim 3 is only partly supported because the file shows the route falls through to return new() (default options) but the 'no authentication scheme / route not authenticated' consequence is defined in AuthenticationOptions and the authentication middleware, which are not shown."
   }
  },
  "r3-ocelot-20": {
@@ -1152,12 +1181,9 @@
    "factsOk": false,
    "ambiguous": false,
    "symbols": [
-    "Ocelot.Administration.OutputCacheController",
     "Ocelot.Administration.OutputCacheController.Delete",
-    "Ocelot.Cache.DefaultMemoryCache<T>",
     "Ocelot.Cache.DefaultMemoryCache<T>.ClearRegion",
     "Ocelot.Configuration.CacheOptions",
-    "Ocelot.Configuration.Creator.CacheOptionsCreator",
     "Ocelot.Configuration.Creator.CacheOptionsCreator.Create",
     "Ocelot.Configuration.Creator.CacheOptionsCreator.Merge"
    ],
@@ -1167,11 +1193,28 @@
     "unsupported",
     "unsupported"
    ],
-   "why": "The administration controller, caching abstraction, and cache options creation logic uniquely implement output cache region deletion and region fallback handling."
+   "why": "The administration endpoint for clearing route cache entries is uniquely implemented in OutputCacheController and uses region keys managed via CacheOptionsCreator and DefaultMemoryCache."
   },
   "glm": {
    "ok": false,
-   "why": "unparsable"
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "OutputCacheController.Delete",
+    "DefaultMemoryCache<T>.ClearRegion",
+    "DefaultMemoryCache<T>.SetRegion",
+    "CacheOptions",
+    "CacheOptionsCreator.Create",
+    "CacheOptionsCreator.Merge"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "No — the DELETE outputcache/{region} endpoint in OutputCacheController is the only management-interface flush (it calls IOcelotCache<CachedResponse>.ClearRegion and returns 204), the unset region's fallback to the load-balancing key is defined only in CacheOptions/CacheOptionsCreator, and DefaultMemoryCache.ClearRegion is the sole default flush implementation, so a careful engineer would not find a different answer elsewhere; claims 3 and 4 are only partly supported because StaticRoutesCreator and OutputCacheMiddleware are not among the shown files."
   }
  }
 }
