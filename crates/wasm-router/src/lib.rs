@@ -5,7 +5,7 @@
 //! Architecture:
 //! 1. Single-pass feature extraction with keyword bitmap (v2)
 //! 2. Zero-allocation pattern matching
-//! 3. CatBoost decision tree (499 trees, depth 4)
+//! 3. CatBoost decision tree (498 trees, depth 4)
 //! 4. Allocation-free reject option
 
 use wasm_bindgen::prelude::*;

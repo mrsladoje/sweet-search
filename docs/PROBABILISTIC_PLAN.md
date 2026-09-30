@@ -719,7 +719,7 @@ significant a query term is within a matched document.
 
 ### Problem
 
-CatBoost WASM (`core/query-router.js:42`) runs 499 trees for every query (~10μs). Many
+CatBoost WASM (`core/query-router.js:42`) runs 498 trees for every query (~10μs). Many
 queries are trivially classifiable (single identifier → lexical, NL sentence → semantic).
 
 ### Approach
