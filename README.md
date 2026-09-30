@@ -489,7 +489,7 @@ Code search is a crowded space. Here's an honest read on where sweet-search wins
 | Permissive license (free commercial use) | ✅ Apache-2.0 | ✅ MIT | ❌⁶ | ✅ MIT | ✅ MIT | ⚠️ AGPL-3.0 |
 | *…and where sweet-search gives ground* | | | | | | |
 | Native Windows | ❌⁷ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Deep-AST language coverage | ⚠️ 14 (+70 via regex) | ✅ 34 | ⚠️ 16 | ✅ 162 | ⚠️ 13 | ✅ 22 |
+| Deep-AST language coverage | ⚠️ 18 (+78 via regex & fallback) | ✅ 34 | ⚠️ 16 | ✅ 162 | ⚠️ 13 | ✅ 22 |
 | Org-wide, multi-repo scale | ❌ | ⚠️⁸ | ✅ | ✅ | ⚠️ | ✅ |
 
 <sub>✅ yes · ⚠️ partial / with caveats · ❌ no. Verified September 2026; capabilities drift.</sub>
@@ -1066,7 +1066,7 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 <img src="assets/index-build.svg" alt="How the index is built. Source files are chunked and enriched, embedded by two models, and stored compressed. One pass feeds six indexes: 1 word index, 2 n-gram index, 3 binary HNSW, 4 bi-encoder vectors, 5 late-interaction vectors, 6 code graph. The embedding runs on Apple Metal, the Apple Neural Engine, NVIDIA CUDA or any CPU, picked automatically at start-up. A maintainer daemon updates all six indexes after each edit with an atomic swap." width="100%" />
 
 ### 🛠️ How it works
-- 🧩 **cAST chunking**: tree-sitter ASTs, so every chunk is a whole function or class. 14 languages native, 70+ extensions.
+- 🧩 **[cAST](https://arxiv.org/abs/2506.15655) chunking**: every chunk is a whole function or class. 96 languages across 206 file extensions, 18 of them parsed with full tree-sitter grammars.
 - 🏷️ **Chunk enrichment, tuned per language family**: context from the code graph. Each language family's policy was picked by ablation on GenCodeSearchNet.
 
 ### 🚀 The models, and how fast they run
@@ -1089,7 +1089,7 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 <a id="idx-chunk"></a>
 ### 🧩 Chunking — every chunk is whole code, never a fixed window
 - **[cAST](https://arxiv.org/abs/2506.15655)** structure-aware chunking over real **tree-sitter** ASTs: a recursive *split-then-merge* greedily packs sibling AST nodes up to the size cap and recurses *into* nodes too big to fit. So a chunk is always a **function, a class, or a contiguous run of declarations** — never a body cut in half, never a string split mid-literal.
-- **14 languages** get true AST grammars — `JS · TS · TSX · Python · Go · Rust · Java · C · C++ · Ruby · PHP · Kotlin · Swift · C#` — and a **39-config regex registry** carries structure-aware chunking to **70+ more extensions**.
+- **18 languages** get full tree-sitter grammars — `JS · TS · TSX · Python · Go · Rust · Java · C · C++ · Ruby · PHP · Kotlin · Swift · C# · Solidity · OCaml · ReScript · TLA+` — and regex patterns plus a lossless fallback chunker bring the total to **96 languages and file formats** across **206 file extensions**.
 
 <a id="idx-enrich"></a>
 ### 🏷️ Metadata — context the encoder can actually see
