@@ -1177,16 +1177,14 @@ before the process exits, and the next edit (or query) respawns a fresh daemon.
 
 ## 🖥️ Platform Support
 
-| Platform | Engine | Acceleration |
-|----------|--------|--------------|
-| macOS arm64 (Apple Silicon) | native | Metal (M1+) · CoreML Neural Engine (M3+) |
-| macOS x64 (Intel) | native | ONNX Runtime INT8 CPU |
-| Linux x64 (glibc) | native | CUDA on NVIDIA Volta+ (V100, T4, RTX 20-series and newer; flash-attn on RTX 30 / A100+) or INT8 CPU |
-| Linux arm64 (glibc) | native | CUDA (Jetson Orin / Grace) or INT8 CPU |
-| Windows | native, inside WSL2 | same as Linux x64. Native Windows is not supported yet. |
-| Other (musl/Alpine, other CPUs) | WASM/JS fallback | untested |
+| Platform | How it runs |
+|----------|-------------|
+| macOS (Apple Silicon and Intel) | ⚡ Native |
+| Linux x64 and arm64 (glibc) | ⚡ Native |
+| Windows | ⚡ Native, inside WSL2. Native Windows is not supported yet. |
+| Other (musl/Alpine, other CPUs) | WASM/JS fallback (untested) |
 
-Requires Node ≥ 22. `npm install` picks the right native binary for your machine, with no flags.
+**Native** means code we compile ahead of time for your exact OS and CPU. It is faster than the WASM/JavaScript fallback, which is general-purpose and not tuned for any one machine. `npm install` downloads the right native package for your machine automatically, with no flags. Requires Node ≥ 22.
 
 On Linux x64, ONNX Runtime's own install step downloads its CUDA libraries. On offline or GPU-less machines, skip that download with `ONNXRUNTIME_NODE_INSTALL=skip npm install`.
 
