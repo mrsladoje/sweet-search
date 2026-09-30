@@ -15,7 +15,7 @@ L="$HOME/.ss-eval/final-tuning-logs"; mkdir -p "$L"
     for tok in $REST; do if [[ "$tok" == ARMB=* ]]; then EXTRA=(--interleave --armB-env "${tok#ARMB=}"); else ENVS="$ENVS $tok"; fi; done
     IDS=$(node -e "const s=require('$WT/core/prompt-optimization/data/final-tuning/r282-split.json'); console.log(('$SPLIT'==='all'?[...s.train,...s.validation]:s['$SPLIT']).join(','))")
     echo "$(date '+%F %T') START $CELL $TAG $SPLIT $REST" >> "$L/queue-$Q.log"
-    ( cd "$WT" && env SWEET_SEARCH_MAX_DAEMONS=8 SS_BENCH_STABLE_RULES_PATH=1 SS_JUDGE_DEEPSEEK_VIA_OPENROUTER=1 CELL="$CELL" $ENVS node scripts/retrieval-bench-282.mjs --conc 3 --arms sweet --ids "$IDS" --tag "$TAG" ${EXTRA[@]+"${EXTRA[@]}"} > "$L/$TAG.log" 2>&1 )
+    ( cd "$WT" && env SWEET_SEARCH_MAX_DAEMONS=8 SS_BENCH_STABLE_RULES_PATH=1 SS_JUDGE_DEEPSEEK_VIA_OPENROUTER=1 SS_BENCH_NO_USD=1 CELL="$CELL" $ENVS node scripts/retrieval-bench-282.mjs --conc 3 --arms sweet --ids "$IDS" --tag "$TAG" ${EXTRA[@]+"${EXTRA[@]}"} > "$L/$TAG.log" 2>&1 )
     echo "$(date '+%F %T') END $CELL $TAG exit=$?" >> "$L/queue-$Q.log"
   done
   echo "$(date '+%F %T') QUEUE DONE" >> "$L/queue-$Q.log"

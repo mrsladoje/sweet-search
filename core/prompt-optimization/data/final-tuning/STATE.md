@@ -10,7 +10,8 @@ section.
 - **DeepSeek agent cell paused** (no direct balance). Restart only as a new cell on OpenRouter with fresh baselines if needed.
 - Queues (`~/.ss-eval/final-tuning-logs/queue-*.log`):
   - codex5 (INTERLEAVED): `cx-il-prune3` (V2 vs base, train) → `cx-il-dedupe` (V3 vs base, train). Compare: `compare.mjs codex-sol61-high <tag> x --within`
-  - cc-opus: `cc-rp-v` (V1 validation, running) → cc-sonnet (A-B-A): `sb-base-a` → `sb-rp-a` (V1) → `sb-base-b`
+  - cc-sonnet2 (A-B-A, V1 Sonnet confirm): `sb-base-a` → `sb-rp-a` → `sb-base-b` (starts after the Opus validation; new runs skip the USD panel `SS_BENCH_NO_USD=1`)
+  - Phase 4 prep agent: wiring V1 into the task runner + TASK-GUARD.md (no rollouts).
   - background: rescore batch 1; r3 verification (`r3-verify.log`)
 - r3: 6 × 36 = 216 drafts done (`r3/drafts/`). Verification by two non-Claude models (gemini-3.8-flash direct, glm-5.3 OpenRouter) running; ocelot 20/30 positives kept. Next: Opus audit agent → split → manifest → index window (no bench) → pilot.
 - Killed: `ds-dedupe-a` (12 rows, balance), deepseek2/deepseek3 queues.
@@ -33,7 +34,8 @@ DeepSeek balance at start: **$2.18** (hard ceiling for DeepSeek agent runs + Dee
 |---|---|---|---|
 | 00:05 | sentinel smoke (1 DeepSeek rollout + judges) | ~0.01 | 0.01 |
 | 00:50 | DeepSeek direct: 5 DeepSeek runs + all judges of all cells until now | 2.05 | 2.06 |
-| 00:52 | OpenRouter: MiniMax judge (all runs so far), r3 verification start | ~1 (est.) | ~3 |
+| 01:28 | OpenRouter since start (judges, USD panel, rescore, r3 verifier) | 8.56 | 10.62 |
+| 01:28 | Gemini direct (judge + r3 verifier), estimate | ~1 | ~11.6 |
 
 Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
@@ -43,11 +45,14 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 |---|---|---|---|---|---|---|---|
 | sentinel | `SS_VARIANT_SENTINEL=1` | proof the bench runs the worktree | — | — | — | — | infra only |
 | bench fix | `SS_BENCH_STABLE_RULES_PATH=1` | opencode prefix cache broken by random rules path (waste #2) | DeepSeek vs r282 native: +7.9% (CI crosses 0), was +54.6% | — | n/a | n/a | **adopted for all new runs (measurement fix, not a product change)** |
-| V1 | `SS_VARIANT_CC_RULES_IN_PROMPT=1` | CC rules re-written each rollout (waste #1) | **PASS** Opus: cost −15.8% (CI < 0), acc +0.2 | | | | screening |
+| V1 | `SS_VARIANT_CC_RULES_IN_PROMPT=1` | CC rules re-written each rollout (waste #1) | **PASS** Opus: cost −15.8% (CI < 0), acc +0.2 | **PASS** Opus: −11.6% (CI < 0), accOR −0.1 | | | | screening |
 | V2 | `SS_VARIANT_PRUNE3=1` | drop ss-find/semantic/trace (owner hyp. 2) | borderline: Codex −13.2% (CI touches 0), DS −9.9..−17% (CI < 0); acc within noise | | | | |
 | V3 | `SS_VARIANT_SEARCH_DEDUPE=1` | repeated ss-search entries/lines (waste #5) | Codex queued; DS killed (balance) | | | | |
 
 ## Decisions log
+
+- 01:30 **V1 passes validation on Opus** (52, aggregates only): cost −11.6% [−15.5%, −8.0%], cache write −18%, accOR −0.1 pt [−1.0, +0.8], calls +8.4% [0.00, +0.33] (borderline, watch on Sonnet). → V1 confirmed on the priority cell; Sonnet A-B-A confirm queued; Phase 4 task guard being prepared.
+- 01:28 Cash: OpenRouter fell from $24.07 to $15.51 (MiniMax judge + USD content panel + GLM verifier on jj ≈ $2.9). Actions: new runs skip the USD/content panel (`SS_BENCH_NO_USD=1`; content is secondary and its CC drop is a gutter artifact); r3 second verifier switched from z-ai/glm-5.3 to deepseek/deepseek-v4-pro-0813 (OpenRouter, ~half the price) for dgraph (partly), tortoise-orm, typedoc, zipkin; ocelot + jj were verified with glm-5.3.
 
 - 01:10 **Codex sequential A/B is invalid.** Test-retest `cx-base-b` vs `cx-base-a` (identical code, 25 min apart): cost −24.5% [−35.9%, −13.6%], naive −14.0% (both significant). V2 vs base A −13.2%, vs base B +15.0% (sig) → the Codex V2 train result is time drift, not the variant. Killed the sequential Codex jobs (`cx-dedupe-a`, codex4 validations). **New runner mode `--interleave --armB-env K=V`**: arms `sweet` and `sweetB` alternate per probe in one queue (order flipped on odd probes), so both see the same drift. Codex screens rerun interleaved. Claude Code cannot interleave (per-repo installed files) → A-B-A design for Sonnet; Opus is stable (fresh baseline reproduced r282 within 0.2 pt of cost %).
 - 01:10 DeepSeek V2 with one grader (accOR): vs base A cost −9.9% (CI < 0), accOR +0.2 pt [−1.3, +1.9]. DeepSeek sequential noise (+8.5%, ns) is smaller than Codex's, but the DeepSeek cell is paused (balance).
