@@ -1074,12 +1074,14 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 
 
 ### 🚀 The embedding models, and how we made them blazing fast
-####   🤖 **Two open, code-specialized models**: 
-> - [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed) (137M, dense) for recall and [LateOn-Code](https://huggingface.co/lightonai/LateOn-Code) (149M, late interaction) for the rerank.<br>
-> - [Late-On-Code-edge](https://huggingface.co/lightonai/LateOn-Code-edge) (17M, late interaction) - edge fallback auto-selected for weaker hosts
-####   ⚡ **GPU-accelerated**: 
-> - candle on Metal and CUDA, plus a Neural Engine cascade on M3+ (~18% faster full index). <br>
-> - **Hand-written fused attention kernels** for both models
+#### 🤖 Two open, code-specialized models
+> - [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed) (137M, dense) for first-stage recall.
+> - [LateOn-Code](https://huggingface.co/lightonai/LateOn-Code) (149M, late interaction) for the rerank.
+> - [LateOn-Code-edge](https://huggingface.co/lightonai/LateOn-Code-edge) (17M, late interaction) as the edge fallback, auto-selected on weaker hosts.
+
+#### ⚡ GPU-accelerated
+> - Runs on candle with Metal and CUDA, plus a Neural Engine cascade on M3+.
+> - **Hand-written fused attention kernels** for both models.
 
 | Your hardware | What runs |
 |--|--|
@@ -1088,25 +1090,52 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 | 🟩 NVIDIA GPU (SM 7.0+) | candle **CUDA**; **flash-attention** on Ampere+ |
 | 💻 No accelerator | **ONNX Runtime INT8**: tuned CPU path, 132 MB model |
 
-####   🧠 **Cache-sized CPU batches**: 
-> - each batch fits one layer's weights and activations in the CPU cache *(which we auto-detect)* <br>
-> - maximum paralellization on all available cores <br>
-> - ORT drives the CPU path *(ONNX Runtime)*
+#### 🧠 Cache-sized CPU batches
+> - Each batch fits one layer's weights and activations in the CPU cache *(which we auto-detect)*.
+> - Uses every physical core.
+> - ONNX Runtime (ORT) drives the CPU path.
 
-####   🗜️ **Two quantizations**: 
-> - goals are improved speed and lower storage demand
-> - INT8 weights make the CPU build ~2× faster. INT4 vectors shrink the late-interaction index ~3x, with no measurable retrieval loss.
+#### 🗜️ Two quantizations: one for speed, one for size
+> - INT8 weights make the CPU build ~2× faster.
+> - INT4 vectors make the late-interaction index ~3× smaller, with no measurable retrieval loss.
 
 <details>
-<summary><b>The GPU kernels we hand-wrote</b></summary>
+<summary><b>Under the hood: the GPU kernels we hand-wrote, and the upstream bugs we fixed</b></summary>
 
 <br/>
 
-- **Surgical attention swap:** we vendor the upstream model implementations (NomicBERT for embeddings, ModernBERT for late interaction) and replace **only the attention forward pass** — an MLX-ported fused SDPA kernel on Metal, `candle-flash-attn` with varlen packing on CUDA Ampere+, and byte-for-byte upstream math on CPU so the fallback is provably identical.
-- **A silent-NaN bug, found and fixed:** Apple's Metal SDPA kernel downcasts attention masks to F16, which saturates the standard `f32::MIN` mask to `-Inf` and quietly produces NaN on padded rows — collapsing retrieval quality. We clamp the mask and serialize Metal command-buffer submissions (concurrent submission corrupts outputs on shared queues). Details in [`crates/sweet-search-native/src/inference/`](crates/sweet-search-native/src/inference/).
-- **CoreML cascade:** 18 pre-traced `.mlpackage` variants (bucketed by sequence length) dispatched to the Apple Neural Engine through an Objective-C shim; oversized batches fall through to Metal. Gated to M3+ because on M1/M2 the ANE doesn't beat its own compile overhead — we measured, so it's off there.
-- **Structure-routed enrichment:** the preamble (path · scope chain · symbol · siblings · imports) is assembled at index time from a code-graph line-range overlap query — never an LLM call — then routed per language family (full enriched text for JS/Ruby/Go/C-family/Rust, a slimmer path policy for Python and the Java family), every decision settled by per-language ablation rather than a global default.
-- **Pipelined, crash-safe indexing:** while batch *N+1* embeds, batch *N*'s vectors stream into SQLite through zero-copy buffer views; full rebuilds write to a temp file and atomically swap, so a crash never leaves you serving half an index.
+> [!IMPORTANT]
+> **We found a silent upstream bug that wrecked retrieval.** Upstream candle-transformers masks padding with `f32::MIN`. Candle's Metal attention kernel downcasts that mask to F16, where it becomes `-Inf`, and softmax turns every padded row into NaN. Nothing crashes, but GenCodeSearchNet MRR fell to **25%**. We use a `-1e4` mask that survives F16.
+>
+> A second one: upstream ModernBERT hardcodes an F32 mask dtype. Upstream PR #2872 fixed that in `bert.rs` but never ported it.
+
+**By the numbers:** 5,000+ lines of Rust and Objective-C · 2 vendored models · 3 hardware backends · 18 CoreML variants
+
+#### 🔪 Surgical attention swap
+- We vendor the upstream models (NomicBERT for embeddings, ModernBERT for late interaction) and replace **only the attention forward pass**.
+- **Why:** upstream attention builds the full attention matrix in every layer. On Metal, one batch took ~4.2 s, ~10% slower than the CPU path.
+- **Metal:** a fused SDPA kernel ported from MLX.
+- **CUDA (Ampere+):** `candle-flash-attn` with variable-length packing. Candle's SDPA has no CUDA backend, and the naive BF16 fallback drifted (per-token cosine down to 0.69).
+- **CPU:** byte-for-byte upstream math, so the fallback is provably identical.
+
+#### 🔒 A silent GPU race, fixed
+- Concurrent Metal command-buffer submissions share candle's global command queue and silently corrupt outputs.
+- One process-wide lock serializes all Metal work. A GPU call takes under 10 ms, so latency stays low.
+
+#### 🍏 CoreML Neural Engine cascade
+- **18 pre-traced `.mlpackage` variants**, 6 per model, bucketed by batch size and sequence length.
+- Dispatched to the Apple Neural Engine through an Objective-C shim. Oversized batches fall through to Metal.
+- Gated to M3+: on M1/M2 the Neural Engine doesn't beat its own compile overhead. We measured, so it's off there.
+
+#### 🏷️ Structure-routed enrichment
+- The preamble (path · scope chain · symbol · siblings · imports) is built at index time from a code-graph line-range overlap query. Never an LLM call.
+- Routed per language family: full enriched text for JS/Ruby/Go/C-family/Rust, a slimmer path policy for Python and the Java family. Every choice was settled by per-language ablation, not a global default.
+
+#### 🧯 Pipelined, crash-safe indexing
+- While batch *N+1* embeds, batch *N*'s vectors stream into SQLite through zero-copy buffer views.
+- Full rebuilds write to a temp file and swap atomically, so a crash never leaves you serving half an index.
+
+Source: [`crates/sweet-search-native/src/inference/`](crates/sweet-search-native/src/inference/)
 
 </details>
 
