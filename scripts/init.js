@@ -53,7 +53,7 @@ import {
 } from './install-claude-lean-harness.js';
 import { installMcpServer } from './install-mcp-server.js';
 import {
-  ensureCodexHooksFeatureFlag, formatCodexUntrustedWarning, installCodexHarness, readCodexProjectTrust,
+  CODEX_MANIFEST_REL, ensureCodexHooksFeatureFlag, formatCodexUntrustedWarning, installCodexHarness, readCodexProjectTrust,
 } from './install-codex-harness.js';
 import { installOpencodeHarness } from './install-opencode-harness.js';
 import { removePromptReminderHook } from './install-prompt-reminders.js';
@@ -1567,8 +1567,8 @@ Options:
                             the rules (.opencode/plugins/sweet-search.mjs), and
                             the grep tool and explore subagent off, all
                             referenced from .opencode/opencode.json (or an
-                            existing .opencode/opencode.jsonc; comments and
-                            formatting are kept). No AGENTS.md and no root
+                            existing .opencode/opencode.jsonc; your comments
+                            and keys are kept). No AGENTS.md and no root
                             opencode.json. Sets up opencode ONLY: add --claude
                             for Claude Code too.
   --codex-enable-global-hooks
@@ -2169,13 +2169,22 @@ export async function runInit(args) {
   //       Codex ignores its project config until the project is trusted, so an
   //       untrusted Codex project keeps the old block (the user keeps the rules
   //       until they trust it; the next init after that strips it).
-  const codexNeedsAgentsBlock = parsed.codex && !codexTrust?.trusted;
+  //       The block is Codex's only rules source unless a TRUSTED project reads our
+  //       Codex config (this run installed it, or an earlier init did). A repo with
+  //       an old Codex layer but no new harness (old `init --codex`, then only
+  //       `init --opencode`) keeps it too. No `.codex/` at all = nothing needs it.
+  const hasCodexLayer = existsSync(join(projectRoot, '.codex'));
+  const codexHarnessPresent = parsed.codex || existsSync(join(projectRoot, CODEX_MANIFEST_REL));
+  if (!codexTrust && hasCodexLayer && codexHarnessPresent) codexTrust = readCodexProjectTrust({ projectRoot });
+  const codexNeedsAgentsBlock = hasCodexLayer && !(codexHarnessPresent && codexTrust?.trusted);
   if ((parsed.codex || parsed.opencode) && !parsed.skipAgentInstructions && !parsed.optInHarnesses.has('agents')) {
     if (codexNeedsAgentsBlock) {
       if (hasLegacyAgentsBlock(projectRoot)) {
-        process.stderr.write(
-          '[init] AGENTS.md: kept the old sweet-search block — Codex reads it until this project is trusted; '
-          + 're-run init after trusting it to remove the block\n',
+        process.stderr.write(codexHarnessPresent
+          ? '[init] AGENTS.md: kept the old sweet-search block — Codex reads it until this project is trusted; '
+            + 're-run init after trusting it to remove the block\n'
+          : '[init] AGENTS.md: kept the old sweet-search block — Codex still reads its rules from it; '
+            + 'run `sweet-search init --codex` to move Codex to its project config\n',
         );
       }
     } else {
