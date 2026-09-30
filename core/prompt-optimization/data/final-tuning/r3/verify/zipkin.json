@@ -1152,5 +1152,39 @@
    ],
    "why": "The supplied files show the content-hash _id deduplication path directly, so there is no conflicting alternative answer in the shown code."
   }
+ },
+ "r3-zipkin-26": {
+  "id": "r3-zipkin-26",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.elasticsearch.internal.IndexNameFormatter.formatTypeAndRange"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "IndexNameFormatter.formatTypeAndRange is the dedicated implementation in Zipkin for compressing date ranges into wildcard index patterns."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.elasticsearch.internal.IndexNameFormatter#formatTypeAndRange"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The shown file contains the dedicated wildcard compression logic in formatTypeAndRange, and no alternative Elasticsearch answer is visible."
+  }
  }
 }
