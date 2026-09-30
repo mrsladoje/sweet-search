@@ -65,6 +65,20 @@ export const MODEL_PRICES = {
   'cursor-grok-4.6-high': { in: 2.0, cache: 0.50, out: 6.0 },
   'cursor-grok-4.6-low': { in: 2.0, cache: 0.50, out: 6.0 },
   'cursor-grok-4.6-medium-fast': { in: 4.0, cache: 1.00, out: 12.0 },
+  // Grok 4.7, from docs.x.ai 2026-09-21: identical headline rate to 4.6 —
+  // $2.00 input / $0.50 cached / $6.00 output per 1M, 500k context.
+  //
+  // TIER CAVEAT: xAI DOUBLES every component ($4 / $1 / $12) once a single request's prompt
+  // reaches 200k tokens. Bench rollouts normally sit far below that, so the base tier is what
+  // we pay — but cursor rollouts accumulate large contexts, so if a run's per-request prompts
+  // approach 200k this table silently under-prices it by 2x. Check before publishing a 4.7
+  // dollar figure on long-context tasks.
+  'grok-4.7-medium': { in: 2.0, cache: 0.50, out: 6.0 },
+  'grok-4.7-low': { in: 2.0, cache: 0.50, out: 6.0 },
+  'grok-4.7-high': { in: 2.0, cache: 0.50, out: 6.0 },
+  'grok-4.7-xhigh': { in: 2.0, cache: 0.50, out: 6.0 },
+  'grok-4.7-medium-fast': { in: 4.0, cache: 1.00, out: 12.0 },
+  'grok-4.7-high-fast': { in: 4.0, cache: 1.00, out: 12.0 },
   'cursor-grok-4.6-high-fast': { in: 4.0, cache: 1.00, out: 12.0 },
   'meta/muse-spark-1.1': { in: 1.25, cache: 0.15, out: 4.25 },
   // Re-fetched 2026-09-03. OpenRouter served $0.10/$0.60 when this was last checked on
