@@ -898,7 +898,11 @@ flowchart TB
     S2 --> S3
     subgraph S3["③ System prompt hill-climbing · per agent"]
         direction LR
-        J["✂️ <b>Remove</b> the lines in each<br/>agent's own system prompt<br/>that conflict with our rules,<br/>➕ <b>add</b> focused lines<br/>such as turn packing"] --> K["🧪 <b>Microsmoke</b> each edit<br/>Claude Code · Codex · opencode"]
+        J["✂️ <b>Remove</b> the lines in each<br/>agent's own system prompt<br/>that conflict with our rules"]
+        L["➕ <b>Add</b> focused lines<br/>such as turn packing"]
+        K["🧪 <b>Microsmoke</b> each edit<br/>Claude Code · Codex · opencode"]
+        L --> K
+        J --> K
         K -->|"cheaper,<br/>same solves"| M(["✅ <b>Keep</b>"])
         K -->|"no gain or<br/>removes a feature"| N(["❌ <b>Drop</b>"])
     end
@@ -924,7 +928,7 @@ flowchart TB
     class F,G rule;
     class H,M keep;
     class I,N drop;
-    class J dig;
+    class J,L dig;
     class K rule;
     class P ship;
 
@@ -935,9 +939,9 @@ flowchart TB
     linkStyle 3 stroke:#fb7185,stroke-width:2px;
     linkStyle 8 stroke:#15803d,stroke-width:2px;
     linkStyle 9 stroke:#dc2626,stroke-width:2px;
-    linkStyle 12 stroke:#15803d,stroke-width:2px;
-    linkStyle 13 stroke:#dc2626,stroke-width:2px;
-    linkStyle 14 stroke:#ff5ba3,stroke-width:3px;
+    linkStyle 13 stroke:#15803d,stroke-width:2px;
+    linkStyle 14 stroke:#dc2626,stroke-width:2px;
+    linkStyle 15 stroke:#ff5ba3,stroke-width:3px;
 ```
 
 | | ① Retrieval · [🧬 GEPA](https://arxiv.org/abs/2507.19457) | ② Task completion · by hand | ③ System prompt hill-climbing |
