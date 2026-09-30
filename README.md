@@ -259,7 +259,7 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 <tr>
 <td width="50%" valign="top">
 
-📄 **③ [Paper-type IR](#bench-paper-type)** *(academic)*<br>
+📄 **③ [Academic IR](#bench-paper-type)** *(full corpus)*<br>
 <sub>The standard academic code-retrieval suites (GCSN, M2CRB, CoSQA…), full-corpus MRR@10.</sub>
 
 </td>
@@ -407,7 +407,7 @@ without — and why we quote a **range, not one number**.
 ---
 
 <a id="bench-paper-type"></a>
-### 📄 3. Paper-type retrieval benchmarks
+### 📄 3. Academic retrieval benchmarks
 
 One question: **how well does `ss-search` rank code on the standard academic suites?** The same binary you install, end to end.
 
@@ -417,7 +417,7 @@ One question: **how well does `ss-search` rank code on the standard academic sui
 
 <div align="center">
 
-<img src="assets/paper-bench-stats.svg" alt="Paper-type retrieval benchmarks, full-corpus MRR@10, zero-shot. GenCodeSearchNet 86.1 on 2,400 held-out queries, tuned on the dev split so no SOTA claim. CoSQA 65.5, zero-shot SOTA. M2CRB 54.0, SOTA. AdvTest 51.4, not SOTA." width="100%" />
+<img src="assets/paper-bench-stats.svg" alt="Academic retrieval benchmarks, full-corpus MRR@10, zero-shot. GenCodeSearchNet 86.1 on 2,400 held-out queries, tuned on the dev split so no SOTA claim. CoSQA 65.5, zero-shot SOTA. M2CRB 54.0, SOTA. AdvTest 51.4, not SOTA." width="100%" />
 
 <sub>MRR@10 · SOTA = best published result we can find, rechecked September 2026 · GCSN held-out only: we tuned ranking on its dev split</sub>
 
