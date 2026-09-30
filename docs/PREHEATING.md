@@ -141,7 +141,12 @@ harness-agnostic — reads only env/cwd, writes nothing to stdout):
 - **The rules and base instructions** — `developer_instructions` (the rules) and
   `model_instructions_file` (our tested base instructions,
   `.codex/sweet-search-instructions.md`) in the same project `.codex/config.toml`.
-  `--codex` no longer writes `AGENTS.md`; an old sweet-search block there is removed.
+  `--codex` no longer writes `AGENTS.md`; an old sweet-search block there is removed
+  once the project is trusted (until then Codex still reads it).
+- **Only with a project-local install.** The hook command must be a path inside
+  the repo (no machine path in a committed file), so a global / linked / hoisted
+  install skips the hook — and then init writes no `[features] hooks` flag
+  either, and says so. Install sweet-search as a dev dependency for the hook.
 - **MCP is not touched.** `init --codex` never writes `.mcp.json`; MCP stays
   optional and unrelated to default incremental indexing.
 
@@ -152,6 +157,12 @@ and file init added, and the config flag when init added it (a manifest,
 
 **The only manual step `init --codex` can't do for you is project trust:**
 
+- **Trust the project.** Codex ignores the project `.codex/config.toml` (our
+  prompt and rules, and the hook flag) until the project is trusted — `codex exec`
+  and CI silently, the interactive app asks once. init reads your Codex config
+  (`$CODEX_HOME/config.toml`, read only) and prints how to trust the project when
+  it is not trusted: run `codex` in the repo and answer "Yes", or add a
+  `[projects."<repo root>"]` entry with `trust_level = "trusted"`.
 - **Review/trust repo-local hooks.** Run `/hooks` inside Codex to review and
   trust the project's `.codex/hooks.json` before Codex will run it. (If you ever
   need to toggle the feature itself, `codex --enable hooks` does that — but

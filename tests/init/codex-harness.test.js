@@ -5,13 +5,14 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
   CODEX_CONFIG_REL, CODEX_INSTRUCTIONS_REL, CODEX_MANIFEST_REL, buildCodexConfigBlock,
-  installCodexHarness, removeCodexHarness, removeCodexHooksFlagText, tomlRulesString,
+  ensureCodexHooksFeatureFlag, installCodexHarness, parseCodexProjectTrust, readCodexProjectTrust,
+  removeCodexHarness, removeCodexHooksFlagText, tomlRulesString,
 } from '../../scripts/install-codex-harness.js';
 import { codexInstructions } from '../../scripts/harness-prompts/index.js';
 import { CANONICAL_POLICY_BODY, getMcpPolicyBody } from '../../scripts/inject-agent-instructions.js';
@@ -116,6 +117,129 @@ describe('installCodexHarness', () => {
     expect(r.warning).toMatch(/user-authored/);
     expect(read(CODEX_INSTRUCTIONS_REL)).toBe('my own instructions\n');
     expect(read(CODEX_CONFIG_REL)).not.toContain('model_instructions_file');
+  });
+});
+
+describe('[features] header with a trailing comment', () => {
+  for (const header of ['[features] # mine', '[features]   ', '[ features ]  # spaced']) {
+    it(`"${header}": adds the flag inside it, never a second [features] table`, () => {
+      const user = `model = "m"\n\n${header}\nweb_search = true\n\n[x]\ny = 1\n`;
+      write(CODEX_CONFIG_REL, user);
+      installCodexHarness({ projectRoot: root, rules: RULES });
+      const cfg = read(CODEX_CONFIG_REL);
+      expect(cfg.match(/^\s*\[\s*features\s*\]/gm)).toHaveLength(1);
+      expect(manifest()).toMatchObject({ addedHooksFlag: true, addedFeaturesTable: false });
+      if (HAS_TOMLLIB) expect(parseToml(cfg)).toMatchObject({ features: { hooks: true, web_search: true }, x: { y: 1 } });
+      removeCodexHarness({ projectRoot: root });
+      expect(read(CODEX_CONFIG_REL)).toBe(user);
+    });
+  }
+
+  it('ensureCodexHooksFeatureFlag: every branch reads a commented header', () => {
+    const cases = [
+      ['[features] # mine\nhooks = true\n', 'already'],
+      ['[features] # mine\nhooks = false\n', 'present-other'],
+      ['[features] # mine\ncodex_hooks = true\n', 'migrated'],
+      ['[features] # mine\nhooks = true\ncodex_hooks = true\n', 'migrated'],
+      ['[features] # mine\n', 'added'],
+    ];
+    for (const [text, status] of cases) {
+      write(CODEX_CONFIG_REL, text);
+      expect(ensureCodexHooksFeatureFlag(join(root, CODEX_CONFIG_REL)).status, text).toBe(status);
+      const out = read(CODEX_CONFIG_REL);
+      expect(out.match(/^\[features\]/gm), out).toHaveLength(1);
+      if (HAS_TOMLLIB && status !== 'present-other') expect(parseToml(out).features).toEqual({ hooks: true });
+    }
+  });
+
+  it('a hooks key in another table is not the flag', () => {
+    write(CODEX_CONFIG_REL, '[other]\nhooks = true\n');
+    expect(ensureCodexHooksFeatureFlag(join(root, CODEX_CONFIG_REL)).status).toBe('added');
+    if (HAS_TOMLLIB) expect(parseToml(read(CODEX_CONFIG_REL))).toEqual({ other: { hooks: true }, features: { hooks: true } });
+  });
+
+  it('a features table defined with dotted keys is left alone (no second definition)', () => {
+    write(CODEX_CONFIG_REL, 'features.web_search = true\n');
+    expect(ensureCodexHooksFeatureFlag(join(root, CODEX_CONFIG_REL)).status).toBe('present-other');
+    expect(read(CODEX_CONFIG_REL)).toBe('features.web_search = true\n');
+  });
+});
+
+describe('hooks flag only with a hook', () => {
+  it('hooksFlag false adds no [features] table', () => {
+    installCodexHarness({ projectRoot: root, rules: RULES, hooksFlag: false });
+    expect(read(CODEX_CONFIG_REL)).not.toContain('[features]');
+    expect(manifest()).toMatchObject({ addedHooksFlag: false, addedFeaturesTable: false });
+  });
+
+  it('hooksFlag false takes back a flag an earlier install added', () => {
+    installCodexHarness({ projectRoot: root, rules: RULES });
+    const r = installCodexHarness({ projectRoot: root, rules: RULES, hooksFlag: false });
+    expect(r.detail).toMatch(/hooks flag removed/);
+    expect(read(CODEX_CONFIG_REL)).not.toContain('[features]');
+    removeCodexHarness({ projectRoot: root });
+    expect(existsSync(join(root, '.codex'))).toBe(false);
+  });
+});
+
+describe('upgrade from an init older than the manifest', () => {
+  for (const legacy of ['[features]\nhooks = true\n', '[features]\ncodex_hooks = true\n']) {
+    it(`adopts a config.toml that is exactly ${JSON.stringify(legacy)}`, () => {
+      write(CODEX_CONFIG_REL, legacy);
+      installCodexHarness({ projectRoot: root, rules: RULES });
+      expect(manifest()).toMatchObject({ createdConfig: true, addedHooksFlag: true, addedFeaturesTable: true });
+      removeCodexHarness({ projectRoot: root });
+      expect(existsSync(join(root, '.codex'))).toBe(false);
+    });
+  }
+
+  it('does not adopt a config.toml with anything else in it', () => {
+    const user = '[features]\nhooks = true\nweb_search = true\n';
+    write(CODEX_CONFIG_REL, user);
+    installCodexHarness({ projectRoot: root, rules: RULES });
+    expect(manifest()).toMatchObject({ createdConfig: false, addedHooksFlag: false });
+    removeCodexHarness({ projectRoot: root });
+    expect(read(CODEX_CONFIG_REL)).toBe(user);
+  });
+});
+
+describe('Codex project trust (read only)', () => {
+  let codexHome;
+  beforeEach(() => { codexHome = mkdtempSync(join(tmpdir(), 'ss-codex-home-')); });
+  afterEach(() => { rmSync(codexHome, { recursive: true, force: true }); });
+  const trust = (toml) => {
+    writeFileSync(join(codexHome, 'config.toml'), toml);
+    return readCodexProjectTrust({ projectRoot: root, env: { CODEX_HOME: codexHome } });
+  };
+
+  it('no config or no entry = untrusted', () => {
+    expect(readCodexProjectTrust({ projectRoot: root, env: { CODEX_HOME: codexHome } })).toMatchObject({ trusted: false, level: null });
+    expect(trust('model = "m"\n').trusted).toBe(false);
+  });
+
+  it('matches the key after resolving symlinks and dropping a trailing slash', () => {
+    const real = realpathSync(root);
+    expect(trust(`[projects.${JSON.stringify(`${real}/`)}]\ntrust_level = "trusted"\n`).trusted).toBe(true);
+    expect(trust(`[projects.${JSON.stringify(`${root}//`)}] # note\ntrust_level = "trusted"\n`).trusted).toBe(true);
+    const link = join(codexHome, 'link');
+    symlinkSync(root, link);
+    expect(trust(`[projects.${JSON.stringify(link)}]\ntrust_level = "trusted"\n`).trusted).toBe(true);
+  });
+
+  it('literal-string keys and the inline [projects] form', () => {
+    expect(trust(`[projects.'${realpathSync(root)}']\ntrust_level = 'trusted'\n`).trusted).toBe(true);
+    expect(trust(`[projects]\n${JSON.stringify(realpathSync(root))} = { trust_level = "trusted" }\n`).trusted).toBe(true);
+  });
+
+  it('an explicit untrusted level and a trust_level in another table do not count', () => {
+    expect(trust(`[projects.${JSON.stringify(root)}]\ntrust_level = "untrusted"\n`)).toMatchObject({ trusted: false, level: 'untrusted' });
+    expect(trust(`[other]\ntrust_level = "trusted"\n`).trusted).toBe(false);
+  });
+
+  it('parseCodexProjectTrust reads every entry', () => {
+    const m = parseCodexProjectTrust('[projects."/a/b"]\ntrust_level = "trusted"\n[projects."/c"]\nx = 1\ntrust_level = "untrusted"\n');
+    expect(m.get('/a/b')).toBe('trusted');
+    expect(m.get('/c')).toBe('untrusted');
   });
 });
 

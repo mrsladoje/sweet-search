@@ -387,20 +387,24 @@ describe('init --codex (end-to-end flag wiring)', () => {
     }
   });
 
-  it('writes [features] hooks = true to project + global config and names hooks (not codex_hooks) in output', () => {
-    // HOME is redirected to a temp dir so the global-flag write never touches
+  // In this harness the CLI runs from the repo, so the hook script lives outside
+  // the temp project (like a global install) and hook registration is skipped.
+  // Then the project flag is NOT written either: no half-set-up hook.
+  it('explicit --codex-enable-global-hooks writes the global flag; no project flag without a hook', () => {
+    // HOME / CODEX_HOME are redirected to a temp dir so the global-flag write never touches
     // the real ~/.codex. --profile core avoids any model downloads.
     const r = spawnSync(
       process.execPath,
       [INIT_CLI, '--codex', '--codex-enable-global-hooks', '--profile', 'core'],
-      { cwd: proj, env: { ...process.env, HOME: home }, encoding: 'utf-8', timeout: 60_000 },
+      { cwd: proj, env: { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex') }, encoding: 'utf-8', timeout: 60_000 },
     );
     expect(r.status).toBe(0);
 
-    // Project flag.
+    // No project flag: the hook was not installed.
     const projCfg = readFileSync(join(proj, '.codex', 'config.toml'), 'utf-8');
-    expect(projCfg).toMatch(/^hooks\s*=\s*true/m);
+    expect(projCfg).not.toMatch(/^\s*hooks\s*=/m);
     expect(projCfg).not.toMatch(/codex_hooks/);
+    expect(existsSync(join(proj, '.codex', 'hooks.json'))).toBe(false);
 
     // Global flag (in the redirected HOME, not the real one).
     const globalCfg = readFileSync(join(home, '.codex', 'config.toml'), 'utf-8');
@@ -412,31 +416,30 @@ describe('init --codex (end-to-end flag wiring)', () => {
     expect(r.stderr).not.toMatch(/codex_hooks\s*=\s*true/);
   });
 
-  it('init --codex alone enables the project flag, never writes the global config, and never pushes --codex-enable-global-hooks or .mcp.json', () => {
+  it('init --codex with the hook skipped (global install) sets no flag, says so, never writes the global config or .mcp.json', () => {
     // No --codex-enable-global-hooks: the normal path must be self-sufficient.
-    // (In this harness the CLI runs from the repo, so the hook script lives
-    // outside the temp project and hook *registration* is skipped — the project
-    // config flag write and the output wording are exercised regardless. The
-    // registered-hook success message is covered by formatCodexSetupGuidance
-    // unit tests and the packed-install smoke.)
+    // The registered-hook path (flag written) is covered by installCodexHarness unit
+    // tests, formatCodexSetupGuidance and the packed-install smoke.
     const r = spawnSync(
       process.execPath,
       [INIT_CLI, '--codex', '--profile', 'core'],
-      { cwd: proj, env: { ...process.env, HOME: home }, encoding: 'utf-8', timeout: 60_000 },
+      { cwd: proj, env: { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex') }, encoding: 'utf-8', timeout: 60_000 },
     );
     expect(r.status).toBe(0);
 
-    // Project feature flag is the canonical one, never the deprecated key.
+    // No hooks flag without a hook; never the deprecated key.
     const projCfg = readFileSync(join(proj, '.codex', 'config.toml'), 'utf-8');
-    expect(projCfg).toMatch(/^hooks\s*=\s*true/m);
+    expect(projCfg).not.toMatch(/^\s*hooks\s*=/m);
     expect(projCfg).not.toMatch(/codex_hooks/);
+    expect(existsSync(join(proj, '.codex', 'hooks.json'))).toBe(false);
 
     // No global config write without the explicit legacy flag.
     expect(existsSync(join(home, '.codex', 'config.toml'))).toBe(false);
 
-    // Output names the canonical flag and never pushes the legacy global flag or
-    // the deprecated key for the normal path.
-    expect(r.stderr).toContain('[features] hooks');
+    // Output says plainly that the hook (and so the flag) was not installed, and never
+    // pushes the legacy global flag or the deprecated key for the normal path.
+    expect(r.stderr).toContain('Codex SessionStart hook: not installed');
+    expect(r.stderr).toContain('No [features] hooks flag was set');
     expect(r.stderr).not.toContain('--codex-enable-global-hooks');
     expect(r.stderr).not.toMatch(/codex_hooks\s*=\s*true/);
 

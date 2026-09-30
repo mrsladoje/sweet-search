@@ -8,6 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -119,5 +120,25 @@ describe('applyExactEdits', () => {
 
   it('ships its third-party notices', () => {
     for (const f of ['NOTICE.md', 'LICENSE-Apache-2.0.txt']) expect(existsSync(join(HARNESS_PROMPTS_DIR, f))).toBe(true);
+  });
+});
+
+// Golden pins. The bench imports the same constants, so a parity test alone cannot catch an
+// accidental edit to them; these hashes can. Change a pin only together with a new benchmark run
+// of the changed text.
+describe('golden pins of the shipped texts (sha256)', () => {
+  const sha = t => createHash('sha256').update(t).digest('hex');
+  it('Codex base instructions', () => {
+    expect(sha(codexInstructions())).toBe('7e282d1b96ac8cd02e0572386a436915078b25c8f1b2e03a45e3f2a84f5e6e50');
+  });
+  it('opencode build/general prompt', () => {
+    expect(sha(opencodePrompt())).toBe('94c23a556525d4e35ae42f2448439559dd61fee37557a4da93f0ff18e0fbe34e');
+  });
+  it('opencode tool-description edits (JSON)', () => {
+    expect(sha(JSON.stringify(OPENCODE_TOOL_EDITS))).toBe('bb647d23c66f3112f4322bd454ecd1f5c7186136b04a3c7c1a51ca64f93144c9');
+  });
+  it("Claude Code main agent file (memoryDir '/m/', no override)", () => {
+    expect(sha(claudeLeanAgentFile({ appendOverride: false, memoryDir: '/m/' })))
+      .toBe('11446e95a164c2fb04892e3db505d2ccec2c7489979392938c51482b9dba48fe');
   });
 });

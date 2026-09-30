@@ -122,7 +122,9 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 npm install -g sweet-search
 
 cd your-repo
-sweet-search init     # one-time: downloads local models, wires up your agent
+sweet-search init     # one-time: downloads local models, wires up Claude Code
+                      #   Codex: init --codex · opencode: init --opencode
+                      #   several: init --claude --codex --opencode
 sweet-search index    # builds the index — GPU-accelerated where available
 
 sweet-search "where do we validate JWT tokens?"
@@ -148,8 +150,10 @@ sweet-search uninstall --all  # everything: all repos, models, and the CLI
 sweet-search init --wizard          # interactive: shows your hardware, recommends a model tier
 sweet-search init --profile core    # lexical-only, no model downloads (CI-friendly)
 sweet-search init --li-model edge   # compact late-interaction model for constrained machines
-sweet-search init --codex --opencode # also set up Codex and opencode (per-project config)
-sweet-search init --agents          # also write AGENTS.md for other AGENTS.md-reading tools
+sweet-search init --codex           # Codex only (per-project config, nothing under .claude/)
+sweet-search init --codex --opencode # Codex and opencode
+sweet-search init --claude --codex  # Claude Code and Codex
+sweet-search init --agents          # Claude Code plus AGENTS.md for other AGENTS.md-reading tools
 sweet-search init --no-claude --agents # streamlined AGENTS-only configuration
 sweet-search uninstall --dry-run    # preview cleanup for the current repo
 ```
@@ -157,7 +161,8 @@ sweet-search uninstall --dry-run    # preview cleanup for the current repo
 - **Footprint:** CPU-only hosts download a few hundred MB of INT8 models; GPU hosts add ~1.2 GB of FP32 backbones (skipped automatically where they'd be useless); M3+ Macs can additionally fetch a ~3.2 GB CoreML cascade for Neural Engine acceleration. Everything lands in `~/.cache/sweet-search/models/` and is used strictly on-device.
 - **Claude Code wiring (default):** init leaves `CLAUDE.md` untouched, writes the verbatim evolved guide to `.claude/rules/sweet-search.md`, installs `.claude/output-styles/sweet-search.md`, and selects it in `.claude/settings.json`. It also registers a session-start prewarm hook and installs the `/sweet-index` skill.
 - **Output-style conflicts:** init never silently replaces another selected style. It still installs the Sweet Search style so it appears under `/config`, then emits a warning. A higher-priority `.claude/settings.local.json` selection is also detected and reported. Select `sweet-search`, then run `/clear` or restart Claude Code.
-- **Codex/opencode wiring:** `--codex` puts the guide and our tested base instructions in the project `.codex/config.toml` (`developer_instructions`, `model_instructions_file`) plus the prewarm hook; `--opencode` puts the guide, our tested prompt and a tool-description plugin under `.opencode/`. Neither writes `AGENTS.md` (an old sweet-search block there is removed). Codex reads a project `.codex/` layer only after you trust the project. `--agents` still writes `AGENTS.md` for other tools.
+- **Which agents:** `init` alone sets up Claude Code. `--codex` and `--opencode` set up only those agents; add `--claude` to include Claude Code too. `--agents`, `--gemini` and `--cursor` add their file to that selection (alone, they keep Claude Code). Indexing, `.sweet-search/` and `--mcp` are the same for every selection.
+- **Codex/opencode wiring:** `--codex` puts the guide and our tested base instructions in the project `.codex/config.toml` (`developer_instructions`, `model_instructions_file`); `--opencode` puts the guide, our tested prompt and a tool-description plugin under `.opencode/` (an existing `.opencode/opencode.jsonc` or commented `opencode.json` is edited in place, comments kept). Neither writes `AGENTS.md`. Codex reads a project `.codex/` layer only after you trust the project: init checks your Codex config (read only) and, if the project is not trusted, says how to trust it and keeps an old sweet-search `AGENTS.md` block until then. The Codex prewarm hook needs sweet-search installed in the project (a dev dependency); a global install skips it, and search does not need it. `--agents` still writes `AGENTS.md` for other tools.
 - **What gets indexed:** what you'd expect — `.gitignore` is respected, `node_modules`/build dirs/minified artifacts are denied, files over 1 MB skipped, with a `.sweet-search-ignore` for extra rules.
 
 ### MCP and other integrations
@@ -197,10 +202,11 @@ The CLI is the default contact surface. To also register the MCP server, run
 | `--skip-cuda` | Disable the CUDA backend even when available. |
 | `--skip-prewarm-hook` | Do not register the Claude/Codex session-start prewarm hook. |
 | `--agents` | Also write the verbatim guide to `AGENTS.md` (not needed for Codex or opencode). |
-| `--codex` | Set up Codex in `.codex/`: guide, our base instructions, prewarm hook and feature flag. |
-| `--opencode` | Set up opencode in `.opencode/`: guide, our prompt, tool-description plugin, grep and explore off. |
+| `--codex` | Set up Codex only, in `.codex/`: guide, our base instructions, and the prewarm hook with its feature flag (project-local installs). |
+| `--opencode` | Set up opencode only, in `.opencode/`: guide, our prompt, tool-description plugin, grep and explore off. |
+| `--claude` | Include Claude Code together with `--codex` / `--opencode`. |
 | `--codex-enable-global-hooks` | Advanced opt-in: also enable hooks in the user-level Codex config. |
-| `--no-claude` | Write nothing under `.claude/`; combine with `--agents` for AGENTS-only setup. |
+| `--no-claude` | Write nothing under `.claude/`; combine with `--agents` for AGENTS-only setup (`--codex` / `--opencode` already imply it unless `--claude` is set). |
 | `--gemini` | Also write `GEMINI.md` (sharing `AGENTS.md` when enabled). |
 | `--cursor` | Also write `.cursor/rules/sweet-search.mdc`. |
 | `--symlink-instruction-files` | Explicitly use the default `GEMINI.md` symlink behavior. |

@@ -19,7 +19,7 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { getCoremlCascadeRoot, getCoremlCascadeState } from '../core/infrastructure/coreml-cascade.js';
-import { PREWARM_HOOK_FILENAME } from './init.js';
+import { PREWARM_HOOK_FILENAME, readCreatedPaths } from './init.js';
 import { removeAgentInstructions } from './inject-agent-instructions.js';
 import { removeClaudeRules } from './write-claude-rules.js';
 import { removeClaudeSystemPrompt } from './install-claude-system-prompt.js';
@@ -611,9 +611,9 @@ Also removed by --all:
 Never removed:
   - Your source code, and any hooks, skills, settings or prose you wrote
   - User-modified copies of sweet-search files (detected and left in place)
-  - A Codex [features] hooks = true flag that was there before init (or that
-    an init older than the Codex harness manifest wrote); an otherwise-empty
-    settings.json may remain as {}
+  - A Codex [features] hooks = true flag that was there before init
+  - A .claude/ settings file or directory that init did not create, or that
+    still holds anything
 `);
 }
 
@@ -686,7 +686,43 @@ export function planProjectUninstall(projectRoot) {
     lines.push('MCP server registration (.mcp.json — mcpServers.sweet-search)');
   }
 
-  return { projectRoot, initConfig, removals, totalBytes, lines, empty: lines.length === 0 };
+  // Read now: the record lives in .sweet-search/, which goes first.
+  const createdPaths = readCreatedPaths(projectRoot);
+
+  return { projectRoot, initConfig, removals, totalBytes, lines, empty: lines.length === 0, createdPaths };
+}
+
+/**
+ * After every remover ran: delete what is left of the paths init created — a
+ * settings.json that is now `{}`, and directories that are now empty (deepest
+ * first). A path init did not create, or one that still holds anything, stays.
+ * Returns the removed paths (relative).
+ */
+export function pruneCreatedPaths(projectRoot, createdPaths = [], { dryRun = false } = {}) {
+  const removed = [];
+  const created = new Set(createdPaths);
+  const settingsRel = '.claude/settings.json';
+  if (created.has(settingsRel)) {
+    const path = join(projectRoot, settingsRel);
+    try {
+      const value = JSON.parse(readFileSync(path, 'utf-8'));
+      if (value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) {
+        if (!dryRun) unlinkSync(path);
+        removed.push(settingsRel);
+      }
+    } catch { /* absent or not JSON: keep */ }
+  }
+  const dirs = [...created].filter((rel) => rel !== settingsRel)
+    .sort((a, b) => b.split('/').length - a.split('/').length);
+  for (const rel of dirs) {
+    const path = join(projectRoot, rel);
+    try {
+      if (!statSync(path).isDirectory() || readdirSync(path).length > 0) continue;
+      if (!dryRun) rmdirSync(path);
+      removed.push(rel);
+    } catch { /* absent or not removable: keep */ }
+  }
+  return removed;
 }
 
 /** Remove everything `planProjectUninstall` found. Returns `{ removed, kept }`. */
@@ -799,6 +835,13 @@ function executeProjectUninstall(plan) {
     removed++;
   } else if (mcpServerResult === 'file-deleted') {
     console.log('  Removed: .mcp.json (wholly sweet-search-managed)');
+    removed++;
+  }
+
+  // Last: what is left of the settings file and directories init created.
+  const pruned = pruneCreatedPaths(projectRoot, plan.createdPaths);
+  if (pruned.length) {
+    console.log(`  Removed: now-empty paths init created (${pruned.join(', ')})`);
     removed++;
   }
 
