@@ -9,9 +9,10 @@ section.
 - Next step: read test-retest (ds-base-a2 vs ds-base-b2; cx-base-a vs cx-base-b) → V1 verdict on Opus train (cc-base-a vs cc-rp-a) → V2 verdicts (Codex, DeepSeek) → queue V3 (SEARCH_DEDUPE) → validation runs for passers.
 - Compare: `node core/prompt-optimization/data/final-tuning/scripts/compare.mjs <cell> <baseTag> <variantTag> [--base2 <tag>] [--native-r282]`
 - Queues (sequential per harness; `scripts/queue.sh`, logs `~/.ss-eval/final-tuning-logs/queue-*.log` + `<tag>.log`):
-  - cc-opus: `cc-base-a` (running) → `cc-rp-a` (V1)
-  - codex: waits for `cx-base-a` → `cx-prune3-a` (V2) → `cx-base-b` (retest)
-  - deepseek: `ds-base-b2` (retest) → `ds-prune3-a` (V2)
+  - cc-opus: `cc-base-a` DONE → `cc-rp-a` (V1) running since 00:25
+  - codex: `cx-base-a` DONE → `cx-prune3-a` (V2) running since 00:17 → `cx-base-b` (retest)
+  - deepseek: `ds-base-b2` (retest) running → `ds-prune3-a` (V2)
+- Phase 5 started early (no GPU needed yet): r3 repos chosen + cloned (`r3/REPOS.md`, `r3/repos.json`: jj Rust, dgraph Go, tortoise-orm Python, typedoc TS, zipkin Java, ocelot C#); 6 Sonnet drafting agents writing `r3/drafts/<repo>.json` per `r3/DRAFTING-BRIEF.md` (36 drafts each). **Indexing needs a window with NO bench running** (indexer swaps ORT CPU ↔ GPU models): ~4,750 files ≈ 95 min serial.
 - Done runs: `ds-base-a2` (78/78), `smoke-rulesprompt` (Opus, 4 Zig questions, V1 mechanism smoke).
 
 ## Baseline
@@ -46,6 +47,9 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Decisions log
 
+- 00:27 Opus fresh baseline `cc-base-a` (train 78) reproduces r282: vs r282 native cost +22.2% [+$0.0093, +$0.0138], cache write +2,550 tokens/rollout (+43%), accuracy 0.975 vs 0.976. Opus is stable over time → clean cell for V1.
+- 00:14 Codex fresh baseline `cx-base-a` vs r282 native: cost +2.4% [−$0.0037, +$0.0052] (r282 said sweet −10.5%) → Codex cost drifts with time; only fresh paired baselines count.
+
 - 00:12 **Bench fix confirmed:** DeepSeek sweet with the stable rules path (`ds-base-a2`, train 78) vs r282 native on the same ids: cost +7.9% [−$0.00010, +$0.00033] (was +54.6% in r282), accuracy 0.969 vs 0.964, native search calls −79%. — `compare.mjs oc-dsflash41 ds-base-a2 ds-base-a2 --native-r282`
 - 00:08 V1 mechanism smoke (Opus, 4 Zig train questions, conc 1): warm rollouts wrote 5,856 / 4,881 cache tokens vs r282 8,164 / 7,123; cost −22% per warm rollout. → full train screen queued.
 - 00:05 Codex queue started a second Codex run while `cx-base-a` was running (bad wait pattern). Killed it within ~1 min and deleted its partial results (`cx-prune3-a.aborted.log`); requeued with an anchored pattern.
@@ -66,4 +70,4 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Problems
 
-- none yet
+- 00:20 The r3 repo-selection agent ran a COUNT-ONLY grep (`grep -c zipkin`) over `.cache/tasks_full_heldout2_reserve.json` while checking freshness. No content was read or printed (3 case-insensitive matches of the word, 0 of `openzipkin/`). Recorded as a breach of the "never touch HO2" rule by a subagent; no HO2 data entered any decision. Later agent prompts name the forbidden files explicitly.
