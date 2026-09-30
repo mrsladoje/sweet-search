@@ -1151,7 +1151,7 @@ You never run a command.
 
 #### ⚙️ How it works
 > - **Only the function you edited is re-embedded.** The rest of the file keeps its vectors, even when your edit shifts every line below it.
-> - **Files that import it refresh too.** Rename a function and its callers pick up the new name. Comment-only edits skip re-embedding.
+> - **Saves with no real change cost almost nothing.** A content hash spots them and skips the models.
 > - **Uncommitted work counts.** The daemon reads files on disk. Deleted and newly ignored files drop out of results.
 > - **Light on your machine.** Updates run on the CPU in small batches of at most 50 files, and a background worker tidies the index later. The GPU stays free for full builds.
 
