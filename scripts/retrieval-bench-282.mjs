@@ -51,7 +51,7 @@ const { spawnWithTimeout, sweetRulesBlock, costsFromTurns, priceFor } = await im
 const { parseClaudeStream, excludeAncestorClaudeMd } = await import(path.join(H, 'claude-code-task-runner.mjs'));
 const { turnsFromTranscript, sidechainTurnSets, addSidechainCostsChecked, selectClaudeMainCosts } = await import(path.join(H, 'claude-code-accounting.mjs'));
 const { parseCodexAgentStream, codexHarnessTrim, codexHarnessTrimArgs, codexRulesConfigArgs, buildPrivateHome, isZeroCallStartFailure, classifyCodexCommand } = await import(path.join(H, 'codex-task-runner.mjs'));
-const { opencodeArmHarnessTrim, opencodeRulesInConfig, buildMainOpencodeConfig, opencodeUnjailedEnv, runOpencodePreflight, parseOpencodeStream, opencodeRunMessage, OPENCODE_TRIM_REPORT } = await import(path.join(H, 'opencode-task-runner.mjs'));
+const { opencodeArmHarnessTrim, opencodeRulesInConfig, buildMainOpencodeConfig, opencodeUnjailedEnv, runOpencodePreflight, parseOpencodeStream, opencodeRunMessage, OPENCODE_TRIM_REPORT, OPENCODE_RULES_FILE } = await import(path.join(H, 'opencode-task-runner.mjs'));
 const { writeClaudeRules, removeClaudeRules } = await imp('scripts/write-claude-rules.js');
 const { installClaudeLeanHarness, removeClaudeLeanHarness } = await imp('scripts/install-claude-lean-harness.js');
 if (ISOLATION_ON) throw new Error('SS_ISOLATION must be 0 on the Mac');
@@ -89,6 +89,7 @@ const onlyIds = String(flag('--ids', '')).split(',').map(s => s.trim()).filter(B
 const ARMS = String(flag('--arms', 'native,sweet')).split(',').map(s => s.trim()).filter(Boolean);
 const TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 900000);
 const TAG = flag('--tag', process.env.RESULTS_TAG || '');
+const STABLE_RULES_PATH = process.env.SS_BENCH_STABLE_RULES_PATH === '1';
 if (TAG && !/^[a-z0-9][a-z0-9._-]*$/i.test(TAG)) { console.error(`bad --tag ${TAG}`); process.exit(2); }
 const SUFFIX = `${SMOKE ? '-smoke' : ''}${TAG ? `-${TAG}` : ''}`;
 
@@ -376,7 +377,18 @@ async function runOpencode(probe, sweet) {
   const ocData = path.join(STATE, `oc-data-${sweet ? 'sweet' : 'native'}`); fs.mkdirSync(ocData, { recursive: true });
   if (CELL.ocAuth) ocSeedAuth(ocData, CELL.ocAuth);
   let trim = opencodeArmHarnessTrim({ sweet, apiModel: CELL.model.replace(/^openrouter\//, ''), stateDir });
-  trim = opencodeRulesInConfig(trim, { rules: sweet ? sweetRulesBlock({ mppText: RULES }) : null, stateDir });
+  // SS_BENCH_STABLE_RULES_PATH=1 (final-tuning, 2026-10-01): the rules file lives at ONE path per run
+  // instead of the per-rollout mkdtemp dir. opencode prints "Instructions from: <absolute path>" into
+  // the system prompt, so the random dir broke the provider's prefix cache on every sweet rollout
+  // (r282 DeepSeek sweet req-0 cache hit 24% vs native 86%). The product (`init`) uses the stable
+  // project path .opencode/sweet-search.md, so the stable path is the production-faithful setting.
+  const rulesDir = STABLE_RULES_PATH ? path.join(STATE, 'oc-rules') : stateDir;
+  trim = opencodeRulesInConfig(trim, { rules: sweet ? sweetRulesBlock({ mppText: RULES }) : null, stateDir: rulesDir });
+  if (STABLE_RULES_PATH && sweet) {
+    fs.mkdirSync(rulesDir, { recursive: true });
+    const f = path.join(rulesDir, OPENCODE_RULES_FILE), txt = trim.files[OPENCODE_RULES_FILE];
+    if (!fs.existsSync(f) || fs.readFileSync(f, 'utf8') !== txt) { const tmp = `${f}.${process.pid}.tmp`; fs.writeFileSync(tmp, txt); fs.renameSync(tmp, f); }
+  }
   for (const [name, text] of Object.entries(trim.files || {})) fs.writeFileSync(path.join(stateDir, name), text);
   const cfg = buildMainOpencodeConfig({ trim });
   cfg.provider = { ...cfg.provider, deepseek: { options: { apiKey: '{env:DEEPSEEK_API_KEY}' } } };
@@ -411,7 +423,7 @@ async function runOpencode(probe, sweet) {
 // ─── one rollout ───────────────────────────────────────────────────────────────────────────────
 async function runOne(probe, arm) {
   const sweet = arm === 'sweet';
-  const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION };
+  const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(Object.keys(process.env).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
   let run;
   try {
     run = CELL.harness === 'cc' ? await runClaude(probe, sweet, arm)

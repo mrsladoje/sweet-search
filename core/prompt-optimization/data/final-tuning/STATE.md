@@ -8,8 +8,9 @@ section.
 - Phase: **0 — setup and inventory** (in progress); Phase 1 agents and Phase 3 baselines started early (independent work, saves wall time).
 - Next step: when agents report → review TRIED-LEVERS.md + 3 normalisers (validate 3 rollouts myself) → common analyser (per-tool share, attribution, follow-up, rank usage, metadata share) → r282-TRACE-ANALYSIS.md.
 - Runs in flight (logs in `~/.ss-eval/final-tuning-logs/`):
-  - `ds-base-a` — oc-dsflash41 sweet, train 78, variant OFF (test-retest run A) — started 00:10
-  - `cx-base-a` — codex-sol61-high sweet, train 78, variant OFF — started 00:10
+  - `ds-base-a2` — oc-dsflash41 sweet, train 78, variants OFF, `SS_BENCH_STABLE_RULES_PATH=1` (test-retest run A) — started 23:58
+  - `cx-base-a` — codex-sol61-high sweet, train 78, variants OFF — started 23:50 (Codex unaffected by the rules-path fix)
+  - (killed) `ds-base-a` — 22 rows on the old random rules path; kept as evidence, not used.
 - Background agents: TRIED-LEVERS sweep; trace normalisers opencode / Codex / Claude Code.
 
 ## Baseline
@@ -39,6 +40,9 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 | sentinel | `SS_VARIANT_SENTINEL=1` | proof the bench runs the worktree | — | — | — | — | infra only |
 
 ## Decisions log
+
+- 23:58 **Bench fix `SS_BENCH_STABLE_RULES_PATH=1`** (runner; default off keeps r282 reproducible). The r282 opencode sweet arm wrote the rules file into a random per-rollout temp dir; opencode prints "Instructions from: <absolute path>" into the system prompt, so the provider prefix cache broke on every sweet rollout. Evidence: DeepSeek req-0 cache hit sweet 2029/8384 tokens (24%) vs native 6254/7235 (86%); prefix = 43% of sweet cost vs 14% native; the prefix gap ($0.00077/q) ≈ the whole r282 DeepSeek cost gap ($0.00079/q). The product (`init`) uses the stable project path `.opencode/sweet-search.md`, so the stable path is production-faithful. **All new opencode runs use it; r282's opencode cost deltas (DeepSeek +55%, oc-Sol +6.8%) are inflated by this artifact.** Killed `ds-base-a` (old setting) and restarted as `ds-base-a2`.
+- 23:57 Phase 1 draft: prefix = 44–73% of cost in every cell and arm; ss-search results 7–12%; ss-read 4–8%. → caching/prefix levers first, output shaping second. — `trace/analyze-traces.mjs`
 
 - 00:12 Codex/Sol (subscription) becomes the main screen cell; DeepSeek runs are rationed (balance $2.18). — balance API
 - 00:10 Baseline runs started before Phase 1/2 finish: they do not depend on any lever and the wall time is the bottleneck. — this file
