@@ -1221,7 +1221,7 @@ sweet-search stands on a lot of shoulders, and we'd rather name them than preten
 | 🧠 **Models** | [LightOn](https://huggingface.co/lightonai) LateOn-Code (late interaction, and the ColGrep idea) · [nomic-ai](https://huggingface.co/nomic-ai) CodeRankEmbed (embeddings) |
 | ⚙️ **Engines & libraries** | [tree-sitter](https://tree-sitter.github.io/) · [SQLite FTS5](https://sqlite.org/fts5.html) · [ONNX Runtime (ORT)](https://onnxruntime.ai/) · [candle](https://github.com/huggingface/candle) · [MLX](https://github.com/ml-explore/mlx) · [tokenizers](https://github.com/huggingface/tokenizers) · [CatBoost](https://catboost.ai/) (query router) · [napi-rs](https://napi.rs/) · [ripgrep](https://github.com/BurntSushi/ripgrep) (our grep baseline) |
 | 💡 **Ideas & benchmarks** | Cursor's [fast regex search](https://cursor.com/blog/fast-regex-search) & GitHub's [Blackbird](https://github.blog/engineering/the-technology-behind-githubs-new-code-search/) (sparse n-grams) · [Aider](https://github.com/Aider-AI/aider) (repo map) · [CodeSearchNet](https://github.com/github/CodeSearchNet) · [SWE-bench](https://www.swebench.com/) · [SWE-rebench](https://swe-rebench.com/) |
-| 🛠️ **Dev tools** | [Agentic QE](https://github.com/proffesor-for-testing/agentic-qe) (Dragan Spiridonov) |
+| 🛠️ **Dev tools** | [Claude Code](https://www.anthropic.com/claude-code) · [Codex](https://github.com/openai/codex) · [Cursor](https://cursor.com/) · [Agentic QE](https://github.com/proffesor-for-testing/agentic-qe) (Dragan Spiridonov) · Alex Prompter's [Feynman prompt](https://x.com/alex_prompter/status/2027787837639410110) (for learning the research) |
 
 ## 📄 License
 
