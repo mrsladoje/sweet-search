@@ -641,6 +641,178 @@
     "litestar-org__polyfactory-405": {
       "_why": "UNFIXABLE IN THE SHIM — excluded from agent runs (2026-08-07). test_cmd names docs/examples/configuration/test_example_8.py, a file CREATED by test_patch. The agent's run_tests applies only the agent diff to the BASE commit, so pytest exits 4 with `ERROR: file or directory not found` and `collected 0 items` on every call — empty diff, gold patch and a deliberately broken patch alike. The agent therefore gets no test feedback at all, which makes every turn-economy measurement on this task meaningless. The GRADER is unaffected (it applies test_patch first), so the gold ledger row stays valid; this is an agent-phase exclusion only.",
       "excludeFromAgentRuns": true
+    },
+    "tableauio__tableau-122": {
+      "image": "swerebenchv2-warm/swerebenchv2-warm/tableauio-tableau:122-e116e35",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "kubernetes-sigs__controller-tools-413": {
+      "image": "swerebenchv2-warm/kubernetes-sigs-controller-tools:413-92e95c1",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "linkerd__linkerd2-7481": {
+      "image": "swerebenchv2-warm/linkerd-linkerd2:7481-c1fa28a",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "aws-cloudformation__rain-565": {
+      "image": "swerebenchv2-warm/aws-cloudformation-rain:565-4da3428",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "vanus-labs__vanus-458": {
+      "image": "swerebenchv2-warm/vanus-labs-vanus:458-1da484d",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "hetznercloud__cli-987": {
+      "image": "swerebenchv2-warm/hetznercloud-cli:987-9fc4201",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "alibaba__sentinel-3136": {
+      "image": "swerebenchv2-warm/alibaba-sentinel:3136-a2e1400",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "hub4j__github-api-1233": {
+      "image": "swerebenchv2-warm/hub4j-github-api:1233-bcb71a3",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "esapi__esapi-java-legacy-441": {
+      "image": "swerebenchv2-warm/esapi-esapi-java-legacy:441-5f528d8",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "joelittlejohn__jsonschema2pojo-1522": {
+      "image": "swerebenchv2-warm/joelittlejohn-jsonschema2pojo:1522-1e51d0f",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "googleapis__java-spanner-jdbc-323": {
+      "image": "swerebenchv2-warm/googleapis-java-spanner-jdbc:323-e1cd90d",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "kafka-ops__kafka-topology-builder-204": {
+      "image": "swerebenchv2-warm/kafka-ops-kafka-topology-builder:204-5e01435",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "knowm__xchart-368": {
+      "image": "swerebenchv2-warm/knowm-xchart:368-c2c7294",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "googleapis__java-storage-nio-1067": {
+      "image": "swerebenchv2-warm/googleapis-java-storage-nio:1067-2f13792",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "googlecloudplatform__cloud-bigtable-client-2005": {
+      "image": "swerebenchv2-warm/googlecloudplatform-cloud-bigtable-client:2005-82b9bb6",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "crawler-commons__crawler-commons-401": {
+      "image": "swerebenchv2-warm/crawler-commons-crawler-commons:401-d8a6126",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "sonarsource__sonar-javascript-602": {
+      "image": "swerebenchv2-warm/sonarsource-sonar-javascript:602-d680828",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "apache__streampipes-2360": {
+      "image": "swerebenchv2-warm/apache-streampipes:2360-09a9da0",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "apache__incubator-fluo-814": {
+      "image": "swerebenchv2-warm/apache-incubator-fluo:814-80833ef",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "firebase__firebase-admin-java-167": {
+      "image": "swerebenchv2-warm/firebase-firebase-admin-java:167-6baace6",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "relayrides__pushy-529": {
+      "image": "swerebenchv2-warm/relayrides-pushy:529-49a11a6",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "googleapis__java-datastore-1457": {
+      "image": "swerebenchv2-warm/googleapis-java-datastore:1457-ff5e397",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "pysal__libpysal-591": {
+      "image": "swerebenchv2-warm/pysal-libpysal:591-5d09bc6",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "rust-lang__regex-1063": {
+      "image": "swerebenchv2-warm/rust-lang-regex:1063-bbf0b38",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "alexcrichton__toml-rs-165": {
+      "image": "swerebenchv2-warm/alexcrichton-toml-rs:165-9942435",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "rust-lang__chalk-673": {
+      "image": "swerebenchv2-warm/rust-lang-chalk:673-caa6910",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "fujiapple852__trippy-1008": {
+      "image": "swerebenchv2-warm/fujiapple852-trippy:1008-c1e3146",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "salsa-rs__salsa-591": {
+      "image": "swerebenchv2-warm/salsa-rs-salsa:591-c6c51a0",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "cobalt-org__cobalt.rs-1054": {
+      "image": "swerebenchv2-warm/cobalt-org-cobalt.rs:1054-ce319d8",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "awslabs__tough-404": {
+      "image": "swerebenchv2-warm/awslabs-tough:404-ac9a347",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "projectfluent__fluent-rs-262": {
+      "image": "swerebenchv2-warm/projectfluent-fluent-rs:262-df81ab8",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "matrix-org__matrix-rust-sdk-3846": {
+      "image": "swerebenchv2-warm/matrix-org-matrix-rust-sdk:3846-96c4e4c",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "public-awesome__launchpad-405": {
+      "image": "swerebenchv2-warm/public-awesome-launchpad:405-791faa3",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "auto-impl-rs__auto_impl-81": {
+      "image": "swerebenchv2-warm/auto-impl-rs-auto-impl:81-11fffab",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "burntsushi__ripgrep-454": {
+      "image": "swerebenchv2-warm/burntsushi-ripgrep:454-c50b8b4",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "winnow-rs__winnow-340": {
+      "image": "swerebenchv2-warm/winnow-rs-winnow:340-552e417",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "prql__prql-479": {
+      "image": "swerebenchv2-warm/prql-prql:479-e597e8b",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "railwayapp__nixpacks-560": {
+      "image": "swerebenchv2-warm/railwayapp-nixpacks:560-a406007",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "1password__typeshare-242": {
+      "image": "swerebenchv2-warm/1password-typeshare:242-3a67a6b",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "y2z__monolith-452": {
+      "image": "swerebenchv2-warm/y2z-monolith:452-9196500",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "input-output-hk__mithril-499": {
+      "image": "swerebenchv2-warm/input-output-hk-mithril:499-bb4e095",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "palantir__bulldozer-370": {
+      "image": "swerebenchv2-warm/palantir-bulldozer:370-7b3d468",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
+    },
+    "aleph-alpha__ts-rs-212": {
+      "image": "swerebenchv2-warm/aleph-alpha-ts-rs:212-5e9965b",
+      "_why": "Warm image (dependencies baked in; the test container has no network). Restored 2026-09-30 from the gold-valid luna-ho2-fp5 ledger row after a Mac->box rsync replaced the box-local overrides that held it."
     }
   }
 }
