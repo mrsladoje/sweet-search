@@ -698,6 +698,8 @@ export function planProjectUninstall(projectRoot) {
  * first). A path init did not create, or one that still holds anything, stays.
  * Returns the removed paths (relative).
  */
+const INIT_CLAUDE_DIRS = ['.claude/skills', '.claude/hooks', '.claude/agents', '.claude/rules', '.claude/output-styles', '.claude'];
+
 export function pruneCreatedPaths(projectRoot, createdPaths = [], { dryRun = false } = {}) {
   const removed = [];
   const created = new Set(createdPaths);
@@ -712,7 +714,10 @@ export function pruneCreatedPaths(projectRoot, createdPaths = [], { dryRun = fal
       }
     } catch { /* absent or not JSON: keep */ }
   }
-  const dirs = [...created].filter((rel) => rel !== settingsRel)
+  // Older inits did not record created paths: also offer the .claude/
+  // directories any init writes into. Only EMPTY directories are removed, so no
+  // content can be lost.
+  const dirs = [...new Set([...created, ...INIT_CLAUDE_DIRS])].filter((rel) => rel !== settingsRel)
     .sort((a, b) => b.split('/').length - a.split('/').length);
   for (const rel of dirs) {
     const path = join(projectRoot, rel);

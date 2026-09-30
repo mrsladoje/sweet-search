@@ -511,9 +511,20 @@ export function removeCodexHarness({ projectRoot, dryRun = false } = {}) {
   const manifestPath = join(projectRoot, CODEX_MANIFEST_REL);
   const manifestRead = readJson(manifestPath);
   if (manifestRead.error) return { status: 'error', detail: manifestRead.error };
-  if (!manifestRead.exists) return { status: 'not-found', detail: 'no Codex harness manifest' };
-  const manifest = manifestRead.value;
   const configPath = join(projectRoot, CODEX_CONFIG_REL);
+  if (!manifestRead.exists) {
+    // An older init (before the manifest) wrote exactly the legacy hooks flag
+    // file; it is ours when its text is still byte-identical.
+    let legacyText = null;
+    try { legacyText = readFileSync(configPath, 'utf8'); } catch { /* absent */ }
+    if (legacyText == null || !LEGACY_CONFIG_TEXTS.has(legacyText)) return { status: 'not-found', detail: 'no Codex harness manifest' };
+    const detail = `${CODEX_CONFIG_REL} (legacy hooks flag from an older init)`;
+    if (dryRun) return { status: 'dry-run', detail };
+    unlinkSync(configPath);
+    try { const dir = join(projectRoot, CODEX_DIR_REL); if (readdirSync(dir).length === 0) rmdirSync(dir); } catch { /* keep a non-empty directory */ }
+    return { status: 'removed', detail };
+  }
+  const manifest = manifestRead.value;
   const parts = [];
   const kept = [];
 

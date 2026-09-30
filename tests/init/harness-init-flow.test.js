@@ -179,6 +179,26 @@ describe('migration of an old AGENTS.md block', () => {
     });
   }
 
+  it('--opencode alone keeps the block while an old Codex layer (no new Codex harness) still reads it', () => {
+    // An older `init --codex` left AGENTS.md + a legacy .codex/config.toml; now only --opencode runs.
+    trustCodexProject();
+    mkdirSync(join(proj, '.codex'));
+    writeFileSync(join(proj, CODEX_CONFIG_REL), '[features]\nhooks = true\n');
+    writeFileSync(join(proj, 'AGENTS.md'), OLD_BLOCK);
+    const r = init('--opencode');
+    expect(read('AGENTS.md')).toBe(OLD_BLOCK);
+    expect(r.stderr).toContain('run `sweet-search init --codex`');
+    // After the Codex harness moves to its project config (trusted), the block goes.
+    init('--codex');
+    expect(exists('AGENTS.md')).toBe(false);
+  });
+
+  it('--opencode alone strips the block when the repo has no Codex layer', () => {
+    writeFileSync(join(proj, 'AGENTS.md'), OLD_BLOCK);
+    init('--opencode');
+    expect(exists('AGENTS.md')).toBe(false);
+  });
+
   it('plain init (Claude only) leaves AGENTS.md alone', () => {
     writeFileSync(join(proj, 'AGENTS.md'), OLD_BLOCK);
     init();
@@ -232,6 +252,26 @@ describe('uninstall restores the harness defaults', () => {
     expect(read(CODEX_CONFIG_REL)).not.toMatch(/^hooks = true$/m); // no hook here, so no flag
     uninstall();
     expect(exists('.codex')).toBe(false);
+  });
+
+  it('removes a legacy hooks-only config.toml and empty .claude/ dirs left by an older init', () => {
+    // No manifest and no created-paths record: what an init before these versions left behind.
+    mkdirSync(join(proj, '.codex'));
+    writeFileSync(join(proj, CODEX_CONFIG_REL), '[features]\nhooks = true\n');
+    mkdirSync(join(proj, '.claude', 'skills'), { recursive: true });
+    uninstall();
+    expect(exists('.codex')).toBe(false);
+    expect(exists('.claude')).toBe(false);
+  });
+
+  it('keeps a legacy-looking config.toml the user changed, and a non-empty .claude/', () => {
+    mkdirSync(join(proj, '.codex'));
+    writeFileSync(join(proj, CODEX_CONFIG_REL), '[features]\nhooks = true\nmodel = "mine"\n');
+    mkdirSync(join(proj, '.claude', 'skills'), { recursive: true });
+    writeFileSync(join(proj, '.claude', 'notes.md'), 'mine');
+    uninstall();
+    expect(read(CODEX_CONFIG_REL)).toContain('model = "mine"');
+    expect(read('.claude/notes.md')).toBe('mine');
   });
 
   it('keeps a hand-edited shipped file and says so', () => {
