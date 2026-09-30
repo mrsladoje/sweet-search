@@ -9,9 +9,9 @@ section.
 - Next step: read test-retest (ds-base-a2 vs ds-base-b2; cx-base-a vs cx-base-b) → V1 verdict on Opus train (cc-base-a vs cc-rp-a) → V2 verdicts (Codex, DeepSeek) → queue V3 (SEARCH_DEDUPE) → validation runs for passers.
 - Compare: `node core/prompt-optimization/data/final-tuning/scripts/compare.mjs <cell> <baseTag> <variantTag> [--base2 <tag>] [--native-r282]`
 - Queues (sequential per harness; `scripts/queue.sh`, logs `~/.ss-eval/final-tuning-logs/queue-*.log` + `<tag>.log`):
-  - cc-opus: `cc-base-a` DONE → `cc-rp-a` (V1) running since 00:25
+  - cc-opus: `cc-base-a` DONE → `cc-rp-a` (V1) running since 00:25 → queue cc-opus-val: `cc-base-v` → `cc-rp-v` (V1 validation, aggregates only)
   - codex: `cx-base-a` DONE → `cx-prune3-a` (V2) running since 00:17 → `cx-base-b` (retest)
-  - deepseek: `ds-base-b2` (retest) running → `ds-prune3-a` (V2)
+  - deepseek: `ds-base-b2` DONE → `ds-prune3-a` (V2) running since 00:29
 - Phase 5 started early (no GPU needed yet): r3 repos chosen + cloned (`r3/REPOS.md`, `r3/repos.json`: jj Rust, dgraph Go, tortoise-orm Python, typedoc TS, zipkin Java, ocelot C#); 6 Sonnet drafting agents writing `r3/drafts/<repo>.json` per `r3/DRAFTING-BRIEF.md` (36 drafts each). **Indexing needs a window with NO bench running** (indexer swaps ORT CPU ↔ GPU models): ~4,750 files ≈ 95 min serial.
 - Done runs: `ds-base-a2` (78/78), `smoke-rulesprompt` (Opus, 4 Zig questions, V1 mechanism smoke).
 
@@ -41,11 +41,14 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 |---|---|---|---|---|---|---|---|
 | sentinel | `SS_VARIANT_SENTINEL=1` | proof the bench runs the worktree | — | — | — | — | infra only |
 | bench fix | `SS_BENCH_STABLE_RULES_PATH=1` | opencode prefix cache broken by random rules path (waste #2) | DeepSeek vs r282 native: +7.9% (CI crosses 0), was +54.6% | — | n/a | n/a | **adopted for all new runs (measurement fix, not a product change)** |
-| V1 | `SS_VARIANT_CC_RULES_IN_PROMPT=1` | CC rules re-written each rollout (waste #1) | running | | | | screening |
+| V1 | `SS_VARIANT_CC_RULES_IN_PROMPT=1` | CC rules re-written each rollout (waste #1) | partial 45/78: cost −13.9% (CI < 0), acc = | | | | screening |
 | V2 | `SS_VARIANT_PRUNE3=1` | drop ss-find/semantic/trace (owner hyp. 2) | queued | | | | |
 | V3 | `SS_VARIANT_SEARCH_DEDUPE=1` | repeated ss-search entries/lines (waste #5) | not queued | | | | |
 
 ## Decisions log
+
+- 00:35 **Test-retest DeepSeek** (`ds-base-b2` vs `ds-base-a2`, identical code, train 78): cost +8.5% [−$0.00001, +$0.00029], accuracy +1.9 pt [+0.001, +0.038] (!), calls +6%. → DeepSeek screens need effects well above ~10% cost; an accuracy CI alone can move 2 points by chance. Recorded in noise-floor terms: real paired noise ≈ the pessimistic MDE.
+- 00:35 V1 partial (Opus, 45/78 train): cost −13.9% [−17.2%, −10.6%], cache write −1,686 tokens/rollout (−20%), accuracy 0.980 vs 0.979, calls equal, 0 native searches. Validation queued.
 
 - 00:27 Opus fresh baseline `cc-base-a` (train 78) reproduces r282: vs r282 native cost +22.2% [+$0.0093, +$0.0138], cache write +2,550 tokens/rollout (+43%), accuracy 0.975 vs 0.976. Opus is stable over time → clean cell for V1.
 - 00:14 Codex fresh baseline `cx-base-a` vs r282 native: cost +2.4% [−$0.0037, +$0.0052] (r282 said sweet −10.5%) → Codex cost drifts with time; only fresh paired baselines count.
