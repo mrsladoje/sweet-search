@@ -1196,11 +1196,9 @@ before the process exits, and the next edit (or query) respawns a fresh daemon.
 | macOS (Apple Silicon and Intel) | ⚡ Native |
 | Linux x64 and arm64 (glibc) | ⚡ Native |
 | Windows | ⚡ Native, inside WSL2. Native Windows is not supported yet. |
-| Other (musl/Alpine, other CPUs) | WASM/JS fallback (untested) |
+| Other (musl/Alpine, other CPUs) | WASM/JS fallback |
 
 **Native** means code we compile ahead of time for your exact OS and CPU. It is faster than the WASM/JavaScript fallback, which is general-purpose and not tuned for any one machine. `npm install` downloads the right native package for your machine automatically, with no flags. Requires Node ≥ 22.
-
-On Linux x64, ONNX Runtime's own install step downloads its CUDA libraries. On offline or GPU-less machines, skip that download with `ONNXRUNTIME_NODE_INSTALL=skip npm install`.
 
 ## 🙏 Prior Art & Acknowledgements
 
