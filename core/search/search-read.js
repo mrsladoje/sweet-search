@@ -13,6 +13,7 @@ import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { withPinnedRead } from './search-reader-pin.js';
 import { emitToolIdentityAuto } from './cli-decoration.js';
 import { resolveProjectRoot } from './server-identity.js';
+import { resolveCwdPath } from './cwd-paths.js';
 import {
   applyReadOmissionDecisions,
   collectReadShownSpans,
@@ -974,14 +975,17 @@ export async function handleReadCli(args) {
     process.stderr.write('[sweet-search read] --lines requires exactly one path\n');
     process.exit(2);
   }
+  // Shell semantics: a path relative to the cwd wins, else it stays root-relative.
+  const root = resolveProjectRoot();
   const files = parsed.positional.map(p => ({
-    path: p,
+    path: resolveCwdPath(p, { root }),
     startLine: wantsRange ? parsed.startLine : undefined,
     endLine: wantsRange ? parsed.endLine : undefined,
   }));
   // Agent-facing entry point: the span gate is on here. `format` still vetoes it
   // for benchmark/raw/json so a measurement run never sees an expanded span.
   const out = await readFiles(files, {
+    projectRoot: root,          // the paths above are root-relative; never the cwd
     includeMetadata: parsed.includeMetadata,
     spanExpand: true,
     format: parsed.format,

@@ -18,11 +18,14 @@ import {
   parseRepeatedValueFlag, extraPositionals,
   buildGrepPattern, stripInertFlags, normalizeArgs, extractPositional,
   parseLineRange, looksLikeOption, renderSufficiency, absorbPositionalPaths as absorbPositionalPathsPure,
+  parseContextFlags,
 } from './_ss-argparse.mjs';
 import {
   reallocateGrepTailForManifest,
   renderGrepBody,
+  renderGrepContext,
 } from '../../../core/search/grep-output-shaping.js';
+import { cwdGrepScope, resolveCwdPath } from '../../../core/search/cwd-paths.js';
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
 import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.js';
 import { createIndexCoverage, semanticTargetFor } from '../../../core/search/index-coverage.js';
@@ -343,13 +346,55 @@ function rejectUnknownOptions(args, usage) {
   if (bad) failUsage(`unrecognised option "${bad}"`, usage);
 }
 
+// Every path argument resolves the way the shell would: relative to the agent's cwd
+// first, then (unchanged) relative to the repository root. The result is the
+// root-relative spelling, so all output stays root-relative (core/search/cwd-paths.js).
+// `cd okhttp3 && ss-read Dispatcher.kt 190 215` used to fail with ENOENT.
+function cwdPath(p) {
+  return resolveCwdPath(p, { cwd: process.cwd(), root: FILE_ROOT });
+}
+
+// --in values and absorbed positional scopes, cwd-first, de-duplicated (in place).
+function resolveScopePaths(inPaths) {
+  const resolved = [...new Set(inPaths.map(cwdPath))];
+  inPaths.splice(0, inPaths.length, ...resolved);
+}
+
 // Grep muscle memory writes `ss-grep "pat" src/foo` with the scope as a bare
 // positional instead of `--in src/foo`. Absorb any such trailing positional that
 // resolves to a real path under the project (pure logic lives in _ss-argparse so
 // it is unit-tested; the path predicate is injected here).
 function absorbPositionalPaths(args, inPaths) {
   absorbPositionalPathsPure(args, inPaths,
-    (tok) => existsSync(path.isAbsolute(tok) ? tok : path.resolve(FILE_ROOT, tok)));
+    (tok) => existsSync(path.isAbsolute(tok) ? tok : path.resolve(FILE_ROOT, cwdPath(tok))));
+}
+
+// File contents for grep context lines, read from the agent's own files (FILE_ROOT).
+// Cached per call; null when the file cannot be read (the hit then prints alone).
+function grepContextLineReader() {
+  const cache = new Map();
+  return (file) => {
+    if (!cache.has(file)) {
+      let lines = null;
+      try {
+        const abs = path.isAbsolute(file) ? file : path.join(FILE_ROOT, file);
+        lines = readFileSync(abs, 'utf8').split('\n');
+        if (lines.length && lines[lines.length - 1] === '') lines.pop();
+      } catch { lines = null; }
+      cache.set(file, lines);
+    }
+    return cache.get(file);
+  };
+}
+
+// Every fetched hit line per file: a context line that is itself a match prints with ':'.
+function grepMatchLines(results) {
+  const byFile = new Map();
+  for (const m of results || []) {
+    if (!byFile.has(m.file)) byFile.set(m.file, new Set());
+    byFile.get(m.file).add(m.line);
+  }
+  return byFile;
 }
 
 // When a scope resolves to a real path on disk but the index does not hold it, a 0-result
@@ -459,19 +504,26 @@ function writeRegexDialectHintAfterRepair(stats, repaired) {
 
 // --- subcommands ----------------------------------------------------------
 
-const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]';
+const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N] [-A N] [-B N] [-C N]';
 async function cmdGrep(rawArgs) {
   const args = normalizeArgs(rawArgs);
   const ignoreCase = parseBoolFlag(args, ['-i', '--ignore-case']);
   const wordBound = parseBoolFlag(args, ['-w', '--word-regexp']);
   const fixedString = parseBoolFlag(args, ['-F', '--fixed-strings']);
   const k = readPositiveIntFlag(args, ['-k', '--top'], 20, GREP_USAGE);
+  // grep's -A/-B/-C: native agents use them in ~13% of grep calls (an enum body in one
+  // call). Rendered client-side from the agent's own files, in grep's own shape; with no
+  // context flag every byte below is what it was.
+  const context = parseContextFlags(args);
+  if (context.error) failUsage(context.error, GREP_USAGE);
+  const withContext = context.before > 0 || context.after > 0;
   // Drill-in scope: restrict matches to the named files or directories (the
   // recovery affordance the diversified output advertises when it truncates a
   // flooded file). Repeatable — one path per flag, every one applied.
   const inPaths = readRepeatedValueFlag(args, '--in', GREP_USAGE);
   stripInertFlags(args);
   absorbPositionalPaths(args, inPaths);
+  resolveScopePaths(inPaths);
   rejectExtraPositionals(args, GREP_USAGE);
   const rawPattern = resolvePositional(args, GREP_USAGE);
   const regex = buildGrepPattern(rawPattern, { ignoreCase, wordBound, fixedString });
@@ -571,12 +623,22 @@ async function cmdGrep(rawArgs) {
     // SS_FIX_GREP_ORDER (B7): source hits before test hits; no repeated matched-text column.
     const rows = FIX.grepOrder ? orderSourceBeforeTests(result.results) : result.results;
     const dropText = FIX.grepOrder && matchTextIsRepeated(rows);
-    rows.forEach((r, i) => {
-      const text = (r.matchText || '').replace(/\s+/g, ' ').trim().slice(0, 140);
-      const marker = (i === rows.length - 1 && total > rows.length)
-        ? ` (+${total - rows.length} more — raise -k)` : '';
-      process.stdout.write(dropText ? `${r.file}:${r.line}${marker}\n` : `${r.file}:${r.line}: ${text}${marker}\n`);
-    });
+    const shown = rows.map((r, i) => ({
+      file: r.file,
+      line: r.line,
+      text: (r.matchText || '').replace(/\s+/g, ' ').trim().slice(0, 140),
+      suffix: (i === rows.length - 1 && total > rows.length)
+        ? ` (+${total - rows.length} more — raise -k)` : '',
+    }));
+    if (withContext) {
+      for (const line of renderGrepContext(shown, {
+        ...context, getLines: grepContextLineReader(), matchLines: grepMatchLines(result.results),
+      })) process.stdout.write(`${line}\n`);
+    } else {
+      for (const r of shown) {
+        process.stdout.write(dropText ? `${r.file}:${r.line}${r.suffix}\n` : `${r.file}:${r.line}: ${r.text}${r.suffix}\n`);
+      }
+    }
     if (result.results.length === 0) {
       // A scope that does not exist on disk is the loudest case: 10 of 11 such calls in the
       // fresh pool printed a bare `(no matches)`, which says "your pattern is absent" about
@@ -611,6 +673,14 @@ async function cmdGrep(rawArgs) {
   // SS_FIX_GREP_ORDER (B7) fetches up to 100 files instead of k, so that source files are
   // not cut away before the source-before-test ordering can see them.
   const fetchFiles = FIX.grepOrder ? Math.max(k, 100) : k;
+  // Run from a subdirectory with no --in, ss-grep searches that subdirectory, as
+  // `grep -r` / `rg` do (jj-13: `cd cli/src/config && ss-grep "editor|pager"` returned
+  // 942 repo-wide hits in 95 files). The scope travels as an engine fileFilter marked
+  // _cwdScope, so the output keeps the unscoped shape (header, per-file body, family
+  // manifest, sibling line) with only the out-of-scope hits gone, and no line announces
+  // it. At the root, or outside the repository, cwdScope is null: nothing changes.
+  const cwdScope = cwdGrepScope({ cwd: process.cwd(), fileRoot: FILE_ROOT, indexRoot: PROJECT_ROOT });
+  const scopeOpts = cwdScope ? { fileFilter: cwdScope, _cwdScope: true } : {};
   const fetchUnscoped = async (rx) => {
     try {
       return await queryWarmSearch(rx, {
@@ -619,6 +689,7 @@ async function cmdGrep(rawArgs) {
         expand: false, rerank: false, useLateInteraction: false,
         _isAgentFormat: !fixedString,
         _siblingLine: process.env.SS_SIBLING_LINE !== '0', // default ON; cost bounded (≤0.6% prompt tokens), see SMOKE-LOSS-FORENSICS §9
+        ...scopeOpts,
       });
     } catch {
       const s = await getSweetSearch();
@@ -627,6 +698,7 @@ async function cmdGrep(rawArgs) {
         perFileCap: Math.min(k, 100), maxFiles: fetchFiles,
         _isAgentFormat: !fixedString,
         _siblingLine: process.env.SS_SIBLING_LINE !== '0', // default ON; cost bounded (≤0.6% prompt tokens), see SMOKE-LOSS-FORENSICS §9
+        ...scopeOpts,
       });
     }
   };
@@ -638,7 +710,7 @@ async function cmdGrep(rawArgs) {
     || { files: [], hiddenFileCount: 0, hiddenMatchCount: 0, hiddenSample: [] };
   // B7: >= GREP_COUNTS_THRESHOLD hits print a short line list per file, not the hit-line flood.
   // Source files come first, but a quota of test files stays among the first k files.
-  const listMode = FIX.grepOrder && total >= GREP_COUNTS_THRESHOLD;
+  const listMode = FIX.grepOrder && total >= GREP_COUNTS_THRESHOLD && !withContext;
   const keptMatches = FIX.grepOrder ? orderSourceBeforeTests(result.results, { k }) : result.results;
   const body = renderGrepBody(keptMatches, fileSummary, k, FIX.grepOrder ? { dropRepeatedText: true } : undefined);
   const completed = listMode
@@ -678,7 +750,18 @@ async function cmdGrep(rawArgs) {
     process.stdout.write(`# (+N more in this file)=truncated — ` +
       `see the rest: ss-grep "<regex>" --in <file>\n`);
   }
-  for (const line of completed.lines) process.stdout.write(line + '\n');
+  if (withContext) {
+    // The same hits the plain body keeps (completed.lines[i] prints body.rows[i]).
+    const shown = body.rows.slice(0, completed.lines.length).map((r) => ({
+      file: r.file, line: r.line, text: r.text,
+      suffix: r.more ? ` (+${r.more} more in this file)` : '',
+    }));
+    for (const line of renderGrepContext(shown, {
+      ...context, getLines: grepContextLineReader(), matchLines: grepMatchLines(result.results),
+    })) process.stdout.write(line + '\n');
+  } else {
+    for (const line of completed.lines) process.stdout.write(line + '\n');
+  }
   if (completed.familyManifest) process.stdout.write(`${completed.familyManifest.rendered}\n`);
   // Singleton hit: the same-file identifier family, with code lines (L1a).
   if (result.siblingLine?.rendered) process.stdout.write(`${result.siblingLine.rendered}\n`);
@@ -708,6 +791,7 @@ async function cmdFind(rawArgs) {
   const inPaths = readRepeatedValueFlag(args, '--in', FIND_USAGE);
   stripInertFlags(args);
   absorbPositionalPaths(args, inPaths);
+  resolveScopePaths(inPaths);
   const query = resolvePositional(args, FIND_USAGE);
   const findFileFilter = inPaths.length ? (inPaths.length === 1 ? inPaths[0] : inPaths) : undefined;
   if (!query) {
@@ -830,7 +914,7 @@ const READ_USAGE =
 async function cmdRead(rawArgs) {
   const args = [...rawArgs];
   const force = parseBoolFlag(args, ['--force']);
-  const file = args[0];
+  const file = cwdPath(args[0]);
   if (!file) {
     process.stderr.write(READ_USAGE + '\n');
     process.exit(2);
@@ -1250,7 +1334,7 @@ async function cmdSemantic(rawArgs) {
   const maxTokens = readPositiveIntFlag(args, '--max-tokens',
     Number(process.env.SS_SMOKE_SEMANTIC_MAXTOKENS || '') || 600, SEMANTIC_USAGE);
   rejectUnknownOptions(args, SEMANTIC_USAGE);
-  let file = args[0];
+  let file = cwdPath(args[0]);
   const query = args[1];
   if (!file || !query) {
     process.stderr.write(SEMANTIC_USAGE + '\n');
@@ -1354,7 +1438,7 @@ async function cmdTrace(rawArgs) {
   }
 
   const opts = { projectRoot: PROJECT_ROOT };
-  const file = readValueFlag(args, ['--in', '--file'], null, TRACE_USAGE);
+  const file = cwdPath(readValueFlag(args, ['--in', '--file'], null, TRACE_USAGE));
   const queryHint = readValueFlag(args, ['--query', '--hint'], '', TRACE_USAGE, { allowOptionValue: true });
   const depth = readPositiveIntFlag(args, '--depth', null, TRACE_USAGE);
   const budget = readPositiveIntFlag(args, '--budget', null, TRACE_USAGE);

@@ -9,6 +9,8 @@ import { DB_PATHS } from '../infrastructure/config/index.js';
 import { StructuralContextBuilder, formatStructuralContext, TRACE_MODES } from '../graph/structural-context.js';
 import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
 import { emitToolIdentityAuto } from './cli-decoration.js';
+import { resolveCwdPath } from './cwd-paths.js';
+import { resolveProjectRoot } from './server-identity.js';
 
 function parseArgs(args) {
   const opts = {
@@ -95,6 +97,12 @@ Examples:
     process.exit(opts.help ? 0 : 1);
   }
 
+  // The project root, never the cwd: run from a subdirectory, the builder used to read
+  // source relative to the cwd and crash (null text in findAliasCallers).
+  const root = resolveProjectRoot();
+  opts.projectRoot ??= root;
+  // Shell semantics for --in: a path relative to the cwd wins, else it stays root-relative.
+  if (opts.filePath) opts.filePath = resolveCwdPath(opts.filePath, { root });
   const result = traceSymbol(opts.symbol, opts);
   if (opts.json) {
     console.log(JSON.stringify(result, null, 2));

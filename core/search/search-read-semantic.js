@@ -38,6 +38,7 @@ import { lineGutterEnabled, numberCodeLines } from './search-read.js';
 import { readFile as readFileExact } from './search-read.js';
 import { withPinnedRead } from './search-reader-pin.js';
 import { emitToolIdentityAuto } from './cli-decoration.js';
+import { resolveCwdPath } from './cwd-paths.js';
 
 // Applies the user's persisted LI model exactly once per (projectRoot, env)
 // pair so encodeQuery/_getLateInteractionIndex below see the right variant.
@@ -953,7 +954,9 @@ export async function handleReadSemanticCli(args) {
   const [file, ...queryParts] = parsed.positional;
   const query = queryParts.join(' ');
   const result = await readSemantic({
-    path: file,
+    // Shell semantics: a path relative to the cwd wins, else it stays root-relative.
+    path: resolveCwdPath(file, { root: PROJECT_ROOT }),
+    projectRoot: PROJECT_ROOT,   // never the cwd: from a subdirectory nothing was found
     query,
     topK: parsed.topK,
     threshold: parsed.threshold,

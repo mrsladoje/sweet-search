@@ -1043,6 +1043,11 @@ export async function startServer() {
       }
       const maxMatches = parseInt(url.searchParams.get('maxMatches') || '0', 10);
       const contextLines = parseInt(url.searchParams.get('contextLines') || '0', 10);
+      // grep -B / -A (asymmetric); absent = the symmetric contextLines count.
+      const contextSide = (name) => (url.searchParams.has(name)
+        ? Math.max(0, parseInt(url.searchParams.get(name), 10) || 0) : undefined);
+      const contextBefore = contextSide('contextBefore');
+      const contextAfter = contextSide('contextAfter');
       // Repeatable: `--in A --in B` arrives as several fileFilter params and
       // every one is applied. A single value stays a plain string, so the
       // one-scope wire format is byte-identical to before.
@@ -1111,6 +1116,8 @@ export async function startServer() {
           regex,
           maxMatches,
           contextLines,
+          ...(contextBefore != null ? { contextBefore } : {}),
+          ...(contextAfter != null ? { contextAfter } : {}),
           fileFilter,
           perFileCap,
           maxFiles,
@@ -1126,6 +1133,8 @@ export async function startServer() {
           _isAgentFormat: isAgentFormat,
           // SS_SIBLING_LINE=0 lives in the CLIENT's env; the daemon must be told.
           _siblingLine: url.searchParams.get('siblingLine') !== 'false',
+          // The fileFilter is the client's shell cwd, not an explicit --in (cwd-paths.js).
+          _cwdScope: url.searchParams.get('cwdScope') === 'true',
           ...(agentFormat && { format: agentFormat, tokenBudget }),
         });
 
@@ -1521,6 +1530,8 @@ export async function queryServer(query, options = {}) {
     topK = 10,
     maxMatches = 0,
     contextLines = 0,
+    contextBefore,
+    contextAfter,
     fileFilter,
     perFileCap = 0,
     maxFiles = 0,
@@ -1541,6 +1552,7 @@ export async function queryServer(query, options = {}) {
     trackAgentSpans = true,
     _isAgentFormat = false,
     _siblingLine = true,
+    _cwdScope = false,
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -1554,6 +1566,8 @@ export async function queryServer(query, options = {}) {
     if (regex) params.set('regex', regex);
     if (maxMatches > 0) params.set('maxMatches', maxMatches.toString());
     if (contextLines > 0) params.set('contextLines', contextLines.toString());
+    if (contextBefore != null) params.set('contextBefore', String(contextBefore));
+    if (contextAfter != null) params.set('contextAfter', String(contextAfter));
     // One param per scope. `set` would stringify an array into "a,b,c", which
     // the server then treats as one literal path that matches nothing.
     for (const f of (Array.isArray(fileFilter) ? fileFilter : [fileFilter])) {
@@ -1576,6 +1590,7 @@ export async function queryServer(query, options = {}) {
     if (projectRoot) params.set('projectRoot', projectRoot);
     if (_isAgentFormat) params.set('agent', 'true');
     if (_siblingLine === false) params.set('siblingLine', 'false');
+    if (_cwdScope) params.set('cwdScope', 'true');
     if (!trackAgentSpans) params.set('trackAgentSpans', 'false');
     if (trackAgentSpans && format?.startsWith('agent') && exactRereadOmissionEnabled()) {
       const sessionId = resolveAgentSessionId();

@@ -265,6 +265,9 @@ export function buildBareGrepResults(matches, options = {}) {
     projectRoot = PROJECT_ROOT,
     contextLines = 0,
   } = options;
+  // grep -B / -A: each side defaults to the symmetric -C count.
+  const beforeLines = options.contextBefore ?? contextLines;
+  const afterLines = options.contextAfter ?? contextLines;
 
   const fileCache = new Map();
 
@@ -272,10 +275,12 @@ export function buildBareGrepResults(matches, options = {}) {
     let contextBefore = [];
     let contextAfter = [];
 
-    if (contextLines > 0) {
-      const before = readFileRange(fileCache, match.file, Math.max(1, match.line - contextLines), match.line - 1, projectRoot);
-      const after = readFileRange(fileCache, match.file, match.line + 1, match.line + contextLines, projectRoot);
+    if (beforeLines > 0) {
+      const before = readFileRange(fileCache, match.file, Math.max(1, match.line - beforeLines), match.line - 1, projectRoot);
       contextBefore = before ? before.split('\n').filter(Boolean) : [];
+    }
+    if (afterLines > 0) {
+      const after = readFileRange(fileCache, match.file, match.line + 1, match.line + afterLines, projectRoot);
       contextAfter = after ? after.split('\n').filter(Boolean) : [];
     }
 

@@ -26,6 +26,7 @@ import {
   parseRepeatedValueFlag,
   extraPositionals,
   parseLineRange,
+  parseContextFlags,
 } from '../../eval/agent-read-workflows/bin/_ss-argparse.mjs';
 
 describe('buildGrepPattern', () => {
@@ -316,6 +317,8 @@ describe('end-to-end pipeline (normalize → parse → resolve → build)', () =
     const fixedString = parseBoolFlag(args, ['-F', '--fixed-strings']);
     const k = parsePositiveIntFlag(args, ['-k', '--top'], 20);
     if (k.error) return { error: k.error };
+    const context = parseContextFlags(args);
+    if (context.error) return { error: context.error };
     stripInertFlags(args);
     const { pattern, unknownFlag } = extractPositional(args);
     if (unknownFlag) return { error: unknownFlag };
@@ -334,8 +337,12 @@ describe('end-to-end pipeline (normalize → parse → resolve → build)', () =
   it('genuine unknown flag is reported, not searched for', () => {
     expect(grepPattern(['-z', 'fn'])).toEqual({ error: '-z' });
   });
-  it('attached unsupported context flag is reported, not searched for', () => {
-    expect(grepPattern(['-C2', 'fn'])).toEqual({ error: '-C2' });
+  it('attached context flag is consumed (now supported), never searched for', () => {
+    expect(grepPattern(['-C2', 'fn'])).toEqual({ regex: 'fn' });
+    expect(grepPattern(['-iA3', 'fn'])).toEqual({ regex: '(?i)fn' });
+  });
+  it('an unsupported attached flag is still reported, not searched for', () => {
+    expect(grepPattern(['-z2', 'fn'])).toEqual({ error: '-z2' });
   });
   it('inert -n is a no-op; pattern still resolves', () => {
     expect(grepPattern(['-n', 'fn main'])).toEqual({ regex: 'fn main' });
@@ -449,5 +456,52 @@ describe('absorbPositionalPaths', () => {
     absorbPositionalPaths(args, inPaths, isPath(['src/a']));
     expect(inPaths).toEqual(['src/b', 'src/a']);
     expect(args).toEqual(['pat']);
+  });
+});
+
+describe('ss-grep context flags -A/-B/-C (grep muscle memory: 166 of 1,247 native grep calls)', () => {
+  const parse = (argv) => {
+    const args = normalizeArgs(argv);
+    const ctx = parseContextFlags(args);
+    return { ...ctx, rest: args };
+  };
+
+  it('no context flag → 0/0 and args untouched (the no-flag output path is unchanged)', () => {
+    expect(parse(['pub enum', '-k', '5'])).toEqual({ before: 0, after: 0, error: null, rest: ['pub enum', '-k', '5'] });
+  });
+
+  it('separate values: -A N, -B N, -C N', () => {
+    expect(parse(['X', '-A', '22'])).toMatchObject({ before: 0, after: 22, rest: ['X'] });
+    expect(parse(['X', '-B', '3'])).toMatchObject({ before: 3, after: 0, rest: ['X'] });
+    expect(parse(['X', '-C', '2'])).toMatchObject({ before: 2, after: 2, rest: ['X'] });
+  });
+
+  it('attached and bundled forms: -A22, -C2, -iC2', () => {
+    expect(parse(['pub enum ConfigSource', '-A22'])).toMatchObject({ after: 22, before: 0, rest: ['pub enum ConfigSource'] });
+    expect(parse(['X', '-C2'])).toMatchObject({ before: 2, after: 2, rest: ['X'] });
+    expect(parse(['X', '-iC2'])).toMatchObject({ before: 2, after: 2, rest: ['X', '-i'] });
+  });
+
+  it('long forms with =N or a separate value', () => {
+    expect(parse(['X', '--after-context=5'])).toMatchObject({ after: 5, before: 0, rest: ['X'] });
+    expect(parse(['X', '--before-context', '4'])).toMatchObject({ before: 4, after: 0, rest: ['X'] });
+    expect(parse(['X', '--context=3'])).toMatchObject({ before: 3, after: 3, rest: ['X'] });
+    expect(parse(['X', '--context', '1'])).toMatchObject({ before: 1, after: 1, rest: ['X'] });
+  });
+
+  it('explicit -A/-B win over -C whatever the order; the last of a kind wins (GNU grep)', () => {
+    expect(parse(['X', '-A', '5', '-C', '1'])).toMatchObject({ before: 1, after: 5 });
+    expect(parse(['X', '-C', '1', '-B', '4'])).toMatchObject({ before: 4, after: 1 });
+    expect(parse(['X', '-A', '1', '-A', '7'])).toMatchObject({ after: 7 });
+  });
+
+  it('a missing or non-numeric count is a usage error, never the pattern', () => {
+    expect(parse(['X', '-A']).error).toMatch(/-A requires a line count/);
+    expect(parse(['X', '-C', 'foo']).error).toMatch(/-C requires a line count/);
+    expect(parse(['X', '--context=x']).error).toMatch(/--context requires a line count/);
+  });
+
+  it('a flag-shaped token after `--` is the pattern, not a context flag', () => {
+    expect(parse(['--', '-A'])).toMatchObject({ before: 0, after: 0, rest: ['--', '-A'] });
   });
 });

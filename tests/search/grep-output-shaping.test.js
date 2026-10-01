@@ -15,6 +15,7 @@ import {
   renderGrepBody,
   reallocateGrepTailForManifest,
   matchesGrepFileFilter,
+  renderGrepContext,
 } from '../../core/search/grep-output-shaping.js';
 import { bareGrep, SweetSearch } from '../../core/search/index.js';
 import { buildSingletonSiblingLine } from '../../core/search/agent-pack-completion.js';
@@ -577,6 +578,21 @@ describe('singleton sibling line (squashql-295)', () => {
     expect(repo.findEntitiesInFile).toHaveBeenCalledTimes(1); // only the in-entity miss did file work
   });
 
+  it('bareGrep keeps it under the implicit cwd scope of ss-grep (_cwdScope), unlike --in', async () => {
+    const searcher = { ...makeSearcher([m(JAVA, 212, 'throw new IllegalArgumentException("sub-query in a sub-query is not supported");')]), projectRoot: root };
+    searcher.codeGraphRepo = squashqlRepo();
+    const opts = { regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true, _siblingLine: true };
+    const inScope = await bareGrep.call(searcher, 'not supported', null, {
+      ...opts, fileFilter: path.join(root, 'src'), _cwdScope: true,
+    });
+    expect(inScope.results).toHaveLength(1);
+    expect(inScope.siblingLine.rendered).toContain('35: private final Map<Measure, CompiledMeasure> subQueryMeasures;');
+    const outOfScope = await bareGrep.call(searcher, 'not supported', null, {
+      ...opts, fileFilter: path.join(root, 'test'), _cwdScope: true,
+    });
+    expect(outOfScope.results).toHaveLength(0);
+  });
+
   it('bareGrep attaches it only for agent format without --in, and honours the opt-out', async () => {
     const searcher = { ...makeSearcher([m(JAVA, 212, 'throw new IllegalArgumentException("sub-query in a sub-query is not supported");')]), projectRoot: root };
     searcher.codeGraphRepo = squashqlRepo();
@@ -597,5 +613,62 @@ describe('singleton sibling line (squashql-295)', () => {
       regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true, _siblingLine: false,
     });
     expect(off.siblingLine).toBeUndefined();
+  });
+});
+
+describe('renderGrepContext (ss-grep -A/-B/-C)', () => {
+  const FILE = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`);
+  FILE[9] = '    pub enum ConfigSource {';   // line 10, indented
+  FILE[11] = '';                              // line 12, blank
+  const files = { 'src/a.rs': FILE, 'src/b.rs': ['fn b() {', '    ConfigSource::Env', '}'] };
+  const getLines = (f) => files[f] ?? null;
+
+  it('renders grep -n shape: hit `file:N: text`, context `file-N- text`, full indented lines', () => {
+    const out = renderGrepContext([{ file: 'src/a.rs', line: 10, text: 'ConfigSource' }], { before: 1, after: 2, getLines });
+    expect(out).toEqual([
+      'src/a.rs-9- line 9',
+      'src/a.rs:10:     pub enum ConfigSource {',
+      'src/a.rs-11- line 11',
+      'src/a.rs-12-',
+    ]);
+  });
+
+  it('merges overlapping and touching windows, separates groups and files with --', () => {
+    const rows = [
+      { file: 'src/a.rs', line: 3, text: 'x' },
+      { file: 'src/a.rs', line: 5, text: 'x' },     // overlaps 3's window
+      { file: 'src/a.rs', line: 8, text: 'x' },     // touches (6..7 | 7..9)
+      { file: 'src/a.rs', line: 20, text: 'x' },    // separate group
+      { file: 'src/b.rs', line: 2, text: 'x' },     // next file
+    ];
+    const out = renderGrepContext(rows, { before: 1, after: 1, getLines });
+    expect(out).toEqual([
+      'src/a.rs-2- line 2', 'src/a.rs:3: line 3', 'src/a.rs-4- line 4', 'src/a.rs:5: line 5',
+      'src/a.rs-6- line 6', 'src/a.rs-7- line 7', 'src/a.rs:8: line 8', 'src/a.rs-9- line 9',
+      '--',
+      'src/a.rs-19- line 19', 'src/a.rs:20: line 20', 'src/a.rs-21- line 21',
+      '--',
+      'src/b.rs-1- fn b() {', 'src/b.rs:2:     ConfigSource::Env', 'src/b.rs-3- }',
+    ]);
+  });
+
+  it('-A only (the jj-13 enum case) clamps at end of file', () => {
+    const out = renderGrepContext([{ file: 'src/b.rs', line: 2, text: 'x' }], { before: 0, after: 22, getLines });
+    expect(out).toEqual(['src/b.rs:2:     ConfigSource::Env', 'src/b.rs-3- }']);
+  });
+
+  it('keeps a truncation marker on its hit and marks other matching lines with `:`', () => {
+    const out = renderGrepContext([{ file: 'src/a.rs', line: 3, text: 'x', suffix: ' (+4 more in this file)' }], {
+      before: 0, after: 2, getLines, matchLines: new Map([['src/a.rs', new Set([3, 4])]]),
+    });
+    expect(out).toEqual(['src/a.rs:3: line 3 (+4 more in this file)', 'src/a.rs:4: line 4', 'src/a.rs-5- line 5']);
+  });
+
+  it('an unreadable file or a stale line prints the plain hit line, in order', () => {
+    const out = renderGrepContext([
+      { file: 'gone.rs', line: 4, text: 'hit', suffix: ' (+1 more — raise -k)' },
+      { file: 'src/b.rs', line: 99, text: 'stale' },
+    ], { before: 2, after: 2, getLines });
+    expect(out).toEqual(['gone.rs:4: hit (+1 more — raise -k)', '--', 'src/b.rs:99: stale']);
   });
 });
