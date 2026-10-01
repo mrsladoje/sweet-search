@@ -344,6 +344,31 @@ describe('review — JVM implicit references', () => {
     }, 'src/p/Use.java', 'java')).toEqual([]);
   });
 
+  it('Kotlin Multiplatform: a reference links the expect declaration, not every platform actual', () => {
+    expect(implicit({
+      'core/common/src/Dispatchers.common.kt': 'package kotlinx.coroutines\n\npublic expect object Dispatchers {\n}\n',
+      'core/jvm/src/Dispatchers.kt': 'package kotlinx.coroutines\n\npublic actual object Dispatchers {\n}\n',
+      'core/js/src/Dispatchers.kt': 'package kotlinx.coroutines\n\n@Suppress("X")\npublic actual object Dispatchers {\n}\n',
+      'core/jvm/test/UseTest.kt': 'package kotlinx.coroutines\n\nclass UseTest { val d = Dispatchers }\n',
+    }, 'core/jvm/test/UseTest.kt', 'kotlin')).toEqual(['core/common/src/Dispatchers.common.kt']);
+  });
+
+  it('the same name declared in several files (not partial parts) is ambiguous: no edge', () => {
+    // Same class in two Gradle modules of one package.
+    expect(implicit({
+      'a/src/main/java/p/Util.java': 'package p;\npublic class Util {}',
+      'b/src/main/java/p/Util.java': 'package p;\npublic class Util {}',
+      'a/src/main/java/p/Use.java': 'package p;\nclass Use { Util u; }',
+    }, 'a/src/main/java/p/Use.java', 'java')).toEqual([]);
+    // Swift free-function overloads in different files of one target.
+    expect(implicit({
+      'Package.swift': 'let package = Package(name: "G", targets: [ .target(name: "G", path: "Sources/G") ])',
+      'Sources/G/A.swift': 'public func cast(_ x: Int) -> Int { x }\n',
+      'Sources/G/B.swift': 'public func cast(_ x: String) -> String { x }\n',
+      'Sources/G/Use.swift': 'func run() { _ = cast(1) }\n',
+    }, 'Sources/G/Use.swift', 'swift')).toEqual([]);
+  });
+
   it('Kotlin top-level function in a differently named file', () => {
     expect(targets({
       'src/a/b/Utils.kt': 'package a.b\n\nfun doThing() {}\n',

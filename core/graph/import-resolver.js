@@ -1504,7 +1504,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
       if (swiftTargetOf(f) !== target) continue;
       const decls = cachedDeclarations(root, f, 'swift', (text) => braceDeclarations(stripNoise(text, 'swift')).decls);
       if (!decls) continue;
-      for (const d of decls) addDecl(byName, d.name, f, d.kind);
+      for (const d of decls) addDecl(byName, d.name, f, d.kind, d);
     }
     swiftModuleIndexMemo.set(target.dir, byName);
     return byName;
@@ -1529,7 +1529,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
       for (const t of decl.types) {
         let byName = types.get(t.ns);
         if (!byName) { byName = new Map(); types.set(t.ns, byName); }
-        addDecl(byName, t.name, f, 'type');
+        addDecl(byName, t.name, f, 'type', t);
       }
       if (decl.globalUsings.length) {
         const proj = csProjectOf(f, projectDirs);
@@ -1554,8 +1554,8 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     if (dot === -1) return null;
     const entry = csIndex().types.get(imp.spec.slice(0, dot))?.get(imp.spec.slice(dot + 1));
     if (!entry) return null;
-    const others = entry.type.filter((f) => f !== fromFile);
-    return others.length >= 1 && others.length <= MAX_FILES_PER_NAME ? others[0] : null;
+    const others = narrowDeclarers(entry, entry.type.filter((f) => f !== fromFile));
+    return others.length >= 1 ? others[0] : null;
   }
 
   // -------------------------------------------------------------------------
@@ -1575,7 +1575,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
       const pkg = packageChain(packages).pop() || '';
       let byName = jvmIndexMemo.get(pkg);
       if (!byName) { byName = new Map(); jvmIndexMemo.set(pkg, byName); }
-      for (const d of decls) addDecl(byName, d.name, f, d.kind);
+      for (const d of decls) addDecl(byName, d.name, f, d.kind, d);
     }
     return jvmIndexMemo;
   }
@@ -1586,7 +1586,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     if (dot === -1) return null;
     const entry = jvmIndex().get(spec.slice(0, dot))?.get(spec.slice(dot + 1));
     if (!entry) return null;
-    const files = [...new Set([...entry.type, ...entry.func])].filter((f) => f !== fromFile);
+    const files = narrowDeclarers(entry, [...new Set([...entry.type, ...entry.func])].filter((f) => f !== fromFile));
     return files.length === 1 ? files[0] : null;
   }
 
@@ -1621,12 +1621,36 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
   // Implicit references (namespace / package / module languages)
   // -------------------------------------------------------------------------
 
-  /** Index entry per name: declaring files split by kind ('type' | 'func'). */
-  function addDecl(byName, name, file, kind) {
+  /**
+   * Index entry per name: declaring files split by kind ('type' | 'func'),
+   * plus the files whose declaration is a Kotlin `actual` (platform
+   * implementation) or a C# `partial` part.
+   */
+  function addDecl(byName, name, file, kind, flags = null) {
     let entry = byName.get(name);
-    if (!entry) { entry = { type: [], func: [] }; byName.set(name, entry); }
+    if (!entry) { entry = { type: [], func: [], actual: new Set(), partial: new Set() }; byName.set(name, entry); }
     const list = kind === 'func' ? entry.func : entry.type;
     if (!list.includes(file)) list.push(file);
+    if (flags?.actual) entry.actual.add(file);
+    if (flags?.partial) entry.partial.add(file);
+  }
+
+  /**
+   * The declaring files one reference may link to. Several files declaring
+   * the name in one scope are linked only when they are one declaration:
+   * the parts of a C# partial type. Kotlin `actual` platform implementations
+   * give way to the `expect` declaration (a JVM file must not link the JS and
+   * native actuals). Anything else — overloads in different files, the same
+   * class in two Gradle modules — is ambiguous: no edge.
+   */
+  function narrowDeclarers(entry, files) {
+    let out = files;
+    if (out.length > 1 && entry.actual.size) {
+      const expectOnly = out.filter((f) => !entry.actual.has(f));
+      if (expectOnly.length) out = expectOnly;
+    }
+    if (out.length > 1 && !out.every((f) => entry.partial.has(f))) return [];
+    return out.length <= MAX_FILES_PER_NAME ? out : [];
   }
 
   /**
@@ -1660,7 +1684,9 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
       if (hitFiles === null) continue;
       const files = hitFiles.includes(fromFile) ? hitFiles.filter((f) => f !== fromFile) : hitFiles;
       if (files.length === 0) return null; // declared by the importing file itself
-      return files.length <= MAX_FILES_PER_NAME ? { scope: hitScope, files } : null;
+      const entry = tier.find(([s]) => s === hitScope)[1].get(name);
+      const narrowed = narrowDeclarers(entry, files);
+      return narrowed.length ? { scope: hitScope, files: narrowed } : null;
     }
     return null;
   }
@@ -1745,8 +1771,8 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
         if (!entry) continue;
         const list = entry.type.length ? entry.type : entry.func;
         if (!list.length) continue;
-        const files = list.filter((f) => f !== fromFile);
-        if (files.length === 0 || files.length > MAX_FILES_PER_NAME) return null;
+        const files = narrowDeclarers(entry, list.filter((f) => f !== fromFile));
+        if (files.length === 0) return null;
         return { scope: ns, files, spec: `${ns}.${segs[k]}` };
       }
     }

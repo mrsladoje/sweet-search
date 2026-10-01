@@ -137,10 +137,10 @@ describe('import-symbol-index', () => {
     const src = 'global using My.Shared;\nnamespace A.B {\n  public partial class Foo<T> where T : class {\n    class Nested {}\n  }\n  public delegate void Handler(object s);\n  namespace C { internal record struct Pt(int X); }\n}\n';
     const d = csharpDeclarations(stripNoise(src, 'csharp'));
     expect(d.namespaces).toEqual(['A.B', 'A.B.C']);
-    expect(d.types).toEqual([{ ns: 'A.B', name: 'Foo' }, { ns: 'A.B', name: 'Handler' }, { ns: 'A.B.C', name: 'Pt' }]);
+    expect(d.types.map(({ ns, name }) => ({ ns, name }))).toEqual([{ ns: 'A.B', name: 'Foo' }, { ns: 'A.B', name: 'Handler' }, { ns: 'A.B.C', name: 'Pt' }]);
     expect(d.globalUsings).toEqual(['My.Shared']);
     const fileScoped = csharpDeclarations(stripNoise('namespace X.Y;\n// class Commented {}\nvar s = "class InString {}";\npublic sealed class Real {}', 'csharp'));
-    expect(fileScoped.types).toEqual([{ ns: 'X.Y', name: 'Real' }]);
+    expect(fileScoped.types.map(({ ns, name }) => ({ ns, name }))).toEqual([{ ns: 'X.Y', name: 'Real' }]);
   });
 
   it('brace languages: column-0 top-level declarations, packages, Kotlin funs, constants', () => {

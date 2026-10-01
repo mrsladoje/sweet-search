@@ -105,7 +105,10 @@ export function csharpDeclarations(stripped) {
     CS_TOKEN_RE.lastIndex += nm[0].length - (nm[0].endsWith('(') ? 1 : 0);
     const name = nm[1].replace(/^@/, '');
     if (name === 'class' || name === 'struct' || name === 'where') continue;
-    types.push({ ns: stack.length ? stack[stack.length - 1].name : fileNs, name });
+    // `public partial class X`: one type split over several files.
+    const header = stripped.slice(stripped.lastIndexOf('\n', m.index) + 1, m.index);
+    const partial = /\bpartial\b/.test(header);
+    types.push({ ns: stack.length ? stack[stack.length - 1].name : fileNs, name, partial });
   }
   const globalUsings = [];
   CS_GLOBAL_USING_RE.lastIndex = 0;
@@ -131,6 +134,14 @@ const KOTLIN_FUN_NAME_RE = /^(?:<[^>]*(?:<[^>]*>[^>]*)*>\s*)?(?:[A-Za-z_][\w<>?,
 const SIMPLE_NAME_RE = /^`?([A-Za-z_]\w*)`?/;
 
 function parseTopLevelDecl(line) {
+  const d = parseTopLevelDeclInner(line);
+  // Kotlin Multiplatform: an `actual` declaration implements an `expect` one
+  // for one platform; the resolver links the expect declaration instead.
+  if (d && /^(?:@[\w.]+(?:\([^()]*\))?\s*|[a-z][\w-]*\s+)*?actual\s/.test(line)) d.actual = true;
+  return d;
+}
+
+function parseTopLevelDeclInner(line) {
   let rest = line;
   for (let guard = 0; guard < 12; guard++) {
     const ann = ANNOTATION_PREFIX_RE.exec(rest);
