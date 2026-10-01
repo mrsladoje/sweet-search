@@ -139,4 +139,68 @@ describe('incremental graph edge resolution matches a full build', () => {
     expect(inc.filter((e) => e.includes('(store.')).every((e) => e.includes('-> null'))).toBe(true);
     expect(inc).toEqual(await fullBuildEdges(['src/service.ts']));
   });
+
+  it('keeps override edges current through add, edit, rename and delete', async () => {
+    const overrides = (edges) => edges.filter((e) => e.startsWith('overrides '));
+    const base = (method) => [
+      'export class Animal {',
+      `  ${method}(): string {`,
+      "    return '';",
+      '  }',
+      '}',
+    ];
+    const dog = [
+      "import { Animal } from './animal';",
+      'export class Dog extends Animal {',
+      '  sound(): string {',
+      "    return 'woof';",
+      '  }',
+      '}',
+    ];
+
+    // Add: Dog.sound overrides Animal.sound.
+    write('src/animal.ts', base('sound'));
+    write('src/dog.ts', dog);
+    enqueue('src/animal.ts', 'src/dog.ts');
+    await tick();
+    let files = ['src/animal.ts', 'src/dog.ts'];
+    let inc = incrementalEdges();
+    expect(overrides(inc).some((e) => e.includes('Dog') || e.includes('src/dog.ts#'))).toBe(true);
+    expect(inc).toEqual(await fullBuildEdges(files));
+
+    // Edit only the base: the overridden method is renamed — the edge vanishes.
+    write('src/animal.ts', base('noise'));
+    enqueue('src/animal.ts');
+    await tick();
+    inc = incrementalEdges();
+    expect(overrides(inc)).toEqual([]);
+    expect(inc).toEqual(await fullBuildEdges(files));
+
+    // Edit it back: the edge returns although dog.ts was not touched.
+    write('src/animal.ts', base('sound'));
+    enqueue('src/animal.ts');
+    await tick();
+    inc = incrementalEdges();
+    expect(overrides(inc).length).toBe(1);
+    expect(inc).toEqual(await fullBuildEdges(files));
+
+    // Rename the subclass file (delete + add under a new path).
+    unlinkSync(join(projectRoot, 'src/dog.ts'));
+    write('src/pet.ts', dog);
+    enqueue('src/dog.ts', 'src/pet.ts');
+    await tick();
+    files = ['src/animal.ts', 'src/pet.ts'];
+    inc = incrementalEdges();
+    expect(overrides(inc).length).toBe(1);
+    expect(overrides(inc)[0]).toContain('src/pet.ts#');
+    expect(inc).toEqual(await fullBuildEdges(files));
+
+    // Delete the base: no override edge may point at a retired definition.
+    unlinkSync(join(projectRoot, 'src/animal.ts'));
+    enqueue('src/animal.ts');
+    await tick();
+    inc = incrementalEdges();
+    expect(overrides(inc)).toEqual([]);
+    expect(inc).toEqual(await fullBuildEdges(['src/pet.ts']));
+  });
 });

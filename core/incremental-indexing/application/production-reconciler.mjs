@@ -15,6 +15,7 @@ import { appendDeltaRecord, FALLBACK_WEIGHTS_ID, fileIdFor, listDeltaSegments } 
 import { fts5Merge, fts5MergeBudgetPages } from '../infrastructure/sqlite-fts5.mjs';
 import { insertEntity, insertRelationships, resolveTouchedEdges, markBinaryStale, createStaleBatch, maintainFloatStore, flushFloatStore } from './production-reconciler-helpers.mjs';
 import { resolveRowsScoped } from '../../graph/relationship-resolver.js';
+import { deriveOverrideEdges } from '../../graph/override-edges.js';
 import {
   chunkCutoffEnabled,
   computeCutoffSignature,
@@ -220,6 +221,21 @@ function relativeArtifact(stateDir, filePath) {
   return path.relative(stateDir, filePath).replace(/\\/g, '/');
 }
 
+/**
+ * Re-derive `overrides` edges on the maintained graph (override-edges.js:
+ * live rows only, diffed — unchanged edges keep their rows, vanished ones
+ * retire at `epoch`). Non-fatal: the derivation reads the whole live graph,
+ * so a failed pass is repaired by the next tick that writes the graph.
+ */
+function deriveOverridesSafely(db, epoch, logger) {
+  try {
+    return deriveOverrideEdges(db, null, { epoch });
+  } catch (err) {
+    (logger || console).warn?.(`[reconciler] override edges not derived this tick: ${err?.message || err}`);
+    return null;
+  }
+}
+
 function uniquePhysicalId(db, table, id) {
   let candidate = id;
   let suffix = 1;
@@ -363,6 +379,7 @@ class ProductionReconcileAdapter {
     }));
     this.liEncoder = options.liEncoder || null;
     this.modelInfo = options.modelInfo || getModelInfo();
+    this.logger = options.logger || null;
     // Shared admission policy — the SAME include/exclude/.sweet-search-ignore/
     // .gitignore/size gates full indexing applies. Used as the second safety
     // gate: queued files full indexing would skip are never reconciled, and a
@@ -604,6 +621,13 @@ class ProductionReconcileAdapter {
     if (!ctx) return { persistedFiles: new Set(), requeueFiles: [] };
     let hnswSaved = false;
     try {
+      // Override edges for every graph write of this tick: one pass over the
+      // live graph, inside the tick's open transaction (committed with it).
+      if (ctx.overridesEpoch != null && ctx.graphDb) {
+        ctx.overrideStats = deriveOverridesSafely(ctx.graphDb, ctx.overridesEpoch, this.logger);
+        ctx.overridesEpoch = null;
+        this.progress('production:overrides-derived');
+      }
       // E.1: insert all staged adds into the resident index in a DETERMINISTIC
       // order (sorted by id). Combined with G1's per-id deterministic levels and
       // sorted-order compaction, this makes the batched graph reproducible and
@@ -939,6 +963,7 @@ class ProductionReconcileAdapter {
       let upsert = 0;
       let tombstone = 0;
       let edgeResolution = null;
+      let overrideStats = null;
       const liveIdFor = new Map();
       const tx = db.transaction(() => {
         const retireEntity = prepareCached(db, 'UPDATE entities SET epoch_retired = ?, stale_since = COALESCE(stale_since, ?) WHERE id = ? AND epoch_retired IS NULL');
@@ -1000,6 +1025,11 @@ class ProductionReconcileAdapter {
           retiredIds,
           newNames,
         }, resolveRowsScoped);
+        // Override edges follow the resolved extends/implements rows above.
+        // The batched tick derives them once at finalize (one tick-wide pass
+        // over the live graph); a per-file connection derives them here.
+        if (ctx?.graphDb) ctx.overridesEpoch = epoch;
+        else overrideStats = deriveOverridesSafely(db, epoch, this.logger);
       });
       tx();
       this.progress('production:graph-written');
@@ -1014,7 +1044,7 @@ class ProductionReconcileAdapter {
           for (const table of ['entities_fts', 'entities_trigram']) try { fts5Merge(db, table, pages); } catch {}
         }
       }
-      this.touched.set(rel, { ...(this.touched.get(rel) || {}), graphEntities: entities.length, graphEdgeResolution: edgeResolution });
+      this.touched.set(rel, { ...(this.touched.get(rel) || {}), graphEntities: entities.length, graphEdgeResolution: edgeResolution, graphOverrides: overrideStats });
       return { ops: { graph_upsert: upsert, graph_tombstone: tombstone }, manifest: { path: 'code-graph.db' } };
     } finally {
       if (ownConn) db.close();
