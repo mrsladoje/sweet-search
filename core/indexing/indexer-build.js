@@ -11,6 +11,7 @@ import path from 'path';
 import { DB_PATHS, EMBEDDING_CONFIG, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { GraphExtractor, createGraphSchema, insertGraph, rebuildGraphFts } from '../graph/graph-extractor.js';
 import { resolveRelationshipTargets } from '../graph/relationship-resolver.js';
+import { createImportResolver, importEdgesEnabled } from '../graph/import-resolver.js';
 import { populatePageRankColumn } from '../graph/structural-pagerank.js';
 import { getEmbeddings, getModelInfo } from '../embedding/embedding-service.js';
 import { configureJournalMode, checkpointWal, atomicSwapDatabase, log, logProgress } from './indexer-utils.js';
@@ -145,7 +146,9 @@ export async function buildCodeGraph(files, dryRun = false) {
 
   const hasFts5 = createGraphSchema(db);
 
-  const extractor = new GraphExtractor();
+  const extractor = new GraphExtractor(importEdgesEnabled()
+    ? { importResolver: createImportResolver({ projectRoot: PROJECT_ROOT, files }) }
+    : undefined);
   let entityBatch = [];
   let relBatch = [];
 

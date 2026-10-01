@@ -26,6 +26,7 @@ import {
 } from '../domain/cutoff-cache.mjs';
 import { FloatVectorStore, getFloatStorePath } from '../../vector-store/float-vector-store.js';
 import { createGraphSchema, GraphExtractor } from '../../graph/graph-extractor.js';
+import { createImportResolver, importEdgesEnabled } from '../../graph/import-resolver.js';
 import { createVectorSchema, ensureVectorSchema, buildInsertItems, insertVectorItems } from '../../indexing/indexer-build.js';
 import { ASTChunker, JAVA_FAMILY } from '../../indexing/ast-chunker.js';
 import { getEmbeddings, getModelInfo } from '../../embedding/embedding-service.js';
@@ -849,6 +850,25 @@ class ProductionReconcileAdapter {
     return h;
   }
 
+  /**
+   * Tick-scoped import resolver (same rules as the full build). The file list
+   * is the graph's live files; candidates missing from it are checked on disk
+   * (new files in this tick), and configs are re-read every tick.
+   */
+  _importResolverFor(ctx, db) {
+    if (!importEdgesEnabled() || !this.projectRoot) return null;
+    if (ctx && ctx.importResolver !== undefined) return ctx.importResolver;
+    let resolver = null;
+    try {
+      const files = prepareCached(db, 'SELECT DISTINCT file_path FROM entities WHERE epoch_retired IS NULL').pluck().all();
+      resolver = createImportResolver({ projectRoot: this.projectRoot, files, probeFs: true });
+    } catch {
+      resolver = null;
+    }
+    if (ctx) ctx.importResolver = resolver;
+    return resolver;
+  }
+
   async applyGraphDelta(file, hashes, epoch, ctx = null) {
     const rel = typeof file === 'string' ? file : file.path;
     // E.1: reuse the tick-scoped RW connection (schema already ensured) instead
@@ -875,7 +895,8 @@ class ProductionReconcileAdapter {
       const oldRows = prepareCached(db, 'SELECT rowid, id, logical_entity_id, signature_hash FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
       const oldByLogical = new Map(oldRows.map((r) => [r.logical_entity_id || r.id, r]));
       const oldIds = oldRows.map((r) => r.id);
-      const extractor = new GraphExtractor();
+      const importResolver = this._importResolverFor(ctx, db);
+      const extractor = new GraphExtractor(importResolver ? { importResolver } : undefined);
       const parsed = hashes.deleted
         ? { entities: [], relationships: [] }
         : await extractor.extractFromFile(rel, hashes.content);

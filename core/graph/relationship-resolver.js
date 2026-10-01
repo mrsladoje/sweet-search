@@ -14,7 +14,28 @@
  * - uses/throws: General reference, prefer same project
  */
 
+import path from 'path';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
+import { UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
+
+// Entities from config/data/markup files (YAML keys, pom.xml tags, Makefile
+// targets, TOML tables) are never the target of a code import. Name-based
+// import resolution used to bind `import os` to a `.github/*.yml` key and
+// `org.junit.Test` to the `org` tag in pom.xml.
+const NON_CODE_IMPORT_TARGET_EXTS = new Set([
+  '.json', '.jsonc', '.json5', '.yaml', '.yml', '.toml', '.xml', '.md', '.mdx', '.markdown',
+  '.ini', '.cfg', '.conf', '.properties', '.lock', '.txt', '.csv', '.html', '.htm', '.css',
+  '.scss', '.sass', '.less', '.sql', '.graphql', '.gql', '.mk', '.cmake', '.dockerfile', '.env',
+]);
+const NON_CODE_IMPORT_TARGET_BASENAMES = new Set(['makefile', 'gnumakefile', 'dockerfile', 'cmakelists.txt']);
+
+function isCodeImportTarget(entity) {
+  const filePath = entity?.file_path;
+  if (!filePath) return false;
+  const base = path.posix.basename(String(filePath).replace(/\\/g, '/')).toLowerCase();
+  if (NON_CODE_IMPORT_TARGET_BASENAMES.has(base)) return false;
+  return !NON_CODE_IMPORT_TARGET_EXTS.has(path.posix.extname(base));
+}
 
 // =============================================================================
 // PROJECT DETECTION
@@ -70,6 +91,7 @@ export function resolveRelationshipTargets(db) {
   const byExactName = new Map(); // "AuthService" -> [entities...]
   const byMethodName = new Map(); // "authenticate" -> [entities...]
   const byFileAndName = new Map(); // "path/to/file.java:AuthService" -> entity
+  const byFile = new Map(); // "path/to/file.java" -> [entities...]
 
   for (const entity of entities) {
     // ID lookup
@@ -84,6 +106,9 @@ export function resolveRelationshipTargets(db) {
     // File + name (unique within file)
     const fileKey = `${entity.file_path}:${entity.name}`;
     byFileAndName.set(fileKey, entity);
+    let fileEntities = byFile.get(entity.file_path);
+    if (!fileEntities) { fileEntities = []; byFile.set(entity.file_path, fileEntities); }
+    fileEntities.push(entity);
 
     // Method name (just the method part)
     if (entity.type === 'method' || entity.type === 'function' || entity.type === 'rpc') {
@@ -132,7 +157,8 @@ export function resolveRelationshipTargets(db) {
         byMethodName,
         byFileAndName,
         byId,
-        warnings
+        warnings,
+        byFile
       );
 
       if (targetId) {
@@ -196,8 +222,14 @@ function resolveTarget(
   byMethodName,
   byFileAndName,
   byId,
-  warnings
+  warnings,
+  byFile = new Map()
 ) {
+  // File-level import edges point at a repo path, not an entity; imports of
+  // non-repo modules have no local target (not even a same-file namesake).
+  if (relType === 'importsFile') return null;
+  if (relType === 'imports' && fullImportPath && fullImportPath.startsWith(UNRESOLVED_IMPORT_PREFIX)) return null;
+
   // Get source entity for context (O(1) lookup instead of database query)
   const sourceEntity = sourceId ? byId.get(sourceId) : null;
 
@@ -288,15 +320,42 @@ function resolveTarget(
     }
 
     case 'imports': {
+      // Annotated by GraphExtractor's import resolver: the module is not a
+      // repo file (package, stdlib) — a same-named local entity is a guess.
+      if (fullImportPath && fullImportPath.startsWith(UNRESOLVED_IMPORT_PREFIX)) return null;
+
+      // Annotated with the resolved repo file: bind to the named entity in
+      // that file (`import { Foo } from './x'`, `com.x.Foo`, `use a::B`).
+      // A module-level import (no such entity) stays file-level only; its
+      // `importsFile` edge carries the target.
+      const resolvedFileEntities = fullImportPath ? byFile.get(fullImportPath) : null;
+      if (resolvedFileEntities) {
+        // Item paths (`a::b::Item`, `com.x.Class`, `App\\Models\\User`) end in
+        // the imported item; JS/Python module paths end in a module name,
+        // which is not an entity (`import flask.json.tag` ≠ function `tag`).
+        const str = String(targetName);
+        const parts = str.split(/::|[.\\/]/).filter(Boolean);
+        const last = parts.length > 1 && (str.includes('::') || str.includes('\\') || /^[A-Z]/.test(parts[parts.length - 1]))
+          ? parts[parts.length - 1]
+          : null;
+        const named = resolvedFileEntities.filter((e) => e.name === str || (last !== null && e.name === last));
+        const pick = named.find((e) => CLASS_LIKE_TYPES.has(e.type)) || named[0];
+        return pick ? pick.id : null;
+      }
+
       // Import statements: use full_import_path for package-aware matching
-      let candidates = byExactName.get(targetName) || [];
+      let candidates = (byExactName.get(targetName) || []).filter(isCodeImportTarget);
 
       // Handle inner class imports: "Employee.Builder" → try "Employee" as fallback
       // Java inner classes are imported as OuterClass.InnerClass but the entity
-      // is typically stored as just "OuterClass" (the file is OuterClass.java)
+      // is typically stored as just "OuterClass" (the file is OuterClass.java).
+      // Only a Capitalised segment names a class: `org.junit.Test` must not
+      // fall back to an entity called `org`.
       if (candidates.length === 0 && targetName.includes('.')) {
-        const outerClassName = targetName.split('.')[0];
-        candidates = byExactName.get(outerClassName) || [];
+        const outerClassName = targetName.split('.').find((seg) => /^[A-Z]/.test(seg));
+        if (outerClassName && outerClassName !== targetName) {
+          candidates = (byExactName.get(outerClassName) || []).filter(isCodeImportTarget);
+        }
       }
 
       if (candidates.length === 0) {
