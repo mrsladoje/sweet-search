@@ -993,5 +993,52 @@
    ],
    "why": "The verification and caching logic is centralized in Signer::verify; no other component decides which verifier is tried or what is cached."
   }
+ },
+ "r3h-jj-08": {
+  "id": "r3h-jj-08",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "try_reset_git_head",
+    "reset_head",
+    "reset_index",
+    "export_some_refs"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The question specifically targets the colocated Git workspace state synchronization logic (HEAD, index, and refs) handled at the end of transactions, which is uniquely implemented across transaction finalization and git state management functions."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "WorkspaceCommandHelper::finish_transaction",
+    "try_reset_git_head",
+    "git::reset_head",
+    "clear_operation_state",
+    "git::reset_index",
+    "update_intent_to_add_impl",
+    "git::export_some_refs"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The colocated-Git synchronization responsibilities are localized to these identified handlers, so varying levels of wrapping do not amount to a substantively different answer."
+  }
  }
 }
