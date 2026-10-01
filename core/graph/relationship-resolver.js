@@ -117,6 +117,13 @@ const TYPE_RECEIVER_FILE = /\.(?:java|kt|kts|swift|py|pyi|js|jsx|mjs|cjs|ts|tsx|
 // that hold functions (`context.commentSummary()` in typedoc) are idiomatic
 // there; not Rust: its `.` calls are always methods.
 const MODULE_FUNCTION_FILE = /\.(?:py|pyi|go)$/i;
+// Languages whose calls the scanner reads without a registry pattern (Zig,
+// Lua, Elixir, Solidity, Perl, R, Julia, Objective-C, shell): with no type
+// information, a `.`-call links only on receiver evidence — the receiver
+// names the candidate's owner, file or an imported file, or is self-like.
+// Otherwise `allocator.free()` binds to whatever repo function is named
+// `free` (Zig spot check: 4 of 6 such edges wrong).
+const RECEIVER_EVIDENCE_FILE = /\.(?:zig|lua|ex|exs|sol|pl|pm|r|jl|m|mm|sh|bash)$/i;
 
 /**
  * Lookups for call-target resolution, built once per resolution pass.
@@ -280,6 +287,13 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
     }
   }
 
+  const needsEvidence = RECEIVER_EVIDENCE_FILE.test(sourceEntity?.file_path || '');
+  if (selfLike && needsEvidence) {
+    // `self:update()` in Lua/Julia/…: the caller's own type or file only.
+    if (!sourceEntity) return [];
+    const srcOwner = ownerOf(sourceEntity);
+    return pool.filter(c => (srcOwner && ownerOf(c) === srcOwner) || c.file_path === sourceEntity.file_path);
+  }
   if (selfLike) {
     if (pool.length > 1 && sourceEntity) {
       const srcOwner = ownerOf(sourceEntity);
@@ -290,7 +304,7 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
     }
     return pool;
   }
-  if (!receiver) return preferImported(pool, sourceEntity, importsOf);
+  if (!receiver) return needsEvidence ? [] : preferImported(pool, sourceEntity, importsOf);
 
   if (PASCAL_CASE.test(receiver)) {
     const typeFiles = containerFiles(receiver);
@@ -323,6 +337,11 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
     }
   }
   if (kept) pool = kept;
+  if (needsEvidence) {
+    const evident = pool.filter(c => receiverMatches(r, factsOf(c).ownerKey) || receiverMatches(r, factsOf(c).stemKey)
+      || isImported(callerImports, c.file_path));
+    return preferImported(evident, sourceEntity, importsOf);
+  }
   if (pool.length > 1) {
     const byOwner = pool.filter(c => receiverMatches(r, factsOf(c).ownerKey));
     if (byOwner.length > 0) {

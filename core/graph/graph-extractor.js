@@ -16,7 +16,7 @@ import fs from 'fs/promises';
 import { GRAPH_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-patterns.js';
 import { getTreeSitterProvider } from '../infrastructure/tree-sitter-provider.js';
-import { CallSiteScanner } from './call-site-scanner.js';
+import { CallSiteScanner, EXTRA_CALL_SCAN_LANGUAGES } from './call-site-scanner.js';
 import { scanImports, SCANNED_IMPORT_LANGUAGES, importLanguageFor } from './import-scanner.js';
 import { UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
 import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './type-usage-scanner.js';
@@ -1453,7 +1453,7 @@ export class GraphExtractor {
       relationshipPatterns,
       methodCallPattern,
     } = this.getGenericPatternPlan(language, graph);
-    const callScanner = methodCallPattern ? new CallSiteScanner(langInfo) : null;
+    const callScanner = (methodCallPattern || EXTRA_CALL_SCAN_LANGUAGES.has(language)) ? new CallSiteScanner(langInfo) : null;
     const seenCalls = new Set(); // one edge per (caller, target) per file
     const seenTypeUsage = new Set();
     const skipObjects = this._skipObjectSet(langInfo);
@@ -2056,7 +2056,7 @@ export class GraphExtractor {
       relationshipPatterns,
       methodCallPattern,
     } = this.getGenericPatternPlan(language, graph);
-    const callScanner = methodCallPattern ? new CallSiteScanner(langInfo) : null;
+    const callScanner = (methodCallPattern || EXTRA_CALL_SCAN_LANGUAGES.has(language)) ? new CallSiteScanner(langInfo) : null;
     const seenCalls = new Set(); // one edge per (caller, target) per file
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
 
