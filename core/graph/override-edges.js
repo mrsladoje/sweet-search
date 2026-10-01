@@ -28,6 +28,8 @@
  * ranking never reads these edges (see relationship-types.js).
  */
 
+import { compareEdgeRows, compareEntitiesForResolution } from './entity-order.js';
+
 const CONTAINER_TYPES = new Set([
   'class', 'struct', 'interface', 'trait', 'impl', 'enum', 'extension',
   'protocol', 'object', 'record', 'actor', 'mixin', 'module',
@@ -131,21 +133,23 @@ export function deriveOverrideEdges(db, entities = null, opts = {}) {
     const r = write([]);
     return { edges: 0, retired: r.retired, ms: Math.round(performance.now() - started) };
   }
-  const rows = (!liveEntities && entities) || db.prepare(`
+  // A fixed input order (not rowid order), so a full build and a maintained
+  // graph derive the same edges whatever order files were indexed in.
+  const rows = [...((!liveEntities && entities) || db.prepare(`
     SELECT id, name, type, file_path, parent_class, signature, start_line, end_line FROM entities
     ${liveEntities ? 'WHERE epoch_retired IS NULL' : ''}
-  `).all();
+  `).all())].sort(compareEntitiesForResolution);
   const live = versioned ? 'AND epoch_retired IS NULL' : '';
   const edges = computeOverrideEdges(
     rows,
     db.prepare(`
       SELECT source_id, target_id, context_line FROM relationships
       WHERE type IN ('extends', 'implements') AND target_id IS NOT NULL AND source_id IS NOT NULL ${live}
-    `).all(),
+    `).all().sort(compareEdgeRows),
     db.prepare(`
       SELECT source_id, context_line, target_id FROM relationships
       WHERE type = 'extensionOf' AND target_id IS NOT NULL ${live}
-    `).all(),
+    `).all().sort(compareEdgeRows),
   );
   const r = write(edges);
   return { edges: r.inserted, retired: r.retired, ms: Math.round(performance.now() - started) };

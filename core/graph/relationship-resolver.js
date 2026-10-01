@@ -19,6 +19,7 @@ import { detectProjectBoundary } from '../infrastructure/project-detector.js';
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX, buildFileImportMap } from './import-resolver.js';
 import { deriveOverrideEdges } from './override-edges.js';
 import { fileNodeId } from './file-nodes.js';
+import { compareEntitiesForResolution } from './entity-order.js';
 
 // Entities from config/data/markup files (YAML keys, pom.xml tags, Makefile
 // targets, TOML tables) are never the target of a code import. Name-based
@@ -425,6 +426,7 @@ export function buildTypeHierarchy(db, { liveOnly = false } = {}) {
       SELECT e.name AS sub, r.target_name AS base
       FROM relationships r JOIN entities e ON e.id = r.source_id
       WHERE r.type IN ('extends', 'implements')${live}${entityLive}
+      ORDER BY e.name, r.target_name
     `).all();
   } catch {
     rows = [];
@@ -683,8 +685,8 @@ export function singleOwnerSet(candidates, sourceEntity, index = NO_INDEX) {
 
 /**
  * Name/file lookups for resolveTarget. Insertion order is the entity order
- * given (ties in candidate ranking keep the first candidate), so callers must
- * pass entities in table (rowid) order.
+ * given (ties in candidate ranking keep the first candidate), so callers pass
+ * entities sorted by compareEntitiesForResolution.
  */
 function buildEntityLookups(entities) {
   const byId = new Map(); // id -> entity (for O(1) lookup)
@@ -814,7 +816,9 @@ export function resolveRowsScoped(db, rows, { liveOnly = true } = {}) {
     containerTypes,
   ));
 
-  const entities = [...byRowid.values()].sort((a, b) => a._rowid - b._rowid);
+  // The full build's order (not rowid order): a maintained graph's rowids
+  // differ from a fresh build's, and ties must resolve the same way.
+  const entities = [...byRowid.values()].sort(compareEntitiesForResolution);
   const { byId, byExactName, byMethodName, byFileAndName, byFile } = buildEntityLookups(entities);
 
   // Imports of the source files: file-node ids are the logical
@@ -865,10 +869,12 @@ export function resolveRelationshipTargets(db) {
   declaredTypeMemo.clear();
 
   // Build entity lookup maps
+  // Sorted, not rowid (= discovery) order: ties between equal candidates
+  // must not depend on the order files were found.
   const entities = db.prepare(`
     SELECT id, name, type, file_path, parent_class, signature, start_line, end_line
     FROM entities
-  `).all();
+  `).all().sort(compareEntitiesForResolution);
 
   console.log(`  Loaded ${entities.length} entities`);
 
@@ -1169,20 +1175,20 @@ function resolveTarget(
           return packageMatch.id;
         }
 
-        // Fallback: prefer same project as source
-        if (sourceEntity) {
-          const sameProjectMatch = candidates.find(c => isSameProject(c.file_path, sourceEntity.file_path));
-          if (sameProjectMatch) return sameProjectMatch.id;
-        }
-
-        if (warnings) {
-          warnings.push(`Ambiguous import ${targetName}: ${candidates.length} matches, using first`);
-        }
-        return candidates[0].id;
-      } else {
-        // No full_import_path, use first match
-        return candidates[0].id;
       }
+      // Several same-named entities and no package evidence: link only when
+      // the source's own project narrows them to one. Otherwise the first
+      // match is a guess (C# `namespace Ocelot.X;` → one of 209 `Ocelot`
+      // namespace blocks; Ruby `include Sequel::SQL::AliasMethods` → one of
+      // 287 `module Sequel` blocks) whose pick followed file order.
+      if (sourceEntity) {
+        const sameProject = candidates.filter(c => isSameProject(c.file_path, sourceEntity.file_path));
+        if (sameProject.length === 1) return sameProject[0].id;
+      }
+      if (warnings) {
+        warnings.push(`Ambiguous import ${targetName}: ${candidates.length} matches, no edge`);
+      }
+      return null;
     }
 
     case 'uses':

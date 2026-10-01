@@ -26,6 +26,7 @@ import path from 'path';
 import { EXTENSION_MAP } from '../infrastructure/language-patterns/maps.js';
 import { createCallResolutionIndex, isTestPath } from './relationship-resolver.js';
 import { asTopLevelCaller, fileNodeId, fileNodeSourceSql, hasFilesTable } from './file-nodes.js';
+import { compareEntitiesForResolution } from './entity-order.js';
 
 const OWNER = 'owner';
 const FILE = 'file';
@@ -228,7 +229,9 @@ export class BareCallResolver {
     }
     const byRowid = new Map();
     for (const e of [...entities, ...extra]) if (!byRowid.has(e._rowid ?? e.id)) byRowid.set(e._rowid ?? e.id, e);
-    const all = [...byRowid.values()].sort((a, b) => (a._rowid ?? 0) - (b._rowid ?? 0));
+    // The resolver's fixed order (not rowid order): a maintained graph's
+    // rowids differ from a fresh build's, and ties must resolve the same way.
+    const all = [...byRowid.values()].sort(compareEntitiesForResolution);
 
     // Callables of these files, for nested-function visibility.
     const callablesByFile = new Map();
