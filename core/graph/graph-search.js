@@ -20,6 +20,7 @@ import { detectIntent, getIntentBoost } from '../query/intent-detector.js';
 import { applyMMR, shouldApplyMMR } from '../ranking/mmr.js';
 import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from '../infrastructure/constants.js';
 import { readAdjacentManifest, resolveManifestCodeGraphPath, sqlAliasPrefix } from '../infrastructure/code-graph-visibility.js';
+import { TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
 
 // Fix 9: Abbreviation expansion dictionary for common software abbreviations
 const ABBREVIATION_EXPANSIONS = {
@@ -256,14 +257,19 @@ export class GraphSearch {
     return [this._manifestEpoch, this._manifestEpoch, this._manifestEpoch];
   }
 
+  // Every graph-search query (graph lane, frontier expansion, impact) also
+  // skips the trace-only relationship types; ss-trace reads them through
+  // structural-context-repository instead.
   _relationshipVisibilitySql(alias = 'r') {
-    if (!this._hasRelationshipEpochVisibility) return '1=1';
     const prefix = sqlAliasPrefix(alias);
+    const traceOnly = `${prefix}type NOT IN ${TRACE_ONLY_TYPES_SQL}`;
+    if (!this._hasRelationshipEpochVisibility) return traceOnly;
     if (this._manifestEpoch !== null) {
       return `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
-        AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)`;
+        AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)
+        AND ${traceOnly}`;
     }
-    return `${prefix}epoch_retired IS NULL`;
+    return `${prefix}epoch_retired IS NULL AND ${traceOnly}`;
   }
 
   _relationshipVisibilityParams() {

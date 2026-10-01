@@ -15,6 +15,7 @@ import { createHash } from 'crypto';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { applyReadPragmas } from '../infrastructure/db-utils.js';
 import { leidenCommunities, findConnectedComponents } from './leiden-algorithm.js';
+import { TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
 
 // Re-export for existing consumers
 export { leidenCommunities } from './leiden-algorithm.js';
@@ -52,12 +53,13 @@ export function computeGraphHash(dbPath) {
   applyReadPragmas(db);
 
   try {
-    // `importsFile` edges (file → file, no entity target) are excluded so
-    // communities and their hash stay what they were before those edges.
+    // `importsFile` edges (file → file, no entity target) and the trace-only
+    // types (relationship-types.js) are excluded so communities and their
+    // hash stay what they were before those edges.
     const rows = db.prepare(`
       SELECT source_id, target_id, type
       FROM relationships
-      WHERE type != 'importsFile'
+      WHERE type != 'importsFile' AND type NOT IN ${TRACE_ONLY_TYPES_SQL}
       ORDER BY source_id, target_id, type
     `).all();
 
@@ -148,7 +150,7 @@ export function detectCommunities(dbPath, options = {}) {
     const relationships = db.prepare(`
       SELECT source_id, target_id, type
       FROM relationships
-      WHERE type != 'importsFile'
+      WHERE type != 'importsFile' AND type NOT IN ${TRACE_ONLY_TYPES_SQL}
     `).all();
 
     // Hard cutoffs: fall back to directory grouping

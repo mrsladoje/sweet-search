@@ -19,6 +19,7 @@
  */
 
 import { readFileRange } from './search-pattern-chunks.js';
+import { rankingRelationshipTypes } from '../graph/relationship-types.js';
 import { computeSufficiencyVerdict } from './query-sufficiency.js';
 import { applyAgentPackCompletion, buildPackSiblingLine, shownSourceEndLine } from './agent-pack-completion.js';
 import { statSync } from 'fs';
@@ -1303,7 +1304,9 @@ export function renderGraphNeighbors(opts) {
   const { codeGraphRepo, entity, skipKeys, tokenCap = 0, body = '' } = opts;
   if (!codeGraphRepo || !entity || !entity.id || tokenCap <= 0) return null;
 
-  const OUT_TYPES = ['imports', 'calls', 'uses', 'extends', 'implements', 'overrides', 'throws'];
+  // Trace-only types (relationship-types.js) stay out of search output:
+  // these neighbours were tuned on graphs without them.
+  const OUT_TYPES = rankingRelationshipTypes(['imports', 'calls', 'uses', 'extends', 'implements', 'overrides', 'throws']);
   const IN_TYPES = ['calls', 'uses', 'extends', 'implements'];
   // typeAlias is what Go's graph extractor stores for struct/interface/type
   // declarations; the others cover JS/TS/Java/Rust/Python conventions.

@@ -13,6 +13,7 @@ import { callsiteHints } from './structural-callsite-hints.js';
 import { extractHeaderContext } from './structural-header-context.js';
 import { scoreEntity, scoreImpactPath, tokenize, safeMax } from './structural-importance.js';
 import { personalizedPageRank } from './structural-forward-push.js';
+import { isTraceOnlyRelationship } from './relationship-types.js';
 const BUDGETS = { preview: 4000, full: 8000, xl: 12000 };
 const DEFAULT_MAX_DEPTH = 3;
 function estimateTokens(text) {
@@ -131,6 +132,12 @@ function mergeSlices(slices) {
 
 function itemSummary(entity) {
   const loc = entity.filePath ? `${entity.filePath}:${entity.startLine || '?'}` : '(external)';
+  // Trace-only edges are not calls: say what they are (`(overrides)`,
+  // `(instantiates)@12`). Call/uses/extends rows render as before.
+  if (isTraceOnlyRelationship(entity.relationship)) {
+    const at = entity.contextLine ? `@${entity.contextLine}` : '';
+    return `${entity.name} [${entity.type}] ${loc} (${entity.relationship})${at}`;
+  }
   const call = entity.contextLine ? ` call@${entity.contextLine}` : '';
   return `${entity.name} [${entity.type}] ${loc}${call}`;
 }

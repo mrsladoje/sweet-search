@@ -206,7 +206,9 @@ export class StructuralContextRepository {
     const db = this._open();
     if (!db || !target?.id) return [];
     const limit = clampLimit(opts.limit, 120, 500);
-    const types = opts.types?.length ? opts.types : ['calls', 'uses', 'implements', 'extends', 'overrides'];
+    // ss-trace callers also list overriding methods and the code that
+    // constructs a type (`instantiates`); typeRef stays opt-in (too many).
+    const types = opts.types?.length ? opts.types : ['calls', 'uses', 'implements', 'extends', 'overrides', 'instantiates'];
     const patterns = [
       target.name,
       `${target.name}.%`,
