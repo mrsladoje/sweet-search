@@ -9,6 +9,7 @@ import { findAssignedMemberDefinitions, findSameFileDefinition } from './structu
 import { shouldTrustQualifiedResolution, trustedCallerEdge } from './structural-qualified-resolution.js';
 import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } from './structural-graph-signals.js';
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
+import { TRACE_ONLY_TYPES_SQL } from '../graph/relationship-types.js';
 import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
 
 export class StructuralContextRepository {
@@ -233,11 +234,13 @@ export class StructuralContextRepository {
         AND e.id <> ?
         AND (
           r.target_id = ?
-          OR r.target_name = ?
-          OR r.target_name LIKE ?
-          OR r.target_name LIKE ?
-          OR r.target_name LIKE ?
-          OR r.target_name LIKE ?
+          OR (r.type NOT IN ${TRACE_ONLY_TYPES_SQL} AND (
+            r.target_name = ?
+            OR r.target_name LIKE ?
+            OR r.target_name LIKE ?
+            OR r.target_name LIKE ?
+            OR r.target_name LIKE ?
+          ))
         )
       ORDER BY r.weight DESC, e.file_path, r.context_line
       LIMIT ?

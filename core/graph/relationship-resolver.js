@@ -661,17 +661,27 @@ const TYPE_REFERENCE_RELATIONSHIPS = new Set([
 function resolveTypeUsage(targetName, sourceEntity, sourceId, byExactName, callIndex) {
   let candidates = typeCandidates(byExactName.get(targetName), sourceId);
   const srcPath = sourceEntity?.file_path;
-  // Library code never uses a test-file type: a lone test `Key` class is not
-  // the `Key` a library signature names (usually a generic placeholder).
-  if (srcPath && !pathFacts(srcPath).isTest) {
-    candidates = candidates.filter(c => !pathFacts(c.file_path || '').isTest);
+  const imported = srcPath ? callIndex?.importsOf?.(srcPath) : null;
+  if (srcPath) {
+    // Test helper types are local. Library code never uses a test-file type
+    // (a lone test `Key` class is not the `Key` a library signature names);
+    // test code uses one only from its own file, a file it imports, or its
+    // own top-level directory (jj lib/tests/test_fix.rs names
+    // lib/src/fix.rs's `LineRange` alias, not cli/testing's struct).
+    const srcIsTest = pathFacts(srcPath).isTest;
+    const srcTop = srcPath.split('/')[0];
+    candidates = candidates.filter((c) => {
+      const p = c.file_path || '';
+      if (!pathFacts(p).isTest) return true;
+      if (!srcIsTest) return false;
+      return p === srcPath || isImported(imported, p) || p.split('/')[0] === srcTop;
+    });
   }
   if (candidates.length <= 1) return candidates[0]?.id || null;
   if (srcPath) {
     const sameFile = candidates.filter(c => c.file_path === srcPath);
     if (sameFile.length === 1) return sameFile[0].id;
     if (sameFile.length > 1) return null;
-    const imported = callIndex?.importsOf?.(srcPath);
     if (imported) {
       const viaImport = candidates.filter(c => isImported(imported, c.file_path));
       if (viaImport.length === 1) return viaImport[0].id;

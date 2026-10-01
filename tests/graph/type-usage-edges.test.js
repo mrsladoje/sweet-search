@@ -135,6 +135,16 @@ describe('type-usage resolution', () => {
     db.close();
   });
 
+  it('test code links a test-file type only in its own top-level directory (jj LineRange)', async () => {
+    const db = await build({
+      'cli/testing/fake-formatter.rs': 'struct LineRange {\n    first: usize,\n}\n',
+      'lib/tests/test_fix.rs': 'fn line_range(first: usize) -> LineRange {\n    todo!()\n}\n',
+      'cli/tests/test_fmt.rs': 'fn other(first: usize) -> LineRange {\n    todo!()\n}\n',
+    });
+    expect(edges(db, 'typeRef')).toEqual(['other -> LineRange@cli/testing/fake-formatter.rs']);
+    db.close();
+  });
+
   it('no edge when two non-test types share the name; library code never links a test-file type', async () => {
     const db = await build({
       'a/Config.kt': 'class Config(val x: Int)\n',

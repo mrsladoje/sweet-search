@@ -6,6 +6,11 @@
 import { describe, it, expect } from 'vitest';
 import { ASTChunker } from '../../core/indexing/ast-chunker.js';
 import { GraphExtractor } from '../../core/graph/index.js';
+import { isTraceOnlyRelationship } from '../../core/graph/relationship-types.js';
+
+// Counts below cover the ranking relationship kinds; trace-only rows
+// (typeRef / instantiates, relationship-types.js) are additive.
+const rankingRels = (result) => result.relationships.filter(r => !isTraceOnlyRelationship(r.type));
 
 const chunker = new ASTChunker({ projectRoot: '/test', useTreeSitter: false });
 const extractor = new GraphExtractor({ projectRoot: '/test', useTreeSitter: false });
@@ -87,7 +92,7 @@ describe('C entity extraction', () => {
       '}',
     ].join('\n'));
     expect(result.entities.length).toBe(4);
-    expect(result.relationships.length).toBe(2);
+    expect(rankingRels(result).length).toBe(2);
     expect(result.entities.some(e => e.type === 'struct' && e.name === 'Buffer')).toBe(true);
     expect(result.entities.some(e => e.type === 'function' && e.name === 'buffer_init')).toBe(true);
     expect(result.entities.some(e => e.type === 'macro' && e.name === 'MAX_SIZE')).toBe(true);
@@ -369,7 +374,7 @@ describe('Dart entity extraction', () => {
       '}',
     ].join('\n'));
     expect(result.entities.length).toBe(2);
-    expect(result.relationships.length).toBe(2);
+    expect(rankingRels(result).length).toBe(2);
     expect(result.entities.some(e => e.type === 'class' && e.name === 'MyWidget')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'package:flutter/material.dart')).toBe(true);
     expect(result.relationships.some(r => r.type === 'extends' && r.target_name === 'StatelessWidget')).toBe(true);
