@@ -137,8 +137,12 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
   const fileSet = new Set();
   const dirSet = new Set(['']);
   if (files) {
-    for (const f of files) {
-      const n = norm(String(f));
+    // Path order, not discovery order: every index built from fileSet
+    // (package roots, declaration maps) then lists candidates the same way
+    // whatever order the files were found in.
+    const sorted = [...files].map(String).sort();
+    for (const f of sorted) {
+      const n = norm(f);
       if (!n) continue;
       fileSet.add(n);
       let d = dirOf(n);
@@ -698,28 +702,59 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     const fallbackRoots = [];
     const fromDir = dirOf(fromFile);
     if (!roots.includes(fromDir) && !hasFile(join(fromDir, '__init__.py'))) fallbackRoots.push(fromDir);
-    const full = [...roots, ...fallbackRoots];
+    // Several roots can hold a package of one name (uv: an `albatross`
+    // package in each test workspace). The root nearest the importing file
+    // wins; equally near roots that both hold the module are a guess — no
+    // edge. Without this, the first root in file discovery order won.
+    const tiers = pythonRootTiers(roots, fromDir);
+    if (fallbackRoots.length) tiers.push(fallbackRoots);
+    const NONE = Symbol('none');
+    const pick = (probe) => {
+      for (const tier of tiers) {
+        const hits = new Set();
+        for (const r of tier) { const hit = probe(r); if (hit) hits.add(hit); }
+        if (hits.size === 1) return [...hits][0];
+        if (hits.size > 1) return null;
+      }
+      return NONE;
+    };
     // `from a.b import c` where c is a submodule.
     if (imp.kind === 'from' && imp.names && imp.names.length) {
-      for (const r of full) {
+      const sub = pick((r) => {
         for (const name of imp.names) {
           const hit = pyModule(join(r, [...segs, name].join('/')));
           if (hit && !hit.endsWith('__init__.py') && !hit.endsWith('__init__.pyi')) return hit;
         }
-      }
+        return null;
+      });
+      if (sub !== NONE) return sub;
     }
-    for (const r of full) {
-      const hit = pyModule(join(r, segs.join('/')));
-      if (hit) return hit;
-    }
+    const mod = pick((r) => pyModule(join(r, segs.join('/'))));
+    if (mod !== NONE) return mod;
     // `import a.b.c` where only the package a.b is local source.
     for (let n = segs.length - 1; n >= 1; n--) {
-      for (const r of roots) {
-        const hit = pyModule(join(r, segs.slice(0, n).join('/')));
-        if (hit) return hit;
-      }
+      const pkg = pick((r) => (fallbackRoots.includes(r) ? null : pyModule(join(r, segs.slice(0, n).join('/')))));
+      if (pkg !== NONE) return pkg;
     }
     return null;
+  }
+
+  /** Roots grouped by nearness to `fromDir` (shared leading path segments), nearest first; paths sorted in a tier. */
+  function pythonRootTiers(roots, fromDir) {
+    const from = fromDir ? fromDir.split('/') : [];
+    const shared = (r) => {
+      const parts = r ? r.split('/') : [];
+      let n = 0;
+      while (n < parts.length && n < from.length && parts[n] === from[n]) n++;
+      return n;
+    };
+    const byShared = new Map();
+    for (const r of roots) {
+      const k = shared(r);
+      if (!byShared.has(k)) byShared.set(k, []);
+      byShared.get(k).push(r);
+    }
+    return [...byShared.keys()].sort((a, b) => b - a).map((k) => byShared.get(k).sort());
   }
 
   // -------------------------------------------------------------------------

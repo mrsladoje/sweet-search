@@ -270,3 +270,35 @@ describe('createImportResolver', () => {
   });
 });
 
+describe('Python: several roots hold a package of one name (uv test workspaces)', () => {
+  const tree = {
+    'ws/just-project/src/albatross/__init__.py': '',
+    'ws/just-project/check.py': 'import albatross',
+    'ws/virtual/packages/albatross/src/albatross/__init__.py': '',
+    'ws/rainbow/src/albatross/__init__.py': '',
+    'tools/check_any.py': 'import albatross',
+  };
+  const build = (order) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-py-roots-'));
+    writeTree(root, tree);
+    const resolver = createImportResolver({ projectRoot: root, files: order });
+    const out = (from) => resolver.resolve(from, { spec: 'albatross', kind: 'import' }, 'python');
+    const result = { near: out('ws/just-project/check.py'), far: out('tools/check_any.py') };
+    fs.rmSync(root, { recursive: true, force: true });
+    return result;
+  };
+
+  it('the root nearest the importing file wins, in any file order', () => {
+    const files = Object.keys(tree);
+    for (const order of [files, [...files].reverse(), [files[2], files[0], files[3], files[1], files[4]]]) {
+      expect(build(order).near).toBe('ws/just-project/src/albatross/__init__.py');
+    }
+  });
+
+  it('equally near roots that all hold the package give no edge', () => {
+    const files = Object.keys(tree);
+    expect(build(files).far).toBeNull();
+    expect(build([...files].reverse()).far).toBeNull();
+  });
+});
+
