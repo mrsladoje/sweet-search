@@ -26,6 +26,7 @@ import {
   resolveThreadKey,
   resultRenderFixActive,
   selectEntries,
+  shownCodeSpan,
   summaryRestatesHeader,
 } from '../../core/search/agent-output-fixes.js';
 import { renderGrepBody } from '../../core/search/grep-output-shaping.js';
@@ -186,13 +187,42 @@ describe('selectEntries (A2, B1, B2)', () => {
 
   it("'a2' drops a summary only under an earlier CODE entry or an identical span", () => {
     const results = [
-      entry({ rank: 1, presentation: 'full', code: 'x', startLine: 10, endLine: 50, symbol: 'big' }),
-      entry({ rank: 2, startLine: 20, endLine: 30, symbol: 'inner' }),     // inside code: dropped
+      entry({ rank: 1, presentation: 'full', code: 'x', startLine: 10, endLine: 50, shownStartLine: 10, shownEndLine: 50, symbol: 'big' }),
+      entry({ rank: 2, startLine: 20, endLine: 30, symbol: 'inner' }),     // inside shown code: dropped
       entry({ rank: 3, startLine: 60, endLine: 70, symbol: 'other' }),
       entry({ rank: 4, startLine: 80, endLine: 90, symbol: 'other' }),     // same symbol, other span: KEPT
       entry({ rank: 5, startLine: 60, endLine: 70, symbol: 'other' }),     // identical span: dropped
     ];
     expect(selectEntries(results, { dedupe: 'a2' }).entries.map((e) => e.r.rank)).toEqual([1, 3, 4]);
+  });
+
+  it("'a2' covers a summary only with the lines a code block SHOWS (cut, sandwich, preview)", () => {
+    const inner = entry({ rank: 2, startLine: 20, endLine: 30, symbol: 'inner' });
+    const keptUnder = (codeEntry) => selectEntries([codeEntry, inner], { dedupe: 'a2' }).entries.map((e) => e.r.rank);
+    const big = { rank: 1, presentation: 'full', startLine: 10, endLine: 50, symbol: 'big' };
+    // Body cut at the token cap after line 15: lines 20-30 were never printed.
+    expect(keptUnder(entry({ ...big, code: 'x', shownStartLine: 10, shownEndLine: 15, boundaryTruncated: true }))).toEqual([1, 2]);
+    // Sandwich (signature + gold + closing, middle elided) and preview bodies print part of the span.
+    expect(keptUnder(entry({ ...big, code: 'x', expansionKind: 'sandwich' }))).toEqual([1, 2]);
+    expect(keptUnder(entry({ ...big, presentation: 'preview', code: 'x' }))).toEqual([1, 2]);
+    // No shown-line stamp: a full body covers its span only when every line of it is printed.
+    const fullBody = Array.from({ length: 41 }, (_, i) => `line ${10 + i}`).join('\n');
+    expect(keptUnder(entry({ ...big, code: fullBody }))).toEqual([1]);
+    expect(keptUnder(entry({ ...big, code: 'x' }))).toEqual([1, 2]);
+    // An identical span is a repeat of the header pointer, whatever the body shows.
+    expect(selectEntries([entry({ ...big, code: 'x', expansionKind: 'sandwich' }), entry({ rank: 2, startLine: 10, endLine: 50 })], { dedupe: 'a2' })
+      .entries.map((e) => e.r.rank)).toEqual([1]);
+  });
+
+  it('shownCodeSpan reports only fully printed lines', () => {
+    expect(shownCodeSpan(entry({ code: null }))).toBe(null);
+    expect(shownCodeSpan(entry({ presentation: 'full', code: 'a\nb', startLine: 5, endLine: 6 }))).toEqual({ start: 5, end: 6 });
+    expect(shownCodeSpan(entry({ presentation: 'full', code: 'a\nb\n', startLine: 5, endLine: 6 }))).toEqual({ start: 5, end: 6 });
+    expect(shownCodeSpan(entry({ presentation: 'full', code: 'a', startLine: 5, endLine: 9, shownStartLine: 5, shownEndLine: 5 }))).toEqual({ start: 5, end: 5 });
+    expect(shownCodeSpan(entry({ presentation: 'full', code: 'a', startLine: 5, endLine: 9, sandwich: { partKinds: [] } }))).toBe(null);
+    const noElision = { partKinds: ['signature', 'gold'], elidedHead: 0, elidedTail: 0, elisionMarkers: 0 };
+    expect(shownCodeSpan(entry({ presentation: 'full', code: 'a\nb', startLine: 5, endLine: 6, expansionKind: 'sandwich', sandwich: noElision }))).toEqual({ start: 5, end: 6 });
+    expect(shownCodeSpan(entry({ presentation: 'full', code: 'a\nb', startLine: 5, endLine: 6, expansionKind: 'sandwich', sandwich: { ...noElision, elidedTail: 3 } }))).toBe(null);
   });
 
   it("'a2' never lets a large summary span (a class) swallow its methods", () => {

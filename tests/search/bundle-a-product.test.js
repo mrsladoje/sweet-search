@@ -91,12 +91,13 @@ function fixtureResponse(overrides = {}) {
       {
         rank: 1, file: 'src/auth.js', startLine: 1, endLine: 18, symbol: 'validate', symbolType: 'function',
         presentation: 'full', expansionKind: 'sandwich', score: 0.91234,
+        sandwich: { partKinds: ['signature', 'gold'], elidedHead: 0, elidedTail: 0, elisionMarkers: 0 },
         headerContext: "'use strict'\nimport { a } from './a'",
         code: longCode,
         sameFile: { rendered: '# same file: helper (fn 30-40 below) — ss-read src/auth.js 30 40' },
         continuation: { kind: 'symbol', rendered: '# continues: src/auth.js:20-24 helper', code: 'function helper() {}' },
       },
-      // Summary inside the code entry above: dropped (A2).
+      // Summary inside the code entry above (every line of it printed): dropped (A2).
       { rank: 2, file: 'src/auth.js', startLine: 4, endLine: 6, symbol: 'inner', symbolType: 'function', presentation: 'summary', score: 0.5, summary: 'src/auth.js:4 — inner (function)' },
       // Stand-alone summary: one line (A2); the summary text restates the header, so it is not repeated.
       { rank: 3, file: 'src/token.js', startLine: 10, endLine: 30, symbol: 'Token', symbolType: 'class', presentation: 'summary', score: 0.4, summary: 'src/token.js:10 — Token (class)' },
@@ -138,16 +139,25 @@ describe('daemon agent text (native `sweet-search` from an agent)', () => {
     }
   });
 
-  it('the opt-out env var reaches the renderer default', () => {
-    const prev = process.env.SWEET_SEARCH_COMPACT_OUTPUT;
+  it('the daemon env reaches the renderer default, with the ss-* precedence (SS_FIX_A first)', () => {
+    const keys = ['SWEET_SEARCH_COMPACT_OUTPUT', 'SS_FIX_A'];
+    const prev = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    const setEnv = (vals) => { for (const k of keys) { if (vals[k] === undefined) delete process.env[k]; else process.env[k] = vals[k]; } };
+    const legacy = previousRenderAgentSearchResponse(fixtureResponse());
+    const compact = renderAgentSearchResponse(fixtureResponse(), { compact: true });
     try {
-      process.env.SWEET_SEARCH_COMPACT_OUTPUT = '0';
-      expect(renderAgentSearchResponse(fixtureResponse())).toBe(previousRenderAgentSearchResponse(fixtureResponse()));
-      delete process.env.SWEET_SEARCH_COMPACT_OUTPUT;
-      expect(renderAgentSearchResponse(fixtureResponse())).toBe(renderAgentSearchResponse(fixtureResponse(), { compact: true }));
+      setEnv({ SWEET_SEARCH_COMPACT_OUTPUT: '0' });
+      expect(renderAgentSearchResponse(fixtureResponse())).toBe(legacy);
+      setEnv({});
+      expect(renderAgentSearchResponse(fixtureResponse())).toBe(compact);
+      // A legacy bench arm (SS_FIX_A=0) gets the previous text from the daemon too, not only from
+      // the ss-* wrappers; an explicit SS_FIX_A=1 wins over the product opt-out.
+      setEnv({ SS_FIX_A: '0' });
+      expect(renderAgentSearchResponse(fixtureResponse())).toBe(legacy);
+      setEnv({ SS_FIX_A: '1', SWEET_SEARCH_COMPACT_OUTPUT: '0' });
+      expect(renderAgentSearchResponse(fixtureResponse())).toBe(compact);
     } finally {
-      if (prev === undefined) delete process.env.SWEET_SEARCH_COMPACT_OUTPUT;
-      else process.env.SWEET_SEARCH_COMPACT_OUTPUT = prev;
+      setEnv(prev);
     }
   });
 
@@ -181,6 +191,12 @@ describe('daemon agent text (native `sweet-search` from an agent)', () => {
     expect(text).toContain('# continues: src/auth.js:20-24 helper\n```\nfunction helper() {}\n```\n');
   });
 
+  it('keeps a summary whose lines the code block above elided (A2 covers only printed lines)', () => {
+    const resp = fixtureResponse();
+    resp.results[0] = { ...resp.results[0], sandwich: { ...resp.results[0].sandwich, elidedHead: 2 } };
+    expect(renderAgentSearchResponse(resp, { compact: true })).toContain('src/auth.js:4-6 inner (function)\n');
+  });
+
   it('prints no sufficient line unless the verdict is YES, and (no matches) on zero results', () => {
     expect(renderAgentSearchResponse(fixtureResponse({ sufficiencyVerdict: 'no' }), { compact: true })).not.toContain('sufficient');
     expect(renderAgentSearchResponse(fixtureResponse({ results: [] }), { compact: true }))
@@ -195,8 +211,17 @@ const fixtureReady = !!FIXTURE && existsSync(path.join(FIXTURE, '.sweet-search',
 describe.skipIf(!fixtureReady)('real ss-* wrappers on an indexed fixture (SS_BUNDLE_A_FIXTURE)', () => {
   const BIN = path.join(REPO_ROOT, 'eval', 'agent-read-workflows', 'bin');
   const runtime = fixtureReady ? mkdtempSync(path.join(tmpdir(), 'ss-bundle-a-rt-')) : '';
+  // The daemon socket and pidfile are keyed by the PROJECT ROOT, not by the runtime dir: with the
+  // default paths this test would reuse (and its last step stop) a daemon another session runs on
+  // the same fixture. A private socket and pidfile make the daemon this test's own.
   const baseEnv = () => {
-    const env = { ...process.env, SWEET_SEARCH_PROJECT_ROOT: FIXTURE, SWEET_SEARCH_RUNTIME_DIR: runtime };
+    const env = {
+      ...process.env,
+      SWEET_SEARCH_PROJECT_ROOT: FIXTURE,
+      SWEET_SEARCH_RUNTIME_DIR: runtime,
+      SWEET_SEARCH_SOCKET_PATH: path.join(runtime, 'd.sock'),
+      SWEET_SEARCH_PID_FILE: path.join(runtime, 'd.pid'),
+    };
     for (const k of Object.keys(env)) if (k.startsWith('SS_FIX_') || k === 'SWEET_SEARCH_COMPACT_OUTPUT') delete env[k];
     return env;
   };
@@ -211,6 +236,7 @@ describe.skipIf(!fixtureReady)('real ss-* wrappers on an indexed fixture (SS_BUN
     ['ss-grep', ['send(']],             // regex error → A5 repair
     ['ss-grep', ['ROUTER']],            // zero case-sensitive hits → A5 case-insensitive retry
     ['ss-grep', ['ZZQQnothingQQZZ']],   // real zero hit
+    ['ss-grep', ['functio\\(n)']],      // repair whose literal is absent (A5 literal safety)
     ['ss-trace', ['handle']],
     ['ss-trace', ['render', 'callers']],
   ];
@@ -222,6 +248,14 @@ describe.skipIf(!fixtureReady)('real ss-* wrappers on an indexed fixture (SS_BUN
     const optOut = run(tool, args, { SWEET_SEARCH_COMPACT_OUTPUT: '0' });
     const benchOff = run(tool, args, { SS_FIX_A: '0' });
     expect(optOut).toEqual(benchOff);
+  }, 600000);
+
+  it('a repaired pattern whose literal text is absent prints zero hits, never a GNU-retry flood', () => {
+    // `functio\(n)` was repaired to `functio\(n\)`, which the engine's zero-hit GNU retry searched
+    // as `functio(n)`: every `function`, under "searched it as literal text".
+    const { out } = run('ss-grep', ['functio\\(n)']);
+    expect(out).toMatch(/^# ss-grep: 0 total match\(es\)/);
+    expect(out).toContain('(no matches — note: the regex did not parse as written');
   }, 600000);
 
   it('stops only the daemon this test started', () => {

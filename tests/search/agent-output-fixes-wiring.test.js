@@ -41,6 +41,7 @@ import {
 } from '../../core/search/agent-span-ledger.js';
 import { buildAgentSpanRequestPayload } from '../../core/search/agent-span-client.js';
 import { buildAgentSpanDaemonResponse } from '../../core/search/search-server.js';
+import { translateBreToRustRegex } from '../../core/search/regex-dialect.js';
 
 const ROOT = '/repo';
 const gutter = (code, startLine) => code.split('\n').map((l, i) => `${startLine + i}\t${l}`).join('\n');
@@ -403,26 +404,42 @@ describe('A5 regex repair keeps alternatives', () => {
 
   it('repairs only the broken alternative of the recorded failure shapes', () => {
     expect(repairRegexBranches("pipe_notebook|Command '{}' exited|had no output|stderr"))
-      .toEqual({ pattern: "pipe_notebook|Command '\\{\\}' exited|had no output|stderr", wholeLiteral: false, repairedBranches: 1 });
-    expect(repairRegexBranches('type Transformation\\|Transform(data').pattern).toBe('type Transformation|Transform\\(data');
-    expect(repairRegexBranches('runModeSetup\\({\\|runModeTransition\\({').pattern).toBe('runModeSetup\\(\\{|runModeTransition\\(\\{');
+      .toEqual({ pattern: "pipe_notebook|Command '[{][}]' exited|had no output|stderr", wholeLiteral: false, repairedBranches: 1 });
+    expect(repairRegexBranches('type Transformation\\|Transform(data').pattern).toBe('type Transformation|Transform[(]data');
+    // The agent's own `\(` stays as written; only the part that did not parse is escaped.
+    expect(repairRegexBranches('runModeSetup\\({\\|runModeTransition\\({').pattern).toBe('runModeSetup\\([{]|runModeTransition\\([{]');
   });
 
   it('a single broken pattern is still searched as literal text', () => {
-    expect(repairRegexBranches('func(')).toEqual({ pattern: 'func\\(', wholeLiteral: true, repairedBranches: 1 });
-    expect(repairRegexBranches('options(\'').pattern).toBe("options\\('");
+    expect(repairRegexBranches('func(')).toEqual({ pattern: 'func[(]', wholeLiteral: true, repairedBranches: 1 });
+    expect(repairRegexBranches('options(\'').pattern).toBe("options[(]'");
     // Look-around is not Rust syntax: literal text.
-    expect(repairRegexBranches('foo(?=bar)').pattern).toBe('foo\\(\\?=bar\\)');
+    expect(repairRegexBranches('foo(?=bar)').pattern).toBe('foo[(][?]=bar[)]');
+    // A partial repair keeps the parts that parse (`.`); `[` keeps the backslash form.
+    expect(repairRegexBranches('a.b[(').pattern).toBe('a.b\\[[(]');
+  });
+
+  it("the engine's GNU-dialect retry never turns a repair escape back into an operator", () => {
+    // `functio\(n)` was repaired to `functio\(n\)`. On zero hits the engine retried it as
+    // `functio(n)` and printed every `function` under "searched it as literal text". A repair
+    // escape is now a one-character class, which translateBreToRustRegex never rewrites: the
+    // translation either does not exist or does not parse (the engine then keeps the zero hits).
+    for (const raw of ['functio\\(n)', 'func\\(.*)', 'a\\(b)', 'foo(bar', 'x{', '+x', 'f(a|b', 'g(x))', 'useState(']) {
+      const repaired = repairRegexBranches(raw).pattern;
+      expect(rustRegexLooksValid(repaired), raw).toBe(true);
+      const translated = translateBreToRustRegex(repaired)?.pattern;
+      if (translated) expect(rustRegexLooksValid(translated), `${raw} -> ${repaired} -> ${translated}`).toBe(false);
+    }
   });
 
   it('a `|` inside an unclosed group stays inside it (never a new top-level alternative)', () => {
     // `app.(get|post` used to become `app.\(get|post`, which matches every `post` in the repo.
     // The pipe stays literal as `[|]` (a `\|` would trigger the GNU-alternation dialect hint).
-    expect(repairRegexBranches('app.(get|post').pattern).toBe('app.\\(get[|]post');
-    expect(repairRegexBranches('a(b|c(d|e)').pattern).toBe('a\\(b[|]c(d|e)');
-    expect(repairRegexBranches('x(y|z|w').pattern).toBe('x\\(y[|]z[|]w');
+    expect(repairRegexBranches('app.(get|post').pattern).toBe('app.[(]get[|]post');
+    expect(repairRegexBranches('a(b|c(d|e)').pattern).toBe('a[(]b[|]c(d|e)');
+    expect(repairRegexBranches('x(y|z|w').pattern).toBe('x[(]y[|]z[|]w');
     // A closed group is untouched; only top-level alternatives split.
-    expect(repairRegexBranches('ok(a|b)|bad(').pattern).toBe('ok(a|b)|bad\\(');
+    expect(repairRegexBranches('ok(a|b)|bad(').pattern).toBe('ok(a|b)|bad[(]');
     for (const raw of ['app.(get|post', 'a(b|c(d|e)', 'x(y|z|w']) {
       expect(rustRegexLooksValid(repairRegexBranches(raw).pattern), raw).toBe(true);
     }

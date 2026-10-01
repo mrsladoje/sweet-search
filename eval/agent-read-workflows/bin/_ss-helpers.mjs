@@ -449,6 +449,14 @@ function writeRegexDialectHint(stats) {
   if (note) process.stdout.write(`${note}\n`);
 }
 
+// A5: after a repair, the engine's "the original pattern was used unchanged" note describes the
+// wrapper's escaped pattern, not the agent's, so it is left out (the repair note says what was
+// searched). A note about the engine's own GNU-dialect retry still prints: the hits shown then
+// come from that retry (an agent-written `\(a\)` searched as `(a)`), and the agent must know it.
+function writeRegexDialectHintAfterRepair(stats, repaired) {
+  if (!repaired || stats?.regexDialectHint?.retryAttempted) writeRegexDialectHint(stats);
+}
+
 // --- subcommands ----------------------------------------------------------
 
 const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N]';
@@ -589,9 +597,7 @@ async function cmdGrep(rawArgs) {
       for (const p of inPaths) { note = await notIndexedNote(p); if (note) break; }
       process.stdout.write(`${note ? note.text : (repaired ? REPAIRED_NO_MATCH : '(no matches)')}\n`);
     }
-    // A5: after a repair the engine's dialect note describes the wrapper's escaped pattern, not
-    // the agent's ("used unchanged" would be false); the repair note above already says it.
-    if (!repaired) writeRegexDialectHint(result.stats);
+    writeRegexDialectHintAfterRepair(result.stats, repaired);
     process.exit(0);
   }
 
@@ -665,7 +671,7 @@ async function cmdGrep(rawArgs) {
     }
     if (completed.familyManifest) process.stdout.write(`${completed.familyManifest.rendered}\n`);
     if (result.siblingLine?.rendered) process.stdout.write(`${result.siblingLine.rendered}\n`);
-    if (!repaired) writeRegexDialectHint(result.stats);
+    writeRegexDialectHintAfterRepair(result.stats, repaired);
     process.exit(0);
   }
   if (body.truncatedFileCount > 0 || body.hiddenLine) {
@@ -678,7 +684,7 @@ async function cmdGrep(rawArgs) {
   if (result.siblingLine?.rendered) process.stdout.write(`${result.siblingLine.rendered}\n`);
   if (body.hiddenLine) process.stdout.write(body.hiddenLine + '\n');
   if (body.shownMatches === 0) process.stdout.write(`${repaired ? REPAIRED_NO_MATCH : '(no matches)'}\n`);
-  if (!repaired) writeRegexDialectHint(result.stats);
+  writeRegexDialectHintAfterRepair(result.stats, repaired);
   process.exit(0);
 }
 
