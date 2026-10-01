@@ -15,7 +15,7 @@ import { buildWeightedAdjacency, pageRankWeighted } from '../../core/graph/struc
 import { expandOneHop, getExpansionStats, GRAPH_EXPANSION_TRACE_ONLY_TYPES_SQL } from '../../core/graph/graph-expansion.js';
 import { computeGraphHash } from '../../core/graph/community-detector.js';
 import {
-  TRACE_ONLY_RELATIONSHIP_TYPES, TRACE_ONLY_TYPES_SQL, rankingRelationshipTypes, isTraceOnlyRelationship,
+  SITE_LINE_RELATIONSHIP_TYPES, TRACE_ONLY_RELATIONSHIP_TYPES, TRACE_ONLY_TYPES_SQL, rankingRelationshipTypes, isTraceOnlyRelationship,
 } from '../../core/graph/relationship-types.js';
 
 const tmpFiles = [];
@@ -38,6 +38,11 @@ function makeDb(file, { withTraceOnly }) {
     rel.run('f', 'a', 'a', 'instantiates');
     rel.run('f', 'b', 'b', 'typeRef');
     rel.run('f', 'b', 'b', 'extensionOf');
+    // Every site line of the type usages (and calls) lives in the trace-only
+    // site-line table; ranking must not see those rows either.
+    const line = db.prepare('INSERT INTO call_lines (source_id, target_name, context_line, rel_type) VALUES (?, ?, ?, ?)');
+    for (const l of [2, 3, 4]) line.run('f', 'a', l, 'instantiates');
+    for (const l of [5, 6]) line.run('f', 'm1', l, 'calls');
   }
   return db;
 }
@@ -49,6 +54,9 @@ describe('trace-only relationship types', () => {
     expect(rankingRelationshipTypes(['calls', 'overrides', 'uses'])).toEqual(['calls', 'uses']);
     expect(isTraceOnlyRelationship('instantiates')).toBe(true);
     expect(isTraceOnlyRelationship('calls')).toBe(false);
+    // Site lines are kept for calls and the per-line trace-only types;
+    // overrides is derived per method pair (one line by nature).
+    expect([...SITE_LINE_RELATIONSHIP_TYPES].sort()).toEqual(['calls', 'extensionOf', 'instantiates', 'typeRef']);
   });
 
   it('PageRank, expansion and the community hash are identical with and without them', () => {
