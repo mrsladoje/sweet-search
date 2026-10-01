@@ -383,7 +383,7 @@ renderer. `readFixFlags` precedence for Bundle A:
 
 1. an explicit `SS_FIX_A=1|0` (bench reproducibility);
 2. else `SWEET_SEARCH_COMPACT_OUTPUT=0|false|off|no` (the product opt-out: every switch off, the previous bytes);
-3. else ON: A1, A2, A7, A5.
+3. else ON: A1, A2, A7, A5, and (second commit) A4.
 
 **Bench consequence:** an unset `SS_FIX_A` now means the product default. A "no-fix" arm must set
 `SS_FIX_A=0`. Sub-switch-only arms (`SS_FIX_TRACE_COMPACT=1` alone, `SS_FIX_GREP_RETRY=1` alone) also need
@@ -396,3 +396,9 @@ from the process that spawned it); restart the daemon after changing it. MCP out
 A5 change in the port: a `|` inside an unclosed group (`app.(get|post`) stays literal (`[|]`) instead of
 becoming a top-level alternative that matched every `post`; the engine's regex-dialect note is not printed
 after a repair (it described the wrapper's escaped pattern as "used unchanged").
+
+A4 (second commit): the product default now includes the compact ss-trace. Its section headings use
+the full trace's count (every row, plus `N call sites, M distinct callers` when they differ; commit
+062997d8), so the heading agrees with `fan-in=` / `fan-out=`; external rows are counted and named in
+the `(+N external ...)` line. The native `sweet-search trace` text (daemon formatStructuralContext) is
+unchanged.

@@ -202,7 +202,7 @@ const EXACT_REREAD_OMISSION = exactRereadOmissionEnabled();
 const SHOWN_SPAN_TRAILER = shownSpanTrailerEnabled();
 const SPAN_POLICY_ENABLED = EXACT_REREAD_OMISSION || SHOWN_SPAN_TRAILER;
 
-// Output-fix switches (see core/search/agent-output-fixes.js). Bundle A (A1, A2, A7, A5) is the
+// Output-fix switches (see core/search/agent-output-fixes.js). Bundle A (A1, A2, A7, A4, A5) is the
 // product default; SWEET_SEARCH_COMPACT_OUTPUT=0 or SS_FIX_A=0 restores the previous output byte
 // for byte. Every other SS_FIX_* switch is default off (bench only).
 const FIX = readFixFlags();

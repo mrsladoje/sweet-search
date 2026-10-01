@@ -1,7 +1,7 @@
 /**
  * Agent-facing output fixes for the ss-* wrappers (final-tuning forensic fixes).
  *
- * Bundle A (SS_FIX_A: A1, A2, A7, A5) is DEFAULT ON since 2026-10-01: the ss-* tools that
+ * Bundle A (SS_FIX_A: A1, A2, A7, A5, A4) is DEFAULT ON since 2026-10-01: the ss-* tools that
  * `sweet-search` ships ARE these wrappers (package.json "files"). SWEET_SEARCH_COMPACT_OUTPUT=0
  * restores the previous output byte for byte; an explicit SS_FIX_A=0|1 wins over both (bench).
  * Every other switch here is DEFAULT OFF and is not part of the product. The functions in
@@ -17,9 +17,8 @@
  *                                   compact `# sufficient=YES` line (only when YES)
  *                                A2 one-line summary entries; dedupe of covered summary entries
  *                                A7 an imports block that the entry's own code already shows is dropped
- *                                A5 below, unless its own switch says 0; A4 only with an
- *                                explicit SS_FIX_A=1
- *   SS_FIX_TRACE_COMPACT=1|0   A4 compact ss-trace + definition resolution (default: explicit SS_FIX_A)
+ *                                A4 and A5 below, unless their own switch says 0
+ *   SS_FIX_TRACE_COMPACT=1|0   A4 compact ss-trace + definition resolution (default: SS_FIX_A)
  *   SS_FIX_GREP_RETRY=1|0      A5 ss-grep regex repair + case-insensitive retry (default: SS_FIX_A)
  *   SS_FIX_ALREADY_SHOWN=1     A3 "already shown" omission (NOT part of SS_FIX_A; own A/B; see the
  *                              subagent limitation in FIXES-IMPL.md)
@@ -55,8 +54,8 @@ function subSwitch(value, inherited) {
 }
 
 /**
- * The product switch. Bundle A (A1, A2, A7, A5) is ON by default in the shipped ss-* tools and
- * in the daemon's agent text; SWEET_SEARCH_COMPACT_OUTPUT=0 (or false/off/no) restores the
+ * The product switch. Bundle A (A1, A2, A7, A4, A5) is ON by default in the shipped ss-* tools;
+ * A1, A2 and A7 also in the daemon's agent text; SWEET_SEARCH_COMPACT_OUTPUT=0 (or false/off/no) restores the
  * previous output byte for byte. Any other value, or no value, keeps the default.
  */
 export const COMPACT_OUTPUT_ENV = 'SWEET_SEARCH_COMPACT_OUTPUT';
@@ -70,7 +69,7 @@ export function compactOutputDefault(env = process.env) {
  * Parse the switches. `summaryCap` is null (off) or an integer >= 1 (0 means off).
  *
  * Bundle A precedence: an explicit SS_FIX_A on/off value (bench reproducibility) wins; else
- * SWEET_SEARCH_COMPACT_OUTPUT (product opt-out); else ON. A bench arm that must reproduce the
+ * SWEET_SEARCH_COMPACT_OUTPUT (product opt-out); else ON (A1, A2, A7, A4, A5). A bench arm that must reproduce the
  * pre-Bundle-A output sets SS_FIX_A=0 (an unset SS_FIX_A now means the product default).
  */
 export function readFixFlags(env = process.env) {
@@ -79,7 +78,7 @@ export function readFixFlags(env = process.env) {
   const compact = subSwitch(env?.SS_FIX_A, compactOutputDefault(env));
   return {
     compact,
-    traceCompact: subSwitch(env?.SS_FIX_TRACE_COMPACT, subSwitch(env?.SS_FIX_A, false)),
+    traceCompact: subSwitch(env?.SS_FIX_TRACE_COMPACT, compact),
     grepRetry: subSwitch(env?.SS_FIX_GREP_RETRY, compact),
     alreadyShown: isOn(env?.SS_FIX_ALREADY_SHOWN),
     dropSufficiency: isOn(env?.SS_FIX_DROP_SUFFICIENCY),
@@ -551,8 +550,15 @@ export function formatTraceCompact(result, { mode = null, notes = [] } = {}) {
     if (!show(title)) continue;
     const internal = section.items.filter((i) => !isExternalItem(i));
     const external = section.items.length - internal.length;
-    const total = Math.max(0, (section.total || 0) - external);
-    lines.push(`\n## ${title} (${total})`);
+    // Same count as the full trace (structural-context-format.js): every row, and the distinct
+    // callers / callees when they differ, so the heading and fan-in / fan-out read as one set.
+    // External rows are counted here and named in the `(+N external ...)` line below.
+    const total = section.total || 0;
+    const noun = title === 'callers' ? 'caller' : 'callee';
+    const count = section.distinct != null && section.distinct !== total
+      ? `${total} call sites, ${section.distinct} distinct ${noun}${section.distinct === 1 ? '' : 's'}`
+      : `${total}`;
+    lines.push(`\n## ${title} (${count})`);
     for (const item of internal) {
       lines.push(item.summary);
       listed.add(`${item.file}:${item.startLine || '?'}`);
