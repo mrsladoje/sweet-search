@@ -48,6 +48,9 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Decisions log
 
+- 02:25 **V1 confirmed on Sonnet (A-B-A, train 78):** vs base A cost −12.7% [−17.7%, −8.1%], vs base B −9.6% [−13.1%, −6.2%]; drift A→B −3.4% (ns); cache write −22..−27%; accuracy +0.9 / 0.0 pt; calls equal. Sonnet validation skipped (subscription; Opus train+val already passed, Sonnet is a confirmation cell). Accuracy re-score (accOR) for the 3 runs in progress.
+- 02:25 OpenRouter DeepSeek judge fails on ~9% of rows (31/354 missing `deepseek-api`); rescore.mjs re-tries incomplete panels; decisions use complete panels only.
+
 - 02:05 **V3 (SEARCH_DEDUPE) not screened live**: $0 replay of 60 r282 ss-search calls (Codex, Opus, DeepSeek) in their r282 clones: output −9.1% chars, entries −18% (572 → 467). ss-search results are 7–13% of cost → expected cost effect ≈ −1%, below every MDE (even interleaved). Kept as an optional low-risk hygiene switch for the owner; cancelled `cx-il-dedupe` to free the machine for r3 indexing + task guard. — `variants/replay-dedupe.json`
 - 02:00 **r3 frozen**: audits kept 163 (jj 28, dgraph 28, tortoise-orm 26, typedoc 29, zipkin 24, ocelot 28), fixed 48 facts/queries, dropped 2 (tortoise-orm-34 negative exists as a pre-save hook; typedoc-27 ambiguous mode). Split seed 42 stratified (repo, stratum). Pre-registration written before any r3 run.
 
