@@ -54,6 +54,7 @@ import {
   printedSpanCandidates,
   readFixFlags,
   readSpansForAlreadyShown,
+  renderCompactHeader,
   renderCompactSufficiency,
   renderFixedBlocks,
   renderGrepLineLists,
@@ -201,8 +202,9 @@ const EXACT_REREAD_OMISSION = exactRereadOmissionEnabled();
 const SHOWN_SPAN_TRAILER = shownSpanTrailerEnabled();
 const SPAN_POLICY_ENABLED = EXACT_REREAD_OMISSION || SHOWN_SPAN_TRAILER;
 
-// Output-fix switches (all default off; see core/search/agent-output-fixes.js). With every
-// switch unset nothing below changes any output byte.
+// Output-fix switches (see core/search/agent-output-fixes.js). Bundle A (A1, A2, A7, A5) is the
+// product default; SWEET_SEARCH_COMPACT_OUTPUT=0 or SS_FIX_A=0 restores the previous output byte
+// for byte. Every other SS_FIX_* switch is default off (bench only).
 const FIX = readFixFlags();
 // A3 (SS_FIX_ALREADY_SHOWN only; not part of SS_FIX_A). AGENT_SESSION_ID above, the original
 // ledger and so ss-read are never changed by it: A3 keeps its receipts under its own ledger
@@ -587,7 +589,9 @@ async function cmdGrep(rawArgs) {
       for (const p of inPaths) { note = await notIndexedNote(p); if (note) break; }
       process.stdout.write(`${note ? note.text : (repaired ? REPAIRED_NO_MATCH : '(no matches)')}\n`);
     }
-    writeRegexDialectHint(result.stats);
+    // A5: after a repair the engine's dialect note describes the wrapper's escaped pattern, not
+    // the agent's ("used unchanged" would be false); the repair note above already says it.
+    if (!repaired) writeRegexDialectHint(result.stats);
     process.exit(0);
   }
 
@@ -661,7 +665,7 @@ async function cmdGrep(rawArgs) {
     }
     if (completed.familyManifest) process.stdout.write(`${completed.familyManifest.rendered}\n`);
     if (result.siblingLine?.rendered) process.stdout.write(`${result.siblingLine.rendered}\n`);
-    writeRegexDialectHint(result.stats);
+    if (!repaired) writeRegexDialectHint(result.stats);
     process.exit(0);
   }
   if (body.truncatedFileCount > 0 || body.hiddenLine) {
@@ -674,7 +678,7 @@ async function cmdGrep(rawArgs) {
   if (result.siblingLine?.rendered) process.stdout.write(`${result.siblingLine.rendered}\n`);
   if (body.hiddenLine) process.stdout.write(body.hiddenLine + '\n');
   if (body.shownMatches === 0) process.stdout.write(`${repaired ? REPAIRED_NO_MATCH : '(no matches)'}\n`);
-  writeRegexDialectHint(result.stats);
+  if (!repaired) writeRegexDialectHint(result.stats);
   process.exit(0);
 }
 
@@ -749,8 +753,7 @@ async function cmdFind(rawArgs) {
   // Header (visible to agent). SS_FIX_A (A1): one short header (results, query, regex) and
   // the compact `# sufficient=YES` line; no budget/used/subMode, no confidence line.
   if (FIX.compact) {
-    const n = response.results?.length || 0;
-    process.stdout.write(`# ss-find: ${n} result${n === 1 ? '' : 's'} for "${query}" /${effectiveRegex || '*'}/\n`);
+    process.stdout.write(renderCompactHeader('ss-find', response.results?.length || 0, query, { regex: effectiveRegex || '*' }));
     process.stdout.write(compactSufficiencyLine(response));
   } else {
     process.stdout.write(`# ss-find: ColGrep ${response.results?.length || 0} for "${query}" /${effectiveRegex || '*'}/` +
@@ -1117,8 +1120,7 @@ async function cmdAgentSearch(rawArgs) {
   // stderr (below).
   const conf = routeConfidence != null ? ` conf=${routeConfidence.toFixed(2)}` : '';
   if (FIX.compact) {
-    const n = response.results.length;
-    process.stdout.write(`# ss-search: ${n} result${n === 1 ? '' : 's'} for "${query}"\n`);
+    process.stdout.write(renderCompactHeader('ss-search', response.results.length, query));
   } else {
     process.stdout.write(`# ss-search: routed=${routedMode}${conf} budget=${response.tokenBudget} used=${response.tokensUsed}` +
       ` results=${response.results.length} subMode=${response.subMode}\n`);

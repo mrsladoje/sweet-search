@@ -135,7 +135,7 @@ function fixture() {
 }
 
 describe('fixed renderer, non-compact (A3 alone, B switches): the original bytes', () => {
-  const none = readFixFlags({});
+  const none = readFixFlags({ SS_FIX_A: '0' });
   it('ss-find: identical to the original loop', () => {
     for (const results of [fixture(), [], fixture().slice(1)]) {
       const p = plan(results, none, { find: true, k: 6 });
@@ -274,9 +274,9 @@ async function readCall(d, file, startLine, n, { flags, originalSession = null, 
 }
 
 describe('A3 ledger wiring', () => {
-  const off = readFixFlags({});
-  const a3 = readFixFlags({ SS_FIX_ALREADY_SHOWN: '1' });
-  const a3b2 = readFixFlags({ SS_FIX_ALREADY_SHOWN: '1', SS_FIX_ONE_PER_FILE: '1' });
+  const off = readFixFlags({ SS_FIX_A: '0' });
+  const a3 = readFixFlags({ SS_FIX_A: '0', SS_FIX_ALREADY_SHOWN: '1' });
+  const a3b2 = readFixFlags({ SS_FIX_A: '0', SS_FIX_ALREADY_SHOWN: '1', SS_FIX_ONE_PER_FILE: '1' });
   const block = () => [codeResult('a.go', 10, 31)];
 
   it('uses its own namespace, never the original session id', () => {
@@ -413,6 +413,19 @@ describe('A5 regex repair keeps alternatives', () => {
     expect(repairRegexBranches('options(\'').pattern).toBe("options\\('");
     // Look-around is not Rust syntax: literal text.
     expect(repairRegexBranches('foo(?=bar)').pattern).toBe('foo\\(\\?=bar\\)');
+  });
+
+  it('a `|` inside an unclosed group stays inside it (never a new top-level alternative)', () => {
+    // `app.(get|post` used to become `app.\(get|post`, which matches every `post` in the repo.
+    // The pipe stays literal as `[|]` (a `\|` would trigger the GNU-alternation dialect hint).
+    expect(repairRegexBranches('app.(get|post').pattern).toBe('app.\\(get[|]post');
+    expect(repairRegexBranches('a(b|c(d|e)').pattern).toBe('a\\(b[|]c(d|e)');
+    expect(repairRegexBranches('x(y|z|w').pattern).toBe('x\\(y[|]z[|]w');
+    // A closed group is untouched; only top-level alternatives split.
+    expect(repairRegexBranches('ok(a|b)|bad(').pattern).toBe('ok(a|b)|bad\\(');
+    for (const raw of ['app.(get|post', 'a(b|c(d|e)', 'x(y|z|w']) {
+      expect(rustRegexLooksValid(repairRegexBranches(raw).pattern), raw).toBe(true);
+    }
   });
 
   it('every repaired pattern parses', () => {

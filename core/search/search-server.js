@@ -40,6 +40,14 @@ import {
   validateSearchBatchRequest,
 } from './search-batch.js';
 import { renderSearchBatchCliResult } from './search-batch-format.js';
+import {
+  compactOutputDefault,
+  renderCompactHeader,
+  renderCompactSufficiency,
+  renderFixedBlocks,
+  renderSufficiencyFragment,
+  selectEntries,
+} from './agent-output-fixes.js';
 import { lineGutterEnabled, numberCodeLines, resolveGutterForm } from './search-read.js';
 
 // =============================================================================
@@ -632,8 +640,41 @@ function buildTextSearchResponse(results, stats, totalTime, { summary = false, m
   return out;
 }
 
-/** Render a packaged agent response for the native captured-output CLI. */
-export function renderAgentSearchResponse(response) {
+/** Line-number gutter of the native agent text: only spans of 15 lines or more. */
+function agentTextGutter(code, startLine) {
+  return (lineGutterEnabled() && String(code).split('\n').length >= 15)
+    ? numberCodeLines(code, startLine || 1)
+    : code;
+}
+
+/**
+ * Bundle A (A1, A2, A7) for the native captured-output CLI: the same renderer the ss-* tools use
+ * (core/search/agent-output-fixes.js). One `# sweet-search: N results for "<query>"` header, the
+ * compact `# sufficient=YES` line only when the verdict is YES, no score / kind tag / budget
+ * header, one-line summary entries, covered summary entries and repeated import lines dropped.
+ */
+function renderCompactAgentSearchResponse(response) {
+  const results = response?.results || [];
+  let out = renderCompactHeader('sweet-search', results.length, response?.query ?? '');
+  out += renderCompactSufficiency(response || {}, renderSufficiencyFragment(response || {}));
+  out += renderFixedBlocks(results, selectEntries(results, { dedupe: 'a2' }), {
+    compact: true,
+    gutter: agentTextGutter,
+  });
+  const regexDialectNote = renderRegexDialectHint(response?.stats?.regexDialectHint);
+  if (regexDialectNote) out += `${regexDialectNote}\n`;
+  return out;
+}
+
+/**
+ * Render a packaged agent response for the native captured-output CLI.
+ *
+ * Compact (Bundle A) by default. SWEET_SEARCH_COMPACT_OUTPUT=0 in the DAEMON's environment (it
+ * inherits the env of the process that spawned it; restart the daemon after a change) restores
+ * the previous text byte for byte.
+ */
+export function renderAgentSearchResponse(response, { compact = compactOutputDefault() } = {}) {
+  if (compact) return renderCompactAgentSearchResponse(response);
   const results = response?.results || [];
   const routing = response?.stats?.routing || {};
   const routedMode = routing.mode || response?.mode || 'auto';

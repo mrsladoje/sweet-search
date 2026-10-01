@@ -374,3 +374,25 @@ evict an original session earlier (32-session LRU shared by both namespaces).
   pre-existing `no-use-before-define` hits in untouched lines of `retrieval-bench-282.mjs`).
 - Not run: no ss-* command, no benchmark (the machine was indexing on the GPU). The byte-identity battery
   (`fixes-verify/battery.sh`, `seq.sh`) must be re-run against `final-tuning` before the first bench run.
+
+## Product port (2026-10-01): Bundle A default ON
+
+The ss-* tools that `sweet-search` ships ARE `eval/agent-read-workflows/bin/ss-*` + `_ss-helpers.mjs`
+(package.json "files"), so the product default and the bench switch run the same code and the same
+renderer. `readFixFlags` precedence for Bundle A:
+
+1. an explicit `SS_FIX_A=1|0` (bench reproducibility);
+2. else `SWEET_SEARCH_COMPACT_OUTPUT=0|false|off|no` (the product opt-out: every switch off, the previous bytes);
+3. else ON: A1, A2, A7, A5.
+
+**Bench consequence:** an unset `SS_FIX_A` now means the product default. A "no-fix" arm must set
+`SS_FIX_A=0`. Sub-switch-only arms (`SS_FIX_TRACE_COMPACT=1` alone, `SS_FIX_GREP_RETRY=1` alone) also need
+`SS_FIX_A=0` to keep A1/A2/A7 off. A3, `SS_FIX_DROP_SUFFICIENCY`, B1, B2, B7 stay default off (bench only).
+
+The native `sweet-search "<q>"` agent text (daemon `renderAgentSearchResponse`) uses the same compact
+renderer with a `# sweet-search:` header. Its opt-out is read from the DAEMON's environment (inherited
+from the process that spawned it); restart the daemon after changing it. MCP output is unchanged.
+
+A5 change in the port: a `|` inside an unclosed group (`app.(get|post`) stays literal (`[|]`) instead of
+becoming a top-level alternative that matched every `post`; the engine's regex-dialect note is not printed
+after a repair (it described the wrapper's escaped pattern as "used unchanged").
