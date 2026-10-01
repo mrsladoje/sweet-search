@@ -369,6 +369,7 @@ class ProductionReconcileAdapter {
     // readDirtySet → _retireSet → hashFile).
     this.admission = options.admissionPolicy || createAdmissionPolicy({ projectRoot: this.projectRoot });
     this._retireSet = new Set();
+    this._tickAdmitted = [];
     this._liSkipFiles = new Set();
     this.hashes = new Map();
     this.touched = new Map();
@@ -812,6 +813,8 @@ class ProductionReconcileAdapter {
       // else: never indexed and inadmissible → drop
     }
     this._retireSet = retire;
+    // Admitted this tick (new files included): the import resolver's file set.
+    this._tickAdmitted = files.filter((f) => !retire.has(f));
     return files;
   }
 
@@ -860,8 +863,22 @@ class ProductionReconcileAdapter {
     if (ctx && ctx.importResolver !== undefined) return ctx.importResolver;
     let resolver = null;
     try {
-      const files = prepareCached(db, 'SELECT DISTINCT file_path FROM entities WHERE epoch_retired IS NULL').pluck().all();
-      resolver = createImportResolver({ projectRoot: this.projectRoot, files, probeFs: true });
+      // Resolve against the file set a full build resolves against: every
+      // indexed file (merkle-state.json) plus this tick's admitted files,
+      // minus this tick's retirements. A disk probe would also link
+      // gitignored / excluded / oversized files (generated code, dist/) that
+      // a full build never sees. Before any merkle state exists (a fresh
+      // maintainer), the graph's live files plus a disk probe stand in.
+      const merkle = this._merkleRead()?.files;
+      if (merkle && Object.keys(merkle).length > 0) {
+        const files = new Set(Object.keys(merkle));
+        for (const f of this._retireSet || []) files.delete(f);
+        for (const f of this._tickAdmitted || []) files.add(f);
+        resolver = createImportResolver({ projectRoot: this.projectRoot, files, probeFs: false });
+      } else {
+        const files = prepareCached(db, 'SELECT DISTINCT file_path FROM entities WHERE epoch_retired IS NULL').pluck().all();
+        resolver = createImportResolver({ projectRoot: this.projectRoot, files, probeFs: true });
+      }
     } catch {
       resolver = null;
     }
