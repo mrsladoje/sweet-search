@@ -968,10 +968,12 @@ class ProductionReconcileAdapter {
         // under the file's logical id with no file entity row, so oldIds never
         // lists it and those rows stayed live forever after an edit (a removed
         // import kept its edge). Retire them with the rest of the file — and
-        // the file-level bare call sites stored under the same id.
+        // the file-level call sites (call_sites, call_lines) stored under the
+        // same id.
         if (!oldIds.includes(fileLogicalId)) {
           prepareCached(db, 'UPDATE relationships SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
           prepareCached(db, 'UPDATE call_sites SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
+          prepareCached(db, 'UPDATE call_lines SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
         }
         // The file's node: one live row while the file exists, retired on
         // delete. Older maintained graphs also hold a `file` row in
@@ -984,6 +986,7 @@ class ProductionReconcileAdapter {
         }
         if (oldIds.length > 0) {
           db.prepare(`UPDATE call_sites SET epoch_retired = ? WHERE source_id IN (${oldIds.map(() => '?').join(',')}) AND epoch_retired IS NULL`).run(epoch, ...oldIds);
+          db.prepare(`UPDATE call_lines SET epoch_retired = ? WHERE source_id IN (${oldIds.map(() => '?').join(',')}) AND epoch_retired IS NULL`).run(epoch, ...oldIds);
         }
         const retiredIds = [];
         const nextLogical = new Set(entities.map((e) => e.id));

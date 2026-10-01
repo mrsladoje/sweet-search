@@ -120,35 +120,40 @@ export function pruneRetiredRelationships(db, frontier, opts = {}) {
 }
 
 /**
- * Delete retired `call_sites` rows (bare calls, see graph-extractor
- * ensureCallSitesSchema) at or below `frontier`, same batching as
- * relationships. Graphs built before the table existed are skipped.
+ * Delete retired `call_sites` rows (bare calls) and `call_lines` rows (every
+ * qualified call site's line), see graph-extractor ensureCallSitesSchema, at
+ * or below `frontier`, same batching as relationships. Graphs built before a
+ * table existed skip it. `maxRows` bounds both tables together.
  */
 export function pruneRetiredCallSites(db, frontier, opts = {}) {
   if (!Number.isInteger(frontier)) {
     throw new Error(`pruneRetiredCallSites: frontier must be an integer, got ${frontier}`);
   }
-  if (!tableExists(db, 'call_sites')) return { deleted: 0, batches: 0, hitCap: false, skipped: 'no-table' };
+  const tables = ['call_sites', 'call_lines'].filter((t) => tableExists(db, t));
+  if (tables.length === 0) return { deleted: 0, batches: 0, hitCap: false, skipped: 'no-table' };
   const { batchSize, maxRows } = normalizeBatchOpts(opts);
-  const stmt = db.prepare(`
-    DELETE FROM call_sites
-     WHERE rowid IN (
-       SELECT rowid FROM call_sites
-        WHERE epoch_retired IS NOT NULL AND epoch_retired <= ?
-        LIMIT ?
-     )
-  `);
   let deleted = 0;
   let batches = 0;
   let hitCap = false;
-  for (;;) {
-    const remainingCap = maxRows - deleted;
-    if (remainingCap <= 0) { hitCap = true; break; }
-    const take = Math.min(batchSize, remainingCap);
-    const changes = stmt.run(frontier, take).changes ?? 0;
-    deleted += changes;
-    batches += 1;
-    if (changes < take) break;
+  for (const table of tables) {
+    const stmt = db.prepare(`
+      DELETE FROM ${table}
+       WHERE rowid IN (
+         SELECT rowid FROM ${table}
+          WHERE epoch_retired IS NOT NULL AND epoch_retired <= ?
+          LIMIT ?
+       )
+    `);
+    for (;;) {
+      const remainingCap = maxRows - deleted;
+      if (remainingCap <= 0) { hitCap = true; break; }
+      const take = Math.min(batchSize, remainingCap);
+      const changes = stmt.run(frontier, take).changes ?? 0;
+      deleted += changes;
+      batches += 1;
+      if (changes < take) break;
+    }
+    if (hitCap) break;
   }
   return { deleted, batches, hitCap };
 }

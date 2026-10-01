@@ -131,7 +131,8 @@ const BARE_KEYWORDS_BY_LANGUAGE = {
   python: ['if', 'elif', 'else', 'for', 'while', 'return', 'yield', 'await', 'assert', 'del', 'not', 'and', 'or', 'in', 'is', 'lambda', 'with', 'except', 'raise', 'from', 'import', 'match', 'case'],
   ruby: ['if', 'elsif', 'unless', 'while', 'until', 'for', 'case', 'when', 'return', 'yield', 'defined?', 'not', 'and', 'or', 'in', 'super', 'rescue'],
   // Go: keywords plus the predeclared builtin functions of the language spec.
-  go: ['if', 'for', 'switch', 'case', 'return', 'go', 'defer', 'select', 'func', 'range', 'make', 'new', 'len', 'cap', 'append', 'copy', 'delete', 'panic', 'recover', 'print', 'println', 'complex', 'real', 'imag', 'close', 'min', 'max', 'clear'],
+  // `import (`, `var (`, `const (` and `type (` open grouped declarations.
+  go: ['if', 'for', 'switch', 'case', 'return', 'go', 'defer', 'select', 'func', 'range', 'import', 'var', 'const', 'type', 'make', 'new', 'len', 'cap', 'append', 'copy', 'delete', 'panic', 'recover', 'print', 'println', 'complex', 'real', 'imag', 'close', 'min', 'max', 'clear'],
   // Rust: keywords plus the prelude's Option/Result constructors.
   rust: ['if', 'else', 'for', 'while', 'loop', 'match', 'return', 'in', 'as', 'move', 'unsafe', 'await', 'Some', 'Ok', 'Err'],
   swift: ['if', 'else', 'for', 'while', 'repeat', 'switch', 'case', 'return', 'guard', 'defer', 'catch', 'try', 'throw', 'await', 'in', 'is', 'as', 'where', 'init', 'super', 'self', 'Self', 'unowned', 'weak', 'some', 'any'],

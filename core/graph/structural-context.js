@@ -125,9 +125,13 @@ function renderCode(entity, opts) {
   } else {
     presentation = 'preview';
     const slices = [{ start: entity.startLine, end: Math.min(entity.endLine, entity.startLine + 3) }];
-    const line = entity.contextLine || opts.focusLine;
-    if (line && line >= entity.startLine && line <= entity.endLine) {
-      slices.push({ start: Math.max(entity.startLine, line - 2), end: Math.min(entity.endLine, line + 2) });
+    // A window around each call site (the first four), so a preview shows
+    // every call the summary line lists.
+    const lines = siteLines(entity).length ? siteLines(entity).slice(0, 4) : [opts.focusLine];
+    for (const line of lines) {
+      if (line && line >= entity.startLine && line <= entity.endLine) {
+        slices.push({ start: Math.max(entity.startLine, line - 2), end: Math.min(entity.endLine, line + 2) });
+      }
     }
     if (entity.endLine > entity.startLine + 4) slices.push({ start: entity.endLine, end: entity.endLine });
     code = readSlices(opts.readFileRange, entity.filePath, mergeSlices(slices));
@@ -150,15 +154,52 @@ function mergeSlices(slices) {
   return merged;
 }
 
+/** Every site line of an item: `contextLines`, else its single `contextLine`. */
+function siteLines(entity) {
+  if (entity.contextLines?.length) return entity.contextLines;
+  return entity.contextLine ? [entity.contextLine] : [];
+}
+
+/**
+ * One item per (entity, relationship), carrying every site line. A caller
+ * that calls the target on lines 440 and 476 is one caller with
+ * `contextLines: [440, 476]`, not two items (two items would pack its code
+ * twice). Keeps the first item's fields and input order.
+ */
+export function mergeCallSites(items) {
+  const byKey = new Map();
+  for (const item of items || []) {
+    if (!item?.id) continue;
+    const key = `${item.id}\u0000${item.relationship || ''}`;
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, { ...item, contextLines: [...siteLines(item)] });
+      continue;
+    }
+    for (const line of siteLines(item)) if (!prev.contextLines.includes(line)) prev.contextLines.push(line);
+  }
+  return [...byKey.values()].map((item) => {
+    item.contextLines.sort((a, b) => a - b);
+    item.contextLine = item.contextLines[0] ?? item.contextLine ?? null;
+    return item;
+  });
+}
+
+/** Call sites across items: each item counts its site lines (at least one). */
+function siteCount(items) {
+  return (items || []).reduce((n, item) => n + Math.max(1, siteLines(item).length), 0);
+}
+
 function itemSummary(entity) {
   const loc = entity.filePath ? `${entity.filePath}:${entity.startLine || '?'}` : '(external)';
+  const lines = siteLines(entity).join(',');
   // Trace-only edges are not calls: say what they are (`(overrides)`,
-  // `(instantiates)@12`). Call/uses/extends rows render as before.
+  // `(instantiates)@12`). Call/uses/extends rows list every site line.
   if (isTraceOnlyRelationship(entity.relationship)) {
-    const at = entity.contextLine ? `@${entity.contextLine}` : '';
+    const at = lines ? `@${lines}` : '';
     return `${entity.name} [${entity.type}] ${loc} (${entity.relationship})${at}`;
   }
-  const call = entity.contextLine ? ` call@${entity.contextLine}` : '';
+  const call = lines ? ` call@${lines}` : '';
   return `${entity.name} [${entity.type}] ${loc}${call}`;
 }
 
@@ -199,6 +240,7 @@ function packSection(items, budget, opts) {
       startLine: item.startLine,
       endLine: item.endLine,
       contextLine: item.contextLine || null,
+      contextLines: siteLines(item),
       relationship: item.relationship || null,
       depth: item.depth || 1,
       importance: Number(item.importance.toFixed(4)),
@@ -377,32 +419,29 @@ export class StructuralContextBuilder {
     const targetHintSites = callsiteHintSites(targetSource, new Set([target.name]));
     const targetCallsiteHints = targetHintSites.map(h => h.name);
     const storedCallers = [...this.repo.getCallers(target, { limit: 160 }), ...(this.repo.getAliasCallers?.(target, { limit: 80 }) || [])];
+    // Bare calls (`helper(x)`), resolved by scope rules from call_sites. They
+    // come from indexed call sites (scope-resolved), so they count as stored,
+    // not as the same-file text scan. Indexed items carry every site line
+    // (call_lines / call_sites); one item per calling entity and relationship.
+    const bareCallers = this.repo.getBareCallers?.(target, { limit: 80 }) || [];
+    const indexedCallers = mergeCallSites([...storedCallers, ...bareCallers]);
+    const storedIds = new Set(indexedCallers.map(x => x.id));
     // Same-file callsite scan: recovers callers the extractor stored no edge
-    // for (bare local calls, out-of-line C++ methods). Deduped against stored
+    // for (bare local calls, out-of-line C++ methods). Deduped against indexed
     // callers by entity id — a stored edge may carry a different context_line
     // for the same call (multi-line invocations), and a same-entity duplicate
     // would double-pack the caller section.
-    const storedIds = new Set(storedCallers.map(x => x.id));
-    // Bare calls (`helper(x)`), resolved by scope rules from call_sites.
-    const bareCallers = (this.repo.getBareCallers?.(target, { limit: 80 }) || [])
-      .filter(x => !storedIds.has(x.id));
-    for (const x of bareCallers) storedIds.add(x.id);
-    const sameFileCallers = (this.repo.getSameFileCallers?.(target, { limit: 24 }) || [])
-      .filter(x => !storedIds.has(x.id));
-    // Bare callers come from indexed call sites (scope-resolved), so they
-    // count as stored, not as the same-file text scan.
+    const sameFileCallers = mergeCallSites((this.repo.getSameFileCallers?.(target, { limit: 24 }) || [])
+      .filter(x => !storedIds.has(x.id)));
     const callerProvenance = {
-      stored: storedCallers.length + bareCallers.length,
+      stored: indexedCallers.length,
       sameFileFallback: sameFileCallers.length,
     };
-    const callersRaw = [...storedCallers, ...bareCallers, ...sameFileCallers].map(x => ({ ...x, depth: 1 }));
-    let calleesRaw = this.repo.getCallees(target, { limit: 160 }).map(x => ({ ...x, depth: 1 }));
-    const calleeIds = new Set(calleesRaw.map(x => x.id));
-    for (const x of this.repo.getBareCallees?.(target, { limit: 80 }) || []) {
-      if (calleeIds.has(x.id)) continue;
-      calleeIds.add(x.id);
-      calleesRaw.push({ ...x, depth: 1 });
-    }
+    const callersRaw = [...indexedCallers, ...sameFileCallers].map(x => ({ ...x, depth: 1 }));
+    let calleesRaw = mergeCallSites([
+      ...this.repo.getCallees(target, { limit: 160 }),
+      ...(this.repo.getBareCallees?.(target, { limit: 80 }) || []),
+    ]).map(x => ({ ...x, depth: 1 }));
     if (!calleesRaw.length) {
       // No stored callees: fall back to names called in the body. A qualified
       // name binds only through bindQualifiedHint (own-type receiver, same
@@ -513,11 +552,13 @@ export class StructuralContextBuilder {
         latencyMs: Math.round(performance.now() - started),
       },
       sections: {
+        // `total` counts call sites (an item lists every line it calls on);
+        // `distinct` counts calling / called entities (= fan-in / fan-out).
         callers: {
-          total: callers.length, distinct: targetFan.fanIn, shown: callersPack.items.length, items: callersPack.items,
+          total: siteCount(callers), distinct: targetFan.fanIn, shown: callersPack.items.length, items: callersPack.items,
           provenance: callerProvenance,
         },
-        callees: { total: callees.length, distinct: targetFan.fanOut, shown: calleesPack.items.length, items: calleesPack.items },
+        callees: { total: siteCount(callees), distinct: targetFan.fanOut, shown: calleesPack.items.length, items: calleesPack.items },
         impact: { total: impactPaths.length, shown: impactPack.paths.length, paths: impactPack.paths },
       },
     };

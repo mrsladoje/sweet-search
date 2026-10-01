@@ -33,6 +33,19 @@ describe('bare call scanning', () => {
     ], ['run'])).toEqual(['check', 'empty', 'execute', 'print', 'parse']);
   });
 
+  it('Go grouped declarations (`import (`, `var (`, `const (`, `type (`) are not calls', () => {
+    expect(bareCalls('go', [
+      'import (',
+      '\t"fmt"',
+      ')',
+      'var (',
+      '\terrX = compute(1)',
+      ')',
+      'const (',
+      'type (',
+    ])).toEqual(['compute']);
+  });
+
   it('a Go trailing-dot continuation is a qualified call, not a bare call', () => {
     expect(bareCalls('go', [
       '\tclient.',
@@ -220,7 +233,7 @@ describe('ss-trace lists bare callers and callees (graph build + query)', () => 
 });
 
 describe('ranking safety', () => {
-  it('only the graph writer, incremental maintenance, GC and ss-trace read call_sites', () => {
+  it('only the graph writer, incremental maintenance, GC and ss-trace read call_sites / call_lines', () => {
     const allowed = new Set([
       'core/graph/graph-extractor.js',
       'core/graph/bare-call-resolution.js',
@@ -237,7 +250,8 @@ describe('ranking safety', () => {
         if (statSync(abs).isDirectory()) { walk(abs); continue; }
         if (!/\.(m?js)$/.test(name)) continue;
         const rel = relative(repoRoot, abs);
-        if (readFileSync(abs, 'utf-8').includes('call_sites') && !allowed.has(rel)) offenders.push(rel);
+        const text = readFileSync(abs, 'utf-8');
+        if ((text.includes('call_sites') || text.includes('call_lines')) && !allowed.has(rel)) offenders.push(rel);
       }
     };
     walk(join(repoRoot, 'core'));

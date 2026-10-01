@@ -293,10 +293,16 @@ export class BareCallResolver {
     const candidates = this._callablesNamed([target.name]);
     if (!candidates.some(c => c.id === target.id)) return [];
     const index = this._index([...candidates, ...sites]);
+    // One row per call site; resolution depends on the calling entity only.
+    const hitsTarget = new Map();
     const out = [];
     for (const site of sites) {
-      const chosen = resolveBareCall(site, candidates, index);
-      if (chosen.some(c => c.id === target.id)) out.push(site);
+      let hit = hitsTarget.get(site.id);
+      if (hit === undefined) {
+        hit = resolveBareCall(site, candidates, index).some(c => c.id === target.id);
+        hitsTarget.set(site.id, hit);
+      }
+      if (hit) out.push(site);
       if (out.length >= limit) break;
     }
     return out;
@@ -322,10 +328,16 @@ export class BareCallResolver {
       list.push(c);
     }
     const index = this._index([...candidates, caller]);
+    // One row per call site; the callee depends on the name only (one caller).
+    const chosenByName = new Map();
     const out = [];
     for (const site of sites) {
-      const chosen = resolveBareCall(caller, byName.get(site.callee_name) || [], index);
-      if (chosen.length > 0) out.push({ entity: chosen[0], contextLine: site.context_line });
+      let chosen = chosenByName.get(site.callee_name);
+      if (chosen === undefined) {
+        chosen = resolveBareCall(caller, byName.get(site.callee_name) || [], index)[0] || null;
+        chosenByName.set(site.callee_name, chosen);
+      }
+      if (chosen) out.push({ entity: chosen, contextLine: site.context_line });
       if (out.length >= limit) break;
     }
     return out;
