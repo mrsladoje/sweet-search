@@ -8,12 +8,13 @@
 // subagent ss-* results echoed the parent's own edit back as repository state.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, realpathSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { resolveRoots, describeWorktree, hasIndex } from '../../core/search/worktree-roots.js';
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+const gitOr = (cwd, ...args) => { try { return git(cwd, ...args).trim(); } catch { return ''; } };
 const fakeIndex = (dir) => {
   mkdirSync(path.join(dir, '.sweet-search'), { recursive: true });
   writeFileSync(path.join(dir, '.sweet-search', 'codebase.db'), '');
@@ -137,7 +138,7 @@ describe('index admission denies worktree copies', () => {
 });
 
 describe('resolveRoots cost', () => {
-  it('starts no git process when the cwd holds the index, and still answers worktree on demand', async () => {
+  it('starts no git process when the cwd holds the index, and answers worktree on demand', async () => {
     const fs = await import('node:fs');
     const os = await import('node:os');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-roots-cost-'));
@@ -152,14 +153,151 @@ describe('resolveRoots cost', () => {
     try {
       const r = resolveRoots({ cwd: dir });
       expect(r.indexRoot).toBe(dir);
+      expect(r.worktree).toBeNull();   // read from files on demand: still no git start
       expect(fs.existsSync(mark)).toBe(false);
-      expect(r.worktree).toBeNull();
-      expect(fs.existsSync(mark)).toBe(true);
-      const starts = fs.readFileSync(mark, 'utf8').length;
-      expect(r.worktree).toBeNull();
-      expect(fs.readFileSync(mark, 'utf8').length).toBe(starts); // memoised
     } finally {
       process.env.PATH = savedPath;
+    }
+  });
+});
+
+describe('resolveRoots from a subdirectory', () => {
+  // Every ss-* used to exit 2 "no Sweet Search index at <repo>/src" from a subdirectory,
+  // although the native client had already sent the call to <repo>'s daemon.
+  let repo;
+  beforeAll(() => {
+    repo = realpathSync(mkdtempSync(path.join(tmpdir(), 'wt-sub-')));
+    git(repo, 'init', '-q');
+    git(repo, 'config', 'user.email', 'fixture@example.test');
+    git(repo, 'config', 'user.name', 'Fixture');
+    mkdirSync(path.join(repo, 'src/deep'), { recursive: true });
+    writeFileSync(path.join(repo, 'src/deep/a.js'), 'export const a = 1;\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-qm', 'base');
+    fakeIndex(repo);
+    git(repo, 'worktree', 'add', '-q', path.join(repo, '.claude/worktrees/x'), '-b', 'nested');
+  });
+  afterAll(() => { if (repo) rmSync(repo, { recursive: true, force: true }); });
+
+  it('both roots are the indexed ancestor, not the cwd', () => {
+    const r = resolveRoots({ cwd: path.join(repo, 'src/deep') });
+    expect(r.refusal).toBeNull();
+    expect(r.split).toBe(false);
+    expect(r.indexRoot).toBe(repo);
+    expect(r.fileRoot).toBe(repo);
+    expect(r.worktree.linked).toBe(false);
+  });
+
+  it('a subdirectory of a linked worktree reads files from the worktree top', () => {
+    fakeIndex(main);
+    const r = resolveRoots({ cwd: path.join(linked, 'src') });
+    expect(r.split).toBe(true);
+    expect(r.indexRoot).toBe(main);
+    expect(r.fileRoot).toBe(linked);
+    expect(r.notice).toContain(main);
+  });
+
+  it('a worktree nested in its indexed main checkout is still a split worktree', () => {
+    // An ancestor walk meets <repo>/.sweet-search too, but the worktree top comes first:
+    // the agent's files are the worktree's, and the notice must still print.
+    const wt = path.join(repo, '.claude/worktrees/x');
+    for (const cwd of [wt, path.join(wt, 'src/deep')]) {
+      const r = resolveRoots({ cwd });
+      expect(r.split).toBe(true);
+      expect(r.indexRoot).toBe(repo);
+      expect(r.fileRoot).toBe(wt);
+      expect(r.notice).toContain(repo);
+    }
+  });
+
+  it('a symlinked spelling of a subdirectory finds the same roots', () => {
+    const link = path.join(realpathSync(tmpdir()), `wt-sub-link-${process.pid}`);
+    rmSync(link, { force: true });
+    symlinkSync(path.join(repo, 'src'), link);
+    try {
+      const r = resolveRoots({ cwd: path.join(link, 'deep') });
+      expect(r.indexRoot).toBe(repo);
+      expect(r.fileRoot).toBe(repo);
+    } finally { rmSync(link, { force: true }); }
+  });
+});
+
+describe('describeWorktree reads git files and agrees with git', () => {
+  // The facts are read from `.git` → gitdir → commondir instead of three `git rev-parse`
+  // starts per call on the daemon's event loop. Same values, same spelling as git.
+  let base;
+  const cases = {};
+  beforeAll(() => {
+    base = mkdtempSync(path.join(tmpdir(), 'wt-parity-'));   // NOT realpath'd: /var vs /private/var
+    const m = path.join(base, 'm');
+    mkdirSync(path.join(m, 'src/deep'), { recursive: true });
+    git(m, 'init', '-q');
+    git(m, 'config', 'user.email', 'fixture@example.test');
+    git(m, 'config', 'user.name', 'Fixture');
+    writeFileSync(path.join(m, 'src/deep/a.js'), 'x\n');
+    git(m, 'add', '-A');
+    git(m, 'commit', '-qm', 'base');
+    git(m, 'worktree', 'add', '-q', path.join(base, 'w'), '-b', 'w');
+    git(m, 'worktree', 'add', '-q', path.join(m, '.claude/worktrees/n'), '-b', 'n');
+    // A submodule, from a second repository.
+    const s = path.join(base, 's');
+    mkdirSync(s);
+    git(s, 'init', '-q');
+    git(s, 'config', 'user.email', 'fixture@example.test');
+    git(s, 'config', 'user.name', 'Fixture');
+    writeFileSync(path.join(s, 'b.js'), 'y\n');
+    git(s, 'add', '-A');
+    git(s, 'commit', '-qm', 'sub');
+    git(m, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', s, 'vendor/s');
+    mkdirSync(path.join(base, 'plain'));
+    symlinkSync(path.join(base, 'w'), path.join(base, 'w-link'));
+    Object.assign(cases, {
+      'main root': m,
+      'main subdir': path.join(m, 'src/deep'),
+      'linked root': path.join(base, 'w'),
+      'linked subdir': path.join(base, 'w/src/deep'),
+      'nested worktree': path.join(m, '.claude/worktrees/n'),
+      'nested worktree subdir': path.join(m, '.claude/worktrees/n/src'),
+      'submodule': path.join(m, 'vendor/s'),
+      'symlinked worktree path': path.join(base, 'w-link/src'),
+      'non-repo': path.join(base, 'plain'),
+    });
+  });
+  afterAll(() => { if (base) rmSync(base, { recursive: true, force: true }); });
+
+  it('matches git rev-parse on every checkout shape', () => {
+    for (const [name, cwd] of Object.entries(cases)) {
+      const gitDir = gitOr(cwd, 'rev-parse', '--absolute-git-dir');
+      const got = describeWorktree(cwd);
+      if (!gitDir) { expect(got, name).toBeNull(); continue; }
+      const commonDir = gitOr(cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir');
+      expect(got, name).toEqual({
+        linked: gitDir !== commonDir,
+        gitDir,
+        commonDir,
+        mainCheckout: path.dirname(commonDir),
+        worktree: gitOr(cwd, 'rev-parse', '--show-toplevel'),
+      });
+    }
+  });
+
+  it('starts no git process for an ordinary linked worktree', async () => {
+    const fs = await import('node:fs');
+    const fakeBin = fs.mkdtempSync(path.join(tmpdir(), 'ss-fake-git-'));
+    const mark = path.join(fakeBin, 'started');
+    fs.writeFileSync(path.join(fakeBin, 'git'), `#!/bin/sh\necho x >> "${mark}"\nexit 1\n`, { mode: 0o755 });
+    const savedPath = process.env.PATH;
+    process.env.PATH = `${fakeBin}:${savedPath}`;
+    try {
+      expect(describeWorktree(cases['linked subdir']).linked).toBe(true);
+      expect(describeWorktree(cases['nested worktree']).linked).toBe(true);
+      expect(fs.existsSync(mark)).toBe(false);
+      // A git location variable moves the repository: only git knows, so git is asked.
+      expect(describeWorktree(cases['linked subdir'], { env: { GIT_DIR: '/nowhere' } })).toBeNull();
+      expect(fs.existsSync(mark)).toBe(true);
+    } finally {
+      process.env.PATH = savedPath;
+      fs.rmSync(fakeBin, { recursive: true, force: true });
     }
   });
 });

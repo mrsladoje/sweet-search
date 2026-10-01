@@ -55,46 +55,47 @@ fn has_index(dir: &Path) -> bool {
     dir.join(".sweet-search").join(INDEX_DB).is_file()
 }
 
-/// The main checkout of the linked git worktree that holds `start`, when there is one.
-/// Read from the `.git` file (`gitdir: …`) and the gitdir's `commondir`, the same facts
-/// `git rev-parse --git-common-dir` reports, without starting git.
-fn linked_worktree_main(start: &Path) -> Option<PathBuf> {
-    for dir in start.ancestors() {
-        let dot_git = dir.join(".git");
-        let meta = match fs::symlink_metadata(&dot_git) {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
-        if meta.is_dir() {
-            return None; // a main checkout, not a linked worktree
-        }
-        let text = fs::read_to_string(&dot_git).ok()?;
-        let gitdir = text.lines().find_map(|l| l.strip_prefix("gitdir:"))?.trim();
-        let gitdir = dir.join(gitdir);
-        let common = match fs::read_to_string(gitdir.join("commondir")) {
-            Ok(rel) => gitdir.join(rel.trim()),
-            Err(_) => return None, // no commondir: not a linked worktree
-        };
-        let common = fs::canonicalize(&common).ok()?;
-        return common.parent().map(Path::to_path_buf);
+/// The main checkout of the linked git worktree whose top is `dir`, when `dir/.git` is a
+/// linked worktree's `.git` file. Read from `gitdir: …` and the gitdir's `commondir`, the
+/// same facts `git rev-parse --git-common-dir` reports, without starting git. A main
+/// checkout (`.git` directory) and a submodule (no `commondir`) are not linked worktrees.
+fn linked_worktree_main_at(dir: &Path) -> Option<PathBuf> {
+    let dot_git = dir.join(".git");
+    if !fs::symlink_metadata(&dot_git).ok()?.is_file() {
+        return None;
     }
-    None
+    let text = fs::read_to_string(&dot_git).ok()?;
+    let gitdir = text.lines().find_map(|l| l.strip_prefix("gitdir:"))?.trim();
+    let gitdir = dir.join(gitdir);
+    let rel = fs::read_to_string(gitdir.join("commondir")).ok()?;
+    let common = fs::canonicalize(gitdir.join(rel.trim())).ok()?;
+    if fs::canonicalize(&gitdir).ok()? == common {
+        return None;
+    }
+    common.parent().map(Path::to_path_buf)
 }
 
 /// The repository whose daemon should take this call: the explicit
-/// $SWEET_SEARCH_PROJECT_ROOT, else the nearest directory at or above `cwd` that holds an
-/// index, else the main checkout of a linked worktree that holds one. None hands the call
-/// to the in-process runner, which prints the right refusal. The daemon re-derives the
-/// root with the tool's own rules and refuses (409) a call that is not its own, so a
-/// wrong guess here costs speed, never correctness.
+/// $SWEET_SEARCH_PROJECT_ROOT, else the first directory at or above `cwd` that decides —
+/// one that holds an index, or the top of a linked worktree (its main checkout, when that
+/// holds an index). The tool code walks the same way (core/search/worktree-roots.js
+/// resolveRoots), so a worktree nested inside its main checkout is still a worktree. None
+/// hands the call to the in-process runner, which prints the right refusal. The daemon
+/// re-derives the root and refuses (409) a call that is not its own, so a wrong guess here
+/// costs speed, never correctness.
 fn index_root(cwd: &Path, explicit: Option<&str>) -> Option<PathBuf> {
     if let Some(root) = explicit.filter(|r| !r.is_empty()) {
         return Some(super::canonicalize_path(Path::new(root)));
     }
-    if let Some(dir) = cwd.ancestors().find(|d| has_index(d)) {
-        return Some(dir.to_path_buf());
+    for dir in cwd.ancestors() {
+        if has_index(dir) {
+            return Some(dir.to_path_buf());
+        }
+        if let Some(main) = linked_worktree_main_at(dir) {
+            return Some(main).filter(|m| has_index(m));
+        }
     }
-    linked_worktree_main(cwd).filter(|main| has_index(main))
+    None
 }
 
 fn falsey(v: &str) -> bool {
@@ -274,12 +275,47 @@ mod tests {
         fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display())).unwrap();
         let inside = wt.join("pkg");
         fs::create_dir_all(&inside).unwrap();
-        assert_eq!(linked_worktree_main(&inside), Some(main.clone()));
+        assert_eq!(linked_worktree_main_at(&wt), Some(main.clone()));
+        assert_eq!(linked_worktree_main_at(&inside), None);
         assert_eq!(index_root(&inside, None), Some(main.clone()));
         // The main checkout itself is not a linked worktree.
-        assert_eq!(linked_worktree_main(&main), None);
+        fs::write(main.join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        assert_eq!(linked_worktree_main_at(&main), None);
         fs::remove_dir_all(wt).unwrap();
         fs::remove_dir_all(main).unwrap();
+    }
+
+    #[test]
+    fn worktree_nested_in_its_indexed_main_is_still_a_worktree() {
+        // <repo>/.claude/worktrees/x: the worktree's top decides before <repo> does.
+        let main = temp_dir("main-nested");
+        index(&main);
+        let gitdir = main.join(".git").join("worktrees").join("x");
+        fs::create_dir_all(&gitdir).unwrap();
+        fs::write(gitdir.join("commondir"), "../..\n").unwrap();
+        let wt = main.join(".claude").join("worktrees").join("x");
+        fs::create_dir_all(wt.join("src")).unwrap();
+        fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display())).unwrap();
+        assert_eq!(index_root(&wt.join("src"), None), Some(main.clone()));
+        // A worktree of another, unindexed repository inside an indexed directory has no
+        // root: the outer index does not describe its files.
+        let other = temp_dir("other-main");
+        let other_gitdir = other.join(".git").join("worktrees").join("y");
+        fs::create_dir_all(&other_gitdir).unwrap();
+        fs::write(other_gitdir.join("commondir"), "../..\n").unwrap();
+        let foreign = main.join("vendor").join("y");
+        fs::create_dir_all(&foreign).unwrap();
+        fs::write(foreign.join(".git"), format!("gitdir: {}\n", other_gitdir.display())).unwrap();
+        assert_eq!(index_root(&foreign, None), None);
+        // A submodule (.git file, no commondir) does not decide: the index above serves.
+        let modules = main.join(".git").join("modules").join("sub");
+        fs::create_dir_all(&modules).unwrap();
+        let sub = main.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join(".git"), format!("gitdir: {}\n", modules.display())).unwrap();
+        assert_eq!(index_root(&sub, None), Some(main.clone()));
+        fs::remove_dir_all(main).unwrap();
+        fs::remove_dir_all(other).unwrap();
     }
 
     #[test]
