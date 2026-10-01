@@ -1,0 +1,113 @@
+{
+ "repo": "ocelot",
+ "keep": [
+  "r3h-ocelot-01",
+  "r3h-ocelot-02",
+  "r3h-ocelot-03",
+  "r3h-ocelot-04",
+  "r3h-ocelot-05",
+  "r3h-ocelot-06",
+  "r3h-ocelot-07",
+  "r3h-ocelot-09",
+  "r3h-ocelot-10",
+  "r3h-ocelot-11",
+  "r3h-ocelot-12",
+  "r3h-ocelot-13",
+  "r3h-ocelot-15",
+  "r3h-ocelot-16",
+  "r3h-ocelot-17",
+  "r3h-ocelot-18",
+  "r3h-ocelot-19",
+  "r3h-ocelot-20",
+  "r3h-ocelot-21",
+  "r3h-ocelot-22",
+  "r3h-ocelot-23",
+  "r3h-ocelot-24"
+ ],
+ "fixes": {
+  "r3h-ocelot-01": {
+   "expectedFiles": [
+    "src/Configuration/Creator/ClaimsToThingCreator.cs",
+    "src/Configuration/Parser/ClaimToThingConfigurationParser.cs",
+    "src/DownstreamPathManipulation/Middleware/ClaimsToDownstreamPathMiddleware.cs",
+    "src/DownstreamPathManipulation/ChangeDownstreamPathTemplate.cs",
+    "src/DownstreamUrlCreator/DownstreamPathPlaceholderReplacer.cs",
+    "src/Responder/ErrorsToHttpStatusCodeMapper.cs",
+    "src/Infrastructure/Claims/ClaimsParser.cs"
+   ],
+   "expectedSymbols": [
+    "ClaimToThingConfigurationParser.Extract",
+    "ClaimsToDownstreamPathMiddleware.Invoke",
+    "ChangeDownstreamPathTemplate.ChangeDownstreamPath",
+    "DownstreamPathPlaceholderReplacer.Replace",
+    "ErrorsToHttpStatusCodeMapper.Map",
+    "ClaimsParser.GetValue"
+   ],
+   "expectedFacts": [
+    "ClaimToThingConfigurationParser.Extract splits the setting text on '>' and requires the first part to look like Claims[name].",
+    "CRITICAL: ChangeDownstreamPathTemplate.ChangeDownstreamPath adds the claim-derived value to the request's shared placeholder list under the setting key wrapped in braces, replacing an existing entry of the same name.",
+    "CRITICAL: ChangeDownstreamPath returns CouldNotFindPlaceholderError when the downstream path template does not contain that placeholder name, and ClaimsToDownstreamPathMiddleware stores it as a pipeline error without calling the next middleware.",
+    "DownstreamUrlCreatorMiddleware later substitutes the placeholder values into the template through DownstreamPathPlaceholderReplacer.Replace.",
+    "A missing claim, or (when a delimiter is configured) an index outside the split parts, makes ClaimsParser.GetValue return CannotFindClaimError, which ErrorsToHttpStatusCodeMapper maps to 403.",
+    "CouldNotFindPlaceholderError has no case in ErrorsToHttpStatusCodeMapper, so the caller gets the default 404."
+   ]
+  },
+  "r3h-ocelot-03": {
+   "expectedFacts": [
+    "CRITICAL: DownstreamRouteProviderFactory.Get picks the discovery finder only when there are no routes (or no route has an upstream path template) AND the discovery settings have a non-empty host, a port above 0 and a non-empty type.",
+    "DiscoveryDownstreamRouteFinder.GetServiceName takes the first path segment ('shop.orders') and splits it at its first '.': namespace 'shop', service name 'orders'; GetDownstreamPath keeps the rest from the second slash ('/items/5').",
+    "The finder looks for a dynamic-route entry with the same service name (and namespace when given); the load balancer key is that entry's key, otherwise RouteKeyCreator.Create(namespace, name, global balancer options).",
+    "CRITICAL: the synthesized route takes the global options and the matching dynamic-route entry's options replace them wholesale; the result is cached in a dictionary by load balancer key.",
+    "The synthesized route carries a service name, so DownstreamRoute.UseServiceDiscovery is true and ServiceDiscoveryProviderFactory.Get takes its service-discovery branch when load balancing starts."
+   ]
+  },
+  "r3h-ocelot-06": {
+   "expectedFacts": [
+    "OutputCacheController handles HTTP DELETE on outputcache/{region}, requires authorization, calls ClearRegion and returns 204.",
+    "OutputCacheMiddleware caches only when CacheOptions.UseCache is true (TtlSeconds > 0) and the call produced no pipeline errors; it then adds the reply under the route's region with that TTL.",
+    "CRITICAL: DefaultMemoryCache.Add records the key under its region (SetRegion, only for a non-empty region) and ClearRegion removes every recorded key.",
+    "CRITICAL: the region does not affect lookups: DefaultMemoryCache.Get and TryGetValue ignore the region argument.",
+    "When no region is configured, CacheOptionsCreator passes the route's load balancer key as the default region; for a fixed route RouteKeyCreator builds that key from methods, upstream template, host, downstream addresses, namespace, name, balancer type and key joined by '|' (a cookie sticky-session balancer with a key gives 'CookieStickySessions:<key>' instead)."
+   ]
+  },
+  "r3h-ocelot-10": {
+   "expectedFacts": [
+    "At load time FileConfigurationFluentValidator fails when a route has a service name, or the global discovery section has a type, but no ServiceDiscoveryFinderDelegate exists (Service Fabric excepted).",
+    "At load time FileQoSOptionsFluentValidator fails when QoS options are active but no QosDelegatingHandlerDelegate exists.",
+    "At load time FileAuthenticationOptionsValidator fails when a configured scheme is not among the IAuthenticationSchemeProvider schemes: when the legacy single key is set only it is checked, otherwise every entry of the key list.",
+    "CRITICAL: At call time QualityOfServiceFactory.Get re-checks the QoS delegate, and when it is missing or returns null it sets UnableToFindQoSProviderError on the request and uses a no-op handler.",
+    "CRITICAL: At call time ServiceDiscoveryProviderFactory returns UnableToFindServiceDiscoveryProviderError when no finder delegate yields a provider whose type name equals the configured type.",
+    "At call time there is no explicit registration check for sign-in schemes: AuthenticationMiddleware.AuthenticateAsync calls each configured scheme, catches an exception thrown by one (for example an unregistered scheme), logs a warning and tries the next; if none succeeds the call gets an unauthenticated error."
+   ]
+  },
+  "r3h-ocelot-11": {
+   "query": "Curly-brace tokens in address templates and in configured strings get filled in with runtime values. Enumerate each distinct source of such values that the gateway itself provides (not each token name, and not tokens that a host application registers through the extension point for custom tokens), and say where each source is supplied."
+  },
+  "r3h-ocelot-15": {
+   "query": "An operator enables the gateway's own resilience feature through the simplest registration call. Several handler classes named after that feature exist. Which instance really wraps backend calls, which class exists only as a marker, and which one is used when resilience is off or cannot be built?"
+  },
+  "r3h-ocelot-18": {
+   "expectedFacts": [
+    "UpstreamTemplatePatternCreator.Create sets containsQueryString when the template has '?', rewrites the '?' into an alternation, and turns a placeholder into '.*' when it stands after the '?' or has no '/' after it, otherwise into '[^/]+'.",
+    "CRITICAL: RegExUrlMatcher.Match tests the pattern against path plus query string when ContainsQueryString is true, otherwise against the path only.",
+    "UrlPathPlaceholderNameAndValueFinder.Find includes the query in the tested text only when the escaped template contains '?', and extracts named groups.",
+    "CRITICAL: When the downstream template has no '?', RemoveQueryStringParametersThatHaveBeenUsedInTemplate removes from the forwarded query every parameter whose name equals a placeholder name.",
+    "When the downstream template has '?', MergeQueryStringsWithoutDuplicateValues drops original parameters named like placeholders, lets the template-derived parameters win and appends the other original ones."
+   ]
+  },
+  "r3h-ocelot-19": {
+   "query": "An operator gives a route a backend time limit and also turns on the gateway's built-in resilience handling with its own call time limit that is longer than the route's limit. Which limit actually ends a hanging call, does the gateway adjust anything on its own, and what does the caller receive?"
+  },
+  "r3h-ocelot-22": {
+   "query": "Two ordinary routes both match an incoming call and its verb. The operator ranked one above the other with the per-route ordering setting, but the higher-ranked route has no host restriction, while the lower-ranked one is restricted to the caller's host. Which one handles the call, and where is that decided? Also say where the ranking value comes from (including its default) and whether any kind of address template ignores it."
+  }
+ },
+ "dropped": {
+  "r3h-ocelot-08": "Wrong answer set: for ordinary routes the route validator REFUSES start for several listed members (non-positive rate-limit limit, period without unit, version text not matching its pattern, unknown version policy name), and the circuit-breaker fact is overstated (ratio <= 0 turns ratio mode off, timeout <= 0 disables the timeout). The correct set depends on route vs global vs dynamic level; not gradeable as one answer set.",
+  "r3h-ocelot-14": "1-3 step lookup in disguise: one grep of 'merge' (a word in the query) reaches the single gold file ConfigurationBuilderExtensions.cs, which holds the whole answer (overloads, ApplyMergeOcelotJsonOption, AddOcelotJsonFile); MergeOcelotJson is a 2-value enum."
+ },
+ "hardened": [
+  "r3h-ocelot-15",
+  "r3h-ocelot-22"
+ ]
+}
