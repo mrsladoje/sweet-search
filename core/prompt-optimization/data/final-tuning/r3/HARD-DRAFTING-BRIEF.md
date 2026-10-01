@@ -40,3 +40,13 @@ investigation: **target — a strong agent with grep and file reading gets only 
 
 Output: `r3/hard-drafts/<repo>.json` = `{ "repo": "<repo>", "sha": "<commit>", "probes": [ … 24 … ] }`.
 Final message: counts per stratum + the 5 hardest (id + why) + how many tool calls you think a strong agent needs on average.
+
+## ADDENDUM (2026-10-01 11:35, from r3/HARD-QUESTION-RESEARCH.md) — binding for every question
+
+1. **Cheapest route ≥ 4 dependent steps.** In `notes`, write the SHORTEST route a smart agent with grep + file reading would take (step by step). It must need ≥ 4 dependent steps, and the first 3 greps of the question's own words must NOT reach a gold file. If your cheapest route is ≤ 3 steps, harden or drop the question.
+2. **No exposed constants.** No identifier, string literal, error message, config key, CLI flag, env var, or numeric constant from the code in the question — they make the first grep runnable.
+3. **Avoid shallow types:** rare-identifier lookups, a single selective clue, paraphrase of one function, open "why/purpose" prose, answers living in README/docs/comments/test names, "list callers of a distinctive X", "is there support for distinctive Y".
+4. **Completeness:** members must NOT share one searchable token (different names, different layers); 3–6 members.
+5. **Gating is welcome:** the default code path is a decoy, the answer sits in a variant (platform file, feature flag, version branch, build tag) — name the decoy in `notes`.
+6. **Facts are atomic** (one checkable claim each); mark the 1–2 critical ones by starting them with "CRITICAL:".
+7. A strong agent should need **6–8 turns**; state your estimate in `notes` ("est. turns: N").
