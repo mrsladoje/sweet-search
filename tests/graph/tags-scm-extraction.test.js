@@ -192,7 +192,8 @@ describe('tags.scm Symbol Extraction', () => {
         signature: 'function myFunc() {',
       });
       expect(mockTree.delete).toHaveBeenCalled();
-      expect(mockQuery.delete).toHaveBeenCalled();
+      // The tags query is compiled once per grammar and kept for reuse.
+      expect(mockQuery.delete).not.toHaveBeenCalled();
     });
 
     it('handles multiple captures in a single file', async () => {
@@ -354,8 +355,11 @@ describe('tags.scm Symbol Extraction', () => {
       provider._createQuery = vi.fn().mockResolvedValue(mockQuery);
 
       await provider.extractSymbols('const x = 1;', 'javascript');
-      expect(mockTree.delete).toHaveBeenCalledOnce();
-      expect(mockQuery.delete).toHaveBeenCalledOnce();
+      await provider.extractSymbols('const y = 2;', 'javascript');
+      expect(mockTree.delete).toHaveBeenCalledTimes(2);
+      // Compiled once per grammar, reused for the second file, never deleted.
+      expect(provider._createQuery).toHaveBeenCalledOnce();
+      expect(mockQuery.delete).not.toHaveBeenCalled();
     });
   });
 });
