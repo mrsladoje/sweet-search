@@ -778,6 +778,7 @@ export class TreeSitterProvider {
     this._initPromise = null;
     this._available = null; // null = unknown, true/false after first check
     this._chunkCounter = 0; // per-parse chunk ID counter
+    this._tagsQueryCache = new WeakMap(); // Language → compiled tags Query
   }
 
   /** Check if web-tree-sitter is importable */
@@ -870,7 +871,14 @@ export class TreeSitterProvider {
       tree = this._parser.parse(content);
       if (!tree) return null;
 
-      query = await this._createQuery(language, queryString);
+      // Compile the tags query once per grammar, not once per file: it cost
+      // 7-32 ms per file (Swift 32, C# 11, TS 7) — most of the graph
+      // extraction time. A Query is immutable and reusable across trees.
+      query = this._tagsQueryCache.get(language);
+      if (!query) {
+        query = await this._createQuery(language, queryString);
+        this._tagsQueryCache.set(language, query);
+      }
       const captures = query.captures(tree.rootNode);
 
       const symbols = [];
@@ -959,7 +967,7 @@ export class TreeSitterProvider {
     } catch {
       return null;
     } finally {
-      if (query) query.delete();
+      // The tags query is cached per grammar (see above) and stays alive.
       if (tree) tree.delete();
     }
   }
