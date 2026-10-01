@@ -27,9 +27,10 @@
  *     warm-up request runs with that arm's exact launch config (cache-warmup.mjs). It runs from its
  *     own clone of the first repo, so the shared prefix (tools + system prompt) is warm in both arms
  *     and the per-repo part stays cold for the first question of each repo in both arms. Its cost goes
- *     to warmups.jsonl, never to runs.jsonl. The run ends with a fairness check on the first scored
- *     requests (summary.json); SS_CACHE_WARMUP=0 turns the warm-up off, --allow-unfair-cache keeps
- *     the exit code 0 when the check fails.
+ *     to warmups.jsonl, never to runs.jsonl. The run ends with a fairness check on each arm's first
+ *     wave of scored requests (--conc of them; summary.json). It exits 3 on a mismatch only for
+ *     Claude Code (deterministic cache); codex / opencode (best-effort cache) get a warning.
+ *     SS_CACHE_WARMUP=0 turns the warm-up off, --allow-unfair-cache keeps the exit code 0.
  *
  *   CELL=cc-sonnet55-high  node scripts/retrieval-bench-282.mjs            # run / resume one cell
  *   CELL=cc-sonnet55-high  node scripts/retrieval-bench-282.mjs --smoke    # 1 probe × 2 arms
@@ -66,7 +67,7 @@ const { parseCodexAgentStream, codexHarnessTrim, codexHarnessTrimArgs, codexRule
 const { opencodeArmHarnessTrim, opencodeRulesInConfig, buildMainOpencodeConfig, opencodeUnjailedEnv, runOpencodePreflight, parseOpencodeStream, opencodeRunMessage, OPENCODE_TRIM_REPORT, OPENCODE_RULES_FILE } = await import(path.join(H, 'opencode-task-runner.mjs'));
 const { writeClaudeRules, removeClaudeRules, resolveClaudeRulesLayout } = await imp('scripts/write-claude-rules.js');
 const { installClaudeLeanHarness, removeClaudeLeanHarness } = await imp('scripts/install-claude-lean-harness.js');
-const { WARMUP_ID, WARMUP_QUESTION, warmupEnabled, createWarmupGate, excludeWarmups, applyClaudeCacheTtl, firstRequestCacheFields, cacheFairness, fairnessBanner } = await import(path.join(H, 'cache-warmup.mjs'));
+const { WARMUP_ID, WARMUP_QUESTION, warmupEnabled, createWarmupGate, excludeWarmups, applyClaudeCacheTtl, firstRequestCacheFields, cacheFairness, cacheIsDeterministic, fairnessBanner } = await import(path.join(H, 'cache-warmup.mjs'));
 const { turnsFromRollout, LEDGER_BASIS } = await import(path.join(H, 'ideal-cost.mjs'));
 if (ISOLATION_ON) throw new Error('SS_ISOLATION must be 0 on the Mac');
 
@@ -103,6 +104,11 @@ const onlyIds = String(flag('--ids', '')).split(',').map(s => s.trim()).filter(B
 const ARMS = String(flag('--arms', 'native,sweet')).split(',').map(s => s.trim()).filter(Boolean);
 const ALLOW_UNFAIR_CACHE = argv.includes('--allow-unfair-cache');
 const WARMUP_ON = warmupEnabled();
+// The fairness check is strict (exit 3) only on Claude Code: Anthropic's explicit cache is
+// deterministic after a warm-up. Codex and opencode use best-effort automatic prefix caching,
+// which can read 0 right after a warm-up; a mismatch there is a recorded WARNING, never fatal,
+// so one routing miss cannot stop retrieval-bench-282-all.sh.
+const CACHE_DETERMINISTIC = cacheIsDeterministic({ harness: CELL.harness });
 const TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 900000);
 const TAG = flag('--tag', process.env.RESULTS_TAG || '');
 const STABLE_RULES_PATH = process.env.SS_BENCH_STABLE_RULES_PATH === '1';
@@ -456,6 +462,9 @@ async function runCodex(probe, sweet, arm) {
     answer: p.answer, wallMs: Date.now() - t0, exitCode: r.exitCode, timedOut: r.timedOut, startRetried, usage: u,
     harnessTrim: trim.mode || null,
     // OpenAI charges no cache-write premium: realized = fresh input + cached input + output.
+    // Same figure on every basis (no write is charged), so the flat column equals it.
+    ledgerBasis: LEDGER_BASIS,
+    costRealizedFlat125Usd: ((inTok - cached) * PRICE.in + cached * PRICE.cache + out * PRICE.out) / 1e6,
     costRealizedUsd: ((inTok - cached) * PRICE.in + cached * PRICE.cache + out * PRICE.out) / 1e6,
     costNaiveUsd: (inTok * PRICE.in + out * PRICE.out) / 1e6,
     costSource: 'turn.completed', errors: p.errors.slice(0, 3), stderrPreview: String(r.stderr || '').replace(/^Reading additional input from stdin\.\.\.\s*/, '').slice(0, 300),
@@ -632,7 +641,7 @@ function report() {
   console.log(`rows ${rows.length}  ok ${ok.length}  errors ${rows.length - ok.length}  timeouts ${rows.filter(r => r.timedOut).length}`);
   const bases = [...new Set(ok.map(r => r.ledgerBasis || 'unlabelled (pre-2026-10-01: every cache write at 1.25x)'))];
   console.log(`ledger basis: ${bases.length > 1 ? `MIXED (${bases.join(' + ')}) - NOT COMPARABLE` : (bases[0] || 'n/a')}`);
-  console.log(fairnessBanner(cacheFairness(ok, { wave: CONC })));
+  console.log(fairnessBanner(cacheFairness(ok, { wave: CONC, deterministic: CACHE_DETERMINISTIC })));
   for (const scope of ['ALL', ...SETS.map(s => s[0])]) {
     const rs = ok.filter(r => scope === 'ALL' || r.set === scope);
     const nat = new Map(rs.filter(r => r.arm === 'native').map(r => [r.id, r]));
@@ -713,7 +722,7 @@ try {
 // Run summary + fairness assertion: did both arms' first scored requests see the same cache state?
 {
   const scored = excludeWarmups(readRuns()).filter(r => !r.error && r.exitCode === 0);
-  const fairness = cacheFairness(scored, { wave: CONC });
+  const fairness = cacheFairness(scored, { wave: CONC, deterministic: CACHE_DETERMINISTIC });
   const warmups = GATE.entries();
   const wUsd = warmups.filter(w => w.ok).reduce((s, w) => s + (Number(w.costRealizedUsd) || 0), 0);
   const summary = {
@@ -725,7 +734,7 @@ try {
   fs.writeFileSync(SUMMARY, `${JSON.stringify(summary, null, 2)}\n`);
   console.error(fairnessBanner(fairness));
   if (fairness.status === 'violation' && !ALLOW_UNFAIR_CACHE) {
-    console.error('Exit code 3: the arms started with different cache state. Rerun with the warm-up on, or pass --allow-unfair-cache to accept it.');
+    console.error('Exit code 3: the arms started with different cache state on a deterministic (Claude Code) cache. Check warmups.jsonl, rerun with the warm-up on, or pass --allow-unfair-cache to accept it.');
     process.exitCode = 3;
   }
 }

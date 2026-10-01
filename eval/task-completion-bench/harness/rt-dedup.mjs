@@ -40,6 +40,7 @@ import { readFileSync, appendFileSync, readdirSync, statSync, mkdirSync } from '
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractFailureSignatures, firstErrorLines } from './rt-condense-lib.mjs';
+import { isWarmupLabel } from './cache-warmup.mjs';
 
 /** Kill-switch. SS_RUNTESTS_DEDUP=0 → the lever is inert (rows stamped rtDedup:false). */
 export const RT_DEDUP_ON = process.env.SS_RUNTESTS_DEDUP !== '0';
@@ -265,7 +266,7 @@ export function buildChangedResultNote(citeCall) {
  * broker writes here, so the state cannot be read or forged from inside a rollout.
  */
 export function dedupLogPathFor(label, _rundir) {
-  return path.join(BENCH_DIR, 'results', process.env.RUN_ID || 'adhoc', 'rt-dedup', `${safe(label)}.jsonl`);
+  return path.join(BENCH_DIR, 'results', process.env.RUN_ID || 'adhoc', ...(isWarmupLabel(label) ? ['warmup'] : []), 'rt-dedup', `${safe(label)}.jsonl`);
 }
 
 /** Open a rollout's dedup log and write the session boundary. Returns the path, or null. */

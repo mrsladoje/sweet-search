@@ -37,6 +37,7 @@ import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync, openSync, c
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensureGuard, guardStatus, HOST_IP, NS, denialsBetween, DENY_LOG } from './egress-guard.mjs';
+import { isWarmupLabel } from './cache-warmup.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const JAIL_INIT = path.join(HERE, 'agent-jail-init.mjs');
@@ -60,7 +61,9 @@ const BENCH_DIR = path.resolve(HERE, '..');
  * output are separable, and the last run had to reconstruct them algebraically.
  */
 export function rolloutStateDir(label, name) {
-  const dir = path.join(BENCH_DIR, 'results', process.env.RUN_ID || 'adhoc', 'agent-state', String(label).replace(/[^\w.@-]/g, '_'), name);
+  // A cache warm-up's state goes under results/<run>/warmup/agent-state, so the scripts that glob
+  // agent-state/ (probe-count, reprice-openrouter-generations) never count it as a rollout.
+  const dir = path.join(BENCH_DIR, 'results', process.env.RUN_ID || 'adhoc', ...(isWarmupLabel(label) ? ['warmup'] : []), 'agent-state', String(label).replace(/[^\w.@-]/g, '_'), name);
   mkdirSync(dir, { recursive: true });
   return dir;
 }

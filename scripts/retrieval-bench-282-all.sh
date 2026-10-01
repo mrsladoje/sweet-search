@@ -12,6 +12,14 @@ LOG_DIR=core/prompt-optimization/data/results/r282-logs
 mkdir -p "$LOG_DIR"
 for c in "${CELLS[@]}"; do
   echo "=== $(date '+%F %T') $c ==="
-  CELL="$c" node scripts/retrieval-bench-282.mjs --conc 3 2>&1 | tee -a "$LOG_DIR/$c.log"
+  rc=0
+  CELL="$c" node scripts/retrieval-bench-282.mjs --conc 3 2>&1 | tee -a "$LOG_DIR/$c.log" || rc=$?
+  if [ "$rc" -eq 3 ]; then
+    # Only a Claude Code cell exits 3 (deterministic cache): its arms started with different cache
+    # state, so the warm-up did not work and the next Claude cell would repeat it. Codex and opencode
+    # cells record a mismatch as a warning in summary.json and exit 0.
+    echo "=== $(date '+%F %T') $c: CACHE FAIRNESS VIOLATION (see results/r282-$c/summary.json); stopping ===" >&2
+  fi
+  [ "$rc" -eq 0 ] || exit "$rc"
 done
 echo "=== $(date '+%F %T') all done ==="
