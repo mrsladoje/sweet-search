@@ -452,7 +452,9 @@ export class StructuralContextRepository {
       SELECT DISTINCT
         e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
         e.signature, e.summary, e.parent_class, e.package,
-        r.target_id, r.target_name, r.context_line, r.weight, r.type as rel_type
+        r.target_id, r.target_name, r.context_line, r.weight, r.type as rel_type,
+        (SELECT t.file_path FROM entities t WHERE t.id = r.target_id LIMIT 1) AS resolved_file,
+        (SELECT t.parent_class FROM entities t WHERE t.id = r.target_id LIMIT 1) AS resolved_parent
       FROM relationships r
       JOIN entities e ON e.id = r.source_id
       WHERE ${entitySql}
@@ -465,13 +467,18 @@ export class StructuralContextRepository {
 
     // Rows admitted by the name-pattern clause (not by target_id) are subject
     // to the same receiver-compat gate as getCallers — otherwise the phantom
-    // `this.fetch`-style edges re-enter through impact paths.
+    // `this.fetch`-style edges re-enter through impact paths. resolvedFile /
+    // resolvedParent let the gate drop a call that resolution already bound
+    // to ANOTHER same-named definition (GRDB: `database.statementDidFail` in
+    // Statement.swift is Database's method, not the broker's).
     const idSet = new Set(ids);
     return rows.map(row => ({
       ...this._entityFromRow(row),
       relationship: row.rel_type,
       targetId: row.target_id || null,
       targetName: row.target_name || null,
+      resolvedFile: row.resolved_file || null,
+      resolvedParent: row.resolved_parent || null,
       contextLine: row.context_line || null,
       weight: row.weight ?? 1,
     })).filter(edge => (edge.targetId && idSet.has(edge.targetId)) || trustedCallerEdge(edge, target));
