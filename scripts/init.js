@@ -10,7 +10,7 @@
  *   sweet-search init [--profile <core|full>] [--verify-deep] [--force] [--verbose]
  */
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -61,6 +61,7 @@ import { installToolEnforcement, removeToolEnforcement } from './install-tool-en
 import { isNativeInferenceAvailable } from '../core/infrastructure/native-inference.js';
 import { registerRepo } from './repo-registry.js';
 import { linkNativeAgentTools } from './link-native-tools.js';
+import { agentPathDirs, installUserShims, whichOnPath } from './user-shims.js';
 import { AGENT_TOOLS } from '../core/agent-tools/tools.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -710,28 +711,40 @@ export function verifyRuntimeAssets(packageRoot) {
 
 /**
  * The ss-* commands the agent rules tell every harness to run through its shell. Swaps
- * the bin stubs for the native binary (again: postinstall may not have run), then checks
- * the agent's shell can find them. A local install puts them in node_modules/.bin, which
- * is not on an agent's PATH — say so with the fix rather than ship rules that fail.
+ * the bin stubs for the native binary (again: postinstall may not have run), then makes
+ * sure the agent's shell can find them. A local install puts them in node_modules/.bin,
+ * which is not on an agent's PATH, so the native binary is copied into a user bin
+ * directory that is (scripts/user-shims.js). Without one, say so with the fix rather than
+ * ship rules that fail.
  *
  * @returns {{status: string, detail: string, onPath: boolean}}
  */
-export function setUpAgentTools({ env = process.env, link = linkNativeAgentTools } = {}) {
+export function setUpAgentTools({
+  env = process.env,
+  link = linkNativeAgentTools,
+  shims = installUserShims,
+  home = homedir(),
+} = {}) {
   let linkReport;
   try { linkReport = link(); }
   catch (err) { linkReport = { status: 'failed', detail: String(err?.message || err) }; }
   const names = Object.keys(AGENT_TOOLS);
-  const dirs = String(env.PATH || '').split(':').filter(Boolean);
-  const missing = names.filter((name) => !dirs.some((d) => {
-    try { return statSync(join(d, name)).isFile(); } catch { return false; }
-  }));
+  let shimReport = null;
+  if (linkReport.status === 'linked' && linkReport.binary) {
+    try { shimReport = shims({ binary: linkReport.binary, packageRoot: linkReport.packageRoot || '', env, home, names }); }
+    catch (err) { shimReport = { status: 'failed', detail: String(err?.message || err) }; }
+  }
+  const dirs = agentPathDirs(env);
+  const missing = names.filter((name) => !whichOnPath(name, dirs));
   const onPath = missing.length === 0;
   const kind = linkReport.status === 'linked' ? 'native' : 'node';
+  const via = shimReport && ['installed', 'current'].includes(shimReport.status) ? ` via ${shimReport.detail}` : '';
+  const why = shimReport && ['no-dir', 'skipped', 'failed'].includes(shimReport.status) ? ` (${shimReport.detail})` : '';
   const detail = onPath
-    ? `on PATH (${kind}${linkReport.status === 'linked' ? '' : `: ${linkReport.detail}`})`
-    : `NOT on PATH (${missing.join(', ')}) — agents cannot run them. Install globally `
-      + '(npm install -g sweet-search) or add node_modules/.bin to the agent\'s PATH.';
-  return { status: onPath ? kind : 'missing', detail, onPath };
+    ? `on PATH${via} (${kind}${linkReport.status === 'linked' ? '' : `: ${linkReport.detail}`})`
+    : `NOT on PATH (${missing.join(', ')}) — agents cannot run them${why}. Install globally `
+      + `(npm install -g sweet-search), or put ${join(home, '.local', 'bin')} on your PATH and re-run sweet-search init.`;
+  return { status: onPath ? kind : 'missing', detail, onPath, shims: shimReport };
 }
 
 export function checkNativeStatus() {
@@ -1702,6 +1715,17 @@ CoreML cascade (M3+ Apple Silicon only):
   full profile. Non-eligible hardware (Intel Mac, Linux, M1/M2) never
   downloads the cascade. See docs/INIT_STRATEGY.md for the delivery
   strategy.
+
+ss-* commands (ss-search, ss-grep, ss-find, ss-read, ss-semantic, ss-trace):
+  The agent rules tell every harness to run these through its shell. A global
+  install puts them on PATH. A project-local install puts them only in
+  node_modules/.bin, which an agent's shell does not search, so init copies
+  the native binary under each name into a user bin directory that is already
+  on PATH (~/.local/bin, then ~/bin; SWEET_SEARCH_BIN_DIR picks another). One
+  set of copies serves every project: each call finds the project's own
+  sweet-search package. init never replaces a file it did not write, and
+  'sweet-search uninstall --all' removes only the copies init recorded. With
+  no such directory on PATH, init names the fix instead.
 
 Examples:
   sweet-search init                         # Full profile (default); CLI contact surface

@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '../..');
 
@@ -43,6 +43,21 @@ describe('npm pack contents', () => {
 
   it('ships the shared environment sourced by every ss-* wrapper', () => {
     expect(packFiles.has('eval/agent-read-workflows/bin/_ss-env.sh')).toBe(true);
+  });
+
+  it('every relative import of the install and ss-* scripts is in the tarball', () => {
+    // "files" lists scripts one by one: a new helper module imported by init.js shipped
+    // without itself, and `sweet-search init` failed with ERR_MODULE_NOT_FOUND.
+    const re = /(?:^|[^\w.])(?:import|export)\s[^'"`;]*?from\s*['"](\.{1,2}\/[^'"]+)['"]|import\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g;
+    const missing = [];
+    for (const file of packFiles) {
+      if (!/^(scripts|core\/agent-tools|bin)\/[^/]+$/.test(file) || !/\.m?js$|^bin\//.test(file)) continue;
+      for (const m of readFileSync(join(ROOT, file), 'utf8').matchAll(re)) {
+        const target = posix.normalize(posix.join(posix.dirname(file), m[1] || m[2]));
+        if (!packFiles.has(target)) missing.push(`${file} -> ${target}`);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 
   it('every runtimeAsset in the manifest is in the tarball', () => {

@@ -64,6 +64,7 @@
     "scripts/benchmark-harness.js",
     "scripts/postinstall-banner.js",
     "scripts/link-native-tools.js",
+    "scripts/user-shims.js",
     "scripts/init.js",
     "scripts/uninstall.js",
     "scripts/repo-registry.js",
