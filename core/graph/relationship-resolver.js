@@ -207,6 +207,20 @@ function subtypeNamed(owner, receiverKey, recvTokens, subtypesOf) {
   return false;
 }
 
+const supertypeTokensMemo = new Map();
+function supertypeNamed(owner, receiverKey, recvTokens, supertypesOf) {
+  const supers = supertypesOf(owner);
+  if (!supers || supers.size === 0) return false;
+  for (const sup of supers) {
+    let t = supertypeTokensMemo.get(sup);
+    if (!t) { t = { key: normalizeName(sup), tokens: nameTokens(sup) }; supertypeTokensMemo.set(sup, t); }
+    if (receiverNamesOwner(receiverKey, recvTokens, t.key, t.tokens)
+      || receiverMatches(receiverKey, t.key)
+      || receiverAbbreviatesOwner(recvTokens, t.tokens)) return true;
+  }
+  return false;
+}
+
 function parentDir(filePath) {
   const parts = String(filePath || '').split(/[\\/]/);
   return parts.length >= 2 ? parts[parts.length - 2] : '';
@@ -230,6 +244,24 @@ const MODULE_FUNCTION_FILE = /\.(?:py|pyi|go)$/i;
 // Otherwise `allocator.free()` binds to whatever repo function is named
 // `free` (Zig spot check: 4 of 6 such edges wrong).
 const RECEIVER_EVIDENCE_FILE = /\.(?:zig|lua|ex|exs|sol|pl|pm|r|jl|m|mm|sh|bash)$/i;
+// C and C++: the scanner reads `a.f(`, `a->f(` and `ns::f(` as `a.f`, and a
+// local's type (`auto &val = lookup(k)`) is not in the caller's signature.
+// A member call on a receiver that is no repo type, not `this` and has no
+// declared type links only on the same receiver evidence as the
+// multi-candidate path (it names the owner, a subtype of it, or the
+// definition's file) — also when one candidate is left: `val.type()` bound
+// to the one unrelated `type()` method in the repo. Bare calls and
+// `this->f()` keep their rules.
+const C_FAMILY_FILE = /\.(?:c|h|cc|cpp|cxx|hpp|hxx|hh|inl|ipp|tpp)$/i;
+
+// C/C++ names for a pointer to, or a member holding, what the stem names:
+// `thisPtr` → this, `connPtr_` → conn, `client_ptr` → client, `loop_` → loop.
+// Lowercase names only; a PascalCase receiver is a type.
+function pointerHeld(name) {
+  if (!/^[a-z_]/.test(name)) return name;
+  const stem = name.replace(/_+$/, '').replace(/_?(?:Ptr|ptr)$/, '');
+  return stem.length > 0 ? stem : name;
+}
 
 /**
  * Lookups for call-target resolution, built once per resolution pass.
@@ -474,7 +506,8 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
   const importsOf = idx.importsOf || NO_INDEX.importsOf;
   const factsOf = idx.factsOf || ((c) => ({ ...defaultFactsOf(c), owner: ownerOf(c), ownerKey: normalizeName(ownerOf(c)) }));
   const chained = receiverRaw.endsWith('()');
-  const receiver = chained ? '' : receiverRaw;
+  const cFamily = C_FAMILY_FILE.test(sourceEntity?.file_path || '');
+  const receiver = chained ? '' : (cFamily ? pointerHeld(receiverRaw) : receiverRaw);
   const supertypesOf = idx.supertypesOf || NO_INDEX.supertypesOf;
   const subtypesOf = idx.subtypesOf || NO_INDEX.subtypesOf;
   const ownedBy = (list, owners) => list.filter((c) => { const o = ownerOf(c); return !!o && owners.has(o); });
@@ -541,7 +574,7 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
   // The caller declares the receiver's type (parameter or Go receiver) and
   // the repo defines that type: only its own methods qualify. None means the
   // method lives in a base type or outside the repo — no edge.
-  const declared = declaredReceiverType(receiver, sourceEntity);
+  const declared = declaredReceiverType(receiverRaw, sourceEntity);
   if (declared) {
     const own = ownedBy(pool, new Set([declared]));
     return own.length > 0 ? own : ownedBy(pool, supertypesOf(declared));
@@ -570,7 +603,7 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
       || isImported(callerImports, c.file_path));
     return preferImported(evident, sourceEntity, importsOf);
   }
-  if (pool.length > 1) {
+  if (pool.length > 1 || cFamily) {
     // Receiver evidence, most specific first: it names the owner in full
     // (`db` → Database), then a subtype of the owner in full (`body` → the
     // `Body` subclass of RequestBody), then the owner as a suffix
@@ -579,19 +612,26 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
     const full = [];
     const viaSubtype = [];
     const suffix = [];
+    // C/C++ only: the receiver names a base of the owner (`resp` →
+    // HttpResponse, implemented by HttpResponseImpl) — a call through the
+    // interface reaches the implementation.
+    const viaSupertype = [];
     for (const c of pool) {
       const f = factsOf(c);
       if (!f.owner) continue;
       if (receiverNamesOwner(r, recvTokens, f.ownerKey, f.ownerTokens)) full.push(c);
       else if (subtypeNamed(f.owner, r, recvTokens, subtypesOf)) viaSubtype.push(c);
       else if (receiverMatches(r, f.ownerKey) || receiverAbbreviatesOwner(recvTokens, f.ownerTokens)) suffix.push(c);
+      else if (cFamily && supertypeNamed(f.owner, r, recvTokens, supertypesOf)) viaSupertype.push(c);
     }
-    const byOwner = full.length > 0 ? full : (viaSubtype.length > 0 ? viaSubtype : suffix);
+    const byOwner = full.length > 0 ? full
+      : (viaSubtype.length > 0 ? viaSubtype : (suffix.length > 0 ? suffix : viaSupertype));
     if (byOwner.length > 0) {
       pool = byOwner;
     } else {
       const byFile = pool.filter(c => receiverMatches(r, factsOf(c).stemKey));
       if (byFile.length > 0) pool = byFile;
+      else if (cFamily) return [];
     }
   }
   return preferImported(pool, sourceEntity, importsOf);
