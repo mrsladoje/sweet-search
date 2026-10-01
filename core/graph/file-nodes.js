@@ -103,15 +103,28 @@ export function syncFileNode(db, relPath, { epoch, deleted = false, node: emitte
 
 const tableMemo = new WeakMap();
 
-/** True when the graph DB has the `files` table (graphs built before it do not). */
+function schemaVersionOf(db) {
+  try { return db.pragma('schema_version', { simple: true }); } catch { return null; }
+}
+
+/**
+ * True when the graph DB has the `files` table (graphs built before it do
+ * not). A "yes" is final: the table is never dropped. A "no" is kept only
+ * while the schema is unchanged, because a long-lived reader (daemon, MCP
+ * server) can stay connected while an upgraded maintainer adds the table to
+ * an older graph; `PRAGMA schema_version` changes exactly then.
+ */
 export function hasFilesTable(db) {
   if (!db) return false;
-  if (tableMemo.has(db)) return tableMemo.get(db);
+  const memo = tableMemo.get(db);
+  if (memo === true) return true;
+  const version = schemaVersionOf(db);
+  if (memo && memo.version === version && version != null) return false;
   let ok = false;
   try {
     ok = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='files'").get();
   } catch { ok = false; }
-  tableMemo.set(db, ok);
+  tableMemo.set(db, ok ? true : { version });
   return ok;
 }
 

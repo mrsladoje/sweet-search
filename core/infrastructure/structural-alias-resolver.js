@@ -103,8 +103,11 @@ function importingFiles(db, targetFile, entitySql, entityParams) {
   }
   const out = new Set();
   const physical = db.prepare('SELECT file_path FROM entities WHERE id = ?');
+  // The per-connection cache predates files indexed later by the maintainer
+  // (a long-lived reader stays connected); their node is still in `files`.
+  const node = hasFilesTable(db) ? db.prepare('SELECT file_path FROM files WHERE id = ? LIMIT 1') : null;
   for (const id of sources) {
-    const f = byId.get(id) || physical.get(id)?.file_path;
+    const f = byId.get(id) || physical.get(id)?.file_path || node?.get(id)?.file_path;
     if (f) out.add(f);
   }
   return [...out].sort().map(file_path => ({ file_path }));
