@@ -1,0 +1,75 @@
+{
+ "repo": "okhttp",
+ "keep": [
+  "r3hb-okhttp-01",
+  "r3hb-okhttp-02",
+  "r3hb-okhttp-04",
+  "r3hb-okhttp-06",
+  "r3hb-okhttp-07",
+  "r3hb-okhttp-08",
+  "r3hb-okhttp-09",
+  "r3hb-okhttp-11",
+  "r3hb-okhttp-12",
+  "r3hb-okhttp-13",
+  "r3hb-okhttp-14"
+ ],
+ "fixes": {
+  "r3hb-okhttp-02": {
+   "expectedFacts": [
+    "In DnsOverHttpsQuery.Factory.newQuery, when the post option is on, the request is built with url(dnsUrl), a POST body holding the encoded DNS message, and cacheUrlOverride set to dnsUrl plus query parameters hostname=<question name> and type=<question type>.",
+    "Request.cacheUrlOverride (set through Request.Builder.cacheUrlOverride and copied by newBuilder) carries the alternative key URL; by default such POST (and QUERY) requests are not cached.",
+    "CRITICAL: CacheInterceptor's private requestForCache returns, when an override is set and the method is GET/QUERY (HttpMethod.isCacheable) or POST, a copy rewritten to GET with url = the override and the override cleared; it is used both for the lookup (cache?.get(...requestForCache())) and for the store (cacheNetworkRequest passed to cache.put).",
+    "CRITICAL: Cache.put only stores requests whose method is GET (invalidating methods like POST remove the entry and return null, other methods return null) and Cache.key is the md5 hex of the URL string, so only the rewritten GET is stored, under the override URL (hostname and type parameters)."
+   ]
+  },
+  "r3hb-okhttp-08": {
+   "query": "Behind a forward proxy that demands a login, an HTTPS request first needs the proxy to open a pipe to the origin, in plain text, before any encryption starts. If the proxy answers that initial request with a demand for credentials, which code loops to answer it, what limits the number of rounds, and what happens if the proxy hangs up after the demand? The code base has a second place that answers a proxy's demand for credentials; name it and say why it is not the one used at this stage.",
+   "expectedFacts": [
+    "ConnectPlan.createTunnel is the loop: it writes the tunnel request on the raw socket with Http1ExchangeCodec, reads the response, returns null on 200, and on 407 takes the next request from route.address.proxyAuthenticator.authenticate(route, response), throwing IOException (Failed to authenticate with proxy) if that returns null.",
+    "CRITICAL: If the 407 response says Connection: close, createTunnel returns the next request and ConnectPlan.connectTunnel closes the raw socket and returns a ConnectResult whose nextPlan is a copy with attempt + 1 and the new tunnel request (a fresh TCP connection); otherwise the loop answers the challenge on the same socket.",
+    "CRITICAL: The round limit is MAX_TUNNEL_ATTEMPTS = 21, counted in ConnectPlan.connectTunnel across reconnects (nextAttempt < 21); beyond it the connect fails with ProtocolException 'Too many tunnel connections attempted: 21'. Challenges answered on the same socket inside createTunnel's loop are not counted by this limit (that loop ends only on 200, an authenticator returning null, or another status).",
+    "The first tunnel request is built in RealRoutePlanner.createTunnelRequest with minimal headers, and the proxy authenticator may pre-authenticate it by receiving a fake 407 response (Preemptive Authenticate, challenge OkHttp-Preemptive); returning null keeps the request as is.",
+    "The other place is RetryAndFollowUpInterceptor.followUpRequest's 407 (HTTP_PROXY_AUTH) branch, which calls chain.proxyAuthenticator for a 407 that arrives as an ordinary response after an exchange (requests sent through the proxy without a tunnel); it is not used while the tunnel is set up."
+   ]
+  },
+  "r3hb-okhttp-09": {
+   "query": "A server-side JVM (not Android, not a native image) runs a Java 8 build from before the release that added built-in application-protocol negotiation. The first-registered security provider is an old Conscrypt release older than the minimum the code accepts, and the boot class path carries no add-on library for application-protocol negotiation. Which platform-adaptation class does the client end up using, what does it do when a connection configures TLS extensions, and which HTTP protocol do calls end up using? Several platform-selection routines exist; say which one applies."
+  },
+  "r3hb-okhttp-11": {
+   "expectedFiles": [
+    "okhttp/src/commonJvmAndroid/kotlin/okhttp3/OkHttpClient.kt",
+    "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealConnection.kt",
+    "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/http2/Http2Connection.kt",
+    "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/ws/RealWebSocket.kt",
+    "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealRoutePlanner.kt",
+    "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/ConnectPlan.kt",
+    "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealCall.kt"
+   ],
+   "expectedSymbols": [
+    "OkHttpClient.pingIntervalMillis",
+    "RealRoutePlanner",
+    "ConnectPlan",
+    "RealConnection.startHttp2",
+    "Http2Connection.failConnection",
+    "RealWebSocket.initReaderAndWriter",
+    "RealWebSocket.writePingFrame",
+    "RealCall.enterNetworkInterceptorExchange"
+   ]
+  },
+  "r3hb-okhttp-14": {
+   "expectedFacts": [
+    "What exists: DnsMessageReader parses the HTTPS record parameters (alpn, no-default-alpn, port, ipv4/ipv6 hints, ech) and StateMachineDnsCall builds Dns.Record.ServiceMetadata(alpnIds, port, ipAddressHints, echConfigList), whose KDoc describes how clients should use them.",
+    "CRITICAL: RouteSelector.dnsLookup consumes only ServiceMetadata.echConfigList (looked up by hostname and applied only on DIRECT routes); alpnIds, port and ipAddressHints are never read by connection planning (they appear only in the record class, its equals/hashCode/toString and the DNS message reader/writer).",
+    "CRITICAL: Routes use the origin's own port (socketPort) and addresses come only from IpAddress (A/AAAA) records; the protocols offered in TLS come from the client's protocol list through Address.protocols, not from the record's alpn ids."
+   ]
+  }
+ },
+ "dropped": {
+  "r3hb-okhttp-03": "closed-book solvable (openai/gpt-6-luna)",
+  "r3hb-okhttp-05": "closed-book solvable (deepseek/deepseek-v4.1-flash)",
+  "r3hb-okhttp-10": "closed-book solvable (openai/gpt-6-luna)"
+ },
+ "hardened": [
+  "r3hb-okhttp-09"
+ ]
+}

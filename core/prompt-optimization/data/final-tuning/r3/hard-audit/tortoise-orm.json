@@ -1,0 +1,85 @@
+{
+ "repo": "tortoise-orm",
+ "keep": [
+  "r3h-tortoise-orm-01",
+  "r3h-tortoise-orm-02",
+  "r3h-tortoise-orm-03",
+  "r3h-tortoise-orm-04",
+  "r3h-tortoise-orm-06",
+  "r3h-tortoise-orm-07",
+  "r3h-tortoise-orm-08",
+  "r3h-tortoise-orm-09",
+  "r3h-tortoise-orm-10",
+  "r3h-tortoise-orm-11",
+  "r3h-tortoise-orm-13",
+  "r3h-tortoise-orm-15",
+  "r3h-tortoise-orm-16",
+  "r3h-tortoise-orm-17",
+  "r3h-tortoise-orm-19",
+  "r3h-tortoise-orm-20",
+  "r3h-tortoise-orm-21",
+  "r3h-tortoise-orm-22",
+  "r3h-tortoise-orm-23",
+  "r3h-tortoise-orm-24"
+ ],
+ "fixes": {
+  "r3h-tortoise-orm-07": {
+   "expectedFacts": [
+    "BaseSchemaGenerator.get_create_schema_sql lets a table be created when its only unresolved reference is itself: references.issubset(created_tables | {the table}) (base/schema_generator.py:563).",
+    "CRITICAL: Apps._init_relations renames a default many-to-many backward key from '<table>_id' to '<table>_rel_id' when it equals the forward key (apps.py:259-262).",
+    "get_joins_for_related_field and resolve_nested_field alias the joined table as '<table>__<field>' when the related table is the same table (query_utils.py:61-62, :140-141).",
+    "CRITICAL: MSSQLSchemaEditor._get_fk_reference_string downgrades ON DELETE CASCADE to NO ACTION for a foreign key that references its own table (migrations/schema_editor/mssql.py:90-110, with _current_model_table set at :80-88).",
+    "Two dependency sorters skip self-edges: OperationGenerator._sort_by_dependencies (operation_generator.py:87) and _topological_sort_models (contrib/test/__init__.py:138).",
+    "PydanticModelCreator._create_submodel (contrib/pydantic/creator.py:555-556) returns None, so _get_submodel excludes the field, when allow_cycles is false and the related model already appears earlier on the recursion stack (stack[:-1]); a relation to the model's own class is therefore cut after one nested level (the allow_cycles docstring names recursive/self-referential models)."
+   ]
+  },
+  "r3h-tortoise-orm-08": {
+   "query": "Which parts of the library change process-wide behaviour outside their own objects when they run or are imported, for example by altering how a standard-library or third-party component behaves, the surrounding process settings, or an object shared by every client of one database kind? List each place and say what it changes.",
+   "expectedFacts": [
+    "backends/base/config_generator.py:11-18 appends the database URL schemes to the standard library's urllib.parse.uses_netloc list at import.",
+    "backends/sqlite/executor.py:19-21 registers sqlite3 adapters for Decimal, date and datetime on the standard sqlite3 module at import.",
+    "CRITICAL: TortoiseContext._init_timezone (context.py:331-338, called at :302) writes the USE_TZ and TIMEZONE environment variables and clears the timezone caches.",
+    "When the deprecated add_exception_handlers option is true, RegisterTortoise.__init__ replaces ExceptionMiddleware.__call__ on Starlette's class (contrib/fastapi/__init__.py:144-161).",
+    "CRITICAL: MySQLClient.create_connection writes supports_transactions = False into the class-level Capabilities __dict__ shared by every MySQL client when a non-InnoDB storage engine is configured (backends/mysql/client.py:135-136).",
+    "cli/cli.py changes process state in two places: main() puts '.' at the front of sys.path (cli/cli.py:866-867), and only on Windows _patch_loop_factory_for_ptpython replaces add_signal_handler and remove_signal_handler on the event-loop factory before the ptpython shell starts (cli/cli.py:45-60, :125-127)."
+   ],
+   "expectedSymbols": [
+    "urlparse.uses_netloc.append",
+    "sqlite3.register_adapter",
+    "TortoiseContext._init_timezone",
+    "RegisterTortoise.__init__",
+    "MySQLClient.create_connection",
+    "_patch_loop_factory_for_ptpython",
+    "main"
+   ]
+  },
+  "r3h-tortoise-orm-09": {
+   "query": "Some relation settings that shape the referential constraints of the created tables are honoured when tables are created straight from the model classes but are ignored when the same tables are created by replaying migrations. Name each such setting and say where each path handles or drops it."
+  },
+  "r3h-tortoise-orm-16": {
+   "expectedFacts": [
+    "makemigrations calls _ensure_migrations_package for each selected app and stores the returned module name in an in-memory copy of that app's config (cli/cli.py:431-445).",
+    "CRITICAL: _ensure_migrations_package uses the configured migrations value, else infer_migrations_module (cli/cli.py:211-259), which takes the first models module name and replaces its last dotted component with 'migrations' (app.models -> app.migrations; a name without a dot gets '.migrations' appended) (cli/utils.py:154-164).",
+    "_ensure_migrations_package creates the package directory and an empty package marker file when missing (cli/cli.py:226-259).",
+    "CRITICAL: Only makemigrations and the init command (cli/cli.py:363-370) infer the location; the commands that run migrations, list history or show heads read the configured migrations key as given (MigrationLoader.migrations_module, migrations/loader.py:30-31), so an app without it is treated as unmigrated.",
+    "normalize_apps_config (cli/utils.py:167-181), which would infer the key for every app, is defined but never called."
+   ]
+  },
+  "r3h-tortoise-orm-17": {
+   "expectedFacts": [
+    "MySQLClient.__init__ reads the storage_engine credential (mysql/client.py:96), and create_connection runs SET default_storage_engine on a pooled connection (:128-136).",
+    "CRITICAL: If the engine name is not 'innodb' (case-insensitive), create_connection sets supports_transactions to False by writing capabilities.__dict__, bypassing the Capabilities.__setattr__ guard (mysql/client.py:135-136; base/client.py:108-111).",
+    "That Capabilities object is a class-level instance shared by all MySQL clients (mysql/client.py:69-76).",
+    "MySQLClient.execute_many uses begin, commit and rollback around executemany only when supports_transactions is true, otherwise a bare executemany (mysql/client.py:196-209).",
+    "CRITICAL: Migration.apply/unapply read supports_transactions (migrations/migration.py:44-46, :93-95) and _run_database_forward/_backward wrap an operation in its own transaction only when it is true (:149-155, :173-179); so on a non-transactional engine even RunPython/RunSQL steps (atomic None, the only ones wrapped by default since schema operations default to atomic=False) run unwrapped. MySQL's can_rollback_ddl is False anyway, so whole-migration atomicity never applies."
+   ]
+  }
+ },
+ "dropped": {
+  "r3h-tortoise-orm-05": "closed-book solvable",
+  "r3h-tortoise-orm-12": "closed-book solvable",
+  "r3h-tortoise-orm-14": "closed-book solvable",
+  "r3h-tortoise-orm-18": "closed-book solvable"
+ },
+ "hardened": []
+}

@@ -24,7 +24,10 @@
  *   CELL=cc-sonnet55-high  node scripts/retrieval-bench-282.mjs            # run / resume one cell
  *   CELL=cc-sonnet55-high  node scripts/retrieval-bench-282.mjs --smoke    # 1 probe × 2 arms
  *   CELL=cc-sonnet55-high  node scripts/retrieval-bench-282.mjs --report   # aggregates only
- *   options: --conc 3 (default)  --ids a,b  --arms native,sweet
+ *   options: --conc 3 (default)  --ids a,b  --arms native,sweet  --tag <name>
+ *   --tag (final-tuning, 2026-10-01): a separate results dir, harness state dir AND clone root per
+ *   tag. Separate clones = separate project roots = fresh ss-* daemons started with this run's env,
+ *   so an SS_VARIANT_* switch reaches the daemon (ss-search output is formatted server-side).
  *   Plan recorded before the run: core/prompt-optimization/data/r282-PREREG.md
  */
 process.env.SS_ISOLATION = '0'; // Mac, unjailed — must be set before the harness modules load
@@ -32,8 +35,10 @@ process.env.SS_ISOLATION = '0'; // Mac, unjailed — must be set before the harn
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { opencodeRulesDir, applyOpencodeRepoCacheKey, applyOpencodeProductCacheKey, stageProductCachePlugin, OC_CACHE_KEY_MODES } from './lib/oc-bench-config.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const H = path.join(REPO, 'eval/task-completion-bench/harness');
@@ -48,7 +53,7 @@ const { spawnWithTimeout, sweetRulesBlock, costsFromTurns, priceFor } = await im
 const { parseClaudeStream, excludeAncestorClaudeMd } = await import(path.join(H, 'claude-code-task-runner.mjs'));
 const { turnsFromTranscript, sidechainTurnSets, addSidechainCostsChecked, selectClaudeMainCosts } = await import(path.join(H, 'claude-code-accounting.mjs'));
 const { parseCodexAgentStream, codexHarnessTrim, codexHarnessTrimArgs, codexRulesConfigArgs, buildPrivateHome, isZeroCallStartFailure, classifyCodexCommand } = await import(path.join(H, 'codex-task-runner.mjs'));
-const { opencodeArmHarnessTrim, opencodeRulesInConfig, buildMainOpencodeConfig, opencodeUnjailedEnv, runOpencodePreflight, parseOpencodeStream, opencodeRunMessage, OPENCODE_TRIM_REPORT } = await import(path.join(H, 'opencode-task-runner.mjs'));
+const { opencodeArmHarnessTrim, opencodeRulesInConfig, buildMainOpencodeConfig, opencodeUnjailedEnv, runOpencodePreflight, parseOpencodeStream, opencodeRunMessage, OPENCODE_TRIM_REPORT, OPENCODE_RULES_FILE } = await import(path.join(H, 'opencode-task-runner.mjs'));
 const { writeClaudeRules, removeClaudeRules, resolveClaudeRulesLayout } = await imp('scripts/write-claude-rules.js');
 const { installClaudeLeanHarness, removeClaudeLeanHarness } = await imp('scripts/install-claude-lean-harness.js');
 if (ISOLATION_ON) throw new Error('SS_ISOLATION must be 0 on the Mac');
@@ -85,13 +90,59 @@ const CONC = Number(flag('--conc', 3));
 const onlyIds = String(flag('--ids', '')).split(',').map(s => s.trim()).filter(Boolean);
 const ARMS = String(flag('--arms', 'native,sweet')).split(',').map(s => s.trim()).filter(Boolean);
 const TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 900000);
+const TAG = flag('--tag', process.env.RESULTS_TAG || '');
+const STABLE_RULES_PATH = process.env.SS_BENCH_STABLE_RULES_PATH === '1';
+if (TAG && !/^[a-z0-9][a-z0-9._-]*$/i.test(TAG)) { console.error(`bad --tag ${TAG}`); process.exit(2); }
+const SUFFIX = `${SMOKE ? '-smoke' : ''}${TAG ? `-${TAG}` : ''}`;
 
-const OUT = path.join(REPO, 'core/prompt-optimization/data/results', `r282-${CELL_NAME}${SMOKE ? '-smoke' : ''}`);
+const OUT = path.join(REPO, 'core/prompt-optimization/data/results', `r282-${CELL_NAME}${SUFFIX}`);
 const RUNS = path.join(OUT, 'runs.jsonl');
 const CAP_DIR = path.join(OUT, 'captures');
-const STATE = path.join(EVAL, 'r282', `${CELL_NAME}${SMOKE ? '-smoke' : ''}`);
+const STATE = path.join(EVAL, 'r282', `${CELL_NAME}${SUFFIX}`);
 const SS_BIN = path.join(REPO, 'eval/agent-read-workflows/bin');
 const RULES = fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md'), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
+// final-tuning variant SS_VARIANT_PRUNE3=1 (default off = byte-identical): ss-find, ss-semantic and
+// ss-trace are removed — from the rules text (variants/rules-prune3.md) AND from PATH (a bin dir with
+// only ss-search / ss-grep / ss-read and their shared helpers), so the agent can neither read about
+// nor call them. Codex / opencode only (Claude Code reads the rules via writeClaudeRules).
+// --interleave --armB-env "K=V,K2=V2" (final-tuning 2026-10-01): a second sweet arm `sweetB` with an env
+// overlay, run INTERLEAVED with `sweet` (A, B, A, B … per probe) in one queue, so both conditions see
+// the same provider/time drift. Needed because two identical Codex baselines run 25 min apart
+// differed by −24.5% in cost (significant). Not wired for Claude Code (per-repo installed files).
+const ARMB_ENV = Object.fromEntries(String(flag('--armB-env', '')).split(',').map(x => x.trim()).filter(Boolean).map(x => [x.slice(0, x.indexOf('=')), x.slice(x.indexOf('=') + 1)]));
+const envOf = (arm) => (arm === 'sweetB' ? { ...process.env, ...ARMB_ENV } : process.env);
+const prune3 = (arm) => envOf(arm).SS_VARIANT_PRUNE3 === '1';
+// SS_VARIANT_OC_CACHE_KEY (opencode; per arm like every SS_VARIANT_*): unset = opencode's own session-id
+// keys; `repo` = bench key (per-model promptCacheKey + scripts/opencode-cache-key-plugin.mjs); `product`
+// = the shipped plugin from the main checkout, listed exactly as `sweet-search init --opencode` lists it.
+const ocCacheMode = (arm) => envOf(arm).SS_VARIANT_OC_CACHE_KEY || '';
+for (const a of ['native', 'sweet', 'sweetB']) {
+  const m = ocCacheMode(a);
+  if (m && !OC_CACHE_KEY_MODES.includes(m)) { console.error(`SS_VARIANT_OC_CACHE_KEY must be one of ${OC_CACHE_KEY_MODES.join(', ')} (got "${m}")`); process.exit(2); }
+}
+const OC_PRODUCT = ['native', 'sweet', 'sweetB'].some(a => ocCacheMode(a) === 'product');
+if (OC_PRODUCT && CELL.harness !== 'opencode') { console.error('SS_VARIANT_OC_CACHE_KEY=product is an opencode switch'); process.exit(2); }
+// The product plugin acts on the `openai` provider only; on any other provider the paid run would measure nothing.
+if (OC_PRODUCT && !CELL.model.startsWith('openai/')) { console.error(`SS_VARIANT_OC_CACHE_KEY=product: ${CELL.model} is not an openai/ model; the product plugin leaves it untouched`); process.exit(2); }
+const PRUNE3 = prune3('sweet') || prune3('sweetB');
+const RULES_PRUNE3 = () => fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/final-tuning/variants/rules-prune3.md'), 'utf8');
+// SS_VARIANT_RULES_FILE=<path relative to the repo> (final-tuning): a full alternative rules text for that
+// arm (same tools; Codex / opencode). Default unset = the shipped rules.
+const rulesFor = (arm) => {
+  const f = envOf(arm).SS_VARIANT_RULES_FILE;
+  if (f) return fs.readFileSync(path.resolve(REPO, f), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
+  return prune3(arm) ? RULES_PRUNE3() : RULES;
+};
+function prunedBin() {
+  const d = path.join(EVAL, 'final-tuning-bin-prune3');
+  fs.mkdirSync(d, { recursive: true });
+  for (const f of ['ss-search', 'ss-grep', 'ss-read', '_ss-env.sh', '_ss-helpers.mjs', '_ss-argparse.mjs']) {
+    const link = path.join(d, f), target = path.join(SS_BIN, f);
+    try { if (fs.readlinkSync(link) === target) continue; fs.rmSync(link); } catch {}
+    fs.symlinkSync(target, link);
+  }
+  return d;
+}
 
 // ─── probes: vault + held-out + OOD, merged ───────────────────────────────────────────────────
 const SETS = [
@@ -105,7 +156,12 @@ const loadSet = ([set, rel]) => {
   const raw = JSON.parse(fs.readFileSync(path.join(REPO, rel), 'utf8'));
   return (Array.isArray(raw) ? raw : raw.probes).map(p => ({ ...p, _set: set }));
 };
-let PROBES = SMOKE ? loadSet(['dev', 'core/prompt-optimization/data/p7-dev-probes.json']) : SETS.flatMap(loadSet);
+// --probes <file> (final-tuning r3): a probe file in the same schema instead of the r282 pool. Each
+// probe's `set` field (e.g. dev / heldout) becomes the bootstrap stratum; default 'r3'.
+const PROBE_FILE = flag('--probes', null);
+let PROBES = SMOKE ? loadSet(['dev', 'core/prompt-optimization/data/p7-dev-probes.json'])
+  : PROBE_FILE ? loadSet(['r3', path.relative(REPO, path.resolve(PROBE_FILE))]).map(p => ({ ...p, _set: p.set || 'r3' }))
+  : SETS.flatMap(loadSet);
 const dup = PROBES.map(p => p.id).filter((id, i, a) => a.indexOf(id) !== i);
 if (dup.length) throw new Error(`duplicate probe ids across sets: ${dup.join(',')}`);
 if (onlyIds.length || SMOKE) PROBES = PROBES.filter(p => (onlyIds.length ? onlyIds : ['go-005']).includes(p.id));
@@ -117,7 +173,7 @@ if (onlyIds.length || SMOKE) PROBES = PROBES.filter(p => (onlyIds.length ? onlyI
 //   - every cell starts from the same index bytes (ss-* writes runtime state into .sweet-search/);
 //   - an agent that writes a file despite the frame pollutes only its cell's clone.
 // The index holds no absolute paths; ss-search output was byte-identical in a clone (3 queries).
-const CLONE_ROOT = path.join(EVAL, 'r282-repos', `${CELL_NAME}${SMOKE ? '-smoke' : ''}`);
+const CLONE_ROOT = path.join(EVAL, 'r282-repos', `${CELL_NAME}${SUFFIX}`);
 const cloneOf = (orig) => path.join(CLONE_ROOT, path.relative(REPO, orig).replace(/[\\/]/g, '__'));
 function ensureClone(orig) {
   const dst = cloneOf(orig);
@@ -153,9 +209,9 @@ const promptFor = (probe) => `${FRAME}\n\nQuestion: ${probe.query}`;
 // ─── helpers ───────────────────────────────────────────────────────────────────────────────────
 const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trim();
 const harnessVersion = () => { try { return sh(path.join(BIN[CELL.harness], { cc: 'claude', codex: 'codex', opencode: 'opencode' }[CELL.harness]), ['--version']).split('\n')[0]; } catch { return null; } };
-const baseEnv = (sweet, cwd) => ({
-  ...process.env,
-  PATH: [BIN[CELL.harness], sweet ? SS_BIN : null, process.env.PATH].filter(Boolean).join(':'),
+const baseEnv = (sweet, cwd, arm = sweet ? 'sweet' : 'native') => ({
+  ...envOf(arm),
+  PATH: [BIN[CELL.harness], sweet ? (prune3(arm) ? prunedBin() : SS_BIN) : null, process.env.PATH].filter(Boolean).join(':'),
   SWEET_SEARCH_PROJECT_ROOT: cwd,
   SWEET_SEARCH_OFFLINE: '1',
 });
@@ -315,13 +371,13 @@ function codexSyncAuthBack(home) {
     }
   } catch { /* nothing to sync */ }
 }
-async function runCodex(probe, sweet) {
+async function runCodex(probe, sweet, arm) {
   const cwd = probe._cwd;
   const { home, phome } = codexHome();
   const stateDir = fs.mkdtempSync(path.join(STATE, 'codex-state-'));
   const trim = codexHarnessTrim({ sweet, model: `openai/${CELL.model}` });
-  const trimArgs = sweet ? [...codexHarnessTrimArgs(trim, stateDir, { model: `openai/${CELL.model}` }), ...codexRulesConfigArgs(RULES)] : [];
-  const env = { ...baseEnv(sweet, cwd), CODEX_HOME: home, HOME: phome, SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'none' };
+  const trimArgs = sweet ? [...codexHarnessTrimArgs(trim, stateDir, { model: `openai/${CELL.model}` }), ...codexRulesConfigArgs(rulesFor(arm))] : [];
+  const env = { ...baseEnv(sweet, cwd, arm), CODEX_HOME: home, HOME: phome, SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'none' };
   delete env.OPENAI_API_KEY;
   const args = ['exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check', '--json',
     '-c', `model_reasoning_effort="${CELL.effort}"`, ...trimArgs, '-m', CELL.model, '-C', cwd, '-'];
@@ -370,24 +426,54 @@ function ocSyncAuthBack(ocData, provider) {
   fs.writeFileSync(tmp, JSON.stringify({ ...master, [provider]: mine }, null, 2), { mode: 0o600 });
   fs.renameSync(tmp, MASTER_OC_AUTH);
 }
-async function runOpencode(probe, sweet) {
+async function runOpencode(probe, sweet, arm) {
   const cwd = probe._cwd;
   const stateDir = fs.mkdtempSync(path.join(STATE, 'oc-state-'));
   const ocData = path.join(STATE, `oc-data-${sweet ? 'sweet' : 'native'}`); fs.mkdirSync(ocData, { recursive: true });
   if (CELL.ocAuth) ocSeedAuth(ocData, CELL.ocAuth);
   let trim = opencodeArmHarnessTrim({ sweet, apiModel: CELL.model.replace(/^openrouter\//, ''), stateDir });
-  trim = opencodeRulesInConfig(trim, { rules: sweet ? sweetRulesBlock({ mppText: RULES }) : null, stateDir });
+  // SS_BENCH_STABLE_RULES_PATH=1 (final-tuning, 2026-10-01): the rules file lives at ONE path per run
+  // instead of the per-rollout mkdtemp dir. opencode prints "Instructions from: <absolute path>" into
+  // the system prompt, so the random dir broke the provider's prefix cache on every sweet rollout
+  // (r282 DeepSeek sweet req-0 cache hit 24% vs native 86%). The product (`init`) uses the stable
+  // project path .opencode/sweet-search.md, so the stable path is the production-faithful setting.
+  // The directory is chosen by the rules TEXT (oc-rules-<sha8>), not by the arm: two arms with identical
+  // rules then send the identical `Instructions from:` line and share the provider prefix cache (the old
+  // oc-rules / oc-rules-B split cut the shared prefix at about 2,150 developer tokens; STATS-HARD S4).
+  const rulesText = sweet ? sweetRulesBlock({ mppText: rulesFor(arm) }) : null;
+  const rulesDir = opencodeRulesDir({ stable: STABLE_RULES_PATH, stateRoot: STATE, stateDir, rulesText });
+  trim = opencodeRulesInConfig(trim, { rules: rulesText, stateDir: rulesDir });
+  if (STABLE_RULES_PATH && sweet) {
+    fs.mkdirSync(rulesDir, { recursive: true });
+    const f = path.join(rulesDir, OPENCODE_RULES_FILE), txt = trim.files[OPENCODE_RULES_FILE];
+    if (!fs.existsSync(f) || fs.readFileSync(f, 'utf8') !== txt) { const tmp = `${f}.${process.pid}.tmp`; fs.writeFileSync(tmp, txt); fs.renameSync(tmp, f); }
+  }
   for (const [name, text] of Object.entries(trim.files || {})) fs.writeFileSync(path.join(stateDir, name), text);
-  const cfg = buildMainOpencodeConfig({ trim });
+  let cfg = buildMainOpencodeConfig({ trim });
   cfg.provider = { ...cfg.provider, deepseek: { options: { apiKey: '{env:DEEPSEEK_API_KEY}' } } };
+  // SS_VARIANT_OC_CACHE_KEY=repo (final-tuning S4): opencode sends promptCacheKey = session id and the
+  // headers session-id / x-session-affinity / X-Session-Id = session id, so every rollout routes to its own
+  // provider cache although the prefix is byte-identical. The switch sets ONE value per repo in both places:
+  // promptCacheKey as a per-model option, the headers through scripts/opencode-cache-key-plugin.mjs.
+  // SS_VARIANT_OC_CACHE_KEY=product: ONLY the product plugin (staged from main at run start), appended
+  // after the trim plugin with no options, as init writes it. Its key: sha256 of opencode's worktree, or
+  // of the --dir when opencode reports worktree "/" (a .git without commits) — one value per clone.
+  let extraPlugins = [];
+  if (ocCacheMode(arm) === 'repo') {
+    const r = applyOpencodeRepoCacheKey(cfg, { model: CELL.model, cwd });
+    cfg = r.cfg; extraPlugins = [r.plugin];
+  } else if (ocCacheMode(arm) === 'product') {
+    const r = applyOpencodeProductCacheKey(cfg, { plugin: OC_PRODUCT_PLUGIN.plugin });
+    cfg = r.cfg; extraPlugins = [r.plugin];
+  }
   const cfgPath = path.join(stateDir, 'opencode.json'); fs.writeFileSync(cfgPath, JSON.stringify(cfg));
   const env = {
-    ...baseEnv(sweet, cwd),
+    ...baseEnv(sweet, cwd, arm),
     ...opencodeUnjailedEnv({ root: path.join(STATE, `oc-home-${sweet ? 'sweet' : 'native'}`), ocData }),
     OPENCODE_CONFIG: cfgPath, SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'colon',
   };
   if (CELL.ocAuth === 'openai') delete env.OPENAI_API_KEY; // the subscription login must pay, never a key
-  await runOpencodePreflight({ cwd, env, plugins: trim.plugins || [] });
+  await runOpencodePreflight({ cwd, env, plugins: [...(trim.plugins || []), ...extraPlugins] });
   const args = ['run', '--format', 'json', '--agent', 'build', '--auto', '--model', CELL.model, ...(CELL.variant ? ['--variant', CELL.variant] : []), '--dir', cwd];
   const t0 = Date.now();
   const once = () => spawnWithTimeout(path.join(BIN.opencode, 'opencode'), args, { cwd, env, timeoutMs: TIMEOUT_MS, stdinText: opencodeRunMessage(promptFor(probe)) });
@@ -410,13 +496,13 @@ async function runOpencode(probe, sweet) {
 
 // ─── one rollout ───────────────────────────────────────────────────────────────────────────────
 async function runOne(probe, arm) {
-  const sweet = arm === 'sweet';
-  const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION };
+  const sweet = arm === 'sweet' || arm === 'sweetB';
+  const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
   let run;
   try {
     run = CELL.harness === 'cc' ? await runClaude(probe, sweet, arm)
-      : CELL.harness === 'codex' ? await runCodex(probe, sweet)
-      : await runOpencode(probe, sweet);
+      : CELL.harness === 'codex' ? await runCodex(probe, sweet, arm)
+      : await runOpencode(probe, sweet, arm);
   } catch (e) {
     if (e.fatal) throw e;
     return { ...base, error: String(e.message).slice(0, 400), exitCode: -1 };
@@ -428,7 +514,8 @@ async function runOne(probe, arm) {
   fs.writeFileSync(path.join(CAP_DIR, `${arm}.${probe.id}.json`), JSON.stringify({ ...base, answer: run.answer, rawResponse, calls: run.calls.map(c => ({ kind: c.kind, command: c.command, isError: c.isError, textChars: (c.text || '').length })) }));
   const [judged, usd] = await Promise.all([
     judgePanelScore({ probe, answer: run.answer, panel: JUDGE_PANEL }).catch(() => null),
-    scoreUsd(probe, rawResponse, sweet ? 'ss' : 'native'),
+    // SS_BENCH_NO_USD=1 (final-tuning, cash): skip the secondary USD/content judge panel; accuracy is unchanged.
+    process.env.SS_BENCH_NO_USD === '1' ? Promise.resolve({ usdSkipped: true }) : scoreUsd(probe, rawResponse, sweet ? 'ss' : 'native'),
   ]);
   const { calls, answer, ...rest } = run;
   return {
@@ -482,6 +569,9 @@ function report() {
 const HARNESS_VERSION = harnessVersion();
 if (REPORT) { report(); process.exit(0); }
 fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(STATE, { recursive: true });
+// SS_VARIANT_OC_CACHE_KEY=product: copy the plugin from the main checkout ONCE, at run start.
+const OC_PRODUCT_PLUGIN = OC_PRODUCT ? stageProductCachePlugin({ repo: REPO, stateRoot: STATE }) : null;
+if (OC_PRODUCT_PLUGIN) console.error(`opencode product cache plugin: ${OC_PRODUCT_PLUGIN.src} (main ${OC_PRODUCT_PLUGIN.commit}${OC_PRODUCT_PLUGIN.dirty ? ', UNCOMMITTED edits' : ''}, sha ${OC_PRODUCT_PLUGIN.sha}) -> ${OC_PRODUCT_PLUGIN.file}`);
 const done = new Set(fs.existsSync(RUNS) ? fs.readFileSync(RUNS, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(r => !r.error && r.exitCode === 0).map(r => `${r.arm}|${r.id}`) : []);
 console.error(`r282 ${CELL_NAME}: ${CELL.model} via ${CELL.harness} (${HARNESS_VERSION}) effort=${CELL.effort ?? CELL.variant ?? 'default'} | ${PROBES.length} probes × ${ARMS.length} arms | conc=${CONC} | ${done.size} done`);
 for (const orig of new Set(PROBES.map(p => p._orig))) ensureClone(orig);
@@ -489,21 +579,30 @@ const cleanup = [];
 const onSignal = () => { for (const f of cleanup.splice(0)) f(); process.exit(130); };
 process.on('SIGINT', onSignal); process.on('SIGTERM', onSignal);
 try {
-  for (const arm of ARMS) {
-    const tasks = PROBES.filter(p => !done.has(`${arm}|${p.id}`));
-    if (!tasks.length) { console.error(`[${arm}] all done`); continue; }
-    const cwds = [...new Set(tasks.map(p => p._cwd))];
-    if (arm === 'sweet') { console.error(`[sweet] warming ${cwds.length} ss-* servers…`); for (const c of cwds) warmup(c); }
+  const INTERLEAVE = argv.includes('--interleave');
+  // Claude Code installs product files INTO the shared clones for the sweet arm: no mixed phase.
+  if (INTERLEAVE && CELL.harness === 'cc') throw new Error('--interleave is not wired for Claude Code');
+  // phases: one per arm (default), or ONE mixed phase with sweet/sweetB alternating per probe.
+  // --interleave: sweet vs sweetB when --armB-env is given, else the --arms list (e.g. native,sweet).
+  const phases = INTERLEAVE ? [Object.keys(ARMB_ENV).length ? ['sweet', 'sweetB'] : ARMS] : ARMS.map(a => [a]);
+  for (const arms of phases) {
+    const label = arms.join('+');
+    const tasks = [];
+    PROBES.forEach((p, i) => { const order = (INTERLEAVE && i % 2) ? [...arms].reverse() : arms; for (const arm of order) if (!done.has(`${arm}|${p.id}`)) tasks.push({ p, arm }); });
+    if (!tasks.length) { console.error(`[${label}] all done`); continue; }
+    const cwds = [...new Set(tasks.map(t => t.p._cwd))];
+    if (arms.some(a => a.startsWith('sweet'))) { console.error(`[${label}] warming ${cwds.length} ss-* servers…`); for (const c of cwds) warmup(c); }
     let installed = [];
-    if (CELL.harness === 'cc' && arm === 'sweet') {
+    if (CELL.harness === 'cc' && PRUNE3) throw new Error('SS_VARIANT_PRUNE3 is not wired for Claude Code');
+    if (CELL.harness === 'cc' && arms.includes('sweet')) {
       installed = installClaudeProduct(cwds, claudeHome('sweet'));
       cleanup.push(() => uninstallClaudeProduct(installed));
     }
-    console.error(`\n[${arm}] ${tasks.length} rollouts`);
+    console.error(`\n[${label}] ${tasks.length} rollouts`);
     let idx = 0, fatal = null;
     const worker = async () => {
       while (idx < tasks.length && !fatal) {
-        const p = tasks[idx++];
+        const { p, arm } = tasks[idx++];
         let row;
         try { row = await runOne(p, arm); } catch (e) { fatal = e; break; }
         fs.appendFileSync(RUNS, JSON.stringify(row) + '\n');

@@ -1,0 +1,1190 @@
+{
+ "r3-tortoise-orm-01": {
+  "id": "r3-tortoise-orm-01",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "TransactionContextPooled.__aenter__",
+    "TransactionContextPooled.__aexit__",
+    "ConnectionHandler.set",
+    "ConnectionHandler.reset",
+    "ConnectionHandler._storage_var"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The per-task connection swap, ContextVar recording, and restoration lifecycle are uniquely implemented in TransactionContextPooled and ConnectionHandler."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "TransactionContextPooled.__aenter__",
+    "ConnectionHandler.set",
+    "ConnectionHandler.reset",
+    "ConnectionHandler.get",
+    "ConnectionHandler._storage_var",
+    "MetaInfo.db",
+    "get_connection"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided files contain the complete transaction context, connection handler, and model DB resolution path described in the question."
+  }
+ },
+ "r3-tortoise-orm-03": {
+  "id": "r3-tortoise-orm-03",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "MySQLExecutor.FILTER_FUNC_OVERRIDE",
+    "MetaInfo._generate_filters",
+    "MetaInfo.finalise_model"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The MySQL filter override mappings and their ingestion into the model's filters via MetaInfo._generate_filters are specifically defined in these locations."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "MySQLExecutor.FILTER_FUNC_OVERRIDE",
+    "BaseExecutor.get_overridden_filter_func",
+    "MetaInfo._generate_filters",
+    "MetaInfo.finalise_model"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The MySQL-specific overrides are declared in MySQLExecutor.FILTER_FUNC_OVERRIDE and swapped into MetaInfo.filters by MetaInfo._generate_filters via BaseExecutor.get_overridden_filter_func; no alternative mechanism exists in the provided code."
+  }
+ },
+ "r3-tortoise-orm-08": {
+  "id": "r3-tortoise-orm-08",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BasePostgresExecutor._prepare_insert_statement",
+    "BasePostgresExecutor._process_insert_result",
+    "BaseExecutor.__init__",
+    "BaseExecutor.execute_insert",
+    "AsyncpgDBClient.execute_insert"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The flow from generating the RETURNING SQL clause, executing the insert via fetchrow, and setting the returned generated PK onto the instance in _process_insert_result is uniquely and directly defined across these executor and client methods."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BaseExecutor.__init__",
+    "BaseExecutor.execute_insert",
+    "BasePostgresExecutor._prepare_insert_statement",
+    "BasePostgresExecutor._process_insert_result",
+    "AsyncpgDBClient.execute_insert"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided files show the complete path: PostgreSQL RETURNING is added in BasePostgresExecutor._prepare_insert_statement, consumed by BaseExecutor.execute_insert via db.execute_insert, fetched by AsyncpgDBClient.execute_insert using fetchrow, and copied onto the instance in BasePostgresExecutor._process_insert_result."
+  }
+ },
+ "r3-tortoise-orm-06": {
+  "id": "r3-tortoise-orm-06",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "BaseExecutor.execute_select"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "BaseExecutor.execute_select is the central mechanism responsible for slicing flat joined result rows, instantiating parent and related model instances, and handling empty joins."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "QuerySet._join_select_related",
+    "BaseExecutor.execute_select"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The row-reconstruction logic is unambiguously shown in BaseExecutor.execute_select, with the queryset-side setup represented by QuerySet._join_select_related, so there is no reasonable alternative answer in the provided files."
+  }
+ },
+ "r3-tortoise-orm-04": {
+  "id": "r3-tortoise-orm-04",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "MigrationExecutor.migrate",
+    "MigrationExecutor._migration_plan",
+    "MigrationExecutor._forward_plan",
+    "MigrationLoader.load_disk",
+    "MigrationLoader.build_graph",
+    "MigrationGraph.forwards_plan",
+    "MigrationRecorder",
+    "MigrationRecorder.applied_migrations",
+    "MigrationRecorder.record_applied"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "Migration discovery, dependency ordering, plan computation, and recording of applied migrations are exclusively implemented in tortoise.migrations."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "MigrationLoader.load_disk",
+    "MigrationLoader.build_graph",
+    "MigrationLoader._add_internal_dependencies",
+    "MigrationLoader._add_external_dependencies",
+    "MigrationGraph.forwards_plan",
+    "MigrationGraph._iterative_dfs",
+    "MigrationExecutor.migrate",
+    "MigrationExecutor._migration_plan",
+    "MigrationExecutor._forward_plan",
+    "MigrationRecorder.__init__",
+    "MigrationRecorder.applied_migrations",
+    "MigrationRecorder.record_applied"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The migration discovery, dependency ordering, execution, and applied-migration recording logic is fully contained in these migration modules; the CLI is only an entry point."
+  }
+ },
+ "r3-tortoise-orm-07": {
+  "id": "r3-tortoise-orm-07",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "AsyncpgDBClient.create_connection",
+    "PsycopgClient.create_connection",
+    "password_factory_connection_class",
+    "resolve_password"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The handling and invocation of dynamic password callables for PostgreSQL drivers is exclusively defined in asyncpg and psycopg client implementations and the base client's resolve_password helper."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "resolve_password",
+    "AsyncpgDBClient.create_connection",
+    "PsycopgClient.create_connection",
+    "password_factory_connection_class"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided code and comments explicitly show asyncpg delegating callable invocation to asyncpg and psycopg invoking it via its connection subclass, so there is no conflicting answer in these sources."
+  }
+ },
+ "r3-tortoise-orm-11": {
+  "id": "r3-tortoise-orm-11",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Model.get_or_create",
+    "Model._create_or_get"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Model.get_or_create and Model._create_or_get uniquely implement the get-or-create pattern and its race condition handling in Tortoise ORM."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Model.get_or_create",
+    "Model._create_or_get"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question clearly describes Model.get_or_create and its _create_or_get race-handling logic, and no other provided symbol matches this exact fetch-or-insert behavior."
+  }
+ },
+ "r3-tortoise-orm-09": {
+  "id": "r3-tortoise-orm-09",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "tortoise.backends.asyncpg.AsyncpgDBClient",
+    "tortoise.backends.asyncpg.client_class",
+    "tortoise.backends.base.config_generator.DB_LOOKUP",
+    "tortoise.backends.base.config_generator.expand_db_url",
+    "tortoise.connection.ConnectionHandler._create_connection",
+    "tortoise.connection.ConnectionHandler._discover_client_class"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The scheme 'postgres' is explicitly aliased to 'asyncpg' in DB_LOOKUP, resolving unequivocally to AsyncpgDBClient via ConnectionHandler."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "DB_LOOKUP",
+    "expand_db_url",
+    "ConnectionHandler._discover_client_class",
+    "ConnectionHandler._create_connection",
+    "client_class",
+    "AsyncpgDBClient"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The shown code explicitly aliases postgres and postgresql to the asyncpg backend and only maps psycopg to the psycopg engine, so no other mapping in these files supports a different client class."
+  }
+ },
+ "r3-tortoise-orm-10": {
+  "id": "r3-tortoise-orm-10",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "DatetimeField.to_db_value"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "DatetimeField.to_db_value explicitly checks for naive datetimes when timezone support is active, emits a RuntimeWarning, and converts the datetime using timezone.make_aware before returning it."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "DatetimeField.to_db_value",
+    "tortoise.timezone.make_aware"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The writing path for a datetime is clearly handled in DatetimeField.to_db_value, which warns, makes the naive datetime aware, validates, and returns it."
+  }
+ },
+ "r3-tortoise-orm-13": {
+  "id": "r3-tortoise-orm-13",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "QuerySet.offset",
+    "QuerySet.__getitem__",
+    "SqliteClient.capabilities",
+    "SqliteClientWithRegexpSupport.capabilities",
+    "MySQLClient.capabilities"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The handling of offset without a limit is implemented directly in QuerySet.offset and triggered by requires_limit in MySQL and SQLite backend capabilities."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "QuerySet.offset",
+    "QuerySet.__getitem__",
+    "SqliteClient",
+    "SqliteClientWithRegexpSupport",
+    "MySQLClient"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The offset and open-ended slice behavior is explicit in QuerySet, and the shown SQLite/MySQL capabilities set requires_limit=True; the Capabilities default cannot be verified from the provided files."
+  }
+ },
+ "r3-tortoise-orm-16": {
+  "id": "r3-tortoise-orm-16",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Q._process_filter_kwarg",
+    "is_null"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The decision to rewrite equality filters with a None value to an `__isnull` filter is uniquely implemented in `Q._process_filter_kwarg` using the `is_null` filter function."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Q._process_filter_kwarg",
+    "filters.is_null"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The code in Q._process_filter_kwarg explicitly checks for value is None and the existence of the '<key>__isnull' filter, and filters.is_null directly returns field.isnull() for truthy values, producing IS NULL."
+  }
+ },
+ "r3-tortoise-orm-17": {
+  "id": "r3-tortoise-orm-17",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "OracleSchemaGenerator._create_fk_string",
+    "OracleSchemaEditor._get_fk_reference_string"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "Both the schema generator and schema editor for Oracle explicitly replace any on_delete value other than CASCADE and SET_NULL with CASCADE."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "OracleSchemaGenerator._create_fk_string",
+    "OracleSchemaEditor._get_fk_reference_string",
+    "OracleSchemaEditor._format_m2m_fk"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The two Oracle-specific code paths both coerce non-CASCADE/SET_NULL on_delete values to CASCADE, and the migration editor's M2M through-table FKs are hard-coded to CASCADE, so the answer is consistent in the provided files."
+  }
+ },
+ "r3-tortoise-orm-18": {
+  "id": "r3-tortoise-orm-18",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "MaxLengthValidator.__call__",
+    "Field.validate",
+    "Field.to_db_value",
+    "CharField.__init__"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Validation for declared text column size is implemented explicitly via MaxLengthValidator invoked inside Field.to_db_value / Field.validate when saving a record."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CharField.__init__",
+    "Field.to_db_value",
+    "Field.validate",
+    "MaxLengthValidator.__call__"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The check is implemented as a Python-side validator appended in CharField.__init__ and executed through Field.to_db_value/Field.validate, not as a database constraint."
+  }
+ },
+ "r3-tortoise-orm-14": {
+  "id": "r3-tortoise-orm-14",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "QuerySet.select_for_update"
+   ],
+   "claims": [
+    "supported",
+    "unsupported"
+   ],
+   "why": "QuerySet.select_for_update directly checks support_for_update and returns self without raising an error or setting lock flags when unsupported."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "QuerySet.select_for_update",
+    "SqliteClient.capabilities"
+   ],
+   "claims": [
+    "supported",
+    "unsupported"
+   ],
+   "why": "The select_for_update method returns self unchanged when self.capabilities.support_for_update is false, so no error is raised and no row locking occurs."
+  }
+ },
+ "r3-tortoise-orm-05": {
+  "id": "r3-tortoise-orm-05",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "BaseExecutor._prefetch_m2m_relation",
+    "ReverseRelation._set_result_for_query"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "Many-to-many prefetching and result assignment is specifically implemented in BaseExecutor._prefetch_m2m_relation and ReverseRelation._set_result_for_query across all backends."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "BaseExecutor._prefetch_m2m_relation",
+    "ReverseRelation._set_result_for_query"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided executor code directly shows one m2m prefetch query built from the through-table subquery and then per-parent grouping into relation containers via _set_result_for_query, so the shown path is clear."
+  }
+ },
+ "r3-tortoise-orm-19": {
+  "id": "r3-tortoise-orm-19",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ForeignKeyFieldInstance.__init__"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The validation requiring `null=True` when `on_delete=SET_NULL` is exclusively implemented in `ForeignKeyFieldInstance.__init__`."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ForeignKeyFieldInstance.__init__"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The code directly contains the SET_NULL/null=True validation in ForeignKeyFieldInstance.__init__, so no other location is reasonably indicated."
+  }
+ },
+ "r3-tortoise-orm-21": {
+  "id": "r3-tortoise-orm-21",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "UpdateQuery._make_query",
+    "IntegrityError"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The check for attempting to overwrite a primary-key or generated column in a bulk filter-and-update query is specifically implemented in UpdateQuery._make_query, raising IntegrityError."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "UpdateQuery._make_query"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The bulk filter-and-update rejection is clearly implemented in UpdateQuery._make_query in tortoise/queryset.py; the instance-level claim is not supported by the provided files."
+  }
+ },
+ "r3-tortoise-orm-23": {
+  "id": "r3-tortoise-orm-23",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Apps._init_relations"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The check for whether the target field exists and is unique is solely performed inside Apps._init_relations (specifically init_fk_o2o_field)."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Apps._init_relations",
+    "init_fk_o2o_field",
+    "Apps.init_app",
+    "Apps._load_from_config"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The provided code contains the unique/non-primary target validation in Apps._init_relations and shows it is invoked during app initialization, so a different answer is not reasonably supported by this code."
+  }
+ },
+ "r3-tortoise-orm-12": {
+  "id": "r3-tortoise-orm-12",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "MetaInfo._generate_lazy_fk_m2m_fields",
+    "_fk_getter",
+    "NoneAwaitable",
+    "_NoneAwaitable"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Foreign key lazy attribute installation on model classes and the getter resolution for unfetched parent relations are specifically implemented in MetaInfo._generate_lazy_fk_m2m_fields and _fk_getter."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "MetaInfo._generate_lazy_fk_m2m_fields",
+    "_fk_getter",
+    "NoneAwaitable"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided code path for un-fetched foreign-key attributes is explicitly handled by _fk_getter and installed as a property by MetaInfo._generate_lazy_fk_m2m_fields, leaving no materially different answer in these files."
+  }
+ },
+ "r3-tortoise-orm-24": {
+  "id": "r3-tortoise-orm-24",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Migration.unapply",
+    "Operation.reversible",
+    "RunPython",
+    "RunSQL"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The rollback check is unequivocally handled in Migration.unapply inspecting the reversible attribute on operations such as RunPython and RunSQL."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Migration.unapply",
+    "Operation.reversible",
+    "RunPython.__init__",
+    "RunSQL.__init__",
+    "RunPython.database_backward",
+    "RunSQL.database_backward"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question is directly answered by Migration.unapply checking the reversible attribute and the RunPython/RunSQL constructors setting it based on reverse_code/reverse_sql."
+  }
+ },
+ "r3-tortoise-orm-02": {
+  "id": "r3-tortoise-orm-02",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "BaseExecutor.execute_update",
+    "DatetimeField.to_db_value"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The logic for updating auto_now datetime fields during an update is uniquely implemented in DatetimeField.to_db_value called by BaseExecutor.execute_update."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "BaseExecutor.execute_update",
+    "DatetimeField.to_db_value"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The code path is explicit: BaseExecutor.execute_update calls DatetimeField.to_db_value, which sets to_python_value(now) on the instance and returns now as the DB value."
+  }
+ },
+ "r3-tortoise-orm-27": {
+  "id": "r3-tortoise-orm-27",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CHUNK_SIZE",
+    "BaseExecutor.execute_select",
+    "BaseExecutor.execute_union"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The event loop yielding mechanism during row-to-model conversion is specifically defined in BaseExecutor via CHUNK_SIZE and asyncio.sleep(0)."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CHUNK_SIZE",
+    "BaseExecutor.execute_select",
+    "BaseExecutor.execute_union"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant logic is explicitly implemented in BaseExecutor.execute_select and execute_union using CHUNK_SIZE to control yielding."
+  }
+ },
+ "r3-tortoise-orm-25": {
+  "id": "r3-tortoise-orm-25",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BaseSchemaGenerator.get_create_schema_sql"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "BaseSchemaGenerator.get_create_schema_sql is the sole place that resolves FK dependencies for table creation and raises ConfigurationError when cyclic references prevent ordering."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BaseSchemaGenerator.get_create_schema_sql"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided code has a single one-shot schema creation path where cyclic foreign-key references cause this ConfigurationError in get_create_schema_sql."
+  }
+ },
+ "r3-tortoise-orm-22": {
+  "id": "r3-tortoise-orm-22",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "BulkCreateQuery._analyze_db_default_fields"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The logic for detecting mixed usage of database defaults across instances during bulk inserts is uniquely implemented in BulkCreateQuery._analyze_db_default_fields."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BulkCreateQuery._analyze_db_default_fields"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The detection and OperationalError behavior are localized in BulkCreateQuery._analyze_db_default_fields, so there is no reasonable alternative location in the code."
+  }
+ },
+ "r3-tortoise-orm-29": {
+  "id": "r3-tortoise-orm-29",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BulkUpdateQuery._make_queries",
+    "BulkUpdateQuery"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "BulkUpdateQuery is the only mechanism in the codebase designed to update already-loaded model instances in batches."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BulkUpdateQuery._make_queries",
+    "BulkUpdateQuery._execute_many"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The shown queryset.py contains the complete bulk-update SQL generation and PostgreSQL cast logic in BulkUpdateQuery._make_queries, with no conflicting alternative implementation in the supplied files."
+  }
+ },
+ "r3-tortoise-orm-31": {
+  "id": "r3-tortoise-orm-31",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-tortoise-orm-32": {
+  "id": "r3-tortoise-orm-32",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-tortoise-orm-33": {
+  "id": "r3-tortoise-orm-33",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-tortoise-orm-34": {
+  "id": "r3-tortoise-orm-34",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-tortoise-orm-35": {
+  "id": "r3-tortoise-orm-35",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-tortoise-orm-36": {
+  "id": "r3-tortoise-orm-36",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-tortoise-orm-15": {
+  "id": "r3-tortoise-orm-15",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "DecimalField",
+    "DecimalField._db_sqlite",
+    "Q._process_filter_kwarg",
+    "AwaitableQuery.resolve_ordering"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "DecimalField's SQLite dialect override and the function_cast calls in Q._process_filter_kwarg and resolve_ordering uniquely implement decimal storage and numeric filtering/sorting for SQLite."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "DecimalField._db_sqlite",
+    "DecimalField._db_sqlite.function_cast",
+    "Q._process_filter_kwarg",
+    "AwaitableQuery.resolve_ordering"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The supplied files directly show the SQLite VARCHAR(40) column type and the function_cast path used by filter and order resolution."
+  }
+ },
+ "r3-tortoise-orm-26": {
+  "id": "r3-tortoise-orm-26",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BaseSchemaGenerator._make_hash",
+    "BaseSchemaGenerator._get_index_name",
+    "BaseSchemaGenerator._get_fk_name",
+    "BaseSchemaEditor._make_hash",
+    "BaseSchemaEditor._generate_index_name",
+    "BaseSchemaEditor._generate_index_name_for_table",
+    "BaseSchemaEditor._generate_fk_name"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The deterministic hashing and truncation rules for index and foreign-key names are uniquely defined in BaseSchemaGenerator and duplicated in BaseSchemaEditor."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BaseSchemaGenerator._make_hash",
+    "BaseSchemaGenerator._get_index_name",
+    "BaseSchemaGenerator._get_fk_name",
+    "BaseSchemaEditor._make_hash",
+    "BaseSchemaEditor._generate_index_name",
+    "BaseSchemaEditor._generate_index_name_for_table",
+    "BaseSchemaEditor._generate_fk_name"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The naming formulas are explicitly implemented in both the schema generator and migration schema editor with deterministic sha256-based hashes, so the answer is consistent across the relevant code paths."
+  }
+ },
+ "r3-tortoise-orm-30": {
+  "id": "r3-tortoise-orm-30",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "SqliteTransactionWrapper._in_transaction",
+    "SqliteTransactionWrapper.savepoint",
+    "SqliteTransactionWrapper.savepoint_rollback",
+    "SqliteTransactionWrapper.release_savepoint",
+    "_gen_savepoint_name",
+    "NestedTransactionContext.__aenter__",
+    "NestedTransactionContext.__aexit__"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Nested transactions on SQLite are unambiguously handled via NestedTransactionContext and SqliteTransactionWrapper savepoint mechanisms."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "SqliteTransactionWrapper._in_transaction",
+    "SqliteTransactionWrapper.savepoint",
+    "SqliteTransactionWrapper.savepoint_rollback",
+    "SqliteTransactionWrapper.release_savepoint",
+    "_gen_savepoint_name",
+    "NestedTransactionContext.__aenter__",
+    "NestedTransactionContext.__aexit__"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The SQLite-specific savepoint behavior is implemented in SqliteTransactionWrapper and NestedTransactionContext, with no alternative inner-transaction path shown in these files."
+  }
+ },
+ "r3-tortoise-orm-28": {
+  "id": "r3-tortoise-orm-28",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "MySQLClient.create_connection"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "MySQLClient.create_connection in tortoise/backends/mysql/client.py is the only place where the MySQL database session time zone is set or skipped based on get_use_tz()."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "MySQLClient.create_connection"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The time zone handling and its skip guard are explicitly implemented in MySQLClient.create_connection; no other code path is implicated."
+  }
+ },
+ "r3-tortoise-orm-20": {
+  "id": "r3-tortoise-orm-20",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Model.__init__",
+    "Model._set_kwargs",
+    "Model.__setattr__",
+    "Model._validate_relation_type"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The enforcement during object construction is explicitly located in Model._set_kwargs (called by Model.__init__), and post-construction assignment is handled in Model.__setattr__ which calls _validate_relation_type without checking _saved_in_db."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": true,
+   "symbols": [
+    "Model._set_kwargs",
+    "Model.__setattr__",
+    "Model._validate_relation_type"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The saved check is clear in Model._set_kwargs for normal construction, but later assignment paths differ: ordinary attribute assignment via Model.__setattr__ does not check _saved_in_db, while Model.update_from_dict reuses _set_kwargs and Model.construct bypasses FK checks, so the same rule is not uniformly applied and the question is underspecified."
+  }
+ }
+}

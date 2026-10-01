@@ -1,0 +1,66 @@
+{
+ "repo": "typedoc",
+ "keep": [
+  "r3h-typedoc-01",
+  "r3h-typedoc-02",
+  "r3h-typedoc-03",
+  "r3h-typedoc-04",
+  "r3h-typedoc-05",
+  "r3h-typedoc-06",
+  "r3h-typedoc-07",
+  "r3h-typedoc-08",
+  "r3h-typedoc-09",
+  "r3h-typedoc-10",
+  "r3h-typedoc-11",
+  "r3h-typedoc-13",
+  "r3h-typedoc-14",
+  "r3h-typedoc-15",
+  "r3h-typedoc-16",
+  "r3h-typedoc-17",
+  "r3h-typedoc-18",
+  "r3h-typedoc-19",
+  "r3h-typedoc-20",
+  "r3h-typedoc-21",
+  "r3h-typedoc-22",
+  "r3h-typedoc-23",
+  "r3h-typedoc-24"
+ ],
+ "fixes": {
+  "r3h-typedoc-01": {
+   "expectedFacts": [
+    "Application.initializeRepositories (application.ts, awaited from convert before conversion starts) builds a RepositoryManager and asks it to initialize repositories for every directory that holds a source file of the programs.",
+    "CRITICAL: GitRepository.tryCreateRepository, when no link pattern was configured, reads the remote's URL with the git command line and derives the pattern with guessSourceUrlTemplate (recognises GitHub, GitHub-enterprise, Bitbucket and GitLab hosts).",
+    "GitRepository.getURL fills the pattern placeholders (revision, short revision, path relative to the repository root, line); the revision is git's HEAD commit (or the branch name when requested).",
+    "CRITICAL: GitRepository.getURL returns undefined for any file that is not in the repository's tracked-file list (git ls-files), so untracked or ignored files get no address; files outside every repository, and files in a repository whose remote URL is not a recognised host (tryCreateRepository then creates no repository), also get none.",
+    "SourcePlugin.onBeginResolve sets each source reference's url from repositories.getURL(fullFileName, line) and rewrites its shown file name relative to a base path.",
+    "member.sources.tsx sourceLink prints plain file:line text when the reference has no url and an anchor otherwise."
+   ]
+  },
+  "r3h-typedoc-05": {
+   "expectedFacts": [
+    "CRITICAL: Converter's constructor registers a built-in unknown-symbol resolver: it only handles references that start from the global scope, looks up mappings[ref.moduleSource ?? 'global'], uses the dotted symbol path (plus meaning suffix) as the key and falls back to a '*' entry.",
+    "When the resolver receives a symbol id (a type used in a signature, or a comment link that TypeScript itself resolved) it re-enters with symbolId.toDeclarationReference(), whose moduleSource is the symbol's package name, so a type from the TypeScript lib files is looked up under the 'typescript' entry; a comment link written as a global declaration reference (leading '!') has no module source and is looked up under 'global'.",
+    "linkResolver.resolveLinkTag asks the external resolvers only after it found no documented target, both for a TypeScript-resolved symbol id with no reflections and for a parsed declaration reference that resolveDeclarationReference cannot resolve; a string (or object with target/caption) result becomes the link part's target.",
+    "LinkResolverPlugin.resolveLinks does the same for ReferenceTypes that have no reflection and stores the URL in type.externalUrl.",
+    "CRITICAL: validation/links.ts treats a link part as broken only when it has no target or its target is still a ReflectionSymbolId, so a string target coming from the mapping is not reported.",
+    "MarkedPlugin.displayPartsToMarkdown uses a string target directly as the href."
+   ]
+  },
+  "r3h-typedoc-07": {
+   "expectedFacts": [
+    "Converter.convert creates the ProjectReflection with the value of the user-supplied name setting, which is an empty string when the user gave none.",
+    "CRITICAL: PackagePlugin.addEntries (run at resolve begin and again on revive) fills an empty name from the discovered package manifest's name (or 'Documentation' if that name is empty); when no valid manifest is found it warns and uses 'Documentation'. discoverPackageJson only accepts a manifest with a string name field, so a nameless manifest is skipped and the upward search continues.",
+    "Application._convertPackages names the combined project with the name setting or, when empty, 'Documentation'.",
+    "Application._merge passes the name setting through unchanged, with no fallback, so an empty name is only filled later by PackagePlugin on revive.",
+    "CRITICAL: Deserializer.reviveProject names the project name || projectObj.name (so a single saved project keeps its own saved name when none is given), while reviveProjects with several projects (or forced entry-point modules) creates a ProjectReflection named exactly by name and turns each saved project into a module child named after it."
+   ]
+  },
+  "r3h-typedoc-10": {
+   "query": "After a documentation comment has been attached to an item, which separate pieces of the pipeline later move or copy descriptive text from it onto a different item, and what exactly does each of them move or copy?"
+  }
+ },
+ "dropped": {
+  "r3h-typedoc-12": "1-3 step lookup in disguise: the gold is one function in one file (comments/linkResolver.ts resolveLinkTag) that a directory listing of converter/comments names directly; the label rule and the setting that changes it are both visible in that one function."
+ },
+ "hardened": []
+}

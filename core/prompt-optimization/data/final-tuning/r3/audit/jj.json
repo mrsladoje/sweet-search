@@ -1,0 +1,114 @@
+{
+ "repo": "jj",
+ "keep": [
+  "r3-jj-02",
+  "r3-jj-03",
+  "r3-jj-04",
+  "r3-jj-06",
+  "r3-jj-07",
+  "r3-jj-09",
+  "r3-jj-11",
+  "r3-jj-12",
+  "r3-jj-13",
+  "r3-jj-14",
+  "r3-jj-16",
+  "r3-jj-18",
+  "r3-jj-20",
+  "r3-jj-21",
+  "r3-jj-22",
+  "r3-jj-23",
+  "r3-jj-25",
+  "r3-jj-26",
+  "r3-jj-27",
+  "r3-jj-28",
+  "r3-jj-29",
+  "r3-jj-30",
+  "r3-jj-31",
+  "r3-jj-32",
+  "r3-jj-33",
+  "r3-jj-34",
+  "r3-jj-35",
+  "r3-jj-36"
+ ],
+ "fixes": {
+  "r3-jj-02": {
+   "query": "When I push a bookmark, how does jj make sure it does not overwrite something a teammate pushed to that same remote branch after my last fetch? Where is the expected remote value recorded, and how is that expectation enforced during the push?",
+   "expectedFacts": [
+    "push_updates records, per ref, the expected pre-push remote location (the update's 'before' target, which GitRefUpdate documents as sourced from the local remote-tracking bookmark; None if the ref should not exist) and pairs it with the refspec in RefToPush.",
+    "spawn_push runs git push with one --force-with-lease=<ref>:<expected-oid> argument per ref (empty oid when the ref is expected not to exist), so git performs the test-and-set.",
+    "The refspecs are given in non-forced format because a forced refspec would ignore the lease; jj also passes --no-verify so Git hooks do not run."
+   ]
+  },
+  "r3-jj-03": {
+   "query": "If two jj processes commit against the same repository at the same moment, so that the operation history forks, what reconciles the fork the next time the repository is opened, and what role does locking play if a third process is doing the same thing concurrently?"
+  },
+  "r3-jj-04": {
+   "expectedFiles": [
+    "cli/src/commands/gerrit/upload.rs"
+   ],
+   "expectedSymbols": [
+    "cmd_gerrit_upload"
+   ]
+  },
+  "r3-jj-06": {
+   "expectedFacts": [
+    "On creation, init_workspace_with_existing_repo writes a .jj/repo file containing the path (relative when possible) from the new .jj directory to the original repo directory.",
+    "DefaultWorkspaceLoader::new treats .jj/repo as a pointer when it is a file: it reads the relative path and canonicalizes it against the .jj dir to get the real repo directory.",
+    "The working-copy state stays per-workspace under .jj/working_copy, and the new workspace is registered in the workspace store."
+   ]
+  },
+  "r3-jj-09": {
+   "expectedFacts": [
+    "evaluate_commit checks out the candidate commit, runs the command, and maps exit status 0 to Good, 125 to Skip, 127 (command not found) to Abort, and any other nonzero code to Bad.",
+    "Bisector::next_step first returns any pending precondition verifications; otherwise it evaluates candidates().bisect().latest(1), where the candidates are the input range between the good heads and bad roots, minus bad and skipped commits.",
+    "Skipped commits are removed from the candidate set, and the result can be FoundDespiteSkips when skipped commits sit between good and bad."
+   ]
+  },
+  "r3-jj-12": {
+   "query": "If a plain word I type as a revision name could name a tag, a bookmark, or a commit or change ID prefix, in what order does jj try these interpretations, and where is that order fixed?",
+   "expectedFacts": [
+    "partial_resolvers yields DEFAULT_RESOLVERS (tag resolver, then bookmark resolver) first, then the commit-ID prefix resolver, then the change-ID prefix resolver, then extension resolvers.",
+    "resolve_symbol walks the resolvers in that order and returns the first commit found (a resolver error such as an ambiguous prefix or a divergent change stops the search); if none matches it produces a no-such-revision error.",
+    "The commit-ID resolver only applies if the symbol is valid hex, and the change-ID resolver uses reverse-hex (k-z) and supports a /offset suffix and errors on divergent change IDs."
+   ]
+  },
+  "r3-jj-16": {
+   "expectedSymbols": [
+    "converge_description",
+    "create_value_merge",
+    "merge_description"
+   ],
+   "expectedFacts": [
+    "converge_description builds a value merge (via create_value_merge) whose base is the dominator value computed on the value-flow graph of the divergent commits' truncated evolution graph, with each divergent commit's description as a side.",
+    "If the merge resolves trivially (SameChange::Accept) the description is Solved; otherwise it returns Unsolved with a base commit hint.",
+    "The CLI then materializes the conflicted description with conflict markers and, if the user agrees, opens the text editor to merge it; otherwise it uses the conflicted text."
+   ]
+  },
+  "r3-jj-22": {
+   "query": "Which conditions make the code-review upload command refuse to proceed before it pushes anything to the server?",
+   "expectedFacts": [
+    "It refuses to upload a commit that is empty and a commit that has no description, each with an error naming the change.",
+    "It errors on a commit with more than one Change-Id/Link trailer (checked per commit while preparing the new descriptions, still before any push); an invalid-format Change-Id or Link value only produces a warning.",
+    "Revisions that would be rewritten must pass the rewritability (immutable) check, and with no revision given and an empty description at @ that is a merge, it errors asking for an explicit -r."
+   ]
+  },
+  "r3-jj-30": {
+   "query": "I fetch several specific branches at once and one of them no longer exists on the remote. How does the fetch logic keep going for the rest, and what happens to my stale remote-tracking copy of the missing branch?"
+  },
+  "r3-jj-32": {
+   "expectedFacts": [
+    "jj has no Git LFS support: no code in lib, cli or core references LFS, smudge or clean filters.",
+    "Files are stored as plain file contents in the store; apart from materializing conflicts with markers, the only per-file content conversion on checkout/snapshot is optional end-of-line conversion (working-copy.eol-conversion) in lib/src/eol.rs.",
+    "Large new files are simply left untracked above snapshot.max-new-file-size rather than being diverted to an external store."
+   ]
+  },
+  "r3-jj-33": {
+   "expectedFacts": [
+    "jj sends no telemetry: there are no telemetry, analytics or crash-reporting modules or dependencies in lib, cli or core.",
+    "Remote communication happens only by spawning the git executable (fetch/push/clone and related commands in lib/src/git_subprocess.rs); the Cargo manifests contain no HTTP client crate and gix is built without network features.",
+    "The tracing crate is used only for local diagnostic logging."
+   ]
+  }
+ },
+ "dropped": {}
+}

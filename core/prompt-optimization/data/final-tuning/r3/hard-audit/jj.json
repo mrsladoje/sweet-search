@@ -1,0 +1,147 @@
+{
+ "repo": "jj",
+ "keep": [
+  "r3h-jj-01",
+  "r3h-jj-02",
+  "r3h-jj-04",
+  "r3h-jj-05",
+  "r3h-jj-06",
+  "r3h-jj-07",
+  "r3h-jj-08",
+  "r3h-jj-09",
+  "r3h-jj-10",
+  "r3h-jj-11",
+  "r3h-jj-12",
+  "r3h-jj-13",
+  "r3h-jj-14",
+  "r3h-jj-15",
+  "r3h-jj-16",
+  "r3h-jj-17",
+  "r3h-jj-18",
+  "r3h-jj-19",
+  "r3h-jj-20",
+  "r3h-jj-21",
+  "r3h-jj-22",
+  "r3h-jj-24"
+ ],
+ "fixes": {
+  "r3h-jj-04": {
+   "expectedFacts": [
+    "FsmonitorSettings::from_settings turns the backend setting into Watchman, None, or an error for the test-only backend.",
+    "CRITICAL: TreeState::snapshot builds its scan matcher from make_fsmonitor_matcher: the changed paths reported by Watchman become a FilesMatcher (plus a prefix matcher for the directory of any changed .gitignore) that is unioned with force-tracking and intersected with the sparse matcher.",
+    "query_changed_files sends the stored clock and excludes the .git and .jj directories.",
+    "CRITICAL: If Watchman reports a fresh instance, no path list is returned and the whole working copy is crawled; if the query fails, a warning is logged and a full scan runs with no clock.",
+    "The last clock lives in TreeState.watchman_clock and is saved in the tree-state file.",
+    "The stored clock is not advanced when the monitor reported no changed paths, nor when the scan found untracked or invalid-UTF-8 paths (unless the new clock is None)."
+   ]
+  },
+  "r3h-jj-07": {
+   "expectedFacts": [
+    "The Git backend uses the all-zero object id of the repo's hash type as the root commit id; no real Git object backs it, and read_commit returns a synthesized empty root commit (make_root_commit) for that id.",
+    "CRITICAL: read_commit gives every Git commit that has no parents (including commits cut off by a shallow clone) the root commit as its parent.",
+    "CRITICAL: write_commit leaves the root parent out of the Git commit and rejects a merge commit that has the root as one of its parents.",
+    "Ref export (collect_changed_refs_to_export) marks a bookmark or tag that targets the root commit as failed with OnRootCommit.",
+    "reset_head leaves Git HEAD unborn when the working-copy commit's first parent is the root commit.",
+    "import_head_commits skips the root id when importing heads, and gc skips it when recreating the no-gc refs that keep commits alive."
+   ],
+   "expectedSymbols": [
+    "GitBackend::new",
+    "GitBackend::read_commit",
+    "GitBackend::write_commit",
+    "collect_changed_refs_to_export",
+    "FailedRefExportReason::OnRootCommit",
+    "reset_head",
+    "GitBackend::import_head_commits",
+    "GitBackend::gc"
+   ]
+  },
+  "r3h-jj-08": {
+   "expectedFacts": [
+    "finish_transaction calls try_reset_git_head, which calls git::reset_head; a failed HEAD update is only a warning.",
+    "CRITICAL: reset_head points Git HEAD at the first parent of the working-copy commit (unborn if that is the root) when it differs from the recorded value.",
+    "reset_head calls clear_operation_state when Git is mid-operation, deleting MERGE_HEAD, MERGE_MODE, MERGE_MSG, REVERT_HEAD, CHERRY_PICK_HEAD, BISECT_LOG and the rebase-merge, rebase-apply and sequencer directories.",
+    "CRITICAL: reset_index rewrites the Git index from the working-copy commit's parent tree, and update_intent_to_add_impl marks files added in the working-copy commit as intent-to-add.",
+    "finish_transaction then calls export_refs (export_some_refs), which writes changed local bookmarks and tags as Git branches and tags, and first detaches HEAD (in the main repo and linked worktrees) when HEAD is a symbolic ref to a ref that is being moved or deleted."
+   ],
+   "expectedSymbols": [
+    "try_reset_git_head",
+    "git::reset_head",
+    "clear_operation_state",
+    "reset_index",
+    "update_intent_to_add_impl",
+    "export_some_refs",
+    "export_refs_to_git"
+   ]
+  },
+  "r3h-jj-11": {
+   "query": "Leaving aside commands whose purpose is to create, enter or move to a commit (including cloning, initialising a repository, adding a workspace and bisecting), in which situations does jj create a brand-new commit on its own and make it my working copy? Name each situation and the function that does it.",
+   "expectedFacts": [
+    "CRITICAL: snapshot_working_copy writes a new commit (holding the snapshotted changes) on top of the working-copy commit when files changed and the recorded working-copy commit is immutable, with a warning.",
+    "CRITICAL: finish_transaction writes a new empty commit on top of the working-copy commit when a command left it immutable, with a warning that it became immutable.",
+    "MutableRepo::update_wc_commits creates a new commit on the merged parents' tree when the working-copy commit was abandoned, and checks it out with edit().",
+    "import_git_head checks out a new commit on top of a Git HEAD that was moved outside jj (shared Git folder), via MutableRepo::check_out.",
+    "create_and_check_out_recovery_commit creates a recovery commit on top of the old working-copy commit during stale-working-copy recovery when the working copy's operation can no longer be read."
+   ]
+  },
+  "r3h-jj-13": {
+   "expectedFacts": [
+    "CRITICAL: Config layers from lowest to highest precedence are: defaults, system config, base environment variables, user config, repo config, workspace config, override environment variables, command-line arguments (documented on config_from_environment).",
+    "env_base_layer sets the editor from the visual-editor variable and otherwise from the general editor variable, so user and repo config override them.",
+    "CRITICAL: The pager environment variable is deliberately not read (comment in env_base_layer, issue 3502); only the jj-specific pager variable in env_overrides_layer sets the pager.",
+    "env_overrides_layer maps the jj-specific editor and pager variables above all config files.",
+    "Platform defaults come from unix.toml (editor nano) and windows.toml (pager set to the builtin pager, editor Notepad); misc.toml sets the default external pager otherwise."
+   ]
+  },
+  "r3h-jj-15": {
+   "expectedFacts": [
+    "The merge.same-change setting is read by MergeOptions::from_settings in tree_merge.rs and handed to the Store by the repo loader, which exposes it as Store::merge_options().same_change.",
+    "CRITICAL: Tree and file-content merging (tree_merge.rs, merged_tree.rs, tree.rs, files.rs merge_inner and resolve_diff_hunks) pass that value to resolve_trivial/trivial_merge in core/src/merge.rs, where Keep leaves the conflict and Accept resolves it.",
+    "CRITICAL: Bookmark and remote-ref merging (merge_ref_targets and merge_remote_refs in refs.rs) hard-codes SameChange::Accept and never consults the setting.",
+    "tree_merge.rs resolves executable bits and copy ids with SameChange::Accept regardless of the setting."
+   ],
+   "expectedSymbols": [
+    "MergeOptions::from_settings",
+    "Store::merge_options",
+    "merge_ref_targets",
+    "merge_remote_refs",
+    "trivial_merge"
+   ]
+  },
+  "r3h-jj-17": {
+   "expectedFacts": [
+    "commit_from_git_without_root_parent takes the change ID from the commit's change-id extra header via extract_change_id_from_commit (reverse hex, exactly 16 bytes).",
+    "CRITICAL: Without a usable header, synthetic_change_id_from_git_commit_id derives the ID from the last 16 bytes of the commit id, in reverse order with the bits of each byte reversed.",
+    "CRITICAL: On import (import_head_commits and import_extra_metadata_entries_from_heads) the computed change ID is stored in the extra-metadata table keyed by commit id so that later rewrites do not assign a new one.",
+    "On read, deserialize_extras overrides the change ID with the stored value when the table has one."
+   ]
+  },
+  "r3h-jj-19": {
+   "expectedFacts": [
+    "The signature template keyword wraps CryptographicSignature, whose status, key and display call Commit::verification, which calls store.signer().verify with the commit id, signed data and signature.",
+    "CRITICAL: Signer::verify first returns a cached Verification for the commit id from an in-memory LRU cache of 100 entries.",
+    "On a miss it tries the main backend and then the other backends that report can_read for the signature, skipping results that are Unknown or an invalid-format error so that the next backend can try.",
+    "CRITICAL: A Good or Bad result is cached for the commit id; a backend error other than invalid format is returned without caching.",
+    "If no backend yields Good or Bad (every reading backend says Unknown, for example because the key is missing, or no backend can read the signature), Signer::verify caches and returns a plain Unknown; the branch meant to skip caching Unknown is effectively unreachable because Unknown results are skipped earlier.",
+    "The cache lives in the Signer inside the Store, so it is per process and every new jj invocation verifies again."
+   ]
+  },
+  "r3h-jj-20": {
+   "expectedFacts": [
+    "CRITICAL: get_updated_tree_value treats a tracked file as clean only if its FileState (type including executable bit, mtime and size) equals the recorded one (is_clean).",
+    "CRITICAL: It additionally requires the recorded file mtime to be strictly earlier than the tree-state file's own mtime (own_mtime); otherwise the file is re-read even when everything else matches.",
+    "own_mtime is set by update_own_mtime from the tree_state file's metadata when the state is read and just before it is saved, and falls back to 0 if unavailable.",
+    "The reason is that a file modified at the same moment as the state file may have changed after the state was written (racy-timestamp problem)."
+   ],
+   "expectedSymbols": [
+    "FileSnapshotter::get_updated_tree_value",
+    "FileState::is_clean",
+    "TreeState::update_own_mtime"
+   ]
+  }
+ },
+ "dropped": {
+  "r3h-jj-03": "closed-book solvable (deepseek-v4.1-flash named 5/6 files and 3/6 symbols without code); sign-on-push flow is well known and push.rs is reached by the first grep of 'sign', so it cannot be hardened without changing the question.",
+  "r3h-jj-23": "1-2 step lookup in disguise: a grep for 'hook' reaches lib/src/git_subprocess.rs spawn_push, whose code comment states the answer (jj passes --no-verify, no hook support); also widely known outside the code (research 2.2 #6, #9). Negatives are not closed-book screened, so audited manually."
+ },
+ "hardened": []
+}

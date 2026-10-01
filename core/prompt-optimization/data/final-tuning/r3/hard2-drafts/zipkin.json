@@ -1,0 +1,346 @@
+{
+  "repo": "r3-zipkin",
+  "sha": "878ce2a1fad54ca941d17fdcf2e1d924b148eb1f",
+  "probes": [
+    {
+      "id": "r3x-zipkin-01",
+      "repo": "r3-zipkin",
+      "language": "Java",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A client span records the other side of the call it made: that side's service name and its network address. On the MySQL backend, follow that information from the moment spans are saved until a trace is fetched by its identifier and rebuilt into spans. Which stored rows carry the other side's network address, how does the key that marks them depend on the span's role, how is the address attached to the right span on read, and which separate column holds only the service name for searching?",
+      "expectedFiles": [
+        "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/MySQLSpanConsumer.java",
+        "zipkin/src/main/java/zipkin2/v1/V2SpanConverter.java",
+        "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/SelectSpansAndAnnotations.java",
+        "zipkin/src/main/java/zipkin2/v1/V1SpanConverter.java",
+        "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/HasRemoteServiceName.java",
+        "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/MySQLSpanStore.java"
+      ],
+      "expectedSymbols": [
+        "MySQLSpanConsumer.BatchInsertSpans.apply",
+        "MySQLSpanConsumer.updateName",
+        "V2SpanConverter.convert",
+        "V2SpanConverter.V1SpanMetadata.parse",
+        "SelectSpansAndAnnotations.apply",
+        "SelectSpansAndAnnotations.processAnnotationRecord",
+        "V1SpanConverter.processBinaryAnnotations",
+        "HasRemoteServiceName.test",
+        "MySQLSpanStore.getRemoteServiceNames"
+      ],
+      "expectedFacts": [
+        "CRITICAL: On write, MySQLSpanConsumer.BatchInsertSpans.apply converts each v2 span to a v1 span with V2SpanConverter, and the remote endpoint is emitted as an address binary annotation whose key depends on the span kind: client 'sa', server 'ca', producer or consumer 'ma' ('sa' when a remote endpoint exists but the kind is unknown).",
+        "The address annotation is stored as a zipkin_annotations row with boolean type (0), a value of the single byte 1, and the endpoint columns filled from the remote endpoint, not the local one.",
+        "The remote service name is also written to zipkin_spans.remote_service_name, only when the schema has that column (null or 'unknown' become an empty string); this column serves search and name listing and is not used to rebuild the span's remote endpoint.",
+        "On read, SelectSpansAndAnnotations.apply loads span rows and annotation rows, and processAnnotationRecord accepts boolean-type rows only when the key is sa, ca or ma, the value is exactly one byte equal to 1, and an endpoint exists.",
+        "CRITICAL: V1SpanConverter.processBinaryAnnotations turns sa/ca/ma into the remoteEndpoint of the span that owns the matching core annotation endpoint (cs/cr for sa, sr/ss for ca, ms/mr for ma); with no core annotations a lone sa sets the remote endpoint on the first span, which has no kind.",
+        "On an old schema without the column, HasRemoteServiceName.test detects it (SQL state 42S22), so writes skip the column, getRemoteServiceNames returns an empty list, and a trace search filtered by remote service throws IllegalArgumentException."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-zipkin-drafter",
+      "date": "2026-10-01",
+      "set": "dev",
+      "notes": "VERIFICATION (all read): MySQLSpanConsumer.java:61 (V2SpanConverter.create), :67 (convert), :86-88 (remote_service_name via updateName, guarded by schema.hasRemoteServiceName), :129-153 (binary annotations; :144-151 address branch, ONE at :33, endpoint from ba.endpoint()), :184-193 (updateName: null/'unknown' -> ''). V2SpanConverter.java:67,71 (addBinaryAnnotation(md.addr, remoteEndpoint)); V1SpanMetadata.parse :119 (default 'sa'), :123-162 (client sa, server ca, producer/consumer ma), :165. V1BinaryAnnotation.java:23 (TYPE_BOOLEAN = 0), :28-30 createAddress. SelectSpansAndAnnotations.java:91-151 (apply), :153-184 (processAnnotationRecord; :169-178 boolean rows only for sa/ca/ma and value {1}), :70-73 (throws when remoteServiceName filter and no column). V1SpanConverter.java:207-270 (processBinaryAnnotations; :234-246 no core annotations; :248-263 ca/sa; :264-269 ma). HasRemoteServiceName.java:26-41 (:32 sqlState 42S22). MySQLSpanStore.java:93-98. mysql.sql:11 (column), :28-30 (a_key/a_type comments). DECOYS: zipkin_spans.remote_service_name + SelectRemoteServiceNames + MySQLSpanStore.getRemoteServiceNames look like the persistence of the remote peer but are search-only (the column is never read back into the span); Schema.java:50 removes REMOTE_SERVICE_NAME from spanIdFields, which is a no-op. ROUTE: [1] grep 'remote|address|endpoint' in mysql-v1 -> lands on the remote_service_name decoy files plus MySQLSpanConsumer/SelectSpansAndAnnotations; [2] read MySQLSpanConsumer -> sees V2SpanConverter.convert and the address branch [G: V2SpanConverter, V1BinaryAnnotation named only inside the body]; [3] locate and read V2SpanConverter (other module, other directory) -> key table by kind [G]; [4] read SelectSpansAndAnnotations.apply/processAnnotationRecord -> sa/ca/ma filter and V1SpanConverter [G: V1SpanConverter named only in the body]; [5] read V1SpanConverter.processBinaryAnnotations [G]; [6] confirm the column is search-only: HasRemoteServiceName/Schema/MySQLSpanStore [G: the probe class is named only inside Schema's constructor]. A smart agent batches [2]+[4] and [3]+[5]+[6], so strict accounting gives MIN CALLS: 5 (6 if the agent first follows the remote_service_name decoy). FIRST CALL (5 greps from the question's own words, all in zipkin-storage/mysql-v1): grep -rn 'address'; grep -rn 'remote'; grep -rn -i 'peer\\|other side'; grep -rn 'serviceName'; grep -rn 'rebuil'. They reach MySQLSpanConsumer, SelectSpansAndAnnotations and the decoy files (about 3 gold files), never V2SpanConverter/V1SpanConverter (other module). est. turns: 8."
+    },
+    {
+      "id": "r3x-zipkin-02",
+      "repo": "r3-zipkin",
+      "language": "Java",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "An operator of the Cassandra backend increases the setting for how many connections are kept to each database node. Follow that number from the server settings until it reaches the database driver. How many requests may each connection have outstanding afterwards, and what else does the code tell the driver when the session is built (read consistency, whether retries are safe, request timeout)? When is the session first created?",
+      "expectedFiles": [
+        "zipkin-server/src/main/java/zipkin2/server/internal/cassandra3/ZipkinCassandra3StorageProperties.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraStorageBuilder.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraStorage.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/DefaultSessionFactory.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/internal/SessionBuilder.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/LazySession.java"
+      ],
+      "expectedSymbols": [
+        "ZipkinCassandra3StorageProperties.toBuilder",
+        "CassandraStorageBuilder.maxConnections",
+        "CassandraStorageBuilder.poolingOptions",
+        "CassandraStorageBuilder.maxRequestsPerConnection",
+        "CassandraStorage.CassandraStorage",
+        "DefaultSessionFactory.buildSession",
+        "SessionBuilder.buildSession",
+        "LazySession.get"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The operator setting travels ZipkinCassandra3StorageProperties.maxConnections (default 8) -> toBuilder().maxConnections(...) -> CassandraStorageBuilder.poolLocalSize (rejected if not positive).",
+        "CRITICAL: CassandraStorageBuilder.poolingOptions() returns two driver options, local pool size = poolLocalSize and max requests per connection = maxRequestsPerConnection; the latter is a final field initialised when the builder is created (40960 / 8 = 5120), so raising the connection count does not change the per-connection limit and total outstanding requests per node grow with the count.",
+        "CassandraStorage's constructor stores builder.poolingOptions(); DefaultSessionFactory.buildSession hands it to SessionBuilder.buildSession, which applies every entry with withInt on the programmatic driver configuration.",
+        "SessionBuilder.buildSession also sets request timeout to one minute, read consistency LOCAL_ONE, default idempotence true (all Zipkin CQL writes are idempotent), the local datacenter, and the SSL engine factory and hostname validation only when SSL is enabled.",
+        "The session is created lazily: LazySession.get calls sessionFactory.create(storage) the first time CassandraStorage.session() is needed (building the span consumer, span store or autocomplete store, or a health check); the factory is SessionFactory.DEFAULT exposed by ZipkinCassandra3StorageConfiguration.sessionFactory."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-zipkin-drafter",
+      "date": "2026-10-01",
+      "set": "dev",
+      "notes": "VERIFICATION (all read): zipkin-server-shared.yml:137 (max-connections ${CASSANDRA_MAX_CONNECTIONS:8}); ZipkinCassandra3StorageProperties.java:18 (maxConnections = 8), :55-57, :107-119 (toBuilder .maxConnections); CassandraStorageBuilder.java:49 (poolLocalSize = 8), :52 (final int maxRequestsPerConnection = 40960 / poolLocalSize, evaluated in the field initialiser, before any setter), :54-59 (poolingOptions map with CONNECTION_POOL_LOCAL_SIZE and CONNECTION_MAX_REQUESTS from static imports at :16-17), :116-120 (maxConnections setter changes only poolLocalSize); CassandraStorage.java:101 (poolingOptions = builder.poolingOptions()), :115 (new LazySession), :126-128 (session()); DefaultSessionFactory.java:15-24; SessionBuilder.java:52 (REQUEST_TIMEOUT 1 minute), :65 (LOCAL_ONE), :67 (poolingOptions.forEach(config::withInt)), :70 (idempotence true), :72-75 (SSL); LazySession.java:33-37; ZipkinCassandra3StorageConfiguration.java:37-39 (SessionFactory bean DEFAULT). DECOYS: yml/doc 'index-fetch-multiplier', maxTraceCols (also builder fields); poolLocalSize is not read anywhere else; maxRequestsPerConnection is NOT recomputed in the maxConnections setter. ROUTE: [1] grep 'connections' (server + cassandra) -> properties setter/toBuilder and the builder setter; [2] read builder -> poolingOptions()/maxRequestsPerConnection initialiser, driver option constants only through static imports [G]; [3] grep 'poolingOptions' -> CassandraStorage field, DefaultSessionFactory, SessionBuilder [G: name known only from [2]]; [4] read those three -> forEach(config::withInt) plus consistency/idempotence/timeout [G]; [5] trace first use: grep sessionFactory.create / session() -> LazySession.get and the bean in ZipkinCassandra3StorageConfiguration [G]. Strict accounting MIN CALLS: 5 (the three reads in [4] and the two in [5] can be merged by a batching agent, giving 4). FIRST CALL (greps from the question's words): grep -rn -i 'connections'; grep -rn -i 'consistency'; grep -rn -i 'idempot'; grep -rn -i 'timeout' in cassandra; grep -rn 'session' in cassandra. They reach ZipkinCassandra3StorageProperties, CassandraStorageBuilder, SessionBuilder (3 gold files at once; the weak point of this question). est. turns: 7."
+    },
+    {
+      "id": "r3x-zipkin-03",
+      "repo": "r3-zipkin",
+      "language": "Java",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "When the server traces itself against an Elasticsearch store, the client span for the HTTP request that saves a batch of spans carries a descriptive operation name instead of the bare HTTP method. Follow how that name travels from the code that picks it to the span, how the tracing hook is attached to the HTTP client and in what order relative to the hook that changes the name, and where the other operation names (read queries, template installation, version probe, cluster health) are chosen.",
+      "expectedFiles": [
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchSpanConsumer.java",
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/BulkCallBuilder.java",
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/client/HttpCall.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/ZipkinElasticsearchStorageConfiguration.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/HttpClientFactory.java",
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/client/SearchRequest.java",
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/EnsureIndexTemplate.java",
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/BaseVersion.java",
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchStorage.java"
+      ],
+      "expectedSymbols": [
+        "ElasticsearchSpanConsumer.BulkSpanIndexer",
+        "BulkCallBuilder.build",
+        "HttpCall.sendRequest",
+        "ZipkinElasticsearchStorageConfiguration.esTracing",
+        "ZipkinElasticsearchStorageConfiguration.esHttpClientFactory",
+        "HttpClientFactory.configureOptionsExceptHttpLogging",
+        "SearchRequest.tag",
+        "EnsureIndexTemplate.ensureIndexTemplate",
+        "BaseVersion.Parser.get",
+        "ElasticsearchStorage.ensureIndexTemplatesAndClusterReady"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The bulk-write name is chosen in ElasticsearchSpanConsumer.BulkSpanIndexer (new BulkCallBuilder(..., 'index-span')); BulkCallBuilder.build passes that tag to http.newCall(request, CHECK_FOR_ERRORS, tag), and HttpCall.sendRequest sets it as the request-log name with Clients.withContextCustomizer(ctx -> ctx.logBuilder().name(name)).",
+        "CRITICAL: ZipkinElasticsearchStorageConfiguration.esTracing (only when the self-tracing condition matches) adds a client decorator that reads the partially filled request log and, when the NAME property is available and non-null, overrides the current span's name through a CurrentSpanCustomizer; the Brave client decorator (httpTracing.clientOf('elasticsearch')) is added last so that it encloses the name-overwriting step.",
+        "The esTracing consumer is one of the qualified List<Consumer<ClientOptionsBuilder>> customizers injected by esHttpClientFactory into HttpClientFactory, which applies each of them in configureOptionsExceptHttpLogging after its own metrics and decoding decorators; the health-check client built in LazyHttpClientImpl.decorateHealthCheck reuses that same method.",
+        "Read queries are named in SearchRequest.tag() ('aggregation' when aggregations are present, else 'search'), passed by SearchCallFactory.newCall to http.newCall.",
+        "The other operation names are literals at their call sites: 'get-node' in BaseVersion.Parser.get, 'get-template' and 'update-template' in EnsureIndexTemplate.ensureIndexTemplate, 'get-cluster-health' and 'delete-index' in ElasticsearchStorage, and 'health-check' in LazyHttpClientImpl."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-zipkin-drafter",
+      "date": "2026-10-01",
+      "set": "dev",
+      "notes": "VERIFICATION (all read): ElasticsearchSpanConsumer.java:83 ('index-span'); BulkCallBuilder.java:73-88 (tag stored), :112-128 (:127 http.newCall(request, CHECK_FOR_ERRORS, tag)); HttpCall.java:92-101 (Factory.newCall), :177-205 (:179-181 withContextCustomizer name); ZipkinElasticsearchStorageConfiguration.java:97-103 (esHttpClientFactory takes @Qualifier List<Consumer<ClientOptionsBuilder>>), :169-197 (esTracing: @ConditionalOnSelfTracing at :169, clientOf('elasticsearch') :178, CurrentSpanCustomizer :179, name-overwrite decorator :182-193, comment :194, BraveClient decorator :195); HttpClientFactory.java:36-51, :94-98 (:96 customizers.forEach); LazyHttpClientImpl.java:60-82 (:69 reuses configureOptionsExceptHttpLogging, :73 name 'health-check'); SearchRequest.java:94-96; SearchCallFactory.java:37; BaseVersion.java:57; EnsureIndexTemplate.java:28,34; ElasticsearchStorage.java:266,295; ConditionalOnSelfTracing.java:33-71. DECOYS: TracingStorageComponent.java:80-168 and TracedCall (storage-level span names 'get-traces', 'accept-spans' etc., a different layer), ThrottledStorageComponent.java:156 ('throttled-accept-spans'), ZipkinSelfTracingConfiguration.httpTracing (server sampler), ZipkinSelfTracingMySQLStorageConfiguration (SQL span names). ROUTE: [1] grep 'self-trac|span name|Tracing' -> lands on the decoy storage-level naming and on esTracing; [2] read esTracing -> decorator reads log NAME, no source of the name here [G]; [3] grep 'logBuilder|\\.name(' in the ES module -> HttpCall.sendRequest [G: nothing in the question names it]; [4] read HttpCall.Factory.newCall (name parameter) and find callers: BulkCallBuilder tag, then ElasticsearchSpanConsumer literal [G: callers are only visible via the previous read]; [5] read HttpClientFactory + esHttpClientFactory to confirm how the customizer list is applied and ordered [G]; [6] enumerate the other literals via grep 'newCall(' [G: only after [4]]. Strict accounting MIN CALLS: 5 (4 if [2]+[3] are merged because the agent guesses logBuilder). FIRST CALL: grep -rn -i 'self.trac' (server); grep -rn 'Tracing' in zipkin-server/.../elasticsearch; grep -rn '_bulk' in zipkin-storage/elasticsearch; grep -rn -i 'span name\\|\\.name(' in ES; grep -rn 'decorator' in ES server package. They reach ZipkinElasticsearchStorageConfiguration and BulkCallBuilder (2 gold files); the name-passing hops (HttpCall, ElasticsearchSpanConsumer, HttpClientFactory) stay unreached. est. turns: 8."
+    },
+    {
+      "id": "r3x-zipkin-04",
+      "repo": "r3-zipkin",
+      "language": "Java",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "On the Cassandra backend a span's local peer, remote peer and annotations are stored in structured column types, not as plain text. Follow how the database driver learns to convert those column values to and from the span model objects: where the converters are defined, when and on which object they are registered relative to schema installation and keyspace selection, what happens to the session if schema setup fails, and where a write and a read each rely on them.",
+      "expectedFiles": [
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/InsertSpan.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/EndpointCodec.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/AnnotationCodec.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/Schema.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/LazySession.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/SelectFromSpan.java"
+      ],
+      "expectedSymbols": [
+        "InsertSpan.newCompletionStage",
+        "EndpointCodec.innerToOuter",
+        "EndpointCodec.outerToInner",
+        "AnnotationCodec.innerToOuter",
+        "Schema.initializeUDTs",
+        "LazySession.get",
+        "SelectFromSpan.ReadSpans"
+      ],
+      "expectedFacts": [
+        "CRITICAL: Writes and reads select the converters by Java type: InsertSpan.newCompletionStage binds l_ep and r_ep with Endpoint.class and annotations with Annotation.class, and SelectFromSpan.ReadSpans reads l_ep/r_ep with row.get(..., Endpoint.class) and annotations with getList(..., Annotation.class); the driver resolves the codec from its registry.",
+        "EndpointCodec and AnnotationCodec are MappingCodec subclasses wrapping the driver's UDT codec: EndpointCodec maps the UDT fields service, ipv4, ipv6 and port (null in, null out); AnnotationCodec maps field 0 (timestamp) and field 1 (value) and returns null when either is null.",
+        "CRITICAL: Schema.initializeUDTs reads the keyspace metadata, obtains the driver codecs for the 'annotation' and 'endpoint' user-defined types and registers the wrapped codecs in the session's MutableCodecRegistry.",
+        "Order in LazySession.get: sessionFactory.create, then ensureSchema (install or validate schema), then 'USE <keyspace>', then Schema.initializeUDTs, then preparing the health-check statement; component constructors (CassandraSpanConsumer, CassandraSpanStore) call storage.session() before preparing statements, so codecs exist first.",
+        "If ensureSchema or a later step throws RuntimeException or Error, LazySession closes the session without nulling it (so failed commands are not repeated) and get() throws ClosedComponentException ('Session initialization failed. See server logs') on that call; the codecs are not registered.",
+        "The UDTs are defined in zipkin2-schema.cql (endpoint: service, ipv4, ipv6, port; annotation: ts, v) with the default keyspace name replaced by Schema.applyCqlFile; InsertSpan skips null endpoints so no tombstones are written."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-zipkin-drafter",
+      "date": "2026-10-01",
+      "set": "dev",
+      "notes": "VERIFICATION (all read): InsertSpan.java:140-169 (:153-154 l_ep/r_ep bound with Endpoint.class, :155-157 annotations with Annotation.class, :153-154 null skipped 'Don't set null as we don't want to add tombstones' comment at :146); SelectFromSpan.java:159-202 (:187-188, :193); EndpointCodec.java:17-45 (:30 service/port, :31-32 ipv4/ipv6, :39-42); AnnotationCodec.java:30-38 (:31 null check on fields 0 and 1); Schema.java:99-112 (initializeUDTs; :104-106 annotation codec, :109-111 endpoint codec), :188-204 (applyCqlFile; :190 keyspace rename); LazySession.java:33-57 (:37 create, :41 ensureSchema, :42 USE, :43 initializeUDTs, :44 prepare, :45-51 catch closes session, comment :46-49, :53-55 ClosedComponentException); CassandraSpanConsumer.java:46-47 and CassandraSpanStore.java:58-59 (storage.session() before prepare); zipkin2-schema.cql:5-15. DECOYS: AnnotationCodec/EndpointCodec look unused by name search because nothing references them except Schema.initializeUDTs; InsertSpan's l_service and annotation_query columns (search index fields, not UDTs); MySQL address annotations (different backend). ROUTE: [1] grep 'l_ep|r_ep|UDT|Codec' in cassandra -> InsertSpan, SelectFromSpan, codecs, Schema; [2] read InsertSpan bind lines: columns bound by Java class only, no codec named [G: codec class names are not in the write path]; [3] grep 'EndpointCodec' -> only Schema.initializeUDTs references it [G]; [4] read Schema.initializeUDTs, then find its single caller via grep 'initializeUDTs' -> LazySession.get [G]; [5] read LazySession.get for order and failure behaviour [G]; [6] read SelectFromSpan.ReadSpans and the cql UDT definitions. Strict accounting MIN CALLS: 5 (merging [3]+[4] would give 4). FIRST CALL: grep -rn 'codec' -i; grep -rn 'UserDefinedType\\|UdtValue'; grep -rn 'l_ep'; grep -rn 'registry'; grep -rn 'endpoint' in zipkin-storage/cassandra. They reach InsertSpan, codecs, Schema and SelectFromSpan (4 of 6 gold files: the weakest point; LazySession is only reached via the second grep on initializeUDTs). est. turns: 7."
+    },
+    {
+      "id": "r3x-zipkin-05",
+      "repo": "r3-zipkin",
+      "language": "Java",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "Which parts of the server's own code start dedicated threads or thread pools, rather than running on the web framework's shared executors? For each, say what the threads are for, how many there are or how the size is decided, and which of them are marked so that self-tracing does not treat their work as a request.",
+      "expectedFiles": [
+        "zipkin-collector/kafka/src/main/java/zipkin2/collector/kafka/KafkaCollector.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/mysql/ZipkinMySQLStorageConfiguration.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/throttle/ThrottledStorageComponent.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/ZipkinElasticsearchStorageConfiguration.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/brave/ZipkinSelfTracingConfiguration.java",
+        "zipkin-collector/scribe/src/main/java/zipkin2/collector/scribe/NettyScribeServer.java"
+      ],
+      "expectedSymbols": [
+        "KafkaCollector.LazyKafkaWorkers.compute",
+        "ZipkinMySQLStorageConfiguration.mysqlExecutor",
+        "ThrottledStorageComponent.ThrottledStorageComponent",
+        "ThrottledStorageComponent.ThreadPoolExecutorResizer",
+        "ZipkinElasticsearchStorageConfiguration.dynamicCredentialsScheduledExecutorService",
+        "ZipkinSelfTracingConfiguration.reporter",
+        "NettyScribeServer.start"
+      ],
+      "expectedFacts": [
+        "CRITICAL: KafkaCollector.LazyKafkaWorkers.compute (run lazily from start) creates a single-thread executor when streams is 1, otherwise a fixed pool of 'streams' threads, each running one KafkaCollectorWorker poll loop.",
+        "ZipkinMySQLStorageConfiguration.mysqlExecutor creates a Spring ThreadPoolTaskExecutor with thread-name prefix 'ZipkinMySQLStorage-' that runs queued MySQL calls (DataSourceCall.doEnqueue); with self-tracing on, ZipkinSelfTracingMySQLStorageConfiguration only wraps it to carry the request context and does not add another pool.",
+        "CRITICAL: ThrottledStorageComponent builds a ThreadPoolExecutor named 'zipkin-throttle-pool' sized initially at the minimum concurrency and resized by ThreadPoolExecutorResizer as the adaptive limit changes (up to the maximum concurrency), with a bounded queue (max queue size, 0 becomes 1) whose rejection throws; its threads are marked as non-request threads.",
+        "ZipkinElasticsearchStorageConfiguration.dynamicCredentialsScheduledExecutorService creates a single-thread scheduled executor named 'zipkin-load-es-credentials' that reloads the credentials file at a fixed rate (the refresh interval in seconds); it exists only when a credentials file is configured.",
+        "ZipkinSelfTracingConfiguration.reporter supplies the thread factory for the self-tracing span reporter's background thread and marks that thread as a non-request thread with setCurrentThreadNotRequestThread(true).",
+        "NettyScribeServer.start creates a boss EventLoopGroup of one thread for accepting connections, while worker threads and the blocking executor used by ScribeSpanConsumer come from Armeria's shared CommonPools; the HTTP and gRPC collectors and the health controller run on the request context's blocking executor."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-zipkin-drafter",
+      "date": "2026-10-01",
+      "set": "dev",
+      "notes": "VERIFICATION (all read): KafkaCollector.java:238-251 (:240 streams == 1 ? newSingleThreadExecutor : newFixedThreadPool(streams)), :211-219 (lazy start); ZipkinMySQLStorageConfiguration.java:32-38 (ThreadPoolTaskExecutor, setThreadNamePrefix); ZipkinSelfTracingMySQLStorageConfiguration.java:34-53 (makeContextAware wraps, :36 reuses the base factory method); DataSourceCall.java:74 (factory.executor.execute); ThrottledStorageComponent.java:73-107 (:84-106 pool, :90 NamedThreadFactory, :94 setCurrentThreadNotRequestThread(true), :107 resizer), :164-173 (createQueue; 0 -> 1), :175-204 (resizer); ZipkinElasticsearchStorageConfiguration.java:153-167 (:158-159 single thread scheduled executor 'zipkin-load-es-credentials', :163 scheduleAtFixedRate), :211-215 (DynamicRefreshRequired); ZipkinSelfTracingConfiguration.java:40-55 (:42-51 threadFactory, :44 setCurrentThreadNotRequestThread(true)); NettyScribeServer.java:31-48 (:32 newEventLoopGroup(1), :33 CommonPools.workerGroup); ScribeSpanConsumer.java:64 (CommonPools.blockingTaskExecutor); ZipkinHttpCollector.java:143, ZipkinGrpcCollector.java:61, ZipkinHealthController.java:65 (ctx.blockingTaskExecutor). DECOYS: WrappingExecutorService.java (copy of a Brave class, never used anywhere), ZipkinHttpCollector/ZipkinGrpcCollector/ZipkinHealthController use the shared blocking executor (not created here), RabbitMQ/ActiveMQ/Pulsar collectors create no threads of their own (their client libraries do; concurrency means channels, sessions or consumers), HttpCall.doExecute (checks it is not on an event loop). ROUTE: [1] grep 'Executor|Thread' over server, collector and storage -> most creation sites in one result; but the result mixes creators with consumers of shared executors and the unused WrappingExecutorService [G: the agent must read each hit to decide created vs borrowed]; [2] read ThrottledStorageComponent, Kafka compute, MySQL config, ES credentials bean, self-tracing reporter, Scribe start [G: sizes and names only inside bodies]; [3] follow the 'not request thread' flag: grep 'setCurrentThreadNotRequestThread' -> two sites [G: the flag name appears only inside the throttle constructor and reporter]; [4] check the MySQL self-tracing wrapper and the Scribe consumer's executor to separate created from borrowed [G]; [5] check ActiveMQ/RabbitMQ/Pulsar init to confirm no threads are created (concurrency = sessions/channels/consumers) [G]. Strict accounting MIN CALLS: 5 (the first grep is broad enough that a batching agent may need only 4; the 'created versus borrowed' reasoning is the hard part, not the search). FIRST CALL: grep -rn 'Executor'; grep -rn 'Thread'; grep -rn 'pool'; grep -rn 'EventLoop'; grep -rn 'concurrency'. Together they reach all six gold files (the weakness of this completeness question: members share the tokens Executor/Thread), so difficulty comes from separating creators from consumers and from the self-tracing flag. est. turns: 7."
+    },
+    {
+      "id": "r3x-zipkin-06",
+      "repo": "r3-zipkin",
+      "language": "Java",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "Operators can relax the exact matching of trace identifiers, so that a 128-bit identifier and its lower 64-bit half count as the same trace. Across the shared storage helpers and all four storage implementations, name each place in production code where this relaxation changes what is written or how traces are looked up, group them by saving versus reading, and say what each does. Also say which helper filters results client-side when exact matching stays on.",
+      "expectedFiles": [
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/VersionSpecificTemplates.java",
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchSpanStore.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/InsertSpan.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/InsertTraceByServiceSpan.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/InsertTraceByServiceRemoteService.java",
+        "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/SelectFromSpan.java",
+        "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/Schema.java",
+        "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/SelectSpansAndAnnotations.java",
+        "zipkin/src/main/java/zipkin2/storage/InMemoryStorage.java",
+        "zipkin/src/main/java/zipkin2/storage/GroupByTraceId.java",
+        "zipkin/src/main/java/zipkin2/storage/StrictTraceId.java"
+      ],
+      "expectedSymbols": [
+        "VersionSpecificTemplates.spanIndexTemplate",
+        "ElasticsearchSpanStore.getTrace",
+        "ElasticsearchSpanStore.getTraces",
+        "InsertSpan.Factory.newInput",
+        "InsertTraceByServiceSpan.Factory.newInput",
+        "InsertTraceByServiceRemoteService.Factory.newInput",
+        "SelectFromSpan.Factory.newCall",
+        "Schema.spanTraceIdCondition",
+        "Schema.traceIdCondition",
+        "SelectSpansAndAnnotations.Factory.create",
+        "InMemoryStorage.getTrace",
+        "InMemoryStorage.strictByTraceId",
+        "GroupByTraceId.map",
+        "StrictTraceId.filterTraces",
+        "StrictTraceId.filterSpans"
+      ],
+      "expectedFacts": [
+        "CRITICAL: Elasticsearch changes the index mapping at template installation: VersionSpecificTemplates.spanIndexTemplate maps traceId as a plain keyword when matching is exact, but when relaxed it uses a text field with fielddata and a custom analyzer (pattern_capture on the trailing hex digits, original preserved); at read time ElasticsearchSpanStore.getTrace and getTraces cut a 32-character id to its lower 16 characters when relaxed, and getTraces(QueryRequest) adds StrictTraceId.filterTraces only when exact.",
+        "CRITICAL: Cassandra changes the stored layout when relaxed: InsertSpan.Factory.newInput splits a 32-character id into trace_id_high (first 16) and trace_id (last 16), and InsertTraceByServiceSpan and InsertTraceByServiceRemoteService index only the lower 16 characters; SelectFromSpan.Factory.newCall queries both the full and the lower id when relaxed and filters (StrictTraceId.filterSpans or filterTraces) when exact, and SelectSpansByTraceIds applies FilterTraces only when exact.",
+        "MySQL writing is unchanged (the high bits are stored whenever the schema has the column); on read SelectSpansAndAnnotations.Factory.create zeroes traceIdHigh when relaxed, Schema.spanTraceIdCondition and traceIdCondition compare (high, low) pairs only when the schema has the column and matching is exact, otherwise only the low half, and MySQLSpanStore adds StrictTraceId filters only when exact.",
+        "InMemoryStorage always indexes by the lower 64 bits (lowTraceId in doAccept); on read, when exact, getTrace, getTraces(QueryRequest) and getTraces(ids) regroup with strictByTraceId and keep only the exact ids, otherwise they return the merged low-64-bit trace.",
+        "Shared helpers: GroupByTraceId.map groups spans by the full trace id when exact and by the lower 16 characters when relaxed; StrictTraceId is the client-side filter used when exact (filterSpans drops spans whose trace id differs, filterTraces(ids) drops traces not in the id set, filterTraces(QueryRequest) re-filters only if two returned traces clash on the lower 64 bits).",
+        "The setting (default true) reaches each backend through its server configuration class (InMemoryConfiguration, ZipkinCassandra3StorageConfiguration, ZipkinMySQLStorageConfiguration, ZipkinElasticsearchStorageConfiguration)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-zipkin-drafter",
+      "date": "2026-10-01",
+      "set": "dev",
+      "notes": "VERIFICATION (all read): VersionSpecificTemplates.java:92-118 (:93 if (!strictTraceId), :97-98 text/fielddata/traceId_analyzer, :110-113 pattern_capture), :139 and :166 (traceIdMapping used); ElasticsearchSpanStore.java:110 (strict ? filterTraces(request)), :119 and :132 (!strictTraceId && length 32 -> substring(16)); InsertSpan.java:82-87 (traceIdHigh = !strictTraceId && length == 32; high = first 16, low = rest); InsertTraceByServiceSpan.java:58 and InsertTraceByServiceRemoteService.java:51 (substring(16) when relaxed); SelectFromSpan.java:57-65 (Set.of(full, lower) when relaxed; filterSpans when strict), :74 and :82, :129-131 (FilterTraces when strict); MySQLSpanConsumer.java:101-104 (high bits written when schema.hasTraceIdHigh, independent of the flag); SelectSpansAndAnnotations.java:51 (traceIdHigh = 0 when relaxed); Schema.java:99-111 (:100 hasTraceIdHigh && strictTraceId), :127-153 (:138); MySQLSpanStore.java:51,63,85; InMemoryStorage.java:186 (lowTraceId at write), :275-296 (getTraces), :298-306 (strictByTraceId), :355-368 (getTrace), :385-390 (getTraces ids), :560-562 (lowTraceId); GroupByTraceId.java:36-47 (:39); StrictTraceId.java:21-100 (filterSpans, filterTraces, hasClashOnLowerTraceId), :108-138; config: ZipkinConfiguration.java:115, ZipkinCassandra3StorageConfiguration.java:43, ZipkinMySQLStorageConfiguration.java:48, ZipkinElasticsearchStorageConfiguration.java:112, zipkin-server-shared.yml:113. DECOYS: DependencyLinkV2SpanIterator.java:73 and InMemoryStorage.java:428 (comments that dependency linking always ignores the high bits), CassandraStorageBuilder.strictTraceId (setter only), StorageComponent.java:120-137 (javadoc), Span.normalizeTraceId (unrelated padding). ROUTE: [1] grep 'strictTraceId|substring(16)|lowTraceId|traceIdHigh' across modules -> most sites in one result [G: but the mix of names per backend means the agent must also search 'analyzer', 'hasTraceIdHigh', 'GroupByTraceId']; [2] read InMemoryStorage + StrictTraceId + GroupByTraceId [G]; [3] read Cassandra InsertSpan/InsertTraceBy*/SelectFromSpan [G: the index inserts are found only from CassandraSpanConsumer's constructor, where they are created]; [4] read MySQL Schema/SelectSpansAndAnnotations/MySQLSpanStore [G]; [5] read ES VersionSpecificTemplates + ElasticsearchSpanStore [G: the analyzer is reached only through spanIndexTemplate]; [6] confirm the server configuration entry points. Strict accounting MIN CALLS: 6 (batching [2]-[5] could bring it to 4; the width, 10 files in 4 modules and 7 facts, is the difficulty). FIRST CALL: grep -rn 'strict'; grep -rn 'lower'; grep -rn '128'; grep -rn 'traceIdHigh\\|trace_id_high'; grep -rn 'substring(16)'. They reach roughly 8 of 10 gold files (weakness: the flag name is a shared token), so the difficulty is breadth and exactness of each backend's write versus read behaviour. est. turns: 8."
+    },
+    {
+      "id": "r3x-zipkin-07",
+      "repo": "r3-zipkin",
+      "language": "Java",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "An operator configures the Kafka collector's consumer group through the dedicated setting and also supplies a raw consumer property for the same purpose through the free-form pass-through settings. Which value does the consumer use, which other parts of the collector share the same effective consumer properties, and would the collector start at all if the broker list were supplied only through the pass-through settings? State the default group when neither is given.",
+      "expectedFiles": [
+        "zipkin-server/src/main/java/zipkin2/server/internal/kafka/ZipkinKafkaCollectorProperties.java",
+        "zipkin-collector/kafka/src/main/java/zipkin2/collector/kafka/KafkaCollector.java",
+        "zipkin-collector/kafka/src/main/java/zipkin2/collector/kafka/KafkaCollectorWorker.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/kafka/ZipkinKafkaCollectorConfiguration.java",
+        "zipkin-server/src/main/resources/zipkin-server-shared.yml"
+      ],
+      "expectedSymbols": [
+        "ZipkinKafkaCollectorProperties.toBuilder",
+        "ZipkinKafkaCollectorProperties.setGroupId",
+        "KafkaCollector.Builder.overrides",
+        "KafkaCollector.Builder.groupId",
+        "KafkaCollectorWorker.KafkaCollectorWorker",
+        "KafkaCollector.getAdminClient",
+        "ZipkinKafkaCollectorConfiguration.KafkaBootstrapServersSet"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The free-form map wins: ZipkinKafkaCollectorProperties.toBuilder applies bootstrapServers, groupId, topic and streams first and overrides last, and KafkaCollector.Builder.overrides does properties.putAll(overrides) on the same Properties object that Builder.groupId filled with put(GROUP_ID_CONFIG), so a raw group id in the map replaces the dedicated setting.",
+        "The default group is 'zipkin': the Builder constructor seeds group.id=zipkin (plus auto.offset.reset=earliest and byte-array deserializers) and the shared yml sets the dedicated value from KAFKA_GROUP_ID with default zipkin; blank dedicated values are turned into null by emptyToNull and skipped, leaving the builder defaults.",
+        "KafkaCollectorWorker's constructor keeps builder.properties itself (no copy) and run() passes it to new KafkaConsumer, so every worker (one per 'streams') uses the same group id and the partitions are shared among them; the topic setting is split on commas into several subscribed topics.",
+        "KafkaCollector.getAdminClient, used by check(), calls AdminClient.create(properties) with the same Properties, so overrides such as security settings also apply to the health check; check() additionally reports a failure recorded by a crashed worker.",
+        "CRITICAL: The collector bean is created only if ZipkinKafkaCollectorConfiguration.KafkaBootstrapServersSet matches, which reads the Spring property zipkin.collector.kafka.bootstrap-servers (non-empty) and requires zipkin.collector.kafka.enabled not to be 'false'; a broker list given only inside the overrides map does not satisfy it, so the collector would not start."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-zipkin-drafter",
+      "date": "2026-10-01",
+      "set": "dev",
+      "notes": "VERIFICATION (all read): ZipkinKafkaCollectorProperties.java:29-47 (emptyToNull setters), :65-73 (toBuilder order: bootstrapServers, groupId, topic, streams, overrides last), :75-77; KafkaCollector.java:53-59 (properties/topic/streams fields), :98-102 (groupId puts GROUP_ID_CONFIG), :125-129 (overrides: properties.putAll), :136-143 (constructor defaults: group.id zipkin, auto.offset.reset earliest, ByteArrayDeserializer), :150-153 (properties = builder.properties), :162-184 (check + getAdminClient with AdminClient.create(properties)), :238-251 (workers); KafkaCollectorWorker.java:49-54 (properties = builder.properties; topics split by comma), :58 (new KafkaConsumer<>(properties)); ZipkinKafkaCollectorConfiguration.java:23-26, :47-62 (KafkaBootstrapServersSet: only 'zipkin.collector.kafka.bootstrap-servers' and 'zipkin.collector.kafka.enabled'); zipkin-server-shared.yml:34-44 (group-id ${KAFKA_GROUP_ID:zipkin}, bootstrap-servers ${KAFKA_BOOTSTRAP_SERVERS:}, streams ${KAFKA_STREAMS:1}; no overrides key). DECOYS: Spring Boot's own Kafka auto-configuration (not used; auto-config is off), KafkaCollector.Builder.topic (not in the Properties, so it cannot be overridden through the map), zipkin-reporter's Kafka sender mentioned in docs. ROUTE: [1] grep 'group' in kafka collector + server kafka package -> setGroupId/groupId/yml [G: the pass-through map name is not in the question]; [2] read ZipkinKafkaCollectorProperties.toBuilder -> call order and the overrides hand-off [G: the builder method name comes only from the body]; [3] read KafkaCollector.Builder (overrides, constructor defaults) [G]; [4] follow the Properties object: KafkaCollectorWorker constructor/run and KafkaCollector.getAdminClient [G: the shared object is visible only after [3]]; [5] find what activates the bean: ZipkinKafkaCollectorConfiguration condition [G: condition class named only on the configuration class]. Strict accounting MIN CALLS: 5 (4 if the agent greps 'Kafka' over the whole server package first). FIRST CALL: grep -rn -i 'group'; grep -rn -i 'consumer'; grep -rn -i 'overrid'; grep -rn 'bootstrap'; grep -rn 'streams' over zipkin-server and zipkin-collector/kafka. They reach ZipkinKafkaCollectorProperties, KafkaCollector and the yml (3 of 5 gold files); the worker and the condition require following the Properties object and the bootstrap property. est. turns: 7."
+    },
+    {
+      "id": "r3x-zipkin-08",
+      "repo": "r3-zipkin",
+      "language": "Java",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "An operator gives the Elasticsearch storage one setting that lists several addresses: some bare host names, one with a secure scheme, one with the old native-transport port, one without a port. Which endpoints does the server end up talking to and over which protocol, which of them are periodically health-checked and how, which timeouts apply, and when is the HTTP client first created?",
+      "expectedFiles": [
+        "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/ZipkinElasticsearchStorageConfiguration.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/InitialEndpointSupplier.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/LazyHttpClientImpl.java",
+        "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/HttpClientFactory.java",
+        "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchStorage.java"
+      ],
+      "expectedSymbols": [
+        "ZipkinElasticsearchStorageConfiguration.esSessionProtocol",
+        "ZipkinElasticsearchStorageConfiguration.esInitialEndpoints",
+        "ZipkinElasticsearchStorageConfiguration.esClientFactory",
+        "InitialEndpointSupplier.get",
+        "InitialEndpointSupplier.getPort",
+        "LazyHttpClientImpl.get",
+        "LazyHttpClientImpl.getEndpoint",
+        "LazyHttpClientImpl.decorateHealthCheck",
+        "HttpClientFactory.configureOptionsExceptHttpLogging",
+        "ElasticsearchStorage.http"
+      ],
+      "expectedFacts": [
+        "CRITICAL: One protocol applies to every endpoint: ZipkinElasticsearchStorageConfiguration.esSessionProtocol returns HTTPS if the hosts string contains 'https://' anywhere, otherwise HTTP (also HTTP when hosts is null); the scheme of an individual entry is only used to parse its host and port.",
+        "InitialEndpointSupplier.get splits on commas (empty pieces skipped); an entry with http:// or https:// is parsed as a URI; a bare host without a colon gets ':9200' appended only when the protocol is not TLS; otherwise the protocol scheme is prefixed to the entry; blank or null hosts become '<protocol>://localhost:9200'.",
+        "A missing port falls back to the session protocol's default port (80 or 443), not 9200, for entries that carry a scheme; port 9300 is rewritten to 9200 with a warning; entries without a host are skipped and, if none remain, IllegalArgumentException is thrown.",
+        "An IP literal or 'localhost' becomes a fixed Endpoint, any other host name becomes a DnsAddressEndpointGroup that round-robins over all resolved addresses, and all are combined into one EndpointGroup.",
+        "CRITICAL: LazyHttpClientImpl.getEndpoint wraps the group in a HealthCheckedEndpointGroup only if the initial group is not a single Endpoint and health checking is enabled (default true); decorateHealthCheck sends GET /_cluster/health every health-check interval (default 3 seconds) with the same client options and customizers and the ES timeout as selection timeout.",
+        "The ES timeout setting (default 10000 ms) is the connect timeout in esClientFactory and the response and write timeout in HttpClientFactory.configureOptionsExceptHttpLogging; the HTTP client is created lazily and once, in LazyHttpClientImpl.get via factory.apply(getEndpoint()), when ElasticsearchStorage.http() first calls lazyHttpClient().get() (for example through version() or ensureIndexTemplates)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-zipkin-drafter",
+      "date": "2026-10-01",
+      "set": "dev",
+      "notes": "VERIFICATION (all read): ZipkinElasticsearchStorageConfiguration.java:62-66 (esInitialEndpoints -> new InitialEndpointSupplier(protocol, es.getHosts())), :69-74 (esSessionProtocol: null -> HTTP, contains 'https://' -> HTTPS), :78-95 (esClientFactory: :92 connectTimeoutMillis(es.getTimeout()), useHttp2Preface(false)), :97-103, :105-128 (:118 new LazyHttpClientImpl(...)); InitialEndpointSupplier.java:25-30 (default '<protocol>://localhost:9200'), :32-74 (:34 split ',', :38-44 URI / ':9200' only if !isTls and no colon / prefix scheme, :46-50 host null skipped, :52-57 port 9300 -> 9200, :59-66 isIpAddress or localhost -> Endpoint, else DnsAddressEndpointGroup, :69-71 IllegalArgumentException), :76-79 (getPort: URI port else protocol default); LazyHttpClientImpl.java:39-48 (double-checked lazy get), :50-57 (:53 skip health check when initial instanceof Endpoint or disabled), :60-82 (:62 '/_cluster/health', :64 useGet, :65 selectionTimeoutMillis(timeoutMillis), :69 configureOptionsExceptHttpLogging, :78 retryInterval); HttpClientFactory.java:83-87, :94-98 (:95 response and write timeouts, :96 customizers); ZipkinElasticsearchStorageProperties.java:132-165 (HealthCheck: enabled true, interval 3s), :174 (hosts default 'http://localhost:9200'), :199 (timeout 10_000), :217-223 (setHosts emptyToNull); zipkin-server-shared.yml:148,150,163-165; ElasticsearchStorage.java:366-368 (@Memoized http() -> new HttpCall.Factory(lazyHttpClient().get())), :241-247 (version()), :314-322. DECOYS: yml comment 'host is left unset intentionally' and Properties.hosts default 'http://localhost:9200' (the supplier default, with the blank yml value, applies instead); HttpClientFactory comment about zipkin-aws; Ssl properties (not the question); the 9300 port rewrite also applies to bare entries. Under the mixed list the explicit-scheme entry without a port resolves to port 443 (HTTPS chosen by 'https://') and a bare 'host' becomes 'https://host' (no 9200 appended); both are traps. ROUTE: [1] grep 'hosts' in server ES package -> properties (default and emptyToNull) and configuration [G: the supplier and protocol beans are named only in the configuration body]; [2] read configuration: esInitialEndpoints/esSessionProtocol/esClientFactory/storage -> LazyHttpClientImpl, InitialEndpointSupplier named [G]; [3] read InitialEndpointSupplier (parsing rules, 9300, DNS group) [G]; [4] read LazyHttpClientImpl (health check conditions and timeouts) [G]; [5] read HttpClientFactory.configureOptionsExceptHttpLogging and ElasticsearchStorage.http() for timeouts and first use [G: the memoized factory is reached from lazyHttpClient().get()]. Strict accounting MIN CALLS: 5 (a batching agent that lists the directory after [1] needs 3-4). FIRST CALL: grep -rn -i 'hosts'; grep -rn 'health'; grep -rn 'timeout' -i; grep -rn '9200'; grep -rn 'https' in zipkin-server/.../elasticsearch. They reach four of five gold files at once (weak point: everything lives in one small package). est. turns: 7."
+    }
+  ]
+}

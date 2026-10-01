@@ -1,0 +1,7 @@
+[
+  {"repo": "okhttp", "dir": "eval/repos/r3-okhttp", "language": "Kotlin", "url": "https://github.com/square/okhttp", "sha": "e9eae50d36e938603811a41f9e2ab04182bcb515", "files": 573, "loc": 141044, "size": "large", "indexable_files": 795, "loc_nontest": 57963},
+  {"repo": "sequel", "dir": "eval/repos/r3-sequel", "language": "Ruby", "url": "https://github.com/jeremyevans/sequel", "sha": "3acf523e8accb7a745e364b4db3bb51b172162b3", "files": 627, "loc": 173936, "size": "large", "indexable_files": 874, "loc_nontest": 75217},
+  {"repo": "composer", "dir": "eval/repos/r3-composer", "language": "PHP", "url": "https://github.com/composer/composer", "sha": "6712f83974b4469f764963f3a65852496f254350", "files": 537, "loc": 131723, "size": "large", "indexable_files": 1010, "loc_nontest": 76168},
+  {"repo": "drogon", "dir": "eval/repos/r3-drogon", "language": "C++", "url": "https://github.com/drogonframework/drogon", "sha": "bfb3ae2e13572a30cbdbd623da1798794d5f2706", "files": 407, "loc": 79518, "size": "medium", "indexable_files": 519, "loc_nontest": 62838},
+  {"repo": "grdb", "dir": "eval/repos/r3-grdb", "language": "Swift", "url": "https://github.com/groue/GRDB.swift", "sha": "0d8cf958b4b66a0473ec6e6986eb9da462171da9", "files": 478, "loc": 192455, "size": "large", "indexable_files": 605, "loc_nontest": 72789}
+]

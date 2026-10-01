@@ -1,0 +1,1247 @@
+{
+ "r3-dgraph-05": {
+  "id": "r3-dgraph-05",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "extractUserAndGroups",
+    "userDataFromPrincipal",
+    "WithResolvedIdentity"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The credential verification fast-path via context Principal resolution is uniquely implemented in WithResolvedIdentity and extractUserAndGroups/userDataFromPrincipal."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "x.WithResolvedIdentity",
+    "x.IdentityUnaryInterceptor",
+    "x.aclAuthenticator.Authenticate",
+    "x.WithPrincipal",
+    "x.PrincipalFrom",
+    "edgraph.extractUserAndGroups",
+    "edgraph.userDataFromPrincipal"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The mechanism lives in exactly these files: the identity interceptor resolves the credential once via WithResolvedIdentity (running the installed/built-in Authenticator and attaching the Principal with WithPrincipal), and the later field-permission path edgraph.extractUserAndGroups takes the fast path userDataFromPrincipal, which reads the Principal back via x.PrincipalFrom (requiring MethodACL and a namespace claim) instead of re-running validateToken; no other code path answers this differently."
+  }
+ },
+ "r3-dgraph-01": {
+  "id": "r3-dgraph-01",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "GetConflictKey",
+    "Oracle",
+    "Oracle.hasConflict"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The conflict key generation logic for mutations is localized in GetConflictKey in posting/list.go, and transaction conflict resolution is definitively decided by Zero's Oracle in dgraph/cmd/zero/oracle.go."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "GetConflictKey",
+    "List.addMutationInternal",
+    "Oracle.hasConflict",
+    "Oracle.commit",
+    "Server.commit",
+    "Server.CommitOrAbort"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The clash key is unambiguously produced by GetConflictKey (called from List.addMutationInternal, which does txn.addConflictKey) as farm.Fingerprint64(dataKey)^0 for a non-list predicate, and the abort is unambiguously decided by Zero's Oracle via hasConflict/commit inside Server.CommitOrAbort; no other shown component generates or adjudicates this key."
+  }
+ },
+ "r3-dgraph-08": {
+  "id": "r3-dgraph-08",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ProcessBackupRequest",
+    "checkBackupReadTsAdvanced",
+    "getManifestsToRestore",
+    "verifyManifests"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The decision logic for full vs incremental backups and the selection/verification of manifests for restore are fully implemented in these functions."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ProcessBackupRequest",
+    "checkBackupReadTsAdvanced",
+    "getManifestsToRestore",
+    "verifyManifests"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The full-vs-incremental decision (reading the latest manifest via GetLatestManifest, setting SinceTs from its ValidReadTs, zeroing it on forceFull, and assigning Type/BackupId/BackupNum) is centralized in ProcessBackupRequest in worker/backup.go, and the restore-side selection and chain validation are centralized in getManifestsToRestore and verifyManifests in worker/backup_manifest.go, so a careful engineer would not reasonably answer this elsewhere."
+  }
+ },
+ "r3-dgraph-09": {
+  "id": "r3-dgraph-09",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "RequestResolver.Resolve",
+    "AuthMeta.AttachAuthorizationJwt",
+    "AuthMeta.ExtractCustomClaims",
+    "queryRewriter.Rewrite",
+    "authRewriter"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The end-to-end flow from GraphQL request header token extraction to DQL query rewrite restrictions is handled uniquely through these authorization and query rewriter components."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "RequestResolver.Resolve",
+    "AuthMeta.AttachAuthorizationJwt",
+    "AuthMeta.ExtractCustomClaims",
+    "AuthMeta.validateJWTCustomClaims",
+    "CustomClaims.UnmarshalJSON",
+    "queryRewriter.Rewrite",
+    "authRewriter (authVariables, evaluateStaticRules, addAuthQueries)"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The flow is a single canonical chain with no competing path: RequestResolver.Resolve calls AttachAuthorizationJwt to move the header JWT into gRPC metadata, queryRewriter.Rewrite calls ExtractCustomClaims (which validates via HS/RS key or JWK URLs, checks audience, and flattens the namespace claim into AuthVariables) and passes those variables to the authRewriter, whose evaluateStaticRules/addAuthQueries apply them as static RBAC verdicts and extra DQL auth queries/filters on the generated query."
+  }
+ },
+ "r3-dgraph-07": {
+  "id": "r3-dgraph-07",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "posting.StatsHolder",
+    "posting.EqContainer",
+    "queryState.handleUidPostings",
+    "algo.CountMinSketch"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The equality filter estimate mechanism is uniquely implemented via StatsHolder's CountMinSketch and populated during handleUidPostings."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "planForEqFilter",
+    "handleUidPostings",
+    "posting.GetStatsHolder",
+    "posting.StatsHolder",
+    "StatsHolder.ProcessEqPredicate",
+    "StatsHolder.InsertRecord",
+    "posting.EqContainer",
+    "EqContainer.Estimate",
+    "EqContainer.InsertRecord",
+    "algo.CountMinSketch"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The estimate has exactly one source and one feed path — the per-predicate Count-Min sketch kept in posting.StatsHolder (queried via ProcessEqPredicate/EqContainer.Estimate on algo.CountMinSketch, created with epsilon 0.001/delta 0.99) and populated solely by the InsertRecord(attr, token, pl.ApproxLen()) call in handleUidPostings for compareAttrFn — so no other code location could reasonably answer it; claim 3 is unsupported because planForEqFilter and its described logic (type-filter uid limit, default 10, division of the estimate) appear nowhere in the code shown."
+  }
+ },
+ "r3-dgraph-10": {
+  "id": "r3-dgraph-10",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "SubGraph.applyOrderAndPagination"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The default limit of 1000 results for ordered queries without an explicit count/page size is unambiguously set in SubGraph.applyOrderAndPagination in query/query.go."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "SubGraph.applyOrderAndPagination"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The 1000-result default for an ordered query with no 'first' is set in exactly one place, SubGraph.applyOrderAndPagination in query/query.go (after the facet-order and value-variable early returns), and the capped count/offset are then shipped in the pb.SortMessage to worker.SortOverNetwork, so no other code path yields a different default."
+  }
+ },
+ "r3-dgraph-12": {
+  "id": "r3-dgraph-12",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "shouldSplit",
+    "binSplit",
+    "rollupOutput.recursiveSplit",
+    "rollupOutput.splitUpList",
+    "List.Rollup"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The mechanism for splitting large posting lists into multi-part lists via binSplit during rollup is unambiguously defined in posting/list.go."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "maxListSize",
+    "shouldSplit",
+    "binSplit",
+    "rollupOutput.splitUpList",
+    "rollupOutput.recursiveSplit",
+    "rollupOutput.updateSplits",
+    "List.rollup",
+    "List.Rollup",
+    "List.readListPart"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The mechanism is unique and localized to posting/list.go: during Rollup, shouldSplit (proto.Size >= maxListSize = mb/2 with more than one UID block) triggers binSplit, which halves the list at the middle block's base UID, and recursiveSplit repeats until every part is small, storing each part under a separate split key while the base key's plist keeps only the Splits (start UIDs, first part always UID 1); nothing else in the shown code (e.g. codec block encoding, which only compresses) provides a different way to avoid one huge stored record."
+  }
+ },
+ "r3-dgraph-13": {
+  "id": "r3-dgraph-13",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Server.rebalanceTablets",
+    "Server.chooseTablet",
+    "moveCooldown",
+    "Server.recordMoveResult",
+    "Server.skipMove"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "Automatic tablet rebalancing rules and cooldown mechanisms to prevent thrashing are exclusively defined in tablet.go."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "rebalanceTablets",
+    "chooseTablet",
+    "movePredicate",
+    "recordMoveResult",
+    "skipMove",
+    "moveCooldown",
+    "tabletBackoff",
+    "moveBackoffBase",
+    "moveBackoffMax",
+    "moveFailureMinElapsed"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The automatic-move rule (rebalanceTablets ticker driving chooseTablet's largest-to-smallest, >=10% size-difference, <=half-difference tablet selection) and the anti-thrash limits (failure cooldown via recordMoveResult/skipMove/moveCooldown: 1h base, doubling, 24h cap, plus the 10% threshold itself) are all contained in zero/tablet.go; CLAIM 1 is only partly supported because the 8-minute default for opts.rebalanceInterval is not shown in this file (it is set elsewhere, e.g. cmd/zero/run.go), while the leader/multi-group gating is."
+  }
+ },
+ "r3-dgraph-14": {
+  "id": "r3-dgraph-14",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "hooks.Enable",
+    "hooks.Config",
+    "hooks.ZeroHooks"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The hooks package specifically defines the embedded mode configuration and ZeroHooks interface needed to bypass a separate Zero coordinator."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "hooks.Enable",
+    "hooks.Config",
+    "hooks.ZeroHooks",
+    "hooks.ZeroHooksFns",
+    "hooks.GetHooks",
+    "hooks.SetDefaultZeroHooks",
+    "worker.defaultZeroHooks",
+    "worker.init"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The hooks package explicitly implements embedded mode (Enable/Config/ZeroHooks, with the worker package's init registering the network-backed default via SetDefaultZeroHooks), so the answer — yes, via hooks.Enable with a host-supplied ZeroHooks — is directly and uniquely determined by these files."
+  }
+ },
+ "r3-dgraph-15": {
+  "id": "r3-dgraph-15",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "setupServer",
+    "setupMcp",
+    "NewMCPServer"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The built-in MCP server and its read-only endpoint (/mcp-ro) and tool registrations are uniquely implemented in these files."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "setupMcp",
+    "setupServer",
+    "NewMCPServer"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question targets the MCP tool endpoint for AI assistants, which exists only here: setupServer wires /mcp (readOnly=false) and /mcp-ro (readOnly=true) via setupMcp when --mcp is set, and NewMCPServer enforces read-only by skipping registration of alter_schema/run_mutation while run_query and get_schema use conn.NewReadOnlyTxn(); no other code path provides such an endpoint."
+  }
+ },
+ "r3-dgraph-04": {
+  "id": "r3-dgraph-04",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "handleValuePostings",
+    "persistentHNSW.SearchWithOptions",
+    "persistentHNSW.SearchWithUidAndOptions"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The question specifically traces the execution path of vector similarity query options, which has a distinct implementation flow in the codebase."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "parseSrcFn",
+    "parseSimilarToOptions",
+    "functionContext",
+    "handleValuePostings",
+    "SearchWithOptions",
+    "SearchWithUidAndOptions",
+    "VectorIndexOptions"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The settings follow a single fixed chain — parsed with the similar_to call, validated in worker's parseSimilarToOptions onto functionContext (vsEfOverride/vsDistanceThreshold), copied into index.VectorIndexOptions by handleValuePostings, and consumed only by persistentHNSW.SearchWithOptions/SearchWithUidAndOptions — so a careful engineer would converge on this same trace rather than a different one."
+  }
+ },
+ "r3-dgraph-16": {
+  "id": "r3-dgraph-16",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ServerState.GetTimestamp",
+    "ServerState.fillTimestampRequests",
+    "Server.lease"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The mechanism for batching transaction timestamp requests on the server before contacting the coordinator is uniquely implemented in ServerState's GetTimestamp and fillTimestampRequests."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ServerState.GetTimestamp",
+    "ServerState.fillTimestampRequests",
+    "ServerState.needTs",
+    "tsReq",
+    "Server.lease"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question is answered by the Alpha-side batching in worker/server_state.go: GetTimestamp enqueues a tsReq on the needTs channel and blocks, while fillTimestampRequests slurps all queued requests and issues a single Timestamps RPC to Zero, distributing StartId..EndId (or one shared ReadOnly ts) to each waiter; dgraph/cmd/zero/assign.go's Server.lease is only the coordinator side that services the batch (including serving a read-only ts from memory), so no other code path yields a different answer."
+  }
+ },
+ "r3-dgraph-17": {
+  "id": "r3-dgraph-17",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CDC",
+    "CDC.processCDCEvents"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The CDC struct comment and implementation in worker/cdc.go explicitly explain that Raft WAL is used instead of Badger Subscribe and detail the exact architectural reasoning."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CDC",
+    "processCDCEvents",
+    "toCDCEvent"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The doc comment on the CDC struct in worker/cdc.go explicitly names the two candidate sources (Badger Subscribe vs Raft WAL), states Raft WAL was chosen, and gives the rationale (resuming from the last sent event after sink loss and preserving commit order, which a Badger scan cannot guarantee), and processCDCEvents/sendEvents confirm events are built from Raft log entries read only on the group leader, so no other code offers a different answer."
+  }
+ },
+ "r3-dgraph-11": {
+  "id": "r3-dgraph-11",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "FullTextTokenizer.Tokens",
+    "TermTokenizer.Tokens",
+    "setupBleve"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The normalization and tokenization pipeline for term and full-text indexes is defined specifically in the tok package."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "FullTextTokenizer.Tokens",
+    "TermTokenizer.Tokens",
+    "setupBleve",
+    "termAnalyzer",
+    "fulltextAnalyzer",
+    "uniqueTerms",
+    "filterStopwords",
+    "filterStemmers"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The fulltext and term tokenizers in tok/tok.go, together with the analyzers set up in tok/bleve.go, are the sole indexing-time normalization for these two indexes, so any careful engineer would give the same comparison from these symbols; note, however, that CLAIM 1's parenthetical about English using the Porter stemmer is not backed by the code shown (filterStemmers' implementation is not in these files), even though the analyze → stop-word → stemming pipeline itself is."
+  }
+ },
+ "r3-dgraph-20": {
+  "id": "r3-dgraph-20",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "validateMutation"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The rejection logic and error message specifically checking search-index entries against the underlying key-size limit are uniquely implemented in validateMutation in edgraph/server.go."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "validateMutation"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "validateMutation is the only place in the provided code that builds index tokens for a predicate's tokenizers and rejects the write with 'value in the mutation is too large for the index' when a token exceeds the 65000-byte key-size budget; other size checks (validatePredName/validateQuery) concern predicate-name length, not value-derived index keys."
+  }
+ },
+ "r3-dgraph-19": {
+  "id": "r3-dgraph-19",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "validateSchemaForUnique"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "validateSchemaForUnique in worker/mutation.go is the specific function where predicate schema definitions with @unique are checked for suitable indexes and rejected if invalid."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "checkSchema",
+    "validateSchemaForUnique"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The unique-with-required-index validation exists only in validateSchemaForUnique, invoked from checkSchema when s.Unique is set, in worker/mutation.go; no other code path in the provided files performs this refusal."
+  }
+ },
+ "r3-dgraph-21": {
+  "id": "r3-dgraph-21",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "authorizeQuery",
+    "removePredsFromQuery"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code clearly shows in edgraph/access.go that authorizeQuery silently removes blocked predicates via removePredsFromQuery rather than rejecting the request."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "authorizeQuery",
+    "removePredsFromQuery",
+    "removeVarsFromQueryVars",
+    "AclCache.AuthorizePredicate"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The read path unambiguously drops fields silently: authorizeQuery (edgraph/access.go) gets Blocked from AuthorizePredicates (backed by AclCache.AuthorizePredicate in worker/acl_cache.go, which denies by default) and rewrites the parsed query via removePredsFromQuery/removeVarsFromQueryVars, returning nil so the rest of the request runs; only mutations and alter operations reject the whole request, which the question (about reads) does not cover."
+  }
+ },
+ "r3-dgraph-23": {
+  "id": "r3-dgraph-23",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Server.QueryNoGrpc",
+    "validateNamespace"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The transaction start time and tenant validation checks via hash verification are uniquely located in QueryNoGrpc and validateNamespace within edgraph/server.go."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "getHash",
+    "validateNamespace",
+    "Server.QueryNoGrpc",
+    "Server.CommitOrAbort"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The check is the ACL transaction-hash validation in edgraph/server.go: getHash hashes the namespace, startTs and AclSecretKeyBytes and is attached to resp.Txn.Hash in doQuery, and a client continuing a transaction is verified in QueryNoGrpc (when StartTs != 0) and in CommitOrAbort via validateNamespace, both returning x.ErrHashMismatch on mismatch; no other location in the shown code performs this startTs/tenant provenance check."
+  }
+ },
+ "r3-dgraph-22": {
+  "id": "r3-dgraph-22",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Server.AssignIds"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The rate limiting on node ID (UID) leases per tenant is specifically implemented in Zero's Server.AssignIds method."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Server.AssignIds",
+    "rateLimit (closure inside Server.AssignIds)",
+    "x.RateLimiter",
+    "x.RateLimiter.Allow",
+    "x.NewRateLimiter",
+    "x.LimiterConf"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The per-tenant UID-lease check exists in exactly one place — the rateLimit closure in Server.AssignIds, invoked only on the Zero leader and only for Num_UID leases — so there is no competing answer; the only gap is that the default-off specifics (uid-lease default 0, 30s refill, limiter created only when the flag > 0) live in cmd/zero/run.go, which is not among the shown files, so CLAIM 3 cannot be verified from the code provided (only the 's.rateLimiter == nil → skip' check is visible)."
+  }
+ },
+ "r3-dgraph-25": {
+  "id": "r3-dgraph-25",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "validateCondValue"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "validateCondValue in edgraph/server.go is the dedicated function validating the condition text to prevent DQL injection in upsert queries."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "validateCondValue",
+    "buildUpsertQuery"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "validateCondValue in edgraph/server.go is the only place that validates the upsert mutation's cond text (case-insensitive @if/@filter prefix, paren/string/escape-aware balancing, rejection of trailing content), and it is invoked by buildUpsertQuery before the cond is rewritten @if→@filter and spliced into the dummy var(func: uid(0)) block; no other code shown performs this check."
+  }
+ },
+ "r3-dgraph-26": {
+  "id": "r3-dgraph-26",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "baseTimeout",
+    "newTimeout",
+    "rateLimiter",
+    "node.proposeAndWait"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The retry loop, exponential backoff, rate limiter weights, and schema proposal special casing for consensus proposals are uniquely implemented in proposeAndWait in worker/proposal.go."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "node.proposeAndWait",
+    "newTimeout",
+    "baseTimeout",
+    "rateLimiter.incr",
+    "rateLimiter.decr",
+    "limiter",
+    "errInternalRetry",
+    "errUnableToServe"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The retry count (3), the doubling 4s/8s/16s waits, the errUnableToServe result, and the weight-based rateLimiter for write proposals are all implemented solely in worker/proposal.go's proposeAndWait and its helpers, so no other code location gives a different answer; claim 2 is only partly supported because the file never shows limiter.max being set from a pending-proposals setting with default 256 (it only says limiter is initialized as part of worker Init)."
+  }
+ },
+ "r3-dgraph-02": {
+  "id": "r3-dgraph-02",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "groupi.Tablet",
+    "groupi.sendTablet",
+    "Server.ShouldServe"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "Tablet assignment for unknown predicates is strictly coordinated between Alpha's ShouldServe request and Zero's Raft-backed ShouldServe handler."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "groupi.Tablet",
+    "groupi.sendTablet",
+    "Server.ShouldServe",
+    "Server.ServingTablet",
+    "Server.Inform"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The first-write path is pinned: the Alpha handling the write builds a Tablet with its own group id (groupi.Tablet) and asks Zero via ShouldServe (groupi.sendTablet); Zero's Server.ShouldServe returns any existing owner (first assignment wins via ServingTablet), forces x.IsReservedPredicate names to group 1, and records the choice by proposing the tablet through Zero's Raft group (Node.proposeAndWait) into the membership state; Inform and the rebalancer only cover startup/rebalancing, not a different answer for writes."
+  }
+ },
+ "r3-dgraph-27": {
+  "id": "r3-dgraph-27",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ProcessTaskOverNetwork",
+    "processWithBackupRequest",
+    "backupRequestGracePeriod"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Cross-group read tasks over the network are routed through ProcessTaskOverNetwork and processWithBackupRequest, which uniquely implement this backup request mechanism."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ProcessTaskOverNetwork",
+    "processWithBackupRequest",
+    "backupRequestGracePeriod",
+    "invokeNetworkRequest"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The remote-group read path is exactly ProcessTaskOverNetwork, which short-circuits locally via groups().ServesGroup(gid) and otherwise delegates to processWithBackupRequest, whose AnyTwoServers(gid) selection, one-second backupRequestGracePeriod timer, first-successful-reply channel logic, and immediate fallback to addrs[1] on an early error match all three claims verbatim; no other code in these files implements this behavior."
+  }
+ },
+ "r3-dgraph-28": {
+  "id": "r3-dgraph-28",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "processSort"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The decision mechanism between walking a sorted index and fetching values directly is entirely implemented within worker.processSort by racing both routines concurrently."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "processSort",
+    "sortWithIndex",
+    "sortWithoutIndex"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The entire choice mechanism lives in processSort in worker/sort.go: it launches sortWithIndex immediately and sortWithoutIndex (direct value fetching) after a 3 ms time.After delay on a shared cancelable context, uses the first error-free result from resCh (falling back to the other if the first errors), and cancels the loser via cancel(); the negative-count and list-type rejections happen before the goroutines start, and no other code path makes this decision."
+  }
+ },
+ "r3-dgraph-24": {
+  "id": "r3-dgraph-24",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Server.Login",
+    "shouldAllowAcls",
+    "hasAdminAuth"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "Login is exclusively implemented and enforced in Server.Login in edgraph/access.go."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Server.Login",
+    "hasAdminAuth",
+    "Server.authenticateLogin",
+    "x.HasWhitelistedIP",
+    "x.isIpWhitelisted"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The only caller-identity condition enforced before the password check is hasAdminAuth, invoked by Server.Login ahead of Server.authenticateLogin (with the whitelist itself enforced via x.HasWhitelistedIP); the other pre-login gates — x.HealthCheck and shouldAllowAcls's shared-instance namespace rule — are conditions on the server or the request, not on the caller."
+  }
+ },
+ "r3-dgraph-31": {
+  "id": "r3-dgraph-31",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-dgraph-32": {
+  "id": "r3-dgraph-32",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-dgraph-33": {
+  "id": "r3-dgraph-33",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-dgraph-34": {
+  "id": "r3-dgraph-34",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-dgraph-35": {
+  "id": "r3-dgraph-35",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-dgraph-36": {
+  "id": "r3-dgraph-36",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-dgraph-30": {
+  "id": "r3-dgraph-30",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "checkRequestBody",
+    "maskPasswordFieldsInGQL",
+    "getMaskedFieldVarName",
+    "skipReqBodyGrpc"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Audit masking logic for login requests across gRPC and HTTP is centrally implemented in audit/interceptor.go."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "checkRequestBody",
+    "skipReqBodyGrpc",
+    "maskPasswordFieldsInGQL",
+    "getMaskedFieldVarName"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The masking logic is centralized in audit/interceptor.go: gRPC 'Login' is listed in skipReqBodyGrpc and its printed body is regex-replaced with '*******' in checkRequestBody, while HTTP /admin bodies go through maskPasswordFieldsInGQL/getMaskedFieldVarName (handling resetPassword and login, including variable references), so a careful engineer would arrive at this same answer."
+  }
+ },
+ "r3-dgraph-29": {
+  "id": "r3-dgraph-29",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "node.calculateSnapshot",
+    "node.proposeSnapshot"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Snapshot index calculation and WAL truncation constraints for mutations and pending transactions are specifically defined in calculateSnapshot and proposeSnapshot in worker/draft.go."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "node.calculateSnapshot",
+    "node.proposeSnapshot"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The rationale (pre-writes of pending transactions are not persisted to pstore, so their Raft entries must be retained until commit/abort) and the cut-point rule (snapshotIdx is set just before the first mutation whose start ts >= minPendingStart, where minPendingStart = x.Min(Oracle().MinPendingStartTs(), cdcTracker.getTs()), with ReadTs = maxCommitTs and no snapshot when nothing can be discarded) are implemented and documented only in worker/draft.go's calculateSnapshot and proposeSnapshot, so a careful engineer would not reasonably answer from elsewhere."
+  }
+ },
+ "r3-dgraph-06": {
+  "id": "r3-dgraph-06",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "UpdateGQLSchemaOverNetwork",
+    "UpdateGraphQLSchema",
+    "newAdminResolver",
+    "resetSchema"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The GraphQL application API update mechanism and its propagation across alpha nodes via group-1 subscription is uniquely implemented in graphql/admin/admin.go and worker/graphql_schema.go."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "worker.UpdateGQLSchemaOverNetwork",
+    "grpcWorker.UpdateGraphQLSchema",
+    "worker.GqlSchemaPred",
+    "worker.GqlSchema",
+    "worker.GQLSchemaStore",
+    "worker.SubscribeForUpdates",
+    "admin.newAdminResolver",
+    "admin.generateGQLSchema",
+    "adminServer.resetSchema",
+    "adminServer.lazyLoadSchema",
+    "admin.LazyLoadSchema",
+    "groupi.Leader"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The question unambiguously describes the GraphQL schema (application API) update flow, and the only mechanism in the code by which the other alphas learn of and start serving the update is the group-1 leader's committed write of the schema text to the reserved dgraph.graphql.schema predicate (worker/graphql_schema.go: UpdateGQLSchemaOverNetwork/grpcWorker.UpdateGraphQLSchema) picked up by every alpha's SubscribeForUpdates prefix subscription and applied via generateGQLSchema/resetSchema (graphql/admin/admin.go: newAdminResolver), so no different answer exists elsewhere; claim 2 is only partly supported because the shown code demonstrates the subscription registration on the predicate's key prefix against group 1 and the callback unmarshalling the new posting list from the received badgerpb.KVList, but the claimed 'Subscribe stream' transport lives inside SubscribeForUpdates, whose definition is not present in the shown code (groups.go is truncated and contains no such stream), and 'every alpha' is likewise inferred rather than shown."
+  }
+ },
+ "r3-dgraph-18": {
+  "id": "r3-dgraph-18",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Server.CreateNamespace",
+    "AuthorizeCapability",
+    "authorizeClusterAdmin",
+    "breakGlassSource.Grants"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The entry point for tenant creation (CreateNamespace) and the capability authorization logic enforcing IP whitelisting and auth token checks are uniquely implemented in these files."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Server.CreateNamespace",
+    "AuthorizeCapability",
+    "predicateACL.AuthorizeCapability",
+    "CapClusterAdmin",
+    "authorizeClusterAdmin",
+    "grantedBySource",
+    "breakGlassSource.Grants",
+    "x.HasWhitelistedIP",
+    "hasPoormansAuth"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "Server.CreateNamespace is the only shown entry point for creating a tenant, and its AuthorizeCapability(CapClusterAdmin) gate routes through authorizeClusterAdmin so that with ACL off only the break-glass source (x.HasWhitelistedIP whitelist plus hasPoormansAuth --security token) can grant, so the answer is uniquely determined by these files; CLAIM 2 is only partly supported because the '(loopback is always allowed)' detail is nowhere in the shown code (x.HasWhitelistedIP's implementation is not in these files), whereas CLAIM 3 matches the file's own doc comment and behavior (authSuperAdmin guardianship of namespace 0, and breakGlassSource.Grants returning false under AclEnabled before its IP/token checks are ever evaluated)."
+  }
+ },
+ "r3-dgraph-03": {
+  "id": "r3-dgraph-03",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "New",
+    "assign",
+    "XidMap.AssignUid",
+    "Server.AllocateIDs",
+    "defaultZeroHooks.AssignUIDs"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The path taken by the live loader to obtain new UIDs through an Alpha via XidMap, AllocateIDs, and Zero hooks is uniquely defined in the codebase."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "xidmap.XidMap.New",
+    "xidmap.XidMap.AssignUid",
+    "edgraph.Server.AllocateIDs",
+    "worker.AssignUidsOverNetwork",
+    "worker.defaultZeroHooks.AssignUIDs",
+    "pb.ZeroClient.AssignIds"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided files trace the alpha-proxied live-loader UID allocation path from XidMap's background AllocateUIDs call to alpha's AllocateIDs RPC and then through the default Zero hook to Zero's AssignIds."
+  }
+ }
+}

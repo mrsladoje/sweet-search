@@ -1,0 +1,1044 @@
+{
+ "r3h-jj-04": {
+  "id": "r3h-jj-04",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "watchman::Fsmonitor::query_changed_files",
+    "TreeState"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The file watching and snapshot mechanisms are uniquely implemented in `fsmonitor` and `local_working_copy`."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "FsmonitorSettings::from_settings",
+    "watchman::Fsmonitor::query_changed_files",
+    "watchman::Fsmonitor::build_exclude_expr",
+    "TreeState::snapshot",
+    "make_fsmonitor_matcher",
+    "FsmonitorMatcher",
+    "TreeState.watchman_clock",
+    "TreeState::save",
+    "TreeState::read"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The relevant behavior is localized to the Watchman query and TreeState persistence/snapshot code, so no different answer is reasonably supported elsewhere."
+  }
+ },
+ "r3h-jj-06": {
+  "id": "r3h-jj-06",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "AbandonArgs",
+    "CommitRewriter",
+    "RewriteRefsOptions",
+    "cmd_abandon"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "Dropping a commit from visible history in Jujutsu specifically refers to `jj abandon`, which has a dedicated implementation tracing bookmarks, working-copy updates, and descendant rebasing."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "cmd_abandon",
+    "AbandonArgs",
+    "RewriteRefsOptions",
+    "transform_descendants_with_options",
+    "CommitRewriter::abandon",
+    "record_abandoned_commit_with_parents",
+    "update_rewritten_references",
+    "update_local_bookmarks",
+    "update_wc_commits"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The abandon command sets delete_abandoned_bookmarks from retain_bookmarks, and MutableRepo's rewrite-reference update logic handles bookmark deletion/moving and working-copy replacement."
+  }
+ },
+ "r3h-jj-05": {
+  "id": "r3h-jj-05",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "cmd_squash",
+    "try_combine_messages",
+    "combine_messages_for_editing",
+    "edit_description"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The command logic for determining the description, handling editor opening, and squashing commits is uniquely implemented in `cmd_squash` and associated description utilities."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "cmd_squash",
+    "SquashedDescription",
+    "select_diff",
+    "try_combine_messages",
+    "combine_messages_for_editing",
+    "edit_description",
+    "squash_commits"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The description and editor decision is centralized in cmd_squash and description_util; no other code path changes it for standard squash."
+  }
+ },
+ "r3h-jj-02": {
+  "id": "r3h-jj-02",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "MaterializedConflictData",
+    "FileState",
+    "update_from_content"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The mechanisms for tracking materialized conflict marker length and restoring conflicts during snapshot are uniquely handled by MaterializedConflictData and conflicts::update_from_content."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "choose_materialized_conflict_marker_len",
+    "MaterializedConflictData",
+    "FileState.materialized_conflict_data",
+    "write_path_to_store",
+    "update_from_content",
+    "parse_conflict"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant logic is localized to conflict materialization/parsing in conflicts.rs and working-copy file-state persistence in local_working_copy.rs, so a careful engineer would not reasonably give a different answer elsewhere."
+  }
+ },
+ "r3h-jj-03": {
+  "id": "r3h-jj-03",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "sign_commits_before_push",
+    "write_to_store",
+    "GitBackend::write_commit"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The logic for signing commits during git push, skipping immutable commits, and writing Git commit signatures is specifically implemented across push.rs, commit_builder.rs, and git_backend.rs."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "cmd_git_push",
+    "sign_commits_before_push",
+    "SignBehavior::Own",
+    "SignSettings::should_sign",
+    "write_to_store",
+    "GitBackend::write_commit",
+    "Signer::can_sign",
+    "Signer::sign"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The push-specific signing flow is clearly implemented in the listed files and symbols, with no reasonable alternative code path for the described behavior."
+  }
+ },
+ "r3h-jj-01": {
+  "id": "r3h-jj-01",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "0/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The mechanism by which Jujutsu imports external Git HEAD changes, manages the prior working copy commit, and preserves on-disk files is deterministic and unambiguous."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "WorkspaceCommandHelper::snapshot_impl",
+    "import_head",
+    "MutableRepo::check_out",
+    "MutableRepo::edit",
+    "LockedWorkingCopy::reset"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The behavior is deterministic and the code path is specific to colocated workspaces."
+  }
+ },
+ "r3h-jj-10": {
+  "id": "r3h-jj-10",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "file_state",
+    "SnapshotStats",
+    "UntrackedReason",
+    "SnapshotOptions"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "Working copy snapshotting and the rules determining which entries are ignored or untracked are centrally handled in the working copy snapshot implementation."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "process_dir_entry",
+    "file_state",
+    "SnapshotStats::invalid_utf8_paths",
+    "UntrackedReason::FileNotAutoTracked",
+    "SnapshotOptions::start_tracking_matcher",
+    "SnapshotOptions::force_tracking_matcher",
+    "FileType::GitSubmodule"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The snapshot exclusions are centralized in process_dir_entry and file_state, with reporting types in working_copy.rs, so no other code path reasonably decides these same exclusions."
+  }
+ },
+ "r3h-jj-09": {
+  "id": "r3h-jj-09",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "fix_files",
+    "fix_one_file",
+    "run_tool"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The logic governing which files are passed to fixers and how formatter outputs or failures are handled is completely implemented across `fix_files` in `lib/src/fix.rs` and `fix_one_file` and `run_tool` in `cli/src/commands/fix.rs`."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "get_tools_config",
+    "fix_one_file",
+    "run_tool",
+    "compute_regions_to_format",
+    "fix_files",
+    "ParallelFileFixer::fix_files"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant decisions are all in the fix command and library fixer code, and the claims match the shown logic."
+  }
+ },
+ "r3h-jj-07": {
+  "id": "r3h-jj-07",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "read_commit",
+    "write_commit",
+    "collect_changed_refs_to_export",
+    "reset_head"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The places where jj compensates for Git lacking the virtual root commit are specific, localized handling points across the Git backend and ref export/reset code."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "GitBackend::read_commit",
+    "GitBackend::write_commit",
+    "collect_changed_refs_to_export",
+    "reset_head",
+    "root_commit_id",
+    "commit_from_git_without_root_parent",
+    "UNBORN_ROOT_REF_NAME"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The listed symbols in git_backend.rs and git.rs are the only places where the virtual root commit is synthesized, omitted, rejected, or used to leave HEAD unborn."
+  }
+ },
+ "r3h-jj-11": {
+  "id": "r3h-jj-11",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "create_and_check_out_recovery_commit"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The question asks for the complete set of situations where jj creates a brand-new empty commit as the working copy, but the provided excerpts truncate or omit the implementations of snapshotting, transaction finishing, Git HEAD import, and commit abandonment."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "snapshot_working_copy",
+    "finish_transaction",
+    "import_git_head",
+    "create_and_check_out_recovery_commit"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question asks for automatic empty working-copy commits; the listed functions cover the distinct situations, and the abandon case creates a non-empty commit."
+  }
+ },
+ "r3h-jj-14": {
+  "id": "r3h-jj-14",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "cmd_split",
+    "rewrite_descendants",
+    "move_first_commit"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The split command logic and configuration in the provided files completely and unambiguously specify change ID inheritance, bookmark movement, working-copy checkout behavior, and how placement options or configuration affect them."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "SplitArgs",
+    "ResolvedSplitArgs",
+    "cmd_split",
+    "rewrite_descendants",
+    "move_first_commit"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The split command's default and placement-option branches determine change IDs, rewrite_descendants handles bookmark and working-copy movement, and misc.toml sets the legacy bookmark default."
+  }
+ },
+ "r3h-jj-13": {
+  "id": "r3h-jj-13",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "config_from_environment",
+    "env_base_layer",
+    "env_overrides_layer"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "Configuration precedence, environment variable mapping, and default fallback values for editor and pager are uniquely defined in the config module and default TOML files."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "config_from_environment",
+    "env_base_layer",
+    "env_overrides_layer"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The layering and environment variable handling are explicitly defined in config_from_environment, env_base_layer, and env_overrides_layer, and the platform defaults are in the TOML files."
+  }
+ },
+ "r3h-jj-15": {
+  "id": "r3h-jj-15",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "MergeOptions::from_settings",
+    "merge_ref_targets"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The codebase cleanly separates tree/file merging (which respects merge.same-change via MergeOptions) from bookmark/ref merging (which hardcodes SameChange::Accept in merge_ref_targets)."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "MergeOptions::from_settings",
+    "Store::merge_options",
+    "SameChange",
+    "trivial_merge",
+    "Merge::resolve_trivial",
+    "merge_ref_targets",
+    "merge_remote_refs",
+    "try_resolve_file_conflict",
+    "merge_inner",
+    "resolve_diff_hunks"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The setting is plumbed into Store and used for tree/file merges, but refs.rs hard-codes SameChange::Accept for bookmark/remote-ref merges, so bookmark moves are not affected."
+  }
+ },
+ "r3h-jj-12": {
+  "id": "r3h-jj-12",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "0/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "cmd_commit",
+    "cmd_new"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The bookmark advancing behavior and configuration are specifically defined in the commit and new commands alongside misc.toml."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "experimental-advance-branches",
+    "cmd_new",
+    "cmd_commit",
+    "get_advanceable_bookmarks",
+    "advance_bookmarks"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The provided files show the setting defaults and the exact advance logic in cmd_new and cmd_commit, so no different answer is needed."
+  }
+ },
+ "r3h-jj-20": {
+  "id": "r3h-jj-20",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "FileSnapshotter::get_updated_tree_value",
+    "TreeState::update_own_mtime"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The conditions under which a file with matching size and mtime is re-read (racy mtime vs tree_state own_mtime) are uniquely handled in local_working_copy.rs."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "FileSnapshotter::get_updated_tree_value",
+    "FileState::is_clean",
+    "TreeState::update_own_mtime",
+    "TreeState::own_mtime"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The racy-timestamp condition is explicitly implemented in get_updated_tree_value using own_mtime, which is set by update_own_mtime from the tree_state file metadata."
+  }
+ },
+ "r3h-jj-17": {
+  "id": "r3h-jj-17",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "commit_from_git_without_root_parent",
+    "extract_change_id_from_commit",
+    "synthetic_change_id_from_git_commit_id",
+    "import_head_commits",
+    "import_extra_metadata_entries_from_heads",
+    "deserialize_extras"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The logic for extracting, synthesizing, and persisting Git change IDs in the extra metadata store is entirely and unambiguously implemented in `lib/src/git_backend.rs`."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "5/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "commit_from_git_without_root_parent",
+    "extract_change_id_from_commit",
+    "synthetic_change_id_from_git_commit_id",
+    "import_head_commits",
+    "import_extra_metadata_entries_from_heads",
+    "serialize_extras",
+    "deserialize_extras",
+    "GitSettings::from_settings",
+    "GitSettings.write_change_id_header"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The Git backend import path in git_backend.rs directly defines header extraction, synthetic derivation, and extra-metadata persistence, so the answer is not reasonably elsewhere."
+  }
+ },
+ "r3h-jj-21": {
+  "id": "r3h-jj-21",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "collect_unchanged_words",
+    "collect_unchanged_words_lcs",
+    "find_lcs",
+    "is_word_byte",
+    "find_word_ranges",
+    "find_nonword_ranges",
+    "ContentDiff::by_word"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The text comparison, anchor line selection, fallback trimming, and word tokenization algorithms are entirely defined in core/src/diff.rs."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "collect_unchanged_words",
+    "collect_unchanged_words_lcs",
+    "Histogram::calculate",
+    "find_lcs",
+    "find_word_ranges",
+    "is_word_byte",
+    "find_nonword_ranges",
+    "ContentDiff::by_word"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question is answered directly by the diff implementation in core/src/diff.rs, with no reasonable alternative elsewhere in the provided code."
+  }
+ },
+ "r3h-jj-23": {
+  "id": "r3h-jj-23",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3h-jj-24": {
+  "id": "r3h-jj-24",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3h-jj-22": {
+  "id": "r3h-jj-22",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "GitBackend::write_commit"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The retry mechanism adjusting the committer timestamp on collision in the extra-metadata table is uniquely implemented in GitBackend::write_commit."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "extra_metadata_store",
+    "serialize_extras",
+    "deserialize_extras",
+    "TableStore",
+    "MutableTable"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The provided excerpt of git_backend.rs does not include write_commit, so the retry logic and no-gc ref creation are not shown. Only the metadata storage (extra_metadata_store, serialize_extras, deserialize_extras) and stacked table implementation are present."
+  }
+ },
+ "r3h-jj-18": {
+  "id": "r3h-jj-18",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "format_short_change_id_with_change_offset",
+    "format_change_offset",
+    "ResolvedChangeTargets",
+    "ResolvedChangeTargets::find_offset",
+    "ResolvedChangeTargets::at_offset",
+    "CompositeCommitIndex::resolve_change_id_prefix",
+    "CompositeCommitIndex::resolve_change_targets_for_positions"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The template formatting and index resolution for change offsets and divergence are uniquely specified in the codebase."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "format_short_change_id_with_change_offset",
+    "format_change_offset",
+    "commit.change_offset",
+    "ResolvedChangeTargets",
+    "ResolvedChangeTargets::find_offset",
+    "ResolvedChangeTargets::at_offset",
+    "ResolvedChangeTargets::is_divergent",
+    "ChangeIdIndex::resolve_prefix",
+    "CompositeCommitIndex::resolve_change_id_prefix",
+    "CompositeCommitIndex::resolve_change_targets_for_positions",
+    "ChangePrefixResolver::resolve_symbol",
+    "RevsetResolutionError::DivergentChangeId"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The suffix behavior is defined by the log template and the change-offset resolution is consistently implemented in the index and revset symbol resolver."
+  }
+ },
+ "r3h-jj-16": {
+  "id": "r3h-jj-16",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "GitBackend::get_copy_records",
+    "diff_util::get_copy_records",
+    "MergedTree::diff_stream_with_copies"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "Rename and copy inference is uniquely implemented in GitBackend::get_copy_records using gix rewrite tracking and forwarded through MergedTree::diff_stream_with_copies to diff formatters."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Backend::get_copy_records",
+    "Store::get_copy_records",
+    "GitBackend::get_copy_records",
+    "SimpleBackend::get_copy_records",
+    "diff_util::get_copy_records",
+    "MergedTree::diff_stream_with_copies",
+    "CopiesTreeDiffStream",
+    "CopyRecord",
+    "CopyRecords"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The inference is in GitBackend::get_copy_records using gix rewrite tracking with 50% similarity, limit 1000, and empty files excluded; Store forwards, cli diff_util collects filtered records, and MergedTree::diff_stream_with_copies uses CopiesTreeDiffStream to fold delete/add pairs into rename/copy entries."
+  }
+ },
+ "r3h-jj-19": {
+  "id": "r3h-jj-19",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Signer",
+    "Signer::verify",
+    "Commit::verification"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "Signature verification dispatch and result caching are unambiguously implemented in Signer::verify."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "5/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Signer",
+    "Signer::verify",
+    "Signer::new",
+    "SigningBackend::can_read",
+    "SigningBackend::verify",
+    "SigStatus",
+    "Verification",
+    "COMMIT_CACHE_CAPACITY",
+    "Commit::verification",
+    "CryptographicSignature",
+    "CommitTemplatePropertyKind::CryptographicSignature"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The verification and caching logic is centralized in Signer::verify; no other component decides which verifier is tried or what is cached."
+  }
+ },
+ "r3h-jj-08": {
+  "id": "r3h-jj-08",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "try_reset_git_head",
+    "reset_head",
+    "reset_index",
+    "export_some_refs"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The question specifically targets the colocated Git workspace state synchronization logic (HEAD, index, and refs) handled at the end of transactions, which is uniquely implemented across transaction finalization and git state management functions."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "WorkspaceCommandHelper::finish_transaction",
+    "try_reset_git_head",
+    "git::reset_head",
+    "clear_operation_state",
+    "git::reset_index",
+    "update_intent_to_add_impl",
+    "git::export_some_refs"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The colocated-Git synchronization responsibilities are localized to these identified handlers, so varying levels of wrapping do not amount to a substantively different answer."
+  }
+ }
+}

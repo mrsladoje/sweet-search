@@ -1,0 +1,669 @@
+{
+ "r3hb-drogon-03": {
+  "id": "r3hb-drogon-03",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "9/10",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "drogon::plugin::Hodor::initAndStart",
+    "drogon::plugin::Hodor::onHttpRequest",
+    "drogon::plugin::Hodor::checkLimit",
+    "drogon::plugin::RealIpResolver::GetRealAddr",
+    "drogon::plugin::RealIpResolver::getRealAddr",
+    "drogon::plugin::RealIpResolver::initAndStart",
+    "drogon::plugin::RealIpResolver::matchCidr",
+    "drogon::plugin::XForwardedForParser::getNext",
+    "drogon::AopAdvice::passPreRoutingObservers",
+    "drogon::HttpServer::onHttpRequest"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The rate limiting plugin (Hodor) and the proxy client IP extraction plugin (RealIpResolver) have uniquely defined interactions and implementation details for obtaining real client addresses."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "9/10",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Hodor::initAndStart",
+    "Hodor::onHttpRequest",
+    "Hodor::checkLimit",
+    "RealIpResolver::initAndStart",
+    "RealIpResolver::GetRealAddr",
+    "RealIpResolver::getRealAddr",
+    "RealIpResolver::matchCidr",
+    "XForwardedForParser::getNext",
+    "parseAddress",
+    "AopAdvice::passPreRoutingObservers",
+    "HttpServer::onHttpRequest",
+    "registerPreRoutingAdvice"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The trace is explicit: Hodor's use_real_ip_resolver option selects RealIpResolver::GetRealAddr, whose value is set by RealIpResolver's pre-routing observer before Hodor's pre-handling advice, and the x-forwarded-for parser scans from the right for the first untrusted specified address."
+  }
+ },
+ "r3hb-drogon-06": {
+  "id": "r3hb-drogon-06",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "HttpServer::onRequests",
+    "HttpRequestImpl::setMethod",
+    "HttpRequestImpl::isHead",
+    "HttpControllersRouter::init",
+    "loadControllers"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The verb (HTTP HEAD) is uniquely specified and all locations where it receives dedicated handling across server-side production code are clearly identifiable."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "8/8",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "HttpServer::onRequests",
+    "CallbackParamPack",
+    "isHeadMethod",
+    "HttpServer::sendResponse",
+    "HttpServer::sendResponses",
+    "getCompressedResponse",
+    "HttpRequestParser::pushRequestToPipelining",
+    "HttpRequestImpl::setMethod",
+    "HttpRequestImpl::isHead",
+    "previousMethod_",
+    "HttpResponseImpl::renderHeaderForHeadMethod",
+    "HttpControllersRouter::init",
+    "corsMethods",
+    "ConfigLoader::loadControllers",
+    "strMethod == \"head\"",
+    "constraints.push_back(Head)"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The listed files/symbols cover the HEAD rewrite, flag propagation, header-only rendering, CORS advertisement, and config branch; no other production-code location is required for GET-only routes."
+  }
+ },
+ "r3hb-drogon-01": {
+  "id": "r3hb-drogon-01",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "8/9",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "passSyncAdvices",
+    "drogon::AopAdvice::passSyncAdvices",
+    "drogon::plugin::Redirector::initAndStart",
+    "drogon::plugin::SlashRemover::initAndStart",
+    "handleReq",
+    "drogon::plugin::SecureSSLRedirector::initAndStart",
+    "drogon::plugin::SecureSSLRedirector::redirectingAdvice",
+    "drogon::plugin::SecureSSLRedirector::redirectToSSL",
+    "drogon::HttpResponse::newRedirectionResponse"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The request interception point, execution order of path rewrite and redirect handlers in Redirector, and resulting 302 redirect response construction are uniquely determined by the shown plugins."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "9/9",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "HttpServer::onRequests",
+    "passSyncAdvices",
+    "AopAdvice::passSyncAdvices",
+    "Redirector::initAndStart",
+    "SlashRemover::initAndStart",
+    "handleReq",
+    "findExcessiveSlashes",
+    "removeExcessiveSlashes",
+    "SecureSSLRedirector::initAndStart",
+    "SecureSSLRedirector::redirectingAdvice",
+    "SecureSSLRedirector::redirectToSSL",
+    "HttpResponse::newRedirectionResponse"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The Redirector sync advice runs SlashRemover's path rewrite before SecureSSLRedirector sets https, so the client receives one 302 to the cleaned https URL."
+  }
+ },
+ "r3hb-drogon-05": {
+  "id": "r3hb-drogon-05",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "HttpRequestParser::parseRequest",
+    "HttpServer::onRequests",
+    "HttpServer::onConnection",
+    "HttpConnectionLimit::tryAddConnection",
+    "WebSocketMessageParser::parse"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The prompt clearly specifies which categories of operator-configurable ceilings to locate and their enforcement points are clearly identified across the server codebase."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "HttpRequestParser::parseRequest",
+    "HttpServer::onRequests",
+    "HttpServer::onConnection",
+    "HttpConnectionLimit::tryAddConnection",
+    "WebSocketMessageParser::parse"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The provided excerpts do not include the compressed-body decompression check, so claim 2 cannot be verified; the global connection-limit check is off by one and does not exactly enforce the configured maximum."
+  }
+ },
+ "r3hb-drogon-04": {
+  "id": "r3hb-drogon-04",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "StaticFileRouter::sendStaticFileResponse",
+    "drogon::parseRangeHeader",
+    "HttpResponse::newFileResponse"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The request path for static file range requests and sendfile socket transmission follows a single canonical execution path in Drogon."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "StaticFileRouter::sendStaticFileResponse",
+    "parseRangeHeader",
+    "HttpResponse::newFileResponse",
+    "HttpResponseImpl::renderToBuffer",
+    "HttpServer::sendResponse"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The static-file range path is unambiguous: StaticFileRouter::sendStaticFileResponse decides partial content, parseRangeHeader parses the range, HttpResponse::newFileResponse builds the response and sets 206/200, and the final write is via HttpServer::sendResponse/conn->sendFile."
+  }
+ },
+ "r3hb-drogon-02": {
+  "id": "r3hb-drogon-02",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "9/9",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "loadApp",
+    "drogon::HttpAppFrameworkImpl::enableDynamicViewsLoading",
+    "drogon::HttpAppFrameworkImpl::run",
+    "drogon::SharedLibManager::SharedLibManager",
+    "drogon::SharedLibManager::managerLibs",
+    "drogon::SharedLibManager::shouldCompileLib",
+    "drogon::SharedLibManager::compileAndLoadLib",
+    "drogon::SharedLibManager::loadLib",
+    "drogon_ctl::create_view::createViewFile"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Dynamic view hot-reloading is uniquely handled through the load_dynamic_views configuration and SharedLibManager."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "9/9",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "loadApp",
+    "HttpAppFrameworkImpl::enableDynamicViewsLoading",
+    "HttpAppFrameworkImpl::run",
+    "SharedLibManager::SharedLibManager",
+    "SharedLibManager::managerLibs",
+    "SharedLibManager::shouldCompileLib",
+    "SharedLibManager::compileAndLoadLib",
+    "SharedLibManager::loadLib",
+    "safeExec",
+    "forEachFileIn",
+    "create_view::handleCommand",
+    "create_view::createViewFiles",
+    "create_view::createViewFile",
+    "create_view::newViewHeaderFile",
+    "create_view::newViewSourceFile"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The dynamic-view reload path is uniquely defined by load_dynamic_views -> enableDynamicViewsLoading -> SharedLibManager's 5-second managerLibs loop, with no other code path implementing the same behavior."
+  }
+ },
+ "r3hb-drogon-09": {
+  "id": "r3hb-drogon-09",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "drogon::orm::DbClientImpl",
+    "drogon::orm::DbClient::newSqlite3Client",
+    "drogon::orm::Sqlite3Config",
+    "drogon::orm::DbClientManager::createDbClients",
+    "drogon::orm::DbClientLockFree"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "Drogon's database client initialization logic uniquely handles SQLite3 via standard DbClientImpl instances and DbClientLockFree explicitly only supports PostgreSQL and MySQL."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "ConfigLoader::loadDbClients",
+    "HttpAppFrameworkImpl::addDbClient",
+    "Sqlite3Config",
+    "PostgresConfig",
+    "MysqlConfig",
+    "DbClientManager::createDbClients",
+    "DbClientManager::addDbClient",
+    "initFastDbClients",
+    "dbClientsMap_",
+    "dbFastClientsMap_",
+    "DbClient::newSqlite3Client",
+    "DbClientLockFree::DbClientLockFree"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The sqlite3 path has no isFast field and createDbClients always uses DbClient::newSqlite3Client into dbClientsMap_, so the fast option is dropped and DbClientLockFree is not used."
+  }
+ },
+ "r3hb-drogon-08": {
+  "id": "r3hb-drogon-08",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "0/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The implementation of the remote forward function (HttpAppFrameworkImpl::forward, lines 847-897) is completely missing from the truncated excerpt of HttpAppFrameworkImpl.cc, so the question cannot be answered from the provided code."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "HttpAppFrameworkImpl::forward",
+    "HttpAppFramework::forward",
+    "HttpInternalForwardHelper::forward",
+    "HttpResponse::newNotFoundResponse"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question clearly describes the remote forward variant (non-empty host) of HttpAppFramework::forward, which uses a static host-to-client map and returns a 404 on failure; the internal re-dispatch variant is explicitly excluded."
+  }
+ },
+ "r3hb-drogon-14": {
+  "id": "r3hb-drogon-14",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3hb-drogon-12": {
+  "id": "r3hb-drogon-12",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "HttpControllersRouter::route",
+    "HttpControllersRouter::init",
+    "addCtrlBinderToRouterItem",
+    "HttpServer::httpRequestRouting",
+    "HttpServer::requestPreHandling",
+    "handleInvalidHttpMethod",
+    "handleHttpOptions"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The routing logic for preliminary OPTIONS requests and the construction of allowed CORS methods are deterministically defined in HttpControllersRouter and HttpServer."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "7/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "HttpControllersRouter::route",
+    "HttpServer::httpRequestRouting",
+    "handleInvalidHttpMethod",
+    "HttpControllersRouter::init",
+    "addCtrlBinderToRouterItem",
+    "HttpServer::requestPreHandling",
+    "handleHttpOptions"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Not ambiguous: for a fixed path with no OPTIONS binder, route returns MethodNotAllowed and httpRequestRouting calls handleInvalidHttpMethod, which replies 403 Forbidden for OPTIONS; a route answers the preflight only if it has an OPTIONS binder (explicitly or via no method constraint), and init builds corsMethods_ as 'OPTIONS,' plus 'GET,HEAD,' for Get and other method names for isCORS_ binders, then removes the trailing comma."
+  }
+ },
+ "r3hb-drogon-10": {
+  "id": "r3hb-drogon-10",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "outputVal",
+    "parseLine",
+    "drogon::HttpViewData::insertAsString",
+    "drogon::HttpViewData::insertFormattedString"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code generation for square-bracket placeholders in `outputVal` directly dictates the type checks, and alternative ways to output numbers via HttpViewData methods or template tags are clearly defined in these files."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "outputVal",
+    "parseLine",
+    "newViewSourceFile",
+    "HttpViewData::insert",
+    "HttpViewData::insertAsString",
+    "HttpViewData::insertFormattedString"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The behavior is unambiguously determined by outputVal's type checks and the alternative string-conversion/expression paths, with no other plausible code path."
+  }
+ },
+ "r3hb-drogon-11": {
+  "id": "r3hb-drogon-11",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "drogon::orm::SqlBinder::operator<<",
+    "drogon::orm::MysqlConnection::execSqlInLoop",
+    "drogon::orm::PgConnection::execSqlInLoop",
+    "drogon::orm::Sqlite3Connection::execSqlInQueue"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The implementation of parameter tagging, MySQL string escaping/interpolation, and prepared statement parameter handling for Postgres and SQLite is uniquely and clearly implemented in these methods."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "SqlBinder::operator<<",
+    "internal::MySqlString",
+    "internal::DrogonDefaultValue",
+    "MysqlConnection::execSqlInLoop",
+    "MysqlConnection::startQuery",
+    "mysql_real_escape_string",
+    "PgConnection::execSqlInLoop",
+    "PgConnection::doAfterPreparing",
+    "PQsendPrepare",
+    "PQsendQueryPrepared",
+    "Sqlite3Connection::execSqlInQueue",
+    "sqlite3_prepare_v2",
+    "sqlite3_bind_*"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The listed files show MySQL text-splices escaped literals in MysqlConnection::execSqlInLoop, while PgConnection and Sqlite3Connection use prepared/bind APIs, so no alternative listed path supports a different answer."
+  }
+ },
+ "r3hb-drogon-13": {
+  "id": "r3hb-drogon-13",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "drogon::Session::changeSessionIdToClient",
+    "drogon::HttpAppFrameworkImpl::handleSessionForResponse",
+    "drogon::SessionManager::changeSessionId",
+    "drogon::SessionManager::getSession",
+    "drogon::CacheMap::insert",
+    "drogon::CacheMap::erase",
+    "drogon::CacheMap::runAfter"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The session regeneration mechanism and lifecycle across Session, HttpAppFrameworkImpl, SessionManager, and CacheMap are uniquely defined in these files."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Session::changeSessionIdToClient",
+    "Session::needToChangeSessionId",
+    "Session::needSetToClient",
+    "Session::setSessionId",
+    "Session::hasSet",
+    "Session::sessionId",
+    "HttpAppFrameworkImpl::handleSessionForResponse",
+    "HttpAppFrameworkImpl::findSessionForRequest",
+    "SessionManager::changeSessionId",
+    "SessionManager::getSession",
+    "SessionManager::SessionManager",
+    "CacheMap::insert",
+    "CacheMap::erase",
+    "CacheMap::runAfter",
+    "CacheMap::modify"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The session-change path is explicit and unique: changeSessionIdToClient flags the session, handleSessionForResponse generates and sends the new cookie on the response, and SessionManager::changeSessionId schedules erasure of the old key after 10 seconds, so no competing code path gives a different answer for the stated conditions."
+  }
+ },
+ "r3hb-drogon-07": {
+  "id": "r3hb-drogon-07",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "HttpResponse::newNotFoundResponse",
+    "Hodor::initAndStart",
+    "Hodor::onHttpRequest"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The code shown only contains the full response-caching implementations for the built-in 404 page in HttpResponseImpl.cc and the rate-limit rejection response in Hodor.cc, while the other files are truncated before their caching implementations appear."
+  },
+  "glm": {
+   "ok": false,
+   "why": "unparsable"
+  }
+ }
+}

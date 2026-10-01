@@ -1,0 +1,502 @@
+{
+ "repo": "r3-sequel",
+ "sha": "3acf523e8accb7a745e364b4db3bb51b172162b3",
+ "probes": [
+  {
+   "id": "r3hb-sequel-01",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "On a current Ruby version with PostgreSQL, a worker thread needs a database connection while every existing connection is busy and the pool is below its size limit. Trace how the new session is created and prepared: which pool code reserves room and what it undoes if creation fails, in what order the user's own post-connection callback, the user's startup SQL statements, and the PostgreSQL adapter's session settings run, and which code reports a creation failure to the caller.",
+   "expectedFiles": [
+    "lib/sequel/connection_pool/timed_queue.rb",
+    "lib/sequel/connection_pool.rb",
+    "lib/sequel/database/connecting.rb",
+    "lib/sequel/adapters/postgres.rb",
+    "lib/sequel/adapters/shared/postgres.rb"
+   ],
+   "expectedSymbols": [
+    "TimedQueueConnectionPool#acquire",
+    "TimedQueueConnectionPool#try_make_new",
+    "TimedQueueConnectionPool#preallocated_make_new",
+    "ConnectionPool#make_new",
+    "Database#new_connection",
+    "Database#connect",
+    "Database#connection_configuration_sqls"
+   ],
+   "expectedFacts": [
+    "TimedQueueConnectionPool#acquire calls try_make_new, which uses can_make_new? to reserve a slot by incrementing the pool size under the mutex, then preallocated_make_new calls make_new(:default) outside the mutex.",
+    "If connection creation raises, preallocated_make_new decrements the pool size and re-raises.",
+    "ConnectionPool#make_new calls Database#new_connection (the deprecated old-API branch is skipped) and rescues any Exception, converting it to Sequel::DatabaseConnectionError via convert_exception_class; a nil connection also raises DatabaseConnectionError.",
+    "CRITICAL: Database#new_connection first calls the adapter's connect(server), then the :after_connect callable (given the server too if its arity is 2), then runs each :connect_sqls statement through log_connection_execute.",
+    "CRITICAL: The PostgreSQL adapter's connect opens the driver connection, sets client encoding if :encoding/:charset is given, and executes every connection_configuration_sqls statement before returning, so adapter settings run before the user's callback and startup SQL.",
+    "shared/postgres.rb connection_configuration_sqls returns SET standard_conforming_strings = ON (default on), SET client_min_messages (default WARNING) and optionally SET search_path; adapters/postgres.rb overrides it to append SET DateStyle = 'ISO' when the ISO date format flag is on."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: connection_pool/timed_queue.rb:84-106 (hold -> acquire(t) at :93), :135-139 preallocated_make_new (@size[0] -= 1 at :138), :181-183 can_make_new?, :192-194 try_make_new, :227-229 acquire; connection_pool.rb:147-173 make_new (@db.new_connection at :169, rescue -> DatabaseConnectionError :172-173); database/connecting.rb:244-262 new_connection; adapters/postgres.rb:215-275 connect (encoding :264-270, configuration sqls :273), :564-570 override (DateStyle); adapters/shared/postgres.rb:1362-1389. All read. DECOYS: connection_pool/threaded.rb (assign_connection, used on Ruby < 3.2; same make_new), connection_pool.rb deprecated @use_old_connect_api branch (:149-167, runs after_connect/connect_sqls itself), adapters/jdbc/postgresql.rb:181 (own call of configuration sqls), adapters/sqlite.rb connect. CHEAPEST ROUTE: (1) grep 'connection pool' / 'pool' -> connection_pool.rb and many files; (2) read get_pool to learn which class is default on current Ruby (timed_queue); (3) read timed_queue acquire -> try_make_new -> preallocated_make_new; (4) follow make_new in connection_pool.rb; (5) read Database#new_connection; (6) open adapters/postgres.rb connect; (7) follow connection_configuration_sqls into shared/postgres.rb. First 3 greps of the question words (pool, session, callback) hit no PostgreSQL gold file. Closed-book risk: low (internal ordering). est. turns: 8."
+  },
+  {
+   "id": "r3hb-sequel-02",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "A developer loads many rows into a PostgreSQL table with the library's multi-row loading call, passes a batch size, and asks to get back the generated key of every row. For each batch, how many INSERT statements are sent, does the library open a transaction of its own, and which pieces of code produce that behaviour? Contrast this with what the generic implementation would do.",
+   "expectedFiles": [
+    "lib/sequel/dataset/actions.rb",
+    "lib/sequel/adapters/shared/postgres.rb",
+    "lib/sequel/dataset/sql.rb"
+   ],
+   "expectedSymbols": [
+    "Dataset#import",
+    "Dataset#multi_insert",
+    "Dataset#_import",
+    "Postgres::DatasetMethods#_import",
+    "Postgres::DatasetMethods#insert_pk",
+    "Dataset#multi_insert_sql",
+    "Postgres::DatasetMethods#multi_insert_sql_strategy",
+    "Dataset#returning_fetch_rows"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Dataset#import slices the rows by the :commit_every option (else :slice, else default_import_slice, which is nil in the generic dataset) and calls _import once per slice; multi_insert is a thin wrapper that turns hashes into column and value arrays and calls import.",
+    "PostgreSQL's DatasetMethods#_import, when :return => :primary_key is given and the dataset has no RETURNING yet, re-calls _import on returning(insert_pk); insert_pk looks up the table's primary key via db.primary_key.",
+    "In the RETURNING branch it takes multi_insert_sql(columns, values)[0], because the PostgreSQL strategy is :values, so each slice is one multi-row INSERT ... VALUES (...),(...) ... RETURNING pk statement.",
+    "CRITICAL: That branch opens no transaction (a code comment says the single-statement strategy guarantees one statement) and runs the SQL through returning_fetch_rows, mapping single-column rows to an array of key values.",
+    "The generic Dataset#_import with :return => :primary_key runs one insert per row inside _import_transaction; otherwise it executes each multi_insert_sql statement via execute_dui, and _import_transaction skips the transaction when there is at most one value or statement."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: dataset/actions.rb:593-597 multi_insert, :400-418 import (slice :407), :1128-1139 generic _import, :1191-1195 _import_transaction, :1241-1243 default_import_slice, :1362-1372 returning_fetch_rows; dataset/sql.rb:149-176 multi_insert_sql, :1528-1530 default :separate strategy; adapters/shared/postgres.rb:2601-2610 _import, :2802-2813 insert_pk, :2898-2900 :values strategy. All read. DECOYS: dataset/actions.rb generic _import (what a naive reader reports: per-row inserts in a transaction); adapters/shared/sqlite.rb:932 default_import_slice 500 and extensions/pg_auto_parameterize.rb:398 default slice 40 (only with that extension); adapters/shared/mssql.rb:870-885 _import (OUTPUT, same shape); insert_conflict/insert_ignore; Dataset#insert with returning (actions.rb:456). CHEAPEST ROUTE: (1) grep 'multi_insert' (the library name of the call) -> actions.rb, sql.rb and all adapters; (2) read import and generic _import (looks like per-row insert in a transaction); (3) grep 'def _import' to notice the PostgreSQL override; (4) read it and follow insert_pk; (5) read multi_insert_sql and the PostgreSQL strategy; (6) returning_fetch_rows. The question words (bulk/batch/generated key) hit no code. Closed-book risk: low-medium. est. turns: 7."
+  },
+  {
+   "id": "r3hb-sequel-03",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "A caller fetches a list of parent records and asks that each parent's child records be loaded alongside them using one extra query for all parents (not a join). Starting from the moment the parent rows have been read, trace how this happens: which hook triggers it, when that hook does nothing, how the parent lookup keys are gathered, which callable fetches the children, and how each child ends up attached to its parent.",
+   "expectedFiles": [
+    "lib/sequel/dataset/actions.rb",
+    "lib/sequel/model/associations.rb"
+   ],
+   "expectedSymbols": [
+    "Dataset#all",
+    "Dataset#_all",
+    "Dataset#post_load",
+    "Associations::DatasetMethods#post_load",
+    "Associations::DatasetMethods#eager_load",
+    "Associations::DatasetMethods#prepare_eager_load",
+    "Associations::DatasetMethods#perform_eager_loads",
+    "ClassMethods#def_one_to_many",
+    "ClassMethods#eager_load_results",
+    "AssociationReflection#eager_load_results",
+    "AssociationReflection#placeholder_eager_loader"
+   ],
+   "expectedFacts": [
+    "Dataset#all builds the row array via _all, which calls post_load(rows) after loading and before any block; the generic Dataset#post_load does nothing.",
+    "CRITICAL: The model's association DatasetMethods#post_load calls eager_graph_build_associations when the dataset uses the join-based option, and calls eager_load only when the eager option is set AND (the dataset has a row_proc OR the join-based option is set); a naked dataset therefore skips separate-query loading.",
+    "eager_load returns for an empty row list, maps each requested name to its reflection (raising UndefinedAssociation for unknown names), calls prepare_eager_load then perform_eager_loads, and finally runs :after_load callbacks.",
+    "prepare_eager_load groups the parent rows by each reflection's eager_loader_key (primary key for one-to-many) into an id_map and builds a hash keyed by each reflection's :eager_loader callable; perform_eager_loads invokes every loader with its options hash.",
+    "CRITICAL: The one-to-many :eager_loader proc defined in def_one_to_many calls eager_load_results, which delegates to the reflection's eager_load_results; that initializes empty association caches on the parents and fetches all children in one query through the cached placeholder_eager_loader (WHERE key IN ids), unless a block or loader: false forces a freshly built eager_loading_dataset.",
+    "For each child the proc looks up the parents by the child's foreign key in id_map and pushes the child into each parent's association cache (or assigns it for one-to-one), also setting the reciprocal association."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: dataset/actions.rb:1169-1176 _all (post_load at :1172), :1356-1357 base post_load; model/associations.rb:3914-3918 post_load, :3777-3792 eager_load, :3793-3843 prepare_eager_load (:3838 builds eager_load_data), :3845-3854 perform_eager_loads/perform_eager_load, :2535-2576 def_one_to_many (:2550 eager_loader proc), :2129-2131 class-level eager_load_results, :266-352 reflection eager_load_results, :835-852 placeholder_eager_loader, :923-925 use_placeholder_loader?, :436-442 initialize_association_cache. All read. DECOYS: eager_graph path (eager_graph_build_associations :3644, single join query), plugins/tactical_eager_loading.rb:209 post_load override, plugins/eager_graph_eager.rb, plugins/eager_each.rb (plain each does not trigger loading), default_eager_loader :1405 (used by many_through_many and some many_to_many), many_to_many inline loader :2331. CHEAPEST ROUTE: (1) grep 'eager' -> associations.rb (4241 lines) plus plugins; (2) find the trigger: post_load (grep) in actions.rb and associations.rb; (3) read eager_load/prepare_eager_load; (4) find which :eager_loader the one-to-many case installs (def_one_to_many); (5) follow eager_load_results at class and reflection level; (6) placeholder_eager_loader. Closed-book risk: medium (eager loading is a known concept, internals are not). est. turns: 8."
+  },
+  {
+   "id": "r3hb-sequel-04",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "A model class is set up so that saving fails when another session changed the same row after it was loaded; the check relies on an integer revision column that the library raises on every update. Session A loads and saves. Session B, still holding the older copy, then saves. Trace how B's UPDATE gets restricted to the revision B holds, where the failure is detected, which exception class results, and what B's in-memory revision value and pending conditions look like afterwards.",
+   "expectedFiles": [
+    "lib/sequel/plugins/optimistic_locking.rb",
+    "lib/sequel/plugins/optimistic_locking_base.rb",
+    "lib/sequel/plugins/instance_filters.rb",
+    "lib/sequel/model/base.rb"
+   ],
+   "expectedSymbols": [
+    "OptimisticLocking::InstanceMethods#_update_columns",
+    "OptimisticLockingBase::InstanceMethods#before_update",
+    "OptimisticLockingBase::InstanceMethods#lock_column_instance_filter",
+    "InstanceFilters::InstanceMethods#instance_filter",
+    "InstanceFilters::InstanceMethods#_update_dataset",
+    "InstanceFilters.configure",
+    "Model::InstanceMethods#_update"
+   ],
+   "expectedFacts": [
+    "The optimistic locking plugin applies the optimistic_locking_base plugin, which applies the instance_filters plugin; the lock column defaults to lock_version.",
+    "CRITICAL: optimistic_locking_base's before_update (also before_destroy) calls lock_column_instance_filter, which registers an instance filter of lock_column => the revision value currently held in memory.",
+    "instance_filters overrides _update_dataset (and _delete_dataset) to apply the registered filters as extra WHERE conditions, so B's UPDATE matches only the row with the old revision.",
+    "CRITICAL: instance_filters.configure sets require_modification to true, so Model#_update raises NoExistingObject when the UPDATE did not modify exactly one row; the plugin's Error constant is that same Sequel::NoExistingObject.",
+    "optimistic_locking's _update_columns puts lock+1 into the column hash before calling super, and only after super succeeds does it write the new revision into the object; on failure B's in-memory revision stays at the old value.",
+    "The filters are cleared by after_update, after destroy and on refresh (_refresh); because after_update is not reached on failure, B's filter stays registered until it is refreshed."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: plugins/optimistic_locking.rb:33 (Error = NoExistingObject), :41 default :lock_version, :51-59 _update_columns; plugins/optimistic_locking_base.rb:8-10 apply, :41-45 before_update, :35-39 before_destroy, :49-51 lock_column_instance_filter, :61-64 _refresh; plugins/instance_filters.rb:46 Error, :49-51 configure (require_modification = true), :65-68 after_update, :79 instance_filter, :116-122 apply_instance_filters, :124 clear, :134-136 _update_dataset; model/base.rb:2036-2041 _update (raise at :2038), :2049 _update_without_checking, :1940-1960 _save update branch (before_update at :1942). All read. DECOYS: plugins/pg_xmin_optimistic_locking.rb (uses xmin, no version column; _update_without_checking RETURNING xmin), plugins/mssql_optimistic_locking.rb (timestamp column), Model#lock! (pessimistic, base.rb:1471), plugins/modification_detection.rb, require_modification default (dataset.provides_accurate_rows_matched?, base.rb:627). CHEAPEST ROUTE: (1) guess the mechanism name and grep 'locking' (not a question word) -> three plugins; (2) read optimistic_locking.rb (only _update_columns; no condition code); (3) open optimistic_locking_base (before_update filter) and see it needs instance_filters; (4) read instance_filters (_update_dataset, configure); (5) read base.rb _update to find the raise; (6) re-read _update_columns for the in-memory effect. Closed-book risk: medium (Sequel docs describe this plugin; internals do not). est. turns: 7."
+  },
+  {
+   "id": "r3hb-sequel-05",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "In which situations does the connection-pooling layer itself close a connection that it is tracking and then carry on, because that connection is broken, too old, idle for long and unresponsive, or because the thread that owned it is gone? Cover both the default behaviour and the optional add-ons; name each situation, its trigger, and what the pool does next. Do not count explicit user requests to disconnect.",
+   "expectedFiles": [
+    "lib/sequel/connection_pool/timed_queue.rb",
+    "lib/sequel/connection_pool/threaded.rb",
+    "lib/sequel/extensions/connection_validator.rb",
+    "lib/sequel/extensions/connection_expiration.rb",
+    "lib/sequel/extensions/transaction_connection_validator.rb"
+   ],
+   "expectedSymbols": [
+    "TimedQueueConnectionPool#hold",
+    "TimedQueueConnectionPool#try_make_new",
+    "ThreadedConnectionPool#hold",
+    "ThreadedConnectionPool#assign_connection",
+    "ConnectionValidator#acquire",
+    "ConnectionExpiration#acquire",
+    "TransactionConnectionValidator#begin_new_transaction",
+    "TransactionConnectionValidator#transaction"
+   ],
+   "expectedFacts": [
+    "CRITICAL: In hold, an exception that is a DatabaseDisconnectError or a driver error classified by disconnect_error? makes the pool disconnect the connection, drop its allocation and call fill_queue(1) (timed queue), then re-raise the error; the failed operation is not retried.",
+    "When the pool is full and a new connection is needed, try_make_new (timed queue) and assign_connection (threaded) find connections allocated to threads that are no longer alive, remove them and disconnect them, then make room (the timed queue also calls fill_queue(count) so waiting threads get connections).",
+    "CRITICAL: The connection_validator extension's acquire checks a connection that has been idle longer than the validation timeout (default 3600 seconds), runs valid_connection?, and if the check is false removes the allocation, disconnects it via disconnect_acquired_connection and redoes acquisition to get another.",
+    "The connection_expiration extension's acquire disconnects any connection older than its expiration time (default 14400 seconds plus a random delay, set when the connection is made) regardless of health, then redoes acquisition.",
+    "The transaction_connection_validator extension turns a disconnect error raised while beginning a transaction into a retryable DisconnectRetry (a DatabaseDisconnectError), so hold discards the connection, and Database#transaction retries up to 5 times before raising the original database error."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: connection_pool/timed_queue.rb:84-106 hold (:94-99), :164-172 fill_queue, :192-216 try_make_new (dead thread reclaim :199-215); connection_pool/threaded.rb:87-110 hold, :192-221 assign_connection (to_disconnect :205-219); extensions/connection_validator.rb:59-72 timeout default 3600, :86-90 checkin_connection timestamp, :102-124 acquire (redo :122); database/connecting.rb:299-308 valid_connection?; extensions/connection_expiration.rb:58 (14400), :111-113 register, :119-137 acquire; extensions/transaction_connection_validator.rb:38-53 transaction (retry < 5 at :51), :59-74 begin_new_transaction. All read. DECOYS (not members): extensions/arbitrary_servers.rb:100-107 (disconnects ad-hoc server connections after use, not because they are bad), Database#disconnect / pool disconnect (explicit user request), connection_pool/threaded.rb:109 and sharded_threaded.rb:375 (the optional connection-handling setting that disconnects after every use; a user setting, not a fault response), connection_pool/single.rb:32 and sharded_single.rb:61 (single-connection variants of the first member, listed as equal variants), connection_pool/sharded_*.rb (sharded variants of members 1-2, equal), extensions/connection_checkout_event_callback.rb (only reports), temporarily_release_connection.rb (releases, does not close). CHEAPEST ROUTE: (1) grep 'disconnect' -> 50+ hits across adapters, pools, extensions; (2) discard adapter-level disconnect_connection definitions and read pool hold rescue; (3) grep disconnect_acquired_connection / disconnect_connection callers -> two extensions plus pool code; (4) read each extension acquire; (5) read try_make_new for the dead-thread path; (6) check transaction_connection_validator. Members use different names (hold rescue, dead-thread reclaim, redo, retry). Closed-book risk: low. est. turns: 9."
+  },
+  {
+   "id": "r3hb-sequel-06",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "A model instance caches related records it has already loaded. Which places in the library silently throw away (rather than set to empty or replace with a new value) that cached related data without the application asking, and what triggers each one? Include the core and the optional add-ons.",
+   "expectedFiles": [
+    "lib/sequel/model/associations.rb",
+    "lib/sequel/plugins/update_primary_key.rb",
+    "lib/sequel/plugins/touch.rb"
+   ],
+   "expectedSymbols": [
+    "Associations::InstanceMethods#_refresh_set_values",
+    "Associations::InstanceMethods#change_column_value",
+    "UpdatePrimaryKey::InstanceMethods#change_column_value",
+    "UpdatePrimaryKey::InstanceMethods#clear_associations_using_primary_key",
+    "Touch::InstanceMethods#touch_associations"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The association instance methods' _refresh_set_values clears the whole association cache (@associations.clear) whenever the object's values are reloaded, so refresh/reload drops every cached association.",
+    "CRITICAL: The association instance methods' change_column_value deletes cached associations listed in autoreloading_associations for a foreign key column when its value changes; for a new object an unchanged value keeps the cache, and when the old key was nil only cached nil results are deleted.",
+    "plugins/update_primary_key.rb change_column_value, when a primary key column changes, calls clear_associations_using_primary_key, which deletes every cached association except many_to_one ones.",
+    "plugins/touch.rb touch_associations, for each touched association whose dataset is not joined, updates all associated rows with one UPDATE and then deletes that association from the instance cache; joined datasets are updated per object instead."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: model/associations.rb:2802-2805 _refresh_set_values (@associations.clear), :2847-2877 change_column_value (deletes at :2871, :2873), :15 and :2496-2498 autoreloading_associations registration for many_to_one keys; plugins/update_primary_key.rb:43-61; plugins/touch.rb:125-141 (associations.delete at :140), :132 joined_dataset? branch. Grepped every 'associations.delete|associations.clear|@associations' in model/ and plugins/: no other discards. All read. DECOYS (set or replace, not discard): model/associations.rb:2961-2965 remove_all_associated_objects sets cache to []; :3013 remove_reciprocal_object sets reciprocal cache to nil; :436-442 initialize_association_cache sets nil/[] before eager loading; plugins/rcte_tree.rb:156-206 sets parent cache nil; :2892 initialize_copy duplicates the hash. CHEAPEST ROUTE: (1) grep 'cache' in model/ -> columns, schema, association cache hits; (2) grep 'associations' (thousands) so narrow to 'associations.delete|clear' -> three of four members; (3) read each hit for its trigger; (4) find the refresh path by reading where _refresh_set_values is overridden; (5) rule out decoys that set empty/nil. est. turns: 7. Closed-book risk: low."
+  },
+  {
+   "id": "r3hb-sequel-07",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "Which operations on a query object (not on the database object, and not on a single record) start a database transaction by themselves, without the caller wrapping them, and under what condition does each of them skip or avoid the transaction? Include operations that live in adapter-specific or optional-plugin code.",
+   "expectedFiles": [
+    "lib/sequel/dataset/actions.rb",
+    "lib/sequel/model/base.rb",
+    "lib/sequel/plugins/single_statement_dataset_destroy.rb",
+    "lib/sequel/adapters/shared/postgres.rb",
+    "lib/sequel/adapters/postgres.rb"
+   ],
+   "expectedSymbols": [
+    "Dataset#paged_each",
+    "Dataset#import",
+    "Dataset#_import_transaction",
+    "Model::DatasetMethods#destroy",
+    "SingleStatementDatasetDestroy::DatasetMethods#destroy",
+    "Postgres::DatasetMethods#lock",
+    "Postgres::Dataset#cursor_fetch_rows"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Dataset#paged_each runs its paging loop inside db.transaction(opts), which can be skipped with the :skip_transaction option.",
+    "CRITICAL: Dataset#import (through _import_transaction) opens a transaction around multiple statements or per-row inserts, but sets skip_transaction when there is at most one value or statement; the PostgreSQL RETURNING branch of _import uses no transaction at all.",
+    "The model dataset's destroy (model/base.rb) wraps all(&:destroy) in db.transaction, with skip_transaction when the model's use_transactions is false; the single_statement_dataset_destroy plugin's destroy opens its own transaction around the batch DELETE (unless around_destroy forces the default path).",
+    "PostgreSQL's Dataset#lock with a block starts a transaction, locks the tables and yields; without a block it only issues LOCK TABLE.",
+    "The native PostgreSQL adapter's cursor_fetch_rows (used when a cursor is requested) declares and fetches the cursor inside db.transaction, skipping it when the cursor is held (hold option / skip_transaction)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: dataset/actions.rb:656-713 paged_each (db.transaction(opts) at :678), :1128-1139 _import, :1191-1195 _import_transaction (skip when values.length <= 1); model/base.rb:2304-2308 DatasetMethods#destroy (skip_transaction: model.use_transactions == false); plugins/single_statement_dataset_destroy.rb:28-50 (db.transaction at :34); adapters/shared/postgres.rb:2331-2336 lock block form (@db.transaction at :2335), :2601-2610 _import returning branch (no transaction); adapters/postgres.rb:689 use_cursor, :771-800 cursor_fetch_rows (hold at :773, db.transaction(server_opts) at :778). Grepped 'transaction' call sites in all of lib/. DECOYS (not dataset-level): Model#save/destroy (checked_transaction, base.rb:2095-2098), Database#table_exists? savepoint (database/query.rb:206), create_table index creation (schema_methods.rb:769), model/base.rb:728 check_non_connection_error savepoint, adapters/shared/sqlite.rb:209 alter-table emulation, extensions/migration.rb:515, plugins/association_multi_add_remove.rb (instance-level), Sequel.transaction core.rb:410. CHEAPEST ROUTE: (1) grep '\\.transaction' across lib -> ~25 hits in all layers; (2) classify each by receiver (database/model/dataset); (3) read paged_each and import to get the skip conditions; (4) inspect model dataset destroy and the plugin variant; (5) inspect the PostgreSQL lock and cursor code. est. turns: 8. Closed-book risk: low."
+  },
+  {
+   "id": "r3hb-sequel-08",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "Several code paths in the model layer fetch one row by its primary key value: the model class's subscript form, a class-level finder method, a dataset-level finder, and an instance reload. In a standard model whose table is a plain table name and whose primary key is a single column, which one runs when application code looks a record up through the class's subscript form with a single key value, how does it build its SELECT, and in which configurations does it fall back to a general first-row query?",
+   "expectedFiles": [
+    "lib/sequel/model/base.rb"
+   ],
+   "expectedSymbols": [
+    "Model::ClassMethods#[]",
+    "Model::ClassMethods#primary_key_lookup",
+    "Model::ClassMethods#reset_fast_pk_lookup_sql",
+    "Model::ClassMethods#convert_input_dataset",
+    "Model::ClassMethods#set_primary_key"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Model.[] with a non-hash argument calls primary_key_lookup (hash arguments go to first).",
+    "CRITICAL: primary_key_lookup, when @fast_pk_lookup_sql is set, duplicates that prefix string, appends the literalized key with literal_append and runs fetch_rows, returning the first row through the dataset's row_proc (no LIMIT clause); otherwise it calls dataset.first(primary_key_hash(pk)).",
+    "@fast_pk_lookup_sql is the string 'SELECT * FROM <table> WHERE <pk> = ' built by reset_fast_pk_lookup_sql, only when both @simple_table and @simple_pk are set.",
+    "@simple_table is set by convert_input_dataset for a symbol/identifier/qualified identifier, or for a dataset that is a simple select-all (unset for aliased/literal sources and joined datasets), and @simple_pk by set_primary_key only for a single non-array key.",
+    "set_dataset clears the fast SQL when the dataset does not support placeholder literalizers, and the sql_comments plugin disables it by overriding reset_fast_pk_lookup_sql.",
+    "The look-alike paths differ: Dataset#with_pk uses a cached placeholder-literalizer loader with a table-qualified condition and LIMIT 1, Model.with_pk delegates to primary_key_lookup, and Model#refresh's _refresh_get uses the fast SQL unless the dataset has a lock style."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: model/base.rb:218-221 Model.[], :1079-1089 primary_key_lookup, :1098-1105 reset_fast_pk_lookup_sql, :629 / :740-751 simple_table assignments (simple_select_all? at :748), :672-674 simple_pk (set_primary_key :663), :637 nil when !supports_placeholder_literalizer?, :711-713 Model.with_pk, :2287-2291 Dataset#[], :2371-2377 Dataset#with_pk, :2402-2415 _with_pk_loader, :1900-1909 _refresh_get; plugins/sql_comments.rb:113-115; plugins/prepared_statements.rb:118; plugins/caching.rb:149, primary_key_lookup_check_values.rb:109, static_cache.rb:249/:293 (override primary_key_lookup). All read. DECOYS: Dataset#with_pk / _with_pk_loader (placeholder literalizer, qualified, LIMIT 1), Model.with_pk, Dataset#[] (integer arg -> with_pk), Model#_refresh_get (instance reload), plugin overrides of primary_key_lookup, plugins/finder.rb. CHEAPEST ROUTE: (1) grep 'primary key' -> hundreds of hits; (2) guess the subscript form and read Model.[] in base.rb; (3) read primary_key_lookup; (4) find where the fast SQL string is built (reset_fast_pk_lookup_sql); (5) trace simple_table / simple_pk assignments (convert_input_dataset, set_primary_key); (6) check set_dataset and plugin resets. est. turns: 7. Closed-book risk: low."
+  },
+  {
+   "id": "r3hb-sequel-09",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "Several model features can turn a duplicate-key problem on PostgreSQL into a validation-style error on the model. Which one only reacts after the database has already rejected the INSERT, uses the identity of the violated index reported by the driver to decide which model column to blame, and what does it do when it cannot map the violation? Name the pieces that supply the driver details and the exception category.",
+   "expectedFiles": [
+    "lib/sequel/plugins/pg_auto_constraint_validations.rb",
+    "lib/sequel/adapters/postgres.rb",
+    "lib/sequel/adapters/shared/postgres.rb"
+   ],
+   "expectedSymbols": [
+    "PgAutoConstraintValidations::InstanceMethods#check_pg_constraint_error",
+    "PgAutoConstraintValidations::ClassMethods#setup_pg_auto_constraint_validations",
+    "Postgres::Database#error_info",
+    "Postgres::DatabaseMethods#database_error_regexps"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The pg_auto_constraint_validations plugin wraps _insert_raw, _insert_select_raw and _update_without_checking in check_pg_constraint_error, which rescues Sequel::ConstraintViolation raised by the database after the statement ran.",
+    "On rescue it calls the database's error_info (native postgres adapter, needs a 9.3+ server and client) to read schema, table, column, constraint name and primary message from the driver result.",
+    "For a UniqueConstraintViolation it looks the constraint name up in the unique-index metadata (gathered at set_dataset time with db.indexes, including partial indexes) and adds the configured message ('is already taken') to the mapped columns.",
+    "CRITICAL: If no column mapping is found, the metadata is missing, or the error's schema/table differs from the model's, errors are empty and the original database exception is re-raised; otherwise it raises ValidationFailed with the original exception as wrapped_exception.",
+    "The exception category UniqueConstraintViolation comes from the PostgreSQL error classification (database_error_regexps /duplicate key value violates unique constraint/ or SQLSTATE 23505), not from the plugin."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: plugins/pg_auto_constraint_validations.rb:131 (after_set_dataset), :168-230 setup (db.indexes at :194), :237-335 check_pg_constraint_error (error_info :246, unique :275-277, schema/table check :311-314, ValidationFailed :329-333), :344-356 overrides; adapters/postgres.rb:323-344 error_info (9.3 note :26-27); adapters/shared/postgres.rb:1498 regexp; database/misc.rb:450-461 SQLSTATE 23505; exceptions.rb:75. All read. DECOYS: plugins/validation_helpers.rb:272-300 validates_unique (SELECT before saving), plugins/auto_validations.rb:232-233,298 (adds validates_unique from db.indexes, also pre-checks with a query), plugins/constraint_validations.rb (validations defined by a metadata table, checked in Ruby), plugins/prepared_statements.rb:136 (also overrides _insert_select_raw), plugins/error_splitter.rb. CHEAPEST ROUTE: (1) grep 'unique' -> validation_helpers, auto_validations, constraint_validations, exceptions; (2) read validates_unique and auto_validations and see they query first; (3) grep 'ConstraintViolation' in plugins -> pg_auto_constraint_validations; (4) read check_pg_constraint_error; (5) follow error_info into adapters/postgres.rb; (6) trace the exception category in shared/postgres.rb / misc.rb. est. turns: 7. Closed-book risk: low-medium."
+  },
+  {
+   "id": "r3hb-sequel-10",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "A migration declares the usual auto-numbered primary key column when creating a new table on a recent PostgreSQL server (version 12). Which exact column type and numbering clause end up in the CREATE TABLE text, in what position relative to the key constraint, and what would differ on a much older server? Name the components that make each decision.",
+   "expectedFiles": [
+    "lib/sequel/database/schema_generator.rb",
+    "lib/sequel/database/misc.rb",
+    "lib/sequel/adapters/shared/postgres.rb",
+    "lib/sequel/database/schema_methods.rb"
+   ],
+   "expectedSymbols": [
+    "Schema::CreateTableGenerator#primary_key",
+    "Database#serial_primary_key_options",
+    "Postgres::DatabaseMethods#serial_primary_key_options",
+    "Database#column_definition_sql",
+    "Postgres::DatabaseMethods#column_definition_default_sql",
+    "Postgres::DatabaseMethods#type_literal_generic_integer",
+    "Database#auto_increment_sql"
+   ],
+   "expectedFacts": [
+    "CreateTableGenerator#primary_key starts from @db.serial_primary_key_options merged with the column name and unshifts the column into the column list.",
+    "CRITICAL: PostgreSQL's serial_primary_key_options returns {primary_key: true, type: Integer} plus identity: true when server_version >= 100002 (PostgreSQL 10.2), else serial: true; it does not set auto_increment, unlike the generic version in database/misc.rb which sets auto_increment: true.",
+    "type_literal for the Integer class goes to type_literal_generic_integer, which PostgreSQL overrides to return serial only when column[:serial] is set; otherwise the generic :integer is used, so version 12 gets integer.",
+    "CRITICAL: PostgreSQL's column_definition_default_sql appends ' GENERATED BY DEFAULT AS IDENTITY' when :identity is set, no default is given and the type is not a serial type; column_definition_sql runs it before the primary key fragment, giving integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY.",
+    "The generic auto_increment_sql ('AUTOINCREMENT') is never emitted for PostgreSQL because auto_increment is not set; on servers older than 10.2 the type literal becomes serial and no identity clause is added (serial PRIMARY KEY)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: database/schema_generator.rb:383-399 primary_key; database/misc.rb:333-335 generic options; adapters/shared/postgres.rb:792-797 serial_primary_key_options, :1321-1332 column_definition_default_sql, :1997-1999 type_literal_generic_integer; database/schema_methods.rb:11 COLUMN_DEFINITION_ORDER (collate, default, null, unique, primary_key, auto_increment, references), :561-563 auto_increment_sql, :566-574 column_definition_order/column_definition_sql, :616-628 primary key fragment, :988-990 'PRIMARY KEY', :1028-1037 type_literal, :1092-1094 generic integer. All read; the PostgreSQL adapter has no override of column_definition_order or auto_increment_sql (grepped). DECOYS: schema_methods.rb:561 auto_increment_sql and :579 column_definition_auto_increment_sql (what the user vocabulary 'auto' leads to; used by SQLite/MySQL etc.), adapters/shared/mysql.rb:22 own column order, adapters/shared/postgres.rb:363-430 convert_serial_to_identity (migration of old tables), jdbc/derby.rb:41, jdbc/h2.rb:43, shared/access.rb:31 (other adapters' options). CHEAPEST ROUTE: (1) grep 'auto' / 'increment' -> auto_increment_sql in schema_methods (decoy, 'AUTOINCREMENT'); (2) grep primary_key in schema_generator -> serial_primary_key_options; (3) find the PostgreSQL override (version check, identity); (4) read column_definition_sql and the order list; (5) find where PostgreSQL turns identity into SQL (column_definition_default_sql); (6) check type_literal_generic_integer. Question avoids all identifiers. est. turns: 8. Closed-book risk: medium (PostgreSQL identity columns are generic knowledge, the exact clause position is not)."
+  },
+  {
+   "id": "r3hb-sequel-11",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "In a SQLite table, a column declared with a date-time type holds, for some rows, a plain whole number (seconds since 1970) and, for others, a decimal number (a day count from an ancient epoch) instead of text. When a model loads such a row, which code picks the converter, which code turns the stored number into the application's time value, which time zone is assumed for the stored number, and where is the application time zone finally applied?",
+   "expectedFiles": [
+    "lib/sequel/adapters/sqlite.rb",
+    "lib/sequel/database/misc.rb",
+    "lib/sequel/timezones.rb"
+   ],
+   "expectedSymbols": [
+    "SQLite::Dataset#fetch_rows",
+    "SQLite::Dataset#base_type_name",
+    "SQLite::Database#adapter_initialize",
+    "SQLite::Database#to_application_timestamp",
+    "Database#to_application_timestamp",
+    "Sequel.convert_timestamp",
+    "Sequel.convert_input_timestamp",
+    "Sequel.convert_output_timestamp"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The SQLite dataset's fetch_rows picks, for each result column, the conversion proc registered for its declared type name (base_type_name lowercases and strips the parenthesised size) and applies it to every non-nil value.",
+    "SQLite::Database#adapter_initialize registers the database's to_application_timestamp method as the conversion proc for the 'datetime' and 'timestamp' declared types.",
+    "SQLite's to_application_timestamp override handles Integer by Time.at(n).to_s (Unix seconds) and Float by DateTime.jd(f).to_s (Julian day number), passes String to super, and raises Sequel::Error for other types.",
+    "The generic Database#to_application_timestamp (database/misc.rb) calls Sequel.convert_timestamp(value, timezone), where the database's timezone is its own setting or else Sequel.database_timezone.",
+    "CRITICAL: convert_input_timestamp parses the string with Sequel.string_to_datetime and, because the strings made from numbers carry an explicit offset (Date._parse has an :offset), does not reinterpret them in the database timezone; convert_timestamp then calls convert_output_timestamp with Sequel.application_timezone (:utc -> getutc, :local -> getlocal, nil -> unchanged)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: adapters/sqlite.rb:424-446 fetch_rows (type procs :427, apply :438-440), :456-458 base_type_name, :213-224 to_application_timestamp, :228-231 adapter_initialize registration; database/misc.rb:349-351 timezone, :356-358 to_application_timestamp; timezones.rb:84-98 convert_timestamp (output conversion at :93), :155-165 convert_input_timestamp String branch (offset check at :159), :55-82 convert_output_timestamp; core.rb:339-347 string_to_datetime, :447-449 _date_parse. All read. DECOYS: database/misc.rb:563-570 typecast_value_datetime / Sequel.typecast_to_application_timestamp (assignment path, typecast timezone), Sequel.database_to_application_timestamp (timezones.rb:104, used by PostgreSQL), adapters/shared/postgres.rb:73/:1794 and extensions/pg_extended_date_support.rb:107 (PostgreSQL converters), adapters/amalgalite.rb:64, extensions/named_timezones.rb, thread_local_timezones. CHEAPEST ROUTE: (1) grep 'timezone' -> timezones.rb, misc.rb and many adapters; (2) grep 'application timestamp' conversions -> per-adapter procs; (3) in the SQLite adapter find the registration and the Integer/Float override; (4) fetch_rows for how a proc is picked; (5) follow super into misc.rb then convert_timestamp; (6) read convert_input_timestamp offset branch. est. turns: 8. Closed-book risk: low."
+  },
+  {
+   "id": "r3hb-sequel-12",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "A model object is saved inside an application-level database transaction. The model is configured to return nil on failure instead of raising. A lifecycle callback that runs right after the new row has been inserted cancels the action. Is the INSERT undone, which code decides that, and what changes if the save call or the outer transaction asks for a nested savepoint?",
+   "expectedFiles": [
+    "lib/sequel/model/base.rb",
+    "lib/sequel/database/transactions.rb",
+    "lib/sequel/model.rb"
+   ],
+   "expectedSymbols": [
+    "Model::InstanceMethods#save",
+    "Model::InstanceMethods#checked_save_failure",
+    "Model::InstanceMethods#checked_transaction",
+    "Model::InstanceMethods#_save",
+    "Model::InstanceMethods#raise_on_failure?",
+    "Database#transaction"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Model#save runs checked_save_failure(opts){checked_transaction(opts){_save(opts)}}, so the code that swallows HookFailed sits outside the transaction wrapper.",
+    "A cancelled hook raises HookFailed (cancel_action -> raise_hook_failure); raise_on_failure? is opts[:raise_on_failure] else raise_on_save_failure (class default true in model.rb), and when it is false checked_save_failure rescues HookFailed and save returns nil.",
+    "checked_transaction calls db.transaction with the save options merged in (and skip_transaction when use_transactions is false).",
+    "CRITICAL: Inside an existing transaction, Database#transaction without a savepoint option (and without an auto_savepoint outer transaction) just yields; it opens no savepoint, so the exception passes through without any rollback.",
+    "The INSERT is executed before after_create runs (in _save), so after the swallowed failure the row stays in the outer transaction and is committed with it unless something else rolls back.",
+    "Passing a savepoint option to save (merged into the transaction options) or opening the outer transaction with auto_savepoint makes the inner call a savepoint that is rolled back before HookFailed is swallowed, undoing the INSERT."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: model/base.rb:1629-1637 save (:1636), :1918-1969 _save (_insert :1930, after_create :1935), :1309-1311 cancel_action, :2082-2092 checked_save_failure, :2095-2099 checked_transaction, :2155-2157 raise_on_failure?, :2161-2172 raise_hook_failure; model.rb:52 @raise_on_save_failure = true; database/transactions.rb:179-243 transaction (skip_transaction :198, already_in_transaction? :218, auto_savepoint :227-229, plain yield :235) and :335-337 already_in_transaction?. All read. DECOYS: Model#destroy (same wrapper, base.rb:1341-1343), validation failure path (_save_valid? at :2018 runs before any transaction and never opens one), Database#transaction retry_on branch, rollback: :always handling (:216-221), plugin instance_hooks / hook_class_methods. CHEAPEST ROUTE: (1) grep 'cancel' / 'hook' in model/base.rb -> HookFailed, around hooks; (2) read save and find the wrapper order; (3) read checked_save_failure and checked_transaction; (4) open database/transactions.rb to see what a nested call does; (5) check the savepoint conditions and auto_savepoint; (6) check the class default for raising. est. turns: 7. Closed-book risk: low."
+  },
+  {
+   "id": "r3hb-sequel-13",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "A SQLite connection URL names no database file (a temporary private database) and carries a query-string part that sets the pool size to five. What maximum pool size results, which of the two competing settings wins and where is that decided, how does the string value become a number, and why does the adapter have a different default for this case?",
+   "expectedFiles": [
+    "lib/sequel/database/connecting.rb",
+    "lib/sequel/database/misc.rb",
+    "lib/sequel/adapters/sqlite.rb",
+    "lib/sequel/connection_pool/timed_queue.rb"
+   ],
+   "expectedSymbols": [
+    "Database.connect",
+    "Database.options_from_uri",
+    "SQLite::Database.uri_to_options",
+    "Database#initialize",
+    "SQLite::Database#connection_pool_default_options",
+    "SQLite::Database#connect",
+    "TimedQueueConnectionPool#initialize"
+   ],
+   "expectedFacts": [
+    "Database.connect parses the URL and builds the options with c.send(:options_from_uri, uri).merge!(opts); options_from_uri splits the query on & and = into symbol keys with String values (after URL-unescaping).",
+    "SQLite's uri_to_options returns database nil when the host is nil and the path is '/', so no file name is set.",
+    "CRITICAL: Database#initialize computes @opts = connection_pool_default_options.merge(@opts), so a user-supplied value overrides the adapter default.",
+    "SQLite's connection_pool_default_options sets max_connections to 1 when the database is ':memory:' or blank, because each connection to a memory database gets its own separate database; here the user's value wins, so the pool size is 5.",
+    "CRITICAL: The pool's initialize converts the string with Integer(opts[:max_connections] || 4), so '5' becomes 5 (4 is the pool default), and each new connection (SQLite connect maps a blank database to ':memory:') gets its own empty database, so threads can see different data."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: database/connecting.rb:26-40 connect (options_from_uri + merge! at :37); database/misc.rb:90-95 options_from_uri (query parsing :92), :157-158 initialize (connection_pool_default_options.merge(@opts)); database/connecting.rb:313-315 base defaults {}; adapters/sqlite.rb:93-110 uri_to_options, :289-295 connection_pool_default_options, :142-144 connect (':memory:' for blank); connection_pool/timed_queue.rb:18-24 (Integer(...) at :20; threaded.rb:30 and sharded variants same). All read. DECOYS: adapters/amalgalite.rb:170-176 and adapters/jdbc/sqlite.rb:85-88 / jdbc/h2.rb:131-134 (same-purpose defaults for other adapters, equal twins for their adapters), database/misc.rb:79-86 generic uri_to_options, connection_pool.rb connection_pool_class (picks pool class, not size). CHEAPEST ROUTE: (1) grep 'memory' -> sqlite.rb default of 1 (first hit reaches gold, rated 'acceptable: needs follow-up'); (2) the question asks which wins: read Database#initialize merge order in misc.rb; (3) read how the URL becomes options (options_from_uri, uri_to_options); (4) read the pool initialize for the Integer conversion; (5) read SQLite connect for the memory fallback. est. turns: 6. Closed-book risk: low."
+  },
+  {
+   "id": "r3hb-sequel-14",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "negative-decoy",
+   "difficulty": "hard",
+   "query": "On the embedded single-file SQL database adapter, when application code locks a loaded record for update inside a transaction so that other writers must wait, does the library send any row-locking clause to the database? If something close exists, say what it does instead.",
+   "expectedFiles": [
+    "lib/sequel/adapters/shared/sqlite.rb",
+    "lib/sequel/dataset/sql.rb",
+    "lib/sequel/model/base.rb"
+   ],
+   "expectedSymbols": [
+    "SQLite::DatasetMethods#select_lock_sql",
+    "Dataset#select_lock_sql",
+    "Model::InstanceMethods#lock!",
+    "Dataset#for_update",
+    "SQLite::DatabaseMethods#begin_new_transaction"
+   ],
+   "expectedFacts": [
+    "CRITICAL: SQLite's DatasetMethods#select_lock_sql is 'super unless @opts[:lock] == :update', so the FOR UPDATE lock style is silently omitted (the comment says this avoids raising errors for compatibility with other databases).",
+    "Model#lock! only calls _refresh on this.lock_style(style) (default :update), so on SQLite it reloads the row with a plain SELECT and takes no row lock.",
+    "The generic Dataset#select_lock_sql in dataset/sql.rb would append ' FOR UPDATE' for :update and appends a String lock style verbatim; the SQLite override suppresses only the :update symbol, so a raw string style would still be appended.",
+    "The nearest real concurrency control on SQLite is the transaction mode (begin_new_transaction uses opts[:mode] or the database's transaction mode: deferred, immediate or exclusive), which locks at database level, not per row."
+   ],
+   "expectedNoMatch": true,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: adapters/shared/sqlite.rb:1018-1023 select_lock_sql, :296-301 begin_new_transaction (TRANSACTION_MODE :30); dataset/sql.rb:1650-1657 generic select_lock_sql; dataset/query.rb:233-235 for_update, :689-691 lock_style, :1469-1471 cached_lock_style_dataset; model/base.rb:1471-1474 lock!, :1900 _refresh_get (skips the fast path when :lock is set). GREPS for the negative (all read): select_lock_sql (overrides only in mysql, postgres, mssql, oracle, sqlite), 'FOR UPDATE' in adapters/shared/sqlite.rb (none), ':lock' in adapters/sqlite.rb and adapters/jdbc/sqlite.rb (none; jdbc/sqlite.rb includes the same shared DatasetMethods), 'lock' in adapters/sqlite.rb (none). DECOYS: dataset/sql.rb generic emission, adapters/shared/mysql.rb:1139 and postgres.rb:2954 (real FOR SHARE/NO KEY UPDATE support), Postgres Dataset#lock (LOCK TABLE), dataset/actions.rb:1260 (locking selects go to the primary server in sharded setups). CHEAPEST ROUTE: (1) grep 'lock' -> for_update, lock!, lock_style in many files; (2) follow lock_style to :lock option and grep select_lock_sql; (3) read generic emission in sql.rb; (4) find per-adapter overrides and read the SQLite one; (5) check the SQLite transaction mode as the nearest feature. est. turns: 6. Closed-book risk: low-medium."
+  }
+ ]
+}

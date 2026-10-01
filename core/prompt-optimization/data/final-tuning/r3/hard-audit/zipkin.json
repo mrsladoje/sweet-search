@@ -1,0 +1,178 @@
+{
+ "repo": "zipkin",
+ "keep": [
+  "r3h-zipkin-01",
+  "r3h-zipkin-02",
+  "r3h-zipkin-03",
+  "r3h-zipkin-04",
+  "r3h-zipkin-05",
+  "r3h-zipkin-06",
+  "r3h-zipkin-08",
+  "r3h-zipkin-09",
+  "r3h-zipkin-10",
+  "r3h-zipkin-11",
+  "r3h-zipkin-12",
+  "r3h-zipkin-13",
+  "r3h-zipkin-14",
+  "r3h-zipkin-15",
+  "r3h-zipkin-16",
+  "r3h-zipkin-17",
+  "r3h-zipkin-18",
+  "r3h-zipkin-19",
+  "r3h-zipkin-20",
+  "r3h-zipkin-22",
+  "r3h-zipkin-23",
+  "r3h-zipkin-24"
+ ],
+ "fixes": {
+  "r3h-zipkin-01": {
+   "expectedFacts": [
+    "CRITICAL: BulkCallBuilder.CHECK_FOR_ERRORS, for a bulk response body that reports errors, throws RejectedExecutionException when the first status field in the body is 429; other bulk errors become a plain RuntimeException.",
+    "CRITICAL: ThrottledCall.EnqueueAndAwait.onError asks the isOverCapacity predicate and calls limiterListener.onDropped when it is true (onIgnore otherwise).",
+    "ElasticsearchStorage.isOverCapacity returns true for RejectedExecutionException or ResponseTimeoutException.",
+    "ThrottledStorageComponent.ThrottledSpanConsumer.accept wraps the delegate's write call in a ThrottledCall.",
+    "ZipkinConfiguration.ThrottledStorageComponentEnhancer replaces every StorageComponent bean with a ThrottledStorageComponent only when ConditionalOnThrottledStorage matches (property zipkin.storage.throttle.enabled is true).",
+    "The limit change reaches the worker pool through limit.notifyOnChange(new ThreadPoolExecutorResizer(executor)) in the ThrottledStorageComponent constructor."
+   ]
+  },
+  "r3h-zipkin-02": {
+   "query": "A producer publishes one span in the old binary wire format, as a lone span rather than a list, to a topic on one of the message brokers the server consumes from, and the span ends up stored. Follow the code from the consumer loop to the request sent to the search cluster, including how the time-based partition of the cluster is picked if the span carries no start time.",
+   "expectedFacts": [
+    "CRITICAL: KafkaCollectorWorker.run decodes a record as one span with SpanBytesDecoder.THRIFT.decodeOne when it is not protobuf3, its first byte is <= 16 and it is not 12, then calls collector.accept(List.of(span), NOOP).",
+    "The other broker consumers (ActiveMQ, RabbitMQ, Pulsar) pass the bytes to Collector.acceptSpans, whose SpanBytesDecoderDetector.decoderForListMessage accepts only list encodings, so a lone binary span is dropped there; only the Kafka worker has the single-span branch.",
+    "Collector.accept(spans, callback) samples the spans and runs the StoreSpans task with Runnable::run, so storage.spanConsumer().accept(...).enqueue is called on the polling thread.",
+    "CRITICAL: ElasticsearchSpanConsumer.indexSpans picks the index timestamp as span timestamp/1000, else the first annotation's timestamp/1000, else System.currentTimeMillis().",
+    "IndexNameFormatter.formatTypeAndTimestampForInsert builds index prefix + type delimiter + \"span\" + \"-\" + UTC date.",
+    "BulkCallBuilder.build sends all spans of the batch in one POST to the bulk endpoint."
+   ]
+  },
+  "r3h-zipkin-03": {
+   "expectedFacts": [
+    "ZipkinQueryApiV2.getDependencies passes endTs and the lookback to storage.spanStore().getDependencies.",
+    "CRITICAL: The MySQL Schema constructor sets hasPreAggregatedDependencies once via HasPreAggregatedDependencies.test, which is true only when zipkin_dependencies has more than zero rows (a missing table gives false).",
+    "MySQLSpanStore.getDependencies uses AggregateDependencies over [endTs-lookback, endTs] in microseconds when nothing is pre-aggregated.",
+    "AggregateDependencies selects whole traces by a trace-id subquery on start_ts, then left-joins zipkin_annotations restricted to the keys lc, cs, ca, sr, sa, ma, mr, ms and error.",
+    "CRITICAL: DependencyLinkV2SpanIterator.ByTraceId groups the rows by trace, and the per-trace DependencyLinkV2SpanIterator rebuilds each span (kind, local and remote endpoint, error tag) from those annotation rows.",
+    "AggregateDependencies feeds each trace to DependencyLinker.putTrace and returns linker.link()."
+   ]
+  },
+  "r3h-zipkin-08": {
+   "expectedFacts": [
+    "CRITICAL: Elasticsearch writes the span into the index of its first annotation's time (else the current time), but BulkIndexWriter.addSearchFields writes no timestamp_millis when the span timestamp is zero, so time-ranged searches cannot match it.",
+    "CRITICAL: Cassandra uses guessTimestamp (first annotation with timestamp > 0, else 0); when the guess is 0, accept skips the trace_by_service_span and remote-service index rows.",
+    "Cassandra still writes the span row (ts_uuid falls back to the current time) and the service/span-name row before that skip.",
+    "MySQL sets start_ts only when the timestamp is non-zero and has no fallback, so a start_ts BETWEEN search never returns it.",
+    "In-memory keys the span at timestamp 0, which sorts as the oldest (evicted first) and falls outside lowTraceIdsInRange for any search window that does not reach back to the epoch.",
+    "In all four the span remains retrievable by trace ID."
+   ]
+  },
+  "r3h-zipkin-10": {
+   "expectedFacts": [
+    "CRITICAL: Collector.accept calls callback.onSuccess right after scheduling the store; a later storage failure only reaches StoreSpans.onError, which counts and logs it, so no transport sees it.",
+    "RabbitMQCollector.LazyInit.compute consumes with auto-acknowledgement (basicConsume(queue, true, ...)).",
+    "ActiveMQSpanConsumer.registerInNewSession creates the queue session with Session.AUTO_ACKNOWLEDGE.",
+    "CRITICAL: Pulsar's ZipkinMessageListener acknowledges after collector.acceptSpans returns and negatively acknowledges only when the listener itself throws.",
+    "Kafka has no explicit commit or acknowledgement code: KafkaCollectorWorker.run polls and hands records on without committing, and KafkaCollector.Builder sets only group id, earliest offset reset and deserializers, so offsets follow the Kafka client's auto-commit default.",
+    "Therefore none of the four redelivers after a storage failure; even a storage error raised synchronously is caught in StoreSpans.run, so Pulsar's negative acknowledgement is not reached by it."
+   ],
+   "expectedFiles": [
+    "zipkin-collector/core/src/main/java/zipkin2/collector/Collector.java",
+    "zipkin-collector/rabbitmq/src/main/java/zipkin2/collector/rabbitmq/RabbitMQCollector.java",
+    "zipkin-collector/activemq/src/main/java/zipkin2/collector/activemq/ActiveMQSpanConsumer.java",
+    "zipkin-collector/pulsar/src/main/java/zipkin2/collector/pulsar/PulsarSpanConsumer.java",
+    "zipkin-collector/kafka/src/main/java/zipkin2/collector/kafka/KafkaCollector.java",
+    "zipkin-collector/kafka/src/main/java/zipkin2/collector/kafka/KafkaCollectorWorker.java"
+   ]
+  },
+  "r3h-zipkin-11": {
+   "expectedFacts": [
+    "IndexNameFormatter formats Elasticsearch index names from a UTC date and expands query ranges day by day, compressing whole years, whole months or day-decades into wildcard patterns.",
+    "DateUtil.midnightUTC floors epoch milliseconds to UTC midnight.",
+    "DateUtil.epochDays lists UTC day starts between (endTs - lookback) and endTs.",
+    "CRITICAL: CassandraUtil.durationIndexBucket divides microseconds by a window (default one day, overridable through a system property) for the bucket column of the trace_by_service_* tables.",
+    "CassandraUtil.getDays turns epochDays into LocalDate values for the dependency table's day column.",
+    "CRITICAL: MySQLSpanStore.getDependencies passes epochDays(endTs, lookback) to SelectDependencies (DAY IN ...) when dependencies are pre-aggregated."
+   ]
+  },
+  "r3h-zipkin-12": {
+   "query": "A client calls the trace search endpoint without giving an end time or a window length. What values are used? Does the call-graph endpoint treat missing values the same way, and which setting supplies the window, as opposed to the default shown in the web UI's search form? On Elasticsearch, which other lookups silently reuse that same setting?",
+   "expectedFacts": [
+    "CRITICAL: ZipkinQueryApiV2.getTraces defaults endTs to System.currentTimeMillis() and lookback to defaultLookback when the parameters are absent.",
+    "CRITICAL: defaultLookback comes from the zipkin.query.lookback property (default 86400000 ms, one day) injected into the ZipkinQueryApiV2 constructor.",
+    "getDependencies has a mandatory endTs parameter (no default) and applies defaultLookback only to a missing lookback.",
+    "The UI's default-lookback (900000 ms in the yml; 7 days as the ZipkinUiProperties Java default) is written into /config.json for the search form and is not the API default.",
+    "On Elasticsearch, ZipkinElasticsearchStorageConfiguration binds the same zipkin.query.lookback property as namesLookback, which ElasticsearchSpanStore (service, remote-service and span names) and ElasticsearchAutocompleteTags.getValues (tag values) use as how far back to look from now."
+   ],
+   "expectedFiles": [
+    "zipkin-server/src/main/java/zipkin2/server/internal/ZipkinQueryApiV2.java",
+    "zipkin-server/src/main/resources/zipkin-server-shared.yml",
+    "zipkin-server/src/main/java/zipkin2/server/internal/ui/ZipkinUiProperties.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/ZipkinElasticsearchStorageConfiguration.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchSpanStore.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchAutocompleteTags.java"
+   ],
+   "expectedSymbols": [
+    "ZipkinQueryApiV2.getTraces",
+    "ZipkinQueryApiV2.getDependencies",
+    "ZipkinQueryApiV2.defaultLookback",
+    "ZipkinElasticsearchStorageConfiguration.storage",
+    "ElasticsearchSpanStore.getServiceNames",
+    "ElasticsearchSpanStore.aggregatedFieldByServiceName",
+    "ElasticsearchAutocompleteTags.getValues"
+   ]
+  },
+  "r3h-zipkin-13": {
+   "query": "With the write back-off feature enabled, which setting limits how many pending writes may wait for a free worker, and what is the actual limit when the operator configures it to let no writes wait at all? What happens to the next write once that limit is reached?",
+   "expectedFacts": [
+    "CRITICAL: The setting is zipkin.storage.throttle.max-queue-size (STORAGE_THROTTLE_MAX_QUEUE_SIZE, default 1000 in zipkin-server-shared.yml), bound by ZipkinStorageThrottleProperties and passed by ZipkinConfiguration to the ThrottledStorageComponent constructor.",
+    "CRITICAL: ThrottledStorageComponent.createQueue turns a size of zero into 1 (negative throws), so the effective bound is one queued write despite the documented 'no buffering'.",
+    "When all pool threads are busy and the bounded queue is full, the executor's rejection handler throws the shared STORAGE_THROTTLE_MAX_QUEUE_SIZE RejectedExecutionException.",
+    "ThrottledCall.doEnqueue catches it, calls callback.onError, reports limiterListener.onIgnore (not a drop) and rethrows for blocking callers."
+   ],
+   "expectedFiles": [
+    "zipkin-server/src/main/java/zipkin2/server/internal/throttle/ZipkinStorageThrottleProperties.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/throttle/ThrottledStorageComponent.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/throttle/ThrottledCall.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/ZipkinConfiguration.java",
+    "zipkin-server/src/main/resources/zipkin-server-shared.yml"
+   ]
+  },
+  "r3h-zipkin-14": {
+   "query": "An operator points the server at a search cluster running a release outside the range the code can work with. Where is that rejected, what decides whether the cluster is treated as Elasticsearch or as OpenSearch, and is the rejection always enforced?"
+  },
+  "r3h-zipkin-15": {
+   "query": "On an Elasticsearch 6.x cluster, which character separates the index prefix from the document kind in newly written index names, where is that decided, and how can queries still find indexes written under the newer convention?",
+   "expectedFacts": [
+    "CRITICAL: ElasticsearchSpecificTemplates.indexTypeDelimiter returns ':' for versions below 7.0 and '-' otherwise.",
+    "ElasticsearchStorage.indexTypeDelimiter() obtains it through VersionSpecificTemplates.forVersion(version()), and OpensearchSpecificTemplates always answers '-'.",
+    "ElasticsearchSpanConsumer captures the delimiter in its constructor.",
+    "IndexNameFormatter.formatTypeAndTimestampForInsert builds prefix + delimiter + type + '-' + date for writes.",
+    "CRITICAL: Reads use IndexNameFormatter.prefix, which places a '*' wildcard where the delimiter would be, so both ':' and '-' index names match."
+   ]
+  },
+  "r3h-zipkin-18": {
+   "query": "An operator wants the date part of the daily Elasticsearch index names written as digits run together, so they blank the setting for the punctuation between year, month and day. Follow how that blank value travels from the server configuration to the actual index names."
+  },
+  "r3h-zipkin-22": {
+   "query": "In the MySQL backend, a client span and its server counterpart are recorded under the same span identifier and are written in separate batches, in either order. Whose start timestamp ends up in the stored row, and which rule in the write path produces that?",
+   "expectedFacts": [
+    "The primary key (trace_id_high, trace_id, id) in mysql.sql makes both halves of the RPC target the same zipkin_spans row.",
+    "CRITICAL: BatchInsertSpans.apply sets start_ts in the INSERT whenever the span has a timestamp, even a shared (server) one, as a tentative value.",
+    "CRITICAL: On duplicate key the update set includes start_ts only when the span is not shared, so the client's timestamp wins regardless of arrival order.",
+    "A non-zero parent_id goes into the update set whether or not the span is shared (unlike start_ts).",
+    "Name and remote service name are updated only when not null and not \"unknown\" (updateName)."
+   ]
+  }
+ },
+ "dropped": {
+  "r3h-zipkin-07": "1-3 step lookup: one regex grep for thread/executor creation (Executors|Thread|ThreadPool|EventLoopGroup) in main code lists all six members, then one parallel read; also ambiguous about threads that client libraries (Kafka, RabbitMQ, Cassandra driver) start internally.",
+  "r3h-zipkin-21": "1-3 step lookup: the first grep for sampling reaches ZipkinSelfTracingConfiguration, and one read of that file (sampler, tracing, httpTracing beans) gives every fact; the interaction is also spelled out in the property javadoc and yml comments."
+ },
+ "hardened": [
+  "r3h-zipkin-02",
+  "r3h-zipkin-12",
+  "r3h-zipkin-14",
+  "r3h-zipkin-18",
+  "r3h-zipkin-22"
+ ]
+}

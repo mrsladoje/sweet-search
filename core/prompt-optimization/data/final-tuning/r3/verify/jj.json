@@ -1,0 +1,1169 @@
+{
+ "r3-jj-03": {
+  "id": "r3-jj-03",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "resolve_op_heads",
+    "OpHeadsStore::lock",
+    "RepoLoader::load_at_head",
+    "RepoLoader::merge_operations"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The mechanism for detecting and reconciling divergent operation heads when loading a repo, along with concurrency protection via op-heads store locking, is uniquely implemented in resolve_op_heads and RepoLoader::load_at_head/merge_operations."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "resolve_op_heads",
+    "OpHeadsStore::lock",
+    "RepoLoader::load_at_head",
+    "RepoLoader::merge_operations"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The fork is reconciled only by resolve_op_heads (invoked from RepoLoader::load_at_head, whose resolver closure runs RepoLoader::merge_operations to create the 'reconcile divergent operations' merge), and the lock's documented purpose — in both the OpHeadsStore trait and resolve_op_heads — is solely to prevent concurrent processes from duplicating that work, so no other code location reasonably answers the question."
+  }
+ },
+ "r3-jj-06": {
+  "id": "r3-jj-06",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Workspace::init_workspace_with_existing_repo",
+    "DefaultWorkspaceLoader::new",
+    "init_working_copy"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The mechanism for referencing shared storage from secondary workspaces via a `.jj/repo` pointer file and initializing per-workspace state is fully and unambiguously handled in `lib/src/workspace.rs`."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Workspace::init_workspace_with_existing_repo",
+    "DefaultWorkspaceLoader::new",
+    "init_working_copy",
+    "WorkspaceStore::add"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The pointer-file mechanism is implemented entirely here: init_workspace_with_existing_repo writes the relative path into .jj/repo (with an absolute-path fallback only when no relative path exists), DefaultWorkspaceLoader::new reads and canonicalizes that pointer to locate the shared repo, and init_working_copy plus workspace_store.add cover the per-workspace state and registration; no other code path provides a different answer."
+  }
+ },
+ "r3-jj-02": {
+  "id": "r3-jj-02",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "RefToPush",
+    "RefToPush::to_git_lease",
+    "GitSubprocessContext::spawn_push"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "Git push concurrency safety is uniquely implemented in jj via RefToPush and GitSubprocessContext::spawn_push using Git's --force-with-lease mechanism."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "push_updates",
+    "RefToPush",
+    "RefToPush::to_git_lease",
+    "RefSpec::to_git_format_not_forced",
+    "GitSubprocessContext::spawn_push"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The protection is implemented in a single push path: push_updates (lib/src/git.rs) supplies the expected pre-push location from the local remote-tracking bookmark and wraps it with the refspec in RefToPush, and GitSubprocessContext::spawn_push (lib/src/git_subprocess.rs) enforces it by passing one --force-with-lease=<ref>:<expected-oid> per ref (empty oid when the ref is expected absent) with non-forced refspecs so git performs the test-and-set; no competing implementation exists elsewhere."
+  }
+ },
+ "r3-jj-04": {
+  "id": "r3-jj-04",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "cmd_gerrit_upload"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The identifier generation and transaction handling logic during Gerrit upload is specifically implemented in cmd_gerrit_upload."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "cmd_gerrit_upload",
+    "format_gerrit_change_id_trailer"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Both the identifier derivation (format!(\"I{}6a6a6964\", change_id.hex()) in the else-branch for commits lacking a Change-Id/Link trailer, with the Link-vs-Change-Id choice keyed on gerrit.review-url) and the explanation for it not appearing locally (the comment stating the transaction is intentionally never finished, with no tx.finish() call) are implemented inline in cmd_gerrit_upload in cli/src/commands/gerrit/upload.rs; templates.toml's format_gerrit_change_id_trailer only mirrors the same padded format for the optional user config that adds the trailer locally."
+  }
+ },
+ "r3-jj-08": {
+  "id": "r3-jj-08",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "parse_remote_auto_track_bookmarks_map",
+    "load_git_import_options",
+    "GitImportOptions",
+    "import_refs_inner",
+    "default_remote_ref_state_for"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The tracing path from git config to import logic is uniquely implemented through `parse_remote_auto_track_bookmarks_map`, `load_git_import_options`, and `import_refs_inner`."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "parse_remote_auto_track_bookmarks_map",
+    "load_git_import_options",
+    "GitImportOptions",
+    "default_remote_ref_state_for",
+    "import_refs_inner"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The shown code contains exactly one trace for fetch-time auto-tracking: remotes.<name>.auto-track-bookmarks is parsed by parse_remote_auto_track_bookmarks_map, stored by load_git_import_options into GitImportOptions.remote_auto_track_bookmarks, and consulted by default_remote_ref_state_for inside import_refs_inner only when the old remote ref is ABSENT_REMOTE_REF; the similarly-named parse_remote_auto_track_bookmarks_map_for_new_bookmarks (which unions auto-track-created-bookmarks) is not used by this import path, so a careful engineer would not give a different answer. Claim 3 is marked unsupported because default_remote_ref_state_for's definition is not in the shown code — only its call sites appear, which support just the 'no previous remote ref state' part, not the claimed return-value behavior."
+  }
+ },
+ "r3-jj-10": {
+  "id": "r3-jj-10",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "choose_materialized_conflict_marker_len"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The logic for choosing distinct conflict marker lengths is unambiguously implemented in choose_materialized_conflict_marker_len in lib/src/conflicts.rs."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "choose_materialized_conflict_marker_len",
+    "MIN_CONFLICT_MARKER_LEN",
+    "CONFLICT_MARKER_LEN_INCREMENT",
+    "parse_conflict_marker_any_len",
+    "ConflictMarkerLine",
+    "ConflictMarkerLineChar",
+    "materialize_merge_result",
+    "materialize_merge_result_to_bytes",
+    "ConflictMaterializeOptions"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The mechanism — scanning every line of every term for marker-like lines of any length and then writing markers that are longer (max existing + 4, floor 7) — is implemented solely in choose_materialized_conflict_marker_len and its helpers/constants in lib/src/conflicts.rs; other code (working copy, merge tools) merely invokes it, so a careful engineer would not find a different answer elsewhere."
+  }
+ },
+ "r3-jj-11": {
+  "id": "r3-jj-11",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "disambiguate_prefix_with_refs",
+    "IdPrefixIndex::shortest_commit_prefix_len",
+    "IdPrefixIndex::shortest_change_prefix_len"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The logic lengthening commit and change ID prefixes beyond uniqueness among commits is specifically implemented in `disambiguate_prefix_with_refs` to avoid collisions with local bookmark and tag names."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "disambiguate_prefix_with_refs",
+    "IdPrefixIndex::shortest_commit_prefix_len",
+    "IdPrefixIndex::shortest_change_prefix_len"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The only lengthening logic is in disambiguate_prefix_with_refs (called from shortest_commit_prefix_len and shortest_change_prefix_len), which extends the prefix until it no longer equals a local tag or local bookmark name, since per the in-code comment tags and bookmarks have higher priority in symbol resolution."
+  }
+ },
+ "r3-jj-13": {
+  "id": "r3-jj-13",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "SecureConfig",
+    "SecureConfig::handle_metadata_path"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The per-repo secure config storage mechanism and copy-detection logic are entirely implemented in `lib/src/secure_config.rs`."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "SecureConfig",
+    "SecureConfig::maybe_load_config",
+    "SecureConfig::load_config",
+    "SecureConfig::handle_metadata_path",
+    "SecureConfig::generate_config",
+    "generate_config_id",
+    "read_metadata",
+    "metadata_path",
+    "LoadedSecureConfig"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The per-repo config location (root_config_dir/<config-id>/config.toml plus metadata.binpb, with only the 20-hex-char config-id file stored in the repo) and the copy-detection logic (handle_metadata_path's move-vs-copy probe) are implemented entirely in lib/src/secure_config.rs, so no other file answers this."
+  }
+ },
+ "r3-jj-09": {
+  "id": "r3-jj-09",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "evaluate_commit",
+    "Bisector",
+    "Bisector::next_step"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The command evaluation logic and bisection stepping are uniquely implemented in `evaluate_commit` in `run.rs` and `Bisector` in `bisect.rs`."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "evaluate_commit",
+    "Evaluation",
+    "Bisector::next_step"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The exit-code-to-verdict mapping exists only in evaluate_commit (which checks out the commit, runs the command, and maps success/125/127/other to Evaluation::Good/Skip/Abort/Bad), and next-commit selection exists only in Bisector::next_step (candidates().bisect().latest(1), with pending verifications popped first); cmd_bisect_run merely consumes the steps these produce, so no other reasonable answer exists."
+  }
+ },
+ "r3-jj-14": {
+  "id": "r3-jj-14",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "is_binary",
+    "TargetEolStrategy::PROBE_LIMIT",
+    "TargetEolStrategy::probe_for_binary"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Line-ending conversion and its binary detection logic are implemented specifically and self-contained within lib/src/eol.rs."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "is_binary",
+    "TargetEolStrategy::probe_for_binary",
+    "TargetEolStrategy::PROBE_LIMIT",
+    "TargetEol::PassThrough"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question is scoped to working-copy EOL conversion, and the entire binary-detection mechanism (is_binary checking for NUL or lone CR, probe_for_binary reading only the first PROBE_LIMIT = 8<<10 bytes, and routing binary files to TargetEol::PassThrough) is contained in lib/src/eol.rs, so no other code location could yield a different answer."
+  }
+ },
+ "r3-jj-15": {
+  "id": "r3-jj-15",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "trivial_merge",
+    "SameChange"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The logic for resolving or keeping same-change merges is defined in trivial_merge with SameChange, and configured to default to 'accept' in misc.toml."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "trivial_merge",
+    "SameChange",
+    "merge.same-change"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The same-change rule is unambiguously implemented in trivial_merge (gated by the SameChange enum, with Keep leaving it conflicted and Accept resolving A+(A-B)=A) and its default 'accept' is set under [merge] in lib/src/config/misc.toml, so a careful engineer would give the same answer; note that claim 3's tree_merge.rs/MergeOptions code is not among the shown files and thus cannot be verified here."
+  }
+ },
+ "r3-jj-17": {
+  "id": "r3-jj-17",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "show_color_words_diff_lines",
+    "ColorWordsDiffOptions::from_settings"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The conditions under which color-words diff switches from inline hunks to separate before/after lines are centrally determined in show_color_words_diff_lines."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "show_color_words_diff_lines",
+    "ColorWordsDiffOptions::from_settings",
+    "count_diff_alternation",
+    "split_diff_hunks_by_matching_newline"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The inline-vs-separate decision is made entirely in show_color_words_diff_lines (with the -1/0 semantics in ColorWordsDiffOptions::from_settings), so no other code location gives a different answer; CLAIM 2 is marked unsupported only because the 'default 3' value is not present in the shown code (it would live in the default config file), though the config name, 0-disables-inlining, and -1-unlimited semantics are supported."
+  }
+ },
+ "r3-jj-18": {
+  "id": "r3-jj-18",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CommitsValidator",
+    "CommitsValidator::validate_commits"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The push pre-conditions and commit validation range are entirely implemented in CommitsValidator within cli/src/commands/git/push.rs."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CommitsValidator",
+    "CommitsValidator::new",
+    "CommitsValidator::validate_commits",
+    "RejectedCommitReason"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The description/author/conflict/private checks are implemented only in CommitsValidator (validate_commits, with known_heads/immutable_heads/private_commits set up in new) in cli/src/commands/git/push.rs; no other code path performs these push-time commit-content checks, so a careful engineer would arrive at the same answer."
+  }
+ },
+ "r3-jj-19": {
+  "id": "r3-jj-19",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "classify_bookmark_update",
+    "classify_ref_push_action"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The push safety checks for non-tracking remote bookmarks and creating untracked remote bookmarks are uniquely implemented in classify_bookmark_update and classify_ref_push_action."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "classify_ref_push_action",
+    "RefPushAction",
+    "classify_bookmark_update",
+    "ClassifyParams"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The refusal is decided in classify_bookmark_update (cli/src/commands/git/push.rs), which errors on RefPushAction::RemoteUntracked and on untracked Update unless ClassifyParams.allow_new, based on the classification returned by classify_ref_push_action (lib/src/refs.rs); no other shown code makes this call. Note on CLAIM 3: the guard 'update.after.is_none() && !params.allow_delete' is shown, but the error message string is truncated mid-literal at \"Refusing t\", so the exact message 'Refusing to push deleted bookmark' cannot be verified from the code shown."
+  }
+ },
+ "r3-jj-16": {
+  "id": "r3-jj-16",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "converge_description",
+    "create_value_merge",
+    "Converge::merge_description",
+    "materialize_conflicted_description"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The `jj converge` command and the library module `lib/src/converge.rs` uniquely implement divergence reconciliation and description merging in the codebase."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "converge_description",
+    "create_value_merge",
+    "ConvergedAttribute",
+    "Converge::generic_solver",
+    "Converge::merge_description",
+    "materialize_conflicted_description"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question plainly describes jj converge reconciling divergent change IDs, and the description-reconciliation logic exists only in these two files (converge_description/create_value_merge building the dominator-based 3-way value merge in the library, and merge_description/materialize_conflicted_description handling the unsolved case in the CLI), so a careful engineer would not answer from elsewhere."
+  }
+ },
+ "r3-jj-07": {
+  "id": "r3-jj-07",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "base_ignores",
+    "visit_directory",
+    "process_dir_entry"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The collection of user-level gitignore files and their evaluation during working-copy directory scanning are unambiguously handled by base_ignores and the local working copy directory walker, though both files are truncated before those definitions."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "base_ignores",
+    "SnapshotOptions",
+    "visit_directory",
+    "process_dir_entry"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The answer is uniquely located: base_ignores() in cli/src/cli_util.rs (evidenced by its GitIgnoreFile/GitIgnoreError imports and the snapshot_impl/snapshot_working_copy path) is the only place the user-level core.excludesFile/XDG-fallback patterns — plus .git/info/exclude for a Git backend — are collected into a chained GitIgnoreFile, which is carried in SnapshotOptions.base_ignores and consumed solely by the working-copy snapshot scanner in lib/src/local_working_copy.rs, where visit_directory chains each directory's .gitignore onto the base chain and process_dir_entry skips untracked entries matching the combined rules, so no other code location reasonably answers the question."
+  }
+ },
+ "r3-jj-12": {
+  "id": "r3-jj-12",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "0/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The revision symbol resolution precedence is strictly and unambiguously determined in jj's symbol resolver implementation."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "SymbolResolver::resolve_symbol",
+    "SymbolResolver::partial_resolvers",
+    "DEFAULT_RESOLVERS",
+    "TagResolver",
+    "BookmarkResolver",
+    "CommitIdResolver",
+    "ChangeIdResolver"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The tag interpretation wins: the precedence (tag resolver, then bookmark resolver, then commit-ID prefix resolver, then change-ID prefix resolver, then extension resolvers) is fixed in exactly one place — the default resolver chain in lib/src/revset.rs that SymbolResolver::resolve_symbol walks first-match-wins, returning NoSuchRevision only when no resolver matches — and no other code path defines a competing order."
+  }
+ },
+ "r3-jj-23": {
+  "id": "r3-jj-23",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "run_mergetool_external_single_file"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The post-exit checks for external 3-way merge tools are directly and comprehensively handled in `run_mergetool_external_single_file`."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "run_mergetool_external_single_file",
+    "ExternalToolError::ToolAborted",
+    "ConflictResolveError::EmptyOrUnchanged",
+    "ExternalToolError::InvalidConflictMarkers"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "All post-exit acceptance checks for the external three-way merge tool live in run_mergetool_external_single_file: non-success exit codes not in merge_conflict_exit_codes yield ToolAborted, an empty or unchanged $output file yields ConflictResolveError::EmptyOrUnchanged, and a conflict-signaling exit code whose parsed output resolves cleanly yields InvalidConflictMarkers; the similar exit-status check in edit_diff_external applies to diff editors, not three-way merge resolution."
+  }
+ },
+ "r3-jj-24": {
+  "id": "r3-jj-24",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "split_hunks_to_trees",
+    "split_file_hunks"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The absorb algorithm and its rules for leaving edits unabsorbed are uniquely implemented in lib/src/absorb.rs."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "split_file_hunks",
+    "split_hunks_to_trees",
+    "to_file_value",
+    "SelectedTrees"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The decision of which edits are deliberately left in place is made entirely in lib/src/absorb.rs: split_hunks_to_trees/to_file_value skip new files and record non-normal files (symlinks, conflicts, submodules, access-denied) in SelectedTrees::skipped_paths, and split_file_hunks leaves any hunk that is ambiguous or not mappable to a destination commit; the CLI command only invokes and reports this logic, so no other answer is reasonable."
+  }
+ },
+ "r3-jj-21": {
+  "id": "r3-jj-21",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "MergeToolFile::from_tree_and_path"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The check for which conflicts can be resolved with a merge tool is uniquely implemented in `MergeToolFile::from_tree_and_path`."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "MergeToolFile::from_tree_and_path",
+    "ConflictResolveError"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "All five refusals (PathNotFound, NotAConflict, NotNormalFiles, ConflictTooComplicated, ExecutableConflict) are raised in MergeToolFile::from_tree_and_path in cli/src/merge_tools/mod.rs, which MergeEditor::edit_files runs for every tool type before invoking it, so a careful engineer would point to the same check (with the 'normal files' test partly delegated to jj_lib's try_materialize_file_conflict_value)."
+  }
+ },
+ "r3-jj-22": {
+  "id": "r3-jj-22",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "cmd_gerrit_upload",
+    "push_options",
+    "calculate_push_remote",
+    "calculate_push_ref"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code review upload logic for Gerrit is entirely contained in `cli/src/commands/gerrit/upload.rs`."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "cmd_gerrit_upload",
+    "push_options",
+    "calculate_push_remote",
+    "calculate_push_ref"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question unambiguously targets `jj gerrit upload` (documented as 'Upload changes to Gerrit for code review'), and every abort-before-rewrite/send condition — push-option validation, no-revision/merge-default and rewritability checks, remote/branch resolution, and the per-commit empty/no-description/multiple-Change-Id rejections — is implemented in cmd_gerrit_upload and its helpers in this single file."
+  }
+ },
+ "r3-jj-27": {
+  "id": "r3-jj-27",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "get_value_producer"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The logic for selecting a base producer commit among candidate dominator producers is uniquely defined in `get_value_producer` in `lib/src/converge.rs`."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "get_value_producer"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The producer-selection logic exists only in get_value_producer (called from create_value_merge and converge_trees); the stale comment in converge_trees saying 'we pick the first one' is superseded by the actual code, so a careful engineer would not find a different real answer elsewhere."
+  }
+ },
+ "r3-jj-28": {
+  "id": "r3-jj-28",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "cleanup_description_lines"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Commit message description cleanup is specifically implemented in cleanup_description_lines in cli/src/description_util.rs."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "cleanup_description_lines",
+    "edit_description"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The stripping of 'JJ:' lines and the 'JJ: ignore-rest' cutoff is centralized in cleanup_description_lines, which is invoked from edit_description (and the bulk-edit path via parse_bulk_edit_message), so no other location in the code reasonably answers the question."
+  }
+ },
+ "r3-jj-29": {
+  "id": "r3-jj-29",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ColorFormatter::requested_style",
+    "Style::merge",
+    "rules_from_config"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The precedence resolution, merging logic, and caching for color styles are entirely and unambiguously implemented in ColorFormatter::requested_style in cli/src/formatter.rs."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ColorFormatter::requested_style",
+    "Style::merge",
+    "rules_from_config"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The rule-matching, priority ranking (reversed matched-index vectors compared lexicographically), ascending sort, merge semantics, and per-label-stack caching are all implemented in ColorFormatter::requested_style together with Style::merge and rules_from_config in this single file; no other code in the repository resolves color-rule conflicts."
+  }
+ },
+ "r3-jj-20": {
+  "id": "r3-jj-20",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "0/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The working copy snapshot refusal logic and size limit setting have specific, unambiguous locations in Jujutsu's working copy management and configuration."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "process_dir_entry",
+    "UntrackedReason::FileTooLarge",
+    "SnapshotOptions::max_new_file_size",
+    "WorkspaceCommandHelper::snapshot_impl",
+    "print_large_file_hint",
+    "snapshot.max-new-file-size"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The too-large refusal is decided only in the local working copy's snapshot path (process_dir_entry in lib/src/local_working_copy.rs, which records UntrackedReason::FileTooLarge in SnapshotStats.untracked_paths for new files exceeding the limit), and the limit enters only through the snapshot.max-new-file-size setting read in cli/src/cli_util.rs (WorkspaceCommandHelper::snapshot_impl, default 1 MiB in cli/src/config/misc.toml, 0 mapped to u64::MAX) with the hint printed by print_large_file_hint, so a careful engineer would not reasonably point to a different location."
+  }
+ },
+ "r3-jj-31": {
+  "id": "r3-jj-31",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-jj-32": {
+  "id": "r3-jj-32",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-jj-33": {
+  "id": "r3-jj-33",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-jj-34": {
+  "id": "r3-jj-34",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-jj-35": {
+  "id": "r3-jj-35",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-jj-36": {
+  "id": "r3-jj-36",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-jj-25": {
+  "id": "r3-jj-25",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "check_rewritable_expr",
+    "builtin_immutable_heads"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "Commit immutability enforcement is centrally handled by check_rewritable_expr in the CLI utility layer, and the default immutable set is configured via revset aliases in revsets.toml."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "WorkspaceCommandHelper::check_rewritable",
+    "WorkspaceCommandHelper::check_rewritable_expr",
+    "WorkspaceCommandEnvironment::resolve_immutable_expression",
+    "WorkspaceCommandEnvironment::immutable_expression",
+    "WorkspaceCommandEnvironment::load_immutable_heads_expression",
+    "immutable_heads()",
+    "builtin_immutable_heads()",
+    "immutable()"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The 'Commit ... is immutable' / 'The root commit ... is immutable' refusal is raised only by the check_rewritable/check_rewritable_expr helper in cli/src/cli_util.rs (with resolve_immutable_expression substituting the root-only set under --ignore-immutable), and the default notion of shared history is defined solely by the immutable_heads()/builtin_immutable_heads() (trunk() | tags() | untracked_remote_bookmarks() | untracked_remote_tags()) aliases in cli/src/config/revsets.toml, so a careful engineer would converge on these same files and symbols rather than answer elsewhere."
+  }
+ },
+ "r3-jj-30": {
+  "id": "r3-jj-30",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "GitSubprocessContext::spawn_fetch",
+    "GitSubprocessContext::spawn_branch_prune"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The fetch loop and pruning coordination is uniquely handled in the Git fetch implementation, though the calling loop in GitFetch is truncated from lib/src/git.rs in the provided snippet."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "GitFetch::fetch",
+    "GitFetchStatus::NoRemoteRef",
+    "spawn_fetch",
+    "parse_no_remote_ref",
+    "spawn_branch_prune"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The retry-on-missing-ref loop (drop the failed refspec, re-run git fetch, collect '<remote>/<name>' into branches_to_prune) and the follow-up deletion of the stale remote-tracking branch via spawn_branch_prune's 'git branch --remotes --delete' live in exactly one code path — GitFetch::fetch in lib/src/git.rs backed by spawn_fetch/GitFetchStatus::NoRemoteRef/parse_no_remote_ref and spawn_branch_prune in lib/src/git_subprocess.rs (whose docs confirm git errors out on a requested missing ref even with --prune and reports only one missing ref at a time) — so a careful engineer would necessarily give the same answer."
+  }
+ },
+ "r3-jj-26": {
+  "id": "r3-jj-26",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CommitRewriter::rebase_with_empty_behavior",
+    "EmptyBehavior"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "CommitRewriter::rebase_with_empty_behavior is the centralized place where rebase determines whether an emptied commit is abandoned based on EmptyBehavior and parent count."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CommitRewriter::rebase_with_empty_behavior",
+    "EmptyBehavior"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The drop decision is centralized in CommitRewriter::rebase_with_empty_behavior, which computes the rebased tree via a 3-way merge (new parents' tree, old parents' tree, old tree), compares it to the single new parent's tree, and — per the explicit 'Ensure we don't abandon commits with multiple parents (merge commits)' check — never abandons commits with more than one parent; other code (CLI commands, rebase_commit_with_options) only selects or propagates the EmptyBehavior, so a careful engineer would not identify a different decision site."
+  }
+ },
+ "r3-jj-05": {
+  "id": "r3-jj-05",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "WorkingCopyFreshness",
+    "WorkingCopyFreshness::check_stale"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "WorkingCopyFreshness::check_stale is the dedicated method that compares the working copy operation ID against the repo operation ID and determines whether it is Fresh, Updated, or stale."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "WorkingCopyFreshness::check_stale",
+    "WorkingCopyFreshness",
+    "handle_stale_working_copy"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The freshness classification (Fresh / Updated / WorkingCopyStale / SiblingOperation) is decided in exactly one place, WorkingCopyFreshness::check_stale in lib/src/working_copy.rs, which compares the working copy's recorded operation id to the repo's and branches on the closest common ancestor operation; the CLI code in cli_util.rs only consumes that result (erroring or recovering), so a careful engineer would not reasonably give a different answer elsewhere."
+  }
+ },
+ "r3-jj-01": {
+  "id": "r3-jj-01",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "cmd_git_push"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The push command logic and the revsets configuration specifically determine which bookmarks are pushed by default when no arguments are provided."
+  },
+  "glm": {
+   "ok": false,
+   "why": "unparsable"
+  }
+ }
+}

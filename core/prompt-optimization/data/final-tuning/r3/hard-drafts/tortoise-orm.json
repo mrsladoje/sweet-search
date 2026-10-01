@@ -1,0 +1,819 @@
+{
+  "repo": "tortoise-orm",
+  "sha": "1979f27d6a37db991ca5c934e2394faa6c942d52",
+  "probes": [
+    {
+      "id": "r3h-tortoise-orm-01",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "One column of my model is filled in by the database engine itself at the moment a row is first stored; my code never supplies a value for it. After I save the new object, the Python attribute shows the stored value. Describe how that value reaches the object, and why the route differs between PostgreSQL and MySQL.",
+      "expectedFiles": [
+        "tortoise/backends/base/executor.py",
+        "tortoise/backends/base_postgres/executor.py",
+        "tortoise/backends/mysql/executor.py"
+      ],
+      "expectedSymbols": [
+        "BaseExecutor.execute_insert",
+        "BaseExecutor._build_insert_with_defaults",
+        "BaseExecutor._add_returning_to_insert",
+        "BasePostgresExecutor._add_returning_to_insert",
+        "BasePostgresExecutor._process_insert_result",
+        "MySQLExecutor._process_insert_result",
+        "BaseExecutor._fetch_db_defaults_after_insert"
+      ],
+      "expectedFacts": [
+        "BaseExecutor.execute_insert (base/executor.py:328) takes a dynamic INSERT path when an instance still holds the database-default placeholder (_has_db_default_values :224, _execute_insert_dynamic :312).",
+        "_build_insert_with_defaults (base/executor.py:234) leaves placeholder columns out of the INSERT and calls the _add_returning_to_insert hook, which does nothing in the base class (:299).",
+        "CRITICAL: On PostgreSQL the hook adds RETURNING for those columns (base_postgres/executor.py:107) and _process_insert_result (:118) sets the returned values on the instance.",
+        "CRITICAL: On MySQL there is no RETURNING; _process_insert_result (mysql/executor.py:150-159) calls _fetch_db_defaults_after_insert (base/executor.py:363), which SELECTs the columns by primary key and sets them on the instance.",
+        "The follow-up SELECT is skipped when Meta.fetch_db_defaults is false, when the model has no database-default columns, or when the pk is None (base/executor.py:370-392)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) grep the question words (none hit); open Model.save in models.py (grep 'def save' hits models.py + 7 client files); (2) follow save -> executor.execute_insert in backends/base/executor.py; (3) read execute_insert / _build_insert_with_defaults and find the _add_returning_to_insert hook; (4) open base_postgres/executor.py for the RETURNING override and its _process_insert_result; (5) open mysql/executor.py and find _fetch_db_defaults_after_insert back in the base executor. 5 dependent steps. FIRST GREPS: 'stored value' -> no files; 'filled in' -> no files; 'after save|def save' -> models.py and client files only (no gold file; models.py is not gold). Agent-knowledge guesses 'db_default'/'RETURNING' would reach gold but are not question words. DECOYS: bulk path BulkCreateQuery._analyze_db_default_fields (queryset.py:2163, r3-22), pk read-back (_process_insert_result for generated pk, r3-08). VERIFICATION: read base/executor.py:224-408, base_postgres/executor.py:96-131, mysql/executor.py:150-162, sqlite/executor.py:32-82 (SQLite uses RETURNING too; acceptable extra), odbc/executor.py:7-16. Closed-book risk: low (generic ORM knowledge does not give the hook names). est. turns: 7."
+    },
+    {
+      "id": "r3h-tortoise-orm-02",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "On PostgreSQL I declare a column that holds a pre-built text-matching index structure, which the database keeps up to date from other text columns of the same row. When I filter on that column with the full-text matching operator, the generated SQL must not rebuild that structure a second time. Trace this from the column declaration to the final SQL condition.",
+      "expectedFiles": [
+        "tortoise/contrib/postgres/fields.py",
+        "tortoise/backends/base/schema_generator.py",
+        "tortoise/filters.py",
+        "tortoise/models.py",
+        "tortoise/backends/base_postgres/executor.py",
+        "tortoise/contrib/postgres/search.py"
+      ],
+      "expectedSymbols": [
+        "TSVectorField._get_generated_sql",
+        "TSVectorField._db_postgres.GENERATED_SQL",
+        "get_filters_for_field",
+        "MetaInfo._generate_filters",
+        "BasePostgresExecutor.get_overridden_filter_func",
+        "postgres_search",
+        "SearchCriterion"
+      ],
+      "expectedFacts": [
+        "TSVectorField builds a GENERATED ALWAYS AS (TO_TSVECTOR(...)) STORED expression (contrib/postgres/fields.py:53-70) and exposes it as the PostgreSQL GENERATED_SQL property (:85-91).",
+        "get_filters_for_field marks the search lookup with is_tsvector when the field is a TSVectorField (filters.py:557).",
+        "CRITICAL: BasePostgresExecutor.get_overridden_filter_func returns postgres_search with field_is_vector taken from that flag (base_postgres/executor.py:88-94); MetaInfo._generate_filters applies it to the model's filters (models.py:492-503).",
+        "CRITICAL: postgres_search builds SearchCriterion(vectorize=not field_is_vector) (base_postgres/executor.py:49-53), and SearchCriterion wraps the column in ToTsVector only when vectorize is true (contrib/postgres/search.py:31-34).",
+        "The base schema generator appends the generated SQL after the SQL type of a generated non-primary-key column (backends/base/schema_generator.py:~437-452)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) grep 'full-text' (only examples/ and CHANGELOG) then guess tsvector/search in contrib/postgres; (2) read contrib/postgres/fields.py TSVectorField (generated SQL) ; (3) find how the lookup is built: filters.py get_filters_for_field has the is_tsvector key; (4) find who consumes the key: base_postgres/executor.py get_overridden_filter_func; (5) read SearchCriterion in contrib/postgres/search.py and the models._generate_filters wiring. 5 dependent steps. FIRST GREPS: 'full-text' -> no tortoise/ file (only examples/postgres_full_text_search.py, CHANGELOG.rst); 'pre-built' -> none; 'rebuild' -> none. DECOYS: SearchVector/SearchQuery expression classes (contrib/postgres/search.py, annotate path), mysql_search (mysql/executor.py), the base filters.search placeholder (filters.py:155). VERIFICATION: read contrib/postgres/fields.py:11-91, filters.py:551-559, models.py:492-503, base_postgres/executor.py:49-94, contrib/postgres/search.py:31-34, backends/base/schema_generator.py:425-460. Closed-book risk: low. est. turns: 7."
+    },
+    {
+      "id": "r3h-tortoise-orm-03",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "I write an explanatory remark with a special comment marker directly above a column attribute inside my model class, without passing any description argument. When tables are created on PostgreSQL, that remark appears as documentation attached to the column in the database. Trace how it gets there.",
+      "expectedFiles": [
+        "tortoise/models.py",
+        "tortoise/backends/base/schema_generator.py",
+        "tortoise/backends/base_postgres/schema_generator.py"
+      ],
+      "expectedSymbols": [
+        "_get_comments",
+        "ModelMeta.__new__",
+        "BaseSchemaGenerator._get_field_comment",
+        "BasePostgresSchemaGenerator._column_comment_generator",
+        "BasePostgresSchemaGenerator._post_table_hook",
+        "BaseSchemaGenerator._get_table_sql"
+      ],
+      "expectedFacts": [
+        "_get_comments (models.py:148-177) extracts the #: comment lines above attribute assignments from the class source.",
+        "CRITICAL: ModelMeta.__new__ (models.py:555-561) sets the field's description to the first comment line when none was given, unless _no_comments is set on the class.",
+        "BaseSchemaGenerator._get_field_comment calls the dialect hook only when the field has a description (base/schema_generator.py:232-237).",
+        "CRITICAL: BasePostgresSchemaGenerator._column_comment_generator records a COMMENT ON COLUMN statement in comments_array and returns an empty inline string (base_postgres/schema_generator.py:46-52).",
+        "_post_table_hook emits the recorded statements after the CREATE TABLE (base_postgres/schema_generator.py:54-60, called at base/schema_generator.py:503)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) 'comment marker'/'remark' find nothing; grep 'comment' in backends/base_postgres/schema_generator.py or 'COMMENT ON'; (2) see _column_comment_generator and comments_array; (3) trace its caller _get_field_comment in base/schema_generator.py -> field.description; (4) find where description is set from a source comment: grep 'description =' -> models.py ModelMeta.__new__ -> _get_comments; (5) confirm _post_table_hook placement. 5 dependent steps. FIRST GREPS: 'comment marker' -> none; 'remark' -> none; 'documentation' -> only fields/data.py (not gold). DECOYS: MySQL inlines COMMENT (mysql/schema_generator.py:_column_comment_generator); SQLite emits /* */; the migration editor copy (migrations/schema_editor/base_postgres.py:36-52) is not used by generate_schemas; MSSQL drops comments. VERIFICATION: read models.py:148-177, 549-566; backends/base/schema_generator.py:232-237, 480-506; backends/base_postgres/schema_generator.py:19-60. Closed-book risk: low. est. turns: 7."
+    },
+    {
+      "id": "r3h-tortoise-orm-04",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "I turn a stored record into the validation and serialisation object generated for my model. The nested related records that this object declares come out filled in, although I never asked the database layer to load them. Trace how the list of relations to load is derived, and how they are then fetched.",
+      "expectedFiles": [
+        "tortoise/contrib/pydantic/creator.py",
+        "tortoise/contrib/pydantic/base.py",
+        "tortoise/models.py",
+        "tortoise/backends/base/executor.py"
+      ],
+      "expectedSymbols": [
+        "PydanticModelCreator.create_pydantic_model",
+        "PydanticModel.from_tortoise_orm",
+        "_get_fetch_fields",
+        "Model.fetch_related",
+        "BaseExecutor.fetch_for_list",
+        "BaseExecutor._execute_prefetch_queries",
+        "BaseExecutor._do_prefetch"
+      ],
+      "expectedFacts": [
+        "creator.py:391 stores the source ORM model in the generated class's model_config under orig_model.",
+        "PydanticModel.from_tortoise_orm (base.py:76-98) computes the paths with _get_fetch_fields, awaits obj.fetch_related(*paths), then validates the object.",
+        "CRITICAL: _get_fetch_fields (base.py:20-52) unwraps list and Optional annotations and builds 'relation__subrelation' paths from schema fields typed as nested schema classes, recursing through each class's orig_model.",
+        "Model.fetch_related (models.py:1212) delegates to BaseExecutor.fetch_for_list, which splits paths on '__' into prefetch_map (base/executor.py:773-790).",
+        "CRITICAL: _execute_prefetch_queries gathers _do_prefetch calls (base/executor.py:762, :746), which dispatch by relation kind: backward FK, backward one-to-one, many-to-many or direct."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) grep 'serialis' finds nothing in tortoise/ (docs/tests only); look at contrib/pydantic; (2) read base.py from_tortoise_orm -> _get_fetch_fields; (3) follow obj.fetch_related into models.py; (4) follow to executor.fetch_for_list; (5) read _execute_prefetch_queries/_do_prefetch for the relation-kind dispatch; (6) back to creator.py to see where orig_model is stored. 6 dependent steps. FIRST GREPS: 'serialis' -> no tortoise/ file (docs/contrib/pydantic.rst, tests, examples only); 'nested related' -> none; 'filled in' -> none. DECOYS: from_queryset / from_queryset_single (base.py:100-125) use QuerySet.prefetch_related instead; plain model_validate (from_attributes) fetches nothing; Prefetch class (query_utils.py). VERIFICATION: read contrib/pydantic/base.py:20-125, creator.py:380-395, models.py:1212-1222, backends/base/executor.py:732-790. Closed-book risk: low. est. turns: 7."
+    },
+    {
+      "id": "r3h-tortoise-orm-05",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A web framework runs my application's bootstrap code inside one separate task, yet code handling incoming calls in other tasks can still reach the database connections that the bootstrap code configured. Trace how the framework integration, the library's initialisation and its connection lookup make that work, and where the arrangement is undone when the application stops.",
+      "expectedFiles": [
+        "tortoise/contrib/fastapi/__init__.py",
+        "tortoise/__init__.py",
+        "tortoise/context.py",
+        "tortoise/connection.py"
+      ],
+      "expectedSymbols": [
+        "RegisterTortoise.init_orm",
+        "Tortoise.init",
+        "TortoiseContext.init",
+        "set_global_context",
+        "get_current_context",
+        "require_context",
+        "get_connection",
+        "TortoiseContext.close_connections"
+      ],
+      "expectedFacts": [
+        "RegisterTortoise defaults _enable_global_fallback to True and init_orm passes it to Tortoise.init (contrib/fastapi/__init__.py:131, :163-172).",
+        "Tortoise.init finds its context only through the context variable, ignoring the global fallback (tortoise/__init__.py:376).",
+        "CRITICAL: TortoiseContext.init calls set_global_context when the flag is set (context.py:328-329); set_global_context raises ConfigurationError if a global context already exists (:71-96).",
+        "CRITICAL: get_current_context returns the context-variable value first, else the module-level global context (context.py:55-68); get_connection reaches it through require_context (connection.py:315-327).",
+        "On stop, close_orm -> Tortoise.close_connections -> TortoiseContext.close_connections clears the global context if it is this one (context.py:431-446)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) none of 'bootstrap'/'web framework'/'incoming' match; open contrib/fastapi (or starlette) from the directory listing; (2) see init_orm -> Tortoise.init with the fallback flag; (3) read Tortoise.init to ctx.init; (4) context.py set_global_context and get_current_context; (5) connection.py get_connection -> require_context to close the loop; (6) close_orm -> close_connections clears it. 6 dependent steps. FIRST GREPS: 'bootstrap' -> none; 'web framework' -> none; 'incoming' -> none ('request' would hit context.py/fastapi but is not used). DECOYS: ConnectionHandler._storage_var (connection.py:47) is task-local transaction storage, not the cross-task fallback; ctx.__enter__ in init_app (tortoise/__init__.py:252); starlette integration has the same default (contrib/starlette/__init__.py:33-60, acceptable extra). VERIFICATION: read contrib/fastapi/__init__.py:120-190, tortoise/__init__.py:370-430 and 470-482, context.py:40-100, 320-330, 431-446, connection.py:315-327. est. turns: 7."
+    },
+    {
+      "id": "r3h-tortoise-orm-06",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "On SQLite, matching a text column against a regular expression only works if I opt in with a parameter in the connection address. Trace how the opt-in changes behaviour, from the address text to the condition in the generated SQL, including how the case-insensitive variant is realised.",
+      "expectedFiles": [
+        "tortoise/backends/base/config_generator.py",
+        "tortoise/connection.py",
+        "tortoise/backends/sqlite/__init__.py",
+        "tortoise/backends/sqlite/client.py",
+        "tortoise/contrib/sqlite/regex.py",
+        "tortoise/backends/sqlite/executor.py"
+      ],
+      "expectedSymbols": [
+        "expand_db_url",
+        "ConnectionHandler._discover_client_class",
+        "get_client_class",
+        "SqliteClientWithRegexpSupport.create_connection",
+        "install_regexp_functions",
+        "posix_sqlite_regexp",
+        "insensitive_posix_sqlite_regexp",
+        "SqliteExecutor.FILTER_FUNC_OVERRIDE"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The sqlite entry of DB_LOOKUP casts the install_regexp_functions parameter with bool (config_generator.py:64-73, :192-193), so any non-empty text counts as true.",
+        "ConnectionHandler._discover_client_class asks the engine module's get_client_class (connection.py:115-128); sqlite/__init__.py:5-10 returns SqliteClientWithRegexpSupport when the credential is truthy.",
+        "SqliteClientWithRegexpSupport.create_connection calls install_regexp_functions after the normal connect (sqlite/client.py:279-295).",
+        "install_regexp_functions registers Python functions named regexp (case-sensitive) and match (re.IGNORECASE) on the connection (contrib/sqlite/regex.py:32-43).",
+        "CRITICAL: SqliteExecutor.FILTER_FUNC_OVERRIDE maps the lookups to builders that emit the REGEXP operator, and the case-insensitive one the MATCH operator (sqlite/executor.py:27-30; contrib/sqlite/regex.py:20-29).",
+        "The generic regex lookups raise NotImplementedError, and MetaInfo._generate_filters swaps in the override (filters.py:160-170, models.py:492-503)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) 'regular expression' only hits docs/query.rst, so grep 'regexp' / sqlite client; (2) read sqlite/client.py SqliteClientWithRegexpSupport; (3) find who picks it: backends/sqlite/__init__.py get_client_class; (4) find who produces the credential: config_generator.py cast table; (5) find how the lookup SQL is built: sqlite executor FILTER_FUNC_OVERRIDE + contrib/sqlite/regex.py; (6) confirm the wiring in models._generate_filters. 6 dependent steps. GATING: the plain SqliteClient is the default and the decoy. FIRST GREPS: 'regular expression' -> only docs/query.rst; 'opt in' -> none; 'connection address' -> none. DECOYS: SqliteClient (default), PostgreSQL/MySQL regex overrides (base_postgres/executor.py:75-85, mysql/executor.py:115-128). Observation (not a fact): SqliteClient.__init__ copies leftover kwargs into pragmas (sqlite/client.py:66-69), so the opt-in is also sent as a PRAGMA. VERIFICATION: read config_generator.py:64-73 and 186-195, connection.py:115-153, sqlite/__init__.py, sqlite/client.py:50-95, 279-295, contrib/sqlite/regex.py, sqlite/executor.py:21-31, models.py:492-503. est. turns: 8."
+    },
+    {
+      "id": "r3h-tortoise-orm-07",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "Which parts of the library contain special handling for a model whose relation points back at its own table, including a many-to-many to itself? List every place where that loop-back changes what is generated or built.",
+      "expectedFiles": [
+        "tortoise/backends/base/schema_generator.py",
+        "tortoise/apps.py",
+        "tortoise/query_utils.py",
+        "tortoise/migrations/schema_editor/mssql.py",
+        "tortoise/migrations/schema_generator/operation_generator.py",
+        "tortoise/contrib/test/__init__.py",
+        "tortoise/contrib/pydantic/creator.py"
+      ],
+      "expectedSymbols": [
+        "BaseSchemaGenerator.get_create_schema_sql",
+        "Apps._init_relations",
+        "get_joins_for_related_field",
+        "MSSQLSchemaEditor._get_fk_reference_string",
+        "OperationGenerator._sort_by_dependencies",
+        "_topological_sort_models",
+        "PydanticModelCreator._create_submodel"
+      ],
+      "expectedFacts": [
+        "BaseSchemaGenerator.get_create_schema_sql lets a table be created when its only unresolved reference is itself: references.issubset(created_tables | {the table}) (base/schema_generator.py:563).",
+        "CRITICAL: Apps._init_relations renames a default many-to-many backward key from '<table>_id' to '<table>_rel_id' when it equals the forward key (apps.py:259-262).",
+        "get_joins_for_related_field and resolve_nested_field alias the joined table as '<table>__<field>' when the related table is the same table (query_utils.py:61-62, :140-141).",
+        "CRITICAL: MSSQLSchemaEditor._get_fk_reference_string downgrades ON DELETE CASCADE to NO ACTION for a foreign key that references its own table (migrations/schema_editor/mssql.py:90-110, with _current_model_table set at :80-88).",
+        "Two dependency sorters skip self-edges: OperationGenerator._sort_by_dependencies (operation_generator.py:87) and _topological_sort_models (contrib/test/__init__.py:138).",
+        "PydanticModelCreator._create_submodel returns None, so the field is excluded, when the model is already on the recursion stack and allow_cycles is false (contrib/pydantic/creator.py:555)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: members share no token and live in six modules: (1) no single grep ('itself' hits 5 unrelated files; 'tree' hits 3 unrelated); (2) agent must think of each layer: schema ordering (base/schema_generator.py), join aliasing (query_utils.py), relation init (apps.py), migrations (operation_generator.py + mssql editor), API schemas (creator.py), test helper; (3) read each layer to find the loop-back case; 6+ dependent reads. FIRST GREPS: 'points back' -> none; 'own table' -> none; 'tree' -> indexes.py, queryset.py, mysql/executor.py (no gold). DECOYS: backends/mssql/schema_generator.py _create_fk_string has NO self-reference downgrade (only the migration editor does); r3-25's cyclic-FK error (schema_generator.py:565-566) is a different case. VERIFICATION: grep -n results: schema_generator.py:563; apps.py:259-262; query_utils.py:61,140; mssql.py:80-110; operation_generator.py:87; contrib/test/__init__.py:138; creator.py:555. Facts merge the two sorters, so 6 facts for 7 files. est. turns: 9."
+    },
+    {
+      "id": "r3h-tortoise-orm-08",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "Which parts of the library change process-wide state outside their own objects when they run or are imported, for example by altering a standard-library or third-party object, the surrounding process settings, or an object shared by every client of one database kind? List each place and say what it changes.",
+      "expectedFiles": [
+        "tortoise/backends/base/config_generator.py",
+        "tortoise/backends/sqlite/executor.py",
+        "tortoise/context.py",
+        "tortoise/contrib/fastapi/__init__.py",
+        "tortoise/backends/mysql/client.py",
+        "tortoise/cli/cli.py"
+      ],
+      "expectedSymbols": [
+        "urlparse.uses_netloc.append",
+        "sqlite3.register_adapter",
+        "TortoiseContext._init_timezone",
+        "RegisterTortoise.__init__",
+        "MySQLClient.create_connection",
+        "_patch_loop_factory_for_ptpython"
+      ],
+      "expectedFacts": [
+        "backends/base/config_generator.py:11-18 appends the database URL schemes to the standard library's urllib.parse.uses_netloc list at import.",
+        "backends/sqlite/executor.py:17-21 registers sqlite3 adapters for Decimal, date and datetime on the standard sqlite3 module at import.",
+        "TortoiseContext._init_timezone (context.py:331-338, called at :302) writes the USE_TZ and TIMEZONE environment variables and clears the timezone caches.",
+        "When the deprecated add_exception_handlers option is true, RegisterTortoise.__init__ replaces ExceptionMiddleware.__call__ on Starlette's class (contrib/fastapi/__init__.py:144-161).",
+        "CRITICAL: MySQLClient.create_connection writes supports_transactions into the class-level Capabilities __dict__ shared by every MySQL client when a non-InnoDB engine is configured (backends/mysql/client.py:135-136).",
+        "CRITICAL: Only on Windows, _patch_loop_factory_for_ptpython replaces add_signal_handler and remove_signal_handler on the event-loop factory before the ptpython shell starts (cli/cli.py:45-60, :125-127)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: members share no token and span six layers, three of them gated (deprecated option, non-InnoDB engine, Windows). (1) grep 'monkey' finds only a docstring in mysql/executor.py; (2) grep 'os.environ' finds context.py and timezone/cli; (3) grep 'register_adapter' and 'uses_netloc' need the agent to know the idioms; (4) '__dict__[' finds the MySQL write; (5) 'ExceptionMiddleware' and 'platform.system' find the gated two; 6+ dependent steps. FIRST GREPS: 'process-wide' -> none; 'standard library' -> none; 'third party' -> none. DECOYS (not members): contrib/test/__init__.py:62 assigns expectedFailure.__doc__ on a unittest function (cosmetic; acceptable extra) and validators.py:197,285,368 set __doc__ on the library's own instances; Tortoise._init_timezone (tortoise/__init__.py:533) duplicates the env write but is never called. VERIFICATION: read config_generator.py:5-20, sqlite/executor.py:14-22, context.py:296-340, contrib/fastapi/__init__.py:140-162, mysql/client.py:125-146, cli/cli.py:45-60 and 119-128. est. turns: 9."
+    },
+    {
+      "id": "r3h-tortoise-orm-09",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "Some relation settings are honoured when tables are created straight from the model classes but are ignored when the same tables are created by replaying migrations. Name each such setting and say where each path handles or drops it.",
+      "expectedFiles": [
+        "tortoise/backends/base/schema_generator.py",
+        "tortoise/migrations/schema_editor/base.py",
+        "tortoise/migrations/schema_editor/mysql.py",
+        "tortoise/migrations/schema_editor/oracle.py",
+        "tortoise/migrations/schema_editor/mssql.py",
+        "tortoise/fields/base.py"
+      ],
+      "expectedSymbols": [
+        "BaseSchemaGenerator._get_field_sql_and_related_table",
+        "BaseSchemaGenerator._get_m2m_tables",
+        "BaseSchemaEditor._get_fk_field_definition",
+        "BaseSchemaEditor._get_m2m_table_definition",
+        "BaseSchemaEditor.M2M_TABLE_TEMPLATE",
+        "MySQLSchemaEditor._format_m2m_fk",
+        "Field.deconstruct"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The opt-out of the database-level foreign-key constraint on a foreign key or one-to-one is honoured by BaseSchemaGenerator._get_field_sql_and_related_table (base/schema_generator.py:264) but ignored by BaseSchemaEditor._get_fk_field_definition, which always emits the reference (migrations/schema_editor/base.py:268-309).",
+        "Field.deconstruct still writes that option into generated migration files (fields/base.py:570-571), so the migration records a setting its editor never reads.",
+        "The same opt-out on a many-to-many through table is honoured by BaseSchemaGenerator._get_m2m_tables (base/schema_generator.py:328, :370) but the editor's M2M_TABLE_TEMPLATE always adds both REFERENCES clauses (migrations/schema_editor/base.py:26-33, :226-266).",
+        "CRITICAL: The many-to-many delete rule is passed through by the generator (base/schema_generator.py:331-339) but fixed to CASCADE in every migration editor: the base template (migrations/schema_editor/base.py:29-31) and _format_m2m_fk in mysql.py:106-114, oracle.py:95-103 and mssql.py:191-198."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: the question words do not hit code. (1) Agent must guess the two schema-producing paths (grep 'schema_generator' vs 'schema_editor'); (2) compare relation handling in base/schema_generator.py (_get_field_sql_and_related_table, _get_m2m_tables) with migrations/schema_editor/base.py; (3) grep 'db_constraint' (reached only after guessing the option name) -> only generator lines + deconstruct, i.e. absent from editors; (4) compare M2M on_delete handling and find the hard-coded CASCADE in four editor files; 5+ dependent steps. FIRST GREPS: 'foreign-key constraint' -> none; 'delete rule' -> none; 'replaying' -> none. GATING: the editors are the variant path; the generator path is the decoy default. DECOYS: FK on_delete IS honoured by both paths (editor base.py:305, sqlite.py:105,350); Oracle's FK coercion to CASCADE (r3-17) exists in both paths; Meta.constraints is the reverse case (only migrations read it; model option, not a relation setting). VERIFICATION: grep -rn db_constraint tortoise -> schema_generator.py:264,328,370; relational.py (declaration); fields/base.py:570 (deconstruct); NO match under migrations/. grep -n 'ON DELETE' migrations/schema_editor -> base.py:25,29,31 (template), mssql.py:25, oracle.py:22, mysql.py:22. est. turns: 8."
+    },
+    {
+      "id": "r3h-tortoise-orm-10",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "A migration fails halfway through its stages. What decides whether the schema changes already made by earlier stages of that same migration are undone? List every piece of code that takes part in that decision, including the one that makes the answer depend on the database engine.",
+      "expectedFiles": [
+        "tortoise/migrations/migration.py",
+        "tortoise/migrations/executor.py",
+        "tortoise/migrations/schema_editor/base.py",
+        "tortoise/migrations/schema_editor/sqlite.py",
+        "tortoise/backends/base/client.py",
+        "tortoise/backends/base_postgres/client.py",
+        "tortoise/backends/sqlite/client.py"
+      ],
+      "expectedSymbols": [
+        "Migration.atomic",
+        "MigrationExecutor.migrate",
+        "BaseSchemaEditor.__init__",
+        "Migration._run_database_forward",
+        "SqliteSchemaEditor._run_sql",
+        "Capabilities"
+      ],
+      "expectedFacts": [
+        "Migration.atomic is a class attribute defaulting to True (migrations/migration.py:15), and MigrationExecutor.migrate builds the schema editor with atomic=migration.atomic (migrations/executor.py:86, :107).",
+        "CRITICAL: BaseSchemaEditor.__init__ sets atomic_migration = connection.capabilities.can_rollback_ddl and atomic (migrations/schema_editor/base.py:62).",
+        "When atomic_migration is true, migrate wraps the whole apply or unapply in in_transaction and swaps schema_editor.client for the transaction client (migrations/executor.py:87-96, :108-117); recording the migration happens afterwards, outside the transaction (:119-120).",
+        "CRITICAL: can_rollback_ddl is True only for the PostgreSQL family (base_postgres/client.py:54) and SQLite (sqlite/client.py:62, :288); the Capabilities default is False (base/client.py:88), so MySQL, MSSQL and Oracle are never whole-migration atomic.",
+        "Otherwise Migration._run_database_forward and _backward give an operation its own transaction only if the editor is not atomic, not collecting SQL, the client supports_transactions, and operation.atomic or (migration.atomic and operation.atomic is not False) holds (migrations/migration.py:139-185); schema operations default to atomic=False, RunPython and RunSQL to None.",
+        "SqliteSchemaEditor._run_sql in atomic mode splits the script on ';' and runs each statement through execute_query because executescript issues an implicit COMMIT (migrations/schema_editor/sqlite.py:33-51)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) grep 'rollback'/'roll back' lists the executor and every driver; read migrations/executor.py migrate(); (2) find in_transaction wrap conditioned on schema_editor.atomic_migration; (3) follow to schema_editor/base.py:62 and the capabilities flag; (4) check which backends set can_rollback_ddl (clients); (5) read Migration._run_database_forward for the per-operation fallback; (6) find the SQLite statement-splitting special case. 6 dependent steps; members share only the generic word 'atomic'. FIRST GREPS: 'undone' -> none; 'schema changes' -> none; 'stage' -> none ('rollback' would reach gold but is not a question word). GATING: the per-operation path (not atomic) is the variant; the executor transaction is the default decoy. DECOYS: transactions.atomic decorator (transactions.py:46), Operation.atomic class defaults (operations.py:39), cli sqlmigrate BEGIN/COMMIT printing (cli/cli.py:669-683, hard-coded to postgres by name). VERIFICATION: read migrations/executor.py:47-121, migration.py:9-20 and 139-185, schema_editor/base.py:56-66, schema_editor/sqlite.py:33-51, base_postgres/client.py:48-56, sqlite/client.py:55-64 and 280-290, base/client.py:70-106. est. turns: 8."
+    },
+    {
+      "id": "r3h-tortoise-orm-11",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "A model declares a default result sequence in its options. Where is that default parsed, inherited from a parent model, checked for wrong field names, and applied to queries, including the cases in which it is skipped or applied when related records are loaded?",
+      "expectedFiles": [
+        "tortoise/models.py",
+        "tortoise/queryset.py",
+        "tortoise/backends/base/executor.py"
+      ],
+      "expectedSymbols": [
+        "prepare_default_ordering",
+        "ModelMeta.__new__",
+        "MetaInfo.ordering",
+        "MetaInfo.finalise_fields",
+        "AwaitableQuery.resolve_ordering",
+        "BaseExecutor._prefetch_reverse_relation",
+        "BaseExecutor._prefetch_m2m_relation"
+      ],
+      "expectedFacts": [
+        "prepare_default_ordering turns the Meta ordering strings into (field, Order) pairs with QuerySet._resolve_ordering_string, a leading '-' meaning descending (models.py:78-84, queryset.py:206-216).",
+        "ModelMeta.__new__ copies _default_ordering from the first base whose meta has one when the subclass Meta defines no ordering (models.py:543-549).",
+        "MetaInfo.finalise_fields sets _ordering_validated, and the MetaInfo.ordering property raises ConfigurationError lazily when a default-ordering field is not a model field (models.py:298-306, :354-358).",
+        "CRITICAL: AwaitableQuery.resolve_ordering applies the model default only when no explicit ordering is passed and there are no annotations (queryset.py:241-242).",
+        "CRITICAL: Prefetching reverse foreign keys and many-to-many relations calls resolve_ordering with no explicit ordering (base/executor.py:536, :625), so the related model's default ordering applies to those lists; reverse one-to-one and direct prefetch do not."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) grep 'ordering' lists models.py, queryset.py, executor and many others; (2) read Meta handling in models.py (prepare_default_ordering, MetaInfo.ordering, ModelMeta inheritance); (3) read queryset.resolve_ordering for the use site and the annotation exemption; (4) notice executor prefetch helpers call resolve_ordering; (5) check reverse O2O and direct prefetch do not. 5-6 dependent steps. FIRST GREPS: 'default sequence' -> none; 'inherited from a parent' -> none; 'sort order' would hit queryset.py but is not a question word. DECOYS: QuerySet.last() uses reversed explicit orderings or pk desc and never the default (queryset.py:901-919); UnionQuery._parse_orderings (queryset.py:2503). VERIFICATION: read models.py:78-84, 228-233, 296-306, 351-360, 543-549; queryset.py:206-260; base/executor.py:520-545, 600-630. est. turns: 8."
+    },
+    {
+      "id": "r3h-tortoise-orm-12",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "The application configuration lists, as dotted path strings, classes that decide which database connection a model uses for reads and for writes. Which code imports and instantiates them during start-up? A second, near-identical copy of that start-up logic exists but nothing ever runs it; which one is live, and which functions then consult the instances?",
+      "expectedFiles": [
+        "tortoise/context.py",
+        "tortoise/router.py",
+        "tortoise/models.py",
+        "tortoise/queryset.py"
+      ],
+      "expectedSymbols": [
+        "TortoiseContext._init_routers",
+        "TortoiseContext.init",
+        "ConnectionRouter.init_routers",
+        "ConnectionRouter.db_for_read",
+        "ConnectionRouter.db_for_write",
+        "Model._choose_db",
+        "_ChooseDBMixin._choose_db"
+      ],
+      "expectedFacts": [
+        "TortoiseContext._init_routers imports each string path into a class and keeps classes as given (context.py:340-358).",
+        "CRITICAL: TortoiseContext.init calls it with the routers from the typed config or the argument (context.py:295, :316).",
+        "ConnectionRouter.init_routers instantiates each router class (router.py:17-18).",
+        "Model._choose_db and _ChooseDBMixin._choose_db ask the router for a write or read connection and fall back to the model's default connection (models.py:1256-1264, queryset.py:91-100).",
+        "CRITICAL: The classmethod Tortoise._init_routers (tortoise/__init__.py:451-467) is the dead duplicate: no code calls it."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) grep 'router' -> context.py, __init__.py, router.py, models.py, queryset.py; (2) two near-identical _init_routers definitions (context.py:340 and __init__.py:451); (3) check callers: grep '_init_routers' shows only context.py:316; (4) read ConnectionRouter and the _choose_db consumers. 4 dependent steps. FIRST GREPS: 'dotted path' -> none in tortoise/ (docs/cli.rst only); 'instantiat' -> contrib/pylint, fields/base.py (no gold); 'near-identical' -> none. DECOYS: Tortoise._init_routers (__init__.py:451, never called), likewise Tortoise._init_timezone (:533) and _init_apps (:261); the tests (tests/test_context.py:620-700) exercise ctx.init(routers=...). VERIFICATION: grep -rn '_init_routers' tortoise -> context.py:316 (call), context.py:340 (def), __init__.py:451 (def); grep -rn 'init_routers' -> router.py:17, context.py:358, __init__.py:467. est. turns: 6."
+    },
+    {
+      "id": "r3h-tortoise-orm-13",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "To print the SQL of a single migration without any database access, the executor is built normally and then a bookkeeping object is swapped for one that reports nothing as applied. Which stand-in does this, where is it installed, and how does it differ from the identically named stand-ins used by other commands?",
+      "expectedFiles": [
+        "tortoise/migrations/api/sqlmigrate.py",
+        "tortoise/migrations/executor.py"
+      ],
+      "expectedSymbols": [
+        "sqlmigrate",
+        "_NoopRecorder",
+        "MigrationExecutor.collect_sql"
+      ],
+      "expectedFacts": [
+        "CRITICAL: sqlmigrate builds the MigrationExecutor normally and then assigns executor.loader.recorder = _NoopRecorder() (migrations/api/sqlmigrate.py:60-63) before calling collect_sql.",
+        "The _NoopRecorder used there is defined in migrations/api/sqlmigrate.py:13-23: applied_migrations returns an empty list and ensure_schema does nothing.",
+        "CRITICAL: Two other classes with the same name exist: migrations/autodetector.py:26-34, passed to MigrationLoader at construction (:48), and cli/cli.py:161-169, used by the heads command (cli/cli.py:621).",
+        "MigrationExecutor.collect_sql replays every graph node as applied through _project_state and uses a schema editor in collect-SQL mode (migrations/executor.py:156-194)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) grep 'SQL of'/'print the sql' reaches cli/cli.py sqlmigrate_cmd; (2) follow into migrations/api/sqlmigrate.py; (3) spot the recorder swap at line 63 and the local _NoopRecorder; (4) grep '_NoopRecorder' finds three definitions and the agent must decide which is installed by sqlmigrate vs the others; (5) read executor.collect_sql. 5 dependent steps; the decoys are reachable by the first grep. FIRST GREPS: 'stand-in' -> none; 'bookkeeping' -> only tests/test_recorder.py and CHANGELOG; 'print the sql' -> cli/cli.py. DECOYS: the autodetector and CLI _NoopRecorder classes (same name, different install point). VERIFICATION: read migrations/api/sqlmigrate.py in full, migrations/autodetector.py:26-50, cli/cli.py:161-169 and 615-626, migrations/executor.py:156-194. est. turns: 6."
+    },
+    {
+      "id": "r3h-tortoise-orm-14",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "On which database backend does an inner nested transaction block fail to be rolled back on its own when it raises an exception, because the steps that the nested block calls are empty? Name the class whose steps are empty and say what the other backends do instead.",
+      "expectedFiles": [
+        "tortoise/backends/odbc/client.py",
+        "tortoise/backends/oracle/client.py",
+        "tortoise/backends/base/client.py",
+        "tortoise/backends/mssql/client.py"
+      ],
+      "expectedSymbols": [
+        "ODBCTransactionWrapper.savepoint",
+        "ODBCTransactionWrapper.savepoint_rollback",
+        "ODBCTransactionWrapper.release_savepoint",
+        "NestedTransactionContext",
+        "TransactionWrapper"
+      ],
+      "expectedFacts": [
+        "NestedTransactionContext calls client.savepoint() on enter, then savepoint_rollback() on an exception or release_savepoint() on success (base/client.py:388-405).",
+        "CRITICAL: ODBCTransactionWrapper implements savepoint, savepoint_rollback and release_savepoint as pass, and its _in_transaction returns NestedTransactionContext(self) (backends/odbc/client.py:168-217).",
+        "CRITICAL: Oracle's TransactionWrapper inherits those empty methods and only overrides begin (backends/oracle/client.py:129-132), so an inner block's work is undone only if the outer transaction rolls back.",
+        "MSSQL, although ODBC-based, overrides them with SAVE TRANSACTION and ROLLBACK TRANSACTION (backends/mssql/client.py:103-120); SQLite, MySQL, asyncpg and psycopg also implement real savepoints."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) grep 'nested' finds asyncpg and psycopg; grep 'savepoint' lists every client; (2) read base/client.py NestedTransactionContext to learn which hooks it calls; (3) read each driver's wrapper for those hooks: sqlite, mysql, asyncpg, psycopg, mssql implement them; (4) odbc/client.py has pass bodies; (5) check Oracle's TransactionWrapper and MSSQL's override to attribute the behaviour. 5 dependent steps; first grep reaches decoys. FIRST GREPS: 'nested transaction' -> asyncpg/client.py, psycopg/client.py (not gold); 'inner' -> many unrelated files; 'empty' -> many unrelated files. DECOYS: MSSQL TransactionWrapper (ODBC-based but overrides), SqliteTransactionWrapper (sqlite/client.py:255-275; r3-30 asks about it), mysql/asyncpg/psycopg wrappers. Exactly one backend (Oracle) has the no-op. VERIFICATION: read base/client.py:388-405, odbc/client.py:168-217, oracle/client.py:129-132, mssql/client.py:92-120. est. turns: 6."
+    },
+    {
+      "id": "r3h-tortoise-orm-15",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "On MySQL, a substring-match filter on a numeric column compares against the column after converting it to text. Which target type does the MySQL path use, how does this differ from the generic version used for other databases, and where is the MySQL version selected?",
+      "expectedFiles": [
+        "tortoise/backends/mysql/executor.py",
+        "tortoise/filters.py",
+        "tortoise/models.py"
+      ],
+      "expectedSymbols": [
+        "mysql_contains",
+        "MySQLExecutor.FILTER_FUNC_OVERRIDE",
+        "contains",
+        "Like",
+        "MetaInfo._generate_filters"
+      ],
+      "expectedFacts": [
+        "CRITICAL: MySQL's substring lookup casts the column to CHAR (mysql_contains, mysql/executor.py:58-62), while the generic lookup casts to VARCHAR (filters.py:151-152).",
+        "The MySQL version builds Like with escape='' so no ESCAPE clause is emitted, while the generic Like defaults to an ESCAPE '\\\\' clause (mysql/executor.py:58-62; filters.py:37-55).",
+        "MySQLExecutor.FILTER_FUNC_OVERRIDE maps the generic contains to mysql_contains (mysql/executor.py:115-128).",
+        "CRITICAL: MetaInfo._generate_filters replaces the filter operator with the executor's override for the model's connection (models.py:492-503)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) 'substring' finds nothing, so grep 'contains' -> filters.py (generic, the decoy) and mysql/executor.py; (2) notice both define a contains-like function and decide which applies on MySQL; (3) find the selection: FILTER_FUNC_OVERRIDE in mysql/executor.py and get_overridden_filter_func in base/executor.py; (4) confirm the wiring in models.py _generate_filters and compare the cast type and escape handling. 4 dependent steps; the decoy is reachable at once. FIRST GREPS: 'substring' -> none; 'numeric column' -> none; 'converting' -> query_utils.py only. DECOYS: filters.contains / starts_with / ends_with / insensitive_* (filters.py:151-200), filters.escape_like (filters.py:58, identical to mysql/executor.py:54), filters.Like. VERIFICATION: read mysql/executor.py:43-128, filters.py:37-60, 151-200, models.py:492-503. est. turns: 6."
+    },
+    {
+      "id": "r3h-tortoise-orm-16",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "I never set a migrations location for one of my apps. When I ask the command-line tool to create migration files, where does it decide which package they go into, and do the other migration commands (the ones that run migrations and list their history) find the same package?",
+      "expectedFiles": [
+        "tortoise/cli/cli.py",
+        "tortoise/cli/utils.py",
+        "tortoise/migrations/loader.py"
+      ],
+      "expectedSymbols": [
+        "makemigrations",
+        "_ensure_migrations_package",
+        "infer_migrations_module",
+        "normalize_apps_config",
+        "MigrationLoader.migrations_module"
+      ],
+      "expectedFacts": [
+        "makemigrations calls _ensure_migrations_package for each selected app and stores the returned module name in an in-memory copy of that app's config (cli/cli.py:431-445).",
+        "CRITICAL: _ensure_migrations_package uses the configured migrations value, else infer_migrations_module (cli/cli.py:211-259), which turns the first models module name ending in '.models' into the same prefix plus '.migrations' (cli/utils.py:154-164).",
+        "_ensure_migrations_package creates the package directory and an empty package marker file when missing (cli/cli.py:226-259).",
+        "CRITICAL: Only makemigrations and the init command (cli/cli.py:363-370) infer the location; the commands that run migrations, list history or show heads read the configured migrations key as given (MigrationLoader.migrations_module, migrations/loader.py:30-31), so an app without it is treated as unmigrated.",
+        "normalize_apps_config (cli/utils.py:167-181), which would infer the key for every app, is defined but never called."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) grep 'migration files' finds nothing; grep 'migrations' in cli/ reaches cli.py; (2) read makemigrations -> _ensure_migrations_package -> utils.infer_migrations_module; (3) look for other callers: grep infer_migrations_module -> only cli.py:214 and utils.py:172 (inside the unused normalize_apps_config); (4) read how the run/history/heads commands get app config (_run_migrate -> migrate_api -> MigrationExecutor -> MigrationLoader.migrations_module) and see no inference; (5) conclude. 5 dependent steps. GATING: the inference exists only in the makemigrations/init variant; normalize_apps_config is the decoy that looks like a shared fix. FIRST GREPS: 'migration files' -> none; 'never declare|not declare' -> none; 'which package' -> none. DECOYS: normalize_apps_config (cli/utils.py:167, never called; grep shows only the definition), MigrationAutodetector._disk_migration_names (autodetector.py:155). VERIFICATION: read cli/cli.py:211-262, 363-372, 431-447, 540-560, 599-626, cli/utils.py:154-181, migrations/loader.py:30-60, migrations/api/migrate.py:13-60. est. turns: 8."
+    },
+    {
+      "id": "r3h-tortoise-orm-17",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "I point my MySQL connection settings at a table engine that does not support transactions. How does the library find out, and what changes afterwards for batch inserts and for how migrations wrap their steps?",
+      "expectedFiles": [
+        "tortoise/backends/mysql/client.py",
+        "tortoise/backends/base/client.py",
+        "tortoise/migrations/migration.py"
+      ],
+      "expectedSymbols": [
+        "MySQLClient.__init__",
+        "MySQLClient.create_connection",
+        "MySQLClient.execute_many",
+        "Capabilities",
+        "Migration._run_database_forward"
+      ],
+      "expectedFacts": [
+        "MySQLClient.__init__ reads the storage_engine credential (mysql/client.py:96), and create_connection runs SET default_storage_engine on a pooled connection (:128-136).",
+        "CRITICAL: If the engine name is not 'innodb' (case-insensitive), create_connection sets supports_transactions to False by writing capabilities.__dict__, bypassing the Capabilities.__setattr__ guard (mysql/client.py:135-136; base/client.py:108-111).",
+        "That Capabilities object is a class-level instance shared by all MySQL clients (mysql/client.py:69-76).",
+        "MySQLClient.execute_many uses begin, commit and rollback around executemany only when supports_transactions is true, otherwise a bare executemany (mysql/client.py:196-209).",
+        "CRITICAL: Migration._run_database_forward and _backward wrap an operation in a transaction only when supports_transactions is true (migrations/migration.py:44-46, :149-161); MySQL's can_rollback_ddl is False anyway."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) 'table engine' finds nothing; read mysql/client.py (guess from MySQL); (2) find the engine option and the capability write in create_connection; (3) see Capabilities immutability guard in base/client.py and why __dict__ is used; (4) grep 'supports_transactions' for consumers: mysql execute_many and migrations/migration.py; (5) read migration.py wrapper logic. 5 dependent steps. FIRST GREPS: 'table engine' -> none; 'does not support transactions' -> none; 'batch insert' -> none. DECOYS: can_rollback_ddl (base/client.py:88), which MySQL leaves False regardless of engine; TransactionWrapper.execute_many (mysql/client.py:253) always plain executemany. VERIFICATION: read mysql/client.py:68-150 and 196-210, base/client.py:42-115, migration.py:36-50 and 139-161; grep -rn supports_transactions tortoise lists only these consumers. est. turns: 7."
+    },
+    {
+      "id": "r3h-tortoise-orm-18",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "I switch time-zone support off in my configuration and choose another zone name. The field conversion code and the MySQL connection code never receive that setting as an argument. How do they learn it, where is it cached, and what happens to a second initialisation with different values?",
+      "expectedFiles": [
+        "tortoise/context.py",
+        "tortoise/timezone.py",
+        "tortoise/fields/data.py",
+        "tortoise/backends/mysql/client.py"
+      ],
+      "expectedSymbols": [
+        "TortoiseContext._init_timezone",
+        "get_use_tz",
+        "get_timezone",
+        "get_default_timezone",
+        "_reset_timezone_cache"
+      ],
+      "expectedFacts": [
+        "CRITICAL: TortoiseContext.init calls _init_timezone, which writes the USE_TZ and TIMEZONE environment variables and then calls _reset_timezone_cache (context.py:302, :331-338).",
+        "get_use_tz, get_timezone and get_default_timezone read those variables and are cached with functools.cache (timezone.py:43-80); _reset_timezone_cache clears all three (:82-86).",
+        "Consumers import the helpers instead of receiving config: fields/data.py (:463-512, :601-640), mysql/client.py (:138-145) and oracle/client.py (:107).",
+        "CRITICAL: The state lives in os.environ, so a later initialisation overwrites it for every context in the process."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) 'time-zone' finds nothing (hyphenated); grep 'timezone' reaches timezone.py/context.py; (2) read timezone.py: functions read os.environ and are cached; (3) find the writer: grep 'os.environ' -> context.py:_init_timezone (and the dead Tortoise._init_timezone); (4) check the cache reset call; (5) read consumers in data.py and mysql client to confirm no argument passing. 5 dependent steps. FIRST GREPS: 'time-zone' -> none; 'zone name' -> none; 'never receive' -> none. DECOYS: Tortoise._init_timezone (tortoise/__init__.py:533-536, never called); TortoiseContext._timezone attribute (context.py:333-334) which is stored but not what the helpers read. VERIFICATION: read context.py:296-340, timezone.py:40-90, fields/data.py:463-512, mysql/client.py:136-146. Differs from r3-10 (naive datetime write) and r3-28 (MySQL session zone). est. turns: 7."
+    },
+    {
+      "id": "r3h-tortoise-orm-19",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "I want the database itself to fill a column with the current time on insert. On MySQL the generated column definition has to ask for fractional-second precision. Where is that dialect-specific text chosen, and how does it reach both the create-all-tables path and the migration path, including the MySQL-specific workaround when the default is an expression?",
+      "expectedFiles": [
+        "tortoise/fields/db_defaults.py",
+        "tortoise/backends/base/schema_generator.py",
+        "tortoise/migrations/schema_editor/base.py",
+        "tortoise/migrations/schema_editor/mysql.py",
+        "tortoise/migrations/writer.py"
+      ],
+      "expectedSymbols": [
+        "Now",
+        "Now.get_sql",
+        "BaseSchemaGenerator._get_field_default",
+        "BaseSchemaEditor._get_model_sql_data",
+        "BaseSchemaEditor.add_field",
+        "MySQLSchemaEditor.add_field",
+        "render_value"
+      ],
+      "expectedFacts": [
+        "CRITICAL: Now keeps a _DIALECT_SQL map in which MySQL gets CURRENT_TIMESTAMP(6) and every other dialect keeps CURRENT_TIMESTAMP, selected by get_sql(dialect) (fields/db_defaults.py:43-62).",
+        "BaseSchemaGenerator._get_field_default calls db_default.get_sql(dialect=self.DIALECT) for the create-all-tables path (backends/base/schema_generator.py:396-414).",
+        "BaseSchemaEditor does the same for migrations in create_model data (migrations/schema_editor/base.py:372) and add_field (:544).",
+        "CRITICAL: MySQLSchemaEditor.add_field adds a column with a SqlDefault expression in two statements, ADD COLUMN without default and then ALTER COLUMN SET DEFAULT, to avoid MySQL error 1674 (migrations/schema_editor/mysql.py:179-215).",
+        "The migration writer serialises the default back as Now() (migrations/writer.py:137-139), keeping migration files dialect-neutral."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) 'fractional' finds nothing; 'current time' finds timezone.py (not gold); look at fields/ for db defaults; (2) read fields/db_defaults.py Now/_DIALECT_SQL; (3) find consumers: grep get_sql(dialect -> base/schema_generator.py:404 and migrations editors; (4) read MySQL editor add_field workaround; (5) check writer.render_value. 5 dependent steps. FIRST GREPS: 'fill a column' -> none; 'fractional' -> none; 'current time' -> timezone.py (not gold). DECOYS: RandomHex.get_sql (db_defaults.py:67-95), the insert-side DatabaseDefault placeholder (fields/base.py:46-70), timezone.now (timezone.py:58). VERIFICATION: read fields/db_defaults.py:43-62, base/schema_generator.py:396-414, migrations/schema_editor/base.py:366-375, 538-546, 660-668, mysql.py:179-215, writer.py:130-146. est. turns: 7."
+    },
+    {
+      "id": "r3h-tortoise-orm-20",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "I add a restricting condition to a counting or summing aggregate so that only matching rows are counted or summed. Under what form of the aggregated target does the restriction really end up in the SQL, and when is it silently not applied?",
+      "expectedFiles": [
+        "tortoise/expressions.py"
+      ],
+      "expectedSymbols": [
+        "Aggregate.__init__",
+        "Aggregate._resolve_nested_field",
+        "Function._resolve_argument",
+        "Function.resolve"
+      ],
+      "expectedFacts": [
+        "Aggregate.__init__ stores the restriction (the _filter Q object) in self.filter (expressions.py:~615-627).",
+        "CRITICAL: Only Aggregate._resolve_nested_field uses it, wrapping the resolved column in CASE WHEN <condition> THEN <column> ELSE NULL (expressions.py:637-644).",
+        "CRITICAL: Function.resolve reaches _resolve_nested_field through _resolve_argument only when the target is a plain string (expressions.py:561-571, :582); an Expression such as F or arithmetic, or a pypika Term, is resolved directly so the restriction is silently ignored.",
+        "Extra arguments after the target are resolved with treat_str_as_field=False, so they never use the restriction either (expressions.py:583-585)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) 'counting'/'restricting condition' find nothing; open functions.py (Count/Sum) from the module listing; (2) follow Count -> Aggregate in expressions.py; (3) find where self.filter is read (only _resolve_nested_field); (4) read Function.resolve/_resolve_argument to learn that string targets alone reach it; (5) conclude for F/Term targets. 5 dependent steps. FIRST GREPS: 'restricting condition' -> none; 'counting' -> none; 'summing' -> none. GATING: the string-target branch is the variant; the expression branch silently skips it. DECOYS: filtering on annotations via Q (Q._resolve_custom_kwarg), QuerySet.filter on an annotated name. Tests only use string targets (tests/test_aggregation.py:119-121, tests/test_source_field.py:223-225); no test covers Count(F(...), _filter=...). VERIFICATION: read expressions.py:540-645 and functions.py:96-138. est. turns: 6."
+    },
+    {
+      "id": "r3h-tortoise-orm-21",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "My model has a last-modified timestamp column that the library updates automatically when I save an object. If I save an existing object but pass only a list of some other fields to update, is the timestamp updated? Explain what decides it, and what happens with the bulk update by queryset and with the bulk update helper.",
+      "expectedFiles": [
+        "tortoise/fields/data.py",
+        "tortoise/backends/base/executor.py",
+        "tortoise/models.py",
+        "tortoise/queryset.py"
+      ],
+      "expectedSymbols": [
+        "DatetimeField.to_db_value",
+        "BaseExecutor.execute_update",
+        "Model.save",
+        "UpdateQuery._make_query",
+        "BulkUpdateQuery._make_queries"
+      ],
+      "expectedFacts": [
+        "CRITICAL: DatetimeField.to_db_value refreshes the value only when its instance argument is a model instance (hasattr _saved_in_db) and auto_now is set, or auto_now_add with an empty value; it also writes the new value onto the instance (fields/data.py:484-512; TimeField :615-631 is similar).",
+        "Model.save passes update_fields to executor.execute_update (models.py:1131-1195).",
+        "CRITICAL: BaseExecutor.execute_update builds effective_fields from only the requested fields and calls to_db_value only for those, so a timestamp column not in the list is neither refreshed nor written (base/executor.py:461-506).",
+        "QuerySet.update passes None as the instance to to_db_value (queryset.py:1431), so it never refreshes the timestamp.",
+        "BulkUpdateQuery._make_queries passes each object to to_db_value (queryset.py:2097), so the timestamp is refreshed only if that column is in the fields argument."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) 'last-modified' finds nothing; grep 'auto_now' guess -> fields/data.py (hit after guessing); (2) read DatetimeField.to_db_value: instance check + auto_now; (3) find who calls to_db_value on save: executor.execute_update; (4) read how effective_fields is built from update_fields; (5) check the two bulk paths in queryset.py. 5 dependent steps. FIRST GREPS: 'last-modified' -> none; 'updated automatically' -> none; 'partial' -> many unrelated files (models.py among them, only for the partial-instance concept). DECOYS: DatetimeField.constraints readOnly flag, Model.__init__ default handling, pydantic readOnly. VERIFICATION: read fields/data.py:484-512, backends/base/executor.py:461-506, models.py:1131-1198, queryset.py:1405-1435 and 2085-2100. est. turns: 7."
+    },
+    {
+      "id": "r3h-tortoise-orm-22",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "When I change the name of a model attribute or of a whole model class and ask the tool to generate migration files, under which condition does it write a rename instead of a removal plus an addition? Which kinds of edits to a field produce no migration at all?",
+      "expectedFiles": [
+        "tortoise/migrations/schema_generator/state_diff.py",
+        "tortoise/migrations/schema_generator/operation_generator.py"
+      ],
+      "expectedSymbols": [
+        "StateFieldDiff.generate_operations",
+        "_field_signature",
+        "_field_signature_for_rename",
+        "_model_signature",
+        "OperationGenerator._match_renamed_models"
+      ],
+      "expectedFacts": [
+        "CRITICAL: _field_signature is the field's describe() output without name, docstring, default and python_type (and db_column when source_field is unset), so changing only the Python-side default produces no AlterField (state_diff.py:65-71).",
+        "CRITICAL: StateFieldDiff.generate_operations pairs each added field name (sorted) with the first removed name (sorted) whose _field_signature_for_rename is equal, and emits RenameField (state_diff.py:368-388); _field_signature_for_rename also drops source_field and db_column (:74-78).",
+        "For a field present in both states whose signature changed, it emits AlterField, but RemoveField plus AddField (and re-created indexes or constraints) when either side is generated (state_diff.py:390-405).",
+        "OperationGenerator._match_renamed_models emits RenameModel when a removed and an added model in the same app have equal _model_signature (operation_generator.py:35-52).",
+        "_model_signature compares non-relation field signatures, options without table/app/indexes/unique_together/constraints, bases, pk field name and the abstract flag (state_diff.py:93-108)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) grep 'rename' lists operations.py, writer.py, schema editors, operation_generator.py, state_diff.py; (2) operations.py RenameField/RenameModel are only the operation classes; find who creates them: operation_generator.py and state_diff.py; (3) read StateFieldDiff.generate_operations; (4) follow _field_signature_for_rename -> _field_signature -> describe(); (5) read _model_signature/_match_renamed_models for the class case. 5 dependent steps. FIRST GREPS: 'change the name' -> none; 'removal' -> none; 'rename' -> reaches state_diff.py (gold) among 8 files but the deciding comparison is two helpers away. DECOYS: RenameField.state_forward and database_forward (operations.py:557-620), MigrationAutodetector (autodetector.py) which only orders and names files, the FK-related RenameField SQL path. VERIFICATION: read state_diff.py:55-110 and 368-415, operation_generator.py:35-52 and 117-160. est. turns: 7."
+    },
+    {
+      "id": "r3h-tortoise-orm-23",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "negative-decoy",
+      "difficulty": "hard",
+      "query": "Where does the library consult the database client's declared ability to return values from an INSERT statement when it decides whether to append a returning clause or to run a separate follow-up lookup?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "A returning-support flag exists: Capabilities declares and stores support_returning (backends/base/client.py:67, :89, :105), and the PostgreSQL family (base_postgres/client.py:55) and SQLite (sqlite/client.py:63, :289) set it to True.",
+        "CRITICAL: No production code reads that flag when building inserts; in the package it is only set, and only tests (tests/test_db_default_insert.py:229, :264) read it by name.",
+        "CRITICAL: The behaviour is chosen by polymorphism: BaseExecutor._add_returning_to_insert does nothing (base/executor.py:299-310) while BasePostgresExecutor (base_postgres/executor.py:107) and SqliteExecutor (sqlite/executor.py:32) override it to add RETURNING.",
+        "Backends without that override (MySQL, ODBC) take the follow-up path _fetch_db_defaults_after_insert (mysql/executor.py:159, odbc/executor.py:16), again without consulting the flag."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) grep 'returning' -> executors (RETURNING clause builders) and clients; (2) grep 'support_returning' -> declaration and assignments only; (3) grep 'capabilities.support_returning' and '.support_returning' -> nothing in tortoise/ (tests only); (4) read _add_returning_to_insert overrides to see the real mechanism; (5) check MySQL/ODBC fall back. 5 dependent steps. FIRST GREPS: 'returning clause' -> sqlite/executor.py, base/executor.py (not a gold file; negative has none); 'follow-up lookup' -> none. VERIFICATION (negative): grep -rn 'support_returning' tortoise -> base/client.py:67,89,105; base_postgres/client.py:55; sqlite/client.py:63,289 (all declaration or assignment). grep -rn 'capabilities\\.support_returning' tortoise -> no match; grep -rn '\\.support_returning' tortoise -> only the assignment base/client.py:105; grep -rn 'support_returning' tests -> tests/test_db_default_insert.py:229,264. Dynamic reads: grep -rn 'getattr.*capabilities' tortoise -> only migrations/recorder.py:18-19 (dialect) and the generic test-skip decorator requireCapability (contrib/test/__init__.py:201), neither used for inserts. DECOYS: _add_returning_to_insert overrides and BasePostgresExecutor._prepare_insert_statement (base_postgres/executor.py:96-105). est. turns: 6."
+    },
+    {
+      "id": "r3h-tortoise-orm-24",
+      "repo": "tortoise-orm",
+      "language": "Python",
+      "stratum": "negative-decoy",
+      "difficulty": "hard",
+      "query": "Where does the migration loader substitute a combined (squashed) migration for the older migrations that it replaces, when it works out which migrations to run?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "A replaces attribute exists: Migration declares it and copies it per instance (migrations/migration.py:13, :23), and MigrationWriter accepts and writes it into generated files (migrations/writer.py:262, :271, :304-305).",
+        "CRITICAL: Nothing reads it: MigrationLoader, MigrationGraph and MigrationExecutor never reference replaces; the graph is built only from dependencies and run_before (migrations/loader.py:73-123).",
+        "No code generates replacing migrations either: MigrationAutodetector.changes never passes replaces to MigrationWriter (migrations/autodetector.py:50-74), and the word squash appears nowhere in the package or docs."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-tortoise-orm-drafter",
+      "date": "2026-10-01",
+      "notes": "CHEAPEST ROUTE: (1) grep 'replaces' -> migration.py and writer.py only; (2) read loader.build_graph / _add_*_dependencies and graph.py to confirm no use; (3) check executor._migration_plan and autodetector for any use; (4) grep 'squash' in tortoise/ and docs/ -> none; conclude no. 4 dependent steps. FIRST GREPS: 'squash' -> none; 'combined' -> expressions.py, contrib/postgres/search.py (unrelated); 'replaces' (agent guess) -> migration.py:13,23 and writer.py. VERIFICATION (negative): grep -rn 'replaces' tortoise -> migrations/migration.py:13,23 and migrations/writer.py:262,271,304,305 only; grep -rn '\\.replaces' tortoise/migrations/loader.py tortoise/migrations/graph.py tortoise/migrations/executor.py -> no match; grep -rni 'squash' tortoise docs CHANGELOG.rst -> no match; no getattr(migration, 'replaces') in the package. DECOYS: run_before handling (loader.py:119-123) and __first__/__latest__ resolution (loader.py:89-103), which look similar but resolve app-level dependencies. est. turns: 6."
+    }
+  ]
+}

@@ -1,0 +1,513 @@
+{
+ "repo": "r3-drogon",
+ "sha": "bfb3ae2e13572a30cbdbd623da1798794d5f2706",
+ "probes": [
+  {
+   "id": "r3hb-drogon-01",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "A site enables two bundled request-rewriting plugins: one that tidies repeated and trailing path separators and is set to answer with a redirect instead of rewriting silently, and one that forces encrypted transport and has no alternative secure host configured. A client sends an unencrypted request for a path with doubled and trailing separators, plus a query string. Which chain of code produces the single reply the client gets? Start where the framework first lets plugin code intercept the request, and say what status and location the reply carries.",
+   "expectedFiles": [
+    "lib/src/HttpServer.cc",
+    "lib/src/AOPAdvice.cc",
+    "lib/src/Redirector.cc",
+    "lib/src/SlashRemover.cc",
+    "lib/src/SecureSSLRedirector.cc"
+   ],
+   "expectedSymbols": [
+    "HttpServer::onRequests",
+    "passSyncAdvices",
+    "AopAdvice::passSyncAdvices",
+    "Redirector::initAndStart",
+    "SlashRemover::initAndStart",
+    "handleReq",
+    "SecureSSLRedirector::redirectingAdvice",
+    "SecureSSLRedirector::redirectToSSL",
+    "HttpResponse::newRedirectionResponse"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Redirector::initAndStart registers one synchronous advice with the framework. HttpServer::onRequests calls the static passSyncAdvices in HttpServer.cc, which calls AopAdvice::passSyncAdvices before routing. A non-null response from that advice is sent and the request is not routed.",
+    "SlashRemover::initAndStart registers its handleReq function as a path-rewrite handler (not a forward handler) because redirect is on. handleReq collapses the doubled and trailing separators with setPath.",
+    "The Redirector advice runs all path-rewrite handlers first, then all redirect handlers. So the secure-transport handler sees the already-rewritten path.",
+    "SecureSSLRedirector::redirectToSSL sets the protocol to https:// and leaves the host empty when no secure host is configured and the request has a Host header.",
+    "CRITICAL: Redirector builds the location from the protocol, the request's Host header, the rewritten path, and '?' plus the original query. It returns HttpResponse::newRedirectionResponse(url) whose default status is 302 Found.",
+    "The client therefore gets one 302 reply to the https URL with the cleaned path (for example //docs//a/ becomes /docs/a), not two redirects."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: HttpServer.cc:292,369 (calls) and :1230-1250 (static passSyncAdvices -> AopAdvice::passSyncAdvices, response queued, request skipped); AOPAdvice.cc:56-66; Redirector.cc:21-82 (advice lambda: pathRewriteHandlers_ loop :33, handlers_ loop :37, URL build :44-72, newRedirectionResponse :74, forwardHandlers_ :76); SlashRemover.cc:196-221 (redirect_ -> registerPathRewriteHandler :216, else registerForwardHandler :220); SlashRemover.cc:153-194 handleReq (both mode :183), findExcessiveSlashes :86-132; SecureSSLRedirector.cc:15-81 initAndStart (registerRedirectHandler :64), redirectingAdvice :83-107, redirectToSSL :109-137 (secureHost_ empty + Host header -> protocol https://, host empty); HttpResponseImpl.cc:197-206 + HttpResponse.h:441 (default k302Found). Hand-traced path //docs//a/ -> /docs/a. DECOYS: SecureSSLRedirector is not a separate sync advice (it only registers a handler); GlobalFilters pre-routing advice (not involved); HttpServer::handleHttpOptions/NotFound redirects; Redirector forwardHandlers_ branch (used only when redirect=false). CHEAPEST ROUTE: (1) grep redirect/slash -> Redirector.cc, SlashRemover.cc, SecureSSLRedirector.cc; (2) read Redirector.cc advice to learn ordering; (3) read SlashRemover.cc to learn which handler kind is used and what the path becomes; (4) read SecureSSLRedirector.cc for the protocol/host outcome; (5) grep registerSyncAdvice -> AOPAdvice.cc/HttpServer.cc to name the entry hop; (6) assemble URL and 302 from newRedirectionResponse default. Note: the first grep for 'redirect' does reach gold files, but the answer needs hops 2-6 (>=4 dependent). est. turns: 7 FIRST-3-GREPS: 'redirect' reaches Redirector.cc/SecureSSLRedirector.cc (gold) at once, so only hops 3-6 are the dependent work."
+  },
+  {
+   "id": "r3hb-drogon-02",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "A developer edits a server-page template file on disk while the server is running and sees the new output without a restart. Trace the chain from the application setting that switches this behaviour on, to the moment the freshly compiled template replaces the old one. Name the code at each hop, including how the template source turns into loadable machine code and how often the check happens.",
+   "expectedFiles": [
+    "lib/src/ConfigLoader.cc",
+    "lib/src/HttpAppFrameworkImpl.cc",
+    "lib/src/SharedLibManager.cc",
+    "drogon_ctl/create_view.cc"
+   ],
+   "expectedSymbols": [
+    "loadApp",
+    "HttpAppFrameworkImpl::enableDynamicViewsLoading",
+    "HttpAppFrameworkImpl::run",
+    "SharedLibManager::SharedLibManager",
+    "SharedLibManager::managerLibs",
+    "SharedLibManager::shouldCompileLib",
+    "SharedLibManager::compileAndLoadLib",
+    "SharedLibManager::loadLib",
+    "create_view::createViewFile"
+   ],
+   "expectedFacts": [
+    "CRITICAL: ConfigLoader.cc loadApp (non-Windows, non-iOS only) reads the dynamic-views switch (default false). Only when it is true and a non-empty list of view directories is configured does it call enableDynamicViewsLoading with those directories and the optional output directory.",
+    "HttpAppFrameworkImpl::enableDynamicViewsLoading stores the directories in libFilePaths_ (relative ones prefixed with the root path) and creates the output directory, exiting if that fails.",
+    "HttpAppFrameworkImpl::run constructs a SharedLibManager (libraries paths and output path) only if libFilePaths_ is not empty.",
+    "CRITICAL: The SharedLibManager constructor starts a worker thread with a repeating 5-second timer that calls managerLibs. managerLibs walks each directory recursively for .csp files, skips a file while its .lock file exists, and reprocesses a file when its modification time is newer than the recorded one.",
+    "When shouldCompileLib says the .so is missing or older than the source, managerLibs runs 'drogon_ctl create view <file> -o <dir>' through safeExec. create_view.cc translates the template into a .cc/.h pair, and compileAndLoadLib compiles it into a shared library; otherwise it just loads the existing .so.",
+    "loadLib dlcloses the previous handle and dlopens the new shared library; if source generation fails the old handle is kept."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ConfigLoader.cc:387-407 (load_dynamic_views, dynamic_views_path, dynamic_views_output_path; #if !_WIN32 && !TARGET_OS_IOS); HttpAppFrameworkImpl.cc:240-277 (path prefixing :248-262, createPath exit :268-273); HttpAppFrameworkImpl.cc:603-608 (SharedLibManager only if !libFilePaths_.empty()); SharedLibManager.cc:114-121 (runEvery(5.0)), :128-243 managerLibs (.csp filter :140, lock file :143-148, mtime compare :152-166, shouldCompileLib :186, safeExec drogon_ctl create view :197-206, compileAndLoadLib :217, lock removal runAfter 3.5 :235), :246-298 compileAndLoadLib, :300-327 shouldCompileLib, :329-350 loadLib (dlclose :333, dlopen :342); create_view.cc:303-362 createViewFile (writes .h/.cc). DECOYS: DrTemplateBase::newTemplate (name lookup at render time, not reload), HttpViewData/DrClassMap, StaticFileRouter (static files are served from disk each request but are not compiled), SSL reload (reloadSSLFiles). CHEAPEST ROUTE: (1) grep for reload/hot/recompile terms -> HttpAppFrameworkImpl/SharedLibManager; (2) read ConfigLoader.cc to find the switch and its conditions; (3) read enableDynamicViewsLoading; (4) read run() to find where the manager is created; (5) read SharedLibManager.cc for timer, lock, mtime, generate+compile+dlopen; (6) open create_view.cc to confirm the translator. est. turns: 7 FIRST-3-GREPS: 'template'/'reload'/'compile' hit DrTemplate*, SSL reload and docs; the first gold file needs the guess 'dynamic views' or 'shared lib'."
+  },
+  {
+   "id": "r3hb-drogon-03",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "An operator puts the framework behind a load balancer and wants per-client request throttling to count the end user's address, not the balancer's. Trace how the throttling decision obtains that address. Start at the throttle plugin's option for it, then show where the address is recorded on the request and at which moment of request processing, and finish with how one entry is chosen from a multi-valued forwarding header.",
+   "expectedFiles": [
+    "lib/src/Hodor.cc",
+    "lib/src/RealIpResolver.cc",
+    "lib/src/HttpAppFrameworkImpl.cc",
+    "lib/src/AOPAdvice.cc",
+    "lib/src/HttpServer.cc"
+   ],
+   "expectedSymbols": [
+    "Hodor::initAndStart",
+    "Hodor::onHttpRequest",
+    "Hodor::checkLimit",
+    "RealIpResolver::GetRealAddr",
+    "RealIpResolver::getRealAddr",
+    "RealIpResolver::initAndStart",
+    "XForwardedForParser::getNext",
+    "RealIpResolver::matchCidr",
+    "AopAdvice::passPreRoutingObservers",
+    "HttpServer::requestPreHandling"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Hodor::initAndStart reads a boolean option (default false) that makes Hodor::onHttpRequest use RealIpResolver::GetRealAddr(req) instead of req->peerAddr() as the client address for every limit strategy.",
+    "RealIpResolver::GetRealAddr returns the peer address if the RealIpResolver plugin is not loaded; otherwise plugin->getRealAddr returns the request attribute stored under the configured attribute key (default real-ip), or the peer address if the attribute is absent.",
+    "The attribute is written by a one-argument callback registered in RealIpResolver::initAndStart through registerPreRoutingAdvice. That overload registers a pre-routing observer, and HttpServer::onHttpRequest runs it through AopAdvice::passPreRoutingObservers before routing, so it runs before Hodor's pre-handling advice.",
+    "The callback keeps the peer address when the configured header is missing or the direct peer is not in the trusted CIDR list. For a multi-valued x-forwarded-for header, XForwardedForParser::getNext yields entries from the right end.",
+    "CRITICAL: The first entry that parses to a specified address and is not inside the trusted CIDRs (RealIpResolver::matchCidr) becomes the real address; if none qualifies, the peer address is used.",
+    "Hodor keeps its own separate trusted-IP list; a client whose resolved address matches it skips all limiting (Hodor::checkLimit)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Hodor.cc:75 (use_real_ip_resolver), :109-117 (own trust_ips), :119-123 (registerPreHandlingAdvice), :131-139 (checkLimit trust skip), :221-228 (GetRealAddr vs peerAddr); RealIpResolver.cc:153-196 (observer lambda; header/peer check :157; single-ip header :166-177; XFF loop :181-191; fallback :194), :24-52 XForwardedForParser::getNext (right-to-left), :202-218 GetRealAddr/getRealAddr, :253-269 matchCidr; HttpAppFrameworkImpl.cc:1302-1307 (one-arg overload -> registerPreRoutingObserver) vs :1309-1316 (three-arg advice); AOPAdvice.cc:68-77; HttpServer.cc:439 (observers) and :619 (pre-handling advices). DECOYS: GlobalFilters registers the three-argument pre-routing advice (a different overload); Hodor's trustCIDRs_ vs RealIpResolver's trustCIDRs_ are different lists; AccessLogger real-ip formatting; HttpRequest::peerAddr. CHEAPEST ROUTE: (1) grep throttle/limit/rate -> Hodor.cc; (2) read Hodor.cc to see the option and GetRealAddr call; (3) open RealIpResolver.cc GetRealAddr/getRealAddr; (4) read initAndStart lambda for attribute and XFF parsing; (5) grep the registration overload -> HttpAppFrameworkImpl.cc/AOPAdvice.cc to learn it is an observer; (6) HttpServer.cc to place it before routing vs pre-handling. est. turns: 8 FIRST-3-GREPS: 'throttle'/'rate'/'limit' reach Hodor.cc (gold) immediately; the dependent hops are RealIpResolver, the observer overload, the XFF scan."
+  },
+  {
+   "id": "r3hb-drogon-04",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "A media player asks a static-file endpoint for a middle slice of a very large file (hundreds of megabytes). Trace how the server turns that request into bytes on the socket. Start where the partial-content decision is made, then show how the response object is built, how its length header gets computed, and which call finally writes the file bytes. Say what status the client sees and when that status would instead be a plain success.",
+   "expectedFiles": [
+    "lib/src/StaticFileRouter.cc",
+    "lib/src/RangeParser.cc",
+    "lib/src/HttpResponseImpl.cc",
+    "lib/src/HttpServer.cc"
+   ],
+   "expectedSymbols": [
+    "StaticFileRouter::sendStaticFileResponse",
+    "parseRangeHeader",
+    "HttpResponse::newFileResponse",
+    "HttpResponseImpl::setSendfileRange",
+    "HttpResponseImpl::renderToBuffer",
+    "HttpServer::sendResponse"
+   ],
+   "expectedFacts": [
+    "CRITICAL: StaticFileRouter::sendStaticFileResponse handles ranges only when the range flag (default true) is set and a Range header exists. It stats the file, answers 304 if If-Modified-Since matches, and uses the range only when If-Range is empty or equals the Last-Modified string; otherwise it falls through to a normal full response.",
+    "parseRangeHeader (RangeParser.cc) returns SinglePart, MultiPart, NotSatisfiable or InvalidRange. StaticFileRouter treats MultiPart like SinglePart and serves only the first range, calling HttpResponse::newFileResponse with offset and length. NotSatisfiable gives 416 with a 'bytes */size' Content-Range.",
+    "HttpResponse::newFileResponse (HttpResponseImpl.cc) uses sendfile (setSendfile + setSendfileRange) when the global sendfile switch is on and the length is over 200 KiB; otherwise it reads the bytes into the body.",
+    "CRITICAL: newFileResponse sets 206 Partial Content only when the length is smaller than the file size; a range covering the whole file gives 200 (the Content-Range header is still added when requested).",
+    "HttpResponseImpl::renderToBuffer takes Content-Length from sendfileRange_.second when a sendfile name is set.",
+    "HttpServer::sendResponse sends the rendered header first, then calls conn->sendFile(name, range.first, range.second) to stream the bytes."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: StaticFileRouter.cc:344-433 (range branch: stat :346-352, 304 :355-364, If-Range :367, parse :371, Single/Multi :375-415 uses ranges.front() :378, 416 :416-427); StaticFileRouter.h:145 enableRange_{true} (no setter anywhere; grep enableRange_); RangeParser.cc:36-180 (>100 ranges -> InvalidRange, totalSize > contentLength -> NotSatisfiable); HttpResponseImpl.cc:281-406 newFileResponse (416 :303-314, sendfile threshold :321-330, 206 vs 200 :341-348, Content-Range :393-403); HttpResponseImpl.cc:770-777 (Content-Length from sendfileRange_.second); HttpServer.cc:1040-1041 (single) and :1126-1129 (batched) conn->sendFile; ConfigLoader.cc:441-442 use_sendfile -> HttpAppFrameworkImpl.h:311,592,735. DECOYS: non-range path (cache + .br/.gz precompressed siblings, StaticFileRouter.cc:505-560), HttpResponse::newFileResponse in-memory overload (:215), HttpServer chunked streaming path (streamCallback), HttpClientImpl. CHEAPEST ROUTE: (1) grep range/partial -> StaticFileRouter.cc, RangeParser.cc; (2) read sendStaticFileResponse range branch; (3) read RangeParser result semantics; (4) follow newFileResponse in HttpResponseImpl.cc; (5) find where Content-Length is rendered; (6) grep sendfileRange/sendFile -> HttpServer.cc. est. turns: 8 FIRST-3-GREPS: 'range' reaches StaticFileRouter.cc/RangeParser.cc (gold); the dependent hops are newFileResponse, content-length render, sendFile."
+  },
+  {
+   "id": "r3hb-drogon-05",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "List every place in the HTTP server code where an operator-configurable ceiling on what a remote peer may send or keep open is enforced. Count only checks driven by application settings (not fixed constants), and ignore the optional request-rate-limiting plugin. Cover payload size (including size after expanding a compressed body), how many requests one connection may carry or have in flight, how many connections are accepted, and message size on upgraded connections. For each, say where the check lives.",
+   "expectedFiles": [
+    "lib/src/HttpRequestParser.cc",
+    "lib/src/HttpRequestImpl.cc",
+    "lib/src/HttpServer.cc",
+    "lib/src/HttpConnectionLimit.cc",
+    "lib/src/WebSocketConnectionImpl.cc"
+   ],
+   "expectedSymbols": [
+    "HttpRequestParser::parseRequest",
+    "HttpRequestImpl::decompressBodyGzip",
+    "HttpServer::onRequests",
+    "HttpServer::onConnection",
+    "HttpConnectionLimit::tryAddConnection",
+    "WebSocketMessageParser::parse"
+   ],
+   "expectedFacts": [
+    "HttpRequestParser::parseRequest compares the declared content length to getClientMaxBodySize and returns 413 (HttpRequestParser.cc:277-279); the chunked path adds each chunk length to the running total and returns 413 when over the same limit (:380-382).",
+    "HttpRequestImpl::decompressBodyGzip stops with TooLarge when the expanded output exceeds getClientMaxBodySize (HttpRequestImpl.cc:1040); HttpServer's tryDecompressRequest turns that status into 413.",
+    "HttpServer::onRequests stops the parser and shuts the connection down when the number of requests parsed on it reaches the keep-alive request limit (HttpServer.cc:333-339).",
+    "HttpServer::onRequests applies the same shutdown when queued pipelined requests plus the new batch reach the pipelining limit (HttpServer.cc:341-347).",
+    "HttpConnectionLimit::tryAddConnection (called from HttpServer::onConnection) refuses a connection over the global maximum or over the per-IP maximum, and the server force-closes it (HttpConnectionLimit.cc:30-54, HttpServer.cc:121-125).",
+    "WebSocketMessageParser::parse rejects a masked (client) frame whose length exceeds getClientMaxWebSocketMessageSize (WebSocketConnectionImpl.cc:371-379)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: HttpRequestParser.cc:277-279 and :380-382; HttpRequestImpl.cc:1020-1046 (gzip) with HttpServer.cc:1192-1226 mapping TooLarge -> k413RequestEntityTooLarge :1209; HttpServer.cc:333-347; HttpConnectionLimit.cc:30-54 + HttpServer.cc:121-125; WebSocketConnectionImpl.cc:268 (parse), :371-379; ConfigLoader.cc:376-384 and :460-497 map the settings. NOT GOLD (decoys): fixed 64K request-line and header-line caps (HttpRequestParser.cc:177-183 and :200-205, not configurable); client_max_memory_body_size (HttpRequestImpl.cc:816,848) only spills the body to a temp file, it rejects nothing; Hodor plugin rate limits (excluded in the question); JSON parser stack limit (HttpRequestImpl.cc:47, a nesting limit, borderline and not counted); decompressBodyBrotli (HttpRequestImpl.cc:951, same check but its status is dropped, see r3hb-drogon-14); HttpClientImpl response handling. Members use different names and layers (parser, request, server, connection limiter, websocket). CHEAPEST ROUTE: (1) grep max body/limit -> getClientMaxBodySize hits; (2) read HttpRequestParser to find both places; (3) grep keep-alive/pipelining numbers -> HttpServer.cc; (4) find connection caps -> HttpConnectionLimit; (5) find websocket size check; (6) find compressed-body size check -> HttpRequestImpl. No single grep returns all. est. turns: 9 FIRST-3-GREPS: 'max body size' reaches only HttpRequestParser.cc; each other member needs its own search."
+  },
+  {
+   "id": "r3hb-drogon-06",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "The framework serves the header-only retrieval verb (the one that returns the headers a plain retrieval would return, but no body) for routes that were registered only for plain retrieval. List every place in the server-side production code (library and configuration loading, not tests, examples or the outbound client) where this verb gets special handling.",
+   "expectedFiles": [
+    "lib/src/HttpServer.cc",
+    "lib/src/HttpRequestParser.cc",
+    "lib/src/HttpRequestImpl.h",
+    "lib/src/HttpResponseImpl.cc",
+    "lib/src/HttpControllersRouter.cc",
+    "lib/src/ConfigLoader.cc"
+   ],
+   "expectedSymbols": [
+    "HttpServer::onRequests",
+    "getCompressedResponse",
+    "HttpServer::sendResponse",
+    "HttpServer::sendResponses",
+    "HttpResponseImpl::renderHeaderForHeadMethod",
+    "HttpRequestImpl::isHead",
+    "HttpControllersRouter::init",
+    "loadControllers"
+   ],
+   "expectedFacts": [
+    "HttpServer::onRequests records whether the method is HEAD, rewrites the request method to GET before routing, and stores that flag with each queued pipelined request and in the callback parameter pack (HttpServer.cc:358-366, HttpRequestParser::pushRequestToPipelining :463).",
+    "HttpRequestImpl::setMethod keeps previousMethod_, so HttpRequestImpl::isHead() still reports true for a request rewritten to GET (HttpRequestImpl.h:141,151-156).",
+    "HttpServer.cc getCompressedResponse returns the response unchanged (no gzip or brotli) when the request was HEAD (:1297).",
+    "HttpServer::sendResponse and sendResponses send only the header block built by HttpResponseImpl::renderHeaderForHeadMethod, with no body, sendfile or stream, when the HEAD flag is set (HttpServer.cc:994-1056, :1076-1156; HttpResponseImpl.cc:939).",
+    "HttpControllersRouter::init adds 'GET,HEAD,' to the advertised CORS method list when a GET binder is marked CORS (HttpControllersRouter.cc:41-44).",
+    "CRITICAL: ConfigLoader.cc loadControllers has a 'head' branch for simple-controller http_methods that adds the Head constraint, but it can never take effect because HEAD requests are rewritten to GET before routing (marked 'The branch never work', ConfigLoader.cc:218-221)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: HttpServer.cc:358-366 and :404 (isHeadMethod, setMethod(Get), pushRequestToPipelining), :369 passSyncAdvices(isHeadMethod), :1297 (getCompressedResponse), :990-1056 sendResponse, :1060-1156 sendResponses; HttpRequestParser.cc:462-467; HttpRequestImpl.h:139-157; HttpResponseImpl.cc:939-975; HttpControllersRouter.cc:36-50; ConfigLoader.cc:216-221. NOT GOLD (decoys): HttpClientImpl.cc:97,626 and HttpRequestImpl.cc:203,670,728 (outbound client rendering and method name/parse tables); HttpResponseParser; tests. Members differ in name (isHeadMethod, Head, isHead, renderHeaderForHeadMethod, 'head' string) and layer (core server, parser, router, config). CHEAPEST ROUTE: (1) grep -i head over lib/src (huge noise from header/headers); (2) filter to Head/isHeadMethod; (3) read HttpServer.cc onRequests, getCompressedResponse, sendResponse; (4) read HttpResponseImpl renderHeaderForHeadMethod; (5) find HttpRequestImpl isHead and router CORS list; (6) find ConfigLoader dead branch. est. turns: 9 FIRST-3-GREPS: 'head' is flooded by header/headers noise; 'HEAD' reaches HttpRequestImpl.cc client-side decoys first."
+  },
+  {
+   "id": "r3hb-drogon-07",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "Which places in the server hold on to a finished response object and hand that same object to many different requests, instead of building a new response each time? Count only places that reuse a ready-made response across requests, not helpers that build a fresh one on every call.",
+   "expectedFiles": [
+    "lib/src/HttpServer.cc",
+    "lib/src/ControllerBinderBase.h",
+    "lib/src/StaticFileRouter.cc",
+    "lib/src/HttpResponseImpl.cc",
+    "lib/src/HttpAppFrameworkImpl.cc",
+    "lib/src/Hodor.cc"
+   ],
+   "expectedSymbols": [
+    "HttpServer::httpRequestHandling",
+    "ControllerBinderBase::responseCache_",
+    "StaticFileRouter::sendStaticFileResponse",
+    "HttpResponse::newNotFoundResponse",
+    "HttpAppFrameworkImpl::getCustom404Page",
+    "Hodor::initAndStart",
+    "Hodor::onHttpRequest"
+   ],
+   "expectedFacts": [
+    "HttpServer::httpRequestHandling returns a per-route cached response (binder responseCache_, an IOThreadStorage declared in ControllerBinderBase.h) while it has not expired, and stores a handler's response there when its expired time is >= 0 and the status is not 404 (HttpServer.cc:645-700, check :651-669, store :680-690).",
+    "StaticFileRouter::sendStaticFileResponse keeps built file responses in a per-IO-thread map (staticFilesCache_) keyed by file path, with expiry through a CacheMap, when static cache time is >= 0 (StaticFileRouter.cc:449-453,495-498,593-606).",
+    "HttpResponse::newNotFoundResponse returns a per-IO-thread cached built-in 404 page (thread404Pages, expired time 0) when no custom error handler is set (HttpResponseImpl.cc:160-186).",
+    "HttpAppFrameworkImpl::getCustom404Page keeps one copy of the application's custom 404 page per IO thread (HttpAppFrameworkImpl.cc:1067-1092).",
+    "Hodor::initAndStart builds one rejection response (429, close connection) and Hodor::onHttpRequest hands that same object to every rejected request unless a factory is set (Hodor.cc:76-81,241-243)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: HttpServer.cc:645-700 (cachedResp check :651-669; store :680-690 resp->expiredTime() >= 0 && != k404NotFound); ControllerBinderBase.h:36 responseCache_; HttpControllersRouter.cc:255,329,559 (re-init per thread); StaticFileRouter.cc:41-58, :449-453 lookup, :495 hit, :593-606 insert (setExpiredTime(staticFilesCacheTime_), staticFilesCache_ + CacheMap erase); HttpResponseImpl.cc:160-186; HttpAppFrameworkImpl.cc:1067-1092; Hodor.cc:76-81, :241-243. NOT GOLD (decoys): defaultErrorHandler (HttpAppFrameworkImpl.cc:111 builds a new response per call); StaticFileRouter::defaultHandler (new 404 each time); HttpServer.cc:762, applyConnectionDecision :1271-1290, getCompressedResponse :1292-1355 and HttpAppFrameworkImpl::handleSessionForResponse :745-800 (these COPY a shared response before mutating it); Redirector builds fresh redirects; HttpResponseImpl header-string memo (makeHeaderString, single response only). CHEAPEST ROUTE: (1) grep cache/expired -> many hits; (2) read HttpServer.cc httpRequestHandling; (3) find static cache; (4) find 404 caches (two copies in two files); (5) notice Hodor's shared reject response by reading Hodor.cc; (6) rule out copy-on-write helpers. Members use different tokens: responseCache_, staticFilesCache_, thread404Pages, rejectResponse_. est. turns: 9 FIRST-3-GREPS: 'cache'/'expired' hit dozens of unrelated lines (CacheMap, sessions, Hodor limiter maps)."
+  },
+  {
+   "id": "r3hb-drogon-08",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "Application code wants to hand an incoming request over to another server given only as a URL string, and give that server's reply back to its own caller. Which framework function does the hand-over, how does it avoid creating a new outbound client for every request, and what does the original caller receive if the other server cannot be reached? Do not confuse it with the variant that re-dispatches inside the same application.",
+   "expectedFiles": [
+    "lib/src/HttpAppFrameworkImpl.cc",
+    "lib/inc/drogon/HttpAppFramework.h",
+    "lib/src/HttpServer.h",
+    "lib/src/HttpClientImpl.cc"
+   ],
+   "expectedSymbols": [
+    "HttpAppFrameworkImpl::forward",
+    "HttpInternalForwardHelper::forward",
+    "HttpClientImpl::sendRequest",
+    "HttpResponse::newNotFoundResponse"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The remote variant is HttpAppFrameworkImpl::forward with a non-empty host string (HttpAppFrameworkImpl.cc:847-897). An empty host string goes to HttpInternalForwardHelper::forward, which just calls HttpServer::onHttpRequest again inside the same app.",
+    "It keeps a function-static map from host string to HttpClientImpl guarded by a mutex, and creates a client only on first use of a host. The client is bound to the current thread's event loop, or the main loop if the caller is not on one.",
+    "It marks the request as pass-through (setPassThrough(true)) so the outbound request keeps its headers and body framing as they are, then calls clientPtr->sendRequest(req, ..., timeout).",
+    "On ReqResult::Ok it marks the upstream response pass-through and passes it to the callback unchanged.",
+    "CRITICAL: On any other ReqResult (timeout, network failure, bad response, etc.) the caller gets HttpResponse::newNotFoundResponse(req), a 404, not a 502 or 504."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: HttpAppFrameworkImpl.cc:847-897 (empty host -> HttpInternalForwardHelper :853-856; static clientsMap/mtx :860-862; client creation :865-878; setPassThrough :880; sendRequest :881; failure branch :884-893); HttpServer.h:156-164 HttpInternalForwardHelper; HttpAppFramework.h:728-762 docs (reverse proxy use, empty host note). DECOYS: HttpClient::newHttpClient + sendRequest (generic outbound client, a fresh object per call, no passthrough), Redirector plugin (client-visible redirects), HttpAppFramework::forwardCoro awaiter (:770, wrapper over forward), HttpClientImpl::sendRequestInLoop pass-through header logic (:414-420). CHEAPEST ROUTE: (1) grep forward -> HttpAppFramework.h docs and HttpAppFrameworkImpl.cc (std::forward noise); (2) read the two forward overloads; (3) open HttpServer.h helper to rule out the same-app variant; (4) check HttpClientImpl sendRequest and ReqResult enumerators to confirm what 'not reached' maps to; (5) confirm the 404 helper. est. turns: 6 FIRST-3-GREPS: 'forward' is flooded by std::forward; 'proxy' reaches the gold comment only after that."
+  },
+  {
+   "id": "r3hb-drogon-09",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "An operator lists an embedded single-file database client in the application configuration with the per-I/O-thread lock-free option switched on, as is done for server databases. At startup, which kind of client object does the framework create for it, and what happens to that option on the way? Name the plausible lock-free candidate that is NOT used.",
+   "expectedFiles": [
+    "lib/src/ConfigLoader.cc",
+    "lib/src/HttpAppFrameworkImpl.cc",
+    "orm_lib/inc/drogon/orm/DbConfig.h",
+    "orm_lib/src/DbClientManager.cc",
+    "orm_lib/src/DbClient.cc",
+    "orm_lib/src/DbClientLockFree.cc"
+   ],
+   "expectedSymbols": [
+    "loadDbClients",
+    "HttpAppFrameworkImpl::addDbClient",
+    "Sqlite3Config",
+    "DbClientManager::createDbClients",
+    "DbClient::newSqlite3Client",
+    "DbClientImpl",
+    "DbClientLockFree::DbClientLockFree"
+   ],
+   "expectedFacts": [
+    "ConfigLoader.cc loadDbClients reads the per-thread fast flag for every client type and passes it to HttpAppFrameworkImpl::addDbClient (ConfigLoader.cc:565,584-597).",
+    "CRITICAL: For sqlite3, HttpAppFrameworkImpl::addDbClient builds Sqlite3Config from connection count, filename, name and timeout only. Sqlite3Config (DbConfig.h) has no fast field, unlike PostgresConfig and MysqlConfig, so the option is silently dropped (HttpAppFrameworkImpl.cc:1011).",
+    "CRITICAL: DbClientManager::createDbClients handles the sqlite3 case by storing a regular shared client from DbClient::newSqlite3Client (a DbClientImpl) in dbClientsMap_. It never uses initFastDbClients or dbFastClientsMap_ for sqlite3 (DbClientManager.cc:133-143).",
+    "The unused candidate is DbClientLockFree, the per-IO-thread lock-free client. Its constructor only creates connections for PostgreSQL or MySQL and logs 'No supported database type' for anything else (DbClientLockFree.cc:62-71).",
+    "Consequently hasFastDbClient for that name is false, since only dbFastClientsMap_ is consulted (DbClientManager.h:55-58)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ConfigLoader.cc:565 is_fast read (inside loadDbClients), :584-597 addDbClient call; HttpAppFrameworkImpl.cc:965-1018 (postgres :983 includes isFast+autoBatch, mysql :998 includes isFast, sqlite3 :1011 has none); DbConfig.h:23-61; DbClientManager.cc:73-145 (pg :79-107, mysql :108-131, sqlite3 :133-143); DbClientManager.h:55-58; DbClient.cc:78-100 (newSqlite3Client -> DbClientImpl with ClientType::Sqlite3); DbClientLockFree.cc:49-72. DECOYS: initFastDbClients (DbClientManager.cc:45) is used only by pg and mysql branches; mysql also ignores auto_batch (:115-123 passes false); DbClientImpl for pg (non-fast). CHEAPEST ROUTE: (1) grep fast/is_fast -> ConfigLoader.cc and DbClientManager; (2) read ConfigLoader.cc loadDbClients; (3) follow addDbClient string dispatch in HttpAppFrameworkImpl.cc to see which config struct receives the flag; (4) open DbConfig.h to compare structs; (5) read DbClientManager::createDbClients sqlite3 branch; (6) check DbClientLockFree ctor type guard. est. turns: 7 FIRST-3-GREPS: 'fast' reaches ConfigLoader.cc/DbClientManager.cc, but the answer needs DbConfig.h and the sqlite3 branch comparison."
+  },
+  {
+   "id": "r3hb-drogon-10",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "In a server-page template, a developer writes a square-bracket placeholder for a view-data entry that the controller stored as a plain number with the general-purpose insert. The page renders with nothing at that spot, and no error is logged. Why does this happen, which code is responsible, and which other ways of putting a number on the page work?",
+   "expectedFiles": [
+    "drogon_ctl/create_view.cc",
+    "lib/inc/drogon/HttpViewData.h"
+   ],
+   "expectedSymbols": [
+    "outputVal",
+    "parseLine",
+    "HttpViewData::insertAsString",
+    "HttpViewData::insertFormattedString"
+   ],
+   "expectedFacts": [
+    "CRITICAL: drogon_ctl/create_view.cc parseLine turns a square-bracket placeholder into a call to outputVal with the key name trimmed of spaces (create_view.cc:149-165).",
+    "CRITICAL: outputVal (create_view.cc:72-87) generates code that reads the std::any entry and writes it to the stream only if its dynamic type is const char* or std::string/const std::string. There is no else branch, so an int or other type prints nothing and logs nothing.",
+    "HttpViewData::insertAsString converts any streamable value to std::string with a stringstream before storing it, so a placeholder prints it (HttpViewData.h:68-75); insertFormattedString also stores a string (:78-).",
+    "The brace-percent form {% expr %} is rewritten to a c++ block that streams the expression to the output stream, so any streamable type prints (create_view.cc:539-541).",
+    "The generated genText code is compiled into the page class by the view generator, so the check happens at render time on the stored type."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: create_view.cc:30 cxx_val_start, :72-87 outputVal (two typeid tests, no else), :149-170 parseLine placeholder branch (keyName trim :154-163), :536-541 brace-percent rewrite with $$ stream name via parseCxxLine replace_all(cxx_output) :54-62; HttpViewData.h:68-76 insertAsString, :78-130 insertFormattedString, :134-137 operator[]. DECOYS: HttpViewData::get<T> (typed fetch, logs 'Bad type' on mismatch :37-49, but is used in <%c++ %> blocks, not by the placeholder); drogon_ctl/templates/*.csp (framework's own model templates use the same placeholder with string data); DrTemplateBase::newTemplate; HttpResponse::newHttpViewResponse. CHEAPEST ROUTE: (1) grep for the template syntax terms -> drogon_ctl/create_view.cc and templates; (2) read parseLine to find the placeholder branch; (3) read outputVal for the type tests; (4) open HttpViewData.h to find the string-converting inserts; (5) read the brace-percent rewrite to find the other working form. First greps of the question's own words (template, number, placeholder) hit docs/templates and viewer code, not the type test. est. turns: 6 FIRST-3-GREPS: 'template'/'placeholder'/'view data' reach HttpViewData.h and the model templates, not the type test in create_view.cc."
+  },
+  {
+   "id": "r3hb-drogon-11",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "An application binds user-supplied text to a placeholder in a query while connected to a MySQL server. How does that value actually reach the server, and what protects the statement from injection? Say which layer tags the value and which layer assembles what is sent, and how the other relational back ends differ.",
+   "expectedFiles": [
+    "orm_lib/src/SqlBinder.cc",
+    "orm_lib/src/mysql_impl/MysqlConnection.cc",
+    "orm_lib/src/postgresql_impl/PgConnection.cc",
+    "orm_lib/src/sqlite3_impl/Sqlite3Connection.cc"
+   ],
+   "expectedSymbols": [
+    "SqlBinder::operator<<",
+    "MysqlConnection::execSqlInLoop",
+    "PgConnection::execSqlInLoop",
+    "Sqlite3Connection::execSqlInLoop"
+   ],
+   "expectedFacts": [
+    "SqlBinder::operator<< (SqlBinder.cc) stores the raw parameter pointer and length and tags it with a back-end format code (MySqlString for MySQL, 0 or 1 for PostgreSQL, Sqlite3TypeText for sqlite3); it does no escaping (SqlBinder.cc:158-181).",
+    "CRITICAL: MysqlConnection::execSqlInLoop builds one SQL text. It scans for each '?' placeholder and splices the parameter in as literal text according to its format tag, so the server never receives separate parameters (MysqlConnection.cc:447-523).",
+    "CRITICAL: A MySqlString parameter is wrapped in single quotes and escaped with mysql_real_escape_string on the live connection (MysqlConnection.cc:502-512); numbers go through std::to_string, null becomes NULL, and a default marker becomes the word default.",
+    "An unknown format tag logs 'MySQL does not recognize the parameter type' and aborts (MysqlConnection.cc:519-524).",
+    "PgConnection uses server-side prepared statements (PQsendPrepare then PQsendQueryPrepared with separate parameters), and Sqlite3Connection uses sqlite3_prepare_v2 with sqlite3_bind_* calls, so those two do not interpolate text."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: SqlBinder.cc:158-181 (std::string_view overload; format by type_), :312-352 DefaultValue handling; MysqlConnection.cc:420-541 (execSqlInLoop; '?' scan :454, per-format switch :459-523, string escape :502-512, default :515-517, fatal :519-523, tail append :527-531); PgConnection.cc:270,295,402 (PQsendQueryPrepared/PQsendPrepare); Sqlite3Connection.cc:196-257 (sqlite3_prepare_v2, sqlite3_bind_*). DECOYS: SqlBinder placeholders rewriting for PostgreSQL ($n) in Mapper.h/BaseBuilder.h (gen_sql); DbClientImpl/DbClientLockFree (dispatch only); PgBatchConnection (batch prepared). User words 'bind' and 'injection' lead first to SqlBinder.h docs and Pg code, not the MySQL splice. CHEAPEST ROUTE: (1) grep bind/escape/injection -> SqlBinder.cc, Mapper.h; (2) read SqlBinder.cc operators to see tagging only; (3) find where MySQL executes SQL -> MysqlConnection.cc; (4) read execSqlInLoop; (5) compare PgConnection and Sqlite3Connection. est. turns: 7 FIRST-3-GREPS: 'bind'/'inject' reach SqlBinder.cc and Pg code; MysqlConnection.cc needs a separate search."
+  },
+  {
+   "id": "r3hb-drogon-12",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "A browser performs a cross-origin permission check (the preliminary request that asks which verbs are allowed) against an endpoint with a fixed path (no path placeholders) whose handlers were registered only for read and write verbs, not for the check verb itself. What does the server reply? Then explain under which condition a registered route does answer the check with a list of allowed verbs, and how that list is built.",
+   "expectedFiles": [
+    "lib/src/HttpServer.cc",
+    "lib/src/HttpControllersRouter.cc"
+   ],
+   "expectedSymbols": [
+    "HttpControllersRouter::route",
+    "HttpServer::httpRequestRouting",
+    "handleInvalidHttpMethod",
+    "addCtrlBinderToRouterItem",
+    "HttpControllersRouter::init",
+    "HttpServer::requestPreHandling",
+    "handleHttpOptions"
+   ],
+   "expectedFacts": [
+    "CRITICAL: If no binder exists for the check verb on the matched route, HttpControllersRouter::route returns RouteResult::MethodNotAllowed (e.g. HttpControllersRouter.cc:658); HttpServer::httpRequestRouting then calls handleInvalidHttpMethod, which answers 403 Forbidden (not 405) when the request method is OPTIONS (HttpServer.cc:475,1357-1367).",
+    "CRITICAL: addCtrlBinderToRouterItem marks a binder as CORS-capable (isCORS_) only when its method list includes Options, or when the registration has no method constraint at all (HttpControllersRouter.cc:160-180).",
+    "HttpControllersRouter::init builds a per-route shared allow string that starts with 'OPTIONS,' and appends, for each binder marked isCORS_, 'GET,HEAD,' for the Get binder or the method name for others (skipping Options), then drops the last comma (HttpControllersRouter.cc:27-53).",
+    "When the check verb is routed, HttpServer::requestPreHandling calls handleHttpOptions with that string, unless the request attribute for custom CORS handling is set (HttpServer.cc:583-596).",
+    "handleHttpOptions sets Allow and Access-Control-Allow-Methods to that string, Access-Control-Allow-Origin to the request Origin or '*', and echoes the requested headers (HttpServer.cc:1371-1389).",
+    "For routes with path placeholders (regex routes) the router skips any item that has no binder for the method, so the check falls through to the static-file router instead of getting 403 (HttpControllersRouter.cc:634-644)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: HttpControllersRouter.cc:23-58 (init, isCORS_ :39, GET,HEAD :43, pop_back :53), :160-180 (addCtrlBinderToRouterItem: Options sets isCORS_ :171; empty methods sets :178), :606-620 (simple controller route), :651-659 (http controller route: binders_[method] null -> MethodNotAllowed); HttpServer.cc:460-479 httpRequestRouting, :583-596 requestPreHandling OPTIONS branch (customCORShandling attribute :588), :1357-1368 handleInvalidHttpMethod (Options -> k403Forbidden), :1371-1389 handleHttpOptions. Regex-route variant: HttpControllersRouter.cc:634-644 loop requires item.binders_[method] before regex_match, so such a route yields NotFound and falls through to StaticFileRouter (this is why the question fixes the path). DECOYS: HttpServer.cc:424-432 (global OPTIONS * answer, only for the asterisk path); HttpMiddleware.h:151-190 HttpOptionsMiddleware (sets the custom-handling attribute); static-file router (OPTIONS -> 405 in sendStaticFileResponse :335); Hodor; CORS filters in examples/tests. CHEAPEST ROUTE: (1) grep cors/preflight/Access-Control -> HttpServer.cc (handleHttpOptions, requestPreHandling) and HttpMiddleware.h; (2) read requestPreHandling and find corsMethods_ source; (3) read HttpControllersRouter init to see isCORS_ gating; (4) read addCtrlBinderToRouterItem for when isCORS_ is set; (5) realize no Options binder means preflight never reaches pre-handling: read route() MethodNotAllowed and handleInvalidHttpMethod. est. turns: 7 FIRST-3-GREPS: 'preflight'/'CORS' reach HttpServer.cc (gold) at once; the 403 and isCORS_ gating need hops 3-5."
+  },
+  {
+   "id": "r3hb-drogon-13",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "After a login, application code asks the framework to issue a brand-new session identifier for the same visitor. Describe when the new identifier is actually sent to the browser, how long the previous identifier keeps working, and at what moment the framework's session-ended notification fires for the previous identifier. State the conditions precisely.",
+   "expectedFiles": [
+    "lib/inc/drogon/Session.h",
+    "lib/src/HttpAppFrameworkImpl.cc",
+    "lib/src/SessionManager.cc",
+    "lib/inc/drogon/CacheMap.h"
+   ],
+   "expectedSymbols": [
+    "Session::changeSessionIdToClient",
+    "HttpAppFrameworkImpl::handleSessionForResponse",
+    "SessionManager::changeSessionId",
+    "SessionManager::getSession",
+    "CacheMap::insert",
+    "CacheMap::erase"
+   ],
+   "expectedFacts": [
+    "Session::changeSessionIdToClient only sets two flags (needToChange_ and needToSet_); it does not change the identifier at that moment (Session.h:214-224).",
+    "CRITICAL: HttpAppFrameworkImpl::handleSessionForResponse runs when the response is being sent. If the session needs a change it calls SessionManager::changeSessionId, then adds a session cookie (path '/', configured SameSite, max-age only when it is >= 0) to that response, using a temporary copy when the response is a shared cached object (HttpAppFrameworkImpl.cc:728-770).",
+    "SessionManager::changeSessionId gets the new identifier from the id-generator callback and inserts the same Session object under the new key. CacheMap::insert fires the session-start advice for the new key (SessionManager.cc:116-123, CacheMap.h:217-247).",
+    "CRITICAL: The old key stays in the map and is erased 10 seconds later by sessionMapPtr_->runAfter(10, ...). CacheMap::erase then fires the session-destroy advice for the old identifier, so that notification is delayed about 10 seconds (low precision, one-second ticks) (SessionManager.cc:124-127, CacheMap.h:387-396).",
+    "During that window a request carrying the old cookie still finds the same Session object through getSession, because the old key is still in the cache."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Session.h:214-224 (changeSessionIdToClient at :220), :248-280 (hasSet, needToChangeSessionId, needSetToClient, setSessionId); HttpAppFrameworkImpl.cc:728-803 (changeSessionId call :741; cookie build :745-770 with sessionMaxAge_ >= 0 test :754,767); SessionManager.cc:99-127 (getSession, changeSessionId insert + runAfter(10)), :27-80 (CacheMap ctor passes start/destroy advice as insert/erase callbacks); CacheMap.h:217-247 (insert -> fnOnInsert_ :245), :387-396 (erase -> fnOnErase_), :417-421 (runAfter low-precision timer, doc :408-415). DECOYS: findSessionForRequest (HttpAppFrameworkImpl.cc:707-721, creates a session when no cookie); session timeout expiry (CacheMap::eraseAfter path :508-555 fires erase callback on idle timeout, a different trigger); SessionManager ctor timeout==0 branch (not analyzed, do not rely); Session::setSessionId. CHEAPEST ROUTE: (1) grep session id/regenerate -> Session.h changeSessionIdToClient; (2) grep needToChangeSessionId -> HttpAppFrameworkImpl.cc handleSessionForResponse; (3) read SessionManager.cc changeSessionId; (4) open CacheMap.h to learn insert/erase callbacks and runAfter semantics; (5) check getSession/findSessionForRequest for the old-cookie window. est. turns: 7 FIRST-3-GREPS: 'session id' reaches Session.h and HttpAppFrameworkImpl.cc (gold); the 10-second slot and callbacks need SessionManager.cc and CacheMap.h."
+  },
+  {
+   "id": "r3hb-drogon-14",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "negative-decoy",
+   "difficulty": "hard",
+   "query": "With compressed request bodies enabled, a client sends a request whose body is brotli-compressed and expands to more than the configured maximum body size. Which code makes the server reject that request with the 'payload too large' status?",
+   "expectedFiles": [
+    "lib/src/HttpRequestImpl.cc",
+    "lib/src/HttpServer.cc"
+   ],
+   "expectedSymbols": [
+    "HttpRequestImpl::decompressBodyBrotli",
+    "HttpRequestImpl::decompressBodyGzip",
+    "HttpRequestImpl::decompressBody",
+    "tryDecompressRequest"
+   ],
+   "expectedFacts": [
+    "No code path rejects an over-size brotli expansion with 413. The status mapping exists, but the brotli routine never reports the overflow.",
+    "HttpServer.cc tryDecompressRequest (only when compressed-request support is on, read once into a static) maps TooLarge to 413, DecompressError to 422 and NotSupported to 415 (HttpServer.cc:1192-1226).",
+    "CRITICAL: HttpRequestImpl::decompressBodyBrotli detects totalOut > maxBodySize, sets status = TooLarge and clears the body, but the function ends with an unconditional 'return StreamDecompressStatus::Ok' (HttpRequestImpl.cc:951-955, 978), so the status is discarded and the handler runs with an empty body.",
+    "A corrupt brotli body is affected the same way: DecompressError is set (:970-974) and dropped, and decompressBody returns Ok after removing the content-encoding header.",
+    "The gzip variant decompressBodyGzip does return its status (HttpRequestImpl.cc:1040-1076), so an oversized gzip body does get 413; and the 413 in HttpRequestParser only checks the compressed bytes on the wire (HttpRequestParser.cc:277-279,380-382)."
+   ],
+   "expectedNoMatch": true,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: HttpRequestImpl.cc:886-907 (decompressBody dispatch, brotli under #ifdef USE_BROTLI :894-899), :909-979 decompressBodyBrotli (maxBodySize :929, check :951-956, DecompressError :970-974, final return Ok :978), :981-1076 decompressBodyGzip (check :1040-1045, returns status :1067-1076); HttpServer.cc:1192-1226 (static enableDecompression :1195; status switch :1205-1219); ConfigLoader.cc:526-527 enabled_compressed_request. Negative greps (all done): grep -n 'TooLarge' lib/src -> only the two checks plus HttpServer mapping; grep -n 'decompressBodyBrotli' lib -> single definition/call, no status read; grep -n 'return status' HttpRequestImpl.cc -> gzip only; grep -rn 'k413RequestEntityTooLarge' lib/src -> HttpRequestParser.cc (:279,:382) and HttpServer.cc:1209 only. DECOYS: gzip path (works), HttpRequestParser 413 (wire bytes), tryDecompressRequest mapping. Gated by USE_BROTLI build flag. CHEAPEST ROUTE: (1) grep 413/payload too large -> HttpRequestParser.cc and HttpServer.cc tryDecompressRequest; (2) follow tryDecompressRequest -> decompressBody; (3) open brotli routine and read to the end; (4) compare with gzip routine return statements; (5) grep TooLarge to confirm nothing else yields it. est. turns: 6 FIRST-3-GREPS: '413'/'too large' reach HttpRequestParser.cc and HttpServer.cc; the brotli return statement is only found by reading the routine."
+  }
+ ]
+}

@@ -1,0 +1,516 @@
+{
+  "repo": "grdb",
+  "sha": "0d8cf958b4b66a0473ec6e6986eb9da462171da9",
+  "probes": [
+    {
+      "id": "r3hb-grdb-01",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A caller's Swift task gets cancelled while an async database access is in the middle of a long-running query. By what route does the cancellation reach SQLite, and why does the caller end up with a task-cancellation error instead of a database error? Cover the whole path from the cancellation signal to the thrown error.",
+      "expectedFiles": [
+        "GRDB/Core/SerializedDatabase.swift",
+        "GRDB/Core/Database.swift",
+        "GRDB/Core/Statement.swift",
+        "GRDB/Core/Database+Statements.swift"
+      ],
+      "expectedSymbols": [
+        "SerializedDatabase.execute",
+        "Database.cancel",
+        "Database.Suspension.checkCancellation",
+        "Statement.executeAllSteps",
+        "Database.statementDidFail",
+        "Database.checkForSuspensionViolation"
+      ],
+      "expectedFacts": [
+        "SerializedDatabase.execute (the async variant) wraps the access in withTaskCancellationHandler; inside the access it stores db.cancel in a mutex-guarded slot, and the onCancel handler calls that closure (SerializedDatabase.swift:253-270).",
+        "CRITICAL: Database.cancel sets Suspension.isCancelled and, when interruptsWhenCancelled is true, calls sqlite3_interrupt on the connection, which makes the running statement stop (Database.swift:1245-1268).",
+        "Statement stepping (executeAllSteps, forEachStep, step) sends any step result other than ROW/DONE to Database.statementDidFail (Statement.swift:566-623).",
+        "CRITICAL: For SQLITE_INTERRUPT or SQLITE_ABORT, Database.statementDidFail calls suspensionMutex.load().checkCancellation(), which throws CancellationError when the access is cancelled and interruptsWhenCancelled is true, before any DatabaseError is built (Database+Statements.swift:497-503; Database.swift:370-374).",
+        "A statement that starts after the cancellation never runs: statementWillExecute calls checkForSuspensionViolation, which tests the cancelled flag before the suspended flag and throws CancellationError (Database+Statements.swift:449; Database.swift:1388-1393, 1427-1428).",
+        "When the access ends, its defer block clears the state with db.uncancel(); DatabasePool.barrierWriteWithoutTransaction (async) repeats the same pattern (SerializedDatabase.swift:258-262; DatabasePool.swift:812-830)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: SerializedDatabase.swift:253-270 (execute async: withTaskCancellationHandler, cancelMutex.store(db.cancel) at :263, Task.checkCancellation :264, onCancel :268, defer uncancel :260); Database.swift:359-381 (Suspension struct, checkCancellation :370-374, suspensionMutex), :1245-1268 (cancel closure, sqlite3_interrupt at :1264), :1271 (uncancel), :1355-1432 (checkForSuspensionViolation; :1388-1393 cancelled check first, :1427-1428 throw CancellationError); Database+Statements.swift:440-455 (statementWillExecute), :474-510 (statementDidFail; :497-503 INTERRUPT/ABORT -> checkCancellation), :517-526 (compile-time variant); Statement.swift:566-623 (executeAllSteps/forEachStep/step call statementDidFail at :578, :603, :622); DatabasePool.swift:812-830. CHEAPEST ROUTE (5 dependent steps): (1) grep 'cancel' -> ~40 hits, mostly ValueObservation/DatabaseCancellable noise; refine to withTaskCancellationHandler -> SerializedDatabase.execute (hop 1); (2) read it: it stores db.cancel -> find Database.cancel -> sqlite3_interrupt (hop 2); (3) ask what turns an interrupted statement into an error: grep SQLITE_INTERRUPT -> DatabaseError.swift constant list (noise) -> need statement failure path -> Statement.swift step loop -> Database.statementDidFail (hops 3-4); (4) see checkCancellation in statementDidFail, read Suspension (hop 5); (5) the pre-execution check needs checkForSuspensionViolation, found only by reading statementWillExecute. FIRST 3 GREPS of the question's words: 'cancel' (noise + SerializedDatabase), 'async' (hundreds of hits), 'CancellationError' (Database.swift, Database+Statements, TransactionObserver comments, reader finalizers). Grep 3 reaches the last hop but not the first two, and none of them states the chain. DECOYS: public Database.interrupt()/DatabaseReader.interrupt() (manual interrupt, no cancel flag), Database.suspend (0xDEAD10CC path), DatabaseCancellable/AnyDatabaseCancellable and ValueObservationScheduler task.cancel (observation cancellation), DatabasePool.barrierWriteWithoutTransaction (same pattern, second copy). CLOSED-BOOK: model may guess 'Task.checkCancellation' but not the interrupt-then-map route. est. turns: 7."
+    },
+    {
+      "id": "r3hb-grdb-02",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A listener registered on a write connection refuses a transaction by throwing from its before-commit callback. Trace how that refusal turns into a rollback inside SQLite, which error the code that issued the commit finally sees, and what the other registered listeners are told afterwards.",
+      "expectedFiles": [
+        "GRDB/Core/TransactionObserver.swift",
+        "GRDB/Core/Database+Statements.swift",
+        "GRDB/Core/Statement.swift",
+        "GRDB/Core/Database.swift"
+      ],
+      "expectedSymbols": [
+        "DatabaseObservationBroker.installCommitAndRollbackHooks",
+        "DatabaseObservationBroker.databaseWillCommit",
+        "DatabaseObservationBroker.TransactionCompletion.cancelledCommit",
+        "Database.statementDidFail",
+        "DatabaseObservationBroker.statementDidFail",
+        "DatabaseObservationBroker.databaseDidRollback"
+      ],
+      "expectedFacts": [
+        "Database.setUp installs the commit and rollback hooks through observationBroker?.installCommitAndRollbackHooks(); read-only connections have no broker (Database.swift:471-474, 516).",
+        "CRITICAL: The sqlite3_commit_hook callback calls broker.databaseWillCommit(), which calls databaseWillCommit on every observer; if one throws, the hook stores transactionCompletion = .cancelledCommit(error) and returns 1, so SQLite turns the COMMIT into a rollback (TransactionObserver.swift:494-501, 664-679).",
+        "The sqlite3_rollback_hook callback keeps .cancelledCommit as it is; for any other completion it records .rollback (TransactionObserver.swift:681-692).",
+        "The failed COMMIT step reaches Statement's step loop as an error code, which calls Database.statementDidFail; that method calls observationBroker.statementDidFail before it builds any DatabaseError (Statement.swift:566-580; Database+Statements.swift:474-496).",
+        "CRITICAL: DatabaseObservationBroker.statementDidFail, on .cancelledCommit(error), runs databaseDidRollback(notifyTransactionObservers: !isReadOnly) and then rethrows that same error, so the committing caller sees the observer's own error and not a SQLite constraint error (TransactionObserver.swift:354-373).",
+        "databaseDidRollback sends databaseDidRollback to every registered observer (including the one that threw) inside ignoringCancellation, then databaseDidEndTransaction drops observers whose extent was the next transaction and re-enables the others (TransactionObserver.swift:571-600)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: Database.swift:471-474 (broker only if !readonly), :516 (installCommitAndRollbackHooks in setUp); TransactionObserver.swift:494-501 (databaseWillCommit loops observers, rethrows), :664-679 (commit hook: do/catch -> .cancelledCommit(error), return 1), :681-692 (rollback hook: .cancelledCommit left alone), :354-379 (statementDidFail: case .cancelledCommit -> databaseDidRollback then throw error), :571-587 (databaseDidRollback, ignoringCancellation at :579), :589-600 (databaseDidEndTransaction); Database+Statements.swift:474-496 (statementDidFail calls observationBroker.statementDidFail at :496 before the generic throw); Statement.swift:566-580. The class comment at TransactionObserver.swift:165-260 only says 'the broker asks SQLite to rollback' and stops there; the error propagation is not documented. CHEAPEST ROUTE (5 dependent steps): (1) grep databaseWillCommit -> protocol + DatabaseObservationBroker; (2) read the commit hook closure -> .cancelledCommit + 'Next step: sqlite3_rollback_hook callback'; (3) read rollback hook -> 'Next step: statementDidFail(_:)'; (4) find who calls it: grep statementDidFail -> Database+Statements.swift and Statement.swift; (5) read broker.statementDidFail for the rethrow and databaseDidRollback for who is notified. FIRST 3 GREPS of the question's words: 'before-commit'/'commit' (hundreds of hits across Database.swift, TransactionObserver.swift, Documentation), 'rollback' (similar), 'refuse|veto' (zero hits). None reaches Database+Statements.swift or Statement.swift, the last two hops. DECOYS: DatabaseObservationBroker.databaseDidCommitEmptyDeferredTransaction (also catches errors and rolls back, but for empty transactions with no hook call), Database.inTransaction/commit() (rethrow the error but do not produce it), TransactionHandler / afterNextTransaction (closure-based observers that cannot veto). est. turns: 7."
+    },
+    {
+      "id": "r3hb-grdb-03",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "An application declares that one record type 'owns many' records of another type without naming any columns, then asks for a join from the owner to its children. Follow the path from that declaration to the join condition in the generated SQL: where does the code learn which columns to use, which table's column ends up on which side of the equality, and what happens if the child table declares two references to the owner?",
+      "expectedFiles": [
+        "GRDB/QueryInterface/Request/Association/HasManyAssociation.swift",
+        "GRDB/QueryInterface/SQLGeneration/SQLQueryGenerator.swift",
+        "GRDB/QueryInterface/SQL/SQLRelation.swift",
+        "GRDB/QueryInterface/SQL/SQLForeignKeyRequest.swift",
+        "GRDB/Core/Database+Schema.swift"
+      ],
+      "expectedSymbols": [
+        "HasManyAssociation.init",
+        "SQLQualifiedJoin.sql",
+        "SQLAssociationCondition.joinExpression",
+        "SQLForeignKeyCondition.foreignKeyRequest",
+        "SQLForeignKeyRequest.fetchForeignKeyMapping",
+        "ForeignKeyMapping.joinMapping(originIsLeft:)",
+        "JoinMapping.joinExpression(leftAlias:rightAlias:)",
+        "Database.foreignKeys(on:in:)"
+      ],
+      "expectedFacts": [
+        "HasManyAssociation.init builds an SQLForeignKeyCondition with the optional user ForeignKey and originIsLeft: false (the child table holds the reference); BelongsToAssociation uses true (HasManyAssociation.swift:70-73; BelongsToAssociation.swift:71-74).",
+        "SQLQualifiedJoin.sql writes 'JOIN <table> ON ...' by calling condition.joinExpression(db, leftAlias:, rightAlias:) (SQLQueryGenerator.swift:786-835, call at :824), which for a foreign-key condition calls foreignKey.joinMapping(db, from: leftAlias.tableName) (SQLRelation.swift:834-847).",
+        "CRITICAL: SQLForeignKeyCondition.foreignKeyRequest swaps origin and destination tables when originIsLeft is false, and SQLForeignKeyRequest.fetchForeignKeyMapping resolves the columns: use the user columns when complete; otherwise filter Database.foreignKeys(on: originTable) by destination table; if none match and origin columns are known, pair them with the destination table's primary key (SQLRelation.swift:894-914; SQLForeignKeyRequest.swift:24-115).",
+        "CRITICAL: When more than one schema foreign key from the child to the owner matches, the code does not throw: it calls fatalError telling the user to provide an explicit ForeignKey (SQLForeignKeyRequest.swift:78-90).",
+        "ForeignKeyMapping.joinMapping(originIsLeft:) orients the pairs: with originIsLeft false the owner's destination column is on the left and the child's origin column on the right (SQLForeignKeyRequest.swift:170-176).",
+        "JoinMapping.joinExpression(leftAlias:rightAlias:) renders 'right.column = left.column' for each pair joined with AND, giving ON child.ownerId = owner.id (SQLRelation.swift:1004-1006)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: HasManyAssociation.swift:67-73 (originIsLeft: false at :73), BelongsToAssociation.swift:74 (true), HasOneAssociation.swift:80 (false); SQLQueryGenerator.swift:760-835 (SQLQualifiedJoin; ON built at :824-846); SQLRelation.swift:800-848 (SQLAssociationCondition.joinExpression), :855-914 (SQLForeignKeyCondition, foreignKeyRequest swaps at :900-914), :1004-1006; SQLForeignKeyRequest.swift:24-115 (:54 db.foreignKeys, :78 count == 1, :84 'Ambiguous foreign key', :105 destination primary key fallback), :170-176; Database+Schema.swift:756 (foreignKeys(on:in:)). CHEAPEST ROUTE (5 dependent steps): (1) grep hasMany -> TableRecord+Association.swift public API, then HasManyAssociation.swift; (2) read init -> SQLForeignKeyCondition(originIsLeft: false); (3) find where the condition becomes SQL: grep SQLForeignKeyCondition -> SQLRelation.swift; (4) joinMapping -> foreignKeyRequest -> SQLForeignKeyRequest.swift; (5) from the join clause generator find who calls joinExpression (SQLQueryGenerator.swift) and read JoinMapping.joinExpression for the final text. FIRST 3 GREPS of the question's words: 'owns many'/'has many' (docs + association files), 'join' (hundreds of hits), 'ambiguous' (SQLForeignKeyRequest.swift, a gold file reached by grep 3). The first two greps do not reach it; the ambiguity detail alone cannot answer the which-side question. DECOYS: JoinMapping.joinExpression(leftRows:) (SQLRelation.swift:928; builds IN (...) filters for eager loading and TableRecord+Association.request(for:), not the JOIN ... ON text), HasManyThroughAssociation (pivot path, QueryInterfaceRequest.swift:2171-2358), the .expression case of SQLAssociationCondition (custom ON closure, no foreign key lookup). est. turns: 7."
+    },
+    {
+      "id": "r3hb-grdb-04",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A multi-reader database is observed for changes to a query result. The first value must arrive quickly even while a long write is running, yet no change that lands between that first read and the start of listening may be missed. Explain the mechanism step by step, and say what the code falls back to on builds or files where the needed SQLite version-comparison feature is unavailable.",
+      "expectedFiles": [
+        "GRDB/ValueObservation/Observers/ValueConcurrentObserver.swift",
+        "GRDB/Core/DatabasePool.swift",
+        "GRDB/Core/WALSnapshotTransaction.swift",
+        "GRDB/Core/WALSnapshot.swift",
+        "GRDB/Core/Database.swift",
+        "Package.swift"
+      ],
+      "expectedSymbols": [
+        "DatabasePool._add",
+        "ValueConcurrentObserver.start",
+        "DatabasePool.walSnapshotTransaction",
+        "WALSnapshotTransaction.init",
+        "ValueConcurrentObserver.asyncStartObservation",
+        "WALSnapshot.compare",
+        "ValueConcurrentObserver.syncStartWithoutWALSnapshot",
+        "Database.setUpWALMode"
+      ],
+      "expectedFacts": [
+        "DatabasePool._add sends a plain observation of a writable pool to _addConcurrent, which creates a ValueConcurrentObserver whose start() reads the initial value from a reader instead of waiting for the writer (DatabasePool.swift:732-777; ValueConcurrentObserver.swift:234-277).",
+        "CRITICAL: With snapshot support, the initial read runs inside a long-lived WALSnapshotTransaction obtained from DatabasePool.walSnapshotTransaction: a deferred read transaction on a reader that also records a WALSnapshot of that moment (WALSnapshotTransaction.swift:66-86; DatabasePool.swift:689-701).",
+        "CRITICAL: asyncStartObservation then runs on the writer queue, takes a WALSnapshot of the writer connection and compares it with the initial one (sqlite3_snapshot_cmp via WALSnapshot.compare); if the writer's is newer, or the writer's snapshot cannot be taken, it assumes a change, fetches again from the writer and notifies a fresh value; otherwise it only starts observing (ValueConcurrentObserver.swift:423-520, comparison at :451-460; WALSnapshot.swift:89-91).",
+        "The snapshot transaction is closed right after the comparison so that its reader returns to the pool (ValueConcurrentObserver.swift:464).",
+        "Without snapshot support (compiled without SQLITE_ENABLE_SNAPSHOT or with SQLITE_DISABLE_SNAPSHOT, which Package.swift defines on Linux) the #else branch sends syncStart and asyncStart to the WithoutWALSnapshot variants, which always fetch a second time from the writer after observation starts, so the same value can be notified twice (ValueConcurrentObserver.swift:279, 527-537, 543-700; Package.swift:17-19).",
+        "At run time, if the snapshot cannot be created (SQLITE_ERROR: missing or empty WAL file) the observer degrades to the same without-snapshot path; Database.setUpWALMode therefore creates and drops a small table to guarantee a non-empty WAL file (ValueConcurrentObserver.swift:296-300, 411-418; Database.swift:531-562)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: DatabasePool.swift:732-777 (_add, _addConcurrent), :689-727 (walSnapshotTransaction, asyncWALSnapshotTransaction, inside #if SQLITE_ENABLE_SNAPSHOT && !SQLITE_DISABLE_SNAPSHOT at :687); ValueConcurrentObserver.swift:234 (start), :279 (#if), :284-338 (syncStart; :296 catch SQLITE_ERROR), :423-525 (asyncStartObservation: :451-460 compare, :464 initialFetchTransaction.close(), :466-478 refetch), :527-537 (#else), :543-700 (WithoutWALSnapshot variants; :651 unconditional databaseDidChange + fetch from writer); WALSnapshotTransaction.swift:66-86; WALSnapshot.swift:89-91; Database.swift:531-562 (:552-560 grdb_issue_102 table create/drop to make a non-empty WAL file); Package.swift:17-19. CHEAPEST ROUTE (6 dependent steps): (1) grep 'ValueObservation' + 'pool' -> ValueObservation.swift, DatabasePool._add; (2) _add -> ValueConcurrentObserver; (3) read start() -> syncStart/asyncStart; (4) '#if SQLITE_ENABLE_SNAPSHOT' -> need to learn what defines it -> grep SQLITE_DISABLE_SNAPSHOT -> Package.swift (Linux); (5) walSnapshotTransaction -> WALSnapshotTransaction.swift -> WALSnapshot.swift; (6) catch SQLITE_ERROR branch -> reason for empty WAL -> Database.setUpWALMode. FIRST 3 GREPS of the question's words: 'ValueObservation' (60+ files), 'initial value' (ValueObservation.swift docs, ValueConcurrentObserver comments), 'WAL' (WALSnapshot*.swift, DatabasePool.swift, Database.swift). Grep 3 reaches WAL files, but the question never says 'snapshot', and the compile-time gate and Linux define sit in Package.swift. DECOYS: ValueWriteOnlyObserver (initial fetch and observation start in one writer access, no snapshot compare), DatabaseSnapshot / DatabaseSnapshotPool (user-facing snapshots, unrelated to observation start), DatabaseRegionObservation. est. turns: 8."
+    },
+    {
+      "id": "r3hb-grdb-05",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "While SQLite compiles each SQL statement, GRDB learns several kinds of facts about it through SQLite's permission-check callback. List each kind of fact the library keeps for a statement, and for each name the component that later uses it and what it uses it for.",
+      "expectedFiles": [
+        "GRDB/Core/StatementAuthorizer.swift",
+        "GRDB/Core/Statement.swift",
+        "GRDB/Core/Database+Statements.swift",
+        "GRDB/Core/TransactionObserver.swift",
+        "GRDB/Core/Database.swift"
+      ],
+      "expectedSymbols": [
+        "StatementAuthorizer.authorize",
+        "Statement.databaseRegion",
+        "Statement.authorizerEventKinds",
+        "Statement.invalidatesDatabaseSchemaCache",
+        "Statement.transactionEffect",
+        "Statement.isQueryOnlyPragma",
+        "Database.statementWillExecute",
+        "Database.statementDidExecute",
+        "Database.checkForSuspensionViolation",
+        "TransactionObservation.statementObservation(for:)"
+      ],
+      "expectedFacts": [
+        "CRITICAL: Read access (SQLITE_READ) builds selectedRegion, stored as Statement.databaseRegion; Database.statementWillExecute passes it to registerAccess(to:), which feeds the region that ValueObservation records while fetching (StatementAuthorizer.swift:115-125; Statement.swift:162; Database+Statements.swift:452; Database.swift:935).",
+        "CRITICAL: Write effects (INSERT, UPDATE, DELETE, including trigger and foreign-key-action effects) build databaseEventKinds, stored as Statement.authorizerEventKinds; TransactionObservation.statementObservation(for:) uses them to decide which observers, and which events, are activated for the statement, and canDeleteRows makes Database.add/remove(transactionObserver:) evict cached statements that delete (StatementAuthorizer.swift:127-161; TransactionObserver.swift:44-45, 66-67, 1045-1090).",
+        "The schema-changing flag (DROP, CREATE, ALTER, ATTACH, DETACH, and the sqlite_drop_column function before SQLite 3.38) becomes Statement.invalidatesDatabaseSchemaCache; Database.statementDidExecute then clears the schema cache (StatementAuthorizer.swift:98-113, 186-203; Database+Statements.swift:461-464).",
+        "The transaction or savepoint effect becomes Statement.transactionEffect: DatabaseObservationBroker.statementDidExecute uses it to maintain the savepoint stack and to detect empty transactions, checkForSuspensionViolation lets rollbacks and read-only commits through, and Statement.releasesDatabaseLock builds on it (StatementAuthorizer.swift:163-185; TransactionObserver.swift:389-430; Database.swift:1367-1374; Statement.swift:808-824).",
+        "The query-only pragma flag becomes Statement.isQueryOnlyPragma, which checkForSuspensionViolation uses to let that pragma run even when the database is suspended (StatementAuthorizer.swift:204-207; Database.swift:1378-1380).",
+        "Besides recording, the callback returns SQLITE_IGNORE for DELETE on tables whose deletions some observer watches, which disables SQLite's truncate optimization so individual row deletions reach the update hook (StatementAuthorizer.swift:132-155)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: StatementAuthorizer.swift:27-52 (the five recorded fields), :98-113 (schema flag), :115-125 (SQLITE_READ -> selectedRegion), :127-161 (INSERT/DELETE/UPDATE -> databaseEventKinds; SQLITE_IGNORE at :152), :163-185 (transaction/savepoint), :186-203 (sqlite_drop_column), :204-207 (query_only); Statement.swift:93-111 (stored fields, canDeleteRows), :162-166 (copy from authorizer), :808-824 (releasesDatabaseLock); Database+Statements.swift:440-469; Database.swift:935 (registerAccess), :1367-1380; TransactionObserver.swift:44-45, 66-67 (evict canDeleteRows statements), :389-430 (transactionEffect switch), :1045-1090 (statementObservation(for:)); QueryInterface/SQLGeneration/SQLQueryGenerator.swift:120 (optimizes statement.databaseRegion, a further consumer). CHEAPEST ROUTE (5 dependent steps): (1) grep 'authorizer' -> StatementAuthorizer.swift + Statement.swift; (2) read authorize() for the five fields; (3) for each field grep its Statement property name (databaseRegion, authorizerEventKinds, invalidatesDatabaseSchemaCache, transactionEffect, isQueryOnlyPragma) to find consumers in four other files; (4) read each consumer to say what it does; (5) check canDeleteRows and the SQLITE_IGNORE return for the observer cache link. FIRST 3 GREPS of the question's words: 'authorizer' (reaches StatementAuthorizer.swift and Statement.swift = definition side only), 'permission' (no code hits), 'compiles' (noise). Consumers share no token: five different property names in five files. DECOYS: Statement.isReadonly (sqlite3_stmt_readonly, not from the authorizer), Statement.databaseRegion public docs, DatabaseRegion.isModified(by:) and DatabaseRegionObservation (use regions, but do not consume the authorizer facts directly), SQLQueryGenerator region optimization (a refinement of databaseRegion for query-interface requests, an additional consumer rather than a fifth fact). est. turns: 8."
+    },
+    {
+      "id": "r3hb-grdb-06",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "Some cleanup steps in the library must still work when the current database access has been cancelled or the connection interrupted; otherwise the connection could be left in a bad state. Which places make that guarantee, and how does each one do it?",
+      "expectedFiles": [
+        "GRDB/Core/Database.swift",
+        "GRDB/Core/TransactionObserver.swift",
+        "GRDB/Core/DatabasePool.swift",
+        "GRDB/Core/DatabaseQueue.swift",
+        "GRDB/Core/DatabaseSnapshot.swift",
+        "GRDB/Core/WALSnapshotTransaction.swift"
+      ],
+      "expectedSymbols": [
+        "Database.endReadOnly",
+        "Database.rollback",
+        "Database.ignoringInterruption",
+        "Database.ignoringCancellation",
+        "DatabaseObservationBroker.databaseDidCommit",
+        "DatabaseObservationBroker.databaseDidRollback",
+        "Database.checkForSuspensionViolation",
+        "DatabasePool.asyncRead",
+        "WALSnapshotTransaction.commitAndRelease"
+      ],
+      "expectedFacts": [
+        "Database.endReadOnly runs the statement that leaves read-only mode inside ignoringInterruption, so an interruption cannot leave the connection permanently unable to write (Database.swift:844-860).",
+        "CRITICAL: Database.rollback runs ROLLBACK inside ignoringInterruption, so an interruption cannot leave a transaction open (which would trip the unsafe-transaction precondition); ignoringInterruption retries the closure once after CancellationError, SQLITE_INTERRUPT or SQLITE_ABORT and resets all prepared statements first (Database.swift:1297-1313, 1782-1795).",
+        "CRITICAL: DatabaseObservationBroker.databaseDidCommit and databaseDidRollback notify transaction observers inside Database.ignoringCancellation, so observers can still use the database even if the committing task was cancelled (TransactionObserver.swift:504-515, 571-587; Database.swift:1279-1292).",
+        "Database.checkForSuspensionViolation never blocks rollbacks, commits on a read-only connection, or the query-only pragma, even when the database is cancelled or suspended (Database.swift:1355-1380).",
+        "Read accesses finish with 'try commit, else try rollback' so the read-only transaction is always left even if commit fails with CancellationError: DatabasePool async read and asyncRead, DatabaseQueue.asyncRead and spawnConcurrentRead, DatabaseSnapshot.deinit and WALSnapshotTransaction.commitAndRelease (DatabasePool.swift:362-372, 392-405; DatabaseQueue.swift:249-258, 303-312; DatabaseSnapshot.swift:112-123; WALSnapshotTransaction.swift:13-27)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: Database.swift:844-860 (endReadOnly, ignoringInterruption at :856), :1297-1313 (ignoringInterruption: retry + resetAllPreparedStatements), :1279-1292 (ignoringCancellation), :1355-1380 (exemptions at :1367, :1372, :1378), :1743-1796 (rollback; ignoringInterruption at :1791); TransactionObserver.swift:504-515 (ignoringCancellation at :510), :571-587 (:579); DatabasePool.swift:354-379, 381-415 (commit/rollback fallback with comment 'commit may fail with a CancellationError'), :559-575; DatabaseQueue.swift:249-258, 303-312; DatabaseSnapshot.swift:112-123; WALSnapshotTransaction.swift:13-27. CHEAPEST ROUTE (5 dependent steps): (1) grep 'interrupt' + 'cancel' -> Database.swift, many files; (2) read Database.swift suspension section -> ignoringInterruption/ignoringCancellation; (3) grep each helper name for its callers -> endReadOnly, rollback, two broker methods (different helper names, so two greps); (4) read checkForSuspensionViolation for exemptions (a gate, not a wrapper, so neither helper grep finds it); (5) grep 'CancellationError' -> the reader-finalizer group in five files. FIRST 3 GREPS of the question's words: 'cancelled' (40+ hits incl. ValueObservation noise), 'interrupt' (Database.swift, DatabaseReader.interrupt, SerializedDatabase), 'cleanup' (noise). Members use two helper names (ignoringInterruption, ignoringCancellation), a guard function and a try-commit-else-rollback idiom, so no single identifier lists all of them. DECOYS: Database.cancel / interrupt / suspend (the cause, not the protection), Database.uncancel, SerializedDatabase deinit close_v2, DatabaseObservationBroker.databaseDidCommitEmptyDeferredTransaction (no cancellation handling). est. turns: 8."
+    },
+    {
+      "id": "r3hb-grdb-07",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "In a database with several reader connections, what makes sure a reader never goes back into the pool of reusable readers while it is still inside an open read transaction, or else is thrown away instead of reused? Name each safeguard and where it lives.",
+      "expectedFiles": [
+        "GRDB/Core/DatabasePool.swift",
+        "GRDB/Core/SerializedDatabase.swift",
+        "GRDB/Core/Database.swift",
+        "GRDB/Core/WALSnapshotTransaction.swift",
+        "GRDB/Utils/Pool.swift"
+      ],
+      "expectedSymbols": [
+        "DatabasePool.init",
+        "SerializedDatabase.preconditionNoUnsafeTransactionLeft",
+        "Database.isolated",
+        "DatabasePool.asyncRead",
+        "DatabasePool.walSnapshotTransaction",
+        "WALSnapshotTransaction.commitAndRelease",
+        "Pool.release"
+      ],
+      "expectedFacts": [
+        "DatabasePool.init forces allowsUnsafeTransactions = false on the reader configuration, whatever the user configured, because the same reader may not be obtained again to close a dangling transaction (DatabasePool.swift:56-63; Configuration.swift:278-282).",
+        "CRITICAL: SerializedDatabase.preconditionNoUnsafeTransactionLeft is a fatal precondition run (via defer) at the end of sync, reentrantSync, async and async execute accesses; it fails if the connection is still inside a transaction, unless an override or the configuration allows it (SerializedDatabase.swift:131, 142, 197-234, 261, 297-309).",
+        "Synchronous DatabasePool.read runs the user closure inside Database.isolated, which opens a savepoint (a real transaction when outermost) and commits it when the closure returns (DatabasePool.swift:339-352; Database.swift:1569-1597).",
+        "The async read paths begin a deferred transaction and use a defer that tries commit and falls back to rollback before the reader is released with .reuse (DatabasePool.swift:354-379, 381-415).",
+        "CRITICAL: For long-lived snapshot reads, walSnapshotTransaction and asyncWALSnapshotTransaction release the reader with .discard instead of .reuse when it is still inside a transaction, and WALSnapshotTransaction.commitAndRelease tries hard to leave the transaction first; Pool.release removes a discarded reader from the pool (DatabasePool.swift:694-700, 716-723; WALSnapshotTransaction.swift:13-27; Pool.swift:165-175)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: DatabasePool.swift:56-63 (readerConfiguration then allowsUnsafeTransactions = false at :63), :339-352 (sync read -> db.isolated at :346), :354-379 and :381-415 (async read/asyncRead: commit/rollback defer, releaseReader(.reuse) at :403), :421-470 (unsafeRead variants: no isolation), :694-700 and :716-723 (.discard when isInsideTransaction); SerializedDatabase.swift:20-21 and :92-99 and :153-160 (override flag), :131/:142/:197/:210/:223/:234/:261 (precondition calls), :297-309; Database.swift:1569-1597 (isolated); WALSnapshotTransaction.swift:9-27; Utils/Pool.swift:165-175 (.discard removes item). CHEAPEST ROUTE (5 dependent steps): (1) grep 'reader' + 'transaction' in DatabasePool.swift -> read/asyncRead; (2) spot the commit/rollback defer; (3) find why configuration matters -> readerConfiguration + Configuration.allowsUnsafeTransactions doc; (4) grep allowsUnsafeTransactions -> SerializedDatabase precondition; (5) grep 'discard' -> walSnapshotTransaction + Pool.release. FIRST 3 GREPS of the question's words: 'reader' (hundreds of hits), 'pool' (Pool.swift, DatabasePool.swift, ValueObservation noise), 'open transaction' (DatabaseQueue, Database.swift, docs). Members use five different names (allowsUnsafeTransactions, preconditionNoUnsafeTransactionLeft, isolated, defer commit/rollback, .discard). DECOYS: DatabasePool.unsafeRead / asyncUnsafeRead (deliberately skip isolation; still protected only by the precondition), SerializedDatabase.sync(allowingLongLivedTransaction:) override used by WALSnapshotTransaction (the one intentional exception), DatabaseSnapshot / DatabaseSnapshotPool (set allowsUnsafeTransactions = true on purpose), DatabaseQueue (single connection, no pool). est. turns: 8."
+    },
+    {
+      "id": "r3hb-grdb-08",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "Two full-text virtual table integrations can keep their index in step with an ordinary table by means of triggers. A maintainer wants to remove the automatic upkeep for the variant whose upkeep uses only after-event triggers (no before-event ones). Which public helper removes it, which trigger names does it drop, where are those triggers created and at what moment of the table-creation flow, and what runs right after they are created?",
+      "expectedFiles": [
+        "GRDB/FTS/FTS5.swift",
+        "GRDB/QueryInterface/Schema/VirtualTableModule.swift"
+      ],
+      "expectedSymbols": [
+        "Database.dropFTS5SynchronizationTriggers(forTable:)",
+        "FTS5.database(_:didCreate:using:)",
+        "FTS5TableDefinition.synchronize(withTable:)",
+        "Database.create(virtualTable:options:using:_:)"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The helper is Database.dropFTS5SynchronizationTriggers(forTable:); it drops the three triggers named __<table>_ai, __<table>_ad and __<table>_au (FTS5.swift:536-541).",
+        "CRITICAL: Those triggers are created by FTS5.database(_:didCreate:using:) when the definition is synchronized with a content table (set by FTS5TableDefinition.synchronize(withTable:)); all three are AFTER INSERT, AFTER DELETE and AFTER UPDATE triggers, and delete or update remove old entries by inserting a row with the special 'delete' command into the index table (FTS5.swift:226-280, 472-474).",
+        "Database.create(virtualTable:...) runs CREATE VIRTUAL TABLE and then calls module.database(_:didCreate:using:), both inside inSavepoint, so the triggers appear in the same atomic step as the table (VirtualTableModule.swift:182-187).",
+        "Right after the triggers, the code runs the 'rebuild' command on the index table so already existing content rows are indexed; temporary external-content tables are refused with a fatal error (FTS5.swift:232-241, 281).",
+        "The other variant's helper, dropFTS4SynchronizationTriggers, drops four triggers (__<table>_bu, _bd, _au, _ai: two BEFORE and two AFTER) and deletes old entries with a plain DELETE by docid, so it is not the one asked about (FTS4.swift:136-153, 404-410)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: FTS5.swift:226-282 (didCreate: temporary -> fatalError :236-241, three CREATE TRIGGER at :266-275 all AFTER, 'delete' command at :270 and :273, 'rebuild' at :281), :472-474 (synchronize(withTable:)), :536-541 (dropFTS5SynchronizationTriggers: _ai, _ad, _au); FTS4.swift:98-155 (four triggers: _bu BEFORE UPDATE :136, _bd BEFORE DELETE :139, _au AFTER UPDATE :142, _ai AFTER INSERT :145; DELETE FROM ... WHERE docid at :137, :140), :404-410 (dropFTS4SynchronizationTriggers); VirtualTableModule.swift:182-187 (inSavepoint: execute CREATE VIRTUAL TABLE, then didCreate). CHEAPEST ROUTE (5 dependent steps): (1) grep 'SynchronizationTriggers' or 'synchronize' -> FTS4.swift AND FTS5.swift (both plausible); (2) read both drop helpers: 4 names vs 3 names; (3) read both didCreate bodies to learn which uses only AFTER triggers and the 'delete' command; (4) pick FTS5; (5) find the caller of didCreate: grep 'didCreate' -> VirtualTableModule.swift create(virtualTable:) inside inSavepoint. FIRST 3 GREPS of the question's words: 'full-text' (FTS3/FTS4/FTS5 files + docs), 'trigger' (FTS4.swift and FTS5.swift both), 'synchron' (both). Grep 1 reaches both candidates, so the decoy is reachable on purpose; the deciding detail (after-only triggers) must be verified by reading both bodies. DECOYS: FTS4 variant (dropFTS4SynchronizationTriggers, 4 triggers incl. BEFORE), FTS3 (no synchronization at all), Documentation/FullTextSearch.md examples. Closed-book risk: the trigger naming scheme of GRDB is not common knowledge. est. turns: 6."
+    },
+    {
+      "id": "r3hb-grdb-09",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "A multi-reader database is observed using the default, most flexible observation style, where the set of tables read by the fetch closure can change from one run to the next. When a write transaction commits, which connection runs the re-fetch, and why? Which other observation style lets the re-fetch run on a reader connection, and which observer class handles the cases where the observation is placed on a single-connection database or is flagged as needing write access?",
+      "expectedFiles": [
+        "GRDB/ValueObservation/Observers/ValueConcurrentObserver.swift",
+        "GRDB/ValueObservation/ValueObservation.swift",
+        "GRDB/Core/DatabasePool.swift",
+        "GRDB/ValueObservation/Observers/ValueWriteOnlyObserver.swift",
+        "GRDB/Core/DatabaseWriter.swift"
+      ],
+      "expectedSymbols": [
+        "ValueConcurrentObserver.databaseDidCommit",
+        "ValueObservation.tracking(_:)",
+        "ValueObservation.trackingConstantRegion(_:)",
+        "ValueObservation.tracking(regions:fetch:)",
+        "DatabasePool._add",
+        "ValueWriteOnlyObserver",
+        "DatabaseWriter._addWriteOnly"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The default tracking(_:) style sets trackingMode .nonConstantRegionRecordedFromSelection; in ValueConcurrentObserver.databaseDidCommit that mode fetches from the writer connection (fetchRecordingObservedRegion(writerDB)) and updates the tracked region (ValueObservation.swift:986-993; ValueConcurrentObserver.swift:759-787).",
+        "The reason is that after a concurrent reader fetch has its snapshot, a change could land in the next tracked region, which was not known yet, so a change would be missed; with a non-constant region the fetch must run on the writer (comment at ValueConcurrentObserver.swift:759-773).",
+        "CRITICAL: trackingConstantRegion(_:) (.constantRegionRecordedFromSelection) and tracking(regions:fetch:) (.constantRegion) take the other branch: setNeedsFetching coalesces requests with a FetchingState (idle, fetching, fetchingAndNeedsFetch) and asyncFetch runs the fetch on a pool reader through dbPool.asyncRead (ValueObservation.swift:786-793, 928-936; ValueConcurrentObserver.swift:756-758, 791-833).",
+        "DatabasePool._add picks the observer: a read-only pool uses _addReadOnly, an observation with requiresWriteAccess uses _addWriteOnly, otherwise _addConcurrent builds the ValueConcurrentObserver (DatabasePool.swift:732-777).",
+        "A DatabaseQueue (or any DatabaseWriter other than a pool, or a pool observation flagged as needing writes) goes through DatabaseWriter._addWriteOnly, which creates a ValueWriteOnlyObserver that always fetches from the writer connection in databaseDidCommit (DatabaseQueue.swift:331-348; DatabaseWriter.swift:588-607; ValueWriteOnlyObserver.swift:366-420)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ValueObservation.swift:46-75 (ValueObservationTrackingMode), :786-793 (trackingConstantRegion -> .constantRegionRecordedFromSelection), :928-936 (tracking(regions:) -> .constantRegion), :986-993 (tracking(_:) -> .nonConstantRegionRecordedFromSelection); ValueConcurrentObserver.swift:738-790 (databaseDidCommit: :756 constant branch -> setNeedsFetching, :759-787 non-constant branch with the missed-change comment and writer fetch), :791-833 (setNeedsFetching, asyncFetch via dbPool.asyncRead at :808, FetchingState transitions); DatabasePool.swift:732-777; DatabaseWriter.swift:588-607 (_addWriteOnly, readOnly: !requiresWriteAccess at :601); DatabaseQueue.swift:331-348; ValueWriteOnlyObserver.swift:366-420 (fetch on db in every trackingMode). CHEAPEST ROUTE (5 dependent steps): (1) grep 'observation' + 'pool' -> ValueObservation.swift, DatabasePool._add; (2) _add -> three observers; (3) open ValueConcurrentObserver, find databaseDidCommit; (4) see two branches keyed on trackingMode -> grep trackingMode to learn which public API sets which mode (ValueObservation.swift); (5) compare with ValueWriteOnlyObserver and DatabaseWriter._addWriteOnly/DatabaseQueue._add for the other cases. FIRST 3 GREPS of the question's words: 'observation' (60+ files), 'writer connection' (DatabasePool/DatabaseWriter), 'fetch' (hundreds). Grep 2 reaches DatabasePool and the writer observer files, which are decoys: both ValueWriteOnlyObserver and ValueConcurrentObserver fetch on the writer in some branch, and the detail that decides is the tracking mode. DECOYS: ValueWriteOnlyObserver (always fetches on the writer, regardless of tracking mode), ValueReadOnlyObserver path DatabaseReader._addReadOnly (no change tracking), ValueConcurrentObserver start-up path (initial fetch on a reader for every mode), DatabaseRegionObservation. est. turns: 7."
+    },
+    {
+      "id": "r3hb-grdb-10",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "A record type has a property that is a list of small structs, and each struct holds a point in time. When the record is written to the database, in what form does that time end up in the stored text, and which piece of code chooses that form? How does it differ from a point-in-time property declared directly on the record?",
+      "expectedFiles": [
+        "GRDB/Record/EncodableRecord+Encodable.swift",
+        "GRDB/Record/EncodableRecord.swift",
+        "GRDB/Core/Support/Foundation/Date.swift"
+      ],
+      "expectedSymbols": [
+        "RecordEncoder.encode(_:forKey:)",
+        "ColumnEncoder.container(keyedBy:)",
+        "EncodableRecord.databaseJSONEncoder(for:)",
+        "EncodableRecord.databaseDateEncodingStrategy(for:)",
+        "DatabaseDateEncodingStrategy.deferredToDate"
+      ],
+      "expectedFacts": [
+        "CRITICAL: RecordEncoder.encode(_:forKey:) first tries a single-value ColumnEncoder; when the value encodes into a keyed or unkeyed container (as an array of structs does), ColumnEncoder sets requiresJSON, a JSONRequiredError is thrown, and the value is encoded again as JSON (EncodableRecord+Encodable.swift:119-166, 244-275).",
+        "CRITICAL: The JSON is produced with Record.databaseJSONEncoder(for: key); its default dateEncodingStrategy is .millisecondsSince1970, so the nested time is stored as a number of milliseconds since 1970 (also base64 data, sorted keys, non-finite floats throw) (EncodableRecord.swift:236-247).",
+        "The JSON bytes are turned into a String and persisted as the column value (EncodableRecord+Encodable.swift:159-160).",
+        "A Date property declared directly on the record bypasses the JSON encoder: it goes through databaseDateEncodingStrategy(for:), whose default .deferredToDate uses Date's DatabaseValueConvertible text 'yyyy-MM-dd HH:mm:ss.SSS' in UTC (EncodableRecord+Encodable.swift:125-128; EncodableRecord.swift:253-257; Date.swift:155-160).",
+        "Look-alikes that are not used here: DatabaseValueConvertible.databaseJSONEncoder() (same defaults, only for values that are both DatabaseValueConvertible and Encodable) and JSONDumpFormat.defaultEncoder (debug dump output) (DatabaseValueConvertible.swift:118-126; DatabaseValueConvertible+Encodable.swift:142; JSONDumpFormat.swift:55-65)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: EncodableRecord+Encodable.swift:119-166 (encode(_:forKey:): Data/Date/UUID/DatabaseValueConvertible first, then ColumnEncoder try, catch JSONRequiredError -> :151 Record.databaseJSONEncoder(for: key.stringValue).encode(value), :159-160 persist(jsonString)), :244-275 (ColumnEncoder.requiresJSON set in container(keyedBy:) and unkeyedContainer()); EncodableRecord.swift:236-247 (default databaseJSONEncoder: .base64, .millisecondsSince1970, .throw, .sortedKeys, userInfo), :253-257 (databaseDateEncodingStrategy default .deferredToDate); Core/Support/Foundation/Date.swift:45-50, :155-160 (UTC 'yyyy-MM-dd HH:mm:ss.SSS'); no Array/Dictionary DatabaseValueConvertible extension exists (grep 'extension Array' -> only Cursor.swift:56 Dictionary and Row.swift ArrayRowImpl), so arrays take the JSON path. CHEAPEST ROUTE (5 dependent steps): (1) grep 'Codable record' / 'nested' -> docs (Documentation/*.md) and FetchableRecord+Decodable; (2) find the encoding side: EncodableRecord+Encodable.swift; (3) read RecordEncoder.encode -> JSON fallback -> databaseJSONEncoder(for:); (4) open EncodableRecord.swift:236 for the date strategy; (5) compare with direct Date path -> databaseDateEncodingStrategy and Date.swift. FIRST 3 GREPS of the question's words: 'point in time' / 'time' (hundreds), 'list of structs' (no hits), 'stored text' (docs). The question names neither 'JSON' nor 'millisecond' nor 'encoder', so grepping its words reaches only docs/tests; code is found only by guessing that nested values need JSON. DECOYS: DatabaseValueConvertible.databaseJSONEncoder() (DatabaseValueConvertible.swift:118; same defaults; used by DatabaseValueConvertible+Encodable.swift:142 for standalone values), JSONDumpFormat.defaultEncoder (Dump/DumpFormats/JSONDumpFormat.swift:55; no date strategy), FetchableRecord.databaseJSONDecoder(for:) (decoding side), docs Documentation/JSON*.md. Closed-book risk: a model might say ISO 8601 from general Codable habits. est. turns: 6."
+    },
+    {
+      "id": "r3hb-grdb-11",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "A developer backs a record type with an SQL view. Saving or finding by key fails because the library says the view has no key. How can the application tell the library which columns identify a row of a view, where is that information consulted, what happens when several such providers are combined, and in which situation is it deliberately switched off?",
+      "expectedFiles": [
+        "GRDB/Core/Configuration.swift",
+        "GRDB/Core/Database.swift",
+        "GRDB/Core/Database+Schema.swift",
+        "GRDB/Core/DatabaseSchemaSource.swift",
+        "GRDB/Migration/Migration.swift"
+      ],
+      "expectedSymbols": [
+        "Configuration.schemaSource",
+        "DatabaseSchemaSource.columnsForPrimaryKey(_:inView:)",
+        "Database.primaryKey",
+        "Database.fetchPrimitivePrimaryKey(forView:columns:)",
+        "DatabaseSchemaSource.then(_:)",
+        "Chained2SchemaSource",
+        "Database.withSchemaSource",
+        "Migration.run"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The application sets Configuration.schemaSource to a DatabaseSchemaSource implementing columnsForPrimaryKey(_:inView:); each connection copies it in Database.init (Configuration.swift:441; Database.swift:467).",
+        "CRITICAL: The private Database.primaryKey(_:) first checks, when a schemaSource exists and the name is a view, schemaSource.columnsForPrimaryKey, and turns the columns into key info with fetchPrimitivePrimaryKey(forView:columns:) (a regular key, tableHasRowID false); otherwise it falls back to table introspection, which for a view leads to the 'database view has no primary key' error (Database+Schema.swift:415-437, 534-566, 372-376).",
+        "Several sources are combined with then(_:) into Chained2SchemaSource: the first source returning non-nil wins, results are never merged (DatabaseSchemaSource.swift:195-216).",
+        "Migration.run executes every migration inside db.withSchemaSource(nil), so migrations see the raw SQLite schema; withSchemaSource swaps the source and clears the schema cache before and after the block (Migration.swift:29-33; Database+Schema.swift:42-57).",
+        "The same source is consulted when GRDB looks for a unique key of a view or table (columnsForUniqueKey) (Database+Schema.swift:1110-1125)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: Configuration.swift:430-441 (schemaSource doc + property: 'automatically disabled during database migrations'), Database.swift:210 (property) and :467 (copy from configuration); Database+Schema.swift:42-57 (withSchemaSource), :361-376 (public primaryKey -> error for view), :414-437 (private primaryKey consults schemaSource), :534-566 (fetchPrimitivePrimaryKey(forView:columns:), .regular(..., tableHasRowID: false) at :566), :1110-1125 (unique key lookup mentions schemaSource); DatabaseSchemaSource.swift:163-216 (protocol default nil, then(_:), Chained2SchemaSource 'We should NEVER MERGE'); Migration.swift:29-33; QueryInterface/SQL/SQLRelation.swift:290-296 (comment about views not customized with the schemaSource). CHEAPEST ROUTE (5 dependent steps): (1) grep 'view' + 'primary key' -> Database+Schema.swift 'database view ... has no primary key' error, Documentation; (2) read the error site -> sees schemaSource mentioned in the doc comment -> grep schemaSource -> Configuration, Database, Database+Schema, Migration, SQLRelation; (3) open DatabaseSchemaSource.swift for the protocol and then(_:); (4) find where the protocol method is called -> Database.primaryKey private function; (5) read Migration.run -> withSchemaSource(nil). FIRST 3 GREPS of the question's words: 'view' (hundreds), 'primary key' (hundreds), 'no key' (no code hits; the code string is 'has no primary key' in Database+Schema.swift, reachable by grep 2 variants). The identifiers schemaSource / columnsForPrimaryKey are not in the question; the error text is the only bridge. Gold files other than Database+Schema.swift (Configuration, Migration, DatabaseSchemaSource) are not reached by the first three greps. DECOYS: Database.primaryKey(_:in:) public wrapper (throws for views), TableInfo/PRAGMA table_info introspection (fetchPrimitivePrimaryKey(forTable:)), Documentation/Views or docs examples, GRDB/Documentation.docc entries. est. turns: 7."
+    },
+    {
+      "id": "r3hb-grdb-12",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "A developer registers schema-change steps using the default referential-integrity setting. One step is registered, then the migrator is switched to its unsafe, faster mode, then a second step is registered. For each of the two steps, on a connection that has referential constraints turned on and on a connection that has them turned off, what does the library run before, during and after the step?",
+      "expectedFiles": [
+        "GRDB/Migration/DatabaseMigrator.swift",
+        "GRDB/Migration/Migration.swift"
+      ],
+      "expectedSymbols": [
+        "DatabaseMigrator.registerMigration",
+        "DatabaseMigrator.disablingDeferredForeignKeyChecks",
+        "Migration.run",
+        "Migration.runWithDeferredForeignKeysChecks",
+        "Migration.runWithDisabledForeignKeysChecks",
+        "Migration.runWithImmediateForeignKeysChecks"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The migrator's option is read when a step is registered, not when it runs: registerMigration maps .deferred to Migration.ForeignKeyChecks.deferred if defersForeignKeyChecks is still true, and to .disabled otherwise; the earlier step keeps .deferred, the later step gets .disabled (DatabaseMigrator.swift:157-159, 319-340).",
+        "CRITICAL: On a connection with foreign keys ON, the earlier (deferred) step runs with foreign_keys switched OFF, inside an immediate transaction; after the step and the bookkeeping insert, db.checkForeignKeys() verifies the data before COMMIT, and foreign_keys is switched back ON in a finally block (Migration.swift:34-37, 79-109).",
+        "On a connection with foreign keys ON, the later (disabled) step runs the same way (foreign_keys OFF, immediate transaction, ON again in finally) but with no checkForeignKeys call, so violations are not detected (Migration.swift:64-77).",
+        "On a connection with foreign keys OFF, Migration.run takes the else branch for both steps: an immediate transaction with the migration and the bookkeeping, no pragma changes and no check (Migration.swift:34, 43-45, 56-62).",
+        "A step registered with foreignKeyChecks .immediate always maps to .immediate, whatever the migrator option, and runs in an immediate transaction without toggling the pragma (DatabaseMigrator.swift:327-329; Migration.swift:56-62). All paths run inside db.withSchemaSource(nil) (Migration.swift:33)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: DatabaseMigrator.swift:113 (defersForeignKeyChecks = true), :157-159 (disablingDeferredForeignKeyChecks returns a copy with the flag false; doc says 'newly registered migrations'), :312-342 (registerMigration: :321-326 deferred -> deferred|disabled by the flag captured now, :327-328 immediate -> immediate); Migration.swift:29-47 (run: PRAGMA foreign_keys query at :34; switch at :35-42; else immediate at :43-45), :56-62 (runWithImmediate), :64-77 (runWithDisabled), :79-109 (runWithDeferred: foreign_keys=OFF :85, inTransaction(.immediate) :89, checkForeignKeys :98, ON in finally :107). CHEAPEST ROUTE (5 dependent steps): (1) grep 'foreign key' + 'migrat' -> DatabaseMigrator.swift and Migration.swift; (2) read DatabaseMigrator.registerMigration for the mapping; (3) notice the flag is read at registration, order matters; (4) read Migration.run for the pragma branch; (5) read the three runWith* bodies to state before/during/after for each. FIRST 3 GREPS of the question's words: 'referential' (no code hits), 'migrator' (DatabaseMigrator.swift = gold), 'schema change'. The question avoids 'foreign key', 'deferred', 'disabling', but 'migrator' reaches the gold file at grep 1 (acknowledged); the order-of-registration trap and the second layer (Migration.run) are what make it a 5-step question. DECOYS: Database.checkForeignKeys() (the verification, not the decision), Database.foreignKeyViolations, Configuration.foreignKeysEnabled (opens the connection with the pragma ON; the question's 'turned on' is a runtime state read by Migration.run), DatabaseMigrator.ForeignKeyChecks (public enum has only deferred/immediate, the private Migration.ForeignKeyChecks also has disabled). est. turns: 6."
+    },
+    {
+      "id": "r3hb-grdb-13",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "A record type stamps the time of the current write on each row it saves, using the library's notion of the time of the current transaction. Two inserts run inside one write block, another insert runs outside any explicit transaction, and in a third case the configured time source throws when the transaction begins. What timestamps do the inserts see, at what moment is the time captured, and when is the failure reported?",
+      "expectedFiles": [
+        "GRDB/Core/Database.swift",
+        "GRDB/Core/Database+Statements.swift",
+        "GRDB/Core/TransactionClock.swift",
+        "GRDB/Core/Configuration.swift"
+      ],
+      "expectedSymbols": [
+        "Database.transactionDate",
+        "Database.transactionDateResult",
+        "Database.checkForAutocommitTransition",
+        "Database.statementDidExecute",
+        "TransactionClock",
+        "DefaultTransactionClock.now",
+        "Configuration.transactionClock"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The time is captured once per transaction: checkForAutocommitTransition runs after each statement executes, and when the connection has just left autocommit mode (the BEGIN statement completed) it stores transactionDateResult = Result { try configuration.transactionClock.now(self) }; both inserts in the write block therefore read the same date (Database+Statements.swift:461-469, 537-553; Database.swift:424-437).",
+        "The captured time is the moment the transaction began, not the moment of the first insert; the stored result is cleared when the connection returns to autocommit mode (Database+Statements.swift:547-551).",
+        "Outside any transaction transactionDateResult is nil, so Database.transactionDate calls the clock again on every access and returns a fresh date each time (Database.swift:424-437).",
+        "CRITICAL: If the clock throws at transaction start, the error is stored inside the Result, BEGIN itself still succeeds, and the error is rethrown only when transactionDate is read, on every read for the rest of that transaction (Database+Statements.swift:541-545; Database.swift:432-434).",
+        "The default clock is DefaultTransactionClock, which simply returns Date() (not an SQLite time); Configuration.transactionClock can be replaced with .custom { db in ... } (TransactionClock.swift:44-52; Configuration.swift:200)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: Database.swift:399 (autocommitState), :400-407 (transactionDateResult invariant), :424-437 (transactionDate getter: stored result else clock); Database+Statements.swift:461-469 (statementDidExecute -> checkForAutocommitTransition at :466), :474-495 (statementDidFail also calls it at :483), :537-553 (transition on -> off: captures Result; off -> on: nil); TransactionClock.swift:18-24, :44-52 (DefaultTransactionClock returns Date()), :55-64 (custom); Configuration.swift:191-200. Doc comment on transactionDate (Database.swift:408-423) states 'set when the database leaves autocommit mode with a BEGIN statement'; the throwing-clock and per-call behaviours need the code. CHEAPEST ROUTE (5 dependent steps): (1) grep 'timestamp' / 'transaction date' -> Database.swift transactionDate + Documentation; (2) read getter -> transactionDateResult and clock; (3) grep transactionDateResult -> Database+Statements.swift checkForAutocommitTransition; (4) read when it is called (statementDidExecute/statementDidFail) and what autocommitState means; (5) open TransactionClock.swift and Configuration.transactionClock for the default and the custom clock. FIRST 3 GREPS of the question's words: 'timestamp' (docs RecordTimestamps.md, tests), 'time of the transaction' (docs), 'clock' (TransactionClock.swift = gold). Grep 1 hits docs/tests first; grep 3 reaches TransactionClock.swift but not the capture site. DECOYS: Date() calls elsewhere (DatabaseValue Date conversion), Documentation/RecordTimestamps.md (shows usage, does not state error timing), Database.beginTransaction, SQLite's own CURRENT_TIMESTAMP. est. turns: 6."
+    },
+    {
+      "id": "r3hb-grdb-14",
+      "repo": "grdb",
+      "language": "Swift",
+      "stratum": "negative-decoy",
+      "difficulty": "hard",
+      "query": "An application sets, on the configuration shared by all its connections, how a connection should behave when another process holds the file lock: fail at once, wait a fixed time, or run a custom callback. Can the application use that setting to control the reader connections that a multi-reader database pool opens? If so, point to where it is applied to them.",
+      "expectedFiles": [
+        "GRDB/Core/Database.swift",
+        "GRDB/Core/DatabasePool.swift",
+        "GRDB/Core/Configuration.swift",
+        "GRDB/Core/DatabaseSnapshotPool.swift"
+      ],
+      "expectedSymbols": [
+        "Database.setupBusyMode",
+        "DatabasePool.readerConfiguration",
+        "Configuration.readonlyBusyMode",
+        "Configuration.busyMode",
+        "DatabaseSnapshotPool.configure"
+      ],
+      "expectedFacts": [
+        "CRITICAL: No: for pool readers the user's busy setting is never applied. Database.setupBusyMode chooses configuration.readonlyBusyMode ?? configuration.busyMode for read-only connections, which looks as if busyMode reaches readers (Database.swift:580-584).",
+        "CRITICAL: DatabasePool.readerConfiguration sets readonly = true on the reader configuration and, because readonlyBusyMode is nil, assigns .timeout(10) to it, so every reader waits up to 10 seconds whatever busyMode says (DatabasePool.swift:114-143; also used for makeSnapshot at DatabasePool.swift:946-950).",
+        "readonlyBusyMode is an internal property with no public setter, so the application cannot override the 10-second reader wait; DatabaseSnapshotPool.configure does the same default (Configuration.swift:333-335; DatabaseSnapshotPool.swift:236-254).",
+        "The public Configuration.busyMode (default .immediateError) therefore governs only the writer connection of a pool and the connections of a DatabaseQueue (Configuration.swift:326-331; Database.swift:585-607)."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-grdb-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (negative): grep -rn 'busyMode' GRDB -> Configuration.swift:331 (public var), Database.swift:582-583 (setupBusyMode), no other readers; grep -rn 'readonlyBusyMode' GRDB -> Configuration.swift:335 (internal declaration), DatabasePool.swift:137-138, DatabaseSnapshotPool.swift:250-251, Database.swift:582 (only these 4 uses; no assignment from user-visible API); grep -rn 'sqlite3_busy_timeout\\|sqlite3_busy_handler' GRDB -> Database.swift:590 and :595 only (inside setupBusyMode); grep -rn 'BusyMode' GRDB -> enum at Database.swift:2022-2040. DatabasePool.swift:114-143 (readerConfiguration), :56-63 (reader config built from it), :946-950 (makeSnapshot uses it); DatabaseSnapshotPool.swift:236-254. CHEAPEST ROUTE (5 dependent steps): (1) grep 'busyMode' -> Configuration.swift + Database.swift setupBusyMode; (2) read setupBusyMode: readonly connections use readonlyBusyMode ?? busyMode; (3) check who sets readonlyBusyMode: grep -> DatabasePool.readerConfiguration and DatabaseSnapshotPool; (4) confirm the property is internal (Configuration.swift:335) and the reader config is built from the user configuration only through readerConfiguration; (5) conclude readers always get .timeout(10), writer/queue get busyMode. FIRST 3 GREPS of the question's words: 'lock' (hundreds), 'busy' (Configuration.swift, Database.swift, DatabaseError.swift codes), 'reader' (hundreds). The question has no 'busyMode' or 'timeout', and a reader who greps 'busy' finds Database.setupBusyMode which seems to answer yes. DECOYS (the 'looks present' part): Database.setupBusyMode's readonly branch, Configuration.busyMode documentation (says it defines how SQLITE_BUSY is handled), DatabaseQueue(readonly config) where busyMode really is used because readonlyBusyMode is nil, Database.BusyMode.callback. est. turns: 6."
+    }
+  ]
+}

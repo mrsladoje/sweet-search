@@ -1,0 +1,35 @@
+{
+ "repo": "typedoc",
+ "keep": [
+  "r3-typedoc-02", "r3-typedoc-03", "r3-typedoc-04", "r3-typedoc-05", "r3-typedoc-06", "r3-typedoc-07",
+  "r3-typedoc-08", "r3-typedoc-09", "r3-typedoc-10", "r3-typedoc-11", "r3-typedoc-12", "r3-typedoc-13",
+  "r3-typedoc-14", "r3-typedoc-15", "r3-typedoc-17", "r3-typedoc-18", "r3-typedoc-19", "r3-typedoc-20",
+  "r3-typedoc-21", "r3-typedoc-22", "r3-typedoc-23", "r3-typedoc-28", "r3-typedoc-29",
+  "r3-typedoc-31", "r3-typedoc-32", "r3-typedoc-33", "r3-typedoc-34", "r3-typedoc-35", "r3-typedoc-36"
+ ],
+ "fixes": {
+  "r3-typedoc-22": {
+   "expectedFacts": [
+    "The GlobArray converter builds each glob with toGlobString and throws an error (glob should use posix slash) when the string contains a backslash followed by a character that is not a special glob character.",
+    "Backslashes before ? * ( ) [ ] \\ { } are allowed as escapes; values that pass the check go to createGlobString, which resolves relative globs against the config path and returns absolute globs and globs that start with ** unchanged."
+   ]
+  },
+  "r3-typedoc-28": {
+   "expectedFacts": [
+    "inferEntryPoints finds the nearest package.json (from packageDir or the working directory) and inferPackageEntryPointPaths reads it: a string exports value is resolved as the \".\" entry, an array exports value is tried in order as fallbacks for \".\", an object exports value is resolved key by key, and without exports the main field is used.",
+    "For an object of conditions, resolveExport walks the keys in the object's own order and resolves the value of the first key that is one of typedoc, types, import, node or default; if no key matches it returns an empty list.",
+    "inferEntryPoints maps built JS paths back to TypeScript sources using the program's rootDir and outDir (falling back to declaration maps) and warns when a JS path cannot be resolved to a TS source."
+   ]
+  },
+  "r3-typedoc-33": {
+   "expectedFacts": [
+    "There is no version-switcher or multi-version documentation feature in the output code or frontend.",
+    "The only version feature is the includeVersion option: PackagePlugin copies the package.json version into project.packageVersion, and getDisplayName in output/themes/lib.tsx appends it to the project name as \" - v<version>\".",
+    "Each run documents a single project; merge mode (Deserializer.reviveProjects) combines the input JSON projects into one project (one module per input when there are several) and has no notion of release versions."
+   ]
+  }
+ },
+ "dropped": {
+  "r3-typedoc-27": "Real ambiguity (verifier B): the question does not fix the entry-point strategy; with the expand strategy a folder is expanded to all its files (getExpandedEntryPointsForPaths) instead of picking one index file, and with the packages strategy a folder is a package directory. Rescue rule says drop on ambiguity."
+ }
+}
