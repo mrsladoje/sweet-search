@@ -545,6 +545,7 @@ const TAGS_QUERIES = {
   kotlin: `
     (class_declaration (type_identifier) @class.definition)
     (object_declaration (type_identifier) @object.definition)
+    (companion_object) @object.definition
     (function_declaration (simple_identifier) @function.definition)
   `,
   // Swift: init_declaration has no name child — captured at node level
@@ -808,6 +809,14 @@ const JS_FAMILY_LANGUAGES = new Set(['javascript', 'typescript', 'tsx']);
 // Swift compile-time conditional lines (`#if X`, `#elseif`, `#else`, `#endif`).
 const SWIFT_CONDITIONAL_DIRECTIVE_LINE = /^[ \t]*#(?:if|elseif|else|endif)\b[^\n]*/gm;
 
+// C/C++ visibility macro between the class-key and the name:
+// `class DROGON_EXPORT HttpRequest : public HttpMessage`, `class Q_CORE_EXPORT
+// QObject`, `struct CV_EXPORTS Mat`. The grammar reads the macro as the class
+// name, so drogon's HttpRequest became a one-line class `DROGON_EXPORT` and
+// lost every method. Shape rule, not a macro list: an ALL-CAPS token followed
+// by another identifier (not `final`) can only be a macro in valid C++.
+const CPP_CLASS_KEY_MACRO = /\b(class|struct|union)([ \t]+)([A-Z][A-Z0-9_]+)(?=[ \t]+(?!final\b)[A-Za-z_]\w*[ \t]*(?:[:{;<]|final\b|$))/gm;
+
 // A definition inside a function body (local helper, closure) or inside an
 // anonymous class body is not a member of the outer type: stop the walk.
 const CONTAINER_STOP_NODE_TYPES = new Set([
@@ -945,6 +954,10 @@ export class TreeSitterProvider {
       if (languageId === 'swift' && content.includes('#')) {
         content = content.replace(SWIFT_CONDITIONAL_DIRECTIVE_LINE, (line) => ' '.repeat(line.length));
       }
+      // C/C++: blank a visibility macro after the class-key (same length).
+      if (languageId === 'cpp' || languageId === 'c') {
+        content = content.replace(CPP_CLASS_KEY_MACRO, (_m, key, gap, macro) => key + gap + ' '.repeat(macro.length));
+      }
       this._parser.setLanguage(language);
       tree = this._parser.parse(content);
       if (!tree) return null;
@@ -1022,6 +1035,11 @@ export class TreeSitterProvider {
         if (!isLeafIdent && languageId === 'ruby'
           && node.childForFieldName?.('name')?.type === 'scope_resolution') {
           scopedName = lastNameSegment(node.childForFieldName('name'));
+        } else if (!isLeafIdent && node.type === 'companion_object') {
+          // Kotlin `companion object Factory { }` / unnamed → `Companion`
+          // (the language's implicit name). Not a container: its members
+          // keep the outer class as parent, matching `Outer.member()` calls.
+          scopedName = node.namedChildren.find(c => c.type === 'type_identifier')?.text || 'Companion';
         } else if (!isLeafIdent && node.type === 'impl_item') {
           const implType = node.childForFieldName('type');
           if (implType?.type === 'scoped_type_identifier' || implType?.type === 'generic_type') {
