@@ -1,0 +1,813 @@
+{
+  "repo": "r3-typedoc",
+  "sha": "6d8c856bbb46b089371952981f113c3e318818fd",
+  "probes": [
+    {
+      "id": "r3h-typedoc-01",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "Under every documented member the generated pages tell the reader where in the code base it is defined, and for most projects that line is a clickable address on the code host instead of plain text. When the user supplied no address pattern of their own, trace how that address is worked out, from the very start of a run to the final markup, and say which source files end up with a plain, non-clickable line.",
+      "expectedFiles": [
+        "src/lib/application.ts",
+        "src/lib/converter/utilities/repository.ts",
+        "src/lib/converter/plugins/SourcePlugin.ts",
+        "src/lib/output/themes/default/partials/member.sources.tsx"
+      ],
+      "expectedSymbols": [
+        "Application.initializeRepositories",
+        "RepositoryManager.initializeRepositoriesForDirs",
+        "GitRepository.tryCreateRepository",
+        "guessSourceUrlTemplate",
+        "GitRepository.getURL",
+        "SourcePlugin.onBeginResolve",
+        "sourceLink"
+      ],
+      "expectedFacts": [
+        "Application.initializeRepositories (application.ts, awaited from convert before conversion starts) builds a RepositoryManager and asks it to initialize repositories for every directory that holds a source file of the programs.",
+        "CRITICAL: GitRepository.tryCreateRepository, when no link pattern was configured, reads the remote's URL with the git command line and derives the pattern with guessSourceUrlTemplate (recognises GitHub, GitHub-enterprise, Bitbucket and GitLab hosts).",
+        "GitRepository.getURL fills the pattern placeholders (revision, short revision, path relative to the repository root, line); the revision is git's HEAD commit (or the branch name when requested).",
+        "CRITICAL: GitRepository.getURL returns undefined for any file that is not in the repository's tracked-file list (git ls-files), so untracked or ignored files, and files outside every repository, get no address.",
+        "SourcePlugin.onBeginResolve sets each source reference's url from repositories.getURL(fullFileName, line) and rewrites its shown file name relative to a base path.",
+        "member.sources.tsx sourceLink prints plain file:line text when the reference has no url and an anchor otherwise."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: application.ts:443 (await initializeRepositories in convert) and :1008-1056 (:1012 disableSources early return, :1040 new RepositoryManager, :1049-1054 dirs of all program source files). converter/utilities/repository.ts:136-202 tryCreateRepository (:144-149 branch/HEAD via git, :153 'git remote get-url', :154 'git ls-files -z', :177-181 template from sourceLinkTemplate or guessSourceUrlTemplate), :375-407 guessSourceUrlTemplate, :109-125 getURL (:110 files.has), :332-359 getRepository. SourcePlugin.ts:136-163 (:160 source.url = repos?.getURL(...)). member.sources.tsx:5-33 (:6 !item.url plain). DECOYS: AssumedRepository (repository.ts:52-72, used only when git is disabled, never checks tracked files), the sourceLinkTemplate shortcut at repository.ts:177-178, i18n 'defined in' string in locales. CHEAPEST ROUTE: (1) find the template that prints the definition line (grep 'sources' in output/themes/default/partials -> member.sources.tsx) and see it only reads item.url; (2) grep '\\.url' / 'getURL' in converter -> SourcePlugin.onBeginResolve calling repos.getURL; (3) follow RepositoryManager.getRepository -> GitRepository.getURL (files set check); (4) read tryCreateRepository + guessSourceUrlTemplate for how the pattern and revision are obtained; (5) find who constructs RepositoryManager -> Application.initializeRepositories (disableSources/disableGit branches). The question's own words (defined, clickable, code host, address pattern) match no code token; the i18n phrase is not quoted. est. turns: 8."
+    },
+    {
+      "id": "r3h-typedoc-02",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "The generated site has a settings panel where a reader can untick boxes to hide kinds of members, for example the ones that come from a parent class. Trace the whole path: where the default state of each box is defined, when a box is shown at all, how individual members get marked so that they can be hidden, and what the browser does when a box is unticked and when the page is reloaded.",
+      "expectedFiles": [
+        "src/lib/utils/options/sources/typedoc.ts",
+        "src/lib/output/themes/default/partials/navigation.tsx",
+        "src/lib/converter/plugins/ImplementsPlugin.ts",
+        "src/lib/output/themes/default/DefaultTheme.tsx",
+        "src/frontend/typedoc/components/Filter.ts"
+      ],
+      "expectedSymbols": [
+        "addTypeDocOptions",
+        "settings",
+        "createLink",
+        "getReflectionClasses",
+        "Filter"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The default state of each box comes from an object-valued setting whose built-in default has entries for protected, private, inherited and external members (protected false, private false, inherited true, external false); keys starting with '@' are accepted too and add tag-based boxes.",
+        "navigation.tsx settings() renders a box for protected, private and external members only when the matching exclusion setting is off, always renders the inherited one, and renders one per '@' key (box name = key without '@', camel case turned into kebab case).",
+        "ImplementsPlugin's createLink sets the Inherited reflection flag on a member that comes from a base class (and not on one that overrides it) while conversion runs.",
+        "CRITICAL: DefaultTheme.getReflectionClasses adds the class tsd-is-<name> (for example tsd-is-inherited) to a reflection for each configured key whose flag or tag it has; member panels, index entries, navigation entries and search rows all carry that class string.",
+        "The browser-side Filter component (registered for the checkboxes in bootstrap.ts) injects a rule hiding .tsd-is-<name> unless the root element has class filter-<name>, toggles that root class on change and stores the choice in storage under filter-<name>.",
+        "On reload Filter reads the stored value and falls back to the checkbox's own checked default."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: sources/typedoc.ts:645-678 (visibilityFilters defaults :650-655, '@' keys allowed :665). navigation.tsx:45-50 flag map, :52-87 settings() (:73-77 exclusion-setting gating). ImplementsPlugin.ts:618-668 createLink (:661-663 setFlag(Inherited) when isInherit). DefaultTheme.tsx:98-101, :340-388 getReflectionClasses (:346-349 inherited). Class used at member.tsx:14,22,38, moduleReflection.tsx:86,117,120, index.tsx:33, DefaultTheme.tsx:207 (navigation), JavascriptIndexPlugin.ts:113 (search rows). frontend/typedoc/components/Filter.ts:34-45 (:36 key, :43 style rule), :47-64 storage, :69-77; bootstrap.ts:11 registerComponent(Filter, '.tsd-filter-item input[type=checkbox]'). DECOYS: Toggle.ts and Accordion.ts components (other collapsibles), Application.ensureFocusedElementVisible (shows a hidden member when linked by hash), the theme dropdown in the same settings panel. CHEAPEST ROUTE: (1) find the panel markup (grep 'checkbox' -> navigation.tsx settings); (2) trace its key list to getValue of the object setting -> sources/typedoc.ts defaults; (3) find who emits the CSS class the browser hides (grep 'tsd-is-' -> DefaultTheme.getReflectionClasses); (4) read frontend Filter.ts for the injected rule + storage; (5) find where the Inherited flag is set (grep 'Inherited' -> ImplementsPlugin.createLink). The question avoids setting names and class names. est. turns: 8."
+    },
+    {
+      "id": "r3h-typedoc-03",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "The sidebar tree of a generated site is not part of each page's markup. Trace how that tree travels from the documentation model into a visitor's browser and gets drawn there, including how it is kept small and what the page does while waiting for it.",
+      "expectedFiles": [
+        "src/lib/output/plugins/NavigationPlugin.ts",
+        "src/lib/output/themes/default/DefaultTheme.tsx",
+        "src/lib/utils/compress.ts",
+        "src/lib/output/themes/default/layouts/default.tsx",
+        "src/lib/output/themes/default/partials/navigation.tsx",
+        "src/frontend/typedoc/Navigation.ts",
+        "src/frontend/typedoc/utils/decompress.ts"
+      ],
+      "expectedSymbols": [
+        "NavigationPlugin.buildNavigationIndex",
+        "DefaultTheme.getNavigation",
+        "DefaultTheme.buildNavigation",
+        "compressJson",
+        "initNav",
+        "decompressJson"
+      ],
+      "expectedFacts": [
+        "NavigationPlugin registers its job only when the active theme is the default theme; the job is queued among the pre-render async jobs and runs before any page file is written.",
+        "CRITICAL: The job calls DefaultTheme.getNavigation, which caches buildNavigation's result for the render; buildNavigation builds nested NavigationElements from modules, groups, categories and folder-like module names, honouring the navigation flag setting and the leaf-name list.",
+        "CRITICAL: compressJson JSON-stringifies the tree, deflates it with zlib and base64-encodes it; NavigationPlugin writes it as window.navigationData in assets/navigation.js.",
+        "layouts/default.tsx loads that script asynchronously under an id that the browser code listens on, and navigation.tsx renders an empty list container that shows a loading entry until the tree is built.",
+        "Navigation.ts initNav waits for the script's load event (or runs at once), decodes the data with decompressJson (atob, DecompressionStream deflate, JSON.parse) and builds nested details/summary elements and links relative to the page's base address.",
+        "After building the tree it creates components for the new elements, reveals the page that an inline script had hidden and opens the active page's ancestors."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: NavigationPlugin.ts:14-36 (:15 DefaultTheme gate, :18 preRenderAsyncJobs.push, :28 getNavigation, :34 'window.navigationData'). renderer.ts:357-367 runPreRenderJobs. DefaultTheme.tsx:156-169 (cache), :171-338 buildNavigation. utils/compress.ts:12-15 (zlib deflate + base64). layouts/default.tsx:88 (async script id tsd-nav-script), :96-105 (hides body until ready). navigation.tsx:133-135 (#tsd-nav-container + loading). frontend Navigation.ts:21-47 initNav/buildNav, :49-116 element building; utils/decompress.ts:7-15; Application.ts showPage/ensureActivePageVisible. DECOYS: JavascriptIndexPlugin (search.js, same compress+script pattern), HierarchyPlugin (hierarchy.js), IconsPlugin, the page-level 'on this page' navigation (pageNavigation in navigation.tsx, rendered server-side). CHEAPEST ROUTE: (1) grep 'sidebar'/'tree' -> navigation.tsx container only (placeholder), ids lead to default.tsx script tag; (2) grep that script's file name 'navigation.js' -> NavigationPlugin; (3) follow getNavigation -> DefaultTheme.buildNavigation; (4) follow compressJson -> utils/compress.ts; (5) grep the global name / script id in src/frontend -> Navigation.ts + decompress.ts. est. turns: 8."
+    },
+    {
+      "id": "r3h-typedoc-04",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A class has been deliberately kept out of the documentation by a marker in its comment. Another documented class extends it, and an exported function mentions it in a parameter type. Explain each mechanism that makes the 'extends' list leave it out and that stops the complaint about a mentioned-but-undocumented type for it, starting from where the removal decision is taken.",
+      "expectedFiles": [
+        "src/lib/converter/plugins/CommentPlugin.ts",
+        "src/lib/models/ProjectReflection.ts",
+        "src/lib/converter/plugins/ImplementsPlugin.ts",
+        "src/lib/models/types.ts",
+        "src/lib/validation/exports.ts"
+      ],
+      "expectedSymbols": [
+        "CommentPlugin.onBeginResolve",
+        "CommentPlugin.isHidden",
+        "ProjectReflection.removeReflection",
+        "ProjectReflection.symbolIdHasBeenRemoved",
+        "ImplementsPlugin.doResolve",
+        "ReferenceType.isIntentionallyBroken",
+        "validateExports"
+      ],
+      "expectedFacts": [
+        "CommentPlugin.onBeginResolve collects every reflection for which isHidden is true (hidden/ignore modifier, and internal when internals are excluded) and removes it with project.removeReflection.",
+        "CRITICAL: ProjectReflection._removeReflection deletes the symbol-to-reflection entry and records the removed reflection's symbol id in removedSymbolIds, which symbolIdHasBeenRemoved answers.",
+        "CRITICAL: ImplementsPlugin.doResolve drops from implementedTypes and extendedTypes every ReferenceType whose symbol id has been removed and deletes a list that becomes empty.",
+        "ReferenceType.isIntentionallyBroken returns true when its unresolved target symbol id has been removed; validateExports skips types that are intentionally broken and also checks symbolIdHasBeenRemoved before warning.",
+        "ReferenceType.toObject writes a reference to a removed symbol with target -1, a deliberately broken reference, so later merges or reloads do not warn either."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: CommentPlugin.ts:349-394 onBeginResolve (:358-374 hidden set, :374 removeReflection), :586-700 isHidden (:686-688 hidden/ignore/internal). ProjectReflection.ts:162-241 removeReflection, :281-327 _removeReflection (:310-323 removedSymbolIds.set), :382-384. ImplementsPlugin.ts:315-325 notHiddenType filter. models/types.ts:862-870 isIntentionallyBroken, :987-995 toObject (-1). validation/exports.ts:74-95 (:80 isIntentionallyBroken, :83 symbolIdHasBeenRemoved). DECOYS: the intentionallyNotExported setting (exports.ts:6-60, a separate way to silence the same warning), CommentPlugin.excludedByCategory, Converter.shouldIgnore (conversion-time exclusion that never creates a reflection). CHEAPEST ROUTE: (1) grep 'hidden' in converter -> CommentPlugin.isHidden/onBeginResolve; (2) follow project.removeReflection -> ProjectReflection._removeReflection recording removed symbol ids; (3) grep the recorder's getter symbolIdHasBeenRemoved -> ImplementsPlugin, models/types.ts, validation/exports.ts; (4) read each consumer to separate what it does (filter heritage lists / treat as intentionally broken / skip warning / serialize -1). The warning's text is not quoted, so locale files are not a shortcut. est. turns: 7."
+    },
+    {
+      "id": "r3h-typedoc-05",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "My doc comments link to a standard-library type that is not part of my documentation, and my configuration maps type names to outside web pages. Trace how such a mapping turns both a link written in a comment and a type used in a signature into a real hyperlink, which entry of the mapping applies to a standard-library type, and why the link check stays quiet about it.",
+      "expectedFiles": [
+        "src/lib/utils/options/sources/typedoc.ts",
+        "src/lib/converter/converter.ts",
+        "src/lib/converter/comments/linkResolver.ts",
+        "src/lib/converter/plugins/LinkResolverPlugin.ts",
+        "src/lib/validation/links.ts",
+        "src/lib/output/themes/MarkedPlugin.tsx"
+      ],
+      "expectedSymbols": [
+        "Converter.constructor",
+        "Converter.resolveExternalLink",
+        "resolveLinkTag",
+        "LinkResolverPlugin.resolveLinks",
+        "getBrokenPartLinks",
+        "MarkedPlugin.displayPartsToMarkdown"
+      ],
+      "expectedFacts": [
+        "CRITICAL: Converter's constructor registers a built-in unknown-symbol resolver: it only handles references that start from the global scope, looks up mappings[ref.moduleSource ?? 'global'], uses the dotted symbol path (plus meaning suffix) as the key and falls back to a '*' entry.",
+        "When the resolver receives a symbol id it re-enters with symbolId.toDeclarationReference(), whose moduleSource is the symbol's package name, so a type declared in the TypeScript library files is looked up under the package 'typescript'.",
+        "linkResolver.resolveLinkTag asks the external resolvers only after it found no documented target, both for a TypeScript-resolved symbol id with no reflections and for a parsed declaration reference that resolveDeclarationReference cannot resolve; a string (or object with target/caption) result becomes the link part's target.",
+        "LinkResolverPlugin.resolveLinks does the same for ReferenceTypes that have no reflection and stores the URL in type.externalUrl.",
+        "CRITICAL: validation/links.ts treats a link part as broken only when it has no target or its target is still a ReflectionSymbolId, so a string target coming from the mapping is not reported.",
+        "MarkedPlugin.displayPartsToMarkdown uses a string target directly as the href."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: sources/typedoc.ts:208-236 (mapping validated as object of objects of strings). converter.ts:262-303 (:268-275 symbolId re-entry, :279 global-only, :283 moduleSource ?? 'global', :296-301 exact key then '*'), :436-447 resolveExternalLink (first truthy resolver wins), :449-480 resolveLinks. comments/linkResolver.ts:187-257 (:232-256 symbol-id branch), :259-292 (declaration reference branch). LinkResolverPlugin.ts:39-61 (:54 externalUrl). models/ReflectionSymbolId.ts:99-109 toDeclarationReference. validation/links.ts:14-28. MarkedPlugin.tsx:149-214 (:155-156 string target). Docs confirm lib types belong to 'typescript': site/options/comments.md:264-266. DECOYS: Converter.addUnknownSymbolResolver (public API for plugins, same loop), ReferenceType.externalUrl rendering in formatter.tsx, site docs. CHEAPEST ROUTE: (1) grep 'external' in comments/linkResolver.ts and converter -> externalResolver param and Converter.resolveExternalLink; (2) find the registered resolver in the Converter constructor (mapping lookup); (3) grep its option getValue -> typedoc.ts declaration; (4) find the type-position consumer (grep resolveExternalLink -> LinkResolverPlugin); (5) reason about the validator: validation/links.ts getBrokenPartLinks + MarkedPlugin href rendering. First greps on the question's words (standard-library, hyperlink, mapping) hit docs/locale text rather than gold. est. turns: 8."
+    },
+    {
+      "id": "r3h-typedoc-06",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A function takes one parameter that is written as an object pattern, so the compiler gives it no real name. The generated docs still show a proper name for it, show the descriptions of its individual properties, and show the default values that were written inside the pattern. Trace where each of those three things comes from.",
+      "expectedFiles": [
+        "src/lib/converter/factories/signature.ts",
+        "src/lib/converter/plugins/CommentPlugin.ts",
+        "src/lib/converter/convert-expression.ts"
+      ],
+      "expectedSymbols": [
+        "convertParameters",
+        "checkForDestructuredParameterDefaults",
+        "CommentPlugin.moveSignatureParamComments",
+        "moveNestedParamTags",
+        "convertDefaultValue",
+        "convertExpression"
+      ],
+      "expectedFacts": [
+        "CRITICAL: signature.ts convertParameters gives a parameter whose compiler symbol name looks like __<digits> the placeholder name __namedParameters.",
+        "CRITICAL: CommentPlugin.moveSignatureParamComments collects @param tags whose name has no dot and matches no parameter, renames each placeholder parameter to the next such tag's name in order, and gives it that tag's text as its comment.",
+        "validateParamTags calls moveNestedParamTags, which moves @param tags named param.prop onto the matching child property's comment (through unions and intersections too) or into highlightedProperties for a referenced type; the tags it uses are not reported as unused.",
+        "signature.ts checkForDestructuredParameterDefaults runs only for a placeholder-named parameter with an object binding pattern whose type is a reflection, and sets each child property's defaultValue from the binding element's initializer.",
+        "convert-expression.ts convertExpression prints literals, identifiers, simple property chains and empty [] / {} verbatim and every other initializer as '...'."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: signature.ts:260 (placeholder in convertParameters), :352 (checkForDestructuredParameterDefaults call), :414-431 (conditions: :419 placeholder name, then object binding pattern, then reflection type; child.defaultValue = convertDefaultValue(tsChild)); signature.ts:368 and :409 convertParameterNodes has the same placeholder and call. CommentPlugin.ts:495-545 (:501-505 unused tags, :507-511 rename), :718-741 validateParamTags (:729 moveNestedParamTags), :778-844 moveNestedParamTags. convert-expression.ts:9-71. DECOYS: convertParameterNodes (JSDoc-only path), CommentPlugin.movePropertyTags (@prop/@property tags, a different tag family moving onto container children), InheritDocPlugin.copySummaries. CHEAPEST ROUTE: (1) grep 'pattern'/'binding' in converter/factories -> signature.ts (placeholder + defaults helper); (2) grep the placeholder string in src/lib -> CommentPlugin line 508; (3) read moveSignatureParamComments then validateParamTags -> moveNestedParamTags; (4) follow convertDefaultValue -> convert-expression.ts to see which initializers print as '...'. est. turns: 7."
+    },
+    {
+      "id": "r3h-typedoc-07",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "Under which different circumstances is the title of the top-level page (the name of the whole documentation project) decided, and which code makes the choice in each of them? Cover a normal run over source code, a run that documents several packages, and a run that recombines previously saved results.",
+      "expectedFiles": [
+        "src/lib/converter/converter.ts",
+        "src/lib/converter/plugins/PackagePlugin.ts",
+        "src/lib/application.ts",
+        "src/lib/serialization/deserializer.ts"
+      ],
+      "expectedSymbols": [
+        "Converter.convert",
+        "PackagePlugin.addEntries",
+        "Application._convertPackages",
+        "Application._merge",
+        "Deserializer.reviveProject",
+        "Deserializer.reviveProjects"
+      ],
+      "expectedFacts": [
+        "Converter.convert creates the ProjectReflection with the value of the user-supplied name setting, which is an empty string when the user gave none.",
+        "CRITICAL: PackagePlugin.addEntries (run at resolve begin and again after serialized projects are revived) fills an empty name from the discovered package manifest's name, else uses 'Documentation' and warns when no manifest was found; a manifest without a name field counts as not found.",
+        "Application._convertPackages names the combined project with the name setting or, when empty, 'Documentation'.",
+        "Application._merge passes the name setting through unchanged, with no fallback, so an empty name is only filled later by PackagePlugin on revive.",
+        "CRITICAL: Deserializer.reviveProject names the project name || projectObj.name (so a single saved project keeps its own saved name when none is given), while reviveProjects with several projects (or forced entry-point modules) creates a ProjectReflection named exactly by name and turns each saved project into a module child named after it."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: converter.ts:327-330 (new ProjectReflection(options name, files)). PackagePlugin.ts:130-132 onBeginResolve, :66-74 onRevive, :134-173 addEntries (:156-160 packageName || 'Documentation', :167-172 else-branch warn + 'Documentation'); utils/fs.ts:287-310 discoverPackageJson validates {name: String}. application.ts:924-932 (name || 'Documentation'), :981-989 (_merge, no fallback). serialization/deserializer.ts:233-285 reviveProject (:254-257 name || projectObj.name), :287-353 reviveProjects (:296-301 single shortcut, :303 new ProjectReflection(name), :321-330 module per project). DECOYS: lib.tsx getDisplayName (adds a ' - v' version suffix, never the title), CommentPlugin module renaming (renames modules not the project), entry-point displayName. CHEAPEST ROUTE: (1) grep 'Documentation' string / project name assignments in src/lib -> PackagePlugin; (2) grep 'new ProjectReflection' -> converter.ts, deserializer.ts (two sites); (3) read application.ts _convertPackages/_merge to see what name each passes; (4) follow reviveProjects branches in deserializer.ts and onRevive in PackagePlugin to see which fills last. Members use different identifiers in different layers. est. turns: 8."
+    },
+    {
+      "id": "r3h-typedoc-08",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "Where can the tool warn that a hyperlink an author wrote in documentation text (a markdown link or an inline link tag) does not lead where it should? Cover both checks that run while the model is built and checks that run later, and say what each one verifies.",
+      "expectedFiles": [
+        "src/lib/validation/links.ts",
+        "src/lib/converter/comments/textParser.ts",
+        "src/lib/validation/filePaths.ts",
+        "src/lib/output/themes/MarkedPlugin.tsx"
+      ],
+      "expectedSymbols": [
+        "validateLinks",
+        "textContent",
+        "validateFilePaths",
+        "MarkedPlugin.displayPartsToMarkdown",
+        "MarkedPlugin.onEnd"
+      ],
+      "expectedFacts": [
+        "CRITICAL: validation/links.ts validateLinks (run by Application.validate when the invalid-link check is on) reports link tags in comments, in project and declaration readmes, in documents and in union-member summaries whose target is missing or still only a symbol id, with a hint for names starting with '@'.",
+        "textParser.ts addRef, while a comment or markdown file is being parsed, reports a relative path that could not be registered as an existing file, when the invalid-path check is on.",
+        "validation/filePaths.ts validateFilePaths (Application.validate, invalid-path check) reports registered media paths with no reflection that are not files, for example folders, because they will not be copied to the output.",
+        "MarkedPlugin.displayPartsToMarkdown, during rendering, warns when a link tag's target has no URL of its own and the link is rewritten to its nearest ancestor with a URL, when the rewritten-link check is on.",
+        "CRITICAL: MarkedPlugin.onEnd, after all pages are rendered, warns for each recorded relative link with a fragment whose fragment is not known to the target page's slugger, suggesting similar ones."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: validation/links.ts:14-28 (broken = no target or ReflectionSymbolId), :41-144 (readme :52-74, document :76-96, comment :98-100, union :102-115). application.ts:743-745 (invalidLink -> validateLinks), :751-753 (invalidPath -> validateFilePaths). converter/comments/textParser.ts:82-111 (:99 !ref.target && invalidPath). validation/filePaths.ts:5-16. MarkedPlugin.tsx:169-191 (:180 rewrittenLink), :276-291. DECOYS: InheritDocPlugin.processInheritDoc (:97-104, warns about an unresolvable inherit-doc target under the same invalid-link flag but that is not a hyperlink), IncludePlugin (missing include files are errors), ValidatingFileRegistry.fromObject (:41-48 saved path missing when reviving JSON), exports.ts. CHEAPEST ROUTE: (1) grep 'link' in src/lib/validation -> validation/links.ts (broken-target check); (2) read Application.validate for the other switch-gated validators -> filePaths.ts; (3) grep the invalid-path switch name -> textParser.ts; (4) grep the rewritten-link switch name -> MarkedPlugin; (5) read MarkedPlugin.onEnd to find the fragment check, then Slugger. The five members live in different layers and use different identifiers (validateLinks / addRef / validateFilePaths / rewrittenLink / onEnd). est. turns: 8."
+    },
+    {
+      "id": "r3h-typedoc-09",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "A declaration is exported from several modules through re-exports. Describe every step in the converter and the later stages that decides which module receives the real documentation and which ones receive only a pointer, including what later stages do with those pointers.",
+      "expectedFiles": [
+        "src/lib/converter/converter.ts",
+        "src/lib/converter/symbols.ts",
+        "src/lib/converter/plugins/GroupPlugin.ts",
+        "src/lib/output/themes/default/DefaultTheme.tsx"
+      ],
+      "expectedSymbols": [
+        "Converter.convertExports",
+        "Converter.finalizeDeferredConversion",
+        "convertSymbol",
+        "_convertSymbolNow",
+        "convertAlias",
+        "createAlias",
+        "GroupPlugin.getGroups",
+        "DefaultTheme.buildNavigation"
+      ],
+      "expectedFacts": [
+        "CRITICAL: Converter.convertExports splits an entry's exports into direct ones (every declaration lives in that entry file) and indirect ones; direct exports are converted at once, indirect ones are deferred until all entries are done.",
+        "symbols.ts convertSymbol defers symbols named default in an export container, so a function exported both by name and as default is documented under its name first.",
+        "CRITICAL: _convertSymbolNow, when a reflection already exists for the symbol under a module or the project, creates an alias (a Reference) instead of converting it again.",
+        "convertAlias defers re-export specifiers (unless the scope or the export's comment carries the primary-export marker) and converts the target under the exporting name when it has no reflection in a module/project yet, else makes an alias; createAlias does nothing when references are excluded and points at the deep target of reference chains.",
+        "GroupPlugin.getGroups puts a Reference without explicit group tags under the plural kind of its target when references are grouped by type, else under References.",
+        "DefaultTheme.buildNavigation drops ReferenceReflections when the navigation flag excludeReferences is set."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: converter.ts:598-613 (partition direct/indirect, :608-613 deferConversion), :496-515 (deferred queue), symbols.ts:196-204 (default deferred), :109-125 (:116-125 previous -> createAlias), :953-993 convertAlias (:960-969 primaryExport/defer, :973-991 _convertAlias), :995-1011 createAlias (:1001 excludeReferences, :1006 getTargetReflection). GroupPlugin.ts:191-199. DefaultTheme.tsx:183-185. Settings: excludeReferences/groupReferencesByType (sources/typedoc.ts). DECOYS: Context.registerReflection duplicate-symbol cleanup (context.ts:326-352, class/interface member symbols), ImplementsPlugin (inheritance not re-export), ReferenceReflection model, project.mergeReflections. CHEAPEST ROUTE: (1) grep 'Reference'/'alias' in converter -> symbols.ts convertAlias/createAlias; (2) read _convertSymbolNow to see the 'previous' branch; (3) grep deferConversion -> converter.ts convertExports + symbols.ts default case; (4) grep ReferenceReflection consumers -> GroupPlugin, DefaultTheme.buildNavigation; (5) check the two settings that toggle them. Members differ in name and layer (converter, symbols, group plugin, theme). est. turns: 8."
+    },
+    {
+      "id": "r3h-typedoc-10",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "After a documentation comment has been attached to an item, which separate pieces of the pipeline later move or copy parts of its content onto a different item, and what exactly does each of them move or copy?",
+      "expectedFiles": [
+        "src/lib/converter/plugins/CommentPlugin.ts",
+        "src/lib/converter/plugins/InheritDocPlugin.ts",
+        "src/lib/converter/plugins/ImplementsPlugin.ts",
+        "src/lib/converter/symbols.ts"
+      ],
+      "expectedSymbols": [
+        "CommentPlugin.moveSignatureParamComments",
+        "moveNestedParamTags",
+        "movePropertyTags",
+        "CommentPlugin.onCreateTypeParameter",
+        "InheritDocPlugin.copyComment",
+        "ImplementsPlugin.copyComment",
+        "convertVariableAsFunction"
+      ],
+      "expectedFacts": [
+        "CRITICAL: CommentPlugin.moveSignatureParamComments moves @param, type-parameter (@typeParam/@template/<T> @param) and @this tag text onto the matching ParameterReflection/TypeParameterReflection comments and removes the tags from the signature comment.",
+        "CommentPlugin.moveNestedParamTags (@param a.b) and movePropertyTags (@prop/@property) move tag text onto child property reflections found by name, or into highlightedProperties of a referenced type.",
+        "CommentPlugin.onResolve moves the @returns tag of a container with exactly one comment-less signature onto that signature, and onCreateTypeParameter takes a type parameter's comment from its parent's tags (or the class's type parameters for constructors).",
+        "InheritDocPlugin.copyComment copies summary, remarks, returns and parameter/type-parameter summaries from the resolved target of an explicit inherit-doc tag, deferring when the source itself inherits.",
+        "CRITICAL: ImplementsPlugin.copyComment (through handleInheritedComments and shouldCopyComment) clones the comment of a base class member or implemented interface member onto a child member that has none, or whose comment carries a bare (nameless) inherit-doc block tag.",
+        "symbols.ts convertVariableAsFunction moves a variable's comment onto its single call signature when that signature has no comment of its own."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: CommentPlugin.ts:495-545 (:501-537 params/type params/this), :718-741 + :778-873 (nested + property tags), :408-493 onResolve (:470-479 single signature returns/params), :269-310 onCreateTypeParameter. InheritDocPlugin.ts:115-186 (:147-150 deferral), :228-247 tag reference extraction (bare tag has no name -> skipped :60). ImplementsPlugin.ts:465-566 handleInheritedComments/copyComment, :670-694 shouldCopyComment (:686-690 bare inherit-doc block tag). symbols.ts:1235-1245 (#2824). DECOYS: discovery.ts declarationToCommentNodes (inherits a base declaration's comment at discovery time, before any reflection pipeline), IncludePlugin (replaces include tags inside the same item), MergeModuleWithPlugin (moves children, not comments), Converter.processDocumentTags. CHEAPEST ROUTE: (1) grep 'comment =' / 'clone()' assignments in converter/plugins -> ImplementsPlugin.copyComment, InheritDocPlugin.copyComment; (2) read CommentPlugin for 'move*' helpers; (3) grep 'signatures[0].comment' -> symbols.ts convertVariableAsFunction; (4) grep CommentPlugin's type-parameter hook; (5) decide what each moves by reading bodies. Members share no identifier. est. turns: 8."
+    },
+    {
+      "id": "r3h-typedoc-11",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "Where does the tool derive a common base directory from a set of file paths in order to shorten names and paths that are shown to the reader or used to build links, and which of these places honours the user's base-path settings and which one does not?",
+      "expectedFiles": [
+        "src/lib/converter/plugins/SourcePlugin.ts",
+        "src/lib/utils/entry-point.ts",
+        "src/lib/application.ts",
+        "src/lib/converter/utilities/repository.ts"
+      ],
+      "expectedSymbols": [
+        "SourcePlugin.onBeginResolve",
+        "getEntryPointsForPaths",
+        "getModuleName",
+        "getDocumentEntryPoints",
+        "Application.initializeRepositories",
+        "AssumedRepository.getURL"
+      ],
+      "expectedFacts": [
+        "SourcePlugin.onBeginResolve shortens shown source file names relative to displayBasePath || basePath, else the common directory of every source file the plugin saw.",
+        "entry-point.ts getEntryPointsForPaths names each entry module by its path relative to displayBasePath || basePath || the common directory of the entry files, with index and extension stripped (getModuleName).",
+        "entry-point.ts getDocumentEntryPoints names each project document by its path relative to displayBasePath || basePath || the common directory of the expanded document files, without extension.",
+        "CRITICAL: Application.initializeRepositories picks displayBasePath || the common directory of the entry source files and never consults basePath.",
+        "That base path is passed to RepositoryManager and only matters when git is disabled: AssumedRepository.getURL builds the path part as relative(basePath, file); git-backed repositories use the repository root."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: SourcePlugin.ts:31-34 (displayBasePath getter = displayBasePath || basePath), :136-137. entry-point.ts:199-205 (getDocumentEntryPoints), :279-284 getModuleName, :296-328 (:296-297 chain, :321 displayName). application.ts:1037-1047 (:1037-1038 displayBasePath || getCommonDirectory(...), no basePath). repository.ts:52-72 (:63 relative(this.path, fileName)), :332-335 (disableGit -> assumedRepo), :109-125 (git repos use this.path = repo root). DECOYS: entry-point.ts:73 and declaration-maps.ts:59 (rootDir for mapping compiled output back to sources, not shown names), entry-point.ts:272,364 and application.ts:946 (deriveRootDir for glob bases), PackagePlugin.ts:82 (where to start the manifest search). CHEAPEST ROUTE: (1) grep 'getCommonDirectory' -> 7 hits across application.ts, entry-point.ts, declaration-maps.ts, SourcePlugin.ts; (2) separate the display-name uses from glob/mapping uses by reading each call site; (3) read each site's fallback chain for the settings; (4) follow the application.ts base path into RepositoryManager -> AssumedRepository to see where it is consumed; the 'does not honour basePath' asymmetry only appears by comparing the three chains. est. turns: 8."
+    },
+    {
+      "id": "r3h-typedoc-12",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "A doc comment contains a link to another documented item, written with no label of its own. What label does the reader see, which code decides it, and what changes the outcome? Several layers touch link tags, and only one decides the label.",
+      "expectedFiles": [
+        "src/lib/converter/comments/linkResolver.ts"
+      ],
+      "expectedSymbols": [
+        "resolveLinkTag"
+      ],
+      "expectedFacts": [
+        "CRITICAL: linkResolver.resolveLinkTag decides the label: text written after the pipe wins, otherwise defaultDisplayText, otherwise the original text (part.text = part.text.substring(pos).trim() || defaultDisplayText || part.text).",
+        "CRITICAL: For a link resolved to a documented reflection the default label is the text as written when the preserve-link-text setting is on (default on) and the target reflection's own name when it is off.",
+        "When TypeScript resolved the target (symbol id route) the label TypeScript considers display text (tsLinkText) takes precedence over that rule; external results may supply a caption.",
+        "Converter passes the preserve-link-text setting into the resolver options (Converter.resolveLinks), and sources/typedoc.ts declares it as a boolean defaulting to true.",
+        "MarkedPlugin.displayPartsToMarkdown only renders whatever text the part already carries; it does not choose a label."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: linkResolver.ts:180-181, :226-227 (tsLinkText || (preserveLinkText ? part.text : target.name)), :243-245, :265-267, :279-281, :294-299 (plain URL), :301-315 (pipe handling, final assignment :315). converter.ts:144-145, :449-480 (passes { preserveLinkText: this.preserveLinkText }). sources/typedoc.ts:763-768 (default true). comments/blockLexer.ts:358-370 (tsLinkText from TypeScript). MarkedPlugin.tsx:149-214. DECOYS: MarkedPlugin.displayPartsToMarkdown (renders), Converter.resolveLinks overloads (:449-480, wrapper), LinkResolverPlugin (drives resolution, no label logic), Comment.combineDisplayParts, models/Comment.ts InlineTagDisplayPart docs. CHEAPEST ROUTE: (1) grep 'link' under converter -> several layers; (2) read LinkResolverPlugin -> Converter.resolveLinks -> comments/linkResolver.ts; (3) read resolveLinkTag's branches for display text; (4) trace the option passed in (grep preserveLinkText); (5) confirm the renderer does not decide (MarkedPlugin). est. turns: 6."
+    },
+    {
+      "id": "r3h-typedoc-13",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "A configuration file in a sub-folder lists an add-on module by a path that starts with a dot, and also lists one by a bare package name. Relative to what is the first one made absolute, what happens to the second, and why does the same entry given on the command line behave differently? Name where each step happens.",
+      "expectedFiles": [
+        "src/lib/utils/options/readers/typedoc.ts",
+        "src/lib/utils/options/options.ts",
+        "src/lib/utils/options/declaration.ts"
+      ],
+      "expectedSymbols": [
+        "TypeDocReader.readFile",
+        "Options.setValue",
+        "converters[ParameterType.PluginArray]",
+        "resolveModulePath"
+      ],
+      "expectedFacts": [
+        "CRITICAL: TypeDocReader.readFile (and the package.json and tsconfig readers) call container.setValue(key, value, <the config file's directory>), whereas the command-line reader calls setValue without a base.",
+        "CRITICAL: Options.setValue passes configPath ?? process.cwd() to convert(), so command-line values resolve against the working directory and config-file values against the file's own folder.",
+        "declaration.ts converters[PluginArray] keeps function entries as they are and maps string entries through resolveModulePath, which resolves a path starting with '.' against that base and leaves other strings (bare package names) normalized but unresolved for Node to look up.",
+        "The deprecated ModuleArray converter has the same logic (resolveModulePaths) but is not what the plugin setting uses; default values are resolved against process.cwd() in the default getters.",
+        "plugins.ts loadPlugins only imports the already-resolved specifier (file URL for absolute paths, require fallback for directory imports) and calls its load function."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: readers/typedoc.ts:135-146 (:140 resolve(dirname(file)) as 3rd arg), readers/package-json.ts:51 (dirname(file)), readers/tsconfig.ts:114-118 (join(fileToRead, '..')), readers/arguments.ts:44-48 (setValue(name, value) no base). options.ts:314-336 (:331-335 configPath ?? process.cwd()). declaration.ts:807-813 (PluginArray converter), :1016-1025 resolveModulePath (:1021 startsWith('.')), :801-806 (ModuleArray, @deprecated :593), :994-999 default getter (process.cwd()). plugins.ts:8-62. sources/typedoc.ts:929-933 (plugin = PluginArray). DECOYS: ParameterType.ModuleArray (deprecated twin), loadPlugins (loading, not resolving), defaultGetters, PathArray converter (declaration.ts:794-799, same base but normalises everything), Application.bootstrapWithPlugins double read. CHEAPEST ROUTE: (1) grep 'plugin' in src/lib/utils -> plugins.ts (load only) and the setting declaration (type PluginArray); (2) grep PluginArray -> declaration.ts converters + the deprecated ModuleArray twin; (3) read resolveModulePath for the '.' rule; (4) trace where the base arrives: Options.setValue's third parameter; (5) grep setValue callers in readers to compare the third argument (config dir vs none). est. turns: 8."
+    },
+    {
+      "id": "r3h-typedoc-14",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "A property in my API is typed with a named interface. I want the generated page to show that interface's members right under the property while the type name still links to the interface's own page. Which comment markers make that happen, where are they read, and which similar-looking markers do something different?",
+      "expectedFiles": [
+        "src/lib/output/themes/default/partials/typeDetails.tsx",
+        "src/lib/output/themes/default/partials/comment.tsx"
+      ],
+      "expectedSymbols": [
+        "shouldExpandReference",
+        "getExpandTypeInfo",
+        "typeDetailsImpl",
+        "commentSummary",
+        "notRenderedTags"
+      ],
+      "expectedFacts": [
+        "CRITICAL: typeDetails.tsx shouldExpandReference (render time) expands a reference to a documented interface or type alias when the target's comment has the expand modifier, or the container or any ancestor comment names the type in an expand-type block tag, or the reference carries highlighted properties; a prevent-expand tag on the container or an ancestor cancels it.",
+        "It never expands non-type targets and never re-expands a target that is already being expanded (the module-level expanded set).",
+        "getExpandTypeInfo merges the tags of the container's ancestor chain (nearest overrides) and caches the result per reflection.",
+        "The model is unchanged: the property keeps a ReferenceType pointing at the interface, which is why the link stays.",
+        "comment.tsx commentSummary additionally reuses the target type's summary when the property has no summary of its own and the target carries the expand modifier.",
+        "CRITICAL: The similar-looking inline markers (Context.shouldInline/withScope, types.ts referenceConverter -> convertTypeInlined) act at conversion time and replace the reference with the type's structure, so no link remains; they are not the answer."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: typeDetails.tsx:63-96 getExpandTypeInfo (:83-90 expandType/preventExpand tags, parent chain merged first), :98 expanded set, :99-121 shouldExpandReference (no-reflection case, kind check, recursion check, then tag/modifier decision), :15-37 renderingTypeDetailsIsUseful (reference case calls shouldExpandReference), :166-181 reference visitor in typeDetailsImpl (expanded.add/delete). partials/comment.tsx:41-53 (:50 expand modifier summary). utils/options/defaults.ts:56-70 (notRenderedTags lists the expand-family tags so they are not printed). DECOYS (conversion-time family): context.ts:429-436 shouldInline, :453-459 withScope reads inlineType/preventInline; types.ts:760-769 and :814-816 (inline unless type args), :1279-1311 convertTypeInlined. CHEAPEST ROUTE: (1) grep 'inline' under converter -> Context.shouldInline (plausible but wrong: it removes the link); (2) notice the 'link stays' clue and search the theme for where referenced type members are rendered -> typeDetails.tsx typeDetailsImpl reference branch; (3) read shouldExpandReference + getExpandTypeInfo; (4) grep the modifier name in defaults/comment.tsx; (5) reconcile the two families. The question uses neither tag name. est. turns: 8."
+    },
+    {
+      "id": "r3h-typedoc-15",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "I want an extra long-form guide page to appear nested under one particular function in the sidebar, and I want to reference the guide's file from that function's doc comment. Where is such a reference turned into a child page, how is the file located, and why does this work for a function but not for a class method?",
+      "expectedFiles": [
+        "src/lib/converter/converter.ts",
+        "src/lib/converter/context.ts",
+        "src/lib/converter/factories/signature.ts",
+        "src/lib/models/kind.ts",
+        "src/lib/output/themes/default/DefaultTheme.tsx"
+      ],
+      "expectedSymbols": [
+        "Converter.processDocumentTags",
+        "Converter.addDocument",
+        "Context.finalizeDeclarationReflection",
+        "createSignature",
+        "ReflectionKind.MayContainDocuments",
+        "DefaultTheme.buildNavigation"
+      ],
+      "expectedFacts": [
+        "CRITICAL: Converter.processDocumentTags reads the reflection comment's document tags, removes them, resolves each path relative to the directory of the comment's source file and calls addDocument with the file's base name; an unreadable file only warns.",
+        "CRITICAL: A function's comment lives on its call signature, so signature.ts createSignature calls processDocumentTags(sigRef, parentReflection) when the parent kind may contain documents; the new document becomes a child of the function.",
+        "Context.finalizeDeclarationReflection calls processDocumentTags for declarations whose kind is in ReflectionKind.MayContainDocuments (exports, project, document); methods are not in that set, so a class method's comment cannot attach documents.",
+        "DefaultTheme.buildNavigation shows only the documents of a non-module parent (functions, classes) in the tree, and the router gives Document reflections their own pages.",
+        "The project-level alternatives (documents setting via addProjectDocuments, and front-matter children in addDocument) are separate paths."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: converter.ts:682-712 processDocumentTags (:683 comment.sourcePath dir, :686-687 getTags/removeTags, :693 resolve(relativeTo, path), :696-701 warn, :705-709 addDocument(parent, file, basename)), :714-789 addDocument. context.ts:252-262 (:259 MayContainDocuments). signature.ts:97-103 (:100). models/kind.ts:86 (SomeExport | Project | Document; Method not included, SomeExport :77-86). DefaultTheme.tsx:232-248 (:236 MayContainDocuments gate, :244-247 documents of non-module parents). router.ts:317-325 getPageKind Document. DECOYS: Converter.addProjectDocuments (converter.ts:360-379, project-level setting, paths relative to cwd/globs), entry-point.ts:178-206 getDocumentEntryPoints, front-matter 'children' (converter.ts:723-789), IncludePlugin (inlines text into a comment rather than creating a page). CHEAPEST ROUTE: (1) grep 'document' in converter -> addProjectDocuments/getDocumentEntryPoints (decoy, project-level) and processDocumentTags; (2) find who calls processDocumentTags -> context.finalizeDeclarationReflection and signature.ts; (3) read the kind set MayContainDocuments in models/kind.ts; (4) check DefaultTheme.buildNavigation for how non-module parents show documents; (5) reason about functions vs methods via where comments are stored. est. turns: 8."
+    },
+    {
+      "id": "r3h-typedoc-16",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "My team documents code with runs of consecutive lines that begin with three forward slashes instead of block comments, and by default none of that text shows up in the generated docs. What changes this, and where is the decision made about which comments count as documentation, including what happens when a line starts with a longer run of slashes?",
+      "expectedFiles": [
+        "src/lib/utils/options/sources/typedoc.ts",
+        "src/lib/converter/converter.ts",
+        "src/lib/converter/comments/index.ts",
+        "src/lib/converter/comments/discovery.ts"
+      ],
+      "expectedSymbols": [
+        "addTypeDocOptions",
+        "Converter._buildCommentParserConfig",
+        "getComment",
+        "discoverComment",
+        "permittedRange",
+        "collectCommentRanges"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The comment-style setting (default jsdoc) selects which comments are documentation; its choices are jsdoc, block, line, triple-slash and all.",
+        "Converter._buildCommentParserConfig copies the setting into the parser config that Context hands to the comment functions.",
+        "comments/index.ts getComment/getNodeComment/getSignatureComment pass the style into discovery.ts (discoverComment, discoverNodeComment, discoverSignatureComment, file comments).",
+        "CRITICAL: discovery.ts permittedRange accepts a single-line comment group in triple-slash style only when the first range's third character is '/' and its fourth is not '/', so four slashes are not documentation; the default jsdoc style accepts only block comments starting with two asterisks.",
+        "collectCommentRanges groups consecutive single-line comments into one range list and comments/index.ts lexes them with lexLineComments, so a run of lines forms one comment."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: sources/typedoc.ts:749-755 (default CommentStyle.JSDoc); utils/options/declaration.ts:24-31 (values). converter.ts:791-813 (:804 commentStyle). converter/context.ts:373-381, :383-389. comments/index.ts:199-205 (discoverComment(... commentStyle ...)), :227, :296; :89-95 SingleLineCommentTrivia -> lexLineComments. discovery.ts:177-197, :199-219, :221-255, :391-437 (all call permittedRange), :694-725 collectCommentRanges, :727-753 permittedRange (:739-744 triple-slash, :745-751 jsdoc). DECOYS: the ts compiler's own JSDoc handling (findJsDocForComment), lineLexer.ts (lexes text, never decides eligibility), site/options/comments.md, tests. CHEAPEST ROUTE: (1) grep 'slash' / 'comment' under converter/comments -> lineLexer.ts and discovery.ts (words are generic, many hits); (2) find the eligibility function in discovery.ts (permittedRange) and who passes its style; (3) trace the style parameter back through comments/index.ts to Context.createCommentContext -> converter config; (4) find the setting declaration in sources/typedoc.ts; (5) read the enum in declaration.ts for the style names. est. turns: 7."
+    },
+    {
+      "id": "r3h-typedoc-17",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "I defined my own custom doc-comment tags in my documentation tool's configuration file, and my project also has the standards-body tag-definition file next to its compiler configuration. My custom tags seem to be ignored and I get a warning. Which wins, where is that file looked for, when is it skipped altogether, and how do the recognised tags reach the comment parser?",
+      "expectedFiles": [
+        "src/lib/utils/options/readers/tsconfig.ts",
+        "src/lib/cli.ts",
+        "src/lib/converter/converter.ts",
+        "src/lib/converter/comments/parser.ts"
+      ],
+      "expectedSymbols": [
+        "TSConfigReader.read",
+        "TSConfigReader.addTagsFromTsdocJson",
+        "TSConfigReader.readTsDoc",
+        "Converter._buildCommentParserConfig",
+        "blockTag"
+      ],
+      "expectedFacts": [
+        "CRITICAL: TSConfigReader.addTagsFromTsdocJson looks for the tag-definition file in the directory of the tsconfig that is being read (join(dirname(tsconfig), 'tsdoc.json')), not in the working directory, and read() returns before calling it when no tsconfig is found.",
+        "CRITICAL: When any of the block, inline or modifier tag settings was already set it warns that they are overwritten, then calls setValue on all three with the file's tags, so the file wins over the tool's own config file.",
+        "The tag lists are the standard TSDoc tags unless noStandardTags is set, plus tagDefinitions filtered by supportForTags; the file may extend others (cycle-checked via seenTsdocPaths).",
+        "Reader order is arguments(0), typedoc.json(100), package.json(150), tsconfig(200), arguments(300), so values given on the command line still override the tag lists afterwards.",
+        "Converter._buildCommentParserConfig builds the parser's block/inline/modifier tag sets from those settings (adding @inheritDoc to block tags), and the comment parser warns about tags missing from the sets."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: readers/tsconfig.ts:62-124 read (:72-80 early return when no tsconfig, :84 addTagsFromTsdocJson), :126-183 (:132 join(dirname(tsconfig), 'tsdoc.json'), :137-146 isSet warning, :161-165 standard tags, :167-182 definitions + setValue), :185-249 readTsDoc/mergeConfigs. cli.ts:23-29 (reader list incl. ArgumentsReader(0) and (300).ignoreErrors()). options.ts:87-93 (documented order). converter.ts:791-813 (:793-795, :810 inheritDoc add). comments/parser.ts:381-383 (unknown block tag warning), :764-766 (unknown inline tag). DECOYS: TypeDocReader (typedoc.ts reader, order 100; sets the same options earlier), PackageJsonReader (typedocOptions key), sources/typedoc.ts tag option declarations (:770-818, defaults from tsdoc-defaults.ts), utils/tsconfig.ts typedocOptions extraction. CHEAPEST ROUTE: (1) grep 'tag' + 'json' under utils/options -> reader files and tsdoc-defaults; (2) read TSConfigReader.read and addTagsFromTsdocJson (location + overwrite rule + warning); (3) compare reader orders (order fields in each reader, cli.ts reader list); (4) grep the tag option names -> Converter._buildCommentParserConfig; (5) find the parser's use (blockTags.has). No file name or option name is quoted in the question. est. turns: 8."
+    },
+    {
+      "id": "r3h-typedoc-18",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "My repository is a monorepo that holds several packages, and I run the tool once to document them all together. How are the package folders found, how are per-package settings loaded and which settings may not be set per package, why are broken-link complaints held back until the end, and how are the per-package results combined, including whether each package shows up as its own module when there is only one package?",
+      "expectedFiles": [
+        "src/lib/application.ts",
+        "src/lib/utils/entry-point.ts",
+        "src/lib/utils/package-manifest.ts",
+        "src/lib/utils/options/options.ts",
+        "src/lib/serialization/deserializer.ts",
+        "src/lib/cli.ts"
+      ],
+      "expectedSymbols": [
+        "Application._convertPackages",
+        "getPackageDirectories",
+        "expandPackages",
+        "Options.copyForPackage",
+        "rootPackageOptions",
+        "Deserializer.reviveProjects"
+      ],
+      "expectedFacts": [
+        "getPackageDirectories/expandPackages expand the entry-point globs to package.json files, skip excluded directories and recurse into any manifest that declares workspaces (array or {packages}), leaving the leaf package directories.",
+        "CRITICAL: Options.copyForPackage clones the options keeping only readers whose supportsPackages is true (so the command-line reader is dropped), reapplies the root packageOptions with the package directory as base, and Application warns when packageOptions contains a root-only setting (rootPackageOptions).",
+        "CRITICAL: For each package Application._convertPackages disables the invalid-link and unused-merge-module checks, converts and validates the package, and serializes it with Serializer.projectToObject; the final validation runs later in cli.ts on the combined project with the root options.",
+        "Deserializer.reviveProjects with exactly one project and alwaysCreateEntryPointModule false revives it directly as the project; otherwise it creates a module reflection per project named after it.",
+        "DeclarationReflection.fromObject, when given a project-variant object, sets kind Module, copies packageVersion, merges the file registry and registers its symbol ids, which is how each package becomes a module.",
+        "Nested packages-mode packages are rejected with an error."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: application.ts:416-422 (strategy dispatch), :820-936 _convertPackages (:821-824 needs entry points, :826-830 getPackageDirectories, :841-849 rootPackageOptions warn, :857 copyForPackage, :869 opts.read(logger, dir), :873-876 validation overrides, :877-885 nested packages error, :896-901 validate + projectToObject, :924-932 reviveProjects). entry-point.ts:266-277. package-manifest.ts:44-67 (workspaces forms), :73-128 expandPackages (:107 exclude, :115-125 recursion). options.ts:119-138 copyForPackage (:123-125). declaration.ts:44-113 rootPackageOptions. deserializer.ts:287-353 (:296-301 single shortcut, :321-330 module per project). models/DeclarationReflection.ts:348-372 (variant project). cli.ts:84-97 (convert then validate). DECOYS: EntryPointStrategy.Merge path Application._merge (application.ts:938-995, same reviveProjects but reads JSON files), utils/fs.ts inferPackageEntryPointPaths (single-package entry inference, existing r3 question), resolve/expand strategies, convertAndWatch (does not support packages). CHEAPEST ROUTE: (1) grep 'workspaces' -> package-manifest.ts expandPackages; (2) find its caller -> entry-point.getPackageDirectories -> Application._convertPackages; (3) read _convertPackages for options/validation/serialization; (4) follow copyForPackage in options.ts and rootPackageOptions in declaration.ts; (5) follow reviveProjects into deserializer.ts and DeclarationReflection.fromObject; (6) check cli.ts for where validation finally runs. 'monorepo' appears in no code token. est. turns: 9."
+    },
+    {
+      "id": "r3h-typedoc-19",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "In my configuration I give numeric weights to documentation section names so that some sections rank higher in the generated site's search. What happens to items in a section whose weight I set to zero, where do the section names come from, and where am I told about a name that matched nothing?",
+      "expectedFiles": [
+        "src/lib/output/plugins/JavascriptIndexPlugin.ts",
+        "src/lib/converter/plugins/GroupPlugin.ts",
+        "src/lib/converter/plugins/CategoryPlugin.ts"
+      ],
+      "expectedSymbols": [
+        "JavascriptIndexPlugin.getBoost",
+        "JavascriptIndexPlugin.buildSearchIndex",
+        "GroupPlugin.getGroups",
+        "CategoryPlugin.getCategories"
+      ],
+      "expectedFacts": [
+        "CRITICAL: JavascriptIndexPlugin.getBoost multiplies the item's precomputed relevanceBoost (default 1) by the configured weight of each of its group names and each of its category names, a missing weight counting as 1.",
+        "CRITICAL: buildSearchIndex skips any item whose resulting boost is <= 0, so a zero weight removes the item from the search index entirely instead of ranking it lowest.",
+        "Group names come from GroupPlugin.getGroups: @group tags on the item, its signatures and its type declaration (and front matter group for documents), else the plural kind name (a reference by its target's kind when references are grouped by type).",
+        "Category names come from CategoryPlugin.getCategories (explicit category tags or front matter only; no default category is added there).",
+        "After the index is built, names in either weight setting that never matched an item are warned about, but only when that setting was explicitly set; the settings themselves are only validated to be objects of numbers."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: JavascriptIndexPlugin.ts:55-57 (unused sets reset per render), :97-102 (:100 boost <= 0 continue), :155-176 (isSet gating :157, :168), :178-197 getBoost (:179 relevanceBoost ?? 1, :181-189 groups, :191-194 categories). GroupPlugin.ts:157-208 (:171-183 tags, :185-187 frontmatter, :189-205 default plural kind / reference-by-target). CategoryPlugin.ts:256-292. sources/typedoc.ts:680-721 (validate numbers). DECOYS: models relevanceBoost field (DeclarationReflection.ts:56, only (de)serialized, never assigned from settings), Search.ts frontend boost by name length (:258-265, ranking in the browser), IndexEvent.searchFieldWeights (field weights, not section weights). CHEAPEST ROUTE: (1) grep 'weight'/'rank' in src/lib/output -> IndexEvent.searchFieldWeights (decoy) and JavascriptIndexPlugin; (2) read JavascriptIndexPlugin.getBoost and buildSearchIndex (the <= 0 skip, unused warnings); (3) follow getGroups/getCategories into the two converter plugins to see where the names originate; (4) check the setting declaration/validation in sources/typedoc.ts; the word 'section' matches many files. est. turns: 7."
+    },
+    {
+      "id": "r3h-typedoc-20",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "A markdown file in my project links to a specific heading inside another documented page. The build sometimes warns that the target heading does not exist even though it clearly does, for example when the target page repeats the same heading text. Under which condition does the tool warn, what does it compare the fragment against, and why can that comparison be wrong?",
+      "expectedFiles": [
+        "src/lib/output/themes/MarkedPlugin.tsx",
+        "src/lib/output/themes/default/Slugger.ts",
+        "src/lib/models/FileRegistry.ts"
+      ],
+      "expectedSymbols": [
+        "MarkedPlugin.displayPartsToMarkdown",
+        "MarkedPlugin.onEnd",
+        "Slugger.hasAnchor",
+        "Slugger.slug",
+        "FileRegistry.registerAbsolute"
+      ],
+      "expectedFacts": [
+        "CRITICAL: MarkedPlugin.displayPartsToMarkdown records a link (source, target reflection, part) only when a relative link has a fragment and its file resolves to a reflection; MarkedPlugin.onEnd, after rendering, asks router.getSlugger(target).hasAnchor(fragment) for each and warns, suggesting similar anchors, when it is false.",
+        "CRITICAL: Slugger.hasAnchor only checks the keys of its seen map, and slug() stores only the lowercased base slug of each heading (seen.set(lowerOriginalSlug, count)); the numbered duplicate slug (for example intro-1) is never stored.",
+        "So a link to the second of two identical headings (intro-1) is reported as missing although the heading exists.",
+        "With the lowercase slug setting off, ids keep their case but the stored keys are lowercase, so a fragment written with the heading's exact case is reported missing while the lowercase one passes.",
+        "FileRegistry.registerAbsolute splits the fragment off the path; the relative-link part keeps it as targetAnchor."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: MarkedPlugin.tsx:223-267 (:246-257 recorded only if targetAnchor and typeof refl === 'object'), :276-295 onEnd (:279 hasAnchor, :281-288 warning with getSimilarAnchors). Slugger.ts:43-60 slug (:55 seen.set(lowerOriginalSlug, count); suffixed slug never added), :62-64 hasAnchor, :66-68. FileRegistry.ts:22-42 (:26-31 anchor split). ValidatingFileRegistry.ts:14-36 (keeps the fragment in absolute, existence check without it). Heading ids assigned at MarkedPlugin.tsx:350-366. DECOYS: textParser.ts (relative path existence check, a different warning), validation/links.ts validateLinks (link tags, not file fragments), router.createAnchor (member anchors via the same Slugger), the rewritten-link warning at MarkedPlugin.tsx:180. CHEAPEST ROUTE: (1) grep 'heading'/'section' -> MarkedPlugin heading_open + Slugger (several hits); (2) find the warning about a missing fragment (grep 'similar' -> getSimilarAnchors -> MarkedPlugin.onEnd); (3) read what populates renderedRelativeLinks (the :246-257 branch) and what hasAnchor checks; (4) read Slugger.slug to see which keys are stored; (5) trace the fragment origin through FileRegistry/ValidatingFileRegistry. The word anchor never appears in the question. est. turns: 7."
+    },
+    {
+      "id": "r3h-typedoc-21",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "A function's doc comment contains two separate sections that each describe what the function gives back. What does the generated page show, is there any warning, and what decides each of those outcomes? Consider also whether the answer changes if the same comment instead has two sections of extended notes.",
+      "expectedFiles": [
+        "src/lib/converter/comments/parser.ts",
+        "src/lib/output/themes/default/partials/member.signature.body.tsx",
+        "src/lib/output/themes/default/partials/comment.tsx"
+      ],
+      "expectedSymbols": [
+        "postProcessComment",
+        "memberSignatureBody",
+        "commentTags"
+      ],
+      "expectedFacts": [
+        "CRITICAL: parser.ts postProcessComment computes the returns tags but guards the 'at most one returns tag' warning and the removal of extras with remarks.length > 1 instead of returns.length > 1.",
+        "So two returns tags (the short alias is normalised to the same tag name in blockTag) with at most one remarks tag give no warning and both tags stay on the comment; with two remarks tags a returns warning is emitted even if there is a single returns tag.",
+        "CRITICAL: memberSignatureBody renders only the first returns tag (getTag returns the first match) in the Returns block.",
+        "comment.tsx commentTags excludes every returns tag from the generic tag list for signatures, so the second returns text is not shown anywhere.",
+        "The remarks check right above it (remarks.length > 1) works as intended: it warns and removes the later remarks tags."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: comments/parser.ts:298-306 (remarks), :308-316 (:309 'if (remarks.length > 1)' for returns, :315 removeIf on returns), :365 aliasedTags @return -> @returns, :385. member.signature.body.tsx:11 (getTag first), :47-55. partials/comment.tsx:64-68 (signature: tag.tag !== '@returns'). CommentPlugin.ts:470-479 (container->signature move uses getTag first, no dedupe). DECOYS: CommentPlugin.mergeSeeTags (merges multiple @see tags, a different duplicate rule), the at-most-one inherit-doc check (parser.ts:318-334, correct), validateParamTags unused-param warning (CommentPlugin.ts:718-741). CHEAPEST ROUTE: (1) grep 'returns' under converter/comments -> parser.ts postProcessComment (and tagName aliasing); (2) read the guard and notice it tests the remarks count; (3) look for what the renderer does with several returns tags (grep '@returns' in output/themes) -> member.signature.body.tsx and comment.tsx; (4) confirm no later dedupe in CommentPlugin; the warning text is not quoted. est. turns: 6."
+    },
+    {
+      "id": "r3h-typedoc-22",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "A class carries a pre-release stability label in its comment, and some of its methods carry other labels such as an explicit public one, an internal one or a deprecation notice. Which members end up marked with the class's stability label in the output, under which condition does a member not receive it, which settings and code decide this, and what happens to the label on a method that has call signatures?",
+      "expectedFiles": [
+        "src/lib/converter/plugins/CommentPlugin.ts",
+        "src/lib/utils/options/defaults.ts"
+      ],
+      "expectedSymbols": [
+        "CommentPlugin.cascadeModifiers",
+        "CommentPlugin.onDeclaration",
+        "CommentPlugin.onResolve",
+        "MUTUALLY_EXCLUSIVE_MODIFIERS",
+        "cascadedModifierTags"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The cascaded-modifier setting defaults to @alpha, @beta and @experimental (defaults.ts); CommentPlugin.cascadeModifiers, called first in onDeclaration for every created declaration and signature, copies each of those that the parent's comment has onto the child's comment (creating one if needed).",
+        "CRITICAL: A child does not receive a cascaded modifier when its own comment already has any modifier from the same mutually exclusive set (alpha, beta, experimental, internal, public); a deprecation tag (a block tag) or other modifiers outside the set do not block it.",
+        "Type literals are skipped (reflection.kindOf(TypeLiteral)), and only the direct parent's comment is consulted when the child is created, so signatures inherit it from the method reflection that already received it.",
+        "In onResolve, for a declaration with signatures whose type is not a reflection type, the cascaded modifiers are deleted from the wrapping declaration's own comment so the label is shown on the signatures only, not twice.",
+        "Marking a child with two exclusive labels is separately reported as mutually exclusive in onResolve."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: utils/options/defaults.ts:48-52; sources/typedoc.ts:805-811. CommentPlugin.ts:56-66 MUTUALLY_EXCLUSIVE_MODIFIERS, :162-171 (CREATE_DECLARATION and CREATE_SIGNATURE both -> onDeclaration), :321-342 (:322 cascadeModifiers first), :558-579 cascadeModifiers (:560 TypeLiteral/no parent comment skip, :566-577 exclusive-set check), :481-486 removal from wrapping declaration, :423-438 mutual exclusion warning. DECOYS: applyModifiers (CommentPlugin.ts:192-261, visibility flags), the excludeInternal hiding rule in isHidden (:686-688), Reflection.isDeprecated parent propagation (models/Reflection.ts:466-483, a separate inheritance rule for deprecation), the stripInternal mapping in options.ts. CHEAPEST ROUTE: (1) grep 'cascade' -> defaults.ts + CommentPlugin; (2) read cascadeModifiers and the exclusive set; (3) check which events call it (constructor registrations) and the creation order (class finalized before members; method before signatures) in symbols.ts/signature.ts; (4) read onResolve for the wrapping-declaration cleanup; (5) check the option declaration. The question names no tag. est. turns: 7."
+    },
+    {
+      "id": "r3h-typedoc-23",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "negative-decoy",
+      "difficulty": "hard",
+      "query": "When the setting that makes generated links absolute (based on the address where the site is hosted) is turned on, where in the rendering path do links between pages of the site get turned into absolute addresses?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "No code in the rendering path produces absolute page links from that setting: the only consumer is ContextAwareRendererComponent.getRelativeUrl (output/components.ts:63-80), which has no callers anywhere in src.",
+        "CRITICAL: Page-to-page links come from the router (BaseRouter.relativeUrl and baseRelativeUrl) via DefaultThemeRenderContext.urlTo and relativeURL, and these always build relative paths.",
+        "Application._bootstrap (application.ts:351-359) only validates the setting: it warns and switches it off when no hosted address is configured.",
+        "The hosted address is really used for the canonical link and sitemap (SitemapPlugin), the site metadata block in the layout, and for treating same-site http links as non-external in MarkedPlugin."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (negative), greps over src: (1) rg 'useHostedBaseUrlForAbsoluteLinks' -> only application.ts:352-358, components.ts:45-46 and :71, sources/typedoc.ts:520, declaration.ts:100,273 and locale strings; (2) rg 'getRelativeUrl' src -> a single hit, the definition at output/components.ts:63 (no caller in src/lib, src/frontend or src/test); (3) rg 'new URL\\(' src/lib/output -> SitemapPlugin.ts:53, components.ts:72 (inside the dead method), default.tsx:33 (site metadata) only; (4) router.ts:216-278 relativeUrl/baseRelativeUrl return relative strings only; DefaultThemeRenderContext.ts:92-106 relativeURL/urlTo delegate to the router; MarkedPlugin.tsx:235-243 uses context.relativeURL/urlTo. site/options/output.md:643-644 documents the behaviour that the code path above does not deliver. WHAT LOOKS PRESENT: option declared (sources/typedoc.ts:519-523), accessor + branch in components.ts:45-46,71-73, startup validation in application.ts:351-359, and docs promising absolute links. WHY IT DOES NOTHING: the method containing the branch is never called. DECOYS: SitemapPlugin.hostedBaseUrl (really used for sitemap/canonical), MarkedPlugin.tsx:389 (external-link detection), layouts/default.tsx:33 (site metadata). CHEAPEST ROUTE: (1) grep the setting name -> application.ts, components.ts, typedoc.ts; (2) read components.ts getRelativeUrl and see the absolute branch; (3) grep its name for callers -> none; (4) read router.relativeUrl/baseRelativeUrl and DefaultThemeRenderContext.relativeURL/urlTo to confirm links are relative; (5) check MarkedPlugin link rendering. est. turns: 7."
+    },
+    {
+      "id": "r3h-typedoc-24",
+      "repo": "r3-typedoc",
+      "language": "TypeScript",
+      "stratum": "negative-decoy",
+      "difficulty": "hard",
+      "query": "In the component that turns markdown in doc comments into HTML, where is the choice between the user's light-mode and dark-mode colour scheme made for a fenced code block?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "No such choice is made in the markdown component: MarkedPlugin declares lightTheme and darkTheme option accessors that nothing ever reads, and getHighlighted calls highlight(text, lang) with no theme argument.",
+        "CRITICAL: Both schemes are loaded together once per render by DefaultTheme.preRender (loadHighlighter with the light and dark themes), and ShikiHighlighter.highlight tokenises every block with both themes at once, emitting classes hl-N.",
+        "ShikiHighlighter.getStyles produces highlight.css that defines per-class CSS variables for light and dark and selects between them with prefers-color-scheme media queries and :root[data-theme] rules; AssetsPlugin writes that file.",
+        "So the scheme is chosen by the visitor's browser, not at conversion or markdown time."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (negative), greps over src: (1) rg 'lightTheme|darkTheme' src/lib -> MarkedPlugin.tsx:38-42 (declarations only) and DefaultTheme.tsx:66-70,148-149 (used by preRender); (2) rg '\\.lightTheme|\\.darkTheme|this\\.lightTheme|this\\.darkTheme' src/lib/output/themes/MarkedPlugin.tsx -> no matches; (3) rg 'getHighlighted|highlight\\(' src/lib -> MarkedPlugin.tsx:81-103,320 and highlighter.tsx:42,185-193 only; (4) utils/highlighter.tsx:142-163 loadHighlighter(light, dark, ...), :43-46 codeToTokensWithThemes({themes:{light,dark}}), :64-109 getStyles (:87-101 media + data-theme selectors); AssetsPlugin.ts:118 writes highlight.css; layouts/default.tsx:78 links it. WHAT LOOKS PRESENT: two @Option accessors named for the colour schemes in the very class that renders code blocks. WHY IT DOES NOTHING: they are dead; the class never uses them. DECOYS: DefaultTheme (the real consumer of the two settings), highlighter.tsx ShikiHighlighter, frontend Theme.ts (stores the visitor's os/light/dark choice, unrelated to code colours). CHEAPEST ROUTE: (1) grep 'darkTheme'/'dark' in src/lib/output -> MarkedPlugin accessors and DefaultTheme; (2) read MarkedPlugin to find they are unused and getHighlighted passes no theme; (3) follow highlight() into utils/highlighter.tsx; (4) read loadHighlighter/getStyles; (5) check AssetsPlugin and the layout for highlight.css. est. turns: 7."
+    }
+  ]
+}
