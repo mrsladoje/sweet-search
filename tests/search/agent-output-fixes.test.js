@@ -42,8 +42,9 @@ const ALL_OFF = {
 };
 
 describe('readFixFlags: product default (Bundle A on)', () => {
-  it('turns on A1/A2/A7 (compact) and A5 with an empty environment; A4 needs an explicit SS_FIX_A=1', () => {
-    expect(readFixFlags({})).toEqual({ ...ALL_OFF, compact: true, grepRetry: true });
+  it('turns on A1/A2/A7 (compact), A4 and A5 with an empty environment', () => {
+    expect(readFixFlags({})).toEqual({ ...ALL_OFF, compact: true, traceCompact: true, grepRetry: true });
+    expect(readFixFlags({})).toEqual(readFixFlags({ SS_FIX_A: '1' }));
     expect(resultRenderFixActive(readFixFlags({}))).toBe(true);
     expect(resultRenderFixActive(readFixFlags({}), { find: true })).toBe(true);
   });
@@ -64,12 +65,10 @@ describe('readFixFlags: product default (Bundle A on)', () => {
     expect(readFixFlags({ SS_FIX_A: 'garbage', SWEET_SEARCH_COMPACT_OUTPUT: '0' })).toEqual(ALL_OFF);
   });
 
-  it('the product default renders like SS_FIX_A=1 for ss-search, ss-find and ss-grep', () => {
-    const product = readFixFlags({});
-    const bench = readFixFlags({ SS_FIX_A: '1' });
-    for (const key of ['compact', 'grepRetry', 'alreadyShown', 'dropSufficiency', 'summaryCap', 'onePerFile', 'grepOrder']) {
-      expect(product[key]).toEqual(bench[key]);
-    }
+  it('the product default renders like SS_FIX_A=1 for ss-search, ss-find, ss-grep and ss-trace', () => {
+    expect(readFixFlags({})).toEqual(readFixFlags({ SS_FIX_A: '1' }));
+    // The trace switch still has its own opt-out inside the product default.
+    expect(readFixFlags({ SS_FIX_TRACE_COMPACT: '0' })).toMatchObject({ compact: true, traceCompact: false });
   });
 
   it('the bench-only switches stay off in the product default', () => {
@@ -362,6 +361,18 @@ describe('formatTraceCompact (A4)', () => {
     expect(out).not.toContain('answer cues');
     expect(out).not.toContain('latency');
     expect(out).not.toContain('importance=');
+  });
+
+  it('counts every row in the heading, as the full trace does, and names distinct callers when they differ', () => {
+    const out = formatTraceCompact(traceResult());
+    expect(out).toContain('## callers (2)');
+    expect(out).toContain('## callees (3)');
+    const withDistinct = traceResult();
+    withDistinct.sections.callers.distinct = 1;
+    withDistinct.sections.callees.distinct = 3;
+    const text = formatTraceCompact(withDistinct);
+    expect(text).toContain('## callers (2 call sites, 1 distinct caller)');
+    expect(text).toContain('## callees (3)');
   });
 
   it('filters external callees and says how many', () => {

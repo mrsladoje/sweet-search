@@ -1,11 +1,10 @@
 /**
- * Bundle A (A1, A2, A7, A5) in the PRODUCT, default on.
+ * Bundle A (A1, A2, A7, A4, A5) in the PRODUCT, default on.
  *
  * The shipped ss-* tools are eval/agent-read-workflows/bin/ss-* (package.json "files"), so the
  * product default and the bench switch go through the same wrapper code and the same renderer.
  * What is pinned here:
- *   1. Flags: the product default selects exactly what SS_FIX_A=1 selects for ss-search, ss-find
- *      and ss-grep; SWEET_SEARCH_COMPACT_OUTPUT=0 selects exactly what SS_FIX_A=0 selects (all
+ *   1. Flags: the product default selects exactly what SS_FIX_A=1 selects; SWEET_SEARCH_COMPACT_OUTPUT=0 selects exactly what SS_FIX_A=0 selects (all
  *      off, the original code paths, which agent-output-fixes-wiring.test.js pins byte for byte
  *      against verbatim copies of the original loops).
  *   2. The daemon's agent text (`sweet-search "<q>"` from an agent, renderAgentSearchResponse):
@@ -13,7 +12,7 @@
  *      with the `sweet-search` tool name.
  *   3. (opt-in, SS_BUNDLE_A_FIXTURE=<indexed repo>) the real wrapper on a real index: default
  *      output == SS_FIX_A=1 output, and SWEET_SEARCH_COMPACT_OUTPUT=0 output == SS_FIX_A=0 output,
- *      for ss-search, ss-find and ss-grep (regex error and zero-hit case included).
+ *      for ss-search, ss-find, ss-grep (regex error and zero-hit case included) and ss-trace.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -112,11 +111,8 @@ function fixtureResponse(overrides = {}) {
 
 // ---- 1. flags ---------------------------------------------------------------------------------
 describe('product default vs bench switch (flags)', () => {
-  const RENDER_KEYS = ['compact', 'grepRetry', 'alreadyShown', 'dropSufficiency', 'summaryCap', 'onePerFile', 'grepOrder'];
-  it('default == SS_FIX_A=1 for every switch ss-search / ss-find / ss-grep read', () => {
-    const product = readFixFlags({});
-    const bench = readFixFlags({ SS_FIX_A: '1' });
-    for (const k of RENDER_KEYS) expect(product[k]).toEqual(bench[k]);
+  it('default == SS_FIX_A=1 for every switch (ss-search, ss-find, ss-grep, ss-trace)', () => {
+    expect(readFixFlags({})).toEqual(readFixFlags({ SS_FIX_A: '1' }));
   });
   it('SWEET_SEARCH_COMPACT_OUTPUT=0 == SS_FIX_A=0 (every switch off: the previous code paths)', () => {
     expect(readFixFlags({ SWEET_SEARCH_COMPACT_OUTPUT: '0' })).toEqual(readFixFlags({ SS_FIX_A: '0' }));
@@ -206,7 +202,7 @@ describe.skipIf(!fixtureReady)('real ss-* wrappers on an indexed fixture (SS_BUN
   };
   const run = (tool, args, extra = {}) => {
     const r = spawnSync(path.join(BIN, tool), args, { cwd: FIXTURE, env: { ...baseEnv(), ...extra }, encoding: 'utf8', timeout: 180000 });
-    return { rc: r.status, out: r.stdout };
+    return { rc: r.status, out: String(r.stdout).replace(/latency=\d+ms/g, 'latency=Nms').replace(/"latencyMs":\d+/g, '"latencyMs":N') };
   };
   const CALLS = [
     ['ss-search', ['how is the request routed']],
@@ -215,6 +211,8 @@ describe.skipIf(!fixtureReady)('real ss-* wrappers on an indexed fixture (SS_BUN
     ['ss-grep', ['send(']],             // regex error → A5 repair
     ['ss-grep', ['ROUTER']],            // zero case-sensitive hits → A5 case-insensitive retry
     ['ss-grep', ['ZZQQnothingQQZZ']],   // real zero hit
+    ['ss-trace', ['handle']],
+    ['ss-trace', ['render', 'callers']],
   ];
 
   it.each(CALLS)('%s %j: default == SS_FIX_A=1; opt-out == SS_FIX_A=0', (tool, args) => {
