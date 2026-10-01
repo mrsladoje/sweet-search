@@ -600,8 +600,8 @@ Removed from each repo:
   - Codex wiring: the config.toml keys init added (model_instructions_file,
     developer_instructions, and [features] hooks when init added it),
     .codex/sweet-search-instructions.md
-  - opencode wiring: .opencode/sweet-search.md, the prompt and plugin files,
-    and the keys init added to .opencode/opencode.json (the file and the
+  - opencode wiring: .opencode/sweet-search.md, the prompt file, the plugin
+    files (tool descriptions, per-repo OpenAI cache key), and the keys init added to .opencode/opencode.json (the file and the
     .opencode directory go too when nothing of yours is left)
 
 Also removed by --all:

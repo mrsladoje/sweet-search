@@ -75,6 +75,8 @@ export function codexInstructions() {
 
 export const OPENCODE_GPT_ORIGINAL = join(HARNESS_PROMPTS_DIR, 'opencode-1.18.4-prompt-gpt-original.txt');
 export const OPENCODE_TRIM_PLUGIN_SOURCE = join(HARNESS_PROMPTS_DIR, 'opencode-trim-plugin.mjs');
+// Per-repo OpenAI prompt-cache key + pinned session headers (init installs it with or without the prompt).
+export const OPENCODE_CACHE_KEY_PLUGIN_SOURCE = join(HARNESS_PROMPTS_DIR, 'opencode-cache-key-plugin.mjs');
 
 // Conflicts with the rules: the stock bullet that steers search to the Glob/Grep tools, and the
 // file-reads clause of the parallel bullet.
