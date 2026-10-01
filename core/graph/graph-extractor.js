@@ -1537,7 +1537,11 @@ export class GraphExtractor {
         if (prefilter && !prefilter(trimmed)) continue;
         const match = trimmed.match(pattern);
         if (match) {
-          const name = match[1];
+          // Lua method definitions `function List:clone()` are stored like
+          // `function M.helper()`: dotted (`List.clone`), so resolution reads
+          // the method name from the last segment. Lua only: `xs:element`
+          // (XML) and `::` paths keep their colons.
+          const name = language === 'lua' && match[1] ? match[1].replace(/(?<=\w):(?=\w)/g, '.') : match[1];
           if (!name) {
             this._recordEmptyCapture('entity', language, type, lineNum, trimmed);
             continue;
