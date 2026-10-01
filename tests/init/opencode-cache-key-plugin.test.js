@@ -31,18 +31,23 @@ afterEach(() => {
 });
 
 const expectedKey = dir => `ss-${createHash('sha256').update(realpathSync.native(dir)).digest('hex').slice(0, 16)}`;
-const hookInput = (providerID, sessionID = 'ses_A') => ({
-  sessionID, agent: 'build', model: { providerID, id: 'm' }, provider: { info: { id: providerID } }, message: {},
+const hookInput = (providerID, sessionID = 'ses_A', agent = 'build') => ({
+  sessionID, agent, model: { providerID, id: 'm' }, provider: { info: { id: providerID } }, message: {},
 });
 
-async function params(hooks, providerID, sessionID) {
-  const output = { temperature: undefined, topP: undefined, topK: undefined, maxOutputTokens: 1, options: { store: false, promptCacheKey: sessionID } };
-  await hooks['chat.params']?.(hookInput(providerID, sessionID), output);
+// options: what opencode 1.18.4 merged before the hook: { store: false, promptCacheKey: sessionID, ... }
+// for an openai conversation request; no promptCacheKey for a title request or with setCacheKey: false.
+async function params(hooks, providerID, sessionID, { agent = 'build', options } = {}) {
+  const output = {
+    temperature: undefined, topP: undefined, topK: undefined, maxOutputTokens: 1,
+    options: options ?? { store: false, promptCacheKey: sessionID },
+  };
+  await hooks['chat.params']?.(hookInput(providerID, sessionID, agent), output);
   return output;
 }
-async function headers(hooks, providerID, sessionID, { before = {}, after = {} } = {}) {
+async function headers(hooks, providerID, sessionID, { before = {}, after = {}, agent = 'build' } = {}) {
   const output = { headers: { ...before } };
-  await hooks['chat.headers']?.(hookInput(providerID, sessionID), output);
+  await hooks['chat.headers']?.(hookInput(providerID, sessionID, agent), output);
   Object.assign(output.headers, after);   // a hook that runs after ours, e.g. opencode's built-in OpenAI plugin
   // opencode 1.18.4: { 'x-session-affinity': sid, 'X-Session-Id': sid, 'User-Agent', ...model.headers, ...hookHeaders }
   return { 'x-session-affinity': sessionID, 'X-Session-Id': sessionID, 'User-Agent': 'opencode/1.18.4', ...output.headers };
@@ -82,6 +87,31 @@ describe('opencode cache-key plugin', () => {
     out.options.promptCacheKey = 'ses_A';
     expect(out.options.promptCacheKey).toBe(key);
     expect(() => { delete out.options.promptCacheKey; }).not.toThrow();
+  });
+
+  it('title requests go out as opencode sends them (no prompt_cache_key, session headers)', async () => {
+    const hooks = await plugin({ worktree: root, directory: root });
+    const out = await params(hooks, 'openai', 'ses_A', { agent: 'title', options: { store: false } });
+    expect(out.options).toEqual({ store: false });
+    const h = await headers(hooks, 'openai', 'ses_A', { agent: 'title', after: { 'session-id': 'ses_A' } });
+    for (const name of HEADERS) expect(h[name]).toBe('ses_A');
+    // The session's next conversation request still gets the repo key.
+    expect((await params(hooks, 'openai', 'ses_A')).options.promptCacheKey).toBe(expectedKey(root));
+    expect((await headers(hooks, 'openai', 'ses_A'))['session-id']).toBe(expectedKey(root));
+  });
+
+  it('a promptCacheKey the user set, or none (setCacheKey: false), is kept, and so are that request\'s headers', async () => {
+    const hooks = await plugin({ worktree: root, directory: root });
+    for (const options of [{ store: false, promptCacheKey: 'my-team-key' }, { store: false }]) {
+      const out = await params(hooks, 'openai', 'ses_U', { options: { ...options } });
+      expect(out.options).toEqual(options);
+      const h = await headers(hooks, 'openai', 'ses_U', { after: { 'session-id': 'ses_U' } });
+      for (const name of HEADERS) expect(h[name]).toBe('ses_U');
+    }
+    // Other sessions are not affected, and the same session follows its latest request.
+    expect((await headers(hooks, 'openai', 'ses_V'))['session-id']).toBe(expectedKey(root));
+    expect((await params(hooks, 'openai', 'ses_U')).options.promptCacheKey).toBe(expectedKey(root));
+    expect((await headers(hooks, 'openai', 'ses_U'))['x-session-affinity']).toBe(expectedKey(root));
   });
 
   it('leaves every other provider untouched', async () => {
@@ -145,6 +175,10 @@ describe('opencode cache-key plugin', () => {
     process.env.SWEET_SEARCH_OC_CACHE_SHARDS = '2';
     expect(new Set(await keysOf(await plugin({ worktree: root }, { shards: 4 })))).toEqual(new Set([`${base}-0`, `${base}-1`]));
     process.env.SWEET_SEARCH_OC_CACHE_SHARDS = '';
+    expect(new Set(await keysOf(await plugin({ worktree: root }, { shards: 4 }))).size).toBe(4);
+    delete process.env.SWEET_SEARCH_OC_CACHE_SHARDS;
+
+    process.env.SWEET_SEARCH_OC_CACHE_SHARDS = 'many';   // not a number: the plugin option applies
     expect(new Set(await keysOf(await plugin({ worktree: root }, { shards: 4 }))).size).toBe(4);
     delete process.env.SWEET_SEARCH_OC_CACHE_SHARDS;
 
