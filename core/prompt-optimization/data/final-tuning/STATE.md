@@ -48,6 +48,8 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Decisions log
 
+- 04:40 r3 indexing DONE (jj 33 min, dgraph 26, tortoise-orm 8, typedoc 12, zipkin 11, ocelot 13; all exit 0, `INDEXING COMPLETE (FULL)`). Task guard V1 launched 04:40 (`tg-20261001-0440-*`, 8 legs interleaved base/var, REPS 2); ETA ~05:40. No retrieval run until it ends (daemon eviction risk).
+
 - 03:40 Residual Opus gap after V1 (est. +6..+8% vs native) is tool-result size: ss-read is NOT fatter than native `sed -n` (median span 35 vs 31 lines, 52 vs 53 chars/line, 107 vs 89 calls); the extra bytes come from ss-search/ss-find code blocks replacing grep lines. The shape lever for that (pointer tail) is in TRIED-LEVERS (no win) → no new variant; recorded as an open item for the owner.
 - 03:30 r3 indexing: jj done in 33 min (11k chunks); dgraph running; ETA all six ≈ 04:50, then the task guard (~1 h).
 
