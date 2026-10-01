@@ -90,6 +90,72 @@ describe('bareGrep — native path requires no ripgrep', () => {
   });
 });
 
+// =============================================================================
+// 1b. ss-grep -g globs stay on the native path; k and counts come after the filter
+// =============================================================================
+
+describe('bareGrep — agent path globs (-g) on the native path', () => {
+  // tests/ floods the alphabetically-early slots: 5 hits in tests/a_test.js, then src.
+  const MATCHES = [
+    ...[1, 2, 3, 4, 5].map(line => ({ file: 'lib/tests/a_test.js', line, matchText: 'Head', content: 'Head' })),
+    { file: 'lib/src/Head.h', line: 1, matchText: 'Head', content: 'struct Head;' },
+    { file: 'lib/src/HttpClient.java', line: 2, matchText: 'Head', content: 'Head x;' },
+    { file: 'src/main.c', line: 3, matchText: 'Head', content: 'Head y;' },
+  ];
+  const grepSearcher = () => ({
+    projectRoot: '/proj',
+    sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
+    sparseGramIndex: makeUnifiedIndex({ matches: MATCHES, candidateFiles: 4, totalFiles: 4, scannedFiles: 4 }),
+  });
+  const run = (opts, searcher = grepSearcher()) => bareGrep.call(searcher, 'Head', null, { regex: 'Head', ...opts });
+  const files = res => [...new Set(res.results.map(r => r.file))];
+
+  it('is served natively (searchFull, no ripgrep) when pathGlobs are present', async () => {
+    const searcher = grepSearcher();
+    const res = await run({ pathGlobs: ['!lib/tests/**'] }, searcher);
+    expect(res.stats.nativeGrepUsed).toBe(true);
+    expect(searcher.sparseGramIndex.searchFull).toHaveBeenCalled();
+    expect(files(res)).toEqual(['lib/src/Head.h', 'lib/src/HttpClient.java', 'src/main.c']);
+  });
+
+  it('an excluded file takes no k slot and no count (maxMatches, totalMatches)', async () => {
+    const res = await run({ pathGlobs: ['!tests'], maxMatches: 2 });
+    expect(res.stats.totalMatches).toBe(3);
+    expect(res.results.map(r => r.file)).toEqual(['lib/src/Head.h', 'lib/src/HttpClient.java']);
+    expect(res.stats.pathGlobExcludedMatches).toBe(5);
+    expect(res.stats.pathGlobExcludedFiles).toBe(1);
+  });
+
+  it('nor in the per-file diversity budget / file summary (ss-grep unscoped shape)', async () => {
+    const res = await run({ pathGlobs: ['!*_test.js'], perFileCap: 2, maxFiles: 2 });
+    expect(res.stats.totalMatches).toBe(3);
+    expect(res.fileSummary.files.map(f => f.file)).toEqual(['lib/src/Head.h', 'lib/src/HttpClient.java']);
+    expect(res.fileSummary.hiddenFileCount).toBe(1);   // src/main.c, never the excluded test file
+    expect(res.fileSummary.hiddenMatchCount).toBe(1);
+  });
+
+  it('include globs, include + exclude, and --in AND -g', async () => {
+    expect(files(await run({ pathGlobs: ['*.h'] }))).toEqual(['lib/src/Head.h']);
+    expect(files(await run({ pathGlobs: ['lib/**', '!*.java'] }))).toEqual(['lib/src/Head.h', 'lib/tests/a_test.js']);
+    expect(files(await run({ fileFilter: 'lib', pathGlobs: ['!lib/tests/**'] })))
+      .toEqual(['lib/src/Head.h', 'lib/src/HttpClient.java']);
+  });
+
+  it('everything excluded: zero results, with the excluded count to explain it', async () => {
+    const res = await run({ pathGlobs: ['*.py'] });
+    expect(res.results).toEqual([]);
+    expect(res.stats.totalMatches).toBe(0);
+    expect(res.stats.pathGlobExcludedMatches).toBe(8);
+    expect(res.stats.pathGlobExcludedFiles).toBe(4);
+  });
+
+  it('no globs: no glob stats at all (byte-identical stats)', async () => {
+    const res = await run({});
+    expect(res.stats).not.toHaveProperty('pathGlobExcludedMatches');
+    expect(res.stats.totalMatches).toBe(8);
+  });
+});
+
 describe('agent regex-dialect diagnostics', () => {
   it('retries an agent-format BRE zero and returns translated-pattern hits', async () => {
     const empty = { matches: [], candidateFiles: 0, totalFiles: 1, scannedFiles: 1 };
@@ -346,6 +412,16 @@ describe('patternSearch — fileFilter scope', () => {
     expect(files(await run(['lib', 'src/sub']))).toEqual(['lib/auth.js', 'src/sub/auth.js']);
     expect(files(await run('/proj/src/sub'))).toEqual(['src/sub/auth.js']);
     expect(files(await run('/elsewhere/src'))).toEqual([]);
+  });
+
+  it('ss-find -g globs restrict the candidates too, alone and ANDed with --in', async () => {
+    const run = opts => patternSearch.call(scopeSearcher(), 'auth', null, { regex: 'AuthService', k: 10, ...opts });
+    expect(files(await run({ pathGlobs: ['!src/sub/**'] }))).toEqual(['lib/auth.js', 'src/auth.js']);
+    expect(files(await run({ pathGlobs: ['src/*'] }))).toEqual(['src/auth.js']);
+    expect(files(await run({ fileFilter: 'src', pathGlobs: ['!sub'] }))).toEqual(['src/auth.js']);
+    const none = await run({ pathGlobs: ['*.py'], format: 'agent' });
+    expect(none.results).toEqual([]);
+    expect(none.stats.pathGlobExcludedMatches).toBe(3);
   });
 
   it('a scope with no match returns the empty (agent) package, not an error', async () => {

@@ -27,6 +27,7 @@ import {
   extraPositionals,
   parseLineRange,
   parseContextFlags,
+  parseGlobFlags,
 } from '../../eval/agent-read-workflows/bin/_ss-argparse.mjs';
 
 describe('buildGrepPattern', () => {
@@ -517,5 +518,77 @@ describe('ss-grep context flags -A/-B/-C (grep muscle memory: 166 of 1,247 nativ
     // -k keeps its old split, and a bundle may still end in a bare -A whose count follows.
     expect(normalizeArgs(['X', '-kx'])).toEqual(['X', '-k', 'x']);
     expect(parse(['X', '-iA', '2'])).toMatchObject({ after: 2, rest: ['X', '-i'] });
+  });
+});
+
+// ss-grep / ss-find -g globs and the grep-habit aliases (core/search/grep-path-globs.js has the
+// matching rules). The parser's job: every glob reaches the engine in rg form, and no glob value
+// is ever read as the pattern or as a positional path.
+describe('parseGlobFlags', () => {
+  const parse = (argv) => {
+    const args = normalizeArgs(argv);
+    const r = parseGlobFlags(args);
+    return { ...r, rest: args };
+  };
+
+  it('-g / --glob are repeatable and keep their order; `!` values are consumed as values', () => {
+    expect(parse(['Head', '-g', '!lib/tests/**', '-g', '!lib/src/HttpClient*'])).toEqual({
+      globs: ['!lib/tests/**', '!lib/src/HttpClient*'], error: null, rest: ['Head'],
+    });
+    expect(parse(['-g', '*.h', 'Head', '--glob', '!*_test.go'])).toMatchObject({
+      globs: ['*.h', '!*_test.go'], rest: ['Head'],
+    });
+  });
+
+  it('the glob value is never the pattern, and the pattern is never eaten', () => {
+    const { rest } = parse(['-g', '!tests/**', 'Head']);
+    expect(extractPositional(rest)).toEqual({ pattern: 'Head', unknownFlag: null });
+    expect(extraPositionals(rest)).toEqual([]);
+  });
+
+  it('grep aliases: --include G = G, --exclude G = !G, --exclude-dir D = !D/', () => {
+    expect(parse(['X', '--include', '*.h', '--exclude', '*_test.go', '--exclude-dir', 'tests']).globs)
+      .toEqual(['*.h', '!*_test.go', '!tests/']);
+    expect(parse(['X', '--exclude-dir', 'lib/tests/']).globs).toEqual(['!lib/tests/']);
+  });
+
+  it('the --flag=value form works for every glob flag', () => {
+    expect(parse(['X', '--glob=!tests/**', '--include=*.h', '--exclude=*.min.js', '--exclude-dir=node_modules']))
+      .toEqual({ globs: ['!tests/**', '*.h', '!*.min.js', '!node_modules/'], error: null, rest: ['X'] });
+  });
+
+  it("rg's attached form -g'!tests/**' is a glob; a dash-leading pattern like -gzip is not", () => {
+    expect(parse(['X', '-g!tests/**', '-g*.h'])).toMatchObject({ globs: ['!tests/**', '*.h'], rest: ['X'] });
+    expect(parse(['-gzip handling'])).toMatchObject({ globs: [], rest: ['-gzip handling'] });
+  });
+
+  it('a missing, empty or option-shaped value is a usage error, never a silent drop', () => {
+    expect(parse(['X', '-g']).error).toMatch(/-g requires a value/);
+    expect(parse(['X', '-g', '-i']).error).toMatch(/-g requires a value/);
+    expect(parse(['X', '--glob=']).error).toMatch(/--glob requires a value/);
+    expect(parse(['X', '--exclude-dir', '/']).error).toMatch(/needs a directory name/);
+    expect(parse(['X', '-g', '!']).error).toMatch(/empty glob/);
+  });
+
+  it('a value starting with "-" that is not option-shaped is still taken as the glob', () => {
+    expect(parse(['X', '-g', '-weird*']).globs).toEqual(['-weird*']);
+  });
+
+  it('options end at `--`: a -g after it is the pattern', () => {
+    expect(parse(['--', '-g'])).toEqual({ globs: [], error: null, rest: ['--', '-g'] });
+  });
+
+  it('de-duplicates, and no glob flag leaves the args untouched', () => {
+    expect(parse(['X', '-g', '*.h', '--include', '*.h']).globs).toEqual(['*.h']);
+    expect(parse(['X', '--in', 'src'])).toEqual({ globs: [], error: null, rest: ['X', '--in', 'src'] });
+  });
+
+  it('globs are consumed before positional paths are absorbed (a glob value is no scope)', () => {
+    const args = normalizeArgs(['Head', '--exclude-dir', 'tests', 'src']);
+    expect(parseGlobFlags(args).globs).toEqual(['!tests/']);
+    const inPaths = [];
+    absorbPositionalPaths(args, inPaths, tok => tok === 'src' || tok === 'tests');
+    expect(inPaths).toEqual(['src']);
+    expect(args).toEqual(['Head']);
   });
 });

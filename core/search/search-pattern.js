@@ -18,6 +18,7 @@ import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { generateRegexMatches } from './search-pattern-planner.js';
 import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
 import { applyGrepFileDiversity, matchesGrepFileFilter } from './grep-output-shaping.js';
+import { compilePathGlobs, filterMatchesByPathGlobs } from './grep-path-globs.js';
 import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js';
 import { ensureSparseGramIndex } from './search-pattern-prefilter.js';
 import { packageForAgent } from './context-expander.js';
@@ -95,6 +96,9 @@ export function mergeRegexIntoQuery(query, regex) {
  *
  * Fixed-string and glob queries are gated off the native path in
  * generateRegexMatches, so they still require ripgrep as the fallback engine.
+ * `globs` here are ripgrep's own (passed to rg). The agent tools' `-g` globs travel as
+ * `pathGlobs` instead: they are evaluated in JS on the engine's repo-relative match paths
+ * (grep-path-globs.js), so they never leave the native path.
  */
 function nativeGrepCanServe(searcher, options = {}) {
   const fixedString = options.fixedString ?? false;
@@ -135,7 +139,10 @@ function isAgentFormat(options) {
   return options?._isAgentFormat === true || AGENT_FORMATS.has(options?.format);
 }
 
-function shapeBareGrepMatches(candidateResult, symbolType, searcher, fileFilter, projectRoot) {
+// `pathGlobs`: the agent's compiled `-g` globs (grep-path-globs.js). `globCounts` records what
+// they removed, keyed by the returned list itself (the dialect retry hands that list back
+// unchanged), so an all-excluded answer can say so.
+function shapeBareGrepMatches(candidateResult, symbolType, searcher, fileFilter, projectRoot, pathGlobs = null, globCounts = null) {
   let matches = [
     ...(candidateResult?.indexedMatches || []),
     ...(candidateResult?.overlayMatches || []),
@@ -147,21 +154,41 @@ function shapeBareGrepMatches(candidateResult, symbolType, searcher, fileFilter,
     // bareGrep callers and makes absolute-scope validation rootless.
     matches = matches.filter(match => matchesGrepFileFilter(match.file, fileFilter, projectRoot));
   }
+  if (pathGlobs) {
+    // After --in (AND), before the sort, the per-file diversity and the k cap: an excluded
+    // file never takes a k slot and never reaches a count.
+    const filtered = filterMatchesByPathGlobs(matches, pathGlobs);
+    matches = filtered.kept;
+    globCounts?.set(matches, { excludedMatches: filtered.excludedMatches, excludedFiles: filtered.excludedFiles });
+  }
   return matches;
 }
 
 /**
- * A candidate result restricted to an --in scope (ss-find). The same whole-segment rule as
- * bareGrep's, applied before chunk mapping and ranking, so it can only remove candidates:
- * it never reorders what remains. No scope = the result unchanged.
+ * A candidate result restricted to an --in scope and the `-g` globs (ss-find). The same
+ * whole-segment rule as bareGrep's, applied before chunk mapping and ranking, so it can only
+ * remove candidates: it never reorders what remains. Neither = the result unchanged.
  */
-function scopeCandidateResult(result, fileFilter, projectRoot) {
-  if (!fileFilter || !result) return result;
-  const inScope = match => matchesGrepFileFilter(match.file, fileFilter, projectRoot);
+function scopeCandidateResult(result, fileFilter, projectRoot, pathGlobs = null) {
+  if ((!fileFilter && !pathGlobs) || !result) return result;
+  const inScope = match => !fileFilter || matchesGrepFileFilter(match.file, fileFilter, projectRoot);
+  if (!pathGlobs) {
+    return {
+      ...result,
+      indexedMatches: (result.indexedMatches || []).filter(inScope),
+      overlayMatches: (result.overlayMatches || []).filter(inScope),
+    };
+  }
+  const indexed = filterMatchesByPathGlobs((result.indexedMatches || []).filter(inScope), pathGlobs);
+  const overlay = filterMatchesByPathGlobs((result.overlayMatches || []).filter(inScope), pathGlobs);
   return {
     ...result,
-    indexedMatches: (result.indexedMatches || []).filter(inScope),
-    overlayMatches: (result.overlayMatches || []).filter(inScope),
+    indexedMatches: indexed.kept,
+    overlayMatches: overlay.kept,
+    stats: {
+      ...(result.stats || {}),
+      pathGlobExcludedMatches: indexed.excludedMatches + overlay.excludedMatches,
+    },
   };
 }
 
@@ -191,8 +218,10 @@ export async function bareGrep(query, routing, options = {}) {
 
   // Disable chunk gram for bare grep — bare grep uses file:line matches, not chunk IDs.
   let candidateResult = await generateRegexMatches(this || {}, regex, searchDir, options);
+  const pathGlobs = compilePathGlobs(options.pathGlobs);
+  const globCounts = pathGlobs ? new Map() : null;
   const shapeResult = result => shapeBareGrepMatches(
-    result, symbolType, this, options.fileFilter, filterRoot,
+    result, symbolType, this, options.fileFilter, filterRoot, pathGlobs, globCounts,
   );
   const dialectRetry = await retryBreDialectAfterZero({
     pattern: regex,
@@ -208,6 +237,7 @@ export async function bareGrep(query, routing, options = {}) {
   // Symbol and --in filtering happen before retry adoption and before sort/cap,
   // so hint counts always describe the matches this call can actually return.
   let matches = dialectRetry.matches;
+  const globExcluded = globCounts?.get(matches) || null;
   matches.sort((a, b) =>
     a.file.localeCompare(b.file) ||
     a.line - b.line ||
@@ -238,7 +268,8 @@ export async function bareGrep(query, routing, options = {}) {
   });
   // An explicit --in drill-in renders neither enrichment. The IMPLICIT scope of an
   // ss-grep run from a subdirectory (_cwdScope) is an ordinary grep with fewer hits,
-  // so it keeps both, exactly as at the repository root.
+  // so it keeps both, exactly as at the repository root. So does a grep with only -g
+  // globs: it is a grep with fewer files, not a drill-in.
   const unscopedShape = !options.fileFilter || options._cwdScope === true;
   const familyManifest = options._isAgentFormat === true && unscopedShape
     ? buildIndexedGrepFamilyManifest(results, this?.codeGraphRepo)
@@ -286,6 +317,10 @@ export async function bareGrep(query, routing, options = {}) {
       gramSelectivity: candidateResult.stats.gramSelectivity,
       nativeGrepUsed: candidateResult.stats.nativeGrepUsed,
       ...(regexDialectHint && { regexDialectHint }),
+      ...(globExcluded && {
+        pathGlobExcludedMatches: globExcluded.excludedMatches,
+        pathGlobExcludedFiles: globExcluded.excludedFiles,
+      }),
       symbolType,
       total_ms: Math.round(performance.now() - start),
       stageTiming: candidateResult.stats.stageTiming || null,
@@ -352,9 +387,10 @@ export async function patternSearch(query, routing, options = {}) {
   const effectiveQuery = enhanceQuery ? mergeRegexIntoQuery(query, regex) : query;
   log(`Query: "${effectiveQuery}"`);
 
-  // --in: only matches inside the scope become candidates (it used to be ignored here).
+  // --in and -g: only matches inside the scope and the globs become candidates.
   const scopeRoot = path.resolve(searchDir);
-  const scoped = result => scopeCandidateResult(result, options.fileFilter, scopeRoot);
+  const pathGlobs = compilePathGlobs(options.pathGlobs);
+  const scoped = result => scopeCandidateResult(result, options.fileFilter, scopeRoot, pathGlobs);
 
   const parallelStart = performance.now();
   let [candidateResult, encodedQuery] = await Promise.all([
@@ -422,6 +458,8 @@ export async function patternSearch(query, routing, options = {}) {
       grepStrategy: candidateResult.stats.grepStrategy,
       parallelTime_ms: Math.round(parallelTime),
       ...(regexDialectHint && { regexDialectHint }),
+      // ss-find -g: the matches the globs removed, so "(no matches)" can say why.
+      ...(pathGlobs && { pathGlobExcludedMatches: candidateResult.stats.pathGlobExcludedMatches || 0 }),
       total_ms: Math.round(performance.now() - start),
     };
 

@@ -82,6 +82,7 @@ export const VALUE_LONGS = new Set([
   '--top', '--regex', '--mode', '--max-tokens',
   '--in', '--file', '--query', '--hint', '--depth', '--budget',
   '--after-context', '--before-context', '--context',
+  '--glob', '--include', '--exclude', '--exclude-dir',
 ]);
 
 export function normalizeArgs(args) {
@@ -188,6 +189,54 @@ export function parseRepeatedValueFlag(args, names) {
     if (!values.includes(v)) values.push(v);
   }
   return { values, flag, error: null };
+}
+
+// ss-grep / ss-find path globs, ripgrep's `-g` plus the grep-habit aliases, in the order
+// given, each rewritten into one rg-style glob (core/search/grep-path-globs.js):
+//
+//   -g G, --glob G     G           (`!G` excludes)
+//   --include G        G           (grep: search only files matching G)
+//   --exclude G        !G          (grep: skip files matching G)
+//   --exclude-dir D    !D/         (grep: skip directories named D, at any depth)
+//
+// normalizeArgs has already split `--glob=G` and friends. `-gG` (rg's attached form, e.g.
+// `-g'!tests/**'` → the token `-g!tests/**`) is taken only when G looks like a glob or a
+// path (`! * ? [ { /` or a leading `.`), so a dash-leading pattern such as `-gzip x` is not
+// read as a glob. The value is consumed whatever it starts with (`!lib/tests/**`, `*.h`);
+// a missing value, `--`, or an option-shaped token is an error, never a silent drop.
+// Options end at `--`. Returns { globs, error }.
+const GLOB_FLAG_KIND = new Map([
+  ['-g', 'glob'], ['--glob', 'glob'],
+  ['--include', 'include'], ['--exclude', 'exclude'], ['--exclude-dir', 'excludeDir'],
+]);
+const ATTACHED_GLOB = /^-g([!*?[{/.].*|.*[*?[{/].*)$/;
+export function parseGlobFlags(args) {
+  const globs = [];
+  const add = (g) => { if (!globs.includes(g)) globs.push(g); };
+  for (let i = 0; i < args.length;) {
+    const tok = args[i];
+    if (tok === '--') break;
+    if (typeof tok !== 'string') { i++; continue; }
+    const attached = ATTACHED_GLOB.exec(tok);
+    if (attached) { add(attached[1]); args.splice(i, 1); continue; }
+    const kind = GLOB_FLAG_KIND.get(tok);
+    if (!kind) { i++; continue; }
+    const v = args[i + 1];
+    if (typeof v !== 'string' || v === '' || v === '--' || looksLikeOption(v)) {
+      return { globs: [], error: `${tok} requires a value (a glob such as '*.h' or '!tests/**')` };
+    }
+    let glob;
+    if (kind === 'exclude') glob = `!${v}`;
+    else if (kind === 'excludeDir') {
+      const dir = v.replace(/\/+$/, '');
+      if (dir === '' || dir === '.') return { globs: [], error: `${tok} needs a directory name, not "${v}"` };
+      glob = `!${dir}/`;
+    } else glob = v;
+    if (glob === '!' || /^!?\/*$/.test(glob)) return { globs: [], error: `${tok} "${v}" is an empty glob` };
+    add(glob);
+    args.splice(i, 2);
+  }
+  return { globs, error: null };
 }
 
 // Bare positionals beyond the first, once every known flag has been consumed.

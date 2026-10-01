@@ -24,14 +24,14 @@ import {
   parseRepeatedValueFlag, extraPositionals,
   buildGrepPattern, stripInertFlags, normalizeArgs, extractPositional,
   parseLineRange, looksLikeOption, renderSufficiency, absorbPositionalPaths as absorbPositionalPathsPure,
-  parseContextFlags,
+  parseContextFlags, parseGlobFlags,
 } from './_ss-argparse.mjs';
 import {
   reallocateGrepTailForManifest,
   renderGrepBody,
   renderGrepContext,
 } from '../../../core/search/grep-output-shaping.js';
-import { cwdGrepScope, resolveCwdPath } from '../../../core/search/cwd-paths.js';
+import { cwdGrepScope, resolveCwdGlob, resolveCwdPath } from '../../../core/search/cwd-paths.js';
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
 import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.js';
 import { createIndexCoverage, semanticTargetFor } from '../../../core/search/index-coverage.js';
@@ -314,6 +314,32 @@ function resolveScopePaths(inPaths) {
   inPaths.splice(0, inPaths.length, ...resolved);
 }
 
+// ss-grep / ss-find -g globs (and --include / --exclude / --exclude-dir), in rg form. A glob
+// typed from a subdirectory is re-anchored the way rg anchors it, at the cwd, with the same
+// root-relative fallback as a path (resolveCwdGlob); `resolve: false` for ss-find's fallback,
+// whose globs are already resolved.
+function readGlobFlags(args, usage, { resolve = true } = {}) {
+  const parsed = parseGlobFlags(args);
+  if (parsed.error) failUsage(parsed.error, usage);
+  if (!resolve) return parsed.globs;
+  return [...new Set(parsed.globs.map(g => resolveCwdGlob(g, { cwd: process.cwd(), root: FILE_ROOT })))];
+}
+
+/** The globs as the agent can paste them back: ` -g '!lib/tests/**'` per glob. */
+function globEcho(globs) {
+  return globs.map(g => ` -g '${g.replace(/'/g, `'\\''`)}'`).join('');
+}
+
+// Every match the -g globs removed, when they removed all of them: never a bare
+// "(no matches)", which reads as "the pattern is absent".
+function globExcludedNote(stats, globs) {
+  const n = stats?.pathGlobExcludedMatches || 0;
+  if (!globs.length || n === 0) return null;
+  const files = stats?.pathGlobExcludedFiles;
+  return `(no matches outside the globs:${globEcho(globs)} removed all ${n} match(es)`
+    + `${files ? ` in ${files} file(s)` : ''}; drop or widen a glob to see them)`;
+}
+
 // Grep muscle memory writes `ss-grep "pat" src/foo` with the scope as a bare
 // positional instead of `--in src/foo`. Absorb any such trailing positional that
 // resolves to a real path under the project (pure logic lives in _ss-argparse so
@@ -474,7 +500,9 @@ function writeRegexDialectHintAfterRepair(stats, repaired) {
 
 // --- subcommands ----------------------------------------------------------
 
-const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N] [-A N] [-B N] [-C N]';
+const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... '
+  + "[-g|--glob '<glob>']... [-k N] [-A N] [-B N] [-C N]\n"
+  + "  -g '*.h' searches only matching files; -g '!tests/**' excludes (exclusion wins). Also --include <glob>, --exclude <glob>, --exclude-dir <dir>.";
 // `fromFind`: ss-find's fallback when there is no late-interaction index. Its --in paths are
 // already resolved (resolving them again would re-apply the cwd), and ss-find has no implicit
 // cwd scope, so the fallback must not pick up ss-grep's.
@@ -494,6 +522,9 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   // recovery affordance the diversified output advertises when it truncates a
   // flooded file). Repeatable — one path per flag, every one applied.
   const inPaths = readRepeatedValueFlag(args, '--in', GREP_USAGE);
+  // -g include / !exclude globs, ANDed with --in; evaluated by the engine on the native path.
+  const globs = readGlobFlags(args, GREP_USAGE, { resolve: !fromFind });
+  const globOpts = globs.length ? { pathGlobs: globs } : {};
   stripInertFlags(args);
   absorbPositionalPaths(args, inPaths);
   if (!fromFind) resolveScopePaths(inPaths);
@@ -537,7 +568,10 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
         : `(invalid regex "${rawPattern}" — escaped only the part(s) that did not parse; the header shows the pattern searched)`);
     }
     const hits = result.stats?.totalMatches ?? result.results.length;
-    if (hits === 0 && !scopeMissing && !/^\(\?[a-z-]*i[a-z-]*[:)]/.test(usedRegex)) {
+    // A zero that the -g globs explain (they removed real matches) is not retried
+    // case-insensitively: the answer to give is "your globs excluded them".
+    const globExplained = (result.stats?.pathGlobExcludedMatches || 0) > 0;
+    if (hits === 0 && !scopeMissing && !globExplained && !/^\(\?[a-z-]*i[a-z-]*[:)]/.test(usedRegex)) {
       try {
         const ci = `(?i)${usedRegex}`;
         const retry = await fetch(ci);
@@ -569,12 +603,14 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
           mode: 'grep', regex: rx, maxMatches: k, contextLines: 0,
           fileFilter, expand: false, rerank: false, useLateInteraction: false,
           _isAgentFormat: !fixedString,
+          ...globOpts,
         });
       } catch {
         const s = await getSweetSearch();
         return await s.bareGrep(rx, null, {
           regex: rx, maxMatches: k, contextLines: 0, fileFilter,
           _isAgentFormat: !fixedString,
+          ...globOpts,
         });
       }
     };
@@ -591,7 +627,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     // Every applied scope is echoed. The header used to print one value however
     // many were supplied, which made the loss look like intended behaviour.
     const scopes = inPaths.map(p => `--in ${p}`).join(' ');
-    process.stdout.write(`# ss-grep: ${total} total match(es) for /${usedRegex}/ (scope: ${scopes})\n`);
+    process.stdout.write(`# ss-grep: ${total} total match(es) for /${usedRegex}/ (scope: ${scopes}${globEcho(globs)})\n`);
     for (const note of notes) process.stdout.write(`${note}\n`);
     // SS_FIX_GREP_ORDER (B7): source hits before test hits; no repeated matched-text column.
     const rows = FIX.grepOrder ? orderSourceBeforeTests(result.results) : result.results;
@@ -616,11 +652,13 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
       // A scope that does not exist on disk is the loudest case (exitScopeNotFound).
       const missing = missingScopes(inPaths);
       if (missing.length) exitScopeNotFound(missing);
+      // Then globs that removed every match in the scope.
+      const globNote = globExcludedNote(result.stats, globs);
       // Then a scope the index cannot answer for: an agent that scoped to a bundle needs to
       // know that before it decides the pattern is absent.
       let note = null;
-      for (const p of inPaths) { note = await notIndexedNote(p); if (note) break; }
-      process.stdout.write(`${note ? note.text : (repaired ? REPAIRED_NO_MATCH : '(no matches)')}\n`);
+      if (!globNote) for (const p of inPaths) { note = await notIndexedNote(p); if (note) break; }
+      process.stdout.write(`${globNote || (note ? note.text : (repaired ? REPAIRED_NO_MATCH : '(no matches)'))}\n`);
     }
     writeRegexDialectHintAfterRepair(result.stats, repaired);
     process.exit(0);
@@ -654,6 +692,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
         _isAgentFormat: !fixedString,
         _siblingLine: process.env.SS_SIBLING_LINE !== '0', // default ON; cost bounded (≤0.6% prompt tokens), see SMOKE-LOSS-FORENSICS §9
         ...scopeOpts,
+        ...globOpts,
       });
     } catch {
       const s = await getSweetSearch();
@@ -663,6 +702,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
         _isAgentFormat: !fixedString,
         _siblingLine: process.env.SS_SIBLING_LINE !== '0', // default ON; cost bounded (≤0.6% prompt tokens), see SMOKE-LOSS-FORENSICS §9
         ...scopeOpts,
+        ...globOpts,
       });
     }
   };
@@ -692,7 +732,8 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   // the file count is the objective "visible siblings" trigger for
   // fix-surface mapping, and it must not depend on truncation having occurred.
   const across = body.matchedFileCount > 1 ? ` across ${body.matchedFileCount} files` : '';
-  process.stdout.write(`# ss-grep: ${total} total match(es) for /${usedRegex}/${across}\n`);
+  // Applied globs are echoed, as --in scopes are (in the form they were applied).
+  process.stdout.write(`# ss-grep: ${total} total match(es) for /${usedRegex}/${across}${globs.length ? ` (${globEcho(globs).trim()})` : ''}\n`);
   for (const note of notes) process.stdout.write(`${note}\n`);
   if (listMode) {
     const linesByFile = new Map();
@@ -730,7 +771,9 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   // Singleton hit: the same-file identifier family, with code lines (L1a).
   if (result.siblingLine?.rendered) process.stdout.write(`${result.siblingLine.rendered}\n`);
   if (body.hiddenLine) process.stdout.write(body.hiddenLine + '\n');
-  if (body.shownMatches === 0) process.stdout.write(`${repaired ? REPAIRED_NO_MATCH : '(no matches)'}\n`);
+  if (body.shownMatches === 0) {
+    process.stdout.write(`${globExcludedNote(result.stats, globs) || (repaired ? REPAIRED_NO_MATCH : '(no matches)')}\n`);
+  }
   writeRegexDialectHintAfterRepair(result.stats, repaired);
   process.exit(0);
 }
@@ -743,7 +786,9 @@ async function cmdFind(rawArgs) {
   // ss-find defaults to the full answer: it saves the follow-up read entirely.
   // (Mirrors the agent-in-the-loop H2H adapter eval/agent-eval/tools/
   // pattern-agent-tools.js, which calls search(...,{format:'agent'}).)
-  const FIND_USAGE = 'Usage: ss-find "<query>" --regex "<regex>" [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [--full|--xl] [-k N]';
+  const FIND_USAGE = 'Usage: ss-find "<query>" --regex "<regex>" [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... '
+    + "[-g|--glob '<glob>']... [--full|--xl] [-k N]\n"
+    + "  -g '*.h' searches only matching files; -g '!tests/**' excludes (exclusion wins). Also --include <glob>, --exclude <glob>, --exclude-dir <dir>.";
   let format = 'agent';
   if (args.includes('--full')) { format = 'agent_full'; args.splice(args.indexOf('--full'), 1); }
   if (args.includes('--xl'))   { format = 'agent_full_xl'; args.splice(args.indexOf('--xl'), 1); }
@@ -753,6 +798,8 @@ async function cmdFind(rawArgs) {
   const k = readPositiveIntFlag(args, ['-k', '--top'], 6, FIND_USAGE);
   const regex = readValueFlag(args, '--regex', '', FIND_USAGE, { allowOptionValue: true });
   const inPaths = readRepeatedValueFlag(args, '--in', FIND_USAGE);
+  const globs = readGlobFlags(args, FIND_USAGE);
+  const globOpts = globs.length ? { pathGlobs: globs } : {};
   stripInertFlags(args);
   absorbPositionalPaths(args, inPaths);
   resolveScopePaths(inPaths);
@@ -774,14 +821,15 @@ async function cmdFind(rawArgs) {
       _isAgentFormat: !fixedString,
       _siblingLine: process.env.SS_SIBLING_LINE !== '0', // default ON; cost bounded (≤0.6% prompt tokens), see SMOKE-LOSS-FORENSICS §9
       ...(findFileFilter ? { fileFilter: findFileFilter } : {}),
+      ...globOpts,
       ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
     });
   } catch {
     const s = await getSweetSearch();
     if (!s.hasLateInteractionIndex) {
       process.stderr.write(`[ss-find] no late-interaction index — falling back to ss-grep\n`);
-      return cmdGrep([effectiveRegex || query, '-k', String(k), ...inPaths.flatMap(p => ['--in', p])],
-        { fromFind: true });
+      return cmdGrep([effectiveRegex || query, '-k', String(k), ...inPaths.flatMap(p => ['--in', p]),
+        ...globs.flatMap(g => ['-g', g])], { fromFind: true });
     }
     response = await s.patternSearch(query, null, {
       regex: effectiveRegex || `\\b\\w+\\b`,
@@ -789,6 +837,7 @@ async function cmdFind(rawArgs) {
       format,
       _isAgentFormat: !fixedString,
       ...(findFileFilter ? { fileFilter: findFileFilter } : {}),
+      ...globOpts,
       ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
     });
   }
@@ -825,7 +874,11 @@ async function cmdFind(rawArgs) {
     if (missing.length) exitScopeNotFound(missing);
   }
 
-  if (renderFix) {
+  // -g globs that removed every candidate: say so, not a bare "(no matches)".
+  const findGlobNote = response.results?.length ? null : globExcludedNote(response.stats, globs);
+  if (findGlobNote) {
+    process.stdout.write(`${findGlobNote}\n`);
+  } else if (renderFix) {
     process.stdout.write(renderFixedBlocks(response.results || [], plan, {
       compact: FIX.compact, omitted: alreadyShown, dropRestatingSummary: false, gutter,
     }));
