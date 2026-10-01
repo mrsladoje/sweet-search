@@ -234,3 +234,29 @@ describe('ranking safety', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe('call scanning for languages without a registry methodCall pattern', () => {
+  const scan = (language, lines) => {
+    const scanner = new CallSiteScanner({ ...LANGUAGES[language], id: language });
+    const q = [];
+    const b = [];
+    for (const line of lines) scanner.scanLine(line, (t) => q.push(t), (n) => b.push(n), () => false);
+    return { q, b };
+  };
+
+  it('Lua: dot and colon method calls, bare calls, -- comments', () => {
+    expect(scan('lua', ['local x = util.trim(s) -- util.strip(s)', 'self:render(view)', 'return build(x)'])).toEqual({ q: ['util.trim', 'self.render'], b: ['build'] });
+  });
+
+  it('Elixir: pipes call the right-hand function; def lines are not calls', () => {
+    expect(scan('elixir', ['def run(data) do', '  data |> normalize |> Cache.put(&fix/1) |> Repo.insert', '  validate(data)'])).toEqual({ q: ['Repo.insert', 'Cache.put'], b: ['normalize', 'validate'] });
+  });
+
+  it('Shell: command words call functions; definitions and assignments do not', () => {
+    expect(scan('shell', ['deploy() {', 'function cleanup {', '  build_image "$tag" && push_image', '  out=$(render_page index)', '  if check_deps; then', '  local x=1'])).toEqual({ q: [], b: ['build_image', 'push_image', 'render_page', 'check_deps'] });
+  });
+
+  it('Julia: short-form definitions are not calls', () => {
+    expect(scan('julia', ['area(r) = pi * r^2', 'total = area(2) + perimeter(3)']).b).toEqual(['area', 'perimeter']);
+  });
+});

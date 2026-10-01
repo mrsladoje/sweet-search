@@ -65,9 +65,12 @@ const SCOPES_BY_LANGUAGE = {
 };
 const DEFAULT_SCOPES = [FILE];
 const C_FAMILY = new Set(['c', 'cpp', 'objc']);
+const FILE_PRIVATE_SIGNATURE = /^\s*(?:local|static)\b/;
 
 export const BARE_CALLABLE_TYPES = new Set([
   'function', 'method', 'rpc', 'arrowFunction', 'objectArrow', 'objectMethod', 'procedure', 'subroutine', 'macro_function',
+  // Registry entity types: Lua `local f = function`, Julia `f(x) = …`, Elixir `defp`.
+  'assignedFunc', 'shortFunction', 'private',
 ]);
 
 export function languageOfPath(filePath) {
@@ -160,7 +163,8 @@ export function resolveBareCall(caller, candidates, index) {
       tier = ownerless.filter(c => dirOf(c.file_path) === dir);
     } else {
       const sameFamily = (l) => l === language || (C_FAMILY.has(language) && C_FAMILY.has(l));
-      tier = ownerless.filter(c => sameFamily(languageOfPath(c.file_path)));
+      // `static` (C/C++) and `local` (Lua) functions are file-private.
+      tier = ownerless.filter(c => sameFamily(languageOfPath(c.file_path)) && !FILE_PRIVATE_SIGNATURE.test(c.signature || ''));
     }
     if (tier.length === 0) continue;
     return asDecision(tier, ownerOf, preferNonTest) || [];

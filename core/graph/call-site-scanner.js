@@ -36,9 +36,31 @@ const SEPARATORS_BY_LANGUAGE = {
   php: ['->', '?->', '::'],
   c: ['.', '->'],
   cpp: ['.', '->', '::'],
+  objc: ['.', '->'],
   rust: ['.', '::'],
   ruby: ['.', '&.'],
+  // Lua `obj:method(` is a method call with implicit self.
+  lua: ['.', ':'],
+  perl: ['->', '::'],
+  r: ['::'],
+  shell: ['.'],
 };
+
+// Languages whose registry has no `methodCall` pattern but whose calls the
+// scanner reads (C-like `name(` / `a.b(` syntax, or shell command words).
+// Juxtaposition languages (Haskell, OCaml, F#, Elm), s-expressions (Clojure,
+// elisp) and `mod:fun(` Erlang need grammar-aware call queries; not scanned.
+export const EXTRA_CALL_SCAN_LANGUAGES = new Set(['objc', 'lua', 'elixir', 'shell', 'zig', 'solidity', 'perl', 'r', 'julia']);
+
+// Elixir pipes call the right-hand function: `data |> transform` /
+// `|> Mod.fun` (tree-sitter-elixir tags.scm: binary_operator "|>" right:
+// identifier @reference.call). Parenthesised forms are read as calls anyway.
+const ELIXIR_PIPE = /\|>\s*(?:(\w+)\.)?([a-z_]\w*[?!]?)(?![\w.(])/g;
+// Julia short-form definition: `area(r) = π * r^2` (not `==`).
+const JULIA_SHORT_DEFINITION = /^(?:\w+\.)?\w+(?:\{[^}]*\})?\([^]*\)\s*(?:::\s*[^=]+)?=(?!=)/;
+// Shell: functions are called as command words, not `name(`.
+const SHELL_SEGMENT_SPLIT = /;|&&|\|\||\||\$\(|`|\b(?:then|do|else|elif|if|while|until|time|exec|command|sudo|xargs)\b/;
+const SHELL_COMMAND_WORD = /^([A-Za-z_][\w-]*)(?=[\s)]|$)/;
 
 // Languages where `'…'` delimits strings (so quote parity must count it when
 // deciding whether a comment token sits inside a string literal). In the rest
@@ -50,7 +72,8 @@ const BACKTICK_STRING_LANGUAGES = new Set(['javascript', 'typescript', 'tsx', 'g
 
 // Extra comment syntax the registry's single `comment.line` entry omits.
 const EXTRA_LINE_COMMENTS = { php: ['#'] };
-const EXTRA_BLOCK_COMMENTS = { python: [["'''", "'''"]] };
+// Docstrings/heredocs hold examples (`iex> Jason.encode(x)`), not calls.
+const EXTRA_BLOCK_COMMENTS = { python: [["'''", "'''"]], elixir: [['"""', '"""']] };
 
 // Trailing-closure call syntax (`a.b { … }` is a call). Elsewhere `x.Y {`
 // is a composite literal (Go) or a block, not a call.
@@ -73,6 +96,9 @@ const CPP_EXPR_KEYWORD_END = /\b(?:return|co_return|co_yield|co_await|throw|new|
 const DEFINITION_GUARDS = {
   kotlin: (before) => /\bfun\s+$/.test(before),
   scala: (before) => /\bdef\s+$/.test(before),
+  // Lua `function M.helper(` / `function Class:method(`, Julia `function Base.show(`.
+  lua: (before) => /\bfunction\s+$/.test(before),
+  julia: (before) => /\bfunction\s+$/.test(before),
   cpp: (before, owner, name) => {
     if (owner === name || name === `~${owner}`) return true; // ctor/dtor
     const b = before.trimEnd();
@@ -232,6 +258,9 @@ function buildPlan(language, langInfo) {
     bareKeywords: bareKeywordsFor(language),
     shorthandDefinitions: SHORTHAND_DEFINITION_LANGUAGES.has(language),
     preprocessor: PREPROCESSOR_LANGUAGES.has(language),
+    pipeCalls: language === 'elixir',
+    juliaShortDefinitions: language === 'julia',
+    commandCalls: language === 'shell',
   };
 }
 
@@ -407,7 +436,30 @@ export class CallSiteScanner {
         if (last === 62 /* > */ && /\w\s*<[^()]*>$/.test(before)) continue;
       } else if (atStart && plan.shorthandDefinitions && code.endsWith('{') && SHORTHAND_DEFINITION.test(code)) {
         continue;
+      } else if (atStart && plan.juliaShortDefinitions && JULIA_SHORT_DEFINITION.test(code)) {
+        continue;
       }
+      emitBare(name);
+    }
+  }
+
+  /**
+   * Shell: a function is called as the first word of a command —
+   * `deploy "$env"`, `if check_deps; then`, `out=$(render_page x)`. The
+   * definition forms `name() {` and `function name {` are skipped, and so are
+   * assignments (`name=value`).
+   */
+  _scanCommands(trimmed, emitBare, isDefinedHere) {
+    if (/^(?:function\s+)?[A-Za-z_][\w-]*\s*\(\s*\)/.test(trimmed) || /^function\s/.test(trimmed)) return;
+    const code = blankStrings(trimmed, this.plan);
+    for (const segment of code.split(SHELL_SEGMENT_SPLIT)) {
+      const seg = segment.trim();
+      if (!seg) continue;
+      const m = SHELL_COMMAND_WORD.exec(seg);
+      if (!m) continue;
+      const name = m[1];
+      if (this.plan.bareKeywords.has(name)) continue;
+      if (isDefinedHere && isDefinedHere(name)) continue;
       emitBare(name);
     }
   }
@@ -421,7 +473,18 @@ export class CallSiteScanner {
     const code = this.codeOf(line);
     const trimmed = code.trim();
     if (!trimmed) return;
-    if (emitBare && trimmed.indexOf('(') !== -1) this._scanBare(trimmed, emitBare, isDefinedHere);
+    if (emitBare) {
+      if (plan.commandCalls) this._scanCommands(trimmed, emitBare, isDefinedHere);
+      else if (trimmed.indexOf('(') !== -1) this._scanBare(trimmed, emitBare, isDefinedHere);
+    }
+    if (plan.pipeCalls && trimmed.indexOf('|>') !== -1) {
+      ELIXIR_PIPE.lastIndex = 0;
+      let pm;
+      while ((pm = ELIXIR_PIPE.exec(trimmed)) !== null) {
+        if (pm[1]) emit(`${pm[1]}.${pm[2]}`);
+        else if (emitBare && !plan.bareKeywords.has(pm[2])) emitBare(pm[2]);
+      }
+    }
 
     // Ruby bang calls (`record.save!`) need no parenthesis.
     const hasParen = trimmed.indexOf('(') !== -1
