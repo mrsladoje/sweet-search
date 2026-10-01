@@ -21,6 +21,9 @@
  * never take part (except C/C++); at most MAX_TARGETS_PER_METHOD targets;
  * constructors never override.
  *
+ * The full build and the incremental maintainer run the same computation
+ * (computeOverrideEdges); only the write differs (deriveOverrideEdges).
+ *
  * Trace-only: `overrides` is in TRACE_ONLY_RELATIONSHIP_TYPES, so search
  * ranking never reads these edges (see relationship-types.js).
  */
@@ -80,27 +83,152 @@ function langFamily(filePath) {
 }
 
 /**
- * Derive `overrides` edges. Replaces every existing `overrides` row (no
+ * True when the graph is epoch-versioned (the incremental maintainer's
+ * schema): rows are retired, never deleted, so pinned readers keep the
+ * snapshot they read.
+ */
+function hasEpochColumns(db, table) {
+  try {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+    return cols.includes('epoch_retired') && cols.includes('epoch_written');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Derive `overrides` edges from the graph's current facts and write them.
+ *
+ * A fresh (full-build) graph: every `overrides` row is replaced (no
  * extractor emits them), so a re-run gives the same result.
- * SWEET_SEARCH_OVERRIDE_EDGES=0 disables (and leaves no rows).
+ *
+ * An epoch-versioned graph (incremental maintainer, or `--resolve-only` on a
+ * maintained index): only LIVE entities and inheritance rows are read, and
+ * the live `overrides` rows are diffed against the new set — a vanished edge
+ * is retired at `epoch` (deleted when this epoch wrote it), a new edge is
+ * inserted with `epoch_written = epoch`, an unchanged edge keeps its row.
+ * Retired rows are never touched, so pinned readers keep their snapshot.
+ *
+ * SWEET_SEARCH_OVERRIDE_EDGES=0 disables (and leaves no live rows).
  *
  * @param {import('better-sqlite3').Database} db
- * @param {Array<object>} [entities] rows with id, name, type, file_path,
- *   parent_class, signature, start_line, end_line (the resolver passes its
- *   own list)
- * @returns {{ edges: number, ms: number }}
+ * @param {Array<object>|null} [entities] rows with id, name, type, file_path,
+ *   parent_class, signature, start_line, end_line (the full resolver passes
+ *   its own list; an epoch-versioned graph reads its live rows instead)
+ * @param {{ epoch?: number }} [opts] the writing epoch on an epoch-versioned
+ *   graph (default: the newest epoch_written in the graph)
+ * @returns {{ edges: number, retired: number, ms: number }} edges = rows inserted
  */
-export function deriveOverrideEdges(db, entities = null) {
+export function deriveOverrideEdges(db, entities = null, opts = {}) {
   const started = performance.now();
-  const clear = db.prepare(`DELETE FROM relationships WHERE type = 'overrides'`);
+  const versioned = hasEpochColumns(db, 'relationships');
+  const liveEntities = versioned && hasEpochColumns(db, 'entities');
+  const epoch = versioned
+    ? (opts.epoch ?? db.prepare('SELECT COALESCE(MAX(epoch_written), 0) AS e FROM relationships').get().e)
+    : null;
+  const write = (edges) => (versioned ? syncRows(db, edges, epoch) : replaceRows(db, edges));
   if (process.env.SWEET_SEARCH_OVERRIDE_EDGES === '0') {
-    clear.run();
-    return { edges: 0, ms: 0 };
+    const r = write([]);
+    return { edges: 0, retired: r.retired, ms: Math.round(performance.now() - started) };
   }
-  const rows = entities || db.prepare(`
+  const rows = (!liveEntities && entities) || db.prepare(`
     SELECT id, name, type, file_path, parent_class, signature, start_line, end_line FROM entities
+    ${liveEntities ? 'WHERE epoch_retired IS NULL' : ''}
   `).all();
+  const live = versioned ? 'AND epoch_retired IS NULL' : '';
+  const edges = computeOverrideEdges(
+    rows,
+    db.prepare(`
+      SELECT source_id, target_id, context_line FROM relationships
+      WHERE type IN ('extends', 'implements') AND target_id IS NOT NULL AND source_id IS NOT NULL ${live}
+    `).all(),
+    db.prepare(`
+      SELECT source_id, context_line, target_id FROM relationships
+      WHERE type = 'extensionOf' AND target_id IS NOT NULL ${live}
+    `).all(),
+  );
+  const r = write(edges);
+  return { edges: r.inserted, retired: r.retired, ms: Math.round(performance.now() - started) };
+}
 
+/** Full build: replace every `overrides` row. */
+function replaceRows(db, edges) {
+  const clear = db.prepare(`DELETE FROM relationships WHERE type = 'overrides'`);
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO relationships (source_id, target_id, target_name, type, weight, context_line)
+    VALUES (?, ?, ?, 'overrides', 1.0, ?)
+  `);
+  let inserted = 0;
+  db.transaction(() => {
+    clear.run();
+    for (const e of edges) inserted += insert.run(e.source, e.target, e.name, e.line).changes;
+  })();
+  return { inserted, retired: 0 };
+}
+
+/**
+ * Epoch-versioned graph: diff the live `overrides` rows against `edges`.
+ * Unchanged edges keep their row; a vanished edge is retired at `epoch`
+ * (deleted when `epoch` itself wrote it); a new edge is inserted at `epoch`.
+ */
+function syncRows(db, edges, epoch) {
+  const wanted = new Map();
+  for (const e of edges) wanted.set(`${e.source}\u0000${e.target}`, e);
+  const existing = db.prepare(`
+    SELECT rowid, source_id, target_id, epoch_written FROM relationships
+    WHERE type = 'overrides' AND epoch_retired IS NULL
+  `).all();
+  const retire = db.prepare('UPDATE relationships SET epoch_retired = ? WHERE rowid = ?');
+  const drop = db.prepare('DELETE FROM relationships WHERE rowid = ?');
+  let hasLogical = false;
+  try {
+    hasLogical = db.prepare('PRAGMA table_info(relationships)').all().some(c => c.name === 'logical_relationship_id');
+  } catch { /* plain schema */ }
+  const insert = db.prepare(hasLogical
+    ? `INSERT OR IGNORE INTO relationships
+       (source_id, target_id, target_name, type, weight, context_line, logical_relationship_id, epoch_written, epoch_retired)
+       VALUES (?, ?, ?, 'overrides', 1.0, ?, ?, ?, NULL)`
+    : `INSERT OR IGNORE INTO relationships
+       (source_id, target_id, target_name, type, weight, context_line, epoch_written, epoch_retired)
+       VALUES (?, ?, ?, 'overrides', 1.0, ?, ?, NULL)`);
+  let inserted = 0;
+  let retired = 0;
+  db.transaction(() => {
+    const kept = new Set();
+    for (const row of existing) {
+      const key = `${row.source_id}\u0000${row.target_id}`;
+      if (wanted.has(key) && !kept.has(key)) {
+        kept.add(key);
+        continue;
+      }
+      if (row.epoch_written === epoch) drop.run(row.rowid);
+      else retire.run(epoch, row.rowid);
+      retired++;
+    }
+    for (const [key, e] of wanted) {
+      if (kept.has(key)) continue;
+      const args = hasLogical
+        ? [e.source, e.target, e.name, e.line, `${e.source}:overrides:${e.name}:${e.line ?? ''}`, epoch]
+        : [e.source, e.target, e.name, e.line, epoch];
+      inserted += insert.run(...args).changes;
+    }
+  })();
+  return { inserted, retired };
+}
+
+/**
+ * The override edges implied by entities and resolved inheritance rows.
+ * Pure: no database access, deterministic for the same input.
+ *
+ * @param {Array<object>} rows entities (id, name, type, file_path,
+ *   parent_class, signature, start_line, end_line)
+ * @param {Array<{source_id, target_id, context_line}>} inheritanceRows
+ *   resolved `extends` / `implements` rows
+ * @param {Array<{source_id, context_line, target_id}>} extensionRows
+ *   resolved Swift `extensionOf` rows
+ * @returns {Array<{ source: string, target: string, name: string, line: number }>}
+ */
+export function computeOverrideEdges(rows, inheritanceRows, extensionRows) {
   // Per-file facts, computed once per path.
   const fileFacts = new Map();
   const factsOf = (filePath) => {
@@ -128,7 +256,11 @@ export function deriveOverrideEdges(db, entities = null) {
       primaryCount.set(k, (primaryCount.get(k) || 0) + 1);
     }
   }
-  for (const list of containersByFile.values()) list.sort((a, b) => a.start_line - b.start_line);
+  // Sorted by start, ties by id: the result never depends on row order (the
+  // incremental graph's row order differs from a fresh build's).
+  for (const list of containersByFile.values()) {
+    list.sort((a, b) => a.start_line - b.start_line || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
 
   // Group key of a type: an extension / impl block joins the ONE primary
   // declaration of that name in its language family. Several primaries with
@@ -155,19 +287,13 @@ export function deriveOverrideEdges(db, entities = null) {
 
   // Swift `extension X: P` rows: (source, line) → X's entity.
   const extensionOf = new Map();
-  for (const r of db.prepare(`
-    SELECT source_id, context_line, target_id FROM relationships
-    WHERE type = 'extensionOf' AND target_id IS NOT NULL
-  `).iterate()) {
+  for (const r of extensionRows) {
     extensionOf.set(`${r.source_id}\u0000${r.context_line}`, r.target_id);
   }
 
   // Resolved inheritance, lifted to groups.
   const basesOfGroup = new Map(); // groupKey → Set(groupKey)
-  for (const r of db.prepare(`
-    SELECT source_id, target_id, context_line FROM relationships
-    WHERE type IN ('extends', 'implements') AND target_id IS NOT NULL AND source_id IS NOT NULL
-  `).iterate()) {
+  for (const r of inheritanceRows) {
     let s = byId.get(r.source_id);
     if (!s || !CONTAINER_TYPES.has(s.type)) {
       const extended = extensionOf.get(`${r.source_id}\u0000${r.context_line}`);
@@ -182,10 +308,7 @@ export function deriveOverrideEdges(db, entities = null) {
     if (!set) { set = new Set(); basesOfGroup.set(sk, set); }
     set.add(tk);
   }
-  if (basesOfGroup.size === 0) {
-    clear.run();
-    return { edges: 0, ms: Math.round(performance.now() - started) };
-  }
+  if (basesOfGroup.size === 0) return [];
 
   // Only types in the inheritance graph need their methods: files holding a
   // container of such a type, or methods whose parent_class names one.
@@ -229,10 +352,6 @@ export function deriveOverrideEdges(db, entities = null) {
     same.push(m);
   }
 
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO relationships (source_id, target_id, target_name, type, weight, context_line)
-    VALUES (?, ?, ?, 'overrides', 1.0, ?)
-  `);
   // Ancestor levels per type, breadth-first once (depth <= MAX_DEPTH); only
   // ancestors that own methods matter.
   const ancestorLevels = (childKey) => {
@@ -256,50 +375,51 @@ export function deriveOverrideEdges(db, entities = null) {
     return levels;
   };
 
-  let edges = 0;
-  db.transaction(() => {
-    clear.run();
-    for (const childKey of basesOfGroup.keys()) {
-      const own = methodsByGroup.get(childKey);
-      if (!own) continue;
-      const levels = ancestorLevels(childKey);
-      if (levels.length === 0) continue;
-      for (const [name, methods] of own) {
-        // The nearest level that defines `name` (non-private) wins.
-        let targets = null;
-        for (const level of levels) {
-          for (const owned of level) {
-            const baseMethods = owned.get(name);
-            if (!baseMethods) continue;
-            for (const bm of baseMethods) if (!isPrivateMember(bm)) (targets ||= []).push(bm);
-          }
-          if (targets) break;
+  const out = [];
+  const seenEdge = new Set();
+  for (const childKey of basesOfGroup.keys()) {
+    const own = methodsByGroup.get(childKey);
+    if (!own) continue;
+    const levels = ancestorLevels(childKey);
+    if (levels.length === 0) continue;
+    for (const [name, methods] of own) {
+      // The nearest level that defines `name` (non-private) wins.
+      let targets = null;
+      for (const level of levels) {
+        for (const owned of level) {
+          const baseMethods = owned.get(name);
+          if (!baseMethods) continue;
+          for (const bm of baseMethods) if (!isPrivateMember(bm)) (targets ||= []).push(bm);
         }
-        if (!targets) continue;
-        for (const m of methods) {
-          if (isPrivateMember(m)) continue;
-          // Overloads share a name (Swift `databaseDidChange()` vs
-          // `databaseDidChange(with:)`): with several candidates, keep the
-          // ones whose parameter count matches when any does.
-          let picked = targets;
-          if (targets.length > 1) {
-            const n = arity(m.signature);
-            if (n !== null) {
-              const same = targets.filter(bm => arity(bm.signature) === n);
-              if (same.length > 0) picked = same;
-            }
+        if (targets) break;
+      }
+      if (!targets) continue;
+      for (const m of methods) {
+        if (isPrivateMember(m)) continue;
+        // Overloads share a name (Swift `databaseDidChange()` vs
+        // `databaseDidChange(with:)`): with several candidates, keep the
+        // ones whose parameter count matches when any does.
+        let picked = targets;
+        if (targets.length > 1) {
+          const n = arity(m.signature);
+          if (n !== null) {
+            const same = targets.filter(bm => arity(bm.signature) === n);
+            if (same.length > 0) picked = same;
           }
-          if (picked.length > MAX_TARGETS_PER_METHOD) continue;
-          for (const bm of picked) {
-            if (bm.id === m.id) continue;
-            const qualified = bm.parent_class ? `${bm.parent_class}.${bm.name}` : bm.name;
-            edges += insert.run(m.id, bm.id, qualified, m.start_line).changes;
-          }
+        }
+        if (picked.length > MAX_TARGETS_PER_METHOD) continue;
+        for (const bm of picked) {
+          if (bm.id === m.id) continue;
+          const key = `${m.id}\u0000${bm.id}`;
+          if (seenEdge.has(key)) continue;
+          seenEdge.add(key);
+          const qualified = bm.parent_class ? `${bm.parent_class}.${bm.name}` : bm.name;
+          out.push({ source: m.id, target: bm.id, name: qualified, line: m.start_line });
         }
       }
     }
-  })();
-  return { edges, ms: Math.round(performance.now() - started) };
+  }
+  return out;
 }
 
 export default deriveOverrideEdges;
