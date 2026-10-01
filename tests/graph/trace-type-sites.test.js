@@ -211,6 +211,41 @@ describe('ss-trace lists a type\'s signature users (typeRef) by default', () => 
     expect(ctor).toBeLessThan(firstTypeRef);
   });
 
+  it('a row prints at most 16 site lines and counts the rest', async () => {
+    const { printedSiteLines } = await import('../../core/graph/structural-context.js');
+    expect(printedSiteLines([4, 5, 6])).toBe('4,5,6');
+    const many = Array.from({ length: 121 }, (_, i) => i + 1);
+    expect(printedSiteLines(many)).toBe(`${many.slice(0, 16).join(',')},…+105`);
+    const ctorLines = Array.from({ length: 20 }, (_, i) => `  const x${i} = new Foo();`);
+    const graph = await buildGraph({
+      'src/foo.ts': ['export class Foo {}'],
+      'src/a.ts': ["import { Foo } from './foo';", 'export function run() {', ...ctorLines, '}'],
+    });
+    const result = trace(graph, 'Foo', { filePath: 'src/foo.ts', mode: 'callers' });
+    const run = result.sections.callers.items.find((x) => x.name === 'run');
+    expect(run.contextLines).toHaveLength(20);
+    expect(formatTraceCompact(result, { mode: 'callers' })).toContain('(instantiates)@3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,…+4');
+    expect(result.sections.callers.items.map((x) => [x.name, x.relationship, x.contextLines.length])).toEqual([['run', 'instantiates', 20]]);
+    expect(result.sections.callers.total).toBe(20);
+  });
+
+  it('foldConstructorCalls drops only the call lines a construction row already lists', async () => {
+    const { foldConstructorCalls } = await import('../../core/graph/structural-context.js');
+    const items = [
+      { id: 'run', relationship: 'calls', contextLines: [3, 4, 9] },
+      { id: 'run', relationship: 'instantiates', contextLines: [3, 4] },
+      { id: 'other', relationship: 'calls', contextLines: [3] },
+      { id: 'only', relationship: 'calls', contextLines: [7] },
+      { id: 'only', relationship: 'instantiates', contextLines: [7] },
+    ];
+    expect(foldConstructorCalls(items).map((x) => [x.id, x.relationship, x.contextLines])).toEqual([
+      ['run', 'calls', [9]],
+      ['run', 'instantiates', [3, 4]],
+      ['other', 'calls', [3]],
+      ['only', 'instantiates', [7]],
+    ]);
+  });
+
   it('a function target never gets typeRef rows', async () => {
     const graph = await buildGraph({
       'src/a.ts': ['export function helper(): void {}', 'export function run(): void {', '  helper();', '}'],
