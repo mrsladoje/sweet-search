@@ -59,7 +59,7 @@ export function resolveRelationshipTargets(db) {
 
   // Build entity lookup maps
   const entities = db.prepare(`
-    SELECT id, name, type, file_path, parent_class, signature
+    SELECT id, name, type, file_path, parent_class, signature, start_line, end_line
     FROM entities
   `).all();
 
@@ -201,8 +201,11 @@ function resolveTarget(
   // Get source entity for context (O(1) lookup instead of database query)
   const sourceEntity = sourceId ? byId.get(sourceId) : null;
 
-  // Strategy 1: Exact name match in same file (highest priority)
-  if (sourceEntity) {
+  // Strategy 1: Exact name match in same file (highest priority). Not for
+  // type references: the per-file map keeps only the last same-named entity,
+  // which is often the class's own constructor (`Field` in Field.java) or the
+  // source itself. Those types rank same-file candidates in the switch below.
+  if (sourceEntity && !TYPE_REFERENCE_RELATIONSHIPS.has(relType)) {
     const sameFileKey = `${sourceEntity.file_path}:${targetName}`;
     const sameFileMatch = byFileAndName.get(sameFileKey);
     if (sameFileMatch) {
@@ -247,43 +250,41 @@ function resolveTarget(
 
     case 'overrides': {
       // Method overrides: find method in parent class
-      const candidates = byMethodName.get(targetName) || [];
-
-      if (candidates.length === 0) {
-        return null;
-      } else if (candidates.length === 1) {
-        return candidates[0].id;
-      } else {
-        // Multiple matches - prefer methods in interfaces or parent classes
-        // This is complex, so just use first match for now
-        if (warnings) {
-          warnings.push(`Ambiguous override of ${targetName}: ${candidates.length} matches`);
-        }
-        return candidates[0].id;
+      const candidates = (byMethodName.get(targetName) || []).filter(c => c.id !== sourceId);
+      const picked = pickClosestCandidate(candidates, sourceEntity);
+      if (picked && candidates.length > 1 && warnings) {
+        warnings.push(`Ambiguous override of ${targetName}: ${candidates.length} matches`);
       }
+      return picked ? picked.id : null;
     }
 
     case 'implements':
     case 'extends': {
-      // Interface/class references: exact name match
-      const candidates = byExactName.get(targetName) || [];
+      // A base type is always a type. A same-named constructor, property or
+      // function is never the target, and neither is the source itself
+      // (Python `class Config(Config)` extends the imported Config).
+      let candidates = typeCandidates(byExactName.get(targetName), sourceId);
 
+      // Qualified base (`Sequel::Model`, `\RuntimeException`, `models.Model`,
+      // `drogon::HttpController`, `Call.Base`): entities are stored by their
+      // short name, so fall back to the last path segment. A qualified name
+      // must also match its qualifier on disk (src/flask/views.py for
+      // `flask.views.View`) — `nn.Module` must not link to an unrelated
+      // local `Module`.
+      const qualifier = qualifierPath(targetName);
       if (candidates.length === 0) {
-        return null;
-      } else if (candidates.length === 1) {
-        return candidates[0].id;
-      } else {
-        // Multiple matches - prefer same project
-        if (sourceEntity) {
-          const sameProjectMatch = candidates.find(c => isSameProject(c.file_path, sourceEntity.file_path));
-          if (sameProjectMatch) return sameProjectMatch.id;
+        const shortName = lastPathSegment(targetName);
+        if (shortName && shortName !== targetName) {
+          candidates = typeCandidates(byExactName.get(shortName), sourceId);
+          if (qualifier) candidates = candidates.filter(c => matchesQualifier(c.file_path || '', qualifier));
         }
-
-        if (warnings) {
-          warnings.push(`Ambiguous ${relType} ${targetName}: ${candidates.length} matches`);
-        }
-        return candidates[0].id;
       }
+
+      const picked = pickClosestCandidate(candidates, sourceEntity, qualifier);
+      if (picked && candidates.length > 1 && warnings) {
+        warnings.push(`Ambiguous ${relType} ${targetName}: ${candidates.length} matches`);
+      }
+      return picked ? picked.id : null;
     }
 
     case 'imports': {
@@ -337,33 +338,128 @@ function resolveTarget(
 
     case 'uses':
     case 'throws': {
-      // General references: exact name match
-      const candidates = byExactName.get(targetName) || [];
-
-      if (candidates.length === 0) {
-        return null;
-      } else if (candidates.length === 1) {
-        return candidates[0].id;
-      } else {
-        // Multiple matches - prefer same project
-        if (sourceEntity) {
-          const sameProjectMatch = candidates.find(c => isSameProject(c.file_path, sourceEntity.file_path));
-          if (sameProjectMatch) return sameProjectMatch.id;
-        }
-
-        return candidates[0].id;
-      }
+      // General references (decorators, embedded types, `Class::member`,
+      // thrown exceptions). A type wins over a same-named constructor or
+      // method (`Tag::setName` uses class Tag, not the Tag() constructor);
+      // decorators still resolve to the function when no type has the name.
+      let candidates = (byExactName.get(targetName) || []).filter(c => c.id !== sourceId);
+      const types = candidates.filter(c => CLASS_LIKE_TYPES.has(c.type));
+      if (types.length > 0) candidates = types;
+      const picked = pickClosestCandidate(candidates, sourceEntity);
+      return picked ? picked.id : null;
     }
 
     default: {
       // Unknown relationship type - try exact name match
-      const candidates = byExactName.get(targetName) || [];
-      if (candidates.length > 0) {
-        return candidates[0].id;
-      }
-      return null;
+      const candidates = (byExactName.get(targetName) || []).filter(c => c.id !== sourceId);
+      const picked = pickClosestCandidate(candidates, sourceEntity);
+      return picked ? picked.id : null;
     }
   }
+}
+
+const TYPE_REFERENCE_RELATIONSHIPS = new Set(['extends', 'implements', 'overrides', 'uses', 'throws']);
+
+// Entity types that can be the target of an inheritance edge.
+const CLASS_LIKE_TYPES = new Set([
+  'class', 'interface', 'struct', 'trait', 'enum', 'type', 'typeAlias', 'typealias',
+  'typedef', 'protocol', 'record', 'object', 'module', 'mixin', 'component', 'message', 'union',
+]);
+
+function typeCandidates(candidates, sourceId) {
+  if (!candidates) return [];
+  return candidates.filter(c => c.id !== sourceId && CLASS_LIKE_TYPES.has(c.type));
+}
+
+/** `Sequel::Model` → `Model`, `\Foo\Bar` → `Bar`, `models.Model` → `Model`. */
+function lastPathSegment(name) {
+  const parts = name.split(/::|\\|\./).filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : null;
+}
+
+function isTestPath(filePath) {
+  return /(?:^|\/)(?:tests?|spec|specs|__tests__|testing|mocks?|fixtures?)\/|(?:_test|_spec|\.test|\.spec|Tests?)\.[^/.]+$/i.test(filePath || '');
+}
+
+function sharedDirDepth(a, b) {
+  const pa = a.split('/');
+  const pb = b.split('/');
+  const n = Math.min(pa.length, pb.length) - 1; // directories only
+  let depth = 0;
+  while (depth < n && pa[depth] === pb[depth]) depth++;
+  return depth;
+}
+
+/** Lowercase, separator-free key: `generic_expression` ≡ `GenericExpression`. */
+function nameKey(s) {
+  return s.toLowerCase().replace(/[_-]/g, '');
+}
+
+function fileStem(filePath) {
+  const base = filePath.slice(filePath.lastIndexOf('/') + 1);
+  const dot = base.indexOf('.');
+  return dot > 0 ? base.slice(0, dot) : base;
+}
+
+/** `flask.views.View` → `flask/views`, `Sequel::Dataset` → `sequel`; null if unqualified. */
+function qualifierPath(name) {
+  const parts = name.split(/::|\\|\./).filter(Boolean);
+  if (parts.length < 2) return null;
+  return parts.slice(0, -1).map(nameKey).join('/');
+}
+
+/** True when the file or its directory sits at the qualifier path (`src/flask/views.py`). */
+function matchesQualifier(filePath, qualifier) {
+  const lower = filePath.toLowerCase().replace(/[_-]/g, '');
+  const dot = lower.lastIndexOf('.');
+  const sansExt = dot > lower.lastIndexOf('/') ? lower.slice(0, dot) : lower;
+  const dir = lower.slice(0, Math.max(0, lower.lastIndexOf('/')));
+  const at = (s) => s === qualifier || s.endsWith('/' + qualifier);
+  return at(sansExt) || at(dir);
+}
+
+/**
+ * Pick the most plausible candidate for an ambiguous name. Order: same file;
+ * then non-test code (a test file's private `Record` helper is not the
+ * library's `Record`); then a file or directory at the reference's qualifier
+ * (`flask.views.View` → src/flask/views.py); then a definition in a file
+ * named after it (`Tag.h` defines `Tag`, `impl_forwards.h` only
+ * forward-declares it); then a multi-line definition over a one-line
+ * declaration; then the deepest shared directory; then the same project.
+ * Ties keep the first candidate.
+ */
+function pickClosestCandidate(candidates, sourceEntity, qualifier = null) {
+  if (candidates.length <= 1) return candidates[0] || null;
+  const srcPath = sourceEntity?.file_path;
+  if (!srcPath) return candidates[0];
+
+  let top = [];
+  let bestScore = -1;
+  for (const c of candidates) {
+    const p = c.file_path || '';
+    let score;
+    if (p === srcPath) {
+      score = 1e6;
+    } else {
+      score = sharedDirDepth(p, srcPath);
+      if (c.end_line > c.start_line) score += 100;
+      if (nameKey(fileStem(p)) === nameKey(c.name)) score += 1000;
+      if (qualifier && matchesQualifier(p, qualifier)) score += 5000;
+      if (!isTestPath(p)) score += 10000;
+    }
+    if (score > bestScore) {
+      top = [c];
+      bestScore = score;
+    } else if (score === bestScore) {
+      top.push(c);
+    }
+  }
+  if (top.length > 1 && bestScore % 100 === 0) {
+    // No shared directory: fall back to the project boundary.
+    const sameProject = top.find(c => isSameProject(c.file_path, srcPath));
+    if (sameProject) return sameProject;
+  }
+  return top[0];
 }
 
 export { detectProject, isSameProject };
