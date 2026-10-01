@@ -244,13 +244,8 @@ export function extractPositional(args) {
 // ` sufficient=unknown (well_formed_only)`. Falls back to the legacy boolean
 // when the engine predates sufficiencyVerdict. The full line shape stays
 // `# confidence=<bucket> (<reason>) sufficient=<verdict> (<why>)`.
-export function renderSufficiency(response) {
-  const verdict = response.sufficiencyVerdict
-    ? (response.sufficiencyVerdict === 'yes' ? 'YES' : response.sufficiencyVerdict)
-    : (response.sufficient ? 'YES' : 'no');
-  const why = response.sufficiencyReason ? ` (${response.sufficiencyReason})` : '';
-  return ` sufficient=${verdict}${why}`;
-}
+// One implementation, shared with the daemon's compact agent text (core/search/agent-output-fixes.js).
+export { renderSufficiencyFragment as renderSufficiency } from '../../../core/search/agent-output-fixes.js';
 
 // Reinterpret bare positionals AFTER the pattern as `--in` scopes when they name
 // a real path. Grep muscle memory writes `ss-grep "pat" src/foo` with the scope

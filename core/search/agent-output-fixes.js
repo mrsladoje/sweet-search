@@ -1,21 +1,25 @@
 /**
  * Agent-facing output fixes for the ss-* wrappers (final-tuning forensic fixes).
  *
- * Every switch here is DEFAULT OFF. With every switch unset the wrappers take
- * their original code path and the output stays byte-identical. The functions in
+ * Bundle A (SS_FIX_A: A1, A2, A7, A5) is DEFAULT ON since 2026-10-01: the ss-* tools that
+ * `sweet-search` ships ARE these wrappers (package.json "files"). SWEET_SEARCH_COMPACT_OUTPUT=0
+ * restores the previous output byte for byte; an explicit SS_FIX_A=0|1 wins over both (bench).
+ * Every other switch here is DEFAULT OFF and is not part of the product. The functions in
  * this file are pure (no I/O, no process state) or take their I/O as an argument
  * (`decideAlreadyShown` gets the socket sender), so they can be unit-tested; the
  * wrapper (eval/agent-read-workflows/bin/_ss-helpers.mjs) wires them to the printers.
  *
  * Switches (read from the environment; on = 1/true/on/yes, off = 0/false/off/no):
- *   SS_FIX_A=1                 bundle A umbrella (no information loss):
+ *   SS_FIX_A=1|0               bundle A umbrella (no information loss; default: ON unless
+ *                              SWEET_SEARCH_COMPACT_OUTPUT=0):
  *                                A1 one-line query header instead of the budget/route header,
  *                                   no score / kind tag / confidence line / trailers,
  *                                   compact `# sufficient=YES` line (only when YES)
  *                                A2 one-line summary entries; dedupe of covered summary entries
  *                                A7 an imports block that the entry's own code already shows is dropped
- *                                A4 and A5 below, unless their own switch says 0
- *   SS_FIX_TRACE_COMPACT=1|0   A4 compact ss-trace + definition resolution (default: SS_FIX_A)
+ *                                A5 below, unless its own switch says 0; A4 only with an
+ *                                explicit SS_FIX_A=1
+ *   SS_FIX_TRACE_COMPACT=1|0   A4 compact ss-trace + definition resolution (default: explicit SS_FIX_A)
  *   SS_FIX_GREP_RETRY=1|0      A5 ss-grep regex repair + case-insensitive retry (default: SS_FIX_A)
  *   SS_FIX_ALREADY_SHOWN=1     A3 "already shown" omission (NOT part of SS_FIX_A; own A/B; see the
  *                              subagent limitation in FIXES-IMPL.md)
@@ -50,14 +54,32 @@ function subSwitch(value, inherited) {
   return inherited;
 }
 
-/** Parse the switches. `summaryCap` is null (off) or an integer >= 1 (0 means off). */
+/**
+ * The product switch. Bundle A (A1, A2, A7, A5) is ON by default in the shipped ss-* tools and
+ * in the daemon's agent text; SWEET_SEARCH_COMPACT_OUTPUT=0 (or false/off/no) restores the
+ * previous output byte for byte. Any other value, or no value, keeps the default.
+ */
+export const COMPACT_OUTPUT_ENV = 'SWEET_SEARCH_COMPACT_OUTPUT';
+
+/** True unless SWEET_SEARCH_COMPACT_OUTPUT is an explicit off value. */
+export function compactOutputDefault(env = process.env) {
+  return !FALSE_VALUES.has(norm(env?.[COMPACT_OUTPUT_ENV]));
+}
+
+/**
+ * Parse the switches. `summaryCap` is null (off) or an integer >= 1 (0 means off).
+ *
+ * Bundle A precedence: an explicit SS_FIX_A on/off value (bench reproducibility) wins; else
+ * SWEET_SEARCH_COMPACT_OUTPUT (product opt-out); else ON. A bench arm that must reproduce the
+ * pre-Bundle-A output sets SS_FIX_A=0 (an unset SS_FIX_A now means the product default).
+ */
 export function readFixFlags(env = process.env) {
   const rawCap = String(env?.SS_FIX_SUMMARY_CAP ?? '').trim();
   const capNumber = /^\d+$/.test(rawCap) ? Number.parseInt(rawCap, 10) : 0;
-  const compact = isOn(env?.SS_FIX_A);
+  const compact = subSwitch(env?.SS_FIX_A, compactOutputDefault(env));
   return {
     compact,
-    traceCompact: subSwitch(env?.SS_FIX_TRACE_COMPACT, compact),
+    traceCompact: subSwitch(env?.SS_FIX_TRACE_COMPACT, subSwitch(env?.SS_FIX_A, false)),
     grepRetry: subSwitch(env?.SS_FIX_GREP_RETRY, compact),
     alreadyShown: isOn(env?.SS_FIX_ALREADY_SHOWN),
     dropSufficiency: isOn(env?.SS_FIX_DROP_SUFFICIENCY),
@@ -251,6 +273,28 @@ export function renderAlsoInFile(also) {
 export function renderAlreadyShownLine(file, startLine, endLine) {
   const f = /\s/.test(String(file)) ? `"${file}"` : file;
   return `(lines ${startLine}-${endLine} already shown above — re-read: ss-read ${f} ${startLine} ${endLine})`;
+}
+
+/**
+ * The original ` sufficient=<verdict>[ (<reason>)]` fragment of the confidence line (the ss-*
+ * wrappers' renderSufficiency; _ss-argparse.mjs re-exports this one).
+ */
+export function renderSufficiencyFragment(response) {
+  const verdict = response.sufficiencyVerdict
+    ? (response.sufficiencyVerdict === 'yes' ? 'YES' : response.sufficiencyVerdict)
+    : (response.sufficient ? 'YES' : 'no');
+  const why = response.sufficiencyReason ? ` (${response.sufficiencyReason})` : '';
+  return ` sufficient=${verdict}${why}`;
+}
+
+/**
+ * A1 one-line header: `# <tool>: N results for "<query>"` (ss-find adds ` /<regex>/`). It
+ * replaces the routed / budget / used / subMode header.
+ */
+export function renderCompactHeader(tool, count, query, { regex = null } = {}) {
+  const n = Number(count) || 0;
+  const rx = regex == null ? '' : ` /${regex}/`;
+  return `# ${tool}: ${n} result${n === 1 ? '' : 's'} for "${query ?? ''}"${rx}\n`;
 }
 
 /**
@@ -651,7 +695,19 @@ function escapeBrokenParts(branch) {
     }
     tokens.push(ch);
   }
-  for (const at of open) tokens[at] = '\\(';
+  for (const at of open) {
+    tokens[at] = '\\(';
+    // A `|` the author wrote INSIDE this group (`app.(get|post`) must not become a top-level
+    // alternative once the `(` is literal: that would search for any `post`. The `|` tokens at
+    // the group's own depth become a literal pipe, written `[|]` (a `\|` would trip the
+    // regex-dialect hint about GNU alternation); `|` inside a closed nested group keeps its meaning.
+    let depth = 0;
+    for (let i = at + 1; i < tokens.length; i++) {
+      if (tokens[i] === '(') depth++;
+      else if (tokens[i] === ')') depth--;
+      else if (tokens[i] === '|' && depth === 0) tokens[i] = '[|]';
+    }
+  }
   return tokens.join('');
 }
 

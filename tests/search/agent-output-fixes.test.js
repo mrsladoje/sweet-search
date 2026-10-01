@@ -3,7 +3,9 @@
  * SS_FIX_ONE_PER_FILE, SS_FIX_GREP_ORDER). The wiring (renderer, ledger protocol, regex repair)
  * is in agent-output-fixes-wiring.test.js.
  *
- * The invariants: every switch is default off, and the pure helpers do what the fix list says.
+ * The invariants: Bundle A (SS_FIX_A) is the product default, SWEET_SEARCH_COMPACT_OUTPUT=0 or
+ * SS_FIX_A=0 turns every switch off, every other switch is default off, and the pure helpers do
+ * what the fix list says.
  * The byte-identical-when-off check for the real CLI is a script run (see FIXES-IMPL.md).
  */
 import { describe, expect, it } from 'vitest';
@@ -16,6 +18,7 @@ import {
   isTestLikePath,
   matchTextIsRepeated,
   orderSourceBeforeTests,
+  compactOutputDefault,
   readFixFlags,
   renderAlsoInFile,
   renderGrepLineLists,
@@ -32,14 +35,56 @@ import {
   collectAgentShownSpansIndexed,
 } from '../../core/search/agent-span-ledger.js';
 
+const OFF = { SS_FIX_A: '0' };
+const ALL_OFF = {
+  compact: false, traceCompact: false, grepRetry: false, alreadyShown: false,
+  dropSufficiency: false, summaryCap: null, onePerFile: false, grepOrder: false,
+};
+
+describe('readFixFlags: product default (Bundle A on)', () => {
+  it('turns on A1/A2/A7 (compact) and A5 with an empty environment; A4 needs an explicit SS_FIX_A=1', () => {
+    expect(readFixFlags({})).toEqual({ ...ALL_OFF, compact: true, grepRetry: true });
+    expect(resultRenderFixActive(readFixFlags({}))).toBe(true);
+    expect(resultRenderFixActive(readFixFlags({}), { find: true })).toBe(true);
+  });
+
+  it('SWEET_SEARCH_COMPACT_OUTPUT=0 turns every switch off (the previous output)', () => {
+    for (const v of ['0', 'false', 'off', 'no', ' OFF ']) {
+      expect(readFixFlags({ SWEET_SEARCH_COMPACT_OUTPUT: v })).toEqual(ALL_OFF);
+      expect(compactOutputDefault({ SWEET_SEARCH_COMPACT_OUTPUT: v })).toBe(false);
+    }
+    for (const v of [undefined, '', '1', 'yes', 'maybe']) {
+      expect(compactOutputDefault({ SWEET_SEARCH_COMPACT_OUTPUT: v })).toBe(true);
+    }
+  });
+
+  it('an explicit SS_FIX_A wins over SWEET_SEARCH_COMPACT_OUTPUT (bench reproducibility)', () => {
+    expect(readFixFlags({ SS_FIX_A: '1', SWEET_SEARCH_COMPACT_OUTPUT: '0' }).compact).toBe(true);
+    expect(readFixFlags({ SS_FIX_A: '0', SWEET_SEARCH_COMPACT_OUTPUT: '1' })).toEqual(ALL_OFF);
+    expect(readFixFlags({ SS_FIX_A: 'garbage', SWEET_SEARCH_COMPACT_OUTPUT: '0' })).toEqual(ALL_OFF);
+  });
+
+  it('the product default renders like SS_FIX_A=1 for ss-search, ss-find and ss-grep', () => {
+    const product = readFixFlags({});
+    const bench = readFixFlags({ SS_FIX_A: '1' });
+    for (const key of ['compact', 'grepRetry', 'alreadyShown', 'dropSufficiency', 'summaryCap', 'onePerFile', 'grepOrder']) {
+      expect(product[key]).toEqual(bench[key]);
+    }
+  });
+
+  it('the bench-only switches stay off in the product default', () => {
+    expect(readFixFlags({})).toMatchObject({ alreadyShown: false, dropSufficiency: false, summaryCap: null, onePerFile: false, grepOrder: false });
+  });
+});
+
 describe('readFixFlags', () => {
-  it('is all off with an empty environment', () => {
-    expect(readFixFlags({})).toEqual({
+  it('is all off with SS_FIX_A=0 (the bench baseline)', () => {
+    expect(readFixFlags(OFF)).toEqual({
       compact: false, traceCompact: false, grepRetry: false, alreadyShown: false,
       dropSufficiency: false, summaryCap: null, onePerFile: false, grepOrder: false,
     });
-    expect(resultRenderFixActive(readFixFlags({}))).toBe(false);
-    expect(resultRenderFixActive(readFixFlags({}), { find: true })).toBe(false);
+    expect(resultRenderFixActive(readFixFlags(OFF))).toBe(false);
+    expect(resultRenderFixActive(readFixFlags(OFF), { find: true })).toBe(false);
   });
 
   it('SS_FIX_A turns on A1/A2 (compact), A4 and A5, but never A3', () => {
@@ -49,8 +94,8 @@ describe('readFixFlags', () => {
   });
 
   it('A4 and A5 have their own switches: on alone, or off inside SS_FIX_A', () => {
-    expect(readFixFlags({ SS_FIX_TRACE_COMPACT: '1' })).toMatchObject({ compact: false, traceCompact: true, grepRetry: false });
-    expect(readFixFlags({ SS_FIX_GREP_RETRY: 'on' })).toMatchObject({ compact: false, traceCompact: false, grepRetry: true });
+    expect(readFixFlags({ ...OFF, SS_FIX_TRACE_COMPACT: '1' })).toMatchObject({ compact: false, traceCompact: true, grepRetry: false });
+    expect(readFixFlags({ ...OFF, SS_FIX_GREP_RETRY: 'on' })).toMatchObject({ compact: false, traceCompact: false, grepRetry: true });
     expect(readFixFlags({ SS_FIX_A: '1', SS_FIX_TRACE_COMPACT: '0' })).toMatchObject({ compact: true, traceCompact: false, grepRetry: true });
     expect(readFixFlags({ SS_FIX_A: '1', SS_FIX_GREP_RETRY: 'off' })).toMatchObject({ compact: true, traceCompact: true, grepRetry: false });
     // An unknown value inherits the umbrella.
@@ -58,36 +103,36 @@ describe('readFixFlags', () => {
   });
 
   it('A3 and the sufficiency drop are separate switches that accept every on-value', () => {
-    expect(readFixFlags({ SS_FIX_ALREADY_SHOWN: '1' })).toMatchObject({ alreadyShown: true, compact: false });
-    expect(readFixFlags({ SS_FIX_DROP_SUFFICIENCY: 'true' }).dropSufficiency).toBe(true);
-    expect(readFixFlags({ SS_FIX_DROP_SUFFICIENCY: 'on' }).dropSufficiency).toBe(true);
-    expect(readFixFlags({ SS_FIX_DROP_SUFFICIENCY: '0' }).dropSufficiency).toBe(false);
+    expect(readFixFlags({ ...OFF, SS_FIX_ALREADY_SHOWN: '1' })).toMatchObject({ alreadyShown: true, compact: false });
+    expect(readFixFlags({ ...OFF, SS_FIX_DROP_SUFFICIENCY: 'true' }).dropSufficiency).toBe(true);
+    expect(readFixFlags({ ...OFF, SS_FIX_DROP_SUFFICIENCY: 'on' }).dropSufficiency).toBe(true);
+    expect(readFixFlags({ ...OFF, SS_FIX_DROP_SUFFICIENCY: '0' }).dropSufficiency).toBe(false);
   });
 
   it('reads each switch on its own', () => {
     expect(readFixFlags({ SS_FIX_A: '1' }).compact).toBe(true);
     expect(readFixFlags({ SS_FIX_A: '0' }).compact).toBe(false);
-    expect(readFixFlags({ SS_FIX_SUMMARY_CAP: '3' }).summaryCap).toBe(3);
+    expect(readFixFlags({ ...OFF, SS_FIX_SUMMARY_CAP: '3' }).summaryCap).toBe(3);
     // 0 means "cap off", as for every other switch in this codebase.
-    expect(readFixFlags({ SS_FIX_SUMMARY_CAP: '0' }).summaryCap).toBeNull();
-    expect(resultRenderFixActive(readFixFlags({ SS_FIX_SUMMARY_CAP: '0' }))).toBe(false);
-    expect(readFixFlags({ SS_FIX_SUMMARY_CAP: '' }).summaryCap).toBeNull();
-    expect(readFixFlags({ SS_FIX_SUMMARY_CAP: 'abc' }).summaryCap).toBeNull();
-    expect(readFixFlags({ SS_FIX_ONE_PER_FILE: '1' }).onePerFile).toBe(true);
-    expect(readFixFlags({ SS_FIX_GREP_ORDER: '1' }).grepOrder).toBe(true);
+    expect(readFixFlags({ ...OFF, SS_FIX_SUMMARY_CAP: '0' }).summaryCap).toBeNull();
+    expect(resultRenderFixActive(readFixFlags({ ...OFF, SS_FIX_SUMMARY_CAP: '0' }))).toBe(false);
+    expect(readFixFlags({ ...OFF, SS_FIX_SUMMARY_CAP: '' }).summaryCap).toBeNull();
+    expect(readFixFlags({ ...OFF, SS_FIX_SUMMARY_CAP: 'abc' }).summaryCap).toBeNull();
+    expect(readFixFlags({ ...OFF, SS_FIX_ONE_PER_FILE: '1' }).onePerFile).toBe(true);
+    expect(readFixFlags({ ...OFF, SS_FIX_GREP_ORDER: '1' }).grepOrder).toBe(true);
   });
 
   it('uses the fixed renderer for ss-search, but one-per-file never reaches ss-find', () => {
-    expect(resultRenderFixActive(readFixFlags({ SS_FIX_ONE_PER_FILE: '1' }))).toBe(true);
-    expect(resultRenderFixActive(readFixFlags({ SS_FIX_ONE_PER_FILE: '1' }), { find: true })).toBe(false);
-    expect(resultRenderFixActive(readFixFlags({ SS_FIX_SUMMARY_CAP: '2' }), { find: true })).toBe(true);
-    expect(resultRenderFixActive(readFixFlags({ SS_FIX_GREP_ORDER: '1' }))).toBe(false);
+    expect(resultRenderFixActive(readFixFlags({ ...OFF, SS_FIX_ONE_PER_FILE: '1' }))).toBe(true);
+    expect(resultRenderFixActive(readFixFlags({ ...OFF, SS_FIX_ONE_PER_FILE: '1' }), { find: true })).toBe(false);
+    expect(resultRenderFixActive(readFixFlags({ ...OFF, SS_FIX_SUMMARY_CAP: '2' }), { find: true })).toBe(true);
+    expect(resultRenderFixActive(readFixFlags({ ...OFF, SS_FIX_GREP_ORDER: '1' }))).toBe(false);
     // Grep / trace sub-switches never touch the ss-search / ss-find renderer.
-    expect(resultRenderFixActive(readFixFlags({ SS_FIX_GREP_RETRY: '1', SS_FIX_TRACE_COMPACT: '1' }))).toBe(false);
+    expect(resultRenderFixActive(readFixFlags({ ...OFF, SS_FIX_GREP_RETRY: '1', SS_FIX_TRACE_COMPACT: '1' }))).toBe(false);
     // A3 uses the renderer only when it is EFFECTIVE (switch + thread key + receipt ledger).
-    expect(resultRenderFixActive(readFixFlags({ SS_FIX_ALREADY_SHOWN: '1' }))).toBe(false);
-    expect(resultRenderFixActive(readFixFlags({}), { alreadyShownActive: true })).toBe(true);
-    expect(resultRenderFixActive(readFixFlags({}), { find: true, alreadyShownActive: true })).toBe(true);
+    expect(resultRenderFixActive(readFixFlags({ ...OFF, SS_FIX_ALREADY_SHOWN: '1' }))).toBe(false);
+    expect(resultRenderFixActive(readFixFlags(OFF), { alreadyShownActive: true })).toBe(true);
+    expect(resultRenderFixActive(readFixFlags(OFF), { find: true, alreadyShownActive: true })).toBe(true);
   });
 });
 
