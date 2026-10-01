@@ -1615,13 +1615,39 @@ fn real_exe() -> Option<PathBuf> {
         .map(|p| fs::canonicalize(&p).unwrap_or(p))
 }
 
+/// `rel` in the package that the `sweet-search` command on `path_var` belongs to. An ss-*
+/// shim copied into a user bin directory (scripts/user-shims.js) has no package beside
+/// it; outside a project with a local install, this finds the global one.
+fn package_file_on_path(
+    rel: &Path,
+    path_var: Option<&std::ffi::OsStr>,
+    exists: &dyn Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    for dir in env::split_paths(path_var?) {
+        let cmd = dir.join("sweet-search");
+        if !exists(&cmd) {
+            continue;
+        }
+        let real = fs::canonicalize(&cmd).unwrap_or(cmd);
+        let found = real
+            .parent()
+            .and_then(|d| d.ancestors().map(|a| a.join(rel)).find(|c| exists(c)));
+        if found.is_some() {
+            return found;
+        }
+    }
+    None
+}
+
 /// A file of the installed package (`rel` from its root), located like the server entry
-/// but without the override and without a diagnostic.
+/// but without the override and without a diagnostic, then through the `sweet-search`
+/// command on $PATH.
 fn find_package_file(rel: &Path) -> Option<String> {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let exe = real_exe();
     let exists = |p: &Path| p.exists();
     let (found, _) = resolve_package_file(rel, &cwd, exe.as_deref(), None, &exists);
+    let found = found.or_else(|| package_file_on_path(rel, env::var_os("PATH").as_deref(), &exists));
     found.map(|p| {
         p.canonicalize()
             .unwrap_or(p)
@@ -1952,6 +1978,30 @@ mod tests {
     fn exists_set(paths: &[&str]) -> impl Fn(&Path) -> bool {
         let set: HashSet<PathBuf> = paths.iter().map(PathBuf::from).collect();
         move |p: &Path| set.contains(p)
+    }
+
+    #[test]
+    fn package_file_on_path_follows_the_sweet_search_command() {
+        let base = env::temp_dir().join(format!("ss-pkg-on-path-{}", std::process::id()));
+        let pkg = base.join("lib").join("node_modules").join("sweet-search");
+        fs::create_dir_all(pkg.join("bin")).unwrap();
+        fs::create_dir_all(pkg.join("core").join("agent-tools")).unwrap();
+        fs::write(pkg.join("bin").join("sweet-search.js"), b"").unwrap();
+        fs::write(pkg.join("core").join("agent-tools").join("cli.js"), b"").unwrap();
+        let bin = base.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        std::os::unix::fs::symlink(pkg.join("bin").join("sweet-search.js"), bin.join("sweet-search")).unwrap();
+        let empty = base.join("empty");
+        fs::create_dir_all(&empty).unwrap();
+        let rel = Path::new("core").join("agent-tools").join("cli.js");
+        let exists = |p: &Path| p.exists();
+        let path_var = env::join_paths([empty.clone(), bin.clone()]).unwrap();
+        let found = package_file_on_path(&rel, Some(&path_var), &exists).unwrap();
+        assert_eq!(fs::canonicalize(found).unwrap(), fs::canonicalize(pkg.join(&rel)).unwrap());
+        let only_empty = env::join_paths([empty]).unwrap();
+        assert_eq!(package_file_on_path(&rel, Some(&only_empty), &exists), None);
+        assert_eq!(package_file_on_path(&rel, None, &exists), None);
+        fs::remove_dir_all(base).unwrap();
     }
 
     #[test]

@@ -59,7 +59,8 @@ function replaceWithBinary(binary, target) {
  * @param {boolean} [opts.force]          allow a development checkout (tests)
  * @param {() => string|null} [opts.resolveBinary]
  * @param {(bin: string) => boolean} [opts.supportsAgentTools]
- * @returns {{status: 'linked'|'skipped'|'failed', detail: string, linked: string[]}}
+ * @returns {{status: 'linked'|'skipped'|'failed', detail: string, linked: string[],
+ *            binary?: string, packageRoot?: string}}  `binary` and `packageRoot` when linked
  */
 export function linkNativeAgentTools({
   packageRoot = PACKAGE_ROOT,
@@ -88,7 +89,7 @@ export function linkNativeAgentTools({
   } catch (err) {
     return { status: 'failed', detail: `${err?.code || err?.message || err} after ${linked.length} of ${Object.keys(AGENT_TOOLS).length}; the JS stubs serve the rest`, linked };
   }
-  return { status: 'linked', detail: `ss-* run the native binary (${binary})`, linked };
+  return { status: 'linked', detail: `ss-* run the native binary (${binary})`, linked, binary, packageRoot };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
