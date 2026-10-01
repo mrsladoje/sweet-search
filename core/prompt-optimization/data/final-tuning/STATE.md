@@ -42,11 +42,14 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 |---|---|---|---|---|---|---|---|
 | sentinel | `SS_VARIANT_SENTINEL=1` | proof the bench runs the worktree | — | — | — | — | infra only |
 | bench fix | `SS_BENCH_STABLE_RULES_PATH=1` | opencode prefix cache broken by random rules path (waste #2) | DeepSeek vs r282 native: +7.9% (CI crosses 0), was +54.6% | — | n/a | n/a | **adopted for all new runs (measurement fix, not a product change)** |
-| V1 | `SS_VARIANT_CC_RULES_IN_PROMPT=1` | CC rules re-written each rollout (waste #1) | **PASS** Opus: cost −15.8% (CI < 0), acc +0.2 | **PASS** Opus: −11.6% (CI < 0), accOR −0.1 | Opus train+val PASS; Sonnet A-B-A −9.6..−12.7% (CI < 0) | queued after r3 index | **champion candidate (Claude Code)** |
+| V1b | `SS_VARIANT_CC_RULES_IN_PROMPT=2` | V1 + 60-token pointer rules file (restores the tool-choice reminder) | queued (`cc-rp2-a`) | — | — | queued (guard-v2) | candidate |
+| V1 | `SS_VARIANT_CC_RULES_IN_PROMPT=1` | CC rules re-written each rollout (waste #1) | **PASS** Opus: cost −15.8% (CI < 0), acc +0.2 | **PASS** Opus: −11.6% (CI < 0), accOR −0.1 | Opus train+val PASS; Sonnet A-B-A −9.6..−12.7% (CI < 0) | **FAIL**: solves 8/20 = 8/20, cost −6%, but ss-* share 0.53 → 0.32 | **replaced by V1b** |
 | V2 | `SS_VARIANT_PRUNE3=1` | drop ss-find/semantic/trace (owner hyp. 2) | DS seq −9.9..−17% (CI < 0); **Codex interleaved: cost −5% (ns), accOR −1.9 pt (sig harm)** | — | — | — | **REJECTED** | | | | |
 | V3 | `SS_VARIANT_SEARCH_DEDUPE=1` | repeated ss-search entries/lines (waste #5) | $0 replay: ss-search −9.1% chars → ≈ −1% cost (below MDE); not screened live | | | | |
 
 ## Decisions log
+
+- 05:50 **Task guard V1 (tg-20261001-0440, Opus, 10 tasks × 2 reps, interleaved): solves 8/20 = 8/20 (same tasks); ideal $ −6.3% [−14.5, +3.4], real $ −11.7%; turns −10%, calls −15%; request-1 cache write 10,993 → 8,948. RED FLAG: ss-* share of search/read calls 0.53 → 0.32 (ss 42 → 21, native grep 13 → 23).** HANDOFF §4 Phase 4 lists "more native fallbacks" as a new failure mode → **V1 FAILS the guard.** Mechanism guess: the rules as a first-user-message reminder are more salient on long tasks than the same text in the system prompt (retrieval questions are too short to show it: ss calls equal there). → back to Phase 2: **V1b** = rules in the cached agent prompt + a short pointer rules file (~60 tokens re-written per session instead of ~1.4k). Implemented in installer, retrieval runner and task runner (`=2`); $0 check PASS for off/1; guard dry run shows `=2` on the 4 var legs.
 
 - 04:40 r3 indexing DONE (jj 33 min, dgraph 26, tortoise-orm 8, typedoc 12, zipkin 11, ocelot 13; all exit 0, `INDEXING COMPLETE (FULL)`). Task guard V1 launched 04:40 (`tg-20261001-0440-*`, 8 legs interleaved base/var, REPS 2); ETA ~05:40. No retrieval run until it ends (daemon eviction risk).
 

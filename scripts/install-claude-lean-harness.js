@@ -364,6 +364,15 @@ export function claudeLeanContextSection({ memoryDir = null, memoryEnabled = tru
  * `claudeAutoMemoryDir` at install time. `promptEdits` applies CLAUDE_LEAN_PROMPT_EDITS (the
  * shipped read6fs text); the benchmark sets it false and applies its own CC_TRIM_BATCH variant.
  */
+// SS_VARIANT_CC_RULES_IN_PROMPT=2 (V1b): the full rules ride in the agent file (as =1) AND this short
+// pointer stays in .claude/rules/sweet-search.md, so the first user message still carries a
+// tool-choice reminder (=1 alone lowered the ss-* share of search/read calls on tasks: 0.53 → 0.32).
+// ~60 tokens re-written per session instead of ~1.4k.
+export const CLAUDE_RULES_POINTER = [
+  '# Sweet-search',
+  'Use the `ss-*` tools (`ss-search`, `ss-grep`, `ss-read`, `ss-find`, `ss-semantic`, `ss-trace`) for all code search and navigation, as the sweet-search rules in your system prompt describe. Use raw `grep`/`find`/`cat` or the native reader only for a file edited seconds ago.',
+].join('\n');
+
 export function claudeLeanAgentFile({
   appendOverride = true, memoryDir = null, memoryEnabled = true, promptEdits = true, rulesInPrompt = false,
 } = {}) {
@@ -506,7 +515,7 @@ export function installClaudeLeanHarness({
   const wantedFiles = {
     [CLAUDE_LEAN_AGENT_REL]: claudeLeanAgentFile({
       appendOverride, promptEdits, memoryDir: memory.dir, memoryEnabled: memory.enabled,
-      rulesInPrompt: env.SS_VARIANT_CC_RULES_IN_PROMPT === '1',
+      rulesInPrompt: env.SS_VARIANT_CC_RULES_IN_PROMPT === '1' || env.SS_VARIANT_CC_RULES_IN_PROMPT === '2',
     }),
     [CLAUDE_LEAN_SUBAGENT_REL]: claudeLeanSubagentFile(),
     [CLAUDE_LEAN_PLAN_REL]: claudeLeanPlanFile(),
