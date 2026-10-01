@@ -1,0 +1,262 @@
+{
+ "r3hb-composer-03": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "5/5",
+   "sHit": "2/9",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "4/5",
+   "sHit": "3/9",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-composer-04": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "4/4",
+   "sHit": "5/6",
+   "solved": true
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "4/4",
+   "sHit": "6/6",
+   "solved": true
+  },
+  "drop": true
+ },
+ "r3hb-composer-02": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "4/6",
+   "sHit": "1/7",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "3/6",
+   "sHit": "1/7",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-composer-01": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "3/5",
+   "sHit": "0/8",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "4/5",
+   "sHit": "2/8",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-composer-05": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "3/5",
+   "sHit": "1/8",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "4/5",
+   "sHit": "0/8",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-composer-09": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "0/5",
+   "sHit": "1/6",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "3/5",
+   "sHit": "3/6",
+   "solved": true
+  },
+  "drop": true
+ },
+ "r3hb-composer-06": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "0/4",
+   "sHit": "0/5",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "0/4",
+   "sHit": "0/5",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-composer-08": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "0/5",
+   "sHit": "1/8",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "0/5",
+   "sHit": "0/8",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-composer-13": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "1/3",
+   "sHit": "3/6",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "2/3",
+   "sHit": "0/6",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-composer-07": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "0/7",
+   "sHit": "0/8",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "4/7",
+   "sHit": "2/8",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-drogon-01": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "0/5",
+   "sHit": "1/9",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "2/5",
+   "sHit": "3/9",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-composer-10": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "0/4",
+   "sHit": "0/6",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "4/4",
+   "sHit": "2/6",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-drogon-03": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "0/5",
+   "sHit": "2/10",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "0/5",
+   "sHit": "2/10",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-drogon-05": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "1/5",
+   "sHit": "1/6",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "4/5",
+   "sHit": "1/6",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-drogon-02": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "1/4",
+   "sHit": "2/9",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "1/4",
+   "sHit": "1/9",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-drogon-04": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "0/4",
+   "sHit": "0/6",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "3/4",
+   "sHit": "2/6",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-drogon-09": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "2/6",
+   "sHit": "1/7",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "2/6",
+   "sHit": "1/7",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-drogon-06": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "0/6",
+   "sHit": "0/8",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "2/6",
+   "sHit": "0/8",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-drogon-11": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "4/4",
+   "sHit": "1/4",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "3/4",
+   "sHit": "1/4",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3hb-drogon-07": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "0/6",
+   "sHit": "0/7",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "0/6",
+   "sHit": "0/7",
+   "solved": false
+  },
+  "drop": false
+ }
+}

@@ -1,0 +1,1064 @@
+{
+ "r3h-dgraph-03": {
+  "id": "r3h-dgraph-03",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "shardMap.shardFor",
+    "mergeMapShardsIntoReduceShards",
+    "RunBulkLoader",
+    "loader.writeSchema",
+    "InitServerState",
+    "StartRaftNodes"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question targets the specific end-to-end mechanism of Dgraph bulk loading across shards, writing the group ID file, reading it on server startup, and schema distribution."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "shardMap.shardFor",
+    "mergeMapShardsIntoReduceShards",
+    "RunBulkLoader (run.go output-dir/group_id setup)",
+    "x.WriteGroupIdFile",
+    "loader.writeSchema",
+    "InitServerState",
+    "StartRaftNodes"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code is explicit: reserved predicates go to map shard 0 -> reduce shard 0 (group 1), other shards are greedily placed largest-first into the smallest reduce shard, run.go writes group_id=i+1 into each out/<i>/p dir, InitServerState reads it into ProposedGroupId, StartRaftNodes zeroes it when the WAL already has a Raft id and otherwise sends ForceGroupId, and writeSchema adler32-hashes data-less predicates modulo the number of output DBs."
+  }
+ },
+ "r3h-dgraph-04": {
+  "id": "r3h-dgraph-04",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "mapper.processReqCh",
+    "RunMapper",
+    "handleRestoreProposal",
+    "bumpLease",
+    "Server.AssignIds",
+    "Server.lease",
+    "node.applyProposal"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The restore process explicitly tracks max UID and max namespace ID during mapping and advances Zero's coordinator lease via AssignIds bump requests."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "mapper.processReqCh",
+    "mapResult",
+    "RunMapper",
+    "handleRestoreProposal",
+    "bumpLease",
+    "Server.AssignIds",
+    "Server.lease",
+    "node.applyProposal"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The restore map computes maxUid/maxNs, bumpLease sends Bump AssignIds requests, and Zero's AssignIds/lease/applyProposal advance the coordinator counters past the backup maxima."
+  }
+ },
+ "r3h-dgraph-08": {
+  "id": "r3h-dgraph-08",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "exportInternal",
+    "ToExportKvList",
+    "WriteExport"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "worker/export.go contains the entire export pipeline for writing portable export files, with explicit filtering logic defined across exportInternal, ToExportKvList, and WriteExport."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "exportInternal",
+    "stream.ChooseKey",
+    "ToExportKvList",
+    "WriteExport"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The omissions are all decided by the stream key chooser and ToExportKvList/WriteExport in worker/export.go, with schema/type and GraphQL schema values routed to separate writers."
+  }
+ },
+ "r3h-dgraph-02": {
+  "id": "r3h-dgraph-02",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "StatsHolder",
+    "EqContainer",
+    "GetStatsHolder"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The index-skipping optimization for equality filters is specifically governed by StatsHolder and EqContainer estimation."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "8/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "planForEqFilter",
+    "handleUidPostings",
+    "StatsHolder",
+    "EqContainer",
+    "InsertRecord",
+    "ProcessEqPredicate",
+    "initMemoryLayer",
+    "GetStatsHolder",
+    "MemoryLayer.statsHolder",
+    "CountMinSketch"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The eq-filter index-vs-value choice is centralized in planForEqFilter, using candidate count and StatsHolder estimates; the estimates are recorded by handleUidPostings and kept in posting/stats.go via CountMinSketch, created in initMemoryLayer."
+  }
+ },
+ "r3h-dgraph-10": {
+  "id": "r3h-dgraph-10",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "authorizePreds",
+    "ExpandEdges",
+    "AclCache.GetUserPredPerms"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The mechanisms for sourcing permitted fields from the ACL cache and narrowing all-fields delete expansions are uniquely implemented across these specific ACL and query/mutation components."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "authorizePreds",
+    "predicateACL.AuthorizePredicates",
+    "authorizeQuery",
+    "authorizeMutation",
+    "worker.AclCache.Update",
+    "AclCache.GetUserPredPerms",
+    "HasAccessToAllPreds",
+    "expandSubgraph",
+    "newGraph",
+    "ExpandEdges",
+    "ToDirectedEdges"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question's two halves map cleanly onto one query path (AllowedPreds narrowed in expandSubgraph) and one delete path (ExpandEdges/ToDirectedEdges), both fed by authorizePreds' list from the ACL cache, so a careful engineer would land on the same symbols."
+  }
+ },
+ "r3h-dgraph-06": {
+  "id": "r3h-dgraph-06",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "groupi.doSendMembership",
+    "groupi.sendMembershipUpdates",
+    "Server.UpdateMembership",
+    "Server.createProposals",
+    "Server.rebalanceTablets",
+    "Server.chooseTablet"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The tablet size reporting, thresholding of updates, and cluster rebalancing logic are uniquely handled across worker/groups.go and the Zero coordinator implementation in dgraph/cmd/zero."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "node.processTabletSizes",
+    "node.calculateTabletSizes",
+    "groupi.sendMembershipUpdates",
+    "groupi.doSendMembership",
+    "Server.UpdateMembership",
+    "Server.createProposals",
+    "Server.rebalanceTablets",
+    "Server.chooseTablet",
+    "Server.movePredicate"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The automatic rebalancer is the only size-driven mechanism; manual MoveTablet does not do the measuring or filtering described."
+  }
+ },
+ "r3h-dgraph-11": {
+  "id": "r3h-dgraph-11",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "x.SetAuthenticator",
+    "x.SetTenantResolver",
+    "edgraph.SetAccessController",
+    "alpha.ConfigureIdentity"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The entry points (x.SetAuthenticator, x.SetTenantResolver, edgraph.SetAccessController) and the startup hook (alpha.ConfigureIdentity) are explicitly documented and implemented for replacing identity, tenancy, and authorization."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "x.SetAuthenticator",
+    "x.currentAuthenticator",
+    "x.ACLAuthenticator",
+    "x.IdentityUnaryInterceptor",
+    "x.IdentityStreamInterceptor",
+    "x.WithResolvedIdentity",
+    "x.SetTenantResolver",
+    "x.aclTenantResolver",
+    "x.MultiTenancyEnabled",
+    "x.TenantResolverInstalled",
+    "x.ResolveTenant",
+    "edgraph.SetAccessController",
+    "edgraph.currentAccessController",
+    "edgraph.AccessController",
+    "edgraph.predicateACL",
+    "edgraph.RegisterCapabilitySource",
+    "edgraph.CapabilitySource",
+    "edgraph.breakGlassSource",
+    "alpha.ConfigureIdentity",
+    "alpha.defaultConfigureIdentity"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The three replaceable seams are unambiguous (x.SetAuthenticator, x.SetTenantResolver, edgraph.SetAccessController, with edgraph.RegisterCapabilitySource as an additive extra), and the single pre-listener hook is alpha.ConfigureIdentity, whose default is a documented no-op."
+  }
+ },
+ "r3h-dgraph-09": {
+  "id": "r3h-dgraph-09",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "skipApis",
+    "skipEPs",
+    "AuditRequestGRPC",
+    "AuditStreamGRPC",
+    "AuditRequestHttp",
+    "AuditWebSockets",
+    "Init",
+    "serveGRPC",
+    "Subscribe"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The audit interceptors, skip maps, and gRPC server setups across the worker and zero nodes precisely specify which traffic is excluded from audit logging."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "5/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "skipApis",
+    "skipEPs",
+    "AuditRequestGRPC",
+    "AuditStreamGRPC",
+    "AuditRequestHttp",
+    "AuditWebSockets",
+    "Subscribe",
+    "Init",
+    "serveGRPC",
+    "run",
+    "InitAuditor",
+    "auditEnabled"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The question is not ambiguous; the provided files directly identify the skipped gRPC/HTTP methods, websocket upgrade handling, and missing interceptors on worker/zero."
+  }
+ },
+ "r3h-dgraph-01": {
+  "id": "r3h-dgraph-01",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "8/9",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "initiateSnapshotStream",
+    "streamSnapshot",
+    "ProposeDrain",
+    "grpcWorker.UpdateExtSnapshotStreamingState",
+    "InStream",
+    "streamInGroup",
+    "node.applyCommitted",
+    "ExtSnapshotStreamingState",
+    "HealthCheck"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The external snapshot streaming and cluster drain workflow is implemented specifically across the dgraphimport client, worker import/drain proposal logic, and health check state."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "9/9",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "initiateSnapshotStream",
+    "streamSnapshot",
+    "streamSnapshotForGroup",
+    "Server.UpdateExtSnapshotStreamingState",
+    "ProposeDrain",
+    "grpcWorker.UpdateExtSnapshotStreamingState",
+    "InStream",
+    "streamInGroup",
+    "pipeTwoStream",
+    "StreamExtSnapshot",
+    "waitForExtSnapshotArmed",
+    "runForwardSubscriber",
+    "runLocalSubscriber",
+    "postStreamProcessing",
+    "applyCommitted",
+    "populateSnapshot",
+    "ExtSnapshotStreamingState",
+    "HealthCheck",
+    "IsExtSnapshotStreamingStateTrue"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The scenario is specifically the external-snapshot import flow, so a careful engineer would not answer with the separate GraphQL draining path even though both eventually set the same draining flag checked by x.HealthCheck."
+  }
+ },
+ "r3h-dgraph-13": {
+  "id": "r3h-dgraph-13",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "7/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "moveTimeout",
+    "moveCooldown",
+    "recordMoveResult",
+    "skipMove",
+    "chooseTablet",
+    "MoveTablet",
+    "movePredicate"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "All mechanics for move timeouts, rebalance backoffs, and manual vs. automatic relocation rules are fully implemented and explained in dgraph/cmd/zero/tablet.go."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "7/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "movePredicate",
+    "recordMoveResult",
+    "moveCooldown",
+    "skipMove",
+    "chooseTablet",
+    "MoveTablet",
+    "moveTimeout",
+    "tabletBackoff",
+    "predicateMoveTimeout",
+    "minMoveRate",
+    "moveFailureMinElapsed",
+    "moveBackoffBase",
+    "moveBackoffMax"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant behavior is centralized in dgraph/cmd/zero/tablet.go: moveCooldown/recordMoveResult/skipMove define automatic retry backoff, MoveTablet bypasses skipMove, and moveTimeout defines the attempt cancellation limit."
+  }
+ },
+ "r3h-dgraph-14": {
+  "id": "r3h-dgraph-14",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Server.CreateNamespace",
+    "Server.CreateNamespaceInternal",
+    "createGuardianAndGroot",
+    "upsertGuardian",
+    "upsertGroot"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The programmatic namespace creation flow clearly hardcodes the password to 'password', provides no parameter for the caller to specify a password, and skips guardian/groot creation entirely if ACL is not enabled."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Server.CreateNamespace",
+    "Server.CreateNamespaceInternal",
+    "createGuardianAndGroot",
+    "upsertGuardian",
+    "upsertGroot",
+    "Server.ResetPassword"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The programmatic path hardcodes password, ignores request password, and skips account creation when ACL is disabled; reset-password is the shown later change path."
+  }
+ },
+ "r3h-dgraph-12": {
+  "id": "r3h-dgraph-12",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "run",
+    "Server.Init",
+    "Server.AssignIds"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "UID lease rate limiting per namespace is configured via Zero's --limit flag and enforced exclusively in Server.AssignIds."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "5/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "options.limiterConfig",
+    "x.LimiterConf",
+    "run",
+    "Server.Init",
+    "Server.AssignIds",
+    "rateLimit",
+    "x.NewRateLimiter",
+    "x.RateLimiter",
+    "RateLimiter.Allow",
+    "RefillPeriodically"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The budget is configured in Zero's --limit flag (uid-lease, refill-interval) parsed into x.LimiterConf in run.go, enforced in Server.AssignIds's rateLimit closure for UID leases per namespace, and over-budget requests sleep a random delay up to the refill interval before returning an exhausted error."
+  }
+ },
+ "r3h-dgraph-05": {
+  "id": "r3h-dgraph-05",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "lambdaOnMutateDirective",
+    "lambdaOnMutateValidation",
+    "schema.Mutation.HasLambdaOnMutate",
+    "dgraphResolver.rewriteAndExecute",
+    "sendWebhookEvent"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The webhook notification mechanism for type-level mutations is uniquely handled by @lambdaOnMutate and sendWebhookEvent."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "lambdaOnMutateDirective",
+    "directiveDefs",
+    "lambdaOnMutateValidation",
+    "lambdaOnMutateMappings",
+    "schema.lambdaOnMutate",
+    "Mutation.HasLambdaOnMutate",
+    "dgraphResolver.rewriteAndExecute",
+    "sendWebhookEvent",
+    "webhookPayload",
+    "eventPayload",
+    "x.LambdaUrl",
+    "x.ExtractNamespace"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The @lambdaOnMutate directive is declared in gqlschema.go, validated in rules.go, mapped to mutation names in wrappers.go, checked after commit in mutation.go, and sendWebhookEvent POSTs to x.LambdaUrl(ns) with best-effort logging on failure."
+  }
+ },
+ "r3h-dgraph-18": {
+  "id": "r3h-dgraph-18",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zero.adminAuthHandler",
+    "zero.isAdminRequestAuthorized",
+    "zero.run",
+    "alpha.adminAuthHandler",
+    "alpha.hasPoormansAuth"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The HTTP admin authorization behavior for both Zero and Alpha is explicitly and unambiguously implemented in their respective admin handlers."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zero.run",
+    "zero.adminAuthHandler",
+    "zero.adminSecurityConfigured",
+    "zero.isAdminRequestAuthorized",
+    "x.IsIpWhitelisted",
+    "alpha.hasPoormansAuth",
+    "alpha.adminAuthHandler",
+    "alpha.getAdminMux"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The relevant HTTP auth paths are explicit in zero/admin.go, zero/run.go, and alpha/admin.go; the only unsupported part of claim 5 is the unshown gRPC admin requirement."
+  }
+ },
+ "r3h-dgraph-15": {
+  "id": "r3h-dgraph-15",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "updateUIDInMutations",
+    "updateValInMutations",
+    "Server.doMutate"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The size caps and mutation counting logic for upserts and mutations are localized entirely in edgraph/server.go."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "updateUIDInMutations",
+    "updateValInMutations",
+    "updateValInNQuads",
+    "doMutate",
+    "queryContext.nquadsCount"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The add-substitution cap is specifically x.Config.LimitQueryEdge in updateUIDInMutations, the remove cap is x.Config.LimitMutationsNquad, and nquadsCount is also checked in updateValInMutations and by len(edges) in doMutate."
+  }
+ },
+ "r3h-dgraph-21": {
+  "id": "r3h-dgraph-21",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "calculatePaginationParams",
+    "uidReadFirst"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "calculatePaginationParams and uidReadFirst directly and unambiguously govern the pushdown decision and the early-stop read bounds."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "calculatePaginationParams",
+    "createTaskQuery",
+    "uidReadFirst",
+    "shouldPrecalculateUids"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The pushdown decision is explicit in calculatePaginationParams/createTaskQuery, and the worker read bound is explicit in uidReadFirst, so a careful engineer would not reasonably answer elsewhere."
+  }
+ },
+ "r3h-dgraph-07": {
+  "id": "r3h-dgraph-07",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/8",
+   "factsOk": false,
+   "ambiguous": true,
+   "symbols": [
+    "Oracle.hasConflict",
+    "Server.commit",
+    "detectPendingTxns",
+    "node.applyMutations",
+    "oracle.ResetTxns",
+    "oracle.ResetTxnsForNs"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "Categorizing and counting what constitutes a distinct 'situation' where the cluster forces a transaction to fail or disappear is subjective and depends on how broadly or granularly one groups conflict checks, membership/routing checks, timeouts, and drop operations."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "7/8",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Oracle.hasConflict",
+    "Server.commit",
+    "Server.TryAbort",
+    "abortOldTransactions",
+    "checkpointAndClose",
+    "detectPendingTxns",
+    "tryAbortTransactions",
+    "applyMutations",
+    "ResetTxns",
+    "ResetTxnsForNs"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "There are five server-side abort/disappear paths: Oracle.hasConflict (commit conflict), Server.commit/checkPreds (predicate checks), abortOldTransactions via checkpointAndClose (idle txns), detectPendingTxns launching tryAbortTransactions (schema/predicate drop), and ResetTxns/ResetTxnsForNs from applyMutations (drop operations)."
+  }
+ },
+ "r3h-dgraph-23": {
+  "id": "r3h-dgraph-23",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3h-dgraph-24": {
+  "id": "r3h-dgraph-24",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3h-dgraph-19": {
+  "id": "r3h-dgraph-19",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "queryHandler",
+    "mutationHandler",
+    "LimitDefaults"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The precedence of client timeouts and the server-wide read limit behavior are uniquely defined in the Dgraph query execution pipeline."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "queryHandler",
+    "parseDuration",
+    "mutationHandler",
+    "QueryNoGrpc",
+    "QueryGraphQL",
+    "LimitDefaults",
+    "run"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The HTTP query handler parses the optional timeout parameter and wraps ctx with context.WithTimeout before QueryNoGrpc, so a client deadline is present; the server-wide limit is --limit query-timeout, default 0ms (unlimited) in worker.LimitDefaults, and is meant to apply only to mutation-less queries with no existing deadline, so the client timeout wins and mutation/update-with-query requests are not cut off; the HTTP mutation handler sets no deadline. However, the shown edgraph/server.go excerpt lacks QueryNoGrpc/QueryGraphQL definitions, so the server-side conditions in Claim 2 and the mutation exemption in Claim 4 are not verifiable from the shown code."
+  }
+ },
+ "r3h-dgraph-20": {
+  "id": "r3h-dgraph-20",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "pickTokenizer",
+    "TermTokenizer",
+    "HashTokenizer",
+    "TrigramTokenizer"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The index selection for equality and comparison queries on text fields is definitively governed by pickTokenizer and the tokenizer properties defined in tok/tok.go."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "pickTokenizer",
+    "getInequalityTokens",
+    "Tokenizer.IsLossy",
+    "Tokenizer.IsSortable",
+    "TermTokenizer",
+    "HashTokenizer",
+    "TrigramTokenizer"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The code's pickTokenizer and tokenizer properties give a single deterministic answer: hash for eq when present; term if only term and trigram are declared; gt/lt/between require any sortable index and otherwise error, while the provided task.go excerpt does not contain handleCompareFunction to verify claim 4."
+  }
+ },
+ "r3h-dgraph-22": {
+  "id": "r3h-dgraph-22",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Server.Connect",
+    "node.handleMemberProposal",
+    "StartRaftNodes"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The logic governing group assignment, learner exceptions, force-group behavior, and Raft replication capacity checks is unambiguously defined across these three functions."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Server.Connect",
+    "node.handleMemberProposal",
+    "StartRaftNodes"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "No ambiguity: Connect admits learners to the requested group and has a ForceGroupId branch, but node.handleMemberProposal rejects a new non-learner once non-learner count reaches NumReplicas; otherwise Connect falls through to a group with room or a new group id."
+  }
+ },
+ "r3h-dgraph-16": {
+  "id": "r3h-dgraph-16",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "authorizeClusterAdmin",
+    "breakGlassSource.Grants",
+    "authSuperAdmin",
+    "Server.CreateNamespace",
+    "Server.DropNamespace",
+    "Server.ListNamespaces"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The capability gating namespace operations and the rules for ACL-enabled vs ACL-disabled authorization are clearly defined in edgraph/predicate_acl.go and edgraph/namespace.go."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "authorizeClusterAdmin",
+    "breakGlassSource.Grants",
+    "authSuperAdmin",
+    "authorizeGuardians",
+    "CapClusterAdmin",
+    "grantedBySource",
+    "capabilitySources",
+    "RegisterCapabilitySource",
+    "Server.CreateNamespace",
+    "Server.DropNamespace",
+    "Server.ListNamespaces",
+    "x.HasWhitelistedIP",
+    "hasPoormansAuth",
+    "x.ExtractNamespaceFrom",
+    "x.IsSuperAdmin"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The namespace RPCs all gate on CapClusterAdmin, and the ACL-off/ACL-on behavior is centralized in authorizeClusterAdmin and breakGlassSource.Grants, so no other code path gives a different answer."
+  }
+ }
+}

@@ -580,5 +580,90 @@
    ],
    "why": "The listed files show MySQL text-splices escaped literals in MysqlConnection::execSqlInLoop, while PgConnection and Sqlite3Connection use prepared/bind APIs, so no alternative listed path supports a different answer."
   }
+ },
+ "r3hb-drogon-13": {
+  "id": "r3hb-drogon-13",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "drogon::Session::changeSessionIdToClient",
+    "drogon::HttpAppFrameworkImpl::handleSessionForResponse",
+    "drogon::SessionManager::changeSessionId",
+    "drogon::SessionManager::getSession",
+    "drogon::CacheMap::insert",
+    "drogon::CacheMap::erase",
+    "drogon::CacheMap::runAfter"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The session regeneration mechanism and lifecycle across Session, HttpAppFrameworkImpl, SessionManager, and CacheMap are uniquely defined in these files."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Session::changeSessionIdToClient",
+    "Session::needToChangeSessionId",
+    "Session::needSetToClient",
+    "Session::setSessionId",
+    "Session::hasSet",
+    "Session::sessionId",
+    "HttpAppFrameworkImpl::handleSessionForResponse",
+    "HttpAppFrameworkImpl::findSessionForRequest",
+    "SessionManager::changeSessionId",
+    "SessionManager::getSession",
+    "SessionManager::SessionManager",
+    "CacheMap::insert",
+    "CacheMap::erase",
+    "CacheMap::runAfter",
+    "CacheMap::modify"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The session-change path is explicit and unique: changeSessionIdToClient flags the session, handleSessionForResponse generates and sends the new cookie on the response, and SessionManager::changeSessionId schedules erasure of the old key after 10 seconds, so no competing code path gives a different answer for the stated conditions."
+  }
+ },
+ "r3hb-drogon-07": {
+  "id": "r3hb-drogon-07",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "HttpResponse::newNotFoundResponse",
+    "Hodor::initAndStart",
+    "Hodor::onHttpRequest"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The code shown only contains the full response-caching implementations for the built-in 404 page in HttpResponseImpl.cc and the rate-limit rejection response in Hodor.cc, while the other files are truncated before their caching implementations appear."
+  },
+  "glm": {
+   "ok": false,
+   "why": "unparsable"
+  }
  }
 }

@@ -1,0 +1,713 @@
+{
+ "r3hb-grdb-03": {
+  "id": "r3hb-grdb-03",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "HasManyAssociation.init(to:key:using:)",
+    "SQLForeignKeyRequest.fetchForeignKeyMapping(_:)",
+    "ForeignKeyMapping.joinMapping(originIsLeft:)"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The resolution of foreign key columns, join orientation, and ambiguity handling for has-many associations are uniquely implemented in HasManyAssociation and SQLForeignKeyRequest."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "7/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "HasManyAssociation.init",
+    "SQLForeignKeyCondition",
+    "SQLForeignKeyCondition.foreignKeyRequest",
+    "SQLForeignKeyRequest.fetchForeignKeyMapping",
+    "ForeignKeyMapping.joinMapping",
+    "JoinMapping.joinExpression",
+    "SQLQualifiedJoin.sql"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The hasMany declaration and foreign-key introspection path is deterministic, so a careful engineer would not reasonably give a different answer elsewhere."
+  }
+ },
+ "r3hb-grdb-01": {
+  "id": "r3hb-grdb-01",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "SerializedDatabase.execute(_:)",
+    "Database.Suspension.checkCancellation()",
+    "Statement.executeAllSteps()",
+    "Database.statementDidFail(_:withResultCode:)"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The cancellation pipeline from Task cancellation handler through SQLite interruption and CancellationError interception in statementDidFail is defined in a single, unambiguous code path."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "SerializedDatabase.execute",
+    "Database.cancel",
+    "Database.Suspension",
+    "Suspension.checkCancellation",
+    "Database.statementDidFail",
+    "Database.statementWillExecute",
+    "Database.checkForSuspensionViolation",
+    "Statement.executeAllSteps",
+    "Statement.forEachStep",
+    "Statement.step"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The cancellation path is centralized: SerializedDatabase.execute installs a task cancellation handler that calls Database.cancel, which interrupts SQLite; when stepping returns SQLITE_INTERRUPT/ABORT, Database.statementDidFail checks the suspension and throws CancellationError before building a DatabaseError."
+  }
+ },
+ "r3hb-grdb-02": {
+  "id": "r3hb-grdb-02",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "DatabaseObservationBroker.databaseWillCommit",
+    "DatabaseObservationBroker.statementDidFail",
+    "Statement.executeAllSteps",
+    "Database.statementDidFail"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "Transaction commit interception, observer notification, and rollback propagation are uniquely handled by DatabaseObservationBroker and Database statement execution hooks."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "DatabaseObservationBroker",
+    "DatabaseObservationBroker.databaseWillCommit()",
+    "DatabaseObservationBroker.statementDidFail(_:)",
+    "DatabaseObservationBroker.statementDidExecute(_:)",
+    "transactionCompletion",
+    "TransactionCompletion.cancelledCommit",
+    "DatabaseObservationBroker.databaseDidRollback(notifyTransactionObservers:)",
+    "DatabaseObservationBroker.databaseDidEndTransaction()",
+    "Database.setUp()",
+    "Database.observationBroker",
+    "Database.statementDidFail(_:withResultCode:)",
+    "Statement.executeAllSteps()"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The provided code points uniquely to the DatabaseObservationBroker commit/statementDidFail path for cancelled commits; no alternative code path in these files changes the answer."
+  }
+ },
+ "r3hb-grdb-05": {
+  "id": "r3hb-grdb-05",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "8/10",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "StatementAuthorizer",
+    "StatementAuthorizer.selectedRegion",
+    "StatementAuthorizer.databaseEventKinds",
+    "StatementAuthorizer.invalidatesDatabaseSchemaCache",
+    "StatementAuthorizer.transactionEffect",
+    "StatementAuthorizer.isQueryOnlyPragma",
+    "StatementAuthorizer.authorize",
+    "Statement.databaseRegion",
+    "Statement.authorizerEventKinds",
+    "Statement.invalidatesDatabaseSchemaCache",
+    "Statement.transactionEffect",
+    "Statement.isQueryOnlyPragma",
+    "Statement.canDeleteRows",
+    "Database.statementWillExecute",
+    "Database.statementDidExecute",
+    "DatabaseObservationBroker.statementWillExecute",
+    "DatabaseObservationBroker.statementDidExecute",
+    "DatabaseObservationBroker.observesDeletions"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "StatementAuthorizer and Statement explicitly record exactly these five properties from SQLite's authorizer callback (plus returning SQLITE_IGNORE for DELETE statements), and each downstream consumer is cleanly documented and implemented across the statement execution and observation pipeline."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "10/10",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "StatementAuthorizer",
+    "StatementAuthorizer.authorize",
+    "StatementAuthorizer.selectedRegion",
+    "StatementAuthorizer.databaseEventKinds",
+    "StatementAuthorizer.invalidatesDatabaseSchemaCache",
+    "StatementAuthorizer.transactionEffect",
+    "StatementAuthorizer.isQueryOnlyPragma",
+    "Statement.databaseRegion",
+    "Statement.authorizerEventKinds",
+    "Statement.invalidatesDatabaseSchemaCache",
+    "Statement.transactionEffect",
+    "Statement.isQueryOnlyPragma",
+    "Statement.canDeleteRows",
+    "Database.statementWillExecute",
+    "Database.statementDidExecute",
+    "Database.registerAccess(to:)",
+    "Database.add(transactionObserver:)",
+    "Database.remove(transactionObserver:)",
+    "DatabaseObservationBroker.statementWillExecute",
+    "DatabaseObservationBroker.statementDidExecute",
+    "DatabaseObservationBroker.observesDeletions(on:)",
+    "TransactionObservation.statementObservation(for:)",
+    "Database.checkForSuspensionViolation(from:)"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The authorizer facts and their primary consumers are explicitly identified in the provided files; no alternative code path changes the listed facts."
+  }
+ },
+ "r3hb-grdb-08": {
+  "id": "r3hb-grdb-08",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Database.dropFTS5SynchronizationTriggers(forTable:)",
+    "FTS5.database(_:didCreate:using:)",
+    "Database.create(virtualTable:options:using:_:)"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The question specifically identifies the FTS5 synchronization mechanism by its exclusive use of AFTER triggers, uniquely matching Database.dropFTS5SynchronizationTriggers and FTS5.database(_:didCreate:using:)."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Database.dropFTS5SynchronizationTriggers(forTable:)",
+    "FTS5.database(_:didCreate:using:)",
+    "FTS5TableDefinition.synchronize(withTable:)",
+    "Database.create(virtualTable:options:using:_:)"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The after-only trigger synchronization is uniquely the FTS5 integration: its helper and trigger-creation path are explicitly FTS5-named, so no other reasonable answer is indicated."
+  }
+ },
+ "r3hb-grdb-10": {
+  "id": "r3hb-grdb-10",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "RecordEncoder",
+    "ColumnEncoder",
+    "EncodableRecord.databaseJSONEncoder(for:)",
+    "EncodableRecord.databaseDateEncodingStrategy(for:)",
+    "Date.databaseValue"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The encoding flow in GRDB unambiguously handles array properties via ColumnEncoder falling back to databaseJSONEncoder (defaulting to milliseconds since 1970) versus direct Date properties encoded via databaseDateEncodingStrategy (defaulting to formatted string)."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "RecordEncoder.encode(_:forKey:)",
+    "ColumnEncoder.unkeyedContainer()",
+    "ColumnEncoder.container(keyedBy:)",
+    "JSONRequiredError",
+    "EncodableRecord.databaseJSONEncoder(for:)",
+    "EncodableRecord.databaseDateEncodingStrategy(for:)",
+    "DatabaseDateEncodingStrategy.encode(_:)",
+    "Date.databaseValue",
+    "storageDateFormatter"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The default code path is unambiguous: nested dates in JSON use databaseJSONEncoder's .millisecondsSince1970, while direct Date properties use databaseDateEncodingStrategy's .deferredToDate text format."
+  }
+ },
+ "r3hb-grdb-09": {
+  "id": "r3hb-grdb-09",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "ValueConcurrentObserver",
+    "ValueWriteOnlyObserver",
+    "ValueObservationTrackingMode",
+    "ValueObservation"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The observation dispatch logic, tracking modes, and observer classes are unambiguously defined in GRDB's ValueObservation subsystem, though the provided excerpts are truncated."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "ValueObservationTrackingMode",
+    "ValueConcurrentObserver",
+    "ValueConcurrentObserver.databaseDidCommit",
+    "DatabaseAccess.fetchRecordingObservedRegion",
+    "FetchingState",
+    "ValueWriteOnlyObserver",
+    "ValueWriteOnlyObserver.databaseDidCommit",
+    "DatabasePool",
+    "DatabaseWriter"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The observation style and observer selection are explicitly determined by tracking mode and requiresWriteAccess, so no reasonable alternative answer exists."
+  }
+ },
+ "r3hb-grdb-13": {
+  "id": "r3hb-grdb-13",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Database.transactionDate",
+    "Database.transactionDateResult",
+    "Database.checkForAutocommitTransition",
+    "Configuration.transactionClock",
+    "TransactionClock"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The transaction date caching lifecycle, error encapsulation in Result, autocommit transition handling, and fallback clock behavior are completely and uniquely defined in these files."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "checkForAutocommitTransition",
+    "transactionDateResult",
+    "Database.transactionDate",
+    "TransactionClock.now",
+    "DefaultTransactionClock",
+    "Configuration.transactionClock"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The cited code directly implements the described transaction-date capture, storage, reset, and error-reporting behavior."
+  }
+ },
+ "r3hb-grdb-14": {
+  "id": "r3hb-grdb-14",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3hb-grdb-12": {
+  "id": "r3hb-grdb-12",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "DatabaseMigrator.disablingDeferredForeignKeyChecks",
+    "DatabaseMigrator.registerMigration(_:foreignKeyChecks:merging:migrate:)",
+    "Migration.run",
+    "Migration.runWithDeferredForeignKeysChecks",
+    "Migration.runWithDisabledForeignKeysChecks",
+    "Migration.runWithImmediateForeignKeysChecks"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The migration registration mapping and execution behavior depending on PRAGMA foreign_keys and defersForeignKeyChecks are unambiguously implemented across DatabaseMigrator and Migration."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "DatabaseMigrator",
+    "DatabaseMigrator.registerMigration(_:foreignKeyChecks:migrate:)",
+    "DatabaseMigrator.registerMigration(_:foreignKeyChecks:merging:migrate:)",
+    "DatabaseMigrator.disablingDeferredForeignKeyChecks()",
+    "DatabaseMigrator.ForeignKeyChecks",
+    "Migration",
+    "Migration.ForeignKeyChecks",
+    "Migration.run(_:mergedIdentifiers:)",
+    "Migration.runWithDeferredForeignKeysChecks(_:mergedIdentifiers:)",
+    "Migration.runWithDisabledForeignKeysChecks(_:mergedIdentifiers:)",
+    "Migration.runWithImmediateForeignKeysChecks(_:mergedIdentifiers:)",
+    "Migration.updateAppliedIdentifier(_:)",
+    "Database.withSchemaSource(_:)",
+    "Database.checkForeignKeys()"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code unambiguously reads the migrator option at registration and branches at runtime on PRAGMA foreign_keys inside Migration.run."
+  }
+ },
+ "r3hb-grdb-11": {
+  "id": "r3hb-grdb-11",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "7/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Configuration.schemaSource",
+    "Database.primaryKey(_:)",
+    "Database.withSchemaSource(_:execute:)",
+    "DatabaseSchemaSource",
+    "DatabaseSchemaSource.columnsForPrimaryKey(_:inView:)",
+    "DatabaseSchemaSource.then(_:)",
+    "Chained2SchemaSource",
+    "Migration.run(_:mergedIdentifiers:)"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The schema source API, primary key resolution for views, source chaining with then(_:), and migration bypass are clearly defined in the schema source subsystem."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "8/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Configuration.schemaSource",
+    "DatabaseSchemaSource",
+    "DatabaseSchemaSource.columnsForPrimaryKey(_:inView:)",
+    "DatabaseSchemaSource.then(_:)",
+    "Chained2SchemaSource",
+    "Database.schemaSource",
+    "Database.withSchemaSource(_:execute:)",
+    "Database.primaryKey(_:)",
+    "Database.fetchPrimitivePrimaryKey(forView:columns:)",
+    "Migration.run"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The files clearly identify Configuration.schemaSource, DatabaseSchemaSource.columnsForPrimaryKey, Database.primaryKey, Chained2SchemaSource, and Migration.run's withSchemaSource(nil) as the relevant mechanism."
+  }
+ },
+ "r3hb-grdb-04": {
+  "id": "r3hb-grdb-04",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "ValueConcurrentObserver",
+    "WALSnapshotTransaction",
+    "WALSnapshot"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The observation mechanism for concurrent reads with WAL snapshot comparison and fallback is uniquely implemented by ValueConcurrentObserver and related snapshot types."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "8/8",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ValueConcurrentObserver",
+    "ValueConcurrentObserver.start()",
+    "ValueConcurrentObserver.syncStart",
+    "ValueConcurrentObserver.asyncStart",
+    "ValueConcurrentObserver.asyncStartObservation",
+    "ValueConcurrentObserver.syncStartWithoutWALSnapshot",
+    "ValueConcurrentObserver.asyncStartWithoutWALSnapshot",
+    "ValueConcurrentObserver.startObservation",
+    "DatabasePool._add",
+    "DatabasePool._addConcurrent",
+    "DatabasePool.walSnapshotTransaction",
+    "WALSnapshotTransaction",
+    "WALSnapshotTransaction.init",
+    "WALSnapshotTransaction.read",
+    "WALSnapshotTransaction.close",
+    "WALSnapshot",
+    "WALSnapshot.init",
+    "WALSnapshot.compare",
+    "Database.setUpWALMode",
+    "SQLITE_ENABLE_SNAPSHOT",
+    "SQLITE_DISABLE_SNAPSHOT"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "DatabasePool._add dispatches to _addConcurrent, which creates ValueConcurrentObserver; start() can call syncStart or asyncStart. Both first fetch from a reader, not the writer: syncStart/asyncStart obtain a long-lived WALSnapshotTransaction from DatabasePool.walSnapshotTransaction(), which opens a deferred read transaction on a reader and records a WALSnapshot of that moment. The initial value is fetched/reduced/notified from that reader snapshot, so it can arrive even during a long write. Then asyncStartObservation runs on the writer queue, takes a WALSnapshot of the writer connection, and compares it to the initial snapshot via WALSnapshot.compare (sqlite3_snapshot_cmp). If the writer snapshot is newer, or cannot be taken, the observer assumes a change, refetches from the writer, and notifies a fresh value; otherwise it just starts observing. The initial WALSnapshotTransaction is closed after the comparison, returning its reader to the pool. Fallback: without SQLITE_ENABLE_SNAPSHOT, or with SQLITE_DISABLE_SNAPSHOT (defined for Linux in Package.swift), the #else path routes to syncStartWithoutWALSnapshot/asyncStartWithoutWALSnapshot, which cannot compare versions and therefore always perform a second writer fetch after observation starts, potentially notifying the same value twice. At runtime, if snapshot creation throws SQLITE_ERROR (missing/empty WAL file), the observer degrades to the same without-snapshot path; Database.setUpWALMode creates and drops a small table to ensure the WAL file is non-empty."
+  }
+ },
+ "r3hb-grdb-07": {
+  "id": "r3hb-grdb-07",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "DatabasePool.init(path:configuration:)",
+    "DatabasePool.read(_:)",
+    "DatabasePool.asyncRead(_:)",
+    "SerializedDatabase.preconditionNoUnsafeTransactionLeft(_:_:file:line:)",
+    "WALSnapshotTransaction.DatabaseAccess.commitAndRelease()",
+    "Pool.release(_:completion:)"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The safeguards against returning open read transactions to the pool are uniquely defined across DatabasePool, SerializedDatabase, and Pool."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "DatabasePool.init",
+    "DatabasePool.read",
+    "DatabasePool.asyncRead",
+    "DatabasePool.walSnapshotTransaction",
+    "DatabasePool.asyncWALSnapshotTransaction",
+    "SerializedDatabase.preconditionNoUnsafeTransactionLeft",
+    "SerializedDatabase.sync",
+    "SerializedDatabase.reentrantSync",
+    "SerializedDatabase.async",
+    "SerializedDatabase.execute",
+    "WALSnapshotTransaction.DatabaseAccess.commitAndRelease",
+    "Pool.release",
+    "PoolCompletion.discard",
+    "Database.isInsideTransaction",
+    "Database.isolated"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The safeguards are specific to DatabasePool readers: disabling allowsUnsafeTransactions, SerializedDatabase's transaction-left precondition, normal read commit/rollback, and long-lived snapshot release with .discard; no other code path reasonably provides a competing answer."
+  }
+ },
+ "r3hb-grdb-06": {
+  "id": "r3hb-grdb-06",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/9",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "DatabasePool.read(_:)",
+    "DatabasePool.asyncRead(_:)",
+    "DatabaseQueue.asyncRead(_:)",
+    "DatabaseQueue.spawnConcurrentRead(_:)",
+    "DatabaseSnapshot.deinit",
+    "WALSnapshotTransaction.DatabaseAccess.commitAndRelease"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The provided code explicitly implements the 'try commit else try rollback' pattern in read cleanup routines across DatabasePool, DatabaseQueue, DatabaseSnapshot, and WALSnapshotTransaction, while the other claimed methods are truncated from Database.swift and TransactionObserver.swift."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "9/9",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Database.endReadOnly",
+    "Database.rollback",
+    "Database.ignoringInterruption",
+    "Database.ignoringCancellation",
+    "Database.checkForSuspensionViolation",
+    "DatabaseObservationBroker.databaseDidCommit",
+    "DatabaseObservationBroker.databaseDidRollback",
+    "DatabasePool.read (async)",
+    "DatabasePool.asyncRead",
+    "DatabaseQueue.asyncRead",
+    "DatabaseQueue.spawnConcurrentRead",
+    "DatabaseSnapshot.deinit",
+    "WALSnapshotTransaction.DatabaseAccess.commitAndRelease"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The question targets specific cleanup paths (rollback, endReadOnly, observer notifications, read transaction commit/rollback) and their use of ignoringInterruption/ignoringCancellation; claim 4 incorrectly states checkForSuspensionViolation bypasses cancellation, but it only does so for suspension."
+  }
+ }
+}

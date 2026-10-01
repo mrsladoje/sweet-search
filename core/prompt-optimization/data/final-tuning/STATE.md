@@ -50,6 +50,8 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Decisions log
 
+- 12:15 r3-hard pipeline: drafts A 144 (6 old repos × 24) + B 70 (5 new repos × 14). Verifier flags B done (strict-rule keeps 0–6 per repo — used as flags only); A verification running (jj done). Closed-book filter B running (2 drops in first 19). Audit brief `r3/HARD-AUDIT-BRIEF.md` (closed-book drop → drop/harden; facts flagged by BOTH verifiers → fix or drop; hardness + ambiguity checks). Forensic chain: pull + stage done, sweep running, then B-repo indexing, then agent legs.
+
 - 11:50 **The Codex r3 accuracy deficit was the ss-find bug.** Clean re-run `cx-r3dev-ns2` (60, interleaved, 0 crashes): sweet vs native accuracy −0.4 pt [−3.5, +2.7], cost +0.1%; clean held-out (rescored, 101 pairs): accuracy −0.4 pt, cost +2.9% (both ns). → Codex sweet = native on accuracy and cost. V4 (completeness wording) was aimed at a bug artifact.
 - 11:50 r3-hard verification: the strict keep rule (both verifiers support every fact) drops 11–13 of 13 positives per B repo — hard questions have 4–6 facts across several (truncated) gold files and a weak 2nd verifier (deepseek-v4.1-flash). Changed: verifier verdicts become FLAGS for the Opus audit (which reads the code and fixes/drops), not an automatic drop. Rationale: the r3 audit showed disputes came from truncation, not wrong gold; the research note says answerability-from-gold filtering selects easy questions.
 
