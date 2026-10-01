@@ -1,0 +1,798 @@
+{
+ "repo": "r3-zipkin",
+ "sha": "878ce2a1fad54ca941d17fdcf2e1d924b148eb1f",
+ "probes": [
+  {
+   "id": "r3h-zipkin-01",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "An operator switches on write throttling for span storage. When the Elasticsearch cluster answers a bulk write with an HTTP 429 status, which chain of code classifies that failure as a capacity problem and reports it to the concurrency limiter? Start from where the throttling setting is read.",
+   "expectedFiles": [
+    "zipkin-server/src/main/java/zipkin2/server/internal/ConditionalOnThrottledStorage.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/ZipkinConfiguration.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/throttle/ThrottledStorageComponent.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/throttle/ThrottledCall.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchStorage.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/BulkCallBuilder.java"
+   ],
+   "expectedSymbols": [
+    "ThrottledStorageCondition",
+    "ThrottledStorageComponentEnhancer.postProcessAfterInitialization",
+    "ThrottledStorageComponent.ThrottledSpanConsumer.accept",
+    "ThrottledCall.EnqueueAndAwait.onError",
+    "ElasticsearchStorage.isOverCapacity",
+    "BulkCallBuilder.CHECK_FOR_ERRORS"
+   ],
+   "expectedFacts": [
+    "ConditionalOnThrottledStorage.ThrottledStorageCondition matches only when the property zipkin.storage.throttle.enabled is true; it guards ZipkinConfiguration.ThrottledStorageComponentEnhancer.",
+    "ThrottledStorageComponentEnhancer.postProcessAfterInitialization (ZipkinConfiguration.java) replaces each StorageComponent bean with a ThrottledStorageComponent built from the min concurrency, max concurrency and max queue size properties.",
+    "ThrottledStorageComponent.spanConsumer returns a ThrottledSpanConsumer whose accept wraps the delegate's write call in a ThrottledCall (executor + limiter).",
+    "BulkCallBuilder.CHECK_FOR_ERRORS (the bulk response converter) throws RejectedExecutionException when the response status is 429, and a plain RuntimeException for other bulk errors.",
+    "ThrottledCall.EnqueueAndAwait.onError asks the isOverCapacity predicate (bound to the StorageComponent's isOverCapacity); ElasticsearchStorage.isOverCapacity returns true for RejectedExecutionException or ResponseTimeoutException, so the limiter listener gets onDropped (and requestsDropped is counted); otherwise onIgnore.",
+    "The limiter's new limit reaches the worker pool through limit.notifyOnChange(new ThreadPoolExecutorResizer(executor)) registered in the ThrottledStorageComponent constructor."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ConditionalOnThrottledStorage.java:21-31 (property check); ZipkinConfiguration.java:47-77 (@ConditionalOnThrottledStorage on ThrottledStorageComponentEnhancer, new ThrottledStorageComponent at :64); ThrottledStorageComponent.java:73-80 (Gradient2Limit + NonLimitingLimiter), :107 (notifyOnChange resizer), :120-122 (spanConsumer), :152-157 (ThrottledCall wrap), :175-204 (ThreadPoolExecutorResizer); ThrottledCall.java:163-179 (onError: isOverCapacity.test -> onDropped else onIgnore); ElasticsearchStorage.java:275-277; BulkCallBuilder.java:46-71 (429 -> RejectedExecutionException at :57-58). DECOYS: StorageComponent.isOverCapacity default (StorageComponent.java:90), ForwardingStorageComponent.isOverCapacity delegate (:56), CassandraStorage.isOverCapacity (:177) / ResultSetFutureCall.isOverCapacity (:116), HttpCall.sendRequest (HttpCall.java:188-197 wraps UnprocessedRequestException into RejectedExecutionException), ThrottledCall.STORAGE_THROTTLE_MAX_CONCURRENCY. Verified by reading every cited line."
+  },
+  {
+   "id": "r3h-zipkin-02",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "A producer puts one legacy Thrift-encoded span (a single span, not a list) on the Kafka topic. Trace the code from the consumer poll to the Elasticsearch bulk request, including how the daily index is chosen when that span has no start timestamp.",
+   "expectedFiles": [
+    "zipkin-collector/kafka/src/main/java/zipkin2/collector/kafka/KafkaCollectorWorker.java",
+    "zipkin-collector/core/src/main/java/zipkin2/collector/Collector.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchSpanConsumer.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/IndexNameFormatter.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/BulkCallBuilder.java"
+   ],
+   "expectedSymbols": [
+    "KafkaCollectorWorker.run",
+    "Collector.accept",
+    "Collector.StoreSpans",
+    "ElasticsearchSpanConsumer.indexSpans",
+    "IndexNameFormatter.formatTypeAndTimestampForInsert",
+    "BulkCallBuilder.build"
+   ],
+   "expectedFacts": [
+    "KafkaCollectorWorker.run: when the first byte is <= 16, is not 12 (thrift list) and the payload is not protobuf3, the bytes are decoded as ONE span with SpanBytesDecoder.THRIFT.decodeOne and passed to collector.accept(List.of(span), NOOP); a decode failure increments messages-dropped.",
+    "Collector.accept(spans, callback) uses Runnable::run as executor: it samples spans (CollectorSampler via sample()), then runs StoreSpans on the polling thread, which calls storage.spanConsumer().accept(spans).enqueue(...).",
+    "ElasticsearchSpanConsumer.indexSpans chooses the index timestamp as span timestamp/1000 if set, else the first annotation's timestamp/1000, else System.currentTimeMillis().",
+    "BulkSpanIndexer.add calls IndexNameFormatter.formatTypeAndTimestampForInsert: index prefix + version-specific type delimiter + \"span\" + \"-\" + UTC date (for example zipkin-span-2024-05-01).",
+    "BulkCallBuilder.build turns all indexed spans of the batch into one POST /_bulk call (adding pipeline and refresh=wait_for parameters when configured)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: KafkaCollectorWorker.java:82-100 (classification; :90 single-span test, :93 decodeOne, :98 collector.accept), :121-123 (protobuf3); Collector.java:97-99 (Runnable::run), :107-131 (sample + executor.execute(new StoreSpans)), :189-191 (store), :197-208 (sample); ElasticsearchSpanConsumer.java:49-73 (:58-67 fallback chain), :89-92 (add); IndexNameFormatter.java:174-177 (formatTypeAndTimestampForInsert), :193-195 (format UTC); BulkCallBuilder.java:112-128 (build, /_bulk, pipeline :114, refresh :115). DECOYS: ScribeSpanConsumer (also decodeOne THRIFT but for Scribe), RabbitMQCollector/ActiveMQSpanConsumer/PulsarSpanConsumer call Collector.acceptSpans(byte[]) (list/detector path), ZipkinHttpCollector. Thrift single-span caveat: v1 core annotations cs/sr convert to kind/timestamp, so the 'no start timestamp' case concerns the converted v2 Span."
+  },
+  {
+   "id": "r3h-zipkin-03",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "On the MySQL backend, an operator asks for the service dependency graph, but nobody has ever loaded precomputed dependency rows. Trace how the answer is produced on the fly from the raw span rows.",
+   "expectedFiles": [
+    "zipkin-server/src/main/java/zipkin2/server/internal/ZipkinQueryApiV2.java",
+    "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/MySQLSpanStore.java",
+    "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/Schema.java",
+    "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/HasPreAggregatedDependencies.java",
+    "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/AggregateDependencies.java",
+    "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/DependencyLinkV2SpanIterator.java",
+    "zipkin/src/main/java/zipkin2/internal/DependencyLinker.java"
+   ],
+   "expectedSymbols": [
+    "ZipkinQueryApiV2.getDependencies",
+    "MySQLSpanStore.getDependencies",
+    "HasPreAggregatedDependencies.test",
+    "AggregateDependencies.apply",
+    "DependencyLinkV2SpanIterator.ByTraceId",
+    "DependencyLinker.putTrace"
+   ],
+   "expectedFacts": [
+    "ZipkinQueryApiV2.getDependencies passes endTs and the lookback (default from configuration) to storage.spanStore().getDependencies and encodes the links with DependencyLinkBytesEncoder.JSON_V1.",
+    "MySQL Schema's constructor sets hasPreAggregatedDependencies via HasPreAggregatedDependencies.test, true only when zipkin_dependencies has more than zero rows (a missing table logs a warning and gives false); the Schema is created lazily once in MySQLStorage.schema(), so the result is cached for the process.",
+    "MySQLSpanStore.getDependencies falls back to AggregateDependencies over the microsecond range [endTs-lookback, endTs] when nothing is pre-aggregated (SelectDependencies by epoch days otherwise).",
+    "AggregateDependencies first selects the distinct trace IDs with start_ts in range (so whole traces are read), then left-joins zipkin_annotations limited to keys lc, cs, ca, sr, sa, ma, mr, ms and error, grouped per span and streamed with fetchLazy.",
+    "DependencyLinkV2SpanIterator.ByTraceId groups rows per trace and turns each span's rows into a v2 Span (sr -> SERVER with ca as remote, sa/cs -> CLIENT, mr/ms -> CONSUMER/PRODUCER, an 'error' string annotation -> error tag).",
+    "AggregateDependencies feeds each trace to DependencyLinker.putTrace and returns linker.link()."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ZipkinQueryApiV2.java:75-83; MySQLSpanStore.java:105-114; Schema.java:34,42; HasPreAggregatedDependencies.java:25-43 (count()>0 at :28, 42S02 at :30); MySQLStorage.java:98,118-127 (lazy volatile schema); AggregateDependencies.java:33-74 (:37-41 trace id subquery, :47-52 left join + A_KEY.in(...), :56 fetchLazy, :69 putTrace, :73 link()); DependencyLinkV2SpanIterator.java:31-59,79-173. DECOYS: SelectDependencies (mysql) used only when pre-aggregated; SelectSpansAndAnnotations + V1SpanConverter (full trace reads, not dependency linking); InMemoryStorage.getDependencyLinks; Cassandra SelectDependencies (same class name)."
+  },
+  {
+   "id": "r3h-zipkin-04",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "An operator on Elasticsearch lists the tag names whose values the web UI should offer as suggestions, with a repeat-suppression window. Trace how a tag value on an incoming span becomes a suggestion document, how repeats are suppressed, and what happens to that suppression when the bulk write fails.",
+   "expectedFiles": [
+    "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/ZipkinElasticsearchStorageConfiguration.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchSpanConsumer.java",
+    "zipkin/src/main/java/zipkin2/internal/DelayLimiter.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/BulkIndexWriter.java"
+   ],
+   "expectedSymbols": [
+    "ZipkinElasticsearchStorageConfiguration.storage",
+    "ElasticsearchSpanConsumer.BulkSpanIndexer.addAutocompleteValues",
+    "ElasticsearchSpanConsumer.BulkSpanIndexer.newCall",
+    "ElasticsearchSpanConsumer.AutocompleteContext",
+    "DelayLimiter.shouldInvoke",
+    "DelayLimiter.invalidate",
+    "BulkIndexWriter.AUTOCOMPLETE"
+   ],
+   "expectedFacts": [
+    "ZipkinElasticsearchStorageConfiguration.storage injects zipkin.storage.autocomplete-keys, autocomplete-ttl (default 3600000 ms) and autocomplete-cardinality (default 20000) into the ElasticsearchStorage builder.",
+    "The ElasticsearchSpanConsumer constructor keeps the keys in a set and builds a DelayLimiter with that ttl and cardinality; indexSpans calls addAutocompleteValues only when search is enabled and the span has tags.",
+    "BulkSpanIndexer.addAutocompleteValues skips a tag when key length + value length + 1 exceeds 256, when the key is not in the configured key set, or when delayLimiter.shouldInvoke(context) is false; the context is AutocompleteContext(indexTimestamp, key, value), so equality includes the timestamp.",
+    "Accepted pairs are added to the bulk request as autocomplete-type documents via BulkIndexWriter.AUTOCOMPLETE: body {tagKey, tagValue} and document id key=value, in the daily autocomplete index.",
+    "BulkSpanIndexer.newCall wraps the bulk call in handleError; on failure it calls delayLimiter.invalidate for every pending context before passing the error on, so the pairs can be written again."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ZipkinElasticsearchStorageConfiguration.java:105-127 (@Value defaults :114-116); zipkin-server-shared.yml:115-117; ElasticsearchSpanConsumer.java:33-42 (DelayLimiter built), :56-73 (indexSpans; :69 guard), :94-110 (addAutocompleteValues: :97-98 length, :101 key set, :105 shouldInvoke, :106 pending, :108 index), :112-121 (newCall/handleError invalidate), :124-151 (AutocompleteContext equals includes timestamp); DelayLimiter.java:64-79, :91-94; BulkIndexWriter.java:41-53 (AUTOCOMPLETE doc id key=value). DECOYS: CassandraSpanConsumer + DeduplicatingInsert/InsertEntry (same DelayLimiter but for Cassandra tables), ElasticsearchAutocompleteTags (read side), InMemoryStorage.autocompleteTags."
+  },
+  {
+   "id": "r3h-zipkin-05",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "The Elasticsearch username and password are kept in a file that the operator rewrites while the server is running. Trace how rotated credentials reach the outgoing Elasticsearch requests, and what happens when the file is bad at startup versus later.",
+   "expectedFiles": [
+    "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/ZipkinElasticsearchStorageConfiguration.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/DynamicCredentialsFileLoader.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/BasicCredentials.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/BasicAuthInterceptor.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/HttpClientFactory.java"
+   ],
+   "expectedSymbols": [
+    "BasicAuthRequired",
+    "DynamicRefreshRequired",
+    "ZipkinElasticsearchStorageConfiguration.dynamicCredentialsScheduledExecutorService",
+    "DynamicCredentialsFileLoader.updateCredentialsFromProperties",
+    "BasicCredentials.updateCredentials",
+    "BasicAuthInterceptor.execute",
+    "HttpClientFactory.configureOptionsExceptHttpLogging"
+   ],
+   "expectedFacts": [
+    "ZipkinElasticsearchStorageConfiguration.BasicAuthRequired (username and password both non-empty, or credentials-file non-empty) creates the BasicCredentials bean and the esBasicAuth Consumer<ClientOptionsBuilder>; DynamicRefreshRequired (credentials-file non-empty) additionally creates the scheduled executor bean.",
+    "dynamicCredentialsScheduledExecutorService loads the file once synchronously (an exception there aborts bean creation, so startup fails) and then schedules the loader at a fixed rate of credentials-refresh-interval seconds.",
+    "DynamicCredentialsFileLoader reads a properties file requiring non-empty zipkin.storage.elasticsearch.username and password keys and calls BasicCredentials.updateCredentials; its run() catches and logs exceptions, so the previous credentials stay in use after a later bad rewrite.",
+    "BasicCredentials keeps a volatile string \"Basic \" + base64(username:password) that is replaced on each update.",
+    "The esBasicAuth consumer is collected into HttpClientFactory's customizers and applied in configureOptionsExceptHttpLogging; BasicAuthInterceptor.execute adds the Authorization header from basicCredentials.getCredentials() to every request (the health-check client reuses the same options)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ZipkinElasticsearchStorageConfiguration.java:130-151 (esBasicAuth/basicCredentials), :153-167 (executor bean: :162 sync load, :163-164 scheduleAtFixedRate), :199-215 (BasicAuthRequired, DynamicRefreshRequired); DynamicCredentialsFileLoader.java:37-65; BasicCredentials.java:20-37; BasicAuthInterceptor.java:29-35; HttpClientFactory.java:34-50,94-98; LazyHttpClientImpl.java:69 (health check reuses configureOptionsExceptHttpLogging). DECOYS: ZipkinElasticsearchStorageProperties.username/password setters (static config), SslUtil (TLS material, not credentials), InitialEndpointSupplier."
+  },
+  {
+   "id": "r3h-zipkin-06",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "On Cassandra, a user searches by service name, one tag condition and a minimum duration. Describe how the matching trace identifiers are found and combined, and how they become full traces.",
+   "expectedFiles": [
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraSpanStore.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraUtil.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/SelectTraceIdsFromSpan.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/SelectTraceIdsFromServiceSpan.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/internal/call/IntersectKeySets.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/SelectFromSpan.java"
+   ],
+   "expectedSymbols": [
+    "CassandraSpanStore.getTraces",
+    "CassandraUtil.annotationKeys",
+    "SelectTraceIdsFromSpan.Factory.newCall",
+    "CassandraSpanStore.newBucketedTraceIdCall",
+    "SelectTraceIdsFromServiceSpan.Factory.newInput",
+    "IntersectKeySets",
+    "SelectFromSpan.SelectSpansByTraceIds"
+   ],
+   "expectedFacts": [
+    "CassandraSpanStore.getTraces turns the tag condition into keys via CassandraUtil.annotationKeys (\"key\" or \"key=value\") and, per key, calls SelectTraceIdsFromSpan (annotation_query LIKE ?, plus l_service when a service name is given) with fetch size limit * indexFetchMultiplier.",
+    "Because a minimum duration is present, getTraces also adds newBucketedTraceIdCall, which builds SelectTraceIdsFromServiceSpan queries (one per day bucket) using the duration-range statement; durations are converted from microseconds to milliseconds and the max defaults to Long.MAX_VALUE.",
+    "With two calls the results are combined by IntersectKeySets (retainAll over the trace-id key sets) and are not sorted by timestamp (only the single-call path uses traceIdsSortedByDescTimestamp).",
+    "The id set is flat-mapped into SelectFromSpan.SelectSpansByTraceIds, which keeps at most request.limit() IDs, selects spans WHERE trace_id IN ... with a LIMIT of maxTraceCols, groups them by trace id and, when strict trace id is on, filters the traces again with FilterTraces (request.test)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: CassandraSpanStore.java:121-159 (:130-139 annotation calls, :142-146 bucketed call because minDuration != null, :149-158 single vs IntersectKeySets, comment '@xxx the sorting by timestamp desc is broken here' at :157), :175-249 (newBucketedTraceIdCall); CassandraUtil.java:78-88, :90-117; SelectTraceIdsFromSpan.java:58-91; SelectTraceIdsFromServiceSpan.java:87-100 (/1000L at :89-90), :114-120 (statement choice); IntersectKeySets.java:25-33; SelectFromSpan.java:121-155 (limit trim :137-142, filter :131); maxTraceCols default 100_000 at CassandraStorageBuilder.java:42. DECOYS: SelectTraceIdsFromServiceRemoteService (only when remote service set), InMemoryStorage.getTraces, ElasticsearchSpanStore.getTraces."
+  },
+  {
+   "id": "r3h-zipkin-07",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "Which classes decide whether each of the message-broker span collectors is started in the server, and what exactly must hold for each one?",
+   "expectedFiles": [
+    "zipkin-server/src/main/java/zipkin2/server/internal/kafka/ZipkinKafkaCollectorConfiguration.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/rabbitmq/ZipkinRabbitMQCollectorConfiguration.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/activemq/ZipkinActiveMQCollectorConfiguration.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/pulsar/ZipkinPulsarCollectorConfiguration.java"
+   ],
+   "expectedSymbols": [
+    "ZipkinKafkaCollectorConfiguration.KafkaBootstrapServersSet",
+    "ZipkinRabbitMQCollectorConfiguration.RabbitMQAddressesOrUriSet",
+    "ZipkinActiveMQCollectorConfiguration.ActiveMQUrlSet",
+    "ZipkinPulsarCollectorConfiguration.PulsarConditions"
+   ],
+   "expectedFacts": [
+    "Kafka: KafkaBootstrapServersSet matches when zipkin.collector.kafka.bootstrap-servers is non-empty and the enabled property is not the literal \"false\".",
+    "RabbitMQ: RabbitMQAddressesOrUriSet matches when addresses OR uri is non-empty and the enabled property is not \"false\".",
+    "ActiveMQ: ActiveMQUrlSet matches when zipkin.collector.activemq.url is non-empty and the enabled property is not \"false\".",
+    "Pulsar: PulsarConditions (AllNestedConditions) requires the enabled property to be true or absent (ConditionalOnProperty havingValue true, matchIfMissing) AND service-url non-empty.",
+    "These custom conditions exist because the yaml defaults the setting to an empty string (${ENV:}) and Spring Boot cannot treat empty as unset."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ZipkinKafkaCollectorConfiguration.java:36-62 (:50-52); ZipkinRabbitMQCollectorConfiguration.java:37-64 (:52-54); ZipkinActiveMQCollectorConfiguration.java:37-60 (:46-49); ZipkinPulsarCollectorConfiguration.java:50-67 (:56-58 enabled, :62-66 service-url); zipkin-server-shared.yml:16-71 (empty defaults, e.g. :38 bootstrap-servers ${KAFKA_BOOTSTRAP_SERVERS:}). DECOYS: ZipkinScribeCollectorConfiguration (ConditionalOnProperty havingValue true, default false, not a broker), ZipkinHttpCollector/ZipkinGrpcCollector (ConditionalOnProperty matchIfMissing), ZipkinEurekaDiscoveryConfiguration.EurekaServiceUrlSet (same pattern but discovery, not a collector), the collectors' own builders."
+  },
+  {
+   "id": "r3h-zipkin-08",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "A span reaches storage with no start timestamp. For each of the four storage implementations (in-memory, Elasticsearch, Cassandra, MySQL), how does the write path treat time for that span, and how does that affect whether trace searches can find it?",
+   "expectedFiles": [
+    "zipkin/src/main/java/zipkin2/storage/InMemoryStorage.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchSpanConsumer.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/BulkIndexWriter.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraSpanConsumer.java",
+    "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/MySQLSpanConsumer.java"
+   ],
+   "expectedSymbols": [
+    "InMemoryStorage.doAccept",
+    "ElasticsearchSpanConsumer.indexSpans",
+    "BulkIndexWriter.addSearchFields",
+    "CassandraSpanConsumer.accept",
+    "CassandraSpanConsumer.guessTimestamp",
+    "MySQLSpanConsumer.BatchInsertSpans.apply"
+   ],
+   "expectedFacts": [
+    "Elasticsearch: indexSpans picks the index from the first annotation's timestamp (or the current time) and BulkIndexWriter.addSearchFields writes no timestamp_millis when the span timestamp is zero, so time-ranged searches cannot match it.",
+    "Cassandra: accept uses guessTimestamp (first annotation with timestamp > 0, else 0) for the index timestamp and falls back to the current time for the ts_uuid; when the guess is 0 it skips the trace_by_service_span and remote-service index rows (service/span-name rows are still written) because search needs a timestamp.",
+    "MySQL: BatchInsertSpans sets start_ts only when the timestamp is non-zero and has no fallback; searches filter on start_ts BETWEEN, so such a span row is never returned by a search.",
+    "In-memory: doAccept keys the span at timestamp 0 (timestampAsLong()/1000), so it sorts as the oldest trace (first to be evicted) and falls outside lowTraceIdsInRange; it is still retrievable by trace ID."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ElasticsearchSpanConsumer.java:56-73 (:59-67); BulkIndexWriter.java:154-157 (timestamp_millis only if != 0); CassandraSpanConsumer.java:112-124 (ts_micro, ts_uuid fallback :118-122), :133 (no service -> no indexing), :140 (serviceSpans.add before the check), :142 ('if (ts_micro == 0L) continue'), :185-191 (guessTimestamp); MySQLSpanConsumer.java:65,78-83; SelectSpansAndAnnotations.java:222 (START_TS.between); InMemoryStorage.java:178-189 (timestamp/1000), :254-256 (eviction takes lastKey of descending map), :329-352 (lowTraceIdsInRange); QueryRequest.java:297-301 (test() false if timestamp==0). DECOYS: Trace.merge, QueryRequest.test only apply post-fetch; GroupByTraceId."
+  },
+  {
+   "id": "r3h-zipkin-09",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "On Cassandra, when mixed 64-bit and 128-bit trace identifiers are tolerated (strict trace ID turned off), which pieces of the storage module write or read identifiers differently than in strict mode?",
+   "expectedFiles": [
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/InsertSpan.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/InsertTraceByServiceSpan.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/InsertTraceByServiceRemoteService.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/SelectFromSpan.java",
+    "zipkin/src/main/java/zipkin2/storage/GroupByTraceId.java"
+   ],
+   "expectedSymbols": [
+    "InsertSpan.Factory.newInput",
+    "InsertTraceByServiceSpan.Factory.newInput",
+    "InsertTraceByServiceRemoteService.Factory.newInput",
+    "SelectFromSpan.Factory.newCall",
+    "SelectFromSpan.ReadSpans",
+    "SelectFromSpan.SelectSpansByTraceIds",
+    "GroupByTraceId.map"
+   ],
+   "expectedFacts": [
+    "InsertSpan.Factory.newInput splits a 32-character trace ID into trace_id_high (first 16) and trace_id (last 16) only when strict trace ID is off.",
+    "InsertTraceByServiceSpan.Factory.newInput and InsertTraceByServiceRemoteService.Factory.newInput store only the lower 16 characters of a 32-character trace ID when strict is off.",
+    "SelectFromSpan.Factory.newCall(String) queries both the full 32-character ID and its lower 16 characters when strict is off, and newCall(Iterable) truncates each requested ID to 64 bits; with strict on, results are filtered client-side (StrictTraceId.filterSpans/filterTraces).",
+    "SelectFromSpan.ReadSpans re-joins trace_id_high + trace_id into the full trace ID, and the factory's GroupByTraceId.create(strictTraceId) groups by the lower 64 bits when strict is off.",
+    "SelectFromSpan.SelectSpansByTraceIds only applies FilterTraces (request.test) when strictTraceId is on, because Cassandra always looks up by 64-bit ID."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: InsertSpan.java:81-87 (traceIdHigh = !strictTraceId && length()==32); InsertTraceByServiceSpan.java:51-60 (:58); InsertTraceByServiceRemoteService.java:45-52 (:51); SelectFromSpan.java:54-66 (:57-61), :68-83 (:74), :51 (GroupByTraceId.create), :126-132 (filter), :167-169 (re-join high+low); GroupByTraceId.java:33-46 (:39 lowerTraceId when !strict). CassandraStorage.java:33-35 class doc. DECOYS: CassandraSpanStore.getTraces (just delegates), ElasticsearchSpanStore.getTrace (also substring(16)), MySQL Schema.spanTraceIdCondition, InMemoryStorage.lowTraceId."
+  },
+  {
+   "id": "r3h-zipkin-10",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "After a storage failure, can the broker redeliver the span message for each of the Kafka, RabbitMQ, ActiveMQ and Pulsar collectors, and what in the code decides that for each one?",
+   "expectedFiles": [
+    "zipkin-collector/core/src/main/java/zipkin2/collector/Collector.java",
+    "zipkin-collector/rabbitmq/src/main/java/zipkin2/collector/rabbitmq/RabbitMQCollector.java",
+    "zipkin-collector/activemq/src/main/java/zipkin2/collector/activemq/ActiveMQSpanConsumer.java",
+    "zipkin-collector/pulsar/src/main/java/zipkin2/collector/pulsar/PulsarSpanConsumer.java",
+    "zipkin-collector/kafka/src/main/java/zipkin2/collector/kafka/KafkaCollector.java"
+   ],
+   "expectedSymbols": [
+    "Collector.accept",
+    "Collector.StoreSpans.onError",
+    "LazyInit.compute",
+    "ActiveMQSpanConsumer.registerInNewSession",
+    "PulsarSpanConsumer.ZipkinMessageListener.received",
+    "KafkaCollector.Builder"
+   ],
+   "expectedFacts": [
+    "Common: Collector.accept calls callback.onSuccess right after scheduling the store, and a later storage failure only reaches StoreSpans.onError -> handleStorageError (spans dropped metric, debug log); the transport never sees it.",
+    "RabbitMQ: RabbitMQCollector.LazyInit.compute consumes with basicConsume(queue, true, ...), i.e. auto-ack, so the message is gone before storage runs.",
+    "ActiveMQ: ActiveMQSpanConsumer.registerInNewSession creates the session with Session.AUTO_ACKNOWLEDGE.",
+    "Pulsar: ZipkinMessageListener.received calls acknowledgeAsync after collector.acceptSpans returns (before storage finishes) and negativeAcknowledge only if the listener itself throws (for example Collector.accept rethrowing a scheduling failure); decode errors are swallowed inside the collector.",
+    "Kafka: there is no commit or ack code; KafkaCollector.Builder only sets group id, auto.offset.reset=earliest and deserializers, leaving offset handling to consumer defaults or overrides."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Collector.java:125-126 (executor.execute then callback.onSuccess), :210-238 (StoreSpans), :249-254; RabbitMQCollector.java:194 (basicConsume(..., true, ...)), :222-224 javadoc; ActiveMQSpanConsumer.java:64, :29-32 javadoc; PulsarSpanConsumer.java:75-90 (:83-84 acceptSpans then acknowledgeAsync, :88 negativeAcknowledge); KafkaCollector.java:136-143 (defaults); grep -rn -i 'commit' in zipkin-collector/kafka/src/main returns nothing. DECOYS: KafkaCollectorWorker (poll loop only), ZipkinHttpCollector/Scribe (respond to caller, not a broker), ReporterMetricsAdapter."
+  },
+  {
+   "id": "r3h-zipkin-11",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "Where does the code cut time into whole UTC days for naming, partitioning or looking up stored data?",
+   "expectedFiles": [
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/IndexNameFormatter.java",
+    "zipkin/src/main/java/zipkin2/internal/DateUtil.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraUtil.java",
+    "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/MySQLSpanStore.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchSpanStore.java"
+   ],
+   "expectedSymbols": [
+    "IndexNameFormatter.format",
+    "IndexNameFormatter.formatTypeAndRange",
+    "IndexNameFormatter.midnightUTC",
+    "DateUtil.midnightUTC",
+    "DateUtil.epochDays",
+    "CassandraUtil.getDays",
+    "CassandraUtil.durationIndexBucket",
+    "MySQLSpanStore.getDependencies"
+   ],
+   "expectedFacts": [
+    "IndexNameFormatter formats daily Elasticsearch index names from a UTC date (format / formatTypeAndTimestamp) and expands query ranges day by day, compressing whole months or day-decades into wildcards, from midnightUTC boundaries.",
+    "DateUtil.midnightUTC floors epoch millis to UTC midnight and DateUtil.epochDays lists the UTC day starts between (endTs - lookback) and endTs.",
+    "CassandraUtil.getDays maps DateUtil.epochDays into LocalDate values bound to the dependency table's day column.",
+    "MySQLSpanStore.getDependencies passes epochDays(endTs, lookback) to SelectDependencies (zipkin_dependencies DAY IN ...) when dependencies are pre-aggregated.",
+    "CassandraUtil.durationIndexBucket divides microseconds by a window (default 86400 s, overridable by a system property) to compute the bucket column of the trace_by_service_* tables."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: IndexNameFormatter.java:68 (UTC), :102-156 (formatTypeAndRange), :167-171 (midnightUTC), :193-195 (format); DateUtil.java:17-37; CassandraUtil.java:40-46 (system property zipkin.store.cassandra.internal.durationIndexBucket), :119-125 (getDays); Cassandra SelectDependencies.java:34-36; MySQLSpanStore.java:20,109-110; mysql SelectDependencies.java:32; ElasticsearchSpanStore.java:191-196 (dependency indices via formatTypeAndRange). DECOYS: InMemoryStorage (no day bucketing), UI default lookback, CassandraSpanStore.timestampRange (ms range, not day truncation)."
+  },
+  {
+   "id": "r3h-zipkin-12",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "When a caller asks the HTTP API for the trace search without giving an end time or a window length, what do they default to? And does the dependency endpoint use the same defaults when those values are missing? Name the setting that supplies the window.",
+   "expectedFiles": [
+    "zipkin-server/src/main/java/zipkin2/server/internal/ZipkinQueryApiV2.java",
+    "zipkin-server/src/main/resources/zipkin-server-shared.yml"
+   ],
+   "expectedSymbols": [
+    "ZipkinQueryApiV2.getTraces",
+    "ZipkinQueryApiV2.getDependencies",
+    "ZipkinQueryApiV2"
+   ],
+   "expectedFacts": [
+    "For trace search, ZipkinQueryApiV2.getTraces uses endTs = System.currentTimeMillis() and lookback = defaultLookback when the parameters are absent.",
+    "defaultLookback is injected into the ZipkinQueryApiV2 constructor from zipkin.query.lookback (QUERY_LOOKBACK), default 86400000 ms (one day), set in zipkin-server-shared.yml and as the @Value default.",
+    "getDependencies requires endTs (it is a mandatory long parameter, no default) and uses the same defaultLookback only when lookback is omitted.",
+    "The UI's default-lookback (900000 ms in the yml, 7 days as the ZipkinUiProperties Java default) only feeds /config.json for the search form and is not the API default."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ZipkinQueryApiV2.java:61-66 (@Value zipkin.query.lookback:86400000), :75-83 (@Param(\"endTs\") long endTs; lookback.orElse(defaultLookback)), :112-140 (endTs.orElse(System.currentTimeMillis()) at :133, lookback.orElse(defaultLookback) at :134); zipkin-server-shared.yml:90 (lookback: ${QUERY_LOOKBACK:86400000}). DECOYS: ZipkinUiProperties.defaultLookback (ZipkinUiProperties.java:18, yml:185 default-lookback 900000, written by ZipkinUiConfiguration.writeConfig :131), ElasticsearchStorage namesLookback (also fed from zipkin.query.lookback at ZipkinElasticsearchStorageConfiguration.java:111 but only for name queries), Cassandra index TTL window (CassandraSpanStore.timestampRange), QueryRequest builder requiring lookback > 0."
+  },
+  {
+   "id": "r3h-zipkin-13",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "With write throttling enabled, which parameter limits how many pending storage writes may wait for a free worker thread, and what is the effective limit when the operator sets it to zero? What happens to a write that arrives when that limit is reached?",
+   "expectedFiles": [
+    "zipkin-server/src/main/java/zipkin2/server/internal/throttle/ZipkinStorageThrottleProperties.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/throttle/ThrottledStorageComponent.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/throttle/ThrottledCall.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/ZipkinConfiguration.java"
+   ],
+   "expectedSymbols": [
+    "ZipkinStorageThrottleProperties.maxQueueSize",
+    "ThrottledStorageComponent.createQueue",
+    "ThrottledStorageComponent.STORAGE_THROTTLE_MAX_QUEUE_SIZE",
+    "ThrottledCall.doEnqueue"
+   ],
+   "expectedFacts": [
+    "The parameter is zipkin.storage.throttle.max-queue-size (STORAGE_THROTTLE_MAX_QUEUE_SIZE, default 1000), read by ZipkinStorageThrottleProperties and passed by ZipkinConfiguration to the ThrottledStorageComponent constructor.",
+    "ThrottledStorageComponent.createQueue builds a bounded LinkedBlockingQueue for the thread pool; a negative size throws, and zero is bumped to 1, so the effective limit is one queued write (despite the documented 'no buffering').",
+    "When pool threads and the queue are full, the executor's rejection handler throws the shared STORAGE_THROTTLE_MAX_QUEUE_SIZE RejectedExecutionException.",
+    "ThrottledCall.doEnqueue catches it, calls callback.onError, reports limiterListener.onIgnore (not a drop) because the executor, not storage, rejected, and rethrows so blocking callers see it."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ZipkinStorageThrottleProperties.java:21-24; zipkin-server-shared.yml:123 (${STORAGE_THROTTLE_MAX_QUEUE_SIZE:1000}); ZipkinConfiguration.java:62-69; ThrottledStorageComponent.java:57-58, :84-106 (rejection handler :104-106), :164-173 (createQueue; :167-169 zero -> 1); ThrottledCall.java:90-107 (:97-105); zipkin-server/README.md:376 documents '0 = no buffering'. DECOYS: STORAGE_THROTTLE_MAX_CONCURRENCY (ThrottledCall.java:40-41, :92, limiter capacity, not queue), CassandraStorageBuilder.maxRequestsPerConnection = 40960/poolLocalSize (:49-52, driver queue), ZipkinElasticsearchStorageProperties.maxRequests (:359 'no longer honored'), Kafka/Rabbit concurrency settings."
+  },
+  {
+   "id": "r3h-zipkin-14",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "When the same pair of services shows up in several stored daily dependency rows, where are their call and error counts added together before the API answers? Which storage readers use that step?",
+   "expectedFiles": [
+    "zipkin/src/main/java/zipkin2/internal/DependencyLinker.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/SelectDependencies.java",
+    "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/SelectDependencies.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/BodyConverters.java"
+   ],
+   "expectedSymbols": [
+    "DependencyLinker.merge",
+    "SelectDependencies.map",
+    "SelectDependencies.apply",
+    "BodyConverters.DEPENDENCY_LINKS"
+   ],
+   "expectedFacts": [
+    "The summing is done by the static DependencyLinker.merge, which groups links by (parent, child) and adds callCount and errorCount.",
+    "Cassandra's SelectDependencies.map collects rows (parent, child, errors, calls) and returns DependencyLinker.merge(unmerged).",
+    "MySQL's SelectDependencies.apply reads zipkin_dependencies rows for the epoch days and returns DependencyLinker.merge(unmerged).",
+    "Elasticsearch's BodyConverters.DEPENDENCY_LINKS overrides convert to call DependencyLinker.merge(result) on the parsed links."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: DependencyLinker.java:176-192 (merge), contrast :154-170 (addLink counts within one trace); Cassandra SelectDependencies.java:61-72 (:71); MySQL SelectDependencies.java:26-42 (:41); BodyConverters.java:26-34 (:32). DECOYS: DependencyLinker.putTrace/addLink (per-trace counting, used by InMemoryStorage.getDependencyLinks :430-437 and MySQL AggregateDependencies), Dependencies.java (thrift holder), DependencyLinkBytesEncoder (serialization), ZipkinQueryApiV2.getDependencies (no merging)."
+  },
+  {
+   "id": "r3h-zipkin-15",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "On an Elasticsearch 6.8 cluster, which character separates the index prefix from the document kind in newly written index names, where is that decided, and how can queries still find indexes written with the other separator?",
+   "expectedFiles": [
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchSpecificTemplates.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/OpensearchSpecificTemplates.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchStorage.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/IndexNameFormatter.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchSpanConsumer.java"
+   ],
+   "expectedSymbols": [
+    "ElasticsearchSpecificTemplates.indexTypeDelimiter",
+    "ElasticsearchStorage.indexTypeDelimiter",
+    "IndexNameFormatter.formatTypeAndTimestampForInsert",
+    "IndexNameFormatter.prefix"
+   ],
+   "expectedFacts": [
+    "ElasticsearchSpecificTemplates.indexTypeDelimiter returns ':' when the version is below 7.0 and '-' otherwise, so a 6.8 cluster gets names like zipkin:span-2024-05-01.",
+    "ElasticsearchStorage.indexTypeDelimiter() reaches it via VersionSpecificTemplates.forVersion(version()) (OpensearchSpecificTemplates always answers '-'); ElasticsearchSpanConsumer captures it in its constructor.",
+    "IndexNameFormatter.formatTypeAndTimestampForInsert builds prefix + delimiter + type + '-' + date for writes.",
+    "Reads use IndexNameFormatter.prefix, which puts a '*' wildcard where the delimiter would be, so both ':' and '-' indexes match; BulkCallBuilder additionally writes the _type field only for versions that support types."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ElasticsearchSpecificTemplates.java:44-46,84-86 (version.compareTo(V7_0) < 0 ? ':' : '-'); OpensearchSpecificTemplates.java:29-31,57-59 (always '-'); ElasticsearchStorage.java:249-251; ElasticsearchSpanConsumer.java:37; IndexNameFormatter.java:173-177, :183-187 (prefix uses index() + \"*\" + type), :23-47 class javadoc; ElasticsearchVersion.java:22-24 and BulkCallBuilder.java:84,206 (supportsTypes / _type). DECOYS: IndexTemplates (carries the delimiter for template names), ElasticsearchStorage.buildUrl (:348-351, template URLs), IndexNameFormatter.dateSeparator (the date part, not the type separator), OpensearchVersion."
+  },
+  {
+   "id": "r3h-zipkin-16",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "A user tags a span with a very long text value and later cannot find the trace by that tag in the search box, although the trace opens fine by its ID. Where do the different storage backends decide that such a tag is not searchable, and are the rules the same?",
+   "expectedFiles": [
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/BulkIndexWriter.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/VersionSpecificTemplates.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraUtil.java",
+    "zipkin/src/main/java/zipkin2/internal/RecyclableBuffers.java"
+   ],
+   "expectedSymbols": [
+    "BulkIndexWriter.addSearchFields",
+    "VersionSpecificTemplates.spanIndexTemplate",
+    "CassandraUtil.annotationQuery",
+    "RecyclableBuffers.SHORT_STRING_LENGTH"
+   ],
+   "expectedFacts": [
+    "Elasticsearch: BulkIndexWriter.addSearchFields skips a tag from the _q search field when key length + value length + 1 exceeds SHORT_STRING_LENGTH (256), and skips annotation values longer than 256.",
+    "Cassandra: CassandraUtil.annotationQuery skips a tag when only the VALUE is longer than 256 (the key length is not counted), and annotation values over 256, when building the annotation_query column.",
+    "The limit constant is RecyclableBuffers.SHORT_STRING_LENGTH = 256 (the Elasticsearch template separately uses its own 256 as ignore_above for dynamic string fields).",
+    "The trace stays retrievable by ID because the full tags remain in the stored span; only the index-side field is omitted. The two backends' rules differ (key+value+1 versus value only)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: BulkIndexWriter.java:154-171 (:160 annotations, :164-165 length = key+value+1), :20 import of RecyclableBuffers.SHORT_STRING_LENGTH; VersionSpecificTemplates.java:15 (own constant), :125-131 (_source excludes _q; ignore_above 256), :158 (_q KEYWORD); CassandraUtil.java:58-76 (:64 annotation value, :70 tag VALUE only); RecyclableBuffers.java:15; ElasticsearchSpanConsumer.java:97-98 (same key+value+1 rule for autocomplete). DECOYS: MySQL stores tags as blobs in zipkin_annotations (no length filter in search), InMemoryStorage (no limit), SearchRequest.MAX_RESULT_WINDOW."
+  },
+  {
+   "id": "r3h-zipkin-17",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "On Cassandra, an operator finds that traces older than about three days still open by ID but never appear in the search results, even with a long lookback. Which code and schema settings cause this?",
+   "expectedFiles": [
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraSpanStore.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/internal/KeyspaceMetadataUtil.java",
+    "zipkin-storage/cassandra/src/main/resources/zipkin2-schema-indexes.cql",
+    "zipkin-storage/cassandra/src/main/resources/zipkin2-schema.cql"
+   ],
+   "expectedSymbols": [
+    "CassandraSpanStore.timestampRange",
+    "KeyspaceMetadataUtil.getDefaultTtl",
+    "CassandraSpanStore.indexTtl"
+   ],
+   "expectedFacts": [
+    "The CassandraSpanStore constructor reads indexTtl as the default_time_to_live of the trace_by_service_span table through KeyspaceMetadataUtil.getDefaultTtl.",
+    "CassandraSpanStore.timestampRange computes oldestData = max(now - indexTtl*1000, 0) and clamps the start of the search window to max(endTs - lookback, oldestData), so searches never reach beyond the index TTL.",
+    "zipkin2-schema-indexes.cql sets default_time_to_live = 259200 (3 days) on the trace_by_service_span index tables, while zipkin2-schema.cql keeps the span table at 604800 (7 days).",
+    "That is why a trace younger than 7 days still opens by ID (span table) but is not found by search after 3 days (index tables expired)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: CassandraSpanStore.java:81 (indexTtl = KeyspaceMetadataUtil.getDefaultTtl(keyspace, TABLE_TRACE_BY_SERVICE_SPAN)), :124 (timestampRange(request, indexTtl)), :304-312 (oldestData/startMillis/endMillis); KeyspaceMetadataUtil.java:13-18 (reads default_time_to_live, 0 if absent); zipkin2-schema-indexes.cql:25 (259200 on trace_by_service_span), :45,:59,:73,:87; zipkin2-schema.cql:37 (604800 on span), :53 (dependency 259200). DECOYS: CassandraUtil.durationIndexBucket (1 day buckets, not TTL), QUERY_LOOKBACK config (ZipkinQueryApiV2), InsertEntry TTL parameter (Cassandra v1 deprecated indexTtl)."
+  },
+  {
+   "id": "r3h-zipkin-18",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "An operator blanks the character that separates year, month and day in the daily Elasticsearch index names, expecting names like zipkin-span-20240501. Follow how the blank value travels from the server configuration to the actual index names.",
+   "expectedFiles": [
+    "zipkin-server/src/main/java/zipkin2/server/internal/elasticsearch/ZipkinElasticsearchStorageProperties.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchStorage.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/internal/IndexNameFormatter.java",
+    "zipkin-server/src/main/resources/zipkin-server-shared.yml"
+   ],
+   "expectedSymbols": [
+    "ZipkinElasticsearchStorageProperties.setDateSeparator",
+    "ZipkinElasticsearchStorageProperties.toBuilder",
+    "ElasticsearchStorage.Builder.dateSeparator",
+    "IndexNameFormatter.Builder.build"
+   ],
+   "expectedFacts": [
+    "zipkin-server-shared.yml maps zipkin.storage.elasticsearch.date-separator to the ES_DATE_SEPARATOR environment variable (default '-').",
+    "ZipkinElasticsearchStorageProperties.setDateSeparator rejects values that are longer than one character after trimming but stores the raw string, so an empty string is accepted.",
+    "ZipkinElasticsearchStorageProperties.toBuilder calls builder.dateSeparator(dateSeparator.isEmpty() ? 0 : dateSeparator.charAt(0)), converting empty to the NUL char 0.",
+    "IndexNameFormatter.Builder.build uses the pattern yyyyMMdd when the separator is 0, otherwise yyyy-MM-dd with '-' replaced by the separator, so names become zipkin-span-20240501."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: zipkin-server-shared.yml:153; ZipkinElasticsearchStorageProperties.java:178, :261-267 (setDateSeparator trims only to validate), :350-352 (toBuilder; empty -> 0); ElasticsearchStorage.java:124-127 (dateSeparator delegates to indexNameFormatterBuilder), :73 default '-'; IndexNameFormatter.java:86-90 (separator == 0 ? \"yyyyMMdd\" : \"yyyy-MM-dd\".replace('-', separator)). Doc at ElasticsearchStorage.java:116-123. DECOYS: IndexNameFormatter.indexTypeDelimiter relatives (type delimiter ':' vs '-'), ZipkinElasticsearchStorageProperties.index prefix, the Cassandra keyspace settings."
+  },
+  {
+   "id": "r3h-zipkin-19",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "An operator selects Cassandra storage and leaves the keyspace setting alone. Which keyspace name do the schema scripts and the queries end up using, and why do the other default names found in the code not apply?",
+   "expectedFiles": [
+    "zipkin-server/src/main/resources/zipkin-server-shared.yml",
+    "zipkin-server/src/main/java/zipkin2/server/internal/cassandra3/ZipkinCassandra3StorageProperties.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraStorage.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/Schema.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/CassandraStorageBuilder.java"
+   ],
+   "expectedSymbols": [
+    "ZipkinCassandra3StorageProperties.keyspace",
+    "ZipkinCassandra3StorageProperties.toBuilder",
+    "Schema.DEFAULT_KEYSPACE",
+    "Schema.applyCqlFile"
+   ],
+   "expectedFacts": [
+    "The effective keyspace is zipkin2: zipkin-server-shared.yml sets keyspace: ${CASSANDRA_KEYSPACE:zipkin2}, bound into ZipkinCassandra3StorageProperties.",
+    "ZipkinCassandra3StorageProperties has its own Java default \"zipkin3\", but the yaml value overrides it and toBuilder passes .keyspace(keyspace) to the builder.",
+    "CassandraStorage.Builder starts from Schema.DEFAULT_KEYSPACE (\"zipkin2\"), and the javadoc in CassandraStorageBuilder.keyspace saying \"zipkin3\" is stale.",
+    "Schema.applyCqlFile rewrites the literal \" zipkin2\" in the bundled CQL scripts with the configured keyspace, so a custom name works with the same scripts."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: zipkin-server-shared.yml:135; ZipkinCassandra3StorageProperties.java:15 (zipkin3), :109 (.keyspace(keyspace)); CassandraStorage.java:49-52 (super(Schema.DEFAULT_KEYSPACE)); Schema.java:33 (DEFAULT_KEYSPACE = zipkin2), :188-192 (replace(\" \" + DEFAULT_KEYSPACE, \" \" + keyspace)); CassandraStorageBuilder.java:146 (javadoc says zipkin3), :39,61-63 (constructor default). DECOYS: the 'zipkin3' string in properties/javadoc; storage type name cassandra3; README docker examples."
+  },
+  {
+   "id": "r3h-zipkin-20",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "A message arrives on the Kafka topic. Under which conditions is it ignored, counted as dropped, decoded as a single legacy span, or handed to the general list decoder, and what happens in the list decoder when the first byte is unrecognised?",
+   "expectedFiles": [
+    "zipkin-collector/kafka/src/main/java/zipkin2/collector/kafka/KafkaCollectorWorker.java",
+    "zipkin/src/main/java/zipkin2/SpanBytesDecoderDetector.java",
+    "zipkin-collector/core/src/main/java/zipkin2/collector/Collector.java"
+   ],
+   "expectedSymbols": [
+    "KafkaCollectorWorker.run",
+    "KafkaCollectorWorker.protobuf3",
+    "SpanBytesDecoderDetector.decoderForListMessage",
+    "Collector.handleDecodeError"
+   ],
+   "expectedFacts": [
+    "Every record increments messages and bytes first; an empty value is then ignored without further counting.",
+    "A value shorter than 2 bytes increments messages-dropped and is skipped.",
+    "If the value is not protobuf3 (first byte 10 with a non-zero second byte), the first byte is <= 16 and not 12, it is decoded as a single span with THRIFT.decodeOne; a RuntimeException there counts a dropped message.",
+    "Everything else (protobuf3, a thrift list starting with 12, JSON starting with '[', or any other byte) goes to collector.acceptSpans(bytes, NOOP), which uses SpanBytesDecoderDetector.decoderForListMessage.",
+    "The detector accepts first bytes 12, 11, protobuf3 or '[' (JSON); otherwise it throws IllegalArgumentException, which Collector.handleDecodeError counts as a dropped message."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: KafkaCollectorWorker.java:79-103 (:82-84 counters/empty, :86-88 <2 bytes, :90 single-span condition, :93-96 decodeOne + drop, :100 acceptSpans), :121-123 (protobuf3 = bytes[0]==10 && bytes[1]!=0); SpanBytesDecoderDetector.java:68-95 (:75-79 first != 12 && != 11 && !protobuf3 && != '['), :84-95 detectDecoder; Collector.java:153-162, :240-243 (handleDecodeError -> incrementMessagesDropped). DECOYS: ZipkinHttpCollector.testForUnexpectedFormat, RabbitMQCollector/ActiveMQSpanConsumer (no single-span path), ScribeSpanConsumer (always THRIFT.decodeOne)."
+  },
+  {
+   "id": "r3h-zipkin-21",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "With the server's self-tracing switched on, what decides whether a given incoming request starts a trace of the server itself? Cover how the sample-rate and traces-per-second settings interact and which requests are even considered.",
+   "expectedFiles": [
+    "zipkin-server/src/main/java/zipkin2/server/internal/brave/ZipkinSelfTracingConfiguration.java",
+    "zipkin-server/src/main/java/zipkin2/server/internal/brave/SelfTracingProperties.java",
+    "zipkin-server/src/main/resources/zipkin-server-shared.yml"
+   ],
+   "expectedSymbols": [
+    "ZipkinSelfTracingConfiguration.sampler",
+    "ZipkinSelfTracingConfiguration.httpTracing",
+    "ZipkinSelfTracingConfiguration.tracing",
+    "SelfTracingProperties"
+   ],
+   "expectedFacts": [
+    "If sample-rate is not 1.0, the sampler is BoundarySampler for rates below 0.01 and Sampler.create(rate) otherwise, and traces-per-second is ignored.",
+    "If sample-rate is 1.0 and traces-per-second is non-zero, RateLimitingSampler.create(tracesPerSecond) is used (defaults 1.0 and 1 make the default one trace per second).",
+    "If sample-rate is 1.0 and traces-per-second is 0, Sampler.ALWAYS_SAMPLE keeps every considered trace.",
+    "The Tracing itself uses Sampler.NEVER_SAMPLE, so only HttpTracing's serverSampler can start traces: it consults the sampler only for request paths starting with /api or /zipkin/api and returns false for all other paths.",
+    "Consequently traces cannot start from other sources such as Kafka or Rabbit consumers (stated in the sampler's javadoc)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ZipkinSelfTracingConfiguration.java:71-90 (sampler bean; :80-85 rate branch, :86-87 per-second, :89 always), :93-105 (:97 NEVER_SAMPLE), :107-119 (:110-115 path check); SelfTracingProperties.java:22-28 (defaults 1.0f, 1); zipkin-server-shared.yml:1-12 (yaml comment: traces-per-second only used when sample-rate is 1.0). DECOYS: ZipkinConfiguration.traceIdSampler / CollectorSampler (collector sample-rate COLLECTOR_SAMPLE_RATE, a different setting that drops incoming spans), ConditionalOnSelfTracing (just enables), TracedCall."
+  },
+  {
+   "id": "r3h-zipkin-22",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "In the MySQL backend, a client span and its server counterpart share one span ID and are written in separate batches, in either order. Whose start timestamp ends up in the stored row, and which rule in the write path produces that?",
+   "expectedFiles": [
+    "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/MySQLSpanConsumer.java",
+    "zipkin-storage/mysql-v1/src/main/resources/mysql.sql"
+   ],
+   "expectedSymbols": [
+    "MySQLSpanConsumer.BatchInsertSpans.apply",
+    "MySQLSpanConsumer.updateName"
+   ],
+   "expectedFacts": [
+    "The row key is (trace_id_high, trace_id, id), so both halves of the RPC target the same zipkin_spans row (primary key in mysql.sql).",
+    "BatchInsertSpans.apply sets START_TS in the INSERT whenever the span has a timestamp, even a shared (server) one, as a tentative value.",
+    "On duplicate key it updates START_TS only when the span is not shared, so the client's authoritative timestamp always wins regardless of arrival order, and a shared span arriving later does not overwrite it.",
+    "duration (non-zero) and parent_id (non-zero) are also written to the update set regardless of shared; name and remote service name only when not null and not \"unknown\" (updateName)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: MySQLSpanConsumer.java:77-83 (:78-82 START_TS rules, comments 'tentatively' / 'replace any tentative'), :90-99 (duration/parent updateFields), :106-109 (onDuplicateKeyUpdate vs onDuplicateKeyIgnore), :184-193 (updateName 'unknown'); mysql.sql:5-15 (PRIMARY KEY (trace_id_high, trace_id, id)). DECOYS: V2SpanConverter.convert (drops timestamp/duration for shared spans in the v1 output but the consumer reads v2.timestampAsLong() directly), Trace.merge (shared flag backfill), V1SpanConverter."
+  },
+  {
+   "id": "r3h-zipkin-23",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "negative-decoy",
+   "difficulty": "hard",
+   "query": "Where does the server apply the storage throttle settings to trace search and trace lookup requests, so that reads are delayed or rejected when storage is under load?",
+   "expectedFiles": [],
+   "expectedSymbols": [],
+   "expectedFacts": [
+    "No code throttles reads: ThrottledStorageComponent extends ForwardingStorageComponent but overrides only spanConsumer() (plus close/toString), so spanStore(), traces(), serviceAndSpanNames() and autocompleteTags() are forwarded unmodified.",
+    "The throttle exists for writes only: ThrottledStorageComponent.ThrottledSpanConsumer.accept wraps the delegate's write call in a ThrottledCall (class javadoc: limits requests to the spanConsumer()).",
+    "The query API calls storage.spanStore()/traces()/serviceAndSpanNames() directly (ZipkinQueryApiV2), which resolve to the unthrottled delegates.",
+    "What exists for reads is a request timeout (zipkin.query.timeout, 11s) set in ZipkinHttpConfiguration, not a throttle."
+   ],
+   "expectedNoMatch": true,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: grep -rn 'Throttled' zipkin-server/src/main/java -> only ZipkinConfiguration (wrapper bean) and the throttle package; ThrottledStorageComponent.java:116-131 shows only delegate(), spanConsumer(), close(), toString() overrides, :120-122 spanConsumer, :133-162 ThrottledSpanConsumer; ForwardingStorageComponent.java:36-50 (forwarding of reads); grep -rn 'spanStore()\\|traces()' zipkin-server/src/main/java -> ZipkinQueryApiV2.java:81,138,147,172 use storage directly; grep -rn 'limiter\\|ThrottledCall' zipkin-server/src/main/java shows no read-path use; ZipkinHttpConfiguration.java:44-54 queryTimeout. DECOYS: STORAGE_THROTTLE_* env vars, ThrottledStorageComponent name suggests whole component, Cassandra/ES isOverCapacity (write classification)."
+  },
+  {
+   "id": "r3h-zipkin-24",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "negative-decoy",
+   "difficulty": "hard",
+   "query": "When self-tracing is on and Cassandra is the storage backend, where does each individual CQL statement execution become a child span of the request's trace?",
+   "expectedFiles": [],
+   "expectedSymbols": [],
+   "expectedFacts": [
+    "It does not: ZipkinCassandra3StorageConfiguration imports TracingSessionFactoryEnhancer (@ConditionalOnSelfTracing) but its postProcessAfterInitialization returns the bean unchanged; the wrapping with TracingSession is commented out.",
+    "The Cassandra driver instrumentation dependency (brave-instrumentation-cassandra-driver) is commented out in zipkin-server/pom.xml, and the zipkin-storage-cassandra module has no Brave code; DefaultSessionFactory builds untraced sessions.",
+    "What does get traced for Cassandra is the storage API level: TracingStorageComponent wraps accept-spans, get-traces and other calls in TracedCall spans for every backend.",
+    "By contrast MySQL gets statement-level spans (ZipkinSelfTracingMySQLStorageConfiguration's ExecuteListener) and Elasticsearch gets HTTP client spans (esTracing)."
+   ],
+   "expectedNoMatch": true,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: grep -rn 'TracingSession' . -> only the commented line ZipkinCassandra3StorageConfiguration.java:75; ZipkinCassandra3StorageConfiguration.java:57-83 (:71-77 no-op postProcessAfterInitialization); grep -rln 'brave' zipkin-storage/cassandra -> no hits; zipkin-server/pom.xml:316-321 (commented dependency); TracingStorageComponent.java:25-68 (API-level spans: accept-spans :186, get-traces :102); ZipkinSelfTracingMySQLStorageConfiguration.java:55-77 (renderEnd/executeEnd spans); ZipkinElasticsearchStorageConfiguration.java:169-197 (esTracing). DECOYS: TracingStorageComponent (looks like it covers Cassandra), TracedCall, ConditionalOnSelfTracing(storageType)."
+  }
+ ]
+}
