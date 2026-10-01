@@ -21,6 +21,31 @@ afterAll(() => {
 });
 
 describe('entity gaps', () => {
+  it('C++: in-class methods returning a reference or pointer are entities (drogon Cookie::getValue)', async () => {
+    const ex = new GraphExtractor();
+    const { entities } = await ex.extractFromFile('lib/inc/drogon/Cookie.h', [
+      'namespace drogon {',
+      'class DROGON_EXPORT Cookie',
+      '{',
+      '  public:',
+      '    const std::string &getValue() const',
+      '    {',
+      '        return value_;',
+      '    }',
+      '    Cookie *self()',
+      '    {',
+      '        return this;',
+      '    }',
+      '    void setValue(const std::string &v) { value_ = v; }',
+      '  private:',
+      '    std::string value_;',
+      '};',
+      '}',
+    ].join('\n'));
+    const methods = entities.filter(e => e.type === 'method').map(e => `${e.parent_class}.${e.name}`);
+    expect(methods).toEqual(['Cookie.getValue', 'Cookie.self', 'Cookie.setValue']);
+  });
+
   it('C++: an export macro is not the class name (drogon HttpRequest)', async () => {
     const ex = new GraphExtractor();
     const { entities, relationships } = await ex.extractFromFile('lib/inc/HttpRequest.h', [

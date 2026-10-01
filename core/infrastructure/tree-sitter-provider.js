@@ -610,6 +610,14 @@ const TAGS_QUERIES = {
       declarator: (reference_declarator
         (function_declarator
           declarator: (qualified_identifier)))) @method.definition
+    (function_definition
+      declarator: (pointer_declarator
+        declarator: (function_declarator
+          declarator: (field_identifier)))) @method.definition
+    (function_definition
+      declarator: (reference_declarator
+        (function_declarator
+          declarator: (field_identifier)))) @method.definition
     (class_specifier name: (type_identifier) @class.definition)
     (struct_specifier name: (type_identifier) @struct.definition)
     (enum_specifier name: (type_identifier) @enum.definition)
