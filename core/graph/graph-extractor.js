@@ -380,6 +380,73 @@ export const GENERIC_RELATIONSHIP_MAPPING = Object.freeze({
 export const INTENTIONAL_DEFAULT_RELATIONSHIP_TYPES = Object.freeze([]);
 const escapeRegexLiteral = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// Relationship patterns whose line annotates the NEXT definition (`@app.route`
+// above `def index`, `#[derive(Debug)]` above `struct Foo`): the decorated
+// definition is the source, not whatever scope encloses the annotation line.
+const ATTRIBUTE_RELATIONSHIP_TYPES = new Set(['decorator', 'derive']);
+// How far below an annotation its definition may start (stacked attributes,
+// doc comments in between).
+const ATTRIBUTE_MAX_GAP = 20;
+// A Go embedded field (`RouterGroup`, `*sync.Mutex`) only exists inside a
+// struct or interface body; anywhere else the same bare-identifier line is a
+// const-block member or a statement.
+const EMBED_SCOPE_TYPES = new Set(['struct', 'interface', 'class', 'type']);
+
+/**
+ * Per-file tracker for comment and docstring lines, called once per line in
+ * order. Relationship patterns (extends / implements / decorator ...) must not
+ * fire on `// class Fake extends Comment`, Javadoc/JSDoc examples or Python
+ * docstring examples — those created self-loops and phantom bases.
+ *
+ * Deliberately conservative: a `/* ... *\/` block is only tracked when the line
+ * STARTS with the opener (a `/*` inside a string such as a glob must not hide
+ * the rest of the file). Python triple quotes are tracked by parity, so a
+ * `SQL = """` assignment is skipped through its closing `"""`.
+ */
+export function createCommentLineTracker(comment) {
+  if (!comment) return () => false;
+  const lineToken = comment.line || null;
+  const [open, close] = comment.block || [];
+  const tripleQuote = open === '"""';
+  const cStyle = open === '/*';
+  let inBlock = false;
+  let quote = null; // active Python triple-quote delimiter
+
+  const count = (s, token) => {
+    let n = 0;
+    for (let i = s.indexOf(token); i !== -1; i = s.indexOf(token, i + token.length)) n++;
+    return n;
+  };
+
+  return (trimmed) => {
+    if (tripleQuote) {
+      if (quote) {
+        if (count(trimmed, quote) % 2 === 1) quote = null;
+        return true;
+      }
+      if (lineToken && trimmed.startsWith(lineToken)) return true;
+      for (const q of ['"""', "'''"]) {
+        if (!trimmed.includes(q)) continue;
+        const startsWithQuote = /^[rRbBuUfF]{0,2}("""|''')/.test(trimmed);
+        if (count(trimmed, q) % 2 === 1) quote = q;
+        return startsWithQuote;
+      }
+      return false;
+    }
+    if (inBlock) {
+      if (trimmed.includes(close)) inBlock = false;
+      return true;
+    }
+    if (lineToken && trimmed.startsWith(lineToken)) return true;
+    if (open && trimmed.startsWith(open)) {
+      if (!trimmed.includes(close, open.length)) inBlock = true;
+      return true;
+    }
+    // Continuation of a block opened mid-line (`code(); /* note` ... ` * more`).
+    return cStyle && (trimmed === '*' || trimmed.startsWith('* ') || trimmed.startsWith('*/'));
+  };
+}
+
 // Types whose regex capture groups commonly contain comma-separated lists.
 // Module-scope constant to avoid per-call Set allocation.
 const MULTI_TARGET_TYPES = new Set([
@@ -387,7 +454,14 @@ const MULTI_TARGET_TYPES = new Set([
   // TS: `interface Foo extends Bar, Baz<T>` — comma-separated
   // parents, generics handled by expandRelationshipTargets.
   'interfaceExtends',
+  // Python `class A(B, C)`, Java/PHP `interface I extends J, K`.
+  'extends',
+  // Rust `#[derive(Debug, Clone)]` — one edge per derived trait.
+  'derive',
 ]);
+// Inheritance-list entries that are not type names after cleanup (Python
+// `metaclass=ABCMeta` / `*mixins`, leftovers of exotic syntax) are dropped.
+const TYPE_LIST_ENTRY = /^\\?[A-Za-z_$][\w$]*(?:(?:\.|::|\\)[A-Za-z_$][\w$]*)*$/;
 
 export const TREE_SITTER_ENTITY_PRIORITY = Object.freeze({
   component: 40,
@@ -1207,6 +1281,9 @@ export class GraphExtractor {
     const lineComment = langInfo.comment?.line || null;
     const hasBlockComment = Array.isArray(langInfo.comment?.block)
       && langInfo.comment.block[0] === '/*';
+    const trackCommentLine = createCommentLineTracker(langInfo.comment);
+    // Decorator/derive edges waiting for the definition below them.
+    let pendingAttributes = [];
 
     // Choose findEndLine strategy based on language type
     const findEndLineFn = (startIdx) => {
@@ -1223,6 +1300,7 @@ export class GraphExtractor {
       const line = lines[i];
       const trimmed = line.trimStart();
       const lineNum = i + 1;
+      const lineIsComment = trackCommentLine(trimmed);
       while (
         activeEntityScopes.length > 0 &&
         activeEntityScopes[activeEntityScopes.length - 1].end_line < lineNum
@@ -1302,6 +1380,12 @@ export class GraphExtractor {
             ...(parentClass ? { parent_class: parentClass } : {}),
           });
           activeEntityScopes.push({ id: entityId, start_line: lineNum, end_line: endLine, type, name });
+          if (pendingAttributes.length > 0 && type !== 'decorator') {
+            for (const rel of pendingAttributes) {
+              if (lineNum - rel.context_line <= ATTRIBUTE_MAX_GAP) rel.source_id = entityId;
+            }
+            pendingAttributes = [];
+          }
           break; // one entity per line
         }
       }
@@ -1319,6 +1403,8 @@ export class GraphExtractor {
 
       for (const { type: relType, pattern, prefilter } of relationshipPatterns) {
         if (relType === 'methodCall') continue;
+        const mappedType = GENERIC_RELATIONSHIP_MAPPING[relType] || 'uses';
+        if (lineIsComment && mappedType !== 'imports') continue;
         if (prefilter && !prefilter(trimmed)) continue;
 
         const match = trimmed.match(pattern);
@@ -1329,22 +1415,25 @@ export class GraphExtractor {
           continue;
         }
         if (match) {
+          if (relType === 'embed' && !EMBED_SCOPE_TYPES.has(activeEntityScopes[activeEntityScopes.length - 1]?.type)) continue;
           const { targets, filtered } = this._resolveRelationshipTargets(relType, match, language);
           if (targets.length === 0) {
             if (!filtered) this._recordEmptyCapture('relationship', language, relType, lineNum, trimmed);
             continue;
           }
-          const mappedType = GENERIC_RELATIONSHIP_MAPPING[relType] || 'uses';
           const weight = GRAPH_CONFIG.relationshipWeights[mappedType] || 1.0;
+          const isAttribute = ATTRIBUTE_RELATIONSHIP_TYPES.has(relType);
           for (const target of targets) {
-            relationships.push({
+            const rel = {
               source_id: sourceEntityId || fileEntityId,
               target_id: null,
               target_name: target,
               type: mappedType,
               weight,
               context_line: lineNum,
-            });
+            };
+            relationships.push(rel);
+            if (isAttribute) pendingAttributes.push(rel);
           }
         }
       }
@@ -1529,24 +1618,36 @@ export class GraphExtractor {
 
     for (let i = 0; i < fragment.length; i++) {
       const ch = fragment[i];
+      let literal;
+      let width;
       if (ch === '\\') {
         const next = fragment[i + 1];
         if (!next) break;
         if (/[A-Za-z0-9]/.test(next)) break;
-        result += next;
-        i++;
+        literal = next;
+        width = 2;
+      } else if (/[A-Za-z0-9_@#<./:-]/.test(ch)) {
+        literal = ch;
+        width = 1;
+      } else {
+        break;
+      }
+
+      // The quantifier on this literal decides whether a line must contain
+      // it. `\*?` / `-?` / `x*` may match nothing: skip it while the prefix is
+      // still empty (e.g. -?include), otherwise stop before it — an escaped
+      // optional char (`^\*?Foo`) was read as a mandatory `*`, so the Go
+      // embed pattern rejected every embed without a pointer star.
+      const quantifier = fragment[i + width];
+      if (quantifier === '?' || quantifier === '*') {
+        if (result.length > 0) break;
+        i += width;
         continue;
       }
-      if (fragment[i + 1] === '?' && result.length === 0 && /[@#<./:_-]/.test(ch)) {
-        // Skip optional leading literal chars (e.g. -?include).
-        i++;
-        continue;
-      }
-      if (/[A-Za-z0-9_@#<./:-]/.test(ch)) {
-        result += ch;
-        continue;
-      }
-      break;
+      result += literal;
+      // `a+` / `a{2}`: the literal is required, but what follows may repeat it.
+      if (quantifier === '+' || quantifier === '{') break;
+      i += width - 1;
     }
 
     return result;
@@ -1556,20 +1657,32 @@ export class GraphExtractor {
     if (typeof target !== 'string') return [target];
     if (!MULTI_TARGET_TYPES.has(relType)) return [target];
 
+    if (relType === 'plainImport') {
+      return splitTopLevelCommas(target)
+        .map((entry) => entry.trim().replace(/\s+as\s+\w+$/i, '').replace(/[;{}]+$/, '').trim())
+        .filter(Boolean);
+    }
+
+    // Generic constraints end the type list: Swift `extension Foo: Bar where
+    // Value: Baz`, Kotlin/C# `class Foo<T> : Bar where T : Baz`.
+    const list = target.replace(/\s+where\s[\s\S]*$/, '');
+
     // Bracket-depth-aware top-level comma splitter.
     // Naive .split(',') would break generics: Base<Foo, Bar>, IFace
-    const parts = splitTopLevelCommas(target);
+    // GraphQL joins interfaces with `&` (`implements Character & Employee`).
+    const parts = splitTopLevelCommas(list).flatMap((entry) => entry.split('&'));
 
     return parts
       .map((entry) => entry.trim()
-        .replace(/\s+as\s+\w+$/i, '')               // import aliases
         .replace(/^(?:(?:public|protected|private|virtual)\s+)+/, '')  // C++ access specifiers
         .replace(/<.*$/, '')                          // strip generics from first <: Map<K, V> → Map
-        .replace(/\([^)]*\)/g, '')                    // strip constructor args: Base(x) → Base
+        .replace(/[([].*$/, '')                       // ctor args / Python generics: Base(x), Generic[T]
+        .replace(/\s+by\s[\s\S]*$/, '')               // Kotlin delegation: Base by impl
+        .replace(/^:+/, '')                           // C++ global qualifier: ::Base
         .replace(/[;{}]+$/, '')                       // strip trailing punctuation
         .trim()
       )
-      .filter(Boolean);
+      .filter((entry) => TYPE_LIST_ENTRY.test(entry));
   }
 
   _clampSentinelEndLines(entities, fileLineCount) {
@@ -1734,11 +1847,30 @@ export class GraphExtractor {
       }
       return null;
     };
+    // The definition an annotation line belongs to: the first non-decorator
+    // entity starting at or below it (tree-sitter may start a decorated
+    // definition at its first decorator line).
+    const findAnnotatedEntity = (lineNum) => {
+      for (const e of sortedEntities) {
+        if (e.start_line < lineNum || e.type === 'decorator') continue;
+        return e.start_line - lineNum <= ATTRIBUTE_MAX_GAP ? e.id : null;
+      }
+      return null;
+    };
+    const findScopeType = (lineNum) => {
+      for (let i = sortedEntities.length - 1; i >= 0; i--) {
+        const e = sortedEntities[i];
+        if (e.start_line <= lineNum && e.end_line >= lineNum) return e.type;
+      }
+      return null;
+    };
+    const trackCommentLine = createCommentLineTracker(langInfo.comment);
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trimStart();
       const lineNum = i + 1;
+      const lineIsComment = trackCommentLine(trimmed);
 
       if (trimmed.length > this.maxRegexLineLength) {
         callScanner?.skipLine();
@@ -1757,20 +1889,24 @@ export class GraphExtractor {
       // Other relationships (imports, extends, etc.)
       for (const { type: relType, pattern, prefilter } of relationshipPatterns) {
         if (relType === 'methodCall') continue;
+        const mappedType = GENERIC_RELATIONSHIP_MAPPING[relType] || 'uses';
+        if (lineIsComment && mappedType !== 'imports') continue;
         if (prefilter && !prefilter(trimmed)) continue;
 
         const match = trimmed.match(pattern);
         if (match) {
+          if (relType === 'embed' && !EMBED_SCOPE_TYPES.has(findScopeType(lineNum))) continue;
           const { targets, filtered } = this._resolveRelationshipTargets(relType, match, language);
           if (targets.length === 0) {
             if (!filtered) this._recordEmptyCapture('relationship', language, relType, lineNum, trimmed);
             continue;
           }
-          const mappedType = GENERIC_RELATIONSHIP_MAPPING[relType] || 'uses';
           const weight = GRAPH_CONFIG.relationshipWeights[mappedType] || 1.0;
+          const sourceId = (ATTRIBUTE_RELATIONSHIP_TYPES.has(relType) && findAnnotatedEntity(lineNum))
+            || sourceEntityId || fileEntityId;
           for (const target of targets) {
             relationships.push({
-              source_id: sourceEntityId || fileEntityId,
+              source_id: sourceId,
               target_id: null,
               target_name: target,
               type: mappedType,
