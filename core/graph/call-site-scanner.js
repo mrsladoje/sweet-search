@@ -84,6 +84,90 @@ const DEFINITION_GUARDS = {
 // `<Map<K, V>>` (one nesting level), Rust turbofish `::<Vec<_>>`.
 const GENERIC_ARGS = String.raw`(?:\s*(?:::)?\s*<[^()<>;]*(?:<[^()<>;]*>[^()<>;]*)*>)?`;
 
+// ── Bare calls (`helper(x)`: a name called with no receiver) ───────────────
+// Reserved words that can precede `(` but never name a callable. Closed,
+// per-language sets (language keywords), not a capture-filter stopword list:
+// builtins (`len`, `print`, `setTimeout`) are left to resolution, which only
+// links a bare call to a definition the caller can see.
+const KW_C_FAMILY = ['if', 'else', 'for', 'while', 'do', 'switch', 'case', 'return', 'sizeof', 'catch', 'try', 'throw', 'new', 'delete', 'goto'];
+const BARE_KEYWORDS_BY_LANGUAGE = {
+  c: [...KW_C_FAMILY, 'alignof', '_Alignof', 'offsetof', 'defined', '__attribute__', '__declspec', 'asm', '__asm__', '_Generic', 'typeof', '__typeof__', 'static_assert', '_Static_assert'],
+  cpp: [...KW_C_FAMILY, 'alignof', 'offsetof', 'defined', '__attribute__', 'decltype', 'static_assert', 'noexcept', 'typeid', 'co_await', 'co_return', 'co_yield', 'requires', 'operator', 'template', 'static_cast', 'dynamic_cast', 'reinterpret_cast', 'const_cast', 'asm', 'catch'],
+  objc: [...KW_C_FAMILY, 'defined', '__attribute__', 'typeof', '@selector', 'synchronized'],
+  java: [...KW_C_FAMILY, 'synchronized', 'assert', 'super', 'this', 'instanceof'],
+  csharp: [...KW_C_FAMILY, 'foreach', 'using', 'lock', 'fixed', 'checked', 'unchecked', 'typeof', 'nameof', 'default', 'base', 'this', 'when', 'stackalloc', 'await', 'in', 'is', 'as'],
+  javascript: [...KW_C_FAMILY, 'typeof', 'void', 'await', 'yield', 'function', 'super', 'import', 'in', 'of', 'instanceof', 'with', 'async'],
+  typescript: [...KW_C_FAMILY, 'typeof', 'void', 'await', 'yield', 'function', 'super', 'import', 'in', 'of', 'instanceof', 'with', 'async', 'keyof', 'satisfies', 'as', 'is', 'asserts', 'infer'],
+  python: ['if', 'elif', 'else', 'for', 'while', 'return', 'yield', 'await', 'assert', 'del', 'not', 'and', 'or', 'in', 'is', 'lambda', 'with', 'except', 'raise', 'print', 'exec', 'from', 'import', 'match', 'case', 'super'],
+  ruby: ['if', 'elsif', 'unless', 'while', 'until', 'for', 'case', 'when', 'return', 'yield', 'defined?', 'not', 'and', 'or', 'in', 'super', 'raise', 'rescue', 'puts', 'p', 'lambda', 'proc', 'loop', 'require', 'require_relative'],
+  go: ['if', 'for', 'switch', 'case', 'return', 'go', 'defer', 'select', 'func', 'range', 'make', 'new', 'len', 'cap', 'append', 'copy', 'delete', 'panic', 'recover', 'print', 'println', 'complex', 'real', 'imag', 'close', 'min', 'max', 'clear'],
+  rust: ['if', 'else', 'for', 'while', 'loop', 'match', 'return', 'in', 'as', 'move', 'unsafe', 'await', 'Some', 'Ok', 'Err', 'Box', 'Vec'],
+  swift: ['if', 'else', 'for', 'while', 'repeat', 'switch', 'case', 'return', 'guard', 'defer', 'catch', 'try', 'throw', 'await', 'in', 'is', 'as', 'where', 'init', 'super', 'self', 'Self', 'type', 'unowned', 'weak', 'some', 'any', 'precondition', 'assert', 'fatalError', 'print'],
+  kotlin: ['if', 'else', 'for', 'while', 'when', 'return', 'throw', 'try', 'catch', 'in', 'is', 'as', 'super', 'this', 'constructor', 'init', 'by', 'where', 'get', 'set', 'listOf', 'mapOf', 'setOf', 'arrayOf', 'println', 'print', 'require', 'check', 'error', 'TODO', 'lazy', 'run', 'let', 'also', 'apply', 'with', 'repeat'],
+  scala: ['if', 'else', 'for', 'while', 'match', 'case', 'return', 'throw', 'try', 'catch', 'yield', 'new', 'super', 'this', 'println', 'print', 'require', 'assert'],
+  php: ['if', 'elseif', 'else', 'for', 'foreach', 'while', 'switch', 'case', 'return', 'catch', 'throw', 'new', 'array', 'list', 'isset', 'unset', 'empty', 'eval', 'exit', 'die', 'echo', 'print', 'include', 'include_once', 'require', 'require_once', 'fn', 'function', 'match', 'clone', 'instanceof', 'parent', 'self', 'static'],
+  dart: [...KW_C_FAMILY, 'assert', 'await', 'yield', 'super', 'this', 'is', 'as', 'in', 'print'],
+  groovy: [...KW_C_FAMILY, 'assert', 'super', 'this', 'in', 'as', 'println', 'print'],
+  lua: ['if', 'elseif', 'while', 'for', 'until', 'return', 'and', 'or', 'not', 'in', 'function', 'local', 'require', 'print', 'pairs', 'ipairs', 'type', 'tostring', 'tonumber', 'error', 'assert', 'pcall', 'xpcall', 'select', 'setmetatable', 'getmetatable', 'rawget', 'rawset', 'next', 'unpack'],
+  elixir: ['if', 'unless', 'case', 'cond', 'with', 'for', 'fn', 'quote', 'unquote', 'receive', 'try', 'raise', 'throw', 'def', 'defp', 'defmacro', 'defmacrop', 'defmodule', 'defstruct', 'defimpl', 'defprotocol', 'defguard', 'defdelegate', 'import', 'alias', 'require', 'use', 'when', 'and', 'or', 'not', 'in', 'is_nil', 'is_atom', 'is_binary', 'is_list', 'is_map', 'is_integer'],
+  shell: ['if', 'then', 'elif', 'else', 'fi', 'for', 'while', 'until', 'do', 'done', 'case', 'esac', 'function', 'return', 'local', 'echo', 'printf', 'test', 'exit'],
+  zig: ['if', 'else', 'while', 'for', 'switch', 'return', 'try', 'catch', 'orelse', 'defer', 'errdefer', 'comptime', 'fn', 'and', 'or', 'struct', 'enum', 'union', 'error'],
+  solidity: [...KW_C_FAMILY, 'require', 'assert', 'revert', 'emit', 'keccak256', 'sha256', 'abi', 'address', 'payable', 'uint', 'uint256', 'int', 'int256', 'bytes', 'bytes32', 'string', 'bool', 'type', 'modifier', 'function', 'event', 'mapping'],
+  perl: ['if', 'elsif', 'else', 'unless', 'while', 'until', 'for', 'foreach', 'return', 'my', 'our', 'local', 'sub', 'and', 'or', 'not', 'print', 'printf', 'push', 'pop', 'shift', 'unshift', 'die', 'warn', 'defined', 'scalar', 'ref', 'keys', 'values', 'exists', 'delete', 'join', 'split', 'map', 'grep', 'sort', 'open', 'close', 'qw'],
+  r: ['if', 'else', 'for', 'while', 'repeat', 'function', 'return', 'c', 'list', 'library', 'require', 'print', 'paste', 'paste0', 'stop', 'warning', 'is.null', 'length', 'names'],
+  julia: ['if', 'elseif', 'else', 'for', 'while', 'return', 'function', 'begin', 'let', 'try', 'catch', 'macro', 'quote', 'in', 'isa', 'println', 'print', 'error', 'throw', 'typeof', 'length', 'push!'],
+};
+const BARE_KEYWORDS_DEFAULT = [...KW_C_FAMILY, 'function', 'func', 'fn', 'fun', 'def', 'await', 'yield', 'super', 'this', 'self', 'in', 'not', 'and', 'or'];
+// Words that may stand right before a called name (`return helper(x)`).
+// Any other identifier directly before the name means a declaration or a
+// type: `def helper(`, `int helper(`, `static Foo* make(`, `fn new(`.
+const CALL_PREFIX_WORDS = new Set([
+  'return', 'await', 'yield', 'throw', 'else', 'case', 'in', 'not', 'and', 'or', 'do', 'then',
+  'when', 'is', 'go', 'defer', 'try', 'echo', 'print', 'puts', 'raise', 'assert', 'if', 'elif',
+  'elsif', 'unless', 'while', 'until', 'match', 'emit', 'co_await', 'co_return', 'co_yield', 'lambda',
+  'orelse', 'catch',
+]);
+// Languages where `name(args) {` at statement start is a method definition
+// (class / object-literal shorthand), not a call. Not Swift/Kotlin/Groovy/
+// Scala/Ruby: there `name(args) { … }` is a call with a trailing closure.
+const SHORTHAND_DEFINITION_LANGUAGES = new Set(['javascript', 'typescript', 'tsx', 'dart', 'java', 'csharp', 'cpp', 'c', 'objc', 'php']);
+const SHORTHAND_DEFINITION = /^(?:(?:async|static|get|set|public|private|protected|internal|override|virtual|abstract|final|readonly|export|default)\s+|\*\s*)*(\w+)\s*(?:<[^()]*>)?\s*\([^]*\)\s*(?::\s*[^{]+)?\{?\s*$/;
+// `#define FOO(x)` / `#if defined(X)` are preprocessor lines, not calls.
+const PREPROCESSOR_LANGUAGES = new Set(['c', 'cpp', 'objc', 'csharp']);
+
+const bareKeywordCache = new Map();
+function bareKeywordsFor(language) {
+  let set = bareKeywordCache.get(language);
+  if (!set) {
+    set = new Set(BARE_KEYWORDS_BY_LANGUAGE[language] || (language === 'tsx' ? BARE_KEYWORDS_BY_LANGUAGE.typescript : BARE_KEYWORDS_DEFAULT));
+    bareKeywordCache.set(language, set);
+  }
+  return set;
+}
+
+/**
+ * Blank the contents of single-line string literals (quotes kept) so call
+ * shapes inside log messages and docs (`"usage: run(cmd)"`) are not read as
+ * calls. Approximate: an unterminated quote blanks to the end of the line.
+ */
+function blankStrings(code, plan) {
+  if (code.indexOf('"') === -1 && !(plan.countSingleQuote && code.indexOf("'") !== -1) && !(plan.countBacktick && code.indexOf('`') !== -1)) return code;
+  let out = '';
+  let quote = 0;
+  for (let i = 0; i < code.length; i++) {
+    const ch = code.charCodeAt(i);
+    if (quote) {
+      if (ch === 92 /* \ */) { out += '  '; i++; continue; }
+      if (ch === quote) { quote = 0; out += code[i]; continue; }
+      out += ' ';
+      continue;
+    }
+    if (ch === 34 || (ch === 39 && plan.countSingleQuote) || (ch === 96 && plan.countBacktick)) quote = ch;
+    out += code[i];
+  }
+  return out;
+}
+
 function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -143,6 +227,11 @@ function buildPlan(language, langInfo) {
     isDefinition: DEFINITION_GUARDS[language] || null,
     // Ruby `=begin`/`=end` must start the line.
     blockAtLineStartOnly: language === 'ruby',
+    // Bare call: a name not preceded by a member/path/sigil character.
+    bare: new RegExp(String.raw`(?<![\w$.:>@#\\])([A-Za-z_]\w*)${GENERIC_ARGS}\s*\(`, 'g'),
+    bareKeywords: bareKeywordsFor(language),
+    shorthandDefinitions: SHORTHAND_DEFINITION_LANGUAGES.has(language),
+    preprocessor: PREPROCESSOR_LANGUAGES.has(language),
   };
 }
 
@@ -283,14 +372,56 @@ export class CallSiteScanner {
   }
 
   /**
+   * Bare calls on one comment-free line: `emitBare(name)` for each name called
+   * with no receiver. Skips keywords, declarations (`def f(`, `int f(`,
+   * `fn f(`, class-method shorthand `f(a) {`), preprocessor lines, names the
+   * line itself defines (`isDefinedHere(name)`), and text inside strings.
+   */
+  _scanBare(trimmed, emitBare, isDefinedHere) {
+    const plan = this.plan;
+    if (plan.preprocessor && trimmed.charCodeAt(0) === 35 /* # */) return;
+    const code = blankStrings(trimmed, plan);
+    const re = plan.bare;
+    re.lastIndex = 0;
+    let m;
+    let first = true;
+    while ((m = re.exec(code)) !== null) {
+      const name = m[1];
+      const atStart = first && m.index === 0;
+      first = false;
+      if (plan.bareKeywords.has(name)) continue;
+      if (isDefinedHere && isDefinedHere(name)) continue;
+      const before = code.slice(0, m.index).trimEnd();
+      if (before) {
+        const last = before.charCodeAt(before.length - 1);
+        // Go `func (r *T) name(`: a receiver list, not a call. Elsewhere
+        // `if (x) name(` and `(int)name(` are calls.
+        if (last === 41 /* ) */ && /^func\s*\(/.test(before)) continue;
+        if (last === 42 /* * */ || last === 38 /* & */) {
+          // `Foo *make(` / `int &ref(`: a declarator after a type name.
+          if (/[\w>]\s*[*&]+$/.test(before)) continue;
+        }
+        const word = /([A-Za-z_]\w*)$/.exec(before);
+        if (word && !CALL_PREFIX_WORDS.has(word[1])) continue;
+        // `Foo<T> make(` / `List<int> f(`: a generic type before the name.
+        if (last === 62 /* > */ && /\w\s*<[^()]*>$/.test(before)) continue;
+      } else if (atStart && plan.shorthandDefinitions && code.endsWith('{') && SHORTHAND_DEFINITION.test(code)) {
+        continue;
+      }
+      emitBare(name);
+    }
+  }
+
+  /**
    * Scan one source line and call `emit(targetName)` for every call site.
    * `line` may be raw (untrimmed); comments are removed here.
    */
-  scanLine(line, emit) {
+  scanLine(line, emit, emitBare = null, isDefinedHere = null) {
     const plan = this.plan;
     const code = this.codeOf(line);
     const trimmed = code.trim();
     if (!trimmed) return;
+    if (emitBare && trimmed.indexOf('(') !== -1) this._scanBare(trimmed, emitBare, isDefinedHere);
 
     // Ruby bang calls (`record.save!`) need no parenthesis.
     const hasParen = trimmed.indexOf('(') !== -1

@@ -151,6 +151,7 @@ export async function buildCodeGraph(files, dryRun = false) {
     : undefined);
   let entityBatch = [];
   let relBatch = [];
+  let callSiteBatch = [];
 
   let processed = 0;
   let errors = 0;
@@ -162,13 +163,14 @@ export async function buildCodeGraph(files, dryRun = false) {
     try {
       const filePath = path.join(PROJECT_ROOT, files[i]);
       const content = await fs.readFile(filePath, 'utf-8');
-      const { entities, relationships } = await extractor.extractFromFile(files[i], content);
+      const { entities, relationships, callSites } = await extractor.extractFromFile(files[i], content);
 
       // Element-wise append, not push(...spread): a single generated mega-file
       // (e.g. libsql's 250k-line SQLite amalgamation) can yield 65k+ entities,
       // and spreading that many args into push() overflows the call stack.
       for (let k = 0; k < entities.length; k++) entityBatch.push(entities[k]);
       for (let k = 0; k < relationships.length; k++) relBatch.push(relationships[k]);
+      if (callSites) for (let k = 0; k < callSites.length; k++) callSiteBatch.push(callSites[k]);
       processed++;
     } catch (err) {
       errors++;
@@ -180,12 +182,13 @@ export async function buildCodeGraph(files, dryRun = false) {
     // O(entities × batches) work discarded by the next batch.
     if ((i + 1) % GRAPH_BATCH_SIZE === 0 || i === files.length - 1) {
       if (entityBatch.length > 0 || relBatch.length > 0) {
-        insertGraph(db, entityBatch, relBatch, hasFts5, { syncFts: false });
+        insertGraph(db, entityBatch, relBatch, hasFts5, { syncFts: false, callSites: callSiteBatch });
         graphFlushed = true;
         totalEntities += entityBatch.length;
         totalRelationships += relBatch.length;
         entityBatch = [];
         relBatch = [];
+        callSiteBatch = [];
       }
     }
 

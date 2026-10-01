@@ -69,7 +69,7 @@ describe('incremental graph edge resolution matches a full build', () => {
     console.log = () => {};
     try {
       const fts = createGraphSchema(db);
-      const extractor = new GraphExtractor({ projectRoot, importResolver: createImportResolver({ projectRoot, files }) });
+      const extractor = new GraphExtractor({ importResolver: createImportResolver({ projectRoot, files }) });
       const ents = [];
       const rels = [];
       for (const rel of files) {

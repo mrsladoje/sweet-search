@@ -660,6 +660,19 @@ const JS_IMPORT_PATTERNS = [
 ];
 
 /**
+ * True when an entity named `name` starts on `lineNum`. Regex extractors push
+ * entities in line order, so only the tail of the list can match.
+ */
+function definedOnLine(entities, lineNum, name) {
+  for (let i = entities.length - 1, k = 0; i >= 0 && k < 6; i--, k++) {
+    const e = entities[i];
+    if (e.start_line === lineNum && e.name === name) return true;
+    if (e.start_line < lineNum) break;
+  }
+  return false;
+}
+
+/**
  * Split a string on commas, but only at the top level — ignoring commas
  * inside <>, (), [], or {} brackets.
  */
@@ -856,8 +869,9 @@ export class GraphExtractor {
             // labels with regex semantics (component/object arrow distinctions).
             const entities = this._normalizeTreeSitterEntities(filePath, symbols, langInfo.id);
             // Still extract relationships with regex (tree-sitter only gives definitions)
-            const relationships = this._extractRelationships(content, lines, filePath, langInfo, entities);
-            return { entities, relationships };
+            const callSites = [];
+            const relationships = this._extractRelationships(content, lines, filePath, langInfo, entities, callSites);
+            return { entities, relationships, callSites };
           }
         }
       } catch {
@@ -900,6 +914,8 @@ export class GraphExtractor {
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
     const javaCallScanner = new CallSiteScanner(JAVA_CALL_SCANNER_LANG);
     const seenCalls = new Set(); // one edge per (caller, target) per file
+    const callSites = [];
+    const javaBare = this._bareCallSink(callSites);
     const importMatches = content.matchAll(JAVA_PATTERNS.import);
 
     for (const match of importMatches) {
@@ -1166,7 +1182,13 @@ export class GraphExtractor {
       }
 
       // Method calls (within method bodies; comment-aware)
-      javaCallScanner.scanLine(line, (targetName) => this._pushCallEdge(relationships, seenCalls, currentClass ? this.makeId(filePath, 'class', currentClass.name) : null, targetName, lineNum));
+      const javaSource = currentClass ? this.makeId(filePath, 'class', currentClass.name) : null;
+      javaCallScanner.scanLine(
+        line,
+        (targetName) => this._pushCallEdge(relationships, seenCalls, javaSource, targetName, lineNum),
+        (name) => javaBare(javaSource || fileEntityId, name, lineNum),
+        (name) => definedOnLine(entities, lineNum, name),
+      );
 
       // Throw statements
       const throwMatch = line.match(/throw\s+new\s+(\w+)/);
@@ -1181,7 +1203,7 @@ export class GraphExtractor {
       }
     }
 
-    return { entities, relationships };
+    return { entities, relationships, callSites };
   }
 
   /**
@@ -1191,6 +1213,8 @@ export class GraphExtractor {
     const entities = [];
     const relationships = [];
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
+    const callSites = [];
+    const jsBare = this._bareCallSink(callSites);
     const jsCallScanner = new CallSiteScanner(JS_CALL_SCANNER_LANG);
     const seenCalls = new Set(); // one edge per (caller, target) per file
 
@@ -1324,10 +1348,15 @@ export class GraphExtractor {
       this._appendDestructuredRequireRelationships(line, fileEntityId, relationships);
 
       // Method call relationships (comment-aware)
-      jsCallScanner.scanLine(line, (targetName) => this._pushCallEdge(relationships, seenCalls, fileEntityId, targetName, lineNum));
+      jsCallScanner.scanLine(
+        line,
+        (targetName) => this._pushCallEdge(relationships, seenCalls, fileEntityId, targetName, lineNum),
+        (name) => jsBare(fileEntityId, name, lineNum),
+        (name) => definedOnLine(entities, lineNum, name),
+      );
     }
 
-    return { entities, relationships };
+    return { entities, relationships, callSites };
   }
 
   /**
@@ -1428,6 +1457,8 @@ export class GraphExtractor {
     const seenCalls = new Set(); // one edge per (caller, target) per file
     const seenTypeUsage = new Set();
     const skipObjects = this._skipObjectSet(langInfo);
+    const callSites = [];
+    const bareSink = this._bareCallSink(callSites);
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
     const jsonDependencySections = new Set(['dependencies', 'devDependencies', 'peerDependencies']);
     let jsonBraceDepth = 0;
@@ -1553,7 +1584,12 @@ export class GraphExtractor {
         : null;
       // Call sites (comment-aware; see call-site-scanner.js).
       if (callScanner) {
-        callScanner.scanLine(line, (targetName) => this._pushCallEdge(relationships, seenCalls, sourceEntityId, targetName, lineNum));
+        callScanner.scanLine(
+          line,
+          (targetName) => this._pushCallEdge(relationships, seenCalls, sourceEntityId, targetName, lineNum),
+          (name) => bareSink(sourceEntityId || fileEntityId, name, lineNum),
+          (name) => definedOnLine(entities, lineNum, name),
+        );
       }
       if (!lineIsComment) {
         const lastEntity = entities[entities.length - 1];
@@ -1634,7 +1670,7 @@ export class GraphExtractor {
     // would need per-language validation before opt-in.
     clampSentinelEndLines(entities, lines.length, langInfo?.id);
 
-    return { entities, relationships };
+    return { entities, relationships, callSites };
   }
 
   getGenericPatternPlan(language, graph) {
@@ -2011,7 +2047,7 @@ export class GraphExtractor {
    * Used by tree-sitter path where entities come from AST but relationships
    * still need regex (tree-sitter tags.scm only gives definitions).
    */
-  _extractRelationships(content, lines, filePath, langInfo, entities) {
+  _extractRelationships(content, lines, filePath, langInfo, entities, callSites = null) {
     const relationships = [];
     if (!langInfo.graph) return relationships;
 
@@ -2072,6 +2108,16 @@ export class GraphExtractor {
     const headers = this._typeHeaderJoins(relationshipPatterns, lines, langInfo);
     const seenTypeUsage = new Set();
     const skipObjects = this._skipObjectSet(langInfo);
+    const bareSink = callSites ? this._bareCallSink(callSites) : null;
+    // Names defined on each line: `def helper(` must not read as a call.
+    const definedOnLine = new Map();
+    if (bareSink) {
+      for (const e of sortedEntities) {
+        let names = definedOnLine.get(e.start_line);
+        if (!names) { names = new Set(); definedOnLine.set(e.start_line, names); }
+        names.add(e.name);
+      }
+    }
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -2093,7 +2139,12 @@ export class GraphExtractor {
 
       // Call sites (comment-aware; see call-site-scanner.js).
       if (callScanner) {
-        callScanner.scanLine(line, (targetName) => this._pushCallEdge(relationships, seenCalls, sourceEntityId, targetName, lineNum));
+        callScanner.scanLine(
+          line,
+          (targetName) => this._pushCallEdge(relationships, seenCalls, sourceEntityId, targetName, lineNum),
+          bareSink ? (name) => bareSink(sourceEntityId || fileEntityId, name, lineNum) : null,
+          bareSink ? (name) => definedOnLine.get(lineNum)?.has(name) === true : null,
+        );
       }
 
       this._appendDestructuredRequireRelationships(trimmed, sourceEntityId || fileEntityId, relationships);
@@ -2151,6 +2202,24 @@ export class GraphExtractor {
    * (resolved duplicates hit the unique index) or left as duplicate
    * unresolved rows, so dropping them changes no resolved edge.
    */
+  /**
+   * Collector for bare call sites (`helper(x)` — no receiver). They go to the
+   * separate `call_sites` table, never to `relationships`: ranking (PageRank,
+   * graph expansion, communities, ref counts) reads relationships only, and
+   * ss-trace resolves bare calls at query time with scope rules
+   * (bare-call-resolution.js). One row per (caller, name) per file.
+   */
+  _bareCallSink(callSites) {
+    const seen = new Set();
+    return (sourceId, name, lineNum) => {
+      if (!sourceId) return;
+      const key = `${sourceId}\u0000${name}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      callSites.push({ source_id: sourceId, callee_name: name, context_line: lineNum });
+    };
+  }
+
   _pushCallEdge(relationships, seen, sourceId, targetName, lineNum) {
     const key = `${sourceId}\u0000${targetName}`;
     if (seen.has(key)) return;
@@ -2614,10 +2683,48 @@ export function createGraphSchema(db) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_target_id ON relationships(target_id) WHERE target_id IS NOT NULL`);
   // Index supports `page_rank DESC` lookups for ss-trace ranking and ranking probes.
   db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_page_rank ON entities(page_rank) WHERE stale_since IS NULL`);
+  ensureCallSitesSchema(db);
 
   setSchemaVersion(db);
 
   return hasFts5;
+}
+
+/**
+ * Bare call sites (`helper(x)` — no receiver). Kept out of `relationships` on
+ * purpose: every ranking consumer (PageRank, graph expansion, communities,
+ * ref counts, name-joined neighbour lookups) reads that table, and bare calls
+ * resolve only under scope rules at ss-trace query time
+ * (bare-call-resolution.js). Additive: graphs built before this table simply
+ * have no bare callers. Epoch columns match the incremental visibility model.
+ */
+export function ensureCallSitesSchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS call_sites (
+      source_id TEXT NOT NULL,
+      callee_name TEXT NOT NULL,
+      context_line INTEGER,
+      epoch_written INTEGER NOT NULL DEFAULT 0,
+      epoch_retired INTEGER
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_call_sites_callee ON call_sites(callee_name)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_call_sites_source ON call_sites(source_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_call_sites_retired ON call_sites(epoch_retired) WHERE epoch_retired IS NOT NULL');
+}
+
+/** Insert bare call sites; `idFor` maps an extractor source id to the stored id. */
+export function insertCallSites(db, callSites, { epoch = 0, idFor = null } = {}) {
+  if (!callSites || callSites.length === 0) return 0;
+  const stmt = db.prepare('INSERT INTO call_sites (source_id, callee_name, context_line, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, NULL)');
+  let n = 0;
+  for (const c of callSites) {
+    const source = (idFor && idFor.get(c.source_id)) || c.source_id;
+    if (!source || !c.callee_name) continue;
+    stmt.run(source, c.callee_name, c.context_line ?? null, epoch);
+    n++;
+  }
+  return n;
 }
 
 /**
@@ -2645,7 +2752,7 @@ export function rebuildGraphFts(db) {
   }
 }
 
-export function insertGraph(db, entities, relationships, hasFts5 = false, { syncFts = true } = {}) {
+export function insertGraph(db, entities, relationships, hasFts5 = false, { syncFts = true, callSites = null } = {}) {
   // Insert entities with HCGS hierarchy support
   // Includes signature_hash for collision-proof backup/restore
   const entityStmt = db.prepare(`
@@ -2766,6 +2873,12 @@ export function insertGraph(db, entities, relationships, hasFts5 = false, { sync
   // Target resolution runs after all files are inserted:
   // relationship-resolver.js resolveRelationshipTargets (called by the
   // index builder), which also derives the trace-only override edges.
+
+  if (callSites && callSites.length > 0) {
+    ensureCallSitesSchema(db);
+    db.transaction(() => insertCallSites(db, callSites))();
+  }
+
 
   // Rebuild FTS indexes if available
   if (hasFts5 && syncFts) {
