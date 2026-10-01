@@ -60,7 +60,8 @@ function compare(label, A, B) {
 }
 // --within: baseTag is ONE interleaved run; compare its arm `sweet` (A) with arm `sweetB` (B).
 const WITHIN = process.argv.includes('--within');
-const base = WITHIN ? run(baseTag, 'sweet') : run(baseTag), variant = WITHIN ? run(baseTag, 'sweetB') : run(varTag);
+const WARMS = (flag('--within-arms') || 'sweet,sweetB').split(',');   // e.g. --within-arms native,sweet
+const base = WITHIN ? run(baseTag, WARMS[0]) : run(baseTag), variant = WITHIN ? run(baseTag, WARMS[1]) : run(varTag);
 console.log(`# ${cell}: ${varTag} vs ${baseTag}`);
 const res = compare(`B=${varTag} vs A=${baseTag}`, base, variant);
 const b2 = flag('--base2');
