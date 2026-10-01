@@ -1329,6 +1329,35 @@ describe('patternSearch', () => {
     expect(result.results.every(r => !r.indexed)).toBe(true);
   });
 
+  // ss-find / pattern mode obeys the final-k contract: at most k results, in both the
+  // benchmark shape and the packaged agent shape (token-budget tier sees <= k results).
+  it.skipIf(!rgAvailable)('returns at most k results in benchmark and agent format', async () => {
+    const makeThis = () => ({
+      verbose: false,
+      hasLateInteractionIndex: true,
+      lateInteractionIndex: {
+        documents: new Map([
+          ['c1', { metadata: { file: 'a.js' }, tokens: new Int8Array(10), numTokens: 1, dim: 10, min: 0, scale: 1 }],
+        ]),
+        aliasPointers: new Map(),
+        init: vi.fn(),
+        hasTokens: () => new Set(),
+      },
+      getChunkLocationMap() {
+        return new Map();
+      },
+    });
+
+    // `class.*` matches far more than 3 lines in this repository.
+    const bench = await patternSearch.call(makeThis(), 'auth', null, { regex: 'class.*', k: 3 });
+    expect(bench.results.length).toBeGreaterThan(0);
+    expect(bench.results.length).toBeLessThanOrEqual(3);
+
+    const agent = await patternSearch.call(makeThis(), 'auth', null, { regex: 'class.*', k: 3, format: 'agent' });
+    expect(agent.results.length).toBeGreaterThan(0);
+    expect(agent.results.length).toBeLessThanOrEqual(3);
+  }, 120_000);
+
   it.skipIf(!rgAvailable)('returns empty results when grep finds no matches', async () => {
     // This tests the full pipeline with a regex that won't match anything
     const regex = ['ZZZZNOTFOUND', 'XYZZY', 'NEVERMATCHES', '42'].join('_');

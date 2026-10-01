@@ -43,6 +43,7 @@ import * as hybrid from './search-hybrid.js';
 import * as postprocess from './search-postprocess.js';
 import * as pattern from './search-pattern.js';
 import { packageForAgent } from './context-expander.js';
+import { seedPoolSize } from './final-k.js';
 import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
 
 export { ROUTE_ALPHAS } from './search-fusion.js';
@@ -761,7 +762,10 @@ export class SweetSearch {
       case 'hybrid':
       default: {
         const hybridResult = await this.hybridSearchV2(query, {
-          k,
+          // Seed pool (== k by default; see final-k.js for why a wider pool is
+          // opt-in). Graph expansion + cascade rerank run on this pool and
+          // applyPostRetrieval cuts the final list back to k.
+          k: seedPoolSize(k),
           useLateInteraction,
           format: options.format,
           routing,
@@ -883,6 +887,7 @@ export class SweetSearch {
         mode: finalStats.path || searchMode,
         format: options.format,
         tokenBudget: options.tokenBudget,
+        k,
         codeGraphRepo: this.codeGraphRepo || null,
         locationMap: null,
         projectRoot: this.projectRoot,

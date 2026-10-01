@@ -22,6 +22,7 @@ import { readFileRange } from './search-pattern-chunks.js';
 import { rankingRelationshipTypes } from '../graph/relationship-types.js';
 import { computeSufficiencyVerdict } from './query-sufficiency.js';
 import { applyAgentPackCompletion, buildPackSiblingLine, shownSourceEndLine } from './agent-pack-completion.js';
+import { capToFinalK } from './final-k.js';
 import { statSync } from 'fs';
 import path from 'path';
 import { UNRESOLVED_IMPORT_PREFIX } from '../graph/import-resolver.js';
@@ -1986,6 +1987,8 @@ export function selectAgentBudget(format, signals, opts = {}) {
  * @param {string} opts.regex - Regex pattern used
  * @param {string} [opts.format='agent'] - 'agent' | 'agent_preview' | 'agent_full'
  * @param {number} [opts.tokenBudget] - Total token budget (default depends on sub-mode)
+ * @param {number} [opts.k] - Final result cap. When set, rankedResults is cut to k
+ *   BEFORE budget signals are computed, so numResults never counts more than k.
  * @param {object} [opts.codeGraphRepo] - CodeGraphRepository for entity lookup (DDD)
  * @param {Map} [opts.locationMap] - Chunk location map
  * @param {string} [opts.projectRoot] - Project root path
@@ -2027,7 +2030,10 @@ export function buildSameFileMap(top, adjacent) {
   return { rendered, tokens: estimateTokens(rendered), neighbors };
 }
 
-export function packageForAgent(rankedResults, searchStats, opts) {
+export function packageForAgent(rankedResultsIn, searchStats, opts) {
+  // Final-k contract: budget-tier signals (numResults, dominance, top-1 size)
+  // are computed on the final <= k list, never on an inflated candidate list.
+  const rankedResults = capToFinalK(rankedResultsIn, opts?.k);
   const {
     query,
     regex,
