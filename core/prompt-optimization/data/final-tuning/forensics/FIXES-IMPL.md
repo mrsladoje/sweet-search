@@ -398,11 +398,56 @@ renderer with a `# sweet-search:` header. Its opt-out is read from the DAEMON's 
 from the process that spawned it); restart the daemon after changing it. MCP output is unchanged.
 
 A5 change in the port: a `|` inside an unclosed group (`app.(get|post`) stays literal (`[|]`) instead of
-becoming a top-level alternative that matched every `post`; the engine's regex-dialect note is not printed
-after a repair (it described the wrapper's escaped pattern as "used unchanged").
+becoming a top-level alternative that matched every `post`; the engine's "used unchanged" regex-dialect
+note is not printed after a repair (it described the wrapper's escaped pattern). See the review below
+for the escape form and the retry note.
 
 A4 (second commit): the product default now includes the compact ss-trace. Its section headings use
 the full trace's count (every row, plus `N call sites, M distinct callers` when they differ; commit
 062997d8), so the heading agrees with `fan-in=` / `fan-out=`; external rows are counted and named in
 the `(+N external ...)` line. The native `sweet-search trace` text (daemon formatStructuralContext) is
 unchanged.
+
+## Product port review (2026-10-01, after 794ab856)
+
+Fixed in ea94eb35 (tests: `agent-output-fixes*.test.js`, `bundle-a-product.test.js`):
+
+| Finding | Fix |
+|---|---|
+| A5 repair was not literal-safe. On zero hits the engine's GNU-dialect retry (`regex-dialect.js`) rewrites the backslash forms of `(` `)` `+` `{m,n}` and of the pipe, so it turned the wrapper's escapes back into operators. `ss-grep 'functio\(n)'` printed 3163 hits (every `function`) under "searched it as literal text"; the port's note suppression made this silent. | A repair escape is a one-character class (`[(]` `[)]` `[{]` `[}]` `[+]` `[?]`, and the same for the pipe); the retry never rewrites it. Now: 0 hits + the repaired-no-match note. After a repair the dialect note still prints when the ENGINE retried (its hits are then shown); only "used unchanged" stays suppressed. |
+| A2 dropped summaries of lines the agent never saw. "Covered by a code entry" used the entry's `startLine..endLine`, but a body cut at the token cap, a sandwich with elided lines or a preview prints only part of that span. | `shownCodeSpan`: the packer's `shownStartLine/shownEndLine`, or a full body whose line count equals the span (a sandwich only with zero elision). An identical span still drops the summary (the header names it). |
+| The daemon's agent text read only `SWEET_SEARCH_COMPACT_OUTPUT`. A legacy bench arm (`SS_FIX_A=0`) got compact `sweet-search "<q>"` text while its `ssOutput` stamp said `legacy`. | `renderAgentSearchResponse` uses `readFixFlags` (same precedence as the ss-* tools). |
+| `bundle-a-product.test.js` fixture run could reuse, then `--stop`, another session's daemon: sockets are keyed by project root, not by `SWEET_SEARCH_RUNTIME_DIR`. | Private `SWEET_SEARCH_SOCKET_PATH` / `SWEET_SEARCH_PID_FILE` in the test's runtime dir. |
+
+Checked and found correct: A1 keeps `# <tool>: N results for "<q>"` and `# sufficient=YES` (only with a
+confidence verdict); A7 cuts only import lines that the entry's code shows; A4 prints the same caller /
+callee rows as the full trace (both print the packed rows; the heading counts every row), keeps the
+ambiguous and wrong-`--in` fallbacks; the opt-out paths (`SWEET_SEARCH_COMPACT_OUTPUT=0`, `SS_FIX_A=0`) run
+the previous code in the wrappers and in the daemon (unit tests pin the daemon bytes); the rules text
+(`p7-final/sweet-search-system-prompt.md`, hooks) names no removed field and keeps the `sufficient=YES`
+sentence. ss-* wrapper output changes need no restart and no native rebuild (no Rust change).
+
+Left open (owner decisions, not fixed here):
+
+- **Native `sweet-search "<q>"` agent text is compact but was never benchmarked.** The bench measured the
+  ss-* wrappers only. The blocks come from the same renderer; the surface is new.
+- **Daemon restart on upgrade.** `renderAgentSearchResponse` runs in the daemon. There is no code-version
+  check: a warm daemon keeps the old renderer until its idle TTL (`SWEET_SEARCH_DAEMON_IDLE_TTL_MS`,
+  default 20 min, `search-server.js:1454`) or `sweet-search --stop`. The opt-out and `SS_FIX_A` are read from
+  the daemon's env, so interleaved bench arms that share one daemon (same repo) share its native-text mode
+  (the warm-up's `sweet` arm env); the ss-* wrapper output is per call and per arm.
+- **Older runners flip silently.** `cc-batch`, `ba-batch`, `oc-batch` and the other `SS_BIN` scripts set no
+  `SS_FIX_*` and stamp no `ssOutput`: a rerun is compact. The task-completion bench runner was not touched
+  (out of scope). A run to compare with rows before 69c8e2fe must set `SS_FIX_A=0`.
+- **ss-* PATH gap (answer).** A user install does not put the ss-* tools on PATH. `package.json:36-39`
+  `bin` exposes only `sweet-search` and `sweet-search-mcp`; `package.json:78-86` ships
+  `eval/agent-read-workflows/bin/ss-*`, but no installer links or exports that directory (`scripts/init.js`,
+  `scripts/install-*.js`, `scripts/hooks/`, `inject-agent-instructions.js`: no reference to
+  `agent-read-workflows`, no PATH change). The rules tell the agent to run `ss-*` via Bash
+  (`p7-final/sweet-search-system-prompt.md:26-34`; `scripts/hooks/remind-tools.mjs:26-31`;
+  `scripts/hooks/intercept-read.mjs:25`). Only the benches put the directory on PATH
+  (`scripts/retrieval-bench-282.mjs:126,258`; `scripts/cc-batch.mjs:26,68`). So in a user install an agent
+  gets `command not found` for `ss-search` unless the user adds
+  `node_modules/sweet-search/eval/agent-read-workflows/bin` to PATH; the only shipped command it can reach
+  is `sweet-search` (the daemon's agent text above).
+
