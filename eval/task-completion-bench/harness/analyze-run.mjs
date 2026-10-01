@@ -8,13 +8,16 @@
 //
 // Usage: node analyze-run.mjs <rows.json> [--ledger <ledger.jsonl>] [--boot 10000]
 //                             [--exclude id1,id2] [--quiet-evidence]
-//                             [--ledger-basis current|legacy-cachewrite-claudecode-only]
+//                             [--ledger-basis current|flat-1.25x|legacy-cachewrite-claudecode-only]
 //
 // LEDGER BASIS. Every cost figure below names the basis it is priced on, because the same
 // run priced two ways gives two different sweet-versus-native percentages. On the fresh pool
 // the difference is 0.79 points on opencode and 0.29 on codex — a quarter of the gap under
-// discussion, not a rounding detail. `current` charges the provider's 1.25x prompt-cache-write
-// rate on all three harnesses. `legacy-cachewrite-claudecode-only` reproduces the basis
+// discussion, not a rounding detail. `current` is 'cache-write-by-ttl' (2026-10-01): each cache
+// write priced at its recorded TTL, 1.25x for 5 minutes and 2.0x for 1 hour, with a flagged 1.25x
+// fallback where a harness reports no split. `flat-1.25x` reproduces the 2026-09-02..09-30 basis
+// (every write at 1.25x) from the costRealizedFlat125Usd column. A run that pools rows from two
+// bases prints MIXED. `legacy-cachewrite-claudecode-only` reproduces the basis
 // published before 2026-09-02, where only claude-code supplied a cache-write count, and reads
 // the costRealizedNoCacheWriteUsd column every runner now writes. Use it for disclosure rows
 // that restate an old number; never for a headline.
@@ -30,13 +33,16 @@ const ROWS = args.find(a => !a.startsWith('--'));
 const arg = (n, d) => { const i = args.indexOf(`--${n}`); return i > -1 ? args[i + 1] : d; };
 const B = +arg('boot', 10000);
 const EXCLUDE = new Set(String(arg('exclude', '')).split(',').map(s => s.trim()).filter(Boolean));
-if (!ROWS) { console.error('usage: analyze-run.mjs <rows.json> [--ledger <f>] [--boot N] [--exclude ids] [--ledger-basis current|legacy-cachewrite-claudecode-only]'); process.exit(2); }
+if (!ROWS) { console.error('usage: analyze-run.mjs <rows.json> [--ledger <f>] [--boot N] [--exclude ids] [--ledger-basis current|flat-1.25x|legacy-cachewrite-claudecode-only]'); process.exit(2); }
 
 const BASIS_MODE = String(arg('ledger-basis', 'current'));
-if (!['current', 'legacy-cachewrite-claudecode-only'].includes(BASIS_MODE)) {
-  console.error(`analyze-run: unknown --ledger-basis "${BASIS_MODE}" (current | legacy-cachewrite-claudecode-only)`); process.exit(2);
+if (!['current', 'flat-1.25x', 'legacy-cachewrite-claudecode-only'].includes(BASIS_MODE)) {
+  console.error(`analyze-run: unknown --ledger-basis "${BASIS_MODE}" (current | flat-1.25x | legacy-cachewrite-claudecode-only)`); process.exit(2);
 }
 const LEGACY_BASIS = BASIS_MODE === 'legacy-cachewrite-claudecode-only';
+// flat-1.25x = the 2026-09-02..09-30 basis (every cache write at 1.25x, whatever its TTL), read
+// from the costRealizedFlat125Usd column the runners write beside the by-TTL figure.
+const FLAT_BASIS = BASIS_MODE === 'flat-1.25x';
 
 const raw = JSON.parse(readFileSync(ROWS, 'utf8'));
 const allRowsRaw = Array.isArray(raw) ? raw : (raw.rows || []);
@@ -51,7 +57,10 @@ const allRows = LEGACY_BASIS
     costRealizedUsd: r.costRealizedNoCacheWriteUsd ?? null,
     costRealizedMainOnlyUsd: r.costRealizedNoCacheWriteMainOnlyUsd ?? null,
   }))
-  : allRowsRaw;
+  : FLAT_BASIS
+    // Rows written before the by-TTL basis have no flat column but already ARE on the flat basis.
+    ? allRowsRaw.map(r => ({ ...r, costRealizedUsd: r.costRealizedFlat125Usd ?? (r.ledgerBasis === 'cache-write-by-ttl' ? null : r.costRealizedUsd ?? null) }))
+    : allRowsRaw;
 
 // One label, printed beside every cost figure. Rows carry their own `ledgerBasis`; if they
 // disagree with each other the run pooled two ledgers and no cost figure from it is
@@ -59,6 +68,7 @@ const allRows = LEGACY_BASIS
 const rowBases = [...new Set(allRowsRaw.map(r => r.ledgerBasis).filter(Boolean))];
 const BASIS_LABEL = LEGACY_BASIS
   ? 'cache-write-1.25x-claudecode-only (LEGACY, disclosure only)'
+  : FLAT_BASIS ? 'cache-write-1.25x-all-harnesses (PREVIOUS, disclosure only)'
   : (rowBases.length === 1 ? rowBases[0]
     : rowBases.length === 0 ? 'UNLABELLED ROWS — basis unknown, pre-2026-09-02 collection'
       : `MIXED (${rowBases.join(' + ')}) — NOT COMPARABLE`);

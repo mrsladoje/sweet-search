@@ -186,7 +186,7 @@ console.log('\ncache-write surcharge (G17), all three runner turn shapes:');
 }
 
 // LEDGER_BASIS is printed beside every cost figure; the two labels must stay distinct.
-assert(LEDGER_BASIS === 'cache-write-1.25x-all-harnesses', 'LEDGER_BASIS names the current basis', LEDGER_BASIS);
+assert(LEDGER_BASIS === 'cache-write-by-ttl', 'LEDGER_BASIS names the current basis', LEDGER_BASIS);
 assert(LEDGER_BASIS_LEGACY !== LEDGER_BASIS, 'the legacy basis label is distinct from the current one');
 
 rmSync(dir, { recursive: true, force: true });

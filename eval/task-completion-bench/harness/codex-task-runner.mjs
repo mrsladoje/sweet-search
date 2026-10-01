@@ -25,6 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { recoverIdealCost, rolloutFilesForRundir, turnsFromRollout, costFromTurns, priceFor, LEDGER_BASIS, PRICE as IDEAL_PRICE } from './ideal-cost.mjs';
 import { persistTurns } from './turn-log.mjs';
+import { firstRequestCacheFields } from './cache-warmup.mjs';
 import { runTestsTelemetry, attachRequireSameDiffFromEnv } from './rt-inflight.mjs';
 import { brokerRequesterSource, directShimSource } from './rt-shim-text.mjs';
 import {
@@ -1212,6 +1213,7 @@ ${ho}`;
   // it the codex realized column sits on the old claude-code-only basis while
   // realFromTurnsUsd sits on the new one, and a cross-harness table mixes two ledgers.
   let cacheWriteTokens = 0;
+  let firstRequestTurns = null;   // cache-warmup.mjs fairness evidence (first request's cache read)
   try {
     const sessionsDir = (jail || privateCodexHome) ? path.join(codexHome, 'sessions') : undefined;
     // C-3 invokes the agent twice, so there are two rollout files and the cost columns must be
@@ -1240,6 +1242,7 @@ ${ho}`;
       idealCostUsd = +cost.idealUsd.toFixed(6); realFromTurnsUsd = +cost.realFromTurnsUsd.toFixed(6);
       breakPricedCostUsd = +cost.breakPricedUsd.toFixed(6); contextRewrites = cost.contextRewrites;
       cacheWriteTokens = merged.reduce((a, tu) => a + (Number(tu.cacheWrite) || 0), 0);
+      firstRequestTurns = merged;
       rolloutFile = files.join(','); idealTurns = merged.length;
       if (c3) { c3.contexts = C3 === 'v5' ? 1 : per.length; c3.rolloutFiles = per.length; }
       // costContentUsd + the persisted turn list follow the same merge, so downstream
@@ -1255,6 +1258,7 @@ ${ho}`;
       const ic = recoverIdealCost(rundir, { sinceMs: t0 - 60000, price: _p, sessionsDir });
       ({ idealCostUsd, realFromTurnsUsd, breakPricedCostUsd, contextRewrites, rolloutFile, turns: idealTurns } = ic);
       cacheWriteTokens = (ic.turnList || []).reduce((a, tu) => a + (Number(tu.cacheWrite) || 0), 0);
+      firstRequestTurns = ic.turnList;
       // P7 (PLAN.md §3 B1): the rollout jsonl lives in the per-rollout codex home, which is
       // torn down with the run — persist the per-turn array now or lose it. costContentUsd
       // (unique context charged once + output) needs the same growing-prefix structure and
@@ -1303,6 +1307,9 @@ ${ho}`;
     stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0,
     exitReason, usage: u, costNaiveUsd: +costNaive.toFixed(6), costRealizedUsd: +costRealized.toFixed(6),
     ledgerBasis: LEDGER_BASIS, cacheWriteTokens,
+    // Codex reports no cache TTL split: its writes are priced at the 1.25x fallback, flagged here.
+    cacheWriteUnsplitTokens: cacheWriteTokens,
+    ...firstRequestCacheFields(firstRequestTurns),
     costRealizedNoCacheWriteUsd: +costRealizedNoCacheWrite.toFixed(6),
     costContentUsd, idealCostUsd, realFromTurnsUsd, breakPricedCostUsd, contextRewrites, rolloutFile, idealTurns, turnsFile,
     wallMs, trajectory, finalAssistantText: answer, c3, r1, ...rtTelemetry,

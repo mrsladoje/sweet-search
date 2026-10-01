@@ -40,6 +40,7 @@ import { assertBaseCommit, writeProvenance, verifyGolden, provenanceNote, proven
 import { materialiseDeps } from './dep-materialise.mjs';
 import { admissionReport, loadBlocklist, vacuityBlocklist } from './task-admission.mjs';
 import { degenerationVerdict } from './degeneration-policy.mjs';
+import { WARMUP_ID, WARMUP_QUESTION, warmupEnabled, createWarmupGate, excludeWarmups, cacheFairness, fairnessBanner } from './cache-warmup.mjs';
 import { SPAWN_LEDGER_ENV, spawnLedgerFile, reapSpawnLedger, reapSpawnLedgerSync, reapLedgerDir, allLedgerFiles } from './spawn-ledger-reap.mjs';
 // HARNESS routes the agent loop through a REAL production coding agent (uncapped — runs
 // to completion) instead of the bare-API ReAct loop. All share grading/metrics + the
@@ -588,6 +589,19 @@ const TOTAL_RUNS = INSTANCES.length * ARMS.length * REPS;
 const t0run = Date.now();
 const prog = { done: 0, errors: 0, cost: 0, predOk: { native: 0, sweet: 0 }, byArm: { native: 0, sweet: 0 } };
 const PROGRESS_LOG = path.join(BENCH, 'results', runId, 'progress.log');
+
+// ---- equal prompt-cache warmth (cache-warmup.mjs) -------------------------------------------
+// Before the first SCORED rollout of each arm, one unscored warm-up request with that arm's exact
+// launch config runs and finishes. Lazily per arm, so an arm that starts late (arms are
+// interleaved per task) is warmed right before ITS first rollout, not minutes earlier. The
+// warm-up's rows, tokens and cost go to results/<runId>/warmups.jsonl and nowhere else: never to
+// rows.json, preds, progress totals or any aggregate. SS_CACHE_WARMUP=0 turns it off.
+const WARM_GATE = createWarmupGate({
+  logFile: path.join(BENCH, 'results', runId, 'warmups.jsonl'),
+  meta: { runId, harness: HARNESS, model: MODEL },
+  enabled: warmupEnabled() && ['codex', 'claudecode', 'opencode'].includes(HARNESS),
+});
+const WARMUP_PROBLEM = `${WARMUP_QUESTION} Make no changes to any file.`;
 const fmtDur = s => (s >= 3600 ? `${(s / 3600).toFixed(1)}h` : `${Math.max(0, Math.round(s / 60))}m`);
 function emitProgress(tag = '') {
   const pct = TOTAL_RUNS ? ((prog.done / TOTAL_RUNS) * 100).toFixed(0) : '0';
@@ -630,6 +644,32 @@ async function withCheckoutLock(key, fn) {
   }
 }
 
+// The unscored warm-up request for one arm: the arm's real runner, its real launch config, a
+// tool-free one-word task, in its own throwaway rundir (a different cwd than any scored rollout, so
+// only the shared prefix is warmed, never the per-repo part). The patch and trajectory are dropped
+// and only a few scalars reach warmups.jsonl. Runs once per arm, through WARM_GATE.
+async function warmupAttempt(arm, id, t, golden, image) {
+  const sweet = arm === 'sweet';
+  const rundir = makeRunDir(golden.dir, 0, sweet);
+  const w0 = Date.now();
+  console.log(`  [warmup ${arm}] unscored cache warm-up (cwd ${path.basename(rundir)}, based on ${id}) — scored ${arm} rollouts wait for it`);
+  try {
+    if (sweet && !(CLI_HARNESS && ISOLATION_ON)) warmupRun(rundir);
+    const task = { id: WARMUP_ID, repoCheckout: rundir, mppPath: MPP, problem_statement: WARMUP_PROBLEM };
+    const agentOpts = { arm, apiModel: MODEL, reasoning: REASONING, provider: PROVIDER, ssBinDir: SS_BIN, mppText, image, t, perCallTimeoutMs: AGENT_TIMEOUT_MS };
+    const r = HARNESS === 'codex' ? await runCodexTask(task, agentOpts)
+      : HARNESS === 'claudecode' ? await runClaudeCodeTask(task, agentOpts)
+      : await runOpencodeTask(task, agentOpts);
+    if (r.exitReason === 'timeout' || r.exitReason === 'agent_error') throw new Error(`warm-up ${r.exitReason}`);
+    const pick = ['calls', 'exitReason', 'usage', 'costRealizedUsd', 'costRealizedFlat125Usd', 'idealCostUsd', 'ledgerBasis',
+      'cacheWriteTokens', 'cacheWriteTokens5m', 'cacheWriteTokens1h', 'cacheWriteUnsplitTokens',
+      'firstRequestCacheRead', 'firstRequestCacheWrite', 'firstRequestInputTokens'];
+    return { id: WARMUP_ID, basedOnTask: id, wallMs: Date.now() - w0, ...Object.fromEntries(pick.filter(k => r[k] !== undefined).map(k => [k, r[k]])) };
+  } finally {
+    await reapRunDir(rundir);
+  }
+}
+
 // Per-task work for ONE instance. Build the golden ONCE (serialized per
 // repo@commit), then each arm/rep runs in its OWN isolated cp-copy of the golden
 // (own ss-* server/maintainer, incremental ON), deleted after. The worker pool
@@ -652,7 +692,10 @@ async function runOneTask(id) {
       for (let rep = 0; rep < REPS; rep++) {
         const sweet = arm === 'sweet';
         // one measured attempt in its own isolated rundir; reaped no matter what.
+        let attemptStartMs = null;   // when the SCORED rollout launched (after its arm's warm-up finished)
         const attemptRun = async () => {
+          // The arm's unscored warm-up finishes BEFORE any scored rollout of that arm starts.
+          await WARM_GATE.ensure(arm, () => warmupAttempt(arm, id, t, golden, image));
           const rundir = makeRunDir(golden.dir, rep, sweet);
           // Installed dependencies, put where a real checkout would have them. OFF by
           // default so the standing baseline stays byte-identical; when on it runs for BOTH
@@ -670,6 +713,7 @@ async function runOneTask(id) {
             // would sit in a different mount namespace, invisible to the agent.
             if (sweet && !(CLI_HARNESS && ISOLATION_ON)) warmupRun(rundir);
             const agentOpts = { arm, apiModel: MODEL, reasoning: REASONING, provider: PROVIDER, ssBinDir: SS_BIN, mppText, image, t, perCallTimeoutMs: AGENT_TIMEOUT_MS };
+            attemptStartMs = Date.now();
             if (HARNESS === 'codex') return await runCodexTask(task, agentOpts);
             if (HARNESS === 'claudecode') return await runClaudeCodeTask(task, agentOpts);
             if (HARNESS === 'opencode') return await runOpencodeTask(task, agentOpts);
@@ -721,7 +765,7 @@ async function runOneTask(id) {
             if (rep === 0) predsByArm[arm].push(pred);
             (predsByRepArm[rep] = predsByRepArm[rep] || { native: [], sweet: [] })[arm].push(pred);
           }
-          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, provider: PROVIDER, harness: HARNESS, harnessVersion: HARNESS_VERSION, reasoning: REASONING, envConfigHash: preflightConfigHashes.get(id) || null, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, degenReran: d.reran, degenerateAfterRetry: d.degenerateAfterRetry, isolated: CLI_HARNESS && ISOLATION_ON, rtDedup: RT_DEDUP_ON, ...BENCH_SWITCH_ROW, ...RT_PROGRESS_ROW, ...packingTreatmentRowFields({ sweet }), ...stripBig(r) });
+          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, provider: PROVIDER, harness: HARNESS, harnessVersion: HARNESS_VERSION, reasoning: REASONING, envConfigHash: preflightConfigHashes.get(id) || null, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, degenReran: d.reran, degenerateAfterRetry: d.degenerateAfterRetry, isolated: CLI_HARNESS && ISOLATION_ON, rtDedup: RT_DEDUP_ON, startedAtMs: attemptStartMs, ...BENCH_SWITCH_ROW, ...RT_PROGRESS_ROW, ...packingTreatmentRowFields({ sweet }), ...stripBig(r) });
           try { const td = path.join(BENCH, 'results', runId, 'trajectories'); mkdirSync(td, { recursive: true }); writeFileSync(path.join(td, `${id}-${arm}-r${rep}.json`), JSON.stringify({ taskId: id, arm, rep, exitReason: r.exitReason, toolCounts: r.toolCounts, ranTests, escapeExamples: r.escapeExamples, trajectory: r.trajectory }, null, 2)); } catch { /* */ }
           prog.done++; prog.byArm[arm]++; if (r.patchHunks > 0 && !v.excluded) prog.predOk[arm]++; prog.cost += attemptCost;
           if (v.excluded) prog.shimExcluded = (prog.shimExcluded || 0) + 1;
@@ -732,7 +776,7 @@ async function runOneTask(id) {
           // rollout identically and there is nothing to salvage by continuing. On
           // 2026-09-10 that burned 1.5h producing 400/400 errors before anyone looked.
           // Abort on the first one and say so, instead of grinding through the set.
-          if (/egress guard unreachable|jail unavailable|claude account fatal/i.test(String(e.message))) {
+          if (/egress guard unreachable|jail unavailable|claude account fatal|cache warm-up failed/i.test(String(e.message))) {
             console.error('\n*** RUN-WIDE INFRASTRUCTURE FAILURE — aborting instead of erroring every rollout ***');
             console.error(`*** ${String(e.message).slice(0, 300)}`);
             if (/claude account fatal/i.test(String(e.message))) {
@@ -740,6 +784,10 @@ async function runOneTask(id) {
               // this one are real; keep them and relaunch the rest (INSTANCES=...) later.
               checkpoint();
               console.error(`*** ${rows.length} finished rollout(s) kept in rows.json. Relaunch the remaining tasks after the limit resets.`);
+            } else if (/cache warm-up failed/i.test(String(e.message))) {
+              // No scored rollout of the failed arm started. Rows of the other arm, if any, are kept.
+              checkpoint();
+              console.error('*** An arm could not be warmed, so its scored rollouts would start cold while the other arm started warm. Fix the cause, then relaunch (SS_CACHE_WARMUP=0 disables the warm-up at the cost of an unfair first wave).');
             } else {
               console.error('*** Fix the guard, then relaunch. Nothing was measured; nothing was billed.');
             }
@@ -998,8 +1046,24 @@ for (const arm of ARMS) {
   else console.log(`   per-task (reps solved): ${perTask}`);
 }
 console.log(`rows → ${path.join(outDir, 'rows.json')}`);
+// Cache fairness: did both arms' first scored requests see the same cache state? Recorded in the
+// run summary (cache-fairness.json); a violation is printed as a banner and exits 3 (after every
+// result above is on disk). SS_ALLOW_UNFAIR_CACHE=1 keeps the exit code 0.
+let cacheUnfair = false;
+try {
+  const warmups = WARM_GATE.entries();
+  const fairness = cacheFairness(excludeWarmups(rows), { wave: CONCURRENCY });
+  writeFileSync(path.join(outDir, 'cache-fairness.json'), JSON.stringify({
+    runId, harness: HARNESS, cacheWarmup: { enabled: warmupEnabled(), file: path.join(outDir, 'warmups.jsonl'), entries: warmups.length,
+      costUsd: +warmups.filter(w => w.ok).reduce((s, w) => s + (Number(w.costRealizedUsd) || 0), 0).toFixed(6),
+      note: 'warm-up cost is NOT in rows.json or any aggregate' },
+    cacheFairness: fairness,
+  }, null, 2));
+  console.log(fairnessBanner(fairness));
+  cacheUnfair = fairness.status === 'violation' && process.env.SS_ALLOW_UNFAIR_CACHE !== '1';
+} catch (e) { console.error(`cache-fairness: could not be computed: ${String(e.message).slice(0, 160)}`); }
 // Force exit: lingering ss-* server sockets/handles can keep Node's event loop
 // alive after all work is done (seen hanging the pre-warm). All results are
 // already flushed above, so a clean explicit exit is safe (and lets the smoke
 // chain model runs back-to-back without a hang).
-process.exit(0);
+process.exit(cacheUnfair ? 3 : 0);

@@ -109,6 +109,33 @@ console.log('\nthe legacy basis is reachable and changes the numbers it should:'
   assert(rejected, 'an unknown --ledger-basis is refused rather than silently ignored');
 }
 
+console.log('\nthe by-TTL basis (2026-10-01) and the previous flat 1.25x basis stay distinguishable:');
+{
+  const rows = mkRows('claudecode').map(r => ({
+    ...r, ledgerBasis: 'cache-write-by-ttl',
+    costRealizedUsd: r.costRealizedUsd == null ? null : 0.02,
+    costRealizedFlat125Usd: r.costRealizedUsd == null ? null : 0.015,
+  }));
+  const f = path.join(dir, 'rows-bythttl.json');
+  writeFileSync(f, JSON.stringify(rows));
+  const cur = execFileSync(process.execPath, [ANALYZER, f, '--boot', '200'], { encoding: 'utf8' });
+  assert(/ledger basis: cache-write-by-ttl/.test(cur), 'rows from the by-TTL runners are labelled cache-write-by-ttl');
+  const flat = execFileSync(process.execPath, [ANALYZER, f, '--boot', '200', '--ledger-basis', 'flat-1.25x'], { encoding: 'utf8' });
+  assert(/cache-write-1\.25x-all-harnesses \(PREVIOUS, disclosure only\)/.test(flat), 'the flat basis labels itself as previous and disclosure-only');
+  // 6 sweet rows x $0.015 flat = $0.090000, against $0.120000 by TTL.
+  assert(flat.includes('$0.090000') && !flat.includes('$0.120000'), 'the flat basis sums the flat column, not the by-TTL one');
+  const old = mkRows('claudecode').map(r => ({ ...r, ledgerBasis: 'cache-write-1.25x-all-harnesses' }));
+  const g = path.join(dir, 'rows-oldflat.json');
+  writeFileSync(g, JSON.stringify(old));
+  const oldFlat = execFileSync(process.execPath, [ANALYZER, g, '--boot', '200', '--ledger-basis', 'flat-1.25x'], { encoding: 'utf8' });
+  assert(oldFlat.includes('$0.120000'), 'rows already on the flat basis pass through unchanged under --ledger-basis flat-1.25x');
+  const pooled = [...rows.slice(0, 6), ...old.slice(6)];
+  const h = path.join(dir, 'rows-pooled.json');
+  writeFileSync(h, JSON.stringify(pooled));
+  const mixed = execFileSync(process.execPath, [ANALYZER, h, '--boot', '200'], { encoding: 'utf8' });
+  assert(/MIXED .* NOT COMPARABLE/.test(mixed), 'pooling by-TTL rows with flat-basis rows is called NOT COMPARABLE');
+}
+
 rmSync(dir, { recursive: true, force: true });
 console.log(ok ? '\nALL PASS' : '\nFAILED');
 process.exit(ok ? 0 : 1);

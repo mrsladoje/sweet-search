@@ -352,11 +352,12 @@ export function auditEscape({ jail, toolCalls, rundir, endMs }) {
 // sums. An adapter with aggregate-only usage must report costContentUsd as null rather
 // than substituting one of the others.
 export function costsFromTurns(turns, price) {
-  const { idealUsd, realFromTurnsUsd, breakPricedUsd, contextRewrites } = costFromTurns(turns, price);
+  const { idealUsd, realFromTurnsUsd, realFlat125Usd, breakPricedUsd, contextRewrites,
+    cacheWriteTokens5m, cacheWriteTokens1h, cacheWriteUnsplitTokens } = costFromTurns(turns, price);
   // Pre-2026-09-02 basis, recomputed on the same turns with the cache-write surcharge
   // suppressed. Every row carries it so a disclosure table can restate an old number
   // without re-deriving it from transcripts that may no longer exist.
-  const legacy = costFromTurns(turns.map(tu => ({ ...tu, cacheWrite: 0 })), price);
+  const legacy = costFromTurns(turns.map(tu => ({ ...tu, cacheWrite: 0, cacheWrite5m: 0, cacheWrite1h: 0 })), price);
   const cacheWriteTokens = turns.reduce((a, tu) => a + (Number(tu.cacheWrite) || 0), 0);
   let prevIn = 0, naive = 0, content = 0;
   for (const tu of turns) {
@@ -374,7 +375,12 @@ export function costsFromTurns(turns, price) {
     // opencode, and a cross-harness table that mixes them is not comparable.
     ledgerBasis: LEDGER_BASIS,
     costRealizedNoCacheWriteUsd: +legacy.realFromTurnsUsd.toFixed(6),
+    // The 2026-09-02..09-30 basis (every cache write at 1.25x), restated from the same turns.
+    costRealizedFlat125Usd: +realFlat125Usd.toFixed(6),
     cacheWriteTokens,
+    // By-TTL split of cacheWriteTokens. Unsplit tokens were priced at 1.25x as a fallback; a row
+    // whose unsplit count is not 0 carries that much of its bill as an assumption.
+    cacheWriteTokens5m, cacheWriteTokens1h, cacheWriteUnsplitTokens,
     // breakPriced is the honest column when a lever can break the prefix cache; codex has
     // published it since 2026-08-10 and the default analyzer reads it, so every adapter
     // that has a real turn distribution must publish it too or its rows silently fall back

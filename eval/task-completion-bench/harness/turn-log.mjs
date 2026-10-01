@@ -60,6 +60,9 @@ export function persistTurns(label, turns, meta = {}) {
     list.forEach((tu, i) => lines.push(JSON.stringify({
       t: i + 1, in: tu.in || 0, cached: tu.cached || 0,
       cacheWrite: tu.cacheWrite || 0, out: tu.out || 0,
+      // By-TTL split of cacheWrite, only when the provider reported it (ledger 'cache-write-by-ttl').
+      ...(tu.cacheWrite5m != null ? { cacheWrite5m: tu.cacheWrite5m } : {}),
+      ...(tu.cacheWrite1h != null ? { cacheWrite1h: tu.cacheWrite1h } : {}),
     })));
     writeFileSync(file, lines.join('\n') + '\n');
     return path.relative(BENCH_DIR, file);
@@ -76,7 +79,9 @@ export function readTurnLog(file) {
     let o; try { o = JSON.parse(line); } catch { continue; }   // tolerate a truncated tail
     if (o.kind === 'meta') { meta = o; continue; }
     turns.push({ in: o.in || 0, cached: o.cached || 0,
-      cacheWrite: o.cacheWrite || 0, out: o.out || 0 });
+      cacheWrite: o.cacheWrite || 0, out: o.out || 0,
+      ...(o.cacheWrite5m != null ? { cacheWrite5m: o.cacheWrite5m } : {}),
+      ...(o.cacheWrite1h != null ? { cacheWrite1h: o.cacheWrite1h } : {}) });
   }
   return { meta, turns };
 }

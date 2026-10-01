@@ -92,7 +92,7 @@ console.log('\nledger basis columns (G17):');
     { in: 3000, cached: 1900, cacheWrite: 1100, out: 30 },
   ];
   const withCw = costsFromTurns(cw, price);
-  assert(withCw.ledgerBasis === 'cache-write-1.25x-all-harnesses', 'every row names its ledger basis', String(withCw.ledgerBasis));
+  assert(withCw.ledgerBasis === 'cache-write-by-ttl', 'every row names its ledger basis', String(withCw.ledgerBasis));
   assert(withCw.cacheWriteTokens === 3100, 'cacheWriteTokens sums the per-turn field', String(withCw.cacheWriteTokens));
   const noCw = costsFromTurns(cw.map(t => ({ ...t, cacheWrite: 0 })), price);
   assert(approx(withCw.costRealizedNoCacheWriteUsd, noCw.costRealizedUsd),
