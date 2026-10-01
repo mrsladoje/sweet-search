@@ -76,6 +76,7 @@ export function stripInertFlags(args) {
 // Used to split attached/bundled forms (-k5, -iw, -iwk5) the way getopt would,
 // so they parse instead of being mistaken for an unknown flag or the pattern.
 export const VALUE_SHORTS = new Set(['k', 'A', 'B', 'C']);
+const CONTEXT_SHORTS = new Set(['A', 'B', 'C']);
 export const BOOL_SHORTS = new Set(['i', 'w', 'F']);
 export const VALUE_LONGS = new Set([
   '--top', '--regex', '--mode', '--max-tokens',
@@ -100,7 +101,12 @@ export function normalizeArgs(args) {
     m = /^-([A-Za-z])(.+)$/.exec(tok);
     if (m) {
       const first = m[1];
-      if (VALUE_SHORTS.has(first)) { out.push('-' + first, m[2]); continue; } // -k5 → -k 5
+      if (VALUE_SHORTS.has(first)) {
+        // -k5 → -k 5. A grep context flag splits only before a count (-A3): `-A.*foo` and
+        // `-C++` are dash-leading patterns/queries and stay whole, as they did before -A/-B/-C.
+        if (!CONTEXT_SHORTS.has(first) || /^\d+$/.test(m[2])) { out.push('-' + first, m[2]); continue; }
+        out.push(tok); continue;
+      }
       if (BOOL_SHORTS.has(first)) {
         const chars = tok.slice(1);
         const expanded = [];
@@ -110,6 +116,7 @@ export function normalizeArgs(args) {
           if (BOOL_SHORTS.has(ch)) { expanded.push('-' + ch); i++; }
           else if (VALUE_SHORTS.has(ch)) {                 // value short ends the bundle
             const val = chars.slice(i + 1);
+            if (CONTEXT_SHORTS.has(ch) && val && !/^\d+$/.test(val)) { ok = false; break; }
             expanded.push('-' + ch);
             if (val) expanded.push(val);
             i = chars.length;

@@ -504,4 +504,18 @@ describe('ss-grep context flags -A/-B/-C (grep muscle memory: 166 of 1,247 nativ
   it('a flag-shaped token after `--` is the pattern, not a context flag', () => {
     expect(parse(['--', '-A'])).toMatchObject({ before: 0, after: 0, rest: ['--', '-A'] });
   });
+
+  // Before -A/-B/-C existed, a dash-leading pattern such as `-A.*foo` reached the engine as the
+  // pattern (looksLikeOption rejects it). Splitting it into `-A .*foo` turned it into a usage
+  // error, and broke ss-find / ss-search queries such as `-C++ templates` the same way.
+  it('a dash-leading pattern that is not -A<count> stays whole (no regression)', () => {
+    expect(normalizeArgs(['-A.*foo'])).toEqual(['-A.*foo']);
+    expect(normalizeArgs(['-C++ templates'])).toEqual(['-C++ templates']);
+    expect(normalizeArgs(['-iB[0-9]'])).toEqual(['-iB[0-9]']);
+    expect(parse(['-A.*foo'])).toMatchObject({ before: 0, after: 0, error: null, rest: ['-A.*foo'] });
+    expect(extractPositional(normalizeArgs(['-A.*foo']))).toEqual({ pattern: '-A.*foo', unknownFlag: null });
+    // -k keeps its old split, and a bundle may still end in a bare -A whose count follows.
+    expect(normalizeArgs(['X', '-kx'])).toEqual(['X', '-k', 'x']);
+    expect(parse(['X', '-iA', '2'])).toMatchObject({ after: 2, rest: ['X', '-i'] });
+  });
 });

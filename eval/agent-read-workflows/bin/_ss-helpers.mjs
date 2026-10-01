@@ -505,7 +505,10 @@ function writeRegexDialectHintAfterRepair(stats, repaired) {
 // --- subcommands ----------------------------------------------------------
 
 const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... [-k N] [-A N] [-B N] [-C N]';
-async function cmdGrep(rawArgs) {
+// `fromFind`: ss-find's fallback when there is no late-interaction index. Its --in paths are
+// already resolved (resolving them again would re-apply the cwd), and ss-find has no implicit
+// cwd scope, so the fallback must not pick up ss-grep's.
+async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   const args = normalizeArgs(rawArgs);
   const ignoreCase = parseBoolFlag(args, ['-i', '--ignore-case']);
   const wordBound = parseBoolFlag(args, ['-w', '--word-regexp']);
@@ -523,7 +526,7 @@ async function cmdGrep(rawArgs) {
   const inPaths = readRepeatedValueFlag(args, '--in', GREP_USAGE);
   stripInertFlags(args);
   absorbPositionalPaths(args, inPaths);
-  resolveScopePaths(inPaths);
+  if (!fromFind) resolveScopePaths(inPaths);
   rejectExtraPositionals(args, GREP_USAGE);
   const rawPattern = resolvePositional(args, GREP_USAGE);
   const regex = buildGrepPattern(rawPattern, { ignoreCase, wordBound, fixedString });
@@ -679,7 +682,8 @@ async function cmdGrep(rawArgs) {
   // _cwdScope, so the output keeps the unscoped shape (header, per-file body, family
   // manifest, sibling line) with only the out-of-scope hits gone, and no line announces
   // it. At the root, or outside the repository, cwdScope is null: nothing changes.
-  const cwdScope = cwdGrepScope({ cwd: process.cwd(), fileRoot: FILE_ROOT, indexRoot: PROJECT_ROOT });
+  const cwdScope = fromFind ? null
+    : cwdGrepScope({ cwd: process.cwd(), fileRoot: FILE_ROOT, indexRoot: PROJECT_ROOT });
   const scopeOpts = cwdScope ? { fileFilter: cwdScope, _cwdScope: true } : {};
   const fetchUnscoped = async (rx) => {
     try {
@@ -816,7 +820,8 @@ async function cmdFind(rawArgs) {
     const s = await getSweetSearch();
     if (!s.hasLateInteractionIndex) {
       process.stderr.write(`[ss-find] no late-interaction index — falling back to ss-grep\n`);
-      return cmdGrep([effectiveRegex || query, '-k', String(k), ...inPaths.flatMap(p => ['--in', p])]);
+      return cmdGrep([effectiveRegex || query, '-k', String(k), ...inPaths.flatMap(p => ['--in', p])],
+        { fromFind: true });
     }
     response = await s.patternSearch(query, null, {
       regex: effectiveRegex || `\\b\\w+\\b`,

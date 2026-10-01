@@ -4,9 +4,10 @@
  *
  * Real directories on disk (a temp tree), because the rule is about what exists where.
  */
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { cwdGrepScope, cwdOffset, resolveCwdPath } from '../../core/search/cwd-paths.js';
@@ -77,7 +78,7 @@ describe('resolveCwdPath', () => {
 describe('cwdGrepScope (ss-grep implicit scope)', () => {
   it('is the absolute subdirectory under the index root when run from a subdirectory', () => {
     expect(cwdGrepScope({ cwd: sub, fileRoot: root, indexRoot: root }))
-      .toBe(path.join(root, 'okhttp', 'src', 'okhttp3'));
+      .toBe(path.join(realpathSync(root), 'okhttp', 'src', 'okhttp3'));
   });
 
   it('is null at the root and outside the repository (output unchanged)', () => {
@@ -98,9 +99,43 @@ describe('cwdGrepScope (ss-grep implicit scope)', () => {
     expect(matchesGrepFileFilter('vendor/okhttp/x.kt', scope, root)).toBe(false);
   });
 
+  // The defect: the wrapper's root came from SWEET_SEARCH_PROJECT_ROOT as typed (/tmp/x on
+  // macOS), the daemon's was canonical (/private/tmp/x, e.g. started by the native client).
+  // The scope was spelled like the wrapper's root, the daemon rejected it, and ss-grep from a
+  // subdirectory printed "(no matches)" for hits that exist.
+  it('a root given through a symlink still matches an engine whose root is the real path', () => {
+    const scope = cwdGrepScope({ cwd: path.join(rootLink, 'okhttp'), fileRoot: rootLink, indexRoot: rootLink });
+    expect(scope).toBe(path.join(realpathSync(root), 'okhttp'));
+    expect(matchesGrepFileFilter('okhttp/src/okhttp3/Dispatcher.kt', scope, realpathSync(root))).toBe(true);
+    expect(matchesGrepFileFilter('okhttp/src/okhttp3/Dispatcher.kt', scope, rootLink)).toBe(true);
+    expect(matchesGrepFileFilter('README.md', scope, realpathSync(root))).toBe(false);
+  });
+
   it('matches when the engine root is a symlinked spelling of the scope root', () => {
     const scope = cwdGrepScope({ cwd: sub, fileRoot: realpathSync(root), indexRoot: realpathSync(root) });
     expect(matchesGrepFileFilter('okhttp/src/okhttp3/Dispatcher.kt', scope, rootLink)).toBe(true);
     expect(matchesGrepFileFilter('README.md', scope, rootLink)).toBe(false);
+  });
+});
+
+// The wrapper cannot be imported (it runs on import and needs a warm daemon), so its wiring is
+// checked in the source, as in agent-output-fixes-wiring.test.js.
+describe('ss-find → ss-grep fallback wiring (_ss-helpers.mjs)', () => {
+  const src = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../../eval/agent-read-workflows/bin/_ss-helpers.mjs'),
+    'utf8',
+  );
+  const cmdGrep = src.slice(src.indexOf('async function cmdGrep('), src.indexOf('async function cmdFind('));
+  const cmdFind = src.slice(src.indexOf('async function cmdFind('), src.indexOf('const READ_USAGE'));
+
+  // Measured on a temp repo before the fix: from src/, ss-find with no --in fell back to
+  // cmdGrep, picked up ss-grep's implicit cwd scope and printed 3 of the 6 hits.
+  it('the fallback tells cmdGrep it comes from ss-find', () => {
+    expect(cmdFind).toMatch(/return cmdGrep\(\[[^\]]*\.\.\.inPaths\.flatMap[^)]*\)\],\s*\{ fromFind: true \}\)/);
+  });
+
+  it('cmdGrep applies neither the implicit cwd scope nor a second cwd resolution for ss-find', () => {
+    expect(cmdGrep).toMatch(/if \(!fromFind\) resolveScopePaths\(inPaths\)/);
+    expect(cmdGrep).toMatch(/const cwdScope = fromFind \? null\s*: cwdGrepScope\(/);
   });
 });

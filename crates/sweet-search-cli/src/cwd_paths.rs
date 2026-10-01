@@ -74,13 +74,16 @@ pub fn resolve_cwd_path(p: &str, cwd: &Path, root: &Path) -> String {
 /// The implicit scope of a `grep` run from a subdirectory of the project: that
 /// subdirectory as an absolute path under `root`, or `None` at the root / outside.
 /// Absolute, because a relative scope matches as a segment run anywhere in a path
-/// (`src` would also admit `vendor/x/src/…`).
+/// (`src` would also admit `vendor/x/src/…`). Anchored at the root's REAL path: the
+/// daemon accepts a scope under its root as spelled or under that root's real path,
+/// not the reverse (a /private/tmp/x daemon drops every hit for /tmp/x/sub).
 pub fn cwd_grep_scope(cwd: &Path, root: &Path) -> Option<String> {
     let offset = cwd_offset(cwd, root)?;
     if offset.as_os_str().is_empty() {
         return None;
     }
-    Some(root.join(offset).to_string_lossy().into_owned())
+    let real_root = fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    Some(real_root.join(offset).to_string_lossy().into_owned())
 }
 
 #[cfg(test)]
@@ -179,5 +182,22 @@ mod tests {
         let scope = cwd_grep_scope(&f.root.join("a/b"), &f.root).unwrap();
         assert!(scope.ends_with("a/b"), "{scope}");
         assert!(Path::new(&scope).is_absolute());
+    }
+
+    #[test]
+    fn grep_scope_is_anchored_at_the_real_root() {
+        // macOS temp dirs live under /var → /private/var; a symlinked spelling of the root
+        // must still yield a scope under the real path (the daemon's root spelling).
+        let f = Fixture::new("realroot");
+        let link = f.root.with_extension("link");
+        let _ = fs::remove_file(&link);
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&f.root, &link).unwrap();
+        #[cfg(not(unix))]
+        let link = f.root.clone();
+        let real = fs::canonicalize(&f.root).unwrap();
+        let scope = cwd_grep_scope(&link.join("a"), &link).unwrap();
+        assert_eq!(Path::new(&scope), real.join("a"));
+        let _ = fs::remove_file(&link);
     }
 }

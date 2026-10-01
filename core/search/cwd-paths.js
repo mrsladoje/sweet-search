@@ -67,9 +67,14 @@ export function resolveCwdPath(p, { cwd = process.cwd(), root, exists = existsSy
  *
  * `fileRoot` is where the agent's files live (a linked worktree may differ from
  * the index root); the offset is measured there and applied to `indexRoot`.
+ *
+ * The scope is anchored at the REAL path of `indexRoot`. The engine accepts an
+ * absolute scope under its root as spelled or under that root's real path
+ * (matchesGrepFileFilter), but not the reverse: a daemon whose root is
+ * /private/tmp/x rejects /tmp/x/sub, and every hit was dropped.
  */
 export function cwdGrepScope({ cwd = process.cwd(), fileRoot, indexRoot = fileRoot } = {}) {
   const offset = cwdOffset({ cwd, root: fileRoot });
   if (!offset || !indexRoot) return null;
-  return path.join(indexRoot, ...offset.split('/'));
+  return path.join(realOrResolved(indexRoot), ...offset.split('/'));
 }
