@@ -922,8 +922,8 @@ export class GraphExtractor {
     // Creates 'imports' relationships for dependency tracking
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
     const javaCallScanner = new CallSiteScanner(JAVA_CALL_SCANNER_LANG);
-    const seenCalls = new Set(); // one edge per (caller, target) per file
     const callSites = [];
+    const seenCalls = this._callEdgeSet(callSites); // one ranking edge per (caller, target) per file
     const javaBare = this._bareCallSink(callSites);
     const importMatches = content.matchAll(JAVA_PATTERNS.import);
 
@@ -1225,7 +1225,7 @@ export class GraphExtractor {
     const callSites = [];
     const jsBare = this._bareCallSink(callSites);
     const jsCallScanner = new CallSiteScanner(JS_CALL_SCANNER_LANG);
-    const seenCalls = new Set(); // one edge per (caller, target) per file
+    const seenCalls = this._callEdgeSet(callSites); // one ranking edge per (caller, target) per file
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -1463,10 +1463,10 @@ export class GraphExtractor {
       methodCallPattern,
     } = this.getGenericPatternPlan(language, graph);
     const callScanner = (methodCallPattern || EXTRA_CALL_SCAN_LANGUAGES.has(language)) ? new CallSiteScanner(langInfo) : null;
-    const seenCalls = new Set(); // one edge per (caller, target) per file
+    const callSites = [];
+    const seenCalls = this._callEdgeSet(callSites); // one ranking edge per (caller, target) per file
     const seenTypeUsage = new Set();
     const skipObjects = this._skipObjectSet(langInfo);
-    const callSites = [];
     const bareSink = this._bareCallSink(callSites);
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
     const jsonDependencySections = new Set(['dependencies', 'devDependencies', 'peerDependencies']);
@@ -2070,7 +2070,7 @@ export class GraphExtractor {
       methodCallPattern,
     } = this.getGenericPatternPlan(language, graph);
     const callScanner = (methodCallPattern || EXTRA_CALL_SCAN_LANGUAGES.has(language)) ? new CallSiteScanner(langInfo) : null;
-    const seenCalls = new Set(); // one edge per (caller, target) per file
+    const seenCalls = this._callEdgeSet(callSites); // one ranking edge per (caller, target) per file
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
 
     // Build scope lookup from tree-sitter entities for source_id attribution
@@ -2210,33 +2210,50 @@ export class GraphExtractor {
   }
 
   /**
-   * Record a call edge once per (caller, target) per file; the first call
-   * site's line is kept. Repeat calls added rows the resolver later deleted
-   * (resolved duplicates hit the unique index) or left as duplicate
-   * unresolved rows, so dropping them changes no resolved edge.
-   */
-  /**
    * Collector for bare call sites (`helper(x)` — no receiver). They go to the
    * separate `call_sites` table, never to `relationships`: ranking (PageRank,
    * graph expansion, communities, ref counts) reads relationships only, and
    * ss-trace resolves bare calls at query time with scope rules
-   * (bare-call-resolution.js). One row per (caller, name) per file.
+   * (bare-call-resolution.js). One row per call site: ss-trace lists every
+   * line a caller calls the name on (`call@440,476`).
    */
   _bareCallSink(callSites) {
     const seen = new Set();
     return (sourceId, name, lineNum) => {
       if (!sourceId) return;
-      const key = `${sourceId}\u0000${name}`;
+      const key = `${sourceId}\u0000${name}\u0000${lineNum}`;
       if (seen.has(key)) return;
       seen.add(key);
       callSites.push({ source_id: sourceId, callee_name: name, context_line: lineNum });
     };
   }
 
+  /**
+   * Per-file state for qualified call edges: the (caller, target) pairs that
+   * already have a ranking row, and the sink for every call site's line.
+   */
+  _callEdgeSet(callSites) {
+    return { keys: new Set(), sites: callSites, siteKeys: new Set() };
+  }
+
+  /**
+   * Record a qualified call. `relationships` gets one row per (caller, target)
+   * per file — the first site's line — as ranking has always seen it: repeat
+   * rows were deleted by the resolver (resolved duplicates hit the unique
+   * index). Every site's line goes to the trace-only `call_lines` table
+   * (via callSites, `target_name` set), so ss-trace shows each call.
+   */
   _pushCallEdge(relationships, seen, sourceId, targetName, lineNum) {
+    if (seen.sites && sourceId) {
+      const siteKey = `${sourceId}\u0000${targetName}\u0000${lineNum}`;
+      if (!seen.siteKeys.has(siteKey)) {
+        seen.siteKeys.add(siteKey);
+        seen.sites.push({ source_id: sourceId, target_name: targetName, context_line: lineNum });
+      }
+    }
     const key = `${sourceId}\u0000${targetName}`;
-    if (seen.has(key)) return;
-    seen.add(key);
+    if (seen.keys.has(key)) return;
+    seen.keys.add(key);
     relationships.push({
       source_id: sourceId,
       target_id: null,
@@ -2725,17 +2742,45 @@ export function ensureCallSitesSchema(db) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_call_sites_callee ON call_sites(callee_name)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_call_sites_source ON call_sites(source_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_call_sites_retired ON call_sites(epoch_retired) WHERE epoch_retired IS NOT NULL');
+  // Every site line of a qualified call (`a.b(`, `A::b(`). `relationships`
+  // keeps one ranking row per (caller, target_name); this trace-only table
+  // keeps each line so ss-trace can list all of them. Same epoch columns and
+  // lifecycle as call_sites; graphs built before it fall back to the
+  // relationship row's single context_line.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS call_lines (
+      source_id TEXT NOT NULL,
+      target_name TEXT NOT NULL,
+      context_line INTEGER,
+      epoch_written INTEGER NOT NULL DEFAULT 0,
+      epoch_retired INTEGER
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_call_lines_source ON call_lines(source_id, target_name)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_call_lines_retired ON call_lines(epoch_retired) WHERE epoch_retired IS NOT NULL');
 }
 
-/** Insert bare call sites; `idFor` maps an extractor source id to the stored id. */
+/**
+ * Insert call sites; `idFor` maps an extractor source id to the stored id.
+ * Bare sites (`callee_name`) go to call_sites; qualified sites
+ * (`target_name`) go to call_lines.
+ */
 export function insertCallSites(db, callSites, { epoch = 0, idFor = null } = {}) {
   if (!callSites || callSites.length === 0) return 0;
-  const stmt = db.prepare('INSERT INTO call_sites (source_id, callee_name, context_line, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, NULL)');
+  const bare = db.prepare('INSERT INTO call_sites (source_id, callee_name, context_line, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, NULL)');
+  let qualified = null;
   let n = 0;
   for (const c of callSites) {
     const source = (idFor && idFor.get(c.source_id)) || c.source_id;
-    if (!source || !c.callee_name) continue;
-    stmt.run(source, c.callee_name, c.context_line ?? null, epoch);
+    if (!source) continue;
+    if (c.target_name) {
+      qualified ||= db.prepare('INSERT INTO call_lines (source_id, target_name, context_line, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, NULL)');
+      qualified.run(source, c.target_name, c.context_line ?? null, epoch);
+      n++;
+      continue;
+    }
+    if (!c.callee_name) continue;
+    bare.run(source, c.callee_name, c.context_line ?? null, epoch);
     n++;
   }
   return n;

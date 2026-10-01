@@ -62,6 +62,55 @@ describe('incremental graph edge resolution matches a full build', () => {
     }
   }
 
+  /**
+   * Live call-site rows — bare calls (call_sites) and every qualified call
+   * line (call_lines) — as (caller, name, line) tuples.
+   */
+  function siteRows(db, live) {
+    const key = entityKeys(db);
+    const where = live ? 'WHERE epoch_retired IS NULL' : '';
+    return [
+      ...db.prepare(`SELECT source_id, callee_name AS name, context_line FROM call_sites ${where}`).all()
+        .map((r) => `bare ${key.get(r.source_id) || 'file'} ${r.name}@${r.context_line}`),
+      ...db.prepare(`SELECT source_id, target_name AS name, context_line FROM call_lines ${where}`).all()
+        .map((r) => `line ${key.get(r.source_id) || 'file'} ${r.name}@${r.context_line}`),
+    ].sort();
+  }
+
+  function incrementalSites() {
+    const db = new Database(join(stateDir, 'code-graph.db'), { readonly: true });
+    try {
+      return siteRows(db, true);
+    } finally {
+      db.close();
+    }
+  }
+
+  async function fullBuildSites(files) {
+    const db = new Database(':memory:');
+    const log = console.log;
+    console.log = () => {};
+    try {
+      const fts = createGraphSchema(db);
+      const extractor = new GraphExtractor({ importResolver: createImportResolver({ projectRoot, files }) });
+      const ents = [];
+      const rels = [];
+      const callSites = [];
+      for (const rel of files) {
+        const out = await extractor.extractFromFile(rel, readFileSync(join(projectRoot, rel), 'utf-8'));
+        ents.push(...out.entities);
+        rels.push(...out.relationships);
+        callSites.push(...(out.callSites || []));
+      }
+      insertGraph(db, ents, rels, fts, { syncFts: false, callSites });
+      resolveRelationshipTargets(db);
+      return siteRows(db, false);
+    } finally {
+      console.log = log;
+      db.close();
+    }
+  }
+
   /** The same files built from scratch with the full pass. */
   async function fullBuildEdges(files) {
     const db = new Database(':memory:');
@@ -138,6 +187,68 @@ describe('incremental graph edge resolution matches a full build', () => {
     inc = incrementalEdges();
     expect(inc.filter((e) => e.includes('(store.')).every((e) => e.includes('-> null'))).toBe(true);
     expect(inc).toEqual(await fullBuildEdges(['src/service.ts']));
+  });
+
+  it('keeps every call site — bare, qualified and top-level — through add, edit and delete', async () => {
+    write('src/util.ts', [
+      'export function helper(n: number) {',
+      '  return n;',
+      '}',
+      'export class Store {',
+      '  load(key: string) {',
+      '    return key;',
+      '  }',
+      '}',
+    ]);
+    const app = (body) => write('src/app.ts', [
+      "import { helper, Store } from './util';",
+      'const store = new Store();',
+      'helper(1);',
+      'helper(2);',
+      'export function run() {',
+      ...body,
+      '}',
+    ]);
+    // run() calls helper twice and store.load twice.
+    app(['  helper(3);', '  store.load("a");', '  helper(4);', '  store.load("b");']);
+    enqueue('src/util.ts', 'src/app.ts');
+    await tick();
+    let files = ['src/util.ts', 'src/app.ts'];
+    let inc = incrementalSites();
+    const runSites = (rows) => rows.filter((r) => r.includes('#function:run@'));
+    expect(runSites(inc)).toEqual([
+      'bare src/app.ts#function:run@5 helper@6',
+      'bare src/app.ts#function:run@5 helper@8',
+      'line src/app.ts#function:run@5 store.load@7',
+      'line src/app.ts#function:run@5 store.load@9',
+    ]);
+    // Top-level calls keep one row per site too.
+    expect(inc.filter((r) => r.includes(' helper@3') || r.includes(' helper@4')).length).toBe(2);
+    expect(inc).toEqual(await fullBuildSites(files));
+    expect(incrementalEdges()).toEqual(await fullBuildEdges(files));
+
+    // Remove one of two helper calls and add a third store.load.
+    app(['  helper(3);', '  store.load("a");', '  store.load("b");', '  store.load("c");']);
+    enqueue('src/app.ts');
+    await tick();
+    inc = incrementalSites();
+    expect(runSites(inc)).toEqual([
+      'bare src/app.ts#function:run@5 helper@6',
+      'line src/app.ts#function:run@5 store.load@7',
+      'line src/app.ts#function:run@5 store.load@8',
+      'line src/app.ts#function:run@5 store.load@9',
+    ]);
+    expect(inc).toEqual(await fullBuildSites(files));
+    expect(incrementalEdges()).toEqual(await fullBuildEdges(files));
+
+    // Delete the caller's file: none of its sites stay live.
+    unlinkSync(join(projectRoot, 'src/app.ts'));
+    enqueue('src/app.ts');
+    await tick();
+    files = ['src/util.ts'];
+    inc = incrementalSites();
+    expect(inc).toEqual([]);
+    expect(inc).toEqual(await fullBuildSites(files));
   });
 
   it('keeps override edges current through add, edit, rename and delete', async () => {

@@ -14,6 +14,12 @@ import { BareCallResolver } from '../graph/bare-call-resolution.js';
 import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable } from '../graph/file-nodes.js';
 import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
 
+function sortLines(item) {
+  item.contextLines.sort((a, b) => a - b);
+  item.contextLine = item.contextLines[0] ?? item.contextLine;
+  return item;
+}
+
 export class StructuralContextRepository {
   constructor(dbPath, opts = {}) {
     this._readerVisibility = new CodeGraphReaderVisibility(dbPath, opts);
@@ -65,6 +71,49 @@ export class StructuralContextRepository {
   _entityParams(db) { return this._readerVisibility.entityParams(db); }
   _relationshipSql(db, alias = 'r') { return this._readerVisibility.relationshipSql(db, alias); }
   _relationshipParams(db) { return this._readerVisibility.relationshipParams(db); }
+
+  /**
+   * Every call-site line of qualified calls made by `sourceIds`, from the
+   * trace-only call_lines table: Map `${source}\0${target_name}` → sorted
+   * lines. Empty for graphs built before the table existed; callers then keep
+   * the relationship row's single context_line.
+   */
+  _qualifiedCallLines(db, sourceIds) {
+    const out = new Map();
+    const ids = [...new Set((sourceIds || []).filter(Boolean))];
+    if (ids.length === 0) return out;
+    if (this._callLinesDb !== db) {
+      this._callLinesDb = db;
+      this._hasCallLines = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='call_lines'").get();
+    }
+    if (!this._hasCallLines) return out;
+    const vis = this._relationshipSql(db, 'cl');
+    for (let i = 0; i < ids.length; i += 500) {
+      const part = ids.slice(i, i + 500);
+      const rows = db.prepare(`
+        SELECT cl.source_id, cl.target_name, cl.context_line FROM call_lines cl
+        WHERE cl.source_id IN (${placeholders(part)}) AND ${vis}
+      `).all(...part, ...this._relationshipParams(db));
+      for (const row of rows) {
+        if (row.context_line == null) continue;
+        const key = `${row.source_id}\u0000${row.target_name}`;
+        let lines = out.get(key);
+        if (!lines) { lines = []; out.set(key, lines); }
+        if (!lines.includes(row.context_line)) lines.push(row.context_line);
+      }
+    }
+    for (const lines of out.values()) lines.sort((a, b) => a - b);
+    return out;
+  }
+
+  /** `contextLines` for a stored `calls` edge: every site, else its own line. */
+  _edgeLines(linesByPair, sourceId, edge) {
+    const lines = edge.relationship === 'calls' && edge.targetName
+      ? linesByPair.get(`${sourceId}\u0000${edge.targetName}`)
+      : null;
+    if (lines?.length) return { contextLine: lines[0], contextLines: lines };
+    return { contextLine: edge.contextLine, contextLines: edge.contextLine ? [edge.contextLine] : [] };
+  }
 
   _resolveUnresolvedTarget(targetName) {
     const db = this._open();
@@ -272,7 +321,7 @@ export class StructuralContextRepository {
       ORDER BY r.weight DESC, e.file_path, r.context_line
       LIMIT ?
     `, [...types, ...this._entityParams(db), ...this._relationshipParams(db), target.id, target.id, ...patterns, limit], limit);
-    return rows.map(row => ({
+    const edges = rows.map(row => ({
       ...this._entityFromRow(row),
       relationship: row.rel_type,
       contextLine: row.context_line || null,
@@ -282,6 +331,8 @@ export class StructuralContextRepository {
       resolvedParent: row.resolved_parent || null,
       weight: row.weight ?? 1,
     })).filter(edge => trustedCallerEdge(edge, target));
+    const linesByPair = this._qualifiedCallLines(db, edges.filter(e => e.relationship === 'calls').map(e => e.id));
+    return edges.map(edge => ({ ...edge, ...this._edgeLines(linesByPair, edge.id, edge) }));
   }
 
   /**
@@ -372,15 +423,29 @@ export class StructuralContextRepository {
     if (!resolver?.available) return [];
     const limit = clampLimit(opts.limit, 80, 300);
     try {
-      return resolver.callersOf(target, { limit }).map(row => ({
-        ...this._entityFromRow(row),
-        relationship: 'calls',
-        contextLine: row.context_line || null,
-        targetId: target.id,
-        targetName: target.name,
-        weight: 1,
-        bare: true,
-      }));
+      // call_sites has one row per site: one caller item per calling entity,
+      // carrying every line it calls the target on.
+      const byCaller = new Map();
+      for (const row of resolver.callersOf(target, { limit: limit * 4 })) {
+        const line = row.context_line || null;
+        const prev = byCaller.get(row.id);
+        if (prev) {
+          if (line && !prev.contextLines.includes(line)) prev.contextLines.push(line);
+          continue;
+        }
+        if (byCaller.size >= limit) continue;
+        byCaller.set(row.id, {
+          ...this._entityFromRow(row),
+          relationship: 'calls',
+          contextLine: line,
+          contextLines: line ? [line] : [],
+          targetId: target.id,
+          targetName: target.name,
+          weight: 1,
+          bare: true,
+        });
+      }
+      return [...byCaller.values()].map(sortLines);
     } catch {
       return [];
     }
@@ -393,13 +458,26 @@ export class StructuralContextRepository {
     if (!resolver?.available) return [];
     const limit = clampLimit(opts.limit, 80, 300);
     try {
-      return resolver.calleesOf(target, { limit }).map(({ entity, contextLine }) => ({
-        ...this._entityFromRow(entity),
-        relationship: 'calls',
-        contextLine: contextLine || null,
-        weight: 1,
-        bare: true,
-      }));
+      // One callee item per definition, carrying every line it is called on.
+      const byCallee = new Map();
+      for (const { entity, contextLine } of resolver.calleesOf(target, { limit: limit * 4 })) {
+        const line = contextLine || null;
+        const prev = byCallee.get(entity.id);
+        if (prev) {
+          if (line && !prev.contextLines.includes(line)) prev.contextLines.push(line);
+          continue;
+        }
+        if (byCallee.size >= limit) continue;
+        byCallee.set(entity.id, {
+          ...this._entityFromRow(entity),
+          relationship: 'calls',
+          contextLine: line,
+          contextLines: line ? [line] : [],
+          weight: 1,
+          bare: true,
+        });
+      }
+      return [...byCallee.values()].map(sortLines);
     } catch {
       return [];
     }
@@ -430,6 +508,7 @@ export class StructuralContextRepository {
       ORDER BY r.context_line, r.weight DESC
       LIMIT ?
     `).all(...this._entityParams(db), target.id, ...this._relationshipParams(db), limit);
+    const linesByPair = this._qualifiedCallLines(db, [target.id]);
     return rows.map((row, idx) => {
       let resolved = row.id ? this._entityFromRow(row) : (this._resolveUnresolvedTarget(row.target_name) || {
         id: `external:${idx}:${row.target_name || 'unknown'}`,
@@ -445,13 +524,14 @@ export class StructuralContextRepository {
       if (resolved.id === target.id) {
         resolved = this._resolveQualifiedAlternative(row.target_name, target.id) || resolved;
       }
-      return {
+      const edge = {
         ...resolved,
         relationship: row.rel_type,
         contextLine: row.context_line || null,
         targetName: row.target_name || null,
         weight: row.weight ?? 1,
       };
+      return { ...edge, ...this._edgeLines(linesByPair, target.id, edge) };
     });
   }
 
