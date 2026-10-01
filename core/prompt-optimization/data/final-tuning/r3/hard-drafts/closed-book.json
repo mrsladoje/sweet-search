@@ -960,5 +960,31 @@
    "solved": false
   },
   "drop": true
+ },
+ "r3h-tortoise-orm-16": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "1/3",
+   "sHit": "1/5",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "1/3",
+   "sHit": "1/5",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3h-tortoise-orm-21": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "3/4",
+   "sHit": "1/5",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "3/4",
+   "sHit": "1/5",
+   "solved": false
+  },
+  "drop": false
  }
 }

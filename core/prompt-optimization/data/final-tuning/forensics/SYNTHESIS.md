@@ -65,6 +65,10 @@ Expected saving = share of that tool's output chars (measured on the recorded ou
   function fetch in a big file), and V2 cost Codex accuracy.
 - Changing the confidence/sufficiency logic: agents ignore it — remove the line (A1), do not tune it.
 
+## Owner decision (2026-10-01, sufficiency)
+
+The rules tell agents to act on `sufficient=YES`, so A1 no longer removes it: Bundle A keeps a compact `# sufficient=YES` line (only when YES); removing it is the separate B-switch `SS_FIX_DROP_SUFFICIENCY=1`, tested as its own A/B. Evidence for "unused" is strong for score=, trailers, the budget header and repeated summary lines; weak for sufficiency/confidence.
+
 ## Owner decision (2026-10-01)
 
 ss-read is NOT changed (B3, B4 and A3-for-ss-read dropped): its wide reads match native reading behaviour that the models are trained for.
