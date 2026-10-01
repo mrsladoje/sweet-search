@@ -164,6 +164,52 @@ describe('qualified call hints never bind to a global same-name definition', () 
     expect(names.some(n => n.startsWith('localStep@worker/draft.go'))).toBe(true);
   });
 
+  it('Go: the named method receiver (n.step) binds in the same file like self', async () => {
+    const graph = await buildGraph({
+      'worker/node.go': [
+        'package worker',
+        '',
+        'type node struct{}',
+        '',
+        'func (n *node) apply(attr string) error {',
+        '\tn.step(attr)',
+        '\tm.step(attr)',
+        '\treturn nil',
+        '}',
+        '',
+        'func (n *node) step(attr string) {',
+        '\t_ = attr',
+        '}',
+      ],
+      'other/step.go': ['package other', '', 'func step(a string) {}'],
+    }, { withEdges: false });
+    const result = trace(graph, 'apply', { filePath: 'worker/node.go' });
+    const callees = result.sections.callees.items.map(i => `${i.name}@${i.file}`);
+    expect(callees).toContain('step@worker/node.go');
+    expect(callees.some(c => c === 'step@other/step.go')).toBe(false);
+  });
+
+  it('own type name as receiver (Foo::helper / Foo.helper) binds in the same file', async () => {
+    const graph = await buildGraph({
+      'src/Foo.java': [
+        'public class Foo {',
+        '  public void run() {',
+        '    Foo.helper();',
+        '    Bar.helper();',
+        '  }',
+        '  static void helper() {',
+        '    return;',
+        '  }',
+        '}',
+      ],
+      'src/Util.java': ['public class Util {', '  static void helper() { return; }', '}'],
+    }, { withEdges: false });
+    const result = trace(graph, 'run', { filePath: 'src/Foo.java' });
+    const callees = result.sections.callees.items.map(i => `${i.name}@${i.file}`);
+    expect(callees).toContain('helper@src/Foo.java');
+    expect(callees.some(c => c === 'helper@src/Util.java')).toBe(false);
+  });
+
   it('TypeScript: this.helper() binds in the same file, other.render() is left out', async () => {
     const graph = await buildGraph({
       'src/view.ts': [
