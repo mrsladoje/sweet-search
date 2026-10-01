@@ -194,7 +194,9 @@ describe('Zig entity extraction', () => {
       '}',
     ].join('\n'));
     expect(result.entities.length).toBe(3);
-    expect(result.relationships.length).toBe(2);
+    // Two imports plus the `log.info` call (Zig call extraction).
+    expect(result.relationships.length).toBe(3);
+    expect(result.relationships.some(r => r.type === 'calls' && r.target_name === 'log.info')).toBe(true);
     expect(result.entities.some(e => e.type === 'function' && e.name === 'init')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'std')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'log')).toBe(true);
