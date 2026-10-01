@@ -22,7 +22,7 @@ for (const [grp, reposFile, draftsDir] of groups) {
     const cb = fs.existsSync(cbPath) ? JSON.parse(fs.readFileSync(cbPath, 'utf8')) : {};
     const hardened = new Set(a.hardened || []);
     const keep = new Set(a.keep.filter(id => !(cb[id]?.drop && !hardened.has(id))));
-    const unscreened = a.keep.filter(id => !cb[id] && !/negative/.test(id)).length;
+    const unscreened = a.keep.filter(id => !cb[id] && !JSON.parse(fs.readFileSync(path.join(HERE, draftsDir, `${r.repo}.json`), 'utf8')).probes.find(p => p.id === id)?.expectedNoMatch).length;
     if (unscreened) console.error(`WARN ${r.repo}: ${unscreened} kept question(s) without a closed-book result`);
     const drafts = JSON.parse(fs.readFileSync(path.join(HERE, draftsDir, `${r.repo}.json`), 'utf8')).probes;
     for (const p of drafts) if (keep.has(p.id)) all.push({ ...p, ...(a.fixes?.[p.id] || {}), repo: `r3-${r.repo}`, repoSha: r.sha, language: p.language || r.language, group: grp });
