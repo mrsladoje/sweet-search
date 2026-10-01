@@ -1,4 +1,5 @@
 import path from 'path';
+import { createHash } from 'crypto';
 
 const ACTIVE = 'stale_since IS NULL';
 
@@ -62,6 +63,51 @@ function lineOfIndex(text, index) {
   return line;
 }
 
+const ALIAS_TARGET_FILE = /\.(?:[cm]?[jt]sx?|rs)$/i;
+
+/** Graph id of a file node in a full build (GraphExtractor.makeId(path, 'file', basename)). */
+function fileNodeId(filePath) {
+  return createHash('sha256').update(`${filePath}:file:${path.basename(filePath)}`).digest('hex').slice(0, 16);
+}
+
+const fileIdCache = new WeakMap();
+
+/**
+ * Files that import `targetFile` (`importsFile` edges), as [{ file_path }],
+ * or null when the graph has no importsFile edges (built before them) —
+ * then the caller falls back to scanning every file. An alias
+ * (`import { foo as bar }`, `const bar = require('./x').foo`) needs an import
+ * of the target's file, so importers are the only files that can hold one.
+ */
+function importingFiles(db, targetFile, entitySql, entityParams) {
+  let hasEdges;
+  try {
+    hasEdges = !!db.prepare("SELECT 1 FROM relationships WHERE type = 'importsFile' LIMIT 1").get();
+  } catch {
+    return null;
+  }
+  if (!hasEdges) return null;
+  const live = db.prepare('PRAGMA table_info(relationships)').all().some(c => c.name === 'epoch_retired') ? ' AND epoch_retired IS NULL' : '';
+  const sources = db.prepare(`SELECT DISTINCT source_id FROM relationships WHERE type = 'importsFile' AND target_name = ?${live}`).all(targetFile)
+    .map(r => r.source_id);
+  if (sources.length === 0) return [];
+  let byId = fileIdCache.get(db);
+  if (!byId) {
+    byId = new Map();
+    for (const { file_path: f } of db.prepare(`SELECT DISTINCT file_path FROM entities WHERE ${entitySql} AND file_path IS NOT NULL`).all(...entityParams)) {
+      byId.set(fileNodeId(f), f);
+    }
+    fileIdCache.set(db, byId);
+  }
+  const out = new Set();
+  const physical = db.prepare('SELECT file_path FROM entities WHERE id = ?');
+  for (const id of sources) {
+    const f = byId.get(id) || physical.get(id)?.file_path;
+    if (f) out.add(f);
+  }
+  return [...out].sort().map(file_path => ({ file_path }));
+}
+
 export function findAliasCallers({
   db,
   target,
@@ -72,7 +118,10 @@ export function findAliasCallers({
   mapEntity = rowToEntity,
 }) {
   if (!db || !target?.filePath || !target?.name) return [];
-  const files = db.prepare(`
+  // Alias forms exist only for JS/TS imports and Rust paths; any other target
+  // can never match, and scanning cost one read of up to 1,000 files.
+  if (!ALIAS_TARGET_FILE.test(target.filePath)) return [];
+  const files = importingFiles(db, target.filePath, entitySql, entityParams) || db.prepare(`
     SELECT DISTINCT file_path
     FROM entities
     WHERE ${entitySql} AND file_path IS NOT NULL
