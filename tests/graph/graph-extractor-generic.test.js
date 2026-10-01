@@ -260,9 +260,10 @@ func main() {
     expect(scopedCall).toBeDefined();
     expect(scopedCall.source_id).toBe(workEntity.id);
 
+    // Top-level code belongs to the file node (graph/file-nodes.js), not to NULL.
     const topLevelCall = result.relationships.find(r => r.type === 'calls' && r.target_name === 'outside.run');
     expect(topLevelCall).toBeDefined();
-    expect(topLevelCall.source_id).toBeNull();
+    expect(topLevelCall.source_id).toBe(result.file.id);
   });
 
   it('extracts Ruby extends', async () => {
