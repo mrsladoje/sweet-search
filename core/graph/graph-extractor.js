@@ -20,7 +20,7 @@ import { CallSiteScanner, EXTRA_CALL_SCAN_LANGUAGES } from './call-site-scanner.
 import { goImportName, scanImports, SCANNED_IMPORT_LANGUAGES, importLanguageFor } from './import-scanner.js';
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
 import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './type-usage-scanner.js';
-import { ensureFilesSchema, insertFileNodes } from './file-nodes.js';
+import { ensureFilesSchema, hasGraphColumn, insertFileNodes } from './file-nodes.js';
 
 // Languages whose legacy `imports` rows are all module specifiers that the
 // statement scanner sees (so an unmatched row is a regex false positive).
@@ -1567,7 +1567,7 @@ export class GraphExtractor {
     const callScanner = (methodCallPattern || EXTRA_CALL_SCAN_LANGUAGES.has(language)) ? new CallSiteScanner(langInfo) : null;
     const callSites = [];
     const seenCalls = this._callEdgeSet(callSites); // one ranking edge per (caller, target) per file
-    const seenTypeUsage = new Set();
+    const seenTypeUsage = this._typeUsageSet(callSites); // one trace row per (source, type, target); every line in callSites
     const skipObjects = this._skipObjectSet(langInfo);
     const bareSink = this._bareCallSink(callSites);
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
@@ -2221,7 +2221,7 @@ export class GraphExtractor {
       }
     }
     const headers = this._typeHeaderJoins(relationshipPatterns, lines, langInfo);
-    const seenTypeUsage = new Set();
+    const seenTypeUsage = this._typeUsageSet(callSites); // one trace row per (source, type, target); every line in callSites
     const skipObjects = this._skipObjectSet(langInfo);
     const bareSink = callSites ? this._bareCallSink(callSites) : null;
     // Names defined on each line: `def helper(` must not read as a call.
@@ -2368,10 +2368,23 @@ export class GraphExtractor {
   }
 
   /**
+   * Per-file state for trace-only type-usage rows: the (source, type, target)
+   * keys that already have a row, and the sink for every site's line (the
+   * same callSites list qualified calls use, tagged with `rel_type`).
+   */
+  _typeUsageSet(callSites) {
+    return { keys: new Set(), sites: callSites, siteKeys: new Set() };
+  }
+
+  /**
    * Trace-only type-usage rows for one comment-free line (relationship-types.js):
    * `instantiates` (constructed types), `typeRef` (types in a function/method
    * signature, definition lines only) and Swift `extensionOf`. One row per
-   * (source, type, target) per file. SWEET_SEARCH_TYPE_USAGE_EDGES=0 disables.
+   * (source, type, target) per file — the first site's line. Every site's
+   * line also goes to the callSites sink with its `rel_type`; insertCallSites
+   * keeps the lines of repeated pairs in call_lines, so ss-trace lists each
+   * `new Foo()` (`(instantiates)@4,5,6`). SWEET_SEARCH_TYPE_USAGE_EDGES=0
+   * disables.
    */
   _appendTypeUsageEdges(relationships, seen, trimmed, lineNum, language, sourceId, defEntity, skipObjects = null, typeHeader = false, fullSignature = null) {
     if (!this.typeUsageEdges || !sourceId) return;
@@ -2379,9 +2392,16 @@ export class GraphExtractor {
       // The registry's skipCallObjects (Scala `Seq(`, Kotlin `listOf`) are
       // library factories, not repo types.
       if (skipObjects && skipObjects.has(target)) return;
+      if (seen.sites) {
+        const siteKey = `${type}\u0000${sourceId}\u0000${target}\u0000${lineNum}`;
+        if (!seen.siteKeys.has(siteKey)) {
+          seen.siteKeys.add(siteKey);
+          seen.sites.push({ source_id: sourceId, target_name: target, context_line: lineNum, rel_type: type });
+        }
+      }
       const key = `${type}\u0000${sourceId}\u0000${target}`;
-      if (seen.has(key)) return;
-      seen.add(key);
+      if (seen.keys.has(key)) return;
+      seen.keys.add(key);
       relationships.push({ source_id: sourceId, target_id: null, target_name: target, type, weight: 1.0, context_line: lineNum });
     };
     for (const name of scanInstantiations(trimmed, language, { typeHeader })) push('instantiates', name);
@@ -2845,21 +2865,30 @@ export function ensureCallSitesSchema(db) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_call_sites_callee ON call_sites(callee_name)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_call_sites_source ON call_sites(source_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_call_sites_retired ON call_sites(epoch_retired) WHERE epoch_retired IS NOT NULL');
-  // Site lines of qualified calls (`a.b(`, `A::b(`). `relationships` keeps
-  // one ranking row per (caller, target_name) with the first site's line;
-  // this trace-only table keeps every line of a pair called on two or more
-  // lines, so ss-trace can list all of them. Same epoch columns and
-  // lifecycle as call_sites; a pair without rows (one site, or a graph built
-  // before the table) uses the relationship row's context_line.
+  // Site lines of qualified calls (`a.b(`, `A::b(`) and of the trace-only
+  // type-usage links (`instantiates`, `typeRef`, `extensionOf`).
+  // `relationships` keeps one row per (source, type, target_name) with the
+  // first site's line; this trace-only table keeps every line of a pair seen
+  // on two or more lines, so ss-trace can list all of them. `rel_type` keeps
+  // a `new Foo()` line apart from a `x.Foo()` call line of the same name.
+  // Same epoch columns and lifecycle as call_sites; a pair without rows (one
+  // site, or a graph built before the table) uses the relationship row's
+  // context_line.
   db.exec(`
     CREATE TABLE IF NOT EXISTS call_lines (
       source_id TEXT NOT NULL,
       target_name TEXT NOT NULL,
       context_line INTEGER,
       epoch_written INTEGER NOT NULL DEFAULT 0,
-      epoch_retired INTEGER
+      epoch_retired INTEGER,
+      rel_type TEXT NOT NULL DEFAULT 'calls'
     )
   `);
+  // Graphs written before rel_type existed hold call lines only: the
+  // default labels them correctly.
+  if (!db.prepare('PRAGMA table_info(call_lines)').all().some((c) => c.name === 'rel_type')) {
+    db.exec("ALTER TABLE call_lines ADD COLUMN rel_type TEXT NOT NULL DEFAULT 'calls'");
+  }
   db.exec('CREATE INDEX IF NOT EXISTS idx_call_lines_source ON call_lines(source_id, target_name)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_call_lines_retired ON call_lines(epoch_retired) WHERE epoch_retired IS NOT NULL');
 }
@@ -2867,29 +2896,39 @@ export function ensureCallSitesSchema(db) {
 /**
  * Insert call sites; `idFor` maps an extractor source id to the stored id.
  * Bare sites (`callee_name`) go to call_sites. Qualified sites
- * (`target_name`) go to call_lines only for a (caller, target) pair called
- * on two or more lines: a single site is already the relationship row's
- * context_line, which readers fall back to. A pair's sites all come from
- * one file, so every batch holds whole pairs.
+ * (`target_name`, `rel_type` 'calls' when absent) go to call_lines only for
+ * a (source, rel_type, target) pair seen on two or more lines: a single site
+ * is already the relationship row's context_line, which readers fall back
+ * to. A pair's sites all come from one file, so every batch holds whole
+ * pairs. On a call_lines table without `rel_type` (a writer that skipped
+ * ensureCallSitesSchema), only call lines are stored.
  */
 export function insertCallSites(db, callSites, { epoch = 0, idFor = null } = {}) {
   if (!callSites || callSites.length === 0) return 0;
   const bare = db.prepare('INSERT INTO call_sites (source_id, callee_name, context_line, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, NULL)');
+  const pairKey = (c) => `${c.source_id}\u0000${c.rel_type || 'calls'}\u0000${c.target_name}`;
   const pairSites = new Map();
   for (const c of callSites) {
     if (!c.target_name || !c.source_id) continue;
-    const key = `${c.source_id}\u0000${c.target_name}`;
+    const key = pairKey(c);
     pairSites.set(key, (pairSites.get(key) || 0) + 1);
   }
+  let typed;
   let qualified = null;
   let n = 0;
   for (const c of callSites) {
     const source = (idFor && idFor.get(c.source_id)) || c.source_id;
     if (!source) continue;
     if (c.target_name) {
-      if ((pairSites.get(`${c.source_id}\u0000${c.target_name}`) || 0) < 2) continue;
-      qualified ||= db.prepare('INSERT INTO call_lines (source_id, target_name, context_line, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, NULL)');
-      qualified.run(source, c.target_name, c.context_line ?? null, epoch);
+      if ((pairSites.get(pairKey(c)) || 0) < 2) continue;
+      typed ??= hasGraphColumn(db, 'call_lines', 'rel_type');
+      const relType = c.rel_type || 'calls';
+      if (!typed && relType !== 'calls') continue;
+      qualified ||= typed
+        ? db.prepare('INSERT INTO call_lines (source_id, target_name, context_line, epoch_written, epoch_retired, rel_type) VALUES (?, ?, ?, ?, NULL, ?)')
+        : db.prepare('INSERT INTO call_lines (source_id, target_name, context_line, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, NULL)');
+      if (typed) qualified.run(source, c.target_name, c.context_line ?? null, epoch, relType);
+      else qualified.run(source, c.target_name, c.context_line ?? null, epoch);
       n++;
       continue;
     }

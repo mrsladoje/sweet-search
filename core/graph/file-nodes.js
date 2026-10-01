@@ -142,6 +142,30 @@ export function hasGraphTable(db, name) {
 }
 
 /**
+ * Whether `db` has column `column` on table `table`, with the same memo rule
+ * as hasGraphTable: a "yes" is final (columns are never dropped), a "no"
+ * holds only while `PRAGMA schema_version` is unchanged (an upgraded
+ * maintainer may ALTER an older graph while a reader stays connected).
+ * Used for additive columns (the trace-only site-line table's `rel_type`).
+ */
+export function hasGraphColumn(db, table, column) {
+  if (!db) return false;
+  let byName = tableMemo.get(db);
+  if (!byName) { byName = new Map(); tableMemo.set(db, byName); }
+  const key = `${table}.${column}`;
+  const memo = byName.get(key);
+  if (memo === true) return true;
+  const version = schemaVersionOf(db);
+  if (memo && memo.version === version && version != null) return false;
+  let ok = false;
+  try {
+    ok = db.prepare(`PRAGMA table_info(${JSON.stringify(table)})`).all().some((c) => c.name === column);
+  } catch { ok = false; }
+  byName.set(key, ok ? true : { version });
+  return ok;
+}
+
+/**
  * A derived table with the entity columns that caller readers select, so a
  * reader can run its caller query once against `entities` and once against
  * this (`JOIN ${fileNodeSourceSql()} e ON e.id = r.source_id`) with the same
