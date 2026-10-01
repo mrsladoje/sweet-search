@@ -52,9 +52,12 @@ export function computeGraphHash(dbPath) {
   applyReadPragmas(db);
 
   try {
+    // `importsFile` edges (file → file, no entity target) are excluded so
+    // communities and their hash stay what they were before those edges.
     const rows = db.prepare(`
       SELECT source_id, target_id, type
       FROM relationships
+      WHERE type != 'importsFile'
       ORDER BY source_id, target_id, type
     `).all();
 
@@ -145,6 +148,7 @@ export function detectCommunities(dbPath, options = {}) {
     const relationships = db.prepare(`
       SELECT source_id, target_id, type
       FROM relationships
+      WHERE type != 'importsFile'
     `).all();
 
     // Hard cutoffs: fall back to directory grouping

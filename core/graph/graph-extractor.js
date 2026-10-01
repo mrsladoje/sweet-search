@@ -16,6 +16,15 @@ import fs from 'fs/promises';
 import { GRAPH_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-patterns.js';
 import { getTreeSitterProvider } from '../infrastructure/tree-sitter-provider.js';
+import { scanImports, SCANNED_IMPORT_LANGUAGES } from './import-scanner.js';
+import { UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
+
+// Languages whose legacy `imports` rows are all module specifiers that the
+// statement scanner sees (so an unmatched row is a regex false positive).
+const STATEMENT_COVERED_IMPORT_LANGUAGES = new Set([
+  'javascript', 'typescript', 'tsx', 'python', 'go', 'rust', 'c', 'cpp', 'objc',
+  'java', 'kotlin', 'scala', 'groovy', 'dart',
+]);
 
 // Schema version - increment when schema changes require full reindex
 // Users should run `/index-codebase --full` after upgrading
@@ -486,6 +495,10 @@ export class GraphExtractor {
     this.patternPrefilterCache = new Map();
     this.methodCallRegexCache = new Map();
     this.genericPatternPlanCache = new Map();
+    // Optional import resolver (core/graph/import-resolver.js). When set,
+    // every file also gets `importsFile` edges to the repo files it imports,
+    // and its legacy `imports` rows are annotated with the resolved file.
+    this.importResolver = options?.importResolver || null;
   }
 
   /**
@@ -494,6 +507,86 @@ export class GraphExtractor {
    * generic registry-based extractor for all other languages.
    */
   async extractFromFile(filePath, content) {
+    const result = await this._extractFromFileInner(filePath, content);
+    if (this.importResolver && result.relationships) {
+      this._appendResolvedImports(filePath, content, result.relationships);
+    }
+    return result;
+  }
+
+  /**
+   * File-level import edges. Scans whole import statements (multi-line,
+   * default + named, namespace, side-effect, `pub use`, `mod x;`, Go blocks),
+   * resolves each specifier to a repo file, and:
+   *  1. appends one `importsFile` edge per (file, imported file):
+   *     target_name = repo-relative target path (Go: package dir + '/'),
+   *     full_import_path = the specifier as written;
+   *  2. sets full_import_path on the matching legacy `imports` rows to the
+   *     resolved file, or to `unresolved:<spec>` when the module is not a
+   *     repo file, so name-based resolution stops guessing.
+   * Legacy target_name/type values are never changed: they feed the
+   * embedding `# Uses:` line (ENRICHMENT_VERSION contract).
+   */
+  _appendResolvedImports(filePath, content, relationships) {
+    const langInfo = resolveLanguage(filePath, content);
+    const language = langInfo?.id;
+    if (language === 'json') {
+      // package.json-style dependency rows name packages, never repo code.
+      for (const rel of relationships) {
+        if (rel.type === 'imports' && !rel.full_import_path) rel.full_import_path = `${UNRESOLVED_IMPORT_PREFIX}${rel.target_name}`;
+      }
+      return;
+    }
+    if (!language || !SCANNED_IMPORT_LANGUAGES.has(language)) return;
+    let scanned;
+    try { scanned = scanImports(content, language); } catch { return; }
+
+    const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
+    const self = String(filePath).replace(/\\/g, '/');
+    const bySpec = new Map();
+    const byBinding = new Map();
+    const seenTargets = new Set();
+    for (const imp of scanned) {
+      const target = this.importResolver.resolve(filePath, imp, language);
+      const annotation = target || `${UNRESOLVED_IMPORT_PREFIX}${imp.spec}`;
+      if (!bySpec.has(imp.spec)) bySpec.set(imp.spec, annotation);
+      for (const name of imp.names || []) if (!byBinding.has(name)) byBinding.set(name, annotation);
+      if (!target || target === self || seenTargets.has(target)) continue;
+      seenTargets.add(target);
+      relationships.push({
+        source_id: fileEntityId,
+        target_id: null,
+        target_name: target,
+        type: 'importsFile',
+        weight: GRAPH_CONFIG.relationshipWeights.imports,
+        context_line: imp.line,
+        full_import_path: imp.spec,
+      });
+    }
+
+    for (const rel of relationships) {
+      if (rel.type !== 'imports' || rel.full_import_path) continue;
+      const name = rel.target_name;
+      const key = language === 'rust' ? String(name).replace(/::$/, '') : name;
+      let annotation = bySpec.get(key);
+      if (annotation === undefined && language === 'rust') {
+        // Legacy Rust rows hold the `use` prefix (`crate::a::b::`); match
+        // the longest scanned path under it.
+        for (const [spec, ann] of bySpec) if (spec.startsWith(`${key}::`)) { annotation = ann; break; }
+      }
+      if (annotation === undefined && !rel.context_line) annotation = byBinding.get(name);
+      // A legacy row no import statement accounts for is a per-line regex
+      // false positive (Go: any line starting with a string literal, e.g.
+      // map keys `"name": x`); keep its text, stop it resolving by name.
+      // Ruby/PHP rows also carry include/trait uses, so they are left alone.
+      if (annotation === undefined && STATEMENT_COVERED_IMPORT_LANGUAGES.has(language)) {
+        annotation = `${UNRESOLVED_IMPORT_PREFIX}${name}`;
+      }
+      if (annotation !== undefined) rel.full_import_path = annotation;
+    }
+  }
+
+  async _extractFromFileInner(filePath, content) {
     this.currentFile = filePath;
     const lines = content.split('\n');
     // resolveLanguage handles per-file disambiguation of ambiguous extensions

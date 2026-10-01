@@ -2237,7 +2237,7 @@ export class GraphSearch {
             r.type as rel_type
           FROM relationships r
           JOIN entities e ON e.id = r.source_id
-          WHERE (r.target_id IN (${placeholders}) OR r.target_name LIKE ?)
+          WHERE (r.target_id IN (${placeholders}) OR (r.target_name LIKE ? AND r.type != 'importsFile'))
             AND ${this._entityVisibilitySql('e')}
             AND ${this._relationshipVisibilitySql('r')}
           LIMIT 50
