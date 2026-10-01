@@ -28,7 +28,9 @@ describe('bare call scanning', () => {
       '    self.log(cmd)',
       '    print("usage: run(cmd)")',
       '    data = [parse(x) for x in rows]',
-    ], ['run'])).toEqual(['check', 'empty', 'execute', 'parse']);
+    // `print` is a library function, not a keyword: it is recorded and gets
+    // no edge unless the repo defines a `print` the caller can see.
+    ], ['run'])).toEqual(['check', 'empty', 'execute', 'print', 'parse']);
   });
 
   it('a Go trailing-dot continuation is a qualified call, not a bare call', () => {

@@ -111,10 +111,14 @@ const DEFINITION_GUARDS = {
 const GENERIC_ARGS = String.raw`(?:\s*(?:::)?\s*<[^()<>;]*(?:<[^()<>;]*>[^()<>;]*)*>)?`;
 
 // ── Bare calls (`helper(x)`: a name called with no receiver) ───────────────
-// Reserved words that can precede `(` but never name a callable. Closed,
-// per-language sets (language keywords), not a capture-filter stopword list:
-// builtins (`len`, `print`, `setTimeout`) are left to resolution, which only
-// links a bare call to a definition the caller can see.
+// Reserved words and language constructs that can precede `(` but never name
+// a callable: closed per-language sets taken from each language's grammar
+// (keywords, special forms, spec-predeclared builtins such as Go's `len`).
+// Library functions (`print`, `listOf`, `pairs`, `paste`) are NOT listed —
+// that would be a capture-filter stopword list (CLAUDE.md): a bare call links
+// only to a repo definition the caller can see, so a library name with no
+// such definition never gets an edge, and a repo function that shadows it
+// does.
 const KW_C_FAMILY = ['if', 'else', 'for', 'while', 'do', 'switch', 'case', 'return', 'sizeof', 'catch', 'try', 'throw', 'new', 'delete', 'goto'];
 const BARE_KEYWORDS_BY_LANGUAGE = {
   c: [...KW_C_FAMILY, 'alignof', '_Alignof', 'offsetof', 'defined', '__attribute__', '__declspec', 'asm', '__asm__', '_Generic', 'typeof', '__typeof__', 'static_assert', '_Static_assert'],
@@ -124,24 +128,31 @@ const BARE_KEYWORDS_BY_LANGUAGE = {
   csharp: [...KW_C_FAMILY, 'foreach', 'using', 'lock', 'fixed', 'checked', 'unchecked', 'typeof', 'nameof', 'default', 'base', 'this', 'when', 'stackalloc', 'await', 'in', 'is', 'as'],
   javascript: [...KW_C_FAMILY, 'typeof', 'void', 'await', 'yield', 'function', 'super', 'import', 'in', 'of', 'instanceof', 'with', 'async'],
   typescript: [...KW_C_FAMILY, 'typeof', 'void', 'await', 'yield', 'function', 'super', 'import', 'in', 'of', 'instanceof', 'with', 'async', 'keyof', 'satisfies', 'as', 'is', 'asserts', 'infer'],
-  python: ['if', 'elif', 'else', 'for', 'while', 'return', 'yield', 'await', 'assert', 'del', 'not', 'and', 'or', 'in', 'is', 'lambda', 'with', 'except', 'raise', 'print', 'exec', 'from', 'import', 'match', 'case', 'super'],
-  ruby: ['if', 'elsif', 'unless', 'while', 'until', 'for', 'case', 'when', 'return', 'yield', 'defined?', 'not', 'and', 'or', 'in', 'super', 'raise', 'rescue', 'puts', 'p', 'lambda', 'proc', 'loop', 'require', 'require_relative'],
+  python: ['if', 'elif', 'else', 'for', 'while', 'return', 'yield', 'await', 'assert', 'del', 'not', 'and', 'or', 'in', 'is', 'lambda', 'with', 'except', 'raise', 'from', 'import', 'match', 'case'],
+  ruby: ['if', 'elsif', 'unless', 'while', 'until', 'for', 'case', 'when', 'return', 'yield', 'defined?', 'not', 'and', 'or', 'in', 'super', 'rescue'],
+  // Go: keywords plus the predeclared builtin functions of the language spec.
   go: ['if', 'for', 'switch', 'case', 'return', 'go', 'defer', 'select', 'func', 'range', 'make', 'new', 'len', 'cap', 'append', 'copy', 'delete', 'panic', 'recover', 'print', 'println', 'complex', 'real', 'imag', 'close', 'min', 'max', 'clear'],
-  rust: ['if', 'else', 'for', 'while', 'loop', 'match', 'return', 'in', 'as', 'move', 'unsafe', 'await', 'Some', 'Ok', 'Err', 'Box', 'Vec'],
-  swift: ['if', 'else', 'for', 'while', 'repeat', 'switch', 'case', 'return', 'guard', 'defer', 'catch', 'try', 'throw', 'await', 'in', 'is', 'as', 'where', 'init', 'super', 'self', 'Self', 'type', 'unowned', 'weak', 'some', 'any', 'precondition', 'assert', 'fatalError', 'print'],
-  kotlin: ['if', 'else', 'for', 'while', 'when', 'return', 'throw', 'try', 'catch', 'in', 'is', 'as', 'super', 'this', 'constructor', 'init', 'by', 'where', 'get', 'set', 'listOf', 'mapOf', 'setOf', 'arrayOf', 'println', 'print', 'require', 'check', 'error', 'TODO', 'lazy', 'run', 'let', 'also', 'apply', 'with', 'repeat'],
-  scala: ['if', 'else', 'for', 'while', 'match', 'case', 'return', 'throw', 'try', 'catch', 'yield', 'new', 'super', 'this', 'println', 'print', 'require', 'assert'],
+  // Rust: keywords plus the prelude's Option/Result constructors.
+  rust: ['if', 'else', 'for', 'while', 'loop', 'match', 'return', 'in', 'as', 'move', 'unsafe', 'await', 'Some', 'Ok', 'Err'],
+  swift: ['if', 'else', 'for', 'while', 'repeat', 'switch', 'case', 'return', 'guard', 'defer', 'catch', 'try', 'throw', 'await', 'in', 'is', 'as', 'where', 'init', 'super', 'self', 'Self', 'unowned', 'weak', 'some', 'any'],
+  kotlin: ['if', 'else', 'for', 'while', 'when', 'return', 'throw', 'try', 'catch', 'in', 'is', 'as', 'super', 'this', 'constructor', 'init', 'by', 'where', 'get', 'set'],
+  scala: ['if', 'else', 'for', 'while', 'match', 'case', 'return', 'throw', 'try', 'catch', 'yield', 'new', 'super', 'this'],
+  // PHP: keywords and language constructs (`isset`, `echo`, `include` are
+  // constructs, not functions).
   php: ['if', 'elseif', 'else', 'for', 'foreach', 'while', 'switch', 'case', 'return', 'catch', 'throw', 'new', 'array', 'list', 'isset', 'unset', 'empty', 'eval', 'exit', 'die', 'echo', 'print', 'include', 'include_once', 'require', 'require_once', 'fn', 'function', 'match', 'clone', 'instanceof', 'parent', 'self', 'static'],
-  dart: [...KW_C_FAMILY, 'assert', 'await', 'yield', 'super', 'this', 'is', 'as', 'in', 'print'],
-  groovy: [...KW_C_FAMILY, 'assert', 'super', 'this', 'in', 'as', 'println', 'print'],
-  lua: ['if', 'elseif', 'while', 'for', 'until', 'return', 'and', 'or', 'not', 'in', 'function', 'local', 'require', 'print', 'pairs', 'ipairs', 'type', 'tostring', 'tonumber', 'error', 'assert', 'pcall', 'xpcall', 'select', 'setmetatable', 'getmetatable', 'rawget', 'rawset', 'next', 'unpack'],
-  elixir: ['if', 'unless', 'case', 'cond', 'with', 'for', 'fn', 'quote', 'unquote', 'receive', 'try', 'raise', 'throw', 'def', 'defp', 'defmacro', 'defmacrop', 'defmodule', 'defstruct', 'defimpl', 'defprotocol', 'defguard', 'defdelegate', 'import', 'alias', 'require', 'use', 'when', 'and', 'or', 'not', 'in', 'is_nil', 'is_atom', 'is_binary', 'is_list', 'is_map', 'is_integer'],
+  dart: [...KW_C_FAMILY, 'assert', 'await', 'yield', 'super', 'this', 'is', 'as', 'in'],
+  groovy: [...KW_C_FAMILY, 'assert', 'super', 'this', 'in', 'as'],
+  lua: ['if', 'elseif', 'while', 'for', 'until', 'return', 'and', 'or', 'not', 'in', 'function', 'local'],
+  // Elixir: reserved words and the special forms / definition macros.
+  elixir: ['if', 'unless', 'case', 'cond', 'with', 'for', 'fn', 'quote', 'unquote', 'receive', 'try', 'raise', 'throw', 'def', 'defp', 'defmacro', 'defmacrop', 'defmodule', 'defstruct', 'defimpl', 'defprotocol', 'defguard', 'defdelegate', 'import', 'alias', 'require', 'use', 'when', 'and', 'or', 'not', 'in'],
+  // Shell: reserved words and POSIX special builtins.
   shell: ['if', 'then', 'elif', 'else', 'fi', 'for', 'while', 'until', 'do', 'done', 'case', 'esac', 'function', 'return', 'local', 'echo', 'printf', 'test', 'exit'],
   zig: ['if', 'else', 'while', 'for', 'switch', 'return', 'try', 'catch', 'orelse', 'defer', 'errdefer', 'comptime', 'fn', 'and', 'or', 'struct', 'enum', 'union', 'error'],
-  solidity: [...KW_C_FAMILY, 'require', 'assert', 'revert', 'emit', 'keccak256', 'sha256', 'abi', 'address', 'payable', 'uint', 'uint256', 'int', 'int256', 'bytes', 'bytes32', 'string', 'bool', 'type', 'modifier', 'function', 'event', 'mapping'],
-  perl: ['if', 'elsif', 'else', 'unless', 'while', 'until', 'for', 'foreach', 'return', 'my', 'our', 'local', 'sub', 'and', 'or', 'not', 'print', 'printf', 'push', 'pop', 'shift', 'unshift', 'die', 'warn', 'defined', 'scalar', 'ref', 'keys', 'values', 'exists', 'delete', 'join', 'split', 'map', 'grep', 'sort', 'open', 'close', 'qw'],
-  r: ['if', 'else', 'for', 'while', 'repeat', 'function', 'return', 'c', 'list', 'library', 'require', 'print', 'paste', 'paste0', 'stop', 'warning', 'is.null', 'length', 'names'],
-  julia: ['if', 'elseif', 'else', 'for', 'while', 'return', 'function', 'begin', 'let', 'try', 'catch', 'macro', 'quote', 'in', 'isa', 'println', 'print', 'error', 'throw', 'typeof', 'length', 'push!'],
+  // Solidity: keywords, `emit`, and elementary type names (conversions read as calls).
+  solidity: [...KW_C_FAMILY, 'emit', 'address', 'payable', 'uint', 'uint256', 'int', 'int256', 'bytes', 'bytes32', 'string', 'bool', 'type', 'modifier', 'function', 'event', 'mapping'],
+  perl: ['if', 'elsif', 'else', 'unless', 'while', 'until', 'for', 'foreach', 'return', 'my', 'our', 'local', 'sub', 'and', 'or', 'not', 'qw'],
+  r: ['if', 'else', 'for', 'while', 'repeat', 'function', 'return'],
+  julia: ['if', 'elseif', 'else', 'for', 'while', 'return', 'function', 'begin', 'let', 'try', 'catch', 'macro', 'quote', 'in', 'isa'],
 };
 const BARE_KEYWORDS_DEFAULT = [...KW_C_FAMILY, 'function', 'func', 'fn', 'fun', 'def', 'await', 'yield', 'super', 'this', 'self', 'in', 'not', 'and', 'or'];
 // Words that may stand right before a called name (`return helper(x)`).
