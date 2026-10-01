@@ -17,6 +17,8 @@ import {
   CLAUDE_LEAN_AGENT_REL, claudeLeanAgentFile, installClaudeLeanHarness,
 } from '../../scripts/install-claude-lean-harness.js';
 import { CLAUDE_SYSTEM_OVERRIDE } from '../../scripts/install-claude-system-prompt.js';
+import { getPolicyBody } from '../../scripts/inject-agent-instructions.js';
+import { CLAUDE_RULES_POINTER } from '../../scripts/write-claude-rules.js';
 import {
   CODEX_INSTRUCTIONS_SOURCE, HARNESS_PROMPTS_DIR, OPENCODE_GPT_ORIGINAL, OPENCODE_TOOL_EDITS,
   OPENCODE_TRIM_PLUGIN_SOURCE, applyExactEdits, codexInstructions, opencodePrompt,
@@ -62,6 +64,37 @@ describe('Claude Code: shipped main agent = bench product + read6fs', () => {
     // Only the memory path differs (it names each project's own directory).
     const norm = t => t.replace(/projects\/[^/`]+\/memory\//, 'projects/<slug>/memory/');
     expect(norm(withoutOverride(product))).toBe(norm(bench));
+  });
+});
+
+// V1b: the shipped main agent carries the rules. It must be the benchmarked
+// SS_VARIANT_CC_RULES_IN_PROMPT=2 file, and the switch value '2' must equal the default.
+describe('Claude Code: V1b agent file = the benchmarked SS_VARIANT_CC_RULES_IN_PROMPT=2 arm', () => {
+  const POLICY = getPolicyBody('cli');
+  const norm = t => t.replace(/projects\/[^/`]+\/memory\//, 'projects/<slug>/memory/');
+  const install = (name, opts) => {
+    const d = join(dir, name);
+    installClaudeLeanHarness({ projectRoot: d, configDir: join(dir, 'cfg'), ...opts });
+    return readFileSync(join(d, CLAUDE_LEAN_AGENT_REL), 'utf8');
+  };
+
+  it('product default = bench runner install (explicit rules = its mppText) + read6fs, modulo the override', () => {
+    const product = install('product', { env: {} });
+    const runner = applyClaudeBatch(install('runner', {
+      appendOverride: false, promptEdits: false, env: {}, rules: `${POLICY}\n`,
+    }), 'read6fs');
+    expect(norm(withoutOverride(product))).toBe(norm(runner));
+    expect(product.split(POLICY)).toHaveLength(2);
+  });
+
+  it("the switch value '2' installs the default bytes; '0' installs the 2.8.2 bytes", () => {
+    const unset = install('unset', { env: {} });
+    const two = install('two', { env: { SS_VARIANT_CC_RULES_IN_PROMPT: '2' } });
+    const zero = install('zero', { env: { SS_VARIANT_CC_RULES_IN_PROMPT: '0' } });
+    const plain = install('plain', { env: {}, rules: false });
+    expect(norm(two)).toBe(norm(unset));
+    expect(norm(zero)).toBe(norm(plain));
+    expect(zero).not.toContain(POLICY);
   });
 });
 
@@ -140,5 +173,18 @@ describe('golden pins of the shipped texts (sha256)', () => {
   it("Claude Code main agent file (memoryDir '/m/', no override)", () => {
     expect(sha(claudeLeanAgentFile({ appendOverride: false, memoryDir: '/m/' })))
       .toBe('11446e95a164c2fb04892e3db505d2ccec2c7489979392938c51482b9dba48fe');
+  });
+  // V1b pins: computed from the benchmarked reference implementation (branch final-tuning,
+  // claudeLeanAgentFile({ rulesInPrompt: true }) and its CLAUDE_RULES_POINTER).
+  it("Claude Code V1b main agent file (memoryDir '/m/', no override)", () => {
+    expect(sha(claudeLeanAgentFile({ appendOverride: false, memoryDir: '/m/', rules: getPolicyBody('cli') })))
+      .toBe('5d238cab2d26025019bcad16cb09ef2f4cfe88468f464d280e366904bca1ae61');
+  });
+  it("Claude Code V1b main agent file as shipped (memoryDir '/m/', with the override)", () => {
+    expect(sha(claudeLeanAgentFile({ memoryDir: '/m/', rules: getPolicyBody('cli') })))
+      .toBe('f09e7ef96b13ab23e72a265a50eeb2601352ee5432e6d30b9ede3fe35a9e96d7');
+  });
+  it('Claude Code V1b pointer rule text', () => {
+    expect(sha(CLAUDE_RULES_POINTER)).toBe('2523ba9ac086973443f4122c5a459124487c8be1d42fc7578c8aea413fe11d4c');
   });
 });

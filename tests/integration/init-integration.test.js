@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CANONICAL_POLICY_BODY, getMcpPolicyBody } from '../../scripts/inject-agent-instructions.js';
-import { _internal as claudeRulesInternal } from '../../scripts/write-claude-rules.js';
+import { CLAUDE_RULES_POINTER, _internal as claudeRulesInternal } from '../../scripts/write-claude-rules.js';
 import { CLAUDE_OUTPUT_STYLE_REL } from '../../scripts/install-claude-system-prompt.js';
 import { CLAUDE_LEAN_AGENT_REL } from '../../scripts/install-claude-lean-harness.js';
 
@@ -25,7 +25,8 @@ function runInit(args, cwd) {
       encoding: 'utf8',
       timeout: 30000,
       cwd,
-      env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: cwd },
+      // Hermetic: the rules-layout switch must not leak in from the developer's shell.
+      env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: cwd, SS_VARIANT_CC_RULES_IN_PROMPT: '' },
     });
     return { stdout, stderr: '', exitCode: 0 };
   } catch (err) {
@@ -134,11 +135,13 @@ describe('sweet-search init (integration)', () => {
     const mcp = JSON.parse(readFileSync(join(tempDir, '.mcp.json'), 'utf8'));
     expect(mcp.mcpServers['sweet-search'].command).toBe('npx');
     expect(mcp.mcpServers['sweet-search'].args).toContain('sweet-search-mcp');
-    // CLI surface intact: exact ss-* rule + system override; CLAUDE.md untouched.
+    // CLI surface intact: the exact ss-* rules in the lean main agent, the pointer rule file,
+    // the system override; CLAUDE.md untouched.
     expect(existsSync(join(tempDir, 'CLAUDE.md'))).toBe(false);
     expect(readFileSync(rulesPath(), 'utf8')).toBe(
-      `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
+      `${claudeRulesInternal.SENTINEL}\n${CLAUDE_RULES_POINTER}\n`,
     );
+    expect(readFileSync(join(tempDir, CLAUDE_LEAN_AGENT_REL), 'utf8').split(CANONICAL_POLICY_BODY)).toHaveLength(2);
     // The CLI override ships in the lean-harness main agent (not the output style).
     expect(existsSync(join(tempDir, CLAUDE_LEAN_AGENT_REL))).toBe(true);
     expect(existsSync(join(tempDir, CLAUDE_OUTPUT_STYLE_REL))).toBe(false);
@@ -147,12 +150,13 @@ describe('sweet-search init (integration)', () => {
   });
 
   it('cli → --mcp --no-cli flips the one rule and removes the CLI-only override', () => {
-    // 1. Plain CLI init installs exact M± in the rule.
+    // 1. Plain CLI init installs exact M± in the lean main agent and the pointer in the rule.
     const first = runInit(FAST, tempDir);
     expect(first.exitCode).toBe(0);
     expect(readFileSync(rulesPath(), 'utf8')).toBe(
-      `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
+      `${claudeRulesInternal.SENTINEL}\n${CLAUDE_RULES_POINTER}\n`,
     );
+    expect(readFileSync(join(tempDir, CLAUDE_LEAN_AGENT_REL), 'utf8').split(CANONICAL_POLICY_BODY)).toHaveLength(2);
     // The CLI override ships in the lean-harness main agent (not the output style).
     expect(existsSync(join(tempDir, CLAUDE_LEAN_AGENT_REL))).toBe(true);
     expect(existsSync(join(tempDir, CLAUDE_OUTPUT_STYLE_REL))).toBe(false);

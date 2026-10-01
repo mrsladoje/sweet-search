@@ -15,6 +15,9 @@ export default defineConfig({
     // temp repos into the developer's real ~/.cache/sweet-search/repos.json.
     env: {
       SWEET_SEARCH_REPO_REGISTRY: join(tmpdir(), `sweet-search-test-repos-${process.pid}.json`),
+      // The Claude Code rules-layout switch (write-claude-rules.js) must not leak in from the
+      // developer's shell: tests assert the product default and pass the switch explicitly.
+      SS_VARIANT_CC_RULES_IN_PROMPT: '',
     },
     // Kill fixture processes orphaned by timed-out tests, before a run starts
     // and again after it ends. A run that inherits the previous run's orphans

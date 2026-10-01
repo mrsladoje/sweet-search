@@ -43,6 +43,7 @@ import {
   removeClaudeLeanHarness,
 } from '../../scripts/install-claude-lean-harness.js';
 import { CLAUDE_SYSTEM_OVERRIDE } from '../../scripts/install-claude-system-prompt.js';
+import { getPolicyBody } from '../../scripts/inject-agent-instructions.js';
 
 let root;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'sweet-search-lean-test-')); });
@@ -348,7 +349,9 @@ describe('upgrade from a v1 install', () => {
     expect(r.status).toBe('installed');
     expect(r.active).toBe(true);
     const mem = claudeAutoMemoryDir({ projectRoot: root });
-    expect(read(CLAUDE_LEAN_AGENT_REL)).toBe(claudeLeanAgentFile({ memoryDir: mem.dir, memoryEnabled: mem.enabled }));
+    // V1b: the product default carries the rules in the main agent (V1b).
+    expect(read(CLAUDE_LEAN_AGENT_REL)).toBe(claudeLeanAgentFile({ memoryDir: mem.dir, memoryEnabled: mem.enabled, rules: getPolicyBody('cli') }));
+    expect(r.rulesInPrompt).toBe(true);
     expect(read(CLAUDE_LEAN_SUBAGENT_REL)).toBe(V1_SUB);
     expect(existsSync(join(root, CLAUDE_LEAN_PLAN_REL))).toBe(true);
     const s = settings();
@@ -465,5 +468,102 @@ describe('removeClaudeLeanHarness', () => {
 
   it('reports not-found without a manifest', () => {
     expect(removeClaudeLeanHarness({ projectRoot: root }).status).toBe('not-found');
+  });
+});
+
+// V1b: the shipped policy rides in the main agent file, ahead of the memory section.
+// Every call passes `env` explicitly so the developer's shell cannot flip the switch.
+describe('rules in the main agent (V1b)', () => {
+  const POLICY = getPolicyBody('cli');
+  const ENV = { SS_VARIANT_CC_RULES_IN_PROMPT: '' };
+  const install = (extra = {}) => installClaudeLeanHarness({ projectRoot: root, env: ENV, ...extra });
+  const count = (text, needle) => text.split(needle).length - 1;
+
+  it('the product default puts the policy in the main agent once, before the memory section', () => {
+    const r = install();
+    expect(r.active).toBe(true);
+    expect(r.rulesInPrompt).toBe(true);
+    const main = read(CLAUDE_LEAN_AGENT_REL);
+    expect(count(main, POLICY)).toBe(1);
+    expect(main.indexOf(POLICY)).toBeLessThan(main.indexOf('# Memory'));
+    // After the whole base prompt, before the memory section, and before the override.
+    expect(main.indexOf(POLICY)).toBeGreaterThan(main.indexOf('# Doing the work'));
+    expect(main.indexOf(POLICY)).toBeLessThan(main.indexOf(CLAUDE_SYSTEM_OVERRIDE));
+    expect(main).toContain(`${POLICY}\n\n# Memory\n`);
+    expect(manifest().files[CLAUDE_LEAN_AGENT_REL]).toBe(sha(main));
+  });
+
+  it('places the policy before the session context when auto memory is off', () => {
+    const text = claudeLeanAgentFile({ memoryEnabled: false, rules: POLICY });
+    expect(text).not.toContain('# Memory');
+    expect(text).toContain(`${POLICY}\n\n# Session context\n`);
+  });
+
+  it('the subagent files never carry the policy', () => {
+    install();
+    expect(read(CLAUDE_LEAN_SUBAGENT_REL)).not.toContain(POLICY);
+    expect(read(CLAUDE_LEAN_PLAN_REL)).not.toContain(POLICY);
+    expect(read(CLAUDE_LEAN_SUBAGENT_REL)).toBe(`---\nname: general-purpose\ndescription: ${CLAUDE_LEAN_SUBAGENT_DESCRIPTION}\n---\n\n${CLAUDE_LEAN_SUBAGENT_PROMPT}\n`);
+  });
+
+  it("'2' and unset install the same bytes; '1' carries the policy too; '0' is the 2.8.2 agent file", () => {
+    const files = (env) => {
+      const d = join(root, `p${env.SS_VARIANT_CC_RULES_IN_PROMPT ?? 'unset'}`);
+      mkdirSync(d);
+      const r = installClaudeLeanHarness({ projectRoot: d, env, configDir: join(root, 'cfg') });
+      const text = readFileSync(join(d, CLAUDE_LEAN_AGENT_REL), 'utf8');
+      return { r, norm: text.split(d.replace(/[^a-zA-Z0-9]/g, '-')).join('<slug>') };
+    };
+    const unset = files({});
+    const two = files({ SS_VARIANT_CC_RULES_IN_PROMPT: '2' });
+    const one = files({ SS_VARIANT_CC_RULES_IN_PROMPT: '1' });
+    const zero = files({ SS_VARIANT_CC_RULES_IN_PROMPT: '0' });
+    expect(two.norm).toBe(unset.norm);
+    expect(one.norm).toBe(unset.norm);
+    expect([unset.r.rulesInPrompt, two.r.rulesInPrompt, one.r.rulesInPrompt, zero.r.rulesInPrompt]).toEqual([true, true, true, false]);
+    expect(zero.norm).not.toContain(POLICY);
+    expect(zero.norm).toBe(unset.norm.replace(`${POLICY}\n\n`, ''));
+  });
+
+  it('an explicit `rules` wins over the env: a custom text, or none', () => {
+    expect(install({ rules: 'CUSTOM RULES\n\n' }).rulesInPrompt).toBe(true);
+    expect(read(CLAUDE_LEAN_AGENT_REL)).toContain('CUSTOM RULES\n\n# Memory');
+    expect(read(CLAUDE_LEAN_AGENT_REL)).not.toContain(POLICY);
+    expect(install({ rules: false }).rulesInPrompt).toBe(false);
+    expect(read(CLAUDE_LEAN_AGENT_REL)).not.toContain('CUSTOM RULES');
+    expect(install({ rules: 7 }).status).toBe('error');
+  });
+
+  it('moves the policy in and out of an owned agent file and keeps the manifest hash in step', () => {
+    install({ env: { SS_VARIANT_CC_RULES_IN_PROMPT: '0' } });
+    const old = read(CLAUDE_LEAN_AGENT_REL);
+    expect(old).not.toContain(POLICY);
+    const up = install();
+    expect(up.status).toBe('installed');
+    expect(up.detail).toContain(CLAUDE_LEAN_AGENT_REL);
+    expect(manifest().files[CLAUDE_LEAN_AGENT_REL]).toBe(sha(read(CLAUDE_LEAN_AGENT_REL)));
+    expect(install().status).toBe('unchanged');
+    install({ env: { SS_VARIANT_CC_RULES_IN_PROMPT: '0' } });
+    expect(read(CLAUDE_LEAN_AGENT_REL)).toBe(old);
+    expect(manifest().files[CLAUDE_LEAN_AGENT_REL]).toBe(sha(old));
+    install();
+    expect(removeClaudeLeanHarness({ projectRoot: root }).status).toBe('removed');
+    expect(existsSync(join(root, CLAUDE_LEAN_AGENT_REL))).toBe(false);
+    expect(existsSync(join(root, CLAUDE_LEAN_MANIFEST_REL))).toBe(false);
+  });
+
+  it('never takes the rules when the harness is not the main agent', () => {
+    write('.claude/settings.local.json', JSON.stringify({ agent: 'other' }));
+    const local = install();
+    expect(local.active).toBe(false);
+    expect(local.rulesInPrompt).toBe(false);
+    expect(read(CLAUDE_LEAN_AGENT_REL)).not.toContain(POLICY);
+    rmSync(join(root, '.claude'), { recursive: true, force: true });
+    write('.claude/settings.json', JSON.stringify({ agent: 'mine' }));
+    expect(install()).toMatchObject({ active: false, rulesInPrompt: false });
+    rmSync(join(root, '.claude'), { recursive: true, force: true });
+    write(CLAUDE_LEAN_AGENT_REL, '---\nname: sweet-search\n---\nmine\n');
+    expect(install()).toMatchObject({ active: false, rulesInPrompt: false });
+    expect(read(CLAUDE_LEAN_AGENT_REL)).toBe('---\nname: sweet-search\n---\nmine\n');
   });
 });

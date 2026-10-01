@@ -27,8 +27,10 @@ import {
   removeAgentInstructions,
 } from '../../scripts/inject-agent-instructions.js';
 import {
+  CLAUDE_RULES_POINTER,
   CLAUDE_RULES_REL,
   removeClaudeRules,
+  resolveClaudeRulesLayout,
   writeClaudeRules,
   _internal as claudeRulesInternal,
 } from '../../scripts/write-claude-rules.js';
@@ -353,6 +355,53 @@ describe('writeClaudeRules / removeClaudeRules', () => {
   it('throws on missing projectRoot', () => {
     expect(() => writeClaudeRules({})).toThrow(/projectRoot is required/);
     expect(() => removeClaudeRules({})).toThrow(/projectRoot is required/);
+  });
+
+  // V1b: the pointer layout, used only while the lean main agent carries the policy.
+  const POINTER = `${claudeRulesInternal.SENTINEL}\n${CLAUDE_RULES_POINTER}\n`;
+  const FULL = `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`;
+
+  it('pointer layout: the ownership comment plus the short pointer only', () => {
+    expect(writeClaudeRules({ projectRoot: tmpRoot, layout: 'pointer' })).toBe('created');
+    expect(read(CLAUDE_RULES_REL)).toBe(POINTER);
+    expect(read(CLAUDE_RULES_REL)).not.toContain(CANONICAL_POLICY_BODY.split('\n')[0]);
+    expect(writeClaudeRules({ projectRoot: tmpRoot, layout: 'pointer' })).toBe('unchanged');
+  });
+
+  it('switches an owned file between the full and the pointer layout in place', () => {
+    writeClaudeRules({ projectRoot: tmpRoot });
+    expect(writeClaudeRules({ projectRoot: tmpRoot, layout: 'pointer' })).toBe('updated');
+    expect(read(CLAUDE_RULES_REL)).toBe(POINTER);
+    expect(writeClaudeRules({ projectRoot: tmpRoot, layout: 'full' })).toBe('updated');
+    expect(read(CLAUDE_RULES_REL)).toBe(FULL);
+  });
+
+  it('never replaces a user-authored file with the pointer; uninstall removes an owned pointer', () => {
+    mkdirSync(join(tmpRoot, '.claude', 'rules'), { recursive: true });
+    writeFileSync(join(tmpRoot, CLAUDE_RULES_REL), '# My rules\nNo sentinel.\n');
+    expect(writeClaudeRules({ projectRoot: tmpRoot, layout: 'pointer' })).toBe('preserved-user-file');
+    expect(read(CLAUDE_RULES_REL)).toBe('# My rules\nNo sentinel.\n');
+    rmSync(join(tmpRoot, CLAUDE_RULES_REL));
+    writeClaudeRules({ projectRoot: tmpRoot, layout: 'pointer' });
+    expect(removeClaudeRules({ projectRoot: tmpRoot })).toBe('removed');
+    expect(exists(CLAUDE_RULES_REL)).toBe(false);
+  });
+
+  it('rejects an unknown layout', () => {
+    expect(() => writeClaudeRules({ projectRoot: tmpRoot, layout: 'half' })).toThrow(/unknown layout/);
+    expect(exists(CLAUDE_RULES_REL)).toBe(false);
+  });
+
+  it('resolveClaudeRulesLayout: unset or 2 = pointer, 0 = file (2.8.2), 1 = none', () => {
+    const r = v => resolveClaudeRulesLayout(v === undefined ? {} : { SS_VARIANT_CC_RULES_IN_PROMPT: v });
+    expect(r(undefined)).toEqual({ layout: 'pointer', value: '' });
+    expect(r('')).toEqual({ layout: 'pointer', value: '' });
+    expect(r(' 2 ')).toEqual({ layout: 'pointer', value: '2' });
+    expect(r('0')).toEqual({ layout: 'file', value: '0' });
+    expect(r('1')).toEqual({ layout: 'none', value: '1' });
+    expect(r('toString')).toEqual({ layout: 'pointer', value: 'toString', invalid: true });
+    expect(() => resolveClaudeRulesLayout({ SS_VARIANT_CC_RULES_IN_PROMPT: 'yes' }, { strict: true }))
+      .toThrow(/expected 0, 1 or 2/);
   });
 });
 
