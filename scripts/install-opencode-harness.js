@@ -16,8 +16,10 @@
  *                                         `openai` provider requests carry one value per repository
  *                                         instead of the session id (harness-prompts/
  *                                         opencode-cache-key-plugin.mjs). Installed with or without
- *                                         the prompt; off with `init --no-opencode-cache-key`, at
- *                                         install time or run time with SWEET_SEARCH_OC_CACHE_KEY=0
+ *                                         the prompt; off with `init --no-opencode-cache-key` (or
+ *                                         SWEET_SEARCH_OC_CACHE_KEY=0 at init time; the manifest keeps
+ *                                         that choice for later inits until `--opencode-cache-key`),
+ *                                         or at run time with SWEET_SEARCH_OC_CACHE_KEY=0
  *   .opencode/opencode.json               keys that reference them (merged into an existing file,
  *                                         or into .opencode/opencode.jsonc when only that exists;
  *                                         comments, trailing commas and the user's formatting are
@@ -204,9 +206,12 @@ const SETTINGS = {
   },
   plugin: {
     has: cfg => Array.isArray(cfg.plugin) && cfg.plugin.some(e => pluginSpecOf(e) === OPENCODE_PLUGIN_SPEC),
+    // A refresh replaces our entry where it stands (the task bench reads plugin[0]); a new one goes last.
     add: cfg => {
-      const list = Array.isArray(cfg.plugin) ? cfg.plugin.filter(e => pluginSpecOf(e) !== OPENCODE_PLUGIN_SPEC) : [];
-      cfg.plugin = [...list, opencodePluginEntry()];
+      const list = Array.isArray(cfg.plugin) ? cfg.plugin : [];
+      const at = list.findIndex(e => pluginSpecOf(e) === OPENCODE_PLUGIN_SPEC);
+      cfg.plugin = at < 0 ? [...list, opencodePluginEntry()]
+        : list.flatMap((e, i) => (i === at ? [opencodePluginEntry()] : pluginSpecOf(e) === OPENCODE_PLUGIN_SPEC ? [] : [e]));
     },
     current: cfg => (Array.isArray(cfg.plugin) ? cfg.plugin.find(e => pluginSpecOf(e) === OPENCODE_PLUGIN_SPEC) : undefined),
     remove: cfg => {
@@ -218,6 +223,7 @@ const SETTINGS = {
   },
   cacheKeyPlugin: {
     key: 'plugin',
+    label: 'plugin (OpenAI cache key)',
     has: cfg => Array.isArray(cfg.plugin) && cfg.plugin.some(e => pluginSpecOf(e) === OPENCODE_CACHE_PLUGIN_SPEC),
     add: cfg => { cfg.plugin = [...(Array.isArray(cfg.plugin) ? cfg.plugin : []), OPENCODE_CACHE_PLUGIN_SPEC]; },
     remove: cfg => {
@@ -236,6 +242,9 @@ const SCALARS = [
   { key: 'agent.general.prompt', path: ['agent', 'general', 'prompt'], value: OPENCODE_PROMPT_REF },
   { key: 'agent.explore.disable', path: ['agent', 'explore', 'disable'], value: true },
 ];
+
+// How a manifest `added` name reads in init / uninstall output (the manifest keeps the internal name).
+const addedLabel = name => SETTINGS[name]?.label ?? name;
 
 function getPath(obj, path) {
   let o = obj;
@@ -274,11 +283,12 @@ function unsetPath(obj, path) {
  * @param {string} args.projectRoot
  * @param {string|null} [args.rules]  the rules text for .opencode/sweet-search.md; null = none
  * @param {boolean} [args.prompt]     ship our prompt, plugin, grep off and explore off
- * @param {boolean} [args.cacheKey]   ship the per-repo OpenAI prompt-cache key plugin (false removes
- *                                    one an earlier init installed)
+ * @param {boolean} [args.cacheKey]   the per-repo OpenAI prompt-cache key plugin: true ships it, false
+ *                                    removes one an earlier init installed and records the opt-out in
+ *                                    the manifest; undefined = the recorded choice (default: ship it)
  * @returns {{status: string, detail: string, warning?: string}} status in { installed, unchanged, error }
  */
-export function installOpencodeHarness({ projectRoot, rules = null, prompt = true, cacheKey = true } = {}) {
+export function installOpencodeHarness({ projectRoot, rules = null, prompt = true, cacheKey } = {}) {
   if (!projectRoot) return { status: 'error', detail: 'install-opencode-harness: projectRoot is required' };
   const manifestPath = join(projectRoot, OPENCODE_MANIFEST_REL);
   const manifestRead = readJson(manifestPath);
@@ -299,6 +309,9 @@ export function installOpencodeHarness({ projectRoot, rules = null, prompt = tru
     ...(configRel === OPENCODE_CONFIG_REL ? {} : { config: configRel }),
     added,
   };
+  // An explicit opt-out sticks: a later plain `init --opencode` (e.g. after an upgrade) keeps it.
+  const wantCacheKey = typeof cacheKey === 'boolean' ? cacheKey : manifest.cacheKeyOff !== true;
+  if (!wantCacheKey) next.cacheKeyOff = true;
   const changes = [];
   const warnings = [];
 
@@ -308,7 +321,7 @@ export function installOpencodeHarness({ projectRoot, rules = null, prompt = tru
       [OPENCODE_RULES_REL]: rules != null ? opencodeRulesFile(rules) : null,
       [OPENCODE_PROMPT_REL]: prompt ? opencodePrompt() : null,
       [OPENCODE_PLUGIN_REL]: prompt ? readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8') : null,
-      [OPENCODE_CACHE_PLUGIN_REL]: cacheKey ? readFileSync(OPENCODE_CACHE_KEY_PLUGIN_SOURCE, 'utf8') : null,
+      [OPENCODE_CACHE_PLUGIN_REL]: wantCacheKey ? readFileSync(OPENCODE_CACHE_KEY_PLUGIN_SOURCE, 'utf8') : null,
     };
     const fileOk = {};
     for (const [rel, content] of Object.entries(wantedFiles)) {
@@ -371,7 +384,7 @@ export function installOpencodeHarness({ projectRoot, rules = null, prompt = tru
     }
     if (JSON.stringify(cfg) !== before || !configRead.exists) {
       writeAtomic(configPath, configRead.exists ? editConfigText(configRead.text, cfg) : JSON.stringify(cfg, null, 2) + '\n');
-      changes.push(`${configRel} (${Object.keys(added).filter(k => k !== '$schema').join(', ') || 'no keys'})`);
+      changes.push(`${configRel} (${Object.keys(added).filter(k => k !== '$schema').map(addedLabel).join(', ') || 'no keys'})`);
     }
 
     if (!manifestRead.exists || !same(manifest, next)) writeAtomic(manifestPath, JSON.stringify(next, null, 2) + '\n');
@@ -409,7 +422,7 @@ export function removeOpencodeHarness({ projectRoot, dryRun = false } = {}) {
   for (const rel of Object.keys(manifest.files || {})) {
     if (!ownedFiles.includes(rel) && existsSync(join(projectRoot, rel))) kept.push(`${rel} (edited by hand)`);
   }
-  const keys = Object.keys(added).filter(k => k !== '$schema');
+  const keys = Object.keys(added).filter(k => k !== '$schema').map(addedLabel);
   const parts = [...ownedFiles, ...(keys.length ? [`${configRel} keys (${keys.join(', ')})`] : [])];
   if (configRead.error) kept.push(`${configRel} (not valid JSON; left as it is)`);
   if (dryRun) return { status: 'dry-run', detail: parts.join(' + ') || 'manifest only', kept };

@@ -291,7 +291,9 @@ describe('init --opencode: per-repo OpenAI prompt-cache key plugin', () => {
   const cachePlugin = () => JSON.parse(read(OPENCODE_CONFIG_REL)).plugin?.filter(e => (Array.isArray(e) ? e[0] : e) === OPENCODE_CACHE_PLUGIN_SPEC) ?? [];
 
   it('installs it by default, re-init is unchanged, uninstall removes it', () => {
-    init('--opencode');
+    const first = init('--opencode');
+    expect(first.stderr).toContain('plugin (OpenAI cache key)');
+    expect(first.stderr).not.toContain('cacheKeyPlugin');
     expect(read(OPENCODE_CACHE_PLUGIN_REL)).toBe(readFileSync(OPENCODE_CACHE_KEY_PLUGIN_SOURCE, 'utf8'));
     expect(cachePlugin()).toEqual([OPENCODE_CACHE_PLUGIN_SPEC]);
     expect(Object.keys(JSON.parse(read(OPENCODE_MANIFEST_REL)).files)).toContain(OPENCODE_CACHE_PLUGIN_REL);
@@ -300,10 +302,14 @@ describe('init --opencode: per-repo OpenAI prompt-cache key plugin', () => {
     expect(exists('.opencode')).toBe(false);
   });
 
-  it('--no-opencode-cache-key skips it and removes one an earlier init installed', () => {
+  it('--no-opencode-cache-key skips it, removes one an earlier init installed, and sticks until --opencode-cache-key', () => {
     init('--opencode', '--no-opencode-cache-key');
     expect(exists(OPENCODE_CACHE_PLUGIN_REL)).toBe(false);
     expect(cachePlugin()).toEqual([]);
+    init('--opencode');
+    expect(exists(OPENCODE_CACHE_PLUGIN_REL)).toBe(false);
+    init('--opencode', '--opencode-cache-key');
+    expect(exists(OPENCODE_CACHE_PLUGIN_REL)).toBe(true);
     init('--opencode');
     expect(exists(OPENCODE_CACHE_PLUGIN_REL)).toBe(true);
     init('--opencode', '--no-opencode-cache-key');

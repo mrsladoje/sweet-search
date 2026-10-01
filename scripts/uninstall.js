@@ -601,8 +601,9 @@ Removed from each repo:
     developer_instructions, and [features] hooks when init added it),
     .codex/sweet-search-instructions.md
   - opencode wiring: .opencode/sweet-search.md, the prompt file, the plugin
-    files (tool descriptions, per-repo OpenAI cache key), and the keys init added to .opencode/opencode.json (the file and the
-    .opencode directory go too when nothing of yours is left)
+    files (tool descriptions, per-repo OpenAI cache key), and the keys init
+    added to .opencode/opencode.json (the file and the .opencode directory go
+    too when nothing of yours is left)
 
 Also removed by --all:
   - The shared model cache (~/.cache/sweet-search), including the CoreML cascade
