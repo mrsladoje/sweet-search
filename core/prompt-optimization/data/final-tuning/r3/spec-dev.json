@@ -1,0 +1,7 @@
+{ "label": "r3 DEV (60) — pipeline test of the final read-out",
+  "comparisons": [
+    { "name": "Opus 2.8.2 vs native", "cell": "cc-opus55-medium", "a": {"tag": "co-r3dev-nat", "arm": "native"}, "b": {"tag": "co-r3dev-sw", "arm": "sweet"} },
+    { "name": "Opus V1b vs native", "cell": "cc-opus55-medium", "a": {"tag": "co-r3dev-nat", "arm": "native"}, "b": {"tag": "co-r3dev-v1b", "arm": "sweet"} },
+    { "name": "Opus V1b vs 2.8.2", "cell": "cc-opus55-medium", "a": {"tag": "co-r3dev-sw", "arm": "sweet"}, "b": {"tag": "co-r3dev-v1b", "arm": "sweet"} },
+    { "name": "Codex 2.8.2 vs native", "cell": "codex-sol61-high", "a": {"tag": "cx-r3dev-ns", "arm": "native"}, "b": {"tag": "cx-r3dev-ns", "arm": "sweet"} }
+  ] }

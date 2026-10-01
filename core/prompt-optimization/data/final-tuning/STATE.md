@@ -50,6 +50,8 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Decisions log
 
+- 08:15 Grader consistency (pre-registered): 49 dev rows re-judged on the same route: 12 scores moved (mean |Δ| 0.015), **0 verdict flips** across 0.5. Read 5 scored dev answers by hand: 0.7 scores = one gold file missing (fair partial credit), 1.0 = complete chain. Grader trusted. r3 dev read-out (BH over 12 tests): `r3/RESULTS-DEV.md`.
+
 - 08:05 **Task guard V1b PASSES** (`tg-20261001-0657-v2`, Opus, 10 tasks × 2, interleaved): solves base 8/20, **V1b 9/20** (svgr +1, all else equal); ideal $ −2.0% [−9.7, +6.4], real $ −7.0%; calls −5.6%, turns −2.4%; **ss-* share 0.53 → 0.54 (V1's native-fallback drop is gone)**; request-1 cache write 10,498 → 9,134. Flags at noise level: zlint V1b edited 2 files in one rep (still solved), jupytext patch-count differs (unsolved both arms), degenerate re-runs 1 → 2. → **V1b = Claude Code champion**; held-out arm queued.
 
 - 06:55 **V1b passes validation** (Opus r282 validation 52, aggregates): cost −8.3% [−12.6%, −4.3%], cache write −15%, accOR +0.8 pt [−0.6, +2.6], calls +12.6% [+0.02, +0.46 per q] (borderline rise; train −4.6%, r3 dev +0.6% → pooled over 190 questions ≈ +0.03 calls/q). Pass with this disclosed.
