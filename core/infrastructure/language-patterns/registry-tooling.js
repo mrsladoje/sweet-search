@@ -125,6 +125,10 @@ export const TOOLING_LANGUAGES = {
         import: /^\s*import\s+([\w.]+)/,
         alias: /^\s*alias\s+([\w.]+)/,
         require: /^\s*require\s+([\w.]+)/,
+        // `@behaviour Plug` / `@behavior GenServer`: the module implements
+        // the behaviour's callbacks (ElixirLS / ctags model it as
+        // implementation; Erlang's -behaviour is mapped the same way).
+        behaviour: /^\s*@behaviou?r\s+([A-Z][\w.]*)/,
       },
       skipCallObjects: ["IO", "Logger", "Kernel", "Enum", "Map", "List", "String"],
     },
@@ -180,6 +184,11 @@ export const TOOLING_LANGUAGES = {
       },
       relationships: {
         open: /^open\s+([\w.]+)/,
+        // Class body `inherit Base(args)` and interface implementation
+        // `interface IDisposable with` (F# language reference: Inheritance,
+        // Interfaces).
+        inherit: /^\s*inherit\s+([A-Za-z_][\w.]*)/,
+        interfaceWith: /^\s*interface\s+([A-Za-z_][\w.]*)(?:<[^>]*>)?\s+with\b/,
       },
       skipCallObjects: ["printfn", "printf", "failwith", "raise", "ignore"],
     },
@@ -252,6 +261,9 @@ export const TOOLING_LANGUAGES = {
       },
       relationships: {
         import: /^\s*(?:using|import)\s+([\w.]+)/,
+        // `struct Point{T} <: AbstractPoint{T}` / `mutable struct S <: M.Base`
+        // (Julia manual: Types — subtyping with `<:`).
+        inherit: /^\s*(?:mutable\s+)?struct\s+[A-Za-z_]\w*(?:\{[^}]*\})?\s*<:\s*([A-Za-z_][\w.]*)/,
       },
       skipCallObjects: [],
     },
