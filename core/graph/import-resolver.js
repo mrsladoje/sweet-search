@@ -206,6 +206,37 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return tie ? null : best;
   }
 
+  // A path that merely ends like the import is not the imported module: an
+  // external `foo.Bar`, `Data.Map` or `Foo::Bar` shares its suffix with a
+  // local `com/x/foo/Bar.java`, `src/MyLib/Data/Map.hs` or `lib/My/Foo/Bar.pm`.
+  // Candidates found by path shape must declare the module they stand for.
+  const declaredMemo = new Map();
+  function declaredModules(rel, family) {
+    const key = `${family}\0${rel}`;
+    if (declaredMemo.has(key)) return declaredMemo.get(key);
+    const text = readText(rel) || '';
+    const names = new Set();
+    if (family === 'jvm') {
+      const lang = JVM_LANG_OF_EXT[path.posix.extname(rel)] || 'java';
+      const chain = packageChain(packageClauses(stripNoise(text, lang)));
+      if (chain.length) names.add(chain[chain.length - 1]);
+      else names.add('');
+    } else {
+      const re = family === 'haskell' ? /^[> \t]*module[ \t]+([\w.']+)/gm
+        : family === 'perl' ? /^[ \t]*package[ \t]+([\w:]+)/gm
+          : family === 'php' ? /^[ \t]*namespace[ \t]+\\?([\w\\]+)[ \t]*[;{]/gm
+            : /\(\s*ns\s+(?:\^\{[^}]*\}\s+|\^:[\w-]+\s+)*([\w.\-*+!?<>=']+)/g; // clojure
+      let m;
+      while ((m = re.exec(text)) !== null) names.add(m[1]);
+    }
+    declaredMemo.set(key, names);
+    return names;
+  }
+
+  function declares(rel, family, expected) {
+    return rel != null && declaredModules(rel, family).has(expected);
+  }
+
   // -------------------------------------------------------------------------
   // JavaScript / TypeScript
   // -------------------------------------------------------------------------
@@ -229,20 +260,30 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return null;
   }
 
+  // TS 5.5 `${configDir}`: the directory of the config being resolved for
+  // (the leaf), even when the option is written in an extended base config.
+  const CONFIG_DIR_RE = /\$\{configDir\}\/?/g;
+  const HAS_CONFIG_DIR_RE = /\$\{configDir\}/;
   const tsconfigMemo = new Map();
-  function loadTsconfig(rel, depth = 0) {
-    if (tsconfigMemo.has(rel)) return tsconfigMemo.get(rel);
-    tsconfigMemo.set(rel, null);
+  /**
+   * @param {string} rel - config file (repo-relative)
+   * @param {number} depth - `extends` depth
+   * @param {string} leafDir - directory of the leaf config (`${configDir}`)
+   */
+  function loadTsconfig(rel, depth = 0, leafDir = dirOf(rel)) {
+    const memoKey = `${rel}\0${leafDir}`;
+    if (tsconfigMemo.has(memoKey)) return tsconfigMemo.get(memoKey);
+    tsconfigMemo.set(memoKey, null);
     const text = readText(rel);
     if (text === null || depth > 8) return null;
     let json;
     try { json = parseJsonc(text); } catch { return null; }
     const dir = dirOf(rel);
-    let cfg = { baseUrl: null, paths: null, pathsDir: null, rootDirs: null, references: [] };
+    let cfg = { baseUrl: null, paths: null, pathsDir: null, rootDirs: null, references: [], leafDir };
     const bases = Array.isArray(json.extends) ? json.extends : json.extends ? [json.extends] : [];
     for (const ext of bases) {
       const baseRel = resolveExtends(dir, String(ext));
-      const parent = baseRel ? loadTsconfig(baseRel, depth + 1) : null;
+      const parent = baseRel ? loadTsconfig(baseRel, depth + 1, leafDir) : null;
       if (parent) {
         cfg = {
           ...cfg,
@@ -254,19 +295,23 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
       }
     }
     const co = json.compilerOptions || {};
-    // TS 5.5 `${configDir}`: the directory of the config that is being
-    // resolved for, i.e. the leaf. Approximated by the defining config.
-    const sub = (v) => String(v).replace(/\$\{configDir\}\/?/g, './');
-    if (typeof co.baseUrl === 'string') cfg.baseUrl = join(dir, sub(co.baseUrl)) ?? '';
+    // A directory option: relative to the defining config, or to the leaf
+    // when it starts with `${configDir}`.
+    const dirOption = (v) => {
+      const s = String(v);
+      return HAS_CONFIG_DIR_RE.test(s) ? join(leafDir, s.replace(CONFIG_DIR_RE, '')) : join(dir, s);
+    };
+    if (typeof co.baseUrl === 'string') cfg.baseUrl = dirOption(co.baseUrl) ?? '';
     if (co.paths && typeof co.paths === 'object') {
-      cfg.paths = Object.fromEntries(Object.entries(co.paths).map(([k, v]) => [k, Array.isArray(v) ? v.map(sub) : v]));
+      // Targets keep `${configDir}`; matchTsPaths anchors them at the leaf.
+      cfg.paths = co.paths;
       cfg.pathsDir = dir;
     }
     // `rootDirs`: several source roots merged into one virtual directory, so
     // `./x` from rootA/p/a.ts may load rootB/p/x.ts (TS handbook, "Virtual
     // Directories with rootDirs").
     if (Array.isArray(co.rootDirs)) {
-      cfg.rootDirs = co.rootDirs.map((d) => join(dir, sub(d))).filter((d) => d !== null);
+      cfg.rootDirs = co.rootDirs.map(dirOption).filter((d) => d !== null);
     }
     if (Array.isArray(json.references)) {
       cfg.references = json.references.map((r) => r && r.path).filter(Boolean).map((p) => {
@@ -274,7 +319,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
         return j && j.endsWith('.json') ? j : join(j ?? '', 'tsconfig.json');
       }).filter(Boolean);
     }
-    tsconfigMemo.set(rel, cfg);
+    tsconfigMemo.set(memoKey, cfg);
     return cfg;
   }
 
@@ -338,7 +383,10 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     if (bestKey === null) return null;
     const targets = Array.isArray(cfg.paths[bestKey]) ? cfg.paths[bestKey] : [];
     for (const t of targets) {
-      const hit = jsCandidates(join(baseDir, String(t).replace('*', bestStar)));
+      const target = String(t).replace('*', bestStar);
+      const hit = jsCandidates(HAS_CONFIG_DIR_RE.test(target)
+        ? join(cfg.leafDir ?? '', target.replace(CONFIG_DIR_RE, ''))
+        : join(baseDir, target));
       if (hit) return hit;
     }
     return null;
@@ -408,19 +456,40 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     for (const name of ['vite.config.ts', 'vite.config.js', 'vite.config.mts', 'vite.config.mjs', 'vitest.config.ts', 'webpack.config.js', 'webpack.config.ts', 'nuxt.config.ts', 'svelte.config.js', 'astro.config.mjs']) {
       const text = readText(join(pkgDir, name) ?? name);
       if (!text) continue;
-      const entryRe = /['"]?([@~#$][\w@~#$/-]*|[A-Za-z_][\w/-]*)['"]?\s*:\s*(?:path\.(?:resolve|join)\(\s*__dirname\s*,\s*|resolve\(\s*__dirname\s*,\s*|fileURLToPath\(\s*new\s+URL\(\s*)?['"](\.{0,2}\/?[^'"]*)['"]/g;
-      const findRe = /find:\s*['"]([^'"]+)['"]\s*,\s*replacement:\s*(?:path\.(?:resolve|join)\(\s*__dirname\s*,\s*|resolve\(\s*__dirname\s*,\s*|fileURLToPath\(\s*new\s+URL\(\s*)?['"](\.{0,2}\/?[^'"]*)['"]/g;
-      const block = /alias\s*:\s*([[{][\s\S]{0,2000}?[}\]])/.exec(text);
-      if (!block) continue;
-      let m;
-      while ((m = entryRe.exec(block[1])) !== null) {
-        if (/^(?:find|replacement)$/.test(m[1])) continue;
-        const target = join(pkgDir, m[2].replace(/^\//, ''));
-        if (target !== null) aliases.push({ key: m[1], target });
-      }
-      while ((m = findRe.exec(block[1])) !== null) {
-        const target = join(pkgDir, m[2].replace(/^\//, ''));
-        if (target !== null) aliases.push({ key: m[1], target });
+      // `path.resolve(__dirname, 'src', 'components')` joins every string
+      // argument; group 3 holds the arguments after the first.
+      const entryRe = /['"]?([@~#$][\w@~#$/-]*|[A-Za-z_][\w/-]*)['"]?\s*:\s*(?:path\.(?:resolve|join)\(\s*__dirname\s*,\s*|resolve\(\s*__dirname\s*,\s*|fileURLToPath\(\s*new\s+URL\(\s*)?['"](\.{0,2}\/?[^'"]*)['"]((?:\s*,\s*['"][^'"]*['"])*)/g;
+      const findRe = /find:\s*['"]([^'"]+)['"]\s*,\s*replacement:\s*(?:path\.(?:resolve|join)\(\s*__dirname\s*,\s*|resolve\(\s*__dirname\s*,\s*|fileURLToPath\(\s*new\s+URL\(\s*)?['"](\.{0,2}\/?[^'"]*)['"]((?:\s*,\s*['"][^'"]*['"])*)/g;
+      const targetOf = (first, more) => {
+        const segs = [first.replace(/^\//, ''), ...((more || '').match(/['"][^'"]*['"]/g) || []).map((s) => s.slice(1, -1))];
+        return join(pkgDir, ...segs);
+      };
+      // Every alias block (array form `[{ find, replacement }, …]` included);
+      // a bracket-balanced slice so nested objects do not end it early.
+      const blockRe = /alias\s*:\s*([[{])/g;
+      let b;
+      while ((b = blockRe.exec(text)) !== null) {
+        const start = b.index + b[0].length - 1;
+        let depth = 0;
+        let end = start;
+        for (; end < text.length && end - start < 4000; end++) {
+          const ch = text[end];
+          if (ch === '[' || ch === '{') depth++;
+          else if ((ch === ']' || ch === '}') && --depth === 0) break;
+        }
+        const body = text.slice(start, end + 1);
+        let m;
+        entryRe.lastIndex = 0;
+        while ((m = entryRe.exec(body)) !== null) {
+          if (/^(?:find|replacement)$/.test(m[1])) continue;
+          const target = targetOf(m[2], m[3]);
+          if (target !== null) aliases.push({ key: m[1], target });
+        }
+        findRe.lastIndex = 0;
+        while ((m = findRe.exec(body)) !== null) {
+          const target = targetOf(m[2], m[3]);
+          if (target !== null) aliases.push({ key: m[1], target });
+        }
       }
     }
     aliases.sort((a, b) => b.key.length - a.key.length);
@@ -574,9 +643,14 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
       const rest = spec.slice(level);
       if (rest) {
         const mod = join(base, rest.replace(/\./g, '/'));
-        const hit = pyModule(mod);
-        if (hit) return hit;
-        return null;
+        if (mod == null) return null;
+        // `from .sub import thing` where thing is a submodule of package sub
+        // (the same rule as the absolute form below).
+        for (const name of imp.kind === 'from' ? imp.names || [] : []) {
+          const sub = pyModule(join(mod, name));
+          if (sub && !sub.endsWith('__init__.py') && !sub.endsWith('__init__.pyi')) return sub;
+        }
+        return pyModule(mod) || null;
       }
       // `from . import x`: prefer submodule x, else the package itself.
       for (const name of imp.names || []) {
@@ -674,9 +748,23 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return join(dir, base.slice(0, -3));
   }
 
+  /**
+   * Module directory of the crate `fromFile` belongs to. Cargo auto-discovers
+   * separate crates under tests/, examples/, benches/ and src/bin/ (one per
+   * x.rs, or per x/main.rs); `crate::` there names that crate, whose modules
+   * sit next to its root file — not the library under src/.
+   */
   function rustCrateSrc(fromFile) {
     const crateDir = nearestWith(dirOf(fromFile), 'Cargo.toml');
     if (crateDir === null) return null;
+    const inCrate = crateDir ? fromFile.slice(crateDir.length + 1) : fromFile;
+    const m = /^(tests|examples|benches|src\/bin)\/(.+)$/.exec(inCrate);
+    if (m) {
+      const base = join(crateDir, m[1]);
+      const sub = m[2].includes('/') ? m[2].split('/')[0] : null;
+      if (sub && hasFile(join(base, sub, 'main.rs'))) return join(base, sub);
+      return base;
+    }
     return join(crateDir, 'src');
   }
 
@@ -806,8 +894,9 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     const segs = imp.spec.split('.');
     for (let n = segs.length; n >= Math.max(2, segs.length - 2); n--) {
       const stem = segs.slice(0, n).join('/');
+      const pkg = segs.slice(0, n - 1).join('.');
       for (const ext of JVM_EXTS) {
-        const hit = closest(suffixMatches(stem + ext), fromFile);
+        const hit = closest(suffixMatches(stem + ext).filter((f) => declares(f, 'jvm', pkg)), fromFile);
         if (hit) return hit;
       }
     }
@@ -869,7 +958,11 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     }
     const parts = fqn.split('\\');
     if (parts.length < 2) return null;
-    return closest(suffixMatches(`${parts.slice(-2).join('/')}.php`), fromFile);
+    // Without a PSR-4 rule, a file named like the class counts only when it
+    // declares the imported namespace (`App\Support\Str.php` is not
+    // `Illuminate\Support\Str`).
+    const ns = parts.slice(0, -1).join('\\');
+    return closest(suffixMatches(`${parts.slice(-2).join('/')}.php`).filter((f) => declares(f, 'php', ns)), fromFile);
   }
 
   function resolveDart(fromFile, spec) {
@@ -1096,12 +1189,13 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     const rel = spec.replace(/\./g, '/');
     for (const d of haskellSourceDirs(dirOf(fromFile))) {
       const hit = firstFile([join(d, `${rel}.hs`), join(d, `${rel}.lhs`), join(d, `${rel}.hsc`), join(d, `${rel}.hs-boot`)]);
-      if (hit) return hit;
+      if (hit && declares(hit, 'haskell', spec)) return hit;
     }
     // A module path is the file path below some source dir; a multi-segment
-    // name is specific enough to match on its suffix.
+    // name is specific enough to match on its suffix — when the file is that
+    // module (`src/MyLib/Data/Map.hs` is MyLib.Data.Map, not Data.Map).
     if (!spec.includes('.')) return null;
-    return closest(suffixMatches(`${rel}.hs`), fromFile);
+    return closest(suffixMatches(`${rel}.hs`).filter((f) => declares(f, 'haskell', spec)), fromFile);
   }
 
   // -------------------------------------------------------------------------
@@ -1140,11 +1234,11 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     const exts = ext === '.cljs' ? ['.cljs', '.cljc'] : ext === '.cljc' ? ['.cljc', '.clj', '.cljs'] : ['.clj', '.cljc'];
     for (const r of clojureRoots(dirOf(fromFile))) {
       const hit = firstFile(exts.map((e) => join(r, `${rel}${e}`)));
-      if (hit) return hit;
+      if (hit && declares(hit, 'clojure', spec)) return hit;
     }
     if (!spec.includes('.')) return null;
     for (const e of exts) {
-      const hit = closest(suffixMatches(`${rel}${e}`), fromFile);
+      const hit = closest(suffixMatches(`${rel}${e}`).filter((f) => declares(f, 'clojure', spec)), fromFile);
       if (hit) return hit;
     }
     return null;
@@ -1269,9 +1363,13 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     const roots = ['lib', '', 't/lib'];
     let d = dirOf(fromFile);
     while (d) { if (path.posix.basename(d) === 'lib') roots.unshift(d); d = dirOf(d); }
-    const hit = firstFile(roots.map((r) => join(r, rel)));
-    if (hit) return hit;
-    return imp.spec.includes('::') ? closest(suffixMatches(rel), fromFile) : null;
+    // A .pm file is the module only when it declares that package
+    // (`lib/My/Foo/Bar.pm` is My::Foo::Bar, not CPAN's Foo::Bar).
+    for (const r of roots) {
+      const cand = join(r, rel);
+      if (cand && hasFile(cand) && declares(cand, 'perl', imp.spec)) return cand;
+    }
+    return imp.spec.includes('::') ? closest(suffixMatches(rel).filter((f) => declares(f, 'perl', imp.spec)), fromFile) : null;
   }
 
   // Erlang: `-include` searches the file's directory then the include path
@@ -1646,13 +1744,30 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     if (idx.types.size === 0) return [];
     const stripped = stripNoise(content, 'csharp');
     const ranges = csharpNamespaceRanges(stripped);
-    const usings = [];
+    // Innermost block-namespace range holding an offset (null at file level;
+    // a file-scoped namespace runs to the end, so it holds every later offset).
+    const rangeAt = (offset) => {
+      let best = null;
+      for (const r of ranges) if (offset >= r.start && offset < r.end && (!best || r.start >= best.start)) best = r;
+      return best;
+    };
+    const lineStarts = [0];
+    for (let k = stripped.indexOf('\n'); k !== -1; k = stripped.indexOf('\n', k + 1)) lineStarts.push(k + 1);
+    // Using directives apply to the body of the namespace block they are
+    // written in (C# spec, "Using directives"); file-level ones everywhere.
+    const usings = []; // { ns, range }
     const aliasNames = new Set();
     for (const imp of scanned) {
-      if (imp.kind === 'cs-namespace' || imp.kind === 'cs-global') { if (!usings.includes(imp.spec)) usings.push(imp.spec); }
+      if (imp.kind === 'cs-namespace' || imp.kind === 'cs-global') {
+        const at = lineStarts[Math.max(0, (imp.line || 1) - 1)] ?? 0;
+        const range = imp.kind === 'cs-global' ? null : rangeAt(at);
+        if (!usings.some((u) => u.ns === imp.spec && u.range === range)) usings.push({ ns: imp.spec, range });
+      }
       if (imp.kind === 'cs-alias') for (const n of imp.names || []) aliasNames.add(n);
     }
-    for (const u of idx.globalUsings.get(csProjectOf(from, idx.projectDirs)) || []) if (!usings.includes(u)) usings.push(u);
+    for (const u of idx.globalUsings.get(csProjectOf(from, idx.projectDirs)) || []) {
+      if (!usings.some((x) => x.ns === u && x.range === null)) usings.push({ ns: u, range: null });
+    }
     const scope = (ns) => [ns, idx.types.get(ns)];
     const outerChain = (ns) => {
       const parts = ns ? ns.split('.') : [];
@@ -1666,11 +1781,16 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     const tiersMemo = new Map();
     const tiersAt = (index) => {
       const ns = namespaceAt(ranges, index);
-      let t = tiersMemo.get(ns);
+      const visible = [];
+      for (const u of usings) {
+        if ((!u.range || (index >= u.range.start && index < u.range.end)) && !visible.includes(u.ns)) visible.push(u.ns);
+      }
+      const key = `${ns}\0${visible.join(',')}`;
+      let t = tiersMemo.get(key);
       if (!t) {
         const chain = outerChain(ns);
-        t = liveTiers([[scope(chain[0])], usings.map(scope), ...chain.slice(1).map((n) => [scope(n)])]);
-        tiersMemo.set(ns, t);
+        t = liveTiers([[scope(chain[0])], visible.map(scope), ...chain.slice(1).map((n) => [scope(n)])]);
+        tiersMemo.set(key, t);
       }
       return t;
     };
