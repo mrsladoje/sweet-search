@@ -21,10 +21,11 @@
  *                                      adapted from the user-relevant stock guidance, without
  *                                      the conflicting search steer.
  *   .claude/agents/general-purpose.md  replaces the built-in catch-all subagent, so delegated
- *                                      work runs a prompt without search advice; the rules
- *                                      reach it through the project rules file
+ *                                      work runs a prompt without search advice; it loads the
+ *                                      project rules file (since V1b the short pointer, see
+ *                                      below)
  *   .claude/agents/Plan.md             replaces the built-in Plan subagent, which omits the
- *                                      project rules; ours loads them
+ *                                      project rules; ours loads the project rules file
  *   .claude/settings.json              `agent`, `permissions.deny` (search-delegation subagent
  *                                      types only) and `env` (conflict and bloat switches)
  *
@@ -38,6 +39,14 @@
  * stay exported below under their old names because the benchmark's old modes (max, max-batch,
  * lean, lean-batch) import them and must stay byte-identical. The product no longer installs
  * them; re-running init on a v1 install removes the deny and env entries v1 added.
+ *
+ * v2.3, "V1b" (2026-10-01; the first release after 2.8.2): the sweet-search rules (the shipped policy,
+ * `getPolicyBody('cli')`) ride in the main agent file, ahead of the memory section, and init writes
+ * only CLAUDE_RULES_POINTER to `.claude/rules/sweet-search.md` (write-claude-rules.js). Claude Code
+ * injects rules files into the first user message, after the prompt-cache marker, so the ~1.4k
+ * rule tokens were re-written to the cache in every session. Held-out: Opus cost -11.3%, Sonnet
+ * -10.1% vs 2.8.2, accuracy equal; task guard 9/20 vs 8/20 solves, ss-* share unchanged. The
+ * subagent files still carry no search advice. Opt-out: SS_VARIANT_CC_RULES_IN_PROMPT=0 (2.8.2).
  *
  * Ownership: `.claude/sweet-search-harness.json` records exactly what this module
  * added (files by content hash, deny entries, env keys, the `agent` selection), so
@@ -53,6 +62,12 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { CLAUDE_SYSTEM_OVERRIDE } from './install-claude-system-prompt.js';
 import { applyExactEdits } from './harness-prompts/index.js';
+import { getPolicyBody } from './inject-agent-instructions.js';
+import { CLAUDE_RULES_POINTER, resolveClaudeRulesLayout } from './write-claude-rules.js';
+
+// The pointer text lives with the rules-file writer; re-exported here because the benchmark
+// runners import it from this module.
+export { CLAUDE_RULES_POINTER };
 
 export const CLAUDE_LEAN_AGENT_NAME = 'sweet-search';
 export const CLAUDE_LEAN_AGENT_REL = '.claude/agents/sweet-search.md';
@@ -362,12 +377,24 @@ export function claudeLeanContextSection({ memoryDir = null, memoryEnabled = tru
  * `--append-system-prompt` instead and sets it false. `memoryDir` / `memoryEnabled` come from
  * `claudeAutoMemoryDir` at install time. `promptEdits` applies CLAUDE_LEAN_PROMPT_EDITS (the
  * shipped read6fs text); the benchmark sets it false and applies its own CC_TRIM_BATCH variant.
+ * `rules` (a policy text, or null): when given, it goes into the prompt ahead of the memory /
+ * session-context section (V1b). Byte-identical to the benchmarked SS_VARIANT_CC_RULES_IN_PROMPT=2
+ * form when `rules` is `getPolicyBody('cli')`. The pure function's default stays null (no rules);
+ * `installClaudeLeanHarness` decides what the product installs.
  */
 export function claudeLeanAgentFile({
-  appendOverride = true, memoryDir = null, memoryEnabled = true, promptEdits = true,
+  appendOverride = true, memoryDir = null, memoryEnabled = true, promptEdits = true, rules = null,
 } = {}) {
-  let body = [CLAUDE_LEAN_HARNESS_PROMPT_BATCH, claudeLeanContextSection({ memoryDir, memoryEnabled })].join('\n\n');
+  const ctx = claudeLeanContextSection({ memoryDir, memoryEnabled });
+  let body = [CLAUDE_LEAN_HARNESS_PROMPT_BATCH, ctx].join('\n\n');
   if (promptEdits) body = applyExactEdits(body, CLAUDE_LEAN_PROMPT_EDITS, 'claude lean prompt');
+  if (rules) {
+    // The context section is the last part of the body; its first line (`# Memory`, or
+    // `# Session context` when auto memory is off) is never edited by CLAUDE_LEAN_PROMPT_EDITS.
+    const at = body.lastIndexOf(ctx.split('\n')[0]);
+    if (at < 0) throw new Error('claude lean prompt: context section not found for the rules');
+    body = `${body.slice(0, at)}${String(rules).trimEnd()}\n\n${body.slice(at)}`;
+  }
   const parts = [body];
   if (appendOverride) parts.push(CLAUDE_SYSTEM_OVERRIDE);
   return `---\nname: ${CLAUDE_LEAN_AGENT_NAME}\ndescription: sweet-search lean harness (main session)\n---\n\n${parts.join('\n\n')}\n`;
@@ -436,18 +463,29 @@ function removeOwnedFile(projectRoot, rel) {
  * CLAUDE_CONFIG_DIR, else ~/.claude); it places the auto-memory path written into the main agent.
  * `visibleConfigDir`: see `claudeAutoMemoryDir`. `promptEdits`: see `claudeLeanAgentFile`.
  *
- * @returns {{status: string, detail: string, active: boolean|null, warning?: string}}
+ * `rules`: what the main agent file carries ahead of its memory section.
+ *   undefined (the product)  the shipped policy `getPolicyBody('cli')`, unless
+ *                            SS_VARIANT_CC_RULES_IN_PROMPT=0 in `env` (the 2.8.2 layout: none)
+ *   a string                 that text (a benchmark runner's own rules text)
+ *   false / null             none
+ * Never when settings.local.json selects another main agent: the agent file is then not the
+ * main prompt, so the caller must keep the full rules file. The caller writes the pointer
+ * rules file ONLY when the result says `active: true` and `rulesInPrompt: true`.
+ *
+ * @returns {{status: string, detail: string, active: boolean|null, rulesInPrompt: boolean, warning?: string}}
  *   status in { installed, unchanged, preserved-existing, error }. `active` is true when
- *   Claude Code will start the main session with the sweet-search agent.
+ *   Claude Code will start the main session with the sweet-search agent. `rulesInPrompt` is true
+ *   when the main agent file on disk carries the rules.
  */
 export function installClaudeLeanHarness({
   projectRoot, appendOverride = true, promptEdits = true, configDir, visibleConfigDir, env = process.env,
+  rules,
 } = {}) {
-  if (!projectRoot) return { status: 'error', detail: 'install-claude-lean-harness: projectRoot is required', active: null };
+  if (!projectRoot) return { status: 'error', detail: 'install-claude-lean-harness: projectRoot is required', active: null, rulesInPrompt: false };
   const settingsPath = join(projectRoot, SETTINGS_REL);
   const manifestPath = join(projectRoot, CLAUDE_LEAN_MANIFEST_REL);
   const settingsRead = readJson(settingsPath, SETTINGS_REL);
-  if (settingsRead.error) return { status: 'error', detail: settingsRead.error, active: null };
+  if (settingsRead.error) return { status: 'error', detail: settingsRead.error, active: null, rulesInPrompt: false };
   const manifestRead = readJson(manifestPath, CLAUDE_LEAN_MANIFEST_REL);
   const manifest = manifestRead.error ? {} : manifestRead.value;
   const settings = settingsRead.value;
@@ -455,14 +493,14 @@ export function installClaudeLeanHarness({
   // A user who selected another main agent keeps it.
   if (settings.agent !== undefined && settings.agent !== CLAUDE_LEAN_AGENT_NAME) {
     return {
-      status: 'preserved-existing', active: false,
+      status: 'preserved-existing', active: false, rulesInPrompt: false,
       detail: `preserved project agent=${JSON.stringify(settings.agent)}`,
       warning: `${SETTINGS_REL} selects the agent ${JSON.stringify(settings.agent)}, so the sweet-search lean harness is not active.`,
     };
   }
   if (fileState(projectRoot, CLAUDE_LEAN_AGENT_REL, manifest) === 'user') {
     return {
-      status: 'preserved-existing', active: false,
+      status: 'preserved-existing', active: false, rulesInPrompt: false,
       detail: `${CLAUDE_LEAN_AGENT_REL} is user-authored; preserved`,
       warning: `${CLAUDE_LEAN_AGENT_REL} is user-authored, so the sweet-search lean harness is not active. Move or rename it, then rerun init.`,
     };
@@ -490,10 +528,26 @@ export function installClaudeLeanHarness({
     return 'written';
   };
 
+  // settings.local.json has higher priority than the project settings: when it selects another
+  // main agent, our agent file is not the main prompt, so it must not take the rules away from
+  // the rules file.
+  const local = readJson(join(projectRoot, LOCAL_SETTINGS_REL), LOCAL_SETTINGS_REL);
+  const localAgent = !local.error && local.value.agent !== undefined && local.value.agent !== CLAUDE_LEAN_AGENT_NAME
+    ? local.value.agent : undefined;
+  let rulesText = null;
+  if (rules === undefined) {
+    if (resolveClaudeRulesLayout(env).layout !== 'file') rulesText = getPolicyBody('cli');
+  } else if (typeof rules === 'string') {
+    rulesText = rules.trim() ? rules : null;
+  } else if (rules !== false && rules !== null) {
+    return { status: 'error', detail: 'install-claude-lean-harness: rules must be a string, false or null', active: null, rulesInPrompt: false };
+  }
+  if (localAgent !== undefined) rulesText = null;
+
   const memory = claudeAutoMemoryDir({ projectRoot, configDir, visibleConfigDir, env });
   const wantedFiles = {
     [CLAUDE_LEAN_AGENT_REL]: claudeLeanAgentFile({
-      appendOverride, promptEdits, memoryDir: memory.dir, memoryEnabled: memory.enabled,
+      appendOverride, promptEdits, memoryDir: memory.dir, memoryEnabled: memory.enabled, rules: rulesText,
     }),
     [CLAUDE_LEAN_SUBAGENT_REL]: claudeLeanSubagentFile(),
     [CLAUDE_LEAN_PLAN_REL]: claudeLeanPlanFile(),
@@ -578,22 +632,21 @@ export function installClaudeLeanHarness({
       || JSON.stringify(manifest.addedEnv || {}) !== JSON.stringify(next.addedEnv);
     if (changes.length || !manifestRead.exists || manifestStale) writeJson(manifestPath, next);
   } catch (err) {
-    return { status: 'error', detail: err.message, active: null };
+    return { status: 'error', detail: err.message, active: null, rulesInPrompt: false };
   }
 
-  // settings.local.json has higher priority than the project settings.
-  const local = readJson(join(projectRoot, LOCAL_SETTINGS_REL), LOCAL_SETTINGS_REL);
-  if (!local.error && local.value.agent !== undefined && local.value.agent !== CLAUDE_LEAN_AGENT_NAME) {
+  if (localAgent !== undefined) {
     return {
-      status: 'preserved-existing', active: false,
-      detail: `installed; ${LOCAL_SETTINGS_REL} selects agent=${JSON.stringify(local.value.agent)}`,
-      warning: `${LOCAL_SETTINGS_REL} selects the agent ${JSON.stringify(local.value.agent)}, which overrides the sweet-search lean harness.`,
+      status: 'preserved-existing', active: false, rulesInPrompt: false,
+      detail: `installed; ${LOCAL_SETTINGS_REL} selects agent=${JSON.stringify(localAgent)}`,
+      warning: `${LOCAL_SETTINGS_REL} selects the agent ${JSON.stringify(localAgent)}, which overrides the sweet-search lean harness.`,
     };
   }
   const result = {
     status: changes.length ? 'installed' : 'unchanged',
     detail: changes.length ? changes.join('; ') : 'lean harness already installed',
     active: true,
+    rulesInPrompt: rulesText !== null,
   };
   if (warnings.length) result.warning = warnings.join(' ');
   return result;

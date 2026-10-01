@@ -40,7 +40,7 @@ import { verifyRuntime, getMaxsimTier, getRouterType } from './verify-runtime.js
 import {
   ALL_HARNESSES, MARKER_BEGIN, getPolicyBody, injectAgentInstructions, stripLegacyAgentsBlock,
 } from './inject-agent-instructions.js';
-import { writeClaudeRules } from './write-claude-rules.js';
+import { CLAUDE_RULES_LAYOUT_ENV, removeClaudeRules, resolveClaudeRulesLayout, writeClaudeRules } from './write-claude-rules.js';
 import {
   formatClaudeSystemPromptGuidance,
   installClaudeSystemPrompt,
@@ -951,7 +951,8 @@ function printReport(report) {
     console.log(`  Agent instructions:   ${summary}`);
   }
   if (claudeRulesReport) {
-    console.log(`  Claude rules file:    ${claudeRulesReport.status}`);
+    console.log(`  Claude rules file:    ${claudeRulesReport.status}`
+      + (claudeRulesReport.layout === 'pointer' ? ' (pointer; the rules are in the lean agent prompt)' : ''));
   }
   if (claudeSystemPromptReport) {
     console.log(
@@ -1616,6 +1617,12 @@ Options:
                             off. With this flag init removes a previously
                             installed lean harness and installs only the rules
                             file and the routing-override output style.
+                            While the lean harness is active, the sweet-search
+                            rules ride in its main agent file (the system
+                            prompt, cached) and .claude/rules/sweet-search.md
+                            holds a short pointer. To keep the full rules file
+                            instead (the 2.8.2 layout), run init with
+                            SS_VARIANT_CC_RULES_IN_PROMPT=0.
   --verbose, -v             Enable verbose output
   --help, -h                Show this help
 
@@ -2264,26 +2271,7 @@ export async function runInit(args) {
       } catch (err) {
         process.stderr.write(`[init] Warning: Agent-instruction injection failed: ${err.message}\n`);
       }
-      // Claude Code auto-loads this unscoped project rule. It is the sole
-      // detailed Claude policy surface: exact shipped body, no hand-authored
-      // supplement and no CLAUDE.md import. The variant changes in place when
-      // the contact surface flips between CLI and MCP.
       if (activeHarnesses.includes('claude-code')) {
-        try {
-          const status = writeClaudeRules({
-            projectRoot,
-            variant: promptVariant,
-          });
-          claudeRulesReport = { status, variant: promptVariant };
-          process.stderr.write(
-            `[init] Claude rules: ${status}`
-            + (promptVariant === 'mcp' ? ' [mcp variant]' : '')
-            + '\n',
-          );
-        } catch (err) {
-          process.stderr.write(`[init] Warning: Claude rules write failed: ${err.message}\n`);
-        }
-
         // Claude Code has no persistent project-level equivalent of the
         // per-invocation `--append-system-prompt` flag. A project output style
         // is the supported system-prompt-priority seam. Install the compact
@@ -2303,6 +2291,7 @@ export async function runInit(args) {
         // so it is removed. If a user's own `agent` selection or agent file
         // blocks it, or the user passes --no-lean-harness, the output style is
         // the fallback.
+        let leanReportForRules = null;
         try {
           let leanReport = null;
           if (parsed.noCli) {
@@ -2319,6 +2308,7 @@ export async function runInit(args) {
             }
           } else {
             leanReport = installClaudeLeanHarness({ projectRoot });
+            leanReportForRules = leanReport;
             if (leanReport.active === true) {
               const styleRemoved = removeClaudeSystemPrompt({ projectRoot });
               claudeSystemPromptReport = {
@@ -2346,6 +2336,54 @@ export async function runInit(args) {
           process.stderr.write(
             `[init] Warning: Claude system prompt ${parsed.noCli ? 'teardown' : 'write'} failed: ${err.message}\n`,
           );
+        }
+
+        // The sweet-search rules for Claude Code: the shipped policy body
+        // verbatim, no hand-authored supplement and no CLAUDE.md import. It
+        // runs AFTER the lean harness because the harness decides where the
+        // policy goes ("V1b", since the release after 2.8.2):
+        //   - lean harness active and its agent file carries the policy
+        //     (`rulesInPrompt`): the rules file holds only a short pointer.
+        //     Claude Code injects rules files after the prompt-cache marker,
+        //     so the full policy there was re-written to the cache in every
+        //     session; in the agent file (the system prompt) it is a cache read.
+        //     SS_VARIANT_CC_RULES_IN_PROMPT=1 (benchmark only) drops the pointer.
+        //   - anything else (--no-lean-harness, --no-cli, a user's own main
+        //     agent, an error, the opt-out SS_VARIANT_CC_RULES_IN_PROMPT=0):
+        //     the full policy in the rules file, as in 2.8.2.
+        // An owned file switches layout in place; a user-authored file stays.
+        // The variant changes in place when the contact surface flips between
+        // CLI and MCP.
+        try {
+          const rulesEnv = resolveClaudeRulesLayout(process.env);
+          if (rulesEnv.invalid) {
+            process.stderr.write(
+              `[init] Warning: ${CLAUDE_RULES_LAYOUT_ENV}=${rulesEnv.value} is not 0, 1 or 2; using the default (2).\n`,
+            );
+          }
+          const inPrompt = leanReportForRules?.active === true && leanReportForRules.rulesInPrompt === true;
+          const layout = !inPrompt ? 'full' : (rulesEnv.layout === 'none' ? 'none' : 'pointer');
+          const status = layout === 'none'
+            ? removeClaudeRules({ projectRoot })
+            : writeClaudeRules({ projectRoot, variant: promptVariant, layout });
+          claudeRulesReport = { status, variant: promptVariant, layout };
+          const where = layout === 'pointer'
+            ? ' [pointer; the full rules are in .claude/agents/sweet-search.md]'
+            : layout === 'none' ? ' [no rules file; the rules are in .claude/agents/sweet-search.md]' : '';
+          process.stderr.write(
+            `[init] Claude rules: ${status}`
+            + (promptVariant === 'mcp' ? ' [mcp variant]' : '')
+            + where
+            + '\n',
+          );
+          if (inPrompt && status === 'preserved-user-file') {
+            process.stderr.write(
+              '[init] Note: .claude/rules/sweet-search.md is user-authored and was kept; '
+              + 'the sweet-search rules are also in .claude/agents/sweet-search.md.\n',
+            );
+          }
+        } catch (err) {
+          process.stderr.write(`[init] Warning: Claude rules write failed: ${err.message}\n`);
         }
       }
     }

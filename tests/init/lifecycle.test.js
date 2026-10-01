@@ -9,7 +9,8 @@
  *      user-authored content intact.
  *
  * Two scenarios:
- *   A. default (`init`)  — Claude project rule + output style; no CLAUDE.md
+ *   A. default (`init`)  — lean harness whose main agent carries the rules, the pointer
+ *      project rule ("V1b"); no CLAUDE.md
  *   B. strict + multi-harness (`init --enforce-tools --agents --gemini --cursor`)
  *      — full surface including opt-in Grep deny/Read hint, AGENTS.md,
  *      GEMINI.md symlink, cursor rule.
@@ -20,6 +21,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -44,6 +46,7 @@ import {
   getMcpPolicyBody,
 } from '../../scripts/inject-agent-instructions.js';
 import {
+  CLAUDE_RULES_POINTER,
   CLAUDE_RULES_REL,
   _internal as claudeRulesInternal,
 } from '../../scripts/write-claude-rules.js';
@@ -66,13 +69,27 @@ afterEach(() => {
 const exists = (rel) => existsSync(join(tmpRoot, rel));
 const readJson = (rel) => JSON.parse(readFileSync(join(tmpRoot, rel), 'utf8'));
 
-function runCli(args) {
+// Hermetic: the rules-layout switch never leaks in from the developer's shell; a test that
+// needs it passes it in `env`.
+function runCli(args, env = {}) {
   const result = spawnSync(process.execPath, [CLI, ...args], {
     cwd: tmpRoot,
     encoding: 'utf8',
     timeout: 60000,
+    env: { ...process.env, SS_VARIANT_CC_RULES_IN_PROMPT: '', ...env },
   });
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+const readText = (rel) => readFileSync(join(tmpRoot, rel), 'utf8');
+const FULL_RULE = `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`;
+const POINTER_RULE = `${claudeRulesInternal.SENTINEL}\n${CLAUDE_RULES_POINTER}\n`;
+const timesIn = (text, needle) => text.split(needle).length - 1;
+// V1b: the main agent carries the policy exactly once, ahead of its memory section.
+function expectRulesInAgent() {
+  const agent = readText(CLAUDE_LEAN_AGENT_REL);
+  expect(timesIn(agent, CANONICAL_POLICY_BODY)).toBe(1);
+  expect(agent.indexOf(CANONICAL_POLICY_BODY)).toBeLessThan(agent.indexOf('# Session context'));
 }
 
 const COMMON_INIT_ARGS = [
@@ -100,11 +117,12 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
     expect(exists('GEMINI.md')).toBe(false);
     expect(exists('.cursor/rules/sweet-search.mdc')).toBe(false);
 
-    // .claude/ ecosystem
+    // .claude/ ecosystem. V1b: the policy rides in the lean main agent (the system
+    // prompt); the project rule is the short pointer.
     expect(exists(CLAUDE_RULES_REL)).toBe(true);
-    expect(readFileSync(join(tmpRoot, CLAUDE_RULES_REL), 'utf8')).toBe(
-      `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
-    );
+    expect(readText(CLAUDE_RULES_REL)).toBe(POINTER_RULE);
+    expectRulesInAgent();
+    expect(r.stderr).toContain('[init] Claude rules: created [pointer;');
     // The lean harness carries the override in the main-agent prompt; the output
     // style would only repeat it, so it is not installed.
     expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(false);
@@ -147,6 +165,9 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
     expect(readJson('.claude/settings.json').outputStyle).toBe(
       CLAUDE_OUTPUT_STYLE_NAME,
     );
+    // The lean agent is not the main prompt, so it must not take the rules: full rule file.
+    expect(readText(CLAUDE_RULES_REL)).toBe(FULL_RULE);
+    expect(readText(CLAUDE_LEAN_AGENT_REL)).not.toContain(CANONICAL_POLICY_BODY);
   });
 
   it('uninstall removes everything sweet-search-managed', () => {
@@ -185,6 +206,7 @@ describe('lifecycle: --no-lean-harness opt-out', () => {
     const r = runCli([...COMMON_INIT_ARGS, '--no-lean-harness']);
     expect(r.code, `init failed: ${r.stderr}`).toBe(0);
     expect(exists(CLAUDE_RULES_REL)).toBe(true);
+    expect(readText(CLAUDE_RULES_REL)).toBe(FULL_RULE);
     expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(true);
     expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(false);
     expect(exists(CLAUDE_LEAN_PLAN_REL)).toBe(false);
@@ -210,6 +232,8 @@ describe('lifecycle: --no-lean-harness opt-out', () => {
     expect(settings.agent).toBeUndefined();
     expect(settings.env).toBeUndefined();
     expect(settings.outputStyle).toBe(CLAUDE_OUTPUT_STYLE_NAME);
+    // The agent file that carried the rules is gone, so the rule file carries them again.
+    expect(readText(CLAUDE_RULES_REL)).toBe(FULL_RULE);
   });
 });
 
@@ -233,9 +257,8 @@ describe('lifecycle: upgrade from the legacy Claude layout', () => {
     expect(result.code, `init failed: ${result.stderr}`).toBe(0);
 
     expect(readFileSync(join(tmpRoot, 'CLAUDE.md'), 'utf8')).toBe('# User rules\nKeep me.\n');
-    expect(readFileSync(join(tmpRoot, CLAUDE_RULES_REL), 'utf8')).toBe(
-      `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
-    );
+    expect(readText(CLAUDE_RULES_REL)).toBe(POINTER_RULE);
+    expectRulesInAgent();
     expect(exists('.claude/hooks/sweet-search-remind-tools.mjs')).toBe(false);
     expect(readJson('.claude/settings.json').hooks?.UserPromptSubmit).toBeUndefined();
   });
@@ -321,9 +344,7 @@ describe('lifecycle: Claude CLI → MCP-only contact surface', () => {
     const cli = runCli(COMMON_INIT_ARGS);
     expect(cli.code, `CLI init failed: ${cli.stderr}`).toBe(0);
     expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(true);
-    expect(readFileSync(join(tmpRoot, CLAUDE_RULES_REL), 'utf8')).toBe(
-      `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
-    );
+    expect(readText(CLAUDE_RULES_REL)).toBe(POINTER_RULE);
 
     const mcp = runCli([...COMMON_INIT_ARGS, '--mcp', '--no-cli']);
     expect(mcp.code, `MCP re-init failed: ${mcp.stderr}`).toBe(0);
@@ -335,5 +356,111 @@ describe('lifecycle: Claude CLI → MCP-only contact surface', () => {
       `${claudeRulesInternal.SENTINEL}\n${getMcpPolicyBody()}\n`,
     );
     expect(exists('CLAUDE.md')).toBe(false);
+  });
+});
+
+// V1b: with the lean harness active, the policy rides in the main agent file and the
+// project rule is a pointer. Every other state keeps the full rule file (2.8.2 layout).
+describe('lifecycle: V1b rules placement', () => {
+  const sha = (t) => createHash('sha256').update(t).digest('hex');
+  const CLAUDE_FILES = [CLAUDE_RULES_REL, CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL, CLAUDE_LEAN_MANIFEST_REL, '.claude/settings.json'];
+  const snapshot = () => Object.fromEntries(CLAUDE_FILES.map((rel) => [rel, exists(rel) ? readText(rel) : null]));
+  const OPT_OUT = { SS_VARIANT_CC_RULES_IN_PROMPT: '0' };
+
+  it('the opt-out installs the 2.8.2 layout: full rule file, agent file without the rules', () => {
+    const r = runCli(COMMON_INIT_ARGS, OPT_OUT);
+    expect(r.code, `init failed: ${r.stderr}`).toBe(0);
+    expect(readText(CLAUDE_RULES_REL)).toBe(FULL_RULE);
+    expect(readText(CLAUDE_LEAN_AGENT_REL)).not.toContain(CANONICAL_POLICY_BODY);
+    expect(r.stderr).not.toContain('[pointer;');
+  });
+
+  it('upgrades a 2.8.2 install in place, keeps the manifest consistent, and re-init is a no-op', () => {
+    expect(runCli(COMMON_INIT_ARGS, OPT_OUT).code).toBe(0);   // the 2.8.2 layout
+    const before = snapshot();
+    const up = runCli(COMMON_INIT_ARGS);
+    expect(up.code, `upgrade failed: ${up.stderr}`).toBe(0);
+    expect(up.stderr).toContain('[init] Claude rules: updated [pointer;');
+    const after = snapshot();
+    expect(after[CLAUDE_RULES_REL]).toBe(POINTER_RULE);
+    expectRulesInAgent();
+    // Only the rule file, the main agent and the manifest hash change.
+    expect(after[CLAUDE_LEAN_SUBAGENT_REL]).toBe(before[CLAUDE_LEAN_SUBAGENT_REL]);
+    expect(after[CLAUDE_LEAN_PLAN_REL]).toBe(before[CLAUDE_LEAN_PLAN_REL]);
+    expect(after['.claude/settings.json']).toBe(before['.claude/settings.json']);
+    expect(after[CLAUDE_LEAN_AGENT_REL].replace(`${CANONICAL_POLICY_BODY}\n\n`, '')).toBe(before[CLAUDE_LEAN_AGENT_REL]);
+    const m = readJson(CLAUDE_LEAN_MANIFEST_REL);
+    for (const rel of [CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL]) {
+      expect(m.files[rel]).toBe(sha(readText(rel)));
+    }
+    // Idempotent: a third run changes no byte and reports the rule as unchanged.
+    const again = runCli(COMMON_INIT_ARGS);
+    expect(again.code).toBe(0);
+    expect(again.stderr).toContain('[init] Claude rules: unchanged [pointer;');
+    expect(snapshot()).toEqual(after);
+  });
+
+  it('the opt-out after an upgrade restores the exact 2.8.2 layout', () => {
+    expect(runCli(COMMON_INIT_ARGS, OPT_OUT).code).toBe(0);
+    const old = snapshot();
+    expect(runCli(COMMON_INIT_ARGS).code).toBe(0);
+    expect(runCli(COMMON_INIT_ARGS, OPT_OUT).code).toBe(0);
+    expect(snapshot()).toEqual(old);
+  });
+
+  it('keeps a user-authored rule file untouched; the agent still carries the rules', () => {
+    const mine = '# My sweet-search rules\nNo sentinel.\n';
+    mkdirSync(join(tmpRoot, '.claude', 'rules'), { recursive: true });
+    writeFileSync(join(tmpRoot, CLAUDE_RULES_REL), mine);
+    const r = runCli(COMMON_INIT_ARGS);
+    expect(r.code, `init failed: ${r.stderr}`).toBe(0);
+    expect(readText(CLAUDE_RULES_REL)).toBe(mine);
+    expect(r.stderr).toContain('[init] Claude rules: preserved-user-file [pointer;');
+    expect(r.stderr).toContain('is user-authored and was kept');
+    expectRulesInAgent();
+    const u = runCli(['uninstall', '--force', '--keep-models']);
+    expect(u.code, `uninstall failed: ${u.stderr}`).toBe(0);
+    expect(readText(CLAUDE_RULES_REL)).toBe(mine);
+    expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(false);
+  });
+
+  it('a user-selected main agent keeps the full rule file and gets no lean agent file', () => {
+    mkdirSync(join(tmpRoot, '.claude'), { recursive: true });
+    writeFileSync(join(tmpRoot, '.claude', 'settings.json'), JSON.stringify({ agent: 'my-agent' }));
+    const r = runCli(COMMON_INIT_ARGS);
+    expect(r.code, `init failed: ${r.stderr}`).toBe(0);
+    expect(readText(CLAUDE_RULES_REL)).toBe(FULL_RULE);
+    expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(false);
+  });
+
+  it('a user-edited lean agent file (harness not active) keeps the full rule file', () => {
+    expect(runCli(COMMON_INIT_ARGS).code).toBe(0);
+    const edited = `${readText(CLAUDE_LEAN_AGENT_REL)}\nmy addition\n`;
+    writeFileSync(join(tmpRoot, CLAUDE_LEAN_AGENT_REL), edited);
+    const r = runCli(COMMON_INIT_ARGS);
+    expect(r.code, `re-init failed: ${r.stderr}`).toBe(0);
+    expect(readText(CLAUDE_LEAN_AGENT_REL)).toBe(edited);
+    expect(readText(CLAUDE_RULES_REL)).toBe(FULL_RULE);
+  });
+
+  it('an unknown switch value warns and installs the default', () => {
+    const r = runCli(COMMON_INIT_ARGS, { SS_VARIANT_CC_RULES_IN_PROMPT: 'yes' });
+    expect(r.code, `init failed: ${r.stderr}`).toBe(0);
+    expect(r.stderr).toContain('SS_VARIANT_CC_RULES_IN_PROMPT=yes is not 0, 1 or 2');
+    expect(readText(CLAUDE_RULES_REL)).toBe(POINTER_RULE);
+    expectRulesInAgent();
+  });
+
+  it('uninstall after an upgrade leaves no Claude Code file behind', () => {
+    expect(runCli(COMMON_INIT_ARGS, OPT_OUT).code).toBe(0);
+    expect(runCli(COMMON_INIT_ARGS).code).toBe(0);
+    const u = runCli(['uninstall', '--force', '--keep-models']);
+    expect(u.code, `uninstall failed: ${u.stderr}`).toBe(0);
+    for (const rel of CLAUDE_FILES) {
+      if (rel === '.claude/settings.json' && exists(rel)) expect(readJson(rel)).toEqual({});
+      else expect(exists(rel), rel).toBe(false);
+    }
+    expect(exists('.claude/rules')).toBe(false);
+    expect(exists('.claude/agents')).toBe(false);
   });
 });
