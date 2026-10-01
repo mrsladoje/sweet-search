@@ -316,14 +316,26 @@ export class StructuralContextBuilder {
     // for the same call (multi-line invocations), and a same-entity duplicate
     // would double-pack the caller section.
     const storedIds = new Set(storedCallers.map(x => x.id));
+    // Bare calls (`helper(x)`), resolved by scope rules from call_sites.
+    const bareCallers = (this.repo.getBareCallers?.(target, { limit: 80 }) || [])
+      .filter(x => !storedIds.has(x.id));
+    for (const x of bareCallers) storedIds.add(x.id);
     const sameFileCallers = (this.repo.getSameFileCallers?.(target, { limit: 24 }) || [])
       .filter(x => !storedIds.has(x.id));
+    // Bare callers come from indexed call sites (scope-resolved), so they
+    // count as stored, not as the same-file text scan.
     const callerProvenance = {
-      stored: storedCallers.length,
+      stored: storedCallers.length + bareCallers.length,
       sameFileFallback: sameFileCallers.length,
     };
-    const callersRaw = [...storedCallers, ...sameFileCallers].map(x => ({ ...x, depth: 1 }));
+    const callersRaw = [...storedCallers, ...bareCallers, ...sameFileCallers].map(x => ({ ...x, depth: 1 }));
     let calleesRaw = this.repo.getCallees(target, { limit: 160 }).map(x => ({ ...x, depth: 1 }));
+    const calleeIds = new Set(calleesRaw.map(x => x.id));
+    for (const x of this.repo.getBareCallees?.(target, { limit: 80 }) || []) {
+      if (calleeIds.has(x.id)) continue;
+      calleeIds.add(x.id);
+      calleesRaw.push({ ...x, depth: 1 });
+    }
     if (!calleesRaw.length) calleesRaw = targetCallsiteHints.map(name => this.repo.findEntityCandidates?.(name, { limit: 1 })?.[0]).filter(isLikelyCodeEntity).map(x => ({ ...x, relationship: 'handoff', depth: 1 }));
     const impactRaw = buildImpactPaths(this.repo, target, {
       maxDepth: options.maxDepth ?? DEFAULT_MAX_DEPTH,

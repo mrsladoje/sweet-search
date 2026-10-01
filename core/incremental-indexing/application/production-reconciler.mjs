@@ -26,7 +26,7 @@ import {
   saveCutoffCache,
 } from '../domain/cutoff-cache.mjs';
 import { FloatVectorStore, getFloatStorePath } from '../../vector-store/float-vector-store.js';
-import { createGraphSchema, GraphExtractor } from '../../graph/graph-extractor.js';
+import { createGraphSchema, GraphExtractor, insertCallSites } from '../../graph/graph-extractor.js';
 import { createImportResolver, importEdgesEnabled } from '../../graph/import-resolver.js';
 import { createVectorSchema, ensureVectorSchema, buildInsertItems, insertVectorItems } from '../../indexing/indexer-build.js';
 import { ASTChunker, JAVA_FAMILY } from '../../indexing/ast-chunker.js';
@@ -921,8 +921,10 @@ class ProductionReconcileAdapter {
       this.progress('production:graph-extracted');
       const entities = [...(parsed.entities || [])];
       const relationships = parsed.relationships || [];
+      const callSites = parsed.callSites || [];
       const fileLogicalId = graphEntityLogicalId(rel, 'file', path.basename(rel));
-      if (relationships.some((r) => r.source_id === fileLogicalId) && !entities.some((e) => e.id === fileLogicalId)) {
+      const fileIsSource = relationships.some((r) => r.source_id === fileLogicalId) || callSites.some((c) => c.source_id === fileLogicalId);
+      if (fileIsSource && !entities.some((e) => e.id === fileLogicalId)) {
         entities.unshift({
           id: fileLogicalId,
           file_path: rel,
@@ -947,13 +949,18 @@ class ProductionReconcileAdapter {
         // A full build writes the file-level rows (`imports`, `importsFile`)
         // under the file's logical id with no file entity row, so oldIds never
         // lists it and those rows stayed live forever after an edit (a removed
-        // import kept its edge). Retire them with the rest of the file.
+        // import kept its edge). Retire them with the rest of the file — and
+        // the file-level bare call sites stored under the same id.
         if (!oldIds.includes(fileLogicalId)) {
           prepareCached(db, 'UPDATE relationships SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
+          prepareCached(db, 'UPDATE call_sites SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
         }
         // A deleted file is no longer an import target of any other file.
         if (hashes.deleted) {
           prepareCached(db, "UPDATE relationships SET epoch_retired = ? WHERE type = 'importsFile' AND target_name = ? AND epoch_retired IS NULL").run(epoch, rel);
+        }
+        if (oldIds.length > 0) {
+          db.prepare(`UPDATE call_sites SET epoch_retired = ? WHERE source_id IN (${oldIds.map(() => '?').join(',')}) AND epoch_retired IS NULL`).run(epoch, ...oldIds);
         }
         const retiredIds = [];
         const nextLogical = new Set(entities.map((e) => e.id));
@@ -981,6 +988,7 @@ class ProductionReconcileAdapter {
           upsert += 1;
         }
         insertRelationships(db, relationships, liveIdFor, epoch);
+        insertCallSites(db, callSites, { epoch, idFor: liveIdFor });
         // Resolve this write's edges (and edges into its definitions) with
         // the full build's rules — otherwise maintained files keep
         // target-less edges that readers can only match by name.

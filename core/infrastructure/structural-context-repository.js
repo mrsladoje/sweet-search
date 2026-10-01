@@ -10,6 +10,7 @@ import { shouldTrustQualifiedResolution, trustedCallerEdge } from './structural-
 import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } from './structural-graph-signals.js';
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
 import { TRACE_ONLY_TYPES_SQL } from '../graph/relationship-types.js';
+import { BareCallResolver } from '../graph/bare-call-resolution.js';
 import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
 
 export class StructuralContextRepository {
@@ -311,6 +312,71 @@ export class StructuralContextRepository {
       if (out.length >= limit) break;
     }
     return out;
+  }
+
+  _bareResolver(db) {
+    if (this._bare?.db === db) return this._bare.resolver;
+    let resolver = null;
+    try {
+      resolver = new BareCallResolver(db, {
+        entitySql: (alias) => this._entitySql(db, alias),
+        entityParams: this._entityParams(db),
+        // call_sites carries the same epoch columns as relationships.
+        siteSql: (alias) => this._relationshipSql(db, alias),
+        siteParams: this._relationshipParams(db),
+        relSql: (alias) => this._relationshipSql(db, alias),
+        relParams: this._relationshipParams(db),
+      });
+    } catch {
+      resolver = null;
+    }
+    this._bare = { db, resolver };
+    return resolver;
+  }
+
+  /**
+   * Callers through bare calls (`helper(x)`), resolved by scope rules at
+   * query time (bare-call-resolution.js). Empty for graphs built before the
+   * call_sites table existed.
+   */
+  getBareCallers(target, opts = {}) {
+    const db = this._open();
+    if (!db || !target?.id) return [];
+    const resolver = this._bareResolver(db);
+    if (!resolver?.available) return [];
+    const limit = clampLimit(opts.limit, 80, 300);
+    try {
+      return resolver.callersOf(target, { limit }).map(row => ({
+        ...this._entityFromRow(row),
+        relationship: 'calls',
+        contextLine: row.context_line || null,
+        targetId: target.id,
+        targetName: target.name,
+        weight: 1,
+        bare: true,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  getBareCallees(target, opts = {}) {
+    const db = this._open();
+    if (!db || !target?.id) return [];
+    const resolver = this._bareResolver(db);
+    if (!resolver?.available) return [];
+    const limit = clampLimit(opts.limit, 80, 300);
+    try {
+      return resolver.calleesOf(target, { limit }).map(({ entity, contextLine }) => ({
+        ...this._entityFromRow(entity),
+        relationship: 'calls',
+        contextLine: contextLine || null,
+        weight: 1,
+        bare: true,
+      }));
+    } catch {
+      return [];
+    }
   }
 
   getAliasCallers(target, opts = {}) {
