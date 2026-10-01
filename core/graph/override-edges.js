@@ -70,6 +70,18 @@ export function deriveOverrideEdges(db, entities = null) {
     SELECT id, name, type, file_path, parent_class, start_line, end_line FROM entities
   `).all();
 
+  // Per-file facts, computed once per path.
+  const fileFacts = new Map();
+  const factsOf = (filePath) => {
+    let f = fileFacts.get(filePath);
+    if (!f) {
+      const open = OPEN_TYPE_FILE.test(filePath || '');
+      f = { open, family: open ? langFamily(filePath) : '' };
+      fileFacts.set(filePath, f);
+    }
+    return f;
+  };
+
   const byId = new Map();
   const containersByFile = new Map();
   const primaryCount = new Map(); // family\0name → count of primary declarations
@@ -79,55 +91,36 @@ export function deriveOverrideEdges(db, entities = null) {
     let list = containersByFile.get(e.file_path);
     if (!list) { list = []; containersByFile.set(e.file_path, list); }
     list.push(e);
-    if (OPEN_TYPE_FILE.test(e.file_path) && !BLOCK_TYPES.has(e.type)) {
-      const k = `${langFamily(e.file_path)}\u0000${e.name}`;
+    const f = factsOf(e.file_path);
+    if (f.open && !BLOCK_TYPES.has(e.type)) {
+      const k = `${f.family}\u0000${e.name}`;
       primaryCount.set(k, (primaryCount.get(k) || 0) + 1);
     }
   }
+  for (const list of containersByFile.values()) list.sort((a, b) => a.start_line - b.start_line);
 
   // Group key of a type: an extension / impl block joins the ONE primary
   // declaration of that name in its language family. Several primaries with
   // one name (GRDB tests declare many `class Observer`) stay separate, so
   // their bases never mix.
   const nameKey = (filePath, name) => {
-    if (!OPEN_TYPE_FILE.test(filePath)) return null;
-    const k = `${langFamily(filePath)}\u0000${name}`;
+    const f = factsOf(filePath);
+    if (!f.open) return null;
+    const k = `${f.family}\u0000${name}`;
     return primaryCount.get(k) === 1 ? k : null;
   };
-  const groupKey = (c) => nameKey(c.file_path, c.name)
-    || (BLOCK_TYPES.has(c.type) && OPEN_TYPE_FILE.test(c.file_path) && !primaryCount.has(`${langFamily(c.file_path)}\u0000${c.name}`)
-      ? `${langFamily(c.file_path)}\u0000${c.name}`
-      : `id\u0000${c.id}`);
-
-  // Methods by owning group.
-  const methodsByGroup = new Map(); // groupKey → Map(name → [method])
-  for (const m of rows) {
-    if (!METHOD_TYPES.has(m.type) || m.start_line == null) continue;
-    if (CONSTRUCTOR_NAMES.has(m.name) || m.name.startsWith('~')) continue;
-    let gk = null;
-    let ownerName = null;
-    const list = containersByFile.get(m.file_path);
-    if (list) {
-      let owner = null;
-      const end = m.end_line ?? m.start_line;
-      for (const c of list) {
-        if (c.id === m.id || c.start_line > m.start_line || c.end_line < end) continue;
-        if (m.parent_class && c.name !== m.parent_class) continue;
-        if (!owner || (c.end_line - c.start_line) < (owner.end_line - owner.start_line)) owner = c;
-      }
-      if (owner) { gk = groupKey(owner); ownerName = owner.name; }
+  const groupKeyCache = new Map();
+  const groupKey = (c) => {
+    let gk = groupKeyCache.get(c.id);
+    if (gk === undefined) {
+      const f = factsOf(c.file_path);
+      const k = `${f.family}\u0000${c.name}`;
+      gk = nameKey(c.file_path, c.name)
+        || (f.open && BLOCK_TYPES.has(c.type) && !primaryCount.has(k) ? k : `id\u0000${c.id}`);
+      groupKeyCache.set(c.id, gk);
     }
-    if (!gk && m.parent_class) {
-      gk = nameKey(m.file_path, m.parent_class);
-      ownerName = m.parent_class;
-    }
-    if (!gk || m.name === ownerName) continue; // Java/C++ constructors share the type's name
-    let byName = methodsByGroup.get(gk);
-    if (!byName) { byName = new Map(); methodsByGroup.set(gk, byName); }
-    let same = byName.get(m.name);
-    if (!same) { same = []; byName.set(m.name, same); }
-    same.push(m);
-  }
+    return gk;
+  };
 
   // Swift `extension X: P` rows: (source, line) → X's entity.
   const extensionOf = new Map();
@@ -158,35 +151,99 @@ export function deriveOverrideEdges(db, entities = null) {
     if (!set) { set = new Set(); basesOfGroup.set(sk, set); }
     set.add(tk);
   }
+  if (basesOfGroup.size === 0) {
+    clear.run();
+    return { edges: 0, ms: Math.round(performance.now() - started) };
+  }
+
+  // Only types in the inheritance graph need their methods: files holding a
+  // container of such a type, or methods whose parent_class names one.
+  const relevant = new Set();
+  for (const [k, bases] of basesOfGroup) {
+    relevant.add(k);
+    for (const b of bases) relevant.add(b);
+  }
+  const relevantFiles = new Set();
+  for (const [filePath, list] of containersByFile) {
+    if (list.some(c => relevant.has(groupKey(c)))) relevantFiles.add(filePath);
+  }
+
+  // Methods by owning group.
+  const methodsByGroup = new Map(); // groupKey → Map(name → [method])
+  for (const m of rows) {
+    if (!METHOD_TYPES.has(m.type) || m.start_line == null) continue;
+    if (CONSTRUCTOR_NAMES.has(m.name) || m.name.startsWith('~')) continue;
+    let gk = null;
+    let ownerName = null;
+    if (relevantFiles.has(m.file_path)) {
+      const end = m.end_line ?? m.start_line;
+      let owner = null;
+      for (const c of containersByFile.get(m.file_path)) {
+        if (c.start_line > m.start_line) break; // sorted by start
+        if (c.id === m.id || c.end_line < end) continue;
+        if (m.parent_class && c.name !== m.parent_class) continue;
+        if (!owner || (c.end_line - c.start_line) < (owner.end_line - owner.start_line)) owner = c;
+      }
+      if (owner) { gk = groupKey(owner); ownerName = owner.name; }
+    }
+    if (!gk && m.parent_class) {
+      gk = nameKey(m.file_path, m.parent_class);
+      ownerName = m.parent_class;
+    }
+    if (!gk || !relevant.has(gk) || m.name === ownerName) continue; // Java/C++ constructors share the type's name
+    let byName = methodsByGroup.get(gk);
+    if (!byName) { byName = new Map(); methodsByGroup.set(gk, byName); }
+    let same = byName.get(m.name);
+    if (!same) { same = []; byName.set(m.name, same); }
+    same.push(m);
+  }
 
   const insert = db.prepare(`
     INSERT OR IGNORE INTO relationships (source_id, target_id, target_name, type, weight, context_line)
     VALUES (?, ?, ?, 'overrides', 1.0, ?)
   `);
+  // Ancestor levels per type, breadth-first once (depth <= MAX_DEPTH); only
+  // ancestors that own methods matter.
+  const ancestorLevels = (childKey) => {
+    const levels = [];
+    const seen = new Set([childKey]);
+    let frontier = [...basesOfGroup.get(childKey)];
+    for (let depth = 0; depth < MAX_DEPTH && frontier.length > 0; depth++) {
+      const level = [];
+      const next = [];
+      for (const bk of frontier) {
+        if (seen.has(bk)) continue;
+        seen.add(bk);
+        const owned = methodsByGroup.get(bk);
+        if (owned) level.push(owned);
+        const up = basesOfGroup.get(bk);
+        if (up) for (const u of up) next.push(u);
+      }
+      if (level.length > 0) levels.push(level);
+      frontier = next;
+    }
+    return levels;
+  };
+
   let edges = 0;
   db.transaction(() => {
     clear.run();
-    for (const [childKey, directBases] of basesOfGroup) {
+    for (const childKey of basesOfGroup.keys()) {
       const own = methodsByGroup.get(childKey);
       if (!own) continue;
+      const levels = ancestorLevels(childKey);
+      if (levels.length === 0) continue;
       for (const [name, methods] of own) {
-        // Breadth-first over bases; the nearest level that defines `name` wins.
-        const targets = [];
-        let frontier = [...directBases];
-        const seen = new Set([childKey]);
-        for (let depth = 0; depth < MAX_DEPTH && frontier.length > 0 && targets.length === 0; depth++) {
-          const next = [];
-          for (const bk of frontier) {
-            if (seen.has(bk)) continue;
-            seen.add(bk);
-            const baseMethods = methodsByGroup.get(bk)?.get(name);
-            if (baseMethods) for (const bm of baseMethods) targets.push(bm);
-            const up = basesOfGroup.get(bk);
-            if (up) for (const u of up) next.push(u);
+        // The nearest level that defines `name` wins.
+        let targets = null;
+        for (const level of levels) {
+          for (const owned of level) {
+            const baseMethods = owned.get(name);
+            if (baseMethods) (targets ||= []).push(...baseMethods);
           }
-          frontier = next;
+          if (targets) break;
         }
-        if (targets.length === 0 || targets.length > MAX_TARGETS_PER_METHOD) continue;
+        if (!targets || targets.length > MAX_TARGETS_PER_METHOD) continue;
         for (const m of methods) {
           for (const bm of targets) {
             if (bm.id === m.id) continue;
