@@ -94,6 +94,16 @@ describe('resolveRelationshipTargets — type references', () => {
     expect(target('php-mock', '\\Composer\\Plugin\\Capability\\Capability')).toBe('php-iface');
   });
 
+  it('a nested base matches through its owning type (zipkin Call.Base)', () => {
+    db.prepare("INSERT INTO entities (id, file_path, type, name, start_line, end_line, parent_class) VALUES ('call-base', 'zipkin/src/main/java/zipkin2/internal/Calls.java', 'class', 'Base', 360, 420, 'Call')").run();
+    entity('other-base', 'zipkin/src/main/java/zipkin2/internal/Other.java', 'class', 'Base', 10, 40);
+    entity('store', 'zipkin/src/main/java/zipkin2/storage/InMemoryStorage.java', 'class', 'StoreSpansCall', 212, 240);
+    rel('store', 'Call.Base', 'extends', 212);
+
+    resolveRelationshipTargets(db);
+    expect(target('store', 'Call.Base')).toBe('call-base');
+  });
+
   it('a qualified base whose qualifier is not in the repo stays unresolved (nn.Module)', () => {
     entity('local-module', 'app/module.py', 'class', 'Module', 1, 40);
     entity('net', 'app/net.py', 'class', 'Net', 1, 40);
