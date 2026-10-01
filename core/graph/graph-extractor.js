@@ -1599,7 +1599,7 @@ export class GraphExtractor {
       if (callScanner) {
         callScanner.scanLine(
           line,
-          (targetName) => this._pushCallEdge(relationships, seenCalls, sourceEntityId, targetName, lineNum),
+          (targetName) => this._pushCallEdge(relationships, seenCalls, sourceEntityId || fileEntityId, targetName, lineNum),
           (name) => bareSink(sourceEntityId || fileEntityId, name, lineNum),
           (name) => definedOnLine(entities, lineNum, name),
         );
@@ -2154,7 +2154,7 @@ export class GraphExtractor {
       if (callScanner) {
         callScanner.scanLine(
           line,
-          (targetName) => this._pushCallEdge(relationships, seenCalls, sourceEntityId, targetName, lineNum),
+          (targetName) => this._pushCallEdge(relationships, seenCalls, sourceEntityId || fileEntityId, targetName, lineNum),
           bareSink ? (name) => bareSink(sourceEntityId || fileEntityId, name, lineNum) : null,
           bareSink ? (name) => definedOnLine.get(lineNum)?.has(name) === true : null,
         );
