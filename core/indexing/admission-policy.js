@@ -248,7 +248,8 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
       if (!rootRealCache) rootRealCache = realpathSync.native(projectRoot);
       const real = realpathSync.native(path.join(projectRoot, normalizeRel(rel)));
       const out = path.relative(rootRealCache, real);
-      if (!out || out.startsWith('..') || path.isAbsolute(out)) return null;
+      // Outside the root is `..` or `../…`; a real directory named `..foo` is inside.
+      if (!out || out === '..' || out.startsWith(`..${path.sep}`) || path.isAbsolute(out)) return null;
       return out.replace(/\\/g, '/');
     } catch {
       return null;

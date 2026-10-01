@@ -25,7 +25,7 @@ import {
 } from '../../../core/search/grep-output-shaping.js';
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
 import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.js';
-import { createIndexCoverage } from '../../../core/search/index-coverage.js';
+import { createIndexCoverage, semanticTargetFor } from '../../../core/search/index-coverage.js';
 import { resolveRoots } from '../../../core/search/worktree-roots.js';
 import { numberCodeLines, lineGutterEnabled } from '../../../core/search/search-read.js';
 import { renderRegexDialectHint } from '../../../core/search/regex-dialect.js';
@@ -1001,7 +1001,7 @@ async function cmdSemantic(rawArgs) {
   const maxTokens = readPositiveIntFlag(args, '--max-tokens',
     Number(process.env.SS_SMOKE_SEMANTIC_MAXTOKENS || '') || 600, SEMANTIC_USAGE);
   rejectUnknownOptions(args, SEMANTIC_USAGE);
-  const file = args[0];
+  let file = args[0];
   const query = args[1];
   if (!file || !query) {
     process.stderr.write(SEMANTIC_USAGE + '\n');
@@ -1011,12 +1011,22 @@ async function cmdSemantic(rawArgs) {
   // has no chunks to rank, so it falls back to a WHOLE-FILE span. Five of the seven
   // [FALLBACK] calls on the fresh pool were `dist/index.js` lines 1-35000 — the tool
   // answering a semantic question with 35,000 lines of bundle.
+  // A symlinked path has no chunks either (the indexer does not follow symlinks): answer
+  // from its real path when that is inside the project, else refuse (semanticTargetFor).
   {
     const note = await notIndexedNote(file);
-    if (note && note.kind === 'excluded' && !note.isDir) {
+    const target = semanticTargetFor(file, note);
+    if (target.refuse) {
       process.stderr.write(`[ss-semantic] ${note.text}\n`);
-      process.stderr.write(`[ss-semantic] There is nothing to rank inside it, so no span is returned. Ask this question of the source it was built from.\n`);
+      process.stderr.write(note.kind === 'symlink'
+        ? `[ss-semantic] The index does not follow this link, so there is nothing to rank and no span is returned. Read it directly instead.\n`
+        : `[ss-semantic] There is nothing to rank inside it, so no span is returned. Ask this question of the source it was built from.\n`);
       process.exit(1);
+    }
+    if (target.redirected) {
+      // STDOUT: the wrapper discards stderr on a zero exit, and a redirect is never silent.
+      process.stdout.write(`(ss-semantic: ${file} is a symlink; answering from its real path ${target.file})\n`);
+      file = target.file;
     }
   }
 
