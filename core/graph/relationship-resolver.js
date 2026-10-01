@@ -290,6 +290,8 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
  */
 export function resolveRelationshipTargets(db) {
   console.log('  Resolving relationship targets...');
+  pathFactsCache.clear();
+  nameKeyCache.clear();
 
   // Build entity lookup maps
   const entities = db.prepare(`
@@ -511,12 +513,14 @@ function resolveTarget(
       // must also match its qualifier on disk (src/flask/views.py for
       // `flask.views.View`) — `nn.Module` must not link to an unrelated
       // local `Module`.
-      const qualifier = qualifierPath(targetName);
+      // A nested type also matches through its owner (`Call.Base` → the
+      // `Base` whose parent_class is `Call`).
+      const qualifier = qualifierOf(targetName);
       if (candidates.length === 0) {
         const shortName = lastPathSegment(targetName);
         if (shortName && shortName !== targetName) {
           candidates = typeCandidates(byExactName.get(shortName), sourceId);
-          if (qualifier) candidates = candidates.filter(c => matchesQualifier(c.file_path || '', qualifier));
+          if (qualifier) candidates = candidates.filter(c => matchesQualifier(c, qualifier));
         }
       }
 
@@ -609,10 +613,17 @@ function resolveTarget(
       // thrown exceptions). A type wins over a same-named constructor or
       // method (`Tag::setName` uses class Tag, not the Tag() constructor);
       // decorators still resolve to the function when no type has the name.
-      let candidates = (byExactName.get(targetName) || []).filter(c => c.id !== sourceId);
-      const types = candidates.filter(c => CLASS_LIKE_TYPES.has(c.type));
-      if (types.length > 0) candidates = types;
-      const picked = pickClosestCandidate(candidates, sourceEntity);
+      const all = byExactName.get(targetName);
+      if (!all) return null;
+      if (all.length === 1) return all[0].id !== sourceId ? all[0].id : null;
+      const others = [];
+      const types = [];
+      for (const c of all) {
+        if (c.id === sourceId) continue;
+        others.push(c);
+        if (CLASS_LIKE_TYPES.has(c.type)) types.push(c);
+      }
+      const picked = pickClosestCandidate(types.length > 0 ? types : others, sourceEntity);
       return picked ? picked.id : null;
     }
 
@@ -648,9 +659,35 @@ function isTestPath(filePath) {
   return /(?:^|\/)(?:tests?|spec|specs|__tests__|testing|mocks?|fixtures?)\/|(?:_test|_spec|\.test|\.spec|Tests?)\.[^/.]+$/i.test(filePath || '');
 }
 
-function sharedDirDepth(a, b) {
-  const pa = a.split('/');
-  const pb = b.split('/');
+// Per-path facts used to rank candidates, computed once per file per run
+// (ranking runs for every ambiguous call/type edge; re-splitting the same
+// paths per candidate was the cost). Cleared by resolveRelationshipTargets.
+const pathFactsCache = new Map();
+const nameKeyCache = new Map();
+
+function pathFacts(filePath) {
+  let facts = pathFactsCache.get(filePath);
+  if (!facts) {
+    facts = {
+      parts: filePath.split('/'),
+      isTest: isTestPath(filePath),
+      stemKey: nameKey(fileStem(filePath)),
+    };
+    pathFactsCache.set(filePath, facts);
+  }
+  return facts;
+}
+
+function cachedNameKey(name) {
+  let key = nameKeyCache.get(name);
+  if (key === undefined) {
+    key = nameKey(name);
+    nameKeyCache.set(name, key);
+  }
+  return key;
+}
+
+function sharedDirDepth(pa, pb) {
   const n = Math.min(pa.length, pb.length) - 1; // directories only
   let depth = 0;
   while (depth < n && pa[depth] === pb[depth]) depth++;
@@ -668,20 +705,27 @@ function fileStem(filePath) {
   return dot > 0 ? base.slice(0, dot) : base;
 }
 
-/** `flask.views.View` → `flask/views`, `Sequel::Dataset` → `sequel`; null if unqualified. */
-function qualifierPath(name) {
+/**
+ * `flask.views.View` → { path: 'flask/views', owner: 'views' },
+ * `Sequel::Dataset` → { path: 'sequel', owner: 'Sequel' }; null if unqualified.
+ */
+function qualifierOf(name) {
   const parts = name.split(/::|\\|\./).filter(Boolean);
   if (parts.length < 2) return null;
-  return parts.slice(0, -1).map(nameKey).join('/');
+  return { path: parts.slice(0, -1).map(nameKey).join('/'), owner: parts[parts.length - 2] };
 }
 
-/** True when the file or its directory sits at the qualifier path (`src/flask/views.py`). */
-function matchesQualifier(filePath, qualifier) {
-  const lower = filePath.toLowerCase().replace(/[_-]/g, '');
+/**
+ * True when the candidate's file or directory sits at the qualifier path
+ * (`src/flask/views.py`) or its owning type is the qualifier (`Call.Base`).
+ */
+function matchesQualifier(candidate, qualifier) {
+  if (candidate.parent_class && candidate.parent_class === qualifier.owner) return true;
+  const lower = (candidate.file_path || '').toLowerCase().replace(/[_-]/g, '');
   const dot = lower.lastIndexOf('.');
   const sansExt = dot > lower.lastIndexOf('/') ? lower.slice(0, dot) : lower;
   const dir = lower.slice(0, Math.max(0, lower.lastIndexOf('/')));
-  const at = (s) => s === qualifier || s.endsWith('/' + qualifier);
+  const at = (s) => s === qualifier.path || s.endsWith('/' + qualifier.path);
   return at(sansExt) || at(dir);
 }
 
@@ -700,6 +744,7 @@ function pickClosestCandidate(candidates, sourceEntity, qualifier = null) {
   const srcPath = sourceEntity?.file_path;
   if (!srcPath) return candidates[0];
 
+  const srcParts = pathFacts(srcPath).parts;
   let top = [];
   let bestScore = -1;
   for (const c of candidates) {
@@ -708,11 +753,12 @@ function pickClosestCandidate(candidates, sourceEntity, qualifier = null) {
     if (p === srcPath) {
       score = 1e6;
     } else {
-      score = sharedDirDepth(p, srcPath);
+      const facts = pathFacts(p);
+      score = sharedDirDepth(facts.parts, srcParts);
       if (c.end_line > c.start_line) score += 100;
-      if (nameKey(fileStem(p)) === nameKey(c.name)) score += 1000;
-      if (qualifier && matchesQualifier(p, qualifier)) score += 5000;
-      if (!isTestPath(p)) score += 10000;
+      if (facts.stemKey === cachedNameKey(c.name)) score += 1000;
+      if (qualifier && matchesQualifier(c, qualifier)) score += 5000;
+      if (!facts.isTest) score += 10000;
     }
     if (score > bestScore) {
       top = [c];
