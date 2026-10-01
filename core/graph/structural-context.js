@@ -249,14 +249,21 @@ function buildImpactPaths(repo, target, opts) {
     frontier = next;
     if (frontier.size === 0) break;
   }
-  addHintImpactPaths(paths, seenPathIds, repo, target, opts.hints || [], limit);
+  addHintImpactPaths(paths, seenPathIds, repo, target, opts.hints || [], limit, opts.resolvedCallees || []);
   return paths;
 }
 
-function addHintImpactPaths(paths, seen, repo, target, hints, limit) {
+function addHintImpactPaths(paths, seen, repo, target, hints, limit, resolvedCallees = []) {
+  const calleeByName = new Map();
+  for (const c of resolvedCallees) if (c?.id && c.name && !calleeByName.has(c.name)) calleeByName.set(c.name, c);
   for (const name of hints) {
     if (paths.length >= limit) break;
-    const hint = repo.findEntityCandidates?.(name, { limit: 1 })?.[0];
+    // A name called in the target's body binds to the definition that call
+    // resolved to (GRDB: the broker's own `databaseDidRollback(notify…)`, not
+    // the protocol requirement or DatabaseRegionObservation's), then to the
+    // definition in the target's own file, then to the global top candidate.
+    const local = calleeByName.get(name) || repo.findSameFileDefinition?.(name, target.filePath);
+    const hint = local?.id ? local : repo.findEntityCandidates?.(name, { limit: 1 })?.[0];
     if (!hint || hint.id === target.id || !isLikelyCodeEntity(hint)) continue;
     const id = `hint:${target.id}>${hint.id}`;
     if (!seen.has(id)) {
@@ -341,6 +348,9 @@ export class StructuralContextBuilder {
       maxDepth: options.maxDepth ?? DEFAULT_MAX_DEPTH,
       limit: 120,
       hints: targetCallsiteHints,
+      // Resolved callees (stored + scope-resolved bare calls) bind a hint
+      // name to the definition the call actually reaches.
+      resolvedCallees: calleesRaw.filter(x => x.relationship !== 'handoff'),
     });
     const ids = [
       target.id,
