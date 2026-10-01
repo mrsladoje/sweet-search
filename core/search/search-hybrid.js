@@ -114,7 +114,7 @@ export async function hybridSearchV2(query, options = {}) {
   // Uses bm25SearchRaw() (not graphExpandedSearch) so fusion sees pure BM25 scores
   // without synthetic graph-expansion scores polluting the distribution.
   const [lexicalSearchResult, semanticSearchResult] = await Promise.all([
-    this.graphSearch.bm25SearchRaw(query, 50),
+    this.graphSearch.bm25SearchRaw(query, 50, { format: options.format }),
     this.semanticSearch(query, {
       k: 50,
       rerank: false,
@@ -297,6 +297,7 @@ export async function hybridSearchV2(query, options = {}) {
     const __t_rrf = __ptStart();
     const fb = await runRRFFallback(results, query, {
       searcher: this,
+      format: options.format,
       ablations: options.ablations,
       confidenceFloor: options.confidenceFloor,
     });

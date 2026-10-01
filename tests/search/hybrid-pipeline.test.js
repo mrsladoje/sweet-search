@@ -114,8 +114,14 @@ describe('hybridSearchV2 uses bm25SearchRaw', () => {
     await searcher.hybridSearchV2('auth middleware');
 
     expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenCalledOnce();
-    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenCalledWith('auth middleware', 50);
+    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenCalledWith('auth middleware', 50, { format: undefined });
     expect(searcher.graphSearch.bm25Search).not.toHaveBeenCalled();
+  });
+
+  it('passes the output format to bm25SearchRaw (doc comments are agent-only)', async () => {
+    const searcher = await makeSearcher();
+    await searcher.hybridSearchV2('auth middleware', { format: 'agent' });
+    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenCalledWith('auth middleware', 50, { format: 'agent' });
   });
 
   it('ignores lexical telemetry fields and only fuses raw results', async () => {
@@ -254,8 +260,8 @@ describe('hybridSearchV2 uses bm25SearchRaw', () => {
       { k: 1, useMMR: false }
     );
 
-    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenNthCalledWith(1, 'where does Fastify validate request body schema', 50);
-    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenNthCalledWith(2, 'validate request body schema', 50);
+    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenNthCalledWith(1, 'where does Fastify validate request body schema', 50, { format: undefined });
+    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenNthCalledWith(2, 'validate request body schema', 50, { format: undefined });
     expect(result.results[0].file).toBe('lib/validation.js');
     expect(result.fusionStats.queryRewrite).toEqual({
       from: 'where does Fastify validate request body schema',
@@ -290,7 +296,7 @@ describe('hybridSearchV2 uses bm25SearchRaw', () => {
       { k: 2, useMMR: false }
     );
 
-    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenNthCalledWith(2, 'validate request body schema', 50);
+    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenNthCalledWith(2, 'validate request body schema', 50, { format: undefined });
     expect(result.results[0].file).toBe('lib/validation.js');
     expect(result.fusionStats.queryRewrite?.reason).toBe('no_implementation_in_top_results');
   });

@@ -734,7 +734,7 @@ export class SweetSearch {
         stats.targetEntity = routing?.targetEntity;
         break;
       case 'lexical': {
-        const lexResult = await this.lexicalSearch(query, { k, expand });
+        const lexResult = await this.lexicalSearch(query, { k, expand, format: options.format });
         results = lexResult.results;
         stats.path = 'lexical';
         stats.confidence = lexResult.stats?.confidence;
@@ -939,13 +939,13 @@ export class SweetSearch {
 
   /** Lexical search path (FTS5/BM25 + Graph) */
   async lexicalSearch(query, options = {}) {
-    const { k = 10, expand = true } = options;
+    const { k = 10, expand = true, format } = options;
     if (!this.hasGraphIndex) {
       this.log('Lexical search unavailable: no graph index');
       return { results: [], stats: { confidence: 'exact' } };
     }
     const { results, stats } = await this.graphSearch.graphExpandedSearch(query, {
-      k, expand, deferExpansion: expand,
+      k, expand, deferExpansion: expand, format,
     });
     this.log(`Lexical: ${stats.bm25_ms}ms BM25, ${stats.graph_ms || 0}ms graph (confidence: ${stats.confidence})`);
     return {
