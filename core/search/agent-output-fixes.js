@@ -170,6 +170,28 @@ export function summaryRestatesHeader(summary) {
 }
 
 /**
+ * The source lines an entry's code block shows in full, as `{start, end}`, or null. The entry's
+ * `startLine..endLine` can be wider than what the agent sees: a packed body cut at the token cap
+ * (`// ... (N more lines)`), a sandwich (middle elided), a preview (signature + snippet). The
+ * packer stamps `shownStartLine` / `shownEndLine` on full, non-sandwich agent bodies; without
+ * them, only a full body whose line count equals the span counts as shown.
+ */
+export function shownCodeSpan(r) {
+  if (!r?.code) return null;
+  if (r.expansionKind === 'sandwich' || r.sandwich) {
+    // A sandwich covers its span only when its stamp says nothing was elided.
+    const s = r.sandwich;
+    if (!s || s.elidedHead !== 0 || s.elidedTail !== 0 || s.elisionMarkers !== 0) return null;
+  }
+  if (Number.isInteger(r.shownStartLine) && Number.isInteger(r.shownEndLine)) {
+    return r.shownEndLine >= r.shownStartLine ? { start: r.shownStartLine, end: r.shownEndLine } : null;
+  }
+  if (r.presentation !== 'full' || !Number.isInteger(r.startLine) || !Number.isInteger(r.endLine)) return null;
+  const lines = String(r.code).replace(/\r?\n$/, '').split('\n').length;
+  return lines === r.endLine - r.startLine + 1 ? { start: r.startLine, end: r.endLine } : null;
+}
+
+/**
  * Entry selection for ss-search / ss-find under the fix switches.
  *
  * Order: dedupe, then B2 one-per-file, then the B1 caps. Rank order is kept; ranks are
@@ -180,7 +202,8 @@ export function summaryRestatesHeader(summary) {
  *          non-compact path so that variant prints what it always printed): a summary entry
  *          inside ANY earlier span, or repeating an earlier file + symbol, is dropped.
  *   'a2' — SS_FIX_A rule (review 2026-10-01): a summary-only entry is dropped only when an
- *          earlier entry has the IDENTICAL span, or an earlier entry WITH CODE contains it.
+ *          earlier entry has the IDENTICAL span, or an earlier entry's code SHOWS all of its
+ *          lines (shownCodeSpan: a cut, sandwiched or preview body covers only what it prints).
  *          No same-symbol rule (overloads, `String()` on two receivers, generic names), and a
  *          large summary span (a class) never swallows its methods.
  *
@@ -210,8 +233,8 @@ export function selectEntries(results, o = {}) {
     list = list.filter(({ r }) => {
       const covered = isSummaryOnly(r) && seen.some((x) => x.file === r.file
         && ((x.start === r.startLine && x.end === r.endLine)
-          || (x.hasCode && r.startLine >= x.start && r.endLine <= x.end)));
-      if (!covered) seen.push({ file: r.file, start: r.startLine, end: r.endLine, hasCode: !!r.code });
+          || (x.shown && r.startLine >= x.shown.start && r.endLine <= x.shown.end)));
+      if (!covered) seen.push({ file: r.file, start: r.startLine, end: r.endLine, shown: shownCodeSpan(r) });
       return !covered;
     });
   }
@@ -668,6 +691,20 @@ export function splitTopLevelAlternation(pattern) {
   return branches;
 }
 
+/**
+ * The characters the engine's GNU-dialect retry rewrites when written with a backslash (`\(` `\)`
+ * `\|` `\+` `\{m,n\}`; regex-dialect.js). On a zero-hit search it would turn an escape that THIS
+ * repair added back into an operator (`functio\(n\)` was searched as `functio(n)` and printed every
+ * `function` under a "searched it as literal text" note), so the repair writes these characters as
+ * one-character classes (`[(]`), which that retry never rewrites. `?` and `}` use the same form.
+ */
+const GNU_OPERATOR_CHARS = new Set(['(', ')', '{', '}', '+', '?', '|']);
+
+/** One character as literal text, in a form the GNU-dialect retry leaves alone. */
+function literalChar(ch) {
+  return GNU_OPERATOR_CHARS.has(ch) ? `[${ch}]` : `\\${ch}`;
+}
+
 /** Escape only the parts of one branch that cannot parse: lone `(` `)` `[` `{` `}` and a leading quantifier. */
 function escapeBrokenParts(branch) {
   const tokens = [];
@@ -687,31 +724,31 @@ function escapeBrokenParts(branch) {
       continue;
     }
     if (ch === '(') { open.push(tokens.length); tokens.push('('); continue; }
-    if (ch === ')') { if (open.length) { open.pop(); tokens.push(')'); } else tokens.push('\\)'); continue; }
+    if (ch === ')') { if (open.length) { open.pop(); tokens.push(')'); } else tokens.push(literalChar(')')); continue; }
     if (ch === '{') {
       const q = /^\{\d+(,\d*)?\}/.exec(branch.slice(i));
       const prev = tokens[tokens.length - 1];
-      if (q && prev && prev !== '(' && prev !== '|' && !/^[*+?]$/.test(prev)) { tokens.push(q[0]); i += q[0].length - 1; } else tokens.push('\\{');
+      if (q && prev && prev !== '(' && prev !== '|' && !/^[*+?]$/.test(prev)) { tokens.push(q[0]); i += q[0].length - 1; } else tokens.push(literalChar('{'));
       continue;
     }
-    if (ch === '}') { tokens.push('\\}'); continue; }
+    if (ch === '}') { tokens.push(literalChar('}')); continue; }
     if (/[*+?]/.test(ch)) {
       const prev = tokens[tokens.length - 1];
-      if (!prev || prev === '(' || prev === '|') { tokens.push(`\\${ch}`); continue; }
+      if (!prev || prev === '(' || prev === '|') { tokens.push(literalChar(ch)); continue; }
     }
     tokens.push(ch);
   }
   for (const at of open) {
-    tokens[at] = '\\(';
+    tokens[at] = literalChar('(');
     // A `|` the author wrote INSIDE this group (`app.(get|post`) must not become a top-level
     // alternative once the `(` is literal: that would search for any `post`. The `|` tokens at
-    // the group's own depth become a literal pipe, written `[|]` (a `\|` would trip the
-    // regex-dialect hint about GNU alternation); `|` inside a closed nested group keeps its meaning.
+    // the group's own depth become a literal pipe, written `[|]` (see GNU_OPERATOR_CHARS);
+    // `|` inside a closed nested group keeps its meaning.
     let depth = 0;
     for (let i = at + 1; i < tokens.length; i++) {
       if (tokens[i] === '(') depth++;
       else if (tokens[i] === ')') depth--;
-      else if (tokens[i] === '|' && depth === 0) tokens[i] = '[|]';
+      else if (tokens[i] === '|' && depth === 0) tokens[i] = literalChar('|');
     }
   }
   return tokens.join('');
@@ -719,7 +756,7 @@ function escapeBrokenParts(branch) {
 
 /** A branch as plain literal text: a punctuation escape (`\(`) is the literal character. */
 function literalBranch(branch) {
-  return String(branch).replace(/\\([^A-Za-z0-9])/g, '$1').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return String(branch).replace(/\\([^A-Za-z0-9])/g, '$1').replace(/[.*+?^${}()|[\]\\]/g, literalChar);
 }
 
 /**

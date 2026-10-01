@@ -41,7 +41,7 @@ import {
 } from './search-batch.js';
 import { renderSearchBatchCliResult } from './search-batch-format.js';
 import {
-  compactOutputDefault,
+  readFixFlags,
   renderCompactHeader,
   renderCompactSufficiency,
   renderFixedBlocks,
@@ -669,11 +669,12 @@ function renderCompactAgentSearchResponse(response) {
 /**
  * Render a packaged agent response for the native captured-output CLI.
  *
- * Compact (Bundle A) by default. SWEET_SEARCH_COMPACT_OUTPUT=0 in the DAEMON's environment (it
- * inherits the env of the process that spawned it; restart the daemon after a change) restores
- * the previous text byte for byte.
+ * Compact (Bundle A) by default, with the ss-* tools' precedence (readFixFlags): an explicit
+ * SS_FIX_A=1|0 wins, else SWEET_SEARCH_COMPACT_OUTPUT=0 restores the previous text byte for byte.
+ * Both are read from the DAEMON's environment (it inherits the env of the process that spawned
+ * it; restart the daemon after a change), so every client of one daemon gets the same mode.
  */
-export function renderAgentSearchResponse(response, { compact = compactOutputDefault() } = {}) {
+export function renderAgentSearchResponse(response, { compact = readFixFlags().compact } = {}) {
   if (compact) return renderCompactAgentSearchResponse(response);
   const results = response?.results || [];
   const routing = response?.stats?.routing || {};
