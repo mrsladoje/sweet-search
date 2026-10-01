@@ -50,6 +50,8 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Decisions log
 
+- 10:00 **$0 replay of the output fixes** (`forensics/REPLAY.md`, 10,353 ss-* calls, 1,141 rollouts, 13 tasks; behaviour held constant): Bundle A saves 0.4% (claudecode-opus) / 11.4% (claudecode-luna) / 8.5% (codex-luna) / 7.5% (opencode-luna) of amplified tool-output tokens; A+B(cap 5) 1.8 / 14.5 / 10.1 / 9.5%. Tool output = 13.6% (Opus) – 28–37% (Luna) of rollout cost → total cost effect ≈ <0.3% for Opus, ≈ 2–5% for ss-search-heavy agents. Largest single fixes: A3 (already-shown omission) for Luna, B7 (ss-grep ordering/flood) for Opus.
+
 - 09:50 **Held-out Codex (interleaved native vs 2.8.2, complete panels, 100–103 pairs): cost −15.2% [−23.2, −7.4] (q<0.001), accuracy −1.3 pt [−3.5, +0.9] (ns).** Sonnet held-out: 2.8.2 + V1b done, native running; rescore chained; spec extended (`r3/spec-heldout.json`).
 
 - 09:40 **Held-out Opus with complete panels (rescored, 100–101 pairs):** V1b vs 2.8.2 cost −14.1% [−18.1, −10.3] (q<0.001), accuracy −1.0 pt [−2.7, +0.6] (ns; non-inferiority at −2 pt NOT formally shown); V1b vs native cost +3.0% (ns), accuracy −0.3 (ns); 2.8.2 vs native cost +19.9% (q<0.001). The interim "−1.9 pt sig" came from incomplete judge panels. Codex rescore pending.
