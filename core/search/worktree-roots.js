@@ -82,10 +82,18 @@ export function resolveRoots({ cwd, explicitRoot = '' } = {}) {
     return { indexRoot: explicitRoot, fileRoot: explicitRoot, split: false, refusal: null, worktree: null };
   }
 
-  const wt = describeWorktree(here);
+  // The common case — the session runs where the index is — needs no git facts. They
+  // cost three `git` starts (~100 ms on a large repository), paid on every ss-* call and,
+  // inside the resident daemon, on its event loop. So they are read only on demand.
   if (hasIndex(here)) {
-    return { indexRoot: here, fileRoot: here, split: false, refusal: null, worktree: wt };
+    let wtMemo;
+    return {
+      indexRoot: here, fileRoot: here, split: false, refusal: null,
+      get worktree() { if (wtMemo === undefined) wtMemo = describeWorktree(here); return wtMemo; },
+    };
   }
+
+  const wt = describeWorktree(here);
 
   if (wt?.linked && hasIndex(wt.mainCheckout)) {
     // Split, and SAY so. The caller prints `notice` once; a silent redirect is the failure

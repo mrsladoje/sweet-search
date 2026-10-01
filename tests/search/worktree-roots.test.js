@@ -135,3 +135,31 @@ describe('index admission denies worktree copies', () => {
     expect(policy.isExcluded('src/a.js')).toBe(false);
   });
 });
+
+describe('resolveRoots cost', () => {
+  it('starts no git process when the cwd holds the index, and still answers worktree on demand', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-roots-cost-'));
+    fs.mkdirSync(path.join(dir, '.sweet-search'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.sweet-search', 'codebase.db'), '');
+    // A `git` that only leaves a mark: every start of it is visible.
+    const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-fake-git-'));
+    const mark = path.join(fakeBin, 'started');
+    fs.writeFileSync(path.join(fakeBin, 'git'), `#!/bin/sh\necho x >> "${mark}"\nexit 1\n`, { mode: 0o755 });
+    const savedPath = process.env.PATH;
+    process.env.PATH = `${fakeBin}:${savedPath}`;
+    try {
+      const r = resolveRoots({ cwd: dir });
+      expect(r.indexRoot).toBe(dir);
+      expect(fs.existsSync(mark)).toBe(false);
+      expect(r.worktree).toBeNull();
+      expect(fs.existsSync(mark)).toBe(true);
+      const starts = fs.readFileSync(mark, 'utf8').length;
+      expect(r.worktree).toBeNull();
+      expect(fs.readFileSync(mark, 'utf8').length).toBe(starts); // memoised
+    } finally {
+      process.env.PATH = savedPath;
+    }
+  });
+});
