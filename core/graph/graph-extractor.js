@@ -2240,8 +2240,9 @@ export class GraphExtractor {
    * Record a qualified call. `relationships` gets one row per (caller, target)
    * per file — the first site's line — as ranking has always seen it: repeat
    * rows were deleted by the resolver (resolved duplicates hit the unique
-   * index). Every site's line goes to the trace-only `call_lines` table
-   * (via callSites, `target_name` set), so ss-trace shows each call.
+   * index). Every site is recorded in callSites (`target_name` set);
+   * insertCallSites stores the lines of repeated pairs in the trace-only
+   * `call_lines` table, so ss-trace shows each call.
    */
   _pushCallEdge(relationships, seen, sourceId, targetName, lineNum) {
     if (seen.sites && sourceId) {
@@ -2742,11 +2743,12 @@ export function ensureCallSitesSchema(db) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_call_sites_callee ON call_sites(callee_name)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_call_sites_source ON call_sites(source_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_call_sites_retired ON call_sites(epoch_retired) WHERE epoch_retired IS NOT NULL');
-  // Every site line of a qualified call (`a.b(`, `A::b(`). `relationships`
-  // keeps one ranking row per (caller, target_name); this trace-only table
-  // keeps each line so ss-trace can list all of them. Same epoch columns and
-  // lifecycle as call_sites; graphs built before it fall back to the
-  // relationship row's single context_line.
+  // Site lines of qualified calls (`a.b(`, `A::b(`). `relationships` keeps
+  // one ranking row per (caller, target_name) with the first site's line;
+  // this trace-only table keeps every line of a pair called on two or more
+  // lines, so ss-trace can list all of them. Same epoch columns and
+  // lifecycle as call_sites; a pair without rows (one site, or a graph built
+  // before the table) uses the relationship row's context_line.
   db.exec(`
     CREATE TABLE IF NOT EXISTS call_lines (
       source_id TEXT NOT NULL,
@@ -2762,18 +2764,28 @@ export function ensureCallSitesSchema(db) {
 
 /**
  * Insert call sites; `idFor` maps an extractor source id to the stored id.
- * Bare sites (`callee_name`) go to call_sites; qualified sites
- * (`target_name`) go to call_lines.
+ * Bare sites (`callee_name`) go to call_sites. Qualified sites
+ * (`target_name`) go to call_lines only for a (caller, target) pair called
+ * on two or more lines: a single site is already the relationship row's
+ * context_line, which readers fall back to. A pair's sites all come from
+ * one file, so every batch holds whole pairs.
  */
 export function insertCallSites(db, callSites, { epoch = 0, idFor = null } = {}) {
   if (!callSites || callSites.length === 0) return 0;
   const bare = db.prepare('INSERT INTO call_sites (source_id, callee_name, context_line, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, NULL)');
+  const pairSites = new Map();
+  for (const c of callSites) {
+    if (!c.target_name || !c.source_id) continue;
+    const key = `${c.source_id}\u0000${c.target_name}`;
+    pairSites.set(key, (pairSites.get(key) || 0) + 1);
+  }
   let qualified = null;
   let n = 0;
   for (const c of callSites) {
     const source = (idFor && idFor.get(c.source_id)) || c.source_id;
     if (!source) continue;
     if (c.target_name) {
+      if ((pairSites.get(`${c.source_id}\u0000${c.target_name}`) || 0) < 2) continue;
       qualified ||= db.prepare('INSERT INTO call_lines (source_id, target_name, context_line, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, NULL)');
       qualified.run(source, c.target_name, c.context_line ?? null, epoch);
       n++;

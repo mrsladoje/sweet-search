@@ -135,6 +135,40 @@ describe('ss-trace shows every call site of a caller', () => {
     expect(formatStructuralContext(callers)).toContain('call@11,15');
   });
 
+  it('a single-site qualified pair needs no call_lines row: its line comes from relationships', async () => {
+    const graph = await buildGraph({
+      'app/run.go': [
+        'package app',
+        '',
+        'func run(a *api) {',
+        '\ta.One()',
+        '\ta.Two()',
+        '\ta.Two()',
+        '}',
+      ],
+      'app/api.go': [
+        'package app',
+        '',
+        'type api struct{}',
+        '',
+        'func (a *api) One() {}',
+        'func (a *api) Two() {}',
+      ],
+    });
+    const db = new Database(graph.dbPath, { readonly: true });
+    const stored = db.prepare('SELECT target_name, context_line FROM call_lines ORDER BY 2').all();
+    db.close();
+    expect(stored).toEqual([
+      { target_name: 'a.Two', context_line: 5 },
+      { target_name: 'a.Two', context_line: 6 },
+    ]);
+    const callees = trace(graph, 'run', { filePath: 'app/run.go' });
+    // The receiver's type is a parameter, so both stay external (`a.One`).
+    const byName = Object.fromEntries(callees.sections.callees.items.map((x) => [x.name, x.contextLines]));
+    expect(byName['a.One']).toEqual([4]);
+    expect(byName['a.Two']).toEqual([5, 6]);
+  });
+
   it('a graph built before call_lines still traces (first line only for qualified calls)', async () => {
     const graph = await buildGraph(GO_FILES, { dropCallLines: true });
     const callers = trace(graph, 'Save', { filePath: 'worker/store.go' });
