@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 import { readRepoRegistry, registerRepo, unregisterRepos } from '../../scripts/repo-registry.js';
 import { detectPackageInstall } from '../../scripts/uninstall.js';
+import { installUserShims } from '../../scripts/user-shims.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI = join(__dirname, '..', '..', 'core', 'cli.js');
@@ -177,6 +178,43 @@ describe('uninstall scope', () => {
     expect(existsSync(join(b, '.sweet-search'))).toBe(false);
     expect(existsSync(join(home, '.cache', 'sweet-search'))).toBe(false);
     expect(r.out).not.toContain('npm uninstall');
+  });
+
+  it('--all removes the ss-* commands init put on PATH, and never a user\'s own', () => {
+    const userBin = join(home, '.local', 'bin');
+    mkdirSync(userBin, { recursive: true });
+    writeFileSync(join(userBin, 'ss-grep'), '#!/bin/sh\necho mine\n', { mode: 0o755 });
+    const binary = join(home, 'native-bin');
+    writeFileSync(binary, 'native', { mode: 0o755 });
+    const shims = installUserShims({ binary, packageRoot: join(home, 'p', 'node_modules', 'sweet-search'), env: { PATH: userBin }, home });
+    expect(shims.status).toBe('installed');
+    expect(existsSync(join(userBin, 'ss-read'))).toBe(true);
+    const elsewhere = makeRepo('not-initialized');
+
+    const dry = runCli(elsewhere, ['uninstall', '--all', '--dry-run']);
+    expect(dry.out).toContain(join(userBin, 'ss-read'));
+    expect(existsSync(join(userBin, 'ss-read'))).toBe(true);
+
+    const r = runCli(elsewhere, ['uninstall', '--all', '--force']);
+    expect(r.code, r.out).toBe(0);
+    for (const n of ['ss-search', 'ss-find', 'ss-read', 'ss-semantic', 'ss-trace']) {
+      expect(existsSync(join(userBin, n)), n).toBe(false);
+    }
+    expect(readFileSync(join(userBin, 'ss-grep'), 'utf8')).toContain('mine');
+    expect(existsSync(join(home, '.cache', 'sweet-search'))).toBe(false);
+  });
+
+  it('a repo-scoped uninstall leaves the ss-* commands on PATH for the other repos', () => {
+    const repo = makeRepo('repo');
+    initRepo(repo);
+    const userBin = join(home, '.local', 'bin');
+    mkdirSync(userBin, { recursive: true });
+    const binary = join(home, 'native-bin');
+    writeFileSync(binary, 'native', { mode: 0o755 });
+    installUserShims({ binary, packageRoot: join(home, 'p', 'node_modules', 'sweet-search'), env: { PATH: userBin }, home });
+    const r = runCli(repo, ['uninstall', '--force']);
+    expect(r.code, r.out).toBe(0);
+    expect(existsSync(join(userBin, 'ss-read'))).toBe(true);
   });
 
   it('--all refuses to run without a terminal unless --force is given', () => {

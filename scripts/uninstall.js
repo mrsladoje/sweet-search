@@ -31,6 +31,7 @@ import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { removeToolEnforcement } from './install-tool-enforcement.js';
 import { projectSocketPath, projectPidFile } from '../core/search/server-identity.js';
 import { existingRegisteredRepos, unregisterRepos } from './repo-registry.js';
+import { planUserShimRemovals, removeUserShims } from './user-shims.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -607,11 +608,15 @@ Removed from each repo:
 
 Also removed by --all:
   - The shared model cache (~/.cache/sweet-search), including the CoreML cascade
+  - The ss-* commands init copied into a user bin directory (~/.local/bin) for
+    a project-local install — only the files init recorded, and only while
+    they are unchanged
   - The sweet-search npm package (global or project-local install)
 
 Never removed:
   - Your source code, and any hooks, skills, settings or prose you wrote
   - User-modified copies of sweet-search files (detected and left in place)
+  - An ss-* command you wrote or replaced, even under the same name
   - A Codex [features] hooks = true flag that was there before init
   - A .claude/ settings file or directory that init did not create, or that
     still holds anything
@@ -950,8 +955,11 @@ export async function runUninstall(args) {
   const plans = roots.map(planProjectUninstall).filter((p) => !p.empty);
   const sharedRemovals = parsed.all ? planSharedCacheRemovals(plans) : [];
   const install = parsed.all ? detectPackageInstall() : { kind: 'none' };
+  // Read before the shared cache goes: the record of these files lives there.
+  const shimPaths = parsed.all ? planUserShimRemovals() : [];
 
-  if (plans.length === 0 && sharedRemovals.length === 0 && !['global', 'local'].includes(install.kind)) {
+  if (plans.length === 0 && sharedRemovals.length === 0 && shimPaths.length === 0
+      && !['global', 'local'].includes(install.kind)) {
     console.log(parsed.all
       ? 'Nothing to remove — Sweet Search is not installed on this machine.'
       : 'Nothing to remove — Sweet Search is not initialized in this project.');
@@ -966,9 +974,10 @@ export async function runUninstall(args) {
     console.log(`  Repo: ${plan.projectRoot}`);
     for (const line of plan.lines) console.log(`    ${line}`);
   }
-  if (parsed.all && (sharedRemovals.length > 0 || ['global', 'local'].includes(install.kind))) {
+  if (parsed.all && (sharedRemovals.length > 0 || shimPaths.length > 0 || ['global', 'local'].includes(install.kind))) {
     console.log('');
     console.log('  This machine:');
+    if (shimPaths.length > 0) console.log(`    ss-* commands on PATH: ${shimPaths.join(', ')}`);
     for (const r of sharedRemovals) console.log(`    ${r.label} (${formatBytes(r.size)})`);
     if (install.kind === 'global') console.log('    sweet-search npm package (global)');
     if (install.kind === 'local') console.log(`    sweet-search npm package (local, in ${install.cwd})`);
@@ -1017,6 +1026,10 @@ export async function runUninstall(args) {
   unregisterRepos(cleaned);
 
   if (parsed.all) {
+    // Before the shared cache: the record of which files are ours lives there.
+    const shims = removeUserShims();
+    for (const p of shims.removed) { console.log(`  Removed: ${p}`); removed++; }
+    for (const p of shims.kept) console.log(`  Kept: ${p} (changed since init wrote it)`);
     for (const r of sharedRemovals) {
       try {
         rmSync(r.path, { recursive: true, force: true });

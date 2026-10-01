@@ -111,8 +111,15 @@ fn run_in_process(sub: &str, args: &[String]) -> ! {
     let script = match script {
         Some(s) => s,
         None => {
-            eprintln!("[ss-*] cannot find core/agent-tools/cli.js next to this binary or under node_modules/sweet-search");
-            process::exit(1);
+            // A shim left behind after `npm uninstall -g sweet-search` (npm 7+ runs no
+            // uninstall script), or a project whose package predates the ss-* commands.
+            let me = env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "this command".into());
+            eprintln!(
+                "[ss-*] sweet-search is not installed here (no node_modules/sweet-search above this directory, no sweet-search on PATH): run npm i -g sweet-search, or remove {me}"
+            );
+            process::exit(127);
         }
     };
     let err = Command::new("node").arg(script).arg(sub).args(args).exec();
