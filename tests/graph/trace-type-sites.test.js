@@ -171,6 +171,55 @@ describe('ss-trace lists every line of an instantiation', () => {
   });
 });
 
+describe('ss-trace lists a type\'s signature users (typeRef) by default', () => {
+  const rows = (result, rel) => result.sections.callers.items.filter((x) => x.relationship === rel).map((x) => x.name);
+
+  it('a type used only in signatures has callers (before: an empty section)', async () => {
+    const graph = await buildGraph({
+      'src/foo.ts': ['export class Foo {}'],
+      'src/a.ts': ["import { Foo } from './foo';", 'export function take(a: Foo): void {', '  return;', '}', 'export function give(): Foo {', '  return null;', '}'],
+    });
+    const result = trace(graph, 'Foo', { filePath: 'src/foo.ts', mode: 'callers' });
+    expect(rows(result, 'typeRef').sort()).toEqual(['give', 'take']);
+    expect(result.sections.callers.siteNoun).toBe('sites');
+    expect(formatTraceCompact(result, { mode: 'callers' })).toMatch(/take \[function\] src\/a\.ts:2 \(typeRef\)@2/);
+  });
+
+  it('a function listed by a stronger relationship is not repeated as a typeRef row', async () => {
+    const graph = await buildGraph({
+      'src/foo.ts': ['export class Foo {}'],
+      'src/a.ts': ["import { Foo } from './foo';", 'export function make(seed: Foo): Foo {', '  return new Foo();', '}'],
+    });
+    const result = trace(graph, 'Foo', { filePath: 'src/foo.ts', mode: 'callers' });
+    expect(rows(result, 'instantiates')).toEqual(['make']);
+    expect(rows(result, 'typeRef')).toEqual([]);
+  });
+
+  it('a popular type: typeRef rows are capped and rank after constructors', async () => {
+    const users = Array.from({ length: 60 }, (_, i) => `export function use${i}(a: Foo): void {}`);
+    const graph = await buildGraph({
+      'src/foo.ts': ['export class Foo {}'],
+      'src/users.ts': ["import { Foo } from './foo';", ...users],
+      'src/make.ts': ["import { Foo } from './foo';", 'export function build() {', '  return new Foo();', '}'],
+    });
+    const result = trace(graph, 'Foo', { filePath: 'src/foo.ts', mode: 'callers', tokenBudget: 12000 });
+    const items = result.sections.callers.items;
+    expect(rows(result, 'typeRef').length).toBeLessThanOrEqual(40);
+    const firstTypeRef = items.findIndex((x) => x.relationship === 'typeRef');
+    const ctor = items.findIndex((x) => x.relationship === 'instantiates');
+    expect(ctor).toBeGreaterThanOrEqual(0);
+    expect(ctor).toBeLessThan(firstTypeRef);
+  });
+
+  it('a function target never gets typeRef rows', async () => {
+    const graph = await buildGraph({
+      'src/a.ts': ['export function helper(): void {}', 'export function run(): void {', '  helper();', '}'],
+    });
+    const result = trace(graph, 'helper', { filePath: 'src/a.ts', mode: 'callers' });
+    expect(rows(result, 'typeRef')).toEqual([]);
+  });
+});
+
 describe('call_lines rel_type keeps type-usage lines apart from call lines', () => {
   function memDb() {
     const db = new Database(':memory:');
