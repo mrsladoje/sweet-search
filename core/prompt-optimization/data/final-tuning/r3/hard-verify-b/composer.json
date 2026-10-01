@@ -1,0 +1,691 @@
+{
+ "r3hb-composer-06": {
+  "id": "r3hb-composer-06",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Composer\\Repository\\Vcs\\GitHubDriver::getComposerInformation",
+    "Composer\\Repository\\Vcs\\GitLabDriver::getComposerInformation",
+    "Composer\\Repository\\Vcs\\ForgejoDriver::getComposerInformation"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Only GitHubDriver, GitLabDriver, and ForgejoDriver check their hosting platforms' archived status and map it to the abandoned flag in getComposerInformation."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "GitHubDriver::getComposerInformation",
+    "GitHubDriver::fetchRootIdentifier",
+    "GitLabDriver::getComposerInformation",
+    "GitLabDriver::fetchProject",
+    "ForgejoDriver::getComposerInformation",
+    "ForgejoDriver::fetchRepositoryData",
+    "ArrayLoader::configureObject"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The three drivers and ArrayLoader clearly implement the archived-to-abandoned mapping and the fallback loss; no other provided code contradicts it."
+  }
+ },
+ "r3hb-composer-02": {
+  "id": "r3hb-composer-02",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Composer\\DependencyResolver\\SecurityAdvisoryPoolFilter::filter",
+    "Composer\\Repository\\RepositorySet::getMatchingSecurityAdvisories",
+    "Composer\\Repository\\RepositorySet::getSecurityAdvisoriesForConstraints",
+    "Composer\\Advisory\\Auditor::needsCompleteAdvisoryLoad"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The flow from filtering candidate packages during an update to conditionally reloading complete security advisories is unambiguously implemented across SecurityAdvisoryPoolFilter, RepositorySet, and Auditor."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "SecurityAdvisoryPoolFilter::filter",
+    "RepositorySet::getMatchingSecurityAdvisories",
+    "RepositorySet::getSecurityAdvisoriesForConstraints",
+    "ComposerRepository::getSecurityAdvisories",
+    "Auditor::needsCompleteAdvisoryLoad",
+    "AdvisoriesPolicyConfig::getIgnoreListForOperation"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The block path is SecurityAdvisoryPoolFilter::filter -> RepositorySet::getMatchingSecurityAdvisories -> getSecurityAdvisoriesForConstraints -> ComposerRepository::getSecurityAdvisories; the re-query condition is Auditor::needsCompleteAdvisoryLoad returning true when partial advisories exist and an ignore-list key does not start with PKSA-."
+  }
+ },
+ "r3hb-composer-01": {
+  "id": "r3hb-composer-01",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "7/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Composer\\Config::merge",
+    "Composer\\Downloader\\DownloadManager::resolvePackageInstallPreference",
+    "Composer\\Downloader\\DownloadManager::getAvailableSources",
+    "Composer\\Downloader\\DownloadManager::download",
+    "Composer\\Command\\BaseCommand::getPreferredInstallOptions",
+    "Composer\\Installer::run"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The logic for merging preferred-install configurations, resolving preferences for dev/stable packages, command-line flag overrides, and download fallback handling is implemented uniquely in Config, DownloadManager, Installer, and BaseCommand."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "8/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Config::merge",
+    "Factory::createDownloadManager",
+    "DownloadManager::setPreferences",
+    "DownloadManager::setPreferSource",
+    "DownloadManager::setPreferDist",
+    "DownloadManager::resolvePackageInstallPreference",
+    "DownloadManager::getAvailableSources",
+    "DownloadManager::download",
+    "BaseCommand::getPreferredInstallOptions",
+    "Installer::run"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question is not ambiguous; the code paths for merging preferred-install, passing preferences to DownloadManager, resolving patterns, and handling CLI flags are clearly defined in the listed symbols."
+  }
+ },
+ "r3hb-composer-05": {
+  "id": "r3hb-composer-05",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/8",
+   "factsOk": false,
+   "ambiguous": true,
+   "symbols": [
+    "Composer\\Package\\Locker::isFresh",
+    "Composer\\Package\\Locker::updateHash",
+    "Composer\\Command\\ValidateCommand::execute",
+    "Composer\\Command\\BumpCommand::doBump"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "Other places in the repository like Installer::doInstall, Installer::doUpdate, and RequireCommand::updateRequirementsAfterResolution handle lock hash checks or updates, but their implementations were truncated from the provided snippets."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "8/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Locker::isFresh",
+    "Locker::updateHash",
+    "Locker::getContentHash",
+    "Installer::doInstall",
+    "Installer::doUpdate",
+    "ValidateCommand::execute",
+    "BumpCommand::doBump",
+    "RequireCommand::updateRequirementsAfterResolution"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The question is specific about comparing the stored fingerprint and reacting, and about refreshing it without dependency resolution, so the relevant methods are clearly identifiable."
+  }
+ },
+ "r3hb-composer-03": {
+  "id": "r3hb-composer-03",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "6/9",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Composer\\Console\\Application::doRun",
+    "Composer\\Util\\Platform::isDocker",
+    "Composer\\Command\\BaseCommand::initialize",
+    "Composer\\Command\\BaseCommand::createComposerInstance",
+    "Composer\\Factory::createComposer",
+    "Composer\\Plugin\\PluginManager::loadInstalledPlugins"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The root check in non-interactive sessions and plugin disabling pathway is uniquely implemented through Application::doRun, Platform::isDocker, BaseCommand, Factory::createComposer, and PluginManager."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "9/9",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Application::doRun",
+    "Application::isRunningAsRoot",
+    "Application::getDisablePluginsByDefault",
+    "Application::getComposer",
+    "Platform::isDocker",
+    "Platform::isWindows",
+    "Platform::getEnv",
+    "BaseCommand::initialize",
+    "BaseCommand::createComposerInstance",
+    "Factory::createComposer",
+    "Factory::createPluginManager",
+    "PluginManager::arePluginsDisabled",
+    "PluginManager::loadInstalledPlugins",
+    "PluginManager::registerPackage",
+    "PluginManager::addPlugin"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The code path is explicit in Application::doRun and the subsequent BaseCommand/Factory/PluginManager chain, so no reasonable alternative answer exists."
+  }
+ },
+ "r3hb-composer-10": {
+  "id": "r3hb-composer-10",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Composer\\Console\\Application::doRun",
+    "Composer\\Factory::getCacheDir",
+    "Composer\\Factory::createDownloadManager",
+    "Composer\\Config::$defaultConfig",
+    "Composer\\Config::get",
+    "Composer\\Cache::__construct",
+    "Composer\\Cache::isUsable",
+    "Composer\\Cache::isEnabled"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The mechanism by which `--no-cache` disables the filesystem Cache instances via `COMPOSER_CACHE_DIR` set to `/dev/null` or `nul` is uniquely implemented across Application, Config, Factory, and Cache."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Application::doRun",
+    "Platform::putEnv",
+    "Factory::getCacheDir",
+    "Config::$defaultConfig",
+    "Config::get",
+    "Cache::__construct",
+    "Cache::isUsable",
+    "Cache::isEnabled",
+    "Factory::createDownloadManager"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The no-cache switch sets COMPOSER_CACHE_DIR to a null path, Factory/Config derive the cache subdirectories from it, and Cache::isUsable disables the Cache, so no alternate answer is needed."
+  }
+ },
+ "r3hb-composer-09": {
+  "id": "r3hb-composer-09",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Composer\\Config::getAuthConfigSource",
+    "Composer\\Config\\JsonConfigSource::addConfigSetting",
+    "Composer\\Factory::createConfig",
+    "Composer\\Util\\AuthHelper::promptAuthIfNeeded",
+    "Composer\\Util\\AuthHelper::storeAuth"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "AuthHelper::storeAuth always retrieves $this->config->getAuthConfigSource() (which resolves to $COMPOSER_HOME/auth.json created in Factory::createConfig), prompts the user if storeAuth is 'prompt', and calls addConfigSetting('http-basic.'.$origin, ...) on that JsonConfigSource, bypassing local auth sources."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "AuthHelper::promptAuthIfNeeded",
+    "AuthHelper::storeAuth",
+    "Config::getAuthConfigSource",
+    "Config::getLocalAuthConfigSource",
+    "Config::$defaultConfig['store-auths']",
+    "Factory::createConfig",
+    "JsonConfigSource::__construct",
+    "JsonConfigSource::addConfigSetting",
+    "CurlDownloader::isAuthenticatedRetryNeeded"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "storeAuth writes to Config::getAuthConfigSource(), which Factory::createConfig sets to the global Composer-home auth.json; JsonConfigSource with authConfig=true writes top-level http-basic.<origin>. The project-local auth.json (getLocalAuthConfigSource) and composer.json's config.http-basic are not used for this prompt."
+  }
+ },
+ "r3hb-composer-08": {
+  "id": "r3hb-composer-08",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "6/8",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Composer\\Downloader\\PathDownloader::remove",
+    "Composer\\Downloader\\FileDownloader::remove",
+    "Composer\\Util\\Filesystem::removeDirectoryAsync",
+    "Composer\\Util\\Filesystem::removeEdgeCases"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The package removal workflow for linked path repositories is clearly traced through PathDownloader::remove, FileDownloader::remove, and Filesystem::removeEdgeCases."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "8/8",
+   "factsOk": false,
+   "ambiguous": true,
+   "symbols": [
+    "LibraryInstaller::uninstall",
+    "LibraryInstaller::removeCode",
+    "DownloadManager::remove",
+    "DownloadManager::getDownloaderForPackage",
+    "PathDownloader::remove",
+    "FileDownloader::remove",
+    "Filesystem::removeDirectoryAsync",
+    "Filesystem::removeEdgeCases",
+    "Filesystem::isSymlinkedDirectory",
+    "Filesystem::unlinkSymlinkedDirectory",
+    "Filesystem::removeJunction",
+    "Filesystem::unlink"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question does not specify the platform, and the code has distinct removal paths for symlinks (Filesystem::removeEdgeCases) and Windows junctions (PathDownloader::remove's junction branch), so a careful engineer could reasonably name either."
+  }
+ },
+ "r3hb-composer-14": {
+  "id": "r3hb-composer-14",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3hb-composer-07": {
+  "id": "r3hb-composer-07",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "8/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Composer\\Installer\\InstallationManager::execute",
+    "Composer\\Installer\\InstallationManager::downloadAndExecuteBatch",
+    "Composer\\Installer\\LibraryInstaller::cleanup",
+    "Composer\\Downloader\\ArchiveDownloader::cleanup",
+    "Composer\\Downloader\\ArchiveDownloader::install",
+    "Composer\\Downloader\\ZipDownloader::extractWithSystemUnzip",
+    "Composer\\Downloader\\VcsDownloader::cleanup"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The cleanup responsibilities and handlers for interrupted operations are consistently centralized across InstallationManager and the downloader hierarchy."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "8/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "InstallationManager::execute",
+    "InstallationManager::downloadAndExecuteBatch",
+    "InstallationManager::executeBatch",
+    "InstallationManager::runCleanup",
+    "LibraryInstaller::cleanup",
+    "DownloadManager::cleanup",
+    "FileDownloader::cleanup",
+    "FileDownloader::clearLastCacheWrite",
+    "FileDownloader::addCleanupPath",
+    "FileDownloader::removeCleanupPath",
+    "ArchiveDownloader::install",
+    "ArchiveDownloader::cleanup",
+    "ZipDownloader::extractWithSystemUnzip",
+    "VcsDownloader::prepare",
+    "VcsDownloader::cleanup",
+    "VcsDownloader::reapplyChanges"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The cleanup triggers and actions are explicitly implemented across InstallationManager, downloaders, and VCS downloader; no reasonable alternative answer is suggested by the code."
+  }
+ },
+ "r3hb-composer-04": {
+  "id": "r3hb-composer-04",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Composer\\Command\\InstallCommand::execute",
+    "Composer\\Installer::run",
+    "Composer\\Autoload\\AutoloadGenerator::setClassMapAuthoritative",
+    "Composer\\Autoload\\AutoloadGenerator::dump",
+    "Composer\\Autoload\\ClassLoader::setClassMapAuthoritative",
+    "Composer\\Autoload\\ClassLoader::findFile"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The classmap-authoritative option and its end-to-end execution path from CLI flag parsing to runtime lookup in ClassLoader::findFile are unambiguous."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "InstallCommand::execute",
+    "Installer::setOptimizeAutoloader",
+    "Installer::setClassMapAuthoritative",
+    "Installer::run",
+    "AutoloadGenerator::setClassMapAuthoritative",
+    "AutoloadGenerator::dump",
+    "AutoloadGenerator::getAutoloadRealFile",
+    "ClassLoader::setClassMapAuthoritative",
+    "ClassLoader::findFile"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question pins the strictest mode to --classmap-authoritative and the four files cover the whole chain (option/config resolution in InstallCommand::execute, the mutually-forcing setters and run() in Installer, the scanPsrPackages forcing and autoload_real.php emission in AutoloadGenerator, and the early-return in ClassLoader::findFile), so no other code path gives a different answer."
+  }
+ },
+ "r3hb-composer-12": {
+  "id": "r3hb-composer-12",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "6/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Composer\\DependencyResolver\\FilterListPoolFilter::buildLockedNameVersionMap",
+    "Composer\\DependencyResolver\\FilterListPoolFilter::isLockedEquivalent",
+    "Composer\\DependencyResolver\\FilterListPoolFilter::filter"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The handling of mirror updates and the buildLockedNameVersionMap/isLockedEquivalent mechanism for checking locked-equivalent packages against install-scope lists are uniquely located in FilterListPoolFilter."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "8/8",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Installer::updateMirrors",
+    "Installer::createSecurityAuditPoolFilter",
+    "Installer::createFilterListPoolFilter",
+    "Installer::requirePackagesForUpdate",
+    "SecurityAdvisoryPoolFilter::filter",
+    "FilterListPoolFilter::filter",
+    "FilterListPoolFilter::buildLockedNameVersionMap",
+    "FilterListPoolFilter::isLockedEquivalent",
+    "Request::isLockedPackage",
+    "Request::lockPackage",
+    "Request::requireName",
+    "Request::getLockedRepository"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Vulnerability/security-advisory blocking is skipped in update-mirrors mode; malware/filter-list blocking still runs and uses buildLockedNameVersionMap/isLockedEquivalent to treat locked-equivalent packages as locked and check them against install-scope lists."
+  }
+ },
+ "r3hb-composer-11": {
+  "id": "r3hb-composer-11",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "6/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Composer\\Config::$defaultConfig",
+    "Composer\\Config::get",
+    "Composer\\IO\\BaseIO::loadConfiguration",
+    "Composer\\Factory::createComposer",
+    "Composer\\Util\\ProcessExecutor::$timeout",
+    "Composer\\Util\\ProcessExecutor::getTimeout",
+    "Composer\\Util\\ProcessExecutor::setTimeout",
+    "Composer\\Util\\ProcessExecutor::runProcess",
+    "Composer\\Command\\RunScriptCommand::execute"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The five-minute default timeout is defined by Config's 'process-timeout' setting and ProcessExecutor::$timeout, propagated by BaseIO::loadConfiguration into ProcessExecutor, and enforced when constructing Symfony Process instances."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Config::$defaultConfig",
+    "Config::get",
+    "Config::disableProcessTimeout",
+    "BaseIO::loadConfiguration",
+    "Factory::createComposer",
+    "ProcessExecutor::$timeout",
+    "ProcessExecutor::getTimeout",
+    "ProcessExecutor::setTimeout",
+    "ProcessExecutor::runProcess",
+    "ProcessExecutor::startJob",
+    "RunScriptCommand::execute"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The five-minute limit is the process-timeout config default (300s), propagated via BaseIO::loadConfiguration to ProcessExecutor::setTimeout and used by runProcess/startJob; the two documented ways to lift it are the run-script --timeout option and the Composer\\Config::disableProcessTimeout script callable, with no other code path providing a different answer."
+  }
+ },
+ "r3hb-composer-13": {
+  "id": "r3hb-composer-13",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Composer\\Plugin\\PluginManager::isPluginAllowed",
+    "Composer\\Plugin\\PluginManager::parseAllowedPlugins",
+    "Composer\\Package\\Locker::getPluginApi"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The resolution logic for allowed plugins, old lockfile plugin-api compatibility, and special-cased packages is deterministically handled in PluginManager::isPluginAllowed and parseAllowedPlugins."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "PluginManager::isPluginAllowed",
+    "PluginManager::parseAllowedPlugins",
+    "PluginManager::registerPackage",
+    "PluginManager::addPlugin",
+    "PluginInstaller::prepare",
+    "Locker::getPluginApi"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The allow-plugins decision is centralized in PluginManager::isPluginAllowed, with parseAllowedPlugins determining null rules and callers passing the optional flag; no other code path changes the skip/fail outcome."
+  }
+ }
+}
