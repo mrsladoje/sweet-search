@@ -50,6 +50,7 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { opencodeRulesDir, applyOpencodeRepoCacheKey, applyOpencodeProductCacheKey, stageProductCachePlugin, OC_CACHE_KEY_MODES } from './lib/oc-bench-config.mjs';
+import { readFixFlags } from '../core/search/agent-output-fixes.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const H = path.join(REPO, 'eval/task-completion-bench/harness');
@@ -139,6 +140,16 @@ const prune3 = (arm) => envOf(arm).SS_VARIANT_PRUNE3 === '1';
 // keys; `repo` = bench key (per-model promptCacheKey + scripts/opencode-cache-key-plugin.mjs); `product`
 // = the shipped plugin from the main checkout, listed exactly as `sweet-search init --opencode` lists it.
 const ocCacheMode = (arm) => envOf(arm).SS_VARIANT_OC_CACHE_KEY || '';
+// EFFECTIVE ss-* output mode of an arm, stamped on every sweet row. Since 2026-10-01 Bundle A is the
+// product default: an unset SS_FIX_A means 'compact', and SS_FIX_A=0 (or SWEET_SEARCH_COMPACT_OUTPUT=0)
+// means 'legacy'. Rows without this field predate the change and are 'legacy' unless their run set
+// SS_FIX_A=1. Never pool rows across different values. 'mixed' = a sub-switch differs from the umbrella.
+const ssOutputMode = (arm) => {
+  const f = readFixFlags(envOf(arm));
+  if (f.compact && f.traceCompact && f.grepRetry) return 'compact';
+  if (!f.compact && !f.traceCompact && !f.grepRetry) return 'legacy';
+  return `mixed(compact=${+f.compact},trace=${+f.traceCompact},grep=${+f.grepRetry})`;
+};
 for (const a of ['native', 'sweet', 'sweetB']) {
   const m = ocCacheMode(a);
   if (m && !OC_CACHE_KEY_MODES.includes(m)) { console.error(`SS_VARIANT_OC_CACHE_KEY must be one of ${OC_CACHE_KEY_MODES.join(', ')} (got "${m}")`); process.exit(2); }
@@ -585,7 +596,7 @@ const GATE = createWarmupGate({ logFile: WARMUPS, meta: { cell: CELL_NAME, harne
 // ─── one rollout ───────────────────────────────────────────────────────────────────────────────
 async function runOne(probe, arm) {
   const sweet = arm === 'sweet' || arm === 'sweetB';
-  const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
+  const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(arm !== 'native' ? { ssOutput: ssOutputMode(arm) } : {}), ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
   let run;
   try {
     // The arm's warm-up must have FINISHED before any scored rollout of that arm starts.

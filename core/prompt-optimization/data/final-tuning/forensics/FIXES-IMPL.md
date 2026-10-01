@@ -388,6 +388,10 @@ renderer. `readFixFlags` precedence for Bundle A:
 **Bench consequence:** an unset `SS_FIX_A` now means the product default. A "no-fix" arm must set
 `SS_FIX_A=0`. Sub-switch-only arms (`SS_FIX_TRACE_COMPACT=1` alone, `SS_FIX_GREP_RETRY=1` alone) also need
 `SS_FIX_A=0` to keep A1/A2/A7 off. A3, `SS_FIX_DROP_SUFFICIENCY`, B1, B2, B7 stay default off (bench only).
+`scripts/retrieval-bench-282.mjs` stamps every sweet row with `ssOutput` (`compact`, `legacy` or
+`mixed(...)`, from `readFixFlags` of that arm's env). Rows without the field predate the change: never
+pool them with `ssOutput: 'compact'` rows. The task-bench runners record no SS_* variants on rows, so they
+carry no stamp.
 
 The native `sweet-search "<q>"` agent text (daemon `renderAgentSearchResponse`) uses the same compact
 renderer with a `# sweet-search:` header. Its opt-out is read from the DAEMON's environment (inherited
