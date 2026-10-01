@@ -20,6 +20,8 @@ import {
 } from './search-format.js';
 import { detectOutputPolicy } from './output-policy.js';
 import { emitDecoration, emitIndexFormatNotice } from './cli-decoration.js';
+import { cwdGrepScope } from './cwd-paths.js';
+import { resolveProjectRoot } from './server-identity.js';
 
 // =============================================================================
 // CLI entry point
@@ -145,6 +147,8 @@ Examples:
     let topK = 10;
     let maxMatches = 0;
     let contextLines = 0;
+    let contextBefore;          // grep -B; undefined = the -C count
+    let contextAfter;           // grep -A; undefined = the -C count
     let fixedString = false;
     let symbolType = '';
     const globs = [];
@@ -174,6 +178,16 @@ Examples:
         mode = 'pattern';
       } else if ((arg === '-C' || arg === '--context') && args[i + 1]) {
         contextLines = parseInt(args[++i], 10);
+      } else if ((arg === '-A' || arg === '--after-context') && args[i + 1]) {
+        contextAfter = parseInt(args[++i], 10);
+      } else if ((arg === '-B' || arg === '--before-context') && args[i + 1]) {
+        contextBefore = parseInt(args[++i], 10);
+      } else if (/^(-[ABC]\d+|--(after-|before-)?context=\d+)$/.test(arg)) {
+        // Attached forms: -A3, -C2, --context=2, --after-context=5.
+        const n = parseInt(arg.replace(/^\D+/, ''), 10);
+        if (arg.startsWith('-A') || arg.startsWith('--after')) contextAfter = n;
+        else if (arg.startsWith('-B') || arg.startsWith('--before')) contextBefore = n;
+        else contextLines = n;
       } else if ((arg === '--max-matches' || arg === '-m') && args[i + 1]) {
         maxMatches = parseInt(args[++i], 10);
       } else if (arg === '-F' || arg === '--fixed-strings') {
@@ -244,12 +258,21 @@ Examples:
       }
     }
 
+    // grep run from a subdirectory searches that subdirectory, as grep -r / rg do.
+    let grepScope = {};
     if (isGrepCommand) {
       mode = 'grep';
       regex = regex || query;
       rerank = false;
       expand = false;
+      const root = resolveProjectRoot();
+      const scope = cwdGrepScope({ cwd: process.cwd(), fileRoot: root, indexRoot: root });
+      if (scope) grepScope = { fileFilter: scope, _cwdScope: true };
     }
+    const contextSides = {
+      ...(contextBefore != null ? { contextBefore } : {}),
+      ...(contextAfter != null ? { contextAfter } : {}),
+    };
 
     if (!query) {
       console.error('Error: Query required');
@@ -283,6 +306,8 @@ Examples:
           topK,
           maxMatches,
           contextLines,
+          ...contextSides,
+          ...grepScope,
           fixedString,
           type: symbolType,
           globs,
@@ -354,6 +379,8 @@ Examples:
         regex,
         maxMatches,
         contextLines,
+        ...contextSides,
+        ...grepScope,
         fixedString,
         type: symbolType,
         globs,

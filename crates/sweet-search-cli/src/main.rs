@@ -7,6 +7,7 @@
 
 mod batch;
 mod batch_transport;
+mod cwd_paths;
 
 use std::env;
 use std::fs;
@@ -381,9 +382,14 @@ struct Options {
     regex: Option<String>,
     max_matches: u32,
     context_lines: u32,
+    // grep -B / -A; None = the -C count
+    context_before: Option<u32>,
+    context_after: Option<u32>,
     fixed_string: bool,
     symbol_type: Option<String>,
     globs: Vec<String>,
+    // grep run from a project subdirectory: that subdirectory (absolute), set by main()
+    cwd_scope: Option<String>,
 }
 
 #[derive(Debug)]
@@ -450,9 +456,12 @@ impl Default for Options {
             regex: None,
             max_matches: 0,
             context_lines: 0,
+            context_before: None,
+            context_after: None,
             fixed_string: false,
             symbol_type: None,
             globs: Vec::new(),
+            cwd_scope: None,
         }
     }
 }
@@ -614,6 +623,8 @@ fn print_usage(prog: &str, a: &Ansi, show_banner: bool) {
     println!("  -e, --regex <pat>   Regex pattern (pattern mode: regex + semantic rank)");
     println!("      --type <kind>   Filter to symbol kind: function|class|method|...");
     println!("  -C, --context <n>   Lines of context around grep matches");
+    println!("  -A, --after-context <n>   Lines of context after grep matches");
+    println!("  -B, --before-context <n>  Lines of context before grep matches");
     println!("      --max-matches <n>  Cap grep matches");
     println!("  -F, --fixed-strings Treat pattern as a literal string");
     println!("      --glob <g>      Restrict to matching paths (repeatable)");
@@ -701,6 +712,14 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
                 i += 1;
                 opts.context_lines = args.get(i).and_then(|v| v.parse().ok()).unwrap_or(0);
             }
+            "-A" | "--after-context" => {
+                i += 1;
+                opts.context_after = Some(parse_context_count(arg, args.get(i))?);
+            }
+            "-B" | "--before-context" => {
+                i += 1;
+                opts.context_before = Some(parse_context_count(arg, args.get(i))?);
+            }
             "--max-matches" => {
                 i += 1;
                 opts.max_matches = args.get(i).and_then(|v| v.parse().ok()).unwrap_or(0);
@@ -736,6 +755,13 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
                         "text" => {}
                         _ => return Err(format!("unknown --format value: {v}")),
                     }
+                } else if let Some((flag, n)) = attached_context_flag(other) {
+                    // -A3 / -B3 / -C3 / --context=3 / --after-context=3 / --before-context=3
+                    match flag {
+                        'A' => opts.context_after = Some(n),
+                        'B' => opts.context_before = Some(n),
+                        _ => opts.context_lines = n,
+                    }
                 } else if other.starts_with('-') {
                     return Err(format!("Unknown option: {other}"));
                 } else if opts.query.is_none() {
@@ -746,6 +772,47 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         i += 1;
     }
     Ok(opts)
+}
+
+fn parse_context_count(flag: &str, value: Option<&String>) -> Result<u32, String> {
+    value
+        .and_then(|v| v.parse().ok())
+        .ok_or_else(|| format!("{flag} requires a line count (a non-negative integer)"))
+}
+
+/// grep's attached context forms: `-A3`, `-B3`, `-C3`, `--after-context=3`,
+/// `--before-context=3`, `--context=3` → (`A` | `B` | `C`, count).
+fn attached_context_flag(arg: &str) -> Option<(char, u32)> {
+    let (flag, num) = if let Some(n) = arg.strip_prefix("--after-context=") {
+        ('A', n)
+    } else if let Some(n) = arg.strip_prefix("--before-context=") {
+        ('B', n)
+    } else if let Some(n) = arg.strip_prefix("--context=") {
+        ('C', n)
+    } else {
+        let mut chars = arg.chars();
+        if chars.next() != Some('-') {
+            return None;
+        }
+        let f = chars.next()?;
+        if !matches!(f, 'A' | 'B' | 'C') {
+            return None;
+        }
+        (f, &arg[2..])
+    };
+    if num.is_empty() || !num.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    num.parse().ok().map(|n| (flag, n))
+}
+
+/// A path argument resolved the way the shell would: relative to the cwd first,
+/// else relative to the project root (unchanged). See cwd_paths.rs.
+fn resolve_arg_path(p: &str) -> String {
+    match env::current_dir() {
+        Ok(cwd) => cwd_paths::resolve_cwd_path(p, &cwd, &resolve_project_root()),
+        Err(_) => p.to_string(),
+    }
 }
 
 fn print_read_semantic_usage(prog: &str, a: &Ansi) {
@@ -926,6 +993,16 @@ fn build_url(
     }
     if opts.context_lines > 0 {
         url.push_str(&format!("&contextLines={}", opts.context_lines));
+    }
+    if let Some(n) = opts.context_before {
+        url.push_str(&format!("&contextBefore={n}"));
+    }
+    if let Some(n) = opts.context_after {
+        url.push_str(&format!("&contextAfter={n}"));
+    }
+    // The daemon keeps the unscoped output shape for this filter (cwdScope=true).
+    if let Some(scope) = &opts.cwd_scope {
+        url.push_str(&format!("&fileFilter={}&cwdScope=true", url_encode(scope)));
     }
     if opts.fixed_string {
         url.push_str("&fixedString=true");
@@ -1548,7 +1625,7 @@ fn main() {
     }
 
     if cli_args.first().map(|s| s.as_str()) == Some("read-semantic") {
-        let rs_opts = match parse_read_semantic_args(&cli_args[1..]) {
+        let mut rs_opts = match parse_read_semantic_args(&cli_args[1..]) {
             Ok(o) => o,
             Err(e) => {
                 eprintln!("{}Error:{} {e}", ea.fa, ea.r);
@@ -1560,6 +1637,7 @@ fn main() {
             print_read_semantic_usage(&prog, ea);
             return;
         }
+        rs_opts.file = rs_opts.file.as_deref().map(resolve_arg_path);
         let file = match rs_opts.file.as_deref() {
             Some(v) if !v.is_empty() => v,
             _ => {
@@ -1599,7 +1677,7 @@ fn main() {
     }
 
     if cli_args.first().map(|s| s.as_str()) == Some("trace") {
-        let t_opts = match parse_trace_args(&cli_args[1..]) {
+        let mut t_opts = match parse_trace_args(&cli_args[1..]) {
             Ok(o) => o,
             Err(e) => {
                 eprintln!("{}Error:{} {e}", ea.fa, ea.r);
@@ -1611,6 +1689,7 @@ fn main() {
             print_trace_usage(&prog, ea);
             return;
         }
+        t_opts.file = t_opts.file.as_deref().map(resolve_arg_path);
         let symbol = match t_opts.symbol.as_deref() {
             Some(v) if !v.is_empty() => v,
             _ => {
@@ -1641,7 +1720,7 @@ fn main() {
     }
 
     if cli_args.first().map(|s| s.as_str()) == Some("read") {
-        let r_opts = match parse_read_args(&cli_args[1..]) {
+        let mut r_opts = match parse_read_args(&cli_args[1..]) {
             Ok(o) => o,
             Err(e) => {
                 eprintln!("{}Error:{} {e}", ea.fa, ea.r);
@@ -1657,6 +1736,7 @@ fn main() {
             print_read_usage(&prog, ea);
             process::exit(2);
         }
+        r_opts.paths = r_opts.paths.iter().map(|p| resolve_arg_path(p)).collect();
         let wants_range = r_opts.start_line.is_some() || r_opts.end_line.is_some();
         if wants_range && r_opts.paths.len() > 1 {
             eprintln!("{}Error:{} --lines requires exactly one path", ea.fa, ea.r);
@@ -1690,7 +1770,7 @@ fn main() {
         }
     }
 
-    let opts = match parse_args(&cli_args) {
+    let mut opts = match parse_args(&cli_args) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("{}Error:{} {e}", ea.fa, ea.r);
@@ -1730,6 +1810,13 @@ fn main() {
             process::exit(1);
         }
         return;
+    }
+
+    // grep run from a project subdirectory searches that subdirectory, as grep -r / rg do.
+    if opts.grep {
+        opts.cwd_scope = env::current_dir()
+            .ok()
+            .and_then(|cwd| cwd_paths::cwd_grep_scope(&cwd, &resolve_project_root()));
     }
 
     let query = match &opts.query {
@@ -2511,5 +2598,44 @@ mod tests {
         assert!(url.contains("maxMatches=5"));
         assert!(url.contains("fixedString=true"));
         assert!(url.contains("glob="));
+        assert!(!url.contains("contextBefore") && !url.contains("contextAfter"));
+        assert!(!url.contains("fileFilter") && !url.contains("cwdScope"));
+    }
+
+    #[test]
+    fn grep_context_flags_parse_separate_attached_and_long_forms() {
+        let parse = |a: &[&str]| {
+            let v: Vec<String> = a.iter().map(|s| s.to_string()).collect();
+            parse_args(&v)
+        };
+        let o = parse(&["grep", "X", "-A", "3", "-B", "1"]).unwrap();
+        assert_eq!((o.context_after, o.context_before), (Some(3), Some(1)));
+        let o = parse(&["grep", "X", "-A22", "-C2"]).unwrap();
+        assert_eq!((o.context_after, o.context_lines), (Some(22), 2));
+        let o = parse(&["grep", "X", "--after-context=4", "--before-context", "5"]).unwrap();
+        assert_eq!((o.context_after, o.context_before), (Some(4), Some(5)));
+        let o = parse(&["grep", "X", "--context=6"]).unwrap();
+        assert_eq!(o.context_lines, 6);
+        let url = build_url(
+            &parse(&["grep", "X", "-A", "3"]).unwrap(),
+            false,
+            false,
+            false,
+        );
+        assert!(url.contains("&contextAfter=3") && !url.contains("contextBefore"));
+        assert!(parse(&["grep", "X", "-A", "x"]).is_err());
+        assert!(parse(&["grep", "X", "-Ax"]).is_err());
+    }
+
+    #[test]
+    fn grep_cwd_scope_threads_through_to_url() {
+        let v: Vec<String> = ["grep", "X"].iter().map(|s| s.to_string()).collect();
+        let mut opts = parse_args(&v).unwrap();
+        opts.cwd_scope = Some("/repo/cli/src".into());
+        let url = build_url(&opts, false, false, false);
+        assert!(
+            url.contains("&fileFilter=%2Frepo%2Fcli%2Fsrc&cwdScope=true"),
+            "{url}"
+        );
     }
 }

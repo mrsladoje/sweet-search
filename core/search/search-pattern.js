@@ -218,14 +218,20 @@ export async function bareGrep(query, routing, options = {}) {
   const results = buildBareGrepResults(matches, {
     projectRoot: searchDir,
     contextLines: options.contextLines ?? 0,
+    ...(options.contextBefore != null ? { contextBefore: options.contextBefore } : {}),
+    ...(options.contextAfter != null ? { contextAfter: options.contextAfter } : {}),
   });
-  const familyManifest = options._isAgentFormat === true && !options.fileFilter
+  // An explicit --in drill-in renders neither enrichment. The IMPLICIT scope of an
+  // ss-grep run from a subdirectory (_cwdScope) is an ordinary grep with fewer hits,
+  // so it keeps both, exactly as at the repository root.
+  const unscopedShape = !options.fileFilter || options._cwdScope === true;
+  const familyManifest = options._isAgentFormat === true && unscopedShape
     ? buildIndexedGrepFamilyManifest(results, this?.codeGraphRepo)
     : null;
   // One to three hits in one file: name the same-file identifier family WITH
   // code lines (the one enrichment a near-singleton grep can take; see
   // agent-pack-completion.js).
-  const siblingLine = options._isAgentFormat === true && !options.fileFilter
+  const siblingLine = options._isAgentFormat === true && unscopedShape
       && options._siblingLine !== false // SS_SIBLING_LINE=0 opts out (client-side, travels as this option)
       && results.length >= 1 && results.length <= 3
       && results.every((result) => result.file === results[0].file)

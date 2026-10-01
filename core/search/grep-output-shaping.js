@@ -13,9 +13,22 @@
  * sorted order; raw match count is deliberately never used as a sort key).
  */
 
+import { realpathSync } from 'node:fs';
+
 /** Split a path into whole segments, dropping "" and "." (so "./a//b" → [a,b]). */
 function pathSegments(value) {
   return String(value).replace(/\\/g, '/').split('/').filter(s => s !== '' && s !== '.');
+}
+
+/** Segments of the root's real path, or null when it does not resolve. Cached per root. */
+const _canonicalRoots = new Map();
+function canonicalRootSegments(projectRoot) {
+  if (!_canonicalRoots.has(projectRoot)) {
+    let segs = null;
+    try { segs = pathSegments(realpathSync.native(projectRoot)); } catch { segs = null; }
+    _canonicalRoots.set(projectRoot, segs);
+  }
+  return _canonicalRoots.get(projectRoot);
 }
 
 /** POSIX, drive-letter, and UNC spellings after slash normalization. */
@@ -81,10 +94,16 @@ export function matchesGrepFileFilter(file, filter, projectRoot = null) {
     // Once the root is stripped, keep the remainder root-anchored as well — an
     // exact `/repo/src` scope must not match `nested/src/a.js`.
     if (isAbsolutePath(raw)) {
-      if (!root || !isAbsolutePath(projectRoot)
-          || scope.length < root.length || !runAt(scope, root, 0)) return false;
+      if (!root || !isAbsolutePath(projectRoot)) return false;
+      // The same directory can have two spellings (macOS /tmp → /private/tmp). The
+      // implicit cwd scope of ss-grep is a real path; the engine root may be either.
+      const realRoot = canonicalRootSegments(projectRoot);
+      const anchor = (scope.length >= root.length && runAt(scope, root, 0)) ? root
+        : (realRoot && scope.length >= realRoot.length && runAt(scope, realRoot, 0)) ? realRoot
+          : null;
+      if (!anchor) return false;
       // (a bare "/" has fewer segments than any real root, so it is rejected above)
-      scope = scope.slice(root.length);
+      scope = scope.slice(anchor.length);
       if (scope.length === 0) return true;
       return scope.length <= target.length && runAt(target, scope, 0);
     }
@@ -204,8 +223,9 @@ export function allocateGrepBudget(counts, budget) {
  * @param {{dropRepeatedText?: boolean}} [opts] - SS_FIX_GREP_ORDER: when every shown hit
  *   carries the same matched text (and more than one hit shows), print `file:line` only.
  *   Absent = the original format, byte for byte.
- * @returns {{lines: string[], shownMatches: number, matchedFileCount: number,
- *            truncatedFileCount: number, hiddenLine: string|null}}
+ * @returns {{lines: string[], rows: Array<{file, line, text, more}>, shownMatches: number,
+ *            matchedFileCount: number, truncatedFileCount: number, hiddenLine: string|null}}
+ *   `rows[i]` is the hit printed as `lines[i]` (for grep context rendering).
  */
 export function renderGrepBody(kept, fileSummary, k, opts = undefined) {
   const groups = new Map();
@@ -263,6 +283,7 @@ export function renderGrepBody(kept, fileSummary, k, opts = undefined) {
 
   return {
     lines,
+    rows,
     shownMatches,
     matchedFileCount: fileSummary.files.length + fileSummary.hiddenFileCount,
     truncatedFileCount,
@@ -296,4 +317,73 @@ export function reallocateGrepTailForManifest(lines, manifest, estimateTokens = 
     familyManifest: { ...manifest, tokens: required },
     removedLineCount: lines.length - keep,
   };
+}
+
+/**
+ * `grep -n -A/-B/-C` rendering of the hits ss-grep already chose to show.
+ *
+ * Agents read grep's own shape without instruction, so this is that shape: a hit
+ * is `file:LINE: text`, a context line is `file-LINE- text`, overlapping or
+ * touching windows of one file merge into one group, and groups are separated by
+ * `--`. Every printed line is the FULL source line (indentation kept), not the
+ * matched substring the context-free body prints. A line that matches the regex
+ * but was not itself a shown hit still prints with `:`, as grep would.
+ *
+ * Pure: file contents come from `getLines(file)` (1-based line i is element i-1;
+ * null when unreadable, in which case that file's hits print as plain hit lines).
+ *
+ * @param {Array<{file: string, line: number, text?: string, suffix?: string}>} rows -
+ *   shown hits in display order; `suffix` (a truncation marker) is kept on its hit
+ * @param {{before?: number, after?: number,
+ *          getLines: (file: string) => string[]|null,
+ *          matchLines?: Map<string, Set<number>>}} opts
+ * @returns {string[]} output lines
+ */
+export function renderGrepContext(rows, { before = 0, after = 0, getLines, matchLines } = {}) {
+  const groups = [];
+  for (const row of rows || []) {
+    const last = groups[groups.length - 1];
+    if (last && last.file === row.file) last.rows.push(row);
+    else groups.push({ file: row.file, rows: [row] });
+  }
+  const blocks = [];
+  for (const { file, rows: hits } of groups) {
+    const lines = getLines ? getLines(file) : null;
+    const plain = (row) => `${row.file}:${row.line}: ${row.text ?? ''}${row.suffix || ''}`;
+    const windows = [];
+    for (const row of [...hits].sort((a, b) => a.line - b.line)) {
+      if (!lines || row.line < 1 || row.line > lines.length) {
+        windows.push({ plain: plain(row) });           // stale or unreadable: the hit alone
+        continue;
+      }
+      const start = Math.max(1, row.line - before);
+      const end = Math.min(lines.length, row.line + after);
+      const cur = windows[windows.length - 1];
+      if (cur && !cur.plain && start <= cur.end + 1) {
+        cur.end = Math.max(cur.end, end);
+        cur.hits.set(row.line, row);
+      } else {
+        windows.push({ start, end, hits: new Map([[row.line, row]]) });
+      }
+    }
+    const matched = matchLines?.get(file);
+    for (const w of windows) {
+      if (w.plain) { blocks.push([w.plain]); continue; }
+      const out = [];
+      for (let n = w.start; n <= w.end; n++) {
+        const text = String(lines[n - 1] ?? '').replace(/\r$/, '');
+        const hit = w.hits.get(n);
+        if (hit) out.push(`${file}:${n}: ${text}${hit.suffix || ''}`);
+        else if (matched?.has(n)) out.push(`${file}:${n}: ${text}`);
+        else out.push(text ? `${file}-${n}- ${text}` : `${file}-${n}-`);
+      }
+      blocks.push(out);
+    }
+  }
+  const result = [];
+  blocks.forEach((block, i) => {
+    if (i > 0) result.push('--');
+    result.push(...block);
+  });
+  return result;
 }

@@ -75,11 +75,12 @@ export function stripInertFlags(args) {
 // Short flags that consume a following value, and value-less boolean shorts.
 // Used to split attached/bundled forms (-k5, -iw, -iwk5) the way getopt would,
 // so they parse instead of being mistaken for an unknown flag or the pattern.
-export const VALUE_SHORTS = new Set(['k']);
+export const VALUE_SHORTS = new Set(['k', 'A', 'B', 'C']);
 export const BOOL_SHORTS = new Set(['i', 'w', 'F']);
 export const VALUE_LONGS = new Set([
   '--top', '--regex', '--mode', '--max-tokens',
   '--in', '--file', '--query', '--hint', '--depth', '--budget',
+  '--after-context', '--before-context', '--context',
 ]);
 
 export function normalizeArgs(args) {
@@ -190,6 +191,37 @@ export function extraPositionals(args) {
   const sep = args.indexOf('--');
   const scan = sep === -1 ? args : args.slice(sep + 1);
   return scan.filter(tok => !looksLikeOption(tok) && tok !== '--').slice(1);
+}
+
+// grep's context flags: -A N / -B N / -C N and --after-context / --before-context /
+// --context (normalizeArgs has already split -A3, -iC2 and --context=2). Every
+// occurrence is consumed and the last one of each kind wins, as in grep; an
+// explicit -A or -B wins over -C whatever the order (GNU grep's rule). Options end
+// at `--`. Returns { before, after, error } with 0/0 when no flag was given.
+const CONTEXT_FLAG_KIND = new Map([
+  ['-A', 'after'], ['--after-context', 'after'],
+  ['-B', 'before'], ['--before-context', 'before'],
+  ['-C', 'both'], ['--context', 'both'],
+]);
+export function parseContextFlags(args) {
+  const seen = { after: null, before: null, both: null };
+  for (let i = 0; i < args.length;) {
+    const tok = args[i];
+    if (tok === '--') break;
+    const kind = CONTEXT_FLAG_KIND.get(tok);
+    if (!kind) { i++; continue; }
+    const v = args[i + 1];
+    if (typeof v !== 'string' || !/^\d+$/.test(v)) {
+      return { before: 0, after: 0, error: `${tok} requires a line count (a non-negative integer)` };
+    }
+    seen[kind] = Number(v);
+    args.splice(i, 2);
+  }
+  return {
+    before: seen.before ?? seen.both ?? 0,
+    after: seen.after ?? seen.both ?? 0,
+    error: null,
+  };
 }
 
 export function parsePositiveIntFlag(args, names, fallback, { min = 1 } = {}) {
