@@ -62,6 +62,14 @@ const NON_CONTAINER_TYPES = new Set([
 
 const LUA_CLAMP_ALLOWED_LANGUAGES = new Set(['lua']);
 
+// Regex-registry entity types that own their members (`parent_class` of the
+// definitions inside their line range). Swift `extension Foo` is named after
+// the extended type, so its members belong to Foo.
+const REGEX_CONTAINER_TYPES = new Set([
+  'class', 'interface', 'enum', 'struct', 'trait', 'impl', 'module', 'object',
+  'protocol', 'extension', 'mixin', 'record',
+]);
+
 export function clampSentinelEndLines(entities, fileLineCount, language) {
   if (!Array.isArray(entities) || entities.length < 2) return entities;
   if (fileLineCount == null || fileLineCount <= 0) return entities;
@@ -503,7 +511,12 @@ export class GraphExtractor {
         const provider = getTreeSitterProvider();
         if (await provider.isAvailable() && provider.hasLanguage(langInfo.id)) {
           const symbols = await provider.extractSymbols(content, langInfo.id);
-          if (symbols && symbols.length > 0) {
+          // C#: the shipped grammar predates C# 12 primary constructors
+          // (`class Box<T>(T route) : Base(route)`); on such files the class
+          // is lost and its methods parse as local functions. Those files keep
+          // the regex extractor (ocelot: 42 of 757 files).
+          const csharpParseError = langInfo.id === 'csharp' && symbols?.hasParseError;
+          if (symbols && symbols.length > 0 && !csharpParseError) {
             // Convert tree-sitter symbols to graph entities format and align
             // labels with regex semantics (component/object arrow distinctions).
             const entities = this._normalizeTreeSitterEntities(filePath, symbols, langInfo.id);
@@ -1108,6 +1121,9 @@ export class GraphExtractor {
     let activeJsonDependencyDepth = null;
     // Track active entity scopes to attribute call source_id by lexical range.
     const activeEntityScopes = [];
+    const lineComment = langInfo.comment?.line || null;
+    const hasBlockComment = Array.isArray(langInfo.comment?.block)
+      && langInfo.comment.block[0] === '/*';
 
     // Choose findEndLine strategy based on language type
     const findEndLineFn = (startIdx) => {
@@ -1162,8 +1178,12 @@ export class GraphExtractor {
         }
       }
 
-      // Entity extraction
-      for (const { type, pattern, prefilter } of entityPatterns) {
+      // Entity extraction. Comment lines are skipped: unanchored definition
+      // patterns matched doc prose (Swift `/// … protocol comes …` became a
+      // protocol named `comes` and parent of the next type).
+      const isCommentLine = (lineComment && trimmed.startsWith(lineComment))
+        || (hasBlockComment && (trimmed.startsWith('*') || trimmed.startsWith('/*')));
+      for (const { type, pattern, prefilter } of (isCommentLine ? [] : entityPatterns)) {
         if (prefilter && !prefilter(trimmed)) continue;
         const match = trimmed.match(pattern);
         if (match) {
@@ -1176,6 +1196,14 @@ export class GraphExtractor {
           const sigHash = this.makeSignatureHash(sig);
           const entityId = this.makeId(filePath, type, name, { signature: sig, startLine: lineNum });
           const endLine = findEndLineFn(i);
+          // Containment: the innermost enclosing entity owns this one only
+          // when it is a type-like container (a definition inside a function
+          // body is local, not a member).
+          // Off for `end`-keyword languages: their keyword-counted end lines
+          // are too loose (sequel: 756 of 3,543 Ruby parents wrong).
+          const enclosing = activeEntityScopes[activeEntityScopes.length - 1];
+          const parentClass = !langInfo.endKeyword && enclosing
+            && REGEX_CONTAINER_TYPES.has(enclosing.type) ? enclosing.name : null;
 
           entities.push({
             id: entityId,
@@ -1187,8 +1215,9 @@ export class GraphExtractor {
             doc_comment: this.extractDocComment(lines, i),
             start_line: lineNum,
             end_line: endLine,
+            ...(parentClass ? { parent_class: parentClass } : {}),
           });
-          activeEntityScopes.push({ id: entityId, start_line: lineNum, end_line: endLine });
+          activeEntityScopes.push({ id: entityId, start_line: lineNum, end_line: endLine, type, name });
           break; // one entity per line
         }
       }
@@ -1512,6 +1541,7 @@ export class GraphExtractor {
           signature: sym.signature || null,
           start_line: startLine + 1, // tree-sitter is 0-indexed
           end_line: endLine + 1,
+          ...(sym.parentClass ? { parent_class: sym.parentClass } : {}),
           rank,
         });
       }
