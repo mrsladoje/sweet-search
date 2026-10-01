@@ -19,6 +19,7 @@ import { getTreeSitterProvider } from '../infrastructure/tree-sitter-provider.js
 import { CallSiteScanner } from './call-site-scanner.js';
 import { scanImports, SCANNED_IMPORT_LANGUAGES } from './import-scanner.js';
 import { UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
+import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './type-usage-scanner.js';
 
 // Languages whose legacy `imports` rows are all module specifiers that the
 // statement scanner sees (so an unmatched row is a regex false positive).
@@ -587,6 +588,19 @@ export class GraphExtractor {
     // every file also gets `importsFile` edges to the repo files it imports,
     // and its legacy `imports` rows are annotated with the resolved file.
     this.importResolver = options?.importResolver || null;
+    // Trace-only `instantiates` / `typeRef` / `extensionOf` rows
+    // (relationship-types.js); ranking consumers skip them.
+    this.typeUsageEdges = options?.typeUsageEdges ?? process.env.SWEET_SEARCH_TYPE_USAGE_EDGES !== '0';
+    this._skipObjectSets = new Map();
+  }
+
+  _skipObjectSet(langInfo) {
+    let set = this._skipObjectSets.get(langInfo.id);
+    if (!set) {
+      set = new Set(langInfo.graph?.skipCallObjects || []);
+      this._skipObjectSets.set(langInfo.id, set);
+    }
+    return set;
   }
 
   /**
@@ -1272,6 +1286,8 @@ export class GraphExtractor {
     } = this.getGenericPatternPlan(language, graph);
     const callScanner = methodCallPattern ? new CallSiteScanner(langInfo) : null;
     const seenCalls = new Set(); // one edge per (caller, target) per file
+    const seenTypeUsage = new Set();
+    const skipObjects = this._skipObjectSet(langInfo);
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
     const jsonDependencySections = new Set(['dependencies', 'devDependencies', 'peerDependencies']);
     let jsonBraceDepth = 0;
@@ -1397,6 +1413,12 @@ export class GraphExtractor {
       // Call sites (comment-aware; see call-site-scanner.js).
       if (callScanner) {
         callScanner.scanLine(line, (targetName) => this._pushCallEdge(relationships, seenCalls, sourceEntityId, targetName, lineNum));
+      }
+      if (!lineIsComment) {
+        const lastEntity = entities[entities.length - 1];
+        this._appendTypeUsageEdges(relationships, seenTypeUsage, trimmed, lineNum, language,
+          sourceEntityId || fileEntityId, lastEntity?.start_line === lineNum ? lastEntity : null,
+          skipObjects);
       }
 
       this._appendDestructuredRequireRelationships(trimmed, sourceEntityId || fileEntityId, relationships);
@@ -1865,6 +1887,13 @@ export class GraphExtractor {
       return null;
     };
     const trackCommentLine = createCommentLineTracker(langInfo.comment);
+    // Definition starting on a line (signature types → `typeRef`).
+    const definitionAt = new Map();
+    for (const e of sortedEntities) {
+      if (!definitionAt.has(e.start_line)) definitionAt.set(e.start_line, e);
+    }
+    const seenTypeUsage = new Set();
+    const skipObjects = this._skipObjectSet(langInfo);
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -1878,6 +1907,10 @@ export class GraphExtractor {
       }
 
       const sourceEntityId = findScopeEntity(lineNum);
+      if (!lineIsComment) {
+        this._appendTypeUsageEdges(relationships, seenTypeUsage, trimmed, lineNum, language,
+          sourceEntityId || fileEntityId, definitionAt.get(lineNum), skipObjects);
+      }
 
       // Call sites (comment-aware; see call-site-scanner.js).
       if (callScanner) {
@@ -1939,6 +1972,35 @@ export class GraphExtractor {
       weight: GRAPH_CONFIG.relationshipWeights.calls,
       context_line: lineNum,
     });
+  }
+
+  /**
+   * Trace-only type-usage rows for one comment-free line (relationship-types.js):
+   * `instantiates` (constructed types), `typeRef` (types in a function/method
+   * signature, definition lines only) and Swift `extensionOf`. One row per
+   * (source, type, target) per file. SWEET_SEARCH_TYPE_USAGE_EDGES=0 disables.
+   */
+  _appendTypeUsageEdges(relationships, seen, trimmed, lineNum, language, sourceId, defEntity, skipObjects = null) {
+    if (!this.typeUsageEdges || !sourceId) return;
+    const push = (type, target) => {
+      // The registry's skipCallObjects (Scala `Seq(`, Kotlin `listOf`) are
+      // library factories, not repo types.
+      if (skipObjects && skipObjects.has(target)) return;
+      const key = `${type}\u0000${sourceId}\u0000${target}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      relationships.push({ source_id: sourceId, target_id: null, target_name: target, type, weight: 1.0, context_line: lineNum });
+    };
+    for (const name of scanInstantiations(trimmed, language)) push('instantiates', name);
+    if (defEntity && (defEntity.type === 'function' || defEntity.type === 'method')) {
+      for (const name of scanSignatureTypes(trimmed, language, { ownName: defEntity.name, ownerName: defEntity.parent_class })) {
+        push('typeRef', name);
+      }
+    }
+    if (language === 'swift') {
+      const extended = swiftExtensionTarget(trimmed);
+      if (extended) push('extensionOf', extended);
+    }
   }
 
   _recordEmptyCapture(kind, language, patternType, lineNum, line) {

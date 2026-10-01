@@ -17,6 +17,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { applyReadPragmas } from '../infrastructure/db-utils.js';
+import { TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
 import {
   createCodeGraphVisibility,
   entityVisibilityParams,
@@ -154,6 +155,7 @@ export function loadGraph(dbPath, opts = {}) {
       SELECT source_id, target_id, target_name, type, weight
       FROM relationships
       WHERE ${relationshipVisibilitySql(visibility, '')}
+        AND type NOT IN ${TRACE_ONLY_TYPES_SQL}
     `).all(...relationshipVisibilityParams(visibility));
 
     return { entities, relationships };

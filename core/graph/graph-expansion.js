@@ -77,18 +77,28 @@ function _entityVisibility(db, manifestEpoch, alias = '', options = {}) {
   };
 }
 
+// Trace-only relationship types (overrides, instantiates, typeRef,
+// extensionOf) never feed expansion ranking. Mirrors TRACE_ONLY_TYPES_SQL in
+// relationship-types.js; inlined so this module stays import-free (tests
+// assert the two agree).
+const _TRACE_ONLY_TYPES_SQL = "('overrides','instantiates','typeRef','extensionOf')";
+
 function _relationshipVisibility(db, manifestEpoch, alias = '') {
   const prefix = _sqlAliasPrefix(alias);
-  if (!_visibilityInfo(db).relationships) return { sql: '1=1', params: [] };
+  const traceOnly = `${prefix}type NOT IN ${_TRACE_ONLY_TYPES_SQL}`;
+  if (!_visibilityInfo(db).relationships) return { sql: traceOnly, params: [] };
   if (Number.isInteger(manifestEpoch)) {
     return {
       sql: `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
-        AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)`,
+        AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)
+        AND ${traceOnly}`,
       params: [manifestEpoch, manifestEpoch],
     };
   }
-  return { sql: `${prefix}epoch_retired IS NULL`, params: [] };
+  return { sql: `${prefix}epoch_retired IS NULL AND ${traceOnly}`, params: [] };
 }
+
+export { _TRACE_ONLY_TYPES_SQL as GRAPH_EXPANSION_TRACE_ONLY_TYPES_SQL };
 
 // Per-stage profiling hooks. No-op unless `globalThis.__stageTimings` is set
 // by scripts/profile-search-stages.mjs (same convention as search-hybrid.js

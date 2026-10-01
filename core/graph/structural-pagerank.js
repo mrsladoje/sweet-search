@@ -12,6 +12,8 @@
  * Domain layer: the actual SQL writes happen behind a writable database handle
  * passed in by the index builder; no path or filesystem concerns leak in.
  */
+import { TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
+
 const DEFAULT_DAMPING = 0.85;
 const DEFAULT_MAX_ITERATIONS = 50;
 const DEFAULT_CONVERGENCE = 1e-6;
@@ -117,6 +119,7 @@ export function buildWeightedAdjacency(db) {
     SELECT source_id, target_id, type, COALESCE(weight, 1.0) AS weight
     FROM relationships
     WHERE source_id IS NOT NULL AND target_id IS NOT NULL
+      AND type NOT IN ${TRACE_ONLY_TYPES_SQL}
   `);
   for (const row of stmt.iterate()) {
     if (!allNodes.has(row.source_id) || !allNodes.has(row.target_id)) continue;

@@ -18,6 +18,7 @@ import path from 'path';
 import { createHash } from 'crypto';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
 import { UNRESOLVED_IMPORT_PREFIX, buildFileImportMap } from './import-resolver.js';
+import { deriveOverrideEdges } from './override-edges.js';
 
 // Entities from config/data/markup files (YAML keys, pom.xml tags, Makefile
 // targets, TOML tables) are never the target of a code import. Name-based
@@ -411,6 +412,12 @@ export function resolveRelationshipTargets(db) {
 
   resolveAll();
 
+  // Trace-only `overrides` edges need the resolved inheritance above.
+  const overrideStats = deriveOverrideEdges(db, entities);
+  if (overrideStats.edges > 0) {
+    console.log(`  ✓ Derived ${overrideStats.edges} override edges (${overrideStats.ms}ms)`);
+  }
+
   if (resolved > 0) {
     console.log(`  ✓ Linked ${resolved}/${unresolved.length} references to local definitions`);
   } else {
@@ -627,6 +634,11 @@ function resolveTarget(
       return picked ? picked.id : null;
     }
 
+    case 'instantiates':
+    case 'typeRef':
+    case 'extensionOf':
+      return resolveTypeUsage(targetName, sourceEntity, sourceId, byExactName, callIndex);
+
     default: {
       // Unknown relationship type - try exact name match
       const candidates = (byExactName.get(targetName) || []).filter(c => c.id !== sourceId);
@@ -636,7 +648,39 @@ function resolveTarget(
   }
 }
 
-const TYPE_REFERENCE_RELATIONSHIPS = new Set(['extends', 'implements', 'overrides', 'uses', 'throws']);
+const TYPE_REFERENCE_RELATIONSHIPS = new Set([
+  'extends', 'implements', 'overrides', 'uses', 'throws', 'instantiates', 'typeRef', 'extensionOf',
+]);
+
+/**
+ * Trace-only type usages (`instantiates`, `typeRef`, `extensionOf`): a type
+ * entity only, and only when exactly one survives — the same file, else a
+ * file the source file imports, else the one non-test definition. A missing
+ * edge beats a wrong one (graphify's exactly-one guard).
+ */
+function resolveTypeUsage(targetName, sourceEntity, sourceId, byExactName, callIndex) {
+  let candidates = typeCandidates(byExactName.get(targetName), sourceId);
+  const srcPath = sourceEntity?.file_path;
+  // Library code never uses a test-file type: a lone test `Key` class is not
+  // the `Key` a library signature names (usually a generic placeholder).
+  if (srcPath && !pathFacts(srcPath).isTest) {
+    candidates = candidates.filter(c => !pathFacts(c.file_path || '').isTest);
+  }
+  if (candidates.length <= 1) return candidates[0]?.id || null;
+  if (srcPath) {
+    const sameFile = candidates.filter(c => c.file_path === srcPath);
+    if (sameFile.length === 1) return sameFile[0].id;
+    if (sameFile.length > 1) return null;
+    const imported = callIndex?.importsOf?.(srcPath);
+    if (imported) {
+      const viaImport = candidates.filter(c => isImported(imported, c.file_path));
+      if (viaImport.length === 1) return viaImport[0].id;
+      if (viaImport.length > 1) return null;
+    }
+  }
+  const nonTest = candidates.filter(c => !pathFacts(c.file_path || '').isTest);
+  return nonTest.length === 1 ? nonTest[0].id : null;
+}
 
 // Entity types that can be the target of an inheritance edge.
 const CLASS_LIKE_TYPES = new Set([
