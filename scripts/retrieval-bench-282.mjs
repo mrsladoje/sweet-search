@@ -38,7 +38,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { opencodeRulesDir, applyOpencodeRepoCacheKey } from './lib/oc-bench-config.mjs';
+import { opencodeRulesDir, applyOpencodeRepoCacheKey, applyOpencodeProductCacheKey, stageProductCachePlugin, OC_CACHE_KEY_MODES } from './lib/oc-bench-config.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const H = path.join(REPO, 'eval/task-completion-bench/harness');
@@ -112,6 +112,18 @@ const RULES = fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/p7-
 const ARMB_ENV = Object.fromEntries(String(flag('--armB-env', '')).split(',').map(x => x.trim()).filter(Boolean).map(x => [x.slice(0, x.indexOf('=')), x.slice(x.indexOf('=') + 1)]));
 const envOf = (arm) => (arm === 'sweetB' ? { ...process.env, ...ARMB_ENV } : process.env);
 const prune3 = (arm) => envOf(arm).SS_VARIANT_PRUNE3 === '1';
+// SS_VARIANT_OC_CACHE_KEY (opencode; per arm like every SS_VARIANT_*): unset = opencode's own session-id
+// keys; `repo` = bench key (per-model promptCacheKey + scripts/opencode-cache-key-plugin.mjs); `product`
+// = the shipped plugin from the main checkout, listed exactly as `sweet-search init --opencode` lists it.
+const ocCacheMode = (arm) => envOf(arm).SS_VARIANT_OC_CACHE_KEY || '';
+for (const a of ['native', 'sweet', 'sweetB']) {
+  const m = ocCacheMode(a);
+  if (m && !OC_CACHE_KEY_MODES.includes(m)) { console.error(`SS_VARIANT_OC_CACHE_KEY must be one of ${OC_CACHE_KEY_MODES.join(', ')} (got "${m}")`); process.exit(2); }
+}
+const OC_PRODUCT = ['native', 'sweet', 'sweetB'].some(a => ocCacheMode(a) === 'product');
+if (OC_PRODUCT && CELL.harness !== 'opencode') { console.error('SS_VARIANT_OC_CACHE_KEY=product is an opencode switch'); process.exit(2); }
+// The product plugin acts on the `openai` provider only; on any other provider the paid run would measure nothing.
+if (OC_PRODUCT && !CELL.model.startsWith('openai/')) { console.error(`SS_VARIANT_OC_CACHE_KEY=product: ${CELL.model} is not an openai/ model; the product plugin leaves it untouched`); process.exit(2); }
 const PRUNE3 = prune3('sweet') || prune3('sweetB');
 const RULES_PRUNE3 = () => fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/final-tuning/variants/rules-prune3.md'), 'utf8');
 // SS_VARIANT_RULES_FILE=<path relative to the repo> (final-tuning): a full alternative rules text for that
@@ -443,9 +455,15 @@ async function runOpencode(probe, sweet, arm) {
   // headers session-id / x-session-affinity / X-Session-Id = session id, so every rollout routes to its own
   // provider cache although the prefix is byte-identical. The switch sets ONE value per repo in both places:
   // promptCacheKey as a per-model option, the headers through scripts/opencode-cache-key-plugin.mjs.
+  // SS_VARIANT_OC_CACHE_KEY=product: ONLY the product plugin (staged from main at run start), appended
+  // after the trim plugin with no options, as init writes it. Its key: sha256 of opencode's worktree, or
+  // of the --dir when opencode reports worktree "/" (a .git without commits) — one value per clone.
   let extraPlugins = [];
-  if (envOf(arm).SS_VARIANT_OC_CACHE_KEY === 'repo') {
+  if (ocCacheMode(arm) === 'repo') {
     const r = applyOpencodeRepoCacheKey(cfg, { model: CELL.model, cwd });
+    cfg = r.cfg; extraPlugins = [r.plugin];
+  } else if (ocCacheMode(arm) === 'product') {
+    const r = applyOpencodeProductCacheKey(cfg, { plugin: OC_PRODUCT_PLUGIN.plugin });
     cfg = r.cfg; extraPlugins = [r.plugin];
   }
   const cfgPath = path.join(stateDir, 'opencode.json'); fs.writeFileSync(cfgPath, JSON.stringify(cfg));
@@ -479,7 +497,7 @@ async function runOpencode(probe, sweet, arm) {
 // ─── one rollout ───────────────────────────────────────────────────────────────────────────────
 async function runOne(probe, arm) {
   const sweet = arm === 'sweet' || arm === 'sweetB';
-  const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
+  const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
   let run;
   try {
     run = CELL.harness === 'cc' ? await runClaude(probe, sweet, arm)
@@ -551,6 +569,9 @@ function report() {
 const HARNESS_VERSION = harnessVersion();
 if (REPORT) { report(); process.exit(0); }
 fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(STATE, { recursive: true });
+// SS_VARIANT_OC_CACHE_KEY=product: copy the plugin from the main checkout ONCE, at run start.
+const OC_PRODUCT_PLUGIN = OC_PRODUCT ? stageProductCachePlugin({ repo: REPO, stateRoot: STATE }) : null;
+if (OC_PRODUCT_PLUGIN) console.error(`opencode product cache plugin: ${OC_PRODUCT_PLUGIN.src} (main ${OC_PRODUCT_PLUGIN.commit}${OC_PRODUCT_PLUGIN.dirty ? ', UNCOMMITTED edits' : ''}, sha ${OC_PRODUCT_PLUGIN.sha}) -> ${OC_PRODUCT_PLUGIN.file}`);
 const done = new Set(fs.existsSync(RUNS) ? fs.readFileSync(RUNS, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(r => !r.error && r.exitCode === 0).map(r => `${r.arm}|${r.id}`) : []);
 console.error(`r282 ${CELL_NAME}: ${CELL.model} via ${CELL.harness} (${HARNESS_VERSION}) effort=${CELL.effort ?? CELL.variant ?? 'default'} | ${PROBES.length} probes × ${ARMS.length} arms | conc=${CONC} | ${done.size} done`);
 for (const orig of new Set(PROBES.map(p => p._orig))) ensureClone(orig);
