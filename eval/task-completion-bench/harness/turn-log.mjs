@@ -35,6 +35,7 @@
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isWarmupLabel } from './cache-warmup.mjs';
 
 const BENCH_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const safe = (s) => String(s || 'rollout').replace(/[^\w.@-]/g, '_');
@@ -53,7 +54,8 @@ export function persistTurns(label, turns, meta = {}) {
   const list = Array.isArray(turns) ? turns : [];
   if (!list.length) return null;
   try {
-    const dir = turnsDir();
+    // A cache warm-up's turns go to results/<run>/warmup/turns, never beside the scored rollouts'.
+    const dir = isWarmupLabel(label) ? path.join(turnsDir(), '..', 'warmup', 'turns') : turnsDir();
     mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${safe(label)}.jsonl`);
     const lines = [JSON.stringify({ kind: 'meta', label, ...meta, turns: list.length })];

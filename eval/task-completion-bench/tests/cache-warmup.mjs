@@ -15,6 +15,7 @@ import { spawnSync } from 'node:child_process';
 import {
   WARMUP_ID, WARMUP_QUESTION, warmupEnabled, isWarmupRow, excludeWarmups, applyClaudeCacheTtl,
   CLAUDE_CACHE_TTL_ENV, firstRequestCacheFields, createWarmupGate, cacheFairness, fairnessBanner,
+  cacheIsDeterministic, isWarmupLabel,
 } from '../harness/cache-warmup.mjs';
 
 let ok = true;
@@ -103,7 +104,7 @@ console.log('\nwarm-up gate, a bench-shaped run (3 workers, 2 arms, warm-up cost
   const scoredFile = path.join(tmp, 'runs.jsonl');
   rows.forEach(r => appendFileSync(scoredFile, `${JSON.stringify(r)}\n`));
   assert(!readFileSync(scoredFile, 'utf8').includes(WARMUP_ID), 'a runs file written from the scored rows has no warm-up in it');
-  const f = cacheFairness(rows, { wave: 3 });
+  const f = cacheFairness(rows, { wave: 3, deterministic: true });
   assert(f.status === 'ok', 'the stub run passes the fairness check', JSON.stringify(f));
 }
 
@@ -146,7 +147,7 @@ console.log('\nfairness assertion:');
     row('native', 1, 10202), row('native', 1, 10202), row('native', 1, 10202), row('native', 9, 12000),
     row('sweet', 100, 0), row('sweet', 100, 0), row('sweet', 100, 0), row('sweet', 140, 12000),
   ];
-  const f = cacheFairness(unfair, { wave: 3 });
+  const f = cacheFairness(unfair, { wave: 3, deterministic: true });
   assert(f.status === 'violation', 'native warm + sweet cold in the first wave is a VIOLATION', JSON.stringify(f));
   assert(/CACHE UNFAIR/.test(f.message) && /sweet/.test(f.message) && /native/.test(f.message), 'the message names both arms', f.message);
   assert(f.arms.sweet.status === 'cold' && f.arms.native.status === 'warm', 'per-arm status is recorded', JSON.stringify(f.arms));
@@ -154,31 +155,51 @@ console.log('\nfairness assertion:');
 
   // the same run AFTER the warm-up: every first request reads the shared prefix
   const fixed = unfair.map(r => (r.firstRequestCacheRead === 0 ? { ...r, firstRequestCacheRead: 10202 } : r));
-  assert(cacheFairness(fixed, { wave: 3 }).status === 'ok', 'both arms warm -> ok');
-  assert(cacheFairness(unfair.filter(r => r.arm === 'native').map(r => ({ ...r })).concat(unfair.filter(r => r.arm === 'sweet').map(r => ({ ...r, firstRequestCacheRead: 0 }))), { wave: 3 }).status === 'violation',
+  assert(cacheFairness(fixed, { wave: 3, deterministic: true }).status === 'ok', 'both arms warm -> ok');
+  assert(cacheFairness(unfair.filter(r => r.arm === 'native').map(r => ({ ...r })).concat(unfair.filter(r => r.arm === 'sweet').map(r => ({ ...r, firstRequestCacheRead: 0 }))), { wave: 3, deterministic: true }).status === 'violation',
     'a sweet arm that never reads from cache is flagged against a warm native arm');
-  assert(cacheFairness([row('native', 1, 0), row('sweet', 2, 0)]).status === 'ok', 'both arms cold is equal treatment, not a violation');
+  assert(cacheFairness([row('native', 1, 0), row('sweet', 2, 0)], { deterministic: true }).status === 'ok', 'both arms cold is equal treatment, not a violation');
 
   // only the first wave counts: a later cold request does not flip a warm arm
   const later = [row('native', 1, 10202), row('native', 2, 10202), row('native', 3, 10202), row('native', 50, 0),
     row('sweet', 1, 10202), row('sweet', 2, 10202), row('sweet', 3, 10202), row('sweet', 60, 0)];
-  assert(cacheFairness(later, { wave: 3 }).status === 'ok', 'only the first wave of each arm is compared');
+  assert(cacheFairness(later, { wave: 3, deterministic: true }).status === 'ok', 'only the first wave of each arm is compared');
   // order is by start time, not array order
   const shuffled = [row('sweet', 140, 12000), row('sweet', 100, 0), row('native', 9, 12000), row('native', 1, 10202), row('sweet', 100, 0), row('native', 1, 10202), row('sweet', 100, 0), row('native', 1, 10202)];
-  assert(cacheFairness(shuffled, { wave: 3 }).status === 'violation', 'the first wave is chosen by start time, not by row order');
+  assert(cacheFairness(shuffled, { wave: 3, deterministic: true }).status === 'violation', 'the first wave is chosen by start time, not by row order');
 
   // warm-up rows and error rows are not scored requests
   const withWarm = [...fixed, { arm: 'sweet', id: WARMUP_ID, startedAtMs: 0, firstRequestCacheRead: 0, warmup: true }];
-  assert(cacheFairness(withWarm, { wave: 3 }).status === 'ok', 'a warm-up row never counts as a first scored request');
+  assert(cacheFairness(withWarm, { wave: 3, deterministic: true }).status === 'ok', 'a warm-up row never counts as a first scored request');
   const withErr = [...fixed, { arm: 'sweet', id: 'e', startedAtMs: 0, error: 'boom', firstRequestCacheRead: 0 }];
-  assert(cacheFairness(withErr, { wave: 3 }).status === 'ok', 'an errored row never counts as a first scored request');
+  assert(cacheFairness(withErr, { wave: 3, deterministic: true }).status === 'ok', 'an errored row never counts as a first scored request');
+
+  // the first WAVE is the unit, not one request: one cold request among three concurrent ones
+  const mixed = [row('native', 1, 10202), row('native', 1, 10202), row('native', 1, 10202),
+    row('sweet', 100, 10202), row('sweet', 100, 0), row('sweet', 100, 0)];
+  const fm = cacheFairness(mixed, { wave: 3, deterministic: true });
+  assert(fm.status === 'violation' && fm.arms.sweet.status === 'mixed' && fm.arms.sweet.coldRequests === 2,
+    'one warm request cannot hide two cold ones in the same first wave (deterministic)', JSON.stringify(fm.arms));
+  assert(cacheFairness(mixed, { wave: 1, deterministic: true }).status === 'ok', 'with wave 1 that same run would look fair: why the wave is the run concurrency');
+  const both = [row('native', 1, 0), row('native', 1, 10202), row('native', 1, 10202), row('sweet', 100, 10202), row('sweet', 100, 0), row('sweet', 100, 10202)];
+  assert(cacheFairness(both, { wave: 3, deterministic: true }).status === 'ok', 'equal cold share in both arms is equal treatment');
+
+  // best-effort caches (codex, opencode, OpenRouter): a mismatch is recorded, never fatal
+  const fb = cacheFairness(unfair, { wave: 3 });
+  assert(fb.status === 'warning' && fb.enforced === false && fb.mode === 'best-effort', 'best-effort is the default and a mismatch there is a WARNING, not a violation', JSON.stringify(fb));
+  assert(/WARNING/.test(fairnessBanner(fb)) && !/!!!!/.test(fairnessBanner(fb)), 'a warning prints a plain warning block, not the violation banner');
+  assert(f.enforced === true && f.mode === 'deterministic', 'the strict result says it was enforced');
+  assert(cacheIsDeterministic({ harness: 'cc' }) === true, 'retrieval bench Claude Code (subscription) is deterministic');
+  assert(cacheIsDeterministic({ harness: 'claudecode', provider: 'anthropic' }) === true, 'task bench Claude Code direct to Anthropic is deterministic');
+  assert(cacheIsDeterministic({ harness: 'claudecode', provider: 'openrouter' }) === false, 'Claude Code through OpenRouter is best-effort');
+  assert(['codex', 'opencode', 'api', undefined].every(h => cacheIsDeterministic({ harness: h, provider: 'openai' }) === false), 'codex, opencode and the rest are best-effort');
 
   // unmeasured arms cannot cause a violation
   const unm = [row('native', 1, 10202), row('sweet', 2, null), row('sweet', 3, undefined)];
-  const fu = cacheFairness(unm, { wave: 3 });
+  const fu = cacheFairness(unm, { wave: 3, deterministic: true });
   assert(fu.status === 'incomplete' && fu.arms.sweet.status === 'unavailable', 'an arm with no per-request cache record is unavailable and never a violation', JSON.stringify(fu));
-  assert(cacheFairness([], { wave: 3 }).status === 'incomplete', 'no rows -> incomplete, not a crash');
-  assert(cacheFairness([{ arm: 'native', firstRequestCacheRead: 5 }, { arm: 'sweet', firstRequestCacheRead: 0 }]).status === 'incomplete', 'rows with no start time cannot form a first wave');
+  assert(cacheFairness([], { wave: 3, deterministic: true }).status === 'incomplete', 'no rows -> incomplete, not a crash');
+  assert(cacheFairness([{ arm: 'native', firstRequestCacheRead: 5 }, { arm: 'sweet', firstRequestCacheRead: 0 }], { deterministic: true }).status === 'incomplete', 'rows with no start time cannot form a first wave');
 }
 
 console.log('\nthe bench launchers gate every scored rollout on the warm-up:');
@@ -192,7 +213,34 @@ console.log('\nthe bench launchers gate every scored rollout on the warm-up:');
   const a = pilot.indexOf('await WARM_GATE.ensure(arm');
   const b = pilot.indexOf('const rundir = makeRunDir(golden.dir, rep, sweet);');
   assert(a !== -1 && b !== -1 && a < b, 'task bench awaits the arm warm-up before preparing a scored rollout');
+  assert(/deterministic: CACHE_DETERMINISTIC/.test(retrieval) && /CACHE_DETERMINISTIC = cacheIsDeterministic\(\{ harness: CELL\.harness \}\)/.test(retrieval),
+    'retrieval bench enforces the fairness check only for a deterministic cache');
+  assert(/deterministic: cacheIsDeterministic\(\{ harness: HARNESS, provider: PROVIDER \}\)/.test(pilot), 'task bench enforces the fairness check only for a deterministic cache');
+  const all = readFileSync(path.join(here, '../../../scripts/retrieval-bench-282-all.sh'), 'utf8');
+  assert(/\|\| rc=\$\?/.test(all) && /CACHE FAIRNESS VIOLATION/.test(all), 'the all-cells driver names a fairness stop');
   assert(WARMUP_QUESTION.includes('READY') && /Do not use any tools/.test(WARMUP_QUESTION), 'the warm-up question is tool-free');
+}
+
+console.log('\nwarm-up per-rollout files stay out of the scored result dirs:');
+{
+  assert(isWarmupLabel(`${WARMUP_ID}-sweet`) && isWarmupLabel(`${WARMUP_ID}-native`) && !isWarmupLabel('django__django-1-sweet') && !isWarmupLabel(undefined), 'warm-up labels are recognised by the warm-up id');
+  const prev = process.env.RUN_ID; process.env.RUN_ID = `cw-test-${process.pid}`;
+  try {
+    const { rolloutStateDir } = await import('../harness/agent-jail.mjs');
+    const { persistTurns } = await import('../harness/turn-log.mjs');
+    const { dedupLogPathFor } = await import('../harness/rt-dedup.mjs');
+    const runRoot = path.join(here, '..', 'results', process.env.RUN_ID);
+    try {
+      const ws = rolloutStateDir(`${WARMUP_ID}-sweet`, 'claude-home');
+      const ss = rolloutStateDir('task1-sweet', 'claude-home');
+      assert(ws === path.join(runRoot, 'warmup', 'agent-state', `${WARMUP_ID}-sweet`, 'claude-home'), 'a warm-up state dir is under results/<run>/warmup/agent-state', ws);
+      assert(ss === path.join(runRoot, 'agent-state', 'task1-sweet', 'claude-home'), 'a scored state dir is unchanged', ss);
+      const wt = persistTurns(`${WARMUP_ID}-native`, [{ in: 10, cached: 0, cacheWrite: 10, out: 1 }]);
+      const st = persistTurns('task1-native', [{ in: 10, cached: 0, cacheWrite: 10, out: 1 }]);
+      assert(wt && path.normalize(wt).includes(path.join('warmup', 'turns')) && st && !st.includes('warmup') && st.includes(`${path.sep}turns${path.sep}`), 'a warm-up turn log goes to warmup/turns, a scored one to turns/', `${wt} | ${st}`);
+      assert(dedupLogPathFor(`${WARMUP_ID}-sweet`).includes(path.join('warmup', 'rt-dedup')) && !dedupLogPathFor('t-sweet').includes('warmup'), 'a warm-up rt-dedup log goes to warmup/rt-dedup');
+    } finally { rmSync(runRoot, { recursive: true, force: true }); }
+  } finally { if (prev === undefined) delete process.env.RUN_ID; else process.env.RUN_ID = prev; }
 }
 
 rmSync(tmp, { recursive: true, force: true });

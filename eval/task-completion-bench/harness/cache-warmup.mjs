@@ -27,11 +27,13 @@
 //
 // WHAT IS EXCLUDED. A warm-up never produces a row. Its tokens and cost go to a SEPARATE log
 // (warmups.jsonl), are never added to runs.jsonl / rows.json / any aggregate, and every consumer
-// that reads rows drops anything `isWarmupRow` recognises.
+// that reads rows drops anything `isWarmupRow` recognises. The task bench's per-rollout files
+// (agent-state/, turns/, rt-dedup/) of a warm-up go under results/<run>/warmup/ instead
+// (`isWarmupLabel`), so scripts that glob those directories never see a warm-up.
 //
-// FAIRNESS ASSERTION. `cacheFairness(rows)` compares what each arm's first scored request read from
-// cache. If one arm started cold (read 0) and the other warm (read > 0) the run is UNFAIR: it is
-// reported loudly and recorded in the run summary.
+// FAIRNESS ASSERTION. `cacheFairness(rows)` compares what each arm's FIRST WAVE of scored requests
+// read from cache. Strict (a violation, exit 3) only where the cache is deterministic (Claude Code
+// on Anthropic). A warning, never fatal, on best-effort caches (codex, opencode, OpenRouter).
 import { appendFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -44,6 +46,11 @@ export const WARMUP_QUESTION = 'This is an unscored cache warm-up. Reply with th
 export function warmupEnabled(env = process.env) {
   return String(env.SS_CACHE_WARMUP ?? '1') !== '0';
 }
+
+/** A warm-up's rollout label (`<task id>-<arm>`, task id = WARMUP_ID). Its per-rollout files go
+ * under results/<run>/warmup/, never beside the scored rollouts' agent-state/, turns/ or
+ * rt-dedup/, which analysis scripts glob (probe-count, reprice-openrouter-generations). */
+export const isWarmupLabel = (label) => String(label ?? '').startsWith(WARMUP_ID);
 
 export const isWarmupRow = (row) => !!row && (row.warmup === true || row.id === WARMUP_ID || row.taskId === WARMUP_ID);
 
@@ -135,15 +142,36 @@ export function createWarmupGate({ logFile = null, meta = {}, retries = 1, enabl
 }
 
 /**
- * Run-level fairness check. `rows` are scored rows carrying { arm, startedAtMs,
- * firstRequestCacheRead }. For each arm take its first `wave` rollouts by start time (the
- * rollouts launched together at the start of the arm) and ask whether ANY of them read from cache.
- *   cold arm = every first-wave first request read 0
- *   warm arm = at least one read > 0
- * One arm cold and the other warm = VIOLATION. An arm with no measurable first request is
- * 'unavailable' and never causes a violation (the check cannot see it).
+ * Is this route's prompt cache DETERMINISTIC? Only Anthropic's own API (Claude Code on a Claude
+ * subscription or an Anthropic key, no base-URL override): a prefix that a FINISHED request wrote
+ * at an explicit cache_control breakpoint is read by the next request with that prefix. Every
+ * other route is BEST-EFFORT: OpenAI-style automatic prefix caching (codex, opencode on OpenAI
+ * or DeepSeek) and Claude Code through OpenRouter can read 0 even right after a warm-up, because
+ * prompt_cache_key / provider routing decides which machine sees the request.
  */
-export function cacheFairness(rows, { wave = 3 } = {}) {
+export function cacheIsDeterministic({ harness, provider } = {}) {
+  if (harness === 'cc') return true;                                  // retrieval bench: subscription only
+  if (harness === 'claudecode') return provider === 'anthropic';      // task bench: the direct route only
+  return false;
+}
+
+/**
+ * Run-level fairness check. `rows` are scored rows carrying { arm, startedAtMs,
+ * firstRequestCacheRead }. The unit is each arm's FIRST WAVE: its first `wave` rollouts by start
+ * time, i.e. the rollouts launched together when the arm starts (pass the run's concurrency).
+ * One request is the wrong unit: concurrent rollouts each pay their own cold write (r282: all
+ * three first-wave requests of a cold arm read 0), so one warm request can hide two cold ones.
+ *   coldRequests = first-wave first requests that read 0 from cache; coldShare = cold / measured
+ *   arm status   = 'cold' (all 0), 'warm' (none 0), 'mixed'
+ * MISMATCH = arms with a different coldShare.
+ *   deterministic: true  (Claude Code on Anthropic) -> status 'violation'. After a warm-up every
+ *     first-wave request must read the shared prefix; a cold one means its arm was not warmed
+ *     like the other.
+ *   deterministic: false (codex, opencode, OpenRouter; the default) -> status 'warning'. Recorded
+ *     and printed, never fatal: such a cache can read 0 after a warm-up for routing reasons alone.
+ * An arm with no measurable first request is 'unavailable' and never causes a mismatch.
+ */
+export function cacheFairness(rows, { wave = 3, deterministic = false } = {}) {
   const scored = excludeWarmups(rows).filter(r => r && !r.error);
   const byArm = new Map();
   for (const r of scored) {
@@ -160,31 +188,35 @@ export function cacheFairness(rows, { wave = 3 } = {}) {
     const measured = first.filter(r => r.firstRequestCacheRead != null && Number.isFinite(Number(r.firstRequestCacheRead)));
     if (!measured.length) { arms[arm] = { status: 'unavailable', wave: first.length, measured: 0 }; continue; }
     const reads = measured.map(r => Number(r.firstRequestCacheRead));
+    const coldRequests = reads.filter(x => x === 0).length;
     arms[arm] = {
-      status: Math.max(...reads) > 0 ? 'warm' : 'cold',
+      status: coldRequests === reads.length ? 'cold' : coldRequests === 0 ? 'warm' : 'mixed',
       wave: first.length, measured: measured.length,
-      firstRequestCacheRead: reads, coldRequests: reads.filter(x => x === 0).length,
+      firstRequestCacheRead: reads, coldRequests, coldShare: +(coldRequests / reads.length).toFixed(4),
     };
   }
-  const known = Object.entries(arms).filter(([, a]) => a.status === 'warm' || a.status === 'cold');
-  const cold = known.filter(([, a]) => a.status === 'cold').map(([k]) => k);
-  const warm = known.filter(([, a]) => a.status === 'warm').map(([k]) => k);
+  const known = Object.entries(arms).filter(([, a]) => a.status !== 'unavailable');
+  const mode = deterministic ? 'deterministic' : 'best-effort';
+  const desc = known.map(([k, a]) => `${k} ${a.coldRequests}/${a.measured} cold, reads [${a.firstRequestCacheRead.join(',')}]`).join('; ');
   let status, message;
   if (known.length < 2) {
     status = 'incomplete';
     message = `cache fairness: cannot compare (${known.length} arm(s) with a measured first request: ${Object.keys(arms).map(a => `${a}=${arms[a].status}`).join(', ') || 'none'})`;
-  } else if (cold.length && warm.length) {
-    status = 'violation';
-    message = `CACHE UNFAIR: arm(s) ${cold.join(',')} started COLD (first request read 0 from cache) while arm(s) ${warm.join(',')} started WARM. Cost columns of this run are not comparable.`;
+  } else if (new Set(known.map(([, a]) => a.coldShare)).size > 1) {
+    status = deterministic ? 'violation' : 'warning';
+    message = deterministic
+      ? `CACHE UNFAIR: the arms' first waves started with different cache state (${desc}). Cost columns of this run are not comparable.`
+      : `cache fairness WARNING (best-effort cache, not fatal): the arms' first waves read the cache differently (${desc}). Provider routing alone can do this; read the cost columns with it in mind.`;
   } else {
     status = 'ok';
-    message = `cache fairness ok: every arm started ${warm.length ? 'warm' : 'cold'} (${known.map(([k, a]) => `${k} reads [${a.firstRequestCacheRead.join(',')}]`).join('; ')})`;
+    message = `cache fairness ok (${mode}): every arm's first wave had the same cold share (${desc})`;
   }
-  return { status, message, wave, arms };
+  return { status, mode, enforced: deterministic, message, wave, arms };
 }
 
-/** A banner a human cannot miss. */
+/** A banner a human cannot miss. A best-effort mismatch prints a plain warning block. */
 export function fairnessBanner(f) {
+  if (f.status === 'warning') return `\n*** ${f.message}\n*** per arm: ${JSON.stringify(f.arms)}\n`;
   if (f.status !== 'violation') return f.message;
   const bar = '!'.repeat(78);
   return `\n${bar}\n*** ${f.message}\n*** per arm: ${JSON.stringify(f.arms)}\n${bar}\n`;

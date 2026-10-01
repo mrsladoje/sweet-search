@@ -40,7 +40,7 @@ import { assertBaseCommit, writeProvenance, verifyGolden, provenanceNote, proven
 import { materialiseDeps } from './dep-materialise.mjs';
 import { admissionReport, loadBlocklist, vacuityBlocklist } from './task-admission.mjs';
 import { degenerationVerdict } from './degeneration-policy.mjs';
-import { WARMUP_ID, WARMUP_QUESTION, warmupEnabled, createWarmupGate, excludeWarmups, cacheFairness, fairnessBanner } from './cache-warmup.mjs';
+import { WARMUP_ID, WARMUP_QUESTION, warmupEnabled, createWarmupGate, excludeWarmups, cacheFairness, cacheIsDeterministic, fairnessBanner } from './cache-warmup.mjs';
 import { SPAWN_LEDGER_ENV, spawnLedgerFile, reapSpawnLedger, reapSpawnLedgerSync, reapLedgerDir, allLedgerFiles } from './spawn-ledger-reap.mjs';
 // HARNESS routes the agent loop through a REAL production coding agent (uncapped — runs
 // to completion) instead of the bare-API ReAct loop. All share grading/metrics + the
@@ -1052,7 +1052,9 @@ console.log(`rows → ${path.join(outDir, 'rows.json')}`);
 let cacheUnfair = false;
 try {
   const warmups = WARM_GATE.entries();
-  const fairness = cacheFairness(excludeWarmups(rows), { wave: CONCURRENCY });
+  // Strict only on a deterministic cache (Claude Code direct to Anthropic); codex, opencode and
+  // OpenRouter routes are best-effort, so a mismatch there is a warning and never exit 3.
+  const fairness = cacheFairness(excludeWarmups(rows), { wave: CONCURRENCY, deterministic: cacheIsDeterministic({ harness: HARNESS, provider: PROVIDER }) });
   writeFileSync(path.join(outDir, 'cache-fairness.json'), JSON.stringify({
     runId, harness: HARNESS, cacheWarmup: { enabled: warmupEnabled(), file: path.join(outDir, 'warmups.jsonl'), entries: warmups.length,
       costUsd: +warmups.filter(w => w.ok).reduce((s, w) => s + (Number(w.costRealizedUsd) || 0), 0).toFixed(6),
