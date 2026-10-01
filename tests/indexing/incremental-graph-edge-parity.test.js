@@ -319,6 +319,61 @@ describe('incremental graph edge resolution matches a full build', () => {
     expect(inc).toEqual(await fullBuildSites(files));
   });
 
+  it('a construction that becomes a call of the same name (and back) moves its lines between rel_types', async () => {
+    write('src/foo.ts', ['export class Foo {}', 'export class Factory {', '  Foo() { return 1; }', '}']);
+    const app = (body) => write('src/app.ts', [
+      "import { Foo, Factory } from './foo';",
+      'export function run(f: Factory) {',
+      ...body,
+      '}',
+    ]);
+    const files = ['src/foo.ts', 'src/app.ts'];
+    const lines = (rows) => rows.filter((r) => r.startsWith('line'));
+    const typedEdges = () => {
+      const db = new Database(join(stateDir, 'code-graph.db'), { readonly: true });
+      try {
+        const key = entityKeys(db);
+        return db.prepare("SELECT source_id, target_id, type FROM relationships WHERE epoch_retired IS NULL AND type IN ('instantiates', 'calls')").all()
+          .map((r) => `${r.type} ${key.get(r.source_id) || 'file'} -> ${r.target_id ? key.get(r.target_id) : 'null'}`).sort();
+      } finally {
+        db.close();
+      }
+    };
+
+    app(['  const a = new Foo();', '  const b = new Foo();']);
+    enqueue(...files);
+    await tick();
+    expect(lines(incrementalSites())).toEqual([
+      'line:instantiates src/app.ts#function:run@2 Foo@3',
+      'line:instantiates src/app.ts#function:run@2 Foo@4',
+    ]);
+    expect(incrementalSites()).toEqual(await fullBuildSites(files));
+    expect(typedEdges()).toContain('instantiates src/app.ts#function:run@2 -> src/foo.ts#class:Foo@1');
+
+    // The same two lines now call the Factory method `Foo`.
+    app(['  const a = f.Foo();', '  const b = f.Foo();']);
+    enqueue('src/app.ts');
+    await tick();
+    expect(lines(incrementalSites())).toEqual([
+      'line src/app.ts#function:run@2 f.Foo@3',
+      'line src/app.ts#function:run@2 f.Foo@4',
+    ]);
+    expect(incrementalSites()).toEqual(await fullBuildSites(files));
+    expect(typedEdges().some((e) => e.startsWith('instantiates'))).toBe(false);
+    expect(incrementalEdges()).toEqual(await fullBuildEdges(files));
+
+    // And back: no call line survives as a construction line or vice versa.
+    app(['  const a = new Foo();', '  const b = new Foo();']);
+    enqueue('src/app.ts');
+    await tick();
+    expect(lines(incrementalSites())).toEqual([
+      'line:instantiates src/app.ts#function:run@2 Foo@3',
+      'line:instantiates src/app.ts#function:run@2 Foo@4',
+    ]);
+    expect(incrementalSites()).toEqual(await fullBuildSites(files));
+    expect(incrementalEdges()).toEqual(await fullBuildEdges(files));
+  });
+
   it('resolves Go package-qualified calls like a full build through add, edit and delete', async () => {
     // `x.Parse` binds the package's top-level function, not the method
     // WorkerOptions.Parse; `glog.Errorf` (third party) binds nothing, not the
