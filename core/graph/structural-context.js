@@ -276,7 +276,8 @@ function buildImpactPaths(repo, target, opts) {
 /**
  * Definition a qualified call hint (`a.b(`, `a::b(`, `a->b(`) reaches, or null.
  * It binds ONLY to the callee the call resolved to, or to a same-file
- * definition when the receiver is self/this. It never falls back to a global
+ * definition when the receiver is the target's own type (self/this, the Go
+ * receiver name, the owning type's name). It never falls back to a global
  * name match: `posting.Oracle()` must not land on an unrelated `Oracle` in
  * another package. Same no-guess rule as the call resolver.
  */
@@ -288,7 +289,7 @@ function bindQualifiedHint(site, repo, target, calleesByName) {
     return parts.length < 2 || site.qualifiers.includes(parts[parts.length - 2]);
   });
   if (resolved) return resolved;
-  if (!site.qualifiers.some(isSelfReceiver)) return null;
+  if (!site.qualifiers.some(q => isSelfReceiver(q, target))) return null;
   const local = repo.findSameFileMember
     ? repo.findSameFileMember(site.name, target)
     : repo.findSameFileDefinition?.(site.name, target.filePath);
@@ -404,7 +405,7 @@ export class StructuralContextBuilder {
     }
     if (!calleesRaw.length) {
       // No stored callees: fall back to names called in the body. A qualified
-      // name binds only through bindQualifiedHint (self/this in the same
+      // name binds only through bindQualifiedHint (own-type receiver, same
       // file); an unqualified name keeps the global top candidate.
       const noResolvedCallees = new Map();
       calleesRaw = targetHintSites

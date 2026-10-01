@@ -13,8 +13,24 @@ const MEMBER_SKIP = new Set([
 // these can only reach a definition in the target's own file.
 const SELF_RECEIVERS = new Set(['self', 'this', 'Self', 'cls']);
 
-export function isSelfReceiver(receiver) {
-  return SELF_RECEIVERS.has(String(receiver || '').replace(/^[$@]/, ''));
+// Go names its method receiver: `func (n *node) apply(` calls siblings as
+// `n.step(`. Generic receivers too: `func (s *Set[T]) Add(`.
+const GO_RECEIVER = /^\s*func\s*\(\s*([A-Za-z_]\w*)\s+\*?\s*[A-Za-z_][\w.]*\s*(?:\[[^\]]*\])?\s*\)/;
+
+/**
+ * True when `receiver` means "the target's own type": self/this/Self/cls
+ * ($this, @self), the Go receiver name of `target`, or the name of the
+ * target's owning type (`Foo::bar(` / `Foo.bar(` inside a Foo method).
+ */
+export function isSelfReceiver(receiver, target = null) {
+  const r = String(receiver || '').replace(/^[$@]/, '');
+  if (!r) return false;
+  if (SELF_RECEIVERS.has(r)) return true;
+  if (!target?.parentClass) return false;
+  const owner = String(target.parentClass).split(/\.|::/).pop();
+  if (r === owner) return true;
+  const go = String(target.signature || '').match(GO_RECEIVER);
+  return Boolean(go && go[1] === r && go[1] !== '_');
 }
 
 // The receiver written right before an identifier: `a.b(`, `a::b(`, `a->b(`,
