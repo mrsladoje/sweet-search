@@ -120,7 +120,7 @@ describe('packageForAgent graph neighbours: ss-find vs ss-search', () => {
     }
   });
 
-  it('ss-search output is byte-identical to the pre-change golden text', () => {
+  it('ss-search keeps the exact pre-change text of the related block', () => {
     const { response } = pack('hybrid');
     const top = response.results[0];
     const text = renderAgentSearchResponse(response);
@@ -144,7 +144,10 @@ describe('packageForAgent graph neighbours: ss-find vs ss-search', () => {
     expect(search.tokensUsed - find.tokensUsed).toBe(search.results[0].neighbors.tokens);
   });
 
-  it('the first rank-1-only tier frees its headroom for lower ranks in pattern mode', () => {
+  // Guard only: lower ranks never LOSE tokens when the tier is skipped. A strict
+  // gain needs a pack that hits its budget (ranks 2-3 truncated by the remaining
+  // budget); on 62 real r282 ss-find calls that happened once (+46 code tokens).
+  it('pattern mode never gives lower ranks fewer tokens and stays within budget', () => {
     const rels = [0, 1, 2].map(n => write(`lib/f${n}.js`, [
       `function fn${n} () {`,
       ...Array.from({ length: 60 }, (_, l) => `  const v${l} = ${l} + ${n}`),
