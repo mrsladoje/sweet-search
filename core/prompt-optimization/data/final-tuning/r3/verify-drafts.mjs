@@ -14,9 +14,10 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MAIN = '/Users/admin/Projects/sweet-search-private';
-const repos = JSON.parse(fs.readFileSync(path.join(HERE, 'repos.json'), 'utf8'));
+const repos = (process.env.R3_REPOS_FILES || 'repos.json').split(',').flatMap(f => JSON.parse(fs.readFileSync(path.join(HERE, f), 'utf8')));
+const DRAFTS = process.env.R3_DRAFTS_DIR || 'drafts';
 const only = process.argv.slice(2);
-const OUT = path.join(HERE, 'verify'); fs.mkdirSync(OUT, { recursive: true });
+const OUT = path.join(HERE, process.env.R3_VERIFY_DIR || 'verify'); fs.mkdirSync(OUT, { recursive: true });
 const MAX_CHARS = 90000;
 let spend = 0;
 
@@ -58,7 +59,7 @@ ${body}`;
 }
 
 for (const repo of repos.filter(r => !only.length || only.includes(r.repo))) {
-  const draftPath = path.join(HERE, 'drafts', `${repo.repo}.json`);
+  const draftPath = path.join(HERE, DRAFTS, `${repo.repo}.json`);
   if (!fs.existsSync(draftPath)) { console.log(`${repo.repo}: no draft yet`); continue; }
   const probes = JSON.parse(fs.readFileSync(draftPath, 'utf8')).probes;
   const outPath = path.join(OUT, `${repo.repo}.json`);

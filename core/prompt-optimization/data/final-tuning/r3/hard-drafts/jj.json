@@ -1,0 +1,794 @@
+{
+  "repo": "jj",
+  "sha": "030ecf22c56b98bf6507067dca0df3dffa6de498",
+  "probes": [
+    {
+      "id": "r3h-jj-01",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "My project folder is shared by jj and plain Git. Outside jj, I use plain Git to switch to a different commit. At my next jj command, how does jj learn about that, what becomes of the commit that was my working copy, and does jj rewrite my files on disk?",
+      "expectedFiles": [
+        "cli/src/cli_util.rs",
+        "lib/src/git.rs",
+        "lib/src/repo.rs",
+        "lib/src/local_working_copy.rs"
+      ],
+      "expectedSymbols": [
+        "WorkspaceCommandHelper::snapshot_impl",
+        "WorkspaceCommandHelper::import_git_head",
+        "git::import_head",
+        "MutableRepo::check_out",
+        "MutableRepo::maybe_abandon_wc_commit",
+        "TreeState::reset"
+      ],
+      "expectedFacts": [
+        "The CLI snapshot routine (snapshot_impl) first calls import_git_head, but only when the workspace is shared with Git, before it records the files.",
+        "git::import_head compares the Git head recorded for this workspace with the real Git HEAD and does nothing if they are equal.",
+        "CRITICAL: For a changed head, import_git_head calls MutableRepo::check_out, which writes a new working-copy commit with the new head's tree on top of the head commit and makes it the workspace's working-copy commit.",
+        "edit() abandons the old working-copy commit only if it is discardable (empty, no description), not referenced by another workspace, bookmark or tag, and is a head.",
+        "CRITICAL: Files on disk are not rewritten; the locked working copy's reset only updates the recorded tree and file states to the new commit."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (shortest, ~6 steps): 1) grep 'colocat|shared_with_git' in cli/src -> cli_util.rs working_copy_shared_with_git (also decoy commands/git/colocation.rs); 2) read snapshot_impl -> import_git_head (cli_util.rs:1328-1450); 3) follow jj_lib::git::import_head (git.rs:1182); 4) follow tx.repo_mut().check_out -> edit -> maybe_abandon_wc_commit (repo.rs:1709-1768); 5) follow locked_wc().reset (cli_util.rs:1405 -> local_working_copy.rs:3002 -> TreeState::reset :2600) to learn files are untouched; 6) read the doc comment at cli_util.rs:1375-1381. FIRST-3-GREPS of the question's words ('plain Git', 'switch commit', 'working copy commit'): hit docs/tests and generic 'checkout' in local_working_copy.rs/git.rs (none identify the import path directly). est. turns: 7. DECOYS: finish_transaction/try_reset_git_head (cli_util.rs:2342,2725) go jj->Git; git::import_head_commit (git.rs:1225) imports without view update; `jj git import` (commands/git/import.rs) imports refs not HEAD. VERIFICATION: cli_util.rs:1337-1343 gate; :1382-1450 import_git_head (check_out :1401-1404, locked_wc.reset :1405-1410); git.rs:1182-1222 (equal-check :1199); repo.rs:1709-1730, :1732-1768 (is_discardable && !is_commit_referenced && heads().contains :1760-1762); local_working_copy.rs:3002-3007, :2600."
+    },
+    {
+      "id": "r3h-jj-02",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A conflicted file was written into my working folder with unusually long separator lines. I edit it by hand and run any jj command. How does jj know how long its separator lines were, and where is my edited text turned back into either a conflict or a clean file when the working copy is recorded?",
+      "expectedFiles": [
+        "lib/src/conflicts.rs",
+        "lib/src/local_working_copy.rs"
+      ],
+      "expectedSymbols": [
+        "choose_materialized_conflict_marker_len",
+        "MaterializedConflictData",
+        "FileSnapshotter::write_path_to_store",
+        "update_from_content",
+        "parse_conflict"
+      ],
+      "expectedFacts": [
+        "When a conflicted file is written at checkout, choose_materialized_conflict_marker_len picks the longest marker-like line already present in any side plus four, but at least seven.",
+        "CRITICAL: The chosen length is stored in that file's FileState as materialized_conflict_data (MaterializedConflictData) in the tree state.",
+        "At snapshot the stored data is kept only while the file stays unresolved.",
+        "CRITICAL: write_path_to_store, after EOL conversion, passes the stored length (seven if none) to conflicts::update_from_content when the current tree value is a file conflict.",
+        "update_from_content uses parse_conflict, which ignores markers shorter than that length; if the parsed number of sides matches it rebuilds the conflict, otherwise it stores the content as one resolved file."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) grep 'marker' in lib/src -> conflicts.rs (choose_materialized_conflict_marker_len :420) and ConflictMarkerStyle decoys; 2) find who calls it: local_working_copy.rs checkout FileConflict arm (:2508-2531) storing MaterializedConflictData (:290); 3) find where the stored length is read back: grep 'materialized_conflict_data' -> write_path_to_store (:1999-2077) and process_present_file keep-logic (:1888-1893); 4) follow conflicts::update_from_content (:1057) -> parse_conflict (:839) and parse_conflict_marker (:412, len >= expected). FIRST-3-GREPS of the question's words ('separator', 'conflicted file', 'edit by hand'): hit merge_tools/external.rs, diff tools and docs first. est. turns: 7. DECOYS: cli/src/merge_tools/external.rs also re-parses markers after an external tool (tool-specific length); ui.conflict-marker-style only picks the style. VERIFICATION: conflicts.rs:61,:67,:420-432,:839-906,:1057-1128; local_working_copy.rs:2054,:2070-2077,:2508-2531."
+    },
+    {
+      "id": "r3h-jj-03",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "I asked jj to have my own commits cryptographically signed automatically as part of sending them to a remote. Before the bookmark update goes out, which commits get signed, what happens to commits in that range that I may not rewrite, and how does the signature end up inside the stored Git commit object?",
+      "expectedFiles": [
+        "cli/src/commands/git/push.rs",
+        "lib/src/commit_builder.rs",
+        "lib/src/settings.rs",
+        "lib/src/git_backend.rs",
+        "core/src/signing.rs",
+        "lib/src/signing_factory.rs"
+      ],
+      "expectedSymbols": [
+        "sign_commits_before_push",
+        "SignSettings::should_sign",
+        "write_to_store",
+        "GitBackend::write_commit",
+        "Signer::sign",
+        "signer_from_settings"
+      ],
+      "expectedFacts": [
+        "cmd_git_push, except for a dry run, reads the sign-on-push setting and calls sign_commits_before_push over the commits between the old remote bookmark heads and the new pushed heads.",
+        "CRITICAL: sign_commits_before_push forces SignBehavior::Own and signs only commits that are not signed yet and whose author email equals the user's email.",
+        "Commits in the range that are immutable are skipped with a warning that lists up to ten of them.",
+        "The selected commits are rewritten with transform_descendants (reparent, set_sign_behavior, write); descendants are rebased and the push targets are remapped to the new ids.",
+        "CRITICAL: write_to_store in commit_builder.rs signs only if the store's Signer has a main backend (can_sign) and should_sign holds, and passes a signing closure to Store::write_commit.",
+        "GitBackend::write_commit serializes the commit without a signature, signs those bytes through the closure, and adds the result as the signature extra header of the Git commit object."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~7 steps): 1) grep 'sign' in cli/src/commands/git/push.rs -> sign_commits_before_push (:918) and the setting gate (:566); 2) read it: Own, needs_signing, immutable skip, transform_descendants; 3) follow set_sign_behavior/write in lib/src/commit_builder.rs (:148,:385,:467 write_to_store); 4) follow store.write_commit -> GitBackend::write_commit sign closure (git_backend.rs:1318,:1418-1432); 5) follow store.signer() -> core/src/signing.rs Signer::sign (:163) and lib/src/signing_factory.rs signer_from_settings (:42) for the backend. FIRST-3-GREPS of question words ('signed', 'push'): hit push.rs (gold) immediately but also sign.rs/unsign.rs commands (decoys), settings.rs; the answer needs 4 further dependent steps. est. turns: 8. DECOYS: `jj sign`/`jj unsign` (commands/sign.rs uses SignBehavior::Force, unsign.rs Drop); signing.behavior (settings.rs) governs ordinary rewrites, not this path. VERIFICATION: push.rs:566-577, :893-906, :918-1025 (Own :925, filter :927-929, take(11) :937, transform_descendants :970); settings.rs:97-135; commit_builder.rs:467-485; git_backend.rs:1418-1432; signing.rs:157-168."
+    },
+    {
+      "id": "r3h-jj-04",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "I switched on the external file-watching integration so that recording my working copy is faster. When jj records the working copy, how does it limit which files it re-reads, where does it remember the last point in time it asked the watcher, and in which situations does it scan everything or refuse to move that remembered point?",
+      "expectedFiles": [
+        "lib/src/fsmonitor.rs",
+        "lib/src/local_working_copy.rs"
+      ],
+      "expectedSymbols": [
+        "FsmonitorSettings::from_settings",
+        "TreeState::snapshot",
+        "TreeState::make_fsmonitor_matcher",
+        "TreeState::query_watchman",
+        "watchman::Fsmonitor::query_changed_files",
+        "TreeState::save"
+      ],
+      "expectedFacts": [
+        "FsmonitorSettings::from_settings turns the backend setting into Watchman, None, or an error for the test-only backend.",
+        "CRITICAL: TreeState::snapshot builds its scan matcher from make_fsmonitor_matcher: the changed paths reported by Watchman become a FilesMatcher that is intersected with the sparse matcher (and unioned with force-tracking).",
+        "query_changed_files sends the stored clock and excludes the .git and .jj directories.",
+        "CRITICAL: If Watchman reports a fresh instance, no path list is returned and the whole working copy is crawled; if the query fails, a warning is logged and a full scan runs with no clock.",
+        "The last clock lives in TreeState.watchman_clock and is saved in the tree-state file.",
+        "The stored clock is not advanced when the monitor reported no changed paths, nor when the scan found untracked or invalid-UTF-8 paths (unless the new clock is None)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) grep 'watch' -> lib/src/fsmonitor.rs (from_settings :59, watchman::Fsmonitor :150+) and cli commands/debug/watchman.rs (decoy); 2) find consumer: local_working_copy.rs make_fsmonitor_matcher (:1438) and query_watchman (:1233); 3) read TreeState::snapshot matcher composition (:1295-1325); 4) read clock update rules (:1415-1434, :1459-1463); 5) read query_changed_files fresh-instance branch (fsmonitor.rs:249) and save() (local_working_copy.rs:1182-1201). FIRST-3-GREPS of question words ('file-watching', 'faster', 'point in time'): hit nothing in code or only watchman docs; reaching gold needs the agent's own 'watchman|fsmonitor' vocabulary. est. turns: 7. DECOYS: LockedLocalWorkingCopy::reset_watchman (local_working_copy.rs:3065) and `jj debug watchman` only inspect/reset; run.rs and diff_working_copies.rs hard-code FsmonitorSettings::None; the test backend variant is gated out of real repos. VERIFICATION: fsmonitor.rs:52-80, :218-262, :318-336; local_working_copy.rs:1233-1259, :1295-1335, :1415-1434, :1438-1507."
+    },
+    {
+      "id": "r3h-jj-05",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "When I fold one commit's changes into another commit, and the commit being folded ends up with nothing left, how does jj decide what description the result gets and whether to open my editor? Include what happens when I fold only some of a commit's changes, and when the commit being folded away is an ancestor of the target.",
+      "expectedFiles": [
+        "cli/src/commands/squash.rs",
+        "lib/src/rewrite.rs",
+        "cli/src/description_util.rs"
+      ],
+      "expectedSymbols": [
+        "cmd_squash",
+        "SquashedDescription",
+        "squash_commits",
+        "CommitWithSelection::is_full_selection",
+        "try_combine_messages",
+        "combine_messages_for_editing"
+      ],
+      "expectedFacts": [
+        "cmd_squash chooses between an exact message, the destination's description, or combining (default), builds a CommitWithSelection per source and calls rewrite::squash_commits.",
+        "CRITICAL: squash_commits abandons a source only when keeping emptied commits is off and the selection is the whole commit; a partly selected source is rewritten without the selected changes and keeps its own description.",
+        "If a source is an ancestor of the destination, squash_commits first rebases descendants onto the rewritten sources so that the destination already includes the move before the diffs are applied.",
+        "CRITICAL: try_combine_messages looks only at the abandoned sources plus the destination: no non-empty description gives an empty one, exactly one non-empty is used as it is, two or more gives None.",
+        "On None, combine_messages_for_editing builds a text with JJ: comment lines and cmd_squash opens the editor for it.",
+        "After writing the destination, cmd_squash calls rebase_descendants."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) the agent must know/guess the command (no code word in the question: 'fold'); grep 'combine' in cli/src -> description_util.rs try_combine_messages (:356) and callers -> squash.rs (:359-396); 2) read cmd_squash flow (:184-415) and SquashedDescription (:450-480); 3) follow rewrite::squash_commits (rewrite.rs:1368-1479) for abandon decision (:1381), skip (:1382), descendant rebase (:1429-1454); 4) read CommitWithSelection (:1307-1327); 5) read combine_messages_for_editing (description_util.rs:374). FIRST-3-GREPS of question words ('fold', 'description', 'editor'): hit describe.rs/commit.rs and description_util.rs edit helpers (decoys) before squash.rs. est. turns: 8. DECOYS: describe/commit editor flow (description_util edit_description), absorb.rs (moves hunks but no description merge), rewrite.rs move_commits. VERIFICATION: squash.rs:336,:349-354,:359-396,:412-413; rewrite.rs:1368-1479; description_util.rs:356-368."
+    },
+    {
+      "id": "r3h-jj-06",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "I drop a commit from my stack so that it disappears from my visible history. It has a bookmark pointing at it, is also the checked-out commit of my workspace, and has other commits on top. Trace what happens to the bookmark, to the checked-out state, and to the commits above it, and say where the choice between deleting and keeping the bookmark is made.",
+      "expectedFiles": [
+        "cli/src/commands/abandon.rs",
+        "lib/src/rewrite.rs",
+        "lib/src/repo.rs"
+      ],
+      "expectedSymbols": [
+        "cmd_abandon",
+        "RewriteRefsOptions",
+        "CommitRewriter::abandon",
+        "MutableRepo::record_abandoned_commit_with_parents",
+        "MutableRepo::update_local_bookmarks",
+        "MutableRepo::update_wc_commits"
+      ],
+      "expectedFacts": [
+        "CRITICAL: cmd_abandon builds RewriteRefsOptions with delete_abandoned_bookmarks set to the opposite of the retain-bookmarks flag and passes it to transform_descendants_with_options.",
+        "In the callback, abandoned targets call CommitRewriter::abandon, which records Rewrite::Abandoned with their new parents (record_abandoned_commit_with_parents); other descendants are rebased, or only reparented with the restore-descendants flag.",
+        "CRITICAL: update_local_bookmarks, run from update_rewritten_references at the end of transform_commits, deletes a bookmark on an abandoned commit if deletion is on, and otherwise moves it to the abandoned commit's parent(s).",
+        "update_wc_commits creates a new commit on the merged parents' tree for an abandoned working-copy commit and checks it out with edit().",
+        "RewriteRefsOptions defaults to keeping bookmarks, and rebase and split also pass false, so abandon is the command that deletes bookmarks by default."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) grep 'abandon' -> many hits; abandon.rs cmd_abandon (:69) options (:113-115); 2) follow transform_descendants_with_options (repo.rs:1518) -> transform_commits (:1536) -> update_rewritten_references (:1278); 3) CommitRewriter::abandon (rewrite.rs:352) -> record_abandoned_commit_with_parents (repo.rs:1163); 4) read update_local_bookmarks (:1299-1333) and update_wc_commits (:1335-1388); 5) check RewriteRefsOptions default (rewrite.rs:568-577) and other callers (rebase.rs:379, split.rs:464). FIRST-3-GREPS of question words ('drop', 'bookmark', 'checked-out'): hit bookmark/*.rs and edit.rs commands (decoys). est. turns: 8. DECOYS: EmptyBehavior::AbandonNewlyEmpty in rewrite.rs/rebase_commit; squash's abandon of an emptied source reuses record_abandoned_commit; commit_builder.abandon. VERIFICATION: abandon.rs:61,:113-136; rewrite.rs:352-357,:568-577; repo.rs:1163-1175,:1299-1333,:1335-1388,:1494-1506."
+    },
+    {
+      "id": "r3h-jj-07",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "Jj histories all start from one virtual, empty ancestor that Git does not have. Across reading from, writing to, and exporting to a Git repository, list each place where the Git integration compensates for that missing commit.",
+      "expectedFiles": [
+        "lib/src/git_backend.rs",
+        "lib/src/git.rs"
+      ],
+      "expectedSymbols": [
+        "GitBackend::new",
+        "GitBackend::read_commit",
+        "GitBackend::write_commit",
+        "collect_changed_refs_to_export",
+        "FailedRefExportReason::OnRootCommit",
+        "reset_head"
+      ],
+      "expectedFacts": [
+        "The Git backend identifies the root commit by the all-zero object id of the repo's hash type and no real Git object backs it.",
+        "read_commit returns a synthesized empty root commit (make_root_commit) for that id.",
+        "CRITICAL: read_commit gives every Git commit that has no parents (including commits cut off by a shallow clone) the root commit as its parent.",
+        "CRITICAL: write_commit leaves the root parent out of the Git commit and rejects a merge commit that has the root as one of its parents.",
+        "Ref export (collect_changed_refs_to_export) marks a bookmark or tag that targets the root commit as failed with OnRootCommit.",
+        "reset_head leaves Git HEAD unborn when the working-copy commit's first parent is the root commit."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~7 steps): 1) grep 'root_commit' in lib/src -> hundreds of hits; narrow to git_backend.rs (:208 null_ref, :1281 read, :1298 parentless, :1341 write) ; 2) grep 'root' in lib/src/git.rs -> OnRootCommit (:1279,:1615) and reset_head (:2014); 3) check import/gc filters (git_backend.rs:485,:1568) as non-compensation; 4) verify error text for merge with root (git_backend.rs:1343-1352). Members share only the generic word 'root', with different local names (null_ref, make_root_commit, Unsupported error, OnRootCommit, unborn). FIRST-3-GREPS of question words ('virtual', 'empty ancestor', 'Git integration'): hit store.rs/backend.rs make_root_commit docs but not the write/export members. est. turns: 8. DECOYS: core/src/backend.rs make_root_commit/root_commit_id (generic, no Git logic); simple_backend.rs root handling; test fixtures in git_backend.rs (:2103+). VERIFICATION: git_backend.rs:208-215,:1281-1299,:1338-1356; git.rs:1596-1616,:2013-2018."
+    },
+    {
+      "id": "r3h-jj-08",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "In a repository where jj and Git share one folder, after a jj command finishes, which pieces of Git's own state does jj rewrite so that plain Git commands see something consistent? Name each piece and the function that handles it.",
+      "expectedFiles": [
+        "cli/src/cli_util.rs",
+        "lib/src/git.rs"
+      ],
+      "expectedSymbols": [
+        "try_reset_git_head",
+        "git::reset_head",
+        "clear_operation_state",
+        "reset_index",
+        "update_intent_to_add_impl",
+        "export_some_refs"
+      ],
+      "expectedFacts": [
+        "finish_transaction calls try_reset_git_head, which calls git::reset_head; a failed HEAD update is only a warning.",
+        "CRITICAL: reset_head points Git HEAD at the first parent of the working-copy commit (unborn if that is the root) when it differs from the recorded value.",
+        "reset_head calls clear_operation_state when Git is mid-operation, deleting MERGE_HEAD, MERGE_MODE, MERGE_MSG, REVERT_HEAD, CHERRY_PICK_HEAD, BISECT_LOG and the rebase-merge, rebase-apply and sequencer directories.",
+        "CRITICAL: reset_index rewrites the Git index from the working-copy commit's parent tree, and update_intent_to_add_impl marks files added in the working-copy commit as intent-to-add.",
+        "export_some_refs detaches HEAD, in the main repo and linked worktrees, when HEAD is a symbolic ref to a ref that is being moved or deleted."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) grep 'colocat|shared_with_git' in cli_util.rs -> finish_transaction (:2342) and try_reset_git_head (:2725); 2) git::reset_head (git.rs:2002) -> clear_operation_state (:2055) -> reset_index (:2087) -> update_intent_to_add_impl (:2284); 3) export_refs call in finish_transaction (:2403) -> export_some_refs/check_and_detach_head (git.rs:1339-1406). Members have different names and layers (cli_util + two functions in git.rs + export). FIRST-3-GREPS of question words ('Git state', 'plain Git commands', 'rewrite'): hit colocation.rs/docs and git/*.rs commands (decoys). est. turns: 7. DECOYS: git::import_head/import_refs (opposite direction); GitBackend::gc (objects); commands/git/colocation.rs (enable/disable colocation). VERIFICATION: cli_util.rs:2392-2403,:2725-2749; git.rs:2002-2052,:2055-2085,:2087-2140,:2284-2350,:1356-1406."
+    },
+    {
+      "id": "r3h-jj-09",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "When I run the command that applies my configured formatters to a range of commits, in which situations is a file's content not sent through a formatter, or a formatter's output thrown away? Name every place in the code that decides one of these.",
+      "expectedFiles": [
+        "cli/src/commands/fix.rs",
+        "lib/src/fix.rs"
+      ],
+      "expectedSymbols": [
+        "get_tools_config",
+        "fix_files",
+        "fix_one_file",
+        "run_tool"
+      ],
+      "expectedFacts": [
+        "get_tools_config drops tools that are disabled and returns a config error if none are left.",
+        "CRITICAL: fix_files only visits paths that match the path filter and that changed relative to the base commit (or were fixed in an ancestor), unless unchanged files are requested; deleted files are skipped.",
+        "fix_files only passes regular file entries to the fixer; symlinks, directories and submodules are skipped.",
+        "fix_one_file leaves a file untouched if no tool's patterns match it, and never runs tools on an empty file.",
+        "A tool configured with line ranges is skipped for a file with no changed lines unless the run-if-zero-ranges option is set.",
+        "CRITICAL: A tool that cannot start or exits non-zero is ignored: a warning is printed, the previous content is kept, and nothing new is stored."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) the agent must find the command by its role ('formatters'): grep 'formatter' -> cli/src/commands/fix.rs docs and diff_util Formatter (noise); 2) read fix_one_file (:279-410) and run_tool (:417-478); 3) read get_tools_config (:554-602); 4) lib/src/fix.rs fix_files (:181-374) for matcher/changed-file/deleted/File-only logic. Members are in two files with different local names. est. turns: 7. DECOYS: lib/src/absorb.rs to_file_value (similar skip rules but for absorb); ParallelFileFixer::fix_files only parallelizes. VERIFICATION: fix.rs:288-292,:310-312,:340-347,:376-396,:446-476,:554-602; lib/src/fix.rs:249-266,:292-306."
+    },
+    {
+      "id": "r3h-jj-10",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "When jj records my working folder, which kinds of entries on disk are deliberately not turned into tracked content, and where in the code is each one decided? Leave aside the file-size limit.",
+      "expectedFiles": [
+        "lib/src/local_working_copy.rs",
+        "lib/src/working_copy.rs"
+      ],
+      "expectedSymbols": [
+        "FileSnapshotter::process_dir_entry",
+        "RESERVED_DIR_NAMES",
+        "file_state",
+        "UntrackedReason",
+        "SnapshotStats"
+      ],
+      "expectedFacts": [
+        "Entries whose names are not valid UTF-8 are skipped and reported separately as invalid-UTF-8 paths.",
+        "CRITICAL: Entries named .git or .jj, and any directory that itself contains one of them (a nested repository), are skipped by process_dir_entry.",
+        "Paths whose recorded state is a Git submodule are skipped.",
+        "CRITICAL: A file that is not tracked yet and matches the ignore patterns is skipped unless force-tracked; an ignored directory only has its already-tracked files visited.",
+        "A not-yet-tracked file that does not match the auto-track matcher is left untracked and reported with UntrackedReason::FileNotAutoTracked.",
+        "Special files such as sockets and pipes are not present because file_state returns None for anything that is not a regular file or symlink."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) grep 'untracked' in lib/src -> working_copy.rs UntrackedReason/SnapshotStats (:245,:229) and local_working_copy.rs; 2) read process_dir_entry (:1710-1838); 3) read file_state (:933-960); 4) check visit_directory/ignore handling (:1590-1700) and visit_tracked_files (:1840); the members use different names (invalid_utf8_paths_tx, RESERVED_DIR_NAMES, GitSubmodule, matches_file/force_tracking_matcher, start_tracking_matcher, file_state None). FIRST-3-GREPS of question words ('not tracked', 'entries on disk', 'recording'): hit cli print_untracked_files, file/track.rs (decoys). est. turns: 8. DECOYS: file-size refusal (UntrackedReason::FileTooLarge, excluded by the question), `jj file untrack`, snapshot.auto-track docs in cli. VERIFICATION: local_working_copy.rs:1717-1727,:1731-1733,:1737-1745,:1752-1758,:1759-1769,:1788-1802,:1834-1836,:933-960; working_copy.rs:245-255."
+    },
+    {
+      "id": "r3h-jj-11",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "Besides when I explicitly ask for a new commit, in which situations does jj create a brand-new empty commit by itself and make it my working copy? Name each situation and the function that does it.",
+      "expectedFiles": [
+        "cli/src/cli_util.rs",
+        "lib/src/repo.rs",
+        "lib/src/working_copy.rs"
+      ],
+      "expectedSymbols": [
+        "WorkspaceCommandHelper::snapshot_working_copy",
+        "WorkspaceCommandHelper::finish_transaction",
+        "MutableRepo::update_wc_commits",
+        "WorkspaceCommandHelper::import_git_head",
+        "create_and_check_out_recovery_commit"
+      ],
+      "expectedFacts": [
+        "CRITICAL: snapshot_working_copy writes a new commit on top of the working-copy commit when files changed and the recorded working-copy commit is immutable, with a warning.",
+        "CRITICAL: finish_transaction writes a new commit on top of the working-copy commit when a command left it immutable, with a warning that it became immutable.",
+        "MutableRepo::update_wc_commits creates a new commit on the merged parents' tree when a working-copy commit was abandoned.",
+        "import_git_head checks out a new commit on top of a Git HEAD that was moved outside jj (shared Git folder).",
+        "create_and_check_out_recovery_commit creates a recovery commit during stale-working-copy recovery when the working copy's operation can no longer be read."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~7 steps): 1) grep 'working-copy commit' / 'new commit has been created' in cli/src -> cli_util.rs snapshot_working_copy (:2086-2167) and finish_transaction (:2342-2390); 2) grep 'set_wc_commit' -> repo.rs update_wc_commits (:1335) and working_copy.rs recovery (:424-451); 3) grep 'check_out(' -> import_git_head (:1403); 4) discard explicit callers (commit.rs, new.rs, edit.rs, split.rs, next/prev) as user-requested. Members have unrelated names in three files. FIRST-3-GREPS of question words ('brand-new empty commit', 'working copy'): hit new.rs/commit.rs/workspace add (decoys: explicit commands). est. turns: 8. DECOYS: `jj new`, `jj commit` (commit.rs:183-195 creates new_wc_commit explicitly), `jj next/prev` (movement_util.rs:280), workspace init (workspace.rs:145 check_out of root) and `jj workspace add`. VERIFICATION: cli_util.rs:2142-2167,:2368-2387,:1382-1410; repo.rs:1355-1372; working_copy.rs:424-451."
+    },
+    {
+      "id": "r3h-jj-12",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "Setting aside the explicit command for moving bookmarks, is there a setting that makes a bookmark follow me automatically when I create the next commit on top of the one it marks? Which bookmarks qualify, which commands honor it, and exactly which bookmark moves to which commit?",
+      "expectedFiles": [
+        "cli/src/cli_util.rs",
+        "cli/src/commands/new.rs",
+        "cli/src/commands/commit.rs",
+        "cli/src/config/misc.toml"
+      ],
+      "expectedSymbols": [
+        "load_advance_bookmarks_matcher",
+        "WorkspaceCommandHelper::get_advanceable_bookmarks",
+        "WorkspaceCommandTransaction::advance_bookmarks",
+        "AdvanceableBookmark"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The feature is controlled by the experimental-advance-branches enabled and disabled name lists, both empty by default in misc.toml, so it is off.",
+        "load_advance_bookmarks_matcher returns None when the enabled list is empty, otherwise a matcher for enabled names and not disabled names.",
+        "CRITICAL: commit passes the parents of the working-copy commit being committed as the source commits and advances matching bookmarks to the newly committed commit.",
+        "new advances only when exactly one parent is given and no insert-before or insert-after is used; bookmarks on that parent's parents move to that parent.",
+        "advance_bookmarks merges each bookmark from its old commit to the new one, so a conflicted bookmark stays conflicted."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) grep 'advance' -> commands/bookmark/advance.rs (decoy, explicit command) first, plus cli_util.rs AdvanceableBookmark (:899-946); 2) read load_advance_bookmarks_matcher and get_advanceable_bookmarks (:2673-2696) and advance_bookmarks (:2875-2891); 3) find callers: commit.rs (:101-102,:183-192), new.rs (:194-203,:279-282); 4) check defaults in cli/src/config/misc.toml (:20-22). DECOYS: bookmark/advance.rs (revsets.bookmark-advance-from, refuses sideways/backward), bookmark/move.rs, bookmark/set.rs; split.legacy-bookmark-behavior. FIRST-3-GREPS of question words ('bookmark follow', 'next commit'): hit bookmark commands (decoys) and new.rs; the setting name is not in the question. est. turns: 7. VERIFICATION: misc.toml:20-22; cli_util.rs:923-946,:2673-2696,:2875-2891; commit.rs:101-102,:189-191; new.rs:195-202,:280-281."
+    },
+    {
+      "id": "r3h-jj-13",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "My shell exports a general editor preference, a separate visual-editor preference, and a pager preference; I also named an editor in my jj config file. For writing messages and for paging output, which source wins, how do the layers stack, what is the default when nothing is set on Unix versus Windows, and which of my shell preferences does jj deliberately not use?",
+      "expectedFiles": [
+        "cli/src/config.rs",
+        "cli/src/config/unix.toml",
+        "cli/src/config/windows.toml",
+        "cli/src/config/misc.toml"
+      ],
+      "expectedSymbols": [
+        "config_from_environment",
+        "env_base_layer",
+        "env_overrides_layer",
+        "default_config_layers"
+      ],
+      "expectedFacts": [
+        "CRITICAL: Config layers from lowest to highest precedence are: defaults, system config, base environment variables, user config, repo config, workspace config, override environment variables, command-line arguments (documented on config_from_environment).",
+        "env_base_layer sets the editor from the visual-editor variable and otherwise from the general editor variable, so user and repo config override them.",
+        "CRITICAL: The pager environment variable is deliberately not read (comment in env_base_layer, issue 3502); only the jj-specific pager variable in env_overrides_layer sets the pager.",
+        "env_overrides_layer maps the jj-specific editor and pager variables above all config files.",
+        "Platform defaults come from unix.toml (editor nano) and windows.toml (pager set to the builtin pager, editor Notepad); misc.toml sets the default external pager otherwise.",
+        "A non-empty NO_COLOR sets ui.color to never in the base layer."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) grep 'EDITOR' in cli/src -> description_util.rs TextEditor::from_settings (consumer, reads ui.editor only) and config.rs; 2) read config.rs env_base_layer (:829-858) and env_overrides_layer (:882-913) and the layering doc (:800-815); 3) read default_config_layers (:860-880) to see unix/windows files; 4) read ui.rs PagerConfig::from_config (:330-341) to confirm pager source; 5) check cli/src/config/unix.toml, windows.toml, misc.toml:39. GATING: the platform default lives in the unix.toml/windows.toml variants (cfg!(unix)/cfg!(windows)) while misc.toml's default pager is the decoy for Windows. FIRST-3-GREPS of question words ('editor', 'pager', 'default'): hit description_util.rs/ui.rs/commands help text (decoys) before config.rs layering. est. turns: 7. DECOYS: description_util.rs TextEditor::from_settings, ui.rs PagerConfig (consumers only); lib/src/config_resolver.rs (conditional scopes); `jj config` commands. VERIFICATION: config.rs:800-822,:829-858,:882-913; unix.toml; windows.toml:1-3; misc.toml:39."
+    },
+    {
+      "id": "r3h-jj-14",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "After I divide a checked-out commit that carries a bookmark into two commits, which of the two keeps the original change ID, which one ends up holding the bookmark, and which one is checked out? Is any of that configurable, and does it flip for any option?",
+      "expectedFiles": [
+        "cli/src/commands/split.rs",
+        "cli/src/config/misc.toml"
+      ],
+      "expectedSymbols": [
+        "cmd_split",
+        "rewrite_descendants",
+        "move_first_commit"
+      ],
+      "expectedFacts": [
+        "CRITICAL: By default the first commit (selected changes) is built with rewrite_commit on the target and keeps its change ID, while the second commit clears its rewrite source and gets a newly generated change ID.",
+        "With the placement options (onto, insert-after, insert-before) the roles flip: the first commit gets the new change ID and the second keeps the original.",
+        "CRITICAL: rewrite_descendants reads split.legacy-bookmark-behavior (true by default) and, when true, calls set_rewritten_commit from the original to the second commit, so bookmarks on the original move to the second (remaining-changes) commit.",
+        "A workspace whose working-copy commit was the target is moved to the second commit with edit().",
+        "move_first_commit (placement options) uses move_commits with delete_abandoned_bookmarks false."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) the agent must find the command (question avoids its name): grep 'selected changes' / 'remaining changes' -> commands/split.rs; 2) read cmd_split builders (:293-301, :343-353) for change-id handling; 3) read rewrite_descendants (:495-543) and the legacy flag; 4) check default in cli/src/config/misc.toml:65-68; 5) read move_first_commit (:423-493). GATING: default path uses legacy-bookmark-behavior=true; the non-default branch and the placement-option branch are the variants. FIRST-3-GREPS of question words ('bookmark', 'change ID', 'checked out'): hit bookmark/*.rs, duplicate.rs, metaedit.rs (decoys). est. turns: 7. DECOYS: squash.rs/abandon.rs (other rewrites), repo.rs update_local_bookmarks (generic mechanism), duplicate.rs/parallelize.rs. VERIFICATION: split.rs:293-301,:343-353,:423-493,:495-543; misc.toml:65-68."
+    },
+    {
+      "id": "r3h-jj-15",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "I configured jj so that an identical edit made independently on both sides of a merge is kept as a conflict instead of being quietly accepted. Does that setting also change how two concurrent operations that moved the same bookmark to the same commit are combined? Where does each behavior come from?",
+      "expectedFiles": [
+        "lib/src/tree_merge.rs",
+        "lib/src/refs.rs",
+        "lib/src/repo.rs",
+        "core/src/merge.rs",
+        "lib/src/files.rs"
+      ],
+      "expectedSymbols": [
+        "MergeOptions::from_settings",
+        "Store::merge_options",
+        "merge_ref_targets",
+        "merge_remote_refs",
+        "MutableRepo::merge_wc_commit",
+        "trivial_merge"
+      ],
+      "expectedFacts": [
+        "The merge.same-change setting is read by MergeOptions::from_settings in tree_merge.rs and handed to the Store by the repo loader, which exposes it as Store::merge_options().same_change.",
+        "CRITICAL: Tree and file-content merging (tree_merge.rs, merged_tree.rs, tree.rs, files.rs merge_inner and resolve_diff_hunks) pass that value to resolve_trivial/trivial_merge in core/src/merge.rs, where Keep leaves the conflict and Accept resolves it.",
+        "CRITICAL: Bookmark and remote-ref merging (merge_ref_targets and merge_remote_refs in refs.rs) hard-codes SameChange::Accept and never consults the setting.",
+        "MutableRepo::merge_wc_commit also hard-codes SameChange::Accept.",
+        "tree_merge.rs resolves executable bits and copy ids with SameChange::Accept regardless of the setting."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) grep 'same.change|SameChange' -> ~40 hits across lib/core/cli; 2) find the config read (tree_merge.rs:71 'merge.same-change') and who stores it (Store::merge_options store.rs:100; repo.rs:235-237,:738-743); 3) enumerate consumers: tree_merge.rs, merged_tree.rs:391, tree.rs:317, files.rs:309-326/:470-495; 4) read refs.rs:96-113,:135 and repo.rs:1674-1690 to see hard-coded Accept. FIRST-3-GREPS of question words ('identical edit', 'both sides', 'moved the same bookmark'): hit tests/docs and files.rs/refs.rs. est. turns: 8. DECOYS: core/src/merge.rs (takes the mode as parameter), lib/src/annotate.rs:467 and conflicts.rs tests (fixed values), rewrite.rs:391 comment. VERIFICATION: tree_merge.rs:56-73,:453,:457; repo.rs:235-237,:738-743,:1674-1690; refs.rs:96-113,:135; files.rs:309-326,:470-495; core/src/merge.rs:112-175."
+    },
+    {
+      "id": "r3h-jj-16",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "In diff and status output jj sometimes shows a file as renamed or copied, even though the commits themselves store no rename information. Where is that inferred, by what similarity rule, and how does the result reach the diff output?",
+      "expectedFiles": [
+        "lib/src/git_backend.rs",
+        "core/src/backend.rs",
+        "lib/src/store.rs",
+        "cli/src/diff_util.rs",
+        "lib/src/merged_tree.rs"
+      ],
+      "expectedSymbols": [
+        "GitBackend::get_copy_records",
+        "Backend::get_copy_records",
+        "Store::get_copy_records",
+        "diff_util::get_copy_records",
+        "MergedTree::diff_stream_with_copies",
+        "CopyRecords"
+      ],
+      "expectedFacts": [
+        "The Backend trait declares get_copy_records and Store::get_copy_records forwards to the backend.",
+        "CRITICAL: GitBackend::get_copy_records computes records with gix tree diff rewrite tracking: copies from the set of modified files, 50% similarity for renames and copies, a limit of 1000, empty files not tracked.",
+        "It only returns records where source and destination are both blobs (symlinks are skipped) and whose target is among the requested paths.",
+        "SimpleBackend::get_copy_records returns an empty stream, so no renames are detected there.",
+        "CRITICAL: cli diff_util::get_copy_records collects the records for (parent, commit) filtered by the matcher, and callers pass them as CopyRecords to MergedTree::diff_stream_with_copies, which folds delete-plus-add pairs into rename or copy entries."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) grep 'renamed|rename' in cli/src -> diff_util.rs (copy records) and many workspace/bookmark rename hits (noise); 2) diff_util.rs get_copy_records (:676-690) and show_patch (:652-668); 3) follow store.get_copy_records (store.rs:104) -> Backend trait (core/src/backend.rs:867) -> git_backend.rs:1476-1560 for the similarity options; 4) check simple_backend.rs:337; 5) merged_tree.rs:314 + copies.rs for consumption. FIRST-3-GREPS of question words ('renamed', 'copied', 'similarity'): hit workspace/bookmark rename commands and gix docs, not git_backend's rewrite options directly. est. turns: 7. DECOYS: lib/src/copies.rs (consumes records), CopyId/CopyHistory (copy-id based, used by annotate), secret_backend.rs pass-through, commands/debug/copy_detection.rs printer. VERIFICATION: backend.rs:867-872; store.rs:104-111; git_backend.rs:1476-1560 (:1529-1538 options, :1496-1500 blob check); simple_backend.rs:337-344; diff_util.rs:652-690."
+    },
+    {
+      "id": "r3h-jj-17",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "A teammate who only uses plain Git pushed commits. When I fetch them, jj still shows a short change ID for each commit, though Git has no such concept. Where do those IDs come from, how are they computed when a commit carries none, and how does jj keep the ID stable afterward?",
+      "expectedFiles": [
+        "lib/src/git_backend.rs",
+        "lib/src/git.rs"
+      ],
+      "expectedSymbols": [
+        "commit_from_git_without_root_parent",
+        "extract_change_id_from_commit",
+        "synthetic_change_id_from_git_commit_id",
+        "GitBackend::import_head_commits",
+        "deserialize_extras"
+      ],
+      "expectedFacts": [
+        "commit_from_git_without_root_parent takes the change ID from the commit's change-id extra header via extract_change_id_from_commit (reverse hex, exactly 16 bytes).",
+        "CRITICAL: Without a usable header, synthetic_change_id_from_git_commit_id derives the ID from the last 16 bytes of the commit id, in reverse order with the bits of each byte reversed.",
+        "CRITICAL: On import (import_head_commits and import_extra_metadata_entries_from_heads) the computed change ID is stored in the extra-metadata table keyed by commit id so that later rewrites do not assign a new one.",
+        "On read, deserialize_extras overrides the change ID with the stored value when the table has one.",
+        "When jj writes commits it adds the change-id header only if the write-change-id-header setting is on (default on)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) grep 'change.id' in lib/src/git_backend.rs -> many hits; 2) read commit_from_git_without_root_parent (:679-753) and extract_change_id_from_commit (:755); 3) read synthetic_change_id_from_git_commit_id (:767-778); 4) follow persistence: import_head_commits (:479-518) + import_extra_metadata_entries_from_heads (:1036) + deserialize_extras (:845); 5) check write path flag (git_backend.rs:1377, git.rs:114-124). FIRST-3-GREPS of question words ('short change ID', 'plain Git', 'fetch'): hit id_prefix.rs/commit_templater (display), git fetch code in git.rs/commands/git/fetch.rs (decoys). est. turns: 7. DECOYS: commit_builder.rs random change-id generation for jj-created commits; Gerrit Change-Id generation (commands/gerrit/upload.rs); id_prefix.rs (display). VERIFICATION: git_backend.rs:98,:479-518,:679-753,:755-761,:767-778,:845-864,:1036-1068,:1377-1382; git.rs:114-124,:674."
+    },
+    {
+      "id": "r3h-jj-18",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "Next to a change ID in the log I sometimes see a slash and a number. When does that suffix appear, how is the number determined, and how can I use it to refer to one particular commit?",
+      "expectedFiles": [
+        "cli/src/config/templates.toml",
+        "cli/src/commit_templater.rs",
+        "lib/src/index.rs",
+        "lib/src/default_index/composite.rs",
+        "lib/src/revset.rs"
+      ],
+      "expectedSymbols": [
+        "format_short_change_id_with_change_offset",
+        "change_offset",
+        "ResolvedChangeTargets::find_offset",
+        "resolve_change_id_prefix",
+        "ChangePrefixResolver::resolve_symbol"
+      ],
+      "expectedFacts": [
+        "CRITICAL: The suffix is added by the log template only when the commit is hidden or divergent; hidden is checked first and overrides divergent.",
+        "The change_offset template keyword resolves the change ID in the repo and returns ResolvedChangeTargets::find_offset(commit id), the commit's position in the target list.",
+        "CRITICAL: The default index returns change targets from resolve_change_id_prefix with commit positions in descending order (newest first) and marks each target visible or hidden.",
+        "A change is divergent when it has more than one visible target.",
+        "ChangePrefixResolver::resolve_symbol accepts a change ID followed by a slash and a number and returns targets.at_offset(number), including hidden commits; without a number, a divergent change ID is an error listing the offsets."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~7 steps): 1) the agent has only 'slash and number': grep 'offset' in cli/src -> templates.toml format_change_offset (:479-507) and commit_templater.rs change_offset (:1293); 2) read how the keyword finds the number: repo.resolve_change_id -> ResolvedChangeTargets::find_offset (index.rs:275); 3) find the order: default_index/composite.rs resolve_change_id_prefix (:298-330) + resolve_change_targets_for_positions (:332) ; 4) revset.rs ChangePrefixResolver::resolve_symbol (:2913-2949) for the reverse use; 5) is_divergent (index.rs:262). FIRST-3-GREPS of question words ('slash', 'suffix', 'number'): hit generic template/diff code (noise) rather than index.rs. est. turns: 8. DECOYS: lib/src/id_prefix.rs (shortest unique prefix length, different problem); commit_id display; evolog uses same keyword. VERIFICATION: templates.toml:479-507; commit_templater.rs:1267-1311; index.rs:216-300; composite.rs:298-352; revset.rs:2913-2949."
+    },
+    {
+      "id": "r3h-jj-19",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "My log shows a commit's signature as not verified even after I installed the signer's key. When does jj re-check a signature, which component decides which verifier is tried, and which results are remembered?",
+      "expectedFiles": [
+        "cli/src/commit_templater.rs",
+        "lib/src/commit.rs",
+        "core/src/signing.rs"
+      ],
+      "expectedSymbols": [
+        "CryptographicSignature::verify",
+        "Commit::verification",
+        "Signer::verify",
+        "SigningBackend::can_read",
+        "SigStatus"
+      ],
+      "expectedFacts": [
+        "The signature template keyword wraps CryptographicSignature, whose status, key and display call Commit::verification, which calls store.signer().verify with the commit id, signed data and signature.",
+        "CRITICAL: Signer::verify first returns a cached Verification for the commit id from an in-memory LRU cache of 100 entries.",
+        "On a miss it tries the main backend and then the other backends that report can_read for the signature, skipping results that are Unknown or an invalid-format error so that the next backend can try.",
+        "CRITICAL: Good and Bad results are cached; an Unknown from a backend that can read the signature is deliberately not cached (a key might be imported later), but Unknown is cached when no backend can read the signature.",
+        "The cache lives in the Signer inside the Store, so it is per process and every new jj invocation verifies again."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~6 steps): 1) grep 'signature' in cli/src -> commit_templater.rs 'signature' keyword (:1170) and CryptographicSignature (:2918); 2) follow Commit::verification (lib/src/commit.rs:209); 3) core/src/signing.rs Signer::verify (:172-216) for cache + backend loop; 4) check cache capacity (:30) and caching rules (:198-216); 5) confirm display gating in templates.toml (ui.show-cryptographic-signatures :150,:247,:520,:545). FIRST-3-GREPS of question words ('signature', 'verified', 'key'): hit gpg_signing.rs/ssh_signing.rs (decoys) and templates.toml. est. turns: 7. DECOYS: per-backend verify in gpg_signing.rs/ssh_signing.rs; creation-path signing (commit_builder.rs, settings.rs SignBehavior). VERIFICATION: commit_templater.rs:1170-1178,:2918-2950; commit.rs:204-215; signing.rs:30,:129-216."
+    },
+    {
+      "id": "r3h-jj-20",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "When jj records my working folder, under what conditions does it re-read and re-hash a file even though its size and modification time look the same as when it last looked, and where does the reference time for that comparison come from?",
+      "expectedFiles": [
+        "lib/src/local_working_copy.rs"
+      ],
+      "expectedSymbols": [
+        "FileSnapshotter::get_updated_tree_value",
+        "FileState::is_clean",
+        "TreeState::update_own_mtime",
+        "FileState::placeholder"
+      ],
+      "expectedFacts": [
+        "CRITICAL: get_updated_tree_value treats a tracked file as clean only if its FileState (type including executable bit, mtime and size) equals the recorded one (is_clean).",
+        "CRITICAL: It additionally requires the recorded file mtime to be strictly earlier than the tree-state file's own mtime (own_mtime); otherwise the file is re-read even when everything else matches.",
+        "own_mtime is set by update_own_mtime from the tree_state file's metadata when the state is read and just before it is saved, and falls back to 0 if unavailable.",
+        "The reason is that a file modified at the same moment as the state file may have changed after the state was written (racy-timestamp problem).",
+        "Files skipped during checkout get a placeholder FileState (mtime 0, size 0), so the next snapshot re-stats and re-reads them."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~5 steps): 1) grep 'mtime' in lib/src/local_working_copy.rs -> many hits (FileState, mtime_from_metadata); 2) find the decision: get_updated_tree_value (:1943-1959) with is_clean (:305-309); 3) trace own_mtime: field (:1002), update_own_mtime (:1132-1140), called in read (:1143) and save (:1214); 4) find placeholder: FileState::placeholder (:312-322) used when checkout skips a path (:2405). FIRST-3-GREPS of question words ('size', 'modification time', 're-read'): hit mtime_from_metadata/file_state helpers and cli stat code but not own_mtime. est. turns: 6. DECOYS: fsmonitor matcher (decides which paths are visited, not whether a visited file is clean); max-new-file-size; core/src/file_util.rs. VERIFICATION: local_working_copy.rs:305-309,:312-322,:1002,:1132-1140,:1212-1214,:1943-1959,:2405."
+    },
+    {
+      "id": "r3h-jj-21",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "When jj compares two versions of a text in which many lines repeat, how does it choose anchor lines to line the two sides up, when does it give up on that and fall back to trimming the identical beginning and end, and what counts as a word when it refines the changed regions?",
+      "expectedFiles": [
+        "core/src/diff.rs"
+      ],
+      "expectedSymbols": [
+        "collect_unchanged_words",
+        "collect_unchanged_words_lcs",
+        "find_lcs",
+        "ContentDiff::by_word",
+        "find_word_ranges"
+      ],
+      "expectedFacts": [
+        "CRITICAL: collect_unchanged_words first runs collect_unchanged_words_lcs; only if that finds no matches does it trim the common leading and trailing words (lines) and use them as unchanged ranges.",
+        "CRITICAL: The anchor search gives up immediately if even the rarest word in the left text occurs more than 100 times (max_occurrences).",
+        "It takes the lowest occurrence-count bucket of the left text that contains words with an identical occurrence count in the right text; if none exists it returns without matches.",
+        "The shared rare words are paired by position and reduced with find_lcs (longest in-order subsequence) to anchors, and the gaps between anchors are processed recursively.",
+        "For word-level refinement a word is a run of ASCII letters, digits, underscore or bytes 0x80 and above (find_word_ranges); by_word then refines changed regions with single non-word bytes."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~5 steps): 1) grep 'histogram|lcs' or read core/src/diff.rs top-down: ContentDiff::by_line (:752) -> for_tokenizer (:611) -> collect_unchanged_words (:421); 2) read collect_unchanged_words_lcs (:466-548) for the 100-occurrence cap (:472-478) and bucket choice; 3) read find_lcs (:363-417); 4) read find_word_ranges/is_word_byte (:42-70) and by_word (:762-769). FIRST-3-GREPS of question words ('compare', 'repeat', 'anchor'): hit lib/src/files.rs, diff_util.rs and diff_presentation (decoys that consume ContentDiff). est. turns: 6. DECOYS: lib/src/files.rs merge (consumer of ContentDiff); diff_presentation/unified.rs; cli/src/diff_util.rs inline coloring; doc comment at core/src/diff.rs:1009-1016 calling it 'Histogram diff (or maybe something similar)'. VERIFICATION: diff.rs:42-70,:363-417,:421-464,:466-548,:611-700,:762-769,:1016-1021."
+    },
+    {
+      "id": "r3h-jj-22",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "After a rewrite, two different jj commits could serialize to exactly the same Git commit hash while having different change IDs. How does jj stop the second from silently reusing the first one's stored metadata, where is that metadata kept, and under what condition does the retry end?",
+      "expectedFiles": [
+        "lib/src/git_backend.rs",
+        "lib/src/stacked_table.rs"
+      ],
+      "expectedSymbols": [
+        "GitBackend::write_commit",
+        "serialize_extras",
+        "read_extra_metadata_table_locked",
+        "TableStore::get_head_locked"
+      ],
+      "expectedFacts": [
+        "CRITICAL: write_commit takes the extra-metadata table head with its lock (read_extra_metadata_table_locked, get_head_locked, merging concurrent heads) and holds it for the whole write to prevent local races.",
+        "After writing the Git commit object it looks the Git id up in the extras table; if an entry exists whose serialized extras differ from the new commit's, it lowers the committer timestamp by one second and writes again.",
+        "CRITICAL: The loop ends when the id is absent from the table or the stored extras are identical; the adjusted committer timestamp is copied back into the returned commit.",
+        "Only after the loop does it create the no-gc ref and add the extras entry to the table, then save the table.",
+        "The extras table is a stacked table in the store's extra directory keyed by commit id (change id and predecessors are serialized in it)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "ROUTE (~5 steps): 1) grep 'change id' + 'timestamp' in lib/src/git_backend.rs is not enough; grep 'extra' -> extra_metadata_store (:305,:355), write_commit (:1318); 2) read write_commit loop (:1409-1459) and the comment at :1409-1416, :1440-1455; 3) follow read_extra_metadata_table_locked (:451) -> TableStore::get_head_locked (stacked_table.rs:542); 4) serialize_extras (:820-843) and save_extra_metadata_table (:458). FIRST-3-GREPS of question words ('same Git commit hash', 'change IDs', 'metadata'): hit tests (git_backend.rs:2425) and commit_builder.rs (decoy). est. turns: 6. DECOYS: commit_builder.rs timestamp reset on rewrite (makes collisions unlikely, no handling); simple_backend.rs content-addressed ids; git_backend.rs test import_head_commits_duplicates. VERIFICATION: git_backend.rs:451-470,:1409-1459,:1463-1476; stacked_table.rs:542-569."
+    },
+    {
+      "id": "r3h-jj-23",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "negative-decoy",
+      "difficulty": "hard",
+      "query": "Where does jj run my repository's own custom check scripts, the kind Git runs on my machine just before a push, when it sends bookmarks to a remote?",
+      "expectedFiles": [
+        "lib/src/git_subprocess.rs"
+      ],
+      "expectedSymbols": [
+        "GitSubprocessContext::spawn_push"
+      ],
+      "expectedFacts": [
+        "CRITICAL: jj does not run Git's pre-push scripts: spawn_push invokes git push with the no-verify option, which makes Git skip them.",
+        "A code comment in spawn_push states that jj does not support commit hooks, so Git is prevented from running them (issues 3577 and 405).",
+        "The only hook-like code in the CLI crate is the dispatch-hook list of CliRunner, an embedding API unrelated to Git scripts.",
+        "No code reads core.hooksPath or runs script files from a repository's hooks directory."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "NEGATIVE. ROUTE (~5 steps): 1) grep 'push' in lib/src -> git.rs push_updates and git_subprocess.rs spawn_push; 2) read spawn_push args (git_subprocess.rs:263-268) -> '--no-verify' + comment; 3) grep 'hook' in cli/src lib/src -> cli_util.rs dispatch_hooks (:4429,:4454,:4559,:4742) = unrelated; 4) grep 'pre-push|pre_push|hooksPath' -> none. GREPS (required >=3): `grep -rn \"pre-push\\|pre_push\\|hooksPath\" cli/src lib/src core/src` -> no hits; `grep -rn \"hooks\" cli/src lib/src` -> cli_util.rs dispatch_hooks + git_subprocess.rs:263 comment only; `grep -rn \"no-verify\" cli/src lib/src` -> git_subprocess.rs:268 only; `grep -rn \"pre-commit\" cli/src` -> commands/run.rs:640-641 doc example. FIRST-3-GREPS of question words ('custom check scripts', 'push', 'remote'): hit git.rs/push.rs push logic without any hook code. est. turns: 6. DECOYS: CliRunner dispatch hooks; `jj run` pre-commit example; git.private-commits and sign-on-push (push.rs) are jj-side pre-push steps but not Git scripts."
+    },
+    {
+      "id": "r3h-jj-24",
+      "repo": "jj",
+      "language": "Rust",
+      "stratum": "negative-decoy",
+      "difficulty": "hard",
+      "query": "Where does jj refuse to accept or push commits whose cryptographic signature is missing or fails verification?",
+      "expectedFiles": [
+        "core/src/signing.rs",
+        "cli/src/commit_templater.rs"
+      ],
+      "expectedSymbols": [
+        "Signer::verify",
+        "CryptographicSignature"
+      ],
+      "expectedFacts": [
+        "CRITICAL: Verification exists (Signer::verify, Commit::verification) but its only consumer is the commit template keyword CryptographicSignature, which is used for display when ui.show-cryptographic-signatures is enabled.",
+        "Signer::verify returns a Verification with a Good, Unknown or Bad status and never turns Bad or Unknown into an error that blocks an operation.",
+        "Fetch, import and push do not check signature status; sign_commits_before_push only adds signatures to the user's own unsigned commits and warns about immutable ones it cannot sign.",
+        "No code path rejects an unsigned commit or a Bad status; jj has no policy that requires signatures."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 15,
+      "tier": "r3-hard",
+      "author": "r3h-jj-drafter",
+      "date": "2026-10-01",
+      "notes": "NEGATIVE. ROUTE (~5 steps): 1) grep 'signature' in cli/src lib/src -> sign.rs/unsign.rs/push.rs sign-on-push (decoys), commit.rs verification, commit_templater.rs; 2) read Commit::verification (commit.rs:209) and its callers: only commit_templater.rs:2929; 3) read Signer::verify (core/src/signing.rs:172) to confirm it returns statuses only; 4) read push.rs sign_commits_before_push (:918-1025) to confirm it only adds signatures; 5) check git.rs import/fetch paths for any verify call (none). GREPS (>=3): `grep -rn \"verification()\\|\\.verify(\" cli/src lib/src core/src --include=*.rs` -> commit.rs:213 and commit_templater.rs:2929 (plus backend tests); `grep -rn \"SigStatus\" cli/src lib/src` -> commit_templater.rs:81,2934 only; `grep -rn \"is_signed()\" cli/src lib/src` -> commit_templater.rs:2924, unsign.rs:68, push.rs:928 (needs-signing filter), none reject; `grep -rn \"unsigned\\|not signed\" cli/src lib/src` -> only unsign command text. FIRST-3-GREPS of question words ('refuse', 'signature', 'verification'): hit sign/unsign commands, gpg_signing.rs, commit_templater.rs. est. turns: 6. DECOYS: sign_commits_before_push (push.rs:918); git.private-commits and description/author/conflict push checks (push.rs ~:790-880); gpg_signing.rs/ssh_signing.rs backend verify."
+    }
+  ]
+}

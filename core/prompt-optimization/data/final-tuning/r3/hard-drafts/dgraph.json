@@ -1,0 +1,821 @@
+{
+ "repo": "dgraph",
+ "sha": "6cd03dca3b003dae29df904c0a09667f7edb703b",
+ "probes": [
+  {
+   "id": "r3h-dgraph-01",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "An operator has built database files ahead of time and moves them into a cluster that is already running and has several server groups. While the move runs, ordinary client requests get turned away. Trace what puts the servers into that turning-away state, how the change spreads to every replica of every group, and how a replica that was absent during the move ends up with the data afterwards.",
+   "expectedFiles": [
+    "dgraph/cmd/dgraphimport/import_client.go",
+    "edgraph/server.go",
+    "worker/import.go",
+    "worker/draft.go",
+    "x/health.go"
+   ],
+   "expectedSymbols": [
+    "initiateSnapshotStream",
+    "streamSnapshot",
+    "Server.UpdateExtSnapshotStreamingState",
+    "ProposeDrain",
+    "grpcWorker.UpdateExtSnapshotStreamingState",
+    "node.applyCommitted",
+    "ExtSnapshotStreamingState",
+    "HealthCheck",
+    "populateSnapshot"
+   ],
+   "expectedFacts": [
+    "The import client (initiateSnapshotStream in dgraph/cmd/dgraphimport/import_client.go) first sends a Start request to the edgraph server handler Server.UpdateExtSnapshotStreamingState, which checks admin authorization and calls worker.ProposeDrain.",
+    "ProposeDrain (worker/import.go) reaches the leader of every group (locally when this node leads the group) and grpcWorker.UpdateExtSnapshotStreamingState there proposes an ExtSnapshotState proposal through Raft.",
+    "CRITICAL: When each replica applies that proposal in node.applyCommitted (worker/draft.go), the Start case calls x.ExtSnapshotStreamingState(true), which sets both the import flag and the draining flag, so x.HealthCheck (x/health.go) returns the draining-mode error to ordinary requests.",
+    "CRITICAL: On the Finish proposal, a replica whose import flag is still set (it did not itself receive the stream, since the stream handlers clear the flag when they end) asks its group leader for a snapshot via populateSnapshot and then runs postStreamProcessing.",
+    "The data is streamed group by group (streamSnapshot -> StreamExtSnapshot -> worker.InStream / streamInGroup), where the receiving group leader forwards the stream to its followers."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: dgraph/cmd/dgraphimport/import_client.go:77 (initiateSnapshotStream sends Start), :112 (streamSnapshot; Finish sent at :150-156); edgraph/server.go:2098-2127 (UpdateExtSnapshotStreamingState -> worker.ProposeDrain), :2132-2147 (StreamExtSnapshot defers x.ExtSnapshotStreamingState(false)); worker/import.go:299 ProposeDrain, :456-474 grpcWorker.UpdateExtSnapshotStreamingState -> proposeAndWait(Proposal{ExtSnapshotState}), :476-481 worker StreamExtSnapshot defers clear, :495 postStreamProcessing, :537 streamInGroup; worker/draft.go:692-750 (Start -> x.ExtSnapshotStreamingState(true); Finish && IsExtSnapshotStreamingStateTrue -> populateSnapshot + postStreamProcessing); x/health.go:40-44 (sets both extSnapshotStreamingState and drainingMode), :54-61 HealthCheck returns errDrainingMode. CHEAPEST ROUTE (7 dependent steps): (1) find the CLI sub-command that takes a prebuilt database directory (dgraph/cmd/root.go list -> dgraphimport/run.go); (2) follow Import() into import_client.go and see it calls two gRPC methods, one sending a Start state and one streaming; (3) find the server side of the state-change RPC in edgraph/server.go; (4) follow worker.ProposeDrain and the worker-level handler in worker/import.go to the Raft proposal; (5) find where Raft applies ExtSnapshotState in worker/draft.go applyCommitted; (6) follow x.ExtSnapshotStreamingState into x/health.go to see it also flips draining mode; (7) re-read the Finish branch to explain the offline replica (populateSnapshot in worker/snapshot.go). FIRST-3-GREPS (question words): 'turned away' / 'database files offline' / 'replica' land on bulk loader, conn/raft and generic error strings (decoys), not on a gold file by themselves; the word 'import' is deliberately absent. DECOYS: worker/snapshot.go (ordinary Raft snapshot transfer), worker/draft.go calculateSnapshot (log truncation), graphql/admin/draining.go and alpha /admin/draining (manual drain switch), worker/online_restore.go (backup restore), dgraph/cmd/bulk (the tool that produces the files). est. turns: 8"
+  },
+  {
+   "id": "r3h-dgraph-02",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "When a filter checks that a field is the same as some value, among a given list of candidate nodes, the server sometimes skips the field's search index and instead reads each candidate's own stored value. Describe what information drives that choice, where that information is gathered, and how it is kept.",
+   "expectedFiles": [
+    "worker/task.go",
+    "posting/stats.go",
+    "algo/cm-sketch.go",
+    "posting/mvcc.go"
+   ],
+   "expectedSymbols": [
+    "planForEqFilter",
+    "handleUidPostings",
+    "StatsHolder",
+    "EqContainer",
+    "ProcessEqPredicate",
+    "InsertRecord",
+    "CountMinSketch",
+    "initMemoryLayer"
+   ],
+   "expectedFacts": [
+    "CRITICAL: handleUidPostings (worker/task.go) records, for every index key read by a comparison function, the approximate length of that index list with posting.GetStatsHolder().InsertRecord(attr, token, size).",
+    "posting/stats.go keeps a StatsHolder with one EqContainer per predicate; each container wraps a count-min sketch (algo.NewCountMinSketch) that estimates how many nodes share a token.",
+    "The StatsHolder is created in initMemoryLayer (posting/mvcc.go) and hangs off the MemoryLayer singleton, reachable through GetStatsHolder().",
+    "planForEqFilter (worker/task.go) keeps using the index if any candidate uid is 0, and reads values directly if the candidate list is shorter than the configured type-filter limit (Config.TypeFilterUidLimit, default 10).",
+    "CRITICAL: Otherwise it sums ProcessEqPredicate estimates for the eq tokens and reads values directly only when the candidate count is below estimate divided by that limit; the first lookup for a predicate has no estimate (returns max uint64 and creates the container), so the index is used."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: worker/task.go:895-902 (InsertRecord only when srcFn.fnType == compareAttrFn), :1916-1953 planForEqFilter, :2065-2078 (called only when q.UidList != nil && fname == eq && len(tokens) > 0), :2001 (non-eq compare functions use a simpler rule); posting/stats.go:15-85 (StatsHolder, EqContainer, ProcessEqPredicate returns math.MaxUint64 on first use and creates container, :36 NewCountMinSketch(0.001,0.99)); posting/mvcc.go:392-398 and :514-519 (statsHolder on MemoryLayer), :510 GetStatsHolder; worker/server_state.go:39 (type-filter-uid-limit=10), dgraph/cmd/alpha/run.go:673. CHEAPEST ROUTE (6 dependent steps): (1) locate where a filter function over a candidate list is planned (worker/task.go parseSrcFn, compareAttrFn branch); (2) notice the eq case calls planForEqFilter; (3) read it and see it consults ProcessEqPredicate; (4) open posting/stats.go to learn it is a count-min-sketch container; (5) find who feeds it (InsertRecord call in handleUidPostings); (6) find where the holder lives (posting/mvcc.go initMemoryLayer) and the limit config (server_state.go / alpha run.go). FIRST-3-GREPS: 'equals'/'candidate'/'stored value' hit worker/task.go (huge, gold) only through noise (the file is also gold, but many unrelated hits), so the agent must reason to the planner; 'estimate'/'sketch' are not in the question. DECOYS: worker/tokens.go pickTokenizer (which index to use, not whether), worker/sort.go (index walk vs value fetch for sorting), query/query.go filter ordering. est. turns: 7"
+  },
+  {
+   "id": "r3h-dgraph-03",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "A one-off tool builds database files for a brand-new cluster without any server running, and is told to produce files for several server groups. Where do the system-owned fields (the ones used for access rules and the stored GraphQL schema) end up, how are all other fields divided between the outputs, how does each output later tell a starting server which group to join, and where do schema-declared fields that received no data go?",
+   "expectedFiles": [
+    "dgraph/cmd/bulk/shard_map.go",
+    "dgraph/cmd/bulk/merge_shards.go",
+    "dgraph/cmd/bulk/run.go",
+    "dgraph/cmd/bulk/loader.go",
+    "worker/groups.go",
+    "worker/server_state.go"
+   ],
+   "expectedSymbols": [
+    "shardMap.shardFor",
+    "mergeMapShardsIntoReduceShards",
+    "WriteGroupIdFile",
+    "loader.writeSchema",
+    "StartRaftNodes",
+    "InitServerState"
+   ],
+   "expectedFacts": [
+    "CRITICAL: shardMap.shardFor (dgraph/cmd/bulk/shard_map.go) sends reserved predicates to map shard 0 and assigns every other predicate to the next map shard round-robin the first time it is seen.",
+    "mergeMapShardsIntoReduceShards (merge_shards.go) moves map shard 0 into reduce shard 0 (so reserved predicates land in group 1) and then places the remaining map shards, largest first, into the currently smallest reduce shard.",
+    "The bulk run.go creates one output directory per reduce shard and writes a group_id file containing index+1 into each output p directory (x.WriteGroupIdFile).",
+    "CRITICAL: At startup the server reads that file into ProposedGroupId (worker/server_state.go InitServerState) and StartRaftNodes (worker/groups.go) sends it to Zero in the Connect request with ForceGroupId set; the file is ignored if the WAL already holds a Raft id.",
+    "loader.writeSchema (loader.go) assigns schema predicates that have no data in any output to an output chosen by adler32 checksum of the predicate name modulo the number of outputs."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: dgraph/cmd/bulk/shard_map.go:28-52 (shardFor; reserved -> 0; round robin), used at mapper.go:340,472; merge_shards.go:24-65 (first shard -> reduce shard 0; sortBySize is biggest-to-smallest at :101-113 and the loop takes reduceShards[len-1], the smallest); bulk/run.go:300-310 (dir i, WriteGroupIdFile(dir, i+1)); worker/server_state.go:70-75 (ReadGroupIdFile -> ProposedGroupId); worker/groups.go:79-104 (raftIdx > 0 clears ProposedGroupId; m.ForceGroupId = true when GroupId > 0); loader.go:564-590 (writeSchema, adler32). CHEAPEST ROUTE (7 dependent steps): (1) identify the tool (dgraph/cmd/bulk) and its run.go; (2) find how a record picks an output shard (mapper -> shardMap.shardFor); (3) read merge_shards.go for map->reduce placement and why shard 0 is special; (4) see in run.go the per-output dir + group id file; (5) find who reads group_id (x/file.go ReadGroupIdFile -> worker/server_state.go); (6) follow ProposedGroupId into worker/groups.go Connect; (7) loader.writeSchema for dataless predicates. FIRST-3-GREPS: 'system-owned fields' / 'tool builds database files' / 'server groups' do not hit shard_map.go by wording (code says 'reserved predicate', 'shard'); 'server group' hits worker/groups.go but only through unrelated noise. DECOYS: dgraph/cmd/zero/zero.go ShouldServe/Inform (online predicate placement), dgraph/cmd/live (live loader), dgraph/cmd/dgraphimport (pushes outputs into a running cluster). est. turns: 8"
+  },
+  {
+   "id": "r3h-dgraph-04",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "After a backup is loaded into a running cluster, node identifiers and customer-space identifiers handed out afterwards must not collide with ones already in the loaded data. Trace how the highest such identifiers inside the backup are discovered and how the coordinator's counters are moved past them.",
+   "expectedFiles": [
+    "worker/restore_map.go",
+    "worker/online_restore.go",
+    "dgraph/cmd/zero/assign.go",
+    "dgraph/cmd/zero/raft.go"
+   ],
+   "expectedSymbols": [
+    "RunMapper",
+    "mapResult",
+    "bumpLease",
+    "handleRestoreProposal",
+    "Server.AssignIds",
+    "Server.lease"
+   ],
+   "expectedFacts": [
+    "During the map phase (worker/restore_map.go) each restored key updates a running maximum uid and maximum namespace (namespace 0 for a namespace-aware restore); the maxima are merged with compare-and-swap and returned in mapResult from RunMapper, which also raises maxNs to the highest banned namespace.",
+    "CRITICAL: handleRestoreProposal (worker/online_restore.go) runs map, reduce and flush and then calls bumpLease, which sends AssignIds requests with Bump=true to the Zero leader, once for UIDs (maxUid) and once for namespace ids (maxNs).",
+    "bumpLease ignores a 'Nothing to be leased' error, which is what Zero returns when its counter is already at or beyond the requested value.",
+    "CRITICAL: In Server.AssignIds (dgraph/cmd/zero/assign.go) a bump request on the leader computes cur = nextUint-1 and, if cur is below the requested value, sets Val = requested - cur, clears Bump and leases normally through Server.lease.",
+    "Server.lease proposes a larger MaxUID / MaxNsID through Raft when the in-memory lease is insufficient, adding at least the lease bandwidth; Zero's Raft apply (dgraph/cmd/zero/raft.go) raises state.MaxUID / MaxNsID."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: worker/restore_map.go:299-300,339-343 (maxUid/maxNs), :629-641 (CAS merge), :905-913 (mapResult, maxBannedNs); worker/online_restore.go: handleRestoreProposal (comment 'Bump the UID and NsId lease after restore'), bumpLease (zc.AssignIds with Bump:true; ignores 'Nothing to be leased'); dgraph/cmd/zero/assign.go:61-150 lease (leaseBandwidth=10000 at :23), :166-290 AssignIds (num.GetBump() branch ~:262-277); dgraph/cmd/zero/raft.go:470-481 (MaxUID/MaxNsID apply). CHEAPEST ROUTE (6 dependent steps): (1) find the code that loads a backup into a live cluster (worker/online_restore.go); (2) spot bumpLease at the end of handleRestoreProposal; (3) open Zero's AssignIds to see the Bump branch; (4) follow lease() to the Raft proposal; (5) find how the mapper obtains maxUid/maxNs (worker/restore_map.go); (6) check the Zero Raft apply of MaxUID. FIRST-3-GREPS: 'backup loaded' / 'identifiers' / 'counters' land on worker/restore*.go only via the word 'restore' which is absent from the question; 'counters' hits dgraph/cmd/zero but also metrics code (decoy). DECOYS: dgraph/cmd/bulk/loader.go leaseNamespaces (bulk loader's own namespace lease), edgraph/zero.go AllocateIDs (client allocation), worker/draft.go snapshot logic. est. turns: 7"
+  },
+  {
+   "id": "r3h-dgraph-05",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "A schema author wants an external scripting service to hear about every successful write to one data type. Trace how this is declared, how the server decides to notify for a given write, where the destination address comes from, and what happens when delivery fails.",
+   "expectedFiles": [
+    "graphql/schema/gqlschema.go",
+    "graphql/schema/wrappers.go",
+    "graphql/schema/rules.go",
+    "graphql/resolve/mutation.go",
+    "graphql/resolve/webhook.go",
+    "x/x.go"
+   ],
+   "expectedSymbols": [
+    "lambdaOnMutateMappings",
+    "mutation.HasLambdaOnMutate",
+    "lambdaOnMutateValidation",
+    "sendWebhookEvent",
+    "LambdaUrl"
+   ],
+   "expectedFacts": [
+    "The notification is declared with the @lambdaOnMutate directive (add/update/delete arguments) on a type (graphql/schema/gqlschema.go); lambdaOnMutateValidation (graphql/schema/rules.go) rejects it unless the alpha was started with a graphql lambda-url and rejects it on @remote types.",
+    "lambdaOnMutateMappings (graphql/schema/wrappers.go) builds a map keyed by argument name plus type name (for example add + Person) for every argument set to true; mutation.HasLambdaOnMutate looks up the mutation's own name in that map.",
+    "CRITICAL: In graphql/resolve/mutation.go the decision is made only after the transaction has committed; if HasLambdaOnMutate holds, sendWebhookEvent runs in a separate goroutine with the commit timestamp and the root uids.",
+    "sendWebhookEvent (graphql/resolve/webhook.go) POSTs a JSON payload (event with typename, operation, commit timestamp and add/update/delete data, plus the caller's access token) to x.LambdaUrl(ns), which substitutes the namespace id for $ns in the configured lambda-url.",
+    "CRITICAL: Delivery is best effort: errors and non-2xx statuses are only logged at verbosity 3; there is no retry and nothing is returned to the GraphQL caller."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: graphql/schema/gqlschema.go:292,317 (directive declaration), :584,608; graphql/schema/rules.go:1525-1560 lambdaOnMutateValidation (lambda url required :1534; @remote conflict :1542); graphql/schema/wrappers.go:963-977 lambdaOnMutateMappings (result[arg.Name+typ.Name]), :2176-2178 HasLambdaOnMutate; graphql/resolve/mutation.go:495-502 (after CommitOrAbort: `go sendWebhookEvent`); graphql/resolve/webhook.go:57-129 (payload; schema.MakeHttpRequest with x.LambdaUrl(ns); glog.V(3) on errors); x/x.go:1585-1588 LambdaUrl. CHEAPEST ROUTE (6 dependent steps): (1) grep 'webhook' or 'event' is not in the question, so start from the GraphQL schema directive list (gqlschema.go) and find the mutation-notification directive; (2) find how the directive is stored per type (wrappers.go lambdaOnMutateMappings); (3) find the mutation-side check HasLambdaOnMutate; (4) read graphql/resolve/mutation.go to see it fires after commit; (5) read webhook.go for payload/URL/failure handling; (6) x.LambdaUrl and the alpha flag validation (run.go). FIRST-3-GREPS: 'external scripting service' / 'successful write' / 'notify' hit the @lambda field-resolver code and CDC (decoys) first. DECOYS: @lambda field resolvers (graphql/schema/wrappers.go customAndLambdaMappings, graphql/resolve/resolver.go) which call the same URL synchronously for field values, @custom HTTP resolvers (graphql/schema/custom_http.go), CDC sinks (worker/cdc.go, worker/sink_handler.go). est. turns: 7"
+  },
+  {
+   "id": "r3h-dgraph-06",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "Some part of the cluster evens out stored data between groups, so it must know how large each field's stored data is on every group. Trace how those sizes are measured, delivered to the coordinator, kept only when worth keeping, and then used to pick what to move.",
+   "expectedFiles": [
+    "worker/draft.go",
+    "worker/groups.go",
+    "dgraph/cmd/zero/zero.go",
+    "dgraph/cmd/zero/tablet.go"
+   ],
+   "expectedSymbols": [
+    "node.processTabletSizes",
+    "node.calculateTabletSizes",
+    "groupi.doSendMembership",
+    "Server.UpdateMembership",
+    "Server.createProposals",
+    "Server.chooseTablet"
+   ],
+   "expectedFacts": [
+    "node.processTabletSizes (worker/draft.go) runs calculateTabletSizes on a fixed 5-minute tick, and only the group leader does the work.",
+    "CRITICAL: calculateTabletSizes adds up on-disk and uncompressed sizes of Badger tables per predicate, counting only tables whose first and last key belong to the same predicate, and sends them with groupi.doSendMembership (worker/groups.go), which attaches tablets only when the sender is the group leader.",
+    "CRITICAL: Zero's UpdateMembership (dgraph/cmd/zero/zero.go) calls createProposals, which ignores tablet data from non-leaders and proposes a tablet update only when the tablet is removed, goes from size 0 to non-zero, or its on-disk size changed by more than 10 percent.",
+    "Server.chooseTablet (dgraph/cmd/zero/tablet.go), run on the rebalance interval by the Zero leader, ranks groups by summed OnDiskBytes and moves from the largest to the smallest group only if the gap is at least 10 percent of the smallest.",
+    "chooseTablet picks the largest non-reserved tablet whose size is at most half the gap and that is not in failure backoff."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: worker/draft.go:831-843 (5-minute tick), :1601-1671 calculateTabletSizes (AmLeader gate :1602; `left.Attr == right.Attr` :1651; doSendMembership :1663); worker/groups.go:742-772 (tablets only if leader); dgraph/cmd/zero/zero.go:348-405 createProposals (`!dstMember.Leader` early return :386; size rule :397-401), :732-760 UpdateMembership; dgraph/cmd/zero/tablet.go:78-90 (rebalanceTablets), :253-327 chooseTablet (10 percent rule :301-304; `tab.OnDiskBytes <= sizeDiff/2` :314; skipMove :308). CHEAPEST ROUTE (6 dependent steps): (1) find the balancer on the coordinator (tablet.go rebalanceTablets/chooseTablet); (2) see it reads OnDiskBytes from state; (3) find who writes tablet sizes into state (zero.go createProposals via UpdateMembership); (4) find the sender (worker/groups.go doSendMembership); (5) find who computes sizes (draft.go calculateTabletSizes) and its schedule (processTabletSizes); (6) read the filters on each hop (leader-only, single-predicate tables, 10 percent change). FIRST-3-GREPS: 'balancer' / 'sizes' / 'coordinator' hit zero/tablet.go chooseTablet (gold) but the answer requires the three other hops, which are not reachable from the question words. DECOYS: worker/predicate_move.go (the data transfer itself), graphql admin state output, worker/snapshot.go. est. turns: 7"
+  },
+  {
+   "id": "r3h-dgraph-07",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "Besides a client choosing to roll back, in how many different situations does the cluster itself force a transaction to fail or disappear, and where is each decided? Count only decisions made by server code, across both the coordinator and the data servers.",
+   "expectedFiles": [
+    "dgraph/cmd/zero/oracle.go",
+    "worker/draft.go",
+    "worker/mutation.go",
+    "posting/oracle.go"
+   ],
+   "expectedSymbols": [
+    "Oracle.hasConflict",
+    "Server.commit",
+    "node.abortOldTransactions",
+    "node.blockingAbort",
+    "detectPendingTxns",
+    "tryAbortTransactions",
+    "oracle.ResetTxns",
+    "oracle.ResetTxnsForNs"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The coordinator's commit-time conflict check (Oracle.hasConflict, used by Server.commit in dgraph/cmd/zero/oracle.go) aborts a transaction that began before the current leader took over or whose written keys were committed later by someone else.",
+    "CRITICAL: Server.commit also aborts when a touched predicate is unknown, now served by a different group than the one that wrote it, or has commits blocked because it is being moved (checkPreds in dgraph/cmd/zero/oracle.go).",
+    "The group leader runs abortOldTransactions every minute (checkpointAndClose in worker/draft.go), which asks Zero (blockingAbort -> TryAbort) to abort transactions whose last write is older than the idle limit, then proposes only the aborts.",
+    "Before a schema change or a predicate drop is applied, detectPendingTxns (worker/draft.go) finds transactions with pending writes on that predicate, returns a retry error and launches tryAbortTransactions (worker/mutation.go).",
+    "Drop-all, drop-data and namespace-drop operations discard pending transactions without a verdict by clearing the posting oracle's pending map (ResetTxns / ResetTxnsForNs in posting/oracle.go, called from applyMutations in worker/draft.go)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: dgraph/cmd/zero/oracle.go:72-90 hasConflict (startTs < startTxnTs :74; keyCommit later than startTs :80), :341-415 commit (checkPreds :358-387 incl. isBlocked :381; ctx.Err :409-411); worker/draft.go:1195-1267 (slowTicker minute; `go n.abortOldTransactions()` inside the AmLeader branch :1267), :1673-1708 blockingAbort (Zero TryAbort :1682; only aborts proposed :1696-1707), :1716-1726 abortOldTransactions (x.WorkerConfig.AbortOlderThan), :315-330 detectPendingTxns (called :440 for schema updates, :476 for predicate drop), :343,379,392 (ResetTxnsForNs / ResetTxns); worker/mutation.go:917-923 tryAbortTransactions; posting/oracle.go:353-372. CHEAPEST ROUTE (7 dependent steps): no single token covers the members: (1) grep 'abort' in dgraph/cmd/zero/oracle.go to find commit/TryAbort; (2) in the same file find checkPreds; (3) follow TryAbort callers to worker/draft.go blockingAbort; (4) find who calls blockingAbort (abortOldTransactions and tryAbortTransactions); (5) trace tryAbortTransactions to detectPendingTxns in applyMutations; (6) in applyMutations notice the three drop branches calling ResetTxns*; (7) confirm in posting/oracle.go. FIRST-3-GREPS: 'roll back' / 'fail' / 'disappear' land on client-facing Discard/Aborted code (edgraph/server.go CommitOrAbort, decoy) rather than gold. DECOYS: edgraph/server.go CommitOrAbort (client-driven abort and error mapping), graphql/resolve/mutation.go abort on error (client-side flow), posting/mvcc.go ShouldAbort (flag that nothing sets; see r3h-dgraph-23). est. turns: 8"
+  },
+  {
+   "id": "r3h-dgraph-08",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "When the whole database is written out as portable text files for archival, which stored entries are deliberately left out of the data file, and where is each omission decided?",
+   "expectedFiles": [
+    "worker/export.go"
+   ],
+   "expectedSymbols": [
+    "exportInternal",
+    "ToExportKvList",
+    "WriteExport"
+   ],
+   "expectedFacts": [
+    "The stream's key chooser in exportInternal skips deleted or expired items and skips the continuation parts of split lists (they are read through the main key).",
+    "CRITICAL: It skips predicates that the writing group does not serve, and skips vector-index internal keys and the legacy single-predicate marker, keeping only data keys.",
+    "CRITICAL: ToExportKvList drops internal system predicates (the GraphQL xid, the drop-operation record, persisted GraphQL queries and several legacy ones) and also drops the marker node whose only type is the internal GraphQL type.",
+    "The GraphQL schema value is not written to the data file; it goes to a separate schema-JSON writer (and errors if more than one value exists).",
+    "WriteExport silently skips entries whose rendered value is empty."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: worker/export.go:798 (IsDeletedOrExpired), :810 (HasStartUid), :813-816 (_predicate_), :821 (ServesTablet), :826 (hnsw.VecKeyword), :829 (return pk.IsData()); :606-690 ToExportKvList (618-620 xid/drop.op/p_query; 622-657 GraphQL schema to Version 2 kv; 659-663 legacy dgraph.cors etc.; 664-680 dgraph.type == dgraph.graphql node); :698-705 WriteExport (len(kv.Value) == 0). CHEAPEST ROUTE (5 dependent steps): (1) find where a database dump is produced (admin GraphQL mutation -> worker.ExportOverNetwork); (2) follow to export() -> exportInternal; (3) read the stream.ChooseKey filters; (4) read ToExportKvList switch and the GraphQL schema branch; (5) read WriteExport for the empty-value skip. The question avoids the words 'export', 'RDF', 'JSON'. FIRST-3-GREPS: 'archival' / 'portable' / 'left out' hit docs/CHANGELOG and backup code (decoy) before worker/export.go. DECOYS: worker/backup.go (backup writes all entries including deletes and schema history), dgraph/cmd/debug (dump tool), dgraph/cmd/live. est. turns: 6"
+  },
+  {
+   "id": "r3h-dgraph-09",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "With the who-did-what trail of control and data calls switched on, which kinds of traffic still produce no entry, and why? Cover both the coordinator and the data servers.",
+   "expectedFiles": [
+    "audit/interceptor.go",
+    "graphql/admin/http.go",
+    "worker/worker.go",
+    "dgraph/cmd/zero/run.go",
+    "audit/audit.go"
+   ],
+   "expectedSymbols": [
+    "skipApis",
+    "skipEPs",
+    "AuditRequestHttp",
+    "AuditWebSockets",
+    "InitAuditor"
+   ],
+   "expectedFacts": [
+    "CRITICAL: A fixed set of gRPC method names is never audited: the Raft/join/heartbeat calls, the coordinator's membership, oracle, timestamp, tablet-serving and connect calls, and the health check/watch calls (skipApis in audit/interceptor.go).",
+    "A fixed set of HTTP paths is never audited: /health, /state and /probe/graphql (skipEPs).",
+    "CRITICAL: HTTP upgrade requests that speak the GraphQL websocket subprotocol are skipped by AuditRequestHttp; instead each subscription request is audited separately by AuditWebSockets, called from graphql/admin/http.go.",
+    "The data servers' internal gRPC server (worker/worker.go Init) is built without any audit interceptor, and the coordinator's gRPC server registers only a unary audit interceptor (dgraph/cmd/zero/run.go), so its streaming calls are not audited.",
+    "Nothing is audited unless the auditor is initialised: every interceptor returns early while the enabled flag is 0, which becomes 1 only in InitAuditor (called after startup health on alpha, at startup on zero)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: audit/interceptor.go:40-57 skipApis, :58-62 skipEPs, :65-77 AuditRequestGRPC, :83-95 AuditStreamGRPC (same skipApis), :97-125 AuditRequestHttp (graphql-ws skip :111-117; websocket audited elsewhere), :130 AuditWebSockets; graphql/admin/http.go:184 (audit.AuditWebSockets); worker/worker.go:50-62 (workerServer grpc.NewServer options: no interceptors); dgraph/cmd/zero/run.go:157 (UnaryInterceptor only); audit/audit.go:92-113 (InitAuditorIfNecessary/InitAuditor sets auditEnabled=1); dgraph/cmd/alpha/run.go:618-623 (init after HealthCheck), dgraph/cmd/zero/run.go:289. CHEAPEST ROUTE (6 dependent steps): (1) find the audit package (audit/interceptor.go); (2) read the skip maps; (3) read AuditRequestHttp for the websocket skip and follow it to the alternate path in graphql/admin/http.go; (4) check which gRPC servers attach the interceptors (alpha run.go serveGRPC vs worker/worker.go vs zero/run.go); (5) notice zero attaches only the unary one; (6) find enable flag initialisation (audit/audit.go, alpha/zero run.go). FIRST-3-GREPS: 'trail' / 'no entry' / 'switched on' do not literally match; an agent greps 'audit' and reaches audit/interceptor.go (gold) in one step, but the remaining members (worker.go, zero/run.go, graphql/admin/http.go) need reasoning about which servers install interceptors. DECOYS: x/logger.go, worker/cdc.go (change events), access logs in edgraph/access.go (logAccess). est. turns: 7"
+  },
+  {
+   "id": "r3h-dgraph-10",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "For a signed-in user who holds permission on only some fields, a request may ask for every field of a node, or ask to delete everything about a node. Where does the server restrict such all-fields requests to the fields the user may touch, and where does that list of permitted fields come from?",
+   "expectedFiles": [
+    "edgraph/predicate_acl.go",
+    "edgraph/access.go",
+    "query/query.go",
+    "query/mutation.go",
+    "worker/acl_cache.go"
+   ],
+   "expectedSymbols": [
+    "authorizePreds",
+    "authorizeQuery",
+    "authorizeMutation",
+    "expandSubgraph",
+    "expandEdges",
+    "AclCache.GetUserPredPerms",
+    "HasAccessToAllPreds"
+   ],
+   "expectedFacts": [
+    "CRITICAL: authorizePreds (edgraph/predicate_acl.go) builds the permitted list per user from the ACL cache (user-to-predicate permissions whose bits cover the operation); it returns a nil list, meaning 'all', when a group has the wildcard permission on every predicate, and still blocks ACL predicates.",
+    "authorizeQuery (edgraph/access.go) stores that list on every root query block (parsedReq.Query[i].AllowedPreds), and authorizeMutation stores it on the mutation (gmu.AllowedPreds).",
+    "CRITICAL: expandSubgraph (query/query.go) intersects the types' predicate list with sg.Params.AllowedPreds only for the all-fields wildcard; that parameter is copied only into root blocks (newGraph), so a wildcard written inside a nested block is not narrowed.",
+    "In query/mutation.go the delete-everything-about-a-node expansion intersects its predicate list with the edge's AllowedPreds, and ToDirectedEdges copies the mutation-level list onto the deletion edges.",
+    "worker/acl_cache.go (AclCache.Update / GetUserPredPerms) is the source of the per-user permission map, rebuilt per namespace."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: edgraph/predicate_acl.go:260-300 authorizePreds (HasAccessToAllPreds -> Allowed nil; else Allowed from GetUserPredPerms with perm&op.Code); edgraph/access.go:852 (gmu.AllowedPreds = result.Allowed), :1056-1058 (AllowedPreds on every root query); query/query.go:2070-2090 (intersection only in `case \"_all_\"`; `default:` branch, i.e. expand(Type) or expand(val(x)), is not intersected), :830 (AllowedPreds copied in newGraph for root only) vs treeCopy :553-570 (child params carry no AllowedPreds); query/mutation.go:97-113 (delete-star intersection), :255-259 (propagation onto edges); worker/acl_cache.go:46-150. CHEAPEST ROUTE (6 dependent steps): (1) find where wildcard expansion is implemented on reads (query/query.go expandSubgraph, 'expand' keyword); (2) notice the AllowedPreds intersection and ask who sets it; (3) trace to edgraph/access.go authorizeQuery; (4) from there find authorizePreds and the all-predicates wildcard (predicate_acl.go, worker/acl_cache.go); (5) find the mutation-side equivalent (authorizeMutation -> query/mutation.go delete-star path); (6) verify root-only propagation by reading newGraph vs treeCopy. FIRST-3-GREPS: 'wildcard' / 'permitted' / 'delete everything' hit unrelated acl docs and the delete-all-edges code in posting/index.go (decoy). The members share no common token apart from AllowedPreds, which the question does not mention. DECOYS: edgraph/access.go removePredsFromQuery (drops named blocked predicates), worker/acl_cache.go AuthorizePredicate (per-predicate check), graphql auth rules (graphql/authorization). est. turns: 8"
+  },
+  {
+   "id": "r3h-dgraph-11",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "The open-source server lets an embedding program replace three decisions: who the caller is, which customer space a request belongs to, and what the caller may do. Which entry points allow that replacement, where does each live, and which single hook connects them before the server begins answering requests?",
+   "expectedFiles": [
+    "x/authn.go",
+    "x/tenancy.go",
+    "edgraph/access_control.go",
+    "dgraph/cmd/alpha/hooks.go",
+    "dgraph/cmd/alpha/run.go"
+   ],
+   "expectedSymbols": [
+    "SetAuthenticator",
+    "SetTenantResolver",
+    "SetAccessController",
+    "RegisterCapabilitySource",
+    "ConfigureIdentity"
+   ],
+   "expectedFacts": [
+    "CRITICAL: x.SetAuthenticator (x/authn.go) swaps the Authenticator used by the identity interceptors that attach a verified Principal to each request; the default is the ACL JWT authenticator.",
+    "x.SetTenantResolver (x/tenancy.go) swaps how a request is attributed to a namespace; the default derives it from the ACL access token, and installing a custom resolver makes MultiTenancyEnabled true even without ACL.",
+    "edgraph.SetAccessController (edgraph/access_control.go) replaces the whole authorization policy (capabilities and predicate access); the built-in policy is predicateACL.",
+    "edgraph.RegisterCapabilitySource (same file) is additive: it appends another route to cluster authority, consulted after the always-present break-glass source, without replacing the policy.",
+    "CRITICAL: The startup hook is the alpha ConfigureIdentity variable (dgraph/cmd/alpha/hooks.go, a no-op by default), called from run() in dgraph/cmd/alpha/run.go after configuration is parsed and before any listener serves."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: x/authn.go:36-66 (authenticator atomic pointer; SetAuthenticator :41; default aclAuthenticator :57-63); x/tenancy.go:40-58 (SetTenantResolver), :59-68 MultiTenancyEnabled, :70-97 ResolveTenant; edgraph/access_control.go:170-196 (capabilitySources = [breakGlassSource{}], RegisterCapabilitySource :194), :227-250 (SetAccessController, currentAccessController -> predicateACL{}); dgraph/cmd/alpha/hooks.go:24-36 (ConfigureIdentity default no-op); dgraph/cmd/alpha/run.go:730-735. CHEAPEST ROUTE (6 dependent steps): (1) find where identity is established (x/authn.go interceptors); (2) find the installer setter; (3) find tenancy resolution (x/tenancy.go) and its setter; (4) find authorization (edgraph/access_control.go) with two different extension points; (5) find the hooks file in dgraph/cmd/alpha; (6) confirm call order in alpha run(). FIRST-3-GREPS: 'replace' / 'embedding program' / 'startup hook' hit hooks/config.go (embedded-mode hooks; decoy) and alpha/hooks.go (gold) together; 'customer space' hits nothing literal. DECOYS: hooks/config.go and worker/default_zero_hooks.go (embedded deployment hooks for transaction/ID services, not identity), dgraph/cmd/alpha/hooks.go RegisterFlags / Zanzibar service hooks (other extension points that are not about the three decisions). est. turns: 7"
+  },
+  {
+   "id": "r3h-dgraph-12",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "Several customers share one cluster. An operator needs every customer other than the primary one to be unable to obtain new node identifiers faster than a fixed budget per period. Where is that budget configured, where is it enforced, and what happens to a request that exceeds it?",
+   "expectedFiles": [
+    "dgraph/cmd/zero/run.go",
+    "dgraph/cmd/zero/zero.go",
+    "dgraph/cmd/zero/assign.go",
+    "x/x.go"
+   ],
+   "expectedSymbols": [
+    "LimiterConf",
+    "NewRateLimiter",
+    "RateLimiter.Allow",
+    "Server.AssignIds",
+    "RefillPeriodically"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The budget lives in Zero's own limit option group (identifier-lease amount and refill interval), parsed in dgraph/cmd/zero/run.go into x.LimiterConf; it is not an Alpha option.",
+    "Server init in dgraph/cmd/zero/zero.go creates the x.RateLimiter only when the lease amount is above zero; the default of 0 means no limiting at all.",
+    "CRITICAL: The check is the rateLimit closure inside Server.AssignIds (dgraph/cmd/zero/assign.go): it applies only to UID leases, skips the root namespace and requests that carry no namespace, and rejects any single request larger than the whole budget.",
+    "RateLimiter.Allow (x/x.go) keeps one token counter per namespace; RefillPeriodically resets every counter to the maximum on each refill interval.",
+    "An over-budget request sleeps a random time up to the refill interval and then fails with a 'lease exhausted, retry after some time' error."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: dgraph/cmd/zero/run.go:90-107 (limit superflag: uid-lease, refill-interval), :222-228 (LimiterConf), :238-241; worker/server_state.go:41 (ZeroLimitsDefaults uid-lease=0; refill-interval=30s); dgraph/cmd/zero/zero.go:96-100; dgraph/cmd/zero/assign.go:183-211 (rateLimit: UID only :186; root ns / missing ns :190-193; num.Val > UidLeaseLimit :197; Allow :202; random delay :205-206), called at :217-219 inside the leader branch; x/x.go:1522-1580 (LimiterConf, RateLimiter, Allow, RefillPeriodically). CHEAPEST ROUTE (5 dependent steps): (1) find where identifiers are leased (zero/assign.go); (2) spot rateLimit and the s.rateLimiter field; (3) follow the field to zero.go Init and x.NewRateLimiter; (4) follow opts.limiterConfig to zero/run.go flag parsing; (5) read x.RateLimiter for per-namespace semantics. DECOYS (named so the question detail selects one): worker/proposal.go rateLimiter (pending-proposal limit on data servers, keyed on Raft backlog not tenants), edgraph/server.go max-pending-queries (global 429 on queries), worker/worker.go limiter initialisation; the detail 'per customer' and 'new node identifiers' selects the Zero limiter. FIRST-3-GREPS: 'budget' / 'time window' / 'customers share' hit none; 'node identifiers' hits many UID paths. est. turns: 6"
+  },
+  {
+   "id": "r3h-dgraph-13",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "The automatic data-relocation process between groups tries to relocate a very large field's data and the attempt fails after running a long time. When will it try that same field again, and does a relocation requested by an operator obey the same waiting rule? Also, how long may one attempt run before it is stopped?",
+   "expectedFiles": [
+    "dgraph/cmd/zero/tablet.go"
+   ],
+   "expectedSymbols": [
+    "recordMoveResult",
+    "moveCooldown",
+    "skipMove",
+    "chooseTablet",
+    "MoveTablet",
+    "movePredicate",
+    "moveTimeout"
+   ],
+   "expectedFacts": [
+    "CRITICAL: movePredicate (after its initial validation) records each attempt's outcome through recordMoveResult; only a failed attempt that ran for at least one minute starts or extends a backoff (shorter failures, such as validation errors, are ignored), and a success clears it.",
+    "The cooldown starts at 1 hour, doubles for each consecutive failure, is capped at 24 hours, and is never shorter than the failed attempt's own running time (moveCooldown).",
+    "CRITICAL: Only the automatic path chooseTablet consults skipMove; the operator path MoveTablet calls movePredicate directly with no backoff check, so manual moves are never held back.",
+    "One attempt is cancelled after a minimum of 2 hours, extended for large tablets to size divided by an assumed floor rate of 256 KiB per second (moveTimeout).",
+    "The relocation interval flag only sets how often the balancer wakes up; it does not enforce the backoff."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: dgraph/cmd/zero/tablet.go:24-43 (constants), :46-51 moveTimeout (max(base, size/minMoveRate)), :78-90 rebalanceTablets (ticker opts.rebalanceInterval), :94-135 MoveTablet (calls s.movePredicate directly :122), :141-228 movePredicate (defer recordMoveResult :151-155; timeout :162), :253-327 chooseTablet (skipMove :308), :334-342 moveCooldown (shift = failures-1 < 6, min(1h<<shift, 24h), max with elapsed), :346-362 recordMoveResult (elapsed < 1m returns :351), :366-369 skipMove. CHEAPEST ROUTE (5 dependent steps): (1) find the balancer entry (zero/tablet.go rebalanceTablets); (2) read chooseTablet and see skipMove; (3) read skipMove/recordMoveResult/moveCooldown; (4) read MoveTablet vs movePredicate to see which path checks it; (5) read moveTimeout for the attempt length. DECOYS: worker/predicate_move.go (Alpha-side streaming, no backoff or timeout of its own), graphql/admin/moveTablet.go and zero/http.go moveTablet (manual entry points), the rebalance-interval flag in zero/run.go, the retry loops in worker/draft.go. est. turns: 6"
+  },
+  {
+   "id": "r3h-dgraph-14",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "A client creates a new isolated customer space through the programmatic cluster call, not through the admin GraphQL operation. What password does that space's built-in administrator account get, can the caller pick it, and under what condition is no administrator created at all?",
+   "expectedFiles": [
+    "edgraph/namespace.go",
+    "edgraph/multi_tenancy.go",
+    "edgraph/access.go"
+   ],
+   "expectedSymbols": [
+    "Server.CreateNamespace",
+    "CreateNamespaceInternal",
+    "createGuardianAndGroot",
+    "upsertGroot",
+    "upsertGuardian"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Server.CreateNamespace (edgraph/namespace.go) hard-codes the password \"password\" and passes it to CreateNamespaceInternal; the handler reads no password from the request, so the caller cannot choose it.",
+    "CreateNamespaceInternal (edgraph/multi_tenancy.go) leases a new namespace id, applies the initial schema and types, and then calls createGuardianAndGroot with that password.",
+    "CRITICAL: createGuardianAndGroot returns immediately without creating any accounts when access control is not enabled.",
+    "With access control on, upsertGuardian and upsertGroot (edgraph/access.go) create the guardians group and the groot user in the new namespace; groot is created only if no such user exists and the guardians group exists, and is added to guardians.",
+    "The password can only be changed afterwards (for example with the admin reset-password operation)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: edgraph/namespace.go:21-37 (password := \"password\" at :29; CreateNamespaceInternal call :30); edgraph/multi_tenancy.go:84-118 CreateNamespaceInternal, :120-132 createGuardianAndGroot (`if !x.WorkerConfig.AclEnabled { return nil }`), edgraph/access.go:531-560 upsertGroot (Cond eq(len(grootid),0) and gt(len(guid),0)). CHEAPEST ROUTE (5 dependent steps): (1) find the gRPC namespace-creation handler (edgraph/namespace.go); (2) read it and see the literal; (3) follow into edgraph/multi_tenancy.go CreateNamespaceInternal; (4) follow createGuardianAndGroot and its ACL gate; (5) read upsertGroot for the existence condition. GATING: the ACL-off path returns before creating anything. DECOYS (same literal, different callers): graphql/admin/namespace.go resolveAddNamespace (takes an optional password, default \"password\"), edgraph/access.go upsertGuardianAndGroot called by InitializeAcl (root namespace at startup, also \"password\"), acl/run.go (the acl CLI user creation). The detail 'programmatic cluster call' selects edgraph/namespace.go. est. turns: 6"
+  },
+  {
+   "id": "r3h-dgraph-15",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "A conditional update request binds a variable to a very large number of nodes, so the statements that add data multiply when the variable is substituted. Which configured size cap refuses the request, is it the same cap that applies to the statements that remove data, and where else is the number of statements per request counted?",
+   "expectedFiles": [
+    "edgraph/server.go"
+   ],
+   "expectedSymbols": [
+    "updateUIDInMutations",
+    "updateValInMutations",
+    "updateMutations",
+    "doMutate"
+   ],
+   "expectedFacts": [
+    "CRITICAL: For the add statements, updateUIDInMutations (edgraph/server.go) checks the running count against the traversal edge limit (the query-edge limit, x.Config.LimitQueryEdge), not against the mutation statement limit.",
+    "CRITICAL: For the remove statements in the same function the check uses the mutation statement limit (x.Config.LimitMutationsNquad), after every subject expansion.",
+    "updateValInMutations then checks the accumulated count against the mutation statement limit, and doMutate checks the final number of directed edges against it again.",
+    "All four checks produce the same error text ('NQuad count in the request ... more that threshold'); both limits default to 1,000,000 so the difference only shows when an operator changes one."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: edgraph/server.go:944-964 updateMutations (updateUIDInMutations :955 before updateValInMutations :958), :1114-1181 updateUIDInMutations (Del loop check LimitMutationsNquad :1158-1161; Set loop `qc.nquadsCount > int(x.Config.LimitQueryEdge)` :1174-1177), :1101-1108 updateValInMutations (LimitMutationsNquad :1104), :634-637 doMutate (len(edges) > LimitMutationsNquad); worker/server_state.go:38-39 defaults query-edge=1000000, mutations-nquad=1000000. CHEAPEST ROUTE (5 dependent steps): (1) find upsert variable substitution (edgraph/server.go updateMutations); (2) read updateUIDInMutations; (3) notice the two different limit fields; (4) check the later check in updateValInMutations and doMutate; (5) confirm defaults in worker/server_state.go. DECOYS: query/recurse.go and query/shortest.go (the query-edge limit as used by traversals; shortest.go also prints the other limit's value in its error), query/outputnode.go (normalize limit), edgraph/server.go doQuery pending-query cap. est. turns: 6"
+  },
+  {
+   "id": "r3h-dgraph-16",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "On a cluster started without any user-permission feature, who is allowed to create or drop an isolated customer space or list all of them? And what changes when the permission feature is on but the caller administers only a non-primary customer space?",
+   "expectedFiles": [
+    "edgraph/predicate_acl.go",
+    "edgraph/access_control.go",
+    "edgraph/namespace.go",
+    "edgraph/server.go",
+    "x/x.go"
+   ],
+   "expectedSymbols": [
+    "authorizeClusterAdmin",
+    "breakGlassSource.Grants",
+    "grantedBySource",
+    "authSuperAdmin",
+    "hasPoormansAuth",
+    "HasWhitelistedIP"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Without access control, authorizeClusterAdmin (edgraph/predicate_acl.go) grants the capability only through registered capability sources, by default the break-glass source.",
+    "CRITICAL: breakGlassSource.Grants requires both a source IP that is loopback or inside the configured whitelist (x.HasWhitelistedIP) and, if an auth token is configured, a matching token (hasPoormansAuth); when no token is configured the IP test alone suffices.",
+    "With access control on, authorizeClusterAdmin calls authSuperAdmin first: the signed token's namespace must be the root namespace and the user must be in the guardians group; break-glass is not consulted in that case.",
+    "A guardian of a non-root namespace is rejected with 'Only superadmin is allowed to do this operation'; additional registered capability sources are still consulted afterwards.",
+    "The same capability also gates drop-all in Alter (edgraph/server.go), while namespace create, drop and list are in edgraph/namespace.go."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: edgraph/predicate_acl.go:95-130 authorizeClusterAdmin (ACL branch :96-118 with authSuperAdmin then grantedBySource; non-ACL branch :119-127), :141-160 breakGlassSource.Grants (returns false when AclEnabled; HasWhitelistedIP + hasPoormansAuth), :168-200 authSuperAdmin (ns != 0 -> PermissionDenied 'Only superadmin is allowed to do this operation'), edgraph/access_control.go:189,203-212; edgraph/server.go:2230-2245 hasPoormansAuth (empty token -> nil); x/x.go:524-541 isIpWhitelisted (loopback always true), :615-628; edgraph/namespace.go:23,42,68; edgraph/server.go:424. CHEAPEST ROUTE (6 dependent steps): (1) find the namespace RPC handlers (edgraph/namespace.go) and the authorization call; (2) follow AuthorizeCapability into edgraph/access_control.go; (3) find the built-in policy (predicate_acl.go authorizeClusterAdmin); (4) read breakGlassSource; (5) read x.HasWhitelistedIP / isIpWhitelisted for the loopback rule and hasPoormansAuth for the token rule; (6) read authSuperAdmin for the ACL-on case. GATING: the ACL flag selects between the identity route and the break-glass route. FIRST-3-GREPS: 'access-control' / 'create or drop' / 'customer space' hit the ACL package and graphql admin (decoys) first. DECOYS: acl/ package CLI, graphql/resolve/middlewares.go (admin middleware), edgraph/access.go authorizeGuardians (guardian of any namespace, used for tenant-level capability), CapTenantAdmin gate for state/health. est. turns: 7"
+  },
+  {
+   "id": "r3h-dgraph-17",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "A person running the server turns on the cache mode in which a committed change removes the in-memory entry for an edge list rather than refreshing it. Trace that choice end to end, from the command line to the exact place the entry is removed.",
+   "expectedFiles": [
+    "dgraph/cmd/alpha/run.go",
+    "posting/lists.go",
+    "posting/mvcc.go",
+    "worker/draft.go"
+   ],
+   "expectedSymbols": [
+    "run",
+    "posting.Init",
+    "initMemoryLayer",
+    "MemoryLayer.updateItemInCache",
+    "Txn.UpdateCachedKeys",
+    "node.commitOrAbort"
+   ],
+   "expectedFacts": [
+    "The alpha reads the cache option group in run() (dgraph/cmd/alpha/run.go) and passes its remove-on-update boolean to posting.Init.",
+    "posting.Init (posting/lists.go) hands it to initMemoryLayer, which stores it as MemoryLayer.removeOnUpdate.",
+    "CRITICAL: node.commitOrAbort (worker/draft.go) first writes committed deltas to disk, then calls Txn.UpdateCachedKeys for every transaction in the delta, and only afterwards advances the oracle.",
+    "CRITICAL: MemoryLayer.updateItemInCache (posting/mvcc.go) returns early for aborted transactions; when removeOnUpdate is set it deletes the key from the cache (ml.del), otherwise it patches the cached list with setMutationAfterCommit and may queue a rollup.",
+    "A rolled-up delta (one carrying a pack) always deletes the cached entry even when the option is off."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: dgraph/cmd/alpha/run.go:109-126 (flag help), :642 (removeOnUpdate := cache.GetBool(\"remove-on-update\")), :787 posting.Init(...removeOnUpdate); posting/lists.go:37-43; posting/mvcc.go:514-519 initMemoryLayer, :582-613 updateItemInCache (commitTs == 0 return :583-585; removeOnUpdate :587-591; patch :602-606; Pack != nil -> ml.del :608-610), :616-624 UpdateCachedKeys; worker/draft.go:966-1021 commitOrAbort (CommitToDisk then UpdateCachedKeys :1017-1020 then ProcessDelta :1023). CHEAPEST ROUTE (6 dependent steps): (1) find the cache option group in alpha run.go flags; (2) see where it is parsed and passed (posting.Init); (3) open posting/lists.go and mvcc.go initMemoryLayer for the stored boolean; (4) find who reads removeOnUpdate (updateItemInCache); (5) find the caller UpdateCachedKeys; (6) find its caller in worker/draft.go commitOrAbort and the ordering around disk writes. DECOYS: posting/mvcc.go readFromCache/ResetCache (read-side and full-clear), worker/worker.go UpdateCacheMb (cache sizing), the Badger block/index caches (cache percentage option). est. turns: 6"
+  },
+  {
+   "id": "r3h-dgraph-18",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "From a machine that is not local and has no special setup, which of the coordinator's HTTP control endpoints can be called on a fresh install, and how does that change once the operator supplies an address allow-list or a shared secret? Is the rule the same for the data server's HTTP admin endpoints?",
+   "expectedFiles": [
+    "dgraph/cmd/zero/admin.go",
+    "dgraph/cmd/zero/run.go",
+    "x/x.go",
+    "dgraph/cmd/alpha/admin.go"
+   ],
+   "expectedSymbols": [
+    "adminAuthHandler",
+    "adminSecurityConfigured",
+    "isAdminRequestAuthorized",
+    "IsIpWhitelisted"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Zero registers four admin endpoints behind adminAuthHandler (dgraph/cmd/zero/run.go): /state and /assign non-strict, /removeNode and /moveTablet strict; all four disappear if the admin-http option is disabled.",
+    "CRITICAL: Strict endpoints (removeNode, moveTablet) always require authorization: a matching token header or a loopback/whitelisted source address, so a remote caller is refused on a fresh install.",
+    "Non-strict endpoints (state, assign) enforce the same authorization only once the operator has configured a token or a whitelist; before that they accept everyone.",
+    "Authorization on Zero is either/or: a correct token passes, otherwise the source IP must be loopback or inside a whitelist range.",
+    "The data server's own HTTP admin handler is different: alpha's adminAuthHandler checks only the token (and only when one is configured) and does no IP check; gRPC admin operations on the data server require the whitelisted IP and the token together."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: dgraph/cmd/zero/admin.go:30-33 adminSecurityConfigured, :38-43 isAdminRequestAuthorized (token OR IsIpWhitelisted), :60-75 adminAuthHandler((strict || adminSecurityConfigured()) && !authorized -> 401); dgraph/cmd/zero/run.go:323-328; x/x.go:519-541 (loopback always whitelisted); dgraph/cmd/alpha/admin.go:27-33 hasPoormansAuth (token only if set), :53-62 adminAuthHandler; edgraph/server.go:2218-2227 hasAdminAuth (IP AND token). CHEAPEST ROUTE (5 dependent steps): (1) find Zero's HTTP handlers registration (zero/run.go); (2) open zero/admin.go; (3) read the strict flag semantics; (4) follow IsIpWhitelisted into x/x.go for the loopback rule; (5) compare with alpha/admin.go and edgraph hasAdminAuth. GATING: behavior depends on the strict flag and whether --security options exist. DECOYS: alpha graphql admin middlewares (graphql/resolve/middlewares.go IpWhitelistingMW), zero gRPC (no HTTP guard), debug/jemalloc handler. est. turns: 6"
+  },
+  {
+   "id": "r3h-dgraph-19",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "A read request arrives over HTTP with its own time limit, and the operator has also configured a server-wide time limit for reads. Which one wins, does the server-wide limit ever cut off a write or an update-with-query, and what is the default?",
+   "expectedFiles": [
+    "dgraph/cmd/alpha/http.go",
+    "edgraph/server.go",
+    "worker/server_state.go",
+    "dgraph/cmd/alpha/run.go"
+   ],
+   "expectedSymbols": [
+    "queryHandler",
+    "Server.QueryNoGrpc",
+    "Server.QueryGraphQL",
+    "parseDuration"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The HTTP query handler (dgraph/cmd/alpha/http.go) reads an optional per-request timeout URL parameter and, when non-zero, wraps the context in a deadline before calling QueryNoGrpc.",
+    "CRITICAL: QueryNoGrpc and QueryGraphQL (edgraph/server.go) apply the server-wide limit only when the request contains no mutations and the context has no deadline yet, so a client's own deadline wins even if it is longer.",
+    "The server-wide default is 0 (unlimited): worker/server_state.go's limit defaults and x.Config.QueryTimeout set in alpha run.go.",
+    "Requests that carry mutations (including update-with-query) are never subject to that limit, and the HTTP mutation handler sets no deadline of its own.",
+    "The separate idle-transaction limit only reaps stale transactions based on their last write; it does not cap how long a statement runs."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: dgraph/cmd/alpha/http.go:194-198 (parseDuration timeout), :246-250 (context.WithTimeout when non-zero); edgraph/server.go:1352-1364 QueryGraphQL, :1396-1417 QueryNoGrpc (`req.GetMutations() == nil && x.Config.QueryTimeout != 0`, `ctx.Deadline()` zero check); worker/server_state.go:39 (query-timeout=0ms); dgraph/cmd/alpha/run.go:196-198,748; dgraph/cmd/alpha/http.go:345 mutationHandler (no deadline code); worker/draft.go abortOldTransactions. CHEAPEST ROUTE (5 dependent steps): (1) find the HTTP read handler (alpha/http.go queryHandler) and its timeout parameter; (2) follow into edgraph QueryNoGrpc; (3) read the deadline check there; (4) find the config source (alpha run.go limit group, server_state.go defaults); (5) check the mutation handler for deadlines. DECOYS: query-timeout-looking settings elsewhere: the idle-transaction abort option (txn-abort-after), the zero-side 30s HTTP assign timeout, x/server.go listener timeouts, conn pool dial timeouts. est. turns: 6"
+  },
+  {
+   "id": "r3h-dgraph-20",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "A text field declares several search indexes in some order: first a word-splitting one, then a fingerprint one, then a substring-matching one. Which index does an exact-match lookup on that field use, what changes if only the word-splitting and substring-matching ones are declared, and what does a greater-than lookup require?",
+   "expectedFiles": [
+    "worker/tokens.go",
+    "worker/task.go",
+    "tok/tok.go"
+   ],
+   "expectedSymbols": [
+    "pickTokenizer",
+    "getInequalityTokens",
+    "handleCompareFunction",
+    "IsLossy",
+    "IsSortable"
+   ],
+   "expectedFacts": [
+    "CRITICAL: For an equality lookup pickTokenizer (worker/tokens.go) walks the field's declared indexes in schema order and returns the first one that is not lossy; the fingerprint (hash) index is not lossy, so with the three declared it is chosen.",
+    "If no declared index is non-lossy and the field is a string, pickTokenizer returns the first index that is not the substring (trigram) one, so word-splitting then serves equality; otherwise it returns the first declared index.",
+    "CRITICAL: For greater-than, less-than and between lookups it returns the first sortable index and fails with an 'does not have proper index for comparison' error if none is sortable (word-splitting, fingerprint and trigram indexes are all non-sortable).",
+    "handleCompareFunction (worker/task.go) re-picks the same index and fetches and compares actual values only when the chosen index is lossy (word-splitting is lossy; fingerprint is not)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: worker/tokens.go:78-122 pickTokenizer (eq: !IsLossy :88-93; non-eq: IsSortable :94-98; error :104-107; string fallback non-trigram :111-117; tokenizers[0] :121); tok/tok.go:390-391 TermTokenizer (not sortable, lossy), :657-663 HashTokenizer (not sortable, not lossy), :635-636 TrigramTokenizer (not sortable, lossy); worker/task.go:1393-1420 handleCompareFunction (fetches values only when tokenizer.IsLossy()). CHEAPEST ROUTE (5 dependent steps): (1) locate where a lookup selects among a field's indexes (worker/task.go -> pickTokenizer in worker/tokens.go); (2) read the loop; (3) look up IsLossy/IsSortable per tokenizer in tok/tok.go; (4) read the string fallback; (5) read handleCompareFunction to see the consequence. The question names indexes by behaviour, not by their DQL names. DECOYS: getInequalityTokens (range token collection), verifyStringIndex (index check for text-search functions), schema/parse.go (tokenizer validity at declaration). est. turns: 6"
+  },
+  {
+   "id": "r3h-dgraph-21",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "A query block asks for only the first few results, possibly with a skip offset. Sometimes the storage read itself stops early; sometimes everything is read and trimmed afterwards. What decides which, and after how many entries does the storage read stop?",
+   "expectedFiles": [
+    "query/query.go",
+    "worker/task.go"
+   ],
+   "expectedSymbols": [
+    "calculatePaginationParams",
+    "createTaskQuery",
+    "uidReadFirst",
+    "SubGraph.applyPagination",
+    "shouldPrecalculateUids"
+   ],
+   "expectedFacts": [
+    "CRITICAL: calculatePaginationParams (query/query.go) pushes count and offset into the storage query only if the block has no filter, no ordering, a non-zero count, and its source function is not one of the multi-token string matchers (regular expression, all-of-terms, all-of-text, fuzzy match, n-gram).",
+    "Otherwise it asks for the maximum count with offset 0, so the whole list is read and trimmed later by applyPagination (offset and count applied to the uid matrix).",
+    "CRITICAL: On the worker, uidReadFirst (worker/task.go) turns a positive pushed-down count into count plus max(offset, 0) entries to read; zero or the maximum value means read everything, and a negative count is passed through without adding the offset.",
+    "Bounded reads also disable uid precalculation for the key (shouldPrecalculateUids returns false when the read is bounded), so those lists are not materialized into the cache."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: query/query.go:920-985 createTaskQuery (First/Offset from calculatePaginationParams :950, set in pb.Query :975-976), :989-1040 calculatePaginationParams (shouldExclude list :1008-1017; `len(sg.Filters) == 0 && len(sg.Params.Order) == 0 && !shouldExclude` :1027; else MaxInt32, 0), :2380 and :2493-2508 applyPagination; worker/task.go:799-808 uidReadFirst, :1166-1170 (opts.First = uidReadFirst(q)), :781-795 shouldPrecalculateUids. CHEAPEST ROUTE (5 dependent steps): (1) find how first/offset are carried (query/query.go params.fill, createTaskQuery); (2) read calculatePaginationParams; (3) follow First/Offset into the pb.Query consumer (worker/task.go helpProcessTask); (4) read uidReadFirst; (5) compare with applyPagination to see the later trimming. DECOYS: applyOrderAndPagination (default count of 1000 for ordered results), x.PageRange, worker/sort.go (ordering pagination), the cascade pagination handling in params.addCascadePaginationArguments. est. turns: 6"
+  },
+  {
+   "id": "r3h-dgraph-22",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "A new data server starts and asks to join a specific group that already has as many full members as the configured copy count. Under what circumstances does it end up in that group anyway, and where does it land otherwise? Consider a non-voting replica and a server whose database files came from the offline build tool.",
+   "expectedFiles": [
+    "dgraph/cmd/zero/zero.go",
+    "dgraph/cmd/zero/raft.go",
+    "worker/groups.go"
+   ],
+   "expectedSymbols": [
+    "Server.Connect",
+    "handleMemberProposal",
+    "StartRaftNodes"
+   ],
+   "expectedFacts": [
+    "CRITICAL: In Zero's Connect handler (dgraph/cmd/zero/zero.go) a read-only (learner) replica that names a group is given that group regardless of capacity.",
+    "A normal member that names a group is admitted only if the group's member count (read-only members included) is below the replica target; otherwise it falls through to the first existing group with room, or else to a brand-new group id.",
+    "A forced-group flag, set by the data server whenever a group id was proposed (from the group-id file of an offline-built database or from the group option; worker/groups.go), makes the proposal-creation step admit the member despite capacity.",
+    "CRITICAL: But Zero's Raft apply step (handleMemberProposal in dgraph/cmd/zero/raft.go) counts only non-read-only members and refuses to add a new non-read-only member once that count has reached the replica target ('Group reached replication level'), so the forced path does not actually overfill a group.",
+    "A proposed group id is discarded if the data server's WAL already holds a Raft id."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: dgraph/cmd/zero/zero.go:505-660 Connect/createProposal (m.GroupId > 0 branch :614-641; unknown group -> create :615-620; Learner :624-628; capacity `len(group.Members) < s.NumReplicas` :631; ForceGroupId :635-640; first group with room :646-651; `s.nextGroup` :653); dgraph/cmd/zero/raft.go:232-247 (numReplicas counts !Learner; `case has || member.GetLearner()` passes; `case numReplicas >= NumReplicas` errors); worker/groups.go:79-104 (ProposedGroupId; ForceGroupId = true when GroupId > 0; WAL raft id clears it). CHEAPEST ROUTE (6 dependent steps): (1) find the join protocol from the data-server side (worker/groups.go StartRaftNodes -> Connect); (2) open Zero's Connect and its createProposal closure; (3) read the learner and forced-group branches; (4) find where the proposal is applied (dgraph/cmd/zero/raft.go handleMemberProposal); (5) compare capacity counting between the two places; (6) check group-id sources (x/file.go, server_state.go). DECOYS: dgraph/cmd/zero/zero.go ShouldServe/Inform (tablet, not member placement), conn/node.go JoinCluster (Raft-level join). est. turns: 7"
+  },
+  {
+   "id": "r3h-dgraph-23",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "negative-decoy",
+   "difficulty": "hard",
+   "query": "When a field's data is being relocated or dropped while some transaction has already written to that field, where does the data server flag that transaction as doomed so that its later writes are refused right away?",
+   "expectedFiles": [
+    "posting/oracle.go",
+    "posting/mvcc.go",
+    "posting/list.go",
+    "worker/draft.go"
+   ],
+   "expectedSymbols": [
+    "Txn.shouldAbort",
+    "Txn.ShouldAbort",
+    "detectPendingTxns"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The transaction struct has an atomic shouldAbort field (posting/oracle.go) that is only ever read (Txn.ShouldAbort in posting/mvcc.go); no code anywhere in the repository assigns it a non-zero value, so no transaction is ever flagged this way.",
+    "The two readers are applyMutations (worker/draft.go), which would return a conflict error, and List.addMutationInternal (posting/list.go); both are therefore dead branches.",
+    "CRITICAL: Actual handling is different: for a schema change or predicate drop, detectPendingTxns returns a retry error and asks Zero to abort the pending transactions (tryAbortTransactions); for a move, Zero blocks commits on the predicate and aborts commits at checkPreds.",
+    "Drop-all, drop-data and namespace-drop clear the pending-transaction map (ResetTxns / ResetTxnsForNs) rather than flagging transactions."
+   ],
+   "expectedNoMatch": true,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION (negative): grep -rn shouldAbort -> only posting/oracle.go:44 (declaration) and posting/mvcc.go:224 (atomic.LoadUint32); grep -rn 'ShouldAbort()' -> posting/list.go:927, worker/draft.go:532 (readers only); grep -rn 'atomic.Store.*shouldAbort|shouldAbort =' -> no match; grep -rn 'SetAbort|markAbort' -> no match. Real mechanisms: worker/draft.go:315-330 detectPendingTxns, worker/mutation.go:917 tryAbortTransactions, dgraph/cmd/zero/oracle.go:358-387 checkPreds + tablet.go blockTablet, posting/oracle.go:353-372. CHEAPEST ROUTE (5 dependent steps): (1) find how the data server reacts to a predicate drop with pending transactions (worker/draft.go applyMutations); (2) notice ShouldAbort() check and the flag; (3) grep the field to find writers; (4) discover none; (5) read detectPendingTxns/tryAbortTransactions and Zero's checkPreds to see the real mechanism. DECOYS: the flag looks like the mechanism (declared, accessor, two guarded branches) but is never set; alpha ErrConflict from Zero commit is unrelated. est. turns: 6"
+  },
+  {
+   "id": "r3h-dgraph-24",
+   "repo": "dgraph",
+   "language": "Go",
+   "stratum": "negative-decoy",
+   "difficulty": "hard",
+   "query": "A vector field is built with the measure that rewards large inner products. A caller of the GraphQL nearest-neighbour search sets a maximum allowed distance. Where are neighbours farther than that dropped for such a field?",
+   "expectedFiles": [
+    "tok/hnsw/persistent_hnsw.go",
+    "worker/task.go",
+    "graphql/resolve/query_rewriter.go",
+    "tok/index/index.go"
+   ],
+   "expectedSymbols": [
+    "persistentHNSW.SearchWithOptions",
+    "persistentHNSW.SearchWithUidAndOptions",
+    "parseSimilarToOptions",
+    "VectorIndexOptions"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The distance option is accepted and forwarded all the way: the GraphQL argument is rewritten into the DQL function options (graphql/resolve/query_rewriter.go), parseSimilarToOptions (worker/task.go) stores it, and it reaches the index as VectorIndexOptions.DistanceThreshold.",
+    "CRITICAL: In tok/hnsw/persistent_hnsw.go, both SearchWithOptions and SearchWithUidAndOptions apply the threshold only in the Euclidean and Cosine cases; for the dot-product metric the switch falls to an empty default branch, so nothing is dropped.",
+    "The interface comment in tok/index/index.go says the dot-product semantics are 'undefined; implementations may ignore'.",
+    "The search-breadth override still applies for dot-product indexes; only the distance cutoff is ignored."
+   ],
+   "expectedNoMatch": true,
+   "max_turns": 15,
+   "tier": "r3-hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION (negative): tok/hnsw/persistent_hnsw.go:329-346 and :398-414 (`switch ph.simType.indexType { case Euclidean ... case Cosine ... default: }`, default has no filtering), tok/index/index.go:129-134 (comment 'Dot product: undefined; implementations may ignore'), worker/task.go:384-397 (opts.DistanceThreshold set; passed only to SearchWithOptions/SearchWithUidAndOptions), graphql/resolve/query_rewriter.go:733-737,885-889; grep -rn DistanceThreshold shows no other consumer; tok/hnsw/persistent_factory.go:71 allows dotproduct as a metric. CHEAPEST ROUTE (5 dependent steps): (1) find the GraphQL argument for the distance cutoff (graphql/schema/gqlschema.go, query_rewriter.go); (2) follow to the DQL option parsing in worker/task.go parseSimilarToOptions; (3) follow opts.DistanceThreshold into tok/index; (4) read the two search methods in persistent_hnsw.go; (5) observe the empty default branch for the dot-product metric. DECOYS: the threshold code exists and is correct for two metrics, so an agent may answer with the Euclidean/Cosine branch; the filter callback (opts.Filter) is a different mechanism. est. turns: 7"
+  }
+ ]
+}
