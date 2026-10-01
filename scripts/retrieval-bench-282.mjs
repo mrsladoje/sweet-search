@@ -112,7 +112,13 @@ const envOf = (arm) => (arm === 'sweetB' ? { ...process.env, ...ARMB_ENV } : pro
 const prune3 = (arm) => envOf(arm).SS_VARIANT_PRUNE3 === '1';
 const PRUNE3 = prune3('sweet') || prune3('sweetB');
 const RULES_PRUNE3 = () => fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/final-tuning/variants/rules-prune3.md'), 'utf8');
-const rulesFor = (arm) => (prune3(arm) ? RULES_PRUNE3() : RULES);
+// SS_VARIANT_RULES_FILE=<path relative to the repo> (final-tuning): a full alternative rules text for that
+// arm (same tools; Codex / opencode). Default unset = the shipped rules.
+const rulesFor = (arm) => {
+  const f = envOf(arm).SS_VARIANT_RULES_FILE;
+  if (f) return fs.readFileSync(path.resolve(REPO, f), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
+  return prune3(arm) ? RULES_PRUNE3() : RULES;
+};
 function prunedBin() {
   const d = path.join(EVAL, 'final-tuning-bin-prune3');
   fs.mkdirSync(d, { recursive: true });
