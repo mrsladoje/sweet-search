@@ -314,6 +314,27 @@ describe('review — C# namespace lookup', () => {
   });
 });
 
+describe('review — declaration cache across resolvers (maintainer ticks)', () => {
+  it('a later resolver sees an edited declaration file, and reuses unchanged ones', () => {
+    const t = tree({
+      'P/Widget.cs': 'namespace P { public class Widget {} }',
+      'X/Use.cs': 'using P;\nnamespace X { class Use { Widget w; } }',
+    });
+    const content = fs.readFileSync(path.join(t.root, 'X/Use.cs'), 'utf8');
+    const edgesNow = () => {
+      const r = createImportResolver({ projectRoot: t.root, files: t.files, probeFs: true });
+      return r.implicitImports('X/Use.cs', content, 'csharp', scanImports(content, 'csharp')).map((e) => e.target);
+    };
+    expect(edgesNow()).toEqual(['P/Widget.cs']);
+    // Rename the class (new size and mtime): the next tick must not link it.
+    const abs = path.join(t.root, 'P/Widget.cs');
+    fs.writeFileSync(abs, 'namespace P { public class Gadget {} }   ');
+    const later = new Date(Date.now() + 5000);
+    fs.utimesSync(abs, later, later);
+    expect(edgesNow()).toEqual([]);
+  });
+});
+
 describe('review — JVM implicit references', () => {
   it('an explicit import shadows the same-package type', () => {
     expect(implicit({

@@ -58,6 +58,29 @@ const MAX_FILES_PER_NAME = 4;
 const SVELTE_CONFIGS = ['svelte.config.js', 'svelte.config.ts', 'svelte.config.mjs'];
 const FILE_SCOPED_MEMO_LANGUAGES =new Set(['rust', 'csharp', 'elixir', 'java', 'kotlin', 'scala', 'groovy']);
 
+// Per-file declaration summaries for the namespace-language indexes (C#,
+// JVM, Swift, Elixir), kept across resolvers. The incremental maintainer
+// builds a fresh resolver every tick; without this, one edited .cs file made
+// the tick re-read and re-parse every .cs file of the repo. A summary is
+// reused while the file's size and mtime (ns) are unchanged.
+const DECL_CACHE = new Map(); // `${root}\0${family}\0${rel}` -> { size, mtime, value }
+const DECL_CACHE_MAX = 250000;
+
+function cachedDeclarations(root, rel, family, parse) {
+  const abs = path.join(root, rel);
+  let st;
+  try { st = fs.statSync(abs, { bigint: true }); } catch { return null; }
+  const key = `${root}\0${family}\0${rel}`;
+  const hit = DECL_CACHE.get(key);
+  if (hit && hit.size === st.size && hit.mtime === st.mtimeNs) return hit.value;
+  let text;
+  try { text = fs.readFileSync(abs, 'utf8'); } catch { return null; }
+  const value = parse(text);
+  if (DECL_CACHE.size >= DECL_CACHE_MAX) DECL_CACHE.clear();
+  DECL_CACHE.set(key, { size: st.size, mtime: st.mtimeNs, value });
+  return value;
+}
+
 /** Normalise to a repo-relative POSIX path; null when it escapes the repo. */
 function norm(p) {
   const n = path.posix.normalize(p.replace(/\\/g, '/'));
@@ -999,14 +1022,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return null;
   }
 
-  /**
-   * Source of a repo file for the declaration indexes. Not memoised in
-   * readMemo: index builds read every file once and keep only declarations.
-   */
-  function sourceText(rel) {
-    try { return fs.readFileSync(path.join(root, rel), 'utf8'); } catch { return null; }
-  }
-
   // -------------------------------------------------------------------------
   // Stylesheets (Sass / SCSS / Less / CSS)
   // -------------------------------------------------------------------------
@@ -1487,9 +1502,9 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     for (const f of fileSet) {
       if (!f.endsWith('.swift') || !f.startsWith(prefix)) continue;
       if (swiftTargetOf(f) !== target) continue;
-      const text = sourceText(f);
-      if (!text) continue;
-      for (const d of braceDeclarations(stripNoise(text, 'swift')).decls) addDecl(byName, d.name, f, d.kind);
+      const decls = cachedDeclarations(root, f, 'swift', (text) => braceDeclarations(stripNoise(text, 'swift')).decls);
+      if (!decls) continue;
+      for (const d of decls) addDecl(byName, d.name, f, d.kind);
     }
     swiftModuleIndexMemo.set(target.dir, byName);
     return byName;
@@ -1508,9 +1523,8 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     const projectDirs = [...fileSet].filter((f) => f.endsWith('.csproj')).map(dirOf);
     for (const f of fileSet) {
       if (!f.endsWith('.cs')) continue;
-      const text = sourceText(f);
-      if (!text) continue;
-      const decl = csharpDeclarations(stripNoise(text, 'csharp'));
+      const decl = cachedDeclarations(root, f, 'csharp', (text) => csharpDeclarations(stripNoise(text, 'csharp')));
+      if (!decl) continue;
       for (const ns of decl.namespaces) namespaces.add(ns);
       for (const t of decl.types) {
         let byName = types.get(t.ns);
@@ -1555,9 +1569,9 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     for (const f of fileSet) {
       const lang = JVM_LANG_OF_EXT[path.posix.extname(f)];
       if (!lang) continue;
-      const text = sourceText(f);
-      if (!text) continue;
-      const { packages, decls } = braceDeclarations(stripNoise(text, lang));
+      const parsed = cachedDeclarations(root, f, lang, (text) => braceDeclarations(stripNoise(text, lang)));
+      if (!parsed) continue;
+      const { packages, decls } = parsed;
       const pkg = packageChain(packages).pop() || '';
       let byName = jvmIndexMemo.get(pkg);
       if (!byName) { byName = new Map(); jvmIndexMemo.set(pkg, byName); }
@@ -1586,9 +1600,9 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     exIndexMemo = new Map(); // module -> [files]
     for (const f of fileSet) {
       if (!f.endsWith('.ex') && !f.endsWith('.exs')) continue;
-      const text = sourceText(f);
-      if (!text) continue;
-      for (const mod of elixirModules(stripNoise(text, 'elixir'))) {
+      const mods = cachedDeclarations(root, f, 'elixir', (text) => elixirModules(stripNoise(text, 'elixir')));
+      if (!mods) continue;
+      for (const mod of mods) {
         const list = exIndexMemo.get(mod);
         if (!list) exIndexMemo.set(mod, [f]); else if (!list.includes(f)) list.push(f);
       }
