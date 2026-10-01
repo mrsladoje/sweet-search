@@ -10,8 +10,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { cwdGrepScope, cwdOffset, resolveCwdPath } from '../../core/search/cwd-paths.js';
+import { cwdGrepScope, cwdOffset, resolveCwdGlob, resolveCwdPath } from '../../core/search/cwd-paths.js';
 import { matchesGrepFileFilter } from '../../core/search/grep-output-shaping.js';
+import { compilePathGlobs } from '../../core/search/grep-path-globs.js';
 
 let base;
 let root;       // the repository
@@ -75,6 +76,50 @@ describe('resolveCwdPath', () => {
   });
 });
 
+// ss-grep / ss-find -g: rg anchors a glob at the cwd; the engine only takes root-anchored or
+// unanchored globs, so the wrapper re-anchors (with the same root-relative fallback as a path).
+describe('resolveCwdGlob (-g typed from a subdirectory)', () => {
+  const okhttp = () => path.join(root, 'okhttp');
+
+  it('a slash-less or **-led glob matches at any depth: unchanged', () => {
+    for (const g of ['*.kt', '!tests', '!tests/', '!*_test.go', '**/okhttp3/*.kt', '!**/tests/**']) {
+      expect(resolveCwdGlob(g, { cwd: sub, root })).toBe(g);
+    }
+  });
+
+  it('an anchored glob is anchored at the cwd, as rg does (`!` kept)', () => {
+    expect(resolveCwdGlob('!src/**', { cwd: okhttp(), root })).toBe('!/okhttp/src/**');
+    expect(resolveCwdGlob('src/okhttp3/*.kt', { cwd: okhttp(), root })).toBe('/okhttp/src/okhttp3/*.kt');
+    expect(resolveCwdGlob('/Dispatcher.kt', { cwd: sub, root })).toBe('/okhttp/src/okhttp3/Dispatcher.kt');
+    expect(resolveCwdGlob('./*.kt', { cwd: sub, root })).toBe('/okhttp/src/okhttp3/*.kt');
+    expect(resolveCwdGlob('!../okhttp3/*.md', { cwd: sub, root })).toBe('!/okhttp/src/okhttp3/*.md');
+    // neither reading exists: rg's reading (cwd)
+    expect(resolveCwdGlob('!nope/**', { cwd: sub, root })).toBe('!/okhttp/src/okhttp3/nope/**');
+  });
+
+  it('a root-relative glob copied from tool output keeps its meaning when only the root has it', () => {
+    expect(resolveCwdGlob('!okhttp/src/**', { cwd: sub, root })).toBe('!okhttp/src/**');
+  });
+
+  it('an absolute path inside the repository becomes the root-anchored glob (any spelling)', () => {
+    expect(resolveCwdGlob(`!${path.join(root, 'okhttp', 'src')}/**`, { cwd: sub, root })).toBe('!/okhttp/src/**');
+    expect(resolveCwdGlob(`${path.join(realpathSync(root), 'okhttp')}/*.kt`, { cwd: root, root: rootLink }))
+      .toBe('/okhttp/*.kt');
+  });
+
+  it('changes nothing at the root, outside the repository, or for a glob that climbs out', () => {
+    expect(resolveCwdGlob('!src/**', { cwd: root, root })).toBe('!src/**');
+    expect(resolveCwdGlob('!src/**', { cwd: outside, root })).toBe('!src/**');
+    expect(resolveCwdGlob('../../../../x/*', { cwd: sub, root })).toBe('../../../../x/*');
+  });
+
+  it('the re-anchored glob excludes the cwd-relative directory and nothing at the root', () => {
+    const g = compilePathGlobs([resolveCwdGlob('!src/**', { cwd: okhttp(), root })]);
+    expect(g.matches('okhttp/src/okhttp3/Dispatcher.kt')).toBe(false);
+    expect(g.matches('src/other.kt')).toBe(true);
+  });
+});
+
 describe('cwdGrepScope (ss-grep implicit scope)', () => {
   it('is the absolute subdirectory under the index root when run from a subdirectory', () => {
     expect(cwdGrepScope({ cwd: sub, fileRoot: root, indexRoot: root }))
@@ -130,12 +175,13 @@ describe('ss-find → ss-grep fallback wiring (_ss-helpers.mjs)', () => {
 
   // Measured on a temp repo before the fix: from src/, ss-find with no --in fell back to
   // cmdGrep, picked up ss-grep's implicit cwd scope and printed 3 of the 6 hits.
-  it('the fallback tells cmdGrep it comes from ss-find', () => {
-    expect(cmdFind).toMatch(/return cmdGrep\(\[[^\]]*\.\.\.inPaths\.flatMap[^)]*\)\],\s*\{ fromFind: true \}\)/);
+  it('the fallback tells cmdGrep it comes from ss-find, with its scopes and its globs', () => {
+    expect(cmdFind).toMatch(/return cmdGrep\(\[[^\]]*\.\.\.inPaths\.flatMap[^)]*\),\s*\.\.\.globs\.flatMap\(g => \['-g', g\]\)\],\s*\{ fromFind: true \}\)/);
   });
 
   it('cmdGrep applies neither the implicit cwd scope nor a second cwd resolution for ss-find', () => {
     expect(cmdGrep).toMatch(/if \(!fromFind\) resolveScopePaths\(inPaths\)/);
+    expect(cmdGrep).toMatch(/readGlobFlags\(args, GREP_USAGE, \{ resolve: !fromFind \}\)/);
     expect(cmdGrep).toMatch(/const cwdScope = fromFind \? null\s*: cwdGrepScope\(/);
   });
 

@@ -1039,6 +1039,14 @@ export async function startServer() {
       const useLiteralFilter = url.searchParams.get('literalFilter') !== 'false';
       const useSparseGrams = url.searchParams.get('gramIndex') !== 'false';
       const globs = url.searchParams.getAll('glob');
+      // The agent tools' `-g` globs (grep-path-globs.js): filtered in JS on the native path,
+      // never handed to ripgrep the way `glob` is. Absent = no filter, byte-identical.
+      const pathGlobs = url.searchParams.getAll('pathGlob').filter(Boolean);
+      if (pathGlobs.some(g => g.length > SEARCH_SERVER_MAX_READ_PATH_LENGTH)) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Path glob too long (max ${SEARCH_SERVER_MAX_READ_PATH_LENGTH} chars)` }));
+        return;
+      }
 
       // Agent mode: context packaging (ColGrep agent format)
       const rawFormat = url.searchParams.get('format');
@@ -1083,6 +1091,7 @@ export async function startServer() {
           fixedString,
           type: symbolType,
           globs,
+          ...(pathGlobs.length ? { pathGlobs } : {}),
           literalFilter: useLiteralFilter,
           gramIndex: useSparseGrams,
           expand,
@@ -1497,6 +1506,7 @@ export async function queryServer(query, options = {}) {
     fixedString = false,
     type = '',
     globs = [],
+    pathGlobs = [],
     literalFilter = true,
     gramIndex = true,
     expand = true,
@@ -1539,6 +1549,7 @@ export async function queryServer(query, options = {}) {
     if (!literalFilter) params.set('literalFilter', 'false');
     if (!gramIndex) params.set('gramIndex', 'false');
     for (const glob of globs) params.append('glob', glob);
+    for (const glob of pathGlobs) if (glob) params.append('pathGlob', glob);
     if (!expand) params.set('expand', 'false');
     if (!rerank) params.set('rerank', 'false');
     if (!useLateInteraction) params.set('late-interaction', 'false');

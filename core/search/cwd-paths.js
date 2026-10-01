@@ -58,6 +58,71 @@ export function resolveCwdPath(p, { cwd = process.cwd(), root, exists = existsSy
   return found ? candidate : p;
 }
 
+const GLOB_META = /[*?[\]{}\\]/;
+
+/**
+ * Re-anchor one ss-grep / ss-find `-g` glob typed from the shell's cwd, so the engine only
+ * ever sees ROOT-anchored or unanchored globs (core/search/grep-path-globs.js).
+ *
+ * ripgrep anchors a `-g` glob at the cwd (measured: from lib/, `rg -g '!tests/**'` drops
+ * lib/tests and `-g '!lib/src/**'` drops nothing), so that is the first reading. The same
+ * one fallback as resolveCwdPath applies: when the glob's literal leading path does not
+ * exist under the cwd but does exist under the root, it keeps its root-relative meaning —
+ * ss-grep prints root-relative paths, and an agent builds its next glob from them.
+ *
+ *   no `/` (`*.h`, `!tests`, `tests/`)   matches at any depth: unchanged
+ *   leading `**`                         matches at any depth: unchanged
+ *   an absolute path inside the root     the root-relative glob, anchored (`/lib/x/**`)
+ *   `/x`, `./x`                          anchored at the cwd (rg's rule; `./` see the module)
+ *   `a/b*`                               cwd-anchored, unless only `root/a` exists
+ *
+ * At the root, or outside the repository, the glob is returned unchanged. The native
+ * client (crates/sweet-search-cli agent_tools.rs) forwards argv and the cwd untouched, so
+ * this wrapper-side call is the only place a glob is re-anchored, on both paths.
+ *
+ * @param {string} glob - as the agent typed it, `!` included
+ * @param {{cwd?: string, root: string, exists?: (abs: string) => boolean}} opts
+ */
+export function resolveCwdGlob(glob, { cwd = process.cwd(), root, exists = existsSync } = {}) {
+  if (typeof glob !== 'string' || glob === '') return glob;
+  const neg = glob.startsWith('!') ? '!' : '';
+  const body = glob.slice(neg.length);
+  // An absolute filesystem path under the root (pasted from a tool's absolute output).
+  if (body.startsWith('/') && root) {
+    for (const r of new Set([path.resolve(root), realOrResolved(root)])) {
+      const prefix = r.split(path.sep).join('/').replace(/\/+$/, '');
+      if (body === prefix || body.startsWith(`${prefix}/`)) {
+        const rest = body.slice(prefix.length).replace(/^\/+/, '');
+        return rest ? `${neg}/${rest}` : glob;
+      }
+    }
+  }
+  const offset = cwdOffset({ cwd, root });
+  if (!offset) return glob;                               // at the root or outside it
+  const trimmed = body.replace(/\/+$/, '');
+  if (body.startsWith('**')) return glob;                 // any depth already
+  const explicitHere = /^(?:\.\/|\/)/.test(body);
+  if (!explicitHere && !trimmed.includes('/')) return glob;   // basename glob, any depth
+  const rel = body.replace(/^(?:\.\/|\/)+/, '');
+  // `..` is resolved lexically (`../src/**` from lib/ is `/src/**`); the engine matches
+  // paths, not spellings. A glob that climbs out of the repository is left as typed.
+  const joined = path.posix.normalize(`${offset}/${rel}`);
+  if (joined === '..' || joined.startsWith('../')) return glob;
+  const cwdAnchored = `${neg}/${joined}`;
+  if (explicitHere) return cwdAnchored;
+  // The literal leading path (segments before the first glob metacharacter).
+  const literal = [];
+  for (const seg of rel.split('/')) {
+    if (seg === '' || GLOB_META.test(seg)) break;
+    literal.push(seg);
+  }
+  if (literal.length === 0 || literal.includes('..') || literal.includes('.')) return cwdAnchored;
+  const has = (p) => { try { return exists(p); } catch { return false; } };
+  if (has(path.join(root, offset, ...literal))) return cwdAnchored;
+  if (has(path.join(root, ...literal))) return glob;      // root-relative, as typed
+  return cwdAnchored;                                     // neither exists: rg's reading
+}
+
 /**
  * The implicit search scope of a grep run from a subdirectory: the absolute path
  * of that subdirectory under `indexRoot` (the root the engine's match paths are
