@@ -350,8 +350,15 @@ function splitTopLevel(text) {
 // Go
 // ---------------------------------------------------------------------------
 
-const GO_SINGLE_RE = /^import\s+(?:[A-Za-z_]\w*\s+|_\s+|\.\s+)?"([^"]+)"/;
-const GO_BLOCK_LINE_RE = /^(?:[A-Za-z_]\w*\s+|_\s+|\.\s+)?"([^"]+)"/;
+// Group 1: the optional package name (`pb "…/protos/pb"`, `_`, `.`).
+const GO_SINGLE_RE = /^import\s+(?:([A-Za-z_]\w*|\.)\s+)?"([^"]+)"/;
+const GO_BLOCK_LINE_RE = /^(?:([A-Za-z_]\w*|\.)\s+)?"([^"]+)"/;
+
+function goImport(m, line) {
+  const out = { spec: m[2], line, kind: 'import' };
+  if (m[1]) out.alias = m[1];
+  return out;
+}
 
 function scanGo(content) {
   const lines = content.split('\n');
@@ -362,15 +369,32 @@ function scanGo(content) {
     if (inBlock) {
       if (trimmed.startsWith(')')) { inBlock = false; continue; }
       const m = GO_BLOCK_LINE_RE.exec(trimmed);
-      if (m) out.push({ spec: m[1], line: i + 1, kind: 'import' });
+      if (m) out.push(goImport(m, i + 1));
       continue;
     }
     if (!trimmed.startsWith('import')) continue;
     if (/^import\s*\($/.test(trimmed) || /^import\s*\(\s*\/\//.test(trimmed)) { inBlock = true; continue; }
     const single = GO_SINGLE_RE.exec(trimmed);
-    if (single) out.push({ spec: single[1], line: i + 1, kind: 'import' });
+    if (single) out.push(goImport(single, i + 1));
   }
   return out;
+}
+
+/**
+ * The name a Go file uses for an import: its explicit name, else the
+ * package-name convention of the path — last element, without a major
+ * version element (`…/raft/v3` → raft) or suffix (`gopkg.in/yaml.v3` →
+ * yaml), without a `go-` prefix or `-go` suffix (`go-humanize` →
+ * humanize). Null when there is no usable name: blank `_` and dot `.`
+ * imports, or a path element that is no identifier after the convention.
+ */
+export function goImportName(imp) {
+  if (imp?.alias) return imp.alias === '_' || imp.alias === '.' ? null : imp.alias;
+  const parts = String(imp?.spec || '').split('/').filter(Boolean);
+  let last = parts.pop() || '';
+  if (/^v\d+$/.test(last) && parts.length > 0) last = parts.pop();
+  last = last.replace(/\.v\d+$/, '').replace(/^go-/, '').replace(/-go$/, '');
+  return /^[A-Za-z_]\w*$/.test(last) ? last : null;
 }
 
 // ---------------------------------------------------------------------------

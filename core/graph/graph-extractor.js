@@ -17,8 +17,8 @@ import { GRAPH_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-patterns.js';
 import { getTreeSitterProvider } from '../infrastructure/tree-sitter-provider.js';
 import { CallSiteScanner, EXTRA_CALL_SCAN_LANGUAGES } from './call-site-scanner.js';
-import { scanImports, SCANNED_IMPORT_LANGUAGES, importLanguageFor } from './import-scanner.js';
-import { UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
+import { goImportName, scanImports, SCANNED_IMPORT_LANGUAGES, importLanguageFor } from './import-scanner.js';
+import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
 import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './type-usage-scanner.js';
 import { ensureFilesSchema, insertFileNodes } from './file-nodes.js';
 
@@ -807,6 +807,11 @@ export class GraphExtractor {
         full_import_path: spec,
       });
     };
+    // Go: the name each import binds in this file → `gopkg:<dir>/` for a repo
+    // package (`gopkg:` for a module root at the repo root), or
+    // `unresolved:<path>` for one outside the repo (standard library, third
+    // party). A path under a repo module with no such directory is left out.
+    const goPackages = importLanguage === 'go' && this.importResolver.goPackageDir ? new Map() : null;
     for (const imp of scanned) {
       const target = this.importResolver.resolve(filePath, imp, importLanguage);
       // A namespace import (C# `using X.Y;`) names a namespace, never one
@@ -814,6 +819,14 @@ export class GraphExtractor {
       // class called Ocelot. Its file-level dependencies come from
       // implicitImports below; the legacy row gets no entity target.
       const annotation = target || `${UNRESOLVED_IMPORT_PREFIX}${imp.spec}`;
+      if (goPackages) {
+        const name = goImportName(imp);
+        if (name && !goPackages.has(name)) {
+          const dir = this.importResolver.goPackageDir(filePath, imp.spec);
+          if (dir === null) goPackages.set(name, `${UNRESOLVED_IMPORT_PREFIX}${imp.spec}`);
+          else if (typeof dir === 'string') goPackages.set(name, `${GO_PACKAGE_PREFIX}${dir ? `${dir}/` : ''}`);
+        }
+      }
       if (!bySpec.has(imp.spec)) bySpec.set(imp.spec, annotation);
       for (const name of imp.names || []) if (!byBinding.has(name)) byBinding.set(name, annotation);
       if (!target || target === self || seenTargets.has(target)) continue;
@@ -847,6 +860,25 @@ export class GraphExtractor {
         annotation = `${UNRESOLVED_IMPORT_PREFIX}${name}`;
       }
       if (annotation !== undefined) rel.full_import_path = annotation;
+    }
+
+    // Go `pkg.Func()` where `pkg` is an import name: a call into that package,
+    // never a method of a same-named local value. full_import_path carries
+    // the package so resolution binds only the package's top-level function
+    // (`x.Parse` → x/keys.go Parse, not WorkerOptions.Parse) and leaves a
+    // non-repo package unresolved (`glog.Errorf` is no in-repo
+    // ToGlog.Errorf). Legacy target_name stays as written.
+    if (goPackages && goPackages.size > 0) {
+      for (const rel of relationships) {
+        if (rel.type !== 'calls' || rel.full_import_path) continue;
+        const dot = String(rel.target_name || '').indexOf('.');
+        if (dot <= 0) continue;
+        const receiver = rel.target_name.slice(0, dot);
+        const rest = rel.target_name.slice(dot + 1);
+        if (!rest || rest.includes('.') || rest.includes('(')) continue;
+        const pkg = goPackages.get(receiver);
+        if (pkg) rel.full_import_path = pkg;
+      }
     }
   }
 

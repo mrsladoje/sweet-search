@@ -264,6 +264,65 @@ describe('incremental graph edge resolution matches a full build', () => {
     expect(inc).toEqual(await fullBuildSites(files));
   });
 
+  it('resolves Go package-qualified calls like a full build through add, edit and delete', async () => {
+    // `x.Parse` binds the package's top-level function, not the method
+    // WorkerOptions.Parse; `glog.Errorf` (third party) binds nothing, not the
+    // in-repo method ToGlog.Errorf.
+    writeFileSync(join(projectRoot, 'go.mod'), 'module example.com/app\n\ngo 1.22\n');
+    mkdirSync(join(projectRoot, 'x'), { recursive: true });
+    mkdirSync(join(projectRoot, 'worker'), { recursive: true });
+    write('x/keys.go', ['package x', '', 'func Parse(key []byte) int {', '\treturn len(key)', '}']);
+    write('x/config.go', ['package x', '', 'type WorkerOptions struct{}', '', 'func (w *WorkerOptions) Parse(conf string) {', '}', '', 'type ToGlog struct{}', '', 'func (rl *ToGlog) Errorf(format string) {', '}']);
+    const draft = (extra) => write('worker/draft.go', [
+      'package worker',
+      '',
+      'import (',
+      '\t"github.com/golang/glog"',
+      '',
+      '\t"example.com/app/x"',
+      ')',
+      '',
+      'func detect(key []byte) int {',
+      '\tglog.Errorf("k")',
+      ...extra,
+      '\treturn x.Parse(key)',
+      '}',
+    ]);
+    draft([]);
+    enqueue('x/keys.go', 'x/config.go', 'worker/draft.go');
+    await tick();
+    let files = ['x/keys.go', 'x/config.go', 'worker/draft.go'];
+    let inc = incrementalEdges();
+    const goCalls = (edges) => edges.filter((e) => e.startsWith('calls worker/draft.go'));
+    expect(goCalls(inc)).toEqual([
+      'calls worker/draft.go#function:detect@9 -> null (glog.Errorf)',
+      'calls worker/draft.go#function:detect@9 -> x/keys.go#function:Parse@3 (x.Parse)',
+    ]);
+    expect(inc).toEqual(await fullBuildEdges(files));
+
+    // A new package function, called from an edited caller.
+    write('x/keys.go', ['package x', '', 'func Parse(key []byte) int {', '\treturn len(key)', '}', '', 'func Encode() string {', '\treturn ""', '}']);
+    draft(['\tx.Encode()']);
+    enqueue('x/keys.go', 'worker/draft.go');
+    await tick();
+    inc = incrementalEdges();
+    expect(goCalls(inc)).toContain('calls worker/draft.go#function:detect@9 -> x/keys.go#function:Encode@7 (x.Encode)');
+    expect(inc).toEqual(await fullBuildEdges(files));
+
+    // The package function goes away: the method of the same name never takes over.
+    unlinkSync(join(projectRoot, 'x/keys.go'));
+    enqueue('x/keys.go');
+    await tick();
+    files = ['x/config.go', 'worker/draft.go'];
+    inc = incrementalEdges();
+    expect(goCalls(inc)).toEqual([
+      'calls worker/draft.go#function:detect@9 -> null (glog.Errorf)',
+      'calls worker/draft.go#function:detect@9 -> null (x.Encode)',
+      'calls worker/draft.go#function:detect@9 -> null (x.Parse)',
+    ]);
+    expect(inc).toEqual(await fullBuildEdges(files));
+  });
+
   it('keeps override edges current through add, edit, rename and delete', async () => {
     const overrides = (edges) => edges.filter((e) => e.startsWith('overrides '));
     const base = (method) => [
