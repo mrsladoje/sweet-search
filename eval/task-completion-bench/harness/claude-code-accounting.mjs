@@ -4,6 +4,9 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { costsFromTurns } from './agent-runner-shared.mjs';
+import { cacheCreationSplit, CACHE_WRITE_MULT_5M, CACHE_WRITE_MULT_1H } from './ideal-cost.mjs';
+
+export { cacheCreationSplit };
 
 export function turnsFromTranscript(claudeHome, sessionId) {
   const file = findSessionFile(claudeHome, sessionId);
@@ -100,7 +103,9 @@ export function transcriptMetricsFromFile(file) {
     // The record that actually reports tokens wins; every record that reports any agrees.
     if (input + output > group.best) {
       group.best = input + output;
-      group.usage = { in: input, cached, cacheWrite, out: output };
+      // `cache_creation` is the by-TTL split of cache_creation_input_tokens. Carried only when
+      // the record has it, so a record without it prices through the 1.25x fallback.
+      group.usage = { in: input, cached, cacheWrite, out: output, ...cacheCreationSplit(usage) };
     }
   }
   // Pass 2 — emit one turn per served request, with that request's whole content.
@@ -234,7 +239,8 @@ export function addSidechainCosts(mainCosts, sidechainCosts) {
   // or it silently compares a main-only old number against an inclusive new one.
   const sumFields = ['costRealizedUsd', 'idealCostUsd', 'realFromTurnsUsd',
     'breakPricedCostUsd', 'costNaiveUsd', 'costContentUsd', 'contextRewrites', 'idealTurns',
-    'costRealizedNoCacheWriteUsd', 'cacheWriteTokens'];
+    'costRealizedNoCacheWriteUsd', 'costRealizedFlat125Usd', 'cacheWriteTokens',
+    'cacheWriteTokens5m', 'cacheWriteTokens1h', 'cacheWriteUnsplitTokens'];
   const out = { ...mainCosts };
   for (const field of sumFields) {
     if (mainCosts[field] == null) { out[field] = null; continue; }
@@ -299,7 +305,8 @@ export function addSidechainCostsChecked(mainCosts, sideSets, price) {
       breakPricedCostMainOnlyUsd: mainCosts.breakPricedCostUsd ?? null,
       costRealizedUsd: null, idealCostUsd: null, realFromTurnsUsd: null,
       breakPricedCostUsd: null, costNaiveUsd: null, costContentUsd: null,
-      costRealizedNoCacheWriteUsd: null, cacheWriteTokens: null,
+      costRealizedNoCacheWriteUsd: null, costRealizedFlat125Usd: null, cacheWriteTokens: null,
+      cacheWriteTokens5m: null, cacheWriteTokens1h: null, cacheWriteUnsplitTokens: null,
       contextRewrites: null, idealTurns: null, costSidechainUsd: null,
       // main + measured delegated turns. A LOWER bound, never the total.
       costRealizedLowerBoundUsd: mainReal == null ? null : +(mainReal + measured).toFixed(6),
@@ -341,7 +348,14 @@ export function claudeCosts(resultUsage, price, costContentUsd = null) {
   const cached = Number(usage.cache_read_input_tokens);
   const cacheWrite = Number(usage.cache_creation_input_tokens);
   const output = Number(usage.output_tokens);
-  const realized = (input * price.in + cacheWrite * price.in * 1.25
+  // Price the write by its recorded TTL when the aggregate carries the split; the unsplit
+  // remainder (or the whole write, with no split) falls back to 1.25x.
+  const split = cacheCreationSplit(usage);
+  const w5 = split ? Math.min(split.cacheWrite5m, cacheWrite) : 0;
+  const w1 = split ? Math.min(split.cacheWrite1h, cacheWrite - w5) : 0;
+  const realized = (input * price.in
+    + w5 * price.in * CACHE_WRITE_MULT_5M + w1 * price.in * CACHE_WRITE_MULT_1H
+    + (cacheWrite - w5 - w1) * price.in * CACHE_WRITE_MULT_5M
     + cached * price.cache + output * price.out) / 1e6;
   const naive = ((input + cached + cacheWrite) * price.in + output * price.out) / 1e6;
   return {
@@ -388,6 +402,7 @@ export function aggregateTurn(resultUsage) {
     cached,
     cacheWrite,
     out: usage.output_tokens || 0,
+    ...cacheCreationSplit(usage),
   };
   return (record.in || record.out) ? [record] : [];
 }

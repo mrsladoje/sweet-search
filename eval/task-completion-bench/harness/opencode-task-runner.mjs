@@ -30,6 +30,7 @@ import { runTestsTelemetry } from './rt-inflight.mjs';
 import { resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules } from './sweet-rules-placement.mjs';
 import { installSedCmds } from './env-ledger.mjs';
 import { persistTurns } from './turn-log.mjs';
+import { firstRequestCacheFields } from './cache-warmup.mjs';
 import { finalizeProgressModelTurns } from './rt-progress-controller.mjs';
 
 const BENCH_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -903,7 +904,7 @@ export async function runOpencodeTask(task, {
     budgetExhausted: resolveHardTurnCap() !== null && turns.length >= resolveHardTurnCap(),
     exitReason: exitReasonFrom(r),
     usage: turns.length ? { turns: turns.length } : {},
-    ...costs, turnsFile,
+    ...costs, turnsFile, ...firstRequestCacheFields(turns),
     wallMs, trajectory, finalAssistantText: answer,
     agentErrors: errors.slice(0, 5), startRetried,
     stderrPreview: String(r.stderr || '').slice(0, 300),

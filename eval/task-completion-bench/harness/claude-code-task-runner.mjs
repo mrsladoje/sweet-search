@@ -34,6 +34,8 @@ export {
 import { installSedCmds } from './env-ledger.mjs';
 import { ISOLATION_ON } from './agent-jail.mjs';
 import { persistTurns } from './turn-log.mjs';
+import { cacheCreationSplit } from './ideal-cost.mjs';
+import { applyClaudeCacheTtl, firstRequestCacheFields } from './cache-warmup.mjs';
 import { classifyRollout } from './degeneration.mjs';
 import {
   CLAUDE_SYSTEM_OVERRIDE as SWEET_SEARCH_SYSTEM_OVERRIDE,
@@ -475,7 +477,7 @@ export function parseClaudeStream(stdout) {
       if (mu) {
         const cRead = mu.cache_read_input_tokens || 0, cCreate = mu.cache_creation_input_tokens || 0;
         turns.push({ in: (mu.input_tokens || 0) + cRead + cCreate, cached: cRead,
-          cacheWrite: cCreate, out: mu.output_tokens || 0 });
+          cacheWrite: cCreate, out: mu.output_tokens || 0, ...cacheCreationSplit(mu) });
         billedOutputTokens += mu.output_tokens || 0;
       }
       for (const blk of (ev.message.content || [])) {
@@ -748,6 +750,10 @@ export async function runClaudeCodeTask(task, {
   });
 
   const env = buildAgentEnv({ rundir, binDir, ssBinDir, sweet, extraEnv: routingEnv, jail });
+  // Both arms, every route: the 5-minute cache TTL a real API-key user gets. A subscription login
+  // would otherwise write at the 1-hour TTL (2x input) and bill nothing like an API key. Costs are
+  // priced by the TTL each write carries (ideal-cost.mjs 'cache-write-by-ttl').
+  applyClaudeCacheTtl(env);
   if (subscriptionToken || loginCreds) {
     for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']) delete env[k];
     // A claude.ai login also pulls the account's claude.ai connectors (Gmail, Drive, …) through
@@ -908,6 +914,9 @@ export async function runClaudeCodeTask(task, {
     readPagesSubagentNote: true,
     sidechainTurns: sideSets.reduce((a, s) => a + s.turns.length, 0),
     ...costs, turnsFile,
+    // Fairness evidence: what this rollout's FIRST request read from the prompt cache, and the
+    // TTL regime it ran under (cache-warmup.mjs cacheFairness reads these).
+    ...firstRequestCacheFields(realTurns), cacheTtl: '5m-forced',
     wallMs, trajectory, finalAssistantText: answer,
     agentErrors: errors.slice(0, 5), startRetried,
     stderrPreview: String(r.stderr || '').slice(0, 300),

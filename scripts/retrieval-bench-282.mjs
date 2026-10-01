@@ -18,8 +18,18 @@
  *     and ~/.claude/CLAUDE.md is never moved. Ancestor CLAUDE.md files (this repo's own) are excluded.
  *   - Probes: vault (60) + held-out (30) + OOD (40) merged = 130 per arm. The whole pool is treated
  *     as HELD-OUT: consume --report aggregates only, never per-probe rows (CLAUDE.md methodology).
- *   - Cost: token counts × list price (ideal-cost.mjs MODEL_PRICES, cache-write 1.25x basis) for
- *     every cell, whatever the billing (Claude Code + Codex run on subscriptions).
+ *   - Cost: token counts × list price (ideal-cost.mjs MODEL_PRICES, ledger basis
+ *     'cache-write-by-ttl': each cache write at the rate of its recorded TTL) for every cell,
+ *     whatever the billing (Claude Code + Codex run on subscriptions).
+ *   - Real API-key cache behaviour (2026-10-01): Claude Code runs with FORCE_PROMPT_CACHING_5M=1 in
+ *     BOTH arms. Without it a subscription writes at the 1-hour TTL, which no API-key user pays.
+ *   - Equal cache warmth (2026-10-01): before the first scored rollout of each arm, ONE unscored
+ *     warm-up request runs with that arm's exact launch config (cache-warmup.mjs). It runs from its
+ *     own clone of the first repo, so the shared prefix (tools + system prompt) is warm in both arms
+ *     and the per-repo part stays cold for the first question of each repo in both arms. Its cost goes
+ *     to warmups.jsonl, never to runs.jsonl. The run ends with a fairness check on the first scored
+ *     requests (summary.json); SS_CACHE_WARMUP=0 turns the warm-up off, --allow-unfair-cache keeps
+ *     the exit code 0 when the check fails.
  *
  *   CELL=cc-sonnet55-high  node scripts/retrieval-bench-282.mjs            # run / resume one cell
  *   CELL=cc-sonnet55-high  node scripts/retrieval-bench-282.mjs --smoke    # 1 probe × 2 arms
@@ -56,6 +66,8 @@ const { parseCodexAgentStream, codexHarnessTrim, codexHarnessTrimArgs, codexRule
 const { opencodeArmHarnessTrim, opencodeRulesInConfig, buildMainOpencodeConfig, opencodeUnjailedEnv, runOpencodePreflight, parseOpencodeStream, opencodeRunMessage, OPENCODE_TRIM_REPORT, OPENCODE_RULES_FILE } = await import(path.join(H, 'opencode-task-runner.mjs'));
 const { writeClaudeRules, removeClaudeRules, resolveClaudeRulesLayout } = await imp('scripts/write-claude-rules.js');
 const { installClaudeLeanHarness, removeClaudeLeanHarness } = await imp('scripts/install-claude-lean-harness.js');
+const { WARMUP_ID, WARMUP_QUESTION, warmupEnabled, createWarmupGate, excludeWarmups, applyClaudeCacheTtl, firstRequestCacheFields, cacheFairness, fairnessBanner } = await import(path.join(H, 'cache-warmup.mjs'));
+const { turnsFromRollout, LEDGER_BASIS } = await import(path.join(H, 'ideal-cost.mjs'));
 if (ISOLATION_ON) throw new Error('SS_ISOLATION must be 0 on the Mac');
 
 // ─── cells (agreed 2026-09-30) ─────────────────────────────────────────────────────────────────
@@ -89,6 +101,8 @@ const SMOKE = argv.includes('--smoke');
 const CONC = Number(flag('--conc', 3));
 const onlyIds = String(flag('--ids', '')).split(',').map(s => s.trim()).filter(Boolean);
 const ARMS = String(flag('--arms', 'native,sweet')).split(',').map(s => s.trim()).filter(Boolean);
+const ALLOW_UNFAIR_CACHE = argv.includes('--allow-unfair-cache');
+const WARMUP_ON = warmupEnabled();
 const TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 900000);
 const TAG = flag('--tag', process.env.RESULTS_TAG || '');
 const STABLE_RULES_PATH = process.env.SS_BENCH_STABLE_RULES_PATH === '1';
@@ -97,6 +111,9 @@ const SUFFIX = `${SMOKE ? '-smoke' : ''}${TAG ? `-${TAG}` : ''}`;
 
 const OUT = path.join(REPO, 'core/prompt-optimization/data/results', `r282-${CELL_NAME}${SUFFIX}`);
 const RUNS = path.join(OUT, 'runs.jsonl');
+// Warm-up requests are logged HERE and nowhere else: never in runs.jsonl, captures or any aggregate.
+const WARMUPS = path.join(OUT, 'warmups.jsonl');
+const SUMMARY = path.join(OUT, 'summary.json');
 const CAP_DIR = path.join(OUT, 'captures');
 const STATE = path.join(EVAL, 'r282', `${CELL_NAME}${SUFFIX}`);
 const SS_BIN = path.join(REPO, 'eval/agent-read-workflows/bin');
@@ -191,6 +208,16 @@ function cloneDrift(dst) {
     return out ? out.split('\n').map(f => path.relative(dst, f)) : [];
   } catch { return []; }
 }
+// The warm-up's own working directory: a fresh clone of the first repo under a DIFFERENT path.
+// The warm-up then writes the shared prefix (tools + system prompt, identical across repos) but not
+// the per-repo part (cwd, memory path), so the first question in each repo stays cold on that part
+// in BOTH arms. For the Claude Code sweet arm the product files are installed here too (see main).
+const WARM_CWD = path.join(CLONE_ROOT, WARMUP_ID);
+function recreateWarmupClone(orig) {
+  fs.rmSync(WARM_CWD, { recursive: true, force: true });
+  fs.mkdirSync(CLONE_ROOT, { recursive: true });
+  execFileSync('cp', ['-c', '-p', '-R', orig, WARM_CWD]);
+}
 // Grouped by repo so concurrent rollouts share warm ss-* servers; the same order for both arms.
 PROBES = PROBES.map(p => ({ ...p, _orig: resolveRepoCwd(p, {}) })).map(p => ({ ...p, _cwd: cloneOf(p._orig) }))
   .sort((a, b) => a._cwd.localeCompare(b._cwd) || a.id.localeCompare(b.id));
@@ -256,6 +283,14 @@ async function scoreUsd(probe, rawResponse, arm) {
     return { USD: sc.USD, USD_noC: usdNoC, grounding: sc.grounding, content: sc.content, content_noD3: sc.content_noD3, purity_ratio: sc.purity_ratio, usdTokens: sc.total_tokens };
   } catch (e) { return { usdError: e.message }; }
 }
+
+// Cache-write ledger columns carried on every priced row (ideal-cost.mjs 'cache-write-by-ttl').
+const cacheLedgerFields = (c) => ({
+  ledgerBasis: LEDGER_BASIS,
+  costRealizedFlat125Usd: c.costRealizedFlat125Usd ?? null,
+  cacheWriteTokens: c.cacheWriteTokens ?? null, cacheWriteTokens5m: c.cacheWriteTokens5m ?? null,
+  cacheWriteTokens1h: c.cacheWriteTokens1h ?? null, cacheWriteUnsplitTokens: c.cacheWriteUnsplitTokens ?? null,
+});
 
 // ─── Claude Code ───────────────────────────────────────────────────────────────────────────────
 function loadClaudeToken() {
@@ -327,6 +362,8 @@ async function runClaude(probe, sweet, arm) {
     SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'tab',
   };
   for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']) delete env[k];
+  // Both arms: the 5-minute cache TTL an API-key user gets (a subscription writes at 1 hour).
+  applyClaudeCacheTtl(env);
   const args = ['-p', '--model', CELL.model, '--effort', CELL.effort, '--permission-mode', 'bypassPermissions',
     '--output-format', 'stream-json', '--verbose', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'];
   const t0 = Date.now();
@@ -345,6 +382,7 @@ async function runClaude(probe, sweet, arm) {
     usage: p.resultUsage, costSource: main.source, subagentContexts: side.length,
     costRealizedUsd: costs.costRealizedUsd ?? null, costNaiveUsd: costs.costNaiveUsd ?? null,
     costRealizedLowerBoundUsd: costs.costRealizedLowerBoundUsd ?? null,
+    ...cacheLedgerFields(costs), ...firstRequestCacheFields(main.turns), cacheTtl: '5m-forced',
     costAccountingComplete: costs.sidechainAccountingComplete !== false,
     errors: p.errors.slice(0, 3), stderrPreview: String(r.stderr || '').slice(0, 300),
   };
@@ -371,6 +409,26 @@ function codexSyncAuthBack(home) {
     }
   } catch { /* nothing to sync */ }
 }
+// Per-request usage of ONE codex rollout, found by the thread id in the stream's thread.started
+// event (the rollout file is named rollout-<time>-<thread id>.jsonl). Concurrent rollouts share a
+// cwd, so the thread id is the only unambiguous key. [] when it cannot be found: the fairness
+// check then reads the arm as unmeasured instead of guessing.
+function codexRolloutTurns(home, stdout) {
+  try {
+    const id = /"thread_id"\s*:\s*"([^"]+)"/.exec(stdout || '')?.[1];
+    if (!id) return [];
+    const walk = (d) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const f = path.join(d, e.name);
+        if (e.isDirectory()) { const hit = walk(f); if (hit) return hit; }
+        else if (e.name.endsWith(`-${id}.jsonl`)) return f;
+      }
+      return null;
+    };
+    const file = walk(path.join(home, 'sessions'));
+    return file ? turnsFromRollout(file) : [];
+  } catch { return []; }
+}
 async function runCodex(probe, sweet, arm) {
   const cwd = probe._cwd;
   const { home, phome } = codexHome();
@@ -391,7 +449,9 @@ async function runCodex(probe, sweet, arm) {
   if (/refresh token|usage limit|log ?in|unauthorized|401/i.test(errText) && !p.toolCalls.length) throw Object.assign(new Error(`ACCOUNT FATAL: ${errText.slice(0, 200)}`), { fatal: true });
   const u = p.usage || {};
   const inTok = u.input_tokens || 0, cached = u.cached_input_tokens || 0, out = u.output_tokens || 0;
+  const firstReq = firstRequestCacheFields(codexRolloutTurns(home, r.stdout));
   return {
+    ...firstReq,
     calls: p.toolCalls.map(c => ({ kind: classifyCodexCommand(c.input?.command || '').kind, command: c.input?.command || '', text: c.result?.content || '', isError: c.result?.isError })),
     answer: p.answer, wallMs: Date.now() - t0, exitCode: r.exitCode, timedOut: r.timedOut, startRetried, usage: u,
     harnessTrim: trim.mode || null,
@@ -488,11 +548,30 @@ async function runOpencode(probe, sweet, arm) {
     calls: p.toolCalls.map(c => ({ kind: c.kind, command: c.command, text: c.resultText, isError: c.isError })),
     answer: p.answer, wallMs: Date.now() - t0, exitCode: r.exitCode, timedOut: r.timedOut, startRetried,
     usage: { turns: p.turns.length, in: p.turns.reduce((a, t) => a + t.in, 0), out: p.turns.reduce((a, t) => a + t.out, 0) },
+    ...cacheLedgerFields(costs), ...firstRequestCacheFields(p.turns),
     harnessTrim: trim.mode || null, harnessTrimApplied: trimApplied,
     costRealizedUsd: costs.costRealizedUsd, costNaiveUsd: costs.costNaiveUsd ?? null, costSource: 'step_finish',
     errors: p.errors.slice(0, 3), stderrPreview: String(r.stderr || '').slice(0, 300),
   };
 }
+
+// ─── warm-up (cache-warmup.mjs) ────────────────────────────────────────────────────────────────
+const launch = (probe, arm) => {
+  const sweet = arm === 'sweet' || arm === 'sweetB';
+  return CELL.harness === 'cc' ? runClaude(probe, sweet, arm)
+    : CELL.harness === 'codex' ? runCodex(probe, sweet, arm)
+    : runOpencode(probe, sweet, arm);
+};
+// ONE unscored request with the arm's exact launch config (same binary, prompt, rules, tools, env,
+// model and effort; only the question differs). The returned entry goes to warmups.jsonl.
+async function runWarmup(arm) {
+  const probe = { id: WARMUP_ID, query: WARMUP_QUESTION, _set: 'warmup', _cwd: WARM_CWD };
+  const run = await launch(probe, arm);
+  if (run.timedOut || run.exitCode !== 0) throw new Error(`warm-up exited ${run.exitCode}${run.timedOut ? ' (timeout)' : ''}: ${(run.errors || []).join('; ').slice(0, 160)}`);
+  const { calls, answer, ...rest } = run;
+  return { id: WARMUP_ID, cell: CELL_NAME, cwd: WARM_CWD, calls: calls.length, answerChars: (answer || '').length, ...rest };
+}
+const GATE = createWarmupGate({ logFile: WARMUPS, meta: { cell: CELL_NAME, harness: CELL.harness, model: CELL.model }, enabled: WARMUP_ON });
 
 // ─── one rollout ───────────────────────────────────────────────────────────────────────────────
 async function runOne(probe, arm) {
@@ -500,9 +579,10 @@ async function runOne(probe, arm) {
   const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
   let run;
   try {
-    run = CELL.harness === 'cc' ? await runClaude(probe, sweet, arm)
-      : CELL.harness === 'codex' ? await runCodex(probe, sweet, arm)
-      : await runOpencode(probe, sweet, arm);
+    // The arm's warm-up must have FINISHED before any scored rollout of that arm starts.
+    await GATE.ensure(arm, () => runWarmup(arm));
+    base.startedAtMs = Date.now();
+    run = await launch(probe, arm);
   } catch (e) {
     if (e.fatal) throw e;
     return { ...base, error: String(e.message).slice(0, 400), exitCode: -1 };
@@ -542,13 +622,17 @@ function bootCI(pairs, B = 20000, seed = 42) {
   for (let b = 0; b < B; b++) { let s = 0, n = 0; for (const ds of bySet.values()) for (let j = 0; j < ds.length; j++) { s += ds[Math.floor(rnd() * ds.length)]; n++; } ms.push(s / n); }
   ms.sort((x, y) => x - y); return [ms[Math.floor(0.025 * B)], ms[Math.floor(0.975 * B)]];
 }
+const readRuns = () => (fs.existsSync(RUNS) ? fs.readFileSync(RUNS, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)) : []);
 function report() {
-  const rows = fs.existsSync(RUNS) ? fs.readFileSync(RUNS, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)) : [];
+  const rows = excludeWarmups(readRuns());
   const ok = rows.filter(r => !r.error && r.exitCode === 0);
   const M = [['accuracy', r => r.score], ['content', r => r.content], ['USD_noC', r => r.USD_noC], ['calls', r => r.calls],
     ['cost$', r => r.costRealizedUsd], ['naive$', r => r.costNaiveUsd], ['wallSec', r => r.wallMs / 1000], ['ssUsed', r => (r.arm === 'sweet' ? +r.ssUsed : null)]];
   console.log(`\n=== r282 ${CELL_NAME} (${CELL.model} via ${CELL.harness}, ${rows[0]?.harnessVersion || '?'}) — aggregates only ===`);
   console.log(`rows ${rows.length}  ok ${ok.length}  errors ${rows.length - ok.length}  timeouts ${rows.filter(r => r.timedOut).length}`);
+  const bases = [...new Set(ok.map(r => r.ledgerBasis || 'unlabelled (pre-2026-10-01: every cache write at 1.25x)'))];
+  console.log(`ledger basis: ${bases.length > 1 ? `MIXED (${bases.join(' + ')}) - NOT COMPARABLE` : (bases[0] || 'n/a')}`);
+  console.log(fairnessBanner(cacheFairness(ok, { wave: CONC })));
   for (const scope of ['ALL', ...SETS.map(s => s[0])]) {
     const rs = ok.filter(r => scope === 'ALL' || r.set === scope);
     const nat = new Map(rs.filter(r => r.arm === 'native').map(r => [r.id, r]));
@@ -578,6 +662,10 @@ if (OC_PRODUCT_PLUGIN) console.error(`opencode product cache plugin: ${OC_PRODUC
 const done = new Set(fs.existsSync(RUNS) ? fs.readFileSync(RUNS, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(r => !r.error && r.exitCode === 0).map(r => `${r.arm}|${r.id}`) : []);
 console.error(`r282 ${CELL_NAME}: ${CELL.model} via ${CELL.harness} (${HARNESS_VERSION}) effort=${CELL.effort ?? CELL.variant ?? 'default'} | ${PROBES.length} probes × ${ARMS.length} arms | conc=${CONC} | ${done.size} done`);
 for (const orig of new Set(PROBES.map(p => p._orig))) ensureClone(orig);
+// The warm-up's own clone (first repo, different path). Rebuilt every run so no earlier install
+// or drift reaches it. PROBES is empty only for a --ids filter that matched nothing.
+if (WARMUP_ON && PROBES.length) recreateWarmupClone(PROBES[0]._orig);
+console.error(`cache warm-up: ${WARMUP_ON ? `ON, one unscored request per arm before its first scored rollout, from ${WARM_CWD}` : 'OFF (SS_CACHE_WARMUP=0)'} | claude cache TTL: ${CELL.harness === 'cc' ? '5m forced (FORCE_PROMPT_CACHING_5M=1)' : 'n/a'}`);
 const cleanup = [];
 const onSignal = () => { for (const f of cleanup.splice(0)) f(); process.exit(130); };
 process.on('SIGINT', onSignal); process.on('SIGTERM', onSignal);
@@ -598,7 +686,8 @@ try {
     let installed = [];
     if (CELL.harness === 'cc' && PRUNE3) throw new Error('SS_VARIANT_PRUNE3 is not wired for Claude Code');
     if (CELL.harness === 'cc' && arms.includes('sweet')) {
-      installed = installClaudeProduct(cwds, claudeHome('sweet'));
+      // The warm-up dir carries the same product install, so the warm-up IS the sweet launch config.
+      installed = installClaudeProduct(WARMUP_ON ? [...cwds, WARM_CWD] : cwds, claudeHome('sweet'));
       cleanup.push(() => uninstallClaudeProduct(installed));
     }
     console.error(`\n[${label}] ${tasks.length} rollouts`);
@@ -619,5 +708,25 @@ try {
   }
 } finally {
   for (const f of cleanup.splice(0)) f();
+  fs.rmSync(WARM_CWD, { recursive: true, force: true });   // the warm-up clone is never a result
+}
+// Run summary + fairness assertion: did both arms' first scored requests see the same cache state?
+{
+  const scored = excludeWarmups(readRuns()).filter(r => !r.error && r.exitCode === 0);
+  const fairness = cacheFairness(scored, { wave: CONC });
+  const warmups = GATE.entries();
+  const wUsd = warmups.filter(w => w.ok).reduce((s, w) => s + (Number(w.costRealizedUsd) || 0), 0);
+  const summary = {
+    cell: CELL_NAME, smoke: SMOKE, finishedAt: new Date().toISOString(), harnessVersion: HARNESS_VERSION,
+    ledgerBasis: LEDGER_BASIS, claudeCacheTtl: CELL.harness === 'cc' ? '5m-forced' : null,
+    scoredRows: scored.length, cacheWarmup: { enabled: WARMUP_ON, file: WARMUPS, thisInvocation: warmups.length, thisInvocationCostUsd: +wUsd.toFixed(6), note: 'warm-up cost is NOT in runs.jsonl or any aggregate' },
+    cacheFairness: fairness,
+  };
+  fs.writeFileSync(SUMMARY, `${JSON.stringify(summary, null, 2)}\n`);
+  console.error(fairnessBanner(fairness));
+  if (fairness.status === 'violation' && !ALLOW_UNFAIR_CACHE) {
+    console.error('Exit code 3: the arms started with different cache state. Rerun with the warm-up on, or pass --allow-unfair-cache to accept it.');
+    process.exitCode = 3;
+  }
 }
 console.error(`\n${CELL_NAME} complete. Aggregates: CELL=${CELL_NAME} node scripts/retrieval-bench-282.mjs --report${SMOKE ? ' --smoke' : ''}`);

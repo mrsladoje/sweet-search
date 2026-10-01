@@ -16,17 +16,32 @@ export const PRICE = { in: 5.0, cache: 0.5, out: 30.0 };  // openai/gpt-5.5 (Ope
 // same run priced under two bases gives two different sweet-versus-native percentages and
 // the difference (0.79 points on opencode) is a quarter of the gap under discussion.
 //
-//   cache-write-1.25x-all-harnesses   the current basis. Every runner supplies a per-turn
-//                                     `cacheWrite` from its own provider usage, so the 1.25x
-//                                     prompt-cache-creation surcharge is charged on codex,
-//                                     opencode and claude-code alike.
+//   cache-write-by-ttl                the current basis (2026-10-01). Every cache write is priced
+//                                     at the rate of the TTL it was actually written with:
+//                                     ephemeral_5m_input_tokens x 1.25 x input and
+//                                     ephemeral_1h_input_tokens x 2.0 x input, read from the
+//                                     usage record's `cache_creation` split (Anthropic list
+//                                     price). A write with NO split in the record (codex,
+//                                     opencode, older transcripts) falls back to 1.25x and is
+//                                     counted in `cacheWriteUnsplitTokens`, so a row says how
+//                                     much of its bill is an assumption.
+//   cache-write-1.25x-all-harnesses   the basis used 2026-09-02 .. 2026-09-30. Every cache write
+//                                     at 1.25x, whatever its TTL. It UNDER-prices a Claude Code
+//                                     subscription run, which writes at the 1-hour TTL (2.0x).
+//                                     Reproducible from any row via `costRealizedFlat125Usd`.
 //   cache-write-1.25x-claudecode-only the basis published before 2026-09-02. Only
 //                                     claude-code-accounting.mjs supplied `cacheWrite`, so
 //                                     codex and opencode paid plain input rate on tokens the
 //                                     provider billed at 1.25x. Reproducible from any row via
 //                                     `costRealizedNoCacheWriteUsd`; kept for disclosure rows.
-export const LEDGER_BASIS = 'cache-write-1.25x-all-harnesses';
+export const LEDGER_BASIS = 'cache-write-by-ttl';
+export const LEDGER_BASIS_FLAT_125 = 'cache-write-1.25x-all-harnesses';
 export const LEDGER_BASIS_LEGACY = 'cache-write-1.25x-claudecode-only';
+
+// Anthropic prompt-cache write multipliers on the input rate (list price, the same for every
+// Claude model). Cache READ rates are per model in MODEL_PRICES.cache.
+export const CACHE_WRITE_MULT_5M = 1.25;
+export const CACHE_WRITE_MULT_1H = 2.0;
 
 // Per-model USD/MTok. `cache` is the cache-READ (hit) rate — idealCost charges
 // every re-sent prefix token at that rate by construction, so a model's
@@ -92,10 +107,17 @@ export const MODEL_PRICES = {
   // same check on a 2026-08-27 fresh-pool generation lands on the same rates, so EVERY luna
   // figure this bench published from at least 2026-08-26 is HALF the real cost.
   //
-  // The correction is an exact scalar 2.0 on every component (cacheWrite included, since the
-  // D1 basis charges in x 1.25 and 0.20 x 1.25 = 0.25 is exactly what the provider bills), so
-  // it moves absolute dollars only. No sweet-versus-native percentage, interval or p-value
-  // changes. It also confirms D1 from the provider side: cache write really is 1.25x input.
+  // The correction is an exact scalar 2.0 on every component (cacheWrite included, since
+  // 0.20 x 1.25 = 0.25 is exactly what OpenRouter billed for a luna cache write), so it moves
+  // absolute dollars only. No sweet-versus-native percentage, interval or p-value changes.
+  //
+  // SCOPE OF THAT CHECK (corrected 2026-10-01). It was made on openai/gpt-5.6-luna through
+  // OpenRouter. It shows that THIS route bills a cache write at 1.25x input. It says nothing
+  // about Anthropic. An earlier version of this comment claimed it "confirms D1 from the
+  // provider side", and the ledger then priced every Claude Code write at 1.25x. Anthropic bills
+  // a 5-minute write at 1.25x and a 1-hour write at 2.0x, and a Claude Code subscription run
+  // writes at the 1-hour TTL. Claude writes are therefore priced by their recorded TTL
+  // (LEDGER_BASIS 'cache-write-by-ttl'), never by this check.
   'openai/gpt-5.6-luna': { in: 0.20, cache: 0.02, out: 1.20 },
   // Fetched from OpenRouter /api/v1/models 2026-08-18 for the hint-ladder backbone probe.
   // Both carry a >272k-prompt tier at double these rates; bench rollouts run at ~8-30k
@@ -149,20 +171,47 @@ export function priceFor(model) {
 // that rewrites context should report it; the cost is then exact. Without it, a turn whose context
 // shrank is priced pessimistically (nothing provably survived the cache), which is deliberate — it
 // makes an unreported rewrite look expensive rather than free.
+//
+// CACHE-WRITE PRICING (LEDGER_BASIS 'cache-write-by-ttl'). A turn may carry `cacheWrite5m` and
+// `cacheWrite1h`, the two halves of the usage record's `cache_creation` split. Each half is
+// priced at its own multiplier (1.25x and 2.0x input). Whatever part of `cacheWrite` has no
+// split (no split at all, or a split that does not cover the total) is priced at 1.25x and
+// reported as unsplit. `cacheWrite` stays the TOTAL, so every consumer that only knows the
+// total keeps working.
+export function cacheWriteSplit(tu) {
+  const room = Math.max(0, (Number(tu.in) || 0) - (Number(tu.cached) || 0));
+  const has5 = tu.cacheWrite5m != null && Number.isFinite(Number(tu.cacheWrite5m));
+  const has1 = tu.cacheWrite1h != null && Number.isFinite(Number(tu.cacheWrite1h));
+  const c5 = has5 ? Math.max(0, Number(tu.cacheWrite5m)) : 0;
+  const c1 = has1 ? Math.max(0, Number(tu.cacheWrite1h)) : 0;
+  const declared = Number(tu.cacheWrite) || 0;
+  const total = Math.max(0, Math.min((has5 || has1) ? Math.max(declared, c5 + c1) : declared, room));
+  const t5 = Math.min(c5, total);
+  const t1 = Math.min(c1, total - t5);
+  return { total, t5, t1, unsplit: total - t5 - t1 };
+}
+
 export function costFromTurns(turns, price = PRICE) {
-  let ideal = 0, real = 0, breakPriced = 0, prevIn = 0, rewrites = 0;
+  let ideal = 0, real = 0, realFlat = 0, breakPriced = 0, prevIn = 0, rewrites = 0;
+  let cw5 = 0, cw1 = 0, cwUnsplit = 0;
   for (const tu of turns) {
     const newIn = Math.max(0, tu.in - prevIn);   // context added this turn
     const resent = tu.in - newIn;                // prior context re-sent
-    const cacheWrite = Math.max(0, Math.min(Number(tu.cacheWrite) || 0, tu.in - (Number(tu.cached) || 0)));
+    const cached = Number(tu.cached) || 0;
+    const w = cacheWriteSplit(tu);
+    cw5 += w.t5; cw1 += w.t1; cwUnsplit += w.unsplit;
     ideal += (newIn * price.in + resent * price.cache + tu.out * price.out) / 1e6;   // ideal cache
-    // Anthropic prompt-cache creation is billed at 1.25x input. Keeping it
-    // distinct from ordinary fresh input is required for transcript-derived
-    // realized cost to agree with the authoritative aggregate usage bill.
-    real += ((tu.in - tu.cached - cacheWrite) * price.in
-      + cacheWrite * price.in * 1.25
-      + tu.cached * price.cache
-      + tu.out * price.out) / 1e6;  // actual cache
+    // Keeping a cache write distinct from ordinary fresh input is required for
+    // transcript-derived realized cost to agree with the authoritative aggregate usage bill.
+    const fresh = (tu.in - cached - w.total) * price.in;
+    const readOut = cached * price.cache + tu.out * price.out;
+    real += (fresh
+      + w.t5 * price.in * CACHE_WRITE_MULT_5M
+      + w.t1 * price.in * CACHE_WRITE_MULT_1H
+      + w.unsplit * price.in * CACHE_WRITE_MULT_5M
+      + readOut) / 1e6;  // actual cache
+    // The previous ledger basis (every write at 1.25x), kept so a row can restate it.
+    realFlat += (fresh + w.total * price.in * CACHE_WRITE_MULT_5M + readOut) / 1e6;
 
     // longest prefix PROVABLY still cache-valid after whatever happened to the context
     let cacheable;
@@ -173,7 +222,21 @@ export function costFromTurns(turns, price = PRICE) {
 
     prevIn = tu.in;
   }
-  return { idealUsd: ideal, realFromTurnsUsd: real, breakPricedUsd: breakPriced, contextRewrites: rewrites };
+  return {
+    idealUsd: ideal, realFromTurnsUsd: real, realFlat125Usd: realFlat,
+    breakPricedUsd: breakPriced, contextRewrites: rewrites,
+    cacheWriteTokens5m: cw5, cacheWriteTokens1h: cw1, cacheWriteUnsplitTokens: cwUnsplit,
+  };
+}
+
+// Aggregate usage with no per-turn record (stream `result.usage`): same rule, one record.
+// `cache_creation` is { ephemeral_5m_input_tokens, ephemeral_1h_input_tokens } when present.
+export function cacheCreationSplit(usage) {
+  const cc = usage?.cache_creation;
+  if (!cc || typeof cc !== 'object') return null;
+  const c5 = Number(cc.ephemeral_5m_input_tokens), c1 = Number(cc.ephemeral_1h_input_tokens);
+  if (!Number.isFinite(c5) && !Number.isFinite(c1)) return null;
+  return { cacheWrite5m: Number.isFinite(c5) ? c5 : 0, cacheWrite1h: Number.isFinite(c1) ? c1 : 0 };
 }
 
 // Per-turn token usage from a codex rollout jsonl (token_count → last_token_usage).
