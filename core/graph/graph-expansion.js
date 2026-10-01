@@ -539,6 +539,24 @@ function collectSeedIds(db, results, options = {}) {
  * @param {Set<string>} edgeTypes
  * @returns {Map<string, {via: string, direction: string, score: number, hops?: number}>}
  */
+/** Reverse-edge rows whose source_id is an entity row (any epoch), in order. */
+function keepEntitySources(db, rels) {
+  if (rels.length === 0) return rels;
+  const ids = [...new Set(rels.map(r => r.source_id))];
+  const known = new Set();
+  try {
+    for (let i = 0; i < ids.length; i += 500) {
+      const part = ids.slice(i, i + 500);
+      for (const row of db.prepare(`SELECT id FROM entities WHERE id IN (${part.map(() => '?').join(',')})`).all(...part)) {
+        known.add(row.id);
+      }
+    }
+  } catch {
+    return rels;
+  }
+  return known.size === ids.length ? rels : rels.filter(r => known.has(r.source_id));
+}
+
 export function expandOneHop(db, seedIds, edgeTypes, options = {}) {
   const expanded = new Map();
   const seedArray = [...seedIds];
@@ -570,6 +588,12 @@ export function expandOneHop(db, seedIds, edgeTypes, options = {}) {
   } catch {
     reverseRels = [];
   }
+  // A reverse edge's source can be a file node (top-level code: imports,
+  // module-level calls — graph/file-nodes.js), which is no entity. Drop it
+  // here: the caller cuts the neighbour list to `maxExpanded` BEFORE the
+  // entity lookup, so a file id would take a slot and then vanish, and the
+  // 2-hop pass would expand from it. Row order is kept.
+  reverseRels = keepEntitySources(db, reverseRels);
 
   for (const { rels, idField, direction } of [
     { rels: forwardRels, idField: 'target_id', direction: 'forward' },
