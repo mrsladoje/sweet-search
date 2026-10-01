@@ -638,6 +638,7 @@ export async function patternSearch(query, routing, options = {}) {
       mode: 'pattern',
       format,
       tokenBudget,
+      k,
       codeGraphRepo: this.codeGraphRepo || null,
       locationMap,
       projectRoot: searchDir,

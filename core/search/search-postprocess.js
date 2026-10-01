@@ -18,6 +18,7 @@ import { classifyIntent, getIntentPolicy } from '../query/intent-router.js';
 import { applyFileKindRanking, applyResultDemotions, classifyFileKindIntent } from '../ranking/file-kind-ranking.js';
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
 import { expandAliases } from './dedup/sibling-expander.js';
+import { capToFinalK } from './final-k.js';
 
 /**
  * Min-max normalize an array of scores to [0, 1].
@@ -895,6 +896,18 @@ export async function applyPostRetrieval(results, query, options, searchContext)
         applied: true,
         top1Changed: !!beforeDiversityTop && results[0] && (beforeDiversityTop !== results[0]),
       };
+    }
+  }
+
+  // Final-k cut. Graph expansion (above) appends neighbours after the seed
+  // stage already cut to k, so the list can be longer than the caller asked
+  // for. Every stage that can add or reorder results has run by now; cut to k
+  // so the user-visible list and the budget-tier signals use <= k results.
+  if (Array.isArray(results)) {
+    const beforeFinalCut = results.length;
+    results = capToFinalK(results, k);
+    if (results.length < beforeFinalCut) {
+      stats.finalKCut = { k: results.length, before: beforeFinalCut };
     }
   }
 
