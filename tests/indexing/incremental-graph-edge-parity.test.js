@@ -63,8 +63,9 @@ describe('incremental graph edge resolution matches a full build', () => {
   }
 
   /**
-   * Live call-site rows — bare calls (call_sites) and every qualified call
-   * line (call_lines) — as (caller, name, line) tuples.
+   * Live call-site rows — bare calls (call_sites), every qualified call line
+   * and every type-usage line (call_lines) — as (caller, name, line) tuples.
+   * Call lines print as `line`, type-usage lines as `line:<rel_type>`.
    */
   function siteRows(db, live) {
     const key = entityKeys(db);
@@ -72,8 +73,8 @@ describe('incremental graph edge resolution matches a full build', () => {
     return [
       ...db.prepare(`SELECT source_id, callee_name AS name, context_line FROM call_sites ${where}`).all()
         .map((r) => `bare ${key.get(r.source_id) || 'file'} ${r.name}@${r.context_line}`),
-      ...db.prepare(`SELECT source_id, target_name AS name, context_line FROM call_lines ${where}`).all()
-        .map((r) => `line ${key.get(r.source_id) || 'file'} ${r.name}@${r.context_line}`),
+      ...db.prepare(`SELECT source_id, rel_type, target_name AS name, context_line FROM call_lines ${where}`).all()
+        .map((r) => `${r.rel_type === 'calls' ? 'line' : `line:${r.rel_type}`} ${key.get(r.source_id) || 'file'} ${r.name}@${r.context_line}`),
     ].sort();
   }
 
@@ -259,6 +260,60 @@ describe('incremental graph edge resolution matches a full build', () => {
     enqueue('src/app.ts');
     await tick();
     files = ['src/util.ts'];
+    inc = incrementalSites();
+    expect(inc).toEqual([]);
+    expect(inc).toEqual(await fullBuildSites(files));
+  });
+
+  it('keeps every instantiation line — in a function and at top level — through add, edit, move and delete', async () => {
+    write('src/foo.ts', ['export class Foo {}', 'export class Bar {}']);
+    const app = (top, body) => write('src/app.ts', [
+      "import { Foo, Bar } from './foo';",
+      ...top,
+      'export function run() {',
+      ...body,
+      '}',
+    ]);
+    // run() constructs Foo three times and Bar once; top-level code constructs
+    // Foo twice (source: the file node).
+    app(['const t1 = new Foo();', 'const t2 = new Foo();'],
+      ['  const a = new Foo();', '  const b = new Bar();', '  const c = new Foo();', '  const d = new Foo();']);
+    enqueue('src/foo.ts', 'src/app.ts');
+    await tick();
+    let files = ['src/foo.ts', 'src/app.ts'];
+    const typed = (rows) => rows.filter((r) => r.startsWith('line:'));
+    let inc = incrementalSites();
+    expect(typed(inc)).toEqual([
+      'line:instantiates file Foo@2',
+      'line:instantiates file Foo@3',
+      'line:instantiates src/app.ts#function:run@4 Foo@5',
+      'line:instantiates src/app.ts#function:run@4 Foo@7',
+      'line:instantiates src/app.ts#function:run@4 Foo@8',
+    ]);
+    expect(inc).toEqual(await fullBuildSites(files));
+    expect(incrementalEdges()).toEqual(await fullBuildEdges(files));
+
+    // Remove one of three Foo lines in run(), move another down, drop one
+    // top-level Foo (a single site needs no row), and construct Bar twice.
+    app(['const t1 = new Foo();'],
+      ['  const b = new Bar();', '  const a = new Foo();', '  const e = new Bar();', '  log();', '  const d = new Foo();']);
+    enqueue('src/app.ts');
+    await tick();
+    inc = incrementalSites();
+    expect(typed(inc)).toEqual([
+      'line:instantiates src/app.ts#function:run@3 Bar@4',
+      'line:instantiates src/app.ts#function:run@3 Bar@6',
+      'line:instantiates src/app.ts#function:run@3 Foo@5',
+      'line:instantiates src/app.ts#function:run@3 Foo@8',
+    ]);
+    expect(inc).toEqual(await fullBuildSites(files));
+    expect(incrementalEdges()).toEqual(await fullBuildEdges(files));
+
+    // Delete the constructing file: none of its lines stay live.
+    unlinkSync(join(projectRoot, 'src/app.ts'));
+    enqueue('src/app.ts');
+    await tick();
+    files = ['src/foo.ts'];
     inc = incrementalSites();
     expect(inc).toEqual([]);
     expect(inc).toEqual(await fullBuildSites(files));

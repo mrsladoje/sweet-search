@@ -9,9 +9,9 @@ import { findAssignedMemberDefinitions, findSameFileDefinition } from './structu
 import { shouldTrustQualifiedResolution, trustedCallerEdge } from './structural-qualified-resolution.js';
 import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } from './structural-graph-signals.js';
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
-import { TRACE_ONLY_TYPES_SQL } from '../graph/relationship-types.js';
+import { SITE_LINE_RELATIONSHIP_TYPES as SITE_LINE_TYPES, TRACE_ONLY_TYPES_SQL } from '../graph/relationship-types.js';
 import { BareCallResolver } from '../graph/bare-call-resolution.js';
-import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable, hasGraphTable } from '../graph/file-nodes.js';
+import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable, hasGraphColumn, hasGraphTable } from '../graph/file-nodes.js';
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../graph/import-resolver.js';
 import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
 
@@ -97,26 +97,29 @@ export class StructuralContextRepository {
   _relationshipParams(db) { return this._readerVisibility.relationshipParams(db); }
 
   /**
-   * Every call-site line of qualified calls made by `sourceIds`, from the
-   * trace-only call_lines table: Map `${source}\0${target_name}` → sorted
-   * lines. Empty for graphs built before the table existed; callers then keep
-   * the relationship row's single context_line.
+   * Every site line of the qualified calls and trace-only type usages
+   * (`instantiates`, `typeRef`, `extensionOf`) made by `sourceIds`, from the
+   * trace-only call_lines table: Map `${source}\0${rel_type}\0${target_name}`
+   * → sorted lines. Rows of a table without `rel_type` (written before type
+   * usages had site lines) are call lines. Empty for graphs built before the
+   * table existed; callers then keep the relationship row's context_line.
    */
-  _qualifiedCallLines(db, sourceIds) {
+  _siteLines(db, sourceIds) {
     const out = new Map();
     const ids = [...new Set((sourceIds || []).filter(Boolean))];
     if (ids.length === 0) return out;
     if (!hasGraphTable(db, 'call_lines')) return out;
+    const relType = hasGraphColumn(db, 'call_lines', 'rel_type') ? 'cl.rel_type' : "'calls'";
     const vis = this._relationshipSql(db, 'cl');
     for (let i = 0; i < ids.length; i += 500) {
       const part = ids.slice(i, i + 500);
       const rows = db.prepare(`
-        SELECT cl.source_id, cl.target_name, cl.context_line FROM call_lines cl
+        SELECT cl.source_id, ${relType} AS rel_type, cl.target_name, cl.context_line FROM call_lines cl
         WHERE cl.source_id IN (${placeholders(part)}) AND ${vis}
       `).all(...part, ...this._relationshipParams(db));
       for (const row of rows) {
         if (row.context_line == null) continue;
-        const key = `${row.source_id}\u0000${row.target_name}`;
+        const key = `${row.source_id}\u0000${row.rel_type}\u0000${row.target_name}`;
         let lines = out.get(key);
         if (!lines) { lines = []; out.set(key, lines); }
         if (!lines.includes(row.context_line)) lines.push(row.context_line);
@@ -126,10 +129,10 @@ export class StructuralContextRepository {
     return out;
   }
 
-  /** `contextLines` for a stored `calls` edge: every site, else its own line. */
+  /** `contextLines` for a stored edge: every site line, else its own line. */
   _edgeLines(linesByPair, sourceId, edge) {
-    const lines = edge.relationship === 'calls' && edge.targetName
-      ? linesByPair.get(`${sourceId}\u0000${edge.targetName}`)
+    const lines = SITE_LINE_TYPES.has(edge.relationship) && edge.targetName
+      ? linesByPair.get(`${sourceId}\u0000${edge.relationship}\u0000${edge.targetName}`)
       : null;
     if (lines?.length) return { contextLine: lines[0], contextLines: lines };
     return { contextLine: edge.contextLine, contextLines: edge.contextLine ? [edge.contextLine] : [] };
@@ -351,7 +354,7 @@ export class StructuralContextRepository {
       resolvedParent: row.resolved_parent || null,
       weight: row.weight ?? 1,
     })).filter(edge => trustedCallerEdge(edge, target));
-    const linesByPair = this._qualifiedCallLines(db, edges.filter(e => e.relationship === 'calls').map(e => e.id));
+    const linesByPair = this._siteLines(db, edges.filter(e => SITE_LINE_TYPES.has(e.relationship)).map(e => e.id));
     return edges.map(edge => ({ ...edge, ...this._edgeLines(linesByPair, edge.id, edge) }));
   }
 
@@ -528,7 +531,7 @@ export class StructuralContextRepository {
       ORDER BY r.context_line, r.weight DESC
       LIMIT ?
     `).all(...this._entityParams(db), target.id, ...this._relationshipParams(db), limit);
-    const linesByPair = this._qualifiedCallLines(db, [target.id]);
+    const linesByPair = this._siteLines(db, [target.id]);
     return rows.map((row, idx) => {
       let resolved = row.id ? this._entityFromRow(row) : ((!packageCallUnbound(row) && this._resolveUnresolvedTarget(row.target_name)) || {
         id: `external:${idx}:${row.target_name || 'unknown'}`,

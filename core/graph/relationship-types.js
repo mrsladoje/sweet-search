@@ -29,6 +29,14 @@ export function isTraceOnlyRelationship(type) {
   return TRACE_ONLY_SET.has(type);
 }
 
+/**
+ * Relationship types whose every site line the extractor records in the
+ * trace-only site-line table (graph-extractor insertCallSites), keyed by
+ * `rel_type`. `relationships` keeps one row per (source, type, target).
+ * `overrides` is derived per method pair, so it has one line by nature.
+ */
+export const SITE_LINE_RELATIONSHIP_TYPES = Object.freeze(new Set(['calls', 'instantiates', 'typeRef', 'extensionOf']));
+
 /** Drop trace-only types from a ranking consumer's relationship-type list. */
 export function rankingRelationshipTypes(types) {
   return types.filter(t => !TRACE_ONLY_SET.has(t));
