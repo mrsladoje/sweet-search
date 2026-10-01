@@ -16,6 +16,7 @@ import { GraphExtractor, createGraphSchema, insertGraph } from '../../core/graph
 import { resolveRelationshipTargets } from '../../core/graph/relationship-resolver.js';
 import { StructuralContextBuilder, formatStructuralContext, mergeCallSites } from '../../core/graph/structural-context.js';
 import { pruneRetiredCallSites } from '../../core/incremental-indexing/infrastructure/graph-gc.mjs';
+import { formatTraceCompact } from '../../core/search/agent-output-fixes.js';
 
 const roots = [];
 afterEach(() => {
@@ -110,6 +111,9 @@ describe('ss-trace shows every call site of a caller', () => {
     const text = formatStructuralContext(result);
     expect(text).toContain('applyMutations [method] worker/draft.go:7 call@8,12');
     expect(text).toContain('## callers (2 call sites, 1 distinct caller)');
+    // The compact product default (Bundle A, A4) prints the same row.
+    const compact = formatTraceCompact(result, { mode: 'callers' });
+    expect(compact).toContain('## callers (2 call sites, 1 distinct caller)\napplyMutations [method] worker/draft.go:7 call@8,12');
   });
 
   it('qualified calls: relationships keep one row per pair, call_lines keep every line', async () => {
