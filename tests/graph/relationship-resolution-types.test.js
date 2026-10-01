@@ -104,6 +104,36 @@ describe('resolveRelationshipTargets — type references', () => {
     expect(target('store', 'Call.Base')).toBe('call-base');
   });
 
+  it('the owner beats a sibling in the qualifier directory (sequel JDBC::Dataset)', () => {
+    const owned = (id, file, owner, line) => db.prepare(
+      "INSERT INTO entities (id, file_path, type, name, start_line, end_line, parent_class) VALUES (?, ?, 'class', 'Dataset', ?, ?, ?)",
+    ).run(id, file, line, line + 40, owner);
+    owned('jdbc', 'lib/sequel/adapters/jdbc.rb', 'JDBC', 737);
+    owned('derby', 'lib/sequel/adapters/jdbc/derby.rb', 'Derby', 187);
+    owned('h2', 'lib/sequel/adapters/jdbc/h2.rb', 'H2', 200);
+    owned('ado', 'lib/sequel/adapters/ado.rb', 'ADO', 245);
+    owned('access', 'lib/sequel/adapters/ado/access.rb', 'Access', 330);
+    owned('mssql', 'lib/sequel/adapters/ado/mssql.rb', 'MSSQL', 42);
+    rel('derby', 'JDBC::Dataset', 'extends', 187);
+    rel('h2', 'JDBC::Dataset', 'extends', 200);
+    rel('access', 'ADO::Dataset', 'extends', 330);
+
+    resolveRelationshipTargets(db);
+    expect(target('derby', 'JDBC::Dataset')).toBe('jdbc');
+    expect(target('h2', 'JDBC::Dataset')).toBe('jdbc');
+    expect(target('access', 'ADO::Dataset')).toBe('ado');
+  });
+
+  it('without containment, the file at the qualifier path beats its directory', () => {
+    entity('jdbc', 'lib/sequel/adapters/jdbc.rb', 'class', 'Dataset', 737, 800);
+    entity('derby', 'lib/sequel/adapters/jdbc/derby.rb', 'class', 'Dataset', 187, 220);
+    entity('h2', 'lib/sequel/adapters/jdbc/h2.rb', 'class', 'Dataset', 200, 240);
+    rel('h2', 'JDBC::Dataset', 'extends', 200);
+
+    resolveRelationshipTargets(db);
+    expect(target('h2', 'JDBC::Dataset')).toBe('jdbc');
+  });
+
   it('a qualified base whose qualifier is not in the repo stays unresolved (nn.Module)', () => {
     entity('local-module', 'app/module.py', 'class', 'Module', 1, 40);
     entity('net', 'app/net.py', 'class', 'Net', 1, 40);

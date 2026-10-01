@@ -527,7 +527,7 @@ function resolveTarget(
         const shortName = lastPathSegment(targetName);
         if (shortName && shortName !== targetName) {
           candidates = typeCandidates(byExactName.get(shortName), sourceId);
-          if (qualifier) candidates = candidates.filter(c => matchesQualifier(c, qualifier));
+          if (qualifier) candidates = bestQualifierTier(candidates, qualifier);
         }
       }
 
@@ -770,17 +770,39 @@ function qualifierOf(name) {
 }
 
 /**
- * True when the candidate's file or directory sits at the qualifier path
- * (`src/flask/views.py`) or its owning type is the qualifier (`Call.Base`).
+ * How well a candidate matches a reference's qualifier: 3 = its owning type
+ * is the qualifier (`Call.Base`, Ruby `JDBC::Dataset` declared in module
+ * JDBC); 2 = its file sits at the qualifier path (`src/flask/views.py`);
+ * 1 = its directory does; 0 = no match.
  */
-function matchesQualifier(candidate, qualifier) {
-  if (candidate.parent_class && candidate.parent_class === qualifier.owner) return true;
+function qualifierMatchLevel(candidate, qualifier) {
+  if (candidate.parent_class && candidate.parent_class === qualifier.owner) return 3;
   const lower = (candidate.file_path || '').toLowerCase().replace(/[_-]/g, '');
   const dot = lower.lastIndexOf('.');
   const sansExt = dot > lower.lastIndexOf('/') ? lower.slice(0, dot) : lower;
-  const dir = lower.slice(0, Math.max(0, lower.lastIndexOf('/')));
   const at = (s) => s === qualifier.path || s.endsWith('/' + qualifier.path);
-  return at(sansExt) || at(dir);
+  if (at(sansExt)) return 2;
+  const dir = lower.slice(0, Math.max(0, lower.lastIndexOf('/')));
+  return at(dir) ? 1 : 0;
+}
+
+/**
+ * Candidates at the strongest qualifier match only. The owner (`JDBC::Dataset`
+ * → the Dataset whose parent_class is JDBC, in jdbc.rb) beats a file at the
+ * qualifier path (jdbc.rb), which beats a file in the qualifier's directory
+ * (jdbc/derby.rb defines its OWN Dataset inside JDBC::Derby — a sibling, not
+ * the base). Empty when nothing matches the qualifier.
+ */
+function bestQualifierTier(candidates, qualifier) {
+  let best = 0;
+  let tier = [];
+  for (const c of candidates) {
+    const level = qualifierMatchLevel(c, qualifier);
+    if (level === 0 || level < best) continue;
+    if (level > best) { best = level; tier = []; }
+    tier.push(c);
+  }
+  return tier;
 }
 
 /**
@@ -811,7 +833,7 @@ function pickClosestCandidate(candidates, sourceEntity, qualifier = null) {
       score = sharedDirDepth(facts.parts, srcParts);
       if (c.end_line > c.start_line) score += 100;
       if (facts.stemKey === cachedNameKey(c.name)) score += 1000;
-      if (qualifier && matchesQualifier(c, qualifier)) score += 5000;
+      if (qualifier) score += 2000 * qualifierMatchLevel(c, qualifier);
       if (!facts.isTest) score += 10000;
     }
     if (score > bestScore) {
