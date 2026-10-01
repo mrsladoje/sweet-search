@@ -150,11 +150,13 @@ describe('index coverage', () => {
 
   it('every reason carries a kind, and only excluded reasons refuse a body', () => {
     for (const [name, r] of Object.entries(REASONS)) {
-      expect(['excluded', 'stale'], `${name} kind`).toContain(r.kind);
+      expect(['excluded', 'stale', 'symlink'], `${name} kind`).toContain(r.kind);
       expect(r.text.length, `${name} text`).toBeGreaterThan(0);
     }
     expect(REASONS.notYetIndexed.kind).toBe('stale');
     expect(REASONS.minified.kind).toBe('excluded');
+    // A symlinked path is ordinary source the indexer reaches at its real path: never a refusal.
+    expect(REASONS.symlinkOutside.kind).toBe('symlink');
   });
 
   it('looksLikeBundle keys on line shape, never on the path', () => {

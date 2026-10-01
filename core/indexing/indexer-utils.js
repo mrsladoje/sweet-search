@@ -382,12 +382,17 @@ export async function discoverFiles(options = {}) {
   // Enumerate via the include globs (with the exclude globs pruning big dirs
   // during traversal), then apply the policy's shape gate so `.sweet-search-ignore`
   // is honoured here too — the one rule full discovery did not previously apply.
+  // followSymbolicLinks:false (admission rule 5): the walk never descends a
+  // symlinked directory, and with onlyFiles a symlink to a file is not reported
+  // either (its dirent is a link, not a file). So a symlink loop or a second
+  // path to the same folder can no longer multiply the index.
   const discovered = await glob(policy.includeGlobs, {
     ignore: policy.excludeGlobs,
     cwd: projectRoot,
     absolute: false,
     onlyFiles: true,
     dot: true,
+    followSymbolicLinks: false,
   });
   const shaped = discovered.filter((rel) => policy.admitsShape(rel));
 
@@ -402,10 +407,13 @@ export async function discoverFiles(options = {}) {
   if (policy.hasGit) {
     const present = new Set(allFiles);
     let readmitted = 0;
+    const symlinkMemo = new Map();
     for (const rel of policy.trackedFiles()) {
       if (present.has(rel)) continue;
       if (!policy.matchesInclude(rel)) continue;
       if (!policy.isBuildOutputOnly(rel)) continue;
+      // git tracks a symlink as one entry (mode 120000); rule 5 applies here too.
+      if (policy.isSymlinkedRel(rel, symlinkMemo)) continue;
       allFiles.push(rel);
       present.add(rel);
       readmitted++;
