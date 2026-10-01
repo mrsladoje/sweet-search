@@ -286,6 +286,159 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
 }
 
 /**
+ * Name/file lookups for resolveTarget. Insertion order is the entity order
+ * given (ties in candidate ranking keep the first candidate), so callers must
+ * pass entities in table (rowid) order.
+ */
+function buildEntityLookups(entities) {
+  const byId = new Map(); // id -> entity (for O(1) lookup)
+  const byExactName = new Map(); // "AuthService" -> [entities...]
+  const byMethodName = new Map(); // "authenticate" -> [entities...]
+  const byFileAndName = new Map(); // "path/to/file.java:AuthService" -> entity
+  const byFile = new Map(); // "path/to/file.java" -> [entities...]
+
+  for (const entity of entities) {
+    byId.set(entity.id, entity);
+
+    // Exact name (may have duplicates across files)
+    let named = byExactName.get(entity.name);
+    if (!named) { named = []; byExactName.set(entity.name, named); }
+    named.push(entity);
+
+    // File + name (the last same-named entity in a file wins)
+    byFileAndName.set(`${entity.file_path}:${entity.name}`, entity);
+    let fileEntities = byFile.get(entity.file_path);
+    if (!fileEntities) { fileEntities = []; byFile.set(entity.file_path, fileEntities); }
+    fileEntities.push(entity);
+
+    // Method name (just the method part)
+    if (CALLABLE_TYPES.has(entity.type)) {
+      const methodName = entity.name.split('.').pop();
+      let methods = byMethodName.get(methodName);
+      if (!methods) { methods = []; byMethodName.set(methodName, methods); }
+      methods.push(entity);
+    }
+  }
+  return { byId, byExactName, byMethodName, byFileAndName, byFile };
+}
+
+const CALLABLE_TYPES = new Set(['method', 'function', 'rpc']);
+const ENTITY_COLUMNS = 'rowid AS _rowid, id, name, type, file_path, parent_class, signature, start_line, end_line';
+const SQL_CHUNK = 500;
+
+function queryChunked(db, sqlFor, values, extraParams = []) {
+  const out = [];
+  const list = [...values];
+  for (let i = 0; i < list.length; i += SQL_CHUNK) {
+    const part = list.slice(i, i + SQL_CHUNK);
+    out.push(...db.prepare(sqlFor(part.map(() => '?').join(','))).all(...part, ...extraParams));
+  }
+  return out;
+}
+
+function hasColumn(db, table, column) {
+  try {
+    return db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === column);
+  } catch {
+    return false;
+  }
+}
+
+/** Every name a target name can be looked up by: itself and its path segments. */
+function targetNameKeys(targetName) {
+  const keys = new Set();
+  const name = String(targetName || '');
+  if (!name) return keys;
+  keys.add(name);
+  for (const seg of name.replace(/\(\)/g, '').split(/::|\\|\.|\//)) if (seg) keys.add(seg);
+  return keys;
+}
+
+/**
+ * Resolve a subset of relationship rows with exactly the rules of the full
+ * pass (resolveTarget), loading only the entities those rows can reach:
+ * the source entities, every entity named by a target-name segment, all
+ * entities of the source and resolved-import files, container types in the
+ * candidates' files (owner lookup) and dotted callables. With the maps
+ * complete for every key a row looks up, the result equals what
+ * resolveRelationshipTargets would pick for that row.
+ *
+ * The incremental reconciler uses it so an edited file's edges — and edges
+ * into its entities — resolve as a full build would, without reloading the
+ * whole entity table each tick.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {Array<{source_id, target_name, type, context_line?, full_import_path?}>} rows
+ * @param {{ liveOnly?: boolean }} [opts] - skip retired entities/edges (epoch columns)
+ * @returns {Array<string|null>} target id per row (aligned with `rows`)
+ */
+export function resolveRowsScoped(db, rows, { liveOnly = true } = {}) {
+  if (!rows || rows.length === 0) return [];
+  const entityLive = liveOnly && hasColumn(db, 'entities', 'epoch_retired') ? ' AND epoch_retired IS NULL' : '';
+  const relLive = liveOnly && hasColumn(db, 'relationships', 'epoch_retired') ? ' AND r.epoch_retired IS NULL' : '';
+
+  const keys = new Set();
+  const sourceIds = new Set();
+  const importFiles = new Set();
+  for (const r of rows) {
+    for (const k of targetNameKeys(r.target_name)) keys.add(k);
+    if (r.source_id) sourceIds.add(r.source_id);
+    if (r.full_import_path && !String(r.full_import_path).startsWith(UNRESOLVED_IMPORT_PREFIX)) importFiles.add(r.full_import_path);
+  }
+
+  const byRowid = new Map();
+  const add = (list) => { for (const e of list) if (!byRowid.has(e._rowid)) byRowid.set(e._rowid, e); };
+  const sources = queryChunked(db, ph => `SELECT ${ENTITY_COLUMNS} FROM entities WHERE id IN (${ph})${entityLive}`, sourceIds);
+  add(sources);
+  const named = queryChunked(db, ph => `SELECT ${ENTITY_COLUMNS} FROM entities WHERE name IN (${ph})${entityLive}`, keys);
+  add(named);
+  // Callables stored under a dotted name (`Foo.bar`) answer to their last part.
+  const dotted = db.prepare(`SELECT ${ENTITY_COLUMNS} FROM entities WHERE name LIKE '%.%' AND type IN ('method','function','rpc')${entityLive}`).all()
+    .filter(e => keys.has(e.name.split('.').pop()));
+  add(dotted);
+
+  const fullFiles = new Set(importFiles);
+  for (const s of sources) if (s.file_path) fullFiles.add(s.file_path);
+  add(queryChunked(db, ph => `SELECT ${ENTITY_COLUMNS} FROM entities WHERE file_path IN (${ph})${entityLive}`, fullFiles));
+  const candidateFiles = new Set();
+  for (const e of [...named, ...dotted]) if (e.file_path && !fullFiles.has(e.file_path)) candidateFiles.add(e.file_path);
+  const containerTypes = [...CONTAINER_TYPES];
+  add(queryChunked(
+    db,
+    ph => `SELECT ${ENTITY_COLUMNS} FROM entities WHERE file_path IN (${ph}) AND type IN (${containerTypes.map(() => '?').join(',')})${entityLive}`,
+    candidateFiles,
+    containerTypes,
+  ));
+
+  const entities = [...byRowid.values()].sort((a, b) => a._rowid - b._rowid);
+  const { byId, byExactName, byMethodName, byFileAndName, byFile } = buildEntityLookups(entities);
+
+  // Imports of the source files: file-node ids are the logical
+  // `path:file:basename` hash in a full build and a physical id in an
+  // incrementally maintained graph — map both back to the path.
+  const fileIdToPath = new Map();
+  for (const s of sources) if (s.file_path) fileIdToPath.set(fileNodeId(s.file_path), s.file_path);
+  for (const e of entities) if (e.type === 'file' && fullFiles.has(e.file_path)) fileIdToPath.set(e.id, e.file_path);
+  const fileImports = new Map();
+  if (fileIdToPath.size > 0) {
+    const importRows = queryChunked(db, ph => `SELECT r.source_id, r.target_name FROM relationships r WHERE r.type = 'importsFile' AND r.source_id IN (${ph})${relLive}`, fileIdToPath.keys());
+    for (const r of importRows) {
+      const from = fileIdToPath.get(r.source_id);
+      if (!from) continue;
+      let set = fileImports.get(from);
+      if (!set) { set = new Set(); fileImports.set(from, set); }
+      set.add(r.target_name);
+    }
+  }
+  const callIndex = createCallResolutionIndex(entities, { fileImports });
+
+  return rows.map(r => resolveTarget(
+    r.source_id, r.target_name, r.type, r.context_line, r.full_import_path,
+    byExactName, byMethodName, byFileAndName, byId, null, byFile, callIndex,
+  ) || null);
+}
+
+/**
  * Resolve relationship target_ids from target_names
  * This runs AFTER all entities are extracted and inserted
  */
@@ -302,39 +455,7 @@ export function resolveRelationshipTargets(db) {
 
   console.log(`  Loaded ${entities.length} entities`);
 
-  // Lookup maps
-  const byId = new Map(); // id -> entity (for O(1) lookup)
-  const byExactName = new Map(); // "AuthService" -> [entities...]
-  const byMethodName = new Map(); // "authenticate" -> [entities...]
-  const byFileAndName = new Map(); // "path/to/file.java:AuthService" -> entity
-  const byFile = new Map(); // "path/to/file.java" -> [entities...]
-
-  for (const entity of entities) {
-    // ID lookup
-    byId.set(entity.id, entity);
-
-    // Exact name (may have duplicates across files)
-    if (!byExactName.has(entity.name)) {
-      byExactName.set(entity.name, []);
-    }
-    byExactName.get(entity.name).push(entity);
-
-    // File + name (unique within file)
-    const fileKey = `${entity.file_path}:${entity.name}`;
-    byFileAndName.set(fileKey, entity);
-    let fileEntities = byFile.get(entity.file_path);
-    if (!fileEntities) { fileEntities = []; byFile.set(entity.file_path, fileEntities); }
-    fileEntities.push(entity);
-
-    // Method name (just the method part)
-    if (entity.type === 'method' || entity.type === 'function' || entity.type === 'rpc') {
-      const methodName = entity.name.split('.').pop();
-      if (!byMethodName.has(methodName)) {
-        byMethodName.set(methodName, []);
-      }
-      byMethodName.get(methodName).push(entity);
-    }
-  }
+  const { byId, byExactName, byMethodName, byFileAndName, byFile } = buildEntityLookups(entities);
 
   // File → imported repo files (`importsFile` edges) for call disambiguation.
   let fileImports = null;

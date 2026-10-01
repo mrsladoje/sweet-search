@@ -13,7 +13,8 @@ import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import { annotateChunksForDelta, snapshotFileRows, diffChunks, applyDiff } from '../infrastructure/vector-delta-writer.mjs';
 import { appendDeltaRecord, FALLBACK_WEIGHTS_ID, fileIdFor, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
 import { fts5Merge, fts5MergeBudgetPages } from '../infrastructure/sqlite-fts5.mjs';
-import { insertEntity, insertRelationships, markBinaryStale, createStaleBatch, maintainFloatStore, flushFloatStore } from './production-reconciler-helpers.mjs';
+import { insertEntity, insertRelationships, resolveTouchedEdges, markBinaryStale, createStaleBatch, maintainFloatStore, flushFloatStore } from './production-reconciler-helpers.mjs';
+import { resolveRowsScoped } from '../../graph/relationship-resolver.js';
 import {
   chunkCutoffEnabled,
   computeCutoffSignature,
@@ -909,7 +910,7 @@ class ProductionReconcileAdapter {
       ownConn = true;
     }
     try {
-      const oldRows = prepareCached(db, 'SELECT rowid, id, logical_entity_id, signature_hash FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
+      const oldRows = prepareCached(db, 'SELECT rowid, id, name, logical_entity_id, signature_hash FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
       const oldByLogical = new Map(oldRows.map((r) => [r.logical_entity_id || r.id, r]));
       const oldIds = oldRows.map((r) => r.id);
       const importResolver = this._importResolverFor(ctx, db);
@@ -935,6 +936,7 @@ class ProductionReconcileAdapter {
       }
       let upsert = 0;
       let tombstone = 0;
+      let edgeResolution = null;
       const liveIdFor = new Map();
       const tx = db.transaction(() => {
         const retireEntity = prepareCached(db, 'UPDATE entities SET epoch_retired = ?, stale_since = COALESCE(stale_since, ?) WHERE id = ? AND epoch_retired IS NULL');
@@ -953,10 +955,12 @@ class ProductionReconcileAdapter {
         if (hashes.deleted) {
           prepareCached(db, "UPDATE relationships SET epoch_retired = ? WHERE type = 'importsFile' AND target_name = ? AND epoch_retired IS NULL").run(epoch, rel);
         }
+        const retiredIds = [];
         const nextLogical = new Set(entities.map((e) => e.id));
         for (const row of oldRows) {
           if (!nextLogical.has(row.logical_entity_id || row.id)) {
             retireEntity.run(epoch, epoch, row.id);
+            retiredIds.push(row.id);
             tombstone += 1;
           }
         }
@@ -968,6 +972,7 @@ class ProductionReconcileAdapter {
           }
           if (old) {
             retireEntity.run(epoch, epoch, old.id);
+            retiredIds.push(old.id);
             tombstone += 1;
           }
           const physical = uniquePhysicalId(db, 'entities', `${e.id}@e${epoch}`);
@@ -976,6 +981,17 @@ class ProductionReconcileAdapter {
           upsert += 1;
         }
         insertRelationships(db, relationships, liveIdFor, epoch);
+        // Resolve this write's edges (and edges into its definitions) with
+        // the full build's rules — otherwise maintained files keep
+        // target-less edges that readers can only match by name.
+        const oldNames = new Set(oldRows.map((r) => r.name));
+        const newNames = [...new Set(entities.filter((e) => e.type !== 'file' && e.name && !oldNames.has(e.name)).map((e) => e.name))];
+        edgeResolution = resolveTouchedEdges(db, {
+          epoch,
+          sourceIds: [...liveIdFor.values()],
+          retiredIds,
+          newNames,
+        }, resolveRowsScoped);
       });
       tx();
       this.progress('production:graph-written');
@@ -990,7 +1006,7 @@ class ProductionReconcileAdapter {
           for (const table of ['entities_fts', 'entities_trigram']) try { fts5Merge(db, table, pages); } catch {}
         }
       }
-      this.touched.set(rel, { ...(this.touched.get(rel) || {}), graphEntities: entities.length });
+      this.touched.set(rel, { ...(this.touched.get(rel) || {}), graphEntities: entities.length, graphEdgeResolution: edgeResolution });
       return { ops: { graph_upsert: upsert, graph_tombstone: tombstone }, manifest: { path: 'code-graph.db' } };
     } finally {
       if (ownConn) db.close();

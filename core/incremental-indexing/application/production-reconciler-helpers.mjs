@@ -60,6 +60,106 @@ export function insertRelationships(db, relationships, liveIdFor, epoch) {
   }
 }
 
+const REL_SELECT = 'rowid, source_id, target_id, target_name, type, weight, context_line, full_import_path, is_static, is_wildcard, logical_relationship_id, epoch_written';
+
+function chunkedAll(db, sqlFor, values, extra = []) {
+  const out = [];
+  const list = [...values];
+  for (let i = 0; i < list.length; i += 500) {
+    const part = list.slice(i, i + 500);
+    out.push(...db.prepare(sqlFor(part.map(() => '?').join(','))).all(...part, ...extra));
+  }
+  return out;
+}
+
+function nameKeysOf(targetName) {
+  const name = String(targetName || '');
+  const keys = [name];
+  for (const seg of name.replace(/\(\)/g, '').split(/::|\\|\.|\//)) if (seg) keys.push(seg);
+  return keys;
+}
+
+/**
+ * Resolve the call/type/import edges an incremental graph write touched, with
+ * the full build's rules (relationship-resolver resolveRowsScoped), so a
+ * maintained graph matches a fresh build for the same files:
+ *
+ *   1. the file's own rows written this epoch (inserted with no target);
+ *   2. live rows elsewhere whose target entity this write retired (an edited
+ *      or deleted definition got a new physical id or disappeared);
+ *   3. live rows elsewhere whose target name names a definition this write
+ *      added under a new name (a new function can now be the better target).
+ *
+ * Rows written this epoch are updated in place. Older rows are versioned:
+ * retired at `epoch` and re-inserted with the new target, so readers pinned to
+ * an older manifest epoch keep the edge they saw.
+ *
+ * @returns {{ resolved: number, rebound: number, scanned: number }}
+ */
+export function resolveTouchedEdges(db, { epoch, sourceIds = [], retiredIds = [], newNames = [] }, resolveRowsScoped) {
+  const rows = new Map();
+  const own = chunkedAll(
+    db,
+    ph => `SELECT ${REL_SELECT} FROM relationships WHERE source_id IN (${ph}) AND epoch_written = ? AND epoch_retired IS NULL AND target_id IS NULL AND type != 'importsFile' AND target_name IS NOT NULL`,
+    new Set(sourceIds),
+    [epoch],
+  );
+  for (const r of own) rows.set(r.rowid, r);
+  for (const r of chunkedAll(db, ph => `SELECT ${REL_SELECT} FROM relationships WHERE target_id IN (${ph}) AND epoch_retired IS NULL`, new Set(retiredIds))) {
+    rows.set(r.rowid, r);
+  }
+  let scanned = 0;
+  if (newNames.length > 0) {
+    const wanted = new Set(newNames);
+    const hits = [];
+    for (const r of db.prepare("SELECT rowid, target_name FROM relationships WHERE epoch_retired IS NULL AND type != 'importsFile' AND target_name IS NOT NULL").iterate()) {
+      scanned++;
+      if (rows.has(r.rowid)) continue;
+      if (nameKeysOf(r.target_name).some(k => wanted.has(k))) hits.push(r.rowid);
+    }
+    for (const r of chunkedAll(db, ph => `SELECT ${REL_SELECT} FROM relationships WHERE rowid IN (${ph})`, hits)) rows.set(r.rowid, r);
+  }
+  if (rows.size === 0) return { resolved: 0, rebound: 0, scanned };
+
+  const list = [...rows.values()];
+  const targets = resolveRowsScoped(db, list, { liveOnly: true });
+  const setTarget = db.prepare('UPDATE relationships SET target_id = ? WHERE rowid = ?');
+  const dropRow = db.prepare('DELETE FROM relationships WHERE rowid = ?');
+  const retire = db.prepare('UPDATE relationships SET epoch_retired = ? WHERE rowid = ?');
+  const insertCopy = db.prepare(`
+    INSERT INTO relationships
+    (source_id, target_id, target_name, type, weight, context_line, full_import_path, is_static, is_wildcard, logical_relationship_id, epoch_written, epoch_retired)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+  `);
+  let resolved = 0;
+  let rebound = 0;
+  list.forEach((r, i) => {
+    const next = targets[i] || null;
+    if (next === (r.target_id || null)) return;
+    if (r.epoch_written === epoch) {
+      try {
+        setTarget.run(next, r.rowid);
+      } catch (err) {
+        // Same edge already live (two call shapes, one target): keep one row,
+        // as the full pass does for its duplicates.
+        if (!String(err?.message).includes('UNIQUE')) throw err;
+        dropRow.run(r.rowid);
+      }
+      if (next) resolved++;
+      return;
+    }
+    retire.run(epoch, r.rowid);
+    try {
+      insertCopy.run(r.source_id, next, r.target_name, r.type, r.weight ?? 1, r.context_line ?? null, r.full_import_path ?? null,
+        r.is_static ? 1 : 0, r.is_wildcard ? 1 : 0, r.logical_relationship_id || '', epoch);
+    } catch (err) {
+      if (!String(err?.message).includes('UNIQUE')) throw err;
+    }
+    rebound++;
+  });
+  return { resolved, rebound, scanned };
+}
+
 /**
  * Batched stale marking. The per-id `markBinaryStale` loads, mutates, and
  * fsyncs the bitmap file once PER RETIRED ID — O(retires × bitmap size) with

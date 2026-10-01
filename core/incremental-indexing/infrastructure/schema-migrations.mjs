@@ -204,6 +204,17 @@ export function migrateRelationshipsSchema(db) {
     'idx_rel_epoch_retired',
     'CREATE INDEX IF NOT EXISTS idx_rel_epoch_retired ON relationships(epoch_retired) WHERE epoch_retired IS NOT NULL',
   );
+  // Edge uniqueness holds among LIVE rows only. A versioned graph keeps a
+  // retired row next to its live successor; once incremental writes resolve
+  // their targets, both carry the same (source, target, type, name) and the
+  // full-table unique index would reject the successor.
+  const columns = new Set(db.prepare('PRAGMA table_info(relationships)').all().map((c) => c.name));
+  const hasEdgeColumns = ['source_id', 'target_id', 'type', 'target_name'].every((c) => columns.has(c));
+  const uniqueSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_rel_unique'").get()?.sql || '';
+  if (hasEdgeColumns && !uniqueSql.includes('epoch_retired')) {
+    db.exec('DROP INDEX IF EXISTS idx_rel_unique');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_rel_unique ON relationships(source_id, target_id, type, target_name) WHERE source_id IS NOT NULL AND epoch_retired IS NULL');
+  }
   return { added };
 }
 
