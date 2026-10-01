@@ -379,6 +379,24 @@ describe('renderGraphNeighbors', () => {
     expect(out.rendered).toMatch(/- imports R ← 'com\.example\.app\.R' \(unresolved\)/);
   });
 
+  it('Go package calls with no target show no internal marker', () => {
+    const repo = mockRepo({
+      outgoing: [
+        { type: 'calls', targetName: 'types.TypeID', targetId: null, contextLine: 185, fullImportPath: 'gopkg:types/', target: null },
+        { type: 'calls', targetName: 'glog.Errorf', targetId: null, contextLine: 319, fullImportPath: 'unresolved:github.com/golang/glog', target: null },
+      ],
+    });
+    const out = renderGraphNeighbors({
+      codeGraphRepo: repo,
+      entity: { id: 'eG', filePath: 'worker/export.go', startLine: 170, endLine: 330, name: 'toRDF', type: 'function' },
+      skipKeys: new Set(),
+      tokenCap: 600,
+    });
+    expect(out.rendered).not.toMatch(/gopkg:|unresolved:/);
+    expect(out.rendered).toMatch(/- calls types\.TypeID \(referenced at line 185\)/);
+    expect(out.rendered).toMatch(/- calls glog\.Errorf \(referenced at line 319\)/);
+  });
+
   it('dedupes against skipKeys (already in pack)', () => {
     const repo = mockRepo({
       outgoing: [

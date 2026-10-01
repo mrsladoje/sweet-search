@@ -25,7 +25,7 @@ import { applyAgentPackCompletion, buildPackSiblingLine, shownSourceEndLine } fr
 import { capToFinalK } from './final-k.js';
 import { statSync } from 'fs';
 import path from 'path';
-import { UNRESOLVED_IMPORT_PREFIX } from '../graph/import-resolver.js';
+import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../graph/import-resolver.js';
 
 // An `imports` row annotated with the repo file it loads (no entity target):
 // a repo-relative path, or a Go / Terraform / Swift package dir ending '/'.
@@ -1408,9 +1408,10 @@ export function renderGraphNeighbors(opts) {
         seen.add(k);
         const range = formatLineRange(r.target.startLine, r.target.endLine);
         rendered = `- ${fam} ${r.target.name} → ${r.target.filePath}:${range} [${r.target.type}]`;
-      } else if (r.fullImportPath && r.fullImportPath.startsWith(UNRESOLVED_IMPORT_PREFIX)) {
-        // A module outside the repo (package, stdlib): the internal marker is
-        // not shown; rendered like an unannotated row.
+      } else if (r.fullImportPath && (r.fullImportPath.startsWith(UNRESOLVED_IMPORT_PREFIX) || r.fullImportPath.startsWith(GO_PACKAGE_PREFIX))) {
+        // A module outside the repo (package, stdlib), or a Go package call
+        // with no function target (`types.TypeID(v)` is a conversion): the
+        // internal marker is not shown; rendered like an unannotated row.
         rendered = r.contextLine
           ? `- ${fam} ${r.targetName} (referenced at line ${r.contextLine})`
           : `- ${fam} ${r.targetName}`;
