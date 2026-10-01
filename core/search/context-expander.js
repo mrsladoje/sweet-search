@@ -24,6 +24,17 @@ import { computeSufficiencyVerdict } from './query-sufficiency.js';
 import { applyAgentPackCompletion, buildPackSiblingLine, shownSourceEndLine } from './agent-pack-completion.js';
 import { statSync } from 'fs';
 import path from 'path';
+import { UNRESOLVED_IMPORT_PREFIX } from '../graph/import-resolver.js';
+
+// An `imports` row annotated with the repo file it loads (no entity target):
+// a repo-relative path, or a Go / Terraform / Swift package dir ending '/'.
+// Java rows carry a dotted FQN instead (`com.example.app.R`), never a path.
+const IMPORT_FILE_EXT_RE = /\.(?:[cm]?[jt]sx?|mts|cts|py|pyi|rs|go|h|hh|hpp|hxx|c|cc|cpp|cxx|m|mm|java|kts?|scala|groovy|rb|php|dart|cs|swift|exs?|lua|zig|l?hs|clj[cs]?|sol|sh|bash|zsh|proto|jl|elm|p[lm]|[rR]|ps[dm]?1|[eh]rl|cr|s[ac]ss|less|css|vue|svelte|astro|tf)$/;
+function isResolvedImportFile(p) {
+  if (p.endsWith('/')) return true;
+  // Root-level files have one dot (`utils.py`); FQNs have more or no slash.
+  return (p.includes('/') || p.indexOf('.') === p.lastIndexOf('.')) && IMPORT_FILE_EXT_RE.test(p) && !/^[\w$]+(?:\.[\w$]+){2,}$/.test(p);
+}
 
 // =============================================================================
 // Token estimation (character-based, no tokenizer on the hot path)
@@ -1375,6 +1386,15 @@ export function renderGraphNeighbors(opts) {
         seen.add(k);
         const range = formatLineRange(r.target.startLine, r.target.endLine);
         rendered = `- ${fam} ${r.target.name} → ${r.target.filePath}:${range} [${r.target.type}]`;
+      } else if (r.fullImportPath && r.fullImportPath.startsWith(UNRESOLVED_IMPORT_PREFIX)) {
+        // A module outside the repo (package, stdlib): the internal marker is
+        // not shown; rendered like an unannotated row.
+        rendered = r.contextLine
+          ? `- ${fam} ${r.targetName} (referenced at line ${r.contextLine})`
+          : `- ${fam} ${r.targetName}`;
+      } else if (r.fullImportPath && fam === 'imports' && isResolvedImportFile(r.fullImportPath)) {
+        // Resolved to a repo file, but to no single entity in it.
+        rendered = `- ${fam} ${r.targetName} → ${r.fullImportPath}`;
       } else if (r.fullImportPath) {
         rendered = `- ${fam} ${r.targetName} ← '${r.fullImportPath}' (unresolved)`;
       } else if (r.targetName && r.contextLine) {

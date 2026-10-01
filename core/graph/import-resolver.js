@@ -214,7 +214,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
   function declaredModules(rel, family) {
     const key = `${family}\0${rel}`;
     if (declaredMemo.has(key)) return declaredMemo.get(key);
-    const text = readText(rel) || '';
+    const text = (readText(rel) || '').replace(/^﻿/, '');
     const names = new Set();
     if (family === 'jvm') {
       const lang = JVM_LANG_OF_EXT[path.posix.extname(rel)] || 'java';
@@ -1889,8 +1889,8 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
 
   /**
    * True when a scanned import names a namespace declared in the repo (C#
-   * `using X;`): it maps to no single file, and its legacy row keeps the
-   * name-based resolution it had before.
+   * `using X;`): it maps to no single file (its file-level dependencies come
+   * from implicitImports).
    */
   function isLocalNamespace(fromFile, imp, language) {
     if (language !== 'csharp' || (imp.kind !== 'cs-namespace' && imp.kind !== 'cs-global')) return false;

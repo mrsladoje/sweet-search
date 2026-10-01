@@ -281,6 +281,20 @@ describe('review — C# namespace lookup', () => {
       .toEqual(['P/Part1.cs', 'P/Part2.cs']);
   });
 
+  it('a byte-order mark does not turn the namespace line into references', () => {
+    // ocelot: 498 of 757 .cs files start with U+FEFF; `namespace Ocelot.Testing;`
+    // on that line read as a reference to class Ocelot.Testing.Ocelot.
+    expect(implicit({
+      'testing/Ocelot.cs': '﻿namespace Ocelot.Testing;\ninternal class Ocelot {}',
+      'testing/StreamExtensions.cs': '﻿namespace Ocelot.Testing;\n\npublic static class StreamExtensions\n{\n}\n',
+    }, 'testing/StreamExtensions.cs', 'csharp')).toEqual([]);
+    // …and a BOM'd Java file keeps its package for same-package lookups.
+    expect(implicit({
+      'src/p/Foo.java': '﻿package p;\npublic class Foo {}',
+      'src/p/Use.java': '﻿package p;\nclass Use { Foo f; }',
+    }, 'src/p/Use.java', 'java')).toEqual(['src/p/Foo.java']);
+  });
+
   it('external usings give nothing', () => {
     expect(implicit({ ...base, 'X/Use.cs': 'using System;\nnamespace X { class Use { void M() { Console.WriteLine(); } } }' }, 'X/Use.cs', 'csharp'))
       .toEqual([]);
